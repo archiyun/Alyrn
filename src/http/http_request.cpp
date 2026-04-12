@@ -1,106 +1,42 @@
 #include "runtime/http/http_request.h"
-
-#include <algorithm>
 #include <cctype>
 
 namespace runtime::http {
 
 namespace {
 
-std::string NormalizeHeaderKey(std::string key) {
-    std::transform(key.begin(), key.end(), key.begin(), [](unsigned char ch) {
-        return static_cast<char>(std::tolower(ch));
-    });
-    return key;
+std::string ToLower(std::string_view sv) {
+  std::string out{sv};
+  for (char &c : out) {
+    c = tolower(c);
+  }
+  return out;
+}
+} // namespace
+
+void HttpRequest::AddHeader(std::string_view field, std::string_view value) {
+    // field 统一转小写
+    headers_.emplace(ToLower(field), std::string(value));
 }
 
-}  // namespace
-
-void HttpRequest::SetMethod(Method method) {
-    method_ = method;
-}
-
-HttpRequest::Method HttpRequest::GetMethod() const {
-    return method_;
-}
-
-void HttpRequest::SetVersion(Version version) {
-    version_ = version;
-}
-
-HttpRequest::Version HttpRequest::GetVersion() const {
-    return version_;
-}
-
-void HttpRequest::SetPath(std::string path) {
-    path_ = std::move(path);
-}
-
-const std::string& HttpRequest::Path() const {
-    return path_;
-}
-
-void HttpRequest::SetBody(std::string body) {
-    body_ = std::move(body);
-}
-
-const std::string& HttpRequest::Body() const {
-    return body_;
-}
-
-void HttpRequest::SetQuery(std::string query) {
-    query_ = std::move(query);
-}
-
-const std::string& HttpRequest::Query() const {
-    return query_;
-}
-
-const std::string& HttpRequest::Qurey() const {
-    return query_;
-}
-
-void HttpRequest::AddHeader(std::string field, std::string value) {
-    headers_[NormalizeHeaderKey(std::move(field))] = std::move(value);
-}
-
-std::string HttpRequest::GetHeader(const std::string& field) const {
-    const auto it = headers_.find(NormalizeHeaderKey(field));
+std::string_view HttpRequest::GetHeader(std::string_view field) const {
+    const auto it = headers_.find(ToLower(field));
     if (it == headers_.end()) {
-        return "";
+        return {}; // null string_view
     }
     return it->second;
 }
 
-const std::unordered_map<std::string, std::string>& HttpRequest::Headers() const {
-    return headers_;
-}
-
-void HttpRequest::SetReceiveTime(runtime::time::Timestamp ts) {
-    receive_time_ = ts;
-}
-
-void HttpRequest::SetReciveTime(runtime::time::Timestamp ts) {
-    SetReceiveTime(ts);
-}
-
-runtime::time::Timestamp HttpRequest::ReceiveTime() const {
-    return receive_time_;
-}
-
-runtime::time::Timestamp HttpRequest::ReciveTime() const {
-    return receive_time_;
-}
-
+// 头部行
+// connection: close or keep-alive
 bool HttpRequest::KeepAlive() const {
-    std::string connection = GetHeader("connection");
-    std::transform(connection.begin(), connection.end(), connection.begin(), [](unsigned char ch) {
-        return static_cast<char>(std::tolower(ch));
-    });
+    const auto conn = GetHeader("connection");
     if (version_ == Version::Http11) {
-        return connection != "close";
+        // http1.1默认开启长连接， 除非显示关闭
+        return conn != "close";
     }
-    return connection == "keep-alive";
+    // http1.0 默认close, 除非显示开启 keep-alive
+    return conn == "keep-alive";
 }
 
 void HttpRequest::Reset() {
@@ -110,7 +46,7 @@ void HttpRequest::Reset() {
     query_.clear();
     body_.clear();
     headers_.clear();
-    receive_time_ = runtime::time::Timestamp::Invalid();
+    receive_time_ = {};
 }
 
-}  // namespace runtime::http
+} // namespace runtime::http

@@ -1,38 +1,29 @@
 #pragma once
 
+#include "runtime/http/http_types.h"
+
 #include <string>
 #include <unordered_map>
+
 namespace runtime::http {
 
 class HttpResponse {
 public:
-    enum class StatusCode {
-        Unknown = 0,
-        _200_Ok = 200,
-        _400_BadRequest = 400,
-        _404_NotFound = 404,
-        _500_InternalServerError = 500
-    };
-
-    explicit HttpResponse(bool close = true);
+    explicit HttpResponse(bool close_connection);
 
     void SetStatusCode(StatusCode code);
-    void SetStatusMessage(std::string message);
-
+    void SetBody(std::string body);
+    void SetContentType(std::string_view content_type);
+    void AddHeader(std::string_view key, std::string_view value);
     void SetCloseConnection(bool close);
+
     bool CloseConnection() const;
 
-    void SetContentType(std::string content_type);
-    void SetBody(std::string body);
-    void AddHeader(std::string key, std::string value);
-
+    // 序列化成 HTTP1.1 报文
     std::string ToString() const;
-    void Reset();
-
 private:
-    StatusCode status_code_{StatusCode::Unknown};
-    std::string status_message_;
-    bool close_connection_{true};
+    StatusCode status_code_ { StatusCode::Ok };
+    bool close_connection_ { true };
     std::unordered_map<std::string, std::string> headers_;
     std::string body_;
 };

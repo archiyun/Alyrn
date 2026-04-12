@@ -81,9 +81,11 @@ target_link_libraries(runtime_net
 target_compile_features(runtime_net PUBLIC cxx_std_20)
 
 add_library(runtime_http STATIC
-    src/http/http_context.cpp
+    src/http/http_types.cpp
     src/http/http_request.cpp
+    src/http/http_context.cpp
     src/http/http_response.cpp
+    src/http/router.cpp
     src/http/http_server.cpp
 )
 
