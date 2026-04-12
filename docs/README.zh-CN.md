@@ -1,7 +1,6 @@
 # HTTP Demo 观测与测试
 
-仓库里的 `simple_http_server` 现在支持这些能力：
-
+仓库里的 `simple_http_server` 
 - `GET` 静态文件
 - `Keep-Alive`
 - 简单 JSON API

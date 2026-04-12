@@ -23,13 +23,15 @@ target_link_libraries(simple_echo_server
         runtime_net
 )
 
-add_executable(simple_http_server
-    simple_http_server.cpp
+
+add_executable(demo_http_server
+    demo_http_server.cpp
 )
 
-target_link_libraries(simple_http_server
+target_link_libraries(demo_http_server
     PRIVATE
         runtime_http
+        runtime_foundation
 )
 
 # 把 example 挂进 CTest，便于直接通过 ctest 跑通日志 smoke test。

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "runtime/http/http_types.h"
 #include "runtime/time/timestamp.h"
 
 #include <string>
@@ -9,57 +10,53 @@ namespace runtime::http {
 
 class HttpRequest {
 public:
-    enum class Method {
-        Invalid,
-        Get,
-        Post,
-        Put,
-        Delete,
-        Head
-    };
+    // http请求行  ex: GET /somedir/page.html HTTP/1.1
+    void SetMethod(Method m) {  method_ = m; }
+    Method GetMethod() const { return method_; }
 
-    enum class Version {
-        Unknown,
-        Http10,
-        Http11,
-    };
+    void SetVersion(Version v) { version_ = v; }
+    Version GetVersion() const { return version_; }
 
-    void SetMethod(Method method);
-    Method GetMethod() const;
+    void SetPath(std::string p) { path_ = std::move(p); }
+    const std::string &Path() const { return path_; }
 
-    void SetVersion(Version version);
-    Version GetVersion() const;
+    void SetQuery(std::string q) { query_ = std::move(q); }
+    const std::string &Query() const { return query_; }
 
-    void SetPath(std::string path);
-    const std::string &Path() const;
+    // http: Headers 
+    /**
+     * @param: field: value
+     * Host: www.example.com
+     * Connection: close
+     * User-agent: Mozilla/5.0
+     * Accept-language: fr
+     * 
+     * field 大小写敏感
+     */ 
+    void AddHeader(std::string_view field, std::string_view value);
+    
+    // 查找时大小写不敏感
+    std::string_view GetHeader(std::string_view field) const;
+    const std::unordered_map<std::string, std::string> &Headers() const { return headers_; }
 
-    void SetBody(std::string body);
-    const std::string &Body() const;
+    // hhtp: Body
+    void SetBody(std::string b) { body_ = std::move(b); }
+    const std::string &Body() const { return body_; }
 
-    void SetQuery(std::string query);
-    const std::string &Query() const;
-    const std::string &Qurey() const;
-
-    void AddHeader(std::string field, std::string value);
-    std::string GetHeader(const std::string &field) const;
-    const std::unordered_map<std::string, std::string> &Headers() const;
-
-    void SetReceiveTime(runtime::time::Timestamp ts);
-    void SetReciveTime(runtime::time::Timestamp ts);
-    runtime::time::Timestamp ReceiveTime() const;
-    runtime::time::Timestamp ReciveTime() const;
-
+    // 其它... 比如长连接
     bool KeepAlive() const;
 
-    void Reset();
+    void SetReceiveTime(runtime::time::Timestamp ts) { receive_time_ = ts; }
+    runtime::time::Timestamp ReceiveTime() const { return receive_time_; }
 
+    void Reset();
 private:
-    Method method_{Method::Invalid};
-    Version version_{Version::Unknown};
+    Method method_ { Method::Invalid };
+    Version version_ { Version::Unknown };
     std::string path_;
     std::string query_;
     std::string body_;
-    std::unordered_map<std::string ,std::string> headers_;
+    std::unordered_map<std::string, std::string> headers_; // key 小写
     runtime::time::Timestamp receive_time_;
 };
-}  // namespace runtime::http
+} // namespace runtime::http

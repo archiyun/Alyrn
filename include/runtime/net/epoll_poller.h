@@ -29,6 +29,7 @@ private:
     void Update(int operation, Channel *channel);
     void FillActiveChannels(int num_events, ChannelList *active_channels) const;
 private:
+    // 初始默认 16 epoll_event, 满了字符翻倍
     static constexpr int kInitEventListSize = 16;
     
     int epollfd_;

@@ -1,8 +1,10 @@
 #include "runtime/net/epoll_poller.h"
 #include "runtime/net/channel.h"
+#include "runtime/log/logger.h"
 
 #include <cassert>
 #include <cerrno>
+#include <cstdlib>
 #include <cstring>
 #include <unistd.h>
 
@@ -16,14 +18,24 @@ enum class ChannelState : int {
   kDeleted = 2,
 };
 
+const char *OpName(int op) {
+  switch (op) {
+  case EPOLL_CTL_ADD: return "ADD";
+  case EPOLL_CTL_MOD: return "MOD";
+  case EPOLL_CTL_DEL: return "DEL";
+  default:            return "UNKNOWN";
+  }
+}
+
 } // namespace
 
 EPollPoller::EPollPoller(EventLoop *loop)
     : Poller(loop), epollfd_(::epoll_create1(EPOLL_CLOEXEC)),
       events_(kInitEventListSize) {
   if (epollfd_ < 0) {
-    // 用日志替换 / 异常abort
-    assert(false && "epoll_create1 failed");
+    LOG_FATAL() << "epoll_create1 failed: errno=" << errno
+                << " message=" << std::strerror(errno);
+    std::abort();
   }
 }
 
@@ -47,7 +59,8 @@ runtime::time::Timestamp EPollPoller::Poll(int timeout_ms,
     }
   } else if (num_events < 0 && saved_errno != EINTR) {
     errno = saved_errno;
-    // 日志
+    LOG_ERROR() << "epoll_wait failed: errno=" << saved_errno
+                << " message=" << std::strerror(saved_errno);
   }
 
   return now;
@@ -98,14 +111,16 @@ void EPollPoller::RemoveChannel(Channel *channel) {
 }
 
 void EPollPoller::Update(int operation, Channel *channel) {
-  epoll_event event{};
+  struct epoll_event event{};
   event.events = channel->Events();
   event.data.ptr = channel;
 
   if (::epoll_ctl(epollfd_, operation, channel->Fd(), &event) < 0) {
-    // 加日志：operation/fd/events/errno
-    // LOG_SYSERR << "epoll_ctl op=" << operation << " fd=" <<
-    // channel->fd();
+    LOG_ERROR() << "epoll_ctl failed: op=" << OpName(operation)
+                << " fd=" << channel->Fd()
+                << " events=" << channel->Events()
+                << " errno=" << errno
+                << " message=" << std::strerror(errno);
   }
 }
 } // namespace runtime::net

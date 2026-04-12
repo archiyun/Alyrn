@@ -2,6 +2,8 @@
 
 #include "runtime/base/noncopyable.h"
 #include "runtime/time/timestamp.h"
+// 时间轮
+#include "runtime/net/timer_id.h"
 
 #include <atomic>
 #include <mutex>
@@ -13,6 +15,7 @@ namespace runtime::net {
 
 class Channel;
 class Poller;
+class TimerQueue;
 
 // 时间循环类 主要包含了两个大模块 Channel Poller(epoll抽象)
 // IO事件分发器 ， 线程内串行任务队列执行器
@@ -37,6 +40,16 @@ public:
 
     bool IsInLoopThread() const;
 
+    // ----- timer -----
+    // 指定时间点执行一次
+    TimerId RunAt(runtime::time::Timestamp time, Functor cb);
+    // delay_sec 秒后 执行一次
+    TimerId RunAfter(double delay_sec, Functor cb);
+    // gap interval_sec,执行一次
+    TimerId RunEvery(double interval_sec, Functor cb);
+    // 取消定时器
+    void Cancel(TimerId id);
+
 private:
     void Wakeup();
     void HandleRead();
@@ -59,6 +72,8 @@ private:
 
     std::mutex mutex_;
     std::vector<Functor> pending_functors_;
+
+    std::unique_ptr<TimerQueue> timer_queue_;
 };
 
 };

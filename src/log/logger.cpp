@@ -3,7 +3,6 @@
 #include "runtime/log/async_logger.h"
 #include "runtime/log/log_formatter.h"
 
-#include <utility>
 
 namespace runtime::log {
 

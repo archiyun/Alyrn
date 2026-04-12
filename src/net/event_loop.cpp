@@ -1,8 +1,10 @@
 #include "runtime/net/event_loop.h"
-
 #include "runtime/log/logger.h"
 #include "runtime/net/channel.h"
 #include "runtime/net/poller.h"
+#include "runtime/net/timer_id.h"
+#include "runtime/net/timer_queue.h"
+#include "runtime/time/timestamp.h"
 
 #include <cassert>
 #include <cerrno>
@@ -14,9 +16,10 @@
 
 namespace runtime::net {
 
+class TimerId;
 namespace {
 
-constexpr int kPollTimeMs = 10000;
+static constexpr int kPollTimeMs = 10000;
 int CreateEventfd() {
     int evtfd = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
     if (evtfd < 0) {
@@ -79,7 +82,8 @@ EventLoop::EventLoop()
       thread_id_(std::this_thread::get_id()),
       poller_(Poller::NewDefaultPoller(this)),
       wakeup_fd_(CreateEventfd()),
-      wakeup_channel_(std::make_unique<Channel>(this, wakeup_fd_)) {
+      wakeup_channel_(std::make_unique<Channel>(this, wakeup_fd_)),
+      timer_queue_(std::make_unique<TimerQueue>(this)) {
         assert(t_loop_in_this_thread == nullptr);
         t_loop_in_this_thread = this;
 
@@ -140,7 +144,7 @@ void EventLoop::RunInLoop(Functor cb){
 
 void EventLoop::QueueInLoop(Functor cb) {
     {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::mutex> lk(mutex_);
         pending_functors_.push_back(std::move(cb));
     }
 
@@ -181,7 +185,7 @@ void EventLoop::DoPendingFunctors() {
     calling_pending_functors_ = true;
 
     {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::lock_guard<std::mutex> lk(mutex_);
         functors.swap(pending_functors_);
     }
 
@@ -191,4 +195,24 @@ void EventLoop::DoPendingFunctors() {
 
     calling_pending_functors_ = false;
 }
+
+// timer
+TimerId EventLoop::RunAt(runtime::time::Timestamp time, Functor cb) {
+    return timer_queue_->AddTimer(std::move(cb), time, 0.0);
+}
+TimerId EventLoop::RunAfter(double delay, Functor cb) {
+    using runtime::time::Timestamp;
+    using runtime::time::AddTime;
+    return timer_queue_->AddTimer(std::move(cb), AddTime(Timestamp::Now(), delay), 0.0);
+}
+TimerId EventLoop::RunEvery(double interval, Functor cb) {
+    using runtime::time::Timestamp;
+    using runtime::time::AddTime;
+    return timer_queue_->AddTimer(std::move(cb), AddTime(Timestamp::Now(), interval), interval);
+}
+void EventLoop::Cancel(TimerId id) {
+    timer_queue_->Cancel(id);
+}
+
+
 } // namespace runtime::net

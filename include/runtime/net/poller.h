@@ -46,7 +46,7 @@ protected:
     ChannelMap channels_;
 private:
     // one loop per thread 
-    EventLoop* ownerLoop_;
+    EventLoop *ownerLoop_;
 };
 
 }   // namespace runtime::net

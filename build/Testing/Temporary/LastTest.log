@@ -1,30 +1,26 @@
-Start testing: Mar 17 08:31 CST
+Start testing: Apr 10 00:04 CST
 ----------------------------------------------------------
-3/3 Testing: ThreadPoolTest.ExecutesTasksAndReturnsFutureValues
-3/3 Test: ThreadPoolTest.ExecutesTasksAndReturnsFutureValues
-Command: "/home/yun/design/high-concurrency-runtime/build/tests/runtime_unit_tests" "--gtest_filter=ThreadPoolTest.ExecutesTasksAndReturnsFutureValues" "--gtest_also_run_disabled_tests"
+9/12 Testing: epoll_poller_smoke_test
+9/12 Test: epoll_poller_smoke_test
+Command: "/home/yun/design/high-concurrency-runtime/build/tests/epoll_poller_smoke_test"
 Directory: /home/yun/design/high-concurrency-runtime/build/tests
-"ThreadPoolTest.ExecutesTasksAndReturnsFutureValues" start time: Mar 17 08:31 CST
+"epoll_poller_smoke_test" start time: Apr 10 00:04 CST
 Output:
 ----------------------------------------------------------
-Running main() from /home/yun/design/high-concurrency-runtime/build/_deps/googletest-src/googletest/src/gtest_main.cc
-Note: Google Test filter = ThreadPoolTest.ExecutesTasksAndReturnsFutureValues
-[==========] Running 1 test from 1 test suite.
-[----------] Global test environment set-up.
-[----------] 1 test from ThreadPoolTest
-[ RUN      ] ThreadPoolTest.ExecutesTasksAndReturnsFutureValues
-[       OK ] ThreadPoolTest.ExecutesTasksAndReturnsFutureValues (0 ms)
-[----------] 1 test from ThreadPoolTest (0 ms total)
-
-[----------] Global test environment tear-down
-[==========] 1 test from 1 test suite ran. (0 ms total)
-[  PASSED  ] 1 test.
+[PASS] Construction
+[PASS] ChannelRegistration
+[PASS] ChannelRemoval
+[PASS] PollDetectsReadEvent
+[PASS] DisableAllKeepsChannelInMap
+[PASS] ReenableAfterDisable
+[PASS] EventsVectorResizes
+[PASS] epoll_poller_smoke_test (7 cases)
 <end of output>
-Test time =   0.00 sec
+Test time =   0.02 sec
 ----------------------------------------------------------
 Test Passed.
-"ThreadPoolTest.ExecutesTasksAndReturnsFutureValues" end time: Mar 17 08:31 CST
-"ThreadPoolTest.ExecutesTasksAndReturnsFutureValues" time elapsed: 00:00:00
+"epoll_poller_smoke_test" end time: Apr 10 00:04 CST
+"epoll_poller_smoke_test" time elapsed: 00:00:00
 ----------------------------------------------------------
 
-End testing: Mar 17 08:31 CST
+End testing: Apr 10 00:04 CST
