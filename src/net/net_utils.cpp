@@ -83,7 +83,7 @@ bool SetReusePort(int fd, bool on) {
 #endif
 }
 
-bool TcpNonDelay(int fd, bool on) {
+bool SetTcpNonDelay(int fd, bool on) {
     int optval = on ? 1 : 0;
     int ret = ::setsockopt(
         fd,

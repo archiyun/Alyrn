@@ -34,6 +34,8 @@ target_compile_features(runtime_foundation PUBLIC cxx_std_20)
 
 add_library(runtime_task STATIC
     src/task/thread_pool.cpp
+    src/task/task.cpp
+    src/task/scheduler.cpp
 )
 
 target_include_directories(runtime_task
@@ -97,6 +99,7 @@ target_include_directories(runtime_http
 target_link_libraries(runtime_http
     PUBLIC
         runtime_net
+        runtime_task
         runtime_foundation
         Threads::Threads
 )

@@ -13,6 +13,7 @@ set(CMAKE_DEPENDS_DEPENDENCY_FILES
   "/home/yun/design/high-concurrency-runtime/tests/unit/test_memory_pool.cpp" "tests/CMakeFiles/runtime_unit_tests.dir/unit/test_memory_pool.cpp.o" "gcc" "tests/CMakeFiles/runtime_unit_tests.dir/unit/test_memory_pool.cpp.o.d"
   "/home/yun/design/high-concurrency-runtime/tests/unit/test_object_pool.cpp" "tests/CMakeFiles/runtime_unit_tests.dir/unit/test_object_pool.cpp.o" "gcc" "tests/CMakeFiles/runtime_unit_tests.dir/unit/test_object_pool.cpp.o.d"
   "/home/yun/design/high-concurrency-runtime/tests/unit/test_sanity.cpp" "tests/CMakeFiles/runtime_unit_tests.dir/unit/test_sanity.cpp.o" "gcc" "tests/CMakeFiles/runtime_unit_tests.dir/unit/test_sanity.cpp.o.d"
+  "/home/yun/design/high-concurrency-runtime/tests/unit/test_scheduler.cpp" "tests/CMakeFiles/runtime_unit_tests.dir/unit/test_scheduler.cpp.o" "gcc" "tests/CMakeFiles/runtime_unit_tests.dir/unit/test_scheduler.cpp.o.d"
   "/home/yun/design/high-concurrency-runtime/tests/unit/test_thread_pool.cpp" "tests/CMakeFiles/runtime_unit_tests.dir/unit/test_thread_pool.cpp.o" "gcc" "tests/CMakeFiles/runtime_unit_tests.dir/unit/test_thread_pool.cpp.o.d"
   )
 

@@ -9,6 +9,8 @@ file(REMOVE_RECURSE
   "CMakeFiles/runtime_unit_tests.dir/unit/test_object_pool.cpp.o.d"
   "CMakeFiles/runtime_unit_tests.dir/unit/test_sanity.cpp.o"
   "CMakeFiles/runtime_unit_tests.dir/unit/test_sanity.cpp.o.d"
+  "CMakeFiles/runtime_unit_tests.dir/unit/test_scheduler.cpp.o"
+  "CMakeFiles/runtime_unit_tests.dir/unit/test_scheduler.cpp.o.d"
   "CMakeFiles/runtime_unit_tests.dir/unit/test_thread_pool.cpp.o"
   "CMakeFiles/runtime_unit_tests.dir/unit/test_thread_pool.cpp.o.d"
   "runtime_unit_tests"

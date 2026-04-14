@@ -1,5 +1,7 @@
 #pragma once
 
+#include "runtime/base/noncopyable.h"
+
 #include <atomic>
 #include <condition_variable>
 #include <cstddef>
@@ -13,8 +15,6 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
-
-#include "runtime/base/noncopyable.h"
 
 namespace runtime::task {
 

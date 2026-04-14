@@ -19,6 +19,7 @@ enum class Method {
     Patch,
 };
 
+// 目前支持 http1.0, 1.1
 enum class Version {
     Unknown,
     Http10,
@@ -37,7 +38,7 @@ enum class StatusCode : int {
     InternalServerError = 500,  
 };
 
-// http_types.cpp 实现
+// http_types.cpp
 std::string_view MethodToString(Method m);
 std::string_view StatusMessage(StatusCode code);
 } // namespace runtime::http

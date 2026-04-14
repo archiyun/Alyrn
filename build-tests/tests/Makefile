@@ -589,6 +589,20 @@ http_smoke_test/fast:
 .PHONY : http_smoke_test/fast
 
 # Convenience name for target.
+tests/CMakeFiles/epoll_poller_smoke_test.dir/rule:
+	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 tests/CMakeFiles/epoll_poller_smoke_test.dir/rule
+.PHONY : tests/CMakeFiles/epoll_poller_smoke_test.dir/rule
+
+# Convenience name for target.
+epoll_poller_smoke_test: tests/CMakeFiles/epoll_poller_smoke_test.dir/rule
+.PHONY : epoll_poller_smoke_test
+
+# fast build rule for target.
+epoll_poller_smoke_test/fast:
+	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/epoll_poller_smoke_test.dir/build.make tests/CMakeFiles/epoll_poller_smoke_test.dir/build
+.PHONY : epoll_poller_smoke_test/fast
+
+# Convenience name for target.
 tests/CMakeFiles/event_loop_smoke_test.dir/rule:
 	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 tests/CMakeFiles/event_loop_smoke_test.dir/rule
 .PHONY : tests/CMakeFiles/event_loop_smoke_test.dir/rule
@@ -874,6 +888,30 @@ unit/test_buffer_smoke.cpp.s:
 	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/buffer_smoke_test.dir/build.make tests/CMakeFiles/buffer_smoke_test.dir/unit/test_buffer_smoke.cpp.s
 .PHONY : unit/test_buffer_smoke.cpp.s
 
+unit/test_epoll_poller_smoke.o: unit/test_epoll_poller_smoke.cpp.o
+.PHONY : unit/test_epoll_poller_smoke.o
+
+# target to build an object file
+unit/test_epoll_poller_smoke.cpp.o:
+	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/epoll_poller_smoke_test.dir/build.make tests/CMakeFiles/epoll_poller_smoke_test.dir/unit/test_epoll_poller_smoke.cpp.o
+.PHONY : unit/test_epoll_poller_smoke.cpp.o
+
+unit/test_epoll_poller_smoke.i: unit/test_epoll_poller_smoke.cpp.i
+.PHONY : unit/test_epoll_poller_smoke.i
+
+# target to preprocess a source file
+unit/test_epoll_poller_smoke.cpp.i:
+	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/epoll_poller_smoke_test.dir/build.make tests/CMakeFiles/epoll_poller_smoke_test.dir/unit/test_epoll_poller_smoke.cpp.i
+.PHONY : unit/test_epoll_poller_smoke.cpp.i
+
+unit/test_epoll_poller_smoke.s: unit/test_epoll_poller_smoke.cpp.s
+.PHONY : unit/test_epoll_poller_smoke.s
+
+# target to generate assembly for a file
+unit/test_epoll_poller_smoke.cpp.s:
+	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/epoll_poller_smoke_test.dir/build.make tests/CMakeFiles/epoll_poller_smoke_test.dir/unit/test_epoll_poller_smoke.cpp.s
+.PHONY : unit/test_epoll_poller_smoke.cpp.s
+
 unit/test_http_smoke.o: unit/test_http_smoke.cpp.o
 .PHONY : unit/test_http_smoke.o
 
@@ -1066,6 +1104,30 @@ unit/test_sanity.cpp.s:
 	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/runtime_unit_tests.dir/build.make tests/CMakeFiles/runtime_unit_tests.dir/unit/test_sanity.cpp.s
 .PHONY : unit/test_sanity.cpp.s
 
+unit/test_scheduler.o: unit/test_scheduler.cpp.o
+.PHONY : unit/test_scheduler.o
+
+# target to build an object file
+unit/test_scheduler.cpp.o:
+	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/runtime_unit_tests.dir/build.make tests/CMakeFiles/runtime_unit_tests.dir/unit/test_scheduler.cpp.o
+.PHONY : unit/test_scheduler.cpp.o
+
+unit/test_scheduler.i: unit/test_scheduler.cpp.i
+.PHONY : unit/test_scheduler.i
+
+# target to preprocess a source file
+unit/test_scheduler.cpp.i:
+	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/runtime_unit_tests.dir/build.make tests/CMakeFiles/runtime_unit_tests.dir/unit/test_scheduler.cpp.i
+.PHONY : unit/test_scheduler.cpp.i
+
+unit/test_scheduler.s: unit/test_scheduler.cpp.s
+.PHONY : unit/test_scheduler.s
+
+# target to generate assembly for a file
+unit/test_scheduler.cpp.s:
+	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/runtime_unit_tests.dir/build.make tests/CMakeFiles/runtime_unit_tests.dir/unit/test_scheduler.cpp.s
+.PHONY : unit/test_scheduler.cpp.s
+
 unit/test_thread_pool.o: unit/test_thread_pool.cpp.o
 .PHONY : unit/test_thread_pool.o
 
@@ -1129,6 +1191,7 @@ help:
 	@echo "... NightlyUpdate"
 	@echo "... buffer_smoke_test"
 	@echo "... concurrency_smoke_test"
+	@echo "... epoll_poller_smoke_test"
 	@echo "... event_loop_smoke_test"
 	@echo "... http_smoke_test"
 	@echo "... logger_smoke_test"
@@ -1164,6 +1227,9 @@ help:
 	@echo "... unit/test_buffer_smoke.o"
 	@echo "... unit/test_buffer_smoke.i"
 	@echo "... unit/test_buffer_smoke.s"
+	@echo "... unit/test_epoll_poller_smoke.o"
+	@echo "... unit/test_epoll_poller_smoke.i"
+	@echo "... unit/test_epoll_poller_smoke.s"
 	@echo "... unit/test_http_smoke.o"
 	@echo "... unit/test_http_smoke.i"
 	@echo "... unit/test_http_smoke.s"
@@ -1188,6 +1254,9 @@ help:
 	@echo "... unit/test_sanity.o"
 	@echo "... unit/test_sanity.i"
 	@echo "... unit/test_sanity.s"
+	@echo "... unit/test_scheduler.o"
+	@echo "... unit/test_scheduler.i"
+	@echo "... unit/test_scheduler.s"
 	@echo "... unit/test_thread_pool.o"
 	@echo "... unit/test_thread_pool.i"
 	@echo "... unit/test_thread_pool.s"

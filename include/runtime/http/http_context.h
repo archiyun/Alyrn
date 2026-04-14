@@ -6,9 +6,14 @@
 
 namespace runtime::http {
 /**
- * 目的:
- * 将Buffer字节流， 按HTTP/1.1协议状态机， 填进 httpRequest
- * 只是一个解析器。
+ * HttpContext:
+ * 负责将 TcpConnection 上的字节流增量解析成一个http请求
+ * 只做协议解析， 翻译: bytes -> HttpRequest
+ * 
+ * 约束:
+ * - 面向 HTTP/1.0 and HTTP/1.1
+ * - 依赖调用方 按连接维度持有上下文
+ * - 解析成功后 由上层决定是否 "Reset()" 进入下一轮请求 
  */
 class HttpContext {
 public:
@@ -20,7 +25,6 @@ public:
     };
 
     bool ParseRequest(runtime::net::Buffer &buf, runtime::time::Timestamp ts);
-
     bool GotAll() const { return state_ == ParseState::GotAll; }
     void Reset();
 

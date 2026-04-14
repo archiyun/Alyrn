@@ -32,6 +32,21 @@ public:
     ScopedFd(const ScopedFd&) = delete;
     ScopedFd& operator=(const ScopedFd&) = delete;
 
+    ScopedFd(ScopedFd&& other) noexcept : fd_(other.fd_) {
+        other.fd_ = -1;
+    }
+
+    ScopedFd& operator=(ScopedFd&& other) noexcept {
+        if (this != &other) {
+            if (fd_ >= 0) {
+                ::close(fd_);
+            }
+            fd_ = other.fd_;
+            other.fd_ = -1;
+        }
+        return *this;
+    }
+
     int get() const { return fd_; }
 
 private:
@@ -85,7 +100,10 @@ std::string ReadExactly(int fd, std::size_t bytes) {
     std::size_t read_total = 0;
     while (read_total < bytes) {
         const ssize_t n = ::read(fd, result.data() + read_total, bytes - read_total);
-        ASSERT_GT(n, 0);
+        if (n <= 0) {
+            ADD_FAILURE() << "expected to read " << bytes << " bytes, got " << read_total;
+            return {};
+        }
         read_total += static_cast<std::size_t>(n);
     }
     return result;
@@ -147,8 +165,10 @@ TEST(TcpServerTest, AcceptsConnectionAndEchoesPayloadOnce) {
             connection_events.fetch_add(1, std::memory_order_relaxed);
         });
         server.SetMessageCallback(
-            [](const TcpServer::TcpConnectionPtr& conn, const std::string& message,
-               runtime::time::Timestamp) { conn->Send(message); });
+            [](const TcpServer::TcpConnectionPtr& conn, Buffer& buffer,
+               runtime::time::Timestamp) {
+                conn->Send(buffer.RetrieveAllAsString());
+            });
         server.Start();
         ready_promise.set_value(&loop);
         loop.Loop();

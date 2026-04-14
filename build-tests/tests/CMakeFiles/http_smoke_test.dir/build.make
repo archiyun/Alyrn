@@ -94,6 +94,7 @@ tests/http_smoke_test: tests/CMakeFiles/http_smoke_test.dir/unit/test_http_smoke
 tests/http_smoke_test: tests/CMakeFiles/http_smoke_test.dir/build.make
 tests/http_smoke_test: libruntime_http.a
 tests/http_smoke_test: libruntime_net.a
+tests/http_smoke_test: libruntime_task.a
 tests/http_smoke_test: libruntime_foundation.a
 tests/http_smoke_test: tests/CMakeFiles/http_smoke_test.dir/link.txt
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking CXX executable http_smoke_test"

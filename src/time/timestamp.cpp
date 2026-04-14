@@ -99,11 +99,11 @@ bool operator==(const Timestamp& lhs, const Timestamp& rhs) {
   return lhs.microseconds_since_epoch_ == rhs.microseconds_since_epoch_;
 }
 
-bool operator>=(const Timesatmp& lhs, const Timestamp7 rhs) {
+bool operator>=(const Timestamp& lhs, const Timestamp& rhs) {
   return lhs.microseconds_since_epoch_ >= rhs.microseconds_since_epoch_;
 }
 
-bool operator<=(const Timesatmp& lhs, const Timestamp7 rhs) {
+bool operator<=(const Timestamp& lhs, const Timestamp& rhs) {
   return lhs.microseconds_since_epoch_ <= rhs.microseconds_since_epoch_;
 }
 double TimeDifference(const Timestamp& high, const Timestamp& low) {
@@ -116,14 +116,17 @@ double TimeDifference(const Timestamp& high, const Timestamp& low) {
   return delta / 1'000'000.0;
 }
 
+// Adds seconds (can be fractional) to a timestamp safely.
+// Returns Invalid() if the addition would underflow.
 Timestamp AddTime(const Timestamp& timestamp, double seconds) {
-  // Convert seconds to microseconds for internal storage.
-  // Note: This truncates fractional microseconds and does not handle
-  // negative seconds that would result in underflow.
+  const auto micros = timestamp.MicrosecondsSinceEpoch();
   const auto delta = static_cast<std::int64_t>(seconds * 1'000'000.0);
-  const auto result = static_cast<std::int64_t>(
-      timestamp.MicrosecondsSinceEpoch()) + delta;
-  return Timestamp(static_cast<std::uint64_t>(result));
+
+  if (delta < 0 && static_cast<std::uint64_t>(-delta) > micros) {
+    return Timestamp::Invalid();
+  }
+
+  return Timestamp(micros + delta);
 }
 
 }  // namespace time

@@ -54,6 +54,22 @@ target_link_libraries(buffer_smoke_test
 
 add_test(NAME buffer_smoke_test COMMAND buffer_smoke_test)
 
+add_executable(http_smoke_test
+    unit/test_http_smoke.cpp
+)
+
+target_include_directories(http_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(http_smoke_test
+    PRIVATE
+        runtime_http
+)
+
+add_test(NAME http_smoke_test COMMAND http_smoke_test)
+
 
 
 add_executable(epoll_poller_smoke_test
@@ -131,6 +147,7 @@ if(GTest_FOUND)
         unit/test_object_pool.cpp
         unit/test_sanity.cpp
         unit/test_thread_pool.cpp
+        unit/test_scheduler.cpp
     )
 
     target_link_libraries(runtime_unit_tests
@@ -153,6 +170,7 @@ if(GTest_FOUND)
         PRIVATE
             GTest::gtest_main
             runtime_net
+            runtime_http
     )
 
     gtest_discover_tests(runtime_integration_tests)

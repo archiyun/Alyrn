@@ -590,9 +590,7 @@ CMakeFiles/runtime_foundation.dir/src/log/logger.cpp.o: /home/yun/design/high-co
   /usr/include/c++/12/bits/vector.tcc \
   /home/yun/design/high-concurrency-runtime/include/runtime/log/log_formatter.h \
   /home/yun/design/high-concurrency-runtime/include/runtime/base/current_thread.h \
-  /home/yun/design/high-concurrency-runtime/include/runtime/time/timestamp.h \
-  /usr/include/c++/12/utility \
-  /usr/include/c++/12/bits/stl_relops.h
+  /home/yun/design/high-concurrency-runtime/include/runtime/time/timestamp.h
 
 CMakeFiles/runtime_foundation.dir/src/time/timestamp.cpp.o: /home/yun/design/high-concurrency-runtime/src/time/timestamp.cpp \
   /usr/include/stdc-predef.h \

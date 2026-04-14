@@ -25,6 +25,10 @@ file(REMOVE_RECURSE
   "CMakeFiles/runtime_net.dir/src/net/tcp_connection.cpp.o.d"
   "CMakeFiles/runtime_net.dir/src/net/tcp_server.cpp.o"
   "CMakeFiles/runtime_net.dir/src/net/tcp_server.cpp.o.d"
+  "CMakeFiles/runtime_net.dir/src/net/timer.cpp.o"
+  "CMakeFiles/runtime_net.dir/src/net/timer.cpp.o.d"
+  "CMakeFiles/runtime_net.dir/src/net/timer_queue.cpp.o"
+  "CMakeFiles/runtime_net.dir/src/net/timer_queue.cpp.o.d"
   "libruntime_net.a"
   "libruntime_net.pdb"
 )

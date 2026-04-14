@@ -1,79 +1,97 @@
 #pragma once
 
 #include "runtime/base/noncopyable.h"
-#include "runtime/time/timestamp.h"
-// 时间轮
 #include "runtime/net/timer_id.h"
+#include "runtime/time/timestamp.h"
 
 #include <atomic>
-#include <mutex>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <thread>
 #include <vector>
+
 namespace runtime::net {
 
 class Channel;
 class Poller;
 class TimerQueue;
 
-// 时间循环类 主要包含了两个大模块 Channel Poller(epoll抽象)
-// IO事件分发器 ， 线程内串行任务队列执行器
+// EventLoop is the core event dispatcher in the Reactor model.
+//
+// Each EventLoop is bound to exactly one thread. It owns a Poller for waiting
+// on I/O events, dispatches active Channel callbacks, runs queued functors in
+// thread order, and manages timer callbacks through TimerQueue.
 class EventLoop : public runtime::base::NonCopyable {
 public:
-    using Functor = std::function<void()>;
+  using Functor = std::function<void()>;
 
-    EventLoop();
-    ~EventLoop();
+  EventLoop();
+  ~EventLoop();
 
-    void Loop();
-    void Quit();
+  // Starts the event loop and blocks until Quit() is requested.
+  void Loop();
 
-    runtime::time::Timestamp PollReturnTime() const { return poll_return_time_; }
+  // Requests the loop to exit. The loop stops after the current iteration.
+  void Quit();
 
-    void RunInLoop(Functor cb);
-    void QueueInLoop(Functor cb);
+  runtime::time::Timestamp PollReturnTime() const { return poll_return_time_; }
 
-    void UpdateChannel(Channel *channel);
-    void RemoveChannel(Channel *channel);
-    bool HasChannel(Channel *channel) const;
+  // Runs cb immediately if called from the owning loop thread; otherwise,
+  // schedules it to run in the loop thread.
+  void RunInLoop(Functor cb);
 
-    bool IsInLoopThread() const;
+  // Queues cb to run in the loop thread on a later iteration.
+  void QueueInLoop(Functor cb);
 
-    // ----- timer -----
-    // 指定时间点执行一次
-    TimerId RunAt(runtime::time::Timestamp time, Functor cb);
-    // delay_sec 秒后 执行一次
-    TimerId RunAfter(double delay_sec, Functor cb);
-    // gap interval_sec,执行一次
-    TimerId RunEvery(double interval_sec, Functor cb);
-    // 取消定时器
-    void Cancel(TimerId id);
+  void UpdateChannel(Channel* channel);
+  void RemoveChannel(Channel* channel);
+  bool HasChannel(Channel* channel) const;
+
+  // Returns true if the caller is running in the owning loop thread.
+  bool IsInLoopThread() const;
+
+  // Schedules cb to run once at the specified time point.
+  TimerId RunAt(runtime::time::Timestamp time, Functor cb);
+
+  // Schedules cb to run once after delay_sec seconds.
+  TimerId RunAfter(double delay_sec, Functor cb);
+
+  // Schedules cb to run repeatedly every interval_sec seconds.
+  TimerId RunEvery(double interval_sec, Functor cb);
+
+  // Cancels a previously scheduled timer.
+  void Cancel(TimerId id);
 
 private:
-    void Wakeup();
-    void HandleRead();
-    void DoPendingFunctors();
+  // Wakes up the loop when work is queued from another thread.
+  void Wakeup();
 
-    std::atomic<bool> looping_; // 线程安全状态标志
-    std::atomic<bool> quit_; // 退出标志
-    std::atomic<bool> calling_pending_functors_; // 当前loop是否有需要执行的回调操作
+  // Handles readability on the wakeup fd.
+  void HandleRead();
 
-    const std::thread::id thread_id_; // 存储当前事件循环所在线程的id
-    runtime::time::Timestamp poll_return_time_; // poller返回发生事件的channels的时间点
+  // Runs all functors queued through QueueInLoop().
+  void DoPendingFunctors();
 
-    std::unique_ptr<Poller> poller_;
-    std::vector<Channel*> active_channels_;
+  std::atomic<bool> looping_;
+  std::atomic<bool> quit_;
+  std::atomic<bool> calling_pending_functors_;
 
-    // wakeup mechanism
-    int wakeup_fd_; // main_loop 获取新用户的channel， 通过轮询算法选择一个subloop, 
-                    //通过该成员通知唤醒subloop处理Channel
-    std::unique_ptr<Channel> wakeup_channel_;
+  const std::thread::id thread_id_;
+  runtime::time::Timestamp poll_return_time_;
 
-    std::mutex mutex_;
-    std::vector<Functor> pending_functors_;
+  std::unique_ptr<Poller> poller_;
+  std::vector<Channel*> active_channels_;
 
-    std::unique_ptr<TimerQueue> timer_queue_;
+  // Eventfd or pipe-based wakeup mechanism used to interrupt epoll_wait when
+  // another thread queues work into this loop.
+  int wakeup_fd_;
+  std::unique_ptr<Channel> wakeup_channel_;
+
+  std::mutex mutex_;
+  std::vector<Functor> pending_functors_;
+
+  std::unique_ptr<TimerQueue> timer_queue_;
 };
 
-};
+}  // namespace runtime::net

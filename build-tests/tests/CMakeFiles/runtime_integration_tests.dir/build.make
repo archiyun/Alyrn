@@ -142,7 +142,10 @@ tests/runtime_integration_tests: tests/CMakeFiles/runtime_integration_tests.dir/
 tests/runtime_integration_tests: tests/CMakeFiles/runtime_integration_tests.dir/build.make
 tests/runtime_integration_tests: /usr/local/lib/libgtest_main.a
 tests/runtime_integration_tests: libruntime_net.a
+tests/runtime_integration_tests: libruntime_http.a
 tests/runtime_integration_tests: /usr/local/lib/libgtest.a
+tests/runtime_integration_tests: libruntime_net.a
+tests/runtime_integration_tests: libruntime_task.a
 tests/runtime_integration_tests: libruntime_foundation.a
 tests/runtime_integration_tests: tests/CMakeFiles/runtime_integration_tests.dir/link.txt
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Linking CXX executable runtime_integration_tests"

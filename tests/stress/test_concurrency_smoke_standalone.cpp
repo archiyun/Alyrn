@@ -112,8 +112,8 @@ bool TestParallelEchoClients() {
         server.SetThreadNum(2);
         server.SetMessageCallback(
             [](const runtime::net::TcpServer::TcpConnectionPtr& conn,
-               const std::string& message, runtime::time::Timestamp) {
-                conn->Send(message);
+               runtime::net::Buffer& buffer, runtime::time::Timestamp) {
+                conn->Send(buffer.RetrieveAllAsString());
             });
         server.Start();
         ready_promise.set_value(&loop);

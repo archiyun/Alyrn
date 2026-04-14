@@ -7,8 +7,7 @@ HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-18081}"
 IO_THREADS="${IO_THREADS:-2}"
 STATIC_ROOT="${STATIC_ROOT:-$ROOT_DIR/examples/www}"
-LOG_FILE="${LOG_FILE:-$BUILD_DIR/simple_http_server.log}"
-IDLE_TIMEOUT_SECONDS="${IDLE_TIMEOUT_SECONDS:-15}"
+LOG_FILE="${LOG_FILE:-$BUILD_DIR/demo_http_server.log}"
 
 SERVER_PID=""
 
@@ -61,16 +60,6 @@ show_network_state() {
   fi
 }
 
-run_timeout_probe() {
-  print_section "idle timeout probe"
-  exec 3<>"/dev/tcp/${HOST}/${PORT}"
-  printf 'GET /api/health HTTP/1.1\r\nHost: demo\r\n' >&3
-  sleep $((IDLE_TIMEOUT_SECONDS + 2))
-  cat <&3 || true
-  exec 3<&-
-  exec 3>&-
-}
-
 require_cmd cmake
 require_cmd curl
 
@@ -78,7 +67,7 @@ mkdir -p "${BUILD_DIR}"
 
 print_section "build"
 cmake -S "${ROOT_DIR}" -B "${BUILD_DIR}" >/dev/null
-cmake --build "${BUILD_DIR}" --target simple_http_server >/dev/null
+cmake --build "${BUILD_DIR}" --target demo_http_server >/dev/null
 
 rm -f "${LOG_FILE}"
 
@@ -88,11 +77,10 @@ print_section "start server"
   HOST="${HOST}" \
   PORT="${PORT}" \
   IO_THREADS="${IO_THREADS}" \
-  STATIC_ROOT="${STATIC_ROOT}" \
-  ./examples/simple_http_server
+  ./examples/demo_http_server
 ) &
 SERVER_PID=$!
-echo "pid=${SERVER_PID} host=${HOST} port=${PORT} static_root=${STATIC_ROOT}"
+echo "pid=${SERVER_PID} host=${HOST} port=${PORT}"
 
 wait_for_server
 
@@ -102,15 +90,14 @@ curl -i --http1.1 "http://${HOST}:${PORT}/api/health"
 print_section "json echo"
 curl -i --http1.1 \
   -H 'Content-Type: application/json' \
-  -H 'X-Trace-Id: demo-trace-001' \
   -d '{"hello":"runtime"}' \
   "http://${HOST}:${PORT}/api/echo?src=script"
 
-print_section "static file"
-curl -i --http1.1 "http://${HOST}:${PORT}/static/index.html"
-
 print_section "404"
 curl -i --http1.1 "http://${HOST}:${PORT}/missing" || true
+
+print_section "405"
+curl -i --http1.1 -X PUT "http://${HOST}:${PORT}/api/health" || true
 
 print_section "keep-alive reuse"
 curl -sv --http1.1 \
@@ -120,7 +107,6 @@ curl -sv --http1.1 \
   -o /dev/null 2>&1 | grep -E 'Re-using existing connection|Connected to|Connection #0' || true
 
 show_network_state
-run_timeout_probe
 
 print_section "recent log"
 tail -n 20 "${LOG_FILE}" || true
@@ -128,9 +114,8 @@ tail -n 20 "${LOG_FILE}" || true
 print_section "manual commands"
 cat <<EOF
 curl -i --http1.1 http://${HOST}:${PORT}/api/health
-curl -i --http1.1 -H 'X-Trace-Id: manual-123' http://${HOST}:${PORT}/api/health
 curl -i --http1.1 -d '{"x":1}' http://${HOST}:${PORT}/api/echo
-curl -i --http1.1 http://${HOST}:${PORT}/static/index.html
+curl -i --http1.1 -X PUT http://${HOST}:${PORT}/api/health
 tail -f ${LOG_FILE}
 ss -tanp | grep :${PORT}
 lsof -n -P -iTCP:${PORT}

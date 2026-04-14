@@ -6,5 +6,7 @@ buffer_smoke_test 3 0.00164958
 event_loop_smoke_test 3 0.00290274
 tcp_server_smoke_test 2 0
 concurrency_smoke_test 2 0
-http_smoke_test 1 0.0033616
+http_smoke_test 2 0.00248918
+runtime_integration_tests_NOT_BUILT 0 0
 ---
+runtime_integration_tests_NOT_BUILT

@@ -69,19 +69,19 @@ include CMakeFiles/runtime_http.dir/progress.make
 # Include the compile flags for this target's objects.
 include CMakeFiles/runtime_http.dir/flags.make
 
-CMakeFiles/runtime_http.dir/src/http/http_context.cpp.o: CMakeFiles/runtime_http.dir/flags.make
-CMakeFiles/runtime_http.dir/src/http/http_context.cpp.o: /home/yun/design/high-concurrency-runtime/src/http/http_context.cpp
-CMakeFiles/runtime_http.dir/src/http/http_context.cpp.o: CMakeFiles/runtime_http.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/runtime_http.dir/src/http/http_context.cpp.o"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/runtime_http.dir/src/http/http_context.cpp.o -MF CMakeFiles/runtime_http.dir/src/http/http_context.cpp.o.d -o CMakeFiles/runtime_http.dir/src/http/http_context.cpp.o -c /home/yun/design/high-concurrency-runtime/src/http/http_context.cpp
+CMakeFiles/runtime_http.dir/src/http/http_types.cpp.o: CMakeFiles/runtime_http.dir/flags.make
+CMakeFiles/runtime_http.dir/src/http/http_types.cpp.o: /home/yun/design/high-concurrency-runtime/src/http/http_types.cpp
+CMakeFiles/runtime_http.dir/src/http/http_types.cpp.o: CMakeFiles/runtime_http.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/runtime_http.dir/src/http/http_types.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/runtime_http.dir/src/http/http_types.cpp.o -MF CMakeFiles/runtime_http.dir/src/http/http_types.cpp.o.d -o CMakeFiles/runtime_http.dir/src/http/http_types.cpp.o -c /home/yun/design/high-concurrency-runtime/src/http/http_types.cpp
 
-CMakeFiles/runtime_http.dir/src/http/http_context.cpp.i: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/runtime_http.dir/src/http/http_context.cpp.i"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/yun/design/high-concurrency-runtime/src/http/http_context.cpp > CMakeFiles/runtime_http.dir/src/http/http_context.cpp.i
+CMakeFiles/runtime_http.dir/src/http/http_types.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/runtime_http.dir/src/http/http_types.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/yun/design/high-concurrency-runtime/src/http/http_types.cpp > CMakeFiles/runtime_http.dir/src/http/http_types.cpp.i
 
-CMakeFiles/runtime_http.dir/src/http/http_context.cpp.s: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/runtime_http.dir/src/http/http_context.cpp.s"
-	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/yun/design/high-concurrency-runtime/src/http/http_context.cpp -o CMakeFiles/runtime_http.dir/src/http/http_context.cpp.s
+CMakeFiles/runtime_http.dir/src/http/http_types.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/runtime_http.dir/src/http/http_types.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/yun/design/high-concurrency-runtime/src/http/http_types.cpp -o CMakeFiles/runtime_http.dir/src/http/http_types.cpp.s
 
 CMakeFiles/runtime_http.dir/src/http/http_request.cpp.o: CMakeFiles/runtime_http.dir/flags.make
 CMakeFiles/runtime_http.dir/src/http/http_request.cpp.o: /home/yun/design/high-concurrency-runtime/src/http/http_request.cpp
@@ -97,10 +97,24 @@ CMakeFiles/runtime_http.dir/src/http/http_request.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/runtime_http.dir/src/http/http_request.cpp.s"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/yun/design/high-concurrency-runtime/src/http/http_request.cpp -o CMakeFiles/runtime_http.dir/src/http/http_request.cpp.s
 
+CMakeFiles/runtime_http.dir/src/http/http_context.cpp.o: CMakeFiles/runtime_http.dir/flags.make
+CMakeFiles/runtime_http.dir/src/http/http_context.cpp.o: /home/yun/design/high-concurrency-runtime/src/http/http_context.cpp
+CMakeFiles/runtime_http.dir/src/http/http_context.cpp.o: CMakeFiles/runtime_http.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/runtime_http.dir/src/http/http_context.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/runtime_http.dir/src/http/http_context.cpp.o -MF CMakeFiles/runtime_http.dir/src/http/http_context.cpp.o.d -o CMakeFiles/runtime_http.dir/src/http/http_context.cpp.o -c /home/yun/design/high-concurrency-runtime/src/http/http_context.cpp
+
+CMakeFiles/runtime_http.dir/src/http/http_context.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/runtime_http.dir/src/http/http_context.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/yun/design/high-concurrency-runtime/src/http/http_context.cpp > CMakeFiles/runtime_http.dir/src/http/http_context.cpp.i
+
+CMakeFiles/runtime_http.dir/src/http/http_context.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/runtime_http.dir/src/http/http_context.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/yun/design/high-concurrency-runtime/src/http/http_context.cpp -o CMakeFiles/runtime_http.dir/src/http/http_context.cpp.s
+
 CMakeFiles/runtime_http.dir/src/http/http_response.cpp.o: CMakeFiles/runtime_http.dir/flags.make
 CMakeFiles/runtime_http.dir/src/http/http_response.cpp.o: /home/yun/design/high-concurrency-runtime/src/http/http_response.cpp
 CMakeFiles/runtime_http.dir/src/http/http_response.cpp.o: CMakeFiles/runtime_http.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/runtime_http.dir/src/http/http_response.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object CMakeFiles/runtime_http.dir/src/http/http_response.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/runtime_http.dir/src/http/http_response.cpp.o -MF CMakeFiles/runtime_http.dir/src/http/http_response.cpp.o.d -o CMakeFiles/runtime_http.dir/src/http/http_response.cpp.o -c /home/yun/design/high-concurrency-runtime/src/http/http_response.cpp
 
 CMakeFiles/runtime_http.dir/src/http/http_response.cpp.i: cmake_force
@@ -111,10 +125,24 @@ CMakeFiles/runtime_http.dir/src/http/http_response.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/runtime_http.dir/src/http/http_response.cpp.s"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/yun/design/high-concurrency-runtime/src/http/http_response.cpp -o CMakeFiles/runtime_http.dir/src/http/http_response.cpp.s
 
+CMakeFiles/runtime_http.dir/src/http/router.cpp.o: CMakeFiles/runtime_http.dir/flags.make
+CMakeFiles/runtime_http.dir/src/http/router.cpp.o: /home/yun/design/high-concurrency-runtime/src/http/router.cpp
+CMakeFiles/runtime_http.dir/src/http/router.cpp.o: CMakeFiles/runtime_http.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CXX object CMakeFiles/runtime_http.dir/src/http/router.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/runtime_http.dir/src/http/router.cpp.o -MF CMakeFiles/runtime_http.dir/src/http/router.cpp.o.d -o CMakeFiles/runtime_http.dir/src/http/router.cpp.o -c /home/yun/design/high-concurrency-runtime/src/http/router.cpp
+
+CMakeFiles/runtime_http.dir/src/http/router.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/runtime_http.dir/src/http/router.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/yun/design/high-concurrency-runtime/src/http/router.cpp > CMakeFiles/runtime_http.dir/src/http/router.cpp.i
+
+CMakeFiles/runtime_http.dir/src/http/router.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/runtime_http.dir/src/http/router.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/yun/design/high-concurrency-runtime/src/http/router.cpp -o CMakeFiles/runtime_http.dir/src/http/router.cpp.s
+
 CMakeFiles/runtime_http.dir/src/http/http_server.cpp.o: CMakeFiles/runtime_http.dir/flags.make
 CMakeFiles/runtime_http.dir/src/http/http_server.cpp.o: /home/yun/design/high-concurrency-runtime/src/http/http_server.cpp
 CMakeFiles/runtime_http.dir/src/http/http_server.cpp.o: CMakeFiles/runtime_http.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object CMakeFiles/runtime_http.dir/src/http/http_server.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building CXX object CMakeFiles/runtime_http.dir/src/http/http_server.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/runtime_http.dir/src/http/http_server.cpp.o -MF CMakeFiles/runtime_http.dir/src/http/http_server.cpp.o.d -o CMakeFiles/runtime_http.dir/src/http/http_server.cpp.o -c /home/yun/design/high-concurrency-runtime/src/http/http_server.cpp
 
 CMakeFiles/runtime_http.dir/src/http/http_server.cpp.i: cmake_force
@@ -127,21 +155,25 @@ CMakeFiles/runtime_http.dir/src/http/http_server.cpp.s: cmake_force
 
 # Object files for target runtime_http
 runtime_http_OBJECTS = \
-"CMakeFiles/runtime_http.dir/src/http/http_context.cpp.o" \
+"CMakeFiles/runtime_http.dir/src/http/http_types.cpp.o" \
 "CMakeFiles/runtime_http.dir/src/http/http_request.cpp.o" \
+"CMakeFiles/runtime_http.dir/src/http/http_context.cpp.o" \
 "CMakeFiles/runtime_http.dir/src/http/http_response.cpp.o" \
+"CMakeFiles/runtime_http.dir/src/http/router.cpp.o" \
 "CMakeFiles/runtime_http.dir/src/http/http_server.cpp.o"
 
 # External object files for target runtime_http
 runtime_http_EXTERNAL_OBJECTS =
 
-libruntime_http.a: CMakeFiles/runtime_http.dir/src/http/http_context.cpp.o
+libruntime_http.a: CMakeFiles/runtime_http.dir/src/http/http_types.cpp.o
 libruntime_http.a: CMakeFiles/runtime_http.dir/src/http/http_request.cpp.o
+libruntime_http.a: CMakeFiles/runtime_http.dir/src/http/http_context.cpp.o
 libruntime_http.a: CMakeFiles/runtime_http.dir/src/http/http_response.cpp.o
+libruntime_http.a: CMakeFiles/runtime_http.dir/src/http/router.cpp.o
 libruntime_http.a: CMakeFiles/runtime_http.dir/src/http/http_server.cpp.o
 libruntime_http.a: CMakeFiles/runtime_http.dir/build.make
 libruntime_http.a: CMakeFiles/runtime_http.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Linking CXX static library libruntime_http.a"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Linking CXX static library libruntime_http.a"
 	$(CMAKE_COMMAND) -P CMakeFiles/runtime_http.dir/cmake_clean_target.cmake
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/runtime_http.dir/link.txt --verbose=$(VERBOSE)
 

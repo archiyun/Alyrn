@@ -155,18 +155,42 @@ simple_echo_server/fast:
 .PHONY : simple_echo_server/fast
 
 # Convenience name for target.
-examples/CMakeFiles/simple_http_server.dir/rule:
-	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 examples/CMakeFiles/simple_http_server.dir/rule
-.PHONY : examples/CMakeFiles/simple_http_server.dir/rule
+examples/CMakeFiles/demo_http_server.dir/rule:
+	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 examples/CMakeFiles/demo_http_server.dir/rule
+.PHONY : examples/CMakeFiles/demo_http_server.dir/rule
 
 # Convenience name for target.
-simple_http_server: examples/CMakeFiles/simple_http_server.dir/rule
-.PHONY : simple_http_server
+demo_http_server: examples/CMakeFiles/demo_http_server.dir/rule
+.PHONY : demo_http_server
 
 # fast build rule for target.
-simple_http_server/fast:
-	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f examples/CMakeFiles/simple_http_server.dir/build.make examples/CMakeFiles/simple_http_server.dir/build
-.PHONY : simple_http_server/fast
+demo_http_server/fast:
+	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f examples/CMakeFiles/demo_http_server.dir/build.make examples/CMakeFiles/demo_http_server.dir/build
+.PHONY : demo_http_server/fast
+
+demo_http_server.o: demo_http_server.cpp.o
+.PHONY : demo_http_server.o
+
+# target to build an object file
+demo_http_server.cpp.o:
+	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f examples/CMakeFiles/demo_http_server.dir/build.make examples/CMakeFiles/demo_http_server.dir/demo_http_server.cpp.o
+.PHONY : demo_http_server.cpp.o
+
+demo_http_server.i: demo_http_server.cpp.i
+.PHONY : demo_http_server.i
+
+# target to preprocess a source file
+demo_http_server.cpp.i:
+	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f examples/CMakeFiles/demo_http_server.dir/build.make examples/CMakeFiles/demo_http_server.dir/demo_http_server.cpp.i
+.PHONY : demo_http_server.cpp.i
+
+demo_http_server.s: demo_http_server.cpp.s
+.PHONY : demo_http_server.s
+
+# target to generate assembly for a file
+demo_http_server.cpp.s:
+	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f examples/CMakeFiles/demo_http_server.dir/build.make examples/CMakeFiles/demo_http_server.dir/demo_http_server.cpp.s
+.PHONY : demo_http_server.cpp.s
 
 simple_echo_server.o: simple_echo_server.cpp.o
 .PHONY : simple_echo_server.o
@@ -191,30 +215,6 @@ simple_echo_server.s: simple_echo_server.cpp.s
 simple_echo_server.cpp.s:
 	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f examples/CMakeFiles/simple_echo_server.dir/build.make examples/CMakeFiles/simple_echo_server.dir/simple_echo_server.cpp.s
 .PHONY : simple_echo_server.cpp.s
-
-simple_http_server.o: simple_http_server.cpp.o
-.PHONY : simple_http_server.o
-
-# target to build an object file
-simple_http_server.cpp.o:
-	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f examples/CMakeFiles/simple_http_server.dir/build.make examples/CMakeFiles/simple_http_server.dir/simple_http_server.cpp.o
-.PHONY : simple_http_server.cpp.o
-
-simple_http_server.i: simple_http_server.cpp.i
-.PHONY : simple_http_server.i
-
-# target to preprocess a source file
-simple_http_server.cpp.i:
-	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f examples/CMakeFiles/simple_http_server.dir/build.make examples/CMakeFiles/simple_http_server.dir/simple_http_server.cpp.i
-.PHONY : simple_http_server.cpp.i
-
-simple_http_server.s: simple_http_server.cpp.s
-.PHONY : simple_http_server.s
-
-# target to generate assembly for a file
-simple_http_server.cpp.s:
-	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f examples/CMakeFiles/simple_http_server.dir/build.make examples/CMakeFiles/simple_http_server.dir/simple_http_server.cpp.s
-.PHONY : simple_http_server.cpp.s
 
 simple_logger.o: simple_logger.cpp.o
 .PHONY : simple_logger.o
@@ -249,15 +249,15 @@ help:
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
 	@echo "... test"
+	@echo "... demo_http_server"
 	@echo "... simple_echo_server"
-	@echo "... simple_http_server"
 	@echo "... simple_logger_example"
+	@echo "... demo_http_server.o"
+	@echo "... demo_http_server.i"
+	@echo "... demo_http_server.s"
 	@echo "... simple_echo_server.o"
 	@echo "... simple_echo_server.i"
 	@echo "... simple_echo_server.s"
-	@echo "... simple_http_server.o"
-	@echo "... simple_http_server.i"
-	@echo "... simple_http_server.s"
 	@echo "... simple_logger.o"
 	@echo "... simple_logger.i"
 	@echo "... simple_logger.s"

@@ -65,7 +65,10 @@ std::string ReadExactly(int fd, std::size_t bytes) {
     std::size_t read_total = 0;
     while (read_total < bytes) {
         const ssize_t n = ::read(fd, result.data() + read_total, bytes - read_total);
-        ASSERT_GT(n, 0);
+        if (n <= 0) {
+            ADD_FAILURE() << "expected to read " << bytes << " bytes, got " << read_total;
+            return {};
+        }
         read_total += static_cast<std::size_t>(n);
     }
     return result;
@@ -81,8 +84,10 @@ TEST(ConcurrencySmokeTest, EchoServerHandlesParallelClients) {
         TcpServer server(&loop, InetAddress(port, "127.0.0.1"), "ConcurrentEchoServer");
         server.SetThreadNum(2);
         server.SetMessageCallback(
-            [](const TcpServer::TcpConnectionPtr& conn, const std::string& message,
-               runtime::time::Timestamp) { conn->Send(message); });
+            [](const TcpServer::TcpConnectionPtr& conn, Buffer& buffer,
+               runtime::time::Timestamp) {
+                conn->Send(buffer.RetrieveAllAsString());
+            });
         server.Start();
         ready_promise.set_value(&loop);
         loop.Loop();

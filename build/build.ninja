@@ -109,6 +109,20 @@ build CMakeFiles/runtime_task.dir/src/task/thread_pool.cpp.o: CXX_COMPILER__runt
   OBJECT_DIR = CMakeFiles/runtime_task.dir
   OBJECT_FILE_DIR = CMakeFiles/runtime_task.dir/src/task
 
+build CMakeFiles/runtime_task.dir/src/task/task.cpp.o: CXX_COMPILER__runtime_task_Debug /home/yun/design/high-concurrency-runtime/src/task/task.cpp || cmake_object_order_depends_target_runtime_task
+  DEP_FILE = CMakeFiles/runtime_task.dir/src/task/task.cpp.o.d
+  FLAGS = -g -std=c++20
+  INCLUDES = -I/home/yun/design/high-concurrency-runtime/include
+  OBJECT_DIR = CMakeFiles/runtime_task.dir
+  OBJECT_FILE_DIR = CMakeFiles/runtime_task.dir/src/task
+
+build CMakeFiles/runtime_task.dir/src/task/scheduler.cpp.o: CXX_COMPILER__runtime_task_Debug /home/yun/design/high-concurrency-runtime/src/task/scheduler.cpp || cmake_object_order_depends_target_runtime_task
+  DEP_FILE = CMakeFiles/runtime_task.dir/src/task/scheduler.cpp.o.d
+  FLAGS = -g -std=c++20
+  INCLUDES = -I/home/yun/design/high-concurrency-runtime/include
+  OBJECT_DIR = CMakeFiles/runtime_task.dir
+  OBJECT_FILE_DIR = CMakeFiles/runtime_task.dir/src/task
+
 
 # =============================================================================
 # Link build statements for STATIC_LIBRARY target runtime_task
@@ -117,7 +131,7 @@ build CMakeFiles/runtime_task.dir/src/task/thread_pool.cpp.o: CXX_COMPILER__runt
 #############################################
 # Link the static library libruntime_task.a
 
-build libruntime_task.a: CXX_STATIC_LIBRARY_LINKER__runtime_task_Debug CMakeFiles/runtime_task.dir/src/task/thread_pool.cpp.o || libruntime_foundation.a
+build libruntime_task.a: CXX_STATIC_LIBRARY_LINKER__runtime_task_Debug CMakeFiles/runtime_task.dir/src/task/thread_pool.cpp.o CMakeFiles/runtime_task.dir/src/task/task.cpp.o CMakeFiles/runtime_task.dir/src/task/scheduler.cpp.o || libruntime_foundation.a
   LANGUAGE_COMPILE_FLAGS = -g
   OBJECT_DIR = CMakeFiles/runtime_task.dir
   POST_BUILD = :
@@ -262,10 +276,10 @@ build libruntime_net.a: CXX_STATIC_LIBRARY_LINKER__runtime_net_Debug CMakeFiles/
 #############################################
 # Order-only phony target for runtime_http
 
-build cmake_object_order_depends_target_runtime_http: phony || cmake_object_order_depends_target_runtime_foundation cmake_object_order_depends_target_runtime_net
+build cmake_object_order_depends_target_runtime_http: phony || cmake_object_order_depends_target_runtime_foundation cmake_object_order_depends_target_runtime_net cmake_object_order_depends_target_runtime_task
 
-build CMakeFiles/runtime_http.dir/src/http/http_context.cpp.o: CXX_COMPILER__runtime_http_Debug /home/yun/design/high-concurrency-runtime/src/http/http_context.cpp || cmake_object_order_depends_target_runtime_http
-  DEP_FILE = CMakeFiles/runtime_http.dir/src/http/http_context.cpp.o.d
+build CMakeFiles/runtime_http.dir/src/http/http_types.cpp.o: CXX_COMPILER__runtime_http_Debug /home/yun/design/high-concurrency-runtime/src/http/http_types.cpp || cmake_object_order_depends_target_runtime_http
+  DEP_FILE = CMakeFiles/runtime_http.dir/src/http/http_types.cpp.o.d
   FLAGS = -g -std=c++20
   INCLUDES = -I/home/yun/design/high-concurrency-runtime/include
   OBJECT_DIR = CMakeFiles/runtime_http.dir
@@ -278,8 +292,22 @@ build CMakeFiles/runtime_http.dir/src/http/http_request.cpp.o: CXX_COMPILER__run
   OBJECT_DIR = CMakeFiles/runtime_http.dir
   OBJECT_FILE_DIR = CMakeFiles/runtime_http.dir/src/http
 
+build CMakeFiles/runtime_http.dir/src/http/http_context.cpp.o: CXX_COMPILER__runtime_http_Debug /home/yun/design/high-concurrency-runtime/src/http/http_context.cpp || cmake_object_order_depends_target_runtime_http
+  DEP_FILE = CMakeFiles/runtime_http.dir/src/http/http_context.cpp.o.d
+  FLAGS = -g -std=c++20
+  INCLUDES = -I/home/yun/design/high-concurrency-runtime/include
+  OBJECT_DIR = CMakeFiles/runtime_http.dir
+  OBJECT_FILE_DIR = CMakeFiles/runtime_http.dir/src/http
+
 build CMakeFiles/runtime_http.dir/src/http/http_response.cpp.o: CXX_COMPILER__runtime_http_Debug /home/yun/design/high-concurrency-runtime/src/http/http_response.cpp || cmake_object_order_depends_target_runtime_http
   DEP_FILE = CMakeFiles/runtime_http.dir/src/http/http_response.cpp.o.d
+  FLAGS = -g -std=c++20
+  INCLUDES = -I/home/yun/design/high-concurrency-runtime/include
+  OBJECT_DIR = CMakeFiles/runtime_http.dir
+  OBJECT_FILE_DIR = CMakeFiles/runtime_http.dir/src/http
+
+build CMakeFiles/runtime_http.dir/src/http/router.cpp.o: CXX_COMPILER__runtime_http_Debug /home/yun/design/high-concurrency-runtime/src/http/router.cpp || cmake_object_order_depends_target_runtime_http
+  DEP_FILE = CMakeFiles/runtime_http.dir/src/http/router.cpp.o.d
   FLAGS = -g -std=c++20
   INCLUDES = -I/home/yun/design/high-concurrency-runtime/include
   OBJECT_DIR = CMakeFiles/runtime_http.dir
@@ -300,7 +328,7 @@ build CMakeFiles/runtime_http.dir/src/http/http_server.cpp.o: CXX_COMPILER__runt
 #############################################
 # Link the static library libruntime_http.a
 
-build libruntime_http.a: CXX_STATIC_LIBRARY_LINKER__runtime_http_Debug CMakeFiles/runtime_http.dir/src/http/http_context.cpp.o CMakeFiles/runtime_http.dir/src/http/http_request.cpp.o CMakeFiles/runtime_http.dir/src/http/http_response.cpp.o CMakeFiles/runtime_http.dir/src/http/http_server.cpp.o || libruntime_foundation.a libruntime_net.a
+build libruntime_http.a: CXX_STATIC_LIBRARY_LINKER__runtime_http_Debug CMakeFiles/runtime_http.dir/src/http/http_types.cpp.o CMakeFiles/runtime_http.dir/src/http/http_request.cpp.o CMakeFiles/runtime_http.dir/src/http/http_context.cpp.o CMakeFiles/runtime_http.dir/src/http/http_response.cpp.o CMakeFiles/runtime_http.dir/src/http/router.cpp.o CMakeFiles/runtime_http.dir/src/http/http_server.cpp.o || libruntime_foundation.a libruntime_net.a libruntime_task.a
   LANGUAGE_COMPILE_FLAGS = -g
   OBJECT_DIR = CMakeFiles/runtime_http.dir
   POST_BUILD = :
@@ -415,37 +443,37 @@ build examples/simple_echo_server: CXX_EXECUTABLE_LINKER__simple_echo_server_Deb
   TARGET_PDB = simple_echo_server.dbg
 
 # =============================================================================
-# Object build statements for EXECUTABLE target simple_http_server
+# Object build statements for EXECUTABLE target demo_http_server
 
 
 #############################################
-# Order-only phony target for simple_http_server
+# Order-only phony target for demo_http_server
 
-build cmake_object_order_depends_target_simple_http_server: phony || cmake_object_order_depends_target_runtime_foundation cmake_object_order_depends_target_runtime_http cmake_object_order_depends_target_runtime_net
+build cmake_object_order_depends_target_demo_http_server: phony || cmake_object_order_depends_target_runtime_foundation cmake_object_order_depends_target_runtime_http cmake_object_order_depends_target_runtime_net cmake_object_order_depends_target_runtime_task
 
-build examples/CMakeFiles/simple_http_server.dir/simple_http_server.cpp.o: CXX_COMPILER__simple_http_server_Debug /home/yun/design/high-concurrency-runtime/examples/simple_http_server.cpp || cmake_object_order_depends_target_simple_http_server
-  DEP_FILE = examples/CMakeFiles/simple_http_server.dir/simple_http_server.cpp.o.d
+build examples/CMakeFiles/demo_http_server.dir/demo_http_server.cpp.o: CXX_COMPILER__demo_http_server_Debug /home/yun/design/high-concurrency-runtime/examples/demo_http_server.cpp || cmake_object_order_depends_target_demo_http_server
+  DEP_FILE = examples/CMakeFiles/demo_http_server.dir/demo_http_server.cpp.o.d
   FLAGS = -g -std=c++20
   INCLUDES = -I/home/yun/design/high-concurrency-runtime/include
-  OBJECT_DIR = examples/CMakeFiles/simple_http_server.dir
-  OBJECT_FILE_DIR = examples/CMakeFiles/simple_http_server.dir
+  OBJECT_DIR = examples/CMakeFiles/demo_http_server.dir
+  OBJECT_FILE_DIR = examples/CMakeFiles/demo_http_server.dir
 
 
 # =============================================================================
-# Link build statements for EXECUTABLE target simple_http_server
+# Link build statements for EXECUTABLE target demo_http_server
 
 
 #############################################
-# Link the executable examples/simple_http_server
+# Link the executable examples/demo_http_server
 
-build examples/simple_http_server: CXX_EXECUTABLE_LINKER__simple_http_server_Debug examples/CMakeFiles/simple_http_server.dir/simple_http_server.cpp.o | libruntime_http.a libruntime_net.a libruntime_foundation.a || libruntime_foundation.a libruntime_http.a libruntime_net.a
+build examples/demo_http_server: CXX_EXECUTABLE_LINKER__demo_http_server_Debug examples/CMakeFiles/demo_http_server.dir/demo_http_server.cpp.o | libruntime_http.a libruntime_foundation.a libruntime_net.a libruntime_task.a libruntime_foundation.a || libruntime_foundation.a libruntime_http.a libruntime_net.a libruntime_task.a
   FLAGS = -g
-  LINK_LIBRARIES = libruntime_http.a  libruntime_net.a  libruntime_foundation.a
-  OBJECT_DIR = examples/CMakeFiles/simple_http_server.dir
+  LINK_LIBRARIES = libruntime_http.a  libruntime_foundation.a  libruntime_net.a  libruntime_task.a  libruntime_foundation.a
+  OBJECT_DIR = examples/CMakeFiles/demo_http_server.dir
   POST_BUILD = :
   PRE_LINK = :
-  TARGET_FILE = examples/simple_http_server
-  TARGET_PDB = simple_http_server.dbg
+  TARGET_FILE = examples/demo_http_server
+  TARGET_PDB = demo_http_server.dbg
 
 
 #############################################
@@ -792,7 +820,7 @@ build tests/buffer_smoke_test: CXX_EXECUTABLE_LINKER__buffer_smoke_test_Debug te
 #############################################
 # Order-only phony target for http_smoke_test
 
-build cmake_object_order_depends_target_http_smoke_test: phony || cmake_object_order_depends_target_runtime_foundation cmake_object_order_depends_target_runtime_http cmake_object_order_depends_target_runtime_net
+build cmake_object_order_depends_target_http_smoke_test: phony || cmake_object_order_depends_target_runtime_foundation cmake_object_order_depends_target_runtime_http cmake_object_order_depends_target_runtime_net cmake_object_order_depends_target_runtime_task
 
 build tests/CMakeFiles/http_smoke_test.dir/unit/test_http_smoke.cpp.o: CXX_COMPILER__http_smoke_test_Debug /home/yun/design/high-concurrency-runtime/tests/unit/test_http_smoke.cpp || cmake_object_order_depends_target_http_smoke_test
   DEP_FILE = tests/CMakeFiles/http_smoke_test.dir/unit/test_http_smoke.cpp.o.d
@@ -809,9 +837,9 @@ build tests/CMakeFiles/http_smoke_test.dir/unit/test_http_smoke.cpp.o: CXX_COMPI
 #############################################
 # Link the executable tests/http_smoke_test
 
-build tests/http_smoke_test: CXX_EXECUTABLE_LINKER__http_smoke_test_Debug tests/CMakeFiles/http_smoke_test.dir/unit/test_http_smoke.cpp.o | libruntime_http.a libruntime_net.a libruntime_foundation.a || libruntime_foundation.a libruntime_http.a libruntime_net.a
+build tests/http_smoke_test: CXX_EXECUTABLE_LINKER__http_smoke_test_Debug tests/CMakeFiles/http_smoke_test.dir/unit/test_http_smoke.cpp.o | libruntime_http.a libruntime_net.a libruntime_task.a libruntime_foundation.a || libruntime_foundation.a libruntime_http.a libruntime_net.a libruntime_task.a
   FLAGS = -g
-  LINK_LIBRARIES = libruntime_http.a  libruntime_net.a  libruntime_foundation.a
+  LINK_LIBRARIES = libruntime_http.a  libruntime_net.a  libruntime_task.a  libruntime_foundation.a
   OBJECT_DIR = tests/CMakeFiles/http_smoke_test.dir
   POST_BUILD = :
   PRE_LINK = :
@@ -1026,7 +1054,7 @@ build tests/runtime_unit_tests tests/runtime_unit_tests[1]_tests.cmake | ${cmake
 #############################################
 # Order-only phony target for runtime_integration_tests
 
-build cmake_object_order_depends_target_runtime_integration_tests: phony || cmake_object_order_depends_target_runtime_foundation cmake_object_order_depends_target_runtime_net
+build cmake_object_order_depends_target_runtime_integration_tests: phony || cmake_object_order_depends_target_runtime_foundation cmake_object_order_depends_target_runtime_http cmake_object_order_depends_target_runtime_net cmake_object_order_depends_target_runtime_task
 
 build tests/CMakeFiles/runtime_integration_tests.dir/integration/test_event_loop.cpp.o: CXX_COMPILER__runtime_integration_tests_Debug /home/yun/design/high-concurrency-runtime/tests/integration/test_event_loop.cpp || cmake_object_order_depends_target_runtime_integration_tests
   DEP_FILE = tests/CMakeFiles/runtime_integration_tests.dir/integration/test_event_loop.cpp.o.d
@@ -1064,9 +1092,9 @@ build tests/CMakeFiles/runtime_integration_tests.dir/stress/test_concurrency_smo
 #############################################
 # Link the executable tests/runtime_integration_tests
 
-build tests/runtime_integration_tests tests/runtime_integration_tests[1]_tests.cmake | ${cmake_ninja_workdir}tests/runtime_integration_tests[1]_tests.cmake: CXX_EXECUTABLE_LINKER__runtime_integration_tests_Debug tests/CMakeFiles/runtime_integration_tests.dir/integration/test_event_loop.cpp.o tests/CMakeFiles/runtime_integration_tests.dir/integration/test_tcp_server.cpp.o tests/CMakeFiles/runtime_integration_tests.dir/integration/test_http_server.cpp.o tests/CMakeFiles/runtime_integration_tests.dir/stress/test_concurrency_smoke.cpp.o | /usr/local/lib/libgtest_main.a libruntime_net.a /usr/local/lib/libgtest.a libruntime_foundation.a || libruntime_foundation.a libruntime_net.a
+build tests/runtime_integration_tests tests/runtime_integration_tests[1]_tests.cmake | ${cmake_ninja_workdir}tests/runtime_integration_tests[1]_tests.cmake: CXX_EXECUTABLE_LINKER__runtime_integration_tests_Debug tests/CMakeFiles/runtime_integration_tests.dir/integration/test_event_loop.cpp.o tests/CMakeFiles/runtime_integration_tests.dir/integration/test_tcp_server.cpp.o tests/CMakeFiles/runtime_integration_tests.dir/integration/test_http_server.cpp.o tests/CMakeFiles/runtime_integration_tests.dir/stress/test_concurrency_smoke.cpp.o | /usr/local/lib/libgtest_main.a libruntime_net.a libruntime_http.a /usr/local/lib/libgtest.a libruntime_net.a libruntime_task.a libruntime_foundation.a || libruntime_foundation.a libruntime_http.a libruntime_net.a libruntime_task.a
   FLAGS = -g
-  LINK_LIBRARIES = /usr/local/lib/libgtest_main.a  libruntime_net.a  /usr/local/lib/libgtest.a  libruntime_foundation.a
+  LINK_LIBRARIES = /usr/local/lib/libgtest_main.a  libruntime_net.a  libruntime_http.a  /usr/local/lib/libgtest.a  libruntime_net.a  libruntime_task.a  libruntime_foundation.a
   OBJECT_DIR = tests/CMakeFiles/runtime_integration_tests.dir
   POST_BUILD = cd /home/yun/design/high-concurrency-runtime/build/tests && /usr/bin/cmake -D TEST_TARGET=runtime_integration_tests -D TEST_EXECUTABLE=/home/yun/design/high-concurrency-runtime/build/tests/runtime_integration_tests -D TEST_EXECUTOR= -D TEST_WORKING_DIR=/home/yun/design/high-concurrency-runtime/build/tests -D TEST_EXTRA_ARGS= -D TEST_PROPERTIES= -D TEST_PREFIX= -D TEST_SUFFIX= -D TEST_FILTER= -D NO_PRETTY_TYPES=FALSE -D NO_PRETTY_VALUES=FALSE -D TEST_LIST=runtime_integration_tests_TESTS -D CTEST_FILE=/home/yun/design/high-concurrency-runtime/build/tests/runtime_integration_tests[1]_tests.cmake -D TEST_DISCOVERY_TIMEOUT=5 -D TEST_XML_OUTPUT_DIR= -P /usr/share/cmake-3.25/Modules/GoogleTestAddTests.cmake
   PRE_LINK = :
@@ -1396,6 +1424,8 @@ build buffer_smoke_test: phony tests/buffer_smoke_test
 
 build concurrency_smoke_test: phony tests/concurrency_smoke_test
 
+build demo_http_server: phony examples/demo_http_server
+
 build epoll_poller_smoke_test: phony tests/epoll_poller_smoke_test
 
 build event_loop_smoke_test: phony tests/event_loop_smoke_test
@@ -1422,8 +1452,6 @@ build runtime_unit_tests: phony tests/runtime_unit_tests
 
 build simple_echo_server: phony examples/simple_echo_server
 
-build simple_http_server: phony examples/simple_http_server
-
 build simple_logger_example: phony examples/simple_logger_example
 
 build tcp_server_smoke_test: phony tests/tcp_server_smoke_test
@@ -1443,7 +1471,7 @@ build all: phony libruntime_foundation.a libruntime_task.a libruntime_net.a libr
 #############################################
 # Folder: /home/yun/design/high-concurrency-runtime/build/examples
 
-build examples/all: phony examples/simple_logger_example examples/simple_echo_server examples/simple_http_server
+build examples/all: phony examples/simple_logger_example examples/simple_echo_server examples/demo_http_server
 
 # =============================================================================
 

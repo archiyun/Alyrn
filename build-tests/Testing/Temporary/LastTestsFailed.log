@@ -1,2 +1,1 @@
-7:tcp_server_smoke_test
-8:concurrency_smoke_test
+3:runtime_integration_tests_NOT_BUILT

@@ -93,6 +93,7 @@ simple_http_server_EXTERNAL_OBJECTS =
 examples/simple_http_server: examples/CMakeFiles/simple_http_server.dir/simple_http_server.cpp.o
 examples/simple_http_server: examples/CMakeFiles/simple_http_server.dir/build.make
 examples/simple_http_server: libruntime_http.a
+examples/simple_http_server: libruntime_foundation.a
 examples/simple_http_server: libruntime_net.a
 examples/simple_http_server: libruntime_foundation.a
 examples/simple_http_server: examples/CMakeFiles/simple_http_server.dir/link.txt

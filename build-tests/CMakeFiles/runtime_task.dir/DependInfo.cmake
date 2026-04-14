@@ -8,6 +8,8 @@ set(CMAKE_DEPENDS_LANGUAGES
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
+  "/home/yun/design/high-concurrency-runtime/src/task/scheduler.cpp" "CMakeFiles/runtime_task.dir/src/task/scheduler.cpp.o" "gcc" "CMakeFiles/runtime_task.dir/src/task/scheduler.cpp.o.d"
+  "/home/yun/design/high-concurrency-runtime/src/task/task.cpp" "CMakeFiles/runtime_task.dir/src/task/task.cpp.o" "gcc" "CMakeFiles/runtime_task.dir/src/task/task.cpp.o.d"
   "/home/yun/design/high-concurrency-runtime/src/task/thread_pool.cpp" "CMakeFiles/runtime_task.dir/src/task/thread_pool.cpp.o" "gcc" "CMakeFiles/runtime_task.dir/src/task/thread_pool.cpp.o.d"
   )
 

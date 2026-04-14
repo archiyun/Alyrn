@@ -215,5 +215,4 @@ CMakeFiles/runtime_foundation.dir/src/log/logger.cpp.o: \
  /usr/include/c++/12/bits/vector.tcc \
  /home/yun/design/high-concurrency-runtime/include/runtime/log/log_formatter.h \
  /home/yun/design/high-concurrency-runtime/include/runtime/base/current_thread.h \
- /home/yun/design/high-concurrency-runtime/include/runtime/time/timestamp.h \
- /usr/include/c++/12/utility /usr/include/c++/12/bits/stl_relops.h
+ /home/yun/design/high-concurrency-runtime/include/runtime/time/timestamp.h

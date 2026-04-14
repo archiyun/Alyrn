@@ -1,0 +1,68 @@
+[2026-04-12 17:35:05.005517] [INFO] [tid:853529] [/home/yun/design/high-concurrency-runtime/src/net/tcp_server.cpp:13] [TcpServer] tcp server created: name=demo
+[2026-04-12 17:35:05.005652] [INFO] [tid:853529] [/home/yun/design/high-concurrency-runtime/examples/demo_http_server.cpp:34] [main] listening on 127.0.0.1:18080
+[2026-04-12 17:35:05.011698] [INFO] [tid:853532] [/home/yun/design/high-concurrency-runtime/src/net/event_loop.cpp:113] [Loop] event loop entering loop
+[2026-04-12 17:35:05.011875] [INFO] [tid:853533] [/home/yun/design/high-concurrency-runtime/src/net/event_loop.cpp:113] [Loop] event loop entering loop
+[2026-04-12 17:35:05.011891] [INFO] [tid:853529] [/home/yun/design/high-concurrency-runtime/src/net/tcp_server.cpp:38] [Start] tcp server starting: name=demo io_threads=2
+[2026-04-12 17:35:05.011920] [INFO] [tid:853529] [/home/yun/design/high-concurrency-runtime/src/net/acceptor.cpp:43] [Listen] acceptor listening on fd=7
+[2026-04-12 17:35:05.011927] [INFO] [tid:853529] [/home/yun/design/high-concurrency-runtime/src/net/event_loop.cpp:113] [Loop] event loop entering loop
+[2026-04-12 17:35:06.022110] [INFO] [tid:853529] [/home/yun/design/high-concurrency-runtime/src/net/acceptor.cpp:58] [HandleRead] accepted connection fd=14 peer=127.0.0.1:43636
+[2026-04-12 17:35:06.022167] [INFO] [tid:853529] [/home/yun/design/high-concurrency-runtime/src/net/tcp_server.cpp:61] [NewConnection] new tcp connection: name=demo#1 local=127.0.0.1:18080 peer=127.0.0.1:43636
+[2026-04-12 17:35:06.022218] [INFO] [tid:853532] [/home/yun/design/high-concurrency-runtime/src/net/tcp_connection.cpp:87] [ConnectEstablished] tcp connection established: name=demo#1 local=127.0.0.1:18080 peer=127.0.0.1:43636
+[2026-04-12 17:35:06.022430] [INFO] [tid:853532] [/home/yun/design/high-concurrency-runtime/src/net/tcp_connection.cpp:168] [HandleClose] tcp connection closed: name=demo#1 peer=127.0.0.1:43636
+[2026-04-12 17:35:06.022461] [INFO] [tid:853529] [/home/yun/design/high-concurrency-runtime/src/net/tcp_server.cpp:82] [RemoveConnectionInLoop] removing tcp connection: name=demo#1 peer=127.0.0.1:43636
+[2026-04-12 17:35:06.022483] [INFO] [tid:853532] [/home/yun/design/high-concurrency-runtime/src/net/tcp_connection.cpp:103] [ConnectDestroyed] tcp connection destroyed: name=demo#1 peer=127.0.0.1:43636
+[2026-04-12 17:35:06.032352] [INFO] [tid:853529] [/home/yun/design/high-concurrency-runtime/src/net/acceptor.cpp:58] [HandleRead] accepted connection fd=14 peer=127.0.0.1:43650
+[2026-04-12 17:35:06.032404] [INFO] [tid:853529] [/home/yun/design/high-concurrency-runtime/src/net/tcp_server.cpp:61] [NewConnection] new tcp connection: name=demo#2 local=127.0.0.1:18080 peer=127.0.0.1:43650
+[2026-04-12 17:35:06.032457] [INFO] [tid:853533] [/home/yun/design/high-concurrency-runtime/src/net/tcp_connection.cpp:87] [ConnectEstablished] tcp connection established: name=demo#2 local=127.0.0.1:18080 peer=127.0.0.1:43650
+[2026-04-12 17:35:06.032652] [INFO] [tid:853533] [/home/yun/design/high-concurrency-runtime/src/net/tcp_connection.cpp:168] [HandleClose] tcp connection closed: name=demo#2 peer=127.0.0.1:43650
+[2026-04-12 17:35:06.032685] [INFO] [tid:853529] [/home/yun/design/high-concurrency-runtime/src/net/tcp_server.cpp:82] [RemoveConnectionInLoop] removing tcp connection: name=demo#2 peer=127.0.0.1:43650
+[2026-04-12 17:35:06.032715] [INFO] [tid:853533] [/home/yun/design/high-concurrency-runtime/src/net/tcp_connection.cpp:103] [ConnectDestroyed] tcp connection destroyed: name=demo#2 peer=127.0.0.1:43650
+[2026-04-12 17:35:06.042337] [INFO] [tid:853529] [/home/yun/design/high-concurrency-runtime/src/net/acceptor.cpp:58] [HandleRead] accepted connection fd=14 peer=127.0.0.1:43654
+[2026-04-12 17:35:06.042389] [INFO] [tid:853529] [/home/yun/design/high-concurrency-runtime/src/net/tcp_server.cpp:61] [NewConnection] new tcp connection: name=demo#3 local=127.0.0.1:18080 peer=127.0.0.1:43654
+[2026-04-12 17:35:06.042502] [INFO] [tid:853532] [/home/yun/design/high-concurrency-runtime/src/net/tcp_connection.cpp:87] [ConnectEstablished] tcp connection established: name=demo#3 local=127.0.0.1:18080 peer=127.0.0.1:43654
+[2026-04-12 17:35:06.042814] [INFO] [tid:853532] [/home/yun/design/high-concurrency-runtime/src/net/tcp_connection.cpp:168] [HandleClose] tcp connection closed: name=demo#3 peer=127.0.0.1:43654
+[2026-04-12 17:35:06.043065] [INFO] [tid:853529] [/home/yun/design/high-concurrency-runtime/src/net/tcp_server.cpp:82] [RemoveConnectionInLoop] removing tcp connection: name=demo#3 peer=127.0.0.1:43654
+[2026-04-12 17:35:06.043096] [INFO] [tid:853532] [/home/yun/design/high-concurrency-runtime/src/net/tcp_connection.cpp:103] [ConnectDestroyed] tcp connection destroyed: name=demo#3 peer=127.0.0.1:43654
+[2026-04-12 17:35:06.053210] [INFO] [tid:853529] [/home/yun/design/high-concurrency-runtime/src/net/acceptor.cpp:58] [HandleRead] accepted connection fd=14 peer=127.0.0.1:43658
+[2026-04-12 17:35:06.053257] [INFO] [tid:853529] [/home/yun/design/high-concurrency-runtime/src/net/tcp_server.cpp:61] [NewConnection] new tcp connection: name=demo#4 local=127.0.0.1:18080 peer=127.0.0.1:43658
+[2026-04-12 17:35:06.053315] [INFO] [tid:853533] [/home/yun/design/high-concurrency-runtime/src/net/tcp_connection.cpp:87] [ConnectEstablished] tcp connection established: name=demo#4 local=127.0.0.1:18080 peer=127.0.0.1:43658
+[2026-04-12 17:35:06.053455] [INFO] [tid:853533] [/home/yun/design/high-concurrency-runtime/src/net/tcp_connection.cpp:168] [HandleClose] tcp connection closed: name=demo#4 peer=127.0.0.1:43658
+[2026-04-12 17:35:06.053492] [INFO] [tid:853529] [/home/yun/design/high-concurrency-runtime/src/net/tcp_server.cpp:82] [RemoveConnectionInLoop] removing tcp connection: name=demo#4 peer=127.0.0.1:43658
+[2026-04-12 17:35:06.053515] [INFO] [tid:853533] [/home/yun/design/high-concurrency-runtime/src/net/tcp_connection.cpp:103] [ConnectDestroyed] tcp connection destroyed: name=demo#4 peer=127.0.0.1:43658
+[2026-04-12 17:35:06.062953] [INFO] [tid:853529] [/home/yun/design/high-concurrency-runtime/src/net/acceptor.cpp:58] [HandleRead] accepted connection fd=14 peer=127.0.0.1:43666
+[2026-04-12 17:35:06.063005] [INFO] [tid:853529] [/home/yun/design/high-concurrency-runtime/src/net/tcp_server.cpp:61] [NewConnection] new tcp connection: name=demo#5 local=127.0.0.1:18080 peer=127.0.0.1:43666
+[2026-04-12 17:35:06.063056] [INFO] [tid:853532] [/home/yun/design/high-concurrency-runtime/src/net/tcp_connection.cpp:87] [ConnectEstablished] tcp connection established: name=demo#5 local=127.0.0.1:18080 peer=127.0.0.1:43666
+[2026-04-12 17:35:06.063465] [INFO] [tid:853532] [/home/yun/design/high-concurrency-runtime/src/net/tcp_connection.cpp:168] [HandleClose] tcp connection closed: name=demo#5 peer=127.0.0.1:43666
+[2026-04-12 17:35:06.063502] [INFO] [tid:853529] [/home/yun/design/high-concurrency-runtime/src/net/tcp_server.cpp:82] [RemoveConnectionInLoop] removing tcp connection: name=demo#5 peer=127.0.0.1:43666
+[2026-04-12 17:35:06.063527] [INFO] [tid:853532] [/home/yun/design/high-concurrency-runtime/src/net/tcp_connection.cpp:103] [ConnectDestroyed] tcp connection destroyed: name=demo#5 peer=127.0.0.1:43666
+[2026-04-12 17:35:48.858657] [INFO] [tid:853797] [/home/yun/design/high-concurrency-runtime/src/net/tcp_server.cpp:13] [TcpServer] tcp server created: name=demo
+[2026-04-12 17:35:48.858769] [INFO] [tid:853797] [/home/yun/design/high-concurrency-runtime/examples/demo_http_server.cpp:34] [main] listening on 127.0.0.1:18080
+[2026-04-12 17:35:48.858920] [INFO] [tid:853800] [/home/yun/design/high-concurrency-runtime/src/net/event_loop.cpp:113] [Loop] event loop entering loop
+[2026-04-12 17:35:48.859235] [INFO] [tid:853801] [/home/yun/design/high-concurrency-runtime/src/net/event_loop.cpp:113] [Loop] event loop entering loop
+[2026-04-12 17:35:48.859264] [INFO] [tid:853797] [/home/yun/design/high-concurrency-runtime/src/net/tcp_server.cpp:38] [Start] tcp server starting: name=demo io_threads=2
+[2026-04-12 17:35:48.859286] [INFO] [tid:853797] [/home/yun/design/high-concurrency-runtime/src/net/acceptor.cpp:43] [Listen] acceptor listening on fd=7
+[2026-04-12 17:35:48.859294] [INFO] [tid:853797] [/home/yun/design/high-concurrency-runtime/src/net/event_loop.cpp:113] [Loop] event loop entering loop
+[2026-04-12 17:35:49.870300] [INFO] [tid:853529] [/home/yun/design/high-concurrency-runtime/src/net/acceptor.cpp:58] [HandleRead] accepted connection fd=14 peer=127.0.0.1:57398
+[2026-04-12 17:35:49.870356] [INFO] [tid:853529] [/home/yun/design/high-concurrency-runtime/src/net/tcp_server.cpp:61] [NewConnection] new tcp connection: name=demo#6 local=127.0.0.1:18080 peer=127.0.0.1:57398
+[2026-04-12 17:35:49.870405] [INFO] [tid:853533] [/home/yun/design/high-concurrency-runtime/src/net/tcp_connection.cpp:87] [ConnectEstablished] tcp connection established: name=demo#6 local=127.0.0.1:18080 peer=127.0.0.1:57398
+[2026-04-12 17:35:49.870784] [INFO] [tid:853533] [/home/yun/design/high-concurrency-runtime/src/net/tcp_connection.cpp:168] [HandleClose] tcp connection closed: name=demo#6 peer=127.0.0.1:57398
+[2026-04-12 17:35:49.870822] [INFO] [tid:853529] [/home/yun/design/high-concurrency-runtime/src/net/tcp_server.cpp:82] [RemoveConnectionInLoop] removing tcp connection: name=demo#6 peer=127.0.0.1:57398
+[2026-04-12 17:35:49.870847] [INFO] [tid:853533] [/home/yun/design/high-concurrency-runtime/src/net/tcp_connection.cpp:103] [ConnectDestroyed] tcp connection destroyed: name=demo#6 peer=127.0.0.1:57398
+[2026-04-12 17:35:49.880921] [INFO] [tid:853529] [/home/yun/design/high-concurrency-runtime/src/net/acceptor.cpp:58] [HandleRead] accepted connection fd=14 peer=127.0.0.1:57408
+[2026-04-12 17:35:49.880970] [INFO] [tid:853529] [/home/yun/design/high-concurrency-runtime/src/net/tcp_server.cpp:61] [NewConnection] new tcp connection: name=demo#7 local=127.0.0.1:18080 peer=127.0.0.1:57408
+[2026-04-12 17:35:49.881019] [INFO] [tid:853532] [/home/yun/design/high-concurrency-runtime/src/net/tcp_connection.cpp:87] [ConnectEstablished] tcp connection established: name=demo#7 local=127.0.0.1:18080 peer=127.0.0.1:57408
+[2026-04-12 17:35:49.881456] [INFO] [tid:853532] [/home/yun/design/high-concurrency-runtime/src/net/tcp_connection.cpp:168] [HandleClose] tcp connection closed: name=demo#7 peer=127.0.0.1:57408
+[2026-04-12 17:35:49.881495] [INFO] [tid:853529] [/home/yun/design/high-concurrency-runtime/src/net/tcp_server.cpp:82] [RemoveConnectionInLoop] removing tcp connection: name=demo#7 peer=127.0.0.1:57408
+[2026-04-12 17:35:49.881521] [INFO] [tid:853532] [/home/yun/design/high-concurrency-runtime/src/net/tcp_connection.cpp:103] [ConnectDestroyed] tcp connection destroyed: name=demo#7 peer=127.0.0.1:57408
+[2026-04-12 17:35:49.902596] [INFO] [tid:853529] [/home/yun/design/high-concurrency-runtime/src/net/acceptor.cpp:58] [HandleRead] accepted connection fd=14 peer=127.0.0.1:57438
+[2026-04-12 17:35:49.902677] [INFO] [tid:853529] [/home/yun/design/high-concurrency-runtime/src/net/tcp_server.cpp:61] [NewConnection] new tcp connection: name=demo#8 local=127.0.0.1:18080 peer=127.0.0.1:57438
+[2026-04-12 17:35:49.902737] [INFO] [tid:853533] [/home/yun/design/high-concurrency-runtime/src/net/tcp_connection.cpp:87] [ConnectEstablished] tcp connection established: name=demo#8 local=127.0.0.1:18080 peer=127.0.0.1:57438
+[2026-04-12 17:35:49.902995] [INFO] [tid:853533] [/home/yun/design/high-concurrency-runtime/src/net/tcp_connection.cpp:168] [HandleClose] tcp connection closed: name=demo#8 peer=127.0.0.1:57438
+[2026-04-12 17:35:49.903454] [INFO] [tid:853529] [/home/yun/design/high-concurrency-runtime/src/net/tcp_server.cpp:82] [RemoveConnectionInLoop] removing tcp connection: name=demo#8 peer=127.0.0.1:57438
+[2026-04-12 17:35:49.903490] [INFO] [tid:853533] [/home/yun/design/high-concurrency-runtime/src/net/tcp_connection.cpp:103] [ConnectDestroyed] tcp connection destroyed: name=demo#8 peer=127.0.0.1:57438
+[2026-04-12 17:35:49.914096] [INFO] [tid:853529] [/home/yun/design/high-concurrency-runtime/src/net/acceptor.cpp:58] [HandleRead] accepted connection fd=14 peer=127.0.0.1:57450
+[2026-04-12 17:35:49.914153] [INFO] [tid:853529] [/home/yun/design/high-concurrency-runtime/src/net/tcp_server.cpp:61] [NewConnection] new tcp connection: name=demo#9 local=127.0.0.1:18080 peer=127.0.0.1:57450
+[2026-04-12 17:35:49.914202] [INFO] [tid:853532] [/home/yun/design/high-concurrency-runtime/src/net/tcp_connection.cpp:87] [ConnectEstablished] tcp connection established: name=demo#9 local=127.0.0.1:18080 peer=127.0.0.1:57450
+[2026-04-12 17:35:49.914333] [INFO] [tid:853532] [/home/yun/design/high-concurrency-runtime/src/net/tcp_connection.cpp:168] [HandleClose] tcp connection closed: name=demo#9 peer=127.0.0.1:57450
+[2026-04-12 17:35:49.914365] [INFO] [tid:853529] [/home/yun/design/high-concurrency-runtime/src/net/tcp_server.cpp:82] [RemoveConnectionInLoop] removing tcp connection: name=demo#9 peer=127.0.0.1:57450
+[2026-04-12 17:35:49.914389] [INFO] [tid:853532] [/home/yun/design/high-concurrency-runtime/src/net/tcp_connection.cpp:103] [ConnectDestroyed] tcp connection destroyed: name=demo#9 peer=127.0.0.1:57450

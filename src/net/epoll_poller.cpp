@@ -9,28 +9,33 @@
 #include <unistd.h>
 
 namespace runtime::net {
-
 namespace {
 
+// Channel registration state within EPollPoller.
 enum class ChannelState : int {
   kNew = -1,
   kAdded = 1,
   kDeleted = 2,
 };
 
-const char *OpName(int op) {
+const char* OpName(int op) {
   switch (op) {
-  case EPOLL_CTL_ADD: return "ADD";
-  case EPOLL_CTL_MOD: return "MOD";
-  case EPOLL_CTL_DEL: return "DEL";
-  default:            return "UNKNOWN";
+    case EPOLL_CTL_ADD:
+      return "ADD";
+    case EPOLL_CTL_MOD:
+      return "MOD";
+    case EPOLL_CTL_DEL:
+      return "DEL";
+    default:
+      return "UNKNOWN";
   }
 }
 
-} // namespace
+}  // namespace
 
-EPollPoller::EPollPoller(EventLoop *loop)
-    : Poller(loop), epollfd_(::epoll_create1(EPOLL_CLOEXEC)),
+EPollPoller::EPollPoller(EventLoop* loop)
+    : Poller(loop),
+      epollfd_(::epoll_create1(EPOLL_CLOEXEC)),
       events_(kInitEventListSize) {
   if (epollfd_ < 0) {
     LOG_FATAL() << "epoll_create1 failed: errno=" << errno
@@ -40,20 +45,25 @@ EPollPoller::EPollPoller(EventLoop *loop)
 }
 
 EPollPoller::~EPollPoller() {
-  if (epollfd_ >= 0)
+  if (epollfd_ >= 0) {
     ::close(epollfd_);
+  }
 }
 
-runtime::time::Timestamp EPollPoller::Poll(int timeout_ms,
-                                           ChannelList *active_channels) {
+runtime::time::Timestamp EPollPoller::Poll(
+    int timeout_ms,
+    ChannelList* active_channels) {
   const int max_events = static_cast<int>(events_.size());
-  int num_events =
-      ::epoll_wait(epollfd_, events_.data(), events_.size(), timeout_ms);
+  const int num_events =
+      ::epoll_wait(epollfd_, events_.data(), max_events, timeout_ms);
   const int saved_errno = errno;
-  auto now = runtime::time::Timestamp::Now();
+  const auto now = runtime::time::Timestamp::Now();
 
   if (num_events > 0) {
     FillActiveChannels(num_events, active_channels);
+
+    // Grow the event buffer when epoll_wait fills the current capacity so the
+    // next poll can absorb a larger burst of ready fds.
     if (num_events == max_events) {
       events_.resize(events_.size() * 2);
     }
@@ -66,21 +76,24 @@ runtime::time::Timestamp EPollPoller::Poll(int timeout_ms,
   return now;
 }
 
-void EPollPoller::FillActiveChannels(int num_events,
-                                     ChannelList *active_channels) const {
+void EPollPoller::FillActiveChannels(
+    int num_events,
+    ChannelList* active_channels) const {
   active_channels->reserve(active_channels->size() +
-                           static_cast<size_t>(num_events));
+                           static_cast<std::size_t>(num_events));
   for (int i = 0; i < num_events; ++i) {
-    auto *channel = static_cast<Channel *>(events_[i].data.ptr);
+    auto* channel = static_cast<Channel*>(events_[i].data.ptr);
     channel->SetRevents(events_[i].events);
     active_channels->push_back(channel);
   }
 }
 
-void EPollPoller::UpdateChannel(Channel *channel) {
+void EPollPoller::UpdateChannel(Channel* channel) {
   const int fd = channel->Fd();
   const auto state = static_cast<ChannelState>(channel->Index());
 
+  // New and previously deleted channels both need an ADD before they can
+  // receive events from epoll again.
   if (state == ChannelState::kNew || state == ChannelState::kDeleted) {
     if (state == ChannelState::kNew) {
       channels_[fd] = channel;
@@ -90,7 +103,8 @@ void EPollPoller::UpdateChannel(Channel *channel) {
     return;
   }
 
-  // state == kAdded
+  // Channels already registered in epoll transition between MOD and DEL
+  // depending on whether they still care about any events.
   if (channel->IsNoneEvent()) {
     Update(EPOLL_CTL_DEL, channel);
     channel->SetIndex(static_cast<int>(ChannelState::kDeleted));
@@ -99,7 +113,7 @@ void EPollPoller::UpdateChannel(Channel *channel) {
   }
 }
 
-void EPollPoller::RemoveChannel(Channel *channel) {
+void EPollPoller::RemoveChannel(Channel* channel) {
   const int fd = channel->Fd();
   channels_.erase(fd);
 
@@ -110,8 +124,8 @@ void EPollPoller::RemoveChannel(Channel *channel) {
   channel->SetIndex(static_cast<int>(ChannelState::kNew));
 }
 
-void EPollPoller::Update(int operation, Channel *channel) {
-  struct epoll_event event{};
+void EPollPoller::Update(int operation, Channel* channel) {
+  epoll_event event{};
   event.events = channel->Events();
   event.data.ptr = channel;
 
@@ -123,4 +137,5 @@ void EPollPoller::Update(int operation, Channel *channel) {
                 << " message=" << std::strerror(errno);
   }
 }
-} // namespace runtime::net
+
+}  // namespace runtime::net

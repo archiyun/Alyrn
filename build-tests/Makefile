@@ -205,17 +205,17 @@ simple_echo_server/fast:
 .PHONY : simple_echo_server/fast
 
 #=============================================================================
-# Target rules for targets named simple_http_server
+# Target rules for targets named demo_http_server
 
 # Build rule for target.
-simple_http_server: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 simple_http_server
-.PHONY : simple_http_server
+demo_http_server: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 demo_http_server
+.PHONY : demo_http_server
 
 # fast build rule for target.
-simple_http_server/fast:
-	$(MAKE) $(MAKESILENT) -f examples/CMakeFiles/simple_http_server.dir/build.make examples/CMakeFiles/simple_http_server.dir/build
-.PHONY : simple_http_server/fast
+demo_http_server/fast:
+	$(MAKE) $(MAKESILENT) -f examples/CMakeFiles/demo_http_server.dir/build.make examples/CMakeFiles/demo_http_server.dir/build
+.PHONY : demo_http_server/fast
 
 #=============================================================================
 # Target rules for targets named Experimental
@@ -647,6 +647,19 @@ http_smoke_test/fast:
 .PHONY : http_smoke_test/fast
 
 #=============================================================================
+# Target rules for targets named epoll_poller_smoke_test
+
+# Build rule for target.
+epoll_poller_smoke_test: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 epoll_poller_smoke_test
+.PHONY : epoll_poller_smoke_test
+
+# fast build rule for target.
+epoll_poller_smoke_test/fast:
+	$(MAKE) $(MAKESILENT) -f tests/CMakeFiles/epoll_poller_smoke_test.dir/build.make tests/CMakeFiles/epoll_poller_smoke_test.dir/build
+.PHONY : epoll_poller_smoke_test/fast
+
+#=============================================================================
 # Target rules for targets named event_loop_smoke_test
 
 # Build rule for target.
@@ -830,6 +843,54 @@ src/http/http_server.s: src/http/http_server.cpp.s
 src/http/http_server.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_http.dir/build.make CMakeFiles/runtime_http.dir/src/http/http_server.cpp.s
 .PHONY : src/http/http_server.cpp.s
+
+src/http/http_types.o: src/http/http_types.cpp.o
+.PHONY : src/http/http_types.o
+
+# target to build an object file
+src/http/http_types.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_http.dir/build.make CMakeFiles/runtime_http.dir/src/http/http_types.cpp.o
+.PHONY : src/http/http_types.cpp.o
+
+src/http/http_types.i: src/http/http_types.cpp.i
+.PHONY : src/http/http_types.i
+
+# target to preprocess a source file
+src/http/http_types.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_http.dir/build.make CMakeFiles/runtime_http.dir/src/http/http_types.cpp.i
+.PHONY : src/http/http_types.cpp.i
+
+src/http/http_types.s: src/http/http_types.cpp.s
+.PHONY : src/http/http_types.s
+
+# target to generate assembly for a file
+src/http/http_types.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_http.dir/build.make CMakeFiles/runtime_http.dir/src/http/http_types.cpp.s
+.PHONY : src/http/http_types.cpp.s
+
+src/http/router.o: src/http/router.cpp.o
+.PHONY : src/http/router.o
+
+# target to build an object file
+src/http/router.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_http.dir/build.make CMakeFiles/runtime_http.dir/src/http/router.cpp.o
+.PHONY : src/http/router.cpp.o
+
+src/http/router.i: src/http/router.cpp.i
+.PHONY : src/http/router.i
+
+# target to preprocess a source file
+src/http/router.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_http.dir/build.make CMakeFiles/runtime_http.dir/src/http/router.cpp.i
+.PHONY : src/http/router.cpp.i
+
+src/http/router.s: src/http/router.cpp.s
+.PHONY : src/http/router.s
+
+# target to generate assembly for a file
+src/http/router.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_http.dir/build.make CMakeFiles/runtime_http.dir/src/http/router.cpp.s
+.PHONY : src/http/router.cpp.s
 
 src/log/async_logger.o: src/log/async_logger.cpp.o
 .PHONY : src/log/async_logger.o
@@ -1191,6 +1252,102 @@ src/net/tcp_server.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_net.dir/build.make CMakeFiles/runtime_net.dir/src/net/tcp_server.cpp.s
 .PHONY : src/net/tcp_server.cpp.s
 
+src/net/timer.o: src/net/timer.cpp.o
+.PHONY : src/net/timer.o
+
+# target to build an object file
+src/net/timer.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_net.dir/build.make CMakeFiles/runtime_net.dir/src/net/timer.cpp.o
+.PHONY : src/net/timer.cpp.o
+
+src/net/timer.i: src/net/timer.cpp.i
+.PHONY : src/net/timer.i
+
+# target to preprocess a source file
+src/net/timer.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_net.dir/build.make CMakeFiles/runtime_net.dir/src/net/timer.cpp.i
+.PHONY : src/net/timer.cpp.i
+
+src/net/timer.s: src/net/timer.cpp.s
+.PHONY : src/net/timer.s
+
+# target to generate assembly for a file
+src/net/timer.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_net.dir/build.make CMakeFiles/runtime_net.dir/src/net/timer.cpp.s
+.PHONY : src/net/timer.cpp.s
+
+src/net/timer_queue.o: src/net/timer_queue.cpp.o
+.PHONY : src/net/timer_queue.o
+
+# target to build an object file
+src/net/timer_queue.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_net.dir/build.make CMakeFiles/runtime_net.dir/src/net/timer_queue.cpp.o
+.PHONY : src/net/timer_queue.cpp.o
+
+src/net/timer_queue.i: src/net/timer_queue.cpp.i
+.PHONY : src/net/timer_queue.i
+
+# target to preprocess a source file
+src/net/timer_queue.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_net.dir/build.make CMakeFiles/runtime_net.dir/src/net/timer_queue.cpp.i
+.PHONY : src/net/timer_queue.cpp.i
+
+src/net/timer_queue.s: src/net/timer_queue.cpp.s
+.PHONY : src/net/timer_queue.s
+
+# target to generate assembly for a file
+src/net/timer_queue.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_net.dir/build.make CMakeFiles/runtime_net.dir/src/net/timer_queue.cpp.s
+.PHONY : src/net/timer_queue.cpp.s
+
+src/task/scheduler.o: src/task/scheduler.cpp.o
+.PHONY : src/task/scheduler.o
+
+# target to build an object file
+src/task/scheduler.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_task.dir/build.make CMakeFiles/runtime_task.dir/src/task/scheduler.cpp.o
+.PHONY : src/task/scheduler.cpp.o
+
+src/task/scheduler.i: src/task/scheduler.cpp.i
+.PHONY : src/task/scheduler.i
+
+# target to preprocess a source file
+src/task/scheduler.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_task.dir/build.make CMakeFiles/runtime_task.dir/src/task/scheduler.cpp.i
+.PHONY : src/task/scheduler.cpp.i
+
+src/task/scheduler.s: src/task/scheduler.cpp.s
+.PHONY : src/task/scheduler.s
+
+# target to generate assembly for a file
+src/task/scheduler.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_task.dir/build.make CMakeFiles/runtime_task.dir/src/task/scheduler.cpp.s
+.PHONY : src/task/scheduler.cpp.s
+
+src/task/task.o: src/task/task.cpp.o
+.PHONY : src/task/task.o
+
+# target to build an object file
+src/task/task.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_task.dir/build.make CMakeFiles/runtime_task.dir/src/task/task.cpp.o
+.PHONY : src/task/task.cpp.o
+
+src/task/task.i: src/task/task.cpp.i
+.PHONY : src/task/task.i
+
+# target to preprocess a source file
+src/task/task.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_task.dir/build.make CMakeFiles/runtime_task.dir/src/task/task.cpp.i
+.PHONY : src/task/task.cpp.i
+
+src/task/task.s: src/task/task.cpp.s
+.PHONY : src/task/task.s
+
+# target to generate assembly for a file
+src/task/task.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_task.dir/build.make CMakeFiles/runtime_task.dir/src/task/task.cpp.s
+.PHONY : src/task/task.cpp.s
+
 src/task/thread_pool.o: src/task/thread_pool.cpp.o
 .PHONY : src/task/thread_pool.o
 
@@ -1278,6 +1435,8 @@ help:
 	@echo "... NightlyUpdate"
 	@echo "... buffer_smoke_test"
 	@echo "... concurrency_smoke_test"
+	@echo "... demo_http_server"
+	@echo "... epoll_poller_smoke_test"
 	@echo "... event_loop_smoke_test"
 	@echo "... http_smoke_test"
 	@echo "... logger_smoke_test"
@@ -1290,7 +1449,6 @@ help:
 	@echo "... runtime_task"
 	@echo "... runtime_unit_tests"
 	@echo "... simple_echo_server"
-	@echo "... simple_http_server"
 	@echo "... simple_logger_example"
 	@echo "... tcp_server_smoke_test"
 	@echo "... src/base/current_thread.o"
@@ -1308,6 +1466,12 @@ help:
 	@echo "... src/http/http_server.o"
 	@echo "... src/http/http_server.i"
 	@echo "... src/http/http_server.s"
+	@echo "... src/http/http_types.o"
+	@echo "... src/http/http_types.i"
+	@echo "... src/http/http_types.s"
+	@echo "... src/http/router.o"
+	@echo "... src/http/router.i"
+	@echo "... src/http/router.s"
 	@echo "... src/log/async_logger.o"
 	@echo "... src/log/async_logger.i"
 	@echo "... src/log/async_logger.s"
@@ -1353,6 +1517,18 @@ help:
 	@echo "... src/net/tcp_server.o"
 	@echo "... src/net/tcp_server.i"
 	@echo "... src/net/tcp_server.s"
+	@echo "... src/net/timer.o"
+	@echo "... src/net/timer.i"
+	@echo "... src/net/timer.s"
+	@echo "... src/net/timer_queue.o"
+	@echo "... src/net/timer_queue.i"
+	@echo "... src/net/timer_queue.s"
+	@echo "... src/task/scheduler.o"
+	@echo "... src/task/scheduler.i"
+	@echo "... src/task/scheduler.s"
+	@echo "... src/task/task.o"
+	@echo "... src/task/task.i"
+	@echo "... src/task/task.s"
 	@echo "... src/task/thread_pool.o"
 	@echo "... src/task/thread_pool.i"
 	@echo "... src/task/thread_pool.s"
