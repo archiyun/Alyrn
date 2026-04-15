@@ -47,7 +47,7 @@
 /home/yun/design/high-concurrency-runtime/build/tests/CMakeFiles/epoll_poller_smoke_test.dir
 /home/yun/design/high-concurrency-runtime/build/tests/CMakeFiles/event_loop_smoke_test.dir
 /home/yun/design/high-concurrency-runtime/build/tests/CMakeFiles/tcp_server_smoke_test.dir
-/home/yun/design/high-concurrency-runtime/build/tests/CMakeFiles/concurrency_smoke_test.dir
+/home/yun/design/high-concurrency-runtime/build/tests/CMakeFiles/memory_pool_bench.dir
 /home/yun/design/high-concurrency-runtime/build/tests/CMakeFiles/runtime_unit_tests.dir
 /home/yun/design/high-concurrency-runtime/build/tests/CMakeFiles/runtime_integration_tests.dir
 /home/yun/design/high-concurrency-runtime/build/tests/CMakeFiles/test.dir

@@ -120,6 +120,17 @@ target_link_libraries(tcp_server_smoke_test
 
 add_test(NAME tcp_server_smoke_test COMMAND tcp_server_smoke_test)
 
+add_executable(memory_pool_bench
+    unit/bench_memory_pool.cpp
+)
+
+target_include_directories(memory_pool_bench
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_compile_options(memory_pool_bench PRIVATE -O2)
+
 find_package(GTest CONFIG QUIET)
 if(GTest_FOUND)
     include(GoogleTest)

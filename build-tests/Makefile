@@ -686,6 +686,19 @@ tcp_server_smoke_test/fast:
 .PHONY : tcp_server_smoke_test/fast
 
 #=============================================================================
+# Target rules for targets named memory_pool_bench
+
+# Build rule for target.
+memory_pool_bench: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 memory_pool_bench
+.PHONY : memory_pool_bench
+
+# fast build rule for target.
+memory_pool_bench/fast:
+	$(MAKE) $(MAKESILENT) -f tests/CMakeFiles/memory_pool_bench.dir/build.make tests/CMakeFiles/memory_pool_bench.dir/build
+.PHONY : memory_pool_bench/fast
+
+#=============================================================================
 # Target rules for targets named runtime_unit_tests
 
 # Build rule for target.
@@ -1426,6 +1439,7 @@ help:
 	@echo "... event_loop_smoke_test"
 	@echo "... http_smoke_test"
 	@echo "... logger_smoke_test"
+	@echo "... memory_pool_bench"
 	@echo "... memory_pool_smoke_test"
 	@echo "... object_pool_smoke_test"
 	@echo "... runtime_foundation"

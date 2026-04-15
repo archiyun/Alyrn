@@ -631,6 +631,20 @@ tcp_server_smoke_test/fast:
 .PHONY : tcp_server_smoke_test/fast
 
 # Convenience name for target.
+tests/CMakeFiles/memory_pool_bench.dir/rule:
+	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 tests/CMakeFiles/memory_pool_bench.dir/rule
+.PHONY : tests/CMakeFiles/memory_pool_bench.dir/rule
+
+# Convenience name for target.
+memory_pool_bench: tests/CMakeFiles/memory_pool_bench.dir/rule
+.PHONY : memory_pool_bench
+
+# fast build rule for target.
+memory_pool_bench/fast:
+	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/memory_pool_bench.dir/build.make tests/CMakeFiles/memory_pool_bench.dir/build
+.PHONY : memory_pool_bench/fast
+
+# Convenience name for target.
 tests/CMakeFiles/runtime_unit_tests.dir/rule:
 	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 tests/CMakeFiles/runtime_unit_tests.dir/rule
 .PHONY : tests/CMakeFiles/runtime_unit_tests.dir/rule
@@ -801,6 +815,30 @@ integration/test_trigger_mode.s: integration/test_trigger_mode.cpp.s
 integration/test_trigger_mode.cpp.s:
 	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/runtime_integration_tests.dir/build.make tests/CMakeFiles/runtime_integration_tests.dir/integration/test_trigger_mode.cpp.s
 .PHONY : integration/test_trigger_mode.cpp.s
+
+unit/bench_memory_pool.o: unit/bench_memory_pool.cpp.o
+.PHONY : unit/bench_memory_pool.o
+
+# target to build an object file
+unit/bench_memory_pool.cpp.o:
+	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/memory_pool_bench.dir/build.make tests/CMakeFiles/memory_pool_bench.dir/unit/bench_memory_pool.cpp.o
+.PHONY : unit/bench_memory_pool.cpp.o
+
+unit/bench_memory_pool.i: unit/bench_memory_pool.cpp.i
+.PHONY : unit/bench_memory_pool.i
+
+# target to preprocess a source file
+unit/bench_memory_pool.cpp.i:
+	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/memory_pool_bench.dir/build.make tests/CMakeFiles/memory_pool_bench.dir/unit/bench_memory_pool.cpp.i
+.PHONY : unit/bench_memory_pool.cpp.i
+
+unit/bench_memory_pool.s: unit/bench_memory_pool.cpp.s
+.PHONY : unit/bench_memory_pool.s
+
+# target to generate assembly for a file
+unit/bench_memory_pool.cpp.s:
+	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/memory_pool_bench.dir/build.make tests/CMakeFiles/memory_pool_bench.dir/unit/bench_memory_pool.cpp.s
+.PHONY : unit/bench_memory_pool.cpp.s
 
 unit/test_buffer.o: unit/test_buffer.cpp.o
 .PHONY : unit/test_buffer.o
@@ -1156,6 +1194,7 @@ help:
 	@echo "... event_loop_smoke_test"
 	@echo "... http_smoke_test"
 	@echo "... logger_smoke_test"
+	@echo "... memory_pool_bench"
 	@echo "... memory_pool_smoke_test"
 	@echo "... object_pool_smoke_test"
 	@echo "... runtime_integration_tests"
@@ -1179,6 +1218,9 @@ help:
 	@echo "... integration/test_trigger_mode.o"
 	@echo "... integration/test_trigger_mode.i"
 	@echo "... integration/test_trigger_mode.s"
+	@echo "... unit/bench_memory_pool.o"
+	@echo "... unit/bench_memory_pool.i"
+	@echo "... unit/bench_memory_pool.s"
 	@echo "... unit/test_buffer.o"
 	@echo "... unit/test_buffer.i"
 	@echo "... unit/test_buffer.s"

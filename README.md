@@ -1,126 +1,114 @@
 # high-concurrency-runtime
 
-> 基于 C++20 实现的高并发 HTTP 服务框架，采用 Reactor + One-Loop-Per-Thread 事件驱动模型。
+> A high-performance HTTP server framework in C++20, built on a Reactor + One-Loop-Per-Thread event model.
+
+**[中文文档](README.zh-CN.md)**
 
 ---
 
-## 架构总览
+## Highlights
 
-```
-┌─────────────────────────────────────────┐
-│              HTTP Layer                 │  runtime::http
-│   HttpServer / Router                   │
-│   HttpRequest / HttpResponse            │
-│   HttpContext（状态机解析器）            │
-└──────────────────┬──────────────────────┘
-                   │ 依赖
-┌──────────────────▼──────────────────────┐
-│            TCP / Net Layer              │  runtime::net
-│   TcpServer / TcpConnection             │
-│   EventLoop / Channel / EpollPoller     │
-│   Buffer / Socket / Acceptor            │
-│   TimerQueue / EventLoopThreadPool      │
-└──────────────────┬──────────────────────┘
-                   │ 依赖
-┌──────────────────▼──────────────────────┐
-│           Foundation Layer              │  runtime::log / runtime::time
-│   AsyncLogger / Timestamp               │
-│   ThreadPool / MemoryPool / ObjectPool  │
-└─────────────────────────────────────────┘
-```
+- **Reactor model** — `epoll`-based event loop, zero-copy buffer reads via `readv` scatter-gather
+- **One-Loop-Per-Thread** — Main Loop accepts only; Sub Loop thread pool owns each connection exclusively, no shared IO state between threads
+- **Trie router** — `O(k)` path matching (k = path segments), dynamic path params (`:param`), static segments preferred over param segments, automatic 404 / 405 distinction
+- **Incremental HTTP parser** — stateful `HttpContext` state machine consumes `Buffer&` directly with no intermediate copies; `Reset()` reuses context across keep-alive requests
+- **Async logger** — double-buffered, batch-flush to disk; IO threads never block on log writes
+- **Memory pool** — intrusive free-list allocator; `ObjectPool` adds RAII `ScopedPtr`, `NullMutex` variant for per-thread use (33× faster than `new/delete` in single-threaded benchmarks)
+- **C++20** — header-only templates, `std::any` for typed connection context, structured bindings
 
 ---
 
-## 核心设计
-
-### Reactor 事件循环
-
-采用 **One-Loop-Per-Thread** 模型，Main Loop 只负责 accept，Sub Loop 线程池负责已建立连接的 IO：
-
-| 组件 | 职责 |
-|---|---|
-| `EventLoop` | 事件驱动主循环，持有 Poller / Channel / TimerQueue |
-| `Channel` | fd 的事件代理，封装感兴趣的事件与回调分发 |
-| `EpollPoller` | epoll 的具体封装，实现 Poller 接口 |
-| `EventLoopThreadPool` | Sub Loop 线程池，管理连接 IO |
-
-### 连接管理
-
-| 组件 | 职责 |
-|---|---|
-| `TcpServer` | 监听端口，accept 新连接，分配 IO 线程 |
-| `TcpConnection` | 单条连接的全生命周期管理（状态机 + 读写缓冲） |
-| `Buffer` | 三段滑动索引缓冲区，支持 `ReadFd` 零拷贝读取 |
-| `Acceptor` | 专门监听 accept，建立连接后通知 TcpServer |
-
-### HTTP 层
-
-HTTP 模块构建在 TcpServer 之上，连接状态通过 `TcpConnection::SetContext(std::any)` 绑定，**每条连接的解析状态自治，IO 线程间无共享数据，无全局锁**。
-
-| 组件 | 职责 |
-|---|---|
-| `HttpContext` | 状态机解析器，直接消费 `Buffer&`，零中间拷贝 |
-| `HttpRequest` | 已解析的请求数据，Header 查找大小写不敏感 |
-| `HttpResponse` | 响应序列化，`Content-Length` 在 `ToString()` 时动态计算 |
-| `Router` | 静态路由表，`(Method, path)` → `Handler`，区分 404 / 405 |
-| `HttpServer` | 组装层，注册回调，驱动解析 → 路由 → 发送循环 |
-
-请求处理数据流：
+## Architecture
 
 ```
-内核数据
-  └─ Buffer::ReadFd()
-       └─ MessageCallback(conn, Buffer&, ts)    ← 零拷贝
-            └─ HttpContext::ParseRequest(buf)   ← 直接消费字节
-                 └─ HttpRequest（解析完成）
-                      └─ Router::Match()
+┌──────────────────────────────────────────────┐
+│               HTTP Layer                     │  runtime::http
+│   HttpServer · Router · HttpContext           │
+│   HttpRequest · HttpResponse                 │
+└──────────────────┬───────────────────────────┘
+                   │ depends on
+┌──────────────────▼───────────────────────────┐
+│              Net Layer                       │  runtime::net
+│   TcpServer · TcpConnection · EventLoop      │
+│   EpollPoller · Channel · Buffer             │
+│   Acceptor · TimerQueue · EventLoopThreadPool│
+└──────────────────┬───────────────────────────┘
+                   │ depends on
+┌──────────────────▼───────────────────────────┐
+│            Foundation Layer                  │  runtime::log / time / task / memory
+│   AsyncLogger · Timestamp                    │
+│   ThreadPool · MemoryPool · ObjectPool       │
+└──────────────────────────────────────────────┘
+```
+
+Dependency is strictly downward. Upper layers never include lower-layer headers in reverse.
+
+---
+
+## Request Flow
+
+```
+kernel data
+  └─ Buffer::ReadFd()              ← scatter-gather read, no intermediate copy
+       └─ MessageCallback(conn, buf, ts)
+            └─ HttpContext::ParseRequest(buf)   ← state machine, consumes bytes in-place
+                 └─ HttpRequest (parse complete)
+                      └─ Router::Match(method, path)
                            └─ Handler(req, resp)
                                 └─ conn->Send(resp.ToString())
 ```
 
-### 异步日志
-
-`Logger` 单例 + RAII LogMessage + 宏实现流式输出，底层 `AsyncLogger` 异步批量落盘，支持滚动日志文件，IO 线程不阻塞。
-
 ---
 
-## 快速开始
+## Quick Start
 
-### 依赖
+### Requirements
 
-- Linux（epoll）
-- GCC 12+ 或 Clang 15+（C++20）
+- Linux (epoll)
+- GCC 12+ or Clang 15+ with C++20 support
 - CMake 3.20+
 
-### 构建
+### Build
 
 ```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j$(nproc)
 ```
 
-### 运行 demo
+### Run the demo server
 
 ```bash
 ./build/examples/demo_http_server
+# Listens on 127.0.0.1:18080 by default
 ```
 
-服务启动后监听 `127.0.0.1:18080`，可用 curl 验证：
+Environment variables:
+
+| Variable | Default | Description |
+|---|---|---|
+| `HOST` | `127.0.0.1` | Bind address |
+| `PORT` | `18080` | Listen port |
+| `IO_THREADS` | auto (≤ 4) | Sub Loop thread count |
+| `ET_MODE` | unset | Enable edge-triggered epoll |
 
 ```bash
-# 基础路由
-curl http://127.0.0.1:18080/
-curl http://127.0.0.1:18080/health
+# Health check
+curl http://127.0.0.1:18080/api/health
 
-# POST + Body
-curl -X POST http://127.0.0.1:18080/echo -d "hello"
+# Echo POST body
+curl -X POST http://127.0.0.1:18080/api/echo -d "hello"
+
+# KV store
+curl -X POST http://127.0.0.1:18080/api/kv/foo -d "bar"
+curl http://127.0.0.1:18080/api/kv/foo
+curl http://127.0.0.1:18080/api/kv
 
 # 404 / 405
 curl http://127.0.0.1:18080/notfound
-curl -X POST http://127.0.0.1:18080/
+curl -X DELETE http://127.0.0.1:18080/api/health
 ```
 
-### 在代码中使用
+### Embed in your own server
 
 ```cpp
 #include "runtime/http/http_server.h"
@@ -129,15 +117,23 @@ curl -X POST http://127.0.0.1:18080/
 
 int main() {
     runtime::net::EventLoop loop;
-    runtime::http::HttpServer server(&loop,
-        runtime::net::InetAddress(8080, "0.0.0.0"), "my-server");
+    runtime::http::HttpServer server(
+        &loop,
+        runtime::net::InetAddress(8080, "0.0.0.0"),
+        "my-server");
 
     server.SetThreadNum(4);
 
-    server.Get("/api/hello", [](const runtime::http::HttpRequest& req,
-                                runtime::http::HttpResponse& resp) {
+    server.Get("/api/users/:id", [](const runtime::http::HttpRequest& req,
+                                    runtime::http::HttpResponse& resp) {
         resp.SetContentType("application/json; charset=utf-8");
-        resp.SetBody("{\"hello\":\"world\"}");
+        resp.SetBody("{\"id\":\"" + std::string(req.PathParam("id")) + "\"}");
+    });
+
+    server.Post("/api/echo", [](const runtime::http::HttpRequest& req,
+                                runtime::http::HttpResponse& resp) {
+        resp.SetContentType("text/plain");
+        resp.SetBody(std::string(req.Body()));
     });
 
     server.Start();
@@ -147,60 +143,83 @@ int main() {
 
 ---
 
-## 基准测试
+## Benchmarks
 
-测试环境：AMD EPYC 9754（2 vCPU）/ 3.6 GiB RAM / Debian 12 / Release 构建 / IO 线程数 = 2
+**Environment:** AMD EPYC 9754 (2 vCPU, KVM) · 3.6 GiB RAM · Debian 12 · Release build (`-O3`)  
+**Tool:** [wrk](https://github.com/wg/wrk) — 5 s duration, 1 wrk thread, Keep-Alive enabled, `IO_THREADS=2`
 
-| 场景 | 并发数 | QPS | P50 延迟 | P99 延迟 |
+### HTTP throughput
+
+| Endpoint | Connections | RPS | P50 | P99 |
 |---|---|---|---|---|
-| GET /api/health | 128 | **69,481** | 0.99 ms | 12.04 ms |
-| GET /api/echo | 128 | **62,756** | 1.08 ms | 11.13 ms |
-| GET /api/echo | 64 | **62,895** | 0.49 ms | 10.30 ms |
+| `GET /api/health` | 64 | 64,750 | 0.47 ms | 9.90 ms |
+| `GET /api/health` | 128 | **69,481** | 0.99 ms | 12.04 ms |
+| `POST /api/echo` | 64 | 62,895 | 0.49 ms | 10.30 ms |
+| `POST /api/echo` | 128 | **62,756** | 1.08 ms | 11.13 ms |
+| `GET /static` (file) | 128 | 22,202 | 4.28 ms | 16.02 ms |
 
-测试工具：[wrk](https://github.com/wg/wrk)，持续 5 秒。
+Keep-Alive off drops throughput ~7× (9,255 RPS at c=128) — new TCP handshake per request dominates.
+
+### Memory allocator comparison (single machine, `-O2`)
+
+| Scenario | Pool (ns/op) | new/delete (ns/op) | Speedup |
+|---|---|---|---|
+| Sequential fill + drain | 28.3 | 27.3 | 1.0× |
+| Interleaved alloc/free (std::mutex) | 35.2 | 24.9 | 0.7× |
+| Batch-32 alloc + free | 19.2 | 37.3 | **1.9×** |
+| ObjectPool with ctor/dtor (Task) | 35.8 | 188.8 | **5.3×** |
+| Interleaved, NullMutex (no lock) | 1.2 | 40.3 | **33×** |
+| 8-thread contention (std::mutex) | 50.9 | 56.9 | 1.1× |
+
+Takeaway: `std::mutex` erases single-slot interleaved gains; `NullMutex` + per-thread pool delivers 33× in lock-free paths. Object construction/destruction is the dominant cost in typed allocation — `ObjectPool` with placement new is 5× faster than `new/delete`.
 
 ---
 
-## 目录结构
+## Repository Layout
 
 ```
 .
 ├── include/runtime/
-│   ├── http/          # HTTP 层头文件
-│   ├── net/           # TCP / 网络层头文件
-│   ├── log/           # 异步日志
-│   ├── memory/        # 内存池 / 对象池
-│   ├── metrics/       # 指标（Counter / Gauge / Histogram）
-│   ├── task/          # 线程池 / 任务调度
-│   ├── time/          # Timestamp
-│   └── trace/         # 链路追踪（TraceId）
-├── src/               # 对应实现
-├── examples/          # 可直接运行的示例
-│   └── demo_http_server.cpp
+│   ├── http/        # HTTP layer (server, router, context, request, response)
+│   ├── net/         # TCP/net layer (event loop, channel, buffer, timers)
+│   ├── log/         # Async logger
+│   ├── memory/      # MemoryPool, ObjectPool, SegmentLRUCache
+│   ├── metrics/     # Counter, Gauge, Histogram, Registry
+│   ├── task/        # ThreadPool, Scheduler
+│   ├── time/        # Timestamp
+│   ├── trace/       # TraceId, LifecycleTrace
+│   ├── inference/   # LLM inference integration (llama engine, SSE streaming)
+│   ├── config/      # Config loader
+│   └── base/        # NonCopyable, CurrentThread
+├── src/             # Corresponding .cpp implementations
+├── examples/
+│   ├── demo_http_server.cpp   # KV store demo (REST API)
+│   └── simple_echo_server.cpp
 ├── tests/
-│   ├── unit/          # 单元测试
-│   ├── integration/   # 集成测试
-│   └── stress/        # 压力测试
-├── benchmarks/        # 基准测试结果
-└── docs/              # 设计文档
+│   ├── unit/        # Unit tests (GTest + smoke tests)
+│   └── integration/ # Integration tests
+├── benchmarks/      # wrk scripts and result archives
+└── docs/            # Design notes
 ```
 
 ---
 
-## 开发状态
+## Status
 
-| 模块 | 状态 |
+| Module | Status |
 |---|---|
-| Net Layer（Reactor / TcpServer / Buffer） | 完成 |
-| HTTP Layer（解析 / 路由 / 响应） | 完成 |
-| 异步日志 | 完成 |
-| 定时器（TimerQueue） | 完成 |
-| 线程池 / 内存池 | 完成 |
-| Metrics（Counter / Gauge / Histogram） | 头文件完成，导出待接入 |
-| 动态路由（Trie） | 待实现 |
-| 中间件链 | 待实现 |
-| HTTPS（TLS） | 待实现 |
+| Net layer (Reactor, TcpServer, Buffer, Timer) | Done |
+| HTTP layer (parser, Trie router, response) | Done |
+| Async logger | Done |
+| ThreadPool | Done |
+| MemoryPool / ObjectPool | Done |
+| Metrics (Counter / Gauge / Histogram) | Headers done, export integration pending |
+| Middleware chain | Planned |
+| HTTPS / TLS | Planned |
+| LLM inference integration | In progress |
 
 ---
 
-> 该项目仍在持续开发中，代码仅供参考学习。
+## License
+
+[MIT](LICENSE)

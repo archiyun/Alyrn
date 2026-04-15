@@ -946,37 +946,36 @@ build tests/tcp_server_smoke_test: CXX_EXECUTABLE_LINKER__tcp_server_smoke_test_
   TARGET_PDB = tcp_server_smoke_test.dbg
 
 # =============================================================================
-# Object build statements for EXECUTABLE target concurrency_smoke_test
+# Object build statements for EXECUTABLE target memory_pool_bench
 
 
 #############################################
-# Order-only phony target for concurrency_smoke_test
+# Order-only phony target for memory_pool_bench
 
-build cmake_object_order_depends_target_concurrency_smoke_test: phony || cmake_object_order_depends_target_runtime_foundation cmake_object_order_depends_target_runtime_net
+build cmake_object_order_depends_target_memory_pool_bench: phony || tests/CMakeFiles/memory_pool_bench.dir
 
-build tests/CMakeFiles/concurrency_smoke_test.dir/stress/test_concurrency_smoke_standalone.cpp.o: CXX_COMPILER__concurrency_smoke_test_Debug /home/yun/design/high-concurrency-runtime/tests/stress/test_concurrency_smoke_standalone.cpp || cmake_object_order_depends_target_concurrency_smoke_test
-  DEP_FILE = tests/CMakeFiles/concurrency_smoke_test.dir/stress/test_concurrency_smoke_standalone.cpp.o.d
-  FLAGS = -g -std=c++20
-  INCLUDES = -I/home/yun/design/high-concurrency-runtime/tests/../include -I/home/yun/design/high-concurrency-runtime/include
-  OBJECT_DIR = tests/CMakeFiles/concurrency_smoke_test.dir
-  OBJECT_FILE_DIR = tests/CMakeFiles/concurrency_smoke_test.dir/stress
+build tests/CMakeFiles/memory_pool_bench.dir/unit/bench_memory_pool.cpp.o: CXX_COMPILER__memory_pool_bench_Debug /home/yun/design/high-concurrency-runtime/tests/unit/bench_memory_pool.cpp || cmake_object_order_depends_target_memory_pool_bench
+  DEP_FILE = tests/CMakeFiles/memory_pool_bench.dir/unit/bench_memory_pool.cpp.o.d
+  FLAGS = -g -O2 -std=c++20
+  INCLUDES = -I/home/yun/design/high-concurrency-runtime/tests/../include
+  OBJECT_DIR = tests/CMakeFiles/memory_pool_bench.dir
+  OBJECT_FILE_DIR = tests/CMakeFiles/memory_pool_bench.dir/unit
 
 
 # =============================================================================
-# Link build statements for EXECUTABLE target concurrency_smoke_test
+# Link build statements for EXECUTABLE target memory_pool_bench
 
 
 #############################################
-# Link the executable tests/concurrency_smoke_test
+# Link the executable tests/memory_pool_bench
 
-build tests/concurrency_smoke_test: CXX_EXECUTABLE_LINKER__concurrency_smoke_test_Debug tests/CMakeFiles/concurrency_smoke_test.dir/stress/test_concurrency_smoke_standalone.cpp.o | libruntime_net.a libruntime_foundation.a || libruntime_foundation.a libruntime_net.a
+build tests/memory_pool_bench: CXX_EXECUTABLE_LINKER__memory_pool_bench_Debug tests/CMakeFiles/memory_pool_bench.dir/unit/bench_memory_pool.cpp.o
   FLAGS = -g
-  LINK_LIBRARIES = libruntime_net.a  libruntime_foundation.a
-  OBJECT_DIR = tests/CMakeFiles/concurrency_smoke_test.dir
+  OBJECT_DIR = tests/CMakeFiles/memory_pool_bench.dir
   POST_BUILD = :
   PRE_LINK = :
-  TARGET_FILE = tests/concurrency_smoke_test
-  TARGET_PDB = concurrency_smoke_test.dbg
+  TARGET_FILE = tests/memory_pool_bench
+  TARGET_PDB = memory_pool_bench.dbg
 
 # =============================================================================
 # Object build statements for EXECUTABLE target runtime_unit_tests
@@ -1029,6 +1028,13 @@ build tests/CMakeFiles/runtime_unit_tests.dir/unit/test_thread_pool.cpp.o: CXX_C
   OBJECT_DIR = tests/CMakeFiles/runtime_unit_tests.dir
   OBJECT_FILE_DIR = tests/CMakeFiles/runtime_unit_tests.dir/unit
 
+build tests/CMakeFiles/runtime_unit_tests.dir/unit/test_scheduler.cpp.o: CXX_COMPILER__runtime_unit_tests_Debug /home/yun/design/high-concurrency-runtime/tests/unit/test_scheduler.cpp || cmake_object_order_depends_target_runtime_unit_tests
+  DEP_FILE = tests/CMakeFiles/runtime_unit_tests.dir/unit/test_scheduler.cpp.o.d
+  FLAGS = -g -std=c++20
+  INCLUDES = -I/home/yun/design/high-concurrency-runtime/include
+  OBJECT_DIR = tests/CMakeFiles/runtime_unit_tests.dir
+  OBJECT_FILE_DIR = tests/CMakeFiles/runtime_unit_tests.dir/unit
+
 
 # =============================================================================
 # Link build statements for EXECUTABLE target runtime_unit_tests
@@ -1037,7 +1043,7 @@ build tests/CMakeFiles/runtime_unit_tests.dir/unit/test_thread_pool.cpp.o: CXX_C
 #############################################
 # Link the executable tests/runtime_unit_tests
 
-build tests/runtime_unit_tests tests/runtime_unit_tests[1]_tests.cmake | ${cmake_ninja_workdir}tests/runtime_unit_tests[1]_tests.cmake: CXX_EXECUTABLE_LINKER__runtime_unit_tests_Debug tests/CMakeFiles/runtime_unit_tests.dir/unit/test_buffer.cpp.o tests/CMakeFiles/runtime_unit_tests.dir/unit/test_logger.cpp.o tests/CMakeFiles/runtime_unit_tests.dir/unit/test_memory_pool.cpp.o tests/CMakeFiles/runtime_unit_tests.dir/unit/test_object_pool.cpp.o tests/CMakeFiles/runtime_unit_tests.dir/unit/test_sanity.cpp.o tests/CMakeFiles/runtime_unit_tests.dir/unit/test_thread_pool.cpp.o | /usr/local/lib/libgtest_main.a libruntime_net.a libruntime_task.a /usr/local/lib/libgtest.a libruntime_foundation.a || libruntime_foundation.a libruntime_net.a libruntime_task.a
+build tests/runtime_unit_tests tests/runtime_unit_tests[1]_tests.cmake | ${cmake_ninja_workdir}tests/runtime_unit_tests[1]_tests.cmake: CXX_EXECUTABLE_LINKER__runtime_unit_tests_Debug tests/CMakeFiles/runtime_unit_tests.dir/unit/test_buffer.cpp.o tests/CMakeFiles/runtime_unit_tests.dir/unit/test_logger.cpp.o tests/CMakeFiles/runtime_unit_tests.dir/unit/test_memory_pool.cpp.o tests/CMakeFiles/runtime_unit_tests.dir/unit/test_object_pool.cpp.o tests/CMakeFiles/runtime_unit_tests.dir/unit/test_sanity.cpp.o tests/CMakeFiles/runtime_unit_tests.dir/unit/test_thread_pool.cpp.o tests/CMakeFiles/runtime_unit_tests.dir/unit/test_scheduler.cpp.o | /usr/local/lib/libgtest_main.a libruntime_net.a libruntime_task.a /usr/local/lib/libgtest.a libruntime_foundation.a || libruntime_foundation.a libruntime_net.a libruntime_task.a
   FLAGS = -g
   LINK_LIBRARIES = /usr/local/lib/libgtest_main.a  libruntime_net.a  libruntime_task.a  /usr/local/lib/libgtest.a  libruntime_foundation.a
   OBJECT_DIR = tests/CMakeFiles/runtime_unit_tests.dir
@@ -1070,19 +1076,19 @@ build tests/CMakeFiles/runtime_integration_tests.dir/integration/test_tcp_server
   OBJECT_DIR = tests/CMakeFiles/runtime_integration_tests.dir
   OBJECT_FILE_DIR = tests/CMakeFiles/runtime_integration_tests.dir/integration
 
+build tests/CMakeFiles/runtime_integration_tests.dir/integration/test_trigger_mode.cpp.o: CXX_COMPILER__runtime_integration_tests_Debug /home/yun/design/high-concurrency-runtime/tests/integration/test_trigger_mode.cpp || cmake_object_order_depends_target_runtime_integration_tests
+  DEP_FILE = tests/CMakeFiles/runtime_integration_tests.dir/integration/test_trigger_mode.cpp.o.d
+  FLAGS = -g -std=c++20
+  INCLUDES = -I/home/yun/design/high-concurrency-runtime/include
+  OBJECT_DIR = tests/CMakeFiles/runtime_integration_tests.dir
+  OBJECT_FILE_DIR = tests/CMakeFiles/runtime_integration_tests.dir/integration
+
 build tests/CMakeFiles/runtime_integration_tests.dir/integration/test_http_server.cpp.o: CXX_COMPILER__runtime_integration_tests_Debug /home/yun/design/high-concurrency-runtime/tests/integration/test_http_server.cpp || cmake_object_order_depends_target_runtime_integration_tests
   DEP_FILE = tests/CMakeFiles/runtime_integration_tests.dir/integration/test_http_server.cpp.o.d
   FLAGS = -g -std=c++20
   INCLUDES = -I/home/yun/design/high-concurrency-runtime/include
   OBJECT_DIR = tests/CMakeFiles/runtime_integration_tests.dir
   OBJECT_FILE_DIR = tests/CMakeFiles/runtime_integration_tests.dir/integration
-
-build tests/CMakeFiles/runtime_integration_tests.dir/stress/test_concurrency_smoke.cpp.o: CXX_COMPILER__runtime_integration_tests_Debug /home/yun/design/high-concurrency-runtime/tests/stress/test_concurrency_smoke.cpp || cmake_object_order_depends_target_runtime_integration_tests
-  DEP_FILE = tests/CMakeFiles/runtime_integration_tests.dir/stress/test_concurrency_smoke.cpp.o.d
-  FLAGS = -g -std=c++20
-  INCLUDES = -I/home/yun/design/high-concurrency-runtime/include
-  OBJECT_DIR = tests/CMakeFiles/runtime_integration_tests.dir
-  OBJECT_FILE_DIR = tests/CMakeFiles/runtime_integration_tests.dir/stress
 
 
 # =============================================================================
@@ -1092,7 +1098,7 @@ build tests/CMakeFiles/runtime_integration_tests.dir/stress/test_concurrency_smo
 #############################################
 # Link the executable tests/runtime_integration_tests
 
-build tests/runtime_integration_tests tests/runtime_integration_tests[1]_tests.cmake | ${cmake_ninja_workdir}tests/runtime_integration_tests[1]_tests.cmake: CXX_EXECUTABLE_LINKER__runtime_integration_tests_Debug tests/CMakeFiles/runtime_integration_tests.dir/integration/test_event_loop.cpp.o tests/CMakeFiles/runtime_integration_tests.dir/integration/test_tcp_server.cpp.o tests/CMakeFiles/runtime_integration_tests.dir/integration/test_http_server.cpp.o tests/CMakeFiles/runtime_integration_tests.dir/stress/test_concurrency_smoke.cpp.o | /usr/local/lib/libgtest_main.a libruntime_net.a libruntime_http.a /usr/local/lib/libgtest.a libruntime_net.a libruntime_task.a libruntime_foundation.a || libruntime_foundation.a libruntime_http.a libruntime_net.a libruntime_task.a
+build tests/runtime_integration_tests tests/runtime_integration_tests[1]_tests.cmake | ${cmake_ninja_workdir}tests/runtime_integration_tests[1]_tests.cmake: CXX_EXECUTABLE_LINKER__runtime_integration_tests_Debug tests/CMakeFiles/runtime_integration_tests.dir/integration/test_event_loop.cpp.o tests/CMakeFiles/runtime_integration_tests.dir/integration/test_tcp_server.cpp.o tests/CMakeFiles/runtime_integration_tests.dir/integration/test_trigger_mode.cpp.o tests/CMakeFiles/runtime_integration_tests.dir/integration/test_http_server.cpp.o | /usr/local/lib/libgtest_main.a libruntime_net.a libruntime_http.a /usr/local/lib/libgtest.a libruntime_net.a libruntime_task.a libruntime_foundation.a || libruntime_foundation.a libruntime_http.a libruntime_net.a libruntime_task.a
   FLAGS = -g
   LINK_LIBRARIES = /usr/local/lib/libgtest_main.a  libruntime_net.a  libruntime_http.a  /usr/local/lib/libgtest.a  libruntime_net.a  libruntime_task.a  libruntime_foundation.a
   OBJECT_DIR = tests/CMakeFiles/runtime_integration_tests.dir
@@ -1422,8 +1428,6 @@ build NightlyUpdate: phony tests/NightlyUpdate
 
 build buffer_smoke_test: phony tests/buffer_smoke_test
 
-build concurrency_smoke_test: phony tests/concurrency_smoke_test
-
 build demo_http_server: phony examples/demo_http_server
 
 build epoll_poller_smoke_test: phony tests/epoll_poller_smoke_test
@@ -1433,6 +1437,8 @@ build event_loop_smoke_test: phony tests/event_loop_smoke_test
 build http_smoke_test: phony tests/http_smoke_test
 
 build logger_smoke_test: phony tests/logger_smoke_test
+
+build memory_pool_bench: phony tests/memory_pool_bench
 
 build memory_pool_smoke_test: phony tests/memory_pool_smoke_test
 
@@ -1478,7 +1484,7 @@ build examples/all: phony examples/simple_logger_example examples/simple_echo_se
 #############################################
 # Folder: /home/yun/design/high-concurrency-runtime/build/tests
 
-build tests/all: phony tests/memory_pool_smoke_test tests/object_pool_smoke_test tests/logger_smoke_test tests/buffer_smoke_test tests/http_smoke_test tests/epoll_poller_smoke_test tests/event_loop_smoke_test tests/tcp_server_smoke_test tests/concurrency_smoke_test tests/runtime_unit_tests tests/runtime_integration_tests
+build tests/all: phony tests/memory_pool_smoke_test tests/object_pool_smoke_test tests/logger_smoke_test tests/buffer_smoke_test tests/http_smoke_test tests/epoll_poller_smoke_test tests/event_loop_smoke_test tests/tcp_server_smoke_test tests/memory_pool_bench tests/runtime_unit_tests tests/runtime_integration_tests
 
 # =============================================================================
 # Built-in targets

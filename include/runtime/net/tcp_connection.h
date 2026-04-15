@@ -53,16 +53,13 @@ public:
   // Initiates a graceful shutdown of the write side.
   void Shutdown();
 
-  void SetConnectionCallback(const ConnectionCallback& cb) {
-    connection_callback_ = cb;
-  }
+  void SetConnectionCallback(const ConnectionCallback& cb) { connection_callback_ = cb; }
 
   void SetMessageCallback(const MessageCallback& cb) { message_callback_ = cb; }
 
   void SetCloseCallback(const CloseCallback& cb) { close_callback_ = cb; }
 
-  void SetWriteCompleteCallback(const WriteCompleteCallback& cb) {
-    write_complete_callback_ = cb;
+  void SetWriteCompleteCallback(const WriteCompleteCallback& cb) { write_complete_callback_ = cb;
   }
 
   // Associates arbitrary upper-layer context with the connection.

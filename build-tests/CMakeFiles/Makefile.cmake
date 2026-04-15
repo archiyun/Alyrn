@@ -104,6 +104,7 @@ set(CMAKE_DEPEND_INFO_FILES
   "tests/CMakeFiles/epoll_poller_smoke_test.dir/DependInfo.cmake"
   "tests/CMakeFiles/event_loop_smoke_test.dir/DependInfo.cmake"
   "tests/CMakeFiles/tcp_server_smoke_test.dir/DependInfo.cmake"
+  "tests/CMakeFiles/memory_pool_bench.dir/DependInfo.cmake"
   "tests/CMakeFiles/runtime_unit_tests.dir/DependInfo.cmake"
   "tests/CMakeFiles/runtime_integration_tests.dir/DependInfo.cmake"
   )

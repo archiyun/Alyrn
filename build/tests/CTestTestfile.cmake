@@ -22,5 +22,3 @@ add_test([=[event_loop_smoke_test]=] "/home/yun/design/high-concurrency-runtime/
 set_tests_properties([=[event_loop_smoke_test]=] PROPERTIES  _BACKTRACE_TRIPLES "/home/yun/design/high-concurrency-runtime/tests/CMakeLists.txt;105;add_test;/home/yun/design/high-concurrency-runtime/tests/CMakeLists.txt;0;")
 add_test([=[tcp_server_smoke_test]=] "/home/yun/design/high-concurrency-runtime/build/tests/tcp_server_smoke_test")
 set_tests_properties([=[tcp_server_smoke_test]=] PROPERTIES  _BACKTRACE_TRIPLES "/home/yun/design/high-concurrency-runtime/tests/CMakeLists.txt;121;add_test;/home/yun/design/high-concurrency-runtime/tests/CMakeLists.txt;0;")
-add_test([=[concurrency_smoke_test]=] "/home/yun/design/high-concurrency-runtime/build/tests/concurrency_smoke_test")
-set_tests_properties([=[concurrency_smoke_test]=] PROPERTIES  _BACKTRACE_TRIPLES "/home/yun/design/high-concurrency-runtime/tests/CMakeLists.txt;137;add_test;/home/yun/design/high-concurrency-runtime/tests/CMakeLists.txt;0;")
