@@ -5,10 +5,10 @@
 
 namespace runtime::net {
 
-/**
- * fd 的RAII包装， socket系统调用的薄封装
- * 拥有完整的生命周期， 和提供底层操作的接口
- */
+// Socket is an RAII wrapper around a socket file descriptor.
+//
+// It owns the descriptor for its lifetime and exposes a small set of socket
+// operations used by the networking layer.
 class Socket : public runtime::base::NonCopyable {
 public:
   explicit Socket(int sockfd);
@@ -16,23 +16,32 @@ public:
 
   int Fd() const { return sockfd_; }
 
-  // bind : 通常用于listen_fd
-  void BindAddress(const InetAddress &localaddr);
-  // listen : 通常用于listen_fd
+  // Binds the socket to a local address.
+  void BindAddress(const InetAddress& localaddr);
+
+  // Marks the socket as a passive listening socket.
   void Listen();
-  // accept
-  int Accept(InetAddress *peeraddr);
-  // shutdown : 关闭写端， 半关闭
+
+  // Accepts a new inbound connection and optionally fills the peer address.
+  int Accept(InetAddress* peeraddr);
+
+  // Shuts down the write side of the socket.
   void ShutdownWrite();
 
-  // setsocketopt
-  void SetTcpNoDelay(bool on); // true: 关闭Nagle算法, 减少小包发送延迟； false; 合并小包提高带宽利用率
-  void SetReuseAddr(bool on); // 允许复用ip地址
-  void SetReusePort(bool on); // 允许复用端口
-  void SetKeepAlive(bool on); // 允许tcp keeplive 机制
+  // Enables or disables TCP_NODELAY.
+  void SetTcpNoDelay(bool on);
+
+  // Enables or disables SO_REUSEADDR.
+  void SetReuseAddr(bool on);
+
+  // Enables or disables SO_REUSEPORT.
+  void SetReusePort(bool on);
+
+  // Enables or disables SO_KEEPALIVE.
+  void SetKeepAlive(bool on);
 
 private:
   const int sockfd_;
 };
 
-} // namespace runtime::net
+}  // namespace runtime::net

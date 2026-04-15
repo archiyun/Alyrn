@@ -127,6 +127,10 @@ void EPollPoller::RemoveChannel(Channel* channel) {
 void EPollPoller::Update(int operation, Channel* channel) {
   epoll_event event{};
   event.events = channel->Events();
+  if (channel->IsEdgeTriggered()) {
+    // Preserve the caller's edge-triggered preference in epoll.
+    event.events |= EPOLLET;
+  }
   event.data.ptr = channel;
 
   if (::epoll_ctl(epollfd_, operation, channel->Fd(), &event) < 0) {

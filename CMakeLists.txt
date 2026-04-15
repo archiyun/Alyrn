@@ -11,8 +11,6 @@ option(BUILD_EXAMPLES "Build example programs" ON)
 
 find_package(Threads REQUIRED)
 
-# 当前先把已经稳定的基础模块整理成可复用 target。
-# 网络主链还在持续实现中，后续 echo server 可以继续在 examples/ 下接入。
 add_library(runtime_foundation STATIC
     src/base/current_thread.cpp
     src/log/async_logger.cpp

@@ -5,8 +5,10 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <mutex>
 #include <string>
 #include <thread>
+#include <unordered_map>
 
 namespace {
 
@@ -56,6 +58,43 @@ std::string JsonEscape(const std::string& input) {
     return out;
 }
 
+// ── in-memory KV store ───────────────────────────────────────────────────────
+// Shared across all IO threads; protected by a mutex.
+// Keys and values are plain strings; values are JSON-escaped on output.
+struct KvStore {
+    std::mutex              mu;
+    std::unordered_map<std::string, std::string> data;
+
+    // Returns {true, value} on hit, {false, ""} on miss.
+    std::pair<bool, std::string> Get(const std::string& key) {
+        std::lock_guard<std::mutex> lk(mu);
+        auto it = data.find(key);
+        if (it == data.end()) return {false, {}};
+        return {true, it->second};
+    }
+
+    void Set(const std::string& key, std::string value) {
+        std::lock_guard<std::mutex> lk(mu);
+        data[key] = std::move(value);
+    }
+
+    // Returns a JSON array of all keys: ["a","b",...]
+    std::string ListKeysJson() {
+        std::lock_guard<std::mutex> lk(mu);
+        std::string out = "[";
+        bool first = true;
+        for (const auto& [k, _] : data) {
+            if (!first) out += ',';
+            out += '"';
+            out += JsonEscape(k);
+            out += '"';
+            first = false;
+        }
+        out += ']';
+        return out;
+    }
+};
+
 }  // namespace
 
 int main() {
@@ -74,6 +113,9 @@ int main() {
 
     const unsigned int thread_count = ResolveThreadCount();
     server.SetThreadNum(static_cast<int>(thread_count));
+
+    const bool et_mode = (std::getenv("ET_MODE") != nullptr);
+    server.SetEdgeTriggered(et_mode);
 
     server.Get("/", [](const runtime::http::HttpRequest&,
                        runtime::http::HttpResponse& resp) {
@@ -97,6 +139,52 @@ int main() {
                         "{\"echo\":\"" + JsonEscape(req.Body()) + "\",\"query\":\"" +
                         JsonEscape(req.Query()) + "\"}");
                 });
+
+    // KV routes:
+    // POST /api/kv/:key writes the request body as the value.
+    // GET  /api/kv/:key reads one value.
+    // GET  /api/kv lists all keys.
+    // The shared store is mutex-protected because handlers may run on
+    // multiple I/O threads.
+    auto kv = std::make_shared<KvStore>();
+
+    server.Post("/api/kv/:key",
+                [kv](const runtime::http::HttpRequest& req,
+                     runtime::http::HttpResponse& resp) {
+                    const std::string key(req.PathParam("key"));
+                    if (key.empty()) {
+                        resp.SetStatusCode(runtime::http::StatusCode::BadRequest);
+                        resp.SetContentType("application/json; charset=utf-8");
+                        resp.SetBody("{\"error\":\"key is empty\"}");
+                        return;
+                    }
+                    kv->Set(key, req.Body());
+                    resp.SetContentType("application/json; charset=utf-8");
+                    resp.SetBody("{\"ok\":true,\"key\":\"" + JsonEscape(key) + "\"}");
+                });
+
+    server.Get("/api/kv/:key",
+               [kv](const runtime::http::HttpRequest& req,
+                    runtime::http::HttpResponse& resp) {
+                   const std::string key(req.PathParam("key"));
+                   auto [found, value] = kv->Get(key);
+                   resp.SetContentType("application/json; charset=utf-8");
+                   if (!found) {
+                       resp.SetStatusCode(runtime::http::StatusCode::NotFound);
+                       resp.SetBody("{\"error\":\"key not found\",\"key\":\"" +
+                                    JsonEscape(key) + "\"}");
+                       return;
+                   }
+                   resp.SetBody("{\"key\":\"" + JsonEscape(key) +
+                                "\",\"value\":\"" + JsonEscape(value) + "\"}");
+               });
+
+    server.Get("/api/kv",
+               [kv](const runtime::http::HttpRequest&,
+                    runtime::http::HttpResponse& resp) {
+                   resp.SetContentType("application/json; charset=utf-8");
+                   resp.SetBody("{\"keys\":" + kv->ListKeysJson() + "}");
+               });
 
     server.Start();
 

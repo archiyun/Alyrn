@@ -42,18 +42,17 @@ bool Expect(bool condition, const char* message) {
 }
 
 // ──────────────────────────────────────────────
-// Test 1: EPollPoller 构造成功 (epoll_create1)
+// Test 1: EPollPoller construction succeeds (epoll_create1).
 // ──────────────────────────────────────────────
 bool TestConstruction() {
-    // EventLoop 构造时调用 Poller::NewDefaultPoller → new EPollPoller
-    // EPollPoller 构造时调用 epoll_create1(EPOLL_CLOEXEC)
-    // 若 epollfd < 0 会 LOG_FATAL + abort，走到这里说明成功
+    // EventLoop creates the default poller, which is EPollPoller on Linux.
+    // Reaching this point means epoll_create1 succeeded.
     runtime::net::EventLoop loop;
     return true;
 }
 
 // ──────────────────────────────────────────────
-// Test 2: Channel 注册 → epoll_ctl ADD，HasChannel = true
+// Test 2: Channel registration issues epoll_ctl ADD.
 // ──────────────────────────────────────────────
 bool TestChannelRegistration() {
     runtime::net::EventLoop loop;
@@ -66,8 +65,6 @@ bool TestChannelRegistration() {
 
     runtime::net::Channel ch(&loop, fds[0]);
     ch.SetReadCallback([](runtime::time::Timestamp) {});
-    // EnableReading → events_ |= kReadEvent → Update()
-    //   → loop.UpdateChannel → EPollPoller::UpdateChannel (kNew → kAdded, epoll_ctl ADD)
     ch.EnableReading();
 
     const bool registered = Expect(loop.HasChannel(&ch),
@@ -81,7 +78,7 @@ bool TestChannelRegistration() {
 }
 
 // ──────────────────────────────────────────────
-// Test 3: Channel 移除 → map erase，HasChannel = false
+// Test 3: Channel removal erases the poller map entry.
 // ──────────────────────────────────────────────
 bool TestChannelRemoval() {
     runtime::net::EventLoop loop;
@@ -96,8 +93,6 @@ bool TestChannelRemoval() {
     ch.SetReadCallback([](runtime::time::Timestamp) {});
     ch.EnableReading();
 
-    // DisableAll → kAdded → kDeleted (epoll_ctl DEL，但 map 中仍保留)
-    // Remove    → EPollPoller::RemoveChannel → channels_.erase(fd)
     ch.DisableAll();
     ch.Remove();
 
@@ -110,7 +105,7 @@ bool TestChannelRemoval() {
 }
 
 // ──────────────────────────────────────────────
-// Test 4: epoll_wait 检测可读事件
+// Test 4: epoll_wait detects a readable event.
 // ──────────────────────────────────────────────
 bool TestPollDetectsReadEvent() {
     runtime::net::EventLoop loop;
@@ -127,11 +122,11 @@ bool TestPollDetectsReadEvent() {
         char buf[4];
         ::read(fds[0], buf, sizeof(buf));
         read_called = true;
-        loop.Quit();    // 收到读事件后退出 loop
+        loop.Quit();
     });
     ch.EnableReading();
 
-    // 先写数据，保证第一轮 epoll_wait 就能返回
+    // Write first so the initial epoll_wait returns immediately.
     if (!Expect(::write(fds[1], "x", 1) == 1, "write to peer failed")) {
         ch.DisableAll(); ch.Remove();
         ::close(fds[0]); ::close(fds[1]);
@@ -149,7 +144,7 @@ bool TestPollDetectsReadEvent() {
 }
 
 // ──────────────────────────────────────────────
-// Test 5: DisableAll 后 channel 仍在 map，但 epoll 不再分发事件
+// Test 5: DisableAll keeps the map entry but suppresses delivery.
 // ──────────────────────────────────────────────
 bool TestDisableAllKeepsChannelInMap() {
     runtime::net::EventLoop loop;
@@ -162,20 +157,19 @@ bool TestDisableAllKeepsChannelInMap() {
 
     runtime::net::Channel ch(&loop, fds[0]);
     ch.SetReadCallback([](runtime::time::Timestamp) {});
-    ch.EnableReading();   // kNew → kAdded
+    ch.EnableReading();
 
-    // DisableAll: kAdded → kDeleted，epoll_ctl DEL，但 channels_ map 不变
     ch.DisableAll();
 
     const bool still_in_map = Expect(loop.HasChannel(&ch),
         "DisableAll should keep channel in Poller map (kDeleted state)");
 
-    // 向 peer 写数据；channel 已从 epoll 移除，不应触发回调
+    // The channel is removed from epoll, so no callback should fire.
     bool read_called = false;
     ch.SetReadCallback([&](runtime::time::Timestamp) { read_called = true; });
     ::write(fds[1], "x", 1);
 
-    // 用定时器驱动退出，不依赖 read 事件
+    // Use a timer to exit instead of depending on a read event.
     loop.RunAfter(0.02, [&] { loop.Quit(); });
     loop.Loop();
 
@@ -189,7 +183,7 @@ bool TestDisableAllKeepsChannelInMap() {
 }
 
 // ──────────────────────────────────────────────
-// Test 6: DisableAll 后 re-enable → kDeleted → kAdded (EPOLL_CTL_ADD)，事件恢复
+// Test 6: Re-enabling after DisableAll registers the channel again.
 // ──────────────────────────────────────────────
 bool TestReenableAfterDisable() {
     runtime::net::EventLoop loop;
@@ -209,9 +203,9 @@ bool TestReenableAfterDisable() {
         loop.Quit();
     });
 
-    ch.EnableReading();   // kNew → kAdded
-    ch.DisableAll();      // kAdded → kDeleted, EPOLL_CTL_DEL
-    ch.EnableReading();   // kDeleted → kAdded, EPOLL_CTL_ADD (重新注册)
+    ch.EnableReading();
+    ch.DisableAll();
+    ch.EnableReading();
 
     ::write(fds[1], "x", 1);
     loop.Loop();
@@ -225,13 +219,12 @@ bool TestReenableAfterDisable() {
 }
 
 // ──────────────────────────────────────────────
-// Test 7: events_ 动态扩容（注册超过 kInitEventListSize=16 的 channel）
+// Test 7: The events_ vector grows when many channels fire together.
 // ──────────────────────────────────────────────
 bool TestEventsVectorResizes() {
     runtime::net::EventLoop loop;
 
-    // 注册 20 个 channel，均在同一轮 epoll_wait 触发
-    // 前 16 个塞满 events_，触发扩容到 32；后续轮次处理剩余
+    // Register 20 channels so the initial event list must grow.
     constexpr int N = 20;
     std::array<std::array<int, 2>, N> pairs{};
     for (auto& p : pairs) {
@@ -249,8 +242,7 @@ bool TestEventsVectorResizes() {
 
     for (int i = 0; i < N; ++i) {
         auto ch = std::make_unique<runtime::net::Channel>(&loop, pairs[i][0]);
-        // 必须消费数据：level-triggered 模式下若不 read，
-        // fd 持续可读，每轮 epoll_wait 都会重复触发，counter 会跳过 == N
+        // Consume the byte to avoid repeated delivery in level-triggered mode.
         const int read_fd = pairs[i][0];
         ch->SetReadCallback([&, read_fd](runtime::time::Timestamp) {
             char buf[4];
@@ -264,12 +256,12 @@ bool TestEventsVectorResizes() {
         channels.push_back(std::move(ch));
     }
 
-    // 所有 peer 端同时写，让 epoll_wait 在第一次调用就看到 >= 16 个事件
+    // Write to every peer so epoll_wait sees many ready events immediately.
     for (auto& p : pairs) {
         ::write(p[1], "x", 1);
     }
 
-    // 备用：若某些事件延迟分散到多轮，定时器兜底
+    // Backstop in case delivery is spread across multiple poll rounds.
     loop.RunAfter(2.0, [&] { loop.Quit(); });
     loop.Loop();
 

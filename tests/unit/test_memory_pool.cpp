@@ -3,36 +3,12 @@
 #include "runtime/memory/memory_pool.h"
 
 #include <atomic>
-#include <string>
+#include <cstdint>
 #include <thread>
 #include <vector>
 
-namespace {
-
-struct TrackedObject {
-    inline static std::atomic<int> live_count{0};
-    inline static std::atomic<int> ctor_count{0};
-    inline static std::atomic<int> dtor_count{0};
-
-    int value;
-    std::string payload;
-
-    TrackedObject(int v, std::string p)
-        : value(v), payload(std::move(p)) {
-        ++live_count;
-        ++ctor_count;
-    }
-
-    ~TrackedObject() {
-        --live_count;
-        ++dtor_count;
-    }
-};
-
-}  // namespace
-
 TEST(MemoryPoolTest, AllocateAndDeallocateReuseSlots) {
-    runtime::memory::MemoryPool<int, 4> pool;
+    runtime::memory::MemoryPool<sizeof(int), alignof(int), 4> pool;
 
     void* a = pool.Allocate();
     void* b = pool.Allocate();
@@ -52,7 +28,7 @@ TEST(MemoryPoolTest, AllocateAndDeallocateReuseSlots) {
 }
 
 TEST(MemoryPoolTest, ReturnsNullWhenExhausted) {
-    runtime::memory::MemoryPool<int, 2> pool;
+    runtime::memory::MemoryPool<sizeof(int), alignof(int), 2> pool;
 
     void* a = pool.Allocate();
     void* b = pool.Allocate();
@@ -65,37 +41,8 @@ TEST(MemoryPoolTest, ReturnsNullWhenExhausted) {
     EXPECT_EQ(pool.used_count(), 2u);
 }
 
-TEST(MemoryPoolTest, ConstructAndDestroyManageLifetime) {
-    TrackedObject::live_count = 0;
-    TrackedObject::ctor_count = 0;
-    TrackedObject::dtor_count = 0;
-
-    runtime::memory::MemoryPool<TrackedObject, 2> pool;
-
-    auto* first = pool.Construct(7, "alpha");
-    auto* second = pool.Construct(9, "beta");
-
-    ASSERT_NE(first, nullptr);
-    ASSERT_NE(second, nullptr);
-    EXPECT_EQ(first->value, 7);
-    EXPECT_EQ(second->payload, "beta");
-    EXPECT_EQ(TrackedObject::live_count.load(), 2);
-    EXPECT_EQ(TrackedObject::ctor_count.load(), 2);
-    EXPECT_EQ(pool.free_count(), 0u);
-
-    pool.Destroy(first);
-    EXPECT_EQ(TrackedObject::live_count.load(), 1);
-    EXPECT_EQ(TrackedObject::dtor_count.load(), 1);
-    EXPECT_EQ(pool.free_count(), 1u);
-
-    pool.Destroy(second);
-    EXPECT_EQ(TrackedObject::live_count.load(), 0);
-    EXPECT_EQ(TrackedObject::dtor_count.load(), 2);
-    EXPECT_EQ(pool.free_count(), 2u);
-}
-
 TEST(MemoryPoolTest, OwnsRecognizesPoolAddresses) {
-    runtime::memory::MemoryPool<std::uint64_t, 4> pool;
+    runtime::memory::MemoryPool<sizeof(std::uint64_t), alignof(std::uint64_t), 4> pool;
 
     void* p = pool.Allocate();
     ASSERT_NE(p, nullptr);
@@ -110,7 +57,7 @@ TEST(MemoryPoolTest, OwnsRecognizesPoolAddresses) {
 }
 
 TEST(MemoryPoolTest, ConcurrentAllocateAndDeallocatePreservesCapacity) {
-    runtime::memory::MemoryPool<int, 256> pool;
+    runtime::memory::MemoryPool<sizeof(int), alignof(int), 256> pool;
     constexpr int kThreads = 8;
     constexpr int kIterations = 2000;
 

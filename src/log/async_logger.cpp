@@ -66,7 +66,8 @@ void AsyncLogger::Append(const char *data, std::size_t len) {
 
   if (len > kBufferSize) {
     const std::size_t suffix_len = kTruncatedSuffix.size();
-    const std::size_t prefix_len = suffix_len >= kBufferSize ? 0 : (kBufferSize - suffix_len);
+    const std::size_t prefix_len =
+        suffix_len >= kBufferSize ? 0 : (kBufferSize - suffix_len);
 
     truncated_storage.reserve(prefix_len + suffix_len);
     truncated_storage.append(data, prefix_len);
@@ -78,12 +79,10 @@ void AsyncLogger::Append(const char *data, std::size_t len) {
 
   std::lock_guard<std::mutex> lk{mutex_};
 
-  // 尝试追加到当前缓冲区， 如果失败了说明当前缓冲区空间不足了。
   if (current_buffer_->Append(write_data, write_len)) {
     return;
   }
 
-  // 将缓冲区加入待写入队列。
   buffers_.push_back(std::move(current_buffer_));
 
   if (next_buffer_) {
@@ -93,7 +92,6 @@ void AsyncLogger::Append(const char *data, std::size_t len) {
   }
 
   if (!current_buffer_->Append(write_data, write_len)) {
-    // 单条日志最多截断到一个 buffer 大小，理论上不应失败；失败时静默丢弃比写坏内存更安全。
     ++dropped_messages_;
     return;
   }
@@ -101,14 +99,12 @@ void AsyncLogger::Append(const char *data, std::size_t len) {
 }
 
 void AsyncLogger::OpenFile() {
-  // 如果没指定文件名 默认到标准输出
   if (filename_.empty()) {
     file_ = stdout;
     return;
   }
 
   file_ = std::fopen(filename_.c_str(), "a");
-  // 文件打开失败则回退到标准输出
   if (file_ == nullptr) {
     file_ = stdout;
   }
@@ -189,7 +185,7 @@ void AsyncLogger::RotateIfNeeded() {
 std::string AsyncLogger::BuildRotateFilename() const {
   const auto now = std::chrono::system_clock::now();
   const auto current_time = std::chrono::system_clock::to_time_t(now);
-  std::tm tm_time {};
+  std::tm tm_time{};
 #if defined(_WIN32)
   localtime_s(&tm_time, &current_time);
 #else

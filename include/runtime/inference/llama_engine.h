@@ -18,9 +18,9 @@ class LlamaEngine {
 public:
     struct Config {
         std::string model_path;
-        int n_ctx_{DEFAULT_CONTEXT_LENGTH}; // context length;
-        int n_gpu_layers_ = 99; // 全部放 CPU， CPU推理假设
-        int n_bacth_{DEFAULT_LLAMA_BATCH_LENGTH}; // llama_batch length
+        int n_ctx_{DEFAULT_CONTEXT_LENGTH};
+        int n_gpu_layers_ = 99;
+        int n_bacth_{DEFAULT_LLAMA_BATCH_LENGTH};
     };
 
     explicit LlamaEngine(Config cfg);
@@ -32,8 +32,8 @@ public:
     void Stop();
 
 private:
-    void RunInferenceLoop(); // 推理线程的主函数
-    void ProcessOne(InferenceRequest &req); //处理的那个请求
+    void RunInferenceLoop();
+    void ProcessOne(InferenceRequest &req);
 
     Config config_;
     llama_model *model{nullptr};
@@ -44,4 +44,4 @@ private:
     std::jthread inference_thread_;
     std::atomic<bool> running_{false};
 };
-}
+}  // namespace runtime::inference

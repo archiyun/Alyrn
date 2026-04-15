@@ -12,20 +12,21 @@ namespace runtime::log {
 
 class AsyncLogger;
 
-// 日志级别 按严重程度从低到高排列，做阈值过滤。
-enum class LogLevel { 
-  DEBUG = 0, 
-  INFO, 
-  WARN, 
-  ERROR, 
-  FATAL 
+// LogLevel orders severities from low to high for threshold filtering.
+enum class LogLevel {
+  DEBUG = 0,
+  INFO,
+  WARN,
+  ERROR,
+  FATAL
 };
 
+// Logger formats log records and forwards them to AsyncLogger.
 class Logger : public runtime::base::NonCopyable {
 public:
-  static Logger &Instance();
+  static Logger& Instance();
 
-  void Init(const std::string &filename, 
+  void Init(const std::string& filename,
             LogLevel level = LogLevel::INFO,
             int flush_interval_ms = 1000,
             std::size_t roll_size = 10 * 1024 * 1024);
@@ -36,14 +37,11 @@ public:
   LogLevel GetLogLevel() const;
   bool ShouldLog(LogLevel level) const;
 
-  // 供外部调用的日志接口
-  // 1. 日志级别的过滤
-  // 2. 调用 formatter 格式化和生成完整日志行
-  // 3. 交给 AsyncLogger 异步写入
-  void Log(LogLevel level, 
-           const char *file, 
-           int line, 
-           const char *func,
+  // Log filters by level, formats the record, and appends it asynchronously.
+  void Log(LogLevel level,
+           const char* file,
+           int line,
+           const char* func,
            std::string_view message);
 
 private:
@@ -54,26 +52,26 @@ private:
   std::unique_ptr<AsyncLogger> async_logger_;
 };
 
-const char *ToString(LogLevel level);
+const char* ToString(LogLevel level);
 
 class LogMessage : public runtime::base::NonCopyable {
 public:
-  LogMessage(LogLevel level, const char *file, int line, const char *func)
+  LogMessage(LogLevel level, const char* file, int line, const char* func)
       : level_(level), file_(file), line_(line), func_(func) {}
 
   ~LogMessage() { Logger::Instance().Log(level_, file_, line_, func_, stream_.str()); }
 
-  std::ostringstream &Stream() { return stream_; }
+  std::ostringstream& Stream() { return stream_; }
 
 private:
   LogLevel level_;
-  const char *file_;
+  const char* file_;
   int line_;
-  const char *func_;
+  const char* func_;
   std::ostringstream stream_;
 };
 
-} // namespace runtime::log
+}  // namespace runtime::log
 
 
 #define LOG_DEBUG()                                                                   \

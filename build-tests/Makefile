@@ -686,19 +686,6 @@ tcp_server_smoke_test/fast:
 .PHONY : tcp_server_smoke_test/fast
 
 #=============================================================================
-# Target rules for targets named concurrency_smoke_test
-
-# Build rule for target.
-concurrency_smoke_test: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 concurrency_smoke_test
-.PHONY : concurrency_smoke_test
-
-# fast build rule for target.
-concurrency_smoke_test/fast:
-	$(MAKE) $(MAKESILENT) -f tests/CMakeFiles/concurrency_smoke_test.dir/build.make tests/CMakeFiles/concurrency_smoke_test.dir/build
-.PHONY : concurrency_smoke_test/fast
-
-#=============================================================================
 # Target rules for targets named runtime_unit_tests
 
 # Build rule for target.
@@ -1434,7 +1421,6 @@ help:
 	@echo "... NightlyTest"
 	@echo "... NightlyUpdate"
 	@echo "... buffer_smoke_test"
-	@echo "... concurrency_smoke_test"
 	@echo "... demo_http_server"
 	@echo "... epoll_poller_smoke_test"
 	@echo "... event_loop_smoke_test"

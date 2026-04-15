@@ -8,9 +8,10 @@
 
 namespace runtime::http {
 
+// HttpRequest stores one parsed HTTP request.
 class HttpRequest {
 public:
-  // http请求行  ex: GET /somedir/page.html HTTP/1.1
+  // Sets and returns request-line fields.
   void SetMethod(Method m) { method_ = m; }
   Method GetMethod() const { return method_; }
 
@@ -18,34 +19,25 @@ public:
   Version GetVersion() const { return version_; }
 
   void SetPath(std::string p) { path_ = std::move(p); }
-  const std::string &Path() const { return path_; }
+  const std::string& Path() const { return path_; }
 
   void SetQuery(std::string q) { query_ = std::move(q); }
-  const std::string &Query() const { return query_; }
+  const std::string& Query() const { return query_; }
 
-  // http: Headers
-  /**
-   * @param: field: value
-   * Host: www.example.com
-   * Connection: close
-   * User-agent: Mozilla/5.0
-   * Accept-language: fr
-   *
-   * field 大小写敏感
-   */
+  // Adds a header line. The field name is normalized to lowercase.
   void AddHeader(std::string_view field, std::string_view value);
 
-  // 查找时大小写不敏感
+  // Looks up a header value with case-insensitive field matching.
   std::string_view GetHeader(std::string_view field) const;
-  const std::unordered_map<std::string, std::string> &Headers() const {
+  const std::unordered_map<std::string, std::string>& Headers() const {
     return headers_;
   }
 
-  // http: Body
+  // Sets and returns the message body.
   void SetBody(std::string b) { body_ = std::move(b); }
-  const std::string &Body() const { return body_; }
+  const std::string& Body() const { return body_; }
 
-  // 其它... 比如 keep-alive
+  // Returns true if the request semantics keep the connection alive.
   bool KeepAlive() const;
 
   void SetPathParams(std::unordered_map<std::string, std::string> p) {
@@ -54,10 +46,11 @@ public:
 
   std::string_view PathParam(std::string_view key) const {
     auto it = path_params_.find(std::string(key));
-    if (it == path_params_.end()) return {};
+    if (it == path_params_.end())
+      return {};
     return it->second;
   }
-  
+
   void SetReceiveTime(runtime::time::Timestamp ts) { receive_time_ = ts; }
   runtime::time::Timestamp ReceiveTime() const { return receive_time_; }
 
@@ -70,7 +63,8 @@ private:
   std::string path_;
   std::string query_;
   std::string body_;
-  std::unordered_map<std::string, std::string> headers_; // key 小写
+  std::unordered_map<std::string, std::string> headers_;
   runtime::time::Timestamp receive_time_;
 };
-} // namespace runtime::http
+
+}  // namespace runtime::http

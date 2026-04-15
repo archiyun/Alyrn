@@ -1,7 +1,7 @@
 #include "runtime/log/logger.h"
 
 int main() {
-    // 测试异步日志的流式输出
+    // Demonstrate asynchronous streaming log output.
     auto& logger = runtime::log::Logger::Instance();
 
     logger.Init("simple_logger.log", runtime::log::LogLevel::DEBUG);

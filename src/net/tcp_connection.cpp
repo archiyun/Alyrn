@@ -17,7 +17,6 @@ TcpConnection::TcpConnection(EventLoop *loop, const std::string &name,
       socket_(std::make_unique<Socket>(sockfd)),
       channel_(std::make_unique<Channel>(loop, sockfd)),
       local_addr_(local_addr), peer_addr_(peer_addr) {
-  // set Callback
   channel_->SetReadCallback([this](runtime::time::Timestamp receive_time) {
     HandleRead(receive_time);
   });
@@ -31,11 +30,10 @@ TcpConnection::~TcpConnection() = default;
 void TcpConnection::Send(const std::string &message) {
   if (state_ == StateE::kConnected) {
     if (loop_->IsInLoopThread()) {
-      SendInLoop(message); // 本线程， 直接发
+      SendInLoop(message);
     } else {
       auto self = shared_from_this();
-      loop_->RunInLoop(
-          [self, message] { self->SendInLoop(message); }); // 跨线程， 先投递
+      loop_->RunInLoop([self, message] { self->SendInLoop(message); });
     }
   } else {
     LOG_WARN() << "send ignored on disconnected connection: name=" << name_;
@@ -43,7 +41,8 @@ void TcpConnection::Send(const std::string &message) {
 }
 
 void TcpConnection::SendInLoop(const std::string &message) {
-  if (state_ == StateE::kDisconnected) return;
+  if (state_ == StateE::kDisconnected)
+    return;
 
   ssize_t nwrote = 0;
   if (!channel_->IsWriting() && output_buffer_.ReadableBytes() == 0) {
@@ -81,8 +80,8 @@ void TcpConnection::Shutdown() {
 
 void TcpConnection::ConnectEstablished() {
   SetState(StateE::kConnected);
-  channel_->Tie(shared_from_this()); // avoid use-after free
-  channel_->EnableReading();         // connfd 注册到epoll中， 开始监听可读
+  channel_->Tie(shared_from_this());
+  channel_->EnableReading();
 
   LOG_INFO() << "tcp connection established: name=" << name_
              << " local=" << local_addr_.ToIpPort()
@@ -110,41 +109,85 @@ void TcpConnection::ConnectDestroyed() {
   channel_->Remove();
 }
 
-// n > 0, 读到数据 触发消息回调
-// n == 0, 对端关闭，HandleClose()
-// n < 0, 读错误， 区分 EAGAIN/EWOULDBLOCK和真正错误。
 void TcpConnection::HandleRead(runtime::time::Timestamp receive_time) {
   int saved_errno = 0;
-  ssize_t n = input_buffer_.ReadFd(channel_->Fd(), &saved_errno);
-
-  if (n > 0) {
-    if (message_callback_) {
+  int fd = channel_->Fd();
+  if (channel_->IsEdgeTriggered()) {
+    // Edge-triggered mode must drain the socket until EAGAIN, otherwise no
+    // further readability notification is guaranteed for already buffered data.
+    while (true) {
+      ssize_t n = input_buffer_.ReadFd(fd, &saved_errno);
+      if (n > 0)
+        continue;
+      else if (n == 0) {
+        HandleClose();
+        return;
+      } else if (saved_errno == EAGAIN || saved_errno == EWOULDBLOCK)
+        break;
+      HandleError();
+      return;
+    }
+    if (input_buffer_.ReadableBytes() > 0 && message_callback_) {
       message_callback_(shared_from_this(), input_buffer_, receive_time);
     }
-  } else if (n == 0) {
-    HandleClose();
   } else {
-    if (saved_errno != EAGAIN && saved_errno != EWOULDBLOCK) {
-      LOG_ERROR() << "tcp read failed: name=" << name_
-                  << " fd=" << channel_->Fd() << " errno=" << saved_errno
-                  << " message=" << std::strerror(saved_errno);
-      HandleError();
+    ssize_t n = input_buffer_.ReadFd(fd, &saved_errno);
+    if (n > 0) {
+      if (message_callback_) {
+        message_callback_(shared_from_this(), input_buffer_, receive_time);
+      }
+    } else if (n == 0) {
+      HandleClose();
+    } else {
+      if (saved_errno != EAGAIN && saved_errno != EWOULDBLOCK) {
+        LOG_ERROR() << "tcp read failed: name=" << name_
+                    << " fd=" << channel_->Fd() << " errno=" << saved_errno
+                    << " message=" << std::strerror(saved_errno);
+        HandleError();
+      }
     }
   }
 }
 
 void TcpConnection::HandleWrite() {
-  if (channel_->IsWriting()) {
-    int saved_errno = 0;
-    ssize_t n = output_buffer_.WriteFd(channel_->Fd(), &saved_errno);
+  if (!channel_->IsWriting()) {
+    return;
+  }
 
+  int saved_errno = 0;
+  if (channel_->IsEdgeTriggered()) {
+    // In edge-triggered mode, flush as much queued output as possible before
+    // returning to avoid relying on another writable notification.
+    while (output_buffer_.ReadableBytes() > 0) {
+      ssize_t n = output_buffer_.WriteFd(channel_->Fd(), &saved_errno);
+      if (n < 0) {
+        if (saved_errno == EAGAIN || saved_errno == EWOULDBLOCK) break;
+        LOG_ERROR() << "tcp write failed: name=" << name_
+                    << " fd=" << channel_->Fd() << " errno=" << saved_errno
+                    << " message=" << std::strerror(saved_errno);
+        HandleError();
+        return;
+      }
+    }
+    if (output_buffer_.ReadableBytes() == 0) {
+      channel_->DisableWriting();
+      if (write_complete_callback_) {
+        write_complete_callback_(shared_from_this());
+      }
+      if (state_ == StateE::kDisconnecting) {
+        ShutdownInLoop();
+      }
+    }
+  } else {
+    // In level-triggered mode, a partial write is acceptable because epoll
+    // will notify again while the socket remains writable.
+    ssize_t n = output_buffer_.WriteFd(channel_->Fd(), &saved_errno);
     if (n > 0) {
       if (output_buffer_.ReadableBytes() == 0) {
         channel_->DisableWriting();
         if (write_complete_callback_) {
           write_complete_callback_(shared_from_this());
         }
-
         if (state_ == StateE::kDisconnecting) {
           ShutdownInLoop();
         }
@@ -191,4 +234,4 @@ void TcpConnection::ShutdownInLoop() {
     socket_->ShutdownWrite();
   }
 }
-} // namespace runtime::net
+}  // namespace runtime::net

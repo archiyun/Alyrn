@@ -1,34 +1,12 @@
 #include "runtime/memory/memory_pool.h"
 
-#include <atomic>
 #include <cstdint>
 #include <exception>
 #include <iostream>
-#include <string>
 #include <thread>
 #include <vector>
 
 namespace {
-
-struct TrackedObject {
-    inline static std::atomic<int> live_count{0};
-    inline static std::atomic<int> ctor_count{0};
-    inline static std::atomic<int> dtor_count{0};
-
-    int value;
-    std::string payload;
-
-    TrackedObject(int v, std::string p)
-        : value(v), payload(std::move(p)) {
-        ++live_count;
-        ++ctor_count;
-    }
-
-    ~TrackedObject() {
-        --live_count;
-        ++dtor_count;
-    }
-};
 
 bool Expect(bool condition, const char* message) {
     if (!condition) {
@@ -39,7 +17,7 @@ bool Expect(bool condition, const char* message) {
 }
 
 bool TestAllocateAndReuse() {
-    runtime::memory::MemoryPool<int, 4> pool;
+    runtime::memory::MemoryPool<sizeof(int), alignof(int), 4> pool;
 
     void* a = pool.Allocate();
     void* b = pool.Allocate();
@@ -56,7 +34,7 @@ bool TestAllocateAndReuse() {
 }
 
 bool TestExhaustion() {
-    runtime::memory::MemoryPool<int, 2> pool;
+    runtime::memory::MemoryPool<sizeof(int), alignof(int), 2> pool;
     void* a = pool.Allocate();
     void* b = pool.Allocate();
     void* c = pool.Allocate();
@@ -67,28 +45,8 @@ bool TestExhaustion() {
     return true;
 }
 
-bool TestConstructAndDestroy() {
-    TrackedObject::live_count = 0;
-    TrackedObject::ctor_count = 0;
-    TrackedObject::dtor_count = 0;
-
-    runtime::memory::MemoryPool<TrackedObject, 2> pool;
-    auto* obj = pool.Construct(42, "payload");
-
-    if (!Expect(obj != nullptr, "construct should succeed")) return false;
-    if (!Expect(obj->value == 42, "constructed object should preserve value")) return false;
-    if (!Expect(obj->payload == "payload", "constructed object should preserve payload")) return false;
-    if (!Expect(TrackedObject::live_count.load() == 1, "live_count should be incremented")) return false;
-
-    pool.Destroy(obj);
-
-    if (!Expect(TrackedObject::live_count.load() == 0, "destroy should decrement live_count")) return false;
-    if (!Expect(TrackedObject::dtor_count.load() == 1, "destroy should call destructor")) return false;
-    return true;
-}
-
 bool TestOwns() {
-    runtime::memory::MemoryPool<std::uint64_t, 4> pool;
+    runtime::memory::MemoryPool<sizeof(std::uint64_t), alignof(std::uint64_t), 4> pool;
     void* p = pool.Allocate();
     int stack_value = 0;
 
@@ -101,7 +59,7 @@ bool TestOwns() {
 }
 
 bool TestConcurrentAllocateAndFree() {
-    runtime::memory::MemoryPool<int, 256> pool;
+    runtime::memory::MemoryPool<sizeof(int), alignof(int), 256> pool;
     constexpr int kThreads = 8;
     constexpr int kIterations = 2000;
 
@@ -152,7 +110,6 @@ int main() {
     try {
         if (!TestAllocateAndReuse()) return 1;
         if (!TestExhaustion()) return 1;
-        if (!TestConstructAndDestroy()) return 1;
         if (!TestOwns()) return 1;
         if (!TestConcurrentAllocateAndFree()) return 1;
     } catch (const std::exception& ex) {

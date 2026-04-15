@@ -11,6 +11,13 @@ namespace runtime::net {
 
 class EventLoop;
 
+// TriggerMode controls whether epoll registration uses level-triggered or
+// edge-triggered delivery.
+enum class TriggerMode {
+  kLevelTriggered,
+  kEdgeTriggered,
+};
+
 // Channel is the event dispatch unit for a single file descriptor.
 //
 // A Channel does not own the file descriptor. Instead, it records:
@@ -71,6 +78,16 @@ public:
   // Stores the Poller-specific index used to track registration state.
   void SetIndex(int idx) { index_ = idx; }
 
+  // Switches the Channel between level-triggered and edge-triggered mode.
+  void SetEdgeTriggered(bool et) {
+    trigger_mode_ = et ? TriggerMode::kEdgeTriggered
+                       : TriggerMode::kLevelTriggered;
+  }
+
+  bool IsEdgeTriggered() const {
+    return trigger_mode_ == TriggerMode::kEdgeTriggered;
+  }
+
   // Returns the EventLoop that owns this Channel.
   EventLoop* OwnerLoop() { return loop_; }
 
@@ -94,6 +111,7 @@ private:
   int events_;
   int revents_;
   int index_;
+  TriggerMode trigger_mode_ { TriggerMode::kLevelTriggered };
 
   std::weak_ptr<void> tie_;
   bool tied_;

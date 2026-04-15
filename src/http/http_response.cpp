@@ -21,8 +21,6 @@ void HttpResponse::SetCloseConnection(bool close) { close_connection_ = close; }
 
 bool HttpResponse::CloseConnection() const { return close_connection_; }
 
-// 生成一条完整的 HTTP/1.1响应报文
-// 当前实现始终输出 Content-Length, 不支持 chunked transfer encoding
 std::string HttpResponse::ToString() const {
   std::string out;
   out.reserve(256 + body_.size());
@@ -33,7 +31,6 @@ std::string HttpResponse::ToString() const {
   out += StatusMessage(status_code_);
   out += "\r\n";
 
-  // Content-Length 由当前 body 大小自动推导， 避免手动调用方手动维护
   out += "Content-Length: ";
   out += std::to_string(body_.size());
   out += "\r\n";
@@ -54,4 +51,5 @@ std::string HttpResponse::ToString() const {
 
   return out;
 }
-} // namespace runtime::http
+
+}  // namespace runtime::http

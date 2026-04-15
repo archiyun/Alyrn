@@ -8,24 +8,47 @@
 #include <cstdint>
 #include <mutex>
 #include <new>
-#include <utility>
 
 namespace runtime::memory {
 
-// Thread-safe fixed-size memory pool for efficient object allocation.
+// NullMutex satisfies BasicLockable with zero overhead.
+// Use as MutexPolicy for single-threaded or benchmark scenarios.
+struct NullMutex {
+  void lock()   noexcept {}
+  void unlock() noexcept {}
+};
+
+// Thread-safe fixed-size raw memory pool.
+//
 // Template parameters:
-//   T - Type of objects to allocate
-//   Capacity - Maximum number of objects that can be allocated (default: 1024)
+//   BlockSize   - Size in bytes of each allocation slot.
+//   Alignment   - Required alignment of each slot (default: max platform alignment).
+//   Capacity    - Maximum number of slots (default: 1024).
+//   MutexPolicy - Lock type; must satisfy BasicLockable (default: std::mutex).
+//                 Use NullMutex for single-threaded use.
 //
-// Example usage:
-//   MemoryPool<MyClass, 128> pool;
-//   MyClass* obj = pool.Construct(arg1, arg2);
-//   pool.Destroy(obj);
+// The pool only manages raw bytes — object construction and destruction are
+// the responsibility of the caller (or ObjectPool).
 //
-// Thread safety:
-//   All public methods are thread-safe and can be called concurrently.
-template <typename T, std::size_t Capacity = 1024>
+// Example:
+//   using Pool = MemoryPool<sizeof(MyClass), alignof(MyClass), 128>;
+//   Pool pool;
+//   void* mem = pool.Allocate();
+//   auto* obj = new (mem) MyClass(args...);
+//   obj->~MyClass();
+//   pool.Deallocate(mem);
+template <
+    std::size_t BlockSize,
+    std::size_t Alignment   = alignof(std::max_align_t),
+    std::size_t Capacity    = 1024,
+    typename    MutexPolicy = std::mutex
+>
 class MemoryPool : public runtime::base::NonCopyable {
+  static_assert(BlockSize > 0,  "MemoryPool: BlockSize must be > 0");
+  static_assert(Capacity  > 0,  "MemoryPool: Capacity must be > 0");
+  static_assert(Alignment > 0 && (Alignment & (Alignment - 1)) == 0,
+                "MemoryPool: Alignment must be a power of two");
+
  public:
   MemoryPool() { Initialize(); }
 
@@ -33,10 +56,10 @@ class MemoryPool : public runtime::base::NonCopyable {
     ::operator delete(buffer_, std::align_val_t{kAlignment});
   }
 
-  // Allocates a memory slot from the pool.
-  // Returns nullptr if pool is exhausted.
+  // Allocates one slot from the pool.
+  // Returns nullptr if the pool is exhausted.
   void* Allocate() noexcept {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<MutexPolicy> lock(mutex_);
     if (free_list_head_ == nullptr) {
       return nullptr;
     }
@@ -47,72 +70,43 @@ class MemoryPool : public runtime::base::NonCopyable {
     return ptr;
   }
 
-  // Returns a memory slot back to the pool.
+  // Returns a slot back to the pool.
   // Passing nullptr is a no-op.
   void Deallocate(void* ptr) noexcept {
     if (ptr == nullptr) {
       return;
     }
 
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<MutexPolicy> lock(mutex_);
     *static_cast<void**>(ptr) = free_list_head_;
     free_list_head_ = ptr;
     ++free_count_;
   }
 
-  // Constructs an object of type T in the pool using forwarded arguments.
-  // Returns nullptr if pool is exhausted.
-  // Throws: Any exception thrown by T's constructor.
-  template <typename... Args>
-  T* Construct(Args&&... args) {
-    void* mem = Allocate();
-    if (mem == nullptr) {
-      return nullptr;
-    }
-
-    try {
-      return new (mem) T(std::forward<Args>(args)...);
-    } catch (...) {
-      Deallocate(mem);
-      throw;
-    }
-  }
-
-  // Destroys an object and returns its memory to the pool.
-  // Passing nullptr is a no-op.
-  void Destroy(T* ptr) noexcept {
-    if (ptr == nullptr) {
-      return;
-    }
-
-    ptr->~T();
-    Deallocate(ptr);
-  }
-
-  // Returns the maximum capacity of the pool.
+  // Returns the maximum number of slots in the pool.
   constexpr std::size_t capacity() const noexcept { return Capacity; }
 
-  // Returns the current number of free slots in the pool.
+  // Returns the number of currently free slots.
   std::size_t free_count() const noexcept {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<MutexPolicy> lock(mutex_);
     return free_count_;
   }
 
-  // Returns the current number of used slots in the pool.
+  // Returns the number of currently allocated slots.
   std::size_t used_count() const noexcept {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::lock_guard<MutexPolicy> lock(mutex_);
     return Capacity - free_count_;
   }
 
-  // Checks if a pointer was allocated from this pool.
+  // Returns true if ptr was allocated from this pool.
   bool owns(const void* ptr) const noexcept {
     if (ptr == nullptr || buffer_ == nullptr) {
       return false;
     }
 
     const std::uintptr_t begin = reinterpret_cast<std::uintptr_t>(buffer_);
-    const std::uintptr_t end = begin + kSlotSize * Capacity;
-    const std::uintptr_t p = reinterpret_cast<std::uintptr_t>(ptr);
+    const std::uintptr_t end   = begin + kSlotSize * Capacity;
+    const std::uintptr_t p     = reinterpret_cast<std::uintptr_t>(ptr);
 
     if (p < begin || p >= end) {
       return false;
@@ -122,14 +116,16 @@ class MemoryPool : public runtime::base::NonCopyable {
   }
 
  private:
+  // Effective alignment: must fit at least one void* for the intrusive free list.
   static constexpr std::size_t kAlignment =
-      std::max(alignof(T), alignof(void*));
+      std::max(Alignment, alignof(void*));
 
+  // Effective slot size: must be large enough for the free-list void* pointer,
+  // then rounded up to the alignment boundary.
   static constexpr std::size_t kSlotSize =
-      ((std::max(sizeof(T), sizeof(void*)) + kAlignment - 1) / kAlignment) *
+      ((std::max(BlockSize, sizeof(void*)) + kAlignment - 1) / kAlignment) *
       kAlignment;
 
-  // Initializes the memory pool and builds the free list.
   void Initialize() {
     buffer_ = static_cast<std::byte*>(
         ::operator new(kSlotSize * Capacity, std::align_val_t{kAlignment}));
@@ -143,21 +139,14 @@ class MemoryPool : public runtime::base::NonCopyable {
 
     *reinterpret_cast<void**>(current) = nullptr;
     free_list_head_ = buffer_;
-    free_count_ = Capacity;
+    free_count_     = Capacity;
   }
 
-  // Raw memory buffer for the pool.
-  std::byte* buffer_{nullptr};
-
-  // Head of the singly-linked free list.
-  void* free_list_head_{nullptr};
-
-  // Current number of free slots in the pool.
+  std::byte*  buffer_{nullptr};
+  void*       free_list_head_{nullptr};
   std::size_t free_count_{0};
 
-  // Mutex protecting all internal state.
-  // mutable to allow locking in const methods.
-  mutable std::mutex mutex_;
+  mutable MutexPolicy mutex_;
 };
 
 }  // namespace runtime::memory

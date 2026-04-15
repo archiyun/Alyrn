@@ -196,11 +196,6 @@
 },
 {
   "directory": "/home/yun/design/high-concurrency-runtime/build-tests/tests",
-  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/tests/../include -I/home/yun/design/high-concurrency-runtime/include -std=c++20 -o CMakeFiles/concurrency_smoke_test.dir/stress/test_concurrency_smoke_standalone.cpp.o -c /home/yun/design/high-concurrency-runtime/tests/stress/test_concurrency_smoke_standalone.cpp",
-  "file": "/home/yun/design/high-concurrency-runtime/tests/stress/test_concurrency_smoke_standalone.cpp"
-},
-{
-  "directory": "/home/yun/design/high-concurrency-runtime/build-tests/tests",
   "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -std=c++20 -o CMakeFiles/runtime_unit_tests.dir/unit/test_buffer.cpp.o -c /home/yun/design/high-concurrency-runtime/tests/unit/test_buffer.cpp",
   "file": "/home/yun/design/high-concurrency-runtime/tests/unit/test_buffer.cpp"
 },
@@ -246,12 +241,12 @@
 },
 {
   "directory": "/home/yun/design/high-concurrency-runtime/build-tests/tests",
-  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -std=c++20 -o CMakeFiles/runtime_integration_tests.dir/integration/test_http_server.cpp.o -c /home/yun/design/high-concurrency-runtime/tests/integration/test_http_server.cpp",
-  "file": "/home/yun/design/high-concurrency-runtime/tests/integration/test_http_server.cpp"
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -std=c++20 -o CMakeFiles/runtime_integration_tests.dir/integration/test_trigger_mode.cpp.o -c /home/yun/design/high-concurrency-runtime/tests/integration/test_trigger_mode.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/tests/integration/test_trigger_mode.cpp"
 },
 {
   "directory": "/home/yun/design/high-concurrency-runtime/build-tests/tests",
-  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -std=c++20 -o CMakeFiles/runtime_integration_tests.dir/stress/test_concurrency_smoke.cpp.o -c /home/yun/design/high-concurrency-runtime/tests/stress/test_concurrency_smoke.cpp",
-  "file": "/home/yun/design/high-concurrency-runtime/tests/stress/test_concurrency_smoke.cpp"
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -std=c++20 -o CMakeFiles/runtime_integration_tests.dir/integration/test_http_server.cpp.o -c /home/yun/design/high-concurrency-runtime/tests/integration/test_http_server.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/tests/integration/test_http_server.cpp"
 }
 ]

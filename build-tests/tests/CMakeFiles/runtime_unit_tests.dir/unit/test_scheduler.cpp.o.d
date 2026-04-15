@@ -308,5 +308,4 @@ tests/CMakeFiles/runtime_unit_tests.dir/unit/test_scheduler.cpp.o: \
  /usr/include/c++/12/future /usr/include/c++/12/bits/atomic_futex.h \
  /usr/include/c++/12/queue /usr/include/c++/12/deque \
  /usr/include/c++/12/bits/stl_deque.h /usr/include/c++/12/bits/deque.tcc \
- /usr/include/c++/12/bits/stl_queue.h /usr/include/c++/12/thread \
- /usr/include/c++/12/chrono
+ /usr/include/c++/12/bits/stl_queue.h /usr/include/c++/12/thread

@@ -97,10 +97,24 @@ tests/CMakeFiles/runtime_integration_tests.dir/integration/test_tcp_server.cpp.s
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/runtime_integration_tests.dir/integration/test_tcp_server.cpp.s"
 	cd /home/yun/design/high-concurrency-runtime/build-tests/tests && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/yun/design/high-concurrency-runtime/tests/integration/test_tcp_server.cpp -o CMakeFiles/runtime_integration_tests.dir/integration/test_tcp_server.cpp.s
 
+tests/CMakeFiles/runtime_integration_tests.dir/integration/test_trigger_mode.cpp.o: tests/CMakeFiles/runtime_integration_tests.dir/flags.make
+tests/CMakeFiles/runtime_integration_tests.dir/integration/test_trigger_mode.cpp.o: /home/yun/design/high-concurrency-runtime/tests/integration/test_trigger_mode.cpp
+tests/CMakeFiles/runtime_integration_tests.dir/integration/test_trigger_mode.cpp.o: tests/CMakeFiles/runtime_integration_tests.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object tests/CMakeFiles/runtime_integration_tests.dir/integration/test_trigger_mode.cpp.o"
+	cd /home/yun/design/high-concurrency-runtime/build-tests/tests && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT tests/CMakeFiles/runtime_integration_tests.dir/integration/test_trigger_mode.cpp.o -MF CMakeFiles/runtime_integration_tests.dir/integration/test_trigger_mode.cpp.o.d -o CMakeFiles/runtime_integration_tests.dir/integration/test_trigger_mode.cpp.o -c /home/yun/design/high-concurrency-runtime/tests/integration/test_trigger_mode.cpp
+
+tests/CMakeFiles/runtime_integration_tests.dir/integration/test_trigger_mode.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/runtime_integration_tests.dir/integration/test_trigger_mode.cpp.i"
+	cd /home/yun/design/high-concurrency-runtime/build-tests/tests && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/yun/design/high-concurrency-runtime/tests/integration/test_trigger_mode.cpp > CMakeFiles/runtime_integration_tests.dir/integration/test_trigger_mode.cpp.i
+
+tests/CMakeFiles/runtime_integration_tests.dir/integration/test_trigger_mode.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/runtime_integration_tests.dir/integration/test_trigger_mode.cpp.s"
+	cd /home/yun/design/high-concurrency-runtime/build-tests/tests && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/yun/design/high-concurrency-runtime/tests/integration/test_trigger_mode.cpp -o CMakeFiles/runtime_integration_tests.dir/integration/test_trigger_mode.cpp.s
+
 tests/CMakeFiles/runtime_integration_tests.dir/integration/test_http_server.cpp.o: tests/CMakeFiles/runtime_integration_tests.dir/flags.make
 tests/CMakeFiles/runtime_integration_tests.dir/integration/test_http_server.cpp.o: /home/yun/design/high-concurrency-runtime/tests/integration/test_http_server.cpp
 tests/CMakeFiles/runtime_integration_tests.dir/integration/test_http_server.cpp.o: tests/CMakeFiles/runtime_integration_tests.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object tests/CMakeFiles/runtime_integration_tests.dir/integration/test_http_server.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object tests/CMakeFiles/runtime_integration_tests.dir/integration/test_http_server.cpp.o"
 	cd /home/yun/design/high-concurrency-runtime/build-tests/tests && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT tests/CMakeFiles/runtime_integration_tests.dir/integration/test_http_server.cpp.o -MF CMakeFiles/runtime_integration_tests.dir/integration/test_http_server.cpp.o.d -o CMakeFiles/runtime_integration_tests.dir/integration/test_http_server.cpp.o -c /home/yun/design/high-concurrency-runtime/tests/integration/test_http_server.cpp
 
 tests/CMakeFiles/runtime_integration_tests.dir/integration/test_http_server.cpp.i: cmake_force
@@ -111,34 +125,20 @@ tests/CMakeFiles/runtime_integration_tests.dir/integration/test_http_server.cpp.
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/runtime_integration_tests.dir/integration/test_http_server.cpp.s"
 	cd /home/yun/design/high-concurrency-runtime/build-tests/tests && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/yun/design/high-concurrency-runtime/tests/integration/test_http_server.cpp -o CMakeFiles/runtime_integration_tests.dir/integration/test_http_server.cpp.s
 
-tests/CMakeFiles/runtime_integration_tests.dir/stress/test_concurrency_smoke.cpp.o: tests/CMakeFiles/runtime_integration_tests.dir/flags.make
-tests/CMakeFiles/runtime_integration_tests.dir/stress/test_concurrency_smoke.cpp.o: /home/yun/design/high-concurrency-runtime/tests/stress/test_concurrency_smoke.cpp
-tests/CMakeFiles/runtime_integration_tests.dir/stress/test_concurrency_smoke.cpp.o: tests/CMakeFiles/runtime_integration_tests.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object tests/CMakeFiles/runtime_integration_tests.dir/stress/test_concurrency_smoke.cpp.o"
-	cd /home/yun/design/high-concurrency-runtime/build-tests/tests && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT tests/CMakeFiles/runtime_integration_tests.dir/stress/test_concurrency_smoke.cpp.o -MF CMakeFiles/runtime_integration_tests.dir/stress/test_concurrency_smoke.cpp.o.d -o CMakeFiles/runtime_integration_tests.dir/stress/test_concurrency_smoke.cpp.o -c /home/yun/design/high-concurrency-runtime/tests/stress/test_concurrency_smoke.cpp
-
-tests/CMakeFiles/runtime_integration_tests.dir/stress/test_concurrency_smoke.cpp.i: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/runtime_integration_tests.dir/stress/test_concurrency_smoke.cpp.i"
-	cd /home/yun/design/high-concurrency-runtime/build-tests/tests && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/yun/design/high-concurrency-runtime/tests/stress/test_concurrency_smoke.cpp > CMakeFiles/runtime_integration_tests.dir/stress/test_concurrency_smoke.cpp.i
-
-tests/CMakeFiles/runtime_integration_tests.dir/stress/test_concurrency_smoke.cpp.s: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/runtime_integration_tests.dir/stress/test_concurrency_smoke.cpp.s"
-	cd /home/yun/design/high-concurrency-runtime/build-tests/tests && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/yun/design/high-concurrency-runtime/tests/stress/test_concurrency_smoke.cpp -o CMakeFiles/runtime_integration_tests.dir/stress/test_concurrency_smoke.cpp.s
-
 # Object files for target runtime_integration_tests
 runtime_integration_tests_OBJECTS = \
 "CMakeFiles/runtime_integration_tests.dir/integration/test_event_loop.cpp.o" \
 "CMakeFiles/runtime_integration_tests.dir/integration/test_tcp_server.cpp.o" \
-"CMakeFiles/runtime_integration_tests.dir/integration/test_http_server.cpp.o" \
-"CMakeFiles/runtime_integration_tests.dir/stress/test_concurrency_smoke.cpp.o"
+"CMakeFiles/runtime_integration_tests.dir/integration/test_trigger_mode.cpp.o" \
+"CMakeFiles/runtime_integration_tests.dir/integration/test_http_server.cpp.o"
 
 # External object files for target runtime_integration_tests
 runtime_integration_tests_EXTERNAL_OBJECTS =
 
 tests/runtime_integration_tests: tests/CMakeFiles/runtime_integration_tests.dir/integration/test_event_loop.cpp.o
 tests/runtime_integration_tests: tests/CMakeFiles/runtime_integration_tests.dir/integration/test_tcp_server.cpp.o
+tests/runtime_integration_tests: tests/CMakeFiles/runtime_integration_tests.dir/integration/test_trigger_mode.cpp.o
 tests/runtime_integration_tests: tests/CMakeFiles/runtime_integration_tests.dir/integration/test_http_server.cpp.o
-tests/runtime_integration_tests: tests/CMakeFiles/runtime_integration_tests.dir/stress/test_concurrency_smoke.cpp.o
 tests/runtime_integration_tests: tests/CMakeFiles/runtime_integration_tests.dir/build.make
 tests/runtime_integration_tests: /usr/local/lib/libgtest_main.a
 tests/runtime_integration_tests: libruntime_net.a

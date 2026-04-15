@@ -10,18 +10,14 @@
 
 namespace runtime::memory {
 
-// 单个分段 LRU 
-// front() -> 最久未使用
-// back() -> 最近使用
-
 /**
- *  数据结构
- *  哈希表 key -> Node {key, value, expire_at}
- *  双向链表 std::list : Node {key, value, expire_at}
- * 
- *  每个LRU单独持有一个互斥锁 mutex_ 来降低锁竞争
+ * LRUCacheSegment stores one shard of an LRU cache.
+ *
+ * The hash table maps keys to list iterators, and the linked list keeps
+ * entries ordered from least recently used at the front to most recently
+ * used at the back. Each segment owns its own mutex to reduce contention.
  */
-template<typename Key, typename Value>
+template <typename Key, typename Value>
 class LRUCacheSegment : public runtime::base::NonCopyable {
 public:
     explicit LRUCacheSegment(std::size_t capacity) : capacity_(capacity) {}
@@ -32,7 +28,6 @@ public:
         auto it = mp_.find(key);
         if(it == mp_.end()) return false;
 
-        // 检查是否过期 
         if(isExpired(it->second)) {
             eraseInternal(it);
             return false;
@@ -56,8 +51,7 @@ public:
         return it->second->value;
     }
 
-    // -------------------
-    // put 提供三种过期策略: 持久化 ， 设定写入固定时间过期。
+    // put supports persistent values, absolute expiration, and TTL.
     void put(const Key &key, const Value &value) {
         std::lock_guard<std::mutex> lk{mutex_};
         putInternal(key, value , std::nullopt);
@@ -143,18 +137,15 @@ private:
             >= it->expire_at->MicrosecondsSinceEpoch();
     }
 
-    // 节点重新移到链表尾部
     void touch(ListIt it) {
         lru_list_.splice(lru_list_.end(), lru_list_, it);
     }
 
-    // 删除节点
     void eraseInternal(MapIt it) {
         lru_list_.erase(it->second);
         mp_.erase(it);
     }
 
-    // 删除链表头部节点
     void evictOne() {
         const auto& oldest = lru_list_.front();
         mp_.erase(oldest.key);
@@ -207,4 +198,4 @@ private:
     std::size_t capacity_;
 };
 
-}   // namespace runtime::memory
+}  // namespace runtime::memory

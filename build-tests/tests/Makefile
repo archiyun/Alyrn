@@ -631,20 +631,6 @@ tcp_server_smoke_test/fast:
 .PHONY : tcp_server_smoke_test/fast
 
 # Convenience name for target.
-tests/CMakeFiles/concurrency_smoke_test.dir/rule:
-	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 tests/CMakeFiles/concurrency_smoke_test.dir/rule
-.PHONY : tests/CMakeFiles/concurrency_smoke_test.dir/rule
-
-# Convenience name for target.
-concurrency_smoke_test: tests/CMakeFiles/concurrency_smoke_test.dir/rule
-.PHONY : concurrency_smoke_test
-
-# fast build rule for target.
-concurrency_smoke_test/fast:
-	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/concurrency_smoke_test.dir/build.make tests/CMakeFiles/concurrency_smoke_test.dir/build
-.PHONY : concurrency_smoke_test/fast
-
-# Convenience name for target.
 tests/CMakeFiles/runtime_unit_tests.dir/rule:
 	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 tests/CMakeFiles/runtime_unit_tests.dir/rule
 .PHONY : tests/CMakeFiles/runtime_unit_tests.dir/rule
@@ -792,53 +778,29 @@ integration/test_tcp_server_smoke.cpp.s:
 	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/tcp_server_smoke_test.dir/build.make tests/CMakeFiles/tcp_server_smoke_test.dir/integration/test_tcp_server_smoke.cpp.s
 .PHONY : integration/test_tcp_server_smoke.cpp.s
 
-stress/test_concurrency_smoke.o: stress/test_concurrency_smoke.cpp.o
-.PHONY : stress/test_concurrency_smoke.o
+integration/test_trigger_mode.o: integration/test_trigger_mode.cpp.o
+.PHONY : integration/test_trigger_mode.o
 
 # target to build an object file
-stress/test_concurrency_smoke.cpp.o:
-	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/runtime_integration_tests.dir/build.make tests/CMakeFiles/runtime_integration_tests.dir/stress/test_concurrency_smoke.cpp.o
-.PHONY : stress/test_concurrency_smoke.cpp.o
+integration/test_trigger_mode.cpp.o:
+	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/runtime_integration_tests.dir/build.make tests/CMakeFiles/runtime_integration_tests.dir/integration/test_trigger_mode.cpp.o
+.PHONY : integration/test_trigger_mode.cpp.o
 
-stress/test_concurrency_smoke.i: stress/test_concurrency_smoke.cpp.i
-.PHONY : stress/test_concurrency_smoke.i
-
-# target to preprocess a source file
-stress/test_concurrency_smoke.cpp.i:
-	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/runtime_integration_tests.dir/build.make tests/CMakeFiles/runtime_integration_tests.dir/stress/test_concurrency_smoke.cpp.i
-.PHONY : stress/test_concurrency_smoke.cpp.i
-
-stress/test_concurrency_smoke.s: stress/test_concurrency_smoke.cpp.s
-.PHONY : stress/test_concurrency_smoke.s
-
-# target to generate assembly for a file
-stress/test_concurrency_smoke.cpp.s:
-	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/runtime_integration_tests.dir/build.make tests/CMakeFiles/runtime_integration_tests.dir/stress/test_concurrency_smoke.cpp.s
-.PHONY : stress/test_concurrency_smoke.cpp.s
-
-stress/test_concurrency_smoke_standalone.o: stress/test_concurrency_smoke_standalone.cpp.o
-.PHONY : stress/test_concurrency_smoke_standalone.o
-
-# target to build an object file
-stress/test_concurrency_smoke_standalone.cpp.o:
-	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/concurrency_smoke_test.dir/build.make tests/CMakeFiles/concurrency_smoke_test.dir/stress/test_concurrency_smoke_standalone.cpp.o
-.PHONY : stress/test_concurrency_smoke_standalone.cpp.o
-
-stress/test_concurrency_smoke_standalone.i: stress/test_concurrency_smoke_standalone.cpp.i
-.PHONY : stress/test_concurrency_smoke_standalone.i
+integration/test_trigger_mode.i: integration/test_trigger_mode.cpp.i
+.PHONY : integration/test_trigger_mode.i
 
 # target to preprocess a source file
-stress/test_concurrency_smoke_standalone.cpp.i:
-	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/concurrency_smoke_test.dir/build.make tests/CMakeFiles/concurrency_smoke_test.dir/stress/test_concurrency_smoke_standalone.cpp.i
-.PHONY : stress/test_concurrency_smoke_standalone.cpp.i
+integration/test_trigger_mode.cpp.i:
+	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/runtime_integration_tests.dir/build.make tests/CMakeFiles/runtime_integration_tests.dir/integration/test_trigger_mode.cpp.i
+.PHONY : integration/test_trigger_mode.cpp.i
 
-stress/test_concurrency_smoke_standalone.s: stress/test_concurrency_smoke_standalone.cpp.s
-.PHONY : stress/test_concurrency_smoke_standalone.s
+integration/test_trigger_mode.s: integration/test_trigger_mode.cpp.s
+.PHONY : integration/test_trigger_mode.s
 
 # target to generate assembly for a file
-stress/test_concurrency_smoke_standalone.cpp.s:
-	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/concurrency_smoke_test.dir/build.make tests/CMakeFiles/concurrency_smoke_test.dir/stress/test_concurrency_smoke_standalone.cpp.s
-.PHONY : stress/test_concurrency_smoke_standalone.cpp.s
+integration/test_trigger_mode.cpp.s:
+	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/runtime_integration_tests.dir/build.make tests/CMakeFiles/runtime_integration_tests.dir/integration/test_trigger_mode.cpp.s
+.PHONY : integration/test_trigger_mode.cpp.s
 
 unit/test_buffer.o: unit/test_buffer.cpp.o
 .PHONY : unit/test_buffer.o
@@ -1190,7 +1152,6 @@ help:
 	@echo "... NightlyTest"
 	@echo "... NightlyUpdate"
 	@echo "... buffer_smoke_test"
-	@echo "... concurrency_smoke_test"
 	@echo "... epoll_poller_smoke_test"
 	@echo "... event_loop_smoke_test"
 	@echo "... http_smoke_test"
@@ -1215,12 +1176,9 @@ help:
 	@echo "... integration/test_tcp_server_smoke.o"
 	@echo "... integration/test_tcp_server_smoke.i"
 	@echo "... integration/test_tcp_server_smoke.s"
-	@echo "... stress/test_concurrency_smoke.o"
-	@echo "... stress/test_concurrency_smoke.i"
-	@echo "... stress/test_concurrency_smoke.s"
-	@echo "... stress/test_concurrency_smoke_standalone.o"
-	@echo "... stress/test_concurrency_smoke_standalone.i"
-	@echo "... stress/test_concurrency_smoke_standalone.s"
+	@echo "... integration/test_trigger_mode.o"
+	@echo "... integration/test_trigger_mode.i"
+	@echo "... integration/test_trigger_mode.s"
 	@echo "... unit/test_buffer.o"
 	@echo "... unit/test_buffer.i"
 	@echo "... unit/test_buffer.s"

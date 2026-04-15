@@ -6,31 +6,6 @@
 - 精确路径路由分发
 - 常见错误码返回
 
-## 一键测试
-
-直接运行：
-
-```bash
-bash scripts/test_http_demo.sh
-```
-
-可选环境变量：
-
-```bash
-PORT=19081 IO_THREADS=2 bash scripts/test_http_demo.sh
-```
-
-脚本会自动完成这些检查：
-
-- 构建并启动 `demo_http_server`
-- 请求 `/api/health`
-- 请求 `/api/echo`
-- 请求一个不存在的路由验证 `404`
-- 对已存在路径使用错误方法验证 `405`
-- 用 `curl -v` 验证连接复用
-- 打印最近日志
-- 打印 `ss` / `lsof` 观测结果
-
 ## 手工命令
 
 启动 demo：

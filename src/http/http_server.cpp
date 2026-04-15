@@ -2,17 +2,17 @@
 #include "runtime/http/http_context.h"
 #include "runtime/http/router.h"
 #include "runtime/task/scheduler.h"
+
 namespace runtime::http {
 
-HttpServer::HttpServer(runtime::net::EventLoop *loop,
-                       const runtime::net::InetAddress &addr, std::string name)
+HttpServer::HttpServer(runtime::net::EventLoop* loop,
+                       const runtime::net::InetAddress& addr,
+                       std::string name)
     : server_(loop, addr, name) {
-  // HttpServer 复用底层 TcpServer 的连接和消息回调,
-  // 把 TCP 事件接入 HTTP 处理链
   server_.SetConnectionCallback(
-      [this](const TcpConnectionPtr &conn) { OnConnection(conn); });
+      [this](const TcpConnectionPtr& conn) { OnConnection(conn); });
   server_.SetMessageCallback(
-      [this](const TcpConnectionPtr &conn, runtime::net::Buffer &buf,
+      [this](const TcpConnectionPtr& conn, runtime::net::Buffer& buf,
              runtime::time::Timestamp ts) { OnMessage(conn, buf, ts); });
 }
 
@@ -20,9 +20,14 @@ void HttpServer::SetThreadNum(int num_threads) {
   server_.SetThreadNum(num_threads);
 }
 
+void HttpServer::SetEdgeTriggered(bool et) {
+  server_.SetEdgeTriggered(et);
+}
+
 void HttpServer::SetScheduler(std::shared_ptr<runtime::task::Scheduler> sched) {
   scheduler_ = std::move(sched);
 }
+
 void HttpServer::Get(std::string_view path, Handler handler) {
   router_.Get(path, std::move(handler));
 }
@@ -37,18 +42,16 @@ void HttpServer::Add(Method method, std::string_view path, Handler handler) {
 
 void HttpServer::Start() { server_.Start(); }
 
-void HttpServer::OnConnection(const TcpConnectionPtr &conn) {
+void HttpServer::OnConnection(const TcpConnectionPtr& conn) {
   if (conn->Connected()) {
-    // 每条已建立连接维护一个独立的 HttpContext,
-    // 用于 keep-alive 场景下持续增量解析请求
     conn->SetContext(HttpContext{});
   }
 }
-void HttpServer::OnMessage(const TcpConnectionPtr &conn,
-                           runtime::net::Buffer &buf,
+
+void HttpServer::OnMessage(const TcpConnectionPtr& conn,
+                           runtime::net::Buffer& buf,
                            runtime::time::Timestamp ts) {
-  auto &ctx = std::any_cast<HttpContext &>(conn->GetContext());
-  // 解析失败说明当前字节流不满足 HTTP 请求格式， 直接返回 400 并关闭连接
+  auto& ctx = std::any_cast<HttpContext&>(conn->GetContext());
   if (!ctx.ParseRequest(buf, ts)) {
     HttpResponse err = MakeError(StatusCode::BadRequest, "malformed request");
     conn->Send(err.ToString());
@@ -60,9 +63,8 @@ void HttpServer::OnMessage(const TcpConnectionPtr &conn,
     HttpRequest request = ctx.Request();
     ctx.Reset();
 
-    // keep-alive
     const bool keep_alive = request.KeepAlive();
-    HttpResponse response(!keep_alive); // 构造参数是 close_connection
+    HttpResponse response(!keep_alive);
 
     auto match = router_.Match(request.GetMethod(), request.Path());
 
@@ -98,7 +100,6 @@ void HttpServer::OnMessage(const TcpConnectionPtr &conn,
     } else {
       response = MakeError(StatusCode::NotFound, "not found");
     }
-    // keep-alive: buf 继续循环
     conn->Send(response.ToString());
     if (response.CloseConnection()) {
       conn->Shutdown();
@@ -115,4 +116,5 @@ HttpResponse HttpServer::MakeError(StatusCode code,
   response.SetBody("{\"error\":\"" + std::string(message) + "\"}");
   return response;
 }
-} // namespace runtime::http
+
+}  // namespace runtime::http

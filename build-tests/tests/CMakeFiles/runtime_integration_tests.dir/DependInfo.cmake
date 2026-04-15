@@ -11,7 +11,7 @@ set(CMAKE_DEPENDS_DEPENDENCY_FILES
   "/home/yun/design/high-concurrency-runtime/tests/integration/test_event_loop.cpp" "tests/CMakeFiles/runtime_integration_tests.dir/integration/test_event_loop.cpp.o" "gcc" "tests/CMakeFiles/runtime_integration_tests.dir/integration/test_event_loop.cpp.o.d"
   "/home/yun/design/high-concurrency-runtime/tests/integration/test_http_server.cpp" "tests/CMakeFiles/runtime_integration_tests.dir/integration/test_http_server.cpp.o" "gcc" "tests/CMakeFiles/runtime_integration_tests.dir/integration/test_http_server.cpp.o.d"
   "/home/yun/design/high-concurrency-runtime/tests/integration/test_tcp_server.cpp" "tests/CMakeFiles/runtime_integration_tests.dir/integration/test_tcp_server.cpp.o" "gcc" "tests/CMakeFiles/runtime_integration_tests.dir/integration/test_tcp_server.cpp.o.d"
-  "/home/yun/design/high-concurrency-runtime/tests/stress/test_concurrency_smoke.cpp" "tests/CMakeFiles/runtime_integration_tests.dir/stress/test_concurrency_smoke.cpp.o" "gcc" "tests/CMakeFiles/runtime_integration_tests.dir/stress/test_concurrency_smoke.cpp.o.d"
+  "/home/yun/design/high-concurrency-runtime/tests/integration/test_trigger_mode.cpp" "tests/CMakeFiles/runtime_integration_tests.dir/integration/test_trigger_mode.cpp.o" "gcc" "tests/CMakeFiles/runtime_integration_tests.dir/integration/test_trigger_mode.cpp.o.d"
   )
 
 # Targets to which this target links.

@@ -193,7 +193,8 @@ bool TestEchoRoundTripAndLifecycle() {
         });
         server.SetMessageCallback(
             [](const runtime::net::TcpServer::TcpConnectionPtr& conn,
-               const std::string& message, runtime::time::Timestamp) {
+               runtime::net::Buffer& buffer, runtime::time::Timestamp) {
+                const std::string message = buffer.RetrieveAllAsString();
                 conn->Send(message);
             });
         server.Start();

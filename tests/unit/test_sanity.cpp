@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-// CMakeLists.txt 的 首次测试。
+// Basic sanity check to verify the test target is wired correctly.
 TEST(SanityTest, Basic) {
     EXPECT_EQ(1 + 1, 2);
 }

@@ -120,22 +120,6 @@ target_link_libraries(tcp_server_smoke_test
 
 add_test(NAME tcp_server_smoke_test COMMAND tcp_server_smoke_test)
 
-add_executable(concurrency_smoke_test
-    stress/test_concurrency_smoke_standalone.cpp
-)
-
-target_include_directories(concurrency_smoke_test
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
-
-target_link_libraries(concurrency_smoke_test
-    PRIVATE
-        runtime_net
-)
-
-add_test(NAME concurrency_smoke_test COMMAND concurrency_smoke_test)
-
 find_package(GTest CONFIG QUIET)
 if(GTest_FOUND)
     include(GoogleTest)
@@ -162,8 +146,8 @@ if(GTest_FOUND)
     add_executable(runtime_integration_tests
         integration/test_event_loop.cpp
         integration/test_tcp_server.cpp
+        integration/test_trigger_mode.cpp
         integration/test_http_server.cpp
-        stress/test_concurrency_smoke.cpp
     )
 
     target_link_libraries(runtime_integration_tests

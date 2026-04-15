@@ -10,29 +10,33 @@ namespace runtime::net {
 
 class EventLoop;
 
+// EventLoopThreadPool manages a set of I/O threads, each owning one EventLoop.
 class EventLoopThreadPool : public runtime::base::NonCopyable {
 public:
-    using ThreadInitCallback = EventLoopThread::ThreadInitCallback;
+  using ThreadInitCallback = EventLoopThread::ThreadInitCallback;
 
-    EventLoopThreadPool(EventLoop *base_loop, int num_threads);
+  EventLoopThreadPool(EventLoop* base_loop, int num_threads);
 
-    ~EventLoopThreadPool();
+  ~EventLoopThreadPool();
 
-    void Start(const ThreadInitCallback &cb = ThreadInitCallback());
+  void Start(const ThreadInitCallback& cb = ThreadInitCallback());
 
-    EventLoop *GetNextLoop();
-    std::vector<EventLoop*> GetAllLoops() const;
+  // Returns the next EventLoop in round-robin order.
+  EventLoop* GetNextLoop();
 
-    bool Started() const { return started_; }
+  // Returns all managed EventLoops. If no worker threads exist, returns the
+  // base loop as the only element.
+  std::vector<EventLoop*> GetAllLoops() const;
+
+  bool Started() const { return started_; }
 private:
+  EventLoop* base_loop_;
+  bool started_;
+  int num_threads_;
+  int next_;
 
-    EventLoop *base_loop_;
-    bool started_;
-    int num_threads_;
-    int next_;
-
-    std::vector<std::unique_ptr<EventLoopThread>> threads_;
-    std::vector<EventLoop*> loops_;
+  std::vector<std::unique_ptr<EventLoopThread>> threads_;
+  std::vector<EventLoop*> loops_;
 };
 
-}   // namespace runtime::net
+}  // namespace runtime::net

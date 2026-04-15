@@ -3,7 +3,7 @@
 
 namespace runtime::task {
 
-std::atomic<int> Task::id_counter_{0}; // 全局任务id自增器
+std::atomic<int> Task::id_counter_{0};
 
 Task::Task(Func f)
     : func_(f),
@@ -15,4 +15,4 @@ void Task::Run() {
     func_();
 }
 
-} // namespace runtime::task
+}  // namespace runtime::task

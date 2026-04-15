@@ -2,16 +2,26 @@
 
 namespace runtime::base {
 
-    extern thread_local int t_cached_tid;
+// Caches the OS thread id for the current thread.
+//
+// The value is stored in thread-local storage so repeated tid() calls do not
+// need to query the kernel every time.
+extern thread_local int t_cached_tid;
 
-    void cacheTid();
+// Populates the cached thread id for the current thread.
+//
+// This is typically called on the first tid() access when the cache is empty.
+void cacheTid();
 
-    inline int tid() {
-        if(__builtin_expect(t_cached_tid == 0, 0)) {
-            cacheTid();
-        }
-        return t_cached_tid;
-    }
+// Returns the cached OS thread id for the current thread.
+//
+// On the fast path, this only reads a thread-local integer. If the cache is
+// still empty, it initializes it first.
+inline int tid() {
+  if (__builtin_expect(t_cached_tid == 0, 0)) {
+    cacheTid();
+  }
+  return t_cached_tid;
+}
 
-
-} // namespace runtime::base::current_thread
+}  // namespace runtime::base

@@ -13,11 +13,10 @@
 
 namespace runtime::memory {
 
-template<typename Key, typename Value>
+template <typename Key, typename Value>
 class SegmentLRUCache : public runtime::base::NonCopyable {
 public:
-    // 构造
-    explicit SegmentLRUCache(std::size_t capacity, std::size_t segment_count) 
+    explicit SegmentLRUCache(std::size_t capacity, std::size_t segment_count)
         : segment_count_(normalizeSegmentCount(capacity, segment_count)) {
         const std::size_t per_count = capacity / segment_count_;
         const std::size_t remainder = capacity % segment_count_;
@@ -30,7 +29,6 @@ public:
         }
     }
 
-    // 基础读接口
     bool get(const Key &key, Value &value) {
         return get_segment(key).get(key, value);
     } 
@@ -92,7 +90,7 @@ public:
     }
 
 private:
-    LRUCacheSegment<Key , Value> &get_segment(const Key &key) {
+    LRUCacheSegment<Key, Value> &get_segment(const Key &key) {
         std::size_t idx = std::hash<Key>{}(key) % segment_count_;
         return *segments_[idx];
     }
@@ -120,4 +118,4 @@ private:
     std::size_t segment_count_;
 };
 
-} // namespace runtime::memory
+}  // namespace runtime::memory

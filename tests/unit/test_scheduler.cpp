@@ -6,7 +6,6 @@
 #include <atomic>
 #include <stdexcept>
 #include <thread>
-#include <chrono>
 
 using namespace runtime::task;
 using namespace std::chrono_literals;
@@ -47,7 +46,7 @@ TEST(TaskTest, RunsBeforeDeadline) {
 TEST(TaskTest, NoDeadlineAlwaysRuns) {
     int x = 0;
     Task t([&x] { x = 1; });
-    // 默认 Timestamp{} 为 Invalid，不设截止时间
+    // The default Timestamp{} is invalid, which means no deadline.
     t.Run();
     EXPECT_EQ(x, 1);
 }
@@ -76,27 +75,27 @@ TEST(SchedulerTest, PendingCountDecrementsAfterRun) {
 }
 
 TEST(SchedulerTest, ThrowsWhenQueueFull) {
-    // 1 个 worker，队列上限 1
+    // One worker with a queue capacity of one task.
     Scheduler sched(1, /*max_queue_size=*/1);
     std::atomic<bool> block{true};
 
-    // 第一个任务堵住 worker
+    // The first task blocks the worker thread.
     sched.Submit([&block] {
         while (block.load()) std::this_thread::sleep_for(5ms);
     });
-    std::this_thread::sleep_for(20ms);  // 确保 worker 已取走任务，pending-- 后 = 0
+    std::this_thread::sleep_for(20ms);  // Let the worker consume the first task.
 
-    // 第二个任务让 pending = 1
+    // The second task fills the pending slot.
     std::atomic<bool> done2{false};
     sched.Submit([&block, &done2] {
         block.store(false);
         done2.store(true);
     });
 
-    // 此时 pending = 1，再提交应抛出
+    // A third submission should exceed the queue limit.
     EXPECT_THROW(sched.Submit([] {}), std::runtime_error);
 
-    // 解除阻塞，正常退出
+    // Release the worker and finish cleanly.
     block.store(false);
     for (int i = 0; i < 100 && !done2.load(); ++i)
         std::this_thread::sleep_for(10ms);
