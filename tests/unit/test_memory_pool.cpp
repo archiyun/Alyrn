@@ -2,7 +2,6 @@
 
 #include "runtime/memory/memory_pool.h"
 
-#include <atomic>
 #include <cstdint>
 #include <thread>
 #include <vector>
