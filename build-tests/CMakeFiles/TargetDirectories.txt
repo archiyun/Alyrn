@@ -11,6 +11,10 @@
 /home/yun/design/high-concurrency-runtime/build-tests/examples/CMakeFiles/test.dir
 /home/yun/design/high-concurrency-runtime/build-tests/examples/CMakeFiles/edit_cache.dir
 /home/yun/design/high-concurrency-runtime/build-tests/examples/CMakeFiles/rebuild_cache.dir
+/home/yun/design/high-concurrency-runtime/build-tests/examples/io_uring_echo/CMakeFiles/io_uring_echo.dir
+/home/yun/design/high-concurrency-runtime/build-tests/examples/io_uring_echo/CMakeFiles/test.dir
+/home/yun/design/high-concurrency-runtime/build-tests/examples/io_uring_echo/CMakeFiles/edit_cache.dir
+/home/yun/design/high-concurrency-runtime/build-tests/examples/io_uring_echo/CMakeFiles/rebuild_cache.dir
 /home/yun/design/high-concurrency-runtime/build-tests/tests/CMakeFiles/Experimental.dir
 /home/yun/design/high-concurrency-runtime/build-tests/tests/CMakeFiles/Nightly.dir
 /home/yun/design/high-concurrency-runtime/build-tests/tests/CMakeFiles/Continuous.dir

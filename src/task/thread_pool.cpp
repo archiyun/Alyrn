@@ -1,5 +1,7 @@
 #include "runtime/task/thread_pool.h"
 
+#include <stop_token>
+
 namespace runtime::task {
 
 ThreadPool::ThreadPool(std::size_t thread_count) {
@@ -14,16 +16,14 @@ ThreadPool::ThreadPool(std::size_t thread_count) {
   workers_.reserve(thread_count);
 
   for (std::size_t i = 0; i < thread_count; ++i) {
-    workers_.emplace_back([this](std::stop_token) {
+    workers_.emplace_back([this](std::stop_token stoken) {
       while (true) {
         Task task;
 
         {
           std::unique_lock<std::mutex> lk(mutex_);
 
-          cv_.wait(lk, [this] { return stop_ || !tasks_.empty(); });
-
-          if (stop_ && tasks_.empty()) {
+          if (!cv_.wait(lk, stoken, [this] { return !tasks_.empty(); })) {
             return;
           }
 

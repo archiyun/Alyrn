@@ -1,0 +1,1 @@
+/usr/bin/c++ CMakeFiles/io_uring_echo.dir/main.cpp.o -o io_uring_echo  /usr/lib/x86_64-linux-gnu/liburing.so.2 

@@ -11,6 +11,7 @@ set(CMAKE_MAKEFILE_DEPENDS
   "CMakeFiles/3.25.1/CMakeCXXCompiler.cmake"
   "CMakeFiles/3.25.1/CMakeSystem.cmake"
   "/home/yun/design/high-concurrency-runtime/examples/CMakeLists.txt"
+  "/home/yun/design/high-concurrency-runtime/examples/io_uring_echo/CMakeLists.txt"
   "/home/yun/design/high-concurrency-runtime/tests/CMakeLists.txt"
   "/usr/local/lib/cmake/GTest/GTestConfig.cmake"
   "/usr/local/lib/cmake/GTest/GTestConfigVersion.cmake"
@@ -55,6 +56,7 @@ set(CMAKE_MAKEFILE_OUTPUTS
 set(CMAKE_MAKEFILE_PRODUCTS
   "CMakeFiles/CMakeDirectoryInformation.cmake"
   "examples/CMakeFiles/CMakeDirectoryInformation.cmake"
+  "examples/io_uring_echo/CMakeFiles/CMakeDirectoryInformation.cmake"
   "DartConfiguration.tcl"
   "tests/CMakeFiles/CMakeDirectoryInformation.cmake"
   )
@@ -68,6 +70,7 @@ set(CMAKE_DEPEND_INFO_FILES
   "examples/CMakeFiles/simple_logger_example.dir/DependInfo.cmake"
   "examples/CMakeFiles/simple_echo_server.dir/DependInfo.cmake"
   "examples/CMakeFiles/demo_http_server.dir/DependInfo.cmake"
+  "examples/io_uring_echo/CMakeFiles/io_uring_echo.dir/DependInfo.cmake"
   "tests/CMakeFiles/Experimental.dir/DependInfo.cmake"
   "tests/CMakeFiles/Nightly.dir/DependInfo.cmake"
   "tests/CMakeFiles/Continuous.dir/DependInfo.cmake"

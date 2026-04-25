@@ -218,6 +218,19 @@ demo_http_server/fast:
 .PHONY : demo_http_server/fast
 
 #=============================================================================
+# Target rules for targets named io_uring_echo
+
+# Build rule for target.
+io_uring_echo: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 io_uring_echo
+.PHONY : io_uring_echo
+
+# fast build rule for target.
+io_uring_echo/fast:
+	$(MAKE) $(MAKESILENT) -f examples/io_uring_echo/CMakeFiles/io_uring_echo.dir/build.make examples/io_uring_echo/CMakeFiles/io_uring_echo.dir/build
+.PHONY : io_uring_echo/fast
+
+#=============================================================================
 # Target rules for targets named Experimental
 
 # Build rule for target.
@@ -1486,6 +1499,7 @@ help:
 	@echo "... epoll_poller_smoke_test"
 	@echo "... event_loop_smoke_test"
 	@echo "... http_smoke_test"
+	@echo "... io_uring_echo"
 	@echo "... logger_smoke_test"
 	@echo "... memory_pool_bench"
 	@echo "... memory_pool_smoke_test"

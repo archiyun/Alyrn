@@ -34,7 +34,7 @@ private:
   std::vector<std::jthread> workers_;
   std::queue<Task> tasks_;
   std::mutex mutex_;
-  std::condition_variable cv_;
+  std::condition_variable_any cv_;
   bool stop_{false};
   std::atomic<std::size_t> task_count_{0};
 };

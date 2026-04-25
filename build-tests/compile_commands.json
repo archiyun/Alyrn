@@ -165,6 +165,11 @@
   "file": "/home/yun/design/high-concurrency-runtime/examples/demo_http_server.cpp"
 },
 {
+  "directory": "/home/yun/design/high-concurrency-runtime/build-tests/examples/io_uring_echo",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/third_party/liburing/include -std=c++20 -o CMakeFiles/io_uring_echo.dir/main.cpp.o -c /home/yun/design/high-concurrency-runtime/examples/io_uring_echo/main.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/examples/io_uring_echo/main.cpp"
+},
+{
   "directory": "/home/yun/design/high-concurrency-runtime/build-tests/tests",
   "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/tests/../include -std=c++20 -o CMakeFiles/memory_pool_smoke_test.dir/unit/test_memory_pool_smoke.cpp.o -c /home/yun/design/high-concurrency-runtime/tests/unit/test_memory_pool_smoke.cpp",
   "file": "/home/yun/design/high-concurrency-runtime/tests/unit/test_memory_pool_smoke.cpp"

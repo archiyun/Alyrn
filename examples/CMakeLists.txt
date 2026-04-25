@@ -26,3 +26,5 @@ target_link_libraries(demo_http_server
         runtime_http
         runtime_foundation
 )
+
+add_subdirectory(io_uring_echo)
