@@ -279,6 +279,34 @@ CMakeFiles/runtime_net.dir/src/net/timer_queue.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/runtime_net.dir/src/net/timer_queue.cpp.s"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/yun/design/high-concurrency-runtime/src/net/timer_queue.cpp -o CMakeFiles/runtime_net.dir/src/net/timer_queue.cpp.s
 
+CMakeFiles/runtime_net.dir/src/net/poll_poller.cpp.o: CMakeFiles/runtime_net.dir/flags.make
+CMakeFiles/runtime_net.dir/src/net/poll_poller.cpp.o: /home/yun/design/high-concurrency-runtime/src/net/poll_poller.cpp
+CMakeFiles/runtime_net.dir/src/net/poll_poller.cpp.o: CMakeFiles/runtime_net.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=$(CMAKE_PROGRESS_16) "Building CXX object CMakeFiles/runtime_net.dir/src/net/poll_poller.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/runtime_net.dir/src/net/poll_poller.cpp.o -MF CMakeFiles/runtime_net.dir/src/net/poll_poller.cpp.o.d -o CMakeFiles/runtime_net.dir/src/net/poll_poller.cpp.o -c /home/yun/design/high-concurrency-runtime/src/net/poll_poller.cpp
+
+CMakeFiles/runtime_net.dir/src/net/poll_poller.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/runtime_net.dir/src/net/poll_poller.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/yun/design/high-concurrency-runtime/src/net/poll_poller.cpp > CMakeFiles/runtime_net.dir/src/net/poll_poller.cpp.i
+
+CMakeFiles/runtime_net.dir/src/net/poll_poller.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/runtime_net.dir/src/net/poll_poller.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/yun/design/high-concurrency-runtime/src/net/poll_poller.cpp -o CMakeFiles/runtime_net.dir/src/net/poll_poller.cpp.s
+
+CMakeFiles/runtime_net.dir/src/net/select.cpp.o: CMakeFiles/runtime_net.dir/flags.make
+CMakeFiles/runtime_net.dir/src/net/select.cpp.o: /home/yun/design/high-concurrency-runtime/src/net/select.cpp
+CMakeFiles/runtime_net.dir/src/net/select.cpp.o: CMakeFiles/runtime_net.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=$(CMAKE_PROGRESS_17) "Building CXX object CMakeFiles/runtime_net.dir/src/net/select.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/runtime_net.dir/src/net/select.cpp.o -MF CMakeFiles/runtime_net.dir/src/net/select.cpp.o.d -o CMakeFiles/runtime_net.dir/src/net/select.cpp.o -c /home/yun/design/high-concurrency-runtime/src/net/select.cpp
+
+CMakeFiles/runtime_net.dir/src/net/select.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/runtime_net.dir/src/net/select.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/yun/design/high-concurrency-runtime/src/net/select.cpp > CMakeFiles/runtime_net.dir/src/net/select.cpp.i
+
+CMakeFiles/runtime_net.dir/src/net/select.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/runtime_net.dir/src/net/select.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/yun/design/high-concurrency-runtime/src/net/select.cpp -o CMakeFiles/runtime_net.dir/src/net/select.cpp.s
+
 # Object files for target runtime_net
 runtime_net_OBJECTS = \
 "CMakeFiles/runtime_net.dir/src/net/acceptor.cpp.o" \
@@ -295,7 +323,9 @@ runtime_net_OBJECTS = \
 "CMakeFiles/runtime_net.dir/src/net/tcp_connection.cpp.o" \
 "CMakeFiles/runtime_net.dir/src/net/tcp_server.cpp.o" \
 "CMakeFiles/runtime_net.dir/src/net/timer.cpp.o" \
-"CMakeFiles/runtime_net.dir/src/net/timer_queue.cpp.o"
+"CMakeFiles/runtime_net.dir/src/net/timer_queue.cpp.o" \
+"CMakeFiles/runtime_net.dir/src/net/poll_poller.cpp.o" \
+"CMakeFiles/runtime_net.dir/src/net/select.cpp.o"
 
 # External object files for target runtime_net
 runtime_net_EXTERNAL_OBJECTS =
@@ -315,9 +345,11 @@ libruntime_net.a: CMakeFiles/runtime_net.dir/src/net/tcp_connection.cpp.o
 libruntime_net.a: CMakeFiles/runtime_net.dir/src/net/tcp_server.cpp.o
 libruntime_net.a: CMakeFiles/runtime_net.dir/src/net/timer.cpp.o
 libruntime_net.a: CMakeFiles/runtime_net.dir/src/net/timer_queue.cpp.o
+libruntime_net.a: CMakeFiles/runtime_net.dir/src/net/poll_poller.cpp.o
+libruntime_net.a: CMakeFiles/runtime_net.dir/src/net/select.cpp.o
 libruntime_net.a: CMakeFiles/runtime_net.dir/build.make
 libruntime_net.a: CMakeFiles/runtime_net.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=$(CMAKE_PROGRESS_16) "Linking CXX static library libruntime_net.a"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=$(CMAKE_PROGRESS_18) "Linking CXX static library libruntime_net.a"
 	$(CMAKE_COMMAND) -P CMakeFiles/runtime_net.dir/cmake_clean_target.cmake
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/runtime_net.dir/link.txt --verbose=$(VERBOSE)
 

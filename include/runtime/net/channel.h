@@ -94,6 +94,14 @@ public:
   // Removes the Channel from its owning EventLoop.
   void Remove();
 
+  // A Channel starts with no interested events.
+  // Read events include normal readable data and priority data.
+  // Write events indicate that the fd can accept more output.
+  static const int kNoneEvent{0};
+  static const int kReadEvent{0x01};
+  static const int kWriteEvent{0x02};
+  static const int kErrorEvent{0x04};
+  static const int kHupEvent{0x08}; // 对端关闭
 private:
   // Pushes the current interest set to the Poller.
   void Update();
@@ -102,9 +110,6 @@ private:
   void HandleEventWithGuard(runtime::time::Timestamp receive_time);
 
 private:
-  static const int kNoneEvent;
-  static const int kReadEvent;
-  static const int kWriteEvent;
 
   EventLoop* loop_;
   const int fd_;
@@ -120,6 +125,7 @@ private:
   EventCallback write_callback_;
   EventCallback close_callback_;
   EventCallback error_callback_;
+
 };
 
 }  // namespace runtime::net

@@ -1,12 +1,55 @@
-logger_smoke_test 9 0.00176787
+logger_smoke_test 10 0.00145392
 simple_logger_example_smoke 3 0.00596772
-memory_pool_smoke_test 3 0.00360987
-object_pool_smoke_test 3 0.00243358
-buffer_smoke_test 3 0.00164958
-event_loop_smoke_test 3 0.00290274
+memory_pool_smoke_test 4 0.00294811
+object_pool_smoke_test 4 0.00143587
+buffer_smoke_test 4 0.000987906
+event_loop_smoke_test 4 0.00143726
 tcp_server_smoke_test 2 0
 concurrency_smoke_test 2 0
-http_smoke_test 2 0.00248918
+http_smoke_test 3 0.00447294
 runtime_integration_tests_NOT_BUILT 0 0
+BufferTest.ReusesPrependableSpaceWhenAppendingAfterRetrieve 1 0.00499232
+BufferTest.ReadFdAndWriteFdTransferPayloadThroughSocketPair 1 0.01078
+BufferTest.ReadFdExpandsStorageForLargePayload 1 0.00479102
+LogBufferTest.AppendAndReset 1 0.00442147
+LogFormatterTest.IncludesExpectedMetadata 1 0.00804549
+LoggerIntegrationTest.FiltersByLogLevelAndFlushesOnShutdown 1 0.00843768
+LoggerIntegrationTest.StreamingMacroWritesExpectedContent 1 0.0102509
+LoggerIntegrationTest.SupportsLargeMessageTruncationMarker 1 0.0199151
+MemoryPoolTest.AllocateAndDeallocateReuseSlots 1 0.00564432
+MemoryPoolTest.ReturnsNullWhenExhausted 1 0.00602173
+MemoryPoolTest.OwnsRecognizesPoolAddresses 1 0.00560425
+MemoryPoolTest.ConcurrentAllocateAndDeallocatePreservesCapacity 1 0.0145712
+ObjectPoolTest.AcquireAndReleaseManageLifetime 1 0.00456965
+ObjectPoolTest.AcquireReturnsNullWhenExhausted 1 0.00466053
+ObjectPoolTest.AcquireScopedReturnsObjectAutomatically 1 0.00568562
+ObjectPoolTest.OwnsRecognizesPoolPointers 1 0.00518313
+SanityTest.Basic 1 0.00489404
+ThreadPoolTest.ExecutesTasksAndReturnsFutureValues 1 0.0130434
+TaskTest.RunsFunction 1 0.0053398
+TaskTest.SkipsWhenCancelled 1 0.00421766
+TaskTest.SkipsWhenPastDeadline 1 0.00464558
+TaskTest.RunsBeforeDeadline 1 0.00497349
+TaskTest.NoDeadlineAlwaysRuns 1 0.00449238
+SchedulerTest.ExecutesOnWorkerThread 1 0.0148299
+SchedulerTest.PendingCountDecrementsAfterRun 1 0.0250618
+SchedulerTest.ThrowsWhenQueueFull 1 0.0393656
+EventLoopTest.RunInLoopExecutesImmediatelyOnOwningThread 1 0.00472633
+EventLoopTest.QueueInLoopFromAnotherThreadWakesLoop 1 0.0108709
+EventLoopTest.QueueInLoopFromPendingFunctorSchedulesNextTurn 1 0.00714841
+TcpServerTest.ConstructServer 1 0.00515027
+TcpServerTest.StartInvokesThreadInitCallbackForEachIoLoop 1 0.00870482
+TcpServerTest.AcceptsConnectionAndEchoesPayloadOnce 1 0.0280089
+TriggerModeTest.ET_DrainLargePayload 1 0.0118617
+TriggerModeTest.LT_DrainLargePayload 1 0.0111149
+TriggerModeTest.ET_AcceptsBurstConnections 1 0.0136253
+TriggerModeTest.ET_SendsLargeResponse 1 0.00855745
+HttpRouterTest.Distinguishes404And405 1 0.0053034
+HttpRouterTest.StaticRouteWinsOverDynamicRoute 1 0.00637773
+LtAndEt/TriggerModeEchoTest.EchoesSmallPayload/LT  # GetParam() = false 1 0.00883001
+LtAndEt/TriggerModeEchoTest.EchoesSmallPayload/ET  # GetParam() = true 1 0.0115925
+LtAndEt/TriggerModeEchoTest.EchoesMultipleMessages/LT  # GetParam() = false 1 0.00795986
+LtAndEt/TriggerModeEchoTest.EchoesMultipleMessages/ET  # GetParam() = true 1 0.00658552
+epoll_poller_smoke_test 1 0.0253139
 ---
-runtime_integration_tests_NOT_BUILT
+tcp_server_smoke_test

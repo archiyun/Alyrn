@@ -1,16 +1,8 @@
 #include "runtime/net/channel.h"
 #include "runtime/net/event_loop.h"
 
-#include <sys/epoll.h>
 
 namespace runtime::net {
-
-// A Channel starts with no interested events.
-// Read events include normal readable data and priority data.
-// Write events indicate that the fd can accept more output.
-const int Channel::kNoneEvent = 0;
-const int Channel::kReadEvent = EPOLLIN | EPOLLPRI;
-const int Channel::kWriteEvent = EPOLLOUT;
 
 Channel::Channel(EventLoop* loop, int fd)
     : loop_(loop),
@@ -49,30 +41,26 @@ void Channel::HandleEvent(runtime::time::Timestamp receive_time) {
 }
 
 void Channel::HandleEventWithGuard(runtime::time::Timestamp receive_time) {
-  // EPOLLHUP without EPOLLIN usually means the peer has closed the connection
+  // kHupEvent without kReadEvent usually means the peer has closed the connection
   // and there is no more readable data left in the socket buffer.
-  if ((revents_ & EPOLLHUP) && !(revents_ & EPOLLIN)) {
-    if (close_callback_) {
+  if ((revents_ & kHupEvent) && !(revents_ & kReadEvent)) {
+    if (close_callback_) 
       close_callback_();
-    }
   }
 
-  if (revents_ & EPOLLERR) {
-    if (error_callback_) {
+  if (revents_ & kErrorEvent) {
+    if (error_callback_) 
       error_callback_();
-    }
   }
 
-  if (revents_ & (EPOLLIN | EPOLLPRI)) {
-    if (read_callback_) {
+  if (revents_ & kReadEvent) {
+    if (read_callback_) 
       read_callback_(receive_time);
-    }
   }
 
-  if (revents_ & EPOLLOUT) {
-    if (write_callback_) {
+  if (revents_ & kWriteEvent) {
+    if (write_callback_) 
       write_callback_();
-    }
   }
 }
 

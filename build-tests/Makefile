@@ -1156,6 +1156,30 @@ src/net/net_utils.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_net.dir/build.make CMakeFiles/runtime_net.dir/src/net/net_utils.cpp.s
 .PHONY : src/net/net_utils.cpp.s
 
+src/net/poll_poller.o: src/net/poll_poller.cpp.o
+.PHONY : src/net/poll_poller.o
+
+# target to build an object file
+src/net/poll_poller.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_net.dir/build.make CMakeFiles/runtime_net.dir/src/net/poll_poller.cpp.o
+.PHONY : src/net/poll_poller.cpp.o
+
+src/net/poll_poller.i: src/net/poll_poller.cpp.i
+.PHONY : src/net/poll_poller.i
+
+# target to preprocess a source file
+src/net/poll_poller.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_net.dir/build.make CMakeFiles/runtime_net.dir/src/net/poll_poller.cpp.i
+.PHONY : src/net/poll_poller.cpp.i
+
+src/net/poll_poller.s: src/net/poll_poller.cpp.s
+.PHONY : src/net/poll_poller.s
+
+# target to generate assembly for a file
+src/net/poll_poller.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_net.dir/build.make CMakeFiles/runtime_net.dir/src/net/poll_poller.cpp.s
+.PHONY : src/net/poll_poller.cpp.s
+
 src/net/poller.o: src/net/poller.cpp.o
 .PHONY : src/net/poller.o
 
@@ -1179,6 +1203,30 @@ src/net/poller.s: src/net/poller.cpp.s
 src/net/poller.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_net.dir/build.make CMakeFiles/runtime_net.dir/src/net/poller.cpp.s
 .PHONY : src/net/poller.cpp.s
+
+src/net/select.o: src/net/select.cpp.o
+.PHONY : src/net/select.o
+
+# target to build an object file
+src/net/select.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_net.dir/build.make CMakeFiles/runtime_net.dir/src/net/select.cpp.o
+.PHONY : src/net/select.cpp.o
+
+src/net/select.i: src/net/select.cpp.i
+.PHONY : src/net/select.i
+
+# target to preprocess a source file
+src/net/select.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_net.dir/build.make CMakeFiles/runtime_net.dir/src/net/select.cpp.i
+.PHONY : src/net/select.cpp.i
+
+src/net/select.s: src/net/select.cpp.s
+.PHONY : src/net/select.s
+
+# target to generate assembly for a file
+src/net/select.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_net.dir/build.make CMakeFiles/runtime_net.dir/src/net/select.cpp.s
+.PHONY : src/net/select.cpp.s
 
 src/net/socket.o: src/net/socket.cpp.o
 .PHONY : src/net/socket.o
@@ -1505,9 +1553,15 @@ help:
 	@echo "... src/net/net_utils.o"
 	@echo "... src/net/net_utils.i"
 	@echo "... src/net/net_utils.s"
+	@echo "... src/net/poll_poller.o"
+	@echo "... src/net/poll_poller.i"
+	@echo "... src/net/poll_poller.s"
 	@echo "... src/net/poller.o"
 	@echo "... src/net/poller.i"
 	@echo "... src/net/poller.s"
+	@echo "... src/net/select.o"
+	@echo "... src/net/select.i"
+	@echo "... src/net/select.s"
 	@echo "... src/net/socket.o"
 	@echo "... src/net/socket.i"
 	@echo "... src/net/socket.s"

@@ -225,6 +225,4 @@ CMakeFiles/runtime_net.dir/src/net/channel.cpp.o: \
  /usr/include/c++/12/bits/atomic_timed_wait.h \
  /usr/include/c++/12/bits/this_thread_sleep.h \
  /usr/include/x86_64-linux-gnu/sys/time.h /usr/include/semaphore.h \
- /usr/include/x86_64-linux-gnu/bits/semaphore.h \
- /usr/include/x86_64-linux-gnu/sys/epoll.h \
- /usr/include/x86_64-linux-gnu/bits/epoll.h
+ /usr/include/x86_64-linux-gnu/bits/semaphore.h

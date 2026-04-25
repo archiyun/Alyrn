@@ -65,6 +65,8 @@ add_library(runtime_net STATIC
     src/net/tcp_server.cpp
     src/net/timer.cpp
     src/net/timer_queue.cpp
+    src/net/poll_poller.cpp
+    src/net/select.cpp
 )
 
 target_include_directories(runtime_net

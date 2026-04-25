@@ -1,0 +1,167 @@
+[
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-bench",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -O2 -O3 -DNDEBUG -std=c++20 -o CMakeFiles/runtime_foundation.dir/src/base/current_thread.cpp.o -c /home/yun/design/high-concurrency-runtime/src/base/current_thread.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/src/base/current_thread.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-bench",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -O2 -O3 -DNDEBUG -std=c++20 -o CMakeFiles/runtime_foundation.dir/src/log/async_logger.cpp.o -c /home/yun/design/high-concurrency-runtime/src/log/async_logger.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/src/log/async_logger.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-bench",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -O2 -O3 -DNDEBUG -std=c++20 -o CMakeFiles/runtime_foundation.dir/src/log/logger.cpp.o -c /home/yun/design/high-concurrency-runtime/src/log/logger.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/src/log/logger.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-bench",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -O2 -O3 -DNDEBUG -std=c++20 -o CMakeFiles/runtime_foundation.dir/src/time/timestamp.cpp.o -c /home/yun/design/high-concurrency-runtime/src/time/timestamp.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/src/time/timestamp.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-bench",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -O2 -O3 -DNDEBUG -std=c++20 -o CMakeFiles/runtime_task.dir/src/task/thread_pool.cpp.o -c /home/yun/design/high-concurrency-runtime/src/task/thread_pool.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/src/task/thread_pool.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-bench",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -O2 -O3 -DNDEBUG -std=c++20 -o CMakeFiles/runtime_task.dir/src/task/task.cpp.o -c /home/yun/design/high-concurrency-runtime/src/task/task.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/src/task/task.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-bench",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -O2 -O3 -DNDEBUG -std=c++20 -o CMakeFiles/runtime_task.dir/src/task/scheduler.cpp.o -c /home/yun/design/high-concurrency-runtime/src/task/scheduler.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/src/task/scheduler.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-bench",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -O2 -O3 -DNDEBUG -std=c++20 -o CMakeFiles/runtime_net.dir/src/net/acceptor.cpp.o -c /home/yun/design/high-concurrency-runtime/src/net/acceptor.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/src/net/acceptor.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-bench",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -O2 -O3 -DNDEBUG -std=c++20 -o CMakeFiles/runtime_net.dir/src/net/buffer.cpp.o -c /home/yun/design/high-concurrency-runtime/src/net/buffer.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/src/net/buffer.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-bench",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -O2 -O3 -DNDEBUG -std=c++20 -o CMakeFiles/runtime_net.dir/src/net/channel.cpp.o -c /home/yun/design/high-concurrency-runtime/src/net/channel.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/src/net/channel.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-bench",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -O2 -O3 -DNDEBUG -std=c++20 -o CMakeFiles/runtime_net.dir/src/net/epoll_poller.cpp.o -c /home/yun/design/high-concurrency-runtime/src/net/epoll_poller.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/src/net/epoll_poller.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-bench",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -O2 -O3 -DNDEBUG -std=c++20 -o CMakeFiles/runtime_net.dir/src/net/event_loop.cpp.o -c /home/yun/design/high-concurrency-runtime/src/net/event_loop.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/src/net/event_loop.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-bench",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -O2 -O3 -DNDEBUG -std=c++20 -o CMakeFiles/runtime_net.dir/src/net/event_loop_thread.cpp.o -c /home/yun/design/high-concurrency-runtime/src/net/event_loop_thread.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/src/net/event_loop_thread.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-bench",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -O2 -O3 -DNDEBUG -std=c++20 -o CMakeFiles/runtime_net.dir/src/net/event_loop_thread_pool.cpp.o -c /home/yun/design/high-concurrency-runtime/src/net/event_loop_thread_pool.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/src/net/event_loop_thread_pool.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-bench",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -O2 -O3 -DNDEBUG -std=c++20 -o CMakeFiles/runtime_net.dir/src/net/inet_address.cpp.o -c /home/yun/design/high-concurrency-runtime/src/net/inet_address.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/src/net/inet_address.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-bench",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -O2 -O3 -DNDEBUG -std=c++20 -o CMakeFiles/runtime_net.dir/src/net/net_utils.cpp.o -c /home/yun/design/high-concurrency-runtime/src/net/net_utils.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/src/net/net_utils.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-bench",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -O2 -O3 -DNDEBUG -std=c++20 -o CMakeFiles/runtime_net.dir/src/net/poller.cpp.o -c /home/yun/design/high-concurrency-runtime/src/net/poller.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/src/net/poller.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-bench",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -O2 -O3 -DNDEBUG -std=c++20 -o CMakeFiles/runtime_net.dir/src/net/socket.cpp.o -c /home/yun/design/high-concurrency-runtime/src/net/socket.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/src/net/socket.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-bench",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -O2 -O3 -DNDEBUG -std=c++20 -o CMakeFiles/runtime_net.dir/src/net/tcp_connection.cpp.o -c /home/yun/design/high-concurrency-runtime/src/net/tcp_connection.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/src/net/tcp_connection.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-bench",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -O2 -O3 -DNDEBUG -std=c++20 -o CMakeFiles/runtime_net.dir/src/net/tcp_server.cpp.o -c /home/yun/design/high-concurrency-runtime/src/net/tcp_server.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/src/net/tcp_server.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-bench",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -O2 -O3 -DNDEBUG -std=c++20 -o CMakeFiles/runtime_net.dir/src/net/timer.cpp.o -c /home/yun/design/high-concurrency-runtime/src/net/timer.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/src/net/timer.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-bench",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -O2 -O3 -DNDEBUG -std=c++20 -o CMakeFiles/runtime_net.dir/src/net/timer_queue.cpp.o -c /home/yun/design/high-concurrency-runtime/src/net/timer_queue.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/src/net/timer_queue.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-bench",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -O2 -O3 -DNDEBUG -std=c++20 -o CMakeFiles/runtime_net.dir/src/net/poll_poller.cpp.o -c /home/yun/design/high-concurrency-runtime/src/net/poll_poller.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/src/net/poll_poller.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-bench",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -O2 -O3 -DNDEBUG -std=c++20 -o CMakeFiles/runtime_net.dir/src/net/select.cpp.o -c /home/yun/design/high-concurrency-runtime/src/net/select.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/src/net/select.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-bench",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -O2 -O3 -DNDEBUG -std=c++20 -o CMakeFiles/runtime_http.dir/src/http/http_types.cpp.o -c /home/yun/design/high-concurrency-runtime/src/http/http_types.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/src/http/http_types.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-bench",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -O2 -O3 -DNDEBUG -std=c++20 -o CMakeFiles/runtime_http.dir/src/http/http_request.cpp.o -c /home/yun/design/high-concurrency-runtime/src/http/http_request.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/src/http/http_request.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-bench",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -O2 -O3 -DNDEBUG -std=c++20 -o CMakeFiles/runtime_http.dir/src/http/http_context.cpp.o -c /home/yun/design/high-concurrency-runtime/src/http/http_context.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/src/http/http_context.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-bench",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -O2 -O3 -DNDEBUG -std=c++20 -o CMakeFiles/runtime_http.dir/src/http/http_response.cpp.o -c /home/yun/design/high-concurrency-runtime/src/http/http_response.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/src/http/http_response.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-bench",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -O2 -O3 -DNDEBUG -std=c++20 -o CMakeFiles/runtime_http.dir/src/http/router.cpp.o -c /home/yun/design/high-concurrency-runtime/src/http/router.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/src/http/router.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-bench",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -O2 -O3 -DNDEBUG -std=c++20 -o CMakeFiles/runtime_http.dir/src/http/http_server.cpp.o -c /home/yun/design/high-concurrency-runtime/src/http/http_server.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/src/http/http_server.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-bench/examples",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -O2 -O3 -DNDEBUG -std=c++20 -o CMakeFiles/simple_logger_example.dir/simple_logger.cpp.o -c /home/yun/design/high-concurrency-runtime/examples/simple_logger.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/examples/simple_logger.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-bench/examples",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -O2 -O3 -DNDEBUG -std=c++20 -o CMakeFiles/simple_echo_server.dir/simple_echo_server.cpp.o -c /home/yun/design/high-concurrency-runtime/examples/simple_echo_server.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/examples/simple_echo_server.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-bench/examples",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -O2 -O3 -DNDEBUG -std=c++20 -o CMakeFiles/demo_http_server.dir/demo_http_server.cpp.o -c /home/yun/design/high-concurrency-runtime/examples/demo_http_server.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/examples/demo_http_server.cpp"
+}
+]

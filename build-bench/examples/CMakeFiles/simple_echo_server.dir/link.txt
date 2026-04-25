@@ -1,0 +1,1 @@
+/usr/bin/c++ -O2 -O3 -DNDEBUG CMakeFiles/simple_echo_server.dir/simple_echo_server.cpp.o -o simple_echo_server  ../libruntime_net.a ../libruntime_foundation.a 

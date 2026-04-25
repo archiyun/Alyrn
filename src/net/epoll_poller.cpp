@@ -31,7 +31,26 @@ const char* OpName(int op) {
   }
 }
 
+// 入口方向， Channel->Events()
+static uint32_t ToEpollEvents(int abstract_events) {
+  uint32_t ev{0};
+  if (abstract_events & Channel::kReadEvent)  ev |= EPOLLIN | EPOLLPRI;
+  if (abstract_events & Channel::kWriteEvent) ev |= EPOLLOUT;
+  return ev;
+}
+
+// 结果方向, epoll_event.events -> abstract
+static int FromEpollEvents(uint32_t epoll_events) {
+  int ev{0};
+  if (epoll_events & (EPOLLIN | EPOLLPRI)) ev |= Channel::kReadEvent;
+  if (epoll_events & EPOLLOUT)             ev |= Channel::kWriteEvent;
+  if (epoll_events & EPOLLERR)             ev |= Channel::kErrorEvent;
+  if (epoll_events & EPOLLHUP)             ev |= Channel::kHupEvent;
+  return ev;
+}
+
 }  // namespace
+
 
 EPollPoller::EPollPoller(EventLoop* loop)
     : Poller(loop),
@@ -83,7 +102,7 @@ void EPollPoller::FillActiveChannels(
                            static_cast<std::size_t>(num_events));
   for (int i = 0; i < num_events; ++i) {
     auto* channel = static_cast<Channel*>(events_[i].data.ptr);
-    channel->SetRevents(events_[i].events);
+    channel->SetRevents(FromEpollEvents(events_[i].events));
     active_channels->push_back(channel);
   }
 }
@@ -126,7 +145,7 @@ void EPollPoller::RemoveChannel(Channel* channel) {
 
 void EPollPoller::Update(int operation, Channel* channel) {
   epoll_event event{};
-  event.events = channel->Events();
+  event.events = ToEpollEvents(channel->Events());
   if (channel->IsEdgeTriggered()) {
     // Preserve the caller's edge-triggered preference in epoll.
     event.events |= EPOLLET;

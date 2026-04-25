@@ -200,7 +200,7 @@ CMakeFiles/runtime_foundation.dir/clean:
 CMakeFiles/runtime_task.dir/all: CMakeFiles/runtime_foundation.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_task.dir/build.make CMakeFiles/runtime_task.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_task.dir/build.make CMakeFiles/runtime_task.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=52,53,54,55 "Built target runtime_task"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=54,55,56,57 "Built target runtime_task"
 .PHONY : CMakeFiles/runtime_task.dir/all
 
 # Build rule for subdir invocation for target.
@@ -226,12 +226,12 @@ CMakeFiles/runtime_task.dir/clean:
 CMakeFiles/runtime_net.dir/all: CMakeFiles/runtime_foundation.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_net.dir/build.make CMakeFiles/runtime_net.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_net.dir/build.make CMakeFiles/runtime_net.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51 "Built target runtime_net"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53 "Built target runtime_net"
 .PHONY : CMakeFiles/runtime_net.dir/all
 
 # Build rule for subdir invocation for target.
 CMakeFiles/runtime_net.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles 21
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles 23
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/runtime_net.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles 0
 .PHONY : CMakeFiles/runtime_net.dir/rule
@@ -259,7 +259,7 @@ CMakeFiles/runtime_http.dir/all: CMakeFiles/runtime_net.dir/all
 
 # Build rule for subdir invocation for target.
 CMakeFiles/runtime_http.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles 32
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles 34
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/runtime_http.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles 0
 .PHONY : CMakeFiles/runtime_http.dir/rule
@@ -280,7 +280,7 @@ CMakeFiles/runtime_http.dir/clean:
 examples/CMakeFiles/simple_logger_example.dir/all: CMakeFiles/runtime_foundation.dir/all
 	$(MAKE) $(MAKESILENT) -f examples/CMakeFiles/simple_logger_example.dir/build.make examples/CMakeFiles/simple_logger_example.dir/depend
 	$(MAKE) $(MAKESILENT) -f examples/CMakeFiles/simple_logger_example.dir/build.make examples/CMakeFiles/simple_logger_example.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=66,67 "Built target simple_logger_example"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=68,69 "Built target simple_logger_example"
 .PHONY : examples/CMakeFiles/simple_logger_example.dir/all
 
 # Build rule for subdir invocation for target.
@@ -307,12 +307,12 @@ examples/CMakeFiles/simple_echo_server.dir/all: CMakeFiles/runtime_foundation.di
 examples/CMakeFiles/simple_echo_server.dir/all: CMakeFiles/runtime_net.dir/all
 	$(MAKE) $(MAKESILENT) -f examples/CMakeFiles/simple_echo_server.dir/build.make examples/CMakeFiles/simple_echo_server.dir/depend
 	$(MAKE) $(MAKESILENT) -f examples/CMakeFiles/simple_echo_server.dir/build.make examples/CMakeFiles/simple_echo_server.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=64,65 "Built target simple_echo_server"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=66,67 "Built target simple_echo_server"
 .PHONY : examples/CMakeFiles/simple_echo_server.dir/all
 
 # Build rule for subdir invocation for target.
 examples/CMakeFiles/simple_echo_server.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles 23
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles 25
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 examples/CMakeFiles/simple_echo_server.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles 0
 .PHONY : examples/CMakeFiles/simple_echo_server.dir/rule
@@ -341,7 +341,7 @@ examples/CMakeFiles/demo_http_server.dir/all: CMakeFiles/runtime_http.dir/all
 
 # Build rule for subdir invocation for target.
 examples/CMakeFiles/demo_http_server.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles 34
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles 36
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 examples/CMakeFiles/demo_http_server.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles 0
 .PHONY : examples/CMakeFiles/demo_http_server.dir/rule
@@ -1174,7 +1174,7 @@ tests/CMakeFiles/buffer_smoke_test.dir/all: CMakeFiles/runtime_net.dir/all
 
 # Build rule for subdir invocation for target.
 tests/CMakeFiles/buffer_smoke_test.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles 23
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles 25
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 tests/CMakeFiles/buffer_smoke_test.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles 0
 .PHONY : tests/CMakeFiles/buffer_smoke_test.dir/rule
@@ -1203,7 +1203,7 @@ tests/CMakeFiles/http_smoke_test.dir/all: CMakeFiles/runtime_http.dir/all
 
 # Build rule for subdir invocation for target.
 tests/CMakeFiles/http_smoke_test.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles 34
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles 36
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 tests/CMakeFiles/http_smoke_test.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles 0
 .PHONY : tests/CMakeFiles/http_smoke_test.dir/rule
@@ -1230,7 +1230,7 @@ tests/CMakeFiles/epoll_poller_smoke_test.dir/all: CMakeFiles/runtime_net.dir/all
 
 # Build rule for subdir invocation for target.
 tests/CMakeFiles/epoll_poller_smoke_test.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles 23
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles 25
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 tests/CMakeFiles/epoll_poller_smoke_test.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles 0
 .PHONY : tests/CMakeFiles/epoll_poller_smoke_test.dir/rule
@@ -1257,7 +1257,7 @@ tests/CMakeFiles/event_loop_smoke_test.dir/all: CMakeFiles/runtime_net.dir/all
 
 # Build rule for subdir invocation for target.
 tests/CMakeFiles/event_loop_smoke_test.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles 23
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles 25
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 tests/CMakeFiles/event_loop_smoke_test.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles 0
 .PHONY : tests/CMakeFiles/event_loop_smoke_test.dir/rule
@@ -1279,12 +1279,12 @@ tests/CMakeFiles/tcp_server_smoke_test.dir/all: CMakeFiles/runtime_foundation.di
 tests/CMakeFiles/tcp_server_smoke_test.dir/all: CMakeFiles/runtime_net.dir/all
 	$(MAKE) $(MAKESILENT) -f tests/CMakeFiles/tcp_server_smoke_test.dir/build.make tests/CMakeFiles/tcp_server_smoke_test.dir/depend
 	$(MAKE) $(MAKESILENT) -f tests/CMakeFiles/tcp_server_smoke_test.dir/build.make tests/CMakeFiles/tcp_server_smoke_test.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=68,69 "Built target tcp_server_smoke_test"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=70,71 "Built target tcp_server_smoke_test"
 .PHONY : tests/CMakeFiles/tcp_server_smoke_test.dir/all
 
 # Build rule for subdir invocation for target.
 tests/CMakeFiles/tcp_server_smoke_test.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles 23
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles 25
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 tests/CMakeFiles/tcp_server_smoke_test.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles 0
 .PHONY : tests/CMakeFiles/tcp_server_smoke_test.dir/rule
@@ -1333,12 +1333,12 @@ tests/CMakeFiles/runtime_unit_tests.dir/all: CMakeFiles/runtime_task.dir/all
 tests/CMakeFiles/runtime_unit_tests.dir/all: CMakeFiles/runtime_net.dir/all
 	$(MAKE) $(MAKESILENT) -f tests/CMakeFiles/runtime_unit_tests.dir/build.make tests/CMakeFiles/runtime_unit_tests.dir/depend
 	$(MAKE) $(MAKESILENT) -f tests/CMakeFiles/runtime_unit_tests.dir/build.make tests/CMakeFiles/runtime_unit_tests.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=56,57,58,59,60,61,62,63 "Built target runtime_unit_tests"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=58,59,60,61,62,63,64,65 "Built target runtime_unit_tests"
 .PHONY : tests/CMakeFiles/runtime_unit_tests.dir/all
 
 # Build rule for subdir invocation for target.
 tests/CMakeFiles/runtime_unit_tests.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles 33
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles 35
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 tests/CMakeFiles/runtime_unit_tests.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles 0
 .PHONY : tests/CMakeFiles/runtime_unit_tests.dir/rule
@@ -1367,7 +1367,7 @@ tests/CMakeFiles/runtime_integration_tests.dir/all: CMakeFiles/runtime_http.dir/
 
 # Build rule for subdir invocation for target.
 tests/CMakeFiles/runtime_integration_tests.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles 37
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles 39
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 tests/CMakeFiles/runtime_integration_tests.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles 0
 .PHONY : tests/CMakeFiles/runtime_integration_tests.dir/rule
