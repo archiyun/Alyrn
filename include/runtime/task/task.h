@@ -1,46 +1,48 @@
 #pragma once
 
+#include "runtime/task/cancellation_token.h"
+#include "runtime/task/task_options.h"
+#include "runtime/task/task_state.h"
 #include "runtime/time/timestamp.h"
 
 #include <atomic>
+#include <cstdint>
 #include <functional>
+#include <future>
+#include <string>
 
 namespace runtime::task {
 
-// Task wraps one scheduled function together with scheduling metadata.
-class Task {
-public:
-  using Func = std::function<void()>;
+// Task is the unit of work in the scheduler.
+// Always heap-allocate via std::make_shared<Task>; never copy or move.
+struct Task {
+  using Func = std::function<void(CancellationToken)>;
 
-  explicit Task(Func f);
+  Task(uint64_t id, std::string name, TaskPriority priority, Func func);
 
-  // std::atomic is not movable, so Task defines a custom move constructor.
-  Task(Task&& other) noexcept
-      : func_(std::move(other.func_)),
-        id_(other.id_),
-        priority_(other.priority_),
-        deadline_(other.deadline_),
-        cancelled_(other.cancelled_.load()) {}
+  Task(const Task&)            = delete;
+  Task& operator=(const Task&) = delete;
+  Task(Task&&)                 = delete;
+  Task& operator=(Task&&)      = delete;
 
-  int Id() const { return id_; }
-  int Priority() const { return priority_; }
-  void SetPriority(int p) { priority_ = p; }
+  // Identity (immutable after construction)
+  const uint64_t     id;
+  const std::string  name;
+  const TaskPriority priority;
+  Func               func;
 
-  runtime::time::Timestamp Deadline() const { return deadline_; }
-  void SetDeadline(runtime::time::Timestamp t) { deadline_ = t; }
+  // Lifecycle state (written by ThreadPool workers)
+  std::atomic<TaskState> state{TaskState::kPending};
+  CancellationSource     cancel_source;
 
-  bool Cancelled() const { return cancelled_.load(); }
-  void Cancel() { cancelled_.store(true); }
+  // Timestamps (written once each, no concurrent writes)
+  runtime::time::Timestamp created_at;
+  runtime::time::Timestamp enqueued_at;
+  runtime::time::Timestamp started_at;
+  runtime::time::Timestamp completed_at;
 
-  void Run();
-
-private:
-  Func func_;
-  int id_;
-  int priority_{0};
-  runtime::time::Timestamp deadline_{};
-  std::atomic<bool> cancelled_{false};
-
-  static std::atomic<int> id_counter_;
+  // Fulfills the future held by TaskHandle
+  std::promise<void> promise;
 };
+
 }  // namespace runtime::task

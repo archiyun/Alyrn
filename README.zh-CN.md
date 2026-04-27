@@ -1,114 +1,182 @@
 # high-concurrency-runtime
 
-> 基于 C++20 的高性能 HTTP 服务框架，采用 Reactor + One-Loop-Per-Thread 事件驱动模型。
+**中文** | [English](README.md)
 
-**[English](README.md)**
+`high-concurrency-runtime` 是一个 C++20 高并发网络运行时与 HTTP 服务框架。
+项目基于 Reactor 模型和 One-Loop-Per-Thread 线程模型，提供 TCP 网络层、HTTP 路由层、异步日志、任务调度器、内存池、指标组件等基础设施，适合用来学习或搭建轻量级 Linux 服务端程序, 或者基于此框架来学习`WebSocket`, `RPC`, 分布式系统， 数据库连接半ORM。
 
----
+## 功能概览
 
-## 核心特性
+- Linux `epoll` 事件驱动网络层
+- One-Loop-Per-Thread I/O 线程模型
+- TCP server、connection、buffer、timer、poller 等基础组件
+- HTTP server、请求解析、响应构造、Trie 路由、路径参数
+- 协作式任务取消、优先级任务队列、线程池调度器
+- 异步日志与时间戳工具
+- MemoryPool / ObjectPool 内存池
+- Counter / Gauge / Histogram / Registry 指标接口
+- 示例服务、单元测试、集成测试和 wrk 压测脚本
 
-- **Reactor 模型** — 基于 `epoll` 的事件驱动循环，`readv` scatter-gather 零拷贝读取
-- **One-Loop-Per-Thread** — Main Loop 只负责 accept，每条连接由 Sub Loop 线程独占，IO 线程间无共享状态，无全局锁
-- **Trie 路由器** — 路径匹配 `O(k)`（k = 路径段数），支持动态参数（`:param`），静态段优先于参数段，自动区分 404 / 405
-- **增量 HTTP 解析器** — `HttpContext` 状态机直接消费 `Buffer&` 字节，零中间拷贝；keep-alive 场景下调用 `Reset()` 复用同一上下文
-- **异步日志** — 双缓冲批量落盘，IO 线程写日志不阻塞
-- **内存池** — 侵入式 free-list 分配器；`ObjectPool` 封装 RAII `ScopedPtr`，`NullMutex` 变体适用于单线程路径（基准测试中比 `new/delete` 快 33×）
-- **C++20** — 纯头文件模板，`std::any` 承载类型化连接上下文，结构化绑定
+## 环境要求
 
----
+推荐在 Linux 环境下构建。
+如果要在 MacOS 或者其它环境需要修改网络层来兼容。
 
-## 架构总览
+基础依赖：
 
-```
-┌──────────────────────────────────────────────┐
-│               HTTP 层                        │  runtime::http
-│   HttpServer · Router · HttpContext           │
-│   HttpRequest · HttpResponse                 │
-└──────────────────┬───────────────────────────┘
-                   │ 依赖
-┌──────────────────▼───────────────────────────┐
-│               Net 层                         │  runtime::net
-│   TcpServer · TcpConnection · EventLoop      │
-│   EpollPoller · Channel · Buffer             │
-│   Acceptor · TimerQueue · EventLoopThreadPool│
-└──────────────────┬───────────────────────────┘
-                   │ 依赖
-┌──────────────────▼───────────────────────────┐
-│             基础层                           │  runtime::log / time / task / memory
-│   AsyncLogger · Timestamp                    │
-│   ThreadPool · MemoryPool · ObjectPool       │
-└──────────────────────────────────────────────┘
-```
+- Linux 环境 , for `epoll`
+- CMake 3.20 或更高版本
+- 支持 C++20 的编译器，推荐 GCC 12+ 或 Clang 15+
+- POSIX threads
 
-依赖关系严格单向向下，上层模块不得反向引用下层头文件。
+可选依赖：
 
----
+- `liburing`：用于构建 `examples/io_uring_echo`
+- GoogleTest：如果系统安装了 GTest，CMake 会自动构建更完整的 gtest 测试；未安装时会跳过这些测试
+- `wrk`：用于运行 HTTP 压测脚本
 
-## 请求处理链路
+Ubuntu / Debian 可以先安装常用依赖：
 
-```
-内核数据
-  └─ Buffer::ReadFd()                 ← scatter-gather 读，无中间拷贝
-       └─ MessageCallback(conn, buf, ts)
-            └─ HttpContext::ParseRequest(buf)   ← 状态机，原地消费字节
-                 └─ HttpRequest（解析完成）
-                      └─ Router::Match(method, path)
-                           └─ Handler(req, resp)
-                                └─ conn->Send(resp.ToString())
+```bash
+sudo apt update
+sudo apt install -y build-essential cmake git liburing2 liburing-dev
 ```
 
----
+如果只想构建核心库和测试，不运行 `io_uring` 示例，可以不安装 `liburing`，并在配置时关闭示例：
 
-## 快速开始
+```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_EXAMPLES=OFF
+cmake --build build -j"$(nproc)"
+```
 
-### 依赖
+## 下载项目
 
-- Linux（需要 epoll）
-- GCC 12+ 或 Clang 15+（C++20）
-- CMake 3.20+
+使用 HTTPS：
 
-### 构建
+```bash
+git clone https://github.com/akiba-miku/high-concurrency-runtime.git
+cd high-concurrency-runtime
+```
+
+或者使用 SSH：
+
+```bash
+git clone git@github.com:akiba-miku/high-concurrency-runtime.git
+cd high-concurrency-runtime
+```
+
+## 快速构建
+
+默认会构建库、示例程序和测试：
 
 ```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j$(nproc)
+cmake --build build -j"$(nproc)"
 ```
 
-### 运行 Demo 服务
+常用 CMake 选项：
+
+| 选项 | 默认值 | 说明 |
+|---|---:|---|
+| `BUILD_EXAMPLES` | `ON` | 构建 `examples/` 下的示例程序 |
+| `BUILD_TESTS` | `ON` | 构建 `tests/` 下的测试 |
+| `CMAKE_BUILD_TYPE` | 空 | 单配置生成器下建议设为 `Debug` 或 `Release` |
+
+只构建核心库：
+
+```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF
+cmake --build build -j"$(nproc)"
+```
+
+Debug 构建：
+
+```bash
+cmake -B build-debug -DCMAKE_BUILD_TYPE=Debug
+cmake --build build-debug -j"$(nproc)"
+```
+
+## 运行 HTTP 示例
+
+构建完成后运行 demo HTTP server：
 
 ```bash
 ./build/examples/demo_http_server
-# 默认监听 127.0.0.1:18080
 ```
 
-支持的环境变量：
+默认监听：
+
+```text
+127.0.0.1:18080
+```
+
+可以通过环境变量调整运行参数：
 
 | 变量 | 默认值 | 说明 |
-|---|---|---|
-| `HOST` | `127.0.0.1` | 绑定地址 |
+|---|---:|---|
+| `HOST` | `127.0.0.1` | 监听地址 |
 | `PORT` | `18080` | 监听端口 |
-| `IO_THREADS` | 自动（≤ 4） | Sub Loop 线程数 |
-| `ET_MODE` | 未设置 | 启用边沿触发 epoll |
+| `IO_THREADS` | 自动探测，最多 4 | I/O 子线程数量 |
+| `ET_MODE` | 未设置 | 设置任意值后启用 edge-triggered epoll |
+
+示例：
 
 ```bash
-# 健康检查
+HOST=0.0.0.0 PORT=18080 IO_THREADS=4 ./build/examples/demo_http_server
+```
+
+另开一个终端访问接口：
+
+```bash
+curl http://127.0.0.1:18080/
 curl http://127.0.0.1:18080/api/health
+curl -X POST http://127.0.0.1:18080/api/echo -d "hello runtime"
+```
 
-# Echo POST body
-curl -X POST http://127.0.0.1:18080/api/echo -d "hello"
+KV 示例接口：
 
-# 内置 KV 存储
-curl -X POST http://127.0.0.1:18080/api/kv/foo -d "bar"
-curl http://127.0.0.1:18080/api/kv/foo
+```bash
+curl -X POST http://127.0.0.1:18080/api/kv/name -d "miku"
+curl http://127.0.0.1:18080/api/kv/name
 curl http://127.0.0.1:18080/api/kv
+```
 
-# 404 / 405 验证
+404 / 405 行为验证：
+
+```bash
 curl http://127.0.0.1:18080/notfound
 curl -X DELETE http://127.0.0.1:18080/api/health
 ```
 
-### 接入自己的服务
+## 运行 TCP Echo 示例
+
+启动 TCP echo server：
+
+```bash
+./build/examples/simple_echo_server
+```
+
+默认监听 `127.0.0.1:8080`。可以用 `nc` 测试：
+
+```bash
+nc 127.0.0.1 8080
+hello
+```
+
+服务端会把收到的内容原样写回。
+
+## 在自己的程序中使用
+
+最简单的方式是把本项目作为子目录加入你的 CMake 工程，然后链接对应的静态库目标。
+
+```cmake
+add_subdirectory(high-concurrency-runtime)
+
+add_executable(my_server main.cpp)
+target_link_libraries(my_server PRIVATE runtime_http)
+```
+
+一个最小 HTTP 服务：
 
 ```cpp
 #include "runtime/http/http_server.h"
@@ -124,106 +192,154 @@ int main() {
 
     server.SetThreadNum(4);
 
-    // 动态路径参数
-    server.Get("/api/users/:id", [](const runtime::http::HttpRequest& req,
-                                    runtime::http::HttpResponse& resp) {
-        resp.SetContentType("application/json; charset=utf-8");
-        resp.SetBody("{\"id\":\"" + std::string(req.PathParam("id")) + "\"}");
-    });
+    server.Get("/api/users/:id",
+        [](const runtime::http::HttpRequest& req,
+           runtime::http::HttpResponse& resp) {
+            resp.SetContentType("application/json; charset=utf-8");
+            resp.SetBody("{\"id\":\"" + std::string(req.PathParam("id")) + "\"}");
+        });
 
-    server.Post("/api/echo", [](const runtime::http::HttpRequest& req,
-                                runtime::http::HttpResponse& resp) {
-        resp.SetContentType("text/plain");
-        resp.SetBody(std::string(req.Body()));
-    });
+    server.Post("/api/echo",
+        [](const runtime::http::HttpRequest& req,
+           runtime::http::HttpResponse& resp) {
+            resp.SetContentType("text/plain; charset=utf-8");
+            resp.SetBody(std::string(req.Body()));
+        });
 
     server.Start();
     loop.Loop();
+    return 0;
 }
 ```
 
----
+如果只需要任务调度器，可以链接 `runtime_task`：
 
-## 基准测试
+```cmake
+target_link_libraries(my_app PRIVATE runtime_task)
+```
 
-**测试环境：** AMD EPYC 9754（2 vCPU，KVM 虚拟化）· 3.6 GiB RAM · Debian 12 · Release 构建（`-O3`）  
-**测试工具：** [wrk](https://github.com/wg/wrk) — 持续 5 秒，1 个 wrk 线程，Keep-Alive 开启，`IO_THREADS=2`
+示例代码：
 
-### HTTP 吞吐量
+```cpp
+#include "runtime/task/scheduler.h"
 
-| 接口 | 并发连接 | QPS | P50 延迟 | P99 延迟 |
-|---|---|---|---|---|
-| `GET /api/health` | 64 | 64,750 | 0.47 ms | 9.90 ms |
-| `GET /api/health` | 128 | **69,481** | 0.99 ms | 12.04 ms |
-| `POST /api/echo` | 64 | 62,895 | 0.49 ms | 10.30 ms |
-| `POST /api/echo` | 128 | **62,756** | 1.08 ms | 11.13 ms |
-| `GET /static`（静态文件） | 128 | 22,202 | 4.28 ms | 16.02 ms |
+#include <iostream>
 
-关闭 Keep-Alive 后吞吐量下降约 7×（c=128 时 QPS 降至 9,255）——每请求建立新 TCP 连接的握手开销成为主要瓶颈。
+int main() {
+    runtime::task::Scheduler scheduler(4);
 
-### 内存分配器对比（单机，`-O2`）
+    auto handle = scheduler.Submit([] {
+        std::cout << "run task\n";
+    });
 
-| 场景 | Pool（ns/op） | new/delete（ns/op） | 加速比 |
-|---|---|---|---|
-| 顺序 fill + drain | 28.3 | 27.3 | 1.0× |
-| 交错 alloc/free（std::mutex） | 35.2 | 24.9 | 0.7× |
-| 批量 32 alloc + free | 19.2 | 37.3 | **1.9×** |
-| ObjectPool 含 ctor/dtor（Task） | 35.8 | 188.8 | **5.3×** |
-| 交错，NullMutex（无锁） | 1.2 | 40.3 | **33×** |
-| 8 线程竞争（std::mutex） | 50.9 | 56.9 | 1.1× |
+    handle.Wait();
+    return 0;
+}
+```
 
-**分析：**
-- `std::mutex` 的加锁开销完全抵消了单槽交错场景的收益（场景 2 甚至比 `new/delete` 慢）
-- 去掉锁（`NullMutex`）后可达 33× 加速——适合 One-Loop-Per-Thread 架构下的单线程对象池
-- 含构造/析构的对象分配收益最明显（5.3×）：`new` 需经过 malloc + ctor，对象池只需 free-list pop + placement new
+库目标关系：
 
----
+| 目标 | 说明 |
+|---|---|
+| `runtime_foundation` | 日志、时间、基础工具 |
+| `runtime_task` | 任务、线程池、调度器 |
+| `runtime_net` | TCP 网络层和事件循环 |
+| `runtime_http` | HTTP 服务层，依赖 net/task/foundation |
+
+## 运行测试
+
+默认配置 `BUILD_TESTS=ON` 时可以运行：
+
+```bash
+ctest --test-dir build --output-on-failure
+```
+
+只运行某个测试：
+
+```bash
+ctest --test-dir build -R http_smoke_test --output-on-failure
+```
+
+说明：
+
+- smoke 测试不依赖 GTest
+- 如果 CMake 找到了 GTest，会额外构建 `runtime_unit_tests` 和 `runtime_integration_tests`
+- 如果没有 GTest，配置阶段会提示 `GTest not found; skipping gtest-based unit tests.`
+
+## 运行压测
+
+先构建 Release 版本并启动 HTTP demo：
+
+```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j"$(nproc)"
+IO_THREADS=2 ./build/examples/demo_http_server
+```
+
+另开终端使用 `wrk`：
+
+```bash
+wrk -t1 -c128 -d5s http://127.0.0.1:18080/api/health
+wrk -t1 -c128 -d5s -s benchmarks/wrk/post_echo.lua http://127.0.0.1:18080/api/echo
+```
+
+也可以使用项目内脚本：
+
+```bash
+bash benchmarks/wrk/run_wrk.sh
+```
 
 ## 目录结构
 
-```
+```text
 .
 ├── include/runtime/
-│   ├── http/        # HTTP 层（server、router、context、request、response）
-│   ├── net/         # TCP/网络层（event loop、channel、buffer、timer）
-│   ├── log/         # 异步日志
-│   ├── memory/      # MemoryPool、ObjectPool、SegmentLRUCache
+│   ├── base/        # NonCopyable、CurrentThread 等基础工具
+│   ├── config/      # 配置加载接口
+│   ├── http/        # HTTP server、router、request、response、context
+│   ├── inference/   # 推理相关接口
+│   ├── log/         # Logger、AsyncLogger
+│   ├── memory/      # MemoryPool、ObjectPool、缓存结构
 │   ├── metrics/     # Counter、Gauge、Histogram、Registry
-│   ├── task/        # ThreadPool、Scheduler
+│   ├── net/         # EventLoop、TcpServer、Channel、Poller、Buffer、Timer
+│   ├── task/        # Scheduler、ThreadPool、Task、WorkQueue
 │   ├── time/        # Timestamp
-│   ├── trace/       # TraceId、LifecycleTrace
-│   ├── inference/   # LLM 推理集成（llama engine、SSE 流式响应）
-│   ├── config/      # 配置加载
-│   └── base/        # NonCopyable、CurrentThread
-├── src/             # 对应的 .cpp 实现
-├── examples/
-│   ├── demo_http_server.cpp   # KV store demo（REST API）
-│   └── simple_echo_server.cpp
-├── tests/
-│   ├── unit/        # 单元测试（GTest + smoke tests）
-│   └── integration/ # 集成测试
-├── benchmarks/      # wrk 脚本与测试结果归档
-└── docs/            # 设计文档
+│   └── trace/       # TraceId、LifecycleTrace
+├── src/             # 各模块实现
+├── examples/        # HTTP/TCP/logger/io_uring 示例
+├── tests/           # 单元测试与集成测试
+├── benchmarks/      # wrk 压测脚本和结果归档
+├── config/          # 示例配置
+├── docs/            # 设计文档
+└── third_party/     # 第三方头文件
 ```
 
----
+## 架构分层
 
-## 开发状态
+```text
+HTTP Layer:        runtime::http
+  HttpServer, Router, HttpContext, HttpRequest, HttpResponse
 
-| 模块 | 状态 |
-|---|---|
-| Net 层（Reactor、TcpServer、Buffer、定时器） | 完成 |
-| HTTP 层（解析器、Trie 路由、响应） | 完成 |
-| 异步日志 | 完成 |
-| 线程池 | 完成 |
-| 内存池 / 对象池 | 完成 |
-| Metrics（Counter / Gauge / Histogram） | 头文件完成，导出接入待实现 |
-| 中间件链 | 规划中 |
-| HTTPS / TLS | 规划中 |
-| LLM 推理集成 | 进行中 |
+Net Layer:         runtime::net
+  TcpServer, TcpConnection, EventLoop, Poller, Channel, Buffer, TimerQueue
 
----
+Foundation Layer:  runtime::base / log / time / task / memory / metrics
+  AsyncLogger, Scheduler, ThreadPool, MemoryPool, ObjectPool, Timestamp
+```
+
+典型 HTTP 请求路径：
+
+```text
+kernel
+  -> Buffer::ReadFd()
+  -> TcpConnection message callback
+  -> HttpContext::ParseRequest()
+  -> Router::Match()
+  -> user handler
+  -> HttpResponse::ToString()
+  -> TcpConnection::Send()
+```
 
 ## License
 
-[MIT](LICENSE)
+本项目使用 [MIT License](LICENSE)。

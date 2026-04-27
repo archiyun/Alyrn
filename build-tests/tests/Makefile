@@ -1128,30 +1128,6 @@ unit/test_scheduler.cpp.s:
 	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/runtime_unit_tests.dir/build.make tests/CMakeFiles/runtime_unit_tests.dir/unit/test_scheduler.cpp.s
 .PHONY : unit/test_scheduler.cpp.s
 
-unit/test_thread_pool.o: unit/test_thread_pool.cpp.o
-.PHONY : unit/test_thread_pool.o
-
-# target to build an object file
-unit/test_thread_pool.cpp.o:
-	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/runtime_unit_tests.dir/build.make tests/CMakeFiles/runtime_unit_tests.dir/unit/test_thread_pool.cpp.o
-.PHONY : unit/test_thread_pool.cpp.o
-
-unit/test_thread_pool.i: unit/test_thread_pool.cpp.i
-.PHONY : unit/test_thread_pool.i
-
-# target to preprocess a source file
-unit/test_thread_pool.cpp.i:
-	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/runtime_unit_tests.dir/build.make tests/CMakeFiles/runtime_unit_tests.dir/unit/test_thread_pool.cpp.i
-.PHONY : unit/test_thread_pool.cpp.i
-
-unit/test_thread_pool.s: unit/test_thread_pool.cpp.s
-.PHONY : unit/test_thread_pool.s
-
-# target to generate assembly for a file
-unit/test_thread_pool.cpp.s:
-	cd /home/yun/design/high-concurrency-runtime/build-tests && $(MAKE) $(MAKESILENT) -f tests/CMakeFiles/runtime_unit_tests.dir/build.make tests/CMakeFiles/runtime_unit_tests.dir/unit/test_thread_pool.cpp.s
-.PHONY : unit/test_thread_pool.cpp.s
-
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -1257,9 +1233,6 @@ help:
 	@echo "... unit/test_scheduler.o"
 	@echo "... unit/test_scheduler.i"
 	@echo "... unit/test_scheduler.s"
-	@echo "... unit/test_thread_pool.o"
-	@echo "... unit/test_thread_pool.i"
-	@echo "... unit/test_thread_pool.s"
 .PHONY : help
 
 

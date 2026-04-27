@@ -70,22 +70,22 @@ void HttpServer::OnMessage(const TcpConnectionPtr& conn,
 
     if (match.handler && scheduler_) {
       request.SetPathParams(std::move(match.params));
-      runtime::task::Task task([conn, req = std::move(request),
-                                resp = std::move(response),
-                                handler = match.handler]() mutable {
-        try {
-          handler(req, resp);
-        } catch (const std::exception &ex) {
-          resp.SetStatusCode(StatusCode::InternalServerError);
-          resp.SetContentType("application/json; charset=utf-8");
-          resp.SetBody("{\"error\":\"" + std::string(ex.what()) + "\"}");
-          resp.SetCloseConnection(true);
-        }
-        conn->Send(resp.ToString());
-        if (resp.CloseConnection())
-          conn->Shutdown();
-      });
-      scheduler_->Submit(std::move(task));
+      // Run the handler on a worker thread; conn->Send() is called from the
+      // worker (cross-thread fd access — Phase 6 will fix via RunInLoop).
+      scheduler_->Submit(
+          [conn, req = std::move(request), resp = std::move(response),
+           handler = match.handler]() mutable {
+            try {
+              handler(req, resp);
+            } catch (const std::exception& ex) {
+              resp.SetStatusCode(StatusCode::InternalServerError);
+              resp.SetContentType("application/json; charset=utf-8");
+              resp.SetBody("{\"error\":\"" + std::string(ex.what()) + "\"}");
+              resp.SetCloseConnection(true);
+            }
+            conn->Send(resp.ToString());
+            if (resp.CloseConnection()) conn->Shutdown();
+          });
       break;
     } else if (match.handler) {
       request.SetPathParams(std::move(match.params));

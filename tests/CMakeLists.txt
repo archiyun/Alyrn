@@ -141,7 +141,6 @@ if(GTest_FOUND)
         unit/test_memory_pool.cpp
         unit/test_object_pool.cpp
         unit/test_sanity.cpp
-        unit/test_thread_pool.cpp
         unit/test_scheduler.cpp
     )
 

@@ -97,10 +97,38 @@ CMakeFiles/runtime_task.dir/src/task/task.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/runtime_task.dir/src/task/task.cpp.s"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/yun/design/high-concurrency-runtime/src/task/task.cpp -o CMakeFiles/runtime_task.dir/src/task/task.cpp.s
 
+CMakeFiles/runtime_task.dir/src/task/task_handle.cpp.o: CMakeFiles/runtime_task.dir/flags.make
+CMakeFiles/runtime_task.dir/src/task/task_handle.cpp.o: /home/yun/design/high-concurrency-runtime/src/task/task_handle.cpp
+CMakeFiles/runtime_task.dir/src/task/task_handle.cpp.o: CMakeFiles/runtime_task.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/runtime_task.dir/src/task/task_handle.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/runtime_task.dir/src/task/task_handle.cpp.o -MF CMakeFiles/runtime_task.dir/src/task/task_handle.cpp.o.d -o CMakeFiles/runtime_task.dir/src/task/task_handle.cpp.o -c /home/yun/design/high-concurrency-runtime/src/task/task_handle.cpp
+
+CMakeFiles/runtime_task.dir/src/task/task_handle.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/runtime_task.dir/src/task/task_handle.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/yun/design/high-concurrency-runtime/src/task/task_handle.cpp > CMakeFiles/runtime_task.dir/src/task/task_handle.cpp.i
+
+CMakeFiles/runtime_task.dir/src/task/task_handle.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/runtime_task.dir/src/task/task_handle.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/yun/design/high-concurrency-runtime/src/task/task_handle.cpp -o CMakeFiles/runtime_task.dir/src/task/task_handle.cpp.s
+
+CMakeFiles/runtime_task.dir/src/task/work_queue.cpp.o: CMakeFiles/runtime_task.dir/flags.make
+CMakeFiles/runtime_task.dir/src/task/work_queue.cpp.o: /home/yun/design/high-concurrency-runtime/src/task/work_queue.cpp
+CMakeFiles/runtime_task.dir/src/task/work_queue.cpp.o: CMakeFiles/runtime_task.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object CMakeFiles/runtime_task.dir/src/task/work_queue.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/runtime_task.dir/src/task/work_queue.cpp.o -MF CMakeFiles/runtime_task.dir/src/task/work_queue.cpp.o.d -o CMakeFiles/runtime_task.dir/src/task/work_queue.cpp.o -c /home/yun/design/high-concurrency-runtime/src/task/work_queue.cpp
+
+CMakeFiles/runtime_task.dir/src/task/work_queue.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/runtime_task.dir/src/task/work_queue.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/yun/design/high-concurrency-runtime/src/task/work_queue.cpp > CMakeFiles/runtime_task.dir/src/task/work_queue.cpp.i
+
+CMakeFiles/runtime_task.dir/src/task/work_queue.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/runtime_task.dir/src/task/work_queue.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/yun/design/high-concurrency-runtime/src/task/work_queue.cpp -o CMakeFiles/runtime_task.dir/src/task/work_queue.cpp.s
+
 CMakeFiles/runtime_task.dir/src/task/scheduler.cpp.o: CMakeFiles/runtime_task.dir/flags.make
 CMakeFiles/runtime_task.dir/src/task/scheduler.cpp.o: /home/yun/design/high-concurrency-runtime/src/task/scheduler.cpp
 CMakeFiles/runtime_task.dir/src/task/scheduler.cpp.o: CMakeFiles/runtime_task.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/runtime_task.dir/src/task/scheduler.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CXX object CMakeFiles/runtime_task.dir/src/task/scheduler.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/runtime_task.dir/src/task/scheduler.cpp.o -MF CMakeFiles/runtime_task.dir/src/task/scheduler.cpp.o.d -o CMakeFiles/runtime_task.dir/src/task/scheduler.cpp.o -c /home/yun/design/high-concurrency-runtime/src/task/scheduler.cpp
 
 CMakeFiles/runtime_task.dir/src/task/scheduler.cpp.i: cmake_force
@@ -115,6 +143,8 @@ CMakeFiles/runtime_task.dir/src/task/scheduler.cpp.s: cmake_force
 runtime_task_OBJECTS = \
 "CMakeFiles/runtime_task.dir/src/task/thread_pool.cpp.o" \
 "CMakeFiles/runtime_task.dir/src/task/task.cpp.o" \
+"CMakeFiles/runtime_task.dir/src/task/task_handle.cpp.o" \
+"CMakeFiles/runtime_task.dir/src/task/work_queue.cpp.o" \
 "CMakeFiles/runtime_task.dir/src/task/scheduler.cpp.o"
 
 # External object files for target runtime_task
@@ -122,10 +152,12 @@ runtime_task_EXTERNAL_OBJECTS =
 
 libruntime_task.a: CMakeFiles/runtime_task.dir/src/task/thread_pool.cpp.o
 libruntime_task.a: CMakeFiles/runtime_task.dir/src/task/task.cpp.o
+libruntime_task.a: CMakeFiles/runtime_task.dir/src/task/task_handle.cpp.o
+libruntime_task.a: CMakeFiles/runtime_task.dir/src/task/work_queue.cpp.o
 libruntime_task.a: CMakeFiles/runtime_task.dir/src/task/scheduler.cpp.o
 libruntime_task.a: CMakeFiles/runtime_task.dir/build.make
 libruntime_task.a: CMakeFiles/runtime_task.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Linking CXX static library libruntime_task.a"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/yun/design/high-concurrency-runtime/build-tests/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Linking CXX static library libruntime_task.a"
 	$(CMAKE_COMMAND) -P CMakeFiles/runtime_task.dir/cmake_clean_target.cmake
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/runtime_task.dir/link.txt --verbose=$(VERBOSE)
 

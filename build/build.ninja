@@ -116,6 +116,20 @@ build CMakeFiles/runtime_task.dir/src/task/task.cpp.o: CXX_COMPILER__runtime_tas
   OBJECT_DIR = CMakeFiles/runtime_task.dir
   OBJECT_FILE_DIR = CMakeFiles/runtime_task.dir/src/task
 
+build CMakeFiles/runtime_task.dir/src/task/task_handle.cpp.o: CXX_COMPILER__runtime_task_Debug /home/yun/design/high-concurrency-runtime/src/task/task_handle.cpp || cmake_object_order_depends_target_runtime_task
+  DEP_FILE = CMakeFiles/runtime_task.dir/src/task/task_handle.cpp.o.d
+  FLAGS = -g -std=c++20
+  INCLUDES = -I/home/yun/design/high-concurrency-runtime/include
+  OBJECT_DIR = CMakeFiles/runtime_task.dir
+  OBJECT_FILE_DIR = CMakeFiles/runtime_task.dir/src/task
+
+build CMakeFiles/runtime_task.dir/src/task/work_queue.cpp.o: CXX_COMPILER__runtime_task_Debug /home/yun/design/high-concurrency-runtime/src/task/work_queue.cpp || cmake_object_order_depends_target_runtime_task
+  DEP_FILE = CMakeFiles/runtime_task.dir/src/task/work_queue.cpp.o.d
+  FLAGS = -g -std=c++20
+  INCLUDES = -I/home/yun/design/high-concurrency-runtime/include
+  OBJECT_DIR = CMakeFiles/runtime_task.dir
+  OBJECT_FILE_DIR = CMakeFiles/runtime_task.dir/src/task
+
 build CMakeFiles/runtime_task.dir/src/task/scheduler.cpp.o: CXX_COMPILER__runtime_task_Debug /home/yun/design/high-concurrency-runtime/src/task/scheduler.cpp || cmake_object_order_depends_target_runtime_task
   DEP_FILE = CMakeFiles/runtime_task.dir/src/task/scheduler.cpp.o.d
   FLAGS = -g -std=c++20
@@ -131,7 +145,7 @@ build CMakeFiles/runtime_task.dir/src/task/scheduler.cpp.o: CXX_COMPILER__runtim
 #############################################
 # Link the static library libruntime_task.a
 
-build libruntime_task.a: CXX_STATIC_LIBRARY_LINKER__runtime_task_Debug CMakeFiles/runtime_task.dir/src/task/thread_pool.cpp.o CMakeFiles/runtime_task.dir/src/task/task.cpp.o CMakeFiles/runtime_task.dir/src/task/scheduler.cpp.o || libruntime_foundation.a
+build libruntime_task.a: CXX_STATIC_LIBRARY_LINKER__runtime_task_Debug CMakeFiles/runtime_task.dir/src/task/thread_pool.cpp.o CMakeFiles/runtime_task.dir/src/task/task.cpp.o CMakeFiles/runtime_task.dir/src/task/task_handle.cpp.o CMakeFiles/runtime_task.dir/src/task/work_queue.cpp.o CMakeFiles/runtime_task.dir/src/task/scheduler.cpp.o || libruntime_foundation.a
   LANGUAGE_COMPILE_FLAGS = -g
   OBJECT_DIR = CMakeFiles/runtime_task.dir
   POST_BUILD = :
@@ -1108,13 +1122,6 @@ build tests/CMakeFiles/runtime_unit_tests.dir/unit/test_sanity.cpp.o: CXX_COMPIL
   OBJECT_DIR = tests/CMakeFiles/runtime_unit_tests.dir
   OBJECT_FILE_DIR = tests/CMakeFiles/runtime_unit_tests.dir/unit
 
-build tests/CMakeFiles/runtime_unit_tests.dir/unit/test_thread_pool.cpp.o: CXX_COMPILER__runtime_unit_tests_Debug /home/yun/design/high-concurrency-runtime/tests/unit/test_thread_pool.cpp || cmake_object_order_depends_target_runtime_unit_tests
-  DEP_FILE = tests/CMakeFiles/runtime_unit_tests.dir/unit/test_thread_pool.cpp.o.d
-  FLAGS = -g -std=c++20
-  INCLUDES = -I/home/yun/design/high-concurrency-runtime/include
-  OBJECT_DIR = tests/CMakeFiles/runtime_unit_tests.dir
-  OBJECT_FILE_DIR = tests/CMakeFiles/runtime_unit_tests.dir/unit
-
 build tests/CMakeFiles/runtime_unit_tests.dir/unit/test_scheduler.cpp.o: CXX_COMPILER__runtime_unit_tests_Debug /home/yun/design/high-concurrency-runtime/tests/unit/test_scheduler.cpp || cmake_object_order_depends_target_runtime_unit_tests
   DEP_FILE = tests/CMakeFiles/runtime_unit_tests.dir/unit/test_scheduler.cpp.o.d
   FLAGS = -g -std=c++20
@@ -1130,7 +1137,7 @@ build tests/CMakeFiles/runtime_unit_tests.dir/unit/test_scheduler.cpp.o: CXX_COM
 #############################################
 # Link the executable tests/runtime_unit_tests
 
-build tests/runtime_unit_tests tests/runtime_unit_tests[1]_tests.cmake | ${cmake_ninja_workdir}tests/runtime_unit_tests[1]_tests.cmake: CXX_EXECUTABLE_LINKER__runtime_unit_tests_Debug tests/CMakeFiles/runtime_unit_tests.dir/unit/test_buffer.cpp.o tests/CMakeFiles/runtime_unit_tests.dir/unit/test_logger.cpp.o tests/CMakeFiles/runtime_unit_tests.dir/unit/test_memory_pool.cpp.o tests/CMakeFiles/runtime_unit_tests.dir/unit/test_object_pool.cpp.o tests/CMakeFiles/runtime_unit_tests.dir/unit/test_sanity.cpp.o tests/CMakeFiles/runtime_unit_tests.dir/unit/test_thread_pool.cpp.o tests/CMakeFiles/runtime_unit_tests.dir/unit/test_scheduler.cpp.o | /usr/local/lib/libgtest_main.a libruntime_net.a libruntime_task.a /usr/local/lib/libgtest.a libruntime_foundation.a || libruntime_foundation.a libruntime_net.a libruntime_task.a
+build tests/runtime_unit_tests tests/runtime_unit_tests[1]_tests.cmake | ${cmake_ninja_workdir}tests/runtime_unit_tests[1]_tests.cmake: CXX_EXECUTABLE_LINKER__runtime_unit_tests_Debug tests/CMakeFiles/runtime_unit_tests.dir/unit/test_buffer.cpp.o tests/CMakeFiles/runtime_unit_tests.dir/unit/test_logger.cpp.o tests/CMakeFiles/runtime_unit_tests.dir/unit/test_memory_pool.cpp.o tests/CMakeFiles/runtime_unit_tests.dir/unit/test_object_pool.cpp.o tests/CMakeFiles/runtime_unit_tests.dir/unit/test_sanity.cpp.o tests/CMakeFiles/runtime_unit_tests.dir/unit/test_scheduler.cpp.o | /usr/local/lib/libgtest_main.a libruntime_net.a libruntime_task.a /usr/local/lib/libgtest.a libruntime_foundation.a || libruntime_foundation.a libruntime_net.a libruntime_task.a
   FLAGS = -g
   LINK_LIBRARIES = /usr/local/lib/libgtest_main.a  libruntime_net.a  libruntime_task.a  /usr/local/lib/libgtest.a  libruntime_foundation.a
   OBJECT_DIR = tests/CMakeFiles/runtime_unit_tests.dir

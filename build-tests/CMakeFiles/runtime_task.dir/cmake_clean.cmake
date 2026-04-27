@@ -3,8 +3,12 @@ file(REMOVE_RECURSE
   "CMakeFiles/runtime_task.dir/src/task/scheduler.cpp.o.d"
   "CMakeFiles/runtime_task.dir/src/task/task.cpp.o"
   "CMakeFiles/runtime_task.dir/src/task/task.cpp.o.d"
+  "CMakeFiles/runtime_task.dir/src/task/task_handle.cpp.o"
+  "CMakeFiles/runtime_task.dir/src/task/task_handle.cpp.o.d"
   "CMakeFiles/runtime_task.dir/src/task/thread_pool.cpp.o"
   "CMakeFiles/runtime_task.dir/src/task/thread_pool.cpp.o.d"
+  "CMakeFiles/runtime_task.dir/src/task/work_queue.cpp.o"
+  "CMakeFiles/runtime_task.dir/src/task/work_queue.cpp.o.d"
   "libruntime_task.a"
   "libruntime_task.pdb"
 )

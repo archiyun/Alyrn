@@ -1409,6 +1409,30 @@ src/task/task.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_task.dir/build.make CMakeFiles/runtime_task.dir/src/task/task.cpp.s
 .PHONY : src/task/task.cpp.s
 
+src/task/task_handle.o: src/task/task_handle.cpp.o
+.PHONY : src/task/task_handle.o
+
+# target to build an object file
+src/task/task_handle.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_task.dir/build.make CMakeFiles/runtime_task.dir/src/task/task_handle.cpp.o
+.PHONY : src/task/task_handle.cpp.o
+
+src/task/task_handle.i: src/task/task_handle.cpp.i
+.PHONY : src/task/task_handle.i
+
+# target to preprocess a source file
+src/task/task_handle.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_task.dir/build.make CMakeFiles/runtime_task.dir/src/task/task_handle.cpp.i
+.PHONY : src/task/task_handle.cpp.i
+
+src/task/task_handle.s: src/task/task_handle.cpp.s
+.PHONY : src/task/task_handle.s
+
+# target to generate assembly for a file
+src/task/task_handle.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_task.dir/build.make CMakeFiles/runtime_task.dir/src/task/task_handle.cpp.s
+.PHONY : src/task/task_handle.cpp.s
+
 src/task/thread_pool.o: src/task/thread_pool.cpp.o
 .PHONY : src/task/thread_pool.o
 
@@ -1432,6 +1456,30 @@ src/task/thread_pool.s: src/task/thread_pool.cpp.s
 src/task/thread_pool.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_task.dir/build.make CMakeFiles/runtime_task.dir/src/task/thread_pool.cpp.s
 .PHONY : src/task/thread_pool.cpp.s
+
+src/task/work_queue.o: src/task/work_queue.cpp.o
+.PHONY : src/task/work_queue.o
+
+# target to build an object file
+src/task/work_queue.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_task.dir/build.make CMakeFiles/runtime_task.dir/src/task/work_queue.cpp.o
+.PHONY : src/task/work_queue.cpp.o
+
+src/task/work_queue.i: src/task/work_queue.cpp.i
+.PHONY : src/task/work_queue.i
+
+# target to preprocess a source file
+src/task/work_queue.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_task.dir/build.make CMakeFiles/runtime_task.dir/src/task/work_queue.cpp.i
+.PHONY : src/task/work_queue.cpp.i
+
+src/task/work_queue.s: src/task/work_queue.cpp.s
+.PHONY : src/task/work_queue.s
+
+# target to generate assembly for a file
+src/task/work_queue.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/runtime_task.dir/build.make CMakeFiles/runtime_task.dir/src/task/work_queue.cpp.s
+.PHONY : src/task/work_queue.cpp.s
 
 src/time/timestamp.o: src/time/timestamp.cpp.o
 .PHONY : src/time/timestamp.o
@@ -1597,9 +1645,15 @@ help:
 	@echo "... src/task/task.o"
 	@echo "... src/task/task.i"
 	@echo "... src/task/task.s"
+	@echo "... src/task/task_handle.o"
+	@echo "... src/task/task_handle.i"
+	@echo "... src/task/task_handle.s"
 	@echo "... src/task/thread_pool.o"
 	@echo "... src/task/thread_pool.i"
 	@echo "... src/task/thread_pool.s"
+	@echo "... src/task/work_queue.o"
+	@echo "... src/task/work_queue.i"
+	@echo "... src/task/work_queue.s"
 	@echo "... src/time/timestamp.o"
 	@echo "... src/time/timestamp.i"
 	@echo "... src/time/timestamp.s"

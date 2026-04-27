@@ -33,6 +33,8 @@ target_compile_features(runtime_foundation PUBLIC cxx_std_20)
 add_library(runtime_task STATIC
     src/task/thread_pool.cpp
     src/task/task.cpp
+    src/task/task_handle.cpp
+    src/task/work_queue.cpp
     src/task/scheduler.cpp
 )
 

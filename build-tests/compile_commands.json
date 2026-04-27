@@ -31,6 +31,16 @@
 },
 {
   "directory": "/home/yun/design/high-concurrency-runtime/build-tests",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -std=c++20 -o CMakeFiles/runtime_task.dir/src/task/task_handle.cpp.o -c /home/yun/design/high-concurrency-runtime/src/task/task_handle.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/src/task/task_handle.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-tests",
+  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -std=c++20 -o CMakeFiles/runtime_task.dir/src/task/work_queue.cpp.o -c /home/yun/design/high-concurrency-runtime/src/task/work_queue.cpp",
+  "file": "/home/yun/design/high-concurrency-runtime/src/task/work_queue.cpp"
+},
+{
+  "directory": "/home/yun/design/high-concurrency-runtime/build-tests",
   "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -std=c++20 -o CMakeFiles/runtime_task.dir/src/task/scheduler.cpp.o -c /home/yun/design/high-concurrency-runtime/src/task/scheduler.cpp",
   "file": "/home/yun/design/high-concurrency-runtime/src/task/scheduler.cpp"
 },
@@ -238,11 +248,6 @@
   "directory": "/home/yun/design/high-concurrency-runtime/build-tests/tests",
   "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -std=c++20 -o CMakeFiles/runtime_unit_tests.dir/unit/test_sanity.cpp.o -c /home/yun/design/high-concurrency-runtime/tests/unit/test_sanity.cpp",
   "file": "/home/yun/design/high-concurrency-runtime/tests/unit/test_sanity.cpp"
-},
-{
-  "directory": "/home/yun/design/high-concurrency-runtime/build-tests/tests",
-  "command": "/usr/bin/c++  -I/home/yun/design/high-concurrency-runtime/include -std=c++20 -o CMakeFiles/runtime_unit_tests.dir/unit/test_thread_pool.cpp.o -c /home/yun/design/high-concurrency-runtime/tests/unit/test_thread_pool.cpp",
-  "file": "/home/yun/design/high-concurrency-runtime/tests/unit/test_thread_pool.cpp"
 },
 {
   "directory": "/home/yun/design/high-concurrency-runtime/build-tests/tests",
