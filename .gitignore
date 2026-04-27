@@ -1,11 +1,38 @@
+# Documentation / local notes
 README.md
 
-.out
-.o
-.exe
-.codex
-.claude
-.vscode
+# Editor and tool state
+.codex/
+.claude/
+.cache/
+.vscode/
 
+# Build directories
+/build/
+/build*/
 
-/build
+# CMake generated files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+compile_commands.json
+build.ninja
+.ninja_deps
+.ninja_log
+Makefile
+
+# Compiled outputs
+*.a
+*.so
+*.so.*
+*.dylib
+*.dll
+*.o
+*.obj
+*.out
+*.exe
+
+# Runtime logs
+*.log

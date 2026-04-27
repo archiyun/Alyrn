@@ -1,2 +1,0 @@
-/usr/bin/ar qc libruntime_foundation.a CMakeFiles/runtime_foundation.dir/src/base/current_thread.cpp.o CMakeFiles/runtime_foundation.dir/src/log/async_logger.cpp.o CMakeFiles/runtime_foundation.dir/src/log/logger.cpp.o CMakeFiles/runtime_foundation.dir/src/time/timestamp.cpp.o
-/usr/bin/ranlib libruntime_foundation.a

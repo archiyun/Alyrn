@@ -1,1 +1,0 @@
-/usr/bin/c++ CMakeFiles/epoll_poller_smoke_test.dir/unit/test_epoll_poller_smoke.cpp.o -o epoll_poller_smoke_test  ../libruntime_net.a ../libruntime_foundation.a 

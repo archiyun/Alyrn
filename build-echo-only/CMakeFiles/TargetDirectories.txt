@@ -1,9 +1,0 @@
-/home/yun/design/high-concurrency-runtime/build-echo-only/CMakeFiles/runtime_foundation.dir
-/home/yun/design/high-concurrency-runtime/build-echo-only/CMakeFiles/runtime_task.dir
-/home/yun/design/high-concurrency-runtime/build-echo-only/CMakeFiles/runtime_net.dir
-/home/yun/design/high-concurrency-runtime/build-echo-only/CMakeFiles/edit_cache.dir
-/home/yun/design/high-concurrency-runtime/build-echo-only/CMakeFiles/rebuild_cache.dir
-/home/yun/design/high-concurrency-runtime/build-echo-only/examples/CMakeFiles/simple_logger_example.dir
-/home/yun/design/high-concurrency-runtime/build-echo-only/examples/CMakeFiles/simple_echo_server.dir
-/home/yun/design/high-concurrency-runtime/build-echo-only/examples/CMakeFiles/edit_cache.dir
-/home/yun/design/high-concurrency-runtime/build-echo-only/examples/CMakeFiles/rebuild_cache.dir

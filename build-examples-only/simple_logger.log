@@ -1,8 +1,0 @@
-[2026-04-01 00:24:43.143075] [DEBUG] [tid:2] [/home/yun/design/high-concurrency-runtime/examples/simple_logger.cpp:8] [main] debug message, value=7
-[2026-04-01 00:24:43.143165] [INFO] [tid:2] [/home/yun/design/high-concurrency-runtime/examples/simple_logger.cpp:9] [main] server started on port 8080
-[2026-04-01 00:24:43.143175] [ERROR] [tid:2] [/home/yun/design/high-concurrency-runtime/examples/simple_logger.cpp:10] [main] request failed: timeout
-[2026-04-01 00:24:43.143183] [FATAL] [tid:2] [/home/yun/design/high-concurrency-runtime/examples/simple_logger.cpp:14] [main] fatal message for shutdown path
-x[2026-04-02 18:09:03.929812] [DEBUG] [tid:2] [/home/yun/design/high-concurrency-runtime/examples/simple_logger.cpp:9] [main] debug message, value=7
-[2026-04-02 18:09:03.929916] [INFO] [tid:2] [/home/yun/design/high-concurrency-runtime/examples/simple_logger.cpp:10] [main] server started on port 8080
-[2026-04-02 18:09:03.929926] [ERROR] [tid:2] [/home/yun/design/high-concurrency-runtime/examples/simple_logger.cpp:11] [main] request failed: timeout
-[2026-04-02 18:09:03.929934] [FATAL] [tid:2] [/home/yun/design/high-concurrency-runtime/examples/simple_logger.cpp:15] [main] fatal message for shutdown path

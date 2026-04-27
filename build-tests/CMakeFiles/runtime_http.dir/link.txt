@@ -1,2 +1,0 @@
-/usr/bin/ar qc libruntime_http.a CMakeFiles/runtime_http.dir/src/http/http_types.cpp.o CMakeFiles/runtime_http.dir/src/http/http_request.cpp.o CMakeFiles/runtime_http.dir/src/http/http_context.cpp.o CMakeFiles/runtime_http.dir/src/http/http_response.cpp.o CMakeFiles/runtime_http.dir/src/http/router.cpp.o CMakeFiles/runtime_http.dir/src/http/http_server.cpp.o
-/usr/bin/ranlib libruntime_http.a

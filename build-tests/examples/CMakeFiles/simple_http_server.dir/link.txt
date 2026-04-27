@@ -1,1 +1,0 @@
-/usr/bin/c++ CMakeFiles/simple_http_server.dir/simple_http_server.cpp.o -o simple_http_server  ../libruntime_http.a ../libruntime_foundation.a ../libruntime_net.a ../libruntime_foundation.a 

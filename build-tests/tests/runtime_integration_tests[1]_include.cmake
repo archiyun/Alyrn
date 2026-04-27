@@ -1,5 +1,0 @@
-if(EXISTS "/home/yun/design/high-concurrency-runtime/build-tests/tests/runtime_integration_tests[1]_tests.cmake")
-  include("/home/yun/design/high-concurrency-runtime/build-tests/tests/runtime_integration_tests[1]_tests.cmake")
-else()
-  add_test(runtime_integration_tests_NOT_BUILT runtime_integration_tests_NOT_BUILT)
-endif()

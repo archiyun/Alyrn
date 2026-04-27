@@ -1,1 +1,0 @@
-/usr/bin/c++ -fsanitize=address -fno-omit-frame-pointer -g -fsanitize=address CMakeFiles/simple_http_server.dir/simple_http_server.cpp.o -o simple_http_server  ../libruntime_net.a ../libruntime_foundation.a 

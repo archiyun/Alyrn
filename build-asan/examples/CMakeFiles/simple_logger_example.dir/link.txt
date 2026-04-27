@@ -1,1 +1,0 @@
-/usr/bin/c++ -fsanitize=address -fno-omit-frame-pointer -g -fsanitize=address CMakeFiles/simple_logger_example.dir/simple_logger.cpp.o -o simple_logger_example  ../libruntime_foundation.a 

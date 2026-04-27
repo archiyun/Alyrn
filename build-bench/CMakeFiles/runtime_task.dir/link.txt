@@ -1,2 +1,0 @@
-/usr/bin/ar qc libruntime_task.a CMakeFiles/runtime_task.dir/src/task/thread_pool.cpp.o CMakeFiles/runtime_task.dir/src/task/task.cpp.o CMakeFiles/runtime_task.dir/src/task/scheduler.cpp.o
-/usr/bin/ranlib libruntime_task.a
