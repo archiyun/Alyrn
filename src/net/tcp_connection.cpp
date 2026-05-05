@@ -1,6 +1,6 @@
 #include "runtime/net/tcp_connection.h"
-#include "runtime/log/logger.h"
 #include "runtime/net/event_loop.h"
+#include "runtime/log/logger.h"
 
 #include <cassert>
 #include <cerrno>
@@ -10,10 +10,10 @@
 
 namespace runtime::net {
 
-TcpConnection::TcpConnection(EventLoop *loop, const std::string &name,
-                             int sockfd, const InetAddress &local_addr,
-                             const InetAddress &peer_addr)
-    : loop_(loop), name_(name), state_(StateE::kConnecting),
+TcpConnection::TcpConnection(EventLoop* loop, const std::string& name,
+                             int sockfd, const InetAddress& local_addr,
+                             const InetAddress& peer_addr)
+    : loop_(loop), name_(name), state_(TCPState::kConnecting),
       socket_(std::make_unique<Socket>(sockfd)),
       channel_(std::make_unique<Channel>(loop, sockfd)),
       local_addr_(local_addr), peer_addr_(peer_addr) {
@@ -27,8 +27,8 @@ TcpConnection::TcpConnection(EventLoop *loop, const std::string &name,
 
 TcpConnection::~TcpConnection() = default;
 
-void TcpConnection::Send(const std::string &message) {
-  if (state_ == StateE::kConnected) {
+void TcpConnection::Send(const std::string& message) {
+  if (state_ == TCPState::kConnected) {
     if (loop_->IsInLoopThread()) {
       SendInLoop(message);
     } else {
@@ -40,8 +40,8 @@ void TcpConnection::Send(const std::string &message) {
   }
 }
 
-void TcpConnection::SendInLoop(const std::string &message) {
-  if (state_ == StateE::kDisconnected)
+void TcpConnection::SendInLoop(const std::string& message) {
+  if (state_ == TCPState::kDisconnected)
     return;
 
   ssize_t nwrote = 0;
@@ -71,15 +71,15 @@ void TcpConnection::SendInLoop(const std::string &message) {
 }
 
 void TcpConnection::Shutdown() {
-  if (state_ == StateE::kConnected) {
-    SetState(StateE::kDisconnecting);
+  if (state_ == TCPState::kConnected) {
+    SetState(TCPState::kDisconnecting);
     auto self = shared_from_this();
     loop_->RunInLoop([self] { self->ShutdownInLoop(); });
   }
 }
 
 void TcpConnection::ConnectEstablished() {
-  SetState(StateE::kConnected);
+  SetState(TCPState::kConnected);
   channel_->Tie(shared_from_this());
   channel_->EnableReading();
 
@@ -93,9 +93,9 @@ void TcpConnection::ConnectEstablished() {
 }
 
 void TcpConnection::ConnectDestroyed() {
-  const bool notify_state_change = state_ != StateE::kDisconnected;
+  const bool notify_state_change = state_ != TCPState::kDisconnected;
   if (notify_state_change) {
-    SetState(StateE::kDisconnected);
+    SetState(TCPState::kDisconnected);
     channel_->DisableAll();
   }
 
@@ -131,6 +131,7 @@ void TcpConnection::HandleRead(runtime::time::Timestamp receive_time) {
       message_callback_(shared_from_this(), input_buffer_, receive_time);
     }
   } else {
+    // Level-triggered mode
     ssize_t n = input_buffer_.ReadFd(fd, &saved_errno);
     if (n > 0) {
       if (message_callback_) {
@@ -174,7 +175,7 @@ void TcpConnection::HandleWrite() {
       if (write_complete_callback_) {
         write_complete_callback_(shared_from_this());
       }
-      if (state_ == StateE::kDisconnecting) {
+      if (state_ == TCPState::kDisconnecting) {
         ShutdownInLoop();
       }
     }
@@ -188,7 +189,7 @@ void TcpConnection::HandleWrite() {
         if (write_complete_callback_) {
           write_complete_callback_(shared_from_this());
         }
-        if (state_ == StateE::kDisconnecting) {
+        if (state_ == TCPState::kDisconnecting) {
           ShutdownInLoop();
         }
       }
@@ -205,7 +206,7 @@ void TcpConnection::HandleWrite() {
 }
 
 void TcpConnection::HandleClose() {
-  SetState(StateE::kDisconnected);
+  SetState(TCPState::kDisconnected);
   channel_->DisableAll();
 
   LOG_INFO() << "tcp connection closed: name=" << name_

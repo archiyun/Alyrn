@@ -15,13 +15,12 @@ class EventLoopThreadPool : public runtime::base::NonCopyable {
 public:
   using ThreadInitCallback = EventLoopThread::ThreadInitCallback;
 
-  EventLoopThreadPool(EventLoop* base_loop, int num_threads);
-
+  EventLoopThreadPool(EventLoop* main_loop, int num_threads);
   ~EventLoopThreadPool();
 
   void Start(const ThreadInitCallback& cb = ThreadInitCallback());
 
-  // Returns the next EventLoop in round-robin order.
+  // Returns the next EventLoop in round-robin order. (RR)
   EventLoop* GetNextLoop();
 
   // Returns all managed EventLoops. If no worker threads exist, returns the
@@ -30,7 +29,7 @@ public:
 
   bool Started() const { return started_; }
 private:
-  EventLoop* base_loop_;
+  EventLoop* main_loop_;
   bool started_;
   int num_threads_;
   int next_;

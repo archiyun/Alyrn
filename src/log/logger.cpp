@@ -6,7 +6,7 @@
 
 namespace runtime::log {
 
-Logger &Logger::Instance() {
+Logger& Logger::Instance() {
     static Logger logger;
     return logger;
 }

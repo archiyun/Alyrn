@@ -10,7 +10,8 @@ struct SchedulerMetrics {
   std::atomic<uint64_t> submitted{0};
   std::atomic<uint64_t> completed{0};
   std::atomic<uint64_t> failed{0};
-  std::atomic<uint64_t> cancelled{0};
+  std::atomic<uint64_t> cancelled{0};  // explicit cancel only
+  std::atomic<uint64_t> timeout{0};    // soft timeout (separate from cancelled)
 
   // Current instantaneous values
   std::atomic<int32_t> queue_size{0};     // tasks waiting in WorkQueue
@@ -22,6 +23,7 @@ struct SchedulerMetrics {
     uint64_t completed;
     uint64_t failed;
     uint64_t cancelled;
+    uint64_t timeout;
     int32_t  queue_size;
     int32_t  running_count;
   };
@@ -32,6 +34,7 @@ struct SchedulerMetrics {
       completed.load(std::memory_order_relaxed),
       failed.load(std::memory_order_relaxed),
       cancelled.load(std::memory_order_relaxed),
+      timeout.load(std::memory_order_relaxed),
       queue_size.load(std::memory_order_relaxed),
       running_count.load(std::memory_order_relaxed),
     };

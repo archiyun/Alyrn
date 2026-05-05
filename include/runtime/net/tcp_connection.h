@@ -44,7 +44,7 @@ public:
   const std::string& Name() const { return name_; }
   const InetAddress& LocalAddress() const { return local_addr_; }
   const InetAddress& PeerAddress() const { return peer_addr_; }
-  bool Connected() const { return state_ == StateE::kConnected; }
+  bool Connected() const { return state_ == TCPState::kConnected; }
 
   // Sends a message on the connection. The actual write may happen
   // immediately or later in the owning loop thread.
@@ -75,27 +75,27 @@ public:
   void ConnectDestroyed();
 
 private:
-  enum class StateE {
+  enum class TCPState {
     kDisconnected,
     kConnecting,
     kConnected,
     kDisconnecting,
   };
 
-  void SetState(StateE state) { state_ = state; }
+  void SetState(TCPState state) { state_ = state; }
 
   void HandleRead(runtime::time::Timestamp receive_time);
   void HandleWrite();
   void HandleClose();
   void HandleError();
 
-  void SendInLoop(const std::string &message);
+  void SendInLoop(const std::string& message);
   void ShutdownInLoop();
 
 private:
   EventLoop* loop_;
   const std::string name_;
-  StateE state_;
+  TCPState state_;
 
   std::unique_ptr<Socket> socket_;
   std::unique_ptr<Channel> channel_;

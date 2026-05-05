@@ -23,7 +23,7 @@ enum class Version {
   Http11,
 };
 
-enum class StatusCode : int {
+enum class StatusCode : uint16_t {
   Ok = 200,
   Created = 201,
   NoContent = 204,
@@ -41,4 +41,4 @@ std::string_view MethodToString(Method m);
 // Returns the standard reason phrase for a status code.
 std::string_view StatusMessage(StatusCode code);
 
-}  // namespace runtime::http
+} // namespace runtime::http

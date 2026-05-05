@@ -80,7 +80,7 @@ thread_local EventLoop* t_loop_in_this_thread = nullptr;
 
 EventLoop::EventLoop()
     : looping_(false),
-      quit_(false),
+      quit_(true),
       calling_pending_functors_(false),
       thread_id_(std::this_thread::get_id()),
       poller_(Poller::NewDefaultPoller(this)),

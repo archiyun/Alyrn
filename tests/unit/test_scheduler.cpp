@@ -216,3 +216,68 @@ TEST(SchedulerTest, TaskOptionsApplied) {
 
   EXPECT_EQ(handle.State(), TaskState::kCompleted);
 }
+
+// ── Scheduler — soft timeout (Phase 3) ───────────────────────────────────────
+
+// A task that ignores cancellation but runs longer than its timeout_ms should
+// be marked kTimeout, not kCancelled.
+TEST(SchedulerTest, SoftTimeoutCancelsSlowTask) {
+  Scheduler sched(2);
+
+  TaskOptions opts;
+  opts.timeout_ms = 50;  // 50 ms deadline
+
+  auto handle = sched.Submit([](CancellationToken token) {
+    // Poll the token; exit once cancelled.
+    for (int i = 0; i < 2000; ++i) {
+      if (token.IsCancelled()) return;
+      std::this_thread::sleep_for(1ms);
+    }
+  }, std::move(opts));
+
+  handle.Wait();
+
+  EXPECT_EQ(handle.State(), TaskState::kTimeout);
+  EXPECT_EQ(sched.Metrics().timeout.load(), 1u);
+  EXPECT_EQ(sched.Metrics().cancelled.load(), 0u);
+}
+
+// A task that finishes before its timeout fires should still get kCompleted.
+TEST(SchedulerTest, TimeoutDoesNotAffectFastTask) {
+  Scheduler sched(1);
+
+  TaskOptions opts;
+  opts.timeout_ms = 500;  // 500 ms — task finishes long before this
+
+  auto handle = sched.Submit([](CancellationToken) {
+    // Nothing — returns immediately.
+  }, std::move(opts));
+
+  handle.Wait();
+
+  EXPECT_EQ(handle.State(), TaskState::kCompleted);
+  EXPECT_EQ(sched.Metrics().timeout.load(), 0u);
+}
+
+// An explicit Cancel() by the caller must produce kCancelled, not kTimeout.
+TEST(SchedulerTest, ExplicitCancelDistinctFromTimeout) {
+  Scheduler sched(1);
+
+  TaskOptions opts;
+  opts.timeout_ms = 500;  // long timeout — should NOT fire
+
+  std::atomic<bool> started{false};
+  auto handle = sched.Submit([&started](CancellationToken token) {
+    started.store(true);
+    while (!token.IsCancelled()) std::this_thread::sleep_for(1ms);
+  }, std::move(opts));
+
+  // Wait until the task is actually running before we cancel it.
+  while (!started.load()) std::this_thread::sleep_for(1ms);
+  handle.Cancel();
+  handle.Wait();
+
+  EXPECT_EQ(handle.State(), TaskState::kCancelled);
+  EXPECT_EQ(sched.Metrics().cancelled.load(), 1u);
+  EXPECT_EQ(sched.Metrics().timeout.load(), 0u);
+}

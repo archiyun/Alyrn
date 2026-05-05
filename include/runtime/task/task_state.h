@@ -3,14 +3,14 @@
 #include <cstdint>
 namespace runtime::task {
 
-// 任务生命周期状态机
+// desc taskstate
 enum class TaskState : uint8_t {
-  kPending,
-  kRunning,
-  kCompleted,
-  kFailed,
-  kCancelled,
-  kTimeout,
+  kPending,    // in WorkQueue, waiting for a worker
+  kRunning,    // executing on a worker thread
+  kCompleted,  // func() returned normally
+  kFailed,     // func() threw an exception
+  kCancelled,  // cancelled before or during execution
+  kTimeout,    // soft timeout expired (form of cancellation)
 };
 
 }  // namespace runtime::task

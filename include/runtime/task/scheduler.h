@@ -4,9 +4,11 @@
 #include "runtime/task/scheduler_metrics.h"
 #include "runtime/task/task.h"
 #include "runtime/task/task_handle.h"
+#include "runtime/task/task_history.h"
 #include "runtime/task/task_options.h"
 #include "runtime/task/thread_pool.h"
 #include "runtime/task/work_queue.h"
+#include "runtime/task/timer_scheduler.h"
 
 #include <atomic>
 #include <cstddef>
@@ -43,14 +45,17 @@ class Scheduler : public runtime::base::NonCopyable {
   }
 
   const SchedulerMetrics& Metrics() const { return metrics_; }
+  const TaskHistory&      History()  const { return history_; }
 
  private:
   std::size_t max_queue_size_{0};
 
   // Declaration order = construction order.
-  // pool_ holds references to queue_ and metrics_, so they must come first.
+  // pool_ holds references to queue_, metrics_, and history_, so they must come first.
   SchedulerMetrics metrics_;
+  TaskHistory      history_;
   WorkQueue        queue_;
+  TimerScheduler   timer_scheduler_;
   ThreadPool       pool_;
 
   static std::atomic<uint64_t> next_id_;

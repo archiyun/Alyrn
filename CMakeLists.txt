@@ -34,8 +34,10 @@ add_library(runtime_task STATIC
     src/task/thread_pool.cpp
     src/task/task.cpp
     src/task/task_handle.cpp
+    src/task/task_history.cpp
     src/task/work_queue.cpp
     src/task/scheduler.cpp
+    src/task/timer_scheduler.cpp
 )
 
 target_include_directories(runtime_task
@@ -91,6 +93,8 @@ add_library(runtime_http STATIC
     src/http/http_response.cpp
     src/http/router.cpp
     src/http/http_server.cpp
+    src/http/metrics_handler.cpp
+    src/http/debug_handler.cpp
 )
 
 target_include_directories(runtime_http

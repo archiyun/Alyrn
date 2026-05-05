@@ -3,7 +3,7 @@
 本文档描述 `runtime::net` 的整体设计、核心对象关系，以及一条 TCP 连接从建立到销毁的完整生命周期。
 
 网络层采用典型的 Reactor 模型：
-IO 多路复用 + 非阻塞 + LT模式
+IO 多路复用 + 非阻塞 + LT模式/ET模式, 支持`Select`,`Poll`,`Epoll`三种模式
 
 - `EventLoop` 负责事件循环、任务串行执行和定时器调度
 - `Poller` 负责与内核多路复用机制交互
@@ -11,7 +11,7 @@ IO 多路复用 + 非阻塞 + LT模式
 - `Acceptor` 负责监听 socket 和接收新连接
 - `TcpServer` 负责组织监听、线程池和连接对象
 - `TcpConnection` 负责单连接的读写、缓冲区和关闭流程
-- `Socket` / `Buffer` / `InetAddress` 提供底层支撑能力
+- `Socket` / `Buffer` / `InetAddress` 提供底层支撑
 
 ## 1. 总体分层
 
@@ -91,17 +91,24 @@ TcpServer
 
 ### 2.2 `Channel`
 
-`Channel` 不是 socket，也不是 Poller。它是 fd 的事件代理对象，维护：
+`Channel` 不是 socket，也不是 Poller。它是 fd 的事件代理对象, 可以认为它是绑定事件与对应回调的路由器。
 
-- 当前 fd
-- 关心的事件 `events_`
-- 实际发生的事件 `revents_`
-- 对应的读/写/关闭/错误回调
+```
+fd_      ← 监听的文件描述符（不拥有，只借用）
+events_  ← 当前感兴趣的事件（我想监听什么）
+revents_ ← epoll 返回的就绪事件（内核说发生了什么）
+index_   ← 在 Poller 中的注册状态（kNew/kAdded/kDeleted）
+loop_    ← 所属 EventLoop 指针
+tie_     ← weak_ptr，防止回调时 owner 已析构
+
+```
 
 `Channel` 的两个关键作用是：
 
 1. 把 fd 事件翻译成上层回调
-2. 保证 “本地感兴趣事件状态” 和 “Poller 中注册状态” 的一致性
+2. 保证 “本地感兴趣事件状态” 和 “Poller 中注册状态” 的一致性.
+
+最初的设计中 Channel 高度绑定`Epoll`, 后续实现了事件抽象兼容了`select`,`poll` 典型的怀旧。
 
 ### 2.3 `Poller`
 

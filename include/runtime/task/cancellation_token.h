@@ -5,8 +5,8 @@
 
 namespace runtime::task {
 
-// Read-only view of a cancellation falg.
-// Pass by value into Task::func; poll IsCancelled() at yield points
+// Read-only view of a cancellation flag.
+// Pass by value into Task::func; poll IsCancelled() at yield points.
 class CancellationToken {
 public:
   explicit CancellationToken(std::shared_ptr<std::atomic<bool>> flag)
@@ -28,4 +28,4 @@ public:
 private:
   std::shared_ptr<std::atomic<bool>> flag_;
 };
-} // namespace runtime::task
+}  // namespace runtime::task

@@ -35,4 +35,4 @@ private:
   std::future<void> future_;
 };
 
-}; // namespace runtime::task
+}  // namespace runtime::task

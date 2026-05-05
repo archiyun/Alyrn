@@ -35,6 +35,10 @@ struct Task {
   std::atomic<TaskState> state{TaskState::kPending};
   CancellationSource     cancel_source;
 
+  // Set by TimerScheduler before calling cancel_source.Cancel().
+  // WorkerLoop reads this to distinguish kTimeout from kCancelled.
+  std::atomic<bool> timeout_triggered_{false};
+
   // Timestamps (written once each, no concurrent writes)
   runtime::time::Timestamp created_at;
   runtime::time::Timestamp enqueued_at;

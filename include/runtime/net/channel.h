@@ -40,16 +40,16 @@ public:
   void HandleEvent(runtime::time::Timestamp receive_time);
 
   void SetReadCallback(ReadEventCallback&& cb) {
-    read_callback_ = std::forward<ReadEventCallback>(cb);
+    read_callback_ = std::move(cb);
   }
   void SetWriteCallback(EventCallback&& cb) {
-    write_callback_ = std::forward<EventCallback>(cb);
+    write_callback_ = std::move(cb);
   }
   void SetCloseCallback(EventCallback&& cb) {
-    close_callback_ = std::forward<EventCallback>(cb);
+    close_callback_ = std::move(cb);
   }
   void SetErrorCallback(EventCallback&& cb) {
-    error_callback_ = std::forward<EventCallback>(cb);
+    error_callback_ = std::move(cb);
   }
 
   // Ties the Channel to an owner object so callbacks are not dispatched after

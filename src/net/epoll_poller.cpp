@@ -12,7 +12,7 @@ namespace runtime::net {
 namespace {
 
 // Channel registration state within EPollPoller.
-enum class ChannelState : int {
+enum class ChannelState : int8_t {
   kNew = -1,
   kAdded = 1,
   kDeleted = 2,
@@ -31,7 +31,7 @@ const char* OpName(int op) {
   }
 }
 
-// 入口方向， Channel->Events()
+// Entrance， Channel->Events()
 static uint32_t ToEpollEvents(int abstract_events) {
   uint32_t ev{0};
   if (abstract_events & Channel::kReadEvent)  ev |= EPOLLIN | EPOLLPRI;
@@ -39,7 +39,7 @@ static uint32_t ToEpollEvents(int abstract_events) {
   return ev;
 }
 
-// 结果方向, epoll_event.events -> abstract
+// Result, epoll_event.events -> abstract
 static int FromEpollEvents(uint32_t epoll_events) {
   int ev{0};
   if (epoll_events & (EPOLLIN | EPOLLPRI)) ev |= Channel::kReadEvent;

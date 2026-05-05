@@ -2,6 +2,7 @@
 
 #include "runtime/base/noncopyable.h"
 #include "runtime/task/scheduler_metrics.h"
+#include "runtime/task/task_history.h"
 #include "runtime/task/task_state.h"
 #include "runtime/task/work_queue.h"
 
@@ -16,7 +17,7 @@ namespace runtime::task {
 // queue and metrics must outlive this ThreadPool.
 class ThreadPool : public runtime::base::NonCopyable {
  public:
-  ThreadPool(WorkQueue& queue, SchedulerMetrics& metrics,
+  ThreadPool(WorkQueue& queue, SchedulerMetrics& metrics, TaskHistory& history,
              std::size_t thread_count = 0);
   ~ThreadPool();
 
@@ -34,6 +35,7 @@ class ThreadPool : public runtime::base::NonCopyable {
 
   WorkQueue&        queue_;
   SchedulerMetrics& metrics_;
+  TaskHistory&      history_;
   std::vector<std::jthread> workers_;
 };
 

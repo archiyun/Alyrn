@@ -1,9 +1,7 @@
 # high-concurrency-runtime
 
-**中文** | [English](README.md)
-
 `high-concurrency-runtime` 是一个 C++20 高并发网络运行时与 HTTP 服务框架。
-项目基于 Reactor 模型和 One-Loop-Per-Thread 线程模型，提供 TCP 网络层、HTTP 路由层、异步日志、任务调度器、内存池、指标组件等基础设施，适合用来学习或搭建轻量级 Linux 服务端程序, 或者基于此框架来学习`WebSocket`, `RPC`, 分布式系统， 数据库连接半ORM。
+项目基于 Reactor 模型和 One-Loop-Per-Thread 线程模型，提供 TCP 网络层、HTTP 路由层、异步日志、任务调度器、内存池、指标组件等基础设施，适合用来学习或搭建轻量级 Linux 服务端程序, 或者基于此框架来学习实现`WebSocket`, `RPC`, 负载均衡和反向代理， C++版的`Mybatis`。
 
 ## 功能概览
 
@@ -21,6 +19,7 @@
 
 推荐在 Linux 环境下构建。
 如果要在 MacOS 或者其它环境需要修改网络层来兼容。
+`Channel`, `Poller`与底层实现解耦， 不需要复杂的重构。
 
 基础依赖：
 
@@ -31,7 +30,7 @@
 
 可选依赖：
 
-- `liburing`：用于构建 `examples/io_uring_echo`
+- `liburing`：用于构建 `examples/io_uring_echo`, 这是作者学习io_uring的用例 可忽略。
 - GoogleTest：如果系统安装了 GTest，CMake 会自动构建更完整的 gtest 测试；未安装时会跳过这些测试
 - `wrk`：用于运行 HTTP 压测脚本
 
@@ -136,7 +135,7 @@ curl -X POST http://127.0.0.1:18080/api/echo -d "hello runtime"
 KV 示例接口：
 
 ```bash
-curl -X POST http://127.0.0.1:18080/api/kv/name -d "miku"
+curl -X POST http://127.0.0.1:18080/api/kv/name -d "kunkun"
 curl http://127.0.0.1:18080/api/kv/name
 curl http://127.0.0.1:18080/api/kv
 ```
@@ -297,9 +296,9 @@ bash benchmarks/wrk/run_wrk.sh
 │   ├── base/        # NonCopyable、CurrentThread 等基础工具
 │   ├── config/      # 配置加载接口
 │   ├── http/        # HTTP server、router、request、response、context
-│   ├── inference/   # 推理相关接口
+│   ├── inference/   # 推理相关接口(无视， 烂尾)
 │   ├── log/         # Logger、AsyncLogger
-│   ├── memory/      # MemoryPool、ObjectPool、缓存结构
+│   ├── memory/      # MemoryPool、ObjectPool、缓存结构(lru分段锁)
 │   ├── metrics/     # Counter、Gauge、Histogram、Registry
 │   ├── net/         # EventLoop、TcpServer、Channel、Poller、Buffer、Timer
 │   ├── task/        # Scheduler、ThreadPool、Task、WorkQueue

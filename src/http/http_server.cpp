@@ -1,6 +1,9 @@
 #include "runtime/http/http_server.h"
+#include "runtime/http/debug_handler.h"
 #include "runtime/http/http_context.h"
+#include "runtime/http/metrics_handler.h"
 #include "runtime/http/router.h"
+#include "runtime/net/event_loop.h"
 #include "runtime/task/scheduler.h"
 
 namespace runtime::http {
@@ -42,6 +45,35 @@ void HttpServer::Add(Method method, std::string_view path, Handler handler) {
 
 void HttpServer::Start() { server_.Start(); }
 
+void HttpServer::RegisterDebugTasksRoute() {
+  Get("/debug/tasks", [this](const HttpRequest&, HttpResponse& resp) {
+    if (!scheduler_) {
+      resp.SetStatusCode(StatusCode::InternalServerError);
+      resp.SetContentType("application/json; charset=utf-8");
+      resp.SetBody("{\"error\":\"scheduler not set\"}");
+      return;
+    }
+    const auto& history = scheduler_->History();
+    resp.SetStatusCode(StatusCode::Ok);
+    resp.SetContentType("application/json; charset=utf-8");
+    resp.SetBody(MakeDebugTasksJson(history.Snapshot(), history.Capacity()));
+  });
+}
+
+void HttpServer::RegisterMetricsRoute() {
+  Get("/metrics", [this](const HttpRequest&, HttpResponse& resp) {
+    if (!scheduler_) {
+      resp.SetStatusCode(StatusCode::InternalServerError);
+      resp.SetContentType("application/json; charset=utf-8");
+      resp.SetBody("{\"error\":\"scheduler not set\"}");
+      return;
+    }
+    resp.SetStatusCode(StatusCode::Ok);
+    resp.SetContentType("application/json; charset=utf-8");
+    resp.SetBody(MakeMetricsJson(scheduler_->Metrics().Load()));
+  });
+}
+
 void HttpServer::OnConnection(const TcpConnectionPtr& conn) {
   if (conn->Connected()) {
     conn->SetContext(HttpContext{});
@@ -70,8 +102,6 @@ void HttpServer::OnMessage(const TcpConnectionPtr& conn,
 
     if (match.handler && scheduler_) {
       request.SetPathParams(std::move(match.params));
-      // Run the handler on a worker thread; conn->Send() is called from the
-      // worker (cross-thread fd access — Phase 6 will fix via RunInLoop).
       scheduler_->Submit(
           [conn, req = std::move(request), resp = std::move(response),
            handler = match.handler]() mutable {
@@ -83,8 +113,16 @@ void HttpServer::OnMessage(const TcpConnectionPtr& conn,
               resp.SetBody("{\"error\":\"" + std::string(ex.what()) + "\"}");
               resp.SetCloseConnection(true);
             }
-            conn->Send(resp.ToString());
-            if (resp.CloseConnection()) conn->Shutdown();
+            // Serialize on the worker (keeps allocation off the IO thread),
+            // then dispatch Send + Shutdown atomically to the owning IO thread
+            // so all connection-state writes stay single-threaded.
+            std::string wire = resp.ToString();
+            const bool close  = resp.CloseConnection();
+            conn->GetLoop()->RunInLoop(
+                [conn, wire = std::move(wire), close] {
+                  conn->Send(wire);
+                  if (close) conn->Shutdown();
+                });
           });
       break;
     } else if (match.handler) {

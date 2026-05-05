@@ -34,7 +34,6 @@ Poller* Poller::NewDefaultPoller(EventLoop* loop) {
 #ifdef __linux__
     if (name == "epoll")  return new EPollPoller(loop);
 #endif
-    // 未知名称：忽略，使用平台默认
   }
   return DefaultPoller(loop);
 }

@@ -40,18 +40,18 @@ public:
   void SetEdgeTriggered(bool et) { et_mode_ = et; }
 
   void SetThreadInitCallback(ThreadInitCallback&& cb) {
-    thread_init_callback_ = std::forward<ThreadInitCallback>(cb);
+    thread_init_callback_ = std::move(cb);
   }
   void SetConnectionCallback(ConnectionCallback&& cb) {
-    connection_callback_ = std::forward<ConnectionCallback>(cb);
+    connection_callback_ = std::move(cb);
   }
 
   void SetMessageCallback(MessageCallback&& cb) {
-    message_callback_ = std::forward<MessageCallback>(cb);
+    message_callback_ = std::move(cb);
   }
 
   void SetWriteCompleteCallback(WriteCompleteCallback&& cb) {
-    write_complete_callback_ = std::forward<WriteCompleteCallback>(cb);
+    write_complete_callback_ = std::move(cb);
   }
 
   // Starts the thread pool and begins accepting connections.

@@ -27,6 +27,14 @@ public:
 
   void SetScheduler(std::shared_ptr<runtime::task::Scheduler> sched);
 
+  // Registers GET /metrics → JSON snapshot of scheduler counters.
+  // Must be called after SetScheduler().
+  void RegisterMetricsRoute();
+
+  // Registers GET /debug/tasks → JSON array of recent completed tasks.
+  // Must be called after SetScheduler().
+  void RegisterDebugTasksRoute();
+
   // Registers routes by forwarding to Router.
   void Get(std::string_view path, Handler handler);
   void Post(std::string_view path, Handler handler);

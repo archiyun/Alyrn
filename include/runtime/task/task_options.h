@@ -14,7 +14,7 @@ enum class TaskPriority : int {
 struct TaskOptions {
   std::string name;
   TaskPriority priority{TaskPriority::kNormal};
-  uint32_t timeout_ms{0}; // 0 = no time out (Phase 4)
+  uint32_t timeout_ms{0};
 };
 
-}; // namespace runtime::task
+}  // namespace runtime::task

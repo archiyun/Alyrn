@@ -4,6 +4,7 @@
 #include "runtime/net/event_loop.h"
 #include "runtime/net/inet_address.h"
 
+
 namespace runtime::net {
 
 class Connector : public runtime::base::NonCopyable,
@@ -13,26 +14,32 @@ public:
 
   Connector(EventLoop *loop, const InetAddress &server_addr);
   ~Connector();
+  void SetConnectionCallback(NewConnectionCallback& cb) { 
+    new_connection_cb_ = std::move(cb); 
+  }
 
-  void SetConnectionCallback(NewConnectionCallback&& cb) { new_connection_cb_ = std::move(cb); }
   void Start();
   void Stop();
 
 private:
-  enum class State : int { kDisConnected = 0, kConnecting, kConnected };
+  enum class ConnectorState : uint8_t { 
+    kDisConnected = 0U, 
+    kConnecting, 
+    kConnected 
+  };
 
   void StartInLoop();
   void Connect();
   void Connecting(int sockfd);
-  void handlerWrite();
+  void handleWrite();
   void handleError();
   void Retry(int sockfd);
   int RemoveAndResetChannel();
 
 private:
-  EventLoop *loop_;
+  EventLoop* loop_;
   InetAddress server_addr_;
-  State state_{State::kDisConnected};
+  ConnectorState state_{ConnectorState::kDisConnected};
   std::unique_ptr<Channel> channel_;
   double retry_delay_sec_{0.5};
   NewConnectionCallback new_connection_cb_;
