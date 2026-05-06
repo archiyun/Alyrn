@@ -152,7 +152,7 @@ void EventLoop::RunInLoop(Functor cb) {
 
 void EventLoop::QueueInLoop(Functor cb) {
   {
-    std::lock_guard<std::mutex> lk(mutex_);
+    std::lock_guard lk(mutex_);
     pending_functors_.push_back(std::move(cb));
   }
 
