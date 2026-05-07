@@ -14,10 +14,17 @@ std::string ToLower(std::string_view sv) {
   return out;
 }
 
+std::string Trim(std::string_view sv) {
+  std::size_t begin{0};
+  std::size_t end{sv.size()};
+  while (begin < end && sv[begin] == ' ') ++begin;
+  while (begin < end && sv[end-1] == ' ') --end;
+  return std::string(sv.substr(begin, end - begin));
+}
 }  // namespace
 
 void HttpRequest::AddHeader(std::string_view field, std::string_view value) {
-  headers_.emplace(ToLower(field), std::string(value));
+  headers_.emplace(ToLower(field), Trim(value));
 }
 
 std::string_view HttpRequest::GetHeader(std::string_view field) const {
@@ -30,8 +37,8 @@ std::string_view HttpRequest::GetHeader(std::string_view field) const {
 
 bool HttpRequest::KeepAlive() const {
   const auto conn = GetHeader("connection");
-  if (version_ == Version::Http11) {
-    // HTTP/1.1 keeps connections alive by default unless the client sends
+  if (static_cast<uint8_t>(version_) < static_cast<uint8_t>(Version::Http10)) {
+    // HTTP/1.1 HTTP/2.0 HTTP/3.0 keeps connections alive by default unless the client sends
     // Connection: close.
     return conn != "close";
   }

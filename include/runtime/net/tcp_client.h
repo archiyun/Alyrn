@@ -6,23 +6,24 @@
 
 #include <atomic>
 #include <memory>
+#include <utility>
 #include <string>
 
 namespace runtime::net {
 
-class Connector;   // forward declare：完整类型只在 .cpp 里需要
+class Connector;   
 class EventLoop;
 
-// TcpClient 是客户端侧的 TCP 连接管理器。
+// TcpClient manages one client-side TCP connection.
 //
-// 它持有一个 Connector 负责发起和重试非阻塞 connect，
-// 连接建立后包装成 TcpConnection 并驱动读写回调。
-// 每个 TcpClient 实例只管理一条连接。
+// Connector is responsible for non-blocking connect/retry.
+// After the connection is established, TcpClient wraps the socket fd into
+// TcpConnection and installs user callbacks.
 class TcpClient : public runtime::base::NonCopyable {
 public:
-  using TcpConnectionPtr     = TcpConnection::TcpConnectionPtr;
-  using ConnectionCallback   = TcpConnection::ConnectionCallback;
-  using MessageCallback      = TcpConnection::MessageCallback;
+  using TcpConnectionPtr      = TcpConnection::TcpConnectionPtr;
+  using ConnectionCallback    = TcpConnection::ConnectionCallback;
+  using MessageCallback       = TcpConnection::MessageCallback;
   using WriteCompleteCallback = TcpConnection::WriteCompleteCallback;
 
   TcpClient(EventLoop* loop, const InetAddress& server_addr, std::string name);
@@ -33,13 +34,13 @@ public:
 
   TcpConnectionPtr connection() const { return connection_; }
 
-  void SetConnectionCallback(ConnectionCallback& cb) {
+  void SetConnectionCallback(ConnectionCallback cb) {
     connection_callback_ = std::move(cb);
   }
-  void SetMessageCallback(MessageCallback& cb) {
+  void SetMessageCallback(MessageCallback cb) {
     message_callback_ = std::move(cb);
   }
-  void SetWriteCompleteCallback(WriteCompleteCallback& cb) {
+  void SetWriteCompleteCallback(WriteCompleteCallback cb) {
     write_complete_callback_ = std::move(cb);
   }
 

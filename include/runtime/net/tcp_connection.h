@@ -7,6 +7,7 @@
 #include "runtime/net/socket.h"
 #include "runtime/time/timestamp.h"
 
+#include <openssl/ssl.h>
 #include <any>
 #include <functional>
 #include <memory>
@@ -74,6 +75,17 @@ public:
   void ConnectEstablished();
   void ConnectDestroyed();
 
+  // Attaches an SSL object and arms the TLS handshake.
+  // Must be called before ConnectEstablished().
+  // Takes ownership of ssl.
+  void SetSsl(SSL* ssl);
+
+  // Invoked once after the TLS handshake completes.
+  // Receives the negotiated ALPN protocol string ("h2" or "http/1.1")
+  using HandshakeCallback = std::function<void(const std::string& protocol)>;
+  void SetHandshakeCallback(HandshakeCallback cb) {
+    handshake_cb_ = std::move(cb);
+  }
 private:
   enum class TCPState {
     kDisconnected,
@@ -112,6 +124,14 @@ private:
   CloseCallback close_callback_;
 
   std::any context_;
+
+private:
+  // SSL support
+  void DoSslHandshake();
+
+  SSL* ssl_{nullptr};
+  bool ssl_handshake_done_{false};
+  HandshakeCallback handshake_cb_;
 };
 
 }  // namespace runtime::net

@@ -5,6 +5,8 @@
 #include <sys/uio.h>
 #include <unistd.h>
 
+#include <openssl/ssl.h>
+
 namespace runtime::net {
 
 Buffer::Buffer(std::size_t initial_size)
@@ -111,6 +113,30 @@ ssize_t Buffer::ReadFd(int fd, int* saved_errno) {
     Append(extrabuf, static_cast<std::size_t>(n) - writable);
   }
 
+  return n;
+}
+
+ssize_t Buffer::ReadSslFd(SSL* ssl, int* saved_errno) {
+  // Ensure room for at least one max-size TLS record (16 KB) plus framing.
+  EnsureWritableBytes(65536);
+  const int n = SSL_read(ssl, BeginWrite(), static_cast<int>(WritableBytes()));
+  if (n < 0) {
+    if (saved_errno != nullptr)
+      *saved_errno = SSL_get_error(ssl, n);
+    return -1;
+  }
+  HasWritten(static_cast<std::size_t>(n));
+  return n;
+}
+
+ssize_t Buffer::WriteSslFd(SSL* ssl, int* saved_errno) {
+  const int n = SSL_write(ssl, Peek(), static_cast<int>(ReadableBytes()));
+  if (n < 0) {
+    if (saved_errno != nullptr)
+      *saved_errno = SSL_get_error(ssl, n);
+    return -1;
+  }
+  Retrieve(static_cast<std::size_t>(n));
   return n;
 }
 

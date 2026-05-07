@@ -58,14 +58,14 @@ public:
   void Reset();
 
 private:
-  Method method_{Method::Invalid};
-  Version version_{Version::Unknown};
-  std::unordered_map<std::string, std::string> path_params_;
-  std::string path_;
-  std::string query_;
+  Method method_{Method::Invalid};       // GET / POST / PUT ...
+  Version version_{Version::Unknown};    // HTTP/1.0 HTTP/1.1
+  std::string path_;                     // e.g. /users/123
+  std::string query_;                    // e.g. name=abc&&age=18
+  std::unordered_map<std::string, std::string> headers_; // Host / Content-Length / Connection ...
   std::string body_;
-  std::unordered_map<std::string, std::string> headers_;
   runtime::time::Timestamp receive_time_;
+  std::unordered_map<std::string, std::string> path_params_; // e.g. /users/:id -> id = 123
 };
 
 }  // namespace runtime::http

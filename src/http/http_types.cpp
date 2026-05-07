@@ -2,7 +2,7 @@
 
 namespace runtime::http {
 
-std::string_view MethodToString(Method m) {
+std::string_view MethodToString(Method m) noexcept {
   switch (m) {
     case Method::Get:
       return "GET";
@@ -23,16 +23,28 @@ std::string_view MethodToString(Method m) {
   }
 }
 
-std::string_view StatusMessage(StatusCode code) {
+std::string_view StatusMessage(StatusCode code) noexcept {
   switch (code) {
+    case StatusCode::SwitchingProtocols:
+      return "Switching Protocols";
     case StatusCode::Ok:
       return "OK";
     case StatusCode::Created:
       return "Created";
     case StatusCode::NoContent:
       return "No Content";
+    case StatusCode::MovedPermanently:
+      return "Moved Permanently";
+    case StatusCode::Found:
+      return "Found";
+    case StatusCode::SeeOther:
+      return "See Other";
+    case StatusCode::NotModified:
+      return "Not Modified";
     case StatusCode::BadRequest:
       return "Bad Request";
+    case StatusCode::Unauthorized:
+      return "Unauthorized";
     case StatusCode::Forbidden:
       return "Forbidden";
     case StatusCode::NotFound:
@@ -43,6 +55,14 @@ std::string_view StatusMessage(StatusCode code) {
       return "Request Timeout";
     case StatusCode::InternalServerError:
       return "Internal Server Error";
+    case StatusCode::NotImplemented:
+      return "Not Implemented";
+    case StatusCode::BadGateway:
+      return "Bad Gateway";
+    case StatusCode::ServiceUnavailable:
+      return "Service Unavailable";
+    case StatusCode::GatewayTimeout:
+      return "Gateway Timeout";
     default:
       return "Unknown";
   }

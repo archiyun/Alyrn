@@ -4,6 +4,7 @@
 #include "runtime/http/http_response.h"
 #include "runtime/http/http_types.h"
 
+#include <cstddef>
 #include <memory>
 #include <functional>
 #include <string>
@@ -18,7 +19,7 @@ using Handler = std::function<void(const HttpRequest&, HttpResponse&)>;
 
 // RouteMatch describes the router result for one method/path lookup.
 struct RouteMatch {
-  Handler handler{nullptr};
+  Handler handler{};
   std::unordered_map<std::string, std::string> params;
   bool path_matched{false};
 };

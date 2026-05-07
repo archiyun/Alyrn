@@ -1,5 +1,6 @@
 #include "runtime/http/router.h"
 
+#include <utility>
 namespace runtime::http {
 
 std::vector<std::string_view> Router::SplitPath(std::string_view path) {
@@ -35,10 +36,16 @@ void Router::Add(Method method, std::string_view path, Handler handler) {
 
   for (const auto& seg : segments) {
     if (IsParamSegment(seg)) {
+      std::string param_name = ExtractParamName(seg);
+
+      if (param_name.empty()) return;
+
       if (!node->param_child) {
         node->param_child = std::make_unique<RouteTrieNode>();
+        node->param_child->param_name = std::move(param_name);
+      } else if (node->param_child->param_name != param_name) {
+        return;
       }
-      node->param_child->param_name = ExtractParamName(seg);
       node = node->param_child.get();
     } else {
       auto& child = node->static_child[std::string(seg)];

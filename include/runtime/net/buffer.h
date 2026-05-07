@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 
+#include <openssl/ssl.h>
+
 namespace runtime::net {
 
 // Buffer is a user-space byte buffer used by the networking layer.
@@ -95,6 +97,11 @@ public:
   // Returns the number of bytes written, or -1 on error. Successfully written
   // bytes are consumed from the buffer.
   ssize_t WriteFd(int fd, int* saved_errno);
+
+  // SSL variants: read/write through an established TLS session.
+  // saved_errno receives SSL_get_error() on failure, not errno.
+  ssize_t ReadSslFd(SSL* ssl, int* saved_errno);
+  ssize_t WriteSslFd(SSL* ssl, int* saved_errno);
 
 private:
   char* Begin();

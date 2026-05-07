@@ -14,7 +14,10 @@ void HttpResponse::SetContentType(std::string_view content_type) {
 }
 
 void HttpResponse::AddHeader(std::string_view key, std::string_view value) {
-  headers_.emplace(std::string(key), std::string(value));
+  std::string k{key};
+  // forbiden user to add Content-Length and Connection
+  if (k == "Content-Length" || k == "Connection") return;
+  headers_.insert_or_assign(k, std::string(value));
 }
 
 void HttpResponse::SetCloseConnection(bool close) { close_connection_ = close; }

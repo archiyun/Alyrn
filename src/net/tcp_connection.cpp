@@ -2,6 +2,7 @@
 #include "runtime/net/event_loop.h"
 #include "runtime/log/logger.h"
 
+#include <openssl/ssl.h>
 #include <cassert>
 #include <cerrno>
 #include <cstring>
@@ -25,7 +26,9 @@ TcpConnection::TcpConnection(EventLoop* loop, const std::string& name,
   channel_->SetCloseCallback([this] { HandleClose(); });
 }
 
-TcpConnection::~TcpConnection() = default;
+TcpConnection::~TcpConnection() {
+  if (ssl_) SSL_free(ssl_);
+}
 
 void TcpConnection::Send(const std::string& message) {
   if (state_ == TCPState::kConnected) {
@@ -46,14 +49,27 @@ void TcpConnection::SendInLoop(const std::string& message) {
 
   ssize_t nwrote = 0;
   if (!channel_->IsWriting() && output_buffer_.ReadableBytes() == 0) {
-    nwrote = ::write(channel_->Fd(), message.data(), message.size());
-    if (nwrote < 0) {
-      nwrote = 0;
-      if (errno != EWOULDBLOCK) {
-        LOG_ERROR() << "tcp direct write failed: name=" << name_
-                    << " fd=" << channel_->Fd() << " errno=" << errno
-                    << " message=" << std::strerror(errno);
-        return;
+    if (ssl_) {
+      nwrote = SSL_write(ssl_, message.data(), static_cast<int>(message.size()));
+      if (nwrote < 0) {
+        const int ssl_err = SSL_get_error(ssl_, static_cast<int>(nwrote));
+        nwrote = 0;
+        if (ssl_err != SSL_ERROR_WANT_WRITE) {
+          LOG_ERROR() << "ssl direct write failed: name=" << name_
+                      << " fd=" << channel_->Fd() << " ssl_err=" << ssl_err;
+          return;
+        }
+      }
+    } else {
+      nwrote = ::write(channel_->Fd(), message.data(), message.size());
+      if (nwrote < 0) {
+        nwrote = 0;
+        if (errno != EWOULDBLOCK) {
+          LOG_ERROR() << "tcp direct write failed: name=" << name_
+                      << " fd=" << channel_->Fd() << " errno=" << errno
+                      << " message=" << std::strerror(errno);
+          return;
+        }
       }
     }
   }
@@ -110,29 +126,45 @@ void TcpConnection::ConnectDestroyed() {
 }
 
 void TcpConnection::HandleRead(runtime::time::Timestamp receive_time) {
+  if (ssl_ && !ssl_handshake_done_) {
+    DoSslHandshake();
+    return;
+  }
+
   int saved_errno = 0;
   int fd = channel_->Fd();
+
   if (channel_->IsEdgeTriggered()) {
-    // Edge-triggered mode must drain the socket until EAGAIN, otherwise no
-    // further readability notification is guaranteed for already buffered data.
+    // ET: drain until EAGAIN (plain) or WANT_READ (SSL).
     while (true) {
-      ssize_t n = input_buffer_.ReadFd(fd, &saved_errno);
-      if (n > 0)
+      ssize_t n = ssl_ ? input_buffer_.ReadSslFd(ssl_, &saved_errno)
+                       : input_buffer_.ReadFd(fd, &saved_errno);
+      if (n > 0) {
         continue;
-      else if (n == 0) {
+      } else if (n == 0) {
         HandleClose();
         return;
-      } else if (saved_errno == EAGAIN || saved_errno == EWOULDBLOCK)
-        break;
-      HandleError();
-      return;
+      } else {
+        if (ssl_) {
+          if (saved_errno == SSL_ERROR_WANT_READ) break;
+          if (saved_errno == SSL_ERROR_WANT_WRITE) {
+            channel_->EnableWriting();
+            break;
+          }
+        } else if (saved_errno == EAGAIN || saved_errno == EWOULDBLOCK) {
+          break;
+        }
+        HandleError();
+        return;
+      }
     }
     if (input_buffer_.ReadableBytes() > 0 && message_callback_) {
       message_callback_(shared_from_this(), input_buffer_, receive_time);
     }
   } else {
-    // Level-triggered mode
-    ssize_t n = input_buffer_.ReadFd(fd, &saved_errno);
+    // LT: one read per event is sufficient.
+    ssize_t n = ssl_ ? input_buffer_.ReadSslFd(ssl_, &saved_errno)
+                     : input_buffer_.ReadFd(fd, &saved_errno);
     if (n > 0) {
       if (message_callback_) {
         message_callback_(shared_from_this(), input_buffer_, receive_time);
@@ -140,10 +172,12 @@ void TcpConnection::HandleRead(runtime::time::Timestamp receive_time) {
     } else if (n == 0) {
       HandleClose();
     } else {
-      if (saved_errno != EAGAIN && saved_errno != EWOULDBLOCK) {
+      const bool transient = ssl_
+          ? (saved_errno == SSL_ERROR_WANT_READ || saved_errno == SSL_ERROR_WANT_WRITE)
+          : (saved_errno == EAGAIN || saved_errno == EWOULDBLOCK);
+      if (!transient) {
         LOG_ERROR() << "tcp read failed: name=" << name_
-                    << " fd=" << channel_->Fd() << " errno=" << saved_errno
-                    << " message=" << std::strerror(saved_errno);
+                    << " fd=" << channel_->Fd() << " errno=" << saved_errno;
         HandleError();
       }
     }
@@ -151,56 +185,57 @@ void TcpConnection::HandleRead(runtime::time::Timestamp receive_time) {
 }
 
 void TcpConnection::HandleWrite() {
+  // Handshake may need to write (e.g. ServerHello); retry it here.
+  if (ssl_ && !ssl_handshake_done_) {
+    DoSslHandshake();
+    return;
+  }
+
   if (!channel_->IsWriting()) {
     return;
   }
 
   int saved_errno = 0;
+
+  auto do_write = [&]() -> ssize_t {
+    return ssl_ ? output_buffer_.WriteSslFd(ssl_, &saved_errno)
+                : output_buffer_.WriteFd(channel_->Fd(), &saved_errno);
+  };
+
+  auto is_transient = [&]() -> bool {
+    return ssl_
+        ? (saved_errno == SSL_ERROR_WANT_WRITE || saved_errno == SSL_ERROR_WANT_READ)
+        : (saved_errno == EAGAIN || saved_errno == EWOULDBLOCK);
+  };
+
   if (channel_->IsEdgeTriggered()) {
-    // In edge-triggered mode, flush as much queued output as possible before
-    // returning to avoid relying on another writable notification.
     while (output_buffer_.ReadableBytes() > 0) {
-      ssize_t n = output_buffer_.WriteFd(channel_->Fd(), &saved_errno);
+      ssize_t n = do_write();
       if (n < 0) {
-        if (saved_errno == EAGAIN || saved_errno == EWOULDBLOCK) break;
+        if (is_transient()) break;
         LOG_ERROR() << "tcp write failed: name=" << name_
-                    << " fd=" << channel_->Fd() << " errno=" << saved_errno
-                    << " message=" << std::strerror(saved_errno);
+                    << " fd=" << channel_->Fd() << " errno=" << saved_errno;
         HandleError();
         return;
       }
     }
     if (output_buffer_.ReadableBytes() == 0) {
       channel_->DisableWriting();
-      if (write_complete_callback_) {
-        write_complete_callback_(shared_from_this());
-      }
-      if (state_ == TCPState::kDisconnecting) {
-        ShutdownInLoop();
-      }
+      if (write_complete_callback_) write_complete_callback_(shared_from_this());
+      if (state_ == TCPState::kDisconnecting) ShutdownInLoop();
     }
   } else {
-    // In level-triggered mode, a partial write is acceptable because epoll
-    // will notify again while the socket remains writable.
-    ssize_t n = output_buffer_.WriteFd(channel_->Fd(), &saved_errno);
+    ssize_t n = do_write();
     if (n > 0) {
       if (output_buffer_.ReadableBytes() == 0) {
         channel_->DisableWriting();
-        if (write_complete_callback_) {
-          write_complete_callback_(shared_from_this());
-        }
-        if (state_ == TCPState::kDisconnecting) {
-          ShutdownInLoop();
-        }
+        if (write_complete_callback_) write_complete_callback_(shared_from_this());
+        if (state_ == TCPState::kDisconnecting) ShutdownInLoop();
       }
-    } else {
-      errno = saved_errno;
-      if (saved_errno != EAGAIN && saved_errno != EWOULDBLOCK) {
-        LOG_ERROR() << "tcp write failed: name=" << name_
-                    << " fd=" << channel_->Fd() << " errno=" << saved_errno
-                    << " message=" << std::strerror(saved_errno);
-        HandleError();
-      }
+    } else if (n < 0 && !is_transient()) {
+      LOG_ERROR() << "tcp write failed: name=" << name_
+                  << " fd=" << channel_->Fd() << " errno=" << saved_errno;
+      HandleError();
     }
   }
 }
@@ -233,6 +268,37 @@ void TcpConnection::HandleError() {
 void TcpConnection::ShutdownInLoop() {
   if (!channel_->IsWriting()) {
     socket_->ShutdownWrite();
+  }
+}
+
+// attached SSL
+void TcpConnection::SetSsl(SSL* ssl) {
+  ssl_ = ssl;
+  SSL_set_fd(ssl_, channel_->Fd());
+  SSL_set_accept_state(ssl_); // 服务端模式
+}
+
+void TcpConnection::DoSslHandshake() {
+  const int ret = SSL_accept(ssl_);
+  if (ret == 1) {
+    // 握手完成， 查询 ALPN 协商结果
+    ssl_handshake_done_ = true;
+    const unsigned char* proto = nullptr;
+    unsigned int proto_len = 0;
+    SSL_get0_alpn_selected(ssl_, &proto, &proto_len);
+    const std::string negotiated(proto ? reinterpret_cast<const char*>(proto) : "http/1.1", 
+                                proto ? proto_len : 8);
+    if (handshake_cb_) handshake_cb_(negotiated);
+    return;
+  }
+
+  const int err =  SSL_get_error(ssl_, ret);
+  if (err == SSL_ERROR_WANT_READ) {
+    channel_->EnableReading();
+  } else if (err == SSL_ERROR_WANT_WRITE) {
+    channel_->EnableWriting();
+  } else {
+    HandleError();
   }
 }
 }  // namespace runtime::net

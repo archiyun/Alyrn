@@ -20,11 +20,11 @@ class EventLoop;
 // EventLoopThreadPool, and manages the lifecycle of TcpConnection objects.
 class TcpServer : public runtime::base::NonCopyable {
 public:
-  using TcpConnectionPtr = std::shared_ptr<TcpConnection>;
-  using ConnectionCallback = TcpConnection::ConnectionCallback;
-  using MessageCallback = TcpConnection::MessageCallback;
+  using TcpConnectionPtr      = std::shared_ptr<TcpConnection>;
+  using ConnectionCallback    = TcpConnection::ConnectionCallback;
+  using MessageCallback       = TcpConnection::MessageCallback;
   using WriteCompleteCallback = TcpConnection::WriteCompleteCallback;
-  using ThreadInitCallback = EventLoopThreadPool::ThreadInitCallback;
+  using ThreadInitCallback    = EventLoopThreadPool::ThreadInitCallback;
 
   TcpServer(EventLoop* loop,
             const InetAddress& listenaddr,
@@ -39,18 +39,18 @@ public:
   // Must be called before Start().
   void SetEdgeTriggered(bool et) { et_mode_ = et; }
 
-  void SetThreadInitCallback(ThreadInitCallback&& cb) {
+  void SetThreadInitCallback(ThreadInitCallback cb) {
     thread_init_callback_ = std::move(cb);
   }
-  void SetConnectionCallback(ConnectionCallback&& cb) {
+  void SetConnectionCallback(ConnectionCallback cb) {
     connection_callback_ = std::move(cb);
   }
 
-  void SetMessageCallback(MessageCallback&& cb) {
+  void SetMessageCallback(MessageCallback cb) {
     message_callback_ = std::move(cb);
   }
 
-  void SetWriteCompleteCallback(WriteCompleteCallback&& cb) {
+  void SetWriteCompleteCallback(WriteCompleteCallback cb) {
     write_complete_callback_ = std::move(cb);
   }
 
@@ -65,20 +65,21 @@ private:
 private:
   using ConnectionMap = std::map<std::string, TcpConnectionPtr>;
 
-  EventLoop* loop_;
+  EventLoop*        loop_;
   const std::string name_;
 
-  std::unique_ptr<Acceptor> acceptor_;
+  std::unique_ptr<Acceptor>            acceptor_;
   std::unique_ptr<EventLoopThreadPool> thread_pool_;
+
   int thread_num_;
   bool started_;
   bool et_mode_;
   int next_conn_id_;
 
-  ConnectionCallback connection_callback_;
-  MessageCallback message_callback_;
+  ConnectionCallback    connection_callback_;
+  MessageCallback       message_callback_;
   WriteCompleteCallback write_complete_callback_;
-  ThreadInitCallback thread_init_callback_;
+  ThreadInitCallback    thread_init_callback_;
 
   ConnectionMap connections_;
 };

@@ -3,6 +3,7 @@
 #include "runtime/http/http_types.h"
 
 #include <string>
+#include <string_view>
 #include <unordered_map>
 
 namespace runtime::http {
@@ -22,6 +23,15 @@ public:
   void SetCloseConnection(bool close);
 
   bool CloseConnection() const;
+
+  // Accessors used by Http2Session to build HTTP/2 HEADERS frames directly,
+  // bypassing the HTTP/1.1 wire format produced by ToString().
+  StatusCode         GetStatusCode() const { return status_code_; }
+  const std::string& Body()         const { return body_; }
+  std::string        ContentType()  const {
+    auto it = headers_.find("Content-Type");
+    return it != headers_.end() ? it->second : std::string{};
+  }
 
   // Serializes the response in HTTP/1.1 format.
   // This implementation always emits Content-Length and does not support

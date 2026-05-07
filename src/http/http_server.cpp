@@ -1,5 +1,6 @@
 #include "runtime/http/http_server.h"
 #include "runtime/http/debug_handler.h"
+#include "runtime/http/http2_session.h"
 #include "runtime/http/http_context.h"
 #include "runtime/http/metrics_handler.h"
 #include "runtime/http/router.h"
@@ -43,6 +44,8 @@ void HttpServer::Add(Method method, std::string_view path, Handler handler) {
   router_.Add(method, path, std::move(handler));
 }
 
+void HttpServer::SetTls(runtime::net::SslContext* ctx) { ssl_ctx_ = ctx; }
+
 void HttpServer::Start() { server_.Start(); }
 
 void HttpServer::RegisterDebugTasksRoute() {
@@ -75,25 +78,98 @@ void HttpServer::RegisterMetricsRoute() {
 }
 
 void HttpServer::OnConnection(const TcpConnectionPtr& conn) {
-  if (conn->Connected()) {
+  if (!conn->Connected()) return;
+
+  if (!ssl_ctx_) {
     conn->SetContext(HttpContext{});
+    return;
   }
+
+  conn->SetSsl(ssl_ctx_->NewSsl());
+  // Capture weak_ptr to avoid conn → handshake_cb_ → conn circular reference.
+  conn->SetHandshakeCallback(
+      [this, weak = std::weak_ptr<runtime::net::TcpConnection>(conn)](
+          const std::string& proto) {
+        auto c = weak.lock();
+        if (!c) return;
+
+        if (proto == "h2") {
+          auto session = std::make_shared<Http2Session>(
+              c,
+              [this](HttpRequest& req, HttpResponse& resp,
+                     std::shared_ptr<runtime::net::TcpConnection> c,
+                     int32_t sid) {
+                auto match = router_.Match(req.GetMethod(), req.Path());
+                if (!match.handler) {
+                  resp = match.path_matched
+                      ? MakeError(StatusCode::MethodNotAllowed, "method not allowed")
+                      : MakeError(StatusCode::NotFound, "not found");
+                  auto& ses = std::any_cast<std::shared_ptr<Http2Session>&>(
+                      c->GetContext());
+                  ses->SendResponse(sid, resp);
+                  return;
+                }
+                req.SetPathParams(std::move(match.params));
+                if (scheduler_) {
+                  scheduler_->Submit(
+                      [c, req = std::move(req), resp = std::move(resp),
+                       handler = match.handler, sid]() mutable {
+                        try {
+                          handler(req, resp);
+                        } catch (const std::exception& ex) {
+                          resp.SetStatusCode(StatusCode::InternalServerError);
+                          resp.SetContentType("application/json; charset=utf-8");
+                          resp.SetBody("{\"error\":\"" +
+                                       std::string(ex.what()) + "\"}");
+                        }
+                        c->GetLoop()->RunInLoop(
+                            [c, resp = std::move(resp), sid] {
+                              auto& ses = std::any_cast<
+                                  std::shared_ptr<Http2Session>&>(
+                                  c->GetContext());
+                              ses->SendResponse(sid, resp);
+                            });
+                      });
+                  return;
+                }
+                try {
+                  match.handler(req, resp);
+                } catch (const std::exception& ex) {
+                  resp = MakeError(StatusCode::InternalServerError, ex.what());
+                }
+                auto& ses = std::any_cast<std::shared_ptr<Http2Session>&>(
+                    c->GetContext());
+                ses->SendResponse(sid, resp);
+              });
+          c->SetContext(std::move(session));
+        } else {
+          c->SetContext(HttpContext{});
+        }
+      });
 }
 
 void HttpServer::OnMessage(const TcpConnectionPtr& conn,
                            runtime::net::Buffer& buf,
                            runtime::time::Timestamp ts) {
-  auto& ctx = std::any_cast<HttpContext&>(conn->GetContext());
-  if (!ctx.ParseRequest(buf, ts)) {
+  // HTTP/2: feed raw bytes into nghttp2; it drives dispatch via DispatchFn.
+  auto& ctx = conn->GetContext();
+  if (ctx.type() == typeid(std::shared_ptr<Http2Session>)) {
+    auto& session = std::any_cast<std::shared_ptr<Http2Session>&>(ctx);
+    if (!session->Feed(buf)) conn->Shutdown();
+    return;
+  }
+
+  auto& h1ctx = std::any_cast<HttpContext&>(conn->GetContext());
+  if (!h1ctx.ParseRequest(buf, ts)) {
     HttpResponse err = MakeError(StatusCode::BadRequest, "malformed request");
     conn->Send(err.ToString());
     conn->Shutdown();
     return;
   }
 
-  while (ctx.GotAll()) {
-    HttpRequest request = ctx.Request();
-    ctx.Reset();
+  while (h1ctx.GotAll()) {
+    HttpRequest request = h1ctx.Request();
+    h1ctx.Reset();
 
     const bool keep_alive = request.KeepAlive();
     HttpResponse response(!keep_alive);

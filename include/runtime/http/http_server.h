@@ -2,6 +2,7 @@
 
 #include "runtime/base/noncopyable.h"
 #include "runtime/http/router.h"
+#include "runtime/net/ssl_context.h"
 #include "runtime/net/tcp_server.h"
 #include "runtime/task/scheduler.h"
 
@@ -19,6 +20,8 @@ public:
   HttpServer(runtime::net::EventLoop* loop,
              const runtime::net::InetAddress& addr,
              std::string name);
+
+  void SetTls(runtime::net::SslContext* ctx);
 
   void SetThreadNum(int num_threads);
 
@@ -57,6 +60,7 @@ private:
   runtime::net::TcpServer server_;
   Router router_;
   std::shared_ptr<runtime::task::Scheduler> scheduler_;
+  runtime::net::SslContext* ssl_ctx_{nullptr};
 };
 
 }  // namespace runtime::http

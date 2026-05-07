@@ -17,28 +17,44 @@ enum class Method {
 };
 
 // HTTP protocol versions supported by the parser.
-enum class Version {
+enum class Version : uint8_t{
   Unknown,
-  Http10,
+  Http10 = 1,
   Http11,
+  Http20, // not implement
+  Http30, // not implement
 };
 
 enum class StatusCode : uint16_t {
-  Ok = 200,
-  Created = 201,
-  NoContent = 204,
-  BadRequest = 400,
-  Forbidden = 403,
-  NotFound = 404,
-  MethodNotAllowed = 405,
-  RequestTimeout = 408,
+  SwitchingProtocols  = 101,
+
+  Ok                  = 200,
+  Created             = 201,
+  NoContent           = 204,
+
+  MovedPermanently    = 301,
+  Found               = 302,
+  SeeOther            = 303,
+  NotModified         = 304,
+
+  BadRequest          = 400,
+  Unauthorized        = 401,
+  Forbidden           = 403,
+  NotFound            = 404,
+  MethodNotAllowed    = 405,
+  RequestTimeout      = 408,
+
   InternalServerError = 500,
+  NotImplemented      = 501,
+  BadGateway          = 502,
+  ServiceUnavailable  = 503,
+  GatewayTimeout      = 504,
 };
 
 // Returns the wire-format name for an HTTP method.
-std::string_view MethodToString(Method m);
+std::string_view MethodToString(Method m) noexcept;
 
 // Returns the standard reason phrase for a status code.
-std::string_view StatusMessage(StatusCode code);
+std::string_view StatusMessage(StatusCode code) noexcept;
 
 } // namespace runtime::http

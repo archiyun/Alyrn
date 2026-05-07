@@ -10,8 +10,6 @@ namespace runtime::net {
 
 class Timer;
 
-
- 
 // The red-black tree code is based on the algorithm described in
 // the "Introduction to Algorithms" by Cormen, Leiserson and Rivest.
 enum class TimerTreeColor : uint8_t {

@@ -32,6 +32,10 @@ bool HttpContext::ParseVersion(std::string_view version_sv) {
     request_.SetVersion(Version::Http11);
   else if (version_sv == "HTTP/1.0")
     request_.SetVersion(Version::Http10);
+  else if (version_sv == "HTTP/2.0")
+    request_.SetVersion(Version::Http20);
+  else if (version_sv == "HTTP/3.0")
+    request_.SetVersion(Version::Http30);
   else
     return false;
   return true;

@@ -2,13 +2,15 @@
 
 #include <cstdint>
 
-// 中文:
-// 
 namespace runtime::net {
 
 class Timer;
 
-// TimerId identifies a timer instance inside TimerQueue.
+// A lightweight cancellation handle returned by TimerQueue.
+//
+// TimerId does not own the Timer. `sequence` is used together with the raw
+// pointer to avoid ABA: an old handle must not cancel a new Timer that reuses
+// the same memory address.
 struct TimerId {
   Timer* timer{nullptr};
   int64_t sequence{0};
