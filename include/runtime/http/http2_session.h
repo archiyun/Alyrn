@@ -19,13 +19,16 @@ namespace runtime::http {
 // DispatchFn is called when a complete HTTP/2 request arrives on a stream.
 // stream_id is needed to route the response back through nghttp2.
 using DispatchFn = std::function<void(HttpRequest&, HttpResponse&, std::shared_ptr<runtime::net::TcpConnection>, int32_t stream_id)>;
+using WireSendFn = std::function<void(std::string)>;
 
 // Http2Session owns one nghttp2_session per TcpConnection.
 // It assembles HttpRequest objects from incoming frames ans submits
 // HttpResponse objects back as HEADERS + DATA frames.
 class Http2Session : public runtime::base::NonCopyable {
 public:
-  Http2Session(std::shared_ptr<runtime::net::TcpConnection> conn, DispatchFn dispatch);
+  Http2Session(std::shared_ptr<runtime::net::TcpConnection> conn,
+               DispatchFn dispatch,
+               WireSendFn wire_send = {});
   ~Http2Session();
 
   // Feed TLS-decrypted bytes into nghttp2. Returns false on fatal error.
@@ -58,6 +61,7 @@ private:
   nghttp2_session* session_{nullptr};
   std::shared_ptr<runtime::net::TcpConnection> conn_;
   DispatchFn dispatch_;
+  WireSendFn wire_send_;
   std::unordered_map<int32_t, StreamState> streams_;
 };
 

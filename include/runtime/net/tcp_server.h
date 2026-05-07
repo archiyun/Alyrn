@@ -57,6 +57,9 @@ public:
   // Starts the thread pool and begins accepting connections.
   void Start();
 
+  EventLoop* const GetLoop() const {
+    return loop_;
+  }
 private:
   void NewConnection(int sockfd, const InetAddress& peeraddr);
   void RemoveConnection(const TcpConnectionPtr& conn);

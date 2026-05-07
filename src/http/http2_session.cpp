@@ -1,18 +1,45 @@
 #include "runtime/http/http2_session.h"
 #include "runtime/net/tcp_connection.h"
 
+#include <algorithm>
+#include <cctype>
 #include <cstring>
+#include <utility>
 #include <vector>
 
 namespace runtime::http {
+
+namespace {
+
+std::string ToLower(std::string_view sv) {
+  std::string out{sv};
+  for (char& c : out) {
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  }
+  return out;
+}
+
+bool IsHttp2ForbiddenResponseHeader(std::string_view key) {
+  return key == "connection" ||
+         key == "keep-alive" ||
+         key == "proxy-connection" ||
+         key == "te" ||
+         key == "transfer-encoding" ||
+         key == "upgrade";
+}
+
+}  // namespace
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Construction / destruction
 // ──────────────────────────────────────────────────────────────────────────────
 
 Http2Session::Http2Session(std::shared_ptr<runtime::net::TcpConnection> conn,
-                           DispatchFn dispatch)
-    : conn_(std::move(conn)), dispatch_(std::move(dispatch)) {
+                           DispatchFn dispatch,
+                           WireSendFn wire_send)
+    : conn_(std::move(conn)),
+      dispatch_(std::move(dispatch)),
+      wire_send_(std::move(wire_send)) {
 
   nghttp2_session_callbacks* cbs;
   nghttp2_session_callbacks_new(&cbs);
@@ -58,14 +85,13 @@ bool Http2Session::Feed(runtime::net::Buffer& buf) {
 void Http2Session::SendResponse(int32_t stream_id, const HttpResponse& resp) {
   // All strings that back nghttp2_nv pointers must outlive nghttp2_session_send
   // (called inside Flush). Keep them as named locals in this scope.
-  const std::string status_str =
-      std::to_string(static_cast<int>(resp.GetStatusCode()));
   const std::string& body = resp.Body();
-  const std::string  ct   = resp.ContentType();
-  const std::string  cl   = body.empty() ? std::string{} : std::to_string(body.size());
+  std::vector<std::pair<std::string, std::string>> headers;
+  headers.emplace_back(":status",
+                       std::to_string(static_cast<int>(resp.GetStatusCode())));
 
   std::vector<nghttp2_nv> nva;
-  auto add = [&](std::string_view k, const std::string& v) {
+  auto add = [&](const std::string& k, const std::string& v) {
     nva.push_back({
       const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(k.data())),
       const_cast<uint8_t*>(reinterpret_cast<const uint8_t*>(v.data())),
@@ -73,33 +99,63 @@ void Http2Session::SendResponse(int32_t stream_id, const HttpResponse& resp) {
     });
   };
 
-  add(":status", status_str);
-  if (!ct.empty()) add("content-type",   ct);
-  if (!cl.empty()) add("content-length", cl);
+  for (const auto& [key, value] : resp.Headers()) {
+    const std::string lower = ToLower(key);
+    if (lower == "content-length" ||
+        IsHttp2ForbiddenResponseHeader(lower)) {
+      continue;
+    }
+    headers.emplace_back(lower, value);
+  }
+
+  if (!body.empty()) {
+    headers.emplace_back("content-length", std::to_string(body.size()));
+  }
+
+  nva.reserve(headers.size());
+  for (const auto& [key, value] : headers) {
+    add(key, value);
+  }
+
+  struct BodySource {
+    std::string body;
+    std::size_t offset{0};
+  };
 
   // DATA provider: nghttp2 pulls body bytes on demand during Flush().
-  // body_copy is heap-allocated because the C callback can't capture state.
   // Ownership transfers into the read_callback; it deletes after EOF.
-  auto* body_copy = new std::string(body);
-  nghttp2_data_provider prd;
-  prd.source.ptr  = body_copy;
-  prd.read_callback = [](nghttp2_session*, int32_t, uint8_t* out,
-                         size_t length, uint32_t* data_flags,
-                         nghttp2_data_source* src, void*) -> ssize_t {
-    auto* s = static_cast<std::string*>(src->ptr);
-    const std::size_t n = std::min(length, s->size());
-    std::memcpy(out, s->data(), n);
-    *data_flags |= NGHTTP2_DATA_FLAG_EOF;
-    delete s;
-    return static_cast<ssize_t>(n);
-  };
+  nghttp2_data_provider prd{};
+  BodySource* body_source = nullptr;
+
+  if (!body.empty()) {
+    body_source = new BodySource{body, 0};
+    prd.source.ptr = body_source;
+    prd.read_callback = [](nghttp2_session*, int32_t, uint8_t* out,
+                           size_t length, uint32_t* data_flags,
+                           nghttp2_data_source* src, void*) -> ssize_t {
+      auto* source = static_cast<BodySource*>(src->ptr);
+      const std::size_t remaining = source->body.size() - source->offset;
+      const std::size_t n = std::min(length, remaining);
+
+      std::memcpy(out, source->body.data() + source->offset, n);
+      source->offset += n;
+
+      if (source->offset == source->body.size()) {
+        *data_flags |= NGHTTP2_DATA_FLAG_EOF;
+        delete source;
+        src->ptr = nullptr;
+      }
+
+      return static_cast<ssize_t>(n);
+    };
+  }
 
   const int rv = nghttp2_submit_response(session_, stream_id,
                                          nva.data(), nva.size(),
                                          body.empty() ? nullptr : &prd);
   if (rv < 0) {
     // Submission failed; read_callback will never fire, so clean up manually.
-    delete body_copy;
+    delete body_source;
     return;
   }
 
@@ -135,8 +191,8 @@ int Http2Session::OnHeaderCb(nghttp2_session*,
     else if (v == "DELETE") st.request.SetMethod(Method::Delete);
     else if (v == "PATCH")  st.request.SetMethod(Method::Patch);
     else if (v == "HEAD")   st.request.SetMethod(Method::Head);
-    // HTTP/2 requests always use HTTP/1.1 semantics for routing
-    st.request.SetVersion(Version::Http11);
+    else if (v == "OPTIONS") st.request.SetMethod(Method::Options);
+    st.request.SetVersion(Version::Http20);
   } else if (k == ":path") {
     const auto q = v.find('?');
     if (q == std::string_view::npos) {
@@ -145,11 +201,13 @@ int Http2Session::OnHeaderCb(nghttp2_session*,
       st.request.SetPath(std::string(v.substr(0, q)));
       st.request.SetQuery(std::string(v.substr(q + 1)));
     }
+  } else if (k == ":authority") {
+    st.request.AddHeader("host", v);
   } else if (!k.empty() && k[0] != ':') {
     // Regular header (AddHeader normalises key to lowercase)
     st.request.AddHeader(k, v);
   }
-  // Ignore :scheme and :authority (not needed for routing)
+  // Ignore :scheme (not needed for routing)
 
   return 0;
 }
@@ -202,7 +260,12 @@ int Http2Session::OnStreamCloseCb(nghttp2_session*, int32_t stream_id,
 ssize_t Http2Session::SendCb(nghttp2_session*, const uint8_t* data,
                              size_t length, int /*flags*/, void* userdata) {
   auto* self = static_cast<Http2Session*>(userdata);
-  self->conn_->Send(std::string(reinterpret_cast<const char*>(data), length));
+  std::string wire(reinterpret_cast<const char*>(data), length);
+  if (self->wire_send_) {
+    self->wire_send_(std::move(wire));
+  } else if (self->conn_) {
+    self->conn_->Send(wire);
+  }
   return static_cast<ssize_t>(length);
 }
 

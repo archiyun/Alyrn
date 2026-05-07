@@ -158,6 +158,7 @@ if(GTest_FOUND)
         integration/test_tcp_server.cpp
         integration/test_trigger_mode.cpp
         integration/test_http_server.cpp
+        integration/test_http2_session.cpp
     )
 
     target_link_libraries(runtime_integration_tests

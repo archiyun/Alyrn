@@ -1,5 +1,4 @@
 #include "runtime/task/timer_scheduler.h"
-
 #include "runtime/task/task.h"
 #include "runtime/time/timestamp.h"
 

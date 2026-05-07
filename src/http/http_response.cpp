@@ -1,6 +1,20 @@
 #include "runtime/http/http_response.h"
 
+#include <cctype>
+
 namespace runtime::http {
+
+namespace {
+
+std::string ToLower(std::string_view sv) {
+  std::string out{sv};
+  for (char& c : out) {
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  }
+  return out;
+}
+
+}  // namespace
 
 HttpResponse::HttpResponse(bool close_connection)
     : close_connection_(close_connection) {}
@@ -15,8 +29,9 @@ void HttpResponse::SetContentType(std::string_view content_type) {
 
 void HttpResponse::AddHeader(std::string_view key, std::string_view value) {
   std::string k{key};
-  // forbiden user to add Content-Length and Connection
-  if (k == "Content-Length" || k == "Connection") return;
+  // Content-Length and Connection are managed by the HTTP layer.
+  const std::string lower = ToLower(k);
+  if (lower == "content-length" || lower == "connection") return;
   headers_.insert_or_assign(k, std::string(value));
 }
 

@@ -1,7 +1,6 @@
 #include "runtime/net/channel.h"
 #include "runtime/net/event_loop.h"
 
-
 namespace runtime::net {
 
 Channel::Channel(EventLoop* loop, int fd)

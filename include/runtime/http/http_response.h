@@ -28,6 +28,9 @@ public:
   // bypassing the HTTP/1.1 wire format produced by ToString().
   StatusCode         GetStatusCode() const { return status_code_; }
   const std::string& Body()         const { return body_; }
+  const std::unordered_map<std::string, std::string>& Headers() const {
+    return headers_;
+  }
   std::string        ContentType()  const {
     auto it = headers_.find("Content-Type");
     return it != headers_.end() ? it->second : std::string{};

@@ -5,7 +5,7 @@
 namespace runtime::http {
 
 // Shared enums used across the HTTP layer.
-enum class Method {
+enum class Method : uint8_t{
   Invalid,
   Get,
   Post,
@@ -21,7 +21,7 @@ enum class Version : uint8_t{
   Unknown,
   Http10 = 1,
   Http11,
-  Http20, // not implement
+  Http20, // implemented through Http2Session/nghttp2, not HttpContext parser
   Http30, // not implement
 };
 

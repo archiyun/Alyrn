@@ -1,5 +1,7 @@
 #include "runtime/http/http_context.h"
 
+#include <array>
+#include <string_view>
 #include <algorithm>
 #include <charconv>
 
@@ -7,38 +9,37 @@ namespace runtime::http {
 
 // Parses the request method token into the internal enum representation.
 bool HttpContext::ParseMethod(std::string_view method_sv) {
-  if (method_sv == "GET")
-    request_.SetMethod(Method::Get);
-  else if (method_sv == "POST")
-    request_.SetMethod(Method::Post);
-  else if (method_sv == "PUT")
-    request_.SetMethod(Method::Put);
-  else if (method_sv == "DELETE")
-    request_.SetMethod(Method::Delete);
-  else if (method_sv == "HEAD")
-    request_.SetMethod(Method::Head);
-  else if (method_sv == "OPTIONS")
-    request_.SetMethod(Method::Options);
-  else if (method_sv == "PATCH")
-    request_.SetMethod(Method::Patch);
-  else
-    return false;
-  return true;
+  static constexpr std::array<std::pair<std::string_view, Method>, 7> table{{
+      {"GET",     Method::Get},
+      {"POST",    Method::Post},
+      {"PUT",     Method::Put},
+      {"DELETE",  Method::Delete},
+      {"HEAD",    Method::Head},
+      {"OPTIONS", Method::Options},
+      {"PATCH",   Method::Patch},
+  }};
+  for (const auto& [name, method] : table) {
+    if (method_sv == name) {
+      request_.SetMethod(method);
+      return true;
+    }
+  }
+  return false;
 }
 
 // Parses the HTTP version token.
 bool HttpContext::ParseVersion(std::string_view version_sv) {
-  if (version_sv == "HTTP/1.1")
-    request_.SetVersion(Version::Http11);
-  else if (version_sv == "HTTP/1.0")
-    request_.SetVersion(Version::Http10);
-  else if (version_sv == "HTTP/2.0")
-    request_.SetVersion(Version::Http20);
-  else if (version_sv == "HTTP/3.0")
-    request_.SetVersion(Version::Http30);
-  else
-    return false;
-  return true;
+  static constexpr std::array table = {
+      std::pair{std::string_view{"HTTP/1.1"}, Version::Http11},
+      std::pair{std::string_view{"HTTP/1.0"}, Version::Http10},
+  };
+  for (const auto& [name, version] : table) {
+    if (version_sv == name) {
+      request_.SetVersion(version);
+      return true;
+    }
+  }
+  return false;
 }
 
 // Incrementally parses bytes from buf.

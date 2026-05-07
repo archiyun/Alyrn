@@ -27,4 +27,13 @@ target_link_libraries(demo_http_server
         runtime_foundation
 )
 
+add_executable(demo_gateway
+    demo_gateway.cpp
+)
+
+target_link_libraries(demo_gateway
+    PRIVATE
+        runtime_gateway
+)
+
 add_subdirectory(io_uring_echo)
