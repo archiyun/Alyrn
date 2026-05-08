@@ -102,13 +102,12 @@ void GatewayServer::OnMessage(const TcpConnectionPtr& conn,
                              "upstream not found: " + route->upstream_name).ToString());
         continue;
       }
-      auto peer = route->lb->Select(*upstream);
-      if (!peer) {
+      auto& pool = GetOrCreatePool(conn->GetLoop());
+      ctx.upstream_req = ProxyPass::Forward(conn, req, *upstream, *route->lb, pool);
+      if (!ctx.upstream_req) {
         conn->Send(MakeError(runtime::http::StatusCode::ServiceUnavailable,
                              "no available upstream peer").ToString());
-        continue;
       }
-      ctx.upstream_req = ProxyPass::Forward(conn, req, peer);
     } else {
       const bool keep_alive = req.KeepAlive();
       runtime::http::HttpResponse resp(!keep_alive);
@@ -132,6 +131,18 @@ const GatewayServer::Route* GatewayServer::MatchRoute(std::string_view path) con
     if (route.match_type == MatchType::Prefix && path.starts_with(route.path)) return &route;
   }
   return nullptr;
+}
+
+UpstreamConnPool& GatewayServer::GetOrCreatePool(runtime::net::EventLoop* loop) {
+  auto it = pools_.find(loop);
+  if (it != pools_.end()) return it->second;
+
+  auto [inserted, ok] = pools_.emplace(loop, UpstreamConnPool{pool_cfg_});
+  loop->RunEvery(30.0, [this, loop] {
+    if (auto jt = pools_.find(loop); jt != pools_.end())
+      jt->second.EvictStale();
+  });
+  return inserted->second;
 }
 
 runtime::http::HttpResponse

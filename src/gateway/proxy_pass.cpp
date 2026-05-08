@@ -1,4 +1,5 @@
 #include "runtime/gateway/proxy_pass.h"
+#include "runtime/gateway/upstream_conn_pool.h"
 #include "runtime/http/http_types.h"
 #include "runtime/log/logger.h"
 #include "runtime/net/inet_address.h"
@@ -9,41 +10,86 @@
 
 namespace runtime::gateway {
 
-// UpstreamRequest
-UpstreamRequest::UpstreamRequest(const TcpConnectionPtr& client_conn, 
-                 std::shared_ptr<UpstreamPeer> peer, 
-                 std::string request_bytes)
+// -- UpstreamRequest --
+
+UpstreamRequest::UpstreamRequest(const TcpConnectionPtr& client_conn,
+                                 Upstream& upstream,
+                                 LoadBalancer& lb,
+                                 UpstreamConnPool& pool,
+                                 std::shared_ptr<UpstreamPeer> first_peer,
+                                 std::string request_bytes,
+                                 int max_retries)
   : client_weak_(client_conn),
-    peer_(std::move(peer)),
-    request_bytes_(std::move(request_bytes)) {
+    upstream_(upstream),
+    lb_(lb),
+    pool_(pool),
+    peer_(std::move(first_peer)),
+    request_bytes_(std::move(request_bytes)),
+    retries_left_(max_retries) {
   peer_->State().active.fetch_add(1, std::memory_order_relaxed);
   peer_->State().requests.fetch_add(1, std::memory_order_relaxed);
 }
 
 UpstreamRequest::~UpstreamRequest() {
-  peer_->State().active.fetch_sub(1, std::memory_order_relaxed);
+  if (peer_) peer_->State().active.fetch_sub(1, std::memory_order_relaxed);
 }
 
 void UpstreamRequest::Start() {
+  if (auto pooled = pool_.Acquire(peer_->Config().name)) {
+    ConnectToWithPool(peer_, std::move(pooled));
+    return;
+  }
+  ConnectTo(std::move(peer_));
+}
+
+void UpstreamRequest::ConnectToWithPool(std::shared_ptr<UpstreamPeer> peer,
+                                        TcpConnectionPtr pooled_conn) {
+  pooled_conn_ = std::move(pooled_conn);
+  peer_ = std::move(peer);
+  phase_ = Phase::kSendingRequest;
+
+  // 重新注册回调 (池里的连接之前的回调已过期)
+  auto weak_self = weak_from_this();
+  pooled_conn_->SetMessageCallback([weak_self](
+    const TcpConnectionPtr& up, runtime::net::Buffer& buf, runtime::time::Timestamp ts) {
+      if (auto self = weak_self.lock()) self->OnUpstreamMessage(up, buf, ts);
+    }
+  );
+
+  pooled_conn_->SetCloseCallback([weak_self](const TcpConnectionPtr& up) {
+    if (auto self = weak_self.lock()) self->OnUpstreamConnChange(up);
+  });
+  pooled_conn_->Send(request_bytes_);
+  LOG_INFO() << "proxy: reuse pooled conn -> " << peer_->Config().name;
+}
+
+void UpstreamRequest::ConnectTo(std::shared_ptr<UpstreamPeer> peer) {
+  // retry 路径：换掉旧 peer，把 active/requests 迁移到新 peer
+  if (peer_ && peer_.get() != peer.get()) {
+    peer_->State().active.fetch_sub(1, std::memory_order_relaxed);
+    peer->State().active.fetch_add(1, std::memory_order_relaxed);
+    peer->State().requests.fetch_add(1, std::memory_order_relaxed);
+  }
+  peer_ = std::move(peer);
+  phase_ = Phase::kConnecting;
+
   auto client = client_weak_.lock();
   if (!client) return;
 
-  runtime::net::InetAddress upstream_addr(peer_->Config().port, peer_->Config().host);
-  upstream_ = std::make_unique<runtime::net::TcpClient>(client->GetLoop(), upstream_addr, "proxy->" + peer_->Config().name);
+  runtime::net::InetAddress addr(peer_->Config().port, peer_->Config().host);
+  upstream_conn_ = std::make_unique<runtime::net::TcpClient>(
+    client->GetLoop(), addr, "proxy->" + peer_->Config().name);
 
-  // weak_from_this 避免 session->TcpClient->callback -> session
   auto weak_self = weak_from_this();
-
-  upstream_->SetConnectionCallback([weak_self](const TcpConnectionPtr& up) {
+  upstream_conn_->SetConnectionCallback([weak_self](const TcpConnectionPtr& up) {
     if (auto self = weak_self.lock()) self->OnUpstreamConnChange(up);
   });
-
-  upstream_->SetMessageCallback([weak_self]
-  (const TcpConnectionPtr& up, runtime::net::Buffer& buf, runtime::time::Timestamp ts){
-    if (auto self = weak_self.lock()) self->OnUpstreamMessage(up, buf, ts);
-  });
-
-  upstream_->Connect();
+  upstream_conn_->SetMessageCallback([weak_self](
+    const TcpConnectionPtr& up, runtime::net::Buffer& buf, runtime::time::Timestamp ts) {
+      if (auto self = weak_self.lock()) self->OnUpstreamMessage(up, buf, ts);
+    }
+  );
+  upstream_conn_->Connect();
 }
 
 void UpstreamRequest::OnUpstreamConnChange(const TcpConnectionPtr& up_conn) {
@@ -55,17 +101,31 @@ void UpstreamRequest::OnUpstreamConnChange(const TcpConnectionPtr& up_conn) {
   }
 
   // Connected()==false：连接断开
-  // kForwardingBody 阶段的断开是 upstream 正常关闭，不算错误
-  if (phase_ != Phase::kForwardingBody && phase_ != Phase::kDone) {
-    const uint64_t fails = 
-      peer_->State().fails.fetch_add(1, std::memory_order_relaxed) + 1;
-    if (static_cast<int>(fails) >= peer_->Config().max_fails) {
-      peer_->State().down.store(true, std::memory_order_relaxed);
-      LOG_WARN() << "proxy: upstream peer " << peer_->Config().name
-                 << " marked unhealthy (fails=" << fails << ")";
-    }
-    Send502();
+  // kForwardingBody 阶段的断开是 upstream 正常关闭，归还连接到池
+  if (phase_ == Phase::kForwardingBody || phase_ == Phase::kDone) {
+    Finalize();
+    return;
   }
+  // 连接阶段或发送阶段断开：更新失败计数
+  const uint64_t fails =
+      peer_->State().fails.fetch_add(1, std::memory_order_relaxed) + 1;
+  if (static_cast<int>(fails) >= peer_->Config().max_fails) {
+    peer_->State().down.store(true, std::memory_order_relaxed);
+    LOG_WARN() << "proxy: peer " << peer_->Config().name
+               << " marked down (fails=" << fails << ")";
+  }
+  if (retries_left_ -- > 0) {
+    auto next = lb_.Select(upstream_);
+    if (next && next.get() != peer_.get()) {
+      LOG_WARN() << "proxy: retry " << peer_->Config().name
+                 << " -> " << next->Config().name
+                 << " (retries_left=" << retries_left_ << ")";
+      ConnectTo(std::move(next));
+      return;
+    }
+  }
+
+  Send502();
   phase_ = Phase::kDone;
 }
 
@@ -83,9 +143,7 @@ void UpstreamRequest::OnUpstreamMessage(const TcpConnectionPtr& /*up*/,
     if (!end) return;
 
     std::string_view raw_headers(buf.Peek(), end - buf.Peek() + 4);
-    std::string rewritten = RewriteHeaders(raw_headers);
-    client->Send(rewritten);
-
+    client->Send(RewriteHeaders(raw_headers));
     buf.Retrieve(raw_headers.size());
     phase_ = Phase::kForwardingBody;
     // fall through: 剩余 buf 里可能已经有 body
@@ -142,15 +200,35 @@ std::string UpstreamRequest::RewriteHeaders(std::string_view raw) {
   return out;
 }
 
+void UpstreamRequest::Finalize() {
+  phase_ = Phase::kDone;
+  TcpConnectionPtr conn_to_return;
+  if (pooled_conn_ && pooled_conn_->Connected()) {
+    conn_to_return = pooled_conn_;
+    pooled_conn_.reset();
+  } else if (upstream_conn_ && upstream_conn_->connection() &&
+             upstream_conn_->connection()->Connected()) {
+    conn_to_return = upstream_conn_->connection();
+  }
+  if (conn_to_return) {
+    pool_.Release(peer_->Config().name, std::move(conn_to_return));
+  }
+}
+
 // -- ProxyPass --
 
 std::shared_ptr<UpstreamRequest>
-ProxyPass::Forward(const TcpConnectionPtr &client_conn, 
-                   const runtime::http::HttpRequest &request, 
-                   std::shared_ptr<UpstreamPeer> peer) {
-  auto session = std::make_shared<UpstreamRequest>(client_conn, peer, BuildRequest(request, *peer));
-  session->Start();
-  return session;
+ProxyPass::Forward(const TcpConnectionPtr& client_conn,
+                   const runtime::http::HttpRequest& request,
+                   Upstream& upstream,
+                   LoadBalancer& lb,
+                   UpstreamConnPool& pool) {
+  auto first_peer = lb.Select(upstream);
+  if (!first_peer) return nullptr;
+  auto req = std::make_shared<UpstreamRequest>(
+      client_conn, upstream, lb, pool, first_peer, BuildRequest(request, *first_peer));
+  req->Start();
+  return req;
 }
 
 std::string ProxyPass::BuildRequest(const runtime::http::HttpRequest& req,

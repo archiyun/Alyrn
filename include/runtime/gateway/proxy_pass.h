@@ -1,7 +1,9 @@
 #pragma once
 
-#include "runtime/gateway/upstream_peer.h"
+#include "runtime/gateway/load_balancer.h"
 #include "runtime/gateway/upstream.h"
+#include "runtime/gateway/upstream_peer.h"
+#include "runtime/gateway/upstream_conn_pool.h"
 #include "runtime/net/buffer.h"
 #include "runtime/net/tcp_connection.h"
 #include "runtime/net/tcp_client.h"
@@ -23,25 +25,36 @@ class UpstreamRequest : public std::enable_shared_from_this<UpstreamRequest> {
 public:
   using TcpConnectionPtr = runtime::net::TcpConnection::TcpConnectionPtr;
   
-  UpstreamRequest(const TcpConnectionPtr& client_conn, 
-               std::shared_ptr<UpstreamPeer> peer,
-               std::string request_bytes);
+  UpstreamRequest(const TcpConnectionPtr& client_conn,
+                  Upstream& upstream,
+                  LoadBalancer& lb,
+                  UpstreamConnPool& pool,
+                  std::shared_ptr<UpstreamPeer> first_peer,
+                  std::string request_bytes,
+                  int max_retries = 2);
   ~UpstreamRequest();
 
   void Start();
 private:
   static std::string RewriteHeaders(std::string_view raw_headers);
+  void ConnectTo(std::shared_ptr<UpstreamPeer> peer);
+  void ConnectToWithPool(std::shared_ptr<UpstreamPeer> peer,
+                         TcpConnectionPtr pooled_conn);
   void OnUpstreamConnChange(const TcpConnectionPtr& up_conn);
   void OnUpstreamMessage(const TcpConnectionPtr& up_conn, runtime::net::Buffer& buf, runtime::time::Timestamp ts);
+  void Finalize();
   void Send502();
 
   std::weak_ptr<runtime::net::TcpConnection> client_weak_;
-  std::unique_ptr<runtime::net::TcpClient> upstream_;
-  std::shared_ptr<UpstreamPeer> peer_;
-  std::string request_bytes_;
-  Upstream& upstream_;
-
-  Phase phase_{Phase::kConnecting};
+  std::unique_ptr<runtime::net::TcpClient>   upstream_conn_;
+  TcpConnectionPtr                           pooled_conn_;
+  std::shared_ptr<UpstreamPeer>              peer_;
+  Upstream&                                  upstream_;
+  LoadBalancer&                              lb_;
+  UpstreamConnPool&                          pool_;
+  std::string                                request_bytes_;
+  int                                        retries_left_;
+  Phase                                      phase_{Phase::kConnecting};
 };
 // 无状态工厂：为每个代理请求创建一个 UpstreamRequest。
 // Forward 返回 upstream_request，调用方必须持有它，否则上游连接在 Start() 前就析构了。
@@ -52,7 +65,9 @@ public:
   static std::shared_ptr<UpstreamRequest>
   Forward(const TcpConnectionPtr& client_conn,
           const runtime::http::HttpRequest& request,
-          std::shared_ptr<UpstreamPeer> peer);
+          Upstream& upstream,
+          LoadBalancer& lb,
+          UpstreamConnPool& pool);
 
   static std::string BuildRequest(const runtime::http::HttpRequest& req,
                                   const UpstreamPeer& peer);

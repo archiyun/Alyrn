@@ -4,6 +4,7 @@
 #include "runtime/gateway/health_checker.h"
 #include "runtime/gateway/load_balancer.h"
 #include "runtime/gateway/proxy_pass.h"
+#include "runtime/gateway/upstream_conn_pool.h"
 #include "runtime/gateway/upstream_registry.h"
 #include "runtime/http/http_context.h"
 #include "runtime/http/http_response.h"
@@ -16,6 +17,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 
 
 namespace runtime::gateway {
@@ -62,10 +64,11 @@ public:
   void Get(std::string_view path, Handler handler);
   void Post(std::string_view path, Handler handler);
 
-  void AddProxyRoute(std::string_view path, 
+  void AddProxyRoute(std::string_view path,
                      std::string_view upstream_name,
                      std::string_view algo = "round_robin");
   void EnableHealthCheck(HealthCheckConfig cfg = {});
+  void SetPoolConfig(PoolConfig cfg) { pool_cfg_ = cfg; }
   const Route* MatchRoute(std::string_view path) const;
   void Start();
 private:
@@ -81,14 +84,16 @@ private:
   void OnMessage(const TcpConnectionPtr& conn,
                  runtime::net::Buffer& buf,
                  runtime::time::Timestamp ts);
-                 
+  UpstreamConnPool& GetOrCreatePool(runtime::net::EventLoop* loop);
   runtime::http::HttpResponse MakeError(runtime::http::StatusCode code,
                                         std::string_view msg) const;
 private:
   runtime::net::TcpServer server_;
   UpstreamRegistry& registry_;
-  std::vector<Route> routes_; 
+  std::vector<Route> routes_;
   std::unique_ptr<HealthChecker> health_checker_;
+  PoolConfig pool_cfg_;
+  std::unordered_map<runtime::net::EventLoop*, UpstreamConnPool> pools_;
 };
 
 } // namespace runtime::gateway
