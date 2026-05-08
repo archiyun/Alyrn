@@ -175,4 +175,30 @@ void Buffer::MakeSpace(std::size_t len) {
   writer_index_ = reader_index_ + readable;
 }
 
+
+const char* Buffer::FindCRLF() const {
+  const char* begin = Peek();
+  const char* end = begin + ReadableBytes();
+  if (end - begin < 4) return nullptr;
+  if (auto it = std::search(begin, end, 
+                            std::string_view("\r\n").begin(),
+                            std::string_view("\r\n").end());
+           it != end) {
+    return it;
+  }
+  return nullptr;
+}
+
+const char* Buffer::FindCRLFCRLF() const {
+  const char* begin = Peek();
+  const char* end = begin + ReadableBytes();
+  if (end - begin < 4) return nullptr;
+  if (auto it = std::search(begin, end, 
+                            std::string_view("\r\n\r\n").begin(),
+                            std::string_view("\r\n\r\n").end());
+           it != end) {
+    return it;
+  }
+  return nullptr;
+}
 }  // namespace runtime::net

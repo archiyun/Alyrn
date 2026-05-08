@@ -4,7 +4,7 @@
 #include "runtime/gateway/health_checker.h"
 #include "runtime/gateway/load_balancer.h"
 #include "runtime/gateway/proxy_pass.h"
-#include "runtime/gateway/service_registry.h"
+#include "runtime/gateway/upstream_registry.h"
 #include "runtime/http/http_context.h"
 #include "runtime/http/http_response.h"
 #include "runtime/http/http_types.h"
@@ -16,21 +16,46 @@
 #include <memory>
 #include <string>
 #include <string_view>
-#include <unordered_map>
+
 
 namespace runtime::gateway {
 
-using Handler = runtime::http::Handler;
-using TcpConnectionPtr = runtime::net::TcpConnection::TcpConnectionPtr;
+
 // GateServer 封装 TcpServer, 拦截 proxy 路由走异步转发
 // 直接路由走同步 handler
 class GatewayServer : public runtime::base::NonCopyable {
 public:
+  using Handler = runtime::http::Handler;
+  using TcpConnectionPtr = runtime::net::TcpConnection::TcpConnectionPtr;
+
+  // 统一直接路由和代理路由
+  enum class RouteType {
+    Direct,
+    Proxy,
+  };
+
+  enum class MatchType {
+    Exact,
+    Prefix,
+  };
+  struct Route {
+    RouteType type;
+    MatchType match_type{MatchType::Exact};
+
+    runtime::http::Method method;
+    bool match_all_methods{false};
+
+    std::string path;
+
+    Handler handler;  // Direct
+    std::string upstream_name;  // Proxy
+    std::unique_ptr<LoadBalancer> lb; // Proxy
+  };
 
   GatewayServer(runtime::net::EventLoop* loop, 
                 const runtime::net::InetAddress& addr, 
                 std::string name, 
-                ServiceRegistry& registry);
+                UpstreamRegistry& registry);
   void SetThreadNum(int num_threads);
 
   // 注册直接处理路由 (同步 Handler)
@@ -38,22 +63,17 @@ public:
   void Post(std::string_view path, Handler handler);
 
   void AddProxyRoute(std::string_view path, 
-                     std::string_view serive_name, 
+                     std::string_view upstream_name,
                      std::string_view algo = "round_robin");
   void EnableHealthCheck(HealthCheckConfig cfg = {});
-
+  const Route* MatchRoute(std::string_view path) const;
   void Start();
 private:
-  
-  struct ProxyRoute {
-    std::string service_name;
-    std::unique_ptr<LoadBalancer> lb;
-  };
 
   // 每个 TCP 连接独享的上下文，存在 conn->context_ (std::any) 里
   struct ConnCtx {
     runtime::http::HttpContext    http_ctx;  // 增量 HTTP 解析状态机
-    std::shared_ptr<ProxySession> session;   // 当前代理会话，直接路由时为 nullptr
+    std::shared_ptr<UpstreamRequest> upstream_req;  // 当前 upstream 请求，直接路由时为 nullptr
   };
 
 
@@ -66,11 +86,8 @@ private:
                                         std::string_view msg) const;
 private:
   runtime::net::TcpServer server_;
-  ServiceRegistry& registry_;
-  // 直接路由表 : path -> handler
-  std::unordered_map<std::string, Handler> direct_routes_;
-  // 代理路由表 : path -> ProxySession
-  std::unordered_map<std::string, ProxyRoute> proxy_routes_;
+  UpstreamRegistry& registry_;
+  std::vector<Route> routes_; 
   std::unique_ptr<HealthChecker> health_checker_;
 };
 

@@ -6,7 +6,7 @@ namespace runtime::gateway {
 GatewayServer::GatewayServer(runtime::net::EventLoop* loop,
                              const runtime::net::InetAddress& addr,
                              std::string name,
-                             ServiceRegistry& registry)
+                             UpstreamRegistry& registry)
   : server_(loop, addr, std::move(name)), registry_(registry) {
   server_.SetConnectionCallback(
     [this](const TcpConnectionPtr& conn) { OnConnection(conn); });
@@ -21,20 +21,34 @@ void GatewayServer::SetThreadNum(int num_threads) {
 }
 
 void GatewayServer::Get(std::string_view path, Handler handler) {
-  direct_routes_.emplace(std::string(path), std::move(handler));
+  routes_.push_back(Route{
+    .type = RouteType::Direct,
+    .path = std::string(path),
+    .handler = std::move(handler),
+  });
 }
 
 void GatewayServer::Post(std::string_view path, Handler handler) {
-  direct_routes_.emplace(std::string(path), std::move(handler));
+  routes_.push_back(Route{
+    .type = RouteType::Direct,
+    .path = std::string(path),
+    .handler = std::move(handler),
+  });
 }
 
+
 void GatewayServer::AddProxyRoute(std::string_view path,
-                                  std::string_view service_name,
-                                  std::string_view algo){ 
-  proxy_routes_.emplace(std::string(path), 
-                ProxyRoute{std::string(service_name), 
-                           MakeLoadBalancer(algo)});
+                                  std::string_view upstream_name,
+                                  std::string_view algo) {
+  routes_.push_back(Route{
+    .type = RouteType::Proxy,
+    .match_type = MatchType::Prefix,
+    .path = std::string(path),
+    .upstream_name = std::string(upstream_name),
+    .lb = CreateLoadBalancer(algo),
+  });
 }
+
 
 void GatewayServer::EnableHealthCheck(HealthCheckConfig cfg) {
   health_checker_ = std::make_unique<HealthChecker>
@@ -75,47 +89,50 @@ void GatewayServer::OnMessage(const TcpConnectionPtr& conn,
                                 : std::string(existing_xff) + ", " + client_ip;
     req.AddHeader("x-forwarded-for", xff);
 
-    // 跑代理路由
-    for (const auto& [prefix, route] : proxy_routes_) {
-      if (req.Path().starts_with(prefix)) {
-        auto group = registry_.Resolve(route.service_name);
-        if (!group) {
-          conn->Send(MakeError(runtime::http::StatusCode::InternalServerError,
-                               "service not found: " + route.service_name).ToString());
-          break;
-        }
-        auto backend = route.lb->Select(*group);
-        if (!backend) {
-          conn->Send(MakeError(runtime::http::StatusCode::ServiceUnavailable,
-                               "no healthy backend").ToString());
-          break;
-        }
-        ctx.session = ProxyPass::Forward(conn, req, backend);
-        goto next_request;
-      }
+    const Route* route = MatchRoute(req.Path());
+    if (!route) {
+      conn->Send(MakeError(runtime::http::StatusCode::NotFound, "not found").ToString());
+      continue;
     }
 
-    {
-      if (auto it = direct_routes_.find(req.Path()); 
-               it != direct_routes_.end()) {
-        const bool keep_alive = req.KeepAlive();
-        runtime::http::HttpResponse resp(!keep_alive);
-        try {
-          it->second(req, resp);
-        } catch (const std::exception& ex) {
-          resp = MakeError(runtime::http::StatusCode::InternalServerError, ex.what());
-          resp.SetCloseConnection(true);
-        }
-        conn->Send(resp.ToString());
-        if (resp.CloseConnection()) { conn->Shutdown(); return; }
-      } else {
-        conn->Send(MakeError(runtime::http::StatusCode::NotFound, "not found").ToString());
+    if (route->type == RouteType::Proxy) {
+      auto upstream = registry_.Find(route->upstream_name);
+      if (!upstream) {
+        conn->Send(MakeError(runtime::http::StatusCode::InternalServerError,
+                             "upstream not found: " + route->upstream_name).ToString());
+        continue;
       }
+      auto peer = route->lb->Select(*upstream);
+      if (!peer) {
+        conn->Send(MakeError(runtime::http::StatusCode::ServiceUnavailable,
+                             "no available upstream peer").ToString());
+        continue;
+      }
+      ctx.upstream_req = ProxyPass::Forward(conn, req, peer);
+    } else {
+      const bool keep_alive = req.KeepAlive();
+      runtime::http::HttpResponse resp(!keep_alive);
+      try {
+        route->handler(req, resp);
+      } catch (const std::exception& ex) {
+        resp = MakeError(runtime::http::StatusCode::InternalServerError, ex.what());
+        resp.SetCloseConnection(true);
+      }
+      conn->Send(resp.ToString());
+      if (resp.CloseConnection()) { conn->Shutdown(); return; }
     }
-    next_request:;
   }
 }
 
+const GatewayServer::Route* GatewayServer::MatchRoute(std::string_view path) const {
+  for (const auto& route : routes_) {
+    if (route.match_type == MatchType::Exact && route.path == path) return &route;
+  }
+  for (const auto& route : routes_) {
+    if (route.match_type == MatchType::Prefix && path.starts_with(route.path)) return &route;
+  }
+  return nullptr;
+}
 
 runtime::http::HttpResponse
 GatewayServer::MakeError(runtime::http::StatusCode code, std::string_view msg) const {

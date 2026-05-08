@@ -103,6 +103,9 @@ public:
   ssize_t ReadSslFd(SSL* ssl, int* saved_errno);
   ssize_t WriteSslFd(SSL* ssl, int* saved_errno);
 
+  // Find "\r\n" and "\r\n\r\n" for HTTP
+  const char* FindCRLF() const;
+  const char* FindCRLFCRLF() const;
 private:
   char* Begin();
   const char* Begin() const;

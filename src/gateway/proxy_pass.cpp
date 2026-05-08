@@ -9,25 +9,27 @@
 
 namespace runtime::gateway {
 
-// ProxySession
-ProxySession::ProxySession(const TcpConnectionPtr& client_conn, std::shared_ptr<Backend> backend, std::string upstream_request)
+// UpstreamRequest
+UpstreamRequest::UpstreamRequest(const TcpConnectionPtr& client_conn, 
+                 std::shared_ptr<UpstreamPeer> peer, 
+                 std::string request_bytes)
   : client_weak_(client_conn),
-    backend_(std::move(backend)),
-    upstream_request_(std::move(upstream_request)) {
-  backend_->state_.active_requests.fetch_add(1, std::memory_order_relaxed);
-  backend_->state_.total_requests.fetch_add(1, std::memory_order_relaxed);
+    peer_(std::move(peer)),
+    request_bytes_(std::move(request_bytes)) {
+  peer_->State().active.fetch_add(1, std::memory_order_relaxed);
+  peer_->State().requests.fetch_add(1, std::memory_order_relaxed);
 }
 
-ProxySession::~ProxySession() {
-  backend_->state_.active_requests.fetch_sub(1, std::memory_order_relaxed);
+UpstreamRequest::~UpstreamRequest() {
+  peer_->State().active.fetch_sub(1, std::memory_order_relaxed);
 }
 
-void ProxySession::Start() {
+void UpstreamRequest::Start() {
   auto client = client_weak_.lock();
   if (!client) return;
 
-  runtime::net::InetAddress upstream_addr(backend_->config_.port, backend_->config_.host);
-  upstream_ = std::make_unique<runtime::net::TcpClient>(client->GetLoop(), upstream_addr, "proxy->" + backend_->config_.id);
+  runtime::net::InetAddress upstream_addr(peer_->Config().port, peer_->Config().host);
+  upstream_ = std::make_unique<runtime::net::TcpClient>(client->GetLoop(), upstream_addr, "proxy->" + peer_->Config().name);
 
   // weak_from_this 避免 session->TcpClient->callback -> session
   auto weak_self = weak_from_this();
@@ -44,42 +46,59 @@ void ProxySession::Start() {
   upstream_->Connect();
 }
 
-void ProxySession::OnUpstreamConnChange(const TcpConnectionPtr& up_conn) {
+void UpstreamRequest::OnUpstreamConnChange(const TcpConnectionPtr& up_conn) {
   if (up_conn->Connected()) {
-    up_conn->Send(upstream_request_);
-    LOG_INFO() << "proxy: upstream connected " << backend_->config_.id;
+    phase_ = Phase::kSendingRequest;
+    up_conn->Send(request_bytes_);
+    LOG_INFO() << "proxy: upstream connected " << peer_->Config().name;
     return;
   }
 
   // Connected()==false：连接断开
-  // responded_==true  → 上游正常关闭，客户端已收到完整响应，无需处理
-  // responded_==false → 真正的错误（连接失败 / 上游提前断开）
-  if (!responded_) {
+  // kForwardingBody 阶段的断开是 upstream 正常关闭，不算错误
+  if (phase_ != Phase::kForwardingBody && phase_ != Phase::kDone) {
     const uint64_t fails = 
-      backend_->state_.fail_count.fetch_add(1, std::memory_order_relaxed) + 1;
-    if (static_cast<int>(fails) >= backend_->config_.max_fails) {
-      backend_->state_.healthy.store(false, std::memory_order_relaxed);
-      LOG_WARN() << "proxy: backend " << backend_->config_.id
+      peer_->State().fails.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (static_cast<int>(fails) >= peer_->Config().max_fails) {
+      peer_->State().down.store(true, std::memory_order_relaxed);
+      LOG_WARN() << "proxy: upstream peer " << peer_->Config().name
                  << " marked unhealthy (fails=" << fails << ")";
     }
     Send502();
   }
+  phase_ = Phase::kDone;
 }
 
-void ProxySession::OnUpstreamMessage(const TcpConnectionPtr& /*up*/,
+void UpstreamRequest::OnUpstreamMessage(const TcpConnectionPtr& /*up*/,
                                      runtime::net::Buffer& buf,
                                      runtime::time::Timestamp /*ts*/) {
   auto client = client_weak_.lock();
   if (!client) { buf.RetrieveAll(); return; }
 
-  // 流式透传
-  std::string chunk(buf.Peek(), buf.ReadableBytes());
-  buf.RetrieveAll();
-  responded_ = true;
-  client->Send(chunk);
+  if (phase_ == Phase::kSendingRequest) {
+    phase_ = Phase::kReadingHeaders;
+  }
+  if (phase_ == Phase::kReadingHeaders) {
+    const char* end = buf.FindCRLFCRLF();
+    if (!end) return;
+
+    std::string_view raw_headers(buf.Peek(), end - buf.Peek() + 4);
+    std::string rewritten = RewriteHeaders(raw_headers);
+    client->Send(rewritten);
+
+    buf.Retrieve(raw_headers.size());
+    phase_ = Phase::kForwardingBody;
+    // fall through: 剩余 buf 里可能已经有 body
+  }
+  if (phase_ == Phase::kForwardingBody && buf.ReadableBytes() > 0) {
+    // 流式透传
+    std::string chunk(buf.Peek(), buf.ReadableBytes());
+    buf.RetrieveAll();
+    client->Send(chunk);
+  }
 }                     
 
-void ProxySession::Send502() {
+void UpstreamRequest::Send502() {
   auto client = client_weak_.lock();
   if (!client) return;
 
@@ -92,22 +111,50 @@ void ProxySession::Send502() {
     "Bad Gateway";
   client->Send(std::string(kResp));
   client->Shutdown();
-  LOG_WARN() << "proxy: 502 -> client, upstream=" << backend_->config_.id; 
+  LOG_WARN() << "proxy: 502 -> client, upstream=" << peer_->Config().name; 
 }
 
-// ProxyPass
+std::string UpstreamRequest::RewriteHeaders(std::string_view raw) {
+  std::string out;
+  out.reserve(raw.size() + 64);
 
-std::shared_ptr<ProxySession>
+  const char* p   = raw.data();
+  const char* end = raw.data() + raw.size();
+
+  while (p < end) {
+    const char* crlf = static_cast<const char*>(
+        ::memmem(p, static_cast<std::size_t>(end - p), "\r\n", 2));
+    if (!crlf) break;
+
+    std::string_view line(p, static_cast<std::size_t>(crlf - p));
+    p = crlf + 2;
+
+    if (line.size() >= 7 && (line[0] == 'S' || line[0] == 's') &&
+        line.substr(0, 7) == "Server:") {
+      out += "Server: runtime-gateway\r\n";
+    } else {
+      out += line;
+      out += "\r\n";
+    }
+
+    if (line.empty()) break;  // 空行 = \r\n\r\n 的第二个 \r\n，header 结束
+  }
+  return out;
+}
+
+// -- ProxyPass --
+
+std::shared_ptr<UpstreamRequest>
 ProxyPass::Forward(const TcpConnectionPtr &client_conn, 
                    const runtime::http::HttpRequest &request, 
-                   std::shared_ptr<Backend> backend) {
-  auto session = std::make_shared<ProxySession>(client_conn, backend, BuildRequest(request, *backend));
+                   std::shared_ptr<UpstreamPeer> peer) {
+  auto session = std::make_shared<UpstreamRequest>(client_conn, peer, BuildRequest(request, *peer));
   session->Start();
   return session;
 }
 
 std::string ProxyPass::BuildRequest(const runtime::http::HttpRequest& req,
-                                    const Backend& backend) {
+                                    const UpstreamPeer& peer) {
   std::ostringstream oss;
   oss << runtime::http::MethodToString(req.GetMethod()) << ' ' << req.Path();
   if (!req.Query().empty()) oss << '?' << req.Query();
@@ -117,11 +164,7 @@ std::string ProxyPass::BuildRequest(const runtime::http::HttpRequest& req,
     if (k == "host") continue;
     oss << k << ": " << v << "\r\n";
   }
-  oss << "host: " << backend.config_.host << ":" << backend.config_.port << "\r\n";
-  
-  const auto xff = req.GetHeader("x-forwarded-for");
-  if (!xff.empty()) oss << "X-Forwarded-For: " << xff << "\r\n";
-
+  oss << "host: " << peer.Config().host << ":" << peer.Config().port << "\r\n";
   oss << "\r\n";
   if (!req.Body().empty()) oss << req.Body();
   return oss.str();

@@ -1,5 +1,4 @@
 #include "runtime/gateway/health_checker.h"
-#include "runtime/gateway/service_registry.h"
 #include "runtime/log/logger.h"
 #include "runtime/net/event_loop.h"
 #include "runtime/net/inet_address.h"
@@ -12,7 +11,7 @@
 namespace runtime::gateway {
 
 HealthChecker::HealthChecker(runtime::net::EventLoop* loop, 
-                             ServiceRegistry& registry, 
+                             UpstreamRegistry& registry, 
                              HealthCheckConfig cfg) 
   : loop_(loop), registry_(registry), cfg_(std::move(cfg)) {}
 
@@ -30,24 +29,24 @@ void HealthChecker::Stop() {
 }
 
 void HealthChecker::CheckAll() {
-  for (const auto& [_, group] : registry_.All()) {
-    for (const auto& backend : group->Backends()) {
-      CheckOne(backend);
+  for (const auto& [_, upstream] : registry_.All()) {
+    for (const auto& peer : upstream->Peers()) {
+      CheckOne(peer);
     }
   }
 }
 
-void HealthChecker::CheckOne(std::shared_ptr<Backend> backend) {
+void HealthChecker::CheckOne(std::shared_ptr<UpstreamPeer> peer) {
   auto client = std::make_shared<runtime::net::TcpClient>(
     loop_,
-    runtime::net::InetAddress(backend->config_.port, backend->config_.host),
-    "health->" + backend->config_.id);
+    runtime::net::InetAddress(peer->Config().port, peer->Config().host),
+    "health->" + peer->Config().name);
   
   const std::string request = 
     "GET " + cfg_.path + " HTTP/1.1\r\n"
-    "Host: " + backend->config_.host + "\r\n"
+    "Host: " + peer->Config().host + "\r\n"
     "Connection: close\r\n"; 
-  auto& ok_count = consecutive_ok_[backend->config_.id];
+  auto& ok_count = consecutive_ok_[peer->Config().name];
   client->SetConnectionCallback(
     [client, request](const runtime::net::TcpConnection::TcpConnectionPtr& conn) {
       if (conn->Connected()) conn->Send(request);
@@ -55,7 +54,7 @@ void HealthChecker::CheckOne(std::shared_ptr<Backend> backend) {
   );
 
   client->SetMessageCallback(
-    [backend, client, &ok_count, healthy_threshold = cfg_.healthy_threshold](
+    [peer, client, &ok_count, healthy_threshold = cfg_.healthy_threshold](
       const runtime::net::TcpConnection::TcpConnectionPtr& conn,
       runtime::net::Buffer& buf,
       runtime::time::Timestamp) {
@@ -66,11 +65,11 @@ void HealthChecker::CheckOne(std::shared_ptr<Backend> backend) {
         if (ok) {
           ++ok_count;
           if (ok_count >= healthy_threshold && 
-            !backend->state_.healthy.load(std::memory_order_relaxed)) {
-            backend->state_.healthy.store(true, std::memory_order_relaxed);
-            backend->state_.fail_count.store(0, std::memory_order_relaxed);
+            peer->State().down.load(std::memory_order_relaxed)) {
+            peer->State().down.store(false, std::memory_order_relaxed);
+            peer->State().fails.store(0, std::memory_order_relaxed);
             ok_count = 0;
-            LOG_INFO() << "health_checker: backend " << backend->config_.id << " recovered";
+            LOG_INFO() << "health_checker: upstream peer " << peer->Config().name << " recovered";
           }
         } else {
           ok_count = 0;

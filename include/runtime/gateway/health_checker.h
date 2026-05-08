@@ -1,23 +1,16 @@
 #pragma once
 
 #include "runtime/base/noncopyable.h"
-#include "runtime/gateway/service_registry.h"
+#include "runtime/gateway/health_check_config.h"
+#include "runtime/gateway/upstream_registry.h"
 #include "runtime/net/event_loop.h"
 #include "runtime/net/timer_id.h"
 
 #include <memory>
 #include <string>
+#include <unordered_map>
 
 namespace runtime::gateway {
-
-struct HealthCheckConfig {
-  std::string path{"/health"};
-  double interval_sec{10.0};
-  double timeout_sec{3.0};
-  int unhealthy_threshold{3};
-  int healthy_threshold{2};
-};
-
 
 // 主动健康检查：定时对每个 backend 发 GET /health，
 // 连续失败 unhealthy_threshold 次 → healthy=false；
@@ -25,15 +18,15 @@ struct HealthCheckConfig {
 // 被动摘除由 ProxySession::OnUpstreamConnChange 负责。
 class HealthChecker : public runtime::base::NonCopyable {
 public:
-  HealthChecker(runtime::net::EventLoop* loop, ServiceRegistry& registry, HealthCheckConfig cfg = {});
+  HealthChecker(runtime::net::EventLoop* loop, UpstreamRegistry& registry, HealthCheckConfig cfg = {});
   void Start();
   void Stop();
 private:
   void CheckAll();
-  void CheckOne(std::shared_ptr<Backend> backend);
+  void CheckOne(std::shared_ptr<UpstreamPeer> peer);
 
   runtime::net::EventLoop* loop_;
-  ServiceRegistry& registry_;
+  UpstreamRegistry& registry_;
   HealthCheckConfig cfg_;
   runtime::net::TimerId timer_id_;
   bool running_{false};

@@ -1,16 +1,19 @@
-#include "runtime/gateway/backend.h"
 #include "runtime/gateway/gateway_server.h"
-#include "runtime/gateway/service_registry.h"
-#include "runtime/gateway/upstream_group.h"
+#include "runtime/gateway/upstream.h"
+#include "runtime/gateway/upstream_peer.h"
+#include "runtime/gateway/upstream_registry.h"
 #include "runtime/net/event_loop.h"
 #include "runtime/net/inet_address.h"
 
 int main() {
-  auto group = std::make_shared<runtime::gateway::UpStreamGroup>("user_service");
-  group->AddBackend(std::make_shared<runtime::gateway::Backend>("127.0.0.1", 9001));
-  group->AddBackend(std::make_shared<runtime::gateway::Backend>("127.0.0.1", 9002));
-  auto& reg = runtime::gateway::ServiceRegistry::Instance();
-  reg.Register("user_service", group);
+  runtime::gateway::UpstreamRegistry reg;
+  auto upstream = std::make_shared<runtime::gateway::Upstream>(
+      runtime::gateway::UpstreamConfig{.name = "user_service"});
+  upstream->AddPeer(std::make_shared<runtime::gateway::UpstreamPeer>(
+      runtime::gateway::UpstreamPeerConfig{.name = "127.0.0.1:9001", .host = "127.0.0.1", .port = 9001}));
+  upstream->AddPeer(std::make_shared<runtime::gateway::UpstreamPeer>(
+      runtime::gateway::UpstreamPeerConfig{.name = "127.0.0.1:9002", .host = "127.0.0.1", .port = 9002}));
+  reg.Add(upstream);
 
   // 2. 创建网关
   runtime::net::EventLoop loop;
