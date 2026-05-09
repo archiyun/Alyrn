@@ -9,6 +9,7 @@
 
 namespace runtime::gateway {
 
+// 负载均衡策略
 enum class LoadBalancePolicy {
   RoundRobin,
   WeightedRoundRobin,

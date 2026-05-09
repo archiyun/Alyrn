@@ -86,6 +86,10 @@ void TcpConnection::SendInLoop(const std::string& message) {
   }
 }
 
+void TcpConnection::SetTcpNoDelay(bool on) {
+  socket_->SetTcpNoDelay(on);
+}
+
 void TcpConnection::Shutdown() {
   if (state_ == TCPState::kConnected) {
     SetState(TCPState::kDisconnecting);

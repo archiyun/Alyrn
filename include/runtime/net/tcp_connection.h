@@ -68,6 +68,8 @@ public:
   std::any& GetContext() { return context_; }
   const std::any& GetContext() const { return context_; }
 
+  void SetTcpNoDelay(bool on);
+
   // Must be called before ConnectEstablished() so the channel is registered
   // with EPOLLET from the first epoll_ctl ADD call.
   void SetEdgeTriggered(bool et) { channel_->SetEdgeTriggered(et); }

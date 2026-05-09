@@ -5,7 +5,6 @@
 
 #include <cstddef>
 #include <vector>
-
 namespace runtime::net {
 
 class Timer;

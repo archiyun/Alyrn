@@ -1,11 +1,13 @@
 #pragma once
 
 #include "runtime/base/noncopyable.h"
+#include "runtime/base/thread_pool.h"
 #include "runtime/gateway/health_checker.h"
 #include "runtime/gateway/load_balancer.h"
 #include "runtime/gateway/proxy_pass.h"
 #include "runtime/gateway/upstream_conn_pool.h"
 #include "runtime/gateway/upstream_registry.h"
+#include "runtime/gateway/static_handler.h"
 #include "runtime/http/http_context.h"
 #include "runtime/http/http_response.h"
 #include "runtime/http/http_types.h"
@@ -17,6 +19,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <filesystem>
 #include <unordered_map>
 
 
@@ -34,6 +37,7 @@ public:
   enum class RouteType {
     Direct,
     Proxy,
+    Static, // 静态资源部署
   };
 
   enum class MatchType {
@@ -52,6 +56,7 @@ public:
     Handler handler;  // Direct
     std::string upstream_name;  // Proxy
     std::unique_ptr<LoadBalancer> lb; // Proxy
+    std::filesystem::path static_root; // Static
   };
 
   GatewayServer(runtime::net::EventLoop* loop, 
@@ -67,6 +72,7 @@ public:
   void AddProxyRoute(std::string_view path,
                      std::string_view upstream_name,
                      std::string_view algo = "round_robin");
+  void AddStaticRoute(std::string_view url_prefix, std::string_view root_dir);
   void EnableHealthCheck(HealthCheckConfig cfg = {});
   void SetPoolConfig(PoolConfig cfg) { pool_cfg_ = cfg; }
   const Route* MatchRoute(std::string_view path) const;
@@ -94,6 +100,7 @@ private:
   std::unique_ptr<HealthChecker> health_checker_;
   PoolConfig pool_cfg_;
   std::unordered_map<runtime::net::EventLoop*, UpstreamConnPool> pools_;
+  runtime::base::ThreadPool static_pool_{4};
 };
 
 } // namespace runtime::gateway

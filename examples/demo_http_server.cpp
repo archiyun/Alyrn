@@ -1,196 +1,125 @@
+// demo_http_server.cpp — runtime_http 层基准测试
+// 
+// 以下是对比测试， 但是不妨碍学习 和 使用 http层
+// 与 demo_echo_server（纯 net 层）在相同条件下对比：
+//   GET  /  → "OK"（2 字节）
+//   POST /  → "OK"（接收 body 后返回固定响应）
+//
+// HttpServer 内部产生的额外开销：
+//   HttpContext  — 状态机解析器（头部解析、状态转换）
+//   Router       — Trie 匹配（静态段 "/" 1个）
+//   std::any     — 连接级解析上下文的装箱/拆箱
+//   std::function — Handler 调用
+//
+// 环境变量：
+//   PORT=8080  IO_THREADS=4  ET_MODE=1
+// 编译:
+// cmake --build build-tests --target demo_http_server -j$(nproc)
+// 杀掉旧进程
+// pkill -f demo_http_server & sleep 0.3
+// 确认端口已释放
+// ss -lntp | grep 8081 # 无输出
+
+/**
+  # ── 启动两台服务器 ──────────────────────────────────────────
+  IO_THREADS=4 PORT=8080 ./build-tests/examples/demo_echo_server &   # 纯 net 层
+  IO_THREADS=4 PORT=8081 ./build-tests/examples/demo_http_server &   # HTTP 层
+  sleep 0.5
+
+  # ── Round 1：GET 4t 50c 15s ─────────────────────────────────
+  echo "=== net layer ===" && wrk -t4 -c50 -d15s --latency http://127.0.0.1:8080/
+  echo "=== http layer ===" && wrk -t4 -c50 -d15s --latency http://127.0.0.1:8081/
+
+  # ── Round 2：GET 4t 200c 15s ────────────────────────────────
+  echo "=== net layer ===" && wrk -t4 -c200 -d15s --latency http://127.0.0.1:8080/
+  echo "=== http layer ===" && wrk -t4 -c200 -d15s --latency http://127.0.0.1:8081/
+
+  # ── Round 3：POST 256B body ──────────────────────────────────
+  # 1. 创建 Lua 脚本 (直接复制粘贴)
+  cat > /tmp/post_bench.lua << 'EOF'
+  wrk.method = "POST"
+  wrk.body   = string.rep("x", 256)
+  wrk.headers["Content-Length"] = "256"
+  EOF
+
+  # 2. -s 指定文件跑 (分别跑 8000, 8081)
+  wrk -t4 -c50 -d15s --latency -s /tmp/post_bench.lua http://127.0.0.1:8080/
+  wrk -t4 -c50 -d15s --latency -s /tmp/post_bench.lua http://127.0.0.1:8081/
+
+  # ── 清理 ────────────────────────────────────────────────────
+  pkill -f demo_echo_server; pkill -f demo_http_server
+*/
+
+
+#include "runtime/http/http_request.h"
+#include "runtime/http/http_response.h"
 #include "runtime/http/http_server.h"
-#include "runtime/log/logger.h"
 #include "runtime/net/event_loop.h"
 #include "runtime/net/inet_address.h"
 
-#include <algorithm>
+#include <atomic>
+#include <csignal>
+#include <cstdio>
 #include <cstdlib>
-#include <mutex>
-#include <string>
 #include <thread>
-#include <unordered_map>
 
-namespace {
+static std::atomic<long long> g_requests{0};
+static std::atomic<long long> g_conns{0};
 
-std::string ReadEnvOrDefault(const char* key, const char* fallback) {
-    const char* value = std::getenv(key);
-    return value == nullptr ? std::string(fallback) : std::string(value);
+static void StatsPrinter() {
+    long long prev = 0;
+    while (true) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        long long cur   = g_requests.load(std::memory_order_relaxed);
+        long long conns = g_conns.load(std::memory_order_relaxed);
+        std::printf("[stats] rps=%-8lld  total=%-10lld  active_conns=%lld\n",
+                    cur - prev, cur, conns);
+        std::fflush(stdout);
+        prev = cur;
+    }
 }
-
-unsigned int ResolveThreadCount() {
-    const char* value = std::getenv("IO_THREADS");
-    if (value != nullptr) {
-        return static_cast<unsigned int>(std::max(1, std::stoi(value)));
-    }
-
-    const unsigned int detected = std::thread::hardware_concurrency();
-    if (detected == 0) {
-        return 4;
-    }
-    return std::min(detected, 4u);
-}
-
-std::string JsonEscape(const std::string& input) {
-    std::string out;
-    out.reserve(input.size() + 8);
-    for (char ch : input) {
-        switch (ch) {
-        case '\\':
-            out += "\\\\";
-            break;
-        case '"':
-            out += "\\\"";
-            break;
-        case '\n':
-            out += "\\n";
-            break;
-        case '\r':
-            out += "\\r";
-            break;
-        case '\t':
-            out += "\\t";
-            break;
-        default:
-            out.push_back(ch);
-            break;
-        }
-    }
-    return out;
-}
-
-// ── in-memory KV store ───────────────────────────────────────────────────────
-// Shared across all IO threads; protected by a mutex.
-// Keys and values are plain strings; values are JSON-escaped on output.
-struct KvStore {
-    std::mutex              mu;
-    std::unordered_map<std::string, std::string> data;
-
-    // Returns {true, value} on hit, {false, ""} on miss.
-    std::pair<bool, std::string> Get(const std::string& key) {
-        std::lock_guard<std::mutex> lk(mu);
-        auto it = data.find(key);
-        if (it == data.end()) return {false, {}};
-        return {true, it->second};
-    }
-
-    void Set(const std::string& key, std::string value) {
-        std::lock_guard<std::mutex> lk(mu);
-        data[key] = std::move(value);
-    }
-
-    // Returns a JSON array of all keys: ["a","b",...]
-    std::string ListKeysJson() {
-        std::lock_guard<std::mutex> lk(mu);
-        std::string out = "[";
-        bool first = true;
-        for (const auto& [k, _] : data) {
-            if (!first) out += ',';
-            out += '"';
-            out += JsonEscape(k);
-            out += '"';
-            first = false;
-        }
-        out += ']';
-        return out;
-    }
-};
-
-}  // namespace
 
 int main() {
-    auto& logger = runtime::log::Logger::Instance();
-    logger.Init("demo_http_server.log", runtime::log::LogLevel::INFO);
+  auto env_int = [](const char* k, int def) -> int {
+    const char* v = std::getenv(k);
+    return v ? std::atoi(v) : def;
+  };
+  const int io_threads = env_int("IO_THREADS", 4);
+  const uint16_t port = static_cast<uint16_t>(env_int("PORT", 8080));
+  const bool et_mode = env_int("ET_MODE", 0) != 0;
 
-    const std::string host = ReadEnvOrDefault("HOST", "127.0.0.1");
-    const std::uint16_t port = static_cast<std::uint16_t>(
-        std::stoi(ReadEnvOrDefault("PORT", "18080")));
+  std::signal(SIGPIPE, SIG_IGN);
 
-    runtime::net::EventLoop loop;
-    runtime::http::HttpServer server(
-        &loop,
-        runtime::net::InetAddress(port, host),
-        "DemoHttpServer");
-
-    const unsigned int thread_count = ResolveThreadCount();
-    server.SetThreadNum(static_cast<int>(thread_count));
-
-    const bool et_mode = (std::getenv("ET_MODE") != nullptr);
-    server.SetEdgeTriggered(et_mode);
-
-    server.Get("/", [](const runtime::http::HttpRequest&,
-                       runtime::http::HttpResponse& resp) {
-        resp.SetContentType("text/plain; charset=utf-8");
-        resp.SetBody("runtime http server is up\n");
-    });
-
-    server.Get("/api/health",
-               [](const runtime::http::HttpRequest& req,
-                  runtime::http::HttpResponse& resp) {
-                   resp.SetContentType("application/json; charset=utf-8");
-                   resp.SetBody(
-                       "{\"ok\":true,\"path\":\"" + JsonEscape(req.Path()) + "\"}");
-               });
-
-    server.Post("/api/echo",
-                [](const runtime::http::HttpRequest& req,
+  runtime::net::EventLoop main_loop;
+  runtime::http::HttpServer server(
+    &main_loop,
+    runtime::net::InetAddress(port),
+    "HttpEchoServer");
+  
+  // GET / - 固定 "OK" 响应
+  server.Get("/", [](const runtime::http::HttpRequest&,
                    runtime::http::HttpResponse& resp) {
-                    resp.SetContentType("application/json; charset=utf-8");
-                    resp.SetBody(
-                        "{\"echo\":\"" + JsonEscape(req.Body()) + "\",\"query\":\"" +
-                        JsonEscape(req.Query()) + "\"}");
-                });
+    resp.SetStatusCode(runtime::http::StatusCode::Ok);
+    resp.SetContentType("text/plain");
+    resp.SetBody("OK");
+    g_requests.fetch_add(1, std::memory_order_relaxed);
+  });
 
-    // KV routes:
-    // POST /api/kv/:key writes the request body as the value.
-    // GET  /api/kv/:key reads one value.
-    // GET  /api/kv lists all keys.
-    // The shared store is mutex-protected because handlers may run on
-    // multiple I/O threads.
-    auto kv = std::make_shared<KvStore>();
-
-    server.Post("/api/kv/:key",
-                [kv](const runtime::http::HttpRequest& req,
-                     runtime::http::HttpResponse& resp) {
-                    const std::string key(req.PathParam("key"));
-                    if (key.empty()) {
-                        resp.SetStatusCode(runtime::http::StatusCode::BadRequest);
-                        resp.SetContentType("application/json; charset=utf-8");
-                        resp.SetBody("{\"error\":\"key is empty\"}");
-                        return;
-                    }
-                    kv->Set(key, req.Body());
-                    resp.SetContentType("application/json; charset=utf-8");
-                    resp.SetBody("{\"ok\":true,\"key\":\"" + JsonEscape(key) + "\"}");
-                });
-
-    server.Get("/api/kv/:key",
-               [kv](const runtime::http::HttpRequest& req,
+  // POST / — 接收 body，同样回 "OK"
+  server.Post("/", [](const runtime::http::HttpRequest&,
                     runtime::http::HttpResponse& resp) {
-                   const std::string key(req.PathParam("key"));
-                   auto [found, value] = kv->Get(key);
-                   resp.SetContentType("application/json; charset=utf-8");
-                   if (!found) {
-                       resp.SetStatusCode(runtime::http::StatusCode::NotFound);
-                       resp.SetBody("{\"error\":\"key not found\",\"key\":\"" +
-                                    JsonEscape(key) + "\"}");
-                       return;
-                   }
-                   resp.SetBody("{\"key\":\"" + JsonEscape(key) +
-                                "\",\"value\":\"" + JsonEscape(value) + "\"}");
-               });
+    resp.SetStatusCode(runtime::http::StatusCode::Ok);
+    resp.SetContentType("text/plain");
+    resp.SetBody("OK");
+    g_requests.fetch_add(1, std::memory_order_relaxed);
+  });
 
-    server.Get("/api/kv",
-               [kv](const runtime::http::HttpRequest&,
-                    runtime::http::HttpResponse& resp) {
-                   resp.SetContentType("application/json; charset=utf-8");
-                   resp.SetBody("{\"keys\":" + kv->ListKeysJson() + "}");
-               });
+  std::thread stats_thr(StatsPrinter);
+  stats_thr.detach();
 
-    server.Start();
-
-    LOG_INFO() << "demo http server listening on " << host << ':' << port
-               << " io_threads=" << thread_count;
-
-    loop.Loop();
-    return 0;
+  server.Start();
+  std::printf("HttpEchoServer  port=%u  io_threads=%d  et=%s\n",
+              port, io_threads, et_mode ? "ON" : "OFF");
+  main_loop.Loop();
+  return 0;
 }

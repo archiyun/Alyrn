@@ -72,6 +72,7 @@ void TcpServer::NewConnection(int sockfd, const InetAddress& peeraddr) {
   conn->SetMessageCallback(message_callback_);
   conn->SetWriteCompleteCallback(write_complete_callback_);
   conn->SetEdgeTriggered(et_mode_);
+  conn->SetTcpNoDelay(true);
 
   conn->SetCloseCallback(
       [this](const TcpConnectionPtr& connection) { RemoveConnection(connection); });

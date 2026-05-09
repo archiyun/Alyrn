@@ -94,6 +94,7 @@ void UpstreamRequest::ConnectTo(std::shared_ptr<UpstreamPeer> peer) {
 
 void UpstreamRequest::OnUpstreamConnChange(const TcpConnectionPtr& up_conn) {
   if (up_conn->Connected()) {
+    up_conn->SetTcpNoDelay(true);
     phase_ = Phase::kSendingRequest;
     up_conn->Send(request_bytes_);
     LOG_INFO() << "proxy: upstream connected " << peer_->Config().name;

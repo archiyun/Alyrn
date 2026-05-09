@@ -7,11 +7,11 @@ target_link_libraries(simple_logger_example
         runtime_foundation
 )
 
-add_executable(simple_echo_server
-    simple_echo_server.cpp
+add_executable(demo_echo_server
+    demo_echo_server.cpp
 )
 
-target_link_libraries(simple_echo_server
+target_link_libraries(demo_echo_server
     PRIVATE
         runtime_net
 )
@@ -36,4 +36,15 @@ target_link_libraries(demo_gateway
         runtime_gateway
 )
 
+add_executable(demo_bench_gateway
+    demo_bench_gateway.cpp
+)
+
+target_link_libraries(demo_bench_gateway
+    PRIVATE
+        runtime_gateway
+)
+
 add_subdirectory(io_uring_echo)
+
+
