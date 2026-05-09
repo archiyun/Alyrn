@@ -1,6 +1,7 @@
 #pragma once
 
 #include "runtime/base/noncopyable.h"
+#include "runtime/net/net_assert.h"
 
 #include <cstddef>
 #include <string>
@@ -31,6 +32,11 @@ namespace runtime::net {
 //
 // This layout allows the buffer to append efficiently while still reusing
 // previously consumed space when possible.
+
+// const value CRLF and CRLFCRLF
+static constexpr std::string_view kCRLF = "\r\n";
+static constexpr std::string_view kCRLFCRLF = "\r\n\r\n";
+
 class Buffer : public runtime::base::NonCopyable {
 public:
   // Reserved bytes at the front of the buffer for prepend operations, such as
@@ -117,6 +123,16 @@ private:
   // Makes room for len additional writable bytes, either by resizing the
   // underlying storage or by moving readable bytes toward the front.
   void MakeSpace(std::size_t len);
+
+  // Checks the three-region invariant. Active only in Debug builds.
+  void AssertInvariant() const {
+    RUNTIME_ASSERT(reader_index_ >= kCheapPrepend,
+                   "reader_index_ undershot kCheapPrepend");
+    RUNTIME_ASSERT(reader_index_ <= writer_index_,
+                   "reader_index_ overtook writer_index_");
+    RUNTIME_ASSERT(writer_index_ <= buffer_.size(),
+                   "writer_index_ past end of buffer");
+  }
 
 private:
   std::vector<char> buffer_;

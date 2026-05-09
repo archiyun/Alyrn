@@ -11,10 +11,14 @@
 
 namespace runtime::net {
 
+
 Buffer::Buffer(std::size_t initial_size)
-    : buffer_(kCheapPrepend + initial_size),
-      reader_index_(kCheapPrepend),
-      writer_index_(kCheapPrepend) {}
+  : buffer_(kCheapPrepend + initial_size),
+    reader_index_(kCheapPrepend),
+    writer_index_(kCheapPrepend) {
+  RUNTIME_ASSERT(reader_index_ == writer_index_, "buffer must start empty");
+  AssertInvariant();
+}
 
 std::size_t Buffer::ReadableBytes() const {
   return writer_index_ - reader_index_;
@@ -33,14 +37,19 @@ const char* Buffer::Peek() const {
 }
 
 void Buffer::Retrieve(std::size_t len) {
+  RUNTIME_ASSERT(len <= ReadableBytes(), "Retrieve: len exceeds readable bytes");
   if (len < ReadableBytes()) {
     reader_index_ += len;
+    AssertInvariant();
     return;
   }
   RetrieveAll();
 }
 
 void Buffer::RetrieveUntil(const char* end) {
+  RUNTIME_ASSERT(end >= Peek(), "RetrieveUntil: end pointer is before Peek()");
+  RUNTIME_ASSERT(end <= Peek() + ReadableBytes(),
+                 "RetrieveUntil: end pointer is past the readable region");
   Retrieve(static_cast<std::size_t>(end - Peek()));
 }
 
@@ -79,7 +88,9 @@ const char* Buffer::BeginWrite() const {
 }
 
 void Buffer::HasWritten(std::size_t len) {
+  RUNTIME_ASSERT(len <= WritableBytes(), "HasWritten: len exceeds writable bytes");
   writer_index_ += len;
+  AssertInvariant();
 }
 
 void Buffer::EnsureWritableBytes(std::size_t len) {
@@ -168,6 +179,7 @@ const char* Buffer::Begin() const {
 void Buffer::MakeSpace(std::size_t len) {
   if (WritableBytes() + PrependableBytes() < len + kCheapPrepend) {
     buffer_.resize(writer_index_ + len);
+    AssertInvariant();
     return;
   }
 
@@ -177,16 +189,17 @@ void Buffer::MakeSpace(std::size_t len) {
   std::memmove(Begin() + kCheapPrepend, Peek(), readable);
   reader_index_ = kCheapPrepend;
   writer_index_ = reader_index_ + readable;
+  AssertInvariant();
 }
 
 
 const char* Buffer::FindCRLF() const {
   const char* begin = Peek();
   const char* end = begin + ReadableBytes();
-  if (end - begin < 4) return nullptr;
+  if (end - begin < 2) return nullptr;
   if (auto it = std::search(begin, end, 
-                            std::string_view("\r\n").begin(),
-                            std::string_view("\r\n").end());
+                            std::string_view(kCRLF).begin(),
+                            std::string_view(kCRLF).end());
            it != end) {
     return it;
   }
@@ -198,11 +211,12 @@ const char* Buffer::FindCRLFCRLF() const {
   const char* end = begin + ReadableBytes();
   if (end - begin < 4) return nullptr;
   if (auto it = std::search(begin, end, 
-                            std::string_view("\r\n\r\n").begin(),
-                            std::string_view("\r\n\r\n").end());
+                            std::string_view(kCRLFCRLF).begin(),
+                            std::string_view(kCRLFCRLF).end());
            it != end) {
     return it;
   }
   return nullptr;
 }
+
 }  // namespace runtime::net

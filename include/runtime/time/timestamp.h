@@ -8,8 +8,7 @@
 #include <cstdint>
 #include <string>
 
-namespace runtime {
-namespace time {
+namespace runtime::time {
 
 // Represents a specific point in time with microsecond precision.
 //
@@ -91,15 +90,13 @@ class Timestamp {
   //
   // The time is formatted in local timezone.
   std::string ToFormattedString(bool show_microseconds = true) const;
-
-  // Comparison operators for ordering timestamps chronologically.
-  friend bool operator<(const Timestamp& lhs, const Timestamp& rhs);
-  friend bool operator>(const Timestamp& lhs, const Timestamp& rhs);
-  friend bool operator==(const Timestamp& lhs, const Timestamp& rhs);
-  friend bool operator>=(const Timestamp& lhs, const Timestamp& rhs);
-  friend bool operator<=(const Timestamp& lhs, const Timestamp& rhs);
-
- private:
+  
+  // support operator {>= <= == > <  != } in C++20
+  auto operator<=>(const Timestamp& rhs) const noexcept -> std::strong_ordering {
+    const Timestamp& lhs = *this;
+    return lhs.microseconds_since_epoch_ <=> rhs.microseconds_since_epoch_;
+  }
+private:
   // Microseconds since 1970-01-01 00:00:00 UTC.
   // A value of 0 indicates an invalid/uninitialized timestamp.
   std::uint64_t microseconds_since_epoch_{0};
@@ -126,5 +123,4 @@ double TimeDifference(const Timestamp& high, const Timestamp& low);
 //   A new Timestamp representing the adjusted time.
 Timestamp AddTime(const Timestamp& timestamp, double seconds);
 
-}  // namespace time
-}  // namespace runtime
+}  // namespace runtime::time

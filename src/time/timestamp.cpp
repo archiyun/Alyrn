@@ -1,4 +1,4 @@
-// Copyright 2024 [Author/Organization]. All rights reserved.
+// Copyright 2026 [arsenova/OpenFree-China]. All rights reserved.
 //
 // Implementation of the Timestamp class for time representation and formatting.
 
@@ -9,8 +9,7 @@
 #include <iomanip>
 #include <sstream>
 
-namespace runtime {
-namespace time {
+namespace runtime::time {
 
 // static
 Timestamp Timestamp::Now() {
@@ -87,25 +86,7 @@ std::string Timestamp::ToFormattedString(bool show_microseconds) const {
   return oss.str();
 }
 
-bool operator<(const Timestamp& lhs, const Timestamp& rhs) {
-  return lhs.microseconds_since_epoch_ < rhs.microseconds_since_epoch_;
-}
 
-bool operator>(const Timestamp& lhs, const Timestamp& rhs) {
-  return lhs.microseconds_since_epoch_ > rhs.microseconds_since_epoch_;
-}
-
-bool operator==(const Timestamp& lhs, const Timestamp& rhs) {
-  return lhs.microseconds_since_epoch_ == rhs.microseconds_since_epoch_;
-}
-
-bool operator>=(const Timestamp& lhs, const Timestamp& rhs) {
-  return lhs.microseconds_since_epoch_ >= rhs.microseconds_since_epoch_;
-}
-
-bool operator<=(const Timestamp& lhs, const Timestamp& rhs) {
-  return lhs.microseconds_since_epoch_ <= rhs.microseconds_since_epoch_;
-}
 double TimeDifference(const Timestamp& high, const Timestamp& low) {
   // Convert to double before subtraction to handle cases where
   // low > high (result would underflow with unsigned arithmetic).
@@ -129,5 +110,4 @@ Timestamp AddTime(const Timestamp& timestamp, double seconds) {
   return Timestamp(micros + delta);
 }
 
-}  // namespace time
-}  // namespace runtime
+}  // namespace runtime::time

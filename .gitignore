@@ -37,3 +37,5 @@ Makefile
 # Runtime logs
 *.log
 *.log.*
+perf.data
+src/net/buffer_ringbuf.cpp

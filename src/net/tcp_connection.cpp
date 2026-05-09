@@ -1,5 +1,6 @@
 #include "runtime/net/tcp_connection.h"
 #include "runtime/net/event_loop.h"
+#include "runtime/net/net_assert.h"
 #include "runtime/log/logger.h"
 
 #ifdef RUNTIME_ENABLE_SSL
@@ -20,6 +21,8 @@ TcpConnection::TcpConnection(EventLoop* loop, const std::string& name,
       socket_(std::make_unique<Socket>(sockfd)),
       channel_(std::make_unique<Channel>(loop, sockfd)),
       local_addr_(local_addr), peer_addr_(peer_addr) {
+  RUNTIME_ASSERT(loop_ != nullptr, "TcpConnection: loop must not be null");
+  RUNTIME_ASSERT(sockfd >= 0, "TcpConnection: sockfd must be valid");
   channel_->SetReadCallback([this](runtime::time::Timestamp receive_time) {
     HandleRead(receive_time);
   });
@@ -48,6 +51,8 @@ void TcpConnection::Send(const std::string& message) {
 }
 
 void TcpConnection::SendInLoop(const std::string& message) {
+  RUNTIME_ASSERT(loop_->IsInLoopThread(),
+                 "TcpConnection::SendInLoop called from wrong thread");
   if (state_ == TCPState::kDisconnected)
     return;
 
@@ -107,6 +112,10 @@ void TcpConnection::Shutdown() {
 }
 
 void TcpConnection::ConnectEstablished() {
+  RUNTIME_ASSERT(loop_->IsInLoopThread(),
+                 "TcpConnection::ConnectEstablished called from wrong thread");
+  RUNTIME_ASSERT(state_ == TCPState::kConnecting,
+                 "TcpConnection::ConnectEstablished: expected kConnecting state");
   SetState(TCPState::kConnected);
   channel_->Tie(shared_from_this());
   channel_->EnableReading();
@@ -121,6 +130,8 @@ void TcpConnection::ConnectEstablished() {
 }
 
 void TcpConnection::ConnectDestroyed() {
+  RUNTIME_ASSERT(loop_->IsInLoopThread(),
+                 "TcpConnection::ConnectDestroyed called from wrong thread");
   const bool notify_state_change = state_ != TCPState::kDisconnected;
   if (notify_state_change) {
     SetState(TCPState::kDisconnected);
@@ -305,6 +316,8 @@ void TcpConnection::HandleError() {
 }
 
 void TcpConnection::ShutdownInLoop() {
+  RUNTIME_ASSERT(loop_->IsInLoopThread(),
+                 "TcpConnection::ShutdownInLoop called from wrong thread");
   if (!channel_->IsWriting()) {
     socket_->ShutdownWrite();
   }

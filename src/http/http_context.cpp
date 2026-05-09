@@ -2,7 +2,6 @@
 
 #include <array>
 #include <string_view>
-#include <algorithm>
 #include <charconv>
 
 namespace runtime::http {
@@ -53,8 +52,7 @@ bool HttpContext::ParseRequest(runtime::net::Buffer& buf,
         state_ == ParseState::ExpectHeaders) {
       const char* begin = buf.Peek();
       const char* end = begin + buf.ReadableBytes();
-      const char* crlf = std::search(begin, end, "\r\n", "\r\n" + 2);
-
+      const char* crlf = buf.FindCRLF();
       if (crlf == end)
         return true;
 
