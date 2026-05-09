@@ -8,7 +8,7 @@
 //   cmake --build build-tests --target demo_bench_gateway -j$(nproc)
 //
 // 启动（3个终端）：
-//   终端1: IO_THREADS=4 PORT=9001 ./build-tests/examples/demo_echo_server
+//   终端1: IO_THREADS=4 PORT=9001 ET_MODE=1 ./build-tests/examples/demo_echo_server
 //   终端2: UPSTREAM_PORT=9001 IO_THREADS=4 PORT=8080 ./build-tests/examples/demo_bench_gateway
 //
 // 验证 (终端3)：
@@ -16,11 +16,11 @@
 //   curl -i http://127.0.0.1:8088/ # nginx 配置在端口 8088 (先完成下面的配置！！！)
 // 
 // 压测 (nginx 测试 请先读下文写好配置)：
-//   wrk -t4 -c50  -d15s --latency http://127.0.0.1:8080/   # 自己的网关
-//   wrk -t4 -c200 -d15s --latency http://127.0.0.1:8080/
-//   wrk -t4 -c50  -d15s --latency http://127.0.0.1:8088/   # nginx（配好后）
-//   wrk -t4 -c200 -d15s --latency http://127.0.0.1:8088/
-
+/*   echo "=== [GW]    50c ===" && wrk -t4 -c50  -d15s --latency http://127.0.0.1:8080/
+     echo "=== [nginx] 50c ===" && wrk -t4 -c50  -d15s --latency http://127.0.0.1:8088/
+     echo "=== [GW]    200c ===" && wrk -t4 -c200 -d15s --latency http://127.0.0.1:8080/
+     echo "=== [nginx] 200c ===" && wrk -t4 -c200 -d15s --latency http://127.0.0.1:8088/
+*/
 /**
    # nginx 一键配置命令
    # 前提: nginx 已安装。检查: nginx -v
@@ -135,6 +135,7 @@ int main() {
     "BenchGateway",
     reg);
   gw.SetThreadNum(io_threads);
+  gw.SetPoolConfig({.max_idle_per_peer = 64});  // 与 nginx keepalive 64 对齐
 
   // 3. 代理路由
   gw.AddProxyRoute("/", "backend", "round_robin");

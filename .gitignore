@@ -36,3 +36,4 @@ Makefile
 
 # Runtime logs
 *.log
+*.log.*

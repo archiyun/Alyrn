@@ -6,7 +6,6 @@
 #include "runtime/time/timestamp.h"
 
 #include <atomic>
-#include <sstream>
 
 namespace runtime::gateway {
 
@@ -151,9 +150,8 @@ void UpstreamRequest::OnUpstreamMessage(const TcpConnectionPtr& /*up*/,
   }
   if (phase_ == Phase::kForwardingBody && buf.ReadableBytes() > 0) {
     // 流式透传
-    std::string chunk(buf.Peek(), buf.ReadableBytes());
+    client->Send(std::string(buf.Peek(), buf.ReadableBytes()));
     buf.RetrieveAll();
-    client->Send(chunk);
   }
 }                     
 
@@ -234,18 +232,23 @@ ProxyPass::Forward(const TcpConnectionPtr& client_conn,
 
 std::string ProxyPass::BuildRequest(const runtime::http::HttpRequest& req,
                                     const UpstreamPeer& peer) {
-  std::ostringstream oss;
-  oss << runtime::http::MethodToString(req.GetMethod()) << ' ' << req.Path();
-  if (!req.Query().empty()) oss << '?' << req.Query();
-  oss << " HTTP/1.1\r\n";
+  std::string out;
+  out.reserve(256);
+  out += runtime::http::MethodToString(req.GetMethod());
+  out += ' ';
+  if (!req.Query().empty()) out += '?'; out += req.Query();
+  out += " HTTP/1.1\r\n";
 
   for (const auto& [k, v] : req.Headers()) {
-    if (k == "host") continue;
-    oss << k << ": " << v << "\r\n";
+    if (k == "host" || k == "connection") continue;
+    out += k; out += ": "; out += v; out += "\r\n";
   }
-  oss << "host: " << peer.Config().host << ":" << peer.Config().port << "\r\n";
-  oss << "\r\n";
-  if (!req.Body().empty()) oss << req.Body();
-  return oss.str();
+  out += "host: ";
+  out += peer.Config().host;
+  out += ':';
+  out += std::to_string(peer.Config().port);
+  out += "\r\nconnection: keep-alive\r\n\r\n";
+  if (!req.Body().empty()) out += req.Body();
+  return out;
 }
 } // namespace runtime::gateway
