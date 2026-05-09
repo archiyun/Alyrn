@@ -1,11 +1,13 @@
 #include "runtime/http/http_server.h"
 #include "runtime/http/debug_handler.h"
-#include "runtime/http/http2_session.h"
 #include "runtime/http/http_context.h"
 #include "runtime/http/metrics_handler.h"
 #include "runtime/http/router.h"
 #include "runtime/net/event_loop.h"
 #include "runtime/task/scheduler.h"
+#ifdef RUNTIME_ENABLE_HTTP2
+#include "runtime/http/http2_session.h"
+#endif
 
 namespace runtime::http {
 
@@ -44,7 +46,9 @@ void HttpServer::Add(Method method, std::string_view path, Handler handler) {
   router_.Add(method, path, std::move(handler));
 }
 
+#ifdef RUNTIME_ENABLE_SSL
 void HttpServer::SetTls(runtime::net::SslContext* ctx) { ssl_ctx_ = ctx; }
+#endif
 
 void HttpServer::Start() { server_.Start(); }
 
@@ -80,6 +84,7 @@ void HttpServer::RegisterMetricsRoute() {
 void HttpServer::OnConnection(const TcpConnectionPtr& conn) {
   if (!conn->Connected()) return;
 
+#ifdef RUNTIME_ENABLE_SSL
   if (!ssl_ctx_) {
     conn->SetContext(HttpContext{});
     return;
@@ -93,6 +98,7 @@ void HttpServer::OnConnection(const TcpConnectionPtr& conn) {
         auto c = weak.lock();
         if (!c) return;
 
+#ifdef RUNTIME_ENABLE_HTTP2
         if (proto == "h2") {
           auto session = std::make_shared<Http2Session>(
               c,
@@ -143,21 +149,29 @@ void HttpServer::OnConnection(const TcpConnectionPtr& conn) {
               });
           c->SetContext(std::move(session));
         } else {
+#endif  // RUNTIME_ENABLE_HTTP2
           c->SetContext(HttpContext{});
+#ifdef RUNTIME_ENABLE_HTTP2
         }
+#endif
       });
+#else
+  conn->SetContext(HttpContext{});
+#endif  // RUNTIME_ENABLE_SSL
 }
 
 void HttpServer::OnMessage(const TcpConnectionPtr& conn,
                            runtime::net::Buffer& buf,
                            runtime::time::Timestamp ts) {
-  // HTTP/2: feed raw bytes into nghttp2; it drives dispatch via DispatchFn.
   auto& ctx = conn->GetContext();
+#ifdef RUNTIME_ENABLE_HTTP2
+  // HTTP/2: feed raw bytes into nghttp2; it drives dispatch via DispatchFn.
   if (ctx.type() == typeid(std::shared_ptr<Http2Session>)) {
     auto& session = std::any_cast<std::shared_ptr<Http2Session>&>(ctx);
     if (!session->Feed(buf)) conn->Shutdown();
     return;
   }
+#endif
 
   auto& h1ctx = std::any_cast<HttpContext&>(conn->GetContext());
   if (!h1ctx.ParseRequest(buf, ts)) {

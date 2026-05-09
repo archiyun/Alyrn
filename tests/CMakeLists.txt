@@ -153,13 +153,18 @@ if(GTest_FOUND)
 
     gtest_discover_tests(runtime_unit_tests)
 
-    add_executable(runtime_integration_tests
+    set(INTEGRATION_TEST_SOURCES
         integration/test_event_loop.cpp
         integration/test_tcp_server.cpp
         integration/test_trigger_mode.cpp
         integration/test_http_server.cpp
-        integration/test_http2_session.cpp
     )
+
+    if(RUNTIME_ENABLE_HTTP2)
+        list(APPEND INTEGRATION_TEST_SOURCES integration/test_http2_session.cpp)
+    endif()
+
+    add_executable(runtime_integration_tests ${INTEGRATION_TEST_SOURCES})
 
     target_link_libraries(runtime_integration_tests
         PRIVATE

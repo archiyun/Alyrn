@@ -2,9 +2,11 @@
 
 #include "runtime/base/noncopyable.h"
 #include "runtime/http/router.h"
-#include "runtime/net/ssl_context.h"
 #include "runtime/net/tcp_server.h"
 #include "runtime/task/scheduler.h"
+#ifdef RUNTIME_ENABLE_SSL
+#include "runtime/net/ssl_context.h"
+#endif
 
 #include <memory>
 #include <string>
@@ -21,7 +23,9 @@ public:
              const runtime::net::InetAddress& addr,
              std::string name);
 
+#ifdef RUNTIME_ENABLE_SSL
   void SetTls(runtime::net::SslContext* ctx);
+#endif
 
   void SetThreadNum(int num_threads);
 
@@ -60,7 +64,9 @@ private:
   runtime::net::TcpServer server_;
   Router router_;
   std::shared_ptr<runtime::task::Scheduler> scheduler_;
+#ifdef RUNTIME_ENABLE_SSL
   runtime::net::SslContext* ssl_ctx_{nullptr};
+#endif
 };
 
 }  // namespace runtime::http

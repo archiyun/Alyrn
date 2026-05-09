@@ -8,11 +8,19 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(BUILD_TESTS "Build tests" ON)
 option(BUILD_EXAMPLES "Build example programs" ON)
+option(RUNTIME_ENABLE_SSL "Enable TLS/SSL support (requires OpenSSL)" OFF)
+option(RUNTIME_ENABLE_HTTP2 "Enable HTTP/2 support (requires nghttp2)" OFF)
 
 find_package(Threads REQUIRED)
-find_package(OpenSSL REQUIRED)
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(NGHTTP2 REQUIRED libnghttp2)
+
+if(RUNTIME_ENABLE_SSL OR RUNTIME_ENABLE_HTTP2)
+    find_package(OpenSSL REQUIRED)
+endif()
+
+if(RUNTIME_ENABLE_HTTP2)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(NGHTTP2 REQUIRED libnghttp2)
+endif()
 
 add_library(runtime_foundation STATIC
     src/base/current_thread.cpp
@@ -87,32 +95,35 @@ target_link_libraries(runtime_net
     PUBLIC
         runtime_foundation
         Threads::Threads
-        OpenSSL::SSL
-        OpenSSL::Crypto
 )
+
+if(RUNTIME_ENABLE_SSL)
+    target_compile_definitions(runtime_net PUBLIC RUNTIME_ENABLE_SSL)
+    target_link_libraries(runtime_net PUBLIC OpenSSL::SSL OpenSSL::Crypto)
+endif()
 
 target_compile_features(runtime_net PUBLIC cxx_std_20)
 
-add_library(runtime_http STATIC
+set(RUNTIME_HTTP_SOURCES
     src/http/http_types.cpp
     src/http/http_request.cpp
     src/http/http_context.cpp
     src/http/http_response.cpp
     src/http/router.cpp
     src/http/http_server.cpp
-    src/http/http2_session.cpp
     src/http/metrics_handler.cpp
     src/http/debug_handler.cpp
 )
 
-target_include_directories(runtime_http
-    PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
+if(RUNTIME_ENABLE_HTTP2)
+    list(APPEND RUNTIME_HTTP_SOURCES src/http/http2_session.cpp)
+endif()
+
+add_library(runtime_http STATIC ${RUNTIME_HTTP_SOURCES})
 
 target_include_directories(runtime_http
     PUBLIC
-        ${NGHTTP2_INCLUDE_DIRS}
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 target_link_libraries(runtime_http
@@ -121,8 +132,17 @@ target_link_libraries(runtime_http
         runtime_task
         runtime_foundation
         Threads::Threads
-        ${NGHTTP2_LIBRARIES}
 )
+
+if(RUNTIME_ENABLE_HTTP2)
+    target_compile_definitions(runtime_http PUBLIC RUNTIME_ENABLE_HTTP2)
+    target_include_directories(runtime_http PUBLIC ${NGHTTP2_INCLUDE_DIRS})
+    target_link_libraries(runtime_http PUBLIC ${NGHTTP2_LIBRARIES})
+endif()
+
+if(RUNTIME_ENABLE_SSL)
+    target_compile_definitions(runtime_http PUBLIC RUNTIME_ENABLE_SSL)
+endif()
 
 target_compile_features(runtime_http PUBLIC cxx_std_20)
 

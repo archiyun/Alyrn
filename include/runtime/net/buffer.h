@@ -6,7 +6,9 @@
 #include <string>
 #include <vector>
 
+#ifdef RUNTIME_ENABLE_SSL
 #include <openssl/ssl.h>
+#endif
 
 namespace runtime::net {
 
@@ -98,10 +100,12 @@ public:
   // bytes are consumed from the buffer.
   ssize_t WriteFd(int fd, int* saved_errno);
 
+#ifdef RUNTIME_ENABLE_SSL
   // SSL variants: read/write through an established TLS session.
   // saved_errno receives SSL_get_error() on failure, not errno.
   ssize_t ReadSslFd(SSL* ssl, int* saved_errno);
   ssize_t WriteSslFd(SSL* ssl, int* saved_errno);
+#endif
 
   // Find "\r\n" and "\r\n\r\n" for HTTP
   const char* FindCRLF() const;

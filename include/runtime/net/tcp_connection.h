@@ -7,7 +7,9 @@
 #include "runtime/net/socket.h"
 #include "runtime/time/timestamp.h"
 
+#ifdef RUNTIME_ENABLE_SSL
 #include <openssl/ssl.h>
+#endif
 #include <any>
 #include <functional>
 #include <memory>
@@ -77,6 +79,7 @@ public:
   void ConnectEstablished();
   void ConnectDestroyed();
 
+#ifdef RUNTIME_ENABLE_SSL
   // Attaches an SSL object and arms the TLS handshake.
   // Must be called before ConnectEstablished().
   // Takes ownership of ssl.
@@ -88,6 +91,7 @@ public:
   void SetHandshakeCallback(HandshakeCallback cb) {
     handshake_cb_ = std::move(cb);
   }
+#endif
 private:
   enum class TCPState {
     kDisconnected,
@@ -127,13 +131,13 @@ private:
 
   std::any context_;
 
-private:
-  // SSL support
+#ifdef RUNTIME_ENABLE_SSL
   void DoSslHandshake();
 
   SSL* ssl_{nullptr};
   bool ssl_handshake_done_{false};
   HandshakeCallback handshake_cb_;
+#endif
 };
 
 }  // namespace runtime::net

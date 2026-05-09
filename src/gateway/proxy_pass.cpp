@@ -5,6 +5,7 @@
 #include "runtime/net/inet_address.h"
 #include "runtime/time/timestamp.h"
 
+#include <algorithm>
 #include <atomic>
 
 namespace runtime::gateway {
@@ -179,9 +180,9 @@ std::string UpstreamRequest::RewriteHeaders(std::string_view raw) {
   const char* end = raw.data() + raw.size();
 
   while (p < end) {
-    const char* crlf = static_cast<const char*>(
-        ::memmem(p, static_cast<std::size_t>(end - p), "\r\n", 2));
-    if (!crlf) break;
+    static constexpr std::string_view kCRLF = "\r\n";
+    const char* crlf = std::search(p, end, kCRLF.begin(), kCRLF.end());
+    if (crlf == end) break;
 
     std::string_view line(p, static_cast<std::size_t>(crlf - p));
     p = crlf + 2;

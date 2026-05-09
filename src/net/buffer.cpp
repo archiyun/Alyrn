@@ -5,7 +5,9 @@
 #include <sys/uio.h>
 #include <unistd.h>
 
+#ifdef RUNTIME_ENABLE_SSL
 #include <openssl/ssl.h>
+#endif
 
 namespace runtime::net {
 
@@ -116,6 +118,7 @@ ssize_t Buffer::ReadFd(int fd, int* saved_errno) {
   return n;
 }
 
+#ifdef RUNTIME_ENABLE_SSL
 ssize_t Buffer::ReadSslFd(SSL* ssl, int* saved_errno) {
   // Ensure room for at least one max-size TLS record (16 KB) plus framing.
   EnsureWritableBytes(65536);
@@ -139,6 +142,7 @@ ssize_t Buffer::WriteSslFd(SSL* ssl, int* saved_errno) {
   Retrieve(static_cast<std::size_t>(n));
   return n;
 }
+#endif
 
 ssize_t Buffer::WriteFd(int fd, int* saved_errno) {
   const ssize_t n = ::write(fd, Peek(), ReadableBytes());
