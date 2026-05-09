@@ -67,6 +67,3 @@ runtime_http   (src/http/, include/runtime/http/)
 using Handler = std::function<void(const HttpRequest&, HttpResponse&)>;
 ```
 
-### 待更新
-
-`tests/integration/test_http_server.cpp` 中的 `HttpRouterTest::Distinguishes404And405` 仍使用旧的 `Match(method, path, bool&)` 签名（返回 `optional<Handler>`），需要改为新的 `Match(method, path)` → `RouteMatch` API。
