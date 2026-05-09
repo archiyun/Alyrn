@@ -64,9 +64,19 @@ target_link_libraries(runtime_task
 
 target_compile_features(runtime_task PUBLIC cxx_std_20)
 
+set(RUNTIME_BUFFER_IMPL "muduo" CACHE STRING "Buffer implementation: muduo | ringbuf | nginx")
+
+if(RUNTIME_BUFFER_IMPL STREQUAL "ringbuf")
+    set(RUNTIME_BUFFER_SRC src/net/buffer_ringbuf.cpp)
+elseif(RUNTIME_BUFFER_IMPL STREQUAL "nginx")
+    set(RUNTIME_BUFFER_SRC src/net/buffer_nginx.cpp)
+else()
+    set(RUNTIME_BUFFER_SRC src/net/buffer_muduo.cpp)
+endif()
+
 add_library(runtime_net STATIC
+    ${RUNTIME_BUFFER_SRC}
     src/net/acceptor.cpp
-    src/net/buffer.cpp
     src/net/channel.cpp
     src/net/connector.cpp
     src/net/tcp_client.cpp
