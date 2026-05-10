@@ -1,6 +1,5 @@
 #include "runtime/log/async_logger.h"
 #include "runtime/log/log_buffer.h"
-#include "runtime/log/log_formatter.h"
 #include "runtime/log/logger.h"
 
 #include <gtest/gtest.h>
@@ -49,17 +48,22 @@ TEST(LogBufferTest, AppendAndReset) {
 }
 
 TEST(LogFormatterTest, IncludesExpectedMetadata) {
-    const std::string formatted =
-        FormatLogMessage(LogLevel::WARN, "logger_test.cpp", 42, "Run",
-                         "hello formatter");
+    const auto log_path = UniqueLogPath("formatter");
+    auto& logger = Logger::Instance();
+    logger.Init(log_path.string(), LogLevel::DEBUG, 10);
+    logger.Log(LogLevel::WARN, "logger_test.cpp", 42, "Run", "hello formatter");
+    logger.Shutdown();
 
-    EXPECT_NE(formatted.find("[WARN]"), std::string::npos);
-    EXPECT_NE(formatted.find("[tid:"), std::string::npos);
-    EXPECT_NE(formatted.find("[logger_test.cpp:42]"), std::string::npos);
-    EXPECT_NE(formatted.find("[Run]"), std::string::npos);
-    EXPECT_NE(formatted.find("hello formatter"), std::string::npos);
-    ASSERT_FALSE(formatted.empty());
-    EXPECT_EQ(formatted.back(), '\n');
+    const std::string output = ReadFile(log_path);
+    EXPECT_NE(output.find("[WARN]"), std::string::npos);
+    EXPECT_NE(output.find("[tid:"), std::string::npos);
+    EXPECT_NE(output.find("[logger_test.cpp:42]"), std::string::npos);
+    EXPECT_NE(output.find("[Run]"), std::string::npos);
+    EXPECT_NE(output.find("hello formatter"), std::string::npos);
+    ASSERT_FALSE(output.empty());
+    EXPECT_EQ(output.back(), '\n');
+
+    std::filesystem::remove(log_path);
 }
 
 TEST(LoggerIntegrationTest, FiltersByLogLevelAndFlushesOnShutdown) {

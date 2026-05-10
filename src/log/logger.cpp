@@ -1,10 +1,39 @@
 #include "runtime/log/logger.h"
 
+#include "runtime/base/current_thread.h"
 #include "runtime/log/async_logger.h"
-#include "runtime/log/log_formatter.h"
+#include "runtime/time/timestamp.h"
 
+#include <string>
+#include <string_view>
 
 namespace runtime::log {
+
+namespace {
+
+std::string FormatLogMessage(LogLevel level, const char* file, int line,
+                             const char* func, std::string_view message) {
+  std::string result;
+  result.reserve(128);
+  result += '[';
+  result += runtime::time::Timestamp::Now().ToFormattedString();
+  result += "] [";
+  result += ToString(level);
+  result += "] [tid:";
+  result += std::to_string(runtime::base::tid());
+  result += "] [";
+  result += file;
+  result += ':';
+  result += std::to_string(line);
+  result += "] [";
+  result += func;
+  result += "] ";
+  result += message;
+  result += '\n';
+  return result;
+}
+
+}  // namespace
 
 Logger& Logger::Instance() {
     static Logger logger;

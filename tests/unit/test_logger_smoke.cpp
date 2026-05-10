@@ -1,6 +1,5 @@
 #include "runtime/log/async_logger.h"
 #include "runtime/log/log_buffer.h"
-#include "runtime/log/log_formatter.h"
 #include "runtime/log/logger.h"
 
 #include <chrono>
@@ -46,9 +45,15 @@ bool TestLogBuffer() {
 }
 
 bool TestFormatter() {
-    const std::string formatted = runtime::log::FormatLogMessage(
-        runtime::log::LogLevel::WARN, "test_logger_smoke.cpp", 88, "Formatter",
-        "formatted message");
+    const auto path = UniqueLogPath("formatter-smoke");
+    auto& logger = runtime::log::Logger::Instance();
+    logger.Init(path.string(), runtime::log::LogLevel::DEBUG, 10);
+    logger.Log(runtime::log::LogLevel::WARN, "test_logger_smoke.cpp", 88,
+               "Formatter", "formatted message");
+    logger.Shutdown();
+
+    const std::string formatted = ReadFile(path);
+    std::filesystem::remove(path);
 
     if (!Expect(formatted.find("[WARN]") != std::string::npos,
                 "formatted log should contain the level")) return false;

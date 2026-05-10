@@ -74,42 +74,15 @@ private:
 }  // namespace runtime::log
 
 
-#define LOG_DEBUG()                                                                   \
-  if (!::runtime::log::Logger::Instance().ShouldLog(::runtime::log::LogLevel::DEBUG)) \
-    ;                                                                                 \
-  else                                                                                \
-    ::runtime::log::LogMessage(::runtime::log::LogLevel::DEBUG, __FILE__, __LINE__,   \
-                               __func__)                                               \
-        .Stream()
+#define LOG(level)                                                                        \
+  if (!::runtime::log::Logger::Instance().ShouldLog(::runtime::log::LogLevel::level))    \
+    ;                                                                                     \
+  else                                                                                    \
+    ::runtime::log::LogMessage(::runtime::log::LogLevel::level,                          \
+                               __FILE__, __LINE__, __func__).Stream()
 
-#define LOG_INFO()                                                                   \
-  if (!::runtime::log::Logger::Instance().ShouldLog(::runtime::log::LogLevel::INFO)) \
-    ;                                                                                \
-  else                                                                               \
-    ::runtime::log::LogMessage(::runtime::log::LogLevel::INFO, __FILE__, __LINE__,   \
-                               __func__)                                              \
-        .Stream()
-
-#define LOG_WARN()                                                                   \
-  if (!::runtime::log::Logger::Instance().ShouldLog(::runtime::log::LogLevel::WARN)) \
-    ;                                                                                \
-  else                                                                               \
-    ::runtime::log::LogMessage(::runtime::log::LogLevel::WARN, __FILE__, __LINE__,   \
-                               __func__)                                              \
-        .Stream()
-
-#define LOG_ERROR()                                                                   \
-  if (!::runtime::log::Logger::Instance().ShouldLog(::runtime::log::LogLevel::ERROR)) \
-    ;                                                                                 \
-  else                                                                                \
-    ::runtime::log::LogMessage(::runtime::log::LogLevel::ERROR, __FILE__, __LINE__,   \
-                               __func__)                                               \
-        .Stream()
-
-#define LOG_FATAL()                                                                   \
-  if (!::runtime::log::Logger::Instance().ShouldLog(::runtime::log::LogLevel::FATAL)) \
-    ;                                                                                 \
-  else                                                                                \
-    ::runtime::log::LogMessage(::runtime::log::LogLevel::FATAL, __FILE__, __LINE__,   \
-                               __func__)                                               \
-        .Stream()
+#define LOG_DEBUG() LOG(DEBUG)
+#define LOG_INFO()  LOG(INFO)
+#define LOG_WARN()  LOG(WARN)
+#define LOG_ERROR() LOG(ERROR)
+#define LOG_FATAL() LOG(FATAL)
