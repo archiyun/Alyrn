@@ -2,71 +2,80 @@
 
 **English** | [中文](README.zh-CN.md)
 
-`high-concurrency-runtime` is a C++20 high-concurrency network runtime and HTTP server framework.
-It is built around a Reactor model and a One-Loop-Per-Thread I/O architecture, and includes a TCP networking layer, HTTP routing, asynchronous logging, task scheduling, memory pools, and metrics utilities. It can be used as a lightweight Linux server framework, or as a codebase for learning WebSocket, RPC, distributed systems, and database-access layers.
+A C++20 high-concurrency network runtime for Linux. The project is layered — you can use it as a full **reverse-proxy gateway**, as a plain **HTTP application server**, as a raw **TCP/event-loop framework**, or as individual **data-structure / allocator / scheduler** libraries. Every upper layer is built on top of the lower ones with no circular dependencies.
+
+```
+Gateway Layer  ─── runtime::gateway
+HTTP Layer     ─── runtime::http        (depends on net)
+Net Layer      ─── runtime::net         (depends on foundation)
+Foundation     ─── runtime::base / log / time / task / memory / metrics
+```
 
 ## Features
 
-- Linux `epoll` based event-driven networking
-- One-Loop-Per-Thread I/O threading model
-- TCP server, connection, buffer, timer, poller, and related primitives
-- HTTP server, request parsing, response building, Trie router, and path parameters
-- Cooperative task cancellation, priority work queue, and thread-pool scheduler
-- Asynchronous logger and timestamp utilities
-- MemoryPool / ObjectPool allocators
-- Counter / Gauge / Histogram / Registry metrics interfaces
-- Example servers, smoke tests, unit tests, integration tests, and wrk benchmark scripts
+### Gateway (`runtime::gateway`)
+
+- **Reverse proxy** — transparent HTTP forwarding to upstream backends over persistent connections
+- **Upstream management** — `UpstreamRegistry` + `Upstream` + `UpstreamPeer`; add backends at runtime
+- **Load balancing** — Round Robin, Smooth Weighted Round Robin, Least Connections, Random, Weighted Random; pluggable via `LoadBalancer` interface
+- **Active health checking** — periodic HTTP probe per backend; automatic mark-down after N consecutive failures and mark-up after M consecutive successes
+- **Passive failure tracking** — `ProxySession` records per-request failures; backends are fenced for `fail_timeout` after `max_fails`
+- **Connection pooling** — `UpstreamConnPool` maintains persistent connections to each backend, one pool per I/O thread (no cross-thread contention)
+- **Direct routes** — register synchronous handlers on the gateway without touching `HttpServer`
+- **Static file serving** — serve a local directory under a URL prefix
+- **Code-driven configuration** — no config files; upstreams and routes are wired in C++ at startup
+
+### HTTP server (`runtime::http`)
+
+- `epoll`-based event loop, One-Loop-Per-Thread I/O threading
+- Incremental HTTP/1.1 parser (`HttpContext`) — zero intermediate copies, keep-alive via `Reset()`
+- Trie router with static/dynamic segments and path parameters (`:param` syntax)
+- Static-first matching — `/users/me` is never captured by `/users/:id`
+
+### Networking (`runtime::net`)
+
+- `EventLoop`, `EpollPoller`, `Channel`, `TcpServer`, `TcpConnection`, `Buffer`
+- Timer queue backed by a generic intrusive red-black tree (`TimerTree`)
+- Level-triggered and edge-triggered epoll modes
+
+### Foundation
+
+- Asynchronous double-buffered logger
+- `MemoryPool`, `ObjectPool` allocators
+- `Scheduler`, `ThreadPool`, `WorkQueue` with cooperative cancellation
+- `IntrusiveRBTree<T, kMember, kLess>` — generic red-black tree with zero per-node heap allocation
+- `Counter`, `Gauge`, `Histogram`, `Registry` metrics interfaces
 
 ## Requirements
 
-Linux is recommended for building and running this project. The networking layer uses `epoll`; macOS or other platforms need networking-layer changes before they can run the server components.
-
 Required:
 
-- Linux environment, for `epoll`
-- CMake 3.20 or newer
-- A C++20 compiler, preferably GCC 12+ or Clang 15+
+- Linux (uses `epoll`)
+- CMake ≥ 3.20
+- GCC 12+ or Clang 15+ with C++20 support
 - POSIX threads
 
 Optional:
 
-- `liburing`: required for `examples/io_uring_echo`
-- GoogleTest: if found by CMake, additional gtest-based tests are built automatically
-- `wrk`: used by the HTTP benchmark scripts
+- GoogleTest — if found by CMake, `runtime_unit_tests` and `runtime_integration_tests` are built automatically
+- `liburing` — for the `io_uring_echo` example only
+- `wrk` — for the HTTP benchmark scripts
 
 On Ubuntu / Debian:
 
 ```bash
 sudo apt update
-sudo apt install -y build-essential cmake git liburing2 liburing-dev
-```
-
-If you only want to build the core libraries and tests, and do not need the `io_uring` example, you can skip `liburing` and disable examples:
-
-```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_EXAMPLES=OFF
-cmake --build build -j"$(nproc)"
+sudo apt install -y build-essential cmake git
 ```
 
 ## Download
-
-Clone with HTTPS:
 
 ```bash
 git clone https://github.com/akiba-miku/high-concurrency-runtime.git
 cd high-concurrency-runtime
 ```
 
-Or clone with SSH:
-
-```bash
-git clone git@github.com:akiba-miku/high-concurrency-runtime.git
-cd high-concurrency-runtime
-```
-
 ## Build
-
-By default, CMake builds the libraries, examples, and tests:
 
 ```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -79,35 +88,43 @@ Common CMake options:
 |---|---:|---|
 | `BUILD_EXAMPLES` | `ON` | Build programs under `examples/` |
 | `BUILD_TESTS` | `ON` | Build tests under `tests/` |
-| `CMAKE_BUILD_TYPE` | empty | For single-config generators, use `Debug` or `Release` |
+| `CMAKE_BUILD_TYPE` | empty | Use `Debug` or `Release` for single-config generators |
 
-Build only the core libraries:
+## Run The Gateway
 
-```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF
-cmake --build build -j"$(nproc)"
-```
-
-Debug build:
+Start two upstream HTTP servers to act as backends:
 
 ```bash
-cmake -B build-debug -DCMAKE_BUILD_TYPE=Debug
-cmake --build build-debug -j"$(nproc)"
+PORT=9001 ./build/examples/demo_http_server &
+PORT=9002 ./build/examples/demo_http_server &
 ```
+
+Start the gateway (listens on `0.0.0.0:8080`):
+
+```bash
+./build/examples/demo_gateway
+```
+
+Exercise the gateway:
+
+```bash
+# Direct route — served by the gateway itself
+curl -i http://127.0.0.1:8080/healthz
+
+# Proxy routes — forwarded to 9001 / 9002 in round-robin
+curl -i http://127.0.0.1:8080/api/health
+curl -i http://127.0.0.1:8080/api/kv
+```
+
+Kill one backend and watch the health checker mark it down — requests stop going to it within one health-check interval.
 
 ## Run The HTTP Demo
-
-After building, start the demo HTTP server:
 
 ```bash
 ./build/examples/demo_http_server
 ```
 
-Default listen address:
-
-```text
-127.0.0.1:18080
-```
+Default listen address: `127.0.0.1:18080`
 
 Runtime environment variables:
 
@@ -118,64 +135,81 @@ Runtime environment variables:
 | `IO_THREADS` | auto, up to 4 | Number of I/O worker threads |
 | `ET_MODE` | unset | Set to any value to enable edge-triggered epoll |
 
-Example:
-
 ```bash
-HOST=0.0.0.0 PORT=18080 IO_THREADS=4 ./build/examples/demo_http_server
-```
-
-In another terminal:
-
-```bash
-curl http://127.0.0.1:18080/
 curl http://127.0.0.1:18080/api/health
-curl -X POST http://127.0.0.1:18080/api/echo -d "hello runtime"
-```
-
-KV API:
-
-```bash
+curl -X POST http://127.0.0.1:18080/api/echo -d "hello"
 curl -X POST http://127.0.0.1:18080/api/kv/name -d "miku"
 curl http://127.0.0.1:18080/api/kv/name
-curl http://127.0.0.1:18080/api/kv
 ```
-
-404 / 405 behavior:
-
-```bash
-curl http://127.0.0.1:18080/notfound
-curl -X DELETE http://127.0.0.1:18080/api/health
-```
-
-## Run The TCP Echo Demo
-
-Start the TCP echo server:
-
-```bash
-./build/examples/simple_echo_server
-```
-
-It listens on `127.0.0.1:8080` by default. Test it with `nc`:
-
-```bash
-nc 127.0.0.1 8080
-hello
-```
-
-The server writes received data back to the client.
 
 ## Use In Your Own Project
 
-The simplest integration path is to add this repository as a CMake subdirectory and link the target you need:
+Add the project as a CMake subdirectory and link only the layer you need:
 
 ```cmake
 add_subdirectory(high-concurrency-runtime)
 
-add_executable(my_server main.cpp)
-target_link_libraries(my_server PRIVATE runtime_http)
+# Full gateway
+target_link_libraries(my_gw    PRIVATE runtime_gateway)
+
+# HTTP server only
+target_link_libraries(my_http  PRIVATE runtime_http)
+
+# Raw TCP / event loop only
+target_link_libraries(my_tcp   PRIVATE runtime_net)
+
+# Allocators / scheduler / data structures
+target_link_libraries(my_util  PRIVATE runtime_foundation)
 ```
 
-Minimal HTTP server:
+### Gateway example
+
+```cpp
+#include "runtime/gateway/gateway_server.h"
+#include "runtime/gateway/upstream.h"
+#include "runtime/gateway/upstream_peer.h"
+#include "runtime/gateway/upstream_registry.h"
+#include "runtime/net/event_loop.h"
+#include "runtime/net/inet_address.h"
+
+int main() {
+    runtime::gateway::UpstreamRegistry reg;
+
+    auto us = std::make_shared<runtime::gateway::Upstream>(
+        runtime::gateway::UpstreamConfig{.name = "backend"});
+
+    us->AddPeer(std::make_shared<runtime::gateway::UpstreamPeer>(
+        runtime::gateway::UpstreamPeerConfig{.name = "127.0.0.1:9001",
+                                              .host = "127.0.0.1", .port = 9001}));
+    us->AddPeer(std::make_shared<runtime::gateway::UpstreamPeer>(
+        runtime::gateway::UpstreamPeerConfig{.name = "127.0.0.1:9002",
+                                              .host = "127.0.0.1", .port = 9002}));
+    reg.Add(us);
+
+    runtime::net::EventLoop loop;
+    runtime::gateway::GatewayServer gw(&loop, runtime::net::InetAddress(8080),
+                                       "gw", reg);
+    gw.SetThreadNum(4);
+
+    // Direct route
+    gw.Get("/healthz", [](const runtime::http::HttpRequest&,
+                          runtime::http::HttpResponse& resp) {
+        resp.SetContentType("application/json");
+        resp.SetBody("{\"status\":\"ok\"}");
+    });
+
+    // Proxy routes
+    gw.AddProxyRoute("/api/", "backend", "round_robin");
+
+    // Active health check
+    gw.EnableHealthCheck({.path = "/api/health", .interval_sec = 10.0});
+
+    gw.Start();
+    loop.Loop();
+}
+```
+
+### HTTP server example
 
 ```cpp
 #include "runtime/http/http_server.h"
@@ -184,11 +218,8 @@ Minimal HTTP server:
 
 int main() {
     runtime::net::EventLoop loop;
-    runtime::http::HttpServer server(
-        &loop,
-        runtime::net::InetAddress(8080, "0.0.0.0"),
-        "my-server");
-
+    runtime::http::HttpServer server(&loop,
+        runtime::net::InetAddress(8080, "0.0.0.0"), "my-server");
     server.SetThreadNum(4);
 
     server.Get("/api/users/:id",
@@ -198,56 +229,35 @@ int main() {
             resp.SetBody("{\"id\":\"" + std::string(req.PathParam("id")) + "\"}");
         });
 
-    server.Post("/api/echo",
-        [](const runtime::http::HttpRequest& req,
-           runtime::http::HttpResponse& resp) {
-            resp.SetContentType("text/plain; charset=utf-8");
-            resp.SetBody(std::string(req.Body()));
-        });
-
     server.Start();
     loop.Loop();
-    return 0;
 }
 ```
 
-If you only need the task scheduler, link `runtime_task`:
-
-```cmake
-target_link_libraries(my_app PRIVATE runtime_task)
-```
-
-Example:
+### Task scheduler example
 
 ```cpp
 #include "runtime/task/scheduler.h"
-
 #include <iostream>
 
 int main() {
     runtime::task::Scheduler scheduler(4);
-
-    auto handle = scheduler.Submit([] {
-        std::cout << "run task\n";
-    });
-
+    auto handle = scheduler.Submit([] { std::cout << "hello\n"; });
     handle.Wait();
-    return 0;
 }
 ```
 
 Library targets:
 
-| Target | Description |
+| Target | Provides |
 |---|---|
-| `runtime_foundation` | Logging, time, and base utilities |
-| `runtime_task` | Task, thread pool, scheduler |
-| `runtime_net` | TCP networking layer and event loop |
-| `runtime_http` | HTTP layer, depends on net/task/foundation |
+| `runtime_gateway` | Gateway, proxy, load balancers, health checker |
+| `runtime_http` | HTTP server, Trie router, request/response, context |
+| `runtime_net` | EventLoop, TcpServer, Channel, Poller, Buffer, TimerQueue |
+| `runtime_task` | Scheduler, ThreadPool, Task, WorkQueue |
+| `runtime_foundation` | Logger, Timestamp, MemoryPool, ObjectPool, IntrusiveRBTree, metrics |
 
 ## Run Tests
-
-When configured with `BUILD_TESTS=ON`, run:
 
 ```bash
 ctest --test-dir build --output-on-failure
@@ -256,18 +266,25 @@ ctest --test-dir build --output-on-failure
 Run one test:
 
 ```bash
-ctest --test-dir build -R http_smoke_test --output-on-failure
+ctest --test-dir build -R rbtree_validator --output-on-failure
 ```
+
+Notable tests:
+
+| Binary | What it tests |
+|---|---|
+| `rbtree_validator` | 10 M ops vs `std::set` oracle + `CheckRBInvariants()` every step |
+| `http_smoke_test` | HTTP parsing and routing (no GTest required) |
+| `buffer_smoke_test` | Buffer read / write / prepend |
+| `runtime_unit_tests` | GTest suite: buffer, logger, memory pool, scheduler |
+| `runtime_integration_tests` | GTest suite: event loop, TCP server, HTTP routing, trigger modes |
 
 Notes:
 
-- Smoke tests do not require GoogleTest
+- Smoke tests build without GoogleTest
 - If CMake finds GoogleTest, it also builds `runtime_unit_tests` and `runtime_integration_tests`
-- If GoogleTest is unavailable, CMake prints `GTest not found; skipping gtest-based unit tests.`
 
 ## Benchmark
-
-Build a Release version and start the HTTP demo:
 
 ```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Release
@@ -275,16 +292,9 @@ cmake --build build -j"$(nproc)"
 IO_THREADS=2 ./build/examples/demo_http_server
 ```
 
-In another terminal, run `wrk`:
-
 ```bash
 wrk -t1 -c128 -d5s http://127.0.0.1:18080/api/health
 wrk -t1 -c128 -d5s -s benchmarks/wrk/post_echo.lua http://127.0.0.1:18080/api/echo
-```
-
-You can also use the included script:
-
-```bash
 bash benchmarks/wrk/run_wrk.sh
 ```
 
@@ -293,21 +303,21 @@ bash benchmarks/wrk/run_wrk.sh
 ```text
 .
 ├── include/runtime/
-│   ├── base/        # NonCopyable, CurrentThread, base utilities
+│   ├── base/        # NonCopyable, CurrentThread, ThreadPool, IntrusiveRBTree
 │   ├── config/      # Configuration loading interfaces
-│   ├── http/        # HTTP server, router, request, response, context
-│   ├── inference/   # Inference-related interfaces
+│   ├── gateway/     # GatewayServer, Upstream, LoadBalancer, HealthChecker, ProxyPass
+│   ├── http/        # HttpServer, Router, HttpContext, HttpRequest, HttpResponse
 │   ├── log/         # Logger, AsyncLogger
-│   ├── memory/      # MemoryPool, ObjectPool, cache structures
+│   ├── memory/      # MemoryPool, ObjectPool
 │   ├── metrics/     # Counter, Gauge, Histogram, Registry
 │   ├── net/         # EventLoop, TcpServer, Channel, Poller, Buffer, Timer
 │   ├── task/        # Scheduler, ThreadPool, Task, WorkQueue
 │   ├── time/        # Timestamp
 │   └── trace/       # TraceId, LifecycleTrace
-├── src/             # Implementations
-├── examples/        # HTTP/TCP/logger/io_uring examples
-├── tests/           # Unit and integration tests
-├── benchmarks/      # wrk benchmark scripts and result archives
+├── src/             # Implementations (mirrors include layout)
+├── examples/        # demo_gateway, demo_http_server, demo_echo_server, demo_rbtree
+├── tests/           # Unit, integration, smoke tests, oracle validator
+├── benchmarks/      # wrk scripts and result archives
 ├── config/          # Example configuration files
 ├── docs/            # Design notes
 └── third_party/     # Third-party headers
@@ -316,27 +326,51 @@ bash benchmarks/wrk/run_wrk.sh
 ## Architecture
 
 ```text
-HTTP Layer:        runtime::http
-  HttpServer, Router, HttpContext, HttpRequest, HttpResponse
+Gateway Layer   runtime::gateway
+  GatewayServer, UpstreamRegistry, Upstream, UpstreamPeer
+  LoadBalancer (RoundRobin / WeightedRoundRobin / LeastConn / Random)
+  HealthChecker, ProxyPass, UpstreamConnPool, StaticHandler
 
-Net Layer:         runtime::net
-  TcpServer, TcpConnection, EventLoop, Poller, Channel, Buffer, TimerQueue
+HTTP Layer      runtime::http
+  HttpServer, Router (Trie), HttpContext, HttpRequest, HttpResponse
 
-Foundation Layer:  runtime::base / log / time / task / memory / metrics
-  AsyncLogger, Scheduler, ThreadPool, MemoryPool, ObjectPool, Timestamp
+Net Layer       runtime::net
+  TcpServer, TcpConnection, EventLoop, EpollPoller, Channel
+  Buffer, TimerQueue (IntrusiveRBTree-backed)
+
+Foundation      runtime::base / log / time / task / memory / metrics
+  AsyncLogger, Scheduler, ThreadPool
+  MemoryPool, ObjectPool
+  IntrusiveRBTree<T, kMember, kLess>
+  Timestamp, Counter, Gauge, Histogram
+```
+
+Typical gateway request flow:
+
+```text
+kernel
+  → Buffer::ReadFd()
+  → TcpConnection message callback (Sub Loop)
+  → HttpContext::ParseRequest()       (incremental state machine)
+  → GatewayServer::MatchRoute()
+      ├── Direct  → synchronous Handler → HttpResponse
+      ├── Proxy   → LoadBalancer::Select() → UpstreamConnPool
+      │             → ProxySession (async upstream I/O on same Sub Loop)
+      └── Static  → ThreadPool file I/O → HttpResponse
+  → TcpConnection::Send()
 ```
 
 Typical HTTP request flow:
 
 ```text
 kernel
-  -> Buffer::ReadFd()
-  -> TcpConnection message callback
-  -> HttpContext::ParseRequest()
-  -> Router::Match()
-  -> user handler
-  -> HttpResponse::ToString()
-  -> TcpConnection::Send()
+  → Buffer::ReadFd()
+  → TcpConnection message callback
+  → HttpContext::ParseRequest()
+  → Router::Match()
+  → user handler
+  → HttpResponse::ToString()
+  → TcpConnection::Send()
 ```
 
 ## License
