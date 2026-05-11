@@ -120,6 +120,17 @@ target_link_libraries(tcp_server_smoke_test
 
 add_test(NAME tcp_server_smoke_test COMMAND tcp_server_smoke_test)
 
+add_executable(rbtree_validator
+    unit/test_rbtree_validator.cpp
+)
+
+target_include_directories(rbtree_validator
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+add_test(NAME rbtree_validator COMMAND rbtree_validator)
+
 add_executable(memory_pool_bench
     unit/bench_memory_pool.cpp
 )

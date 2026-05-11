@@ -1,8 +1,8 @@
 #pragma once
 
 #include "runtime/base/noncopyable.h"
+#include "runtime/base/rbtree.h"
 #include "runtime/time/timestamp.h"
-#include "runtime/net/timer_rbtree.h"
 
 #include <cstdint>
 #include <functional>
@@ -34,18 +34,17 @@ public:
   void Restart(runtime::time::Timestamp now) {
     expiration_ = runtime::time::AddTime(now, interval_sec_);
   }
+
+  // Intrusive tree node. TimerTree links this node directly without allocating
+  // an extra container node like std::set would.
+  base::RBTNode<Timer> tree_node_;
 private:
-  friend class TimerTree;
 
   TimerCallback timer_callback_;
   runtime::time::Timestamp expiration_;
   double interval_sec_;
   bool repeat_;
   int64_t sequence_;
-
-  // Intrusive tree node. TimerTree links this node directly without allocating
-  // an extra container node like std::set would.
-  TimerTreeNode tree_node_;
 
   inline static std::atomic<int64_t> next_sequence_;
 };
