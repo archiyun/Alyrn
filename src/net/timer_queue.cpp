@@ -105,7 +105,9 @@ void TimerQueue::HandleRead() {
 }
 
 std::vector<Timer*> TimerQueue::GetExpired(runtime::time::Timestamp now) {
-  return timers_.PopExpired(now);
+  return timers_.PopWhile([now](const Timer* t) {
+    return t->Expiration() <= now;
+  });
 }
 
 void TimerQueue::Reset(const std::vector<Timer*>& expired, runtime::time::Timestamp now) {
