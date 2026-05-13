@@ -30,6 +30,7 @@ public:
                   LoadBalancer& lb,
                   UpstreamConnPool& pool,
                   std::shared_ptr<UpstreamPeer> first_peer,
+                  RequestContext request_ctx,
                   std::string request_bytes,
                   int max_retries = 2);
   ~UpstreamRequest();
@@ -52,6 +53,7 @@ private:
   Upstream&                                  upstream_;
   LoadBalancer&                              lb_;
   UpstreamConnPool&                          pool_;
+  RequestContext                             request_ctx_;
   std::string                                request_bytes_;
   int                                        retries_left_;
   Phase                                      phase_{Phase::kConnecting};
@@ -67,7 +69,8 @@ public:
           const runtime::http::HttpRequest& request,
           Upstream& upstream,
           LoadBalancer& lb,
-          UpstreamConnPool& pool);
+          UpstreamConnPool& pool,
+          const RequestContext& ctx = {});
 
   static std::string BuildRequest(const runtime::http::HttpRequest& req,
                                   const UpstreamPeer& peer);

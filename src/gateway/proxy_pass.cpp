@@ -17,6 +17,7 @@ UpstreamRequest::UpstreamRequest(const TcpConnectionPtr& client_conn,
                                  LoadBalancer& lb,
                                  UpstreamConnPool& pool,
                                  std::shared_ptr<UpstreamPeer> first_peer,
+                                 RequestContext request_ctx,
                                  std::string request_bytes,
                                  int max_retries)
   : client_weak_(client_conn),
@@ -24,6 +25,7 @@ UpstreamRequest::UpstreamRequest(const TcpConnectionPtr& client_conn,
     lb_(lb),
     pool_(pool),
     peer_(std::move(first_peer)),
+    request_ctx_(std::move(request_ctx)),
     request_bytes_(std::move(request_bytes)),
     retries_left_(max_retries) {
   peer_->State().active.fetch_add(1, std::memory_order_relaxed);
@@ -116,7 +118,7 @@ void UpstreamRequest::OnUpstreamConnChange(const TcpConnectionPtr& up_conn) {
                << " marked down (fails=" << fails << ")";
   }
   if (retries_left_ -- > 0) {
-    auto next = lb_.Select(upstream_);
+    auto next = lb_.Select(upstream_, request_ctx_);
     if (next && next.get() != peer_.get()) {
       LOG_WARN() << "proxy: retry " << peer_->Config().name
                  << " -> " << next->Config().name
@@ -222,11 +224,12 @@ ProxyPass::Forward(const TcpConnectionPtr& client_conn,
                    const runtime::http::HttpRequest& request,
                    Upstream& upstream,
                    LoadBalancer& lb,
-                   UpstreamConnPool& pool) {
-  auto first_peer = lb.Select(upstream);
+                   UpstreamConnPool& pool,
+                   const RequestContext& ctx) {
+  auto first_peer = lb.Select(upstream, ctx);
   if (!first_peer) return nullptr;
   auto req = std::make_shared<UpstreamRequest>(
-      client_conn, upstream, lb, pool, first_peer, BuildRequest(request, *first_peer));
+      client_conn, upstream, lb, pool, first_peer, ctx, BuildRequest(request, *first_peer));
   req->Start();
   return req;
 }

@@ -115,7 +115,11 @@ void GatewayServer::OnMessage(const TcpConnectionPtr& conn,
         continue;
       }
       auto& pool = GetOrCreatePool(conn->GetLoop());
-      ctx.upstream_req = ProxyPass::Forward(conn, req, *upstream, *route->lb, pool);
+      RequestContext req_ctx{
+        .client_ip = client_ip,
+        .uri = std::string(req.Path()),
+      };
+      ctx.upstream_req = ProxyPass::Forward(conn, req, *upstream, *route->lb, pool, req_ctx);
       if (!ctx.upstream_req) {
         conn->Send(MakeError(runtime::http::StatusCode::ServiceUnavailable,
                              "no available upstream peer").ToString());
