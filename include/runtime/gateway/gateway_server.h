@@ -40,6 +40,7 @@ public:
     Static, // 静态资源部署
   };
 
+  // 匹配类型
   enum class MatchType {
     Exact,
     Prefix,

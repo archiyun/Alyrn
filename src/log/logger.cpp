@@ -1,6 +1,5 @@
-#include "runtime/log/logger.h"
-
 #include "runtime/base/current_thread.h"
+#include "runtime/log/logger.h"
 #include "runtime/log/async_logger.h"
 #include "runtime/time/timestamp.h"
 
@@ -91,7 +90,7 @@ void Logger::Log(LogLevel level,
     async_logger_->Append(formatted.data(), formatted.size());
 }
 
-const char *ToString(LogLevel level) {
+const char* ToString(LogLevel level) {
     switch (level) {
         case LogLevel::DEBUG:
             return "DEBUG";

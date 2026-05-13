@@ -95,8 +95,11 @@ int main() {
     &main_loop,
     runtime::net::InetAddress(port),
     "HttpEchoServer");
-  
-  // GET / - 固定 "OK" 响应
+
+  server.SetThreadNum(io_threads);
+  server.SetEdgeTriggered(et_mode);
+
+  // GET / - 固定 "OK" 响应（用于 demo_echo_server 基准对比）
   server.Get("/", [](const runtime::http::HttpRequest&,
                    runtime::http::HttpResponse& resp) {
     resp.SetStatusCode(runtime::http::StatusCode::Ok);
@@ -112,6 +115,22 @@ int main() {
     resp.SetContentType("text/plain");
     resp.SetBody("OK");
     g_requests.fetch_add(1, std::memory_order_relaxed);
+  });
+
+  // GET /api/health — 供 demo_gateway 健康探针使用
+  server.Get("/api/health", [](const runtime::http::HttpRequest&,
+                               runtime::http::HttpResponse& resp) {
+    resp.SetStatusCode(runtime::http::StatusCode::Ok);
+    resp.SetContentType("application/json");
+    resp.SetBody("{\"status\":\"ok\"}");
+  });
+
+  // GET /api/kv — 供 demo_gateway 代理路由使用
+  server.Get("/api/kv", [](const runtime::http::HttpRequest&,
+                            runtime::http::HttpResponse& resp) {
+    resp.SetStatusCode(runtime::http::StatusCode::Ok);
+    resp.SetContentType("application/json");
+    resp.SetBody("{\"key\":\"demo\",\"value\":\"hello\"}");
   });
 
   std::thread stats_thr(StatsPrinter);

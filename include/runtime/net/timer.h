@@ -11,7 +11,6 @@
 
 namespace runtime::net {
 
-
 // Timer represents one scheduled callback managed by TimerQueue.
 //
 // It stores the callback, next expiration time, repeat interval, and an
@@ -27,7 +26,7 @@ public:
         repeat_(interval_sec > 0.0),
         sequence_(next_sequence_.fetch_add(1, std::memory_order_relaxed)) {}
 
-  void Run() const { timer_callback_(); }
+  void Run() const { if(timer_callback_) timer_callback_(); }
   runtime::time::Timestamp Expiration() const { return expiration_; }
   bool Repeat() const { return repeat_; }
   int64_t Sequence() const { return sequence_; }

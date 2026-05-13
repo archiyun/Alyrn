@@ -16,6 +16,8 @@ enum class LoadBalancePolicy {
   LeastConnection,
   Random,
   WeightedRandom,
+  IPHash, // Ip 哈希算法 尚未实现
+  ConsistentHash, // 一致性哈希算法 尚未实现
 };
 
 struct UpstreamConfig {

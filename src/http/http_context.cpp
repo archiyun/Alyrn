@@ -53,7 +53,7 @@ bool HttpContext::ParseRequest(runtime::net::Buffer& buf,
       const char* begin = buf.Peek();
       const char* end = begin + buf.ReadableBytes();
       const char* crlf = buf.FindCRLF();
-      if (crlf == end)
+      if (crlf == nullptr)
         return true;
 
       std::string_view line(begin, crlf - begin);

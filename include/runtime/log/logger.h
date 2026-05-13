@@ -47,7 +47,6 @@ public:
 private:
   Logger() = default;
 
-private:
   std::atomic<LogLevel> level_{LogLevel::INFO};
   std::unique_ptr<AsyncLogger> async_logger_;
 };

@@ -8,7 +8,7 @@
 namespace runtime::gateway {
 
 struct UpstreamPeerConfig {
-  std::string name;      // "127.0.0.1:9001"
+  std::string name;      // ip:port => eg. "127.0.0.1:9001"
   std::string host;
   uint16_t port{0};
 

@@ -1,8 +1,8 @@
-add_executable(simple_logger_example
-    simple_logger.cpp
+add_executable(demo_logger_example
+    demo_logger.cpp
 )
 
-target_link_libraries(simple_logger_example
+target_link_libraries(demo_logger_example
     PRIVATE
         runtime_foundation
 )
@@ -43,6 +43,15 @@ add_executable(demo_bench_gateway
 target_link_libraries(demo_bench_gateway
     PRIVATE
         runtime_gateway
+)
+
+add_executable(demo_rbtree
+    demo_rbtree.cpp
+)
+
+target_link_libraries(demo_rbtree
+    PRIVATE
+        runtime_foundation
 )
 
 add_subdirectory(io_uring_echo)
