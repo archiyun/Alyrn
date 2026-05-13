@@ -147,6 +147,7 @@ void GatewayServer::OnMessage(const TcpConnectionPtr& conn,
         });
       });
     } else {
+      // Direct
       const bool keep_alive = req.KeepAlive();
       runtime::http::HttpResponse resp(!keep_alive);
       try {
