@@ -7,8 +7,24 @@
 
 namespace runtime::base {
 
-// The red-black tree code is based on the algorithm described in
-// the "Introduction to Algorithms" by Cormen, Leiserson ,Stein and Rivest.
+// Intrusive red-black tree — the node storage lives inside T, not in a separate
+// heap allocation.  A single shared sentinel (kSentinel) replaces nullptr as
+// both the null leaf and the parent of root, eliminating null-pointer branches
+// throughout the implementation.
+//
+// Template parameters:
+//   T        - element type; must embed an RBTNode<T>
+//   kMember  - member-pointer to that embedded node
+//   kLess    - total order on T; must be irreflexive and transitive
+//
+// This tree is used as an ordered work queue (TimerQueue, deadline scheduling).
+// In that pattern PopWhile (extract-all-matching in key order) dominates, so
+// min_ is eagerly cached.  Rotations during insert/erase never change which
+// node is the minimum, so keeping min_ correct costs only a single lookup in
+// the Erase path.
+//
+// Based on the algorithm in Cormen, Leiserson, Rivest, Stein — "Introduction
+// to Algorithms".  "CLRS" version 
 template<typename T>
 struct RBTNode {
   T*        owner{nullptr};
@@ -27,22 +43,30 @@ template<
 >
 class IntrusiveRBTree : public NonCopyable {
 public:
-  IntrusiveRBTree() : root_{kSentinel} {}
+  IntrusiveRBTree() : root_{kSentinel}, min_{kSentinel} {}
   ~IntrusiveRBTree() = default;
 
+  // O(1)
   bool  Empty() const { return size_ == 0; }
   std::size_t Size() const { return size_; }
+
+  // O(log n) amortized; no-op if elem is already in the tree.
   void  Insert(T* elem);
+
+  // O(log n) amortized; returns false if elem was not in the tree.
   bool  Erase(T* elem);
+
+  // O(1) — cached pointer, updated on Insert and Erase.
   T*    Earliest() const;
 
+  // O(k log n) where k is the number of extracted elements.
+  // Extracts (and erases) the earliest elements satisfying pred in key order.
+  // Stops at the first element that fails the predicate.
   template<typename Pred>
   std::vector<T*> PopWhile(Pred pred);
 
-  // Returns true if all RB-tree invariants hold:
-  //   1. root is black
-  //   2. no two consecutive red nodes
-  //   3. all root-to-leaf paths have the same black height
+  // O(n) — debug only. Verifies RB invariants (root black, no adjacent reds,
+  // uniform black height).
   bool CheckRBInvariants() const;
 
 private:
@@ -66,8 +90,13 @@ private:
   static RBTNode<T>* NodeOf(T* elem) { return &(elem->*kMember);}
   static T*          ElemOf(RBTNode<T>* node) { return node->owner; }
 
+  // O(log n) — walks left spine of subtree.
   static RBTNode<T>* Minimum(RBTNode<T>* node);
+
+  // Amortized O(log n) — either descends once via Minimum, or walks parent
+  // links (at most tree height).  Called once per Erase that removes min_.
   static RBTNode<T>* Next(RBTNode<T>* node);
+
   static void ResetNode(RBTNode<T>* node);
 
   void Transplant(RBTNode<T>* src, RBTNode<T>* dst);
@@ -77,6 +106,7 @@ private:
   void DeleteFixup(RBTNode<T>* node);
 
   RBTNode<T>* root_{kSentinel};
+  RBTNode<T>* min_{kSentinel};
   std::size_t size_{0};
 };
 
@@ -211,6 +241,9 @@ void IRBT_TYPE::Insert(T* elem) {
   else if (kLess(elem, ElemOf(parent))) parent->left = node;
   else parent->right = node;
 
+  if (min_ == kSentinel || kLess(elem, ElemOf(min_))) {
+    min_ = node;
+  }
   ++size_;
   InsertFixup(node);
 }
@@ -277,6 +310,9 @@ IRBT_TMPL
 bool IRBT_TYPE::Erase(T* elem) {
   auto target = NodeOf(elem);
   if (!target->in_tree) return false;
+  if (target == min_) {
+    min_ = Next(min_);
+  }
   auto detach = target;
   auto orphan = kSentinel;
   bool detach_original_is_red = IsRed(detach);
@@ -317,8 +353,7 @@ bool IRBT_TYPE::Erase(T* elem) {
 
 IRBT_TMPL
 T* IRBT_TYPE::Earliest() const {
-  if (Empty()) return nullptr;
-  return ElemOf(Minimum(root_));
+  return min_ == kSentinel ? nullptr : ElemOf(min_);
 }
 
 IRBT_TMPL
