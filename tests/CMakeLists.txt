@@ -147,6 +147,22 @@ target_link_libraries(load_balancer_smoke_test
 
 add_test(NAME load_balancer_smoke_test COMMAND load_balancer_smoke_test)
 
+add_executable(health_checker_smoke_test
+    unit/test_health_checker_smoke.cpp
+)
+
+target_include_directories(health_checker_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(health_checker_smoke_test
+    PRIVATE
+        runtime_gateway
+)
+
+add_test(NAME health_checker_smoke_test COMMAND health_checker_smoke_test)
+
 add_executable(memory_pool_bench
     unit/bench_memory_pool.cpp
 )
