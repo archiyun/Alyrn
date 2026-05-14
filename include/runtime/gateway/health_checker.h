@@ -31,7 +31,9 @@ private:
   runtime::net::TimerId timer_id_;
   bool running_{false};
 
-  // per-backend 连续成功计数 (不持久化， 重启归零)
+  // per-stream 连续成功计数 (不持久化， 重启归零)
   std::unordered_map<std::string, int> consecutive_ok_;
+  // per-upstream 连续失败次数 
+  std::unordered_map<std::string, int> consecutive_fail_;
 };
 } // namespace runtime::gateway
