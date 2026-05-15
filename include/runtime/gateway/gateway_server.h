@@ -1,13 +1,13 @@
 #pragma once
 
-#include "runtime/base/noncopyable.h"
-#include "runtime/base/thread_pool.h"
+#include "runtime/gateway/rate_limiter.h"
+#include "runtime/gateway/fallback_config.h"
+#include "runtime/gateway/static_handler.h"
 #include "runtime/gateway/health_checker.h"
 #include "runtime/gateway/load_balancer.h"
 #include "runtime/gateway/proxy_pass.h"
 #include "runtime/gateway/upstream_conn_pool.h"
 #include "runtime/gateway/upstream_registry.h"
-#include "runtime/gateway/static_handler.h"
 #include "runtime/http/http_context.h"
 #include "runtime/http/http_response.h"
 #include "runtime/http/http_types.h"
@@ -15,16 +15,17 @@
 #include "runtime/net/inet_address.h"
 #include "runtime/net/tcp_server.h"
 #include "runtime/time/timestamp.h"
+#include "runtime/base/noncopyable.h"
+#include "runtime/base/thread_pool.h"
 
 #include <memory>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <filesystem>
 #include <unordered_map>
 
-
 namespace runtime::gateway {
-
 
 // GateServer 封装 TcpServer, 拦截 proxy 路由走异步转发
 // 直接路由走同步 handler
@@ -58,6 +59,9 @@ public:
     std::string upstream_name;  // Proxy
     std::unique_ptr<LoadBalancer> lb; // Proxy
     std::filesystem::path static_root; // Static
+
+    FallbackConfig fallback; // 降级配置
+    bool circuit_breaker_enabled{false}; // 熔断器启用
   };
 
   GatewayServer(runtime::net::EventLoop* loop, 
@@ -73,8 +77,17 @@ public:
   void AddProxyRoute(std::string_view path,
                      std::string_view upstream_name,
                      std::string_view algo = "round_robin");
+  // NEW: 带降级和熔断配置
+  void AddProxyRoute(std::string_view path,
+                     std::string_view upstream_name,
+                     FallbackConfig fallback,
+                     bool circuit_breaker_enabled = false,
+                     std::string_view algo = "round_robin");
   void AddStaticRoute(std::string_view url_prefix, std::string_view root_dir);
   void EnableHealthCheck(HealthCheckConfig cfg = {});
+  // NEW: 限流配置
+  void EnableGlobalRateLimit(double rate, double burst);
+  void EnablePerIPRateLimit(double rate, double burst);
   void SetPoolConfig(PoolConfig cfg) { pool_cfg_ = cfg; }
   const Route* MatchRoute(std::string_view path) const;
   void Start();
@@ -94,14 +107,23 @@ private:
   UpstreamConnPool& GetOrCreatePool(runtime::net::EventLoop* loop);
   runtime::http::HttpResponse MakeError(runtime::http::StatusCode code,
                                         std::string_view msg) const;
+  std::string RenderFallback(const Route& route,
+                             std::string_view reason) const;
 private:
   runtime::net::TcpServer server_;
   UpstreamRegistry& registry_;
   std::vector<Route> routes_;
   std::unique_ptr<HealthChecker> health_checker_;
   PoolConfig pool_cfg_;
+  // pools_ 在 sub-loop 之间共享：每条 sub-loop 都会调 GetOrCreatePool。
+  // 仅 map 结构本身需要保护，value (UpstreamConnPool) 的访问是 per-loop 单线程的。
+  // unordered_map 的 reference 在插入时不会失效，所以拿到 reference 后即可释放锁。
+  mutable std::mutex pools_mu_;
   std::unordered_map<runtime::net::EventLoop*, UpstreamConnPool> pools_;
   runtime::base::ThreadPool static_pool_{4};
+  std::unique_ptr<RateLimiter> rate_limiter_;  // 限流器
+  std::string rate_limit_response_429_; // 预渲染 429 响应
+  RateLimiterConfig rate_limiter_cfg_;  // accumulated config, committed in Enable* calls
 };
 
 } // namespace runtime::gateway

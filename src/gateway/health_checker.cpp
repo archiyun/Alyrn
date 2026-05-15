@@ -1,3 +1,9 @@
+// Active health checks: periodically probe every registered peer with a
+// small HTTP GET. The probe outcome feeds two independent state machines:
+//   - threshold-based binary up/down (state.down) for hard removal
+//   - per-call effective_weight bump/decay for gradual demotion by WRR
+// Both run entirely on the gateway's main EventLoop, so no synchronization
+// is needed on the consecutive_ok_/consecutive_fail_ counters.
 #include "runtime/gateway/health_checker.h"
 
 #include "runtime/log/logger.h"
@@ -7,9 +13,21 @@
 #include "runtime/net/buffer.h"
 #include "runtime/time/timestamp.h"
 
+#include <chrono>
 #include <string>
 
 namespace runtime::gateway {
+
+namespace {
+// Monotonic milliseconds since some unspecified epoch. Used only to stamp
+// state.checked_ms so the fail_timeout window can be evaluated later.
+uint64_t NowMs() {
+  return static_cast<uint64_t>(
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::steady_clock::now().time_since_epoch())
+          .count());
+}
+}  // namespace
 
 HealthChecker::HealthChecker(runtime::net::EventLoop* loop, 
                              UpstreamRegistry& registry, 
@@ -40,20 +58,25 @@ void HealthChecker::CheckAll() {
 void HealthChecker::CheckOne(std::shared_ptr<UpstreamPeer> peer) {
   using TcpConnectionPtr = runtime::net::TcpConnection::TcpConnectionPtr;
   std::string name = peer->Config().name;
-  // 1. 创建临时 TcpClient
+
+  // 1. Build a one-shot TcpClient targeting this peer. The shared_ptr keeps
+  //    the client alive across the async callbacks below.
   auto client = std::make_shared<runtime::net::TcpClient>(
     loop_,
     runtime::net::InetAddress(peer->Config().port, peer->Config().host),
     "health->" + name);
-  
-  // 2. 构造 HTTP 请求
-  const std::string request = 
+
+  // 2. Pre-render the probe request. Connection: close keeps each probe
+  //    fully independent — we don't pool health-check sockets.
+  const std::string request =
     "GET " + cfg_.path + " HTTP/1.1\r\n"
     "Host: " + peer->Config().host + "\r\n"
-    "Connection: close\r\n\r\n"; 
+    "Connection: close\r\n\r\n";
 
-  
-  // 3. 连接成功回调 -> 发送回调
+  // 3. ConnectionCallback: on connect, send the request; on early disconnect
+  //    (before any bytes were read), count it as a connection-level failure.
+  //    `done` guards against the MessageCallback path having already attributed
+  //    the outcome to a higher-priority signal.
   auto done = std::make_shared<bool>(false);
   client->SetConnectionCallback(
     [this, peer, client, request, name, done](const TcpConnectionPtr& conn) {
@@ -61,7 +84,7 @@ void HealthChecker::CheckOne(std::shared_ptr<UpstreamPeer> peer) {
         conn->Send(request);
       }
       else if (!*done) {
-        // MessageCallback 从未触发，连接层面就失败了
+        peer->OnFailure(NowMs());  // -1 to effective_weight per failed probe.
         auto& fail_count = consecutive_fail_[name];
         if (++fail_count >= cfg_.unhealthy_threshold &&
             !peer->State().down.load(std::memory_order_relaxed)) {
@@ -70,18 +93,19 @@ void HealthChecker::CheckOne(std::shared_ptr<UpstreamPeer> peer) {
       }
     });
 
-  // 4. 消息回调 -> 检验响应头 + 判定状态
+  // 4. MessageCallback: inspect the first 12 bytes for "HTTP/1.1 200" and
+  //    drive both the binary down/up threshold and the gradual effective_weight
+  //    decay/recovery from the result.
   client->SetMessageCallback(
     [this, peer, client, name, healthy_threshold = cfg_.healthy_threshold,
      unhealthy_threshold = cfg_.unhealthy_threshold, done](
       const TcpConnectionPtr& conn,
       runtime::net::Buffer& buf,
       runtime::time::Timestamp) {
-        // "HTTP/1.1 200" => 12 bytes
-        // 字节数不够 等下一次回调
+        // "HTTP/1.1 200" is 12 bytes; wait for the full status line before deciding.
         if (buf.ReadableBytes() < 12) return;
 
-        *done = true; // 防止 ConnectionCallback else 重复计数
+        *done = true;  // Suppress the ConnectionCallback fallback path.
 
         const bool ok = std::string_view(buf.Peek(), 12) == "HTTP/1.1 200";
         buf.RetrieveAll();
@@ -89,10 +113,11 @@ void HealthChecker::CheckOne(std::shared_ptr<UpstreamPeer> peer) {
 
         auto& ok_count = consecutive_ok_[name];
         if (ok) {
+          peer->OnSuccess();  // +1 to effective_weight (capped at config.weight).
           consecutive_fail_[name] = 0;
           ++ok_count;
-          // 连续成功次数大于上线阈值直接复活
-          if (ok_count >= healthy_threshold && 
+          // After healthy_threshold consecutive successes, lift the hard down flag.
+          if (ok_count >= healthy_threshold &&
               peer->State().down.load(std::memory_order_relaxed)) {
             peer->State().down.store(false, std::memory_order_relaxed);
             peer->State().fails.store(0, std::memory_order_relaxed);
@@ -100,8 +125,9 @@ void HealthChecker::CheckOne(std::shared_ptr<UpstreamPeer> peer) {
             LOG_INFO() << "health_checker: upstream peer " << name << " recovered";
           }
         } else {
+          peer->OnFailure(NowMs());  // App-layer failure also decays effective_weight.
           ok_count = 0;
-          // 连续失败超过下线阈值直接去世
+          // After unhealthy_threshold consecutive failures, hard-mark the peer down.
           auto& fail_count = consecutive_fail_[name];
           ++fail_count;
           if (fail_count >= unhealthy_threshold &&
@@ -111,10 +137,13 @@ void HealthChecker::CheckOne(std::shared_ptr<UpstreamPeer> peer) {
           }
         }
       });
-  // 5. 发起连接
+
+  // 5. Kick off the probe.
   client->Connect();
 
-  // 6. 超时兜底
+  // 6. Timeout backstop: if the probe still has a live connection after
+  //    `timeout_sec`, force-disconnect so the callbacks above run and the
+  //    TcpClient can be released.
   loop_->RunAfter(cfg_.timeout_sec, [client] {
     if (client->connection() && client->connection()->Connected()) {
       client->Disconnect();

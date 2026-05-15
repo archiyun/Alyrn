@@ -163,6 +163,88 @@ target_link_libraries(health_checker_smoke_test
 
 add_test(NAME health_checker_smoke_test COMMAND health_checker_smoke_test)
 
+add_executable(circuit_breaker_smoke_test
+    unit/test_circuit_breaker_smoke.cpp
+)
+
+target_include_directories(circuit_breaker_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(circuit_breaker_smoke_test
+    PRIVATE
+        runtime_gateway
+)
+
+add_test(NAME circuit_breaker_smoke_test COMMAND circuit_breaker_smoke_test)
+
+add_executable(fallback_config_smoke_test
+    unit/test_fallback_config_smoke.cpp
+)
+
+target_include_directories(fallback_config_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(fallback_config_smoke_test
+    PRIVATE
+        runtime_gateway
+)
+
+add_test(NAME fallback_config_smoke_test COMMAND fallback_config_smoke_test)
+
+add_executable(rate_limiter_smoke_test
+    unit/test_rate_limiter_smoke.cpp
+)
+
+target_include_directories(rate_limiter_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(rate_limiter_smoke_test
+    PRIVATE
+        runtime_gateway
+)
+
+add_test(NAME rate_limiter_smoke_test COMMAND rate_limiter_smoke_test)
+
+add_executable(proxy_e2e_smoke_test
+    unit/test_proxy_e2e_smoke.cpp
+)
+
+target_include_directories(proxy_e2e_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(proxy_e2e_smoke_test
+    PRIVATE
+        runtime_gateway
+        runtime_http
+        runtime_net
+)
+
+add_test(NAME proxy_e2e_smoke_test COMMAND proxy_e2e_smoke_test)
+
+add_executable(resilience_integration_smoke_test
+    unit/test_resilience_integration_smoke.cpp
+)
+
+target_include_directories(resilience_integration_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(resilience_integration_smoke_test
+    PRIVATE
+        runtime_gateway
+)
+
+add_test(NAME resilience_integration_smoke_test COMMAND resilience_integration_smoke_test)
+
 add_executable(memory_pool_bench
     unit/bench_memory_pool.cpp
 )

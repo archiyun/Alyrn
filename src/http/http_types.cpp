@@ -40,6 +40,7 @@ std::string_view StatusMessage(StatusCode code) noexcept {
       std::pair{StatusCode::NotFound,            std::string_view{"Not Found"}},
       std::pair{StatusCode::MethodNotAllowed,    std::string_view{"Method Not Allowed"}},
       std::pair{StatusCode::RequestTimeout,      std::string_view{"Request Timeout"}},
+      std::pair{StatusCode::TooManyRequests,     std::string_view{"Too Many Requests"}},
       std::pair{StatusCode::InternalServerError, std::string_view{"Internal Server Error"}},
       std::pair{StatusCode::NotImplemented,      std::string_view{"Not Implemented"}},
       std::pair{StatusCode::BadGateway,          std::string_view{"Bad Gateway"}},

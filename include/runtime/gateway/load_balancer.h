@@ -1,3 +1,17 @@
+// Copyright (c) 2026 Aresna
+// SPDX-License-Identifier: MIT
+//
+// Load-balancer strategies. Each strategy is a stateless (or near-stateless)
+// policy object held by a Route; Select() is invoked on every proxy request
+// to pick one UpstreamPeer out of the Upstream's peer list.
+//
+// Design notes:
+//  * No allocation in Select() — every strategy filters Upstream::Peers()
+//    inline via UpstreamPeer::Available() to avoid materializing a snapshot.
+//  * Per-peer atomic state (effective_weight, active, fails, ...) is read
+//    relaxed; load balancing tolerates slightly stale values.
+//  * CreateLoadBalancer(name) is the string-to-factory entry point used by
+//    GatewayServer::AddProxyRoute.
 #pragma once
 
 #include "runtime/base/murmurhash3.h"
@@ -17,218 +31,263 @@
 
 namespace runtime::gateway {
 
+// Per-request signals forwarded to LBs that route on request attributes
+// (IP hash, consistent hash on a specific field). Populated by GatewayServer
+// before calling Select(); empty strings mean "not provided".
 struct RequestContext {
   std::string client_ip;
   std::string uri;
   std::string user_id;
   std::string session_id;
 };
+
+// Abstract base for all load-balancing strategies.
+// Implementations must be thread-safe: Select() may be invoked concurrently
+// from any IO thread that processes a proxy request.
 class LoadBalancer {
 public:
   virtual ~LoadBalancer() = default;
+  // Picks one available peer from `upstream`, or nullptr if no peer is eligible.
+  // `ctx` is consulted only by hash-based strategies; other strategies ignore it.
   virtual std::shared_ptr<UpstreamPeer> Select(Upstream& upstream, const RequestContext ctx = {}) = 0;
 };
 
-// -- Round Robin --
+// Round-robin: lock-free selection driven by a single atomic counter.
+// Two passes over peers_ are needed because the available count must be known
+// before the modular pick; a peer transitioning between passes is acceptable
+// — UpstreamRequest will retry on a connection failure.
 class RoundRobinLB : public LoadBalancer {
 public:
   std::shared_ptr<UpstreamPeer> Select(Upstream& upstream,  const RequestContext ctx = {}) override {
-    auto peers = upstream.Available();
-    if (peers.empty()) return nullptr;
-
-    uint64_t idx = counter_.fetch_add(1, std::memory_order_relaxed);
-    return peers[idx % peers.size()];
+    const auto& peers = upstream.Peers();
+    std::size_t avail = 0;
+    for (const auto& p : peers) {
+      if (p->Available(0)) {
+        ++avail;
+      }
+    }
+    if (avail == 0) return nullptr;
+    std::size_t pick = counter_.fetch_add(1, std::memory_order_relaxed) % avail;
+    for (const auto& p : peers) {
+      if (!p->Available(0)) continue;
+      if (pick-- == 0) return p;
+    }
+    return nullptr; // unreachable
   }
 
 private:
   std::atomic<uint64_t> counter_{0};
 };
 
-// -- Smooth Weighted Round Robin --
+// Nginx-style smooth weighted round robin.
+// Drives selection off each peer's dynamic effective_weight (in [0, config.weight]):
+// failures decrement effective_weight, successful health probes increment it back,
+// and a peer at effective_weight=0 is silently skipped. current_weights_ holds the
+// running selection counters across calls, so the whole step runs under mutex_.
 class WeightedRoundRobinLB : public LoadBalancer {
 public:
   std::shared_ptr<UpstreamPeer> Select(Upstream& upstream, const RequestContext ctx = {}) override {
-    auto peers = upstream.Available();
-    if (peers.empty()) return nullptr;
-
-    std::lock_guard lk(mutex_);
+    const auto& peers = upstream.Peers();
+    std::lock_guard lk{mutex_};
 
     int total = 0;
     for (const auto& peer : peers) {
-      total += std::max(peer->Config().weight, 0);
+      if (!peer->Available(0)) continue;
+      total += std::max(peer->EffectiveWeight(), 0);
     }
-
     if (total <= 0) return nullptr;
 
     std::shared_ptr<UpstreamPeer> best;
     int best_weight = std::numeric_limits<int>::min();
 
     for (const auto& peer : peers) {
-      int weight = std::max(peer->Config().weight, 0);
-      auto& cur = current_weights_[peer->Config().name];
-
+      if (!peer->Available(0)) continue;
+      int weight = std::max(peer->EffectiveWeight(), 0);
+      // peer pointers are stable after startup; using them as the key avoids
+      // the cost of hashing/comparing peer name strings on every call.
+      auto& cur = current_weights_[peer.get()];
       cur += weight;
-
       if (cur > best_weight) {
         best_weight = cur;
         best = peer;
       }
     }
 
-    if (best) {
-      current_weights_[best->Config().name] -= total;
-    }
-
+    if (best) current_weights_[best.get()] -= total;
     return best;
   }
 
 private:
   std::mutex mutex_;
-  std::unordered_map<std::string, int> current_weights_;
+  std::unordered_map<const UpstreamPeer*, int> current_weights_;
 };
 
-// -- Least Connections --
+// Least connections: pick the available peer with the lowest in-flight count.
+// Reads `state.active` relaxed; a tie is broken in iteration order.
 class LeastConnectionLB : public LoadBalancer {
 public:
   std::shared_ptr<UpstreamPeer> Select(Upstream& upstream,  const RequestContext ctx = {}) override {
-    auto peers = upstream.Available();
-    if (peers.empty()) return nullptr;
-
+    const auto& peers = upstream.Peers();
     std::shared_ptr<UpstreamPeer> best;
     int min_active = std::numeric_limits<int>::max();
 
     for (const auto& peer : peers) {
+      if (!peer->Available(0)) continue;
       int active = peer->State().active.load(std::memory_order_relaxed);
       if (active < min_active) {
         min_active = active;
         best = peer;
       }
     }
-
     return best;
   }
 };
 
-// -- Random --
+// Uniform random over available peers. thread_local RNG keeps Select() lock-free.
 class RandomLB : public LoadBalancer {
 public:
   std::shared_ptr<UpstreamPeer> Select(Upstream& upstream,  const RequestContext ctx = {}) override {
-    auto peers = upstream.Available();
-    if (peers.empty()) return nullptr;
+    const auto& peers = upstream.Peers();
+    std::size_t avail = 0;
+    for (const auto& p : peers) if (p->Available(0)) ++avail;
+    if (avail == 0) return nullptr;
 
     thread_local std::mt19937 gen{std::random_device{}()};
-    std::uniform_int_distribution<size_t> dist(0, peers.size() - 1);
-
-    return peers[dist(gen)];
+    std::uniform_int_distribution<std::size_t> dist(0, avail - 1);
+    std::size_t pick = dist(gen);
+    for (const auto& p : peers) {
+      if (!p->Available(0)) continue;
+      if (pick-- == 0) return p;
+    }
+    return nullptr;  // unreachable
   }
 };
 
-// -- Weighted Random --
+// Weighted random over available peers. Uses static config.weight (not effective_weight)
+// so it stays a fixed distribution; gradual demotion is reserved for WRR.
 class WeightedRandomLB : public LoadBalancer {
 public:
   std::shared_ptr<UpstreamPeer> Select(Upstream& upstream,  const RequestContext ctx = {}) override {
-    auto peers = upstream.Available();
-    if (peers.empty()) return nullptr;
-
+    const auto& peers = upstream.Peers();
     int total_weight = 0;
     for (const auto& peer : peers) {
+      if (!peer->Available(0)) continue;
       total_weight += std::max(peer->Config().weight, 0);
     }
-
     if (total_weight <= 0) return nullptr;
 
     thread_local std::mt19937 gen{std::random_device{}()};
     std::uniform_int_distribution<int> dist(1, total_weight);
-
     int r = dist(gen);
 
+    std::shared_ptr<UpstreamPeer> last_available;
     for (const auto& peer : peers) {
+      if (!peer->Available(0)) continue;
+      last_available = peer;
       r -= std::max(peer->Config().weight, 0);
-      if (r <= 0) {
-        return peer;
-      }
+      if (r <= 0) return peer;
     }
-
-    return peers.back();
+    return last_available;  // Guard against arithmetic edge cases (should be unreachable).
   }
 };
 
-// -- IP-Hash --
+// IP-hash: deterministic mapping from client IP to peer index.
+// Falls back to "0.0.0.0" when no client IP is provided so the result is
+// stable rather than dependent on uninitialized state.
 class IPHashLB : public LoadBalancer {
 public:
   std::shared_ptr<UpstreamPeer> Select(Upstream& upstream,  const RequestContext ctx = {}) override {
-    auto peers = upstream.Available();
-    if (peers.empty()) return nullptr;
+    const auto& peers = upstream.Peers();
+    std::size_t avail = 0;
+    for (const auto& p : peers) if (p->Available(0)) ++avail;
+    if (avail == 0) return nullptr;
 
     const auto& key = ctx.client_ip.empty() ? "0.0.0.0" : ctx.client_ip;
     uint32_t hash = runtime::base::MurmurHash3(key);
-    return peers[hash % peers.size()];
+    std::size_t pick = hash % avail;
+    for (const auto& p : peers) {
+      if (!p->Available(0)) continue;
+      if (pick-- == 0) return p;
+    }
+    return nullptr;  // unreachable
   }
 };
 
-// -- Consistent-Hash --
-// 一致性哈希负载均衡器， 采用虚拟节点 + 权重支持
-// hash 函数: MurmurHash3
-// hash_on 决定用 RequestContext 的哪个字段做路由。
+// Consistent hashing with virtual nodes (ketama-style) for stable peer affinity.
+//
+// Hash function: MurmurHash3 over a per-vnode key "peer_name#i".
+// `hash_on`   : which RequestContext field becomes the routing key (parsed once
+//                from a string into a HashOn enum at construction time).
+//
+// Concurrency: the ring is cached behind a shared_mutex. The fast path takes
+// a shared_lock and matches a cheap fingerprint of the current peer set; only
+// a peer-set change drops to the slow path that holds an exclusive lock and
+// rebuilds the ring.
 class ConsistentHashLB : public LoadBalancer {
 public:
-  // 虚拟节点数量 值域(边界性检查)
-  // 可以在此调节虚拟节点的值域参数。
-  // 追求分布均匀，重建哈希环开销的权衡。 同时要考虑虚拟节点增加对分布提升效果
-  // 一般来说如果 Key 规模足够大， 哈希函数本身就保证大样本分布均匀性。 
+  // Virtual nodes per unit of weight. Trades ring memory and rebuild cost
+  // against distribution uniformity; values outside [kVNODESMIN, kVNODESMAX]
+  // are clamped at construction.
   static constexpr int kVNODESMAX = 200;
   static constexpr int kVNODESMIN = 100;
 
-  // hash_on: "client_ip" | "uri" | "user_id" | "session_id"
+  enum class HashOn : uint8_t {
+    kClientIp,
+    kUri,
+    kUserId,
+    kSessionId,
+  };
+
+  // hash_on accepts: "client_ip" | "uri" | "user_id" | "session_id".
+  // Unknown values fall back to "client_ip".
   explicit ConsistentHashLB(int vnodes_per_unit = 150,
-                            std::string hash_on = "client_ip") 
-    : vnodes_per_unit_(vnodes_per_unit),
-      hash_on_(std::move(hash_on)) {
-    if (vnodes_per_unit < kVNODESMIN) vnodes_per_unit_ = kVNODESMIN;
-    if (vnodes_per_unit > kVNODESMAX) vnodes_per_unit_ = kVNODESMAX;
-  }
-  std::shared_ptr<UpstreamPeer> Select(Upstream& upstream,  
+                            std::string_view hash_on = "client_ip")
+    : vnodes_per_unit_(std::clamp(vnodes_per_unit, kVNODESMIN, kVNODESMAX)),
+      hash_on_(ParseHashOn(hash_on)) {}
+  std::shared_ptr<UpstreamPeer> Select(Upstream& upstream,
                                        const RequestContext ctx = {}) override {
-    auto peers = upstream.Available();
-    if (peers.empty()) return nullptr;
-
+    const auto& peers = upstream.Peers();
     auto fp = ComputeFingerprint(peers);
+    if (fp.empty()) return nullptr;  // No peer is currently available.
 
-    // 快路径： 指纹相同 -> 直接查环
+    // Fast path: fingerprint matches the cached ring -> direct lookup under shared lock.
     {
       std::shared_lock lk{mutex_};
       if (ring_ && ring_->fingerprint == fp) {
         return Lookup(*ring_, base::MurmurHash3(HashKey(ctx)));
       }
     }
-    // 慢路径: 写锁内重新获取 peers 并二次确认指纹，避免竞态
+    // Slow path: re-fingerprint inside the exclusive lock to absorb the race
+    // where another thread already rebuilt the ring between the two locks.
     {
       std::lock_guard lk{mutex_};
-      auto fresh_peers = upstream.Available();
-      auto fresh_fp = ComputeFingerprint(fresh_peers);
+      auto fresh_fp = ComputeFingerprint(peers);
       if (!ring_ || ring_->fingerprint != fresh_fp) {
-        ring_ = BuildRing(fresh_peers);
+        ring_ = BuildRing(peers);
       }
       return Lookup(*ring_, base::MurmurHash3(HashKey(ctx)));
     }
-    
   }
 private:
-  // 哈希环的内部表示
-  // 查找频繁， 增加和删除 很少 => 读多写少的场景
-  // 从算法复杂度看， 红黑树 对于频繁插入删除的场景频繁。
-  // 从查询多的场景， 内存连续 + 有序数组(二分查找) + CPU缓存 => 完爆红黑树， 均摊来看有序数组更好。
+  // Sorted-array ring keyed by 32-bit hash. Lookup is hot (binary search) and
+  // mutation is rare (only on peer-set change), so a contiguous array beats a
+  // red-black tree on both cache locality and constant factors.
   struct HashRing {
-    // {hash32, peer_ptr} 按 hash 升序排列
-    std::vector<std::pair<uint32_t, std::shared_ptr<UpstreamPeer>>> nodes; //sorted by hash
-    std::string fingerprint; // "peer1:w1;peer2:w2;..."
+    // {hash32, peer_ptr} sorted ascending by hash.
+    std::vector<std::pair<uint32_t, std::shared_ptr<UpstreamPeer>>> nodes;
+    // Compact identity of the peer set ("name1:w1;name2:w2;..."). Comparing
+    // this on every Select() decides whether the ring needs to be rebuilt.
+    std::string fingerprint;
   };
 
-  // 计算指纹 
-  static std::string ComputeFingerprint(const std::vector<std::shared_ptr<UpstreamPeer>>& peers) {
+  // Compute the fingerprint by filtering inline — avoids materializing a
+  // snapshot vector of available peers on each Select().
+  static std::string ComputeFingerprint(
+      const std::vector<std::shared_ptr<UpstreamPeer>>& peers) {
     std::string fp;
-    fp.reserve(peers.size() * 32); // 
+    fp.reserve(peers.size() * 32);
     for (const auto& peer : peers) {
+      if (!peer->Available(0)) continue;
       fp += peer->Config().name;
       fp += ':';
       fp += std::to_string(peer->Config().weight);
@@ -237,24 +296,27 @@ private:
     return fp;
   }
 
-  // 时间复杂度: O(N + V * N + NlogN) => O(max(V * N, NlogN))
+  // Build a fresh ring from the current set of available peers.
+  // Complexity: O(N + V*N + N log N) where V == vnodes_per_unit_.
+  // Generates `weight * V` virtual nodes per peer, sorts them by hash, and
+  // dedups collisions (rare with MurmurHash3 at typical scales).
   std::shared_ptr<const HashRing> BuildRing(
       const std::vector<std::shared_ptr<UpstreamPeer>>& peers) const {
     auto ring = std::make_shared<HashRing>();
 
-    // 估计一下虚拟节点总数， 提前预留空间
     int total_weight = 0;
     for (const auto& peer : peers) {
+      if (!peer->Available(0)) continue;
       total_weight += std::max(peer->Config().weight, 1);
     }
     ring->nodes.reserve(total_weight * vnodes_per_unit_);
 
-    // 物理节点 -> 生成虚拟节点
     for (const auto& peer : peers) {
+      if (!peer->Available(0)) continue;
       int weight = std::max(peer->Config().weight, 1);
       int vnode_cnt = weight * vnodes_per_unit_;
       for (int i = 0; i < vnode_cnt; i++) {
-        // 虚拟节点标识: peer_name#0, peer_name#1, ...
+        // Virtual-node identity: "peer_name#0", "peer_name#1", ...
         std::string vnode_key = peer->Config().name;
         vnode_key += "#";
         vnode_key += std::to_string(i);
@@ -262,33 +324,48 @@ private:
         ring->nodes.emplace_back(hash, peer);
       }
     }
-    // 按哈希值排序 O(logn)
     std::sort(ring->nodes.begin(), ring->nodes.end(),
               [](const auto& a, const auto& b) { return a.first < b.first; });
     ring->fingerprint = ComputeFingerprint(peers);
 
-    // 哈希碰撞的处理方案
-    // 方案一(采用)： 排序后去重
-    auto it = std::unique(ring->nodes.begin(), ring->nodes.end(), [](const auto& a, const auto& b) { return a.first == b.first; });
+    // Collision handling: simply drop duplicates after sorting.
+    // Alternatives considered: rehash with a new seed, or use a multimap.
+    // Dedup after sort is the simplest and is fine because MurmurHash3
+    // collisions at typical ring sizes are rare and a lost vnode just
+    // marginally skews the distribution.
+    auto it = std::unique(ring->nodes.begin(), ring->nodes.end(),
+                          [](const auto& a, const auto& b) { return a.first == b.first; });
     ring->nodes.erase(it, ring->nodes.end());
     return ring;
   }
 
-  // -- 从 RequestContext 中取哈希键 --
-  const std::string& HashKey(const RequestContext& ctx) const {
-    if (hash_on_ == "uri" && !ctx.uri.empty())        return ctx.uri;
-    if (hash_on_ == "user_id" && !ctx.user_id.empty())    return ctx.user_id;
-    if (hash_on_ == "session_id" && !ctx.session_id.empty()) return ctx.session_id;
-    // 默认 fallback: client_ip
-    if (!ctx.client_ip.empty()) return ctx.client_ip;
-
-    // 极端情况, 所有字段都为空串 "默认构造情况" , 返回静态子串。
-    static const std::string empty;
-    return empty;
+  // Parse the hash_on string once at construction so HashKey() can dispatch
+  // via a cheap switch instead of repeated string comparisons.
+  static HashOn ParseHashOn(std::string_view s) {
+    if (s == "uri")        return HashOn::kUri;
+    if (s == "user_id")    return HashOn::kUserId;
+    if (s == "session_id") return HashOn::kSessionId;
+    return HashOn::kClientIp;
   }
 
+  // Returns the routing key for the configured `hash_on` field.
+  // Falls back to client_ip when the configured field is empty so a request
+  // missing optional context still has a deterministic mapping.
+  const std::string& HashKey(const RequestContext& ctx) const {
+    static const std::string empty;
+    switch (hash_on_) {
+      case HashOn::kUri:       if (!ctx.uri.empty())        return ctx.uri;        break;
+      case HashOn::kUserId:    if (!ctx.user_id.empty())    return ctx.user_id;    break;
+      case HashOn::kSessionId: if (!ctx.session_id.empty()) return ctx.session_id; break;
+      case HashOn::kClientIp:  break;
+    }
+    return ctx.client_ip.empty() ? empty : ctx.client_ip;
+  }
+
+  // Binary-search the ring for the first vnode with hash >= key, wrapping to
+  // the head when the key is larger than every hash on the ring.
   static std::shared_ptr<UpstreamPeer> Lookup(const HashRing& ring, uint32_t hash) {
-    auto it = std::lower_bound(ring.nodes.begin(), ring.nodes.end(), hash, 
+    auto it = std::lower_bound(ring.nodes.begin(), ring.nodes.end(), hash,
         [](const auto& node, uint32_t h) { return node.first < h; });
     if (it == ring.nodes.end()) {
       it = ring.nodes.begin();
@@ -297,10 +374,11 @@ private:
   }
 private:
   int vnodes_per_unit_;
-  std::string hash_on_;
+  HashOn hash_on_;
   mutable std::shared_mutex mutex_;
   std::shared_ptr<const HashRing> ring_;
 };
+
 namespace detail {
 
 inline std::unique_ptr<LoadBalancer> MakeRoundRobinLB() {
@@ -332,6 +410,9 @@ inline std::unique_ptr<LoadBalancer> MakeConsistentHashLB() {
 }
 } // namespace detail
 
+// String-to-factory entry point used by GatewayServer when registering a route.
+// Returns nullptr for an unknown algorithm name so the caller can reject the
+// route configuration explicitly instead of silently defaulting.
 inline std::unique_ptr<LoadBalancer> CreateLoadBalancer(std::string_view algo) {
   using Creator = std::unique_ptr<LoadBalancer> (*)();
 
