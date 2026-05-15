@@ -31,6 +31,10 @@ public:
             const std::string& name);
   ~TcpServer();
 
+  const std::string& Name() const {
+    return name_;
+  }
+
   // A value of 0 keeps all I/O on the base loop. A positive value creates
   // that many worker loops.
   void SetThreadNum(int num_threads) { thread_num_ = num_threads; }

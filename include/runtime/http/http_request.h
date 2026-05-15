@@ -27,6 +27,12 @@ public:
 
   // Adds a header line. The field name is normalized to lowercase.
   void AddHeader(std::string_view field, std::string_view value);
+  
+  // Update header. field: new_value
+  void SetHeader(std::string_view field, std::string_view value);
+
+  // Remove header.
+  bool RemoveHeader(std::string_view field);
 
   // Looks up a header value with case-insensitive field matching.
   std::string_view GetHeader(std::string_view field) const;

@@ -2,7 +2,100 @@
 
 #include "runtime/log/logger.h"
 
+#include <array>
+#include <atomic>
+#include <chrono>
+
 namespace runtime::gateway {
+
+namespace {
+// RFC 7230 §6.1 hop-by-hop headers — 不能透传给上游
+constexpr std::array<std::string_view, 9> kHopByHop = {
+  "connection", "keep-alive", "proxy-connection",
+  "proxy-authenticate", "proxy-authorization",
+  "te", "trailer", "transfer-encoding", "upgrade",
+};
+
+// 客户端可能伪造的 forwarded 系列 - 信任策略: 剥掉重写, 不要追加
+constexpr std::array<std::string_view, 4> kClientSpoofable = {
+  "x-real-ip", "x-forwarded-proto", "x-forwarded-host", "x-forwarded-port",
+};
+
+// 单调时间戳 (ns) + 进程内原子序号, 拼成 16-hex + '-' + 16-hex
+// 不依赖 UUID 库, 单机内唯一即可 (跨节点请在网关前置层做)
+std::string GenRequestId() {
+  static std::atomic<std::uint64_t> seq{0};
+  const auto ts = static_cast<std::uint64_t>(
+      std::chrono::steady_clock::now().time_since_epoch().count());
+  const auto n = seq.fetch_add(1, std::memory_order_relaxed);
+  char buf[34];
+  std::snprintf(buf, sizeof(buf), "%016lx-%016lx",
+                static_cast<unsigned long>(ts),
+                static_cast<unsigned long>(n));
+  return std::string(buf, 33);
+}
+
+void RewriteForUpstream(runtime::http::HttpRequest& req,
+                        const std::string& client_ip,
+                        std::string_view scheme,
+                        std::string_view gateway_name,
+                        std::string_view request_id) {
+  // 保存原始 Host, 写入 X-Forwarded-Host (BuildRequest 会改写真正的 Host)
+  std::string orig_host(req.GetHeader("host"));
+
+  // Connection 列举的字段视同 hop-by-hop, 一并删除
+  const auto conn_hdr = req.GetHeader("connection");
+  if (!conn_hdr.empty()) {
+    std::size_t i = 0;
+    while (i < conn_hdr.size()) {
+      const auto comma = conn_hdr.find(',', i);
+      auto tok = conn_hdr.substr(
+          i, comma == std::string_view::npos ? std::string_view::npos : comma - i);
+      while (!tok.empty() && (tok.front() == ' ' || tok.front() == '\t')) tok.remove_prefix(1);
+      while (!tok.empty() && (tok.back()  == ' ' || tok.back()  == '\t')) tok.remove_suffix(1);
+      if (!tok.empty()) req.RemoveHeader(tok);
+      if (comma == std::string_view::npos) break;
+      i = comma + 1;
+    }
+  }
+
+  for (auto h : kHopByHop) req.RemoveHeader(h);
+
+  // 剥离客户端伪造的 forwarded 系列 (XFF 单独处理: append)
+  for (auto h : kClientSpoofable) req.RemoveHeader(h);
+
+  // XFF: 追加而非替换, 用 SetHeader 绕开 emplace 静默丢弃语义
+  std::string xff(req.GetHeader("x-forwarded-for"));
+  if (xff.empty()) {
+    xff = client_ip;
+  } else {
+    xff += ", ";
+    xff += client_ip;
+  }
+  req.SetHeader("x-forwarded-for", xff);
+
+  req.SetHeader("x-real-ip", client_ip);
+  req.SetHeader("x-forwarded-proto", scheme);
+  if (!orig_host.empty()) req.SetHeader("x-forwarded-host", orig_host);
+
+  // Via: RFC 7230 §5.7.1
+  std::string via;
+  if (const auto prev = req.GetHeader("via"); !prev.empty()) {
+    via.assign(prev);
+    via += ", ";
+  }
+  via += "1.1 ";
+  via.append(gateway_name);
+  req.SetHeader("via", via);
+
+  // 全链路追踪 ID: 有则透传, 无则生成
+  if (req.GetHeader("x-request-id").empty() && !request_id.empty()) {
+    req.SetHeader("x-request-id", request_id);
+  }
+}
+}  // namespace
+
+
 
 GatewayServer::GatewayServer(runtime::net::EventLoop* loop,
                              const runtime::net::InetAddress& addr,
@@ -142,11 +235,10 @@ void GatewayServer::OnMessage(const TcpConnectionPtr& conn,
 
     // 注入真实的客户端信息,让上游知道真实 IP
     const std::string client_ip = conn->PeerAddress().ToIp();
-    const auto existing_xff = req.GetHeader("x-forwarded-for");
-    const std::string xff = existing_xff.empty() 
-                                ? client_ip
-                                : std::string(existing_xff) + ", " + client_ip;
-    req.AddHeader("x-forwarded-for", xff);
+    RewriteForUpstream(req, client_ip,
+                       /*scheme=*/"http",
+                       /*gateway_name=*/server_.Name(),
+                       /*request_id=*/GenRequestId());
 
     // 限流, 路由匹配之前按照流量选择过滤
     if (rate_limiter_) {

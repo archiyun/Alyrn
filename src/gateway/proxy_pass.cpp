@@ -429,7 +429,13 @@ std::string ProxyPass::BuildRequest(const runtime::http::HttpRequest& req,
   out += " HTTP/1.1\r\n";
 
   for (const auto& [k, v] : req.Headers()) {
-    if (k == "host" || k == "connection") continue;
+    // double protection
+    if (k == "host" || k == "connection" ||
+      k == "keep-alive" || k == "proxy-connection" ||
+      k == "proxy-authenticate" || k == "proxy-authorization" ||
+      k == "te" || k == "trailer" || k == "transfer-encoding" || k == "upgrade") {
+    continue;
+  }
     out += k; out += ": "; out += v; out += "\r\n";
   }
   out += "host: ";

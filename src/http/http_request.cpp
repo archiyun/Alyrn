@@ -35,6 +35,14 @@ std::string_view HttpRequest::GetHeader(std::string_view field) const {
   return it->second;
 }
 
+void HttpRequest::SetHeader(std::string_view field, std::string_view value) {
+  headers_[ToLower(field)] = Trim(value);
+}
+
+bool HttpRequest::RemoveHeader(std::string_view field) {
+  return headers_.erase(ToLower(field)) > 0;
+}
+
 bool HttpRequest::KeepAlive() const {
   const auto conn = GetHeader("connection");
   if (static_cast<uint8_t>(version_) < static_cast<uint8_t>(Version::Http10)) {
