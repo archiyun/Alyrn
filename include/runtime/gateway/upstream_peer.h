@@ -52,9 +52,13 @@ public:
   explicit UpstreamPeer(UpstreamPeerConfig config) : config_(std::move(config)) {
     // Start fully eligible; OnFailure/OnSuccess move it within [0, config_.weight].
     state_.effective_weight.store(config_.weight, std::memory_order_relaxed);
+    // Pre-format "host:port" once; reused per request in BuildRequest hot path.
+    host_port_.reserve(config_.host.size() + 6);
+    host_port_.append(config_.host).append(":").append(std::to_string(config_.port));
   }
 
   const UpstreamPeerConfig& Config() const { return config_; }
+  const std::string& HostPort() const { return host_port_; }
   UpstreamPeerState& State() { return state_; }
 
   // Returns false if: (1) marked down by health checker, or (2) fail count has reached
@@ -112,6 +116,7 @@ public:
 private:
   UpstreamPeerConfig config_;
   UpstreamPeerState state_;
+  std::string host_port_;
 };
 
 }  // namespace runtime::gateway

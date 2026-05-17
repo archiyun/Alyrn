@@ -1,15 +1,16 @@
 #pragma once
 
-#include "runtime/base/noncopyable.h"
 #include "runtime/net/buffer.h"
 #include "runtime/net/channel.h"
 #include "runtime/net/inet_address.h"
 #include "runtime/net/socket.h"
 #include "runtime/time/timestamp.h"
+#include "runtime/base/noncopyable.h"
 
 #ifdef RUNTIME_ENABLE_SSL
 #include <openssl/ssl.h>
 #endif
+
 #include <any>
 #include <functional>
 #include <memory>
@@ -52,6 +53,8 @@ public:
   // Sends a message on the connection. The actual write may happen
   // immediately or later in the owning loop thread.
   void Send(const std::string& message);
+  void Send(std::string_view message);
+  void Send(const void* data, std::size_t len);
 
   // Initiates a graceful shutdown of the write side.
   void Shutdown();
@@ -108,6 +111,7 @@ private:
   void HandleError();
 
   void SendInLoop(const std::string& message);
+  void SendInLoop(const void* data, std::size_t len);
   void ShutdownInLoop();
 
 private:

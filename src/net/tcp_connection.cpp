@@ -38,19 +38,42 @@ TcpConnection::~TcpConnection() {
 }
 
 void TcpConnection::Send(const std::string& message) {
-  if (state_ == TCPState::kConnected) {
-    if (loop_->IsInLoopThread()) {
-      SendInLoop(message);
-    } else {
-      auto self = shared_from_this();
-      loop_->RunInLoop([self, message] { self->SendInLoop(message); });
-    }
+  Send(message.data(), message.size());
+  // if (state_ == TCPState::kConnected) {
+  //   if (loop_->IsInLoopThread()) {
+  //     SendInLoop(message);
+  //   } else {
+  //     auto self = shared_from_this();
+  //     loop_->RunInLoop([self, message] { self->SendInLoop(message); });
+  //   }
+  // } else {
+  //   LOG_WARN() << "send ignored on disconnected connection: name=" << name_;
+  // }
+}
+
+void TcpConnection::Send(std::string_view message) {
+  Send(message.data(), message.size());
+}
+
+void TcpConnection::Send(const void* data, std::size_t len) {
+  if (state_ != TCPState::kConnected) {
+    return;
+  }
+  if (loop_->IsInLoopThread()) {
+    SendInLoop(data, len);
   } else {
-    LOG_WARN() << "send ignored on disconnected connection: name=" << name_;
+    auto self = shared_from_this();
+    std::string copy(static_cast<const char*>(data), len);
+    loop_->RunInLoop([self, copy = std::move(copy)] { self->SendInLoop(copy.data(), copy.size());});
   }
 }
 
 void TcpConnection::SendInLoop(const std::string& message) {
+  SendInLoop(message.data(), message.size());
+}
+
+
+void TcpConnection::SendInLoop(const void* data, std::size_t len) {
   RUNTIME_ASSERT(loop_->IsInLoopThread(),
                  "TcpConnection::SendInLoop called from wrong thread");
   if (state_ == TCPState::kDisconnected)
@@ -60,7 +83,7 @@ void TcpConnection::SendInLoop(const std::string& message) {
   if (!channel_->IsWriting() && output_buffer_.ReadableBytes() == 0) {
 #ifdef RUNTIME_ENABLE_SSL
     if (ssl_) {
-      nwrote = SSL_write(ssl_, message.data(), static_cast<int>(message.size()));
+      nwrote = SSL_write(ssl_, data, static_cast<int>(len));
       if (nwrote < 0) {
         const int ssl_err = SSL_get_error(ssl_, static_cast<int>(nwrote));
         nwrote = 0;
@@ -72,7 +95,7 @@ void TcpConnection::SendInLoop(const std::string& message) {
       }
     } else {
 #endif
-      nwrote = ::write(channel_->Fd(), message.data(), message.size());
+      nwrote = ::write(channel_->Fd(), data, len);
       if (nwrote < 0) {
         nwrote = 0;
         if (errno != EWOULDBLOCK) {
@@ -87,8 +110,8 @@ void TcpConnection::SendInLoop(const std::string& message) {
 #endif
   }
 
-  if (static_cast<std::size_t>(nwrote) < message.size()) {
-    output_buffer_.Append(message.data() + nwrote, message.size() - nwrote);
+  if (static_cast<std::size_t>(nwrote) < len) {
+    output_buffer_.Append(static_cast<const char*>(data) + nwrote,len - nwrote);
     if (!channel_->IsWriting()) {
       channel_->EnableWriting();
     }
@@ -120,9 +143,9 @@ void TcpConnection::ConnectEstablished() {
   channel_->Tie(shared_from_this());
   channel_->EnableReading();
 
-  LOG_INFO() << "tcp connection established: name=" << name_
-             << " local=" << local_addr_.ToIpPort()
-             << " peer=" << peer_addr_.ToIpPort();
+  LOG_DEBUG() << "tcp connection established: name=" << name_
+              << " local=" << local_addr_.ToIpPort()
+              << " peer=" << peer_addr_.ToIpPort();
 
   if (connection_callback_) {
     connection_callback_(shared_from_this());
@@ -138,8 +161,8 @@ void TcpConnection::ConnectDestroyed() {
     channel_->DisableAll();
   }
 
-  LOG_INFO() << "tcp connection destroyed: name=" << name_
-             << " peer=" << peer_addr_.ToIpPort();
+  LOG_DEBUG() << "tcp connection destroyed: name=" << name_
+              << " peer=" << peer_addr_.ToIpPort();
 
   if (notify_state_change && connection_callback_) {
     connection_callback_(shared_from_this());
@@ -294,8 +317,8 @@ void TcpConnection::HandleClose() {
   SetState(TCPState::kDisconnected);
   channel_->DisableAll();
 
-  LOG_INFO() << "tcp connection closed: name=" << name_
-             << " peer=" << peer_addr_.ToIpPort();
+  LOG_DEBUG() << "tcp connection closed: name=" << name_
+              << " peer=" << peer_addr_.ToIpPort();
 
   TcpConnectionPtr guard(shared_from_this());
   if (connection_callback_) {

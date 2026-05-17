@@ -4,11 +4,11 @@
 #include "runtime/gateway/upstream.h"
 #include "runtime/gateway/upstream_peer.h"
 #include "runtime/gateway/upstream_conn_pool.h"
+#include "runtime/http/http_request.h"
+#include "runtime/http/http_types.h"
 #include "runtime/net/buffer.h"
 #include "runtime/net/tcp_connection.h"
 #include "runtime/net/tcp_client.h"
-#include "runtime/http/http_request.h"
-#include "runtime/http/http_types.h"
 
 #include <memory>
 #include <string>
@@ -48,7 +48,7 @@ public:
 
   void Start();
 private:
-  static std::string RewriteHeaders(std::string_view raw_headers);
+  static void RewriteHeaders(std::string_view raw_headers, std::string& out);
   void ParseFraming(std::string_view raw_headers, int status);
   void ConnectTo(std::shared_ptr<UpstreamPeer> peer);
   void ConnectToWithPool(std::shared_ptr<UpstreamPeer> peer,

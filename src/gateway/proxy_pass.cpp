@@ -96,7 +96,6 @@ void UpstreamRequest::ConnectToWithPool(std::shared_ptr<UpstreamPeer> peer,
     if (auto self = weak_self.lock()) self->OnUpstreamConnChange(up);
   });
   conn.Send(request_bytes_);
-  LOG_INFO() << "proxy: reuse pooled conn -> " << peer_->Config().name;
 }
 
 void UpstreamRequest::ConnectTo(std::shared_ptr<UpstreamPeer> peer) {
@@ -137,7 +136,6 @@ void UpstreamRequest::OnUpstreamConnChange(const TcpConnectionPtr& up_conn) {
     up_conn->SetTcpNoDelay(true);
     phase_ = Phase::kSendingRequest;
     up_conn->Send(request_bytes_);
-    LOG_INFO() << "proxy: upstream connected " << peer_->Config().name;
     return;
   }
 
@@ -185,6 +183,13 @@ void UpstreamRequest::OnUpstreamMessage(const TcpConnectionPtr& /*up*/,
   if (phase_ == Phase::kSendingRequest) {
     phase_ = Phase::kReadingHeaders;
   }
+
+  // Coalesce headers + first body chunk from this callback into a single
+  // Send -> single write() syscall. We append body bytes onto the same
+  // rewritten buffer so SendInLoop sees one contiguous payload.
+  std::string outbound;
+  bool finalize_after = false;
+
   if (phase_ == Phase::kReadingHeaders) {
     const char* crlf = reinterpret_cast<const char*>(
       std::memchr(buf.Peek(), '\r', buf.ReadableBytes())
@@ -195,14 +200,11 @@ void UpstreamRequest::OnUpstreamMessage(const TcpConnectionPtr& /*up*/,
     int status = 0;
     if (crlf) {
       std::string_view first_line(buf.Peek(), crlf - buf.Peek());
-      // Status line layout: "HTTP/1.1 503 Service Unavailable"
-      // first_line[8] is the space between version and status code.
       if (first_line.size() >= 12 && first_line[8] == ' ') {
         auto code_sv = first_line.substr(9, 3);
         std::from_chars(code_sv.data(), code_sv.data() + code_sv.size(), status);
       }
     }
-    // Feed the circuit breaker: 5xx counts as a failure, anything else as success.
     if (cb_) {
       if (status >= 500) cb_->OnFailure();
       else               cb_->OnSuccess();
@@ -210,35 +212,36 @@ void UpstreamRequest::OnUpstreamMessage(const TcpConnectionPtr& /*up*/,
 
     std::string_view raw_headers(buf.Peek(), end - buf.Peek() + 4);
     ParseFraming(raw_headers, status);
-    client->Send(RewriteHeaders(raw_headers));
+    // Reserve once for headers + the body bytes we already have in buf so the
+    // subsequent body append below stays in the same allocation.
+    outbound.reserve(raw_headers.size() + 64 +
+                     (buf.ReadableBytes() - raw_headers.size()));
+    RewriteHeaders(raw_headers, outbound);
     buf.Retrieve(raw_headers.size());
     phase_ = Phase::kForwardingBody;
 
-    // Immediate completion: HEAD, 1xx, 204, 304, or Content-Length: 0.
     if (framing_ == BodyFraming::kNoBody ||
         (framing_ == BodyFraming::kContentLength && body_remaining_ == 0)) {
+      client->Send(std::string_view(outbound));
       Finalize();
       return;
     }
-    // Fall through: bytes remaining in buf may already be body data.
   }
+
   if (phase_ == Phase::kForwardingBody && buf.ReadableBytes() > 0) {
+    const uint64_t n = (framing_ == BodyFraming::kContentLength)
+                         ? std::min<uint64_t>(buf.ReadableBytes(), body_remaining_)
+                         : buf.ReadableBytes();
+    outbound.append(buf.Peek(), n);
+    buf.Retrieve(n);
     if (framing_ == BodyFraming::kContentLength) {
-      const uint64_t n = std::min<uint64_t>(buf.ReadableBytes(), body_remaining_);
-      client->Send(std::string(buf.Peek(), n));
-      buf.Retrieve(n);
       body_remaining_ -= n;
-      if (body_remaining_ == 0) {
-        Finalize();
-        return;
-      }
-    } else {
-      // chunked or close-delimited: stream through verbatim and let the
-      // upstream FIN tell us when the response is over.
-      client->Send(std::string(buf.Peek(), buf.ReadableBytes()));
-      buf.RetrieveAll();
+      if (body_remaining_ == 0) finalize_after = true;
     }
   }
+
+  if (!outbound.empty()) client->Send(std::string_view(outbound));
+  if (finalize_after) Finalize();
 }
 
 void UpstreamRequest::ParseFraming(std::string_view raw_headers, int status) {
@@ -330,8 +333,7 @@ void UpstreamRequest::Send502() {
   LOG_WARN() << "proxy: 502 -> client, upstream=" << peer_->Config().name; 
 }
 
-std::string UpstreamRequest::RewriteHeaders(std::string_view raw) {
-  std::string out;
+void UpstreamRequest::RewriteHeaders(std::string_view raw, std::string& out) {
   out.reserve(raw.size() + 64);
 
   const char* p   = raw.data();
@@ -355,7 +357,6 @@ std::string UpstreamRequest::RewriteHeaders(std::string_view raw) {
 
     if (line.empty()) break;  // Empty line marks the end of the header block.
   }
-  return out;
 }
 
 void UpstreamRequest::Finalize() {
@@ -439,9 +440,7 @@ std::string ProxyPass::BuildRequest(const runtime::http::HttpRequest& req,
     out += k; out += ": "; out += v; out += "\r\n";
   }
   out += "host: ";
-  out += peer.Config().host;
-  out += ':';
-  out += std::to_string(peer.Config().port);
+  out += peer.HostPort();
   out += "\r\nconnection: keep-alive\r\n\r\n";
   if (!req.Body().empty()) out += req.Body();
   return out;
