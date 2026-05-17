@@ -3,7 +3,7 @@
 // 编译
 // cmake --build build-tests --target fallback_config_smoke_test -j$(nproc)
 // 运行
-// ./build-tests/fallback_config_smoke_test
+// ./build-tests/tests/fallback_config_smoke_test
 
 #include "runtime/gateway/fallback_config.h"
 #include "runtime/http/http_types.h"

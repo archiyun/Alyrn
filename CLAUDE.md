@@ -21,15 +21,16 @@ cmake --build build -j$(nproc)
 cd build-tests && ctest --output-on-failure
 
 # 直接运行某个 smoke test（不需要 GTest）
-./build-tests/http_smoke_test
-./build-tests/buffer_smoke_test
+# 所有测试二进制都在 build-tests/tests/ 下（CMake 子目录布局），examples 在 build-tests/examples/
+./build-tests/tests/http_smoke_test
+./build-tests/tests/buffer_smoke_test
 
 # GTest 测试套件（需要系统安装 libgtest-dev）
-./build-tests/runtime_unit_tests          # 单元测试
-./build-tests/runtime_integration_tests   # 集成测试（含 HTTP 路由测试）
+./build-tests/tests/runtime_unit_tests          # 单元测试
+./build-tests/tests/runtime_integration_tests   # 集成测试（含 HTTP 路由测试）
 
 # 运行单个 GTest 用例
-./build-tests/runtime_integration_tests --gtest_filter="HttpRouterTest.*"
+./build-tests/tests/runtime_integration_tests --gtest_filter="HttpRouterTest.*"
 ```
 
 **注意**：GTest 是可选依赖，`tests/CMakeLists.txt` 用 `find_package(GTest CONFIG QUIET)` 检测，找不到时跳过 `runtime_unit_tests` 和 `runtime_integration_tests`，但 smoke tests 始终构建。

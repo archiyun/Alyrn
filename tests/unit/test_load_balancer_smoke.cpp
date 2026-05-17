@@ -3,7 +3,7 @@
 // 编译
 // cmake --build build-tests --target load_balancer_smoke_test -j$(nproc)
 // 运行
-// ./build-tests/load_balancer_smoke_test
+// ./build-tests/tests/load_balancer_smoke_test
 
 #include "runtime/gateway/load_balancer.h"
 #include "runtime/gateway/upstream.h"

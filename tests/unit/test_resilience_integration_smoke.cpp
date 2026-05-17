@@ -7,7 +7,7 @@
 // 编译
 // cmake --build build-tests --target resilience_integration_smoke_test -j$(nproc)
 // 运行
-// ./build-tests/resilience_integration_smoke_test
+// ./build-tests/tests/resilience_integration_smoke_test
 
 #include "runtime/gateway/circuit_breaker.h"
 #include "runtime/gateway/fallback_config.h"

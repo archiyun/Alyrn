@@ -3,7 +3,7 @@
 // 编译
 // cmake --build build-tests --target rate_limiter_smoke_test -j$(nproc)
 // 运行
-// ./build-tests/rate_limiter_smoke_test
+// ./build-tests/tests/rate_limiter_smoke_test
 
 #include "runtime/gateway/rate_limiter.h"
 

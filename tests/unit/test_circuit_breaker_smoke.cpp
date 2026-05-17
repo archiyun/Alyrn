@@ -3,7 +3,8 @@
 // 编译
 // cmake --build build-tests --target circuit_breaker_smoke_test -j$(nproc)
 // 运行
-// ./build-tests/circuit_breaker_smoke_test
+// ./build-tests/tests/circuit_breaker_smoke_test
+// 或 cd build-tests && ctest -R circuit_breaker --output-on-failure
 
 #include "runtime/gateway/circuit_breaker.h"
 
