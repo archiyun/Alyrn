@@ -1,6 +1,5 @@
 #include "runtime/net/buffer.h"
 
-#include <algorithm>
 #include <cstring>
 #include <sys/uio.h>
 #include <unistd.h>
@@ -11,93 +10,12 @@
 
 namespace runtime::net {
 
-
 Buffer::Buffer(std::size_t initial_size)
   : buffer_(kCheapPrepend + initial_size),
     reader_index_(kCheapPrepend),
     writer_index_(kCheapPrepend) {
   RUNTIME_ASSERT(reader_index_ == writer_index_, "buffer must start empty");
   AssertInvariant();
-}
-
-std::size_t Buffer::ReadableBytes() const {
-  return writer_index_ - reader_index_;
-}
-
-std::size_t Buffer::WritableBytes() const {
-  return buffer_.size() - writer_index_;
-}
-
-std::size_t Buffer::PrependableBytes() const {
-  return reader_index_;
-}
-
-const char* Buffer::Peek() const {
-  return Begin() + reader_index_;
-}
-
-void Buffer::Retrieve(std::size_t len) {
-  RUNTIME_ASSERT(len <= ReadableBytes(), "Retrieve: len exceeds readable bytes");
-  if (len < ReadableBytes()) {
-    reader_index_ += len;
-    AssertInvariant();
-    return;
-  }
-  RetrieveAll();
-}
-
-void Buffer::RetrieveUntil(const char* end) {
-  RUNTIME_ASSERT(end >= Peek(), "RetrieveUntil: end pointer is before Peek()");
-  RUNTIME_ASSERT(end <= Peek() + ReadableBytes(),
-                 "RetrieveUntil: end pointer is past the readable region");
-  Retrieve(static_cast<std::size_t>(end - Peek()));
-}
-
-void Buffer::RetrieveAll() {
-  reader_index_ = kCheapPrepend;
-  writer_index_ = kCheapPrepend;
-}
-
-std::string Buffer::RetrieveAsString(std::size_t len) {
-  len = std::min(len, ReadableBytes());
-  std::string result(Peek(), len);
-  Retrieve(len);
-  return result;
-}
-
-std::string Buffer::RetrieveAllAsString() {
-  return RetrieveAsString(ReadableBytes());
-}
-
-void Buffer::Append(const char* data, std::size_t len) {
-  EnsureWritableBytes(len);
-  std::memcpy(BeginWrite(), data, len);
-  HasWritten(len);
-}
-
-void Buffer::Append(const std::string& str) {
-  Append(str.data(), str.size());
-}
-
-char* Buffer::BeginWrite() {
-  return Begin() + writer_index_;
-}
-
-const char* Buffer::BeginWrite() const {
-  return Begin() + writer_index_;
-}
-
-void Buffer::HasWritten(std::size_t len) {
-  RUNTIME_ASSERT(len <= WritableBytes(), "HasWritten: len exceeds writable bytes");
-  writer_index_ += len;
-  AssertInvariant();
-}
-
-void Buffer::EnsureWritableBytes(std::size_t len) {
-  if (WritableBytes() >= len) {
-    return;
-  }
-  MakeSpace(len);
 }
 
 ssize_t Buffer::ReadFd(int fd, int* saved_errno) {
@@ -168,14 +86,6 @@ ssize_t Buffer::WriteFd(int fd, int* saved_errno) {
   return n;
 }
 
-char* Buffer::Begin() {
-  return buffer_.data();
-}
-
-const char* Buffer::Begin() const {
-  return buffer_.data();
-}
-
 void Buffer::MakeSpace(std::size_t len) {
   if (WritableBytes() + PrependableBytes() < len + kCheapPrepend) {
     buffer_.resize(writer_index_ + len);
@@ -190,33 +100,6 @@ void Buffer::MakeSpace(std::size_t len) {
   reader_index_ = kCheapPrepend;
   writer_index_ = reader_index_ + readable;
   AssertInvariant();
-}
-
-
-const char* Buffer::FindCRLF() const {
-  const char* begin = Peek();
-  const char* end = begin + ReadableBytes();
-  if (end - begin < 2) return nullptr;
-  if (auto it = std::search(begin, end, 
-                            std::string_view(kCRLF).begin(),
-                            std::string_view(kCRLF).end());
-           it != end) {
-    return it;
-  }
-  return nullptr;
-}
-
-const char* Buffer::FindCRLFCRLF() const {
-  const char* begin = Peek();
-  const char* end = begin + ReadableBytes();
-  if (end - begin < 4) return nullptr;
-  if (auto it = std::search(begin, end, 
-                            std::string_view(kCRLFCRLF).begin(),
-                            std::string_view(kCRLFCRLF).end());
-           it != end) {
-    return it;
-  }
-  return nullptr;
 }
 
 }  // namespace runtime::net

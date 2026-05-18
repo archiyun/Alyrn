@@ -114,6 +114,9 @@ endif()
 
 target_compile_features(runtime_net PUBLIC cxx_std_20)
 
+# memmem 是 GNU 扩展, buffer.h 内联用到, 通过 PUBLIC 让上层库也能 include buffer.h
+target_compile_definitions(runtime_net PUBLIC _GNU_SOURCE)
+
 set(RUNTIME_HTTP_SOURCES
     src/http/http_types.cpp
     src/http/http_request.cpp

@@ -1,9 +1,14 @@
+// Copyright (c) 2026 Aresna
+// SPDX-License-Identifier: MIT
+// Reference: https://github.com/chenshuo/muduo/blob/master/muduo/net/Buffer.h
 #pragma once
 
 #include "runtime/base/noncopyable.h"
 #include "runtime/net/net_assert.h"
 
+#include <algorithm>
 #include <cstddef>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -49,50 +54,99 @@ public:
   explicit Buffer(std::size_t initial_size = kInitialSize);
 
   // Returns the number of bytes currently available for reading.
-  std::size_t ReadableBytes() const;
+  std::size_t ReadableBytes() const {
+    return writer_index_ - reader_index_;
+  }
 
   // Returns the number of bytes currently available for appending.
-  std::size_t WritableBytes() const;
+  std::size_t WritableBytes() const {
+    return buffer_.size() - writer_index_;
+  }
 
   // Returns the number of bytes before the readable region.
-  std::size_t PrependableBytes() const;
+  std::size_t PrependableBytes() const {
+    return reader_index_;
+  }
 
   // Returns a pointer to the beginning of the readable region.
-  const char* Peek() const;
+  const char* Peek() const {
+    return Begin() + reader_index_;
+  }
 
   // Consumes len bytes from the readable region.
-  void Retrieve(std::size_t len);
+  void Retrieve(std::size_t len) {
+  RUNTIME_ASSERT(len <= ReadableBytes(), "Retrieve: len exceeds readable bytes");
+  if (len < ReadableBytes()) {
+    reader_index_ += len;
+    AssertInvariant();
+    return;
+  }
+  RetrieveAll();
+  }
 
   // Consumes bytes up to end, where end must point into the readable region.
-  void RetrieveUntil(const char* end);
+  void RetrieveUntil(const char* end) {
+  RUNTIME_ASSERT(end >= Peek(), "RetrieveUntil: end pointer is before Peek()");
+  RUNTIME_ASSERT(end <= Peek() + ReadableBytes(),
+                 "RetrieveUntil: end pointer is past the readable region");
+  Retrieve(static_cast<std::size_t>(end - Peek()));
+  }
 
   // Resets the buffer to an empty state.
-  void RetrieveAll();
+  void RetrieveAll() {
+    reader_index_ = kCheapPrepend;
+    writer_index_ = kCheapPrepend;
+  }
 
   // Returns and consumes len bytes as a string.
-  std::string RetrieveAsString(std::size_t len);
+  std::string RetrieveAsString(std::size_t len) {
+    len = std::min(len, ReadableBytes());
+    std::string res(Peek(), len);
+    Retrieve(len);
+    return res;
+  }
 
   // Returns and consumes the entire readable region as a string.
-  std::string RetrieveAllAsString();
+  std::string RetrieveAllAsString() {
+    return RetrieveAsString(ReadableBytes());
+  }
 
   // Appends raw bytes to the writable region.
-  void Append(const char* data, std::size_t len);
+  void Append(const char* data, std::size_t len) {
+    EnsureWritableBytes(len);
+    std::memcpy(BeginWrite(), data, len);
+    HasWritten(len);
+  }
 
   // Appends a string to the writable region.
-  void Append(const std::string& str);
+  void Append(const std::string& str) {
+    Append(str.data(), str.size());
+  }
 
   // Returns a pointer to the beginning of the writable region.
-  char* BeginWrite();
+  char* BeginWrite() {
+    return Begin() + writer_index_;
+  }
 
   // Returns a pointer to the beginning of the writable region.
-  const char* BeginWrite() const;
+  const char* BeginWrite() const {
+    return Begin() + writer_index_;
+  }
 
   // Advances the writer index after len bytes have been written into the
   // writable region by external code.
-  void HasWritten(std::size_t len);
+  void HasWritten(std::size_t len) {
+    RUNTIME_ASSERT(len <= WritableBytes(), "HasWritten: len exceeds writable bytes");
+    writer_index_ += len;
+    AssertInvariant();
+  }
+
 
   // Ensures that at least len writable bytes are available.
-  void EnsureWritableBytes(std::size_t len);
+  void EnsureWritableBytes(std::size_t len) {
+    if (WritableBytes() >= len) return;
+    MakeSpace(len);
+  }
 
   // Reads from fd into the buffer.
   //
@@ -113,12 +167,25 @@ public:
   ssize_t WriteSslFd(SSL* ssl, int* saved_errno);
 #endif
 
-  // Find "\r\n" and "\r\n\r\n" for HTTP
-  const char* FindCRLF() const;
-  const char* FindCRLFCRLF() const;
+  // Find "\r\n" and "\r\n\r\n" in the readable region for HTTP parsing.
+  // Uses glibc memmem (Two-Way algorithm) to guarantee linear time and avoid
+  // the constant-factor blow-up of memchr-then-restart on adversarial inputs
+  // with a high density of stray '\r' bytes.
+  // Requires _GNU_SOURCE, which is defined PUBLIC on the runtime_net target.
+  const char* FindCRLF() const {
+    const std::size_t n = ReadableBytes();
+    if (n < 2) return nullptr;
+    return static_cast<const char*>(::memmem(Peek(), n, "\r\n", 2));
+  }
+
+  const char* FindCRLFCRLF() const {
+    const std::size_t n = ReadableBytes();
+    if (n < 4) return nullptr;
+    return static_cast<const char*>(::memmem(Peek(), n, "\r\n\r\n", 4));
+  }
 private:
-  char* Begin();
-  const char* Begin() const;
+  char* Begin()  { return buffer_.data(); }
+  const char* Begin() const { return buffer_.data(); }
 
   // Makes room for len additional writable bytes, either by resizing the
   // underlying storage or by moving readable bytes toward the front.
