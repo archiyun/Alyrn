@@ -1,6 +1,8 @@
 #include "runtime/net/tcp_connection.h"
+#include "runtime/net/channel.h"
 #include "runtime/net/event_loop.h"
 #include "runtime/net/net_assert.h"
+#include "runtime/net/socket.h"
 #include "runtime/log/logger.h"
 
 #ifdef RUNTIME_ENABLE_SSL
@@ -37,27 +39,21 @@ TcpConnection::~TcpConnection() {
 #endif
 }
 
-void TcpConnection::Send(const std::string& message) {
-  Send(message.data(), message.size());
-  // if (state_ == TCPState::kConnected) {
-  //   if (loop_->IsInLoopThread()) {
-  //     SendInLoop(message);
-  //   } else {
-  //     auto self = shared_from_this();
-  //     loop_->RunInLoop([self, message] { self->SendInLoop(message); });
-  //   }
-  // } else {
-  //   LOG_WARN() << "send ignored on disconnected connection: name=" << name_;
-  // }
+void TcpConnection::SetEdgeTriggered(bool et) {
+  channel_->SetEdgeTriggered(et);
 }
 
-void TcpConnection::Send(std::string_view message) {
-  Send(message.data(), message.size());
+bool TcpConnection::Send(const std::string& message) {
+  return Send(message.data(), message.size());
 }
 
-void TcpConnection::Send(const void* data, std::size_t len) {
+bool TcpConnection::Send(std::string_view message) {
+  return Send(message.data(), message.size());
+}
+
+bool TcpConnection::Send(const void* data, std::size_t len) {
   if (state_ != TCPState::kConnected) {
-    return;
+    return false;
   }
   if (loop_->IsInLoopThread()) {
     SendInLoop(data, len);
@@ -66,6 +62,7 @@ void TcpConnection::Send(const void* data, std::size_t len) {
     std::string copy(static_cast<const char*>(data), len);
     loop_->RunInLoop([self, copy = std::move(copy)] { self->SendInLoop(copy.data(), copy.size());});
   }
+  return true;
 }
 
 void TcpConnection::SendInLoop(const std::string& message) {
@@ -111,7 +108,18 @@ void TcpConnection::SendInLoop(const void* data, std::size_t len) {
   }
 
   if (static_cast<std::size_t>(nwrote) < len) {
+    const std::size_t old_len = output_buffer_.ReadableBytes();
     output_buffer_.Append(static_cast<const char*>(data) + nwrote,len - nwrote);
+    const std::size_t new_len = output_buffer_.ReadableBytes();
+    if (old_len < high_water_mark_ && new_len >= high_water_mark_ &&
+        high_water_mark_callback_) {
+      auto self = shared_from_this();
+      loop_->QueueInLoop([self, new_len] {
+        if (self->high_water_mark_callback_) {
+          self->high_water_mark_callback_(self, new_len);
+        }
+      });
+    }
     if (!channel_->IsWriting()) {
       channel_->EnableWriting();
     }

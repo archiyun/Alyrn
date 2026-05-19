@@ -39,16 +39,16 @@ public:
   // callbacks.
   void HandleEvent(runtime::time::Timestamp receive_time);
 
-  void SetReadCallback(ReadEventCallback&& cb) {
+  void SetReadCallback(ReadEventCallback cb) {
     read_callback_ = std::move(cb);
   }
-  void SetWriteCallback(EventCallback&& cb) {
+  void SetWriteCallback(EventCallback cb) {
     write_callback_ = std::move(cb);
   }
-  void SetCloseCallback(EventCallback&& cb) {
+  void SetCloseCallback(EventCallback cb) {
     close_callback_ = std::move(cb);
   }
-  void SetErrorCallback(EventCallback&& cb) {
+  void SetErrorCallback(EventCallback cb) {
     error_callback_ = std::move(cb);
   }
 
@@ -73,11 +73,6 @@ public:
   bool IsWriting() const { return events_ & kWriteEvent; }
   bool IsReading() const { return events_ & kReadEvent; }
 
-  int Index() const { return index_; }
-
-  // Stores the Poller-specific index used to track registration state.
-  void SetIndex(int idx) { index_ = idx; }
-
   // Switches the Channel between level-triggered and edge-triggered mode.
   void SetEdgeTriggered(bool et) {
     trigger_mode_ = et ? TriggerMode::kEdgeTriggered
@@ -101,8 +96,18 @@ public:
   static const int kReadEvent{0x01};
   static const int kWriteEvent{0x02};
   static const int kErrorEvent{0x04};
-  static const int kHupEvent{0x08}; // 对端关闭
+  static const int kHupEvent{0x08};
 private:
+  // Index/SetIndex track Poller-private registration state and must remain
+  // hidden from general consumers. Concrete Poller implementations are the
+  // only legitimate users.
+  friend class EPollPoller;
+  friend class PollPoller;
+  friend class SelectPoller;
+
+  int Index() const { return index_; }
+  void SetIndex(int idx) { index_ = idx; }
+
   // Pushes the current interest set to the Poller.
   void Update();
 

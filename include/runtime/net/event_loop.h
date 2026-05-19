@@ -38,12 +38,14 @@ public:
   runtime::time::Timestamp PollReturnTime() const { return poll_return_time_; }
 
   // Runs cb immediately if called from the owning loop thread; otherwise,
-  // schedules it to run in the loop thread.
+  // schedules it to run in the loop thread. Thread-safe.
   void RunInLoop(Functor cb);
 
-  // Queues cb to run in the loop thread on a later iteration.
+  // Queues cb to run in the loop thread on a later iteration. Thread-safe.
   void QueueInLoop(Functor cb);
 
+  // The following Channel-management methods must be called from the owning
+  // loop thread. They mutate the Poller's channel set and are not thread-safe.
   void UpdateChannel(Channel* channel);
   void RemoveChannel(Channel* channel);
   bool HasChannel(Channel* channel) const;

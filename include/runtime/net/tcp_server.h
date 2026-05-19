@@ -6,9 +6,9 @@
 #include "runtime/net/inet_address.h"
 #include "runtime/net/tcp_connection.h"
 
-#include <map>
 #include <memory>
 #include <string>
+#include <unordered_map>
 
 namespace runtime::net {
 
@@ -27,7 +27,7 @@ public:
   using ThreadInitCallback    = EventLoopThreadPool::ThreadInitCallback;
 
   TcpServer(EventLoop* loop,
-            const InetAddress& listenaddr,
+            const InetAddress& listen_addr,
             const std::string& name);
   ~TcpServer();
 
@@ -61,7 +61,7 @@ public:
   // Starts the thread pool and begins accepting connections.
   void Start();
 
-  EventLoop* const GetLoop() const {
+  EventLoop* GetLoop() const {
     return loop_;
   }
 private:
@@ -70,7 +70,11 @@ private:
   void RemoveConnectionInLoop(const TcpConnectionPtr& conn);
 
 private:
-  using ConnectionMap = std::map<std::string, TcpConnectionPtr>;
+  // ConnectionMap is only accessed on the base loop thread. New connections are
+  // inserted from NewConnection() (which runs on the base loop via Acceptor)
+  // and erased from RemoveConnectionInLoop() (which RemoveConnection forwards
+  // through RunInLoop). No locking is needed.
+  using ConnectionMap = std::unordered_map<std::string, TcpConnectionPtr>;
 
   EventLoop*        loop_;
   const std::string name_;

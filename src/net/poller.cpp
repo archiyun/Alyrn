@@ -10,7 +10,7 @@
 namespace runtime::net {
 
 Poller::Poller(EventLoop* loop)
-    : ownerLoop_(loop) {}
+    : owner_loop_(loop) {}
 
 bool Poller::HasChannel(Channel* channel) const {
   auto it = channels_.find(channel->Fd());

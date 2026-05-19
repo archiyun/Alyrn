@@ -1,9 +1,7 @@
 #pragma once
 
 #include "runtime/net/buffer.h"
-#include "runtime/net/channel.h"
 #include "runtime/net/inet_address.h"
-#include "runtime/net/socket.h"
 #include "runtime/time/timestamp.h"
 #include "runtime/base/noncopyable.h"
 
@@ -18,7 +16,9 @@
 
 namespace runtime::net {
 
+class Channel;
 class EventLoop;
+class Socket;
 
 // TcpConnection represents one established TCP connection.
 //
@@ -34,6 +34,11 @@ public:
       std::function<void(const TcpConnectionPtr&, Buffer&, runtime::time::Timestamp)>;
   using CloseCallback = std::function<void(const TcpConnectionPtr&)>;
   using WriteCompleteCallback = std::function<void(const TcpConnectionPtr&)>;
+  // Fired (once per crossing) when output_buffer_ grows from below the
+  // configured high-water-mark threshold to at or above it. The second
+  // argument is the current readable byte count of output_buffer_.
+  using HighWaterMarkCallback =
+      std::function<void(const TcpConnectionPtr&, std::size_t)>;
 
   TcpConnection(
       EventLoop* loop,
@@ -52,20 +57,45 @@ public:
 
   // Sends a message on the connection. The actual write may happen
   // immediately or later in the owning loop thread.
-  void Send(const std::string& message);
-  void Send(std::string_view message);
-  void Send(const void* data, std::size_t len);
+  // Returns true if accepted (sent or queued for the loop thread); false if
+  // dropped because the connection is no longer in the Connected state.
+  // Callers that need flow control should also wire SetHighWaterMarkCallback
+  // and watch for the buffer-growth signal.
+  bool Send(const std::string& message);
+  bool Send(std::string_view message);
+  bool Send(const void* data, std::size_t len);
 
   // Initiates a graceful shutdown of the write side.
   void Shutdown();
 
-  void SetConnectionCallback(const ConnectionCallback& cb) { connection_callback_ = cb; }
+  void SetConnectionCallback(ConnectionCallback cb) {
+    connection_callback_ = std::move(cb);
+  }
 
-  void SetMessageCallback(const MessageCallback& cb) { message_callback_ = cb; }
+  void SetMessageCallback(MessageCallback cb) {
+    message_callback_ = std::move(cb);
+  }
 
-  void SetCloseCallback(const CloseCallback& cb) { close_callback_ = cb; }
+  void SetCloseCallback(CloseCallback cb) {
+    close_callback_ = std::move(cb);
+  }
 
-  void SetWriteCompleteCallback(const WriteCompleteCallback& cb) { write_complete_callback_ = cb;
+  void SetWriteCompleteCallback(WriteCompleteCallback cb) {
+    write_complete_callback_ = std::move(cb);
+  }
+
+  // Configures the backpressure threshold and the callback fired when the
+  // output buffer crosses it. Both should be set before the first Send().
+  void SetHighWaterMarkCallback(HighWaterMarkCallback cb) {
+    high_water_mark_callback_ = std::move(cb);
+  }
+
+  // Threshold in bytes. The callback is only meaningful when this value is
+  // less than the maximum possible buffer growth.
+  void SetHighWaterMark(std::size_t bytes) { high_water_mark_ = bytes; }
+  std::size_t HighWaterMark() const { return high_water_mark_; }
+  std::size_t OutputBufferReadableBytes() const {
+    return output_buffer_.ReadableBytes();
   }
 
   // Associates arbitrary upper-layer context with the connection.
@@ -77,7 +107,7 @@ public:
 
   // Must be called before ConnectEstablished() so the channel is registered
   // with EPOLLET from the first epoll_ctl ADD call.
-  void SetEdgeTriggered(bool et) { channel_->SetEdgeTriggered(et); }
+  void SetEdgeTriggered(bool et);
 
   void ConnectEstablished();
   void ConnectDestroyed();
@@ -131,7 +161,12 @@ private:
   ConnectionCallback connection_callback_;
   MessageCallback message_callback_;
   WriteCompleteCallback write_complete_callback_;
+  HighWaterMarkCallback high_water_mark_callback_;
   CloseCallback close_callback_;
+
+  // Default: effectively disabled (SIZE_MAX). The callback is only invoked
+  // when the user explicitly lowers the threshold.
+  std::size_t high_water_mark_{static_cast<std::size_t>(-1)};
 
   std::any context_;
 

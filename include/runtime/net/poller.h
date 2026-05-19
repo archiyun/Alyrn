@@ -47,7 +47,7 @@ protected:
 
 private:
   // The owning EventLoop. Poller follows the one-loop-per-thread model.
-  EventLoop* ownerLoop_;
+  EventLoop* owner_loop_;
 };
 
 }  // namespace runtime::net
