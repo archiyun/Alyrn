@@ -176,18 +176,6 @@ void GatewayServer::AddProxyRoute(std::string_view path,
     .circuit_breaker_enabled = circuit_breaker_enabled,
   });
 }
-void GatewayServer::AddStaticRoute(std::string_view url_prefix,
-                                   std::string_view root_dir) {
-  std::string prefix(url_prefix);
-  routes_.push_back(Route{
-    .type        = RouteType::Static,
-    .match_type  = MatchType::Prefix,
-    .match_all_methods = true,
-    .path        = prefix,
-    .static_root = std::filesystem::canonical(root_dir),
-  });
-}
-
 void GatewayServer::EnableHealthCheck(HealthCheckConfig cfg) {
   health_checker_ = std::make_unique<HealthChecker>
     (server_.GetLoop(),registry_, std::move(cfg));
@@ -283,32 +271,6 @@ void GatewayServer::OnMessage(const TcpConnectionPtr& conn,
       if (!ctx.upstream_req) {
         conn->Send(RenderFallback(*route, "no available upstream peer"));
       }
-    } else if (route->type == RouteType::Static) {
-      // Strip url prefix in the IO thread (pure string op, no syscall).
-      std::string rel(req.Path());
-      rel.erase(0, route->path.size());
-      if (rel.empty()) rel = "/";
-
-      auto* loop = conn->GetLoop();
-      std::weak_ptr<runtime::net::TcpConnection> weak = conn;
-      const bool keep_alive = req.KeepAlive();
-      const std::filesystem::path root = route->static_root;
-
-      static_pool_.Submit([loop, weak, root, rel = std::move(rel), keep_alive] {
-        runtime::http::HttpResponse resp(!keep_alive);
-        if (!ServeFile(root, rel, resp)) {
-          resp.SetStatusCode(runtime::http::StatusCode::NotFound);
-          resp.SetContentType("text/plain");
-          resp.SetBody("not found");
-        }
-        std::string wire = resp.ToString();
-        loop->RunInLoop([weak, wire = std::move(wire), keep_alive] {
-          if (auto conn = weak.lock()) {
-            conn->Send(wire);
-            if (!keep_alive) conn->Shutdown();
-          }
-        });
-      });
     } else {
       // Direct
       const bool keep_alive = req.KeepAlive();

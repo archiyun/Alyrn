@@ -2,7 +2,6 @@
 
 #include "runtime/gateway/rate_limiter.h"
 #include "runtime/gateway/fallback_config.h"
-#include "runtime/gateway/static_handler.h"
 #include "runtime/gateway/health_checker.h"
 #include "runtime/gateway/load_balancer.h"
 #include "runtime/gateway/proxy_pass.h"
@@ -16,13 +15,11 @@
 #include "runtime/net/tcp_server.h"
 #include "runtime/time/timestamp.h"
 #include "runtime/base/noncopyable.h"
-#include "runtime/base/thread_pool.h"
 
 #include <memory>
 #include <mutex>
 #include <string>
 #include <string_view>
-#include <filesystem>
 #include <unordered_map>
 
 namespace runtime::gateway {
@@ -38,7 +35,6 @@ public:
   enum class RouteType {
     Direct,
     Proxy,
-    Static, // 静态资源部署
   };
 
   // 匹配类型
@@ -58,7 +54,6 @@ public:
     Handler handler;  // Direct
     std::string upstream_name;  // Proxy
     std::unique_ptr<LoadBalancer> lb; // Proxy
-    std::filesystem::path static_root; // Static
 
     FallbackConfig fallback; // 降级配置
     bool circuit_breaker_enabled{false}; // 熔断器启用
@@ -83,7 +78,6 @@ public:
                      FallbackConfig fallback,
                      bool circuit_breaker_enabled = false,
                      std::string_view algo = "round_robin");
-  void AddStaticRoute(std::string_view url_prefix, std::string_view root_dir);
   void EnableHealthCheck(HealthCheckConfig cfg = {});
   // NEW: 限流配置
   void EnableGlobalRateLimit(double rate, double burst);
@@ -120,7 +114,6 @@ private:
   // unordered_map 的 reference 在插入时不会失效，所以拿到 reference 后即可释放锁。
   mutable std::mutex pools_mu_;
   std::unordered_map<runtime::net::EventLoop*, UpstreamConnPool> pools_;
-  runtime::base::ThreadPool static_pool_{4};
   std::unique_ptr<RateLimiter> rate_limiter_;  // 限流器
   std::string rate_limit_response_429_; // 预渲染 429 响应
   RateLimiterConfig rate_limiter_cfg_;  // accumulated config, committed in Enable* calls
