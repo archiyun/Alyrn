@@ -8,13 +8,34 @@
 #ifdef RUNTIME_ENABLE_SSL
 #include <openssl/ssl.h>
 #endif
+#include <atomic>
 #include <cassert>
 #include <cerrno>
 #include <cstring>
+#include <string_view>
 #include <sys/socket.h>
 #include <unistd.h>
 
 namespace runtime::net {
+
+namespace {
+// Lifetime counters scoped to upstream (proxy-side) TcpConnection only.
+// Used to verify the upstream connection pool actually reuses sockets
+// instead of silently rebuilding one per request.
+std::atomic<uint64_t> g_upstream_ctor_count{0};
+std::atomic<uint64_t> g_upstream_dtor_count{0};
+
+bool IsUpstreamName(std::string_view name) {
+  return name.size() >= 7 && name.substr(0, 7) == "proxy->";
+}
+}  // namespace
+
+uint64_t TcpConnection::UpstreamCtorCount() {
+  return g_upstream_ctor_count.load(std::memory_order_relaxed);
+}
+uint64_t TcpConnection::UpstreamDtorCount() {
+  return g_upstream_dtor_count.load(std::memory_order_relaxed);
+}
 
 TcpConnection::TcpConnection(EventLoop* loop, const std::string& name,
                              int sockfd, const InetAddress& local_addr,
@@ -25,6 +46,9 @@ TcpConnection::TcpConnection(EventLoop* loop, const std::string& name,
       local_addr_(local_addr), peer_addr_(peer_addr) {
   RUNTIME_ASSERT(loop_ != nullptr, "TcpConnection: loop must not be null");
   RUNTIME_ASSERT(sockfd >= 0, "TcpConnection: sockfd must be valid");
+  if (IsUpstreamName(name_)) {
+    g_upstream_ctor_count.fetch_add(1, std::memory_order_relaxed);
+  }
   channel_->SetReadCallback([this](runtime::time::Timestamp receive_time) {
     HandleRead(receive_time);
   });
@@ -34,6 +58,9 @@ TcpConnection::TcpConnection(EventLoop* loop, const std::string& name,
 }
 
 TcpConnection::~TcpConnection() {
+  if (IsUpstreamName(name_)) {
+    g_upstream_dtor_count.fetch_add(1, std::memory_order_relaxed);
+  }
 #ifdef RUNTIME_ENABLE_SSL
   if (ssl_) SSL_free(ssl_);
 #endif

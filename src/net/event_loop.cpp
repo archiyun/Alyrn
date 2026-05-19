@@ -1,6 +1,7 @@
+#include "runtime/net/event_loop.h"
+
 #include "runtime/time/timestamp.h"
 #include "runtime/log/logger.h"
-#include "runtime/net/event_loop.h"
 #include "runtime/net/channel.h"
 #include "runtime/net/poller.h"
 #include "runtime/net/timer_id.h"
@@ -152,7 +153,7 @@ void EventLoop::RunInLoop(Functor cb) {
 
 void EventLoop::QueueInLoop(Functor cb) {
   {
-    std::lock_guard lk(mutex_);
+    std::lock_guard lk{mutex_};
     pending_functors_.push_back(std::move(cb));
   }
 
@@ -196,7 +197,7 @@ void EventLoop::DoPendingFunctors() {
   calling_pending_functors_ = true;
 
   {
-    std::lock_guard<std::mutex> lk(mutex_);
+    std::lock_guard lk(mutex_);
     functors.swap(pending_functors_);
   }
 

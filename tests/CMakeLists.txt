@@ -211,6 +211,22 @@ target_link_libraries(rate_limiter_smoke_test
 
 add_test(NAME rate_limiter_smoke_test COMMAND rate_limiter_smoke_test)
 
+add_executable(gateway_metrics_smoke_test
+    unit/test_gateway_metrics_smoke.cpp
+)
+
+target_include_directories(gateway_metrics_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(gateway_metrics_smoke_test
+    PRIVATE
+        Threads::Threads
+)
+
+add_test(NAME gateway_metrics_smoke_test COMMAND gateway_metrics_smoke_test)
+
 add_executable(proxy_e2e_smoke_test
     unit/test_proxy_e2e_smoke.cpp
 )

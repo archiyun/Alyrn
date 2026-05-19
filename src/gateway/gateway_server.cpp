@@ -195,6 +195,17 @@ void GatewayServer::EnablePerIPRateLimit(double rate, double burst) {
   rate_limiter_ = std::make_unique<RateLimiter>(rate_limiter_cfg_);
 }
 
+void GatewayServer::EnableMetricsEndpoint(std::string_view path) {
+  // 直接路由形式注册, handler 内同步渲染当前 metrics 快照.
+  Get(path, [this](const runtime::http::HttpRequest&,
+                   runtime::http::HttpResponse& resp) {
+    resp.SetStatusCode(runtime::http::StatusCode::Ok);
+    // Prometheus text format 0.0.4 的 Content-Type
+    resp.SetContentType("text/plain; version=0.0.4; charset=utf-8");
+    resp.SetBody(metrics_.Render());
+  });
+}
+
 void GatewayServer::Start() {
   if (health_checker_) health_checker_->Start();
   server_.Start();
@@ -204,6 +215,11 @@ void GatewayServer::Start() {
 void GatewayServer::OnConnection(const TcpConnectionPtr& conn) {
   if (conn->Connected()) {
     conn->SetContext(ConnCtx{});
+    metrics_.connections_accepted_total.Inc();
+    metrics_.connections_active.Inc();
+  } else {
+    metrics_.connections_closed_total.Inc();
+    metrics_.connections_active.Dec();
   }
 }
 
@@ -212,6 +228,8 @@ void GatewayServer::OnMessage(const TcpConnectionPtr& conn,
                               runtime::time::Timestamp ts) {
   auto& ctx = std::any_cast<ConnCtx&>(conn->GetContext());
   if (!ctx.http_ctx.ParseRequest(buf, ts)) {
+    metrics_.requests_malformed_total.Inc();
+    metrics_.ObserveStatus(static_cast<int>(runtime::http::StatusCode::BadRequest));
     conn->Send(MakeError(runtime::http::StatusCode::BadRequest, "malformed request").ToString());
     conn->Shutdown();
     return;
@@ -220,6 +238,9 @@ void GatewayServer::OnMessage(const TcpConnectionPtr& conn,
   while (ctx.http_ctx.GotAll()) {
     runtime::http::HttpRequest req = ctx.http_ctx.Request();
     ctx.http_ctx.Reset();
+
+    // 同步路径下记录端到端耗时; 异步 (proxy / static) 路径只埋单次事件计数.
+    const auto req_start = std::chrono::steady_clock::now();
 
     // 注入真实的客户端信息,让上游知道真实 IP
     const std::string client_ip = conn->PeerAddress().ToIp();
@@ -231,8 +252,16 @@ void GatewayServer::OnMessage(const TcpConnectionPtr& conn,
     // 限流, 路由匹配之前按照流量选择过滤
     if (rate_limiter_) {
       // 全局流量和 IP 流量过滤
-      if (!rate_limiter_->AllowGlobal() ||
-          !rate_limiter_->AllowPerIP(client_ip)) {
+      const bool global_ok  = rate_limiter_->AllowGlobal();
+      const bool per_ip_ok  = global_ok && rate_limiter_->AllowPerIP(client_ip);
+      if (!global_ok || !per_ip_ok) {
+        if (!global_ok) metrics_.rate_limited_global_total.Inc();
+        else            metrics_.rate_limited_per_ip_total.Inc();
+        metrics_.ObserveStatus(
+            static_cast<int>(runtime::http::StatusCode::TooManyRequests));
+        const auto elapsed = std::chrono::duration<double>(
+            std::chrono::steady_clock::now() - req_start).count();
+        metrics_.request_duration.Observe(elapsed);
         conn->Send(rate_limit_response_429_);
         continue;
       }
@@ -240,13 +269,23 @@ void GatewayServer::OnMessage(const TcpConnectionPtr& conn,
 
     const Route* route = MatchRoute(req.Path());
     if (!route) {
+      metrics_.requests_not_found_total.Inc();
+      metrics_.ObserveStatus(static_cast<int>(runtime::http::StatusCode::NotFound));
+      const auto elapsed = std::chrono::duration<double>(
+          std::chrono::steady_clock::now() - req_start).count();
+      metrics_.request_duration.Observe(elapsed);
       conn->Send(MakeError(runtime::http::StatusCode::NotFound, "not found").ToString());
       continue;
     }
 
     if (route->type == RouteType::Proxy) {
+      metrics_.routes_proxy_total.Inc();
       auto upstream = registry_.Find(route->upstream_name);
       if (!upstream) {
+        metrics_.upstream_no_peer_total.Inc();
+        metrics_.fallback_served_total.Inc();
+        metrics_.ObserveStatus(
+            static_cast<int>(runtime::http::StatusCode::ServiceUnavailable));
         conn->Send(RenderFallback(*route, "upstream not found: " + route->upstream_name));
         continue;
       }
@@ -258,6 +297,10 @@ void GatewayServer::OnMessage(const TcpConnectionPtr& conn,
       }
       // 熔断检查: 在 LB 选择之前快速失败
       if (cb && !cb->AllowRequest()) {
+        metrics_.circuit_breaker_rejected_total.Inc();
+        metrics_.fallback_served_total.Inc();
+        metrics_.ObserveStatus(
+            static_cast<int>(runtime::http::StatusCode::ServiceUnavailable));
         conn->Send(RenderFallback(*route, "circuit open"));
         continue;
       }
@@ -269,10 +312,17 @@ void GatewayServer::OnMessage(const TcpConnectionPtr& conn,
       };
       ctx.upstream_req = ProxyPass::Forward(conn, req, *upstream, *route->lb, pool, req_ctx, cb);
       if (!ctx.upstream_req) {
+        metrics_.upstream_no_peer_total.Inc();
+        metrics_.fallback_served_total.Inc();
+        metrics_.ObserveStatus(
+            static_cast<int>(runtime::http::StatusCode::ServiceUnavailable));
         conn->Send(RenderFallback(*route, "no available upstream peer"));
+      } else {
+        metrics_.upstream_requests_total.Inc();
       }
     } else {
       // Direct
+      metrics_.routes_direct_total.Inc();
       const bool keep_alive = req.KeepAlive();
       runtime::http::HttpResponse resp(!keep_alive);
       try {
@@ -281,6 +331,10 @@ void GatewayServer::OnMessage(const TcpConnectionPtr& conn,
         resp = MakeError(runtime::http::StatusCode::InternalServerError, ex.what());
         resp.SetCloseConnection(true);
       }
+      metrics_.ObserveStatus(static_cast<int>(resp.GetStatusCode()));
+      const auto elapsed = std::chrono::duration<double>(
+          std::chrono::steady_clock::now() - req_start).count();
+      metrics_.request_duration.Observe(elapsed);
       conn->Send(resp.ToString());
       if (resp.CloseConnection()) { conn->Shutdown(); return; }
     }
@@ -336,4 +390,5 @@ std::string GatewayServer::RenderFallback(const Route& route,
   }
   return MakeError(runtime::http::StatusCode::ServiceUnavailable, reason).ToString();
 }
+
 } // namespace runtime::gateway

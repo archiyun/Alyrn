@@ -18,7 +18,7 @@ void cacheTid();
 // On the fast path, this only reads a thread-local integer. If the cache is
 // still empty, it initializes it first.
 inline int tid() {
-  if (__builtin_expect(t_cached_tid == 0, 0)) {
+  if (t_cached_tid == 0) [[unlikely]] {
     cacheTid();
   }
   return t_cached_tid;

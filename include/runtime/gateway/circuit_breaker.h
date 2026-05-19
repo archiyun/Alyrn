@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Aresna
+// SPDX-License-Identifier: MIT
 #pragma once
 
 #include <chrono>
@@ -6,7 +8,6 @@
 
 namespace runtime::gateway {
 
-// 编写一个熔断器， 待测试。
 enum class CircuitBreakerState : uint8_t {
   kClosed,
   kOpen,
@@ -20,58 +21,73 @@ struct CircuitBreakerConfig {
   int half_open_max_requests{1};
 };
 
-// Per-upstream 熔断器，全 atomic + CAS，零互斥锁。
+// Per-upstream circuit breaker. Lock-free — all state transitions use
+// std::atomic + CAS. Safe for concurrent access from multiple EventLoop
+// threads with no mutexes on the hot path.
 //
-// 三层防护各司其职：
-//   Layer 1 — CircuitBreaker    per-upstream  "整个服务挂了就别试了"
-//   Layer 2 — UpstreamPeer 健康  per-peer      "这个节点坏了换一个"
-//   Layer 3 — UpstreamRequest 重试 per-request "偶发抖动换节点重试"
+// Sits at Layer 1 of the three-tier fault protection stack:
+//   Layer 1  CircuitBreaker     per-upstream   fast-fail when the whole backend is down
+//   Layer 2  UpstreamPeer       per-peer        skip individual unhealthy nodes
+//   Layer 3  UpstreamRequest    per-request     retry on transient connection errors
 //
-// 状态机：
-//   CLOSED ──[连续失败 >= failure_threshold]──> OPEN
-//   OPEN   ──[open_timeout 到期]──────────────> HALF_OPEN
-//   HALF_OPEN ──[连续成功 >= success_threshold]──> CLOSED
-//   HALF_OPEN ──[任意失败]────────────────────> OPEN
+// State machine:
+//   CLOSED   → [consecutive failures >= failure_threshold]  → OPEN
+//   OPEN     → [open_timeout elapsed]                       → HALF_OPEN
+//   HALF_OPEN → [consecutive successes >= success_threshold] → CLOSED
+//   HALF_OPEN → [any failure]                               → OPEN
 //
-// CLOSED 下连续失败达到阈值才 OPEN，连续成功达到 success_threshold 才重置计数器，
-// 避免间歇性故障场景下单次成功永久抑制熔断。
+// In CLOSED state, a single success does NOT reset the failure counter.
+// The counter resets only after consecutive successes reach success_threshold,
+// which prevents intermittent faults from permanently suppressing the trip.
 //
-// AllowRequest() 是热路径（每次代理请求都调）：
-//   CLOSED    → 一次 acquire-load
-//   OPEN      → 一次 acquire-load + 一次 relaxed-load 比较超时
-//   HALF_OPEN → 一次 fetch_add，限量放行 
+// AllowRequest() is on the critical path (called once per proxied request):
+//   CLOSED    — one acquire-load
+//   OPEN      — one acquire-load + one relaxed-load for timeout comparison
+//   HALF_OPEN — one fetch_add to claim a probe slot
 class CircuitBreaker {
 public:
   explicit CircuitBreaker(CircuitBreakerConfig cfg) noexcept
     : cfg_(cfg) {}
+
+  // Returns the current state. Intended for metrics export only;
+  // do not use the result to make routing decisions — call AllowRequest().
   CircuitBreakerState State() const noexcept {
     return static_cast<CircuitBreakerState>(
       state_.load(std::memory_order_acquire)
     );
   }
 
+  // Cumulative consecutive failure count. Exposed for metrics.
   uint64_t FailureCount() const noexcept {
     return failure_count_.load(std::memory_order_relaxed);
   }
 
+  // Total number of state transitions since construction. Exposed for metrics.
   uint64_t TransitionCount() const noexcept {
     return transition_count_.load(std::memory_order_relaxed);
   }
-  // 热路径， 无锁。 返回 true 表示放行
+
+  // Hot path. Lock-free. Returns true if the request should be forwarded.
+  //
+  // Callers MUST invoke OnSuccess() or OnFailure() after the request
+  // completes. Failing to do so in HALF_OPEN state will exhaust the probe
+  // quota and stall recovery until the next open_timeout cycle.
   bool AllowRequest() noexcept {
     int s = state_.load(std::memory_order_acquire);
 
     if (s == kClosedInt) {
       return true;
     }
-    
+
     if (s == kOpenInt) {
-      uint64_t now = NowMs();
+      uint64_t now     = NowMs();
       uint64_t entered = open_entered_ms_.load(std::memory_order_relaxed);
       if (now - entered < static_cast<uint64_t>(cfg_.open_timeout.count())) {
-        return false; // 超时未到， 快速拒绝
+        return false;  // timeout not yet elapsed — fast reject
       }
-      // 超时到期， CAS OPEN -> HALF_OPEN
+      // Timeout elapsed. Race all threads to claim the OPEN→HALF_OPEN transition.
+      // compare_exchange_strong updates s to the observed value on failure,
+      // so the fall-through below handles the "lost the race" case correctly.
       if (state_.compare_exchange_strong(s, kHalfOpenInt,
             std::memory_order_acq_rel, std::memory_order_acquire)) {
         half_open_requests_.store(0, std::memory_order_relaxed);
@@ -79,19 +95,25 @@ public:
         transition_count_.fetch_add(1, std::memory_order_relaxed);
         s = kHalfOpenInt;
       }
-      // CAS 失败: s 已被 compare_exchange_strong 更新为实际状态， fall through
     }
 
     if (s == kHalfOpenInt) {
-      uint64_t n = half_open_requests_.fetch_add(1, std::memory_order_relaxed);
-      return n < static_cast<uint64_t>(cfg_.half_open_max_requests);
+      // Admit only the first half_open_max_requests probes.
+      // fetch_add returns the pre-increment value; requests with index >= limit
+      // are rejected without touching the upstream.
+      uint64_t slot = half_open_requests_.fetch_add(1, std::memory_order_relaxed);
+      return slot < static_cast<uint64_t>(cfg_.half_open_max_requests);
     }
+
     return false;
   }
 
-  // 请求成功时调用
-  // CLOSED: 连续成功达标才重置失败计数 (避免间歇故障下单次成功永久抑制熔断)
-  // HALF_OPEN: 连续成功达标 -> CLOSED
+  // Must be called after a successful upstream response (2xx, 3xx, 4xx).
+  // 5xx and connection errors must call OnFailure() instead.
+  //
+  // CLOSED:    accumulates consecutive successes; resets failure_count_ only
+  //            after success_threshold is reached.
+  // HALF_OPEN: sufficient consecutive successes transition to CLOSED.
   void OnSuccess() noexcept {
     int s = state_.load(std::memory_order_acquire);
 
@@ -117,6 +139,11 @@ public:
     }
   }
 
+  // Must be called on upstream failure: 5xx response, connection error, or timeout.
+  //
+  // HALF_OPEN: any failure immediately re-opens the breaker.
+  // CLOSED:    increments the consecutive failure counter; trips to OPEN
+  //            once failure_threshold is reached.
   void OnFailure() noexcept {
     int s = state_.load(std::memory_order_acquire);
 
@@ -143,6 +170,7 @@ public:
       }
     }
   }
+
 private:
   static uint64_t NowMs() noexcept {
     return static_cast<uint64_t>(
@@ -158,11 +186,11 @@ private:
   CircuitBreakerConfig cfg_;
 
   std::atomic<int>      state_{kClosedInt};
-  std::atomic<uint64_t> failure_count_{0};
-  std::atomic<uint64_t> success_count_{0};
-  std::atomic<uint64_t> half_open_requests_{0};
-  std::atomic<uint64_t> open_entered_ms_{0};
-  std::atomic<uint64_t> transition_count_{0};
+  std::atomic<uint64_t> failure_count_{0};    // consecutive failures (CLOSED)
+  std::atomic<uint64_t> success_count_{0};    // consecutive successes (CLOSED / HALF_OPEN)
+  std::atomic<uint64_t> half_open_requests_{0}; // probe slots claimed in HALF_OPEN
+  std::atomic<uint64_t> open_entered_ms_{0};  // steady_clock ms when OPEN was entered
+  std::atomic<uint64_t> transition_count_{0}; // total state transitions — metrics only
 };
 
 }  // namespace runtime::gateway

@@ -78,6 +78,9 @@ int main() {
   // 3. 启动主动健康检查（上游的 /api/health 返回 200，符合探针预期）
   gw.EnableHealthCheck({.path = "/api/health", .interval_sec = 10.0});
 
+  // 暴露 Prometheus 指标端点
+  gw.EnableMetricsEndpoint();
+
   gw.Start();
   loop.Loop();
 }

@@ -1,4 +1,5 @@
-
+// Copyright (c) 2026 Aresna
+// SPDX-License-Identifier: MIT
 #pragma once
 
 #include "runtime/base/noncopyable.h"
@@ -388,4 +389,4 @@ bool IRBT_TYPE::CheckRBInvariants() const {
 
 #undef IRBT_TMPL
 #undef IRBT_TYPE
-};
+} // namespace runtime::base

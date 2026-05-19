@@ -82,6 +82,7 @@ NGINXEOF
 #include "runtime/gateway/upstream_registry.h"
 #include "runtime/net/event_loop.h"
 #include "runtime/net/inet_address.h"
+#include "runtime/net/tcp_connection.h"
 
 #include <atomic>
 #include <csignal>
@@ -93,12 +94,21 @@ static std::atomic<long long> g_proxied{0};
 
 static void StatsPrinter() {
     long long prev = 0;
+    uint64_t prev_ctor = 0;
+    uint64_t prev_dtor = 0;
     while (true) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
-        long long cur = g_proxied.load(std::memory_order_relaxed);
-        std::printf("[gw-stats] rps=%-8lld  total=%lld\n", cur - prev, cur);
+        const long long cur = g_proxied.load(std::memory_order_relaxed);
+        const uint64_t ctor = runtime::net::TcpConnection::UpstreamCtorCount();
+        const uint64_t dtor = runtime::net::TcpConnection::UpstreamDtorCount();
+        std::printf("[gw-stats] rps=%-8lld total=%lld | upstream_conn ctor=+%lu dtor=+%lu live=%lu (cum_ctor=%lu)\n",
+                    cur - prev, cur,
+                    ctor - prev_ctor, dtor - prev_dtor,
+                    ctor - dtor, ctor);
         std::fflush(stdout);
         prev = cur;
+        prev_ctor = ctor;
+        prev_dtor = dtor;
     }
 }
 

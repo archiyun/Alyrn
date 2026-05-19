@@ -10,6 +10,7 @@
 #endif
 
 #include <any>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
@@ -51,6 +52,13 @@ public:
 
   EventLoop* GetLoop() const { return loop_; }
   const std::string& Name() const { return name_; }
+
+  // Diagnostic counters for upstream (proxy-side) TcpConnection lifetimes.
+  // Bumped only when name starts with "proxy->". A request count that far
+  // exceeds the ctor count is the only evidence that the upstream conn
+  // pool is actually reusing sockets (vs. silently rebuilding every time).
+  static uint64_t UpstreamCtorCount();
+  static uint64_t UpstreamDtorCount();
   const InetAddress& LocalAddress() const { return local_addr_; }
   const InetAddress& PeerAddress() const { return peer_addr_; }
   bool Connected() const { return state_ == TCPState::kConnected; }

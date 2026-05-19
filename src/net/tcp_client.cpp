@@ -1,4 +1,5 @@
 #include "runtime/net/tcp_client.h"
+
 #include "runtime/net/connector.h"
 #include "runtime/net/net_utils.h"
 #include "runtime/log/logger.h"
@@ -49,14 +50,13 @@ void TcpClient::Disconnect() {
   }
 }
 
-// ── 私有 ─────────────────────────────────────────────────────────────────────
 
 void TcpClient::NewConnection(int sockfd) {
   // 此函数在 loop_ 线程中被调用（由 Connector::handleWrite 触发）
   // 与 TcpServer::NewConnection 对称，区别是没有线程池，直接用 loop_
 
   InetAddress local_addr(GetLocalAddr(sockfd));
-  InetAddress peer_addr(server_addr_);  // connect 的目标就是 peer
+  InetAddress peer_addr(server_addr_);
 
   // 生成唯一连接名，便于日志追踪
   static std::atomic<int> conn_id{1};

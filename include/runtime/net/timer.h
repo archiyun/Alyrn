@@ -36,7 +36,7 @@ public:
 
   // Intrusive tree node. TimerTree links this node directly without allocating
   // an extra container node like std::set would.
-  base::RBTNode<Timer> tree_node_;
+  runtime::base::RBTNode<Timer> tree_node_;
 private:
 
   TimerCallback timer_callback_;

@@ -7,6 +7,7 @@
 #include "runtime/gateway/proxy_pass.h"
 #include "runtime/gateway/upstream_conn_pool.h"
 #include "runtime/gateway/upstream_registry.h"
+#include "runtime/metrics/gateway_metrics.h"
 #include "runtime/http/http_context.h"
 #include "runtime/http/http_response.h"
 #include "runtime/http/http_types.h"
@@ -55,8 +56,8 @@ public:
     std::string upstream_name;  // Proxy
     std::unique_ptr<LoadBalancer> lb; // Proxy
 
-    FallbackConfig fallback; // 降级配置
-    bool circuit_breaker_enabled{false}; // 熔断器启用
+    FallbackConfig fallback; // fallback
+    bool circuit_breaker_enabled{false}; // circuit_break
   };
 
   GatewayServer(runtime::net::EventLoop* loop, 
@@ -83,6 +84,15 @@ public:
   void EnableGlobalRateLimit(double rate, double burst);
   void EnablePerIPRateLimit(double rate, double burst);
   void SetPoolConfig(PoolConfig cfg) { pool_cfg_ = cfg; }
+
+  // 注册一条 GET 直接路由, 返回当前 GatewayMetrics 的 Prometheus 文本.
+  // 调用方应在 Start() 之前调用. path 默认 "/metrics".
+  void EnableMetricsEndpoint(std::string_view path = "/metrics");
+
+  // 暴露指标对象, 调用方可读可写 (用于外部埋点 / 测试 / 自定义导出).
+  runtime::metrics::GatewayMetrics&       Metrics()       { return metrics_; }
+  const runtime::metrics::GatewayMetrics& Metrics() const { return metrics_; }
+
   const Route* MatchRoute(std::string_view path) const;
   void Start();
 private:
@@ -117,6 +127,7 @@ private:
   std::unique_ptr<RateLimiter> rate_limiter_;  // 限流器
   std::string rate_limit_response_429_; // 预渲染 429 响应
   RateLimiterConfig rate_limiter_cfg_;  // accumulated config, committed in Enable* calls
+  runtime::metrics::GatewayMetrics metrics_;  // 运行时观测点, header-only 原子操作
 };
 
 } // namespace runtime::gateway

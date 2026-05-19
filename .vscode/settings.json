@@ -11,5 +11,9 @@
         "mutex": "cpp",
         "condition_variable": "cpp"
     },
-    "C_Cpp.errorSquiggles": "disabled"
+    "C_Cpp.errorSquiggles": "disabled",
+    "editor.tabSize": 2,
+    "editor.indentSize": "tabSize",
+    "editor.insertSpaces": true,
+    "editor.detectIndentation": false
 }
