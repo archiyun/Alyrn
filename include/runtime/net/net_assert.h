@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Aresna
+// SPDX-License-Identifier: MIT
 #pragma once
 
 // RUNTIME_ASSERT(cond, msg)

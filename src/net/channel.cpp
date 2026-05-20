@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Aresna
+// SPDX-License-Identifier: MIT
 #include "runtime/net/channel.h"
 #include "runtime/net/event_loop.h"
 #include "runtime/net/net_assert.h"

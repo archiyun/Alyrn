@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Aresna
+// SPDX-License-Identifier: MIT
 #include "runtime/log/logger.h"
 #include "runtime/net/acceptor.h"
 #include "runtime/net/event_loop.h"

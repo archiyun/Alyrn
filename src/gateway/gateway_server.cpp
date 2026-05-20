@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Aresna
+// SPDX-License-Identifier: MIT
 #include "runtime/gateway/gateway_server.h"
 
 #include "runtime/log/logger.h"

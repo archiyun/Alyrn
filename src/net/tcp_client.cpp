@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Aresna
+// SPDX-License-Identifier: MIT
 #include "runtime/net/tcp_client.h"
 
 #include "runtime/net/connector.h"

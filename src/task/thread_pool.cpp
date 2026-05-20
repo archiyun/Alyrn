@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Aresna
+// SPDX-License-Identifier: MIT
 #include "runtime/task/thread_pool.h"
 
 #include "runtime/task/task.h"

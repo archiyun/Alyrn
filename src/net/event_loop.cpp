@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Aresna
+// SPDX-License-Identifier: MIT
 #include "runtime/net/event_loop.h"
 
 #include "runtime/time/timestamp.h"

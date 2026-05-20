@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Aresna
+// SPDX-License-Identifier: MIT
 #include "runtime/net/timer.h"
 #include "runtime/net/timer_rbtree.h"
 

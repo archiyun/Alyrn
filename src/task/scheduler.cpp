@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Aresna
+// SPDX-License-Identifier: MIT
 #include "runtime/task/scheduler.h"
 #include "runtime/time/timestamp.h"
 #include <stdexcept>

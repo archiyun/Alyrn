@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Aresna
+// SPDX-License-Identifier: MIT
 // Proxy request lifecycle. UpstreamRequest models one upstream interaction as
 // a small state machine driven by network callbacks on the gateway's IO thread:
 //

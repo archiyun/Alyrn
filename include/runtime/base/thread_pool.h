@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Aresna
+// SPDX-License-Identifier: MIT
 #pragma once
 
 // Lightweight fire-and-forget thread pool for offloading blocking operations.

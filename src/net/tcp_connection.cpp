@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Aresna
+// SPDX-License-Identifier: MIT
 #include "runtime/net/tcp_connection.h"
 #include "runtime/net/channel.h"
 #include "runtime/net/event_loop.h"
@@ -385,7 +387,7 @@ void TcpConnection::ShutdownInLoop() {
 void TcpConnection::SetSsl(SSL* ssl) {
   ssl_ = ssl;
   SSL_set_fd(ssl_, channel_->Fd());
-  SSL_set_accept_state(ssl_); // 服务端模式
+  SSL_set_accept_state(ssl_); 
 }
 
 void TcpConnection::DoSslHandshake() {

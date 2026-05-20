@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Aresna
+// SPDX-License-Identifier: MIT
 #include "runtime/net/connector.h"
 #include "runtime/net/channel.h"
 #include "runtime/net/net_utils.h"

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Aresna
+// SPDX-License-Identifier: MIT
 #include "runtime/net/poller.h"
 #include "runtime/net/channel.h"
 #include "runtime/net/epoll_poller.h"

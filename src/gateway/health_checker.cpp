@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Aresna
+// SPDX-License-Identifier: MIT
 // Active health checks: periodically probe every registered peer with a
 // small HTTP GET. The probe outcome feeds two independent state machines:
 //   - threshold-based binary up/down (state.down) for hard removal

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Aresna
+// SPDX-License-Identifier: MIT
 // murmurhash3.h - MurmurHash3 32-bit
 // 
 // 引用: https//github.com/aappleby/smhasher (by Austin Appleby)
