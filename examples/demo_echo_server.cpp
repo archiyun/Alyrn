@@ -54,6 +54,7 @@
    wrk -t8 -c500 -d30s --latency http://127.0.0.1:8080/
  */
 
+#include "runtime/log/logger.h"
 #include "runtime/net/buffer.h"
 #include "runtime/net/event_loop.h"
 #include "runtime/net/inet_address.h"
@@ -153,6 +154,13 @@ int main() {
   // -- 忽略 SIGPIPE -- （客户端断联时不 Crash)
   std::signal(SIGPIPE, SIG_IGN);
 
+  // -- 初始化日志（写到 echo_server.log，可 tail -f 实时查看） --
+  runtime::log::Logger::Instance().Init(
+      "echo_server",
+      runtime::log::LogLevel::INFO,
+      /*flush_interval_ms=*/1000,
+      /*roll_size=*/10 * 1024 * 1024);
+
   // -- 构建服务器 --
   runtime::net::EventLoop main_loop;
   runtime::net::TcpServer server(
@@ -174,7 +182,9 @@ int main() {
 
   // -- 启动服务 --
   server.Start();
-  std::printf("NetEchoServer port=%u io_threads=%d et=%s", port, io_threads, et_mode ? "ON" : "OFF");
+  std::printf("NetEchoServer port=%u io_threads=%d et=%s  (logs: tail -f echo_server.log)\n",
+              port, io_threads, et_mode ? "ON" : "OFF");
+  std::fflush(stdout);
   main_loop.Loop();
   return 0;
 }
