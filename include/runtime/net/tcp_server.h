@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Aresna
+// SPDX-License-Identifier: MIT
 #pragma once
 
 #include "runtime/base/noncopyable.h"
@@ -36,8 +38,8 @@ public:
   }
 
   // A value of 0 keeps all I/O on the base loop. A positive value creates
-  // that many worker loops.
-  void SetThreadNum(int num_threads) { thread_num_ = num_threads; }
+  // that many sub-reactor loops (one EventLoop per thread).
+  void SetThreadNum(int sub_loop_num) { sub_loop_num_ = sub_loop_num; }
 
   // Switch the acceptor and all new connections to edge-triggered epoll mode.
   // Must be called before Start().
@@ -82,7 +84,7 @@ private:
   std::unique_ptr<Acceptor>            acceptor_;
   std::unique_ptr<EventLoopThreadPool> thread_pool_;
 
-  int thread_num_;
+  int sub_loop_num_;
   bool started_;
   bool et_mode_;
   int next_conn_id_;

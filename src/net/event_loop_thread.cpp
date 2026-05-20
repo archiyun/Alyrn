@@ -1,17 +1,21 @@
+// Copyright (c) 2026 Aresna
+// SPDX-License-Identifier: MIT
 #include "runtime/net/event_loop_thread.h"
+
 #include "runtime/net/event_loop.h"
 
 #include <cassert>
 
 namespace runtime::net {
 
-EventLoopThread::EventLoopThread(const ThreadInitCallback& cb)
-    : init_callback_(cb) {}
+EventLoopThread::EventLoopThread() = default;
 
+EventLoopThread::EventLoopThread(ThreadInitCallback cb)
+    : init_callback_(std::move(cb)) {}
 
 EventLoop* EventLoopThread::StartLoop() {
   thread_ = std::jthread([this](std::stop_token token) {
-    ThreadFunc(std::move(token));
+    WorkLoop(std::move(token));
   });
   EventLoop* loop = nullptr;
   {
@@ -24,7 +28,7 @@ EventLoop* EventLoopThread::StartLoop() {
   return loop;
 }
 
-void EventLoopThread::ThreadFunc(std::stop_token token) {
+void EventLoopThread::WorkLoop(std::stop_token token) {
   EventLoop loop;
 
   if (init_callback_) init_callback_(&loop);
@@ -41,3 +45,4 @@ void EventLoopThread::ThreadFunc(std::stop_token token) {
   }
 }
 }  // namespace runtime::net
+

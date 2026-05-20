@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Aresna
+// SPDX-License-Identifier: MIT
 #pragma once
 
 #include "runtime/base/noncopyable.h"
@@ -24,8 +26,8 @@ public:
   Acceptor(EventLoop* loop, const InetAddress& listen_addr, bool reuse_port);
   ~Acceptor();
 
-  void SetNewConnectionCallback(const NewConnectionCallback& cb) {
-    new_connection_callback_ = cb;
+  void SetNewConnectionCallback(NewConnectionCallback cb) {
+    new_connection_callback_ = std::move(cb);
   }
 
   // Must be called before Listen() so accept_channel_ is registered with EPOLLET.

@@ -1,4 +1,7 @@
+// Copyright (c) 2026 Aresna
+// SPDX-License-Identifier: MIT
 #include "runtime/net/tcp_server.h"
+
 #include "runtime/net/event_loop.h"
 #include "runtime/net/net_utils.h"
 #include "runtime/log/logger.h"
@@ -17,7 +20,7 @@ TcpServer::TcpServer(
       started_(false),
       et_mode_(false),
       next_conn_id_(1),
-      thread_num_(0) {
+      sub_loop_num_(0) {
     LOG_INFO() << "tcp server created: name=" << name_;
 
     acceptor_->SetNewConnectionCallback(
@@ -29,8 +32,8 @@ TcpServer::TcpServer(
 TcpServer::~TcpServer() {
     LOG_INFO() << "tcp server destroying: name=" << name_
                << " active_connections=" << connections_.size();
-  for (auto& item : connections_) {
-    TcpConnectionPtr conn(item.second);
+  for (auto& [_, conn_ptr] : connections_) {
+    TcpConnectionPtr conn(conn_ptr);
     conn->ConnectDestroyed();
   }
 }
@@ -39,10 +42,14 @@ void TcpServer::Start() {
   if (!started_) {
     started_ = true;
 
-    thread_pool_ = std::make_unique<EventLoopThreadPool>(loop_, thread_num_);
-    thread_pool_->Start(thread_init_callback_);
+    thread_pool_ = std::make_unique<EventLoopThreadPool>(loop_, sub_loop_num_);
+    if (thread_init_callback_) {
+      thread_pool_->Start(thread_init_callback_);
+    } else {
+      thread_pool_->Start();
+    }
     LOG_INFO() << "tcp server starting: name=" << name_
-               << " io_threads=" << thread_num_;
+               << " sub_loops=" << sub_loop_num_;
     loop_->RunInLoop([this] {
       acceptor_->SetEdgeTriggered(et_mode_);
       acceptor_->Listen();

@@ -17,23 +17,22 @@ class EventLoopThreadPool : public runtime::base::NonCopyable {
 public:
   using ThreadInitCallback = EventLoopThread::ThreadInitCallback;
 
-  EventLoopThreadPool(EventLoop* main_loop, int num_threads);
+  EventLoopThreadPool(EventLoop* main_loop, int sub_loop_num);
   ~EventLoopThreadPool();
 
-  void Start(const ThreadInitCallback& cb = ThreadInitCallback());
+  void Start();
+  void Start(ThreadInitCallback cb);
 
   // Returns the next EventLoop in round-robin order. (RR)
+  // Must be called from the main loop thread — the round-robin cursor is
+  // unsynchronized.
   EventLoop* GetNextLoop();
-
-  // Returns all managed EventLoops. If no worker threads exist, returns the
-  // base loop as the only element.
-  std::vector<EventLoop*> GetAllLoops() const;
 
   bool Started() const { return started_; }
 private:
   EventLoop* main_loop_;
   bool started_;
-  int num_threads_;
+  int sub_loop_num_;
   int next_;
 
   std::vector<std::unique_ptr<EventLoopThread>> threads_;

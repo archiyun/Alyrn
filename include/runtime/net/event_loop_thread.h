@@ -17,14 +17,16 @@ class EventLoop;
 class EventLoopThread : public runtime::base::NonCopyable {
 public:
   using ThreadInitCallback = std::function<void(EventLoop*)>;
-  explicit EventLoopThread(const ThreadInitCallback& cb = ThreadInitCallback());
+
+  EventLoopThread();
+  explicit EventLoopThread(ThreadInitCallback cb);
   ~EventLoopThread() = default;
 
   // Starts the thread and blocks until the EventLoop is ready.
   EventLoop* StartLoop();
 
 private:
-  void ThreadFunc(std::stop_token token);
+  void WorkLoop(std::stop_token token);
 
   EventLoop* loop_{nullptr};
   std::mutex mutex_;

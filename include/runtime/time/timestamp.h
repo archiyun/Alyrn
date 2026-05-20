@@ -1,8 +1,5 @@
-// Copyright 2024 [Author/Organization]. All rights reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// ...
-
+// Copyright (c) 2026 Aresna
+// SPDX-License-Identifier: MIT
 #pragma once
 
 #include <cstdint>

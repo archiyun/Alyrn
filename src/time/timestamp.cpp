@@ -1,7 +1,5 @@
-// Copyright 2026 [arsenova/OpenFree-China]. All rights reserved.
-//
-// Implementation of the Timestamp class for time representation and formatting.
-
+// Copyright (c) 2026 Aresna
+// SPDX-License-Identifier: MIT
 #include "runtime/time/timestamp.h"
 
 #include <chrono>
