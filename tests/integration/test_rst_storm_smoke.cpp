@@ -1,4 +1,5 @@
 // Copyright (c) 2026 Aresna
+// 
 // SPDX-License-Identifier: MIT
 //
 // 压力测试：在服务端挂 10k 条空闲连接，然后客户端用
@@ -35,7 +36,6 @@
 
 #include <arpa/inet.h>
 #include <atomic>
-#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <exception>

@@ -17,6 +17,11 @@ bool Expect(bool condition, const char* message) {
     return true;
 }
 
+bool ParseOk(runtime::http::ParseStatus s) {
+    return s == runtime::http::ParseStatus::Continue ||
+           s == runtime::http::ParseStatus::GotAll;
+}
+
 bool TestParsesHttp11KeepAliveRequest() {
     runtime::http::HttpContext context;
     runtime::net::Buffer buffer;
@@ -28,7 +33,7 @@ bool TestParsesHttp11KeepAliveRequest() {
         "\r\n";
     buffer.Append(request);
 
-    bool ok = Expect(context.ParseRequest(buffer, runtime::time::Timestamp::Now()),
+    bool ok = Expect(ParseOk(context.ParseRequest(buffer, runtime::time::Timestamp::Now())),
                      "parser should accept a valid HTTP/1.1 request");
     ok &= Expect(context.GotAll(), "parser should complete the request");
 
@@ -72,12 +77,12 @@ bool TestParsesRequestBodyAcrossChunks() {
         "\r\n";
 
     buffer.Append(head);
-    bool ok = Expect(context.ParseRequest(buffer, runtime::time::Timestamp::Now()),
+    bool ok = Expect(ParseOk(context.ParseRequest(buffer, runtime::time::Timestamp::Now())),
                      "parser should accept a partial POST request");
     ok &= Expect(!context.GotAll(), "parser should wait for the remaining body bytes");
 
     buffer.Append("hello");
-    ok &= Expect(context.ParseRequest(buffer, runtime::time::Timestamp::Now()),
+    ok &= Expect(ParseOk(context.ParseRequest(buffer, runtime::time::Timestamp::Now())),
                  "parser should accept the completed body");
     ok &= Expect(context.GotAll(), "parser should complete after receiving the body");
 
@@ -176,6 +181,106 @@ bool TestDistinguishes404And405() {
     return ok;
 }
 
+bool TestRejectsTransferEncoding() {
+  runtime::net::Buffer buf;
+  buf.Append("POST / HTTP/1.1\r\n"
+             "Host: x\r\n"
+             "Transfer-Encoding: chunked\r\n"
+             "\r\n");
+  runtime::http::HttpContext ctx;
+  return Expect(!ParseOk(ctx.ParseRequest(buf, {})),
+                "parser should reject Transfer-Encoding");
+}
+
+bool TestRejectsCLAndTEBoth() {
+  runtime::net::Buffer buf;
+  buf.Append("POST / HTTP/1.1\r\n"
+             "Host: x\r\n"
+             "Content-Length: 5\r\n"
+             "Transfer-Encoding: chunked\r\n"
+             "\r\n");
+  runtime::http::HttpContext ctx;
+  return Expect(!ParseOk(ctx.ParseRequest(buf, {})),
+                "parser should reject Content-Length + Transfer-Encoding");
+}
+
+bool TestRejectsDuplicateContentLength() {
+  runtime::net::Buffer buf;
+  buf.Append("POST / HTTP/1.1\r\n"
+             "Host: x\r\n"
+             "Content-Length: 10\r\n"
+             "Content-Length: 20\r\n"
+             "\r\n"
+             "0123456789");
+  runtime::http::HttpContext ctx;
+  return Expect(!ParseOk(ctx.ParseRequest(buf, {})),
+                "parser should reject duplicate Content-Length");
+}
+
+bool TestRejectsTooManyHeaders() {
+  runtime::net::Buffer buf;
+  buf.Append("GET / HTTP/1.1\r\n");
+  for (int i = 0; i < 200; ++i) {
+    buf.Append("X-Spam-" + std::to_string(i) + ": v\r\n");
+  }
+  buf.Append("\r\n");
+  runtime::http::HttpContext ctx;
+  return Expect(!ParseOk(ctx.ParseRequest(buf, {})),
+                "parser should reject when header count exceeds the cap");
+}
+
+bool TestRejectsOversizedRequestLine() {
+  runtime::net::Buffer buf;
+  buf.Append("GET /");
+  buf.Append(std::string(9000, 'a'));  // > kMaxRequestLine (8 KiB)
+  buf.Append(" HTTP/1.1\r\n\r\n");
+  runtime::http::HttpContext ctx;
+  return Expect(!ParseOk(ctx.ParseRequest(buf, {})),
+                "parser should reject request line beyond the cap");
+}
+
+bool TestRejectsObsFold() {
+  // RFC 9112 §5.2: obsolete line folding (continuation line starting with
+  // whitespace) must be rejected. The fold line lacks a colon, so the parser
+  // rejects it as a malformed header — lock that behavior down.
+  runtime::net::Buffer buf;
+  buf.Append("GET / HTTP/1.1\r\n"
+             "Host: x\r\n"
+             "X-Foo: bar\r\n"
+             " continuation\r\n"
+             "\r\n");
+  runtime::http::HttpContext ctx;
+  const auto s = ctx.ParseRequest(buf, {});
+  return Expect(s == runtime::http::ParseStatus::BadRequest,
+                "obs-fold continuation must yield BadRequest");
+}
+
+bool TestMapsParseStatusToStatusCode() {
+  using runtime::http::ParseStatus;
+  using runtime::http::StatusCode;
+  using runtime::http::ParseStatusToStatusCode;
+  bool ok = true;
+  ok &= Expect(ParseStatusToStatusCode(ParseStatus::UriTooLong)      == StatusCode::UriTooLong,                  "414");
+  ok &= Expect(ParseStatusToStatusCode(ParseStatus::HeaderTooLarge)  == StatusCode::RequestHeaderFieldsTooLarge, "431");
+  ok &= Expect(ParseStatusToStatusCode(ParseStatus::PayloadTooLarge) == StatusCode::PayloadTooLarge,             "413");
+  ok &= Expect(ParseStatusToStatusCode(ParseStatus::BadMethod)       == StatusCode::NotImplemented,              "501");
+  ok &= Expect(ParseStatusToStatusCode(ParseStatus::BadVersion)      == StatusCode::HttpVersionNotSupported,     "505");
+  ok &= Expect(ParseStatusToStatusCode(ParseStatus::BadRequest)      == StatusCode::BadRequest,                  "400");
+  return ok;
+}
+
+bool TestParsesConnectMethod() {
+  runtime::net::Buffer buf;
+  buf.Append("CONNECT example.com:443 HTTP/1.1\r\n"
+             "Host: example.com:443\r\n"
+             "\r\n");
+  runtime::http::HttpContext ctx;
+  bool ok = Expect(ParseOk(ctx.ParseRequest(buf, {})), "CONNECT should parse");
+  ok &= Expect(ctx.Request().GetMethod() == runtime::http::Method::Connect,
+               "method enum should be Connect");
+  return ok;
+}
+
 }  // namespace
 
 int main() {
@@ -185,7 +290,15 @@ int main() {
                     TestMatchesStaticRoute() &&
                     TestMatchesDynamicRouteAndParams() &&
                     TestPrefersStaticRouteOverParamRoute() &&
-                    TestDistinguishes404And405();
+                    TestDistinguishes404And405() &&
+                    TestRejectsTransferEncoding() &&
+                    TestRejectsCLAndTEBoth() &&
+                    TestRejectsDuplicateContentLength() &&
+                    TestRejectsTooManyHeaders() &&
+                    TestRejectsOversizedRequestLine() &&
+                    TestRejectsObsFold() &&
+                    TestMapsParseStatusToStatusCode() &&
+                    TestParsesConnectMethod();
     if (!ok) {
         return 1;
     }

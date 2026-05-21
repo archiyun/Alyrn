@@ -29,7 +29,7 @@ public:
   // Accessors used by Http2Session to build HTTP/2 HEADERS frames directly,
   // bypassing the HTTP/1.1 wire format produced by ToString().
   StatusCode         GetStatusCode() const { return status_code_; }
-  const std::string& Body()         const { return body_; }
+  const std::string& Body()          const { return body_; }
   const std::unordered_map<std::string, std::string>& Headers() const {
     return headers_;
   }

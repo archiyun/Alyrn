@@ -2,21 +2,9 @@
 // SPDX-License-Identifier: MIT
 #include "runtime/http/http_response.h"
 
-#include <cctype>
+#include "header_utils.h"
 
 namespace runtime::http {
-
-namespace {
-
-std::string ToLower(std::string_view sv) {
-  std::string out{sv};
-  for (char& c : out) {
-    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-  }
-  return out;
-}
-
-}  // namespace
 
 HttpResponse::HttpResponse(bool close_connection)
     : close_connection_(close_connection) {}
@@ -30,11 +18,9 @@ void HttpResponse::SetContentType(std::string_view content_type) {
 }
 
 void HttpResponse::AddHeader(std::string_view key, std::string_view value) {
-  std::string k{key};
-  // Content-Length and Connection are managed by the HTTP layer.
-  const std::string lower = ToLower(k);
-  if (lower == "content-length" || lower == "connection") return;
-  headers_.insert_or_assign(k, std::string(value));
+  // Reject framing / hop-by-hop / pseudo headers — the HTTP layer owns these.
+  if (detail::IsRestrictedResponseHeader(detail::LowerCopy(key))) return;
+  headers_.insert_or_assign(std::string(key), std::string(value));
 }
 
 void HttpResponse::SetCloseConnection(bool close) { close_connection_ = close; }
@@ -57,6 +43,14 @@ std::string HttpResponse::ToString() const {
 
   out += close_connection_ ? "Connection: close\r\n"
                            : "Connection: keep-alive\r\n";
+
+  out += "Date: ";
+  out += detail::FormatHttpDateNow();
+  out += "\r\n";
+
+  out += "Server: ";
+  out += detail::kServerSignature;
+  out += "\r\n";
 
   for (const auto &[key, value] : headers_) {
     out += key;

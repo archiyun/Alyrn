@@ -137,6 +137,23 @@ target_link_libraries(rst_storm_smoke_test
 add_test(NAME rst_storm_smoke_test COMMAND rst_storm_smoke_test)
 set_tests_properties(rst_storm_smoke_test PROPERTIES TIMEOUT 60)
 
+add_executable(slowloris_smoke_test
+    integration/test_slowloris_smoke.cpp
+)
+
+target_include_directories(slowloris_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(slowloris_smoke_test
+    PRIVATE
+        runtime_http
+)
+
+add_test(NAME slowloris_smoke_test COMMAND slowloris_smoke_test)
+set_tests_properties(slowloris_smoke_test PROPERTIES TIMEOUT 30)
+
 add_executable(rbtree_validator
     unit/test_rbtree_validator.cpp
 )

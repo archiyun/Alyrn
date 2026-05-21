@@ -38,4 +38,54 @@ Makefile
 *.log
 *.log.*
 perf.data
+perf.data.old
 src/net/buffer_ringbuf.cpp
+
+# Core dumps and crash artifacts
+core
+core.*
+vgcore.*
+*.core
+hs_err_pid*
+
+# Top-level capture files (stdout redirects from demo_* binaries)
+# These look like binaries but are actually plain-text logs.
+/echo_server
+/gateway
+/demo_*.out
+
+# Coverage and profiling
+*.gcda
+*.gcno
+*.gcov
+coverage.info
+lcov.info
+*.profraw
+*.profdata
+coverage/
+callgrind.out.*
+massif.out.*
+
+# Sanitizer suppressions output
+*.tsan
+*.asan.log.*
+*.ubsan.log.*
+
+# Editor and OS clutter
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Python / tooling caches (test scripts, codegen)
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# clangd / language server
+.clangd/
+.cache/clangd/

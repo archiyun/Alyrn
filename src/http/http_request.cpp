@@ -2,35 +2,16 @@
 // SPDX-License-Identifier: MIT
 #include "runtime/http/http_request.h"
 
-#include <cctype>
+#include "header_utils.h"
 
 namespace runtime::http {
 
-namespace {
-
-std::string ToLower(std::string_view sv) {
-  std::string out{sv};
-  for (char& c : out) {
-    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-  }
-  return out;
-}
-
-std::string Trim(std::string_view sv) {
-  std::size_t begin{0};
-  std::size_t end{sv.size()};
-  while (begin < end && sv[begin] == ' ') ++begin;
-  while (begin < end && sv[end-1] == ' ') --end;
-  return std::string(sv.substr(begin, end - begin));
-}
-}  // namespace
-
 void HttpRequest::AddHeader(std::string_view field, std::string_view value) {
-  headers_.emplace(ToLower(field), Trim(value));
+  headers_.emplace(detail::LowerCopy(field), detail::Trim(value));
 }
 
 std::string_view HttpRequest::GetHeader(std::string_view field) const {
-  const auto it = headers_.find(ToLower(field));
+  const auto it = headers_.find(detail::LowerCopy(field));
   if (it == headers_.end()) {
     return {};
   }
@@ -38,11 +19,11 @@ std::string_view HttpRequest::GetHeader(std::string_view field) const {
 }
 
 void HttpRequest::SetHeader(std::string_view field, std::string_view value) {
-  headers_[ToLower(field)] = Trim(value);
+  headers_[detail::LowerCopy(field)] = detail::Trim(value);
 }
 
 bool HttpRequest::RemoveHeader(std::string_view field) {
-  return headers_.erase(ToLower(field)) > 0;
+  return headers_.erase(detail::LowerCopy(field)) > 0;
 }
 
 bool HttpRequest::KeepAlive() const {

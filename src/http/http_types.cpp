@@ -2,60 +2,58 @@
 // SPDX-License-Identifier: MIT
 #include "runtime/http/http_types.h"
 
-#include <array>
-#include <string_view>
 namespace runtime::http {
 
 std::string_view MethodToString(Method m) noexcept {
-  static constexpr std::array table = {
-      std::pair{Method::Get,     std::string_view{"GET"}},
-      std::pair{Method::Post,    std::string_view{"POST"}},
-      std::pair{Method::Put,     std::string_view{"PUT"}},
-      std::pair{Method::Delete,  std::string_view{"DELETE"}},
-      std::pair{Method::Head,    std::string_view{"HEAD"}},
-      std::pair{Method::Options, std::string_view{"OPTIONS"}},
-      std::pair{Method::Patch,   std::string_view{"PATCH"}},
-  };
-
-  for (const auto& [method, name] : table) {
-    if (method == m) {
-      return name;
-    }
+  switch (m) {
+    case Method::Get:     return "GET";
+    case Method::Post:    return "POST";
+    case Method::Put:     return "PUT";
+    case Method::Delete:  return "DELETE";
+    case Method::Head:    return "HEAD";
+    case Method::Options: return "OPTIONS";
+    case Method::Patch:   return "PATCH";
+    case Method::Connect: return "CONNECT";
+    case Method::Trace:   return "TRACE";
+    case Method::Invalid: return "INVALID";
   }
-
   return "INVALID";
 }
 
 std::string_view StatusMessage(StatusCode code) noexcept {
-  static constexpr std::array table = {
-      std::pair{StatusCode::SwitchingProtocols,  std::string_view{"Switching Protocols"}},
-      std::pair{StatusCode::Ok,                  std::string_view{"OK"}},
-      std::pair{StatusCode::Created,             std::string_view{"Created"}},
-      std::pair{StatusCode::NoContent,           std::string_view{"No Content"}},
-      std::pair{StatusCode::MovedPermanently,    std::string_view{"Moved Permanently"}},
-      std::pair{StatusCode::Found,               std::string_view{"Found"}},
-      std::pair{StatusCode::SeeOther,            std::string_view{"See Other"}},
-      std::pair{StatusCode::NotModified,         std::string_view{"Not Modified"}},
-      std::pair{StatusCode::BadRequest,          std::string_view{"Bad Request"}},
-      std::pair{StatusCode::Unauthorized,        std::string_view{"Unauthorized"}},
-      std::pair{StatusCode::Forbidden,           std::string_view{"Forbidden"}},
-      std::pair{StatusCode::NotFound,            std::string_view{"Not Found"}},
-      std::pair{StatusCode::MethodNotAllowed,    std::string_view{"Method Not Allowed"}},
-      std::pair{StatusCode::RequestTimeout,      std::string_view{"Request Timeout"}},
-      std::pair{StatusCode::TooManyRequests,     std::string_view{"Too Many Requests"}},
-      std::pair{StatusCode::InternalServerError, std::string_view{"Internal Server Error"}},
-      std::pair{StatusCode::NotImplemented,      std::string_view{"Not Implemented"}},
-      std::pair{StatusCode::BadGateway,          std::string_view{"Bad Gateway"}},
-      std::pair{StatusCode::ServiceUnavailable,  std::string_view{"Service Unavailable"}},
-      std::pair{StatusCode::GatewayTimeout,      std::string_view{"Gateway Timeout"}},
-  };
+  switch (code) {
+    case StatusCode::Continue:                    return "Continue";
+    case StatusCode::SwitchingProtocols:          return "Switching Protocols";
 
-  for (const auto& [status_code, message] : table) {
-    if (status_code == code) {
-      return message;
-    }
+    case StatusCode::Ok:                          return "OK";
+    case StatusCode::Created:                     return "Created";
+    case StatusCode::NoContent:                   return "No Content";
+    case StatusCode::PartialContent:              return "Partial Content";
+
+    case StatusCode::MovedPermanently:            return "Moved Permanently";
+    case StatusCode::Found:                       return "Found";
+    case StatusCode::SeeOther:                    return "See Other";
+    case StatusCode::NotModified:                 return "Not Modified";
+
+    case StatusCode::BadRequest:                  return "Bad Request";
+    case StatusCode::Unauthorized:                return "Unauthorized";
+    case StatusCode::Forbidden:                   return "Forbidden";
+    case StatusCode::NotFound:                    return "Not Found";
+    case StatusCode::MethodNotAllowed:            return "Method Not Allowed";
+    case StatusCode::RequestTimeout:              return "Request Timeout";
+    case StatusCode::PayloadTooLarge:             return "Payload Too Large";
+    case StatusCode::UriTooLong:                  return "URI Too Long";
+    case StatusCode::UnsupportedMediaType:        return "Unsupported Media Type";
+    case StatusCode::TooManyRequests:             return "Too Many Requests";
+    case StatusCode::RequestHeaderFieldsTooLarge: return "Request Header Fields Too Large";
+
+    case StatusCode::InternalServerError:         return "Internal Server Error";
+    case StatusCode::NotImplemented:              return "Not Implemented";
+    case StatusCode::BadGateway:                  return "Bad Gateway";
+    case StatusCode::ServiceUnavailable:          return "Service Unavailable";
+    case StatusCode::GatewayTimeout:              return "Gateway Timeout";
+    case StatusCode::HttpVersionNotSupported:     return "HTTP Version Not Supported";
   }
-
   return "Unknown";
 }
 

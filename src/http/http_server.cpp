@@ -176,8 +176,11 @@ void HttpServer::OnMessage(const TcpConnectionPtr& conn,
 #endif
 
   auto& h1ctx = std::any_cast<HttpContext&>(conn->GetContext());
-  if (!h1ctx.ParseRequest(buf, ts)) {
-    HttpResponse err = MakeError(StatusCode::BadRequest, "malformed request");
+  const ParseStatus parse_status = h1ctx.ParseRequest(buf, ts);
+  if (parse_status != ParseStatus::Continue &&
+      parse_status != ParseStatus::GotAll) {
+    const StatusCode code = ParseStatusToStatusCode(parse_status);
+    HttpResponse err = MakeError(code, StatusMessage(code));
     conn->Send(err.ToString());
     conn->Shutdown();
     return;

@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <array>
+#include <cstdint>
 #include <string_view>
 
 namespace runtime::http {
@@ -16,6 +18,8 @@ enum class Method : uint8_t{
   Head,
   Options,
   Patch,
+  Connect,
+  Trace,
 };
 
 // HTTP protocol versions supported by the parser.
@@ -24,34 +28,42 @@ enum class Version : uint8_t{
   Http10 = 1,
   Http11,
   Http20, // implemented through Http2Session/nghttp2, not HttpContext parser
-  Http30, // not implement
+  Http30, // not implemented
 };
 
 enum class StatusCode : uint16_t {
-  SwitchingProtocols  = 101,
+  Continue                    = 100,
+  SwitchingProtocols          = 101,
 
-  Ok                  = 200,
-  Created             = 201,
-  NoContent           = 204,
+  Ok                          = 200,
+  Created                     = 201,
+  NoContent                   = 204,
+  PartialContent              = 206,
 
-  MovedPermanently    = 301,
-  Found               = 302,
-  SeeOther            = 303,
-  NotModified         = 304,
+  MovedPermanently            = 301,
+  Found                       = 302,
+  SeeOther                    = 303,
+  NotModified                 = 304,
 
-  BadRequest          = 400,
-  Unauthorized        = 401,
-  Forbidden           = 403,
-  NotFound            = 404,
-  MethodNotAllowed    = 405,
-  RequestTimeout      = 408,
-  TooManyRequests     = 429,
+  BadRequest                  = 400,
+  Unauthorized                = 401,
+  Forbidden                   = 403,
+  NotFound                    = 404,
+  MethodNotAllowed            = 405,
+  RequestTimeout              = 408,
+  PayloadTooLarge             = 413,
+  UriTooLong                  = 414,
+  UnsupportedMediaType        = 415,
 
-  InternalServerError = 500,
-  NotImplemented      = 501,
-  BadGateway          = 502,
-  ServiceUnavailable  = 503,
-  GatewayTimeout      = 504,
+  TooManyRequests             = 429,
+  RequestHeaderFieldsTooLarge = 431,
+
+  InternalServerError         = 500,
+  NotImplemented              = 501,
+  BadGateway                  = 502,
+  ServiceUnavailable          = 503,
+  GatewayTimeout              = 504,
+  HttpVersionNotSupported     = 505,
 };
 
 // Returns the wire-format name for an HTTP method.
@@ -59,5 +71,14 @@ std::string_view MethodToString(Method m) noexcept;
 
 // Returns the standard reason phrase for a status code.
 std::string_view StatusMessage(StatusCode code) noexcept;
+
+// All request methods accepted by the HTTP/1.x parser.
+// Order is arbitrary; the parser iterates and matches against MethodToString.
+// MethodToString is the single source of truth for the wire-format spelling.
+inline constexpr std::array<Method, 9> kAllRequestMethods = {
+    Method::Get,    Method::Post,   Method::Put,    Method::Delete,
+    Method::Head,   Method::Options, Method::Patch,
+    Method::Connect, Method::Trace,
+};
 
 } // namespace runtime::http

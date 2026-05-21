@@ -3,34 +3,14 @@
 #include "runtime/http/http2_session.h"
 #include "runtime/net/tcp_connection.h"
 
+#include "header_utils.h"
+
 #include <algorithm>
-#include <cctype>
 #include <cstring>
 #include <utility>
 #include <vector>
 
 namespace runtime::http {
-
-namespace {
-
-std::string ToLower(std::string_view sv) {
-  std::string out{sv};
-  for (char& c : out) {
-    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-  }
-  return out;
-}
-
-bool IsHttp2ForbiddenResponseHeader(std::string_view key) {
-  return key == "connection" ||
-         key == "keep-alive" ||
-         key == "proxy-connection" ||
-         key == "te" ||
-         key == "transfer-encoding" ||
-         key == "upgrade";
-}
-
-}  // namespace
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Construction / destruction
@@ -102,13 +82,16 @@ void Http2Session::SendResponse(int32_t stream_id, const HttpResponse& resp) {
   };
 
   for (const auto& [key, value] : resp.Headers()) {
-    const std::string lower = ToLower(key);
-    if (lower == "content-length" ||
-        IsHttp2ForbiddenResponseHeader(lower)) {
-      continue;
-    }
-    headers.emplace_back(lower, value);
+    std::string lower = detail::LowerCopy(key);
+    // Restricted list covers framing, hop-by-hop, and pseudo headers — plus
+    // date/server, which we re-emit below from the framework's own values.
+    if (detail::IsRestrictedResponseHeader(lower)) continue;
+    headers.emplace_back(std::move(lower), value);
   }
+
+  // Framework-managed headers (RFC 9110 §6.6.1 requires Date).
+  headers.emplace_back("date", detail::FormatHttpDateNow());
+  headers.emplace_back("server", std::string(detail::kServerSignature));
 
   if (!body.empty()) {
     headers.emplace_back("content-length", std::to_string(body.size()));

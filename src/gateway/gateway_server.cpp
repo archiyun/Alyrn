@@ -229,10 +229,14 @@ void GatewayServer::OnMessage(const TcpConnectionPtr& conn,
                               runtime::net::Buffer& buf,
                               runtime::time::Timestamp ts) {
   auto& ctx = std::any_cast<ConnCtx&>(conn->GetContext());
-  if (!ctx.http_ctx.ParseRequest(buf, ts)) {
+  const runtime::http::ParseStatus parse_status = ctx.http_ctx.ParseRequest(buf, ts);
+  if (parse_status != runtime::http::ParseStatus::Continue &&
+      parse_status != runtime::http::ParseStatus::GotAll) {
+    const runtime::http::StatusCode code =
+        runtime::http::ParseStatusToStatusCode(parse_status);
     metrics_.requests_malformed_total.Inc();
-    metrics_.ObserveStatus(static_cast<int>(runtime::http::StatusCode::BadRequest));
-    conn->Send(MakeError(runtime::http::StatusCode::BadRequest, "malformed request").ToString());
+    metrics_.ObserveStatus(static_cast<int>(code));
+    conn->Send(MakeError(code, runtime::http::StatusMessage(code)).ToString());
     conn->Shutdown();
     return;
   }
