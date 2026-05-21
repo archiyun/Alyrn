@@ -118,15 +118,19 @@ bool TestMatchesDynamicRouteAndParams() {
                      "dynamic route should return a handler");
     ok &= Expect(match.path_matched, "dynamic route should mark path as matched");
 
-    const auto id_it = match.params.find("id");
-    const auto post_it = match.params.find("post_id");
-    ok &= Expect(id_it != match.params.end(), "dynamic route should capture id");
-    ok &= Expect(post_it != match.params.end(),
-                 "dynamic route should capture post_id");
-    ok &= Expect(id_it != match.params.end() && id_it->second == "42",
-                 "id param should equal 42");
-    ok &= Expect(post_it != match.params.end() && post_it->second == "7",
-                 "post_id param should equal 7");
+    auto find_param = [&](std::string_view key)
+        -> const runtime::http::PathParam* {
+      for (const auto& p : match.params) {
+        if (p.key == key) return &p;
+      }
+      return nullptr;
+    };
+    const auto* id_p = find_param("id");
+    const auto* post_p = find_param("post_id");
+    ok &= Expect(id_p != nullptr, "dynamic route should capture id");
+    ok &= Expect(post_p != nullptr, "dynamic route should capture post_id");
+    ok &= Expect(id_p && id_p->value == "42", "id param should equal 42");
+    ok &= Expect(post_p && post_p->value == "7", "post_id param should equal 7");
     return ok;
 }
 
@@ -283,6 +287,18 @@ bool TestParsesConnectMethod() {
 
 }  // namespace
 
+bool TestRouterPathNormalization() {
+  runtime::http::Router r;
+  bool hit = false;
+  r.Get("/foo", [&](const runtime::http::HttpRequest&, runtime::http::HttpResponse&) { hit = true; });
+
+  for (auto p : {"/foo", "/foo/", "//foo", "/foo//"}) {
+    auto m = r.Match(runtime::http::Method::Get, p);
+    if (!m.handler) { std::fprintf(stderr, "missed: %s\n", p); return false; }
+  }
+  return true;
+}
+
 int main() {
     const bool ok = TestParsesHttp11KeepAliveRequest() &&
                     TestBuildsHttpResponse() &&
@@ -298,7 +314,8 @@ int main() {
                     TestRejectsOversizedRequestLine() &&
                     TestRejectsObsFold() &&
                     TestMapsParseStatusToStatusCode() &&
-                    TestParsesConnectMethod();
+                    TestParsesConnectMethod() &&
+                    TestRouterPathNormalization();
     if (!ok) {
         return 1;
     }

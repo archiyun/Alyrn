@@ -5,8 +5,7 @@
 #include <utility>
 namespace runtime::http {
 
-std::vector<std::string_view> Router::SplitPath(std::string_view path) {
-  std::vector<std::string_view> segments;
+void Router::SplitPath(std::string_view path, std::vector<std::string_view>& segments) {
   std::size_t start = 0;
   const std::size_t n = path.size();
 
@@ -21,24 +20,25 @@ std::vector<std::string_view> Router::SplitPath(std::string_view path) {
     }
     start = end + 1;
   }
-  return segments;
 }
 
 bool Router::IsParamSegment(std::string_view seg) {
   return !seg.empty() && seg[0] == ':';
 }
 
-std::string Router::ExtractParamName(std::string_view seg) {
-  return std::string(seg.substr(1));
+void Router::ExtractParamName(std::string_view seg, std::string& param_name) {
+  param_name = std::string(seg.substr(1));
 }
 
 void Router::Add(Method method, std::string_view path, Handler handler) {
-  const auto segments = SplitPath(path);
+  std::vector<std::string_view> segments;
+  SplitPath(path, segments);
   RouteTrieNode* node = &root_;
 
   for (const auto& seg : segments) {
     if (IsParamSegment(seg)) {
-      std::string param_name = ExtractParamName(seg);
+      std::string param_name;
+      ExtractParamName(seg, param_name);
 
       if (param_name.empty()) return;
 
@@ -96,27 +96,29 @@ bool Router::MatchNode(const RouteTrieNode* node,
   const std::string_view seg = segments[index];
 
   // Prefer static segments over parameter segments so "/users/me" does not get
-  // captured by "/users/:id" when both routes exist.
-  const auto sit = node->static_child.find(std::string(seg));
+  // captured by "/users/:id" when both routes exist. Heterogeneous find avoids
+  // constructing a temporary std::string on every segment lookup.
+  const auto sit = node->static_child.find(seg);
   if (sit != node->static_child.end() &&
       MatchNode(sit->second.get(), segments, index + 1, method, result)) {
     return true;
   }
 
   if (node->param_child) {
-    result.params[node->param_child->param_name] = std::string(seg);
+    const std::size_t saved = result.params.size();
+    result.params.push_back({node->param_child->param_name, std::string(seg)});
     if (MatchNode(node->param_child.get(), segments, index + 1, method,
                   result)) {
       return true;
     }
-    result.params.erase(node->param_child->param_name);
+    result.params.resize(saved);
   }
-
   return false;
 }
 
 RouteMatch Router::Match(Method method, std::string_view path) const {
-  const auto segments = SplitPath(path);
+  std::vector<std::string_view> segments;
+  SplitPath(path, segments);
   RouteMatch result;
   MatchNode(&root_, segments, 0, method, result);
   return result;

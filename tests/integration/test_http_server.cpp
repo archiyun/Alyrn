@@ -23,8 +23,9 @@ TEST(HttpRouterTest, Distinguishes404And405) {
     const auto exact = router.Match(runtime::http::Method::Get, "/users/42");
     EXPECT_TRUE(static_cast<bool>(exact.handler));
     EXPECT_TRUE(exact.path_matched);
-    ASSERT_EQ(exact.params.count("id"), 1u);
-    EXPECT_EQ(exact.params.at("id"), "42");
+    ASSERT_EQ(exact.params.size(), 1u);
+    EXPECT_EQ(exact.params[0].key, "id");
+    EXPECT_EQ(exact.params[0].value, "42");
 
     const auto wrong_method = router.Match(runtime::http::Method::Post, "/users/42");
     EXPECT_FALSE(static_cast<bool>(wrong_method.handler));

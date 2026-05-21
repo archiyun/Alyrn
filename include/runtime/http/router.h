@@ -16,13 +16,34 @@
 
 namespace runtime::http {
 
+namespace detail {
+
+// Transparent hash wrapper so unordered_map<std::string, ...> can be looked up
+// with std::string_view without constructing a temporary std::string.
+// C++20 heterogeneous lookup requires is_transparent on BOTH Hash and KeyEqual;
+// std::hash<std::string_view> alone does not carry that tag, hence this wrapper.
+struct TransparentStringHash {
+  using is_transparent = void;
+  std::size_t operator()(std::string_view v) const noexcept {
+    return std::hash<std::string_view>{}(v);
+  }
+  std::size_t operator()(const std::string& s) const noexcept {
+    return std::hash<std::string_view>{}(s);
+  }
+  std::size_t operator()(const char* s) const noexcept {
+    return std::hash<std::string_view>{}(s);
+  }
+};
+
+}  // namespace detail
+
 // Handler is the business callback executed after a request has been parsed.
 using Handler = std::function<void(const HttpRequest&, HttpResponse&)>;
 
 // RouteMatch describes the router result for one method/path lookup.
 struct RouteMatch {
   Handler handler{};
-  std::unordered_map<std::string, std::string> params;
+  std::vector<PathParam> params;
   bool path_matched{false};
 };
 
@@ -43,16 +64,29 @@ public:
   RouteMatch Match(Method method, std::string_view path) const;
 private:
   struct RouteTrieNode {
-    std::unordered_map<std::string, std::unique_ptr<RouteTrieNode>>
+    std::unordered_map<std::string, std::unique_ptr<RouteTrieNode>,
+                       detail::TransparentStringHash, std::equal_to<>>
         static_child;
     std::unique_ptr<RouteTrieNode> param_child;
     std::string param_name;
     std::unordered_map<Method, Handler> handlers;
   };
 
-  static std::vector<std::string_view> SplitPath(std::string_view path);
+  // Canonical path segmentation. The ONLY function in the project that
+  // splits a route path into segments. Both Add() and Match() MUST use it,
+  // otherwise registered routes can become unreachable.
+  //
+  // Normalization rules (silent, by design):
+  //   - leading '/' stripped
+  //   - empty segments dropped: "//foo" → ["foo"], "/foo/" → ["foo"]
+  //   - trailing '/' has no semantic effect: "/foo/" matches the same as "/foo"
+  //
+  // If you need to distinguish "/foo" from "/foo/", do not patch this
+  // function — add a separate strict matcher.
+  static void SplitPath(std::string_view path, std::vector<std::string_view>& segments);
+  
   static bool IsParamSegment(std::string_view seg);
-  static std::string ExtractParamName(std::string_view seg);
+  static void ExtractParamName(std::string_view seg, std::string& param_name);
 
   bool MatchNode(const RouteTrieNode* node,
                  const std::vector<std::string_view>& segments,

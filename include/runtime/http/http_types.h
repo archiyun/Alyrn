@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstdint>
+#include <string>
 #include <string_view>
 
 namespace runtime::http {
@@ -79,6 +80,14 @@ inline constexpr std::array<Method, 9> kAllRequestMethods = {
     Method::Get,    Method::Post,   Method::Put,    Method::Delete,
     Method::Head,   Method::Options, Method::Patch,
     Method::Connect, Method::Trace,
+};
+
+// A single captured path parameter, e.g. for "/users/:id" with "/users/42"
+// the entry is {"id", "42"}. Lives in http_types.h (not router.h) so both
+// Router and HttpRequest can reference it without a circular include.
+struct PathParam {
+  std::string key;
+  std::string value;
 };
 
 } // namespace runtime::http

@@ -7,6 +7,7 @@
 
 #include <string>
 #include <string_view>
+#include <vector>
 #include <unordered_map>
 
 namespace runtime::http {
@@ -49,15 +50,17 @@ public:
   // Returns true if the request semantics keep the connection alive.
   bool KeepAlive() const;
 
-  void SetPathParams(std::unordered_map<std::string, std::string> p) {
+  void SetPathParams(std::vector<::runtime::http::PathParam> p) {
     path_params_ = std::move(p);
   }
 
+  // Linear scan: path_params_ typically holds 0~2 entries, where linear
+  // search beats hashing both in instructions and in allocation cost.
   std::string_view PathParam(std::string_view key) const {
-    auto it = path_params_.find(std::string(key));
-    if (it == path_params_.end())
-      return {};
-    return it->second;
+    for (const auto& p : path_params_) {
+      if (p.key == key) return p.value;
+    }
+    return {};
   }
 
   void SetReceiveTime(runtime::time::Timestamp ts) { receive_time_ = ts; }
@@ -73,7 +76,7 @@ private:
   std::unordered_map<std::string, std::string> headers_; // Host / Content-Length / Connection ...
   std::string body_;
   runtime::time::Timestamp receive_time_;
-  std::unordered_map<std::string, std::string> path_params_; // e.g. /users/:id -> id = 123
+  std::vector<::runtime::http::PathParam> path_params_; // e.g. /users/:id -> id = 123
 };
 
 }  // namespace runtime::http
