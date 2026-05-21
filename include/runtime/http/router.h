@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <memory>
 #include <functional>
+#include <source_location>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -51,11 +52,21 @@ struct RouteMatch {
 // parameter segments such as "/users/:id".
 class Router {
 public:
-  void Add(Method method, std::string_view path, Handler handler);
-  void Get(std::string_view path, Handler handler);
-  void Post(std::string_view path, Handler handler);
-  void Put(std::string_view path, Handler handler);
-  void Delete(std::string_view path, Handler handler);
+  // Registration is fail-fast: any structural error (bad path, empty handler,
+  // param-name conflict, duplicate (method, path)) aborts the process and
+  // logs the caller's file:line via std::source_location. Routes are a
+  // startup-time invariant — there is no runtime recovery path for a
+  // misconfigured table, so we surface the bug immediately.
+  void Add(Method method, std::string_view path, Handler handler,
+           std::source_location loc = std::source_location::current());
+  void Get(std::string_view path, Handler handler,
+           std::source_location loc = std::source_location::current());
+  void Post(std::string_view path, Handler handler,
+            std::source_location loc = std::source_location::current());
+  void Put(std::string_view path, Handler handler,
+           std::source_location loc = std::source_location::current());
+  void Delete(std::string_view path, Handler handler,
+              std::source_location loc = std::source_location::current());
 
   // Returns a RouteMatch.
   // - handler != null and path_matched == true means a route was found

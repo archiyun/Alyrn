@@ -36,16 +36,19 @@ void HttpServer::SetScheduler(std::shared_ptr<runtime::task::Scheduler> sched) {
   scheduler_ = std::move(sched);
 }
 
-void HttpServer::Get(std::string_view path, Handler handler) {
-  router_.Get(path, std::move(handler));
+void HttpServer::Get(std::string_view path, Handler handler,
+                     std::source_location loc) {
+  router_.Get(path, std::move(handler), loc);
 }
 
-void HttpServer::Post(std::string_view path, Handler handler) {
-  router_.Post(path, std::move(handler));
+void HttpServer::Post(std::string_view path, Handler handler,
+                      std::source_location loc) {
+  router_.Post(path, std::move(handler), loc);
 }
 
-void HttpServer::Add(Method method, std::string_view path, Handler handler) {
-  router_.Add(method, path, std::move(handler));
+void HttpServer::Add(Method method, std::string_view path, Handler handler,
+                     std::source_location loc) {
+  router_.Add(method, path, std::move(handler), loc);
 }
 
 #ifdef RUNTIME_ENABLE_SSL

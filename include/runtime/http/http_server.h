@@ -11,6 +11,7 @@
 #endif
 
 #include <memory>
+#include <source_location>
 #include <string>
 #include <string_view>
 
@@ -44,10 +45,16 @@ public:
   // Must be called after SetScheduler().
   void RegisterDebugTasksRoute();
 
-  // Registers routes by forwarding to Router.
-  void Get(std::string_view path, Handler handler);
-  void Post(std::string_view path, Handler handler);
-  void Add(Method method, std::string_view path, Handler handler);
+  // Registers routes by forwarding to Router. The default-argument
+  // std::source_location captures the user's call site so registration errors
+  // (logged & aborted inside Router) point at user code rather than this
+  // forwarding shim.
+  void Get(std::string_view path, Handler handler,
+           std::source_location loc = std::source_location::current());
+  void Post(std::string_view path, Handler handler,
+            std::source_location loc = std::source_location::current());
+  void Add(Method method, std::string_view path, Handler handler,
+           std::source_location loc = std::source_location::current());
 
   void Start();
 

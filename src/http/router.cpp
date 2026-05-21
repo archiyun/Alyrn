@@ -2,8 +2,32 @@
 // SPDX-License-Identifier: MIT
 #include "runtime/http/router.h"
 
+#include "runtime/log/logger.h"
+
+#include <iostream>
+#include <sstream>
 #include <utility>
 namespace runtime::http {
+
+namespace {
+[[noreturn]] void RouteFail(std::string_view reason,
+                            std::string_view path,
+                            std::source_location loc) {
+  // Build the message once and emit it twice: directly to stderr (so the
+  // diagnostic survives even when the global logger has not been initialized
+  // — route registration usually happens before logger setup — and so that
+  // EXPECT_DEATH can match against the subprocess stderr), and through the
+  // logger for production deployments that route FATAL to a real sink.
+  std::ostringstream oss;
+  oss << "router: " << reason
+      << " (path=\"" << path << "\")"
+      << " at " << loc.file_name() << ":" << loc.line();
+  const std::string msg = oss.str();
+  std::cerr << msg << '\n';
+  LOG_FATAL() << msg;
+  std::abort();
+}
+} // namespace
 
 void Router::SplitPath(std::string_view path, std::vector<std::string_view>& segments) {
   std::size_t start = 0;
@@ -30,7 +54,13 @@ void Router::ExtractParamName(std::string_view seg, std::string& param_name) {
   param_name = std::string(seg.substr(1));
 }
 
-void Router::Add(Method method, std::string_view path, Handler handler) {
+void Router::Add(Method method, std::string_view path, Handler handler,
+                 std::source_location loc) {
+  if (path.empty() || path.front() != '/')
+    RouteFail("path must start with '/'", path, loc);
+  if (!handler)
+    RouteFail("handler must not be empty", path, loc);
+
   std::vector<std::string_view> segments;
   SplitPath(path, segments);
   RouteTrieNode* node = &root_;
@@ -40,13 +70,22 @@ void Router::Add(Method method, std::string_view path, Handler handler) {
       std::string param_name;
       ExtractParamName(seg, param_name);
 
-      if (param_name.empty()) return;
+      // ":" with no name following is a typo, not a wildcard.
+      if (param_name.empty())
+        RouteFail("empty parameter name after ':'", path, loc);
 
       if (!node->param_child) {
         node->param_child = std::make_unique<RouteTrieNode>();
         node->param_child->param_name = std::move(param_name);
       } else if (node->param_child->param_name != param_name) {
-        return;
+        // Same depth already bound to a different param name — refusing this
+        // is the only way to keep the trie unambiguous; capturing both would
+        // silently shadow one route under the other.
+        std::ostringstream oss;
+        oss << "param name conflict at same depth (existing '"
+            << node->param_child->param_name
+            << "' vs new '" << param_name << "')";
+        RouteFail(oss.str(), path, loc);
       }
       node = node->param_child.get();
     } else {
@@ -56,23 +95,33 @@ void Router::Add(Method method, std::string_view path, Handler handler) {
       node = child.get();
     }
   }
+
+  // Same (method, path) registered twice: previously silently overwrote the
+  // earlier handler, which hid double-registration bugs across modules.
+  if (node->handlers.find(method) != node->handlers.end())
+    RouteFail("duplicate registration for the same (method, path)", path, loc);
+
   node->handlers[method] = std::move(handler);
 }
 
-void Router::Get(std::string_view path, Handler handler) {
-  Add(Method::Get, path, std::move(handler));
+void Router::Get(std::string_view path, Handler handler,
+                 std::source_location loc) {
+  Add(Method::Get, path, std::move(handler), loc);
 }
 
-void Router::Post(std::string_view path, Handler handler) {
-  Add(Method::Post, path, std::move(handler));
+void Router::Post(std::string_view path, Handler handler,
+                  std::source_location loc) {
+  Add(Method::Post, path, std::move(handler), loc);
 }
 
-void Router::Put(std::string_view path, Handler handler) {
-  Add(Method::Put, path, std::move(handler));
+void Router::Put(std::string_view path, Handler handler,
+                 std::source_location loc) {
+  Add(Method::Put, path, std::move(handler), loc);
 }
 
-void Router::Delete(std::string_view path, Handler handler) {
-  Add(Method::Delete, path, std::move(handler));
+void Router::Delete(std::string_view path, Handler handler,
+                    std::source_location loc) {
+  Add(Method::Delete, path, std::move(handler), loc);
 }
 
 bool Router::MatchNode(const RouteTrieNode* node,

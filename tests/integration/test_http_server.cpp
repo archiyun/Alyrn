@@ -50,6 +50,57 @@ TEST(HttpRouterTest, StaticRouteWinsOverDynamicRoute) {
     EXPECT_TRUE(match.params.empty());
 }
 
+// Defensive registration: misconfigured routes must abort the process at
+// registration time, with a diagnostic pointing at the user's call site.
+// Each EXPECT_DEATH runs in a forked subprocess; the main test process
+// continues after each case.
+//
+// Death-style assertions only execute the matcher against the subprocess
+// stderr, so RouteFail writes its message directly to std::cerr (the global
+// logger may not be initialized in tests).
+
+TEST(HttpRouterDeathTest, RejectsPathWithoutLeadingSlash) {
+    runtime::http::Router router;
+    EXPECT_DEATH(
+        router.Get("users/:id", [](const runtime::http::HttpRequest&,
+                                   runtime::http::HttpResponse&) {}),
+        "must start with '/'");
+}
+
+TEST(HttpRouterDeathTest, RejectsEmptyParamName) {
+    runtime::http::Router router;
+    EXPECT_DEATH(
+        router.Get("/foo/:", [](const runtime::http::HttpRequest&,
+                                runtime::http::HttpResponse&) {}),
+        "empty parameter name");
+}
+
+TEST(HttpRouterDeathTest, RejectsConflictingParamNames) {
+    runtime::http::Router router;
+    router.Get("/users/:id", [](const runtime::http::HttpRequest&,
+                                runtime::http::HttpResponse&) {});
+    EXPECT_DEATH(
+        router.Get("/users/:name", [](const runtime::http::HttpRequest&,
+                                      runtime::http::HttpResponse&) {}),
+        "param name conflict");
+}
+
+TEST(HttpRouterDeathTest, RejectsDuplicateRegistration) {
+    runtime::http::Router router;
+    router.Get("/dup", [](const runtime::http::HttpRequest&,
+                          runtime::http::HttpResponse&) {});
+    EXPECT_DEATH(
+        router.Get("/dup", [](const runtime::http::HttpRequest&,
+                              runtime::http::HttpResponse&) {}),
+        "duplicate registration");
+}
+
+TEST(HttpRouterDeathTest, RejectsEmptyHandler) {
+    runtime::http::Router router;
+    runtime::http::Handler empty;
+    EXPECT_DEATH(router.Get("/x", std::move(empty)), "handler must not be empty");
+}
+
 // ── HttpDispatch (Phase 5) ────────────────────────────────────────────────────
 //
 // The async dispatch path in OnMessage runs handlers on a Scheduler worker
