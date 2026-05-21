@@ -25,6 +25,7 @@ enum class LoadBalancePolicy {
   WeightedRandom,
   IPHash,
   ConsistentHash,
+  P2C,
 };
 
 // Static configuration block for an Upstream. Immutable after construction.

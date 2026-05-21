@@ -133,7 +133,7 @@ public:
 
     for (const auto& peer : peers) {
       if (!peer->Available(0)) continue;
-      int active = peer->State().active.load(std::memory_order_relaxed);
+      int active = peer->ActiveRequest();
       if (active < min_active) {
         min_active = active;
         best = peer;
@@ -172,7 +172,7 @@ public:
     int total_weight = 0;
     for (const auto& peer : peers) {
       if (!peer->Available(0)) continue;
-      total_weight += std::max(peer->Config().weight, 0);
+      total_weight += std::max(peer->Weight(), 0);
     }
     if (total_weight <= 0) return nullptr;
 
@@ -184,7 +184,7 @@ public:
     for (const auto& peer : peers) {
       if (!peer->Available(0)) continue;
       last_available = peer;
-      r -= std::max(peer->Config().weight, 0);
+      r -= std::max(peer->Weight(), 0);
       if (r <= 0) return peer;
     }
     return last_available;  // Guard against arithmetic edge cases (should be unreachable).
@@ -379,6 +379,63 @@ private:
   std::shared_ptr<const HashRing> ring_;
 };
 
+// Power-of-two-choices: sample two random available peers and pick the one with
+// the lower load. Approximates LeastConnection's quality at O(1) inspection
+// cost regardless of fleet size, and avoids the herd effect where every IO
+// thread converges on the same "least loaded" peer between probes.
+//
+// Implementation notes:
+//  * Two passes over peers_ (count, then index-walk) — no per-call allocation,
+//    matching RoundRobinLB / RandomLB.
+//  * Distinct pair via dist(0, n-2) + shift, not (idx2+1)%n: the latter
+//    over-samples the peer at (idx1+1)%n whenever the two RNG draws collide.
+//  * Load metric is active/weight (fixed-point), so a peer configured with
+//    twice the weight is treated as half as loaded at the same active count.
+class P2CLB : public LoadBalancer {
+public:
+  std::shared_ptr<UpstreamPeer> Select(Upstream& upstream, const RequestContext ctx = {}) override {
+    const auto& peers = upstream.Peers();
+    std::size_t avail = 0;
+    for (const auto& p : peers) {
+      if (p->Available(0)) ++avail;
+    }
+    if (avail == 0) return nullptr;
+
+    auto pick_at = [&](std::size_t k) -> std::shared_ptr<UpstreamPeer> {
+      for (const auto& p : peers) {
+        if (!p->Available(0)) continue;
+        if (k-- == 0) return p;
+      }
+      return nullptr;  // unreachable
+    };
+
+    if (avail == 1) return pick_at(0);
+
+    thread_local std::mt19937 gen{std::random_device{}()};
+    std::uniform_int_distribution<std::size_t> dist(0, avail - 1);
+    std::size_t idx1 = dist(gen);
+    // Sample idx2 from [0, avail-2] then shift past idx1 — produces a uniform
+    // distinct pair without the (idx1+1)%avail bias.
+    std::uniform_int_distribution<std::size_t> dist2(0, avail - 2);
+    std::size_t idx2 = dist2(gen);
+    if (idx2 >= idx1) ++idx2;
+
+    auto peer1 = pick_at(idx1);
+    auto peer2 = pick_at(idx2);
+    if (!peer1) return peer2;
+    if (!peer2) return peer1;
+
+    // Compare active/weight in fixed-point (scale by max weight to stay integer).
+    // weight==0 should not appear for an available peer, but guard with max(.,1).
+    int w1 = std::max(peer1->Weight(), 1);
+    int w2 = std::max(peer2->Weight(), 1);
+    // load1 < load2  <=>  active1 * w2 < active2 * w1
+    int64_t load1 = static_cast<int64_t>(peer1->ActiveRequest()) * w2;
+    int64_t load2 = static_cast<int64_t>(peer2->ActiveRequest()) * w1;
+    return load1 <= load2 ? peer1 : peer2;
+  }
+};
+
 namespace detail {
 
 inline std::unique_ptr<LoadBalancer> MakeRoundRobinLB() {
@@ -408,6 +465,10 @@ inline std::unique_ptr<LoadBalancer> MakeIPHashLB() {
 inline std::unique_ptr<LoadBalancer> MakeConsistentHashLB() {
   return std::make_unique<ConsistentHashLB>();
 }
+
+inline std::unique_ptr<LoadBalancer> MakeP2CLB() {
+  return std::make_unique<P2CLB>();
+}
 } // namespace detail
 
 // String-to-factory entry point used by GatewayServer when registering a route.
@@ -416,7 +477,7 @@ inline std::unique_ptr<LoadBalancer> MakeConsistentHashLB() {
 inline std::unique_ptr<LoadBalancer> CreateLoadBalancer(std::string_view algo) {
   using Creator = std::unique_ptr<LoadBalancer> (*)();
 
-  static constexpr std::array<std::pair<std::string_view, Creator>, 7> table = {{
+  static constexpr std::array<std::pair<std::string_view, Creator>, 8> table = {{
       {std::string_view{"round_robin"}, detail::MakeRoundRobinLB},
       {std::string_view{"weighted_round_robin"}, detail::MakeWeightedRoundRobinLB},
       {std::string_view{"least_connection"}, detail::MakeLeastConnectionLB},
@@ -424,6 +485,7 @@ inline std::unique_ptr<LoadBalancer> CreateLoadBalancer(std::string_view algo) {
       {std::string_view{"weighted_random"}, detail::MakeWeightedRandomLB},
       {std::string_view{"ip_hash"}, detail::MakeIPHashLB},
       {std::string_view{"consistent_hash"}, detail::MakeConsistentHashLB},
+      {std::string_view{"p2c"}, detail::MakeP2CLB},
   }};
 
   for (const auto& [name, creator] : table) {

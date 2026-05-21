@@ -75,6 +75,9 @@ public:
   int EffectiveWeight() const {
     return state_.effective_weight.load(std::memory_order_relaxed);
   }
+  int ActiveRequest() const {
+    return state_.active.load(std::memory_order_relaxed);
+  }
 
   void OnRequestStart() {
     state_.active.fetch_add(1, std::memory_order_relaxed);
