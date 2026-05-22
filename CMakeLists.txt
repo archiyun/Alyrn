@@ -28,6 +28,7 @@ add_library(runtime_foundation STATIC
     src/base/current_thread.cpp
     src/log/async_logger.cpp
     src/log/logger.cpp
+    src/memory/pool.cpp
     src/time/timestamp.cpp
 )
 

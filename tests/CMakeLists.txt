@@ -22,6 +22,22 @@ target_include_directories(object_pool_smoke_test
 
 add_test(NAME object_pool_smoke_test COMMAND object_pool_smoke_test)
 
+add_executable(pool_smoke_test
+    unit/test_pool_smoke.cpp
+)
+
+target_include_directories(pool_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(pool_smoke_test
+    PRIVATE
+        runtime_foundation
+)
+
+add_test(NAME pool_smoke_test COMMAND pool_smoke_test)
+
 add_executable(logger_smoke_test
     unit/test_logger_smoke.cpp
 )
