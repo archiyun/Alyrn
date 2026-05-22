@@ -54,6 +54,10 @@ hs_err_pid*
 /gateway
 /demo_*.out
 
+# Dated capture logs from demo runs (e.g. echo_server.20260522-001047.10)
+/echo_server.*
+/gateway.*
+
 # Coverage and profiling
 *.gcda
 *.gcno
