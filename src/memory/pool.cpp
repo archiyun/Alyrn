@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <new>
 
@@ -24,20 +26,40 @@ inline std::byte* AlignPtr(std::byte* p, std::size_t align) noexcept {
 
 } // namespace
 
+namespace {
+
+[[noreturn]] void AbortWithReason(const char* msg) noexcept {
+  std::fprintf(stderr, "[runtime::memory::Pool] %s\n", msg);
+  std::abort();
+}
+
+}  // namespace
+
+// 后续 chunk 的预留 = ChunkHeader + 到 kDefaultAlign 边界的 padding.
+// 后续 chunk 的可用 payload = chunk_size - kHeaderReserve.
+const std::size_t Pool::kHeaderReserve =
+    (sizeof(Pool::ChunkHeader) + kDefaultAlign - 1) & ~(kDefaultAlign - 1);
+
 Pool::Pool(std::size_t chunk_size)
   : d_{},
-    max_{std::min(chunk_size, kMaxSmallAlloc)},
+    // chunk_size < kMinChunkSize 时这里 underflow, 但下方 abort 会先触发.
+    max_{std::min(chunk_size - kHeaderReserve, kMaxSmallAlloc)},
     chunk_size_{chunk_size},
     current_{&d_},
     large_{nullptr},
     cleanup_{nullptr} {
+  // 下限校验: 必须能装得下后续 chunk 的 header + 至少一个 LargeNode.
+  // chunk_size 在初始化列表里也用于 max_ 计算, 这里做 hard fail 不再继续.
+  if (chunk_size < kMinChunkSize) {
+    AbortWithReason("chunk_size below kMinChunkSize");
+  }
 
   auto* buf = static_cast<std::byte*>(
     ::operator new(chunk_size_, std::align_val_t{kDefaultAlign})
   );
-  d_.last = buf;
-  d_.end = buf + chunk_size_;
-  d_.next = nullptr;
+  d_.last   = buf;
+  d_.end    = buf + chunk_size_;
+  d_.next   = nullptr;
   d_.failed = 0;
 }
 
@@ -173,7 +195,10 @@ std::size_t Pool::bytes_used() const noexcept {
 void* Pool::AllocateSmall(std::size_t size, std::size_t align) {
   for (ChunkHeader* c = current_; /* void */; c = c->next) {
     std::byte* aligned = AlignPtr(c->last, align);
-    if (static_cast<std::size_t>(c->end - aligned) >= size) {
+    // aligned 可能因为大对齐 padding 越过 c->end. 必须先做指针顺序检查,
+    // 否则 (end - aligned) 为负, cast 到 size_t 变天文数字 -> 越界写入.
+    if (aligned <= c->end &&
+        static_cast<std::size_t>(c->end - aligned) >= size) {
       c->last = aligned + size;
       return aligned;
     }

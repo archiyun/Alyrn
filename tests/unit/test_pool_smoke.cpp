@@ -165,6 +165,28 @@ void TestResetReusesChunks() {
   EXPECT(p != nullptr, "alloc after Reset works");
 }
 
+void TestSmallChunkWithLargeAlignment() {
+  // 用 kMinChunkSize 起步: 触发后续 chunk 的紧凑布局, 暴露 aligned 越过
+  // end 的边界. 同时让 AlignPtr 推进的距离接近 chunk 大小.
+  Pool pool(/*chunk_size=*/Pool::kMinChunkSize);
+
+  // 反复申请 64B + 64B 对齐, 迫使每个 chunk 上的 aligned 接近 / 越过 end.
+  std::vector<void*> ptrs;
+  for (int i = 0; i < 20; ++i) {
+    void* p = pool.AllocateAligned(64, 64);
+    EXPECT(p != nullptr, "tight chunk + 64B align still serves");
+    EXPECT(IsAligned(p, 64), "returned pointer respects 64B align");
+    ptrs.push_back(p);
+  }
+
+  // 不应该有任何两次返回同一地址 (即便 chunk 紧到几乎装不下).
+  for (std::size_t i = 0; i < ptrs.size(); ++i) {
+    for (std::size_t j = i + 1; j < ptrs.size(); ++j) {
+      EXPECT(ptrs[i] != ptrs[j], "tight chunk path returns distinct ptrs");
+    }
+  }
+}
+
 void TestStressNoCrash() {
   // 混合负载: 小+大+cleanup, 走 ASan 时这是主要的捕获面.
   Pool pool(/*chunk_size=*/512);
@@ -194,6 +216,7 @@ int main() {
   TestCleanupNotRunOnReset();
   TestCleanupWithDataPayload();
   TestResetReusesChunks();
+  TestSmallChunkWithLargeAlignment();
   TestStressNoCrash();
 
   if (g_failures == 0) {

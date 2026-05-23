@@ -15,6 +15,9 @@ public:
   inline static constexpr std::size_t  kDefaultChunkSize = 1 << 12;
   inline static constexpr std::size_t  kMaxSmallAlloc    = kDefaultChunkSize - 1;
   inline static constexpr std::size_t  kFailedThreshold  = 4;
+  // 最小 chunk: 至少要装下后续 chunk 的 ChunkHeader + 几个 LargeNode/CleanupNode,
+  // 否则后续 chunk 几乎没有可用空间. 对标 nginx NGX_MIN_POOL_SIZE (~112B).
+  inline static constexpr std::size_t  kMinChunkSize     = 128;
 
   explicit Pool(std::size_t chunk_size = kDefaultChunkSize);
   ~Pool() noexcept;
@@ -57,6 +60,10 @@ private:
     CleanupNode*  next;
   };
 private:
+  // 后续 chunk 的预留字节数 (ChunkHeader + 对齐 padding). 定义在 .cpp,
+  // 因为依赖 .cpp 内的 kDefaultAlign 常量, 且与 AllocateChunk 共享同一布局.
+  static const std::size_t kHeaderReserve;
+
   void Destroy() noexcept;
   void* AllocateSmall(std::size_t size, std::size_t alignment);
   void* AllocateLarge(std::size_t size);
