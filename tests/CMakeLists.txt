@@ -38,6 +38,22 @@ target_link_libraries(pool_smoke_test
 
 add_test(NAME pool_smoke_test COMMAND pool_smoke_test)
 
+add_executable(pmr_pool_resource_smoke_test
+    unit/test_pmr_pool_resource_smoke.cpp
+)
+
+target_include_directories(pmr_pool_resource_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(pmr_pool_resource_smoke_test
+    PRIVATE
+        runtime_foundation
+)
+
+add_test(NAME pmr_pool_resource_smoke_test COMMAND pmr_pool_resource_smoke_test)
+
 add_executable(logger_smoke_test
     unit/test_logger_smoke.cpp
 )
