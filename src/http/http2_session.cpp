@@ -67,7 +67,7 @@ bool Http2Session::Feed(runtime::net::Buffer& buf) {
 void Http2Session::SendResponse(int32_t stream_id, const HttpResponse& resp) {
   // All strings that back nghttp2_nv pointers must outlive nghttp2_session_send
   // (called inside Flush). Keep them as named locals in this scope.
-  const std::string& body = resp.Body();
+  const std::string& body = resp.GetBody();
   std::vector<std::pair<std::string, std::string>> headers;
   headers.emplace_back(":status",
                        std::to_string(static_cast<int>(resp.GetStatusCode())));
@@ -81,7 +81,7 @@ void Http2Session::SendResponse(int32_t stream_id, const HttpResponse& resp) {
     });
   };
 
-  for (const auto& [key, value] : resp.Headers()) {
+  for (const auto& [key, value] : resp.GetHeaders()) {
     std::string lower = detail::LowerCopy(key);
     // Restricted list covers framing, hop-by-hop, and pseudo headers — plus
     // date/server, which we re-emit below from the framework's own values.

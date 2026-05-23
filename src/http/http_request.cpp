@@ -15,8 +15,7 @@ HttpRequest::HttpRequest()
       path_{res_.get()},
       query_{res_.get()},
       body_{res_.get()},
-      headers_{res_.get()},
-      path_params_{res_.get()} {}
+      headers_{res_.get()} {}
 
 void HttpRequest::AddHeader(std::string_view field, std::string_view value) {
   headers_.emplace(detail::LowerCopy(field, res_.get()),
@@ -57,9 +56,20 @@ bool HttpRequest::KeepAlive() const {
 }
 
 void HttpRequest::Reset() {
+  // moved-from 状态 (pool_/res_ 为空, 例如 TakeRequest 之后): 直接重建.
+  // 否则走快路径, 复用 arena 的 chunk.
+  if (pool_ == nullptr) {
+    *this = HttpRequest{};
+    return;
+  }
+
   method_  = Method::Invalid;
   version_ = Version::Unknown;
-  path_params_.~HttpVector<PathParam>();
+
+  // 销毁顺序: pmr 容器先析构 (do_deallocate 是 no-op 不真释放),
+  // 然后 Pool::Reset 一次性回收 arena, 最后 placement-new 重建.
+  // path_params_ 用普通 std::allocator, 单独 clear 即可.
+  path_params_.clear();
   headers_.~HttpMap<HttpString, HttpString>();
   body_.~HttpString();
   query_.~HttpString();
@@ -67,12 +77,11 @@ void HttpRequest::Reset() {
 
   pool_->Reset();
 
-  new (&path_)        HttpString{res_.get()};
-  new (&query_)       HttpString{res_.get()};
-  new (&body_)        HttpString{res_.get()};
-  new (&headers_)     HttpMap<HttpString, HttpString>{res_.get()};
-  new (&path_params_) HttpVector<PathParam>{res_.get()};
-  
+  new (&path_)    HttpString{res_.get()};
+  new (&query_)   HttpString{res_.get()};
+  new (&body_)    HttpString{res_.get()};
+  new (&headers_) HttpMap<HttpString, HttpString>{res_.get()};
+
   receive_time_ = {};
 }
 

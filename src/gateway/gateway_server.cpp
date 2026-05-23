@@ -216,9 +216,8 @@ void GatewayServer::Start() {
 
 void GatewayServer::OnConnection(const TcpConnectionPtr& conn) {
   if (conn->Connected()) {
-    // ConnCtx owns HttpContext which owns a move-only HttpRequest, so
-    // ConnCtx itself is move-only. std::any requires copy-constructibility,
-    // so we shuttle through shared_ptr.
+    // ConnCtx 包含 HttpContext (含 Pool unique_ptr) 是 move-only,
+    // std::any 要求可拷贝, 因此包成 shared_ptr.
     conn->SetContext(std::make_shared<ConnCtx>());
     metrics_.connections_accepted_total.Inc();
     metrics_.connections_active.Inc();
@@ -345,7 +344,7 @@ void GatewayServer::OnMessage(const TcpConnectionPtr& conn,
           std::chrono::steady_clock::now() - req_start).count();
       metrics_.request_duration.Observe(elapsed);
       conn->Send(resp.ToString());
-      if (resp.CloseConnection()) { conn->Shutdown(); return; }
+      if (resp.GetCloseConnection()) { conn->Shutdown(); return; }
     }
   }
 }

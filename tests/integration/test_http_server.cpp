@@ -127,7 +127,7 @@ TEST(HttpDispatchTest, HandlerAssemblesResponseCorrectly) {
 
   EXPECT_NE(wire.find("200 OK"), std::string::npos);
   EXPECT_NE(wire.find("{\"status\":\"ok\"}"), std::string::npos);
-  EXPECT_FALSE(resp.CloseConnection());
+  EXPECT_FALSE(resp.GetCloseConnection());
 }
 
 TEST(HttpDispatchTest, ExceptionInHandlerProducesInternalServerError) {
@@ -148,7 +148,7 @@ TEST(HttpDispatchTest, ExceptionInHandlerProducesInternalServerError) {
   const std::string wire = resp.ToString();
   EXPECT_NE(wire.find("500"), std::string::npos);
   EXPECT_NE(wire.find("db offline"), std::string::npos);
-  EXPECT_TRUE(resp.CloseConnection());
+  EXPECT_TRUE(resp.GetCloseConnection());
 }
 
 // Verifies that handler body executes on a different thread than the submitter,

@@ -37,7 +37,7 @@ bool TestParsesHttp11KeepAliveRequest() {
                      "parser should accept a valid HTTP/1.1 request");
     ok &= Expect(context.GotAll(), "parser should complete the request");
 
-    const runtime::http::HttpRequest& parsed = context.Request();
+    const runtime::http::HttpRequest& parsed = context.GetRequest();
     ok &= Expect(parsed.GetMethod() == runtime::http::Method::Get,
                  "request method should be GET");
     ok &= Expect(parsed.GetPath() == "/api/health", "path should be parsed");
@@ -86,7 +86,7 @@ bool TestParsesRequestBodyAcrossChunks() {
                  "parser should accept the completed body");
     ok &= Expect(context.GotAll(), "parser should complete after receiving the body");
 
-    const runtime::http::HttpRequest& parsed = context.Request();
+    const runtime::http::HttpRequest& parsed = context.GetRequest();
     ok &= Expect(parsed.GetMethod() == runtime::http::Method::Post,
                  "request method should be POST");
     ok &= Expect(parsed.GetBody() == "hello", "body should be parsed from the buffer");
@@ -280,7 +280,7 @@ bool TestParsesConnectMethod() {
              "\r\n");
   runtime::http::HttpContext ctx;
   bool ok = Expect(ParseOk(ctx.ParseRequest(buf, {})), "CONNECT should parse");
-  ok &= Expect(ctx.Request().GetMethod() == runtime::http::Method::Connect,
+  ok &= Expect(ctx.GetRequest().GetMethod() == runtime::http::Method::Connect,
                "method enum should be Connect");
   return ok;
 }

@@ -177,11 +177,11 @@ TEST(Http2SessionIntegrationTest, MapsRequestPseudoHeadersAndBody) {
         ++dispatch_count;
         EXPECT_EQ(req.GetMethod(), runtime::http::Method::Options);
         EXPECT_EQ(req.GetVersion(), runtime::http::Version::Http20);
-        EXPECT_EQ(req.Path(), "/api/items");
-        EXPECT_EQ(req.Query(), "debug=1");
+        EXPECT_EQ(req.GetPath(), "/api/items");
+        EXPECT_EQ(req.GetQuery(), "debug=1");
         EXPECT_EQ(req.GetHeader("host"), "example.test");
         EXPECT_EQ(req.GetHeader("x-client"), "h2-test");
-        EXPECT_EQ(req.Body(), "payload-body");
+        EXPECT_EQ(req.GetBody(), "payload-body");
 
         resp.SetStatusCode(runtime::http::StatusCode::Created);
         resp.SetContentType("text/plain");

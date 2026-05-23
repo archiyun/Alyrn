@@ -24,16 +24,16 @@ public:
   void AddHeader(std::string_view key, std::string_view value);
   void SetCloseConnection(bool close);
 
-  bool CloseConnection() const;
+  bool GetCloseConnection() const;
 
   // Accessors used by Http2Session to build HTTP/2 HEADERS frames directly,
   // bypassing the HTTP/1.1 wire format produced by ToString().
   StatusCode         GetStatusCode() const { return status_code_; }
-  const std::string& Body()          const { return body_; }
-  const std::unordered_map<std::string, std::string>& Headers() const {
+  const std::string& GetBody()       const { return body_; }
+  const std::unordered_map<std::string, std::string>& GetHeaders() const {
     return headers_;
   }
-  std::string        ContentType()  const {
+  std::string        GetContentType() const {
     auto it = headers_.find("Content-Type");
     return it != headers_.end() ? it->second : std::string{};
   }

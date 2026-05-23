@@ -110,7 +110,7 @@ void HttpServer::OnConnection(const TcpConnectionPtr& conn) {
               [this](HttpRequest& req, HttpResponse& resp,
                      std::shared_ptr<runtime::net::TcpConnection> c,
                      int32_t sid) {
-                auto match = router_.Match(req.GetMethod(), req.Path());
+                auto match = router_.Match(req.GetMethod(), req.GetPath());
                 if (!match.handler) {
                   resp = match.path_matched
                       ? MakeError(StatusCode::MethodNotAllowed, "method not allowed")
@@ -191,9 +191,9 @@ void HttpServer::OnMessage(const TcpConnectionPtr& conn,
   }
 
   while (h1ctx.GotAll()) {
-    // TakeRequest moves the parsed request out of h1ctx; Reset reconstructs
-    // a fresh HttpRequest so the next pipelined parse starts from a valid
-    // arena state.
+    // TakeRequest moves the parsed request out (HttpRequest is move-only
+    // because it owns its arena); Reset reconstructs a fresh HttpRequest
+    // so the next pipelined parse starts from a valid arena state.
     HttpRequest request = h1ctx.TakeRequest();
     h1ctx.Reset();
 
@@ -203,10 +203,10 @@ void HttpServer::OnMessage(const TcpConnectionPtr& conn,
     auto match = router_.Match(request.GetMethod(), request.GetPath());
 
     if (match.handler && scheduler_) {
-      request.SetPathParams(match.params);
-      // HttpRequest is move-only (owns a Pool); std::function requires
-      // copy-constructibility, so the request/response are shuttled through
-      // a shared_ptr-owned state struct that the lambda holds by value.
+      request.SetPathParams(std::move(match.params));
+      // HttpRequest 现在持有 Pool unique_ptr, move-only; std::function
+      // 要求 callable 可拷贝, 因此把 req/resp 装进 shared_ptr 让 lambda
+      // 持有可拷贝引用.
       struct DispatchState {
         HttpRequest  request;
         HttpResponse response;
@@ -219,17 +219,16 @@ void HttpServer::OnMessage(const TcpConnectionPtr& conn,
               handler(state->request, state->response);
             } catch (const std::exception& ex) {
               state->response.SetStatusCode(StatusCode::InternalServerError);
-              state->response.SetContentType(
-                  "application/json; charset=utf-8");
+              state->response.SetContentType("application/json; charset=utf-8");
               state->response.SetBody(
                   "{\"error\":\"" + std::string(ex.what()) + "\"}");
               state->response.SetCloseConnection(true);
             }
-            // Serialize on the worker (keeps allocation off the IO thread),
-            // then dispatch Send + Shutdown atomically to the owning IO thread
-            // so all connection-state writes stay single-threaded.
+            // 在 worker 上 serialize (把 allocation 留给 worker), 然后
+            // 把 Send + Shutdown 原子地派回归属 IO 线程, 保证连接状态写
+            // 入单线程.
             std::string wire = state->response.ToString();
-            const bool close = state->response.CloseConnection();
+            const bool close = state->response.GetCloseConnection();
             conn->GetLoop()->RunInLoop(
                 [conn, wire = std::move(wire), close] {
                   conn->Send(wire);
@@ -238,7 +237,7 @@ void HttpServer::OnMessage(const TcpConnectionPtr& conn,
           });
       break;
     } else if (match.handler) {
-      request.SetPathParams(match.params);
+      request.SetPathParams(std::move(match.params));
       try {
         match.handler(request, response);
       } catch (const std::exception &ex) {
@@ -251,7 +250,7 @@ void HttpServer::OnMessage(const TcpConnectionPtr& conn,
       response = MakeError(StatusCode::NotFound, "not found");
     }
     conn->Send(response.ToString());
-    if (response.CloseConnection()) {
+    if (response.GetCloseConnection()) {
       conn->Shutdown();
       return;
     }

@@ -11,6 +11,7 @@
 #include <memory>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace runtime::http {
 
@@ -51,16 +52,12 @@ public:
 
   bool KeepAlive() const;
 
-  void SetPathParams(HttpVector<PathParam> p) {
+  // path_params_ is a plain std::vector (not HttpVector) because Router
+  // produces std::vector<PathParam> and PathParam itself holds std::string
+  // members; pmr-fying just the spine of this 0~2-entry vector is not
+  // worth the type ripple through the router.
+  void SetPathParams(std::vector<PathParam> p) {
     path_params_ = std::move(p);
-  }
-
-  // Router yields std::vector<PathParam>; copy elements into this
-  // request's arena-backed storage so PathParam() lookups stay local.
-  void SetPathParams(const std::vector<PathParam>& p) {
-    path_params_.clear();
-    path_params_.reserve(p.size());
-    for (const auto& kv : p) path_params_.push_back(kv);
   }
 
   // Linear scan: path_params_ typically holds 0~2 entries, where linear
@@ -73,7 +70,7 @@ public:
   }
 
   void SetReceiveTime(runtime::time::Timestamp ts) { receive_time_ = ts; }
-  runtime::time::Timestamp ReceiveTime() const { return receive_time_; }
+  runtime::time::Timestamp GetReceiveTime() const { return receive_time_; }
 
   void Reset();
 
@@ -86,7 +83,7 @@ private:
   HttpString query_;                    // e.g. name=abc&age=18
   HttpString body_;
   HttpMap<HttpString, HttpString> headers_; // Host / Content-Length / Connection ...
-  HttpVector<PathParam> path_params_; // e.g. /users/:id -> id = 123
+  std::vector<PathParam> path_params_; // e.g. /users/:id -> id = 123
   runtime::time::Timestamp receive_time_;
 };
 

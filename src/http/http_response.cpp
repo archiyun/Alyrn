@@ -25,7 +25,7 @@ void HttpResponse::AddHeader(std::string_view key, std::string_view value) {
 
 void HttpResponse::SetCloseConnection(bool close) { close_connection_ = close; }
 
-bool HttpResponse::CloseConnection() const { return close_connection_; }
+bool HttpResponse::GetCloseConnection() const { return close_connection_; }
 
 std::string HttpResponse::ToString() const {
   std::string out;

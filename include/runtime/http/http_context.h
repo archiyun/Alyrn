@@ -7,6 +7,8 @@
 #include "runtime/http/http_request.h"
 #include "runtime/http/http_types.h"
 
+#include <utility>
+
 namespace runtime::http {
 
 // Result of one ParseRequest call. Distinct error variants let the server
@@ -36,12 +38,12 @@ public:
   bool GotAll() const { return state_ == ParseState::GotAll; }
   void Reset();
 
-  const HttpRequest& Request() const { return request_; }
+  const HttpRequest& GetRequest() const { return request_; }
 
-  // Moves the request out for downstream handlers. After this call,
-  // request_ is in moved-from state until the next Reset() reinitializes
-  // it. Callers must follow TakeRequest with Reset before parsing again.
-  HttpRequest TakeRequest() noexcept { return std::move(request_); }
+  // Moves the parsed request out of the context. After this call, the
+  // context's internal HttpRequest is in a moved-from state; the caller
+  // MUST invoke Reset() before parsing the next pipelined request.
+  HttpRequest TakeRequest() { return std::move(request_); }
 
 private:
   enum class ParseState : uint8_t {
