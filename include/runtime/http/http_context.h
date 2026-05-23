@@ -38,6 +38,11 @@ public:
 
   const HttpRequest& Request() const { return request_; }
 
+  // Moves the request out for downstream handlers. After this call,
+  // request_ is in moved-from state until the next Reset() reinitializes
+  // it. Callers must follow TakeRequest with Reset before parsing again.
+  HttpRequest TakeRequest() noexcept { return std::move(request_); }
+
 private:
   enum class ParseState : uint8_t {
     ExpectRequestLine,

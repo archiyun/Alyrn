@@ -424,14 +424,14 @@ std::string ProxyPass::BuildRequest(const runtime::http::HttpRequest& req,
   out.reserve(256);
   out += runtime::http::MethodToString(req.GetMethod());
   out += ' ';
-  out += req.Path().empty() ? "/" : req.Path();
-  if (!req.Query().empty()) {
+  out += req.GetPath().empty() ? "/" : req.GetPath();
+  if (!req.GetQuery().empty()) {
     out += '?';
-    out += req.Query();
+    out += req.GetQuery();
   }
   out += " HTTP/1.1\r\n";
 
-  for (const auto& [k, v] : req.Headers()) {
+  for (const auto& [k, v] : req.GetHeaders()) {
     // double protection
     if (k == "host" || k == "connection" ||
       k == "keep-alive" || k == "proxy-connection" ||
@@ -444,7 +444,7 @@ std::string ProxyPass::BuildRequest(const runtime::http::HttpRequest& req,
   out += "host: ";
   out += peer.HostPort();
   out += "\r\nconnection: keep-alive\r\n\r\n";
-  if (!req.Body().empty()) out += req.Body();
+  if (!req.GetBody().empty()) out += req.GetBody();
   return out;
 }
 } // namespace runtime::gateway

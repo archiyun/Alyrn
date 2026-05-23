@@ -127,11 +127,11 @@ ParseStatus HttpContext::ProcessRequestLine(std::string_view line) {
 
   const auto q_pos = uri_sv.find('?');
   if (q_pos == std::string_view::npos) {
-    request_.SetPath(std::string(uri_sv));
-    request_.SetQuery("");
+    request_.SetPath(uri_sv);
+    request_.SetQuery({});
   } else {
-    request_.SetPath(std::string(uri_sv.substr(0, q_pos)));
-    request_.SetQuery(std::string(uri_sv.substr(q_pos + 1)));
+    request_.SetPath(uri_sv.substr(0, q_pos));
+    request_.SetQuery(uri_sv.substr(q_pos + 1));
   }
   return ParseStatus::Continue;
 }
@@ -184,7 +184,10 @@ void HttpContext::Reset() {
   header_count_ = 0;
   header_bytes_ = 0;
   content_length_seen_ = false;
-  request_.Reset();
+  // request_ may be in moved-from state after TakeRequest; reconstruct
+  // it to restore the Pool/PoolResource ownership and pmr container
+  // bindings rather than calling Reset on a moved-from object.
+  request_ = HttpRequest{};
 }
 
 }  // namespace runtime::http

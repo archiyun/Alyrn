@@ -91,7 +91,7 @@ void HttpServer::OnConnection(const TcpConnectionPtr& conn) {
 
 #ifdef RUNTIME_ENABLE_SSL
   if (!ssl_ctx_) {
-    conn->SetContext(HttpContext{});
+    conn->SetContext(std::make_shared<HttpContext>());
     return;
   }
 
@@ -155,13 +155,13 @@ void HttpServer::OnConnection(const TcpConnectionPtr& conn) {
           c->SetContext(std::move(session));
         } else {
 #endif  // RUNTIME_ENABLE_HTTP2
-          c->SetContext(HttpContext{});
+          c->SetContext(std::make_shared<HttpContext>());
 #ifdef RUNTIME_ENABLE_HTTP2
         }
 #endif
       });
 #else
-  conn->SetContext(HttpContext{});
+  conn->SetContext(std::make_shared<HttpContext>());
 #endif  // RUNTIME_ENABLE_SSL
 }
 
@@ -178,7 +178,8 @@ void HttpServer::OnMessage(const TcpConnectionPtr& conn,
   }
 #endif
 
-  auto& h1ctx = std::any_cast<HttpContext&>(conn->GetContext());
+  auto& h1ctx = *std::any_cast<std::shared_ptr<HttpContext>&>(
+      conn->GetContext());
   const ParseStatus parse_status = h1ctx.ParseRequest(buf, ts);
   if (parse_status != ParseStatus::Continue &&
       parse_status != ParseStatus::GotAll) {
@@ -190,32 +191,45 @@ void HttpServer::OnMessage(const TcpConnectionPtr& conn,
   }
 
   while (h1ctx.GotAll()) {
-    HttpRequest request = h1ctx.Request();
+    // TakeRequest moves the parsed request out of h1ctx; Reset reconstructs
+    // a fresh HttpRequest so the next pipelined parse starts from a valid
+    // arena state.
+    HttpRequest request = h1ctx.TakeRequest();
     h1ctx.Reset();
 
     const bool keep_alive = request.KeepAlive();
     HttpResponse response(!keep_alive);
 
-    auto match = router_.Match(request.GetMethod(), request.Path());
+    auto match = router_.Match(request.GetMethod(), request.GetPath());
 
     if (match.handler && scheduler_) {
-      request.SetPathParams(std::move(match.params));
+      request.SetPathParams(match.params);
+      // HttpRequest is move-only (owns a Pool); std::function requires
+      // copy-constructibility, so the request/response are shuttled through
+      // a shared_ptr-owned state struct that the lambda holds by value.
+      struct DispatchState {
+        HttpRequest  request;
+        HttpResponse response;
+      };
+      auto state = std::make_shared<DispatchState>(
+          DispatchState{std::move(request), std::move(response)});
       scheduler_->Submit(
-          [conn, req = std::move(request), resp = std::move(response),
-           handler = match.handler]() mutable {
+          [conn, state, handler = match.handler]() mutable {
             try {
-              handler(req, resp);
+              handler(state->request, state->response);
             } catch (const std::exception& ex) {
-              resp.SetStatusCode(StatusCode::InternalServerError);
-              resp.SetContentType("application/json; charset=utf-8");
-              resp.SetBody("{\"error\":\"" + std::string(ex.what()) + "\"}");
-              resp.SetCloseConnection(true);
+              state->response.SetStatusCode(StatusCode::InternalServerError);
+              state->response.SetContentType(
+                  "application/json; charset=utf-8");
+              state->response.SetBody(
+                  "{\"error\":\"" + std::string(ex.what()) + "\"}");
+              state->response.SetCloseConnection(true);
             }
             // Serialize on the worker (keeps allocation off the IO thread),
             // then dispatch Send + Shutdown atomically to the owning IO thread
             // so all connection-state writes stay single-threaded.
-            std::string wire = resp.ToString();
-            const bool close  = resp.CloseConnection();
+            std::string wire = state->response.ToString();
+            const bool close = state->response.CloseConnection();
             conn->GetLoop()->RunInLoop(
                 [conn, wire = std::move(wire), close] {
                   conn->Send(wire);
@@ -224,7 +238,7 @@ void HttpServer::OnMessage(const TcpConnectionPtr& conn,
           });
       break;
     } else if (match.handler) {
-      request.SetPathParams(std::move(match.params));
+      request.SetPathParams(match.params);
       try {
         match.handler(request, response);
       } catch (const std::exception &ex) {

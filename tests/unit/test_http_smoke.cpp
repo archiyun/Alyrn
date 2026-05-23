@@ -40,8 +40,8 @@ bool TestParsesHttp11KeepAliveRequest() {
     const runtime::http::HttpRequest& parsed = context.Request();
     ok &= Expect(parsed.GetMethod() == runtime::http::Method::Get,
                  "request method should be GET");
-    ok &= Expect(parsed.Path() == "/api/health", "path should be parsed");
-    ok &= Expect(parsed.Query() == "verbose=1", "query string should be parsed");
+    ok &= Expect(parsed.GetPath() == "/api/health", "path should be parsed");
+    ok &= Expect(parsed.GetQuery() == "verbose=1", "query string should be parsed");
     ok &= Expect(parsed.KeepAlive(), "HTTP/1.1 keep-alive should be enabled");
     ok &= Expect(parsed.GetHeader("x-trace-id") == "trace-123",
                  "trace id header should be accessible case-insensitively");
@@ -89,8 +89,8 @@ bool TestParsesRequestBodyAcrossChunks() {
     const runtime::http::HttpRequest& parsed = context.Request();
     ok &= Expect(parsed.GetMethod() == runtime::http::Method::Post,
                  "request method should be POST");
-    ok &= Expect(parsed.Body() == "hello", "body should be parsed from the buffer");
-    ok &= Expect(parsed.Query() == "src=test", "query string should remain available");
+    ok &= Expect(parsed.GetBody() == "hello", "body should be parsed from the buffer");
+    ok &= Expect(parsed.GetQuery() == "src=test", "query string should remain available");
     return ok;
 }
 

@@ -4,10 +4,19 @@
 
 #include <array>
 #include <cstdint>
+#include <memory_resource>
 #include <string>
 #include <string_view>
+#include <unordered_map>
+#include <vector>
 
 namespace runtime::http {
+
+using HttpString = std::pmr::string;
+template <typename K, typename V>
+using HttpMap = std::pmr::unordered_map<K, V>;
+template <typename T>
+using HttpVector = std::pmr::vector<T>;
 
 // Shared enums used across the HTTP layer.
 enum class Method : uint8_t{

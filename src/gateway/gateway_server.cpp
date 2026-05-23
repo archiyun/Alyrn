@@ -216,7 +216,10 @@ void GatewayServer::Start() {
 
 void GatewayServer::OnConnection(const TcpConnectionPtr& conn) {
   if (conn->Connected()) {
-    conn->SetContext(ConnCtx{});
+    // ConnCtx owns HttpContext which owns a move-only HttpRequest, so
+    // ConnCtx itself is move-only. std::any requires copy-constructibility,
+    // so we shuttle through shared_ptr.
+    conn->SetContext(std::make_shared<ConnCtx>());
     metrics_.connections_accepted_total.Inc();
     metrics_.connections_active.Inc();
   } else {
@@ -228,7 +231,7 @@ void GatewayServer::OnConnection(const TcpConnectionPtr& conn) {
 void GatewayServer::OnMessage(const TcpConnectionPtr& conn,
                               runtime::net::Buffer& buf,
                               runtime::time::Timestamp ts) {
-  auto& ctx = std::any_cast<ConnCtx&>(conn->GetContext());
+  auto& ctx = *std::any_cast<std::shared_ptr<ConnCtx>&>(conn->GetContext());
   const runtime::http::ParseStatus parse_status = ctx.http_ctx.ParseRequest(buf, ts);
   if (parse_status != runtime::http::ParseStatus::Continue &&
       parse_status != runtime::http::ParseStatus::GotAll) {
@@ -242,7 +245,7 @@ void GatewayServer::OnMessage(const TcpConnectionPtr& conn,
   }
 
   while (ctx.http_ctx.GotAll()) {
-    runtime::http::HttpRequest req = ctx.http_ctx.Request();
+    runtime::http::HttpRequest req = ctx.http_ctx.TakeRequest();
     ctx.http_ctx.Reset();
 
     // 同步路径下记录端到端耗时; 异步 (proxy / static) 路径只埋单次事件计数.
@@ -273,7 +276,7 @@ void GatewayServer::OnMessage(const TcpConnectionPtr& conn,
       }
     }
 
-    const Route* route = MatchRoute(req.Path());
+    const Route* route = MatchRoute(req.GetPath());
     if (!route) {
       metrics_.requests_not_found_total.Inc();
       metrics_.ObserveStatus(static_cast<int>(runtime::http::StatusCode::NotFound));
@@ -314,7 +317,7 @@ void GatewayServer::OnMessage(const TcpConnectionPtr& conn,
       auto& pool = GetOrCreatePool(conn->GetLoop());
       RequestContext req_ctx{
         .client_ip = client_ip,
-        .uri = std::string(req.Path()),
+        .uri = std::string(req.GetPath()),
       };
       ctx.upstream_req = ProxyPass::Forward(conn, req, *upstream, *route->lb, pool, req_ctx, cb);
       if (!ctx.upstream_req) {

@@ -6,6 +6,7 @@
 #include <cctype>
 #include <cstddef>
 #include <ctime>
+#include <memory_resource>
 #include <string>
 #include <string_view>
 
@@ -25,12 +26,33 @@ inline std::string LowerCopy(std::string_view sv) {
   return out;
 }
 
+// pmr 版本: 在传入的 memory_resource 上分配, 避免每个 header 触发一次 malloc.
+// 重载而非默认参数, 因为返回类型不同.
+inline std::pmr::string LowerCopy(std::string_view sv,
+                                  std::pmr::memory_resource* res) {
+  std::pmr::string out(sv, res);
+  for (char& c : out) {
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  }
+  return out;
+}
+
 inline std::string Trim(std::string_view sv) {
   std::size_t begin{0};
   std::size_t end{sv.size()};
   while (begin < end && sv[begin] == ' ') ++begin;
   while (begin < end && sv[end - 1] == ' ') --end;
   return std::string(sv.substr(begin, end - begin));
+}
+
+// pmr 版本: 同上, 在 arena 上分配 trim 后的字符串.
+inline std::pmr::string Trim(std::string_view sv,
+                             std::pmr::memory_resource* res) {
+  std::size_t begin{0};
+  std::size_t end{sv.size()};
+  while (begin < end && sv[begin] == ' ') ++begin;
+  while (begin < end && sv[end - 1] == ' ') --end;
+  return std::pmr::string(sv.substr(begin, end - begin), res);
 }
 
 // Response headers that the framework manages and handlers must not set.
