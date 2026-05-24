@@ -24,6 +24,8 @@ int g_failures = 0;
     }                                                              \
   } while (0)
 
+
+
 using runtime::memory::Pool;
 using runtime::memory::PoolResource;
 
@@ -45,18 +47,19 @@ bool PointerLooksInsideArena(const void* p, const Pool& /*pool*/) {
 }
 
 void TestIsEqual() {
-  Pool a, b;
-  PoolResource ra1(a), ra2(a), rb(b);
+  auto pa = Pool::Create();
+  auto pb = Pool::Create();
+  PoolResource ra1(*pa), ra2(*pa), rb(*pb);
 
   EXPECT(ra1 == ra2, "two resources on same Pool compare equal");
   EXPECT(!(ra1 == rb), "resources on different Pools are not equal");
-  EXPECT(ra1.pool().chunk_count() >= 1, "underlying pool reachable via pool()");
+  EXPECT(ra1.pool().ChunkCount() >= 1, "underlying pool reachable via pool()");
 }
 
 void TestPmrStringGrowsThroughArena() {
-  Pool pool;
-  PoolResource res(pool);
-  const std::size_t bytes_before = pool.bytes_used();
+  auto pool = Pool::Create();
+  PoolResource res(*pool);
+  const std::size_t bytes_before = pool->ByteUsed();
 
   PmrString s(&res);
   s.reserve(256);  // 单次大 reserve, 强制走 arena
@@ -64,16 +67,16 @@ void TestPmrStringGrowsThroughArena() {
     s.push_back('a' + (i % 26));
   }
   EXPECT(s.size() == 200, "pmr::string accumulates characters");
-  EXPECT(pool.bytes_used() > bytes_before,
-         "Pool::bytes_used increased after pmr::string activity");
-  EXPECT(PointerLooksInsideArena(s.data(), pool),
+  EXPECT(pool->ByteUsed() > bytes_before,
+         "Pool::ByteUsed increased after pmr::string activity");
+  EXPECT(PointerLooksInsideArena(s.data(), *pool),
          "pmr::string buffer pointer is reasonable");
 }
 
 void TestPmrVectorReallocation() {
-  Pool pool(/*chunk_size=*/512);
-  PoolResource res(pool);
-  const std::size_t chunks_before = pool.chunk_count();
+  auto pool = Pool::Create(/*chunk_size=*/512);
+  PoolResource res(*pool);
+  const std::size_t chunks_before = pool->ChunkCount();
 
   PmrVector<int> v(&res);
   for (int i = 0; i < 1024; ++i) {
@@ -83,13 +86,13 @@ void TestPmrVectorReallocation() {
   for (int i = 0; i < 1024; ++i) {
     EXPECT(v[i] == i, "pmr::vector preserves values across reallocate");
   }
-  EXPECT(pool.chunk_count() > chunks_before,
+  EXPECT(pool->ChunkCount() > chunks_before,
          "vector reallocates spilled into new arena chunk(s)");
 }
 
 void TestPmrUnorderedMapInsertAndLookup() {
-  Pool pool;
-  PoolResource res(pool);
+  auto pool = Pool::Create();
+  PoolResource res(*pool);
 
   PmrMap<PmrString, int> m(&res);
   for (int i = 0; i < 64; ++i) {
@@ -111,8 +114,8 @@ void TestPmrUnorderedMapInsertAndLookup() {
 void TestResetInvalidatesAndReuses() {
   // PMR 硬规则: Reset 之后所有从该 arena 分配的容器必须已被析构,
   // 否则继续访问就是 UAF. 本测试显式按序 destroy -> Reset -> rebuild.
-  Pool pool;
-  PoolResource res(pool);
+  auto pool = Pool::Create();
+  PoolResource res(*pool);
 
   {
     PmrVector<int> v(&res);
@@ -120,10 +123,10 @@ void TestResetInvalidatesAndReuses() {
     EXPECT(v.size() == 128, "first cycle vector populated");
   }  // v 析构, 但 arena 内存还没被回收 (do_deallocate 是 no-op)
 
-  EXPECT(pool.bytes_used() > 0, "arena still holds bytes after container dtor");
+  EXPECT(pool->ByteUsed() > 0, "arena still holds bytes after container dtor");
 
-  pool.Reset();
-  EXPECT(pool.bytes_used() == 0, "Pool::Reset zeroes used bytes");
+  pool->Reset();
+  EXPECT(pool->ByteUsed() == 0, "Pool::Reset zeroes used bytes");
 
   // Reset 之后再构造新容器, 必须能正常使用同一个 PoolResource
   {
@@ -141,8 +144,8 @@ void TestAlignmentRoutedToPool() {
     std::uint64_t a, b, c, d, e, f, g, h;
   };
 
-  Pool pool;
-  PoolResource res(pool);
+  auto pool = Pool::Create();
+  PoolResource res(*pool);
   PmrVector<AlignedNode> v(&res);
   v.resize(4);
   for (std::size_t i = 0; i < v.size(); ++i) {

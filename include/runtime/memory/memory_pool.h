@@ -61,7 +61,7 @@ class MemoryPool : public runtime::base::NonCopyable {
   // Allocates one slot from the pool.
   // Returns nullptr if the pool is exhausted.
   void* Allocate() noexcept {
-    std::lock_guard<MutexPolicy> lock(mutex_);
+    std::lock_guard<MutexPolicy> lock{mutex_};
     if (free_list_head_ == nullptr) {
       return nullptr;
     }
@@ -79,7 +79,7 @@ class MemoryPool : public runtime::base::NonCopyable {
       return;
     }
 
-    std::lock_guard<MutexPolicy> lock(mutex_);
+    std::lock_guard<MutexPolicy> lock{mutex_};
     *static_cast<void**>(ptr) = free_list_head_;
     free_list_head_ = ptr;
     ++free_count_;

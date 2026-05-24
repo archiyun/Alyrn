@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -28,28 +29,27 @@ bool IsAligned(const void* p, std::size_t align) {
 }
 
 void TestSingleSmallAlloc() {
-  Pool pool;
-  void* a = pool.Allocate(64);
+  auto pool = Pool::Create();
+  void* a = pool->Allocate(64);
   EXPECT(a != nullptr,             "small alloc returns non-null");
   EXPECT(IsAligned(a, alignof(std::max_align_t)), "default-aligned");
-  EXPECT(pool.chunk_count() == 1,  "still 1 chunk");
-  EXPECT(pool.bytes_used() >= 64,  "bytes_used >= request");
+  EXPECT(pool->ChunkCount() == 1,  "still 1 chunk");
+  EXPECT(pool->ByteUsed() >= 64,   "ByteUsed >= request");
 }
 
 void TestManyAllocsCrossChunk() {
-  Pool pool(/*chunk_size=*/256);
+  auto pool = Pool::Create(/*chunk_size=*/256);
 
   std::vector<void*> ptrs;
   ptrs.reserve(64);
   for (int i = 0; i < 32; ++i) {
-    void* p = pool.Allocate(64);   // 每个 64B + 对齐, 256B 装不下几次
+    void* p = pool->Allocate(64);
     EXPECT(p != nullptr, "many small allocs succeed");
     ptrs.push_back(p);
   }
 
-  EXPECT(pool.chunk_count() > 1, "must have spilled into new chunk(s)");
+  EXPECT(pool->ChunkCount() > 1, "must have spilled into new chunk(s)");
 
-  // 检查所有指针互不重叠 (前 32 个, size 64).
   for (std::size_t i = 0; i < ptrs.size(); ++i) {
     for (std::size_t j = i + 1; j < ptrs.size(); ++j) {
       auto a = reinterpret_cast<std::uintptr_t>(ptrs[i]);
@@ -60,41 +60,41 @@ void TestManyAllocsCrossChunk() {
 }
 
 void TestAlignment() {
-  Pool pool;
+  auto pool = Pool::Create();
   for (std::size_t align : {std::size_t{8}, std::size_t{16},
                             std::size_t{32}, std::size_t{64}}) {
-    void* p1 = pool.AllocateAligned(7, align);  // 故意不对齐的 size
-    void* p2 = pool.AllocateAligned(13, align);
+    void* p1 = pool->AllocateAligned(7, align);
+    void* p2 = pool->AllocateAligned(13, align);
     EXPECT(IsAligned(p1, align), "AllocateAligned returns aligned p1");
     EXPECT(IsAligned(p2, align), "AllocateAligned returns aligned p2");
   }
 }
 
 void TestLargeAllocBypass() {
-  Pool pool(/*chunk_size=*/256);
-  void* big = pool.Allocate(8192);     // > max_, 走 large
-  EXPECT(big != nullptr,           "large alloc returns non-null");
-  EXPECT(pool.large_count() == 1,  "large_count incremented");
-  std::memset(big, 0xAB, 8192);    // 可写, 大小正确
+  auto pool = Pool::Create(/*chunk_size=*/256);
+  void* big = pool->Allocate(8192);
+  EXPECT(big != nullptr,            "large alloc returns non-null");
+  EXPECT(pool->LargeCount() == 1,   "LargeCount incremented");
+  std::memset(big, 0xAB, 8192);
 }
 
 void TestFreeAndReuseLargeSlot() {
-  Pool pool(/*chunk_size=*/256);
-  void* a = pool.Allocate(8192);
-  void* b = pool.Allocate(8192);
-  EXPECT(pool.large_count() == 2, "two large blocks");
+  auto pool = Pool::Create(/*chunk_size=*/256);
+  void* a = pool->Allocate(8192);
+  void* b = pool->Allocate(8192);
+  EXPECT(pool->LargeCount() == 2, "two large blocks");
 
-  pool.Free(a);
-  EXPECT(pool.large_count() == 1, "free dropped one large slot");
+  pool->Free(a);
+  EXPECT(pool->LargeCount() == 1, "free dropped one large slot");
 
-  void* c = pool.Allocate(8192);
-  EXPECT(pool.large_count() == 2, "new large alloc reuses slot");
+  void* c = pool->Allocate(8192);
+  EXPECT(pool->LargeCount() == 2, "new large alloc reuses slot");
   (void)b; (void)c;
 }
 
 void TestCalloc() {
-  Pool pool;
-  auto* p = static_cast<unsigned char*>(pool.Callocate(128));
+  auto pool = Pool::Create();
+  auto* p = static_cast<unsigned char*>(pool->Callocate(128));
   EXPECT(p != nullptr, "callocate non-null");
   for (int i = 0; i < 128; ++i) {
     EXPECT(p[i] == 0, "callocate zero-fills");
@@ -106,10 +106,10 @@ void CleanupHandler(void* /*data*/) { ++g_cleanup_calls; }
 void TestCleanupLifoOnDestroy() {
   g_cleanup_calls = 0;
   {
-    Pool pool;
-    pool.RegisterCleanup(&CleanupHandler, 0);
-    pool.RegisterCleanup(&CleanupHandler, 0);
-    pool.RegisterCleanup(&CleanupHandler, 0);
+    auto pool = Pool::Create();
+    pool->RegisterCleanup(&CleanupHandler, 0);
+    pool->RegisterCleanup(&CleanupHandler, 0);
+    pool->RegisterCleanup(&CleanupHandler, 0);
   }
   EXPECT(g_cleanup_calls == 3, "all 3 cleanups ran on ~Pool");
 }
@@ -119,9 +119,9 @@ void TestCleanupNotRunOnReset() {
   // 否则 ~Pool 会在野指针上 double-run.
   g_cleanup_calls = 0;
   {
-    Pool pool;
-    pool.RegisterCleanup(&CleanupHandler, 0);
-    pool.Reset();
+    auto pool = Pool::Create();
+    pool->RegisterCleanup(&CleanupHandler, 0);
+    pool->Reset();
     EXPECT(g_cleanup_calls == 0, "Reset does not run cleanup");
   }
   EXPECT(g_cleanup_calls == 0, "~Pool after Reset does not re-run stale cleanup");
@@ -137,9 +137,9 @@ void TestCleanupWithDataPayload() {
 
   g_sum = 0;
   {
-    Pool pool;
+    auto pool = Pool::Create();
     auto* p = static_cast<Payload*>(
-        pool.RegisterCleanup(handler, sizeof(Payload)));
+        pool->RegisterCleanup(handler, sizeof(Payload)));
     EXPECT(p != nullptr, "cleanup payload non-null");
     EXPECT(IsAligned(p, alignof(Payload)), "payload aligned");
     p->x = 17;
@@ -149,37 +149,33 @@ void TestCleanupWithDataPayload() {
 }
 
 void TestResetReusesChunks() {
-  Pool pool(/*chunk_size=*/256);
-  // 强制开新 chunk
-  for (int i = 0; i < 16; ++i) (void)pool.Allocate(64);
-  std::size_t chunks_before = pool.chunk_count();
+  auto pool = Pool::Create(/*chunk_size=*/256);
+  for (int i = 0; i < 16; ++i) (void)pool->Allocate(64);
+  std::size_t chunks_before = pool->ChunkCount();
   EXPECT(chunks_before > 1, "spilled into more than one chunk");
 
-  pool.Reset();
-  EXPECT(pool.chunk_count() == chunks_before, "Reset keeps chunks");
-  EXPECT(pool.bytes_used() == 0,              "Reset zeros used bytes");
-  EXPECT(pool.large_count() == 0,             "Reset drops large blocks");
+  pool->Reset();
+  EXPECT(pool->ChunkCount() == chunks_before, "Reset keeps chunks");
+  EXPECT(pool->ByteUsed() == 0,               "Reset zeros used bytes");
+  EXPECT(pool->LargeCount() == 0,             "Reset drops large blocks");
 
-  // Reset 后还能继续分配, 走第一个 chunk
-  void* p = pool.Allocate(64);
+  void* p = pool->Allocate(64);
   EXPECT(p != nullptr, "alloc after Reset works");
 }
 
 void TestSmallChunkWithLargeAlignment() {
   // 用 kMinChunkSize 起步: 触发后续 chunk 的紧凑布局, 暴露 aligned 越过
   // end 的边界. 同时让 AlignPtr 推进的距离接近 chunk 大小.
-  Pool pool(/*chunk_size=*/Pool::kMinChunkSize);
+  auto pool = Pool::Create(/*chunk_size=*/Pool::kMinChunkSize);
 
-  // 反复申请 64B + 64B 对齐, 迫使每个 chunk 上的 aligned 接近 / 越过 end.
   std::vector<void*> ptrs;
   for (int i = 0; i < 20; ++i) {
-    void* p = pool.AllocateAligned(64, 64);
+    void* p = pool->AllocateAligned(64, 64);
     EXPECT(p != nullptr, "tight chunk + 64B align still serves");
     EXPECT(IsAligned(p, 64), "returned pointer respects 64B align");
     ptrs.push_back(p);
   }
 
-  // 不应该有任何两次返回同一地址 (即便 chunk 紧到几乎装不下).
   for (std::size_t i = 0; i < ptrs.size(); ++i) {
     for (std::size_t j = i + 1; j < ptrs.size(); ++j) {
       EXPECT(ptrs[i] != ptrs[j], "tight chunk path returns distinct ptrs");
@@ -187,20 +183,32 @@ void TestSmallChunkWithLargeAlignment() {
   }
 }
 
-void TestStressNoCrash() {
-  // 混合负载: 小+大+cleanup, 走 ASan 时这是主要的捕获面.
-  Pool pool(/*chunk_size=*/512);
-  for (int i = 0; i < 200; ++i) {
-    if (i % 13 == 0)      (void)pool.Allocate(4096);   // large
-    else if (i % 7 == 0)  pool.RegisterCleanup(&CleanupHandler, 32);
-    else                  (void)pool.Allocate(64);
+void TestMoveOwnership() {
+  // Pool::Ptr 是 unique_ptr, 应能移动而不复制; 移动后析构只跑一次.
+  g_cleanup_calls = 0;
+  {
+    auto a = Pool::Create();
+    a->RegisterCleanup(&CleanupHandler, 0);
+    auto b = std::move(a);
+    EXPECT(a.get() == nullptr, "moved-from Ptr is empty");
+    EXPECT(b.get() != nullptr, "moved-to Ptr owns the pool");
   }
-  EXPECT(pool.chunk_count() >= 2,  "stress test grew chunks");
-  EXPECT(pool.large_count() >= 1,  "stress test grew large list");
+  EXPECT(g_cleanup_calls == 1, "cleanup ran exactly once after move");
+}
 
-  pool.Reset();
-  EXPECT(pool.bytes_used() == 0,   "stress Reset clean");
-  EXPECT(pool.large_count() == 0,  "stress Reset large gone");
+void TestStressNoCrash() {
+  auto pool = Pool::Create(/*chunk_size=*/512);
+  for (int i = 0; i < 200; ++i) {
+    if (i % 13 == 0)      (void)pool->Allocate(4096);
+    else if (i % 7 == 0)  pool->RegisterCleanup(&CleanupHandler, 32);
+    else                  (void)pool->Allocate(64);
+  }
+  EXPECT(pool->ChunkCount() >= 2,  "stress test grew chunks");
+  EXPECT(pool->LargeCount() >= 1,  "stress test grew large list");
+
+  pool->Reset();
+  EXPECT(pool->ByteUsed() == 0,    "stress Reset clean");
+  EXPECT(pool->LargeCount() == 0,  "stress Reset large gone");
 }
 
 }  // namespace
@@ -217,6 +225,7 @@ int main() {
   TestCleanupWithDataPayload();
   TestResetReusesChunks();
   TestSmallChunkWithLargeAlignment();
+  TestMoveOwnership();
   TestStressNoCrash();
 
   if (g_failures == 0) {

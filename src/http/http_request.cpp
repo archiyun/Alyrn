@@ -10,7 +10,7 @@
 namespace runtime::http {
 
 HttpRequest::HttpRequest()
-    : pool_{std::make_unique<runtime::memory::Pool>()},
+    : pool_{runtime::memory::Pool::Create()},
       res_{std::make_unique<runtime::memory::PoolResource>(*pool_)},
       path_{res_.get()},
       query_{res_.get()},
@@ -56,10 +56,15 @@ bool HttpRequest::KeepAlive() const {
 }
 
 void HttpRequest::Reset() {
-  // moved-from 状态 (pool_/res_ 为空, 例如 TakeRequest 之后): 直接重建.
-  // 否则走快路径, 复用 arena 的 chunk.
+  // moved-from 状态 (pool_/res_ 为空, 例如 TakeRequest 之后): 必须原地
+  // 析构 + placement-new, 不能走 move-assign. 原因: pmr 容器内部缓存
+  // 了 allocator 的裸指针, 但 polymorphic_allocator 的
+  // propagate_on_container_move_assignment = false, move-assign 不会
+  // 更新这些指针, 旧的 PoolResource 一旦被 TakeRequest 的接收者释放,
+  // 容器内的 allocator 就悬空, 下一次 AddHeader 会在 vtable 派发处崩.
   if (pool_ == nullptr) {
-    *this = HttpRequest{};
+    this->~HttpRequest();
+    new (this) HttpRequest();
     return;
   }
 

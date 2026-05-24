@@ -55,16 +55,20 @@ TEST(ObjectPoolTest, AcquireAndReleaseManageLifetime) {
     EXPECT_EQ(TrackedObject::dtor_count.load(), 2);
 }
 
-TEST(ObjectPoolTest, AcquireReturnsNullWhenExhausted) {
+TEST(ObjectPoolTest, AcquireFallsBackToHeapWhenExhausted) {
     runtime::memory::ObjectPool<TrackedObject, 1> pool;
 
     auto* first = pool.Acquire(7, "only");
     auto* second = pool.Acquire(8, "extra");
 
     ASSERT_NE(first, nullptr);
-    EXPECT_EQ(second, nullptr);
+    ASSERT_NE(second, nullptr);
+    EXPECT_TRUE(pool.owns(first));
+    EXPECT_FALSE(pool.owns(second));
+    EXPECT_EQ(pool.overflow_count(), 1u);
 
     pool.Release(first);
+    pool.Release(second);
 }
 
 TEST(ObjectPoolTest, AcquireScopedReturnsObjectAutomatically) {

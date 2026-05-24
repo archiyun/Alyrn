@@ -81,9 +81,13 @@ bool TestExhaustion() {
     auto* second = pool.Acquire(4, "extra");
 
     if (!Expect(first != nullptr, "first acquire should succeed")) return false;
-    if (!Expect(second == nullptr, "acquire past capacity should return nullptr")) return false;
+    if (!Expect(second != nullptr, "acquire past capacity should fall back to heap, not return null")) return false;
+    if (!Expect(pool.owns(first), "first should be pool-owned")) return false;
+    if (!Expect(!pool.owns(second), "overflow object should not be pool-owned")) return false;
+    if (!Expect(pool.overflow_count() == 1, "overflow_count should record the spill")) return false;
 
     pool.Release(first);
+    pool.Release(second);
     return true;
 }
 

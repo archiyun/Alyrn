@@ -75,8 +75,11 @@ public:
   void Reset();
 
 private:
-  std::unique_ptr<runtime::memory::Pool> pool_;
-  std::unique_ptr<runtime::memory::PoolResource> res_;  
+  // 必须用 Pool::Ptr (绑定 Pool::Deleter): unique_ptr<Pool> 会走
+  // default_delete -> 既无法访问 private ~Pool, 也绕过 DestroyArena,
+  // 导致 chunk / large / cleanup 链全部泄漏.
+  runtime::memory::Pool::Ptr pool_;
+  std::unique_ptr<runtime::memory::PoolResource> res_;
   Method method_{Method::Invalid};       // GET / POST / PUT ...
   Version version_{Version::Unknown};    // HTTP/1.0 HTTP/1.1
   HttpString path_;                     // e.g. /users/123

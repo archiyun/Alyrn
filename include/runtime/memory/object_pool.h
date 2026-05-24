@@ -5,7 +5,7 @@
 #include "runtime/base/noncopyable.h"
 #include "runtime/memory/memory_pool.h"
 
-#include <cassert>
+#include <atomic>
 #include <cstddef>
 #include <memory>
 #include <utility>
@@ -57,22 +57,23 @@ class ObjectPool : public runtime::base::NonCopyable {
   ObjectPool()  = default;
   ~ObjectPool() = default;
 
-  // Constructs an object of type T in the pool using forwarded arguments.
-  // Returns nullptr if the pool is exhausted.
+  // Constructs an object of type T using forwarded arguments. When the pool
+  // is exhausted, falls back to heap allocation so callers never observe
+  // nullptr. The fallback path is slower than a pool hit; a sustained
+  // non-zero overflow_count() indicates Capacity is undersized for the load.
   // Throws: any exception thrown by T's constructor (slot is returned on throw).
   template <typename... Args>
   T* Acquire(Args&&... args) {
-    void* mem = pool_.Allocate();
-    if (mem == nullptr) {
-      return nullptr;
+    if (void* mem = pool_.Allocate()) {
+      try {
+        return new (mem) T(std::forward<Args>(args)...);
+      } catch (...) {
+        pool_.Deallocate(mem);
+        throw;
+      }
     }
-
-    try {
-      return new (mem) T(std::forward<Args>(args)...);
-    } catch (...) {
-      pool_.Deallocate(mem);
-      throw;
-    }
+    overflow_count_.fetch_add(1, std::memory_order_relaxed);
+    return new T(std::forward<Args>(args)...);
   }
 
   // Constructs an object and wraps it in a ScopedPtr that automatically
@@ -82,16 +83,19 @@ class ObjectPool : public runtime::base::NonCopyable {
     return ScopedPtr(Acquire(std::forward<Args>(args)...), Deleter(this));
   }
 
-  // Destroys the object and returns its slot to the pool.
-  // Passing nullptr is a no-op.
+  // Destroys the object and returns its storage. Pool-owned pointers go back
+  // to the free list; heap-overflow pointers are deleted. Passing nullptr is
+  // a no-op.
   void Release(T* ptr) noexcept {
     if (ptr == nullptr) {
       return;
     }
-
-    assert(pool_.owns(ptr) && "pointer does not belong to this ObjectPool");
-    ptr->~T();
-    pool_.Deallocate(static_cast<void*>(ptr));
+    if (pool_.owns(ptr)) {
+      ptr->~T();
+      pool_.Deallocate(static_cast<void*>(ptr));
+    } else {
+      delete ptr;
+    }
   }
 
   // Returns true if the pointer belongs to this pool.
@@ -103,8 +107,15 @@ class ObjectPool : public runtime::base::NonCopyable {
   std::size_t           free_count() const noexcept { return pool_.free_count(); }
   std::size_t           used_count() const noexcept { return pool_.used_count(); }
 
+  // Number of times Acquire() spilled to the heap because the pool was full.
+  // Monotonically increasing; never reset. Useful for sizing Capacity in prod.
+  std::size_t overflow_count() const noexcept {
+    return overflow_count_.load(std::memory_order_relaxed);
+  }
+
  private:
   MemoryPool<sizeof(T), alignof(T), Capacity, MutexPolicy> pool_;
+  std::atomic<std::size_t> overflow_count_{0};
 };
 
 }  // namespace runtime::memory

@@ -1,56 +1,81 @@
 // Copyright (c) 2026 Aresna
 // SPDX-License-Identifier: MIT
-// Referecnce: https://github.com/nginx/nginx/blob/master/src/core/ngx_palloc.h
+// Reference: https://github.com/nginx/nginx/blob/master/src/core/ngx_palloc.h
 #pragma once
 
 #include "runtime/base/noncopyable.h"  // IWYU pragma: keep
 
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
+#include <memory>
 
 namespace runtime::memory {
 
+// Pool is an nginx-style per-request arena allocator.
+//
+// Layout:
+// The Pool object itself is embedded at the beginning of the first chunk
+// via placement new and a custom deleter, matching nginx's ngx_pool_t layout.
+//
+// A single heap allocation contains both the Pool header and the initial
+// allocation buffer. Additional chunks use a smaller ChunkHeader layout
+// to maximize usable payload space.
+//
+// Typical usage:
+//   auto pool = Pool::Create(8192);
+//   void* p = pool->Allocate(64);
+//   pool->RegisterCleanup(&close_fd, sizeof(int));
+//   // Pool destruction:
+//   //   cleanup handlers -> large allocations -> chunk chain -> Pool itself
 class Pool : public runtime::base::NonCopyable {
 public:
-  inline static constexpr std::size_t  kDefaultChunkSize = 1 << 12;
-  inline static constexpr std::size_t  kMaxSmallAlloc    = kDefaultChunkSize - 1;
-  inline static constexpr std::size_t  kFailedThreshold  = 4;
-  // 最小 chunk: 至少要装下后续 chunk 的 ChunkHeader + 几个 LargeNode/CleanupNode,
-  // 否则后续 chunk 几乎没有可用空间. 对标 nginx NGX_MIN_POOL_SIZE (~112B).
-  inline static constexpr std::size_t  kMinChunkSize     = 128;
+  inline static constexpr std::size_t kDefaultChunkSize = 1 << 12;
+  inline static constexpr std::size_t kMaxSmallAlloc    = kDefaultChunkSize - 1;
+  inline static constexpr std::size_t kFailedThreshold  = 1 << 2;
+  inline static constexpr std::size_t kMinChunkSize     = 1 << 7;
 
-  explicit Pool(std::size_t chunk_size = kDefaultChunkSize);
-  ~Pool() noexcept;
+  struct Deleter {
+    void operator()(Pool* p) const noexcept;
+  };
+  using Ptr = std::unique_ptr<Pool, Deleter>;
 
+  // Pool must be placement-new'ed at the beginning of its own arena memory,
+  // so stack allocation and direct new are intentionally disallowed.
+  static Ptr Create(std::size_t chunk_size = kDefaultChunkSize);
+
+  // size <= max_ uses the bump arena fast path.
+  // Larger allocations bypass the arena and use the large-allocation path.
   void* Allocate(std::size_t size);
-
   void* AllocateAligned(std::size_t size, std::size_t align);
-
   void* AllocateUnaligned(std::size_t size);
-
   void* Callocate(std::size_t size);
 
+  // Only valid for large allocations.
+  // Small allocations are reclaimed by Reset() or Pool destruction.
   void Free(void* p) noexcept;
 
+  // Does not execute cleanup handlers.
+  // Releases large allocations and rewinds all chunk bump pointers.
   void Reset() noexcept;
 
+  // handler(data) is executed in LIFO order during Pool destruction.
+  // Returned data memory is allocated from the arena itself.
   void* RegisterCleanup(void (*handler)(void*), std::size_t data_size);
 
-  // metrics
-  std::size_t chunk_count() const noexcept;
-  std::size_t large_count() const noexcept;
-  std::size_t bytes_used()  const noexcept;
+  std::size_t ChunkCount() const noexcept;
+  std::size_t LargeCount() const noexcept;
+  std::size_t ByteUsed()   const noexcept;
 
 private:
   struct ChunkHeader {
-    std::byte*    last; // bump start_point
-    std::byte*    end; // chunk endpoint
-    ChunkHeader*  next; // next chunk
-    std::uint32_t failed; // bump
+    std::byte*    last;
+    std::byte*    end;
+    ChunkHeader*  next;
+    std::uint32_t failed;
   };
 
   struct LargeNode {
-    void*       alloc; // operator new Large chunk
+    void*       alloc;
     LargeNode*  next;
   };
 
@@ -59,22 +84,21 @@ private:
     void*         data;
     CleanupNode*  next;
   };
-private:
-  // 后续 chunk 的预留字节数 (ChunkHeader + 对齐 padding). 定义在 .cpp,
-  // 因为依赖 .cpp 内的 kDefaultAlign 常量, 且与 AllocateChunk 共享同一布局.
-  static const std::size_t kHeaderReserve;
 
-  void Destroy() noexcept;
+  explicit Pool(std::size_t chunk_size) noexcept;
+  ~Pool() = default;
+
+  void DestroyArena() noexcept;
   void* AllocateSmall(std::size_t size, std::size_t alignment);
   void* AllocateLarge(std::size_t size);
-  ChunkHeader* AllocateChunk(std::size_t size);
-private:
-  ChunkHeader   d_;
-  std::size_t   max_;
-  std::size_t   chunk_size_;
-  ChunkHeader*  current_;
-  LargeNode*    large_;
-  CleanupNode*  cleanup_;
+  ChunkHeader* AllocateChunk();
+
+  // reinterpret_cast<ChunkHeader*>(this) == &d_,
+  ChunkHeader  d_;
+  std::size_t  max_;
+  ChunkHeader* current_;
+  LargeNode*   large_;
+  CleanupNode* cleanup_;
 };
 
-} // namespace runtime::memory
+}  // namespace runtime::memory
