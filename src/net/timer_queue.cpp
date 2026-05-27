@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Aresna
+// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #include "runtime/time/timestamp.h"
 #include "runtime/net/channel.h"
@@ -54,24 +54,15 @@ TimerQueue::~TimerQueue() {
   ::close(timerfd_);
   for (auto& [seq, timer] : active_timers_) {
     timers_.Erase(timer);
-    Reclaim(timer);
+    timer_pool_.Release(timer);
   }
   active_timers_.clear();
-}
-
-void TimerQueue::Reclaim(Timer* timer) {
-  if (timer_pool_.owns(timer)) {
-    timer_pool_.Release(timer);
-  } else {
-    delete timer;
-  }
 }
 
 TimerId TimerQueue::AddTimer(TimerCallback cb,
                              runtime::time::Timestamp when,
                              double interval) {
   Timer* t = timer_pool_.Acquire(std::move(cb), when, interval);
-  assert(t != nullptr && "TimerQueue pool exhausted");
   loop_->RunInLoop([this, t] {
     bool earliest_changed =
         timers_.Empty() || t->Expiration() < timers_.Earliest()->Expiration();
@@ -89,7 +80,7 @@ void TimerQueue::Cancel(TimerId id) {
     auto it = active_timers_.find(seq);
     if (it != active_timers_.end()) {
       timers_.Erase(it->second);
-      Reclaim(it->second);
+      timer_pool_.Release(it->second);
       active_timers_.erase(it);
     }
   });
@@ -120,7 +111,7 @@ void TimerQueue::Reset(const std::vector<Timer*>& expired, runtime::time::Timest
       timers_.Insert(timer);
       active_timers_[timer->Sequence()] = timer;
     } else {
-      Reclaim(timer);
+      timer_pool_.Release(timer);
     }
   }
   if (!timers_.Empty()) {

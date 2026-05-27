@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Aresna
+// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #include "runtime/base/current_thread.h"
 #include "runtime/log/logger.h"

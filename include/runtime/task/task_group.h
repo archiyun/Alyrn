@@ -1,2 +1,2 @@
-// Copyright (c) 2026 Aresna
+// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT

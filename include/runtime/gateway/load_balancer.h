@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Aresna
+// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 //
 // Load-balancer strategies. Each strategy is a stateless (or near-stateless)

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Aresna
+// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 // Active health checks: periodically probe every registered peer with a
 // small HTTP GET. The probe outcome feeds two independent state machines:

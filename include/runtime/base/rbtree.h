@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Aresna
+// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
@@ -26,7 +26,7 @@ namespace runtime::base {
 //
 // Based on the algorithm in Cormen, Leiserson, Rivest, Stein — "Introduction
 // to Algorithms".  "CLRS" version 
-template<typename T>
+template <typename T>
 struct RBTNode {
   T*        owner{nullptr};
   RBTNode*  parent{nullptr};
@@ -37,10 +37,10 @@ struct RBTNode {
 };
 
 
-template<
-    typename T,
-    RBTNode<T> T::* kMember,           // Member pointer of Intrusive Node
-    bool (*kLess)(const T*, const T*)  // Comparator
+template <
+  typename T,
+  RBTNode<T> T::* kMember,           // Member pointer of Intrusive Node
+  bool (*kLess)(const T*, const T*)  // Comparator
 >
 class IntrusiveRBTree : public NonCopyable {
 public:

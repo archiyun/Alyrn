@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Aresna
+// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #include "runtime/task/timer_scheduler.h"
 #include "runtime/task/task.h"

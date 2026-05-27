@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Aresna
+// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 // Reference: https://github.com/nginx/nginx/blob/master/src/core/ngx_palloc.c
 #include "runtime/memory/pool.h"
@@ -228,7 +228,6 @@ void* Pool::AllocateSmall(std::size_t size, std::size_t align) {
 void* Pool::AllocateLarge(std::size_t size) {
   void* alloc = ::operator new(size);
 
-  // 探测前 kLargeSlotSearch 个 LargeNode, 复用 alloc==nullptr 的空槽.
   std::size_t probe = 0;
   for (LargeNode* l = large_; l != nullptr; l = l->next) {
     if (l->alloc == nullptr) {
@@ -238,7 +237,6 @@ void* Pool::AllocateLarge(std::size_t size) {
     if (++probe >= kLargeSlotSearch) break;
   }
 
-  // 新 LargeNode 本身从 arena bump (节点 16B, 不值得走 large 自己).
   auto* node = static_cast<LargeNode*>(
       AllocateSmall(sizeof(LargeNode), alignof(LargeNode)));
   node->alloc = alloc;

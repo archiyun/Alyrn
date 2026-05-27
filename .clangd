@@ -1,0 +1,15 @@
+CompileFlags:
+  # 优先用 build-perf(RelWithDebInfo)的编译数据库
+  # 如果以后切构建目录,改这一行即可(例:build-tests / build)
+  CompilationDatabase: build-perf
+  # 兜底:对纯头文件或新增未注册的源,补全 include 与 std 版本
+  Add:
+    - -std=c++20
+    - -I${workspaceFolder}/include
+    - -I${workspaceFolder}/src
+
+Diagnostics:
+  UnusedIncludes: Strict
+
+Index:
+  Background: Build

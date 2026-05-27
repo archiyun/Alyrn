@@ -45,6 +45,24 @@ target_link_libraries(demo_bench_gateway
         runtime_gateway
 )
 
+add_executable(demo_bench_gateway_multi
+    demo_bench_gateway_multi.cpp
+)
+
+target_link_libraries(demo_bench_gateway_multi
+    PRIVATE
+        runtime_gateway
+)
+
+add_executable(demo_bench_timer
+    demo_bench_timer.cpp
+)
+
+target_link_libraries(demo_bench_timer
+    PRIVATE
+        runtime_net
+)
+
 add_executable(demo_rbtree
     demo_rbtree.cpp
 )

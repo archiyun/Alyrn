@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Aresna
+// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #include "runtime/net/poll_poller.h"
 #include "runtime/net/channel.h"
@@ -14,20 +14,23 @@ namespace {
 
 short ToPollEvents(int abstract_events) {
     short ev{0};
-    if (abstract_events & Channel::kReadEvent) ev |= POLLIN | POLLPRI;
+    if (abstract_events & Channel::kReadEvent)  ev |= POLLIN | POLLPRI;
     if (abstract_events & Channel::kWriteEvent) ev |= POLLOUT;
     return ev;
 }
 
 int FromPollEvents(short poll_events) {
     int ev{0};
-    if (poll_events & (POLLIN | POLLPRI))  ev |= Channel::kReadEvent;
+    if (poll_events &(POLLIN | POLLPRI))   ev |= Channel::kReadEvent;
     if (poll_events & POLLOUT)             ev |= Channel::kWriteEvent;
     if (poll_events & POLLERR)             ev |= Channel::kErrorEvent;
     if (poll_events & POLLHUP)             ev |= Channel::kHupEvent;
     return ev;
 }
-}
+
+}  // namespace
+
+
 PollPoller::PollPoller(EventLoop* loop) : Poller(loop) {}
 
 runtime::time::Timestamp PollPoller::Poll(int timeout_ms,
@@ -94,4 +97,5 @@ void PollPoller::RemoveChannel(Channel* channel) {
   pollfds_.pop_back();
   channel->SetIndex(-1);
 }
+
 } // namespace runtime::net

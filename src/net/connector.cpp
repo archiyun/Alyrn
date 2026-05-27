@@ -1,6 +1,7 @@
-// Copyright (c) 2026 Aresna
+// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #include "runtime/net/connector.h"
+
 #include "runtime/net/channel.h"
 #include "runtime/net/net_utils.h"
 #include "runtime/log/logger.h"
@@ -181,9 +182,6 @@ int Connector::RemoveAndResetChannel() {
   channel_->Remove();
   int sockfd = channel_->Fd();
 
-  // 不能在此处直接 reset：当前在 channel_->HandleEvent() 的调用栈内
-  // 直接 reset 会析构正在执行的 Channel 对象 → UB
-  // QueueInLoop 推迟到本轮事件分发结束后执行
   auto self = shared_from_this();
   loop_->QueueInLoop([self] { self->channel_.reset(); });
 

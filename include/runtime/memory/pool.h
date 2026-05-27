@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Aresna
+// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 // Reference: https://github.com/nginx/nginx/blob/master/src/core/ngx_palloc.h
 #pragma once

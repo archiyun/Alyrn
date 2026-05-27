@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Aresna
+// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
@@ -14,7 +14,7 @@ namespace runtime::net {
 // BSD variants. It translates Channel registrations into pollfd structures and
 // converts poll results back into active Channel
 class PollPoller : public Poller {
- public:
+public:
   explicit PollPoller(EventLoop* loop);
   ~PollPoller() override = default;
 
@@ -23,7 +23,7 @@ class PollPoller : public Poller {
   void UpdateChannel(Channel* channel) override;
   void RemoveChannel(Channel* channel) override;
 
- private:
+private:
   void FillActiveChannels(int num_events,
                           ChannelList* active_channels) const;
 

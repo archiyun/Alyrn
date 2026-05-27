@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Aresna
+// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
@@ -47,10 +47,8 @@ public:
   }
 
 private:
-  // Connector 建立连接后回调此函数，把 sockfd 包装成 TcpConnection
   void NewConnection(int sockfd);
 
-  // TcpConnection 关闭时的清理回调
   void RemoveConnection(const TcpConnectionPtr& conn);
 
   EventLoop*        loop_;
@@ -58,7 +56,7 @@ private:
   std::string       name_;
   std::atomic<bool> connect_{false};
 
-  std::shared_ptr<Connector> connector_;  // shared_ptr：Connector 内部用 shared_from_this
+  std::shared_ptr<Connector> connector_;
   TcpConnectionPtr           connection_;
 
   ConnectionCallback    connection_callback_;

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Aresna
+// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
@@ -36,19 +36,18 @@ public:
   void Cancel(TimerId id);
 
 private:
+  static constexpr std::size_t kTimerQueueMax = 1 << 15;
 
   void HandleRead();
   void ResetTimerfd(runtime::time::Timestamp expiration);
   std::vector<Timer*> GetExpired(runtime::time::Timestamp now);
   void Reset(const std::vector<Timer*>& expired, runtime::time::Timestamp now);
 
-  void Reclaim(Timer* timer);
-
   EventLoop* loop_;
   int timerfd_;
   std::unique_ptr<Channel> timerfd_channel_;
   TimerTree timers_;
-  runtime::memory::ObjectPool<Timer, 512> timer_pool_;
+  runtime::memory::ObjectPool<Timer, kTimerQueueMax> timer_pool_;
   std::unordered_map<int64_t, Timer*> active_timers_;
 };
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Aresna
+// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #include "runtime/net/tcp_client.h"
 
@@ -18,11 +18,8 @@ TcpClient::TcpClient(EventLoop* loop,
       server_addr_(server_addr),
       name_(std::move(name)),
       connector_(std::make_shared<Connector>(loop, server_addr)) {
-
-  // Connector 建立好连接后把裸 fd 交过来，由我们包成 TcpConnection
   connector_->SetConnectionCallback(
       [this](int sockfd) { NewConnection(sockfd); });
-
   LOG_INFO() << "tcp client created: name=" << name_
              << " server=" << server_addr_.ToIpPort();
 }
@@ -33,7 +30,6 @@ TcpClient::~TcpClient() {
 
   TcpConnectionPtr conn = connection_;
   if (conn) {
-    // ConnectDestroyed 必须在连接所在的 loop 线程执行
     conn->GetLoop()->RunInLoop([conn] { conn->ConnectDestroyed(); });
   }
 }
