@@ -83,7 +83,7 @@ thread_local EventLoop* t_loop_in_this_thread = nullptr;
 
 EventLoop::EventLoop()
     : looping_(false),
-      quit_(true),
+      quit_(false),
       calling_pending_functors_(false),
       thread_id_(std::this_thread::get_id()),
       poller_(Poller::NewDefaultPoller(this)),
@@ -116,8 +116,10 @@ void EventLoop::Loop() {
   assert(IsInLoopThread());
   assert(!looping_);
   looping_ = true;
-  quit_ = false;
 
+  // Do not reset quit_ here: a Quit() that races in before Loop() begins (e.g.
+  // another thread holds the loop pointer and stops it during startup) must be
+  // honored, otherwise the loop would clear the request and block forever.
   LOG_INFO() << "event loop entering loop";
 
   while (!quit_) {
