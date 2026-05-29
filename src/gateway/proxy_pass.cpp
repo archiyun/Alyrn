@@ -14,17 +14,18 @@
 // completes or the client disconnects. All callbacks capture weak_self so the
 // object can outlive any single in-flight callback without UAF.
 #include "runtime/gateway/proxy_pass.h"
-#include "runtime/gateway/upstream_conn_pool.h"
-#include "runtime/http/http_types.h"
-#include "runtime/log/logger.h"
-#include "runtime/net/inet_address.h"
-#include "runtime/time/timestamp.h"
 
 #include <algorithm>
 #include <atomic>
 #include <charconv>
 #include <chrono>
 #include <cstring>
+
+#include "runtime/gateway/upstream_conn_pool.h"
+#include "runtime/http/http_types.h"
+#include "runtime/log/logger.h"
+#include "runtime/net/inet_address.h"
+#include "runtime/time/timestamp.h"
 
 namespace runtime::gateway {
 

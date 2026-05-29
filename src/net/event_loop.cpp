@@ -2,20 +2,21 @@
 // SPDX-License-Identifier: MIT
 #include "runtime/net/event_loop.h"
 
-#include "runtime/time/timestamp.h"
+#include <sys/eventfd.h>
+#include <unistd.h>
+
+#include <cassert>
+#include <cerrno>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+
 #include "runtime/log/logger.h"
 #include "runtime/net/channel.h"
 #include "runtime/net/poller.h"
 #include "runtime/net/timer_id.h"
 #include "runtime/net/timer_queue.h"
-
-#include <cassert>
-#include <cerrno>
-#include <cstdlib>
-#include <cstdint>
-#include <cstring>
-#include <sys/eventfd.h>
-#include <unistd.h>
+#include "runtime/time/timestamp.h"
 
 namespace runtime::net {
 

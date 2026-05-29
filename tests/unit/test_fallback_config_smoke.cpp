@@ -5,11 +5,11 @@
 // 运行
 // ./build-tests/tests/fallback_config_smoke_test
 
-#include "runtime/gateway/fallback_config.h"
-#include "runtime/http/http_types.h"
-
 #include <iostream>
 #include <string>
+
+#include "runtime/gateway/fallback_config.h"
+#include "runtime/http/http_types.h"
 
 namespace {
 

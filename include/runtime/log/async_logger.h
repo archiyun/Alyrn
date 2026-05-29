@@ -2,13 +2,10 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include "runtime/base/noncopyable.h"
-#include "runtime/log/log_buffer.h"
-
 #include <condition_variable>
 #include <cstddef>
-#include <cstdio>
 #include <cstdint>
+#include <cstdio>
 #include <memory>
 #include <mutex>
 #include <stop_token>
@@ -16,6 +13,8 @@
 #include <thread>
 #include <vector>
 
+#include "runtime/base/noncopyable.h"
+#include "runtime/log/log_buffer.h"
 
 namespace runtime::log {
 

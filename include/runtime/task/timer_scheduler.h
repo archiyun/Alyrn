@@ -2,8 +2,6 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include "runtime/time/timestamp.h"
-
 #include <condition_variable>
 #include <memory>
 #include <mutex>
@@ -11,6 +9,8 @@
 #include <stop_token>
 #include <thread>
 #include <vector>
+
+#include "runtime/time/timestamp.h"
 
 namespace runtime::task {
 

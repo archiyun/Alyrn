@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: MIT
 #include "runtime/gateway/gateway_server.h"
 
-#include "runtime/log/logger.h"
-
 #include <array>
 #include <atomic>
 #include <chrono>
+
+#include "runtime/log/logger.h"
 
 namespace runtime::gateway {
 

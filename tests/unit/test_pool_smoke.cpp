@@ -1,12 +1,12 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/memory/pool.h"
-
 #include <cstdint>
 #include <cstring>
 #include <iostream>
 #include <utility>
 #include <vector>
+
+#include "runtime/memory/pool.h"
 
 namespace {
 

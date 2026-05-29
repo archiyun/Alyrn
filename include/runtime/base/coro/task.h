@@ -4,12 +4,12 @@
 
 // Task<T>: 目前用于网关协程化的最小协程返回模型。
 
-#include "runtime/base/noncopyable.h"
-
 #include <coroutine>
 #include <exception>
 #include <utility>
 #include <variant>
+
+#include "runtime/base/noncopyable.h"
 
 namespace runtime::base::coro {
 

@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "runtime/base/noncopyable.h"
 #include "runtime/net/buffer.h"
 #include "runtime/net/inet_address.h"
 #include "runtime/time/timestamp.h"
-#include "runtime/base/noncopyable.h"
 
 #ifdef RUNTIME_ENABLE_SSL
 #include <openssl/ssl.h>

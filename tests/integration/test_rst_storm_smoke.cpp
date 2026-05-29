@@ -29,12 +29,11 @@
 //   5. 整个风暴期间不 crash 不 hang —— TimerQueue 和 Channel 的级联
 //      清理路径必须能扛住瞬时大量析构。
 
-#include "runtime/net/event_loop.h"
-#include "runtime/net/inet_address.h"
-#include "runtime/net/net_utils.h"
-#include "runtime/net/tcp_server.h"
-
 #include <arpa/inet.h>
+#include <sys/resource.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
 #include <atomic>
 #include <cstdint>
 #include <cstdlib>
@@ -42,11 +41,13 @@
 #include <future>
 #include <iostream>
 #include <string>
-#include <sys/resource.h>
-#include <sys/socket.h>
 #include <thread>
-#include <unistd.h>
 #include <vector>
+
+#include "runtime/net/event_loop.h"
+#include "runtime/net/inet_address.h"
+#include "runtime/net/net_utils.h"
+#include "runtime/net/tcp_server.h"
 
 namespace {
 

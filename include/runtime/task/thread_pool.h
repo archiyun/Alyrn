@@ -2,15 +2,15 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <cstddef>
+#include <thread>
+#include <vector>
+
 #include "runtime/base/noncopyable.h"
 #include "runtime/task/scheduler_metrics.h"
 #include "runtime/task/task_history.h"
 #include "runtime/task/task_state.h"
 #include "runtime/task/work_queue.h"
-
-#include <cstddef>
-#include <thread>
-#include <vector>
 
 namespace runtime::task {
 

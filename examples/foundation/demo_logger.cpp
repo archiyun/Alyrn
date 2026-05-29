@@ -7,12 +7,12 @@
  * 运行时换级别
  */
 
-#include "runtime/log/logger.h"
-
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <string>
+
+#include "runtime/log/logger.h"
 
 // Helper: read a log file and print it to stdout so the demo is self-contained.
 static void PrintFile(const std::string& path) {

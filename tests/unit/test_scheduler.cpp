@@ -1,13 +1,14 @@
 #include <gtest/gtest.h>
+
+#include <atomic>
+#include <stdexcept>
+#include <thread>
+
 #include "runtime/task/cancellation_token.h"
 #include "runtime/task/scheduler.h"
 #include "runtime/task/task_handle.h"
 #include "runtime/task/task_options.h"
 #include "runtime/task/work_queue.h"
-
-#include <atomic>
-#include <stdexcept>
-#include <thread>
 
 using namespace runtime::task;
 using namespace std::chrono_literals;

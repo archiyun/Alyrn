@@ -17,9 +17,8 @@
  *   7. EventsVectorResizes   - register > kInitEventListSize(16) channels, all fire
  */
 
-#include "runtime/net/channel.h"
-#include "runtime/net/event_loop.h"
-#include "runtime/time/timestamp.h"
+#include <sys/socket.h>
+#include <unistd.h>
 
 #include <array>
 #include <cerrno>
@@ -27,9 +26,11 @@
 #include <exception>
 #include <iostream>
 #include <memory>
-#include <sys/socket.h>
-#include <unistd.h>
 #include <vector>
+
+#include "runtime/net/channel.h"
+#include "runtime/net/event_loop.h"
+#include "runtime/time/timestamp.h"
 
 namespace {
 

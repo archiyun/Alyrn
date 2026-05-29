@@ -5,14 +5,8 @@
 // 运行
 // ./build-tests/tests/health_checker_smoke_test
 
-#include "runtime/gateway/health_check_config.h"
-#include "runtime/gateway/health_checker.h"
-#include "runtime/gateway/upstream.h"
-#include "runtime/gateway/upstream_peer.h"
-#include "runtime/gateway/upstream_registry.h"
-#include "runtime/net/event_loop.h"
-#include "runtime/net/inet_address.h"
-#include "runtime/net/tcp_server.h"
+#include <sys/socket.h>
+#include <unistd.h>
 
 #include <atomic>
 #include <chrono>
@@ -21,9 +15,16 @@
 #include <iostream>
 #include <memory>
 #include <string>
-#include <sys/socket.h>
 #include <thread>
-#include <unistd.h>
+
+#include "runtime/gateway/health_check_config.h"
+#include "runtime/gateway/health_checker.h"
+#include "runtime/gateway/upstream.h"
+#include "runtime/gateway/upstream_peer.h"
+#include "runtime/gateway/upstream_registry.h"
+#include "runtime/net/event_loop.h"
+#include "runtime/net/inet_address.h"
+#include "runtime/net/tcp_server.h"
 
 namespace {
 

@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include "runtime/time/timestamp.h"
-#include "runtime/net/buffer.h"
+#include <utility>
+
 #include "runtime/http/http_request.h"
 #include "runtime/http/http_types.h"
-
-#include <utility>
+#include "runtime/net/buffer.h"
+#include "runtime/time/timestamp.h"
 
 namespace runtime::http {
 

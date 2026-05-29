@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #include "runtime/http/http_server.h"
+
 #include "runtime/http/debug_handler.h"
 #include "runtime/http/http_context.h"
 #include "runtime/http/metrics_handler.h"

@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include <cstdint>
-#include <string>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+
+#include <cstdint>
+#include <string>
 
 namespace runtime::net {
 

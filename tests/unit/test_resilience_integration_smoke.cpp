@@ -9,15 +9,15 @@
 // 运行
 // ./build-tests/tests/resilience_integration_smoke_test
 
-#include "runtime/gateway/circuit_breaker.h"
-#include "runtime/gateway/fallback_config.h"
-#include "runtime/gateway/rate_limiter.h"
-
 #include <chrono>
 #include <iostream>
 #include <string>
 #include <string_view>
 #include <thread>
+
+#include "runtime/gateway/circuit_breaker.h"
+#include "runtime/gateway/fallback_config.h"
+#include "runtime/gateway/rate_limiter.h"
 
 namespace {
 

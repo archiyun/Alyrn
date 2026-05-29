@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include "runtime/base/noncopyable.h"
-#include "runtime/memory/memory_pool.h"
-
 #include <atomic>
 #include <cstddef>
 #include <memory>
 #include <utility>
+
+#include "runtime/base/noncopyable.h"
+#include "runtime/memory/memory_pool.h"
 
 namespace runtime::memory {
 

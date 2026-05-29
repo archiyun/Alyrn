@@ -2,6 +2,10 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
+
 #include "runtime/base/noncopyable.h"
 #include "runtime/task/scheduler_metrics.h"
 #include "runtime/task/task.h"
@@ -9,12 +13,8 @@
 #include "runtime/task/task_history.h"
 #include "runtime/task/task_options.h"
 #include "runtime/task/thread_pool.h"
-#include "runtime/task/work_queue.h"
 #include "runtime/task/timer_scheduler.h"
-
-#include <atomic>
-#include <cstddef>
-#include <cstdint>
+#include "runtime/task/work_queue.h"
 
 namespace runtime::task {
 

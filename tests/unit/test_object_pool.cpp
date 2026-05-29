@@ -1,9 +1,9 @@
 #include <gtest/gtest.h>
 
-#include "runtime/memory/object_pool.h"
-
 #include <atomic>
 #include <string>
+
+#include "runtime/memory/object_pool.h"
 
 namespace {
 

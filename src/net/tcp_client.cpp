@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: MIT
 #include "runtime/net/tcp_client.h"
 
-#include "runtime/net/connector.h"
-#include "runtime/net/net_utils.h"
-#include "runtime/log/logger.h"
-
 #include <atomic>
 #include <cstdio>
+
+#include "runtime/log/logger.h"
+#include "runtime/net/connector.h"
+#include "runtime/net/net_utils.h"
 
 namespace runtime::net {
 

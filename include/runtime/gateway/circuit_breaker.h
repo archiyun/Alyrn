@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include <chrono>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 
 namespace runtime::gateway {

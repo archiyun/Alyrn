@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: MIT
 #include "runtime/http/debug_handler.h"
 
+#include <cstdio>
+
 #include "runtime/task/task_options.h"
 #include "runtime/task/task_state.h"
-
-#include <cstdio>
 
 namespace runtime::http {
 

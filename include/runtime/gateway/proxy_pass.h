@@ -2,18 +2,18 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <memory>
+#include <string>
+
 #include "runtime/gateway/load_balancer.h"
 #include "runtime/gateway/upstream.h"
-#include "runtime/gateway/upstream_peer.h"
 #include "runtime/gateway/upstream_conn_pool.h"
+#include "runtime/gateway/upstream_peer.h"
 #include "runtime/http/http_request.h"
 #include "runtime/http/http_types.h"
 #include "runtime/net/buffer.h"
-#include "runtime/net/tcp_connection.h"
 #include "runtime/net/tcp_client.h"
-
-#include <memory>
-#include <string>
+#include "runtime/net/tcp_connection.h"
 
 namespace runtime::gateway {
 

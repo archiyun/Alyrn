@@ -2,18 +2,18 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include "runtime/http/http_types.h"
-
 #include <string>
 #include <string_view>
 #include <unordered_map>
+
+#include "runtime/http/http_types.h"
 
 namespace runtime::http {
 
 // HttpResponse stores one HTTP response and serializes it into an HTTP/1.1
 // message.
 class HttpResponse {
-public:
+ public:
   // When close_connection is true, the caller is expected to close the
   // connection after sending the response.
   explicit HttpResponse(bool close_connection);
@@ -28,12 +28,10 @@ public:
 
   // Accessors used by Http2Session to build HTTP/2 HEADERS frames directly,
   // bypassing the HTTP/1.1 wire format produced by ToString().
-  StatusCode         GetStatusCode() const { return status_code_; }
-  const std::string& GetBody()       const { return body_; }
-  const std::unordered_map<std::string, std::string>& GetHeaders() const {
-    return headers_;
-  }
-  std::string        GetContentType() const {
+  StatusCode GetStatusCode() const { return status_code_; }
+  const std::string& GetBody() const { return body_; }
+  const std::unordered_map<std::string, std::string>& GetHeaders() const { return headers_; }
+  std::string GetContentType() const {
     auto it = headers_.find("Content-Type");
     return it != headers_.end() ? it->second : std::string{};
   }
@@ -42,7 +40,8 @@ public:
   // This implementation always emits Content-Length and does not support
   // chunked transfer encoding.
   std::string ToString() const;
-private:
+
+ private:
   StatusCode status_code_{StatusCode::Ok};
   bool close_connection_{true};
   std::unordered_map<std::string, std::string> headers_;

@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include "runtime/base/noncopyable.h"
-
 #include <atomic>
 #include <memory>
 #include <sstream>
 #include <string>
 #include <string_view>
+
+#include "runtime/base/noncopyable.h"
 
 namespace runtime::log {
 

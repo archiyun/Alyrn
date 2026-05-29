@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include "runtime/base/noncopyable.h"
-
 #include <vector>
+
+#include "runtime/base/noncopyable.h"
 
 namespace runtime::base {
 

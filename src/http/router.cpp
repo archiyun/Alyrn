@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: MIT
 #include "runtime/http/router.h"
 
-#include "runtime/log/logger.h"
-
 #include <iostream>
 #include <sstream>
 #include <utility>
+
+#include "runtime/log/logger.h"
 namespace runtime::http {
 
 namespace {

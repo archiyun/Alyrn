@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: MIT
 #include "runtime/net/event_loop_thread_pool.h"
 
+#include <cassert>
+
 #include "runtime/net/event_loop.h"
 #include "runtime/net/net_assert.h"
-
-#include <cassert>
 
 namespace runtime::net {
 

@@ -1,452 +1,442 @@
-# 网络层架构设计
+## 网络层职责
+如果你第一次读这个网络层，我建议按这个顺序：
+先了解Reactor架构， 了解下面的类在该架构上充当什么角色。
 
-本文档描述 `runtime::net` 的整体设计、核心对象关系，以及一条 TCP 连接从建立到销毁的完整生命周期。
+1. `EventLoop`：理解事件循环、跨线程投递、定时器入口。
 
-网络层采用典型的 Reactor 模型：
-IO 多路复用 + 非阻塞 + LT模式/ET模式, 支持`Select`,`Poll`,`Epoll`三种模式
+2. `Channel`：理解“一个 fd 对应一个事件分发单元”。
+   `Channel` 是Reactor 的代理中间件， 往下对接网络接口， 往上持事件的回调函数。
 
-- `EventLoop` 负责事件循环、任务串行执行和定时器调度
-- `Poller` 负责与内核多路复用机制交互
-- `Channel` 负责把 fd 上发生的事件分发给上层回调
-- `Acceptor` 负责监听 socket 和接收新连接
-- `TcpServer` 负责组织监听、线程池和连接对象
-- `TcpConnection` 负责单连接的读写、缓冲区和关闭流程
-- `Socket` / `Buffer` / `InetAddress` 提供底层支撑
+3. `Poller` / `EPollPoller`：理解 `Channel` 如何注册到 epoll，epoll 结果如何回填到 `Channel`。
 
-## 1. 总体分层
+4. `Acceptor` + `TcpServer`：理解服务端如何 accept 新连接，并把新连接交给 `TcpConnection`。
+   `TcpServer` 的注释说得很清楚：它管理监听 socket 和活跃连接，在 base loop accept，并把连接分配给 `EventLoopThreadPool` 中的 IO loop。 include/runtime/net/tcp_server.h:19-22
 
-从职责上看，网络层可以分成 4 层：
+5. `TcpConnection` + `Buffer`：理解连接建立后的读写、缓冲、关闭。
+   `TcpConnection` 代表一条已建立 TCP 连接，拥有 connected socket、`Channel`、输入/输出 buffer，并驱动 read/write/close/error callbacks。 include/runtime/net/tcp_connection.h:26-30
 
-### 1.1 系统调用薄封装
+6. `TimerQueue`：理解 `RunAfter` / `RunEvery` 背后的 timerfd 机制。
+   `TimerQueue` 是每个 `EventLoop` 的 timerfd 驱动定时器队列，拥有 `Timer` 对象，使用 `TimerTree` 按过期时间索引。 include/runtime/net/timer_queue.h:22-26
 
-- `Socket`
-- `InetAddress`
-- `Buffer`
+7. `Connector` + `TcpClient`：理解客户端侧非阻塞 connect、重试、包装成 `TcpConnection`。
+   `Connector` 负责异步 outbound connect，并支持失败后的指数退避重试。 include/runtime/net/connector.h:11-18
 
-围绕 socket fd、地址结构和字节缓冲区工作，
-把底层系统调用包装成更稳定的 C++ 接口。
+---
 
-### 1.2 事件抽象层
+# 3. 核心模型：Reactor
 
-- `Channel`
-- `Poller`
-
-这一层负责把 “某个 fd 上发生了什么事件” 抽象成统一的数据结构和回调接口。
-
-### 1.3 事件循环层
-
-- `EventLoop`
-- `TimerQueue`
-
-这一层负责：
-
-- 调用 `Poller` 等待 I/O 事件
-- 串行执行回调
-- 承载跨线程投递的任务
-- 调度定时器
-
-### 1.4 TCP 连接管理层
-
-- `Acceptor`
-- `TcpServer`
-- `TcpConnection`
-- `EventLoopThreadPool`
-
-这一层面向 TCP 服务端语义，负责监听端口、接收连接、选择 I/O 线程、创建连接对象，以及驱动连接生命周期。
-
-## 2. 核心对象关系
-
-网络层里的核心对象关系如下：
+这个网络层是典型 Reactor 模型，核心链路是：
 
 ```text
+EventLoop::Loop()
+  -> Poller::Poll()
+    -> epoll_wait()
+    -> FillActiveChannels()
+  -> Channel::HandleEvent()
+    -> read/write/close/error callback
+```
+
+`EventLoop::Loop()` 会不断清空 active channel 列表，调用 `poller_->Poll()` 等待 IO 事件，然后逐个调用 `channel->HandleEvent()`，最后执行跨线程投递进来的 pending functors。 src/net/event_loop.cpp:125-134
+
+`EPollPoller::Poll()` 内部就是 `epoll_wait()`，拿到事件后调用 `FillActiveChannels()`，如果当前 event buffer 被填满，还会扩容 `events_`，以便下一轮吸收更大 burst。 src/net/epoll_poller.cpp:74-98
+
+`FillActiveChannels()` 从 `epoll_event.data.ptr` 取回 `Channel*`，把 epoll 事件转换成抽象事件写入 `channel->SetRevents()`，再 push 到 `active_channels`。 src/net/epoll_poller.cpp:100-109
+
+`Channel::HandleEvent()` 会保证必须在 owning loop 线程执行；如果 `Tie()` 过 owner，则先尝试从 weak_ptr lock 出 shared_ptr，避免 owner 已析构后还分发 callback。 src/net/channel.cpp:39-50
+
+---
+
+# 4. EventLoop：每个线程一个事件循环
+
+`EventLoop` 有几个非常关键的成员：
+
+```cpp
+std::unique_ptr<Poller> poller_;
+std::vector<Channel*> active_channels_;
+int wakeup_fd_;
+std::unique_ptr<Channel> wakeup_channel_;
+std::mutex mutex_;
+std::vector<Functor> pending_functors_;
+std::unique_ptr<TimerQueue> timer_queue_;
+```
+
+这些成员直接体现了它的职责：IO multiplexing、active channel 分发、跨线程唤醒、pending functor 队列和定时器。 include/runtime/net/event_loop.h:87-98
+
+构造函数里会创建默认 `Poller`、`eventfd`、`wakeup_channel_` 和 `TimerQueue`，并把 `wakeup_channel_` 的读事件 callback 设成 `HandleRead()`，然后注册读事件。 src/net/event_loop.cpp:84-103
+
+这里的 `eventfd` 是跨线程唤醒机制：别的线程调用 `QueueInLoop()` 后，如果 loop 正在 `epoll_wait()`，就写 `eventfd` 唤醒它。 src/net/event_loop.cpp:158-169src/net/event_loop.cpp:191-197
+
+`RunInLoop()` 的语义是：如果调用者就在 loop 线程，立即执行；否则进入 `QueueInLoop()`，异步排队到 loop 线程执行。 src/net/event_loop.cpp:150-156
+
+`QueueInLoop()` 会把 callback 放进 `pending_functors_`，并在跨线程调用或当前正在执行 pending functors 时唤醒 loop。 src/net/event_loop.cpp:158-169
+
+`DoPendingFunctors()` 会先把共享队列 swap 到局部 vector，再执行 callback，这样执行 callback 时不持有 mutex，避免阻塞生产者继续投递任务。 src/net/event_loop.cpp:199-215
+
+定时器入口也挂在 `EventLoop` 上：`RunAt()`、`RunAfter()`、`RunEvery()` 最终都调用 `timer_queue_->AddTimer()`，`Cancel()` 调用 `timer_queue_->Cancel()`。 src/net/event_loop.cpp:218-238
+
+---
+
+# 5. Channel：fd 的事件分发器
+
+`Channel` 是一个很薄但非常重要的对象：它不拥有 fd，只负责记录这个 fd 感兴趣的事件、poller 返回的事件，以及读/写/关闭/错误 callback。 include/runtime/net/channel.h:23-31
+
+`Channel` 的事件位是自己定义的一套抽象位：
+
+```cpp
+kReadEvent
+kWriteEvent
+kErrorEvent
+kHupEvent
+```
+
+这些抽象事件随后会在 `EPollPoller` 里转换成 `EPOLLIN`、`EPOLLOUT`、`EPOLLERR`、`EPOLLHUP`。 include/runtime/net/channel.h:94-101src/net/epoll_poller.cpp:36-51
+
+当你调用 `EnableReading()` / `EnableWriting()` / `DisableWriting()` / `DisableAll()` 时，`Channel` 会更新本地 `events_`，然后调用私有 `Update()` 同步到底层 `Poller`。 include/runtime/net/channel.h:66-72src/net/channel.cpp:28-31
+
+`Channel::Update()` 和 `Channel::Remove()` 都要求在 owner loop 线程执行，这就是整个网络层线程模型的基础之一。 src/net/channel.cpp:28-36
+
+事件真正分发时，`HandleEventWithGuard()` 按顺序处理 close、error、read、write：如果是 HUP 且没有 read 事件，先调 close；有 error 调 error；有 read 调 read；有 write 调 write。 src/net/channel.cpp:53-75
+
+---
+
+# 6. Poller / EPollPoller：epoll 适配层
+
+`Poller` 是一个抽象基类，接口只有三个核心方法：
+
+```cpp
+Poll(timeout_ms, active_channels)
+UpdateChannel(channel)
+RemoveChannel(channel)
+```
+
+这说明上层 `EventLoop` 不关心底层是 epoll、poll 还是 select。 include/runtime/net/poller.h:29-39
+
+默认 poller 在 Linux 下是 `EPollPoller`，但也可以通过环境变量 `RUNTIME_POLLER=poll|select|epoll` 覆盖。 src/net/poller.cpp:22-40
+
+`EPollPoller` 内部维护一个 epoll fd 和 `std::vector<epoll_event> events_`。 include/runtime/net/epoll_poller.h:34-40
+
+`EPollPoller::UpdateChannel()` 用 `Channel::Index()` 保存 channel 在 epoll 里的状态：新建、已添加、已删除；新建或已删除时走 `EPOLL_CTL_ADD`，已添加但没有任何关心事件时走 `EPOLL_CTL_DEL`，否则走 `EPOLL_CTL_MOD`。 src/net/epoll_poller.cpp:112-135
+
+`EPollPoller::Update()` 会把 `Channel::Events()` 转换成 epoll events；如果 `Channel` 配了 edge-triggered，还会加 `EPOLLET`。 src/net/epoll_poller.cpp:148-155
+
+所以 `Channel` 和 `EPollPoller` 的分工是：
+
+```text
+Channel:
+  维护 fd + interested events + callbacks
+
+EPollPoller:
+  把 Channel 注册进 epoll
+  把 epoll 返回事件写回 Channel::revents_
+```
+
+---
+
+# 7. 服务端路径：TcpServer + Acceptor
+
+服务端监听入口是 `TcpServer`。
+
+`TcpServer` 构造时创建 `Acceptor`，并给 `Acceptor` 注册 new connection callback；当 `Acceptor` accept 到新 fd 后，会调用 `TcpServer::NewConnection()`。 src/net/tcp_server.cpp:13-30
+
+`TcpServer::Start()` 会创建 `EventLoopThreadPool`，启动 sub loops，然后通过 base loop 的 `RunInLoop()` 调 `acceptor_->Listen()`。 src/net/tcp_server.cpp:41-57
+
+`Acceptor` 构造时创建非阻塞监听 socket，设置 `SO_REUSEADDR` / `SO_REUSEPORT`，bind 到监听地址，并给监听 fd 对应的 `accept_channel_` 设置 read callback。 src/net/acceptor.cpp:16-31
+
+`Acceptor::Listen()` 会调用底层 socket 的 `listen()`，然后让 `accept_channel_` 开始关注读事件。 src/net/acceptor.cpp:39-44
+
+当监听 fd 可读时，`Acceptor::HandleRead()` 调 `accept_socket_.Accept()` 拿到 connfd；如果有 `new_connection_callback_`，就把 connfd 和 peer address 交给上层，否则关闭 connfd。 src/net/acceptor.cpp:47-67
+
+这里还支持 LT / ET 两种触发模式：ET 模式必须循环 accept 到 `EAGAIN`，LT 模式 accept 一次即可。 src/net/acceptor.cpp:70-78
+
+---
+
+# 8. 新连接如何分配到 IO 线程
+
+`TcpServer::NewConnection()` 的第一步是从 `thread_pool_->GetNextLoop()` 拿一个 IO loop。 src/net/tcp_server.cpp:60-62
+
+`EventLoopThreadPool::GetNextLoop()` 要求只能在 main loop 线程调用，因为 round-robin 游标 `next_` 没有加锁；如果没有 sub loop，就返回 main loop，否则从 `loops_` 里轮询一个 sub loop。 src/net/event_loop_thread_pool.cpp:52-68
+
+拿到 IO loop 后，`TcpServer` 会创建 `TcpConnection`，保存到 `connections_`，设置连接回调、消息回调、写完成回调、ET 模式和 TCP_NODELAY，并设置 close callback 让连接关闭时回到 `TcpServer::RemoveConnection()`。 src/net/tcp_server.cpp:67-85
+
+最后，连接建立流程必须投递到该连接所属 IO loop 中执行：`ioLoop->RunInLoop([conn] { conn->ConnectEstablished(); });`。 src/net/tcp_server.cpp:87-90
+
+这就是项目文档里说的 one-loop-per-thread：base loop 负责 accept，真正连接上的 IO 操作在分配到的 IO loop 中执行。 CLAUDE.md:87-94
+
+---
+
+# 9. TcpConnection：连接生命周期
+
+`TcpConnection` 拥有三个核心对象：
+
+```cpp
+Socket socket_;
+Channel channel_;
+Buffer input_buffer_;
+Buffer output_buffer_;
+```
+
+它的头文件注释明确说：`TcpConnection` 代表一条已建立 TCP 连接，拥有 connected socket 和 `Channel`，并维护输入/输出 buffer。 include/runtime/net/tcp_connection.h:26-30include/runtime/net/tcp_connection.h:162-169
+
+构造函数里，`TcpConnection` 会创建 `Socket` 和 `Channel`，然后把 channel 的 read/write/error/close callback 分别绑定到自己的 `HandleRead()`、`HandleWrite()`、`HandleError()`、`HandleClose()`。 src/net/tcp_connection.cpp:43-61
+
+`ConnectEstablished()` 是连接真正“上线”的地方：它要求在所属 loop 线程执行，把状态改成 `kConnected`，把 `Channel` tie 到 `shared_from_this()`，然后 `EnableReading()` 注册读事件，并触发用户 connection callback。 src/net/tcp_connection.cpp:175-190
+
+`ConnectDestroyed()` 是连接销毁前的清理：如果还没进入 disconnected 状态，就改状态、`DisableAll()`，必要时触发 connection callback，最后 `channel_->Remove()` 从 poller 里移除。 src/net/tcp_connection.cpp:193-210
+
+连接关闭时，`HandleClose()` 会把状态改成 disconnected，禁用所有事件，然后调用 connection callback 和 close callback；close callback 通常是 `TcpServer` 注册的删除逻辑。 src/net/tcp_connection.cpp:354-367
+
+`TcpServer::RemoveConnection()` 会把删除操作序列化回 base loop，然后在 `RemoveConnectionInLoop()` 中从 `connections_` map 删除连接，并把 `ConnectDestroyed()` 投递回连接所属 IO loop 执行。 src/net/tcp_server.cpp:92-106
+
+---
+
+# 10. 读路径：socket → Buffer → MessageCallback
+
+读事件到达时，`Channel` 调 `TcpConnection::HandleRead()`。 src/net/channel.cpp:66-69src/net/tcp_connection.cpp:212-286
+
+如果是 ET 模式，`HandleRead()` 会循环 `ReadFd()` 直到 `EAGAIN` / `EWOULDBLOCK`；读到 0 表示对端关闭，调用 `HandleClose()`；读出错误则 `HandleError()`。 src/net/tcp_connection.cpp:223-256
+
+如果是 LT 模式，每次事件只读一次；读到数据后调用 `message_callback_(conn, input_buffer_, receive_time)`，读到 0 关闭，非 transient 错误则记录并处理错误。 src/net/tcp_connection.cpp:257-285
+
+`Buffer::ReadFd()` 用 `readv()`，第一个 iovec 指向 buffer 当前 writable 区域，第二个 iovec 指向 64KB 栈上临时缓冲区；这样如果当前 buffer writable 不够，仍然能一次 readv 尽量多读，溢出的部分再 append 回 buffer。 src/net/buffer_muduo.cpp:23-49
+
+`Buffer` 的内部布局是 `[prependable | readable | writable]`，用 `reader_index_` 和 `writer_index_` 维护可读和可写区域。 include/runtime/net/buffer.h:21-39
+
+---
+
+# 11. 写路径：Send → 直接写 / output_buffer_ → 关注可写事件
+
+`TcpConnection::Send()` 可以跨线程调用：如果当前就在连接所属 loop 线程，直接 `SendInLoop()`；否则复制数据，并投递到 loop 线程执行。 src/net/tcp_connection.cpp:84-95
+
+`SendInLoop()` 的核心策略是：如果当前没有关注写事件且 output buffer 为空，就先尝试直接 `write()`；如果没写完，再把剩余数据 append 到 `output_buffer_`，并开启写事件。 src/net/tcp_connection.cpp:103-160
+
+这里还有 high water mark 机制：当 `output_buffer_` 从低于阈值增长到大于等于阈值时，会通过 `QueueInLoop()` 触发 high-water callback，供上层做背压处理。 src/net/tcp_connection.cpp:140-152
+
+当 fd 可写时，`HandleWrite()` 会把 `output_buffer_` 写出去；ET 模式会循环写到 buffer 为空或遇到 transient 错误，LT 模式写一次。 src/net/tcp_connection.cpp:288-351
+
+写完后会 `DisableWriting()`，触发 `write_complete_callback_`，如果连接状态已经是 `kDisconnecting`，则继续执行 `ShutdownInLoop()`。 src/net/tcp_connection.cpp:333-345
+
+`Shutdown()` 是优雅关闭写端：把状态改成 `kDisconnecting`，然后投递 `ShutdownInLoop()`；`ShutdownInLoop()` 只有在当前没有待写事件时才调用 socket 的 `ShutdownWrite()`。 src/net/tcp_connection.cpp:167-172src/net/tcp_connection.cpp:379-384
+
+---
+
+# 12. Buffer：网络层的字节容器
+
+`Buffer` 默认实现是 `muduo` 风格，CMake 里通过 `RUNTIME_BUFFER_IMPL` 选择 `muduo` / `ringbuf` / `nginx`，默认是 `muduo`。 CMakeLists.txt:70-78
+
+`Buffer` 的三个区域是：
+
+```text
+[ prependable | readable | writable ]
+```
+
+`reader_index_` 到 `writer_index_` 是 readable，`writer_index_` 到 vector end 是 writable，前面的 prependable 可以被复用。 include/runtime/net/buffer.h:21-39
+
+`Append()` 会先 `EnsureWritableBytes()`，必要时 `MakeSpace()`，然后 memcpy 到 writable 区域并推进 writer index。 include/runtime/net/buffer.h:114-149
+
+`MakeSpace()` 如果总空间不够就 resize；如果只是前面 prependable 空间够用，就把 readable 区域 memmove 到 `kCheapPrepend` 后面，复用已经消费掉的空间。 src/net/buffer_muduo.cpp:91-105
+
+`FindCRLF()` 和 `FindCRLFCRLF()` 使用 `memmem()` 在线性时间内查找 HTTP 分隔符，这一点对 HTTP 解析抗恶意输入比较重要。 include/runtime/net/buffer.h:170-185
+
+---
+
+# 13. TimerQueue：定时器如何挂进 EventLoop
+
+`TimerQueue` 内部创建 `timerfd`，再创建一个 `Channel` 监听这个 `timerfd` 的读事件；timerfd 可读时调用 `HandleRead()`。 src/net/timer_queue.cpp:41-49
+
+`AddTimer()` 会从对象池创建 `Timer`，然后通过 `loop_->RunInLoop()` 把插入 timer tree 的动作放到 loop 线程执行；如果新 timer 是最早过期的，就重置 timerfd。 src/net/timer_queue.cpp:62-76
+
+`HandleRead()` 读取 timerfd，取出所有已经过期的 timer，逐个执行 `timer->Run()`，然后调用 `Reset()` 处理重复定时器或释放一次性定时器。 src/net/timer_queue.cpp:89-98
+
+`Reset()` 对 repeat timer 会 `Restart(now)` 后重新插入，对非 repeat timer 则释放回对象池；最后如果队列不空，会把 timerfd 设到下一次最早过期时间。 src/net/timer_queue.cpp:106-124
+
+所以 `EventLoop::RunAfter()` / `RunEvery()` 实际上不是单独开线程 sleep，而是把 timerfd 当成一个普通 fd 纳入 Reactor。 src/net/event_loop.cpp:222-238src/net/timer_queue.cpp:41-49
+
+---
+
+# 14. 客户端路径：Connector + TcpClient
+
+客户端侧入口是 `TcpClient`，它内部持有一个 `Connector` 和当前 `TcpConnectionPtr`。 include/runtime/net/tcp_client.h:49-65
+
+`TcpClient::Connect()` 把 `connect_` 标记为 true，然后调用 `connector_->Start()`。 src/net/tcp_client.cpp:37-42
+
+`Connector::Start()` 会通过 `loop_->RunInLoop()` 进入 loop 线程执行 `StartInLoop()`，再调用 `Connect()` 创建非阻塞 socket 并调用 `connect()`。 src/net/connector.cpp:27-47
+
+非阻塞 connect 的正常路径包括 `0`、`EINPROGRESS`、`EINTR`、`EISCONN`，这些都会进入 `Connecting(sockfd)`；可重试错误如 `ECONNREFUSED`、`ENETUNREACH` 会进入 `Retry(sockfd)`。 src/net/connector.cpp:49-84
+
+`Connecting()` 会创建临时 `Channel` 关注写事件；因为非阻塞 connect 完成通常表现为 fd writable。 src/net/connector.cpp:86-96
+
+`handleWrite()` 里不会直接认为连接成功，而是先 `getsockopt(SO_ERROR)` 确认 connect 结果；成功后把 fd 交给 `new_connection_cb_`，失败则 retry。 src/net/connector.cpp:98-141
+
+`Retry()` 关闭 fd，状态回到 disconnected，并用 `RunAfter()` 做指数退避，最大退避 30 秒。 src/net/connector.cpp:158-177
+
+`TcpClient::NewConnection()` 收到已连接 fd 后，创建 `TcpConnection`，设置回调，保存到 `connection_`，然后调用 `ConnectEstablished()` 注册读事件并触发 connection callback。 src/net/tcp_client.cpp:52-82
+
+---
+
+# 15. 线程模型里最重要的约束
+
+这个网络层的核心约束是：**每个 fd 的 Channel 操作必须发生在它所属的 EventLoop 线程。**
+
+代码里有很多地方体现这个约束：
+
+* `EventLoop` 构造时记录 `thread_id_`，`IsInLoopThread()` 用它判断当前线程是否是 owner 线程。 src/net/event_loop.cpp:84-89src/net/event_loop.cpp:187-189
+* `Channel::Update()` / `Remove()` 要求在 owner loop 线程执行。 src/net/channel.cpp:28-36
+* `TcpConnection::ConnectEstablished()` 和 `ConnectDestroyed()` 要求在连接所属 loop 线程执行。 src/net/tcp_connection.cpp:175-195
+* `TcpServer::NewConnection()` 创建连接后，不直接在 base loop 注册连接 channel，而是投递到选中的 `ioLoop` 执行 `ConnectEstablished()`。 src/net/tcp_server.cpp:87-90
+* `TcpServer::RemoveConnection()` 先回到 base loop 删除 map，再投递到连接所属 IO loop 执行 `ConnectDestroyed()`。 src/net/tcp_server.cpp:92-106
+
+这套约束的好处是：每条连接的读写状态、buffer 和 context 都由单一 IO loop 独占，避免大部分锁。项目文档也明确提到 IO 线程间无共享数据，每条 `TcpConnection` 的状态通过 `SetContext(std::any)` 绑定，由所属 sub loop 独享。 CLAUDE.md:89-92
+
+---
+
+# 16. 从一次请求看完整链路
+
+以服务端收到一条连接并读到数据为例，完整链路大概是：
+
+```text
+main()
+  -> 创建 EventLoop base_loop
+  -> 创建 TcpServer(&base_loop, addr, name)
+  -> server.Start()
+  -> base_loop.Loop()
+
+TcpServer::Start()
+  -> 创建 EventLoopThreadPool
+  -> acceptor.Listen()
+
+客户端连接进来：
+  -> epoll_wait 返回 listen fd readable
+  -> EventLoop 分发 accept_channel.HandleEvent()
+  -> Acceptor::HandleRead()
+  -> accept()
+  -> TcpServer::NewConnection(connfd)
+
+TcpServer::NewConnection()
+  -> thread_pool.GetNextLoop()
+  -> make_shared<TcpConnection>(ioLoop, connfd)
+  -> 设置 callbacks
+  -> ioLoop.RunInLoop(conn->ConnectEstablished)
+
+IO loop 中：
+  -> conn->ConnectEstablished()
+  -> channel.EnableReading()
+  -> epoll_ctl ADD connfd
+
+客户端发数据：
+  -> epoll_wait 返回 connfd readable
+  -> TcpConnection::HandleRead()
+  -> input_buffer.ReadFd()
+  -> message_callback(conn, input_buffer, timestamp)
+
+业务回包：
+  -> conn->Send()
+  -> 直接 write 或 append output_buffer
+  -> 必要时 EnableWriting()
+  -> writable 后 HandleWrite()
+```
+
+这个链路中的关键代码分别是 `TcpServer::Start()`、`Acceptor::HandleRead()`、`TcpServer::NewConnection()`、`TcpConnection::ConnectEstablished()`、`TcpConnection::HandleRead()` 和 `TcpConnection::SendInLoop()`。 src/net/tcp_server.cpp:41-57src/net/acceptor.cpp:47-78src/net/tcp_server.cpp:60-90src/net/tcp_connection.cpp:175-190src/net/tcp_connection.cpp:212-286src/net/tcp_connection.cpp:103-160
+
+---
+
+# 17. 读代码时可以重点留意的设计点
+
+## 17.1 `Channel::Tie()` 防止回调期间对象析构
+
+`TcpConnection::ConnectEstablished()` 会 `channel_->Tie(shared_from_this())`，`Channel::HandleEvent()` 分发前会 lock weak_ptr，只有 owner 还活着才继续处理事件。 src/net/tcp_connection.cpp:180-182src/net/channel.cpp:39-50
+
+这是 Reactor 代码里非常常见也非常关键的生命周期保护。
+
+---
+
+## 17.2 ET 模式必须 drain
+
+`Acceptor` 在 ET 模式下会循环 accept 到不能再 accept。 src/net/acceptor.cpp:70-78
+
+`TcpConnection::HandleRead()` 在 ET 模式下会循环读到 `EAGAIN` / `EWOULDBLOCK`。 src/net/tcp_connection.cpp:223-256
+
+`TcpConnection::HandleWrite()` 在 ET 模式下会循环写 output buffer 到写完或遇到 transient 错误。 src/net/tcp_connection.cpp:322-337
+
+这三处是 ET 模式正确性的核心。
+
+---
+
+## 17.3 跨线程只投递任务，不直接碰 fd 状态
+
+`Send()` 跨线程调用时会复制数据，然后通过 `loop_->RunInLoop()` 投递到连接所属线程执行。 src/net/tcp_connection.cpp:84-95
+
+`EventLoop::QueueInLoop()` 使用 mutex 保护 pending functors，然后通过 eventfd 唤醒 loop。 src/net/event_loop.cpp:158-169
+
+这种设计把“线程安全边界”集中在 `QueueInLoop()` / `RunInLoop()`，业务侧不用直接给每条连接加锁。
+
+---
+
+## 17.4 Timer 也是 Reactor 的一部分
+
+`TimerQueue` 把 timerfd 包装成 `Channel`，因此定时器和 socket fd 都走同一个 `EventLoop` 分发路径。 src/net/timer_queue.cpp:41-49
+
+这使得后续如果要做连接空闲超时、请求 header-read timeout、重试退避等能力，都可以自然挂到 `EventLoop::RunAfter()` / `RunEvery()` 上。 src/net/event_loop.cpp:222-238
+
+---
+
+# 18. 一个简化类图
+
+```text
+EventLoop
+  owns Poller
+  owns TimerQueue
+  owns wakeup Channel
+  has active Channel*
+
+Channel
+  belongs to EventLoop
+  points to fd
+  has read/write/close/error callbacks
+
+EPollPoller : Poller
+  owns epoll fd
+  maps fd -> Channel*
+
+Acceptor
+  owns listening Socket
+  owns listening Channel
+  callback -> TcpServer::NewConnection
+
 TcpServer
-  ├── Acceptor
-  │     ├── Socket(listen_fd)
-  │     └── Channel(listen_fd)
-  ├── EventLoopThreadPool
-  │     ├── EventLoop(sub loop 1)
-  │     ├── EventLoop(sub loop 2)
-  │     └── ...
-  └── TcpConnection(name -> shared_ptr)
-        ├── Socket(conn_fd)
-        ├── Channel(conn_fd)
-        ├── Buffer(input/output)
-        └── EventLoop(sub loop owner)
+  owns Acceptor
+  owns EventLoopThreadPool
+  owns map<string, TcpConnectionPtr>
+
+EventLoopThreadPool
+  owns EventLoopThread[]
+  returns EventLoop* round-robin
+
+TcpConnection
+  owns connected Socket
+  owns connected Channel
+  owns input/output Buffer
+
+Connector
+  owns temporary connect Channel
+  callback -> TcpClient::NewConnection
+
+TcpClient
+  owns Connector
+  owns one TcpConnectionPtr
 ```
 
-### 2.1 `EventLoop`
+这些关系分别可以从对应类成员看出来：`EventLoop` 持有 `poller_`、`active_channels_`、`wakeup_channel_`、`timer_queue_`；`TcpServer` 持有 `acceptor_`、`thread_pool_` 和 `connections_`；`TcpConnection` 持有 `socket_`、`channel_`、`input_buffer_` 和 `output_buffer_`。 include/runtime/net/event_loop.h:87-98include/runtime/net/tcp_server.h:81-98include/runtime/net/tcp_connection.h:158-181
 
-`EventLoop` 是网络层的调度中心，职责包括：
+---
 
-- 轮询 I/O 事件
-- 执行激活 `Channel` 的回调
-- 执行跨线程投递的任务
-- 处理定时器回调
+# 19. 如果继续深入，下一步建议
 
-项目采用 **one loop per thread** 模型：
+我建议下一轮可以按你最关心的方向继续拆：
 
-- 每个 `EventLoop` 只归属于一个线程
-- 该线程内串行处理所有 I/O 回调和投递任务
-- 跨线程调用通过 `RunInLoop()` / `QueueInLoop()` 回到所属线程执行
+1. **只读服务端收发路径**：从 `tests/integration/test_tcp_server_smoke.cpp` 或 demo 入手，把 `TcpServer`、`TcpConnection` 和业务 callback 串起来。
+2. **只读 epoll / Channel 状态机**：重点看 `Channel::index_`、`EPollPoller::UpdateChannel()` 和 `RemoveChannel()`。
+3. **只读线程模型**：重点看 `EventLoopThread`、`EventLoopThreadPool`、`RunInLoop()`、`QueueInLoop()`。
+4. **只读 Buffer 与 HTTP 解析连接处**：从 `Buffer` 进入 `HttpContext`，理解上层 HTTP 怎么消费网络层数据。
+5. **读测试验证行为**：比如 `event_loop_smoke_test`、`tcp_server_smoke_test`、`trigger_mode`、`rst_storm_smoke_test`、`slowloris_smoke_test`。
 
-### 2.2 `Channel`
-
-`Channel` 不是 socket，也不是 Poller。它是 fd 的事件代理对象, 可以认为它是绑定事件与对应回调的路由器。
-
-```
-fd_      ← 监听的文件描述符（不拥有，只借用）
-events_  ← 当前感兴趣的事件（我想监听什么）
-revents_ ← epoll 返回的就绪事件（内核说发生了什么）
-index_   ← 在 Poller 中的注册状态（kNew/kAdded/kDeleted）
-loop_    ← 所属 EventLoop 指针
-tie_     ← weak_ptr，防止回调时 owner 已析构
-
-```
-
-`Channel` 的两个关键作用是：
-
-1. 把 fd 事件翻译成上层回调
-2. 保证 “本地感兴趣事件状态” 和 “Poller 中注册状态” 的一致性.
-
-最初的设计中 Channel 高度绑定`Epoll`, 后续实现了事件抽象兼容了`select`,`poll` 典型的怀旧。
-
-### 2.3 `Poller`
-
-`Poller` 是对底层 I/O 复用机制的抽象。当前实现主要由 `epoll` 驱动。
-
-它负责：
-
-- 把 `Channel` 注册到内核
-- 等待活跃事件
-- 返回本轮活跃的 `Channel` 集合
-
-`Poller` 本身不理解 TCP 连接，也不直接执行业务逻辑；它只提供事件发现能力。
-
-### 2.4 `Socket`
-
-`Socket` 是 socket fd 的 RAII 包装类，负责：
-
-- 生命周期管理
-- `bind` / `listen` / `accept`
-- `shutdown`
-- 常见 socket option 设置
-
-它是系统调用的薄封装，不承载事件循环和连接状态机。
-
-### 2.5 `Buffer`
-
-`Buffer` 是用户态字节缓冲区，负责：
-
-- 缓存 socket 读出的输入数据
-- 缓存还未完全写出的输出数据
-- 支持按读指针/写指针滑动管理内存
-
-在 `TcpConnection` 中：
-
-- `input_buffer_` 保存从内核读出来但上层还没完全消费的数据
-- `output_buffer_` 保存已经准备发送但暂时还没完全写入 socket 的数据
-
-## 3. 主线程与 I/O 线程模型
-
-`TcpServer` 采用主从式线程模型：
-
-- **主 loop**：负责监听 socket 和接收新连接
-- **sub loop**：负责已建立连接的读写 I/O
-
-线程分工如下：
-
-### 3.1 主 loop
-
-主 loop 上主要承载：
-
-- `Acceptor`
-- listen fd 对应的 `Channel`
-- 新连接到来时的 `accept`
-
-主 loop 不直接负责每条连接的后续读写处理。
-
-### 3.2 sub loop
-
-每条新连接会分配给某个 sub loop，之后该连接的：
-
-- 可读事件
-- 可写事件
-- 关闭事件
-- 错误事件
-
-都在所属 sub loop 上处理。
-
-### 3.3 线程池
-
-`EventLoopThreadPool` 负责创建和管理多个 I/O 线程，每个线程内部持有一个 `EventLoop`。
-
-`TcpServer` 在 `Start()` 时启动线程池，然后在每次新连接到来时，从线程池中选取一个 sub loop 作为连接归属线程。
-
-## 4. 从监听到建立连接的流程
-
-一条新连接的建立过程如下：
-
-### 4.1 服务器启动
-
-`TcpServer::Start()` 做两件事：
-
-1. 启动 `EventLoopThreadPool`
-2. 启动 `Acceptor`
-
-### 4.2 `Acceptor` 开始监听
-
-`Acceptor` 内部持有：
-
-- 一个监听 socket
-- 一个绑定在 listen fd 上的 `Channel`
-
-调用 `Listen()` 后：
-
-- socket 进入监听态
-- listen fd 注册到主 loop 的 `Poller`
-- 主 loop 开始监听新连接事件
-
-### 4.3 新连接到来
-
-当 listen fd 可读时：
-
-1. 主 loop 收到活跃事件
-2. `Channel` 触发 `Acceptor::HandleRead()`
-3. `HandleRead()` 调用 `accept`
-4. 拿到新的 conn fd 和对端地址
-5. 调用 `TcpServer::NewConnection()`
-
-## 5. `TcpConnection` 的建立流程
-
-`TcpServer::NewConnection()` 会完成这些动作：
-
-1. 从线程池里选择一个 sub loop
-2. 为新连接生成唯一名字
-3. 创建 `TcpConnection`
-4. 给该连接设置各种回调：
-   - connection callback
-   - message callback
-   - write complete callback
-   - close callback
-5. 把连接对象保存到 `connections_`
-6. 将 `ConnectEstablished()` 投递到该连接所属的 sub loop
-
-### 5.1 为什么要投递到 sub loop
-
-因为连接的 `Channel` 最终归属于 sub loop，所以：
-
-- 启用读事件
-- 更新 Poller 注册状态
-- 触发用户连接建立回调
-
-这些动作都应该在连接所属的 `EventLoop` 线程中完成。
-
-### 5.2 `ConnectEstablished()`
-
-`TcpConnection::ConnectEstablished()` 会：
-
-- 把状态切换到 `kConnected`
-- 把 `Channel` 和自身绑定，避免回调期间对象被销毁
-- 打开读事件
-- 触发 connection callback
-
-到这里，一条连接才真正进入可收发数据的状态。
-
-## 6. 数据接收流程
-
-当某条连接上有数据到来时，流程如下：
-
-### 6.1 fd 可读
-
-连接所属 sub loop 从 `Poller` 得到该 fd 的可读事件，调用：
-
-`Channel::HandleEvent()`
-
-### 6.2 `Channel` 分发读事件
-
-`Channel` 根据 `revents_` 调用 `read_callback_`，也就是：
-
-`TcpConnection::HandleRead()`
-
-### 6.3 `TcpConnection::HandleRead()`
-
-`HandleRead()` 做这些事：
-
-1. 调用 `input_buffer_.ReadFd()` 从 socket 读取数据
-2. 如果读到正数字节：
-   - 调用 `message_callback_`
-3. 如果读到 0：
-   - 表示对端关闭，进入 `HandleClose()`
-4. 如果读失败：
-   - 区分可重试错误和真正错误
-   - 需要时进入 `HandleError()`
-
-### 6.4 message callback
-
-网络层本身不解释协议内容。`message_callback_` 会把：
-
-- `TcpConnection`
-- `Buffer`
-- `receive_time`
-
-交给上层协议模块。
-
-例如 HTTP 层会在这里读取 `Buffer`，把字节流解析成 `HttpRequest`。
-
-## 7. 数据发送流程
-
-发送数据分成两种情况：
-
-### 7.1 直接写成功
-
-调用 `TcpConnection::Send()` 后，如果当前：
-
-- 连接已建立
-- 在所属 loop 线程
-- 没有正在监听写事件
-- 输出缓冲区为空
-
-那么会优先尝试一次 `write()` 直接发送。
-
-如果一次性全部发完：
-
-- 不需要进入 `output_buffer_`
-- 不需要监听可写事件
-
-### 7.2 需要缓存剩余数据
-
-如果 `write()` 没写完，或者当前已经有待发送数据：
-
-1. 把剩余数据追加到 `output_buffer_`
-2. 打开 `Channel` 的写事件
-3. 等待 fd 可写
-
-### 7.3 fd 可写时
-
-`Channel` 触发 `TcpConnection::HandleWrite()`：
-
-1. 调用 `output_buffer_.WriteFd()`
-2. 持续刷出待发送数据
-3. 如果缓冲区清空：
-   - 关闭写事件监听
-   - 触发 write complete callback
-   - 如果当前状态是 `kDisconnecting`，执行半关闭
-
-## 8. 连接关闭流程
-
-连接关闭有两类来源：
-
-### 8.1 对端关闭
-
-在 `HandleRead()` 中，如果 `read()` 返回 0，说明对端关闭连接：
-
-1. 进入 `HandleClose()`
-2. 状态切到 `kDisconnected`
-3. 禁用所有事件
-4. 触发 connection callback
-5. 触发 close callback
-
-其中 close callback 会通知 `TcpServer` 移除该连接。
-
-### 8.2 本端主动关闭
-
-调用 `TcpConnection::Shutdown()` 时：
-
-1. 状态切到 `kDisconnecting`
-2. 投递 `ShutdownInLoop()` 到所属 loop
-
-如果当前没有待发送数据，则立即关闭写端。  
-如果还有待发送数据，则等 `HandleWrite()` 把输出缓冲区刷空后再关闭写端。
-
-这保证了：
-
-- 连接关闭前尽量把已排队的响应发完
-- 不会粗暴丢弃还没写出的数据
-
-## 9. 连接对象的移除与销毁
-
-`TcpServer` 使用 `connections_` 持有所有活动连接。
-
-当 `TcpConnection` 通过 close callback 通知 `TcpServer` 后：
-
-1. `TcpServer::RemoveConnection()` 把移除动作投递回主 loop
-2. 主 loop 中执行 `RemoveConnectionInLoop()`
-3. 从 `connections_` 删除该连接
-4. 再把 `ConnectDestroyed()` 投递到连接所属 sub loop
-
-`ConnectDestroyed()` 会：
-
-- 最终关闭 `Channel`
-- 取消 Poller 注册
-- 触发必要的连接销毁回调
-
-这套流程的重点是：
-
-- 连接对象的所有权集中在 `TcpServer`
-- Poller/Channel 的清理在所属 loop 中完成
-- 避免跨线程直接销毁连接对象带来的竞态问题
-
-## 10. 和 HTTP 层的关系
-
-`runtime::net` 只负责 TCP 和事件驱动语义，不理解 HTTP 协议。
-
-HTTP 层是在 `TcpServer` 之上叠加出来的：
-
-- `HttpServer` 内部复用 `TcpServer`
-- 每条连接上通过 `SetContext()` 挂一个 `HttpContext`
-- `message_callback_` 中把 `Buffer` 解析成 HTTP 请求
-
-也就是说：
-
-- 网络层负责 “字节什么时候到了”
-- HTTP 层负责 “这些字节是什么意思”
-
-这种分层使网络层可以复用到：
-
-- HTTP
-- 自定义二进制协议
-- RPC
-- 纯 TCP echo 服务
-
-## 11. 当前设计的优点
-
-### 11.1 分层清晰
-
-- fd 生命周期在 `Socket`
-- 事件抽象在 `Channel`
-- 事件循环在 `EventLoop`
-- TCP 服务端语义在 `TcpServer` / `TcpConnection`
-
-### 11.2 线程模型清楚
-
-- 主 loop 只做 accept
-- sub loop 只做已连接 I/O
-- 连接始终归属于一个固定 loop
-
-### 11.3 上层协议容易接入
-
-通过 `message_callback_` 和 `context_`，上层可以方便地实现 HTTP 等协议，而无需侵入网络层内部。
-
-### 11.4 生命周期控制较稳
-
-连接的建立、关闭、移除和销毁都通过所属 loop 或主 loop 串行推进，避免了大量裸线程同步。
-
-## 12. 当前边界与限制
-
-当前网络层是一个比较完整的最小 Reactor TCP 框架，但还存在一些明显边界：
-
-- 目前主要针对 Linux/epoll 场景设计
-- 连接背压和高水位控制能力还较弱
-- 错误码封装与统一错误模型仍较轻量
-- 没有 TLS/SSL 层
-- 观测指标和 tracing 钩子还不系统
-
-这些都不影响当前架构成立，但属于后续可扩展方向。
-
-## 13. 一句话总结
-
-`runtime::net` 的核心设计是：
-
-**用 `EventLoop + Poller + Channel` 构建 Reactor 事件驱动骨架，再用 `TcpServer + TcpConnection` 把它组织成一个支持多线程 I/O 的 TCP 服务端框架。**
-
-上层协议只需要关注如何消费连接上的字节流，而不需要自己重新处理 epoll、回调分发和连接生命周期。
+如果你愿意，我可以下一条直接带你逐行走一遍 **“TcpServer 收到连接并 echo 回包”** 的实际执行路径。

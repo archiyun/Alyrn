@@ -8,15 +8,15 @@
 // is needed on the consecutive_ok_/consecutive_fail_ counters.
 #include "runtime/gateway/health_checker.h"
 
+#include <chrono>
+#include <string>
+
 #include "runtime/log/logger.h"
+#include "runtime/net/buffer.h"
 #include "runtime/net/event_loop.h"
 #include "runtime/net/inet_address.h"
 #include "runtime/net/tcp_client.h"
-#include "runtime/net/buffer.h"
 #include "runtime/time/timestamp.h"
-
-#include <chrono>
-#include <string>
 
 namespace runtime::gateway {
 

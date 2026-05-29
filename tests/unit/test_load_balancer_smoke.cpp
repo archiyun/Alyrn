@@ -5,10 +5,6 @@
 // 运行
 // ./build-tests/tests/load_balancer_smoke_test
 
-#include "runtime/gateway/load_balancer.h"
-#include "runtime/gateway/upstream.h"
-#include "runtime/gateway/upstream_peer.h"
-
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -16,6 +12,10 @@
 #include <string>
 #include <unordered_set>
 #include <vector>
+
+#include "runtime/gateway/load_balancer.h"
+#include "runtime/gateway/upstream.h"
+#include "runtime/gateway/upstream_peer.h"
 
 namespace {
 

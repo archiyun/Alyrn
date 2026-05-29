@@ -1,14 +1,14 @@
 // Smoke test for runtime::metrics primitives and GatewayMetrics aggregator.
 // 不依赖 GTest, 用断言风格直接验证.
 
-#include "runtime/metrics/gateway_metrics.h"
-
 #include <cassert>
 #include <cstdio>
 #include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
+
+#include "runtime/metrics/gateway_metrics.h"
 
 namespace m = runtime::metrics;
 

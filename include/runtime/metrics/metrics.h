@@ -2,8 +2,6 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include "runtime/base/noncopyable.h"
-
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -13,6 +11,8 @@
 #include <string_view>
 #include <utility>
 #include <vector>
+
+#include "runtime/base/noncopyable.h"
 
 namespace runtime::metrics {
 

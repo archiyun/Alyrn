@@ -1,8 +1,4 @@
 #include <gtest/gtest.h>
-
-#include "runtime/http/http2_session.h"
-#include "runtime/net/buffer.h"
-
 #include <nghttp2/nghttp2.h>
 
 #include <algorithm>
@@ -14,6 +10,9 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+#include "runtime/http/http2_session.h"
+#include "runtime/net/buffer.h"
 
 namespace {
 

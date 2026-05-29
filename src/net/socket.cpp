@@ -2,15 +2,16 @@
 // SPDX-License-Identifier: MIT
 #include "runtime/net/socket.h"
 
-#include "runtime/log/logger.h"
-
 #include <arpa/inet.h>
-#include <cerrno>
-#include <cstdlib>
-#include <cstring>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <unistd.h>
+
+#include <cerrno>
+#include <cstdlib>
+#include <cstring>
+
+#include "runtime/log/logger.h"
 
 namespace runtime::net {
 

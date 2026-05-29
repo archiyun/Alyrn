@@ -76,6 +76,12 @@ NGINXEOF
 
  */
 
+#include <atomic>
+#include <csignal>
+#include <cstdio>
+#include <cstdlib>
+#include <thread>
+
 #include "runtime/gateway/gateway_server.h"
 #include "runtime/gateway/upstream.h"
 #include "runtime/gateway/upstream_peer.h"
@@ -83,12 +89,6 @@ NGINXEOF
 #include "runtime/net/event_loop.h"
 #include "runtime/net/inet_address.h"
 #include "runtime/net/tcp_connection.h"
-
-#include <atomic>
-#include <csignal>
-#include <cstdio>
-#include <cstdlib>
-#include <thread>
 
 static std::atomic<long long> g_proxied{0};
 

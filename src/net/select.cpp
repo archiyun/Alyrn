@@ -1,12 +1,13 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #include "runtime/net/select.h"
-#include "runtime/net/channel.h"
-#include "runtime/log/logger.h"
 
 #include <cassert>
 #include <cerrno>
 #include <cstring>
+
+#include "runtime/log/logger.h"
+#include "runtime/net/channel.h"
 
 namespace runtime::net {
 

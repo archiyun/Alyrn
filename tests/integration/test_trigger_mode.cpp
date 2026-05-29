@@ -6,22 +6,22 @@
 //  3. ET acceptor drains a burst of simultaneous connections without dropping
 //  4. Large write path completes in ET mode (server sends > 64 KB response)
 
+#include <arpa/inet.h>
 #include <gtest/gtest.h>
+#include <unistd.h>
+
+#include <atomic>
+#include <chrono>
+#include <future>
+#include <string>
+#include <thread>
+#include <vector>
 
 #include "runtime/net/buffer.h"
 #include "runtime/net/event_loop.h"
 #include "runtime/net/inet_address.h"
 #include "runtime/net/net_utils.h"
 #include "runtime/net/tcp_server.h"
-
-#include <arpa/inet.h>
-#include <atomic>
-#include <chrono>
-#include <future>
-#include <string>
-#include <thread>
-#include <unistd.h>
-#include <vector>
 
 namespace runtime::net {
 namespace {

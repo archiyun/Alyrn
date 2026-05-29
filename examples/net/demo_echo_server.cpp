@@ -54,14 +54,6 @@
    wrk -t8 -c500 -d30s --latency http://127.0.0.1:8080/
  */
 
-#include "runtime/log/logger.h"
-#include "runtime/net/buffer.h"
-#include "runtime/net/event_loop.h"
-#include "runtime/net/inet_address.h"
-#include "runtime/net/tcp_connection.h"
-#include "runtime/net/tcp_server.h"
-#include "runtime/time/timestamp.h"
-
 #include <atomic>
 #include <charconv>
 #include <csignal>
@@ -69,6 +61,14 @@
 #include <cstdlib>
 #include <string_view>
 #include <thread>
+
+#include "runtime/log/logger.h"
+#include "runtime/net/buffer.h"
+#include "runtime/net/event_loop.h"
+#include "runtime/net/inet_address.h"
+#include "runtime/net/tcp_connection.h"
+#include "runtime/net/tcp_server.h"
+#include "runtime/time/timestamp.h"
 
 using TcpConnectionPtr = std::shared_ptr<runtime::net::TcpConnection>;
 

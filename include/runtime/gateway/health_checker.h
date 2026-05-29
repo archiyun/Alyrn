@@ -2,15 +2,15 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <memory>
+#include <string>
+#include <unordered_map>
+
 #include "runtime/base/noncopyable.h"
 #include "runtime/gateway/health_check_config.h"
 #include "runtime/gateway/upstream_registry.h"
 #include "runtime/net/event_loop.h"
 #include "runtime/net/timer_id.h"
-
-#include <memory>
-#include <string>
-#include <unordered_map>
 
 namespace runtime::gateway {
 

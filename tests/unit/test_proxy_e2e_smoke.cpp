@@ -7,15 +7,6 @@
 // 编译: cmake --build build-tests --target proxy_e2e_smoke_test -j$(nproc)
 // 运行: ./build-tests/tests/proxy_e2e_smoke_test
 
-#include "runtime/gateway/gateway_server.h"
-#include "runtime/gateway/upstream.h"
-#include "runtime/gateway/upstream_peer.h"
-#include "runtime/gateway/upstream_registry.h"
-#include "runtime/net/event_loop.h"
-#include "runtime/net/event_loop_thread.h"
-#include "runtime/net/inet_address.h"
-#include "runtime/net/tcp_server.h"
-
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -31,6 +22,15 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+#include "runtime/gateway/gateway_server.h"
+#include "runtime/gateway/upstream.h"
+#include "runtime/gateway/upstream_peer.h"
+#include "runtime/gateway/upstream_registry.h"
+#include "runtime/net/event_loop.h"
+#include "runtime/net/event_loop_thread.h"
+#include "runtime/net/inet_address.h"
+#include "runtime/net/tcp_server.h"
 
 using namespace std::chrono_literals;
 

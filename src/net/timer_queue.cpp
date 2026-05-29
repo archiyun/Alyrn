@@ -1,16 +1,18 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/time/timestamp.h"
-#include "runtime/net/channel.h"
-#include "runtime/net/event_loop.h"
 #include "runtime/net/timer_queue.h"
-#include "runtime/net/timer.h"
-#include "runtime/net/timer_id.h"
 
 #include <sys/timerfd.h>
 #include <unistd.h>
-#include <cstring>
+
 #include <cassert>
+#include <cstring>
+
+#include "runtime/net/channel.h"
+#include "runtime/net/event_loop.h"
+#include "runtime/net/timer.h"
+#include "runtime/net/timer_id.h"
+#include "runtime/time/timestamp.h"
 
 namespace runtime::net {
 

@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <string>
+
 #include "runtime/http/http_response.h"
 #include "runtime/http/http_types.h"
-
-#include <string>
 
 namespace runtime::gateway {
 

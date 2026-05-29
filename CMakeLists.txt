@@ -12,6 +12,7 @@ option(BUILD_TESTS "Build tests" ON)
 option(BUILD_EXAMPLES "Build example programs" ON)
 option(RUNTIME_ENABLE_SSL "Enable TLS/SSL support (requires OpenSSL)" OFF)
 option(RUNTIME_ENABLE_HTTP2 "Enable HTTP/2 support (requires nghttp2)" OFF)
+option(RUNTIME_ENABLE_URING "Enable io_uring proactor backend (requires liburing, Linux 5.19+)" OFF)
 
 find_package(Threads REQUIRED)
 
@@ -22,6 +23,11 @@ endif()
 if(RUNTIME_ENABLE_HTTP2)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(NGHTTP2 REQUIRED libnghttp2)
+endif()
+
+if(RUNTIME_ENABLE_URING)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(URING REQUIRED liburing)
 endif()
 
 add_library(runtime_foundation STATIC
@@ -119,6 +125,34 @@ target_compile_features(runtime_net PUBLIC cxx_std_20)
 
 # memmem 是 GNU 扩展, buffer.h 内联用到, 通过 PUBLIC 让上层库也能 include buffer.h
 target_compile_definitions(runtime_net PUBLIC _GNU_SOURCE)
+
+# runtime_uring —— io_uring proactor 后端，与 reactor 版 net 并行。
+# 复用 runtime_net 的 Buffer / InetAddress / Socket，故 PUBLIC 依赖 runtime_net。
+if(RUNTIME_ENABLE_URING)
+    add_library(runtime_uring STATIC
+        src/uring/uring_loop.cpp
+        src/uring/uring_connection.cpp
+        src/uring/uring_server.cpp
+    )
+
+    target_include_directories(runtime_uring
+        PUBLIC
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${URING_INCLUDE_DIRS}
+            ${CMAKE_CURRENT_SOURCE_DIR}/third_party/liburing/include
+    )
+
+    target_link_libraries(runtime_uring
+        PUBLIC
+            runtime_net
+            runtime_foundation
+            ${URING_LIBRARIES}
+            Threads::Threads
+    )
+
+    target_compile_definitions(runtime_uring PUBLIC RUNTIME_ENABLE_URING)
+    target_compile_features(runtime_uring PUBLIC cxx_std_20)
+endif()
 
 set(RUNTIME_HTTP_SOURCES
     src/http/http_types.cpp

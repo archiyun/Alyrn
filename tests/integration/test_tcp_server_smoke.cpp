@@ -1,9 +1,6 @@
-#include "runtime/net/event_loop.h"
-#include "runtime/net/inet_address.h"
-#include "runtime/net/net_utils.h"
-#include "runtime/net/tcp_server.h"
-
 #include <arpa/inet.h>
+#include <unistd.h>
+
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -14,7 +11,11 @@
 #include <mutex>
 #include <string>
 #include <thread>
-#include <unistd.h>
+
+#include "runtime/net/event_loop.h"
+#include "runtime/net/inet_address.h"
+#include "runtime/net/net_utils.h"
+#include "runtime/net/tcp_server.h"
 
 namespace {
 

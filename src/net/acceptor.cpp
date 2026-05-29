@@ -1,15 +1,17 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/log/logger.h"
 #include "runtime/net/acceptor.h"
+
+#include <unistd.h>
+
+#include <cassert>
+#include <cerrno>
+#include <cstring>
+
+#include "runtime/log/logger.h"
 #include "runtime/net/event_loop.h"
 #include "runtime/net/inet_address.h"
 #include "runtime/net/net_utils.h"
-
-#include <cerrno>
-#include <cassert>
-#include <cstring>
-#include <unistd.h>
 
 namespace runtime::net {
 

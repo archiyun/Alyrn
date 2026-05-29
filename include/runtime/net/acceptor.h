@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <functional>
+
 #include "runtime/base/noncopyable.h"
 #include "runtime/net/channel.h"
 #include "runtime/net/socket.h"
-
-#include <functional>
 
 namespace runtime::net {
 

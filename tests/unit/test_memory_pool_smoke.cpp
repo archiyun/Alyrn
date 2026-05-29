@@ -1,10 +1,10 @@
-#include "runtime/memory/memory_pool.h"
-
 #include <cstdint>
 #include <exception>
 #include <iostream>
 #include <thread>
 #include <vector>
+
+#include "runtime/memory/memory_pool.h"
 
 namespace {
 

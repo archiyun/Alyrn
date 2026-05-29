@@ -3,14 +3,14 @@
 // Reference: https://github.com/chenshuo/muduo/blob/master/muduo/net/Buffer.h
 #pragma once
 
-#include "runtime/base/noncopyable.h"
-#include "runtime/net/net_assert.h"
-
 #include <algorithm>
 #include <cstddef>
 #include <cstring>
 #include <string>
 #include <vector>
+
+#include "runtime/base/noncopyable.h"
+#include "runtime/net/net_assert.h"
 
 #ifdef RUNTIME_ENABLE_SSL
 #include <openssl/ssl.h>

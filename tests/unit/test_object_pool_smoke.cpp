@@ -1,9 +1,9 @@
-#include "runtime/memory/object_pool.h"
-
 #include <atomic>
 #include <exception>
 #include <iostream>
 #include <string>
+
+#include "runtime/memory/object_pool.h"
 
 namespace {
 

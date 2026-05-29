@@ -5,14 +5,14 @@
 // 运行
 // ./build-tests/tests/rate_limiter_smoke_test
 
-#include "runtime/gateway/rate_limiter.h"
-
 #include <atomic>
 #include <chrono>
 #include <iostream>
 #include <string>
 #include <thread>
 #include <vector>
+
+#include "runtime/gateway/rate_limiter.h"
 
 namespace {
 

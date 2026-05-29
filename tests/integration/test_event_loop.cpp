@@ -1,9 +1,9 @@
 #include <gtest/gtest.h>
 
-#include "runtime/net/event_loop.h"
-
 #include <future>
 #include <thread>
+
+#include "runtime/net/event_loop.h"
 
 namespace runtime::net {
 namespace {

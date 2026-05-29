@@ -1,10 +1,11 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/net/buffer.h"
-
-#include <cstring>
 #include <sys/socket.h>
 #include <unistd.h>
+
+#include <cstring>
+
+#include "runtime/net/buffer.h"
 
 #ifdef RUNTIME_ENABLE_SSL
 #include <openssl/ssl.h>

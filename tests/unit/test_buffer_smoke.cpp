@@ -1,11 +1,12 @@
-#include "runtime/net/buffer.h"
+#include <sys/socket.h>
+#include <unistd.h>
 
 #include <array>
 #include <exception>
 #include <iostream>
 #include <string>
-#include <sys/socket.h>
-#include <unistd.h>
+
+#include "runtime/net/buffer.h"
 
 namespace {
 

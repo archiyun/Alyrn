@@ -34,7 +34,6 @@
 #include "runtime/net/event_loop.h"
 #include "runtime/net/inet_address.h"
 
-
 int main() {
   // 1. 创建服务注册中心 和 配置上游
   runtime::gateway::UpstreamRegistry reg;

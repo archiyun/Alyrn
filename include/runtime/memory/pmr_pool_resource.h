@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include "runtime/memory/pool.h"
-
 #include <memory_resource>
+
+#include "runtime/memory/pool.h"
 
 namespace runtime::memory {
 

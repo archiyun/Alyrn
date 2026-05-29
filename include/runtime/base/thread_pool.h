@@ -18,8 +18,6 @@
 //
 // Requires C++20 (std::jthread, std::stop_token, condition_variable_any).
 
-#include "runtime/base/noncopyable.h"
-
 #include <condition_variable>
 #include <cstddef>
 #include <functional>
@@ -27,6 +25,8 @@
 #include <queue>
 #include <thread>
 #include <vector>
+
+#include "runtime/base/noncopyable.h"
 
 namespace runtime::base {
 

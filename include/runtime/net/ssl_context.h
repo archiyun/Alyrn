@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include "runtime/base/noncopyable.h"
-#include <openssl/ssl.h> // SSL_CTX / SSL / TLS_server_method ...
+#include <openssl/ssl.h>  // SSL_CTX / SSL / TLS_server_method ...
+
 #include <stdexcept>
 #include <string>
 
+#include "runtime/base/noncopyable.h"
 
 namespace runtime::net {
 

@@ -1,11 +1,11 @@
 #include <gtest/gtest.h>
-
-#include "runtime/net/buffer.h"
+#include <sys/socket.h>
+#include <unistd.h>
 
 #include <array>
 #include <string>
-#include <sys/socket.h>
-#include <unistd.h>
+
+#include "runtime/net/buffer.h"
 
 namespace runtime::net {
 namespace {

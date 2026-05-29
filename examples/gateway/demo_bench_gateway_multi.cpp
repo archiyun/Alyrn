@@ -17,12 +17,6 @@
 //   wrk -t4 -c100 -d15s --latency http://127.0.0.1:8080/
 //   wrk -t4 -c100 -d15s --latency http://127.0.0.1:8088/
 
-#include "runtime/gateway/gateway_server.h"
-#include "runtime/gateway/upstream.h"
-#include "runtime/gateway/upstream_peer.h"
-#include "runtime/net/event_loop.h"
-#include "runtime/net/inet_address.h"
-
 #include <csignal>
 #include <cstdint>
 #include <cstdio>
@@ -31,6 +25,12 @@
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include "runtime/gateway/gateway_server.h"
+#include "runtime/gateway/upstream.h"
+#include "runtime/gateway/upstream_peer.h"
+#include "runtime/net/event_loop.h"
+#include "runtime/net/inet_address.h"
 
 namespace {
 

@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: MIT
 #include "runtime/http/http_context.h"
 
-#include "header_utils.h"
-
 #include <charconv>
 #include <string_view>
+
+#include "header_utils.h"
 
 namespace runtime::http {
 

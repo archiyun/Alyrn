@@ -1,12 +1,13 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/base/current_thread.h"
 #include "runtime/log/logger.h"
-#include "runtime/log/async_logger.h"
-#include "runtime/time/timestamp.h"
 
 #include <string>
 #include <string_view>
+
+#include "runtime/base/current_thread.h"
+#include "runtime/log/async_logger.h"
+#include "runtime/time/timestamp.h"
 
 namespace runtime::log {
 

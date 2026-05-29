@@ -1,5 +1,8 @@
 #include <gtest/gtest.h>
 
+#include <stdexcept>
+#include <string>
+
 #include "runtime/http/debug_handler.h"
 #include "runtime/http/metrics_handler.h"
 #include "runtime/http/router.h"
@@ -9,9 +12,6 @@
 #include "runtime/task/task_history.h"
 #include "runtime/task/task_options.h"
 #include "runtime/task/task_state.h"
-
-#include <stdexcept>
-#include <string>
 
 namespace {
 

@@ -13,8 +13,6 @@ cmake --build build-tests --target rbtree_validator -j$(nproc) 2>&1 | tail -8
 // 运行
 // ./build-tests/tests/rbtree_validator
 
-#include "runtime/base/rbtree.h"
-
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
@@ -22,6 +20,8 @@ cmake --build build-tests --target rbtree_validator -j$(nproc) 2>&1 | tail -8
 #include <random>
 #include <set>
 #include <vector>
+
+#include "runtime/base/rbtree.h"
 
 // ----------------------------------------------------------------
 // Element type

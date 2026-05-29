@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include "runtime/base/noncopyable.h"
-#include "runtime/metrics/metrics.h"
-
 #include <cstdint>
 #include <ostream>
 #include <sstream>
 #include <string>
+
+#include "runtime/base/noncopyable.h"
+#include "runtime/metrics/metrics.h"
 
 namespace runtime::metrics {
 

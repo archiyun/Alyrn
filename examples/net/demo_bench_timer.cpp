@@ -12,9 +12,6 @@
 // 编译:
 //   cmake --build build-perf --target demo_bench_timer -j$(nproc)
 
-#include "runtime/net/event_loop.h"
-#include "runtime/net/timer_id.h"
-
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -23,6 +20,9 @@
 #include <mutex>
 #include <thread>
 #include <vector>
+
+#include "runtime/net/event_loop.h"
+#include "runtime/net/timer_id.h"
 
 using clk = std::chrono::steady_clock;
 using ns_t = std::chrono::nanoseconds;

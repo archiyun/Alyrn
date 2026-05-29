@@ -3,11 +3,11 @@
 // Reference: https://github.com/nginx/nginx/blob/master/src/core/ngx_palloc.h
 #pragma once
 
-#include "runtime/base/noncopyable.h"  // IWYU pragma: keep
-
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+
+#include "runtime/base/noncopyable.h"  // IWYU pragma: keep
 
 namespace runtime::memory {
 

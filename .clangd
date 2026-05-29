@@ -1,0 +1,17 @@
+# clangd 配置 —— 让语言服务用上项目的编译数据库与 C++20。
+CompileFlags:
+  # 编译数据库目录（相对本文件解析）。build-tests 是常驻的 CTest/sanitizer 构建目录，
+  # 始终存在；若改用 build-perf / build，只需改这一行。
+  CompilationDatabase: build-tests
+  # 兜底：对尚未注册进 DB 的新源文件 / 纯头文件，补上标准与 include 路径。
+  Add:
+    - -std=c++20
+    - -Iinclude
+    - -Isrc
+
+Diagnostics:
+  # 未使用 include 不刷屏（误报较多）；静态检查交给 .vscode 里的 --clang-tidy。
+  UnusedIncludes: None
+
+Index:
+  Background: Build

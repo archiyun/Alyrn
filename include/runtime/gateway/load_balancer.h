@@ -14,20 +14,20 @@
 //    GatewayServer::AddProxyRoute.
 #pragma once
 
-#include "runtime/base/murmurhash3.h"
-#include "runtime/gateway/upstream.h"
-
 #include <algorithm>
 #include <array>
 #include <atomic>
 #include <limits>
 #include <memory>
 #include <mutex>
-#include <shared_mutex>
 #include <random>
+#include <shared_mutex>
 #include <string>
 #include <string_view>
 #include <unordered_map>
+
+#include "runtime/base/murmurhash3.h"
+#include "runtime/gateway/upstream.h"
 
 namespace runtime::gateway {
 

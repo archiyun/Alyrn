@@ -1,14 +1,14 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #include "runtime/http/http2_session.h"
-#include "runtime/net/tcp_connection.h"
-
-#include "header_utils.h"
 
 #include <algorithm>
 #include <cstring>
 #include <utility>
 #include <vector>
+
+#include "header_utils.h"
+#include "runtime/net/tcp_connection.h"
 
 namespace runtime::http {
 

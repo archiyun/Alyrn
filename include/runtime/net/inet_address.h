@@ -3,10 +3,11 @@
 #pragma once
 
 #include <arpa/inet.h>
-#include <cstdint>
 #include <netinet/in.h>
-#include <string>
 #include <sys/socket.h>
+
+#include <cstdint>
+#include <string>
 
 namespace runtime::net {
 

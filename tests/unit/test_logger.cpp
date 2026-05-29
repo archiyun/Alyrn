@@ -1,13 +1,13 @@
-#include "runtime/log/async_logger.h"
-#include "runtime/log/log_buffer.h"
-#include "runtime/log/logger.h"
-
 #include <gtest/gtest.h>
 
 #include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <string>
+
+#include "runtime/log/async_logger.h"
+#include "runtime/log/log_buffer.h"
+#include "runtime/log/logger.h"
 
 namespace runtime::log {
 namespace {

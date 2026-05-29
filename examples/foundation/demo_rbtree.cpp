@@ -9,11 +9,11 @@
 // 编译:
 // cmake --B --build
 //
-#include "runtime/base/rbtree.h"
-
 #include <cstdint>
 #include <cstdio>
 #include <string>
+
+#include "runtime/base/rbtree.h"
 
 using namespace runtime::base;
 

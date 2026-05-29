@@ -2,22 +2,23 @@
 // SPDX-License-Identifier: MIT
 #include "runtime/net/tcp_connection.h"
 
+#include "runtime/log/logger.h"
 #include "runtime/net/channel.h"
 #include "runtime/net/event_loop.h"
 #include "runtime/net/net_assert.h"
 #include "runtime/net/socket.h"
-#include "runtime/log/logger.h"
 
 #ifdef RUNTIME_ENABLE_SSL
 #include <openssl/ssl.h>
 #endif
+#include <sys/socket.h>
+#include <unistd.h>
+
 #include <atomic>
 #include <cassert>
 #include <cerrno>
 #include <cstring>
 #include <string_view>
-#include <sys/socket.h>
-#include <unistd.h>
 
 namespace runtime::net {
 

@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include "runtime/task/task_record.h"
-
 #include <cstddef>
 #include <deque>
 #include <mutex>
 #include <vector>
+
+#include "runtime/task/task_record.h"
 
 namespace runtime::task {
 

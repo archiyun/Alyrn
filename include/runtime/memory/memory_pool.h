@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include "runtime/base/noncopyable.h"
-
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
 #include <new>
+
+#include "runtime/base/noncopyable.h"
 
 namespace runtime::memory {
 

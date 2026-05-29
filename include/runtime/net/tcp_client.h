@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <atomic>
+#include <memory>
+#include <string>
+#include <utility>
+
 #include "runtime/base/noncopyable.h"
 #include "runtime/net/inet_address.h"
 #include "runtime/net/tcp_connection.h"
-
-#include <atomic>
-#include <memory>
-#include <utility>
-#include <string>
 
 namespace runtime::net {
 

@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include "runtime/net/poller.h"
-
 #include <sys/select.h>
+
+#include "runtime/net/poller.h"
 
 namespace runtime::net {
 

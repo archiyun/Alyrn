@@ -1,8 +1,10 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #include "runtime/task/scheduler.h"
-#include "runtime/time/timestamp.h"
+
 #include <stdexcept>
+
+#include "runtime/time/timestamp.h"
 
 namespace runtime::task {
 

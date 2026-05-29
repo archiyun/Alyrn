@@ -50,18 +50,17 @@
   pkill -f demo_echo_server; pkill -f demo_http_server
 */
 
+#include <atomic>
+#include <csignal>
+#include <cstdio>
+#include <cstdlib>
+#include <thread>
 
 #include "runtime/http/http_request.h"
 #include "runtime/http/http_response.h"
 #include "runtime/http/http_server.h"
 #include "runtime/net/event_loop.h"
 #include "runtime/net/inet_address.h"
-
-#include <atomic>
-#include <csignal>
-#include <cstdio>
-#include <cstdlib>
-#include <thread>
 
 static std::atomic<long long> g_requests{0};
 static std::atomic<long long> g_conns{0};

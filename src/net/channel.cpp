@@ -1,18 +1,14 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #include "runtime/net/channel.h"
+
 #include "runtime/net/event_loop.h"
 #include "runtime/net/net_assert.h"
 
 namespace runtime::net {
 
 Channel::Channel(EventLoop* loop, int fd)
-    : loop_(loop),
-      fd_(fd),
-      events_(0),
-      revents_(0),
-      index_(-1),
-      tied_(false) {
+    : loop_(loop), fd_(fd), events_(0), revents_(0), index_(-1), tied_(false) {
   RUNTIME_ASSERT(loop_ != nullptr, "Channel: loop must not be null");
   RUNTIME_ASSERT(fd_ >= 0, "Channel: fd must be a valid non-negative descriptor");
 }
@@ -54,23 +50,19 @@ void Channel::HandleEventWithGuard(runtime::time::Timestamp receive_time) {
   // kHupEvent without kReadEvent usually means the peer has closed the connection
   // and there is no more readable data left in the socket buffer.
   if ((revents_ & kHupEvent) && !(revents_ & kReadEvent)) {
-    if (close_callback_) 
-      close_callback_();
+    if (close_callback_) close_callback_();
   }
 
   if (revents_ & kErrorEvent) {
-    if (error_callback_) 
-      error_callback_();
+    if (error_callback_) error_callback_();
   }
 
   if (revents_ & kReadEvent) {
-    if (read_callback_) 
-      read_callback_(receive_time);
+    if (read_callback_) read_callback_(receive_time);
   }
 
   if (revents_ & kWriteEvent) {
-    if (write_callback_) 
-      write_callback_();
+    if (write_callback_) write_callback_();
   }
 }
 

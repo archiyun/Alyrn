@@ -6,11 +6,11 @@
 // ./build-tests/tests/circuit_breaker_smoke_test
 // 或 cd build-tests && ctest -R circuit_breaker --output-on-failure
 
-#include "runtime/gateway/circuit_breaker.h"
-
 #include <chrono>
 #include <iostream>
 #include <thread>
+
+#include "runtime/gateway/circuit_breaker.h"
 
 namespace {
 

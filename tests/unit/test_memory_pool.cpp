@@ -1,10 +1,10 @@
 #include <gtest/gtest.h>
 
-#include "runtime/memory/memory_pool.h"
-
 #include <cstdint>
 #include <thread>
 #include <vector>
+
+#include "runtime/memory/memory_pool.h"
 
 TEST(MemoryPoolTest, AllocateAndDeallocateReuseSlots) {
     runtime::memory::MemoryPool<sizeof(int), alignof(int), 4> pool;

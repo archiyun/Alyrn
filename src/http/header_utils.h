@@ -2,8 +2,6 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include "runtime/http/http_types.h"
-
 #include <array>
 #include <cctype>
 #include <cstddef>
@@ -11,6 +9,8 @@
 #include <memory_resource>
 #include <string>
 #include <string_view>
+
+#include "runtime/http/http_types.h"
 
 namespace runtime::http::detail {
 

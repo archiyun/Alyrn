@@ -13,8 +13,8 @@
 //   RUNTIME_ASSERT(reader_index_ <= writer_index_, "buffer invariant violated");
 
 #ifndef NDEBUG
-#  include <cstdio>
-#  include <cstdlib>
+#include <cstdio>
+#include <cstdlib>
 #  define RUNTIME_ASSERT(cond, msg)                                       \
      do {                                                                  \
        if (__builtin_expect(!(cond), 0)) {                                 \

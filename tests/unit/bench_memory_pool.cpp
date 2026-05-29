@@ -10,9 +10,6 @@
 //   5. NullMutex    — pool with lock overhead removed (single-thread ceiling)
 //   6. Multi-thread — 8 threads interleaved alloc/free on shared pool
 
-#include "runtime/memory/memory_pool.h"
-#include "runtime/memory/object_pool.h"
-
 #include <atomic>
 #include <chrono>
 #include <cstddef>
@@ -21,6 +18,9 @@
 #include <iostream>
 #include <thread>
 #include <vector>
+
+#include "runtime/memory/memory_pool.h"
+#include "runtime/memory/object_pool.h"
 
 // ---------------------------------------------------------------------------
 // Benchmark object

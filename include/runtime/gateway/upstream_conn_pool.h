@@ -2,15 +2,15 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include "runtime/gateway/upstream_peer.h"
-#include "runtime/net/tcp_client.h"
-#include "runtime/net/tcp_connection.h"
-
 #include <chrono>
 #include <deque>
 #include <memory>
 #include <string>
 #include <unordered_map>
+
+#include "runtime/gateway/upstream_peer.h"
+#include "runtime/net/tcp_client.h"
+#include "runtime/net/tcp_connection.h"
 
 namespace runtime::gateway {
 

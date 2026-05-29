@@ -6,13 +6,13 @@
 // read-only thereafter; per-peer mutable state lives inside each UpstreamPeer.
 #pragma once
 
-#include "runtime/gateway/circuit_breaker.h"
-#include "runtime/gateway/health_check_config.h"
-#include "runtime/gateway/upstream_peer.h"
-
 #include <memory>
 #include <string>
 #include <vector>
+
+#include "runtime/gateway/circuit_breaker.h"
+#include "runtime/gateway/health_check_config.h"
+#include "runtime/gateway/upstream_peer.h"
 
 namespace runtime::gateway {
 

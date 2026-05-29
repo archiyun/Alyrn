@@ -19,11 +19,10 @@ namespace runtime::http {
 
 // HttpServer adds a minimal HTTP/1.1 processing layer on top of TcpServer.
 class HttpServer : public runtime::base::NonCopyable {
-public:
+ public:
   using TcpConnectionPtr = runtime::net::TcpConnection::TcpConnectionPtr;
 
-  HttpServer(runtime::net::EventLoop* loop,
-             const runtime::net::InetAddress& addr,
+  HttpServer(runtime::net::EventLoop* loop, const runtime::net::InetAddress& addr,
              std::string name);
 
 #ifdef RUNTIME_ENABLE_SSL
@@ -58,13 +57,12 @@ public:
 
   void Start();
 
-private:
+ private:
   // Initializes per-connection HTTP parsing state.
   void OnConnection(const TcpConnectionPtr& conn);
 
   // Parses bytes, dispatches handlers, and writes responses.
-  void OnMessage(const TcpConnectionPtr& conn,
-                 runtime::net::Buffer& buf,
+  void OnMessage(const TcpConnectionPtr& conn, runtime::net::Buffer& buf,
                  runtime::time::Timestamp ts);
 
   // Builds a JSON error response for common HTTP failures.

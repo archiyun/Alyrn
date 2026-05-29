@@ -1,8 +1,5 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/memory/pmr_pool_resource.h"
-#include "runtime/memory/pool.h"
-
 #include <cstdint>
 #include <iostream>
 #include <memory_resource>
@@ -10,6 +7,9 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+#include "runtime/memory/pmr_pool_resource.h"
+#include "runtime/memory/pool.h"
 
 namespace {
 

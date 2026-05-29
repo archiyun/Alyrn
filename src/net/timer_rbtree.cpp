@@ -1,7 +1,8 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/net/timer.h"
 #include "runtime/net/timer_rbtree.h"
+
+#include "runtime/net/timer.h"
 
 namespace runtime::net {
 

@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <cstdint>
+#include <string>
+
 #include "runtime/task/task_options.h"
 #include "runtime/task/task_state.h"
 #include "runtime/time/timestamp.h"
-
-#include <cstdint>
-#include <string>
 
 namespace runtime::task {
 

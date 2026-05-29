@@ -1,9 +1,9 @@
-#include "runtime/net/event_loop.h"
-
 #include <exception>
 #include <future>
 #include <iostream>
 #include <thread>
+
+#include "runtime/net/event_loop.h"
 
 namespace {
 

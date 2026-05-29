@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include "runtime/base/noncopyable.h"
-#include "runtime/time/timestamp.h"
-
 #include <functional>
 #include <memory>
 #include <utility>
+
+#include "runtime/base/noncopyable.h"
+#include "runtime/time/timestamp.h"
 
 namespace runtime::net {
 
@@ -15,7 +15,7 @@ class EventLoop;
 
 // TriggerMode controls whether epoll registration uses level-triggered or
 // edge-triggered delivery.
-enum class TriggerMode {
+enum class TriggerMode : uint8_t {
   kLevelTriggered,
   kEdgeTriggered,
 };
@@ -30,7 +30,7 @@ enum class TriggerMode {
 // Channel is also responsible for keeping its local event state consistent
 // with the registration state stored in the Poller.
 class Channel : public runtime::base::NonCopyable {
-public:
+ public:
   using EventCallback = std::function<void()>;
   using ReadEventCallback = std::function<void(runtime::time::Timestamp)>;
 
@@ -41,18 +41,10 @@ public:
   // callbacks.
   void HandleEvent(runtime::time::Timestamp receive_time);
 
-  void SetReadCallback(ReadEventCallback cb) {
-    read_callback_ = std::move(cb);
-  }
-  void SetWriteCallback(EventCallback cb) {
-    write_callback_ = std::move(cb);
-  }
-  void SetCloseCallback(EventCallback cb) {
-    close_callback_ = std::move(cb);
-  }
-  void SetErrorCallback(EventCallback cb) {
-    error_callback_ = std::move(cb);
-  }
+  void SetReadCallback(ReadEventCallback cb) { read_callback_ = std::move(cb); }
+  void SetWriteCallback(EventCallback cb) { write_callback_ = std::move(cb); }
+  void SetCloseCallback(EventCallback cb) { close_callback_ = std::move(cb); }
+  void SetErrorCallback(EventCallback cb) { error_callback_ = std::move(cb); }
 
   // Ties the Channel to an owner object so callbacks are not dispatched after
   // the owner has already been destroyed.
@@ -65,11 +57,26 @@ public:
 
   // Updates the local interest set and immediately synchronizes it with the
   // underlying Poller.
-  void EnableReading() { events_ |= kReadEvent; Update(); }
-  void DisableReading() { events_ &= ~kReadEvent; Update(); }
-  void EnableWriting() { events_ |= kWriteEvent; Update(); }
-  void DisableWriting() { events_ &= ~kWriteEvent; Update(); }
-  void DisableAll() { events_ = kNoneEvent; Update(); }
+  void EnableReading() {
+    events_ |= kReadEvent;
+    Update();
+  }
+  void DisableReading() {
+    events_ &= ~kReadEvent;
+    Update();
+  }
+  void EnableWriting() {
+    events_ |= kWriteEvent;
+    Update();
+  }
+  void DisableWriting() {
+    events_ &= ~kWriteEvent;
+    Update();
+  }
+  void DisableAll() {
+    events_ = kNoneEvent;
+    Update();
+  }
 
   bool IsNoneEvent() const { return events_ == kNoneEvent; }
   bool IsWriting() const { return events_ & kWriteEvent; }
@@ -77,13 +84,10 @@ public:
 
   // Switches the Channel between level-triggered and edge-triggered mode.
   void SetEdgeTriggered(bool et) {
-    trigger_mode_ = et ? TriggerMode::kEdgeTriggered
-                       : TriggerMode::kLevelTriggered;
+    trigger_mode_ = et ? TriggerMode::kEdgeTriggered : TriggerMode::kLevelTriggered;
   }
 
-  bool IsEdgeTriggered() const {
-    return trigger_mode_ == TriggerMode::kEdgeTriggered;
-  }
+  bool IsEdgeTriggered() const { return trigger_mode_ == TriggerMode::kEdgeTriggered; }
 
   // Returns the EventLoop that owns this Channel.
   EventLoop* OwnerLoop() { return loop_; }
@@ -99,7 +103,8 @@ public:
   static const int kWriteEvent{0x02};
   static const int kErrorEvent{0x04};
   static const int kHupEvent{0x08};
-private:
+
+ private:
   // Index/SetIndex track Poller-private registration state and must remain
   // hidden from general consumers. Concrete Poller implementations are the
   // only legitimate users.
@@ -116,14 +121,13 @@ private:
   // Dispatches events only after verifying that the tied owner is still alive.
   void HandleEventWithGuard(runtime::time::Timestamp receive_time);
 
-private:
-
+ private:
   EventLoop* loop_;
   const int fd_;
   int events_;
   int revents_;
   int index_;
-  TriggerMode trigger_mode_ { TriggerMode::kLevelTriggered };
+  TriggerMode trigger_mode_{TriggerMode::kLevelTriggered};
 
   std::weak_ptr<void> tie_;
   bool tied_;
@@ -132,7 +136,6 @@ private:
   EventCallback write_callback_;
   EventCallback close_callback_;
   EventCallback error_callback_;
-
 };
 
 }  // namespace runtime::net
