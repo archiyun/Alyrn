@@ -4,7 +4,7 @@
 #   demo_bench_gateway_multi : 多上游 / 负载均衡基准
 
 add_executable(demo_gateway
-    demo_gateway.cpp
+    demo_gateway.cc
 )
 target_link_libraries(demo_gateway
     PRIVATE
@@ -12,7 +12,7 @@ target_link_libraries(demo_gateway
 )
 
 add_executable(demo_bench_gateway
-    demo_bench_gateway.cpp
+    demo_bench_gateway.cc
 )
 target_link_libraries(demo_bench_gateway
     PRIVATE
@@ -20,7 +20,7 @@ target_link_libraries(demo_bench_gateway
 )
 
 add_executable(demo_bench_gateway_multi
-    demo_bench_gateway_multi.cpp
+    demo_bench_gateway_multi.cc
 )
 target_link_libraries(demo_bench_gateway_multi
     PRIVATE

@@ -41,19 +41,19 @@ class Channel : public runtime::base::NonCopyable {
   // callbacks.
   void HandleEvent(runtime::time::Timestamp receive_time);
 
-  void SetReadCallback(ReadEventCallback cb) { read_callback_ = std::move(cb); }
-  void SetWriteCallback(EventCallback cb) { write_callback_ = std::move(cb); }
-  void SetCloseCallback(EventCallback cb) { close_callback_ = std::move(cb); }
-  void SetErrorCallback(EventCallback cb) { error_callback_ = std::move(cb); }
+  void set_read_callback(ReadEventCallback cb) { read_callback_ = std::move(cb); }
+  void set_write_callback(EventCallback cb) { write_callback_ = std::move(cb); }
+  void set_close_callback(EventCallback cb) { close_callback_ = std::move(cb); }
+  void set_error_callback(EventCallback cb) { error_callback_ = std::move(cb); }
 
   // Ties the Channel to an owner object so callbacks are not dispatched after
   // the owner has already been destroyed.
   void Tie(const std::shared_ptr<void>&);
 
-  int Fd() const { return fd_; }
-  int Events() const { return events_; }
-  int Revents() const { return revents_; }
-  void SetRevents(int revt) { revents_ = revt; }
+  int fd() const { return fd_; }
+  int events() const { return events_; }
+  int revents() const { return revents_; }
+  void set_revents(int revt) { revents_ = revt; }
 
   // Updates the local interest set and immediately synchronizes it with the
   // underlying Poller.
@@ -83,7 +83,7 @@ class Channel : public runtime::base::NonCopyable {
   bool IsReading() const { return events_ & kReadEvent; }
 
   // Switches the Channel between level-triggered and edge-triggered mode.
-  void SetEdgeTriggered(bool et) {
+  void set_edge_triggered(bool et) {
     trigger_mode_ = et ? TriggerMode::kEdgeTriggered : TriggerMode::kLevelTriggered;
   }
 
@@ -105,15 +105,15 @@ class Channel : public runtime::base::NonCopyable {
   static const int kHupEvent{0x08};
 
  private:
-  // Index/SetIndex track Poller-private registration state and must remain
+  // Index/set_index track Poller-private registration state and must remain
   // hidden from general consumers. Concrete Poller implementations are the
   // only legitimate users.
   friend class EPollPoller;
   friend class PollPoller;
   friend class SelectPoller;
 
-  int Index() const { return index_; }
-  void SetIndex(int idx) { index_ = idx; }
+  int index() const { return index_; }
+  void set_index(int idx) { index_ = idx; }
 
   // Pushes the current interest set to the Poller.
   void Update();

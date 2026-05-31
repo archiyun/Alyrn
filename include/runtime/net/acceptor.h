@@ -26,14 +26,14 @@ public:
   Acceptor(EventLoop* loop, const InetAddress& listen_addr, bool reuse_port);
   ~Acceptor();
 
-  void SetNewConnectionCallback(NewConnectionCallback cb) {
+  void set_new_connection_callback(NewConnectionCallback cb) {
     new_connection_callback_ = std::move(cb);
   }
 
   // Must be called before Listen() so accept_channel_ is registered with EPOLLET.
-  void SetEdgeTriggered(bool et) { accept_channel_.SetEdgeTriggered(et); }
+  void set_edge_triggered(bool et) { accept_channel_.set_edge_triggered(et); }
 
-  bool Listening() const { return listening_; }
+  bool listening() const { return listening_; }
   void Listen();
 
 private:

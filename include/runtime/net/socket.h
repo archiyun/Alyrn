@@ -16,7 +16,7 @@ public:
   explicit Socket(int sockfd);
   ~Socket();
 
-  int Fd() const { return sockfd_; }
+  int fd() const { return sockfd_; }
 
   // Binds the socket to a local address.
   void BindAddress(const InetAddress& localaddr);
@@ -31,16 +31,16 @@ public:
   void ShutdownWrite();
 
   // Enables or disables TCP_NODELAY.
-  void SetTcpNoDelay(bool on);
+  void set_tcp_no_delay(bool on);
 
   // Enables or disables SO_REUSEADDR.
-  void SetReuseAddr(bool on);
+  void set_reuse_addr(bool on);
 
   // Enables or disables SO_REUSEPORT.
-  void SetReusePort(bool on);
+  void set_reuse_port(bool on);
 
   // Enables or disables SO_KEEPALIVE.
-  void SetKeepAlive(bool on);
+  void set_keep_alive(bool on);
 
 private:
   const int sockfd_;

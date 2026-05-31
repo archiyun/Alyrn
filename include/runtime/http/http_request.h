@@ -25,47 +25,47 @@ class HttpRequest {
   HttpRequest(HttpRequest&&) noexcept = default;
   HttpRequest& operator=(HttpRequest&&) noexcept = default;
 
-  void SetMethod(Method m) { method_ = m; }
-  Method GetMethod() const { return method_; }
+  void set_method(Method m) { method_ = m; }
+  Method method() const { return method_; }
 
-  void SetVersion(Version v) { version_ = v; }
-  Version GetVersion() const { return version_; }
+  void set_version(Version v) { version_ = v; }
+  Version version() const { return version_; }
 
-  void SetPath(std::string_view p) { path_.assign(p); }
-  std::string_view GetPath() const { return path_; }
+  void set_path(std::string_view p) { path_.assign(p); }
+  std::string_view path() const { return path_; }
 
-  void SetQuery(std::string_view q) { query_.assign(q); }
-  std::string_view GetQuery() const { return query_; }
+  void set_query(std::string_view q) { query_.assign(q); }
+  std::string_view query() const { return query_; }
 
   void AddHeader(std::string_view field, std::string_view value);
-  void SetHeader(std::string_view field, std::string_view value);
+  void set_header(std::string_view field, std::string_view value);
   bool RemoveHeader(std::string_view field);
 
-  std::string_view GetHeader(std::string_view field) const;
-  const HttpMap<HttpString, HttpString>& GetHeaders() const { return headers_; }
+  std::string_view header(std::string_view field) const;
+  const HttpMap<HttpString, HttpString>& headers() const { return headers_; }
 
-  void SetBody(std::string_view b) { body_.assign(b); }
-  std::string_view GetBody() const { return body_; }
+  void set_body(std::string_view b) { body_.assign(b); }
+  std::string_view body() const { return body_; }
 
-  bool KeepAlive() const;
+  bool keep_alive() const;
 
   // path_params_ is a plain std::vector (not HttpVector) because Router
   // produces std::vector<PathParam> and PathParam itself holds std::string
   // members; pmr-fying just the spine of this 0~2-entry vector is not
   // worth the type ripple through the router.
-  void SetPathParams(std::vector<PathParam> p) { path_params_ = std::move(p); }
+  void set_path_params(std::vector<PathParam> p) { path_params_ = std::move(p); }
 
   // Linear scan: path_params_ typically holds 0~2 entries, where linear
   // search beats hashing both in instructions and in allocation cost.
-  std::string_view GetPathParam(std::string_view key) const {
+  std::string_view path_param(std::string_view key) const {
     for (const auto& p : path_params_) {
       if (p.key == key) return p.value;
     }
     return {};
   }
 
-  void SetReceiveTime(runtime::time::Timestamp ts) { receive_time_ = ts; }
-  runtime::time::Timestamp GetReceiveTime() const { return receive_time_; }
+  void set_receive_time(runtime::time::Timestamp ts) { receive_time_ = ts; }
+  runtime::time::Timestamp receive_time() const { return receive_time_; }
 
   void Reset();
 

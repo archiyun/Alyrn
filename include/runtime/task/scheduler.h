@@ -41,12 +41,12 @@ class Scheduler : public runtime::base::NonCopyable {
         std::move(opts));
   }
 
-  std::size_t PendingCount() const {
+  std::size_t pending_count() const {
     return static_cast<std::size_t>(
         std::max(0, metrics_.queue_size.load(std::memory_order_relaxed)));
   }
 
-  const SchedulerMetrics& Metrics() const { return metrics_; }
+  const SchedulerMetrics& metrics() const { return metrics_; }
   const TaskHistory&      History()  const { return history_; }
 
  private:

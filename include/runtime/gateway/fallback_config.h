@@ -9,21 +9,28 @@
 
 namespace runtime::gateway {
 
-struct FallbackConfig {    
+// Static fallback response configuration for a proxy route.
+//
+// When enabled, GatewayServer serves this pre-rendered response instead of the
+// generated default error response for unavailable upstreams, open circuit
+// breakers, and other proxy failure paths.
+struct FallbackConfig {
   bool enabled{false};
   runtime::http::StatusCode status_code{runtime::http::StatusCode::ServiceUnavailable};
   std::string content_type{"application/json; charset=utf-8"};
   std::string body{R"({"error":"service temporarily unavailable"})"};
-  std::string pre_rendered; // 完整的 HTTP 响应字节
+  // Cached wire-format response used on the hot path after Init().
+  std::string pre_rendered;
 
+  // Builds the cached response. Call during route setup, before serving traffic.
   void Init() {
-    if (!enabled) return;      
+    if (!enabled) return;
     runtime::http::HttpResponse resp(true);
-    resp.SetStatusCode(status_code);
-    resp.SetContentType(content_type);
-    resp.SetBody(body);
+    resp.set_status_code(status_code);
+    resp.set_content_type(content_type);
+    resp.set_body(body);
     pre_rendered = resp.ToString();
   }
 };
 
-} // namespace runtime::gateway
+}  // namespace runtime::gateway

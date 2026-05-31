@@ -54,17 +54,17 @@ public:
   explicit Buffer(std::size_t initial_size = kInitialSize);
 
   // Returns the number of bytes currently available for reading.
-  std::size_t ReadableBytes() const {
+  std::size_t readable_bytes() const {
     return writer_index_ - reader_index_;
   }
 
   // Returns the number of bytes currently available for appending.
-  std::size_t WritableBytes() const {
+  std::size_t writable_bytes() const {
     return buffer_.size() - writer_index_;
   }
 
   // Returns the number of bytes before the readable region.
-  std::size_t PrependableBytes() const {
+  std::size_t prependable_bytes() const {
     return reader_index_;
   }
 
@@ -75,8 +75,8 @@ public:
 
   // Consumes len bytes from the readable region.
   void Retrieve(std::size_t len) {
-  RUNTIME_ASSERT(len <= ReadableBytes(), "Retrieve: len exceeds readable bytes");
-  if (len < ReadableBytes()) {
+  RUNTIME_ASSERT(len <= readable_bytes(), "Retrieve: len exceeds readable bytes");
+  if (len < readable_bytes()) {
     reader_index_ += len;
     AssertInvariant();
     return;
@@ -87,7 +87,7 @@ public:
   // Consumes bytes up to end, where end must point into the readable region.
   void RetrieveUntil(const char* end) {
   RUNTIME_ASSERT(end >= Peek(), "RetrieveUntil: end pointer is before Peek()");
-  RUNTIME_ASSERT(end <= Peek() + ReadableBytes(),
+  RUNTIME_ASSERT(end <= Peek() + readable_bytes(),
                  "RetrieveUntil: end pointer is past the readable region");
   Retrieve(static_cast<std::size_t>(end - Peek()));
   }
@@ -100,7 +100,7 @@ public:
 
   // Returns and consumes len bytes as a string.
   std::string RetrieveAsString(std::size_t len) {
-    len = std::min(len, ReadableBytes());
+    len = std::min(len, readable_bytes());
     std::string res(Peek(), len);
     Retrieve(len);
     return res;
@@ -108,7 +108,7 @@ public:
 
   // Returns and consumes the entire readable region as a string.
   std::string RetrieveAllAsString() {
-    return RetrieveAsString(ReadableBytes());
+    return RetrieveAsString(readable_bytes());
   }
 
   // Appends raw bytes to the writable region.
@@ -136,7 +136,7 @@ public:
   // Advances the writer index after len bytes have been written into the
   // writable region by external code.
   void HasWritten(std::size_t len) {
-    RUNTIME_ASSERT(len <= WritableBytes(), "HasWritten: len exceeds writable bytes");
+    RUNTIME_ASSERT(len <= writable_bytes(), "HasWritten: len exceeds writable bytes");
     writer_index_ += len;
     AssertInvariant();
   }
@@ -144,7 +144,7 @@ public:
 
   // Ensures that at least len writable bytes are available.
   void EnsureWritableBytes(std::size_t len) {
-    if (WritableBytes() >= len) return;
+    if (writable_bytes() >= len) return;
     MakeSpace(len);
   }
 
@@ -173,13 +173,13 @@ public:
   // with a high density of stray '\r' bytes.
   // Requires _GNU_SOURCE, which is defined PUBLIC on the runtime_net target.
   const char* FindCRLF() const {
-    const std::size_t n = ReadableBytes();
+    const std::size_t n = readable_bytes();
     if (n < 2) return nullptr;
     return static_cast<const char*>(::memmem(Peek(), n, "\r\n", 2));
   }
 
   const char* FindCRLFCRLF() const {
-    const std::size_t n = ReadableBytes();
+    const std::size_t n = readable_bytes();
     if (n < 4) return nullptr;
     return static_cast<const char*>(::memmem(Peek(), n, "\r\n\r\n", 4));
   }

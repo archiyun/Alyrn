@@ -24,7 +24,7 @@ public:
   Connector(EventLoop* loop, const InetAddress& server_addr);
   ~Connector();
 
-  void SetConnectionCallback(NewConnectionCallback cb) {
+  void set_connection_callback(NewConnectionCallback cb) {
     new_connection_cb_ = std::move(cb);
   }
 

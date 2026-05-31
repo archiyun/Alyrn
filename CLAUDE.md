@@ -88,7 +88,7 @@ runtime_gateway   (src/gateway/, include/runtime/gateway/)
 
 - `EventLoop` 持有 `EpollPoller` + `Channel` 列表 + `TimerQueue`，是单线程驱动的核心
 - `TcpServer` 跑在 Main Loop 只负责 accept；`EventLoopThreadPool` 管理 Sub Loop 线程池，新连接 round-robin 分配
-- **IO 线程间无共享数据**：每条 `TcpConnection` 的状态通过 `conn->SetContext(std::any)` 绑定，由所属 Sub Loop 独享
+- **IO 线程间无共享数据**：每条 `TcpConnection` 的状态通过 `conn->set_context(std::any)` 绑定，由所属 Sub Loop 独享
 - `Buffer` 实现可在编译期切换（`muduo` / `ringbuf` / `nginx`，见 `RUNTIME_BUFFER_IMPL`）
 - 客户端侧：`Connector` + `TcpClient`
 - 定时器双实现：`TimerQueue`（基于 timerfd）+ `timer_rbtree`（自研红黑树，配 `rbtree_validator`）
@@ -103,9 +103,9 @@ runtime_gateway   (src/gateway/, include/runtime/gateway/)
 - `Add()` 按 `/` 分段，`:` 前缀走 `param_child`，其余走 `static_child`
 - `MatchNode()` DFS，**静态分支优先于参数分支**（`/users/me` 不会被 `/users/:id` 错误命中）；参数分支匹配失败时回溯，擦除已写入 `result.params` 的值
 - `Match()` 返回 `RouteMatch`：`.handler != null` → 命中；`.path_matched == true` 且 handler 为空 → 405；两者均为默认值 → 404
-- `HttpServer::OnMessage()` 调用 handler 前 `request.SetPathParams(std::move(match.params))`，handler 内通过 `req.PathParam("key")` 取值
+- `HttpServer::OnMessage()` 调用 handler 前 `request.set_path_params(std::move(match.params))`，handler 内通过 `req.path_param("key")` 取值
 
-**HTTP/2**：`RUNTIME_ENABLE_HTTP2` 打开时编译 `src/http/http2_session.cpp`（基于 libnghttp2）。
+**HTTP/2**：`RUNTIME_ENABLE_HTTP2` 打开时编译 `src/http/http2_session.cc`（基于 libnghttp2）。
 
 **内置端点**：`metrics_handler`（Prometheus 风格指标）、`debug_handler`。
 

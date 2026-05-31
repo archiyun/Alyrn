@@ -62,8 +62,8 @@ public:
     return true;
   }
 
-  double Rate() const noexcept { return rate_; }
-  double Burst() const noexcept { return burst_; }
+  double rate() const noexcept { return rate_; }
+  double burst() const noexcept { return burst_; }
 
 private:
   static constexpr uint64_t kScale = 1'000'000;  // 精度换算系数

@@ -39,7 +39,7 @@ Makefile
 *.log.*
 perf.data
 perf.data.old
-src/net/buffer_ringbuf.cpp
+src/net/buffer_ringbuf.cc
 
 # Core dumps and crash artifacts
 core

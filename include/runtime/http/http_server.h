@@ -26,22 +26,22 @@ class HttpServer : public runtime::base::NonCopyable {
              std::string name);
 
 #ifdef RUNTIME_ENABLE_SSL
-  void SetTls(runtime::net::SslContext* ctx);
+  void set_tls(runtime::net::SslContext* ctx);
 #endif
 
-  void SetThreadNum(int num_threads);
+  void set_thread_num(int num_threads);
 
   // Delegates to the underlying TcpServer. Must be called before Start().
-  void SetEdgeTriggered(bool et);
+  void set_edge_triggered(bool et);
 
-  void SetScheduler(std::shared_ptr<runtime::task::Scheduler> sched);
+  void set_scheduler(std::shared_ptr<runtime::task::Scheduler> sched);
 
   // Registers GET /metrics → JSON snapshot of scheduler counters.
-  // Must be called after SetScheduler().
+  // Must be called after set_scheduler().
   void RegisterMetricsRoute();
 
   // Registers GET /debug/tasks → JSON array of recent completed tasks.
-  // Must be called after SetScheduler().
+  // Must be called after set_scheduler().
   void RegisterDebugTasksRoute();
 
   // Registers routes by forwarding to Router. The default-argument

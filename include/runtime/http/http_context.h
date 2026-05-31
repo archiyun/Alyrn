@@ -38,7 +38,7 @@ public:
   bool GotAll() const { return state_ == ParseState::GotAll; }
   void Reset();
 
-  const HttpRequest& GetRequest() const { return request_; }
+  const HttpRequest& request() const { return request_; }
 
   // Moves the parsed request out of the context. After this call, the
   // context's internal HttpRequest is in a moved-from state; the caller

@@ -49,7 +49,7 @@ public:
 
   // O(1)
   bool  Empty() const { return size_ == 0; }
-  std::size_t Size() const { return size_; }
+  std::size_t size() const { return size_; }
 
   // O(log n) amortized; no-op if elem is already in the tree.
   void  Insert(T* elem);
@@ -58,7 +58,7 @@ public:
   bool  Erase(T* elem);
 
   // O(1) — cached pointer, updated on Insert and Erase.
-  T*    Earliest() const;
+  T*    earliest() const;
 
   // O(k log n) where k is the number of extracted elements.
   // Extracts (and erases) the earliest elements satisfying pred in key order.
@@ -353,7 +353,7 @@ bool IRBT_TYPE::Erase(T* elem) {
 
 
 IRBT_TMPL
-T* IRBT_TYPE::Earliest() const {
+T* IRBT_TYPE::earliest() const {
   return min_ == kSentinel ? nullptr : ElemOf(min_);
 }
 
@@ -362,7 +362,7 @@ template<typename Pred>
 std::vector<T*> IRBT_TYPE::PopWhile(Pred pred) {
   std::vector<T*> result;
   while (!Empty()) {
-    T* elem = Earliest();
+    T* elem = earliest();
     if (!pred(elem)) break;
     result.push_back(elem);
     Erase(elem);

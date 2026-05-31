@@ -27,7 +27,7 @@ class WorkQueue {
   // Non-blocking pop. Returns nullptr if empty.
   std::shared_ptr<Task> TryPop();
 
-  std::size_t Size() const;
+  std::size_t size() const;
 
   // Wakes all blocked Wait() calls so workers can drain and exit.
   void Shutdown();

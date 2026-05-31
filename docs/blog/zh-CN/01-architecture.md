@@ -307,9 +307,9 @@ nginx 不需要这个机制，因为 `ngx_connection_t` 是从池里分配的—
 
 讲点真实的——架构图画起来漂亮，写代码时被以下几个问题折磨过：
 
-### 5.1 Channel 的 Index/SetIndex 暴露问题
+### 5.1 Channel 的 Index/set_index 暴露问题
 
-`Channel` 有一个 `index_` 字段，记录它在 Poller 里的注册状态（新/已添加/已删除）。我最初把 `Index()`/`SetIndex()` 设为 public——结果 HTTP 层的代码就有人写了 `channel_->Index()` 来"查状态"，但语义完全错了。
+`Channel` 有一个 `index_` 字段，记录它在 Poller 里的注册状态（新/已添加/已删除）。我最初把 `index()`/`set_index()` 设为 public——结果 HTTP 层的代码就有人写了 `channel_->index()` 来"查状态"，但语义完全错了。
 
 正确做法是把它 `private`，然后 `friend` 给三个具体 Poller 实现：
 
@@ -322,7 +322,7 @@ private:
   friend class SelectPoller;
 
   int Index() const { return index_; }
-  void SetIndex(int idx) { index_ = idx; }
+  void set_index(int idx) { index_ = idx; }
 };
 ```
 
@@ -337,8 +337,8 @@ if (!conn->Send(payload)) {
   metrics_.dropped++;          // 连接断了，丢的
 }
 
-conn->SetHighWaterMark(64 * 1024 * 1024);
-conn->SetHighWaterMarkCallback([](auto& c, size_t n){
+conn->set_high_water_mark(64 * 1024 * 1024);
+conn->set_high_water_mark_callback([](auto& c, size_t n){
   LOG_WARN() << "slow downstream, buffered=" << n;
 });
 ```
@@ -449,7 +449,7 @@ p99 延迟 1.76s 不算好看，但这是 2 vCPU 的物理瓶颈——10K 连接
 - 两侧都 HTTP/1.1，关闭 access log
 - wrk: 4 线程，扫并发 50 / 200 / 1000，每组 15s
 
-代码和 nginx 配置都在 [`examples/demo_bench_gateway.cpp`](../../../examples/demo_bench_gateway.cpp)，可复现。
+代码和 nginx 配置都在 [`examples/demo_bench_gateway.cc`](../../../examples/demo_bench_gateway.cc)，可复现。
 
 | 并发 | 本项目 RPS | nginx RPS | 本项目 p99 | nginx p99 | 本项目 / nginx |
 |---|---|---|---|---|---|

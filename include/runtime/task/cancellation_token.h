@@ -25,7 +25,7 @@ public:
   CancellationSource() : flag_(std::make_shared<std::atomic<bool>>(false)) {}
   void Cancel() { flag_->store(true, std::memory_order_relaxed); }
   bool IsCancelled() const { return flag_->load(std::memory_order_relaxed); }
-  CancellationToken Token() const { return CancellationToken(flag_); }
+  CancellationToken token() const { return CancellationToken(flag_); }
 
 private:
   std::shared_ptr<std::atomic<bool>> flag_;

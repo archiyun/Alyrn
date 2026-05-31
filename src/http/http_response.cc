@@ -1,0 +1,69 @@
+// Copyright (c) 2026 Arsenova
+// SPDX-License-Identifier: MIT
+#include "runtime/http/http_response.h"
+
+#include "header_utils.h"
+
+namespace runtime::http {
+
+HttpResponse::HttpResponse(bool close_connection)
+    : close_connection_(close_connection) {}
+
+void HttpResponse::set_status_code(StatusCode code) { status_code_ = code; }
+
+void HttpResponse::set_body(std::string body) { body_ = std::move(body); }
+
+void HttpResponse::set_content_type(std::string_view content_type) {
+  headers_["Content-Type"] = std::string(content_type);
+}
+
+void HttpResponse::AddHeader(std::string_view key, std::string_view value) {
+  // Reject framing / hop-by-hop / pseudo headers — the HTTP layer owns these.
+  if (detail::IsRestrictedResponseHeader(detail::LowerCopy(key))) return;
+  headers_.insert_or_assign(std::string(key), std::string(value));
+}
+
+void HttpResponse::set_close_connection(bool close) { close_connection_ = close; }
+
+bool HttpResponse::close_connection() const { return close_connection_; }
+
+std::string HttpResponse::ToString() const {
+  std::string out;
+  out.reserve(256 + body_.size());
+
+  out += "HTTP/1.1 ";
+  out += std::to_string(static_cast<int>(status_code_));
+  out += ' ';
+  out += StatusMessage(status_code_);
+  out += "\r\n";
+
+  out += "Content-Length: ";
+  out += std::to_string(body_.size());
+  out += "\r\n";
+
+  out += close_connection_ ? "Connection: close\r\n"
+                           : "Connection: keep-alive\r\n";
+
+  out += "Date: ";
+  out += detail::FormatHttpDateNow();
+  out += "\r\n";
+
+  out += "Server: ";
+  out += detail::kServerSignature;
+  out += "\r\n";
+
+  for (const auto &[key, value] : headers_) {
+    out += key;
+    out += ": ";
+    out += value;
+    out += "\r\n";
+  }
+
+  out += "\r\n";
+
+  out += body_;
+
+  return out;
+}
+
+}  // namespace runtime::http

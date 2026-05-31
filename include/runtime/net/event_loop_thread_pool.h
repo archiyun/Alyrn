@@ -28,7 +28,7 @@ public:
   // unsynchronized.
   EventLoop* GetNextLoop();
 
-  bool Started() const { return started_; }
+  bool started() const { return started_; }
 private:
   EventLoop* main_loop_;
   bool started_;

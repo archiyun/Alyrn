@@ -52,8 +52,8 @@ public:
 
   ~TcpConnection();
 
-  EventLoop* GetLoop() const { return loop_; }
-  const std::string& Name() const { return name_; }
+  EventLoop* loop() const { return loop_; }
+  const std::string& name() const { return name_; }
 
   // Diagnostic counters for upstream (proxy-side) TcpConnection lifetimes.
   // Bumped only when name starts with "proxy->". A request count that far
@@ -61,15 +61,15 @@ public:
   // pool is actually reusing sockets (vs. silently rebuilding every time).
   static uint64_t UpstreamCtorCount();
   static uint64_t UpstreamDtorCount();
-  const InetAddress& LocalAddress() const { return local_addr_; }
-  const InetAddress& PeerAddress() const { return peer_addr_; }
+  const InetAddress& local_address() const { return local_addr_; }
+  const InetAddress& peer_address() const { return peer_addr_; }
   bool Connected() const { return state_ == TCPState::kConnected; }
 
   // Sends a message on the connection. The actual write may happen
   // immediately or later in the owning loop thread.
   // Returns true if accepted (sent or queued for the loop thread); false if
   // dropped because the connection is no longer in the Connected state.
-  // Callers that need flow control should also wire SetHighWaterMarkCallback
+  // Callers that need flow control should also wire set_high_water_mark_callback
   // and watch for the buffer-growth signal.
   bool Send(const std::string& message);
   bool Send(std::string_view message);
@@ -78,46 +78,46 @@ public:
   // Initiates a graceful shutdown of the write side.
   void Shutdown();
 
-  void SetConnectionCallback(ConnectionCallback cb) {
+  void set_connection_callback(ConnectionCallback cb) {
     connection_callback_ = std::move(cb);
   }
 
-  void SetMessageCallback(MessageCallback cb) {
+  void set_message_callback(MessageCallback cb) {
     message_callback_ = std::move(cb);
   }
 
-  void SetCloseCallback(CloseCallback cb) {
+  void set_close_callback(CloseCallback cb) {
     close_callback_ = std::move(cb);
   }
 
-  void SetWriteCompleteCallback(WriteCompleteCallback cb) {
+  void set_write_complete_callback(WriteCompleteCallback cb) {
     write_complete_callback_ = std::move(cb);
   }
 
   // Configures the backpressure threshold and the callback fired when the
   // output buffer crosses it. Both should be set before the first Send().
-  void SetHighWaterMarkCallback(HighWaterMarkCallback cb) {
+  void set_high_water_mark_callback(HighWaterMarkCallback cb) {
     high_water_mark_callback_ = std::move(cb);
   }
 
   // Threshold in bytes. The callback is only meaningful when this value is
   // less than the maximum possible buffer growth.
-  void SetHighWaterMark(std::size_t bytes) { high_water_mark_ = bytes; }
-  std::size_t HighWaterMark() const { return high_water_mark_; }
-  std::size_t OutputBufferReadableBytes() const {
-    return output_buffer_.ReadableBytes();
+  void set_high_water_mark(std::size_t bytes) { high_water_mark_ = bytes; }
+  std::size_t high_water_mark() const { return high_water_mark_; }
+  std::size_t output_buffer_readable_bytes() const {
+    return output_buffer_.readable_bytes();
   }
 
   // Associates arbitrary upper-layer context with the connection.
-  void SetContext(std::any ctx) { context_ = std::move(ctx); }
-  std::any& GetContext() { return context_; }
-  const std::any& GetContext() const { return context_; }
+  void set_context(std::any ctx) { context_ = std::move(ctx); }
+  std::any& context() { return context_; }
+  const std::any& context() const { return context_; }
 
-  void SetTcpNoDelay(bool on);
+  void set_tcp_no_delay(bool on);
 
   // Must be called before ConnectEstablished() so the channel is registered
   // with EPOLLET from the first epoll_ctl ADD call.
-  void SetEdgeTriggered(bool et);
+  void set_edge_triggered(bool et);
 
   void ConnectEstablished();
   void ConnectDestroyed();
@@ -126,12 +126,12 @@ public:
   // Attaches an SSL object and arms the TLS handshake.
   // Must be called before ConnectEstablished().
   // Takes ownership of ssl.
-  void SetSsl(SSL* ssl);
+  void set_ssl(SSL* ssl);
 
   // Invoked once after the TLS handshake completes.
   // Receives the negotiated ALPN protocol string ("h2" or "http/1.1")
   using HandshakeCallback = std::function<void(const std::string& protocol)>;
-  void SetHandshakeCallback(HandshakeCallback cb) {
+  void set_handshake_callback(HandshakeCallback cb) {
     handshake_cb_ = std::move(cb);
   }
 #endif
@@ -143,7 +143,7 @@ private:
     kDisconnecting,
   };
 
-  void SetState(TCPState state) { state_ = state; }
+  void set_state(TCPState state) { state_ = state; }
 
   void HandleRead(runtime::time::Timestamp receive_time);
   void HandleWrite();

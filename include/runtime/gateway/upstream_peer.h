@@ -57,9 +57,9 @@ public:
     host_port_.append(config_.host).append(":").append(std::to_string(config_.port));
   }
 
-  const UpstreamPeerConfig& Config() const { return config_; }
-  const std::string& HostPort() const { return host_port_; }
-  UpstreamPeerState& State() { return state_; }
+  const UpstreamPeerConfig& config() const { return config_; }
+  const std::string& host_port() const { return host_port_; }
+  UpstreamPeerState& state() { return state_; }
 
   // Returns false if: (1) marked down by health checker, or (2) fail count has reached
   // max_fails and the fail_timeout cooldown has not yet elapsed.
@@ -71,11 +71,11 @@ public:
     return (now_ms - checked) >= static_cast<uint64_t>(config_.fail_timeout.count());
   }
 
-  int Weight() const { return config_.weight; }
-  int EffectiveWeight() const {
+  int weight() const { return config_.weight; }
+  int effective_weight() const {
     return state_.effective_weight.load(std::memory_order_relaxed);
   }
-  int ActiveRequest() const {
+  int active_request() const {
     return state_.active.load(std::memory_order_relaxed);
   }
 

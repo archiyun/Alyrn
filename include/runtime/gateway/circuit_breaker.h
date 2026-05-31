@@ -51,19 +51,19 @@ public:
 
   // Returns the current state. Intended for metrics export only;
   // do not use the result to make routing decisions — call AllowRequest().
-  CircuitBreakerState State() const noexcept {
+  CircuitBreakerState state() const noexcept {
     return static_cast<CircuitBreakerState>(
       state_.load(std::memory_order_acquire)
     );
   }
 
   // Cumulative consecutive failure count. Exposed for metrics.
-  uint64_t FailureCount() const noexcept {
+  uint64_t failure_count() const noexcept {
     return failure_count_.load(std::memory_order_relaxed);
   }
 
   // Total number of state transitions since construction. Exposed for metrics.
-  uint64_t TransitionCount() const noexcept {
+  uint64_t transition_count() const noexcept {
     return transition_count_.load(std::memory_order_relaxed);
   }
 

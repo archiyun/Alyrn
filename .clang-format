@@ -1,5 +1,9 @@
 # Google C++ Style —— 项目化版本
-# 唯一改动：列宽从 Google 默认的 80 放宽到 100（现有代码实际按 ~100 列编写，
-# 用 80 会把大量文件重排）。其余沿用 Google：2 空格缩进、不用 Tab、左花括号不换行等。
+# 改动一：列宽从 Google 默认的 80 放宽到 100（现有代码实际按 ~100 列编写，
+#         用 80 会把大量文件重排）。
+# 改动二：AccessModifierOffset 从 Google 默认的 -1 改为 -2，让 public/private/
+#         protected 顶到第 0 列（默认会缩进 1 格，写成 " public:"）。
+# 其余沿用 Google：2 空格缩进、不用 Tab、左花括号不换行等。
 BasedOnStyle: Google
 ColumnLimit: 100
+AccessModifierOffset: -2

@@ -3,7 +3,7 @@
 #   www/             : 静态资源占位（index.html 描述可用路由）
 
 add_executable(demo_http_server
-    demo_http_server.cpp
+    demo_http_server.cc
 )
 target_link_libraries(demo_http_server
     PRIVATE

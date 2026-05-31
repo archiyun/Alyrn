@@ -17,22 +17,22 @@ namespace runtime::net {
 int CreateNonBlockingSocket();
 
 // Sets or clears O_NONBLOCK on the given fd.
-bool SetNonBlocking(int fd);
+bool set_non_blocking(int fd);
 
 // Sets or clears FD_CLOEXEC on the given fd.
-bool SetCloseOnExec(int fd);
+bool set_close_on_exec(int fd);
 
 // Enables or disables SO_REUSEADDR on the given socket.
-bool SetReuseAddr(int fd, bool on = true);
+bool set_reuse_addr(int fd, bool on = true);
 
 // Enables or disables SO_REUSEPORT on the given socket.
-bool SetReusePort(int fd, bool on = true);
+bool set_reuse_port(int fd, bool on = true);
 
 // Enables or disables TCP_NODELAY on the given socket.
-bool SetTcpNonDelay(int fd, bool on = true);
+bool set_tcp_non_delay(int fd, bool on = true);
 
 // Enables or disables SO_KEEPALIVE on the given socket.
-bool SetKeepAlive(int fd, bool on = true);
+bool set_keep_alive(int fd, bool on = true);
 
 // Installs process-wide handling to ignore SIGPIPE.
 //

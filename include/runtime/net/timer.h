@@ -29,9 +29,9 @@ public:
         sequence_(next_sequence_.fetch_add(1, std::memory_order_relaxed)) {}
 
   void Run() const { if(timer_callback_) timer_callback_(); }
-  runtime::time::Timestamp Expiration() const { return expiration_; }
-  bool Repeat() const { return repeat_; }
-  int64_t Sequence() const { return sequence_; }
+  runtime::time::Timestamp expiration() const { return expiration_; }
+  bool repeat() const { return repeat_; }
+  int64_t sequence() const { return sequence_; }
   void Restart(runtime::time::Timestamp now) {
     expiration_ = runtime::time::AddTime(now, interval_sec_);
   }

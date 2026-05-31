@@ -36,13 +36,13 @@ public:
 
   TcpConnectionPtr connection() const { return connection_; }
 
-  void SetConnectionCallback(ConnectionCallback cb) {
+  void set_connection_callback(ConnectionCallback cb) {
     connection_callback_ = std::move(cb);
   }
-  void SetMessageCallback(MessageCallback cb) {
+  void set_message_callback(MessageCallback cb) {
     message_callback_ = std::move(cb);
   }
-  void SetWriteCompleteCallback(WriteCompleteCallback cb) {
+  void set_write_complete_callback(WriteCompleteCallback cb) {
     write_complete_callback_ = std::move(cb);
   }
 

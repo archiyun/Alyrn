@@ -21,7 +21,7 @@ class Counter {
 public:
   void Inc() { val_.fetch_add(1, std::memory_order_relaxed); }
   void Add(std::uint64_t n) { val_.fetch_add(n, std::memory_order_relaxed); }
-  std::uint64_t Value() const { return val_.load(std::memory_order_relaxed); }
+  std::uint64_t value() const { return val_.load(std::memory_order_relaxed); }
 
 private:
   std::atomic<std::uint64_t> val_{0};
@@ -34,7 +34,7 @@ public:
   void Inc() { val_.fetch_add(1, std::memory_order_relaxed); }
   void Dec() { val_.fetch_sub(1, std::memory_order_relaxed); }
   void Add(std::int64_t n) { val_.fetch_add(n, std::memory_order_relaxed); }
-  std::int64_t Value() const { return val_.load(std::memory_order_relaxed); }
+  std::int64_t value() const { return val_.load(std::memory_order_relaxed); }
 
 private:
   std::atomic<std::int64_t> val_{0};
@@ -91,14 +91,14 @@ inline void WriteCounter(std::ostream& os, std::string_view name,
                          std::string_view help, const Counter& c) {
   os << "# HELP " << name << ' ' << help << '\n';
   os << "# TYPE " << name << " counter\n";
-  os << name << ' ' << c.Value() << '\n';
+  os << name << ' ' << c.value() << '\n';
 }
 
 inline void WriteGauge(std::ostream& os, std::string_view name,
                        std::string_view help, const Gauge& g) {
   os << "# HELP " << name << ' ' << help << '\n';
   os << "# TYPE " << name << " gauge\n";
-  os << name << ' ' << g.Value() << '\n';
+  os << name << ' ' << g.value() << '\n';
 }
 
 }  // namespace runtime::metrics

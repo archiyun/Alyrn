@@ -37,7 +37,7 @@ public:
   // Requests the loop to exit. The loop stops after the current iteration.
   void Quit();
 
-  runtime::time::Timestamp PollReturnTime() const { return poll_return_time_; }
+  runtime::time::Timestamp poll_return_time() const { return poll_return_time_; }
 
   // Runs cb immediately if called from the owning loop thread; otherwise,
   // schedules it to run in the loop thread. Thread-safe.

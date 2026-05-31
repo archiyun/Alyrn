@@ -189,13 +189,13 @@ int main() {
     runtime::net::EventLoop loop;
     runtime::gateway::GatewayServer gw(&loop, runtime::net::InetAddress(8080),
                                        "gw", reg);
-    gw.SetThreadNum(4);
+    gw.set_thread_num(4);
 
     // Direct route
     gw.Get("/healthz", [](const runtime::http::HttpRequest&,
                           runtime::http::HttpResponse& resp) {
-        resp.SetContentType("application/json");
-        resp.SetBody("{\"status\":\"ok\"}");
+        resp.set_content_type("application/json");
+        resp.set_body("{\"status\":\"ok\"}");
     });
 
     // Proxy routes
@@ -220,13 +220,13 @@ int main() {
     runtime::net::EventLoop loop;
     runtime::http::HttpServer server(&loop,
         runtime::net::InetAddress(8080, "0.0.0.0"), "my-server");
-    server.SetThreadNum(4);
+    server.set_thread_num(4);
 
     server.Get("/api/users/:id",
         [](const runtime::http::HttpRequest& req,
            runtime::http::HttpResponse& resp) {
-            resp.SetContentType("application/json; charset=utf-8");
-            resp.SetBody("{\"id\":\"" + std::string(req.PathParam("id")) + "\"}");
+            resp.set_content_type("application/json; charset=utf-8");
+            resp.set_body("{\"id\":\"" + std::string(req.path_param("id")) + "\"}");
         });
 
     server.Start();

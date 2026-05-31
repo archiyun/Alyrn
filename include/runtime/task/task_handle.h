@@ -24,8 +24,8 @@ public:
   TaskHandle(TaskHandle&&) = default;
   TaskHandle&operator=(TaskHandle&&) = default;
 
-  uint64_t Id() const { return id_; }
-  TaskState State() const;
+  uint64_t id() const { return id_; }
+  TaskState state() const;
   bool Valid() const { return task_ != nullptr; }
 
   void Wait();

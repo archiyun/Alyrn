@@ -26,7 +26,7 @@ class TaskHistory {
   // Thread-safe: safe to call from any thread.
   std::vector<TaskRecord> Snapshot() const;
 
-  std::size_t Capacity() const { return capacity_; }
+  std::size_t capacity() const { return capacity_; }
 
  private:
   std::size_t capacity_;

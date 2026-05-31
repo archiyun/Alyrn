@@ -27,21 +27,21 @@
 
 namespace runtime::gateway {
 
-// GateServer 封装 TcpServer, 拦截 proxy 路由走异步转发
-// 直接路由走同步 handler
+// GatewayServer wraps TcpServer and dispatches incoming HTTP requests to either
+// synchronous direct handlers or asynchronous upstream proxy forwarding.
 class GatewayServer : public runtime::base::NonCopyable {
 public:
   using Handler = runtime::http::Handler;
   using TcpConnectionPtr = runtime::net::TcpConnection::TcpConnectionPtr;
 
-  // 统一直接路由和代理路由
-  enum class RouteType {
+  // Route category used by the unified routing table.
+  enum class RouteType : uint8_t {
     Direct,
     Proxy,
   };
 
-  // 匹配类型
-  enum class MatchType {
+  // Path matching mode.
+  enum class MatchType : uint8_t {
     Exact,
     Prefix,
   };
@@ -54,55 +54,57 @@ public:
 
     std::string path;
 
-    Handler handler;  // Direct
-    std::string upstream_name;  // Proxy
-    std::unique_ptr<LoadBalancer> lb; // Proxy
+    Handler handler;  // Direct route handler.
+    std::string upstream_name;  // Proxy upstream name.
+    std::unique_ptr<LoadBalancer> lb;  // Proxy load balancer.
 
-    FallbackConfig fallback; // fallback
-    bool circuit_breaker_enabled{false}; // circuit_break
+    FallbackConfig fallback;
+    bool circuit_breaker_enabled{false};
   };
 
-  GatewayServer(runtime::net::EventLoop* loop, 
-                const runtime::net::InetAddress& addr, 
-                std::string name, 
+  GatewayServer(runtime::net::EventLoop* loop,
+                const runtime::net::InetAddress& addr,
+                std::string name,
                 UpstreamRegistry& registry);
-  void SetThreadNum(int num_threads);
+  void set_thread_num(int num_threads);
 
-  // 注册直接处理路由 (同步 Handler)
+  // Register synchronous direct routes.
   void Get(std::string_view path, Handler handler);
   void Post(std::string_view path, Handler handler);
 
   void AddProxyRoute(std::string_view path,
                      std::string_view upstream_name,
                      std::string_view algo = "round_robin");
-  // NEW: 带降级和熔断配置
+  // Register a proxy route with fallback and optional circuit breaker support.
   void AddProxyRoute(std::string_view path,
                      std::string_view upstream_name,
                      FallbackConfig fallback,
                      bool circuit_breaker_enabled = false,
                      std::string_view algo = "round_robin");
   void EnableHealthCheck(HealthCheckConfig cfg = {});
-  // NEW: 限流配置
+
+  // Enable request rate limiting.
   void EnableGlobalRateLimit(double rate, double burst);
   void EnablePerIPRateLimit(double rate, double burst);
-  void SetPoolConfig(PoolConfig cfg) { pool_cfg_ = cfg; }
+  void set_pool_config(PoolConfig cfg) { pool_cfg_ = cfg; }
 
-  // 注册一条 GET 直接路由, 返回当前 GatewayMetrics 的 Prometheus 文本.
-  // 调用方应在 Start() 之前调用. path 默认 "/metrics".
+  // Register a GET direct route that renders GatewayMetrics in Prometheus text
+  // format. Call before Start(); the default path is "/metrics".
   void EnableMetricsEndpoint(std::string_view path = "/metrics");
 
-  // 暴露指标对象, 调用方可读可写 (用于外部埋点 / 测试 / 自定义导出).
-  runtime::metrics::GatewayMetrics&       Metrics()       { return metrics_; }
-  const runtime::metrics::GatewayMetrics& Metrics() const { return metrics_; }
+  // Expose metrics for external instrumentation, tests, and custom exporters.
+  runtime::metrics::GatewayMetrics&       metrics()       { return metrics_; }
+  const runtime::metrics::GatewayMetrics& metrics() const { return metrics_; }
 
   const Route* MatchRoute(std::string_view path) const;
   void Start();
 private:
 
-  // 每个 TCP 连接独享的上下文，存在 conn->context_ (std::any) 里
+  // Per-connection context stored in TcpConnection::context_.
   struct ConnCtx {
-    runtime::http::HttpContext    http_ctx;  // 增量 HTTP 解析状态机
-    std::shared_ptr<UpstreamRequest> upstream_req;  // 当前 upstream 请求，直接路由时为 nullptr
+    runtime::http::HttpContext http_ctx;  // Incremental HTTP parser state.
+    // Current upstream request; null while handling direct routes.
+    std::shared_ptr<UpstreamRequest> upstream_req;
   };
 
 
@@ -121,15 +123,16 @@ private:
   std::vector<Route> routes_;
   std::unique_ptr<HealthChecker> health_checker_;
   PoolConfig pool_cfg_;
-  // pools_ 在 sub-loop 之间共享：每条 sub-loop 都会调 GetOrCreatePool。
-  // 仅 map 结构本身需要保护，value (UpstreamConnPool) 的访问是 per-loop 单线程的。
-  // unordered_map 的 reference 在插入时不会失效，所以拿到 reference 后即可释放锁。
+  // Shared across sub-loops: each sub-loop calls GetOrCreatePool().
+  // Only the map structure requires locking; each UpstreamConnPool value is
+  // accessed by its owning loop thread. unordered_map references remain valid
+  // across insertions, so the lock can be released after obtaining the pool.
   mutable std::mutex pools_mu_;
   std::unordered_map<runtime::net::EventLoop*, UpstreamConnPool> pools_;
-  std::unique_ptr<RateLimiter> rate_limiter_;  // 限流器
-  std::string rate_limit_response_429_; // 预渲染 429 响应
-  RateLimiterConfig rate_limiter_cfg_;  // accumulated config, committed in Enable* calls
-  runtime::metrics::GatewayMetrics metrics_;  // 运行时观测点, header-only 原子操作
+  std::unique_ptr<RateLimiter> rate_limiter_;
+  std::string rate_limit_response_429_;  // Pre-rendered 429 response.
+  RateLimiterConfig rate_limiter_cfg_;  // Accumulated by Enable* calls.
+  runtime::metrics::GatewayMetrics metrics_;  // Runtime counters and gauges.
 };
 
-} // namespace runtime::gateway
+}  // namespace runtime::gateway

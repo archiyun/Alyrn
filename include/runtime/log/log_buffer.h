@@ -21,11 +21,11 @@ public:
     cur_ += len;
     return true;
   }
-  const char *Data() const { return data_; }
+  const char *data() const { return data_; }
 
-  std::size_t Capacity() const { return SIZE; }
+  std::size_t capacity() const { return SIZE; }
 
-  std::size_t Size() const { return cur_; }
+  std::size_t size() const { return cur_; }
 
   std::size_t Avail() const { return SIZE - cur_; }
 

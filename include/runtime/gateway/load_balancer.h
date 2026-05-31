@@ -6,7 +6,7 @@
 // to pick one UpstreamPeer out of the Upstream's peer list.
 //
 // Design notes:
-//  * No allocation in Select() — every strategy filters Upstream::Peers()
+//  * No allocation in Select() — every strategy filters Upstream::peers()
 //    inline via UpstreamPeer::Available() to avoid materializing a snapshot.
 //  * Per-peer atomic state (effective_weight, active, fails, ...) is read
 //    relaxed; load balancing tolerates slightly stale values.
@@ -59,7 +59,7 @@ public:
 class RoundRobinLB : public LoadBalancer {
 public:
   std::shared_ptr<UpstreamPeer> Select(Upstream& upstream,  const RequestContext ctx = {}) override {
-    const auto& peers = upstream.Peers();
+    const auto& peers = upstream.peers();
     std::size_t avail = 0;
     for (const auto& p : peers) {
       if (p->Available(0)) {
@@ -87,13 +87,13 @@ private:
 class WeightedRoundRobinLB : public LoadBalancer {
 public:
   std::shared_ptr<UpstreamPeer> Select(Upstream& upstream, const RequestContext ctx = {}) override {
-    const auto& peers = upstream.Peers();
+    const auto& peers = upstream.peers();
     std::lock_guard lk{mutex_};
 
     int total = 0;
     for (const auto& peer : peers) {
       if (!peer->Available(0)) continue;
-      total += std::max(peer->EffectiveWeight(), 0);
+      total += std::max(peer->effective_weight(), 0);
     }
     if (total <= 0) return nullptr;
 
@@ -102,7 +102,7 @@ public:
 
     for (const auto& peer : peers) {
       if (!peer->Available(0)) continue;
-      int weight = std::max(peer->EffectiveWeight(), 0);
+      int weight = std::max(peer->effective_weight(), 0);
       // peer pointers are stable after startup; using them as the key avoids
       // the cost of hashing/comparing peer name strings on every call.
       auto& cur = current_weights_[peer.get()];
@@ -127,13 +127,13 @@ private:
 class LeastConnectionLB : public LoadBalancer {
 public:
   std::shared_ptr<UpstreamPeer> Select(Upstream& upstream,  const RequestContext ctx = {}) override {
-    const auto& peers = upstream.Peers();
+    const auto& peers = upstream.peers();
     std::shared_ptr<UpstreamPeer> best;
     int min_active = std::numeric_limits<int>::max();
 
     for (const auto& peer : peers) {
       if (!peer->Available(0)) continue;
-      int active = peer->ActiveRequest();
+      int active = peer->active_request();
       if (active < min_active) {
         min_active = active;
         best = peer;
@@ -147,7 +147,7 @@ public:
 class RandomLB : public LoadBalancer {
 public:
   std::shared_ptr<UpstreamPeer> Select(Upstream& upstream,  const RequestContext ctx = {}) override {
-    const auto& peers = upstream.Peers();
+    const auto& peers = upstream.peers();
     std::size_t avail = 0;
     for (const auto& p : peers) if (p->Available(0)) ++avail;
     if (avail == 0) return nullptr;
@@ -168,11 +168,11 @@ public:
 class WeightedRandomLB : public LoadBalancer {
 public:
   std::shared_ptr<UpstreamPeer> Select(Upstream& upstream,  const RequestContext ctx = {}) override {
-    const auto& peers = upstream.Peers();
+    const auto& peers = upstream.peers();
     int total_weight = 0;
     for (const auto& peer : peers) {
       if (!peer->Available(0)) continue;
-      total_weight += std::max(peer->Weight(), 0);
+      total_weight += std::max(peer->weight(), 0);
     }
     if (total_weight <= 0) return nullptr;
 
@@ -184,7 +184,7 @@ public:
     for (const auto& peer : peers) {
       if (!peer->Available(0)) continue;
       last_available = peer;
-      r -= std::max(peer->Weight(), 0);
+      r -= std::max(peer->weight(), 0);
       if (r <= 0) return peer;
     }
     return last_available;  // Guard against arithmetic edge cases (should be unreachable).
@@ -197,7 +197,7 @@ public:
 class IPHashLB : public LoadBalancer {
 public:
   std::shared_ptr<UpstreamPeer> Select(Upstream& upstream,  const RequestContext ctx = {}) override {
-    const auto& peers = upstream.Peers();
+    const auto& peers = upstream.peers();
     std::size_t avail = 0;
     for (const auto& p : peers) if (p->Available(0)) ++avail;
     if (avail == 0) return nullptr;
@@ -246,7 +246,7 @@ public:
       hash_on_(ParseHashOn(hash_on)) {}
   std::shared_ptr<UpstreamPeer> Select(Upstream& upstream,
                                        const RequestContext ctx = {}) override {
-    const auto& peers = upstream.Peers();
+    const auto& peers = upstream.peers();
     auto fp = ComputeFingerprint(peers);
     if (fp.empty()) return nullptr;  // No peer is currently available.
 
@@ -288,9 +288,9 @@ private:
     fp.reserve(peers.size() * 32);
     for (const auto& peer : peers) {
       if (!peer->Available(0)) continue;
-      fp += peer->Config().name;
+      fp += peer->config().name;
       fp += ':';
-      fp += std::to_string(peer->Config().weight);
+      fp += std::to_string(peer->config().weight);
       fp += ';';
     }
     return fp;
@@ -307,17 +307,17 @@ private:
     int total_weight = 0;
     for (const auto& peer : peers) {
       if (!peer->Available(0)) continue;
-      total_weight += std::max(peer->Config().weight, 1);
+      total_weight += std::max(peer->config().weight, 1);
     }
     ring->nodes.reserve(total_weight * vnodes_per_unit_);
 
     for (const auto& peer : peers) {
       if (!peer->Available(0)) continue;
-      int weight = std::max(peer->Config().weight, 1);
+      int weight = std::max(peer->config().weight, 1);
       int vnode_cnt = weight * vnodes_per_unit_;
       for (int i = 0; i < vnode_cnt; i++) {
         // Virtual-node identity: "peer_name#0", "peer_name#1", ...
-        std::string vnode_key = peer->Config().name;
+        std::string vnode_key = peer->config().name;
         vnode_key += "#";
         vnode_key += std::to_string(i);
         uint32_t hash = base::MurmurHash3(vnode_key);
@@ -394,7 +394,7 @@ private:
 class P2CLB : public LoadBalancer {
 public:
   std::shared_ptr<UpstreamPeer> Select(Upstream& upstream, const RequestContext ctx = {}) override {
-    const auto& peers = upstream.Peers();
+    const auto& peers = upstream.peers();
     std::size_t avail = 0;
     for (const auto& p : peers) {
       if (p->Available(0)) ++avail;
@@ -427,11 +427,11 @@ public:
 
     // Compare active/weight in fixed-point (scale by max weight to stay integer).
     // weight==0 should not appear for an available peer, but guard with max(.,1).
-    int w1 = std::max(peer1->Weight(), 1);
-    int w2 = std::max(peer2->Weight(), 1);
+    int w1 = std::max(peer1->weight(), 1);
+    int w2 = std::max(peer2->weight(), 1);
     // load1 < load2  <=>  active1 * w2 < active2 * w1
-    int64_t load1 = static_cast<int64_t>(peer1->ActiveRequest()) * w2;
-    int64_t load2 = static_cast<int64_t>(peer2->ActiveRequest()) * w1;
+    int64_t load1 = static_cast<int64_t>(peer1->active_request()) * w2;
+    int64_t load2 = static_cast<int64_t>(peer2->active_request()) * w1;
     return load1 <= load2 ? peer1 : peer2;
   }
 };

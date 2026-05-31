@@ -62,8 +62,8 @@ public:
   // Returned data memory is allocated from the arena itself.
   void* RegisterCleanup(void (*handler)(void*), std::size_t data_size);
 
-  std::size_t ChunkCount() const noexcept;
-  std::size_t LargeCount() const noexcept;
+  std::size_t chunk_count() const noexcept;
+  std::size_t large_count() const noexcept;
   std::size_t ByteUsed()   const noexcept;
 
 private:

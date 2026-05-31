@@ -51,7 +51,7 @@ struct Route {
 };
 ```
 
-`gateway_server.cpp`中 新增一个 `RenderFallback` 用于封装 "优先用自定义降级, 否则回退到通用错误" 的逻辑.
+`gateway_server.cc`中 新增一个 `RenderFallback` 用于封装 "优先用自定义降级, 否则回退到通用错误" 的逻辑.
 
 
 ```cpp
@@ -66,10 +66,10 @@ std::string GatewayServer::RenderFallback(const Route& route,
 
 如果采用 MakeError 再转字符串会额外产生拷贝， 采用自定义降级配置可以优化性能。
 
-`gateway_server.cpp` 中的 `OnMessgae` 代理处理块
+`gateway_server.cc` 中的 `OnMessgae` 代理处理块
 如果上游集群不存在，或者负载均衡没选出有效的上游节点， 那么统一走降级处理。
 ```cpp
-// gateway_server.cpp OnMessage ProxtPass 分支
+// gateway_server.cc OnMessage ProxtPass 分支
 if (route->type == RouteType::Proxy) {
   auto upstream = registry_.Find(route->upstream_name);
   if (!upstream) {

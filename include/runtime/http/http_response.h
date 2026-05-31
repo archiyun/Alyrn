@@ -18,20 +18,20 @@ class HttpResponse {
   // connection after sending the response.
   explicit HttpResponse(bool close_connection);
 
-  void SetStatusCode(StatusCode code);
-  void SetBody(std::string body);
-  void SetContentType(std::string_view content_type);
+  void set_status_code(StatusCode code);
+  void set_body(std::string body);
+  void set_content_type(std::string_view content_type);
   void AddHeader(std::string_view key, std::string_view value);
-  void SetCloseConnection(bool close);
+  void set_close_connection(bool close);
 
-  bool GetCloseConnection() const;
+  bool close_connection() const;
 
   // Accessors used by Http2Session to build HTTP/2 HEADERS frames directly,
   // bypassing the HTTP/1.1 wire format produced by ToString().
-  StatusCode GetStatusCode() const { return status_code_; }
-  const std::string& GetBody() const { return body_; }
-  const std::unordered_map<std::string, std::string>& GetHeaders() const { return headers_; }
-  std::string GetContentType() const {
+  StatusCode status_code() const { return status_code_; }
+  const std::string& body() const { return body_; }
+  const std::unordered_map<std::string, std::string>& headers() const { return headers_; }
+  std::string content_type() const {
     auto it = headers_.find("Content-Type");
     return it != headers_.end() ? it->second : std::string{};
   }

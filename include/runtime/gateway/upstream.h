@@ -43,7 +43,7 @@ struct UpstreamConfig {
 //   2. AddPeer() repeatedly during startup
 //   3. handed to UpstreamRegistry; from this point treated as read-only
 //      (peers_ and config_ never mutate again).
-// Concurrency: peers_ is read-only at runtime, so Peers() is lock-free.
+// Concurrency: peers_ is read-only at runtime, so peers() is lock-free.
 // Per-peer dynamic state is owned by each UpstreamPeer via atomics.
 class Upstream {
 public:
@@ -55,18 +55,18 @@ public:
     peers_.push_back(std::move(peer));
   }
 
-  const std::string& Name() const { return config_.name; }
-  LoadBalancePolicy Policy() const { return config_.policy; }
-  const UpstreamConfig& Config() const { return config_; }
+  const std::string& name() const { return config_.name; }
+  LoadBalancePolicy policy() const { return config_.policy; }
+  const UpstreamConfig& config() const { return config_; }
   // Returns the full peer list; load balancers filter via UpstreamPeer::Available()
   // inline on each Select to avoid per-call allocation of a snapshot vector.
-  const std::vector<std::shared_ptr<UpstreamPeer>>& Peers() const { return peers_; }
+  const std::vector<std::shared_ptr<UpstreamPeer>>& peers() const { return peers_; }
 
   // Circuit breaker is attached lazily by GatewayServer::AddProxyRoute when
   // circuit_breaker_enabled is set on a Route. Stored as shared_ptr so
   // GatewayServer and proxy code can share the same instance across requests.
-  void SetCircuitBreaker(std::shared_ptr<CircuitBreaker> cb) { cb_ = std::move(cb); }
-  std::shared_ptr<CircuitBreaker> GetCircuitBreaker() const { return cb_; }
+  void set_circuit_breaker(std::shared_ptr<CircuitBreaker> cb) { cb_ = std::move(cb); }
+  std::shared_ptr<CircuitBreaker> circuit_breaker() const { return cb_; }
 
 private:
   UpstreamConfig config_;

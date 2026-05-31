@@ -14,10 +14,14 @@
 
 namespace runtime::gateway {
 
-// 主动健康检查：定时对每个 backend 发 GET /health，
-// 连续失败 unhealthy_threshold 次 → healthy=false；
-// 连续成功 healthy_threshold 次   → healthy=true, fail_count=0。
-// 被动摘除由 ProxySession::OnUpstreamConnChange 负责。
+// Active health checker for upstream peers.
+//
+// Periodically sends an HTTP GET probe to each registered backend. A peer is
+// marked down after `unhealthy_threshold` consecutive failures and marked up
+// again after `healthy_threshold` consecutive successes.
+//
+// Passive failure handling is performed by the proxy path when upstream
+// connections fail during request forwarding.
 class HealthChecker : public runtime::base::NonCopyable {
 public:
   HealthChecker(runtime::net::EventLoop* loop, UpstreamRegistry& registry, HealthCheckConfig cfg = {});
@@ -33,9 +37,10 @@ private:
   runtime::net::TimerId timer_id_;
   bool running_{false};
 
-  // per-stream 连续成功计数 (不持久化， 重启归零)
+  // Consecutive successful probes per peer. Not persisted across restarts.
   std::unordered_map<std::string, int> consecutive_ok_;
-  // per-upstream 连续失败次数 
+
+  // Consecutive failed probes per peer.
   std::unordered_map<std::string, int> consecutive_fail_;
 };
-} // namespace runtime::gateway
+}  // namespace runtime::gateway

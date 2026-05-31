@@ -5,7 +5,7 @@
 #   demo_uring_echo  : io_uring proactor 回显 demo（需 RUNTIME_ENABLE_URING）
 
 add_executable(demo_echo_server
-    demo_echo_server.cpp
+    demo_echo_server.cc
 )
 target_link_libraries(demo_echo_server
     PRIVATE
@@ -13,7 +13,7 @@ target_link_libraries(demo_echo_server
 )
 
 add_executable(demo_redis_lite
-    demo_redis_lite.cpp
+    demo_redis_lite.cc
 )
 target_link_libraries(demo_redis_lite
     PRIVATE
@@ -22,7 +22,7 @@ target_link_libraries(demo_redis_lite
 )
 
 add_executable(demo_bench_timer
-    demo_bench_timer.cpp
+    demo_bench_timer.cc
 )
 target_link_libraries(demo_bench_timer
     PRIVATE
@@ -31,7 +31,7 @@ target_link_libraries(demo_bench_timer
 
 if(RUNTIME_ENABLE_URING)
     add_executable(demo_uring_echo
-        demo_uring_echo.cpp
+        demo_uring_echo.cc
     )
     target_link_libraries(demo_uring_echo
         PRIVATE

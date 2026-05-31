@@ -16,7 +16,7 @@ namespace runtime::net {
 //   - 需要维护 max_fd_：select() 第一个参数 = max_fd_ + 1
 //   - fd 上限为 FD_SETSIZE（通常 1024），超出则拒绝注册
 //
-// Channel::Index() 在此后端仅用作注册标志：-1 表示未注册，>= 0 表示已注册。
+// Channel::index() 在此后端仅用作注册标志：-1 表示未注册，>= 0 表示已注册。
 class SelectPoller : public Poller {
  public:
   explicit SelectPoller(EventLoop* loop);

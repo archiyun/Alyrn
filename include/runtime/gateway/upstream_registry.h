@@ -30,7 +30,7 @@ public:
       std::equal_to<>>;
 
   void Add(std::shared_ptr<Upstream> upstream) {
-    registry_.emplace(upstream->Name(), std::move(upstream));
+    registry_.emplace(upstream->name(), std::move(upstream));
   }
 
   std::shared_ptr<Upstream> Find(std::string_view name) const {
@@ -38,7 +38,7 @@ public:
     return it != registry_.end() ? it->second : nullptr;
   }
   
-  const UpstreamRegistryMap& All() const {
+  const UpstreamRegistryMap& all() const {
     return registry_;
   }
 

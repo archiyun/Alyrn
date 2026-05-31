@@ -18,24 +18,26 @@
 namespace runtime::gateway {
 
 enum class Phase : uint8_t {
-  kConnecting,    // TcpClient::Connect() 已调用， 等待 OnUpstreamConnChange(connected);
-  kSendingRequest,// upstream 连接建立， upstream_request_ 已 Send, 等待响应
-  kReadingHeaders,// 收到第一批数据， 正在解析 upstream 响应头
-  kForwardingBody,// 响应头已转发给 client, 流式透传 body
-  kDone,          // 响应完成或者连接已关闭。
+  kConnecting,      // TcpClient::Connect() has been called.
+  kSendingRequest,  // Upstream is connected; request bytes have been sent.
+  kReadingHeaders,  // First bytes received; parsing upstream response headers.
+  kForwardingBody,  // Headers forwarded to the client; streaming body bytes.
+  kDone,            // Response is complete or the connection has closed.
 };
 
-// 响应体的边界确定方式。决定何时把上游连接归还到 pool。
+// Response-body framing mode. Determines when the upstream connection can be
+// returned to the keepalive pool.
 enum class BodyFraming : uint8_t {
-  kCloseDelimited,  // 没有 Content-Length 也不是 chunked -> 等 upstream 关闭
-  kContentLength,   // 按 Content-Length 计字节
-  kChunked,         // Transfer-Encoding: chunked，v1 仍按 close 处理（不复用）
-  kNoBody,          // 1xx / 204 / 304 / HEAD 响应：肯定没 body
+  kCloseDelimited,  // No Content-Length and not chunked; wait for upstream EOF.
+  kContentLength,   // Count body bytes according to Content-Length.
+  kChunked,         // Transfer-Encoding: chunked; currently not pooled.
+  kNoBody,          // 1xx, 204, 304, and HEAD responses never carry a body.
 };
+
 class UpstreamRequest : public std::enable_shared_from_this<UpstreamRequest> {
 public:
   using TcpConnectionPtr = runtime::net::TcpConnection::TcpConnectionPtr;
-  
+
   UpstreamRequest(const TcpConnectionPtr& client_conn,
                   Upstream& upstream,
                   LoadBalancer& lb,
@@ -77,8 +79,12 @@ private:
   bool                                       upstream_keepalive_{false};
   runtime::http::Method                      request_method_{runtime::http::Method::Invalid};
 };
-// 无状态工厂：为每个代理请求创建一个 UpstreamRequest。
-// Forward 返回 upstream_request，调用方必须持有它，否则上游连接在 Start() 前就析构了。
+// Stateless proxy factory. Each forwarded request is represented by one
+// UpstreamRequest instance.
+//
+// Forward returns the request object to the caller, which must keep it alive
+// until completion; otherwise the upstream connection may be destroyed before
+// Start() can finish wiring callbacks.
 class ProxyPass {
 public:
   using TcpConnectionPtr = runtime::net::TcpConnection::TcpConnectionPtr;

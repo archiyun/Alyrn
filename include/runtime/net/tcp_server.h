@@ -33,37 +33,37 @@ public:
             const std::string& name);
   ~TcpServer();
 
-  const std::string& Name() const {
+  const std::string& name() const {
     return name_;
   }
 
   // A value of 0 keeps all I/O on the base loop. A positive value creates
   // that many sub-reactor loops (one EventLoop per thread).
-  void SetThreadNum(int sub_loop_num) { sub_loop_num_ = sub_loop_num; }
+  void set_thread_num(int sub_loop_num) { sub_loop_num_ = sub_loop_num; }
 
   // Switch the acceptor and all new connections to edge-triggered epoll mode.
   // Must be called before Start().
-  void SetEdgeTriggered(bool et) { et_mode_ = et; }
+  void set_edge_triggered(bool et) { et_mode_ = et; }
 
-  void SetThreadInitCallback(ThreadInitCallback cb) {
+  void set_thread_init_callback(ThreadInitCallback cb) {
     thread_init_callback_ = std::move(cb);
   }
-  void SetConnectionCallback(ConnectionCallback cb) {
+  void set_connection_callback(ConnectionCallback cb) {
     connection_callback_ = std::move(cb);
   }
 
-  void SetMessageCallback(MessageCallback cb) {
+  void set_message_callback(MessageCallback cb) {
     message_callback_ = std::move(cb);
   }
 
-  void SetWriteCompleteCallback(WriteCompleteCallback cb) {
+  void set_write_complete_callback(WriteCompleteCallback cb) {
     write_complete_callback_ = std::move(cb);
   }
 
   // Starts the thread pool and begins accepting connections.
   void Start();
 
-  EventLoop* GetLoop() const {
+  EventLoop* loop() const {
     return loop_;
   }
 private:
