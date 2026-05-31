@@ -19,10 +19,16 @@ struct PoolConfig {
   double keepalive_timeout_sec{60.0};
 };
 
-// 仿照 nginx per-worker keepalive的思路。
-// 池接管整个 TcpClient (而不仅是 TcpConnection)，因为 TcpClient 析构会
-// 调 ConnectDestroyed() 销毁底层 socket —— 如果只存 TcpConnectionPtr，
-// 上游 TcpClient 一离开作用域 conn 就废了。
+// Per-event-loop upstream keep-alive pool, modeled after nginx's per-worker
+// upstream keepalive cache.
+//
+// The pool owns whole TcpClient objects, not just TcpConnection shared_ptrs.
+// TcpClient owns the connector/client-side connection lifecycle; destroying it
+// tears down the underlying TcpConnection. Keeping only TcpConnectionPtr would
+// leave the pooled connection unusable once the original TcpClient leaves scope.
+//
+// UpstreamConnPool is intended to be used from one EventLoop thread. The server
+// keeps one pool per loop, so this class does not add its own synchronization.
 class UpstreamConnPool {
 public:
   using TcpConnectionPtr = runtime::net::TcpConnection::TcpConnectionPtr;
@@ -30,8 +36,10 @@ public:
 
   explicit UpstreamConnPool(PoolConfig cfg = {}) : config_(cfg) {}
 
-  // 返回一个仍然 Connected() 的 TcpClient (其 connection() 可立即使用)；
-  // 若池中无可复用连接返回 nullptr。
+  // Returns a reusable connected TcpClient for peer_name.
+  //
+  // Stale or already-closed entries are discarded while scanning the idle
+  // queue. nullptr means no live idle connection is currently available.
   TcpClientPtr Acquire(const std::string& peer_name) {
     auto it = idle_.find(peer_name);
     if (it == idle_.end() || it->second.empty()) return nullptr;
@@ -44,12 +52,16 @@ public:
           entry.client->connection()->Connected()) {
         return std::move(entry.client);
       }
-      // 死连接：TcpClient 局部析构会清理底层 socket
+      // Dead entry: local TcpClient destruction cleans up the socket.
     }
     idle_.erase(it);
     return nullptr;
   }
 
+  // Returns a connected upstream client to the idle queue.
+  //
+  // Closed clients are dropped. If the peer already has max_idle_per_peer idle
+  // clients, the returned client is disconnected instead of being cached.
   void Release(const std::string& peer_name, TcpClientPtr client) {
     if (!client || !client->connection() || !client->connection()->Connected()) {
       return;
@@ -62,7 +74,7 @@ public:
     q.push_back({std::move(client), std::chrono::steady_clock::now()});
   }
 
-  // 定时器回调: 清理超过 keepalive_timeout 的空闲连接
+  // Timer callback: evicts idle clients older than keepalive_timeout_sec.
   void EvictStale() {
     const auto now = std::chrono::steady_clock::now();
     const auto timeout = std::chrono::duration<double>(config_.keepalive_timeout_sec);
@@ -84,8 +96,8 @@ private:
     std::chrono::steady_clock::time_point idle_since;
   };
   PoolConfig config_;
-  // upstream_name -> QUEUE<IdleEntry>
+  // peer_name -> idle clients for that peer.
   std::unordered_map<std::string, std::deque<IdleEntry>> idle_;
 };
-} // namespace runtime::gateway
 
+}  // namespace runtime::gateway

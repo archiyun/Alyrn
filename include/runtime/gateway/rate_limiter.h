@@ -5,6 +5,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -12,26 +13,29 @@
 
 namespace runtime::gateway {
 
-// 单位: 秒
+// Rate limiter settings. Rates are expressed as tokens per second,
+// and burst values are the maximum number of tokens a bucket may accumulate.
 struct RateLimiterConfig {
   bool global_enabled{false};
   double global_rate{1000.0};
   double global_burst{2000.0};
 
-  // per-ip 
+  // Per-client-IP limiter. Each observed IP address gets an independent bucket.
   bool per_ip_enabled{false};
   double per_ip_rate{10.0};
   double per_ip_burst{20.0};
 };
 
-// 令牌桶, 全 atomic , thread-safe
-// 令牌桶工作方式:
-// - 以 rate 的速率往桶里加令牌
-// - 桶的容量上限是 burst
-// - 每个请求消耗是 1 个令牌
-// - 桶空了 -> reject
-// - 空闲令牌累积 -> 可处理突发
-// uint64_t 
+// Thread-safe token bucket.
+//
+// Tokens are refilled lazily when TryConsume() is called, so no background
+// timer is required. Each accepted request consumes one token.
+// If fewer than one token is available, the request is rejected.
+// Idle time lets tokens build up to burst_, which allows short traffic
+// spikes without raising the steady request rate.
+//
+// Token counts are stored as fixed-point integers. kScale represents one whole
+// token and preserves fractional refill progress between calls.
 class TokenBucket {
 public:
   explicit TokenBucket(double rate, double burst)
@@ -66,7 +70,7 @@ public:
   double burst() const noexcept { return burst_; }
 
 private:
-  static constexpr uint64_t kScale = 1'000'000;  // 精度换算系数
+  static constexpr uint64_t kScale = 1'000'000;  // Fixed-point units per token.
   static uint64_t NowMs() noexcept {
     return static_cast<uint64_t>(
       std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -76,25 +80,29 @@ private:
   }
 
   mutable std::mutex mutex_;
-  std::atomic<uint64_t> scaled_tokens_; // 当前令牌数 , 实际令牌数 等价于 -> scaled_tokens / kScale
+  // Current token balance, scaled by kScale.
   std::atomic<uint64_t> last_refill_ms_{NowMs()};
-  double rate_; // 每 s 填充速率
-  double burst_;  // 桶容量上限
+  std::atomic<uint64_t> scaled_tokens_;
+  double rate_;   // Refill rate in tokens per second.
+  double burst_;  // Maximum bucket capacity in tokens.
 };
 
 
-// 全局限流器， 挂在 GatewayServer 上。
+// Gateway-wide rate limiter.
 //
-// 全局桶: 每个请求过一次， 用 mutex 保护 (临界区 ~20 CPU 周期)。
-// Per-IP 桶: 懒创建， 用 mutex 保护 map access
-// 
-// 两层锁都极短， 不会阻塞 IO 线程
+// The global bucket is checked once for every request when enabled.
+// Per-IP buckets are created lazily and are keyed by the peer address observed
+// by the gateway. Map access is serialized, and each TokenBucket serializes
+// its own refill/consume sequence.
+//
+// Both locks protect short critical sections and are intended to avoid blocking
+// IO threads for meaningful periods of time.
 class RateLimiter {
 public:
   explicit RateLimiter(RateLimiterConfig config) noexcept
     : config_(config),
       global_bucket_(config_.global_rate, config_.global_burst) {}
-  
+
   bool AllowGlobal() {
     if (!config_.global_enabled) return true;
     return global_bucket_.TryConsume();
@@ -106,17 +114,16 @@ public:
     std::string key(client_ip);
     std::lock_guard lk{ip_mutex_};
 
-    // try_emplace constructs TokenBucket in-place (no move/copy needed),
-    // which is required because std::mutex and std::atomic are non-movable.
     auto [it, _] = ip_buckets_.try_emplace(
-        key, config_.per_ip_rate, config_.per_ip_burst);
-    return it->second.TryConsume();
+        key, std::make_shared<TokenBucket>(config_.per_ip_rate, config_.per_ip_burst));
+    return it->second->TryConsume();
   }
 private:
   RateLimiterConfig config_;
   TokenBucket global_bucket_;
 
   std::mutex ip_mutex_;
-  std::unordered_map<std::string, TokenBucket> ip_buckets_;
+  std::unordered_map<std::string, std::shared_ptr<TokenBucket>> ip_buckets_;
 };
+
 }  // namespace runtime::gateway

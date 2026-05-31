@@ -19,13 +19,15 @@ constexpr std::array<std::string_view, 9> kHopByHop = {
   "te", "trailer", "transfer-encoding", "upgrade",
 };
 
-// 客户端可能伪造的 forwarded 系列 - 信任策略: 剥掉重写, 不要追加
+// Forwards-style headers that clients may spoof. The gateway strips and
+// rewrites them instead of appending to untrusted input.
 constexpr std::array<std::string_view, 4> kClientSpoofable = {
   "x-real-ip", "x-forwarded-proto", "x-forwarded-host", "x-forwarded-port",
 };
 
-// 单调时间戳 (ns) + 进程内原子序号, 拼成 16-hex + '-' + 16-hex
-// 不依赖 UUID 库, 单机内唯一即可 (跨节点请在网关前置层做)
+// Monotonic timestamp plus an in-process atomic sequence formatted as
+// 16-hex + '-' + 16-hex. This avoids a UUID dependency and is only intended
+// to be unique within one process.
 std::string GenRequestId() {
   static std::atomic<std::uint64_t> seq{0};
   const auto ts = static_cast<std::uint64_t>(
@@ -43,10 +45,12 @@ void RewriteForUpstream(runtime::http::HttpRequest& req,
                         std::string_view scheme,
                         std::string_view gateway_name,
                         std::string_view request_id) {
-  // 保存原始 Host, 写入 X-Forwarded-Host (BuildRequest 会改写真正的 Host)
+  // Preserve the original Host for X-Forwarded-Host.
+  // BuildRequest will set the upstream Host header later.
   std::string orig_host(req.header("host"));
 
-  // Connection 列举的字段视同 hop-by-hop, 一并删除
+  // Fields listed in Connection are hop-by-hop as well
+  // and must be removed.
   const auto conn_hdr = req.header("connection");
   if (!conn_hdr.empty()) {
     std::size_t i = 0;
@@ -64,10 +68,12 @@ void RewriteForUpstream(runtime::http::HttpRequest& req,
 
   for (auto h : kHopByHop) req.RemoveHeader(h);
 
-  // 剥离客户端伪造的 forwarded 系列 (XFF 单独处理: append)
+  // Strip client-controlled forwarded headers. X-Forwarded-For is handled
+  // separately by appending the current peer address.
   for (auto h : kClientSpoofable) req.RemoveHeader(h);
 
-  // XFF: 追加而非替换, 用 set_header 绕开 emplace 静默丢弃语义
+  // XFF is appended rather than replaced. Use set_header to avoid emplace-style
+  // duplicate suppression semantics.
   std::string xff(req.header("x-forwarded-for"));
   if (xff.empty()) {
     xff = client_ip;
@@ -91,7 +97,7 @@ void RewriteForUpstream(runtime::http::HttpRequest& req,
   via.append(gateway_name);
   req.set_header("via", via);
 
-  // 全链路追踪 ID: 有则透传, 无则生成
+  // Propagate an existing request id, or generate one at the gateway edge.
   if (req.header("x-request-id").empty() && !request_id.empty()) {
     req.set_header("x-request-id", request_id);
   }
@@ -111,7 +117,8 @@ GatewayServer::GatewayServer(runtime::net::EventLoop* loop,
     [this](const TcpConnectionPtr& conn,
            runtime::net::Buffer& buf,
            runtime::time::Timestamp ts) { OnMessage(conn, buf, ts); });
-  // 预渲染 429 响应， 用于限流，避免每次都动态分配
+  // Pre-render the 429 response used by rate limiting to avoid per-request
+  // allocation on the hot path.
   runtime::http::HttpResponse rate_limit_resp(true);
   rate_limit_resp.set_status_code(runtime::http::StatusCode::TooManyRequests);
   rate_limit_resp.set_content_type("application/json; charset=utf-8");
@@ -199,11 +206,12 @@ void GatewayServer::EnablePerIPRateLimit(double rate, double burst) {
 }
 
 void GatewayServer::EnableMetricsEndpoint(std::string_view path) {
-  // 直接路由形式注册, handler 内同步渲染当前 metrics 快照.
+  // Register as a direct route and render the current metrics snapshot
+  // synchronously in the handler.
   Get(path, [this](const runtime::http::HttpRequest&,
                    runtime::http::HttpResponse& resp) {
     resp.set_status_code(runtime::http::StatusCode::Ok);
-    // Prometheus text format 0.0.4 的 Content-Type
+    // Content-Type for Prometheus text format 0.0.4.
     resp.set_content_type("text/plain; version=0.0.4; charset=utf-8");
     resp.set_body(metrics_.Render());
   });
@@ -217,8 +225,8 @@ void GatewayServer::Start() {
 
 void GatewayServer::OnConnection(const TcpConnectionPtr& conn) {
   if (conn->Connected()) {
-    // ConnCtx 包含 HttpContext (含 Pool unique_ptr) 是 move-only,
-    // std::any 要求可拷贝, 因此包成 shared_ptr.
+    // ConnCtx contains HttpContext, which is move-only because it owns a pool.
+    // Store it behind shared_ptr because std::any requires copyable values.
     conn->set_context(std::make_shared<ConnCtx>());
     metrics_.connections_accepted_total.Inc();
     metrics_.connections_active.Inc();
@@ -248,19 +256,20 @@ void GatewayServer::OnMessage(const TcpConnectionPtr& conn,
     runtime::http::HttpRequest req = ctx.http_ctx.TakeRequest();
     ctx.http_ctx.Reset();
 
-    // 同步路径下记录端到端耗时; 异步 (proxy / static) 路径只埋单次事件计数.
+    // Direct routes record end-to-end latency here.
+    // Asynchronous routes only record per-event counters at this layer.
     const auto req_start = std::chrono::steady_clock::now();
 
-    // 注入真实的客户端信息,让上游知道真实 IP
+    // Inject client identity headers for upstream services.
     const std::string client_ip = conn->peer_address().ToIp();
     RewriteForUpstream(req, client_ip,
                        /*scheme=*/"http",
                        /*gateway_name=*/server_.name(),
                        /*request_id=*/GenRequestId());
 
-    // 限流, 路由匹配之前按照流量选择过滤
+    // Apply rate limiting before route matching.
     if (rate_limiter_) {
-      // 全局流量和 IP 流量过滤
+      // Global and per-IP limit checks.
       const bool global_ok  = rate_limiter_->AllowGlobal();
       const bool per_ip_ok  = global_ok && rate_limiter_->AllowPerIP(client_ip);
       if (!global_ok || !per_ip_ok) {
@@ -304,7 +313,7 @@ void GatewayServer::OnMessage(const TcpConnectionPtr& conn,
       if (route->circuit_breaker_enabled) {
         cb = upstream->circuit_breaker().get();
       }
-      // 熔断检查: 在 LB 选择之前快速失败
+      // Circuit breaker check: fail fast before load-balancer selection.
       if (cb && !cb->AllowRequest()) {
         metrics_.circuit_breaker_rejected_total.Inc();
         metrics_.fallback_served_total.Inc();
