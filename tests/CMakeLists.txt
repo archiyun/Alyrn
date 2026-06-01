@@ -197,6 +197,17 @@ target_include_directories(rbtree_validator
 
 add_test(NAME rbtree_validator COMMAND rbtree_validator)
 
+add_executable(quad_heap_test
+    unit/test_quad_heap.cc
+)
+
+target_include_directories(quad_heap_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+add_test(NAME quad_heap_test COMMAND quad_heap_test)
+
 add_executable(load_balancer_smoke_test
     unit/test_load_balancer_smoke.cc
 )
