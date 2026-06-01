@@ -160,7 +160,7 @@ EPollPoller:
 
 最后，连接建立流程必须投递到该连接所属 IO loop 中执行：`ioLoop->RunInLoop([conn] { conn->ConnectEstablished(); });`。 src/net/tcp_server.cc:87-90
 
-这就是项目文档里说的 one-loop-per-thread：base loop 负责 accept，真正连接上的 IO 操作在分配到的 IO loop 中执行。 CLAUDE.md:87-94
+这就是 one-loop-per-thread：base loop 负责 accept，真正连接上的 IO 操作在分配到的 IO loop 中执行。
 
 ---
 
@@ -285,7 +285,7 @@ Buffer output_buffer_;
 * `TcpServer::NewConnection()` 创建连接后，不直接在 base loop 注册连接 channel，而是投递到选中的 `ioLoop` 执行 `ConnectEstablished()`。 src/net/tcp_server.cc:87-90
 * `TcpServer::RemoveConnection()` 先回到 base loop 删除 map，再投递到连接所属 IO loop 执行 `ConnectDestroyed()`。 src/net/tcp_server.cc:92-106
 
-这套约束的好处是：每条连接的读写状态、buffer 和 context 都由单一 IO loop 独占，避免大部分锁。项目文档也明确提到 IO 线程间无共享数据，每条 `TcpConnection` 的状态通过 `set_context(std::any)` 绑定，由所属 sub loop 独享。 CLAUDE.md:89-92
+这套约束的好处是：每条连接的读写状态、buffer 和 context 都由单一 IO loop 独占，避免大部分锁。每条 `TcpConnection` 的状态通过 `set_context(std::any)` 绑定，由所属 sub loop 独享。
 
 ---
 
@@ -437,6 +437,6 @@ TcpClient
 2. **只读 epoll / Channel 状态机**：重点看 `Channel::index_`、`EPollPoller::UpdateChannel()` 和 `RemoveChannel()`。
 3. **只读线程模型**：重点看 `EventLoopThread`、`EventLoopThreadPool`、`RunInLoop()`、`QueueInLoop()`。
 4. **只读 Buffer 与 HTTP 解析连接处**：从 `Buffer` 进入 `HttpContext`，理解上层 HTTP 怎么消费网络层数据。
-5. **读测试验证行为**：比如 `event_loop_smoke_test`、`tcp_server_smoke_test`、`trigger_mode`、`rst_storm_smoke_test`、`slowloris_smoke_test`。
+5. **读测试验证行为**：比如 `event_loop_smoke_test`、`tcp_server_smoke_test`、`trigger_mode`、`rst_storm_smoke_test`。
 
 如果你愿意，我可以下一条直接带你逐行走一遍 **“TcpServer 收到连接并 echo 回包”** 的实际执行路径。

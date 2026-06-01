@@ -170,7 +170,7 @@ INSTANTIATE_TEST_SUITE_P(
 
 // Both modes must echo a small payload round-trip correctly.
 TEST_P(TriggerModeEchoTest, EchoesSmallPayload) {
-  const bool et = param();
+  const bool et = GetParam();
   const auto port = ReserveLoopbackPort();
   auto srv = EchoServer::Start(port, et);
 
@@ -182,7 +182,7 @@ TEST_P(TriggerModeEchoTest, EchoesSmallPayload) {
 
 // Pipelining: send two back-to-back messages on the same connection.
 TEST_P(TriggerModeEchoTest, EchoesMultipleMessages) {
-  const bool et = param();
+  const bool et = GetParam();
   const auto port = ReserveLoopbackPort();
   auto srv = EchoServer::Start(port, et);
 
