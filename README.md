@@ -44,6 +44,7 @@ Foundation     ─── runtime::base / log / time / task / memory / metrics
 - `MemoryPool`, `ObjectPool` allocators
 - `Scheduler`, `ThreadPool`, `WorkQueue` with cooperative cancellation
 - `IntrusiveRBTree<T, kMember, kLess>` — generic red-black tree with zero per-node heap allocation
+- `IntrusiveQuadHeap<T, kMember, kLess>` — intrusive 4-ary min-heap skeleton for timer-style queues
 - `Counter`, `Gauge`, `Histogram`, `Registry` metrics interfaces
 
 ## Requirements
@@ -255,7 +256,7 @@ Library targets:
 | `runtime_http` | HTTP server, Trie router, request/response, context |
 | `runtime_net` | EventLoop, TcpServer, Channel, Poller, Buffer, TimerQueue |
 | `runtime_task` | Scheduler, ThreadPool, Task, WorkQueue |
-| `runtime_foundation` | Logger, Timestamp, MemoryPool, ObjectPool, IntrusiveRBTree, metrics |
+| `runtime_foundation` | Logger, Timestamp, MemoryPool, ObjectPool, IntrusiveRBTree, IntrusiveQuadHeap, metrics |
 
 ## Run Tests
 
@@ -274,6 +275,7 @@ Notable tests:
 | Binary | What it tests |
 |---|---|
 | `rbtree_validator` | 10 M ops vs `std::set` oracle + `CheckRBInvariants()` every step |
+| `quad_heap_test` | intrusive 4-ary heap insert, erase, duplicate insert, cross-heap safety, and ordered `PopWhile()` |
 | `http_smoke_test` | HTTP parsing and routing (no GTest required) |
 | `buffer_smoke_test` | Buffer read / write / prepend |
 | `runtime_unit_tests` | GTest suite: buffer, logger, memory pool, scheduler |
@@ -304,7 +306,7 @@ bash benchmarks/wrk/run_wrk.sh
 .
 ├── include/runtime/
 │   ├── base/        # NonCopyable, CurrentThread, ThreadPool, IntrusiveRBTree
-│   ├── config/      # Configuration loading interfaces
+│   │                # IntrusiveQuadHeap
 │   ├── gateway/     # GatewayServer, Upstream, LoadBalancer, HealthChecker, ProxyPass
 │   ├── http/        # HttpServer, Router, HttpContext, HttpRequest, HttpResponse
 │   ├── log/         # Logger, AsyncLogger
@@ -312,8 +314,7 @@ bash benchmarks/wrk/run_wrk.sh
 │   ├── metrics/     # Counter, Gauge, Histogram, Registry
 │   ├── net/         # EventLoop, TcpServer, Channel, Poller, Buffer, Timer
 │   ├── task/        # Scheduler, ThreadPool, Task, WorkQueue
-│   ├── time/        # Timestamp
-│   └── trace/       # TraceId, LifecycleTrace
+│   └── time/        # Timestamp
 ├── src/             # Implementations (mirrors include layout)
 ├── examples/        # demo_gateway, demo_http_server, demo_echo_server, demo_rbtree
 ├── tests/           # Unit, integration, smoke tests, oracle validator
@@ -342,6 +343,7 @@ Foundation      runtime::base / log / time / task / memory / metrics
   AsyncLogger, Scheduler, ThreadPool
   MemoryPool, ObjectPool
   IntrusiveRBTree<T, kMember, kLess>
+  IntrusiveQuadHeap<T, kMember, kLess>
   Timestamp, Counter, Gauge, Histogram
 ```
 
