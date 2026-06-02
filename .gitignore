@@ -1,5 +1,5 @@
 # Documentation / local notes
-README.md
+CLAUDE.md
 
 # Editor and tool state
 .codex/
@@ -91,5 +91,6 @@ __pycache__/
 .ruff_cache/
 
 # clangd / language server
+.clangd
 .clangd/
 .cache/clangd/

@@ -271,6 +271,7 @@ Notable tests:
 | Binary | What it tests |
 |---|---|
 | `rbtree_validator` | 10 M ops vs `std::set` oracle + `CheckRBInvariants()` every step |
+| `quad_heap_test` | intrusive 4-ary heap insert, erase, duplicate insert, cross-heap safety, and ordered `PopWhile()` |
 | `http_smoke_test` | HTTP parsing and routing (no GTest required) |
 | `buffer_smoke_test` | Buffer read / write / prepend |
 | `runtime_unit_tests` | GTest suite: buffer, logger, memory pool, scheduler |
