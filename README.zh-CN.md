@@ -8,7 +8,7 @@
 Gateway Layer  ─── runtime::gateway
 HTTP Layer     ─── runtime::http        (依赖 net)
 Net Layer      ─── runtime::net         (依赖 foundation)
-Foundation     ─── runtime::base / log / time / task / memory / metrics
+Foundation     ─── runtime::base / ds / log / time / task / memory / metrics
 ```
 
 ## 功能概览
@@ -30,12 +30,11 @@ Foundation     ─── runtime::base / log / time / task / memory / metrics
 - `epoll` 事件驱动，One-Loop-Per-Thread I/O 线程模型
 - 增量式 HTTP/1.1 解析器（`HttpContext`）——零中间拷贝，keep-alive 通过 `Reset()` 复用上下文
 - 前缀树路由，支持静态段和动态路径参数（`:param` 语法）
-- 静态分支优先匹配，`/users/me` 不会被 `/users/:id` 错误捕获
 
 ### 网络层（`runtime::net`）
 
 - `EventLoop`、`EpollPoller`、`Channel`、`TcpServer`、`TcpConnection`、`Buffer`
-- 定时器队列基于泛型侵入式红黑树（`TimerTree`）实现
+- 定时器队列由 `timerfd` 驱动，并通过 `TimerTree` 索引 `runtime::time::Timer`
 - 支持水平触发和边缘触发两种 epoll 模式
 
 ### 基础设施
@@ -43,7 +42,7 @@ Foundation     ─── runtime::base / log / time / task / memory / metrics
 - 异步双缓冲日志
 - `MemoryPool`、`ObjectPool` 内存分配器
 - `Scheduler`、`ThreadPool`、`WorkQueue`，支持协作式任务取消
-- `IntrusiveRBTree<T, kMember, kLess>` — 泛型侵入式红黑树，节点零堆分配
+- `runtime::ds::IntrusiveRBTree<T, kMember, kLess>` 和 `IntrusiveQuadHeap` — 泛型侵入式数据结构，节点零堆分配
 - `Counter`、`Gauge`、`Histogram`、`Registry` 指标接口
 
 ## 环境要求
@@ -59,8 +58,6 @@ Foundation     ─── runtime::base / log / time / task / memory / metrics
 
 - GoogleTest — 若 CMake 检测到则自动构建 `runtime_unit_tests` 和 `runtime_integration_tests`
 - `liburing` — 仅 `io_uring_echo` 示例需要
-- `wrk` — 用于运行 HTTP 压测脚本
-
 Ubuntu / Debian 安装常用依赖：
 
 ```bash
@@ -253,7 +250,7 @@ int main() {
 | `runtime_http` | HTTP 服务器、Trie 路由、请求/响应、上下文 |
 | `runtime_net` | EventLoop、TcpServer、Channel、Poller、Buffer、TimerQueue |
 | `runtime_task` | Scheduler、ThreadPool、Task、WorkQueue |
-| `runtime_foundation` | 日志、时间戳、MemoryPool、ObjectPool、IntrusiveRBTree、指标 |
+| `runtime_foundation` | 日志、时间戳、MemoryPool、ObjectPool、`runtime::ds`、指标 |
 
 ## 运行测试
 
@@ -282,43 +279,26 @@ ctest --test-dir build -R rbtree_validator --output-on-failure
 - smoke 测试不依赖 GTest
 - 如果 CMake 找到 GTest，会额外构建 `runtime_unit_tests` 和 `runtime_integration_tests`
 
-## 运行压测
-
-```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j"$(nproc)"
-IO_THREADS=2 ./build/examples/demo_http_server
-```
-
-```bash
-wrk -t1 -c128 -d5s http://127.0.0.1:18080/api/health
-wrk -t1 -c128 -d5s -s benchmarks/wrk/post_echo.lua http://127.0.0.1:18080/api/echo
-bash benchmarks/wrk/run_wrk.sh
-```
-
 ## 目录结构
 
 ```text
 .
 ├── include/runtime/
-│   ├── base/        # NonCopyable、CurrentThread、ThreadPool、IntrusiveRBTree
-│   ├── config/      # 配置加载接口
+│   ├── base/        # NonCopyable、CurrentThread
+│   ├── ds/          # IntrusiveRBTree、IntrusiveQuadHeap、MurmurHash3
 │   ├── gateway/     # GatewayServer、Upstream、LoadBalancer、HealthChecker、ProxyPass
 │   ├── http/        # HttpServer、Router、HttpContext、HttpRequest、HttpResponse
 │   ├── log/         # Logger、AsyncLogger
 │   ├── memory/      # MemoryPool、ObjectPool
 │   ├── metrics/     # Counter、Gauge、Histogram、Registry
-│   ├── net/         # EventLoop、TcpServer、Channel、Poller、Buffer、Timer
-│   ├── task/        # Scheduler、ThreadPool、Task、WorkQueue
-│   ├── time/        # Timestamp
+│   ├── net/         # EventLoop、TcpServer、Channel、Poller、Buffer、TimerQueue
+│   ├── task/        # Scheduler、ThreadPool、Task、WorkQueue、coro
+│   ├── time/        # Timestamp、Timer、TimerId、TimerTree
 │   └── trace/       # TraceId、LifecycleTrace
 ├── src/             # 各模块实现（目录结构与 include 对称）
 ├── examples/        # demo_gateway、demo_http_server、demo_echo_server、demo_rbtree
 ├── tests/           # 单元测试、集成测试、smoke 测试、对数器验证
-├── benchmarks/      # wrk 压测脚本和结果归档
-├── config/          # 示例配置
-├── docs/            # 设计文档
-└── third_party/     # 第三方头文件
+└── docs/            # 设计文档
 ```
 
 ## 架构分层
@@ -334,13 +314,13 @@ HTTP Layer      runtime::http
 
 Net Layer       runtime::net
   TcpServer、TcpConnection、EventLoop、EpollPoller、Channel
-  Buffer、TimerQueue（基于 IntrusiveRBTree）
+  Buffer、TimerQueue（基于 timerfd）
 
-Foundation      runtime::base / log / time / task / memory / metrics
+Foundation      runtime::base / ds / log / time / task / memory / metrics
   AsyncLogger、Scheduler、ThreadPool
   MemoryPool、ObjectPool
-  IntrusiveRBTree<T, kMember, kLess>
-  Timestamp、Counter、Gauge、Histogram
+  runtime::ds::IntrusiveRBTree<T, kMember, kLess>、IntrusiveQuadHeap
+  Timestamp、Timer、TimerTree、Counter、Gauge、Histogram
 ```
 
 典型网关请求路径：

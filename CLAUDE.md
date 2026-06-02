@@ -68,7 +68,7 @@ runtime_gateway   (src/gateway/, include/runtime/gateway/)
             └── runtime_net    (src/net/, include/runtime/net/)
                     └── runtime_task   (src/task/, include/runtime/task/)
                             └── runtime_foundation
-                                    (src/base/, src/log/, src/time/, src/memory/)
+                                    (include/runtime/base/, src/log/, src/time/, src/memory/)
 ```
 
 `runtime_task` 与 `runtime_net` 同级、互不依赖；`runtime_http` 同时依赖二者。
@@ -76,8 +76,9 @@ runtime_gateway   (src/gateway/, include/runtime/gateway/)
 ### Foundation 层
 
 - `runtime::base` — `NonCopyable`、`current_thread` 等基础设施
+- `runtime::ds` — `IntrusiveRBTree`、`IntrusiveQuadHeap`、`MurmurHash3` 等纯数据结构
 - `runtime::log` — `AsyncLogger` 后端 + `LOG_INFO/WARN/ERROR/DEBUG/FATAL` 流式宏
-- `runtime::time` — `Timestamp` 时间戳
+- `runtime::time` — `Timestamp`、`Timer`、`TimerId`、`TimerTree` 等与 EventLoop 无关的时间/定时器模型
 - `runtime::memory` — `Pool`（nginx 风格 arena）、`MemoryPool`、`ObjectPool`、`SegmentLruCache`、`pmr_pool_resource`（`std::pmr::memory_resource` 适配器）
 
 ### Task 层
@@ -91,7 +92,7 @@ runtime_gateway   (src/gateway/, include/runtime/gateway/)
 - **IO 线程间无共享数据**：每条 `TcpConnection` 的状态通过 `conn->set_context(std::any)` 绑定，由所属 Sub Loop 独享
 - `Buffer` 实现可在编译期切换（`muduo` / `ringbuf` / `nginx`，见 `RUNTIME_BUFFER_IMPL`）
 - 客户端侧：`Connector` + `TcpClient`
-- 定时器双实现：`TimerQueue`（基于 timerfd）+ `timer_rbtree`（自研红黑树，配 `rbtree_validator`）
+- 定时器分层：`runtime::net::TimerQueue` 负责 EventLoop/timerfd 接线，`runtime::time::TimerTree` 负责纯定时器排序
 
 ### HTTP 层
 

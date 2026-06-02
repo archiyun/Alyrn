@@ -8,41 +8,44 @@
 #include <utility>
 
 #include "runtime/base/noncopyable.h"
-#include "runtime/base/rbtree.h"
+#include "runtime/ds/intrusive_rbtree.h"
 #include "runtime/time/timestamp.h"
 
-namespace runtime::net {
+namespace runtime::time {
 
-// Timer represents one scheduled callback managed by TimerQueue.
+// Timer represents one scheduled callback.
 //
 // It stores the callback, next expiration time, repeat interval, and an
-// intrusive red-black tree node used by TimerTree.
+// intrusive red-black tree node used by TimerTree. It has no EventLoop or fd
+// dependency; the net layer decides how expirations are delivered.
 class Timer : public runtime::base::NonCopyable {
 public:
   using TimerCallback = std::function<void()>;
 
-  Timer(TimerCallback cb, runtime::time::Timestamp when, double interval_sec)
+  Timer(TimerCallback cb, Timestamp when, double interval_sec)
       : timer_callback_(std::move(cb)),
         expiration_(when),
         interval_sec_(interval_sec),
         repeat_(interval_sec > 0.0),
         sequence_(next_sequence_.fetch_add(1, std::memory_order_relaxed)) {}
 
-  void Run() const { if(timer_callback_) timer_callback_(); }
-  runtime::time::Timestamp expiration() const { return expiration_; }
+  void Run() const {
+    if (timer_callback_) timer_callback_();
+  }
+
+  Timestamp expiration() const { return expiration_; }
   bool repeat() const { return repeat_; }
   int64_t sequence() const { return sequence_; }
-  void Restart(runtime::time::Timestamp now) {
-    expiration_ = runtime::time::AddTime(now, interval_sec_);
-  }
+
+  void Restart(Timestamp now) { expiration_ = AddTime(now, interval_sec_); }
 
   // Intrusive tree node. TimerTree links this node directly without allocating
   // an extra container node like std::set would.
-  runtime::base::RBTNode<Timer> tree_node_;
-private:
+  runtime::ds::RBTNode<Timer> tree_node_;
 
+private:
   TimerCallback timer_callback_;
-  runtime::time::Timestamp expiration_;
+  Timestamp expiration_;
   double interval_sec_;
   bool repeat_;
   int64_t sequence_;
@@ -50,4 +53,4 @@ private:
   inline static std::atomic<int64_t> next_sequence_;
 };
 
-}  // namespace runtime::net
+}  // namespace runtime::time

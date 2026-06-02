@@ -31,11 +31,11 @@ if(RUNTIME_ENABLE_URING)
 endif()
 
 add_library(runtime_foundation STATIC
-    src/base/current_thread.cc
     src/log/async_logger.cc
     src/log/logger.cc
     src/memory/pool.cc
     src/time/timestamp.cc
+    src/time/timer_tree.cc
 )
 
 target_include_directories(runtime_foundation
@@ -99,7 +99,6 @@ add_library(runtime_net STATIC
     src/net/socket.cc
     src/net/tcp_connection.cc
     src/net/tcp_server.cc
-    src/net/timer_rbtree.cc
     src/net/timer_queue.cc
     src/net/poll_poller.cc
     src/net/select.cc

@@ -21,7 +21,7 @@ cmake --build build-tests --target rbtree_validator -j$(nproc) 2>&1 | tail -8
 #include <set>
 #include <vector>
 
-#include "runtime/base/rbtree.h"
+#include "runtime/ds/intrusive_rbtree.h"
 
 // ----------------------------------------------------------------
 // Element type
@@ -30,7 +30,7 @@ cmake --build build-tests --target rbtree_validator -j$(nproc) 2>&1 | tail -8
 struct Job {
   int         id;
   int64_t     deadline_ms;
-  runtime::base::RBTNode<Job> node;
+  runtime::ds::RBTNode<Job> node;
 };
 
 bool JobLess(const Job* a, const Job* b) {
@@ -38,7 +38,7 @@ bool JobLess(const Job* a, const Job* b) {
   return a->id < b->id;
 }
 
-using JobTree = runtime::base::IntrusiveRBTree<Job, &Job::node, JobLess>;
+using JobTree = runtime::ds::IntrusiveRBTree<Job, &Job::node, JobLess>;
 
 struct JobCmp {
   bool operator()(const Job* a, const Job* b) const { return JobLess(a, b); }
@@ -90,6 +90,31 @@ int main() {
   std::set<Job*, JobCmp> oracle;
   // active_vec tracks which jobs are currently in the tree (for O(1) random pick)
   std::vector<Job*> active;
+
+  {
+    Job a{};
+    Job b{};
+    a.id = -2;
+    a.deadline_ms = 10;
+    b.id = -1;
+    b.deadline_ms = 20;
+    JobTree other;
+
+    tree.Insert(&a);
+    other.Insert(&b);
+
+    int op_idx = -1;
+    CHECK(!other.Erase(&a), "cross-tree erase should fail");
+    CHECK(tree.size() == 1, "cross-tree erase changed source tree size");
+    CHECK(other.size() == 1, "cross-tree erase changed target tree size");
+    CHECK(tree.earliest() == &a, "cross-tree erase changed source tree minimum");
+    CHECK(other.earliest() == &b, "cross-tree erase changed target tree minimum");
+    CHECK(tree.CheckRBInvariants(), "source tree invariants after cross-tree erase");
+    CHECK(other.CheckRBInvariants(), "target tree invariants after cross-tree erase");
+
+    CHECK(tree.Erase(&a), "source tree erase should still succeed");
+    CHECK(other.Erase(&b), "target tree erase should still succeed");
+  }
 
   auto remove_from_active = [&](Job* j) {
     auto it = std::find(active.begin(), active.end(), j);
@@ -146,7 +171,7 @@ int main() {
   // ---- Final drain: compare full sorted order ----
   std::printf("Draining remaining %zu elements...\n", tree.size());
   std::vector<Job*> drain_tree, drain_oracle(oracle.begin(), oracle.end());
-  while (!tree.Empty()) {
+  while (!tree.empty()) {
     drain_tree.push_back(tree.earliest());
     tree.Erase(tree.earliest());
   }

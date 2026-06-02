@@ -10,8 +10,8 @@
 
 #include "runtime/net/channel.h"
 #include "runtime/net/event_loop.h"
-#include "runtime/net/timer.h"
-#include "runtime/net/timer_id.h"
+#include "runtime/time/timer.h"
+#include "runtime/time/timer_id.h"
 #include "runtime/time/timestamp.h"
 
 namespace runtime::net {
@@ -61,13 +61,13 @@ TimerQueue::~TimerQueue() {
   active_timers_.clear();
 }
 
-TimerId TimerQueue::AddTimer(TimerCallback cb,
-                             runtime::time::Timestamp when,
-                             double interval) {
-  Timer* t = timer_pool_.Acquire(std::move(cb), when, interval);
+runtime::time::TimerId TimerQueue::AddTimer(TimerCallback cb,
+                                            runtime::time::Timestamp when,
+                                            double interval) {
+  runtime::time::Timer* t = timer_pool_.Acquire(std::move(cb), when, interval);
   loop_->RunInLoop([this, t] {
     bool earliest_changed =
-        timers_.Empty() || t->expiration() < timers_.earliest()->expiration();
+        timers_.empty() || t->expiration() < timers_.earliest()->expiration();
     timers_.Insert(t);
     active_timers_[t->sequence()] = t;
     if (earliest_changed) {
@@ -77,7 +77,7 @@ TimerId TimerQueue::AddTimer(TimerCallback cb,
   return {t, t->sequence()};
 }
 
-void TimerQueue::Cancel(TimerId id) {
+void TimerQueue::Cancel(runtime::time::TimerId id) {
   loop_->RunInLoop([this, seq = id.sequence] {
     auto it = active_timers_.find(seq);
     if (it != active_timers_.end()) {
@@ -93,20 +93,21 @@ void TimerQueue::HandleRead() {
   ReadTimerfd(timerfd_);
 
   auto expired = GetExpired(now);
-  for (Timer* timer : expired) {
+  for (runtime::time::Timer* timer : expired) {
     timer->Run();
   }
   Reset(expired, now);
 }
 
-std::vector<Timer*> TimerQueue::GetExpired(runtime::time::Timestamp now) {
-  return timers_.PopWhile([now](const Timer* t) {
+std::vector<runtime::time::Timer*> TimerQueue::GetExpired(runtime::time::Timestamp now) {
+  return timers_.PopWhile([now](const runtime::time::Timer* t) {
     return t->expiration() <= now;
   });
 }
 
-void TimerQueue::Reset(const std::vector<Timer*>& expired, runtime::time::Timestamp now) {
-  for (Timer* timer : expired) {
+void TimerQueue::Reset(const std::vector<runtime::time::Timer*>& expired,
+                       runtime::time::Timestamp now) {
+  for (runtime::time::Timer* timer : expired) {
     active_timers_.erase(timer->sequence());
     if (timer->repeat()) {
       timer->Restart(now);
@@ -116,7 +117,7 @@ void TimerQueue::Reset(const std::vector<Timer*>& expired, runtime::time::Timest
       timer_pool_.Release(timer);
     }
   }
-  if (!timers_.Empty()) {
+  if (!timers_.empty()) {
     ResetTimerfd(timers_.earliest()->expiration());
   }
 }

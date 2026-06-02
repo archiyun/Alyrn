@@ -26,7 +26,7 @@
 #include <string_view>
 #include <unordered_map>
 
-#include "runtime/base/murmurhash3.h"
+#include "runtime/ds/murmurhash3.h"
 #include "runtime/gateway/upstream.h"
 
 namespace runtime::gateway {
@@ -203,7 +203,7 @@ public:
     if (avail == 0) return nullptr;
 
     const auto& key = ctx.client_ip.empty() ? "0.0.0.0" : ctx.client_ip;
-    uint32_t hash = runtime::base::MurmurHash3(key);
+    uint32_t hash = runtime::ds::MurmurHash3(key);
     std::size_t pick = hash % avail;
     for (const auto& p : peers) {
       if (!p->Available(0)) continue;
@@ -254,7 +254,7 @@ public:
     {
       std::shared_lock lk{mutex_};
       if (ring_ && ring_->fingerprint == fp) {
-        return Lookup(*ring_, base::MurmurHash3(HashKey(ctx)));
+        return Lookup(*ring_, runtime::ds::MurmurHash3(HashKey(ctx)));
       }
     }
     // Slow path: re-fingerprint inside the exclusive lock to absorb the race
@@ -265,7 +265,7 @@ public:
       if (!ring_ || ring_->fingerprint != fresh_fp) {
         ring_ = BuildRing(peers);
       }
-      return Lookup(*ring_, base::MurmurHash3(HashKey(ctx)));
+      return Lookup(*ring_, runtime::ds::MurmurHash3(HashKey(ctx)));
     }
   }
 private:
@@ -320,7 +320,7 @@ private:
         std::string vnode_key = peer->config().name;
         vnode_key += "#";
         vnode_key += std::to_string(i);
-        uint32_t hash = base::MurmurHash3(vnode_key);
+        uint32_t hash = runtime::ds::MurmurHash3(vnode_key);
         ring->nodes.emplace_back(hash, peer);
       }
     }

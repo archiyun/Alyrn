@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 // murmurhash3.h - MurmurHash3 32-bit
-// 
+//
 // 引用: https//github.com/aappleby/smhasher (by Austin Appleby)
 // 简化版本: 只保留 x86 32-bit 路径, 适用于一致性哈希场景( 64-bit key 空间过剩， 故采用 32-bit )
 
@@ -11,7 +11,7 @@
 #include <cstdint>
 #include <string_view>
 
-namespace runtime::base {
+namespace runtime::ds {
 
 inline uint32_t rotl32(uint32_t x, int8_t r) {
     return (x << r) | (x >> (32 - r));
@@ -73,4 +73,4 @@ inline uint32_t MurmurHash3(std::string_view s, uint32_t seed = 0) {
     return MurmurHash3_x86_32(s.data(), s.size(), seed);
 }
 
-} // namespace runtime::base
+} // namespace runtime::ds
