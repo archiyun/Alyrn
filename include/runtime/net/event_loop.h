@@ -91,6 +91,7 @@ private:
   // another thread queues work into this loop.
   int wakeup_fd_;
   std::unique_ptr<Channel> wakeup_channel_;
+  std::mutex wakeup_mutex_;
 
   std::mutex mutex_;
   std::vector<Functor> pending_functors_;

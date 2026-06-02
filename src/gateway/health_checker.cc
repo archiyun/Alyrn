@@ -86,7 +86,7 @@ void HealthChecker::CheckOne(std::shared_ptr<UpstreamPeer> peer) {
   //    the outcome to a higher-priority signal.
   auto done = std::make_shared<bool>(false);
   client->set_connection_callback(
-    [this, peer, client, request, name, done](const TcpConnectionPtr& conn) {
+    [this, peer, request, name, done](const TcpConnectionPtr& conn) {
       if (conn->Connected()) {
         conn->Send(request);
       }
@@ -104,7 +104,7 @@ void HealthChecker::CheckOne(std::shared_ptr<UpstreamPeer> peer) {
   //    drive both the binary down/up threshold and the gradual effective_weight
   //    decay/recovery from the result.
   client->set_message_callback(
-    [this, peer, client, name, healthy_threshold = cfg_.healthy_threshold,
+    [this, peer, name, healthy_threshold = cfg_.healthy_threshold,
      unhealthy_threshold = cfg_.unhealthy_threshold, done](
       const TcpConnectionPtr& conn,
       runtime::net::Buffer& buf,
