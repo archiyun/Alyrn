@@ -2,14 +2,14 @@
 #include <iostream>
 #include <vector>
 
-#include "runtime/base/quad_heap.h"
+#include "runtime/ds/quad_heap.h"
 
 namespace {
 
 struct TimerJob {
   int id;
   int64_t deadline_ms;
-  runtime::base::HeapNode<TimerJob> heap_node;
+  runtime::ds::HeapNode<TimerJob> heap_node;
 };
 
 bool TimerJobLess(const TimerJob* a, const TimerJob* b) {
@@ -19,7 +19,7 @@ bool TimerJobLess(const TimerJob* a, const TimerJob* b) {
   return a->id < b->id;
 }
 
-using TimerHeap = runtime::base::IntrusiveQuadHeap<TimerJob, &TimerJob::heap_node, TimerJobLess>;
+using TimerHeap = runtime::ds::IntrusiveQuadHeap<TimerJob, &TimerJob::heap_node, TimerJobLess>;
 
 bool Expect(bool condition, const char* message) {
   if (!condition) {

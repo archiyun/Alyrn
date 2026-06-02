@@ -8,7 +8,7 @@
 
 #include "runtime/base/noncopyable.h"
 
-namespace runtime::base {
+namespace runtime::ds {
 
 static constexpr std::size_t kNotInHeap = static_cast<std::size_t>(-1);
 
@@ -23,7 +23,7 @@ template <typename T,
           HeapNode<T> T::*kMember,           // Member pointer of Intrusive Node
           bool (*kLess)(const T*, const T*)  // Comparator
           >
-class IntrusiveQuadHeap : public NonCopyable {
+class IntrusiveQuadHeap : public runtime::base::NonCopyable {
 public:
   IntrusiveQuadHeap() = default;
   ~IntrusiveQuadHeap() = default;
@@ -146,4 +146,4 @@ std::vector<T*> IQAH_TYPE::PopWhile(Pred pred) {
 
 #undef IQAH_TYPE
 #undef IQAH_TMPL
-}  // namespace runtime::base
+}  // namespace runtime::ds

@@ -10,7 +10,7 @@
 #include <vector>
 
 #include "runtime/base/noncopyable.h"
-#include "runtime/net/timer_id.h"
+#include "runtime/time/timer_id.h"
 #include "runtime/time/timestamp.h"
 
 namespace runtime::net {
@@ -56,16 +56,16 @@ public:
   bool IsInLoopThread() const;
 
   // Schedules cb to run once at the specified time point.
-  TimerId RunAt(runtime::time::Timestamp time, Functor cb);
+  runtime::time::TimerId RunAt(runtime::time::Timestamp time, Functor cb);
 
   // Schedules cb to run once after delay_sec seconds.
-  TimerId RunAfter(double delay_sec, Functor cb);
+  runtime::time::TimerId RunAfter(double delay_sec, Functor cb);
 
   // Schedules cb to run repeatedly every interval_sec seconds.
-  TimerId RunEvery(double interval_sec, Functor cb);
+  runtime::time::TimerId RunEvery(double interval_sec, Functor cb);
 
   // Cancels a previously scheduled timer.
-  void Cancel(TimerId id);
+  void Cancel(runtime::time::TimerId id);
 
 private:
   // Wakes up the loop when work is queued from another thread.

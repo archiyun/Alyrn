@@ -42,9 +42,9 @@ Logger& Logger::Instance() {
     return logger;
 }
 
-void Logger::Init(const std::string &filename, 
-                  LogLevel level, 
-                  int flush_interval_ms, 
+void Logger::Init(const std::string &filename,
+                  LogLevel level,
+                  int flush_interval_ms,
                   std::size_t roll_size) {
     if (async_logger_) {
         async_logger_->Stop();
@@ -74,22 +74,22 @@ bool Logger::ShouldLog(LogLevel level) const {
     return level >= level_.load(std::memory_order_relaxed);
 }
 
-void Logger::Log(LogLevel level, 
+void Logger::Log(LogLevel level,
                  const char *file,
                  int line,
                  const char *func,
                  std::string_view message) {
     if (level < level_.load(std::memory_order_relaxed)) {
-        return;        
+        return;
     }
 
     if (!async_logger_) {
         return;
     }
 
-    const std::string formatted = 
+    const std::string formatted =
         FormatLogMessage(level, file, line, func, message);
-    
+
     async_logger_->Append(formatted.data(), formatted.size());
 }
 
@@ -109,4 +109,5 @@ const char* ToString(LogLevel level) {
             return "UNKNOWN";
     }
 }
-} // namespace runtime::log
+
+}  // namespace runtime::log

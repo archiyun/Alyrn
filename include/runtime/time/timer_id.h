@@ -4,11 +4,11 @@
 
 #include <cstdint>
 
-namespace runtime::net {
+namespace runtime::time {
 
 class Timer;
 
-// A lightweight cancellation handle returned by TimerQueue.
+// A lightweight cancellation handle returned by timer schedulers.
 //
 // TimerId does not own the Timer. `sequence` is used together with the raw
 // pointer to avoid ABA: an old handle must not cancel a new Timer that reuses
@@ -17,9 +17,7 @@ struct TimerId {
   Timer* timer{nullptr};
   int64_t sequence{0};
 
-  bool Valid() const {
-    return timer != nullptr;
-  }
+  bool Valid() const { return timer != nullptr; }
 };
 
-}  // namespace runtime::net
+}  // namespace runtime::time

@@ -14,13 +14,11 @@
 #include "runtime/log/logger.h"
 #include "runtime/net/channel.h"
 #include "runtime/net/poller.h"
-#include "runtime/net/timer_id.h"
 #include "runtime/net/timer_queue.h"
+#include "runtime/time/timer_id.h"
 #include "runtime/time/timestamp.h"
 
 namespace runtime::net {
-
-class TimerId;
 
 namespace {
 
@@ -218,22 +216,22 @@ void EventLoop::DoPendingFunctors() {
   calling_pending_functors_.store(false, std::memory_order_relaxed);
 }
 
-TimerId EventLoop::RunAt(runtime::time::Timestamp time, Functor cb) {
+runtime::time::TimerId EventLoop::RunAt(runtime::time::Timestamp time, Functor cb) {
   return timer_queue_->AddTimer(std::move(cb), time, 0.0);
 }
 
-TimerId EventLoop::RunAfter(double delay, Functor cb) {
+runtime::time::TimerId EventLoop::RunAfter(double delay, Functor cb) {
   using runtime::time::AddTime;
   using runtime::time::Timestamp;
   return timer_queue_->AddTimer(std::move(cb), AddTime(Timestamp::Now(), delay), 0.0);
 }
 
-TimerId EventLoop::RunEvery(double interval, Functor cb) {
+runtime::time::TimerId EventLoop::RunEvery(double interval, Functor cb) {
   using runtime::time::AddTime;
   using runtime::time::Timestamp;
   return timer_queue_->AddTimer(std::move(cb), AddTime(Timestamp::Now(), interval), interval);
 }
 
-void EventLoop::Cancel(TimerId id) { timer_queue_->Cancel(id); }
+void EventLoop::Cancel(runtime::time::TimerId id) { timer_queue_->Cancel(id); }
 
 }  // namespace runtime::net
