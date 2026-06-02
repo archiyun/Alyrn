@@ -8,7 +8,7 @@ A C++20 high-concurrency network runtime for Linux. The project is layered — y
 Gateway Layer  ─── runtime::gateway
 HTTP Layer     ─── runtime::http        (depends on net)
 Net Layer      ─── runtime::net         (depends on foundation)
-Foundation     ─── runtime::base / log / time / task / memory / metrics
+Foundation     ─── runtime::base / ds / log / time / task / memory / metrics
 ```
 
 ## Features
@@ -30,12 +30,11 @@ Foundation     ─── runtime::base / log / time / task / memory / metrics
 - `epoll`-based event loop, One-Loop-Per-Thread I/O threading
 - Incremental HTTP/1.1 parser (`HttpContext`) — zero intermediate copies, keep-alive via `Reset()`
 - Trie router with static/dynamic segments and path parameters (`:param` syntax)
-- Static-first matching — `/users/me` is never captured by `/users/:id`
 
 ### Networking (`runtime::net`)
 
 - `EventLoop`, `EpollPoller`, `Channel`, `TcpServer`, `TcpConnection`, `Buffer`
-- Timer queue backed by a generic intrusive red-black tree (`TimerTree`)
+- Timer queue driven by `timerfd`, indexing `runtime::time::Timer` objects through `TimerTree`
 - Level-triggered and edge-triggered epoll modes
 
 ### Foundation
@@ -43,8 +42,7 @@ Foundation     ─── runtime::base / log / time / task / memory / metrics
 - Asynchronous double-buffered logger
 - `MemoryPool`, `ObjectPool` allocators
 - `Scheduler`, `ThreadPool`, `WorkQueue` with cooperative cancellation
-- `IntrusiveRBTree<T, kMember, kLess>` — generic red-black tree with zero per-node heap allocation
-- `IntrusiveQuadHeap<T, kMember, kLess>` — intrusive 4-ary min-heap skeleton for timer-style queues
+- `runtime::ds::IntrusiveRBTree<T, kMember, kLess>` and `IntrusiveQuadHeap` — generic intrusive data structures with zero per-node heap allocation
 - `Counter`, `Gauge`, `Histogram`, `Registry` metrics interfaces
 
 ## Requirements
@@ -60,8 +58,6 @@ Optional:
 
 - GoogleTest — if found by CMake, `runtime_unit_tests` and `runtime_integration_tests` are built automatically
 - `liburing` — for the `io_uring_echo` example only
-- `wrk` — for the HTTP benchmark scripts
-
 On Ubuntu / Debian:
 
 ```bash
@@ -256,7 +252,7 @@ Library targets:
 | `runtime_http` | HTTP server, Trie router, request/response, context |
 | `runtime_net` | EventLoop, TcpServer, Channel, Poller, Buffer, TimerQueue |
 | `runtime_task` | Scheduler, ThreadPool, Task, WorkQueue |
-| `runtime_foundation` | Logger, Timestamp, MemoryPool, ObjectPool, IntrusiveRBTree, IntrusiveQuadHeap, metrics |
+| `runtime_foundation` | Logger, Timestamp, MemoryPool, ObjectPool, `runtime::ds`, metrics |
 
 ## Run Tests
 
@@ -286,42 +282,26 @@ Notes:
 - Smoke tests build without GoogleTest
 - If CMake finds GoogleTest, it also builds `runtime_unit_tests` and `runtime_integration_tests`
 
-## Benchmark
-
-```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j"$(nproc)"
-IO_THREADS=2 ./build/examples/demo_http_server
-```
-
-```bash
-wrk -t1 -c128 -d5s http://127.0.0.1:18080/api/health
-wrk -t1 -c128 -d5s -s benchmarks/wrk/post_echo.lua http://127.0.0.1:18080/api/echo
-bash benchmarks/wrk/run_wrk.sh
-```
-
 ## Repository Layout
 
 ```text
 .
 ├── include/runtime/
-│   ├── base/        # NonCopyable, CurrentThread, ThreadPool, IntrusiveRBTree
-│   │                # IntrusiveQuadHeap
+│   ├── base/        # NonCopyable, CurrentThread
+│   ├── ds/          # IntrusiveRBTree, IntrusiveQuadHeap, MurmurHash3
 │   ├── gateway/     # GatewayServer, Upstream, LoadBalancer, HealthChecker, ProxyPass
 │   ├── http/        # HttpServer, Router, HttpContext, HttpRequest, HttpResponse
 │   ├── log/         # Logger, AsyncLogger
 │   ├── memory/      # MemoryPool, ObjectPool
 │   ├── metrics/     # Counter, Gauge, Histogram, Registry
-│   ├── net/         # EventLoop, TcpServer, Channel, Poller, Buffer, Timer
-│   ├── task/        # Scheduler, ThreadPool, Task, WorkQueue
-│   └── time/        # Timestamp
+│   ├── net/         # EventLoop, TcpServer, Channel, Poller, Buffer, TimerQueue
+│   ├── task/        # Scheduler, ThreadPool, Task, WorkQueue, coro
+│   ├── time/        # Timestamp, Timer, TimerId, TimerTree
+│   └── trace/       # TraceId, LifecycleTrace
 ├── src/             # Implementations (mirrors include layout)
 ├── examples/        # demo_gateway, demo_http_server, demo_echo_server, demo_rbtree
 ├── tests/           # Unit, integration, smoke tests, oracle validator
-├── benchmarks/      # wrk scripts and result archives
-├── config/          # Example configuration files
-├── docs/            # Design notes
-└── third_party/     # Third-party headers
+└── docs/            # Design notes
 ```
 
 ## Architecture
@@ -337,14 +317,13 @@ HTTP Layer      runtime::http
 
 Net Layer       runtime::net
   TcpServer, TcpConnection, EventLoop, EpollPoller, Channel
-  Buffer, TimerQueue (IntrusiveRBTree-backed)
+  Buffer, TimerQueue (timerfd-backed)
 
-Foundation      runtime::base / log / time / task / memory / metrics
+Foundation      runtime::base / ds / log / time / task / memory / metrics
   AsyncLogger, Scheduler, ThreadPool
   MemoryPool, ObjectPool
-  IntrusiveRBTree<T, kMember, kLess>
-  IntrusiveQuadHeap<T, kMember, kLess>
-  Timestamp, Counter, Gauge, Histogram
+  runtime::ds::IntrusiveRBTree<T, kMember, kLess>, IntrusiveQuadHeap
+  Timestamp, Timer, TimerTree, Counter, Gauge, Histogram
 ```
 
 Typical gateway request flow:

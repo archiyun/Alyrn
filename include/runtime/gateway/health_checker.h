@@ -10,7 +10,7 @@
 #include "runtime/gateway/health_check_config.h"
 #include "runtime/gateway/upstream_registry.h"
 #include "runtime/net/event_loop.h"
-#include "runtime/net/timer_id.h"
+#include "runtime/time/timer_id.h"
 
 namespace runtime::gateway {
 
@@ -34,7 +34,7 @@ private:
   runtime::net::EventLoop* loop_;
   UpstreamRegistry& registry_;
   HealthCheckConfig cfg_;
-  runtime::net::TimerId timer_id_;
+  runtime::time::TimerId timer_id_;
   bool running_{false};
 
   // Consecutive successful probes per peer. Not persisted across restarts.

@@ -1,5 +1,5 @@
 // Demo: IntrusiveRBTree 使用示例
-// 
+//
 // 侵入式的 红黑树结构， 使用的方法非常简单。
 // 类里包含 红黑树节点 成员即可。
 // 场景：一个按截止时间调度的任务调度器。
@@ -13,9 +13,9 @@
 #include <cstdio>
 #include <string>
 
-#include "runtime/base/rbtree.h"
+#include "runtime/ds/intrusive_rbtree.h"
 
-using namespace runtime::base;
+using namespace runtime::ds;
 
 // ------------------------------------------------------------
 // 1. 定义任务元素类型，并在其中嵌入红黑树节点

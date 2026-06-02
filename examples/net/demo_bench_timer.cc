@@ -22,7 +22,7 @@
 #include <vector>
 
 #include "runtime/net/event_loop.h"
-#include "runtime/net/timer_id.h"
+#include "runtime/time/timer_id.h"
 
 using clk = std::chrono::steady_clock;
 using ns_t = std::chrono::nanoseconds;
@@ -64,7 +64,7 @@ int main(int argc, char** argv) {
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
   // --- 1) AddTimer 速率(远期 timer,不会立刻触发) ---
-  std::vector<runtime::net::TimerId> ids;
+  std::vector<runtime::time::TimerId> ids;
   ids.reserve(N);
   long long add_ns = 0;
   RunInLoopSync(loop, [&]() {
