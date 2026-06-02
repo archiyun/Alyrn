@@ -106,7 +106,13 @@ EventLoop::~EventLoop() {
 
   wakeup_channel_->DisableAll();
   wakeup_channel_->Remove();
-  ::close(wakeup_fd_);
+  {
+    std::lock_guard lk{wakeup_mutex_};
+    if (wakeup_fd_ >= 0) {
+      ::close(wakeup_fd_);
+      wakeup_fd_ = -1;
+    }
+  }
   t_loop_in_this_thread = nullptr;
 }
 
@@ -184,7 +190,12 @@ bool EventLoop::HasChannel(Channel* channel) const {
 
 bool EventLoop::IsInLoopThread() const { return thread_id_ == std::this_thread::get_id(); }
 
-void EventLoop::Wakeup() { WriteEventfd(wakeup_fd_); }
+void EventLoop::Wakeup() {
+  std::lock_guard lk{wakeup_mutex_};
+  if (wakeup_fd_ >= 0) {
+    WriteEventfd(wakeup_fd_);
+  }
+}
 
 void EventLoop::HandleRead() { ReadEventfd(wakeup_fd_); }
 
