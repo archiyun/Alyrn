@@ -7,6 +7,8 @@
  * 运行时换级别
  */
 
+#include <unistd.h>
+
 #include <filesystem>
 #include <fstream>
 #include <iostream>
