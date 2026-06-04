@@ -17,12 +17,11 @@ Foundation     ─── runtime::base / ds / log / time / task / memory / metri
 
 - **Reverse proxy** — transparent HTTP forwarding to upstream backends over persistent connections
 - **Upstream management** — `UpstreamRegistry` + `Upstream` + `UpstreamPeer`; add backends at runtime
-- **Load balancing** — Round Robin, Smooth Weighted Round Robin, Least Connections, Random, Weighted Random; pluggable via `LoadBalancer` interface
+- **Load balancing** — Round Robin, Smooth Weighted Round Robin, Least Connections, Random, Weighted Random, IP Hash, Consistent Hash, and P2C; pluggable via `LoadBalancer` interface
 - **Active health checking** — periodic HTTP probe per backend; automatic mark-down after N consecutive failures and mark-up after M consecutive successes
 - **Passive failure tracking** — `ProxySession` records per-request failures; backends are fenced for `fail_timeout` after `max_fails`
 - **Connection pooling** — `UpstreamConnPool` maintains persistent connections to each backend, one pool per I/O thread (no cross-thread contention)
 - **Direct routes** — register synchronous handlers on the gateway without touching `HttpServer`
-- **Static file serving** — serve a local directory under a URL prefix
 - **Code-driven configuration** — no config files; upstreams and routes are wired in C++ at startup
 
 ### HTTP server (`runtime::http`)
@@ -309,8 +308,9 @@ Notes:
 ```text
 Gateway Layer   runtime::gateway
   GatewayServer, UpstreamRegistry, Upstream, UpstreamPeer
-  LoadBalancer (RoundRobin / WeightedRoundRobin / LeastConn / Random)
-  HealthChecker, ProxyPass, UpstreamConnPool, StaticHandler
+  LoadBalancer (RoundRobin / WeightedRoundRobin / LeastConn / Random /
+  WeightedRandom / IPHash / ConsistentHash / P2C)
+  HealthChecker, ProxyPass, UpstreamConnPool
 
 HTTP Layer      runtime::http
   HttpServer, Router (Trie), HttpContext, HttpRequest, HttpResponse
@@ -337,7 +337,6 @@ kernel
       ├── Direct  → synchronous Handler → HttpResponse
       ├── Proxy   → LoadBalancer::Select() → UpstreamConnPool
       │             → ProxySession (async upstream I/O on same Sub Loop)
-      └── Static  → ThreadPool file I/O → HttpResponse
   → TcpConnection::Send()
 ```
 
