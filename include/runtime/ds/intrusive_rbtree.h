@@ -29,43 +29,41 @@ namespace runtime::ds {
 //
 template <typename T>
 struct RBTNode {
-  T*        owner{nullptr};
-  RBTNode*  parent{nullptr};
-  RBTNode*  left{nullptr};
-  RBTNode*  right{nullptr};
+  T* owner{nullptr};
+  RBTNode* parent{nullptr};
+  RBTNode* left{nullptr};
+  RBTNode* right{nullptr};
   const void* tree{nullptr};
-  bool      red{false};
-  bool      in_tree{false};
+  bool red{false};
+  bool in_tree{false};
 };
 
-
-template <
-  typename T,
-  RBTNode<T> T::* kMember,           // Member pointer of Intrusive Node
-  bool (*kLess)(const T*, const T*)  // Comparator
->
+template <typename T,
+          RBTNode<T> T::*kMember,            // Member pointer of Intrusive Node
+          bool (*kLess)(const T*, const T*)  // Comparator
+          >
 class IntrusiveRBTree : public runtime::base::NonCopyable {
 public:
   IntrusiveRBTree();
   ~IntrusiveRBTree() = default;
 
   // O(1)
-  bool  empty() const { return size_ == 0; }
+  bool empty() const { return size_ == 0; }
   std::size_t size() const { return size_; }
 
   // O(log n) amortized; no-op if elem is already in the tree.
-  void  Insert(T* elem);
+  void Insert(T* elem);
 
   // O(log n) amortized; returns false if elem was not in the tree.
-  bool  Erase(T* elem);
+  bool Erase(T* elem);
 
   // O(1) — cached pointer, updated on Insert and Erase.
-  T*    earliest() const;
+  T* earliest() const { return min_ == sentinel_ ? nullptr : ElemOf(min_); }
 
   // O(k log n) where k is the number of extracted elements.
   // Extracts (and erases) the earliest elements satisfying pred in key order.
   // Stops at the first element that fails the predicate.
-  template<typename Pred>
+  template <typename Pred>
   std::vector<T*> PopWhile(Pred pred);
 
   // O(n) — debug only. Verifies RB invariants (root black, no adjacent reds,
@@ -82,8 +80,8 @@ private:
   inline static void Black(RBTNode<T>* node) { node->red = false; }
   inline static void CopyColor(RBTNode<T>* dst, RBTNode<T>* src) { dst->red = src->red; }
 
-  static RBTNode<T>* NodeOf(T* elem) { return &(elem->*kMember);}
-  static T*          ElemOf(RBTNode<T>* node) { return node->owner; }
+  static RBTNode<T>* NodeOf(T* elem) { return &(elem->*kMember); }
+  static T* ElemOf(RBTNode<T>* node) { return node->owner; }
 
   // O(log n) — walks left spine of subtree.
   RBTNode<T>* Minimum(RBTNode<T>* node) const;
@@ -108,12 +106,11 @@ private:
   std::size_t size_{0};
 };
 
-#define IRBT_TMPL template<typename T, RBTNode<T> T::* kMember, bool (*kLess)(const T*, const T*)>
+#define IRBT_TMPL template <typename T, RBTNode<T> T::*kMember, bool (*kLess)(const T*, const T*)>
 #define IRBT_TYPE IntrusiveRBTree<T, kMember, kLess>
 
 IRBT_TMPL
-IRBT_TYPE::IntrusiveRBTree()
-    : sentinel_{&sentinel_node_}, root_{sentinel_}, min_{sentinel_} {
+IRBT_TYPE::IntrusiveRBTree() : sentinel_{&sentinel_node_}, root_{sentinel_}, min_{sentinel_} {
   InitSentinel();
 }
 
@@ -141,7 +138,7 @@ RBTNode<T>* IRBT_TYPE::Next(RBTNode<T>* node) const {
     return Minimum(node->right);
   }
   while (true) {
-    auto parent = node->parent;
+    auto* parent = node->parent;
     if (parent == sentinel_ || node == parent) {
       return sentinel_;
     }
@@ -155,16 +152,19 @@ RBTNode<T>* IRBT_TYPE::Next(RBTNode<T>* node) const {
 // Replace subtree rooted at src with subtree rooted at dst.
 IRBT_TMPL
 void IRBT_TYPE::Transplant(RBTNode<T>* src, RBTNode<T>* dst) {
-  if (src->parent == sentinel_) root_ = dst;
-  else if (src == src->parent->left) src->parent->left = dst;
-  else src->parent->right = dst;
+  if (src->parent == sentinel_)
+    root_ = dst;
+  else if (src == src->parent->left)
+    src->parent->left = dst;
+  else
+    src->parent->right = dst;
   dst->parent = src->parent;
 }
 
 // -- Rotations --
 IRBT_TMPL
 void IRBT_TYPE::LeftRotate(RBTNode<T>* pivot) {
-  auto new_top = pivot->right;
+  auto* new_top = pivot->right;
   pivot->right = new_top->left;
   if (new_top->left != sentinel_) new_top->left->parent = pivot;
   Transplant(pivot, new_top);
@@ -174,7 +174,7 @@ void IRBT_TYPE::LeftRotate(RBTNode<T>* pivot) {
 
 IRBT_TMPL
 void IRBT_TYPE::RightRotate(RBTNode<T>* pivot) {
-  auto new_top = pivot->left;
+  auto* new_top = pivot->left;
   pivot->left = new_top->right;
   if (new_top->right != sentinel_) new_top->right->parent = pivot;
   Transplant(pivot, new_top);
@@ -197,7 +197,7 @@ IRBT_TMPL
 void IRBT_TYPE::InsertFixup(RBTNode<T>* node) {
   while (node != root_ && IsRed(node->parent)) {
     if (node->parent == node->parent->parent->left) {
-      auto uncle = node->parent->parent->right;
+      auto* uncle = node->parent->parent->right;
       if (IsRed(uncle)) {
         // CLRS insert case 1: parent and uncle are red. Recolor and move the
         // violation up to the grandparent.
@@ -218,7 +218,7 @@ void IRBT_TYPE::InsertFixup(RBTNode<T>* node) {
         RightRotate(node->parent->parent);
       }
     } else {
-      auto uncle = node->parent->parent->left;
+      auto* uncle = node->parent->parent->left;
       if (IsRed(uncle)) {
         // CLRS insert case 1, mirrored.
         Black(node->parent);
@@ -243,7 +243,7 @@ void IRBT_TYPE::InsertFixup(RBTNode<T>* node) {
 
 IRBT_TMPL
 void IRBT_TYPE::Insert(T* elem) {
-  auto node = NodeOf(elem);
+  auto* node = NodeOf(elem);
   if (node->in_tree) return;
   node->owner = elem;
   node->in_tree = true;
@@ -253,15 +253,18 @@ void IRBT_TYPE::Insert(T* elem) {
   node->parent = sentinel_;
   Red(node);
 
-  auto parent = sentinel_;
-  for (auto cursor = root_ ; cursor != sentinel_; ) {
+  auto* parent = sentinel_;
+  for (auto* cursor = root_; cursor != sentinel_;) {
     parent = cursor;
     cursor = kLess(elem, ElemOf(cursor)) ? cursor->left : cursor->right;
   }
   node->parent = parent;
-  if (parent == sentinel_) root_ = node;
-  else if (kLess(elem, ElemOf(parent))) parent->left = node;
-  else parent->right = node;
+  if (parent == sentinel_)
+    root_ = node;
+  else if (kLess(elem, ElemOf(parent)))
+    parent->left = node;
+  else
+    parent->right = node;
 
   if (min_ == sentinel_ || kLess(elem, ElemOf(min_))) {
     min_ = node;
@@ -273,9 +276,9 @@ void IRBT_TYPE::Insert(T* elem) {
 IRBT_TMPL
 void IRBT_TYPE::DeleteFixup(RBTNode<T>* node) {
   while (node != root_ && IsBlack(node)) {
-    auto parent = node->parent;
+    auto* parent = node->parent;
     if (node == parent->left) {
-      auto sibling = parent->right;
+      auto* sibling = parent->right;
       if (IsRed(sibling)) {
         // CLRS delete case 1: sibling is red. Rotate to make the sibling
         // black, then continue with one of cases 2-4.
@@ -307,7 +310,7 @@ void IRBT_TYPE::DeleteFixup(RBTNode<T>* node) {
         break;
       }
     } else {
-      auto sibling = parent->left;
+      auto* sibling = parent->left;
       if (IsRed(sibling)) {
         // CLRS delete case 1, mirrored.
         Black(sibling);
@@ -341,13 +344,13 @@ void IRBT_TYPE::DeleteFixup(RBTNode<T>* node) {
 
 IRBT_TMPL
 bool IRBT_TYPE::Erase(T* elem) {
-  auto target = NodeOf(elem);
+  auto* target = NodeOf(elem);
   if (!target->in_tree || target->tree != this) return false;
   if (target == min_) {
     min_ = Next(min_);
   }
-  auto detach = target;
-  auto orphan = sentinel_;
+  auto* detach = target;
+  auto* orphan = sentinel_;
   bool detach_original_is_red = IsRed(detach);
   if (target->left == sentinel_) {
     orphan = target->right;
@@ -383,14 +386,8 @@ bool IRBT_TYPE::Erase(T* elem) {
   return true;
 }
 
-
 IRBT_TMPL
-T* IRBT_TYPE::earliest() const {
-  return min_ == sentinel_ ? nullptr : ElemOf(min_);
-}
-
-IRBT_TMPL
-template<typename Pred>
+template <typename Pred>
 std::vector<T*> IRBT_TYPE::PopWhile(Pred pred) {
   std::vector<T*> result;
   while (!empty()) {
