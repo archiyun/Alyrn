@@ -17,12 +17,11 @@ Foundation     ─── runtime::base / ds / log / time / task / memory / metri
 
 - **反向代理** — 将 HTTP 请求透明转发到上游 backend，底层使用持久连接
 - **上游管理** — `UpstreamRegistry` + `Upstream` + `UpstreamPeer`；支持运行时动态添加 backend
-- **负载均衡** — 轮询、平滑加权轮询、最少连接、随机、加权随机；通过 `LoadBalancer` 接口可插拔
+- **负载均衡** — 轮询、平滑加权轮询、最少连接、随机、加权随机、IP 哈希、一致性哈希、P2C；通过 `LoadBalancer` 接口可插拔
 - **主动健康检查** — 定时 HTTP 探针；连续失败 N 次摘除 backend，连续成功 M 次恢复
 - **被动故障追踪** — `ProxySession` 记录每次请求的失败；达到 `max_fails` 后隔离 `fail_timeout`
 - **连接池** — `UpstreamConnPool` 对每个 backend 维护持久连接，每个 I/O 线程独立一个池，无跨线程竞争
 - **直接路由** — 在网关上直接注册同步 handler，无需单独启动 `HttpServer`
-- **静态文件服务** — 将本地目录挂载到 URL 前缀
 - **代码驱动配置** — 无配置文件，上游和路由全部在 C++ 代码中注册
 
 ### HTTP 服务层（`runtime::http`）
@@ -306,8 +305,9 @@ ctest --test-dir build -R rbtree_validator --output-on-failure
 ```text
 Gateway Layer   runtime::gateway
   GatewayServer、UpstreamRegistry、Upstream、UpstreamPeer
-  LoadBalancer（RoundRobin / WeightedRoundRobin / LeastConn / Random）
-  HealthChecker、ProxyPass、UpstreamConnPool、StaticHandler
+  LoadBalancer（RoundRobin / WeightedRoundRobin / LeastConn / Random /
+  WeightedRandom / IPHash / ConsistentHash / P2C）
+  HealthChecker、ProxyPass、UpstreamConnPool
 
 HTTP Layer      runtime::http
   HttpServer、Router（Trie）、HttpContext、HttpRequest、HttpResponse
@@ -334,7 +334,6 @@ kernel
       ├── Direct  → 同步 Handler → HttpResponse
       ├── Proxy   → LoadBalancer::Select() → UpstreamConnPool
       │             → ProxySession（异步上游 I/O，同一 Sub Loop）
-      └── Static  → ThreadPool 文件 I/O → HttpResponse
   → TcpConnection::Send()
 ```
 
