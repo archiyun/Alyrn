@@ -37,6 +37,9 @@ jobs:
           python-version: "3.x"
 
       - uses: actions/configure-pages@v5
+        if: github.event_name != 'pull_request'
+        with:
+          enablement: true
 
       - name: Install docs dependencies
         run: pip install -r requirements-docs.txt
