@@ -1,0 +1,35 @@
+site_name: high-concurrency-runtime
+site_description: C++20 high-concurrency Linux network runtime documentation
+site_url: https://akiba-miku.github.io/high-concurrency-runtime/
+repo_url: https://github.com/akiba-miku/high-concurrency-runtime
+repo_name: akiba-miku/high-concurrency-runtime
+
+theme:
+  name: material
+  language: zh
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.superfences
+
+nav:
+  - 首页: index.md
+  - 设计:
+      - 网络库: design/zh-CN/network/index.md
+      - HTTP: design/zh-CN/http/index.md
+      - 网关: design/zh-CN/gateway/index.md
+      - 数据结构: design/zh-CN/datastructure/index.md
