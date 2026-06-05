@@ -191,6 +191,17 @@ target_include_directories(quad_heap_test
 
 add_test(NAME quad_heap_test COMMAND quad_heap_test)
 
+add_executable(bloom_filter_test
+    unit/test_bloom_filter.cc
+)
+
+target_include_directories(bloom_filter_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+add_test(NAME bloom_filter_test COMMAND bloom_filter_test)
+
 add_executable(load_balancer_smoke_test
     unit/test_load_balancer_smoke.cc
 )
