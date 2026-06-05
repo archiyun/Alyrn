@@ -74,13 +74,13 @@ public:
 
   void AddProxyRoute(std::string_view path,
                      std::string_view upstream_name,
-                     std::string_view algo = "round_robin");
+                     std::string_view algo = "p2c");
   // Register a proxy route with fallback and optional circuit breaker support.
   void AddProxyRoute(std::string_view path,
                      std::string_view upstream_name,
                      FallbackConfig fallback,
                      bool circuit_breaker_enabled = false,
-                     std::string_view algo = "round_robin");
+                     std::string_view algo = "p2c");
   void EnableHealthCheck(HealthCheckConfig cfg = {});
 
   // Enable request rate limiting.
