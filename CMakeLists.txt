@@ -30,6 +30,21 @@ if(RUNTIME_ENABLE_URING)
     pkg_check_modules(URING REQUIRED liburing)
 endif()
 
+# Sanitizer toggle. Empty/OFF = no instrumentation (default). Accepts any
+# value the compiler understands after -fsanitize=, e.g.:
+#   cmake -B build-tsan -DRUNTIME_SANITIZER=thread
+#   cmake -B build-asan -DRUNTIME_SANITIZER=address,undefined
+# Applied globally to every target defined below (must precede add_library).
+# address and thread are mutually exclusive — pick one build dir per sanitizer.
+set(RUNTIME_SANITIZER "" CACHE STRING
+    "Build with a sanitizer: address | thread | undefined | address,undefined (empty = off)")
+
+if(RUNTIME_SANITIZER)
+    message(STATUS "Building with sanitizer: -fsanitize=${RUNTIME_SANITIZER}")
+    add_compile_options(-fsanitize=${RUNTIME_SANITIZER} -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=${RUNTIME_SANITIZER})
+endif()
+
 add_library(runtime_foundation STATIC
     src/log/async_logger.cc
     src/log/logger.cc

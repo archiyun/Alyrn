@@ -1,15 +1,18 @@
-// LoadBalancer 一致性哈希 + 基础 LB 冒烟测试
+// LoadBalancer smoke tests: ConsistentHash ring + the basic LB strategies.
 //
-// 编译
-// cmake --build build-tests --target load_balancer_smoke_test -j$(nproc)
-// 运行
-// ./build-tests/tests/load_balancer_smoke_test
+// Build:
+//   cmake --build build-tests --target load_balancer_smoke_test -j$(nproc)
+// Run:
+//   ./build-tests/tests/load_balancer_smoke_test
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <iostream>
 #include <memory>
 #include <string>
+#include <thread>
 #include <unordered_set>
 #include <vector>
 
@@ -31,7 +34,7 @@ void Passed(const char* name) {
   std::cout << "[PASS] " << name << '\n';
 }
 
-// --- 辅助函数：创建测试 Upstream ---
+// Helper: build a test Upstream from a list of {peer_name, weight} pairs.
 std::shared_ptr<runtime::gateway::Upstream> MakeUpstream(
     const std::string& name,
     const std::vector<std::pair<std::string, int>>& peer_weights) {
@@ -42,6 +45,12 @@ std::shared_ptr<runtime::gateway::Upstream> MakeUpstream(
     upstream->AddPeer(std::make_shared<runtime::gateway::UpstreamPeer>(
         runtime::gateway::UpstreamPeerConfig{
             .name = host_port,
+            // host/port are deliberately fixed placeholders: these are pure
+            // LB-algorithm tests that never dial a backend. ConsistentHashLB
+            // keys its vnodes and fingerprint off config().name only, so the
+            // peer identity that matters is `name`. Every peer shares port 80
+            // (the cast just silences narrowing into the uint16_t field); the
+            // name is what distinguishes them.
             .host = "127.0.0.1",
             .port = static_cast<uint16_t>(80),
             .weight = weight,
@@ -51,7 +60,7 @@ std::shared_ptr<runtime::gateway::Upstream> MakeUpstream(
 }
 
 // ================================================================
-// ConsistentHashLB 专项测试
+// ConsistentHashLB tests
 // ================================================================
 
 bool TestConsistentHashSameKeySamePeer() {
@@ -62,7 +71,7 @@ bool TestConsistentHashSameKeySamePeer() {
   runtime::gateway::RequestContext ctx{.client_ip = "10.0.0.1"};
   auto first = lb.Select(*upstream, ctx);
 
-  // 同一 key 连续 100 次都应命中同一 peer
+  // The same key must map to the same peer across 100 repeated selects.
   for (int i = 0; i < 100; i++) {
     auto peer = lb.Select(*upstream, ctx);
     if (peer != first) {
@@ -85,14 +94,14 @@ bool TestConsistentHashDifferentKeysSpread() {
     if (!peer) return Expect(false, "must return a peer");
     seen.insert(peer->config().name);
   }
-  // 500 个不同 IP 应该命中全部 3 个 peer
+  // 500 distinct IPs should spread across all 3 peers.
   if (!Expect(seen.size() >= 3, "500 different keys should hit at least 3 peers")) return false;
   Passed("TestConsistentHashDifferentKeysSpread");
   return true;
 }
 
 bool TestConsistentHashWeightedDistribution() {
-  // peer-a 权重 10，peer-b 权重 1 — peer-a 应有更多虚拟节点
+  // peer-a weight 10 vs peer-b weight 1 -> peer-a gets ~10x the vnodes.
   auto upstream = MakeUpstream("test_ch_w", {
       {"peer-a:80", 10}, {"peer-b:80", 1}});
   runtime::gateway::ConsistentHashLB lb(150, "client_ip");
@@ -106,7 +115,7 @@ bool TestConsistentHashWeightedDistribution() {
   }
 
   double ratio = static_cast<double>(count_a) / static_cast<double>(count_b);
-  // 权重 10:1，分布比例应接近 10:1（允许 ±30% 误差）
+  // With a 10:1 weight, the traffic split should land near 10:1 (loose bounds).
   if (!Expect(ratio > 5.0 && ratio < 20.0,
               "weighted nodes: peer-a should get ~10x peer-b traffic")) return false;
   Passed("TestConsistentHashWeightedDistribution");
@@ -121,14 +130,15 @@ bool TestConsistentHashRingRebuildOnPeerChange() {
   runtime::gateway::RequestContext ctx{.client_ip = "10.0.0.5"};
   auto before = lb.Select(*upstream, ctx);
 
-  // 加一个新 peer
+  // Add a new peer.
   upstream->AddPeer(std::make_shared<runtime::gateway::UpstreamPeer>(
       runtime::gateway::UpstreamPeerConfig{
           .name = "peer-c:80", .host = "127.0.0.1", .port = 80, .weight = 1}));
 
   auto after = lb.Select(*upstream, ctx);
-  // 指纹变了，环重建，但 key 可能迁移到新 peer 也可能不变（取决于 hash 值）
-  // 只需验证环正常返回即可
+  // The fingerprint changed so the ring is rebuilt. The key may or may not
+  // migrate to the new peer (depends on the hash) -- we only assert the ring
+  // still serves a valid result.
   if (!Expect(after != nullptr, "ring must work after adding peer")) return false;
   Passed("TestConsistentHashRingRebuildOnPeerChange");
   return true;
@@ -138,13 +148,13 @@ bool TestConsistentHashExcludesDownPeers() {
   auto upstream = MakeUpstream("test_ch", {
       {"peer-a:80", 1}, {"peer-b:80", 1}});
 
-  // 标记 peer-a 为 down
+  // Mark peer-a down.
   auto peers = upstream->peers();
   peers[0]->state().down.store(true);
 
   runtime::gateway::ConsistentHashLB lb(150, "client_ip");
 
-  // 所有请求都只能命中 peer-b
+  // Every request must now land on peer-b only.
   for (int i = 0; i < 200; i++) {
     runtime::gateway::RequestContext ctx{.client_ip = "10.0.0." + std::to_string(i)};
     auto peer = lb.Select(*upstream, ctx);
@@ -201,7 +211,7 @@ bool TestConsistentHashHashOnFields() {
 }
 
 bool TestConsistentHashVNodNodesBounds() {
-  // vnodes_per_unit 超出范围时应被 clamp
+  // vnodes_per_unit out of range must be clamped at construction.
   runtime::gateway::ConsistentHashLB lb_low(50, "client_ip");
   runtime::gateway::ConsistentHashLB lb_high(500, "client_ip");
 
@@ -217,7 +227,7 @@ bool TestConsistentHashVNodNodesBounds() {
 }
 
 bool TestConsistentHashHashRingUniqueVirtualNodes() {
-  // 哈希碰撞去重后环应当可查（不 crash）
+  // After collision dedup the ring must still be queryable (no crash).
   auto upstream = MakeUpstream("test_ch", {{"peer-a:80", 1}});
   runtime::gateway::ConsistentHashLB lb(150, "client_ip");
 
@@ -230,8 +240,78 @@ bool TestConsistentHashHashRingUniqueVirtualNodes() {
   return true;
 }
 
+// Stress the RCU path: N reader threads call Select lock-free while one mutator
+// thread periodically flips some peers' down state. Each flip changes the
+// fingerprint, continuously triggering BuildRing + atomic publish, so the read
+// side (load) and write side (store) genuinely run concurrently. peer-0 stays
+// up the whole time, so the fingerprint is never empty and Select always has a
+// target.
+//
+// The real value is under TSan/ASan: it proves the ring swap is free of data
+// races / use-after-free. The assertion itself is intentionally weak (non-null
+// + pointer belongs to the known peer set), because an RCU reader observes some
+// past snapshot -- returning a peer that may have just been marked down is the
+// expected staleness, not a bug.
+bool TestConsistentHashConcurrentSelectWithPeerChanges() {
+  auto upstream = MakeUpstream("test_ch_mt", {
+      {"peer-0:80", 1}, {"peer-1:80", 1}, {"peer-2:80", 1},
+      {"peer-3:80", 1}, {"peer-4:80", 1}, {"peer-5:80", 1}});
+  auto lb = std::make_shared<runtime::gateway::ConsistentHashLB>(150, "client_ip");
+
+  // Set of valid peer pointers for the membership check (the result must be
+  // one of them). The peers vector stays structurally fixed for the whole
+  // test; only the per-peer `down` atomics get flipped.
+  const auto& peers = upstream->peers();
+  std::unordered_set<runtime::gateway::UpstreamPeer*> valid;
+  for (const auto& p : peers) valid.insert(p.get());
+
+  constexpr int kReaders = 8;
+  constexpr int kItersPerReader = 50000;
+  std::atomic<bool> stop{false};
+  std::atomic<bool> failed{false};
+
+  std::vector<std::thread> readers;
+  readers.reserve(kReaders);
+  for (int t = 0; t < kReaders; ++t) {
+    readers.emplace_back([&, t] {
+      for (int i = 0; i < kItersPerReader; ++i) {
+        runtime::gateway::RequestContext ctx{
+            .client_ip = "10." + std::to_string(t) + ".0." +
+                         std::to_string(i & 0xFF)};
+        auto peer = lb->Select(*upstream, ctx);
+        if (!peer || valid.find(peer.get()) == valid.end()) {
+          failed.store(true, std::memory_order_relaxed);
+          return;
+        }
+      }
+    });
+  }
+
+  // Mutator: flip the down state of peers 1/3/5 to force ring rebuilds;
+  // peers 0/2/4 never go down so a target always exists.
+  std::thread mutator([&] {
+    bool down = false;
+    while (!stop.load(std::memory_order_relaxed)) {
+      down = !down;
+      peers[1]->state().down.store(down, std::memory_order_relaxed);
+      peers[3]->state().down.store(down, std::memory_order_relaxed);
+      peers[5]->state().down.store(!down, std::memory_order_relaxed);
+      std::this_thread::sleep_for(std::chrono::microseconds(50));
+    }
+  });
+
+  for (auto& th : readers) th.join();
+  stop.store(true, std::memory_order_relaxed);
+  mutator.join();
+
+  if (!Expect(!failed.load(std::memory_order_relaxed),
+              "concurrent Select must always return a valid peer")) return false;
+  Passed("TestConsistentHashConcurrentSelectWithPeerChanges");
+  return true;
+}
+
 // ================================================================
-// IPHashLB 测试
+// IPHashLB tests
 // ================================================================
 
 bool TestIPHashSameIPSamePeer() {
@@ -262,7 +342,7 @@ bool TestIPHashEmptyIPUsesFallback() {
 }
 
 // ================================================================
-// RoundRobinLB 测试
+// RoundRobinLB tests
 // ================================================================
 
 bool TestRoundRobinCycles() {
@@ -282,13 +362,70 @@ bool TestRoundRobinCycles() {
 }
 
 // ================================================================
-// CreateLoadBalancer 工厂测试
+// WeightedLeastConnectionLB tests
+// ================================================================
+
+// Picks the peer with the lowest active/weight ratio. A heavier peer must be
+// chosen even at a higher raw active count, as long as its load ratio is lower.
+// Constructed so an inverted comparison (picking the *most* loaded peer) fails.
+bool TestWeightedLeastConnectionPicksLowestRatio() {
+  auto upstream = MakeUpstream("test_wlc", {{"light:80", 1}, {"heavy:80", 3}});
+  auto peers = upstream->peers();
+  // light: 2 active / weight 1 = 2.00    heavy: 4 active / weight 3 = 1.33
+  peers[0]->state().active.store(2);
+  peers[1]->state().active.store(4);
+
+  runtime::gateway::WeightedLeastConnectionLB lb;
+  auto pick = lb.Select(*upstream);
+  if (!pick) return Expect(false, "WLC must return a peer");
+  if (!Expect(pick->config().name == "heavy:80",
+              "WLC must pick the lower active/weight ratio (heavy), not the lower raw active"))
+    return false;
+  Passed("TestWeightedLeastConnectionPicksLowestRatio");
+  return true;
+}
+
+// With equal weights it degenerates to plain least-connection: lowest active wins.
+bool TestWeightedLeastConnectionEqualWeightLowestActive() {
+  auto upstream = MakeUpstream("test_wlc", {{"a:80", 1}, {"b:80", 1}, {"c:80", 1}});
+  auto peers = upstream->peers();
+  peers[0]->state().active.store(5);
+  peers[1]->state().active.store(1);
+  peers[2]->state().active.store(9);
+
+  runtime::gateway::WeightedLeastConnectionLB lb;
+  auto pick = lb.Select(*upstream);
+  if (!pick) return Expect(false, "WLC must return a peer");
+  if (!Expect(pick->config().name == "b:80", "WLC equal weights must pick the lowest active"))
+    return false;
+  Passed("TestWeightedLeastConnectionEqualWeightLowestActive");
+  return true;
+}
+
+// Down peers are excluded even when they carry the higher weight.
+bool TestWeightedLeastConnectionExcludesDownPeers() {
+  auto upstream = MakeUpstream("test_wlc", {{"a:80", 5}, {"b:80", 1}});
+  auto peers = upstream->peers();
+  peers[0]->state().down.store(true);  // a is down despite the higher weight
+  peers[1]->state().active.store(7);
+
+  runtime::gateway::WeightedLeastConnectionLB lb;
+  auto pick = lb.Select(*upstream);
+  if (!pick) return Expect(false, "WLC must return the only available peer");
+  if (!Expect(pick->config().name == "b:80", "WLC must skip down peers")) return false;
+  Passed("TestWeightedLeastConnectionExcludesDownPeers");
+  return true;
+}
+
+// ================================================================
+// CreateLoadBalancer factory tests
 // ================================================================
 
 bool TestCreateLoadBalancerAllAlgos() {
   const char* algos[] = {
-    "round_robin", "weighted_round_robin", "least_connection",
-    "random", "weighted_random", "ip_hash", "consistent_hash"
+    "round_robin", "smooth_weighted_round_robin", "least_connection",
+    "weighted_least_connection", "random", "weighted_random",
+    "ip_hash", "consistent_hash", "p2c"
   };
   for (const auto& algo : algos) {
     auto lb = runtime::gateway::CreateLoadBalancer(algo);
@@ -305,7 +442,7 @@ bool TestCreateLoadBalancerAllAlgos() {
 }
 
 // ================================================================
-// RequestContext 默认构造
+// RequestContext default construction
 // ================================================================
 
 bool TestRequestContextDefaultEmpty() {
@@ -334,11 +471,16 @@ int main() {
   RUN(TestConsistentHashHashOnFields);
   RUN(TestConsistentHashVNodNodesBounds);
   RUN(TestConsistentHashHashRingUniqueVirtualNodes);
+  RUN(TestConsistentHashConcurrentSelectWithPeerChanges);
 
   RUN(TestIPHashSameIPSamePeer);
   RUN(TestIPHashEmptyIPUsesFallback);
 
   RUN(TestRoundRobinCycles);
+
+  RUN(TestWeightedLeastConnectionPicksLowestRatio);
+  RUN(TestWeightedLeastConnectionEqualWeightLowestActive);
+  RUN(TestWeightedLeastConnectionExcludesDownPeers);
 
   RUN(TestCreateLoadBalancerAllAlgos);
   RUN(TestRequestContextDefaultEmpty);
