@@ -45,7 +45,7 @@ struct UpstreamPeerState {
 
 // Represents a single upstream peer: static config + runtime state.
 //
-// Passive health check logic is split across Available(), OnFailure(), and OnSuccess().
+// Passive health check logic is split across AvailableAt(), OnFailure(), and OnSuccess().
 // Active health check (HealthChecker) writes state_.down directly and is orthogonal to passive.
 class UpstreamPeer {
 public:
@@ -61,14 +61,23 @@ public:
   const std::string& host_port() const { return host_port_; }
   UpstreamPeerState& state() { return state_; }
 
+  // Active-health status only. This intentionally ignores passive failure
+  // cooldowns so callers do not have to pass a fake timestamp when they only
+  // need the binary health-check state.
+  bool IsUp() const {
+    return !state_.down.load(std::memory_order_relaxed);
+  }
+
   // Returns false if: (1) marked down by health checker, or (2) fail count has reached
-  // max_fails and the fail_timeout cooldown has not yet elapsed.
-  bool Available(uint64_t now_ms) const {
-    if (state_.down.load(std::memory_order_relaxed)) return false;
+  // max_fails and the fail_timeout cooldown has not yet elapsed. `now_ms` must use
+  // the same steady-clock millisecond source passed to OnFailure().
+  bool AvailableAt(uint64_t now_ms) const {
+    if (!IsUp()) return false;
     const int fails = static_cast<int>(state_.fails.load(std::memory_order_relaxed));
     if (fails < config_.max_fails) return true;
     const uint64_t checked = state_.checked_ms.load(std::memory_order_relaxed);
-    return (now_ms - checked) >= static_cast<uint64_t>(config_.fail_timeout.count());
+    return now_ms >= checked &&
+           (now_ms - checked) >= static_cast<uint64_t>(config_.fail_timeout.count());
   }
 
   int weight() const { return config_.weight; }
@@ -88,7 +97,7 @@ public:
     state_.active.fetch_sub(1, std::memory_order_relaxed);
   }
 
-  // Records a failure: bumps fails/checked_ms (drives Available's fail_timeout window)
+  // Records a failure: bumps fails/checked_ms (drives AvailableAt's fail_timeout window)
   // and decrements effective_weight toward 0 (drives WRR gradual demotion).
   // CAS loop keeps the value in [0, config_.weight] under concurrent updates.
   void OnFailure(uint64_t now_ms) {
