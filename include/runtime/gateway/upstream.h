@@ -45,7 +45,7 @@ public:
 
   const std::string& name() const { return config_.name; }
   const UpstreamConfig& config() const { return config_; }
-  // Returns the full peer list; load balancers filter via UpstreamPeer::Available()
+  // Returns the full peer list; load balancers filter via UpstreamPeer::AvailableAt()
   // inline on each Select to avoid per-call allocation of a snapshot vector.
   const std::vector<std::shared_ptr<UpstreamPeer>>& peers() const { return peers_; }
 

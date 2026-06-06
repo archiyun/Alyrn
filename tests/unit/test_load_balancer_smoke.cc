@@ -311,6 +311,60 @@ bool TestConsistentHashConcurrentSelectWithPeerChanges() {
 }
 
 // ================================================================
+// MaglevHashLB tests
+// ================================================================
+
+bool TestMaglevHashSameKeySamePeer() {
+  auto upstream = MakeUpstream("test_maglev", {
+      {"peer-a:80", 1}, {"peer-b:80", 1}, {"peer-c:80", 1}});
+  runtime::gateway::MaglevHashLB lb(257, "client_ip");
+
+  runtime::gateway::RequestContext ctx{.client_ip = "10.0.0.1"};
+  auto first = lb.Select(*upstream, ctx);
+  if (!Expect(first != nullptr, "MaglevHash must return a peer")) return false;
+
+  for (int i = 0; i < 100; i++) {
+    auto peer = lb.Select(*upstream, ctx);
+    if (peer != first) {
+      return Expect(false, "MaglevHash: same key must always map to same peer");
+    }
+  }
+  Passed("TestMaglevHashSameKeySamePeer");
+  return true;
+}
+
+bool TestMaglevHashExcludesDownPeers() {
+  auto upstream = MakeUpstream("test_maglev", {
+      {"peer-a:80", 1}, {"peer-b:80", 1}});
+  upstream->peers()[0]->state().down.store(true);
+
+  runtime::gateway::MaglevHashLB lb(257, "client_ip");
+  for (int i = 0; i < 200; i++) {
+    runtime::gateway::RequestContext ctx{.client_ip = "10.0.1." + std::to_string(i)};
+    auto peer = lb.Select(*upstream, ctx);
+    if (!peer) return Expect(false, "MaglevHash must return a peer when one is up");
+    if (peer->config().name != "peer-b:80") {
+      return Expect(false, "MaglevHash must exclude down peers");
+    }
+  }
+  Passed("TestMaglevHashExcludesDownPeers");
+  return true;
+}
+
+bool TestMaglevHashAllPeersDownReturnsNull() {
+  auto upstream = MakeUpstream("test_maglev", {{"peer-a:80", 1}});
+  upstream->peers()[0]->state().down.store(true);
+
+  runtime::gateway::MaglevHashLB lb(257, "client_ip");
+  runtime::gateway::RequestContext ctx{.client_ip = "10.0.0.1"};
+  auto peer = lb.Select(*upstream, ctx);
+  if (!Expect(peer == nullptr, "MaglevHash must return nullptr when all peers down"))
+    return false;
+  Passed("TestMaglevHashAllPeersDownReturnsNull");
+  return true;
+}
+
+// ================================================================
 // IPHashLB tests
 // ================================================================
 
@@ -358,6 +412,46 @@ bool TestRoundRobinCycles() {
   if (!Expect(p0->config().name != p1->config().name || p1->config().name != p2->config().name,
               "RR: consecutive selects should cycle")) return false;
   Passed("TestRoundRobinCycles");
+  return true;
+}
+
+bool TestRoundRobinHonorsPassiveFailTimeout() {
+  auto upstream = std::make_shared<runtime::gateway::Upstream>(
+      runtime::gateway::UpstreamConfig{.name = "test_rr_passive"});
+  auto cooling = std::make_shared<runtime::gateway::UpstreamPeer>(
+      runtime::gateway::UpstreamPeerConfig{
+          .name = "cooling:80",
+          .host = "127.0.0.1",
+          .port = static_cast<uint16_t>(80),
+          .weight = 1,
+          .max_fails = 1,
+          .fail_timeout = std::chrono::hours(1),
+      });
+  auto healthy = std::make_shared<runtime::gateway::UpstreamPeer>(
+      runtime::gateway::UpstreamPeerConfig{
+          .name = "healthy:80",
+          .host = "127.0.0.1",
+          .port = static_cast<uint16_t>(80),
+          .weight = 1,
+      });
+  upstream->AddPeer(cooling);
+  upstream->AddPeer(healthy);
+
+  const auto now_ms = static_cast<uint64_t>(
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::steady_clock::now().time_since_epoch())
+          .count());
+  cooling->OnFailure(now_ms);
+
+  runtime::gateway::RoundRobinLB lb;
+  for (int i = 0; i < 10; ++i) {
+    auto peer = lb.Select(*upstream);
+    if (!peer) return Expect(false, "RR must return the healthy peer");
+    if (peer->config().name != "healthy:80") {
+      return Expect(false, "RR must exclude peers inside passive fail_timeout");
+    }
+  }
+  Passed("TestRoundRobinHonorsPassiveFailTimeout");
   return true;
 }
 
@@ -425,7 +519,7 @@ bool TestCreateLoadBalancerAllAlgos() {
   const char* algos[] = {
     "round_robin", "smooth_weighted_round_robin", "least_connection",
     "weighted_least_connection", "random", "weighted_random",
-    "ip_hash", "consistent_hash", "p2c"
+    "ip_hash", "consistent_hash", "maglev_hash", "p2c"
   };
   for (const auto& algo : algos) {
     auto lb = runtime::gateway::CreateLoadBalancer(algo);
@@ -473,10 +567,15 @@ int main() {
   RUN(TestConsistentHashHashRingUniqueVirtualNodes);
   RUN(TestConsistentHashConcurrentSelectWithPeerChanges);
 
+  RUN(TestMaglevHashSameKeySamePeer);
+  RUN(TestMaglevHashExcludesDownPeers);
+  RUN(TestMaglevHashAllPeersDownReturnsNull);
+
   RUN(TestIPHashSameIPSamePeer);
   RUN(TestIPHashEmptyIPUsesFallback);
 
   RUN(TestRoundRobinCycles);
+  RUN(TestRoundRobinHonorsPassiveFailTimeout);
 
   RUN(TestWeightedLeastConnectionPicksLowestRatio);
   RUN(TestWeightedLeastConnectionEqualWeightLowestActive);
