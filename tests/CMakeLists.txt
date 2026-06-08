@@ -342,7 +342,7 @@ if(GTest_FOUND)
         unit/test_memory_pool.cc
         unit/test_object_pool.cc
         unit/test_sanity.cc
-        unit/test_scheduler.cc
+        unit/test_blocking_executor.cc
     )
 
     target_link_libraries(runtime_unit_tests

@@ -69,10 +69,8 @@ add_library(runtime_task STATIC
     src/task/thread_pool.cc
     src/task/task.cc
     src/task/task_handle.cc
-    src/task/task_history.cc
     src/task/work_queue.cc
-    src/task/scheduler.cc
-    src/task/timer_scheduler.cc
+    src/task/blocking_executor.cc
 )
 
 target_include_directories(runtime_task

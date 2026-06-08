@@ -1,13 +1,9 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/task/task.h"
+#include "runtime/task/detail/task.h"
 
 namespace runtime::task {
 
-Task::Task(uint64_t id, std::string name, TaskPriority priority, Func func)
-  : id(id),
-    name(std::move(name)),
-    priority(priority),
-    func(std::move(func)) {}
+Task::Task(uint64_t id, Func func) : id(id), func(std::move(func)) {}
 
 }  // namespace runtime::task

@@ -12,7 +12,6 @@ enum class TaskState : uint8_t {
   kCompleted,  // func() returned normally
   kFailed,     // func() threw an exception
   kCancelled,  // cancelled before or during execution
-  kTimeout,    // soft timeout expired (form of cancellation)
 };
 
 }  // namespace runtime::task

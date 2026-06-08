@@ -6,12 +6,9 @@
 #include <cstdint>
 #include <functional>
 #include <future>
-#include <string>
 
 #include "runtime/task/cancellation_token.h"
-#include "runtime/task/task_options.h"
 #include "runtime/task/task_state.h"
-#include "runtime/time/timestamp.h"
 
 namespace runtime::task {
 
@@ -20,7 +17,7 @@ namespace runtime::task {
 struct Task {
   using Func = std::function<void(CancellationToken)>;
 
-  Task(uint64_t id, std::string name, TaskPriority priority, Func func);
+  Task(uint64_t id, Func func);
 
   Task(const Task&)            = delete;
   Task& operator=(const Task&) = delete;
@@ -28,24 +25,12 @@ struct Task {
   Task& operator=(Task&&)      = delete;
 
   // Identity (immutable after construction)
-  const uint64_t     id;
-  const std::string  name;
-  const TaskPriority priority;
-  Func               func;
+  const uint64_t id;
+  Func func;
 
   // Lifecycle state (written by ThreadPool workers)
   std::atomic<TaskState> state{TaskState::kPending};
   CancellationSource     cancel_source;
-
-  // Set by TimerScheduler before calling cancel_source.Cancel().
-  // WorkerLoop reads this to distinguish kTimeout from kCancelled.
-  std::atomic<bool> timeout_triggered_{false};
-
-  // Timestamps (written once each, no concurrent writes)
-  runtime::time::Timestamp created_at;
-  runtime::time::Timestamp enqueued_at;
-  runtime::time::Timestamp started_at;
-  runtime::time::Timestamp completed_at;
 
   // Fulfills the future held by TaskHandle
   std::promise<void> promise;

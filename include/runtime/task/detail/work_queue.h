@@ -3,20 +3,31 @@
 #pragma once
 
 #include <condition_variable>
+#include <cstddef>
 #include <memory>
 #include <mutex>
 #include <queue>
 #include <stop_token>
-#include <vector>
 
-#include "runtime/task/task.h"
+#include "runtime/task/detail/task.h"
 
 namespace runtime::task {
 
-// Thread-safe priority queue for Tasks.
-// Higher TaskPriority integer value → dequeued first.
+// Thread-safe bounded FIFO queue for Tasks.
 class WorkQueue {
  public:
+  enum class PushStatus {
+    kOk,
+    kFull,
+    kShutdown,
+  };
+
+  // max_size == 0 means unbounded.
+  explicit WorkQueue(std::size_t max_size = 0);
+
+  // Returns the precise reason a task was accepted or rejected.
+  PushStatus TryPush(std::shared_ptr<Task>&& task);
+
   // Returns false if the queue has been shut down.
   bool Push(std::shared_ptr<Task>&& task);
 
@@ -33,19 +44,10 @@ class WorkQueue {
   void Shutdown();
 
  private:
-  struct ByPriority {
-    // priority_queue is a max-heap: comp(a,b)=true means a has lower priority.
-    bool operator()(const std::shared_ptr<Task>& a,
-                    const std::shared_ptr<Task>& b) const {
-      return static_cast<int>(a->priority) < static_cast<int>(b->priority);
-    }
-  };
-
+  std::size_t max_size_{0};
   mutable std::mutex          mutex_;
   std::condition_variable_any cv_;
-  std::priority_queue<std::shared_ptr<Task>,
-                      std::vector<std::shared_ptr<Task>>,
-                      ByPriority> queue_;
+  std::queue<std::shared_ptr<Task>> queue_;
   bool shutdown_{false};
 };
 
