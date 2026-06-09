@@ -173,7 +173,6 @@ set(RUNTIME_HTTP_SOURCES
     src/http/router.cc
     src/http/http_server.cc
     src/http/metrics_handler.cc
-    src/http/debug_handler.cc
 )
 
 if(RUNTIME_ENABLE_HTTP2)

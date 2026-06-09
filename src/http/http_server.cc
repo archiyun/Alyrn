@@ -2,12 +2,11 @@
 // SPDX-License-Identifier: MIT
 #include "runtime/http/http_server.h"
 
-#include "runtime/http/debug_handler.h"
 #include "runtime/http/http_context.h"
 #include "runtime/http/metrics_handler.h"
 #include "runtime/http/router.h"
 #include "runtime/net/event_loop.h"
-#include "runtime/task/scheduler.h"
+#include "runtime/task/blocking_executor.h"
 #ifdef RUNTIME_ENABLE_HTTP2
 #include "runtime/http/http2_session.h"
 #endif
@@ -33,8 +32,9 @@ void HttpServer::set_edge_triggered(bool et) {
   server_.set_edge_triggered(et);
 }
 
-void HttpServer::set_scheduler(std::shared_ptr<runtime::task::Scheduler> sched) {
-  scheduler_ = std::move(sched);
+void HttpServer::set_blocking_executor(
+    std::shared_ptr<runtime::task::BlockingExecutor> executor) {
+  blocking_executor_ = std::move(executor);
 }
 
 void HttpServer::Get(std::string_view path, Handler handler,
@@ -58,32 +58,17 @@ void HttpServer::set_tls(runtime::net::SslContext* ctx) { ssl_ctx_ = ctx; }
 
 void HttpServer::Start() { server_.Start(); }
 
-void HttpServer::RegisterDebugTasksRoute() {
-  Get("/debug/tasks", [this](const HttpRequest&, HttpResponse& resp) {
-    if (!scheduler_) {
-      resp.set_status_code(StatusCode::InternalServerError);
-      resp.set_content_type("application/json; charset=utf-8");
-      resp.set_body("{\"error\":\"scheduler not set\"}");
-      return;
-    }
-    const auto& history = scheduler_->History();
-    resp.set_status_code(StatusCode::Ok);
-    resp.set_content_type("application/json; charset=utf-8");
-    resp.set_body(MakeDebugTasksJson(history.Snapshot(), history.capacity()));
-  });
-}
-
 void HttpServer::RegisterMetricsRoute() {
   Get("/metrics", [this](const HttpRequest&, HttpResponse& resp) {
-    if (!scheduler_) {
+    if (!blocking_executor_) {
       resp.set_status_code(StatusCode::InternalServerError);
       resp.set_content_type("application/json; charset=utf-8");
-      resp.set_body("{\"error\":\"scheduler not set\"}");
+      resp.set_body("{\"error\":\"blocking executor not set\"}");
       return;
     }
     resp.set_status_code(StatusCode::Ok);
     resp.set_content_type("application/json; charset=utf-8");
-    resp.set_body(MakeMetricsJson(scheduler_->metrics().Load()));
+    resp.set_body(MakeMetricsJson(blocking_executor_->metrics().Load()));
   });
 }
 
@@ -122,8 +107,8 @@ void HttpServer::OnConnection(const TcpConnectionPtr& conn) {
                   return;
                 }
                 req.set_path_params(std::move(match.params));
-                if (scheduler_) {
-                  scheduler_->Submit(
+                if (blocking_executor_) {
+                  blocking_executor_->Submit(
                       [c, req = std::move(req), resp = std::move(resp),
                        handler = match.handler, sid]() mutable {
                         try {
@@ -203,7 +188,7 @@ void HttpServer::OnMessage(const TcpConnectionPtr& conn,
 
     auto match = router_.Match(request.method(), request.path());
 
-    if (match.handler && scheduler_) {
+    if (match.handler && blocking_executor_) {
       request.set_path_params(std::move(match.params));
       // HttpRequest 现在持有 Pool unique_ptr, move-only; std::function
       // 要求 callable 可拷贝, 因此把 req/resp 装进 shared_ptr 让 lambda
@@ -214,7 +199,7 @@ void HttpServer::OnMessage(const TcpConnectionPtr& conn,
       };
       auto state = std::make_shared<DispatchState>(
           DispatchState{std::move(request), std::move(response)});
-      scheduler_->Submit(
+      blocking_executor_->Submit(
           [conn, state, handler = match.handler]() mutable {
             try {
               handler(state->request, state->response);

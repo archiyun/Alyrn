@@ -6,7 +6,7 @@
 
 namespace runtime::http {
 
-std::string MakeMetricsJson(const runtime::task::SchedulerMetrics::Snapshot& snap) {
+std::string MakeMetricsJson(const runtime::task::ExecutorMetrics::Snapshot& snap) {
   char buf[256];
   std::snprintf(buf, sizeof(buf),
     "{"
@@ -14,7 +14,6 @@ std::string MakeMetricsJson(const runtime::task::SchedulerMetrics::Snapshot& sna
       "\"completed\":%llu,"
       "\"failed\":%llu,"
       "\"cancelled\":%llu,"
-      "\"timeout\":%llu,"
       "\"queue_size\":%d,"
       "\"running_count\":%d"
     "}",
@@ -22,7 +21,6 @@ std::string MakeMetricsJson(const runtime::task::SchedulerMetrics::Snapshot& sna
     static_cast<unsigned long long>(snap.completed),
     static_cast<unsigned long long>(snap.failed),
     static_cast<unsigned long long>(snap.cancelled),
-    static_cast<unsigned long long>(snap.timeout),
     snap.queue_size,
     snap.running_count);
   return buf;

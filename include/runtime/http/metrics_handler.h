@@ -4,12 +4,12 @@
 
 #include <string>
 
-#include "runtime/task/scheduler_metrics.h"
+#include "runtime/task/executor_metrics.h"
 
 namespace runtime::http {
 
-// Serializes a SchedulerMetrics snapshot to a JSON object string.
+// Serializes an ExecutorMetrics snapshot to a JSON object string.
 // The returned string is a self-contained JSON value with no trailing newline.
-std::string MakeMetricsJson(const runtime::task::SchedulerMetrics::Snapshot& snap);
+std::string MakeMetricsJson(const runtime::task::ExecutorMetrics::Snapshot& snap);
 
 }  // namespace runtime::http
