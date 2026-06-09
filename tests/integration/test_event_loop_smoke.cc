@@ -106,6 +106,46 @@ bool TestNestedQueueInLoopSchedulesNextTurn() {
     return ok;
 }
 
+bool TestRepeatingTimerCanCancelItself() {
+    std::promise<runtime::net::EventLoop*> ready_promise;
+    std::promise<void> exited_promise;
+
+    auto ready_future = ready_promise.get_future();
+    auto exited_future = exited_promise.get_future();
+
+    int fire_count = 0;
+    runtime::time::TimerId timer_id;
+
+    std::thread loop_thread([&] {
+        runtime::net::EventLoop loop;
+        ready_promise.set_value(&loop);
+        loop.Loop();
+        exited_promise.set_value();
+    });
+
+    runtime::net::EventLoop* loop = ready_future.get();
+    loop->QueueInLoop([&] {
+        timer_id = loop->RunEvery(0.01, [&] {
+            ++fire_count;
+            if (fire_count == 1) {
+                loop->Cancel(timer_id);
+                loop->RunAfter(0.05, [loop] { loop->Quit(); });
+            }
+        });
+    });
+
+    const bool exited_ready =
+        exited_future.wait_for(2s) == std::future_status::ready;
+    if (!exited_ready) {
+        loop->Quit();
+    }
+    loop_thread.join();
+
+    return Expect(exited_ready, "self-cancelling timer should not stall the loop") &&
+           Expect(fire_count == 1,
+                  "self-cancelling repeating timer should fire exactly once");
+}
+
 }  // namespace
 
 int main() {
@@ -113,6 +153,7 @@ int main() {
         if (!TestRunInLoopExecutesImmediately()) return 1;
         if (!TestQueueInLoopWakesLoop()) return 1;
         if (!TestNestedQueueInLoopSchedulesNextTurn()) return 1;
+        if (!TestRepeatingTimerCanCancelItself()) return 1;
     } catch (const std::exception& ex) {
         std::cerr << "[FAIL] unexpected exception: " << ex.what() << '\n';
         return 1;

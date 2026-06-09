@@ -78,12 +78,20 @@ runtime::time::TimerId TimerQueue::AddTimer(TimerCallback cb,
 }
 
 void TimerQueue::Cancel(runtime::time::TimerId id) {
-  loop_->RunInLoop([this, seq = id.sequence] {
+  loop_->RunInLoop([this, timer = id.timer, seq = id.sequence] {
     auto it = active_timers_.find(seq);
-    if (it != active_timers_.end()) {
-      timers_.Erase(it->second);
-      timer_pool_.Release(it->second);
+    if (it != active_timers_.end() && it->second == timer) {
+      runtime::time::Timer* active_timer = it->second;
       active_timers_.erase(it);
+      timers_.Erase(active_timer);
+      timer_pool_.Release(active_timer);
+      return;
+    }
+
+    if (processing_timer_ != nullptr &&
+        processing_timer_ == timer &&
+        processing_timer_->sequence() == seq) {
+      processing_timer_cancelled_ = true;
     }
   });
 }
@@ -92,38 +100,36 @@ void TimerQueue::HandleRead() {
   runtime::time::Timestamp now = runtime::time::Timestamp::Now();
   ReadTimerfd(timerfd_);
 
-  auto expired = GetExpired(now);
-  for (runtime::time::Timer* timer : expired) {
-    timer->Run();
-  }
-  Reset(expired, now);
-}
+  timers_.PopWhile(
+      [now](const runtime::time::Timer* timer) {
+        return timer->expiration() <= now;
+      },
+      [this, now](runtime::time::Timer* timer) {
+        active_timers_.erase(timer->sequence());
+        processing_timer_ = timer;
+        processing_timer_cancelled_ = false;
+        timer->Run();
 
-std::vector<runtime::time::Timer*> TimerQueue::GetExpired(runtime::time::Timestamp now) {
-  return timers_.PopWhile([now](const runtime::time::Timer* t) {
-    return t->expiration() <= now;
-  });
-}
+        const bool cancelled = processing_timer_cancelled_;
+        processing_timer_ = nullptr;
+        processing_timer_cancelled_ = false;
 
-void TimerQueue::Reset(const std::vector<runtime::time::Timer*>& expired,
-                       runtime::time::Timestamp now) {
-  for (runtime::time::Timer* timer : expired) {
-    active_timers_.erase(timer->sequence());
-    if (timer->repeat()) {
-      timer->Restart(now);
-      timers_.Insert(timer);
-      active_timers_[timer->sequence()] = timer;
-    } else {
-      timer_pool_.Release(timer);
-    }
-  }
+        if (timer->repeat() && !cancelled) {
+          timer->Restart(now);
+          timers_.Insert(timer);
+          active_timers_[timer->sequence()] = timer;
+        } else {
+          timer_pool_.Release(timer);
+        }
+      });
+
   if (!timers_.empty()) {
     ResetTimerfd(timers_.earliest()->expiration());
   }
 }
 
 void TimerQueue::ResetTimerfd(runtime::time::Timestamp expiration) {
-    set_timerfd(timerfd_, expiration);
+  set_timerfd(timerfd_, expiration);
 }
 
 }  // namespace runtime::net
