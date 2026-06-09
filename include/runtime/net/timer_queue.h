@@ -5,7 +5,6 @@
 #include <functional>
 #include <memory>
 #include <unordered_map>
-#include <vector>
 
 #include "runtime/base/noncopyable.h"
 #include "runtime/memory/object_pool.h"
@@ -40,8 +39,6 @@ private:
 
   void HandleRead();
   void ResetTimerfd(runtime::time::Timestamp expiration);
-  std::vector<runtime::time::Timer*> GetExpired(runtime::time::Timestamp now);
-  void Reset(const std::vector<runtime::time::Timer*>& expired, runtime::time::Timestamp now);
 
   EventLoop* loop_;
   int timerfd_;
@@ -49,6 +46,8 @@ private:
   runtime::time::TimerTree timers_;
   runtime::memory::ObjectPool<runtime::time::Timer, kTimerQueueMax> timer_pool_;
   std::unordered_map<int64_t, runtime::time::Timer*> active_timers_;
+  runtime::time::Timer* processing_timer_{nullptr};
+  bool processing_timer_cancelled_{false};
 };
 
 }  // namespace runtime::net

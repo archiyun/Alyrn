@@ -16,9 +16,14 @@ namespace runtime::time {
 // Timer represents one scheduled callback.
 //
 // It stores the callback, next expiration time, repeat interval, and an
-// intrusive red-black tree node used by TimerTree. It has no EventLoop or fd
+// intrusive red-black tree hook used by TimerTree. It has no EventLoop or fd
 // dependency; the net layer decides how expirations are delivered.
-class Timer : public runtime::base::NonCopyable {
+//
+// The tree linkage is inherited (base-hook): TimerTree recovers the Timer from
+// the hook with static_cast, so no per-node owner pointer is stored. See
+// runtime/ds/intrusive_rbtree.h.
+class Timer : public runtime::base::NonCopyable,
+              public runtime::ds::RBTNode<Timer> {
 public:
   using TimerCallback = std::function<void()>;
 
@@ -38,10 +43,6 @@ public:
   int64_t sequence() const { return sequence_; }
 
   void Restart(Timestamp now) { expiration_ = AddTime(now, interval_sec_); }
-
-  // Intrusive tree node. TimerTree links this node directly without allocating
-  // an extra container node like std::set would.
-  runtime::ds::RBTNode<Timer> tree_node_;
 
 private:
   TimerCallback timer_callback_;
