@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 #include "runtime/task/task_handle.h"
 
-#include "runtime/task/task.h"
+#include "runtime/task/detail/task.h"
 
 namespace runtime::task {
 
@@ -25,8 +25,7 @@ bool TaskHandle::Cancel() {
   const auto current = task_->state.load(std::memory_order_acquire);
   if (current == TaskState::kCompleted ||
   current == TaskState::kFailed ||
-  current == TaskState::kCancelled || 
-  current == TaskState::kTimeout) {
+  current == TaskState::kCancelled) {
     return false;
   } 
   task_->cancel_source.Cancel();

@@ -7,10 +7,9 @@
 #include <vector>
 
 #include "runtime/base/noncopyable.h"
-#include "runtime/task/scheduler_metrics.h"
-#include "runtime/task/task_history.h"
+#include "runtime/task/executor_metrics.h"
 #include "runtime/task/task_state.h"
-#include "runtime/task/work_queue.h"
+#include "runtime/task/detail/work_queue.h"
 
 namespace runtime::task {
 
@@ -19,7 +18,7 @@ namespace runtime::task {
 // queue and metrics must outlive this ThreadPool.
 class ThreadPool : public runtime::base::NonCopyable {
  public:
-  ThreadPool(WorkQueue& queue, SchedulerMetrics& metrics, TaskHistory& history,
+  ThreadPool(WorkQueue& queue, ExecutorMetrics& metrics,
              std::size_t thread_count = 0);
   ~ThreadPool();
 
@@ -36,8 +35,7 @@ class ThreadPool : public runtime::base::NonCopyable {
   void FailTask(Task& task);
 
   WorkQueue&        queue_;
-  SchedulerMetrics& metrics_;
-  TaskHistory&      history_;
+  ExecutorMetrics& metrics_;
   std::vector<std::jthread> workers_;
 };
 

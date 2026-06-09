@@ -1,2 +1,2 @@
 // ThreadPool no longer exposes a public enqueue() API.
-// Use Scheduler::Submit() instead. Tests live in test_scheduler.cc.
+// Use BlockingExecutor::Submit() instead. Tests live in test_blocking_executor.cc.

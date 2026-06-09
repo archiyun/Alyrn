@@ -13,7 +13,7 @@ namespace runtime::task {
 struct Task;
 
 // TaskHandle is the caller's interface to a submitted task
-// Returned by Scheduler::Submit(). Move-only; cannnot be copied.
+// Returned by BlockingExecutor::Submit(). Move-only; cannnot be copied.
 class TaskHandle {
 public:
   TaskHandle() = default;
