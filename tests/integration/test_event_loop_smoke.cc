@@ -2,8 +2,10 @@
 #include <future>
 #include <iostream>
 #include <thread>
+#include <vector>
 
 #include "runtime/net/event_loop.h"
+#include "runtime/time/timestamp.h"
 
 namespace {
 
@@ -146,6 +148,80 @@ bool TestRepeatingTimerCanCancelItself() {
                   "self-cancelling repeating timer should fire exactly once");
 }
 
+bool TestSameDeadlineTimersKeepSequenceOrder() {
+    runtime::net::EventLoop loop;
+    std::vector<int> fired;
+    const auto deadline =
+        runtime::time::AddTime(runtime::time::Timestamp::Now(), 0.01);
+
+    loop.RunAt(deadline, [&] { fired.push_back(1); });
+    loop.RunAt(deadline, [&] { fired.push_back(2); });
+    loop.RunAt(deadline, [&] {
+        fired.push_back(3);
+        loop.Quit();
+    });
+    loop.Loop();
+
+    return Expect(fired == std::vector<int>({1, 2, 3}),
+                  "same-deadline timers should follow sequence order");
+}
+
+bool TestCancelEarliestKeepsNextTimerScheduled() {
+    runtime::net::EventLoop loop;
+    bool cancelled_timer_fired = false;
+    bool next_timer_fired = false;
+    bool timed_out = false;
+
+    auto cancelled = loop.RunAfter(0.01, [&] {
+        cancelled_timer_fired = true;
+    });
+    loop.RunAfter(0.03, [&] {
+        next_timer_fired = true;
+        loop.Quit();
+    });
+    loop.RunAfter(0.5, [&] {
+        timed_out = true;
+        loop.Quit();
+    });
+    loop.Cancel(cancelled);
+    loop.Loop();
+
+    return Expect(!timed_out, "next timer should fire before watchdog") &&
+           Expect(!cancelled_timer_fired,
+                  "cancelled earliest timer should not fire") &&
+           Expect(next_timer_fired,
+                  "next timer should remain scheduled after cancellation");
+}
+
+bool TestStaleTimerIdCannotCancelReplacement() {
+    runtime::net::EventLoop loop;
+    bool replacement_fired = false;
+    bool timed_out = false;
+
+    auto stale = loop.RunAfter(60.0, [] {});
+    loop.Cancel(stale);
+
+    auto replacement = loop.RunAfter(0.01, [&] {
+        replacement_fired = true;
+        loop.Quit();
+    });
+    loop.RunAfter(0.5, [&] {
+        timed_out = true;
+        loop.Quit();
+    });
+
+    loop.Cancel(stale);
+    loop.Loop();
+
+    return Expect(stale.timer == replacement.timer,
+                  "replacement timer should reuse the released pool slot") &&
+           Expect(stale.sequence != replacement.sequence,
+                  "replacement timer should have a new sequence") &&
+           Expect(!timed_out, "replacement timer should fire before watchdog") &&
+           Expect(replacement_fired,
+                  "stale TimerId should not cancel a replacement timer");
+}
+
 }  // namespace
 
 int main() {
@@ -154,6 +230,9 @@ int main() {
         if (!TestQueueInLoopWakesLoop()) return 1;
         if (!TestNestedQueueInLoopSchedulesNextTurn()) return 1;
         if (!TestRepeatingTimerCanCancelItself()) return 1;
+        if (!TestSameDeadlineTimersKeepSequenceOrder()) return 1;
+        if (!TestCancelEarliestKeepsNextTimerScheduled()) return 1;
+        if (!TestStaleTimerIdCannotCancelReplacement()) return 1;
     } catch (const std::exception& ex) {
         std::cerr << "[FAIL] unexpected exception: " << ex.what() << '\n';
         return 1;

@@ -136,6 +136,22 @@ target_link_libraries(event_loop_smoke_test
 
 add_test(NAME event_loop_smoke_test COMMAND event_loop_smoke_test)
 
+add_executable(timer_tree_smoke_test
+    unit/test_timer_tree_smoke.cc
+)
+
+target_include_directories(timer_tree_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(timer_tree_smoke_test
+    PRIVATE
+        runtime_foundation
+)
+
+add_test(NAME timer_tree_smoke_test COMMAND timer_tree_smoke_test)
+
 add_executable(tcp_server_smoke_test
     integration/test_tcp_server_smoke.cc
 )

@@ -15,7 +15,7 @@
 //     kept parent, color, root, minimum as explicit fields.
 //   v4:
 //     Modern C++ engineering version.
-//     The tree uses member-pointer intrusive hooks, C++20 concepts and static
+//     The tree uses base intrusive hooks, C++20 concepts and static
 //     helper policies. Node metadata is compressed with pointer tagging: the
 //     parent pointer shares one uintptr_t-sized field with low-bit flags such as
 //     color and linked state. The tree also uses a sentinel header node, inspired
@@ -160,10 +160,10 @@ public:
   bool empty() const { return size_ == 0; }
   // O(1)
   std::size_t size() const noexcept { return size_; }
-  // O(log n) amortized; no-op if elem is already in the tree.
+  // O(log n) worst-case; no-op if elem is already in the tree.
   void Insert(T* elem);
 
-  // O(log n) amortized; returns false if elem was not linked in any tree.
+  // O(log n) worst-case; returns false if elem was not linked in any tree.
   //
   // Precondition: if elem is linked, it must be linked in this exact tree.
   // Passing an element linked in another IntrusiveRBTree instance is undefined
@@ -227,7 +227,7 @@ private:
   // O(log n) - walks right spine of subtree.
   Node* Maximum(Node* node);
 
-  // Amortized O(log n) — either descends once via Minimum, or walks parent
+  // Worst-case O(log n) — either descends once via Minimum, or walks parent
   // links (at most tree height).  Called once per Erase that removes min_.
   Node* Next(Node* node);
   Node* Prev(Node* node);
