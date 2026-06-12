@@ -218,6 +218,17 @@ target_include_directories(intrusive_list_smoke_test
 
 add_test(NAME intrusive_list_smoke_test COMMAND intrusive_list_smoke_test)
 
+add_executable(intrusive_hash_table_smoke_test
+    unit/test_intrusive_hash_table_smoke.cc
+)
+
+target_include_directories(intrusive_hash_table_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+add_test(NAME intrusive_hash_table_smoke_test COMMAND intrusive_hash_table_smoke_test)
+
 add_executable(load_balancer_smoke_test
     unit/test_load_balancer_smoke.cc
 )

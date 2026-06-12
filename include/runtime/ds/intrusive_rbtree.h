@@ -160,8 +160,8 @@ public:
   bool empty() const { return size_ == 0; }
   // O(1)
   std::size_t size() const noexcept { return size_; }
-  // O(log n) worst-case; no-op if elem is already in the tree.
-  void Insert(T* elem);
+  // O(log n) worst-case; return false if elem is already in the tree.
+  bool Insert(T* elem);
 
   // O(log n) worst-case; returns false if elem was not linked in any tree.
   //
@@ -412,7 +412,7 @@ auto IRBT_TYPE::InsertFixup(Node* node) -> void {
 }
 
 IRBT_TMPL
-void IRBT_TYPE::Insert(T* elem) {
+bool IRBT_TYPE::Insert(T* elem) {
   assert(elem != nullptr);
 
   auto* node = node_of(elem);
@@ -420,7 +420,7 @@ void IRBT_TYPE::Insert(T* elem) {
   assert(node != nullptr);
   assert(node != sentinel());
 
-  if (node->InTree()) return;
+  if (node->InTree()) return false;
 
   assert(node->left() == nullptr);
   assert(node->right() == nullptr);
@@ -473,6 +473,8 @@ void IRBT_TYPE::Insert(T* elem) {
   assert(min() != sentinel());
   assert(max() != sentinel());
   assert(node->InTree());
+
+  return true;
 }
 
 // -- Delete and DeleteFixup --
