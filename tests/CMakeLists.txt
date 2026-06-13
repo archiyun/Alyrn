@@ -196,6 +196,17 @@ target_include_directories(rbtree_validator
 
 add_test(NAME rbtree_validator COMMAND rbtree_validator)
 
+add_executable(splaytree_validator
+    unit/test_splaytree_validator.cc
+)
+
+target_include_directories(splaytree_validator
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+add_test(NAME splaytree_validator COMMAND splaytree_validator)
+
 add_executable(quad_heap_test
     unit/test_quad_heap.cc
 )
