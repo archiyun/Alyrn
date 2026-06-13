@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "runtime/base/noncopyable.h"
+#include "runtime/ds/intrusive_hash_table.h"
 #include "runtime/ds/intrusive_rbtree.h"
 #include "runtime/time/timestamp.h"
 
@@ -23,7 +24,8 @@ namespace runtime::time {
 // the hook with static_cast, so no per-node owner pointer is stored. See
 // runtime/ds/intrusive_rbtree.h.
 class Timer : public runtime::base::NonCopyable,
-              public runtime::ds::RBTNode<Timer> {
+              public runtime::ds::RBTNode<Timer>,
+              public runtime::ds::HashNode<Timer> {
 public:
   using TimerCallback = std::function<void()>;
 

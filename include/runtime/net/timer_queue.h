@@ -4,10 +4,10 @@
 
 #include <functional>
 #include <memory>
-#include <unordered_map>
 
 #include "runtime/base/noncopyable.h"
 #include "runtime/memory/object_pool.h"
+#include "runtime/ds/intrusive_hash_table.h"
 #include "runtime/time/timer.h"
 #include "runtime/time/timer_id.h"
 #include "runtime/time/timer_tree.h"
@@ -17,6 +17,11 @@ namespace runtime::net {
 
 class Channel;
 class EventLoop;
+
+inline constexpr auto kTimerSequenceOf =
+    [](const runtime::time::Timer* t) -> int64_t { return t->sequence(); };
+using ActiveTimerTable =
+    runtime::ds::IntrusiveHashTable<runtime::time::Timer, kTimerSequenceOf>;
 
 // TimerQueue manages timerfd-driven timer scheduling for one EventLoop.
 //
@@ -45,7 +50,7 @@ private:
   std::unique_ptr<Channel> timerfd_channel_;
   runtime::time::TimerTree timers_;
   runtime::memory::ObjectPool<runtime::time::Timer, kTimerQueueMax> timer_pool_;
-  std::unordered_map<int64_t, runtime::time::Timer*> active_timers_;
+  ActiveTimerTable active_timers_;
   runtime::time::Timer* processing_timer_{nullptr};
   bool processing_timer_cancelled_{false};
 };
