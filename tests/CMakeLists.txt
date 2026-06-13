@@ -136,6 +136,22 @@ target_link_libraries(event_loop_smoke_test
 
 add_test(NAME event_loop_smoke_test COMMAND event_loop_smoke_test)
 
+add_executable(timer_tree_smoke_test
+    unit/test_timer_tree_smoke.cc
+)
+
+target_include_directories(timer_tree_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(timer_tree_smoke_test
+    PRIVATE
+        runtime_foundation
+)
+
+add_test(NAME timer_tree_smoke_test COMMAND timer_tree_smoke_test)
+
 add_executable(tcp_server_smoke_test
     integration/test_tcp_server_smoke.cc
 )
@@ -180,6 +196,17 @@ target_include_directories(rbtree_validator
 
 add_test(NAME rbtree_validator COMMAND rbtree_validator)
 
+add_executable(splaytree_validator
+    unit/test_splaytree_validator.cc
+)
+
+target_include_directories(splaytree_validator
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+add_test(NAME splaytree_validator COMMAND splaytree_validator)
+
 add_executable(quad_heap_test
     unit/test_quad_heap.cc
 )
@@ -191,16 +218,27 @@ target_include_directories(quad_heap_test
 
 add_test(NAME quad_heap_test COMMAND quad_heap_test)
 
-add_executable(bloom_filter_test
-    unit/test_bloom_filter.cc
+add_executable(intrusive_list_smoke_test
+    unit/test_intrusive_list_smoke.cc
 )
 
-target_include_directories(bloom_filter_test
+target_include_directories(intrusive_list_smoke_test
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
 
-add_test(NAME bloom_filter_test COMMAND bloom_filter_test)
+add_test(NAME intrusive_list_smoke_test COMMAND intrusive_list_smoke_test)
+
+add_executable(intrusive_hash_table_smoke_test
+    unit/test_intrusive_hash_table_smoke.cc
+)
+
+target_include_directories(intrusive_hash_table_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+add_test(NAME intrusive_hash_table_smoke_test COMMAND intrusive_hash_table_smoke_test)
 
 add_executable(load_balancer_smoke_test
     unit/test_load_balancer_smoke.cc
@@ -353,7 +391,7 @@ if(GTest_FOUND)
         unit/test_memory_pool.cc
         unit/test_object_pool.cc
         unit/test_sanity.cc
-        unit/test_scheduler.cc
+        unit/test_blocking_executor.cc
     )
 
     target_link_libraries(runtime_unit_tests

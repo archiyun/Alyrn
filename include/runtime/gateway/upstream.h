@@ -1,9 +1,11 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 //
-// Upstream: a named group of backend peers sharing one load-balance policy
-// and (optionally) one circuit breaker. Built once at startup and treated as
-// read-only thereafter; per-peer mutable state lives inside each UpstreamPeer.
+// Upstream: a named group of backend peers with (optionally) one circuit
+// breaker. Built once at startup and treated as read-only thereafter; per-peer
+// mutable state lives inside each UpstreamPeer. The load-balancing strategy is
+// not stored here — it is owned per-route (Route::lb, built from the algo string
+// passed to GatewayServer::AddProxyRoute).
 #pragma once
 
 #include <memory>
@@ -16,29 +18,15 @@
 
 namespace runtime::gateway {
 
-// Selection algorithm used by LoadBalancer::Select to pick a peer.
-enum class LoadBalancePolicy {
-  RoundRobin,
-  WeightedRoundRobin,
-  LeastConnection,
-  Random,
-  WeightedRandom,
-  IPHash,
-  ConsistentHash,
-  P2C,
-};
-
 // Static configuration block for an Upstream. Immutable after construction.
 struct UpstreamConfig {
   std::string name;
-  LoadBalancePolicy policy{LoadBalancePolicy::RoundRobin};
   HealthCheckConfig health_check{};
   CircuitBreakerConfig circuit_breaker{};
   bool circuit_breaker_enabled{false};
 };
 
-// A named group of upstream peers sharing one LB policy and an optional
-// circuit breaker. Lifecycle:
+// A named group of upstream peers with an optional circuit breaker. Lifecycle:
 //   1. construct
 //   2. AddPeer() repeatedly during startup
 //   3. handed to UpstreamRegistry; from this point treated as read-only
@@ -56,9 +44,8 @@ public:
   }
 
   const std::string& name() const { return config_.name; }
-  LoadBalancePolicy policy() const { return config_.policy; }
   const UpstreamConfig& config() const { return config_; }
-  // Returns the full peer list; load balancers filter via UpstreamPeer::Available()
+  // Returns the full peer list; load balancers filter via UpstreamPeer::AvailableAt()
   // inline on each Select to avoid per-call allocation of a snapshot vector.
   const std::vector<std::shared_ptr<UpstreamPeer>>& peers() const { return peers_; }
 

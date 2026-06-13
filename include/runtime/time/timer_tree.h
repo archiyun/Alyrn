@@ -9,6 +9,6 @@ namespace runtime::time {
 
 bool TimerLess(const Timer* a, const Timer* b);
 
-using TimerTree = runtime::ds::IntrusiveRBTree<Timer, &Timer::tree_node_, TimerLess>;
+using TimerTree = runtime::ds::IntrusiveRBTree<Timer, TimerLess>;
 
 }  // namespace runtime::time

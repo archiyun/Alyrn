@@ -3,62 +3,175 @@
 // Reference:
 //   - Cormen, Leiserson, Rivest, Stein, "Introduction to Algorithms",
 //     3rd ed., Chapter 13: Red-Black Trees.
+//   - Linux Kernel rbtree implementation by Andrea Arcangeli & Michel Lespinasse
+//     (Intrusive node topology, pointer tagging/recoloring optimization).
+//   - GNU libstdc++ / LLVM libc++ _Rb_tree implementation
+//     (Dual-purpose Header node mapping both root and cached minimum node).
+//
+// Design note:
+//   v1 ~ v3:
+//     Experimental intrusive red-black tree implementations based on CLRS.
+//     These versions focused on insertion / deletion fix-up correctness and
+//     kept parent, color, root, minimum as explicit fields.
+//   v4:
+//     Modern C++ engineering version.
+//     The tree uses base intrusive hooks, C++20 concepts and static
+//     helper policies. Node metadata is compressed with pointer tagging: the
+//     parent pointer shares one uintptr_t-sized field with low-bit flags such as
+//     color and linked state. The tree also uses a sentinel header node, inspired
+//     by STL _Rb_tree implementations, where the header caches the root, minimum
+//     and maximum nodes. This improves boundary handling and makes begin(),
+//     min(), max() and empty checks straightforward.
+//      --- 2026-06-08  Copyright (c) Arsenova
 #pragma once
 
+#include <cassert>
+#include <concepts>
+#include <cstdint>
 #include <vector>
-
-#include "runtime/base/noncopyable.h"
 
 namespace runtime::ds {
 
-// Intrusive red-black tree — the node storage lives inside T, not in a separate
-// heap allocation.  Each tree owns a sentinel node that replaces nullptr as
-// both the null leaf and the parent of root, eliminating null-pointer branches
-// throughout the implementation.
+// Intrusive red-black tree. Node storage lives in T through a base hook:
+// T must publicly inherit RBTNode<T, Tag>, so the tree can recover T* from a
+// node with static_cast.
+//
+// Each tree owns one sentinel node. The sentinel is used as the null leaf, and
+// its three pointer slots also cache tree-level state:
+//   parent = root
+//   left   = minimum
+//   right  = maximum
+// This means sentinel.parent() is not a NIL-parent link. DeleteFixup receives
+// the explicit parent whenever the fixup node is the sentinel.
 //
 // Template parameters:
-//   T        - element type; must embed an RBTNode<T>
-//   kMember  - member-pointer to that embedded node
+//   T        - element type; must publicly inherit RBTNode<T>
 //   kLess    - total order on T; must be irreflexive and transitive
+//   Tag      - optional hook tag for objects that inherit multiple RBTNode hooks
 //
 // This tree is used as an ordered work queue (TimerQueue, deadline scheduling).
 // In that pattern PopWhile (extract-all-matching in key order) dominates, so
-// min_ is eagerly cached.  Rotations during insert/erase never change which
-// node is the minimum, so keeping min_ correct costs only a single lookup in
-// the Erase path.
+// minimum is eagerly cached. Rotations during insert/erase never change which
+// node is the minimum, so keeping the cache correct costs only a single lookup
+// in the Erase path.
 //
-template <typename T>
-struct RBTNode {
-  T* owner{nullptr};
-  RBTNode* parent{nullptr};
-  RBTNode* left{nullptr};
-  RBTNode* right{nullptr};
-  const void* tree{nullptr};
-  bool red{false};
-  bool in_tree{false};
+template <class T, auto kLess, class Tag = void>
+class IntrusiveRBTree;
+
+template <typename T, class Tag = void>
+class RBTNode {
+  template <class, auto, class>
+  friend class IntrusiveRBTree;
+
+public:
+  bool InTree() const noexcept {
+    return linked();
+  }
+
+protected:
+  RBTNode() = default;
+  RBTNode(const RBTNode&) = delete;
+  RBTNode& operator=(const RBTNode&) = delete;
+
+private:
+  using Node = RBTNode<T, Tag>;
+
+  // Unlike Linux rbtree, this implementation uses bit0 = 1 for red.
+  static constexpr std::uintptr_t kRed = 1u; // bit 0
+  static constexpr std::uintptr_t kLinked = 1u << 1; // bit 1
+  static constexpr std::uintptr_t kReserved = 1u << 2; // bit 2, reserved
+  static constexpr std::uintptr_t kFlagMask = kRed | kLinked | kReserved; // ...111
+
+  std::uintptr_t parent_and_flags_{0u}; // parent address plus low-bit flags
+  Node* left_{nullptr};
+  Node* right_{nullptr};
+
+  Node* parent() const noexcept {
+    return reinterpret_cast<Node*>(parent_and_flags_ & ~kFlagMask);
+  }
+
+  void set_parent(Node* parent) noexcept {
+    auto raw = reinterpret_cast<std::uintptr_t>(parent);
+    assert((raw & kFlagMask) == 0);
+    parent_and_flags_ = raw | (parent_and_flags_ & kFlagMask);
+  }
+
+  Node* left() const noexcept { return left_; }
+  void set_left(Node* left) noexcept { left_ = left; }
+
+  Node* right() const noexcept { return right_; }
+  void set_right(Node* right) noexcept { right_ = right; }
+
+  bool red() const noexcept {
+    return (parent_and_flags_ & kRed) != 0;
+  }
+
+  void set_red(bool red) noexcept {
+    if (red) {
+      parent_and_flags_ |= kRed;
+    } else {
+      parent_and_flags_ &= ~kRed;
+    }
+  }
+
+  bool linked() const noexcept { return (parent_and_flags_ & kLinked) != 0; }
+
+  void set_linked(const bool linked) noexcept {
+    if (linked) {
+      parent_and_flags_ |= kLinked;
+    } else {
+      parent_and_flags_ &= ~kLinked;
+    }
+  }
+
+  void clear_hook() noexcept {
+    left_ = nullptr;
+    right_ = nullptr;
+    parent_and_flags_ = 0;
+  }
 };
 
-template <typename T,
-          RBTNode<T> T::*kMember,            // Member pointer of Intrusive Node
-          bool (*kLess)(const T*, const T*)  // Comparator
-          >
-class IntrusiveRBTree : public runtime::base::NonCopyable {
+template <class T, class Tag = void>
+concept RBTNodeBaseHook =
+    std::derived_from<T, RBTNode<T, Tag>> &&
+    requires(T* elem, RBTNode<T, Tag>* node) {
+      { static_cast<RBTNode<T, Tag>*>(elem) } -> std::same_as<RBTNode<T, Tag>*>;
+      { static_cast<T*>(node) } -> std::same_as<T*>;
+    };
+
+template <class T, auto kLess, class Tag>
+class IntrusiveRBTree {
 public:
-  IntrusiveRBTree();
+  using Node = RBTNode<T, Tag>;
+  static_assert(alignof(Node) >= 8,
+                "RBTNode must be at least 8-byte aligned for pointer tagging");
+  static_assert(RBTNodeBaseHook<T, Tag>,
+                "T must publicly and non-virtually inherit RBTNode<T, Tag>");
+
+  IntrusiveRBTree() {
+    sentinel_.set_left(&sentinel_);
+    sentinel_.set_right(&sentinel_);
+    sentinel_.set_parent(&sentinel_);
+    sentinel_.set_red(false);
+  }
   ~IntrusiveRBTree() = default;
 
   // O(1)
   bool empty() const { return size_ == 0; }
-  std::size_t size() const { return size_; }
+  // O(1)
+  std::size_t size() const noexcept { return size_; }
+  // O(log n) worst-case; return false if elem is already in the tree.
+  bool Insert(T* elem);
 
-  // O(log n) amortized; no-op if elem is already in the tree.
-  void Insert(T* elem);
-
-  // O(log n) amortized; returns false if elem was not in the tree.
+  // O(log n) worst-case; returns false if elem was not linked in any tree.
+  //
+  // Precondition: if elem is linked, it must be linked in this exact tree.
+  // Passing an element linked in another IntrusiveRBTree instance is undefined
+  // behavior. InTree() only says whether the element is linked somewhere.
   bool Erase(T* elem);
 
   // O(1) — cached pointer, updated on Insert and Erase.
-  T* earliest() const { return min_ == sentinel_ ? nullptr : ElemOf(min_); }
+  T* earliest() const { return min() == sentinel() ? nullptr : elem_of(min()); }
 
   // O(k log n) where k is the number of extracted elements.
   // Extracts (and erases) the earliest elements satisfying pred in key order.
@@ -66,276 +179,395 @@ public:
   template <typename Pred>
   std::vector<T*> PopWhile(Pred pred);
 
-  // O(n) — debug only. Verifies RB invariants (root black, no adjacent reds,
-  // uniform black height).
+  // O(k log n). Same traversal as PopWhile(pred), but avoids building a
+  // result vector. Each element is erased before on_pop(elem) runs.
+  template <typename Pred, typename OnPop>
+  std::size_t PopWhile(Pred pred, OnPop on_pop);
+
+  // O(n) - debug only. Verifies RB invariants, BST order, parent/child links,
+  // linked state, subtree size and cached root/min/max state.
   bool CheckRBInvariants() const;
-
 private:
-  // Returns black-height of subtree, or -1 if any invariant is violated.
-  int BlackHeightOf(RBTNode<T>* node) const;
+  struct CheckResult {
+    bool ok{true};
+    int black_height{0};
+    std::size_t count{0};
+    const Node* min{nullptr};
+    const Node* max{nullptr};
+  };
 
-  inline static bool IsRed(const RBTNode<T>* node) { return node->red; }
-  inline static bool IsBlack(const RBTNode<T>* node) { return !IsRed(node); }
-  inline static void Red(RBTNode<T>* node) { node->red = true; }
-  inline static void Black(RBTNode<T>* node) { node->red = false; }
-  inline static void CopyColor(RBTNode<T>* dst, RBTNode<T>* src) { dst->red = src->red; }
+  Node sentinel_{};
+  std::size_t size_{0};
+  Node* sentinel() noexcept { return &sentinel_; }
+  const Node* sentinel() const noexcept { return &sentinel_; }
 
-  static RBTNode<T>* NodeOf(T* elem) { return &(elem->*kMember); }
-  static T* ElemOf(RBTNode<T>* node) { return node->owner; }
+  Node* root() noexcept { return sentinel_.parent(); }
+  const Node* root() const noexcept { return sentinel_.parent(); }
+  void set_root(Node* node) noexcept {
+    sentinel_.set_parent(node);     // sentinel.parent = root
+    node->set_parent(sentinel());   // root.parent = sentinel
+  }
+
+  static Node* node_of(T* elem) { return static_cast<Node*>(elem); }
+  static T* elem_of(Node* node) { return static_cast<T*>(node); }
+
+  Node* min() const noexcept { return sentinel_.left(); }
+  void set_min(Node* node) noexcept { sentinel_.set_left(node); }
+  Node* max() const noexcept { return sentinel_.right(); }
+  void set_max(Node* node) noexcept { sentinel_.set_right(node); }
+
+  inline static void Red(Node* node) { node->set_red(true); }
+  inline static void Black(Node* node) { node->set_red(false); }
+  inline static bool IsRed(const Node* node) { return node->red(); }
+  inline static bool IsBlack(const Node* node) { return !IsRed(node); }
+  inline static void CopyColor(Node* dst, const Node* src) { dst->set_red(src->red()); }
 
   // O(log n) — walks left spine of subtree.
-  RBTNode<T>* Minimum(RBTNode<T>* node) const;
+  Node* Minimum(Node* node);
+  // O(log n) - walks right spine of subtree.
+  Node* Maximum(Node* node);
 
-  // Amortized O(log n) — either descends once via Minimum, or walks parent
+  // Worst-case O(log n) — either descends once via Minimum, or walks parent
   // links (at most tree height).  Called once per Erase that removes min_.
-  RBTNode<T>* Next(RBTNode<T>* node) const;
+  Node* Next(Node* node);
+  Node* Prev(Node* node);
 
-  void InitSentinel();
-  void ResetNode(RBTNode<T>* node);
+  CheckResult CheckSubtree(const Node* node,
+                           const Node* parent,
+                           const Node* lower,
+                           const Node* upper) const;
 
-  void Transplant(RBTNode<T>* src, RBTNode<T>* dst);
-  void LeftRotate(RBTNode<T>* pivot);
-  void RightRotate(RBTNode<T>* pivot);
-  void InsertFixup(RBTNode<T>* node);
-  void DeleteFixup(RBTNode<T>* node);
-
-  RBTNode<T> sentinel_node_{};
-  RBTNode<T>* const sentinel_;
-  RBTNode<T>* root_;
-  RBTNode<T>* min_;
-  std::size_t size_{0};
+  void Transplant(Node* src, Node* dst);
+  void LeftRotate(Node* pivot);
+  void RightRotate(Node* pivot);
+  void InsertFixup(Node* node);
+  void DeleteFixup(Node* node, Node* parent);
 };
 
-#define IRBT_TMPL template <typename T, RBTNode<T> T::*kMember, bool (*kLess)(const T*, const T*)>
-#define IRBT_TYPE IntrusiveRBTree<T, kMember, kLess>
+#define IRBT_TMPL template <typename T, auto kLess, class Tag>
+#define IRBT_TYPE IntrusiveRBTree<T, kLess, Tag>
 
 IRBT_TMPL
-IRBT_TYPE::IntrusiveRBTree() : sentinel_{&sentinel_node_}, root_{sentinel_}, min_{sentinel_} {
-  InitSentinel();
-}
+auto IRBT_TYPE::Minimum(Node* node) -> Node* {
+  assert(node != sentinel());
 
-IRBT_TMPL
-void IRBT_TYPE::InitSentinel() {
-  sentinel_node_.parent = sentinel_;
-  sentinel_node_.left = sentinel_;
-  sentinel_node_.right = sentinel_;
-  sentinel_node_.tree = this;
-  sentinel_node_.in_tree = true;
-  Black(sentinel_);
-}
-
-IRBT_TMPL
-RBTNode<T>* IRBT_TYPE::Minimum(RBTNode<T>* node) const {
-  while (node->left != sentinel_) {
-    node = node->left;
+  while (node->left() != sentinel()) {
+    node = node->left();
   }
   return node;
 }
 
 IRBT_TMPL
-RBTNode<T>* IRBT_TYPE::Next(RBTNode<T>* node) const {
-  if (node->right != sentinel_) {
-    return Minimum(node->right);
-  }
+auto IRBT_TYPE::Next(Node* node) -> Node* {
+  assert(node != sentinel());
+
+  if (node->right() != sentinel()) return Minimum(node->right());
+  if (node == root()) return sentinel();
   while (true) {
-    auto* parent = node->parent;
-    if (parent == sentinel_ || node == parent) {
-      return sentinel_;
-    }
-    if (node == parent->left) {
-      return parent;
-    }
+    auto* parent = node->parent();
+    if (parent == sentinel()) return sentinel();
+    if (node == parent->left()) return parent;
+    node = parent;
+  }
+}
+
+IRBT_TMPL
+auto IRBT_TYPE::Maximum(Node* node) -> Node* {
+  assert(node != sentinel());
+  while (node->right() != sentinel()) {
+    node = node->right();
+  }
+  return node;
+}
+
+IRBT_TMPL
+auto IRBT_TYPE::Prev(Node* node) -> Node* {
+  assert(node != sentinel());
+
+  if (node->left() != sentinel()) return Maximum(node->left());
+  if (node == root()) return sentinel();
+  while (true) {
+    auto* parent = node->parent();
+    if (parent == sentinel()) return sentinel();
+    if (node == parent->right()) return parent;
     node = parent;
   }
 }
 
 // Replace subtree rooted at src with subtree rooted at dst.
 IRBT_TMPL
-void IRBT_TYPE::Transplant(RBTNode<T>* src, RBTNode<T>* dst) {
-  if (src->parent == sentinel_)
-    root_ = dst;
-  else if (src == src->parent->left)
-    src->parent->left = dst;
-  else
-    src->parent->right = dst;
-  dst->parent = src->parent;
+auto IRBT_TYPE::Transplant(Node* src, Node* dst) -> void {
+  assert(src != sentinel());
+
+  auto* parent = src->parent();
+  if (parent == sentinel())
+    set_root(dst);
+  else if (src == parent->left())
+    parent->set_left(dst);
+  else // src == parent->right()
+    parent->set_right(dst);
+  if (dst != sentinel()) {
+    dst->set_parent(parent);
+  }
 }
 
 // -- Rotations --
 IRBT_TMPL
-void IRBT_TYPE::LeftRotate(RBTNode<T>* pivot) {
-  auto* new_top = pivot->right;
-  pivot->right = new_top->left;
-  if (new_top->left != sentinel_) new_top->left->parent = pivot;
+auto IRBT_TYPE::LeftRotate(Node* pivot) -> void {
+  assert(pivot != sentinel());
+
+  auto* new_top = pivot->right();
+  pivot->set_right(new_top->left());
+  if (new_top->left() != sentinel()) new_top->left()->set_parent(pivot);
   Transplant(pivot, new_top);
-  new_top->left = pivot;
-  pivot->parent = new_top;
+  new_top->set_left(pivot);
+  pivot->set_parent(new_top);
 }
 
 IRBT_TMPL
-void IRBT_TYPE::RightRotate(RBTNode<T>* pivot) {
-  auto* new_top = pivot->left;
-  pivot->left = new_top->right;
-  if (new_top->right != sentinel_) new_top->right->parent = pivot;
-  Transplant(pivot, new_top);
-  new_top->right = pivot;
-  pivot->parent = new_top;
-}
+auto IRBT_TYPE::RightRotate(Node* pivot) -> void {
+  assert(pivot != sentinel());
 
-IRBT_TMPL
-void IRBT_TYPE::ResetNode(RBTNode<T>* node) {
-  node->left = sentinel_;
-  node->right = sentinel_;
-  node->parent = sentinel_;
-  node->tree = nullptr;
-  node->in_tree = false;
-  Black(node);
+  auto* new_top = pivot->left();
+  pivot->set_left(new_top->right());
+  if (new_top->right() != sentinel()) new_top->right()->set_parent(pivot);
+  Transplant(pivot, new_top);
+  new_top->set_right(pivot);
+  pivot->set_parent(new_top);
 }
 
 // -- Insert and InsertFixup --
 IRBT_TMPL
-void IRBT_TYPE::InsertFixup(RBTNode<T>* node) {
-  while (node != root_ && IsRed(node->parent)) {
-    if (node->parent == node->parent->parent->left) {
-      auto* uncle = node->parent->parent->right;
+auto IRBT_TYPE::InsertFixup(Node* node) -> void {
+  assert(node != nullptr);
+  assert(node != sentinel());
+  assert(node->InTree());
+  assert(IsRed(node));
+  assert(root() != sentinel());
+  assert(IsBlack(sentinel()));
+
+  assert(node->left() == sentinel());
+  assert(node->right() == sentinel());
+
+  while (node != root() && IsRed(node->parent())) {
+    auto* parent = node->parent();
+
+    assert(parent != nullptr);
+    assert(parent != sentinel());
+    assert(parent->left() == node || parent->right() == node);
+    assert(IsRed(parent));
+
+    auto* grandparent = parent->parent();
+
+    assert(grandparent != nullptr);
+    assert(grandparent != sentinel());
+    assert(grandparent->left() == parent || grandparent->right() == parent);
+    assert(IsBlack(grandparent));
+
+    if (parent == grandparent->left()) {
+      auto* uncle = grandparent->right();
       if (IsRed(uncle)) {
         // CLRS insert case 1: parent and uncle are red. Recolor and move the
         // violation up to the grandparent.
-        Black(node->parent);
+        Black(parent);
         Black(uncle);
-        Red(node->parent->parent);
-        node = node->parent->parent;
+        Red(grandparent);
+        node = grandparent;
       } else {
-        if (node == node->parent->right) {
+        if (node == parent->right()) {
           // CLRS insert case 2: triangle shape. Rotate parent to convert to
           // case 3.
-          node = node->parent;
+          node = parent;
           LeftRotate(node);
+          parent = node->parent();
         }
         // CLRS insert case 3: line shape. Recolor and rotate grandparent.
-        Black(node->parent);
-        Red(node->parent->parent);
-        RightRotate(node->parent->parent);
+        Black(parent);
+        Red(grandparent);
+        RightRotate(grandparent);
       }
     } else {
-      auto* uncle = node->parent->parent->left;
+      auto* uncle = grandparent->left();
       if (IsRed(uncle)) {
         // CLRS insert case 1, mirrored.
-        Black(node->parent);
+        Black(parent);
         Black(uncle);
-        Red(node->parent->parent);
-        node = node->parent->parent;
+        Red(grandparent);
+        node = grandparent;
       } else {
-        if (node == node->parent->left) {
+        if (node == parent->left()) {
           // CLRS insert case 2, mirrored.
-          node = node->parent;
+          node = parent;
           RightRotate(node);
+          parent = node->parent();
         }
         // CLRS insert case 3, mirrored.
-        Black(node->parent);
-        Red(node->parent->parent);
-        LeftRotate(node->parent->parent);
+        Black(parent);
+        Red(grandparent);
+        LeftRotate(grandparent);
       }
     }
   }
-  Black(root_);
+  Black(root());
 }
 
 IRBT_TMPL
-void IRBT_TYPE::Insert(T* elem) {
-  auto* node = NodeOf(elem);
-  if (node->in_tree) return;
-  node->owner = elem;
-  node->in_tree = true;
-  node->tree = this;
-  node->left = sentinel_;
-  node->right = sentinel_;
-  node->parent = sentinel_;
+bool IRBT_TYPE::Insert(T* elem) {
+  assert(elem != nullptr);
+
+  auto* node = node_of(elem);
+
+  assert(node != nullptr);
+  assert(node != sentinel());
+
+  if (node->InTree()) return false;
+
+  assert(node->left() == nullptr);
+  assert(node->right() == nullptr);
+  assert(node->parent() == nullptr);
+  assert(IsBlack(node));
+
+  node->set_linked(true);
+  node->set_left(sentinel());
+  node->set_right(sentinel());
+  node->set_parent(sentinel());
   Red(node);
 
-  auto* parent = sentinel_;
-  for (auto* cursor = root_; cursor != sentinel_;) {
+  auto* parent = sentinel();
+  for (auto* cursor = root(); cursor != sentinel();) {
     parent = cursor;
-    cursor = kLess(elem, ElemOf(cursor)) ? cursor->left : cursor->right;
-  }
-  node->parent = parent;
-  if (parent == sentinel_)
-    root_ = node;
-  else if (kLess(elem, ElemOf(parent)))
-    parent->left = node;
-  else
-    parent->right = node;
 
-  if (min_ == sentinel_ || kLess(elem, ElemOf(min_))) {
-    min_ = node;
+    assert(cursor->InTree());
+    assert(cursor->left() != nullptr);
+    assert(cursor->right() != nullptr);
+
+    cursor = kLess(elem, elem_of(cursor)) ? cursor->left() : cursor->right();
   }
-  ++size_;
+  node->set_parent(parent);
+  if (parent == sentinel()) {
+    assert(root() == sentinel());
+    set_root(node);
+  }
+  else if (kLess(elem, elem_of(parent))) {
+    assert(parent->left() == sentinel());
+    parent->set_left(node);
+  }
+  else {
+    // kLess(elem_of(parent), elem)
+    assert(parent->right() == sentinel());
+    parent->set_right(node);
+  }
+
+  if (min() == sentinel() || kLess(elem, elem_of(min()))) {
+    set_min(node);
+  }
+  if (max() == sentinel() || kLess(elem_of(max()), elem)) {
+    set_max(node);
+  }
   InsertFixup(node);
+  ++size_;
+
+  assert(root() != sentinel());
+  assert(root()->parent() == sentinel());
+  assert(IsBlack(root()));
+  assert(min() != sentinel());
+  assert(max() != sentinel());
+  assert(node->InTree());
+
+  return true;
 }
+
 // -- Delete and DeleteFixup --
+// parent is the explicit parent of node. This matters when node == sentinel(),
+// because sentinel.parent() stores the root cache.
 IRBT_TMPL
-void IRBT_TYPE::DeleteFixup(RBTNode<T>* node) {
-  while (node != root_ && IsBlack(node)) {
-    auto* parent = node->parent;
-    if (node == parent->left) {
-      auto* sibling = parent->right;
+auto IRBT_TYPE::DeleteFixup(Node* node, Node* parent) -> void {
+  assert(node != nullptr);
+  assert(parent != nullptr);
+
+  while (node != root() && IsBlack(node)) {
+    assert(parent != sentinel());
+
+    if (node == parent->left()) {
+      auto* sibling = parent->right();
+
+      assert(sibling != sentinel());
+
       if (IsRed(sibling)) {
         // CLRS delete case 1: sibling is red. Rotate to make the sibling
         // black, then continue with one of cases 2-4.
         Black(sibling);
         Red(parent);
         LeftRotate(parent);
-        sibling = parent->right;
+        sibling = parent->right();
+        assert(sibling != sentinel());
       }
-      if (IsBlack(sibling->left) && IsBlack(sibling->right)) {
+      auto* sibling_left = sibling->left();
+      auto* sibling_right = sibling->right();
+      if (IsBlack(sibling_left) && IsBlack(sibling_right)) {
         // CLRS delete case 2: sibling and both sibling children are black.
         // Push the extra blackness up to the parent.
         Red(sibling);
         node = parent;
+        parent = node->parent();
       } else {
-        if (IsBlack(sibling->right)) {
+        if (IsBlack(sibling_right)) {
           // CLRS delete case 3: sibling is black, sibling's near child is red,
           // and far child is black. Rotate sibling to convert to case 4.
-          Black(sibling->left);
+          Black(sibling_left);
           Red(sibling);
           RightRotate(sibling);
-          sibling = parent->right;
+          sibling = parent->right();
+          assert(sibling != sentinel());
         }
         // CLRS delete case 4: sibling is black and sibling's far child is red.
         // Rotate parent and recolor to remove the extra blackness.
         CopyColor(sibling, parent);
         Black(parent);
-        Black(sibling->right);
+        Black(sibling->right());
         LeftRotate(parent);
-        break;
+
+        node = root();
+        parent = sentinel();
       }
     } else {
-      auto* sibling = parent->left;
+      assert(node == parent->right());
+
+      auto* sibling = parent->left();
+      assert(sibling != sentinel());
+
       if (IsRed(sibling)) {
         // CLRS delete case 1, mirrored.
         Black(sibling);
         Red(parent);
         RightRotate(parent);
-        sibling = parent->left;
+        sibling = parent->left();
+        assert(sibling != sentinel());
       }
-      if (IsBlack(sibling->left) && IsBlack(sibling->right)) {
+      auto* sibling_left = sibling->left();
+      auto* sibling_right = sibling->right();
+      if (IsBlack(sibling_left) && IsBlack(sibling_right)) {
         // CLRS delete case 2, mirrored.
         Red(sibling);
         node = parent;
+        parent = node->parent();
       } else {
-        if (IsBlack(sibling->left)) {
+        if (IsBlack(sibling_left)) {
           // CLRS delete case 3, mirrored.
-          Black(sibling->right);
+          Black(sibling_right);
           Red(sibling);
           LeftRotate(sibling);
-          sibling = parent->left;
+          sibling = parent->left();
+          assert(sibling != sentinel());
         }
         // CLRS delete case 4, mirrored.
         CopyColor(sibling, parent);
         Black(parent);
-        Black(sibling->left);
+        Black(sibling->left());
         RightRotate(parent);
-        break;
+
+        node = root();
+        parent = sentinel();
       }
     }
   }
@@ -344,45 +576,124 @@ void IRBT_TYPE::DeleteFixup(RBTNode<T>* node) {
 
 IRBT_TMPL
 bool IRBT_TYPE::Erase(T* elem) {
-  auto* target = NodeOf(elem);
-  if (!target->in_tree || target->tree != this) return false;
-  if (target == min_) {
-    min_ = Next(min_);
+  assert(elem != nullptr);
+
+  auto* target = node_of(elem);
+
+  assert(target != nullptr);
+  assert(target != sentinel());
+
+  if (!target->InTree()) return false;
+
+  assert(root() != sentinel());
+  assert(size_ > 0);
+
+  assert(target->left() != nullptr);
+  assert(target->right() != nullptr);
+  assert(target->parent() != nullptr);
+
+  if (target == min()) {
+    set_min(Next(min()));
   }
+  if (target == max()) {
+    set_max(Prev(max()));
+  }
+
   auto* detach = target;
-  auto* orphan = sentinel_;
+  auto* orphan = sentinel();
+  auto* orphan_parent = sentinel();
   bool detach_original_is_red = IsRed(detach);
-  if (target->left == sentinel_) {
-    orphan = target->right;
-    Transplant(target, target->right);
-  } else if (target->right == sentinel_) {
-    orphan = target->left;
-    Transplant(target, target->left);
+
+  if (target->left() == sentinel()) {
+    orphan = target->right();
+    orphan_parent = target->parent();
+
+    assert(orphan_parent != nullptr);
+    assert(orphan_parent == sentinel() || orphan_parent->left() == target ||
+           orphan_parent->right() == target);
+
+    Transplant(target, target->right());
+  } else if (target->right() == sentinel()) {
+    orphan = target->left();
+    orphan_parent = target->parent();
+
+    assert(orphan_parent != nullptr);
+    assert(orphan_parent == sentinel() || orphan_parent->left() == target ||
+           orphan_parent->right() == target);
+
+    Transplant(target, target->left());
   } else {
     // The target's leftChild and rightChild all exist.
-    detach = Minimum(target->right);
-    detach_original_is_red = IsRed(detach);
-    orphan = detach->right;
+    // Successor must be the minimum of the right subtree
+    // and therefore has no real left child.
+    assert(target->left() != sentinel());
+    assert(target->right() != sentinel());
 
-    if (detach->parent == target) {
-      orphan->parent = detach;
+    detach = Minimum(target->right());
+
+    assert(detach != sentinel());
+    assert(detach->left() == sentinel());
+
+    detach_original_is_red = IsRed(detach);
+    orphan = detach->right();
+
+    if (detach->parent() == target) {
+      orphan_parent = detach;
+      if (orphan != sentinel()) {
+        orphan->set_parent(detach);
+        assert(orphan->parent() == detach);
+      }
     } else {
+      orphan_parent = detach->parent();
+
+      assert(orphan_parent != nullptr);
+      assert(orphan_parent != sentinel());
+      assert(orphan_parent->left() == detach);
+      assert(detach->right() == orphan);
+
       Transplant(detach, orphan);
-      detach->right = target->right;
-      target->right->parent = detach;
+
+      detach->set_right(target->right());
+      detach->right()->set_parent(detach);
+
+      assert(detach->right() != sentinel());
+      assert(detach->right()->parent() == detach);
     }
+
     Transplant(target, detach);
-    target->left->parent = detach;
-    detach->left = target->left;
+
+    assert(detach->parent() == target->parent() ||
+           detach->parent() == sentinel());
+
+    detach->set_left(target->left());
+    detach->left()->set_parent(detach);
+
+    assert(detach->left() != sentinel());
+    assert(detach->left()->parent() == detach);
+
     CopyColor(detach, target);
   }
 
-  ResetNode(target);
-  --size_;
+  assert(orphan != nullptr);
+  assert(orphan_parent != nullptr);
 
   if (!detach_original_is_red) {
-    DeleteFixup(orphan);
+    DeleteFixup(orphan, orphan_parent);
   }
+  target->clear_hook();
+  --size_;
+
+  if (size_ == 0) {
+    assert(root() == sentinel());
+    assert(min() == sentinel());
+    assert(max() == sentinel());
+  } else {
+    assert(root() != sentinel());
+    assert(root()->parent() == sentinel());
+    assert(min() != sentinel());
+    assert(max() != sentinel());
+  }
+
   return true;
 }
 
@@ -400,22 +711,92 @@ std::vector<T*> IRBT_TYPE::PopWhile(Pred pred) {
 }
 
 IRBT_TMPL
-int IRBT_TYPE::BlackHeightOf(RBTNode<T>* node) const {
-  if (node == sentinel_) return 0;
-  if (IsRed(node) && (IsRed(node->left) || IsRed(node->right))) return -1;
-  int lh = BlackHeightOf(node->left);
-  int rh = BlackHeightOf(node->right);
-  if (lh < 0 || rh < 0 || lh != rh) return -1;
-  return lh + (IsBlack(node) ? 1 : 0);
+template <typename Pred, typename OnPop>
+std::size_t IRBT_TYPE::PopWhile(Pred pred, OnPop on_pop) {
+  std::size_t popped = 0;
+  while (!empty()) {
+    T* elem = earliest();
+    if (!pred(elem)) break;
+    Erase(elem);
+    on_pop(elem);
+    ++popped;
+  }
+  return popped;
 }
 
 IRBT_TMPL
-bool IRBT_TYPE::CheckRBInvariants() const {
-  if (root_ != sentinel_ && IsRed(root_)) return false;
-  if (size_ == 0) return root_ == sentinel_;
-  return BlackHeightOf(root_) >= 0;
+auto IRBT_TYPE::CheckSubtree(const Node* node,
+                             const Node* parent,
+                             const Node* lower,
+                             const Node* upper) const
+    -> typename IRBT_TYPE::CheckResult {
+  if (node == sentinel()) return {};
+
+  CheckResult result{};
+  result.ok = false;
+
+  if (node == nullptr || parent == nullptr) return result;
+  if (!node->InTree()) return result;
+  if (node->parent() != parent) return result;
+  if (node->left() == nullptr || node->right() == nullptr) return result;
+
+  auto* elem = elem_of(const_cast<Node*>(node));
+  if (kLess(elem, elem)) return result;
+  if (lower != nullptr &&
+      !kLess(elem_of(const_cast<Node*>(lower)), elem)) {
+    return result;
+  }
+  if (upper != nullptr &&
+      !kLess(elem, elem_of(const_cast<Node*>(upper)))) {
+    return result;
+  }
+
+  if (IsRed(node) && (IsRed(node->left()) || IsRed(node->right()))) {
+    return result;
+  }
+
+  auto left = CheckSubtree(node->left(), node, lower, node);
+  if (!left.ok) return result;
+
+  auto right = CheckSubtree(node->right(), node, node, upper);
+  if (!right.ok) return result;
+
+  if (left.black_height != right.black_height) return result;
+
+  result.ok = true;
+  result.black_height = left.black_height + (IsBlack(node) ? 1 : 0);
+  result.count = left.count + right.count + 1;
+  result.min = left.count == 0 ? node : left.min;
+  result.max = right.count == 0 ? node : right.max;
+  return result;
+}
+
+IRBT_TMPL
+auto IRBT_TYPE::CheckRBInvariants() const -> bool {
+  if (!IsBlack(sentinel()) || sentinel()->InTree()) {
+    return false;
+  }
+
+  if (root() == nullptr || min() == nullptr || max() == nullptr) {
+    return false;
+  }
+
+  if (root() == sentinel()) {
+    return size_ == 0 && min() == sentinel() && max() == sentinel();
+  }
+  if (size_ == 0 || min() == sentinel() || max() == sentinel() ||
+      root()->parent() != sentinel() || IsRed(root())) {
+    return false;
+  }
+
+  auto result = CheckSubtree(root(), sentinel(), nullptr, nullptr);
+  return result.ok &&
+         result.count == size_ &&
+         result.min == min() &&
+         result.max == max();
 }
 
 #undef IRBT_TMPL
 #undef IRBT_TYPE
+
 }  // namespace runtime::ds

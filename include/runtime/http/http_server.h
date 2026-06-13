@@ -5,7 +5,7 @@
 #include "runtime/base/noncopyable.h"
 #include "runtime/http/router.h"
 #include "runtime/net/tcp_server.h"
-#include "runtime/task/scheduler.h"
+#include "runtime/task/blocking_executor.h"
 #ifdef RUNTIME_ENABLE_SSL
 #include "runtime/net/ssl_context.h"
 #endif
@@ -34,15 +34,12 @@ class HttpServer : public runtime::base::NonCopyable {
   // Delegates to the underlying TcpServer. Must be called before Start().
   void set_edge_triggered(bool et);
 
-  void set_scheduler(std::shared_ptr<runtime::task::Scheduler> sched);
+  void set_blocking_executor(
+      std::shared_ptr<runtime::task::BlockingExecutor> executor);
 
-  // Registers GET /metrics → JSON snapshot of scheduler counters.
-  // Must be called after set_scheduler().
+  // Registers GET /metrics → JSON snapshot of executor counters.
+  // Must be called after set_blocking_executor().
   void RegisterMetricsRoute();
-
-  // Registers GET /debug/tasks → JSON array of recent completed tasks.
-  // Must be called after set_scheduler().
-  void RegisterDebugTasksRoute();
 
   // Registers routes by forwarding to Router. The default-argument
   // std::source_location captures the user's call site so registration errors
@@ -70,7 +67,7 @@ class HttpServer : public runtime::base::NonCopyable {
 
   runtime::net::TcpServer server_;
   Router router_;
-  std::shared_ptr<runtime::task::Scheduler> scheduler_;
+  std::shared_ptr<runtime::task::BlockingExecutor> blocking_executor_;
 #ifdef RUNTIME_ENABLE_SSL
   runtime::net::SslContext* ssl_ctx_{nullptr};
 #endif

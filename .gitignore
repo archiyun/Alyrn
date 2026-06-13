@@ -1,11 +1,13 @@
 # Documentation / local notes
 CLAUDE.md
+/tmp/
 
 # Editor and tool state
 .codex/
 .claude/
 .cache/
 .vscode/
+.zed/
 
 # Build directories
 /build/
