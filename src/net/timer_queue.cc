@@ -54,11 +54,12 @@ TimerQueue::~TimerQueue() {
   timerfd_channel_->DisableAll();
   timerfd_channel_->Remove();
   ::close(timerfd_);
-  for (auto& [seq, timer] : active_timers_) {
+  while (!timers_.empty()) {
+    runtime::time::Timer* timer = timers_.earliest();
+    active_timers_.Erase(timer);
     timers_.Erase(timer);
     timer_pool_.Release(timer);
   }
-  active_timers_.clear();
 }
 
 runtime::time::TimerId TimerQueue::AddTimer(TimerCallback cb,
@@ -69,27 +70,27 @@ runtime::time::TimerId TimerQueue::AddTimer(TimerCallback cb,
     bool earliest_changed =
         timers_.empty() || t->expiration() < timers_.earliest()->expiration();
     timers_.Insert(t);
-    active_timers_[t->sequence()] = t;
+    active_timers_.Insert(t);
     if (earliest_changed) {
       ResetTimerfd(t->expiration());
     }
   });
-  return {t, t->sequence()};
+  return {t->sequence()};
 }
 
 void TimerQueue::Cancel(runtime::time::TimerId id) {
-  loop_->RunInLoop([this, timer = id.timer, seq = id.sequence] {
-    auto it = active_timers_.find(seq);
-    if (it != active_timers_.end() && it->second == timer) {
-      runtime::time::Timer* active_timer = it->second;
-      active_timers_.erase(it);
+  loop_->RunInLoop([this, seq = id.sequence] {
+    runtime::time::Timer* active_timer = active_timers_.Find(seq);
+    if (active_timer != nullptr) {
+      active_timers_.Erase(active_timer);
       timers_.Erase(active_timer);
       timer_pool_.Release(active_timer);
       return;
     }
 
+    // Missed the registry: the target is mid-callback (its sequence was already
+    // erased when it fired), so flag the in-flight timer instead of touching it.
     if (processing_timer_ != nullptr &&
-        processing_timer_ == timer &&
         processing_timer_->sequence() == seq) {
       processing_timer_cancelled_ = true;
     }
@@ -105,7 +106,7 @@ void TimerQueue::HandleRead() {
         return timer->expiration() <= now;
       },
       [this, now](runtime::time::Timer* timer) {
-        active_timers_.erase(timer->sequence());
+        active_timers_.Erase(timer);
         processing_timer_ = timer;
         processing_timer_cancelled_ = false;
         timer->Run();
@@ -117,7 +118,7 @@ void TimerQueue::HandleRead() {
         if (timer->repeat() && !cancelled) {
           timer->Restart(now);
           timers_.Insert(timer);
-          active_timers_[timer->sequence()] = timer;
+          active_timers_.Insert(timer);
         } else {
           timer_pool_.Release(timer);
         }

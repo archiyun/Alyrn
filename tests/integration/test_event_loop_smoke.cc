@@ -213,9 +213,9 @@ bool TestStaleTimerIdCannotCancelReplacement() {
     loop.Cancel(stale);
     loop.Loop();
 
-    return Expect(stale.timer == replacement.timer,
-                  "replacement timer should reuse the released pool slot") &&
-           Expect(stale.sequence != replacement.sequence,
+    // The pool slot reuse that makes this an ABA hazard is deliberately no
+    // longer observable through the handle: TimerId carries only the sequence.
+    return Expect(stale.sequence != replacement.sequence,
                   "replacement timer should have a new sequence") &&
            Expect(!timed_out, "replacement timer should fire before watchdog") &&
            Expect(replacement_fired,

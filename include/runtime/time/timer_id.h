@@ -6,18 +6,19 @@
 
 namespace runtime::time {
 
-class Timer;
-
 // A lightweight cancellation handle returned by timer schedulers.
 //
-// TimerId does not own the Timer. `sequence` is used together with the raw
-// pointer to avoid ABA: an old handle must not cancel a new Timer that reuses
-// the same memory address.
+// TimerId is just the Timer's monotonic sequence number. Sequences are never
+// reused, so the sequence alone defeats ABA: once a Timer expires or is
+// cancelled its sequence leaves the scheduler's registry, so a stale handle can
+// never match a newer Timer that reuses the same memory address. Carrying no
+// raw Timer pointer means a stale handle never even names freed storage.
 struct TimerId {
-  Timer* timer{nullptr};
-  int64_t sequence{0};
+  static constexpr int64_t kInvalid = -1;
 
-  bool Valid() const { return timer != nullptr; }
+  int64_t sequence{kInvalid};
+
+  bool Valid() const { return sequence != kInvalid; }
 };
 
 }  // namespace runtime::time
