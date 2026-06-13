@@ -1,4 +1,4 @@
-// Copyright (c) 2026 Arsenova
+// Copyright (c) 2026  junxu05o3-sketch
 // SPDX-License-Identifier: MIT
 // bloom_filter.h - Space-efficient probabilistic membership data structure
 //
@@ -14,6 +14,7 @@
 #pragma once
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <numbers>
@@ -27,18 +28,58 @@ namespace runtime::ds {
 
 namespace detail {
 
-// Optimal bit count: m = -(n * ln(p)) / (ln2)^2
-consteval std::size_t OptimalBitCount(std::size_t n, double p) {
-  return static_cast<std::size_t>(
-      -static_cast<double>(n) * std::log(p) /
-      (std::numbers::ln2 * std::numbers::ln2));
+// Constexpr natural logarithm, valid for x > 0.
+//
+// We cannot use std::log here: it is not constexpr until C++26 (P0533).
+// GCC's libstdc++ accepts it as an extension in constant expressions, but
+// clang does not — which would break the clang CI builds. So we implement ln
+// directly:
+//   - Range reduction: write x = 2^e * f with f in [1, 2), then
+//         ln(x) = e * ln2 + ln(f).
+//   - For f in [1, 2) use the atanh series (t = (f-1)/(f+1) is in [0, 1/3),
+//     so ~7 terms give ~1e-12 precision):
+//         ln(f) = 2 * (t + t^3/3 + t^5/5 + ...).
+consteval double ConstLn(double x) {
+  int e = 0;
+  while (x >= 2.0) {
+    x *= 0.5;
+    ++e;
+  }
+  while (x < 1.0) {
+    x *= 2.0;
+    --e;
+  }
+  double t = (x - 1.0) / (x + 1.0);
+  double t2 = t * t;
+  double sum = 0.0;
+  double term = t;
+  for (int i = 1; i <= 13; i += 2) {
+    sum += term / static_cast<double>(i);
+    term *= t2;
+  }
+  return 2.0 * sum + static_cast<double>(e) * std::numbers::ln2;
 }
 
-// Optimal hash count: k = ceil((m / n) * ln2)
+// Smallest integer >= x, for x > 0. (std::ceil is not constexpr until C++26.)
+consteval std::size_t ConstCeil(double x) {
+  std::size_t n = static_cast<std::size_t>(x);
+  return (static_cast<double>(n) < x) ? n + 1 : n;
+}
+
+// Optimal bit count: m = -(n * ln(p)) / (ln2)^2. Floored at 1 so that later
+// modular indexing never divides by zero.
+consteval std::size_t OptimalBitCount(std::size_t n, double p) {
+  std::size_t m = static_cast<std::size_t>(
+      -static_cast<double>(n) * ConstLn(p) /
+      (std::numbers::ln2 * std::numbers::ln2));
+  return m == 0 ? 1 : m;
+}
+
+// Optimal hash count: k = ceil((m / n) * ln2). At least one hash function.
 consteval std::size_t OptimalHashCount(std::size_t m, std::size_t n) {
-  return static_cast<std::size_t>(
-      std::ceil(static_cast<double>(m) / static_cast<double>(n) *
-                std::numbers::ln2));
+  std::size_t k = ConstCeil(static_cast<double>(m) / static_cast<double>(n) *
+                            std::numbers::ln2);
+  return k == 0 ? 1 : k;
 }
 
 // Round up to next multiple of 64 (uint64_t word boundary).
