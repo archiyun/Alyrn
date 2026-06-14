@@ -53,9 +53,15 @@ public:
   // Returns the current state. Intended for metrics export only;
   // do not use the result to make routing decisions — call AllowRequest().
   CircuitBreakerState state() const noexcept {
-    return static_cast<CircuitBreakerState>(
-      state_.load(std::memory_order_acquire)
-    );
+    const int state = state_.load(std::memory_order_acquire);
+    if (state == kTransitioningToOpenInt ||
+        state == kTransitioningToHalfOpenInt) {
+      return CircuitBreakerState::kOpen;
+    }
+    if (state == kTransitioningToClosedInt) {
+      return CircuitBreakerState::kHalfOpen;
+    }
+    return static_cast<CircuitBreakerState>(state);
   }
 
   // Cumulative consecutive failure count. Exposed for metrics.
@@ -89,14 +95,16 @@ public:
       if (now - entered < static_cast<uint64_t>(cfg_.open_timeout.count())) {
         return false;  // timeout not yet elapsed — fast reject
       }
-      // Timeout elapsed. Race all threads to claim the OPEN→HALF_OPEN transition.
-      // compare_exchange_strong updates s to the observed value on failure,
-      // so the fall-through below handles the "lost the race" case correctly.
-      if (state_.compare_exchange_strong(s, kHalfOpenInt,
+      // Initialize the new probe cycle before publishing HALF_OPEN. Publishing
+      // HALF_OPEN first would let another thread claim a slot before the
+      // counters are reset, then allow the winner to reset and claim it again.
+      if (state_.compare_exchange_strong(s, kTransitioningToHalfOpenInt,
             std::memory_order_acq_rel, std::memory_order_acquire)) {
         half_open_requests_.store(0, std::memory_order_relaxed);
         half_open_success_count_.store(0, std::memory_order_relaxed);
+        half_open_probe_ms_.store(0, std::memory_order_relaxed);
         transition_count_.fetch_add(1, std::memory_order_relaxed);
+        state_.store(kHalfOpenInt, std::memory_order_release);
         s = kHalfOpenInt;
       }
     }
@@ -116,13 +124,18 @@ public:
       // Fall back to OPEN so the OPEN->HALF_OPEN timer re-arms and a fresh probe
       // is admitted next cycle, instead of rejecting forever.
       uint64_t probe_at = half_open_probe_ms_.load(std::memory_order_acquire);
-      if (now - probe_at >= static_cast<uint64_t>(cfg_.open_timeout.count())) {
+      if (cfg_.open_timeout.count() > 0 &&
+          now - probe_at >=
+              static_cast<uint64_t>(cfg_.open_timeout.count())) {
         int expected = kHalfOpenInt;
-        if (state_.compare_exchange_strong(expected, kOpenInt,
+        if (state_.compare_exchange_strong(expected, kTransitioningToOpenInt,
               std::memory_order_acq_rel, std::memory_order_acquire)) {
           open_entered_ms_.store(now, std::memory_order_release);
           half_open_success_count_.store(0, std::memory_order_relaxed);
+          half_open_requests_.store(0, std::memory_order_relaxed);
+          half_open_probe_ms_.store(0, std::memory_order_relaxed);
           transition_count_.fetch_add(1, std::memory_order_relaxed);
+          state_.store(kOpenInt, std::memory_order_release);
         }
       }
       return false;
@@ -163,11 +176,14 @@ public:
           half_open_success_count_.fetch_add(1, std::memory_order_relaxed) + 1;
       if (n >= SuccessThreshold()) {
         int expected = kHalfOpenInt;
-        if (state_.compare_exchange_strong(expected, kClosedInt,
+        if (state_.compare_exchange_strong(expected, kTransitioningToClosedInt,
                 std::memory_order_acq_rel, std::memory_order_acquire)) {
           closed_counts_.store(0, std::memory_order_relaxed);
           half_open_success_count_.store(0, std::memory_order_relaxed);
+          half_open_requests_.store(0, std::memory_order_relaxed);
+          half_open_probe_ms_.store(0, std::memory_order_relaxed);
           transition_count_.fetch_add(1, std::memory_order_relaxed);
+          state_.store(kClosedInt, std::memory_order_release);
         }
       }
     }
@@ -183,11 +199,14 @@ public:
 
     if (s == kHalfOpenInt) {
       int expected = kHalfOpenInt;
-      if (state_.compare_exchange_strong(expected, kOpenInt,
+      if (state_.compare_exchange_strong(expected, kTransitioningToOpenInt,
             std::memory_order_acq_rel, std::memory_order_acquire)) {
         open_entered_ms_.store(NowMs(), std::memory_order_release);
         half_open_success_count_.store(0, std::memory_order_relaxed);
+        half_open_requests_.store(0, std::memory_order_relaxed);
+        half_open_probe_ms_.store(0, std::memory_order_relaxed);
         transition_count_.fetch_add(1, std::memory_order_relaxed);
+        state_.store(kOpenInt, std::memory_order_release);
       }
       return;
     }
@@ -205,10 +224,14 @@ public:
       }
       if (failures >= FailureThreshold()) {
         int expected = kClosedInt;
-        if (state_.compare_exchange_strong(expected, kOpenInt,
+        if (state_.compare_exchange_strong(expected, kTransitioningToOpenInt,
                 std::memory_order_acq_rel, std::memory_order_acquire)) {
           open_entered_ms_.store(NowMs(), std::memory_order_release);
+          half_open_success_count_.store(0, std::memory_order_relaxed);
+          half_open_requests_.store(0, std::memory_order_relaxed);
+          half_open_probe_ms_.store(0, std::memory_order_relaxed);
           transition_count_.fetch_add(1, std::memory_order_relaxed);
+          state_.store(kOpenInt, std::memory_order_release);
         }
       }
     }
@@ -225,6 +248,9 @@ private:
   static constexpr int kClosedInt   = static_cast<int>(CircuitBreakerState::kClosed);
   static constexpr int kOpenInt     = static_cast<int>(CircuitBreakerState::kOpen);
   static constexpr int kHalfOpenInt = static_cast<int>(CircuitBreakerState::kHalfOpen);
+  static constexpr int kTransitioningToOpenInt = 3;
+  static constexpr int kTransitioningToHalfOpenInt = 4;
+  static constexpr int kTransitioningToClosedInt = 5;
 
   static constexpr uint64_t PackClosedCounts(
       uint32_t failures, uint32_t successes) noexcept {

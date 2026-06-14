@@ -6,9 +6,12 @@
 // ./build-tests/tests/circuit_breaker_smoke_test
 // 或 cd build-tests && ctest -R circuit_breaker --output-on-failure
 
+#include <atomic>
+#include <barrier>
 #include <chrono>
 #include <iostream>
 #include <thread>
+#include <vector>
 
 #include "runtime/gateway/circuit_breaker.h"
 
@@ -328,24 +331,42 @@ bool TestFullCycle() {
 // ================================================================
 
 bool TestConcurrentAllowRequestInOpen() {
-  runtime::gateway::CircuitBreakerConfig cfg;
-  cfg.failure_threshold = 1;
-  cfg.open_timeout = 1ms;
-  cfg.half_open_max_requests = 1;
-  runtime::gateway::CircuitBreaker cb(cfg);
+  constexpr int kRounds = 200;
+  constexpr int kThreads = 8;
 
-  cb.OnFailure();  // → OPEN
-  std::this_thread::sleep_for(5ms);
+  for (int round = 0; round < kRounds; ++round) {
+    runtime::gateway::CircuitBreakerConfig cfg;
+    cfg.failure_threshold = 1;
+    cfg.open_timeout = 0ms;
+    cfg.half_open_max_requests = 1;
+    runtime::gateway::CircuitBreaker cb(cfg);
 
-  // 多个线程同时调 AllowRequest，只有一个该拿到探测令牌
-  std::atomic<int> allowed{0};
-  std::thread t1([&] { if (cb.AllowRequest()) allowed.fetch_add(1); });
-  std::thread t2([&] { if (cb.AllowRequest()) allowed.fetch_add(1); });
-  std::thread t3([&] { if (cb.AllowRequest()) allowed.fetch_add(1); });
-  t1.join(); t2.join(); t3.join();
+    cb.OnFailure();  // → OPEN
 
-  if (!Expect(allowed.load() == 1,
-              "exactly 1 thread must get the HALF_OPEN probe token")) return false;
+    std::atomic<int> allowed{0};
+    std::barrier start_line(kThreads + 1);
+    std::vector<std::thread> threads;
+    threads.reserve(kThreads);
+    for (int i = 0; i < kThreads; ++i) {
+      threads.emplace_back([&] {
+        start_line.arrive_and_wait();
+        if (cb.AllowRequest()) {
+          allowed.fetch_add(1, std::memory_order_relaxed);
+        }
+      });
+    }
+
+    start_line.arrive_and_wait();
+    for (auto& thread : threads) {
+      thread.join();
+    }
+
+    if (!Expect(allowed.load(std::memory_order_relaxed) == 1,
+                "exactly 1 thread must get the HALF_OPEN probe token")) {
+      return false;
+    }
+  }
+
   Passed("TestConcurrentAllowRequestInOpen");
   return true;
 }
