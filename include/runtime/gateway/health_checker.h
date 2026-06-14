@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <atomic>
+#include <cstdint>
 #include <memory>
 #include <string>
-#include <unordered_map>
 
 #include "runtime/base/noncopyable.h"
 #include "runtime/gateway/health_check_config.h"
@@ -25,22 +26,29 @@ namespace runtime::gateway {
 class HealthChecker : public runtime::base::NonCopyable {
 public:
   HealthChecker(runtime::net::EventLoop* loop, UpstreamRegistry& registry, HealthCheckConfig cfg = {});
+  ~HealthChecker();
+
   void Start();
   void Stop();
 private:
-  void CheckAll();
-  void CheckOne(std::shared_ptr<UpstreamPeer> peer);
+  struct State;
+
+  static void CheckAll(const std::shared_ptr<State>& state,
+                       uint64_t generation);
+  static void CheckOne(const std::shared_ptr<State>& state,
+                       uint64_t generation,
+                       std::shared_ptr<UpstreamPeer> peer);
+  static bool CompleteProbe(
+      const std::shared_ptr<State>& state,
+      uint64_t generation,
+      const std::shared_ptr<UpstreamPeer>& peer,
+      const std::string& name,
+      const std::shared_ptr<std::atomic<bool>>& done,
+      bool success);
 
   runtime::net::EventLoop* loop_;
-  UpstreamRegistry& registry_;
-  HealthCheckConfig cfg_;
+  std::shared_ptr<State> state_;
   runtime::time::TimerId timer_id_;
-  bool running_{false};
-
-  // Consecutive successful probes per peer. Not persisted across restarts.
-  std::unordered_map<std::string, int> consecutive_ok_;
-
-  // Consecutive failed probes per peer.
-  std::unordered_map<std::string, int> consecutive_fail_;
+  std::atomic<bool> running_{false};
 };
 }  // namespace runtime::gateway

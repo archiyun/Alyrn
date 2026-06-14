@@ -15,6 +15,7 @@
 // object can outlive any single in-flight callback without UAF.
 #include "runtime/gateway/proxy_pass.h"
 
+#include <algorithm>
 #include <atomic>
 #include <charconv>
 #include <chrono>
@@ -23,6 +24,7 @@
 #include "runtime/gateway/upstream_conn_pool.h"
 #include "runtime/http/http_types.h"
 #include "runtime/log/logger.h"
+#include "runtime/net/event_loop.h"
 #include "runtime/net/inet_address.h"
 #include "runtime/net/net_utils.h"
 #include "runtime/time/timestamp.h"
@@ -37,6 +39,24 @@ uint64_t NowMs() {
       std::chrono::duration_cast<std::chrono::milliseconds>(
           std::chrono::steady_clock::now().time_since_epoch())
           .count());
+}
+
+// RFC 7231 idempotent methods: replaying them upstream has no extra effect, so
+// they are safe to retry on another peer even after the bytes were flushed.
+// POST/PATCH/CONNECT (and Invalid) are not — a replay could double-execute.
+bool IsIdempotent(runtime::http::Method m) {
+  using runtime::http::Method;
+  switch (m) {
+    case Method::Get:
+    case Method::Head:
+    case Method::Put:
+    case Method::Delete:
+    case Method::Options:
+    case Method::Trace:
+      return true;
+    default:
+      return false;
+  }
 }
 }  // namespace
 
@@ -67,10 +87,39 @@ UpstreamRequest::UpstreamRequest(const TcpConnectionPtr& client_conn,
 }
 
 UpstreamRequest::~UpstreamRequest() {
-  if (peer_) peer_->state().active.fetch_sub(1, std::memory_order_relaxed);
+  CancelDeadline();
+  ReleaseAccounting();
+  // Backstop: a request admitted by the breaker MUST resolve to exactly one
+  // OnSuccess/OnFailure. If we never reported (client disconnected mid-flight,
+  // weak_self expired, ...), count it as a failure so a HALF_OPEN probe slot is
+  // released and the breaker can re-open and retry instead of stalling forever.
+  ReportToBreaker(false);
+}
+
+void UpstreamRequest::ReportToBreaker(bool success) {
+  if (!cb_ || cb_reported_) return;
+  cb_reported_ = true;
+  if (success) {
+    cb_->OnSuccess();
+  } else {
+    cb_->OnFailure();
+  }
+}
+
+// Linear scan for any other available peer. Not weight-aware, but this is the
+// degraded failover path: the affinity/primary target is already failing, so
+// reaching a different healthy node matters more than honoring the LB policy.
+std::shared_ptr<UpstreamPeer> UpstreamRequest::SelectFailoverPeer() {
+  const uint64_t now_ms = NowMs();
+  for (const auto& p : upstream_.peers()) {
+    if (p.get() == peer_.get()) continue;
+    if (p->AvailableAt(now_ms)) return p;
+  }
+  return nullptr;
 }
 
 void UpstreamRequest::Start() {
+  ArmDeadline();
   if (auto pooled = pool_.Acquire(peer_->config().name)) {
     ConnectToWithPool(peer_, std::move(pooled));
     return;
@@ -119,12 +168,14 @@ void UpstreamRequest::ConnectTo(std::shared_ptr<UpstreamPeer> peer) {
                                                 peer_->config().port);
   if (!address) {
     peer_->OnFailure(NowMs());
-    if (cb_) cb_->OnFailure();
+    ReportToBreaker(false);
     LOG_ERROR() << "proxy: invalid IPv4 address for peer "
                 << peer_->config().name << ": " << peer_->config().host
                 << " error=" << address.error.message();
     Send502();
     phase_ = Phase::kDone;
+    CancelDeadline();
+    ReleaseAccounting();
     return;
   }
   upstream_conn_ = std::make_unique<runtime::net::TcpClient>(
@@ -160,32 +211,54 @@ void UpstreamRequest::OnUpstreamConnChange(const TcpConnectionPtr& up_conn) {
     Finalize();
     return;
   }
-  // Connect or send phase: record a failure. OnFailure bumps fails/checked_ms
-  // and decays effective_weight by 1; the inline max_fails check then flips
-  // the hard down flag once the threshold is crossed.
+  // Connect or send phase: record a passive failure. OnFailure bumps
+  // fails/checked_ms and decays effective_weight by 1. Recovery is governed by
+  // AvailableAt()'s max_fails + fail_timeout cooldown — we deliberately do NOT
+  // touch state_.down here. That hard flag is owned exclusively by the active
+  // HealthChecker; writing it from the proxy path would make the cooldown
+  // unreachable and strand the peer forever when no HealthChecker is running.
   peer_->OnFailure(NowMs());
-  const auto fails = peer_->state().fails.load(std::memory_order_relaxed);
-  if (static_cast<int>(fails) >= peer_->config().max_fails) {
-    peer_->state().down.store(true, std::memory_order_relaxed);
-    LOG_WARN() << "proxy: peer " << peer_->config().name
-               << " marked down (fails=" << fails << ")";
-  }
-  if (retries_left_-- > 0) {
+
+  // Only retry when it is safe: the request was never put on the wire
+  // (kConnecting failed) OR the method is idempotent. Replaying a POST/PATCH
+  // that was already flushed could double-execute it, so those fail fast once
+  // the bytes leave (matches nginx not retrying non-idempotent methods).
+  const bool request_on_wire = (phase_ != Phase::kConnecting);
+  if ((!request_on_wire || IsIdempotent(request_method_)) &&
+      retries_left_-- > 0) {
+    // lb_.Select() with the same ctx re-picks the SAME peer for hash-based
+    // strategies (ip_hash/consistent/maglev) — that would make the retry a
+    // no-op. Fall back to any other available peer: the affinity target is
+    // down, so failing over to a different node is the correct degraded path.
     auto next = lb_.Select(upstream_, request_ctx_);
+    if (!next || next.get() == peer_.get()) next = SelectFailoverPeer();
     if (next && next.get() != peer_.get()) {
       LOG_WARN() << "proxy: retry " << peer_->config().name
                  << " -> " << next->config().name
                  << " (retries_left=" << retries_left_ << ")";
-      ConnectTo(std::move(next));
+      // This callback runs before TcpClient's close callback. Replacing
+      // upstream_conn_ synchronously would destroy that TcpClient while
+      // TcpConnection::HandleClose() is still about to call back into it.
+      // Defer the replacement until the current close event has unwound.
+      auto weak_self = weak_from_this();
+      up_conn->loop()->QueueInLoop(
+          [weak_self, next = std::move(next)]() mutable {
+            if (auto self = weak_self.lock();
+                self && self->phase_ != Phase::kDone) {
+              self->ConnectTo(std::move(next));
+            }
+          });
       return;
     }
   }
-  // Retries exhausted: notify the per-upstream circuit breaker (if any) so
-  // it can transition Closed -> Open after enough consecutive failures.
-  if (cb_) cb_->OnFailure();
+  // Retries exhausted or unsafe: notify the per-upstream circuit breaker (if
+  // any) so it can transition Closed -> Open after enough consecutive failures.
+  ReportToBreaker(false);
 
   Send502();
   phase_ = Phase::kDone;
+  CancelDeadline();
+  ReleaseAccounting();
 }
 
 void UpstreamRequest::OnUpstreamMessage(const TcpConnectionPtr& /*up*/,
@@ -219,9 +292,13 @@ void UpstreamRequest::OnUpstreamMessage(const TcpConnectionPtr& /*up*/,
         std::from_chars(code_sv.data(), code_sv.data() + code_sv.size(), status);
       }
     }
-    if (cb_) {
-      if (status >= 500) cb_->OnFailure();
-      else               cb_->OnSuccess();
+    if (status >= 500) {
+      ReportToBreaker(false);
+    } else {
+      // Completed a full round-trip to the peer: clear passive fails and let
+      // effective_weight climb back so SWRR re-promotes a recovered peer.
+      peer_->OnSuccess();
+      ReportToBreaker(true);
     }
 
     std::string_view raw_headers(buf.Peek(), end - buf.Peek() + 4);
@@ -347,6 +424,50 @@ void UpstreamRequest::Send502() {
   LOG_WARN() << "proxy: 502 -> client, upstream=" << peer_->config().name;
 }
 
+void UpstreamRequest::ArmDeadline() {
+  auto client = client_weak_.lock();
+  if (!client) return;
+
+  request_loop_ = client->loop();
+  const auto timeout = std::max(
+      upstream_.config().request_timeout,
+      std::chrono::milliseconds{1});
+  deadline_armed_ = true;
+  auto weak_self = weak_from_this();
+  deadline_timer_ = request_loop_->RunAfter(
+      std::chrono::duration<double>(timeout).count(),
+      [weak_self] {
+        if (auto self = weak_self.lock()) self->OnDeadline();
+      });
+}
+
+void UpstreamRequest::CancelDeadline() {
+  if (!deadline_armed_ || !request_loop_) return;
+  deadline_armed_ = false;
+  request_loop_->Cancel(deadline_timer_);
+}
+
+void UpstreamRequest::OnDeadline() {
+  if (phase_ == Phase::kDone) return;
+  deadline_armed_ = false;
+
+  peer_->OnFailure(NowMs());
+  ReportToBreaker(false);
+  phase_ = Phase::kDone;
+  if (upstream_conn_) upstream_conn_->Disconnect();
+  Send502();
+  ReleaseAccounting();
+}
+
+void UpstreamRequest::ReleaseAccounting() {
+  if (accounting_released_) return;
+  accounting_released_ = true;
+  if (peer_) {
+    peer_->state().active.fetch_sub(1, std::memory_order_relaxed);
+  }
+  upstream_.ReleaseRequestSlot();
+}
+
 void UpstreamRequest::RewriteHeaders(std::string_view raw, std::string& out) {
   out.reserve(raw.size() + 64);
 
@@ -386,6 +507,8 @@ void UpstreamRequest::RewriteHeaders(std::string_view raw, std::string& out) {
 
 void UpstreamRequest::Finalize() {
   phase_ = Phase::kDone;
+  CancelDeadline();
+  ReleaseAccounting();
   if (!upstream_conn_ || !upstream_conn_->connection() ||
       !upstream_conn_->connection()->Connected()) {
     return;
@@ -428,12 +551,28 @@ ProxyPass::Forward(const TcpConnectionPtr& client_conn,
                    UpstreamConnPool& pool,
                    const RequestContext& ctx,
                    CircuitBreaker* cb) {
+  if (!upstream.TryAcquireRequestSlot()) {
+    if (cb) cb->OnFailure();
+    return nullptr;
+  }
+
   auto first_peer = lb.Select(upstream, ctx);
-  if (!first_peer) return nullptr;
-  auto req = std::make_shared<UpstreamRequest>(
-      client_conn, upstream, lb, pool, first_peer, ctx,
-      BuildRequest(request, *first_peer),
-      cb, /*max_retries=*/2, request.method());
+  if (!first_peer) {
+    upstream.ReleaseRequestSlot();
+    if (cb) cb->OnFailure();
+    return nullptr;
+  }
+
+  std::shared_ptr<UpstreamRequest> req;
+  try {
+    req = std::make_shared<UpstreamRequest>(
+        client_conn, upstream, lb, pool, first_peer, ctx,
+        BuildRequest(request, *first_peer),
+        cb, /*max_retries=*/2, request.method());
+  } catch (...) {
+    upstream.ReleaseRequestSlot();
+    throw;
+  }
   req->Start();
   return req;
 }

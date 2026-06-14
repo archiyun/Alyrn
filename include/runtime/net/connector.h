@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <atomic>
+
 #include "runtime/base/noncopyable.h"
 #include "runtime/net/event_loop.h"
 #include "runtime/net/inet_address.h"
@@ -53,6 +55,7 @@ private:
   std::unique_ptr<Channel> channel_;
   double                   retry_delay_sec_{0.5};
   NewConnectionCallback    new_connection_cb_;
+  std::atomic<bool>        stopped_{false};
 };
 
 } // namespace runtime::net

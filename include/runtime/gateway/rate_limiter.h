@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -24,6 +25,10 @@ struct RateLimiterConfig {
   bool per_ip_enabled{false};
   double per_ip_rate{10.0};
   double per_ip_burst{20.0};
+  // Cap on live per-IP buckets. Once the map reaches this size, idle buckets
+  // (already refilled to full — loss-less to drop) are evicted. 0 disables the
+  // cap (unbounded growth, the original behavior).
+  std::size_t per_ip_max_buckets{65536};
 };
 
 // Thread-safe token bucket.
@@ -68,6 +73,18 @@ public:
 
   double rate() const noexcept { return rate_; }
   double burst() const noexcept { return burst_; }
+
+  // True when enough time has elapsed since the last refill that the bucket is
+  // guaranteed back at burst_. A full bucket is indistinguishable from a
+  // freshly-created one, so the owner may evict it without changing any future
+  // TryConsume() outcome — this is what makes idle per-IP bucket eviction safe.
+  bool RefilledToFull(uint64_t now) const noexcept {
+    if (rate_ <= 0.0) return false;  // never refills; evicting would reset it
+    uint64_t last = last_refill_ms_.load(std::memory_order_relaxed);
+    if (now <= last) return false;
+    const double full_ms = (burst_ / rate_) * 1000.0;
+    return static_cast<double>(now - last) >= full_ms;
+  }
 
 private:
   static constexpr uint64_t kScale = 1'000'000;  // Fixed-point units per token.
@@ -114,16 +131,70 @@ public:
     std::string key(client_ip);
     std::lock_guard lk{ip_mutex_};
 
+    auto existing = ip_buckets_.find(key);
+    if (existing != ip_buckets_.end()) {
+      return existing->second->TryConsume();
+    }
+
+    if (config_.per_ip_max_buckets != 0) {
+      if (ip_buckets_.size() >= config_.per_ip_max_buckets) {
+        EvictFullBucketsLocked();
+      }
+      // Hard admission bound: never evict an active bucket (which would reset
+      // its limit), and never grow beyond the configured memory cap. Unknown
+      // identities are rate-limited until an idle bucket becomes evictable.
+      if (ip_buckets_.size() >= config_.per_ip_max_buckets) {
+        return false;
+      }
+    }
+
     auto [it, _] = ip_buckets_.try_emplace(
-        key, std::make_shared<TokenBucket>(config_.per_ip_rate, config_.per_ip_burst));
+        std::move(key),
+        std::make_shared<TokenBucket>(
+            config_.per_ip_rate, config_.per_ip_burst));
     return it->second->TryConsume();
   }
-private:
+
+  // Number of live per-IP buckets. Exposed for metrics and tests.
+  std::size_t per_ip_bucket_count() const {
+    std::lock_guard lk{ip_mutex_};
+    return ip_buckets_.size();
+  }
+
+ private:
+  // Drop buckets that have refilled to full. Loss-less: a re-created bucket also
+  // starts full, so eviction changes no future outcome. Throttled to at most one
+  // O(n) sweep per kEvictIntervalMs, so a workload that pins the map at the cap
+  // with genuinely active buckets can't sweep on every call. Caller holds
+  // ip_mutex_.
+  void EvictFullBucketsLocked() {
+    const uint64_t now = NowMs();
+    if (now - last_evict_ms_ < kEvictIntervalMs) return;
+    last_evict_ms_ = now;
+    for (auto it = ip_buckets_.begin(); it != ip_buckets_.end();) {
+      if (it->second->RefilledToFull(now)) {
+        it = ip_buckets_.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  }
+
+  static uint64_t NowMs() noexcept {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch())
+            .count());
+  }
+
+  static constexpr uint64_t kEvictIntervalMs = 1000;
+
   RateLimiterConfig config_;
   TokenBucket global_bucket_;
 
-  std::mutex ip_mutex_;
+  mutable std::mutex ip_mutex_;
   std::unordered_map<std::string, std::shared_ptr<TokenBucket>> ip_buckets_;
+  uint64_t last_evict_ms_{0};  // guarded by ip_mutex_
 };
 
 }  // namespace runtime::gateway

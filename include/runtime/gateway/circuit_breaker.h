@@ -5,6 +5,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <limits>
 
 namespace runtime::gateway {
 
@@ -59,7 +60,8 @@ public:
 
   // Cumulative consecutive failure count. Exposed for metrics.
   uint64_t failure_count() const noexcept {
-    return failure_count_.load(std::memory_order_relaxed);
+    return ClosedFailures(
+        closed_counts_.load(std::memory_order_relaxed));
   }
 
   // Total number of state transitions since construction. Exposed for metrics.
@@ -69,9 +71,11 @@ public:
 
   // Hot path. Lock-free. Returns true if the request should be forwarded.
   //
-  // Callers MUST invoke OnSuccess() or OnFailure() after the request
-  // completes. Failing to do so in HALF_OPEN state will exhaust the probe
-  // quota and stall recovery until the next open_timeout cycle.
+  // Callers MUST invoke OnSuccess() or OnFailure() after the request completes.
+  // Defense-in-depth: if a HALF_OPEN probe's outcome is lost, AllowRequest()
+  // falls back to OPEN once open_timeout elapses with the quota exhausted and
+  // unresolved (see the HALF_OPEN branch below), so a single dropped outcome
+  // cannot strand the breaker in HALF_OPEN rejecting everything forever.
   bool AllowRequest() noexcept {
     int s = state_.load(std::memory_order_acquire);
 
@@ -91,18 +95,37 @@ public:
       if (state_.compare_exchange_strong(s, kHalfOpenInt,
             std::memory_order_acq_rel, std::memory_order_acquire)) {
         half_open_requests_.store(0, std::memory_order_relaxed);
-        success_count_.store(0, std::memory_order_relaxed);
+        half_open_success_count_.store(0, std::memory_order_relaxed);
         transition_count_.fetch_add(1, std::memory_order_relaxed);
         s = kHalfOpenInt;
       }
     }
 
     if (s == kHalfOpenInt) {
-      // Admit only the first half_open_max_requests probes.
-      // fetch_add returns the pre-increment value; requests with index >= limit
-      // are rejected without touching the upstream.
+      // Admit only the first half_open_max_requests probes. fetch_add returns
+      // the pre-increment value; requests with index >= limit are rejected
+      // without touching the upstream.
+      uint64_t now  = NowMs();
       uint64_t slot = half_open_requests_.fetch_add(1, std::memory_order_relaxed);
-      return slot < static_cast<uint64_t>(cfg_.half_open_max_requests);
+      if (slot < static_cast<uint64_t>(cfg_.half_open_max_requests)) {
+        half_open_probe_ms_.store(now, std::memory_order_release);
+        return true;
+      }
+      // Quota exhausted. If no admitted probe has resolved within open_timeout,
+      // its outcome was likely lost (caller never called OnSuccess/OnFailure).
+      // Fall back to OPEN so the OPEN->HALF_OPEN timer re-arms and a fresh probe
+      // is admitted next cycle, instead of rejecting forever.
+      uint64_t probe_at = half_open_probe_ms_.load(std::memory_order_acquire);
+      if (now - probe_at >= static_cast<uint64_t>(cfg_.open_timeout.count())) {
+        int expected = kHalfOpenInt;
+        if (state_.compare_exchange_strong(expected, kOpenInt,
+              std::memory_order_acq_rel, std::memory_order_acquire)) {
+          open_entered_ms_.store(now, std::memory_order_release);
+          half_open_success_count_.store(0, std::memory_order_relaxed);
+          transition_count_.fetch_add(1, std::memory_order_relaxed);
+        }
+      }
+      return false;
     }
 
     return false;
@@ -118,21 +141,32 @@ public:
     int s = state_.load(std::memory_order_acquire);
 
     if (s == kClosedInt) {
-      uint64_t n = success_count_.fetch_add(1, std::memory_order_relaxed) + 1;
-      if (n >= static_cast<uint64_t>(cfg_.success_threshold)) {
-        failure_count_.store(0, std::memory_order_relaxed);
-        success_count_.store(0, std::memory_order_relaxed);
+      uint64_t current = closed_counts_.load(std::memory_order_relaxed);
+      while (state_.load(std::memory_order_acquire) == kClosedInt) {
+        uint32_t failures = ClosedFailures(current);
+        uint32_t successes = SaturatingIncrement(ClosedSuccesses(current));
+        if (successes >= SuccessThreshold()) {
+          failures = 0;
+          successes = 0;
+        }
+        if (closed_counts_.compare_exchange_weak(
+                current, PackClosedCounts(failures, successes),
+                std::memory_order_relaxed, std::memory_order_relaxed)) {
+          return;
+        }
       }
       return;
     }
 
     if (s == kHalfOpenInt) {
-      uint64_t n = success_count_.fetch_add(1, std::memory_order_relaxed) + 1;
-      if (n >= static_cast<uint64_t>(cfg_.success_threshold)) {
+      uint64_t n =
+          half_open_success_count_.fetch_add(1, std::memory_order_relaxed) + 1;
+      if (n >= SuccessThreshold()) {
         int expected = kHalfOpenInt;
         if (state_.compare_exchange_strong(expected, kClosedInt,
                 std::memory_order_acq_rel, std::memory_order_acquire)) {
-          failure_count_.store(0, std::memory_order_relaxed);
+          closed_counts_.store(0, std::memory_order_relaxed);
+          half_open_success_count_.store(0, std::memory_order_relaxed);
           transition_count_.fetch_add(1, std::memory_order_relaxed);
         }
       }
@@ -152,15 +186,24 @@ public:
       if (state_.compare_exchange_strong(expected, kOpenInt,
             std::memory_order_acq_rel, std::memory_order_acquire)) {
         open_entered_ms_.store(NowMs(), std::memory_order_release);
-        success_count_.store(0, std::memory_order_relaxed);
+        half_open_success_count_.store(0, std::memory_order_relaxed);
         transition_count_.fetch_add(1, std::memory_order_relaxed);
       }
       return;
     }
 
     if (s == kClosedInt) {
-      uint64_t n = failure_count_.fetch_add(1, std::memory_order_relaxed) + 1;
-      if (n >= static_cast<uint64_t>(cfg_.failure_threshold)) {
+      uint64_t current = closed_counts_.load(std::memory_order_relaxed);
+      uint32_t failures = 0;
+      while (state_.load(std::memory_order_acquire) == kClosedInt) {
+        failures = SaturatingIncrement(ClosedFailures(current));
+        if (closed_counts_.compare_exchange_weak(
+                current, PackClosedCounts(failures, 0),
+                std::memory_order_relaxed, std::memory_order_relaxed)) {
+          break;
+        }
+      }
+      if (failures >= FailureThreshold()) {
         int expected = kClosedInt;
         if (state_.compare_exchange_strong(expected, kOpenInt,
                 std::memory_order_acq_rel, std::memory_order_acquire)) {
@@ -183,12 +226,44 @@ private:
   static constexpr int kOpenInt     = static_cast<int>(CircuitBreakerState::kOpen);
   static constexpr int kHalfOpenInt = static_cast<int>(CircuitBreakerState::kHalfOpen);
 
+  static constexpr uint64_t PackClosedCounts(
+      uint32_t failures, uint32_t successes) noexcept {
+    return (static_cast<uint64_t>(failures) << 32) | successes;
+  }
+
+  static constexpr uint32_t ClosedFailures(uint64_t counts) noexcept {
+    return static_cast<uint32_t>(counts >> 32);
+  }
+
+  static constexpr uint32_t ClosedSuccesses(uint64_t counts) noexcept {
+    return static_cast<uint32_t>(counts);
+  }
+
+  static constexpr uint32_t SaturatingIncrement(uint32_t value) noexcept {
+    return value == std::numeric_limits<uint32_t>::max() ? value : value + 1;
+  }
+
+  uint32_t FailureThreshold() const noexcept {
+    return cfg_.failure_threshold > 0
+        ? static_cast<uint32_t>(cfg_.failure_threshold)
+        : 1;
+  }
+
+  uint32_t SuccessThreshold() const noexcept {
+    return cfg_.success_threshold > 0
+        ? static_cast<uint32_t>(cfg_.success_threshold)
+        : 1;
+  }
+
   CircuitBreakerConfig cfg_;
 
   std::atomic<int>      state_{kClosedInt};
-  std::atomic<uint64_t> failure_count_{0};    // consecutive failures (CLOSED)
-  std::atomic<uint64_t> success_count_{0};    // consecutive successes (CLOSED / HALF_OPEN)
+  // CLOSED failure score and recovery-success streak are updated together so
+  // concurrent outcomes cannot reset a failure with a stale success streak.
+  std::atomic<uint64_t> closed_counts_{0};
+  std::atomic<uint64_t> half_open_success_count_{0};
   std::atomic<uint64_t> half_open_requests_{0}; // probe slots claimed in HALF_OPEN
+  std::atomic<uint64_t> half_open_probe_ms_{0}; // steady_clock ms of last admitted probe
   std::atomic<uint64_t> open_entered_ms_{0};  // steady_clock ms when OPEN was entered
   std::atomic<uint64_t> transition_count_{0}; // total state transitions — metrics only
 };

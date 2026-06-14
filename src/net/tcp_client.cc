@@ -44,6 +44,7 @@ void TcpClient::Connect() {
 
 void TcpClient::Disconnect() {
   connect_.store(false);
+  connector_->Stop();
   if (connection_) {
     connection_->Shutdown();
   }

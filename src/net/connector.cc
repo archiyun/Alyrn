@@ -26,11 +26,13 @@ Connector::~Connector() {
 }
 
 void Connector::Start() {
+  stopped_.store(false, std::memory_order_release);
   auto self = shared_from_this();
   loop_->RunInLoop([self] { self->StartInLoop(); });
 }
 
 void Connector::Stop() {
+  stopped_.store(true, std::memory_order_release);
   auto self = shared_from_this();
   loop_->RunInLoop([self] {
     if (self->state_ == ConnectorState::kConnecting) {
@@ -43,11 +45,14 @@ void Connector::Stop() {
 
 void Connector::StartInLoop() {
   assert(loop_->IsInLoopThread());
+  if (stopped_.load(std::memory_order_acquire)) return;
   assert(state_ == ConnectorState::kDisConnected);
   Connect();
 }
 
 void Connector::Connect() {
+  if (stopped_.load(std::memory_order_acquire)) return;
+
   auto socket = CreateNonBlockingSocket();
   if (!socket) {
     LOG_ERROR() << "connector: CreateNonBlockingSocket failed: error="
@@ -143,6 +148,12 @@ void Connector::handleWrite() {
   state_ = ConnectorState::kConnected;
   retry_delay_sec_ = 0.5;  // 连接成功，重置退避计时器
 
+  if (stopped_.load(std::memory_order_acquire)) {
+    state_ = ConnectorState::kDisConnected;
+    ::close(sockfd);
+    return;
+  }
+
   LOG_INFO() << "connector: connected to " << server_addr_.ToIpPort()
              << " fd=" << sockfd;
 
@@ -171,7 +182,7 @@ void Connector::Retry(int sockfd) {
   ::close(sockfd);
   state_ = ConnectorState::kDisConnected;
 
-  if (!new_connection_cb_) {
+  if (stopped_.load(std::memory_order_acquire) || !new_connection_cb_) {
     return;  // TcpClient 已析构，不再重试
   }
 
@@ -183,7 +194,9 @@ void Connector::Retry(int sockfd) {
 
   auto self = shared_from_this();
   loop_->RunAfter(retry_delay_sec_, [self] {
-    if (self->state_ == ConnectorState::kDisConnected && self->new_connection_cb_) {
+    if (!self->stopped_.load(std::memory_order_acquire) &&
+        self->state_ == ConnectorState::kDisConnected &&
+        self->new_connection_cb_) {
       self->Connect();
     }
   });

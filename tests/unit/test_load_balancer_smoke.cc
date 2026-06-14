@@ -455,6 +455,63 @@ bool TestRoundRobinHonorsPassiveFailTimeout() {
   return true;
 }
 
+// Regression guard for the passive-recovery bug: a peer that trips max_fails on
+// the *proxy* path (no active HealthChecker running) must recover on its own.
+// Previously the proxy set state_.down on max_fails, which made AvailableAt()
+// short-circuit to false forever — the fail_timeout cooldown window was
+// unreachable and the peer stayed stranded until an active checker cleared
+// `down`. AvailableAt() takes now_ms explicitly, so the whole window is driven
+// with synthetic timestamps (no real sleeping, fully deterministic).
+bool TestPassivePeerRecoversAfterFailTimeout() {
+  runtime::gateway::UpstreamPeer peer(runtime::gateway::UpstreamPeerConfig{
+      .name = "passive:80",
+      .host = "127.0.0.1",
+      .port = static_cast<uint16_t>(80),
+      .weight = 4,
+      .max_fails = 2,
+      .fail_timeout = std::chrono::milliseconds(100),
+  });
+
+  constexpr uint64_t t0 = 1'000'000;
+  if (!Expect(peer.AvailableAt(t0), "fresh peer must be available")) return false;
+  if (!Expect(peer.effective_weight() == 4,
+              "fresh peer starts at config weight")) return false;
+
+  // One failure is below max_fails: still eligible.
+  peer.OnFailure(t0);
+  if (!Expect(peer.AvailableAt(t0), "1 < max_fails must stay available")) return false;
+
+  // Second failure reaches max_fails -> enters the fail_timeout cooldown.
+  peer.OnFailure(t0);
+  if (!Expect(!peer.state().down.load(),
+              "passive max_fails must NOT set the active down flag")) return false;
+  if (!Expect(!peer.AvailableAt(t0),
+              "peer must be excluded at the start of the cooldown")) return false;
+  if (!Expect(!peer.AvailableAt(t0 + 50),
+              "peer must stay excluded mid-cooldown (50ms < 100ms)")) return false;
+
+  // Cooldown elapsed: the peer comes back WITHOUT any active health check.
+  // This is the exact re-inclusion the bug made impossible.
+  if (!Expect(peer.AvailableAt(t0 + 100),
+              "peer must recover once fail_timeout elapses")) return false;
+
+  // A successful round-trip clears passive fails and climbs effective_weight
+  // back so SWRR re-promotes the recovered peer.
+  peer.OnSuccess();
+  if (!Expect(peer.AvailableAt(t0),
+              "OnSuccess must make the peer immediately available")) return false;
+  if (!Expect(peer.effective_weight() == 3,
+              "OnSuccess must restore effective_weight toward config weight")) {
+    return false;
+  }
+  peer.OnSuccess();
+  if (!Expect(peer.effective_weight() == 4,
+              "effective_weight is capped at config weight")) return false;
+
+  Passed("TestPassivePeerRecoversAfterFailTimeout");
+  return true;
+}
+
 // ================================================================
 // WeightedLeastConnectionLB tests
 // ================================================================
@@ -576,6 +633,7 @@ int main() {
 
   RUN(TestRoundRobinCycles);
   RUN(TestRoundRobinHonorsPassiveFailTimeout);
+  RUN(TestPassivePeerRecoversAfterFailTimeout);
 
   RUN(TestWeightedLeastConnectionPicksLowestRatio);
   RUN(TestWeightedLeastConnectionEqualWeightLowestActive);
