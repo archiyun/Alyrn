@@ -12,6 +12,7 @@
 #include <cstring>
 
 #include "runtime/log/logger.h"
+#include "runtime/net/net_utils.h"
 
 namespace runtime::net {
 
@@ -51,31 +52,9 @@ int Socket::Accept(InetAddress* peeraddr) {
   sockaddr_in addr{};
   socklen_t len = static_cast<socklen_t>(sizeof(addr));
 
-#if defined(__linux__)
   int connfd = ::accept4(
       sockfd_, reinterpret_cast<sockaddr*>(&addr), &len,
       SOCK_NONBLOCK | SOCK_CLOEXEC);
-#else
-  int connfd = ::accept(sockfd_, reinterpret_cast<sockaddr*>(&addr), &len);
-  if (connfd >= 0) {
-    // On platforms without accept4(), the accepted fd must be configured
-    // manually to match the non-blocking close-on-exec contract.
-    if (!set_non_blocking(connfd)) {
-      LOG_ERROR() << "failed to set accepted socket non-blocking: fd="
-                  << connfd << " errno=" << errno
-                  << " message=" << std::strerror(errno);
-      ::close(connfd);
-      return -1;
-    }
-    if (!set_close_on_exec(connfd)) {
-      LOG_ERROR() << "failed to set accepted socket close-on-exec: fd="
-                  << connfd << " errno=" << errno
-                  << " message=" << std::strerror(errno);
-      ::close(connfd);
-      return -1;
-    }
-  }
-#endif
   if (connfd >= 0 && peeraddr) {
     *peeraddr = InetAddress(addr);
   } else if (connfd < 0 && errno != EAGAIN && errno != EWOULDBLOCK &&
@@ -99,61 +78,52 @@ void Socket::ShutdownWrite() {
 }
 
 void Socket::set_tcp_no_delay(bool on) {
-  int optval = on ? 1 : 0;
-  if (::setsockopt(
-          sockfd_, IPPROTO_TCP, TCP_NODELAY, &optval, sizeof(optval)) == 0) {
+  const std::error_code error =
+      runtime::net::set_tcp_non_delay(sockfd_, on);
+  if (!error) {
     return;
   }
 
   LOG_ERROR() << "setsockopt TCP_NODELAY failed: fd=" << sockfd_
               << " on=" << on
-              << " errno=" << errno
-              << " message=" << std::strerror(errno);
+              << " error=" << error.value()
+              << " message=" << error.message();
 }
 
 void Socket::set_reuse_addr(bool on) {
-  int optval = on ? 1 : 0;
-  if (::setsockopt(
-          sockfd_, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval)) == 0) {
+  const std::error_code error = runtime::net::set_reuse_addr(sockfd_, on);
+  if (!error) {
     return;
   }
 
   LOG_ERROR() << "setsockopt SO_REUSEADDR failed: fd=" << sockfd_
               << " on=" << on
-              << " errno=" << errno
-              << " message=" << std::strerror(errno);
+              << " error=" << error.value()
+              << " message=" << error.message();
 }
 
 void Socket::set_reuse_port(bool on) {
-#ifdef SO_REUSEPORT
-  int optval = on ? 1 : 0;
-  if (::setsockopt(
-          sockfd_, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval)) == 0) {
+  const std::error_code error = runtime::net::set_reuse_port(sockfd_, on);
+  if (!error) {
     return;
   }
 
   LOG_ERROR() << "setsockopt SO_REUSEPORT failed: fd=" << sockfd_
               << " on=" << on
-              << " errno=" << errno
-              << " message=" << std::strerror(errno);
-#else
-  (void)on;
-  LOG_WARN() << "SO_REUSEPORT is not supported on this platform: fd="
-             << sockfd_;
-#endif
+              << " error=" << error.value()
+              << " message=" << error.message();
 }
 
 void Socket::set_keep_alive(bool on) {
-  int optval = on ? 1 : 0;
-  if (::setsockopt(
-          sockfd_, SOL_SOCKET, SO_KEEPALIVE, &optval, sizeof(optval)) == 0) {
+  const std::error_code error = runtime::net::set_keep_alive(sockfd_, on);
+  if (!error) {
     return;
   }
 
   LOG_ERROR() << "setsockopt SO_KEEPALIVE failed: fd=" << sockfd_
               << " on=" << on
-              << " errno=" << errno
-              << " message=" << std::strerror(errno);
+              << " error=" << error.value()
+              << " message=" << error.message();
 }
 
 }  // namespace runtime::net

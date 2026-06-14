@@ -123,7 +123,7 @@ void TcpConnection::SendInLoop(const void* data, std::size_t len) {
       }
     } else {
 #endif
-      nwrote = ::write(channel_->fd(), data, len);
+      nwrote = ::send(channel_->fd(), data, len, MSG_NOSIGNAL);
       if (nwrote < 0) {
         nwrote = 0;
         if (errno != EWOULDBLOCK) {

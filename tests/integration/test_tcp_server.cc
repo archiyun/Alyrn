@@ -78,9 +78,11 @@ ScopedFd ConnectToServer(std::uint16_t port) {
     const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
     EXPECT_GE(fd, 0);
 
-    sockaddr_in server_addr = MakeIPv4Address("127.0.0.1", port);
+    const InetAddress server_addr(port);
     const int rc =
-        ::connect(fd, reinterpret_cast<sockaddr*>(&server_addr), sizeof(server_addr));
+        ::connect(fd,
+                  reinterpret_cast<const sockaddr*>(&server_addr.sock_addr()),
+                  sizeof(server_addr.sock_addr()));
     EXPECT_EQ(rc, 0);
     return ScopedFd(fd);
 }
@@ -110,7 +112,7 @@ std::string ReadExactly(int fd, std::size_t bytes) {
 
 TEST(TcpServerTest, ConstructServer) {
     EventLoop loop;
-    InetAddress listen_addr(8080, "127.0.0.1");
+    InetAddress listen_addr(8080);
     TcpServer server(&loop, listen_addr, "TestEchoServer");
 
     SUCCEED();
@@ -127,7 +129,7 @@ TEST(TcpServerTest, StartInvokesThreadInitCallbackForEachIoLoop) {
 
     std::thread server_thread([&] {
         EventLoop loop;
-        TcpServer server(&loop, InetAddress(port, "127.0.0.1"), "ThreadInitServer");
+        TcpServer server(&loop, InetAddress(port), "ThreadInitServer");
         server.set_thread_num(2);
         server.set_thread_init_callback([&](EventLoop*) {
             std::lock_guard<std::mutex> lock(mutex);
@@ -158,7 +160,7 @@ TEST(TcpServerTest, AcceptsConnectionAndEchoesPayloadOnce) {
 
     std::thread server_thread([&] {
         EventLoop loop;
-        TcpServer server(&loop, InetAddress(port, "127.0.0.1"), "EchoServer");
+        TcpServer server(&loop, InetAddress(port), "EchoServer");
         server.set_thread_num(1);
         server.set_connection_callback([&](const TcpServer::TcpConnectionPtr&) {
             connection_events.fetch_add(1, std::memory_order_relaxed);

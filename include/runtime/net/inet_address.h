@@ -17,7 +17,8 @@ namespace runtime::net {
 // socket addresses in a more convenient C++ form.
 class InetAddress {
 public:
-  explicit InetAddress(std::uint16_t port, std::string ip = "127.0.0.1");
+  // Builds a loopback endpoint.
+  explicit InetAddress(std::uint16_t port);
   explicit InetAddress(const struct sockaddr_in& addr) : addr_(addr) {}
 
   std::string ToIp() const;
@@ -26,8 +27,10 @@ public:
 
   const struct sockaddr_in& sock_addr() const { return addr_; }
 
+  friend bool operator==(const InetAddress& lhs, const InetAddress& rhs) noexcept;
+
 private:
-  struct sockaddr_in addr_{};
+  struct sockaddr_in addr_ {};
 };
 
 }  // namespace runtime::net

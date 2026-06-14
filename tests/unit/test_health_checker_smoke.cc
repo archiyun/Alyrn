@@ -116,7 +116,7 @@ TestEnv StartTestEnv(
 
     runtime::net::TcpServer server(
         &loop,
-        runtime::net::InetAddress(port, "127.0.0.1"),
+        runtime::net::InetAddress(port),
         "mock-backend");
 
     server.set_connection_callback(

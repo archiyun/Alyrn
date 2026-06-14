@@ -176,7 +176,7 @@ bool TestRstStorm() {
 
     std::thread server_thread([&] {
         EventLoop loop;
-        TcpServer server(&loop, InetAddress(port, "127.0.0.1"), "RstStormServer");
+        TcpServer server(&loop, InetAddress(port), "RstStormServer");
         server.set_thread_num(4);
 
         server.set_connection_callback([&](const TcpServer::TcpConnectionPtr& conn) {
@@ -229,12 +229,14 @@ bool TestRstStorm() {
     // SO_LINGER{1, 0} 是 RST 风暴的关键：close() 不走 FIN，直接发 RST。
     std::vector<int> clients;
     clients.reserve(target_conns);
-    sockaddr_in server_addr = runtime::net::MakeIPv4Address("127.0.0.1", port);
+    const runtime::net::InetAddress server_addr(port);
 
     for (std::size_t i = 0; i < target_conns; ++i) {
         const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
         if (fd < 0) break;
-        if (::connect(fd, reinterpret_cast<sockaddr*>(&server_addr), sizeof(server_addr)) != 0) {
+        if (::connect(fd,
+                      reinterpret_cast<const sockaddr*>(&server_addr.sock_addr()),
+                      sizeof(server_addr.sock_addr())) != 0) {
             ::close(fd);
             break;
         }

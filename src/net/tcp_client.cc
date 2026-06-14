@@ -3,6 +3,7 @@
 #include "runtime/net/tcp_client.h"
 
 #include <atomic>
+#include <cstdlib>
 #include <cstdio>
 
 #include "runtime/log/logger.h"
@@ -53,7 +54,13 @@ void TcpClient::NewConnection(int sockfd) {
   // 此函数在 loop_ 线程中被调用（由 Connector::handleWrite 触发）
   // 与 TcpServer::NewConnection 对称，区别是没有线程池，直接用 loop_
 
-  InetAddress local_addr(GetLocalAddr(sockfd));
+  auto local_addr = get_local_addr(sockfd);
+  if (!local_addr) {
+    LOG_FATAL() << "getsockname failed for connected socket: fd=" << sockfd
+                << " error=" << local_addr.error.value()
+                << " message=" << local_addr.error.message();
+    std::abort();
+  }
   InetAddress peer_addr(server_addr_);
 
   // 生成唯一连接名，便于日志追踪
@@ -63,7 +70,7 @@ void TcpClient::NewConnection(int sockfd) {
   std::string conn_name = name_ + buf;
 
   TcpConnectionPtr conn = std::make_shared<TcpConnection>(
-      loop_, conn_name, sockfd, local_addr, peer_addr);
+      loop_, conn_name, sockfd, *local_addr.value, peer_addr);
 
   conn->set_connection_callback(connection_callback_);
   conn->set_message_callback(message_callback_);
@@ -77,7 +84,7 @@ void TcpClient::NewConnection(int sockfd) {
   conn->ConnectEstablished();
 
   LOG_INFO() << "tcp client new connection: name=" << conn_name
-             << " local=" << local_addr.ToIpPort()
+             << " local=" << local_addr.value->ToIpPort()
              << " peer=" << peer_addr.ToIpPort();
 }
 

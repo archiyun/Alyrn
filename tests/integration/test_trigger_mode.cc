@@ -75,8 +75,11 @@ std::uint16_t ReserveLoopbackPort() {
 ScopedFd ConnectTo(std::uint16_t port) {
   int fd = ::socket(AF_INET, SOCK_STREAM, 0);
   EXPECT_GE(fd, 0);
-  sockaddr_in addr = MakeIPv4Address("127.0.0.1", port);
-  EXPECT_EQ(::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0);
+  const InetAddress addr(port);
+  EXPECT_EQ(::connect(fd,
+                      reinterpret_cast<const sockaddr*>(&addr.sock_addr()),
+                      sizeof(addr.sock_addr())),
+            0);
   return ScopedFd(fd);
 }
 
@@ -131,7 +134,7 @@ struct EchoServer {
     es.thread = std::thread([port, et_mode, io_threads,
                               p = std::move(ready)]() mutable {
       EventLoop loop;
-      TcpServer server(&loop, InetAddress(port, "127.0.0.1"), "EchoServer");
+      TcpServer server(&loop, InetAddress(port), "EchoServer");
       server.set_thread_num(io_threads);
       server.set_edge_triggered(et_mode);
       server.set_message_callback(
@@ -269,7 +272,7 @@ TEST(TriggerModeTest, ET_SendsLargeResponse) {
   auto fut = ready.get_future();
   std::thread srv_thread([&, port] {
     EventLoop loop;
-    TcpServer server(&loop, InetAddress(port, "127.0.0.1"), "BigSendServer");
+    TcpServer server(&loop, InetAddress(port), "BigSendServer");
     server.set_thread_num(0);  // single-threaded: all I/O on main loop
     server.set_edge_triggered(true);
     server.set_message_callback(

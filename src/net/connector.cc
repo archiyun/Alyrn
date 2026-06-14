@@ -48,11 +48,14 @@ void Connector::StartInLoop() {
 }
 
 void Connector::Connect() {
-  int sockfd = CreateNonBlockingSocket();
-  if (sockfd < 0) {
-    LOG_ERROR() << "connector: CreateNonBlockingSocket failed";
+  auto socket = CreateNonBlockingSocket();
+  if (!socket) {
+    LOG_ERROR() << "connector: CreateNonBlockingSocket failed: error="
+                << socket.error.value()
+                << " message=" << socket.error.message();
     return;
   }
+  const int sockfd = *socket.value;
 
   const sockaddr_in addr = server_addr_.sock_addr();
   int ret = ::connect(sockfd,
@@ -122,7 +125,15 @@ void Connector::handleWrite() {
   }
 
   // loopback 上内核可能将本地端口分配成和目标端口相同，形成自连接
-  if (IsSelfConnect(sockfd)) {
+  auto self_connect = IsSelfConnect(sockfd);
+  if (!self_connect) {
+    LOG_ERROR() << "connector: failed to inspect connected socket: fd="
+                << sockfd << " error=" << self_connect.error.value()
+                << " message=" << self_connect.error.message();
+    Retry(sockfd);
+    return;
+  }
+  if (*self_connect.value) {
     LOG_WARN() << "connector: self-connect on " << server_addr_.ToIpPort()
                << ", retrying";
     Retry(sockfd);

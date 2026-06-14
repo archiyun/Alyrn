@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
+#include <sys/socket.h>
 #include <sys/uio.h>
 #include <unistd.h>
 
@@ -77,7 +78,7 @@ ssize_t Buffer::WriteSslFd(SSL* ssl, int* saved_errno) {
 #endif
 
 ssize_t Buffer::WriteFd(int fd, int* saved_errno) {
-  const ssize_t n = ::write(fd, Peek(), readable_bytes());
+  const ssize_t n = ::send(fd, Peek(), readable_bytes(), MSG_NOSIGNAL);
   if (n < 0) {
     if (saved_errno != nullptr) {
       *saved_errno = errno;
