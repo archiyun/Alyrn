@@ -24,6 +24,7 @@
 #include "runtime/http/http_types.h"
 #include "runtime/log/logger.h"
 #include "runtime/net/inet_address.h"
+#include "runtime/net/net_utils.h"
 #include "runtime/time/timestamp.h"
 
 namespace runtime::gateway {
@@ -114,9 +115,20 @@ void UpstreamRequest::ConnectTo(std::shared_ptr<UpstreamPeer> peer) {
   auto client = client_weak_.lock();
   if (!client) return;
 
-  runtime::net::InetAddress addr(peer_->config().port, peer_->config().host);
+  auto address = runtime::net::ParseIPv4Address(peer_->config().host,
+                                                peer_->config().port);
+  if (!address) {
+    peer_->OnFailure(NowMs());
+    if (cb_) cb_->OnFailure();
+    LOG_ERROR() << "proxy: invalid IPv4 address for peer "
+                << peer_->config().name << ": " << peer_->config().host
+                << " error=" << address.error.message();
+    Send502();
+    phase_ = Phase::kDone;
+    return;
+  }
   upstream_conn_ = std::make_unique<runtime::net::TcpClient>(
-    client->loop(), addr, "proxy->" + peer_->config().name);
+    client->loop(), *address.value, "proxy->" + peer_->config().name);
   AttachCallbacks();
   upstream_conn_->Connect();
 }

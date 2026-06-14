@@ -2,66 +2,60 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
+#include <optional>
+#include <string_view>
+#include <system_error>
 
-#include <cstdint>
-#include <string>
+#include "runtime/net/inet_address.h"
+
+#if !defined(__linux__)
+#error "runtime::net currently requires Linux"
+#endif
 
 namespace runtime::net {
 
-// Creates a non-blocking socket with close-on-exec enabled when supported.
-//
-// Returns the socket fd on success, or a negative value on failure.
-int CreateNonBlockingSocket();
+template <typename T>
+struct [[nodiscard]] NetResult {
+  std::optional<T> value;
+  std::error_code error;
+
+  explicit operator bool() const noexcept { return value.has_value(); }
+};
+
+// Parses a numeric IPv4 address. Hostnames are not resolved.
+[[nodiscard]] NetResult<InetAddress> ParseIPv4Address(std::string_view ip, std::uint16_t port);
+
+// Creates a non-blocking IPv4 TCP socket with close-on-exec enabled atomically.
+[[nodiscard]] NetResult<int> CreateNonBlockingSocket();
 
 // Sets or clears O_NONBLOCK on the given fd.
-bool set_non_blocking(int fd);
+[[nodiscard]] std::error_code set_non_blocking(int fd, bool on = true);
 
 // Sets or clears FD_CLOEXEC on the given fd.
-bool set_close_on_exec(int fd);
+[[nodiscard]] std::error_code set_close_on_exec(int fd, bool on = true);
 
 // Enables or disables SO_REUSEADDR on the given socket.
-bool set_reuse_addr(int fd, bool on = true);
+[[nodiscard]] std::error_code set_reuse_addr(int fd, bool on = true);
 
 // Enables or disables SO_REUSEPORT on the given socket.
-bool set_reuse_port(int fd, bool on = true);
+[[nodiscard]] std::error_code set_reuse_port(int fd, bool on = true);
 
 // Enables or disables TCP_NODELAY on the given socket.
-bool set_tcp_non_delay(int fd, bool on = true);
+[[nodiscard]] std::error_code set_tcp_non_delay(int fd, bool on = true);
 
 // Enables or disables SO_KEEPALIVE on the given socket.
-bool set_keep_alive(int fd, bool on = true);
-
-// Installs process-wide handling to ignore SIGPIPE.
-//
-// This prevents the process from being terminated when writing to a socket
-// whose peer has already closed the connection.
-void IgnoreSigPipe();
-
-// Builds an IPv4 socket address from an IP string and port.
-sockaddr_in MakeIPv4Address(const std::string& ip, std::uint16_t port);
-
-// Converts an IPv4 socket address to its textual IP representation.
-std::string ToIp(const sockaddr_in& addr);
-
-// Converts an IPv4 socket address to "ip:port" form.
-std::string ToIpPort(const sockaddr_in& addr);
-
-// Returns the port portion of an IPv4 socket address as a string.
-std::string ToPort(const sockaddr_in& addr);
+[[nodiscard]] std::error_code set_keep_alive(int fd, bool on = true);
 
 // Returns the local socket address bound to fd.
-sockaddr_in GetLocalAddr(int fd);
+[[nodiscard]] NetResult<InetAddress> get_local_addr(int fd);
 
 // Returns the peer socket address connected to fd.
-sockaddr_in GetPeerAddr(int fd);
+[[nodiscard]] NetResult<InetAddress> get_peer_addr(int fd);
 
 // Returns true if fd is connected to itself.
 //
 // A self-connect usually indicates that the local and peer endpoints refer to
 // the same address and port pair.
-bool IsSelfConnect(int fd);
+[[nodiscard]] NetResult<bool> IsSelfConnect(int fd);
 
 }  // namespace runtime::net

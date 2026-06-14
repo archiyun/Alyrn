@@ -98,8 +98,10 @@ ScopedFd ConnectToServer(std::uint16_t port) {
         return ScopedFd();
     }
 
-    sockaddr_in server_addr = runtime::net::MakeIPv4Address("127.0.0.1", port);
-    if (::connect(fd, reinterpret_cast<sockaddr*>(&server_addr), sizeof(server_addr)) != 0) {
+    const runtime::net::InetAddress server_addr(port);
+    if (::connect(fd,
+                  reinterpret_cast<const sockaddr*>(&server_addr.sock_addr()),
+                  sizeof(server_addr.sock_addr())) != 0) {
         ::close(fd);
         return ScopedFd();
     }
@@ -148,7 +150,7 @@ bool TestThreadInitCallbackRunsForEachIoLoop() {
     std::thread server_thread([&] {
         runtime::net::EventLoop loop;
         runtime::net::TcpServer server(
-            &loop, runtime::net::InetAddress(port, "127.0.0.1"), "ThreadInitServer");
+            &loop, runtime::net::InetAddress(port), "ThreadInitServer");
         server.set_thread_num(2);
         server.set_thread_init_callback([&](runtime::net::EventLoop*) {
             std::lock_guard<std::mutex> lock(mutex);
@@ -187,7 +189,7 @@ bool TestEchoRoundTripAndLifecycle() {
     std::thread server_thread([&] {
         runtime::net::EventLoop loop;
         runtime::net::TcpServer server(
-            &loop, runtime::net::InetAddress(port, "127.0.0.1"), "EchoServer");
+            &loop, runtime::net::InetAddress(port), "EchoServer");
         server.set_thread_num(1);
         server.set_connection_callback([&](const runtime::net::TcpServer::TcpConnectionPtr&) {
             connection_events.fetch_add(1, std::memory_order_relaxed);

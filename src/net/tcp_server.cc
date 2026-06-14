@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 #include "runtime/net/tcp_server.h"
 
+#include <cstdlib>
 #include <cstdio>
 
 #include "runtime/log/logger.h"
@@ -64,15 +65,21 @@ void TcpServer::NewConnection(int sockfd, const InetAddress& peeraddr) {
   std::snprintf(buf, sizeof(buf), "#%d", next_conn_id_++);
   std::string conn_name = name_ + buf;
 
-  InetAddress localaddr(GetLocalAddr(sockfd));
+  auto localaddr = get_local_addr(sockfd);
+  if (!localaddr) {
+    LOG_FATAL() << "getsockname failed for accepted socket: fd=" << sockfd
+                << " error=" << localaddr.error.value()
+                << " message=" << localaddr.error.message();
+    std::abort();
+  }
 
   TcpConnectionPtr conn = std::make_shared<TcpConnection>(
-      ioLoop, conn_name, sockfd, localaddr, peeraddr);
+      ioLoop, conn_name, sockfd, *localaddr.value, peeraddr);
 
   connections_[conn_name] = conn;
 
   LOG_INFO() << "new tcp connection: name=" << conn_name
-             << " local=" << localaddr.ToIpPort()
+             << " local=" << localaddr.value->ToIpPort()
              << " peer=" << peeraddr.ToIpPort();
 
   conn->set_connection_callback(connection_callback_);

@@ -6,6 +6,7 @@
 
 #include <cassert>
 #include <cerrno>
+#include <cstdlib>
 #include <cstring>
 
 #include "runtime/log/logger.h"
@@ -14,12 +15,25 @@
 #include "runtime/net/net_utils.h"
 
 namespace runtime::net {
+namespace {
+
+int CreateAcceptSocket() {
+  auto fd = CreateNonBlockingSocket();
+  if (!fd) {
+    LOG_FATAL() << "failed to create accept socket: error="
+                << fd.error.value() << " message=" << fd.error.message();
+    std::abort();
+  }
+  return *fd.value;
+}
+
+}  // namespace
 
 Acceptor::Acceptor(EventLoop* loop,
                    const InetAddress& listen_addr,
                    bool reuse_port)
     : loop_(loop),
-      accept_socket_(CreateNonBlockingSocket()),
+      accept_socket_(CreateAcceptSocket()),
       accept_channel_(loop, accept_socket_.fd()),
       listening_(false) {
     accept_socket_.set_reuse_addr(true);

@@ -389,6 +389,7 @@ if(GTest_FOUND)
         unit/test_buffer.cc
         unit/test_logger.cc
         unit/test_memory_pool.cc
+        unit/test_net_utils.cc
         unit/test_object_pool.cc
         unit/test_sanity.cc
         unit/test_blocking_executor.cc

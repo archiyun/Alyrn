@@ -20,6 +20,7 @@
 #include "runtime/net/buffer.h"
 #include "runtime/net/event_loop.h"
 #include "runtime/net/inet_address.h"
+#include "runtime/net/net_utils.h"
 #include "runtime/net/tcp_client.h"
 #include "runtime/time/timestamp.h"
 
@@ -66,12 +67,24 @@ void HealthChecker::CheckOne(std::shared_ptr<UpstreamPeer> peer) {
   using TcpConnectionPtr = runtime::net::TcpConnection::TcpConnectionPtr;
   std::string name = peer->config().name;
 
+  auto address = runtime::net::ParseIPv4Address(peer->config().host,
+                                                peer->config().port);
+  if (!address) {
+    peer->OnFailure(NowMs());
+    auto& fail_count = consecutive_fail_[name];
+    if (++fail_count >= cfg_.unhealthy_threshold) {
+      peer->state().down.store(true, std::memory_order_relaxed);
+    }
+    LOG_ERROR() << "health_checker: invalid IPv4 address for peer " << name
+                << ": " << peer->config().host
+                << " error=" << address.error.message();
+    return;
+  }
+
   // 1. Build a one-shot TcpClient targeting this peer. The shared_ptr keeps
   //    the client alive across the async callbacks below.
   auto client = std::make_shared<runtime::net::TcpClient>(
-    loop_,
-    runtime::net::InetAddress(peer->config().port, peer->config().host),
-    "health->" + name);
+    loop_, *address.value, "health->" + name);
 
   // 2. Pre-render the probe request. Connection: close keeps each probe
   //    fully independent — we don't pool health-check sockets.

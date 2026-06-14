@@ -154,7 +154,7 @@ public:
   // null, it is updated with errno when a read error occurs.
   ssize_t ReadFd(int fd, int* saved_errno);
 
-  // Writes the readable region to fd.
+  // Writes the readable region to a socket without raising SIGPIPE.
   //
   // Returns the number of bytes written, or -1 on error. Successfully written
   // bytes are consumed from the buffer.

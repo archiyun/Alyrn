@@ -41,7 +41,7 @@ ssize_t Buffer::ReadFd(int fd, int* saved_error) {
 }
 
 ssize_t Buffer::WriteFd(int fd, int* saved_error) {
-  const ssize_t n = ::write(fd, Peek(), readable_bytes());
+  const ssize_t n = ::send(fd, Peek(), readable_bytes(), MSG_NOSIGNAL);
   if (n < 0) {
     if (saved_error) *saved_error = errno;
     return n;
