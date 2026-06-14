@@ -370,6 +370,40 @@ target_link_libraries(resilience_integration_smoke_test
 
 add_test(NAME resilience_integration_smoke_test COMMAND resilience_integration_smoke_test)
 
+add_executable(gateway_adversarial_test
+    adversarial/test_gateway_resilience_adversarial.cc
+)
+
+target_include_directories(gateway_adversarial_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(gateway_adversarial_test
+    PRIVATE
+        runtime_gateway
+        runtime_net
+)
+
+add_test(NAME gateway_adversarial_test COMMAND gateway_adversarial_test)
+set_tests_properties(gateway_adversarial_test PROPERTIES LABELS "adversarial")
+
+add_executable(health_checker_lifetime_reproducer
+    EXCLUDE_FROM_ALL
+    adversarial/test_health_checker_lifetime_reproducer.cc
+)
+
+target_include_directories(health_checker_lifetime_reproducer
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(health_checker_lifetime_reproducer
+    PRIVATE
+        runtime_gateway
+        runtime_net
+)
+
 add_executable(memory_pool_bench
     unit/bench_memory_pool.cc
 )

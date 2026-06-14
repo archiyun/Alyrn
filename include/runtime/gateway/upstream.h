@@ -8,6 +8,9 @@
 // passed to GatewayServer::AddProxyRoute).
 #pragma once
 
+#include <atomic>
+#include <chrono>
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <vector>
@@ -24,6 +27,11 @@ struct UpstreamConfig {
   HealthCheckConfig health_check{};
   CircuitBreakerConfig circuit_breaker{};
   bool circuit_breaker_enabled{false};
+
+  // Bulkhead and deadline defaults. A value of 0 keeps the legacy unbounded
+  // behavior; the default is deliberately bounded.
+  std::size_t max_concurrent_requests{1024};
+  std::chrono::milliseconds request_timeout{5000};
 };
 
 // A named group of upstream peers with an optional circuit breaker. Lifecycle:
@@ -55,10 +63,38 @@ public:
   void set_circuit_breaker(std::shared_ptr<CircuitBreaker> cb) { cb_ = std::move(cb); }
   std::shared_ptr<CircuitBreaker> circuit_breaker() const { return cb_; }
 
+  bool TryAcquireRequestSlot() noexcept {
+    const std::size_t limit = config_.max_concurrent_requests;
+    if (limit == 0) {
+      active_requests_.fetch_add(1, std::memory_order_acq_rel);
+      return true;
+    }
+
+    std::size_t current =
+        active_requests_.load(std::memory_order_relaxed);
+    while (current < limit) {
+      if (active_requests_.compare_exchange_weak(
+              current, current + 1,
+              std::memory_order_acq_rel, std::memory_order_relaxed)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void ReleaseRequestSlot() noexcept {
+    active_requests_.fetch_sub(1, std::memory_order_acq_rel);
+  }
+
+  std::size_t active_requests() const noexcept {
+    return active_requests_.load(std::memory_order_relaxed);
+  }
+
 private:
   UpstreamConfig config_;
   std::vector<std::shared_ptr<UpstreamPeer>> peers_;
   std::shared_ptr<CircuitBreaker> cb_;
+  std::atomic<std::size_t> active_requests_{0};
 };
 
 }  // namespace runtime::gateway

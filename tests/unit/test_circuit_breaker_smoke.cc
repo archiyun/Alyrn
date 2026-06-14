@@ -235,6 +235,32 @@ bool TestClosedSingleSuccessDoesNotReset() {
   return true;
 }
 
+bool TestClosedFailureBreaksSuccessStreak() {
+  runtime::gateway::CircuitBreakerConfig cfg;
+  cfg.failure_threshold = 100;
+  cfg.success_threshold = 2;
+  runtime::gateway::CircuitBreaker cb(cfg);
+
+  cb.OnFailure();
+  cb.OnSuccess();
+  cb.OnFailure();  // Breaks the recovery-success streak.
+  cb.OnSuccess();
+
+  if (!Expect(cb.failure_count() == 2,
+              "non-consecutive successes must not reset failure count")) {
+    return false;
+  }
+
+  cb.OnSuccess();
+  if (!Expect(cb.failure_count() == 0,
+              "two consecutive successes must reset failure count")) {
+    return false;
+  }
+
+  Passed("TestClosedFailureBreaksSuccessStreak");
+  return true;
+}
+
 // ================================================================
 // 状态转换计数
 // ================================================================
@@ -362,6 +388,53 @@ bool TestFailureCountExposed() {
   return true;
 }
 
+// Defense-in-depth: a HALF_OPEN probe whose outcome is never reported (lost)
+// must not strand the breaker. Once open_timeout elapses with the quota
+// exhausted and unresolved, AllowRequest() falls back to OPEN and re-arms, so a
+// fresh probe is admitted on the next cycle.
+bool TestHalfOpenStallFallsBackToOpen() {
+  runtime::gateway::CircuitBreakerConfig cfg;
+  cfg.failure_threshold = 1;       // one failure trips OPEN
+  cfg.half_open_max_requests = 1;  // a single probe slot
+  cfg.open_timeout = 40ms;
+  runtime::gateway::CircuitBreaker cb(cfg);
+
+  cb.OnFailure();  // → OPEN
+  if (!Expect(cb.state() == runtime::gateway::CircuitBreakerState::kOpen,
+              "must be kOpen after threshold")) return false;
+
+  // After open_timeout the first request flips OPEN → HALF_OPEN and is admitted
+  // as the probe, consuming the only slot.
+  std::this_thread::sleep_for(55ms);
+  if (!Expect(cb.AllowRequest(), "first probe admitted after open_timeout")) return false;
+  if (!Expect(cb.state() == runtime::gateway::CircuitBreakerState::kHalfOpen,
+              "must be kHalfOpen")) return false;
+
+  // Simulate a LOST probe outcome: never call OnSuccess/OnFailure. The quota is
+  // gone, so further requests are rejected while still inside open_timeout.
+  if (!Expect(!cb.AllowRequest(),
+              "quota exhausted → reject within open_timeout")) return false;
+  if (!Expect(cb.state() == runtime::gateway::CircuitBreakerState::kHalfOpen,
+              "still kHalfOpen before the stall timeout")) return false;
+
+  // Once open_timeout passes with the probe unresolved, the next call detects
+  // the stall and falls the breaker back to OPEN.
+  std::this_thread::sleep_for(55ms);
+  if (!Expect(!cb.AllowRequest(), "stalled probe → this call rejected")) return false;
+  if (!Expect(cb.state() == runtime::gateway::CircuitBreakerState::kOpen,
+              "stalled kHalfOpen must fall back to kOpen")) return false;
+
+  // OPEN re-armed: after another open_timeout a brand-new probe is admitted —
+  // recovery is no longer permanently stalled.
+  std::this_thread::sleep_for(55ms);
+  if (!Expect(cb.AllowRequest(), "fresh probe admitted on the next cycle")) return false;
+  if (!Expect(cb.state() == runtime::gateway::CircuitBreakerState::kHalfOpen,
+              "back to kHalfOpen with a new probe")) return false;
+
+  Passed("TestHalfOpenStallFallsBackToOpen");
+  return true;
+}
+
 }  // namespace
 
 int main() {
@@ -379,10 +452,12 @@ int main() {
   RUN(TestTransitionToClosedAfterSuccesses);
   RUN(TestTransitionBackToOpenOnFailureInHalfOpen);
   RUN(TestClosedSingleSuccessDoesNotReset);
+  RUN(TestClosedFailureBreaksSuccessStreak);
   RUN(TestTransitionCount);
   RUN(TestFullCycle);
   RUN(TestConcurrentAllowRequestInOpen);
   RUN(TestFailureCountExposed);
+  RUN(TestHalfOpenStallFallsBackToOpen);
 
   std::cout << "===========================\n";
   std::cout << passed << "/" << total << " tests passed.\n";

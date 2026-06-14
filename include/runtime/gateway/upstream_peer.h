@@ -31,7 +31,7 @@ struct UpstreamPeerConfig {
 // across IO threads. Relaxed ordering is intentional — load balancing tolerates slightly
 // stale counts.
 struct UpstreamPeerState {
-  std::atomic<bool> down{false};        // Set by active health checker only.
+  std::atomic<bool> down{false};        // Hard-down; owned exclusively by the active HealthChecker.
   std::atomic<int> active{0};           // In-flight request count; used by LeastConn.
   std::atomic<uint64_t> requests{0};
   std::atomic<uint64_t> fails{0};
@@ -88,15 +88,6 @@ public:
     return state_.active.load(std::memory_order_relaxed);
   }
 
-  void OnRequestStart() {
-    state_.active.fetch_add(1, std::memory_order_relaxed);
-    state_.requests.fetch_add(1, std::memory_order_relaxed);
-  }
-
-  void OnRequestDone() {
-    state_.active.fetch_sub(1, std::memory_order_relaxed);
-  }
-
   // Records a failure: bumps fails/checked_ms (drives AvailableAt's fail_timeout window)
   // and decrements effective_weight toward 0 (drives WRR gradual demotion).
   // CAS loop keeps the value in [0, config_.weight] under concurrent updates.
@@ -116,7 +107,8 @@ public:
   // effective_weight=0 once WRR has fully steered traffic away.
   void OnSuccess() {
     state_.fails.store(0, std::memory_order_relaxed);
-    state_.down.store(false, std::memory_order_relaxed);
+    // NOTE: does NOT clear state_.down - the active HealthChecker owns that flag
+    // and lifts it only after healthy_threshold consecutive probes.
     int cur = state_.effective_weight.load(std::memory_order_relaxed);
     while (cur < config_.weight &&
            !state_.effective_weight.compare_exchange_weak(

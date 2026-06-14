@@ -14,6 +14,7 @@
 #include "runtime/net/buffer.h"
 #include "runtime/net/tcp_client.h"
 #include "runtime/net/tcp_connection.h"
+#include "runtime/time/timer_id.h"
 
 namespace runtime::gateway {
 
@@ -62,6 +63,18 @@ private:
   void OnUpstreamMessage(const TcpConnectionPtr& up_conn, runtime::net::Buffer& buf, runtime::time::Timestamp ts);
   void Finalize();
   void Send502();
+  void ArmDeadline();
+  void CancelDeadline();
+  void OnDeadline();
+  void ReleaseAccounting();
+  // Reports the request outcome to the circuit breaker exactly once. A breaker
+  // that admitted this request (especially a HALF_OPEN probe) requires a single
+  // OnSuccess/OnFailure; the cb_reported_ guard makes every exit path idempotent.
+  void ReportToBreaker(bool success);
+  // Retry helper: pick any *other* available peer. lb_.Select() with the same
+  // ctx re-picks the same node for hash-based strategies, so retries need this
+  // to actually fail over.
+  std::shared_ptr<UpstreamPeer> SelectFailoverPeer();
 
   std::weak_ptr<runtime::net::TcpConnection> client_weak_;
   std::unique_ptr<runtime::net::TcpClient>   upstream_conn_;
@@ -74,10 +87,15 @@ private:
   int                                        retries_left_;
   Phase                                      phase_{Phase::kConnecting};
   CircuitBreaker*                            cb_{nullptr};
+  bool                                       cb_reported_{false};
   BodyFraming                                framing_{BodyFraming::kCloseDelimited};
   uint64_t                                   body_remaining_{0};
   bool                                       upstream_keepalive_{false};
   runtime::http::Method                      request_method_{runtime::http::Method::Invalid};
+  runtime::net::EventLoop*                   request_loop_{nullptr};
+  runtime::time::TimerId                     deadline_timer_;
+  bool                                       deadline_armed_{false};
+  bool                                       accounting_released_{false};
 };
 // Stateless proxy factory. Each forwarded request is represented by one
 // UpstreamRequest instance.

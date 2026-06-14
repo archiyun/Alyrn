@@ -298,6 +298,69 @@ bool TestConcurrentPerIPDifferentIPs() {
   return true;
 }
 
+// Idle per-IP buckets that have refilled to full are evicted once the map hits
+// per_ip_max_buckets. Eviction is loss-less: a re-created bucket starts full
+// too, so a previously-seen IP behaves identically afterwards.
+bool TestPerIPEvictsIdleFullBuckets() {
+  runtime::gateway::RateLimiterConfig cfg;
+  cfg.per_ip_enabled = true;
+  cfg.per_ip_rate = 1000.0;    // full_ms = burst/rate*1000 = 1ms (refills fast)
+  cfg.per_ip_burst = 1.0;
+  cfg.per_ip_max_buckets = 4;  // small cap so eviction is easy to trigger
+  runtime::gateway::RateLimiter rl(cfg);
+
+  for (int i = 0; i < 4; ++i) {
+    rl.AllowPerIP("10.0.0." + std::to_string(i));
+  }
+  if (!Expect(rl.per_ip_bucket_count() == 4, "4 buckets created (at cap)")) return false;
+
+  // Let every bucket refill to full so it becomes evictable.
+  std::this_thread::sleep_for(20ms);
+
+  // The 5th distinct IP hits the cap, triggers a sweep that drops the 4 idle
+  // full buckets, then inserts itself.
+  rl.AllowPerIP("10.0.0.99");
+  if (!Expect(rl.per_ip_bucket_count() == 1,
+              "idle full buckets evicted; only the new one remains")) return false;
+
+  // Loss-less: an evicted IP works exactly as before (a fresh full bucket).
+  if (!Expect(rl.AllowPerIP("10.0.0.0"),
+              "re-created bucket for an evicted IP starts full")) return false;
+
+  Passed("TestPerIPEvictsIdleFullBuckets");
+  return true;
+}
+
+// Eviction must never drop a bucket that is still rate-limiting. Once the hard
+// cap is full of active buckets, a new identity is rejected rather than growing
+// memory or silently resetting an existing client's limit.
+bool TestPerIPEvictionKeepsActiveBuckets() {
+  runtime::gateway::RateLimiterConfig cfg;
+  cfg.per_ip_enabled = true;
+  cfg.per_ip_rate = 0.001;  // full_ms ~= 1e6 ms: effectively never refills
+  cfg.per_ip_burst = 1.0;
+  cfg.per_ip_max_buckets = 2;
+  runtime::gateway::RateLimiter rl(cfg);
+
+  // Drain both buckets (token -> 0); they are nowhere near refilled.
+  if (!Expect(rl.AllowPerIP("a"), "a: first token passes")) return false;
+  if (!Expect(rl.AllowPerIP("b"), "b: first token passes")) return false;
+  if (!Expect(!rl.AllowPerIP("a"), "a: second is limited")) return false;
+
+  // A 3rd IP cannot be admitted. No bucket is full, so none can be dropped.
+  if (!Expect(!rl.AllowPerIP("c"),
+              "new identity must be rejected when active buckets fill cap")) {
+    return false;
+  }
+  if (!Expect(rl.per_ip_bucket_count() == 2,
+              "per-ip bucket count must never exceed the hard cap")) return false;
+  // The drained bucket is intact: still limited, not silently reset.
+  if (!Expect(!rl.AllowPerIP("a"), "a stays limited after the over-cap insert")) return false;
+
+  Passed("TestPerIPEvictionKeepsActiveBuckets");
+  return true;
+}
+
 }  // namespace
 
 int main() {
@@ -317,6 +380,8 @@ int main() {
   RUN(TestConcurrentGlobalRateLimiter);
   RUN(TestConcurrentPerIPSameIP);
   RUN(TestConcurrentPerIPDifferentIPs);
+  RUN(TestPerIPEvictsIdleFullBuckets);
+  RUN(TestPerIPEvictionKeepsActiveBuckets);
 
   std::cout << "===========================\n";
   std::cout << passed << "/" << total << " tests passed.\n";
