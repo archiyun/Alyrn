@@ -22,7 +22,7 @@
 #include "runtime/http/router.h"
 #include "runtime/metrics/gateway_metrics.h"
 #include "runtime/net/inet_address.h"
-#include "runtime/net/tcp_server.h"
+#include "runtime/net/io_backend.h"
 #include "runtime/time/timestamp.h"
 
 namespace runtime::gateway {
@@ -65,7 +65,9 @@ public:
   GatewayServer(runtime::net::EventLoop* loop,
                 const runtime::net::InetAddress& addr,
                 std::string name,
-                UpstreamRegistry& registry);
+                UpstreamRegistry& registry,
+                runtime::net::Backend backend = runtime::net::Backend::kEpoll);
+
   void set_thread_num(int num_threads);
 
   // Register synchronous direct routes.
@@ -108,17 +110,19 @@ private:
   };
 
 
-  void OnConnection(const TcpConnectionPtr& conn);
-  void OnMessage(const TcpConnectionPtr& conn,
+  void OnConnection(const runtime::net::ConnPtr& conn);
+  void OnMessage(const runtime::net::ConnPtr& conn,
                  runtime::net::Buffer& buf,
                  runtime::time::Timestamp ts);
+
   UpstreamConnPool& GetOrCreatePool(runtime::net::EventLoop* loop);
   runtime::http::HttpResponse MakeError(runtime::http::StatusCode code,
                                         std::string_view msg) const;
   std::string RenderFallback(const Route& route,
                              std::string_view reason) const;
 private:
-  runtime::net::TcpServer server_;
+  runtime::net::EventLoop* base_loop_;
+  std::unique_ptr<runtime::net::IServer> server_;
   UpstreamRegistry& registry_;
   std::vector<Route> routes_;
   std::unique_ptr<HealthChecker> health_checker_;

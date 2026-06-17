@@ -6,7 +6,12 @@
 #include <atomic>
 #include <chrono>
 
+#include "runtime/http/http_types.h"
 #include "runtime/log/logger.h"
+#include "runtime/net/event_loop.h"
+#include "runtime/net/io_backend.h"
+#include "runtime/net/reactor_backend.h"
+
 
 namespace runtime::gateway {
 
@@ -109,12 +114,15 @@ void RewriteForUpstream(runtime::http::HttpRequest& req,
 GatewayServer::GatewayServer(runtime::net::EventLoop* loop,
                              const runtime::net::InetAddress& addr,
                              std::string name,
-                             UpstreamRegistry& registry)
-  : server_(loop, addr, std::move(name)), registry_(registry) {
-  server_.set_connection_callback(
-    [this](const TcpConnectionPtr& conn) { OnConnection(conn); });
-  server_.set_message_callback(
-    [this](const TcpConnectionPtr& conn,
+                             UpstreamRegistry& registry,
+                             runtime::net::Backend backend)
+  : base_loop_(loop),
+    server_(runtime::net::MakeServer(backend, loop, addr, std::move(name))),
+    registry_(registry) {
+  server_->set_connection_callback(
+    [this](const runtime::net::ConnPtr& conn) { OnConnection(conn); });
+  server_->set_message_callback(
+    [this](const runtime::net::ConnPtr& conn,
            runtime::net::Buffer& buf,
            runtime::time::Timestamp ts) { OnMessage(conn, buf, ts); });
   // Pre-render the 429 response used by rate limiting to avoid per-request
@@ -127,7 +135,7 @@ GatewayServer::GatewayServer(runtime::net::EventLoop* loop,
 }
 
 void GatewayServer::set_thread_num(int num_threads) {
-  server_.set_thread_num(num_threads);
+  server_->set_thread_num(num_threads);
 }
 
 void GatewayServer::Get(std::string_view path, Handler handler) {
@@ -188,7 +196,7 @@ void GatewayServer::AddProxyRoute(std::string_view path,
 }
 void GatewayServer::EnableHealthCheck(HealthCheckConfig cfg) {
   health_checker_ = std::make_unique<HealthChecker>
-    (server_.loop(),registry_, std::move(cfg));
+    (base_loop_,registry_, std::move(cfg));
 }
 
 void GatewayServer::EnableGlobalRateLimit(double rate, double burst) {
@@ -219,11 +227,11 @@ void GatewayServer::EnableMetricsEndpoint(std::string_view path) {
 
 void GatewayServer::Start() {
   if (health_checker_) health_checker_->Start();
-  server_.Start();
+  server_->Start();
   LOG_INFO() << "gateway: started";
 }
 
-void GatewayServer::OnConnection(const TcpConnectionPtr& conn) {
+void GatewayServer::OnConnection(const runtime::net::ConnPtr& conn) {
   if (conn->Connected()) {
     // ConnCtx contains HttpContext, which is move-only because it owns a pool.
     // Store it behind shared_ptr because std::any requires copyable values.
@@ -236,7 +244,7 @@ void GatewayServer::OnConnection(const TcpConnectionPtr& conn) {
   }
 }
 
-void GatewayServer::OnMessage(const TcpConnectionPtr& conn,
+void GatewayServer::OnMessage(const runtime::net::ConnPtr& conn,
                               runtime::net::Buffer& buf,
                               runtime::time::Timestamp ts) {
   auto& ctx = *std::any_cast<std::shared_ptr<ConnCtx>&>(conn->context());
@@ -264,7 +272,7 @@ void GatewayServer::OnMessage(const TcpConnectionPtr& conn,
     const std::string client_ip = conn->peer_address().ToIp();
     RewriteForUpstream(req, client_ip,
                        /*scheme=*/"http",
-                       /*gateway_name=*/server_.name(),
+                       /*gateway_name=*/server_->name(),
                        /*request_id=*/GenRequestId());
 
     // Apply rate limiting before route matching.
@@ -298,6 +306,14 @@ void GatewayServer::OnMessage(const TcpConnectionPtr& conn,
 
     if (route->type == RouteType::Proxy) {
       metrics_.routes_proxy_total.Inc();
+
+      auto native = runtime::net::ReactorNativeConn(conn);
+      if (!native) {
+        metrics_.fallback_served_total.Inc();
+        metrics_.ObserveStatus(static_cast<int>(runtime::http::StatusCode::ServiceUnavailable));
+        conn->Send(RenderFallback(*route, "proxy requires the epoll backend"));
+        continue;
+      }
       auto upstream = registry_.Find(route->upstream_name);
       if (!upstream) {
         metrics_.upstream_no_peer_total.Inc();
@@ -323,12 +339,13 @@ void GatewayServer::OnMessage(const TcpConnectionPtr& conn,
         continue;
       }
 
-      auto& pool = GetOrCreatePool(conn->loop());
+      auto& pool = GetOrCreatePool(native->loop());
       RequestContext req_ctx{
         .client_ip = client_ip,
         .uri = std::string(req.path()),
       };
-      ctx.upstream_req = ProxyPass::Forward(conn, req, *upstream, *route->lb, pool, req_ctx, cb);
+      ctx.upstream_req =
+          ProxyPass::Forward(native, req, *upstream, *route->lb, pool, req_ctx, cb);
       if (!ctx.upstream_req) {
         metrics_.upstream_no_peer_total.Inc();
         metrics_.fallback_served_total.Inc();

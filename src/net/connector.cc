@@ -182,8 +182,10 @@ void Connector::Retry(int sockfd) {
   ::close(sockfd);
   state_ = ConnectorState::kDisConnected;
 
-  if (stopped_.load(std::memory_order_acquire) || !new_connection_cb_) {
-    return;  // TcpClient 已析构，不再重试
+  if (stopped_.load(std::memory_order_acquire) ||
+      !retry_enabled_.load(std::memory_order_acquire) ||
+      !new_connection_cb_) {
+    return;
   }
 
   // 指数退避：0.5s → 1s → 2s → ... → 30s
@@ -195,6 +197,7 @@ void Connector::Retry(int sockfd) {
   auto self = shared_from_this();
   loop_->RunAfter(retry_delay_sec_, [self] {
     if (!self->stopped_.load(std::memory_order_acquire) &&
+        self->retry_enabled_.load(std::memory_order_acquire) &&
         self->state_ == ConnectorState::kDisConnected &&
         self->new_connection_cb_) {
       self->Connect();

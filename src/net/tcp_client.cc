@@ -50,6 +50,9 @@ void TcpClient::Disconnect() {
   }
 }
 
+void TcpClient::set_retry_enabled(bool enabled) {
+  connector_->set_retry_enabled(enabled);
+}
 
 void TcpClient::NewConnection(int sockfd) {
   // 此函数在 loop_ 线程中被调用（由 Connector::handleWrite 触发）
