@@ -160,8 +160,10 @@ bool IQH_TYPE::Erase(T* elem) {
   auto* node = node_of(elem);
   if (!node->InHeap()) return false;
   auto* last = heap_.back();
-  std::size_t index = node->heap_index();
+
   heap_.pop_back();
+  std::size_t index = node->heap_index();
+
   node->clear_hook();
   if (index >= heap_.size()) return true;
 
