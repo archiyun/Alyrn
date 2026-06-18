@@ -9,6 +9,20 @@
 
 namespace runtime::http {
 
+namespace {
+
+bool HeaderNameEquals(std::string_view a, std::string_view b) noexcept {
+  if (a.size() != b.size()) return false;
+  for (std::size_t i = 0; i < a.size(); ++i) {
+    unsigned char c = static_cast<unsigned char>(a[i]);
+    if (c >= 'A' && c <= 'Z') c = static_cast<unsigned char>(c - 'A' + 'a');
+    if (static_cast<char>(c) != b[i]) return false;
+  }
+  return true;
+}
+
+}  // namespace
+
 HttpRequest::HttpRequest()
     : pool_{runtime::memory::Pool::Create()},
       res_{std::make_unique<runtime::memory::PoolResource>(*pool_)},
@@ -18,11 +32,26 @@ HttpRequest::HttpRequest()
       headers_{res_.get()} {}
 
 void HttpRequest::AddHeader(std::string_view field, std::string_view value) {
-  headers_.emplace(detail::LowerCopy(field, res_.get()),
-                   detail::Trim(value,     res_.get()));
+  AddHeaderLowered(MakeHeaderKey(field), value);
+}
+
+HttpString HttpRequest::MakeHeaderKey(std::string_view field) const {
+  return detail::LowerCopy(field, res_.get());
+}
+
+void HttpRequest::AddHeaderLowered(HttpString field, std::string_view value) {
+  auto [it, inserted] =
+      headers_.emplace(std::move(field), detail::Trim(value, res_.get()));
+  if (inserted) {
+    CacheHeader(it->first, it->second);
+  }
 }
 
 std::string_view HttpRequest::header(std::string_view field) const {
+  if (HeaderNameEquals(field, "host")) return host_;
+  if (HeaderNameEquals(field, "connection")) return connection_;
+  if (HeaderNameEquals(field, "content-length")) return content_length_;
+
   const auto key = detail::LowerCopy(field, res_.get());
   const auto it  = headers_.find(key);
   if (it == headers_.end()) {
@@ -38,21 +67,45 @@ void HttpRequest::set_header(std::string_view field, std::string_view value) {
   if (!inserted) {
     it->second = std::move(val);
   }
+  CacheHeader(it->first, it->second);
 }
 
 bool HttpRequest::RemoveHeader(std::string_view field) {
   const auto key = detail::LowerCopy(field, res_.get());
-  return headers_.erase(key) > 0;
+  if (headers_.erase(key) == 0) return false;
+  ClearCachedHeader(key);
+  return true;
 }
 
 bool HttpRequest::keep_alive() const {
-  const auto conn = header("connection");
-  if (static_cast<uint8_t>(version_) < static_cast<uint8_t>(Version::Http10)) {
-    // HTTP/1.1 / 2 / 3 keeps connections alive by default unless the client sends
-    // Connection: close.
+  const auto conn = connection_;
+  if (version_ == Version::Http11) {
     return conn != "close";
   }
-  return conn == "keep-alive";
+  if (version_ == Version::Http10) {
+    return conn == "keep-alive";
+  }
+  return false;
+}
+
+void HttpRequest::CacheHeader(std::string_view field, std::string_view value) {
+  if (field == "host") {
+    host_ = value;
+  } else if (field == "connection") {
+    connection_ = value;
+  } else if (field == "content-length") {
+    content_length_ = value;
+  }
+}
+
+void HttpRequest::ClearCachedHeader(std::string_view field) {
+  if (field == "host") {
+    host_ = {};
+  } else if (field == "connection") {
+    connection_ = {};
+  } else if (field == "content-length") {
+    content_length_ = {};
+  }
 }
 
 void HttpRequest::Reset() {
@@ -87,6 +140,9 @@ void HttpRequest::Reset() {
   new (&body_)    HttpString{res_.get()};
   new (&headers_) HttpMap<HttpString, HttpString>{res_.get()};
 
+  host_ = {};
+  connection_ = {};
+  content_length_ = {};
   receive_time_ = {};
 }
 

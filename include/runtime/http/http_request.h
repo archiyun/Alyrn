@@ -38,10 +38,15 @@ class HttpRequest {
   std::string_view query() const { return query_; }
 
   void AddHeader(std::string_view field, std::string_view value);
+  HttpString MakeHeaderKey(std::string_view field) const;
+  void AddHeaderLowered(HttpString field, std::string_view value);
   void set_header(std::string_view field, std::string_view value);
   bool RemoveHeader(std::string_view field);
 
   std::string_view header(std::string_view field) const;
+  std::string_view host() const { return host_; }
+  std::string_view connection() const { return connection_; }
+  std::string_view content_length() const { return content_length_; }
   const HttpMap<HttpString, HttpString>& headers() const { return headers_; }
 
   void set_body(std::string_view b) { body_.assign(b); }
@@ -70,6 +75,9 @@ class HttpRequest {
   void Reset();
 
  private:
+  void CacheHeader(std::string_view field, std::string_view value);
+  void ClearCachedHeader(std::string_view field);
+
   runtime::memory::Pool::Ptr pool_;
   std::unique_ptr<runtime::memory::PoolResource> res_;
   Method method_{Method::Invalid};     // GET / POST / PUT ...
@@ -78,6 +86,9 @@ class HttpRequest {
   HttpString query_;                   // e.g. name=abc&age=18
   HttpString body_;
   HttpMap<HttpString, HttpString> headers_;  // Host / Content-Length / Connection ...
+  std::string_view host_;
+  std::string_view connection_;
+  std::string_view content_length_;
   std::vector<PathParam> path_params_;       // e.g. /users/:id -> id = 123
   runtime::time::Timestamp receive_time_;
 };

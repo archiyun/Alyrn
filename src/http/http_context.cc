@@ -4,8 +4,7 @@
 
 #include <charconv>
 #include <string_view>
-
-#include "header_utils.h"
+#include <utility>
 
 namespace runtime::http {
 
@@ -35,15 +34,30 @@ StatusCode ParseStatusToStatusCode(ParseStatus s) noexcept {
   return StatusCode::BadRequest;
 }
 
-// Parses the method token. Drives the lookup off MethodToString so the
-// wire-format spelling lives in exactly one place (http_types.cc).
 // HTTP method names are case-sensitive uppercase tokens (RFC 9110 §9.1).
 bool HttpContext::ParseMethod(std::string_view method_sv) {
-  for (Method m : kAllRequestMethods) {
-    if (method_sv == MethodToString(m)) {
-      request_.set_method(m);
-      return true;
-    }
+  switch (method_sv.size()) {
+    case 3:
+      if (method_sv == "GET") { request_.set_method(Method::Get); return true; }
+      if (method_sv == "PUT") { request_.set_method(Method::Put); return true; }
+      break;
+    case 4:
+      if (method_sv == "POST") { request_.set_method(Method::Post); return true; }
+      if (method_sv == "HEAD") { request_.set_method(Method::Head); return true; }
+      break;
+    case 5:
+      if (method_sv == "PATCH") { request_.set_method(Method::Patch); return true; }
+      if (method_sv == "TRACE") { request_.set_method(Method::Trace); return true; }
+      break;
+    case 6:
+      if (method_sv == "DELETE") { request_.set_method(Method::Delete); return true; }
+      break;
+    case 7:
+      if (method_sv == "OPTIONS") { request_.set_method(Method::Options); return true; }
+      if (method_sv == "CONNECT") { request_.set_method(Method::Connect); return true; }
+      break;
+    default:
+      break;
   }
   return false;
 }
@@ -127,11 +141,11 @@ ParseStatus HttpContext::ProcessRequestLine(std::string_view line) {
 
   const auto q_pos = uri_sv.find('?');
   if (q_pos == std::string_view::npos) {
-    request_.set_path(std::string(uri_sv));
+    request_.set_path(uri_sv);
     request_.set_query("");
   } else {
-    request_.set_path(std::string(uri_sv.substr(0, q_pos)));
-    request_.set_query(std::string(uri_sv.substr(q_pos + 1)));
+    request_.set_path(uri_sv.substr(0, q_pos));
+    request_.set_query(uri_sv.substr(q_pos + 1));
   }
   return ParseStatus::Continue;
 }
@@ -151,7 +165,7 @@ ParseStatus HttpContext::ProcessHeaderLine(std::string_view line) {
   while (!value.empty() && value.front() == ' ') value.remove_prefix(1);
   if (field.empty()) return ParseStatus::BadRequest;
 
-  const std::string lower_field = detail::LowerCopy(field);
+  auto lower_field = request_.MakeHeaderKey(field);
 
   // RFC 9112 §6.1: any Transfer-Encoding is rejected — we don't implement
   // chunked, and allowing TE alongside Content-Length is the canonical
@@ -174,7 +188,7 @@ ParseStatus HttpContext::ProcessHeaderLine(std::string_view line) {
     body_bytes_expected_ = len;
   }
 
-  request_.AddHeader(field, value);
+  request_.AddHeaderLowered(std::move(lower_field), value);
   return ParseStatus::Continue;
 }
 

@@ -1,41 +1,39 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
+
 #include <liburing.h>
 
-#include <cerrno>
-#include <stdexcept>
+#include <optional>
 
 #include "runtime/base/noncopyable.h"
 
 namespace runtime::uring {
 
-// 目前仅在 demo 阶段， 可忽略
-// io_uring 实例的薄 RAII 封装。只管准备/提交 SQE；
-// 收割 CQE 不在这里做——那是 UringLoop 的事（它知道怎么把 CQE 派发给 user_data 里的 Completion）。
+// RAII owner of a liburing io_uring instance (the SQ/CQ ring pair).
+//
+// Setup can fail
 class Ring : public runtime::base::NonCopyable {
 public:
-  explicit Ring(unsigned entries = 256) {
-    const int rc = io_uring_queue_init(entries, &ring_, /*flags=*/0);
-    if (rc < 0) throw std::runtime_error("io_uring_queue_init failed");
-  }
-  ~Ring() { io_uring_queue_exit(&ring_); }
+  [[nodiscard]] std::optional<Ring> Create(unsigned entries);
+  ~Ring(); // io_uring_queue_exit
+  Ring(Ring&& other) noexcept;
+  Ring& operator=(Ring&& other) noexcept;
 
-  // SQ 满时先 flush 一次再取；仍可能返回 nullptr。
-  io_uring_sqe* get_sqe() {
-    io_uring_sqe* sqe = io_uring_get_sqe(&ring_);
-    if (sqe == nullptr) {
-      io_uring_submit(&ring_);
-      sqe = io_uring_get_sqe(&ring_);
-    }
-    return sqe;
-  }
+  [[nodiscard]] io_uring_sqe* get_sqe() { return io_uring_get_sqe(&ring_); }
 
   int Submit() { return io_uring_submit(&ring_); }
-  io_uring* Raw() noexcept { return &ring_; }
+
+  int SubmitAndWait(unsigned wait_nr) {
+    return io_uring_submit_and_wait(&ring_, wait_nr);
+  }
+
+  [[nodiscard]] io_uring* Raw() { return &ring_; }
 
 private:
+  explicit Ring(const io_uring& ring) : ring_(ring), valid_(true) {}
   io_uring ring_;
+  bool valid_{false};
 };
 
 }  // namespace runtime::uring

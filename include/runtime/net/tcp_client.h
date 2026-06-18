@@ -33,6 +33,7 @@ public:
 
   void Connect();
   void Disconnect();
+  void set_retry_enabled(bool enabled);
 
   TcpConnectionPtr connection() const { return connection_; }
 

@@ -109,6 +109,7 @@ add_library(runtime_net STATIC
     src/net/inet_address.cc
     src/net/net_utils.cc
     src/net/poller.cc
+    src/net/reactor_backend.cc
     src/net/socket.cc
     src/net/tcp_connection.cc
     src/net/tcp_server.cc
@@ -138,32 +139,12 @@ target_compile_features(runtime_net PUBLIC cxx_std_20)
 # memmem 是 GNU 扩展, buffer.h 内联用到, 通过 PUBLIC 让上层库也能 include buffer.h
 target_compile_definitions(runtime_net PUBLIC _GNU_SOURCE)
 
-# runtime_uring —— io_uring proactor 后端，与 reactor 版 net 并行。
-# 复用 runtime_net 的 Buffer / InetAddress / Socket，故 PUBLIC 依赖 runtime_net。
-if(RUNTIME_ENABLE_URING)
-    add_library(runtime_uring STATIC
-        src/uring/uring_loop.cc
-        src/uring/uring_connection.cc
-        src/uring/uring_server.cc
-    )
-
-    target_include_directories(runtime_uring
-        PUBLIC
-            ${CMAKE_CURRENT_SOURCE_DIR}/include
-            ${URING_INCLUDE_DIRS}
-    )
-
-    target_link_libraries(runtime_uring
-        PUBLIC
-            runtime_net
-            runtime_foundation
-            ${URING_LIBRARIES}
-            Threads::Threads
-    )
-
-    target_compile_definitions(runtime_uring PUBLIC RUNTIME_ENABLE_URING)
-    target_compile_features(runtime_uring PUBLIC cxx_std_20)
-endif()
+# runtime_uring —— io_uring proactor 后端（已清空，待重写）。
+# 重写时在此重新 add_library(runtime_uring STATIC src/uring/*.cc)：
+#   PUBLIC link runtime_net（复用 Buffer/InetAddress/Socket）+ ${URING_LIBRARIES}，
+#   include ${URING_INCLUDE_DIRS}，
+#   target_compile_definitions(runtime_uring PUBLIC RUNTIME_ENABLE_URING)，cxx_std_20。
+# 开关 option(RUNTIME_ENABLE_URING)（上方）与 pkg_check_modules(URING) 已保留备用。
 
 set(RUNTIME_HTTP_SOURCES
     src/http/http_types.cc

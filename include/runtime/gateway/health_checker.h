@@ -31,6 +31,7 @@ public:
   void Start();
   void Stop();
 private:
+  struct Probe;
   struct State;
 
   static void CheckAll(const std::shared_ptr<State>& state,
@@ -43,7 +44,7 @@ private:
       uint64_t generation,
       const std::shared_ptr<UpstreamPeer>& peer,
       const std::string& name,
-      const std::shared_ptr<std::atomic<bool>>& done,
+      const std::shared_ptr<Probe>& probe,
       bool success);
 
   runtime::net::EventLoop* loop_;

@@ -60,7 +60,19 @@ int ParseHealthStatus(std::string_view headers) {
   if (line.size() > 12 && line[12] != ' ') return 0;
   return status;
 }
+
+void CancelTimeoutLater(runtime::net::EventLoop* loop,
+                        runtime::time::TimerId id) {
+  // Cancelling releases the timer's TcpClient capture. Do that after the
+  // current connection callback returns.
+  loop->QueueInLoop([loop, id] { loop->Cancel(id); });
+}
 }  // namespace
+
+struct HealthChecker::Probe {
+  bool done{false};
+  runtime::time::TimerId timeout_id;
+};
 
 struct HealthChecker::State {
   State(runtime::net::EventLoop* event_loop,
@@ -175,41 +187,32 @@ void HealthChecker::CheckOne(const std::shared_ptr<State>& state,
     flight_it->second = generation;
   }
 
-  // 1. Build a one-shot TcpClient targeting this peer. The shared_ptr keeps
-  //    the client alive across the async callbacks below.
   auto client = std::make_shared<runtime::net::TcpClient>(
     state->loop, *address.value, "health->" + name);
+  client->set_retry_enabled(false);
 
-  // 2. Pre-render the probe request. Connection: close keeps each probe
-  //    fully independent — we don't pool health-check sockets.
   const std::string request =
     "GET " + state->cfg.path + " HTTP/1.1\r\n"
     "Host: " + peer->config().host + "\r\n"
     "Connection: close\r\n\r\n";
 
-  // 3. ConnectionCallback: on connect, send the request; on early disconnect
-  //    (before any bytes were read), count it as a connection-level failure.
-  //    `done` guards against the MessageCallback path having already attributed
-  //    the outcome to a higher-priority signal.
-  auto done = std::make_shared<std::atomic<bool>>(false);
+  auto probe = std::make_shared<Probe>();
   std::weak_ptr<State> weak_state = state;
   client->set_connection_callback(
-    [weak_state, generation, peer, request, name, done](
+    [weak_state, generation, peer, request, name, probe](
         const TcpConnectionPtr& conn) {
       auto state = weak_state.lock();
       if (!state || !state->IsActive(generation)) return;
 
       if (conn->Connected()) {
         conn->Send(request);
-      } else {
-        CompleteProbe(state, generation, peer, name, done, false);
+      } else if (CompleteProbe(state, generation, peer, name, probe, false)) {
+        CancelTimeoutLater(state->loop, probe->timeout_id);
       }
     });
 
-  // 4. MessageCallback: require a complete bounded HTTP header block, parse
-  //    the status line, and drive both binary health and dynamic weight.
   client->set_message_callback(
-    [weak_state, generation, peer, name, done](
+    [weak_state, generation, peer, name, probe](
       const TcpConnectionPtr& conn,
       runtime::net::Buffer& buf,
       runtime::time::Timestamp) {
@@ -236,22 +239,19 @@ void HealthChecker::CheckOne(const std::shared_ptr<State>& state,
         }
         buf.RetrieveAll();
         conn->Shutdown();
-        CompleteProbe(state, generation, peer, name, done, ok);
+        if (CompleteProbe(state, generation, peer, name, probe, ok)) {
+          CancelTimeoutLater(state->loop, probe->timeout_id);
+        }
       });
 
-  // 5. Kick off the probe.
   client->Connect();
 
-  // 6. Timeout backstop: if the probe still has a live connection after
-  //    `timeout_sec`, force-disconnect so the callbacks above run and the
-  //    TcpClient can be released.
-  // The timer owns the client until it fires. Its callbacks hold only weak
-  // State references, so destroying HealthChecker cannot create a cycle or UAF.
-  state->loop->RunAfter(
+  // This timer owns the one-shot client until completion or timeout.
+  probe->timeout_id = state->loop->RunAfter(
       state->cfg.timeout_sec,
-      [weak_state, generation, peer, name, done, client] {
+      [weak_state, generation, peer, name, probe, client] {
     if (auto state = weak_state.lock()) {
-      CompleteProbe(state, generation, peer, name, done, false);
+      CompleteProbe(state, generation, peer, name, probe, false);
     }
     if (client->connection() && client->connection()->Connected()) {
       client->Disconnect();
@@ -264,13 +264,10 @@ bool HealthChecker::CompleteProbe(
     uint64_t generation,
     const std::shared_ptr<UpstreamPeer>& peer,
     const std::string& name,
-    const std::shared_ptr<std::atomic<bool>>& done,
+    const std::shared_ptr<Probe>& probe,
     bool success) {
-  bool expected = false;
-  if (!done->compare_exchange_strong(
-          expected, true, std::memory_order_acq_rel)) {
-    return false;
-  }
+  if (probe->done) return false;
+  probe->done = true;
   if (!state->IsActive(generation)) return false;
 
   auto in_flight = state->in_flight_generation.find(name);

@@ -29,6 +29,9 @@ public:
   void set_connection_callback(NewConnectionCallback cb) {
     new_connection_cb_ = std::move(cb);
   }
+  void set_retry_enabled(bool enabled) noexcept {
+    retry_enabled_.store(enabled, std::memory_order_release);
+  }
 
   void Start();
   void Stop();
@@ -56,6 +59,7 @@ private:
   double                   retry_delay_sec_{0.5};
   NewConnectionCallback    new_connection_cb_;
   std::atomic<bool>        stopped_{false};
+  std::atomic<bool>        retry_enabled_{true};
 };
 
 } // namespace runtime::net
