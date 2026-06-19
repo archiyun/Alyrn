@@ -7,10 +7,6 @@
 #include "runtime/net/inet_address.h"
 #include "runtime/time/timestamp.h"
 
-#ifdef RUNTIME_ENABLE_SSL
-#include <openssl/ssl.h>
-#endif
-
 #include <any>
 #include <cstdint>
 #include <functional>
@@ -122,19 +118,6 @@ public:
   void ConnectEstablished();
   void ConnectDestroyed();
 
-#ifdef RUNTIME_ENABLE_SSL
-  // Attaches an SSL object and arms the TLS handshake.
-  // Must be called before ConnectEstablished().
-  // Takes ownership of ssl.
-  void set_ssl(SSL* ssl);
-
-  // Invoked once after the TLS handshake completes.
-  // Receives the negotiated ALPN protocol string ("h2" or "http/1.1")
-  using HandshakeCallback = std::function<void(const std::string& protocol)>;
-  void set_handshake_callback(HandshakeCallback cb) {
-    handshake_cb_ = std::move(cb);
-  }
-#endif
 private:
   enum class TCPState {
     kDisconnected,
@@ -180,13 +163,6 @@ private:
 
   std::any context_;
 
-#ifdef RUNTIME_ENABLE_SSL
-  void DoSslHandshake();
-
-  SSL* ssl_{nullptr};
-  bool ssl_handshake_done_{false};
-  HandshakeCallback handshake_cb_;
-#endif
 };
 
 }  // namespace runtime::net

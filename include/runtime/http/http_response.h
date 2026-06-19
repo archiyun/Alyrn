@@ -26,8 +26,6 @@ class HttpResponse {
 
   bool close_connection() const;
 
-  // Accessors used by Http2Session to build HTTP/2 HEADERS frames directly,
-  // bypassing the HTTP/1.1 wire format produced by ToString().
   StatusCode status_code() const { return status_code_; }
   const std::string& body() const { return body_; }
   const std::unordered_map<std::string, std::string>& headers() const { return headers_; }

@@ -6,9 +6,6 @@
 #include "runtime/http/router.h"
 #include "runtime/net/tcp_server.h"
 #include "runtime/task/blocking_executor.h"
-#ifdef RUNTIME_ENABLE_SSL
-#include "runtime/net/ssl_context.h"
-#endif
 
 #include <memory>
 #include <source_location>
@@ -24,10 +21,6 @@ class HttpServer : public runtime::base::NonCopyable {
 
   HttpServer(runtime::net::EventLoop* loop, const runtime::net::InetAddress& addr,
              std::string name);
-
-#ifdef RUNTIME_ENABLE_SSL
-  void set_tls(runtime::net::SslContext* ctx);
-#endif
 
   void set_thread_num(int num_threads);
 
@@ -68,9 +61,6 @@ class HttpServer : public runtime::base::NonCopyable {
   runtime::net::TcpServer server_;
   Router router_;
   std::shared_ptr<runtime::task::BlockingExecutor> blocking_executor_;
-#ifdef RUNTIME_ENABLE_SSL
-  runtime::net::SslContext* ssl_ctx_{nullptr};
-#endif
 };
 
 }  // namespace runtime::http

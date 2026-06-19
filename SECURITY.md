@@ -22,8 +22,7 @@ unbounded resource consumption, parser flaw, etc.):
 In scope:
 - `runtime_foundation`, `runtime_task`, `runtime_net`, `runtime_http`,
   `runtime_gateway` library code
-- HTTP/1.1 and (optionally) HTTP/2 parsing and routing
-- TLS surface (when built with `RUNTIME_ENABLE_SSL`)
+- HTTP/1.1 parsing and routing
 
 Out of scope:
 - Example programs under `examples/`

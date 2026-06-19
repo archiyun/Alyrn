@@ -59,10 +59,10 @@ inline HttpString Trim(std::string_view sv,
 
 // Response headers that the framework manages and handlers must not set.
 // Covers framing (Content-Length, Transfer-Encoding), hop-by-hop headers
-// (RFC 9110 §7.6.1), and pseudo-headers (HTTP/2 RFC 7540 §8.1.2.2).
+// (RFC 9110 §7.6.1), and colon-prefixed pseudo-style headers.
 // Caller is responsible for passing a lowercased key.
 inline bool IsRestrictedResponseHeader(std::string_view lower_key) noexcept {
-  if (!lower_key.empty() && lower_key.front() == ':') return true;  // HTTP/2 pseudo
+  if (!lower_key.empty() && lower_key.front() == ':') return true;
   return lower_key == "content-length"      ||
          lower_key == "transfer-encoding"   ||
          lower_key == "connection"          ||

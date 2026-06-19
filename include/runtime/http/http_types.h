@@ -36,8 +36,6 @@ enum class Version : uint8_t {
   Unknown,
   Http10 = 1,
   Http11,
-  Http20,  // implemented through Http2Session/nghttp2, not HttpContext parser
-  Http30,  // not implemented
 };
 
 enum class StatusCode : uint16_t {

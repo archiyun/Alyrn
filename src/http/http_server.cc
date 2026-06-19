@@ -7,9 +7,6 @@
 #include "runtime/http/router.h"
 #include "runtime/net/event_loop.h"
 #include "runtime/task/blocking_executor.h"
-#ifdef RUNTIME_ENABLE_HTTP2
-#include "runtime/http/http2_session.h"
-#endif
 
 namespace runtime::http {
 
@@ -52,10 +49,6 @@ void HttpServer::Add(Method method, std::string_view path, Handler handler,
   router_.Add(method, path, std::move(handler), loc);
 }
 
-#ifdef RUNTIME_ENABLE_SSL
-void HttpServer::set_tls(runtime::net::SslContext* ctx) { ssl_ctx_ = ctx; }
-#endif
-
 void HttpServer::Start() { server_.Start(); }
 
 void HttpServer::RegisterMetricsRoute() {
@@ -74,96 +67,12 @@ void HttpServer::RegisterMetricsRoute() {
 
 void HttpServer::OnConnection(const TcpConnectionPtr& conn) {
   if (!conn->Connected()) return;
-
-#ifdef RUNTIME_ENABLE_SSL
-  if (!ssl_ctx_) {
-    conn->set_context(std::make_shared<HttpContext>());
-    return;
-  }
-
-  conn->set_ssl(ssl_ctx_->NewSsl());
-  // Capture weak_ptr to avoid conn → handshake_cb_ → conn circular reference.
-  conn->set_handshake_callback(
-      [this, weak = std::weak_ptr<runtime::net::TcpConnection>(conn)](
-          const std::string& proto) {
-        auto c = weak.lock();
-        if (!c) return;
-
-#ifdef RUNTIME_ENABLE_HTTP2
-        if (proto == "h2") {
-          auto session = std::make_shared<Http2Session>(
-              c,
-              [this](HttpRequest& req, HttpResponse& resp,
-                     std::shared_ptr<runtime::net::TcpConnection> c,
-                     int32_t sid) {
-                auto match = router_.Match(req.method(), req.path());
-                if (!match.handler) {
-                  resp = match.path_matched
-                      ? MakeError(StatusCode::MethodNotAllowed, "method not allowed")
-                      : MakeError(StatusCode::NotFound, "not found");
-                  auto& ses = std::any_cast<std::shared_ptr<Http2Session>&>(
-                      c->context());
-                  ses->SendResponse(sid, resp);
-                  return;
-                }
-                req.set_path_params(std::move(match.params));
-                if (blocking_executor_) {
-                  blocking_executor_->Submit(
-                      [c, req = std::move(req), resp = std::move(resp),
-                       handler = match.handler, sid]() mutable {
-                        try {
-                          handler(req, resp);
-                        } catch (const std::exception& ex) {
-                          resp.set_status_code(StatusCode::InternalServerError);
-                          resp.set_content_type("application/json; charset=utf-8");
-                          resp.set_body("{\"error\":\"" +
-                                       std::string(ex.what()) + "\"}");
-                        }
-                        c->loop()->RunInLoop(
-                            [c, resp = std::move(resp), sid] {
-                              auto& ses = std::any_cast<
-                                  std::shared_ptr<Http2Session>&>(
-                                  c->context());
-                              ses->SendResponse(sid, resp);
-                            });
-                      });
-                  return;
-                }
-                try {
-                  match.handler(req, resp);
-                } catch (const std::exception& ex) {
-                  resp = MakeError(StatusCode::InternalServerError, ex.what());
-                }
-                auto& ses = std::any_cast<std::shared_ptr<Http2Session>&>(
-                    c->context());
-                ses->SendResponse(sid, resp);
-              });
-          c->set_context(std::move(session));
-        } else {
-#endif  // RUNTIME_ENABLE_HTTP2
-          c->set_context(std::make_shared<HttpContext>());
-#ifdef RUNTIME_ENABLE_HTTP2
-        }
-#endif
-      });
-#else
   conn->set_context(std::make_shared<HttpContext>());
-#endif  // RUNTIME_ENABLE_SSL
 }
 
 void HttpServer::OnMessage(const TcpConnectionPtr& conn,
                            runtime::net::Buffer& buf,
                            runtime::time::Timestamp ts) {
-  auto& ctx = conn->context();
-#ifdef RUNTIME_ENABLE_HTTP2
-  // HTTP/2: feed raw bytes into nghttp2; it drives dispatch via DispatchFn.
-  if (ctx.type() == typeid(std::shared_ptr<Http2Session>)) {
-    auto& session = std::any_cast<std::shared_ptr<Http2Session>&>(ctx);
-    if (!session->Feed(buf)) conn->Shutdown();
-    return;
-  }
-#endif
-
   auto& h1ctx = *std::any_cast<std::shared_ptr<HttpContext>&>(
       conn->context());
   const ParseStatus parse_status = h1ctx.ParseRequest(buf, ts);

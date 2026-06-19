@@ -7,10 +7,6 @@
 
 #include "runtime/net/buffer.h"
 
-#ifdef RUNTIME_ENABLE_SSL
-#include <openssl/ssl.h>
-#endif
-
 namespace runtime::net {
 
 namespace {
@@ -49,29 +45,6 @@ ssize_t Buffer::WriteFd(int fd, int* saved_error) {
   Retrieve(static_cast<std::size_t>(n));
   return n;
 }
-
-#ifdef RUN_ENABLE_SSL
-ssize_t Buffer::ReadSslFd(SSL* sll, int* saved_error) {
-  EnsureWriteableBytes(kReadChunk);
-  const int n = SSL_read(ssl, BeginWrite(), static_cast<int>(Writeable));
-  if (n < 0) {
-    if (saved_error) *saved_error = errno;
-    return -1;
-  }
-  HasWrittern(static_cast<std::size_t>(n));
-  return n;
-}
-
-ssize_t Buffer::WriteSslFd(SSL* ssl, int* saved_errno) {
-  const int n = SSL_write(ssl, Peek(), static_cast<int>(readable_bytes()));
-  if (n < 0) {
-    if (saved_errno) *saved_errno = SSL_get_error(ssl, n);
-    return -1;
-  }
-  Retrieve(static_cast<std::size_t>(n));
-  return n;
-}
-#endif
 
 void Buffer::MakeSpace(std::size_t len) {
   const std::size_t readable = readable_bytes();
