@@ -62,8 +62,7 @@ bool HttpContext::ParseMethod(std::string_view method_sv) {
   return false;
 }
 
-// Only HTTP/1.x is accepted here — HTTP/2 uses a binary preface detected
-// outside this parser, so an "HTTP/2.0" text token is rejected.
+// Only HTTP/1.x is accepted here.
 bool HttpContext::ParseVersion(std::string_view version_sv) {
   if (version_sv == "HTTP/1.1") { request_.set_version(Version::Http11); return true; }
   if (version_sv == "HTTP/1.0") { request_.set_version(Version::Http10); return true; }

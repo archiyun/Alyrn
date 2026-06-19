@@ -12,10 +12,6 @@
 #include "runtime/base/noncopyable.h"
 #include "runtime/net/net_assert.h"
 
-#ifdef RUNTIME_ENABLE_SSL
-#include <openssl/ssl.h>
-#endif
-
 namespace runtime::net {
 
 // Buffer is a user-space byte buffer used by the networking layer.
@@ -159,13 +155,6 @@ public:
   // Returns the number of bytes written, or -1 on error. Successfully written
   // bytes are consumed from the buffer.
   ssize_t WriteFd(int fd, int* saved_errno);
-
-#ifdef RUNTIME_ENABLE_SSL
-  // SSL variants: read/write through an established TLS session.
-  // saved_errno receives SSL_get_error() on failure, not errno.
-  ssize_t ReadSslFd(SSL* ssl, int* saved_errno);
-  ssize_t WriteSslFd(SSL* ssl, int* saved_errno);
-#endif
 
   // Find "\r\n" and "\r\n\r\n" in the readable region for HTTP parsing.
   // Uses glibc memmem (Two-Way algorithm) to guarantee linear time and avoid

@@ -445,10 +445,6 @@ if(GTest_FOUND)
         integration/test_http_server.cc
     )
 
-    if(RUNTIME_ENABLE_HTTP2)
-        list(APPEND INTEGRATION_TEST_SOURCES integration/test_http2_session.cc)
-    endif()
-
     add_executable(runtime_integration_tests ${INTEGRATION_TEST_SOURCES})
 
     target_link_libraries(runtime_integration_tests

@@ -8,10 +8,6 @@
 
 #include "runtime/net/buffer.h"
 
-#ifdef RUNTIME_ENABLE_SSL
-#include <openssl/ssl.h>
-#endif
-
 namespace runtime::net {
 
 Buffer::Buffer(std::size_t initial_size)
@@ -50,32 +46,6 @@ ssize_t Buffer::ReadFd(int fd, int* saved_errno) {
 
   return n;
 }
-
-#ifdef RUNTIME_ENABLE_SSL
-ssize_t Buffer::ReadSslFd(SSL* ssl, int* saved_errno) {
-  // Ensure room for at least one max-size TLS record (16 KB) plus framing.
-  EnsureWritableBytes(65536);
-  const int n = SSL_read(ssl, BeginWrite(), static_cast<int>(writable_bytes()));
-  if (n < 0) {
-    if (saved_errno != nullptr)
-      *saved_errno = SSL_get_error(ssl, n);
-    return -1;
-  }
-  HasWritten(static_cast<std::size_t>(n));
-  return n;
-}
-
-ssize_t Buffer::WriteSslFd(SSL* ssl, int* saved_errno) {
-  const int n = SSL_write(ssl, Peek(), static_cast<int>(readable_bytes()));
-  if (n < 0) {
-    if (saved_errno != nullptr)
-      *saved_errno = SSL_get_error(ssl, n);
-    return -1;
-  }
-  Retrieve(static_cast<std::size_t>(n));
-  return n;
-}
-#endif
 
 ssize_t Buffer::WriteFd(int fd, int* saved_errno) {
   const ssize_t n = ::send(fd, Peek(), readable_bytes(), MSG_NOSIGNAL);

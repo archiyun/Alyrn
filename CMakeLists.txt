@@ -10,20 +10,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(BUILD_TESTS "Build tests" ON)
 option(BUILD_EXAMPLES "Build example programs" ON)
-option(RUNTIME_ENABLE_SSL "Enable TLS/SSL support (requires OpenSSL)" OFF)
-option(RUNTIME_ENABLE_HTTP2 "Enable HTTP/2 support (requires nghttp2)" OFF)
 option(RUNTIME_ENABLE_URING "Enable io_uring proactor backend (requires liburing, Linux 5.19+)" OFF)
 
 find_package(Threads REQUIRED)
-
-if(RUNTIME_ENABLE_SSL OR RUNTIME_ENABLE_HTTP2)
-    find_package(OpenSSL REQUIRED)
-endif()
-
-if(RUNTIME_ENABLE_HTTP2)
-    find_package(PkgConfig REQUIRED)
-    pkg_check_modules(NGHTTP2 REQUIRED libnghttp2)
-endif()
 
 if(RUNTIME_ENABLE_URING)
     find_package(PkgConfig REQUIRED)
@@ -129,11 +118,6 @@ target_link_libraries(runtime_net
         Threads::Threads
 )
 
-if(RUNTIME_ENABLE_SSL)
-    target_compile_definitions(runtime_net PUBLIC RUNTIME_ENABLE_SSL)
-    target_link_libraries(runtime_net PUBLIC OpenSSL::SSL OpenSSL::Crypto)
-endif()
-
 target_compile_features(runtime_net PUBLIC cxx_std_20)
 
 # memmem 是 GNU 扩展, buffer.h 内联用到, 通过 PUBLIC 让上层库也能 include buffer.h
@@ -156,10 +140,6 @@ set(RUNTIME_HTTP_SOURCES
     src/http/metrics_handler.cc
 )
 
-if(RUNTIME_ENABLE_HTTP2)
-    list(APPEND RUNTIME_HTTP_SOURCES src/http/http2_session.cc)
-endif()
-
 add_library(runtime_http STATIC ${RUNTIME_HTTP_SOURCES})
 
 target_include_directories(runtime_http
@@ -174,16 +154,6 @@ target_link_libraries(runtime_http
         runtime_foundation
         Threads::Threads
 )
-
-if(RUNTIME_ENABLE_HTTP2)
-    target_compile_definitions(runtime_http PUBLIC RUNTIME_ENABLE_HTTP2)
-    target_include_directories(runtime_http PUBLIC ${NGHTTP2_INCLUDE_DIRS})
-    target_link_libraries(runtime_http PUBLIC ${NGHTTP2_LIBRARIES})
-endif()
-
-if(RUNTIME_ENABLE_SSL)
-    target_compile_definitions(runtime_http PUBLIC RUNTIME_ENABLE_SSL)
-endif()
 
 target_compile_features(runtime_http PUBLIC cxx_std_20)
 
