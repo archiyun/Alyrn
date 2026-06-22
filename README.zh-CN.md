@@ -291,7 +291,7 @@ ctest --test-dir build -R rbtree_validator --output-on-failure
 │   ├── memory/      # MemoryPool、ObjectPool
 │   ├── metrics/     # Counter、Gauge、Histogram、Registry
 │   ├── net/         # EventLoop、TcpServer、Channel、Poller、Buffer、TimerQueue
-│   ├── task/        # Scheduler、ThreadPool、Task、WorkQueue、coro
+│   ├── task/        # Scheduler、ThreadPool、Task、WorkQueue
 │   ├── time/        # Timestamp、Timer、TimerId、TimerTree
 │   └── trace/       # TraceId、LifecycleTrace
 ├── src/             # 各模块实现（目录结构与 include 对称）
