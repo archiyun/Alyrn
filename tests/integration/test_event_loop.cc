@@ -3,9 +3,9 @@
 #include <future>
 #include <thread>
 
-#include "runtime/net/event_loop.h"
+#include "vexo/net/event_loop.h"
 
-namespace runtime::net {
+namespace vexo::net {
 namespace {
 
 using namespace std::chrono_literals;
@@ -84,4 +84,4 @@ TEST(EventLoopTest, QueueInLoopFromPendingFunctorSchedulesNextTurn) {
 }
 
 }  // namespace
-}  // namespace runtime::net
+}  // namespace vexo::net

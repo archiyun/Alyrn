@@ -82,13 +82,13 @@ NGINXEOF
 #include <cstdlib>
 #include <thread>
 
-#include "runtime/gateway/gateway_server.h"
-#include "runtime/gateway/upstream.h"
-#include "runtime/gateway/upstream_peer.h"
-#include "runtime/gateway/upstream_registry.h"
-#include "runtime/net/event_loop.h"
-#include "runtime/net/inet_address.h"
-#include "runtime/net/tcp_connection.h"
+#include "vexo/gateway/gateway_server.h"
+#include "vexo/gateway/upstream.h"
+#include "vexo/gateway/upstream_peer.h"
+#include "vexo/gateway/upstream_registry.h"
+#include "vexo/net/event_loop.h"
+#include "vexo/net/inet_address.h"
+#include "vexo/net/tcp_connection.h"
 
 static std::atomic<long long> g_proxied{0};
 
@@ -99,8 +99,8 @@ static void StatsPrinter() {
     while (true) {
         std::this_thread::sleep_for(std::chrono::seconds(1));
         const long long cur = g_proxied.load(std::memory_order_relaxed);
-        const uint64_t ctor = runtime::net::TcpConnection::UpstreamCtorCount();
-        const uint64_t dtor = runtime::net::TcpConnection::UpstreamDtorCount();
+        const uint64_t ctor = vexo::net::TcpConnection::UpstreamCtorCount();
+        const uint64_t dtor = vexo::net::TcpConnection::UpstreamDtorCount();
         std::printf("[gw-stats] rps=%-8lld total=%lld | upstream_conn ctor=+%lu dtor=+%lu live=%lu (cum_ctor=%lu)\n",
                     cur - prev, cur,
                     ctor - prev_ctor, dtor - prev_dtor,
@@ -127,21 +127,21 @@ int main() {
   std::signal(SIGPIPE, SIG_IGN);
 
   // 1. 注册上游 
-  runtime::gateway::UpstreamRegistry reg;
-  auto us = std::make_shared<runtime::gateway::Upstream>(
-    runtime::gateway::UpstreamConfig{.name = "backend"});
-  us->AddPeer(std::make_shared<runtime::gateway::UpstreamPeer>(
-    runtime::gateway::UpstreamPeerConfig{
+  vexo::gateway::UpstreamRegistry reg;
+  auto us = std::make_shared<vexo::gateway::Upstream>(
+    vexo::gateway::UpstreamConfig{.name = "backend"});
+  us->AddPeer(std::make_shared<vexo::gateway::UpstreamPeer>(
+    vexo::gateway::UpstreamPeerConfig{
             .name = "127.0.0.1:" + std::to_string(upstream_port),
             .host = "127.0.0.1",
             .port = upstream_port}));
   reg.Add(us);
 
   // 2. 网关
-  runtime::net::EventLoop loop;
-  runtime::gateway::GatewayServer gw(
+  vexo::net::EventLoop loop;
+  vexo::gateway::GatewayServer gw(
     &loop,
-    runtime::net::InetAddress(listen_port),
+    vexo::net::InetAddress(listen_port),
     "BenchGateway",
     reg);
   gw.set_thread_num(io_threads);

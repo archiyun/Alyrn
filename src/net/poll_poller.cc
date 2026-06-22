@@ -1,15 +1,15 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/net/poll_poller.h"
+#include "vexo/net/poll_poller.h"
 
 #include <cassert>
 #include <cerrno>
 #include <cstring>
 
-#include "runtime/log/logger.h"
-#include "runtime/net/channel.h"
+#include "vexo/log/logger.h"
+#include "vexo/net/channel.h"
 
-namespace runtime::net {
+namespace vexo::net {
 
 namespace {
 
@@ -34,11 +34,11 @@ int FromPollEvents(short poll_events) {
 
 PollPoller::PollPoller(EventLoop* loop) : Poller(loop) {}
 
-runtime::time::Timestamp PollPoller::Poll(int timeout_ms,
+vexo::time::Timestamp PollPoller::Poll(int timeout_ms,
                                          ChannelList* active_channels) {
   const int num_events = ::poll(pollfds_.data(), static_cast<nfds_t>(pollfds_.size()), timeout_ms);
   const int saved_errno = errno;
-  const auto now = runtime::time::Timestamp::Now();
+  const auto now = vexo::time::Timestamp::Now();
 
   if (num_events > 0) {
     FillActiveChannels(num_events, active_channels);
@@ -99,4 +99,4 @@ void PollPoller::RemoveChannel(Channel* channel) {
   channel->set_index(-1);
 }
 
-} // namespace runtime::net
+} // namespace vexo::net

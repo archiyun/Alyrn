@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/net/connector.h"
+#include "vexo/net/connector.h"
 
 #include <sys/socket.h>
 #include <unistd.h>
@@ -10,11 +10,11 @@
 #include <cerrno>
 #include <cstring>
 
-#include "runtime/log/logger.h"
-#include "runtime/net/channel.h"
-#include "runtime/net/net_utils.h"
+#include "vexo/log/logger.h"
+#include "vexo/net/channel.h"
+#include "vexo/net/net_utils.h"
 
-namespace runtime::net {
+namespace vexo::net {
 
 static constexpr double kMaxRetryDelaySec = 30.0;
 
@@ -216,4 +216,4 @@ int Connector::RemoveAndResetChannel() {
   return sockfd;
 }
 
-}  // namespace runtime::net
+}  // namespace vexo::net

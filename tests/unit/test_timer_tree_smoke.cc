@@ -3,16 +3,16 @@
 #include <iostream>
 #include <vector>
 
-#include "runtime/ds/intrusive_rbtree.h"
-#include "runtime/time/timer.h"
-#include "runtime/time/timer_tree.h"
-#include "runtime/time/timestamp.h"
+#include "vexo/ds/intrusive_rbtree.h"
+#include "vexo/time/timer.h"
+#include "vexo/time/timer_tree.h"
+#include "vexo/time/timestamp.h"
 
 namespace {
 
 static_assert(
-    std::derived_from<runtime::time::Timer,
-                      runtime::ds::RBTNode<runtime::time::Timer>>);
+    std::derived_from<vexo::time::Timer,
+                      vexo::ds::RBTNode<vexo::time::Timer>>);
 
 bool Expect(bool condition, const char* message) {
   if (!condition) {
@@ -23,12 +23,12 @@ bool Expect(bool condition, const char* message) {
 }
 
 bool TestOrdersByExpirationThenSequence() {
-  const runtime::time::Timestamp early_deadline(1'000'000);
-  const runtime::time::Timestamp late_deadline(2'000'000);
-  runtime::time::Timer first([] {}, late_deadline, 0.0);
-  runtime::time::Timer second([] {}, late_deadline, 0.0);
-  runtime::time::Timer early([] {}, early_deadline, 0.0);
-  runtime::time::TimerTree timers;
+  const vexo::time::Timestamp early_deadline(1'000'000);
+  const vexo::time::Timestamp late_deadline(2'000'000);
+  vexo::time::Timer first([] {}, late_deadline, 0.0);
+  vexo::time::Timer second([] {}, late_deadline, 0.0);
+  vexo::time::Timer early([] {}, early_deadline, 0.0);
+  vexo::time::TimerTree timers;
 
   timers.Insert(&second);
   timers.Insert(&first);
@@ -54,12 +54,12 @@ bool TestOrdersByExpirationThenSequence() {
 }
 
 bool TestPopWhileUnlinksAndPreservesOrder() {
-  const runtime::time::Timestamp deadline(3'000'000);
-  runtime::time::Timer first([] {}, deadline, 0.0);
-  runtime::time::Timer second([] {}, deadline, 0.0);
-  runtime::time::Timer later(
-      [] {}, runtime::time::Timestamp(4'000'000), 0.0);
-  runtime::time::TimerTree timers;
+  const vexo::time::Timestamp deadline(3'000'000);
+  vexo::time::Timer first([] {}, deadline, 0.0);
+  vexo::time::Timer second([] {}, deadline, 0.0);
+  vexo::time::Timer later(
+      [] {}, vexo::time::Timestamp(4'000'000), 0.0);
+  vexo::time::TimerTree timers;
 
   timers.Insert(&later);
   timers.Insert(&second);
@@ -67,10 +67,10 @@ bool TestPopWhileUnlinksAndPreservesOrder() {
 
   std::vector<std::int64_t> popped_sequences;
   const std::size_t popped = timers.PopWhile(
-      [deadline](const runtime::time::Timer* timer) {
+      [deadline](const vexo::time::Timer* timer) {
         return timer->expiration() <= deadline;
       },
-      [&](runtime::time::Timer* timer) {
+      [&](vexo::time::Timer* timer) {
         if (!timer->InTree()) {
           popped_sequences.push_back(timer->sequence());
         }
@@ -93,16 +93,16 @@ bool TestPopWhileUnlinksAndPreservesOrder() {
 }
 
 bool TestTimerCanBeReinsertedAfterRestart() {
-  runtime::time::Timer repeating(
-      [] {}, runtime::time::Timestamp(5'000'000), 0.01);
-  runtime::time::TimerTree timers;
+  vexo::time::Timer repeating(
+      [] {}, vexo::time::Timestamp(5'000'000), 0.01);
+  vexo::time::TimerTree timers;
 
   timers.Insert(&repeating);
   if (!Expect(timers.Erase(&repeating), "repeating timer should be erasable")) {
     return false;
   }
 
-  repeating.Restart(runtime::time::Timestamp(6'000'000));
+  repeating.Restart(vexo::time::Timestamp(6'000'000));
   timers.Insert(&repeating);
 
   return Expect(repeating.InTree(), "restarted timer should be linked") &&

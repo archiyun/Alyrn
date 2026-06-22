@@ -28,9 +28,9 @@
 #include <memory>
 #include <vector>
 
-#include "runtime/net/channel.h"
-#include "runtime/net/event_loop.h"
-#include "runtime/time/timestamp.h"
+#include "vexo/net/channel.h"
+#include "vexo/net/event_loop.h"
+#include "vexo/time/timestamp.h"
 
 namespace {
 
@@ -48,7 +48,7 @@ bool Expect(bool condition, const char* message) {
 bool TestConstruction() {
     // EventLoop creates the default poller, which is EPollPoller on Linux.
     // Reaching this point means epoll_create1 succeeded.
-    runtime::net::EventLoop loop;
+    vexo::net::EventLoop loop;
     return true;
 }
 
@@ -56,7 +56,7 @@ bool TestConstruction() {
 // Test 2: Channel registration issues epoll_ctl ADD.
 // ──────────────────────────────────────────────
 bool TestChannelRegistration() {
-    runtime::net::EventLoop loop;
+    vexo::net::EventLoop loop;
 
     std::array<int, 2> fds{};
     if (!Expect(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds.data()) == 0,
@@ -64,8 +64,8 @@ bool TestChannelRegistration() {
         return false;
     }
 
-    runtime::net::Channel ch(&loop, fds[0]);
-    ch.set_read_callback([](runtime::time::Timestamp) {});
+    vexo::net::Channel ch(&loop, fds[0]);
+    ch.set_read_callback([](vexo::time::Timestamp) {});
     ch.EnableReading();
 
     const bool registered = Expect(loop.HasChannel(&ch),
@@ -82,7 +82,7 @@ bool TestChannelRegistration() {
 // Test 3: Channel removal erases the poller map entry.
 // ──────────────────────────────────────────────
 bool TestChannelRemoval() {
-    runtime::net::EventLoop loop;
+    vexo::net::EventLoop loop;
 
     std::array<int, 2> fds{};
     if (!Expect(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds.data()) == 0,
@@ -90,8 +90,8 @@ bool TestChannelRemoval() {
         return false;
     }
 
-    runtime::net::Channel ch(&loop, fds[0]);
-    ch.set_read_callback([](runtime::time::Timestamp) {});
+    vexo::net::Channel ch(&loop, fds[0]);
+    ch.set_read_callback([](vexo::time::Timestamp) {});
     ch.EnableReading();
 
     ch.DisableAll();
@@ -109,7 +109,7 @@ bool TestChannelRemoval() {
 // Test 4: epoll_wait detects a readable event.
 // ──────────────────────────────────────────────
 bool TestPollDetectsReadEvent() {
-    runtime::net::EventLoop loop;
+    vexo::net::EventLoop loop;
 
     std::array<int, 2> fds{};
     if (!Expect(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds.data()) == 0,
@@ -118,8 +118,8 @@ bool TestPollDetectsReadEvent() {
     }
 
     bool read_called = false;
-    runtime::net::Channel ch(&loop, fds[0]);
-    ch.set_read_callback([&](runtime::time::Timestamp) {
+    vexo::net::Channel ch(&loop, fds[0]);
+    ch.set_read_callback([&](vexo::time::Timestamp) {
         char buf[4];
         ::read(fds[0], buf, sizeof(buf));
         read_called = true;
@@ -148,7 +148,7 @@ bool TestPollDetectsReadEvent() {
 // Test 5: DisableAll keeps the map entry but suppresses delivery.
 // ──────────────────────────────────────────────
 bool TestDisableAllKeepsChannelInMap() {
-    runtime::net::EventLoop loop;
+    vexo::net::EventLoop loop;
 
     std::array<int, 2> fds{};
     if (!Expect(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds.data()) == 0,
@@ -156,8 +156,8 @@ bool TestDisableAllKeepsChannelInMap() {
         return false;
     }
 
-    runtime::net::Channel ch(&loop, fds[0]);
-    ch.set_read_callback([](runtime::time::Timestamp) {});
+    vexo::net::Channel ch(&loop, fds[0]);
+    ch.set_read_callback([](vexo::time::Timestamp) {});
     ch.EnableReading();
 
     ch.DisableAll();
@@ -167,7 +167,7 @@ bool TestDisableAllKeepsChannelInMap() {
 
     // The channel is removed from epoll, so no callback should fire.
     bool read_called = false;
-    ch.set_read_callback([&](runtime::time::Timestamp) { read_called = true; });
+    ch.set_read_callback([&](vexo::time::Timestamp) { read_called = true; });
     ::write(fds[1], "x", 1);
 
     // Use a timer to exit instead of depending on a read event.
@@ -187,7 +187,7 @@ bool TestDisableAllKeepsChannelInMap() {
 // Test 6: Re-enabling after DisableAll registers the channel again.
 // ──────────────────────────────────────────────
 bool TestReenableAfterDisable() {
-    runtime::net::EventLoop loop;
+    vexo::net::EventLoop loop;
 
     std::array<int, 2> fds{};
     if (!Expect(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds.data()) == 0,
@@ -196,8 +196,8 @@ bool TestReenableAfterDisable() {
     }
 
     bool read_called = false;
-    runtime::net::Channel ch(&loop, fds[0]);
-    ch.set_read_callback([&](runtime::time::Timestamp) {
+    vexo::net::Channel ch(&loop, fds[0]);
+    ch.set_read_callback([&](vexo::time::Timestamp) {
         char buf[4];
         ::read(fds[0], buf, sizeof(buf));
         read_called = true;
@@ -223,7 +223,7 @@ bool TestReenableAfterDisable() {
 // Test 7: The events_ vector grows when many channels fire together.
 // ──────────────────────────────────────────────
 bool TestEventsVectorResizes() {
-    runtime::net::EventLoop loop;
+    vexo::net::EventLoop loop;
 
     // Register 20 channels so the initial event list must grow.
     constexpr int N = 20;
@@ -238,14 +238,14 @@ bool TestEventsVectorResizes() {
     }
 
     int trigger_count = 0;
-    std::vector<std::unique_ptr<runtime::net::Channel>> channels;
+    std::vector<std::unique_ptr<vexo::net::Channel>> channels;
     channels.reserve(N);
 
     for (int i = 0; i < N; ++i) {
-        auto ch = std::make_unique<runtime::net::Channel>(&loop, pairs[i][0]);
+        auto ch = std::make_unique<vexo::net::Channel>(&loop, pairs[i][0]);
         // Consume the byte to avoid repeated delivery in level-triggered mode.
         const int read_fd = pairs[i][0];
-        ch->set_read_callback([&, read_fd](runtime::time::Timestamp) {
+        ch->set_read_callback([&, read_fd](vexo::time::Timestamp) {
             char buf[4];
             ::read(read_fd, buf, sizeof(buf));
             ++trigger_count;

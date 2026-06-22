@@ -1,11 +1,11 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/task/detail/thread_pool.h"
+#include "vexo/task/detail/thread_pool.h"
 
-#include "runtime/task/detail/task.h"
-#include "runtime/task/task_state.h"
+#include "vexo/task/detail/task.h"
+#include "vexo/task/task_state.h"
 
-namespace runtime::task {
+namespace vexo::task {
 
 ThreadPool::ThreadPool(WorkQueue& queue, ExecutorMetrics& metrics,
                        std::size_t thread_count)
@@ -96,4 +96,4 @@ void ThreadPool::FailTask(Task& task) {
   try { task.promise.set_exception(std::current_exception()); } catch (...) {}
 }
 
-}  // namespace runtime::task
+}  // namespace vexo::task

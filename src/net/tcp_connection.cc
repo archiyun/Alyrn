@@ -1,12 +1,12 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/net/tcp_connection.h"
+#include "vexo/net/tcp_connection.h"
 
-#include "runtime/log/logger.h"
-#include "runtime/net/channel.h"
-#include "runtime/net/event_loop.h"
-#include "runtime/net/net_assert.h"
-#include "runtime/net/socket.h"
+#include "vexo/log/logger.h"
+#include "vexo/net/channel.h"
+#include "vexo/net/event_loop.h"
+#include "vexo/net/net_assert.h"
+#include "vexo/net/socket.h"
 
 #include <sys/socket.h>
 #include <unistd.h>
@@ -17,7 +17,7 @@
 #include <cstring>
 #include <string_view>
 
-namespace runtime::net {
+namespace vexo::net {
 
 namespace {
 // Lifetime counters scoped to upstream (proxy-side) TcpConnection only.
@@ -45,12 +45,12 @@ TcpConnection::TcpConnection(EventLoop* loop, const std::string& name,
       socket_(std::make_unique<Socket>(sockfd)),
       channel_(std::make_unique<Channel>(loop, sockfd)),
       local_addr_(local_addr), peer_addr_(peer_addr) {
-  RUNTIME_ASSERT(loop_ != nullptr, "TcpConnection: loop must not be null");
-  RUNTIME_ASSERT(sockfd >= 0, "TcpConnection: sockfd must be valid");
+  VEXO_ASSERT(loop_ != nullptr, "TcpConnection: loop must not be null");
+  VEXO_ASSERT(sockfd >= 0, "TcpConnection: sockfd must be valid");
   if (IsUpstreamName(name_)) {
     g_upstream_ctor_count.fetch_add(1, std::memory_order_relaxed);
   }
-  channel_->set_read_callback([this](runtime::time::Timestamp receive_time) {
+  channel_->set_read_callback([this](vexo::time::Timestamp receive_time) {
     HandleRead(receive_time);
   });
   channel_->set_write_callback([this] { HandleWrite(); });
@@ -96,7 +96,7 @@ void TcpConnection::SendInLoop(const std::string& message) {
 
 
 void TcpConnection::SendInLoop(const void* data, std::size_t len) {
-  RUNTIME_ASSERT(loop_->IsInLoopThread(),
+  VEXO_ASSERT(loop_->IsInLoopThread(),
                  "TcpConnection::SendInLoop called from wrong thread");
   if (state_ == TCPState::kDisconnected)
     return;
@@ -151,9 +151,9 @@ void TcpConnection::Shutdown() {
 }
 
 void TcpConnection::ConnectEstablished() {
-  RUNTIME_ASSERT(loop_->IsInLoopThread(),
+  VEXO_ASSERT(loop_->IsInLoopThread(),
                  "TcpConnection::ConnectEstablished called from wrong thread");
-  RUNTIME_ASSERT(state_ == TCPState::kConnecting,
+  VEXO_ASSERT(state_ == TCPState::kConnecting,
                  "TcpConnection::ConnectEstablished: expected kConnecting state");
   set_state(TCPState::kConnected);
   channel_->Tie(shared_from_this());
@@ -169,7 +169,7 @@ void TcpConnection::ConnectEstablished() {
 }
 
 void TcpConnection::ConnectDestroyed() {
-  RUNTIME_ASSERT(loop_->IsInLoopThread(),
+  VEXO_ASSERT(loop_->IsInLoopThread(),
                  "TcpConnection::ConnectDestroyed called from wrong thread");
   const bool notify_state_change = state_ != TCPState::kDisconnected;
   if (notify_state_change) {
@@ -187,7 +187,7 @@ void TcpConnection::ConnectDestroyed() {
   channel_->Remove();
 }
 
-void TcpConnection::HandleRead(runtime::time::Timestamp receive_time) {
+void TcpConnection::HandleRead(vexo::time::Timestamp receive_time) {
   int saved_errno = 0;
   int fd = channel_->fd();
 
@@ -304,11 +304,11 @@ void TcpConnection::HandleError() {
 }
 
 void TcpConnection::ShutdownInLoop() {
-  RUNTIME_ASSERT(loop_->IsInLoopThread(),
+  VEXO_ASSERT(loop_->IsInLoopThread(),
                  "TcpConnection::ShutdownInLoop called from wrong thread");
   if (!channel_->IsWriting()) {
     socket_->ShutdownWrite();
   }
 }
 
-}  // namespace runtime::net
+}  // namespace vexo::net

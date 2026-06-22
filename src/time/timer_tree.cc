@@ -1,10 +1,10 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/time/timer_tree.h"
+#include "vexo/time/timer_tree.h"
 
-#include "runtime/time/timer.h"
+#include "vexo/time/timer.h"
 
-namespace runtime::time {
+namespace vexo::time {
 
 bool TimerLess(const Timer* a, const Timer* b) {
   if (a->expiration() < b->expiration()) return true;
@@ -12,4 +12,4 @@ bool TimerLess(const Timer* a, const Timer* b) {
   return a->sequence() < b->sequence();
 }
 
-}  // namespace runtime::time
+}  // namespace vexo::time

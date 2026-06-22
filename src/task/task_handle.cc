@@ -1,10 +1,10 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/task/task_handle.h"
+#include "vexo/task/task_handle.h"
 
-#include "runtime/task/detail/task.h"
+#include "vexo/task/detail/task.h"
 
-namespace runtime::task {
+namespace vexo::task {
 
 TaskHandle::TaskHandle(uint64_t id, std::shared_ptr<Task> task, std::future<void> future)
   : id_(id), task_(std::move(task)), future_(std::move(future)) {}
@@ -31,4 +31,4 @@ bool TaskHandle::Cancel() {
   task_->cancel_source.Cancel();
   return true;
 }
-} // namespace runtime::task
+} // namespace vexo::task

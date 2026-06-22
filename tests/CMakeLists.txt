@@ -33,7 +33,7 @@ target_include_directories(pool_smoke_test
 
 target_link_libraries(pool_smoke_test
     PRIVATE
-        runtime_foundation
+        vexo_foundation
 )
 
 add_test(NAME pool_smoke_test COMMAND pool_smoke_test)
@@ -49,7 +49,7 @@ target_include_directories(pmr_pool_resource_smoke_test
 
 target_link_libraries(pmr_pool_resource_smoke_test
     PRIVATE
-        runtime_foundation
+        vexo_foundation
 )
 
 add_test(NAME pmr_pool_resource_smoke_test COMMAND pmr_pool_resource_smoke_test)
@@ -65,7 +65,7 @@ target_include_directories(logger_smoke_test
 
 target_link_libraries(logger_smoke_test
     PRIVATE
-        runtime_foundation
+        vexo_foundation
 )
 
 add_test(NAME logger_smoke_test COMMAND logger_smoke_test)
@@ -81,7 +81,7 @@ target_include_directories(buffer_smoke_test
 
 target_link_libraries(buffer_smoke_test
     PRIVATE
-        runtime_net
+        vexo_net
 )
 
 add_test(NAME buffer_smoke_test COMMAND buffer_smoke_test)
@@ -97,7 +97,7 @@ target_include_directories(http_smoke_test
 
 target_link_libraries(http_smoke_test
     PRIVATE
-        runtime_http
+        vexo_http
 )
 
 add_test(NAME http_smoke_test COMMAND http_smoke_test)
@@ -115,7 +115,7 @@ target_include_directories(epoll_poller_smoke_test
 
 target_link_libraries(epoll_poller_smoke_test
     PRIVATE
-        runtime_net
+        vexo_net
 )
 
 add_test(NAME epoll_poller_smoke_test COMMAND epoll_poller_smoke_test)
@@ -131,7 +131,7 @@ target_include_directories(event_loop_smoke_test
 
 target_link_libraries(event_loop_smoke_test
     PRIVATE
-        runtime_net
+        vexo_net
 )
 
 add_test(NAME event_loop_smoke_test COMMAND event_loop_smoke_test)
@@ -147,7 +147,7 @@ target_include_directories(timer_tree_smoke_test
 
 target_link_libraries(timer_tree_smoke_test
     PRIVATE
-        runtime_foundation
+        vexo_foundation
 )
 
 add_test(NAME timer_tree_smoke_test COMMAND timer_tree_smoke_test)
@@ -163,7 +163,7 @@ target_include_directories(tcp_server_smoke_test
 
 target_link_libraries(tcp_server_smoke_test
     PRIVATE
-        runtime_net
+        vexo_net
 )
 
 add_test(NAME tcp_server_smoke_test COMMAND tcp_server_smoke_test)
@@ -179,7 +179,7 @@ target_include_directories(rst_storm_smoke_test
 
 target_link_libraries(rst_storm_smoke_test
     PRIVATE
-        runtime_net
+        vexo_net
 )
 
 add_test(NAME rst_storm_smoke_test COMMAND rst_storm_smoke_test)
@@ -251,7 +251,7 @@ target_include_directories(load_balancer_smoke_test
 
 target_link_libraries(load_balancer_smoke_test
     PRIVATE
-        runtime_gateway
+        vexo_gateway
 )
 
 add_test(NAME load_balancer_smoke_test COMMAND load_balancer_smoke_test)
@@ -267,7 +267,7 @@ target_include_directories(health_checker_smoke_test
 
 target_link_libraries(health_checker_smoke_test
     PRIVATE
-        runtime_gateway
+        vexo_gateway
 )
 
 add_test(NAME health_checker_smoke_test COMMAND health_checker_smoke_test)
@@ -283,7 +283,7 @@ target_include_directories(circuit_breaker_smoke_test
 
 target_link_libraries(circuit_breaker_smoke_test
     PRIVATE
-        runtime_gateway
+        vexo_gateway
 )
 
 add_test(NAME circuit_breaker_smoke_test COMMAND circuit_breaker_smoke_test)
@@ -299,7 +299,7 @@ target_include_directories(fallback_config_smoke_test
 
 target_link_libraries(fallback_config_smoke_test
     PRIVATE
-        runtime_gateway
+        vexo_gateway
 )
 
 add_test(NAME fallback_config_smoke_test COMMAND fallback_config_smoke_test)
@@ -315,7 +315,7 @@ target_include_directories(rate_limiter_smoke_test
 
 target_link_libraries(rate_limiter_smoke_test
     PRIVATE
-        runtime_gateway
+        vexo_gateway
 )
 
 add_test(NAME rate_limiter_smoke_test COMMAND rate_limiter_smoke_test)
@@ -347,9 +347,9 @@ target_include_directories(proxy_e2e_smoke_test
 
 target_link_libraries(proxy_e2e_smoke_test
     PRIVATE
-        runtime_gateway
-        runtime_http
-        runtime_net
+        vexo_gateway
+        vexo_http
+        vexo_net
 )
 
 add_test(NAME proxy_e2e_smoke_test COMMAND proxy_e2e_smoke_test)
@@ -365,7 +365,7 @@ target_include_directories(resilience_integration_smoke_test
 
 target_link_libraries(resilience_integration_smoke_test
     PRIVATE
-        runtime_gateway
+        vexo_gateway
 )
 
 add_test(NAME resilience_integration_smoke_test COMMAND resilience_integration_smoke_test)
@@ -381,8 +381,8 @@ target_include_directories(gateway_adversarial_test
 
 target_link_libraries(gateway_adversarial_test
     PRIVATE
-        runtime_gateway
-        runtime_net
+        vexo_gateway
+        vexo_net
 )
 
 add_test(NAME gateway_adversarial_test COMMAND gateway_adversarial_test)
@@ -400,8 +400,8 @@ target_include_directories(health_checker_lifetime_reproducer
 
 target_link_libraries(health_checker_lifetime_reproducer
     PRIVATE
-        runtime_gateway
-        runtime_net
+        vexo_gateway
+        vexo_net
 )
 
 add_executable(memory_pool_bench
@@ -419,7 +419,7 @@ find_package(GTest CONFIG QUIET)
 if(GTest_FOUND)
     include(GoogleTest)
 
-    add_executable(runtime_unit_tests
+    add_executable(vexo_unit_tests
         unit/test_buffer.cc
         unit/test_logger.cc
         unit/test_memory_pool.cc
@@ -429,14 +429,14 @@ if(GTest_FOUND)
         unit/test_blocking_executor.cc
     )
 
-    target_link_libraries(runtime_unit_tests
+    target_link_libraries(vexo_unit_tests
         PRIVATE
             GTest::gtest_main
-            runtime_net
-            runtime_task
+            vexo_net
+            vexo_task
     )
 
-    gtest_discover_tests(runtime_unit_tests DISCOVERY_MODE PRE_TEST)
+    gtest_discover_tests(vexo_unit_tests DISCOVERY_MODE PRE_TEST)
 
     set(INTEGRATION_TEST_SOURCES
         integration/test_event_loop.cc
@@ -445,16 +445,16 @@ if(GTest_FOUND)
         integration/test_http_server.cc
     )
 
-    add_executable(runtime_integration_tests ${INTEGRATION_TEST_SOURCES})
+    add_executable(vexo_integration_tests ${INTEGRATION_TEST_SOURCES})
 
-    target_link_libraries(runtime_integration_tests
+    target_link_libraries(vexo_integration_tests
         PRIVATE
             GTest::gtest_main
-            runtime_net
-            runtime_http
+            vexo_net
+            vexo_http
     )
 
-    gtest_discover_tests(runtime_integration_tests DISCOVERY_MODE PRE_TEST)
+    gtest_discover_tests(vexo_integration_tests DISCOVERY_MODE PRE_TEST)
 else()
     message(STATUS "GTest not found; skipping gtest-based unit tests.")
 endif()

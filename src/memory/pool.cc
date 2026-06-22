@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 // Reference: https://github.com/nginx/nginx/blob/master/src/core/ngx_palloc.c
-#include "runtime/memory/pool.h"
+#include "vexo/memory/pool.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -11,7 +11,7 @@
 #include <cstring>
 #include <new>
 
-namespace runtime::memory {
+namespace vexo::memory {
 
 namespace {
 
@@ -27,7 +27,7 @@ inline std::byte* AlignPtr(std::byte* p, std::size_t align) noexcept {
 }
 
 [[noreturn]] void AbortWithReason(const char* msg) noexcept {
-  std::fprintf(stderr, "[runtime::memory::Pool] %s\n", msg);
+  std::fprintf(stderr, "[vexo::memory::Pool] %s\n", msg);
   std::abort();
 }
 
@@ -260,4 +260,4 @@ Pool::ChunkHeader* Pool::AllocateChunk() {
   return hdr;
 }
 
-}  // namespace runtime::memory
+}  // namespace vexo::memory

@@ -16,9 +16,9 @@
 #include <unordered_set>
 #include <vector>
 
-#include "runtime/gateway/load_balancer.h"
-#include "runtime/gateway/upstream.h"
-#include "runtime/gateway/upstream_peer.h"
+#include "vexo/gateway/load_balancer.h"
+#include "vexo/gateway/upstream.h"
+#include "vexo/gateway/upstream_peer.h"
 
 namespace {
 
@@ -35,15 +35,15 @@ void Passed(const char* name) {
 }
 
 // Helper: build a test Upstream from a list of {peer_name, weight} pairs.
-std::shared_ptr<runtime::gateway::Upstream> MakeUpstream(
+std::shared_ptr<vexo::gateway::Upstream> MakeUpstream(
     const std::string& name,
     const std::vector<std::pair<std::string, int>>& peer_weights) {
-  auto upstream = std::make_shared<runtime::gateway::Upstream>(
-      runtime::gateway::UpstreamConfig{.name = name});
+  auto upstream = std::make_shared<vexo::gateway::Upstream>(
+      vexo::gateway::UpstreamConfig{.name = name});
 
   for (const auto& [host_port, weight] : peer_weights) {
-    upstream->AddPeer(std::make_shared<runtime::gateway::UpstreamPeer>(
-        runtime::gateway::UpstreamPeerConfig{
+    upstream->AddPeer(std::make_shared<vexo::gateway::UpstreamPeer>(
+        vexo::gateway::UpstreamPeerConfig{
             .name = host_port,
             // host/port are deliberately fixed placeholders: these are pure
             // LB-algorithm tests that never dial a backend. ConsistentHashLB
@@ -66,9 +66,9 @@ std::shared_ptr<runtime::gateway::Upstream> MakeUpstream(
 bool TestConsistentHashSameKeySamePeer() {
   auto upstream = MakeUpstream("test_ch", {
       {"peer-a:80", 1}, {"peer-b:80", 1}, {"peer-c:80", 1}});
-  runtime::gateway::ConsistentHashLB lb(150, "client_ip");
+  vexo::gateway::ConsistentHashLB lb(150, "client_ip");
 
-  runtime::gateway::RequestContext ctx{.client_ip = "10.0.0.1"};
+  vexo::gateway::RequestContext ctx{.client_ip = "10.0.0.1"};
   auto first = lb.Select(*upstream, ctx);
 
   // The same key must map to the same peer across 100 repeated selects.
@@ -85,11 +85,11 @@ bool TestConsistentHashSameKeySamePeer() {
 bool TestConsistentHashDifferentKeysSpread() {
   auto upstream = MakeUpstream("test_ch", {
       {"peer-a:80", 1}, {"peer-b:80", 1}, {"peer-c:80", 1}});
-  runtime::gateway::ConsistentHashLB lb(150, "client_ip");
+  vexo::gateway::ConsistentHashLB lb(150, "client_ip");
 
   std::unordered_set<std::string> seen;
   for (int i = 0; i < 500; i++) {
-    runtime::gateway::RequestContext ctx{.client_ip = "10.0.0." + std::to_string(i)};
+    vexo::gateway::RequestContext ctx{.client_ip = "10.0.0." + std::to_string(i)};
     auto peer = lb.Select(*upstream, ctx);
     if (!peer) return Expect(false, "must return a peer");
     seen.insert(peer->config().name);
@@ -104,11 +104,11 @@ bool TestConsistentHashWeightedDistribution() {
   // peer-a weight 10 vs peer-b weight 1 -> peer-a gets ~10x the vnodes.
   auto upstream = MakeUpstream("test_ch_w", {
       {"peer-a:80", 10}, {"peer-b:80", 1}});
-  runtime::gateway::ConsistentHashLB lb(150, "client_ip");
+  vexo::gateway::ConsistentHashLB lb(150, "client_ip");
 
   int count_a = 0, count_b = 0;
   for (int i = 0; i < 2000; i++) {
-    runtime::gateway::RequestContext ctx{.client_ip = "192.168." + std::to_string(i / 256) + "." + std::to_string(i % 256)};
+    vexo::gateway::RequestContext ctx{.client_ip = "192.168." + std::to_string(i / 256) + "." + std::to_string(i % 256)};
     auto peer = lb.Select(*upstream, ctx);
     if (peer->config().name == "peer-a:80") count_a++;
     else count_b++;
@@ -125,14 +125,14 @@ bool TestConsistentHashWeightedDistribution() {
 bool TestConsistentHashRingRebuildOnPeerChange() {
   auto upstream = MakeUpstream("test_ch", {
       {"peer-a:80", 1}, {"peer-b:80", 1}});
-  runtime::gateway::ConsistentHashLB lb(150, "client_ip");
+  vexo::gateway::ConsistentHashLB lb(150, "client_ip");
 
-  runtime::gateway::RequestContext ctx{.client_ip = "10.0.0.5"};
+  vexo::gateway::RequestContext ctx{.client_ip = "10.0.0.5"};
   auto before = lb.Select(*upstream, ctx);
 
   // Add a new peer.
-  upstream->AddPeer(std::make_shared<runtime::gateway::UpstreamPeer>(
-      runtime::gateway::UpstreamPeerConfig{
+  upstream->AddPeer(std::make_shared<vexo::gateway::UpstreamPeer>(
+      vexo::gateway::UpstreamPeerConfig{
           .name = "peer-c:80", .host = "127.0.0.1", .port = 80, .weight = 1}));
 
   auto after = lb.Select(*upstream, ctx);
@@ -152,11 +152,11 @@ bool TestConsistentHashExcludesDownPeers() {
   auto peers = upstream->peers();
   peers[0]->state().down.store(true);
 
-  runtime::gateway::ConsistentHashLB lb(150, "client_ip");
+  vexo::gateway::ConsistentHashLB lb(150, "client_ip");
 
   // Every request must now land on peer-b only.
   for (int i = 0; i < 200; i++) {
-    runtime::gateway::RequestContext ctx{.client_ip = "10.0.0." + std::to_string(i)};
+    vexo::gateway::RequestContext ctx{.client_ip = "10.0.0." + std::to_string(i)};
     auto peer = lb.Select(*upstream, ctx);
     if (!peer) return Expect(false, "must return a peer when at least one is up");
     if (peer->config().name != "peer-b:80") {
@@ -169,9 +169,9 @@ bool TestConsistentHashExcludesDownPeers() {
 
 bool TestConsistentHashEmptyUpstreamReturnsNull() {
   auto upstream = MakeUpstream("test_ch", {});
-  runtime::gateway::ConsistentHashLB lb(150, "client_ip");
+  vexo::gateway::ConsistentHashLB lb(150, "client_ip");
 
-  runtime::gateway::RequestContext ctx{.client_ip = "10.0.0.1"};
+  vexo::gateway::RequestContext ctx{.client_ip = "10.0.0.1"};
   auto peer = lb.Select(*upstream, ctx);
   if (!Expect(peer == nullptr, "must return nullptr for empty upstream")) return false;
   Passed("TestConsistentHashEmptyUpstreamReturnsNull");
@@ -182,8 +182,8 @@ bool TestConsistentHashAllPeersDownReturnsNull() {
   auto upstream = MakeUpstream("test_ch", {{"peer-a:80", 1}});
   upstream->peers()[0]->state().down.store(true);
 
-  runtime::gateway::ConsistentHashLB lb(150, "client_ip");
-  runtime::gateway::RequestContext ctx{.client_ip = "10.0.0.1"};
+  vexo::gateway::ConsistentHashLB lb(150, "client_ip");
+  vexo::gateway::RequestContext ctx{.client_ip = "10.0.0.1"};
   auto peer = lb.Select(*upstream, ctx);
   if (!Expect(peer == nullptr, "must return nullptr when all peers down")) return false;
   Passed("TestConsistentHashAllPeersDownReturnsNull");
@@ -194,11 +194,11 @@ bool TestConsistentHashHashOnFields() {
   // URI-based routing
   auto upstream = MakeUpstream("test_ch", {
       {"peer-a:80", 1}, {"peer-b:80", 1}, {"peer-c:80", 1}});
-  runtime::gateway::ConsistentHashLB lb(150, "uri");
+  vexo::gateway::ConsistentHashLB lb(150, "uri");
 
-  runtime::gateway::RequestContext ctx1{.uri = "/users/42"};
-  runtime::gateway::RequestContext ctx2{.uri = "/users/42"};  // same URI
-  runtime::gateway::RequestContext ctx3{.uri = "/posts/99"};   // different URI
+  vexo::gateway::RequestContext ctx1{.uri = "/users/42"};
+  vexo::gateway::RequestContext ctx2{.uri = "/users/42"};  // same URI
+  vexo::gateway::RequestContext ctx3{.uri = "/posts/99"};   // different URI
 
   auto p1 = lb.Select(*upstream, ctx1);
   auto p2 = lb.Select(*upstream, ctx2);
@@ -212,11 +212,11 @@ bool TestConsistentHashHashOnFields() {
 
 bool TestConsistentHashVNodNodesBounds() {
   // vnodes_per_unit out of range must be clamped at construction.
-  runtime::gateway::ConsistentHashLB lb_low(50, "client_ip");
-  runtime::gateway::ConsistentHashLB lb_high(500, "client_ip");
+  vexo::gateway::ConsistentHashLB lb_low(50, "client_ip");
+  vexo::gateway::ConsistentHashLB lb_high(500, "client_ip");
 
   auto upstream = MakeUpstream("test_ch", {{"peer-a:80", 1}});
-  runtime::gateway::RequestContext ctx{.client_ip = "10.0.0.1"};
+  vexo::gateway::RequestContext ctx{.client_ip = "10.0.0.1"};
 
   auto p_low = lb_low.Select(*upstream, ctx);
   auto p_high = lb_high.Select(*upstream, ctx);
@@ -229,10 +229,10 @@ bool TestConsistentHashVNodNodesBounds() {
 bool TestConsistentHashHashRingUniqueVirtualNodes() {
   // After collision dedup the ring must still be queryable (no crash).
   auto upstream = MakeUpstream("test_ch", {{"peer-a:80", 1}});
-  runtime::gateway::ConsistentHashLB lb(150, "client_ip");
+  vexo::gateway::ConsistentHashLB lb(150, "client_ip");
 
   for (int i = 0; i < 100; i++) {
-    runtime::gateway::RequestContext ctx{.client_ip = "172.16." + std::to_string(i / 256) + "." + std::to_string(i % 256)};
+    vexo::gateway::RequestContext ctx{.client_ip = "172.16." + std::to_string(i / 256) + "." + std::to_string(i % 256)};
     auto peer = lb.Select(*upstream, ctx);
     if (!Expect(peer != nullptr, "ring lookup must not crash after dedup")) return false;
   }
@@ -256,13 +256,13 @@ bool TestConsistentHashConcurrentSelectWithPeerChanges() {
   auto upstream = MakeUpstream("test_ch_mt", {
       {"peer-0:80", 1}, {"peer-1:80", 1}, {"peer-2:80", 1},
       {"peer-3:80", 1}, {"peer-4:80", 1}, {"peer-5:80", 1}});
-  auto lb = std::make_shared<runtime::gateway::ConsistentHashLB>(150, "client_ip");
+  auto lb = std::make_shared<vexo::gateway::ConsistentHashLB>(150, "client_ip");
 
   // Set of valid peer pointers for the membership check (the result must be
   // one of them). The peers vector stays structurally fixed for the whole
   // test; only the per-peer `down` atomics get flipped.
   const auto& peers = upstream->peers();
-  std::unordered_set<runtime::gateway::UpstreamPeer*> valid;
+  std::unordered_set<vexo::gateway::UpstreamPeer*> valid;
   for (const auto& p : peers) valid.insert(p.get());
 
   constexpr int kReaders = 8;
@@ -275,7 +275,7 @@ bool TestConsistentHashConcurrentSelectWithPeerChanges() {
   for (int t = 0; t < kReaders; ++t) {
     readers.emplace_back([&, t] {
       for (int i = 0; i < kItersPerReader; ++i) {
-        runtime::gateway::RequestContext ctx{
+        vexo::gateway::RequestContext ctx{
             .client_ip = "10." + std::to_string(t) + ".0." +
                          std::to_string(i & 0xFF)};
         auto peer = lb->Select(*upstream, ctx);
@@ -317,9 +317,9 @@ bool TestConsistentHashConcurrentSelectWithPeerChanges() {
 bool TestMaglevHashSameKeySamePeer() {
   auto upstream = MakeUpstream("test_maglev", {
       {"peer-a:80", 1}, {"peer-b:80", 1}, {"peer-c:80", 1}});
-  runtime::gateway::MaglevHashLB lb(257, "client_ip");
+  vexo::gateway::MaglevHashLB lb(257, "client_ip");
 
-  runtime::gateway::RequestContext ctx{.client_ip = "10.0.0.1"};
+  vexo::gateway::RequestContext ctx{.client_ip = "10.0.0.1"};
   auto first = lb.Select(*upstream, ctx);
   if (!Expect(first != nullptr, "MaglevHash must return a peer")) return false;
 
@@ -338,9 +338,9 @@ bool TestMaglevHashExcludesDownPeers() {
       {"peer-a:80", 1}, {"peer-b:80", 1}});
   upstream->peers()[0]->state().down.store(true);
 
-  runtime::gateway::MaglevHashLB lb(257, "client_ip");
+  vexo::gateway::MaglevHashLB lb(257, "client_ip");
   for (int i = 0; i < 200; i++) {
-    runtime::gateway::RequestContext ctx{.client_ip = "10.0.1." + std::to_string(i)};
+    vexo::gateway::RequestContext ctx{.client_ip = "10.0.1." + std::to_string(i)};
     auto peer = lb.Select(*upstream, ctx);
     if (!peer) return Expect(false, "MaglevHash must return a peer when one is up");
     if (peer->config().name != "peer-b:80") {
@@ -355,8 +355,8 @@ bool TestMaglevHashAllPeersDownReturnsNull() {
   auto upstream = MakeUpstream("test_maglev", {{"peer-a:80", 1}});
   upstream->peers()[0]->state().down.store(true);
 
-  runtime::gateway::MaglevHashLB lb(257, "client_ip");
-  runtime::gateway::RequestContext ctx{.client_ip = "10.0.0.1"};
+  vexo::gateway::MaglevHashLB lb(257, "client_ip");
+  vexo::gateway::RequestContext ctx{.client_ip = "10.0.0.1"};
   auto peer = lb.Select(*upstream, ctx);
   if (!Expect(peer == nullptr, "MaglevHash must return nullptr when all peers down"))
     return false;
@@ -371,9 +371,9 @@ bool TestMaglevHashAllPeersDownReturnsNull() {
 bool TestIPHashSameIPSamePeer() {
   auto upstream = MakeUpstream("test_iph", {
       {"peer-a:80", 1}, {"peer-b:80", 1}, {"peer-c:80", 1}});
-  runtime::gateway::IPHashLB lb;
+  vexo::gateway::IPHashLB lb;
 
-  runtime::gateway::RequestContext ctx{.client_ip = "192.168.1.100"};
+  vexo::gateway::RequestContext ctx{.client_ip = "192.168.1.100"};
   auto first = lb.Select(*upstream, ctx);
   for (int i = 0; i < 100; i++) {
     if (lb.Select(*upstream, ctx) != first) {
@@ -386,9 +386,9 @@ bool TestIPHashSameIPSamePeer() {
 
 bool TestIPHashEmptyIPUsesFallback() {
   auto upstream = MakeUpstream("test_iph", {{"peer-a:80", 1}, {"peer-b:80", 1}});
-  runtime::gateway::IPHashLB lb;
+  vexo::gateway::IPHashLB lb;
 
-  runtime::gateway::RequestContext ctx;  // empty client_ip
+  vexo::gateway::RequestContext ctx;  // empty client_ip
   auto peer = lb.Select(*upstream, ctx);
   if (!Expect(peer != nullptr, "IPHash must use fallback for empty IP")) return false;
   Passed("TestIPHashEmptyIPUsesFallback");
@@ -402,7 +402,7 @@ bool TestIPHashEmptyIPUsesFallback() {
 bool TestRoundRobinCycles() {
   auto upstream = MakeUpstream("test_rr", {
       {"peer-a:80", 1}, {"peer-b:80", 1}, {"peer-c:80", 1}});
-  runtime::gateway::RoundRobinLB lb;
+  vexo::gateway::RoundRobinLB lb;
 
   auto p0 = lb.Select(*upstream);
   auto p1 = lb.Select(*upstream);
@@ -416,10 +416,10 @@ bool TestRoundRobinCycles() {
 }
 
 bool TestRoundRobinHonorsPassiveFailTimeout() {
-  auto upstream = std::make_shared<runtime::gateway::Upstream>(
-      runtime::gateway::UpstreamConfig{.name = "test_rr_passive"});
-  auto cooling = std::make_shared<runtime::gateway::UpstreamPeer>(
-      runtime::gateway::UpstreamPeerConfig{
+  auto upstream = std::make_shared<vexo::gateway::Upstream>(
+      vexo::gateway::UpstreamConfig{.name = "test_rr_passive"});
+  auto cooling = std::make_shared<vexo::gateway::UpstreamPeer>(
+      vexo::gateway::UpstreamPeerConfig{
           .name = "cooling:80",
           .host = "127.0.0.1",
           .port = static_cast<uint16_t>(80),
@@ -427,8 +427,8 @@ bool TestRoundRobinHonorsPassiveFailTimeout() {
           .max_fails = 1,
           .fail_timeout = std::chrono::hours(1),
       });
-  auto healthy = std::make_shared<runtime::gateway::UpstreamPeer>(
-      runtime::gateway::UpstreamPeerConfig{
+  auto healthy = std::make_shared<vexo::gateway::UpstreamPeer>(
+      vexo::gateway::UpstreamPeerConfig{
           .name = "healthy:80",
           .host = "127.0.0.1",
           .port = static_cast<uint16_t>(80),
@@ -443,7 +443,7 @@ bool TestRoundRobinHonorsPassiveFailTimeout() {
           .count());
   cooling->OnFailure(now_ms);
 
-  runtime::gateway::RoundRobinLB lb;
+  vexo::gateway::RoundRobinLB lb;
   for (int i = 0; i < 10; ++i) {
     auto peer = lb.Select(*upstream);
     if (!peer) return Expect(false, "RR must return the healthy peer");
@@ -463,7 +463,7 @@ bool TestRoundRobinHonorsPassiveFailTimeout() {
 // `down`. AvailableAt() takes now_ms explicitly, so the whole window is driven
 // with synthetic timestamps (no real sleeping, fully deterministic).
 bool TestPassivePeerRecoversAfterFailTimeout() {
-  runtime::gateway::UpstreamPeer peer(runtime::gateway::UpstreamPeerConfig{
+  vexo::gateway::UpstreamPeer peer(vexo::gateway::UpstreamPeerConfig{
       .name = "passive:80",
       .host = "127.0.0.1",
       .port = static_cast<uint16_t>(80),
@@ -526,7 +526,7 @@ bool TestWeightedLeastConnectionPicksLowestRatio() {
   peers[0]->state().active.store(2);
   peers[1]->state().active.store(4);
 
-  runtime::gateway::WeightedLeastConnectionLB lb;
+  vexo::gateway::WeightedLeastConnectionLB lb;
   auto pick = lb.Select(*upstream);
   if (!pick) return Expect(false, "WLC must return a peer");
   if (!Expect(pick->config().name == "heavy:80",
@@ -544,7 +544,7 @@ bool TestWeightedLeastConnectionEqualWeightLowestActive() {
   peers[1]->state().active.store(1);
   peers[2]->state().active.store(9);
 
-  runtime::gateway::WeightedLeastConnectionLB lb;
+  vexo::gateway::WeightedLeastConnectionLB lb;
   auto pick = lb.Select(*upstream);
   if (!pick) return Expect(false, "WLC must return a peer");
   if (!Expect(pick->config().name == "b:80", "WLC equal weights must pick the lowest active"))
@@ -560,7 +560,7 @@ bool TestWeightedLeastConnectionExcludesDownPeers() {
   peers[0]->state().down.store(true);  // a is down despite the higher weight
   peers[1]->state().active.store(7);
 
-  runtime::gateway::WeightedLeastConnectionLB lb;
+  vexo::gateway::WeightedLeastConnectionLB lb;
   auto pick = lb.Select(*upstream);
   if (!pick) return Expect(false, "WLC must return the only available peer");
   if (!Expect(pick->config().name == "b:80", "WLC must skip down peers")) return false;
@@ -579,14 +579,14 @@ bool TestCreateLoadBalancerAllAlgos() {
     "ip_hash", "consistent_hash", "maglev_hash", "p2c"
   };
   for (const auto& algo : algos) {
-    auto lb = runtime::gateway::CreateLoadBalancer(algo);
+    auto lb = vexo::gateway::CreateLoadBalancer(algo);
     if (!lb) {
       std::string msg = "CreateLoadBalancer must return non-null for ";
       msg += algo;
       return Expect(false, msg.c_str());
     }
   }
-  auto unknown = runtime::gateway::CreateLoadBalancer("bogus");
+  auto unknown = vexo::gateway::CreateLoadBalancer("bogus");
   if (!Expect(unknown == nullptr, "unknown algo must return nullptr")) return false;
   Passed("TestCreateLoadBalancerAllAlgos");
   return true;
@@ -597,7 +597,7 @@ bool TestCreateLoadBalancerAllAlgos() {
 // ================================================================
 
 bool TestRequestContextDefaultEmpty() {
-  runtime::gateway::RequestContext ctx;
+  vexo::gateway::RequestContext ctx;
   if (!Expect(ctx.client_ip.empty(), "default client_ip must be empty")) return false;
   if (!Expect(ctx.uri.empty(), "default uri must be empty")) return false;
   Passed("TestRequestContextDefaultEmpty");

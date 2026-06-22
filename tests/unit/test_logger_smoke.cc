@@ -5,9 +5,9 @@
 #include <iostream>
 #include <string>
 
-#include "runtime/log/async_logger.h"
-#include "runtime/log/log_buffer.h"
-#include "runtime/log/logger.h"
+#include "vexo/log/async_logger.h"
+#include "vexo/log/log_buffer.h"
+#include "vexo/log/logger.h"
 
 namespace {
 
@@ -33,7 +33,7 @@ std::filesystem::path UniqueLogPath(const std::string& name) {
 }
 
 bool TestLogBuffer() {
-    runtime::log::LogBuffer<8> buffer;
+    vexo::log::LogBuffer<8> buffer;
     if (!Expect(buffer.Empty(), "new log buffer should be empty")) return false;
     if (!Expect(buffer.Append("abc", 3), "append should succeed when space is available")) return false;
     if (!Expect(buffer.size() == 3U, "buffer size should reflect appended bytes")) return false;
@@ -46,9 +46,9 @@ bool TestLogBuffer() {
 
 bool TestFormatter() {
     const auto path = UniqueLogPath("formatter-smoke");
-    auto& logger = runtime::log::Logger::Instance();
-    logger.Init(path.string(), runtime::log::LogLevel::DEBUG, 10);
-    logger.Log(runtime::log::LogLevel::WARN, "test_logger_smoke.cc", 88,
+    auto& logger = vexo::log::Logger::Instance();
+    logger.Init(path.string(), vexo::log::LogLevel::DEBUG, 10);
+    logger.Log(vexo::log::LogLevel::WARN, "test_logger_smoke.cc", 88,
                "Formatter", "formatted message");
     logger.Shutdown();
 
@@ -70,14 +70,14 @@ bool TestFormatter() {
 
 bool TestLoggerIntegration() {
     const auto path = UniqueLogPath("logger-smoke");
-    auto& logger = runtime::log::Logger::Instance();
+    auto& logger = vexo::log::Logger::Instance();
 
-    logger.Init(path.string(), runtime::log::LogLevel::WARN, 10);
-    logger.Log(runtime::log::LogLevel::INFO, "test_logger_smoke.cc", 120,
+    logger.Init(path.string(), vexo::log::LogLevel::WARN, 10);
+    logger.Log(vexo::log::LogLevel::INFO, "test_logger_smoke.cc", 120,
                "Integration", "filtered");
     LOG_ERROR() << "persisted error";
-    const std::string huge(runtime::log::AsyncLogger::kBufferSize + 128, 'x');
-    logger.Log(runtime::log::LogLevel::ERROR, "test_logger_smoke.cc", 123,
+    const std::string huge(vexo::log::AsyncLogger::kBufferSize + 128, 'x');
+    logger.Log(vexo::log::LogLevel::ERROR, "test_logger_smoke.cc", 123,
                "Integration", huge);
     logger.Shutdown();
 

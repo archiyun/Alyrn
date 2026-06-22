@@ -1,4 +1,4 @@
-# net 层 examples —— 依赖 runtime_net
+# net 层 examples —— 依赖 vexo_net
 #   demo_echo_server : One-Loop-Per-Thread 回显服务器
 #   demo_redis_lite  : RESP 协议的极简 Redis（SET/GET/DEL），展示增量解析
 #   demo_bench_timer : TimerQueue 定时器基准
@@ -8,7 +8,7 @@ add_executable(demo_echo_server
 )
 target_link_libraries(demo_echo_server
     PRIVATE
-        runtime_net
+        vexo_net
 )
 
 add_executable(demo_redis_lite
@@ -16,8 +16,8 @@ add_executable(demo_redis_lite
 )
 target_link_libraries(demo_redis_lite
     PRIVATE
-        runtime_net
-        runtime_foundation
+        vexo_net
+        vexo_foundation
 )
 
 add_executable(demo_bench_timer
@@ -25,5 +25,5 @@ add_executable(demo_bench_timer
 )
 target_link_libraries(demo_bench_timer
     PRIVATE
-        runtime_net
+        vexo_net
 )

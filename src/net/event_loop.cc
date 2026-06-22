@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/net/event_loop.h"
+#include "vexo/net/event_loop.h"
 
 #include <sys/eventfd.h>
 #include <unistd.h>
@@ -11,14 +11,14 @@
 #include <cstdlib>
 #include <cstring>
 
-#include "runtime/log/logger.h"
-#include "runtime/net/channel.h"
-#include "runtime/net/poller.h"
-#include "runtime/net/timer_queue.h"
-#include "runtime/time/timer_id.h"
-#include "runtime/time/timestamp.h"
+#include "vexo/log/logger.h"
+#include "vexo/net/channel.h"
+#include "vexo/net/poller.h"
+#include "vexo/net/timer_queue.h"
+#include "vexo/time/timer_id.h"
+#include "vexo/time/timestamp.h"
 
-namespace runtime::net {
+namespace vexo::net {
 
 namespace {
 
@@ -92,7 +92,7 @@ EventLoop::EventLoop()
 
   // The wakeup fd is monitored like a normal Channel so other threads can
   // interrupt epoll_wait when they queue work into this loop.
-  wakeup_channel_->set_read_callback([this](runtime::time::Timestamp) { HandleRead(); });
+  wakeup_channel_->set_read_callback([this](vexo::time::Timestamp) { HandleRead(); });
   wakeup_channel_->EnableReading();
 
   LOG_DEBUG() << "event loop created: wakeup_fd=" << wakeup_fd_;
@@ -216,22 +216,22 @@ void EventLoop::DoPendingFunctors() {
   calling_pending_functors_.store(false, std::memory_order_relaxed);
 }
 
-runtime::time::TimerId EventLoop::RunAt(runtime::time::Timestamp time, Functor cb) {
+vexo::time::TimerId EventLoop::RunAt(vexo::time::Timestamp time, Functor cb) {
   return timer_queue_->AddTimer(std::move(cb), time, 0.0);
 }
 
-runtime::time::TimerId EventLoop::RunAfter(double delay, Functor cb) {
-  using runtime::time::AddTime;
-  using runtime::time::Timestamp;
+vexo::time::TimerId EventLoop::RunAfter(double delay, Functor cb) {
+  using vexo::time::AddTime;
+  using vexo::time::Timestamp;
   return timer_queue_->AddTimer(std::move(cb), AddTime(Timestamp::Now(), delay), 0.0);
 }
 
-runtime::time::TimerId EventLoop::RunEvery(double interval, Functor cb) {
-  using runtime::time::AddTime;
-  using runtime::time::Timestamp;
+vexo::time::TimerId EventLoop::RunEvery(double interval, Functor cb) {
+  using vexo::time::AddTime;
+  using vexo::time::Timestamp;
   return timer_queue_->AddTimer(std::move(cb), AddTime(Timestamp::Now(), interval), interval);
 }
 
-void EventLoop::Cancel(runtime::time::TimerId id) { timer_queue_->Cancel(id); }
+void EventLoop::Cancel(vexo::time::TimerId id) { timer_queue_->Cancel(id); }
 
-}  // namespace runtime::net
+}  // namespace vexo::net

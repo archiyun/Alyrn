@@ -1,4 +1,4 @@
-// demo_redis_lite.cc — 用 runtime_net 实现的极简 Redis 服务器
+// demo_redis_lite.cc — 用 vexo_net 实现的极简 Redis 服务器
 // 环境变量：
 //   PORT=6379  IO_THREADS=1
 //
@@ -27,15 +27,15 @@
 #include <unordered_map>
 #include <vector>
 
-#include "runtime/log/logger.h"
-#include "runtime/net/buffer.h"
-#include "runtime/net/event_loop.h"
-#include "runtime/net/inet_address.h"
-#include "runtime/net/tcp_connection.h"
-#include "runtime/net/tcp_server.h"
-#include "runtime/time/timestamp.h"
+#include "vexo/log/logger.h"
+#include "vexo/net/buffer.h"
+#include "vexo/net/event_loop.h"
+#include "vexo/net/inet_address.h"
+#include "vexo/net/tcp_connection.h"
+#include "vexo/net/tcp_server.h"
+#include "vexo/time/timestamp.h"
 
-using TcpConnectionPtr = std::shared_ptr<runtime::net::TcpConnection>;
+using TcpConnectionPtr = std::shared_ptr<vexo::net::TcpConnection>;
 
 static std::mutex g_db_mutex;
 static std::unordered_map<std::string, std::string> g_db;
@@ -185,8 +185,8 @@ static bool TryParseCommand(const char* p, std::size_t n, std::vector<std::strin
   return true;
 }
 
-static void OnMessage(const TcpConnectionPtr& conn, runtime::net::Buffer& buf,
-                      runtime::time::Timestamp) {
+static void OnMessage(const TcpConnectionPtr& conn, vexo::net::Buffer& buf,
+                      vexo::time::Timestamp) {
   while (buf.readable_bytes() > 0) {
     std::vector<std::string> args;
     std::size_t consumed = 0;
@@ -216,12 +216,12 @@ int main() {
 
   std::signal(SIGPIPE, SIG_IGN);
 
-  runtime::log::Logger::Instance().Init("redis_lite", runtime::log::LogLevel::INFO,
+  vexo::log::Logger::Instance().Init("redis_lite", vexo::log::LogLevel::INFO,
                                         /*flush_interval_ms=*/1000,
                                         /*roll_size=*/10 * 1024 * 1024);
 
-  runtime::net::EventLoop main_loop;
-  runtime::net::TcpServer server(&main_loop, runtime::net::InetAddress(port), "RedisLite");
+  vexo::net::EventLoop main_loop;
+  vexo::net::TcpServer server(&main_loop, vexo::net::InetAddress(port), "RedisLite");
 
   server.set_thread_num(io_threads);
   server.set_message_callback(OnMessage);

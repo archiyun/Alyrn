@@ -8,8 +8,8 @@
 #include <utility>
 #include <vector>
 
-#include "runtime/memory/pmr_pool_resource.h"
-#include "runtime/memory/pool.h"
+#include "vexo/memory/pmr_pool_resource.h"
+#include "vexo/memory/pool.h"
 
 namespace {
 
@@ -26,8 +26,8 @@ int g_failures = 0;
 
 
 
-using runtime::memory::Pool;
-using runtime::memory::PoolResource;
+using vexo::memory::Pool;
+using vexo::memory::PoolResource;
 
 using PmrString = std::pmr::string;
 

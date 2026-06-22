@@ -19,8 +19,8 @@
 #include <thread>
 #include <vector>
 
-#include "runtime/memory/memory_pool.h"
-#include "runtime/memory/object_pool.h"
+#include "vexo/memory/memory_pool.h"
+#include "vexo/memory/object_pool.h"
 
 // ---------------------------------------------------------------------------
 // Benchmark object
@@ -90,7 +90,7 @@ static void bench_sequential() {
     void* buf[kCap];
 
     // pool
-    runtime::memory::MemoryPool<sizeof(void*), alignof(void*), kCap> pool;
+    vexo::memory::MemoryPool<sizeof(void*), alignof(void*), kCap> pool;
     auto t0 = Clock::now();
     for (long long r = 0; r < kRound; ++r) {
         for (std::size_t i = 0; i < kCap; ++i) buf[i] = pool.Allocate();
@@ -120,7 +120,7 @@ static void bench_interleaved() {
     constexpr long long   kN   = 2'000'000LL;
 
     // pool
-    runtime::memory::MemoryPool<sizeof(void*), alignof(void*), kCap> pool;
+    vexo::memory::MemoryPool<sizeof(void*), alignof(void*), kCap> pool;
     auto t0 = Clock::now();
     for (long long i = 0; i < kN; ++i) {
         void* p = pool.Allocate();
@@ -153,7 +153,7 @@ static void bench_batch() {
     void* buf[kBatch];
 
     // pool
-    runtime::memory::MemoryPool<sizeof(void*), alignof(void*), kCap> pool;
+    vexo::memory::MemoryPool<sizeof(void*), alignof(void*), kCap> pool;
     auto t0 = Clock::now();
     for (long long r = 0; r < kRound; ++r) {
         for (int i = 0; i < kBatch; ++i) buf[i] = pool.Allocate();
@@ -183,7 +183,7 @@ static void bench_object_pool() {
     Task* buf[kCap];
 
     // ObjectPool
-    runtime::memory::ObjectPool<Task, kCap> pool;
+    vexo::memory::ObjectPool<Task, kCap> pool;
     auto t0 = Clock::now();
     for (long long r = 0; r < kRound; ++r) {
         for (std::size_t i = 0; i < kCap; ++i)
@@ -214,8 +214,8 @@ static void bench_null_mutex() {
     constexpr long long   kN   = 2'000'000LL;
 
     // NullMutex pool
-    runtime::memory::MemoryPool<sizeof(void*), alignof(void*), kCap,
-                                runtime::memory::NullMutex> pool;
+    vexo::memory::MemoryPool<sizeof(void*), alignof(void*), kCap,
+                                vexo::memory::NullMutex> pool;
     auto t0 = Clock::now();
     for (long long i = 0; i < kN; ++i) {
         void* p = pool.Allocate();
@@ -249,7 +249,7 @@ static void bench_multithreaded() {
 
     // pool
     {
-        runtime::memory::MemoryPool<sizeof(void*), alignof(void*), kCap> pool;
+        vexo::memory::MemoryPool<sizeof(void*), alignof(void*), kCap> pool;
         std::vector<std::thread> ts;
         ts.reserve(kThreads);
 

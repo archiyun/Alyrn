@@ -12,10 +12,10 @@
 #include <string>
 #include <thread>
 
-#include "runtime/net/event_loop.h"
-#include "runtime/net/inet_address.h"
-#include "runtime/net/net_utils.h"
-#include "runtime/net/tcp_server.h"
+#include "vexo/net/event_loop.h"
+#include "vexo/net/inet_address.h"
+#include "vexo/net/net_utils.h"
+#include "vexo/net/tcp_server.h"
 
 namespace {
 
@@ -98,7 +98,7 @@ ScopedFd ConnectToServer(std::uint16_t port) {
         return ScopedFd();
     }
 
-    const runtime::net::InetAddress server_addr(port);
+    const vexo::net::InetAddress server_addr(port);
     if (::connect(fd,
                   reinterpret_cast<const sockaddr*>(&server_addr.sock_addr()),
                   sizeof(server_addr.sock_addr())) != 0) {
@@ -140,7 +140,7 @@ bool TestThreadInitCallbackRunsForEachIoLoop() {
         return false;
     }
 
-    std::promise<runtime::net::EventLoop*> ready_promise;
+    std::promise<vexo::net::EventLoop*> ready_promise;
     auto ready_future = ready_promise.get_future();
 
     std::mutex mutex;
@@ -148,11 +148,11 @@ bool TestThreadInitCallbackRunsForEachIoLoop() {
     int init_count = 0;
 
     std::thread server_thread([&] {
-        runtime::net::EventLoop loop;
-        runtime::net::TcpServer server(
-            &loop, runtime::net::InetAddress(port), "ThreadInitServer");
+        vexo::net::EventLoop loop;
+        vexo::net::TcpServer server(
+            &loop, vexo::net::InetAddress(port), "ThreadInitServer");
         server.set_thread_num(2);
-        server.set_thread_init_callback([&](runtime::net::EventLoop*) {
+        server.set_thread_init_callback([&](vexo::net::EventLoop*) {
             std::lock_guard<std::mutex> lock(mutex);
             ++init_count;
             cv.notify_all();
@@ -162,7 +162,7 @@ bool TestThreadInitCallbackRunsForEachIoLoop() {
         loop.Loop();
     });
 
-    runtime::net::EventLoop* loop = ready_future.get();
+    vexo::net::EventLoop* loop = ready_future.get();
 
     bool ok = true;
     {
@@ -182,21 +182,21 @@ bool TestEchoRoundTripAndLifecycle() {
         return false;
     }
 
-    std::promise<runtime::net::EventLoop*> ready_promise;
+    std::promise<vexo::net::EventLoop*> ready_promise;
     auto ready_future = ready_promise.get_future();
     std::atomic<int> connection_events{0};
 
     std::thread server_thread([&] {
-        runtime::net::EventLoop loop;
-        runtime::net::TcpServer server(
-            &loop, runtime::net::InetAddress(port), "EchoServer");
+        vexo::net::EventLoop loop;
+        vexo::net::TcpServer server(
+            &loop, vexo::net::InetAddress(port), "EchoServer");
         server.set_thread_num(1);
-        server.set_connection_callback([&](const runtime::net::TcpServer::TcpConnectionPtr&) {
+        server.set_connection_callback([&](const vexo::net::TcpServer::TcpConnectionPtr&) {
             connection_events.fetch_add(1, std::memory_order_relaxed);
         });
         server.set_message_callback(
-            [](const runtime::net::TcpServer::TcpConnectionPtr& conn,
-               runtime::net::Buffer& buffer, runtime::time::Timestamp) {
+            [](const vexo::net::TcpServer::TcpConnectionPtr& conn,
+               vexo::net::Buffer& buffer, vexo::time::Timestamp) {
                 const std::string message = buffer.RetrieveAllAsString();
                 conn->Send(message);
             });
@@ -205,7 +205,7 @@ bool TestEchoRoundTripAndLifecycle() {
         loop.Loop();
     });
 
-    runtime::net::EventLoop* loop = ready_future.get();
+    vexo::net::EventLoop* loop = ready_future.get();
     ScopedFd client = ConnectToServer(port);
     bool ok = Expect(client.get() >= 0, "client should connect to the echo server");
 

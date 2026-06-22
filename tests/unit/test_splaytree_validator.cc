@@ -27,13 +27,13 @@
 #include <type_traits>
 #include <vector>
 
-#include "runtime/ds/intrusive_splaytree.h"
+#include "vexo/ds/intrusive_splaytree.h"
 
 // ----------------------------------------------------------------
 // Element type
 // ----------------------------------------------------------------
 
-struct Job : runtime::ds::SplayNode<Job> {
+struct Job : vexo::ds::SplayNode<Job> {
   Job() = default;
 
   int     id;
@@ -45,7 +45,7 @@ bool JobLess(const Job* a, const Job* b) {
   return a->id < b->id;
 }
 
-using JobTree = runtime::ds::IntrusiveSplayTree<Job, JobLess>;
+using JobTree = vexo::ds::IntrusiveSplayTree<Job, JobLess>;
 
 static_assert(!std::is_copy_constructible_v<JobTree>);
 static_assert(!std::is_copy_assignable_v<JobTree>);

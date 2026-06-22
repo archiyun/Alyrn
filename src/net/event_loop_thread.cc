@@ -1,12 +1,12 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/net/event_loop_thread.h"
+#include "vexo/net/event_loop_thread.h"
 
 #include <cassert>
 
-#include "runtime/net/event_loop.h"
+#include "vexo/net/event_loop.h"
 
-namespace runtime::net {
+namespace vexo::net {
 
 EventLoopThread::EventLoopThread() = default;
 
@@ -44,5 +44,5 @@ void EventLoopThread::WorkLoop(std::stop_token token) {
     loop_ = nullptr;
   }
 }
-}  // namespace runtime::net
+}  // namespace vexo::net
 

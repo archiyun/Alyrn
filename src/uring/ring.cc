@@ -1,9 +1,9 @@
 // CopyRight (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/uring/ring.h"
-#include "runtime/log/logger.h"
+#include "vexo/uring/ring.h"
+#include "vexo/log/logger.h"
 
-namespace runtime::uring {
+namespace vexo::uring {
 
 std::optional<Ring> Create(unsigned entries) {
   io_uring ring{};
@@ -11,4 +11,4 @@ std::optional<Ring> Create(unsigned entries) {
   if (rc < 0) LOG_WARN() << "ring.cc io_uring_init failed\n";
   return Ring(ring);
 }
-}  // namespace runtime::uring
+}  // namespace vexo::uring

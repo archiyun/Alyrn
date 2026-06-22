@@ -17,14 +17,14 @@
 #include <string>
 #include <thread>
 
-#include "runtime/gateway/health_check_config.h"
-#include "runtime/gateway/health_checker.h"
-#include "runtime/gateway/upstream.h"
-#include "runtime/gateway/upstream_peer.h"
-#include "runtime/gateway/upstream_registry.h"
-#include "runtime/net/event_loop.h"
-#include "runtime/net/inet_address.h"
-#include "runtime/net/tcp_server.h"
+#include "vexo/gateway/health_check_config.h"
+#include "vexo/gateway/health_checker.h"
+#include "vexo/gateway/upstream.h"
+#include "vexo/gateway/upstream_peer.h"
+#include "vexo/gateway/upstream_registry.h"
+#include "vexo/net/event_loop.h"
+#include "vexo/net/inet_address.h"
+#include "vexo/net/tcp_server.h"
 
 namespace {
 
@@ -83,25 +83,25 @@ void WaitFor(std::atomic<bool>& flag, bool expected, int timeout_ms) {
 // main thread 通过 RunInLoop 向 loop 投递 Quit 命令。
 struct TestEnv {
   std::thread loop_thread;
-  runtime::net::EventLoop* loop{nullptr};  // owned by loop_thread
-  std::shared_ptr<runtime::gateway::UpstreamPeer> peer;
+  vexo::net::EventLoop* loop{nullptr};  // owned by loop_thread
+  std::shared_ptr<vexo::gateway::UpstreamPeer> peer;
   std::atomic<bool>* peer_down_flag{nullptr};
 };
 
 TestEnv StartTestEnv(
     std::uint16_t port,
     const std::string& http_status_line,
-    runtime::gateway::HealthCheckConfig cfg,
-    std::shared_ptr<runtime::gateway::UpstreamPeer> peer) {
+    vexo::gateway::HealthCheckConfig cfg,
+    std::shared_ptr<vexo::gateway::UpstreamPeer> peer) {
 
-  auto upstream = std::make_shared<runtime::gateway::Upstream>(
-      runtime::gateway::UpstreamConfig{.name = "test-upstream"});
+  auto upstream = std::make_shared<vexo::gateway::Upstream>(
+      vexo::gateway::UpstreamConfig{.name = "test-upstream"});
   upstream->AddPeer(peer);
 
-  auto registry = std::make_shared<runtime::gateway::UpstreamRegistry>();
+  auto registry = std::make_shared<vexo::gateway::UpstreamRegistry>();
   registry->Add(upstream);
 
-  std::promise<runtime::net::EventLoop*> loop_promise;
+  std::promise<vexo::net::EventLoop*> loop_promise;
   auto loop_future = loop_promise.get_future();
   std::promise<void> started;
   auto started_future = started.get_future();
@@ -109,18 +109,18 @@ TestEnv StartTestEnv(
   std::thread t([port, http_status_line, cfg, registry,
                  loop_promise = std::move(loop_promise),
                  started = std::move(started)]() mutable {
-    runtime::net::EventLoop loop;
+    vexo::net::EventLoop loop;
 
     std::string response = http_status_line +
         "\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
 
-    runtime::net::TcpServer server(
+    vexo::net::TcpServer server(
         &loop,
-        runtime::net::InetAddress(port),
+        vexo::net::InetAddress(port),
         "mock-backend");
 
     server.set_connection_callback(
-        [response](const runtime::net::TcpServer::TcpConnectionPtr& conn) {
+        [response](const vexo::net::TcpServer::TcpConnectionPtr& conn) {
           if (conn->Connected()) {
             conn->Send(response);
             conn->Shutdown();
@@ -129,7 +129,7 @@ TestEnv StartTestEnv(
 
     server.Start();
 
-    runtime::gateway::HealthChecker checker(&loop, *registry, cfg);
+    vexo::gateway::HealthChecker checker(&loop, *registry, cfg);
     checker.Start();
 
     loop_promise.set_value(&loop);
@@ -162,7 +162,7 @@ void StopTestEnv(TestEnv& env) {
 // 测试: HealthCheckConfig 默认值
 // ================================================================
 bool TestHealthCheckConfigDefaults() {
-  runtime::gateway::HealthCheckConfig cfg;
+  vexo::gateway::HealthCheckConfig cfg;
   if (!Expect(cfg.path == "/health", "default path should be /health")) return false;
   if (!Expect(cfg.interval_sec == 10.0, "default interval should be 10s")) return false;
   if (!Expect(cfg.timeout_sec == 3.0, "default timeout should be 3s")) return false;
@@ -179,15 +179,15 @@ bool TestRecoveryAfterConsecutiveSuccesses() {
   const std::uint16_t port = ReserveLoopbackPort();
   if (!Expect(port != 0, "should reserve a port")) return false;
 
-  auto peer = std::make_shared<runtime::gateway::UpstreamPeer>(
-      runtime::gateway::UpstreamPeerConfig{
+  auto peer = std::make_shared<vexo::gateway::UpstreamPeer>(
+      vexo::gateway::UpstreamPeerConfig{
           .name = "127.0.0.1:" + std::to_string(port),
           .host = "127.0.0.1",
           .port = port,
       });
   peer->state().down.store(true, std::memory_order_relaxed);
 
-  runtime::gateway::HealthCheckConfig cfg;
+  vexo::gateway::HealthCheckConfig cfg;
   cfg.path = "/health";
   cfg.interval_sec = 0.2;
   cfg.timeout_sec = 1.5;
@@ -213,14 +213,14 @@ bool TestMarkedDownAfterConsecutiveFailures() {
   const std::uint16_t port = ReserveLoopbackPort();
   if (!Expect(port != 0, "should reserve a port")) return false;
 
-  auto peer = std::make_shared<runtime::gateway::UpstreamPeer>(
-      runtime::gateway::UpstreamPeerConfig{
+  auto peer = std::make_shared<vexo::gateway::UpstreamPeer>(
+      vexo::gateway::UpstreamPeerConfig{
           .name = "127.0.0.1:" + std::to_string(port),
           .host = "127.0.0.1",
           .port = port,
       });
 
-  runtime::gateway::HealthCheckConfig cfg;
+  vexo::gateway::HealthCheckConfig cfg;
   cfg.path = "/health";
   cfg.interval_sec = 0.2;
   cfg.timeout_sec = 1.5;
@@ -246,15 +246,15 @@ bool TestFullRecoveryCycle() {
   const std::uint16_t port = ReserveLoopbackPort();
   if (!Expect(port != 0, "should reserve a port")) return false;
 
-  auto peer = std::make_shared<runtime::gateway::UpstreamPeer>(
-      runtime::gateway::UpstreamPeerConfig{
+  auto peer = std::make_shared<vexo::gateway::UpstreamPeer>(
+      vexo::gateway::UpstreamPeerConfig{
           .name = "127.0.0.1:" + std::to_string(port),
           .host = "127.0.0.1",
           .port = port,
       });
   peer->state().down.store(true, std::memory_order_relaxed);
 
-  runtime::gateway::HealthCheckConfig cfg;
+  vexo::gateway::HealthCheckConfig cfg;
   cfg.path = "/health";
   cfg.interval_sec = 0.2;
   cfg.timeout_sec = 1.5;

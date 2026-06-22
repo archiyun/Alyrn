@@ -26,11 +26,11 @@
 #include <string_view>
 #include <vector>
 
-#include "runtime/gateway/gateway_server.h"
-#include "runtime/gateway/upstream.h"
-#include "runtime/gateway/upstream_peer.h"
-#include "runtime/net/event_loop.h"
-#include "runtime/net/inet_address.h"
+#include "vexo/gateway/gateway_server.h"
+#include "vexo/gateway/upstream.h"
+#include "vexo/gateway/upstream_peer.h"
+#include "vexo/net/event_loop.h"
+#include "vexo/net/inet_address.h"
 
 namespace {
 
@@ -73,22 +73,22 @@ int main() {
 
   std::signal(SIGPIPE, SIG_IGN);
 
-  runtime::gateway::UpstreamRegistry reg;
-  auto us = std::make_shared<runtime::gateway::Upstream>(
-      runtime::gateway::UpstreamConfig{.name = "backend"});
+  vexo::gateway::UpstreamRegistry reg;
+  auto us = std::make_shared<vexo::gateway::Upstream>(
+      vexo::gateway::UpstreamConfig{.name = "backend"});
   for (uint16_t p : ports) {
-    us->AddPeer(std::make_shared<runtime::gateway::UpstreamPeer>(
-        runtime::gateway::UpstreamPeerConfig{
+    us->AddPeer(std::make_shared<vexo::gateway::UpstreamPeer>(
+        vexo::gateway::UpstreamPeerConfig{
             .name = "127.0.0.1:" + std::to_string(p),
             .host = "127.0.0.1",
             .port = p}));
   }
   reg.Add(us);
 
-  runtime::net::EventLoop loop;
-  runtime::gateway::GatewayServer gw(
+  vexo::net::EventLoop loop;
+  vexo::gateway::GatewayServer gw(
       &loop,
-      runtime::net::InetAddress(listen_port),
+      vexo::net::InetAddress(listen_port),
       "BenchGatewayMulti",
       reg);
   gw.set_thread_num(io_threads);

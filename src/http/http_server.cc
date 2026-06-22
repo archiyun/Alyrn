@@ -1,24 +1,24 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/http/http_server.h"
+#include "vexo/http/http_server.h"
 
-#include "runtime/http/http_context.h"
-#include "runtime/http/metrics_handler.h"
-#include "runtime/http/router.h"
-#include "runtime/net/event_loop.h"
-#include "runtime/task/blocking_executor.h"
+#include "vexo/http/http_context.h"
+#include "vexo/http/metrics_handler.h"
+#include "vexo/http/router.h"
+#include "vexo/net/event_loop.h"
+#include "vexo/task/blocking_executor.h"
 
-namespace runtime::http {
+namespace vexo::http {
 
-HttpServer::HttpServer(runtime::net::EventLoop* loop,
-                       const runtime::net::InetAddress& addr,
+HttpServer::HttpServer(vexo::net::EventLoop* loop,
+                       const vexo::net::InetAddress& addr,
                        std::string name)
     : server_(loop, addr, name) {
   server_.set_connection_callback(
       [this](const TcpConnectionPtr& conn) { OnConnection(conn); });
   server_.set_message_callback(
-      [this](const TcpConnectionPtr& conn, runtime::net::Buffer& buf,
-             runtime::time::Timestamp ts) { OnMessage(conn, buf, ts); });
+      [this](const TcpConnectionPtr& conn, vexo::net::Buffer& buf,
+             vexo::time::Timestamp ts) { OnMessage(conn, buf, ts); });
 }
 
 void HttpServer::set_thread_num(int num_threads) {
@@ -30,7 +30,7 @@ void HttpServer::set_edge_triggered(bool et) {
 }
 
 void HttpServer::set_blocking_executor(
-    std::shared_ptr<runtime::task::BlockingExecutor> executor) {
+    std::shared_ptr<vexo::task::BlockingExecutor> executor) {
   blocking_executor_ = std::move(executor);
 }
 
@@ -71,8 +71,8 @@ void HttpServer::OnConnection(const TcpConnectionPtr& conn) {
 }
 
 void HttpServer::OnMessage(const TcpConnectionPtr& conn,
-                           runtime::net::Buffer& buf,
-                           runtime::time::Timestamp ts) {
+                           vexo::net::Buffer& buf,
+                           vexo::time::Timestamp ts) {
   auto& h1ctx = *std::any_cast<std::shared_ptr<HttpContext>&>(
       conn->context());
   const ParseStatus parse_status = h1ctx.ParseRequest(buf, ts);
@@ -161,4 +161,4 @@ HttpResponse HttpServer::MakeError(StatusCode code,
   return response;
 }
 
-}  // namespace runtime::http
+}  // namespace vexo::http

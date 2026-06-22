@@ -1,0 +1,49 @@
+// Copyright (c) 2026 Arsenova
+// SPDX-License-Identifier: MIT
+#pragma once
+
+#include <memory>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <utility>
+
+#include "vexo/base/noncopyable.h"
+#include "vexo/gateway/upstream.h"
+
+namespace vexo::gateway {
+
+struct StringHash {
+  using is_transparent = void;
+  std::size_t operator()(std::string_view sv) const noexcept {
+    return std::hash<std::string_view>{}(sv);
+  }
+};
+
+// Built during startup. After startup, it is read-only and can be resolved without locks.
+class UpstreamRegistry : public vexo::base::NonCopyable {
+public:
+  using UpstreamRegistryMap = std::unordered_map<
+      std::string, 
+      std::shared_ptr<Upstream>,
+      StringHash,
+      std::equal_to<>>;
+
+  void Add(std::shared_ptr<Upstream> upstream) {
+    registry_.emplace(upstream->name(), std::move(upstream));
+  }
+
+  std::shared_ptr<Upstream> Find(std::string_view name) const {
+    auto it = registry_.find(name);
+    return it != registry_.end() ? it->second : nullptr;
+  }
+  
+  const UpstreamRegistryMap& all() const {
+    return registry_;
+  }
+
+private:
+  UpstreamRegistryMap registry_;
+};
+
+}  // namespace vexo::gateway

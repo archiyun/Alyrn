@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/net/net_utils.h"
+#include "vexo/net/net_utils.h"
 
 #include <arpa/inet.h>
 #include <fcntl.h>
@@ -10,7 +10,7 @@
 #include <cerrno>
 #include <string>
 
-namespace runtime::net {
+namespace vexo::net {
 namespace {
 
 std::error_code CurrentErrno() { return {errno, std::generic_category()}; }
@@ -121,4 +121,4 @@ NetResult<bool> IsSelfConnect(int fd) {
   return {.value = *localaddr.value == *peeraddr.value};
 }
 
-}  // namespace runtime::net
+}  // namespace vexo::net

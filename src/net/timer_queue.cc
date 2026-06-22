@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/net/timer_queue.h"
+#include "vexo/net/timer_queue.h"
 
 #include <sys/timerfd.h>
 #include <unistd.h>
@@ -8,13 +8,13 @@
 #include <cassert>
 #include <cstring>
 
-#include "runtime/net/channel.h"
-#include "runtime/net/event_loop.h"
-#include "runtime/time/timer.h"
-#include "runtime/time/timer_id.h"
-#include "runtime/time/timestamp.h"
+#include "vexo/net/channel.h"
+#include "vexo/net/event_loop.h"
+#include "vexo/time/timer.h"
+#include "vexo/time/timer_id.h"
+#include "vexo/time/timestamp.h"
 
-namespace runtime::net {
+namespace vexo::net {
 
 static int CreateTimerfd() {
   int fd = ::timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
@@ -22,10 +22,10 @@ static int CreateTimerfd() {
   return fd;
 }
 
-static void set_timerfd(int timerfd, runtime::time::Timestamp expiration) {
+static void set_timerfd(int timerfd, vexo::time::Timestamp expiration) {
   itimerspec new_value{};
   int64_t us =
-      static_cast<int64_t>(TimeDifference(expiration, runtime::time::Timestamp::Now()) * 1e6);
+      static_cast<int64_t>(TimeDifference(expiration, vexo::time::Timestamp::Now()) * 1e6);
   if (us < 100) {
     us = 100;
   }
@@ -46,7 +46,7 @@ TimerQueue::TimerQueue(EventLoop* loop)
       timerfd_channel_(std::make_unique<Channel>(loop, timerfd_)) {
 
   timerfd_channel_->set_read_callback(
-      [this](runtime::time::Timestamp) { HandleRead(); });
+      [this](vexo::time::Timestamp) { HandleRead(); });
   timerfd_channel_->EnableReading();
 }
 
@@ -55,17 +55,17 @@ TimerQueue::~TimerQueue() {
   timerfd_channel_->Remove();
   ::close(timerfd_);
   while (!timers_.empty()) {
-    runtime::time::Timer* timer = timers_.earliest();
+    vexo::time::Timer* timer = timers_.earliest();
     active_timers_.Erase(timer);
     timers_.Erase(timer);
     timer_pool_.Release(timer);
   }
 }
 
-runtime::time::TimerId TimerQueue::AddTimer(TimerCallback cb,
-                                            runtime::time::Timestamp when,
+vexo::time::TimerId TimerQueue::AddTimer(TimerCallback cb,
+                                            vexo::time::Timestamp when,
                                             double interval) {
-  runtime::time::Timer* t = timer_pool_.Acquire(std::move(cb), when, interval);
+  vexo::time::Timer* t = timer_pool_.Acquire(std::move(cb), when, interval);
   loop_->RunInLoop([this, t] {
     bool earliest_changed =
         timers_.empty() || t->expiration() < timers_.earliest()->expiration();
@@ -78,9 +78,9 @@ runtime::time::TimerId TimerQueue::AddTimer(TimerCallback cb,
   return {t->sequence()};
 }
 
-void TimerQueue::Cancel(runtime::time::TimerId id) {
+void TimerQueue::Cancel(vexo::time::TimerId id) {
   loop_->RunInLoop([this, seq = id.sequence] {
-    runtime::time::Timer* active_timer = active_timers_.Find(seq);
+    vexo::time::Timer* active_timer = active_timers_.Find(seq);
     if (active_timer != nullptr) {
       active_timers_.Erase(active_timer);
       timers_.Erase(active_timer);
@@ -98,14 +98,14 @@ void TimerQueue::Cancel(runtime::time::TimerId id) {
 }
 
 void TimerQueue::HandleRead() {
-  runtime::time::Timestamp now = runtime::time::Timestamp::Now();
+  vexo::time::Timestamp now = vexo::time::Timestamp::Now();
   ReadTimerfd(timerfd_);
 
   timers_.PopWhile(
-      [now](const runtime::time::Timer* timer) {
+      [now](const vexo::time::Timer* timer) {
         return timer->expiration() <= now;
       },
-      [this, now](runtime::time::Timer* timer) {
+      [this, now](vexo::time::Timer* timer) {
         active_timers_.Erase(timer);
         processing_timer_ = timer;
         processing_timer_cancelled_ = false;
@@ -129,8 +129,8 @@ void TimerQueue::HandleRead() {
   }
 }
 
-void TimerQueue::ResetTimerfd(runtime::time::Timestamp expiration) {
+void TimerQueue::ResetTimerfd(vexo::time::Timestamp expiration) {
   set_timerfd(timerfd_, expiration);
 }
 
-}  // namespace runtime::net
+}  // namespace vexo::net

@@ -4,14 +4,14 @@
 #include <random>
 #include <vector>
 
-#include "runtime/ds/intrusive_quadheap.h"
+#include "vexo/ds/intrusive_quadheap.h"
 
 namespace {
 
 // Base-hook intrusive node: TimerJob inherits HeapNode<TimerJob>, so the heap
 // recovers TimerJob* via static_cast. Inheriting a non-copyable hook makes
 // TimerJob non-movable, so tests keep them in std::deque (stable addresses).
-struct TimerJob : runtime::ds::HeapNode<TimerJob> {
+struct TimerJob : vexo::ds::HeapNode<TimerJob> {
   TimerJob(int id_, int64_t deadline) : id(id_), deadline_ms(deadline) {}
   int id;
   int64_t deadline_ms;
@@ -24,7 +24,7 @@ bool TimerJobLess(const TimerJob* a, const TimerJob* b) {
   return a->id < b->id;
 }
 
-using TimerHeap = runtime::ds::IntrusiveQuadHeap<TimerJob, &TimerJobLess>;
+using TimerHeap = vexo::ds::IntrusiveQuadHeap<TimerJob, &TimerJobLess>;
 
 bool Expect(bool condition, const char* message) {
   if (!condition) {

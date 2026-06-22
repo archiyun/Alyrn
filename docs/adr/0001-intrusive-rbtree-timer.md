@@ -16,7 +16,7 @@
 [05-06:7b77556](https://github.com/akiba-miku/high-concurrency-runtime/commit/7b775564e98d20ab1e895fe1bfd27d8c2df632c9#diff-4c51713d85ef5b5b11ba8cc9d05af608a89b6ae136d09864a1888be8c45a0bd2): 节点嵌入Timer, 过于耦合但是第一次开始写完， 实现了标准CLRS红黑树。具体看了Nginx红黑树源码。--缺点 过耦合，目前就定时器使用但或许考虑未来的使用。
 [05-11](https://github.com/akiba-miku/high-concurrency-runtime/commit/29e967052022cfa9066b61bf8a85cf1c64a36995): 实现了可插拔红黑树，实现解耦， 形成了初代Member hook.
 后续，缓存了最小值指针。--缺点 考虑有虚函数多继承甚至菱形继承的场景， 内存布局变得复杂， 考虑到前者节点内部缓存了对象指针以逃避这个问题。
-[06-02](https://github.com/akiba-miku/high-concurrency-runtime/commit/744c02cfc7f3e7f60744e12185d64350a016dd6f#diff-4e534af418bb39b0da64637d67499c40320d3d87274954bccb1e54548e9fe7c8): 数据结构和哈希算法统一挪到`runtime::ds`模块。且加入了跨树检查和每树独立的哨兵节点。--缺点 节点占了48字节， 颜色， 当前树的指针， intree标识， 内部的对象指针索引。 太费内存。
+[06-02](https://github.com/akiba-miku/high-concurrency-runtime/commit/744c02cfc7f3e7f60744e12185d64350a016dd6f#diff-4e534af418bb39b0da64637d67499c40320d3d87274954bccb1e54548e9fe7c8): 数据结构和哈希算法统一挪到`vexo::ds`模块。且加入了跨树检查和每树独立的哨兵节点。--缺点 节点占了48字节， 颜色， 当前树的指针， intree标识， 内部的对象指针索引。 太费内存。
 [06-10](https://github.com/akiba-miku/high-concurrency-runtime/commit/d276766ca18d0ec961a967e85f7adaf951b57bf6#diff-4e534af418bb39b0da64637d67499c40320d3d87274954bccb1e54548e9fe7c8): 面试后的几天，了解到CRTP的设计模式，改写成 base hook, 指针位压缩， 哨兵缓存， Tag支持挂多棵树， 支持多继承base hook。 --目前暂用， 考虑加入DEBUG下加入宏。
 
 节点占了48字节， 颜色， 当前树的指针， intree标识。 太费内存。

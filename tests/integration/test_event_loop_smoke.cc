@@ -4,8 +4,8 @@
 #include <thread>
 #include <vector>
 
-#include "runtime/net/event_loop.h"
-#include "runtime/time/timestamp.h"
+#include "vexo/net/event_loop.h"
+#include "vexo/time/timestamp.h"
 
 namespace {
 
@@ -20,7 +20,7 @@ bool Expect(bool condition, const char* message) {
 }
 
 bool TestRunInLoopExecutesImmediately() {
-    runtime::net::EventLoop loop;
+    vexo::net::EventLoop loop;
     bool called = false;
     std::thread::id callback_thread;
 
@@ -35,7 +35,7 @@ bool TestRunInLoopExecutesImmediately() {
 }
 
 bool TestQueueInLoopWakesLoop() {
-    std::promise<runtime::net::EventLoop*> ready_promise;
+    std::promise<vexo::net::EventLoop*> ready_promise;
     std::promise<std::thread::id> callback_thread_promise;
     std::promise<void> exited_promise;
 
@@ -44,13 +44,13 @@ bool TestQueueInLoopWakesLoop() {
     auto exited_future = exited_promise.get_future();
 
     std::thread loop_thread([&] {
-        runtime::net::EventLoop loop;
+        vexo::net::EventLoop loop;
         ready_promise.set_value(&loop);
         loop.Loop();
         exited_promise.set_value();
     });
 
-    runtime::net::EventLoop* loop = ready_future.get();
+    vexo::net::EventLoop* loop = ready_future.get();
     loop->QueueInLoop([&] {
         callback_thread_promise.set_value(std::this_thread::get_id());
         loop->Quit();
@@ -73,7 +73,7 @@ bool TestQueueInLoopWakesLoop() {
 }
 
 bool TestNestedQueueInLoopSchedulesNextTurn() {
-    std::promise<runtime::net::EventLoop*> ready_promise;
+    std::promise<vexo::net::EventLoop*> ready_promise;
     std::promise<void> nested_functor_promise;
     std::promise<void> exited_promise;
 
@@ -82,13 +82,13 @@ bool TestNestedQueueInLoopSchedulesNextTurn() {
     auto exited_future = exited_promise.get_future();
 
     std::thread loop_thread([&] {
-        runtime::net::EventLoop loop;
+        vexo::net::EventLoop loop;
         ready_promise.set_value(&loop);
         loop.Loop();
         exited_promise.set_value();
     });
 
-    runtime::net::EventLoop* loop = ready_future.get();
+    vexo::net::EventLoop* loop = ready_future.get();
     loop->QueueInLoop([&] {
         loop->QueueInLoop([&] {
             nested_functor_promise.set_value();
@@ -109,23 +109,23 @@ bool TestNestedQueueInLoopSchedulesNextTurn() {
 }
 
 bool TestRepeatingTimerCanCancelItself() {
-    std::promise<runtime::net::EventLoop*> ready_promise;
+    std::promise<vexo::net::EventLoop*> ready_promise;
     std::promise<void> exited_promise;
 
     auto ready_future = ready_promise.get_future();
     auto exited_future = exited_promise.get_future();
 
     int fire_count = 0;
-    runtime::time::TimerId timer_id;
+    vexo::time::TimerId timer_id;
 
     std::thread loop_thread([&] {
-        runtime::net::EventLoop loop;
+        vexo::net::EventLoop loop;
         ready_promise.set_value(&loop);
         loop.Loop();
         exited_promise.set_value();
     });
 
-    runtime::net::EventLoop* loop = ready_future.get();
+    vexo::net::EventLoop* loop = ready_future.get();
     loop->QueueInLoop([&] {
         timer_id = loop->RunEvery(0.01, [&] {
             ++fire_count;
@@ -149,10 +149,10 @@ bool TestRepeatingTimerCanCancelItself() {
 }
 
 bool TestSameDeadlineTimersKeepSequenceOrder() {
-    runtime::net::EventLoop loop;
+    vexo::net::EventLoop loop;
     std::vector<int> fired;
     const auto deadline =
-        runtime::time::AddTime(runtime::time::Timestamp::Now(), 0.01);
+        vexo::time::AddTime(vexo::time::Timestamp::Now(), 0.01);
 
     loop.RunAt(deadline, [&] { fired.push_back(1); });
     loop.RunAt(deadline, [&] { fired.push_back(2); });
@@ -167,7 +167,7 @@ bool TestSameDeadlineTimersKeepSequenceOrder() {
 }
 
 bool TestCancelEarliestKeepsNextTimerScheduled() {
-    runtime::net::EventLoop loop;
+    vexo::net::EventLoop loop;
     bool cancelled_timer_fired = false;
     bool next_timer_fired = false;
     bool timed_out = false;
@@ -194,7 +194,7 @@ bool TestCancelEarliestKeepsNextTimerScheduled() {
 }
 
 bool TestStaleTimerIdCannotCancelReplacement() {
-    runtime::net::EventLoop loop;
+    vexo::net::EventLoop loop;
     bool replacement_fired = false;
     bool timed_out = false;
 

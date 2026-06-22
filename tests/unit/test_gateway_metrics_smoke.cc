@@ -1,4 +1,4 @@
-// Smoke test for runtime::metrics primitives and GatewayMetrics aggregator.
+// Smoke test for vexo::metrics primitives and GatewayMetrics aggregator.
 // 不依赖 GTest, 用断言风格直接验证.
 
 #include <cassert>
@@ -8,9 +8,9 @@
 #include <thread>
 #include <vector>
 
-#include "runtime/metrics/gateway_metrics.h"
+#include "vexo/metrics/gateway_metrics.h"
 
-namespace m = runtime::metrics;
+namespace m = vexo::metrics;
 
 static void test_counter_basics() {
   m::Counter c;

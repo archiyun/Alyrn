@@ -1,8 +1,8 @@
 // demo_echo_server.cc — 纯 net 层 HTTP/1.1 echo server
 //
 // 适合: 如果觉得HTTP层写得太重了， 或者只想用项目网络层进行开发学习
-// 只引入 runtime_net（TcpServer / Buffer / EventLoop），
-// 不引入 runtime_http，目的是单独压测网络层本身。
+// 只引入 vexo_net（TcpServer / Buffer / EventLoop），
+// 不引入 vexo_http，目的是单独压测网络层本身。
 // 
 //
 // 手动在 MessageCallback 里做最小 HTTP/1.1 解析：
@@ -62,15 +62,15 @@
 #include <string_view>
 #include <thread>
 
-#include "runtime/log/logger.h"
-#include "runtime/net/buffer.h"
-#include "runtime/net/event_loop.h"
-#include "runtime/net/inet_address.h"
-#include "runtime/net/tcp_connection.h"
-#include "runtime/net/tcp_server.h"
-#include "runtime/time/timestamp.h"
+#include "vexo/log/logger.h"
+#include "vexo/net/buffer.h"
+#include "vexo/net/event_loop.h"
+#include "vexo/net/inet_address.h"
+#include "vexo/net/tcp_connection.h"
+#include "vexo/net/tcp_server.h"
+#include "vexo/time/timestamp.h"
 
-using TcpConnectionPtr = std::shared_ptr<runtime::net::TcpConnection>;
+using TcpConnectionPtr = std::shared_ptr<vexo::net::TcpConnection>;
 
 static std::atomic<long long> g_requests{0};
 static std::atomic<long long> g_conns{0};
@@ -105,8 +105,8 @@ static std::size_t ParseContentLength(std::string_view headers) {
 // 同一个 TcpConnection 在 keep-alive 下会连续收到多个 HTTP 请求，
 // 全部放在同一个 Buffer 里——用 while 循环一次性处理完。
 static void OnMessage(const TcpConnectionPtr& conn,
-                      runtime::net::Buffer& buf,
-                      runtime::time::Timestamp) {
+                      vexo::net::Buffer& buf,
+                      vexo::time::Timestamp) {
     while (true) {
         // 1. 等 header 完整（必须看到 \r\n\r\n）
         const char* header_end = buf.FindCRLFCRLF();
@@ -155,17 +155,17 @@ int main() {
   std::signal(SIGPIPE, SIG_IGN);
 
   // -- 初始化日志（写到 echo_server.log，可 tail -f 实时查看） --
-  runtime::log::Logger::Instance().Init(
+  vexo::log::Logger::Instance().Init(
       "echo_server",
-      runtime::log::LogLevel::INFO,
+      vexo::log::LogLevel::INFO,
       /*flush_interval_ms=*/1000,
       /*roll_size=*/10 * 1024 * 1024);
 
   // -- 构建服务器 --
-  runtime::net::EventLoop main_loop;
-  runtime::net::TcpServer server(
+  vexo::net::EventLoop main_loop;
+  vexo::net::TcpServer server(
     &main_loop,
-    runtime::net::InetAddress(port),
+    vexo::net::InetAddress(port),
     "NetEchoServer");
   
     server.set_thread_num(io_threads);

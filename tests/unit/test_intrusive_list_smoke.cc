@@ -12,10 +12,10 @@
 #include <random>
 #include <vector>
 
-#include "runtime/ds/intrusive_list.h"
+#include "vexo/ds/intrusive_list.h"
 
-using runtime::ds::IntrusiveList;
-using runtime::ds::ListNode;
+using vexo::ds::IntrusiveList;
+using vexo::ds::ListNode;
 
 // Element with a stable identity (id) used to match nodes against oracle values.
 struct Item : ListNode<Item> {

@@ -6,15 +6,15 @@
 
 #include <cstring>
 
-#include "runtime/net/buffer.h"
+#include "vexo/net/buffer.h"
 
-namespace runtime::net {
+namespace vexo::net {
 
 Buffer::Buffer(std::size_t initial_size)
   : buffer_(kCheapPrepend + initial_size),
     reader_index_(kCheapPrepend),
     writer_index_(kCheapPrepend) {
-  RUNTIME_ASSERT(reader_index_ == writer_index_, "buffer must start empty");
+  VEXO_ASSERT(reader_index_ == writer_index_, "buffer must start empty");
   AssertInvariant();
 }
 
@@ -76,4 +76,4 @@ void Buffer::MakeSpace(std::size_t len) {
   AssertInvariant();
 }
 
-}  // namespace runtime::net
+}  // namespace vexo::net
