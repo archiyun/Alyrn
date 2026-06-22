@@ -22,7 +22,7 @@ L3  gateway policy and orchestration
                          |
                          v
 L2  execution, transport, and protocol
-    task / coro / net / uring / http
+    task / net / uring / http
                          |
                          v
 L1  process services and value utilities
@@ -48,7 +48,6 @@ about higher-layer policy.
 | `include/runtime/log`, `src/log` | L1 | Process logging; may depend on base and time. |
 | `include/runtime/metrics` | L1 plus one L3 leak | Generic metrics are L1. `gateway_metrics.h` belongs under gateway. |
 | `include/runtime/task`, `src/task` | L2 | Blocking/thread-pool execution. Must remain independent of net. |
-| `include/runtime/coro` | L2 | Coroutine execution utilities. |
 | `include/runtime/net`, `src/net` | L2 | Reactor, sockets, channels, timers bound to EventLoop, TCP lifecycle. |
 | `include/runtime/uring`, `src/uring` | L2 | Optional I/O backend. It may reuse net value types but must not expose gateway policy. |
 | `include/runtime/http`, `src/http` | L2 | HTTP parser, router, request/response, and server adapter over net/task. |

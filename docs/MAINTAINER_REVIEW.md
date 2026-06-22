@@ -16,7 +16,7 @@ semantic leaks, and insufficiently explicit lifetime contracts.
 | TTL/LRU cache under `memory` | L0/L1 mixed | It depends on wall-clock `Timestamp`; move cache policy to L1 or inject a clock. |
 | `time` | L1 | Correctly independent of net. Scheduling still uses wall-clock timestamps while timerfd uses a monotonic clock. |
 | `log`, generic `metrics` | L1 | Correct, except `gateway_metrics.h` is gateway policy in a generic namespace. |
-| `task`, `coro`, `net`, `http` | L2 | Direction is mostly correct. `task` and `net` are peers; `http` is their integration layer. |
+| `task`, `net`, `http` | L2 | Direction is mostly correct. `task` and `net` are peers; `http` is their integration layer. |
 | `gateway` | L3 | All gateway responsibilities are flattened into one directory and several header-only types. |
 | examples/tests/benchmarks | L4 | Correct consumers, but the human test map is already stale in places. |
 
@@ -62,7 +62,6 @@ include/runtime/
   log/
   metrics/                # generic primitives only
   task/
-  coro/
   net/
     backend/
   http/

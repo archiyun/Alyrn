@@ -294,7 +294,7 @@ Notes:
 │   ├── memory/      # MemoryPool, ObjectPool
 │   ├── metrics/     # Counter, Gauge, Histogram, Registry
 │   ├── net/         # EventLoop, TcpServer, Channel, Poller, Buffer, TimerQueue
-│   ├── task/        # Scheduler, ThreadPool, Task, WorkQueue, coro
+│   ├── task/        # Scheduler, ThreadPool, Task, WorkQueue
 │   ├── time/        # Timestamp, Timer, TimerId, TimerTree
 │   └── trace/       # TraceId, LifecycleTrace
 ├── src/             # Implementations (mirrors include layout)

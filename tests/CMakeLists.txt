@@ -436,7 +436,7 @@ if(GTest_FOUND)
             runtime_task
     )
 
-    gtest_discover_tests(runtime_unit_tests)
+    gtest_discover_tests(runtime_unit_tests DISCOVERY_MODE PRE_TEST)
 
     set(INTEGRATION_TEST_SOURCES
         integration/test_event_loop.cc
@@ -454,7 +454,7 @@ if(GTest_FOUND)
             runtime_http
     )
 
-    gtest_discover_tests(runtime_integration_tests)
+    gtest_discover_tests(runtime_integration_tests DISCOVERY_MODE PRE_TEST)
 else()
     message(STATUS "GTest not found; skipping gtest-based unit tests.")
 endif()
