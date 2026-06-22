@@ -4,10 +4,10 @@
 #include <thread>
 #include <vector>
 
-#include "runtime/memory/memory_pool.h"
+#include "vexo/memory/memory_pool.h"
 
 TEST(MemoryPoolTest, AllocateAndDeallocateReuseSlots) {
-    runtime::memory::MemoryPool<sizeof(int), alignof(int), 4> pool;
+    vexo::memory::MemoryPool<sizeof(int), alignof(int), 4> pool;
 
     void* a = pool.Allocate();
     void* b = pool.Allocate();
@@ -27,7 +27,7 @@ TEST(MemoryPoolTest, AllocateAndDeallocateReuseSlots) {
 }
 
 TEST(MemoryPoolTest, ReturnsNullWhenExhausted) {
-    runtime::memory::MemoryPool<sizeof(int), alignof(int), 2> pool;
+    vexo::memory::MemoryPool<sizeof(int), alignof(int), 2> pool;
 
     void* a = pool.Allocate();
     void* b = pool.Allocate();
@@ -41,7 +41,7 @@ TEST(MemoryPoolTest, ReturnsNullWhenExhausted) {
 }
 
 TEST(MemoryPoolTest, OwnsRecognizesPoolAddresses) {
-    runtime::memory::MemoryPool<sizeof(std::uint64_t), alignof(std::uint64_t), 4> pool;
+    vexo::memory::MemoryPool<sizeof(std::uint64_t), alignof(std::uint64_t), 4> pool;
 
     void* p = pool.Allocate();
     ASSERT_NE(p, nullptr);
@@ -56,7 +56,7 @@ TEST(MemoryPoolTest, OwnsRecognizesPoolAddresses) {
 }
 
 TEST(MemoryPoolTest, ConcurrentAllocateAndDeallocatePreservesCapacity) {
-    runtime::memory::MemoryPool<sizeof(int), alignof(int), 256> pool;
+    vexo::memory::MemoryPool<sizeof(int), alignof(int), 256> pool;
     constexpr int kThreads = 8;
     constexpr int kIterations = 2000;
 

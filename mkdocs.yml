@@ -1,5 +1,5 @@
 site_name: high-concurrency-runtime
-site_description: C++20 high-concurrency Linux network runtime documentation
+site_description: C++23 high-concurrency Linux network runtime documentation
 site_url: https://akiba-miku.github.io/high-concurrency-runtime/
 repo_url: https://github.com/akiba-miku/high-concurrency-runtime
 repo_name: akiba-miku/high-concurrency-runtime

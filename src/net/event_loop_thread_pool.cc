@@ -1,13 +1,13 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/net/event_loop_thread_pool.h"
+#include "vexo/net/event_loop_thread_pool.h"
 
 #include <cassert>
 
-#include "runtime/net/event_loop.h"
-#include "runtime/net/net_assert.h"
+#include "vexo/net/event_loop.h"
+#include "vexo/net/net_assert.h"
 
-namespace runtime::net {
+namespace vexo::net {
 
 class EventLoop;
 
@@ -53,7 +53,7 @@ EventLoop* EventLoopThreadPool::GetNextLoop() {
   // next_ is a plain int with no synchronization; the round-robin counter is
   // only safe to advance from the main loop thread (typically Acceptor's
   // NewConnection callback). Off-thread callers would race.
-  RUNTIME_ASSERT(main_loop_->IsInLoopThread(),
+  VEXO_ASSERT(main_loop_->IsInLoopThread(),
                  "GetNextLoop() must be called from the main loop thread");
   assert(started_);
 
@@ -67,4 +67,4 @@ EventLoop* EventLoopThreadPool::GetNextLoop() {
   return loop;
 }
 
-}  // namespace runtime::net
+}  // namespace vexo::net

@@ -12,7 +12,7 @@
 #include <thread>
 #include <vector>
 
-#include "runtime/gateway/rate_limiter.h"
+#include "vexo/gateway/rate_limiter.h"
 
 namespace {
 
@@ -35,9 +35,9 @@ void Passed(const char* name) {
 // ================================================================
 
 bool TestGlobalDisabledAlwaysAllows() {
-  runtime::gateway::RateLimiterConfig cfg;
+  vexo::gateway::RateLimiterConfig cfg;
   cfg.global_enabled = false;
-  runtime::gateway::RateLimiter rl(cfg);
+  vexo::gateway::RateLimiter rl(cfg);
 
   for (int i = 0; i < 10000; ++i) {
     if (!Expect(rl.AllowGlobal(), "global disabled must always allow")) return false;
@@ -51,11 +51,11 @@ bool TestGlobalDisabledAlwaysAllows() {
 // ================================================================
 
 bool TestGlobalEnabledAllowsUpToBurst() {
-  runtime::gateway::RateLimiterConfig cfg;
+  vexo::gateway::RateLimiterConfig cfg;
   cfg.global_enabled = true;
   cfg.global_rate = 0.001; // 极低速率，确保不会在测试期间补充
   cfg.global_burst = 3.0;
-  runtime::gateway::RateLimiter rl(cfg);
+  vexo::gateway::RateLimiter rl(cfg);
 
   // burst=3，初始令牌满，前 3 个请求放行
   if (!Expect(rl.AllowGlobal(), "request 1/3 must pass")) return false;
@@ -74,11 +74,11 @@ bool TestGlobalEnabledAllowsUpToBurst() {
 // ================================================================
 
 bool TestGlobalTokenRefillAfterTime() {
-  runtime::gateway::RateLimiterConfig cfg;
+  vexo::gateway::RateLimiterConfig cfg;
   cfg.global_enabled = true;
   cfg.global_rate = 200.0; // 200 token/s = 1 token per 5ms
   cfg.global_burst = 1.0;
-  runtime::gateway::RateLimiter rl(cfg);
+  vexo::gateway::RateLimiter rl(cfg);
 
   // 消耗掉唯一令牌
   if (!Expect(rl.AllowGlobal(), "initial token must pass")) return false;
@@ -98,9 +98,9 @@ bool TestGlobalTokenRefillAfterTime() {
 // ================================================================
 
 bool TestPerIPDisabledAlwaysAllows() {
-  runtime::gateway::RateLimiterConfig cfg;
+  vexo::gateway::RateLimiterConfig cfg;
   cfg.per_ip_enabled = false;
-  runtime::gateway::RateLimiter rl(cfg);
+  vexo::gateway::RateLimiter rl(cfg);
 
   for (int i = 0; i < 1000; ++i) {
     if (!Expect(rl.AllowPerIP("192.168.1.1"), "per-ip disabled must always allow")) return false;
@@ -114,11 +114,11 @@ bool TestPerIPDisabledAlwaysAllows() {
 // ================================================================
 
 bool TestPerIPEnabledAllowsUpToBurst() {
-  runtime::gateway::RateLimiterConfig cfg;
+  vexo::gateway::RateLimiterConfig cfg;
   cfg.per_ip_enabled = true;
   cfg.per_ip_rate = 0.001;
   cfg.per_ip_burst = 2.0;
-  runtime::gateway::RateLimiter rl(cfg);
+  vexo::gateway::RateLimiter rl(cfg);
 
   if (!Expect(rl.AllowPerIP("10.0.0.1"), "ip request 1/2 must pass")) return false;
   if (!Expect(rl.AllowPerIP("10.0.0.1"), "ip request 2/2 must pass")) return false;
@@ -133,11 +133,11 @@ bool TestPerIPEnabledAllowsUpToBurst() {
 // ================================================================
 
 bool TestDifferentIPsAreIndependent() {
-  runtime::gateway::RateLimiterConfig cfg;
+  vexo::gateway::RateLimiterConfig cfg;
   cfg.per_ip_enabled = true;
   cfg.per_ip_rate = 0.001;
   cfg.per_ip_burst = 1.0;
-  runtime::gateway::RateLimiter rl(cfg);
+  vexo::gateway::RateLimiter rl(cfg);
 
   // 两个 IP 各自消耗自己的 burst
   if (!Expect(rl.AllowPerIP("1.1.1.1"), "ip1 first must pass")) return false;
@@ -156,11 +156,11 @@ bool TestDifferentIPsAreIndependent() {
 // ================================================================
 
 bool TestPerIPTokenRefillAfterTime() {
-  runtime::gateway::RateLimiterConfig cfg;
+  vexo::gateway::RateLimiterConfig cfg;
   cfg.per_ip_enabled = true;
   cfg.per_ip_rate = 200.0; // 1 token per 5ms
   cfg.per_ip_burst = 1.0;
-  runtime::gateway::RateLimiter rl(cfg);
+  vexo::gateway::RateLimiter rl(cfg);
 
   if (!Expect(rl.AllowPerIP("3.3.3.3"), "initial token must pass")) return false;
   if (!Expect(!rl.AllowPerIP("3.3.3.3"), "must be rejected after exhaustion")) return false;
@@ -178,14 +178,14 @@ bool TestPerIPTokenRefillAfterTime() {
 // ================================================================
 
 bool TestBothGlobalAndPerIPMustPass() {
-  runtime::gateway::RateLimiterConfig cfg;
+  vexo::gateway::RateLimiterConfig cfg;
   cfg.global_enabled = true;
   cfg.global_rate = 0.001;
   cfg.global_burst = 10.0; // 全局桶宽松
   cfg.per_ip_enabled = true;
   cfg.per_ip_rate = 0.001;
   cfg.per_ip_burst = 1.0; // per-ip 桶严格
-  runtime::gateway::RateLimiter rl(cfg);
+  vexo::gateway::RateLimiter rl(cfg);
 
   // 第 1 个：global OK, per-ip OK → 通过
   bool global_ok = rl.AllowGlobal();
@@ -206,11 +206,11 @@ bool TestBothGlobalAndPerIPMustPass() {
 // ================================================================
 
 bool TestConcurrentGlobalRateLimiter() {
-  runtime::gateway::RateLimiterConfig cfg;
+  vexo::gateway::RateLimiterConfig cfg;
   cfg.global_enabled = true;
   cfg.global_rate = 0.001;
   cfg.global_burst = 50.0;
-  runtime::gateway::RateLimiter rl(cfg);
+  vexo::gateway::RateLimiter rl(cfg);
 
   std::atomic<int> allowed{0};
   std::atomic<int> rejected{0};
@@ -239,11 +239,11 @@ bool TestConcurrentGlobalRateLimiter() {
 // ================================================================
 
 bool TestConcurrentPerIPSameIP() {
-  runtime::gateway::RateLimiterConfig cfg;
+  vexo::gateway::RateLimiterConfig cfg;
   cfg.per_ip_enabled = true;
   cfg.per_ip_rate = 0.001;
   cfg.per_ip_burst = 10.0;
-  runtime::gateway::RateLimiter rl(cfg);
+  vexo::gateway::RateLimiter rl(cfg);
 
   std::atomic<int> allowed{0};
 
@@ -269,11 +269,11 @@ bool TestConcurrentPerIPSameIP() {
 // ================================================================
 
 bool TestConcurrentPerIPDifferentIPs() {
-  runtime::gateway::RateLimiterConfig cfg;
+  vexo::gateway::RateLimiterConfig cfg;
   cfg.per_ip_enabled = true;
   cfg.per_ip_rate = 0.001;
   cfg.per_ip_burst = 1.0;
-  runtime::gateway::RateLimiter rl(cfg);
+  vexo::gateway::RateLimiter rl(cfg);
 
   std::atomic<int> allowed{0};
   constexpr int kNumIPs = 8;
@@ -302,12 +302,12 @@ bool TestConcurrentPerIPDifferentIPs() {
 // per_ip_max_buckets. Eviction is loss-less: a re-created bucket starts full
 // too, so a previously-seen IP behaves identically afterwards.
 bool TestPerIPEvictsIdleFullBuckets() {
-  runtime::gateway::RateLimiterConfig cfg;
+  vexo::gateway::RateLimiterConfig cfg;
   cfg.per_ip_enabled = true;
   cfg.per_ip_rate = 1000.0;    // full_ms = burst/rate*1000 = 1ms (refills fast)
   cfg.per_ip_burst = 1.0;
   cfg.per_ip_max_buckets = 4;  // small cap so eviction is easy to trigger
-  runtime::gateway::RateLimiter rl(cfg);
+  vexo::gateway::RateLimiter rl(cfg);
 
   for (int i = 0; i < 4; ++i) {
     rl.AllowPerIP("10.0.0." + std::to_string(i));
@@ -335,12 +335,12 @@ bool TestPerIPEvictsIdleFullBuckets() {
 // cap is full of active buckets, a new identity is rejected rather than growing
 // memory or silently resetting an existing client's limit.
 bool TestPerIPEvictionKeepsActiveBuckets() {
-  runtime::gateway::RateLimiterConfig cfg;
+  vexo::gateway::RateLimiterConfig cfg;
   cfg.per_ip_enabled = true;
   cfg.per_ip_rate = 0.001;  // full_ms ~= 1e6 ms: effectively never refills
   cfg.per_ip_burst = 1.0;
   cfg.per_ip_max_buckets = 2;
-  runtime::gateway::RateLimiter rl(cfg);
+  vexo::gateway::RateLimiter rl(cfg);
 
   // Drain both buckets (token -> 0); they are nowhere near refilled.
   if (!Expect(rl.AllowPerIP("a"), "a: first token passes")) return false;

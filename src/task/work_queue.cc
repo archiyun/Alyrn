@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/task/detail/work_queue.h"
+#include "vexo/task/detail/work_queue.h"
 
-namespace runtime::task {
+namespace vexo::task {
 
 WorkQueue::WorkQueue(std::size_t max_size) : max_size_(max_size) {}
 
@@ -53,4 +53,4 @@ void WorkQueue::Shutdown() {
   cv_.notify_all();
 }
 
-}  // namespace runtime::task
+}  // namespace vexo::task

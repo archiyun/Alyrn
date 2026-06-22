@@ -2,18 +2,18 @@
 
 **English** | [中文](README.zh-CN.md) | [Documentation](https://akiba-miku.github.io/high-concurrency-runtime/)
 
-A C++20 high-concurrency network runtime for Linux. The project is layered — you can use it as a full **reverse-proxy gateway**, as a plain **HTTP application server**, as a raw **TCP/event-loop framework**, or as individual **data-structure / allocator / scheduler** libraries. Every upper layer is built on top of the lower ones with no circular dependencies.
+A C++23 high-concurrency network runtime for Linux. The project is layered — you can use it as a full **reverse-proxy gateway**, as a plain **HTTP application server**, as a raw **TCP/event-loop framework**, or as individual **data-structure / allocator / scheduler** libraries. Every upper layer is built on top of the lower ones with no circular dependencies.
 
 ```
-Gateway Layer  ─── runtime::gateway
-HTTP Layer     ─── runtime::http        (depends on net)
-Net Layer      ─── runtime::net         (depends on foundation)
-Foundation     ─── runtime::base / ds / log / time / task / memory / metrics
+Gateway Layer  ─── vexo::gateway
+HTTP Layer     ─── vexo::http        (depends on net)
+Net Layer      ─── vexo::net         (depends on foundation)
+Foundation     ─── vexo::base / ds / log / time / task / memory / metrics
 ```
 
 ## Features
 
-### Gateway (`runtime::gateway`)
+### Gateway (`vexo::gateway`)
 
 - **Reverse proxy** — transparent HTTP forwarding to upstream backends over persistent connections
 - **Upstream management** — `UpstreamRegistry` + `Upstream` + `UpstreamPeer`; add backends at runtime
@@ -24,16 +24,16 @@ Foundation     ─── runtime::base / ds / log / time / task / memory / metri
 - **Direct routes** — register synchronous handlers on the gateway without touching `HttpServer`
 - **Code-driven configuration** — no config files; upstreams and routes are wired in C++ at startup
 
-### HTTP server (`runtime::http`)
+### HTTP server (`vexo::http`)
 
 - `epoll`-based event loop, One-Loop-Per-Thread I/O threading
 - Incremental HTTP/1.1 parser (`HttpContext`) — zero intermediate copies, keep-alive via `Reset()`
 - Trie router with static/dynamic segments and path parameters (`:param` syntax)
 
-### Networking (`runtime::net`)
+### Networking (`vexo::net`)
 
 - `EventLoop`, `EpollPoller`, `Channel`, `TcpServer`, `TcpConnection`, `Buffer`
-- Timer queue driven by `timerfd`, indexing `runtime::time::Timer` objects through `TimerTree`
+- Timer queue driven by `timerfd`, indexing `vexo::time::Timer` objects through `TimerTree`
 - Level-triggered and edge-triggered epoll modes
 
 ### Foundation
@@ -41,7 +41,7 @@ Foundation     ─── runtime::base / ds / log / time / task / memory / metri
 - Asynchronous double-buffered logger
 - `MemoryPool`, `ObjectPool` allocators
 - `Scheduler`, `ThreadPool`, `WorkQueue` with cooperative cancellation
-- `runtime::ds::IntrusiveRBTree<T, kMember, kLess>` and `IntrusiveQuadHeap` — generic intrusive data structures with zero per-node heap allocation
+- `vexo::ds::IntrusiveRBTree<T, kMember, kLess>` and `IntrusiveQuadHeap` — generic intrusive data structures with zero per-node heap allocation
 - `Counter`, `Gauge`, `Histogram`, `Registry` metrics interfaces
 
 ## Requirements
@@ -50,12 +50,12 @@ Required:
 
 - Linux (uses `epoll`)
 - CMake ≥ 3.20
-- GCC 12+ or Clang 15+ with C++20 support
+- GCC 13+ or Clang 17+ with C++23 support
 - POSIX threads
 
 Optional:
 
-- GoogleTest — if found by CMake, `runtime_unit_tests` and `runtime_integration_tests` are built automatically
+- GoogleTest — if found by CMake, `vexo_unit_tests` and `vexo_integration_tests` are built automatically
 - `liburing` — for the `io_uring_echo` example only
 On Ubuntu / Debian:
 
@@ -146,50 +146,50 @@ Add the project as a CMake subdirectory and link only the layer you need:
 add_subdirectory(high-concurrency-runtime)
 
 # Full gateway
-target_link_libraries(my_gw    PRIVATE runtime_gateway)
+target_link_libraries(my_gw    PRIVATE vexo_gateway)
 
 # HTTP server only
-target_link_libraries(my_http  PRIVATE runtime_http)
+target_link_libraries(my_http  PRIVATE vexo_http)
 
 # Raw TCP / event loop only
-target_link_libraries(my_tcp   PRIVATE runtime_net)
+target_link_libraries(my_tcp   PRIVATE vexo_net)
 
 # Allocators / scheduler / data structures
-target_link_libraries(my_util  PRIVATE runtime_foundation)
+target_link_libraries(my_util  PRIVATE vexo_foundation)
 ```
 
 ### Gateway example
 
 ```cpp
-#include "runtime/gateway/gateway_server.h"
-#include "runtime/gateway/upstream.h"
-#include "runtime/gateway/upstream_peer.h"
-#include "runtime/gateway/upstream_registry.h"
-#include "runtime/net/event_loop.h"
-#include "runtime/net/inet_address.h"
+#include "vexo/gateway/gateway_server.h"
+#include "vexo/gateway/upstream.h"
+#include "vexo/gateway/upstream_peer.h"
+#include "vexo/gateway/upstream_registry.h"
+#include "vexo/net/event_loop.h"
+#include "vexo/net/inet_address.h"
 
 int main() {
-    runtime::gateway::UpstreamRegistry reg;
+    vexo::gateway::UpstreamRegistry reg;
 
-    auto us = std::make_shared<runtime::gateway::Upstream>(
-        runtime::gateway::UpstreamConfig{.name = "backend"});
+    auto us = std::make_shared<vexo::gateway::Upstream>(
+        vexo::gateway::UpstreamConfig{.name = "backend"});
 
-    us->AddPeer(std::make_shared<runtime::gateway::UpstreamPeer>(
-        runtime::gateway::UpstreamPeerConfig{.name = "127.0.0.1:9001",
+    us->AddPeer(std::make_shared<vexo::gateway::UpstreamPeer>(
+        vexo::gateway::UpstreamPeerConfig{.name = "127.0.0.1:9001",
                                               .host = "127.0.0.1", .port = 9001}));
-    us->AddPeer(std::make_shared<runtime::gateway::UpstreamPeer>(
-        runtime::gateway::UpstreamPeerConfig{.name = "127.0.0.1:9002",
+    us->AddPeer(std::make_shared<vexo::gateway::UpstreamPeer>(
+        vexo::gateway::UpstreamPeerConfig{.name = "127.0.0.1:9002",
                                               .host = "127.0.0.1", .port = 9002}));
     reg.Add(us);
 
-    runtime::net::EventLoop loop;
-    runtime::gateway::GatewayServer gw(&loop, runtime::net::InetAddress(8080),
+    vexo::net::EventLoop loop;
+    vexo::gateway::GatewayServer gw(&loop, vexo::net::InetAddress(8080),
                                        "gw", reg);
     gw.set_thread_num(4);
 
     // Direct route
-    gw.Get("/healthz", [](const runtime::http::HttpRequest&,
-                          runtime::http::HttpResponse& resp) {
+    gw.Get("/healthz", [](const vexo::http::HttpRequest&,
+                          vexo::http::HttpResponse& resp) {
         resp.set_content_type("application/json");
         resp.set_body("{\"status\":\"ok\"}");
     });
@@ -208,19 +208,19 @@ int main() {
 ### HTTP server example
 
 ```cpp
-#include "runtime/http/http_server.h"
-#include "runtime/net/event_loop.h"
-#include "runtime/net/inet_address.h"
+#include "vexo/http/http_server.h"
+#include "vexo/net/event_loop.h"
+#include "vexo/net/inet_address.h"
 
 int main() {
-    runtime::net::EventLoop loop;
-    runtime::http::HttpServer server(&loop,
-        runtime::net::InetAddress(8080, "0.0.0.0"), "my-server");
+    vexo::net::EventLoop loop;
+    vexo::http::HttpServer server(&loop,
+        vexo::net::InetAddress(8080, "0.0.0.0"), "my-server");
     server.set_thread_num(4);
 
     server.Get("/api/users/:id",
-        [](const runtime::http::HttpRequest& req,
-           runtime::http::HttpResponse& resp) {
+        [](const vexo::http::HttpRequest& req,
+           vexo::http::HttpResponse& resp) {
             resp.set_content_type("application/json; charset=utf-8");
             resp.set_body("{\"id\":\"" + std::string(req.path_param("id")) + "\"}");
         });
@@ -233,11 +233,11 @@ int main() {
 ### Task scheduler example
 
 ```cpp
-#include "runtime/task/scheduler.h"
+#include "vexo/task/scheduler.h"
 #include <iostream>
 
 int main() {
-    runtime::task::Scheduler scheduler(4);
+    vexo::task::Scheduler scheduler(4);
     auto handle = scheduler.Submit([] { std::cout << "hello\n"; });
     handle.Wait();
 }
@@ -247,11 +247,11 @@ Library targets:
 
 | Target | Provides |
 |---|---|
-| `runtime_gateway` | Gateway, proxy, load balancers, health checker |
-| `runtime_http` | HTTP server, Trie router, request/response, context |
-| `runtime_net` | EventLoop, TcpServer, Channel, Poller, Buffer, TimerQueue |
-| `runtime_task` | Scheduler, ThreadPool, Task, WorkQueue |
-| `runtime_foundation` | Logger, Timestamp, MemoryPool, ObjectPool, `runtime::ds`, metrics |
+| `vexo_gateway` | Gateway, proxy, load balancers, health checker |
+| `vexo_http` | HTTP server, Trie router, request/response, context |
+| `vexo_net` | EventLoop, TcpServer, Channel, Poller, Buffer, TimerQueue |
+| `vexo_task` | Scheduler, ThreadPool, Task, WorkQueue |
+| `vexo_foundation` | Logger, Timestamp, MemoryPool, ObjectPool, `vexo::ds`, metrics |
 
 ## Run Tests
 
@@ -273,19 +273,19 @@ Notable tests:
 | `quad_heap_test` | intrusive 4-ary heap insert, erase, duplicate insert, cross-heap safety, and ordered `PopWhile()` |
 | `http_smoke_test` | HTTP parsing and routing (no GTest required) |
 | `buffer_smoke_test` | Buffer read / write / prepend |
-| `runtime_unit_tests` | GTest suite: buffer, logger, memory pool, scheduler |
-| `runtime_integration_tests` | GTest suite: event loop, TCP server, HTTP routing, trigger modes |
+| `vexo_unit_tests` | GTest suite: buffer, logger, memory pool, scheduler |
+| `vexo_integration_tests` | GTest suite: event loop, TCP server, HTTP routing, trigger modes |
 
 Notes:
 
 - Smoke tests build without GoogleTest
-- If CMake finds GoogleTest, it also builds `runtime_unit_tests` and `runtime_integration_tests`
+- If CMake finds GoogleTest, it also builds `vexo_unit_tests` and `vexo_integration_tests`
 
 ## Repository Layout
 
 ```text
 .
-├── include/runtime/
+├── include/vexo/
 │   ├── base/        # NonCopyable, CurrentThread
 │   ├── ds/          # IntrusiveRBTree, IntrusiveQuadHeap, MurmurHash3
 │   ├── gateway/     # GatewayServer, Upstream, LoadBalancer, HealthChecker, ProxyPass
@@ -306,23 +306,23 @@ Notes:
 ## Architecture
 
 ```text
-Gateway Layer   runtime::gateway
+Gateway Layer   vexo::gateway
   GatewayServer, UpstreamRegistry, Upstream, UpstreamPeer
   LoadBalancer (RoundRobin / WeightedRoundRobin / LeastConn / Random /
   WeightedRandom / IPHash / ConsistentHash / P2C)
   HealthChecker, ProxyPass, UpstreamConnPool
 
-HTTP Layer      runtime::http
+HTTP Layer      vexo::http
   HttpServer, Router (Trie), HttpContext, HttpRequest, HttpResponse
 
-Net Layer       runtime::net
+Net Layer       vexo::net
   TcpServer, TcpConnection, EventLoop, EpollPoller, Channel
   Buffer, TimerQueue (timerfd-backed)
 
-Foundation      runtime::base / ds / log / time / task / memory / metrics
+Foundation      vexo::base / ds / log / time / task / memory / metrics
   AsyncLogger, Scheduler, ThreadPool
   MemoryPool, ObjectPool
-  runtime::ds::IntrusiveRBTree<T, kMember, kLess>, IntrusiveQuadHeap
+  vexo::ds::IntrusiveRBTree<T, kMember, kLess>, IntrusiveQuadHeap
   Timestamp, Timer, TimerTree, Counter, Gauge, Histogram
 ```
 

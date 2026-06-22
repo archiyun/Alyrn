@@ -9,12 +9,12 @@
 #include <string>
 #include <thread>
 
-#include "runtime/net/event_loop.h"
-#include "runtime/net/inet_address.h"
-#include "runtime/net/net_utils.h"
-#include "runtime/net/tcp_server.h"
+#include "vexo/net/event_loop.h"
+#include "vexo/net/inet_address.h"
+#include "vexo/net/net_utils.h"
+#include "vexo/net/tcp_server.h"
 
-namespace runtime::net {
+namespace vexo::net {
 namespace {
 
 using namespace std::chrono_literals;
@@ -167,7 +167,7 @@ TEST(TcpServerTest, AcceptsConnectionAndEchoesPayloadOnce) {
         });
         server.set_message_callback(
             [](const TcpServer::TcpConnectionPtr& conn, Buffer& buffer,
-               runtime::time::Timestamp) {
+               vexo::time::Timestamp) {
                 conn->Send(buffer.RetrieveAllAsString());
             });
         server.Start();
@@ -194,4 +194,4 @@ TEST(TcpServerTest, AcceptsConnectionAndEchoesPayloadOnce) {
 }
 
 }  // namespace
-}  // namespace runtime::net
+}  // namespace vexo::net

@@ -21,15 +21,15 @@
 #include <thread>
 #include <vector>
 
-#include "runtime/net/event_loop.h"
-#include "runtime/time/timer_id.h"
+#include "vexo/net/event_loop.h"
+#include "vexo/time/timer_id.h"
 
 using clk = std::chrono::steady_clock;
 using ns_t = std::chrono::nanoseconds;
 
 namespace {
 
-void RunInLoopSync(runtime::net::EventLoop& loop, std::function<void()> fn) {
+void RunInLoopSync(vexo::net::EventLoop& loop, std::function<void()> fn) {
   std::mutex mu;
   std::condition_variable cv;
   bool done = false;
@@ -57,14 +57,14 @@ int main(int argc, char** argv) {
 
   std::printf("=== TimerQueue bench  N=%d  (pool cap=512) ===\n\n", N);
 
-  runtime::net::EventLoop loop;
+  vexo::net::EventLoop loop;
   std::thread loop_thr([&loop]() { loop.Loop(); });
 
   // 等 loop 起来
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
   // --- 1) AddTimer 速率(远期 timer,不会立刻触发) ---
-  std::vector<runtime::time::TimerId> ids;
+  std::vector<vexo::time::TimerId> ids;
   ids.reserve(N);
   long long add_ns = 0;
   RunInLoopSync(loop, [&]() {

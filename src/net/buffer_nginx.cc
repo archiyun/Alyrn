@@ -5,9 +5,9 @@
 
 #include <cstring>
 
-#include "runtime/net/buffer.h"
+#include "vexo/net/buffer.h"
 
-namespace runtime::net {
+namespace vexo::net {
 
 namespace {
 
@@ -74,4 +74,4 @@ void Buffer::MakeSpace(std::size_t len) {
 }
 
 
-} // namespace runtime::net
+} // namespace vexo::net

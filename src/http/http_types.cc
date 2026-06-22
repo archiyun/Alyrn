@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/http/http_types.h"
+#include "vexo/http/http_types.h"
 
-namespace runtime::http {
+namespace vexo::http {
 
 std::string_view MethodToString(Method m) noexcept {
   switch (m) {
@@ -57,4 +57,4 @@ std::string_view StatusMessage(StatusCode code) noexcept {
   return "Unknown";
 }
 
-}  // namespace runtime::http
+}  // namespace vexo::http

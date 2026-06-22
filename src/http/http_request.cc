@@ -1,13 +1,13 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/http/http_request.h"
+#include "vexo/http/http_request.h"
 
 #include <utility>
 
 #include "header_utils.h"
-#include "runtime/http/http_types.h"
+#include "vexo/http/http_types.h"
 
-namespace runtime::http {
+namespace vexo::http {
 
 namespace {
 
@@ -24,8 +24,8 @@ bool HeaderNameEquals(std::string_view a, std::string_view b) noexcept {
 }  // namespace
 
 HttpRequest::HttpRequest()
-    : pool_{runtime::memory::Pool::Create()},
-      res_{std::make_unique<runtime::memory::PoolResource>(*pool_)},
+    : pool_{vexo::memory::Pool::Create()},
+      res_{std::make_unique<vexo::memory::PoolResource>(*pool_)},
       path_{res_.get()},
       query_{res_.get()},
       body_{res_.get()},
@@ -146,4 +146,4 @@ void HttpRequest::Reset() {
   receive_time_ = {};
 }
 
-}  // namespace runtime::http
+}  // namespace vexo::http

@@ -1,19 +1,19 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/gateway/gateway_server.h"
+#include "vexo/gateway/gateway_server.h"
 
 #include <array>
 #include <atomic>
 #include <chrono>
 
-#include "runtime/http/http_types.h"
-#include "runtime/log/logger.h"
-#include "runtime/net/event_loop.h"
-#include "runtime/net/io_backend.h"
-#include "runtime/net/reactor_backend.h"
+#include "vexo/http/http_types.h"
+#include "vexo/log/logger.h"
+#include "vexo/net/event_loop.h"
+#include "vexo/net/io_backend.h"
+#include "vexo/net/reactor_backend.h"
 
 
-namespace runtime::gateway {
+namespace vexo::gateway {
 
 namespace {
 // RFC 7230 Section 6.01 hop-by-hop headers. These must not be forwarded
@@ -45,7 +45,7 @@ std::string GenRequestId() {
   return std::string(buf, 33);
 }
 
-void RewriteForUpstream(runtime::http::HttpRequest& req,
+void RewriteForUpstream(vexo::http::HttpRequest& req,
                         const std::string& client_ip,
                         std::string_view scheme,
                         std::string_view gateway_name,
@@ -111,24 +111,24 @@ void RewriteForUpstream(runtime::http::HttpRequest& req,
 
 
 
-GatewayServer::GatewayServer(runtime::net::EventLoop* loop,
-                             const runtime::net::InetAddress& addr,
+GatewayServer::GatewayServer(vexo::net::EventLoop* loop,
+                             const vexo::net::InetAddress& addr,
                              std::string name,
                              UpstreamRegistry& registry,
-                             runtime::net::Backend backend)
+                             vexo::net::Backend backend)
   : base_loop_(loop),
-    server_(runtime::net::MakeServer(backend, loop, addr, std::move(name))),
+    server_(vexo::net::MakeServer(backend, loop, addr, std::move(name))),
     registry_(registry) {
   server_->set_connection_callback(
-    [this](const runtime::net::ConnPtr& conn) { OnConnection(conn); });
+    [this](const vexo::net::ConnPtr& conn) { OnConnection(conn); });
   server_->set_message_callback(
-    [this](const runtime::net::ConnPtr& conn,
-           runtime::net::Buffer& buf,
-           runtime::time::Timestamp ts) { OnMessage(conn, buf, ts); });
+    [this](const vexo::net::ConnPtr& conn,
+           vexo::net::Buffer& buf,
+           vexo::time::Timestamp ts) { OnMessage(conn, buf, ts); });
   // Pre-render the 429 response used by rate limiting to avoid per-request
   // allocation on the hot path.
-  runtime::http::HttpResponse rate_limit_resp(true);
-  rate_limit_resp.set_status_code(runtime::http::StatusCode::TooManyRequests);
+  vexo::http::HttpResponse rate_limit_resp(true);
+  rate_limit_resp.set_status_code(vexo::http::StatusCode::TooManyRequests);
   rate_limit_resp.set_content_type("application/json; charset=utf-8");
   rate_limit_resp.set_body(R"({"error":"rate limit exceeded"})");
   rate_limit_response_429_ = rate_limit_resp.ToString();
@@ -216,9 +216,9 @@ void GatewayServer::EnablePerIPRateLimit(double rate, double burst) {
 void GatewayServer::EnableMetricsEndpoint(std::string_view path) {
   // Register as a direct route and render the current metrics snapshot
   // synchronously in the handler.
-  Get(path, [this](const runtime::http::HttpRequest&,
-                   runtime::http::HttpResponse& resp) {
-    resp.set_status_code(runtime::http::StatusCode::Ok);
+  Get(path, [this](const vexo::http::HttpRequest&,
+                   vexo::http::HttpResponse& resp) {
+    resp.set_status_code(vexo::http::StatusCode::Ok);
     // Content-Type for Prometheus text format 0.0.4.
     resp.set_content_type("text/plain; version=0.0.4; charset=utf-8");
     resp.set_body(metrics_.Render());
@@ -231,7 +231,7 @@ void GatewayServer::Start() {
   LOG_INFO() << "gateway: started";
 }
 
-void GatewayServer::OnConnection(const runtime::net::ConnPtr& conn) {
+void GatewayServer::OnConnection(const vexo::net::ConnPtr& conn) {
   if (conn->Connected()) {
     // ConnCtx contains HttpContext, which is move-only because it owns a pool.
     // Store it behind shared_ptr because std::any requires copyable values.
@@ -244,24 +244,24 @@ void GatewayServer::OnConnection(const runtime::net::ConnPtr& conn) {
   }
 }
 
-void GatewayServer::OnMessage(const runtime::net::ConnPtr& conn,
-                              runtime::net::Buffer& buf,
-                              runtime::time::Timestamp ts) {
+void GatewayServer::OnMessage(const vexo::net::ConnPtr& conn,
+                              vexo::net::Buffer& buf,
+                              vexo::time::Timestamp ts) {
   auto& ctx = *std::any_cast<std::shared_ptr<ConnCtx>&>(conn->context());
-  const runtime::http::ParseStatus parse_status = ctx.http_ctx.ParseRequest(buf, ts);
-  if (parse_status != runtime::http::ParseStatus::Continue &&
-      parse_status != runtime::http::ParseStatus::GotAll) {
-    const runtime::http::StatusCode code =
-        runtime::http::ParseStatusToStatusCode(parse_status);
+  const vexo::http::ParseStatus parse_status = ctx.http_ctx.ParseRequest(buf, ts);
+  if (parse_status != vexo::http::ParseStatus::Continue &&
+      parse_status != vexo::http::ParseStatus::GotAll) {
+    const vexo::http::StatusCode code =
+        vexo::http::ParseStatusToStatusCode(parse_status);
     metrics_.requests_malformed_total.Inc();
     metrics_.ObserveStatus(static_cast<int>(code));
-    conn->Send(MakeError(code, runtime::http::StatusMessage(code)).ToString());
+    conn->Send(MakeError(code, vexo::http::StatusMessage(code)).ToString());
     conn->Shutdown();
     return;
   }
 
   while (ctx.http_ctx.GotAll()) {
-    runtime::http::HttpRequest req = ctx.http_ctx.TakeRequest();
+    vexo::http::HttpRequest req = ctx.http_ctx.TakeRequest();
     ctx.http_ctx.Reset();
 
     // Direct routes record end-to-end latency here.
@@ -284,7 +284,7 @@ void GatewayServer::OnMessage(const runtime::net::ConnPtr& conn,
         if (!global_ok) metrics_.rate_limited_global_total.Inc();
         else            metrics_.rate_limited_per_ip_total.Inc();
         metrics_.ObserveStatus(
-            static_cast<int>(runtime::http::StatusCode::TooManyRequests));
+            static_cast<int>(vexo::http::StatusCode::TooManyRequests));
         const auto elapsed = std::chrono::duration<double>(
             std::chrono::steady_clock::now() - req_start).count();
         metrics_.request_duration.Observe(elapsed);
@@ -296,21 +296,21 @@ void GatewayServer::OnMessage(const runtime::net::ConnPtr& conn,
     const Route* route = MatchRoute(req.path());
     if (!route) {
       metrics_.requests_not_found_total.Inc();
-      metrics_.ObserveStatus(static_cast<int>(runtime::http::StatusCode::NotFound));
+      metrics_.ObserveStatus(static_cast<int>(vexo::http::StatusCode::NotFound));
       const auto elapsed = std::chrono::duration<double>(
           std::chrono::steady_clock::now() - req_start).count();
       metrics_.request_duration.Observe(elapsed);
-      conn->Send(MakeError(runtime::http::StatusCode::NotFound, "not found").ToString());
+      conn->Send(MakeError(vexo::http::StatusCode::NotFound, "not found").ToString());
       continue;
     }
 
     if (route->type == RouteType::Proxy) {
       metrics_.routes_proxy_total.Inc();
 
-      auto native = runtime::net::ReactorNativeConn(conn);
+      auto native = vexo::net::ReactorNativeConn(conn);
       if (!native) {
         metrics_.fallback_served_total.Inc();
-        metrics_.ObserveStatus(static_cast<int>(runtime::http::StatusCode::ServiceUnavailable));
+        metrics_.ObserveStatus(static_cast<int>(vexo::http::StatusCode::ServiceUnavailable));
         conn->Send(RenderFallback(*route, "proxy requires the epoll backend"));
         continue;
       }
@@ -319,7 +319,7 @@ void GatewayServer::OnMessage(const runtime::net::ConnPtr& conn,
         metrics_.upstream_no_peer_total.Inc();
         metrics_.fallback_served_total.Inc();
         metrics_.ObserveStatus(
-            static_cast<int>(runtime::http::StatusCode::ServiceUnavailable));
+            static_cast<int>(vexo::http::StatusCode::ServiceUnavailable));
         conn->Send(RenderFallback(*route, "upstream not found: " + route->upstream_name));
         continue;
       }
@@ -334,7 +334,7 @@ void GatewayServer::OnMessage(const runtime::net::ConnPtr& conn,
         metrics_.circuit_breaker_rejected_total.Inc();
         metrics_.fallback_served_total.Inc();
         metrics_.ObserveStatus(
-            static_cast<int>(runtime::http::StatusCode::ServiceUnavailable));
+            static_cast<int>(vexo::http::StatusCode::ServiceUnavailable));
         conn->Send(RenderFallback(*route, "circuit open"));
         continue;
       }
@@ -350,7 +350,7 @@ void GatewayServer::OnMessage(const runtime::net::ConnPtr& conn,
         metrics_.upstream_no_peer_total.Inc();
         metrics_.fallback_served_total.Inc();
         metrics_.ObserveStatus(
-            static_cast<int>(runtime::http::StatusCode::ServiceUnavailable));
+            static_cast<int>(vexo::http::StatusCode::ServiceUnavailable));
         conn->Send(RenderFallback(*route, "no available upstream peer"));
       } else {
         metrics_.upstream_requests_total.Inc();
@@ -359,11 +359,11 @@ void GatewayServer::OnMessage(const runtime::net::ConnPtr& conn,
       // Direct
       metrics_.routes_direct_total.Inc();
       const bool keep_alive = req.keep_alive();
-      runtime::http::HttpResponse resp(!keep_alive);
+      vexo::http::HttpResponse resp(!keep_alive);
       try {
         route->handler(req, resp);
       } catch (const std::exception& ex) {
-        resp = MakeError(runtime::http::StatusCode::InternalServerError, ex.what());
+        resp = MakeError(vexo::http::StatusCode::InternalServerError, ex.what());
         resp.set_close_connection(true);
       }
       metrics_.ObserveStatus(static_cast<int>(resp.status_code()));
@@ -393,7 +393,7 @@ const GatewayServer::Route* GatewayServer::MatchRoute(std::string_view path) con
   return nullptr;
 }
 
-UpstreamConnPool& GatewayServer::GetOrCreatePool(runtime::net::EventLoop* loop) {
+UpstreamConnPool& GatewayServer::GetOrCreatePool(vexo::net::EventLoop* loop) {
   // Protect only the map structure. After a pool reference is returned, callers
   // access that pool exclusively from its owning loop thread.
   std::unique_lock lk{pools_mu_};
@@ -409,9 +409,9 @@ UpstreamConnPool& GatewayServer::GetOrCreatePool(runtime::net::EventLoop* loop) 
   return pool_ref;
 }
 
-runtime::http::HttpResponse
-GatewayServer::MakeError(runtime::http::StatusCode code, std::string_view msg) const {
-  runtime::http::HttpResponse resp(true);
+vexo::http::HttpResponse
+GatewayServer::MakeError(vexo::http::StatusCode code, std::string_view msg) const {
+  vexo::http::HttpResponse resp(true);
   resp.set_status_code(code);
   resp.set_content_type("application/json; charset=utf-8");
   resp.set_body("{\"error\":\"" + std::string(msg) + "\"}");
@@ -424,7 +424,7 @@ std::string GatewayServer::RenderFallback(const Route& route,
   if (route.fallback.enabled) {
     return route.fallback.pre_rendered;
   }
-  return MakeError(runtime::http::StatusCode::ServiceUnavailable, reason).ToString();
+  return MakeError(vexo::http::StatusCode::ServiceUnavailable, reason).ToString();
 }
 
-}  // namespace runtime::gateway
+}  // namespace vexo::gateway

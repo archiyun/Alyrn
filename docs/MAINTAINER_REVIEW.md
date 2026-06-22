@@ -37,9 +37,9 @@ Boundary violations or warning signs:
 - `TcpConnection` counts connections whose names start with `"proxy->"`. This
   is a semantic net-to-gateway dependency even though no gateway header is
   included.
-- `runtime::metrics::GatewayMetrics` is gateway-owned policy placed in an L1
+- `vexo::metrics::GatewayMetrics` is gateway-owned policy placed in an L1
   namespace.
-- The single `runtime_foundation` target combines L0 memory/ds concerns with L1
+- The single `vexo_foundation` target combines L0 memory/ds concerns with L1
   time/log concerns, so CMake cannot enforce the intended boundaries.
 - `GatewayServer` must downcast `IConnection` to a reactor connection before it
   can proxy. The backend interface is not yet sufficient for gateway transport
@@ -53,7 +53,7 @@ This is an incremental destination. Keep compatibility forwarding headers when
 moving public APIs.
 
 ```text
-include/runtime/
+include/vexo/
   base/
   ds/
   memory/                 # arena, fixed block pool, object pool only
@@ -75,7 +75,7 @@ include/runtime/
     load_balance/
     metrics/
 
-src/                       # mirrors include/runtime
+src/                       # mirrors include/vexo
 examples/
 tools/
 benchmarks/                # move executable benchmark drivers here over time
@@ -92,10 +92,10 @@ runtime_memory
 runtime_time       -> base, ds
 runtime_log        -> base, time
 runtime_metrics    -> base
-runtime_task       -> base, metrics
-runtime_net        -> base, ds, memory, time, log
-runtime_http       -> memory, time, task, net, log
-runtime_gateway    -> http, net, time, log, metrics, ds
+vexo_task       -> base, metrics
+vexo_net        -> base, ds, memory, time, log
+vexo_http       -> memory, time, task, net, log
+vexo_gateway    -> http, net, time, log, metrics, ds
 ```
 
 Do not perform all moves in one commit. First add dependency checks and
@@ -121,19 +121,19 @@ new-module rules, threading/lifetime rules, and AI patch requirements.
 
 ## E. Module `SKILL.md` Drafts
 
-The version-controlled drafts are under `docs/skills/runtime`:
+The version-controlled drafts are under `docs/skills/vexo`:
 
-- [net](skills/runtime/net/SKILL.md)
-- [time](skills/runtime/time/SKILL.md)
-- [ds](skills/runtime/ds/SKILL.md)
-- [memory](skills/runtime/memory/SKILL.md)
-- [gateway](skills/runtime/gateway/SKILL.md)
-- [gateway/health](skills/runtime/gateway/health/SKILL.md)
-- [gateway/rate_limit](skills/runtime/gateway/rate_limit/SKILL.md)
-- [gateway/circuit_breaker](skills/runtime/gateway/circuit_breaker/SKILL.md)
-- [gateway/proxy](skills/runtime/gateway/proxy/SKILL.md)
-- [gateway/upstream](skills/runtime/gateway/upstream/SKILL.md)
-- [gateway/load_balance](skills/runtime/gateway/load_balance/SKILL.md)
+- [net](skills/vexo/net/SKILL.md)
+- [time](skills/vexo/time/SKILL.md)
+- [ds](skills/vexo/ds/SKILL.md)
+- [memory](skills/vexo/memory/SKILL.md)
+- [gateway](skills/vexo/gateway/SKILL.md)
+- [gateway/health](skills/vexo/gateway/health/SKILL.md)
+- [gateway/rate_limit](skills/vexo/gateway/rate_limit/SKILL.md)
+- [gateway/circuit_breaker](skills/vexo/gateway/circuit_breaker/SKILL.md)
+- [gateway/proxy](skills/vexo/gateway/proxy/SKILL.md)
+- [gateway/upstream](skills/vexo/gateway/upstream/SKILL.md)
+- [gateway/load_balance](skills/vexo/gateway/load_balance/SKILL.md)
 
 These are repository maintenance instructions. They can later be mirrored into
 an agent-specific skill directory without making `.claude/` the canonical copy.

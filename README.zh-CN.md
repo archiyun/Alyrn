@@ -2,18 +2,18 @@
 
 [English](README.md) | **中文** | [文档站](https://akiba-miku.github.io/high-concurrency-runtime/)
 
-一个 C++20 高并发 Linux 网络运行时。项目采用分层设计——你可以把它当作完整的**反向代理网关**使用，也可以只用 **HTTP 应用服务器**层、裸 **TCP/事件循环**层，或者单独使用其中的**数据结构 / 内存分配器 / 调度器**库。上层依赖下层，无循环依赖。
+一个 C++23 高并发 Linux 网络运行时。项目采用分层设计——你可以把它当作完整的**反向代理网关**使用，也可以只用 **HTTP 应用服务器**层、裸 **TCP/事件循环**层，或者单独使用其中的**数据结构 / 内存分配器 / 调度器**库。上层依赖下层，无循环依赖。
 
 ```
-Gateway Layer  ─── runtime::gateway
-HTTP Layer     ─── runtime::http        (依赖 net)
-Net Layer      ─── runtime::net         (依赖 foundation)
-Foundation     ─── runtime::base / ds / log / time / task / memory / metrics
+Gateway Layer  ─── vexo::gateway
+HTTP Layer     ─── vexo::http        (依赖 net)
+Net Layer      ─── vexo::net         (依赖 foundation)
+Foundation     ─── vexo::base / ds / log / time / task / memory / metrics
 ```
 
 ## 功能概览
 
-### 网关层（`runtime::gateway`）
+### 网关层（`vexo::gateway`）
 
 - **反向代理** — 将 HTTP 请求透明转发到上游 backend，底层使用持久连接
 - **上游管理** — `UpstreamRegistry` + `Upstream` + `UpstreamPeer`；支持运行时动态添加 backend
@@ -24,16 +24,16 @@ Foundation     ─── runtime::base / ds / log / time / task / memory / metri
 - **直接路由** — 在网关上直接注册同步 handler，无需单独启动 `HttpServer`
 - **代码驱动配置** — 无配置文件，上游和路由全部在 C++ 代码中注册
 
-### HTTP 服务层（`runtime::http`）
+### HTTP 服务层（`vexo::http`）
 
 - `epoll` 事件驱动，One-Loop-Per-Thread I/O 线程模型
 - 增量式 HTTP/1.1 解析器（`HttpContext`）——零中间拷贝，keep-alive 通过 `Reset()` 复用上下文
 - 前缀树路由，支持静态段和动态路径参数（`:param` 语法）
 
-### 网络层（`runtime::net`）
+### 网络层（`vexo::net`）
 
 - `EventLoop`、`EpollPoller`、`Channel`、`TcpServer`、`TcpConnection`、`Buffer`
-- 定时器队列由 `timerfd` 驱动，并通过 `TimerTree` 索引 `runtime::time::Timer`
+- 定时器队列由 `timerfd` 驱动，并通过 `TimerTree` 索引 `vexo::time::Timer`
 - 支持水平触发和边缘触发两种 epoll 模式
 
 ### 基础设施
@@ -41,7 +41,7 @@ Foundation     ─── runtime::base / ds / log / time / task / memory / metri
 - 异步双缓冲日志
 - `MemoryPool`、`ObjectPool` 内存分配器
 - `Scheduler`、`ThreadPool`、`WorkQueue`，支持协作式任务取消
-- `runtime::ds::IntrusiveRBTree<T, kMember, kLess>` 和 `IntrusiveQuadHeap` — 泛型侵入式数据结构，节点零堆分配
+- `vexo::ds::IntrusiveRBTree<T, kMember, kLess>` 和 `IntrusiveQuadHeap` — 泛型侵入式数据结构，节点零堆分配
 - `Counter`、`Gauge`、`Histogram`、`Registry` 指标接口
 
 ## 环境要求
@@ -50,12 +50,12 @@ Foundation     ─── runtime::base / ds / log / time / task / memory / metri
 
 - Linux（使用 `epoll`）
 - CMake ≥ 3.20
-- GCC 12+ 或 Clang 15+，支持 C++20
+- GCC 13+ 或 Clang 17+，支持 C++23
 - POSIX threads
 
 可选依赖：
 
-- GoogleTest — 若 CMake 检测到则自动构建 `runtime_unit_tests` 和 `runtime_integration_tests`
+- GoogleTest — 若 CMake 检测到则自动构建 `vexo_unit_tests` 和 `vexo_integration_tests`
 - `liburing` — 仅 `io_uring_echo` 示例需要
 Ubuntu / Debian 安装常用依赖：
 
@@ -144,50 +144,50 @@ curl http://127.0.0.1:18080/api/kv/name
 add_subdirectory(high-concurrency-runtime)
 
 # 完整网关
-target_link_libraries(my_gw    PRIVATE runtime_gateway)
+target_link_libraries(my_gw    PRIVATE vexo_gateway)
 
 # 只要 HTTP server
-target_link_libraries(my_http  PRIVATE runtime_http)
+target_link_libraries(my_http  PRIVATE vexo_http)
 
 # 只要 TCP 事件循环
-target_link_libraries(my_tcp   PRIVATE runtime_net)
+target_link_libraries(my_tcp   PRIVATE vexo_net)
 
 # 只要分配器 / 调度器 / 数据结构
-target_link_libraries(my_util  PRIVATE runtime_foundation)
+target_link_libraries(my_util  PRIVATE vexo_foundation)
 ```
 
 ### 网关示例
 
 ```cpp
-#include "runtime/gateway/gateway_server.h"
-#include "runtime/gateway/upstream.h"
-#include "runtime/gateway/upstream_peer.h"
-#include "runtime/gateway/upstream_registry.h"
-#include "runtime/net/event_loop.h"
-#include "runtime/net/inet_address.h"
+#include "vexo/gateway/gateway_server.h"
+#include "vexo/gateway/upstream.h"
+#include "vexo/gateway/upstream_peer.h"
+#include "vexo/gateway/upstream_registry.h"
+#include "vexo/net/event_loop.h"
+#include "vexo/net/inet_address.h"
 
 int main() {
-    runtime::gateway::UpstreamRegistry reg;
+    vexo::gateway::UpstreamRegistry reg;
 
-    auto us = std::make_shared<runtime::gateway::Upstream>(
-        runtime::gateway::UpstreamConfig{.name = "backend"});
+    auto us = std::make_shared<vexo::gateway::Upstream>(
+        vexo::gateway::UpstreamConfig{.name = "backend"});
 
-    us->AddPeer(std::make_shared<runtime::gateway::UpstreamPeer>(
-        runtime::gateway::UpstreamPeerConfig{.name = "127.0.0.1:9001",
+    us->AddPeer(std::make_shared<vexo::gateway::UpstreamPeer>(
+        vexo::gateway::UpstreamPeerConfig{.name = "127.0.0.1:9001",
                                               .host = "127.0.0.1", .port = 9001}));
-    us->AddPeer(std::make_shared<runtime::gateway::UpstreamPeer>(
-        runtime::gateway::UpstreamPeerConfig{.name = "127.0.0.1:9002",
+    us->AddPeer(std::make_shared<vexo::gateway::UpstreamPeer>(
+        vexo::gateway::UpstreamPeerConfig{.name = "127.0.0.1:9002",
                                               .host = "127.0.0.1", .port = 9002}));
     reg.Add(us);
 
-    runtime::net::EventLoop loop;
-    runtime::gateway::GatewayServer gw(&loop, runtime::net::InetAddress(8080),
+    vexo::net::EventLoop loop;
+    vexo::gateway::GatewayServer gw(&loop, vexo::net::InetAddress(8080),
                                        "gw", reg);
     gw.set_thread_num(4);
 
     // 直接路由——网关自己响应
-    gw.Get("/healthz", [](const runtime::http::HttpRequest&,
-                          runtime::http::HttpResponse& resp) {
+    gw.Get("/healthz", [](const vexo::http::HttpRequest&,
+                          vexo::http::HttpResponse& resp) {
         resp.set_content_type("application/json");
         resp.set_body("{\"status\":\"ok\"}");
     });
@@ -206,19 +206,19 @@ int main() {
 ### HTTP server 示例
 
 ```cpp
-#include "runtime/http/http_server.h"
-#include "runtime/net/event_loop.h"
-#include "runtime/net/inet_address.h"
+#include "vexo/http/http_server.h"
+#include "vexo/net/event_loop.h"
+#include "vexo/net/inet_address.h"
 
 int main() {
-    runtime::net::EventLoop loop;
-    runtime::http::HttpServer server(&loop,
-        runtime::net::InetAddress(8080, "0.0.0.0"), "my-server");
+    vexo::net::EventLoop loop;
+    vexo::http::HttpServer server(&loop,
+        vexo::net::InetAddress(8080, "0.0.0.0"), "my-server");
     server.set_thread_num(4);
 
     server.Get("/api/users/:id",
-        [](const runtime::http::HttpRequest& req,
-           runtime::http::HttpResponse& resp) {
+        [](const vexo::http::HttpRequest& req,
+           vexo::http::HttpResponse& resp) {
             resp.set_content_type("application/json; charset=utf-8");
             resp.set_body("{\"id\":\"" + std::string(req.path_param("id")) + "\"}");
         });
@@ -231,11 +231,11 @@ int main() {
 ### 任务调度示例
 
 ```cpp
-#include "runtime/task/scheduler.h"
+#include "vexo/task/scheduler.h"
 #include <iostream>
 
 int main() {
-    runtime::task::Scheduler scheduler(4);
+    vexo::task::Scheduler scheduler(4);
     auto handle = scheduler.Submit([] { std::cout << "hello\n"; });
     handle.Wait();
 }
@@ -245,11 +245,11 @@ int main() {
 
 | 目标 | 提供 |
 |---|---|
-| `runtime_gateway` | 网关、反向代理、负载均衡器、健康检查 |
-| `runtime_http` | HTTP 服务器、Trie 路由、请求/响应、上下文 |
-| `runtime_net` | EventLoop、TcpServer、Channel、Poller、Buffer、TimerQueue |
-| `runtime_task` | Scheduler、ThreadPool、Task、WorkQueue |
-| `runtime_foundation` | 日志、时间戳、MemoryPool、ObjectPool、`runtime::ds`、指标 |
+| `vexo_gateway` | 网关、反向代理、负载均衡器、健康检查 |
+| `vexo_http` | HTTP 服务器、Trie 路由、请求/响应、上下文 |
+| `vexo_net` | EventLoop、TcpServer、Channel、Poller、Buffer、TimerQueue |
+| `vexo_task` | Scheduler、ThreadPool、Task、WorkQueue |
+| `vexo_foundation` | 日志、时间戳、MemoryPool、ObjectPool、`vexo::ds`、指标 |
 
 ## 运行测试
 
@@ -270,19 +270,19 @@ ctest --test-dir build -R rbtree_validator --output-on-failure
 | `rbtree_validator` | 1000 万次操作对比 `std::set` 对数器 + 每步 `CheckRBInvariants()` |
 | `http_smoke_test` | HTTP 解析与路由（不依赖 GTest） |
 | `buffer_smoke_test` | Buffer 读/写/预置 |
-| `runtime_unit_tests` | GTest 套件：buffer、logger、内存池、调度器 |
-| `runtime_integration_tests` | GTest 套件：事件循环、TCP 服务器、HTTP 路由、触发模式 |
+| `vexo_unit_tests` | GTest 套件：buffer、logger、内存池、调度器 |
+| `vexo_integration_tests` | GTest 套件：事件循环、TCP 服务器、HTTP 路由、触发模式 |
 
 说明：
 
 - smoke 测试不依赖 GTest
-- 如果 CMake 找到 GTest，会额外构建 `runtime_unit_tests` 和 `runtime_integration_tests`
+- 如果 CMake 找到 GTest，会额外构建 `vexo_unit_tests` 和 `vexo_integration_tests`
 
 ## 目录结构
 
 ```text
 .
-├── include/runtime/
+├── include/vexo/
 │   ├── base/        # NonCopyable、CurrentThread
 │   ├── ds/          # IntrusiveRBTree、IntrusiveQuadHeap、MurmurHash3
 │   ├── gateway/     # GatewayServer、Upstream、LoadBalancer、HealthChecker、ProxyPass
@@ -303,23 +303,23 @@ ctest --test-dir build -R rbtree_validator --output-on-failure
 ## 架构分层
 
 ```text
-Gateway Layer   runtime::gateway
+Gateway Layer   vexo::gateway
   GatewayServer、UpstreamRegistry、Upstream、UpstreamPeer
   LoadBalancer（RoundRobin / WeightedRoundRobin / LeastConn / Random /
   WeightedRandom / IPHash / ConsistentHash / P2C）
   HealthChecker、ProxyPass、UpstreamConnPool
 
-HTTP Layer      runtime::http
+HTTP Layer      vexo::http
   HttpServer、Router（Trie）、HttpContext、HttpRequest、HttpResponse
 
-Net Layer       runtime::net
+Net Layer       vexo::net
   TcpServer、TcpConnection、EventLoop、EpollPoller、Channel
   Buffer、TimerQueue（基于 timerfd）
 
-Foundation      runtime::base / ds / log / time / task / memory / metrics
+Foundation      vexo::base / ds / log / time / task / memory / metrics
   AsyncLogger、Scheduler、ThreadPool
   MemoryPool、ObjectPool
-  runtime::ds::IntrusiveRBTree<T, kMember, kLess>、IntrusiveQuadHeap
+  vexo::ds::IntrusiveRBTree<T, kMember, kLess>、IntrusiveQuadHeap
   Timestamp、Timer、TimerTree、Counter、Gauge、Histogram
 ```
 

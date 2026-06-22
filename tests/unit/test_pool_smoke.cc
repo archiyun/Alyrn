@@ -6,7 +6,7 @@
 #include <utility>
 #include <vector>
 
-#include "runtime/memory/pool.h"
+#include "vexo/memory/pool.h"
 
 namespace {
 
@@ -22,7 +22,7 @@ int g_cleanup_calls = 0;
     }                                                              \
   } while (0)
 
-using runtime::memory::Pool;
+using vexo::memory::Pool;
 
 bool IsAligned(const void* p, std::size_t align) {
   return (reinterpret_cast<std::uintptr_t>(p) % align) == 0;

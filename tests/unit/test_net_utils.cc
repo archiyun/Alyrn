@@ -6,11 +6,11 @@
 
 #include <cerrno>
 
-#include "runtime/net/buffer.h"
-#include "runtime/net/inet_address.h"
-#include "runtime/net/net_utils.h"
+#include "vexo/net/buffer.h"
+#include "vexo/net/inet_address.h"
+#include "vexo/net/net_utils.h"
 
-namespace runtime::net {
+namespace vexo::net {
 namespace {
 
 class ScopedFd {
@@ -188,4 +188,4 @@ TEST(NetUtilsTest, SocketWriteDoesNotRaiseSigPipe) {
 }
 
 }  // namespace
-}  // namespace runtime::net
+}  // namespace vexo::net

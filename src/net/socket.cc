@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/net/socket.h"
+#include "vexo/net/socket.h"
 
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
@@ -11,10 +11,10 @@
 #include <cstdlib>
 #include <cstring>
 
-#include "runtime/log/logger.h"
-#include "runtime/net/net_utils.h"
+#include "vexo/log/logger.h"
+#include "vexo/net/net_utils.h"
 
-namespace runtime::net {
+namespace vexo::net {
 
 Socket::Socket(int sockfd) : sockfd_(sockfd) {}
 
@@ -79,7 +79,7 @@ void Socket::ShutdownWrite() {
 
 void Socket::set_tcp_no_delay(bool on) {
   const std::error_code error =
-      runtime::net::set_tcp_non_delay(sockfd_, on);
+      vexo::net::set_tcp_non_delay(sockfd_, on);
   if (!error) {
     return;
   }
@@ -91,7 +91,7 @@ void Socket::set_tcp_no_delay(bool on) {
 }
 
 void Socket::set_reuse_addr(bool on) {
-  const std::error_code error = runtime::net::set_reuse_addr(sockfd_, on);
+  const std::error_code error = vexo::net::set_reuse_addr(sockfd_, on);
   if (!error) {
     return;
   }
@@ -103,7 +103,7 @@ void Socket::set_reuse_addr(bool on) {
 }
 
 void Socket::set_reuse_port(bool on) {
-  const std::error_code error = runtime::net::set_reuse_port(sockfd_, on);
+  const std::error_code error = vexo::net::set_reuse_port(sockfd_, on);
   if (!error) {
     return;
   }
@@ -115,7 +115,7 @@ void Socket::set_reuse_port(bool on) {
 }
 
 void Socket::set_keep_alive(bool on) {
-  const std::error_code error = runtime::net::set_keep_alive(sockfd_, on);
+  const std::error_code error = vexo::net::set_keep_alive(sockfd_, on);
   if (!error) {
     return;
   }
@@ -126,4 +126,4 @@ void Socket::set_keep_alive(bool on) {
               << " message=" << error.message();
 }
 
-}  // namespace runtime::net
+}  // namespace vexo::net

@@ -1,12 +1,12 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/net/inet_address.h"
+#include "vexo/net/inet_address.h"
 
 #include <arpa/inet.h>
 
 #include <cstdlib>
 
-namespace runtime::net {
+namespace vexo::net {
 
 InetAddress::InetAddress(std::uint16_t port) {
   addr_.sin_family = AF_INET;
@@ -30,4 +30,4 @@ bool operator==(const InetAddress& lhs, const InetAddress& rhs) noexcept {
          lhs.addr_.sin_addr.s_addr == rhs.addr_.sin_addr.s_addr;
 }
 
-}  // namespace runtime::net
+}  // namespace vexo::net

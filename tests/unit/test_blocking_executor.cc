@@ -5,12 +5,12 @@
 #include <thread>
 #include <vector>
 
-#include "runtime/task/cancellation_token.h"
-#include "runtime/task/blocking_executor.h"
-#include "runtime/task/task_handle.h"
-#include "runtime/task/detail/work_queue.h"
+#include "vexo/task/cancellation_token.h"
+#include "vexo/task/blocking_executor.h"
+#include "vexo/task/task_handle.h"
+#include "vexo/task/detail/work_queue.h"
 
-using namespace runtime::task;
+using namespace vexo::task;
 using namespace std::chrono_literals;
 
 // ── CancellationToken ─────────────────────────────────────────────────────────

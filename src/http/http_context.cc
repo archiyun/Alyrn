@@ -1,12 +1,12 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/http/http_context.h"
+#include "vexo/http/http_context.h"
 
 #include <charconv>
 #include <string_view>
 #include <utility>
 
-namespace runtime::http {
+namespace vexo::http {
 
 namespace {
 
@@ -69,8 +69,8 @@ bool HttpContext::ParseVersion(std::string_view version_sv) {
   return false;
 }
 
-ParseStatus HttpContext::ParseRequest(runtime::net::Buffer& buf,
-                                      runtime::time::Timestamp ts) {
+ParseStatus HttpContext::ParseRequest(vexo::net::Buffer& buf,
+                                      vexo::time::Timestamp ts) {
   while (state_ != ParseState::GotAll) {
     if (state_ == ParseState::ExpectRequestLine ||
         state_ == ParseState::ExpectHeaders) {
@@ -200,4 +200,4 @@ void HttpContext::Reset() {
   request_.Reset();
 }
 
-}  // namespace runtime::http
+}  // namespace vexo::http

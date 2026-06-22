@@ -44,17 +44,17 @@
 #include <thread>
 #include <vector>
 
-#include "runtime/net/event_loop.h"
-#include "runtime/net/inet_address.h"
-#include "runtime/net/net_utils.h"
-#include "runtime/net/tcp_server.h"
+#include "vexo/net/event_loop.h"
+#include "vexo/net/inet_address.h"
+#include "vexo/net/net_utils.h"
+#include "vexo/net/tcp_server.h"
 
 namespace {
 
 using namespace std::chrono_literals;
-using runtime::net::EventLoop;
-using runtime::net::InetAddress;
-using runtime::net::TcpServer;
+using vexo::net::EventLoop;
+using vexo::net::InetAddress;
+using vexo::net::TcpServer;
 
 // epoll fd、eventfd、stdio、日志、监听 socket 等都要占用 fd 名额，
 // 预留出这部分余量，避免把整个进程的 fd 撑爆触发 accept 失败。
@@ -189,7 +189,7 @@ bool TestRstStorm() {
                 // 会强持 conn，RST 之后连接不会析构，本测试就会卡死在
                 // context_alive != 0 上。这是对"timer 不应延长连接生命
                 // 周期"这条约定的硬验证。
-                std::weak_ptr<runtime::net::TcpConnection> weak = conn;
+                std::weak_ptr<vexo::net::TcpConnection> weak = conn;
                 // 60s 的长延时 timer：本测试窗口（~秒级）内绝不应该触发。
                 // 它的存在只是为了在 RST 风暴发生时，让"连接析构 + timer
                 // 还在 TimerQueue 红黑树里"这两件事真实地并发起来。
@@ -215,8 +215,8 @@ bool TestRstStorm() {
         });
 
         server.set_message_callback(
-            [](const TcpServer::TcpConnectionPtr&, runtime::net::Buffer& buf,
-               runtime::time::Timestamp) { buf.RetrieveAll(); });
+            [](const TcpServer::TcpConnectionPtr&, vexo::net::Buffer& buf,
+               vexo::time::Timestamp) { buf.RetrieveAll(); });
 
         server.Start();
         ready_promise.set_value(&loop);
@@ -229,7 +229,7 @@ bool TestRstStorm() {
     // SO_LINGER{1, 0} 是 RST 风暴的关键：close() 不走 FIN，直接发 RST。
     std::vector<int> clients;
     clients.reserve(target_conns);
-    const runtime::net::InetAddress server_addr(port);
+    const vexo::net::InetAddress server_addr(port);
 
     for (std::size_t i = 0; i < target_conns; ++i) {
         const int fd = ::socket(AF_INET, SOCK_STREAM, 0);

@@ -1,12 +1,12 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/http/metrics_handler.h"
+#include "vexo/http/metrics_handler.h"
 
 #include <cstdio>
 
-namespace runtime::http {
+namespace vexo::http {
 
-std::string MakeMetricsJson(const runtime::task::ExecutorMetrics::Snapshot& snap) {
+std::string MakeMetricsJson(const vexo::task::ExecutorMetrics::Snapshot& snap) {
   char buf[256];
   std::snprintf(buf, sizeof(buf),
     "{"
@@ -26,4 +26,4 @@ std::string MakeMetricsJson(const runtime::task::ExecutorMetrics::Snapshot& snap
   return buf;
 }
 
-}  // namespace runtime::http
+}  // namespace vexo::http

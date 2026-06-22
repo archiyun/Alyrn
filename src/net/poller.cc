@@ -1,16 +1,16 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/net/poller.h"
+#include "vexo/net/poller.h"
 
 #include <cstdlib>
 #include <string_view>
 
-#include "runtime/net/channel.h"
-#include "runtime/net/epoll_poller.h"
-#include "runtime/net/poll_poller.h"
-#include "runtime/net/select.h"
+#include "vexo/net/channel.h"
+#include "vexo/net/epoll_poller.h"
+#include "vexo/net/poll_poller.h"
+#include "vexo/net/select.h"
 
-namespace runtime::net {
+namespace vexo::net {
 
 Poller::Poller(EventLoop* loop)
     : owner_loop_(loop) {}
@@ -29,7 +29,7 @@ static Poller* DefaultPoller(EventLoop* loop) {
 }
 
 Poller* Poller::NewDefaultPoller(EventLoop* loop) {
-  const char* env = ::getenv("RUNTIME_POLLER");
+  const char* env = ::getenv("VEXO_POLLER");
   if (env != nullptr) {
     const std::string_view name(env);
     if (name == "poll")   return new PollPoller(loop);
@@ -41,4 +41,4 @@ Poller* Poller::NewDefaultPoller(EventLoop* loop) {
   return DefaultPoller(loop);
 }
 
-}  // namespace runtime::net
+}  // namespace vexo::net

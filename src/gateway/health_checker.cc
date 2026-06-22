@@ -11,7 +11,7 @@
 //
 // The consecutive success/failure counters are owned by the gateway EventLoop
 // thread, so they do not require additional synchronization.
-#include "runtime/gateway/health_checker.h"
+#include "vexo/gateway/health_checker.h"
 
 #include <atomic>
 #include <charconv>
@@ -20,15 +20,15 @@
 #include <string_view>
 #include <unordered_map>
 
-#include "runtime/log/logger.h"
-#include "runtime/net/buffer.h"
-#include "runtime/net/event_loop.h"
-#include "runtime/net/inet_address.h"
-#include "runtime/net/net_utils.h"
-#include "runtime/net/tcp_client.h"
-#include "runtime/time/timestamp.h"
+#include "vexo/log/logger.h"
+#include "vexo/net/buffer.h"
+#include "vexo/net/event_loop.h"
+#include "vexo/net/inet_address.h"
+#include "vexo/net/net_utils.h"
+#include "vexo/net/tcp_client.h"
+#include "vexo/time/timestamp.h"
 
-namespace runtime::gateway {
+namespace vexo::gateway {
 
 namespace {
 constexpr std::size_t kMaxHealthResponseHeaderBytes = 16 * 1024;
@@ -61,8 +61,8 @@ int ParseHealthStatus(std::string_view headers) {
   return status;
 }
 
-void CancelTimeoutLater(runtime::net::EventLoop* loop,
-                        runtime::time::TimerId id) {
+void CancelTimeoutLater(vexo::net::EventLoop* loop,
+                        vexo::time::TimerId id) {
   // Cancelling releases the timer's TcpClient capture. Do that after the
   // current connection callback returns.
   loop->QueueInLoop([loop, id] { loop->Cancel(id); });
@@ -71,11 +71,11 @@ void CancelTimeoutLater(runtime::net::EventLoop* loop,
 
 struct HealthChecker::Probe {
   bool done{false};
-  runtime::time::TimerId timeout_id;
+  vexo::time::TimerId timeout_id;
 };
 
 struct HealthChecker::State {
-  State(runtime::net::EventLoop* event_loop,
+  State(vexo::net::EventLoop* event_loop,
         UpstreamRegistry& registry_ref,
         HealthCheckConfig config)
       : loop(event_loop), registry(registry_ref), cfg(std::move(config)) {}
@@ -85,7 +85,7 @@ struct HealthChecker::State {
            generation.load(std::memory_order_acquire) == expected_generation;
   }
 
-  runtime::net::EventLoop* loop;
+  vexo::net::EventLoop* loop;
   UpstreamRegistry& registry;
   HealthCheckConfig cfg;
   std::atomic<bool> active{false};
@@ -97,7 +97,7 @@ struct HealthChecker::State {
   std::unordered_map<std::string, uint64_t> in_flight_generation;
 };
 
-HealthChecker::HealthChecker(runtime::net::EventLoop* loop,
+HealthChecker::HealthChecker(vexo::net::EventLoop* loop,
                              UpstreamRegistry& registry,
                              HealthCheckConfig cfg)
   : loop_(loop),
@@ -157,12 +157,12 @@ void HealthChecker::CheckAll(const std::shared_ptr<State>& state,
 void HealthChecker::CheckOne(const std::shared_ptr<State>& state,
                              uint64_t generation,
                              std::shared_ptr<UpstreamPeer> peer) {
-  using TcpConnectionPtr = runtime::net::TcpConnection::TcpConnectionPtr;
+  using TcpConnectionPtr = vexo::net::TcpConnection::TcpConnectionPtr;
   if (!state->IsActive(generation)) return;
 
   std::string name = peer->config().name;
 
-  auto address = runtime::net::ParseIPv4Address(peer->config().host,
+  auto address = vexo::net::ParseIPv4Address(peer->config().host,
                                                 peer->config().port);
   if (!address) {
     if (!state->IsActive(generation)) return;
@@ -187,7 +187,7 @@ void HealthChecker::CheckOne(const std::shared_ptr<State>& state,
     flight_it->second = generation;
   }
 
-  auto client = std::make_shared<runtime::net::TcpClient>(
+  auto client = std::make_shared<vexo::net::TcpClient>(
     state->loop, *address.value, "health->" + name);
   client->set_retry_enabled(false);
 
@@ -214,8 +214,8 @@ void HealthChecker::CheckOne(const std::shared_ptr<State>& state,
   client->set_message_callback(
     [weak_state, generation, peer, name, probe](
       const TcpConnectionPtr& conn,
-      runtime::net::Buffer& buf,
-      runtime::time::Timestamp) {
+      vexo::net::Buffer& buf,
+      vexo::time::Timestamp) {
         auto state = weak_state.lock();
         if (!state || !state->IsActive(generation)) {
           buf.RetrieveAll();
@@ -301,4 +301,4 @@ bool HealthChecker::CompleteProbe(
   }
   return true;
 }
-}  // namespace runtime::gateway
+}  // namespace vexo::gateway

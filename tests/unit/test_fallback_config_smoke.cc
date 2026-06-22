@@ -8,8 +8,8 @@
 #include <iostream>
 #include <string>
 
-#include "runtime/gateway/fallback_config.h"
-#include "runtime/http/http_types.h"
+#include "vexo/gateway/fallback_config.h"
+#include "vexo/http/http_types.h"
 
 namespace {
 
@@ -30,22 +30,22 @@ void Passed(const char* name) {
 // ================================================================
 
 bool TestDefaultDisabled() {
-  runtime::gateway::FallbackConfig cfg;
+  vexo::gateway::FallbackConfig cfg;
   if (!Expect(!cfg.enabled, "default enabled must be false")) return false;
   Passed("TestDefaultDisabled");
   return true;
 }
 
 bool TestDefaultStatusCodeIs503() {
-  runtime::gateway::FallbackConfig cfg;
-  if (!Expect(cfg.status_code == runtime::http::StatusCode::ServiceUnavailable,
+  vexo::gateway::FallbackConfig cfg;
+  if (!Expect(cfg.status_code == vexo::http::StatusCode::ServiceUnavailable,
               "default status_code must be 503")) return false;
   Passed("TestDefaultStatusCodeIs503");
   return true;
 }
 
 bool TestDefaultContentType() {
-  runtime::gateway::FallbackConfig cfg;
+  vexo::gateway::FallbackConfig cfg;
   if (!Expect(cfg.content_type == "application/json; charset=utf-8",
               "default content_type must be application/json")) return false;
   Passed("TestDefaultContentType");
@@ -53,7 +53,7 @@ bool TestDefaultContentType() {
 }
 
 bool TestDefaultBody() {
-  runtime::gateway::FallbackConfig cfg;
+  vexo::gateway::FallbackConfig cfg;
   if (!Expect(cfg.body.find("service temporarily unavailable") != std::string::npos,
               "default body must mention 'service temporarily unavailable'")) return false;
   Passed("TestDefaultBody");
@@ -65,7 +65,7 @@ bool TestDefaultBody() {
 // ================================================================
 
 bool TestInitNoOpWhenDisabled() {
-  runtime::gateway::FallbackConfig cfg;
+  vexo::gateway::FallbackConfig cfg;
   cfg.Init();
   if (!Expect(cfg.pre_rendered.empty(),
               "pre_rendered must be empty when enabled=false")) return false;
@@ -74,7 +74,7 @@ bool TestInitNoOpWhenDisabled() {
 }
 
 bool TestInitProducesValidHttpResponse() {
-  runtime::gateway::FallbackConfig cfg;
+  vexo::gateway::FallbackConfig cfg;
   cfg.enabled = true;
   cfg.Init();
 
@@ -94,7 +94,7 @@ bool TestInitProducesValidHttpResponse() {
 }
 
 bool TestInitContainsDefaultBody() {
-  runtime::gateway::FallbackConfig cfg;
+  vexo::gateway::FallbackConfig cfg;
   cfg.enabled = true;
   cfg.Init();
 
@@ -109,9 +109,9 @@ bool TestInitContainsDefaultBody() {
 // ================================================================
 
 bool TestCustomStatusCodeAppearsInResponse() {
-  runtime::gateway::FallbackConfig cfg;
+  vexo::gateway::FallbackConfig cfg;
   cfg.enabled = true;
-  cfg.status_code = runtime::http::StatusCode::BadGateway;
+  cfg.status_code = vexo::http::StatusCode::BadGateway;
   cfg.body = "bad gateway";
   cfg.Init();
 
@@ -125,7 +125,7 @@ bool TestCustomStatusCodeAppearsInResponse() {
 }
 
 bool TestCustomContentTypeAppearsInResponse() {
-  runtime::gateway::FallbackConfig cfg;
+  vexo::gateway::FallbackConfig cfg;
   cfg.enabled = true;
   cfg.content_type = "text/html; charset=utf-8";
   cfg.body = "<html><body>down</body></html>";
@@ -138,7 +138,7 @@ bool TestCustomContentTypeAppearsInResponse() {
 }
 
 bool TestCloseConnectionFlagIsSet() {
-  runtime::gateway::FallbackConfig cfg;
+  vexo::gateway::FallbackConfig cfg;
   cfg.enabled = true;
   cfg.Init();
 
@@ -154,7 +154,7 @@ bool TestCloseConnectionFlagIsSet() {
 // ================================================================
 
 bool TestInitIdempotent() {
-  runtime::gateway::FallbackConfig cfg;
+  vexo::gateway::FallbackConfig cfg;
   cfg.enabled = true;
   cfg.Init();
   std::string first = cfg.pre_rendered;

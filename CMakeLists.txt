@@ -1,40 +1,40 @@
 cmake_minimum_required(VERSION 3.20) 
-project(high_concurrency_runtime 
+project(high_concurrency_vexo 
         VERSION 0.1.0 
         LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(BUILD_TESTS "Build tests" ON)
 option(BUILD_EXAMPLES "Build example programs" ON)
-option(RUNTIME_ENABLE_URING "Enable io_uring proactor backend (requires liburing, Linux 5.19+)" OFF)
+option(VEXO_ENABLE_URING "Enable io_uring proactor backend (requires liburing, Linux 5.19+)" OFF)
 
 find_package(Threads REQUIRED)
 
-if(RUNTIME_ENABLE_URING)
+if(VEXO_ENABLE_URING)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(URING REQUIRED liburing)
 endif()
 
 # Sanitizer toggle. Empty/OFF = no instrumentation (default). Accepts any
 # value the compiler understands after -fsanitize=, e.g.:
-#   cmake -B build-tsan -DRUNTIME_SANITIZER=thread
-#   cmake -B build-asan -DRUNTIME_SANITIZER=address,undefined
+#   cmake -B build-tsan -DVEXO_SANITIZER=thread
+#   cmake -B build-asan -DVEXO_SANITIZER=address,undefined
 # Applied globally to every target defined below (must precede add_library).
 # address and thread are mutually exclusive — pick one build dir per sanitizer.
-set(RUNTIME_SANITIZER "" CACHE STRING
+set(VEXO_SANITIZER "" CACHE STRING
     "Build with a sanitizer: address | thread | undefined | address,undefined (empty = off)")
 
-if(RUNTIME_SANITIZER)
-    message(STATUS "Building with sanitizer: -fsanitize=${RUNTIME_SANITIZER}")
-    add_compile_options(-fsanitize=${RUNTIME_SANITIZER} -fno-omit-frame-pointer -g)
-    add_link_options(-fsanitize=${RUNTIME_SANITIZER})
+if(VEXO_SANITIZER)
+    message(STATUS "Building with sanitizer: -fsanitize=${VEXO_SANITIZER}")
+    add_compile_options(-fsanitize=${VEXO_SANITIZER} -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=${VEXO_SANITIZER})
 endif()
 
-add_library(runtime_foundation STATIC
+add_library(vexo_foundation STATIC
     src/log/async_logger.cc
     src/log/logger.cc
     src/memory/pool.cc
@@ -42,19 +42,19 @@ add_library(runtime_foundation STATIC
     src/time/timer_tree.cc
 )
 
-target_include_directories(runtime_foundation
+target_include_directories(vexo_foundation
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_link_libraries(runtime_foundation
+target_link_libraries(vexo_foundation
     PUBLIC
         Threads::Threads
 )
 
-target_compile_features(runtime_foundation PUBLIC cxx_std_20)
+target_compile_features(vexo_foundation PUBLIC cxx_std_23)
 
-add_library(runtime_task STATIC
+add_library(vexo_task STATIC
     src/task/thread_pool.cc
     src/task/task.cc
     src/task/task_handle.cc
@@ -62,31 +62,31 @@ add_library(runtime_task STATIC
     src/task/blocking_executor.cc
 )
 
-target_include_directories(runtime_task
+target_include_directories(vexo_task
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_link_libraries(runtime_task
+target_link_libraries(vexo_task
     PUBLIC
-        runtime_foundation
+        vexo_foundation
         Threads::Threads
 )
 
-target_compile_features(runtime_task PUBLIC cxx_std_20)
+target_compile_features(vexo_task PUBLIC cxx_std_23)
 
-set(RUNTIME_BUFFER_IMPL "muduo" CACHE STRING "Buffer implementation: muduo | ringbuf | nginx")
+set(VEXO_BUFFER_IMPL "muduo" CACHE STRING "Buffer implementation: muduo | ringbuf | nginx")
 
-if(RUNTIME_BUFFER_IMPL STREQUAL "ringbuf")
-    set(RUNTIME_BUFFER_SRC src/net/buffer_ringbuf.cc)
-elseif(RUNTIME_BUFFER_IMPL STREQUAL "nginx")
-    set(RUNTIME_BUFFER_SRC src/net/buffer_nginx.cc)
+if(VEXO_BUFFER_IMPL STREQUAL "ringbuf")
+    set(VEXO_BUFFER_SRC src/net/buffer_ringbuf.cc)
+elseif(VEXO_BUFFER_IMPL STREQUAL "nginx")
+    set(VEXO_BUFFER_SRC src/net/buffer_nginx.cc)
 else()
-    set(RUNTIME_BUFFER_SRC src/net/buffer_muduo.cc)
+    set(VEXO_BUFFER_SRC src/net/buffer_muduo.cc)
 endif()
 
-add_library(runtime_net STATIC
-    ${RUNTIME_BUFFER_SRC}
+add_library(vexo_net STATIC
+    ${VEXO_BUFFER_SRC}
     src/net/acceptor.cc
     src/net/channel.cc
     src/net/connector.cc
@@ -107,30 +107,30 @@ add_library(runtime_net STATIC
     src/net/select.cc
 )
 
-target_include_directories(runtime_net
+target_include_directories(vexo_net
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_link_libraries(runtime_net
+target_link_libraries(vexo_net
     PUBLIC
-        runtime_foundation
+        vexo_foundation
         Threads::Threads
 )
 
-target_compile_features(runtime_net PUBLIC cxx_std_20)
+target_compile_features(vexo_net PUBLIC cxx_std_23)
 
 # memmem 是 GNU 扩展, buffer.h 内联用到, 通过 PUBLIC 让上层库也能 include buffer.h
-target_compile_definitions(runtime_net PUBLIC _GNU_SOURCE)
+target_compile_definitions(vexo_net PUBLIC _GNU_SOURCE)
 
-# runtime_uring —— io_uring proactor 后端（已清空，待重写）。
-# 重写时在此重新 add_library(runtime_uring STATIC src/uring/*.cc)：
-#   PUBLIC link runtime_net（复用 Buffer/InetAddress/Socket）+ ${URING_LIBRARIES}，
+# vexo_uring —— io_uring proactor 后端（已清空，待重写）。
+# 重写时在此重新 add_library(vexo_uring STATIC src/uring/*.cc)：
+#   PUBLIC link vexo_net（复用 Buffer/InetAddress/Socket）+ ${URING_LIBRARIES}，
 #   include ${URING_INCLUDE_DIRS}，
-#   target_compile_definitions(runtime_uring PUBLIC RUNTIME_ENABLE_URING)，cxx_std_20。
-# 开关 option(RUNTIME_ENABLE_URING)（上方）与 pkg_check_modules(URING) 已保留备用。
+#   target_compile_definitions(vexo_uring PUBLIC VEXO_ENABLE_URING)，cxx_std_23。
+# 开关 option(VEXO_ENABLE_URING)（上方）与 pkg_check_modules(URING) 已保留备用。
 
-set(RUNTIME_HTTP_SOURCES
+set(VEXO_HTTP_SOURCES
     src/http/http_types.cc
     src/http/http_request.cc
     src/http/http_context.cc
@@ -140,41 +140,41 @@ set(RUNTIME_HTTP_SOURCES
     src/http/metrics_handler.cc
 )
 
-add_library(runtime_http STATIC ${RUNTIME_HTTP_SOURCES})
+add_library(vexo_http STATIC ${VEXO_HTTP_SOURCES})
 
-target_include_directories(runtime_http
+target_include_directories(vexo_http
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_link_libraries(runtime_http
+target_link_libraries(vexo_http
     PUBLIC
-        runtime_net
-        runtime_task
-        runtime_foundation
+        vexo_net
+        vexo_task
+        vexo_foundation
         Threads::Threads
 )
 
-target_compile_features(runtime_http PUBLIC cxx_std_20)
+target_compile_features(vexo_http PUBLIC cxx_std_23)
 
-add_library(runtime_gateway STATIC
+add_library(vexo_gateway STATIC
     src/gateway/proxy_pass.cc
     src/gateway/health_checker.cc
     src/gateway/gateway_server.cc
 )
 
-target_include_directories(runtime_gateway PUBLIC
+target_include_directories(vexo_gateway PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_link_libraries(runtime_gateway PUBLIC
-    runtime_http
-    runtime_net
-    runtime_foundation
+target_link_libraries(vexo_gateway PUBLIC
+    vexo_http
+    vexo_net
+    vexo_foundation
     Threads::Threads
 )
 
-target_compile_features(runtime_gateway PUBLIC cxx_std_20)
+target_compile_features(vexo_gateway PUBLIC cxx_std_23)
 
 
 if(BUILD_TESTS)

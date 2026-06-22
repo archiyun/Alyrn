@@ -5,9 +5,9 @@
 #include <array>
 #include <string>
 
-#include "runtime/net/buffer.h"
+#include "vexo/net/buffer.h"
 
-namespace runtime::net {
+namespace vexo::net {
 namespace {
 
 TEST(BufferTest, ReusesPrependableSpaceWhenAppendingAfterRetrieve) {
@@ -78,4 +78,4 @@ TEST(BufferTest, ReadFdExpandsStorageForLargePayload) {
 }
 
 }  // namespace
-}  // namespace runtime::net
+}  // namespace vexo::net

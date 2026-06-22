@@ -27,28 +27,28 @@
  * 
  * ... 自行扩展
  */
-#include "runtime/gateway/gateway_server.h"
-#include "runtime/gateway/upstream.h"
-#include "runtime/gateway/upstream_peer.h"
-#include "runtime/gateway/upstream_registry.h"
-#include "runtime/net/event_loop.h"
-#include "runtime/net/inet_address.h"
+#include "vexo/gateway/gateway_server.h"
+#include "vexo/gateway/upstream.h"
+#include "vexo/gateway/upstream_peer.h"
+#include "vexo/gateway/upstream_registry.h"
+#include "vexo/net/event_loop.h"
+#include "vexo/net/inet_address.h"
 
 int main() {
   // 1. 创建服务注册中心 和 配置上游
-  runtime::gateway::UpstreamRegistry reg;
+  vexo::gateway::UpstreamRegistry reg;
   
-  auto upstream = std::make_shared<runtime::gateway::Upstream>(
-    runtime::gateway::UpstreamConfig{.name = "user_service"});
+  auto upstream = std::make_shared<vexo::gateway::Upstream>(
+    vexo::gateway::UpstreamConfig{.name = "user_service"});
   
-  upstream->AddPeer(std::make_shared<runtime::gateway::UpstreamPeer>(
-    runtime::gateway::UpstreamPeerConfig{
+  upstream->AddPeer(std::make_shared<vexo::gateway::UpstreamPeer>(
+    vexo::gateway::UpstreamPeerConfig{
       .name = "127.0.0.1:9001",
       .host = "127.0.0.1",
       .port = 9001}));
 
-  upstream->AddPeer(std::make_shared<runtime::gateway::UpstreamPeer>(
-    runtime::gateway::UpstreamPeerConfig{
+  upstream->AddPeer(std::make_shared<vexo::gateway::UpstreamPeer>(
+    vexo::gateway::UpstreamPeerConfig{
       .name = "127.0.0.1:9002",
       .host = "127.0.0.1",
       .port = 9002}));
@@ -56,16 +56,16 @@ int main() {
   reg.Add(upstream);
 
   // 2. 创建网关
-  runtime::net::EventLoop loop;
-  runtime::net::InetAddress addr(8080);
-  runtime::gateway::GatewayServer gw(&loop, addr, "gateway", reg);
+  vexo::net::EventLoop loop;
+  vexo::net::InetAddress addr(8080);
+  vexo::gateway::GatewayServer gw(&loop, addr, "gateway", reg);
 
   gw.set_thread_num(4);
 
   // 直接路由
-  gw.Get("/healthz", [](const runtime::http::HttpRequest&, 
-                        runtime::http::HttpResponse& resp){
-    resp.set_status_code(runtime::http::StatusCode::Ok);
+  gw.Get("/healthz", [](const vexo::http::HttpRequest&, 
+                        vexo::http::HttpResponse& resp){
+    resp.set_status_code(vexo::http::StatusCode::Ok);
     resp.set_content_type("application/json");
     resp.set_body("{\"status\":\"ok\"}");
   });

@@ -17,13 +17,13 @@
 #include <thread>
 #include <vector>
 
-#include "runtime/net/buffer.h"
-#include "runtime/net/event_loop.h"
-#include "runtime/net/inet_address.h"
-#include "runtime/net/net_utils.h"
-#include "runtime/net/tcp_server.h"
+#include "vexo/net/buffer.h"
+#include "vexo/net/event_loop.h"
+#include "vexo/net/inet_address.h"
+#include "vexo/net/net_utils.h"
+#include "vexo/net/tcp_server.h"
 
-namespace runtime::net {
+namespace vexo::net {
 namespace {
 
 using namespace std::chrono_literals;
@@ -139,7 +139,7 @@ struct EchoServer {
       server.set_edge_triggered(et_mode);
       server.set_message_callback(
           [](const TcpServer::TcpConnectionPtr& conn, Buffer& buf,
-             runtime::time::Timestamp) {
+             vexo::time::Timestamp) {
             conn->Send(buf.RetrieveAllAsString());
           });
       server.Start();
@@ -277,7 +277,7 @@ TEST(TriggerModeTest, ET_SendsLargeResponse) {
     server.set_edge_triggered(true);
     server.set_message_callback(
         [&large_body](const TcpServer::TcpConnectionPtr& conn, Buffer& buf,
-                      runtime::time::Timestamp) {
+                      vexo::time::Timestamp) {
           buf.RetrieveAll();       // discard the request
           conn->Send(large_body);  // send large response
         });
@@ -303,4 +303,4 @@ TEST(TriggerModeTest, ET_SendsLargeResponse) {
 }
 
 }  // namespace
-}  // namespace runtime::net
+}  // namespace vexo::net

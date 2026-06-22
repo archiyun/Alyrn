@@ -20,8 +20,8 @@ unbounded resource consumption, parser flaw, etc.):
 ## Scope
 
 In scope:
-- `runtime_foundation`, `runtime_task`, `runtime_net`, `runtime_http`,
-  `runtime_gateway` library code
+- `vexo_foundation`, `vexo_task`, `vexo_net`, `vexo_http`,
+  `vexo_gateway` library code
 - HTTP/1.1 parsing and routing
 
 Out of scope:

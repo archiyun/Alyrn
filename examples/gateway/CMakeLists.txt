@@ -1,4 +1,4 @@
-# gateway 层 examples —— 依赖 runtime_gateway
+# gateway 层 examples —— 依赖 vexo_gateway
 #   demo_gateway             : 反向代理最小示例
 #   demo_bench_gateway       : 单上游代理基准
 #   demo_bench_gateway_multi : 多上游 / 负载均衡基准
@@ -8,7 +8,7 @@ add_executable(demo_gateway
 )
 target_link_libraries(demo_gateway
     PRIVATE
-        runtime_gateway
+        vexo_gateway
 )
 
 add_executable(demo_bench_gateway
@@ -16,7 +16,7 @@ add_executable(demo_bench_gateway
 )
 target_link_libraries(demo_bench_gateway
     PRIVATE
-        runtime_gateway
+        vexo_gateway
 )
 
 add_executable(demo_bench_gateway_multi
@@ -24,5 +24,5 @@ add_executable(demo_bench_gateway_multi
 )
 target_link_libraries(demo_bench_gateway_multi
     PRIVATE
-        runtime_gateway
+        vexo_gateway
 )

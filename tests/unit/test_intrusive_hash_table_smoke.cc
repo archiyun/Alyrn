@@ -18,10 +18,10 @@
 #include <unordered_map>
 #include <vector>
 
-#include "runtime/ds/intrusive_hash_table.h"
+#include "vexo/ds/intrusive_hash_table.h"
 
-using runtime::ds::HashNode;
-using runtime::ds::IntrusiveHashTable;
+using vexo::ds::HashNode;
+using vexo::ds::IntrusiveHashTable;
 
 [[noreturn]] void Fail(const char* expression, int line) {
   std::fprintf(stderr, "FAIL line %d: %s\n", line, expression);

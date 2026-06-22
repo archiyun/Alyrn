@@ -1,4 +1,4 @@
-// demo_http_server.cc — runtime_http 层基准测试
+// demo_http_server.cc — vexo_http 层基准测试
 // 
 // 以下是对比测试， 但是不妨碍学习 和 使用 http层
 // 与 demo_echo_server（纯 net 层）在相同条件下对比：
@@ -56,11 +56,11 @@
 #include <cstdlib>
 #include <thread>
 
-#include "runtime/http/http_request.h"
-#include "runtime/http/http_response.h"
-#include "runtime/http/http_server.h"
-#include "runtime/net/event_loop.h"
-#include "runtime/net/inet_address.h"
+#include "vexo/http/http_request.h"
+#include "vexo/http/http_response.h"
+#include "vexo/http/http_server.h"
+#include "vexo/net/event_loop.h"
+#include "vexo/net/inet_address.h"
 
 static std::atomic<long long> g_requests{0};
 static std::atomic<long long> g_conns{0};
@@ -89,45 +89,45 @@ int main() {
 
   std::signal(SIGPIPE, SIG_IGN);
 
-  runtime::net::EventLoop main_loop;
-  runtime::http::HttpServer server(
+  vexo::net::EventLoop main_loop;
+  vexo::http::HttpServer server(
     &main_loop,
-    runtime::net::InetAddress(port),
+    vexo::net::InetAddress(port),
     "HttpEchoServer");
 
   server.set_thread_num(io_threads);
   server.set_edge_triggered(et_mode);
 
   // GET / - 固定 "OK" 响应（用于 demo_echo_server 基准对比）
-  server.Get("/", [](const runtime::http::HttpRequest&,
-                   runtime::http::HttpResponse& resp) {
-    resp.set_status_code(runtime::http::StatusCode::Ok);
+  server.Get("/", [](const vexo::http::HttpRequest&,
+                   vexo::http::HttpResponse& resp) {
+    resp.set_status_code(vexo::http::StatusCode::Ok);
     resp.set_content_type("text/plain");
     resp.set_body("OK");
     g_requests.fetch_add(1, std::memory_order_relaxed);
   });
 
   // POST / — 接收 body，同样回 "OK"
-  server.Post("/", [](const runtime::http::HttpRequest&,
-                    runtime::http::HttpResponse& resp) {
-    resp.set_status_code(runtime::http::StatusCode::Ok);
+  server.Post("/", [](const vexo::http::HttpRequest&,
+                    vexo::http::HttpResponse& resp) {
+    resp.set_status_code(vexo::http::StatusCode::Ok);
     resp.set_content_type("text/plain");
     resp.set_body("OK");
     g_requests.fetch_add(1, std::memory_order_relaxed);
   });
 
   // GET /api/health — 供 demo_gateway 健康探针使用
-  server.Get("/api/health", [](const runtime::http::HttpRequest&,
-                               runtime::http::HttpResponse& resp) {
-    resp.set_status_code(runtime::http::StatusCode::Ok);
+  server.Get("/api/health", [](const vexo::http::HttpRequest&,
+                               vexo::http::HttpResponse& resp) {
+    resp.set_status_code(vexo::http::StatusCode::Ok);
     resp.set_content_type("application/json");
     resp.set_body("{\"status\":\"ok\"}");
   });
 
   // GET /api/kv — 供 demo_gateway 代理路由使用
-  server.Get("/api/kv", [](const runtime::http::HttpRequest&,
-                            runtime::http::HttpResponse& resp) {
-    resp.set_status_code(runtime::http::StatusCode::Ok);
+  server.Get("/api/kv", [](const vexo::http::HttpRequest&,
+                            vexo::http::HttpResponse& resp) {
+    resp.set_status_code(vexo::http::StatusCode::Ok);
     resp.set_content_type("application/json");
     resp.set_body("{\"key\":\"demo\",\"value\":\"hello\"}");
   });

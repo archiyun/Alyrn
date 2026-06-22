@@ -41,17 +41,17 @@ about higher-layer policy.
 
 | Current directory | Layer | Notes |
 |---|---:|---|
-| `include/runtime/base` | L0 | Noncopyable and thread identity primitives. |
-| `include/runtime/ds` | L0 | Header-only intrusive containers and hashes. |
-| `include/runtime/memory` | L0/L1 | Pools are L0. TTL/LRU cache code currently depends on `time` and should be split into an L1 cache module. |
-| `include/runtime/time`, `src/time` | L1 | Time values, timers, and timer indexes. No fd or EventLoop ownership. |
-| `include/runtime/log`, `src/log` | L1 | Process logging; may depend on base and time. |
-| `include/runtime/metrics` | L1 plus one L3 leak | Generic metrics are L1. `gateway_metrics.h` belongs under gateway. |
-| `include/runtime/task`, `src/task` | L2 | Blocking/thread-pool execution. Must remain independent of net. |
-| `include/runtime/net`, `src/net` | L2 | Reactor, sockets, channels, timers bound to EventLoop, TCP lifecycle. |
-| `include/runtime/uring`, `src/uring` | L2 | Optional I/O backend. It may reuse net value types but must not expose gateway policy. |
-| `include/runtime/http`, `src/http` | L2 | HTTP parser, router, request/response, and server adapter over net/task. |
-| `include/runtime/gateway`, `src/gateway` | L3 | Currently flat; should be split by policy responsibility. |
+| `include/vexo/base` | L0 | Noncopyable and thread identity primitives. |
+| `include/vexo/ds` | L0 | Header-only intrusive containers and hashes. |
+| `include/vexo/memory` | L0/L1 | Pools are L0. TTL/LRU cache code currently depends on `time` and should be split into an L1 cache module. |
+| `include/vexo/time`, `src/time` | L1 | Time values, timers, and timer indexes. No fd or EventLoop ownership. |
+| `include/vexo/log`, `src/log` | L1 | Process logging; may depend on base and time. |
+| `include/vexo/metrics` | L1 plus one L3 leak | Generic metrics are L1. `gateway_metrics.h` belongs under gateway. |
+| `include/vexo/task`, `src/task` | L2 | Blocking/thread-pool execution. Must remain independent of net. |
+| `include/vexo/net`, `src/net` | L2 | Reactor, sockets, channels, timers bound to EventLoop, TCP lifecycle. |
+| `include/vexo/uring`, `src/uring` | L2 | Optional I/O backend. It may reuse net value types but must not expose gateway policy. |
+| `include/vexo/http`, `src/http` | L2 | HTTP parser, router, request/response, and server adapter over net/task. |
+| `include/vexo/gateway`, `src/gateway` | L3 | Currently flat; should be split by policy responsibility. |
 | `examples`, `docs/benchmark`, `tests` | L4 | Consumers and validation only. |
 
 ## Allowed Dependencies
@@ -106,7 +106,7 @@ The following are hard failures:
 - `net` including `http` or `gateway`, or inspecting gateway-specific names.
 - `task` including `net`, and `net` including `task`.
 - `http` including `gateway`.
-- A gateway policy type being placed in `runtime::metrics`, `runtime::net`, or
+- A gateway policy type being placed in `vexo::metrics`, `vexo::net`, or
   another lower namespace merely to make it reusable.
 - Tests or benchmarks becoming required runtime link dependencies.
 

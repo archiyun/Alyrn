@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/net/acceptor.h"
+#include "vexo/net/acceptor.h"
 
 #include <unistd.h>
 
@@ -9,12 +9,12 @@
 #include <cstdlib>
 #include <cstring>
 
-#include "runtime/log/logger.h"
-#include "runtime/net/event_loop.h"
-#include "runtime/net/inet_address.h"
-#include "runtime/net/net_utils.h"
+#include "vexo/log/logger.h"
+#include "vexo/net/event_loop.h"
+#include "vexo/net/inet_address.h"
+#include "vexo/net/net_utils.h"
 
-namespace runtime::net {
+namespace vexo::net {
 namespace {
 
 int CreateAcceptSocket() {
@@ -41,7 +41,7 @@ Acceptor::Acceptor(EventLoop* loop,
     accept_socket_.BindAddress(listen_addr);
 
     accept_channel_.set_read_callback(
-        [this](runtime::time::Timestamp receive_time) {
+        [this](vexo::time::Timestamp receive_time) {
             HandleRead(receive_time);
         });
 }
@@ -60,7 +60,7 @@ void Acceptor::Listen() {
   LOG_INFO() << "acceptor listening on fd=" << accept_socket_.fd();
 }
 
-void Acceptor::HandleRead(runtime::time::Timestamp) {
+void Acceptor::HandleRead(vexo::time::Timestamp) {
   auto do_accept = [this]() -> bool {
     InetAddress peer_addr(0);
     int connfd = accept_socket_.Accept(&peer_addr);
@@ -94,4 +94,4 @@ void Acceptor::HandleRead(runtime::time::Timestamp) {
   }
 }
 
-}  // namespace runtime::net
+}  // namespace vexo::net

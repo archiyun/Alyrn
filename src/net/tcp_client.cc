@@ -1,16 +1,16 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/net/tcp_client.h"
+#include "vexo/net/tcp_client.h"
 
 #include <atomic>
 #include <cstdlib>
 #include <cstdio>
 
-#include "runtime/log/logger.h"
-#include "runtime/net/connector.h"
-#include "runtime/net/net_utils.h"
+#include "vexo/log/logger.h"
+#include "vexo/net/connector.h"
+#include "vexo/net/net_utils.h"
 
-namespace runtime::net {
+namespace vexo::net {
 
 TcpClient::TcpClient(EventLoop* loop,
                      const InetAddress& server_addr,
@@ -103,4 +103,4 @@ void TcpClient::RemoveConnection(const TcpConnectionPtr& conn) {
              << " peer=" << conn->peer_address().ToIpPort();
 }
 
-}  // namespace runtime::net
+}  // namespace vexo::net

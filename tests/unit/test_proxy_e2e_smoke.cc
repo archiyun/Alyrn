@@ -27,15 +27,15 @@
 #include <utility>
 #include <vector>
 
-#include "runtime/ds/murmurhash32.h"
-#include "runtime/gateway/gateway_server.h"
-#include "runtime/gateway/upstream.h"
-#include "runtime/gateway/upstream_peer.h"
-#include "runtime/gateway/upstream_registry.h"
-#include "runtime/net/event_loop.h"
-#include "runtime/net/event_loop_thread.h"
-#include "runtime/net/inet_address.h"
-#include "runtime/net/tcp_server.h"
+#include "vexo/ds/murmurhash32.h"
+#include "vexo/gateway/gateway_server.h"
+#include "vexo/gateway/upstream.h"
+#include "vexo/gateway/upstream_peer.h"
+#include "vexo/gateway/upstream_registry.h"
+#include "vexo/net/event_loop.h"
+#include "vexo/net/event_loop_thread.h"
+#include "vexo/net/inet_address.h"
+#include "vexo/net/tcp_server.h"
 
 using namespace std::chrono_literals;
 
@@ -69,7 +69,7 @@ bool Expect(bool ok, const char* msg) {
 void Passed(const char* name) { std::cout << "[PASS] " << name << '\n'; }
 
 template <typename F>
-void RunInLoopAndWait(runtime::net::EventLoop* loop, F&& fn) {
+void RunInLoopAndWait(vexo::net::EventLoop* loop, F&& fn) {
   std::promise<void> done_promise;
   auto done = done_promise.get_future();
   loop->RunInLoop(
@@ -120,9 +120,9 @@ std::string BlockingHttpCall(uint16_t port, const std::string& req,
 
 // upstream stub：把每次收到的 request 完整记录下来，回固定 Content-Length 响应。
 struct UpstreamStub {
-  runtime::net::EventLoopThread loop_thr;
-  runtime::net::EventLoop* loop_holder{nullptr};
-  std::unique_ptr<runtime::net::TcpServer> server;
+  vexo::net::EventLoopThread loop_thr;
+  vexo::net::EventLoop* loop_holder{nullptr};
+  std::unique_ptr<vexo::net::TcpServer> server;
   std::mutex mu;
   std::vector<std::string> requests;        // 收到的每条完整请求 (按 \r\n\r\n 切)
   std::atomic<int> accept_count{0};
@@ -133,16 +133,16 @@ struct UpstreamStub {
   void Start(uint16_t port) {
     auto* loop = loop_thr.StartLoop();
     loop_holder = loop;
-    runtime::net::InetAddress addr(port);
+    vexo::net::InetAddress addr(port);
     RunInLoopAndWait(loop, [this, loop, addr] {
-      server = std::make_unique<runtime::net::TcpServer>(loop, addr, "upstream-stub");
+      server = std::make_unique<vexo::net::TcpServer>(loop, addr, "upstream-stub");
       server->set_connection_callback(
-          [this](const runtime::net::TcpConnection::TcpConnectionPtr& conn) {
+          [this](const vexo::net::TcpConnection::TcpConnectionPtr& conn) {
             if (conn->Connected()) accept_count.fetch_add(1);
           });
       server->set_message_callback(
-          [this](const runtime::net::TcpConnection::TcpConnectionPtr& conn,
-                 runtime::net::Buffer& buf, runtime::time::Timestamp) {
+          [this](const vexo::net::TcpConnection::TcpConnectionPtr& conn,
+                 vexo::net::Buffer& buf, vexo::time::Timestamp) {
             while (true) {
               std::string_view view(buf.Peek(), buf.readable_bytes());
               auto pos = view.find("\r\n\r\n");
@@ -173,10 +173,10 @@ struct UpstreamStub {
 };
 
 void AddPeersWithHashSelectingFirst(
-    const std::shared_ptr<runtime::gateway::Upstream>& upstream,
-    const std::shared_ptr<runtime::gateway::UpstreamPeer>& selected,
-    const std::shared_ptr<runtime::gateway::UpstreamPeer>& failover) {
-  const auto hash = runtime::ds::MurmurHash3("127.0.0.1");
+    const std::shared_ptr<vexo::gateway::Upstream>& upstream,
+    const std::shared_ptr<vexo::gateway::UpstreamPeer>& selected,
+    const std::shared_ptr<vexo::gateway::UpstreamPeer>& failover) {
+  const auto hash = vexo::ds::MurmurHash3("127.0.0.1");
   if ((hash % 2) == 0) {
     upstream->AddPeer(selected);
     upstream->AddPeer(failover);
@@ -196,20 +196,20 @@ bool TestProxyPreservesRequestLineAndReusesConnection() {
   stub.Start(up_port);
 
   // 2. 网关起来 (单线程,简化生命周期)
-  runtime::gateway::UpstreamRegistry reg;
-  auto up = std::make_shared<runtime::gateway::Upstream>(
-      runtime::gateway::UpstreamConfig{.name = "stub"});
-  up->AddPeer(std::make_shared<runtime::gateway::UpstreamPeer>(
-      runtime::gateway::UpstreamPeerConfig{
+  vexo::gateway::UpstreamRegistry reg;
+  auto up = std::make_shared<vexo::gateway::Upstream>(
+      vexo::gateway::UpstreamConfig{.name = "stub"});
+  up->AddPeer(std::make_shared<vexo::gateway::UpstreamPeer>(
+      vexo::gateway::UpstreamPeerConfig{
           .name = "stub-1", .host = "127.0.0.1", .port = up_port}));
   reg.Add(up);
 
-  runtime::net::EventLoopThread gw_thr;
+  vexo::net::EventLoopThread gw_thr;
   auto* gw_loop = gw_thr.StartLoop();
-  std::unique_ptr<runtime::gateway::GatewayServer> gw;
+  std::unique_ptr<vexo::gateway::GatewayServer> gw;
   RunInLoopAndWait(gw_loop, [&] {
-    gw = std::make_unique<runtime::gateway::GatewayServer>(
-        gw_loop, runtime::net::InetAddress(gw_port), "gw", reg);
+    gw = std::make_unique<vexo::gateway::GatewayServer>(
+        gw_loop, vexo::net::InetAddress(gw_port), "gw", reg);
     gw->AddProxyRoute("/api/", "stub", "round_robin");
     gw->Start();
   });
@@ -277,20 +277,20 @@ bool TestPrefixBoundary() {
   UpstreamStub stub;
   stub.Start(up_port);
 
-  runtime::gateway::UpstreamRegistry reg;
-  auto up = std::make_shared<runtime::gateway::Upstream>(
-      runtime::gateway::UpstreamConfig{.name = "stub"});
-  up->AddPeer(std::make_shared<runtime::gateway::UpstreamPeer>(
-      runtime::gateway::UpstreamPeerConfig{
+  vexo::gateway::UpstreamRegistry reg;
+  auto up = std::make_shared<vexo::gateway::Upstream>(
+      vexo::gateway::UpstreamConfig{.name = "stub"});
+  up->AddPeer(std::make_shared<vexo::gateway::UpstreamPeer>(
+      vexo::gateway::UpstreamPeerConfig{
           .name = "stub-1", .host = "127.0.0.1", .port = up_port}));
   reg.Add(up);
 
-  runtime::net::EventLoopThread gw_thr;
+  vexo::net::EventLoopThread gw_thr;
   auto* gw_loop = gw_thr.StartLoop();
-  std::unique_ptr<runtime::gateway::GatewayServer> gw;
+  std::unique_ptr<vexo::gateway::GatewayServer> gw;
   RunInLoopAndWait(gw_loop, [&] {
-    gw = std::make_unique<runtime::gateway::GatewayServer>(
-        gw_loop, runtime::net::InetAddress(gw_port), "gw2", reg);
+    gw = std::make_unique<vexo::gateway::GatewayServer>(
+        gw_loop, vexo::net::InetAddress(gw_port), "gw2", reg);
     gw->AddProxyRoute("/api", "stub", "round_robin");
     gw->Start();
   });
@@ -327,24 +327,24 @@ bool TestProxyDeadlineReleasesBulkheadSlot() {
   stub.respond = false;
   stub.Start(up_port);
 
-  runtime::gateway::UpstreamRegistry reg;
-  runtime::gateway::UpstreamConfig cfg;
+  vexo::gateway::UpstreamRegistry reg;
+  vexo::gateway::UpstreamConfig cfg;
   cfg.name = "slow";
   cfg.max_concurrent_requests = 1;
   cfg.request_timeout = 100ms;
-  auto up = std::make_shared<runtime::gateway::Upstream>(cfg);
-  auto peer = std::make_shared<runtime::gateway::UpstreamPeer>(
-      runtime::gateway::UpstreamPeerConfig{
+  auto up = std::make_shared<vexo::gateway::Upstream>(cfg);
+  auto peer = std::make_shared<vexo::gateway::UpstreamPeer>(
+      vexo::gateway::UpstreamPeerConfig{
           .name = "slow-1", .host = "127.0.0.1", .port = up_port});
   up->AddPeer(peer);
   reg.Add(up);
 
-  runtime::net::EventLoopThread gw_thr;
+  vexo::net::EventLoopThread gw_thr;
   auto* gw_loop = gw_thr.StartLoop();
-  std::unique_ptr<runtime::gateway::GatewayServer> gw;
+  std::unique_ptr<vexo::gateway::GatewayServer> gw;
   RunInLoopAndWait(gw_loop, [&] {
-    gw = std::make_unique<runtime::gateway::GatewayServer>(
-        gw_loop, runtime::net::InetAddress(gw_port), "deadline-gw", reg);
+    gw = std::make_unique<vexo::gateway::GatewayServer>(
+        gw_loop, vexo::net::InetAddress(gw_port), "deadline-gw", reg);
     gw->AddProxyRoute("/slow", "slow", "round_robin");
     gw->Start();
   });
@@ -402,28 +402,28 @@ bool TestIPHashConnectFailureFailsOver() {
   UpstreamStub good;
   good.Start(good_port);
 
-  runtime::gateway::UpstreamRegistry reg;
-  runtime::gateway::UpstreamConfig cfg;
+  vexo::gateway::UpstreamRegistry reg;
+  vexo::gateway::UpstreamConfig cfg;
   cfg.name = "hash-failover";
   cfg.request_timeout = 1s;
-  auto up = std::make_shared<runtime::gateway::Upstream>(cfg);
-  auto bad_peer = std::make_shared<runtime::gateway::UpstreamPeer>(
-      runtime::gateway::UpstreamPeerConfig{
+  auto up = std::make_shared<vexo::gateway::Upstream>(cfg);
+  auto bad_peer = std::make_shared<vexo::gateway::UpstreamPeer>(
+      vexo::gateway::UpstreamPeerConfig{
           .name = "accept-then-close",
           .host = "127.0.0.1",
           .port = closing_port});
-  auto good_peer = std::make_shared<runtime::gateway::UpstreamPeer>(
-      runtime::gateway::UpstreamPeerConfig{
+  auto good_peer = std::make_shared<vexo::gateway::UpstreamPeer>(
+      vexo::gateway::UpstreamPeerConfig{
           .name = "healthy", .host = "127.0.0.1", .port = good_port});
   AddPeersWithHashSelectingFirst(up, bad_peer, good_peer);
   reg.Add(up);
 
-  runtime::net::EventLoopThread gw_thr;
+  vexo::net::EventLoopThread gw_thr;
   auto* gw_loop = gw_thr.StartLoop();
-  std::unique_ptr<runtime::gateway::GatewayServer> gw;
+  std::unique_ptr<vexo::gateway::GatewayServer> gw;
   RunInLoopAndWait(gw_loop, [&] {
-    gw = std::make_unique<runtime::gateway::GatewayServer>(
-        gw_loop, runtime::net::InetAddress(gw_port), "hash-failover-gw", reg);
+    gw = std::make_unique<vexo::gateway::GatewayServer>(
+        gw_loop, vexo::net::InetAddress(gw_port), "hash-failover-gw", reg);
     gw->AddProxyRoute("/hash", "hash-failover", "ip_hash");
     gw->Start();
   });
@@ -463,28 +463,28 @@ bool TestPostIsNotReplayedAfterFlush() {
   UpstreamStub good;
   good.Start(good_port);
 
-  runtime::gateway::UpstreamRegistry reg;
-  runtime::gateway::UpstreamConfig cfg;
+  vexo::gateway::UpstreamRegistry reg;
+  vexo::gateway::UpstreamConfig cfg;
   cfg.name = "post-no-replay";
   cfg.request_timeout = 1s;
-  auto up = std::make_shared<runtime::gateway::Upstream>(cfg);
-  auto closing_peer = std::make_shared<runtime::gateway::UpstreamPeer>(
-      runtime::gateway::UpstreamPeerConfig{
+  auto up = std::make_shared<vexo::gateway::Upstream>(cfg);
+  auto closing_peer = std::make_shared<vexo::gateway::UpstreamPeer>(
+      vexo::gateway::UpstreamPeerConfig{
           .name = "accept-then-close",
           .host = "127.0.0.1",
           .port = closing_port});
-  auto good_peer = std::make_shared<runtime::gateway::UpstreamPeer>(
-      runtime::gateway::UpstreamPeerConfig{
+  auto good_peer = std::make_shared<vexo::gateway::UpstreamPeer>(
+      vexo::gateway::UpstreamPeerConfig{
           .name = "must-not-receive", .host = "127.0.0.1", .port = good_port});
   AddPeersWithHashSelectingFirst(up, closing_peer, good_peer);
   reg.Add(up);
 
-  runtime::net::EventLoopThread gw_thr;
+  vexo::net::EventLoopThread gw_thr;
   auto* gw_loop = gw_thr.StartLoop();
-  std::unique_ptr<runtime::gateway::GatewayServer> gw;
+  std::unique_ptr<vexo::gateway::GatewayServer> gw;
   RunInLoopAndWait(gw_loop, [&] {
-    gw = std::make_unique<runtime::gateway::GatewayServer>(
-        gw_loop, runtime::net::InetAddress(gw_port), "post-no-replay-gw", reg);
+    gw = std::make_unique<vexo::gateway::GatewayServer>(
+        gw_loop, vexo::net::InetAddress(gw_port), "post-no-replay-gw", reg);
     gw->AddProxyRoute("/write", "post-no-replay", "ip_hash");
     gw->Start();
   });

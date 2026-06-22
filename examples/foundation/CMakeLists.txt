@@ -1,4 +1,4 @@
-# foundation 层 examples —— 依赖 runtime_foundation
+# foundation 层 examples —— 依赖 vexo_foundation
 #   demo_logger  : AsyncLogger / LOG_* 流式宏
 #   demo_rbtree  : base/rbtree.h 红黑树
 
@@ -7,7 +7,7 @@ add_executable(demo_logger_example
 )
 target_link_libraries(demo_logger_example
     PRIVATE
-        runtime_foundation
+        vexo_foundation
 )
 
 add_executable(demo_rbtree
@@ -15,5 +15,5 @@ add_executable(demo_rbtree
 )
 target_link_libraries(demo_rbtree
     PRIVATE
-        runtime_foundation
+        vexo_foundation
 )

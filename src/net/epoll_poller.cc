@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/net/epoll_poller.h"
+#include "vexo/net/epoll_poller.h"
 
 #include <unistd.h>
 
@@ -9,10 +9,10 @@
 #include <cstdlib>
 #include <cstring>
 
-#include "runtime/log/logger.h"
-#include "runtime/net/channel.h"
+#include "vexo/log/logger.h"
+#include "vexo/net/channel.h"
 
-namespace runtime::net {
+namespace vexo::net {
 namespace {
 
 // Channel registration state within EPollPoller.
@@ -73,14 +73,14 @@ EPollPoller::~EPollPoller() {
   }
 }
 
-runtime::time::Timestamp EPollPoller::Poll(
+vexo::time::Timestamp EPollPoller::Poll(
     int timeout_ms,
     ChannelList* active_channels) {
   const int max_events = static_cast<int>(events_.size());
   const int num_events =
       ::epoll_wait(epollfd_, events_.data(), max_events, timeout_ms);
   const int saved_errno = errno;
-  const auto now = runtime::time::Timestamp::Now();
+  const auto now = vexo::time::Timestamp::Now();
 
   if (num_events > 0) {
     FillActiveChannels(num_events, active_channels);
@@ -165,4 +165,4 @@ void EPollPoller::Update(int operation, Channel* channel) {
   }
 }
 
-}  // namespace runtime::net
+}  // namespace vexo::net

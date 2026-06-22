@@ -1,16 +1,16 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/task/blocking_executor.h"
+#include "vexo/task/blocking_executor.h"
 
 #include <algorithm>
 #include <memory>
 #include <stdexcept>
 
-#include "runtime/task/detail/task.h"
-#include "runtime/task/detail/thread_pool.h"
-#include "runtime/task/detail/work_queue.h"
+#include "vexo/task/detail/task.h"
+#include "vexo/task/detail/thread_pool.h"
+#include "vexo/task/detail/work_queue.h"
 
-namespace runtime::task {
+namespace vexo::task {
 
 std::atomic<uint64_t> BlockingExecutor::next_id_{1};
 
@@ -81,4 +81,4 @@ const ExecutorMetrics& BlockingExecutor::metrics() const {
   return impl_->metrics;
 }
 
-}  // namespace runtime::task
+}  // namespace vexo::task

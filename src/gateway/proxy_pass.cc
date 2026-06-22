@@ -13,7 +13,7 @@
 // shared_ptr, and held in the client connection's ConnCtx until the response
 // completes or the client disconnects. All callbacks capture weak_self so the
 // object can outlive any single in-flight callback without UAF.
-#include "runtime/gateway/proxy_pass.h"
+#include "vexo/gateway/proxy_pass.h"
 
 #include <algorithm>
 #include <atomic>
@@ -21,15 +21,15 @@
 #include <chrono>
 #include <cstring>
 
-#include "runtime/gateway/upstream_conn_pool.h"
-#include "runtime/http/http_types.h"
-#include "runtime/log/logger.h"
-#include "runtime/net/event_loop.h"
-#include "runtime/net/inet_address.h"
-#include "runtime/net/net_utils.h"
-#include "runtime/time/timestamp.h"
+#include "vexo/gateway/upstream_conn_pool.h"
+#include "vexo/http/http_types.h"
+#include "vexo/log/logger.h"
+#include "vexo/net/event_loop.h"
+#include "vexo/net/inet_address.h"
+#include "vexo/net/net_utils.h"
+#include "vexo/time/timestamp.h"
 
-namespace runtime::gateway {
+namespace vexo::gateway {
 
 namespace {
 // Monotonic milliseconds since some unspecified epoch, used to stamp
@@ -44,8 +44,8 @@ uint64_t NowMs() {
 // RFC 7231 idempotent methods: replaying them upstream has no extra effect, so
 // they are safe to retry on another peer even after the bytes were flushed.
 // POST/PATCH/CONNECT (and Invalid) are not — a replay could double-execute.
-bool IsIdempotent(runtime::http::Method m) {
-  using runtime::http::Method;
+bool IsIdempotent(vexo::http::Method m) {
+  using vexo::http::Method;
   switch (m) {
     case Method::Get:
     case Method::Head:
@@ -71,7 +71,7 @@ UpstreamRequest::UpstreamRequest(const TcpConnectionPtr& client_conn,
                                  std::string request_bytes,
                                  CircuitBreaker* cb,
                                  int max_retries,
-                                 runtime::http::Method request_method)
+                                 vexo::http::Method request_method)
   : client_weak_(client_conn),
     upstream_(upstream),
     lb_(lb),
@@ -128,7 +128,7 @@ void UpstreamRequest::Start() {
 }
 
 void UpstreamRequest::ConnectToWithPool(std::shared_ptr<UpstreamPeer> peer,
-                                        std::unique_ptr<runtime::net::TcpClient> pooled_client) {
+                                        std::unique_ptr<vexo::net::TcpClient> pooled_client) {
   upstream_conn_ = std::move(pooled_client);
   peer_ = std::move(peer);
   phase_ = Phase::kSendingRequest;
@@ -140,8 +140,8 @@ void UpstreamRequest::ConnectToWithPool(std::shared_ptr<UpstreamPeer> peer,
   auto& conn = *upstream_conn_->connection();
   auto weak_self = weak_from_this();
   conn.set_message_callback(
-      [weak_self](const TcpConnectionPtr& up, runtime::net::Buffer& buf,
-                  runtime::time::Timestamp ts) {
+      [weak_self](const TcpConnectionPtr& up, vexo::net::Buffer& buf,
+                  vexo::time::Timestamp ts) {
         if (auto self = weak_self.lock()) self->OnUpstreamMessage(up, buf, ts);
       });
   conn.set_close_callback([weak_self](const TcpConnectionPtr& up) {
@@ -164,7 +164,7 @@ void UpstreamRequest::ConnectTo(std::shared_ptr<UpstreamPeer> peer) {
   auto client = client_weak_.lock();
   if (!client) return;
 
-  auto address = runtime::net::ParseIPv4Address(peer_->config().host,
+  auto address = vexo::net::ParseIPv4Address(peer_->config().host,
                                                 peer_->config().port);
   if (!address) {
     peer_->OnFailure(NowMs());
@@ -178,7 +178,7 @@ void UpstreamRequest::ConnectTo(std::shared_ptr<UpstreamPeer> peer) {
     ReleaseAccounting();
     return;
   }
-  upstream_conn_ = std::make_unique<runtime::net::TcpClient>(
+  upstream_conn_ = std::make_unique<vexo::net::TcpClient>(
     client->loop(), *address.value, "proxy->" + peer_->config().name);
   AttachCallbacks();
   upstream_conn_->Connect();
@@ -190,7 +190,7 @@ void UpstreamRequest::AttachCallbacks() {
     if (auto self = weak_self.lock()) self->OnUpstreamConnChange(up);
   });
   upstream_conn_->set_message_callback([weak_self](
-    const TcpConnectionPtr& up, runtime::net::Buffer& buf, runtime::time::Timestamp ts) {
+    const TcpConnectionPtr& up, vexo::net::Buffer& buf, vexo::time::Timestamp ts) {
       if (auto self = weak_self.lock()) self->OnUpstreamMessage(up, buf, ts);
     }
   );
@@ -262,8 +262,8 @@ void UpstreamRequest::OnUpstreamConnChange(const TcpConnectionPtr& up_conn) {
 }
 
 void UpstreamRequest::OnUpstreamMessage(const TcpConnectionPtr& /*up*/,
-                                     runtime::net::Buffer& buf,
-                                     runtime::time::Timestamp /*ts*/) {
+                                     vexo::net::Buffer& buf,
+                                     vexo::time::Timestamp /*ts*/) {
   auto client = client_weak_.lock();
   if (!client) { buf.RetrieveAll(); return; }
 
@@ -337,7 +337,7 @@ void UpstreamRequest::OnUpstreamMessage(const TcpConnectionPtr& /*up*/,
 
 void UpstreamRequest::ParseFraming(std::string_view raw_headers, int status) {
   // RFC 7230 §3.3.3: HEAD responses and 1xx/204/304 status codes never carry a body.
-  if (request_method_ == runtime::http::Method::Head ||
+  if (request_method_ == vexo::http::Method::Head ||
       status == 204 || status == 304 ||
       (status >= 100 && status < 200)) {
     framing_ = BodyFraming::kNoBody;
@@ -529,7 +529,7 @@ void UpstreamRequest::Finalize() {
   // would still be forwarded to *this* request's client connection.
   auto& conn = *upstream_conn_->connection();
   conn.set_message_callback(
-      [](const TcpConnectionPtr&, runtime::net::Buffer& b, runtime::time::Timestamp) {
+      [](const TcpConnectionPtr&, vexo::net::Buffer& b, vexo::time::Timestamp) {
         b.RetrieveAll();
       });
   conn.set_close_callback([](const TcpConnectionPtr&) {});
@@ -545,7 +545,7 @@ void UpstreamRequest::Finalize() {
 // only owner and cancel the request.
 std::shared_ptr<UpstreamRequest>
 ProxyPass::Forward(const TcpConnectionPtr& client_conn,
-                   const runtime::http::HttpRequest& request,
+                   const vexo::http::HttpRequest& request,
                    Upstream& upstream,
                    LoadBalancer& lb,
                    UpstreamConnPool& pool,
@@ -580,11 +580,11 @@ ProxyPass::Forward(const TcpConnectionPtr& client_conn,
 // Serialize the inbound HttpRequest into the byte stream we send upstream.
 // Strips the client's Host/Connection (we rewrite both) and pins the
 // outgoing connection to keep-alive so the conn pool can reuse it.
-std::string ProxyPass::BuildRequest(const runtime::http::HttpRequest& req,
+std::string ProxyPass::BuildRequest(const vexo::http::HttpRequest& req,
                                     const UpstreamPeer& peer) {
   std::string out;
   out.reserve(256);
-  out += runtime::http::MethodToString(req.method());
+  out += vexo::http::MethodToString(req.method());
   out += ' ';
   out += req.path().empty() ? "/" : req.path();
   if (!req.query().empty()) {
@@ -610,4 +610,4 @@ std::string ProxyPass::BuildRequest(const runtime::http::HttpRequest& req,
   return out;
 }
 
-}  // namespace runtime::gateway
+}  // namespace vexo::gateway

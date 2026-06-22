@@ -5,11 +5,11 @@
 #include <fstream>
 #include <string>
 
-#include "runtime/log/async_logger.h"
-#include "runtime/log/log_buffer.h"
-#include "runtime/log/logger.h"
+#include "vexo/log/async_logger.h"
+#include "vexo/log/log_buffer.h"
+#include "vexo/log/logger.h"
 
-namespace runtime::log {
+namespace vexo::log {
 namespace {
 
 std::string ReadFile(const std::filesystem::path& path) {
@@ -118,4 +118,4 @@ TEST(LoggerIntegrationTest, SupportsLargeMessageTruncationMarker) {
 }
 
 }  // namespace
-}  // namespace runtime::log
+}  // namespace vexo::log

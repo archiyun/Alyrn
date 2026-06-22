@@ -13,7 +13,7 @@
 #include <thread>
 #include <vector>
 
-#include "runtime/gateway/circuit_breaker.h"
+#include "vexo/gateway/circuit_breaker.h"
 
 namespace {
 
@@ -36,17 +36,17 @@ void Passed(const char* name) {
 // ================================================================
 
 bool TestInitialStateIsClosed() {
-  runtime::gateway::CircuitBreakerConfig cfg;
-  runtime::gateway::CircuitBreaker cb(cfg);
-  if (!Expect(cb.state() == runtime::gateway::CircuitBreakerState::kClosed,
+  vexo::gateway::CircuitBreakerConfig cfg;
+  vexo::gateway::CircuitBreaker cb(cfg);
+  if (!Expect(cb.state() == vexo::gateway::CircuitBreakerState::kClosed,
               "initial state must be kClosed")) return false;
   Passed("TestInitialStateIsClosed");
   return true;
 }
 
 bool TestAllowRequestReturnsTrueInClosed() {
-  runtime::gateway::CircuitBreakerConfig cfg;
-  runtime::gateway::CircuitBreaker cb(cfg);
+  vexo::gateway::CircuitBreakerConfig cfg;
+  vexo::gateway::CircuitBreaker cb(cfg);
   if (!Expect(cb.AllowRequest(), "AllowRequest must return true in kClosed")) return false;
   // 多次调用应一致
   for (int i = 0; i < 100; i++) {
@@ -61,28 +61,28 @@ bool TestAllowRequestReturnsTrueInClosed() {
 // ================================================================
 
 bool TestTransitionToOpenAfterFailures() {
-  runtime::gateway::CircuitBreakerConfig cfg;
+  vexo::gateway::CircuitBreakerConfig cfg;
   cfg.failure_threshold = 3;
-  runtime::gateway::CircuitBreaker cb(cfg);
+  vexo::gateway::CircuitBreaker cb(cfg);
 
   // 2 次失败：还不到阈值
   cb.OnFailure();
   cb.OnFailure();
-  if (!Expect(cb.state() == runtime::gateway::CircuitBreakerState::kClosed,
+  if (!Expect(cb.state() == vexo::gateway::CircuitBreakerState::kClosed,
               "must stay kClosed before threshold")) return false;
 
   // 第 3 次失败 → OPEN
   cb.OnFailure();
-  if (!Expect(cb.state() == runtime::gateway::CircuitBreakerState::kOpen,
+  if (!Expect(cb.state() == vexo::gateway::CircuitBreakerState::kOpen,
               "must transition to kOpen after failure threshold")) return false;
   Passed("TestTransitionToOpenAfterFailures");
   return true;
 }
 
 bool TestAllowRequestReturnsFalseInOpen() {
-  runtime::gateway::CircuitBreakerConfig cfg;
+  vexo::gateway::CircuitBreakerConfig cfg;
   cfg.failure_threshold = 2;
-  runtime::gateway::CircuitBreaker cb(cfg);
+  vexo::gateway::CircuitBreaker cb(cfg);
 
   cb.OnFailure();
   cb.OnFailure();  // → OPEN
@@ -97,13 +97,13 @@ bool TestAllowRequestReturnsFalseInOpen() {
 // ================================================================
 
 bool TestTransitionToHalfOpenAfterTimeout() {
-  runtime::gateway::CircuitBreakerConfig cfg;
+  vexo::gateway::CircuitBreakerConfig cfg;
   cfg.failure_threshold = 1;
   cfg.open_timeout = 50ms;  // 极短超时
-  runtime::gateway::CircuitBreaker cb(cfg);
+  vexo::gateway::CircuitBreaker cb(cfg);
 
   cb.OnFailure();  // → OPEN
-  if (!Expect(cb.state() == runtime::gateway::CircuitBreakerState::kOpen,
+  if (!Expect(cb.state() == vexo::gateway::CircuitBreakerState::kOpen,
               "must be kOpen")) return false;
 
   // 立即请求：还在超时内
@@ -116,7 +116,7 @@ bool TestTransitionToHalfOpenAfterTimeout() {
   // 下一个请求触发 OPEN → HALF_OPEN
   if (!Expect(cb.AllowRequest(),
               "must allow after open_timeout (lazy OPEN→HALF_OPEN)")) return false;
-  if (!Expect(cb.state() == runtime::gateway::CircuitBreakerState::kHalfOpen,
+  if (!Expect(cb.state() == vexo::gateway::CircuitBreakerState::kHalfOpen,
               "must be kHalfOpen after timeout")) return false;
   Passed("TestTransitionToHalfOpenAfterTimeout");
   return true;
@@ -127,11 +127,11 @@ bool TestTransitionToHalfOpenAfterTimeout() {
 // ================================================================
 
 bool TestHalfOpenLimitsRequests() {
-  runtime::gateway::CircuitBreakerConfig cfg;
+  vexo::gateway::CircuitBreakerConfig cfg;
   cfg.failure_threshold = 1;
   cfg.half_open_max_requests = 2;
   cfg.open_timeout = 1ms;  // 立即触发
-  runtime::gateway::CircuitBreaker cb(cfg);
+  vexo::gateway::CircuitBreaker cb(cfg);
 
   cb.OnFailure();  // → OPEN
   std::this_thread::sleep_for(5ms);
@@ -151,11 +151,11 @@ bool TestHalfOpenLimitsRequests() {
 // ================================================================
 
 bool TestTransitionToClosedAfterSuccesses() {
-  runtime::gateway::CircuitBreakerConfig cfg;
+  vexo::gateway::CircuitBreakerConfig cfg;
   cfg.failure_threshold = 1;
   cfg.success_threshold = 2;
   cfg.open_timeout = 1ms;
-  runtime::gateway::CircuitBreaker cb(cfg);
+  vexo::gateway::CircuitBreaker cb(cfg);
 
   cb.OnFailure();  // → OPEN
   std::this_thread::sleep_for(5ms);
@@ -163,12 +163,12 @@ bool TestTransitionToClosedAfterSuccesses() {
 
   // 1 次成功 → 不达标
   cb.OnSuccess();
-  if (!Expect(cb.state() == runtime::gateway::CircuitBreakerState::kHalfOpen,
+  if (!Expect(cb.state() == vexo::gateway::CircuitBreakerState::kHalfOpen,
               "must stay kHalfOpen after 1/2 successes")) return false;
 
   // 2 次成功 → CLOSED
   cb.OnSuccess();
-  if (!Expect(cb.state() == runtime::gateway::CircuitBreakerState::kClosed,
+  if (!Expect(cb.state() == vexo::gateway::CircuitBreakerState::kClosed,
               "must transition to kClosed after success threshold")) return false;
   Passed("TestTransitionToClosedAfterSuccesses");
   return true;
@@ -179,10 +179,10 @@ bool TestTransitionToClosedAfterSuccesses() {
 // ================================================================
 
 bool TestTransitionBackToOpenOnFailureInHalfOpen() {
-  runtime::gateway::CircuitBreakerConfig cfg;
+  vexo::gateway::CircuitBreakerConfig cfg;
   cfg.failure_threshold = 1;
   cfg.open_timeout = 1ms;
-  runtime::gateway::CircuitBreaker cb(cfg);
+  vexo::gateway::CircuitBreaker cb(cfg);
 
   cb.OnFailure();  // → OPEN
   std::this_thread::sleep_for(5ms);
@@ -190,7 +190,7 @@ bool TestTransitionBackToOpenOnFailureInHalfOpen() {
 
   // 探测请求失败 → 立刻回到 OPEN
   cb.OnFailure();
-  if (!Expect(cb.state() == runtime::gateway::CircuitBreakerState::kOpen,
+  if (!Expect(cb.state() == vexo::gateway::CircuitBreakerState::kOpen,
               "must go back to kOpen on failure in kHalfOpen")) return false;
   Passed("TestTransitionBackToOpenOnFailureInHalfOpen");
   return true;
@@ -201,10 +201,10 @@ bool TestTransitionBackToOpenOnFailureInHalfOpen() {
 // ================================================================
 
 bool TestClosedSingleSuccessDoesNotReset() {
-  runtime::gateway::CircuitBreakerConfig cfg;
+  vexo::gateway::CircuitBreakerConfig cfg;
   cfg.failure_threshold = 5;
   cfg.success_threshold = 2;
-  runtime::gateway::CircuitBreaker cb(cfg);
+  vexo::gateway::CircuitBreaker cb(cfg);
 
   // 4 次失败
   cb.OnFailure();
@@ -215,7 +215,7 @@ bool TestClosedSingleSuccessDoesNotReset() {
   // 1 次成功 → 不达标（需要 success_threshold=2）
   cb.OnSuccess();
   // failure_count 应该保持而不是重置
-  if (!Expect(cb.state() == runtime::gateway::CircuitBreakerState::kClosed,
+  if (!Expect(cb.state() == vexo::gateway::CircuitBreakerState::kClosed,
               "must stay kClosed after single success")) return false;
 
   // 第 2 次成功 → 达标，重置 failure_count
@@ -226,20 +226,20 @@ bool TestClosedSingleSuccessDoesNotReset() {
   cb.OnFailure();
   cb.OnFailure();
   cb.OnFailure();
-  if (!Expect(cb.state() == runtime::gateway::CircuitBreakerState::kClosed,
+  if (!Expect(cb.state() == vexo::gateway::CircuitBreakerState::kClosed,
               "must stay kClosed at 4/5 failures after reset")) return false;
   cb.OnFailure();  // 第 5 次 → OPEN
-  if (!Expect(cb.state() == runtime::gateway::CircuitBreakerState::kOpen,
+  if (!Expect(cb.state() == vexo::gateway::CircuitBreakerState::kOpen,
               "must go kOpen at 5/5 failures after reset")) return false;
   Passed("TestClosedSingleSuccessDoesNotReset");
   return true;
 }
 
 bool TestClosedFailureBreaksSuccessStreak() {
-  runtime::gateway::CircuitBreakerConfig cfg;
+  vexo::gateway::CircuitBreakerConfig cfg;
   cfg.failure_threshold = 100;
   cfg.success_threshold = 2;
-  runtime::gateway::CircuitBreaker cb(cfg);
+  vexo::gateway::CircuitBreaker cb(cfg);
 
   cb.OnFailure();
   cb.OnSuccess();
@@ -266,11 +266,11 @@ bool TestClosedFailureBreaksSuccessStreak() {
 // ================================================================
 
 bool TestTransitionCount() {
-  runtime::gateway::CircuitBreakerConfig cfg;
+  vexo::gateway::CircuitBreakerConfig cfg;
   cfg.failure_threshold = 1;
   cfg.success_threshold = 1;
   cfg.open_timeout = 1ms;
-  runtime::gateway::CircuitBreaker cb(cfg);
+  vexo::gateway::CircuitBreaker cb(cfg);
 
   if (!Expect(cb.transition_count() == 0,
               "transition_count must start at 0")) return false;
@@ -296,16 +296,16 @@ bool TestTransitionCount() {
 // ================================================================
 
 bool TestFullCycle() {
-  runtime::gateway::CircuitBreakerConfig cfg;
+  vexo::gateway::CircuitBreakerConfig cfg;
   cfg.failure_threshold = 2;
   cfg.success_threshold = 1;
   cfg.open_timeout = 50ms;
-  runtime::gateway::CircuitBreaker cb(cfg);
+  vexo::gateway::CircuitBreaker cb(cfg);
 
   // 1. CLOSED → OPEN
   cb.OnFailure();
   cb.OnFailure();
-  if (!Expect(cb.state() == runtime::gateway::CircuitBreakerState::kOpen,
+  if (!Expect(cb.state() == vexo::gateway::CircuitBreakerState::kOpen,
               "step 1: must be kOpen")) return false;
 
   // 2. Rejected during OPEN
@@ -317,7 +317,7 @@ bool TestFullCycle() {
 
   // 4. HALF_OPEN → CLOSED (success)
   cb.OnSuccess();
-  if (!Expect(cb.state() == runtime::gateway::CircuitBreakerState::kClosed,
+  if (!Expect(cb.state() == vexo::gateway::CircuitBreakerState::kClosed,
               "step 4: must be kClosed after success")) return false;
 
   // 5. CLOSED again, can allow
@@ -335,11 +335,11 @@ bool TestConcurrentAllowRequestInOpen() {
   constexpr int kThreads = 8;
 
   for (int round = 0; round < kRounds; ++round) {
-    runtime::gateway::CircuitBreakerConfig cfg;
+    vexo::gateway::CircuitBreakerConfig cfg;
     cfg.failure_threshold = 1;
     cfg.open_timeout = 0ms;
     cfg.half_open_max_requests = 1;
-    runtime::gateway::CircuitBreaker cb(cfg);
+    vexo::gateway::CircuitBreaker cb(cfg);
 
     cb.OnFailure();  // → OPEN
 
@@ -376,9 +376,9 @@ bool TestConcurrentAllowRequestInOpen() {
 // ================================================================
 
 bool TestFailureCountExposed() {
-  runtime::gateway::CircuitBreakerConfig cfg;
+  vexo::gateway::CircuitBreakerConfig cfg;
   cfg.failure_threshold = 10;
-  runtime::gateway::CircuitBreaker cb(cfg);
+  vexo::gateway::CircuitBreaker cb(cfg);
 
   if (!Expect(cb.failure_count() == 0, "failure_count must start at 0")) return false;
   cb.OnFailure();
@@ -393,42 +393,42 @@ bool TestFailureCountExposed() {
 // exhausted and unresolved, AllowRequest() falls back to OPEN and re-arms, so a
 // fresh probe is admitted on the next cycle.
 bool TestHalfOpenStallFallsBackToOpen() {
-  runtime::gateway::CircuitBreakerConfig cfg;
+  vexo::gateway::CircuitBreakerConfig cfg;
   cfg.failure_threshold = 1;       // one failure trips OPEN
   cfg.half_open_max_requests = 1;  // a single probe slot
   cfg.open_timeout = 40ms;
-  runtime::gateway::CircuitBreaker cb(cfg);
+  vexo::gateway::CircuitBreaker cb(cfg);
 
   cb.OnFailure();  // → OPEN
-  if (!Expect(cb.state() == runtime::gateway::CircuitBreakerState::kOpen,
+  if (!Expect(cb.state() == vexo::gateway::CircuitBreakerState::kOpen,
               "must be kOpen after threshold")) return false;
 
   // After open_timeout the first request flips OPEN → HALF_OPEN and is admitted
   // as the probe, consuming the only slot.
   std::this_thread::sleep_for(55ms);
   if (!Expect(cb.AllowRequest(), "first probe admitted after open_timeout")) return false;
-  if (!Expect(cb.state() == runtime::gateway::CircuitBreakerState::kHalfOpen,
+  if (!Expect(cb.state() == vexo::gateway::CircuitBreakerState::kHalfOpen,
               "must be kHalfOpen")) return false;
 
   // Simulate a LOST probe outcome: never call OnSuccess/OnFailure. The quota is
   // gone, so further requests are rejected while still inside open_timeout.
   if (!Expect(!cb.AllowRequest(),
               "quota exhausted → reject within open_timeout")) return false;
-  if (!Expect(cb.state() == runtime::gateway::CircuitBreakerState::kHalfOpen,
+  if (!Expect(cb.state() == vexo::gateway::CircuitBreakerState::kHalfOpen,
               "still kHalfOpen before the stall timeout")) return false;
 
   // Once open_timeout passes with the probe unresolved, the next call detects
   // the stall and falls the breaker back to OPEN.
   std::this_thread::sleep_for(55ms);
   if (!Expect(!cb.AllowRequest(), "stalled probe → this call rejected")) return false;
-  if (!Expect(cb.state() == runtime::gateway::CircuitBreakerState::kOpen,
+  if (!Expect(cb.state() == vexo::gateway::CircuitBreakerState::kOpen,
               "stalled kHalfOpen must fall back to kOpen")) return false;
 
   // OPEN re-armed: after another open_timeout a brand-new probe is admitted —
   // recovery is no longer permanently stalled.
   std::this_thread::sleep_for(55ms);
   if (!Expect(cb.AllowRequest(), "fresh probe admitted on the next cycle")) return false;
-  if (!Expect(cb.state() == runtime::gateway::CircuitBreakerState::kHalfOpen,
+  if (!Expect(cb.state() == vexo::gateway::CircuitBreakerState::kHalfOpen,
               "back to kHalfOpen with a new probe")) return false;
 
   Passed("TestHalfOpenStallFallsBackToOpen");

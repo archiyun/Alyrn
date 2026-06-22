@@ -1,15 +1,15 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/net/select.h"
+#include "vexo/net/select.h"
 
 #include <cassert>
 #include <cerrno>
 #include <cstring>
 
-#include "runtime/log/logger.h"
-#include "runtime/net/channel.h"
+#include "vexo/log/logger.h"
+#include "vexo/net/channel.h"
 
-namespace runtime::net {
+namespace vexo::net {
 
 SelectPoller::SelectPoller(EventLoop* loop) : Poller(loop) {
   FD_ZERO(&read_fds_);
@@ -17,7 +17,7 @@ SelectPoller::SelectPoller(EventLoop* loop) : Poller(loop) {
   FD_ZERO(&error_fds_);
 }
 
-runtime::time::Timestamp SelectPoller::Poll(int timeout_ms,
+vexo::time::Timestamp SelectPoller::Poll(int timeout_ms,
                                             ChannelList* active_channels) {
   // select() 的 fd_set 是 in/out 参数：调用后被内核覆写为就绪集合。
   // 必须每次从原始兴趣集拷贝临时副本，避免兴趣集被破坏。
@@ -35,7 +35,7 @@ runtime::time::Timestamp SelectPoller::Poll(int timeout_ms,
                                   &error_ready,
                                   &tv);
   const int saved_errno = errno;
-  const auto now = runtime::time::Timestamp::Now();
+  const auto now = vexo::time::Timestamp::Now();
 
   if (num_events > 0) {
     FillActiveChannels(read_ready, write_ready, error_ready, active_channels);
@@ -127,4 +127,4 @@ void SelectPoller::RemoveChannel(Channel* channel) {
   }
 }
 
-}  // namespace runtime::net
+}  // namespace vexo::net

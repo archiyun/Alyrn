@@ -1,15 +1,15 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "runtime/log/logger.h"
+#include "vexo/log/logger.h"
 
 #include <string>
 #include <string_view>
 
-#include "runtime/base/current_thread.h"
-#include "runtime/log/async_logger.h"
-#include "runtime/time/timestamp.h"
+#include "vexo/base/current_thread.h"
+#include "vexo/log/async_logger.h"
+#include "vexo/time/timestamp.h"
 
-namespace runtime::log {
+namespace vexo::log {
 
 namespace {
 
@@ -18,11 +18,11 @@ std::string FormatLogMessage(LogLevel level, const char* file, int line,
   std::string result;
   result.reserve(128);
   result += '[';
-  result += runtime::time::Timestamp::Now().ToFormattedString();
+  result += vexo::time::Timestamp::Now().ToFormattedString();
   result += "] [";
   result += ToString(level);
   result += "] [tid:";
-  result += std::to_string(runtime::base::tid());
+  result += std::to_string(vexo::base::tid());
   result += "] [";
   result += file;
   result += ':';
@@ -110,4 +110,4 @@ const char* ToString(LogLevel level) {
     }
 }
 
-}  // namespace runtime::log
+}  // namespace vexo::log

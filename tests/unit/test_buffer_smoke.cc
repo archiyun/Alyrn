@@ -6,7 +6,7 @@
 #include <iostream>
 #include <string>
 
-#include "runtime/net/buffer.h"
+#include "vexo/net/buffer.h"
 
 namespace {
 
@@ -19,7 +19,7 @@ bool Expect(bool condition, const char* message) {
 }
 
 bool TestReusePrependableSpace() {
-    runtime::net::Buffer buffer(16);
+    vexo::net::Buffer buffer(16);
     buffer.Append("hello", 5);
     buffer.Append(" world", 6);
 
@@ -43,7 +43,7 @@ bool TestReadFdAndWriteFd() {
         return false;
     }
 
-    runtime::net::Buffer buffer;
+    vexo::net::Buffer buffer;
     const std::string inbound = "ping-from-peer";
     if (!Expect(::write(fds[0], inbound.data(), inbound.size()) ==
                     static_cast<ssize_t>(inbound.size()),
@@ -118,7 +118,7 @@ bool TestLargeReadGrowth() {
         return false;
     }
 
-    runtime::net::Buffer buffer(32);
+    vexo::net::Buffer buffer(32);
     int saved_errno = 0;
     if (!Expect(buffer.ReadFd(fds[1], &saved_errno) ==
                     static_cast<ssize_t>(large_payload.size()),

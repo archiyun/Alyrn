@@ -19,16 +19,16 @@
 #include <string_view>
 #include <thread>
 
-#include "runtime/gateway/circuit_breaker.h"
-#include "runtime/gateway/health_check_config.h"
-#include "runtime/gateway/health_checker.h"
-#include "runtime/gateway/rate_limiter.h"
-#include "runtime/gateway/upstream.h"
-#include "runtime/gateway/upstream_peer.h"
-#include "runtime/gateway/upstream_registry.h"
-#include "runtime/net/event_loop.h"
-#include "runtime/net/inet_address.h"
-#include "runtime/net/tcp_server.h"
+#include "vexo/gateway/circuit_breaker.h"
+#include "vexo/gateway/health_check_config.h"
+#include "vexo/gateway/health_checker.h"
+#include "vexo/gateway/rate_limiter.h"
+#include "vexo/gateway/upstream.h"
+#include "vexo/gateway/upstream_peer.h"
+#include "vexo/gateway/upstream_registry.h"
+#include "vexo/net/event_loop.h"
+#include "vexo/net/inet_address.h"
+#include "vexo/net/tcp_server.h"
 
 namespace {
 
@@ -86,23 +86,23 @@ bool WaitForAtLeast(const std::atomic<int>& value, int target,
 
 struct HealthTestEnv {
   std::thread loop_thread;
-  runtime::net::EventLoop* loop{nullptr};
+  vexo::net::EventLoop* loop{nullptr};
 };
 
 template <typename ConfigureServer>
 HealthTestEnv StartHealthTest(
     std::uint16_t port,
-    const std::shared_ptr<runtime::gateway::UpstreamPeer>& peer,
-    runtime::gateway::HealthCheckConfig cfg,
+    const std::shared_ptr<vexo::gateway::UpstreamPeer>& peer,
+    vexo::gateway::HealthCheckConfig cfg,
     ConfigureServer configure_server) {
-  auto upstream = std::make_shared<runtime::gateway::Upstream>(
-      runtime::gateway::UpstreamConfig{.name = "adversarial-upstream"});
+  auto upstream = std::make_shared<vexo::gateway::Upstream>(
+      vexo::gateway::UpstreamConfig{.name = "adversarial-upstream"});
   upstream->AddPeer(peer);
 
-  auto registry = std::make_shared<runtime::gateway::UpstreamRegistry>();
+  auto registry = std::make_shared<vexo::gateway::UpstreamRegistry>();
   registry->Add(upstream);
 
-  std::promise<runtime::net::EventLoop*> loop_promise;
+  std::promise<vexo::net::EventLoop*> loop_promise;
   auto loop_future = loop_promise.get_future();
   std::promise<void> started_promise;
   auto started_future = started_promise.get_future();
@@ -111,13 +111,13 @@ HealthTestEnv StartHealthTest(
       [port, cfg, registry, configure_server = std::move(configure_server),
        loop_promise = std::move(loop_promise),
        started_promise = std::move(started_promise)]() mutable {
-        runtime::net::EventLoop loop;
-        runtime::net::TcpServer server(
-            &loop, runtime::net::InetAddress(port), "adversarial-health-backend");
+        vexo::net::EventLoop loop;
+        vexo::net::TcpServer server(
+            &loop, vexo::net::InetAddress(port), "adversarial-health-backend");
         configure_server(server);
         server.Start();
 
-        runtime::gateway::HealthChecker checker(&loop, *registry, cfg);
+        vexo::gateway::HealthChecker checker(&loop, *registry, cfg);
         checker.Start();
 
         loop_promise.set_value(&loop);
@@ -137,10 +137,10 @@ void StopHealthTest(HealthTestEnv& env) {
 }
 
 bool TestCircuitBreakerRequiresConsecutiveSuccesses() {
-  runtime::gateway::CircuitBreakerConfig cfg;
+  vexo::gateway::CircuitBreakerConfig cfg;
   cfg.failure_threshold = 100;
   cfg.success_threshold = 2;
-  runtime::gateway::CircuitBreaker breaker(cfg);
+  vexo::gateway::CircuitBreaker breaker(cfg);
 
   breaker.OnFailure();
   breaker.OnSuccess();
@@ -158,12 +158,12 @@ bool TestCircuitBreakerRequiresConsecutiveSuccesses() {
 }
 
 bool TestPerIPBucketLimitIsHard() {
-  runtime::gateway::RateLimiterConfig cfg;
+  vexo::gateway::RateLimiterConfig cfg;
   cfg.per_ip_enabled = true;
   cfg.per_ip_rate = 0.000001;
   cfg.per_ip_burst = 1.0;
   cfg.per_ip_max_buckets = 8;
-  runtime::gateway::RateLimiter limiter(cfg);
+  vexo::gateway::RateLimiter limiter(cfg);
 
   // Simulate a high-cardinality identity spray. Every bucket remains active,
   // so an eviction policy that only drops full buckets cannot enforce the cap.
@@ -184,10 +184,10 @@ bool TestPerIPBucketLimitIsHard() {
 }
 
 bool TestUpstreamBulkheadIsHard() {
-  runtime::gateway::UpstreamConfig cfg;
+  vexo::gateway::UpstreamConfig cfg;
   cfg.name = "bulkhead";
   cfg.max_concurrent_requests = 2;
-  runtime::gateway::Upstream upstream(cfg);
+  vexo::gateway::Upstream upstream(cfg);
 
   if (!Expect(upstream.TryAcquireRequestSlot(), "bulkhead slot 1 must pass")) {
     return false;
@@ -225,8 +225,8 @@ bool TestTruncated200DoesNotForgeHealth() {
   const std::uint16_t port = ReserveLoopbackPort();
   if (!Expect(port != 0, "failed to reserve loopback port")) return false;
 
-  auto peer = std::make_shared<runtime::gateway::UpstreamPeer>(
-      runtime::gateway::UpstreamPeerConfig{
+  auto peer = std::make_shared<vexo::gateway::UpstreamPeer>(
+      vexo::gateway::UpstreamPeerConfig{
           .name = "truncated-200",
           .host = "127.0.0.1",
           .port = port,
@@ -234,7 +234,7 @@ bool TestTruncated200DoesNotForgeHealth() {
   peer->state().down.store(true, std::memory_order_relaxed);
 
   std::atomic<int> accepted{0};
-  runtime::gateway::HealthCheckConfig cfg;
+  vexo::gateway::HealthCheckConfig cfg;
   cfg.interval_sec = 0.05;
   cfg.timeout_sec = 0.5;
   cfg.healthy_threshold = 1;
@@ -242,9 +242,9 @@ bool TestTruncated200DoesNotForgeHealth() {
 
   auto env = StartHealthTest(
       port, peer, cfg,
-      [&accepted](runtime::net::TcpServer& server) {
+      [&accepted](vexo::net::TcpServer& server) {
         server.set_connection_callback(
-            [&accepted](const runtime::net::TcpServer::TcpConnectionPtr& conn) {
+            [&accepted](const vexo::net::TcpServer::TcpConnectionPtr& conn) {
               if (!conn->Connected()) return;
               accepted.fetch_add(1, std::memory_order_relaxed);
               // Exactly the prefix inspected by HealthChecker. There is no
@@ -275,8 +275,8 @@ bool TestConnectionFailureBreaksHealthSuccessStreak() {
   const std::uint16_t port = ReserveLoopbackPort();
   if (!Expect(port != 0, "failed to reserve loopback port")) return false;
 
-  auto peer = std::make_shared<runtime::gateway::UpstreamPeer>(
-      runtime::gateway::UpstreamPeerConfig{
+  auto peer = std::make_shared<vexo::gateway::UpstreamPeer>(
+      vexo::gateway::UpstreamPeerConfig{
           .name = "non-consecutive-health",
           .host = "127.0.0.1",
           .port = port,
@@ -284,7 +284,7 @@ bool TestConnectionFailureBreaksHealthSuccessStreak() {
   peer->state().down.store(true, std::memory_order_relaxed);
 
   std::atomic<int> accepted{0};
-  runtime::gateway::HealthCheckConfig cfg;
+  vexo::gateway::HealthCheckConfig cfg;
   cfg.interval_sec = 0.1;
   cfg.timeout_sec = 0.5;
   cfg.healthy_threshold = 2;
@@ -292,9 +292,9 @@ bool TestConnectionFailureBreaksHealthSuccessStreak() {
 
   auto env = StartHealthTest(
       port, peer, cfg,
-      [&accepted](runtime::net::TcpServer& server) {
+      [&accepted](vexo::net::TcpServer& server) {
         server.set_connection_callback(
-            [&accepted](const runtime::net::TcpServer::TcpConnectionPtr& conn) {
+            [&accepted](const vexo::net::TcpServer::TcpConnectionPtr& conn) {
               if (!conn->Connected()) return;
               const int probe =
                   accepted.fetch_add(1, std::memory_order_relaxed) + 1;
@@ -330,8 +330,8 @@ bool TestHealthChecksDoNotOverlapPerPeer() {
   const std::uint16_t port = ReserveLoopbackPort();
   if (!Expect(port != 0, "failed to reserve loopback port")) return false;
 
-  auto peer = std::make_shared<runtime::gateway::UpstreamPeer>(
-      runtime::gateway::UpstreamPeerConfig{
+  auto peer = std::make_shared<vexo::gateway::UpstreamPeer>(
+      vexo::gateway::UpstreamPeerConfig{
           .name = "slow-health-backend",
           .host = "127.0.0.1",
           .port = port,
@@ -341,7 +341,7 @@ bool TestHealthChecksDoNotOverlapPerPeer() {
   std::atomic<int> max_active{0};
   std::atomic<int> accepted{0};
 
-  runtime::gateway::HealthCheckConfig cfg;
+  vexo::gateway::HealthCheckConfig cfg;
   cfg.interval_sec = 0.02;
   cfg.timeout_sec = 0.5;
   cfg.healthy_threshold = 2;
@@ -349,10 +349,10 @@ bool TestHealthChecksDoNotOverlapPerPeer() {
 
   auto env = StartHealthTest(
       port, peer, cfg,
-      [&active, &max_active, &accepted](runtime::net::TcpServer& server) {
+      [&active, &max_active, &accepted](vexo::net::TcpServer& server) {
         server.set_connection_callback(
             [&active, &max_active, &accepted](
-                const runtime::net::TcpServer::TcpConnectionPtr& conn) {
+                const vexo::net::TcpServer::TcpConnectionPtr& conn) {
               if (conn->Connected()) {
                 accepted.fetch_add(1, std::memory_order_relaxed);
                 const int current =

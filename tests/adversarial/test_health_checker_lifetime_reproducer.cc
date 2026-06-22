@@ -2,7 +2,7 @@
 //
 // Build and run with:
 //   cmake -S . -B build-asan -DBUILD_TESTS=ON \
-//     -DRUNTIME_SANITIZER=address,undefined
+//     -DVEXO_SANITIZER=address,undefined
 //   cmake --build build-asan --target health_checker_lifetime_reproducer
 //   ./build-asan/tests/health_checker_lifetime_reproducer
 //
@@ -23,15 +23,15 @@
 #include <memory>
 #include <thread>
 
-#include "runtime/gateway/health_check_config.h"
-#include "runtime/gateway/health_checker.h"
-#include "runtime/gateway/upstream.h"
-#include "runtime/gateway/upstream_peer.h"
-#include "runtime/gateway/upstream_registry.h"
-#include "runtime/net/event_loop.h"
-#include "runtime/net/event_loop_thread.h"
-#include "runtime/net/inet_address.h"
-#include "runtime/net/tcp_server.h"
+#include "vexo/gateway/health_check_config.h"
+#include "vexo/gateway/health_checker.h"
+#include "vexo/gateway/upstream.h"
+#include "vexo/gateway/upstream_peer.h"
+#include "vexo/gateway/upstream_registry.h"
+#include "vexo/net/event_loop.h"
+#include "vexo/net/event_loop_thread.h"
+#include "vexo/net/inet_address.h"
+#include "vexo/net/tcp_server.h"
 
 namespace {
 
@@ -83,33 +83,33 @@ int main() {
     return 2;
   }
 
-  auto peer = std::make_shared<runtime::gateway::UpstreamPeer>(
-      runtime::gateway::UpstreamPeerConfig{
+  auto peer = std::make_shared<vexo::gateway::UpstreamPeer>(
+      vexo::gateway::UpstreamPeerConfig{
           .name = "lifetime-target",
           .host = "127.0.0.1",
           .port = port,
       });
-  auto upstream = std::make_shared<runtime::gateway::Upstream>(
-      runtime::gateway::UpstreamConfig{.name = "lifetime-upstream"});
+  auto upstream = std::make_shared<vexo::gateway::Upstream>(
+      vexo::gateway::UpstreamConfig{.name = "lifetime-upstream"});
   upstream->AddPeer(peer);
-  runtime::gateway::UpstreamRegistry registry;
+  vexo::gateway::UpstreamRegistry registry;
   registry.Add(upstream);
 
-  runtime::net::EventLoopThread loop_thread;
-  runtime::net::EventLoop* loop = loop_thread.StartLoop();
+  vexo::net::EventLoopThread loop_thread;
+  vexo::net::EventLoop* loop = loop_thread.StartLoop();
 
-  std::unique_ptr<runtime::net::TcpServer> server;
-  std::unique_ptr<runtime::gateway::HealthChecker> checker;
-  runtime::net::TcpServer::TcpConnectionPtr backend_conn;
+  std::unique_ptr<vexo::net::TcpServer> server;
+  std::unique_ptr<vexo::gateway::HealthChecker> checker;
+  vexo::net::TcpServer::TcpConnectionPtr backend_conn;
   std::atomic<int> accepted{0};
 
   std::promise<void> started_promise;
   auto started = started_promise.get_future();
   loop->RunInLoop([&] {
-    server = std::make_unique<runtime::net::TcpServer>(
-        loop, runtime::net::InetAddress(port), "lifetime-backend");
+    server = std::make_unique<vexo::net::TcpServer>(
+        loop, vexo::net::InetAddress(port), "lifetime-backend");
     server->set_connection_callback(
-        [&](const runtime::net::TcpServer::TcpConnectionPtr& conn) {
+        [&](const vexo::net::TcpServer::TcpConnectionPtr& conn) {
           if (conn->Connected()) {
             backend_conn = conn;
             accepted.fetch_add(1, std::memory_order_relaxed);
@@ -117,11 +117,11 @@ int main() {
         });
     server->Start();
 
-    runtime::gateway::HealthCheckConfig cfg;
+    vexo::gateway::HealthCheckConfig cfg;
     cfg.interval_sec = 0.02;
     cfg.timeout_sec = 10.0;
     checker =
-        std::make_unique<runtime::gateway::HealthChecker>(loop, registry, cfg);
+        std::make_unique<vexo::gateway::HealthChecker>(loop, registry, cfg);
     checker->Start();
     started_promise.set_value();
   });
