@@ -9,29 +9,20 @@
 #include <string_view>
 
 #include "vexo/base/noncopyable.h"
+#include "vexo/base/singleton.h"
 
 namespace vexo::log {
 
 class AsyncLogger;
 
 // LogLevel orders severities from low to high for threshold filtering.
-enum class LogLevel {
-  DEBUG = 0,
-  INFO,
-  WARN,
-  ERROR,
-  FATAL
-};
+enum class LogLevel : uint8_t { DEBUG = 0, INFO, WARN, ERROR, FATAL };
 
 // Logger formats log records and forwards them to AsyncLogger.
-class Logger : public vexo::base::NonCopyable {
+class Logger : public vexo::base::Singleton<Logger> {
 public:
-  static Logger& Instance();
-
-  void Init(const std::string& filename,
-            LogLevel level = LogLevel::INFO,
-            int flush_interval_ms = 1000,
-            std::size_t roll_size = 10 * 1024 * 1024);
+  void Init(const std::string& filename, LogLevel level = LogLevel::INFO,
+            int flush_interval_ms = 1000, std::size_t roll_size = 10 * 1024 * 1024);
 
   void Shutdown();
 
@@ -40,14 +31,13 @@ public:
   bool ShouldLog(LogLevel level) const;
 
   // Log filters by level, formats the record, and appends it asynchronously.
-  void Log(LogLevel level,
-           const char* file,
-           int line,
-           const char* func,
-           std::string_view message);
+  void Log(LogLevel level, const char* file, int line, const char* func, std::string_view message);
 
 private:
-  Logger() = default;
+  friend class vexo::base::Singleton<Logger>;
+
+  Logger();
+  ~Logger();
 
   std::atomic<LogLevel> level_{LogLevel::INFO};
   std::unique_ptr<AsyncLogger> async_logger_;
@@ -74,16 +64,14 @@ private:
 
 }  // namespace vexo::log
 
-
-#define LOG(level)                                                                        \
-  if (!::vexo::log::Logger::Instance().ShouldLog(::vexo::log::LogLevel::level))    \
-    ;                                                                                     \
-  else                                                                                    \
-    ::vexo::log::LogMessage(::vexo::log::LogLevel::level,                          \
-                               __FILE__, __LINE__, __func__).Stream()
+#define LOG(level)                                                              \
+  if (!::vexo::log::Logger::Instance().ShouldLog(::vexo::log::LogLevel::level)) \
+    ;                                                                           \
+  else                                                                          \
+    ::vexo::log::LogMessage(::vexo::log::LogLevel::level, __FILE__, __LINE__, __func__).Stream()
 
 #define LOG_DEBUG() LOG(DEBUG)
-#define LOG_INFO()  LOG(INFO)
-#define LOG_WARN()  LOG(WARN)
+#define LOG_INFO() LOG(INFO)
+#define LOG_WARN() LOG(WARN)
 #define LOG_ERROR() LOG(ERROR)
 #define LOG_FATAL() LOG(FATAL)
