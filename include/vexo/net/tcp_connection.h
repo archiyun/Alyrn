@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include "vexo/base/noncopyable.h"
 #include "vexo/net/buffer.h"
 #include "vexo/net/inet_address.h"
 #include "vexo/time/timestamp.h"
+#include "vexo/utils/macros.h"
 
 #include <any>
 #include <cstdint>
@@ -23,8 +23,7 @@ class Socket;
 //
 // It owns the connected socket and its Channel, buffers inbound and outbound
 // data, and drives the read/write/close/error callbacks for the connection.
-class TcpConnection : public vexo::base::NonCopyable,
-                      public std::enable_shared_from_this<TcpConnection> {
+class TcpConnection : public std::enable_shared_from_this<TcpConnection> {
 public:
   using TcpConnectionPtr = std::shared_ptr<TcpConnection>;
 
@@ -47,6 +46,8 @@ public:
       const InetAddress& peer_addr);
 
   ~TcpConnection();
+
+  VEXO_DELETE_COPY_MOVE(TcpConnection);
 
   EventLoop* loop() const { return loop_; }
   const std::string& name() const { return name_; }

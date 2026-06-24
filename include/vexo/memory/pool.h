@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <memory>
 
-#include "vexo/base/noncopyable.h"  // IWYU pragma: keep
+#include "vexo/utils/macros.h"
 
 namespace vexo::memory {
 
@@ -27,7 +27,7 @@ namespace vexo::memory {
 //   pool->RegisterCleanup(&close_fd, sizeof(int));
 //   // Pool destruction:
 //   //   cleanup handlers -> large allocations -> chunk chain -> Pool itself
-class Pool : public vexo::base::NonCopyable {
+class Pool {
 public:
   inline static constexpr std::size_t kDefaultChunkSize = 1 << 12;
   inline static constexpr std::size_t kMaxSmallAlloc    = kDefaultChunkSize - 1;
@@ -42,6 +42,8 @@ public:
   // Pool must be placement-new'ed at the beginning of its own arena memory,
   // so stack allocation and direct new are intentionally disallowed.
   static Ptr Create(std::size_t chunk_size = kDefaultChunkSize);
+
+  VEXO_DELETE_COPY_MOVE(Pool);
 
   // size <= max_ uses the bump arena fast path.
   // Larger allocations bypass the arena and use the large-allocation path.

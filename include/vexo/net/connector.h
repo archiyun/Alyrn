@@ -4,9 +4,9 @@
 
 #include <atomic>
 
-#include "vexo/base/noncopyable.h"
 #include "vexo/net/event_loop.h"
 #include "vexo/net/inet_address.h"
+#include "vexo/utils/macros.h"
 
 namespace vexo::net {
 
@@ -18,13 +18,14 @@ namespace vexo::net {
 //
 // Connector also maintains connection state and supports retry with
 // exponential backoff after connection failures.
-class Connector : public vexo::base::NonCopyable,
-                  public std::enable_shared_from_this<Connector> {
+class Connector : public std::enable_shared_from_this<Connector> {
 public:
   using NewConnectionCallback = std::function<void(int sockfd)>;
 
   Connector(EventLoop* loop, const InetAddress& server_addr);
   ~Connector();
+
+  VEXO_DELETE_COPY_MOVE(Connector);
 
   void set_connection_callback(NewConnectionCallback cb) {
     new_connection_cb_ = std::move(cb);

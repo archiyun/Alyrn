@@ -7,20 +7,22 @@
 #include <mutex>
 #include <thread>
 
-#include "vexo/base/noncopyable.h"
+#include "vexo/utils/macros.h"
 
 namespace vexo::net {
 
 class EventLoop;
 
 // EventLoopThread starts a dedicated thread and creates one EventLoop inside it.
-class EventLoopThread : public vexo::base::NonCopyable {
+class EventLoopThread {
 public:
   using ThreadInitCallback = std::function<void(EventLoop*)>;
 
   EventLoopThread();
   explicit EventLoopThread(ThreadInitCallback cb);
   ~EventLoopThread() = default;
+
+  VEXO_DELETE_COPY_MOVE(EventLoopThread);
 
   // Starts the thread and blocks until the EventLoop is ready.
   EventLoop* StartLoop();

@@ -6,11 +6,11 @@
 #include <string>
 #include <unordered_map>
 
-#include "vexo/base/noncopyable.h"
 #include "vexo/net/acceptor.h"
 #include "vexo/net/event_loop_thread_pool.h"
 #include "vexo/net/inet_address.h"
 #include "vexo/net/tcp_connection.h"
+#include "vexo/utils/macros.h"
 
 namespace vexo::net {
 
@@ -20,7 +20,7 @@ class EventLoop;
 //
 // It accepts new connections on the base loop, assigns them to I/O loops from
 // EventLoopThreadPool, and manages the lifecycle of TcpConnection objects.
-class TcpServer : public vexo::base::NonCopyable {
+class TcpServer {
 public:
   using TcpConnectionPtr      = std::shared_ptr<TcpConnection>;
   using ConnectionCallback    = TcpConnection::ConnectionCallback;
@@ -32,6 +32,8 @@ public:
             const InetAddress& listen_addr,
             const std::string& name);
   ~TcpServer();
+
+  VEXO_DELETE_COPY_MOVE(TcpServer);
 
   const std::string& name() const {
     return name_;

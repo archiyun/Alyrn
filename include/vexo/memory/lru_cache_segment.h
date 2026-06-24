@@ -7,8 +7,8 @@
 #include <optional>
 #include <unordered_map>
 
-#include "vexo/base/noncopyable.h"
 #include "vexo/time/timestamp.h"
+#include "vexo/utils/macros.h"
 
 namespace vexo::memory {
 
@@ -20,9 +20,11 @@ namespace vexo::memory {
  * used at the back. Each segment owns its own mutex to reduce contention.
  */
 template <typename Key, typename Value>
-class LRUCacheSegment : public vexo::base::NonCopyable {
+class LRUCacheSegment {
 public:
     explicit LRUCacheSegment(std::size_t capacity) : capacity_(capacity) {}
+
+    VEXO_DELETE_COPY_MOVE(LRUCacheSegment);
 
     bool get(const Key& key, Value& value) {
         std::lock_guard<std::mutex> lk{mutex_};

@@ -7,10 +7,10 @@
 #include <functional>
 #include <utility>
 
-#include "vexo/base/noncopyable.h"
 #include "vexo/ds/intrusive_hash_table.h"
 #include "vexo/ds/intrusive_rbtree.h"
 #include "vexo/time/timestamp.h"
+#include "vexo/utils/macros.h"
 
 namespace vexo::time {
 
@@ -23,8 +23,7 @@ namespace vexo::time {
 // The tree linkage is inherited (base-hook): TimerTree recovers the Timer from
 // the hook with static_cast, so no per-node owner pointer is stored. See
 // vexo/ds/intrusive_rbtree.h.
-class Timer : public vexo::base::NonCopyable,
-              public vexo::ds::RBTNode<Timer>,
+class Timer : public vexo::ds::RBTNode<Timer>,
               public vexo::ds::HashNode<Timer> {
 public:
   using TimerCallback = std::function<void()>;
@@ -35,6 +34,8 @@ public:
         interval_sec_(interval_sec),
         repeat_(interval_sec > 0.0),
         sequence_(next_sequence_.fetch_add(1, std::memory_order_relaxed)) {}
+
+  VEXO_DELETE_COPY_MOVE(Timer);
 
   void Run() const {
     if (timer_callback_) timer_callback_();

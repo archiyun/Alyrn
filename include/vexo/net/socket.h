@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include "vexo/base/noncopyable.h"
 #include "vexo/net/inet_address.h"
+#include "vexo/utils/macros.h"
 
 namespace vexo::net {
 
@@ -11,10 +11,12 @@ namespace vexo::net {
 //
 // It owns the descriptor for its lifetime and exposes a small set of socket
 // operations used by the networking layer.
-class Socket : public vexo::base::NonCopyable {
+class Socket {
 public:
   explicit Socket(int sockfd);
   ~Socket();
+
+  VEXO_DELETE_COPY_MOVE(Socket);
 
   int fd() const { return sockfd_; }
 

@@ -12,7 +12,7 @@
 #include <utility>
 #include <vector>
 
-#include "vexo/base/noncopyable.h"
+#include "vexo/utils/macros.h"
 
 namespace vexo::metrics {
 
@@ -42,7 +42,7 @@ private:
 
 // 直方图, 桶边界覆盖 1ms ~ 60s 的请求耗时区间
 // 互斥锁实现, 写入路径上有一次加锁; 网关每秒万级 QPS 量级下 contention 可忽略
-class Histogram : public vexo::base::NonCopyable {
+class Histogram {
 public:
   static constexpr std::array<double, 14> kBuckets = {
       0.001, 0.005, 0.01,  0.025, 0.05, 0.1,  0.25,
@@ -52,6 +52,8 @@ public:
   Histogram(std::string name, std::string help)
       : name_(std::move(name)), help_(std::move(help)),
         bucket_counts_(kBuckets.size(), 0) {}
+
+  VEXO_DELETE_COPY_MOVE(Histogram);
 
   void Observe(double seconds) {
     std::lock_guard lk{mu_};

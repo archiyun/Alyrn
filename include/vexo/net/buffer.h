@@ -9,8 +9,8 @@
 #include <string>
 #include <vector>
 
-#include "vexo/base/noncopyable.h"
 #include "vexo/net/net_assert.h"
+#include "vexo/utils/macros.h"
 
 namespace vexo::net {
 
@@ -38,7 +38,7 @@ namespace vexo::net {
 static constexpr std::string_view kCRLF = "\r\n";
 static constexpr std::string_view kCRLFCRLF = "\r\n\r\n";
 
-class Buffer : public vexo::base::NonCopyable {
+class Buffer {
 public:
   // Reserved bytes at the front of the buffer for prepend operations, such as
   // adding a length field before an already encoded payload.
@@ -48,6 +48,8 @@ public:
   static constexpr std::size_t kInitialSize = 1024;
 
   explicit Buffer(std::size_t initial_size = kInitialSize);
+
+  VEXO_DELETE_COPY_MOVE(Buffer);
 
   // Returns the number of bytes currently available for reading.
   std::size_t readable_bytes() const {

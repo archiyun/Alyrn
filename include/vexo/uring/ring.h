@@ -6,15 +6,17 @@
 
 #include <optional>
 
-#include "vexo/base/noncopyable.h"
+#include "vexo/utils/macros.h"
 
 namespace vexo::uring {
 
 // RAII owner of a liburing io_uring instance (the SQ/CQ ring pair).
 //
 // Setup can fail
-class Ring : public vexo::base::NonCopyable {
+class Ring {
 public:
+  VEXO_DELETE_COPY(Ring);
+
   [[nodiscard]] std::optional<Ring> Create(unsigned entries);
   ~Ring(); // io_uring_queue_exit
   Ring(Ring&& other) noexcept;
