@@ -7,8 +7,8 @@
 #include <sstream>
 #include <string>
 
-#include "vexo/base/noncopyable.h"
 #include "vexo/metrics/metrics.h"
+#include "vexo/utils/macros.h"
 
 namespace vexo::metrics {
 
@@ -20,13 +20,15 @@ namespace vexo::metrics {
 //       <namespace>_<subsystem>_<name>_<unit>
 //     namespace 固定为 "gateway".
 //   - 直方图桶继承 Histogram 的默认值 (1ms ~ 60s).
-class GatewayMetrics : public vexo::base::NonCopyable {
+class GatewayMetrics {
 public:
   GatewayMetrics()
       : request_duration("gateway_request_duration_seconds",
                         "End-to-end request handling latency in seconds"),
         upstream_duration("gateway_upstream_duration_seconds",
                          "Upstream round-trip latency in seconds") {}
+
+  VEXO_DELETE_COPY_MOVE(GatewayMetrics);
 
   // 连接维度
   Counter connections_accepted_total;

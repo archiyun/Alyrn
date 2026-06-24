@@ -5,13 +5,13 @@
 #include <functional>
 #include <memory>
 
-#include "vexo/base/noncopyable.h"
 #include "vexo/memory/object_pool.h"
 #include "vexo/ds/intrusive_hash_table.h"
 #include "vexo/time/timer.h"
 #include "vexo/time/timer_id.h"
 #include "vexo/time/timer_tree.h"
 #include "vexo/time/timestamp.h"
+#include "vexo/utils/macros.h"
 
 namespace vexo::net {
 
@@ -27,12 +27,14 @@ using ActiveTimerTable =
 //
 // TimerQueue owns Timer objects. TimerTree only indexes them by expiration
 // time using intrusive red-black tree nodes embedded inside Timer.
-class TimerQueue : public vexo::base::NonCopyable {
+class TimerQueue {
 public:
   using TimerCallback = std::function<void()>;
 
   explicit TimerQueue(EventLoop* loop);
   ~TimerQueue();
+
+  VEXO_DELETE_COPY_MOVE(TimerQueue);
 
   vexo::time::TimerId AddTimer(TimerCallback cb,
                                   vexo::time::Timestamp when,

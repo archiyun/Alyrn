@@ -13,8 +13,8 @@
 #include <thread>
 #include <vector>
 
-#include "vexo/base/noncopyable.h"
 #include "vexo/log/log_buffer.h"
+#include "vexo/utils/macros.h"
 
 namespace vexo::log {
 
@@ -22,7 +22,7 @@ namespace vexo::log {
  * AsyncLogger batches log records on a background thread using a
  * producer-consumer model with double buffering.
  */
-class AsyncLogger : public vexo::base::NonCopyable {
+class AsyncLogger {
 public:
   static constexpr std::size_t kBufferSize = 64 * 1024;
   using Buffer = LogBuffer<kBufferSize>;
@@ -33,6 +33,8 @@ public:
                        int flush_interval_ms = 1000,
                        std::size_t roll_size = 10 * 1024 * 1024);
   ~AsyncLogger();
+
+  VEXO_DELETE_COPY_MOVE(AsyncLogger);
 
   void Start();
   void Stop();

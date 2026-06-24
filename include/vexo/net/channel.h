@@ -6,8 +6,8 @@
 #include <memory>
 #include <utility>
 
-#include "vexo/base/noncopyable.h"
 #include "vexo/time/timestamp.h"
+#include "vexo/utils/macros.h"
 
 namespace vexo::net {
 
@@ -29,13 +29,15 @@ enum class TriggerMode : uint8_t {
 //
 // Channel is also responsible for keeping its local event state consistent
 // with the registration state stored in the Poller.
-class Channel : public vexo::base::NonCopyable {
+class Channel {
  public:
   using EventCallback = std::function<void()>;
   using ReadEventCallback = std::function<void(vexo::time::Timestamp)>;
 
   explicit Channel(EventLoop* loop, int fd);
   ~Channel();
+
+  VEXO_DELETE_COPY_MOVE(Channel);
 
   // Dispatches the active events stored in revents_ to the corresponding
   // callbacks.

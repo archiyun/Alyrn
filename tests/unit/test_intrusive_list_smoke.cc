@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <list>
 #include <random>
+#include <utility>
 #include <vector>
 
 #include "vexo/ds/intrusive_list.h"
@@ -19,10 +20,49 @@ using vexo::ds::ListNode;
 
 // Element with a stable identity (id) used to match nodes against oracle values.
 struct Item : ListNode<Item> {
+  Item() = default;
+
   int id;
 };
 
 int main() {
+  {
+    Item one{};
+    Item two{};
+    Item replacement{};
+    one.id = 1;
+    two.id = 2;
+    replacement.id = 3;
+
+    IntrusiveList<Item> source;
+    source.PushBack(&one);
+    source.PushBack(&two);
+
+    IntrusiveList<Item> moved(std::move(source));
+    assert(source.empty());
+    assert(moved.size() == 2);
+    assert(moved.front() == &one);
+    assert(moved.back() == &two);
+
+    source.PushBack(&replacement);
+    moved = std::move(source);
+    assert(source.empty());
+    assert(moved.size() == 1);
+    assert(moved.front() == &replacement);
+    assert(moved.back() == &replacement);
+    assert(!one.InList());
+    assert(!two.InList());
+
+    moved = std::move(moved);
+    assert(moved.size() == 1);
+    assert(moved.front() == &replacement);
+
+    IntrusiveList<Item> empty;
+    moved = std::move(empty);
+    assert(moved.empty());
+    assert(!replacement.InList());
+  }
+
   constexpr int N = 2000;        // pool size; ids are unique so oracle.remove(id) is exact
   constexpr int times = 500000;  // number of random operations
 

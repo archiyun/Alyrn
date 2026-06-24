@@ -7,11 +7,11 @@
 #include <memory>
 #include <string>
 
-#include "vexo/base/noncopyable.h"
 #include "vexo/gateway/health_check_config.h"
 #include "vexo/gateway/upstream_registry.h"
 #include "vexo/net/event_loop.h"
 #include "vexo/time/timer_id.h"
+#include "vexo/utils/macros.h"
 
 namespace vexo::gateway {
 
@@ -23,10 +23,12 @@ namespace vexo::gateway {
 //
 // Passive failure handling is performed by the proxy path when upstream
 // connections fail during request forwarding.
-class HealthChecker : public vexo::base::NonCopyable {
+class HealthChecker {
 public:
   HealthChecker(vexo::net::EventLoop* loop, UpstreamRegistry& registry, HealthCheckConfig cfg = {});
   ~HealthChecker();
+
+  VEXO_DELETE_COPY_MOVE(HealthChecker);
 
   void Start();
   void Stop();

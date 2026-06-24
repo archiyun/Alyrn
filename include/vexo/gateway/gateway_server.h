@@ -8,7 +8,6 @@
 #include <string_view>
 #include <unordered_map>
 
-#include "vexo/base/noncopyable.h"
 #include "vexo/gateway/fallback_config.h"
 #include "vexo/gateway/health_checker.h"
 #include "vexo/gateway/load_balancer.h"
@@ -24,13 +23,16 @@
 #include "vexo/net/inet_address.h"
 #include "vexo/net/io_backend.h"
 #include "vexo/time/timestamp.h"
+#include "vexo/utils/macros.h"
 
 namespace vexo::gateway {
 
 // GatewayServer wraps TcpServer and dispatches incoming HTTP requests to either
 // synchronous direct handlers or asynchronous upstream proxy forwarding.
-class GatewayServer : public vexo::base::NonCopyable {
+class GatewayServer {
 public:
+  VEXO_DELETE_COPY_MOVE(GatewayServer);
+
   using Handler = vexo::http::Handler;
   using TcpConnectionPtr = vexo::net::TcpConnection::TcpConnectionPtr;
 

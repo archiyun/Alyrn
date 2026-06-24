@@ -6,21 +6,23 @@
 #include <thread>
 #include <vector>
 
-#include "vexo/base/noncopyable.h"
 #include "vexo/task/executor_metrics.h"
 #include "vexo/task/task_state.h"
 #include "vexo/task/detail/work_queue.h"
+#include "vexo/utils/macros.h"
 
 namespace vexo::task {
 
 // ThreadPool pulls Tasks from WorkQueue and executes them.
 // It owns no queue and holds no task identity; it only drives execution.
 // queue and metrics must outlive this ThreadPool.
-class ThreadPool : public vexo::base::NonCopyable {
+class ThreadPool {
  public:
   ThreadPool(WorkQueue& queue, ExecutorMetrics& metrics,
              std::size_t thread_count = 0);
   ~ThreadPool();
+
+  VEXO_DELETE_COPY_MOVE(ThreadPool);
 
  private:
   void WorkerLoop(std::stop_token stoken);

@@ -4,9 +4,9 @@
 
 #include <functional>
 
-#include "vexo/base/noncopyable.h"
 #include "vexo/net/channel.h"
 #include "vexo/net/socket.h"
+#include "vexo/utils/macros.h"
 
 namespace vexo::net {
 
@@ -18,13 +18,14 @@ class InetAddress;
 // It is typically attached to the base EventLoop. When the listening fd
 // becomes readable, Acceptor accepts one or more pending connections and
 // forwards them through NewConnectionCallback.
-class Acceptor : public vexo::base::NonCopyable {
+class Acceptor {
 public:
-  using NewConnectionCallback =
-      std::function<void(int sockfd, const InetAddress&)>;
+  using NewConnectionCallback = std::function<void(int sockfd, const InetAddress&)>;
 
   Acceptor(EventLoop* loop, const InetAddress& listen_addr, bool reuse_port);
   ~Acceptor();
+
+  VEXO_DELETE_COPY_MOVE(Acceptor);
 
   void set_new_connection_callback(NewConnectionCallback cb) {
     new_connection_callback_ = std::move(cb);

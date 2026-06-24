@@ -7,8 +7,8 @@
 #include <memory>
 #include <utility>
 
-#include "vexo/base/noncopyable.h"
 #include "vexo/memory/memory_pool.h"
+#include "vexo/utils/macros.h"
 
 namespace vexo::memory {
 
@@ -35,7 +35,7 @@ template <
     std::size_t Capacity    = 1024,
     typename    MutexPolicy = std::mutex
 >
-class ObjectPool : public vexo::base::NonCopyable {
+class ObjectPool {
  public:
   class Deleter {
    public:
@@ -56,6 +56,8 @@ class ObjectPool : public vexo::base::NonCopyable {
 
   ObjectPool()  = default;
   ~ObjectPool() = default;
+
+  VEXO_DELETE_COPY_MOVE(ObjectPool);
 
   // Constructs an object of type T using forwarded arguments. When the pool
   // is exhausted, falls back to heap allocation so callers never observe

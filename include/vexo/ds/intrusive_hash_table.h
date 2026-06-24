@@ -16,7 +16,7 @@
 #include <utility>
 #include <vector>
 
-#include "vexo/base/noncopyable.h"
+#include "vexo/utils/macros.h"
 
 namespace vexo::ds {
 
@@ -88,8 +88,10 @@ concept HashNodeBaseHook =
                                               };
 
 template <class T, auto kKeyOf, class Hash, class Eq, class Tag>
-class IntrusiveHashTable : public vexo::base::NonCopyable {
+class IntrusiveHashTable {
 public:
+  VEXO_DELETE_COPY_MOVE(IntrusiveHashTable);
+
   using Node = HashNode<T, Tag>;
   using Key = std::remove_cvref_t<decltype(kKeyOf(static_cast<const T*>(nullptr)))>;
   static_assert(HashNodeBaseHook<T, Tag>,

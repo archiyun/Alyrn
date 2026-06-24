@@ -7,7 +7,7 @@
 #include <vector>
 #include <concepts>
 
-#include "vexo/base/noncopyable.h"
+#include "vexo/utils/macros.h"
 
 namespace vexo::ds {
 
@@ -53,8 +53,10 @@ concept HeapNodeBaseHook =
     };
 
 template <class T, auto kLess, class Tag>
-class IntrusiveQuadHeap : public vexo::base::NonCopyable {
+class IntrusiveQuadHeap {
 public:
+  VEXO_DELETE_COPY_MOVE(IntrusiveQuadHeap);
+
   using Node = HeapNode<T, Tag>;
   static_assert(HeapNodeBaseHook<T, Tag>,
                 "T must publicly and non-virtually inherit HeapNode<T, Tag>");

@@ -10,14 +10,16 @@
 #include <stdexcept>
 #include <vector>
 
-#include "vexo/base/noncopyable.h"
 #include "vexo/memory/lru_cache_segment.h"
+#include "vexo/utils/macros.h"
 
 namespace vexo::memory {
 
 template <typename Key, typename Value>
-class SegmentLRUCache : public vexo::base::NonCopyable {
+class SegmentLRUCache {
 public:
+    VEXO_DELETE_COPY_MOVE(SegmentLRUCache);
+
     explicit SegmentLRUCache(std::size_t capacity, std::size_t segment_count)
         : segment_count_(normalizeSegmentCount(capacity, segment_count)) {
         const std::size_t per_count = capacity / segment_count_;

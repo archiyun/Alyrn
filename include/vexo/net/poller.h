@@ -5,8 +5,8 @@
 #include <unordered_map>
 #include <vector>
 
-#include "vexo/base/noncopyable.h"
 #include "vexo/time/timestamp.h"
+#include "vexo/utils/macros.h"
 
 namespace vexo::net {
 
@@ -19,12 +19,14 @@ class EventLoop;
 // Each EventLoop owns exactly one Poller. The Poller tracks the Channels
 // currently registered with the loop, waits for active events from the kernel,
 // and updates or removes Channel registrations as their interest sets change.
-class Poller : public vexo::base::NonCopyable {
+class Poller {
 public:
   using ChannelList = std::vector<Channel*>;
 
   explicit Poller(EventLoop* loop);
   virtual ~Poller() = default;
+
+  VEXO_DELETE_COPY_MOVE(Poller);
 
   // Waits for I/O events and fills active_channels with the Channels that
   // became active before the timeout expires.

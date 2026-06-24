@@ -4,9 +4,13 @@
 
 namespace vexo::base {
 
-// NonCopyable disables copy construction and copy assignment for derived
-// types.
-class NonCopyable {
+// Legacy inheritance helper that disables copying and also prevents derived
+// types from being moved implicitly. Retained for source compatibility; new
+// types should declare their intended copy and move semantics directly with
+// VEXO_DELETE_COPY_MOVE or VEXO_DISABLE_COPY_ALLOW_MOVE from
+// vexo/utils/macros.h.
+class [[deprecated(
+    "Use VEXO_DELETE_COPY_MOVE or VEXO_DISABLE_COPY_ALLOW_MOVE instead")]] NonCopyable {
 protected:
   NonCopyable() = default;
   ~NonCopyable() = default;

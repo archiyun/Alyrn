@@ -9,7 +9,7 @@
 #include <mutex>
 #include <new>
 
-#include "vexo/base/noncopyable.h"
+#include "vexo/utils/macros.h"
 
 namespace vexo::memory {
 
@@ -45,7 +45,7 @@ template <
     std::size_t Capacity    = 1024,
     typename    MutexPolicy = std::mutex
 >
-class MemoryPool : public vexo::base::NonCopyable {
+class MemoryPool {
   static_assert(BlockSize > 0,  "MemoryPool: BlockSize must be > 0");
   static_assert(Capacity  > 0,  "MemoryPool: Capacity must be > 0");
   static_assert(Alignment > 0 && (Alignment & (Alignment - 1)) == 0,
@@ -57,6 +57,8 @@ class MemoryPool : public vexo::base::NonCopyable {
   ~MemoryPool() {
     ::operator delete(buffer_, std::align_val_t{kAlignment});
   }
+
+  VEXO_DELETE_COPY_MOVE(MemoryPool);
 
   // Allocates one slot from the pool.
   // Returns nullptr if the pool is exhausted.
