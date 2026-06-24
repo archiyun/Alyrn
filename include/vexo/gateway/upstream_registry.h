@@ -8,8 +8,8 @@
 #include <unordered_map>
 #include <utility>
 
-#include "vexo/base/noncopyable.h"
 #include "vexo/gateway/upstream.h"
+#include "vexo/utils/macros.h"
 
 namespace vexo::gateway {
 
@@ -21,8 +21,12 @@ struct StringHash {
 };
 
 // Built during startup. After startup, it is read-only and can be resolved without locks.
-class UpstreamRegistry : public vexo::base::NonCopyable {
+class UpstreamRegistry {
 public:
+  UpstreamRegistry() = default;
+
+  VEXO_DELETE_COPY_MOVE(UpstreamRegistry);
+
   using UpstreamRegistryMap = std::unordered_map<
       std::string, 
       std::shared_ptr<Upstream>,

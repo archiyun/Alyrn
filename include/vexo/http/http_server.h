@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include "vexo/base/noncopyable.h"
 #include "vexo/http/router.h"
 #include "vexo/net/tcp_server.h"
 #include "vexo/task/blocking_executor.h"
+#include "vexo/utils/macros.h"
 
 #include <memory>
 #include <source_location>
@@ -15,12 +15,14 @@
 namespace vexo::http {
 
 // HttpServer adds a minimal HTTP/1.1 processing layer on top of TcpServer.
-class HttpServer : public vexo::base::NonCopyable {
+class HttpServer {
  public:
   using TcpConnectionPtr = vexo::net::TcpConnection::TcpConnectionPtr;
 
   HttpServer(vexo::net::EventLoop* loop, const vexo::net::InetAddress& addr,
              std::string name);
+
+  VEXO_DELETE_COPY_MOVE(HttpServer);
 
   void set_thread_num(int num_threads);
 

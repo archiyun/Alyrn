@@ -5,20 +5,22 @@
 #include <memory>
 #include <vector>
 
-#include "vexo/base/noncopyable.h"
 #include "vexo/net/event_loop_thread.h"
+#include "vexo/utils/macros.h"
 
 namespace vexo::net {
 
 class EventLoop;
 
 // EventLoopThreadPool manages a set of I/O threads, each owning one EventLoop.
-class EventLoopThreadPool : public vexo::base::NonCopyable {
+class EventLoopThreadPool {
 public:
   using ThreadInitCallback = EventLoopThread::ThreadInitCallback;
 
   EventLoopThreadPool(EventLoop* main_loop, int sub_loop_num);
   ~EventLoopThreadPool();
+
+  VEXO_DELETE_COPY_MOVE(EventLoopThreadPool);
 
   void Start();
   void Start(ThreadInitCallback cb);

@@ -12,10 +12,10 @@
 #include <type_traits>
 #include <utility>
 
-#include "vexo/base/noncopyable.h"
 #include "vexo/task/cancellation_token.h"
 #include "vexo/task/executor_metrics.h"
 #include "vexo/task/task_handle.h"
+#include "vexo/utils/macros.h"
 
 namespace vexo::task {
 
@@ -28,13 +28,15 @@ enum class SubmitError {
 
 // BlockingExecutor runs blocking or CPU-bound callbacks outside I/O loop
 // threads. It assigns IDs, enforces queue limits, and returns TaskHandles.
-class BlockingExecutor : public vexo::base::NonCopyable {
+class BlockingExecutor {
  public:
   // worker_count == 0 → hardware_concurrency.
   // max_queue_size == 0 → unbounded queue.
   explicit BlockingExecutor(std::size_t worker_count   = 0,
                             std::size_t max_queue_size = 0);
   ~BlockingExecutor();
+
+  VEXO_DELETE_COPY_MOVE(BlockingExecutor);
 
   // Primary submit: func receives a CancellationToken for cooperative cancel.
   TaskHandle Submit(TaskFunction func);

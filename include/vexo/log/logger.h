@@ -8,8 +8,8 @@
 #include <string>
 #include <string_view>
 
-#include "vexo/base/noncopyable.h"
 #include "vexo/base/singleton.h"
+#include "vexo/utils/macros.h"
 
 namespace vexo::log {
 
@@ -45,12 +45,14 @@ private:
 
 const char* ToString(LogLevel level);
 
-class LogMessage : public vexo::base::NonCopyable {
+class LogMessage {
 public:
   LogMessage(LogLevel level, const char* file, int line, const char* func)
       : level_(level), file_(file), line_(line), func_(func) {}
 
   ~LogMessage() { Logger::Instance().Log(level_, file_, line_, func_, stream_.str()); }
+
+  VEXO_DELETE_COPY_MOVE(LogMessage);
 
   std::ostringstream& Stream() { return stream_; }
 

@@ -6,7 +6,7 @@
 #include <concepts>
 #include <cstddef>
 
-#include "vexo/base/noncopyable.h"
+#include "vexo/utils/macros.h"
 
 namespace vexo::ds {
 
@@ -23,8 +23,7 @@ public:
 
 protected:
   ListNode() = default;
-  ListNode(const ListNode&) = delete;
-  ListNode& operator=(const ListNode&) = delete;
+  VEXO_DELETE_COPY(ListNode);
 
 private:
   using Node = ListNode<T, Tag>;
@@ -45,8 +44,10 @@ concept ListNodeBaseHook =
     };
 
 template <class T, class Tag = void>
-class IntrusiveList : public vexo::base::NonCopyable {
+class IntrusiveList {
 public:
+  VEXO_DELETE_COPY_MOVE(IntrusiveList);
+
   using Node = ListNode<T, Tag>;
   static_assert(ListNodeBaseHook<T, Tag>,
                 "T must publicly and non-virutally inherit ListNode<T, Tag>");

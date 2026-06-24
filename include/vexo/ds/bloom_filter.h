@@ -21,7 +21,7 @@
 #include <string_view>
 #include <type_traits>
 
-#include "vexo/base/noncopyable.h"
+#include "vexo/utils/macros.h"
 #include "vexo/ds/murmurhash3.h"
 
 namespace vexo::ds {
@@ -104,13 +104,15 @@ consteval std::size_t WordsNeeded(std::size_t bits) {
 //   - Removal (standard bloom filters cannot delete elements)
 //
 template <std::size_t kExpectedItems, double kFalsePositiveRate = 0.01>
-class BloomFilter : public vexo::base::NonCopyable {
+class BloomFilter {
   static_assert(kExpectedItems > 0, "kExpectedItems must be positive");
   static_assert(kFalsePositiveRate > 0.0 && kFalsePositiveRate < 1.0,
                 "kFalsePositiveRate must be in (0, 1)");
 
  public:
   BloomFilter() = default;
+
+  VEXO_DELETE_COPY_MOVE(BloomFilter);
 
   // --- Insert ---
 

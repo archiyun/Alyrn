@@ -9,7 +9,7 @@
 #include <thread>
 #include <vector>
 
-#include "vexo/base/noncopyable.h"
+#include "vexo/utils/macros.h"
 #include "vexo/time/timer_id.h"
 #include "vexo/time/timestamp.h"
 
@@ -24,12 +24,14 @@ class TimerQueue;
 // Each EventLoop is bound to exactly one thread. It owns a Poller for waiting
 // on I/O events, dispatches active Channel callbacks, runs queued functors in
 // thread order, and manages timer callbacks through TimerQueue.
-class EventLoop : public vexo::base::NonCopyable {
+class EventLoop {
 public:
   using Functor = std::function<void()>;
 
   EventLoop();
   ~EventLoop();
+
+  VEXO_DELETE_COPY_MOVE(EventLoop);
 
   // Starts the event loop and blocks until Quit() is requested.
   void Loop();

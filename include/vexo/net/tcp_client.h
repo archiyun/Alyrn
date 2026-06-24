@@ -7,9 +7,9 @@
 #include <string>
 #include <utility>
 
-#include "vexo/base/noncopyable.h"
 #include "vexo/net/inet_address.h"
 #include "vexo/net/tcp_connection.h"
+#include "vexo/utils/macros.h"
 
 namespace vexo::net {
 
@@ -21,7 +21,7 @@ class EventLoop;
 // Connector is responsible for non-blocking connect/retry.
 // After the connection is established, TcpClient wraps the socket fd into
 // TcpConnection and installs user callbacks.
-class TcpClient : public vexo::base::NonCopyable {
+class TcpClient {
 public:
   using TcpConnectionPtr      = TcpConnection::TcpConnectionPtr;
   using ConnectionCallback    = TcpConnection::ConnectionCallback;
@@ -30,6 +30,8 @@ public:
 
   TcpClient(EventLoop* loop, const InetAddress& server_addr, std::string name);
   ~TcpClient();
+
+  VEXO_DELETE_COPY_MOVE(TcpClient);
 
   void Connect();
   void Disconnect();
