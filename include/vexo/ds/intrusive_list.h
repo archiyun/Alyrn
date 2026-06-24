@@ -46,15 +46,27 @@ concept ListNodeBaseHook =
 template <class T, class Tag = void>
 class IntrusiveList {
 public:
-  VEXO_DELETE_COPY_MOVE(IntrusiveList);
+  VEXO_DELETE_COPY(IntrusiveList);
 
   using Node = ListNode<T, Tag>;
   static_assert(ListNodeBaseHook<T, Tag>,
-                "T must publicly and non-virutally inherit ListNode<T, Tag>");
-  IntrusiveList() {
-    head_.next_ = &head_;
-    head_.prev_ = &head_;
+                "T must publicly and non-virtually inherit ListNode<T, Tag>");
+
+  IntrusiveList() noexcept { reset(); }
+
+  IntrusiveList(IntrusiveList&& other) noexcept {
+    reset();
+    TakeFrom(other);
   }
+
+  IntrusiveList& operator=(IntrusiveList&& other) noexcept {
+    if (this != &other) {
+      Clear();
+      TakeFrom(other);
+    }
+    return *this;
+  }
+
   // Resets every linked node's hook so a stale Erase after destruction is safe.
   ~IntrusiveList() { Clear(); }
 
@@ -130,6 +142,23 @@ public:
   void ForEachSafe(Fn fn);
 
 private:
+  void reset() noexcept {
+    head_.next_ = &head_;
+    head_.prev_ = &head_;
+    size_ = 0;
+  }
+
+  void TakeFrom(IntrusiveList& other) noexcept {
+    if (other.empty()) return;
+
+    head_.next_ = other.head_.next_;
+    head_.prev_ = other.head_.prev_;
+    size_ = other.size_;
+
+    head_.next_->prev_ = &head_;
+    head_.prev_->next_ = &head_;
+    other.reset();
+  }
   // -- Link primitives (the shared base for every modifier) --
   // Splice node out of the ring without touching its hook or size_ (for MoveTo).
   static void SpliceOut(Node* node) {
@@ -274,9 +303,7 @@ void ILIST_TYPE::Splice(IntrusiveList& other) {
   head_.prev_ = last;
   size_ += other.size_;
 
-  other.head_.next_ = &other.head_;
-  other.head_.prev_ = &other.head_;
-  other.size_ = 0;
+  other.reset();
 }
 
 ILIST_TMPL
