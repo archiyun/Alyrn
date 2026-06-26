@@ -595,7 +595,7 @@ std::shared_ptr<UpstreamRequest> ProxyPass::Forward(const TcpConnectionPtr& clie
   std::shared_ptr<UpstreamRequest> req;
   try {
     req = std::make_shared<UpstreamRequest>(client_conn, upstream, lb, pool, first_peer, ctx,
-                                            BuildRequest(request, *first_peer), cb,
+                                            BuildRequest(request, *first_peer, forwarded), cb,
                                             /*max_retries=*/2, request.method());
   } catch (...) {
     upstream.ReleaseRequestSlot();
@@ -606,9 +606,10 @@ std::shared_ptr<UpstreamRequest> ProxyPass::Forward(const TcpConnectionPtr& clie
 }
 
 // Serialize the inbound HttpRequest into the byte stream we send upstream.
-// Strips the client's Host/Connection (we rewrite both) and pins the
-// outgoing connection to keep-alive so the conn pool can reuse it.
-std::string ProxyPass::BuildRequest(const vexo::http::HttpRequest& req, const UpstreamPeer& peer) {
+// Filters and rewrites gateway-owned headers during the same traversal used
+// for serialization. The inbound HttpRequest remains untouched.
+std::string ProxyPass::BuildRequest(const vexo::http::HttpRequest& req, const UpstreamPeer& peer,
+                                    ForwardedHeaderContext forwarded) {
   std::string out;
   out.reserve(256);
   out += vexo::http::MethodToString(req.method());
@@ -627,20 +628,71 @@ std::string ProxyPass::BuildRequest(const vexo::http::HttpRequest& req, const Up
   std::string_view existing_request_id;
 
   for (const auto& [k, v] : req.headers()) {
-    // double protection
-    if (k == "host" || k == "connection" || k == "keep-alive" || k == "proxy-connection" ||
-        k == "proxy-authenticate" || k == "proxy-authorization" || k == "te" || k == "trailer" ||
-        k == "transfer-encoding" || k == "upgrade") {
+    if (k == "host" || IsHopByHop(k) || NamedByConnection(k, connection)) {
       continue;
     }
-    out += k;
-    out += ": ";
-    out += v;
+    if (k == "x-forwarded-for") {
+      previous_xff = v;
+      continue;
+    }
+    if (k == "via") {
+      previous_via = v;
+      continue;
+    }
+    if (k == "x-request-id") {
+      existing_request_id = v;
+      continue;
+    }
+    if (k == "x-real-ip" || k == "x-forwarded-proto" || k == "x-forwarded-host" ||
+        k == "x-forwarded-port") {
+      continue;
+    }
+    AppendHeader(out, k, v);
+  }
+
+  if (!previous_xff.empty() && !forwarded.client_ip.empty()) {
+    out += "x-forwarded-for: ";
+    out += previous_xff;
+    out += ", ";
+    out += forwarded.client_ip;
+    out += "\r\n";
+  } else if (!previous_xff.empty()) {
+    AppendHeader(out, "x-forwarded-for", previous_xff);
+  } else if (!forwarded.client_ip.empty()) {
+    AppendHeader(out, "x-forwarded-for", forwarded.client_ip);
+  }
+  if (!forwarded.client_ip.empty()) {
+    AppendHeader(out, "x-real-ip", forwarded.client_ip);
+  }
+  if (!forwarded.scheme.empty()) {
+    AppendHeader(out, "x-forwarded-proto", forwarded.scheme);
+  }
+  if (!original_host.empty()) {
+    AppendHeader(out, "x-forwarded-host", original_host);
+  }
+
+  if (!previous_via.empty() && !forwarded.gateway_name.empty()) {
+    out += "via: ";
+    out += previous_via;
+    out += ", 1.1 ";
+    out += forwarded.gateway_name;
+    out += "\r\n";
+  } else if (!previous_via.empty()) {
+    AppendHeader(out, "via", previous_via);
+  } else if (!forwarded.gateway_name.empty()) {
+    out += "via: 1.1 ";
+    out += forwarded.gateway_name;
     out += "\r\n";
   }
-  out += "host: ";
-  out += peer.host_port();
-  out += "\r\nconnection: keep-alive\r\n\r\n";
+
+  if (!existing_request_id.empty()) {
+    AppendHeader(out, "x-request-id", existing_request_id);
+  } else if (!forwarded.request_id.empty()) {
+    AppendHeader(out, "x-request-id", forwarded.request_id);
+  }
+
+  AppendHeader(out, "host", peer.host_port());
+  out += "connection: keep-alive\r\n\r\n";
   if (!req.body().empty()) out += req.body();
   return out;
 }
