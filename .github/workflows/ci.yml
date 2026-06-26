@@ -19,8 +19,8 @@ jobs:
       matrix:
         build_type: [Debug, Release]
         compiler:
-          - { name: gcc-12, cc: gcc-12, cxx: g++-12, pkgs: g++-12 }
-          - { name: clang,  cc: clang,  cxx: clang++, pkgs: clang }
+          - { name: gcc-12, cc: gcc-12, cxx: g++-12, pkgs: g++-12, cxx_flags: "", linker_flags: "" }
+          - { name: clang, cc: clang, cxx: clang++, pkgs: "clang libc++-dev libc++abi-dev", cxx_flags: "-stdlib=libc++", linker_flags: "-stdlib=libc++" }
 
     env:
       CC: ${{ matrix.compiler.cc }}
@@ -35,7 +35,11 @@ jobs:
             cmake ninja-build libgtest-dev ${{ matrix.compiler.pkgs }}
 
       - name: Configure
-        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+        run: >
+          cmake -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DCMAKE_CXX_FLAGS="${{ matrix.compiler.cxx_flags }}"
+          -DCMAKE_EXE_LINKER_FLAGS="${{ matrix.compiler.linker_flags }}"
 
       - name: Build
         run: cmake --build build -j"$(nproc)"
@@ -62,14 +66,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build libgtest-dev clang
+            cmake ninja-build libgtest-dev clang libc++-dev libc++abi-dev
 
       - name: Configure
         run: >
           cmake -B build -G Ninja
           -DCMAKE_BUILD_TYPE=RelWithDebInfo
-          -DCMAKE_CXX_FLAGS="${{ matrix.san.flags }}"
-          -DCMAKE_EXE_LINKER_FLAGS="${{ matrix.san.flags }}"
+          -DCMAKE_CXX_FLAGS="-stdlib=libc++ ${{ matrix.san.flags }}"
+          -DCMAKE_EXE_LINKER_FLAGS="-stdlib=libc++ ${{ matrix.san.flags }}"
 
       - name: Build
         run: cmake --build build -j"$(nproc)"
