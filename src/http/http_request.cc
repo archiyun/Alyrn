@@ -9,20 +9,6 @@
 
 namespace vexo::http {
 
-namespace {
-
-bool HeaderNameEquals(std::string_view a, std::string_view b) noexcept {
-  if (a.size() != b.size()) return false;
-  for (std::size_t i = 0; i < a.size(); ++i) {
-    unsigned char c = static_cast<unsigned char>(a[i]);
-    if (c >= 'A' && c <= 'Z') c = static_cast<unsigned char>(c - 'A' + 'a');
-    if (static_cast<char>(c) != b[i]) return false;
-  }
-  return true;
-}
-
-}  // namespace
-
 HttpRequest::HttpRequest()
     : pool_{vexo::memory::Pool::Create()},
       res_{std::make_unique<vexo::memory::PoolResource>(*pool_)},
@@ -48,12 +34,12 @@ void HttpRequest::AddHeaderLowered(HttpString field, std::string_view value) {
 }
 
 std::string_view HttpRequest::header(std::string_view field) const {
-  if (HeaderNameEquals(field, "host")) return host_;
-  if (HeaderNameEquals(field, "connection")) return connection_;
-  if (HeaderNameEquals(field, "content-length")) return content_length_;
+  const HeaderNameEqual equal;
+  if (equal(field, "host")) return host_;
+  if (equal(field, "connection")) return connection_;
+  if (equal(field, "content-length")) return content_length_;
 
-  const auto key = detail::LowerCopy(field, res_.get());
-  const auto it  = headers_.find(key);
+  const auto it = headers_.find(field);
   if (it == headers_.end()) {
     return {};
   }
@@ -61,19 +47,22 @@ std::string_view HttpRequest::header(std::string_view field) const {
 }
 
 void HttpRequest::set_header(std::string_view field, std::string_view value) {
-  auto key  = detail::LowerCopy(field, res_.get());
-  auto val  = detail::Trim(value,      res_.get());
-  auto [it, inserted] = headers_.try_emplace(std::move(key), std::move(val));
-  if (!inserted) {
+  auto val = detail::Trim(value, res_.get());
+  auto it = headers_.find(field);
+  if (it == headers_.end()) {
+    auto key = detail::LowerCopy(field, res_.get());
+    it = headers_.emplace(std::move(key), std::move(val)).first;
+  } else {
     it->second = std::move(val);
   }
   CacheHeader(it->first, it->second);
 }
 
 bool HttpRequest::RemoveHeader(std::string_view field) {
-  const auto key = detail::LowerCopy(field, res_.get());
-  if (headers_.erase(key) == 0) return false;
-  ClearCachedHeader(key);
+  const auto it = headers_.find(field);
+  if (it == headers_.end()) return false;
+  ClearCachedHeader(it->first);
+  headers_.erase(it);
   return true;
 }
 
@@ -128,7 +117,7 @@ void HttpRequest::Reset() {
   // 然后 Pool::Reset 一次性回收 arena, 最后 placement-new 重建.
   // path_params_ 用普通 std::allocator, 单独 clear 即可.
   path_params_.clear();
-  headers_.~HttpMap<HttpString, HttpString>();
+  headers_.~HeaderMap();
   body_.~HttpString();
   query_.~HttpString();
   path_.~HttpString();
@@ -138,7 +127,7 @@ void HttpRequest::Reset() {
   new (&path_)    HttpString{res_.get()};
   new (&query_)   HttpString{res_.get()};
   new (&body_)    HttpString{res_.get()};
-  new (&headers_) HttpMap<HttpString, HttpString>{res_.get()};
+  new (&headers_) HeaderMap{res_.get()};
 
   host_ = {};
   connection_ = {};
