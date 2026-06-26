@@ -20,7 +20,6 @@ jobs:
         build_type: [Debug, Release]
         compiler:
           - { name: gcc-12, cc: gcc-12, cxx: g++-12, pkgs: g++-12 }
-          - { name: clang,  cc: clang,  cxx: clang++, pkgs: clang }
 
     env:
       CC: ${{ matrix.compiler.cc }}
@@ -53,8 +52,8 @@ jobs:
           - name: asan-ubsan
             flags: "-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer -g"
     env:
-      CC: clang
-      CXX: clang++
+      CC: gcc-12
+      CXX: g++-12
     steps:
       - uses: actions/checkout@v4
 
@@ -62,7 +61,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build libgtest-dev clang
+            cmake ninja-build libgtest-dev g++-12
 
       - name: Configure
         run: >

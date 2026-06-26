@@ -215,14 +215,14 @@ void UpstreamRequest::ConnectTo(std::shared_ptr<UpstreamPeer> peer) {
     peer_->OnFailure(NowMs());
     ReportToBreaker(false);
     LOG_ERROR() << "proxy: invalid IPv4 address for peer " << peer_->config().name << ": "
-                << peer_->config().host << " error=" << address.error.message();
+                << peer_->config().host << " error=" << address.error().message();
     Send502();
     phase_ = Phase::kDone;
     CancelDeadline();
     ReleaseAccounting();
     return;
   }
-  upstream_conn_ = std::make_unique<vexo::net::TcpClient>(client->loop(), *address.value,
+  upstream_conn_ = std::make_unique<vexo::net::TcpClient>(client->loop(), *address,
                                                           "proxy->" + peer_->config().name);
   AttachCallbacks();
   upstream_conn_->Connect();

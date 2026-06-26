@@ -20,30 +20,26 @@ namespace {
 int CreateAcceptSocket() {
   auto fd = CreateNonBlockingSocket();
   if (!fd) {
-    LOG_FATAL() << "failed to create accept socket: error="
-                << fd.error.value() << " message=" << fd.error.message();
+    LOG_FATAL() << "failed to create accept socket: error=" << fd.error().value()
+                << " message=" << fd.error().message();
     std::abort();
   }
-  return *fd.value;
+  return *fd;
 }
 
 }  // namespace
 
-Acceptor::Acceptor(EventLoop* loop,
-                   const InetAddress& listen_addr,
-                   bool reuse_port)
+Acceptor::Acceptor(EventLoop* loop, const InetAddress& listen_addr, bool reuse_port)
     : loop_(loop),
       accept_socket_(CreateAcceptSocket()),
       accept_channel_(loop, accept_socket_.fd()),
       listening_(false) {
-    accept_socket_.set_reuse_addr(true);
-    accept_socket_.set_reuse_port(reuse_port);
-    accept_socket_.BindAddress(listen_addr);
+  accept_socket_.set_reuse_addr(true);
+  accept_socket_.set_reuse_port(reuse_port);
+  accept_socket_.BindAddress(listen_addr);
 
-    accept_channel_.set_read_callback(
-        [this](vexo::time::Timestamp receive_time) {
-            HandleRead(receive_time);
-        });
+  accept_channel_.set_read_callback(
+      [this](vexo::time::Timestamp receive_time) { HandleRead(receive_time); });
 }
 
 Acceptor::~Acceptor() {
@@ -66,19 +62,16 @@ void Acceptor::HandleRead(vexo::time::Timestamp) {
     int connfd = accept_socket_.Accept(&peer_addr);
     if (connfd >= 0) {
       if (new_connection_callback_) {
-        LOG_INFO() << "accepted connection fd=" << connfd
-                   << " peer=" << peer_addr.ToIpPort();
+        LOG_INFO() << "accepted connection fd=" << connfd << " peer=" << peer_addr.ToIpPort();
         new_connection_callback_(connfd, peer_addr);
       } else {
-        LOG_WARN() << "accepted connection without callback, closing fd="
-                   << connfd;
+        LOG_WARN() << "accepted connection without callback, closing fd=" << connfd;
         ::close(connfd);
       }
       return true;
     }
     if (errno != EAGAIN && errno != EWOULDBLOCK) {
-      LOG_ERROR() << "accept failed: errno=" << errno
-                  << " message=" << std::strerror(errno);
+      LOG_ERROR() << "accept failed: errno=" << errno << " message=" << std::strerror(errno);
     }
     return false;
   };

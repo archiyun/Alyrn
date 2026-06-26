@@ -1,5 +1,21 @@
 include(CTest)
 
+add_executable(panic_check_smoke_test
+    unit/test_panic_check_smoke.cc
+)
+
+target_include_directories(panic_check_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(panic_check_smoke_test
+    PRIVATE
+        vexo_foundation
+)
+
+add_test(NAME panic_check_smoke_test COMMAND panic_check_smoke_test)
+
 add_executable(memory_pool_smoke_test
     unit/test_memory_pool_smoke.cc
 )
@@ -21,6 +37,54 @@ target_include_directories(object_pool_smoke_test
 )
 
 add_test(NAME object_pool_smoke_test COMMAND object_pool_smoke_test)
+
+# coro 叶子:Task<T> 惰性 + 对称转移 + Spawn/JoinHandle,不绑定网络后端或错误类型。
+add_executable(coro_smoke_test
+    unit/test_coro_smoke.cc
+)
+
+target_include_directories(coro_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(coro_smoke_test PRIVATE vexo_coro vexo_foundation)
+
+add_test(NAME coro_smoke_test COMMAND coro_smoke_test)
+
+# EventLoop 协程工作源:Schedule + ready_ + 快照 drain。链接 vexo_net(EventLoop 实现)。
+add_executable(event_loop_coro_smoke_test
+    unit/test_event_loop_coro_smoke.cc
+)
+
+target_include_directories(event_loop_coro_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(event_loop_coro_smoke_test
+    PRIVATE
+        vexo_net
+)
+
+add_test(NAME event_loop_coro_smoke_test COMMAND event_loop_coro_smoke_test)
+
+# C3:detached 连接协程(Spawn)park→resume→自毁,无泄漏/无 UAF。链 vexo_net。
+add_executable(spawn_c3_smoke_test
+    unit/test_spawn_c3_smoke.cc
+)
+
+target_include_directories(spawn_c3_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(spawn_c3_smoke_test
+    PRIVATE
+        vexo_net
+)
+
+add_test(NAME spawn_c3_smoke_test COMMAND spawn_c3_smoke_test)
 
 add_executable(pool_smoke_test
     unit/test_pool_smoke.cc
@@ -101,6 +165,17 @@ target_link_libraries(http_smoke_test
 )
 
 add_test(NAME http_smoke_test COMMAND http_smoke_test)
+
+add_executable(facade_smoke_test
+    unit/test_facade_smoke.cc
+)
+
+target_include_directories(facade_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+add_test(NAME facade_smoke_test COMMAND facade_smoke_test)
 
 
 
@@ -228,6 +303,17 @@ target_include_directories(intrusive_list_smoke_test
 )
 
 add_test(NAME intrusive_list_smoke_test COMMAND intrusive_list_smoke_test)
+
+add_executable(intrusive_queue_smoke_test
+    unit/test_intrusive_queue_smoke.cc
+)
+
+target_include_directories(intrusive_queue_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+add_test(NAME intrusive_queue_smoke_test COMMAND intrusive_queue_smoke_test)
 
 add_executable(intrusive_hash_table_smoke_test
     unit/test_intrusive_hash_table_smoke.cc

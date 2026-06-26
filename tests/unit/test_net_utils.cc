@@ -50,39 +50,37 @@ TEST(InetAddressTest, ParsesAndFormatsNumericIPv4) {
   auto address = ParseIPv4Address("127.0.0.1", 8080);
 
   ASSERT_TRUE(address);
-  EXPECT_FALSE(address.error);
-  EXPECT_EQ(address.value->ToIp(), "127.0.0.1");
-  EXPECT_EQ(address.value->ToPort(), 8080);
-  EXPECT_EQ(address.value->ToIpPort(), "127.0.0.1:8080");
+  EXPECT_EQ(address->ToIp(), "127.0.0.1");
+  EXPECT_EQ(address->ToPort(), 8080);
+  EXPECT_EQ(address->ToIpPort(), "127.0.0.1:8080");
 }
 
 TEST(InetAddressTest, RejectsInvalidIPv4WithoutLoopbackFallback) {
   auto address = ParseIPv4Address("not-an-ip", 8080);
 
   EXPECT_FALSE(address);
-  EXPECT_EQ(address.error, std::make_error_code(std::errc::invalid_argument));
+  EXPECT_EQ(address.error(), std::make_error_code(std::errc::invalid_argument));
 
   auto hostname = ParseIPv4Address("localhost", 8080);
   EXPECT_FALSE(hostname);
-  EXPECT_EQ(hostname.error, std::make_error_code(std::errc::invalid_argument));
+  EXPECT_EQ(hostname.error(), std::make_error_code(std::errc::invalid_argument));
 }
 
 TEST(NetUtilsTest, CreatesSocketWithAtomicFlagsAndSupportsClearingThem) {
   auto socket = CreateNonBlockingSocket();
   ASSERT_TRUE(socket);
-  ASSERT_FALSE(socket.error);
-  ScopedFd fd(*socket.value);
+  ScopedFd fd(*socket);
 
   EXPECT_NE(::fcntl(fd.get(), F_GETFL, 0) & O_NONBLOCK, 0);
   EXPECT_NE(::fcntl(fd.get(), F_GETFD, 0) & FD_CLOEXEC, 0);
 
-  EXPECT_FALSE(set_non_blocking(fd.get(), false));
-  EXPECT_FALSE(set_close_on_exec(fd.get(), false));
+  EXPECT_TRUE(set_non_blocking(fd.get(), false));
+  EXPECT_TRUE(set_close_on_exec(fd.get(), false));
   EXPECT_EQ(::fcntl(fd.get(), F_GETFL, 0) & O_NONBLOCK, 0);
   EXPECT_EQ(::fcntl(fd.get(), F_GETFD, 0) & FD_CLOEXEC, 0);
 
-  EXPECT_FALSE(set_non_blocking(fd.get(), true));
-  EXPECT_FALSE(set_close_on_exec(fd.get(), true));
+  EXPECT_TRUE(set_non_blocking(fd.get(), true));
+  EXPECT_TRUE(set_close_on_exec(fd.get(), true));
   EXPECT_NE(::fcntl(fd.get(), F_GETFL, 0) & O_NONBLOCK, 0);
   EXPECT_NE(::fcntl(fd.get(), F_GETFD, 0) & FD_CLOEXEC, 0);
 }
@@ -90,45 +88,45 @@ TEST(NetUtilsTest, CreatesSocketWithAtomicFlagsAndSupportsClearingThem) {
 TEST(NetUtilsTest, ReportsSocketOptionErrorsAndSupportsOnOff) {
   auto socket = CreateNonBlockingSocket();
   ASSERT_TRUE(socket);
-  ScopedFd fd(*socket.value);
+  ScopedFd fd(*socket);
 
-  EXPECT_FALSE(set_reuse_addr(fd.get(), true));
+  EXPECT_TRUE(set_reuse_addr(fd.get(), true));
   EXPECT_EQ(get_socket_option(fd.get(), SOL_SOCKET, SO_REUSEADDR), 1);
-  EXPECT_FALSE(set_reuse_addr(fd.get(), false));
+  EXPECT_TRUE(set_reuse_addr(fd.get(), false));
   EXPECT_EQ(get_socket_option(fd.get(), SOL_SOCKET, SO_REUSEADDR), 0);
 
-  EXPECT_FALSE(set_reuse_port(fd.get(), true));
+  EXPECT_TRUE(set_reuse_port(fd.get(), true));
   EXPECT_EQ(get_socket_option(fd.get(), SOL_SOCKET, SO_REUSEPORT), 1);
-  EXPECT_FALSE(set_reuse_port(fd.get(), false));
+  EXPECT_TRUE(set_reuse_port(fd.get(), false));
   EXPECT_EQ(get_socket_option(fd.get(), SOL_SOCKET, SO_REUSEPORT), 0);
 
-  EXPECT_FALSE(set_tcp_non_delay(fd.get(), true));
+  EXPECT_TRUE(set_tcp_non_delay(fd.get(), true));
   EXPECT_EQ(get_socket_option(fd.get(), IPPROTO_TCP, TCP_NODELAY), 1);
-  EXPECT_FALSE(set_tcp_non_delay(fd.get(), false));
+  EXPECT_TRUE(set_tcp_non_delay(fd.get(), false));
   EXPECT_EQ(get_socket_option(fd.get(), IPPROTO_TCP, TCP_NODELAY), 0);
 
-  EXPECT_FALSE(set_keep_alive(fd.get(), true));
+  EXPECT_TRUE(set_keep_alive(fd.get(), true));
   EXPECT_EQ(get_socket_option(fd.get(), SOL_SOCKET, SO_KEEPALIVE), 1);
-  EXPECT_FALSE(set_keep_alive(fd.get(), false));
+  EXPECT_TRUE(set_keep_alive(fd.get(), false));
   EXPECT_EQ(get_socket_option(fd.get(), SOL_SOCKET, SO_KEEPALIVE), 0);
 
-  EXPECT_EQ(set_non_blocking(-1).value(), EBADF);
-  EXPECT_EQ(set_close_on_exec(-1).value(), EBADF);
-  EXPECT_EQ(set_reuse_addr(-1).value(), EBADF);
+  EXPECT_EQ(set_non_blocking(-1).error().value(), EBADF);
+  EXPECT_EQ(set_close_on_exec(-1).error().value(), EBADF);
+  EXPECT_EQ(set_reuse_addr(-1).error().value(), EBADF);
 }
 
 TEST(NetUtilsTest, AddressQueriesPreserveErrors) {
   auto local = get_local_addr(-1);
   EXPECT_FALSE(local);
-  EXPECT_EQ(local.error.value(), EBADF);
+  EXPECT_EQ(local.error().value(), EBADF);
 
   auto peer = get_peer_addr(-1);
   EXPECT_FALSE(peer);
-  EXPECT_EQ(peer.error.value(), EBADF);
+  EXPECT_EQ(peer.error().value(), EBADF);
 
   auto self_connect = IsSelfConnect(-1);
   EXPECT_FALSE(self_connect);
-  EXPECT_EQ(self_connect.error.value(), EBADF);
+  EXPECT_EQ(self_connect.error().value(), EBADF);
 }
 
 TEST(NetUtilsTest, QueriesConnectedIPv4Endpoints) {
@@ -146,10 +144,10 @@ TEST(NetUtilsTest, QueriesConnectedIPv4Endpoints) {
 
   ScopedFd client(::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP));
   ASSERT_GE(client.get(), 0);
-  ASSERT_EQ(::connect(client.get(),
-                      reinterpret_cast<const sockaddr*>(&listening_address.value->sock_addr()),
-                      sizeof(listening_address.value->sock_addr())),
-            0);
+  ASSERT_EQ(
+      ::connect(client.get(), reinterpret_cast<const sockaddr*>(&listening_address->sock_addr()),
+                sizeof(listening_address->sock_addr())),
+      0);
 
   ScopedFd accepted(::accept4(listener.get(), nullptr, nullptr, SOCK_CLOEXEC));
   ASSERT_GE(accepted.get(), 0);
@@ -163,12 +161,12 @@ TEST(NetUtilsTest, QueriesConnectedIPv4Endpoints) {
   auto server_peer = get_peer_addr(accepted.get());
   ASSERT_TRUE(server_peer);
 
-  EXPECT_EQ(*client_local.value, *server_peer.value);
-  EXPECT_EQ(*client_peer.value, *server_local.value);
+  EXPECT_EQ(*client_local, *server_peer);
+  EXPECT_EQ(*client_peer, *server_local);
 
   auto self_connect = IsSelfConnect(client.get());
   ASSERT_TRUE(self_connect);
-  EXPECT_FALSE(*self_connect.value);
+  EXPECT_FALSE(*self_connect);
 }
 
 TEST(NetUtilsTest, SocketWriteDoesNotRaiseSigPipe) {

@@ -8,40 +8,41 @@
 #include <sys/socket.h>
 
 #include <cerrno>
+#include <expected>
 #include <string>
 
 namespace vexo::net {
 namespace {
 
-std::error_code CurrentErrno() { return {errno, std::generic_category()}; }
+vexo::base::Error CurrentErrno() { return vexo::base::make_errno(errno); }
 
-std::error_code set_fd_flag(int fd, int cmd_get, int cmd_set, int flag, bool on) {
+vexo::base::Result<void> set_fd_flag(int fd, int cmd_get, int cmd_set, int flag, bool on) {
   const int old_flag = ::fcntl(fd, cmd_get, 0);
   if (old_flag < 0) {
-    return CurrentErrno();
+    return std::unexpected(CurrentErrno());
   }
 
   const int new_flag = on ? (old_flag | flag) : (old_flag & ~flag);
   if (new_flag != old_flag && ::fcntl(fd, cmd_set, new_flag) < 0) {
-    return CurrentErrno();
+    return std::unexpected(CurrentErrno());
   }
 
   return {};
 }
 
-std::error_code set_socket_option(int fd, int level, int option, bool on) {
+vexo::base::Result<void> set_socket_option(int fd, int level, int option, bool on) {
   const int optval = on ? 1 : 0;
   if (::setsockopt(fd, level, option, &optval, static_cast<socklen_t>(sizeof(optval))) < 0) {
-    return CurrentErrno();
+    return std::unexpected(CurrentErrno());
   }
   return {};
 }
 
 }  // namespace
 
-NetResult<InetAddress> ParseIPv4Address(std::string_view ip, std::uint16_t port) {
+vexo::base::Result<InetAddress> ParseIPv4Address(std::string_view ip, std::uint16_t port) {
   if (ip.find('\0') != std::string_view::npos) {
-    return {.error = std::make_error_code(std::errc::invalid_argument)};
+    return std::unexpected(vexo::base::Error(std::make_error_code(std::errc::invalid_argument)));
   }
 
   sockaddr_in addr{};
@@ -51,74 +52,78 @@ NetResult<InetAddress> ParseIPv4Address(std::string_view ip, std::uint16_t port)
   const std::string ip_string(ip);
   const int result = ::inet_pton(AF_INET, ip_string.c_str(), &addr.sin_addr);
   if (result == 1) {
-    return {.value = InetAddress(addr)};
+    return InetAddress(addr);
   }
-  return {.error =
-              result == 0 ? std::make_error_code(std::errc::invalid_argument) : CurrentErrno()};
+  if (result == 0) {
+    return std::unexpected(vexo::base::Error(std::make_error_code(std::errc::invalid_argument)));
+  }
+  return std::unexpected(CurrentErrno());
 }
 
-NetResult<int> CreateNonBlockingSocket() {
+vexo::base::Result<int> CreateNonBlockingSocket() {
   const int sockfd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, IPPROTO_TCP);
   if (sockfd < 0) {
-    return {.error = CurrentErrno()};
+    return std::unexpected(CurrentErrno());
   }
-  return {.value = sockfd};
+  return sockfd;
 }
 
-std::error_code set_non_blocking(int fd, bool on) {
+vexo::base::Result<void> set_non_blocking(int fd, bool on) {
   return set_fd_flag(fd, F_GETFL, F_SETFL, O_NONBLOCK, on);
 }
 
-std::error_code set_close_on_exec(int fd, bool on) {
+vexo::base::Result<void> set_close_on_exec(int fd, bool on) {
   return set_fd_flag(fd, F_GETFD, F_SETFD, FD_CLOEXEC, on);
 }
 
-std::error_code set_reuse_addr(int fd, bool on) {
+vexo::base::Result<void> set_reuse_addr(int fd, bool on) {
   return set_socket_option(fd, SOL_SOCKET, SO_REUSEADDR, on);
 }
 
-std::error_code set_reuse_port(int fd, bool on) {
+vexo::base::Result<void> set_reuse_port(int fd, bool on) {
   return set_socket_option(fd, SOL_SOCKET, SO_REUSEPORT, on);
 }
 
-std::error_code set_tcp_non_delay(int fd, bool on) {
+vexo::base::Result<void> set_tcp_non_delay(int fd, bool on) {
   return set_socket_option(fd, IPPROTO_TCP, TCP_NODELAY, on);
 }
 
-std::error_code set_keep_alive(int fd, bool on) {
+vexo::base::Result<void> set_keep_alive(int fd, bool on) {
   return set_socket_option(fd, SOL_SOCKET, SO_KEEPALIVE, on);
 }
 
-NetResult<InetAddress> get_local_addr(int fd) {
+vexo::base::Result<InetAddress> get_local_addr(int fd) {
   sockaddr_in localaddr{};
   socklen_t addrlen = static_cast<socklen_t>(sizeof(localaddr));
   if (::getsockname(fd, reinterpret_cast<sockaddr*>(&localaddr), &addrlen) < 0) {
-    return {.error = CurrentErrno()};
+    return std::unexpected(CurrentErrno());
   }
   if (localaddr.sin_family != AF_INET) {
-    return {.error = std::make_error_code(std::errc::address_family_not_supported)};
+    return std::unexpected(
+        vexo::base::Error(std::make_error_code(std::errc::address_family_not_supported)));
   }
-  return {.value = InetAddress(localaddr)};
+  return InetAddress(localaddr);
 }
 
-NetResult<InetAddress> get_peer_addr(int fd) {
+vexo::base::Result<InetAddress> get_peer_addr(int fd) {
   sockaddr_in peeraddr{};
   socklen_t addrlen = static_cast<socklen_t>(sizeof(peeraddr));
   if (::getpeername(fd, reinterpret_cast<sockaddr*>(&peeraddr), &addrlen) < 0) {
-    return {.error = CurrentErrno()};
+    return std::unexpected(CurrentErrno());
   }
   if (peeraddr.sin_family != AF_INET) {
-    return {.error = std::make_error_code(std::errc::address_family_not_supported)};
+    return std::unexpected(
+        vexo::base::Error(std::make_error_code(std::errc::address_family_not_supported)));
   }
-  return {.value = InetAddress(peeraddr)};
+  return InetAddress(peeraddr);
 }
 
-NetResult<bool> IsSelfConnect(int fd) {
+vexo::base::Result<bool> IsSelfConnect(int fd) {
   auto localaddr = get_local_addr(fd);
-  if (!localaddr) return {.error = localaddr.error};
+  if (!localaddr) return std::unexpected(localaddr.error());
   auto peeraddr = get_peer_addr(fd);
-  if (!peeraddr) return {.error = peeraddr.error};
-  return {.value = *localaddr.value == *peeraddr.value};
+  if (!peeraddr) return std::unexpected(peeraddr.error());
+  return *localaddr == *peeraddr;
 }
 
 }  // namespace vexo::net
