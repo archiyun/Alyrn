@@ -3,8 +3,8 @@
 #include "vexo/net/tcp_client.h"
 
 #include <atomic>
-#include <cstdlib>
 #include <cstdio>
+#include <cstdlib>
 
 #include "vexo/log/logger.h"
 #include "vexo/net/connector.h"
@@ -12,17 +12,13 @@
 
 namespace vexo::net {
 
-TcpClient::TcpClient(EventLoop* loop,
-                     const InetAddress& server_addr,
-                     std::string name)
+TcpClient::TcpClient(EventLoop* loop, const InetAddress& server_addr, std::string name)
     : loop_(loop),
       server_addr_(server_addr),
       name_(std::move(name)),
       connector_(std::make_shared<Connector>(loop, server_addr)) {
-  connector_->set_connection_callback(
-      [this](int sockfd) { NewConnection(sockfd); });
-  LOG_INFO() << "tcp client created: name=" << name_
-             << " server=" << server_addr_.ToIpPort();
+  connector_->set_connection_callback([this](int sockfd) { NewConnection(sockfd); });
+  LOG_INFO() << "tcp client created: name=" << name_ << " server=" << server_addr_.ToIpPort();
 }
 
 TcpClient::~TcpClient() {
@@ -38,8 +34,7 @@ TcpClient::~TcpClient() {
 void TcpClient::Connect() {
   connect_.store(true);
   connector_->Start();
-  LOG_INFO() << "tcp client connecting: name=" << name_
-             << " server=" << server_addr_.ToIpPort();
+  LOG_INFO() << "tcp client connecting: name=" << name_ << " server=" << server_addr_.ToIpPort();
 }
 
 void TcpClient::Disconnect() {
@@ -50,9 +45,7 @@ void TcpClient::Disconnect() {
   }
 }
 
-void TcpClient::set_retry_enabled(bool enabled) {
-  connector_->set_retry_enabled(enabled);
-}
+void TcpClient::set_retry_enabled(bool enabled) { connector_->set_retry_enabled(enabled); }
 
 void TcpClient::NewConnection(int sockfd) {
   // 此函数在 loop_ 线程中被调用（由 Connector::handleWrite 触发）
@@ -61,8 +54,8 @@ void TcpClient::NewConnection(int sockfd) {
   auto local_addr = get_local_addr(sockfd);
   if (!local_addr) {
     LOG_FATAL() << "getsockname failed for connected socket: fd=" << sockfd
-                << " error=" << local_addr.error.value()
-                << " message=" << local_addr.error.message();
+                << " error=" << local_addr.error().value()
+                << " message=" << local_addr.error().message();
     std::abort();
   }
   InetAddress peer_addr(server_addr_);
@@ -73,14 +66,13 @@ void TcpClient::NewConnection(int sockfd) {
   std::snprintf(buf, sizeof(buf), "#%d", conn_id.fetch_add(1));
   std::string conn_name = name_ + buf;
 
-  TcpConnectionPtr conn = std::make_shared<TcpConnection>(
-      loop_, conn_name, sockfd, *local_addr.value, peer_addr);
+  TcpConnectionPtr conn =
+      std::make_shared<TcpConnection>(loop_, conn_name, sockfd, *local_addr, peer_addr);
 
   conn->set_connection_callback(connection_callback_);
   conn->set_message_callback(message_callback_);
   conn->set_write_complete_callback(write_complete_callback_);
-  conn->set_close_callback(
-      [this](const TcpConnectionPtr& c) { RemoveConnection(c); });
+  conn->set_close_callback([this](const TcpConnectionPtr& c) { RemoveConnection(c); });
 
   connection_ = conn;
 
@@ -88,8 +80,7 @@ void TcpClient::NewConnection(int sockfd) {
   conn->ConnectEstablished();
 
   LOG_INFO() << "tcp client new connection: name=" << conn_name
-             << " local=" << local_addr.value->ToIpPort()
-             << " peer=" << peer_addr.ToIpPort();
+             << " local=" << local_addr->ToIpPort() << " peer=" << peer_addr.ToIpPort();
 }
 
 void TcpClient::RemoveConnection(const TcpConnectionPtr& conn) {

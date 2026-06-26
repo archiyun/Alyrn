@@ -130,6 +130,36 @@ target_compile_definitions(vexo_net PUBLIC _GNU_SOURCE)
 #   target_compile_definitions(vexo_uring PUBLIC VEXO_ENABLE_URING)，cxx_std_23。
 # 开关 option(VEXO_ENABLE_URING)（上方）与 pkg_check_modules(URING) 已保留备用。
 
+# ── Coroutine layer ────────────────────────────────────────────────────────
+# 协程在 co_await 层统一 reactor 与 luring 两个后端。
+#
+# vexo_coro —— backend-neutral 协程原语(Task<T>、Work、Scheduler、Spawn/
+# JoinHandle、SyncWait,职责单文件拆分)。Task<T> 不定义错误策略；网络层按需
+# 返回 Task<base::Result<T>>。Header-only,只依赖标准库 + vexo/utils 宏,绝不
+# #include net/luring。
+add_library(vexo_coro INTERFACE)
+target_include_directories(vexo_coro INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_features(vexo_coro INTERFACE cxx_std_23)
+
+# vexo_coro_reactor —— 把协程绑到 epoll/reactor 后端,坐在 net 之上(用
+# Socket/Channel/EventLoop)。当前是 header-only 骨架;awaitable 的 .cc 落地后
+# 改成 add_library(vexo_coro_reactor STATIC src/coro/reactor/*.cc)。
+add_library(vexo_coro_reactor INTERFACE)
+target_include_directories(vexo_coro_reactor INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(vexo_coro_reactor INTERFACE vexo_coro vexo_net)
+target_compile_features(vexo_coro_reactor INTERFACE cxx_std_23)
+
+# vexo_coro_luring —— 把协程绑到 io_uring proactor 后端。头文件经 ring.h 引入
+# <liburing.h>,故仅在 VEXO_ENABLE_URING 下构建;待 vexo_uring 复活后改 link 它。
+if(VEXO_ENABLE_URING)
+    add_library(vexo_coro_luring INTERFACE)
+    target_include_directories(vexo_coro_luring INTERFACE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include ${URING_INCLUDE_DIRS})
+    target_link_libraries(vexo_coro_luring INTERFACE vexo_coro ${URING_LIBRARIES})
+    target_compile_definitions(vexo_coro_luring INTERFACE VEXO_ENABLE_URING)
+    target_compile_features(vexo_coro_luring INTERFACE cxx_std_23)
+endif()
+
 set(VEXO_HTTP_SOURCES
     src/http/http_types.cc
     src/http/http_request.cc

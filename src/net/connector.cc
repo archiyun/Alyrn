@@ -21,9 +21,7 @@ static constexpr double kMaxRetryDelaySec = 30.0;
 Connector::Connector(EventLoop* loop, const InetAddress& server_addr)
     : loop_(loop), server_addr_(server_addr) {}
 
-Connector::~Connector() {
-  assert(!channel_);
-}
+Connector::~Connector() { assert(!channel_); }
 
 void Connector::Start() {
   stopped_.store(false, std::memory_order_release);
@@ -56,15 +54,13 @@ void Connector::Connect() {
   auto socket = CreateNonBlockingSocket();
   if (!socket) {
     LOG_ERROR() << "connector: CreateNonBlockingSocket failed: error="
-                << socket.error.value()
-                << " message=" << socket.error.message();
+                << socket.error().value() << " message=" << socket.error().message();
     return;
   }
-  const int sockfd = *socket.value;
+  const int sockfd = *socket;
 
   const sockaddr_in addr = server_addr_.sock_addr();
-  int ret = ::connect(sockfd,
-                      reinterpret_cast<const sockaddr*>(&addr),
+  int ret = ::connect(sockfd, reinterpret_cast<const sockaddr*>(&addr),
                       static_cast<socklen_t>(sizeof(addr)));
   int saved_errno = (ret == 0) ? 0 : errno;
 
@@ -132,15 +128,14 @@ void Connector::handleWrite() {
   // loopback 上内核可能将本地端口分配成和目标端口相同，形成自连接
   auto self_connect = IsSelfConnect(sockfd);
   if (!self_connect) {
-    LOG_ERROR() << "connector: failed to inspect connected socket: fd="
-                << sockfd << " error=" << self_connect.error.value()
-                << " message=" << self_connect.error.message();
+    LOG_ERROR() << "connector: failed to inspect connected socket: fd=" << sockfd
+                << " error=" << self_connect.error().value()
+                << " message=" << self_connect.error().message();
     Retry(sockfd);
     return;
   }
-  if (*self_connect.value) {
-    LOG_WARN() << "connector: self-connect on " << server_addr_.ToIpPort()
-               << ", retrying";
+  if (*self_connect) {
+    LOG_WARN() << "connector: self-connect on " << server_addr_.ToIpPort() << ", retrying";
     Retry(sockfd);
     return;
   }
@@ -154,8 +149,7 @@ void Connector::handleWrite() {
     return;
   }
 
-  LOG_INFO() << "connector: connected to " << server_addr_.ToIpPort()
-             << " fd=" << sockfd;
+  LOG_INFO() << "connector: connected to " << server_addr_.ToIpPort() << " fd=" << sockfd;
 
   if (new_connection_cb_) {
     new_connection_cb_(sockfd);
@@ -172,8 +166,7 @@ void Connector::handleError() {
     int err = 0;
     socklen_t len = static_cast<socklen_t>(sizeof(err));
     ::getsockopt(sockfd, SOL_SOCKET, SO_ERROR, &err, &len);
-    LOG_ERROR() << "connector: error on " << server_addr_.ToIpPort()
-                << ": " << std::strerror(err);
+    LOG_ERROR() << "connector: error on " << server_addr_.ToIpPort() << ": " << std::strerror(err);
     Retry(sockfd);
   }
 }
@@ -182,8 +175,7 @@ void Connector::Retry(int sockfd) {
   ::close(sockfd);
   state_ = ConnectorState::kDisConnected;
 
-  if (stopped_.load(std::memory_order_acquire) ||
-      !retry_enabled_.load(std::memory_order_acquire) ||
+  if (stopped_.load(std::memory_order_acquire) || !retry_enabled_.load(std::memory_order_acquire) ||
       !new_connection_cb_) {
     return;
   }
@@ -191,15 +183,14 @@ void Connector::Retry(int sockfd) {
   // 指数退避：0.5s → 1s → 2s → ... → 30s
   retry_delay_sec_ = std::min(retry_delay_sec_ * 2.0, kMaxRetryDelaySec);
 
-  LOG_INFO() << "connector: retrying " << server_addr_.ToIpPort()
-             << " in " << retry_delay_sec_ << "s";
+  LOG_INFO() << "connector: retrying " << server_addr_.ToIpPort() << " in " << retry_delay_sec_
+             << "s";
 
   auto self = shared_from_this();
   loop_->RunAfter(retry_delay_sec_, [self] {
     if (!self->stopped_.load(std::memory_order_acquire) &&
         self->retry_enabled_.load(std::memory_order_acquire) &&
-        self->state_ == ConnectorState::kDisConnected &&
-        self->new_connection_cb_) {
+        self->state_ == ConnectorState::kDisConnected && self->new_connection_cb_) {
       self->Connect();
     }
   });

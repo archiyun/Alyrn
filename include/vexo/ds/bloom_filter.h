@@ -21,8 +21,8 @@
 #include <string_view>
 #include <type_traits>
 
+#include "vexo/ds/murmurhash32.h"
 #include "vexo/utils/macros.h"
-#include "vexo/ds/murmurhash3.h"
 
 namespace vexo::ds {
 

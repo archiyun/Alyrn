@@ -7,19 +7,17 @@
 
 namespace vexo::base {
 
-using Error = std::system_error;
+using Error = std::error_code;
 
 template <typename T>
 using Result = std::expected<T, Error>;
 
 // Converts a positive errno value to 'vexo::base::Error'
 inline Error make_errno(int err) noexcept {
-  return std::error_code{err, std::system_category()};
+  return Error(err, std::system_category());
 }
 
 // Converts a negative errno value to 'vexo::base::Error'
-inline Error make_neg_errno(int neg_err) noexcept {
-  return make_errno(-neg_err);
-}
+inline Error make_neg_errno(int neg_err) noexcept { return make_errno(-neg_err); }
 
 }  // namespace vexo::base

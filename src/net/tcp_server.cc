@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 #include "vexo/net/tcp_server.h"
 
-#include <cstdlib>
 #include <cstdio>
+#include <cstdlib>
 
 #include "vexo/log/logger.h"
 #include "vexo/net/event_loop.h"
@@ -11,10 +11,7 @@
 
 namespace vexo::net {
 
-TcpServer::TcpServer(
-    EventLoop* loop,
-    const InetAddress& listenaddr,
-    const std::string& name)
+TcpServer::TcpServer(EventLoop* loop, const InetAddress& listenaddr, const std::string& name)
     : loop_(loop),
       name_(name),
       acceptor_(std::make_unique<Acceptor>(loop, listenaddr, false)),
@@ -22,17 +19,15 @@ TcpServer::TcpServer(
       et_mode_(false),
       next_conn_id_(1),
       sub_loop_num_(0) {
-    LOG_INFO() << "tcp server created: name=" << name_;
+  LOG_INFO() << "tcp server created: name=" << name_;
 
-    acceptor_->set_new_connection_callback(
-        [this](int sockfd, const InetAddress& peeraddr) {
-            NewConnection(sockfd, peeraddr);
-        });
+  acceptor_->set_new_connection_callback(
+      [this](int sockfd, const InetAddress& peeraddr) { NewConnection(sockfd, peeraddr); });
 }
 
 TcpServer::~TcpServer() {
-    LOG_INFO() << "tcp server destroying: name=" << name_
-               << " active_connections=" << connections_.size();
+  LOG_INFO() << "tcp server destroying: name=" << name_
+             << " active_connections=" << connections_.size();
   for (auto& [_, conn_ptr] : connections_) {
     TcpConnectionPtr conn(conn_ptr);
     conn->ConnectDestroyed();
@@ -49,8 +44,7 @@ void TcpServer::Start() {
     } else {
       thread_pool_->Start();
     }
-    LOG_INFO() << "tcp server starting: name=" << name_
-               << " sub_loops=" << sub_loop_num_;
+    LOG_INFO() << "tcp server starting: name=" << name_ << " sub_loops=" << sub_loop_num_;
     loop_->RunInLoop([this] {
       acceptor_->set_edge_triggered(et_mode_);
       acceptor_->Listen();
@@ -68,18 +62,17 @@ void TcpServer::NewConnection(int sockfd, const InetAddress& peeraddr) {
   auto localaddr = get_local_addr(sockfd);
   if (!localaddr) {
     LOG_FATAL() << "getsockname failed for accepted socket: fd=" << sockfd
-                << " error=" << localaddr.error.value()
-                << " message=" << localaddr.error.message();
+                << " error=" << localaddr.error().value()
+                << " message=" << localaddr.error().message();
     std::abort();
   }
 
-  TcpConnectionPtr conn = std::make_shared<TcpConnection>(
-      ioLoop, conn_name, sockfd, *localaddr.value, peeraddr);
+  TcpConnectionPtr conn =
+      std::make_shared<TcpConnection>(ioLoop, conn_name, sockfd, *localaddr, peeraddr);
 
   connections_[conn_name] = conn;
 
-  LOG_INFO() << "new tcp connection: name=" << conn_name
-             << " local=" << localaddr.value->ToIpPort()
+  LOG_INFO() << "new tcp connection: name=" << conn_name << " local=" << localaddr->ToIpPort()
              << " peer=" << peeraddr.ToIpPort();
 
   conn->set_connection_callback(connection_callback_);

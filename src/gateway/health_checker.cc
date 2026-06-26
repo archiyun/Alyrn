@@ -36,10 +36,9 @@ constexpr std::size_t kMaxHealthResponseHeaderBytes = 16 * 1024;
 // Monotonic milliseconds since some unspecified epoch. Used only to stamp
 // state.checked_ms so the fail_timeout window can be evaluated later.
 uint64_t NowMs() {
-  return static_cast<uint64_t>(
-      std::chrono::duration_cast<std::chrono::milliseconds>(
-          std::chrono::steady_clock::now().time_since_epoch())
-          .count());
+  return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                   std::chrono::steady_clock::now().time_since_epoch())
+                                   .count());
 }
 
 int ParseHealthStatus(std::string_view headers) {
@@ -47,22 +46,19 @@ int ParseHealthStatus(std::string_view headers) {
   if (line_end == std::string_view::npos) return 0;
 
   const std::string_view line = headers.substr(0, line_end);
-  if (!(line.starts_with("HTTP/1.1 ") || line.starts_with("HTTP/1.0 ")) ||
-      line.size() < 12) {
+  if (!(line.starts_with("HTTP/1.1 ") || line.starts_with("HTTP/1.0 ")) || line.size() < 12) {
     return 0;
   }
 
   const std::string_view code = line.substr(9, 3);
   int status = 0;
-  const auto [ptr, ec] =
-      std::from_chars(code.data(), code.data() + code.size(), status);
+  const auto [ptr, ec] = std::from_chars(code.data(), code.data() + code.size(), status);
   if (ec != std::errc{} || ptr != code.data() + code.size()) return 0;
   if (line.size() > 12 && line[12] != ' ') return 0;
   return status;
 }
 
-void CancelTimeoutLater(vexo::net::EventLoop* loop,
-                        vexo::time::TimerId id) {
+void CancelTimeoutLater(vexo::net::EventLoop* loop, vexo::time::TimerId id) {
   // Cancelling releases the timer's TcpClient capture. Do that after the
   // current connection callback returns.
   loop->QueueInLoop([loop, id] { loop->Cancel(id); });
@@ -75,9 +71,7 @@ struct HealthChecker::Probe {
 };
 
 struct HealthChecker::State {
-  State(vexo::net::EventLoop* event_loop,
-        UpstreamRegistry& registry_ref,
-        HealthCheckConfig config)
+  State(vexo::net::EventLoop* event_loop, UpstreamRegistry& registry_ref, HealthCheckConfig config)
       : loop(event_loop), registry(registry_ref), cfg(std::move(config)) {}
 
   bool IsActive(uint64_t expected_generation) const noexcept {
@@ -97,38 +91,28 @@ struct HealthChecker::State {
   std::unordered_map<std::string, uint64_t> in_flight_generation;
 };
 
-HealthChecker::HealthChecker(vexo::net::EventLoop* loop,
-                             UpstreamRegistry& registry,
+HealthChecker::HealthChecker(vexo::net::EventLoop* loop, UpstreamRegistry& registry,
                              HealthCheckConfig cfg)
-  : loop_(loop),
-    state_(std::make_shared<State>(loop, registry, std::move(cfg))) {}
+    : loop_(loop), state_(std::make_shared<State>(loop, registry, std::move(cfg))) {}
 
-HealthChecker::~HealthChecker() {
-  Stop();
-}
+HealthChecker::~HealthChecker() { Stop(); }
 
 void HealthChecker::Start() {
   bool expected = false;
-  if (!running_.compare_exchange_strong(
-          expected, true, std::memory_order_acq_rel)) {
+  if (!running_.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
     return;
   }
 
-  const uint64_t generation =
-      state_->generation.fetch_add(1, std::memory_order_acq_rel) + 1;
+  const uint64_t generation = state_->generation.fetch_add(1, std::memory_order_acq_rel) + 1;
   state_->active.store(true, std::memory_order_release);
 
   std::weak_ptr<State> weak_state = state_;
-  timer_id_ = loop_->RunEvery(
-      state_->cfg.interval_sec,
-      [weak_state, generation] {
-        if (auto state = weak_state.lock();
-            state && state->IsActive(generation)) {
-          CheckAll(state, generation);
-        }
-      });
-  LOG_INFO() << "health_checker: started, interval="
-             << state_->cfg.interval_sec << "s";
+  timer_id_ = loop_->RunEvery(state_->cfg.interval_sec, [weak_state, generation] {
+    if (auto state = weak_state.lock(); state && state->IsActive(generation)) {
+      CheckAll(state, generation);
+    }
+  });
+  LOG_INFO() << "health_checker: started, interval=" << state_->cfg.interval_sec << "s";
 }
 
 void HealthChecker::Stop() {
@@ -142,8 +126,7 @@ void HealthChecker::Stop() {
   loop_->Cancel(timer_id_);
 }
 
-void HealthChecker::CheckAll(const std::shared_ptr<State>& state,
-                             uint64_t generation) {
+void HealthChecker::CheckAll(const std::shared_ptr<State>& state, uint64_t generation) {
   if (!state->IsActive(generation)) return;
 
   for (const auto& [_, upstream] : state->registry.all()) {
@@ -154,16 +137,14 @@ void HealthChecker::CheckAll(const std::shared_ptr<State>& state,
   }
 }
 
-void HealthChecker::CheckOne(const std::shared_ptr<State>& state,
-                             uint64_t generation,
+void HealthChecker::CheckOne(const std::shared_ptr<State>& state, uint64_t generation,
                              std::shared_ptr<UpstreamPeer> peer) {
   using TcpConnectionPtr = vexo::net::TcpConnection::TcpConnectionPtr;
   if (!state->IsActive(generation)) return;
 
   std::string name = peer->config().name;
 
-  auto address = vexo::net::ParseIPv4Address(peer->config().host,
-                                                peer->config().port);
+  auto address = vexo::net::ParseIPv4Address(peer->config().host, peer->config().port);
   if (!address) {
     if (!state->IsActive(generation)) return;
     peer->OnFailure(NowMs());
@@ -172,14 +153,12 @@ void HealthChecker::CheckOne(const std::shared_ptr<State>& state,
     if (++fail_count >= state->cfg.unhealthy_threshold) {
       peer->state().down.store(true, std::memory_order_relaxed);
     }
-    LOG_ERROR() << "health_checker: invalid IPv4 address for peer " << name
-                << ": " << peer->config().host
-                << " error=" << address.error.message();
+    LOG_ERROR() << "health_checker: invalid IPv4 address for peer " << name << ": "
+                << peer->config().host << " error=" << address.error().message();
     return;
   }
 
-  auto [flight_it, inserted] =
-      state->in_flight_generation.try_emplace(name, generation);
+  auto [flight_it, inserted] = state->in_flight_generation.try_emplace(name, generation);
   if (!inserted) {
     if (flight_it->second == generation) {
       return;
@@ -187,35 +166,33 @@ void HealthChecker::CheckOne(const std::shared_ptr<State>& state,
     flight_it->second = generation;
   }
 
-  auto client = std::make_shared<vexo::net::TcpClient>(
-    state->loop, *address.value, "health->" + name);
+  auto client = std::make_shared<vexo::net::TcpClient>(state->loop, *address, "health->" + name);
   client->set_retry_enabled(false);
 
-  const std::string request =
-    "GET " + state->cfg.path + " HTTP/1.1\r\n"
-    "Host: " + peer->config().host + "\r\n"
-    "Connection: close\r\n\r\n";
+  const std::string request = "GET " + state->cfg.path +
+                              " HTTP/1.1\r\n"
+                              "Host: " +
+                              peer->config().host +
+                              "\r\n"
+                              "Connection: close\r\n\r\n";
 
   auto probe = std::make_shared<Probe>();
   std::weak_ptr<State> weak_state = state;
   client->set_connection_callback(
-    [weak_state, generation, peer, request, name, probe](
-        const TcpConnectionPtr& conn) {
-      auto state = weak_state.lock();
-      if (!state || !state->IsActive(generation)) return;
+      [weak_state, generation, peer, request, name, probe](const TcpConnectionPtr& conn) {
+        auto state = weak_state.lock();
+        if (!state || !state->IsActive(generation)) return;
 
-      if (conn->Connected()) {
-        conn->Send(request);
-      } else if (CompleteProbe(state, generation, peer, name, probe, false)) {
-        CancelTimeoutLater(state->loop, probe->timeout_id);
-      }
-    });
+        if (conn->Connected()) {
+          conn->Send(request);
+        } else if (CompleteProbe(state, generation, peer, name, probe, false)) {
+          CancelTimeoutLater(state->loop, probe->timeout_id);
+        }
+      });
 
   client->set_message_callback(
-    [weak_state, generation, peer, name, probe](
-      const TcpConnectionPtr& conn,
-      vexo::net::Buffer& buf,
-      vexo::time::Timestamp) {
+      [weak_state, generation, peer, name, probe](const TcpConnectionPtr& conn,
+                                                  vexo::net::Buffer& buf, vexo::time::Timestamp) {
         auto state = weak_state.lock();
         if (!state || !state->IsActive(generation)) {
           buf.RetrieveAll();
@@ -224,18 +201,15 @@ void HealthChecker::CheckOne(const std::shared_ptr<State>& state,
         }
 
         const char* header_end = buf.FindCRLFCRLF();
-        if (!header_end &&
-            buf.readable_bytes() <= kMaxHealthResponseHeaderBytes) {
+        if (!header_end && buf.readable_bytes() <= kMaxHealthResponseHeaderBytes) {
           return;
         }
 
         bool ok = false;
         if (header_end) {
-          const std::size_t header_bytes =
-              static_cast<std::size_t>(header_end - buf.Peek()) + 4;
+          const std::size_t header_bytes = static_cast<std::size_t>(header_end - buf.Peek()) + 4;
           ok = header_bytes <= kMaxHealthResponseHeaderBytes &&
-               ParseHealthStatus(
-                   std::string_view(buf.Peek(), header_bytes)) == 200;
+               ParseHealthStatus(std::string_view(buf.Peek(), header_bytes)) == 200;
         }
         buf.RetrieveAll();
         conn->Shutdown();
@@ -248,31 +222,26 @@ void HealthChecker::CheckOne(const std::shared_ptr<State>& state,
 
   // This timer owns the one-shot client until completion or timeout.
   probe->timeout_id = state->loop->RunAfter(
-      state->cfg.timeout_sec,
-      [weak_state, generation, peer, name, probe, client] {
-    if (auto state = weak_state.lock()) {
-      CompleteProbe(state, generation, peer, name, probe, false);
-    }
-    if (client->connection() && client->connection()->Connected()) {
-      client->Disconnect();
-    }
-  });
+      state->cfg.timeout_sec, [weak_state, generation, peer, name, probe, client] {
+        if (auto state = weak_state.lock()) {
+          CompleteProbe(state, generation, peer, name, probe, false);
+        }
+        if (client->connection() && client->connection()->Connected()) {
+          client->Disconnect();
+        }
+      });
 }
 
-bool HealthChecker::CompleteProbe(
-    const std::shared_ptr<State>& state,
-    uint64_t generation,
-    const std::shared_ptr<UpstreamPeer>& peer,
-    const std::string& name,
-    const std::shared_ptr<Probe>& probe,
-    bool success) {
+bool HealthChecker::CompleteProbe(const std::shared_ptr<State>& state, uint64_t generation,
+                                  const std::shared_ptr<UpstreamPeer>& peer,
+                                  const std::string& name, const std::shared_ptr<Probe>& probe,
+                                  bool success) {
   if (probe->done) return false;
   probe->done = true;
   if (!state->IsActive(generation)) return false;
 
   auto in_flight = state->in_flight_generation.find(name);
-  if (in_flight != state->in_flight_generation.end() &&
-      in_flight->second == generation) {
+  if (in_flight != state->in_flight_generation.end() && in_flight->second == generation) {
     state->in_flight_generation.erase(in_flight);
   }
 
