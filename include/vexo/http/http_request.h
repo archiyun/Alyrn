@@ -14,6 +14,46 @@
 
 namespace vexo::http {
 
+struct HeaderNameHash {
+  using is_transparent = void;
+
+  std::size_t operator()(std::string_view field) const noexcept {
+    std::size_t hash;
+    if constexpr (sizeof(std::size_t) == 8) {
+      hash = 14695981039346656037ull;
+    } else {
+      hash = 2166136261u;
+    }
+    constexpr std::size_t kPrime =
+        sizeof(std::size_t) == 8 ? 1099511628211ull : 16777619u;
+    for (unsigned char c : field) {
+      if (c >= 'A' && c <= 'Z') c = static_cast<unsigned char>(c + ('a' - 'A'));
+      hash ^= c;
+      hash *= kPrime;
+    }
+    return hash;
+  }
+};
+
+struct HeaderNameEqual {
+  using is_transparent = void;
+
+  bool operator()(std::string_view lhs, std::string_view rhs) const noexcept {
+    if (lhs.size() != rhs.size()) return false;
+    for (std::size_t i = 0; i < lhs.size(); ++i) {
+      unsigned char a = static_cast<unsigned char>(lhs[i]);
+      unsigned char b = static_cast<unsigned char>(rhs[i]);
+      if (a >= 'A' && a <= 'Z') a = static_cast<unsigned char>(a + ('a' - 'A'));
+      if (b >= 'A' && b <= 'Z') b = static_cast<unsigned char>(b + ('a' - 'A'));
+      if (a != b) return false;
+    }
+    return true;
+  }
+};
+
+using HeaderMap = std::pmr::unordered_map<HttpString, HttpString, HeaderNameHash,
+                                         HeaderNameEqual>;
+
 // HttpRequest stores one parsed HTTP request.
 class HttpRequest {
  public:
@@ -47,7 +87,7 @@ class HttpRequest {
   std::string_view host() const { return host_; }
   std::string_view connection() const { return connection_; }
   std::string_view content_length() const { return content_length_; }
-  const HttpMap<HttpString, HttpString>& headers() const { return headers_; }
+  const HeaderMap& headers() const { return headers_; }
 
   void set_body(std::string_view b) { body_.assign(b); }
   std::string_view body() const { return body_; }
@@ -85,7 +125,7 @@ class HttpRequest {
   HttpString path_;                    // e.g. /users/123
   HttpString query_;                   // e.g. name=abc&age=18
   HttpString body_;
-  HttpMap<HttpString, HttpString> headers_;  // Host / Content-Length / Connection ...
+  HeaderMap headers_;  // Host / Content-Length / Connection ...
   std::string_view host_;
   std::string_view connection_;
   std::string_view content_length_;

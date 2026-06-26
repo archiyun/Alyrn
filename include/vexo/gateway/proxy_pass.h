@@ -18,6 +18,13 @@
 
 namespace vexo::gateway {
 
+struct ForwardedHeaderContext {
+  std::string_view client_ip;
+  std::string_view scheme;
+  std::string_view gateway_name;
+  std::string_view request_id;
+};
+
 enum class Phase : uint8_t {
   kConnecting,      // TcpClient::Connect() has been called.
   kSendingRequest,  // Upstream is connected; request bytes have been sent.
@@ -39,19 +46,15 @@ class UpstreamRequest : public std::enable_shared_from_this<UpstreamRequest> {
 public:
   using TcpConnectionPtr = vexo::net::TcpConnection::TcpConnectionPtr;
 
-  UpstreamRequest(const TcpConnectionPtr& client_conn,
-                  Upstream& upstream,
-                  LoadBalancer& lb,
-                  UpstreamConnPool& pool,
-                  std::shared_ptr<UpstreamPeer> first_peer,
-                  RequestContext request_ctx,
-                  std::string request_bytes,
-                  CircuitBreaker* cb = nullptr,
-                  int max_retries = 2,
+  UpstreamRequest(const TcpConnectionPtr& client_conn, Upstream& upstream, LoadBalancer& lb,
+                  UpstreamConnPool& pool, std::shared_ptr<UpstreamPeer> first_peer,
+                  RequestContext request_ctx, std::string request_bytes,
+                  CircuitBreaker* cb = nullptr, int max_retries = 2,
                   vexo::http::Method request_method = vexo::http::Method::Get);
   ~UpstreamRequest();
 
   void Start();
+
 private:
   static void RewriteHeaders(std::string_view raw_headers, std::string& out);
   void ParseFraming(std::string_view raw_headers, int status);
@@ -60,7 +63,8 @@ private:
                          std::unique_ptr<vexo::net::TcpClient> pooled_client);
   void AttachCallbacks();
   void OnUpstreamConnChange(const TcpConnectionPtr& up_conn);
-  void OnUpstreamMessage(const TcpConnectionPtr& up_conn, vexo::net::Buffer& buf, vexo::time::Timestamp ts);
+  void OnUpstreamMessage(const TcpConnectionPtr& up_conn, vexo::net::Buffer& buf,
+                         vexo::time::Timestamp ts);
   void Finalize();
   void Send502();
   void ArmDeadline();
@@ -77,25 +81,25 @@ private:
   std::shared_ptr<UpstreamPeer> SelectFailoverPeer();
 
   std::weak_ptr<vexo::net::TcpConnection> client_weak_;
-  std::unique_ptr<vexo::net::TcpClient>   upstream_conn_;
-  std::shared_ptr<UpstreamPeer>              peer_;
-  Upstream&                                  upstream_;
-  LoadBalancer&                              lb_;
-  UpstreamConnPool&                          pool_;
-  RequestContext                             request_ctx_;
-  std::string                                request_bytes_;
-  int                                        retries_left_;
-  Phase                                      phase_{Phase::kConnecting};
-  CircuitBreaker*                            cb_{nullptr};
-  bool                                       cb_reported_{false};
-  BodyFraming                                framing_{BodyFraming::kCloseDelimited};
-  uint64_t                                   body_remaining_{0};
-  bool                                       upstream_keepalive_{false};
-  vexo::http::Method                      request_method_{vexo::http::Method::Invalid};
-  vexo::net::EventLoop*                   request_loop_{nullptr};
-  vexo::time::TimerId                     deadline_timer_;
-  bool                                       deadline_armed_{false};
-  bool                                       accounting_released_{false};
+  std::unique_ptr<vexo::net::TcpClient> upstream_conn_;
+  std::shared_ptr<UpstreamPeer> peer_;
+  Upstream& upstream_;
+  LoadBalancer& lb_;
+  UpstreamConnPool& pool_;
+  RequestContext request_ctx_;
+  std::string request_bytes_;
+  int retries_left_;
+  Phase phase_{Phase::kConnecting};
+  CircuitBreaker* cb_{nullptr};
+  bool cb_reported_{false};
+  BodyFraming framing_{BodyFraming::kCloseDelimited};
+  uint64_t body_remaining_{0};
+  bool upstream_keepalive_{false};
+  vexo::http::Method request_method_{vexo::http::Method::Invalid};
+  vexo::net::EventLoop* request_loop_{nullptr};
+  vexo::time::TimerId deadline_timer_;
+  bool deadline_armed_{false};
+  bool accounting_released_{false};
 };
 // Stateless proxy factory. Each forwarded request is represented by one
 // UpstreamRequest instance.
@@ -107,17 +111,13 @@ class ProxyPass {
 public:
   using TcpConnectionPtr = vexo::net::TcpConnection::TcpConnectionPtr;
 
-  static std::shared_ptr<UpstreamRequest>
-  Forward(const TcpConnectionPtr& client_conn,
-          const vexo::http::HttpRequest& request,
-          Upstream& upstream,
-          LoadBalancer& lb,
-          UpstreamConnPool& pool,
-          const RequestContext& ctx = {},
-          CircuitBreaker* cb = nullptr);
+  static std::shared_ptr<UpstreamRequest> Forward(
+      const TcpConnectionPtr& client_conn, const vexo::http::HttpRequest& request,
+      Upstream& upstream, LoadBalancer& lb, UpstreamConnPool& pool, const RequestContext& ctx = {},
+      CircuitBreaker* cb = nullptr, ForwardedHeaderContext forwarded = {});
 
-  static std::string BuildRequest(const vexo::http::HttpRequest& req,
-                                  const UpstreamPeer& peer);
+  static std::string BuildRequest(const vexo::http::HttpRequest& req, const UpstreamPeer& peer,
+                                  ForwardedHeaderContext forwarded = {});
 };
 
 }  // namespace vexo::gateway

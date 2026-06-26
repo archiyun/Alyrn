@@ -16,6 +16,7 @@
 #include "vexo/gateway/proxy_pass.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <charconv>
 #include <chrono>
@@ -56,6 +57,57 @@ bool IsIdempotent(vexo::http::Method m) {
     default:
       return false;
   }
+}
+
+bool AsciiCaseEqual(std::string_view lhs, std::string_view rhs) {
+  if (lhs.size() != rhs.size()) return false;
+  for (std::size_t i = 0; i < lhs.size(); ++i) {
+    unsigned char a = static_cast<unsigned char>(lhs[i]);
+    unsigned char b = static_cast<unsigned char>(rhs[i]);
+    if (a >= 'A' && a <= 'Z') a = static_cast<unsigned char>(a + ('a' - 'A'));
+    if (b >= 'A' && b <= 'Z') b = static_cast<unsigned char>(b + ('a' - 'A'));
+    if (a != b) return false;
+  }
+  return true;
+}
+
+bool NamedByConnection(std::string_view header, std::string_view connection) {
+  while (!connection.empty()) {
+    const auto comma = connection.find(',');
+    auto token = connection.substr(0, comma);
+    while (!token.empty() && (token.front() == ' ' || token.front() == '\t')) {
+      token.remove_prefix(1);
+    }
+    while (!token.empty() && (token.back() == ' ' || token.back() == '\t')) {
+      token.remove_suffix(1);
+    }
+    if (AsciiCaseEqual(header, token)) return true;
+    if (comma == std::string_view::npos) break;
+    connection.remove_prefix(comma + 1);
+  }
+  return false;
+}
+
+bool IsHopByHop(std::string_view header) {
+  static constexpr std::array<std::string_view, 9> kHeaders = {
+      "connection",
+      "keep-alive",
+      "proxy-connection",
+      "proxy-authenticate",
+      "proxy-authorization",
+      "te",
+      "trailer",
+      "transfer-encoding",
+      "upgrade",
+  };
+  return std::find(kHeaders.begin(), kHeaders.end(), header) != kHeaders.end();
+}
+
+void AppendHeader(std::string& out, std::string_view name, std::string_view value) {
+  out += name;
+  out += ": ";
+  out += value;
+  out += "\r\n";
 }
 }  // namespace
 
@@ -115,7 +167,7 @@ std::shared_ptr<UpstreamPeer> UpstreamRequest::SelectFailoverPeer() {
 
 void UpstreamRequest::Start() {
   ArmDeadline();
-  if (auto pooled = pool_.Acquire(peer_->config().name)) {
+  if (auto pooled = pool_.Acquire(peer_.get())) {
     ConnectToWithPool(peer_, std::move(pooled));
     return;
   }
@@ -512,7 +564,7 @@ void UpstreamRequest::Finalize() {
   conn.set_message_callback([](const TcpConnectionPtr&, vexo::net::Buffer& b,
                                vexo::time::Timestamp) { b.RetrieveAll(); });
   conn.set_close_callback([](const TcpConnectionPtr&) {});
-  pool_.Release(peer_->config().name, std::move(upstream_conn_));
+  pool_.Release(peer_.get(), std::move(upstream_conn_));
 }
 
 // -- ProxyPass --
@@ -526,7 +578,8 @@ std::shared_ptr<UpstreamRequest> ProxyPass::Forward(const TcpConnectionPtr& clie
                                                     const vexo::http::HttpRequest& request,
                                                     Upstream& upstream, LoadBalancer& lb,
                                                     UpstreamConnPool& pool,
-                                                    const RequestContext& ctx, CircuitBreaker* cb) {
+                                                    const RequestContext& ctx, CircuitBreaker* cb,
+                                                    ForwardedHeaderContext forwarded) {
   if (!upstream.TryAcquireRequestSlot()) {
     if (cb) cb->OnFailure();
     return nullptr;
@@ -566,6 +619,12 @@ std::string ProxyPass::BuildRequest(const vexo::http::HttpRequest& req, const Up
     out += req.query();
   }
   out += " HTTP/1.1\r\n";
+
+  const std::string_view connection = req.connection();
+  const std::string_view original_host = req.host();
+  std::string_view previous_xff;
+  std::string_view previous_via;
+  std::string_view existing_request_id;
 
   for (const auto& [k, v] : req.headers()) {
     // double protection
