@@ -57,6 +57,14 @@ int EnvInt(const char* key, int def) {
   return v ? std::atoi(v) : def;
 }
 
+std::size_t EnvSize(const char* key, std::size_t def) {
+  const char* v = std::getenv(key);
+  if (!v) return def;
+  char* end = nullptr;
+  unsigned long long parsed = std::strtoull(v, &end, 10);
+  return end != v ? static_cast<std::size_t>(parsed) : def;
+}
+
 }  // namespace
 
 int main() {
@@ -64,6 +72,7 @@ int main() {
   const uint16_t listen_port = static_cast<uint16_t>(EnvInt("PORT", 8080));
   const auto     ports_csv   = std::string(EnvOr("UPSTREAM_PORTS", "9001"));
   const auto     algo        = std::string(EnvOr("LB_ALGO", "round_robin"));
+  const auto     max_concurrent = EnvSize("MAX_CONCURRENT_REQUESTS", 1024);
 
   const auto ports = ParsePorts(ports_csv);
   if (ports.empty()) {
@@ -74,8 +83,10 @@ int main() {
   std::signal(SIGPIPE, SIG_IGN);
 
   vexo::gateway::UpstreamRegistry reg;
-  auto us = std::make_shared<vexo::gateway::Upstream>(
-      vexo::gateway::UpstreamConfig{.name = "backend"});
+  vexo::gateway::UpstreamConfig upstream_cfg;
+  upstream_cfg.name = "backend";
+  upstream_cfg.max_concurrent_requests = max_concurrent;
+  auto us = std::make_shared<vexo::gateway::Upstream>(std::move(upstream_cfg));
   for (uint16_t p : ports) {
     us->AddPeer(std::make_shared<vexo::gateway::UpstreamPeer>(
         vexo::gateway::UpstreamPeerConfig{
@@ -97,8 +108,8 @@ int main() {
   gw.AddProxyRoute("/", "backend", algo);
 
   gw.Start();
-  std::printf("BenchGatewayMulti listen=%u peers=[%s] algo=%s io_threads=%d\n",
-              listen_port, ports_csv.c_str(), algo.c_str(), io_threads);
+  std::printf("BenchGatewayMulti listen=%u peers=[%s] algo=%s io_threads=%d max_concurrent=%zu\n",
+              listen_port, ports_csv.c_str(), algo.c_str(), io_threads, max_concurrent);
   loop.Loop();
   return 0;
 }
