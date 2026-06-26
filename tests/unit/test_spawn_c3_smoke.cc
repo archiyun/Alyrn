@@ -24,8 +24,8 @@
 #include <coroutine>
 #include <expected>
 #include <future>
+#include <iostream>
 #include <mutex>
-#include <print>
 #include <thread>
 #include <utility>
 
@@ -140,7 +140,7 @@ int main() {
 
   auto fut = g_all_done.get_future();
   if (fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
-    std::println("FAIL: watchdog timed out -- detached coroutines never finished");
+    std::cout << "FAIL: watchdog timed out -- detached coroutines never finished\n";
     g_loop->Quit();
     return 1;
   }
@@ -150,9 +150,11 @@ int main() {
   const int done = g_completed.load();
   const int on_loop = g_on_loop.load();
   if (done != kConns || on_loop != kConns) {
-    std::println("FAIL: completed={} on_loop={} expected={}", done, on_loop, kConns);
+    std::cout << "FAIL: completed=" << done << " on_loop=" << on_loop << " expected=" << kConns
+              << '\n';
     return 1;
   }
-  std::println("spawn c3 smoke: PASS ({} detached coroutines resumed & self-destructed)", kConns);
+  std::cout << "spawn c3 smoke: PASS (" << kConns
+            << " detached coroutines resumed & self-destructed)\n";
   return 0;
 }

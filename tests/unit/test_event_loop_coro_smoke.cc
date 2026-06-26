@@ -17,8 +17,8 @@
 #include <cstdint>
 #include <functional>
 #include <future>
+#include <iostream>
 #include <mutex>
-#include <print>
 #include <thread>
 
 #include "vexo/net/channel.h"
@@ -101,7 +101,7 @@ bool CheckScheduleAndAffinity() {
 
   auto future = done.get_future();
   if (future.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
-    std::println("FAIL: scheduled coroutines did not complete");
+    std::cout << "FAIL: scheduled coroutines did not complete\n";
     loop->Quit();
     return false;
   }
@@ -109,7 +109,8 @@ bool CheckScheduleAndAffinity() {
 
   constexpr int kExpected = kSimple + 2;
   if (ran.load() != kExpected || ran_on_loop.load() != kExpected) {
-    std::println("FAIL: ran={} on_loop={} expected={}", ran.load(), ran_on_loop.load(), kExpected);
+    std::cout << "FAIL: ran=" << ran.load() << " on_loop=" << ran_on_loop.load()
+              << " expected=" << kExpected << '\n';
     return false;
   }
   return true;
@@ -166,7 +167,7 @@ bool CheckCoroutineBudgetPreservesIoFairness() {
     cv.wait(lock, [&] { return setup_done; });
   }
   if (loop == nullptr || io_fd < 0) {
-    std::println("FAIL: eventfd setup failed");
+    std::cout << "FAIL: eventfd setup failed\n";
     return false;
   }
 
@@ -188,7 +189,7 @@ bool CheckCoroutineBudgetPreservesIoFairness() {
   // budget of coroutines, performs a non-blocking poll, then continues.
   const uint64_t one = 1;
   if (::write(io_fd, &one, sizeof(one)) != static_cast<ssize_t>(sizeof(one))) {
-    std::println("FAIL: eventfd write failed");
+    std::cout << "FAIL: eventfd write failed\n";
     {
       std::lock_guard lock{mutex};
       start = true;
@@ -209,7 +210,7 @@ bool CheckCoroutineBudgetPreservesIoFairness() {
 
   auto future = all_coroutines_done.get_future();
   if (future.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
-    std::println("FAIL: coroutine budget test timed out");
+    std::cout << "FAIL: coroutine budget test timed out\n";
     loop->Quit();
     return false;
   }
@@ -217,7 +218,7 @@ bool CheckCoroutineBudgetPreservesIoFairness() {
 
   const int io_position = ran_when_io_fired.load(std::memory_order_relaxed);
   if (io_position < 0 || io_position >= kTotal) {
-    std::println("FAIL: fd event was starved by {} runnable coroutines", kTotal);
+    std::cout << "FAIL: fd event was starved by " << kTotal << " runnable coroutines\n";
     return false;
   }
   return true;
@@ -229,6 +230,6 @@ int main() {
   if (!CheckScheduleAndAffinity()) return 1;
   if (!CheckCoroutineBudgetPreservesIoFairness()) return 1;
 
-  std::println("event loop coro smoke: PASS");
+  std::cout << "event loop coro smoke: PASS\n";
   return 0;
 }

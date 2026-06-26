@@ -11,8 +11,8 @@
 #include <cerrno>
 #include <deque>
 #include <expected>
+#include <iostream>
 #include <memory>
-#include <print>
 #include <system_error>
 
 #include "vexo/base/error.h"
@@ -36,7 +36,7 @@ namespace {
 
 bool Check(bool condition, const char* message) {
   if (condition) return true;
-  std::println("test failed: {}", message);
+  std::cout << "test failed: " << message << '\n';
   return false;
 }
 
@@ -135,6 +135,6 @@ int main() {
     if (!Check(r.error() == std::errc::invalid_argument, "Fail should carry EINVAL")) return 1;
   }
 
-  std::println("coro smoke: PASS");
+  std::cout << "coro smoke: PASS\n";
   return 0;
 }
