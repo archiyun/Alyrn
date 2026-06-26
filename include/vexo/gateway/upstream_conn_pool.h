@@ -5,7 +5,6 @@
 #include <chrono>
 #include <deque>
 #include <memory>
-#include <string>
 #include <unordered_map>
 
 #include "vexo/gateway/upstream_peer.h"
@@ -36,12 +35,12 @@ public:
 
   explicit UpstreamConnPool(PoolConfig cfg = {}) : config_(cfg) {}
 
-  // Returns a reusable connected TcpClient for peer_name.
+  // Returns a reusable connected TcpClient for peer.
   //
   // Stale or already-closed entries are discarded while scanning the idle
   // queue. nullptr means no live idle connection is currently available.
-  TcpClientPtr Acquire(const std::string& peer_name) {
-    auto it = idle_.find(peer_name);
+  TcpClientPtr Acquire(const UpstreamPeer* peer) {
+    auto it = idle_.find(peer);
     if (it == idle_.end() || it->second.empty()) return nullptr;
 
     auto& q = it->second;
@@ -62,11 +61,11 @@ public:
   //
   // Closed clients are dropped. If the peer already has max_idle_per_peer idle
   // clients, the returned client is disconnected instead of being cached.
-  void Release(const std::string& peer_name, TcpClientPtr client) {
+  void Release(const UpstreamPeer* peer, TcpClientPtr client) {
     if (!client || !client->connection() || !client->connection()->Connected()) {
       return;
     }
-    auto& q = idle_[peer_name];
+    auto& q = idle_[peer];
     if (static_cast<int>(q.size()) >= config_.max_idle_per_peer) {
       client->Disconnect();
       return;
@@ -96,8 +95,9 @@ private:
     std::chrono::steady_clock::time_point idle_since;
   };
   PoolConfig config_;
-  // peer_name -> idle clients for that peer.
-  std::unordered_map<std::string, std::deque<IdleEntry>> idle_;
+  // Upstream peers are created during startup and remain alive while the
+  // gateway is running, so their addresses are stable pool keys.
+  std::unordered_map<const UpstreamPeer*, std::deque<IdleEntry>> idle_;
 };
 
 }  // namespace vexo::gateway

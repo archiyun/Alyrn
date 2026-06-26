@@ -43,8 +43,24 @@ bool TestParsesHttp11KeepAliveRequest() {
     ok &= Expect(parsed.path() == "/api/health", "path should be parsed");
     ok &= Expect(parsed.query() == "verbose=1", "query string should be parsed");
     ok &= Expect(parsed.keep_alive(), "HTTP/1.1 keep-alive should be enabled");
-    ok &= Expect(parsed.header("x-trace-id") == "trace-123",
+    ok &= Expect(parsed.header("X-TrAcE-Id") == "trace-123",
                  "trace id header should be accessible case-insensitively");
+    return ok;
+}
+
+bool TestMutatesHeadersCaseInsensitively() {
+    vexo::http::HttpRequest request;
+    request.AddHeader("X-Trace-ID", "first");
+    request.set_header("x-TRACE-id", "second");
+
+    bool ok = Expect(request.header("X-Trace-Id") == "second",
+                     "set_header should find an existing header without normalizing a lookup key");
+    ok &= Expect(request.headers().size() == 1,
+                 "case variants should not create duplicate header entries");
+    ok &= Expect(request.RemoveHeader("X-tRaCe-iD"),
+                 "RemoveHeader should support a mixed-case heterogeneous lookup");
+    ok &= Expect(request.header("x-trace-id").empty(),
+                 "removed header should no longer be accessible");
     return ok;
 }
 
@@ -301,6 +317,7 @@ bool TestRouterPathNormalization() {
 
 int main() {
     const bool ok = TestParsesHttp11KeepAliveRequest() &&
+                    TestMutatesHeadersCaseInsensitively() &&
                     TestBuildsHttpResponse() &&
                     TestParsesRequestBodyAcrossChunks() &&
                     TestMatchesStaticRoute() &&
