@@ -88,6 +88,7 @@ public:
   void EnableHealthCheck(HealthCheckConfig cfg = {});
 
   // Enable request rate limiting.
+  void EnableRateLimit(RateLimiterConfig cfg);
   void EnableGlobalRateLimit(double rate, double burst);
   void EnablePerIPRateLimit(double rate, double burst);
   void set_pool_config(PoolConfig cfg) { pool_cfg_ = cfg; }

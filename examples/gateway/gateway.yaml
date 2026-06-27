@@ -1,0 +1,67 @@
+server:
+  name: gateway
+  listen: 0.0.0.0:8080
+  threads: 4
+
+status_endpoint:
+  enabled: true
+  path: /healthz
+
+metrics:
+  enabled: true
+  path: /metrics
+
+health_check:
+  enabled: true
+  path: /api/health
+  interval_sec: 10
+  timeout_sec: 3
+  unhealthy_threshold: 3
+  healthy_threshold: 2
+
+rate_limit:
+  global:
+    enabled: true
+    rate: 1000
+    burst: 2000
+  per_ip:
+    enabled: true
+    rate: 100
+    burst: 200
+    max_buckets: 65536
+
+upstreams:
+  - name: user_service
+    max_concurrent_requests: 1024
+    request_timeout_ms: 5000
+    circuit_breaker:
+      enabled: true
+      failure_threshold: 5
+      success_threshold: 2
+      open_timeout_ms: 10000
+      half_open_max_requests: 1
+    peers:
+      - name: user-1
+        host: 127.0.0.1
+        port: 9001
+        weight: 1
+        max_fails: 3
+        fail_timeout_ms: 10000
+      - name: user-2
+        host: 127.0.0.1
+        port: 9002
+        weight: 1
+        max_fails: 3
+        fail_timeout_ms: 10000
+
+routes:
+  - path: /api
+    match: prefix
+    upstream: user_service
+    load_balance: round_robin
+    circuit_breaker: true
+    fallback:
+      enabled: true
+      status: 503
+      content_type: application/json; charset=utf-8
+      body: '{"error":"user service unavailable"}'

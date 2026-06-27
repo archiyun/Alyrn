@@ -22,7 +22,7 @@ Foundation     ─── vexo::base / ds / log / time / task / memory / metrics
 - **Passive failure tracking** — `ProxySession` records per-request failures; backends are fenced for `fail_timeout` after `max_fails`
 - **Connection pooling** — `UpstreamConnPool` maintains persistent connections to each backend, one pool per I/O thread (no cross-thread contention)
 - **Direct routes** — register synchronous handlers on the gateway without touching `HttpServer`
-- **Code-driven configuration** — no config files; upstreams and routes are wired in C++ at startup
+- **Startup configuration** — wire upstreams and routes in C++ or declare them in YAML
 
 ### HTTP server (`vexo::http`)
 
@@ -57,11 +57,13 @@ Optional:
 
 - GoogleTest — if found by CMake, `vexo_unit_tests` and `vexo_integration_tests` are built automatically
 - `liburing` — for the `io_uring_echo` example only
+- `yaml-cpp` — required for the YAML gateway config loader and example
+
 On Ubuntu / Debian:
 
 ```bash
 sudo apt update
-sudo apt install -y build-essential cmake git
+sudo apt install -y build-essential cmake git libyaml-cpp-dev
 ```
 
 ## Download
@@ -84,6 +86,7 @@ Common CMake options:
 |---|---:|---|
 | `BUILD_EXAMPLES` | `ON` | Build programs under `examples/` |
 | `BUILD_TESTS` | `ON` | Build tests under `tests/` |
+| `VEXO_ENABLE_GATEWAY_YAML_CONFIG` | `ON` | Build the YAML gateway config loader; requires `yaml-cpp` |
 | `CMAKE_BUILD_TYPE` | empty | Use `Debug` or `Release` for single-config generators |
 
 ## Run The Gateway
@@ -91,14 +94,21 @@ Common CMake options:
 Start two upstream HTTP servers to act as backends:
 
 ```bash
-PORT=9001 ./build/examples/demo_http_server &
-PORT=9002 ./build/examples/demo_http_server &
+PORT=9001 ./build/examples/http/demo_http_server &
+PORT=9002 ./build/examples/http/demo_http_server &
 ```
 
-Start the gateway (listens on `0.0.0.0:8080`):
+Start the code-driven gateway (listens on `0.0.0.0:8080`):
 
 ```bash
-./build/examples/demo_gateway
+./build/examples/gateway/demo_gateway
+```
+
+Or start the YAML-configured gateway:
+
+```bash
+./build/examples/gateway/demo_gateway_config --check examples/gateway/gateway.yaml
+./build/examples/gateway/demo_gateway_config examples/gateway/gateway.yaml
 ```
 
 Exercise the gateway:
@@ -117,7 +127,7 @@ Kill one backend and watch the health checker mark it down — requests stop goi
 ## Run The HTTP Demo
 
 ```bash
-./build/examples/demo_http_server
+./build/examples/http/demo_http_server
 ```
 
 Default listen address: `127.0.0.1:18080`
@@ -139,6 +149,8 @@ curl http://127.0.0.1:18080/api/kv/name
 ```
 
 ## Use In Your Own Project
+
+See the YAML gateway walkthrough in [docs/design/zh-CN/gateway/config_tutorial.md](docs/design/zh-CN/gateway/config_tutorial.md).
 
 Add the project as a CMake subdirectory and link only the layer you need:
 
