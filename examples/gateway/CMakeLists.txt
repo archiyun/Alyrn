@@ -11,6 +11,16 @@ target_link_libraries(demo_gateway
         vexo_gateway
 )
 
+if(TARGET vexo_gateway_config)
+    add_executable(demo_gateway_config
+        demo_gateway_config.cc
+    )
+    target_link_libraries(demo_gateway_config
+        PRIVATE
+            vexo_gateway_config
+    )
+endif()
+
 add_executable(demo_bench_gateway
     demo_bench_gateway.cc
 )

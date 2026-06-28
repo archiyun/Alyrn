@@ -11,6 +11,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(BUILD_TESTS "Build tests" ON)
 option(BUILD_EXAMPLES "Build example programs" ON)
 option(VEXO_ENABLE_URING "Enable io_uring proactor backend (requires liburing, Linux 5.19+)" OFF)
+option(VEXO_ENABLE_GATEWAY_YAML_CONFIG "Build YAML gateway config support (requires yaml-cpp)" ON)
 
 find_package(Threads REQUIRED)
 
@@ -205,6 +206,45 @@ target_link_libraries(vexo_gateway PUBLIC
 )
 
 target_compile_features(vexo_gateway PUBLIC cxx_std_23)
+
+if(VEXO_ENABLE_GATEWAY_YAML_CONFIG)
+    find_package(yaml-cpp QUIET CONFIG)
+    if(TARGET yaml-cpp::yaml-cpp)
+        set(VEXO_YAML_CPP_TARGET yaml-cpp::yaml-cpp)
+    elseif(TARGET yaml-cpp)
+        set(VEXO_YAML_CPP_TARGET yaml-cpp)
+    else()
+        find_package(PkgConfig QUIET)
+        if(PkgConfig_FOUND)
+            pkg_check_modules(YAML_CPP QUIET IMPORTED_TARGET yaml-cpp)
+            if(TARGET PkgConfig::YAML_CPP)
+                set(VEXO_YAML_CPP_TARGET PkgConfig::YAML_CPP)
+            endif()
+        endif()
+    endif()
+
+    if(VEXO_YAML_CPP_TARGET)
+        add_library(vexo_gateway_config STATIC
+            src/gateway/gateway_config_yaml.cc
+        )
+
+        target_include_directories(vexo_gateway_config PUBLIC
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+        )
+
+        target_link_libraries(vexo_gateway_config
+            PUBLIC
+                vexo_gateway
+            PRIVATE
+                ${VEXO_YAML_CPP_TARGET}
+        )
+
+        target_compile_features(vexo_gateway_config PUBLIC cxx_std_23)
+        target_compile_definitions(vexo_gateway_config PUBLIC VEXO_HAS_GATEWAY_YAML_CONFIG=1)
+    else()
+        message(WARNING "yaml-cpp was not found; vexo_gateway_config will not be built")
+    endif()
+endif()
 
 
 if(BUILD_TESTS)

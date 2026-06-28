@@ -22,7 +22,7 @@ Foundation     ─── vexo::base / ds / log / time / task / memory / metrics
 - **被动故障追踪** — `ProxySession` 记录每次请求的失败；达到 `max_fails` 后隔离 `fail_timeout`
 - **连接池** — `UpstreamConnPool` 对每个 backend 维护持久连接，每个 I/O 线程独立一个池，无跨线程竞争
 - **直接路由** — 在网关上直接注册同步 handler，无需单独启动 `HttpServer`
-- **代码驱动配置** — 无配置文件，上游和路由全部在 C++ 代码中注册
+- **启动期配置** — 可在 C++ 代码中注册上游和路由，也可用 YAML 文件声明网关配置
 
 ### HTTP 服务层（`vexo::http`）
 
@@ -57,11 +57,13 @@ Foundation     ─── vexo::base / ds / log / time / task / memory / metrics
 
 - GoogleTest — 若 CMake 检测到则自动构建 `vexo_unit_tests` 和 `vexo_integration_tests`
 - `liburing` — 仅 `io_uring_echo` 示例需要
+- `yaml-cpp` — 构建 YAML 配置化网关示例和 `vexo_gateway_config` 时需要
+
 Ubuntu / Debian 安装常用依赖：
 
 ```bash
 sudo apt update
-sudo apt install -y build-essential cmake git
+sudo apt install -y build-essential cmake git libyaml-cpp-dev
 ```
 
 ## 下载项目
@@ -84,6 +86,7 @@ cmake --build build -j"$(nproc)"
 |---|---:|---|
 | `BUILD_EXAMPLES` | `ON` | 构建 `examples/` 下的示例程序 |
 | `BUILD_TESTS` | `ON` | 构建 `tests/` 下的测试 |
+| `VEXO_ENABLE_GATEWAY_YAML_CONFIG` | `ON` | 构建 YAML 配置加载器；需要 `yaml-cpp` |
 | `CMAKE_BUILD_TYPE` | 空 | 单配置生成器下建议设为 `Debug` 或 `Release` |
 
 ## 运行网关示例
@@ -91,14 +94,21 @@ cmake --build build -j"$(nproc)"
 先启动两个上游 HTTP server 模拟 backend：
 
 ```bash
-PORT=9001 ./build/examples/demo_http_server &
-PORT=9002 ./build/examples/demo_http_server &
+PORT=9001 ./build/examples/http/demo_http_server &
+PORT=9002 ./build/examples/http/demo_http_server &
 ```
 
-启动网关（监听 `0.0.0.0:8080`）：
+启动代码驱动网关（监听 `0.0.0.0:8080`）：
 
 ```bash
-./build/examples/demo_gateway
+./build/examples/gateway/demo_gateway
+```
+
+也可以启动 YAML 配置驱动网关：
+
+```bash
+./build/examples/gateway/demo_gateway_config --check examples/gateway/gateway.yaml
+./build/examples/gateway/demo_gateway_config examples/gateway/gateway.yaml
 ```
 
 验证各路由：
@@ -117,7 +127,7 @@ curl -i http://127.0.0.1:8080/api/kv
 ## 运行 HTTP 示例
 
 ```bash
-./build/examples/demo_http_server
+./build/examples/http/demo_http_server
 ```
 
 默认监听 `127.0.0.1:18080`，可以通过环境变量调整：
@@ -137,6 +147,8 @@ curl http://127.0.0.1:18080/api/kv/name
 ```
 
 ## 在自己的程序中使用
+
+配置化网关的完整教程见 [docs/design/zh-CN/gateway/config_tutorial.md](docs/design/zh-CN/gateway/config_tutorial.md)。
 
 将本项目作为 CMake 子目录引入，按需链接对应层级：
 

@@ -104,6 +104,15 @@ void GatewayServer::EnableHealthCheck(HealthCheckConfig cfg) {
   health_checker_ = std::make_unique<HealthChecker>(base_loop_, registry_, std::move(cfg));
 }
 
+void GatewayServer::EnableRateLimit(RateLimiterConfig cfg) {
+  rate_limiter_cfg_ = cfg;
+  if (rate_limiter_cfg_.global_enabled || rate_limiter_cfg_.per_ip_enabled) {
+    rate_limiter_ = std::make_unique<RateLimiter>(rate_limiter_cfg_);
+  } else {
+    rate_limiter_.reset();
+  }
+}
+
 void GatewayServer::EnableGlobalRateLimit(double rate, double burst) {
   rate_limiter_cfg_.global_enabled = true;
   rate_limiter_cfg_.global_rate = rate;
