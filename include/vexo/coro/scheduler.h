@@ -18,9 +18,18 @@ class Scheduler {
 public:
   virtual ~Scheduler() = default;
 
-  virtual void Schedule(Work* work) = 0;
+  // Preconditions:
+  // - work != nullptr
+  // - work->run != nullptr
+  // - work is not already enqueued
+  // - work stays alive until it is run or cancelled by owner-side protocol
+  virtual void Schedule(Work* work) noexcept = 0;
 
   static Scheduler* Current() noexcept { return current_; }
+  static Scheduler& RequireCurrent() noexcept {
+    assert(current_ && "no current scheduler set for this thread");
+    return *current_;
+  }
   static void SetCurrent(Scheduler* scheduler) noexcept { current_ = scheduler; }
 
 protected:

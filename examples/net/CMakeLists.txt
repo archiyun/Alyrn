@@ -27,3 +27,11 @@ target_link_libraries(demo_bench_timer
     PRIVATE
         vexo_net
 )
+
+add_executable(demo_reactor_coro_echo
+    demo_reactor_coro_echo.cc
+)
+target_link_libraries(demo_reactor_coro_echo
+    PRIVATE
+        vexo_net
+)

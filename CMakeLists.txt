@@ -1,6 +1,6 @@
-cmake_minimum_required(VERSION 3.20) 
-project(high_concurrency_vexo 
-        VERSION 0.1.0 
+cmake_minimum_required(VERSION 3.20)
+project(high_concurrency_vexo
+        VERSION 0.1.0
         LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
@@ -40,7 +40,6 @@ add_library(vexo_foundation STATIC
     src/log/logger.cc
     src/memory/pool.cc
     src/time/timestamp.cc
-    src/time/timer_tree.cc
 )
 
 target_include_directories(vexo_foundation
@@ -100,6 +99,8 @@ add_library(vexo_net STATIC
     src/net/net_utils.cc
     src/net/poller.cc
     src/net/reactor_backend.cc
+    src/net/reactor_listener.cc
+    src/net/reactor_stream.cc
     src/net/socket.cc
     src/net/tcp_connection.cc
     src/net/tcp_server.cc

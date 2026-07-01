@@ -38,7 +38,7 @@ const char* OpName(int op) {
 // Entrance， Channel->events()
 static uint32_t ToEpollEvents(int abstract_events) {
   uint32_t ev{0};
-  if (abstract_events & Channel::kReadEvent)  ev |= EPOLLIN | EPOLLPRI;
+  if (abstract_events & Channel::kReadEvent) ev |= EPOLLIN | EPOLLPRI | EPOLLRDHUP;
   if (abstract_events & Channel::kWriteEvent) ev |= EPOLLOUT;
   return ev;
 }
@@ -49,7 +49,7 @@ static int FromEpollEvents(uint32_t epoll_events) {
   if (epoll_events & (EPOLLIN | EPOLLPRI)) ev |= Channel::kReadEvent;
   if (epoll_events & EPOLLOUT)             ev |= Channel::kWriteEvent;
   if (epoll_events & EPOLLERR)             ev |= Channel::kErrorEvent;
-  if (epoll_events & EPOLLHUP)             ev |= Channel::kHupEvent;
+  if (epoll_events & (EPOLLHUP | EPOLLRDHUP)) ev |= Channel::kHupEvent;
   return ev;
 }
 

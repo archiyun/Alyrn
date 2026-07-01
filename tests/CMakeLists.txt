@@ -86,6 +86,38 @@ target_link_libraries(spawn_c3_smoke_test
 
 add_test(NAME spawn_c3_smoke_test COMMAND spawn_c3_smoke_test)
 
+add_executable(reactor_stream_smoke_test
+    unit/test_reactor_stream_smoke.cc
+)
+
+target_include_directories(reactor_stream_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(reactor_stream_smoke_test
+    PRIVATE
+        vexo_net
+)
+
+add_test(NAME reactor_stream_smoke_test COMMAND reactor_stream_smoke_test)
+
+add_executable(reactor_listener_smoke_test
+    unit/test_reactor_listener_smoke.cc
+)
+
+target_include_directories(reactor_listener_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(reactor_listener_smoke_test
+    PRIVATE
+        vexo_net
+)
+
+add_test(NAME reactor_listener_smoke_test COMMAND reactor_listener_smoke_test)
+
 add_executable(pool_smoke_test
     unit/test_pool_smoke.cc
 )
@@ -259,6 +291,17 @@ target_link_libraries(rst_storm_smoke_test
 
 add_test(NAME rst_storm_smoke_test COMMAND rst_storm_smoke_test)
 set_tests_properties(rst_storm_smoke_test PROPERTIES TIMEOUT 60)
+
+add_executable(intrusive_rbtree_clear_smoke_test
+    unit/test_intrusive_rbtree_clear_smoke.cc
+)
+
+target_include_directories(intrusive_rbtree_clear_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+add_test(NAME intrusive_rbtree_clear_smoke_test COMMAND intrusive_rbtree_clear_smoke_test)
 
 add_executable(rbtree_validator
     unit/test_rbtree_validator.cc

@@ -8,8 +8,8 @@
 //   d) error path: Task<Result<int>> co_return std::unexpected(...).
 // The module is IO-agnostic: the only scheduler here is a test-local container.
 
+#include <cassert>
 #include <cerrno>
-#include <deque>
 #include <expected>
 #include <iostream>
 #include <memory>
@@ -31,6 +31,7 @@ using vexo::coro::Spawn;
 using vexo::coro::SyncWait;
 using vexo::coro::Task;
 using vexo::coro::Work;
+using vexo::coro::WorkQueue;
 
 namespace {
 
@@ -67,18 +68,20 @@ Task<void> SetMarker() {
 // enqueue more (e.g. a parked joiner being resumed), so the loop re-checks.
 class DrainScheduler final : public Scheduler {
 public:
-  void Schedule(Work* work) override { queue_.push_back(work); }
+  void Schedule(Work* work) noexcept override {
+    const bool queued = queue_.PushBack(work);
+    assert(queued);
+    (void)queued;
+  }
 
   void Drain() {
-    while (!queue_.empty()) {
-      Work* work = queue_.front();
-      queue_.pop_front();
-      work->run(work);
+    while (Work* work = queue_.PopFront()) {
+      work->Run();
     }
   }
 
 private:
-  std::deque<Work*> queue_;
+  WorkQueue queue_;
 };
 
 // Parent coroutine that joins two spawned children asynchronously.

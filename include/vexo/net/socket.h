@@ -32,6 +32,9 @@ public:
   // Shuts down the write side of the socket.
   void ShutdownWrite();
 
+  // Closes the descriptor before destruction. Idempotent.
+  void Close() noexcept;
+
   // Enables or disables TCP_NODELAY.
   void set_tcp_no_delay(bool on);
 
@@ -45,7 +48,7 @@ public:
   void set_keep_alive(bool on);
 
 private:
-  const int sockfd_;
+  int sockfd_;
 };
 
 }  // namespace vexo::net

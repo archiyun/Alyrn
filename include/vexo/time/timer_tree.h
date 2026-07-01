@@ -7,7 +7,15 @@
 
 namespace vexo::time {
 
-bool TimerLess(const Timer* a, const Timer* b);
+inline bool TimerLess(const Timer* a, const Timer* b) {
+  if (a->expiration() < b->expiration()) {
+    return true;
+  }
+  if (a->expiration() > b->expiration()) {
+    return false;
+  }
+  return a->sequence() < b->sequence();
+}
 
 using TimerTree = vexo::ds::IntrusiveRBTree<Timer, TimerLess>;
 

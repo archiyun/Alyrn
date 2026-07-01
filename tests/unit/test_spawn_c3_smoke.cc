@@ -35,6 +35,7 @@
 #include "vexo/coro/task.h"
 #include "vexo/coro/work.h"
 #include "vexo/net/event_loop.h"
+#include "vexo/net/event_loop_scheduler.h"
 
 using vexo::base::make_errno;
 using vexo::base::Result;
@@ -44,20 +45,6 @@ using vexo::coro::Work;
 using vexo::net::EventLoop;
 
 namespace {
-
-// Adapts the coarse-grained coro Scheduler onto an EventLoop: a submitted Work
-// is run on the loop thread. std::function lives in this net-side adapter, never
-// in the coro module.
-class LoopScheduler final : public vexo::coro::Scheduler {
-public:
-  explicit LoopScheduler(EventLoop* loop) noexcept : loop_(loop) {}
-  void Schedule(Work* work) override {
-    loop_->RunInLoop([work] { work->run(work); });
-  }
-
-private:
-  EventLoop* loop_;
-};
 
 // Stand-in for a Channel read slot: parks one coroutine handle, hands back a
 // scripted Result<int> when resumed. All access happens on the loop thread.
@@ -131,7 +118,7 @@ int main() {
   // deliveries for the following loop iteration, after both roots have parked on
   // their first Read.
   g_loop->RunInLoop([&] {
-    static LoopScheduler sched(g_loop);
+    static vexo::net::EventLoopScheduler sched(g_loop);
     Spawn(sched, Serve(&conn_a)).Detach();
     Spawn(sched, Serve(&conn_b)).Detach();
     g_loop->QueueInLoop([&] { conn_a.Deliver(Result<int>{0}, g_loop); });  // EOF
