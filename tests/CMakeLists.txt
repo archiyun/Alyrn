@@ -260,6 +260,17 @@ target_link_libraries(rst_storm_smoke_test
 add_test(NAME rst_storm_smoke_test COMMAND rst_storm_smoke_test)
 set_tests_properties(rst_storm_smoke_test PROPERTIES TIMEOUT 60)
 
+add_executable(intrusive_rbtree_clear_smoke_test
+    unit/test_intrusive_rbtree_clear_smoke.cc
+)
+
+target_include_directories(intrusive_rbtree_clear_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+add_test(NAME intrusive_rbtree_clear_smoke_test COMMAND intrusive_rbtree_clear_smoke_test)
+
 add_executable(rbtree_validator
     unit/test_rbtree_validator.cc
 )
