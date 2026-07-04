@@ -140,6 +140,14 @@ add_library(vexo_coro INTERFACE)
 target_include_directories(vexo_coro INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(vexo_coro INTERFACE cxx_std_23)
 
+# vexo_io —— backend-neutral coroutine I/O concepts, capability profiles, and
+# scatter/gather buffer utilities. It intentionally does not depend on any
+# concrete reactor or io_uring backend state.
+add_library(vexo_io INTERFACE)
+target_include_directories(vexo_io INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(vexo_io INTERFACE vexo_coro vexo_foundation)
+target_compile_features(vexo_io INTERFACE cxx_std_23)
+
 # vexo_coro_reactor —— 把协程绑到 epoll/reactor 后端,坐在 net 之上(用
 # Socket/Channel/EventLoop)。当前是 header-only 骨架;awaitable 的 .cc 落地后
 # 改成 add_library(vexo_coro_reactor STATIC src/coro/reactor/*.cc)。

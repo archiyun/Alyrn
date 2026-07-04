@@ -52,6 +52,22 @@ target_link_libraries(coro_smoke_test PRIVATE vexo_coro vexo_foundation)
 
 add_test(NAME coro_smoke_test COMMAND coro_smoke_test)
 
+add_executable(io_buffer_smoke_test
+    unit/test_io_buffer_smoke.cc
+)
+
+target_include_directories(io_buffer_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(io_buffer_smoke_test
+    PRIVATE
+        vexo_io
+)
+
+add_test(NAME io_buffer_smoke_test COMMAND io_buffer_smoke_test)
+
 # EventLoop 协程工作源:Schedule + ready_ + 快照 drain。链接 vexo_net(EventLoop 实现)。
 add_executable(event_loop_coro_smoke_test
     unit/test_event_loop_coro_smoke.cc
