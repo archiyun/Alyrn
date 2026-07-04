@@ -42,7 +42,7 @@ public:
   // Returns true if channel is currently tracked by this Poller.
   bool HasChannel(Channel* channel) const;
 
-  // Creates the default Poller implementation for the current platform.
+  // Creates the epoll-backed Poller implementation.
   static Poller* NewDefaultPoller(EventLoop* loop);
 
 protected:
