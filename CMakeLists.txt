@@ -104,8 +104,6 @@ add_library(vexo_net STATIC
     src/net/tcp_connection.cc
     src/net/tcp_server.cc
     src/net/timer_queue.cc
-    src/net/poll_poller.cc
-    src/net/select.cc
 )
 
 target_include_directories(vexo_net

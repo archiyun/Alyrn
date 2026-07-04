@@ -14,7 +14,7 @@ namespace vexo::net {
 //
 // It translates Channel registrations into epoll_ctl operations and converts
 // epoll_wait results back into active Channel objects for the owning EventLoop.
-class EPollPoller : public Poller {
+class EPollPoller final : public Poller {
 public:
   explicit EPollPoller(EventLoop* loop);
   ~EPollPoller() override;
