@@ -64,9 +64,7 @@ class RBTNode {
   friend class IntrusiveRBTree;
 
 public:
-  bool InTree() const noexcept {
-    return linked();
-  }
+  bool InTree() const noexcept { return linked(); }
 
 protected:
   RBTNode() = default;
@@ -77,18 +75,16 @@ private:
   using Node = RBTNode<T, Tag>;
 
   // Unlike Linux rbtree, this implementation uses bit0 = 1 for red.
-  static constexpr std::uintptr_t kRed = 1u; // bit 0
-  static constexpr std::uintptr_t kLinked = 1u << 1; // bit 1
-  static constexpr std::uintptr_t kReserved = 1u << 2; // bit 2, reserved
-  static constexpr std::uintptr_t kFlagMask = kRed | kLinked | kReserved; // ...111
+  static constexpr std::uintptr_t kRed = 1u;                               // bit 0
+  static constexpr std::uintptr_t kLinked = 1u << 1;                       // bit 1
+  static constexpr std::uintptr_t kReserved = 1u << 2;                     // bit 2, reserved
+  static constexpr std::uintptr_t kFlagMask = kRed | kLinked | kReserved;  // ...111
 
-  std::uintptr_t parent_and_flags_{0u}; // parent address plus low-bit flags
+  std::uintptr_t parent_and_flags_{0u};  // parent address plus low-bit flags
   Node* left_{nullptr};
   Node* right_{nullptr};
 
-  Node* parent() const noexcept {
-    return reinterpret_cast<Node*>(parent_and_flags_ & ~kFlagMask);
-  }
+  Node* parent() const noexcept { return reinterpret_cast<Node*>(parent_and_flags_ & ~kFlagMask); }
 
   void set_parent(Node* parent) noexcept {
     auto raw = reinterpret_cast<std::uintptr_t>(parent);
@@ -102,9 +98,7 @@ private:
   Node* right() const noexcept { return right_; }
   void set_right(Node* right) noexcept { right_ = right; }
 
-  bool red() const noexcept {
-    return (parent_and_flags_ & kRed) != 0;
-  }
+  bool red() const noexcept { return (parent_and_flags_ & kRed) != 0; }
 
   void set_red(bool red) noexcept {
     if (red) {
@@ -133,8 +127,7 @@ private:
 
 template <class T, class Tag = void>
 concept RBTNodeBaseHook =
-    std::derived_from<T, RBTNode<T, Tag>> &&
-    requires(T* elem, RBTNode<T, Tag>* node) {
+    std::derived_from<T, RBTNode<T, Tag>> && requires(T* elem, RBTNode<T, Tag>* node) {
       { static_cast<RBTNode<T, Tag>*>(elem) } -> std::same_as<RBTNode<T, Tag>*>;
       { static_cast<T*>(node) } -> std::same_as<T*>;
     };
@@ -143,8 +136,7 @@ template <class T, auto kLess, class Tag>
 class IntrusiveRBTree {
 public:
   using Node = RBTNode<T, Tag>;
-  static_assert(alignof(Node) >= 8,
-                "RBTNode must be at least 8-byte aligned for pointer tagging");
+  static_assert(alignof(Node) >= 8, "RBTNode must be at least 8-byte aligned for pointer tagging");
   static_assert(RBTNodeBaseHook<T, Tag>,
                 "T must publicly and non-virtually inherit RBTNode<T, Tag>");
 
@@ -173,6 +165,7 @@ public:
   // O(1) — cached pointer, updated on Insert and Erase.
   T* earliest() const { return min() == sentinel() ? nullptr : elem_of(min()); }
 
+  void Clear();
   // O(k log n) where k is the number of extracted elements.
   // Extracts (and erases) the earliest elements satisfying pred in key order.
   // Stops at the first element that fails the predicate.
@@ -187,6 +180,7 @@ public:
   // O(n) - debug only. Verifies RB invariants, BST order, parent/child links,
   // linked state, subtree size and cached root/min/max state.
   bool CheckRBInvariants() const;
+
 private:
   struct CheckResult {
     bool ok{true};
@@ -204,8 +198,8 @@ private:
   Node* root() noexcept { return sentinel_.parent(); }
   const Node* root() const noexcept { return sentinel_.parent(); }
   void set_root(Node* node) noexcept {
-    sentinel_.set_parent(node);     // sentinel.parent = root
-    node->set_parent(sentinel());   // root.parent = sentinel
+    sentinel_.set_parent(node);    // sentinel.parent = root
+    node->set_parent(sentinel());  // root.parent = sentinel
   }
 
   static Node* node_of(T* elem) { return static_cast<Node*>(elem); }
@@ -232,9 +226,7 @@ private:
   Node* Next(Node* node);
   Node* Prev(Node* node);
 
-  CheckResult CheckSubtree(const Node* node,
-                           const Node* parent,
-                           const Node* lower,
+  CheckResult CheckSubtree(const Node* node, const Node* parent, const Node* lower,
                            const Node* upper) const;
 
   void Transplant(Node* src, Node* dst);
@@ -304,7 +296,7 @@ auto IRBT_TYPE::Transplant(Node* src, Node* dst) -> void {
     set_root(dst);
   else if (src == parent->left())
     parent->set_left(dst);
-  else // src == parent->right()
+  else  // src == parent->right()
     parent->set_right(dst);
   if (dst != sentinel()) {
     dst->set_parent(parent);
@@ -447,12 +439,10 @@ bool IRBT_TYPE::Insert(T* elem) {
   if (parent == sentinel()) {
     assert(root() == sentinel());
     set_root(node);
-  }
-  else if (kLess(elem, elem_of(parent))) {
+  } else if (kLess(elem, elem_of(parent))) {
     assert(parent->left() == sentinel());
     parent->set_left(node);
-  }
-  else {
+  } else {
     // kLess(elem_of(parent), elem)
     assert(parent->right() == sentinel());
     parent->set_right(node);
@@ -662,8 +652,7 @@ bool IRBT_TYPE::Erase(T* elem) {
 
     Transplant(target, detach);
 
-    assert(detach->parent() == target->parent() ||
-           detach->parent() == sentinel());
+    assert(detach->parent() == target->parent() || detach->parent() == sentinel());
 
     detach->set_left(target->left());
     detach->left()->set_parent(detach);
@@ -725,11 +714,51 @@ std::size_t IRBT_TYPE::PopWhile(Pred pred, OnPop on_pop) {
 }
 
 IRBT_TMPL
-auto IRBT_TYPE::CheckSubtree(const Node* node,
-                             const Node* parent,
-                             const Node* lower,
-                             const Node* upper) const
-    -> typename IRBT_TYPE::CheckResult {
+void IRBT_TYPE::Clear() {
+  if (empty()) {
+    return;
+  }
+
+  auto* node = root();
+  while (node != sentinel()) {
+    assert(node != nullptr);
+    assert(node->InTree());
+    assert(node->left() != nullptr);
+    assert(node->right() != nullptr);
+
+    if (node->left() != sentinel()) {
+      node = node->left();
+      continue;
+    }
+    if (node->right() != sentinel()) {
+      node = node->right();
+      continue;
+    }
+
+    auto* parent = node->parent();
+    if (parent != sentinel()) {
+      assert(parent != nullptr);
+      if (parent->left() == node) {
+        parent->set_left(sentinel());
+      } else {
+        assert(parent->right() == node);
+        parent->set_right(sentinel());
+      }
+    }
+    node->clear_hook();
+    node = parent;
+  }
+
+  sentinel_.set_parent(&sentinel_);
+  sentinel_.set_left(&sentinel_);
+  sentinel_.set_right(&sentinel_);
+  sentinel_.set_red(false);
+  size_ = 0;
+}
+
+IRBT_TMPL
+auto IRBT_TYPE::CheckSubtree(const Node* node, const Node* parent, const Node* lower,
+                             const Node* upper) const -> typename IRBT_TYPE::CheckResult {
   if (node == sentinel()) return {};
 
   CheckResult result{};
@@ -742,12 +771,10 @@ auto IRBT_TYPE::CheckSubtree(const Node* node,
 
   auto* elem = elem_of(const_cast<Node*>(node));
   if (kLess(elem, elem)) return result;
-  if (lower != nullptr &&
-      !kLess(elem_of(const_cast<Node*>(lower)), elem)) {
+  if (lower != nullptr && !kLess(elem_of(const_cast<Node*>(lower)), elem)) {
     return result;
   }
-  if (upper != nullptr &&
-      !kLess(elem, elem_of(const_cast<Node*>(upper)))) {
+  if (upper != nullptr && !kLess(elem, elem_of(const_cast<Node*>(upper)))) {
     return result;
   }
 
@@ -784,16 +811,13 @@ auto IRBT_TYPE::CheckRBInvariants() const -> bool {
   if (root() == sentinel()) {
     return size_ == 0 && min() == sentinel() && max() == sentinel();
   }
-  if (size_ == 0 || min() == sentinel() || max() == sentinel() ||
-      root()->parent() != sentinel() || IsRed(root())) {
+  if (size_ == 0 || min() == sentinel() || max() == sentinel() || root()->parent() != sentinel() ||
+      IsRed(root())) {
     return false;
   }
 
   auto result = CheckSubtree(root(), sentinel(), nullptr, nullptr);
-  return result.ok &&
-         result.count == size_ &&
-         result.min == min() &&
-         result.max == max();
+  return result.ok && result.count == size_ && result.min == min() && result.max == max();
 }
 
 #undef IRBT_TMPL
