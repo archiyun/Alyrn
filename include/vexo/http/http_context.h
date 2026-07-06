@@ -5,36 +5,17 @@
 #include <utility>
 
 #include "vexo/http/http_request.h"
-#include "vexo/http/http_types.h"
+#include "vexo/http/parse_status.h"
 #include "vexo/net/buffer.h"
 #include "vexo/time/timestamp.h"
 
 namespace vexo::http {
 
-// Result of one ParseRequest call. Distinct error variants let the server
-// emit accurate status codes (413 / 414 / 431 / 501 / 505) instead of a
-// blanket 400.
-enum class ParseStatus : uint8_t {
-  Continue,         // Need more bytes; call again on next read.
-  GotAll,           // A complete request is available via Request().
-  BadRequest,       // 400 — malformed framing (bad line, dup CL, TE present...)
-  UriTooLong,       // 414 — request line / URI over the cap.
-  HeaderTooLarge,   // 431 — header line/count/total bytes over the cap.
-  PayloadTooLarge,  // 413 — Content-Length declared value over the cap.
-  BadMethod,        // 501 — method token not recognized.
-  BadVersion,       // 505 — HTTP version token not supported.
-};
-
-// Maps a ParseStatus error to the HTTP status code a server should emit.
-// Callers should only invoke this for error variants (not Continue/GotAll).
-StatusCode ParseStatusToStatusCode(ParseStatus s) noexcept;
-
 // HttpContext incrementally parses bytes from one TCP connection into an
 // HttpRequest.
 class HttpContext {
 public:
-  ParseStatus ParseRequest(vexo::net::Buffer& buf,
-                           vexo::time::Timestamp ts);
+  ParseStatus ParseRequest(vexo::net::Buffer& buf, vexo::time::Timestamp ts);
   bool GotAll() const { return state_ == ParseState::GotAll; }
   void Reset();
 
@@ -65,7 +46,7 @@ private:
 
   std::size_t header_count_{0};
   std::size_t header_bytes_{0};
-  bool        content_length_seen_{false};
+  bool content_length_seen_{false};
 };
 
 }  // namespace vexo::http

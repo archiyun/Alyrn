@@ -30,7 +30,10 @@
 #include "vexo/gateway/upstream.h"
 #include "vexo/gateway/upstream_peer.h"
 #include "vexo/net/event_loop.h"
+#include "vexo/net/event_loop_scheduler.h"
 #include "vexo/net/inet_address.h"
+#include "vexo/net/reactor_connect.h"
+#include "vexo/net/reactor_listener.h"
 
 namespace {
 
@@ -40,8 +43,7 @@ std::vector<uint16_t> ParsePorts(std::string_view csv) {
   while (i < csv.size()) {
     std::size_t j = csv.find(',', i);
     if (j == std::string_view::npos) j = csv.size();
-    out.push_back(
-        static_cast<uint16_t>(std::atoi(std::string(csv.substr(i, j - i)).c_str())));
+    out.push_back(static_cast<uint16_t>(std::atoi(std::string(csv.substr(i, j - i)).c_str())));
     i = j + 1;
   }
   return out;
@@ -68,11 +70,11 @@ std::size_t EnvSize(const char* key, std::size_t def) {
 }  // namespace
 
 int main() {
-  const int      io_threads  = EnvInt("IO_THREADS", 4);
+  const int io_threads = EnvInt("IO_THREADS", 4);
   const uint16_t listen_port = static_cast<uint16_t>(EnvInt("PORT", 8080));
-  const auto     ports_csv   = std::string(EnvOr("UPSTREAM_PORTS", "9001"));
-  const auto     algo        = std::string(EnvOr("LB_ALGO", "round_robin"));
-  const auto     max_concurrent = EnvSize("MAX_CONCURRENT_REQUESTS", 1024);
+  const auto ports_csv = std::string(EnvOr("UPSTREAM_PORTS", "9001"));
+  const auto algo = std::string(EnvOr("LB_ALGO", "round_robin"));
+  const auto max_concurrent = EnvSize("MAX_CONCURRENT_REQUESTS", 1024);
 
   const auto ports = ParsePorts(ports_csv);
   if (ports.empty()) {
@@ -88,20 +90,17 @@ int main() {
   upstream_cfg.max_concurrent_requests = max_concurrent;
   auto us = std::make_shared<vexo::gateway::Upstream>(std::move(upstream_cfg));
   for (uint16_t p : ports) {
-    us->AddPeer(std::make_shared<vexo::gateway::UpstreamPeer>(
-        vexo::gateway::UpstreamPeerConfig{
-            .name = "127.0.0.1:" + std::to_string(p),
-            .host = "127.0.0.1",
-            .port = p}));
+    us->AddPeer(std::make_shared<vexo::gateway::UpstreamPeer>(vexo::gateway::UpstreamPeerConfig{
+        .name = "127.0.0.1:" + std::to_string(p), .host = "127.0.0.1", .port = p}));
   }
   reg.Add(us);
 
   vexo::net::EventLoop loop;
-  vexo::gateway::GatewayServer gw(
-      &loop,
-      vexo::net::InetAddress(listen_port),
-      "BenchGatewayMulti",
-      reg);
+  vexo::net::EventLoopScheduler scheduler(&loop);
+  vexo::net::ReactorListener listener(&loop, vexo::net::InetAddress(listen_port));
+  vexo::net::ReactorConnector connector(&loop);
+  vexo::gateway::GatewayServer<vexo::net::ReactorListener, vexo::net::ReactorConnector> gw(
+      listener, scheduler, "BenchGatewayMulti", reg, connector);
   gw.set_thread_num(io_threads);
   gw.set_pool_config({.max_idle_per_peer = 64});
 

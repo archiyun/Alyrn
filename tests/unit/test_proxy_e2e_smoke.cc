@@ -33,8 +33,11 @@
 #include "vexo/gateway/upstream_peer.h"
 #include "vexo/gateway/upstream_registry.h"
 #include "vexo/net/event_loop.h"
+#include "vexo/net/event_loop_scheduler.h"
 #include "vexo/net/event_loop_thread.h"
 #include "vexo/net/inet_address.h"
+#include "vexo/net/reactor_connect.h"
+#include "vexo/net/reactor_listener.h"
 #include "vexo/net/tcp_server.h"
 
 using namespace std::chrono_literals;
@@ -61,6 +64,16 @@ uint16_t ReservePort() {
 
 namespace {
 
+using TestGateway =
+    vexo::gateway::GatewayServer<vexo::net::ReactorListener, vexo::net::ReactorConnector>;
+
+struct GatewayRuntime {
+  std::unique_ptr<vexo::net::EventLoopScheduler> scheduler;
+  std::unique_ptr<vexo::net::ReactorListener> listener;
+  std::unique_ptr<vexo::net::ReactorConnector> connector;
+  std::unique_ptr<TestGateway> gateway;
+};
+
 bool Expect(bool ok, const char* msg) {
   if (!ok) std::cerr << "[FAIL] " << msg << '\n';
   return ok;
@@ -77,6 +90,37 @@ void RunInLoopAndWait(vexo::net::EventLoop* loop, F&& fn) {
     done_promise.set_value();
   });
   done.wait();
+}
+
+void InitGateway(GatewayRuntime& runtime, vexo::net::EventLoop* loop, uint16_t port,
+                 std::string name, vexo::gateway::UpstreamRegistry& registry) {
+  runtime.scheduler = std::make_unique<vexo::net::EventLoopScheduler>(loop);
+  runtime.listener =
+      std::make_unique<vexo::net::ReactorListener>(loop, vexo::net::InetAddress(port));
+  runtime.connector = std::make_unique<vexo::net::ReactorConnector>(loop);
+  runtime.gateway = std::make_unique<TestGateway>(*runtime.listener, *runtime.scheduler,
+                                                  std::move(name), registry, *runtime.connector);
+}
+
+vexo::coro::Task<void> StopGatewayTask(TestGateway* gateway, std::promise<void>* done) {
+  co_await gateway->Stop();
+  done->set_value();
+}
+
+void StopGateway(vexo::net::EventLoop* loop, GatewayRuntime& runtime) {
+  std::promise<void> done_promise;
+  auto done = done_promise.get_future();
+  loop->RunInLoop([&runtime, &done_promise] {
+    vexo::coro::Spawn(*runtime.scheduler, StopGatewayTask(runtime.gateway.get(), &done_promise))
+        .Detach();
+  });
+  done.wait();
+  RunInLoopAndWait(loop, [&] {
+    runtime.gateway.reset();
+    runtime.connector.reset();
+    runtime.listener.reset();
+    runtime.scheduler.reset();
+  });
 }
 
 // 简单的 blocking 客户端：写完整请求并读到 EOF 或固定字节数。
@@ -201,12 +245,11 @@ bool TestProxyPreservesRequestLineAndReusesConnection() {
 
   vexo::net::EventLoopThread gw_thr;
   auto* gw_loop = gw_thr.StartLoop();
-  std::unique_ptr<vexo::gateway::GatewayServer> gw;
+  GatewayRuntime gw;
   RunInLoopAndWait(gw_loop, [&] {
-    gw = std::make_unique<vexo::gateway::GatewayServer>(gw_loop, vexo::net::InetAddress(gw_port),
-                                                        "gw", reg);
-    gw->AddProxyRoute("/api/", "stub", "round_robin");
-    gw->Start();
+    InitGateway(gw, gw_loop, gw_port, "gw", reg);
+    gw.gateway->AddProxyRoute("/api/", "stub", "round_robin");
+    gw.gateway->Start();
   });
 
   // 3. 发两个请求，验证：
@@ -298,7 +341,7 @@ bool TestProxyPreservesRequestLineAndReusesConnection() {
 
   Passed("TestProxyPreservesRequestLineAndReusesConnection");
   // gw 和 stub.server 都在 loop 线程上创建，必须也在 loop 线程上析构
-  RunInLoopAndWait(gw_loop, [&] { gw.reset(); });
+  StopGateway(gw_loop, gw);
   auto* stub_loop = stub.loop_holder;
   RunInLoopAndWait(stub_loop, [&] { stub.server.reset(); });
   return true;
@@ -322,12 +365,11 @@ bool TestPrefixBoundary() {
 
   vexo::net::EventLoopThread gw_thr;
   auto* gw_loop = gw_thr.StartLoop();
-  std::unique_ptr<vexo::gateway::GatewayServer> gw;
+  GatewayRuntime gw;
   RunInLoopAndWait(gw_loop, [&] {
-    gw = std::make_unique<vexo::gateway::GatewayServer>(gw_loop, vexo::net::InetAddress(gw_port),
-                                                        "gw2", reg);
-    gw->AddProxyRoute("/api", "stub", "round_robin");
-    gw->Start();
+    InitGateway(gw, gw_loop, gw_port, "gw2", reg);
+    gw.gateway->AddProxyRoute("/api", "stub", "round_robin");
+    gw.gateway->Start();
   });
 
   // /apifoo 不应代理，应该 404
@@ -345,7 +387,7 @@ bool TestPrefixBoundary() {
     return false;
 
   Passed("TestPrefixBoundary");
-  RunInLoopAndWait(gw_loop, [&] { gw.reset(); });
+  StopGateway(gw_loop, gw);
   auto* stub_loop = stub.loop_holder;
   RunInLoopAndWait(stub_loop, [&] { stub.server.reset(); });
   return true;
@@ -373,12 +415,11 @@ bool TestProxyDeadlineReleasesBulkheadSlot() {
 
   vexo::net::EventLoopThread gw_thr;
   auto* gw_loop = gw_thr.StartLoop();
-  std::unique_ptr<vexo::gateway::GatewayServer> gw;
+  GatewayRuntime gw;
   RunInLoopAndWait(gw_loop, [&] {
-    gw = std::make_unique<vexo::gateway::GatewayServer>(gw_loop, vexo::net::InetAddress(gw_port),
-                                                        "deadline-gw", reg);
-    gw->AddProxyRoute("/slow", "slow", "round_robin");
-    gw->Start();
+    InitGateway(gw, gw_loop, gw_port, "deadline-gw", reg);
+    gw.gateway->AddProxyRoute("/slow", "slow", "round_robin");
+    gw.gateway->Start();
   });
 
   const std::string req = "GET /slow HTTP/1.1\r\nHost: deadline-gw\r\nConnection: close\r\n\r\n";
@@ -411,7 +452,7 @@ bool TestProxyDeadlineReleasesBulkheadSlot() {
     return false;
 
   Passed("TestProxyDeadlineReleasesBulkheadSlot");
-  RunInLoopAndWait(gw_loop, [&] { gw.reset(); });
+  StopGateway(gw_loop, gw);
   auto* stub_loop = stub.loop_holder;
   RunInLoopAndWait(stub_loop, [&] { stub.server.reset(); });
   return true;
@@ -446,12 +487,11 @@ bool TestIPHashConnectFailureFailsOver() {
 
   vexo::net::EventLoopThread gw_thr;
   auto* gw_loop = gw_thr.StartLoop();
-  std::unique_ptr<vexo::gateway::GatewayServer> gw;
+  GatewayRuntime gw;
   RunInLoopAndWait(gw_loop, [&] {
-    gw = std::make_unique<vexo::gateway::GatewayServer>(gw_loop, vexo::net::InetAddress(gw_port),
-                                                        "hash-failover-gw", reg);
-    gw->AddProxyRoute("/hash", "hash-failover", "ip_hash");
-    gw->Start();
+    InitGateway(gw, gw_loop, gw_port, "hash-failover-gw", reg);
+    gw.gateway->AddProxyRoute("/hash", "hash-failover", "ip_hash");
+    gw.gateway->Start();
   });
 
   bool ok = true;
@@ -466,7 +506,7 @@ bool TestIPHashConnectFailureFailsOver() {
                "healthy failover peer must receive the retry exactly once");
 
   if (ok) Passed("TestIPHashConnectFailureFailsOver");
-  RunInLoopAndWait(gw_loop, [&] { gw.reset(); });
+  StopGateway(gw_loop, gw);
   RunInLoopAndWait(closing.loop_holder, [&] { closing.server.reset(); });
   RunInLoopAndWait(good.loop_holder, [&] { good.server.reset(); });
   return ok;
@@ -502,12 +542,11 @@ bool TestPostIsNotReplayedAfterFlush() {
 
   vexo::net::EventLoopThread gw_thr;
   auto* gw_loop = gw_thr.StartLoop();
-  std::unique_ptr<vexo::gateway::GatewayServer> gw;
+  GatewayRuntime gw;
   RunInLoopAndWait(gw_loop, [&] {
-    gw = std::make_unique<vexo::gateway::GatewayServer>(gw_loop, vexo::net::InetAddress(gw_port),
-                                                        "post-no-replay-gw", reg);
-    gw->AddProxyRoute("/write", "post-no-replay", "ip_hash");
-    gw->Start();
+    InitGateway(gw, gw_loop, gw_port, "post-no-replay-gw", reg);
+    gw.gateway->AddProxyRoute("/write", "post-no-replay", "ip_hash");
+    gw.gateway->Start();
   });
 
   bool ok = true;
@@ -520,7 +559,7 @@ bool TestPostIsNotReplayedAfterFlush() {
   ok &= Expect(good.request_count.load() == 0, "failover peer must never receive a replayed POST");
 
   if (ok) Passed("TestPostIsNotReplayedAfterFlush");
-  RunInLoopAndWait(gw_loop, [&] { gw.reset(); });
+  StopGateway(gw_loop, gw);
   RunInLoopAndWait(closing.loop_holder, [&] { closing.server.reset(); });
   RunInLoopAndWait(good.loop_holder, [&] { good.server.reset(); });
   return ok;

@@ -8,6 +8,7 @@
 // scheduling logic lives here -- Task knows nothing about how it is driven.
 #pragma once
 
+#include <cassert>
 #include <concepts>
 #include <coroutine>
 #include <memory>
@@ -23,8 +24,8 @@ namespace vexo::coro {
 // A Task yields void or any movable object. Non-void values live in the frame,
 // so they must be move-constructible; void is handled by a dedicated promise.
 template <class T>
-concept Returnable = std::is_void_v<T> ||
-                     (std::is_object_v<T> && !std::is_array_v<T> && std::move_constructible<T>);
+concept Returnable =
+    std::is_void_v<T> || (std::is_object_v<T> && !std::is_array_v<T> && std::move_constructible<T>);
 
 template <Returnable T = void>
 class Task;
@@ -45,12 +46,16 @@ public:
   Task<T> get_return_object() noexcept;
 
   void return_value(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
+    assert(!has_value_);
     ::new (static_cast<void*>(std::addressof(value_))) T(std::move(value));
     has_value_ = true;
   }
 
   // Precondition: the coroutine reached co_return. Moves the stored value out.
-  T TakeValue() noexcept(std::is_nothrow_move_constructible_v<T>) { return std::move(value_); }
+  T TakeValue() noexcept(std::is_nothrow_move_constructible_v<T>) {
+    assert(has_value_);
+    return std::move(value_);
+  }
 
 private:
   // Manual union storage: the value is constructed in place by return_value and
@@ -64,6 +69,9 @@ private:
 template <>
 class TaskPromise<void> final : public PromiseBase {
 public:
+  VEXO_DELETE_COPY_MOVE(TaskPromise);
+  TaskPromise() = default;
+  ~TaskPromise() = default;
   Task<void> get_return_object() noexcept;
   void return_void() const noexcept {}
 };
@@ -76,7 +84,9 @@ public:
   using Promise = TaskPromise<T>;
   using Handle = std::coroutine_handle<Promise>;
 
-  explicit TaskAwaiter(Handle handle) noexcept : handle_(handle) {}
+  explicit TaskAwaiter(Handle handle) noexcept : handle_(handle) {
+    assert(handle_ && "cannot co_await an empty Task.");
+  }
   VEXO_DELETE_COPY(TaskAwaiter);
   TaskAwaiter(TaskAwaiter&& other) noexcept : handle_(std::exchange(other.handle_, {})) {}
   TaskAwaiter& operator=(TaskAwaiter&&) = delete;
@@ -89,6 +99,7 @@ public:
   bool await_ready() const noexcept { return false; }
 
   Handle await_suspend(std::coroutine_handle<> caller) noexcept {
+    assert(handle_);
     handle_.promise().set_continuation(caller);
     return handle_;
   }

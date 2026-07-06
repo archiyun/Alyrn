@@ -18,7 +18,7 @@ namespace vexo::net {
 
 Socket::Socket(int sockfd) : sockfd_(sockfd) {}
 
-Socket::~Socket() { ::close(sockfd_); }
+Socket::~Socket() { Close(); }
 
 void Socket::BindAddress(const InetAddress& localAddr) {
   const int ret = ::bind(sockfd_, reinterpret_cast<const sockaddr*>(&localAddr.sock_addr()),
@@ -60,11 +60,30 @@ int Socket::Accept(InetAddress* peeraddr) {
 }
 
 void Socket::ShutdownWrite() {
+  if (sockfd_ < 0) {
+    return;
+  }
+
   if (::shutdown(sockfd_, SHUT_WR) == 0) {
     return;
   }
 
   LOG_ERROR() << "shutdown write failed: fd=" << sockfd_ << " errno=" << errno
+              << " message=" << std::strerror(errno);
+}
+
+void Socket::Close() noexcept {
+  if (sockfd_ < 0) {
+    return;
+  }
+
+  const int fd = sockfd_;
+  sockfd_ = -1;
+  if (::close(fd) == 0) {
+    return;
+  }
+
+  LOG_ERROR() << "socket close failed: fd=" << fd << " errno=" << errno
               << " message=" << std::strerror(errno);
 }
 

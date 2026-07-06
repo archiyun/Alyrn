@@ -17,6 +17,10 @@
 #include "vexo/gateway/gateway_server.h"
 #include "vexo/gateway/upstream_registry.h"
 #include "vexo/net/event_loop.h"
+#include "vexo/net/event_loop_scheduler.h"
+#include "vexo/net/net_utils.h"
+#include "vexo/net/reactor_connect.h"
+#include "vexo/net/reactor_listener.h"
 
 int main(int argc, char** argv) {
   const bool check_only = argc > 1 && std::string_view(argv[1]) == "--check";
@@ -35,8 +39,15 @@ int main(int argc, char** argv) {
     }
 
     vexo::net::EventLoop loop;
-    vexo::gateway::GatewayServer gateway(&loop, vexo::gateway::MakeGatewayListenAddress(config),
-                                         config.server.name, registry);
+    vexo::net::EventLoopScheduler scheduler(&loop);
+    auto listen_addr = vexo::net::ParseIPv4Address(config.server.host, config.server.port);
+    if (!listen_addr) {
+      throw vexo::gateway::GatewayConfigError("server.listen: expected a numeric IPv4 address");
+    }
+    vexo::net::ReactorListener listener(&loop, *listen_addr);
+    vexo::net::ReactorConnector connector(&loop);
+    vexo::gateway::GatewayServer<vexo::net::ReactorListener, vexo::net::ReactorConnector> gateway(
+        listener, scheduler, config.server.name, registry, connector);
 
     vexo::gateway::ApplyGatewayConfig(config, gateway);
 

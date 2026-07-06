@@ -1,7 +1,7 @@
 // examples/demo_bench_gateway.cc
 // 只做一件事：把所有请求反向代理到 UPSTREAM_HOST:UPSTREAM_PORT
-// 
-// 对比 nginx 与 该网关的性能差异 
+//
+// 对比 nginx 与 该网关的性能差异
 // 想了解如何学习/使用 网关层(反向代理层), 移步 examples/demo_gateway.cc
 //
 // 编译：
@@ -14,7 +14,7 @@
 // 验证 (终端3)：
 //   curl -i http://127.0.0.1:8080/ # 网关 端口 8080
 //   curl -i http://127.0.0.1:8088/ # nginx 配置在端口 8088 (先完成下面的配置！！！)
-// 
+//
 // 压测 (nginx 测试 请先读下文写好配置)：
 /*   echo "=== [GW]    50c ===" && wrk -t4 -c50  -d15s --latency http://127.0.0.1:8080/
      echo "=== [nginx] 50c ===" && wrk -t4 -c50  -d15s --latency http://127.0.0.1:8088/
@@ -87,63 +87,64 @@ NGINXEOF
 #include "vexo/gateway/upstream_peer.h"
 #include "vexo/gateway/upstream_registry.h"
 #include "vexo/net/event_loop.h"
+#include "vexo/net/event_loop_scheduler.h"
 #include "vexo/net/inet_address.h"
+#include "vexo/net/reactor_connect.h"
+#include "vexo/net/reactor_listener.h"
 #include "vexo/net/tcp_connection.h"
 
 static std::atomic<long long> g_proxied{0};
 
 static void StatsPrinter() {
-    long long prev = 0;
-    uint64_t prev_ctor = 0;
-    uint64_t prev_dtor = 0;
-    while (true) {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-        const long long cur = g_proxied.load(std::memory_order_relaxed);
-        const uint64_t ctor = vexo::net::TcpConnection::UpstreamCtorCount();
-        const uint64_t dtor = vexo::net::TcpConnection::UpstreamDtorCount();
-        std::printf("[gw-stats] rps=%-8lld total=%lld | upstream_conn ctor=+%lu dtor=+%lu live=%lu (cum_ctor=%lu)\n",
-                    cur - prev, cur,
-                    ctor - prev_ctor, dtor - prev_dtor,
-                    ctor - dtor, ctor);
-        std::fflush(stdout);
-        prev = cur;
-        prev_ctor = ctor;
-        prev_dtor = dtor;
-    }
+  long long prev = 0;
+  uint64_t prev_ctor = 0;
+  uint64_t prev_dtor = 0;
+  while (true) {
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    const long long cur = g_proxied.load(std::memory_order_relaxed);
+    const uint64_t ctor = vexo::net::TcpConnection::UpstreamCtorCount();
+    const uint64_t dtor = vexo::net::TcpConnection::UpstreamDtorCount();
+    std::printf(
+        "[gw-stats] rps=%-8lld total=%lld | upstream_conn ctor=+%lu dtor=+%lu live=%lu "
+        "(cum_ctor=%lu)\n",
+        cur - prev, cur, ctor - prev_ctor, dtor - prev_dtor, ctor - dtor, ctor);
+    std::fflush(stdout);
+    prev = cur;
+    prev_ctor = ctor;
+    prev_dtor = dtor;
+  }
 }
 
-
 int main() {
-   // -- 读配置 --
-  auto env_int = [](const char* k, int def)->int {
+  // -- 读配置 --
+  auto env_int = [](const char* k, int def) -> int {
     const char* v = std::getenv(k);
     return v ? std::atoi(v) : def;
   };
-  const int      io_threads = env_int("IO_THREADS", 4);
-  const uint16_t listen_port       = static_cast<uint16_t>(env_int("PORT", 8080));
-  const uint16_t upstream_port     =  static_cast<uint16_t>(env_int("UPSTREAM_PORT", 9001));
+  const int io_threads = env_int("IO_THREADS", 4);
+  const uint16_t listen_port = static_cast<uint16_t>(env_int("PORT", 8080));
+  const uint16_t upstream_port = static_cast<uint16_t>(env_int("UPSTREAM_PORT", 9001));
 
   // -- 忽略 SIGPIPE -- （客户端断联时不 Crash)
   std::signal(SIGPIPE, SIG_IGN);
 
-  // 1. 注册上游 
+  // 1. 注册上游
   vexo::gateway::UpstreamRegistry reg;
-  auto us = std::make_shared<vexo::gateway::Upstream>(
-    vexo::gateway::UpstreamConfig{.name = "backend"});
+  auto us =
+      std::make_shared<vexo::gateway::Upstream>(vexo::gateway::UpstreamConfig{.name = "backend"});
   us->AddPeer(std::make_shared<vexo::gateway::UpstreamPeer>(
-    vexo::gateway::UpstreamPeerConfig{
-            .name = "127.0.0.1:" + std::to_string(upstream_port),
-            .host = "127.0.0.1",
-            .port = upstream_port}));
+      vexo::gateway::UpstreamPeerConfig{.name = "127.0.0.1:" + std::to_string(upstream_port),
+                                        .host = "127.0.0.1",
+                                        .port = upstream_port}));
   reg.Add(us);
 
   // 2. 网关
   vexo::net::EventLoop loop;
-  vexo::gateway::GatewayServer gw(
-    &loop,
-    vexo::net::InetAddress(listen_port),
-    "BenchGateway",
-    reg);
+  vexo::net::EventLoopScheduler scheduler(&loop);
+  vexo::net::ReactorListener listener(&loop, vexo::net::InetAddress(listen_port));
+  vexo::net::ReactorConnector connector(&loop);
+  vexo::gateway::GatewayServer<vexo::net::ReactorListener, vexo::net::ReactorConnector> gw(
+      listener, scheduler, "BenchGateway", reg, connector);
   gw.set_thread_num(io_threads);
   gw.set_pool_config({.max_idle_per_peer = 64});  // 与 nginx keepalive 64 对齐
 
@@ -154,8 +155,8 @@ int main() {
   stats_thr.detach();
 
   gw.Start();
-  std::printf("BenchGateway listen=%u upstream=127.0.0.1:%u io_threads=%d\n",
-              listen_port, upstream_port, io_threads);
+  std::printf("BenchGateway listen=%u upstream=127.0.0.1:%u io_threads=%d\n", listen_port,
+              upstream_port, io_threads);
   loop.Loop();
   return 0;
 }

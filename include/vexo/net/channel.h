@@ -30,7 +30,7 @@ enum class TriggerMode : uint8_t {
 // Channel is also responsible for keeping its local event state consistent
 // with the registration state stored in the Poller.
 class Channel {
- public:
+public:
   using EventCallback = std::function<void()>;
   using ReadEventCallback = std::function<void(vexo::time::Timestamp)>;
 
@@ -106,7 +106,7 @@ class Channel {
   static const int kErrorEvent{0x04};
   static const int kHupEvent{0x08};
 
- private:
+private:
   // Index/set_index track Poller-private registration state and must remain
   // hidden from general consumers. Concrete Poller implementations are the
   // only legitimate users.
@@ -121,7 +121,7 @@ class Channel {
   // Dispatches events only after verifying that the tied owner is still alive.
   void HandleEventWithGuard(vexo::time::Timestamp receive_time);
 
- private:
+private:
   EventLoop* loop_;
   const int fd_;
   int events_;

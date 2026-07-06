@@ -12,49 +12,61 @@ namespace {
 
 // Resource limits to bound memory use on malformed or abusive clients.
 constexpr std::size_t kMaxRequestLine = 8 * 1024;
-constexpr std::size_t kMaxHeaderLine  = 8 * 1024;
+constexpr std::size_t kMaxHeaderLine = 8 * 1024;
 constexpr std::size_t kMaxHeaderCount = 100;
 constexpr std::size_t kMaxHeaderBytes = 32 * 1024;
-constexpr std::size_t kMaxBodyBytes   = 8 * 1024 * 1024;
+constexpr std::size_t kMaxBodyBytes = 8 * 1024 * 1024;
 
 }  // namespace
-
-StatusCode ParseStatusToStatusCode(ParseStatus s) noexcept {
-  switch (s) {
-    case ParseStatus::UriTooLong:      return StatusCode::UriTooLong;
-    case ParseStatus::HeaderTooLarge:  return StatusCode::RequestHeaderFieldsTooLarge;
-    case ParseStatus::PayloadTooLarge: return StatusCode::PayloadTooLarge;
-    case ParseStatus::BadMethod:       return StatusCode::NotImplemented;
-    case ParseStatus::BadVersion:      return StatusCode::HttpVersionNotSupported;
-    case ParseStatus::BadRequest:
-    case ParseStatus::Continue:
-    case ParseStatus::GotAll:
-      break;
-  }
-  return StatusCode::BadRequest;
-}
 
 // HTTP method names are case-sensitive uppercase tokens (RFC 9110 §9.1).
 bool HttpContext::ParseMethod(std::string_view method_sv) {
   switch (method_sv.size()) {
     case 3:
-      if (method_sv == "GET") { request_.set_method(Method::Get); return true; }
-      if (method_sv == "PUT") { request_.set_method(Method::Put); return true; }
+      if (method_sv == "GET") {
+        request_.set_method(Method::Get);
+        return true;
+      }
+      if (method_sv == "PUT") {
+        request_.set_method(Method::Put);
+        return true;
+      }
       break;
     case 4:
-      if (method_sv == "POST") { request_.set_method(Method::Post); return true; }
-      if (method_sv == "HEAD") { request_.set_method(Method::Head); return true; }
+      if (method_sv == "POST") {
+        request_.set_method(Method::Post);
+        return true;
+      }
+      if (method_sv == "HEAD") {
+        request_.set_method(Method::Head);
+        return true;
+      }
       break;
     case 5:
-      if (method_sv == "PATCH") { request_.set_method(Method::Patch); return true; }
-      if (method_sv == "TRACE") { request_.set_method(Method::Trace); return true; }
+      if (method_sv == "PATCH") {
+        request_.set_method(Method::Patch);
+        return true;
+      }
+      if (method_sv == "TRACE") {
+        request_.set_method(Method::Trace);
+        return true;
+      }
       break;
     case 6:
-      if (method_sv == "DELETE") { request_.set_method(Method::Delete); return true; }
+      if (method_sv == "DELETE") {
+        request_.set_method(Method::Delete);
+        return true;
+      }
       break;
     case 7:
-      if (method_sv == "OPTIONS") { request_.set_method(Method::Options); return true; }
-      if (method_sv == "CONNECT") { request_.set_method(Method::Connect); return true; }
+      if (method_sv == "OPTIONS") {
+        request_.set_method(Method::Options);
+        return true;
+      }
+      if (method_sv == "CONNECT") {
+        request_.set_method(Method::Connect);
+        return true;
+      }
       break;
     default:
       break;
@@ -64,16 +76,20 @@ bool HttpContext::ParseMethod(std::string_view method_sv) {
 
 // Only HTTP/1.x is accepted here.
 bool HttpContext::ParseVersion(std::string_view version_sv) {
-  if (version_sv == "HTTP/1.1") { request_.set_version(Version::Http11); return true; }
-  if (version_sv == "HTTP/1.0") { request_.set_version(Version::Http10); return true; }
+  if (version_sv == "HTTP/1.1") {
+    request_.set_version(Version::Http11);
+    return true;
+  }
+  if (version_sv == "HTTP/1.0") {
+    request_.set_version(Version::Http10);
+    return true;
+  }
   return false;
 }
 
-ParseStatus HttpContext::ParseRequest(vexo::net::Buffer& buf,
-                                      vexo::time::Timestamp ts) {
+ParseStatus HttpContext::ParseRequest(vexo::net::Buffer& buf, vexo::time::Timestamp ts) {
   while (state_ != ParseState::GotAll) {
-    if (state_ == ParseState::ExpectRequestLine ||
-        state_ == ParseState::ExpectHeaders) {
+    if (state_ == ParseState::ExpectRequestLine || state_ == ParseState::ExpectHeaders) {
       const char* begin = buf.Peek();
       const char* crlf = buf.FindCRLF();
       if (crlf == nullptr) {
@@ -83,7 +99,7 @@ ParseStatus HttpContext::ParseRequest(vexo::net::Buffer& buf,
         if (state_ == ParseState::ExpectRequestLine) {
           if (pending > kMaxRequestLine) return ParseStatus::UriTooLong;
         } else {
-          if (pending > kMaxHeaderLine)  return ParseStatus::HeaderTooLarge;
+          if (pending > kMaxHeaderLine) return ParseStatus::HeaderTooLarge;
         }
         return ParseStatus::Continue;
       }
@@ -131,11 +147,11 @@ ParseStatus HttpContext::ProcessRequestLine(std::string_view line) {
   const auto uri_end = line.find(' ', m_end + 1);
   if (uri_end == std::string_view::npos) return ParseStatus::BadRequest;
 
-  const std::string_view method_sv  = line.substr(0, m_end);
-  const std::string_view uri_sv     = line.substr(m_end + 1, uri_end - m_end - 1);
+  const std::string_view method_sv = line.substr(0, m_end);
+  const std::string_view uri_sv = line.substr(m_end + 1, uri_end - m_end - 1);
   const std::string_view version_sv = line.substr(uri_end + 1);
 
-  if (!ParseMethod(method_sv))   return ParseStatus::BadMethod;
+  if (!ParseMethod(method_sv)) return ParseStatus::BadMethod;
   if (!ParseVersion(version_sv)) return ParseStatus::BadVersion;
 
   const auto q_pos = uri_sv.find('?');
@@ -151,10 +167,10 @@ ParseStatus HttpContext::ProcessRequestLine(std::string_view line) {
 
 ParseStatus HttpContext::ProcessHeaderLine(std::string_view line) {
   // Header-side resource limits — bound memory before any allocation.
-  if (line.size() > kMaxHeaderLine)      return ParseStatus::HeaderTooLarge;
+  if (line.size() > kMaxHeaderLine) return ParseStatus::HeaderTooLarge;
   if (++header_count_ > kMaxHeaderCount) return ParseStatus::HeaderTooLarge;
   header_bytes_ += line.size();
-  if (header_bytes_ > kMaxHeaderBytes)   return ParseStatus::HeaderTooLarge;
+  if (header_bytes_ > kMaxHeaderBytes) return ParseStatus::HeaderTooLarge;
 
   const auto colon = line.find(':');
   if (colon == std::string_view::npos) return ParseStatus::BadRequest;
@@ -178,8 +194,7 @@ ParseStatus HttpContext::ProcessHeaderLine(std::string_view line) {
     content_length_seen_ = true;
 
     std::size_t len = 0;
-    const auto [ptr, ec] =
-        std::from_chars(value.data(), value.data() + value.size(), len);
+    const auto [ptr, ec] = std::from_chars(value.data(), value.data() + value.size(), len);
     if (ec != std::errc{} || ptr != value.data() + value.size()) {
       return ParseStatus::BadRequest;
     }

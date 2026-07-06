@@ -10,8 +10,8 @@
 //   6. 有序插删、反向删除、密集重复 key + PopWhile churn 均与 oracle 一致
 //   7. PopWhile(pred, on_pop) 在回调前已删除节点，且不需要结果 vector
 //
-// 注意：IntrusiveRBTree 不存 per-node tree owner。跨树 Erase 是调用方违反
-// 前置条件，不在本测试里验证。
+// 注意：Debug 构建下 IntrusiveRBTree 用 per-node tree owner 捕获跨树 Erase；
+// release 构建仍把跨树 Erase 视为调用方违反前置条件，不在本测试里触发。
 //
 // 编译
 // cmake -B build-tests

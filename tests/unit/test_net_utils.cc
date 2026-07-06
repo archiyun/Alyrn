@@ -175,7 +175,6 @@ TEST(NetUtilsTest, SocketWriteDoesNotRaiseSigPipe) {
   ScopedFd writer(raw_fds[0]);
   ScopedFd peer(raw_fds[1]);
 
-  ASSERT_EQ(::shutdown(peer.get(), SHUT_RDWR), 0);
   peer = ScopedFd();
 
   Buffer buffer;

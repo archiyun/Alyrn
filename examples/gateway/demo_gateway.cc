@@ -16,7 +16,7 @@
  * 终端 1: PORT=9001 ./build-tests/examples/demo_http_server
  * 终端 2: PORT=9002 ./build-tests/examples/demo_http_server
  * 终端 3: ./build-tests/examples/demo_gateway
- * 
+ *
  * 再开一个客户端 当作客户端
  * 健康测试
  * curl -i http://127.0.0.1:8080/healthz
@@ -24,7 +24,7 @@
  * curl -i http://127.0.0.1:8080/api/health
  * 测试KV代理路由
  * curl -i http://127.0.0.1:8080/api/kv
- * 
+ *
  * ... 自行扩展
  */
 #include "vexo/gateway/gateway_server.h"
@@ -32,39 +32,39 @@
 #include "vexo/gateway/upstream_peer.h"
 #include "vexo/gateway/upstream_registry.h"
 #include "vexo/net/event_loop.h"
+#include "vexo/net/event_loop_scheduler.h"
 #include "vexo/net/inet_address.h"
+#include "vexo/net/reactor_connect.h"
+#include "vexo/net/reactor_listener.h"
 
 int main() {
   // 1. 创建服务注册中心 和 配置上游
   vexo::gateway::UpstreamRegistry reg;
-  
-  auto upstream = std::make_shared<vexo::gateway::Upstream>(
-    vexo::gateway::UpstreamConfig{.name = "user_service"});
-  
-  upstream->AddPeer(std::make_shared<vexo::gateway::UpstreamPeer>(
-    vexo::gateway::UpstreamPeerConfig{
-      .name = "127.0.0.1:9001",
-      .host = "127.0.0.1",
-      .port = 9001}));
 
-  upstream->AddPeer(std::make_shared<vexo::gateway::UpstreamPeer>(
-    vexo::gateway::UpstreamPeerConfig{
-      .name = "127.0.0.1:9002",
-      .host = "127.0.0.1",
-      .port = 9002}));
-  
+  auto upstream = std::make_shared<vexo::gateway::Upstream>(
+      vexo::gateway::UpstreamConfig{.name = "user_service"});
+
+  upstream->AddPeer(std::make_shared<vexo::gateway::UpstreamPeer>(vexo::gateway::UpstreamPeerConfig{
+      .name = "127.0.0.1:9001", .host = "127.0.0.1", .port = 9001}));
+
+  upstream->AddPeer(std::make_shared<vexo::gateway::UpstreamPeer>(vexo::gateway::UpstreamPeerConfig{
+      .name = "127.0.0.1:9002", .host = "127.0.0.1", .port = 9002}));
+
   reg.Add(upstream);
 
   // 2. 创建网关
   vexo::net::EventLoop loop;
+  vexo::net::EventLoopScheduler scheduler(&loop);
   vexo::net::InetAddress addr(8080);
-  vexo::gateway::GatewayServer gw(&loop, addr, "gateway", reg);
+  vexo::net::ReactorListener listener(&loop, addr);
+  vexo::net::ReactorConnector connector(&loop);
+  vexo::gateway::GatewayServer<vexo::net::ReactorListener, vexo::net::ReactorConnector> gw(
+      listener, scheduler, "gateway", reg, connector);
 
   gw.set_thread_num(4);
 
   // 直接路由
-  gw.Get("/healthz", [](const vexo::http::HttpRequest&, 
-                        vexo::http::HttpResponse& resp){
+  gw.Get("/healthz", [](const vexo::http::HttpRequest&, vexo::http::HttpResponse& resp) {
     resp.set_status_code(vexo::http::StatusCode::Ok);
     resp.set_content_type("application/json");
     resp.set_body("{\"status\":\"ok\"}");
@@ -72,7 +72,7 @@ int main() {
 
   // 代理路由：把 /api/health 和 /api/kv 转发到 user_service（demo_http_server 有这两条路由）
   gw.AddProxyRoute("/api/health", "user_service", "round_robin");
-  gw.AddProxyRoute("/api/kv",     "user_service", "round_robin");
+  gw.AddProxyRoute("/api/kv", "user_service", "round_robin");
 
   // 3. 启动主动健康检查（上游的 /api/health 返回 200，符合探针预期）
   gw.EnableHealthCheck({.path = "/api/health", .interval_sec = 10.0});

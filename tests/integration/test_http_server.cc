@@ -3,11 +3,7 @@
 #include <stdexcept>
 #include <string>
 
-#include "vexo/http/metrics_handler.h"
 #include "vexo/http/router.h"
-#include "vexo/task/blocking_executor.h"
-#include "vexo/task/cancellation_token.h"
-#include "vexo/task/executor_metrics.h"
 
 namespace {
 
@@ -97,15 +93,10 @@ TEST(HttpRouterDeathTest, RejectsEmptyHandler) {
     EXPECT_DEATH(router.Get("/x", std::move(empty)), "handler must not be empty");
 }
 
-// ── HttpDispatch (Phase 5) ────────────────────────────────────────────────────
+// ── HttpDispatch ──────────────────────────────────────────────────────────────
 //
-// The async dispatch path in OnMessage runs handlers on a BlockingExecutor
-// worker thread, then sends the response via conn->loop()->RunInLoop() so that
-// all connection-state writes stay on the owning IO thread.
-//
-// Tests below verify the handler-assembly contract (handler runs, response is
-// built correctly, exception path produces 500) without requiring a live TCP
-// connection.
+// HttpServer executes handlers directly on the owning IO thread. Tests below
+// verify the handler-assembly contract without requiring a live TCP connection.
 
 TEST(HttpDispatchTest, HandlerAssemblesResponseCorrectly) {
   vexo::http::HttpRequest req;
@@ -145,62 +136,6 @@ TEST(HttpDispatchTest, ExceptionInHandlerProducesInternalServerError) {
   EXPECT_NE(wire.find("500"), std::string::npos);
   EXPECT_NE(wire.find("db offline"), std::string::npos);
   EXPECT_TRUE(resp.close_connection());
-}
-
-// Verifies that handler body executes on a different thread than the submitter,
-// which is the precondition that makes RunInLoop dispatch necessary.
-TEST(HttpDispatchTest, HandlerRunsOnWorkerThread) {
-  vexo::task::BlockingExecutor executor(2);
-  const auto caller_tid = std::this_thread::get_id();
-  std::atomic<bool> tid_differs{false};
-  std::promise<void> done;
-
-  executor.Submit([&](vexo::task::CancellationToken) {
-    tid_differs.store(std::this_thread::get_id() != caller_tid);
-    done.set_value();
-  });
-
-  done.get_future().wait();
-  EXPECT_TRUE(tid_differs.load());
-}
-
-// ── MetricsHandler ────────────────────────────────────────────────────────────
-
-TEST(MetricsHandlerTest, JsonContainsAllFields) {
-  vexo::task::ExecutorMetrics::Snapshot snap{};
-  snap.submitted     = 10;
-  snap.completed     = 8;
-  snap.failed        = 1;
-  snap.cancelled     = 0;
-  snap.queue_size    = 2;
-  snap.running_count = 3;
-
-  const std::string json = vexo::http::MakeMetricsJson(snap);
-
-  EXPECT_NE(json.find("\"submitted\":10"),      std::string::npos);
-  EXPECT_NE(json.find("\"completed\":8"),       std::string::npos);
-  EXPECT_NE(json.find("\"failed\":1"),          std::string::npos);
-  EXPECT_NE(json.find("\"cancelled\":0"),       std::string::npos);
-  EXPECT_NE(json.find("\"queue_size\":2"),      std::string::npos);
-  EXPECT_NE(json.find("\"running_count\":3"),   std::string::npos);
-}
-
-TEST(MetricsHandlerTest, JsonReflectsExecutorCounters) {
-  vexo::task::BlockingExecutor executor(2);
-
-  auto h1 = executor.Submit([](vexo::task::CancellationToken) {});
-  auto h2 = executor.Submit([](vexo::task::CancellationToken) {
-    throw std::runtime_error("fail");
-  });
-  h1.Wait();
-  try { h2.Wait(); } catch (...) {}
-
-  const auto snap = executor.metrics().Load();
-  const std::string json = vexo::http::MakeMetricsJson(snap);
-
-  EXPECT_NE(json.find("\"submitted\":2"), std::string::npos);
-  EXPECT_NE(json.find("\"completed\":1"), std::string::npos);
-  EXPECT_NE(json.find("\"failed\":1"),    std::string::npos);
 }
 
 }  // namespace

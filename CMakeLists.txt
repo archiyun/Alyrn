@@ -1,6 +1,6 @@
-cmake_minimum_required(VERSION 3.20) 
-project(high_concurrency_vexo 
-        VERSION 0.1.0 
+cmake_minimum_required(VERSION 3.20)
+project(high_concurrency_vexo
+        VERSION 0.1.0
         LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
@@ -40,7 +40,6 @@ add_library(vexo_foundation STATIC
     src/log/logger.cc
     src/memory/pool.cc
     src/time/timestamp.cc
-    src/time/timer_tree.cc
 )
 
 target_include_directories(vexo_foundation
@@ -55,26 +54,21 @@ target_link_libraries(vexo_foundation
 
 target_compile_features(vexo_foundation PUBLIC cxx_std_23)
 
-add_library(vexo_task STATIC
-    src/task/thread_pool.cc
-    src/task/task.cc
-    src/task/task_handle.cc
-    src/task/work_queue.cc
-    src/task/blocking_executor.cc
-)
+# ── Coroutine and IO contracts ──────────────────────────────────────────────
+#
+# vexo_coro —— backend-neutral 协程原语(Task<T>、Work、Scheduler、Spawn/
+# JoinHandle、SyncWait)。Task<T> 不定义错误策略；I/O 层按需返回
+# Task<base::Result<T>>。
+add_library(vexo_coro INTERFACE)
+target_include_directories(vexo_coro INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_features(vexo_coro INTERFACE cxx_std_23)
 
-target_include_directories(vexo_task
-    PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-target_link_libraries(vexo_task
-    PUBLIC
-        vexo_foundation
-        Threads::Threads
-)
-
-target_compile_features(vexo_task PUBLIC cxx_std_23)
+# vexo_io —— 协程可观察 I/O 契约和启动期 backend/capability profile。
+# 这里不包含 fd、Channel、epoll_wait、SQE/CQE 等后端内部状态。
+add_library(vexo_io INTERFACE)
+target_include_directories(vexo_io INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(vexo_io INTERFACE vexo_coro vexo_foundation)
+target_compile_features(vexo_io INTERFACE cxx_std_23)
 
 set(VEXO_BUFFER_IMPL "muduo" CACHE STRING "Buffer implementation: muduo | ringbuf | nginx")
 
@@ -99,7 +93,10 @@ add_library(vexo_net STATIC
     src/net/inet_address.cc
     src/net/net_utils.cc
     src/net/poller.cc
+    src/net/reactor_connect.cc
     src/net/reactor_backend.cc
+    src/net/reactor_listener.cc
+    src/net/reactor_stream.cc
     src/net/socket.cc
     src/net/tcp_connection.cc
     src/net/tcp_server.cc
@@ -113,6 +110,7 @@ target_include_directories(vexo_net
 
 target_link_libraries(vexo_net
     PUBLIC
+        vexo_io
         vexo_foundation
         Threads::Threads
 )
@@ -122,31 +120,32 @@ target_compile_features(vexo_net PUBLIC cxx_std_23)
 # memmem 是 GNU 扩展, buffer.h 内联用到, 通过 PUBLIC 让上层库也能 include buffer.h
 target_compile_definitions(vexo_net PUBLIC _GNU_SOURCE)
 
-# vexo_uring —— io_uring proactor 后端（已清空，待重写）。
-# 重写时在此重新 add_library(vexo_uring STATIC src/uring/*.cc)：
-#   PUBLIC link vexo_net（复用 Buffer/InetAddress/Socket）+ ${URING_LIBRARIES}，
-#   include ${URING_INCLUDE_DIRS}，
-#   target_compile_definitions(vexo_uring PUBLIC VEXO_ENABLE_URING)，cxx_std_23。
-# 开关 option(VEXO_ENABLE_URING)（上方）与 pkg_check_modules(URING) 已保留备用。
+# vexo_luring —— io_uring proactor 网络模块。它和 vexo_net/reactor 并列，
+# 共同解释 vexo_io 的协程可观察 I/O 契约。
+if(VEXO_ENABLE_URING)
+    add_library(vexo_luring STATIC
+        src/luring/capabilities.cc
+        src/luring/listener.cc
+        src/luring/loop.cc
+        src/luring/ring.cc
+        src/luring/stream.cc
+    )
 
-# ── Coroutine layer ────────────────────────────────────────────────────────
-# 协程在 co_await 层统一 reactor 与 luring 两个后端。
-#
-# vexo_coro —— backend-neutral 协程原语(Task<T>、Work、Scheduler、Spawn/
-# JoinHandle、SyncWait,职责单文件拆分)。Task<T> 不定义错误策略；网络层按需
-# 返回 Task<base::Result<T>>。Header-only,只依赖标准库 + vexo/utils 宏,绝不
-# #include net/luring。
-add_library(vexo_coro INTERFACE)
-target_include_directories(vexo_coro INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_compile_features(vexo_coro INTERFACE cxx_std_23)
+    target_include_directories(vexo_luring
+        PUBLIC
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${URING_INCLUDE_DIRS}
+    )
 
-# vexo_io —— backend-neutral coroutine I/O concepts, capability profiles, and
-# scatter/gather buffer utilities. It intentionally does not depend on any
-# concrete reactor or io_uring backend state.
-add_library(vexo_io INTERFACE)
-target_include_directories(vexo_io INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(vexo_io INTERFACE vexo_coro vexo_foundation)
-target_compile_features(vexo_io INTERFACE cxx_std_23)
+    target_link_libraries(vexo_luring
+        PUBLIC
+            vexo_io
+            ${URING_LIBRARIES}
+    )
+
+    target_compile_definitions(vexo_luring PUBLIC VEXO_ENABLE_URING)
+    target_compile_features(vexo_luring PUBLIC cxx_std_23)
+endif()
 
 # vexo_coro_reactor —— 把协程绑到 epoll/reactor 后端,坐在 net 之上(用
 # Socket/Channel/EventLoop)。当前是 header-only 骨架;awaitable 的 .cc 落地后
@@ -162,19 +161,37 @@ if(VEXO_ENABLE_URING)
     add_library(vexo_coro_luring INTERFACE)
     target_include_directories(vexo_coro_luring INTERFACE
         ${CMAKE_CURRENT_SOURCE_DIR}/include ${URING_INCLUDE_DIRS})
-    target_link_libraries(vexo_coro_luring INTERFACE vexo_coro ${URING_LIBRARIES})
+    target_link_libraries(vexo_coro_luring INTERFACE vexo_luring)
     target_compile_definitions(vexo_coro_luring INTERFACE VEXO_ENABLE_URING)
     target_compile_features(vexo_coro_luring INTERFACE cxx_std_23)
 endif()
 
-set(VEXO_HTTP_SOURCES
+set(VEXO_HTTP_CORE_SOURCES
     src/http/http_types.cc
     src/http/http_request.cc
-    src/http/http_context.cc
     src/http/http_response.cc
+    src/http/http_parser.cc
+    src/http/parse_status.cc
     src/http/router.cc
+)
+
+add_library(vexo_http_core STATIC ${VEXO_HTTP_CORE_SOURCES})
+
+target_include_directories(vexo_http_core
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_link_libraries(vexo_http_core
+    PUBLIC
+        vexo_foundation
+)
+
+target_compile_features(vexo_http_core PUBLIC cxx_std_23)
+
+set(VEXO_HTTP_SOURCES
+    src/http/http_context.cc
     src/http/http_server.cc
-    src/http/metrics_handler.cc
 )
 
 add_library(vexo_http STATIC ${VEXO_HTTP_SOURCES})
@@ -186,18 +203,33 @@ target_include_directories(vexo_http
 
 target_link_libraries(vexo_http
     PUBLIC
+        vexo_http_core
         vexo_net
-        vexo_task
         vexo_foundation
         Threads::Threads
 )
 
 target_compile_features(vexo_http PUBLIC cxx_std_23)
 
+add_library(vexo_gateway_core STATIC
+    src/gateway/gateway_core.cc
+)
+
+target_include_directories(vexo_gateway_core PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_link_libraries(vexo_gateway_core PUBLIC
+    vexo_http_core
+    vexo_foundation
+    Threads::Threads
+)
+
+target_compile_features(vexo_gateway_core PUBLIC cxx_std_23)
+
 add_library(vexo_gateway STATIC
     src/gateway/proxy_pass.cc
     src/gateway/health_checker.cc
-    src/gateway/gateway_server.cc
 )
 
 target_include_directories(vexo_gateway PUBLIC
@@ -205,6 +237,7 @@ target_include_directories(vexo_gateway PUBLIC
 )
 
 target_link_libraries(vexo_gateway PUBLIC
+    vexo_gateway_core
     vexo_http
     vexo_net
     vexo_foundation

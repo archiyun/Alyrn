@@ -9,10 +9,14 @@
 #include <coroutine>
 #include <exception>
 
+#include "vexo/utils/macros.h"
+
 namespace vexo::coro::detail {
 
 class PromiseBase {
 public:
+  VEXO_DELETE_COPY_MOVE(PromiseBase);
+
   // Lazy: the body does not run until a consumer resumes the frame.
   std::suspend_always initial_suspend() const noexcept { return {}; }
 
@@ -33,7 +37,7 @@ public:
   void unhandled_exception() noexcept { std::terminate(); }
 
   void set_continuation(std::coroutine_handle<> continuation) noexcept {
-    continuation_ = continuation;
+    continuation_ = continuation ? continuation : std::noop_coroutine();
   }
   std::coroutine_handle<> continuation() const noexcept { return continuation_; }
 
