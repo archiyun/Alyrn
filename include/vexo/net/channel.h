@@ -111,8 +111,6 @@ private:
   // hidden from general consumers. Concrete Poller implementations are the
   // only legitimate users.
   friend class EPollPoller;
-  friend class PollPoller;
-  friend class SelectPoller;
 
   int index() const { return index_; }
   void set_index(int idx) { index_ = idx; }
