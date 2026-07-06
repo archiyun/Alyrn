@@ -134,6 +134,65 @@ target_link_libraries(reactor_listener_smoke_test
 
 add_test(NAME reactor_listener_smoke_test COMMAND reactor_listener_smoke_test)
 
+if(VEXO_ENABLE_URING)
+    add_executable(luring_coro_smoke_test
+        unit/test_luring_coro_smoke.cc
+    )
+
+    target_include_directories(luring_coro_smoke_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../include
+            ${URING_INCLUDE_DIRS}
+    )
+
+    target_link_libraries(luring_coro_smoke_test
+        PRIVATE
+            vexo_luring
+    )
+
+    target_compile_definitions(luring_coro_smoke_test PRIVATE VEXO_ENABLE_URING)
+
+    add_test(NAME luring_coro_smoke_test COMMAND luring_coro_smoke_test)
+
+    add_executable(luring_stream_smoke_test
+        unit/test_luring_stream_smoke.cc
+    )
+
+    target_include_directories(luring_stream_smoke_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../include
+            ${URING_INCLUDE_DIRS}
+    )
+
+    target_link_libraries(luring_stream_smoke_test
+        PRIVATE
+            vexo_luring
+    )
+
+    target_compile_definitions(luring_stream_smoke_test PRIVATE VEXO_ENABLE_URING)
+
+    add_test(NAME luring_stream_smoke_test COMMAND luring_stream_smoke_test)
+
+    add_executable(luring_listener_smoke_test
+        unit/test_luring_listener_smoke.cc
+    )
+
+    target_include_directories(luring_listener_smoke_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../include
+            ${URING_INCLUDE_DIRS}
+    )
+
+    target_link_libraries(luring_listener_smoke_test
+        PRIVATE
+            vexo_luring
+    )
+
+    target_compile_definitions(luring_listener_smoke_test PRIVATE VEXO_ENABLE_URING)
+
+    add_test(NAME luring_listener_smoke_test COMMAND luring_listener_smoke_test)
+endif()
+
 add_executable(pool_smoke_test
     unit/test_pool_smoke.cc
 )
@@ -481,6 +540,22 @@ target_link_libraries(gateway_metrics_smoke_test
 
 add_test(NAME gateway_metrics_smoke_test COMMAND gateway_metrics_smoke_test)
 
+add_executable(gateway_core_smoke_test
+    unit/test_gateway_core_smoke.cc
+)
+
+target_include_directories(gateway_core_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(gateway_core_smoke_test
+    PRIVATE
+        vexo_gateway_core
+)
+
+add_test(NAME gateway_core_smoke_test COMMAND gateway_core_smoke_test)
+
 add_executable(proxy_e2e_smoke_test
     unit/test_proxy_e2e_smoke.cc
 )
@@ -571,14 +646,12 @@ if(GTest_FOUND)
         unit/test_net_utils.cc
         unit/test_object_pool.cc
         unit/test_sanity.cc
-        unit/test_blocking_executor.cc
     )
 
     target_link_libraries(vexo_unit_tests
         PRIVATE
             GTest::gtest_main
             vexo_net
-            vexo_task
     )
 
     gtest_discover_tests(vexo_unit_tests DISCOVERY_MODE PRE_TEST)

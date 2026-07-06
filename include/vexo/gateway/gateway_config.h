@@ -11,13 +11,15 @@
 
 #include "vexo/gateway/fallback_config.h"
 #include "vexo/gateway/health_check_config.h"
+#include "vexo/gateway/rate_limiter.h"
 #include "vexo/gateway/upstream.h"
 #include "vexo/gateway/upstream_peer.h"
-#include "vexo/net/inet_address.h"
+#include "vexo/http/http_request.h"
+#include "vexo/http/http_response.h"
+#include "vexo/http/http_types.h"
 
 namespace vexo::gateway {
 
-class GatewayServer;
 class UpstreamRegistry;
 
 class GatewayConfigError : public std::runtime_error {
@@ -87,10 +89,49 @@ struct GatewayConfig {
 
 GatewayConfig LoadGatewayConfigFromYaml(std::string_view path);
 
-vexo::net::InetAddress MakeGatewayListenAddress(const GatewayConfig& config);
-
 void ValidateGatewayConfig(const GatewayConfig& config);
 void BuildGatewayUpstreamRegistry(const GatewayConfig& config, UpstreamRegistry& registry);
-void ApplyGatewayConfig(const GatewayConfig& config, GatewayServer& gateway);
+
+template <class Gateway>
+void ApplyGatewayConfig(const GatewayConfig& config, Gateway& gateway) {
+  if (config.server.threads > 0) {
+    gateway.set_thread_num(config.server.threads);
+  }
+
+  if (config.status_endpoint.enabled) {
+    const GatewayStatusEndpointConfig endpoint = config.status_endpoint;
+    gateway.Get(endpoint.path,
+                [endpoint](const vexo::http::HttpRequest&, vexo::http::HttpResponse& resp) {
+                  resp.set_status_code(vexo::http::StatusCode::Ok);
+                  resp.set_content_type(endpoint.content_type);
+                  resp.set_body(endpoint.body);
+                });
+  }
+
+  if (config.metrics.enabled) {
+    gateway.EnableMetricsEndpoint(config.metrics.path);
+  }
+
+  if (config.rate_limit.global.enabled || config.rate_limit.per_ip.enabled) {
+    RateLimiterConfig limiter;
+    limiter.global_enabled = config.rate_limit.global.enabled;
+    limiter.global_rate = config.rate_limit.global.rate;
+    limiter.global_burst = config.rate_limit.global.burst;
+    limiter.per_ip_enabled = config.rate_limit.per_ip.enabled;
+    limiter.per_ip_rate = config.rate_limit.per_ip.rate;
+    limiter.per_ip_burst = config.rate_limit.per_ip.burst;
+    limiter.per_ip_max_buckets = config.rate_limit.per_ip.max_buckets;
+    gateway.EnableRateLimit(limiter);
+  }
+
+  for (const GatewayRouteConfig& route : config.routes) {
+    gateway.AddProxyRoute(route.path, route.upstream_name, route.fallback,
+                          route.circuit_breaker_enabled, route.load_balance);
+  }
+
+  if (config.health_check.enabled) {
+    gateway.EnableHealthCheck(config.health_check.config);
+  }
+}
 
 }  // namespace vexo::gateway

@@ -4,10 +4,8 @@
 
 #include "vexo/http/router.h"
 #include "vexo/net/tcp_server.h"
-#include "vexo/task/blocking_executor.h"
 #include "vexo/utils/macros.h"
 
-#include <memory>
 #include <source_location>
 #include <string>
 #include <string_view>
@@ -28,13 +26,6 @@ class HttpServer {
 
   // Delegates to the underlying TcpServer. Must be called before Start().
   void set_edge_triggered(bool et);
-
-  void set_blocking_executor(
-      std::shared_ptr<vexo::task::BlockingExecutor> executor);
-
-  // Registers GET /metrics → JSON snapshot of executor counters.
-  // Must be called after set_blocking_executor().
-  void RegisterMetricsRoute();
 
   // Registers routes by forwarding to Router. The default-argument
   // std::source_location captures the user's call site so registration errors
@@ -62,7 +53,6 @@ class HttpServer {
 
   vexo::net::TcpServer server_;
   Router router_;
-  std::shared_ptr<vexo::task::BlockingExecutor> blocking_executor_;
 };
 
 }  // namespace vexo::http

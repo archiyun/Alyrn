@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 #include <sys/socket.h>
+#include <sys/uio.h>
 #include <unistd.h>
 
 #include <array>
@@ -11,22 +12,24 @@
 #include <iostream>
 #include <optional>
 #include <span>
+#include <string>
+#include <vector>
 
 #include "vexo/base/error.h"
 #include "vexo/coro/scheduler.h"
 #include "vexo/coro/spawn.h"
 #include "vexo/coro/task.h"
+#include "vexo/io/stream_algorithms.h"
 #include "vexo/net/event_loop.h"
 #include "vexo/net/event_loop_scheduler.h"
 #include "vexo/net/reactor_stream.h"
-#include "vexo/net/stream_algorithms.h"
 
 namespace {
 
 using ReadResult = vexo::base::Result<std::size_t>;
 using WriteResult = vexo::base::Result<std::size_t>;
 
-static_assert(vexo::net::AsyncStream<vexo::net::ReactorStream>);
+static_assert(vexo::io::AsyncStream<vexo::net::ReactorStream>);
 
 bool Check(bool condition, const char* message) {
   if (!condition) {
@@ -40,11 +43,29 @@ bool MakeSocketPair(int sv[2]) {
   return ::socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0, sv) == 0;
 }
 
+std::string Gather(vexo::io::Buffer& buffer) {
+  std::string out;
+  for (const iovec& iov : buffer.ReadableIov(32)) {
+    out.append(static_cast<const char*>(iov.iov_base), iov.iov_len);
+  }
+  return out;
+}
+
 vexo::coro::Task<void> ReadOnce(vexo::net::ReactorStream* stream, vexo::net::EventLoop* loop,
                                 vexo::net::EventLoopScheduler* scheduler,
                                 std::array<std::byte, 16>* buffer, std::optional<ReadResult>* out,
                                 bool* resumed_with_scheduler) {
   ReadResult result = co_await stream->ReadSome(*buffer);
+  *resumed_with_scheduler = vexo::coro::Scheduler::Current() == scheduler;
+  out->emplace(std::move(result));
+  loop->Quit();
+}
+
+vexo::coro::Task<void> ReadBufferOnce(vexo::net::ReactorStream* stream, vexo::net::EventLoop* loop,
+                                      vexo::net::EventLoopScheduler* scheduler,
+                                      vexo::io::Buffer* buffer, std::optional<ReadResult>* out,
+                                      bool* resumed_with_scheduler) {
+  ReadResult result = co_await stream->ReadSome(*buffer, 32);
   *resumed_with_scheduler = vexo::coro::Scheduler::Current() == scheduler;
   out->emplace(std::move(result));
   loop->Quit();
@@ -60,11 +81,21 @@ vexo::coro::Task<void> WriteOnce(vexo::net::ReactorStream* stream, vexo::net::Ev
   loop->Quit();
 }
 
+vexo::coro::Task<void> WriteBufferOnce(vexo::net::ReactorStream* stream, vexo::net::EventLoop* loop,
+                                       vexo::net::EventLoopScheduler* scheduler,
+                                       vexo::io::Buffer* buffer, std::optional<WriteResult>* out,
+                                       bool* resumed_with_scheduler) {
+  WriteResult result = co_await stream->WriteSome(*buffer);
+  *resumed_with_scheduler = vexo::coro::Scheduler::Current() == scheduler;
+  out->emplace(std::move(result));
+  loop->Quit();
+}
+
 vexo::coro::Task<void> EchoServer(vexo::net::ReactorStream* stream,
                                   std::array<std::byte, 64>* scratch,
                                   std::optional<vexo::base::Result<void>>* out, int* done_count,
                                   vexo::net::EventLoop* loop) {
-  out->emplace(co_await vexo::net::EchoOnce(*stream, *scratch));
+  out->emplace(co_await vexo::io::EchoOnce(*stream, *scratch));
   if (++(*done_count) == 2) {
     loop->Quit();
   }
@@ -76,7 +107,7 @@ vexo::coro::Task<void> EchoClient(vexo::net::ReactorStream* stream,
                                   std::optional<vexo::base::Result<void>>* out,
                                   std::size_t* received_size, int* done_count,
                                   vexo::net::EventLoop* loop) {
-  vexo::base::Result<void> write_result = co_await vexo::net::WriteAll(*stream, payload);
+  vexo::base::Result<void> write_result = co_await vexo::io::WriteAll(*stream, payload);
   if (!write_result.has_value()) {
     out->emplace(std::unexpected(write_result.error()));
   } else {
@@ -219,6 +250,84 @@ bool CheckPendingRead() {
          Check(resumed_with_scheduler, "pending read resumed without current scheduler");
 }
 
+bool CheckReadIntoIoBuffer() {
+  int sv[2] = {-1, -1};
+  if (!MakeSocketPair(sv)) {
+    std::cout << "FAIL: socketpair failed\n";
+    return false;
+  }
+
+  const char payload[] = "buffer-read";
+  if (::write(sv[1], payload, sizeof(payload) - 1) != static_cast<ssize_t>(sizeof(payload) - 1)) {
+    std::cout << "FAIL: initial buffer write failed\n";
+    ::close(sv[0]);
+    ::close(sv[1]);
+    return false;
+  }
+
+  vexo::net::EventLoop loop;
+  vexo::net::ReactorStream stream(&loop, sv[0]);
+  vexo::net::EventLoopScheduler scheduler(&loop);
+
+  vexo::io::Buffer buffer(4);
+  std::optional<ReadResult> result;
+  bool resumed_with_scheduler = false;
+
+  vexo::coro::Spawn(scheduler, ReadBufferOnce(&stream, &loop, &scheduler, &buffer, &result,
+                                              &resumed_with_scheduler))
+      .Detach();
+  loop.Loop();
+
+  ::close(sv[1]);
+
+  return Check(result.has_value(), "buffer read did not finish") &&
+         Check(result->has_value(), "buffer read returned error") &&
+         Check(**result == sizeof(payload) - 1, "buffer read byte count mismatch") &&
+         Check(buffer.ReadableBytes() == sizeof(payload) - 1,
+               "buffer read should commit readable bytes") &&
+         Check(Gather(buffer) == std::string(payload, sizeof(payload) - 1),
+               "buffer read payload mismatch") &&
+         Check(resumed_with_scheduler, "buffer read resumed without current scheduler");
+}
+
+bool CheckWriteFromIoBuffer() {
+  int sv[2] = {-1, -1};
+  if (!MakeSocketPair(sv)) {
+    std::cout << "FAIL: socketpair failed\n";
+    return false;
+  }
+
+  vexo::net::EventLoop loop;
+  vexo::net::ReactorStream stream(&loop, sv[0]);
+  vexo::net::EventLoopScheduler scheduler(&loop);
+
+  const std::string payload = "write-from-io-buffer";
+  vexo::io::Buffer buffer(5);
+  buffer.Append(payload.substr(0, 7));
+  buffer.Append(payload.substr(7));
+
+  std::optional<WriteResult> result;
+  bool resumed_with_scheduler = false;
+
+  vexo::coro::Spawn(scheduler, WriteBufferOnce(&stream, &loop, &scheduler, &buffer, &result,
+                                               &resumed_with_scheduler))
+      .Detach();
+  loop.Loop();
+
+  std::array<char, 64> received{};
+  const ssize_t n = ::read(sv[1], received.data(), received.size());
+  ::close(sv[1]);
+
+  return Check(result.has_value(), "buffer write did not finish") &&
+         Check(result->has_value(), "buffer write returned error") &&
+         Check(**result == payload.size(), "buffer write byte count mismatch") &&
+         Check(buffer.Empty(), "buffer write should drain written bytes") &&
+         Check(n == static_cast<ssize_t>(payload.size()), "buffer write peer count mismatch") &&
+         Check(std::string(received.data(), static_cast<std::size_t>(n)) == payload,
+               "buffer write payload mismatch") &&
+         Check(resumed_with_scheduler, "buffer write resumed without current scheduler");
+}
+
 bool CheckCloseCancelsPendingRead() {
   int sv[2] = {-1, -1};
   if (!MakeSocketPair(sv)) {
@@ -334,6 +443,8 @@ int main() {
   if (!CheckImmediateRead()) return 1;
   if (!CheckImmediateWrite()) return 1;
   if (!CheckPendingRead()) return 1;
+  if (!CheckReadIntoIoBuffer()) return 1;
+  if (!CheckWriteFromIoBuffer()) return 1;
   if (!CheckCloseCancelsPendingRead()) return 1;
   if (!CheckEchoAlgorithmUsesAsyncStream()) return 1;
   if (!CheckCloseRejectsLaterSubmit()) return 1;

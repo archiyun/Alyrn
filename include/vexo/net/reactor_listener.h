@@ -18,12 +18,11 @@ namespace vexo::net {
 
 class ReactorListener {
 public:
+  VEXO_DELETE_COPY_MOVE(ReactorListener);
   using Stream = ReactorStream;
 
   ReactorListener(EventLoop* loop, const InetAddress& listen_addr);
   ~ReactorListener();
-
-  VEXO_DELETE_COPY_MOVE(ReactorListener);
 
   coro::Task<base::Result<std::unique_ptr<ReactorStream>>> Accept();
   coro::Task<base::Result<void>> Close();

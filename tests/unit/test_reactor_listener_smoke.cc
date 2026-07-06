@@ -14,7 +14,8 @@
 #include "vexo/base/error.h"
 #include "vexo/coro/spawn.h"
 #include "vexo/coro/task.h"
-#include "vexo/net/async_listener.h"
+#include "vexo/io/async_listener.h"
+#include "vexo/io/io_backend.h"
 #include "vexo/net/event_loop.h"
 #include "vexo/net/event_loop_scheduler.h"
 #include "vexo/net/inet_address.h"
@@ -26,7 +27,7 @@ namespace {
 using AcceptResult =
     vexo::base::Result<std::unique_ptr<typename vexo::net::ReactorListener::Stream>>;
 
-static_assert(vexo::net::AsyncListener<vexo::net::ReactorListener>);
+static_assert(vexo::io::AsyncListener<vexo::net::ReactorListener>);
 
 bool Check(bool condition, const char* message) {
   if (!condition) {
@@ -104,11 +105,40 @@ bool CheckCloseCancelsPendingAccept() {
                "cancelled accept did not return ECANCELED");
 }
 
+bool CheckBackendBindingProfile() {
+  auto binding = vexo::io::BindReactor();
+  if (!Check(binding.has_value(), "reactor backend binding failed")) {
+    return false;
+  }
+
+  if (!Check(binding->active_profile.ContainsAll(vexo::io::CapabilitySet::CoreGateway()),
+             "reactor binding does not activate core gateway profile")) {
+    return false;
+  }
+
+  if (!Check(binding->backend_capabilities.ContainsAll(binding->active_profile),
+             "reactor backend capabilities do not cover active profile")) {
+    return false;
+  }
+
+  if (!Check(binding->backend_capabilities.ContainsAll(vexo::io::CapabilitySet::TimedGateway()),
+             "reactor backend should advertise timeout-capable gateway profile")) {
+    return false;
+  }
+
+  vexo::io::CapabilitySet invalid_profile;
+  invalid_profile.Enable(vexo::io::IoCapability::kReadinessPoll);
+  auto invalid = vexo::io::BindReactor(invalid_profile);
+  return Check(!invalid.has_value(),
+               "reactor binding unexpectedly accepted implementation tags in active profile");
+}
+
 }  // namespace
 
 int main() {
   if (!CheckPendingAccept()) return 1;
   if (!CheckCloseCancelsPendingAccept()) return 1;
+  if (!CheckBackendBindingProfile()) return 1;
 
   std::cout << "reactor listener smoke: PASS\n";
   return 0;

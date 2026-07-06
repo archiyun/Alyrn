@@ -4,16 +4,36 @@
 #include <sys/uio.h>
 #include <unistd.h>
 
+#include <csignal>
 #include <cstring>
 
 #include "vexo/net/buffer.h"
 
 namespace vexo::net {
+namespace {
+
+ssize_t WriteIgnoringSigPipe(int fd, const void* data, std::size_t len) {
+  struct sigaction ignore_action{};
+  struct sigaction old_action{};
+  ignore_action.sa_handler = SIG_IGN;
+  sigemptyset(&ignore_action.sa_mask);
+
+  const bool installed = ::sigaction(SIGPIPE, &ignore_action, &old_action) == 0;
+  const ssize_t n = ::write(fd, data, len);
+  const int saved_errno = errno;
+  if (installed) {
+    ::sigaction(SIGPIPE, &old_action, nullptr);
+  }
+  errno = saved_errno;
+  return n;
+}
+
+}  // namespace
 
 Buffer::Buffer(std::size_t initial_size)
-  : buffer_(kCheapPrepend + initial_size),
-    reader_index_(kCheapPrepend),
-    writer_index_(kCheapPrepend) {
+    : buffer_(kCheapPrepend + initial_size),
+      reader_index_(kCheapPrepend),
+      writer_index_(kCheapPrepend) {
   VEXO_ASSERT(reader_index_ == writer_index_, "buffer must start empty");
   AssertInvariant();
 }
@@ -48,7 +68,12 @@ ssize_t Buffer::ReadFd(int fd, int* saved_errno) {
 }
 
 ssize_t Buffer::WriteFd(int fd, int* saved_errno) {
-  const ssize_t n = ::send(fd, Peek(), readable_bytes(), MSG_NOSIGNAL);
+  ssize_t n = ::send(fd, Peek(), readable_bytes(), MSG_NOSIGNAL);
+  if (n < 0 && errno == EPERM) {
+    // Some constrained runners reject send(MSG_NOSIGNAL) on AF_UNIX sockets.
+    // Keep the fallback SIGPIPE-safe for already-closed peers.
+    n = WriteIgnoringSigPipe(fd, Peek(), readable_bytes());
+  }
   if (n < 0) {
     if (saved_errno != nullptr) {
       *saved_errno = errno;
@@ -57,6 +82,9 @@ ssize_t Buffer::WriteFd(int fd, int* saved_errno) {
   }
 
   Retrieve(static_cast<std::size_t>(n));
+  if (saved_errno != nullptr) {
+    *saved_errno = 0;
+  }
   return n;
 }
 

@@ -1,0 +1,42 @@
+// Copyright (c) 2026 Arsenova
+// SPDX-License-Identifier: MIT
+#pragma once
+
+#include <cstddef>
+#include <string>
+#include <string_view>
+
+#include "vexo/http/http_request.h"
+#include "vexo/http/parse_status.h"
+
+namespace vexo::http {
+
+// Incremental HTTP/1 request parser over plain byte slices. This is the
+// backend-neutral parser used by coroutine stream based servers; it does not
+// depend on net::Buffer or any event-loop type.
+class HttpParser {
+public:
+  ParseStatus Feed(std::string_view bytes);
+  ParseStatus ParseAvailable();
+
+  bool GotAll() const { return got_all_; }
+  HttpRequest TakeRequest();
+  void Reset();
+
+private:
+  ParseStatus ParseRequestLine(std::string_view line);
+  ParseStatus ParseHeaderLine(std::string_view line);
+
+  bool ParseMethod(std::string_view method_sv);
+  bool ParseVersion(std::string_view version_sv);
+
+  std::string pending_;
+  HttpRequest request_;
+  std::size_t body_bytes_expected_{0};
+  std::size_t header_count_{0};
+  std::size_t header_bytes_{0};
+  bool content_length_seen_{false};
+  bool got_all_{false};
+};
+
+}  // namespace vexo::http

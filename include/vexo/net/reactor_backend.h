@@ -3,23 +3,56 @@
 #pragma once
 
 #include <any>
+#include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
 
+#include "vexo/io/io_backend.h"
+#include "vexo/net/buffer.h"
 #include "vexo/net/inet_address.h"
-#include "vexo/net/io_backend.h"
 #include "vexo/net/tcp_connection.h"
 #include "vexo/net/tcp_server.h"
+#include "vexo/time/timestamp.h"
 
 namespace vexo::net {
+
+class IConnection;
+using ConnPtr = std::shared_ptr<IConnection>;
+
+class IConnection {
+public:
+  virtual ~IConnection() = default;
+
+  [[nodiscard]] virtual bool Connected() const = 0;
+  virtual bool Send(std::string_view data) = 0;
+  virtual void Shutdown() = 0;
+  [[nodiscard]] virtual const InetAddress& peer_address() const = 0;
+
+  virtual void set_context(std::any ctx) = 0;
+  [[nodiscard]] virtual std::any& context() = 0;
+};
+
+class IServer {
+public:
+  using ConnectionCallback = std::function<void(const ConnPtr&)>;
+  using MessageCallback = std::function<void(const ConnPtr, Buffer&, vexo::time::Timestamp)>;
+
+  virtual ~IServer() = default;
+
+  virtual void set_connection_callback(ConnectionCallback cb) = 0;
+  virtual void set_message_callback(MessageCallback cb) = 0;
+  virtual void set_thread_num(int num_threads) = 0;
+  virtual void Start() = 0;
+  [[nodiscard]] virtual std::string_view name() const = 0;
+};
 
 // IConnection adapter over a reactor TcpConnection.
 //
 // LifeTime: a shared_ptr<ReactorConn> is stashed inside the underlying
 // TcpConnection's context slot, so the adapter lives exactly as long as the
-// connection. It holds a week_ptr back to the connection to avoid an ownership
+// connection. It holds a weak_ptr back to the connection to avoid an ownership
 // cycle. Transport ops only run on the owning loop thread while the connection
 // is alive, so lock() always succeeds there.
 class ReactorConn final : public IConnection {
@@ -43,12 +76,10 @@ public:
 
   [[nodiscard]] const InetAddress& peer_address() const override { return peer_; }
 
-  void set_context(std::any ctx) override { context_  = std::move(ctx); }
+  void set_context(std::any ctx) override { context_ = std::move(ctx); }
   [[nodiscard]] std::any& context() override { return context_; }
 
-  [[nodiscard]] TcpConnection::TcpConnectionPtr native() const {
-    return conn_.lock();
-  }
+  [[nodiscard]] TcpConnection::TcpConnectionPtr native() const { return conn_.lock(); }
 
 private:
   std::weak_ptr<TcpConnection> conn_;
@@ -65,13 +96,9 @@ public:
     connection_callback_ = std::move(cb);
   }
 
-  void set_message_callback(MessageCallback cb) override {
-    message_callback_ = std::move(cb);
-  }
+  void set_message_callback(MessageCallback cb) override { message_callback_ = std::move(cb); }
 
-  void set_thread_num(int num_threads) override {
-    server_.set_thread_num(num_threads);
-  }
+  void set_thread_num(int num_threads) override { server_.set_thread_num(num_threads); }
 
   std::string_view name() const override { return server_.name(); }
 
@@ -86,10 +113,12 @@ private:
   MessageCallback message_callback_;
 };
 
-[[nodiscard]] inline TcpConnection::TcpConnectionPtr
-ReactorNativeConn(const ConnPtr& conn) {
+[[nodiscard]] inline TcpConnection::TcpConnectionPtr ReactorNativeConn(const ConnPtr& conn) {
   auto* rc = dynamic_cast<ReactorConn*>(conn.get());
   return rc ? rc->native() : nullptr;
 }
+
+[[nodiscard]] std::unique_ptr<IServer> MakeReactorServer(vexo::io::Backend backend, EventLoop* loop,
+                                                         const InetAddress& addr, std::string name);
 
 }  // namespace vexo::net

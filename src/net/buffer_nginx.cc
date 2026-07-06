@@ -3,6 +3,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <csignal>
 #include <cstring>
 
 #include "vexo/net/buffer.h"
@@ -15,12 +16,28 @@ constexpr std::size_t kReadChunk = 16 * 1024;
 
 constexpr std::size_t kCompactNumerator = 1;
 constexpr std::size_t kCompactDenominator = 2;
-} // namespace 
 
-Buffer::Buffer(std::size_t inital_size) 
-  : buffer_(kCheapPrepend + inital_size),
-    reader_index_(kCheapPrepend),
-    writer_index_(kCheapPrepend) {
+ssize_t WriteIgnoringSigPipe(int fd, const void* data, std::size_t len) {
+  struct sigaction ignore_action{};
+  struct sigaction old_action{};
+  ignore_action.sa_handler = SIG_IGN;
+  sigemptyset(&ignore_action.sa_mask);
+
+  const bool installed = ::sigaction(SIGPIPE, &ignore_action, &old_action) == 0;
+  const ssize_t n = ::write(fd, data, len);
+  const int saved_errno = errno;
+  if (installed) {
+    ::sigaction(SIGPIPE, &old_action, nullptr);
+  }
+  errno = saved_errno;
+  return n;
+}
+}  // namespace
+
+Buffer::Buffer(std::size_t inital_size)
+    : buffer_(kCheapPrepend + inital_size),
+      reader_index_(kCheapPrepend),
+      writer_index_(kCheapPrepend) {
   AssertInvariant();
 }
 
@@ -37,12 +54,18 @@ ssize_t Buffer::ReadFd(int fd, int* saved_error) {
 }
 
 ssize_t Buffer::WriteFd(int fd, int* saved_error) {
-  const ssize_t n = ::send(fd, Peek(), readable_bytes(), MSG_NOSIGNAL);
+  ssize_t n = ::send(fd, Peek(), readable_bytes(), MSG_NOSIGNAL);
+  if (n < 0 && errno == EPERM) {
+    // Some constrained runners reject send(MSG_NOSIGNAL) on AF_UNIX sockets.
+    // Keep the fallback SIGPIPE-safe for already-closed peers.
+    n = WriteIgnoringSigPipe(fd, Peek(), readable_bytes());
+  }
   if (n < 0) {
     if (saved_error) *saved_error = errno;
     return n;
   }
   Retrieve(static_cast<std::size_t>(n));
+  if (saved_error) *saved_error = 0;
   return n;
 }
 
@@ -52,10 +75,8 @@ void Buffer::MakeSpace(std::size_t len) {
   const std::size_t prependable = reader_index_;
 
   // lazy ensure capacity
-  const bool can_compact = 
-      prependable * kCompactDenominator > capacity * kCompactNumerator;
-  const bool compact_enough = 
-      (capacity - readable - kCheapPrepend) >= len;
+  const bool can_compact = prependable * kCompactDenominator > capacity * kCompactNumerator;
+  const bool compact_enough = (capacity - readable - kCheapPrepend) >= len;
   if (can_compact && compact_enough) {
     std::memmove(Begin() + kCheapPrepend, Peek(), readable);
     reader_index_ = kCheapPrepend;
@@ -73,5 +94,4 @@ void Buffer::MakeSpace(std::size_t len) {
   AssertInvariant();
 }
 
-
-} // namespace vexo::net
+}  // namespace vexo::net

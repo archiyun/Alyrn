@@ -379,4 +379,3 @@ I6: 每个 pending read/write/accept 槽位有唯一归属。
 
 这些不变量是 reactor 和 luring 共同解释 `AsyncStream` / `AsyncListener` 的基础。后端可以改变
 调度策略、submit batch、CQE reap 批量大小和内部数据结构，但不能改变这些可观察语义。
-

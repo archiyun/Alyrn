@@ -102,15 +102,15 @@ public:
 private:
   AcceptResult TryAccept() noexcept {
     int fd = -1;
+    InetAddress peer_addr(0);
     do {
-      InetAddress peer_addr(0);
       fd = listener_->socket_.Accept(&peer_addr);
     } while (fd < 0 && errno == EINTR);
 
     if (fd < 0) {
       return std::unexpected(base::make_errno(errno));
     }
-    AcceptedStream stream(new (std::nothrow) ReactorStream(listener_->loop_, fd));
+    AcceptedStream stream(new (std::nothrow) ReactorStream(listener_->loop_, fd, peer_addr));
     if (!stream) {
       ::close(fd);
       return std::unexpected(base::make_errno(ENOMEM));

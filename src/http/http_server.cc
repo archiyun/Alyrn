@@ -3,10 +3,12 @@
 #include "vexo/http/http_server.h"
 
 #include "vexo/http/http_context.h"
-#include "vexo/http/metrics_handler.h"
 #include "vexo/http/router.h"
-#include "vexo/net/event_loop.h"
-#include "vexo/task/blocking_executor.h"
+
+#include <any>
+#include <exception>
+#include <memory>
+#include <utility>
 
 namespace vexo::http {
 
@@ -29,11 +31,6 @@ void HttpServer::set_edge_triggered(bool et) {
   server_.set_edge_triggered(et);
 }
 
-void HttpServer::set_blocking_executor(
-    std::shared_ptr<vexo::task::BlockingExecutor> executor) {
-  blocking_executor_ = std::move(executor);
-}
-
 void HttpServer::Get(std::string_view path, Handler handler,
                      std::source_location loc) {
   router_.Get(path, std::move(handler), loc);
@@ -50,20 +47,6 @@ void HttpServer::Add(Method method, std::string_view path, Handler handler,
 }
 
 void HttpServer::Start() { server_.Start(); }
-
-void HttpServer::RegisterMetricsRoute() {
-  Get("/metrics", [this](const HttpRequest&, HttpResponse& resp) {
-    if (!blocking_executor_) {
-      resp.set_status_code(StatusCode::InternalServerError);
-      resp.set_content_type("application/json; charset=utf-8");
-      resp.set_body("{\"error\":\"blocking executor not set\"}");
-      return;
-    }
-    resp.set_status_code(StatusCode::Ok);
-    resp.set_content_type("application/json; charset=utf-8");
-    resp.set_body(MakeMetricsJson(blocking_executor_->metrics().Load()));
-  });
-}
 
 void HttpServer::OnConnection(const TcpConnectionPtr& conn) {
   if (!conn->Connected()) return;
@@ -97,45 +80,11 @@ void HttpServer::OnMessage(const TcpConnectionPtr& conn,
 
     auto match = router_.Match(request.method(), request.path());
 
-    if (match.handler && blocking_executor_) {
-      request.set_path_params(std::move(match.params));
-      // HttpRequest 现在持有 Pool unique_ptr, move-only; std::function
-      // 要求 callable 可拷贝, 因此把 req/resp 装进 shared_ptr 让 lambda
-      // 持有可拷贝引用.
-      struct DispatchState {
-        HttpRequest  request;
-        HttpResponse response;
-      };
-      auto state = std::make_shared<DispatchState>(
-          DispatchState{std::move(request), std::move(response)});
-      blocking_executor_->Submit(
-          [conn, state, handler = match.handler]() mutable {
-            try {
-              handler(state->request, state->response);
-            } catch (const std::exception& ex) {
-              state->response.set_status_code(StatusCode::InternalServerError);
-              state->response.set_content_type("application/json; charset=utf-8");
-              state->response.set_body(
-                  "{\"error\":\"" + std::string(ex.what()) + "\"}");
-              state->response.set_close_connection(true);
-            }
-            // 在 worker 上 serialize (把 allocation 留给 worker), 然后
-            // 把 Send + Shutdown 原子地派回归属 IO 线程, 保证连接状态写
-            // 入单线程.
-            std::string wire = state->response.ToString();
-            const bool close = state->response.close_connection();
-            conn->loop()->RunInLoop(
-                [conn, wire = std::move(wire), close] {
-                  conn->Send(wire);
-                  if (close) conn->Shutdown();
-                });
-          });
-      break;
-    } else if (match.handler) {
+    if (match.handler) {
       request.set_path_params(std::move(match.params));
       try {
         match.handler(request, response);
-      } catch (const std::exception &ex) {
+      } catch (const std::exception& ex) {
         response = MakeError(StatusCode::InternalServerError, ex.what());
         response.set_close_connection(true);
       }

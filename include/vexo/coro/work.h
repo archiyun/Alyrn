@@ -16,7 +16,7 @@
 
 namespace vexo::coro {
 
-struct Work : vexo::ds::QueueNode<Work> {
+struct Work : public vexo::ds::QueueNode<Work> {
   VEXO_DELETE_COPY_MOVE(Work);
   using RunFn = void (*)(Work*) noexcept;
 
@@ -33,12 +33,14 @@ struct Work : vexo::ds::QueueNode<Work> {
 using WorkQueue = vexo::ds::IntrusiveQueue<Work>;
 
 // A Work that resumes a coroutine. This is the only place Work meets a frame.
-struct ResumeWork : Work {
+struct ResumeWork : public Work {
   VEXO_DELETE_COPY_MOVE(ResumeWork);
   std::coroutine_handle<> handle{};
 
   ResumeWork() noexcept { run = &ResumeWork::Resume; }
-  explicit ResumeWork(std::coroutine_handle<> h) noexcept : handle(h) { run = &ResumeWork::Resume; }
+  explicit ResumeWork(std::coroutine_handle<> handle) noexcept : handle(handle) {
+    run = &ResumeWork::Resume;
+  }
 
 private:
   static void Resume(Work* self) noexcept {
