@@ -24,10 +24,10 @@ namespace vexo::coro {
 template <Returnable T>
 class [[nodiscard]] JoinHandle {
 public:
+  VEXO_DELETE_COPY(JoinHandle);
   using State = detail::JoinState<T>;
 
   explicit JoinHandle(State* state) noexcept : state_(state) {}
-  VEXO_DELETE_COPY(JoinHandle);
   JoinHandle(JoinHandle&& other) noexcept : state_(std::exchange(other.state_, nullptr)) {}
   JoinHandle& operator=(JoinHandle&& other) noexcept {
     if (this != &other) {
