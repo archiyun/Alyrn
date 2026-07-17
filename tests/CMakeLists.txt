@@ -154,6 +154,25 @@ if(VEXO_ENABLE_URING)
 
     add_test(NAME luring_coro_smoke_test COMMAND luring_coro_smoke_test)
 
+    add_executable(luring_connector_smoke_test
+        unit/test_luring_connector_smoke.cc
+    )
+
+    target_include_directories(luring_connector_smoke_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../include
+            ${URING_INCLUDE_DIRS}
+    )
+
+    target_link_libraries(luring_connector_smoke_test
+        PRIVATE
+            vexo_luring
+    )
+
+    target_compile_definitions(luring_connector_smoke_test PRIVATE VEXO_ENABLE_URING)
+
+    add_test(NAME luring_connector_smoke_test COMMAND luring_connector_smoke_test)
+
     add_executable(luring_stream_smoke_test
         unit/test_luring_stream_smoke.cc
     )
@@ -191,6 +210,64 @@ if(VEXO_ENABLE_URING)
     target_compile_definitions(luring_listener_smoke_test PRIVATE VEXO_ENABLE_URING)
 
     add_test(NAME luring_listener_smoke_test COMMAND luring_listener_smoke_test)
+
+    add_executable(luring_worker_group_smoke_test
+        unit/test_luring_worker_group_smoke.cc
+    )
+
+    target_include_directories(luring_worker_group_smoke_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../include
+            ${URING_INCLUDE_DIRS}
+    )
+
+    target_link_libraries(luring_worker_group_smoke_test
+        PRIVATE
+            vexo_luring
+    )
+
+    target_compile_definitions(luring_worker_group_smoke_test PRIVATE VEXO_ENABLE_URING)
+
+    add_test(NAME luring_worker_group_smoke_test COMMAND luring_worker_group_smoke_test)
+
+    add_executable(luring_server_smoke_test
+        unit/test_luring_server_smoke.cc
+    )
+
+    target_include_directories(luring_server_smoke_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../include
+            ${URING_INCLUDE_DIRS}
+    )
+
+    target_link_libraries(luring_server_smoke_test
+        PRIVATE
+            vexo_luring
+    )
+
+    target_compile_definitions(luring_server_smoke_test PRIVATE VEXO_ENABLE_URING)
+
+    add_test(NAME luring_server_smoke_test COMMAND luring_server_smoke_test)
+
+    add_executable(luring_gateway_smoke_test
+        unit/test_luring_gateway_smoke.cc
+    )
+
+    target_include_directories(luring_gateway_smoke_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../include
+            ${URING_INCLUDE_DIRS}
+    )
+
+    target_link_libraries(luring_gateway_smoke_test
+        PRIVATE
+            vexo_gateway
+            vexo_luring
+    )
+
+    target_compile_definitions(luring_gateway_smoke_test PRIVATE VEXO_ENABLE_URING)
+
+    add_test(NAME luring_gateway_smoke_test COMMAND luring_gateway_smoke_test)
 endif()
 
 add_executable(pool_smoke_test

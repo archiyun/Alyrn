@@ -26,7 +26,7 @@ public:
   [[nodiscard]] static base::Result<LUringRing> Create(const LUringOptions& options) noexcept;
 
   [[nodiscard]] io_uring_sqe* GetSqe() noexcept;
-  [[nodiscard]] base::Result<void> Submit() noexcept;
+  [[nodiscard]] base::Result<std::size_t> Submit() noexcept;
 
   template <class F>
   [[nodiscard]] base::Result<std::size_t> Reap(F&& on_cqe) noexcept {
@@ -53,4 +53,5 @@ private:
   io_uring ring_;
   bool initialized_{false};
 };
+
 }  // namespace vexo::luring

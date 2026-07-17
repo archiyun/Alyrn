@@ -3,9 +3,9 @@
 #pragma once
 
 #include <algorithm>
+#include <concepts>
 #include <cstddef>
 #include <vector>
-#include <concepts>
 
 #include "vexo/utils/macros.h"
 
@@ -22,21 +22,20 @@ class HeapNode {
   friend class IntrusiveQuadHeap;
 
 public:
-  bool InHeap() const noexcept { return linked(); }
+  [[nodiscard]] bool InHeap() const noexcept { return linked(); }
 
 protected:
+  VEXO_DELETE_COPY(HeapNode);
   HeapNode() = default;
   ~HeapNode() = default;
-  HeapNode(const HeapNode&) = delete;
-  HeapNode& operator=(const HeapNode&) = delete;
 
 private:
   using Node = HeapNode<T, Tag>;
 
-  std::size_t heap_index() const noexcept { return heap_index_; }
+  [[nodiscard]] std::size_t heap_index() const noexcept { return heap_index_; }
   void set_heap_index(std::size_t index) noexcept { heap_index_ = index; }
 
-  bool linked() const noexcept { return heap_index_ != kNotInHeap; }
+  [[nodiscard]] bool linked() const noexcept { return heap_index_ != kNotInHeap; }
   void clear_hook() noexcept { heap_index_ = kNotInHeap; }
 
   std::size_t heap_index_{kNotInHeap};  // slot in heap_, or kNotInHeap
@@ -44,11 +43,8 @@ private:
 
 template <class T, class Tag = void>
 concept HeapNodeBaseHook =
-    std::derived_from<T, HeapNode<T, Tag>> &&
-    requires(T* elem, HeapNode<T, Tag>* node) {
-      {
-        static_cast<HeapNode<T, Tag>*>(elem)
-      } -> std::same_as<HeapNode<T, Tag>*>;
+    std::derived_from<T, HeapNode<T, Tag>> && requires(T* elem, HeapNode<T, Tag>* node) {
+      { static_cast<HeapNode<T, Tag>*>(elem) } -> std::same_as<HeapNode<T, Tag>*>;
       { static_cast<T*>(node) } -> std::same_as<T*>;
     };
 
@@ -65,8 +61,8 @@ public:
   ~IntrusiveQuadHeap() = default;
 
   // O(1)
-  bool empty() const noexcept { return heap_.empty(); }
-  std::size_t size() const noexcept { return heap_.size(); }
+  [[nodiscard]] bool empty() const noexcept { return heap_.empty(); }
+  [[nodiscard]] std::size_t size() const noexcept { return heap_.size(); }
 
   // O(log n); returns false if elem is already linked in this heap.
   bool Insert(T* elem);
@@ -102,8 +98,8 @@ private:
   static T* elem_of(Node* node) { return static_cast<T*>(node); }
 
   void SwapNodes(std::size_t i, std::size_t j);
-  void SiftUp(std::size_t index);
-  void SiftDown(std::size_t index);
+  void SiftUp(std::size_t child);
+  void SiftDown(std::size_t parent);
 
   std::vector<Node*> heap_;
 };

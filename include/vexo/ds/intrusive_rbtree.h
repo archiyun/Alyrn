@@ -78,7 +78,7 @@ class RBTNode {
 
 public:
   VEXO_DELETE_COPY(RBTNode);
-  bool InTree() const noexcept { return linked(); }
+  [[nodiscard]] bool InTree() const noexcept { return linked(); }
 
 protected:
   RBTNode() = default;
@@ -113,7 +113,7 @@ private:
   Node* right() const noexcept { return right_; }
   void set_right(Node* right) noexcept { right_ = right; }
 
-  bool red() const noexcept { return (parent_and_flags_ & kRed) != 0; }
+  [[nodiscard]] bool red() const noexcept { return (parent_and_flags_ & kRed) != 0; }
 
   void set_red(bool red) noexcept {
     if (red) {
@@ -123,7 +123,7 @@ private:
     }
   }
 
-  bool linked() const noexcept { return (parent_and_flags_ & kLinked) != 0; }
+  [[nodiscard]] bool linked() const noexcept { return (parent_and_flags_ & kLinked) != 0; }
 
   void set_linked(const bool linked) noexcept {
     if (linked) {

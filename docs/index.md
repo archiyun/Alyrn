@@ -3,6 +3,10 @@
 项目文档正在重写。
 目前只提供中文。
 
+## 用户指南
+
+- [中文用户指南](user-guide/zh-CN.md)：从协程和异步 I/O 到 luring server、gateway 接入。
+
 ## 设计文档
 
 - [网络库](design/zh-CN/network/index.md)

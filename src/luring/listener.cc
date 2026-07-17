@@ -27,7 +27,8 @@ namespace {
 using AcceptedStream = std::unique_ptr<LUringStream>;
 using AcceptResult = base::Result<AcceptedStream>;
 
-base::Result<int> CreatedListenFd(const net::InetAddress& listen_addr) noexcept {
+base::Result<int> CreatedListenFd(const net::InetAddress& listen_addr,
+                                  const LUringListenOptions& options) noexcept {
   const int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, IPPROTO_TCP);
   if (fd < 0) {
     return std::unexpected(base::CurrentErrno());
@@ -39,8 +40,17 @@ base::Result<int> CreatedListenFd(const net::InetAddress& listen_addr) noexcept 
   };
 
   int on = 1;
-  if (::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) < 0) {
-    return fail(base::CurrentErrno());
+
+  if (options.reuse_addr) {
+    if (::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) < 0) {
+      return fail(base::CurrentErrno());
+    }
+  }
+
+  if (options.reuse_port) {
+    if (::setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on)) < 0) {
+      return fail(base::CurrentErrno());
+    }
   }
 
   const sockaddr_in addr = listen_addr.sock_addr();
@@ -48,7 +58,7 @@ base::Result<int> CreatedListenFd(const net::InetAddress& listen_addr) noexcept 
     return fail(base::CurrentErrno());
   }
 
-  if (::listen(fd, SOMAXCONN) < 0) {
+  if (::listen(fd, options.backlog) < 0) {
     return fail(base::CurrentErrno());
   }
 
@@ -174,10 +184,10 @@ public:
     cancel_op_.owner = this;
     cancel_op_.on_complete = &CloseAwaiter::OnCancelComplete;
 
-    auto submitted = listener_->loop_->SubmitOp(&cancel_op_, [fd = listener_->fd_](
-                                                                 io_uring_sqe* sqe) noexcept {
-      io_uring_prep_cancel_fd(sqe, fd, IORING_ASYNC_CANCEL_ALL);
-    });
+    auto submitted =
+        listener_->loop_->SubmitOp(&cancel_op_, [fd = listener_->fd_](io_uring_sqe* sqe) noexcept {
+          io_uring_prep_cancel_fd(sqe, fd, IORING_ASYNC_CANCEL_ALL);
+        });
     if (!submitted.has_value()) {
       listener_->pending_close_ = nullptr;
       listener_->closed_ = false;
@@ -236,10 +246,11 @@ private:
 };
 
 base::Result<std::unique_ptr<LUringListener>> LUringListener::Create(
-    LUringLoop* loop, const net::InetAddress& listen_addr) noexcept {
+    LUringLoop* loop, const net::InetAddress& listen_addr, LUringListenOptions options) noexcept {
   assert(loop != nullptr);
+  assert(loop->IsInLoopThread());
 
-  auto fd = CreatedListenFd(listen_addr);
+  auto fd = CreatedListenFd(listen_addr, options);
   if (!fd.has_value()) {
     return std::unexpected(fd.error());
   }
@@ -270,9 +281,7 @@ coro::Task<base::Result<std::unique_ptr<LUringStream>>> LUringListener::Accept()
   co_return co_await AcceptAwaiter(*this);
 }
 
-coro::Task<base::Result<void>> LUringListener::Close() {
-  co_return co_await CloseAwaiter(*this);
-}
+coro::Task<base::Result<void>> LUringListener::Close() { co_return co_await CloseAwaiter(*this); }
 
 base::Result<net::InetAddress> LUringListener::LocalAddress() const noexcept {
   if (closed_ || fd_ < 0) {
