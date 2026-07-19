@@ -62,6 +62,7 @@ void CloseListenerAndDrain(LUringLoop& loop, LUringListener& listener) noexcept 
 }
 
 }  // namespace
+
 LUringWorker::LUringWorker(net::InetAddress listen_addr, LUringWorkerOptions options,
                            ThreadInitCallback init_callback, ConnectionCallback connection_callback)
     : listen_addr_(listen_addr),
@@ -95,7 +96,8 @@ void LUringWorker::Stop() noexcept {
 }
 
 void LUringWorker::WorkLoop(std::stop_token token) noexcept {
-  LUringLoop loop;
+  LUringLoop loop(options_.frame_resource);
+  coro::FrameAllocatorScope frame_scope{options_.frame_resource};
 
   auto init = loop.Init(options_.loop_options);
   if (!init.has_value()) {

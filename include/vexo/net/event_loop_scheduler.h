@@ -18,7 +18,11 @@ namespace vexo::net {
 // work runs on its owning thread.
 class EventLoopScheduler final : public coro::Scheduler {
 public:
-  explicit EventLoopScheduler(EventLoop* loop) noexcept : loop_(loop) { assert(loop_ != nullptr); }
+  explicit EventLoopScheduler(EventLoop* loop,
+                              std::pmr::memory_resource* frame_resource = nullptr) noexcept
+      : Scheduler(frame_resource), loop_(loop) {
+    assert(loop_ != nullptr);
+  }
   VEXO_DELETE_COPY_MOVE(EventLoopScheduler);
 
   void Schedule(coro::Work* work) noexcept override {
@@ -28,7 +32,7 @@ public:
       coro::Scheduler::SetCurrent(this);
       auto restore = [previous] { coro::Scheduler::SetCurrent(previous); };
 
-      work->Run();
+      Run(work);
 
       // Work may resume and destroy the coroutine frame it belongs to, so only
       // restore thread-local scheduler state after touching no work-owned data.

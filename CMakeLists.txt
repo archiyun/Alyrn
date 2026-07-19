@@ -57,8 +57,8 @@ target_compile_features(vexo_foundation PUBLIC cxx_std_23)
 # ── Coroutine and IO contracts ──────────────────────────────────────────────
 #
 # vexo_coro —— backend-neutral 协程原语(Task<T>、Work、Scheduler、Spawn/
-# JoinHandle、SyncWait)。Task<T> 不定义错误策略；I/O 层按需返回
-# Task<base::Result<T>>。
+# JoinHandle、SyncWait、可选 FrameAllocatorScope)。Task<T> 不定义错误策略；
+# I/O 层按需返回 Task<base::Result<T>>。
 add_library(vexo_coro INTERFACE)
 target_include_directories(vexo_coro INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(vexo_coro INTERFACE cxx_std_23)

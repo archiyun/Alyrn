@@ -38,6 +38,17 @@ target_include_directories(object_pool_smoke_test
 
 add_test(NAME object_pool_smoke_test COMMAND object_pool_smoke_test)
 
+add_executable(mpsc_bounded_queue_smoke_test
+    unit/test_mpsc_bounded_queue_smoke.cc
+)
+
+target_include_directories(mpsc_bounded_queue_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+add_test(NAME mpsc_bounded_queue_smoke_test COMMAND mpsc_bounded_queue_smoke_test)
+
 # coro 叶子:Task<T> 惰性 + 对称转移 + Spawn/JoinHandle,不绑定网络后端或错误类型。
 add_executable(coro_smoke_test
     unit/test_coro_smoke.cc
@@ -51,6 +62,19 @@ target_include_directories(coro_smoke_test
 target_link_libraries(coro_smoke_test PRIVATE vexo_coro vexo_foundation)
 
 add_test(NAME coro_smoke_test COMMAND coro_smoke_test)
+
+add_executable(coro_frame_allocator_smoke_test
+    unit/test_coro_frame_allocator_smoke.cc
+)
+
+target_include_directories(coro_frame_allocator_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(coro_frame_allocator_smoke_test PRIVATE vexo_coro)
+
+add_test(NAME coro_frame_allocator_smoke_test COMMAND coro_frame_allocator_smoke_test)
 
 add_executable(io_buffer_smoke_test
     unit/test_io_buffer_smoke.cc
@@ -153,6 +177,25 @@ if(VEXO_ENABLE_URING)
     target_compile_definitions(luring_coro_smoke_test PRIVATE VEXO_ENABLE_URING)
 
     add_test(NAME luring_coro_smoke_test COMMAND luring_coro_smoke_test)
+
+    add_executable(luring_msg_ring_smoke_test
+        unit/test_luring_msg_ring_smoke.cc
+    )
+
+    target_include_directories(luring_msg_ring_smoke_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../include
+            ${URING_INCLUDE_DIRS}
+    )
+
+    target_link_libraries(luring_msg_ring_smoke_test
+        PRIVATE
+            vexo_luring
+    )
+
+    target_compile_definitions(luring_msg_ring_smoke_test PRIVATE VEXO_ENABLE_URING)
+
+    add_test(NAME luring_msg_ring_smoke_test COMMAND luring_msg_ring_smoke_test)
 
     add_executable(luring_connector_smoke_test
         unit/test_luring_connector_smoke.cc

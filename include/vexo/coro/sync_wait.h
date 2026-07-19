@@ -22,7 +22,7 @@ namespace detail {
 // Eager root (initial_suspend = suspend_never): begins running the moment it is
 // created, co_awaits the lazy task, and self-destructs at final suspend.
 struct SyncWaitRoot {
-  struct promise_type {
+  struct promise_type : FrameAllocationSupport {
     SyncWaitRoot get_return_object() const noexcept { return {}; }
     std::suspend_never initial_suspend() const noexcept { return {}; }
     std::suspend_never final_suspend() const noexcept { return {}; }

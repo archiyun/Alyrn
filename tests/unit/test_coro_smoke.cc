@@ -41,10 +41,54 @@ bool Check(bool condition, const char* message) {
   return false;
 }
 
+struct RawAwaiter {
+  bool await_ready() const noexcept { return true; }
+  void await_suspend(std::coroutine_handle<>) const noexcept {}
+  int await_resume() const noexcept { return 7; }
+};
+
+struct MemberAwaitable {
+  RawAwaiter operator co_await() && noexcept { return {}; }
+};
+
+struct AdlAwaitable {};
+RawAwaiter operator co_await(AdlAwaitable&&) noexcept { return {}; }
+
+struct BothAwaitable {
+  RawAwaiter operator co_await() && noexcept { return {}; }
+};
+RawAwaiter operator co_await(BothAwaitable&&) noexcept { return {}; }
+
+struct PromiseMarker {};
+struct PromiseAwareAwaiter {
+  bool await_ready() const noexcept { return true; }
+  void await_suspend(std::coroutine_handle<PromiseMarker>) const noexcept {}
+  void await_resume() const noexcept {}
+};
+
+struct TransformPromise {
+  RawAwaiter await_transform(int) noexcept { return {}; }
+};
+
+struct BadAwaiter {
+  bool await_ready() const noexcept { return true; }
+  int await_suspend(std::coroutine_handle<>) const noexcept { return 0; }
+  void await_resume() const noexcept {}
+};
+
 // The leaf Task and its composition. Task<int> is the awaitable that satisfies
 // the Awaitable concept used to constrain Spawn/SyncWait inputs.
 static_assert(vexo::coro::Awaitable<Task<int>>);
 static_assert(vexo::coro::Awaitable<Task<void>>);
+static_assert(vexo::coro::Awaitable<RawAwaiter>);
+static_assert(vexo::coro::Awaitable<MemberAwaitable>);
+static_assert(vexo::coro::Awaitable<AdlAwaitable>);
+static_assert(vexo::coro::Awaitable<BothAwaitable>);
+static_assert(std::same_as<vexo::coro::AwaitResult<AdlAwaitable>, int>);
+static_assert(vexo::coro::AwaiterFor<PromiseAwareAwaiter, PromiseMarker>);
+static_assert(vexo::coro::PromiseTransformedAwaitable<TransformPromise, int>);
+static_assert(!vexo::coro::Awaiter<PromiseAwareAwaiter>);
+static_assert(!vexo::coro::Awaiter<BadAwaiter>);
 
 Task<int> Add(int a, int b) { co_return a + b; }
 

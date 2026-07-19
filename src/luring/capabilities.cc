@@ -93,6 +93,10 @@ base::Result<vexo::io::CapabilitySet> ProbeCapabilities(const LUringOptions& opt
   if (ProbeSupports(probe, IORING_OP_ACCEPT)) {
     caps.Enable(vexo::io::IoCapability::kMultishotAccept);
   }
+
+  if (ProbeSupports(probe, IORING_OP_MSG_RING)) {
+    caps.Enable(vexo::io::IoCapability::kMsgRing);
+  }
 #ifdef IORING_OP_RECV
   if (ProbeSupports(probe, IORING_OP_RECV)) {
     caps.Enable(vexo::io::IoCapability::kMultishotRecv);

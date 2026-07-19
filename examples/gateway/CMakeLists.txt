@@ -36,3 +36,14 @@ target_link_libraries(demo_bench_gateway_multi
     PRIVATE
         vexo_gateway
 )
+
+if(VEXO_ENABLE_URING)
+    add_executable(demo_bench_gateway_luring
+        demo_bench_gateway_luring.cc
+    )
+    target_link_libraries(demo_bench_gateway_luring
+        PRIVATE
+            vexo_gateway
+            vexo_luring
+    )
+endif()

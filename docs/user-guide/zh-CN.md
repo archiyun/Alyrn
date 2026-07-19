@@ -170,6 +170,33 @@ vexo::coro::Task<int> Parent(vexo::coro::Scheduler& scheduler) {
 `Task`、`JoinHandle` 都是 move-only 的单消费者对象。一个 task 只能被消费一次；不要复制
 或重复 `co_await` 同一个 task。
 
+### 可选的协程帧内存池
+
+默认情况下，`Task`、`SpawnRoot` 和 `SyncWaitRoot` 的 coroutine frame 使用
+`std::pmr::new_delete_resource()`，因此不需要修改现有代码。需要降低 frame 的堆分配开销时，
+可以使用任意 `std::pmr::memory_resource`，例如标准库的 pool resource：
+
+```cpp
+#include <memory_resource>
+
+#include "vexo/coro/frame_allocator.h"
+#include "vexo/net/event_loop_scheduler.h"
+
+std::pmr::unsynchronized_pool_resource frame_pool;
+vexo::net::EventLoopScheduler scheduler(&loop, &frame_pool);
+
+{
+  // 必须覆盖 Task 函数的调用；Task frame 在函数调用时就已经分配。
+  vexo::coro::FrameAllocatorScope frames(frame_pool);
+  vexo::coro::Spawn(scheduler, Serve(&connection)).Detach();
+}
+```
+
+`FrameAllocatorScope` 记录在每个 frame 的分配元数据中，所以 frame 可以在作用域结束后恢复和
+销毁。`Scheduler` 的 resource 会在每次 `Work` 恢复期间重新激活，协程运行中创建的嵌套 Task
+也会使用同一个 resource。内存 resource 必须存活到所有相关 frame 销毁之后；使用
+`vexo::memory::PoolResource` 时，还应在所有 frame 完成后再 `Pool::Reset()`。
+
 ## Scheduler 和协程恢复
 
 `vexo::coro::Scheduler` 只有一个核心职责：接收 `coro::Work*` 并在所属执行上下文中运行。
