@@ -125,10 +125,14 @@ target_compile_definitions(vexo_net PUBLIC _GNU_SOURCE)
 if(VEXO_ENABLE_URING)
     add_library(vexo_luring STATIC
         src/luring/capabilities.cc
+        src/luring/connector.cc
         src/luring/listener.cc
         src/luring/loop.cc
         src/luring/ring.cc
+        src/luring/server.cc
         src/luring/stream.cc
+        src/luring/worker.cc
+        src/luring/worker_group.cc
     )
 
     target_include_directories(vexo_luring

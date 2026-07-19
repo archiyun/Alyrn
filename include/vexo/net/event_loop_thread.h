@@ -16,13 +16,12 @@ class EventLoop;
 // EventLoopThread starts a dedicated thread and creates one EventLoop inside it.
 class EventLoopThread {
 public:
+  VEXO_DELETE_COPY_MOVE(EventLoopThread);
   using ThreadInitCallback = std::function<void(EventLoop*)>;
 
   EventLoopThread();
   explicit EventLoopThread(ThreadInitCallback cb);
   ~EventLoopThread() = default;
-
-  VEXO_DELETE_COPY_MOVE(EventLoopThread);
 
   // Starts the thread and blocks until the EventLoop is ready.
   EventLoop* StartLoop();
@@ -34,7 +33,7 @@ private:
   std::mutex mutex_;
   std::condition_variable_any cv_;
   ThreadInitCallback init_callback_;
-  std::jthread thread_;  
+  std::jthread thread_;
 };
 
 }  // namespace vexo::net

@@ -96,6 +96,12 @@ bool CheckNopResumesCoroutine() {
     std::cout << "FAIL: LUringLoop init failed: " << init.error().message() << '\n';
     return false;
   }
+  if (!Check(loop.IsInLoopThread(), "loop should be bound to the creating thread")) {
+    return false;
+  }
+  if (!Check(loop.IsDrained(), "fresh loop should be drained")) {
+    return false;
+  }
 
   std::optional<vexo::base::Result<int>> result;
   bool resumed_with_scheduler = false;
@@ -104,9 +110,21 @@ bool CheckNopResumesCoroutine() {
 
   loop.RunReady();
 
+  if (!Check(loop.PendingSubmitCount() == 1, "NOP should be pending submit after suspension") ||
+      !Check(loop.InflightCount() == 0, "NOP should not be inflight before submit") ||
+      !Check(!loop.IsDrained(), "loop should not be drained before NOP completion")) {
+    return false;
+  }
+
   auto completions = loop.WaitCompletions();
   if (!completions.has_value()) {
     std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+    return false;
+  }
+
+  if (!Check(loop.PendingSubmitCount() == 0, "pending submit should be empty after wait") ||
+      !Check(loop.InflightCount() == 0, "inflight should be empty after NOP CQE") ||
+      !Check(loop.IsDrained(), "loop should be drained after NOP CQE")) {
     return false;
   }
 

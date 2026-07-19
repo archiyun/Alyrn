@@ -53,8 +53,8 @@ void Connector::Connect() {
 
   auto socket = CreateNonBlockingSocket();
   if (!socket) {
-    LOG_ERROR() << "connector: CreateNonBlockingSocket failed: error="
-                << socket.error().value() << " message=" << socket.error().message();
+    LOG_ERROR() << "connector: CreateNonBlockingSocket failed: error=" << socket.error().value()
+                << " message=" << socket.error().message();
     return;
   }
   const int sockfd = *socket;
@@ -64,9 +64,9 @@ void Connector::Connect() {
                       static_cast<socklen_t>(sizeof(addr)));
   int saved_errno = (ret == 0) ? 0 : errno;
 
-  switch (saved_errno) {  // 注意：用 saved_errno，不是 errno（errno 会被后续调用修改）
+  switch (saved_errno) {
     case 0:
-    case EINPROGRESS:  // 非阻塞 connect 的正常路径：握手进行中
+    case EINPROGRESS:
     case EINTR:
     case EISCONN:
       Connecting(sockfd);

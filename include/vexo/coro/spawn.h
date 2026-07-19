@@ -50,7 +50,7 @@ public:
   auto operator co_await() && noexcept {
     struct Awaiter {
       State* state;
-      bool await_ready() const noexcept { return state->IsFinished(); }
+      [[nodiscard]] bool await_ready() const noexcept { return state->IsFinished(); }
       bool await_suspend(std::coroutine_handle<> joiner) noexcept {
         return state->TryParkJoiner(joiner);
       }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <sys/socket.h>
+
 #include <memory>
 
 #include "vexo/base/error.h"
@@ -13,13 +15,20 @@ namespace vexo::luring {
 
 class LUringLoop;
 
+struct LUringListenOptions {
+  bool reuse_addr{true};
+  bool reuse_port{true};
+  int backlog{SOMAXCONN};
+};
+
 class LUringListener {
 public:
   VEXO_DELETE_COPY_MOVE(LUringListener);
   using Stream = LUringStream;
 
   static base::Result<std::unique_ptr<LUringListener>> Create(
-      LUringLoop* loop, const net::InetAddress& listen_addr) noexcept;
+      LUringLoop* loop, const net::InetAddress& listen_addr,
+      LUringListenOptions options = {}) noexcept;
 
   ~LUringListener();
 

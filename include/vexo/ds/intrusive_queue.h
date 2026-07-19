@@ -19,7 +19,7 @@ class QueueNode {
   friend class IntrusiveQueue;
 
 public:
-  bool InQueue() const noexcept { return next_ != nullptr; }
+  [[nodiscard]] bool InQueue() const noexcept { return next_ != nullptr; }
 
 protected:
   QueueNode() = default;
@@ -35,11 +35,9 @@ private:
 template <class T, class Tag = void>
 concept QueueNodeBaseHook =
     std::derived_from<T, QueueNode<T, Tag>> && requires(T* elem, QueueNode<T, Tag>* node) {
-                                                 {
-                                                   static_cast<QueueNode<T, Tag>*>(elem)
-                                                   } -> std::same_as<QueueNode<T, Tag>*>;
-                                                 { static_cast<T*>(node) } -> std::same_as<T*>;
-                                               };
+      { static_cast<QueueNode<T, Tag>*>(elem) } -> std::same_as<QueueNode<T, Tag>*>;
+      { static_cast<T*>(node) } -> std::same_as<T*>;
+    };
 template <class T, class Tag = void>
 class IntrusiveQueue {
 public:
@@ -70,8 +68,8 @@ public:
   static T* elem_of(Node* node) { return static_cast<T*>(node); }
   static Node* node_of(T* elem) { return static_cast<Node*>(elem); }
 
-  bool empty() const { return head_.next_ == &head_; }
-  std::size_t size() const { return size_; }
+  [[nodiscard]] bool empty() const { return head_.next_ == &head_; }
+  [[nodiscard]] std::size_t size() const { return size_; }
 
   T* front() const { return empty() ? nullptr : elem_of(head_.next_); }
   T* back() const { return empty() ? nullptr : elem_of(tail_); }
@@ -94,7 +92,9 @@ public:
     const bool was_empty = empty();
     node->next_ = head_.next_;
     head_.next_ = node;
-    if (was_empty) tail_ = node;
+    if (was_empty) {
+      tail_ = node;
+    }
     ++size_;
     return true;
   }
@@ -105,7 +105,9 @@ public:
     head_.next_ = node->next_;
     node->clear_hook();
     --size_;
-    if (empty()) tail_ = &head_;
+    if (empty()) {
+      tail_ = &head_;
+    }
     return elem_of(node);
   }
 
@@ -138,7 +140,9 @@ public:
       Node* next = cur->next_;
       if (fn(*elem_of(cur))) {
         prev->next_ = next;
-        if (tail_ == cur) tail_ = prev;
+        if (tail_ == cur) {
+          tail_ = prev;
+        }
         cur->clear_hook();
         --size_;
       } else {

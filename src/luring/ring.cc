@@ -58,7 +58,9 @@ LUringRing::LUringRing(LUringRing&& other) noexcept
 }
 
 LUringRing& LUringRing::operator=(LUringRing&& other) noexcept {
-  if (this == &other) return *this;
+  if (this == &other) {
+    return *this;
+  }
 
   if (initialized_) {
     io_uring_queue_exit(&ring_);
@@ -82,22 +84,14 @@ base::Result<LUringRing> LUringRing::Create(const LUringOptions& options) noexce
   return LUringRing(ring);
 }
 
-io_uring_sqe* LUringRing::GetSqe() noexcept {
-  io_uring_sqe* sqe = io_uring_get_sqe(&ring_);
-  if (sqe != nullptr) return sqe;
+io_uring_sqe* LUringRing::GetSqe() noexcept { return io_uring_get_sqe(&ring_); }
 
-  const int submitted = io_uring_submit(&ring_);
-  if (submitted < 0) return nullptr;
-
-  return io_uring_get_sqe(&ring_);
-}
-
-base::Result<void> LUringRing::Submit() noexcept {
+base::Result<std::size_t> LUringRing::Submit() noexcept {
   const int r = io_uring_submit(&ring_);
   if (r < 0) {
     return std::unexpected(base::make_neg_errno(r));
   }
-  return {};
+  return static_cast<std::size_t>(r);
 }
 
 }  // namespace vexo::luring
