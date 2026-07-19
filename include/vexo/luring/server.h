@@ -26,6 +26,7 @@ public:
   using SessionHandler = std::function<coro::Task<void>(LUringLoop&, std::unique_ptr<Stream>)>;
 
   explicit LUringServer(net::InetAddress listen_addr, LUringServerOptions options = {});
+  ~LUringServer() noexcept;
 
   void set_thread_init_callback(ThreadInitCallback callback) noexcept {
     thread_init_callback_ = std::move(callback);

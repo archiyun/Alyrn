@@ -17,7 +17,7 @@ enum class LUringOpKind : std::uint8_t {
   kConnect,
   kClose,
   kTimeout,
-
+  kMsgRing,
   kCount,
 };
 

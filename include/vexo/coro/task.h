@@ -35,13 +35,13 @@ namespace detail {
 template <Returnable T>
 class TaskPromise final : public PromiseBase {
 public:
+  VEXO_DELETE_COPY_MOVE(TaskPromise);
   TaskPromise() noexcept {}
   ~TaskPromise() {
     if (has_value_) {
       value_.~T();
     }
   }
-  VEXO_DELETE_COPY_MOVE(TaskPromise);
 
   Task<T> get_return_object() noexcept;
 

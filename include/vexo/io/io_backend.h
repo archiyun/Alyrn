@@ -36,6 +36,7 @@ enum class IoCapability : uint8_t {
   kFixedFile,
   kSqPoll,
   kIoPoll,
+  kMsgRing,
 
   // C: explicit extension semantics.
   kProvidedBuffer,
@@ -72,6 +73,7 @@ enum class CapabilityRole : uint8_t {
     case IoCapability::kFixedFile:
     case IoCapability::kSqPoll:
     case IoCapability::kIoPoll:
+    case IoCapability::kMsgRing:
       return CapabilityRole::kImplementationTag;
 
     case IoCapability::kProvidedBuffer:

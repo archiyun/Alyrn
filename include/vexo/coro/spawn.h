@@ -75,7 +75,7 @@ namespace detail {
 // Self-destroying root frame: scheduled once, resumes the leaf Task, stores the
 // result, then signals the JoinState. final_suspend = suspend_never frees it.
 struct SpawnRoot {
-  struct promise_type {
+  struct promise_type : FrameAllocationSupport {
     SpawnRoot get_return_object() noexcept {
       return SpawnRoot{std::coroutine_handle<promise_type>::from_promise(*this)};
     }

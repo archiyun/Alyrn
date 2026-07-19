@@ -14,6 +14,7 @@
 #include "vexo/base/singleton.h"
 #include "vexo/base/try.h"
 #include "vexo/coro/awaitable.h"
+#include "vexo/coro/frame_allocator.h"
 #include "vexo/coro/scheduler.h"
 #include "vexo/coro/spawn.h"
 #include "vexo/coro/sync_wait.h"

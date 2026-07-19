@@ -3,6 +3,7 @@
 #include <condition_variable>
 #include <functional>
 #include <memory>
+#include <memory_resource>
 #include <mutex>
 #include <thread>
 
@@ -18,6 +19,10 @@ namespace vexo::luring {
 struct LUringWorkerOptions {
   LUringOptions loop_options{};
   LUringListenOptions listen_options{};
+
+  // Optional resource for coroutine frames created while this worker resumes
+  // work. The resource must outlive the worker group.
+  std::pmr::memory_resource* frame_resource{nullptr};
 };
 
 class LUringWorker {
@@ -45,8 +50,6 @@ private:
   ThreadInitCallback init_callback_;
   ConnectionCallback connection_callback_;
 
-  std::jthread thread_;
-
   std::mutex mutex_;
   std::condition_variable_any cv_;
   base::Result<void> start_result_{};
@@ -54,6 +57,8 @@ private:
 
   LUringLoop* loop_{nullptr};
   LUringListener* listener_{nullptr};
+
+  std::jthread thread_;
 };
 
 }  // namespace vexo::luring

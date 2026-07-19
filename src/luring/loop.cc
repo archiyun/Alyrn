@@ -1,3 +1,6 @@
+// Copyright (c) 2026 Arsenova
+// SPDX-License-Identifier: MIT
+
 #include "vexo/luring/loop.h"
 
 #include <liburing.h>
@@ -29,7 +32,8 @@ namespace {
 
 }  // namespace
 
-LUringLoop::LUringLoop() : thread_id_(base::tid()) {}
+LUringLoop::LUringLoop(std::pmr::memory_resource* frame_resource)
+    : Scheduler(frame_resource), thread_id_(base::tid()) {}
 
 base::Result<void> LUringLoop::Init(const LUringOptions& options) noexcept {
   assert(IsInLoopThread());
@@ -83,7 +87,7 @@ void LUringLoop::RunReady() noexcept {
 
   while (!ready_.empty()) {
     coro::Work* work = ready_.PopFront();
-    work->Run();
+    Run(work);
   }
 
   coro::Scheduler::SetCurrent(previous);
@@ -166,8 +170,15 @@ base::Result<std::size_t> LUringLoop::WaitCompletions() noexcept {
 void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
   assert(IsInLoopThread());
 
+  if (cqe->user_data == kMsgRingNotificationUserData) {
+    HandleMailbox();
+    return;
+  }
+
   LUringOp* op = DecodeOp(cqe);
-  if (op == nullptr) return;
+  if (op == nullptr) {
+    return;
+  }
 
   assert(inflight_ > 0);
   if (inflight_ > 0) {
@@ -178,6 +189,30 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
   if (op->resume_work.handle) {
     Schedule(&op->resume_work);
   }
+}
+
+void LUringLoop::HandleMailbox() noexcept {
+  assert(IsInLoopThread());
+
+  DrainMessages([this](const LUringMessage& message) noexcept {
+    switch (message.type) {
+      case LUringMessage::Type::kResume: {
+        auto* work = reinterpret_cast<coro::Work*>(
+            static_cast<std::uintptr_t>(message.data));
+        if (work == nullptr) {
+          assert(false && "mailbox resume message contains a null work pointer");
+          return;
+        }
+        Schedule(work);
+        return;
+      }
+      case LUringMessage::Type::kFunction:
+        assert(false && "mailbox function messages are not implemented");
+        return;
+    }
+
+    assert(false && "unknown mailbox message type");
+  });
 }
 
 }  // namespace vexo::luring

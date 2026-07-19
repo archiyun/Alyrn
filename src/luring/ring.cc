@@ -1,8 +1,11 @@
+// Copyright (c) 2026 Arsenova
+// SPDX-License-Identifier: MIT
 #include "vexo/luring/ring.h"
 
 #include <liburing.h>
 #include <liburing/io_uring.h>
 
+#include <cassert>
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
@@ -16,6 +19,7 @@ namespace vexo::luring {
 
 namespace {
 
+// Convert the high-level LUringOptions into native liburing parameters.
 [[nodiscard]] io_uring_params MakeParams(const LUringOptions& options) noexcept {
   io_uring_params params{};
   params.flags |= IORING_SETUP_CLAMP;
@@ -76,9 +80,9 @@ base::Result<LUringRing> LUringRing::Create(const LUringOptions& options) noexce
   io_uring ring{};
   io_uring_params params = MakeParams(options);
 
-  const int r = io_uring_queue_init_params(options.entries, &ring, &params);
-  if (r < 0) {
-    return std::unexpected(vexo::base::make_neg_errno(r));
+  const int result = io_uring_queue_init_params(options.entries, &ring, &params);
+  if (result < 0) {
+    return std::unexpected(vexo::base::make_neg_errno(result));
   }
 
   return LUringRing(ring);
@@ -87,11 +91,19 @@ base::Result<LUringRing> LUringRing::Create(const LUringOptions& options) noexce
 io_uring_sqe* LUringRing::GetSqe() noexcept { return io_uring_get_sqe(&ring_); }
 
 base::Result<std::size_t> LUringRing::Submit() noexcept {
-  const int r = io_uring_submit(&ring_);
-  if (r < 0) {
-    return std::unexpected(base::make_neg_errno(r));
+  const int result = io_uring_submit(&ring_);
+  if (result < 0) {
+    return std::unexpected(base::make_neg_errno(result));
   }
-  return static_cast<std::size_t>(r);
+  return static_cast<std::size_t>(result);
 }
 
+// type -> target CQE.res
+// data -> target CQE.user_data
+void LUringRing::PrepMsgRing(io_uring_sqe* sqe, int target_ring_fd, std::uint32_t type,
+                             std::uint64_t data) noexcept {
+  assert(sqe != nullptr);
+
+  io_uring_prep_msg_ring(sqe, target_ring_fd, type, data, IORING_MSG_DATA);
+}
 }  // namespace vexo::luring

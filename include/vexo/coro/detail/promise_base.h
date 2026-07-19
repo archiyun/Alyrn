@@ -9,11 +9,12 @@
 #include <coroutine>
 #include <exception>
 
+#include "vexo/coro/frame_allocator.h"
 #include "vexo/utils/macros.h"
 
 namespace vexo::coro::detail {
 
-class PromiseBase {
+class PromiseBase : public FrameAllocationSupport {
 public:
   VEXO_DELETE_COPY_MOVE(PromiseBase);
 
