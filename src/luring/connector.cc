@@ -23,6 +23,7 @@
 #include "vexo/luring/loop.h"
 #include "vexo/luring/op.h"
 #include "vexo/luring/stream.h"
+#include "vexo/luring/timer.h"
 #include "vexo/net/inet_address.h"
 
 namespace vexo::luring {
@@ -157,6 +158,11 @@ coro::Task<base::Result<std::unique_ptr<LUringStream>>> LUringConnector::Connect
   }
 
   co_return co_await ConnectAwaiter(loop_, *peer);
+}
+
+coro::Task<void> LUringConnector::SleepFor(std::chrono::milliseconds delay) {
+  auto result = co_await vexo::luring::SleepFor(*loop_, delay);
+  (void)result;
 }
 
 }  // namespace vexo::luring

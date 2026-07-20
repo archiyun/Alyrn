@@ -5,9 +5,11 @@
 #include <atomic>
 #include <cassert>
 #include <cerrno>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <stop_token>
+#include <utility>
 
 #include "vexo/base/current_thread.h"
 #include "vexo/base/error.h"
@@ -17,6 +19,7 @@
 #include "vexo/luring/op.h"
 #include "vexo/luring/options.h"
 #include "vexo/luring/ring.h"
+#include "vexo/luring/timer_queue.h"
 
 namespace vexo::luring {
 
@@ -54,6 +57,17 @@ public:
   [[nodiscard]] std::size_t InflightCount() const noexcept { return inflight_; }
 
   [[nodiscard]] bool IsDrained() const noexcept { return pending_submit_ == 0 && inflight_ == 0; }
+
+  [[nodiscard]] base::Result<time::TimerId> RunAfter(std::chrono::steady_clock::duration delay,
+                                                     LUringTimerQueue::TimerCallback callback) {
+    assert(IsInLoopThread());
+    return timers_.AddAfter(delay, std::move(callback));
+  }
+
+  base::Result<void> CancelTimer(time::TimerId id) noexcept {
+    assert(IsInLoopThread());
+    return timers_.Cancel(id);
+  }
 
   // Enqueues coroutine work to be resumed by RunReady().
   void Schedule(coro::Work* work) noexcept override;
@@ -152,10 +166,14 @@ private:
   // Preferred number of prepared operations before performing a batch submit.
   std::size_t submit_batch_{32};
 
+  // Fairness budget for one RunReady() pass. Zero means unlimited.
+  std::size_t max_ready_work_per_turn_{256};
+
   // Cross-thread exit request observed by the event loop.
   std::atomic_bool quit_{false};
 
   LUringMailbox mailbox_;
+  LUringTimerQueue timers_;
 };
 
 }  // namespace vexo::luring

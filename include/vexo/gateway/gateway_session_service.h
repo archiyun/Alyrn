@@ -28,14 +28,18 @@ namespace vexo::gateway {
 //
 // The owning server supplies one accepted client stream and one connector
 // bound to that stream's I/O loop. This class intentionally owns neither an
-// accept loop nor a backend object. A pool is created per session so a
-// loop-bound upstream stream cannot cross worker/ring boundaries.
+// accept loop nor a backend object. Callers that have a worker-local lifetime
+// boundary should use the overload taking an UpstreamStreamPool reference so
+// loop-bound upstream streams can be reused by all sessions on that worker
+// without crossing worker/ring boundaries. The two-argument overload remains
+// available and keeps the historical per-session pool behavior.
 template <vexo::io::AsyncStream ClientStream, UpstreamConnector Connector>
 class GatewaySessionService {
 public:
   using Handler = GatewayCore::Handler;
   using Route = GatewayCore::Route;
   using UpstreamStream = typename Connector::Stream;
+  using Pool = UpstreamStreamPool<UpstreamStream>;
 
   GatewaySessionService(std::string name, UpstreamRegistry& registry, PoolConfig pool_config = {})
       : core_(std::move(name), registry), pool_config_(pool_config) {}
@@ -77,15 +81,32 @@ public:
   // frame so a loop-bound connector cannot dangle after the handler returns.
   // The caller must construct it from the same loop that owns stream.
   coro::Task<void> Serve(std::unique_ptr<ClientStream> stream, Connector connector) {
+    Pool pool(pool_config_);
+    co_await ServeWithPool(std::move(stream), std::move(connector), pool);
+  }
+
+  // Serve one accepted connection using a pool owned by the current worker.
+  // The pool and all streams acquired from it must remain alive until every
+  // session on that worker has stopped. It must not be shared across I/O
+  // loops because upstream streams are loop-bound.
+  coro::Task<void> Serve(std::unique_ptr<ClientStream> stream, Connector connector, Pool& pool) {
+    co_await ServeWithPool(std::move(stream), std::move(connector), pool);
+  }
+
+private:
+  coro::Task<void> ServeWithPool(std::unique_ptr<ClientStream> stream, Connector connector,
+                                 Pool& pool) {
     if (!stream) {
       co_return;
     }
 
-    UpstreamStreamPool<UpstreamStream> pool(pool_config_);
     core_.OnConnectionOpen();
 
     http::HttpParser parser;
-    std::array<std::byte, 8192> read_buffer{};
+    // Requests are fed incrementally, so the per-connection buffer does not
+    // need to be large enough for the complete HTTP request. Keeping this at
+    // 4 KiB materially reduces the frame footprint at high connection counts.
+    std::array<std::byte, 4096> read_buffer{};
     const std::string client_ip = ClientIp(*stream);
 
     for (;;) {
@@ -124,7 +145,6 @@ public:
     core_.OnConnectionClosed();
   }
 
-private:
   static std::span<const std::byte> Bytes(std::string_view text) {
     return std::as_bytes(std::span<const char>(text.data(), text.size()));
   }
@@ -151,7 +171,7 @@ private:
   }
 
   coro::Task<bool> ApplyAction(ClientStream& stream, const http::HttpRequest& request,
-                               GatewayCore::Action action, UpstreamStreamPool<UpstreamStream>& pool,
+                               GatewayCore::Action action, Pool& pool,
                                Connector& connector) {
     if (action.kind == GatewayActionKind::Send) {
       auto written = co_await io::WriteAll(stream, Bytes(action.response));

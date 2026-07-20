@@ -12,6 +12,8 @@ option(BUILD_TESTS "Build tests" ON)
 option(BUILD_EXAMPLES "Build example programs" ON)
 option(VEXO_ENABLE_URING "Enable io_uring proactor backend (requires liburing, Linux 5.19+)" OFF)
 option(VEXO_ENABLE_GATEWAY_YAML_CONFIG "Build YAML gateway config support (requires yaml-cpp)" ON)
+option(VEXO_ENABLE_CTRACK "Enable optional CTRACK instrumentation" OFF)
+set(VEXO_CTRACK_ROOT "" CACHE PATH "Path to a CTRACK checkout containing include/ctrack.hpp")
 
 find_package(Threads REQUIRED)
 
@@ -62,6 +64,21 @@ target_compile_features(vexo_foundation PUBLIC cxx_std_23)
 add_library(vexo_coro INTERFACE)
 target_include_directories(vexo_coro INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(vexo_coro INTERFACE cxx_std_23)
+
+# Optional profiling dependency. CTRACK is linked only into targets that use
+# the luring instrumentation, and remains absent from normal builds.
+add_library(vexo_ctrack INTERFACE)
+if(VEXO_ENABLE_CTRACK)
+    if(NOT VEXO_CTRACK_ROOT OR NOT EXISTS "${VEXO_CTRACK_ROOT}/include/ctrack.hpp")
+        message(FATAL_ERROR
+            "VEXO_ENABLE_CTRACK requires VEXO_CTRACK_ROOT/include/ctrack.hpp")
+    endif()
+    target_include_directories(vexo_ctrack SYSTEM INTERFACE
+        ${VEXO_CTRACK_ROOT}/include)
+    target_compile_definitions(vexo_ctrack INTERFACE
+        VEXO_ENABLE_CTRACK
+        CTRACK_DISABLE_EXECUTION_POLICY)
+endif()
 
 # vexo_io —— 协程可观察 I/O 契约和启动期 backend/capability profile。
 # 这里不包含 fd、Channel、epoll_wait、SQE/CQE 等后端内部状态。
@@ -130,6 +147,7 @@ if(VEXO_ENABLE_URING)
         src/luring/loop.cc
         src/luring/ring.cc
         src/luring/server.cc
+        src/luring/timer_queue.cc
         src/luring/stream.cc
         src/luring/worker.cc
         src/luring/worker_group.cc
@@ -144,6 +162,7 @@ if(VEXO_ENABLE_URING)
     target_link_libraries(vexo_luring
         PUBLIC
             vexo_io
+            vexo_ctrack
             ${URING_LIBRARIES}
     )
 

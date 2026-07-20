@@ -96,12 +96,7 @@ public:
       immediate_.emplace(std::unexpected(base::make_errno(EBADF)));
       return false;
     }
-    if (listener_->pending_accept_ != nullptr) {
-      immediate_.emplace(std::unexpected(base::make_errno(EBUSY)));
-      return false;
-    }
-
-    listener_->pending_accept_ = this;
+    ++listener_->pending_accepts_;
     op_.kind = LUringOpKind::kAccept;
     op_.continuation_ = continuation;
     op_.resume_work.handle = continuation;
@@ -116,7 +111,7 @@ public:
         });
 
     if (!submitted.has_value()) {
-      listener_->pending_accept_ = nullptr;
+      --listener_->pending_accepts_;
       immediate_.emplace(std::unexpected(submitted.error()));
       return false;
     }
@@ -143,8 +138,9 @@ public:
 private:
   static void OnComplete(LUringOp* op) noexcept {
     auto* self = static_cast<AcceptAwaiter*>(op->owner);
-    if (self->listener_ != nullptr && self->listener_->pending_accept_ == self) {
-      self->listener_->pending_accept_ = nullptr;
+    if (self->listener_ != nullptr) {
+      assert(self->listener_->pending_accepts_ > 0);
+      --self->listener_->pending_accepts_;
       self->listener_->NotifyCloseProgress();
     }
   }
@@ -173,7 +169,7 @@ public:
     }
 
     listener_->closed_ = true;
-    if (listener_->pending_accept_ == nullptr) {
+    if (listener_->pending_accepts_ == 0) {
       result_ = CloseFd();
       return false;
     }
@@ -207,7 +203,7 @@ public:
     if (completed_ || listener_ == nullptr || !cancel_completed_) {
       return;
     }
-    if (listener_->pending_accept_ != nullptr) {
+    if (listener_->pending_accepts_ != 0) {
       return;
     }
 
@@ -270,7 +266,7 @@ LUringListener::LUringListener(LUringLoop* loop, int fd) noexcept : loop_(loop),
 }
 
 LUringListener::~LUringListener() {
-  assert(pending_accept_ == nullptr);
+  assert(pending_accepts_ == 0);
   assert(pending_close_ == nullptr);
   if (fd_ >= 0) {
     ::close(fd_);
