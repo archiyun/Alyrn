@@ -4,6 +4,8 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <thread>
+#include <vector>
 
 #include "vexo/log/async_logger.h"
 #include "vexo/log/log_buffer.h"
@@ -100,6 +102,20 @@ TEST(LoggerIntegrationTest, StreamingMacroWritesExpectedContent) {
     std::filesystem::remove(log_path);
 }
 
+TEST(LoggerIntegrationTest, Cpp23FormatMacroWritesExpectedContent) {
+    const auto log_path = UniqueLogPath("format-macro");
+    auto& logger = Logger::Instance();
+
+    logger.Init(log_path.string(), LogLevel::DEBUG, 10);
+    LOG_INFOF("formatted fd={} peer={}", 7, "127.0.0.1");
+    logger.Shutdown();
+
+    const std::string output = ReadFile(log_path);
+    EXPECT_NE(output.find("formatted fd=7 peer=127.0.0.1"), std::string::npos);
+
+    std::filesystem::remove(log_path);
+}
+
 TEST(LoggerIntegrationTest, SupportsLargeMessageTruncationMarker) {
     const auto log_path = UniqueLogPath("truncate");
     auto& logger = Logger::Instance();
@@ -113,6 +129,37 @@ TEST(LoggerIntegrationTest, SupportsLargeMessageTruncationMarker) {
     const std::string output = ReadFile(log_path);
     EXPECT_NE(output.find("[ERROR]"), std::string::npos);
     EXPECT_NE(output.find("[truncated]"), std::string::npos);
+
+    std::filesystem::remove(log_path);
+}
+
+TEST(LoggerIntegrationTest, ConcurrentProducersFlushOnShutdown) {
+    const auto log_path = UniqueLogPath("concurrent");
+    auto& logger = Logger::Instance();
+    constexpr int kThreads = 8;
+    constexpr int kMessagesPerThread = 250;
+
+    logger.Init(log_path.string(), LogLevel::INFO, 10);
+    std::vector<std::thread> producers;
+    producers.reserve(kThreads);
+    for (int thread_index = 0; thread_index < kThreads; ++thread_index) {
+        producers.emplace_back([&, thread_index] {
+            for (int message_index = 0; message_index < kMessagesPerThread;
+                 ++message_index) {
+                logger.Log(LogLevel::INFO, "concurrent_test.cc", 300,
+                           "Producer", "concurrent message");
+                LOG_INFOF("producer={} message={}", thread_index, message_index);
+            }
+        });
+    }
+    for (auto& producer : producers) {
+        producer.join();
+    }
+    logger.Shutdown();
+
+    const std::string output = ReadFile(log_path);
+    EXPECT_NE(output.find("concurrent message"), std::string::npos);
+    EXPECT_NE(output.find("producer=7 message=249"), std::string::npos);
 
     std::filesystem::remove(log_path);
 }

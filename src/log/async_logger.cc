@@ -25,8 +25,13 @@ constexpr std::string_view kTruncatedSuffix = "... [truncated]\n";
 AsyncLogger::AsyncLogger(std::string filename, int flush_interval_ms,
                          std::size_t roll_size)
     : filename_(std::move(filename)), flush_interval_ms_(flush_interval_ms),
-      roll_size_(roll_size), current_buffer_(std::make_unique<Buffer>()),
-      next_buffer_(std::make_unique<Buffer>()) {}
+      roll_size_(roll_size) {
+  for (auto& shard : shards_) {
+    shard.current_buffer = std::make_unique<Buffer>();
+    shard.next_buffer = std::make_unique<Buffer>();
+    shard.buffers.reserve(8);
+  }
+}
 
 AsyncLogger::~AsyncLogger() { Stop(); }
 
@@ -37,6 +42,7 @@ void AsyncLogger::Start() {
 
   OpenFile();
   started_ = true;
+  accepting_.store(true, std::memory_order_release);
   backend_thread_ = std::jthread([this](std::stop_token stop_token) {
     ThreadFunc(stop_token);
   });
@@ -47,6 +53,10 @@ void AsyncLogger::Stop() {
     return;
   }
 
+  // Block new appends before requesting the backend to stop. Every append that
+  // already holds a shard lock is drained before the backend thread exits;
+  // later appenders observe accepting_ == false.
+  accepting_.store(false, std::memory_order_release);
   backend_thread_.request_stop();
   cv_.notify_one();
 
@@ -80,21 +90,28 @@ void AsyncLogger::Append(const char *data, std::size_t len) {
     write_len = truncated_storage.size();
   }
 
-  std::lock_guard<std::mutex> lk{mutex_};
-
-  if (current_buffer_->Append(write_data, write_len)) {
+  thread_local const auto shard_index =
+      std::hash<std::thread::id>{}(std::this_thread::get_id()) % kShardCount;
+  auto& shard = shards_[shard_index];
+  std::lock_guard<std::mutex> lk{shard.mutex};
+  if (!accepting_.load(std::memory_order_acquire)) {
+    ++dropped_messages_;
     return;
   }
 
-  buffers_.push_back(std::move(current_buffer_));
-
-  if (next_buffer_) {
-    current_buffer_ = std::move(next_buffer_);
-  } else {
-    current_buffer_ = std::make_unique<Buffer>();
+  if (shard.current_buffer->Append(write_data, write_len)) {
+    return;
   }
 
-  if (!current_buffer_->Append(write_data, write_len)) {
+  shard.buffers.push_back(std::move(shard.current_buffer));
+
+  if (shard.next_buffer) {
+    shard.current_buffer = std::move(shard.next_buffer);
+  } else {
+    shard.current_buffer = std::make_unique<Buffer>();
+  }
+
+  if (!shard.current_buffer->Append(write_data, write_len)) {
     ++dropped_messages_;
     return;
   }
@@ -204,48 +221,41 @@ std::string AsyncLogger::BuildRotateFilename() const {
 
 void AsyncLogger::ThreadFunc(std::stop_token stop_token) {
   BufferQueue buffers_to_write;
-  buffers_to_write.reserve(16);
-
-  auto spare_buffer1 = std::make_unique<Buffer>();
-  auto spare_buffer2 = std::make_unique<Buffer>();
+  buffers_to_write.reserve(kShardCount * 4);
+  BufferQueue spare_buffers;
+  spare_buffers.reserve(kShardCount * 2);
 
   while (!stop_token.stop_requested()) {
-    {
-      std::unique_lock<std::mutex> lk{mutex_};
-
-      if (buffers_.empty() &&
-          (current_buffer_ == nullptr || current_buffer_->Empty())) {
-        cv_.wait_for(lk, std::chrono::milliseconds(flush_interval_ms_));
+    for (auto& shard : shards_) {
+      std::lock_guard<std::mutex> lk{shard.mutex};
+      if (shard.current_buffer && !shard.current_buffer->Empty()) {
+        shard.buffers.push_back(std::move(shard.current_buffer));
       }
-
-      if (current_buffer_ && !current_buffer_->Empty()) {
-        buffers_.push_back(std::move(current_buffer_));
+      while (!shard.buffers.empty()) {
+        buffers_to_write.push_back(std::move(shard.buffers.back()));
+        shard.buffers.pop_back();
       }
-
-      buffers_to_write.swap(buffers_);
-
-      if (!current_buffer_) {
-        if (spare_buffer1) {
-          current_buffer_ = std::move(spare_buffer1);
-        } else if (spare_buffer2) {
-          current_buffer_ = std::move(spare_buffer2);
+      if (!shard.current_buffer) {
+        if (!spare_buffers.empty()) {
+          shard.current_buffer = std::move(spare_buffers.back());
+          spare_buffers.pop_back();
         } else {
-          current_buffer_ = std::make_unique<Buffer>();
+          shard.current_buffer = std::make_unique<Buffer>();
         }
       }
-
-      if (!next_buffer_) {
-        if (spare_buffer1) {
-          next_buffer_ = std::move(spare_buffer1);
-        } else if (spare_buffer2) {
-          next_buffer_ = std::move(spare_buffer2);
+      if (!shard.next_buffer) {
+        if (!spare_buffers.empty()) {
+          shard.next_buffer = std::move(spare_buffers.back());
+          spare_buffers.pop_back();
         } else {
-          next_buffer_ = std::make_unique<Buffer>();
+          shard.next_buffer = std::make_unique<Buffer>();
         }
       }
     }
 
     if (buffers_to_write.empty()) {
+      std::unique_lock<std::mutex> lk{wait_mutex_};
+      cv_.wait_for(lk, std::chrono::milliseconds(flush_interval_ms_));
       continue;
     }
 
@@ -255,33 +265,25 @@ void AsyncLogger::ThreadFunc(std::stop_token stop_token) {
 
     FlushFile();
 
-    while (!spare_buffer1 && !buffers_to_write.empty()) {
+    while (!buffers_to_write.empty()) {
       auto buffer = std::move(buffers_to_write.back());
       buffers_to_write.pop_back();
       if (buffer) {
         buffer->Reset();
-        spare_buffer1 = std::move(buffer);
+        spare_buffers.push_back(std::move(buffer));
       }
     }
-
-    while (!spare_buffer2 && !buffers_to_write.empty()) {
-      auto buffer = std::move(buffers_to_write.back());
-      buffers_to_write.pop_back();
-      if (buffer) {
-        buffer->Reset();
-        spare_buffer2 = std::move(buffer);
-      }
-    }
-
-    buffers_to_write.clear();
   }
 
-  {
-    std::lock_guard<std::mutex> lk{mutex_};
-    if (current_buffer_ && !current_buffer_->Empty()) {
-      buffers_.push_back(std::move(current_buffer_));
+  for (auto& shard : shards_) {
+    std::lock_guard<std::mutex> lk{shard.mutex};
+    if (shard.current_buffer && !shard.current_buffer->Empty()) {
+      shard.buffers.push_back(std::move(shard.current_buffer));
     }
-    buffers_to_write.swap(buffers_);
+    while (!shard.buffers.empty()) {
+      buffers_to_write.push_back(std::move(shard.buffers.back()));
+      shard.buffers.pop_back();
+    }
   }
 
   for (auto &buffer : buffers_to_write) {

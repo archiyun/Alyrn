@@ -20,8 +20,8 @@ namespace {
 int CreateAcceptSocket() {
   auto fd = CreateNonBlockingSocket();
   if (!fd) {
-    LOG_FATAL() << "failed to create accept socket: error=" << fd.error().value()
-                << " message=" << fd.error().message();
+    LOG_FATALF("failed to create accept socket: error={} message={}",
+               fd.error().value(), fd.error().message());
     std::abort();
   }
   return *fd;
@@ -53,7 +53,7 @@ void Acceptor::Listen() {
   listening_ = true;
   accept_socket_.Listen();
   accept_channel_.EnableReading();
-  LOG_INFO() << "acceptor listening on fd=" << accept_socket_.fd();
+  LOG_INFOF("acceptor listening on fd={}", accept_socket_.fd());
 }
 
 void Acceptor::HandleRead(vexo::time::Timestamp) {
@@ -62,16 +62,16 @@ void Acceptor::HandleRead(vexo::time::Timestamp) {
     int connfd = accept_socket_.Accept(&peer_addr);
     if (connfd >= 0) {
       if (new_connection_callback_) {
-        LOG_INFO() << "accepted connection fd=" << connfd << " peer=" << peer_addr.ToIpPort();
+        LOG_INFOF("accepted connection fd={} peer={}", connfd, peer_addr.ToIpPort());
         new_connection_callback_(connfd, peer_addr);
       } else {
-        LOG_WARN() << "accepted connection without callback, closing fd=" << connfd;
+        LOG_WARNF("accepted connection without callback, closing fd={}", connfd);
         ::close(connfd);
       }
       return true;
     }
     if (errno != EAGAIN && errno != EWOULDBLOCK) {
-      LOG_ERROR() << "accept failed: errno=" << errno << " message=" << std::strerror(errno);
+      LOG_ERRORF("accept failed: errno={} message={}", errno, std::strerror(errno));
     }
     return false;
   };
