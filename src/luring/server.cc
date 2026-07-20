@@ -15,6 +15,8 @@ namespace vexo::luring {
 LUringServer::LUringServer(net::InetAddress listen_addr, LUringServerOptions options)
     : listen_addr_(listen_addr), options_(std::move(options)) {}
 
+LUringServer::~LUringServer() noexcept { Stop(); }
+
 base::Result<void> LUringServer::Start() {
   if (started_) {
     return std::unexpected(base::make_errno(EALREADY));

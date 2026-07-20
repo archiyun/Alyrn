@@ -130,7 +130,7 @@ private:
 
   vexo::coro::Task<void> Session(std::unique_ptr<Stream> stream) {
     vexo::http::HttpParser parser;
-    std::array<std::byte, 8192> read_buffer{};
+    std::array<std::byte, 4096> read_buffer{};
     const std::string client_ip = ClientIp(*stream);
 
     for (;;) {

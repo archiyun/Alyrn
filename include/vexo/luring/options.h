@@ -19,6 +19,11 @@ struct LUringOptions {
   bool setup_single_issuer{true};
 
   std::size_t submit_batch{32};
+
+  // Maximum number of ready coroutine works resumed before polling CQEs
+  // again. This bounds scheduler monopolization under a completion burst.
+  // Zero disables the budget and drains the ready queue completely.
+  std::size_t max_ready_work_per_turn{256};
 };
 
 }  // namespace vexo::luring

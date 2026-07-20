@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstddef>
 #include <span>
 
@@ -21,6 +22,8 @@ public:
   ~LUringStream();
 
   coro::Task<base::Result<std::size_t>> ReadSome(std::span<std::byte> buffer);
+  coro::Task<base::Result<std::size_t>> ReadSomeFor(std::span<std::byte> buffer,
+                                                    std::chrono::milliseconds timeout);
   coro::Task<base::Result<std::size_t>> WriteSome(std::span<const std::byte> buffer);
   coro::Task<base::Result<void>> Shutdown();
   coro::Task<base::Result<void>> Close();
@@ -30,6 +33,7 @@ public:
 
 private:
   class ReadAwaiter;
+  class ReadForAwaiter;
   class WriteAwaiter;
   class CloseAwaiter;
 
@@ -38,7 +42,7 @@ private:
   LUringLoop* loop_;
   int fd_{-1};
   net::InetAddress peer_;
-  ReadAwaiter* pending_read_{nullptr};
+  void* pending_read_{nullptr};
   WriteAwaiter* pending_write_{nullptr};
   CloseAwaiter* pending_close_{nullptr};
   bool closed_{false};

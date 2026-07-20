@@ -178,6 +178,25 @@ if(VEXO_ENABLE_URING)
 
     add_test(NAME luring_coro_smoke_test COMMAND luring_coro_smoke_test)
 
+    add_executable(luring_timer_smoke_test
+        unit/test_luring_timer_smoke.cc
+    )
+
+    target_include_directories(luring_timer_smoke_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../include
+            ${URING_INCLUDE_DIRS}
+    )
+
+    target_link_libraries(luring_timer_smoke_test
+        PRIVATE
+            vexo_luring
+    )
+
+    target_compile_definitions(luring_timer_smoke_test PRIVATE VEXO_ENABLE_URING)
+
+    add_test(NAME luring_timer_smoke_test COMMAND luring_timer_smoke_test)
+
     add_executable(luring_msg_ring_smoke_test
         unit/test_luring_msg_ring_smoke.cc
     )

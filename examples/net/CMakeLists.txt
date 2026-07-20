@@ -11,6 +11,18 @@ target_link_libraries(demo_echo_server
         vexo_net
 )
 
+add_executable(demo_raw_echo_server
+    demo_raw_echo_server.cc
+)
+target_link_libraries(demo_raw_echo_server
+    PRIVATE
+        vexo_net
+)
+
+add_executable(demo_raw_tcp_bench
+    demo_raw_tcp_bench.cc
+)
+
 add_executable(demo_redis_lite
     demo_redis_lite.cc
 )
@@ -35,3 +47,14 @@ target_link_libraries(demo_reactor_coro_echo
     PRIVATE
         vexo_net
 )
+
+if(VEXO_ENABLE_URING)
+    add_executable(demo_luring_raw_echo_server
+        demo_luring_raw_echo_server.cc
+    )
+    target_link_libraries(demo_luring_raw_echo_server
+        PRIVATE
+            vexo_luring
+            vexo_net
+    )
+endif()

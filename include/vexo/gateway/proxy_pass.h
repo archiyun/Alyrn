@@ -141,7 +141,7 @@ vexo::coro::Task<vexo::base::Result<bool>> ProxyPass::RelayResponse(
     ClientStream& client, UpstreamStream& upstream, UpstreamPeer& peer, CircuitBreaker* cb,
     bool& cb_reported, vexo::http::Method request_method,
     std::chrono::milliseconds request_timeout) {
-  std::array<std::byte, 8192> read_buffer{};
+  std::array<std::byte, 4096> read_buffer{};
   std::string pending;
 
   for (;;) {

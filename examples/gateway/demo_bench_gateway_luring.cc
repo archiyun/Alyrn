@@ -1,11 +1,13 @@
 // io_uring gateway benchmark with an optional coroutine-frame memory pool.
 //
 // The proxy topology intentionally matches demo_bench_gateway_multi:
-// four local nginx upstreams, round-robin routing, and 64 idle connections per
-// peer. Set FRAME_POOL=0 to retain the default new/delete frame allocator.
+// four local nginx upstreams, round-robin routing, and a configurable idle
+// connection pool. Set FRAME_POOL=0 to retain the default new/delete frame
+// allocator. For a fair comparison with nginx keepalive=64 per worker, use
+// MAX_IDLE_PER_PEER=16 (4 peers x 16 idle connections per worker).
 //
 //   UPSTREAM_PORTS=9001,9002,9003,9004 \
-//   FRAME_POOL=1 PORT=8081 \
+//   BIND_HOST=0.0.0.0 FRAME_POOL=1 PORT=8081 \
 //   ./build-uring/examples/gateway/demo_bench_gateway_luring
 
 #include <atomic>
@@ -16,8 +18,10 @@
 #include <cstdlib>
 #include <memory>
 #include <memory_resource>
+#include <mutex>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <thread>
 #include <vector>
 
@@ -29,6 +33,7 @@
 #include "vexo/luring/connector.h"
 #include "vexo/luring/server.h"
 #include "vexo/net/inet_address.h"
+#include "vexo/net/net_utils.h"
 
 namespace {
 
@@ -76,10 +81,13 @@ bool EnvBool(const char* key, bool fallback) {
 
 int main() {
   const uint16_t listen_port = static_cast<uint16_t>(EnvInt("PORT", 8081));
+  const auto bind_host = std::string(EnvOr("BIND_HOST", "0.0.0.0"));
   const auto ports_csv = std::string(EnvOr("UPSTREAM_PORTS", "9001"));
   const auto algo = std::string(EnvOr("LB_ALGO", "round_robin"));
   const auto max_concurrent = EnvSize("MAX_CONCURRENT_REQUESTS", 1024);
+  const auto max_idle_per_peer = EnvInt("MAX_IDLE_PER_PEER", 64);
   const auto ring_entries = static_cast<std::uint32_t>(EnvSize("URING_ENTRIES", 32768));
+  const auto max_ready_work_per_turn = EnvSize("MAX_READY_WORK_PER_TURN", 256);
   const auto worker_num = EnvSize("URING_WORKERS", 4);
   const bool frame_pool = EnvBool("FRAME_POOL", true);
 
@@ -112,9 +120,21 @@ int main() {
 
   using Service = vexo::gateway::GatewaySessionService<vexo::luring::LUringStream,
                                                        vexo::luring::LUringConnector>;
+  using WorkerPool = Service::Pool;
   Service service("BenchGatewayLUring", registry);
-  service.set_pool_config({.max_idle_per_peer = 64});
+  const vexo::gateway::PoolConfig pool_config{.max_idle_per_peer = max_idle_per_peer};
+  service.set_pool_config(pool_config);
   service.AddProxyRoute("/", "backend", algo);
+
+  // Upstream streams are owned by their io_uring loop. Keep one pool per
+  // worker so sessions on the same ring can reuse connections without
+  // introducing cross-worker stream ownership.
+  std::vector<std::unique_ptr<WorkerPool>> worker_pools;
+  std::unordered_map<vexo::luring::LUringLoop*, WorkerPool*> pools_by_loop;
+  std::mutex pools_mutex;
+  std::atomic_bool pools_ready{false};
+  worker_pools.reserve(worker_num);
+  pools_by_loop.reserve(worker_num);
 
   std::vector<std::unique_ptr<std::pmr::unsynchronized_pool_resource>> frame_pools;
   if (frame_pool) {
@@ -127,17 +147,52 @@ int main() {
   vexo::luring::LUringServerOptions options;
   options.worker_group_options.worker_num = worker_num;
   options.worker_group_options.worker_options.loop_options.entries = ring_entries;
+  options.worker_group_options.worker_options.loop_options.max_ready_work_per_turn =
+      max_ready_work_per_turn;
   options.worker_group_options.worker_options.listen_options.reuse_port = true;
   options.worker_group_options.frame_resource_factory =
       [&frame_pools](std::size_t index) -> std::pmr::memory_resource* {
     return index < frame_pools.size() ? frame_pools[index].get() : nullptr;
   };
 
-  vexo::luring::LUringServer server(vexo::net::InetAddress(listen_port), std::move(options));
+  auto listen_addr = vexo::net::ParseIPv4Address(bind_host, listen_port);
+  if (!listen_addr.has_value()) {
+    std::fprintf(stderr, "invalid BIND_HOST '%s': %s\n", bind_host.c_str(),
+                 listen_addr.error().message().c_str());
+    return 1;
+  }
+
+  vexo::luring::LUringServer server(*listen_addr, std::move(options));
+  server.set_thread_init_callback(
+      [&worker_pools, &pools_by_loop, &pools_mutex,
+       pool_config](vexo::luring::LUringLoop* loop, vexo::luring::LUringListener*) {
+        auto pool = std::make_unique<WorkerPool>(pool_config);
+        auto* pool_ptr = pool.get();
+        std::lock_guard lock(pools_mutex);
+        worker_pools.push_back(std::move(pool));
+        pools_by_loop.emplace(loop, pool_ptr);
+      });
   server.set_session_handler(
-      [&service](vexo::luring::LUringLoop& loop,
-                 std::unique_ptr<vexo::luring::LUringStream> stream) -> vexo::coro::Task<void> {
-        return service.Serve(std::move(stream), vexo::luring::LUringConnector(&loop));
+      [&service, &pools_by_loop, &pools_mutex, &pools_ready](
+          vexo::luring::LUringLoop& loop,
+          std::unique_ptr<vexo::luring::LUringStream> stream) -> vexo::coro::Task<void> {
+        WorkerPool* pool = nullptr;
+        if (!pools_ready.load(std::memory_order_acquire)) {
+          std::lock_guard lock(pools_mutex);
+          auto it = pools_by_loop.find(&loop);
+          if (it != pools_by_loop.end()) {
+            pool = it->second;
+          }
+        } else {
+          auto it = pools_by_loop.find(&loop);
+          if (it != pools_by_loop.end()) {
+            pool = it->second;
+          }
+        }
+        if (pool == nullptr) {
+          return service.Serve(std::move(stream), vexo::luring::LUringConnector(&loop));
+        }
+        return service.Serve(std::move(stream), vexo::luring::LUringConnector(&loop), *pool);
       });
 
   auto started = server.Start();
@@ -145,12 +200,13 @@ int main() {
     std::fprintf(stderr, "LUringServer::Start failed: %s\n", started.error().message().c_str());
     return 1;
   }
+  pools_ready.store(true, std::memory_order_release);
 
   std::printf(
-      "BenchGatewayLUring listen=%u peers=[%s] algo=%s frame_pool=%s workers=%zu "
-      "reuse_port=on entries=%u\n",
-      listen_port, ports_csv.c_str(), algo.c_str(), frame_pool ? "on" : "off", worker_num,
-      ring_entries);
+      "BenchGatewayLUring bind=%s listen=%u peers=[%s] algo=%s frame_pool=%s workers=%zu "
+      "reuse_port=on entries=%u max_idle_per_peer=%d ready_budget=%zu\n",
+      bind_host.c_str(), listen_port, ports_csv.c_str(), algo.c_str(), frame_pool ? "on" : "off",
+      worker_num, ring_entries, max_idle_per_peer, max_ready_work_per_turn);
   while (!g_stop.load(std::memory_order_relaxed)) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }

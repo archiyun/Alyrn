@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <string_view>
@@ -27,6 +28,9 @@ public:
 
   coro::Task<base::Result<std::unique_ptr<LUringStream>>> Connect(std::string_view host,
                                                                   std::uint16_t port);
+
+  // Backend-selected timer used by the generic gateway health-check loop.
+  coro::Task<void> SleepFor(std::chrono::milliseconds delay);
 
 private:
   LUringLoop* loop_;

@@ -2,6 +2,7 @@
 
 #include <sys/socket.h>
 
+#include <cstddef>
 #include <memory>
 
 #include "vexo/base/error.h"
@@ -19,6 +20,9 @@ struct LUringListenOptions {
   bool reuse_addr{true};
   bool reuse_port{true};
   int backlog{SOMAXCONN};
+  // Number of accepts kept in flight by each worker. A value greater than one
+  // prevents a connection burst from being serialized behind one accept CQE.
+  std::size_t accept_depth{4};
 };
 
 class LUringListener {
@@ -47,7 +51,7 @@ private:
 
   LUringLoop* loop_;
   int fd_{-1};
-  AcceptAwaiter* pending_accept_{nullptr};
+  std::size_t pending_accepts_{0};
   CloseAwaiter* pending_close_{nullptr};
   bool closed_{false};
 };

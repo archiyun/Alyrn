@@ -1,6 +1,7 @@
 #include "vexo/luring/worker.h"
 
 #include <cerrno>
+#include <algorithm>
 #include <expected>
 #include <memory>
 #include <optional>
@@ -135,7 +136,10 @@ void LUringWorker::WorkLoop(std::stop_token token) noexcept {
   cv_.notify_one();
 
   if (connection_callback_) {
-    coro::Spawn(loop, AcceptLoop(loop, listener->get(), &connection_callback_)).Detach();
+    const std::size_t accept_depth = std::max<std::size_t>(1, options_.listen_options.accept_depth);
+    for (std::size_t i = 0; i < accept_depth; ++i) {
+      coro::Spawn(loop, AcceptLoop(loop, listener->get(), &connection_callback_)).Detach();
+    }
   }
 
   std::stop_callback on_stop{token, [&loop] { loop.Quit(); }};
