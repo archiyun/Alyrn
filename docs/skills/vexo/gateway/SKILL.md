@@ -11,8 +11,8 @@ editing.
 ## Purpose
 
 Integrate HTTP, net, upstream topology, proxying, health, rate limiting,
-circuit breaking, load balancing, fallback, and gateway metrics into one
-request-serving product.
+circuit breaking, load balancing, and fallback into one request-serving
+product.
 
 ## Non-goals
 
@@ -27,13 +27,13 @@ request-serving product.
 - Component lifecycle and startup/teardown ordering.
 - Per-connection gateway context.
 - Per-loop upstream connection pools and their maintenance timers.
-- Gateway-specific metrics and fallback responses.
+- Gateway-specific fallback responses.
 
 ## Public API / entry points
 
 - `GatewayServer`
 - Route registration and `Start`
-- Health/rate-limit/metrics enablement
+- Health and rate-limit enablement
 - Public upstream, proxy, load-balancer, and resilience configuration types
 
 ## Thread model
@@ -76,7 +76,7 @@ Proxy request: admitted -> active -> terminal cleanup
 - Recurring pool timer UAF.
 - Pipelined requests overwriting one active request slot.
 - Backend-specific downcast leaking into policy.
-- Metrics and fallback paths reporting the wrong rejection reason.
+- Rejection and fallback paths reporting the wrong reason.
 - Destruction order invalidating state before server callbacks stop.
 
 ## Required tests
@@ -91,8 +91,7 @@ Proxy request: admitted -> active -> terminal cleanup
 ## Forbidden dependencies
 
 - Tests/examples/benchmarks from production code
-- New gateway knowledge in `base`, `ds`, `memory`, `time`, `task`, `net`, or
-  generic `metrics`
+- New gateway knowledge in `base`, `ds`, `memory`, `time`, `task`, or `net`
 - Global locks protecting per-loop state
 
 ## Patch rules

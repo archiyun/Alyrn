@@ -50,8 +50,8 @@ public:
   explicit CircuitBreaker(CircuitBreakerConfig cfg) noexcept
     : cfg_(cfg) {}
 
-  // Returns the current state. Intended for metrics export only;
-  // do not use the result to make routing decisions — call AllowRequest().
+  // Returns the current state for diagnostics; do not use it to make routing
+  // decisions — call AllowRequest().
   CircuitBreakerState state() const noexcept {
     const int state = state_.load(std::memory_order_acquire);
     if (state == kTransitioningToOpenInt ||
@@ -64,13 +64,13 @@ public:
     return static_cast<CircuitBreakerState>(state);
   }
 
-  // Cumulative consecutive failure count. Exposed for metrics.
+  // Cumulative consecutive failure count for diagnostics and tests.
   uint64_t failure_count() const noexcept {
     return ClosedFailures(
         closed_counts_.load(std::memory_order_relaxed));
   }
 
-  // Total number of state transitions since construction. Exposed for metrics.
+  // Total number of state transitions since construction.
   uint64_t transition_count() const noexcept {
     return transition_count_.load(std::memory_order_relaxed);
   }
@@ -291,7 +291,7 @@ private:
   std::atomic<uint64_t> half_open_requests_{0}; // probe slots claimed in HALF_OPEN
   std::atomic<uint64_t> half_open_probe_ms_{0}; // steady_clock ms of last admitted probe
   std::atomic<uint64_t> open_entered_ms_{0};  // steady_clock ms when OPEN was entered
-  std::atomic<uint64_t> transition_count_{0}; // total state transitions — metrics only
+  std::atomic<uint64_t> transition_count_{0};
 };
 
 }  // namespace vexo::gateway

@@ -79,12 +79,6 @@ public:
   }
   void EnablePerIPRateLimit(double rate, double burst) { core_.EnablePerIPRateLimit(rate, burst); }
   void set_pool_config(PoolConfig cfg) { pool_ = UpstreamStreamPool<UpstreamStream>(cfg); }
-  void EnableMetricsEndpoint(std::string_view path = "/metrics") {
-    core_.EnableMetricsEndpoint(path);
-  }
-
-  vexo::metrics::GatewayMetrics& metrics() { return core_.metrics(); }
-  const vexo::metrics::GatewayMetrics& metrics() const { return core_.metrics(); }
 
   const Route* MatchRoute(std::string_view path) const { return core_.MatchRoute(path); }
 
@@ -123,7 +117,6 @@ private:
       if (!accepted.has_value()) {
         co_return;
       }
-      core_.OnConnectionOpen();
       vexo::coro::Spawn(scheduler_, Session(std::move(*accepted))).Detach();
     }
   }
@@ -141,7 +134,6 @@ private:
       auto parse_status = parser.Feed(bytes);
       if (!co_await HandleParseStatus(*stream, parse_status)) {
         co_await stream->Close();
-        core_.OnConnectionClosed();
         co_return;
       }
 
@@ -150,20 +142,17 @@ private:
         auto action = core_.HandleRequest(req, client_ip);
         if (!co_await ApplyAction(*stream, req, std::move(action))) {
           co_await stream->Close();
-          core_.OnConnectionClosed();
           co_return;
         }
         parse_status = parser.ParseAvailable();
         if (!co_await HandleParseStatus(*stream, parse_status)) {
           co_await stream->Close();
-          core_.OnConnectionClosed();
           co_return;
         }
       }
     }
 
     co_await stream->Close();
-    core_.OnConnectionClosed();
   }
 
   vexo::coro::Task<bool> HandleParseStatus(Stream& stream, vexo::http::ParseStatus status) {
@@ -195,12 +184,8 @@ private:
         stream, req, *action.proxy.upstream, *action.proxy.load_balancer, pool_, connector_,
         action.proxy.request_ctx, action.proxy.circuit_breaker,
         core_.MakeForwardedContext(action.proxy));
-    if (result.started) {
-      core_.OnProxyStarted();
-    }
     if (result.status == ProxyForwardStatus::kNoPeer) {
-      auto fallback = core_.ProxyUnavailable(*action.proxy.route, "no available upstream peer",
-                                             /*count_no_peer=*/true);
+      auto fallback = core_.ProxyUnavailable(*action.proxy.route, "no available upstream peer");
       co_await vexo::io::WriteAll(stream, Bytes(fallback.response));
       co_return true;
     }
@@ -254,25 +239,17 @@ private:
   }
 
   vexo::coro::Task<void> HealthCheckRound() {
-    std::int64_t total = 0;
-    std::int64_t healthy = 0;
     for (const auto& [_, upstream] : registry_.all()) {
       for (const auto& peer : upstream->peers()) {
-        ++total;
         const bool ok = co_await ProbePeer(*peer);
         CompleteHealthProbe(*peer, ok);
-        if (peer->IsUp()) ++healthy;
       }
     }
-    core_.metrics().upstream_peers_total.Set(total);
-    core_.metrics().upstream_peers_healthy.Set(healthy);
   }
 
   vexo::coro::Task<bool> ProbePeer(UpstreamPeer& peer) {
-    core_.metrics().health_check_runs_total.Inc();
     auto connected = co_await connector_.Connect(peer.config().host, peer.config().port);
     if (!connected.has_value()) {
-      core_.metrics().health_check_failures_total.Inc();
       co_return false;
     }
 
@@ -283,7 +260,6 @@ private:
                                 peer.host_port() + "\r\nConnection: close\r\n\r\n";
     auto written = co_await vexo::io::WriteAll(*stream, Bytes(request));
     if (!written.has_value()) {
-      core_.metrics().health_check_failures_total.Inc();
       co_await stream->Close();
       co_return false;
     }
@@ -295,7 +271,6 @@ private:
     while (pending.size() <= 16 * 1024) {
       auto read = co_await ReadSomeForHealth(*stream, buffer, timeout);
       if (!read.has_value() || *read == 0) {
-        core_.metrics().health_check_failures_total.Inc();
         co_await stream->Close();
         co_return false;
       }
@@ -305,12 +280,10 @@ private:
         const int status = ParseHealthStatus(std::string_view(pending.data(), header_end + 4));
         co_await stream->Close();
         const bool ok = status == 200;
-        if (!ok) core_.metrics().health_check_failures_total.Inc();
         co_return ok;
       }
     }
 
-    core_.metrics().health_check_failures_total.Inc();
     co_await stream->Close();
     co_return false;
   }

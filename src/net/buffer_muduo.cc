@@ -34,7 +34,7 @@ Buffer::Buffer(std::size_t initial_size)
     : buffer_(kCheapPrepend + initial_size),
       reader_index_(kCheapPrepend),
       writer_index_(kCheapPrepend) {
-  VEXO_ASSERT(reader_index_ == writer_index_, "buffer must start empty");
+  VEXO_DCHECK(reader_index_ == writer_index_, "buffer must start empty");
   AssertInvariant();
 }
 

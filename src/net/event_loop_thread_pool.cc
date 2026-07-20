@@ -4,8 +4,8 @@
 
 #include <cassert>
 
+#include "vexo/base/check.h"
 #include "vexo/net/event_loop.h"
-#include "vexo/net/net_assert.h"
 
 namespace vexo::net {
 
@@ -53,8 +53,8 @@ EventLoop* EventLoopThreadPool::GetNextLoop() {
   // next_ is a plain int with no synchronization; the round-robin counter is
   // only safe to advance from the main loop thread (typically Acceptor's
   // NewConnection callback). Off-thread callers would race.
-  VEXO_ASSERT(main_loop_->IsInLoopThread(),
-                 "GetNextLoop() must be called from the main loop thread");
+  VEXO_DCHECK(main_loop_->IsInLoopThread(),
+              "GetNextLoop() must be called from the main loop thread");
   assert(started_);
 
   EventLoop* loop = main_loop_;

@@ -23,7 +23,6 @@ namespace vexo::net {
 namespace {
 
 static constexpr int kPollTimeMs = 10000;
-static constexpr std::size_t kCoroutineBudget = 256;
 
 int CreateEventfd() {
   const int evtfd = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
@@ -102,12 +101,6 @@ EventLoop::EventLoop()
 EventLoop::~EventLoop() {
   assert(IsInLoopThread());
   assert(!looping_);
-  assert(local_ready_.empty());
-
-  {
-    std::lock_guard lk{remote_ready_mutex_};
-    assert(remote_ready_.empty());
-  }
 
   wakeup_channel_->DisableAll();
   wakeup_channel_->Remove();
@@ -133,11 +126,9 @@ void EventLoop::Loop() {
   LOG_INFOF("event loop entering loop");
 
   while (!quit_.load(std::memory_order_relaxed)) {
-    DrainRemoteCoroutines();
-    RunReadyCoroutines();
     DoPendingFunctors();
 
-    // Quit() may have been called by a resumed coroutine or pending functor.
+    // Quit() may have been called by a pending functor.
     // Do not enter a potentially blocking poll after the stop request.
     if (quit_.load(std::memory_order_relaxed)) {
       break;
@@ -145,8 +136,6 @@ void EventLoop::Loop() {
 
     active_channels_.clear();
 
-    // A bounded coroutine drain preserves I/O fairness. If runnable work
-    // remains, probe the poller without blocking before the next drain.
     const int timeout_ms = HasImmediateWork() ? 0 : kPollTimeMs;
     poll_return_time_ = poller_->Poll(timeout_ms, &active_channels_);
 
@@ -191,73 +180,8 @@ void EventLoop::QueueInLoop(Functor cb) {
   }
 }
 
-void EventLoop::Schedule(std::coroutine_handle<> h) {
-  if (!h) {
-    return;
-  }
-
-  if (IsInLoopThread()) {
-    local_ready_.push_back(h);
-    return;
-  }
-
-  bool need_wakeup = false;
-  {
-    std::lock_guard lk{remote_ready_mutex_};
-    need_wakeup = remote_ready_.empty();
-    remote_ready_.push_back(h);
-  }
-
-  if (need_wakeup) {
-    Wakeup();
-  }
-}
-
-void EventLoop::DrainRemoteCoroutines() {
-  assert(IsInLoopThread());
-
-  std::deque<std::coroutine_handle<>> incoming;
-
-  {
-    std::lock_guard lk{remote_ready_mutex_};
-    incoming.swap(remote_ready_);
-  }
-
-  while (!incoming.empty()) {
-    local_ready_.push_back(incoming.front());
-    incoming.pop_front();
-  }
-}
-
-void EventLoop::RunReadyCoroutines() {
-  assert(IsInLoopThread());
-
-  std::size_t count = 0;
-  while (!local_ready_.empty() && count < kCoroutineBudget) {
-    const std::coroutine_handle<> handle = local_ready_.front();
-    local_ready_.pop_front();
-
-    if (handle && !handle.done()) {
-      handle.resume();
-    }
-
-    ++count;
-  }
-}
-
 bool EventLoop::HasImmediateWork() {
   assert(IsInLoopThread());
-
-  if (!local_ready_.empty()) {
-    return true;
-  }
-
-  {
-    std::lock_guard lk{remote_ready_mutex_};
-    if (!remote_ready_.empty()) {
-      return true;
-    }
-  }
 
   {
     std::lock_guard lk{mutex_};

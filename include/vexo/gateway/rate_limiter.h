@@ -155,7 +155,7 @@ public:
     return it->second->TryConsume();
   }
 
-  // Number of live per-IP buckets. Exposed for metrics and tests.
+  // Number of live per-IP buckets. Exposed for diagnostics and tests.
   std::size_t per_ip_bucket_count() const {
     std::lock_guard lk{ip_mutex_};
     return ip_buckets_.size();

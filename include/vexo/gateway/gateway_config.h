@@ -41,11 +41,6 @@ struct GatewayStatusEndpointConfig {
   std::string body{R"({"status":"ok"})"};
 };
 
-struct GatewayMetricsConfig {
-  bool enabled{false};
-  std::string path{"/metrics"};
-};
-
 struct GatewayHealthCheckConfig {
   bool enabled{false};
   HealthCheckConfig config{};
@@ -80,7 +75,6 @@ struct GatewayRouteConfig {
 struct GatewayConfig {
   GatewayServerConfig server{};
   GatewayStatusEndpointConfig status_endpoint{};
-  GatewayMetricsConfig metrics{};
   GatewayHealthCheckConfig health_check{};
   GatewayRateLimitConfig rate_limit{};
   std::vector<GatewayUpstreamConfig> upstreams;
@@ -106,10 +100,6 @@ void ApplyGatewayConfig(const GatewayConfig& config, Gateway& gateway) {
                   resp.set_content_type(endpoint.content_type);
                   resp.set_body(endpoint.body);
                 });
-  }
-
-  if (config.metrics.enabled) {
-    gateway.EnableMetricsEndpoint(config.metrics.path);
   }
 
   if (config.rate_limit.global.enabled || config.rate_limit.per_ip.enabled) {

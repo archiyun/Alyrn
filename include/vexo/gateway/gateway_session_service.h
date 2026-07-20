@@ -20,7 +20,6 @@
 #include "vexo/http/parse_status.h"
 #include "vexo/io/async_stream.h"
 #include "vexo/io/stream_algorithms.h"
-#include "vexo/metrics/gateway_metrics.h"
 
 namespace vexo::gateway {
 
@@ -66,14 +65,7 @@ public:
 
   void EnablePerIPRateLimit(double rate, double burst) { core_.EnablePerIPRateLimit(rate, burst); }
 
-  void EnableMetricsEndpoint(std::string_view path = "/metrics") {
-    core_.EnableMetricsEndpoint(path);
-  }
-
   void set_pool_config(PoolConfig cfg) { pool_config_ = cfg; }
-
-  metrics::GatewayMetrics& metrics() { return core_.metrics(); }
-  const metrics::GatewayMetrics& metrics() const { return core_.metrics(); }
 
   const Route* MatchRoute(std::string_view path) const { return core_.MatchRoute(path); }
 
@@ -100,8 +92,6 @@ private:
       co_return;
     }
 
-    core_.OnConnectionOpen();
-
     http::HttpParser parser;
     // Requests are fed incrementally, so the per-connection buffer does not
     // need to be large enough for the complete HTTP request. Keeping this at
@@ -119,7 +109,6 @@ private:
       auto parse_status = parser.Feed(bytes);
       if (!co_await HandleParseStatus(*stream, parse_status)) {
         co_await stream->Close();
-        core_.OnConnectionClosed();
         co_return;
       }
 
@@ -128,21 +117,18 @@ private:
         auto action = core_.HandleRequest(request, client_ip);
         if (!co_await ApplyAction(*stream, request, std::move(action), pool, connector)) {
           co_await stream->Close();
-          core_.OnConnectionClosed();
           co_return;
         }
 
         parse_status = parser.ParseAvailable();
         if (!co_await HandleParseStatus(*stream, parse_status)) {
           co_await stream->Close();
-          core_.OnConnectionClosed();
           co_return;
         }
       }
     }
 
     co_await stream->Close();
-    core_.OnConnectionClosed();
   }
 
   static std::span<const std::byte> Bytes(std::string_view text) {
@@ -190,13 +176,8 @@ private:
         action.proxy.request_ctx, action.proxy.circuit_breaker,
         core_.MakeForwardedContext(action.proxy));
 
-    if (result.started) {
-      core_.OnProxyStarted();
-    }
-
     if (result.status == ProxyForwardStatus::kNoPeer) {
-      auto fallback =
-          core_.ProxyUnavailable(*action.proxy.route, "no available upstream peer", true);
+      auto fallback = core_.ProxyUnavailable(*action.proxy.route, "no available upstream peer");
       co_await io::WriteAll(stream, Bytes(fallback.response));
       co_return true;
     }

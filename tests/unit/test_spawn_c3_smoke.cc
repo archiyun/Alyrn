@@ -12,10 +12,9 @@
 // Schedules the resume. Two exit paths are covered:
 //   conn A: Deliver(0)            -> EOF, graceful co_return
 //   conn B: Deliver(unexpected)   -> teardown via resume-with-error
-// LoopScheduler adapts the coro Scheduler onto the EventLoop: the initial root
-// submission runs on the loop thread; subsequent IO resumes go straight through
-// EventLoop::Schedule(handle). Run under ASan (leak check proves self-destruct)
-// and TSan (cross-thread Schedule/RunInLoop).
+// EventLoopScheduler adapts the coro Scheduler onto the EventLoop: the initial
+// root submission and subsequent IO resumes run through the EventLoop callback
+// queue. Run under ASan (leak check proves self-destruct) and TSan.
 
 #include <atomic>
 #include <cerrno>
@@ -60,10 +59,15 @@ struct FakeConn {
   };
   ReadAwaiter Read() noexcept { return ReadAwaiter{this}; }
 
-  // Loop-thread side: deliver `r`, then schedule the parked coroutine's resume.
+  // Loop-thread side: deliver `r`, then queue the parked coroutine's resume as
+  // an ordinary EventLoop callback.
   void Deliver(Result<int> r, EventLoop* loop) {
     next = std::move(r);
-    if (auto h = std::exchange(parked, {})) loop->Schedule(h);
+    if (auto h = std::exchange(parked, {})) {
+      loop->QueueInLoop([h] {
+        if (!h.done()) h.resume();
+      });
+    }
   }
 };
 

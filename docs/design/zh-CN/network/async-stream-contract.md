@@ -324,9 +324,9 @@ read 和 write 可以同时 pending；同方向的两个 operation 不能同时 
 必须发生在对象所属的 loop 线程。
 ```
 
-`EventLoop::Schedule` 的跨线程能力不等于 stream 本身线程安全。当前 `LUringLoop::Schedule`
-也要求调用者位于 loop 线程。跨 ring 投递需要单独的消息机制；`eventfd` 和 `msg_ring` 都
-不属于当前 CoreStream 契约。
+`EventLoop::QueueInLoop` 的跨线程投递能力不等于 stream 本身线程安全。当前
+`LUringLoop::Schedule` 也要求调用者位于 loop 线程。跨 ring 投递需要单独的消息机制；
+`eventfd` 和 `msg_ring` 都不属于当前 CoreStream 契约。
 
 ### I8：能力 profile 固定
 

@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-#include "vexo/net/net_assert.h"
+#include "vexo/base/check.h"
 #include "vexo/utils/macros.h"
 
 namespace vexo::net {
@@ -73,7 +73,7 @@ public:
 
   // Consumes len bytes from the readable region.
   void Retrieve(std::size_t len) {
-  VEXO_ASSERT(len <= readable_bytes(), "Retrieve: len exceeds readable bytes");
+  VEXO_DCHECK(len <= readable_bytes(), "Retrieve: len exceeds readable bytes");
   if (len < readable_bytes()) {
     reader_index_ += len;
     AssertInvariant();
@@ -84,9 +84,9 @@ public:
 
   // Consumes bytes up to end, where end must point into the readable region.
   void RetrieveUntil(const char* end) {
-  VEXO_ASSERT(end >= Peek(), "RetrieveUntil: end pointer is before Peek()");
-  VEXO_ASSERT(end <= Peek() + readable_bytes(),
-                 "RetrieveUntil: end pointer is past the readable region");
+  VEXO_DCHECK(end >= Peek(), "RetrieveUntil: end pointer is before Peek()");
+  VEXO_DCHECK(end <= Peek() + readable_bytes(),
+              "RetrieveUntil: end pointer is past the readable region");
   Retrieve(static_cast<std::size_t>(end - Peek()));
   }
 
@@ -134,7 +134,7 @@ public:
   // Advances the writer index after len bytes have been written into the
   // writable region by external code.
   void HasWritten(std::size_t len) {
-    VEXO_ASSERT(len <= writable_bytes(), "HasWritten: len exceeds writable bytes");
+    VEXO_DCHECK(len <= writable_bytes(), "HasWritten: len exceeds writable bytes");
     writer_index_ += len;
     AssertInvariant();
   }
@@ -184,12 +184,9 @@ private:
 
   // Checks the three-region invariant. Active only in Debug builds.
   void AssertInvariant() const {
-    VEXO_ASSERT(reader_index_ >= kCheapPrepend,
-                   "reader_index_ undershot kCheapPrepend");
-    VEXO_ASSERT(reader_index_ <= writer_index_,
-                   "reader_index_ overtook writer_index_");
-    VEXO_ASSERT(writer_index_ <= buffer_.size(),
-                   "writer_index_ past end of buffer");
+    VEXO_DCHECK(reader_index_ >= kCheapPrepend, "reader_index_ undershot kCheapPrepend");
+    VEXO_DCHECK(reader_index_ <= writer_index_, "reader_index_ overtook writer_index_");
+    VEXO_DCHECK(writer_index_ <= buffer_.size(), "writer_index_ past end of buffer");
   }
 
 private:

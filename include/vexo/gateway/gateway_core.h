@@ -19,7 +19,6 @@
 #include "vexo/http/http_types.h"
 #include "vexo/http/parse_status.h"
 #include "vexo/http/router.h"
-#include "vexo/metrics/gateway_metrics.h"
 #include "vexo/utils/macros.h"
 
 namespace vexo::gateway {
@@ -94,21 +93,13 @@ public:
   void EnableRateLimit(RateLimiterConfig cfg);
   void EnableGlobalRateLimit(double rate, double burst);
   void EnablePerIPRateLimit(double rate, double burst);
-  void EnableMetricsEndpoint(std::string_view path = "/metrics");
-
-  vexo::metrics::GatewayMetrics& metrics() { return metrics_; }
-  const vexo::metrics::GatewayMetrics& metrics() const { return metrics_; }
 
   const Route* MatchRoute(std::string_view path) const;
-
-  void OnConnectionOpen();
-  void OnConnectionClosed();
 
   Action HandleParseError(vexo::http::ParseStatus parse_status);
   Action HandleRequest(const vexo::http::HttpRequest& req, std::string_view client_ip);
 
-  Action ProxyUnavailable(const Route& route, std::string_view reason, bool count_no_peer);
-  void OnProxyStarted();
+  Action ProxyUnavailable(const Route& route, std::string_view reason);
 
   ForwardedHeaderContext MakeForwardedContext(const ProxyTarget& proxy) const;
 
@@ -124,7 +115,6 @@ private:
   std::unique_ptr<RateLimiter> rate_limiter_;
   std::string rate_limit_response_429_;
   RateLimiterConfig rate_limiter_cfg_;
-  vexo::metrics::GatewayMetrics metrics_;
 };
 
 }  // namespace vexo::gateway

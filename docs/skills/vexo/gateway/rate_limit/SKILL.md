@@ -82,7 +82,7 @@ identity: absent -> admitted bucket -> idle/full -> evicted
 - `vexo/net`
 - `gateway/proxy`
 - `gateway/health`
-- Fallback body or metrics presentation policy
+- Fallback body presentation policy
 
 ## Patch rules
 

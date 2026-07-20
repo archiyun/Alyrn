@@ -2,13 +2,13 @@
 
 [English](README.md) | **中文** | [文档站](https://akiba-miku.github.io/high-concurrency-runtime/)
 
-一个 C++23 高并发 Linux 网络运行时。项目采用分层设计——你可以把它当作完整的**反向代理网关**使用，也可以只用 **HTTP 应用服务器**层、裸 **TCP/事件循环**层，或者单独使用其中的**数据结构 / 内存分配器 / 调度器**库。上层依赖下层，无循环依赖。
+一个 C++23 高并发 Linux 网络运行时。项目采用分层设计——你可以把它当作完整的**反向代理网关**使用，也可以只用 **HTTP 协议核心**层、裸 **TCP/事件循环**层，或者单独使用其中的**数据结构 / 内存分配器 / 调度器**库。上层依赖下层，无循环依赖。
 
 ```
 Gateway Layer  ─── vexo::gateway
 HTTP Layer     ─── vexo::http        (依赖 net)
 Net Layer      ─── vexo::net         (依赖 foundation)
-Foundation     ─── vexo::base / ds / log / time / task / memory / metrics
+Foundation     ─── vexo::base / ds / log / time / task / memory
 ```
 
 ## 功能概览
@@ -21,7 +21,7 @@ Foundation     ─── vexo::base / ds / log / time / task / memory / metrics
 - **主动健康检查** — 定时 HTTP 探针；连续失败 N 次摘除 backend，连续成功 M 次恢复
 - **被动故障追踪** — `ProxySession` 记录每次请求的失败；达到 `max_fails` 后隔离 `fail_timeout`
 - **连接池** — `UpstreamConnPool` 对每个 backend 维护持久连接，每个 I/O 线程独立一个池，无跨线程竞争
-- **直接路由** — 在网关上直接注册同步 handler，无需单独启动 `HttpServer`
+- **直接路由** — 在网关上直接注册同步 handler
 - **启动期配置** — 可在 C++ 代码中注册上游和路由，也可用 YAML 文件声明网关配置
 
 ### HTTP 服务层（`vexo::http`）
@@ -91,11 +91,10 @@ cmake --build build -j"$(nproc)"
 
 ## 运行网关示例
 
-先启动两个上游 HTTP server 模拟 backend：
+先启动两个上游 HTTP 服务模拟 backend：
 
 ```bash
-PORT=9001 ./build/examples/http/demo_http_server &
-PORT=9002 ./build/examples/http/demo_http_server &
+# 替换为实际部署中的两个 HTTP 上游服务（9001 / 9002）
 ```
 
 启动代码驱动网关（监听 `0.0.0.0:8080`）：
@@ -124,28 +123,6 @@ curl -i http://127.0.0.1:8080/api/kv
 
 关掉其中一个 backend，观察健康检查在一个探测周期内将其摘除，请求不再转发给它。
 
-## 运行 HTTP 示例
-
-```bash
-./build/examples/http/demo_http_server
-```
-
-默认监听 `127.0.0.1:18080`，可以通过环境变量调整：
-
-| 变量 | 默认值 | 说明 |
-|---|---:|---|
-| `HOST` | `127.0.0.1` | 监听地址 |
-| `PORT` | `18080` | 监听端口 |
-| `IO_THREADS` | 自动探测，最多 4 | I/O 子线程数量 |
-| `ET_MODE` | 未设置 | 设置任意值启用 edge-triggered epoll |
-
-```bash
-curl http://127.0.0.1:18080/api/health
-curl -X POST http://127.0.0.1:18080/api/echo -d "hello"
-curl -X POST http://127.0.0.1:18080/api/kv/name -d "kunkun"
-curl http://127.0.0.1:18080/api/kv/name
-```
-
 ## 在自己的程序中使用
 
 配置化网关的完整教程见 [docs/design/zh-CN/gateway/config_tutorial.md](docs/design/zh-CN/gateway/config_tutorial.md)。
@@ -158,8 +135,8 @@ add_subdirectory(high-concurrency-runtime)
 # 完整网关
 target_link_libraries(my_gw    PRIVATE vexo_gateway)
 
-# 只要 HTTP server
-target_link_libraries(my_http  PRIVATE vexo_http)
+# 只要 HTTP 协议核心
+target_link_libraries(my_http  PRIVATE vexo_http_core)
 
 # 只要 TCP 事件循环
 target_link_libraries(my_tcp   PRIVATE vexo_net)
@@ -215,31 +192,6 @@ int main() {
 }
 ```
 
-### HTTP server 示例
-
-```cpp
-#include "vexo/http/http_server.h"
-#include "vexo/net/event_loop.h"
-#include "vexo/net/inet_address.h"
-
-int main() {
-    vexo::net::EventLoop loop;
-    vexo::http::HttpServer server(&loop,
-        vexo::net::InetAddress(8080, "0.0.0.0"), "my-server");
-    server.set_thread_num(4);
-
-    server.Get("/api/users/:id",
-        [](const vexo::http::HttpRequest& req,
-           vexo::http::HttpResponse& resp) {
-            resp.set_content_type("application/json; charset=utf-8");
-            resp.set_body("{\"id\":\"" + std::string(req.path_param("id")) + "\"}");
-        });
-
-    server.Start();
-    loop.Loop();
-}
-```
-
 ### 任务调度示例
 
 ```cpp
@@ -258,7 +210,7 @@ int main() {
 | 目标 | 提供 |
 |---|---|
 | `vexo_gateway` | 网关、反向代理、负载均衡器、健康检查 |
-| `vexo_http` | HTTP 服务器、Trie 路由、请求/响应、上下文 |
+| `vexo_http_core` | HTTP 解析器、Trie 路由、请求/响应、上下文 |
 | `vexo_net` | EventLoop、TcpServer、Channel、Poller、Buffer、TimerQueue |
 | `vexo_task` | Scheduler、ThreadPool、Task、WorkQueue |
 | `vexo_foundation` | 日志、时间戳、MemoryPool、ObjectPool、`vexo::ds`、指标 |
@@ -295,19 +247,18 @@ ctest --test-dir build -R rbtree_validator --output-on-failure
 ```text
 .
 ├── include/vexo/
-│   ├── base/        # NonCopyable、CurrentThread
+│   ├── base/        # CurrentThread、检查、panic、singleton
 │   ├── ds/          # IntrusiveRBTree、IntrusiveQuadHeap、MurmurHash3
 │   ├── gateway/     # GatewayServer、Upstream、LoadBalancer、HealthChecker、ProxyPass
-│   ├── http/        # HttpServer、Router、HttpContext、HttpRequest、HttpResponse
+│   ├── http/        # Parser、Router、HttpContext、HttpRequest、HttpResponse
 │   ├── log/         # Logger、AsyncLogger
 │   ├── memory/      # MemoryPool、ObjectPool
-│   ├── metrics/     # Counter、Gauge、Histogram、Registry
 │   ├── net/         # EventLoop、TcpServer、Channel、Poller、Buffer、TimerQueue
 │   ├── task/        # Scheduler、ThreadPool、Task、WorkQueue
 │   ├── time/        # Timestamp、Timer、TimerId、TimerTree
 │   └── trace/       # TraceId、LifecycleTrace
 ├── src/             # 各模块实现（目录结构与 include 对称）
-├── examples/        # demo_gateway、demo_http_server、demo_echo_server、demo_rbtree
+├── examples/        # demo_gateway、demo_echo_server、demo_rbtree
 ├── tests/           # 单元测试、集成测试、smoke 测试、对数器验证
 └── docs/            # 设计文档
 ```
@@ -321,14 +272,14 @@ Gateway Layer   vexo::gateway
   WeightedRandom / IPHash / ConsistentHash / P2C）
   HealthChecker、ProxyPass、UpstreamConnPool
 
-HTTP Layer      vexo::http
-  HttpServer、Router（Trie）、HttpContext、HttpRequest、HttpResponse
+HTTP Core       vexo::http
+  Parser、Router（Trie）、HttpContext、HttpRequest、HttpResponse
 
 Net Layer       vexo::net
   TcpServer、TcpConnection、EventLoop、EpollPoller、Channel
   Buffer、TimerQueue（基于 timerfd）
 
-Foundation      vexo::base / ds / log / time / task / memory / metrics
+Foundation      vexo::base / ds / log / time / task / memory
   AsyncLogger、Scheduler、ThreadPool
   MemoryPool、ObjectPool
   vexo::ds::IntrusiveRBTree<T, kMember, kLess>、IntrusiveQuadHeap

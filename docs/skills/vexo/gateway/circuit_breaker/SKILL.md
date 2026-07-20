@@ -21,7 +21,6 @@ recovery probes after a monotonic open timeout.
 - Closed/Open/HalfOpen state.
 - Failure/success streak or score, as explicitly defined.
 - Open timestamp, HalfOpen probe quota, unresolved-probe timeout.
-- Transition metrics counters.
 
 ## Public API / entry points
 
@@ -52,8 +51,8 @@ HalfOpen --any failed probe or unresolved timeout--> Open
 
 ## Invariants
 
-- The meaning of "consecutive failures" is consistent in code, comments, tests,
-  and metrics.
+- The meaning of "consecutive failures" is consistent in code, comments, and
+  tests.
 - A success/failure cannot be counted twice for one admitted request.
 - `success_threshold <= half_open_max_requests`, unless recovery is explicitly
   designed across multiple cycles.

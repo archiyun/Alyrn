@@ -7,10 +7,6 @@ status_endpoint:
   enabled: true
   path: /healthz
 
-metrics:
-  enabled: true
-  path: /metrics
-
 health_check:
   enabled: true
   path: /api/health

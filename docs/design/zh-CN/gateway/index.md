@@ -1,6 +1,6 @@
 # 网关
 
-`vexo::gateway` 是运行时的反向代理层，负责把 HTTP 请求转发到上游服务，并提供负载均衡、健康检查、限流、熔断、fallback 和 Prometheus 指标端点。
+`vexo::gateway` 是运行时的反向代理层，负责把 HTTP 请求转发到上游服务，并提供负载均衡、健康检查、限流、熔断和 fallback。
 
 ## 教程
 

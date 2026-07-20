@@ -3,7 +3,6 @@
 #include "vexo/gateway/gateway_core.h"
 
 #include <atomic>
-#include <chrono>
 #include <cstdio>
 #include <exception>
 #include <memory>
@@ -92,14 +91,6 @@ void GatewayCore::EnablePerIPRateLimit(double rate, double burst) {
   rate_limiter_ = std::make_unique<RateLimiter>(rate_limiter_cfg_);
 }
 
-void GatewayCore::EnableMetricsEndpoint(std::string_view path) {
-  Get(path, [this](const vexo::http::HttpRequest&, vexo::http::HttpResponse& resp) {
-    resp.set_status_code(vexo::http::StatusCode::Ok);
-    resp.set_content_type("text/plain; version=0.0.4; charset=utf-8");
-    resp.set_body(metrics_.Render());
-  });
-}
-
 const GatewayCore::Route* GatewayCore::MatchRoute(std::string_view path) const {
   for (const auto& route : routes_) {
     if (route.match_type == MatchType::Exact && route.path == path) return &route;
@@ -115,62 +106,29 @@ const GatewayCore::Route* GatewayCore::MatchRoute(std::string_view path) const {
   return nullptr;
 }
 
-void GatewayCore::OnConnectionOpen() {
-  metrics_.connections_accepted_total.Inc();
-  metrics_.connections_active.Inc();
-}
-
-void GatewayCore::OnConnectionClosed() {
-  metrics_.connections_closed_total.Inc();
-  metrics_.connections_active.Dec();
-}
-
 GatewayCore::Action GatewayCore::HandleParseError(vexo::http::ParseStatus parse_status) {
   const vexo::http::StatusCode code = vexo::http::ParseStatusToStatusCode(parse_status);
-  metrics_.requests_malformed_total.Inc();
-  metrics_.ObserveStatus(static_cast<int>(code));
   return SendResponse(MakeError(code, vexo::http::StatusMessage(code)).ToString(), true);
 }
 
 GatewayCore::Action GatewayCore::HandleRequest(const vexo::http::HttpRequest& req,
                                                std::string_view client_ip) {
-  const auto req_start = std::chrono::steady_clock::now();
-
   if (rate_limiter_) {
     const bool global_ok = rate_limiter_->AllowGlobal();
     const bool per_ip_ok = global_ok && rate_limiter_->AllowPerIP(client_ip);
     if (!global_ok || !per_ip_ok) {
-      if (!global_ok) {
-        metrics_.rate_limited_global_total.Inc();
-      } else {
-        metrics_.rate_limited_per_ip_total.Inc();
-      }
-      metrics_.ObserveStatus(static_cast<int>(vexo::http::StatusCode::TooManyRequests));
-      const auto elapsed =
-          std::chrono::duration<double>(std::chrono::steady_clock::now() - req_start).count();
-      metrics_.request_duration.Observe(elapsed);
       return SendResponse(rate_limit_response_429_);
     }
   }
 
   const Route* route = MatchRoute(req.path());
   if (!route) {
-    metrics_.requests_not_found_total.Inc();
-    metrics_.ObserveStatus(static_cast<int>(vexo::http::StatusCode::NotFound));
-    const auto elapsed =
-        std::chrono::duration<double>(std::chrono::steady_clock::now() - req_start).count();
-    metrics_.request_duration.Observe(elapsed);
     return SendResponse(MakeError(vexo::http::StatusCode::NotFound, "not found").ToString());
   }
 
   if (route->type == RouteType::Proxy) {
-    metrics_.routes_proxy_total.Inc();
-
     auto upstream = registry_.Find(route->upstream_name);
     if (!upstream) {
-      metrics_.upstream_no_peer_total.Inc();
-      metrics_.fallback_served_total.Inc();
-      metrics_.ObserveStatus(static_cast<int>(vexo::http::StatusCode::ServiceUnavailable));
       return SendResponse(
           RenderFallback(*route, std::string("upstream not found: ") + route->upstream_name));
     }
@@ -180,9 +138,6 @@ GatewayCore::Action GatewayCore::HandleRequest(const vexo::http::HttpRequest& re
       cb = upstream->circuit_breaker().get();
     }
     if (cb && !cb->AllowRequest()) {
-      metrics_.circuit_breaker_rejected_total.Inc();
-      metrics_.fallback_served_total.Inc();
-      metrics_.ObserveStatus(static_cast<int>(vexo::http::StatusCode::ServiceUnavailable));
       return SendResponse(RenderFallback(*route, "circuit open"));
     }
 
@@ -205,7 +160,6 @@ GatewayCore::Action GatewayCore::HandleRequest(const vexo::http::HttpRequest& re
     };
   }
 
-  metrics_.routes_direct_total.Inc();
   const bool keep_alive = req.keep_alive();
   vexo::http::HttpResponse resp(!keep_alive);
   try {
@@ -214,24 +168,12 @@ GatewayCore::Action GatewayCore::HandleRequest(const vexo::http::HttpRequest& re
     resp = MakeError(vexo::http::StatusCode::InternalServerError, ex.what());
     resp.set_close_connection(true);
   }
-  metrics_.ObserveStatus(static_cast<int>(resp.status_code()));
-  const auto elapsed =
-      std::chrono::duration<double>(std::chrono::steady_clock::now() - req_start).count();
-  metrics_.request_duration.Observe(elapsed);
   return SendResponse(resp.ToString(), resp.close_connection());
 }
 
-GatewayCore::Action GatewayCore::ProxyUnavailable(const Route& route, std::string_view reason,
-                                                  bool count_no_peer) {
-  if (count_no_peer) {
-    metrics_.upstream_no_peer_total.Inc();
-  }
-  metrics_.fallback_served_total.Inc();
-  metrics_.ObserveStatus(static_cast<int>(vexo::http::StatusCode::ServiceUnavailable));
+GatewayCore::Action GatewayCore::ProxyUnavailable(const Route& route, std::string_view reason) {
   return SendResponse(RenderFallback(route, reason));
 }
-
-void GatewayCore::OnProxyStarted() { metrics_.upstream_requests_total.Inc(); }
 
 ForwardedHeaderContext GatewayCore::MakeForwardedContext(const ProxyTarget& proxy) const {
   return ForwardedHeaderContext{
