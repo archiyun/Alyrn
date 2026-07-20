@@ -3,7 +3,9 @@
 #pragma once
 
 #include <atomic>
+#if __has_include(<format>) && !defined(VEXO_LOG_DISABLE_STD_FORMAT)
 #include <format>
+#endif
 #include <memory>
 #include <mutex>
 #include <source_location>
@@ -11,12 +13,65 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <tuple>
+#include <type_traits>
 #include <utility>
+
+#if defined(__cpp_lib_format) && __cpp_lib_format >= 201907L
+#define VEXO_LOG_HAS_STD_FORMAT 1
+#else
+#define VEXO_LOG_HAS_STD_FORMAT 0
+#endif
 
 #include "vexo/base/singleton.h"
 #include "vexo/utils/macros.h"
 
 namespace vexo::log {
+
+namespace detail {
+
+#if !VEXO_LOG_HAS_STD_FORMAT
+
+template <std::size_t Index = 0, typename Tuple>
+void AppendFallbackArgument(std::ostringstream& stream, Tuple& arguments,
+                            std::size_t index) {
+  if constexpr (Index < std::tuple_size_v<std::remove_reference_t<Tuple>>) {
+    if (Index == index) {
+      stream << std::get<Index>(arguments);
+    } else {
+      AppendFallbackArgument<Index + 1>(stream, arguments, index);
+    }
+  } else {
+    stream << "{}";
+  }
+}
+
+template <typename... Args>
+std::string FallbackFormat(std::string_view format, Args&&... args) {
+  std::ostringstream stream;
+  auto arguments = std::forward_as_tuple(std::forward<Args>(args)...);
+  std::size_t argument_index = 0;
+
+  for (std::size_t i = 0; i < format.size(); ++i) {
+    if (format[i] == '{' && i + 1 < format.size() && format[i + 1] == '{') {
+      stream.put('{');
+      ++i;
+    } else if (format[i] == '}' && i + 1 < format.size() && format[i + 1] == '}') {
+      stream.put('}');
+      ++i;
+    } else if (format[i] == '{' && i + 1 < format.size() && format[i + 1] == '}') {
+      AppendFallbackArgument(stream, arguments, argument_index++);
+      ++i;
+    } else {
+      stream.put(format[i]);
+    }
+  }
+  return stream.str();
+}
+
+#endif
+
+}  // namespace detail
 
 class AsyncLogger;
 
@@ -47,11 +102,19 @@ public:
   // so convenience macros preserve the caller's location.
   template <typename... Args>
   void Logf(LogLevel level, std::source_location location,
+#if VEXO_LOG_HAS_STD_FORMAT
             std::format_string<Args...> format, Args&&... args) {
+#else
+            std::string_view format, Args&&... args) {
+#endif
     if (!ShouldLog(level)) {
       return;
     }
+#if VEXO_LOG_HAS_STD_FORMAT
     Log(level, std::format(format, std::forward<Args>(args)...), location);
+#else
+    Log(level, detail::FallbackFormat(format, std::forward<Args>(args)...), location);
+#endif
   }
 
 private:
