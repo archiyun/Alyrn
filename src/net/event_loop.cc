@@ -85,15 +85,15 @@ EventLoop::EventLoop()
       thread_id_(std::this_thread::get_id()),
       poller_(Poller::NewDefaultPoller(this)),
       wakeup_fd_(CreateEventfd()),
-      wakeup_channel_(std::make_unique<Channel>(this, wakeup_fd_)),
+      wakeup_channel_(this, wakeup_fd_),
       timer_queue_(std::make_unique<TimerQueue>(this)) {
   assert(t_loop_in_this_thread == nullptr);
   t_loop_in_this_thread = this;
 
   // The wakeup fd is monitored like a normal Channel so other threads can
   // interrupt epoll_wait when they queue work into this loop.
-  wakeup_channel_->set_read_callback([this](vexo::time::Timestamp) { HandleRead(); });
-  wakeup_channel_->EnableReading();
+  wakeup_channel_.set_read_callback([this](vexo::time::Timestamp) { HandleRead(); });
+  wakeup_channel_.EnableReading();
 
   LOG_DEBUGF("event loop created: wakeup_fd={}", wakeup_fd_);
 }
@@ -102,8 +102,8 @@ EventLoop::~EventLoop() {
   assert(IsInLoopThread());
   assert(!looping_);
 
-  wakeup_channel_->DisableAll();
-  wakeup_channel_->Remove();
+  wakeup_channel_.DisableAll();
+  wakeup_channel_.Remove();
   {
     std::lock_guard lk{wakeup_mutex_};
     if (wakeup_fd_ >= 0) {

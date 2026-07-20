@@ -31,7 +31,7 @@ struct UpstreamPeerConfig {
 // across IO threads. Relaxed ordering is intentional — load balancing tolerates slightly
 // stale counts.
 struct UpstreamPeerState {
-  std::atomic<bool> down{false};        // Hard-down; owned exclusively by the active HealthChecker.
+  std::atomic<bool> down{false};        // Hard-down; owned by the active gateway health loop.
   std::atomic<int> active{0};           // In-flight request count; used by LeastConn.
   std::atomic<uint64_t> requests{0};
   std::atomic<uint64_t> fails{0};
@@ -39,14 +39,14 @@ struct UpstreamPeerState {
   std::atomic<uint64_t> accessed_ms{0};
   // Dynamic weight for SWRR. Starts at config.weight; decremented on failure (min 0),
   // incremented on success (max config.weight). Drives gradual demotion of flaky peers
-  // without crossing the binary down/up boundary owned by HealthChecker.
+  // without crossing the binary down/up boundary owned by the active gateway health loop.
   std::atomic<int> effective_weight{0};
 };
 
 // Represents a single upstream peer: static config + runtime state.
 //
 // Passive health check logic is split across AvailableAt(), OnFailure(), and OnSuccess().
-// Active health check (HealthChecker) writes state_.down directly and is orthogonal to passive.
+// The gateway's active health loop writes state_.down directly and is orthogonal to passive.
 class UpstreamPeer {
 public:
   explicit UpstreamPeer(UpstreamPeerConfig config) : config_(std::move(config)) {
@@ -103,12 +103,12 @@ public:
   }
 
   // Records a success: clears passive failure counters AND bumps effective_weight back
-  // toward config.weight. HealthChecker is the only path that can lift a peer out of
-  // effective_weight=0 once WRR has fully steered traffic away.
+  // toward config.weight. The active gateway health loop is the only path that
+  // can lift a peer out of effective_weight=0 once WRR has fully steered traffic away.
   void OnSuccess() {
     state_.fails.store(0, std::memory_order_relaxed);
-    // NOTE: does NOT clear state_.down - the active HealthChecker owns that flag
-    // and lifts it only after healthy_threshold consecutive probes.
+    // NOTE: does NOT clear state_.down - the active gateway health loop owns
+    // that flag and lifts it only after healthy_threshold consecutive probes.
     int cur = state_.effective_weight.load(std::memory_order_relaxed);
     while (cur < config_.weight &&
            !state_.effective_weight.compare_exchange_weak(

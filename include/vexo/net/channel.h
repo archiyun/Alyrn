@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <utility>
@@ -31,30 +32,37 @@ enum class TriggerMode : uint8_t {
 // with the registration state stored in the Poller.
 class Channel {
 public:
+  VEXO_DELETE_COPY(Channel);
+
   using EventCallback = std::function<void()>;
   using ReadEventCallback = std::function<void(vexo::time::Timestamp)>;
 
   explicit Channel(EventLoop* loop, int fd);
-  ~Channel();
+  ~Channel() = default;
 
-  VEXO_DELETE_COPY_MOVE(Channel);
+  // Moving transfers the non-owning fd association and callbacks. Both the
+  // source and destination must be detached from the Poller; a registered
+  // Poller entry stores the Channel object's address and cannot be moved
+  // transparently.
+  Channel(Channel&& other) noexcept;
+  Channel& operator=(Channel&& other) noexcept;
 
   // Dispatches the active events stored in revents_ to the corresponding
   // callbacks.
   void HandleEvent(vexo::time::Timestamp receive_time);
 
-  void set_read_callback(ReadEventCallback cb) { read_callback_ = std::move(cb); }
-  void set_write_callback(EventCallback cb) { write_callback_ = std::move(cb); }
-  void set_close_callback(EventCallback cb) { close_callback_ = std::move(cb); }
-  void set_error_callback(EventCallback cb) { error_callback_ = std::move(cb); }
+  void set_read_callback(ReadEventCallback callback) { read_callback_ = std::move(callback); }
+  void set_write_callback(EventCallback callback) { write_callback_ = std::move(callback); }
+  void set_close_callback(EventCallback callback) { close_callback_ = std::move(callback); }
+  void set_error_callback(EventCallback callback) { error_callback_ = std::move(callback); }
 
   // Ties the Channel to an owner object so callbacks are not dispatched after
   // the owner has already been destroyed.
   void Tie(const std::shared_ptr<void>&);
 
-  int fd() const { return fd_; }
-  int events() const { return events_; }
-  int revents() const { return revents_; }
+  [[nodiscard]] int fd() const { return fd_; }
+  [[nodiscard]] int events() const { return events_; }
+  [[nodiscard]] int revents() const { return revents_; }
   void set_revents(int revt) { revents_ = revt; }
 
   // Updates the local interest set and immediately synchronizes it with the
@@ -80,16 +88,18 @@ public:
     Update();
   }
 
-  bool IsNoneEvent() const { return events_ == kNoneEvent; }
-  bool IsWriting() const { return events_ & kWriteEvent; }
-  bool IsReading() const { return events_ & kReadEvent; }
+  [[nodiscard]] bool IsNoneEvent() const { return events_ == kNoneEvent; }
+  [[nodiscard]] bool IsWriting() const { return static_cast<bool>(events_ & kWriteEvent); }
+  [[nodiscard]] bool IsReading() const { return static_cast<bool>(events_ & kReadEvent); }
 
   // Switches the Channel between level-triggered and edge-triggered mode.
-  void set_edge_triggered(bool et) {
-    trigger_mode_ = et ? TriggerMode::kEdgeTriggered : TriggerMode::kLevelTriggered;
+  void set_edge_triggered(bool et_mode) {
+    trigger_mode_ = et_mode ? TriggerMode::kEdgeTriggered : TriggerMode::kLevelTriggered;
   }
 
-  bool IsEdgeTriggered() const { return trigger_mode_ == TriggerMode::kEdgeTriggered; }
+  [[nodiscard]] bool IsEdgeTriggered() const {
+    return trigger_mode_ == TriggerMode::kEdgeTriggered;
+  }
 
   // Returns the EventLoop that owns this Channel.
   EventLoop* OwnerLoop() { return loop_; }
@@ -112,7 +122,7 @@ private:
   // only legitimate users.
   friend class EPollPoller;
 
-  int index() const { return index_; }
+  [[nodiscard]] int index() const { return index_; }
   void set_index(int idx) { index_ = idx; }
 
   // Pushes the current interest set to the Poller.
@@ -121,9 +131,8 @@ private:
   // Dispatches events only after verifying that the tied owner is still alive.
   void HandleEventWithGuard(vexo::time::Timestamp receive_time);
 
-private:
-  EventLoop* loop_;
-  const int fd_;
+  EventLoop* loop_{nullptr};
+  int fd_;
   int events_;
   int revents_;
   int index_;

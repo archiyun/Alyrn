@@ -72,10 +72,6 @@ ctest --test-dir build-uring --output-on-failure
 ### 可选配置
 
 ```bash
-# 选择 vexo_net 使用的 Buffer 实现
-cmake -B build \
-  -DVEXO_BUFFER_IMPL=muduo
-
 # 开启 AddressSanitizer 和 UndefinedBehaviorSanitizer
 cmake -B build-asan \
   -DVEXO_SANITIZER=address,undefined

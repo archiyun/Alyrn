@@ -8,7 +8,7 @@
 //   cmake --build build-tests --target demo_bench_gateway -j$(nproc)
 //
 // 启动（3个终端）：
-//   终端1: IO_THREADS=4 PORT=9001 ET_MODE=1 ./build-tests/examples/demo_echo_server
+//   终端1: 启动一个 HTTP 上游服务监听 9001
 //   终端2: UPSTREAM_PORT=9001 IO_THREADS=4 PORT=8080 ./build-tests/examples/demo_bench_gateway
 //
 // 验证 (终端3)：
@@ -91,27 +91,17 @@ NGINXEOF
 #include "vexo/net/inet_address.h"
 #include "vexo/net/reactor_connect.h"
 #include "vexo/net/reactor_listener.h"
-#include "vexo/net/tcp_connection.h"
 
 static std::atomic<long long> g_proxied{0};
 
 static void StatsPrinter() {
   long long prev = 0;
-  uint64_t prev_ctor = 0;
-  uint64_t prev_dtor = 0;
   while (true) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
     const long long cur = g_proxied.load(std::memory_order_relaxed);
-    const uint64_t ctor = vexo::net::TcpConnection::UpstreamCtorCount();
-    const uint64_t dtor = vexo::net::TcpConnection::UpstreamDtorCount();
-    std::printf(
-        "[gw-stats] rps=%-8lld total=%lld | upstream_conn ctor=+%lu dtor=+%lu live=%lu "
-        "(cum_ctor=%lu)\n",
-        cur - prev, cur, ctor - prev_ctor, dtor - prev_dtor, ctor - dtor, ctor);
+    std::printf("[gw-stats] rps=%-8lld total=%lld\n", cur - prev, cur);
     std::fflush(stdout);
     prev = cur;
-    prev_ctor = ctor;
-    prev_dtor = dtor;
   }
 }
 

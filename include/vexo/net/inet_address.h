@@ -25,7 +25,7 @@ public:
   std::string ToIpPort() const;
   std::uint16_t ToPort() const;
 
-  const struct sockaddr_in& sock_addr() const { return addr_; }
+  [[nodiscard]] const struct sockaddr_in& sock_addr() const { return addr_; }
 
   friend bool operator==(const InetAddress& lhs, const InetAddress& rhs) noexcept;
 

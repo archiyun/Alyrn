@@ -9,13 +9,13 @@
 #include <thread>
 #include <vector>
 
+#include "vexo/net/channel.h"
 #include "vexo/time/timer_id.h"
 #include "vexo/time/timestamp.h"
 #include "vexo/utils/macros.h"
 
 namespace vexo::net {
 
-class Channel;
 class Poller;
 class TimerQueue;
 
@@ -94,7 +94,7 @@ private:
   // Eventfd or pipe-based wakeup mechanism used to interrupt epoll_wait when
   // another thread queues work into this loop.
   int wakeup_fd_;
-  std::unique_ptr<Channel> wakeup_channel_;
+  Channel wakeup_channel_;
   std::mutex wakeup_mutex_;
 
   std::mutex mutex_;

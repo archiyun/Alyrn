@@ -16,9 +16,9 @@ Foundation     ─── vexo::base / ds / log / time / task / memory
 ### Gateway (`vexo::gateway`)
 
 - **Reverse proxy** — transparent HTTP forwarding to upstream backends over persistent connections
-- **Upstream management** — `UpstreamRegistry` + `Upstream` + `UpstreamPeer`; add backends at runtime
+- **Upstream management** — `UpstreamRegistry` + `Upstream` + `UpstreamPeer`; topology is published at startup
 - **Load balancing** — Round Robin, Smooth Weighted Round Robin, Least Connections, Random, Weighted Random, IP Hash, Consistent Hash, and P2C; pluggable via `LoadBalancer` interface
-- **Active health checking** — periodic HTTP probe per backend; automatic mark-down after N consecutive failures and mark-up after M consecutive successes
+- **Active health checking** — `GatewayServer` runs periodic bounded HTTP probes per backend; automatic mark-down after N consecutive failures and mark-up after M consecutive successes
 - **Passive failure tracking** — `ProxySession` records per-request failures; backends are fenced for `fail_timeout` after `max_fails`
 - **Connection pooling** — `UpstreamConnPool` maintains persistent connections to each backend, one pool per I/O thread (no cross-thread contention)
 - **Direct routes** — register synchronous handlers directly on the gateway
@@ -26,12 +26,12 @@ Foundation     ─── vexo::base / ds / log / time / task / memory
 
 ### HTTP protocol core (`vexo::http`)
 
-- Incremental HTTP/1.1 parser (`HttpContext`) — zero intermediate copies, keep-alive via `Reset()`
+- Incremental HTTP/1.1 parser (`HttpParser`) — consumes byte slices and supports keep-alive via `Reset()`
 - Trie router with static/dynamic segments and path parameters (`:param` syntax)
 
 ### Networking (`vexo::net`)
 
-- `EventLoop`, `EpollPoller`, `Channel`, `TcpServer`, `TcpConnection`, `Buffer`
+- `EventLoop`, `EpollPoller`, `Channel`, `ReactorListener`, `ReactorConnector`, `ReactorStream`, `Socket`
 - Timer queue driven by `timerfd`, indexing `vexo::time::Timer` objects through `TimerTree`
 - Level-triggered and edge-triggered epoll modes
 
@@ -207,9 +207,9 @@ Library targets:
 
 | Target | Provides |
 |---|---|
-| `vexo_gateway` | Gateway, proxy, load balancers, health checker |
-| `vexo_http_core` | HTTP parser, Trie router, request/response, context |
-| `vexo_net` | EventLoop, TcpServer, Channel, Poller, Buffer, TimerQueue |
+| `vexo_gateway` | Gateway, proxy, load balancers, active health loop |
+| `vexo_http_core` | HTTP parser, Trie router, request/response |
+| `vexo_net` | Reactor EventLoop, Channel, Poller, streams, Socket, TimerQueue |
 | `vexo_task` | Scheduler, ThreadPool, Task, WorkQueue |
 | `vexo_foundation` | Logger, Timestamp, MemoryPool, ObjectPool, `vexo::ds` |
 
@@ -232,9 +232,9 @@ Notable tests:
 | `rbtree_validator` | 10 M ops vs `std::set` oracle + `CheckRBInvariants()` every step |
 | `quad_heap_test` | intrusive 4-ary heap insert, erase, duplicate insert, cross-heap safety, and ordered `PopWhile()` |
 | `http_smoke_test` | HTTP parsing and routing (no GTest required) |
-| `buffer_smoke_test` | Buffer read / write / prepend |
-| `vexo_unit_tests` | GTest suite: buffer, logger, memory pool, scheduler |
-| `vexo_integration_tests` | GTest suite: event loop, TCP server, HTTP routing, trigger modes |
+| `io_buffer_smoke_test` | Backend-neutral I/O buffer read / write |
+| `vexo_unit_tests` | GTest suite: logger, memory pool, scheduler, current net utilities |
+| `vexo_integration_tests` | GTest suite: EventLoop and current HTTP/gateway integration |
 
 Notes:
 
@@ -248,16 +248,16 @@ Notes:
 ├── include/vexo/
 │   ├── base/        # CurrentThread, checks, panic, singleton
 │   ├── ds/          # IntrusiveRBTree, IntrusiveQuadHeap, MurmurHash3
-│   ├── gateway/     # GatewayServer, Upstream, LoadBalancer, HealthChecker, ProxyPass
-│   ├── http/        # Parser, Router, HttpContext, HttpRequest, HttpResponse
+│   ├── gateway/     # GatewayServer, Upstream, LoadBalancer, active health, ProxyPass
+│   ├── http/        # HttpParser, Router, HttpRequest, HttpResponse
 │   ├── log/         # Logger, AsyncLogger
 │   ├── memory/      # MemoryPool, ObjectPool
-│   ├── net/         # EventLoop, TcpServer, Channel, Poller, Buffer, TimerQueue
+│   ├── net/         # EventLoop, Reactor streams, Channel, Poller, TimerQueue
 │   ├── task/        # Scheduler, ThreadPool, Task, WorkQueue
 │   ├── time/        # Timestamp, Timer, TimerId, TimerTree
 │   └── trace/       # TraceId, LifecycleTrace
 ├── src/             # Implementations (mirrors include layout)
-├── examples/        # demo_gateway, demo_echo_server, demo_rbtree
+├── examples/        # gateway, Reactor/io_uring, and foundation demos
 ├── tests/           # Unit, integration, smoke tests, oracle validator
 └── docs/            # Design notes
 ```
@@ -269,14 +269,14 @@ Gateway Layer   vexo::gateway
   GatewayServer, UpstreamRegistry, Upstream, UpstreamPeer
   LoadBalancer (RoundRobin / WeightedRoundRobin / LeastConn / Random /
   WeightedRandom / IPHash / ConsistentHash / P2C)
-  HealthChecker, ProxyPass, UpstreamConnPool
+  active health loop, ProxyPass, UpstreamStreamPool
 
 HTTP Core       vexo::http
-  Parser, Router (Trie), HttpContext, HttpRequest, HttpResponse
+  HttpParser, Router (Trie), HttpRequest, HttpResponse
 
 Net Layer       vexo::net
-  TcpServer, TcpConnection, EventLoop, EpollPoller, Channel
-  Buffer, TimerQueue (timerfd-backed)
+  ReactorListener, ReactorConnector, ReactorStream, EventLoop
+  EpollPoller, Channel, Socket, TimerQueue (timerfd-backed)
 
 Foundation      vexo::base / ds / log / time / task / memory
   AsyncLogger, Scheduler, ThreadPool
@@ -289,27 +289,27 @@ Typical gateway request flow:
 
 ```text
 kernel
-  → Buffer::ReadFd()
-  → TcpConnection message callback (Sub Loop)
-  → HttpContext::ParseRequest()       (incremental state machine)
+  → ReactorListener::Accept()
+  → ReactorStream read operation
+  → HttpParser::Feed()                (incremental state machine)
   → GatewayServer::MatchRoute()
       ├── Direct  → synchronous Handler → HttpResponse
-      ├── Proxy   → LoadBalancer::Select() → UpstreamConnPool
-      │             → ProxySession (async upstream I/O on same Sub Loop)
-  → TcpConnection::Send()
+      ├── Proxy   → LoadBalancer::Select() → UpstreamStreamPool
+      │             → UpstreamConnector / AsyncStream
+  → downstream ReactorStream write operation
 ```
 
 Typical HTTP request flow:
 
 ```text
 kernel
-  → Buffer::ReadFd()
-  → TcpConnection message callback
-  → HttpContext::ParseRequest()
+  → ReactorListener::Accept()
+  → ReactorStream read operation
+  → HttpParser::Feed()
   → Router::Match()
   → user handler
   → HttpResponse::ToString()
-  → TcpConnection::Send()
+  → ReactorStream write operation
 ```
 
 ## License

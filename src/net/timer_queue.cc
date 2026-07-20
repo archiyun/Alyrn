@@ -8,7 +8,6 @@
 #include <cassert>
 #include <cstring>
 
-#include "vexo/net/channel.h"
 #include "vexo/net/event_loop.h"
 #include "vexo/time/timer.h"
 #include "vexo/time/timer_id.h"
@@ -43,16 +42,16 @@ static void ReadTimerfd(int timerfd) {
 TimerQueue::TimerQueue(EventLoop* loop)
     : loop_(loop),
       timerfd_(CreateTimerfd()),
-      timerfd_channel_(std::make_unique<Channel>(loop, timerfd_)) {
+      timerfd_channel_(loop, timerfd_) {
 
-  timerfd_channel_->set_read_callback(
+  timerfd_channel_.set_read_callback(
       [this](vexo::time::Timestamp) { HandleRead(); });
-  timerfd_channel_->EnableReading();
+  timerfd_channel_.EnableReading();
 }
 
 TimerQueue::~TimerQueue() {
-  timerfd_channel_->DisableAll();
-  timerfd_channel_->Remove();
+  timerfd_channel_.DisableAll();
+  timerfd_channel_.Remove();
   ::close(timerfd_);
   while (!timers_.empty()) {
     vexo::time::Timer* timer = timers_.earliest();

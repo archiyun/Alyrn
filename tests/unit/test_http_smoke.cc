@@ -1,11 +1,10 @@
 #include <iostream>
 #include <string>
 
-#include "vexo/http/http_context.h"
+#include "vexo/http/http_parser.h"
 #include "vexo/http/http_request.h"
 #include "vexo/http/http_response.h"
 #include "vexo/http/router.h"
-#include "vexo/net/buffer.h"
 
 namespace {
 
@@ -23,21 +22,18 @@ bool ParseOk(vexo::http::ParseStatus s) {
 }
 
 bool TestParsesHttp11KeepAliveRequest() {
-    vexo::http::HttpContext context;
-    vexo::net::Buffer buffer;
+    vexo::http::HttpParser parser;
     const std::string request =
         "GET /api/health?verbose=1 HTTP/1.1\r\n"
         "Host: localhost\r\n"
         "Connection: keep-alive\r\n"
         "X-Trace-Id: trace-123\r\n"
         "\r\n";
-    buffer.Append(request);
-
-    bool ok = Expect(ParseOk(context.ParseRequest(buffer, vexo::time::Timestamp::Now())),
+    bool ok = Expect(ParseOk(parser.Feed(request)),
                      "parser should accept a valid HTTP/1.1 request");
-    ok &= Expect(context.GotAll(), "parser should complete the request");
+    ok &= Expect(parser.GotAll(), "parser should complete the request");
 
-    const vexo::http::HttpRequest& parsed = context.request();
+    const vexo::http::HttpRequest parsed = parser.TakeRequest();
     ok &= Expect(parsed.method() == vexo::http::Method::Get,
                  "request method should be GET");
     ok &= Expect(parsed.path() == "/api/health", "path should be parsed");
@@ -84,25 +80,22 @@ bool TestBuildsHttpResponse() {
 }
 
 bool TestParsesRequestBodyAcrossChunks() {
-    vexo::http::HttpContext context;
-    vexo::net::Buffer buffer;
+    vexo::http::HttpParser parser;
     const std::string head =
         "POST /api/echo?src=test HTTP/1.1\r\n"
         "Host: localhost\r\n"
         "Content-Length: 5\r\n"
         "\r\n";
 
-    buffer.Append(head);
-    bool ok = Expect(ParseOk(context.ParseRequest(buffer, vexo::time::Timestamp::Now())),
+    bool ok = Expect(ParseOk(parser.Feed(head)),
                      "parser should accept a partial POST request");
-    ok &= Expect(!context.GotAll(), "parser should wait for the remaining body bytes");
+    ok &= Expect(!parser.GotAll(), "parser should wait for the remaining body bytes");
 
-    buffer.Append("hello");
-    ok &= Expect(ParseOk(context.ParseRequest(buffer, vexo::time::Timestamp::Now())),
+    ok &= Expect(ParseOk(parser.Feed("hello")),
                  "parser should accept the completed body");
-    ok &= Expect(context.GotAll(), "parser should complete after receiving the body");
+    ok &= Expect(parser.GotAll(), "parser should complete after receiving the body");
 
-    const vexo::http::HttpRequest& parsed = context.request();
+    const vexo::http::HttpRequest parsed = parser.TakeRequest();
     ok &= Expect(parsed.method() == vexo::http::Method::Post,
                  "request method should be POST");
     ok &= Expect(parsed.body() == "hello", "body should be parsed from the buffer");
@@ -202,60 +195,51 @@ bool TestDistinguishes404And405() {
 }
 
 bool TestRejectsTransferEncoding() {
-  vexo::net::Buffer buf;
-  buf.Append("POST / HTTP/1.1\r\n"
-             "Host: x\r\n"
-             "Transfer-Encoding: chunked\r\n"
-             "\r\n");
-  vexo::http::HttpContext ctx;
-  return Expect(!ParseOk(ctx.ParseRequest(buf, {})),
+  vexo::http::HttpParser parser;
+  return Expect(!ParseOk(parser.Feed("POST / HTTP/1.1\r\n"
+                                      "Host: x\r\n"
+                                      "Transfer-Encoding: chunked\r\n"
+                                      "\r\n")),
                 "parser should reject Transfer-Encoding");
 }
 
 bool TestRejectsCLAndTEBoth() {
-  vexo::net::Buffer buf;
-  buf.Append("POST / HTTP/1.1\r\n"
-             "Host: x\r\n"
-             "Content-Length: 5\r\n"
-             "Transfer-Encoding: chunked\r\n"
-             "\r\n");
-  vexo::http::HttpContext ctx;
-  return Expect(!ParseOk(ctx.ParseRequest(buf, {})),
+  vexo::http::HttpParser parser;
+  return Expect(!ParseOk(parser.Feed("POST / HTTP/1.1\r\n"
+                                      "Host: x\r\n"
+                                      "Content-Length: 5\r\n"
+                                      "Transfer-Encoding: chunked\r\n"
+                                      "\r\n")),
                 "parser should reject Content-Length + Transfer-Encoding");
 }
 
 bool TestRejectsDuplicateContentLength() {
-  vexo::net::Buffer buf;
-  buf.Append("POST / HTTP/1.1\r\n"
-             "Host: x\r\n"
-             "Content-Length: 10\r\n"
-             "Content-Length: 20\r\n"
-             "\r\n"
-             "0123456789");
-  vexo::http::HttpContext ctx;
-  return Expect(!ParseOk(ctx.ParseRequest(buf, {})),
+  vexo::http::HttpParser parser;
+  return Expect(!ParseOk(parser.Feed("POST / HTTP/1.1\r\n"
+                                      "Host: x\r\n"
+                                      "Content-Length: 10\r\n"
+                                      "Content-Length: 20\r\n"
+                                      "\r\n"
+                                      "0123456789")),
                 "parser should reject duplicate Content-Length");
 }
 
 bool TestRejectsTooManyHeaders() {
-  vexo::net::Buffer buf;
-  buf.Append("GET / HTTP/1.1\r\n");
+  std::string request = "GET / HTTP/1.1\r\n";
   for (int i = 0; i < 200; ++i) {
-    buf.Append("X-Spam-" + std::to_string(i) + ": v\r\n");
+    request += "X-Spam-" + std::to_string(i) + ": v\r\n";
   }
-  buf.Append("\r\n");
-  vexo::http::HttpContext ctx;
-  return Expect(!ParseOk(ctx.ParseRequest(buf, {})),
+  request += "\r\n";
+  vexo::http::HttpParser parser;
+  return Expect(!ParseOk(parser.Feed(request)),
                 "parser should reject when header count exceeds the cap");
 }
 
 bool TestRejectsOversizedRequestLine() {
-  vexo::net::Buffer buf;
-  buf.Append("GET /");
-  buf.Append(std::string(9000, 'a'));  // > kMaxRequestLine (8 KiB)
-  buf.Append(" HTTP/1.1\r\n\r\n");
-  vexo::http::HttpContext ctx;
-  return Expect(!ParseOk(ctx.ParseRequest(buf, {})),
+  const std::string request = "GET /" + std::string(9000, 'a') +
+                              " HTTP/1.1\r\n\r\n";  // > kMaxRequestLine (8 KiB)
+  vexo::http::HttpParser parser;
+  return Expect(!ParseOk(parser.Feed(request)),
                 "parser should reject request line beyond the cap");
 }
 
@@ -263,14 +247,12 @@ bool TestRejectsObsFold() {
   // RFC 9112 §5.2: obsolete line folding (continuation line starting with
   // whitespace) must be rejected. The fold line lacks a colon, so the parser
   // rejects it as a malformed header — lock that behavior down.
-  vexo::net::Buffer buf;
-  buf.Append("GET / HTTP/1.1\r\n"
-             "Host: x\r\n"
-             "X-Foo: bar\r\n"
-             " continuation\r\n"
-             "\r\n");
-  vexo::http::HttpContext ctx;
-  const auto s = ctx.ParseRequest(buf, {});
+  vexo::http::HttpParser parser;
+  const auto s = parser.Feed("GET / HTTP/1.1\r\n"
+                             "Host: x\r\n"
+                             "X-Foo: bar\r\n"
+                             " continuation\r\n"
+                             "\r\n");
   return Expect(s == vexo::http::ParseStatus::BadRequest,
                 "obs-fold continuation must yield BadRequest");
 }
@@ -290,13 +272,13 @@ bool TestMapsParseStatusToStatusCode() {
 }
 
 bool TestParsesConnectMethod() {
-  vexo::net::Buffer buf;
-  buf.Append("CONNECT example.com:443 HTTP/1.1\r\n"
-             "Host: example.com:443\r\n"
-             "\r\n");
-  vexo::http::HttpContext ctx;
-  bool ok = Expect(ParseOk(ctx.ParseRequest(buf, {})), "CONNECT should parse");
-  ok &= Expect(ctx.request().method() == vexo::http::Method::Connect,
+  vexo::http::HttpParser parser;
+  bool ok = Expect(ParseOk(parser.Feed("CONNECT example.com:443 HTTP/1.1\r\n"
+                                       "Host: example.com:443\r\n"
+                                       "\r\n")),
+                   "CONNECT should parse");
+  const auto request = parser.TakeRequest();
+  ok &= Expect(request.method() == vexo::http::Method::Connect,
                "method enum should be Connect");
   return ok;
 }

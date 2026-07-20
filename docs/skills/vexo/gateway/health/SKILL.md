@@ -1,97 +1,96 @@
 ---
 name: runtime-gateway-health-maintenance
-description: Maintain active upstream health checking. Use for HealthChecker probes, thresholds, late callbacks, Stop semantics, overlap prevention, and health-state ownership.
+description: Maintain GatewayServer's active upstream health loop, bounded probes, thresholds, late completions, and health-state ownership.
 ---
 
 # vexo/gateway/health Maintenance
 
 ## Purpose
 
-Actively probe upstream peers, classify complete bounded responses, maintain
-consecutive probe outcomes, and exclusively own the active-health hard-down
-flag.
+Probe upstream peers through the configured `UpstreamConnector`, classify
+complete bounded responses, maintain consecutive outcomes, and exclusively own
+the active-health hard-down flag.
 
 ## Non-goals
 
 - Passive request failure cooldowns.
 - Circuit-breaker transitions.
 - Load-balancer algorithms or proxy retries.
-- Generic TCP connection management.
+- Generic transport implementation.
 
 ## Owned resources
 
-- Periodic scan timer and per-probe timeout.
-- Probe TcpClient lifetime.
-- Per-peer in-flight marker.
+- GatewayServer-owned periodic health loop and probe tasks.
+- Per-peer in-flight marker and bounded probe stream.
 - Consecutive success/failure counters.
 - Active-health writes to `UpstreamPeerState::down`.
 
 ## Public API / entry points
 
 - `HealthCheckConfig`
-- `HealthChecker::{Start,Stop}`
+- `GatewayServer::EnableHealthCheck`
+- `GatewayServer::HealthLoop`, `ProbePeer`, and `CompleteHealthProbe`
 
 ## Thread model
 
-- Probe maps and threshold counters run on one configured EventLoop.
-- `running`, `active`, and generation are atomic cancellation gates.
-- TcpClient callbacks and timeout callbacks complete on the loop.
+- The health loop runs on the GatewayServer scheduler.
+- Probe state and threshold updates are serialized by that loop.
+- Connector and stream completions return to the same scheduling domain.
+- Stop/generation gates make late completions harmless.
 
 ## Lifetime rules
 
-- EventLoop and registry outlive the checker.
-- Stop invalidates generation before timer cancellation.
-- Late callbacks may release transport resources but must not mutate peer health.
-- Per-probe ownership is bounded and released promptly after completion.
+- GatewayServer, registry, and scheduler outlive the health loop.
+- Shutdown invalidates the generation before resources are released.
+- Late completions may release stream resources but must not mutate peer health.
+- Probe ownership is bounded and released promptly after completion.
 
 ## State machine
 
 ```text
-checker: stopped -> running(generation N) -> stopped(generation N+1)
+health loop: disabled -> running(generation N) -> stopped
 peer probe: idle -> in-flight -> success | failure | timeout -> idle
 peer health: up --N failures--> down --M successes--> up
 ```
 
 ## Invariants
 
-- At most one in-flight probe per peer identity per generation.
+- At most one in-flight probe exists per peer identity per generation.
 - Exactly one outcome is attributed to each probe.
 - A successful prefix is not a successful HTTP response; headers must complete
-  within the byte limit.
+  within the configured byte limit.
 - Failures reset success streaks and successes reset failure streaks.
-- Stop makes all prior-generation callbacks inert.
-- Active health alone owns `down`.
+- Active health alone owns `down`; passive proxy failures do not write it.
 
 ## Common bugs
 
-- Raw `this` in recurring or timeout callbacks.
-- Timer cancellation treated as synchronous.
+- Raw owner captures in recurring probe tasks.
+- Completion or cancellation treated as synchronous when it is not.
 - Duplicate peer names colliding in the in-flight map.
-- Probe overlap when interval is shorter than timeout.
-- Timeout callback retaining TcpClient until the full timeout after early
-  completion.
-- Registry mutation during iteration.
+- Probe overlap when interval is shorter than the timeout.
+- A late stream completion changing state after shutdown.
+- Registry mutation during peer iteration.
 
 ## Required tests
 
-- `health_checker_smoke_test`
 - `gateway_adversarial_test`
-- `health_checker_lifetime_reproducer`
+- `gateway_core_smoke_test`
+- `proxy_e2e_smoke_test` when probe transport changes
+- `luring_gateway_smoke_test` for the io_uring backend
 - ASan/UBSan for destroy-with-probe-in-flight
-- Tests for malformed/truncated status, oversized headers, timeout, Stop/Start
+- Tests for malformed/truncated status, oversized headers, timeout, shutdown,
   generation changes, and duplicate peer identity
 
 ## Forbidden dependencies
 
 - `gateway/proxy`
 - `gateway/rate_limit`
-- Route/fallback/HTTP-server policy
+- Route/fallback policy
 - Writes to passive cooldown or circuit-breaker state
 
 ## Patch rules
 
-- Preserve generation-based late-callback invalidation.
-- Store/cancel per-probe timers if a patch changes probe ownership.
+- Preserve generation-based invalidation for late completions.
 - Key single-flight state by a truly unique peer identity.
 - Never permit overlapping probes as an accidental side effect.
-- Add a lifetime test before changing callback captures.
+- Add a lifetime test before changing callback or task captures.

@@ -3,10 +3,9 @@
 #pragma once
 
 #include <functional>
-#include <memory>
-
 #include "vexo/memory/object_pool.h"
 #include "vexo/ds/intrusive_hash_table.h"
+#include "vexo/net/channel.h"
 #include "vexo/time/timer.h"
 #include "vexo/time/timer_id.h"
 #include "vexo/time/timer_tree.h"
@@ -15,7 +14,6 @@
 
 namespace vexo::net {
 
-class Channel;
 class EventLoop;
 
 inline constexpr auto kTimerSequenceOf =
@@ -36,7 +34,7 @@ public:
 
   VEXO_DELETE_COPY_MOVE(TimerQueue);
 
-  vexo::time::TimerId AddTimer(TimerCallback cb,
+  vexo::time::TimerId AddTimer(TimerCallback callback,
                                   vexo::time::Timestamp when,
                                   double interval_sec);
   void Cancel(vexo::time::TimerId id);
@@ -49,7 +47,7 @@ private:
 
   EventLoop* loop_;
   int timerfd_;
-  std::unique_ptr<Channel> timerfd_channel_;
+  Channel timerfd_channel_;
   vexo::time::TimerTree timers_;
   vexo::memory::ObjectPool<vexo::time::Timer, kTimerQueueMax> timer_pool_;
   ActiveTimerTable active_timers_;

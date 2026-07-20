@@ -6,7 +6,6 @@
 
 #include <cerrno>
 
-#include "vexo/net/buffer.h"
 #include "vexo/net/inet_address.h"
 #include "vexo/net/net_utils.h"
 
@@ -167,21 +166,6 @@ TEST(NetUtilsTest, QueriesConnectedIPv4Endpoints) {
   auto self_connect = IsSelfConnect(client.get());
   ASSERT_TRUE(self_connect);
   EXPECT_FALSE(*self_connect);
-}
-
-TEST(NetUtilsTest, SocketWriteDoesNotRaiseSigPipe) {
-  int raw_fds[2];
-  ASSERT_EQ(::socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, raw_fds), 0);
-  ScopedFd writer(raw_fds[0]);
-  ScopedFd peer(raw_fds[1]);
-
-  peer = ScopedFd();
-
-  Buffer buffer;
-  buffer.Append("payload");
-  int saved_errno = 0;
-  EXPECT_EQ(buffer.WriteFd(writer.get(), &saved_errno), -1);
-  EXPECT_EQ(saved_errno, EPIPE);
 }
 
 }  // namespace

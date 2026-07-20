@@ -17,10 +17,11 @@ namespace vexo::net {
 
 class ReactorConnector {
 public:
+  VEXO_DELETE_COPY_MOVE(ReactorConnector);
+
   using Stream = ReactorStream;
 
   explicit ReactorConnector(EventLoop* loop) noexcept : loop_(loop) {}
-  VEXO_DELETE_COPY_MOVE(ReactorConnector);
 
   coro::Task<base::Result<std::unique_ptr<ReactorStream>>> Connect(std::string_view host,
                                                                    std::uint16_t port);

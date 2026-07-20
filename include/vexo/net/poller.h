@@ -21,12 +21,12 @@ class EventLoop;
 // and updates or removes Channel registrations as their interest sets change.
 class Poller {
 public:
+  VEXO_DELETE_COPY_MOVE(Poller);
+
   using ChannelList = std::vector<Channel*>;
 
   explicit Poller(EventLoop* loop);
   virtual ~Poller() = default;
-
-  VEXO_DELETE_COPY_MOVE(Poller);
 
   // Waits for I/O events and fills active_channels with the Channels that
   // became active before the timeout expires.
@@ -40,7 +40,7 @@ public:
   virtual void RemoveChannel(Channel* channel) = 0;
 
   // Returns true if channel is currently tracked by this Poller.
-  bool HasChannel(Channel* channel) const;
+  [[nodiscard]] bool HasChannel(Channel* channel) const;
 
   // Creates the epoll-backed Poller implementation.
   static Poller* NewDefaultPoller(EventLoop* loop);

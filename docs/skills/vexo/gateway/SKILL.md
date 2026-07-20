@@ -84,7 +84,7 @@ Proxy request: admitted -> active -> terminal cleanup
 - `proxy_e2e_smoke_test`
 - `resilience_integration_smoke_test`
 - `gateway_adversarial_test`
-- `health_checker_lifetime_reproducer`
+- `gateway_core_smoke_test`
 - All narrower submodule smoke tests affected by the patch
 - ASan/UBSan for lifecycle changes; TSan for shared gateway state
 

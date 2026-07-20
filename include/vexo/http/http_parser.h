@@ -12,8 +12,8 @@
 namespace vexo::http {
 
 // Incremental HTTP/1 request parser over plain byte slices. This is the
-// backend-neutral parser used by coroutine stream based servers; it does not
-// depend on net::Buffer or any event-loop type.
+// backend-neutral parser used by stream-based servers; it does not depend on
+// a transport implementation or any event-loop type.
 class HttpParser {
 public:
   ParseStatus Feed(std::string_view bytes);
