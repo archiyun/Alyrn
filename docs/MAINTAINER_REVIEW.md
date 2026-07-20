@@ -15,7 +15,7 @@ semantic leaks, and insufficiently explicit lifetime contracts.
 | `base`, intrusive `ds`, pool allocators | L0 | Correct direction. Intrusive containers need stronger hook-membership and owner-lifetime rules. |
 | TTL/LRU cache under `memory` | L0/L1 mixed | It depends on wall-clock `Timestamp`; move cache policy to L1 or inject a clock. |
 | `time` | L1 | Correctly independent of net. Scheduling still uses wall-clock timestamps while timerfd uses a monotonic clock. |
-| `log`, generic `metrics` | L1 | Correct, except `gateway_metrics.h` is gateway policy in a generic namespace. |
+| `log` | L1 | Correctly placed as a process-level service. |
 | `task`, `net`, `http` | L2 | Direction is mostly correct. `task` and `net` are peers; `http` is their integration layer. |
 | `gateway` | L3 | All gateway responsibilities are flattened into one directory and several header-only types. |
 | examples/tests/benchmarks | L4 | Correct consumers, but the human test map is already stale in places. |
@@ -29,7 +29,7 @@ log -> base, time
 task -> base
 net -> base, ds, memory, time, log
 http -> base, memory, time, task, net, log
-gateway -> base, ds, time, log, metrics, net, http
+gateway -> base, ds, time, log, net, http
 ```
 
 Boundary violations or warning signs:
@@ -37,13 +37,8 @@ Boundary violations or warning signs:
 - `TcpConnection` counts connections whose names start with `"proxy->"`. This
   is a semantic net-to-gateway dependency even though no gateway header is
   included.
-- `vexo::metrics::GatewayMetrics` is gateway-owned policy placed in an L1
-  namespace.
 - The single `vexo_foundation` target combines L0 memory/ds concerns with L1
   time/log concerns, so CMake cannot enforce the intended boundaries.
-- `GatewayServer` must downcast `IConnection` to a reactor connection before it
-  can proxy. The backend interface is not yet sufficient for gateway transport
-  needs.
 - README claims upstreams can be added at runtime, while `UpstreamRegistry` and
   `Upstream` are implemented as startup-built, read-only objects.
 
@@ -60,7 +55,6 @@ include/vexo/
   cache/                  # TTL/LRU policy; L1
   time/
   log/
-  metrics/                # generic primitives only
   task/
   net/
     backend/
@@ -73,7 +67,6 @@ include/vexo/
     proxy/
     upstream/
     load_balance/
-    metrics/
 
 src/                       # mirrors include/vexo
 examples/
@@ -91,11 +84,10 @@ runtime_ds
 runtime_memory
 runtime_time       -> base, ds
 runtime_log        -> base, time
-runtime_metrics    -> base
-vexo_task       -> base, metrics
+vexo_task       -> base
 vexo_net        -> base, ds, memory, time, log
-vexo_http       -> memory, time, task, net, log
-vexo_gateway    -> http, net, time, log, metrics, ds
+vexo_http_core  -> foundation
+vexo_gateway    -> http, net, time, log, ds
 ```
 
 Do not perform all moves in one commit. First add dependency checks and
@@ -110,8 +102,8 @@ The normative rules are in [SUBSYSTEMS.md](SUBSYSTEMS.md). The short form is:
 - `task` and `net` remain independent peers.
 - `http` may integrate task and net; gateway may integrate HTTP and net.
 - Sibling gateway dependencies follow the graph in `SUBSYSTEMS.md`.
-- Semantic knowledge counts as a dependency. Name prefixes, metrics labels,
-  and test hooks can violate boundaries without an include.
+- Semantic knowledge counts as a dependency. Name prefixes and test hooks can
+  violate boundaries without an include.
 
 ## D. `docs/SUBSYSTEMS.md` Draft
 
@@ -324,35 +316,32 @@ an agent-specific skill directory without making `.claude/` the canonical copy.
 
 ### P2: structural debt
 
-1. Split gateway metrics out of generic metrics.
-2. Remove gateway-specific connection counters/name parsing from net.
-3. Split TTL caches from memory-core.
-4. Split load balancers out of one large header and move nontrivial algorithms
+1. Remove gateway-specific connection counters/name parsing from net.
+2. Split TTL caches from memory-core.
+3. Split load balancers out of one large header and move nontrivial algorithms
    to `.cc` files.
-5. Enforce target-level boundaries in CMake and CI.
-6. Reconcile README runtime-mutation claims with startup-only registry design.
-7. Move timer scheduling to an explicit monotonic time domain.
+4. Enforce target-level boundaries in CMake and CI.
+5. Reconcile README runtime-mutation claims with startup-only registry design.
+6. Move timer scheduling to an explicit monotonic time domain.
 
 ## H. Suggested Commit Plan
 
 1. `docs: define subsystem layering and maintenance contracts`
    - Add `SUBSYSTEMS.md`, this review, and module skills only.
-2. `build: split enforceable foundation targets`
-   - Introduce base/ds/memory/time/log/metrics targets without moving APIs.
-3. `net: make connection teardown and cross-thread state access safe`
+2. `net: make connection teardown and cross-thread state access safe`
    - Fix TcpClient callback ownership, TcpServer sub-loop teardown, and
      TcpConnection state access; add ASan/TSan regressions.
-4. `net: harden timer ownership and monotonic scheduling`
+3. `net: harden timer ownership and monotonic scheduling`
    - Loop-own allocation/insertion, explicit cancellation/drain rules, and
      monotonic deadlines.
-5. `gateway: make server and pool timers teardown-safe`
+4. `gateway: make server and pool timers teardown-safe`
    - Store timer IDs, cancel on owner loop, and define destructor ordering.
-6. `gateway: bound proxy request lifecycle`
+5. `gateway: bound proxy request lifecycle`
    - Pending limit, committed-response timeout behavior, response-header limit,
      downstream backpressure, and idempotent cleanup.
-7. `gateway: separate retry and overload budgets from breaker outcomes`
+6. `gateway: separate retry and overload budgets from breaker outcomes`
    - Configurable per-request retry count plus shared retry budget.
-8. `gateway: validate resilience configuration`
+7. `gateway: validate resilience configuration`
    - Circuit-breaker semantics, rate/burst ranges, health thresholds, and
      globally unique peer identity.
 9. `gateway: split subdirectories with compatibility headers`

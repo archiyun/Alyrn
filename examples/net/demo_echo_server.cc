@@ -2,7 +2,7 @@
 //
 // 适合: 如果觉得HTTP层写得太重了， 或者只想用项目网络层进行开发学习
 // 只引入 vexo_net（TcpServer / Buffer / EventLoop），
-// 不引入 vexo_http，目的是单独压测网络层本身。
+// 不引入 vexo_http_core，目的是单独压测网络层本身。
 // 
 //
 // 手动在 MessageCallback 里做最小 HTTP/1.1 解析：

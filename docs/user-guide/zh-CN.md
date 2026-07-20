@@ -606,7 +606,6 @@ int main() {
     response.set_body(R"({"status":"ok"})");
   });
   gateway.AddProxyRoute("/api", "user_service", "round_robin");
-  gateway.EnableMetricsEndpoint();
 
   vexo::luring::LUringServerOptions options;
   options.worker_group_options.worker_num = 4;

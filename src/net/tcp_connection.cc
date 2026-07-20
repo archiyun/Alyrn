@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: MIT
 #include "vexo/net/tcp_connection.h"
 
+#include "vexo/base/check.h"
 #include "vexo/log/logger.h"
 #include "vexo/net/channel.h"
 #include "vexo/net/event_loop.h"
-#include "vexo/net/net_assert.h"
 #include "vexo/net/socket.h"
 
 #include <sys/socket.h>
@@ -45,8 +45,8 @@ TcpConnection::TcpConnection(EventLoop* loop, const std::string& name,
       socket_(std::make_unique<Socket>(sockfd)),
       channel_(std::make_unique<Channel>(loop, sockfd)),
       local_addr_(local_addr), peer_addr_(peer_addr) {
-  VEXO_ASSERT(loop_ != nullptr, "TcpConnection: loop must not be null");
-  VEXO_ASSERT(sockfd >= 0, "TcpConnection: sockfd must be valid");
+  VEXO_DCHECK(loop_ != nullptr, "TcpConnection: loop must not be null");
+  VEXO_DCHECK(sockfd >= 0, "TcpConnection: sockfd must be valid");
   if (IsUpstreamName(name_)) {
     g_upstream_ctor_count.fetch_add(1, std::memory_order_relaxed);
   }
@@ -96,8 +96,8 @@ void TcpConnection::SendInLoop(const std::string& message) {
 
 
 void TcpConnection::SendInLoop(const void* data, std::size_t len) {
-  VEXO_ASSERT(loop_->IsInLoopThread(),
-                 "TcpConnection::SendInLoop called from wrong thread");
+  VEXO_DCHECK(loop_->IsInLoopThread(),
+              "TcpConnection::SendInLoop called from wrong thread");
   if (state_ == TCPState::kDisconnected)
     return;
 
@@ -151,10 +151,10 @@ void TcpConnection::Shutdown() {
 }
 
 void TcpConnection::ConnectEstablished() {
-  VEXO_ASSERT(loop_->IsInLoopThread(),
-                 "TcpConnection::ConnectEstablished called from wrong thread");
-  VEXO_ASSERT(state_ == TCPState::kConnecting,
-                 "TcpConnection::ConnectEstablished: expected kConnecting state");
+  VEXO_DCHECK(loop_->IsInLoopThread(),
+              "TcpConnection::ConnectEstablished called from wrong thread");
+  VEXO_DCHECK(state_ == TCPState::kConnecting,
+              "TcpConnection::ConnectEstablished: expected kConnecting state");
   set_state(TCPState::kConnected);
   channel_->Tie(shared_from_this());
   channel_->EnableReading();
@@ -169,8 +169,8 @@ void TcpConnection::ConnectEstablished() {
 }
 
 void TcpConnection::ConnectDestroyed() {
-  VEXO_ASSERT(loop_->IsInLoopThread(),
-                 "TcpConnection::ConnectDestroyed called from wrong thread");
+  VEXO_DCHECK(loop_->IsInLoopThread(),
+              "TcpConnection::ConnectDestroyed called from wrong thread");
   const bool notify_state_change = state_ != TCPState::kDisconnected;
   if (notify_state_change) {
     set_state(TCPState::kDisconnected);
@@ -304,8 +304,8 @@ void TcpConnection::HandleError() {
 }
 
 void TcpConnection::ShutdownInLoop() {
-  VEXO_ASSERT(loop_->IsInLoopThread(),
-                 "TcpConnection::ShutdownInLoop called from wrong thread");
+  VEXO_DCHECK(loop_->IsInLoopThread(),
+              "TcpConnection::ShutdownInLoop called from wrong thread");
   if (!channel_->IsWriting()) {
     socket_->ShutdownWrite();
   }

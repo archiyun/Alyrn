@@ -26,7 +26,7 @@ L2  execution, transport, and protocol
                          |
                          v
 L1  process services and value utilities
-    time / log / metrics / config
+    time / log / config
                          |
                          v
 L0  dependency-free foundations
@@ -41,12 +41,11 @@ about higher-layer policy.
 
 | Current directory | Layer | Notes |
 |---|---:|---|
-| `include/vexo/base` | L0 | Noncopyable and thread identity primitives. |
+| `include/vexo/base` | L0 | Thread identity, checks, panic, and singleton primitives. |
 | `include/vexo/ds` | L0 | Header-only intrusive containers and hashes. |
 | `include/vexo/memory` | L0/L1 | Pools are L0. TTL/LRU cache code currently depends on `time` and should be split into an L1 cache module. |
 | `include/vexo/time`, `src/time` | L1 | Time values, timers, and timer indexes. No fd or EventLoop ownership. |
 | `include/vexo/log`, `src/log` | L1 | Process logging; may depend on base and time. |
-| `include/vexo/metrics` | L1 plus one L3 leak | Generic metrics are L1. `gateway_metrics.h` belongs under gateway. |
 | `include/vexo/task`, `src/task` | L2 | Blocking/thread-pool execution. Must remain independent of net. |
 | `include/vexo/net`, `src/net` | L2 | Reactor, sockets, channels, timers bound to EventLoop, TCP lifecycle. |
 | `include/vexo/uring`, `src/uring` | L2 | Optional I/O backend. It may reuse net value types but must not expose gateway policy. |
@@ -68,7 +67,6 @@ about higher-layer policy.
 
 - May depend on L0.
 - `log` may depend on `time`.
-- Generic metrics must remain independent of HTTP and gateway.
 - Configuration data types should not construct sockets, start threads, or
   schedule callbacks.
 
@@ -86,8 +84,8 @@ about higher-layer policy.
 - May depend on public APIs from L0-L2.
 - Gateway submodules may depend on the gateway core types listed in the
   submodule graph below.
-- Gateway policy must not be moved into net, time, ds, memory, or generic
-  metrics to avoid an apparent dependency.
+- Gateway policy must not be moved into net, time, ds, or memory to avoid an
+  apparent dependency.
 
 ### L4
 
@@ -102,12 +100,11 @@ The following are hard failures:
 
 - `base`, `ds`, or memory pools including `time`, `net`, `http`, or `gateway`.
 - `time` including `net`, `http`, or `gateway`.
-- `log` or generic metrics including `http` or `gateway`.
 - `net` including `http` or `gateway`, or inspecting gateway-specific names.
 - `task` including `net`, and `net` including `task`.
 - `http` including `gateway`.
-- A gateway policy type being placed in `vexo::metrics`, `vexo::net`, or
-  another lower namespace merely to make it reusable.
+- A gateway policy type being placed in `vexo::net` or another lower namespace
+  merely to make it reusable.
 - Tests or benchmarks becoming required runtime link dependencies.
 
 Semantic dependency inversion counts even without an include. For example,
@@ -120,7 +117,7 @@ gateway dependency.
 gateway/server
   -> proxy, health, rate_limit, circuit_breaker
   -> upstream, load_balance
-  -> http, net, metrics
+  -> http, net
 
 gateway/proxy
   -> upstream, load_balance, circuit_breaker
@@ -148,8 +145,8 @@ gateway/upstream
 ### Gateway Responsibility Boundaries
 
 - **server** owns route registration, request admission order, response
-  selection, metrics wiring, and lifecycle orchestration. It does not implement
-  load-balancing algorithms or TCP connection state.
+  selection, and lifecycle orchestration. It does not implement load-balancing
+  algorithms or TCP connection state.
 - **proxy** owns one downstream-to-upstream request state machine, header
   rewriting, response framing, timeout handling, retry decisions, and
   backpressure coordination.

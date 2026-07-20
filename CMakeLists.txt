@@ -111,7 +111,6 @@ add_library(vexo_net STATIC
     src/net/net_utils.cc
     src/net/poller.cc
     src/net/reactor_connect.cc
-    src/net/reactor_backend.cc
     src/net/reactor_listener.cc
     src/net/reactor_stream.cc
     src/net/socket.cc
@@ -194,6 +193,7 @@ set(VEXO_HTTP_CORE_SOURCES
     src/http/http_request.cc
     src/http/http_response.cc
     src/http/http_parser.cc
+    src/http/http_context.cc
     src/http/parse_status.cc
     src/http/router.cc
 )
@@ -211,28 +211,6 @@ target_link_libraries(vexo_http_core
 )
 
 target_compile_features(vexo_http_core PUBLIC cxx_std_23)
-
-set(VEXO_HTTP_SOURCES
-    src/http/http_context.cc
-    src/http/http_server.cc
-)
-
-add_library(vexo_http STATIC ${VEXO_HTTP_SOURCES})
-
-target_include_directories(vexo_http
-    PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-target_link_libraries(vexo_http
-    PUBLIC
-        vexo_http_core
-        vexo_net
-        vexo_foundation
-        Threads::Threads
-)
-
-target_compile_features(vexo_http PUBLIC cxx_std_23)
 
 add_library(vexo_gateway_core STATIC
     src/gateway/gateway_core.cc
@@ -261,7 +239,6 @@ target_include_directories(vexo_gateway PUBLIC
 
 target_link_libraries(vexo_gateway PUBLIC
     vexo_gateway_core
-    vexo_http
     vexo_net
     vexo_foundation
     Threads::Threads

@@ -52,11 +52,10 @@ config ok: examples/gateway/gateway.yaml
 
 ## 四、启动完整示例
 
-先启动两个 demo HTTP server 作为上游：
+先启动两个监听 9001 / 9002 的 HTTP 服务作为上游：
 
 ```bash
-PORT=9001 ./build/examples/http/demo_http_server &
-PORT=9002 ./build/examples/http/demo_http_server &
+# 使用部署环境中的 HTTP 服务，分别监听 9001 和 9002
 ```
 
 启动配置版网关：
@@ -71,7 +70,6 @@ PORT=9002 ./build/examples/http/demo_http_server &
 curl -i http://127.0.0.1:8080/healthz
 curl -i http://127.0.0.1:8080/api/health
 curl -i http://127.0.0.1:8080/api/kv
-curl -i http://127.0.0.1:8080/metrics
 ```
 
 其中 `/healthz` 是网关直接响应，`/api/...` 会按配置转发到 `user_service` 上游。
@@ -118,10 +116,6 @@ server:
 status_endpoint:
   enabled: true
   path: /healthz
-
-metrics:
-  enabled: true
-  path: /metrics
 
 health_check:
   enabled: true

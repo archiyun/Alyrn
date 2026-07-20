@@ -3,8 +3,6 @@
 #pragma once
 
 #include <atomic>
-#include <coroutine>
-#include <deque>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -50,12 +48,6 @@ public:
   // Queues cb to run in the loop thread on a later iteration. Thread-safe.
   void QueueInLoop(Functor cb);
 
-  // Schedules h to resume on this EventLoop's owning thread. Thread-safe.
-  //
-  // EventLoop does not own or destroy the coroutine frame. The caller must
-  // ensure that h remains valid until it is resumed.
-  void Schedule(std::coroutine_handle<> h);
-
   // The following Channel-management methods must be called from the owning
   // loop thread. They mutate the Poller's channel set and are not thread-safe.
   void UpdateChannel(Channel* channel);
@@ -87,10 +79,6 @@ private:
   // Runs all functors queued through QueueInLoop().
   void DoPendingFunctors();
 
-  void DrainRemoteCoroutines();
-
-  void RunReadyCoroutines();
-
   [[nodiscard]] bool HasImmediateWork();
 
   std::atomic<bool> looping_;
@@ -111,16 +99,6 @@ private:
 
   std::mutex mutex_;
   std::vector<Functor> pending_functors_;
-
-  // Owned and accessed only by the EventLoop thread. Handles are removed
-  // before resume and are never destroyed by EventLoop.
-  std::deque<std::coroutine_handle<>> local_ready_;
-
-  // Produced by arbitrary threads and consumed only by the EventLoop thread.
-  // The first producer transitioning this queue from empty to non-empty wakes
-  // the poller; later producers coalesce behind that wakeup.
-  mutable std::mutex remote_ready_mutex_;
-  std::deque<std::coroutine_handle<>> remote_ready_;
 
   std::unique_ptr<TimerQueue> timer_queue_;
 };

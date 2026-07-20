@@ -11,10 +11,9 @@
  * 8. 启动事件循环
  *
  * 测试:
- * 开三个终端，终端 1、2 启动 demo_http_server 模拟上游，
+ * 开三个终端，终端 1、2 启动两个 HTTP 服务模拟上游，
  * 终端 3 启动代理网关。
- * 终端 1: PORT=9001 ./build-tests/examples/demo_http_server
- * 终端 2: PORT=9002 ./build-tests/examples/demo_http_server
+ * 终端 1、2: 启动监听 9001 / 9002 的 HTTP 服务
  * 终端 3: ./build-tests/examples/demo_gateway
  *
  * 再开一个客户端 当作客户端
@@ -70,15 +69,12 @@ int main() {
     resp.set_body("{\"status\":\"ok\"}");
   });
 
-  // 代理路由：把 /api/health 和 /api/kv 转发到 user_service（demo_http_server 有这两条路由）
+  // 代理路由：把 /api/health 和 /api/kv 转发到 user_service
   gw.AddProxyRoute("/api/health", "user_service", "round_robin");
   gw.AddProxyRoute("/api/kv", "user_service", "round_robin");
 
   // 3. 启动主动健康检查（上游的 /api/health 返回 200，符合探针预期）
   gw.EnableHealthCheck({.path = "/api/health", .interval_sec = 10.0});
-
-  // 暴露 Prometheus 指标端点
-  gw.EnableMetricsEndpoint();
 
   gw.Start();
   loop.Loop();

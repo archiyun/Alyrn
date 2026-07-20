@@ -20,7 +20,7 @@ unbounded resource consumption, parser flaw, etc.):
 ## Scope
 
 In scope:
-- `vexo_foundation`, `vexo_task`, `vexo_net`, `vexo_http`,
+- `vexo_foundation`, `vexo_task`, `vexo_net`, `vexo_http_core`,
   `vexo_gateway` library code
 - HTTP/1.1 parsing and routing
 

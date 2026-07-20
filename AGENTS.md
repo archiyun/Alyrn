@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This is a Linux-focused C++23 runtime built with CMake. Public headers live in `include/vexo/`, grouped by layer: `base`, `ds`, `gateway`, `http`, `log`, `memory`, `metrics`, `net`, `task`, and `time`. Implementations live in matching `src/` subdirectories. Examples are under `examples/` by feature area, while tests are split into `tests/unit/`, `tests/integration/`, and `tests/adversarial/`. Project docs and benchmark scripts live in `docs/`; benchmark output is kept under `docs/benchmark/results/`.
+This is a Linux-focused C++23 runtime built with CMake. Public headers live in `include/vexo/`, grouped by layer: `base`, `ds`, `gateway`, `http`, `log`, `memory`, `net`, `task`, and `time`. Implementations live in matching `src/` subdirectories. Examples are under `examples/` by feature area, while tests are split into `tests/unit/`, `tests/integration/`, and `tests/adversarial/`. Project docs and benchmark scripts live in `docs/`; benchmark output is kept under `docs/benchmark/results/`.
 
 ## Build, Test, and Development Commands
 
@@ -13,7 +13,7 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j"$(nproc)"
 ```
 
-Useful CMake options include `-DBUILD_TESTS=ON`, `-DBUILD_EXAMPLES=ON`, `-DVEXO_BUFFER_IMPL=muduo|ringbuf|nginx`, and `-DVEXO_SANITIZER=address,undefined` or `thread`. Run the demo HTTP server with `./build/examples/demo_http_server`; run the gateway with `./build/examples/demo_gateway` after starting backend demo servers.
+Useful CMake options include `-DBUILD_TESTS=ON`, `-DBUILD_EXAMPLES=ON`, `-DVEXO_BUFFER_IMPL=muduo|ringbuf|nginx`, and `-DVEXO_SANITIZER=address,undefined` or `thread`. Run the gateway with `./build/examples/gateway/demo_gateway` after starting backend HTTP services.
 
 ## Coding Style & Naming Conventions
 

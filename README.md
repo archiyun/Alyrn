@@ -2,13 +2,13 @@
 
 **English** | [中文](README.zh-CN.md) | [Documentation](https://akiba-miku.github.io/high-concurrency-runtime/)
 
-A C++23 high-concurrency network runtime for Linux. The project is layered — you can use it as a full **reverse-proxy gateway**, as a plain **HTTP application server**, as a raw **TCP/event-loop framework**, or as individual **data-structure / allocator / scheduler** libraries. Every upper layer is built on top of the lower ones with no circular dependencies.
+A C++23 high-concurrency network runtime for Linux. The project is layered — you can use it as a full **reverse-proxy gateway**, as an **HTTP protocol core**, as a raw **TCP/event-loop framework**, or as individual **data-structure / allocator / scheduler** libraries. Every upper layer is built on top of the lower ones with no circular dependencies.
 
 ```
 Gateway Layer  ─── vexo::gateway
 HTTP Layer     ─── vexo::http        (depends on net)
 Net Layer      ─── vexo::net         (depends on foundation)
-Foundation     ─── vexo::base / ds / log / time / task / memory / metrics
+Foundation     ─── vexo::base / ds / log / time / task / memory
 ```
 
 ## Features
@@ -21,12 +21,11 @@ Foundation     ─── vexo::base / ds / log / time / task / memory / metrics
 - **Active health checking** — periodic HTTP probe per backend; automatic mark-down after N consecutive failures and mark-up after M consecutive successes
 - **Passive failure tracking** — `ProxySession` records per-request failures; backends are fenced for `fail_timeout` after `max_fails`
 - **Connection pooling** — `UpstreamConnPool` maintains persistent connections to each backend, one pool per I/O thread (no cross-thread contention)
-- **Direct routes** — register synchronous handlers on the gateway without touching `HttpServer`
+- **Direct routes** — register synchronous handlers directly on the gateway
 - **Startup configuration** — wire upstreams and routes in C++ or declare them in YAML
 
-### HTTP server (`vexo::http`)
+### HTTP protocol core (`vexo::http`)
 
-- `epoll`-based event loop, One-Loop-Per-Thread I/O threading
 - Incremental HTTP/1.1 parser (`HttpContext`) — zero intermediate copies, keep-alive via `Reset()`
 - Trie router with static/dynamic segments and path parameters (`:param` syntax)
 
@@ -42,7 +41,6 @@ Foundation     ─── vexo::base / ds / log / time / task / memory / metrics
 - `MemoryPool`, `ObjectPool` allocators
 - `Scheduler`, `ThreadPool`, `WorkQueue` with cooperative cancellation
 - `vexo::ds::IntrusiveRBTree<T, kMember, kLess>` and `IntrusiveQuadHeap` — generic intrusive data structures with zero per-node heap allocation
-- `Counter`, `Gauge`, `Histogram`, `Registry` metrics interfaces
 
 ## Requirements
 
@@ -91,11 +89,10 @@ Common CMake options:
 
 ## Run The Gateway
 
-Start two upstream HTTP servers to act as backends:
+Start two HTTP backends on ports 9001 and 9002:
 
 ```bash
-PORT=9001 ./build/examples/http/demo_http_server &
-PORT=9002 ./build/examples/http/demo_http_server &
+# Replace these with the HTTP services used in your deployment.
 ```
 
 Start the code-driven gateway (listens on `0.0.0.0:8080`):
@@ -124,30 +121,6 @@ curl -i http://127.0.0.1:8080/api/kv
 
 Kill one backend and watch the health checker mark it down — requests stop going to it within one health-check interval.
 
-## Run The HTTP Demo
-
-```bash
-./build/examples/http/demo_http_server
-```
-
-Default listen address: `127.0.0.1:18080`
-
-Runtime environment variables:
-
-| Variable | Default | Description |
-|---|---:|---|
-| `HOST` | `127.0.0.1` | Bind address |
-| `PORT` | `18080` | Listen port |
-| `IO_THREADS` | auto, up to 4 | Number of I/O worker threads |
-| `ET_MODE` | unset | Set to any value to enable edge-triggered epoll |
-
-```bash
-curl http://127.0.0.1:18080/api/health
-curl -X POST http://127.0.0.1:18080/api/echo -d "hello"
-curl -X POST http://127.0.0.1:18080/api/kv/name -d "miku"
-curl http://127.0.0.1:18080/api/kv/name
-```
-
 ## Use In Your Own Project
 
 See the YAML gateway walkthrough in [docs/design/zh-CN/gateway/config_tutorial.md](docs/design/zh-CN/gateway/config_tutorial.md).
@@ -160,8 +133,8 @@ add_subdirectory(high-concurrency-runtime)
 # Full gateway
 target_link_libraries(my_gw    PRIVATE vexo_gateway)
 
-# HTTP server only
-target_link_libraries(my_http  PRIVATE vexo_http)
+# HTTP protocol core only
+target_link_libraries(my_http  PRIVATE vexo_http_core)
 
 # Raw TCP / event loop only
 target_link_libraries(my_tcp   PRIVATE vexo_net)
@@ -217,31 +190,6 @@ int main() {
 }
 ```
 
-### HTTP server example
-
-```cpp
-#include "vexo/http/http_server.h"
-#include "vexo/net/event_loop.h"
-#include "vexo/net/inet_address.h"
-
-int main() {
-    vexo::net::EventLoop loop;
-    vexo::http::HttpServer server(&loop,
-        vexo::net::InetAddress(8080, "0.0.0.0"), "my-server");
-    server.set_thread_num(4);
-
-    server.Get("/api/users/:id",
-        [](const vexo::http::HttpRequest& req,
-           vexo::http::HttpResponse& resp) {
-            resp.set_content_type("application/json; charset=utf-8");
-            resp.set_body("{\"id\":\"" + std::string(req.path_param("id")) + "\"}");
-        });
-
-    server.Start();
-    loop.Loop();
-}
-```
-
 ### Task scheduler example
 
 ```cpp
@@ -260,10 +208,10 @@ Library targets:
 | Target | Provides |
 |---|---|
 | `vexo_gateway` | Gateway, proxy, load balancers, health checker |
-| `vexo_http` | HTTP server, Trie router, request/response, context |
+| `vexo_http_core` | HTTP parser, Trie router, request/response, context |
 | `vexo_net` | EventLoop, TcpServer, Channel, Poller, Buffer, TimerQueue |
 | `vexo_task` | Scheduler, ThreadPool, Task, WorkQueue |
-| `vexo_foundation` | Logger, Timestamp, MemoryPool, ObjectPool, `vexo::ds`, metrics |
+| `vexo_foundation` | Logger, Timestamp, MemoryPool, ObjectPool, `vexo::ds` |
 
 ## Run Tests
 
@@ -298,19 +246,18 @@ Notes:
 ```text
 .
 ├── include/vexo/
-│   ├── base/        # NonCopyable, CurrentThread
+│   ├── base/        # CurrentThread, checks, panic, singleton
 │   ├── ds/          # IntrusiveRBTree, IntrusiveQuadHeap, MurmurHash3
 │   ├── gateway/     # GatewayServer, Upstream, LoadBalancer, HealthChecker, ProxyPass
-│   ├── http/        # HttpServer, Router, HttpContext, HttpRequest, HttpResponse
+│   ├── http/        # Parser, Router, HttpContext, HttpRequest, HttpResponse
 │   ├── log/         # Logger, AsyncLogger
 │   ├── memory/      # MemoryPool, ObjectPool
-│   ├── metrics/     # Counter, Gauge, Histogram, Registry
 │   ├── net/         # EventLoop, TcpServer, Channel, Poller, Buffer, TimerQueue
 │   ├── task/        # Scheduler, ThreadPool, Task, WorkQueue
 │   ├── time/        # Timestamp, Timer, TimerId, TimerTree
 │   └── trace/       # TraceId, LifecycleTrace
 ├── src/             # Implementations (mirrors include layout)
-├── examples/        # demo_gateway, demo_http_server, demo_echo_server, demo_rbtree
+├── examples/        # demo_gateway, demo_echo_server, demo_rbtree
 ├── tests/           # Unit, integration, smoke tests, oracle validator
 └── docs/            # Design notes
 ```
@@ -324,14 +271,14 @@ Gateway Layer   vexo::gateway
   WeightedRandom / IPHash / ConsistentHash / P2C)
   HealthChecker, ProxyPass, UpstreamConnPool
 
-HTTP Layer      vexo::http
-  HttpServer, Router (Trie), HttpContext, HttpRequest, HttpResponse
+HTTP Core       vexo::http
+  Parser, Router (Trie), HttpContext, HttpRequest, HttpResponse
 
 Net Layer       vexo::net
   TcpServer, TcpConnection, EventLoop, EpollPoller, Channel
   Buffer, TimerQueue (timerfd-backed)
 
-Foundation      vexo::base / ds / log / time / task / memory / metrics
+Foundation      vexo::base / ds / log / time / task / memory
   AsyncLogger, Scheduler, ThreadPool
   MemoryPool, ObjectPool
   vexo::ds::IntrusiveRBTree<T, kMember, kLess>, IntrusiveQuadHeap

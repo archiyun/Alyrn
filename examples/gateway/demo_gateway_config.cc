@@ -4,8 +4,7 @@
 // Config-driven gateway demo.
 //
 // Run backend demo servers first:
-//   PORT=9001 ./build/examples/http/demo_http_server
-//   PORT=9002 ./build/examples/http/demo_http_server
+//   启动两个监听 9001 / 9002 的 HTTP 上游服务
 //
 // Then run the gateway from the repository root:
 //   ./build/examples/gateway/demo_gateway_config examples/gateway/gateway.yaml

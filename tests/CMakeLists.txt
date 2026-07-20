@@ -92,23 +92,6 @@ target_link_libraries(io_buffer_smoke_test
 
 add_test(NAME io_buffer_smoke_test COMMAND io_buffer_smoke_test)
 
-# EventLoop 协程工作源:Schedule + ready_ + 快照 drain。链接 vexo_net(EventLoop 实现)。
-add_executable(event_loop_coro_smoke_test
-    unit/test_event_loop_coro_smoke.cc
-)
-
-target_include_directories(event_loop_coro_smoke_test
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
-
-target_link_libraries(event_loop_coro_smoke_test
-    PRIVATE
-        vexo_net
-)
-
-add_test(NAME event_loop_coro_smoke_test COMMAND event_loop_coro_smoke_test)
-
 # C3:detached 连接协程(Spawn)park→resume→自毁,无泄漏/无 UAF。链 vexo_net。
 add_executable(spawn_c3_smoke_test
     unit/test_spawn_c3_smoke.cc
@@ -407,7 +390,8 @@ target_include_directories(http_smoke_test
 
 target_link_libraries(http_smoke_test
     PRIVATE
-        vexo_http
+        vexo_http_core
+        vexo_net
 )
 
 add_test(NAME http_smoke_test COMMAND http_smoke_test)
@@ -663,22 +647,6 @@ target_link_libraries(rate_limiter_smoke_test
 
 add_test(NAME rate_limiter_smoke_test COMMAND rate_limiter_smoke_test)
 
-add_executable(gateway_metrics_smoke_test
-    unit/test_gateway_metrics_smoke.cc
-)
-
-target_include_directories(gateway_metrics_smoke_test
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
-
-target_link_libraries(gateway_metrics_smoke_test
-    PRIVATE
-        Threads::Threads
-)
-
-add_test(NAME gateway_metrics_smoke_test COMMAND gateway_metrics_smoke_test)
-
 add_executable(gateway_core_smoke_test
     unit/test_gateway_core_smoke.cc
 )
@@ -707,7 +675,6 @@ target_include_directories(proxy_e2e_smoke_test
 target_link_libraries(proxy_e2e_smoke_test
     PRIVATE
         vexo_gateway
-        vexo_http
         vexo_net
 )
 
@@ -799,7 +766,6 @@ if(GTest_FOUND)
         integration/test_event_loop.cc
         integration/test_tcp_server.cc
         integration/test_trigger_mode.cc
-        integration/test_http_server.cc
     )
 
     add_executable(vexo_integration_tests ${INTEGRATION_TEST_SOURCES})
@@ -808,7 +774,6 @@ if(GTest_FOUND)
         PRIVATE
             GTest::gtest_main
             vexo_net
-            vexo_http
     )
 
     gtest_discover_tests(vexo_integration_tests DISCOVERY_MODE PRE_TEST)

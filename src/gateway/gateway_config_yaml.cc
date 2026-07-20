@@ -219,20 +219,6 @@ void ParseStatusEndpoint(const YAML::Node& root, GatewayConfig* config) {
   ReadOptionalString(node, "body", "status_endpoint", &config->status_endpoint.body);
 }
 
-void ParseMetrics(const YAML::Node& root, GatewayConfig* config) {
-  YAML::Node node = Field(root, "metrics");
-  if (!node) return;
-  if (node.IsScalar()) {
-    config->metrics.enabled = As<bool>(node, "metrics");
-    return;
-  }
-
-  RequireMap(node, "metrics");
-  config->metrics.enabled = true;
-  ReadOptionalBool(node, "enabled", "metrics", &config->metrics.enabled);
-  ReadOptionalString(node, "path", "metrics", &config->metrics.path);
-}
-
 void ParseHealthCheck(const YAML::Node& root, GatewayConfig* config) {
   YAML::Node node = Field(root, "health_check");
   if (!node) return;
@@ -457,7 +443,6 @@ GatewayConfig LoadGatewayConfigFromYaml(std::string_view path) {
     GatewayConfig config;
     ParseServer(root, &config);
     ParseStatusEndpoint(root, &config);
-    ParseMetrics(root, &config);
     ParseHealthCheck(root, &config);
     ParseRateLimit(root, &config);
     ParseUpstreams(root, &config);
@@ -478,9 +463,6 @@ void ValidateGatewayConfig(const GatewayConfig& config) {
 
   if (config.status_endpoint.enabled) {
     ValidatePath(config.status_endpoint.path, "status_endpoint.path");
-  }
-  if (config.metrics.enabled) {
-    ValidatePath(config.metrics.path, "metrics.path");
   }
   if (config.health_check.enabled) {
     ValidatePath(config.health_check.config.path, "health_check.path");

@@ -17,7 +17,7 @@ timerfd integration, and transport backend adapters.
 
 - HTTP parsing, routing, retries, health policy, rate limiting, or upstream
   selection.
-- Gateway-specific metrics, connection names, or test hooks.
+- Gateway-specific connection names or test hooks.
 - Blocking task execution.
 
 ## Owned resources
@@ -34,7 +34,6 @@ timerfd integration, and transport backend adapters.
 - `Channel`
 - `TcpServer`, `TcpClient`, `TcpConnection`
 - `Buffer`, `InetAddress`, socket/net utility APIs
-- `IServer`, `IConnection`, and backend factories
 
 ## Thread model
 
@@ -102,8 +101,7 @@ Timer: pending-insert -> active -> executing -> active(repeat) | released
 - `vexo/http`
 - `vexo/gateway`
 - `vexo/task`
-- Gateway metrics, peer health, retries, route policy, or connection-name
-  conventions
+- Peer health, retries, route policy, or connection-name conventions
 
 ## Patch rules
 
