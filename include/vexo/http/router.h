@@ -95,7 +95,7 @@ private:
   // If you need to distinguish "/foo" from "/foo/", do not patch this
   // function — add a separate strict matcher.
   static void SplitPath(std::string_view path, std::vector<std::string_view>& segments);
-  
+
   static bool IsParamSegment(std::string_view seg);
   static void ExtractParamName(std::string_view seg, std::string& param_name);
 
@@ -104,7 +104,6 @@ private:
                  std::size_t index,
                  Method method,
                  RouteMatch& result) const;
-private:
   RouteTrieNode root_;
 };
 

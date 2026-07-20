@@ -19,6 +19,10 @@
 //   T     - element type; must publicly inherit SplayNode<T, Tag>
 //   kLess - total order on T; must be irreflexive and transitive
 //   Tag   - optional hook tag for objects that inherit multiple SplayNode hooks
+//
+// Elements must remain at stable addresses and their ordering keys must not
+// change while linked. The tree is not thread-safe; synchronize the tree and
+// all linked elements externally.
 #pragma once
 
 #include <cassert>
@@ -26,6 +30,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+
+#include "vexo/utils/macros.h"
 
 namespace vexo::ds {
 
@@ -38,22 +44,26 @@ class SplayNode {
   friend class IntrusiveSplayTree;
 
 public:
-  bool InTree() const noexcept { return linked(); }
+  [[nodiscard]] bool InTree() const noexcept { return linked(); }
 
 protected:
+  VEXO_DELETE_COPY(SplayNode);
+
   SplayNode() = default;
-  SplayNode(const SplayNode&) = delete;
-  SplayNode& operator=(const SplayNode&) = delete;
+  ~SplayNode() = default;
 
 private:
   using Node = SplayNode<T, Tag>;
 
-  static constexpr std::uintptr_t kLinked = 1u;  // bit 0
+  static constexpr std::uintptr_t kLinked = 1;  // bit 0
   static constexpr std::uintptr_t kFlagMask = kLinked;
 
-  std::uintptr_t parent_and_flags_{0u};
+  std::uintptr_t parent_and_flags_{0};
   Node* left_{nullptr};
   Node* right_{nullptr};
+#ifndef NDEBUG
+  const void* owner_{nullptr};
+#endif
 
   Node* parent() const noexcept { return reinterpret_cast<Node*>(parent_and_flags_ & ~kFlagMask); }
   void set_parent(Node* parent) noexcept {
@@ -67,7 +77,7 @@ private:
   Node* right() const noexcept { return right_; }
   void set_right(Node* right) noexcept { right_ = right; }
 
-  bool linked() const noexcept { return (parent_and_flags_ & kLinked) != 0; }
+  [[nodiscard]] bool linked() const noexcept { return (parent_and_flags_ & kLinked) != 0; }
   void set_linked(const bool linked) noexcept {
     if (linked) {
       parent_and_flags_ |= kLinked;
@@ -80,7 +90,15 @@ private:
     left_ = nullptr;
     right_ = nullptr;
     parent_and_flags_ = 0;
+#ifndef NDEBUG
+    owner_ = nullptr;
+#endif
   }
+
+#ifndef NDEBUG
+  const void* owner() const noexcept { return owner_; }
+  void set_owner(const void* owner) noexcept { owner_ = owner; }
+#endif
 };
 
 template <typename T, class Tag = void>
@@ -93,6 +111,8 @@ concept SplayNodeBaseHook =
 template <typename T, auto kLess, class Tag>
 class IntrusiveSplayTree {
 public:
+  VEXO_DELETE_COPY_MOVE(IntrusiveSplayTree);
+
   using Node = SplayNode<T, Tag>;
   static_assert(alignof(Node) >= 8,
                 "SplayNode must be at least 8-byte aligned for pointer tagging");
@@ -100,15 +120,15 @@ public:
                 "T must publicly and non-virtually inherit SplayNode<T, Tag>");
 
   IntrusiveSplayTree() = default;
-  IntrusiveSplayTree(const IntrusiveSplayTree&) = delete;
-  IntrusiveSplayTree& operator=(const IntrusiveSplayTree&) = delete;
-  IntrusiveSplayTree(IntrusiveSplayTree&&) = delete;
-  IntrusiveSplayTree& operator=(IntrusiveSplayTree&&) = delete;
+  ~IntrusiveSplayTree() { Clear(); }
 
   // O(1)
-  bool empty() const noexcept { return size_ == 0; }
+  [[nodiscard]] bool empty() const noexcept { return size_ == 0; }
   // O(1)
-  std::size_t size() const noexcept { return size_; }
+  [[nodiscard]] std::size_t size() const noexcept { return size_; }
+
+  // O(n). Unlinks every element without invoking the comparator.
+  void Clear() noexcept;
 
   // O(log n) amortized; returns false (and splays the existing node) if an
   // equal element is already in the tree.
@@ -120,7 +140,10 @@ public:
   bool Erase(T* elem);
 
   // O(1) — cached pointer, updated on Insert and Erase.
-  T* earliest() const { return min_ == nullptr ? nullptr : elem_of(min_); }
+  [[nodiscard]] T* earliest() noexcept { return min_ == nullptr ? nullptr : elem_of(min_); }
+  [[nodiscard]] const T* earliest() const noexcept {
+    return min_ == nullptr ? nullptr : elem_of(static_cast<const Node*>(min_));
+  }
 
   // O(k log n) where k is the number of extracted elements.
   // Extracts (and erases) the earliest elements satisfying pred in key order.
@@ -135,7 +158,7 @@ public:
 
   // O(n) - debug only. Verifies BST order, parent/child links, linked state,
   // subtree size and the cached minimum.
-  bool CheckInvariants() const;
+  [[nodiscard]] bool CheckInvariants() const;
 
 private:
   struct CheckResult {
@@ -149,6 +172,7 @@ private:
   std::size_t size_{0};
 
   static T* elem_of(Node* node) { return static_cast<T*>(node); }
+  static const T* elem_of(const Node* node) { return static_cast<const T*>(node); }
   static Node* node_of(T* elem) { return static_cast<Node*>(elem); }
 
   // O(log n) amortized — walks the left/right spine of a subtree.
@@ -195,10 +219,16 @@ bool ISPLAY_TYPE::Insert(T* elem) {
   if (node->InTree()) {
     return false;
   }
+#ifndef NDEBUG
+  assert(node->owner() == nullptr);
+#endif
   node->set_left(nullptr);
   node->set_right(nullptr);
   node->set_parent(nullptr);
   node->set_linked(true);
+#ifndef NDEBUG
+  node->set_owner(this);
+#endif
 
   if (empty()) {
     root_ = node;
@@ -246,6 +276,9 @@ bool ISPLAY_TYPE::Erase(T* elem) {
   if (!node->InTree()) {
     return false;
   }
+#ifndef NDEBUG
+  assert(node->owner() == this);
+#endif
   assert(root_ != nullptr);
 
   const bool erasing_min = (node == min_);
@@ -278,6 +311,37 @@ bool ISPLAY_TYPE::Erase(T* elem) {
   }
 
   return true;
+}
+
+ISPLAY_TMPL
+void ISPLAY_TYPE::Clear() noexcept {
+  Node* node = root_;
+  while (node != nullptr) {
+    if (node->left() != nullptr) {
+      node = node->left();
+      continue;
+    }
+    if (node->right() != nullptr) {
+      node = node->right();
+      continue;
+    }
+
+    Node* parent = node->parent();
+    if (parent != nullptr) {
+      if (parent->left() == node) {
+        parent->set_left(nullptr);
+      } else {
+        assert(parent->right() == node);
+        parent->set_right(nullptr);
+      }
+    }
+    node->clear_hook();
+    node = parent;
+  }
+
+  root_ = nullptr;
+  min_ = nullptr;
+  size_ = 0;
 }
 
 ISPLAY_TMPL
@@ -418,9 +482,12 @@ auto ISPLAY_TYPE::CheckSubtree(const Node* node, const Node* parent, const Node*
   result.ok = false;
 
   if (!node->InTree()) return result;
+#ifndef NDEBUG
+  if (node->owner() != this) return result;
+#endif
   if (node->parent() != parent) return result;
 
-  auto* elem = elem_of(const_cast<Node*>(node));
+  T* elem = elem_of(const_cast<Node*>(node));
   if (kLess(elem, elem)) return result;  // irreflexive
   if (lower != nullptr && !kLess(elem_of(const_cast<Node*>(lower)), elem)) return result;
   if (upper != nullptr && !kLess(elem, elem_of(const_cast<Node*>(upper)))) return result;

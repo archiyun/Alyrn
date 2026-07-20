@@ -37,32 +37,40 @@ const char* OpName(int op) {
 
 // Entrance， Channel->events()
 static uint32_t ToEpollEvents(int abstract_events) {
-  uint32_t ev{0};
-  if (abstract_events & Channel::kReadEvent) ev |= EPOLLIN | EPOLLPRI | EPOLLRDHUP;
-  if (abstract_events & Channel::kWriteEvent) ev |= EPOLLOUT;
-  return ev;
+  uint32_t event{0};
+  if (static_cast<bool>(abstract_events & Channel::kReadEvent)) {
+    event |= EPOLLIN | EPOLLPRI | EPOLLRDHUP;
+  }
+  if (static_cast<bool>(abstract_events & Channel::kWriteEvent)) {
+    event |= EPOLLOUT;
+  }
+  return event;
 }
 
 // Result, epoll_event.events -> abstract
 static int FromEpollEvents(uint32_t epoll_events) {
-  int ev{0};
-  if (epoll_events & (EPOLLIN | EPOLLPRI)) ev |= Channel::kReadEvent;
-  if (epoll_events & EPOLLOUT)             ev |= Channel::kWriteEvent;
-  if (epoll_events & EPOLLERR)             ev |= Channel::kErrorEvent;
-  if (epoll_events & (EPOLLHUP | EPOLLRDHUP)) ev |= Channel::kHupEvent;
-  return ev;
+  int event{0};
+  if (static_cast<bool>(epoll_events & (EPOLLIN | EPOLLPRI))) {
+    event |= Channel::kReadEvent;
+  }
+  if (static_cast<bool>(epoll_events & EPOLLOUT)) {
+    event |= Channel::kWriteEvent;
+  }
+  if (static_cast<bool>(epoll_events & EPOLLERR)) {
+    event |= Channel::kErrorEvent;
+  }
+  if (static_cast<bool>(epoll_events & (EPOLLHUP | EPOLLRDHUP))) {
+    event |= Channel::kHupEvent;
+  }
+  return event;
 }
 
 }  // namespace
 
-
 EPollPoller::EPollPoller(EventLoop* loop)
-    : Poller(loop),
-      epollfd_(::epoll_create1(EPOLL_CLOEXEC)),
-      events_(kInitEventListSize) {
+    : Poller(loop), epollfd_(::epoll_create1(EPOLL_CLOEXEC)), events_(kInitEventListSize) {
   if (epollfd_ < 0) {
-    LOG_FATAL() << "epoll_create1 failed: errno=" << errno
-                << " message=" << std::strerror(errno);
+    LOG_FATAL() << "epoll_create1 failed: errno=" << errno << " message=" << std::strerror(errno);
     std::abort();
   }
 }
@@ -73,12 +81,9 @@ EPollPoller::~EPollPoller() {
   }
 }
 
-vexo::time::Timestamp EPollPoller::Poll(
-    int timeout_ms,
-    ChannelList* active_channels) {
+vexo::time::Timestamp EPollPoller::Poll(int timeout_ms, ChannelList* active_channels) {
   const int max_events = static_cast<int>(events_.size());
-  const int num_events =
-      ::epoll_wait(epollfd_, events_.data(), max_events, timeout_ms);
+  const int num_events = ::epoll_wait(epollfd_, events_.data(), max_events, timeout_ms);
   const int saved_errno = errno;
   const auto now = vexo::time::Timestamp::Now();
 
@@ -99,11 +104,8 @@ vexo::time::Timestamp EPollPoller::Poll(
   return now;
 }
 
-void EPollPoller::FillActiveChannels(
-    int num_events,
-    ChannelList* active_channels) const {
-  active_channels->reserve(active_channels->size() +
-                           static_cast<std::size_t>(num_events));
+void EPollPoller::FillActiveChannels(int num_events, ChannelList* active_channels) const {
+  active_channels->reserve(active_channels->size() + static_cast<std::size_t>(num_events));
   for (int i = 0; i < num_events; ++i) {
     auto* channel = static_cast<Channel*>(events_[i].data.ptr);
     channel->set_revents(FromEpollEvents(events_[i].events));
@@ -157,10 +159,8 @@ void EPollPoller::Update(int operation, Channel* channel) {
   event.data.ptr = channel;
 
   if (::epoll_ctl(epollfd_, operation, channel->fd(), &event) < 0) {
-    LOG_ERROR() << "epoll_ctl failed: op=" << OpName(operation)
-                << " fd=" << channel->fd()
-                << " events=" << channel->events()
-                << " errno=" << errno
+    LOG_ERROR() << "epoll_ctl failed: op=" << OpName(operation) << " fd=" << channel->fd()
+                << " events=" << channel->events() << " errno=" << errno
                 << " message=" << std::strerror(errno);
   }
 }

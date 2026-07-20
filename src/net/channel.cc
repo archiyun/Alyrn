@@ -13,8 +13,6 @@ Channel::Channel(EventLoop* loop, int fd)
   VEXO_DCHECK(fd_ >= 0, "Channel: fd must be a valid non-negative descriptor");
 }
 
-Channel::~Channel() = default;
-
 Channel::Channel(Channel&& other) noexcept
     : loop_(nullptr),
       fd_(-1),
@@ -97,19 +95,19 @@ void Channel::HandleEvent(vexo::time::Timestamp receive_time) {
 void Channel::HandleEventWithGuard(vexo::time::Timestamp receive_time) {
   // kHupEvent without kReadEvent usually means the peer has closed the connection
   // and there is no more readable data left in the socket buffer.
-  if ((revents_ & kHupEvent) && !(revents_ & kReadEvent)) {
+  if (static_cast<bool>((revents_ & kHupEvent)) && !static_cast<bool>((revents_ & kReadEvent))) {
     if (close_callback_) close_callback_();
   }
 
-  if (revents_ & kErrorEvent) {
+  if (static_cast<bool>(revents_ & kErrorEvent)) {
     if (error_callback_) error_callback_();
   }
 
-  if (revents_ & kReadEvent) {
+  if (static_cast<bool>(revents_ & kReadEvent)) {
     if (read_callback_) read_callback_(receive_time);
   }
 
-  if (revents_ & kWriteEvent) {
+  if (static_cast<bool>(revents_ & kWriteEvent)) {
     if (write_callback_) write_callback_();
   }
 }

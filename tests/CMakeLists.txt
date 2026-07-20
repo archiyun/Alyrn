@@ -489,6 +489,22 @@ target_include_directories(splaytree_validator
 
 add_test(NAME splaytree_validator COMMAND splaytree_validator)
 
+add_executable(lru_cache_test
+    unit/test_lru_cache.cc
+)
+
+target_include_directories(lru_cache_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(lru_cache_test
+    PRIVATE
+        vexo_foundation
+)
+
+add_test(NAME lru_cache_test COMMAND lru_cache_test)
+
 add_executable(quad_heap_test
     unit/test_quad_heap.cc
 )

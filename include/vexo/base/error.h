@@ -20,4 +20,5 @@ inline Error make_errno(int err) noexcept { return Error(err, std::system_catego
 inline Error make_neg_errno(int neg_err) noexcept { return make_errno(-neg_err); }
 
 inline Error CurrentErrno() noexcept { return make_errno(errno); }
+
 }  // namespace vexo::base
