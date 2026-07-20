@@ -28,8 +28,8 @@ static constexpr std::size_t kCoroutineBudget = 256;
 int CreateEventfd() {
   const int evtfd = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
   if (evtfd < 0) {
-    LOG_FATAL() << "eventfd creation failed: errno=" << errno
-                << " message=" << std::strerror(errno);
+    LOG_FATALF("eventfd creation failed: errno={} message={}", errno,
+               std::strerror(errno));
     std::abort();
   }
   return evtfd;
@@ -49,8 +49,8 @@ void WriteEventfd(int fd) {
       return;
     }
 
-    LOG_ERROR() << "eventfd write failed: fd=" << fd << " errno=" << errno
-                << " message=" << std::strerror(errno);
+    LOG_ERRORF("eventfd write failed: fd={} errno={} message={}", fd, errno,
+               std::strerror(errno));
     return;
   }
 }
@@ -69,8 +69,8 @@ void ReadEventfd(int fd) {
       return;
     }
 
-    LOG_ERROR() << "eventfd read failed: fd=" << fd << " errno=" << errno
-                << " message=" << std::strerror(errno);
+    LOG_ERRORF("eventfd read failed: fd={} errno={} message={}", fd, errno,
+               std::strerror(errno));
     return;
   }
 }
@@ -96,7 +96,7 @@ EventLoop::EventLoop()
   wakeup_channel_->set_read_callback([this](vexo::time::Timestamp) { HandleRead(); });
   wakeup_channel_->EnableReading();
 
-  LOG_DEBUG() << "event loop created: wakeup_fd=" << wakeup_fd_;
+  LOG_DEBUGF("event loop created: wakeup_fd={}", wakeup_fd_);
 }
 
 EventLoop::~EventLoop() {
@@ -130,7 +130,7 @@ void EventLoop::Loop() {
   // Do not reset quit_ here: a Quit() that races in before Loop() begins (e.g.
   // another thread holds the loop pointer and stops it during startup) must be
   // honored, otherwise the loop would clear the request and block forever.
-  LOG_INFO() << "event loop entering loop";
+  LOG_INFOF("event loop entering loop");
 
   while (!quit_.load(std::memory_order_relaxed)) {
     DrainRemoteCoroutines();
@@ -156,7 +156,7 @@ void EventLoop::Loop() {
   }
 
   looping_.store(false, std::memory_order_relaxed);
-  LOG_INFO() << "event loop exited loop";
+  LOG_INFOF("event loop exited loop");
 }
 
 void EventLoop::Quit() {

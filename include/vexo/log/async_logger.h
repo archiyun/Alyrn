@@ -2,10 +2,13 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <atomic>
+#include <array>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <stop_token>
@@ -25,6 +28,7 @@ namespace vexo::log {
 class AsyncLogger {
 public:
   static constexpr std::size_t kBufferSize = 64 * 1024;
+  static constexpr std::size_t kShardCount = 8;
   using Buffer = LogBuffer<kBufferSize>;
   using BufferPtr = std::unique_ptr<Buffer>;
   using BufferQueue = std::vector<BufferPtr>;
@@ -41,6 +45,13 @@ public:
   void Append(const char *data, std::size_t len);
 
 private:
+  struct Shard {
+    std::mutex mutex;
+    BufferPtr current_buffer;
+    BufferPtr next_buffer;
+    BufferQueue buffers;
+  };
+
   void ThreadFunc(std::stop_token stop_token);
 
   void OpenFile();
@@ -55,20 +66,18 @@ private:
   int flush_interval_ms_;
   std::size_t roll_size_;
 
-  std::mutex mutex_;
+  std::mutex wait_mutex_;
   std::condition_variable_any cv_;
-
-  BufferPtr current_buffer_;
-  BufferPtr next_buffer_;
-  BufferQueue buffers_;
+  std::array<Shard, kShardCount> shards_;
 
   std::jthread backend_thread_;
   bool started_ {false};
+  std::atomic<bool> accepting_{false};
 
   FILE *file_{nullptr};
   std::size_t written_bytes_{0};
   std::uint64_t rotate_sequence_{0};
-  std::size_t dropped_messages_{0};
+  std::atomic<std::size_t> dropped_messages_{0};
   int last_error_code_{0};
 };
 }  // namespace vexo::log

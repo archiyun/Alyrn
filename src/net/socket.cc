@@ -27,8 +27,8 @@ void Socket::BindAddress(const InetAddress& localAddr) {
     return;
   }
 
-  LOG_FATAL() << "bind failed: fd=" << sockfd_ << " address=" << localAddr.ToIpPort()
-              << " errno=" << errno << " message=" << std::strerror(errno);
+  LOG_FATALF("bind failed: fd={} address={} errno={} message={}", sockfd_,
+             localAddr.ToIpPort(), errno, std::strerror(errno));
   std::abort();
 }
 
@@ -38,8 +38,8 @@ void Socket::Listen() {
     return;
   }
 
-  LOG_FATAL() << "listen failed: fd=" << sockfd_ << " errno=" << errno
-              << " message=" << std::strerror(errno);
+  LOG_FATALF("listen failed: fd={} errno={} message={}", sockfd_, errno,
+             std::strerror(errno));
   std::abort();
 }
 
@@ -52,8 +52,8 @@ int Socket::Accept(InetAddress* peeraddr) {
   if (connfd >= 0 && peeraddr) {
     *peeraddr = InetAddress(addr);
   } else if (connfd < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
-    LOG_ERROR() << "accept failed: listen_fd=" << sockfd_ << " errno=" << errno
-                << " message=" << std::strerror(errno);
+    LOG_ERRORF("accept failed: listen_fd={} errno={} message={}", sockfd_, errno,
+               std::strerror(errno));
   }
 
   return connfd;
@@ -68,8 +68,8 @@ void Socket::ShutdownWrite() {
     return;
   }
 
-  LOG_ERROR() << "shutdown write failed: fd=" << sockfd_ << " errno=" << errno
-              << " message=" << std::strerror(errno);
+  LOG_ERRORF("shutdown write failed: fd={} errno={} message={}", sockfd_, errno,
+             std::strerror(errno));
 }
 
 void Socket::Close() noexcept {
@@ -83,8 +83,8 @@ void Socket::Close() noexcept {
     return;
   }
 
-  LOG_ERROR() << "socket close failed: fd=" << fd << " errno=" << errno
-              << " message=" << std::strerror(errno);
+  LOG_ERRORF("socket close failed: fd={} errno={} message={}", fd, errno,
+             std::strerror(errno));
 }
 
 void Socket::set_tcp_no_delay(bool on) {
@@ -93,8 +93,8 @@ void Socket::set_tcp_no_delay(bool on) {
     return;
   }
 
-  LOG_ERROR() << "setsockopt TCP_NODELAY failed: fd=" << sockfd_ << " on=" << on
-              << " error=" << result.error().value() << " message=" << result.error().message();
+  LOG_ERRORF("setsockopt TCP_NODELAY failed: fd={} on={} error={} message={}",
+             sockfd_, on ? 1 : 0, result.error().value(), result.error().message());
 }
 
 void Socket::set_reuse_addr(bool on) {
@@ -103,8 +103,8 @@ void Socket::set_reuse_addr(bool on) {
     return;
   }
 
-  LOG_ERROR() << "setsockopt SO_REUSEADDR failed: fd=" << sockfd_ << " on=" << on
-              << " error=" << result.error().value() << " message=" << result.error().message();
+  LOG_ERRORF("setsockopt SO_REUSEADDR failed: fd={} on={} error={} message={}",
+             sockfd_, on ? 1 : 0, result.error().value(), result.error().message());
 }
 
 void Socket::set_reuse_port(bool on) {
@@ -113,8 +113,8 @@ void Socket::set_reuse_port(bool on) {
     return;
   }
 
-  LOG_ERROR() << "setsockopt SO_REUSEPORT failed: fd=" << sockfd_ << " on=" << on
-              << " error=" << result.error().value() << " message=" << result.error().message();
+  LOG_ERRORF("setsockopt SO_REUSEPORT failed: fd={} on={} error={} message={}",
+             sockfd_, on ? 1 : 0, result.error().value(), result.error().message());
 }
 
 void Socket::set_keep_alive(bool on) {
@@ -123,8 +123,8 @@ void Socket::set_keep_alive(bool on) {
     return;
   }
 
-  LOG_ERROR() << "setsockopt SO_KEEPALIVE failed: fd=" << sockfd_ << " on=" << on
-              << " error=" << result.error().value() << " message=" << result.error().message();
+  LOG_ERRORF("setsockopt SO_KEEPALIVE failed: fd={} on={} error={} message={}",
+             sockfd_, on ? 1 : 0, result.error().value(), result.error().message());
 }
 
 }  // namespace vexo::net
