@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
-# Compare the memory-pool io_uring gateway with the existing Reactor gateway
-# and the repository's Nginx gateway configuration.
+# Compare the io_uring gateway with the existing Reactor gateway and the
+# repository's Nginx gateway configuration.
 #
 # The three targets proxy to the same four local Nginx upstreams. The runtime
-# Reactor gateway uses one event-loop worker because
+# Reactor gateway uses one EventLoop because
 # demo_bench_gateway_multi::set_thread_num is currently a compatibility no-op.
-# The io_uring gateway uses four independent rings/listeners with SO_REUSEPORT;
-# the kernel distributes incoming connections among them. Nginx keeps its
-# existing four-worker configuration for continuity with historical results.
+# The fair Reactor/io_uring comparison therefore uses one EventLoop and one
+# io_uring worker/ring. Nginx keeps its existing four-worker configuration as
+# an independent reference and is not part of the fair runtime comparison.
+#
+# The fair runtime comparison also disables the io_uring-only frame pool and
+# uses the same upstream idle-pool size in both gateways.
 #
 # Usage:
 #   docs/benchmark/bench_luring_pool_vs_reactor_nginx.sh
@@ -19,13 +22,27 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 BD="$ROOT/docs/benchmark"
-OUTDIR=${OUTDIR:-"$BD/results-luring-pool-vs-reactor-nginx-$(date +%Y%m%d-%H%M%S)"}
+OUTDIR=${OUTDIR:-"$BD/results-luring-vs-reactor-nginx-$(date +%Y%m%d-%H%M%S)"}
 REACTOR_BIN="$ROOT/build/examples/gateway/demo_bench_gateway_multi"
 LURING_BIN="$ROOT/build-uring/examples/gateway/demo_bench_gateway_luring"
 MAX_CONCURRENT_REQUESTS=${MAX_CONCURRENT_REQUESTS:-20000}
-URING_WORKERS=${URING_WORKERS:-4}
+URING_WORKERS=${URING_WORKERS:-1}
 URING_ENTRIES=${URING_ENTRIES:-8192}
-MAX_IDLE_PER_PEER=${MAX_IDLE_PER_PEER:-16}
+MAX_IDLE_PER_PEER=${MAX_IDLE_PER_PEER:-64}
+FRAME_POOL=${FRAME_POOL:-0}
+
+if [[ "$URING_WORKERS" != 1 ]]; then
+  echo "fair comparison requires URING_WORKERS=1; Reactor currently has one EventLoop" >&2
+  exit 1
+fi
+if [[ "$MAX_IDLE_PER_PEER" != 64 ]]; then
+  echo "fair comparison requires MAX_IDLE_PER_PEER=64 to match Reactor" >&2
+  exit 1
+fi
+if [[ "$FRAME_POOL" != 0 ]]; then
+  echo "fair comparison requires FRAME_POOL=0; Reactor has no frame pool" >&2
+  exit 1
+fi
 
 export NO_PROXY="127.0.0.1,localhost${NO_PROXY:+,$NO_PROXY}"
 export no_proxy="$NO_PROXY"
@@ -81,8 +98,8 @@ run_target() {
   "$BD/run_bench.sh" "$url" "$name" "$cpu_match" "$OUTDIR"
 }
 
-echo "==> starting Reactor gateway (8080)"
-UPSTREAM_PORTS=9001,9002,9003,9004 LB_ALGO=round_robin IO_THREADS=4 \
+echo "==> starting Reactor gateway (8080, one EventLoop)"
+UPSTREAM_PORTS=9001,9002,9003,9004 LB_ALGO=round_robin IO_THREADS=1 \
   MAX_CONCURRENT_REQUESTS="$MAX_CONCURRENT_REQUESTS" PORT=8080 \
   "$REACTOR_BIN" >"$OUTDIR/reactor.log" 2>&1 &
 REACTOR_PID=$!
@@ -93,16 +110,16 @@ kill "$REACTOR_PID" 2>/dev/null
 wait "$REACTOR_PID" 2>/dev/null || true
 REACTOR_PID=""
 
-echo "==> starting memory-pool io_uring gateway (8081)"
-UPSTREAM_PORTS=9001,9002,9003,9004 LB_ALGO=round_robin FRAME_POOL=1 \
+echo "==> starting io_uring gateway (8081, one worker/ring, frame pool disabled)"
+UPSTREAM_PORTS=9001,9002,9003,9004 LB_ALGO=round_robin FRAME_POOL="$FRAME_POOL" \
   URING_WORKERS="$URING_WORKERS" URING_ENTRIES="$URING_ENTRIES" \
   MAX_IDLE_PER_PEER="$MAX_IDLE_PER_PEER" \
   MAX_CONCURRENT_REQUESTS="$MAX_CONCURRENT_REQUESTS" PORT=8081 \
-  "$LURING_BIN" >"$OUTDIR/luring_pool.log" 2>&1 &
+  "$LURING_BIN" >"$OUTDIR/luring.log" 2>&1 &
 LURING_PID=$!
 sleep 1
 curl -fsS http://127.0.0.1:8081/ >/dev/null
-run_target luring_pool http://127.0.0.1:8081/ demo_bench_gateway_luring
+run_target luring http://127.0.0.1:8081/ demo_bench_gateway_luring
 kill -TERM "$LURING_PID" 2>/dev/null
 wait "$LURING_PID" 2>/dev/null || true
 LURING_PID=""

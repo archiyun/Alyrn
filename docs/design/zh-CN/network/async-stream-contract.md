@@ -52,10 +52,10 @@ vexo::luring    io_uring / SQE / CQE
 
 ```cpp
 ReadSome(std::span<std::byte> buffer)
-    -> coro::Task<base::Result<std::size_t>>
+    -> 可 await，await_resume() 为 base::Result<std::size_t>
 
 WriteSome(std::span<const std::byte> buffer)
-    -> coro::Task<base::Result<std::size_t>>
+    -> 可 await，await_resume() 为 base::Result<std::size_t>
 
 Shutdown()
     -> coro::Task<base::Result<void>>
@@ -96,22 +96,27 @@ Close()
 `Connect()` 不属于 `AsyncStream` 或 `AsyncListener`。它是建立 outbound stream 的另一项
 能力，由 gateway 使用的 `UpstreamConnector` concept 单独约束。
 
-### 2.3 Task 的使用规则
+### 2.3 Awaitable 的使用规则
 
-网络方法返回的是惰性的 `coro::Task<T>`：
+`ReadSome` 和 `WriteSome` 的返回值必须是可 await 对象，并产生约定的
+`base::Result`。后端可以返回惰性的 `coro::Task<T>`，也可以返回直接承载操作状态的
+底层 awaiter：
 
 ```cpp
-auto task = stream.ReadSome(buffer);  // 只创建 Task，不提交 I/O
-auto result = co_await std::move(task);  // 此处开始执行该 Task
+auto result = co_await stream.ReadSome(buffer);
 ```
 
-`Task` 是 move-only、single-consumer 对象，只能被 await 一次。也可以把它交给
-`coro::Spawn(scheduler, task)`，通过 `JoinHandle` 等待或 detach。
+`ReactorStream` 和 `LUringStream` 的 span 读写入口都返回直接 awaiter，因此核心读写路径
+不会为一次读写额外创建子协程帧。`io::Buffer` 等扩展重载以及 `Shutdown()`、`Close()`
+仍可返回 `Task`。
 
-下面的写法不会启动 I/O，Task 析构时会销毁协程帧：
+如果具体接口返回 `Task`，它仍然是 move-only、single-consumer 对象，只能被 await 一次，
+也可以交给 `coro::Spawn(scheduler, task)`。直接 awaitable 则在 `co_await` 时提交 I/O。
+
+无论返回哪种 awaitable，丢弃未等待的操作都属于错误：
 
 ```cpp
-stream.ReadSome(buffer);  // 错误：丢弃了 [[nodiscard]] Task
+stream.ReadSome(buffer);  // 错误：没有等待该 I/O operation
 ```
 
 I/O 方法本身不抛出业务异常。结果通过 `vexo::base::Result<T>` 返回，它是
@@ -397,7 +402,7 @@ unexpected(error)
 ```
 
 调用方不能假设一次 `WriteSome` 写完整个 buffer。应使用 `vexo::io::WriteAll` 或等价
-循环。buffer 在该 `WriteSome` 的 Task 完成前不能修改、移动或释放。
+循环。buffer 在该 `WriteSome` 的 awaitable 完成前不能修改、移动或释放。
 
 普通 `WriteSome` 的完成表示该调用使用的 buffer 已经不再被该 operation 访问。send
 zero-copy 可能在“数据发送完成”和“buffer 可以复用”之间产生不同完成事件，因此不属于
@@ -508,10 +513,10 @@ co_await stream.ReadSome(buffer)
 co_await stream.WriteSome(buffer)
 ```
 
-对应 Task 完成的整个过程：
+对应 I/O operation 完成的整个过程：
 
 ```text
-创建 Task -> Submit -> 可能 Suspend -> Complete -> await_resume
+创建 awaitable -> co_await -> Submit -> 可能 Suspend -> Complete -> await_resume
 ```
 
 错误示例：

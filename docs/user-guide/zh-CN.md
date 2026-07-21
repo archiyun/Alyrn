@@ -236,11 +236,15 @@ concept AsyncStream =
 核心接口是：
 
 ```cpp
-Task<Result<std::size_t>> ReadSome(std::span<std::byte> buffer);
-Task<Result<std::size_t>> WriteSome(std::span<const std::byte> buffer);
+// ReadSome/WriteSome 返回可 await 对象，await_resume() 的结果分别为：
+// Result<std::size_t>
 Task<Result<void>> Shutdown();
 Task<Result<void>> Close();
 ```
+
+`ReadSome` 和 `WriteSome` 可以返回惰性 `Task`，也可以返回直接执行 I/O 的底层
+awaitable；调用方统一使用 `co_await`。当前两个后端的 span 重载都直接返回 awaitable，
+避免为单次读写创建额外的子协程帧；`io::Buffer` 等扩展重载仍可返回 `Task`。
 
 `vexo::net::ReactorStream` 和 `vexo::luring::LUringStream` 都满足这个概念：
 
@@ -286,7 +290,7 @@ vexo::coro::Task<void> SendHello(vexo::io::AsyncStream auto& stream) {
 
 ### buffer 生命周期
 
-传给 `ReadSome` 或 `WriteSome` 的 buffer 必须存活到对应 `Task` 完成：
+传给 `ReadSome` 或 `WriteSome` 的 buffer 必须存活到对应 I/O operation 完成：
 
 ```cpp
 vexo::coro::Task<void> Correct(vexo::luring::LUringStream& stream) {
