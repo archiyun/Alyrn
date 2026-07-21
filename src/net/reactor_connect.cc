@@ -5,16 +5,14 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include <cassert>
 #include <cerrno>
 #include <chrono>
 #include <coroutine>
 #include <expected>
-#include <memory>
-#include <new>
 #include <optional>
 #include <utility>
 
+#include "vexo/base/check.h"
 #include "vexo/coro/scheduler.h"
 #include "vexo/coro/work.h"
 #include "vexo/net/channel.h"
@@ -28,7 +26,7 @@ base::Result<int> ConnectError(int fd) noexcept {
   int err = 0;
   socklen_t len = static_cast<socklen_t>(sizeof(err));
   if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) < 0) {
-    return std::unexpected(base::make_errno(errno));
+    return std::unexpected(base::CurrentErrno());
   }
   return err;
 }
@@ -47,7 +45,7 @@ public:
   bool await_ready() const noexcept { return false; }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
-    assert(loop_->IsInLoopThread());
+    VEXO_DCHECK(loop_->IsInLoopThread(), "ConnectAwaiter: wrong EventLoop thread");
     scheduler_ = &coro::Scheduler::RequireCurrent();
     resume_work_.handle = continuation;
 
@@ -69,7 +67,7 @@ public:
       return false;
     }
     if (errno != EINPROGRESS) {
-      result_ = std::unexpected(base::make_errno(errno));
+      result_ = std::unexpected(base::CurrentErrno());
       return false;
     }
 
@@ -80,19 +78,15 @@ public:
     return true;
   }
 
-  base::Result<std::unique_ptr<ReactorStream>> await_resume() noexcept {
-    assert(result_.has_value());
+  base::Result<ReactorStream> await_resume() noexcept {
+    VEXO_DCHECK(result_.has_value(), "ConnectAwaiter: result is not ready");
     return std::move(*result_);
   }
 
 private:
-  base::Result<std::unique_ptr<ReactorStream>> MakeStream() noexcept {
+  base::Result<ReactorStream> MakeStream() noexcept {
     DetachChannel();
-    auto stream =
-        std::unique_ptr<ReactorStream>(new (std::nothrow) ReactorStream(loop_, fd_, peer_));
-    if (!stream) {
-      return std::unexpected(base::make_errno(ENOMEM));
-    }
+    ReactorStream stream(loop_, fd_, peer_);
     fd_ = -1;
     return stream;
   }
@@ -128,7 +122,7 @@ private:
   std::optional<Channel> channel_;
   coro::Scheduler* scheduler_{nullptr};
   coro::ResumeWork resume_work_{};
-  std::optional<base::Result<std::unique_ptr<ReactorStream>>> result_;
+  std::optional<base::Result<ReactorStream>> result_;
 };
 
 class SleepAwaiter {
@@ -139,7 +133,7 @@ public:
   bool await_ready() const noexcept { return delay_.count() <= 0; }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
-    assert(loop_->IsInLoopThread());
+    VEXO_DCHECK(loop_->IsInLoopThread(), "SleepAwaiter: wrong EventLoop thread");
     scheduler_ = &coro::Scheduler::RequireCurrent();
     resume_work_.handle = continuation;
     const auto seconds = std::chrono::duration<double>(delay_).count();
@@ -158,8 +152,20 @@ private:
 
 }  // namespace
 
-coro::Task<base::Result<std::unique_ptr<ReactorStream>>> ReactorConnector::Connect(
-    std::string_view host, std::uint16_t port) {
+ReactorConnector::ReactorConnector(EventLoop* loop) noexcept : loop_(loop) {}
+
+ReactorConnector::ReactorConnector(ReactorConnector&& other) noexcept
+    : loop_(std::exchange(other.loop_, nullptr)) {}
+
+ReactorConnector& ReactorConnector::operator=(ReactorConnector&& other) noexcept {
+  if (this != &other) {
+    loop_ = std::exchange(other.loop_, nullptr);
+  }
+  return *this;
+}
+
+coro::Task<base::Result<ReactorStream>> ReactorConnector::Connect(std::string_view host,
+                                                                  std::uint16_t port) {
   auto address = ParseIPv4Address(host, port);
   if (!address.has_value()) {
     co_return std::unexpected(address.error());

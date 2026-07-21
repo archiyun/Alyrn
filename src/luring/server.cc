@@ -24,7 +24,7 @@ base::Result<void> LUringServer::Start() {
 
   workers_ = std::make_unique<LUringWorkerGroup>(
       listen_addr_, options_.worker_group_options, thread_init_callback_,
-      [this](LUringLoop& loop, std::unique_ptr<LUringStream> stream) {
+      [this](LUringLoop& loop, LUringStream stream) {
         if (session_handler_) {
           coro::Spawn(loop, session_handler_(loop, std::move(stream))).Detach();
         }

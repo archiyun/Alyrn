@@ -61,19 +61,19 @@ std::string_view StripLineEnding(std::string_view line) {
 }
 
 template <vexo::io::AsyncStream Stream>
-[[maybe_unused]] vexo::coro::Task<void> EchoOnceSession(std::unique_ptr<Stream> stream) {
+[[maybe_unused]] vexo::coro::Task<void> EchoOnceSession(Stream stream) {
   std::array<std::byte, 4096> buffer{};
 
-  auto result = co_await vexo::io::EchoOnce(*stream, buffer);
+  auto result = co_await vexo::io::EchoOnce(stream, buffer);
   if (!result.has_value()) {
     std::cerr << "echo once failed: " << result.error().message() << '\n';
   }
 
-  co_await stream->Close();
+  co_await stream.Close();
 }
 
 template <vexo::io::AsyncStream Stream>
-vexo::coro::Task<void> Session(std::unique_ptr<Stream> stream, long long* active_sessions,
+vexo::coro::Task<void> Session(Stream stream, long long* active_sessions,
                                long long* total_messages) {
   ++(*active_sessions);
 
@@ -81,7 +81,7 @@ vexo::coro::Task<void> Session(std::unique_ptr<Stream> stream, long long* active
   std::string pending;
 
   for (;;) {
-    auto read_result = co_await stream->ReadSome(buffer);
+    auto read_result = co_await stream.ReadSome(buffer);
     if (!read_result.has_value()) {
       std::cerr << "read failed: " << read_result.error().message() << '\n';
       break;
@@ -91,14 +91,14 @@ vexo::coro::Task<void> Session(std::unique_ptr<Stream> stream, long long* active
     if (n == 0) {
       if (!pending.empty()) {
         ++(*total_messages);
-        co_await vexo::io::WriteAll(*stream, Bytes(pending));
+        co_await vexo::io::WriteAll(stream, Bytes(pending));
       }
       break;
     }
 
     pending.append(reinterpret_cast<const char*>(buffer.data()), n);
     if (pending.size() > 64 * 1024) {
-      co_await vexo::io::WriteAll(*stream, Bytes("ERR line too long\n"));
+      co_await vexo::io::WriteAll(stream, Bytes("ERR line too long\n"));
       break;
     }
 
@@ -112,8 +112,8 @@ vexo::coro::Task<void> Session(std::unique_ptr<Stream> stream, long long* active
       const std::string_view command = StripLineEnding(line);
 
       if (command == "/quit") {
-        co_await vexo::io::WriteAll(*stream, Bytes("bye\n"));
-        co_await stream->Close();
+        co_await vexo::io::WriteAll(stream, Bytes("bye\n"));
+        co_await stream.Close();
         --(*active_sessions);
         co_return;
       }
@@ -121,14 +121,14 @@ vexo::coro::Task<void> Session(std::unique_ptr<Stream> stream, long long* active
       if (command == "/stats") {
         std::string reply = "active_sessions=" + std::to_string(*active_sessions) +
                             " total_messages=" + std::to_string(*total_messages) + "\n";
-        co_await vexo::io::WriteAll(*stream, Bytes(reply));
+        co_await vexo::io::WriteAll(stream, Bytes(reply));
         pending.erase(0, line_end + 1);
         continue;
       }
 
       ++(*total_messages);
 
-      auto write_result = co_await vexo::io::WriteAll(*stream, Bytes(line));
+      auto write_result = co_await vexo::io::WriteAll(stream, Bytes(line));
       if (!write_result.has_value()) {
         std::cerr << "write failed: " << write_result.error().message() << '\n';
         break;
@@ -138,7 +138,7 @@ vexo::coro::Task<void> Session(std::unique_ptr<Stream> stream, long long* active
     }
   }
 
-  co_await stream->Close();
+  co_await stream.Close();
   --(*active_sessions);
 }
 

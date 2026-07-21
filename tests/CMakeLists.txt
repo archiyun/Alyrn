@@ -38,6 +38,23 @@ target_include_directories(object_pool_smoke_test
 
 add_test(NAME object_pool_smoke_test COMMAND object_pool_smoke_test)
 
+add_executable(upstream_conn_pool_smoke_test
+    unit/test_upstream_conn_pool_smoke.cc
+)
+
+target_include_directories(upstream_conn_pool_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(upstream_conn_pool_smoke_test
+    PRIVATE
+        vexo_coro
+        vexo_foundation
+)
+
+add_test(NAME upstream_conn_pool_smoke_test COMMAND upstream_conn_pool_smoke_test)
+
 add_executable(mpsc_bounded_queue_smoke_test
     unit/test_mpsc_bounded_queue_smoke.cc
 )
@@ -236,6 +253,26 @@ if(VEXO_ENABLE_URING)
     target_compile_definitions(luring_stream_smoke_test PRIVATE VEXO_ENABLE_URING)
 
     add_test(NAME luring_stream_smoke_test COMMAND luring_stream_smoke_test)
+
+    add_executable(luring_move_smoke_test
+        unit/test_luring_move_smoke.cc
+    )
+
+    target_include_directories(luring_move_smoke_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../include
+            ${URING_INCLUDE_DIRS}
+    )
+
+    target_link_libraries(luring_move_smoke_test
+        PRIVATE
+            vexo_luring
+            vexo_net
+    )
+
+    target_compile_definitions(luring_move_smoke_test PRIVATE VEXO_ENABLE_URING)
+
+    add_test(NAME luring_move_smoke_test COMMAND luring_move_smoke_test)
 
     add_executable(luring_listener_smoke_test
         unit/test_luring_listener_smoke.cc

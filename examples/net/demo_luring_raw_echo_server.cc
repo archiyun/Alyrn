@@ -59,28 +59,28 @@ bool EnvBool(const char* key, bool fallback) {
   return value != nullptr ? std::atoi(value) != 0 : fallback;
 }
 
-vexo::coro::Task<void> EchoSession(std::unique_ptr<vexo::luring::LUringStream> stream) {
+vexo::coro::Task<void> EchoSession(vexo::luring::LUringStream stream) {
   std::array<std::byte, 16 * 1024> buffer{};
 
   for (;;) {
-    auto read = co_await stream->ReadSome(buffer);
+    auto read = co_await stream.ReadSome(buffer);
     if (!read.has_value() || *read == 0) {
       break;
     }
 
     std::size_t written = 0;
     while (written < *read) {
-      auto result = co_await stream->WriteSome(
+      auto result = co_await stream.WriteSome(
           std::span<const std::byte>(buffer.data() + written, *read - written));
       if (!result.has_value() || *result == 0) {
-        co_await stream->Close();
+        co_await stream.Close();
         co_return;
       }
       written += *result;
     }
   }
 
-  co_await stream->Close();
+  co_await stream.Close();
 }
 
 }  // namespace
@@ -130,10 +130,9 @@ int main() {
   };
 
   vexo::luring::LUringServer server(*listen_addr, std::move(options));
-  server.set_session_handler(
-      [](vexo::luring::LUringLoop&, std::unique_ptr<vexo::luring::LUringStream> stream) {
-        return EchoSession(std::move(stream));
-      });
+  server.set_session_handler([](vexo::luring::LUringLoop&, vexo::luring::LUringStream stream) {
+    return EchoSession(std::move(stream));
+  });
 
   auto started = server.Start();
   if (!started.has_value()) {

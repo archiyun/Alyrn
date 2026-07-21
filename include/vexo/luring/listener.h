@@ -3,7 +3,6 @@
 #include <sys/socket.h>
 
 #include <cstddef>
-#include <memory>
 
 #include "vexo/base/error.h"
 #include "vexo/coro/task.h"
@@ -27,16 +26,21 @@ struct LUringListenOptions {
 
 class LUringListener {
 public:
-  VEXO_DELETE_COPY_MOVE(LUringListener);
+  VEXO_DELETE_COPY(LUringListener);
+
   using Stream = LUringStream;
 
-  static base::Result<std::unique_ptr<LUringListener>> Create(
-      LUringLoop* loop, const net::InetAddress& listen_addr,
-      LUringListenOptions options = {}) noexcept;
+  static base::Result<LUringListener> Create(LUringLoop* loop, const net::InetAddress& listen_addr,
+                                             LUringListenOptions options = {}) noexcept;
 
   ~LUringListener();
 
-  coro::Task<base::Result<std::unique_ptr<LUringStream>>> Accept();
+  // A listener may move only on its owning loop thread and only while no
+  // accept or close operation is waiting for a CQE.
+  LUringListener(LUringListener&& other) noexcept;
+  LUringListener& operator=(LUringListener&& other) noexcept;
+
+  coro::Task<base::Result<LUringStream>> Accept();
   coro::Task<base::Result<void>> Close();
 
   base::Result<net::InetAddress> LocalAddress() const noexcept;
@@ -48,6 +52,8 @@ private:
 
   LUringListener(LUringLoop* loop, int fd) noexcept;
   void NotifyCloseProgress() noexcept;
+  void ResetForMove() noexcept;
+  static LUringLoop* PrepareMove(LUringListener& other) noexcept;
 
   LUringLoop* loop_;
   int fd_{-1};

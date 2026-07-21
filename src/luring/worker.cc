@@ -1,7 +1,7 @@
 #include "vexo/luring/worker.h"
 
-#include <cerrno>
 #include <algorithm>
+#include <cerrno>
 #include <expected>
 #include <memory>
 #include <optional>
@@ -123,13 +123,13 @@ void LUringWorker::WorkLoop(std::stop_token token) noexcept {
   }
 
   if (init_callback_) {
-    init_callback_(&loop, listener->get());
+    init_callback_(&loop, &*listener);
   }
 
   {
     std::lock_guard lk{mutex_};
     loop_ = &loop;
-    listener_ = listener->get();
+    listener_ = &*listener;
     start_result_ = base::Result<void>{};
     started_ = true;
   }
@@ -138,7 +138,7 @@ void LUringWorker::WorkLoop(std::stop_token token) noexcept {
   if (connection_callback_) {
     const std::size_t accept_depth = std::max<std::size_t>(1, options_.listen_options.accept_depth);
     for (std::size_t i = 0; i < accept_depth; ++i) {
-      coro::Spawn(loop, AcceptLoop(loop, listener->get(), &connection_callback_)).Detach();
+      coro::Spawn(loop, AcceptLoop(loop, &*listener, &connection_callback_)).Detach();
     }
   }
 
@@ -146,8 +146,7 @@ void LUringWorker::WorkLoop(std::stop_token token) noexcept {
 
   loop.Loop(token);
 
-  CloseListenerAndDrain(loop, *listener->get());
-  listener->reset();
+  CloseListenerAndDrain(loop, *listener);
 
   {
     std::lock_guard lk{mutex_};

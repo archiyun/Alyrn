@@ -2,7 +2,6 @@
 
 #include <condition_variable>
 #include <functional>
-#include <memory>
 #include <memory_resource>
 #include <mutex>
 #include <thread>
@@ -30,7 +29,7 @@ public:
   VEXO_DELETE_COPY_MOVE(LUringWorker);
 
   using ThreadInitCallback = std::function<void(LUringLoop*, LUringListener*)>;
-  using ConnectionCallback = std::function<void(LUringLoop&, std::unique_ptr<LUringStream>)>;
+  using ConnectionCallback = std::function<void(LUringLoop&, LUringStream)>;
 
   LUringWorker(net::InetAddress listen_addr, LUringWorkerOptions options = {},
                ThreadInitCallback init_callback = {}, ConnectionCallback connection_callback = {});

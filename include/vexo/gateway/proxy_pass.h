@@ -10,7 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
-#include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -54,7 +54,7 @@ concept UpstreamConnector = requires(T& connector, std::string_view host, std::u
   requires vexo::io::AsyncStream<typename T::Stream>;
   {
     connector.Connect(host, port)
-  } -> std::same_as<vexo::coro::Task<vexo::base::Result<std::unique_ptr<typename T::Stream>>>>;
+  } -> std::same_as<vexo::coro::Task<vexo::base::Result<typename T::Stream>>>;
 };
 
 class ProxyPass {
@@ -79,9 +79,8 @@ private:
 
   static uint64_t NowMs();
   static bool IsIdempotent(vexo::http::Method method);
-  static void RewriteHeaders(std::string_view raw_headers, std::string& out);
-  static ResponseState ParseResponseState(std::string_view raw_headers,
-                                          vexo::http::Method request_method);
+  static ResponseState RewriteHeaders(std::string_view raw_headers, std::string& out,
+                                      vexo::http::Method request_method);
   static std::shared_ptr<UpstreamPeer> SelectFailoverPeer(Upstream& upstream,
                                                           const UpstreamPeer& current);
 
@@ -149,7 +148,12 @@ vexo::coro::Task<vexo::base::Result<bool>> ProxyPass::RelayResponse(
     if (header_end != std::string::npos) {
       const std::size_t raw_size = header_end + 4;
       const std::string_view raw_headers(pending.data(), raw_size);
-      ResponseState state = ParseResponseState(raw_headers, request_method);
+      ResponseState state;
+
+      std::string outbound;
+      const std::size_t body_available = pending.size() - raw_size;
+      outbound.reserve(raw_headers.size() + 64 + body_available);
+      state = RewriteHeaders(raw_headers, outbound, request_method);
 
       if (!cb_reported) {
         cb_reported = true;
@@ -161,17 +165,11 @@ vexo::coro::Task<vexo::base::Result<bool>> ProxyPass::RelayResponse(
         }
       }
 
-      std::string outbound;
-      outbound.reserve(raw_headers.size() + 64 + pending.size() - raw_size);
-      RewriteHeaders(raw_headers, outbound);
-      pending.erase(0, raw_size);
-
-      if (!pending.empty()) {
+      if (body_available != 0) {
         const uint64_t n = (state.framing == BodyFraming::kContentLength)
-                               ? std::min<uint64_t>(pending.size(), state.body_remaining)
-                               : pending.size();
-        outbound.append(pending.data(), n);
-        pending.erase(0, static_cast<std::size_t>(n));
+                               ? std::min<uint64_t>(body_available, state.body_remaining)
+                               : body_available;
+        outbound.append(pending.data() + raw_size, static_cast<std::size_t>(n));
         if (state.framing == BodyFraming::kContentLength) {
           state.body_remaining -= n;
         }
@@ -248,7 +246,7 @@ vexo::coro::Task<ProxyForwardResult> ProxyPass::Forward(
   bool request_on_wire = false;
 
   for (;;) {
-    std::unique_ptr<UpstreamStream> upstream_stream = pool.Acquire(peer.get());
+    std::optional<UpstreamStream> upstream_stream = pool.Acquire(peer.get());
     if (!upstream_stream) {
       auto connected = co_await connector.Connect(peer->config().host, peer->config().port);
       if (!connected.has_value()) {

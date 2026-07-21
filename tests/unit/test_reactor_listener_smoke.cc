@@ -8,7 +8,6 @@
 #include <cerrno>
 #include <expected>
 #include <iostream>
-#include <memory>
 #include <optional>
 
 #include "vexo/base/error.h"
@@ -24,8 +23,7 @@
 
 namespace {
 
-using AcceptResult =
-    vexo::base::Result<std::unique_ptr<typename vexo::net::ReactorListener::Stream>>;
+using AcceptResult = vexo::base::Result<typename vexo::net::ReactorListener::Stream>;
 
 static_assert(vexo::io::AsyncListener<vexo::net::ReactorListener>);
 
@@ -83,8 +81,7 @@ bool CheckPendingAccept() {
   }
 
   return Check(result.has_value(), "pending accept did not finish") &&
-         Check(result->has_value(), "pending accept returned error") &&
-         Check((*result)->get() != nullptr, "pending accept returned null stream");
+         Check(result->has_value(), "pending accept returned error");
 }
 
 bool CheckCloseCancelsPendingAccept() {

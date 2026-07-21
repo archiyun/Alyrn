@@ -4,7 +4,6 @@
 
 #include <chrono>
 #include <cstdint>
-#include <memory>
 #include <string_view>
 
 #include "vexo/base/error.h"
@@ -26,8 +25,7 @@ public:
 
   explicit LUringConnector(LUringLoop* loop) noexcept : loop_(loop) {}
 
-  coro::Task<base::Result<std::unique_ptr<LUringStream>>> Connect(std::string_view host,
-                                                                  std::uint16_t port);
+  coro::Task<base::Result<LUringStream>> Connect(std::string_view host, std::uint16_t port);
 
   // Backend-selected timer used by the generic gateway health-check loop.
   coro::Task<void> SleepFor(std::chrono::milliseconds delay);
