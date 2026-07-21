@@ -110,11 +110,11 @@ public:
   // A Channel starts with no interested events.
   // Read events include normal readable data and priority data.
   // Write events indicate that the fd can accept more output.
-  static const int kNoneEvent{0};
-  static const int kReadEvent{0x01};
-  static const int kWriteEvent{0x02};
-  static const int kErrorEvent{0x04};
-  static const int kHupEvent{0x08};
+  static constexpr int kNoneEvent = 0;
+  static constexpr int kReadEvent = 0x01;
+  static constexpr int kWriteEvent = 0x02;
+  static constexpr int kErrorEvent = 0x04;
+  static constexpr int kHupEvent = 0x08;
 
 private:
   // Index/set_index track Poller-private registration state and must remain
