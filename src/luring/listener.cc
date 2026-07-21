@@ -9,11 +9,10 @@
 #include <cerrno>
 #include <coroutine>
 #include <expected>
-#include <memory>
-#include <new>
 #include <optional>
 #include <utility>
 
+#include "vexo/base/check.h"
 #include "vexo/base/error.h"
 #include "vexo/luring/loop.h"
 #include "vexo/luring/op.h"
@@ -24,8 +23,7 @@ namespace vexo::luring {
 
 namespace {
 
-using AcceptedStream = std::unique_ptr<LUringStream>;
-using AcceptResult = base::Result<AcceptedStream>;
+using AcceptResult = base::Result<LUringStream>;
 
 base::Result<int> CreatedListenFd(const net::InetAddress& listen_addr,
                                   const LUringListenOptions& options) noexcept {
@@ -75,12 +73,7 @@ base::Result<net::InetAddress> GetLocalAddress(int fd) noexcept {
 }
 
 AcceptResult MakeStream(LUringLoop* loop, int fd, const sockaddr_in& peer_addr) noexcept {
-  auto* stream = new (std::nothrow) LUringStream(loop, fd, net::InetAddress(peer_addr));
-  if (stream == nullptr) {
-    ::close(fd);
-    return std::unexpected(base::make_errno(ENOMEM));
-  }
-  return AcceptedStream(stream);
+  return LUringStream(loop, fd, net::InetAddress(peer_addr));
 }
 
 }  // namespace
@@ -119,29 +112,28 @@ public:
   }
 
   AcceptResult await_resume() noexcept {
-    if (immediate_.has_value()) {
-      return std::move(*immediate_);
-    }
-    assert(op_.completed);
-
-    if (!op_.result.has_value()) {
-      return std::unexpected(op_.result.error());
-    }
-
-    if (*op_.result < 0) {
-      return std::unexpected(base::make_neg_errno(*op_.result));
-    }
-
-    return MakeStream(listener_->loop_, *op_.result, peer_addr_);
+    assert(immediate_.has_value());
+    return std::move(*immediate_);
   }
 
 private:
   static void OnComplete(LUringOp* op) noexcept {
     auto* self = static_cast<AcceptAwaiter*>(op->owner);
     if (self->listener_ != nullptr) {
-      assert(self->listener_->pending_accepts_ > 0);
-      --self->listener_->pending_accepts_;
-      self->listener_->NotifyCloseProgress();
+      LUringListener* listener = self->listener_;
+      assert(listener->pending_accepts_ > 0);
+      --listener->pending_accepts_;
+
+      if (!op->result.has_value()) {
+        self->immediate_ = std::unexpected(op->result.error());
+      } else if (*op->result < 0) {
+        self->immediate_ = std::unexpected(base::make_neg_errno(*op->result));
+      } else {
+        self->immediate_ = MakeStream(listener->loop_, *op->result, self->peer_addr_);
+      }
+
+      self->listener_ = nullptr;
+      listener->NotifyCloseProgress();
     }
   }
 
@@ -241,8 +233,9 @@ private:
   bool completed_{false};
 };
 
-base::Result<std::unique_ptr<LUringListener>> LUringListener::Create(
-    LUringLoop* loop, const net::InetAddress& listen_addr, LUringListenOptions options) noexcept {
+base::Result<LUringListener> LUringListener::Create(LUringLoop* loop,
+                                                    const net::InetAddress& listen_addr,
+                                                    LUringListenOptions options) noexcept {
   assert(loop != nullptr);
   assert(loop->IsInLoopThread());
 
@@ -251,18 +244,42 @@ base::Result<std::unique_ptr<LUringListener>> LUringListener::Create(
     return std::unexpected(fd.error());
   }
 
-  auto* listener = new (std::nothrow) LUringListener(loop, *fd);
-  if (listener == nullptr) {
-    ::close(*fd);
-    return std::unexpected(base::make_errno(ENOMEM));
-  }
-
-  return std::unique_ptr<LUringListener>(listener);
+  return LUringListener(loop, *fd);
 }
 
 LUringListener::LUringListener(LUringLoop* loop, int fd) noexcept : loop_(loop), fd_(fd) {
   assert(loop_ != nullptr);
   assert(fd_ >= 0);
+}
+
+LUringListener::LUringListener(LUringListener&& other) noexcept
+    : loop_(PrepareMove(other)),
+      fd_(std::exchange(other.fd_, -1)),
+      pending_accepts_(0),
+      pending_close_(nullptr),
+      closed_(other.closed_) {
+  other.closed_ = true;
+}
+
+LUringListener& LUringListener::operator=(LUringListener&& other) noexcept {
+  if (this == &other) {
+    return *this;
+  }
+
+  LUringLoop* other_loop = PrepareMove(other);
+  VEXO_CHECK(loop_ == nullptr || loop_ == other_loop,
+             "LUringListener move requires both objects to use the same LUringLoop");
+  if (loop_ != nullptr) {
+    ResetForMove();
+  }
+
+  loop_ = other_loop;
+  fd_ = std::exchange(other.fd_, -1);
+  pending_accepts_ = 0;
+  pending_close_ = nullptr;
+  closed_ = other.closed_;
+  other.closed_ = true;
+  return *this;
 }
 
 LUringListener::~LUringListener() {
@@ -273,7 +290,7 @@ LUringListener::~LUringListener() {
   }
 }
 
-coro::Task<base::Result<std::unique_ptr<LUringStream>>> LUringListener::Accept() {
+coro::Task<base::Result<LUringStream>> LUringListener::Accept() {
   co_return co_await AcceptAwaiter(*this);
 }
 
@@ -290,6 +307,34 @@ void LUringListener::NotifyCloseProgress() noexcept {
   if (pending_close_ != nullptr) {
     pending_close_->TryComplete();
   }
+}
+
+void LUringListener::ResetForMove() noexcept {
+  VEXO_CHECK(loop_ != nullptr, "LUringListener move destination is not initialized");
+  VEXO_CHECK(loop_->IsInLoopThread(), "LUringListener move called from wrong LUringLoop thread");
+  VEXO_CHECK(pending_accepts_ == 0,
+             "LUringListener move destination has pending accept operations");
+  VEXO_CHECK(pending_close_ == nullptr,
+             "LUringListener move destination has a pending close operation");
+
+  const int fd = std::exchange(fd_, -1);
+  if (fd >= 0) {
+    ::close(fd);
+  }
+}
+
+LUringLoop* LUringListener::PrepareMove(LUringListener& other) noexcept {
+  VEXO_CHECK(other.loop_ != nullptr, "LUringListener move source is not initialized");
+  VEXO_CHECK(other.loop_->IsInLoopThread(),
+             "LUringListener move called from wrong LUringLoop thread");
+  VEXO_CHECK(other.pending_accepts_ == 0,
+             "LUringListener cannot move with pending accept operations");
+  VEXO_CHECK(other.pending_close_ == nullptr,
+             "LUringListener cannot move with a pending close operation");
+
+  LUringLoop* loop = other.loop_;
+  other.loop_ = nullptr;
+  return loop;
 }
 
 }  // namespace vexo::luring

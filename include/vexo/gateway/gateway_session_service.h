@@ -2,7 +2,6 @@
 
 #include <array>
 #include <cstddef>
-#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
@@ -72,7 +71,7 @@ public:
   // Serve one accepted connection. The connector is moved into the coroutine
   // frame so a loop-bound connector cannot dangle after the handler returns.
   // The caller must construct it from the same loop that owns stream.
-  coro::Task<void> Serve(std::unique_ptr<ClientStream> stream, Connector connector) {
+  coro::Task<void> Serve(ClientStream stream, Connector connector) {
     Pool pool(pool_config_);
     co_await ServeWithPool(std::move(stream), std::move(connector), pool);
   }
@@ -81,54 +80,49 @@ public:
   // The pool and all streams acquired from it must remain alive until every
   // session on that worker has stopped. It must not be shared across I/O
   // loops because upstream streams are loop-bound.
-  coro::Task<void> Serve(std::unique_ptr<ClientStream> stream, Connector connector, Pool& pool) {
+  coro::Task<void> Serve(ClientStream stream, Connector connector, Pool& pool) {
     co_await ServeWithPool(std::move(stream), std::move(connector), pool);
   }
 
 private:
-  coro::Task<void> ServeWithPool(std::unique_ptr<ClientStream> stream, Connector connector,
-                                 Pool& pool) {
-    if (!stream) {
-      co_return;
-    }
-
+  coro::Task<void> ServeWithPool(ClientStream stream, Connector connector, Pool& pool) {
     http::HttpParser parser;
     // Requests are fed incrementally, so the per-connection buffer does not
     // need to be large enough for the complete HTTP request. Keeping this at
     // 4 KiB materially reduces the frame footprint at high connection counts.
     std::array<std::byte, 4096> read_buffer{};
-    const std::string client_ip = ClientIp(*stream);
+    const std::string client_ip = ClientIp(stream);
 
     for (;;) {
-      auto read = co_await stream->ReadSome(read_buffer);
+      auto read = co_await stream.ReadSome(read_buffer);
       if (!read.has_value() || *read == 0) {
         break;
       }
 
       const std::string_view bytes(reinterpret_cast<const char*>(read_buffer.data()), *read);
       auto parse_status = parser.Feed(bytes);
-      if (!co_await HandleParseStatus(*stream, parse_status)) {
-        co_await stream->Close();
+      if (!co_await HandleParseStatus(stream, parse_status)) {
+        co_await stream.Close();
         co_return;
       }
 
       while (parser.GotAll()) {
         http::HttpRequest request = parser.TakeRequest();
         auto action = core_.HandleRequest(request, client_ip);
-        if (!co_await ApplyAction(*stream, request, std::move(action), pool, connector)) {
-          co_await stream->Close();
+        if (!co_await ApplyAction(stream, request, std::move(action), pool, connector)) {
+          co_await stream.Close();
           co_return;
         }
 
         parse_status = parser.ParseAvailable();
-        if (!co_await HandleParseStatus(*stream, parse_status)) {
-          co_await stream->Close();
+        if (!co_await HandleParseStatus(stream, parse_status)) {
+          co_await stream.Close();
           co_return;
         }
       }
     }
 
-    co_await stream->Close();
+    co_await stream.Close();
   }
 
   static std::span<const std::byte> Bytes(std::string_view text) {
@@ -157,8 +151,7 @@ private:
   }
 
   coro::Task<bool> ApplyAction(ClientStream& stream, const http::HttpRequest& request,
-                               GatewayCore::Action action, Pool& pool,
-                               Connector& connector) {
+                               GatewayCore::Action action, Pool& pool, Connector& connector) {
     if (action.kind == GatewayActionKind::Send) {
       auto written = co_await io::WriteAll(stream, Bytes(action.response));
       if (!written.has_value()) {

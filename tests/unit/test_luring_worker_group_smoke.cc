@@ -12,7 +12,6 @@
 #include <cstdint>
 #include <expected>
 #include <iostream>
-#include <memory>
 #include <system_error>
 #include <thread>
 #include <utility>
@@ -193,18 +192,18 @@ bool CheckWorkerGroupAcceptCallback() {
   options.worker_options.listen_options.reuse_port = true;
 
   std::atomic_size_t connection_count{0};
-  std::atomic_bool null_stream{false};
+  std::atomic_bool invalid_stream{false};
   std::atomic_bool bad_thread{false};
 
   const auto listen_addr = LoopbackAddress(*port);
   vexo::luring::LUringWorkerGroup group(
       listen_addr, options, {},
-      [&](vexo::luring::LUringLoop& loop, std::unique_ptr<vexo::luring::LUringStream> stream) {
+      [&](vexo::luring::LUringLoop& loop, vexo::luring::LUringStream stream) {
         if (!loop.IsInLoopThread()) {
           bad_thread.store(true, std::memory_order_relaxed);
         }
-        if (stream == nullptr) {
-          null_stream.store(true, std::memory_order_relaxed);
+        if (stream.fd() < 0) {
+          invalid_stream.store(true, std::memory_order_relaxed);
         }
         connection_count.fetch_add(1, std::memory_order_relaxed);
       });
@@ -239,8 +238,8 @@ bool CheckWorkerGroupAcceptCallback() {
                   "connection callback should run once") &&
             Check(!bad_thread.load(std::memory_order_relaxed),
                   "connection callback should run in loop thread") &&
-            Check(!null_stream.load(std::memory_order_relaxed),
-                  "connection callback received null stream");
+            Check(!invalid_stream.load(std::memory_order_relaxed),
+                  "connection callback received an invalid stream");
 
   group.Stop();
 

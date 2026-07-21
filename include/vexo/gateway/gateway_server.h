@@ -8,7 +8,6 @@
 #include <charconv>
 #include <chrono>
 #include <cstddef>
-#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
@@ -121,38 +120,38 @@ private:
     }
   }
 
-  vexo::coro::Task<void> Session(std::unique_ptr<Stream> stream) {
+  vexo::coro::Task<void> Session(Stream stream) {
     vexo::http::HttpParser parser;
     std::array<std::byte, 4096> read_buffer{};
-    const std::string client_ip = ClientIp(*stream);
+    const std::string client_ip = ClientIp(stream);
 
     for (;;) {
-      auto read = co_await stream->ReadSome(read_buffer);
+      auto read = co_await stream.ReadSome(read_buffer);
       if (!read.has_value() || *read == 0) break;
 
       std::string_view bytes(reinterpret_cast<const char*>(read_buffer.data()), *read);
       auto parse_status = parser.Feed(bytes);
-      if (!co_await HandleParseStatus(*stream, parse_status)) {
-        co_await stream->Close();
+      if (!co_await HandleParseStatus(stream, parse_status)) {
+        co_await stream.Close();
         co_return;
       }
 
       while (parser.GotAll()) {
         vexo::http::HttpRequest req = parser.TakeRequest();
         auto action = core_.HandleRequest(req, client_ip);
-        if (!co_await ApplyAction(*stream, req, std::move(action))) {
-          co_await stream->Close();
+        if (!co_await ApplyAction(stream, req, std::move(action))) {
+          co_await stream.Close();
           co_return;
         }
         parse_status = parser.ParseAvailable();
-        if (!co_await HandleParseStatus(*stream, parse_status)) {
-          co_await stream->Close();
+        if (!co_await HandleParseStatus(stream, parse_status)) {
+          co_await stream.Close();
           co_return;
         }
       }
     }
 
-    co_await stream->Close();
+    co_await stream.Close();
   }
 
   vexo::coro::Task<bool> HandleParseStatus(Stream& stream, vexo::http::ParseStatus status) {
@@ -258,9 +257,9 @@ private:
                                 " HTTP/1.1\r\n"
                                 "Host: " +
                                 peer.host_port() + "\r\nConnection: close\r\n\r\n";
-    auto written = co_await vexo::io::WriteAll(*stream, Bytes(request));
+    auto written = co_await vexo::io::WriteAll(stream, Bytes(request));
     if (!written.has_value()) {
-      co_await stream->Close();
+      co_await stream.Close();
       co_return false;
     }
 
@@ -269,22 +268,22 @@ private:
     const auto timeout = std::chrono::milliseconds(
         static_cast<int>(std::max(health_check_cfg_.timeout_sec, 0.001) * 1000.0));
     while (pending.size() <= 16 * 1024) {
-      auto read = co_await ReadSomeForHealth(*stream, buffer, timeout);
+      auto read = co_await ReadSomeForHealth(stream, buffer, timeout);
       if (!read.has_value() || *read == 0) {
-        co_await stream->Close();
+        co_await stream.Close();
         co_return false;
       }
       pending.append(reinterpret_cast<const char*>(buffer.data()), *read);
       const auto header_end = pending.find("\r\n\r\n");
       if (header_end != std::string::npos) {
         const int status = ParseHealthStatus(std::string_view(pending.data(), header_end + 4));
-        co_await stream->Close();
+        co_await stream.Close();
         const bool ok = status == 200;
         co_return ok;
       }
     }
 
-    co_await stream->Close();
+    co_await stream.Close();
     co_return false;
   }
 

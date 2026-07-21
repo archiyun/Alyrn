@@ -2,8 +2,6 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include <memory>
-
 #include "vexo/base/error.h"
 #include "vexo/coro/task.h"
 #include "vexo/net/channel.h"
@@ -18,14 +16,19 @@ namespace vexo::net {
 
 class ReactorListener {
 public:
-  VEXO_DELETE_COPY_MOVE(ReactorListener);
+  VEXO_DELETE_COPY(ReactorListener);
 
   using Stream = ReactorStream;
 
   ReactorListener(EventLoop* loop, const InetAddress& listen_addr);
   ~ReactorListener();
 
-  coro::Task<base::Result<std::unique_ptr<ReactorStream>>> Accept();
+  // Moves are loop-affine: the source must be used from its owning loop
+  // thread and must not have a pending accept operation.
+  ReactorListener(ReactorListener&& other) noexcept;
+  ReactorListener& operator=(ReactorListener&& other) noexcept;
+
+  coro::Task<base::Result<ReactorStream>> Accept();
   coro::Task<base::Result<void>> Close();
 
   [[nodiscard]] base::Result<InetAddress> LocalAddress() const;
@@ -35,8 +38,11 @@ private:
 
   void HandleRead(vexo::time::Timestamp receive_time);
   void HandleError();
-  void CompleteAccept(base::Result<std::unique_ptr<ReactorStream>> result);
+  void CompleteAccept(base::Result<ReactorStream> result);
   void DetachChannel();
+  void BindChannelCallbacks() noexcept;
+  void ResetForMove() noexcept;
+  static EventLoop* PrepareMove(ReactorListener& other) noexcept;
 
   EventLoop* loop_;
   Socket socket_;

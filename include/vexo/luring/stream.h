@@ -16,10 +16,15 @@ class LUringLoop;
 
 class LUringStream {
 public:
-  VEXO_DELETE_COPY_MOVE(LUringStream);
+  VEXO_DELETE_COPY(LUringStream);
 
   LUringStream(LUringLoop* loop, int fd, net::InetAddress peer) noexcept;
   ~LUringStream();
+
+  // A stream may move only on its owning loop thread and only while no
+  // operation is waiting for a CQE.
+  LUringStream(LUringStream&& other) noexcept;
+  LUringStream& operator=(LUringStream&& other) noexcept;
 
   coro::Task<base::Result<std::size_t>> ReadSome(std::span<std::byte> buffer);
   coro::Task<base::Result<std::size_t>> ReadSomeFor(std::span<std::byte> buffer,
@@ -38,6 +43,8 @@ private:
   class CloseAwaiter;
 
   void NotifyCloseProgress() noexcept;
+  void ResetForMove() noexcept;
+  static LUringLoop* PrepareMove(LUringStream& other) noexcept;
 
   LUringLoop* loop_;
   int fd_{-1};

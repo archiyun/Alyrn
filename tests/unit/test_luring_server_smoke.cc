@@ -176,20 +176,19 @@ bool CheckServerSessionHandler() {
   vexo::luring::LUringServer server(listen_addr, MakeOptions());
 
   std::atomic_size_t session_count{0};
-  std::atomic_bool null_stream{false};
+  std::atomic_bool invalid_stream{false};
   std::atomic_bool wrong_loop{false};
-  server.set_session_handler(
-      [&](vexo::luring::LUringLoop& loop,
-          std::unique_ptr<vexo::luring::LUringStream> stream) -> vexo::coro::Task<void> {
-        if (!loop.IsInLoopThread()) {
-          wrong_loop.store(true, std::memory_order_relaxed);
-        }
-        if (stream == nullptr) {
-          null_stream.store(true, std::memory_order_relaxed);
-        }
-        session_count.fetch_add(1, std::memory_order_relaxed);
-        co_return;
-      });
+  server.set_session_handler([&](vexo::luring::LUringLoop& loop,
+                                 vexo::luring::LUringStream stream) -> vexo::coro::Task<void> {
+    if (!loop.IsInLoopThread()) {
+      wrong_loop.store(true, std::memory_order_relaxed);
+    }
+    if (stream.fd() < 0) {
+      invalid_stream.store(true, std::memory_order_relaxed);
+    }
+    session_count.fetch_add(1, std::memory_order_relaxed);
+    co_return;
+  });
 
   auto started = server.Start();
   if (!started.has_value()) {
@@ -217,12 +216,12 @@ bool CheckServerSessionHandler() {
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
 
-  bool ok =
-      Check(session_count.load(std::memory_order_relaxed) == 1,
-            "session handler should run once") &&
-      Check(!null_stream.load(std::memory_order_relaxed), "session handler received null stream") &&
-      Check(!wrong_loop.load(std::memory_order_relaxed),
-            "session handler should run in the worker loop thread");
+  bool ok = Check(session_count.load(std::memory_order_relaxed) == 1,
+                  "session handler should run once") &&
+            Check(!invalid_stream.load(std::memory_order_relaxed),
+                  "session handler received an invalid stream") &&
+            Check(!wrong_loop.load(std::memory_order_relaxed),
+                  "session handler should run in the worker loop thread");
 
   server.Stop();
 

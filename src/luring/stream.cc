@@ -13,8 +13,9 @@
 #include <optional>
 #include <utility>
 
-#include "vexo/base/error.h"
+#include "vexo/base/check.h"
 #include "vexo/base/ctrack.h"
+#include "vexo/base/error.h"
 #include "vexo/luring/loop.h"
 #include "vexo/luring/op.h"
 #include "vexo/net/inet_address.h"
@@ -365,6 +366,40 @@ LUringStream::LUringStream(LUringLoop* loop, int fd, net::InetAddress peer) noex
   assert(fd_ >= 0);
 }
 
+LUringStream::LUringStream(LUringStream&& other) noexcept
+    : loop_(PrepareMove(other)),
+      fd_(std::exchange(other.fd_, -1)),
+      peer_(std::move(other.peer_)),
+      pending_read_(nullptr),
+      pending_write_(nullptr),
+      pending_close_(nullptr),
+      closed_(other.closed_) {
+  other.closed_ = true;
+}
+
+LUringStream& LUringStream::operator=(LUringStream&& other) noexcept {
+  if (this == &other) {
+    return *this;
+  }
+
+  LUringLoop* other_loop = PrepareMove(other);
+  VEXO_CHECK(loop_ == nullptr || loop_ == other_loop,
+             "LUringStream move requires both objects to use the same LUringLoop");
+  if (loop_ != nullptr) {
+    ResetForMove();
+  }
+
+  loop_ = other_loop;
+  fd_ = std::exchange(other.fd_, -1);
+  peer_ = std::move(other.peer_);
+  pending_read_ = nullptr;
+  pending_write_ = nullptr;
+  pending_close_ = nullptr;
+  closed_ = other.closed_;
+  other.closed_ = true;
+  return *this;
+}
+
 LUringStream::~LUringStream() {
   assert(pending_read_ == nullptr);
   assert(pending_write_ == nullptr);
@@ -406,6 +441,35 @@ void LUringStream::NotifyCloseProgress() noexcept {
   if (pending_close_ != nullptr) {
     pending_close_->TryComplete();
   }
+}
+
+void LUringStream::ResetForMove() noexcept {
+  VEXO_CHECK(loop_ != nullptr, "LUringStream move destination is not initialized");
+  VEXO_CHECK(loop_->IsInLoopThread(), "LUringStream move called from wrong LUringLoop thread");
+  VEXO_CHECK(pending_read_ == nullptr, "LUringStream move destination has a pending read");
+  VEXO_CHECK(pending_write_ == nullptr, "LUringStream move destination has a pending write");
+  VEXO_CHECK(pending_close_ == nullptr, "LUringStream move destination has a pending close");
+
+  const int fd = std::exchange(fd_, -1);
+  if (fd >= 0) {
+    ::close(fd);
+  }
+}
+
+LUringLoop* LUringStream::PrepareMove(LUringStream& other) noexcept {
+  VEXO_CHECK(other.loop_ != nullptr, "LUringStream move source is not initialized");
+  VEXO_CHECK(other.loop_->IsInLoopThread(),
+             "LUringStream move called from wrong LUringLoop thread");
+  VEXO_CHECK(other.pending_read_ == nullptr,
+             "LUringStream cannot move with a pending read operation");
+  VEXO_CHECK(other.pending_write_ == nullptr,
+             "LUringStream cannot move with a pending write operation");
+  VEXO_CHECK(other.pending_close_ == nullptr,
+             "LUringStream cannot move with a pending close operation");
+
+  LUringLoop* loop = other.loop_;
+  other.loop_ = nullptr;
+  return loop;
 }
 
 }  // namespace vexo::luring

@@ -4,7 +4,6 @@
 
 #include <chrono>
 #include <cstdint>
-#include <memory>
 #include <string_view>
 
 #include "vexo/base/error.h"
@@ -17,14 +16,16 @@ namespace vexo::net {
 
 class ReactorConnector {
 public:
-  VEXO_DELETE_COPY_MOVE(ReactorConnector);
+  VEXO_DELETE_COPY(ReactorConnector);
 
   using Stream = ReactorStream;
 
-  explicit ReactorConnector(EventLoop* loop) noexcept : loop_(loop) {}
+  explicit ReactorConnector(EventLoop* loop) noexcept;
 
-  coro::Task<base::Result<std::unique_ptr<ReactorStream>>> Connect(std::string_view host,
-                                                                   std::uint16_t port);
+  ReactorConnector(ReactorConnector&& other) noexcept;
+  ReactorConnector& operator=(ReactorConnector&& other) noexcept;
+
+  coro::Task<base::Result<ReactorStream>> Connect(std::string_view host, std::uint16_t port);
   coro::Task<void> SleepFor(std::chrono::milliseconds delay);
 
 private:

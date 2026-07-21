@@ -23,7 +23,7 @@ public:
 
   using Stream = LUringStream;
   using ThreadInitCallback = LUringWorkerGroup::ThreadInitCallback;
-  using SessionHandler = std::function<coro::Task<void>(LUringLoop&, std::unique_ptr<Stream>)>;
+  using SessionHandler = std::function<coro::Task<void>(LUringLoop&, Stream)>;
 
   explicit LUringServer(net::InetAddress listen_addr, LUringServerOptions options = {});
   ~LUringServer() noexcept;

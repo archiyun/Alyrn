@@ -84,7 +84,7 @@ listener 的最小接口是：
 using Stream = ...;
 
 Accept()
-    -> coro::Task<base::Result<std::unique_ptr<Stream>>>
+    -> coro::Task<base::Result<Stream>>
 
 Close()
     -> coro::Task<base::Result<void>>
@@ -470,7 +470,7 @@ auto result = co_await listener.Accept();
 一次 `Accept()` 是 single-shot operation：
 
 ```text
-成功 -> unique_ptr<Stream>
+成功 -> Stream 值
 失败 -> errno 风格错误
 ```
 

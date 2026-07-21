@@ -9,7 +9,6 @@
 #include <cerrno>
 #include <expected>
 #include <iostream>
-#include <memory>
 #include <optional>
 #include <system_error>
 #include <utility>
@@ -120,7 +119,7 @@ vexo::net::InetAddress LoopbackAddress(std::uint16_t port) {
 
 vexo::coro::Task<void> AcceptOnce(
     vexo::luring::LUringListener* listener, vexo::luring::LUringLoop* loop,
-    std::optional<vexo::base::Result<std::unique_ptr<vexo::luring::LUringStream>>>* out,
+    std::optional<vexo::base::Result<vexo::luring::LUringStream>>* out,
     bool* resumed_with_scheduler) {
   auto result = co_await listener->Accept();
   *resumed_with_scheduler = vexo::coro::Scheduler::Current() == loop;
@@ -150,7 +149,7 @@ bool CheckAccept() {
     return false;
   }
 
-  auto local = (*listener)->LocalAddress();
+  auto local = listener->LocalAddress();
   if (!local.has_value()) {
     std::cout << "FAIL: LocalAddress failed: " << local.error().message() << '\n';
     return false;
@@ -163,10 +162,10 @@ bool CheckAccept() {
   }
   UniqueFd client(*client_fd);
 
-  std::optional<vexo::base::Result<std::unique_ptr<vexo::luring::LUringStream>>> accepted;
+  std::optional<vexo::base::Result<vexo::luring::LUringStream>> accepted;
   bool resumed_with_scheduler = false;
 
-  vexo::coro::Spawn(loop, AcceptOnce(listener->get(), &loop, &accepted, &resumed_with_scheduler))
+  vexo::coro::Spawn(loop, AcceptOnce(&*listener, &loop, &accepted, &resumed_with_scheduler))
       .Detach();
 
   loop.RunReady();
@@ -182,7 +181,7 @@ bool CheckAccept() {
   return Check(*completions >= 1, "accept did not produce a completion") &&
          Check(accepted.has_value(), "accept coroutine did not resume") &&
          Check(accepted->has_value(), "Accept returned an error") &&
-         Check(accepted->value() != nullptr, "Accept returned nullptr stream") &&
+         Check(accepted->value().fd() >= 0, "Accept returned an invalid stream") &&
          Check(resumed_with_scheduler, "accept resumed without current scheduler");
 }
 
@@ -203,15 +202,15 @@ bool CheckCloseCancelsPendingAccept() {
     return false;
   }
 
-  std::optional<vexo::base::Result<std::unique_ptr<vexo::luring::LUringStream>>> accepted;
+  std::optional<vexo::base::Result<vexo::luring::LUringStream>> accepted;
   bool resumed_with_scheduler = false;
-  vexo::coro::Spawn(loop, AcceptOnce(listener->get(), &loop, &accepted, &resumed_with_scheduler))
+  vexo::coro::Spawn(loop, AcceptOnce(&*listener, &loop, &accepted, &resumed_with_scheduler))
       .Detach();
 
   loop.RunReady();
 
   std::optional<vexo::base::Result<void>> close_result;
-  vexo::coro::Spawn(loop, CloseOnce(listener->get(), &close_result)).Detach();
+  vexo::coro::Spawn(loop, CloseOnce(&*listener, &close_result)).Detach();
 
   loop.RunReady();
 

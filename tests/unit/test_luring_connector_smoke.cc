@@ -10,7 +10,6 @@
 #include <cstdint>
 #include <expected>
 #include <iostream>
-#include <memory>
 #include <optional>
 #include <string_view>
 #include <system_error>
@@ -139,8 +138,7 @@ vexo::base::Result<ListenEndpoint> ListenLoopback() {
 
 vexo::coro::Task<void> ConnectOnce(
     vexo::luring::LUringConnector* connector, vexo::luring::LUringLoop* loop, std::string_view host,
-    std::uint16_t port,
-    std::optional<vexo::base::Result<std::unique_ptr<vexo::luring::LUringStream>>>* out,
+    std::uint16_t port, std::optional<vexo::base::Result<vexo::luring::LUringStream>>* out,
     bool* resumed_with_scheduler) {
   auto connected = co_await connector->Connect(host, port);
   *resumed_with_scheduler = vexo::coro::Scheduler::Current() == loop;
@@ -169,7 +167,7 @@ bool CheckConnectSuccess() {
   }
 
   vexo::luring::LUringConnector connector(&loop);
-  std::optional<vexo::base::Result<std::unique_ptr<vexo::luring::LUringStream>>> connected;
+  std::optional<vexo::base::Result<vexo::luring::LUringStream>> connected;
   bool resumed_with_scheduler = false;
 
   vexo::coro::Spawn(loop, ConnectOnce(&connector, &loop, "127.0.0.1", listener->port, &connected,
@@ -189,7 +187,7 @@ bool CheckConnectSuccess() {
   return Check(*completions >= 1, "connect did not produce a completion") &&
          Check(connected.has_value(), "connect coroutine did not resume") &&
          Check(connected->has_value(), "Connect returned an error") &&
-         Check(connected->value() != nullptr, "Connect returned nullptr stream") &&
+         Check(connected->value().fd() >= 0, "Connect returned an invalid stream") &&
          Check(resumed_with_scheduler, "connect resumed without current scheduler");
 }
 
@@ -197,7 +195,7 @@ bool CheckConnectRejectsInvalidHost() {
   vexo::luring::LUringLoop loop;
   vexo::luring::LUringConnector connector(&loop);
 
-  std::optional<vexo::base::Result<std::unique_ptr<vexo::luring::LUringStream>>> connected;
+  std::optional<vexo::base::Result<vexo::luring::LUringStream>> connected;
   bool resumed_with_scheduler = false;
 
   vexo::coro::Spawn(

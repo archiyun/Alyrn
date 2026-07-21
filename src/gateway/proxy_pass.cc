@@ -95,38 +95,50 @@ std::shared_ptr<UpstreamPeer> ProxyPass::SelectFailoverPeer(Upstream& upstream,
   return nullptr;
 }
 
-ProxyPass::ResponseState ProxyPass::ParseResponseState(std::string_view raw_headers,
-                                                       vexo::http::Method request_method) {
+ProxyPass::ResponseState ProxyPass::RewriteHeaders(std::string_view raw_headers, std::string& out,
+                                                   vexo::http::Method request_method) {
   ResponseState state;
+  out.reserve(raw_headers.size() + 64);
 
-  const char* p = raw_headers.data();
-  const char* end = raw_headers.data() + raw_headers.size();
-  if (const char* crlf = static_cast<const char*>(std::memchr(p, '\r', end - p))) {
-    std::string_view first_line(p, crlf - p);
+  std::size_t pos = 0;
+  const std::size_t first_cr = raw_headers.find('\r');
+  if (first_cr != std::string_view::npos) {
+    std::string_view first_line = raw_headers.substr(0, first_cr);
+    out += first_line;
+    out += "\r\n";
     if (first_line.size() >= 12 && first_line[8] == ' ') {
       auto code_sv = first_line.substr(9, 3);
       std::from_chars(code_sv.data(), code_sv.data() + code_sv.size(), state.status);
     }
-    p = crlf + 2;
+    pos = first_cr + 2;
   }
 
-  if (request_method == vexo::http::Method::Head || state.status == 204 || state.status == 304 ||
-      (state.status >= 100 && state.status < 200)) {
+  const bool no_body = request_method == vexo::http::Method::Head || state.status == 204 ||
+                       state.status == 304 || (state.status >= 100 && state.status < 200);
+  if (no_body) {
     state.framing = BodyFraming::kNoBody;
     state.body_remaining = 0;
     state.upstream_keepalive = true;
-    return state;
   }
 
-  while (p < end) {
-    const char* eol = static_cast<const char*>(std::memchr(p, '\n', end - p));
-    if (!eol) break;
-    std::string_view line(p, eol - p);
+  while (pos < raw_headers.size()) {
+    const std::size_t eol = raw_headers.find('\n', pos);
+    if (eol == std::string_view::npos) break;
+    std::string_view line = raw_headers.substr(pos, eol - pos);
     if (!line.empty() && line.back() == '\r') line.remove_suffix(1);
-    p = eol + 1;
-    if (line.empty()) break;
+    pos = eol + 1;
 
-    auto colon = line.find(':');
+    const auto colon = line.find(':');
+    if (colon != std::string_view::npos && AsciiCaseEqual(line.substr(0, colon), "server")) {
+      out += "Server: runtime-gateway\r\n";
+    } else {
+      out += line;
+      out += "\r\n";
+    }
+
+    if (line.empty()) break;
+    if (no_body) continue;
+
     if (colon == std::string_view::npos) continue;
     std::string_view name = line.substr(0, colon);
     std::string_view value = line.substr(colon + 1);
@@ -153,31 +165,6 @@ ProxyPass::ResponseState ProxyPass::ParseResponseState(std::string_view raw_head
     }
   }
   return state;
-}
-
-void ProxyPass::RewriteHeaders(std::string_view raw_headers, std::string& out) {
-  out.reserve(raw_headers.size() + 64);
-
-  const char* p = raw_headers.data();
-  const char* end = raw_headers.data() + raw_headers.size();
-
-  while (p < end) {
-    const char* cr = static_cast<const char*>(std::memchr(p, '\r', end - p));
-    if (!cr || cr + 1 >= end || cr[1] != '\n') break;
-
-    std::string_view line(p, static_cast<std::size_t>(cr - p));
-    p = cr + 2;
-
-    const auto colon = line.find(':');
-    if (colon != std::string_view::npos && AsciiCaseEqual(line.substr(0, colon), "server")) {
-      out += "Server: runtime-gateway\r\n";
-    } else {
-      out += line;
-      out += "\r\n";
-    }
-
-    if (line.empty()) break;
-  }
 }
 
 std::string ProxyPass::BuildRequest(const vexo::http::HttpRequest& req, const UpstreamPeer& peer,

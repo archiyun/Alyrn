@@ -21,8 +21,8 @@
 #include <mutex>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 #include "vexo/coro/frame_allocator.h"
@@ -164,36 +164,35 @@ int main() {
 
   vexo::luring::LUringServer server(*listen_addr, std::move(options));
   server.set_thread_init_callback(
-      [&worker_pools, &pools_by_loop, &pools_mutex,
-       pool_config](vexo::luring::LUringLoop* loop, vexo::luring::LUringListener*) {
+      [&worker_pools, &pools_by_loop, &pools_mutex, pool_config](vexo::luring::LUringLoop* loop,
+                                                                 vexo::luring::LUringListener*) {
         auto pool = std::make_unique<WorkerPool>(pool_config);
         auto* pool_ptr = pool.get();
         std::lock_guard lock(pools_mutex);
         worker_pools.push_back(std::move(pool));
         pools_by_loop.emplace(loop, pool_ptr);
       });
-  server.set_session_handler(
-      [&service, &pools_by_loop, &pools_mutex, &pools_ready](
-          vexo::luring::LUringLoop& loop,
-          std::unique_ptr<vexo::luring::LUringStream> stream) -> vexo::coro::Task<void> {
-        WorkerPool* pool = nullptr;
-        if (!pools_ready.load(std::memory_order_acquire)) {
-          std::lock_guard lock(pools_mutex);
-          auto it = pools_by_loop.find(&loop);
-          if (it != pools_by_loop.end()) {
-            pool = it->second;
-          }
-        } else {
-          auto it = pools_by_loop.find(&loop);
-          if (it != pools_by_loop.end()) {
-            pool = it->second;
-          }
-        }
-        if (pool == nullptr) {
-          return service.Serve(std::move(stream), vexo::luring::LUringConnector(&loop));
-        }
-        return service.Serve(std::move(stream), vexo::luring::LUringConnector(&loop), *pool);
-      });
+  server.set_session_handler([&service, &pools_by_loop, &pools_mutex, &pools_ready](
+                                 vexo::luring::LUringLoop& loop,
+                                 vexo::luring::LUringStream stream) -> vexo::coro::Task<void> {
+    WorkerPool* pool = nullptr;
+    if (!pools_ready.load(std::memory_order_acquire)) {
+      std::lock_guard lock(pools_mutex);
+      auto it = pools_by_loop.find(&loop);
+      if (it != pools_by_loop.end()) {
+        pool = it->second;
+      }
+    } else {
+      auto it = pools_by_loop.find(&loop);
+      if (it != pools_by_loop.end()) {
+        pool = it->second;
+      }
+    }
+    if (pool == nullptr) {
+      return service.Serve(std::move(stream), vexo::luring::LUringConnector(&loop));
+    }
+    return service.Serve(std::move(stream), vexo::luring::LUringConnector(&loop), *pool);
+  });
 
   auto started = server.Start();
   if (!started.has_value()) {

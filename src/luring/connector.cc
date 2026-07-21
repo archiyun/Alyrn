@@ -12,8 +12,6 @@
 #include <cerrno>
 #include <coroutine>
 #include <expected>
-#include <memory>
-#include <new>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -113,7 +111,7 @@ public:
     return true;
   }
 
-  base::Result<std::unique_ptr<LUringStream>> await_resume() noexcept {
+  base::Result<LUringStream> await_resume() noexcept {
     if (result_.has_value()) {
       return std::move(*result_);
     }
@@ -131,11 +129,7 @@ public:
       return std::unexpected(nonblocking.error());
     }
 
-    auto stream = std::unique_ptr<LUringStream>(new (std::nothrow) LUringStream(loop_, fd_, peer_));
-    if (stream == nullptr) {
-      return std::unexpected(base::make_errno(ENOMEM));
-    }
-
+    LUringStream stream(loop_, fd_, peer_);
     fd_ = -1;
     return stream;
   }
@@ -145,13 +139,13 @@ private:
   net::InetAddress peer_;
   int fd_{-1};
   LUringOp op_{.kind = LUringOpKind::kConnect};
-  std::optional<base::Result<std::unique_ptr<LUringStream>>> result_;
+  std::optional<base::Result<LUringStream>> result_;
 };
 
 }  // namespace
 
-coro::Task<base::Result<std::unique_ptr<LUringStream>>> LUringConnector::Connect(
-    std::string_view host, std::uint16_t port) {
+coro::Task<base::Result<LUringStream>> LUringConnector::Connect(std::string_view host,
+                                                                std::uint16_t port) {
   auto peer = ParseIPv4Address(host, port);
   if (!peer.has_value()) {
     co_return std::unexpected(peer.error());
