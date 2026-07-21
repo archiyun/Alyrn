@@ -10,7 +10,9 @@
 // 运行: ./build-tests/tests/proxy_e2e_smoke_test
 
 #include <arpa/inet.h>
+#include <cerrno>
 #include <netinet/in.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -34,11 +36,9 @@
 #include "vexo/gateway/upstream_registry.h"
 #include "vexo/net/event_loop.h"
 #include "vexo/net/event_loop_scheduler.h"
-#include "vexo/net/event_loop_thread.h"
 #include "vexo/net/inet_address.h"
 #include "vexo/net/reactor_connect.h"
 #include "vexo/net/reactor_listener.h"
-#include "vexo/net/tcp_server.h"
 
 using namespace std::chrono_literals;
 
@@ -91,6 +91,22 @@ void RunInLoopAndWait(vexo::net::EventLoop* loop, F&& fn) {
   });
   done.wait();
 }
+
+struct LoopThread {
+  std::jthread thread;
+
+  vexo::net::EventLoop* StartLoop() {
+    std::promise<vexo::net::EventLoop*> ready;
+    auto future = ready.get_future();
+    thread = std::jthread([ready = std::move(ready)](std::stop_token token) mutable {
+      vexo::net::EventLoop loop;
+      std::stop_callback on_stop{token, [&loop] { loop.Quit(); }};
+      ready.set_value(&loop);
+      loop.Loop();
+    });
+    return future.get();
+  }
+};
 
 void InitGateway(GatewayRuntime& runtime, vexo::net::EventLoop* loop, uint16_t port,
                  std::string name, vexo::gateway::UpstreamRegistry& registry) {
@@ -162,9 +178,9 @@ std::string BlockingHttpCall(uint16_t port, const std::string& req, size_t expec
 
 // upstream stub：把每次收到的 request 完整记录下来，回固定 Content-Length 响应。
 struct UpstreamStub {
-  vexo::net::EventLoopThread loop_thr;
-  vexo::net::EventLoop* loop_holder{nullptr};
-  std::unique_ptr<vexo::net::TcpServer> server;
+  std::jthread thread;
+  std::atomic<int> listen_fd{-1};
+  std::atomic<int> active_fd{-1};
   std::mutex mu;
   std::vector<std::string> requests;  // 收到的每条完整请求 (按 \r\n\r\n 切)
   std::atomic<int> accept_count{0};
@@ -172,44 +188,108 @@ struct UpstreamStub {
   bool respond{true};
   bool close_after_request{false};
 
-  void Start(uint16_t port) {
-    auto* loop = loop_thr.StartLoop();
-    loop_holder = loop;
-    vexo::net::InetAddress addr(port);
-    RunInLoopAndWait(loop, [this, loop, addr] {
-      server = std::make_unique<vexo::net::TcpServer>(loop, addr, "upstream-stub");
-      server->set_connection_callback(
-          [this](const vexo::net::TcpConnection::TcpConnectionPtr& conn) {
-            if (conn->Connected()) accept_count.fetch_add(1);
-          });
-      server->set_message_callback([this](const vexo::net::TcpConnection::TcpConnectionPtr& conn,
-                                          vexo::net::Buffer& buf, vexo::time::Timestamp) {
-        while (true) {
-          std::string_view view(buf.Peek(), buf.readable_bytes());
-          auto pos = view.find("\r\n\r\n");
-          if (pos == std::string_view::npos) return;
-          {
-            std::lock_guard lk{mu};
-            requests.emplace_back(view.substr(0, pos + 4));
-          }
-          buf.Retrieve(pos + 4);
-          request_count.fetch_add(1);
-          if (close_after_request) {
-            conn->Shutdown();
-            return;
-          }
-          if (!respond) continue;
-          const std::string body = "hello world";
-          std::string resp =
-              "HTTP/1.1 200 OK\r\n"
-              "Content-Type: text/plain\r\n"
-              "Content-Length: " +
-              std::to_string(body.size()) + "\r\n\r\n" + body;
-          conn->Send(resp);
+  ~UpstreamStub() {
+    const int listener = listen_fd.exchange(-1, std::memory_order_acq_rel);
+    if (listener >= 0) ::close(listener);
+    const int active = active_fd.exchange(-1, std::memory_order_acq_rel);
+    if (active >= 0) {
+      ::shutdown(active, SHUT_RDWR);
+      ::close(active);
+    }
+  }
+
+  static bool SendAll(int fd, std::string_view data) {
+    while (!data.empty()) {
+      const ssize_t n = ::send(fd, data.data(), data.size(), MSG_NOSIGNAL);
+      if (n > 0) {
+        data.remove_prefix(static_cast<std::size_t>(n));
+        continue;
+      }
+      if (n < 0 && errno == EINTR) continue;
+      return false;
+    }
+    return true;
+  }
+
+  void HandleConnection(int fd, std::stop_token token) {
+    active_fd.store(fd, std::memory_order_release);
+    std::string pending;
+    char buffer[4096];
+
+    while (!token.stop_requested()) {
+      const ssize_t n = ::recv(fd, buffer, sizeof(buffer), 0);
+      if (n > 0) {
+        pending.append(buffer, static_cast<std::size_t>(n));
+      } else if (n < 0 && errno == EINTR) {
+        continue;
+      } else {
+        break;
+      }
+
+      for (;;) {
+        const auto end = pending.find("\r\n\r\n");
+        if (end == std::string::npos) break;
+
+        {
+          std::lock_guard lk{mu};
+          requests.emplace_back(pending.data(), end + 4);
         }
-      });
-      server->Start();
-    });
+        pending.erase(0, end + 4);
+        request_count.fetch_add(1, std::memory_order_relaxed);
+
+        if (close_after_request) {
+          ::shutdown(fd, SHUT_RDWR);
+          return;
+        }
+        if (!respond) continue;
+
+        const std::string body = "hello world";
+        const std::string response =
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: text/plain\r\n"
+            "Content-Length: " +
+            std::to_string(body.size()) + "\r\n\r\n" + body;
+        if (!SendAll(fd, response)) return;
+      }
+    }
+  }
+
+  void Run(std::stop_token token) {
+    while (!token.stop_requested()) {
+      pollfd event{listen_fd.load(std::memory_order_acquire), POLLIN, 0};
+      if (event.fd < 0) return;
+      const int ready = ::poll(&event, 1, 50);
+      if (ready <= 0) continue;
+
+      const int fd = ::accept4(event.fd, nullptr, nullptr, SOCK_CLOEXEC);
+      if (fd < 0) {
+        if (errno == EINTR) continue;
+        if (token.stop_requested()) return;
+        continue;
+      }
+      accept_count.fetch_add(1, std::memory_order_relaxed);
+      HandleConnection(fd, token);
+      active_fd.store(-1, std::memory_order_release);
+      ::close(fd);
+    }
+  }
+
+  void Start(uint16_t port) {
+    int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
+    if (fd < 0) return;
+    int on = 1;
+    ::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on));
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_port = htons(port);
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    if (::bind(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) != 0 ||
+        ::listen(fd, 16) != 0) {
+      ::close(fd);
+      return;
+    }
+    listen_fd.store(fd, std::memory_order_release);
+    thread = std::jthread([this](std::stop_token token) { Run(token); });
   }
 };
 
@@ -243,7 +323,7 @@ bool TestProxyPreservesRequestLineAndReusesConnection() {
       vexo::gateway::UpstreamPeerConfig{.name = "stub-1", .host = "127.0.0.1", .port = up_port}));
   reg.Add(up);
 
-  vexo::net::EventLoopThread gw_thr;
+  LoopThread gw_thr;
   auto* gw_loop = gw_thr.StartLoop();
   GatewayRuntime gw;
   RunInLoopAndWait(gw_loop, [&] {
@@ -340,10 +420,7 @@ bool TestProxyPreservesRequestLineAndReusesConnection() {
   }
 
   Passed("TestProxyPreservesRequestLineAndReusesConnection");
-  // gw 和 stub.server 都在 loop 线程上创建，必须也在 loop 线程上析构
   StopGateway(gw_loop, gw);
-  auto* stub_loop = stub.loop_holder;
-  RunInLoopAndWait(stub_loop, [&] { stub.server.reset(); });
   return true;
 }
 
@@ -363,7 +440,7 @@ bool TestPrefixBoundary() {
       vexo::gateway::UpstreamPeerConfig{.name = "stub-1", .host = "127.0.0.1", .port = up_port}));
   reg.Add(up);
 
-  vexo::net::EventLoopThread gw_thr;
+  LoopThread gw_thr;
   auto* gw_loop = gw_thr.StartLoop();
   GatewayRuntime gw;
   RunInLoopAndWait(gw_loop, [&] {
@@ -388,8 +465,6 @@ bool TestPrefixBoundary() {
 
   Passed("TestPrefixBoundary");
   StopGateway(gw_loop, gw);
-  auto* stub_loop = stub.loop_holder;
-  RunInLoopAndWait(stub_loop, [&] { stub.server.reset(); });
   return true;
 }
 
@@ -413,7 +488,7 @@ bool TestProxyDeadlineReleasesBulkheadSlot() {
   up->AddPeer(peer);
   reg.Add(up);
 
-  vexo::net::EventLoopThread gw_thr;
+  LoopThread gw_thr;
   auto* gw_loop = gw_thr.StartLoop();
   GatewayRuntime gw;
   RunInLoopAndWait(gw_loop, [&] {
@@ -453,8 +528,6 @@ bool TestProxyDeadlineReleasesBulkheadSlot() {
 
   Passed("TestProxyDeadlineReleasesBulkheadSlot");
   StopGateway(gw_loop, gw);
-  auto* stub_loop = stub.loop_holder;
-  RunInLoopAndWait(stub_loop, [&] { stub.server.reset(); });
   return true;
 }
 
@@ -485,7 +558,7 @@ bool TestIPHashConnectFailureFailsOver() {
   AddPeersWithHashSelectingFirst(up, bad_peer, good_peer);
   reg.Add(up);
 
-  vexo::net::EventLoopThread gw_thr;
+  LoopThread gw_thr;
   auto* gw_loop = gw_thr.StartLoop();
   GatewayRuntime gw;
   RunInLoopAndWait(gw_loop, [&] {
@@ -507,8 +580,6 @@ bool TestIPHashConnectFailureFailsOver() {
 
   if (ok) Passed("TestIPHashConnectFailureFailsOver");
   StopGateway(gw_loop, gw);
-  RunInLoopAndWait(closing.loop_holder, [&] { closing.server.reset(); });
-  RunInLoopAndWait(good.loop_holder, [&] { good.server.reset(); });
   return ok;
 }
 
@@ -540,7 +611,7 @@ bool TestPostIsNotReplayedAfterFlush() {
   AddPeersWithHashSelectingFirst(up, closing_peer, good_peer);
   reg.Add(up);
 
-  vexo::net::EventLoopThread gw_thr;
+  LoopThread gw_thr;
   auto* gw_loop = gw_thr.StartLoop();
   GatewayRuntime gw;
   RunInLoopAndWait(gw_loop, [&] {
@@ -560,8 +631,6 @@ bool TestPostIsNotReplayedAfterFlush() {
 
   if (ok) Passed("TestPostIsNotReplayedAfterFlush");
   StopGateway(gw_loop, gw);
-  RunInLoopAndWait(closing.loop_holder, [&] { closing.server.reset(); });
-  RunInLoopAndWait(good.loop_holder, [&] { good.server.reset(); });
   return ok;
 }
 

@@ -19,6 +19,7 @@ namespace vexo::net {
 class ReactorListener {
 public:
   VEXO_DELETE_COPY_MOVE(ReactorListener);
+
   using Stream = ReactorStream;
 
   ReactorListener(EventLoop* loop, const InetAddress& listen_addr);
@@ -27,7 +28,7 @@ public:
   coro::Task<base::Result<std::unique_ptr<ReactorStream>>> Accept();
   coro::Task<base::Result<void>> Close();
 
-  base::Result<InetAddress> LocalAddress() const;
+  [[nodiscard]] base::Result<InetAddress> LocalAddress() const;
 
 private:
   class AcceptAwaiter;

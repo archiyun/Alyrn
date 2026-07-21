@@ -108,8 +108,7 @@ The following are hard failures:
 - Tests or benchmarks becoming required runtime link dependencies.
 
 Semantic dependency inversion counts even without an include. For example,
-`TcpConnection` recognizing a `"proxy->"` name prefix is a forbidden net to
-gateway dependency.
+transport code must not inspect gateway-specific route, peer, or proxy names.
 
 ## Gateway Submodule Graph
 

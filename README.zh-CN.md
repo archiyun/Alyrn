@@ -16,9 +16,9 @@ Foundation     ─── vexo::base / ds / log / time / task / memory
 ### 网关层（`vexo::gateway`）
 
 - **反向代理** — 将 HTTP 请求透明转发到上游 backend，底层使用持久连接
-- **上游管理** — `UpstreamRegistry` + `Upstream` + `UpstreamPeer`；支持运行时动态添加 backend
+- **上游管理** — `UpstreamRegistry` + `Upstream` + `UpstreamPeer`；拓扑在启动阶段构建并发布
 - **负载均衡** — 轮询、平滑加权轮询、最少连接、随机、加权随机、IP 哈希、一致性哈希、P2C；通过 `LoadBalancer` 接口可插拔
-- **主动健康检查** — 定时 HTTP 探针；连续失败 N 次摘除 backend，连续成功 M 次恢复
+- **主动健康检查** — `GatewayServer` 执行有界的定时 HTTP 探针；连续失败 N 次摘除 backend，连续成功 M 次恢复
 - **被动故障追踪** — `ProxySession` 记录每次请求的失败；达到 `max_fails` 后隔离 `fail_timeout`
 - **连接池** — `UpstreamConnPool` 对每个 backend 维护持久连接，每个 I/O 线程独立一个池，无跨线程竞争
 - **直接路由** — 在网关上直接注册同步 handler
@@ -27,12 +27,12 @@ Foundation     ─── vexo::base / ds / log / time / task / memory
 ### HTTP 服务层（`vexo::http`）
 
 - `epoll` 事件驱动，One-Loop-Per-Thread I/O 线程模型
-- 增量式 HTTP/1.1 解析器（`HttpContext`）——零中间拷贝，keep-alive 通过 `Reset()` 复用上下文
+- 增量式 HTTP/1.1 解析器（`HttpParser`）——消费字节片段，keep-alive 通过 `Reset()` 复用解析状态
 - 前缀树路由，支持静态段和动态路径参数（`:param` 语法）
 
 ### 网络层（`vexo::net`）
 
-- `EventLoop`、`EpollPoller`、`Channel`、`TcpServer`、`TcpConnection`、`Buffer`
+- `EventLoop`、`EpollPoller`、`Channel`、`ReactorListener`、`ReactorConnector`、`ReactorStream`、`Socket`
 - 定时器队列由 `timerfd` 驱动，并通过 `TimerTree` 索引 `vexo::time::Timer`
 - 支持水平触发和边缘触发两种 epoll 模式
 
@@ -209,9 +209,9 @@ int main() {
 
 | 目标 | 提供 |
 |---|---|
-| `vexo_gateway` | 网关、反向代理、负载均衡器、健康检查 |
-| `vexo_http_core` | HTTP 解析器、Trie 路由、请求/响应、上下文 |
-| `vexo_net` | EventLoop、TcpServer、Channel、Poller、Buffer、TimerQueue |
+| `vexo_gateway` | 网关、反向代理、负载均衡器、主动健康循环 |
+| `vexo_http_core` | HTTP 解析器、Trie 路由、请求/响应 |
+| `vexo_net` | Reactor EventLoop、Channel、Poller、流、Socket、TimerQueue |
 | `vexo_task` | Scheduler、ThreadPool、Task、WorkQueue |
 | `vexo_foundation` | 日志、时间戳、MemoryPool、ObjectPool、`vexo::ds`、指标 |
 
@@ -233,9 +233,9 @@ ctest --test-dir build -R rbtree_validator --output-on-failure
 |---|---|
 | `rbtree_validator` | 1000 万次操作对比 `std::set` 对数器 + 每步 `CheckRBInvariants()` |
 | `http_smoke_test` | HTTP 解析与路由（不依赖 GTest） |
-| `buffer_smoke_test` | Buffer 读/写/预置 |
-| `vexo_unit_tests` | GTest 套件：buffer、logger、内存池、调度器 |
-| `vexo_integration_tests` | GTest 套件：事件循环、TCP 服务器、HTTP 路由、触发模式 |
+| `io_buffer_smoke_test` | 与后端无关的 I/O buffer 读写 |
+| `vexo_unit_tests` | GTest 套件：logger、内存池、调度器、当前 net 工具 |
+| `vexo_integration_tests` | GTest 套件：EventLoop 与当前 HTTP/gateway 集成 |
 
 说明：
 
@@ -249,16 +249,16 @@ ctest --test-dir build -R rbtree_validator --output-on-failure
 ├── include/vexo/
 │   ├── base/        # CurrentThread、检查、panic、singleton
 │   ├── ds/          # IntrusiveRBTree、IntrusiveQuadHeap、MurmurHash3
-│   ├── gateway/     # GatewayServer、Upstream、LoadBalancer、HealthChecker、ProxyPass
-│   ├── http/        # Parser、Router、HttpContext、HttpRequest、HttpResponse
+│   ├── gateway/     # GatewayServer、Upstream、LoadBalancer、主动健康、ProxyPass
+│   ├── http/        # HttpParser、Router、HttpRequest、HttpResponse
 │   ├── log/         # Logger、AsyncLogger
 │   ├── memory/      # MemoryPool、ObjectPool
-│   ├── net/         # EventLoop、TcpServer、Channel、Poller、Buffer、TimerQueue
+│   ├── net/         # EventLoop、Reactor 流、Channel、Poller、TimerQueue
 │   ├── task/        # Scheduler、ThreadPool、Task、WorkQueue
 │   ├── time/        # Timestamp、Timer、TimerId、TimerTree
 │   └── trace/       # TraceId、LifecycleTrace
 ├── src/             # 各模块实现（目录结构与 include 对称）
-├── examples/        # demo_gateway、demo_echo_server、demo_rbtree
+├── examples/        # gateway、Reactor/io_uring、基础设施示例
 ├── tests/           # 单元测试、集成测试、smoke 测试、对数器验证
 └── docs/            # 设计文档
 ```
@@ -270,14 +270,14 @@ Gateway Layer   vexo::gateway
   GatewayServer、UpstreamRegistry、Upstream、UpstreamPeer
   LoadBalancer（RoundRobin / WeightedRoundRobin / LeastConn / Random /
   WeightedRandom / IPHash / ConsistentHash / P2C）
-  HealthChecker、ProxyPass、UpstreamConnPool
+  主动健康循环、ProxyPass、UpstreamStreamPool
 
 HTTP Core       vexo::http
-  Parser、Router（Trie）、HttpContext、HttpRequest、HttpResponse
+  HttpParser、Router（Trie）、HttpRequest、HttpResponse
 
 Net Layer       vexo::net
-  TcpServer、TcpConnection、EventLoop、EpollPoller、Channel
-  Buffer、TimerQueue（基于 timerfd）
+  ReactorListener、ReactorConnector、ReactorStream、EventLoop
+  EpollPoller、Channel、Socket、TimerQueue（基于 timerfd）
 
 Foundation      vexo::base / ds / log / time / task / memory
   AsyncLogger、Scheduler、ThreadPool
@@ -290,27 +290,27 @@ Foundation      vexo::base / ds / log / time / task / memory
 
 ```text
 kernel
-  → Buffer::ReadFd()
-  → TcpConnection 消息回调（Sub Loop）
-  → HttpContext::ParseRequest()        增量状态机解析
+  → ReactorListener::Accept()
+  → ReactorStream 读操作
+  → HttpParser::Feed()                 增量状态机解析
   → GatewayServer::MatchRoute()
       ├── Direct  → 同步 Handler → HttpResponse
-      ├── Proxy   → LoadBalancer::Select() → UpstreamConnPool
-      │             → ProxySession（异步上游 I/O，同一 Sub Loop）
-  → TcpConnection::Send()
+      ├── Proxy   → LoadBalancer::Select() → UpstreamStreamPool
+      │             → UpstreamConnector / AsyncStream
+  → 下游 ReactorStream 写操作
 ```
 
 典型 HTTP 请求路径：
 
 ```text
 kernel
-  → Buffer::ReadFd()
-  → TcpConnection 消息回调
-  → HttpContext::ParseRequest()
+  → ReactorListener::Accept()
+  → ReactorStream 读操作
+  → HttpParser::Feed()
   → Router::Match()
   → 用户 handler
   → HttpResponse::ToString()
-  → TcpConnection::Send()
+  → ReactorStream 写操作
 ```
 
 ## License

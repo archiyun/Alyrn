@@ -13,7 +13,7 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j"$(nproc)"
 ```
 
-Useful CMake options include `-DBUILD_TESTS=ON`, `-DBUILD_EXAMPLES=ON`, `-DVEXO_BUFFER_IMPL=muduo|ringbuf|nginx`, and `-DVEXO_SANITIZER=address,undefined` or `thread`. Run the gateway with `./build/examples/gateway/demo_gateway` after starting backend HTTP services.
+Useful CMake options include `-DBUILD_TESTS=ON`, `-DBUILD_EXAMPLES=ON`, and `-DVEXO_SANITIZER=address,undefined` or `thread`. Run the gateway with `./build/examples/gateway/demo_gateway` after starting backend HTTP services.
 
 ## Coding Style & Naming Conventions
 

@@ -40,7 +40,7 @@ public:
     });
   }
 
-  EventLoop* loop() const noexcept { return loop_; }
+  [[nodiscard]] EventLoop* loop() const noexcept { return loop_; }
 
 private:
   EventLoop* loop_;

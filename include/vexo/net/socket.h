@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <utility>
+
 #include "vexo/net/inet_address.h"
 #include "vexo/utils/macros.h"
 
@@ -13,12 +15,23 @@ namespace vexo::net {
 // operations used by the networking layer.
 class Socket {
 public:
+  VEXO_DELETE_COPY(Socket);
+
   explicit Socket(int sockfd);
   ~Socket();
 
-  VEXO_DELETE_COPY_MOVE(Socket);
+  // Move assignment closes the descriptor currently owned by *this before
+  // taking ownership from other.
+  Socket(Socket&& other) noexcept : sockfd_(std::exchange(other.sockfd_, -1)) {}
+  Socket& operator=(Socket&& other) noexcept {
+    if (this != &other) {
+      Close();
+      sockfd_ = std::exchange(other.sockfd_, -1);
+    }
+    return *this;
+  }
 
-  int fd() const { return sockfd_; }
+  [[nodiscard]] int fd() const { return sockfd_; }
 
   // Binds the socket to a local address.
   void BindAddress(const InetAddress& localaddr);

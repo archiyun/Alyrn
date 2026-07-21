@@ -73,7 +73,7 @@ public:
       return false;
     }
 
-    channel_ = std::make_unique<Channel>(loop_, fd_);
+    channel_.emplace(loop_, fd_);
     channel_->set_write_callback([this] { OnReady(); });
     channel_->set_error_callback([this] { OnReady(); });
     channel_->EnableWriting();
@@ -116,7 +116,7 @@ private:
     if (!channel_->IsNoneEvent()) {
       channel_->DisableAll();
     }
-    if (loop_->HasChannel(channel_.get())) {
+    if (loop_->HasChannel(&*channel_)) {
       channel_->Remove();
     }
     channel_.reset();
@@ -125,7 +125,7 @@ private:
   EventLoop* loop_;
   InetAddress peer_;
   int fd_{-1};
-  std::unique_ptr<Channel> channel_;
+  std::optional<Channel> channel_;
   coro::Scheduler* scheduler_{nullptr};
   coro::ResumeWork resume_work_{};
   std::optional<base::Result<std::unique_ptr<ReactorStream>>> result_;

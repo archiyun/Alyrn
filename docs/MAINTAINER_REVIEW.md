@@ -34,9 +34,9 @@ gateway -> base, ds, time, log, net, http
 
 Boundary violations or warning signs:
 
-- `TcpConnection` counts connections whose names start with `"proxy->"`. This
-  is a semantic net-to-gateway dependency even though no gateway header is
-  included.
+- The former callback-oriented TCP layer mixed transport lifetime with gateway
+  policy. It is now removed; the Reactor stream and gateway connector contracts
+  keep those responsibilities separate.
 - The single `vexo_foundation` target combines L0 memory/ds concerns with L1
   time/log concerns, so CMake cannot enforce the intended boundaries.
 - README claims upstreams can be added at runtime, while `UpstreamRegistry` and
@@ -159,21 +159,6 @@ an agent-specific skill directory without making `.claude/` the canonical copy.
 // destroying the owner mid-dispatch, and callbacks firing in an unexpected order.
 ```
 
-### TcpConnection
-
-```cpp
-// Threading: state, Channel, socket, context, and buffers belong to loop().
-// Cross-thread APIs must post all state access to that loop or use documented atomics.
-// Lifetime: TcpServer/TcpClient own shared connection lifetime; Channel::Tie holds
-// a dispatch guard only. ConnectDestroyed must run exactly once on loop().
-// State: Connecting -> Connected -> Disconnecting -> Disconnected.
-// Invariants: socket and Channel refer to the same fd; callbacks run on loop();
-// output-buffer accounting and high-water notification are monotonic per crossing.
-// Common failure modes: non-atomic state reads off-loop, duplicate destruction,
-// owner destruction from inside a callback, unbounded output buffering, and
-// lower-layer instrumentation keyed by gateway-specific connection names.
-```
-
 ### TimerQueue / TimerId
 
 ```cpp
@@ -187,21 +172,6 @@ an agent-specific skill directory without making `.claude/` the canonical copy.
 // Common failure modes: wall-clock jumps, raw-this captures, allocation outside
 // the loop racing teardown, cancellation assumed synchronous, and uncancelled
 // repeating timers retaining component state.
-```
-
-### HealthChecker
-
-```cpp
-// Threading: probe maps and threshold counters are owned by the configured loop.
-// Start/Stop may be invoked externally only through their documented atomic gate.
-// Lifetime: registry and loop outlive the checker. Generation checks make callbacks
-// inert after Stop; timeout ownership must not retain probe resources indefinitely.
-// State: stopped -> running(generation N) -> stopped(generation N+1).
-// Per peer: idle -> probing -> success/failure -> idle; at most one probe per key.
-// Invariants: late callbacks do not mutate health; one probe reports once; active
-// health alone owns the hard-down flag; thresholds count consecutive outcomes.
-// Common failure modes: raw-this timer capture, duplicate peer-name keys, overlapping
-// probes, successful prefixes accepted as full responses, and timeout timers retained.
 ```
 
 ### CircuitBreaker
@@ -235,7 +205,8 @@ an agent-specific skill directory without making `.claude/` the canonical copy.
 ```cpp
 // Threading: construction and Add occur before publication; Find/all are read-only
 // after publication. Runtime mutation requires immutable snapshot replacement.
-// Lifetime: registry outlives GatewayServer, HealthChecker, routes, and requests.
+// Lifetime: registry outlives GatewayServer, the active health loop, routes,
+// and requests.
 // State: building -> frozen/published.
 // Invariants: upstream names are unique; peer vectors/configuration do not mutate
 // after publication; returned Upstream objects remain alive for active requests.
@@ -263,8 +234,8 @@ an agent-specific skill directory without making `.claude/` the canonical copy.
 // Threading: connection/request state is owned by the downstream connection's loop.
 // Shared topology is immutable or atomic; per-loop pools are never touched off-loop.
 // Lifetime: GatewayServer outlives server callbacks and recurring timers.
-// UpstreamRequest has one idempotent terminal cleanup path and does not destroy a
-// TcpClient while that client's callback is still on the stack.
+// Proxy requests have one idempotent terminal cleanup path and do not close or
+// return an upstream stream while its terminal operation is still on the stack.
 // State: request admission -> connect -> send -> read headers -> stream body -> done.
 // Invariants: one response per request; no retry of unsafe on-wire methods; active,
 // peer, breaker, timer, and pool accounting are released exactly once; all queues,
@@ -278,17 +249,9 @@ an agent-specific skill directory without making `.claude/` the canonical copy.
 
 ### P0: fix before adding gateway features
 
-1. **TcpClient owner destruction during callback dispatch.** Proxy retry can
-   replace `upstream_conn_` from the old connection's disconnect callback.
-   `TcpConnection::HandleClose` then continues to invoke the old TcpClient's
-   close callback, which captures raw `this`.
-2. **Recurring pool timer has no owner-safe teardown.** `GetOrCreatePool`
+1. **Recurring pool timer has no owner-safe teardown.** `GetOrCreatePool`
    captures `&pool_ref` in `RunEvery` and stores no `TimerId`; destroying
    `GatewayServer` while loops continue leaves a dangling callback.
-3. **Wrong-thread TCP teardown.** `TcpServer::~TcpServer` directly calls
-   `ConnectDestroyed` for connections that may belong to sub-loops.
-4. **Cross-thread data race in TcpConnection.** `Send` and `Shutdown` inspect
-   or mutate non-atomic `state_` before posting to the loop.
 
 ### P1: resilience contracts are incomplete
 
@@ -310,42 +273,35 @@ an agent-specific skill directory without making `.claude/` the canonical copy.
    HalfOpen cycle. Configuration requires validation.
 7. RateLimiter bounds identity count, but all per-IP traffic and a possible
    65k-entry eviction sweep run under one mutex on I/O threads.
-8. HealthChecker prevents same-name overlap and ignores late results after
-   Stop, but timeout timers retain each TcpClient until timeout and peer names
-   must be globally unique to avoid cross-upstream suppression.
 
 ### P2: structural debt
 
-1. Remove gateway-specific connection counters/name parsing from net.
-2. Split TTL caches from memory-core.
-3. Split load balancers out of one large header and move nontrivial algorithms
+1. Split TTL caches from memory-core.
+2. Split load balancers out of one large header and move nontrivial algorithms
    to `.cc` files.
-4. Enforce target-level boundaries in CMake and CI.
-5. Reconcile README runtime-mutation claims with startup-only registry design.
-6. Move timer scheduling to an explicit monotonic time domain.
+3. Enforce target-level boundaries in CMake and CI.
+4. Reconcile README runtime-mutation claims with startup-only registry design.
+5. Move timer scheduling to an explicit monotonic time domain.
 
 ## H. Suggested Commit Plan
 
 1. `docs: define subsystem layering and maintenance contracts`
    - Add `SUBSYSTEMS.md`, this review, and module skills only.
-2. `net: make connection teardown and cross-thread state access safe`
-   - Fix TcpClient callback ownership, TcpServer sub-loop teardown, and
-     TcpConnection state access; add ASan/TSan regressions.
-3. `net: harden timer ownership and monotonic scheduling`
+2. `net: harden timer ownership and monotonic scheduling`
    - Loop-own allocation/insertion, explicit cancellation/drain rules, and
      monotonic deadlines.
-4. `gateway: make server and pool timers teardown-safe`
+3. `gateway: make server and pool timers teardown-safe`
    - Store timer IDs, cancel on owner loop, and define destructor ordering.
-5. `gateway: bound proxy request lifecycle`
+4. `gateway: bound proxy request lifecycle`
    - Pending limit, committed-response timeout behavior, response-header limit,
      downstream backpressure, and idempotent cleanup.
-6. `gateway: separate retry and overload budgets from breaker outcomes`
+5. `gateway: separate retry and overload budgets from breaker outcomes`
    - Configurable per-request retry count plus shared retry budget.
-7. `gateway: validate resilience configuration`
+6. `gateway: validate resilience configuration`
    - Circuit-breaker semantics, rate/burst ranges, health thresholds, and
      globally unique peer identity.
-9. `gateway: split subdirectories with compatibility headers`
+7. `gateway: split subdirectories with compatibility headers`
    - Move one submodule per commit; preserve existing external includes.
-10. `ci: add dependency and sanitizer gates`
+8. `ci: add dependency and sanitizer gates`
     - Include graph checks, required module tests, ASan lifetime tests, and TSan
       tests for cross-loop APIs.

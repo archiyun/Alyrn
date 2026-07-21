@@ -363,22 +363,6 @@ target_link_libraries(logger_smoke_test
 
 add_test(NAME logger_smoke_test COMMAND logger_smoke_test)
 
-add_executable(buffer_smoke_test
-    unit/test_buffer_smoke.cc
-)
-
-target_include_directories(buffer_smoke_test
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
-
-target_link_libraries(buffer_smoke_test
-    PRIVATE
-        vexo_net
-)
-
-add_test(NAME buffer_smoke_test COMMAND buffer_smoke_test)
-
 add_executable(http_smoke_test
     unit/test_http_smoke.cc
 )
@@ -391,7 +375,6 @@ target_include_directories(http_smoke_test
 target_link_libraries(http_smoke_test
     PRIVATE
         vexo_http_core
-        vexo_net
 )
 
 add_test(NAME http_smoke_test COMMAND http_smoke_test)
@@ -425,6 +408,22 @@ target_link_libraries(epoll_poller_smoke_test
 
 add_test(NAME epoll_poller_smoke_test COMMAND epoll_poller_smoke_test)
 
+add_executable(net_move_smoke_test
+    unit/test_net_move_smoke.cc
+)
+
+target_include_directories(net_move_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(net_move_smoke_test
+    PRIVATE
+        vexo_net
+)
+
+add_test(NAME net_move_smoke_test COMMAND net_move_smoke_test)
+
 add_executable(event_loop_smoke_test
     integration/test_event_loop_smoke.cc
 )
@@ -456,39 +455,6 @@ target_link_libraries(timer_tree_smoke_test
 )
 
 add_test(NAME timer_tree_smoke_test COMMAND timer_tree_smoke_test)
-
-add_executable(tcp_server_smoke_test
-    integration/test_tcp_server_smoke.cc
-)
-
-target_include_directories(tcp_server_smoke_test
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
-
-target_link_libraries(tcp_server_smoke_test
-    PRIVATE
-        vexo_net
-)
-
-add_test(NAME tcp_server_smoke_test COMMAND tcp_server_smoke_test)
-
-add_executable(rst_storm_smoke_test
-    integration/test_rst_storm_smoke.cc
-)
-
-target_include_directories(rst_storm_smoke_test
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
-
-target_link_libraries(rst_storm_smoke_test
-    PRIVATE
-        vexo_net
-)
-
-add_test(NAME rst_storm_smoke_test COMMAND rst_storm_smoke_test)
-set_tests_properties(rst_storm_smoke_test PROPERTIES TIMEOUT 60)
 
 add_executable(intrusive_rbtree_clear_smoke_test
     unit/test_intrusive_rbtree_clear_smoke.cc
@@ -522,6 +488,22 @@ target_include_directories(splaytree_validator
 )
 
 add_test(NAME splaytree_validator COMMAND splaytree_validator)
+
+add_executable(lru_cache_test
+    unit/test_lru_cache.cc
+)
+
+target_include_directories(lru_cache_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(lru_cache_test
+    PRIVATE
+        vexo_foundation
+)
+
+add_test(NAME lru_cache_test COMMAND lru_cache_test)
 
 add_executable(quad_heap_test
     unit/test_quad_heap.cc
@@ -582,22 +564,6 @@ target_link_libraries(load_balancer_smoke_test
 )
 
 add_test(NAME load_balancer_smoke_test COMMAND load_balancer_smoke_test)
-
-add_executable(health_checker_smoke_test
-    unit/test_health_checker_smoke.cc
-)
-
-target_include_directories(health_checker_smoke_test
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
-
-target_link_libraries(health_checker_smoke_test
-    PRIVATE
-        vexo_gateway
-)
-
-add_test(NAME health_checker_smoke_test COMMAND health_checker_smoke_test)
 
 add_executable(circuit_breaker_smoke_test
     unit/test_circuit_breaker_smoke.cc
@@ -714,22 +680,6 @@ target_link_libraries(gateway_adversarial_test
 add_test(NAME gateway_adversarial_test COMMAND gateway_adversarial_test)
 set_tests_properties(gateway_adversarial_test PROPERTIES LABELS "adversarial")
 
-add_executable(health_checker_lifetime_reproducer
-    EXCLUDE_FROM_ALL
-    adversarial/test_health_checker_lifetime_reproducer.cc
-)
-
-target_include_directories(health_checker_lifetime_reproducer
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
-
-target_link_libraries(health_checker_lifetime_reproducer
-    PRIVATE
-        vexo_gateway
-        vexo_net
-)
-
 add_executable(memory_pool_bench
     unit/bench_memory_pool.cc
 )
@@ -746,7 +696,6 @@ if(GTest_FOUND)
     include(GoogleTest)
 
     add_executable(vexo_unit_tests
-        unit/test_buffer.cc
         unit/test_logger.cc
         unit/test_memory_pool.cc
         unit/test_net_utils.cc
@@ -764,8 +713,6 @@ if(GTest_FOUND)
 
     set(INTEGRATION_TEST_SOURCES
         integration/test_event_loop.cc
-        integration/test_tcp_server.cc
-        integration/test_trigger_mode.cc
     )
 
     add_executable(vexo_integration_tests ${INTEGRATION_TEST_SOURCES})

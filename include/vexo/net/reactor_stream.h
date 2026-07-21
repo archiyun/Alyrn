@@ -18,6 +18,7 @@ namespace vexo::net {
 class ReactorStream {
 public:
   VEXO_DISABLE_COPY_ALLOW_MOVE(ReactorStream);
+
   ReactorStream(EventLoop* loop, int fd, InetAddress peer = InetAddress(0));
   ~ReactorStream();
 
@@ -33,7 +34,7 @@ public:
   coro::Task<base::Result<void>> Shutdown();
   coro::Task<base::Result<void>> Close();
 
-  const InetAddress& PeerAddress() const noexcept { return peer_; }
+  [[nodiscard]] const InetAddress& PeerAddress() const noexcept { return peer_; }
 
 private:
   class ReadOperation;

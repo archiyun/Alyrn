@@ -456,7 +456,7 @@ bool TestRoundRobinHonorsPassiveFailTimeout() {
 }
 
 // Regression guard for the passive-recovery bug: a peer that trips max_fails on
-// the *proxy* path (no active HealthChecker running) must recover on its own.
+// the *proxy* path (with no active gateway health loop) must recover on its own.
 // Previously the proxy set state_.down on max_fails, which made AvailableAt()
 // short-circuit to false forever — the fail_timeout cooldown window was
 // unreachable and the peer stayed stranded until an active checker cleared

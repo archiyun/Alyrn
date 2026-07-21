@@ -16,7 +16,6 @@
 #include <vector>
 
 #include "vexo/gateway/circuit_breaker.h"
-#include "vexo/gateway/health_check_config.h"
 #include "vexo/gateway/upstream_peer.h"
 
 namespace vexo::gateway {
@@ -24,7 +23,6 @@ namespace vexo::gateway {
 // Static configuration block for an Upstream. Immutable after construction.
 struct UpstreamConfig {
   std::string name;
-  HealthCheckConfig health_check{};
   CircuitBreakerConfig circuit_breaker{};
   bool circuit_breaker_enabled{false};
 

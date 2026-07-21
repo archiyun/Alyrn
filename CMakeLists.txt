@@ -87,26 +87,10 @@ target_include_directories(vexo_io INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include
 target_link_libraries(vexo_io INTERFACE vexo_coro vexo_foundation)
 target_compile_features(vexo_io INTERFACE cxx_std_23)
 
-set(VEXO_BUFFER_IMPL "muduo" CACHE STRING "Buffer implementation: muduo | ringbuf | nginx")
-
-if(VEXO_BUFFER_IMPL STREQUAL "ringbuf")
-    set(VEXO_BUFFER_SRC src/net/buffer_ringbuf.cc)
-elseif(VEXO_BUFFER_IMPL STREQUAL "nginx")
-    set(VEXO_BUFFER_SRC src/net/buffer_nginx.cc)
-else()
-    set(VEXO_BUFFER_SRC src/net/buffer_muduo.cc)
-endif()
-
 add_library(vexo_net STATIC
-    ${VEXO_BUFFER_SRC}
-    src/net/acceptor.cc
     src/net/channel.cc
-    src/net/connector.cc
-    src/net/tcp_client.cc
     src/net/epoll_poller.cc
     src/net/event_loop.cc
-    src/net/event_loop_thread.cc
-    src/net/event_loop_thread_pool.cc
     src/net/inet_address.cc
     src/net/net_utils.cc
     src/net/poller.cc
@@ -114,8 +98,6 @@ add_library(vexo_net STATIC
     src/net/reactor_listener.cc
     src/net/reactor_stream.cc
     src/net/socket.cc
-    src/net/tcp_connection.cc
-    src/net/tcp_server.cc
     src/net/timer_queue.cc
 )
 
@@ -132,9 +114,6 @@ target_link_libraries(vexo_net
 )
 
 target_compile_features(vexo_net PUBLIC cxx_std_23)
-
-# memmem 是 GNU 扩展, buffer.h 内联用到, 通过 PUBLIC 让上层库也能 include buffer.h
-target_compile_definitions(vexo_net PUBLIC _GNU_SOURCE)
 
 # vexo_luring —— io_uring proactor 网络模块。它和 vexo_net/reactor 并列，
 # 共同解释 vexo_io 的协程可观察 I/O 契约。
@@ -193,7 +172,6 @@ set(VEXO_HTTP_CORE_SOURCES
     src/http/http_request.cc
     src/http/http_response.cc
     src/http/http_parser.cc
-    src/http/http_context.cc
     src/http/parse_status.cc
     src/http/router.cc
 )
@@ -230,7 +208,6 @@ target_compile_features(vexo_gateway_core PUBLIC cxx_std_23)
 
 add_library(vexo_gateway STATIC
     src/gateway/proxy_pass.cc
-    src/gateway/health_checker.cc
 )
 
 target_include_directories(vexo_gateway PUBLIC

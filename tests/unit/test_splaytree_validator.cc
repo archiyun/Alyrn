@@ -10,8 +10,8 @@
 //   6. 有序插删、反向删除、内外交替删除、密集重复 key + PopWhile churn 均与 oracle 一致
 //   7. PopWhile(pred, on_pop) 在回调前已删除节点，且不需要结果 vector
 //
-// 注意：IntrusiveSplayTree 不存 per-node tree owner。跨树 Erase 是调用方违反
-// 前置条件，不在本测试里验证。
+// 注意：Release 构建不存 per-node tree owner。跨树 Erase 仍是调用方违反
+// 前置条件；Debug 构建会通过 owner assert 尽早捕获该错误。
 //
 // 编译
 // cmake -B build-tests
@@ -55,6 +55,24 @@ static_assert(!std::is_move_assignable_v<JobTree>);
 struct JobCmp {
   bool operator()(const Job* a, const Job* b) const { return JobLess(a, b); }
 };
+
+struct SecondaryHook {};
+
+struct MultiHookJob : vexo::ds::SplayNode<MultiHookJob>,
+                     vexo::ds::SplayNode<MultiHookJob, SecondaryHook> {
+  MultiHookJob() = default;
+
+  int key = 0;
+};
+
+bool MultiHookJobLess(const MultiHookJob* a, const MultiHookJob* b) {
+  return a->key < b->key;
+}
+
+using PrimaryMultiHookTree =
+    vexo::ds::IntrusiveSplayTree<MultiHookJob, MultiHookJobLess>;
+using SecondaryMultiHookTree =
+    vexo::ds::IntrusiveSplayTree<MultiHookJob, MultiHookJobLess, SecondaryHook>;
 
 // ----------------------------------------------------------------
 // Helpers
@@ -102,6 +120,90 @@ static bool full_check(const JobTree& tree,
     ok &= CheckAt(tree.earliest() == *oracle.begin(), where, "earliest mismatch");
   }
   return ok;
+}
+
+static std::vector<Job> MakeOrderedPool(int size);
+
+static bool lifecycle_test() {
+  auto pool = MakeOrderedPool(32);
+  {
+    JobTree tree;
+    for (Job& job : pool) {
+      tree.Insert(&job);
+    }
+
+    if (!CheckAt(tree.size() == pool.size(), "lifecycle-clear",
+                 "tree should contain every element before Clear")) {
+      return false;
+    }
+    tree.Clear();
+    if (!CheckAt(tree.empty(), "lifecycle-clear", "Clear should empty the tree") ||
+        !CheckAt(tree.earliest() == nullptr, "lifecycle-clear",
+                 "Clear should reset earliest")) {
+      return false;
+    }
+    for (Job& job : pool) {
+      if (!CheckAt(!job.InTree(), "lifecycle-clear",
+                   "Clear should unlink every element")) {
+        return false;
+      }
+    }
+
+    for (Job& job : pool) {
+      tree.Insert(&job);
+    }
+  }
+
+  for (Job& job : pool) {
+    if (!CheckAt(!job.InTree(), "lifecycle-destructor",
+                 "destructor should unlink every element")) {
+      return false;
+    }
+  }
+
+  JobTree replacement;
+  for (Job& job : pool) {
+    if (!CheckAt(replacement.Insert(&job), "lifecycle-reinsert",
+                 "elements should be reusable after tree destruction")) {
+      return false;
+    }
+  }
+  return CheckAt(replacement.CheckInvariants(), "lifecycle-reinsert",
+                 "replacement tree invariants should hold");
+}
+
+static bool tag_test() {
+  MultiHookJob first;
+  MultiHookJob second;
+  first.key = 1;
+  second.key = 2;
+
+  PrimaryMultiHookTree primary;
+  SecondaryMultiHookTree secondary;
+  if (!CheckAt(primary.Insert(&first), "tag", "primary hook insert failed") ||
+      !CheckAt(secondary.Insert(&first), "tag", "secondary hook insert failed") ||
+      !CheckAt(primary.Insert(&second), "tag", "second primary insert failed") ||
+      !CheckAt(secondary.Insert(&second), "tag", "second secondary insert failed")) {
+    return false;
+  }
+
+  if (!CheckAt(primary.size() == 2 && secondary.size() == 2, "tag",
+               "tagged hooks should maintain independent memberships") ||
+      !CheckAt(primary.CheckInvariants() && secondary.CheckInvariants(), "tag",
+               "tagged trees should satisfy invariants")) {
+    return false;
+  }
+
+  primary.Clear();
+  secondary.Clear();
+  using PrimaryHook = vexo::ds::SplayNode<MultiHookJob>;
+  using SecondaryHookNode = vexo::ds::SplayNode<MultiHookJob, SecondaryHook>;
+  return CheckAt(!static_cast<PrimaryHook*>(&first)->InTree() &&
+                     !static_cast<SecondaryHookNode*>(&first)->InTree() &&
+                     !static_cast<PrimaryHook*>(&second)->InTree() &&
+                     !static_cast<SecondaryHookNode*>(&second)->InTree(),
+                 "tag",
+                 "both tagged hooks should be clearable");
 }
 
 static std::vector<Job> MakeOrderedPool(int size) {
@@ -338,6 +440,16 @@ int main() {
   constexpr int kPoolSize = 20000;
   constexpr int kNumOps   = 2000000;
   constexpr int kDeadlineRange = 10000;
+
+  if (!lifecycle_test()) {
+    std::printf("LIFECYCLE TESTS FAILED\n");
+    return 1;
+  }
+
+  if (!tag_test()) {
+    std::printf("TAG TESTS FAILED\n");
+    return 1;
+  }
 
   if (!pattern_test()) {
     std::printf("PATTERN TESTS FAILED\n");

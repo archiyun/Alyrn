@@ -217,7 +217,7 @@ c500 profile 中该调用链约 1.22%。
 查找热点消失后，剩余 Header 成本集中在解析阶段：
 
 ```text
-HttpContext::ProcessHeaderLine
+HttpParser::ParseHeaderLine
   -> HttpRequest::AddHeaderLowered
   -> unordered_map node allocation / insert
 ```
