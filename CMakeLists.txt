@@ -40,7 +40,6 @@ endif()
 add_library(vexo_foundation STATIC
     src/log/async_logger.cc
     src/log/logger.cc
-    src/memory/pool.cc
     src/time/timestamp.cc
 )
 
