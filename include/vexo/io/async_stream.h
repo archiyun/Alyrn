@@ -7,18 +7,23 @@
 #include <span>
 
 #include "vexo/base/error.h"
+#include "vexo/coro/awaitable.h"
 #include "vexo/coro/task.h"
 
 namespace vexo::io {
 
 template <class T>
 concept AsyncReadStream = requires(T& stream, std::span<std::byte> buffer) {
-  { stream.ReadSome(buffer) } -> std::same_as<coro::Task<base::Result<std::size_t>>>;
+  requires coro::Awaitable<decltype(stream.ReadSome(buffer))>;
+  requires std::same_as<coro::AwaitResult<decltype(stream.ReadSome(buffer))>,
+                        base::Result<std::size_t>>;
 };
 
 template <class T>
 concept AsyncWriteStream = requires(T& stream, std::span<const std::byte> buffer) {
-  { stream.WriteSome(buffer) } -> std::same_as<coro::Task<base::Result<std::size_t>>>;
+  requires coro::Awaitable<decltype(stream.WriteSome(buffer))>;
+  requires std::same_as<coro::AwaitResult<decltype(stream.WriteSome(buffer))>,
+                        base::Result<std::size_t>>;
 };
 
 template <class T>

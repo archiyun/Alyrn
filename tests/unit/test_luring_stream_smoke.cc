@@ -128,8 +128,7 @@ bool WriteFd(int fd, std::string_view bytes) {
   return true;
 }
 
-vexo::coro::Task<void> ReadOnce(vexo::luring::LUringStream* stream,
-                                vexo::luring::LUringLoop* loop,
+vexo::coro::Task<void> ReadOnce(vexo::luring::LUringStream* stream, vexo::luring::LUringLoop* loop,
                                 std::span<std::byte> buffer,
                                 std::optional<vexo::base::Result<std::size_t>>* out,
                                 bool* resumed_with_scheduler) {
@@ -138,8 +137,7 @@ vexo::coro::Task<void> ReadOnce(vexo::luring::LUringStream* stream,
   out->emplace(std::move(result));
 }
 
-vexo::coro::Task<void> WriteOnce(vexo::luring::LUringStream* stream,
-                                 vexo::luring::LUringLoop* loop,
+vexo::coro::Task<void> WriteOnce(vexo::luring::LUringStream* stream, vexo::luring::LUringLoop* loop,
                                  std::span<const std::byte> buffer,
                                  std::optional<vexo::base::Result<std::size_t>>* out,
                                  bool* resumed_with_scheduler) {

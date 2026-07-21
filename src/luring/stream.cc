@@ -36,70 +36,56 @@ base::Result<std::size_t> ToSizeResult(const base::Result<int>& result) noexcept
 
 }  // namespace
 
-class LUringStream::ReadAwaiter {
-public:
-  ReadAwaiter(LUringStream& stream, std::span<std::byte> buffer) noexcept
-      : stream_(&stream), buffer_(buffer) {}
-
-  bool await_ready() const noexcept { return false; }
-
-  bool await_suspend(std::coroutine_handle<> continuation) noexcept {
-    VEXO_CTRACK_SCOPE("luring.read.prepare");
-    if (stream_->closed_ || stream_->fd_ < 0) {
-      immediate_ = std::unexpected(base::make_errno(EBADF));
-      return false;
-    }
-    if (buffer_.empty()) {
-      immediate_ = std::size_t{0};
-      return false;
-    }
-    if (stream_->pending_read_ != nullptr) {
-      immediate_ = std::unexpected(base::make_errno(EBUSY));
-      return false;
-    }
-
-    stream_->pending_read_ = this;
-    op_.kind = LUringOpKind::kRead;
-    op_.continuation_ = continuation;
-    op_.resume_work.handle = continuation;
-    op_.owner = this;
-    op_.on_complete = &ReadAwaiter::OnComplete;
-
-    auto submitted = stream_->loop_->SubmitOp(
-        &op_, [fd = stream_->fd_, buffer = buffer_](io_uring_sqe* sqe) noexcept {
-          io_uring_prep_recv(sqe, fd, buffer.data(), buffer.size(), 0);
-        });
-    if (!submitted.has_value()) {
-      stream_->pending_read_ = nullptr;
-      immediate_ = std::unexpected(submitted.error());
-      return false;
-    }
-    return true;
+bool LUringStream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
+  VEXO_CTRACK_SCOPE("luring.read.prepare");
+  if (stream_->closed_ || stream_->fd_ < 0) {
+    immediate_ = std::unexpected(base::make_errno(EBADF));
+    return false;
+  }
+  if (buffer_.empty()) {
+    immediate_ = std::size_t{0};
+    return false;
+  }
+  if (stream_->pending_read_ != nullptr) {
+    immediate_ = std::unexpected(base::make_errno(EBUSY));
+    return false;
   }
 
-  base::Result<std::size_t> await_resume() noexcept {
-    VEXO_CTRACK_SCOPE("luring.read.resume");
-    if (immediate_.has_value()) {
-      return std::move(*immediate_);
-    }
-    assert(op_.completed);
-    return ToSizeResult(op_.result);
-  }
+  stream_->pending_read_ = this;
+  op_.kind = LUringOpKind::kRead;
+  op_.continuation_ = continuation;
+  op_.resume_work.handle = continuation;
+  op_.owner = this;
+  op_.on_complete = &ReadSomeAwaiter::OnComplete;
 
-private:
-  static void OnComplete(LUringOp* op) noexcept {
-    auto* self = static_cast<ReadAwaiter*>(op->owner);
-    if (self->stream_ != nullptr && self->stream_->pending_read_ == self) {
-      self->stream_->pending_read_ = nullptr;
-      self->stream_->NotifyCloseProgress();
-    }
+  auto submitted = stream_->loop_->SubmitOp(
+      &op_, [fd = stream_->fd_, buffer = buffer_](io_uring_sqe* sqe) noexcept {
+        io_uring_prep_recv(sqe, fd, buffer.data(), buffer.size(), 0);
+      });
+  if (!submitted.has_value()) {
+    stream_->pending_read_ = nullptr;
+    immediate_ = std::unexpected(submitted.error());
+    return false;
   }
+  return true;
+}
 
-  LUringStream* stream_;
-  std::span<std::byte> buffer_;
-  LUringOp op_{.kind = LUringOpKind::kRead};
-  std::optional<base::Result<std::size_t>> immediate_;
-};
+base::Result<std::size_t> LUringStream::ReadSomeAwaiter::await_resume() noexcept {
+  VEXO_CTRACK_SCOPE("luring.read.resume");
+  if (immediate_.has_value()) {
+    return std::move(*immediate_);
+  }
+  assert(op_.completed);
+  return ToSizeResult(op_.result);
+}
+
+void LUringStream::ReadSomeAwaiter::OnComplete(LUringOp* op) noexcept {
+  auto* self = static_cast<ReadSomeAwaiter*>(op->owner);
+  if (self->stream_ != nullptr && self->stream_->pending_read_ == self) {
+    self->stream_->pending_read_ = nullptr;
+    self->stream_->NotifyCloseProgress();
+  }
+}
 
 class LUringStream::ReadForAwaiter {
 public:
@@ -208,68 +194,56 @@ private:
   bool timeout_done_{false};
 };
 
-class LUringStream::WriteAwaiter {
-public:
-  WriteAwaiter(LUringStream& stream, std::span<const std::byte> buffer) noexcept
-      : stream_(&stream), buffer_(buffer) {}
-
-  bool await_ready() const noexcept { return false; }
-  bool await_suspend(std::coroutine_handle<> continuation) noexcept {
-    if (stream_->closed_ || stream_->fd_ < 0) {
-      immediate_ = std::unexpected(base::make_errno(EBADF));
-      return false;
-    }
-    if (buffer_.empty()) {
-      immediate_ = std::size_t{0};
-      return false;
-    }
-    if (stream_->pending_write_ != nullptr) {
-      immediate_ = std::unexpected(base::make_errno(EBUSY));
-      return false;
-    }
-
-    stream_->pending_write_ = this;
-    op_.kind = LUringOpKind::kWrite;
-    op_.continuation_ = continuation;
-    op_.resume_work.handle = continuation;
-    op_.owner = this;
-    op_.on_complete = &WriteAwaiter::OnComplete;
-
-    auto submitted = stream_->loop_->SubmitOp(
-        &op_, [fd = stream_->fd_, buffer = buffer_](io_uring_sqe* sqe) noexcept {
-          io_uring_prep_send(sqe, fd, buffer.data(), buffer.size(), MSG_NOSIGNAL);
-        });
-
-    if (!submitted.has_value()) {
-      stream_->pending_write_ = nullptr;
-      immediate_ = std::unexpected(submitted.error());
-      return false;
-    }
-    return true;
+bool LUringStream::WriteSomeAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
+  if (stream_->closed_ || stream_->fd_ < 0) {
+    immediate_ = std::unexpected(base::make_errno(EBADF));
+    return false;
   }
-  base::Result<std::size_t> await_resume() noexcept {
-    VEXO_CTRACK_SCOPE("luring.write.resume");
-    if (immediate_.has_value()) {
-      return std::move(*immediate_);
-    }
-    assert(op_.completed);
-    return ToSizeResult(op_.result);
+  if (buffer_.empty()) {
+    immediate_ = std::size_t{0};
+    return false;
+  }
+  if (stream_->pending_write_ != nullptr) {
+    immediate_ = std::unexpected(base::make_errno(EBUSY));
+    return false;
   }
 
-private:
-  static void OnComplete(LUringOp* op) noexcept {
-    auto* self = static_cast<WriteAwaiter*>(op->owner);
-    if (self->stream_ != nullptr && self->stream_->pending_write_ == self) {
-      self->stream_->pending_write_ = nullptr;
-      self->stream_->NotifyCloseProgress();
-    }
-  }
+  stream_->pending_write_ = this;
+  op_.kind = LUringOpKind::kWrite;
+  op_.continuation_ = continuation;
+  op_.resume_work.handle = continuation;
+  op_.owner = this;
+  op_.on_complete = &WriteSomeAwaiter::OnComplete;
 
-  LUringStream* stream_;
-  std::span<const std::byte> buffer_;
-  LUringOp op_{.kind = LUringOpKind::kWrite};
-  std::optional<base::Result<std::size_t>> immediate_;
-};
+  auto submitted = stream_->loop_->SubmitOp(
+      &op_, [fd = stream_->fd_, buffer = buffer_](io_uring_sqe* sqe) noexcept {
+        io_uring_prep_send(sqe, fd, buffer.data(), buffer.size(), MSG_NOSIGNAL);
+      });
+
+  if (!submitted.has_value()) {
+    stream_->pending_write_ = nullptr;
+    immediate_ = std::unexpected(submitted.error());
+    return false;
+  }
+  return true;
+}
+
+base::Result<std::size_t> LUringStream::WriteSomeAwaiter::await_resume() noexcept {
+  VEXO_CTRACK_SCOPE("luring.write.resume");
+  if (immediate_.has_value()) {
+    return std::move(*immediate_);
+  }
+  assert(op_.completed);
+  return ToSizeResult(op_.result);
+}
+
+void LUringStream::WriteSomeAwaiter::OnComplete(LUringOp* op) noexcept {
+  auto* self = static_cast<WriteSomeAwaiter*>(op->owner);
+  if (self->stream_ != nullptr && self->stream_->pending_write_ == self) {
+    self->stream_->pending_write_ = nullptr;
+    self->stream_->NotifyCloseProgress();
+  }
+}
 
 class LUringStream::CloseAwaiter {
 public:
@@ -409,9 +383,8 @@ LUringStream::~LUringStream() {
   }
 }
 
-coro::Task<base::Result<std::size_t>> LUringStream::ReadSome(std::span<std::byte> buffer) {
-  VEXO_CTRACK_SCOPE("luring.stream.read.task");
-  co_return co_await ReadAwaiter(*this, buffer);
+LUringStream::ReadSomeAwaiter LUringStream::ReadSome(std::span<std::byte> buffer) noexcept {
+  return ReadSomeAwaiter(*this, buffer);
 }
 
 coro::Task<base::Result<std::size_t>> LUringStream::ReadSomeFor(std::span<std::byte> buffer,
@@ -419,9 +392,8 @@ coro::Task<base::Result<std::size_t>> LUringStream::ReadSomeFor(std::span<std::b
   co_return co_await ReadForAwaiter(*this, buffer, timeout);
 }
 
-coro::Task<base::Result<std::size_t>> LUringStream::WriteSome(std::span<const std::byte> buffer) {
-  VEXO_CTRACK_SCOPE("luring.stream.write.task");
-  co_return co_await WriteAwaiter(*this, buffer);
+LUringStream::WriteSomeAwaiter LUringStream::WriteSome(std::span<const std::byte> buffer) noexcept {
+  return WriteSomeAwaiter(*this, buffer);
 }
 
 coro::Task<base::Result<void>> LUringStream::Shutdown() {
