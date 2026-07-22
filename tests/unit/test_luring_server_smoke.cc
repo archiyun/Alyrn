@@ -178,9 +178,9 @@ bool CheckServerSessionHandler() {
   std::atomic_size_t session_count{0};
   std::atomic_bool invalid_stream{false};
   std::atomic_bool wrong_loop{false};
-  server.set_session_handler([&](vexo::luring::LUringLoop& loop,
+  server.set_session_handler([&](vexo::luring::LUringWorkerContext& context,
                                  vexo::luring::LUringStream stream) -> vexo::coro::Task<void> {
-    if (!loop.IsInLoopThread()) {
+    if (!context.loop.IsInLoopThread()) {
       wrong_loop.store(true, std::memory_order_relaxed);
     }
     if (stream.fd() < 0) {

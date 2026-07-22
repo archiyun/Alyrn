@@ -66,6 +66,8 @@
 #include "vexo/net/reactor_connect.h"
 #include "vexo/net/reactor_listener.h"
 #include "vexo/net/reactor_stream.h"
+#include "vexo/net/reactor_worker.h"
+#include "vexo/net/reactor_worker_group.h"
 #include "vexo/net/socket.h"
 #include "vexo/net/timer_queue.h"
 #include "vexo/time/timer.h"

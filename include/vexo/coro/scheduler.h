@@ -35,7 +35,9 @@ public:
     work->Run();
   }
 
-  std::pmr::memory_resource* frame_resource() const noexcept { return frame_resource_; }
+  [[nodiscard]] std::pmr::memory_resource* frame_resource() const noexcept {
+    return frame_resource_;
+  }
 
   static Scheduler* Current() noexcept { return current_; }
   static Scheduler& RequireCurrent() noexcept {

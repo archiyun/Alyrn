@@ -18,6 +18,7 @@
 #include "vexo/net/event_loop.h"
 #include "vexo/net/event_loop_scheduler.h"
 #include "vexo/net/inet_address.h"
+#include "vexo/net/reactor_connect.h"
 #include "vexo/net/reactor_listener.h"
 #include "vexo/net/reactor_stream.h"
 
@@ -55,6 +56,39 @@ vexo::coro::Task<void> AcceptOnce(vexo::net::ReactorListener* listener, vexo::ne
                                   std::optional<AcceptResult>* out) {
   out->emplace(co_await listener->Accept());
   loop->Quit();
+}
+
+bool CheckFactories() {
+  auto null_listener = vexo::net::ReactorListener::Create(nullptr, vexo::net::InetAddress(0));
+  if (!Check(!null_listener.has_value() && null_listener.error() == std::errc::invalid_argument,
+             "listener factory accepted a null EventLoop")) {
+    return false;
+  }
+
+  auto null_connector = vexo::net::ReactorConnector::Create(nullptr);
+  if (!Check(!null_connector.has_value() && null_connector.error() == std::errc::invalid_argument,
+             "connector factory accepted a null EventLoop")) {
+    return false;
+  }
+
+  vexo::net::EventLoop loop;
+  auto listener = vexo::net::ReactorListener::Create(&loop, vexo::net::InetAddress(0));
+  if (!Check(listener.has_value(), "listener factory failed for a valid socket")) {
+    if (!listener.has_value()) {
+      std::cout << "factory error: " << listener.error().message() << '\n';
+    }
+    return false;
+  }
+
+  auto address = listener->LocalAddress();
+  if (!Check(address.has_value(), "factory listener local address lookup failed")) {
+    return false;
+  }
+
+  auto conflicting_listener = vexo::net::ReactorListener::Create(&loop, *address);
+  return Check(!conflicting_listener.has_value() &&
+                   conflicting_listener.error() == std::errc::address_in_use,
+               "listener factory did not return bind errors");
 }
 
 bool CheckPendingAccept() {
@@ -133,6 +167,7 @@ bool CheckBackendBindingProfile() {
 }  // namespace
 
 int main() {
+  if (!CheckFactories()) return 1;
   if (!CheckPendingAccept()) return 1;
   if (!CheckCloseCancelsPendingAccept()) return 1;
   if (!CheckBackendBindingProfile()) return 1;

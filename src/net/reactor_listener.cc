@@ -21,13 +21,11 @@
 namespace vexo::net {
 namespace {
 
-using AcceptResult = base::Result<ReactorStream>;
-
 bool IsWouldBlock(int err) noexcept { return err == EAGAIN || err == EWOULDBLOCK; }
 
 base::Error SocketError(int fd) noexcept {
   int err = 0;
-  socklen_t len = static_cast<socklen_t>(sizeof(err));
+  auto len = static_cast<socklen_t>(sizeof(err));
   if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) < 0) {
     return base::CurrentErrno();
   }
@@ -35,6 +33,44 @@ base::Error SocketError(int fd) noexcept {
     err = EIO;
   }
   return base::make_errno(err);
+}
+
+EventLoop* CheckLoop(EventLoop* loop) noexcept {
+  VEXO_CHECK(loop != nullptr, "ReactorListener: loop must not be null");
+  return loop;
+}
+
+base::Result<Socket> TryCreateListenSocket(const InetAddress& listen_addr,
+                                           ReactorListenerOptions options) noexcept {
+  auto fd = CreateNonBlockingSocket();
+  if (!fd.has_value()) {
+    return std::unexpected(fd.error());
+  }
+
+  Socket socket(*fd);
+
+  auto reuse_addr = set_reuse_addr(socket.fd(), options.reuse_addr);
+  if (!reuse_addr.has_value()) {
+    return std::unexpected(reuse_addr.error());
+  }
+
+  if (options.reuse_port) {
+    auto reuse_port = set_reuse_port(socket.fd(), true);
+    if (!reuse_port.has_value()) {
+      return std::unexpected(reuse_port.error());
+    }
+  }
+
+  if (::bind(socket.fd(), reinterpret_cast<const sockaddr*>(&listen_addr.sock_addr()),
+             static_cast<socklen_t>(sizeof(sockaddr_in))) < 0) {
+    return std::unexpected(base::CurrentErrno());
+  }
+
+  if (::listen(socket.fd(), SOMAXCONN) < 0) {
+    return std::unexpected(base::CurrentErrno());
+  }
+
+  return socket;
 }
 
 int CreateListenSocket() {
@@ -53,7 +89,7 @@ class ReactorListener::AcceptAwaiter {
 public:
   explicit AcceptAwaiter(ReactorListener& listener) noexcept : listener_(&listener) {}
 
-  bool await_ready() const noexcept { return false; }
+  [[nodiscard]] bool await_ready() const noexcept { return false; }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     VEXO_DCHECK(listener_->loop_->IsInLoopThread(), "AcceptAwaiter: wrong EventLoop thread");
@@ -63,7 +99,7 @@ public:
     scheduler_ = &coro::Scheduler::RequireCurrent();
     resume_work_.handle = continuation;
 
-    AcceptResult result = TryAccept();
+    base::Result<ReactorStream> result = TryAccept();
     if (result.has_value() || !IsWouldBlock(result.error().value())) {
       result_ = std::move(result);
       return false;
@@ -76,19 +112,19 @@ public:
     return true;
   }
 
-  AcceptResult await_resume() noexcept {
+  base::Result<ReactorStream> await_resume() noexcept {
     VEXO_DCHECK(result_.has_value(), "AcceptAwaiter: result is not ready");
     return std::move(*result_);
   }
 
-  void Complete(AcceptResult result) noexcept {
+  void Complete(base::Result<ReactorStream> result) noexcept {
     result_ = std::move(result);
     VEXO_DCHECK(scheduler_ != nullptr, "AcceptAwaiter: scheduler is not bound");
     scheduler_->Schedule(&resume_work_);
   }
 
   void OnReady() noexcept {
-    AcceptResult result = TryAccept();
+    base::Result<ReactorStream> result = TryAccept();
     if (!result.has_value() && IsWouldBlock(result.error().value())) {
       return;
     }
@@ -96,7 +132,7 @@ public:
   }
 
 private:
-  AcceptResult TryAccept() noexcept {
+  base::Result<ReactorStream> TryAccept() noexcept {
     int fd = -1;
     InetAddress peer_addr(0);
     do {
@@ -111,19 +147,40 @@ private:
 
   ReactorListener* listener_;
   coro::Scheduler* scheduler_{nullptr};
-  coro::ResumeWork resume_work_{};
-  std::optional<AcceptResult> result_;
+  coro::ResumeWork resume_work_;
+  std::optional<base::Result<ReactorStream>> result_;
 };
 
-ReactorListener::ReactorListener(EventLoop* loop, const InetAddress& listen_addr)
-    : loop_(loop), socket_(CreateListenSocket()), channel_(loop, socket_.fd()) {
-  VEXO_DCHECK(loop_ != nullptr, "ReactorListener: loop must not be null");
-
-  socket_.set_reuse_addr(true);
+ReactorListener::ReactorListener(EventLoop* loop, const InetAddress& listen_addr,
+                                 ReactorListenerOptions options)
+    : loop_(CheckLoop(loop)), socket_(CreateListenSocket()), channel_(loop_, socket_.fd()) {
+  socket_.set_reuse_addr(options.reuse_addr);
+  if (options.reuse_port) {
+    socket_.set_reuse_port(true);
+  }
   socket_.BindAddress(listen_addr);
   socket_.Listen();
 
   BindChannelCallbacks();
+}
+
+ReactorListener::ReactorListener(EventLoop* loop, Socket socket) noexcept
+    : loop_(CheckLoop(loop)), socket_(std::move(socket)), channel_(loop_, socket_.fd()) {
+  BindChannelCallbacks();
+}
+
+base::Result<ReactorListener> ReactorListener::Create(EventLoop* loop,
+                                                      const InetAddress& listen_addr,
+                                                      ReactorListenerOptions options) noexcept {
+  if (loop == nullptr) {
+    return std::unexpected(base::make_errno(EINVAL));
+  }
+
+  auto socket = TryCreateListenSocket(listen_addr, options);
+  if (!socket.has_value()) {
+    return std::unexpected(socket.error());
+  }
+  return ReactorListener(loop, std::move(*socket));
 }
 
 ReactorListener::ReactorListener(ReactorListener&& other) noexcept

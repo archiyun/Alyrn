@@ -158,6 +158,22 @@ target_link_libraries(reactor_listener_smoke_test
 
 add_test(NAME reactor_listener_smoke_test COMMAND reactor_listener_smoke_test)
 
+add_executable(reactor_worker_group_smoke_test
+    unit/test_reactor_worker_group_smoke.cc
+)
+
+target_include_directories(reactor_worker_group_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(reactor_worker_group_smoke_test
+    PRIVATE
+        vexo_net
+)
+
+add_test(NAME reactor_worker_group_smoke_test COMMAND reactor_worker_group_smoke_test)
+
 if(VEXO_ENABLE_URING)
     add_executable(luring_coro_smoke_test
         unit/test_luring_coro_smoke.cc

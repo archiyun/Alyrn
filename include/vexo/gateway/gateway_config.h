@@ -31,6 +31,8 @@ struct GatewayServerConfig {
   std::string name{"gateway"};
   std::string host{"127.0.0.1"};
   std::uint16_t port{8080};
+  // Reserved for the future ReactorServer owner. GatewayServer itself always
+  // runs on the single EventLoop/Scheduler pair supplied by its caller.
   int threads{0};
 };
 
@@ -88,10 +90,6 @@ void BuildGatewayUpstreamRegistry(const GatewayConfig& config, UpstreamRegistry&
 
 template <class Gateway>
 void ApplyGatewayConfig(const GatewayConfig& config, Gateway& gateway) {
-  if (config.server.threads > 0) {
-    gateway.set_thread_num(config.server.threads);
-  }
-
   if (config.status_endpoint.enabled) {
     const GatewayStatusEndpointConfig endpoint = config.status_endpoint;
     gateway.Get(endpoint.path,

@@ -18,12 +18,13 @@ class LUringConnector {
 public:
   VEXO_DELETE_COPY(LUringConnector);
 
-  LUringConnector(LUringConnector&&) noexcept = default;
-  LUringConnector& operator=(LUringConnector&&) noexcept = default;
-
   using Stream = LUringStream;
 
-  explicit LUringConnector(LUringLoop* loop) noexcept : loop_(loop) {}
+  LUringConnector(LUringConnector&&) noexcept;
+  LUringConnector& operator=(LUringConnector&&) noexcept;
+
+  [[nodiscard]] static base::Result<LUringConnector> Create(LUringLoop* loop) noexcept;
+  explicit LUringConnector(LUringLoop* loop) noexcept;
 
   coro::Task<base::Result<LUringStream>> Connect(std::string_view host, std::uint16_t port);
 

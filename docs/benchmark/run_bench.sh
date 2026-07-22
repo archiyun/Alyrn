@@ -17,7 +17,7 @@
 # Env knobs:
 #   DURATION   wrk test duration         (default 15s)
 #   ROUNDS     rounds per level          (default 3)
-#   THREADS    wrk threads               (default 4, matches server threads)
+#   THREADS    wrk client threads        (default 4)
 #   LEVELS     space-separated conn list (default "100 500 1000 5000 10000")
 #   WARMUP     warmup seconds per level  (default 3)
 #

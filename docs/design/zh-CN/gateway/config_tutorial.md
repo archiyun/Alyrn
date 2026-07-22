@@ -82,7 +82,7 @@ curl -i http://127.0.0.1:8080/api/kv
 server:
   name: gateway
   listen: 0.0.0.0:8080
-  threads: 4
+  threads: 1
 
 status_endpoint:
   enabled: true
@@ -111,7 +111,7 @@ routes:
 server:
   name: gateway
   listen: 0.0.0.0:8080
-  threads: 4
+  threads: 1
 
 status_endpoint:
   enabled: true
@@ -183,7 +183,7 @@ routes:
 | `listen` | `127.0.0.1:8080` | 监听地址，当前只支持数字 IPv4 |
 | `host` | `127.0.0.1` | 可替代 `listen` 的拆分写法 |
 | `port` | `8080` | 可替代 `listen` 的拆分写法 |
-| `threads` | `0` | I/O 子线程数，`0` 表示不显式设置 |
+| `threads` | `0` | 当前只允许 `0` 或 `1`；`GatewayServer` 不创建线程，未来由 `ReactorServer` 消费该配置 |
 
 ### `upstreams`
 

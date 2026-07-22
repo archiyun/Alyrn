@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include <cassert>
-
+#include "vexo/base/check.h"
+#include "vexo/base/error.h"
 #include "vexo/coro/scheduler.h"
 #include "vexo/coro/work.h"
 #include "vexo/net/event_loop.h"
@@ -18,15 +18,18 @@ namespace vexo::net {
 // work runs on its owning thread.
 class EventLoopScheduler final : public coro::Scheduler {
 public:
-  explicit EventLoopScheduler(EventLoop* loop,
-                              std::pmr::memory_resource* frame_resource = nullptr) noexcept
-      : Scheduler(frame_resource), loop_(loop) {
-    assert(loop_ != nullptr);
-  }
-  VEXO_DELETE_COPY_MOVE(EventLoopScheduler);
+  VEXO_DELETE_COPY(EventLoopScheduler);
+
+  [[nodiscard]] static base::Result<EventLoopScheduler> Create(
+      EventLoop* loop, std::pmr::memory_resource* frame_resource = nullptr) noexcept;
+
+  explicit EventLoopScheduler(EventLoop* loop, std::pmr::memory_resource* frame_resource = nullptr);
+
+  EventLoopScheduler(EventLoopScheduler&&) noexcept;
+  EventLoopScheduler& operator=(EventLoopScheduler&&) noexcept;
 
   void Schedule(coro::Work* work) noexcept override {
-    assert(work != nullptr);
+    VEXO_DCHECK(work != nullptr, "EventLoopScheduler::Schedule: work must not be null");
     loop_->QueueInLoop([this, work] {
       coro::Scheduler* previous = coro::Scheduler::Current();
       coro::Scheduler::SetCurrent(this);
@@ -45,4 +48,5 @@ public:
 private:
   EventLoop* loop_;
 };
+
 }  // namespace vexo::net

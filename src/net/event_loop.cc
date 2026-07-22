@@ -5,12 +5,11 @@
 #include <sys/eventfd.h>
 #include <unistd.h>
 
-#include <cassert>
 #include <cerrno>
 #include <cstdint>
-#include <cstdlib>
 #include <cstring>
 
+#include "vexo/base/check.h"
 #include "vexo/log/logger.h"
 #include "vexo/net/channel.h"
 #include "vexo/net/poller.h"
@@ -27,9 +26,8 @@ static constexpr int kPollTimeMs = 10000;
 int CreateEventfd() {
   const int evtfd = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
   if (evtfd < 0) {
-    LOG_FATALF("eventfd creation failed: errno={} message={}", errno,
-               std::strerror(errno));
-    std::abort();
+    LOG_FATALF("eventfd creation failed: errno={} message={}", errno, std::strerror(errno));
+    VEXO_CHECK(false, "EventLoop: eventfd creation failed");
   }
   return evtfd;
 }
@@ -48,8 +46,7 @@ void WriteEventfd(int fd) {
       return;
     }
 
-    LOG_ERRORF("eventfd write failed: fd={} errno={} message={}", fd, errno,
-               std::strerror(errno));
+    LOG_ERRORF("eventfd write failed: fd={} errno={} message={}", fd, errno, std::strerror(errno));
     return;
   }
 }
@@ -68,8 +65,7 @@ void ReadEventfd(int fd) {
       return;
     }
 
-    LOG_ERRORF("eventfd read failed: fd={} errno={} message={}", fd, errno,
-               std::strerror(errno));
+    LOG_ERRORF("eventfd read failed: fd={} errno={} message={}", fd, errno, std::strerror(errno));
     return;
   }
 }
@@ -87,7 +83,8 @@ EventLoop::EventLoop()
       wakeup_fd_(CreateEventfd()),
       wakeup_channel_(this, wakeup_fd_),
       timer_queue_(std::make_unique<TimerQueue>(this)) {
-  assert(t_loop_in_this_thread == nullptr);
+  VEXO_DCHECK(t_loop_in_this_thread == nullptr,
+              "EventLoop: only one EventLoop may exist per thread");
   t_loop_in_this_thread = this;
 
   // The wakeup fd is monitored like a normal Channel so other threads can
@@ -99,8 +96,8 @@ EventLoop::EventLoop()
 }
 
 EventLoop::~EventLoop() {
-  assert(IsInLoopThread());
-  assert(!looping_);
+  VEXO_DCHECK(IsInLoopThread(), "EventLoop destructor called from wrong thread");
+  VEXO_DCHECK(!looping_, "EventLoop destroyed while looping");
 
   wakeup_channel_.DisableAll();
   wakeup_channel_.Remove();
@@ -115,8 +112,8 @@ EventLoop::~EventLoop() {
 }
 
 void EventLoop::Loop() {
-  assert(IsInLoopThread());
-  assert(!looping_);
+  VEXO_DCHECK(IsInLoopThread(), "EventLoop::Loop called from wrong thread");
+  VEXO_DCHECK(!looping_, "EventLoop::Loop called while already looping");
 
   looping_.store(true, std::memory_order_relaxed);
 
@@ -181,7 +178,7 @@ void EventLoop::QueueInLoop(Functor cb) {
 }
 
 bool EventLoop::HasImmediateWork() {
-  assert(IsInLoopThread());
+  VEXO_DCHECK(IsInLoopThread(), "EventLoop::HasImmediateWork called from wrong thread");
 
   {
     std::lock_guard lk{mutex_};
@@ -190,17 +187,17 @@ bool EventLoop::HasImmediateWork() {
 }
 
 void EventLoop::UpdateChannel(Channel* channel) {
-  assert(IsInLoopThread());
+  VEXO_DCHECK(IsInLoopThread(), "EventLoop::UpdateChannel called from wrong thread");
   poller_->UpdateChannel(channel);
 }
 
 void EventLoop::RemoveChannel(Channel* channel) {
-  assert(IsInLoopThread());
+  VEXO_DCHECK(IsInLoopThread(), "EventLoop::RemoveChannel called from wrong thread");
   poller_->RemoveChannel(channel);
 }
 
 bool EventLoop::HasChannel(Channel* channel) const {
-  assert(IsInLoopThread());
+  VEXO_DCHECK(IsInLoopThread(), "EventLoop::HasChannel called from wrong thread");
   return poller_->HasChannel(channel);
 }
 

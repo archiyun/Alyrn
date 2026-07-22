@@ -7,24 +7,21 @@
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 
-#include <cerrno>
 #include <expected>
 #include <string>
 
 namespace vexo::net {
 namespace {
 
-vexo::base::Error CurrentErrno() { return vexo::base::make_errno(errno); }
-
 vexo::base::Result<void> set_fd_flag(int fd, int cmd_get, int cmd_set, int flag, bool on) {
   const int old_flag = ::fcntl(fd, cmd_get, 0);
   if (old_flag < 0) {
-    return std::unexpected(CurrentErrno());
+    return std::unexpected(vexo::base::CurrentErrno());
   }
 
   const int new_flag = on ? (old_flag | flag) : (old_flag & ~flag);
   if (new_flag != old_flag && ::fcntl(fd, cmd_set, new_flag) < 0) {
-    return std::unexpected(CurrentErrno());
+    return std::unexpected(vexo::base::CurrentErrno());
   }
 
   return {};
@@ -33,7 +30,7 @@ vexo::base::Result<void> set_fd_flag(int fd, int cmd_get, int cmd_set, int flag,
 vexo::base::Result<void> set_socket_option(int fd, int level, int option, bool on) {
   const int optval = on ? 1 : 0;
   if (::setsockopt(fd, level, option, &optval, static_cast<socklen_t>(sizeof(optval))) < 0) {
-    return std::unexpected(CurrentErrno());
+    return std::unexpected(vexo::base::CurrentErrno());
   }
   return {};
 }
@@ -57,13 +54,13 @@ vexo::base::Result<InetAddress> ParseIPv4Address(std::string_view ip, std::uint1
   if (result == 0) {
     return std::unexpected(vexo::base::Error(std::make_error_code(std::errc::invalid_argument)));
   }
-  return std::unexpected(CurrentErrno());
+  return std::unexpected(vexo::base::CurrentErrno());
 }
 
 vexo::base::Result<int> CreateNonBlockingSocket() {
   const int sockfd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, IPPROTO_TCP);
   if (sockfd < 0) {
-    return std::unexpected(CurrentErrno());
+    return std::unexpected(vexo::base::CurrentErrno());
   }
   return sockfd;
 }
@@ -96,7 +93,7 @@ vexo::base::Result<InetAddress> get_local_addr(int fd) {
   sockaddr_in localaddr{};
   socklen_t addrlen = static_cast<socklen_t>(sizeof(localaddr));
   if (::getsockname(fd, reinterpret_cast<sockaddr*>(&localaddr), &addrlen) < 0) {
-    return std::unexpected(CurrentErrno());
+    return std::unexpected(vexo::base::CurrentErrno());
   }
   if (localaddr.sin_family != AF_INET) {
     return std::unexpected(
@@ -109,7 +106,7 @@ vexo::base::Result<InetAddress> get_peer_addr(int fd) {
   sockaddr_in peeraddr{};
   socklen_t addrlen = static_cast<socklen_t>(sizeof(peeraddr));
   if (::getpeername(fd, reinterpret_cast<sockaddr*>(&peeraddr), &addrlen) < 0) {
-    return std::unexpected(CurrentErrno());
+    return std::unexpected(vexo::base::CurrentErrno());
   }
   if (peeraddr.sin_family != AF_INET) {
     return std::unexpected(

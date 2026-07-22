@@ -31,7 +31,9 @@ namespace vexo::gateway {
 
 // Coroutine gateway server over backend-neutral listener/stream concepts.
 // It owns gateway routing/proxy orchestration and delegates actual IO to the
-// supplied Listener and Connector implementations.
+// supplied Listener and Connector implementations. A GatewayServer is bound
+// to the EventLoop/Scheduler pair supplied by its listener and scheduler; it
+// does not create or manage worker threads.
 template <vexo::io::AsyncListener Listener, UpstreamConnector Connector>
 class GatewayServer {
 public:
@@ -51,8 +53,6 @@ public:
         connector_(connector),
         core_(std::move(name), registry),
         registry_(registry) {}
-
-  void set_thread_num(int /*num_threads*/) {}
 
   void Get(std::string_view path, Handler handler) { core_.Get(path, std::move(handler)); }
   void Post(std::string_view path, Handler handler) { core_.Post(path, std::move(handler)); }

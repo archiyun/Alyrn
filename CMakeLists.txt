@@ -90,14 +90,17 @@ add_library(vexo_net STATIC
     src/net/channel.cc
     src/net/epoll_poller.cc
     src/net/event_loop.cc
-    src/net/inet_address.cc
+    src/net/event_loop_scheduler.cc
     src/net/net_utils.cc
     src/net/poller.cc
     src/net/reactor_connect.cc
     src/net/reactor_listener.cc
     src/net/reactor_stream.cc
+    src/net/reactor_worker.cc
+    src/net/reactor_worker_group.cc
     src/net/socket.cc
     src/net/timer_queue.cc
+    src/net/inet_address.cc
 )
 
 target_include_directories(vexo_net

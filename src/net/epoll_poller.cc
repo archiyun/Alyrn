@@ -4,11 +4,10 @@
 
 #include <unistd.h>
 
-#include <cassert>
 #include <cerrno>
-#include <cstdlib>
 #include <cstring>
 
+#include "vexo/base/check.h"
 #include "vexo/log/logger.h"
 #include "vexo/net/channel.h"
 
@@ -71,7 +70,7 @@ EPollPoller::EPollPoller(EventLoop* loop)
     : Poller(loop), epollfd_(::epoll_create1(EPOLL_CLOEXEC)), events_(kInitEventListSize) {
   if (epollfd_ < 0) {
     LOG_FATAL() << "epoll_create1 failed: errno=" << errno << " message=" << std::strerror(errno);
-    std::abort();
+    VEXO_CHECK(false, "EPollPoller: epoll_create1 failed");
   }
 }
 

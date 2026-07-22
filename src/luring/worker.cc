@@ -3,8 +3,8 @@
 #include <algorithm>
 #include <cerrno>
 #include <expected>
-#include <memory>
 #include <optional>
+#include <stop_token>
 #include <utility>
 
 #include "vexo/base/error.h"
@@ -17,10 +17,10 @@ namespace vexo::luring {
 
 namespace {
 
-coro::Task<void> AcceptLoop(LUringLoop& loop, LUringListener* listener,
+coro::Task<void> AcceptLoop(LUringWorkerContext& context,
                             LUringWorker::ConnectionCallback* callback) {
   while (true) {
-    auto accepted = co_await listener->Accept();
+    auto accepted = co_await context.listener.Accept();
     if (!accepted.has_value()) {
       const int error = accepted.error().value();
       if (error == ECANCELED || error == EBADF) {
@@ -29,7 +29,7 @@ coro::Task<void> AcceptLoop(LUringLoop& loop, LUringListener* listener,
       continue;
     }
     if (*callback) {
-      (*callback)(loop, std::move(*accepted));
+      coro::Spawn(context.loop, (*callback)(context, std::move(*accepted))).Detach();
     }
   }
 }
@@ -64,95 +64,101 @@ void CloseListenerAndDrain(LUringLoop& loop, LUringListener& listener) noexcept 
 
 }  // namespace
 
-LUringWorker::LUringWorker(net::InetAddress listen_addr, LUringWorkerOptions options,
-                           ThreadInitCallback init_callback, ConnectionCallback connection_callback)
-    : listen_addr_(listen_addr),
+LUringWorker::LUringWorker(std::size_t index, net::InetAddress listen_addr,
+                           LUringWorkerOptions options, ThreadInitCallback init_callback,
+                           ConnectionCallback connection_callback)
+    : index_(index),
+      listen_addr_(listen_addr),
       options_(std::move(options)),
       init_callback_(std::move(init_callback)),
       connection_callback_(std::move(connection_callback)) {}
 
-LUringWorker::~LUringWorker() { Stop(); }
+LUringWorker::~LUringWorker() noexcept { Stop(); }
 
 base::Result<void> LUringWorker::Start() {
   if (thread_.joinable()) {
     return std::unexpected(base::make_errno(EALREADY));
   }
 
+  {
+    std::lock_guard lock{mutex_};
+    init_done_ = false;
+    start_result_ = base::Result<void>{};
+  }
+
   thread_ = std::jthread([this](std::stop_token token) { WorkLoop(std::move(token)); });
 
-  std::unique_lock lk{mutex_};
-  cv_.wait(lk, thread_.get_stop_token(), [this] { return started_; });
+  std::unique_lock lock{mutex_};
+  cv_.wait(lock, thread_.get_stop_token(), [this] { return init_done_; });
 
-  if (!start_result_.has_value()) {
-    return std::unexpected(start_result_.error());
+  if (!init_done_) {
+    return std::unexpected(base::make_errno(ECANCELED));
   }
-  return {};
+  return start_result_;
 }
 
 void LUringWorker::Stop() noexcept {
   if (thread_.joinable()) {
     thread_.request_stop();
-    cv_.notify_all();
   }
 }
 
 void LUringWorker::WorkLoop(std::stop_token token) noexcept {
-  LUringLoop loop(options_.frame_resource);
   coro::FrameAllocatorScope frame_scope{options_.frame_resource};
 
-  auto init = loop.Init(options_.loop_options);
-  if (!init.has_value()) {
+  LUringLoop loop(options_.frame_resource);
+
+  auto publish_start = [this](base::Result<void> result) noexcept {
     {
-      std::lock_guard lk{mutex_};
-      start_result_ = std::unexpected(init.error());
-      started_ = true;
+      std::lock_guard lock{mutex_};
+      start_result_ = std::move(result);
+      init_done_ = true;
     }
     cv_.notify_one();
+  };
+
+  auto loop_init = loop.Init(options_.loop_options);
+  if (!loop_init.has_value()) {
+    publish_start(std::unexpected(loop_init.error()));
     return;
   }
 
   auto listener = LUringListener::Create(&loop, listen_addr_, options_.listen_options);
+
   if (!listener.has_value()) {
-    {
-      std::lock_guard lk{mutex_};
-      start_result_ = std::unexpected(listener.error());
-      started_ = true;
-    }
-    cv_.notify_one();
+    publish_start(std::unexpected(listener.error()));
     return;
   }
 
+  auto connector = LUringConnector::Create(&loop);
+  if (!connector.has_value()) {
+    publish_start(std::unexpected(connector.error()));
+    return;
+  }
+
+  LUringWorkerContext context{index_, loop, *listener, *connector};
+
   if (init_callback_) {
-    init_callback_(&loop, &*listener);
-  }
-
-  {
-    std::lock_guard lk{mutex_};
-    loop_ = &loop;
-    listener_ = &*listener;
-    start_result_ = base::Result<void>{};
-    started_ = true;
-  }
-  cv_.notify_one();
-
-  if (connection_callback_) {
-    const std::size_t accept_depth = std::max<std::size_t>(1, options_.listen_options.accept_depth);
-    for (std::size_t i = 0; i < accept_depth; ++i) {
-      coro::Spawn(loop, AcceptLoop(loop, &*listener, &connection_callback_)).Detach();
+    try {
+      init_callback_(context);
+    } catch (...) {
+      publish_start(std::unexpected(base::make_errno(EFAULT)));
+      return;
     }
   }
 
   std::stop_callback on_stop{token, [&loop] { loop.Quit(); }};
 
-  loop.Loop(token);
-
-  CloseListenerAndDrain(loop, *listener);
-
-  {
-    std::lock_guard lk{mutex_};
-    loop_ = nullptr;
-    listener_ = nullptr;
+  if (connection_callback_) {
+    const std::size_t accept_depth = std::max<std::size_t>(1, options_.listen_options.accept_depth);
+    for (std::size_t i = 0; i < accept_depth; ++i) {
+      coro::Spawn(loop, AcceptLoop(context, &connection_callback_)).Detach();
+    }
   }
+
+  publish_start(base::Result<void>{});
+  loop.Loop(token);
+  CloseListenerAndDrain(loop, *listener);
 }
 
 }  // namespace vexo::luring

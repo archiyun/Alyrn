@@ -14,6 +14,8 @@
 #include <memory_resource>
 #include <new>
 
+#include "vexo/utils/macros.h"
+
 namespace vexo::coro {
 namespace detail {
 
@@ -110,6 +112,8 @@ public:
 // this scope has ended or another resource is current later.
 class FrameAllocatorScope {
 public:
+  VEXO_DELETE_COPY(FrameAllocatorScope);
+
   explicit FrameAllocatorScope(std::pmr::memory_resource& resource) noexcept
       : previous_(detail::CurrentFrameResource()) {
     detail::SetCurrentFrameResource(&resource);
@@ -119,9 +123,6 @@ public:
       : previous_(detail::CurrentFrameResource()) {
     detail::SetCurrentFrameResource(resource);
   }
-
-  FrameAllocatorScope(const FrameAllocatorScope&) = delete;
-  FrameAllocatorScope& operator=(const FrameAllocatorScope&) = delete;
 
   ~FrameAllocatorScope() { detail::SetCurrentFrameResource(previous_); }
 

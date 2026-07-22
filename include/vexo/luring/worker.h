@@ -1,12 +1,17 @@
+// Copyright (c) 2026 Arsenova
+// SPDX-License-Identifier: MIT
 #pragma once
 
 #include <condition_variable>
+#include <cstddef>
 #include <functional>
 #include <memory_resource>
 #include <mutex>
 #include <thread>
 
 #include "vexo/base/error.h"
+#include "vexo/coro/task.h"
+#include "vexo/luring/connector.h"
 #include "vexo/luring/listener.h"
 #include "vexo/luring/loop.h"
 #include "vexo/luring/options.h"
@@ -14,6 +19,19 @@
 #include "vexo/utils/macros.h"
 
 namespace vexo::luring {
+
+struct LUringWorkerContext {
+  LUringWorkerContext(std::size_t index, LUringLoop& loop, LUringListener& listener,
+                      LUringConnector& connector) noexcept
+      : index(index), loop(loop), listener(listener), connector(connector) {}
+
+  VEXO_DELETE_COPY_MOVE(LUringWorkerContext);
+
+  const std::size_t index;
+  LUringLoop& loop;
+  LUringListener& listener;
+  LUringConnector& connector;
+};
 
 struct LUringWorkerOptions {
   LUringOptions loop_options{};
@@ -28,22 +46,22 @@ class LUringWorker {
 public:
   VEXO_DELETE_COPY_MOVE(LUringWorker);
 
-  using ThreadInitCallback = std::function<void(LUringLoop*, LUringListener*)>;
-  using ConnectionCallback = std::function<void(LUringLoop&, LUringStream)>;
+  using ThreadInitCallback = std::function<void(LUringWorkerContext&)>;
+  using ConnectionCallback = std::function<coro::Task<void>(LUringWorkerContext&, LUringStream)>;
 
-  LUringWorker(net::InetAddress listen_addr, LUringWorkerOptions options = {},
+  LUringWorker(std::size_t index, net::InetAddress listen_addr, LUringWorkerOptions options = {},
                ThreadInitCallback init_callback = {}, ConnectionCallback connection_callback = {});
-  ~LUringWorker();
+  ~LUringWorker() noexcept;
 
   [[nodiscard]] base::Result<void> Start();
   void Stop() noexcept;
 
-  LUringLoop* loop() noexcept { return loop_; }
-  LUringListener* listener() noexcept { return listener_; }
+  [[nodiscard]] std::size_t index() const noexcept { return index_; }
 
 private:
   void WorkLoop(std::stop_token token) noexcept;
 
+  std::size_t index_;
   net::InetAddress listen_addr_;
   LUringWorkerOptions options_;
   ThreadInitCallback init_callback_;
@@ -51,11 +69,8 @@ private:
 
   std::mutex mutex_;
   std::condition_variable_any cv_;
-  base::Result<void> start_result_{};
-  bool started_{false};
-
-  LUringLoop* loop_{nullptr};
-  LUringListener* listener_{nullptr};
+  base::Result<void> start_result_;
+  bool init_done_{false};
 
   std::jthread thread_;
 };

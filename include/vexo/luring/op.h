@@ -26,8 +26,8 @@ public:
   using CompleteHook = void (*)(LUringOp*) noexcept;
 
   LUringOpKind kind{};
-  std::coroutine_handle<> continuation_{};
-  vexo::coro::ResumeWork resume_work{};
+  std::coroutine_handle<> continuation_;
+  vexo::coro::ResumeWork resume_work;
   base::Result<int> result;
   bool completed{false};
 

@@ -163,18 +163,18 @@ int main() {
   }
 
   vexo::luring::LUringServer server(*listen_addr, std::move(options));
-  server.set_thread_init_callback(
-      [&worker_pools, &pools_by_loop, &pools_mutex, pool_config](vexo::luring::LUringLoop* loop,
-                                                                 vexo::luring::LUringListener*) {
-        auto pool = std::make_unique<WorkerPool>(pool_config);
-        auto* pool_ptr = pool.get();
-        std::lock_guard lock(pools_mutex);
-        worker_pools.push_back(std::move(pool));
-        pools_by_loop.emplace(loop, pool_ptr);
-      });
+  server.set_thread_init_callback([&worker_pools, &pools_by_loop, &pools_mutex,
+                                   pool_config](vexo::luring::LUringWorkerContext& context) {
+    auto pool = std::make_unique<WorkerPool>(pool_config);
+    auto* pool_ptr = pool.get();
+    std::lock_guard lock(pools_mutex);
+    worker_pools.push_back(std::move(pool));
+    pools_by_loop.emplace(&context.loop, pool_ptr);
+  });
   server.set_session_handler([&service, &pools_by_loop, &pools_mutex, &pools_ready](
-                                 vexo::luring::LUringLoop& loop,
+                                 vexo::luring::LUringWorkerContext& context,
                                  vexo::luring::LUringStream stream) -> vexo::coro::Task<void> {
+    auto& loop = context.loop;
     WorkerPool* pool = nullptr;
     if (!pools_ready.load(std::memory_order_acquire)) {
       std::lock_guard lock(pools_mutex);

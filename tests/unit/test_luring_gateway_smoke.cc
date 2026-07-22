@@ -267,9 +267,9 @@ private:
 template <class Service>
 void BindServer(Service& service, vexo::luring::LUringServer& server) {
   server.set_session_handler(
-      [&service](vexo::luring::LUringLoop& loop,
+      [&service](vexo::luring::LUringWorkerContext& context,
                  vexo::luring::LUringStream stream) -> vexo::coro::Task<void> {
-        return service.Serve(std::move(stream), vexo::luring::LUringConnector(&loop));
+        return service.Serve(std::move(stream), vexo::luring::LUringConnector(&context.loop));
       });
 }
 

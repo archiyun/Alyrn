@@ -116,7 +116,7 @@ IoAttempt TryWritev(int fd, const std::vector<iovec>& iovs) noexcept {
 
 base::Error SocketError(int fd) noexcept {
   int err = 0;
-  socklen_t len = static_cast<socklen_t>(sizeof(err));
+  auto len = static_cast<socklen_t>(sizeof(err));
   if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) < 0) {
     return base::CurrentErrno();
   }
@@ -187,112 +187,102 @@ void ReactorStream::ReadSomeAwaiter::OnReady() noexcept {
   stream_->CompleteRead(std::move(attempt.result));
 }
 
-class ReactorStream::BufferReadAwaiter : public ReactorStream::ReadOperation {
-public:
-  BufferReadAwaiter(ReactorStream& stream, io::Buffer& buffer, std::size_t reserve,
-                    std::chrono::milliseconds timeout = std::chrono::milliseconds{0}) noexcept
-      : stream_(&stream),
-        buffer_(&buffer),
-        reserve_(std::max<std::size_t>(reserve, 1)),
-        timeout_(timeout) {}
+ReactorStream::BufferReadAwaiter::BufferReadAwaiter(ReactorStream& stream, io::Buffer& buffer,
+                                                    std::size_t reserve,
+                                                    std::chrono::milliseconds timeout) noexcept
+    : stream_(&stream),
+      buffer_(&buffer),
+      reserve_(std::max<std::size_t>(reserve, 1)),
+      timeout_(timeout) {}
 
-  bool await_ready() const noexcept { return false; }
-
-  bool await_suspend(std::coroutine_handle<> continuation) noexcept {
-    VEXO_DCHECK(stream_->loop_->IsInLoopThread(), "BufferReadAwaiter: wrong EventLoop thread");
-    VEXO_DCHECK(stream_->pending_read_ == nullptr,
-                "BufferReadAwaiter: only one pending read is supported per stream");
-
-    scheduler_ = &coro::Scheduler::RequireCurrent();
-    resume_work_.handle = continuation;
-
-    if (!PrepareReservation()) {
-      return false;
-    }
-
-    IoAttempt attempt = TryReadv(stream_->socket_.fd(), iovs_);
-    if (!attempt.pending) {
-      FinishAttempt(std::move(attempt.result));
-      return false;
-    }
-
-    stream_->pending_read_ = this;
-    if (!stream_->channel_.IsReading()) {
-      stream_->channel_.EnableReading();
-    }
-    if (timeout_.count() > 0) {
-      timer_armed_ = true;
-      const auto seconds =
-          std::chrono::duration<double>(std::max(timeout_, std::chrono::milliseconds{1})).count();
-      timer_ = stream_->loop_->RunAfter(seconds, [this] {
-        if (stream_ != nullptr && stream_->pending_read_ == this) {
-          stream_->CompleteRead(std::unexpected(base::make_errno(ETIMEDOUT)));
-        }
-      });
-    }
-    return true;
+bool ReactorStream::BufferReadAwaiter::await_suspend(
+    std::coroutine_handle<> continuation) noexcept {
+  if (stream_->closed_ || stream_->socket_.fd() < 0) {
+    result_ = std::unexpected(base::make_errno(EBADF));
+    return false;
   }
 
-  base::Result<std::size_t> await_resume() noexcept {
-    VEXO_DCHECK(result_.has_value(), "BufferReadAwaiter: result is not ready");
-    return std::move(*result_);
+  VEXO_DCHECK(stream_->loop_->IsInLoopThread(), "BufferReadAwaiter: wrong EventLoop thread");
+  VEXO_DCHECK(stream_->pending_read_ == nullptr,
+              "BufferReadAwaiter: only one pending read is supported per stream");
+
+  scheduler_ = &coro::Scheduler::RequireCurrent();
+  resume_work_.handle = continuation;
+
+  if (!PrepareReservation()) {
+    return false;
   }
 
-  void Complete(base::Result<std::size_t> result) noexcept override {
-    if (timer_armed_) {
-      timer_armed_ = false;
-      stream_->loop_->Cancel(timer_);
-    }
-    FinishAttempt(std::move(result));
-    stream_ = nullptr;
-    VEXO_DCHECK(scheduler_ != nullptr, "BufferReadAwaiter: scheduler is not bound");
-    scheduler_->Schedule(&resume_work_);
+  IoAttempt attempt = TryReadv(stream_->socket_.fd(), iovs_);
+  if (!attempt.pending) {
+    FinishAttempt(std::move(attempt.result));
+    return false;
   }
 
-  void OnReady() noexcept override {
-    IoAttempt attempt = TryReadv(stream_->socket_.fd(), iovs_);
-    if (attempt.pending) {
-      return;
-    }
-    stream_->CompleteRead(std::move(attempt.result));
+  stream_->pending_read_ = this;
+  if (!stream_->channel_.IsReading()) {
+    stream_->channel_.EnableReading();
+  }
+  if (timeout_.count() > 0) {
+    timer_armed_ = true;
+    const auto seconds =
+        std::chrono::duration<double>(std::max(timeout_, std::chrono::milliseconds{1})).count();
+    timer_ = stream_->loop_->RunAfter(seconds, [this] {
+      if (stream_ != nullptr && stream_->pending_read_ == this) {
+        stream_->CompleteRead(std::unexpected(base::make_errno(ETIMEDOUT)));
+      }
+    });
+  }
+  return true;
+}
+
+base::Result<std::size_t> ReactorStream::BufferReadAwaiter::await_resume() noexcept {
+  VEXO_DCHECK(result_.has_value(), "BufferReadAwaiter: result is not ready");
+  return std::move(*result_);
+}
+
+void ReactorStream::BufferReadAwaiter::Complete(base::Result<std::size_t> result) noexcept {
+  if (timer_armed_) {
+    timer_armed_ = false;
+    stream_->loop_->Cancel(timer_);
+  }
+  FinishAttempt(std::move(result));
+  stream_ = nullptr;
+  VEXO_DCHECK(scheduler_ != nullptr, "BufferReadAwaiter: scheduler is not bound");
+  scheduler_->Schedule(&resume_work_);
+}
+
+void ReactorStream::BufferReadAwaiter::OnReady() noexcept {
+  IoAttempt attempt = TryReadv(stream_->socket_.fd(), iovs_);
+  if (attempt.pending) {
+    return;
+  }
+  stream_->CompleteRead(std::move(attempt.result));
+}
+
+bool ReactorStream::BufferReadAwaiter::PrepareReservation() noexcept {
+  try {
+    iovs_ = buffer_->PrepareWrite(reserve_, 16);
+  } catch (const std::bad_alloc&) {
+    result_ = std::unexpected(base::make_errno(ENOMEM));
+    return false;
   }
 
-private:
-  bool PrepareReservation() noexcept {
-    try {
-      iovs_ = buffer_->PrepareWrite(reserve_, 16);
-    } catch (const std::bad_alloc&) {
-      result_ = std::unexpected(base::make_errno(ENOMEM));
-      return false;
-    }
-
-    if (iovs_.empty()) {
-      result_ = std::unexpected(base::make_errno(ENOMEM));
-      return false;
-    }
-    return true;
+  if (iovs_.empty()) {
+    result_ = std::unexpected(base::make_errno(ENOMEM));
+    return false;
   }
+  return true;
+}
 
-  void FinishAttempt(base::Result<std::size_t> result) noexcept {
-    if (result.has_value()) {
-      buffer_->CommitWrite(*result);
-    } else {
-      buffer_->AbortWrite();
-    }
-    result_ = std::move(result);
+void ReactorStream::BufferReadAwaiter::FinishAttempt(base::Result<std::size_t> result) noexcept {
+  if (result.has_value()) {
+    buffer_->CommitWrite(*result);
+  } else {
+    buffer_->AbortWrite();
   }
-
-  ReactorStream* stream_;
-  io::Buffer* buffer_;
-  std::size_t reserve_;
-  std::chrono::milliseconds timeout_;
-  std::vector<iovec> iovs_;
-  coro::Scheduler* scheduler_{nullptr};
-  coro::ResumeWork resume_work_{};
-  std::optional<base::Result<std::size_t>> result_;
-  vexo::time::TimerId timer_;
-  bool timer_armed_{false};
-};
+  result_ = std::move(result);
+}
 
 bool ReactorStream::WriteSomeAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   if (stream_->closed_ || stream_->socket_.fd() < 0) {
@@ -338,95 +328,89 @@ void ReactorStream::WriteSomeAwaiter::OnReady() noexcept {
   stream_->CompleteWrite(std::move(attempt.result));
 }
 
-class ReactorStream::BufferWriteAwaiter : public ReactorStream::WriteOperation {
-public:
-  BufferWriteAwaiter(ReactorStream& stream, io::Buffer& buffer) noexcept
-      : stream_(&stream), buffer_(&buffer) {}
+ReactorStream::BufferWriteAwaiter::BufferWriteAwaiter(ReactorStream& stream,
+                                                      io::Buffer& buffer) noexcept
+    : stream_(&stream), buffer_(&buffer) {}
 
-  bool await_ready() const noexcept { return false; }
-
-  bool await_suspend(std::coroutine_handle<> continuation) noexcept {
-    VEXO_DCHECK(stream_->loop_->IsInLoopThread(), "BufferWriteAwaiter: wrong EventLoop thread");
-    VEXO_DCHECK(stream_->pending_write_ == nullptr,
-                "BufferWriteAwaiter: only one pending write is supported per stream");
-
-    scheduler_ = &coro::Scheduler::RequireCurrent();
-    resume_work_.handle = continuation;
-
-    if (!PrepareReadable()) {
-      return false;
-    }
-
-    IoAttempt attempt = TryWritev(stream_->socket_.fd(), iovs_);
-    if (!attempt.pending) {
-      FinishAttempt(std::move(attempt.result));
-      return false;
-    }
-
-    stream_->pending_write_ = this;
-    if (!stream_->channel_.IsWriting()) {
-      stream_->channel_.EnableWriting();
-    }
-    return true;
+bool ReactorStream::BufferWriteAwaiter::await_suspend(
+    std::coroutine_handle<> continuation) noexcept {
+  if (stream_->closed_ || stream_->socket_.fd() < 0) {
+    result_ = std::unexpected(base::make_errno(EBADF));
+    return false;
   }
 
-  base::Result<std::size_t> await_resume() noexcept {
-    VEXO_DCHECK(result_.has_value(), "BufferWriteAwaiter: result is not ready");
-    return std::move(*result_);
+  VEXO_DCHECK(stream_->loop_->IsInLoopThread(), "BufferWriteAwaiter: wrong EventLoop thread");
+  VEXO_DCHECK(stream_->pending_write_ == nullptr,
+              "BufferWriteAwaiter: only one pending write is supported per stream");
+
+  scheduler_ = &coro::Scheduler::RequireCurrent();
+  resume_work_.handle = continuation;
+
+  if (!PrepareReadable()) {
+    return false;
   }
 
-  void Complete(base::Result<std::size_t> result) noexcept override {
-    FinishAttempt(std::move(result));
-    VEXO_DCHECK(scheduler_ != nullptr, "BufferWriteAwaiter: scheduler is not bound");
-    scheduler_->Schedule(&resume_work_);
+  IoAttempt attempt = TryWritev(stream_->socket_.fd(), iovs_);
+  if (!attempt.pending) {
+    FinishAttempt(std::move(attempt.result));
+    return false;
   }
 
-  void OnReady() noexcept override {
-    IoAttempt attempt = TryWritev(stream_->socket_.fd(), iovs_);
-    if (attempt.pending) {
-      return;
-    }
-    stream_->CompleteWrite(std::move(attempt.result));
+  stream_->pending_write_ = this;
+  if (!stream_->channel_.IsWriting()) {
+    stream_->channel_.EnableWriting();
+  }
+  return true;
+}
+
+base::Result<std::size_t> ReactorStream::BufferWriteAwaiter::await_resume() noexcept {
+  VEXO_DCHECK(result_.has_value(), "BufferWriteAwaiter: result is not ready");
+  return std::move(*result_);
+}
+
+void ReactorStream::BufferWriteAwaiter::Complete(base::Result<std::size_t> result) noexcept {
+  FinishAttempt(std::move(result));
+  VEXO_DCHECK(scheduler_ != nullptr, "BufferWriteAwaiter: scheduler is not bound");
+  scheduler_->Schedule(&resume_work_);
+}
+
+void ReactorStream::BufferWriteAwaiter::OnReady() noexcept {
+  IoAttempt attempt = TryWritev(stream_->socket_.fd(), iovs_);
+  if (attempt.pending) {
+    return;
+  }
+  stream_->CompleteWrite(std::move(attempt.result));
+}
+
+bool ReactorStream::BufferWriteAwaiter::PrepareReadable() noexcept {
+  if (buffer_->Empty()) {
+    result_ = base::Result<std::size_t>{0};
+    return false;
   }
 
-private:
-  bool PrepareReadable() noexcept {
-    if (buffer_->Empty()) {
-      result_ = base::Result<std::size_t>{0};
-      return false;
-    }
-
-    try {
-      iovs_ = buffer_->ReadableIov(16);
-    } catch (const std::bad_alloc&) {
-      result_ = std::unexpected(base::make_errno(ENOMEM));
-      return false;
-    }
-
-    if (iovs_.empty()) {
-      result_ = base::Result<std::size_t>{0};
-      return false;
-    }
-    return true;
+  try {
+    iovs_ = buffer_->ReadableIov(16);
+  } catch (const std::bad_alloc&) {
+    result_ = std::unexpected(base::make_errno(ENOMEM));
+    return false;
   }
 
-  void FinishAttempt(base::Result<std::size_t> result) noexcept {
-    if (result.has_value() && *result > 0) {
-      buffer_->Drain(*result);
-    }
-    result_ = std::move(result);
+  if (iovs_.empty()) {
+    result_ = base::Result<std::size_t>{0};
+    return false;
   }
+  return true;
+}
 
-  ReactorStream* stream_;
-  io::Buffer* buffer_;
-  std::vector<iovec> iovs_;
-  coro::Scheduler* scheduler_{nullptr};
-  coro::ResumeWork resume_work_{};
-  std::optional<base::Result<std::size_t>> result_;
-};
+void ReactorStream::BufferWriteAwaiter::FinishAttempt(base::Result<std::size_t> result) noexcept {
+  if (result.has_value() && *result > 0) {
+    buffer_->Drain(*result);
+  }
+  result_ = std::move(result);
+}
 
 ReactorStream::ReactorStream(EventLoop* loop, int fd, InetAddress peer)
-    : loop_(loop), socket_(fd), channel_(loop, fd), peer_(std::move(peer)) {
+    : loop_(loop), socket_(fd), channel_(loop, fd), peer_(peer) {
   VEXO_DCHECK(loop_ != nullptr, "ReactorStream: loop must not be null");
   [[maybe_unused]] auto nonblocking = set_non_blocking(fd, true);
   VEXO_DCHECK(nonblocking.has_value(), "ReactorStream: failed to set non-blocking mode");
@@ -484,29 +468,20 @@ ReactorStream::ReadSomeAwaiter ReactorStream::ReadSome(std::span<std::byte> buff
   return ReadSomeAwaiter(*this, buffer);
 }
 
-coro::Task<base::Result<std::size_t>> ReactorStream::ReadSome(io::Buffer& buffer,
-                                                              std::size_t reserve) {
-  if (closed_) {
-    co_return std::unexpected(base::make_errno(EBADF));
-  }
-  co_return co_await BufferReadAwaiter(*this, buffer, reserve);
+ReactorStream::BufferReadAwaiter ReactorStream::ReadSome(io::Buffer& buffer,
+                                                         std::size_t reserve) noexcept {
+  return BufferReadAwaiter(*this, buffer, reserve);
 }
 
-coro::Task<base::Result<std::size_t>> ReactorStream::ReadSomeFor(
-    std::span<std::byte> buffer, std::chrono::milliseconds timeout) {
-  if (closed_) {
-    co_return std::unexpected(base::make_errno(EBADF));
-  }
-  co_return co_await ReadSomeAwaiter(*this, buffer, timeout);
+ReactorStream::ReadSomeAwaiter ReactorStream::ReadSomeFor(
+    std::span<std::byte> buffer, std::chrono::milliseconds timeout) noexcept {
+  return ReadSomeAwaiter(*this, buffer, timeout);
 }
 
-coro::Task<base::Result<std::size_t>> ReactorStream::ReadSomeFor(io::Buffer& buffer,
-                                                                 std::chrono::milliseconds timeout,
-                                                                 std::size_t reserve) {
-  if (closed_) {
-    co_return std::unexpected(base::make_errno(EBADF));
-  }
-  co_return co_await BufferReadAwaiter(*this, buffer, reserve, timeout);
+ReactorStream::BufferReadAwaiter ReactorStream::ReadSomeFor(io::Buffer& buffer,
+                                                            std::chrono::milliseconds timeout,
+                                                            std::size_t reserve) noexcept {
+  return BufferReadAwaiter(*this, buffer, reserve, timeout);
 }
 
 ReactorStream::WriteSomeAwaiter ReactorStream::WriteSome(
@@ -514,11 +489,8 @@ ReactorStream::WriteSomeAwaiter ReactorStream::WriteSome(
   return WriteSomeAwaiter(*this, buffer);
 }
 
-coro::Task<base::Result<std::size_t>> ReactorStream::WriteSome(io::Buffer& buffer) {
-  if (closed_) {
-    co_return std::unexpected(base::make_errno(EBADF));
-  }
-  co_return co_await BufferWriteAwaiter(*this, buffer);
+ReactorStream::BufferWriteAwaiter ReactorStream::WriteSome(io::Buffer& buffer) noexcept {
+  return BufferWriteAwaiter(*this, buffer);
 }
 
 coro::Task<base::Result<void>> ReactorStream::Shutdown() {

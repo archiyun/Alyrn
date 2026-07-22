@@ -11,6 +11,8 @@
 #include <exception>
 #include <iostream>
 #include <string_view>
+#include <system_error>
+#include <utility>
 
 #include "vexo/gateway/gateway_config.h"
 #include "vexo/gateway/gateway_server.h"
@@ -43,8 +45,17 @@ int main(int argc, char** argv) {
     if (!listen_addr) {
       throw vexo::gateway::GatewayConfigError("server.listen: expected a numeric IPv4 address");
     }
-    vexo::net::ReactorListener listener(&loop, *listen_addr);
-    vexo::net::ReactorConnector connector(&loop);
+    auto listener_result = vexo::net::ReactorListener::Create(&loop, *listen_addr);
+    if (!listener_result.has_value()) {
+      throw std::system_error(listener_result.error(), "failed to create listener");
+    }
+    auto listener = std::move(*listener_result);
+
+    auto connector_result = vexo::net::ReactorConnector::Create(&loop);
+    if (!connector_result.has_value()) {
+      throw std::system_error(connector_result.error(), "failed to create connector");
+    }
+    auto connector = std::move(*connector_result);
     vexo::gateway::GatewayServer<vexo::net::ReactorListener, vexo::net::ReactorConnector> gateway(
         listener, scheduler, config.server.name, registry, connector);
 

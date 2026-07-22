@@ -10,7 +10,7 @@
 // 启动顺序:
 //   ① 上游 nginx (4 端口, 见 README/nginx_upstream.conf 一并配)
 //   ② 我们: UPSTREAM_PORTS=9001,9002,9003,9004 LB_ALGO=round_robin \
-//          IO_THREADS=4 PORT=8080 ./build-release/examples/demo_bench_gateway_multi
+//          PORT=8080 ./build-release/examples/demo_bench_gateway_multi
 //   ③ nginx 网关: 配置在 /tmp/nginx_gw_multi.conf, listen 8088
 //
 // 压测:
@@ -24,6 +24,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "vexo/gateway/gateway_server.h"
@@ -70,7 +71,6 @@ std::size_t EnvSize(const char* key, std::size_t def) {
 }  // namespace
 
 int main() {
-  const int io_threads = EnvInt("IO_THREADS", 4);
   const uint16_t listen_port = static_cast<uint16_t>(EnvInt("PORT", 8080));
   const auto ports_csv = std::string(EnvOr("UPSTREAM_PORTS", "9001"));
   const auto algo = std::string(EnvOr("LB_ALGO", "round_robin"));
@@ -97,18 +97,33 @@ int main() {
 
   vexo::net::EventLoop loop;
   vexo::net::EventLoopScheduler scheduler(&loop);
-  vexo::net::ReactorListener listener(&loop, vexo::net::InetAddress(listen_port));
-  vexo::net::ReactorConnector connector(&loop);
+  auto listener_result =
+      vexo::net::ReactorListener::Create(&loop, vexo::net::InetAddress(listen_port));
+  if (!listener_result.has_value()) {
+    std::fprintf(stderr, "failed to create listener: %s\n",
+                 listener_result.error().message().c_str());
+    return 1;
+  }
+  auto listener = std::move(*listener_result);
+
+  auto connector_result = vexo::net::ReactorConnector::Create(&loop);
+  if (!connector_result.has_value()) {
+    std::fprintf(stderr, "failed to create connector: %s\n",
+                 connector_result.error().message().c_str());
+    return 1;
+  }
+  auto connector = std::move(*connector_result);
   vexo::gateway::GatewayServer<vexo::net::ReactorListener, vexo::net::ReactorConnector> gw(
       listener, scheduler, "BenchGatewayMulti", reg, connector);
-  gw.set_thread_num(io_threads);
   gw.set_pool_config({.max_idle_per_peer = 64});
 
   gw.AddProxyRoute("/", "backend", algo);
 
   gw.Start();
-  std::printf("BenchGatewayMulti listen=%u peers=[%s] algo=%s io_threads=%d max_concurrent=%zu\n",
-              listen_port, ports_csv.c_str(), algo.c_str(), io_threads, max_concurrent);
+  std::printf(
+      "BenchGatewayMulti listen=%u peers=[%s] algo=%s event_loop_threads=1 "
+      "max_concurrent=%zu\n",
+      listen_port, ports_csv.c_str(), algo.c_str(), max_concurrent);
   loop.Loop();
   return 0;
 }

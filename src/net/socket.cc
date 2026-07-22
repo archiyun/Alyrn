@@ -8,9 +8,9 @@
 #include <unistd.h>
 
 #include <cerrno>
-#include <cstdlib>
 #include <cstring>
 
+#include "vexo/base/check.h"
 #include "vexo/log/logger.h"
 #include "vexo/net/net_utils.h"
 
@@ -27,9 +27,9 @@ void Socket::BindAddress(const InetAddress& localAddr) {
     return;
   }
 
-  LOG_FATALF("bind failed: fd={} address={} errno={} message={}", sockfd_,
-             localAddr.ToIpPort(), errno, std::strerror(errno));
-  std::abort();
+  LOG_FATALF("bind failed: fd={} address={} errno={} message={}", sockfd_, localAddr.ToIpPort(),
+             errno, std::strerror(errno));
+  VEXO_CHECK(false, "Socket::BindAddress: bind failed");
 }
 
 void Socket::Listen() {
@@ -38,18 +38,17 @@ void Socket::Listen() {
     return;
   }
 
-  LOG_FATALF("listen failed: fd={} errno={} message={}", sockfd_, errno,
-             std::strerror(errno));
-  std::abort();
+  LOG_FATALF("listen failed: fd={} errno={} message={}", sockfd_, errno, std::strerror(errno));
+  VEXO_CHECK(false, "Socket::Listen: listen failed");
 }
 
 int Socket::Accept(InetAddress* peeraddr) {
   sockaddr_in addr{};
-  socklen_t len = static_cast<socklen_t>(sizeof(addr));
+  auto len = static_cast<socklen_t>(sizeof(addr));
 
   int connfd =
       ::accept4(sockfd_, reinterpret_cast<sockaddr*>(&addr), &len, SOCK_NONBLOCK | SOCK_CLOEXEC);
-  if (connfd >= 0 && peeraddr) {
+  if (connfd >= 0 && peeraddr != nullptr) {
     *peeraddr = InetAddress(addr);
   } else if (connfd < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
     LOG_ERRORF("accept failed: listen_fd={} errno={} message={}", sockfd_, errno,
@@ -83,8 +82,7 @@ void Socket::Close() noexcept {
     return;
   }
 
-  LOG_ERRORF("socket close failed: fd={} errno={} message={}", fd, errno,
-             std::strerror(errno));
+  LOG_ERRORF("socket close failed: fd={} errno={} message={}", fd, errno, std::strerror(errno));
 }
 
 void Socket::set_tcp_no_delay(bool on) {
@@ -93,8 +91,8 @@ void Socket::set_tcp_no_delay(bool on) {
     return;
   }
 
-  LOG_ERRORF("setsockopt TCP_NODELAY failed: fd={} on={} error={} message={}",
-             sockfd_, on ? 1 : 0, result.error().value(), result.error().message());
+  LOG_ERRORF("setsockopt TCP_NODELAY failed: fd={} on={} error={} message={}", sockfd_, on ? 1 : 0,
+             result.error().value(), result.error().message());
 }
 
 void Socket::set_reuse_addr(bool on) {
@@ -103,8 +101,8 @@ void Socket::set_reuse_addr(bool on) {
     return;
   }
 
-  LOG_ERRORF("setsockopt SO_REUSEADDR failed: fd={} on={} error={} message={}",
-             sockfd_, on ? 1 : 0, result.error().value(), result.error().message());
+  LOG_ERRORF("setsockopt SO_REUSEADDR failed: fd={} on={} error={} message={}", sockfd_, on ? 1 : 0,
+             result.error().value(), result.error().message());
 }
 
 void Socket::set_reuse_port(bool on) {
@@ -113,8 +111,8 @@ void Socket::set_reuse_port(bool on) {
     return;
   }
 
-  LOG_ERRORF("setsockopt SO_REUSEPORT failed: fd={} on={} error={} message={}",
-             sockfd_, on ? 1 : 0, result.error().value(), result.error().message());
+  LOG_ERRORF("setsockopt SO_REUSEPORT failed: fd={} on={} error={} message={}", sockfd_, on ? 1 : 0,
+             result.error().value(), result.error().message());
 }
 
 void Socket::set_keep_alive(bool on) {
@@ -123,8 +121,8 @@ void Socket::set_keep_alive(bool on) {
     return;
   }
 
-  LOG_ERRORF("setsockopt SO_KEEPALIVE failed: fd={} on={} error={} message={}",
-             sockfd_, on ? 1 : 0, result.error().value(), result.error().message());
+  LOG_ERRORF("setsockopt SO_KEEPALIVE failed: fd={} on={} error={} message={}", sockfd_, on ? 1 : 0,
+             result.error().value(), result.error().message());
 }
 
 }  // namespace vexo::net

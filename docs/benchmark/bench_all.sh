@@ -17,8 +17,6 @@ set -euo pipefail
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 BD="$ROOT/docs/benchmark"
 GW_BIN="$ROOT/build-release/examples/gateway/demo_bench_gateway_multi"
-IO_THREADS=${IO_THREADS:-4}
-
 cleanup() {
   set +e
   nginx -s stop -c "$BD/nginx_gateway.conf"  2>/dev/null
@@ -39,7 +37,7 @@ curl -fs http://127.0.0.1:9001/ >/dev/null && echo "    upstream ok ($(curl -s h
 
 # ---- runtime gateway on :8080 ----
 echo "==> starting runtime gateway (:8080)"
-UPSTREAM_PORTS=9001,9002,9003,9004 LB_ALGO=round_robin IO_THREADS="$IO_THREADS" PORT=8080 \
+UPSTREAM_PORTS=9001,9002,9003,9004 LB_ALGO=round_robin PORT=8080 \
   "$GW_BIN" &
 GW_PID=$!
 sleep 1
