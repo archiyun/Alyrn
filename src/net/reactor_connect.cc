@@ -24,7 +24,7 @@ namespace {
 
 base::Result<int> ConnectError(int fd) noexcept {
   int err = 0;
-  socklen_t len = static_cast<socklen_t>(sizeof(err));
+  auto len = static_cast<socklen_t>(sizeof(err));
   if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) < 0) {
     return std::unexpected(base::CurrentErrno());
   }
@@ -33,8 +33,7 @@ base::Result<int> ConnectError(int fd) noexcept {
 
 class ConnectAwaiter {
 public:
-  ConnectAwaiter(EventLoop* loop, InetAddress peer) noexcept
-      : loop_(loop), peer_(std::move(peer)) {}
+  ConnectAwaiter(EventLoop* loop, InetAddress peer) noexcept : loop_(loop), peer_(peer) {}
 
   ~ConnectAwaiter() {
     if (fd_ >= 0) {
@@ -42,7 +41,7 @@ public:
     }
   }
 
-  bool await_ready() const noexcept { return false; }
+  [[nodiscard]] bool await_ready() const noexcept { return false; }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     VEXO_DCHECK(loop_->IsInLoopThread(), "ConnectAwaiter: wrong EventLoop thread");
@@ -130,7 +129,7 @@ public:
   SleepAwaiter(EventLoop* loop, std::chrono::milliseconds delay) noexcept
       : loop_(loop), delay_(delay) {}
 
-  bool await_ready() const noexcept { return delay_.count() <= 0; }
+  [[nodiscard]] bool await_ready() const noexcept { return delay_.count() <= 0; }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     VEXO_DCHECK(loop_->IsInLoopThread(), "SleepAwaiter: wrong EventLoop thread");
@@ -147,12 +146,21 @@ private:
   EventLoop* loop_;
   std::chrono::milliseconds delay_;
   coro::Scheduler* scheduler_{nullptr};
-  coro::ResumeWork resume_work_{};
+  coro::ResumeWork resume_work_;
 };
 
 }  // namespace
 
-ReactorConnector::ReactorConnector(EventLoop* loop) noexcept : loop_(loop) {}
+ReactorConnector::ReactorConnector(EventLoop* loop) noexcept : loop_(loop) {
+  VEXO_CHECK(loop_ != nullptr, "ReactorConnector: loop must not be null");
+}
+
+[[nodiscard]] base::Result<ReactorConnector> ReactorConnector::Create(EventLoop* loop) noexcept {
+  if (loop == nullptr) {
+    return std::unexpected(base::make_errno(EINVAL));
+  }
+  return ReactorConnector(loop);
+}
 
 ReactorConnector::ReactorConnector(ReactorConnector&& other) noexcept
     : loop_(std::exchange(other.loop_, nullptr)) {}
@@ -164,13 +172,17 @@ ReactorConnector& ReactorConnector::operator=(ReactorConnector&& other) noexcept
   return *this;
 }
 
+coro::Task<base::Result<ReactorStream>> ReactorConnector::Connect(const InetAddress& peer) {
+  co_return co_await ConnectAwaiter(loop_, peer);
+}
+
 coro::Task<base::Result<ReactorStream>> ReactorConnector::Connect(std::string_view host,
                                                                   std::uint16_t port) {
-  auto address = ParseIPv4Address(host, port);
-  if (!address.has_value()) {
-    co_return std::unexpected(address.error());
+  auto peer = ParseIPv4Address(host, port);
+  if (!peer.has_value()) {
+    co_return std::unexpected(peer.error());
   }
-  co_return co_await ConnectAwaiter(loop_, *address);
+  co_return co_await Connect(*peer);
 }
 
 coro::Task<void> ReactorConnector::SleepFor(std::chrono::milliseconds delay) {

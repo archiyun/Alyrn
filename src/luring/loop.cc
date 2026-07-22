@@ -14,8 +14,8 @@
 #include <stop_token>
 #include <utility>
 
-#include "vexo/base/current_thread.h"
 #include "vexo/base/ctrack.h"
+#include "vexo/base/current_thread.h"
 #include "vexo/base/error.h"
 #include "vexo/coro/scheduler.h"
 #include "vexo/luring/op.h"
@@ -25,6 +25,8 @@
 namespace vexo::luring {
 
 namespace {
+
+constexpr std::chrono::milliseconds kStopPollInterval{100};
 
 [[nodiscard]] LUringOp* DecodeOp(io_uring_cqe* cqe) noexcept {
   return reinterpret_cast<LUringOp*>(io_uring_cqe_get_data(cqe));
@@ -38,6 +40,10 @@ LUringLoop::LUringLoop(std::pmr::memory_resource* frame_resource)
 base::Result<void> LUringLoop::Init(const LUringOptions& options) noexcept {
   assert(IsInLoopThread());
 
+  if (initialized_) {
+    return std::unexpected(base::make_errno(EALREADY));
+  }
+
   auto ring = LUringRing::Create(options);
   if (!ring.has_value()) {
     return std::unexpected(ring.error());
@@ -49,11 +55,16 @@ base::Result<void> LUringLoop::Init(const LUringOptions& options) noexcept {
   pending_submit_ = 0;
   inflight_ = 0;
   quit_.store(false, std::memory_order_relaxed);
+  initialized_ = true;
   return {};
 }
 
 void LUringLoop::Loop(std::stop_token token) noexcept {
   assert(IsInLoopThread());
+
+  if (!initialized_) {
+    return;
+  }
 
   while (!token.stop_requested() && !quit_.load(std::memory_order_relaxed)) {
     RunReady();
@@ -68,7 +79,10 @@ void LUringLoop::Loop(std::stop_token token) noexcept {
     }
 
     if (*completed == 0 && ready_.empty() && inflight_ > 0) {
-      completed = WaitCompletions();
+      completed = WaitCompletionsFor(kStopPollInterval);
+      if (!completed.has_value() && completed.error().value() != ETIME) {
+        break;
+      }
     }
   }
 }
@@ -87,8 +101,7 @@ void LUringLoop::RunReady() noexcept {
   coro::Scheduler::SetCurrent(this);
 
   std::size_t resumed = 0;
-  while (!ready_.empty() &&
-         (max_ready_work_per_turn_ == 0 || resumed < max_ready_work_per_turn_)) {
+  while (!ready_.empty() && (max_ready_work_per_turn_ == 0 || resumed < max_ready_work_per_turn_)) {
     coro::Work* work = ready_.PopFront();
     {
       VEXO_CTRACK_SCOPE("luring.ready.work");
@@ -102,6 +115,10 @@ void LUringLoop::RunReady() noexcept {
 
 void LUringLoop::RunUntilIdle() {
   assert(IsInLoopThread());
+
+  if (!initialized_) {
+    return;
+  }
 
   while (!ready_.empty() || pending_submit_ > 0 || inflight_ > 0) {
     RunReady();
@@ -158,6 +175,11 @@ base::Result<std::size_t> LUringLoop::PollCompletions() noexcept {
 }
 
 base::Result<std::size_t> LUringLoop::WaitCompletions() noexcept {
+  return WaitCompletionsFor(std::chrono::nanoseconds::max());
+}
+
+base::Result<std::size_t> LUringLoop::WaitCompletionsFor(
+    std::chrono::nanoseconds timeout) noexcept {
   assert(IsInLoopThread());
 
   auto flushed = FlushSubmit();
@@ -169,7 +191,16 @@ base::Result<std::size_t> LUringLoop::WaitCompletions() noexcept {
   int r = 0;
   {
     VEXO_CTRACK_SCOPE("luring.ring.wait");
-    r = io_uring_wait_cqe(ring_.native(), &cqe);
+    if (timeout == std::chrono::nanoseconds::max()) {
+      r = io_uring_wait_cqe(ring_.native(), &cqe);
+    } else {
+      constexpr std::int64_t kNanosecondsPerSecond = 1'000'000'000;
+      const std::int64_t count = timeout.count();
+      __kernel_timespec timeout_spec{};
+      timeout_spec.tv_sec = count / kNanosecondsPerSecond;
+      timeout_spec.tv_nsec = count % kNanosecondsPerSecond;
+      r = io_uring_wait_cqe_timeout(ring_.native(), &cqe, &timeout_spec);
+    }
   }
   if (r < 0) {
     return std::unexpected(base::make_neg_errno(r));
@@ -195,6 +226,9 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
 
   LUringOp* op = DecodeOp(cqe);
   if (op == nullptr) {
+    if (inflight_ > 0) {
+      --inflight_;
+    }
     return;
   }
 
@@ -203,10 +237,10 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
     --inflight_;
   }
 
-    {
-      VEXO_CTRACK_SCOPE("luring.cqe.complete");
-      op->Complete(cqe->res);
-    }
+  {
+    VEXO_CTRACK_SCOPE("luring.cqe.complete");
+    op->Complete(cqe->res);
+  }
   if (op->resume_work.handle) {
     Schedule(&op->resume_work);
   }

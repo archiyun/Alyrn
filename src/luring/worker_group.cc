@@ -18,11 +18,7 @@ LUringWorkerGroup::LUringWorkerGroup(net::InetAddress listen_addr, LUringWorkerG
       init_callback_(std::move(init_callback)),
       connection_callback_(std::move(connection_callback)) {}
 
-LUringWorkerGroup::~LUringWorkerGroup() {
-  if (started_) {
-    Stop();
-  }
-}
+LUringWorkerGroup::~LUringWorkerGroup() noexcept { Stop(); }
 
 base::Result<void> LUringWorkerGroup::Start() {
   if (started_) {
@@ -41,7 +37,7 @@ base::Result<void> LUringWorkerGroup::Start() {
       worker_options.frame_resource = options_.frame_resource_factory(i);
     }
 
-    auto worker = std::make_unique<LUringWorker>(listen_addr_, std::move(worker_options),
+    auto worker = std::make_unique<LUringWorker>(i, listen_addr_, std::move(worker_options),
                                                  init_callback_, connection_callback_);
     auto started = worker->Start();
     if (!started.has_value()) {

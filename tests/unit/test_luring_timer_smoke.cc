@@ -57,9 +57,16 @@ bool TestTimers() {
   auto early = loop.RunAfter(2ms, [&early_fired] noexcept { early_fired = true; });
   if (!Check(early.has_value(), "early timer should be accepted")) return false;
 
-  auto completed = loop.WaitCompletions();
-  if (!Check(completed.has_value(), "timer completion should be received") ||
-      !Check(early_fired, "earlier timer should fire first") ||
+  // Updating an already armed timeout may produce one or more control CQEs
+  // before the updated timer itself expires.
+  while (!early_fired && !late_fired) {
+    auto completed = loop.WaitCompletions();
+    if (!Check(completed.has_value(), "timer completion should be received")) {
+      return false;
+    }
+  }
+
+  if (!Check(early_fired, "earlier timer should fire first") ||
       !Check(!late_fired, "later timer should not fire early")) {
     return false;
   }
@@ -72,7 +79,7 @@ bool TestTimers() {
   bool scheduler_ok = false;
   vexo::coro::Spawn(loop, SleepTask(&loop, &resumed, &scheduler_ok)).Detach();
   loop.RunReady();
-  completed = loop.WaitCompletions();
+  auto completed = loop.WaitCompletions();
   loop.RunReady();
 
   return Check(completed.has_value(), "sleep should complete") &&

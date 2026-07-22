@@ -4,7 +4,7 @@
 
 #include <arpa/inet.h>
 
-#include <cstdlib>
+#include "vexo/base/check.h"
 
 namespace vexo::net {
 
@@ -17,7 +17,7 @@ InetAddress::InetAddress(std::uint16_t port) {
 std::string InetAddress::ToIp() const {
   char buffer[INET_ADDRSTRLEN] = {0};
   const char* result = ::inet_ntop(AF_INET, &addr_.sin_addr, buffer, sizeof(buffer));
-  if (result == nullptr) std::abort();
+  VEXO_CHECK(result != nullptr, "InetAddress::ToIp: inet_ntop failed");
   return result;
 }
 

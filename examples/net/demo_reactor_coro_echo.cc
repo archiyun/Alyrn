@@ -25,6 +25,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "vexo/base/error.h"
 #include "vexo/coro/scheduler.h"
@@ -172,7 +173,12 @@ int main() {
 
   vexo::net::EventLoop loop;
   vexo::net::EventLoopScheduler scheduler(&loop);
-  vexo::net::ReactorListener listener(&loop, vexo::net::InetAddress(port));
+  auto listener_result = vexo::net::ReactorListener::Create(&loop, vexo::net::InetAddress(port));
+  if (!listener_result.has_value()) {
+    std::cerr << "failed to create listener: " << listener_result.error().message() << '\n';
+    return 1;
+  }
+  auto listener = std::move(*listener_result);
 
   long long active_sessions = 0;
   long long total_messages = 0;

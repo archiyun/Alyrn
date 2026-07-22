@@ -14,13 +14,23 @@
 
 namespace vexo::net {
 
+struct ReactorListenerOptions {
+  bool reuse_addr{true};
+  bool reuse_port{false};
+};
+
 class ReactorListener {
 public:
   VEXO_DELETE_COPY(ReactorListener);
 
   using Stream = ReactorStream;
 
-  ReactorListener(EventLoop* loop, const InetAddress& listen_addr);
+  [[nodiscard]] static base::Result<ReactorListener> Create(
+      EventLoop* loop, const InetAddress& listen_addr,
+      ReactorListenerOptions options = {}) noexcept;
+
+  ReactorListener(EventLoop* loop, const InetAddress& listen_addr,
+                  ReactorListenerOptions options = {});
   ~ReactorListener();
 
   // Moves are loop-affine: the source must be used from its owning loop
@@ -35,6 +45,8 @@ public:
 
 private:
   class AcceptAwaiter;
+
+  ReactorListener(EventLoop* loop, Socket socket) noexcept;
 
   void HandleRead(vexo::time::Timestamp receive_time);
   void HandleError();

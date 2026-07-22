@@ -2,11 +2,14 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <sys/uio.h>
+
 #include <chrono>
 #include <coroutine>
 #include <cstddef>
 #include <optional>
 #include <span>
+#include <vector>
 
 #include "vexo/base/error.h"
 #include "vexo/coro/scheduler.h"
@@ -34,16 +37,17 @@ public:
 
   class ReadSomeAwaiter;
   class WriteSomeAwaiter;
+  class BufferReadAwaiter;
+  class BufferWriteAwaiter;
 
   [[nodiscard]] ReadSomeAwaiter ReadSome(std::span<std::byte> buffer) noexcept;
-  coro::Task<base::Result<std::size_t>> ReadSome(io::Buffer& buffer, std::size_t reserve = 4096);
-  coro::Task<base::Result<std::size_t>> ReadSomeFor(std::span<std::byte> buffer,
-                                                    std::chrono::milliseconds timeout);
-  coro::Task<base::Result<std::size_t>> ReadSomeFor(io::Buffer& buffer,
-                                                    std::chrono::milliseconds timeout,
-                                                    std::size_t reserve = 4096);
+  [[nodiscard]] BufferReadAwaiter ReadSome(io::Buffer& buffer, std::size_t reserve = 4096) noexcept;
+  [[nodiscard]] ReadSomeAwaiter ReadSomeFor(std::span<std::byte> buffer,
+                                            std::chrono::milliseconds timeout) noexcept;
+  [[nodiscard]] BufferReadAwaiter ReadSomeFor(io::Buffer& buffer, std::chrono::milliseconds timeout,
+                                              std::size_t reserve = 4096) noexcept;
   [[nodiscard]] WriteSomeAwaiter WriteSome(std::span<const std::byte> buffer) noexcept;
-  coro::Task<base::Result<std::size_t>> WriteSome(io::Buffer& buffer);
+  [[nodiscard]] BufferWriteAwaiter WriteSome(io::Buffer& buffer) noexcept;
   coro::Task<base::Result<void>> Shutdown();
   coro::Task<base::Result<void>> Close();
 
@@ -63,9 +67,6 @@ private:
     virtual void Complete(base::Result<std::size_t> result) noexcept = 0;
     virtual void OnReady() noexcept = 0;
   };
-
-  class BufferReadAwaiter;
-  class BufferWriteAwaiter;
 
   void HandleRead(vexo::time::Timestamp receive_time);
   void HandleWrite();
@@ -108,9 +109,9 @@ private:
   std::span<std::byte> buffer_;
   std::chrono::milliseconds timeout_;
   coro::Scheduler* scheduler_{nullptr};
-  coro::ResumeWork resume_work_{};
+  coro::ResumeWork resume_work_;
   std::optional<base::Result<std::size_t>> result_;
-  vexo::time::TimerId timer_;
+  time::TimerId timer_;
   bool timer_armed_{false};
 };
 
@@ -132,7 +133,60 @@ private:
   ReactorStream* stream_;
   std::span<const std::byte> buffer_;
   coro::Scheduler* scheduler_{nullptr};
-  coro::ResumeWork resume_work_{};
+  coro::ResumeWork resume_work_;
+  std::optional<base::Result<std::size_t>> result_;
+};
+
+class ReactorStream::BufferReadAwaiter : public ReactorStream::ReadOperation {
+public:
+  VEXO_DELETE_COPY_MOVE(BufferReadAwaiter);
+
+  BufferReadAwaiter(ReactorStream& stream, io::Buffer& buffer, std::size_t reserve,
+                    std::chrono::milliseconds timeout = std::chrono::milliseconds{0}) noexcept;
+
+  [[nodiscard]] bool await_ready() const noexcept { return false; }
+  [[nodiscard]] bool await_suspend(std::coroutine_handle<> continuation) noexcept;
+  base::Result<std::size_t> await_resume() noexcept;
+
+private:
+  void Complete(base::Result<std::size_t> result) noexcept override;
+  void OnReady() noexcept override;
+  bool PrepareReservation() noexcept;
+  void FinishAttempt(base::Result<std::size_t> result) noexcept;
+
+  ReactorStream* stream_;
+  io::Buffer* buffer_;
+  std::size_t reserve_;
+  std::chrono::milliseconds timeout_;
+  std::vector<iovec> iovs_;
+  coro::Scheduler* scheduler_{nullptr};
+  coro::ResumeWork resume_work_;
+  std::optional<base::Result<std::size_t>> result_;
+  vexo::time::TimerId timer_;
+  bool timer_armed_{false};
+};
+
+class ReactorStream::BufferWriteAwaiter : public ReactorStream::WriteOperation {
+public:
+  VEXO_DELETE_COPY_MOVE(BufferWriteAwaiter);
+
+  BufferWriteAwaiter(ReactorStream& stream, io::Buffer& buffer) noexcept;
+
+  [[nodiscard]] bool await_ready() const noexcept { return false; }
+  [[nodiscard]] bool await_suspend(std::coroutine_handle<> continuation) noexcept;
+  base::Result<std::size_t> await_resume() noexcept;
+
+private:
+  void Complete(base::Result<std::size_t> result) noexcept override;
+  void OnReady() noexcept override;
+  bool PrepareReadable() noexcept;
+  void FinishAttempt(base::Result<std::size_t> result) noexcept;
+
+  ReactorStream* stream_;
+  io::Buffer* buffer_;
+  std::vector<iovec> iovs_;
+  coro::Scheduler* scheduler_{nullptr};
+  coro::ResumeWork resume_work_;
   std::optional<base::Result<std::size_t>> result_;
 };
 

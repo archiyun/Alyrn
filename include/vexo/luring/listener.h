@@ -43,8 +43,8 @@ public:
   coro::Task<base::Result<LUringStream>> Accept();
   coro::Task<base::Result<void>> Close();
 
-  base::Result<net::InetAddress> LocalAddress() const noexcept;
-  int fd() const noexcept { return fd_; }
+  [[nodiscard]] base::Result<net::InetAddress> LocalAddress() const noexcept;
+  [[nodiscard]] int fd() const noexcept { return fd_; }
 
 private:
   class AcceptAwaiter;

@@ -21,7 +21,7 @@ public:
   SleepAwaiter(LUringLoop& loop, std::chrono::steady_clock::duration delay) noexcept
       : loop_(&loop), delay_(delay) {}
 
-  bool await_ready() const noexcept {
+  [[nodiscard]] bool await_ready() const noexcept {
     return delay_ <= std::chrono::steady_clock::duration::zero();
   }
 
@@ -32,7 +32,7 @@ public:
 private:
   LUringLoop* loop_;
   std::chrono::steady_clock::duration delay_;
-  std::expected<void, base::Error> error_{};
+  base::Result<void> error_{};
   coro::ResumeWork resume_work_{};
 };
 

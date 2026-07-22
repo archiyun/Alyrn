@@ -7,7 +7,6 @@
 #include <utility>
 
 #include "vexo/base/error.h"
-#include "vexo/coro/spawn.h"
 #include "vexo/luring/stream.h"
 
 namespace vexo::luring {
@@ -22,13 +21,16 @@ base::Result<void> LUringServer::Start() {
     return std::unexpected(base::make_errno(EALREADY));
   }
 
-  workers_ = std::make_unique<LUringWorkerGroup>(
-      listen_addr_, options_.worker_group_options, thread_init_callback_,
-      [this](LUringLoop& loop, LUringStream stream) {
-        if (session_handler_) {
-          coro::Spawn(loop, session_handler_(loop, std::move(stream))).Detach();
-        }
-      });
+  LUringWorkerGroup::ConnectionCallback connection_callback;
+  if (session_handler_) {
+    connection_callback = [this](LUringWorkerContext& context, LUringStream stream) {
+      return session_handler_(context, std::move(stream));
+    };
+  }
+
+  workers_ =
+      std::make_unique<LUringWorkerGroup>(listen_addr_, options_.worker_group_options,
+                                          thread_init_callback_, std::move(connection_callback));
   auto started = workers_->Start();
   if (!started.has_value()) {
     workers_.reset();

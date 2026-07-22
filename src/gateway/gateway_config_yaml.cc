@@ -198,8 +198,7 @@ void ParseServer(const YAML::Node& root, GatewayConfig* config) {
   ReadOptionalString(node, "host", "server", &config->server.host);
   YAML::Node port = Field(node, "port");
   if (port) config->server.port = ReadPort(port, "server.port");
-  ReadOptionalInt(node, "threads", "server", &config->server.threads, 0,
-                  std::numeric_limits<int>::max());
+  ReadOptionalInt(node, "threads", "server", &config->server.threads, 0, 1);
 }
 
 void ParseStatusEndpoint(const YAML::Node& root, GatewayConfig* config) {
@@ -459,7 +458,9 @@ GatewayConfig LoadGatewayConfigFromYaml(std::string_view path) {
 void ValidateGatewayConfig(const GatewayConfig& config) {
   if (config.server.name.empty()) Fail("server.name", "must not be empty");
   ValidateIPv4Endpoint(config.server.host, config.server.port, "server.listen");
-  if (config.server.threads < 0) Fail("server.threads", "must be >= 0");
+  if (config.server.threads < 0 || config.server.threads > 1) {
+    Fail("server.threads", "must be 0 or 1 until ReactorServer owns worker creation");
+  }
 
   if (config.status_endpoint.enabled) {
     ValidatePath(config.status_endpoint.path, "status_endpoint.path");

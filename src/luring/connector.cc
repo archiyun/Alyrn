@@ -144,6 +144,26 @@ private:
 
 }  // namespace
 
+LUringConnector::LUringConnector(LUringLoop* loop) noexcept : loop_(loop) {}
+
+base::Result<LUringConnector> LUringConnector::Create(LUringLoop* loop) noexcept {
+  if (loop == nullptr) {
+    return std::unexpected(base::make_errno(EINVAL));
+  }
+  return LUringConnector{loop};
+}
+
+LUringConnector::LUringConnector(LUringConnector&& other) noexcept : loop_(other.loop_) {
+  other.loop_ = nullptr;
+}
+
+LUringConnector& LUringConnector::operator=(LUringConnector&& other) noexcept {
+  if (this != &other) {
+    loop_ = std::exchange(other.loop_, nullptr);
+  }
+  return *this;
+}
+
 coro::Task<base::Result<LUringStream>> LUringConnector::Connect(std::string_view host,
                                                                 std::uint16_t port) {
   auto peer = ParseIPv4Address(host, port);

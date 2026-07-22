@@ -36,6 +36,7 @@ template <Returnable T>
 class TaskPromise final : public PromiseBase {
 public:
   VEXO_DELETE_COPY_MOVE(TaskPromise);
+
   TaskPromise() noexcept {}
   ~TaskPromise() {
     if (has_value_) {
@@ -126,13 +127,14 @@ private:
 template <Returnable T>
 class [[nodiscard]] Task {
 public:
+  VEXO_DELETE_COPY(Task);
+
   using promise_type = detail::TaskPromise<T>;
   using Handle = std::coroutine_handle<promise_type>;
 
   Task() noexcept = default;
   explicit Task(Handle handle) noexcept : handle_(handle) {}
 
-  VEXO_DELETE_COPY(Task);
   Task(Task&& other) noexcept : handle_(other.Release()) {}
   Task& operator=(Task&& other) noexcept {
     if (this != &other) {

@@ -16,7 +16,6 @@ BD="$ROOT/docs/benchmark"
 OUTDIR=${OUTDIR:-"$BD/results-envoy-vs-gateway"}
 GW_BIN="$ROOT/build-release/examples/gateway/demo_bench_gateway_multi"
 ENVOY_BIN=${ENVOY_BIN:-envoy}
-IO_THREADS=${IO_THREADS:-4}
 ENVOY_CONCURRENCY=${ENVOY_CONCURRENCY:-4}
 NOFILE=${NOFILE:-200000}
 
@@ -55,7 +54,7 @@ curl -fs http://127.0.0.1:9001/ >/dev/null
 echo "    upstream ok ($(curl -s http://127.0.0.1:9001/ | wc -c) bytes)"
 
 echo "==> starting runtime gateway (:8080)"
-UPSTREAM_PORTS=9001,9002,9003,9004 LB_ALGO=round_robin IO_THREADS="$IO_THREADS" PORT=8080 \
+UPSTREAM_PORTS=9001,9002,9003,9004 LB_ALGO=round_robin PORT=8080 \
   "$GW_BIN" > "$OUTDIR/gateway.log" 2>&1 &
 GW_PID=$!
 echo "$GW_PID" > /tmp/vexo_gateway.pid

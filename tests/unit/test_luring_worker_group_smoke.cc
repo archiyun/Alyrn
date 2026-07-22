@@ -135,19 +135,22 @@ bool CheckWorkerGroupStartStop() {
 
   std::atomic_size_t init_count{0};
   std::atomic_bool bad_thread{false};
-  std::atomic_bool null_listener{false};
+  std::atomic_bool invalid_index{false};
+  std::atomic_bool invalid_listener{false};
 
-  vexo::luring::LUringWorkerGroup group(
-      LoopbackAddress(*port), options,
-      [&](vexo::luring::LUringLoop* loop, vexo::luring::LUringListener* listener) {
-        if (!loop->IsInLoopThread()) {
-          bad_thread.store(true, std::memory_order_relaxed);
-        }
-        if (listener == nullptr) {
-          null_listener.store(true, std::memory_order_relaxed);
-        }
-        init_count.fetch_add(1, std::memory_order_relaxed);
-      });
+  vexo::luring::LUringWorkerGroup group(LoopbackAddress(*port), options,
+                                        [&](vexo::luring::LUringWorkerContext& context) {
+                                          if (!context.loop.IsInLoopThread()) {
+                                            bad_thread.store(true, std::memory_order_relaxed);
+                                          }
+                                          if (context.index >= 2) {
+                                            invalid_index.store(true, std::memory_order_relaxed);
+                                          }
+                                          if (context.listener.fd() < 0) {
+                                            invalid_listener.store(true, std::memory_order_relaxed);
+                                          }
+                                          init_count.fetch_add(1, std::memory_order_relaxed);
+                                        });
 
   auto started = group.Start();
   if (!started.has_value()) {
@@ -159,14 +162,16 @@ bool CheckWorkerGroupStartStop() {
     return false;
   }
 
-  bool ok =
-      Check(group.started(), "group should be started") &&
-      Check(group.size() == 2, "group size should be 2") &&
-      Check(init_count.load(std::memory_order_relaxed) == 2,
-            "init callback should run for each worker") &&
-      Check(!bad_thread.load(std::memory_order_relaxed),
-            "init callback should run in loop thread") &&
-      Check(!null_listener.load(std::memory_order_relaxed), "init callback received null listener");
+  bool ok = Check(group.started(), "group should be started") &&
+            Check(group.size() == 2, "group size should be 2") &&
+            Check(init_count.load(std::memory_order_relaxed) == 2,
+                  "init callback should run for each worker") &&
+            Check(!bad_thread.load(std::memory_order_relaxed),
+                  "init callback should run in loop thread") &&
+            Check(!invalid_index.load(std::memory_order_relaxed),
+                  "init callback received an invalid worker index") &&
+            Check(!invalid_listener.load(std::memory_order_relaxed),
+                  "init callback received an invalid listener");
 
   group.Stop();
 
@@ -198,14 +203,16 @@ bool CheckWorkerGroupAcceptCallback() {
   const auto listen_addr = LoopbackAddress(*port);
   vexo::luring::LUringWorkerGroup group(
       listen_addr, options, {},
-      [&](vexo::luring::LUringLoop& loop, vexo::luring::LUringStream stream) {
-        if (!loop.IsInLoopThread()) {
+      [&](vexo::luring::LUringWorkerContext& context,
+          vexo::luring::LUringStream stream) -> vexo::coro::Task<void> {
+        if (!context.loop.IsInLoopThread()) {
           bad_thread.store(true, std::memory_order_relaxed);
         }
         if (stream.fd() < 0) {
           invalid_stream.store(true, std::memory_order_relaxed);
         }
         connection_count.fetch_add(1, std::memory_order_relaxed);
+        co_return;
       });
 
   auto started = group.Start();

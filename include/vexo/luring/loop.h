@@ -8,6 +8,9 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <memory_resource>
+#include <new>
 #include <stop_token>
 #include <utility>
 
@@ -20,6 +23,7 @@
 #include "vexo/luring/options.h"
 #include "vexo/luring/ring.h"
 #include "vexo/luring/timer_queue.h"
+#include "vexo/time/timer_id.h"
 
 namespace vexo::luring {
 
@@ -33,12 +37,16 @@ namespace vexo::luring {
 //   target.PostMessage() -> source.Notify() -> target.HandleCqe() -> target.Schedule(work)
 class LUringLoop final : public coro::Scheduler {
 public:
+  VEXO_DELETE_COPY_MOVE(LUringLoop);
+
   // frame_resource is used for coroutine frames Scheduled by this loop.
   explicit LUringLoop(std::pmr::memory_resource* frame_resource = nullptr);
 
   // Initializes the underlying io_uring instance.
   // Must be called from the loop thread before Loop().
   [[nodiscard]] base::Result<void> Init(const LUringOptions& options) noexcept;
+
+  [[nodiscard]] bool initialized() const noexcept { return initialized_; }
 
   // Runs the event loop until cancellation or Quit().
   void Loop(std::stop_token token) noexcept;
@@ -61,11 +69,17 @@ public:
   [[nodiscard]] base::Result<time::TimerId> RunAfter(std::chrono::steady_clock::duration delay,
                                                      LUringTimerQueue::TimerCallback callback) {
     assert(IsInLoopThread());
+    if (!initialized_) {
+      return std::unexpected(base::make_errno(EBADF));
+    }
     return timers_.AddAfter(delay, std::move(callback));
   }
 
   base::Result<void> CancelTimer(time::TimerId id) noexcept {
     assert(IsInLoopThread());
+    if (!initialized_) {
+      return std::unexpected(base::make_errno(EBADF));
+    }
     return timers_.Cancel(id);
   }
 
@@ -79,9 +93,7 @@ public:
   }
 
   // Re-arms notification after a source-side msg_ring submission failure.
-  [[nodiscard]] bool RetryMessageNotification() noexcept {
-    return mailbox_.RetryNotification();
-  }
+  [[nodiscard]] bool RetryMessageNotification() noexcept { return mailbox_.RetryNotification(); }
 
   template <class F>
   std::size_t DrainMessages(F&& handler) {
@@ -99,6 +111,13 @@ public:
   template <class Prep>
   [[nodiscard]] base::Result<void> SubmitOp(LUringOp* op, Prep&& prep) noexcept {
     assert(IsInLoopThread());
+
+    if (!initialized_) {
+      return std::unexpected(base::make_errno(EBADF));
+    }
+    if (op == nullptr) {
+      return std::unexpected(base::make_errno(EINVAL));
+    }
 
     io_uring_sqe* sqe = ring_.GetSqe();
     if (sqe == nullptr) {
@@ -150,12 +169,16 @@ public:
   void RunUntilIdle();
 
 private:
+  [[nodiscard]] base::Result<std::size_t> WaitCompletionsFor(
+      std::chrono::nanoseconds timeout) noexcept;
+
   void HandleCqe(io_uring_cqe* cqe) noexcept;
   void HandleMailbox() noexcept;
 
   const int thread_id_;
   LUringRing ring_;
   coro::WorkQueue ready_;
+  bool initialized_{false};
 
   // Prepared SQEs that have not yet produced a CQE.
   std::size_t pending_submit_{0};

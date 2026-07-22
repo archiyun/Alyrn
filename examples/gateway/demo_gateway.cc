@@ -26,6 +26,9 @@
  *
  * ... 自行扩展
  */
+#include <cstdio>
+#include <utility>
+
 #include "vexo/gateway/gateway_server.h"
 #include "vexo/gateway/upstream.h"
 #include "vexo/gateway/upstream_peer.h"
@@ -55,12 +58,23 @@ int main() {
   vexo::net::EventLoop loop;
   vexo::net::EventLoopScheduler scheduler(&loop);
   vexo::net::InetAddress addr(8080);
-  vexo::net::ReactorListener listener(&loop, addr);
-  vexo::net::ReactorConnector connector(&loop);
+  auto listener_result = vexo::net::ReactorListener::Create(&loop, addr);
+  if (!listener_result.has_value()) {
+    std::fprintf(stderr, "failed to create listener: %s\n",
+                 listener_result.error().message().c_str());
+    return 1;
+  }
+  auto listener = std::move(*listener_result);
+
+  auto connector_result = vexo::net::ReactorConnector::Create(&loop);
+  if (!connector_result.has_value()) {
+    std::fprintf(stderr, "failed to create connector: %s\n",
+                 connector_result.error().message().c_str());
+    return 1;
+  }
+  auto connector = std::move(*connector_result);
   vexo::gateway::GatewayServer<vexo::net::ReactorListener, vexo::net::ReactorConnector> gw(
       listener, scheduler, "gateway", reg, connector);
-
-  gw.set_thread_num(4);
 
   // 直接路由
   gw.Get("/healthz", [](const vexo::http::HttpRequest&, vexo::http::HttpResponse& resp) {

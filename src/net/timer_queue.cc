@@ -5,9 +5,9 @@
 #include <sys/timerfd.h>
 #include <unistd.h>
 
-#include <cassert>
 #include <cstring>
 
+#include "vexo/base/check.h"
 #include "vexo/net/event_loop.h"
 #include "vexo/time/timer.h"
 #include "vexo/time/timer_id.h"
@@ -17,14 +17,13 @@ namespace vexo::net {
 
 static int CreateTimerfd() {
   int fd = ::timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
-  assert(fd >= 0 && "timerfd_create failed");
+  VEXO_CHECK(fd >= 0, "TimerQueue: timerfd_create failed");
   return fd;
 }
 
 static void set_timerfd(int timerfd, vexo::time::Timestamp expiration) {
   itimerspec new_value{};
-  int64_t us =
-      static_cast<int64_t>(TimeDifference(expiration, vexo::time::Timestamp::Now()) * 1e6);
+  int64_t us = static_cast<int64_t>(TimeDifference(expiration, vexo::time::Timestamp::Now()) * 1e6);
   if (us < 100) {
     us = 100;
   }
@@ -40,12 +39,8 @@ static void ReadTimerfd(int timerfd) {
 }
 
 TimerQueue::TimerQueue(EventLoop* loop)
-    : loop_(loop),
-      timerfd_(CreateTimerfd()),
-      timerfd_channel_(loop, timerfd_) {
-
-  timerfd_channel_.set_read_callback(
-      [this](vexo::time::Timestamp) { HandleRead(); });
+    : loop_(loop), timerfd_(CreateTimerfd()), timerfd_channel_(loop, timerfd_) {
+  timerfd_channel_.set_read_callback([this](vexo::time::Timestamp) { HandleRead(); });
   timerfd_channel_.EnableReading();
 }
 
@@ -61,13 +56,11 @@ TimerQueue::~TimerQueue() {
   }
 }
 
-vexo::time::TimerId TimerQueue::AddTimer(TimerCallback cb,
-                                            vexo::time::Timestamp when,
-                                            double interval) {
+vexo::time::TimerId TimerQueue::AddTimer(TimerCallback cb, vexo::time::Timestamp when,
+                                         double interval) {
   vexo::time::Timer* t = timer_pool_.Acquire(std::move(cb), when, interval);
   loop_->RunInLoop([this, t] {
-    bool earliest_changed =
-        timers_.empty() || t->expiration() < timers_.earliest()->expiration();
+    bool earliest_changed = timers_.empty() || t->expiration() < timers_.earliest()->expiration();
     timers_.Insert(t);
     active_timers_.Insert(t);
     if (earliest_changed) {
@@ -89,8 +82,7 @@ void TimerQueue::Cancel(vexo::time::TimerId id) {
 
     // Missed the registry: the target is mid-callback (its sequence was already
     // erased when it fired), so flag the in-flight timer instead of touching it.
-    if (processing_timer_ != nullptr &&
-        processing_timer_->sequence() == seq) {
+    if (processing_timer_ != nullptr && processing_timer_->sequence() == seq) {
       processing_timer_cancelled_ = true;
     }
   });
@@ -100,28 +92,25 @@ void TimerQueue::HandleRead() {
   vexo::time::Timestamp now = vexo::time::Timestamp::Now();
   ReadTimerfd(timerfd_);
 
-  timers_.PopWhile(
-      [now](const vexo::time::Timer* timer) {
-        return timer->expiration() <= now;
-      },
-      [this, now](vexo::time::Timer* timer) {
-        active_timers_.Erase(timer);
-        processing_timer_ = timer;
-        processing_timer_cancelled_ = false;
-        timer->Run();
+  timers_.PopWhile([now](const vexo::time::Timer* timer) { return timer->expiration() <= now; },
+                   [this, now](vexo::time::Timer* timer) {
+                     active_timers_.Erase(timer);
+                     processing_timer_ = timer;
+                     processing_timer_cancelled_ = false;
+                     timer->Run();
 
-        const bool cancelled = processing_timer_cancelled_;
-        processing_timer_ = nullptr;
-        processing_timer_cancelled_ = false;
+                     const bool cancelled = processing_timer_cancelled_;
+                     processing_timer_ = nullptr;
+                     processing_timer_cancelled_ = false;
 
-        if (timer->repeat() && !cancelled) {
-          timer->Restart(now);
-          timers_.Insert(timer);
-          active_timers_.Insert(timer);
-        } else {
-          timer_pool_.Release(timer);
-        }
-      });
+                     if (timer->repeat() && !cancelled) {
+                       timer->Restart(now);
+                       timers_.Insert(timer);
+                       active_timers_.Insert(timer);
+                     } else {
+                       timer_pool_.Release(timer);
+                     }
+                   });
 
   if (!timers_.empty()) {
     ResetTimerfd(timers_.earliest()->expiration());

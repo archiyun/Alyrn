@@ -3,11 +3,10 @@
 # repository's Nginx gateway configuration.
 #
 # The three targets proxy to the same four local Nginx upstreams. The runtime
-# Reactor gateway uses one EventLoop because
-# demo_bench_gateway_multi::set_thread_num is currently a compatibility no-op.
-# The fair Reactor/io_uring comparison therefore uses one EventLoop and one
-# io_uring worker/ring. Nginx keeps its existing four-worker configuration as
-# an independent reference and is not part of the fair runtime comparison.
+# Reactor gateway is explicitly a single EventLoop. The fair Reactor/io_uring
+# comparison therefore uses one EventLoop and one io_uring worker/ring. Nginx
+# keeps its existing four-worker configuration as an independent reference and
+# is not part of the fair runtime comparison.
 #
 # The fair runtime comparison also disables the io_uring-only frame pool and
 # uses the same upstream idle-pool size in both gateways.
@@ -99,7 +98,7 @@ run_target() {
 }
 
 echo "==> starting Reactor gateway (8080, one EventLoop)"
-UPSTREAM_PORTS=9001,9002,9003,9004 LB_ALGO=round_robin IO_THREADS=1 \
+UPSTREAM_PORTS=9001,9002,9003,9004 LB_ALGO=round_robin \
   MAX_CONCURRENT_REQUESTS="$MAX_CONCURRENT_REQUESTS" PORT=8080 \
   "$REACTOR_BIN" >"$OUTDIR/reactor.log" 2>&1 &
 REACTOR_PID=$!

@@ -47,6 +47,7 @@ private:
   void ProcessExpired() noexcept;
   void Reconcile() noexcept;
   void Arm(time::Timestamp deadline) noexcept;
+  void ArmFallback(time::Timestamp deadline) noexcept;
   void Update(time::Timestamp deadline) noexcept;
 
   LUringLoop* loop_;
@@ -57,6 +58,9 @@ private:
   LUringOp control_op_{.kind = LUringOpKind::kTimeout};
   bool driver_armed_{false};
   bool control_pending_{false};
+  bool control_is_fallback_{false};
+  bool fallback_armed_{false};
+  bool timeout_update_supported_{true};
   time::Timestamp driver_deadline_;
   time::Timestamp requested_deadline_;
 
@@ -64,6 +68,7 @@ private:
   // must therefore outlive SubmitOp() and remain valid until the SQE reaches
   // the kernel, rather than living in Arm()/Update()'s stack frames.
   __kernel_timespec driver_timespec_{};
+  __kernel_timespec fallback_timespec_{};
   __kernel_timespec update_timespec_{};
 };
 

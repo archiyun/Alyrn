@@ -9,7 +9,7 @@
 //
 // 启动（3个终端）：
 //   终端1: 启动一个 HTTP 上游服务监听 9001
-//   终端2: UPSTREAM_PORT=9001 IO_THREADS=4 PORT=8080 ./build-tests/examples/demo_bench_gateway
+//   终端2: UPSTREAM_PORT=9001 PORT=8080 ./build-tests/examples/demo_bench_gateway
 //
 // 验证 (终端3)：
 //   curl -i http://127.0.0.1:8080/ # 网关 端口 8080
@@ -81,6 +81,7 @@ NGINXEOF
 #include <cstdio>
 #include <cstdlib>
 #include <thread>
+#include <utility>
 
 #include "vexo/gateway/gateway_server.h"
 #include "vexo/gateway/upstream.h"
@@ -111,7 +112,6 @@ int main() {
     const char* v = std::getenv(k);
     return v ? std::atoi(v) : def;
   };
-  const int io_threads = env_int("IO_THREADS", 4);
   const uint16_t listen_port = static_cast<uint16_t>(env_int("PORT", 8080));
   const uint16_t upstream_port = static_cast<uint16_t>(env_int("UPSTREAM_PORT", 9001));
 
@@ -131,11 +131,24 @@ int main() {
   // 2. 网关
   vexo::net::EventLoop loop;
   vexo::net::EventLoopScheduler scheduler(&loop);
-  vexo::net::ReactorListener listener(&loop, vexo::net::InetAddress(listen_port));
-  vexo::net::ReactorConnector connector(&loop);
+  auto listener_result =
+      vexo::net::ReactorListener::Create(&loop, vexo::net::InetAddress(listen_port));
+  if (!listener_result.has_value()) {
+    std::fprintf(stderr, "failed to create listener: %s\n",
+                 listener_result.error().message().c_str());
+    return 1;
+  }
+  auto listener = std::move(*listener_result);
+
+  auto connector_result = vexo::net::ReactorConnector::Create(&loop);
+  if (!connector_result.has_value()) {
+    std::fprintf(stderr, "failed to create connector: %s\n",
+                 connector_result.error().message().c_str());
+    return 1;
+  }
+  auto connector = std::move(*connector_result);
   vexo::gateway::GatewayServer<vexo::net::ReactorListener, vexo::net::ReactorConnector> gw(
       listener, scheduler, "BenchGateway", reg, connector);
-  gw.set_thread_num(io_threads);
   gw.set_pool_config({.max_idle_per_peer = 64});  // 与 nginx keepalive 64 对齐
 
   // 3. 代理路由
@@ -145,8 +158,8 @@ int main() {
   stats_thr.detach();
 
   gw.Start();
-  std::printf("BenchGateway listen=%u upstream=127.0.0.1:%u io_threads=%d\n", listen_port,
-              upstream_port, io_threads);
+  std::printf("BenchGateway listen=%u upstream=127.0.0.1:%u event_loop_threads=1\n", listen_port,
+              upstream_port);
   loop.Loop();
   return 0;
 }

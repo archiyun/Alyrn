@@ -130,9 +130,10 @@ int main() {
   };
 
   vexo::luring::LUringServer server(*listen_addr, std::move(options));
-  server.set_session_handler([](vexo::luring::LUringLoop&, vexo::luring::LUringStream stream) {
-    return EchoSession(std::move(stream));
-  });
+  server.set_session_handler(
+      [](vexo::luring::LUringWorkerContext&, vexo::luring::LUringStream stream) {
+        return EchoSession(std::move(stream));
+      });
 
   auto started = server.Start();
   if (!started.has_value()) {
