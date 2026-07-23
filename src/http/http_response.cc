@@ -1,10 +1,10 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "vexo/http/http_response.h"
+#include "coropact/http/http_response.h"
 
 #include "header_utils.h"
 
-namespace vexo::http {
+namespace coropact::http {
 
 HttpResponse::HttpResponse(bool close_connection)
     : close_connection_(close_connection) {}
@@ -66,4 +66,4 @@ std::string HttpResponse::ToString() const {
   return out;
 }
 
-}  // namespace vexo::http
+}  // namespace coropact::http

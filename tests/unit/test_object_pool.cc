@@ -3,7 +3,7 @@
 #include <atomic>
 #include <string>
 
-#include "vexo/memory/object_pool.h"
+#include "coropact/memory/object_pool.h"
 
 namespace {
 
@@ -34,7 +34,7 @@ TEST(ObjectPoolTest, AcquireAndReleaseManageLifetime) {
     TrackedObject::ctor_count = 0;
     TrackedObject::dtor_count = 0;
 
-    vexo::memory::ObjectPool<TrackedObject, 2> pool;
+    coropact::memory::ObjectPool<TrackedObject, 2> pool;
 
     auto* first = pool.Acquire(1, "alpha");
     auto* second = pool.Acquire(2, "beta");
@@ -56,7 +56,7 @@ TEST(ObjectPoolTest, AcquireAndReleaseManageLifetime) {
 }
 
 TEST(ObjectPoolTest, AcquireFallsBackToHeapWhenExhausted) {
-    vexo::memory::ObjectPool<TrackedObject, 1> pool;
+    coropact::memory::ObjectPool<TrackedObject, 1> pool;
 
     auto* first = pool.Acquire(7, "only");
     auto* second = pool.Acquire(8, "extra");
@@ -76,7 +76,7 @@ TEST(ObjectPoolTest, AcquireScopedReturnsObjectAutomatically) {
     TrackedObject::ctor_count = 0;
     TrackedObject::dtor_count = 0;
 
-    vexo::memory::ObjectPool<TrackedObject, 1> pool;
+    coropact::memory::ObjectPool<TrackedObject, 1> pool;
 
     {
         auto scoped = pool.AcquireScoped(9, "scoped");
@@ -93,7 +93,7 @@ TEST(ObjectPoolTest, AcquireScopedReturnsObjectAutomatically) {
 }
 
 TEST(ObjectPoolTest, OwnsRecognizesPoolPointers) {
-    vexo::memory::ObjectPool<TrackedObject, 1> pool;
+    coropact::memory::ObjectPool<TrackedObject, 1> pool;
 
     auto* obj = pool.Acquire(11, "owned");
     ASSERT_NE(obj, nullptr);

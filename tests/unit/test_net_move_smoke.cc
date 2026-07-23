@@ -13,16 +13,16 @@
 #include <type_traits>
 #include <utility>
 
-#include "vexo/base/error.h"
-#include "vexo/coro/spawn.h"
-#include "vexo/coro/task.h"
-#include "vexo/net/channel.h"
-#include "vexo/net/event_loop.h"
-#include "vexo/net/event_loop_scheduler.h"
-#include "vexo/net/inet_address.h"
-#include "vexo/net/reactor_listener.h"
-#include "vexo/net/reactor_stream.h"
-#include "vexo/net/socket.h"
+#include "coropact/base/error.h"
+#include "coropact/coro/spawn.h"
+#include "coropact/coro/task.h"
+#include "coropact/net/channel.h"
+#include "coropact/net/event_loop.h"
+#include "coropact/net/event_loop_scheduler.h"
+#include "coropact/net/inet_address.h"
+#include "coropact/net/reactor_listener.h"
+#include "coropact/net/reactor_stream.h"
+#include "coropact/net/socket.h"
 
 namespace {
 
@@ -39,7 +39,7 @@ bool MakeSocketPair(int fds[2]) {
 }
 
 bool TestChannelMove() {
-  vexo::net::EventLoop loop;
+  coropact::net::EventLoop loop;
   int first[2]{-1, -1};
   int second[2]{-1, -1};
   if (!Check(MakeSocketPair(first) && MakeSocketPair(second), "socketpair creation failed")) {
@@ -53,16 +53,16 @@ bool TestChannelMove() {
   }
 
   bool read_called = false;
-  vexo::net::Channel source(&loop, first[0]);
+  coropact::net::Channel source(&loop, first[0]);
   source.set_edge_triggered(true);
-  source.set_read_callback([&](vexo::time::Timestamp) {
+  source.set_read_callback([&](coropact::time::Timestamp) {
     char byte = 0;
     ::read(first[0], &byte, sizeof(byte));
     read_called = true;
     loop.Quit();
   });
 
-  vexo::net::Channel moved(std::move(source));
+  coropact::net::Channel moved(std::move(source));
   if (!Check(source.fd() == -1 && moved.fd() == first[0],
              "Channel move construction should transfer the fd association") ||
       !Check(moved.IsEdgeTriggered(), "Channel move construction should transfer mode")) {
@@ -73,7 +73,7 @@ bool TestChannelMove() {
     return false;
   }
 
-  vexo::net::Channel target(&loop, second[0]);
+  coropact::net::Channel target(&loop, second[0]);
   target = std::move(moved);
   ::close(second[0]);
 
@@ -104,9 +104,9 @@ bool TestSocketMove() {
     return false;
   }
 
-  vexo::net::Socket source(first[0]);
-  vexo::net::Socket moved(std::move(source));
-  vexo::net::Socket target(second[0]);
+  coropact::net::Socket source(first[0]);
+  coropact::net::Socket moved(std::move(source));
+  coropact::net::Socket target(second[0]);
   const int replaced_fd = target.fd();
   target = std::move(moved);
 
@@ -121,22 +121,22 @@ bool TestSocketMove() {
                "Socket move operations should transfer ownership and close the old target fd");
 }
 
-using ReadResult = vexo::base::Result<std::size_t>;
-using AcceptResult = vexo::base::Result<vexo::net::ReactorListener::Stream>;
+using ReadResult = coropact::base::Result<std::size_t>;
+using AcceptResult = coropact::base::Result<coropact::net::ReactorListener::Stream>;
 
-static_assert(std::is_move_constructible_v<vexo::net::ReactorStream>);
-static_assert(std::is_move_assignable_v<vexo::net::ReactorStream>);
-static_assert(std::is_move_constructible_v<vexo::net::ReactorListener>);
-static_assert(std::is_move_assignable_v<vexo::net::ReactorListener>);
+static_assert(std::is_move_constructible_v<coropact::net::ReactorStream>);
+static_assert(std::is_move_assignable_v<coropact::net::ReactorStream>);
+static_assert(std::is_move_constructible_v<coropact::net::ReactorListener>);
+static_assert(std::is_move_assignable_v<coropact::net::ReactorListener>);
 
-vexo::coro::Task<void> ReadOnce(vexo::net::ReactorStream* stream, vexo::net::EventLoop* loop,
+coropact::coro::Task<void> ReadOnce(coropact::net::ReactorStream* stream, coropact::net::EventLoop* loop,
                                 std::array<std::byte, 16>* buffer,
                                 std::optional<ReadResult>* result) {
   result->emplace(co_await stream->ReadSome(*buffer));
   loop->Quit();
 }
 
-vexo::coro::Task<void> AcceptOnce(vexo::net::ReactorListener* listener, vexo::net::EventLoop* loop,
+coropact::coro::Task<void> AcceptOnce(coropact::net::ReactorListener* listener, coropact::net::EventLoop* loop,
                                   std::optional<AcceptResult>* result) {
   result->emplace(co_await listener->Accept());
   loop->Quit();
@@ -159,12 +159,12 @@ bool TestReactorStreamMove() {
   std::optional<ReadResult> constructed_result;
   std::array<std::byte, 16> constructed_buffer{};
   {
-    vexo::net::EventLoop loop;
-    vexo::net::ReactorStream source(&loop, source_pair[0]);
-    vexo::net::ReactorStream moved(std::move(source));
-    vexo::net::EventLoopScheduler scheduler(&loop);
+    coropact::net::EventLoop loop;
+    coropact::net::ReactorStream source(&loop, source_pair[0]);
+    coropact::net::ReactorStream moved(std::move(source));
+    coropact::net::EventLoopScheduler scheduler(&loop);
 
-    vexo::coro::Spawn(scheduler, ReadOnce(&moved, &loop, &constructed_buffer, &constructed_result))
+    coropact::coro::Spawn(scheduler, ReadOnce(&moved, &loop, &constructed_buffer, &constructed_result))
         .Detach();
     loop.QueueInLoop([peer_fd = source_pair[1]] { ::write(peer_fd, "c", 1); });
     loop.RunAfter(0.2, [&] { loop.Quit(); });
@@ -183,13 +183,13 @@ bool TestReactorStreamMove() {
   std::optional<ReadResult> assigned_result;
   std::array<std::byte, 16> assigned_buffer{};
   {
-    vexo::net::EventLoop loop;
-    vexo::net::ReactorStream source(&loop, target_pair[0]);
-    vexo::net::ReactorStream target(&loop, source_pair[1]);
+    coropact::net::EventLoop loop;
+    coropact::net::ReactorStream source(&loop, target_pair[0]);
+    coropact::net::ReactorStream target(&loop, source_pair[1]);
     target = std::move(source);
-    vexo::net::EventLoopScheduler scheduler(&loop);
+    coropact::net::EventLoopScheduler scheduler(&loop);
 
-    vexo::coro::Spawn(scheduler, ReadOnce(&target, &loop, &assigned_buffer, &assigned_result))
+    coropact::coro::Spawn(scheduler, ReadOnce(&target, &loop, &assigned_buffer, &assigned_result))
         .Detach();
     loop.QueueInLoop([peer_fd = target_pair[1]] { ::write(peer_fd, "a", 1); });
     loop.RunAfter(0.2, [&] { loop.Quit(); });
@@ -202,7 +202,7 @@ bool TestReactorStreamMove() {
       "ReactorStream move assignment lost the read callback");
 }
 
-int ConnectNonBlocking(const vexo::net::InetAddress& address) {
+int ConnectNonBlocking(const coropact::net::InetAddress& address) {
   int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
   if (fd < 0) {
     return -1;
@@ -219,8 +219,8 @@ int ConnectNonBlocking(const vexo::net::InetAddress& address) {
 }
 
 bool TestReactorListenerMove() {
-  vexo::net::EventLoop loop;
-  vexo::net::ReactorListener source(&loop, vexo::net::InetAddress(0));
+  coropact::net::EventLoop loop;
+  coropact::net::ReactorListener source(&loop, coropact::net::InetAddress(0));
   auto source_address = source.LocalAddress();
   if (!Check(source_address.has_value(), "ReactorListener local address lookup failed")) {
     return false;
@@ -229,15 +229,15 @@ bool TestReactorListenerMove() {
   std::optional<AcceptResult> accepted;
   int client_fd = -1;
   {
-    vexo::net::ReactorListener moved(std::move(source));
+    coropact::net::ReactorListener moved(std::move(source));
     auto moved_address = moved.LocalAddress();
     if (!Check(moved_address.has_value() && moved_address->ToPort() == source_address->ToPort(),
                "ReactorListener move construction did not transfer the socket")) {
       return false;
     }
 
-    vexo::net::EventLoopScheduler scheduler(&loop);
-    vexo::coro::Spawn(scheduler, AcceptOnce(&moved, &loop, &accepted)).Detach();
+    coropact::net::EventLoopScheduler scheduler(&loop);
+    coropact::coro::Spawn(scheduler, AcceptOnce(&moved, &loop, &accepted)).Detach();
     loop.QueueInLoop([&] { client_fd = ConnectNonBlocking(*moved_address); });
     loop.RunAfter(0.2, [&] { loop.Quit(); });
     loop.Loop();
@@ -252,9 +252,9 @@ bool TestReactorListenerMove() {
     return false;
   }
 
-  vexo::net::ReactorListener assigned_source(&loop, vexo::net::InetAddress(0));
+  coropact::net::ReactorListener assigned_source(&loop, coropact::net::InetAddress(0));
   auto assigned_source_address = assigned_source.LocalAddress();
-  vexo::net::ReactorListener assigned_target(&loop, vexo::net::InetAddress(0));
+  coropact::net::ReactorListener assigned_target(&loop, coropact::net::InetAddress(0));
   assigned_target = std::move(assigned_source);
   auto assigned_target_address = assigned_target.LocalAddress();
   return Check(assigned_source_address.has_value() && assigned_target_address.has_value() &&

@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "vexo/luring/worker.h"
+#include "coropact/luring/worker.h"
 
 #include <pthread.h>
 #include <sched.h>
@@ -12,13 +12,13 @@
 #include <stop_token>
 #include <utility>
 
-#include "vexo/base/error.h"
-#include "vexo/coro/spawn.h"
-#include "vexo/coro/task.h"
-#include "vexo/luring/listener.h"
-#include "vexo/luring/loop.h"
+#include "coropact/base/error.h"
+#include "coropact/coro/spawn.h"
+#include "coropact/coro/task.h"
+#include "coropact/luring/listener.h"
+#include "coropact/luring/loop.h"
 
-namespace vexo::luring {
+namespace coropact::luring {
 
 namespace {
 
@@ -184,4 +184,4 @@ void LUringWorker::WorkLoop(std::stop_token token) noexcept {
   CloseListenerAndDrain(loop, *listener);
 }
 
-}  // namespace vexo::luring
+}  // namespace coropact::luring

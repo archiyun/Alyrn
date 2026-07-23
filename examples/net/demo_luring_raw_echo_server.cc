@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 //
-// Raw TCP echo server built directly on vexo_luring.
+// Raw TCP echo server built directly on coropact_luring.
 //
 // The session only performs io_uring accept/read/write operations. There is no
 // HTTP parser, gateway, upstream connection, or application timer involved.
@@ -21,14 +21,14 @@
 #include <thread>
 #include <vector>
 
-#if defined(VEXO_ENABLE_CTRACK)
+#if defined(COROPACT_ENABLE_CTRACK)
 #include <ctrack.hpp>
 #endif
 
-#include "vexo/coro/frame_allocator.h"
-#include "vexo/luring/server.h"
-#include "vexo/net/inet_address.h"
-#include "vexo/net/net_utils.h"
+#include "coropact/coro/frame_allocator.h"
+#include "coropact/luring/server.h"
+#include "coropact/net/inet_address.h"
+#include "coropact/net/net_utils.h"
 
 namespace {
 
@@ -59,7 +59,7 @@ bool EnvBool(const char* key, bool fallback) {
   return value != nullptr ? std::atoi(value) != 0 : fallback;
 }
 
-vexo::coro::Task<void> EchoSession(vexo::luring::LUringStream stream) {
+coropact::coro::Task<void> EchoSession(coropact::luring::LUringStream stream) {
   std::array<std::byte, 16 * 1024> buffer{};
 
   for (;;) {
@@ -110,22 +110,22 @@ int main() {
     return 1;
   }
 
-  auto listen_addr = vexo::net::ParseIPv4Address(bind_host, port);
+  auto listen_addr = coropact::net::ParseIPv4Address(bind_host, port);
   if (!listen_addr.has_value()) {
     std::fprintf(stderr, "invalid BIND_HOST '%s': %s\n", bind_host,
                  listen_addr.error().message().c_str());
     return 1;
   }
 
-  std::vector<std::unique_ptr<vexo::coro::CoroFramePoolResource>> frame_pools;
+  std::vector<std::unique_ptr<coropact::coro::CoroFramePoolResource>> frame_pools;
   if (frame_pool) {
     frame_pools.reserve(workers);
     for (std::size_t i = 0; i < workers; ++i) {
-      frame_pools.push_back(std::make_unique<vexo::coro::CoroFramePoolResource>());
+      frame_pools.push_back(std::make_unique<coropact::coro::CoroFramePoolResource>());
     }
   }
 
-  vexo::luring::LUringServerOptions options;
+  coropact::luring::LUringServerOptions options;
   options.worker_group_options.worker_num = workers;
   options.worker_group_options.worker_options.loop_options.entries = entries;
   options.worker_group_options.worker_options.loop_options.max_ready_work_per_turn = ready_budget;
@@ -148,9 +148,9 @@ int main() {
     return index < frame_pools.size() ? frame_pools[index].get() : nullptr;
   };
 
-  vexo::luring::LUringServer server(*listen_addr, std::move(options));
+  coropact::luring::LUringServer server(*listen_addr, std::move(options));
   server.set_session_handler(
-      [](vexo::luring::LUringWorkerContext&, vexo::luring::LUringStream stream) {
+      [](coropact::luring::LUringWorkerContext&, coropact::luring::LUringStream stream) {
         return EchoSession(std::move(stream));
       });
 
@@ -172,7 +172,7 @@ int main() {
   while (!g_stop.load(std::memory_order_relaxed)) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
-#if defined(VEXO_ENABLE_CTRACK)
+#if defined(COROPACT_ENABLE_CTRACK)
   std::fputs(ctrack::result_as_string().c_str(), stdout);
 #endif
   server.Stop();

@@ -7,9 +7,9 @@
 #include <span>
 #include <thread>
 
-#include "vexo/base/error.h"
-#include "vexo/coro/task.h"
-#include "vexo/gateway/upstream_conn_pool.h"
+#include "coropact/base/error.h"
+#include "coropact/coro/task.h"
+#include "coropact/gateway/upstream_conn_pool.h"
 
 namespace {
 
@@ -19,35 +19,35 @@ public:
 
   int id() const noexcept { return id_; }
 
-  vexo::coro::Task<vexo::base::Result<std::size_t>> ReadSome(std::span<std::byte>) {
+  coropact::coro::Task<coropact::base::Result<std::size_t>> ReadSome(std::span<std::byte>) {
     co_return std::size_t{0};
   }
 
-  vexo::coro::Task<vexo::base::Result<std::size_t>> WriteSome(std::span<const std::byte>) {
+  coropact::coro::Task<coropact::base::Result<std::size_t>> WriteSome(std::span<const std::byte>) {
     co_return std::size_t{0};
   }
 
-  vexo::coro::Task<vexo::base::Result<void>> Shutdown() { co_return vexo::base::Result<void>{}; }
-  vexo::coro::Task<vexo::base::Result<void>> Close() { co_return vexo::base::Result<void>{}; }
+  coropact::coro::Task<coropact::base::Result<void>> Shutdown() { co_return coropact::base::Result<void>{}; }
+  coropact::coro::Task<coropact::base::Result<void>> Close() { co_return coropact::base::Result<void>{}; }
 
 private:
   int id_;
 };
 
-using Pool = vexo::gateway::UpstreamStreamPool<FakeStream>;
+using Pool = coropact::gateway::UpstreamStreamPool<FakeStream>;
 
 bool Expect(bool condition, const char* message) {
   if (!condition) std::cerr << "[FAIL] " << message << '\n';
   return condition;
 }
 
-std::optional<FakeStream> Take(Pool& pool, const vexo::gateway::UpstreamPeer* peer) {
+std::optional<FakeStream> Take(Pool& pool, const coropact::gateway::UpstreamPeer* peer) {
   return pool.Acquire(peer);
 }
 
 bool TestPeerIsolationAndCapacity() {
-  vexo::gateway::UpstreamPeer first({.name = "first", .host = "127.0.0.1", .port = 9001});
-  vexo::gateway::UpstreamPeer second({.name = "second", .host = "127.0.0.1", .port = 9002});
+  coropact::gateway::UpstreamPeer first({.name = "first", .host = "127.0.0.1", .port = 9001});
+  coropact::gateway::UpstreamPeer second({.name = "second", .host = "127.0.0.1", .port = 9002});
   Pool pool({.max_idle_per_peer = 2});
 
   pool.Release(&first, std::optional<FakeStream>{FakeStream(1)});
@@ -71,7 +71,7 @@ bool TestPeerIsolationAndCapacity() {
 }
 
 bool TestZeroCapacityAndStaleEviction() {
-  vexo::gateway::UpstreamPeer peer({.name = "peer", .host = "127.0.0.1", .port = 9001});
+  coropact::gateway::UpstreamPeer peer({.name = "peer", .host = "127.0.0.1", .port = 9001});
 
   Pool disabled({.max_idle_per_peer = 0});
   disabled.Release(&peer, std::optional<FakeStream>{FakeStream(1)});
@@ -85,8 +85,8 @@ bool TestZeroCapacityAndStaleEviction() {
 }
 
 bool TestSharedCapacity() {
-  vexo::gateway::UpstreamPeer first({.name = "first", .host = "127.0.0.1", .port = 9001});
-  vexo::gateway::UpstreamPeer second({.name = "second", .host = "127.0.0.1", .port = 9002});
+  coropact::gateway::UpstreamPeer first({.name = "first", .host = "127.0.0.1", .port = 9001});
+  coropact::gateway::UpstreamPeer second({.name = "second", .host = "127.0.0.1", .port = 9002});
   Pool pool({.max_idle_per_peer = 0, .max_idle_total = 3});
 
   pool.Release(&first, std::optional<FakeStream>{FakeStream(1)});

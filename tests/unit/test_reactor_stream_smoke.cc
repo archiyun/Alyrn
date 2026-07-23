@@ -15,21 +15,21 @@
 #include <string>
 #include <vector>
 
-#include "vexo/base/error.h"
-#include "vexo/coro/scheduler.h"
-#include "vexo/coro/spawn.h"
-#include "vexo/coro/task.h"
-#include "vexo/io/stream_algorithms.h"
-#include "vexo/net/event_loop.h"
-#include "vexo/net/event_loop_scheduler.h"
-#include "vexo/net/reactor_stream.h"
+#include "coropact/base/error.h"
+#include "coropact/coro/scheduler.h"
+#include "coropact/coro/spawn.h"
+#include "coropact/coro/task.h"
+#include "coropact/io/stream_algorithms.h"
+#include "coropact/net/event_loop.h"
+#include "coropact/net/event_loop_scheduler.h"
+#include "coropact/net/reactor_stream.h"
 
 namespace {
 
-using ReadResult = vexo::base::Result<std::size_t>;
-using WriteResult = vexo::base::Result<std::size_t>;
+using ReadResult = coropact::base::Result<std::size_t>;
+using WriteResult = coropact::base::Result<std::size_t>;
 
-static_assert(vexo::io::AsyncStream<vexo::net::ReactorStream>);
+static_assert(coropact::io::AsyncStream<coropact::net::ReactorStream>);
 
 bool Check(bool condition, const char* message) {
   if (!condition) {
@@ -43,7 +43,7 @@ bool MakeSocketPair(int sv[2]) {
   return ::socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0, sv) == 0;
 }
 
-std::string Gather(vexo::io::Buffer& buffer) {
+std::string Gather(coropact::io::Buffer& buffer) {
   std::string out;
   for (const iovec& iov : buffer.ReadableIov(32)) {
     out.append(static_cast<const char*>(iov.iov_base), iov.iov_len);
@@ -51,63 +51,63 @@ std::string Gather(vexo::io::Buffer& buffer) {
   return out;
 }
 
-vexo::coro::Task<void> ReadOnce(vexo::net::ReactorStream* stream, vexo::net::EventLoop* loop,
-                                vexo::net::EventLoopScheduler* scheduler,
+coropact::coro::Task<void> ReadOnce(coropact::net::ReactorStream* stream, coropact::net::EventLoop* loop,
+                                coropact::net::EventLoopScheduler* scheduler,
                                 std::array<std::byte, 16>* buffer, std::optional<ReadResult>* out,
                                 bool* resumed_with_scheduler) {
   ReadResult result = co_await stream->ReadSome(*buffer);
-  *resumed_with_scheduler = vexo::coro::Scheduler::Current() == scheduler;
+  *resumed_with_scheduler = coropact::coro::Scheduler::Current() == scheduler;
   out->emplace(std::move(result));
   loop->Quit();
 }
 
-vexo::coro::Task<void> ReadBufferOnce(vexo::net::ReactorStream* stream, vexo::net::EventLoop* loop,
-                                      vexo::net::EventLoopScheduler* scheduler,
-                                      vexo::io::Buffer* buffer, std::optional<ReadResult>* out,
+coropact::coro::Task<void> ReadBufferOnce(coropact::net::ReactorStream* stream, coropact::net::EventLoop* loop,
+                                      coropact::net::EventLoopScheduler* scheduler,
+                                      coropact::io::Buffer* buffer, std::optional<ReadResult>* out,
                                       bool* resumed_with_scheduler) {
   ReadResult result = co_await stream->ReadSome(*buffer, 32);
-  *resumed_with_scheduler = vexo::coro::Scheduler::Current() == scheduler;
+  *resumed_with_scheduler = coropact::coro::Scheduler::Current() == scheduler;
   out->emplace(std::move(result));
   loop->Quit();
 }
 
-vexo::coro::Task<void> WriteOnce(vexo::net::ReactorStream* stream, vexo::net::EventLoop* loop,
-                                 vexo::net::EventLoopScheduler* scheduler,
+coropact::coro::Task<void> WriteOnce(coropact::net::ReactorStream* stream, coropact::net::EventLoop* loop,
+                                 coropact::net::EventLoopScheduler* scheduler,
                                  std::span<const std::byte> payload,
                                  std::optional<WriteResult>* out, bool* resumed_with_scheduler) {
   WriteResult result = co_await stream->WriteSome(payload);
-  *resumed_with_scheduler = vexo::coro::Scheduler::Current() == scheduler;
+  *resumed_with_scheduler = coropact::coro::Scheduler::Current() == scheduler;
   out->emplace(std::move(result));
   loop->Quit();
 }
 
-vexo::coro::Task<void> WriteBufferOnce(vexo::net::ReactorStream* stream, vexo::net::EventLoop* loop,
-                                       vexo::net::EventLoopScheduler* scheduler,
-                                       vexo::io::Buffer* buffer, std::optional<WriteResult>* out,
+coropact::coro::Task<void> WriteBufferOnce(coropact::net::ReactorStream* stream, coropact::net::EventLoop* loop,
+                                       coropact::net::EventLoopScheduler* scheduler,
+                                       coropact::io::Buffer* buffer, std::optional<WriteResult>* out,
                                        bool* resumed_with_scheduler) {
   WriteResult result = co_await stream->WriteSome(*buffer);
-  *resumed_with_scheduler = vexo::coro::Scheduler::Current() == scheduler;
+  *resumed_with_scheduler = coropact::coro::Scheduler::Current() == scheduler;
   out->emplace(std::move(result));
   loop->Quit();
 }
 
-vexo::coro::Task<void> EchoServer(vexo::net::ReactorStream* stream,
+coropact::coro::Task<void> EchoServer(coropact::net::ReactorStream* stream,
                                   std::array<std::byte, 64>* scratch,
-                                  std::optional<vexo::base::Result<void>>* out, int* done_count,
-                                  vexo::net::EventLoop* loop) {
-  out->emplace(co_await vexo::io::EchoOnce(*stream, *scratch));
+                                  std::optional<coropact::base::Result<void>>* out, int* done_count,
+                                  coropact::net::EventLoop* loop) {
+  out->emplace(co_await coropact::io::EchoOnce(*stream, *scratch));
   if (++(*done_count) == 2) {
     loop->Quit();
   }
 }
 
-vexo::coro::Task<void> EchoClient(vexo::net::ReactorStream* stream,
+coropact::coro::Task<void> EchoClient(coropact::net::ReactorStream* stream,
                                   std::span<const std::byte> payload,
                                   std::array<std::byte, 64>* received,
-                                  std::optional<vexo::base::Result<void>>* out,
+                                  std::optional<coropact::base::Result<void>>* out,
                                   std::size_t* received_size, int* done_count,
-                                  vexo::net::EventLoop* loop) {
-  vexo::base::Result<void> write_result = co_await vexo::io::WriteAll(*stream, payload);
+                                  coropact::net::EventLoop* loop) {
+  coropact::base::Result<void> write_result = co_await coropact::io::WriteAll(*stream, payload);
   if (!write_result.has_value()) {
     out->emplace(std::unexpected(write_result.error()));
   } else {
@@ -125,12 +125,12 @@ vexo::coro::Task<void> EchoClient(vexo::net::ReactorStream* stream,
   }
 }
 
-vexo::coro::Task<void> CloseThenSubmit(vexo::net::ReactorStream* stream, vexo::net::EventLoop* loop,
+coropact::coro::Task<void> CloseThenSubmit(coropact::net::ReactorStream* stream, coropact::net::EventLoop* loop,
                                        std::array<std::byte, 16>* read_buffer,
                                        std::span<const std::byte> write_buffer,
                                        std::optional<ReadResult>* read_result,
                                        std::optional<WriteResult>* write_result) {
-  vexo::base::Result<void> close_result = co_await stream->Close();
+  coropact::base::Result<void> close_result = co_await stream->Close();
   if (!close_result.has_value()) {
     read_result->emplace(std::unexpected(close_result.error()));
     write_result->emplace(std::unexpected(close_result.error()));
@@ -156,15 +156,15 @@ bool CheckImmediateRead() {
     return false;
   }
 
-  vexo::net::EventLoop loop;
-  vexo::net::ReactorStream stream(&loop, sv[0]);
-  vexo::net::EventLoopScheduler scheduler(&loop);
+  coropact::net::EventLoop loop;
+  coropact::net::ReactorStream stream(&loop, sv[0]);
+  coropact::net::EventLoopScheduler scheduler(&loop);
 
   std::array<std::byte, 16> buffer{};
   std::optional<ReadResult> result;
   bool resumed_with_scheduler = false;
 
-  vexo::coro::Spawn(scheduler,
+  coropact::coro::Spawn(scheduler,
                     ReadOnce(&stream, &loop, &scheduler, &buffer, &result, &resumed_with_scheduler))
       .Detach();
   loop.Loop();
@@ -186,16 +186,16 @@ bool CheckImmediateWrite() {
     return false;
   }
 
-  vexo::net::EventLoop loop;
-  vexo::net::ReactorStream stream(&loop, sv[0]);
-  vexo::net::EventLoopScheduler scheduler(&loop);
+  coropact::net::EventLoop loop;
+  coropact::net::ReactorStream stream(&loop, sv[0]);
+  coropact::net::EventLoopScheduler scheduler(&loop);
 
   const char payload[] = "write";
   auto bytes = std::as_bytes(std::span(payload, sizeof(payload) - 1));
   std::optional<WriteResult> result;
   bool resumed_with_scheduler = false;
 
-  vexo::coro::Spawn(scheduler,
+  coropact::coro::Spawn(scheduler,
                     WriteOnce(&stream, &loop, &scheduler, bytes, &result, &resumed_with_scheduler))
       .Detach();
   loop.Loop();
@@ -220,15 +220,15 @@ bool CheckPendingRead() {
     return false;
   }
 
-  vexo::net::EventLoop loop;
-  vexo::net::ReactorStream stream(&loop, sv[0]);
-  vexo::net::EventLoopScheduler scheduler(&loop);
+  coropact::net::EventLoop loop;
+  coropact::net::ReactorStream stream(&loop, sv[0]);
+  coropact::net::EventLoopScheduler scheduler(&loop);
 
   std::array<std::byte, 16> buffer{};
   std::optional<ReadResult> result;
   bool resumed_with_scheduler = false;
 
-  vexo::coro::Spawn(scheduler,
+  coropact::coro::Spawn(scheduler,
                     ReadOnce(&stream, &loop, &scheduler, &buffer, &result, &resumed_with_scheduler))
       .Detach();
 
@@ -265,15 +265,15 @@ bool CheckReadIntoIoBuffer() {
     return false;
   }
 
-  vexo::net::EventLoop loop;
-  vexo::net::ReactorStream stream(&loop, sv[0]);
-  vexo::net::EventLoopScheduler scheduler(&loop);
+  coropact::net::EventLoop loop;
+  coropact::net::ReactorStream stream(&loop, sv[0]);
+  coropact::net::EventLoopScheduler scheduler(&loop);
 
-  vexo::io::Buffer buffer(4);
+  coropact::io::Buffer buffer(4);
   std::optional<ReadResult> result;
   bool resumed_with_scheduler = false;
 
-  vexo::coro::Spawn(scheduler, ReadBufferOnce(&stream, &loop, &scheduler, &buffer, &result,
+  coropact::coro::Spawn(scheduler, ReadBufferOnce(&stream, &loop, &scheduler, &buffer, &result,
                                               &resumed_with_scheduler))
       .Detach();
   loop.Loop();
@@ -297,19 +297,19 @@ bool CheckWriteFromIoBuffer() {
     return false;
   }
 
-  vexo::net::EventLoop loop;
-  vexo::net::ReactorStream stream(&loop, sv[0]);
-  vexo::net::EventLoopScheduler scheduler(&loop);
+  coropact::net::EventLoop loop;
+  coropact::net::ReactorStream stream(&loop, sv[0]);
+  coropact::net::EventLoopScheduler scheduler(&loop);
 
   const std::string payload = "write-from-io-buffer";
-  vexo::io::Buffer buffer(5);
+  coropact::io::Buffer buffer(5);
   buffer.Append(payload.substr(0, 7));
   buffer.Append(payload.substr(7));
 
   std::optional<WriteResult> result;
   bool resumed_with_scheduler = false;
 
-  vexo::coro::Spawn(scheduler, WriteBufferOnce(&stream, &loop, &scheduler, &buffer, &result,
+  coropact::coro::Spawn(scheduler, WriteBufferOnce(&stream, &loop, &scheduler, &buffer, &result,
                                                &resumed_with_scheduler))
       .Detach();
   loop.Loop();
@@ -335,18 +335,18 @@ bool CheckCloseCancelsPendingRead() {
     return false;
   }
 
-  vexo::net::EventLoop loop;
-  vexo::net::ReactorStream stream(&loop, sv[0]);
-  vexo::net::EventLoopScheduler scheduler(&loop);
+  coropact::net::EventLoop loop;
+  coropact::net::ReactorStream stream(&loop, sv[0]);
+  coropact::net::EventLoopScheduler scheduler(&loop);
 
   std::array<std::byte, 16> buffer{};
   std::optional<ReadResult> result;
   bool resumed_with_scheduler = false;
 
-  vexo::coro::Spawn(scheduler,
+  coropact::coro::Spawn(scheduler,
                     ReadOnce(&stream, &loop, &scheduler, &buffer, &result, &resumed_with_scheduler))
       .Detach();
-  loop.QueueInLoop([&] { vexo::coro::Spawn(scheduler, stream.Close()).Detach(); });
+  loop.QueueInLoop([&] { coropact::coro::Spawn(scheduler, stream.Close()).Detach(); });
 
   loop.Loop();
 
@@ -366,25 +366,25 @@ bool CheckEchoAlgorithmUsesAsyncStream() {
     return false;
   }
 
-  vexo::net::EventLoop loop;
-  vexo::net::ReactorStream server(&loop, sv[0]);
-  vexo::net::ReactorStream client(&loop, sv[1]);
-  vexo::net::EventLoopScheduler scheduler(&loop);
+  coropact::net::EventLoop loop;
+  coropact::net::ReactorStream server(&loop, sv[0]);
+  coropact::net::ReactorStream client(&loop, sv[1]);
+  coropact::net::EventLoopScheduler scheduler(&loop);
 
   const char payload[] = "echo-through-async-stream";
   auto bytes = std::as_bytes(std::span(payload, sizeof(payload) - 1));
 
   std::array<std::byte, 64> server_buffer{};
   std::array<std::byte, 64> client_buffer{};
-  std::optional<vexo::base::Result<void>> server_result;
-  std::optional<vexo::base::Result<void>> client_result;
+  std::optional<coropact::base::Result<void>> server_result;
+  std::optional<coropact::base::Result<void>> client_result;
   std::size_t received_size = 0;
   int done_count = 0;
 
-  vexo::coro::Spawn(scheduler,
+  coropact::coro::Spawn(scheduler,
                     EchoServer(&server, &server_buffer, &server_result, &done_count, &loop))
       .Detach();
-  vexo::coro::Spawn(scheduler, EchoClient(&client, bytes, &client_buffer, &client_result,
+  coropact::coro::Spawn(scheduler, EchoClient(&client, bytes, &client_buffer, &client_result,
                                           &received_size, &done_count, &loop))
       .Detach();
 
@@ -406,9 +406,9 @@ bool CheckCloseRejectsLaterSubmit() {
     return false;
   }
 
-  vexo::net::EventLoop loop;
-  vexo::net::ReactorStream stream(&loop, sv[0]);
-  vexo::net::EventLoopScheduler scheduler(&loop);
+  coropact::net::EventLoop loop;
+  coropact::net::ReactorStream stream(&loop, sv[0]);
+  coropact::net::EventLoopScheduler scheduler(&loop);
 
   std::array<std::byte, 16> read_buffer{};
   const char payload[] = "after-close";
@@ -416,7 +416,7 @@ bool CheckCloseRejectsLaterSubmit() {
   std::optional<ReadResult> read_result;
   std::optional<WriteResult> write_result;
 
-  vexo::coro::Spawn(
+  coropact::coro::Spawn(
       scheduler, CloseThenSubmit(&stream, &loop, &read_buffer, bytes, &read_result, &write_result))
       .Detach();
 

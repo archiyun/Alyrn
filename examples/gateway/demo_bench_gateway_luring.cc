@@ -28,16 +28,16 @@
 #include <unordered_map>
 #include <vector>
 
-#include "vexo/coro/frame_allocator.h"
-#include "vexo/gateway/gateway_session_service.h"
-#include "vexo/gateway/upstream.h"
-#include "vexo/gateway/upstream_peer.h"
-#include "vexo/gateway/upstream_registry.h"
-#include "vexo/luring/connector.h"
-#include "vexo/luring/server.h"
-#include "vexo/memory/pmr_pool_resource.h"
-#include "vexo/net/inet_address.h"
-#include "vexo/net/net_utils.h"
+#include "coropact/coro/frame_allocator.h"
+#include "coropact/gateway/gateway_session_service.h"
+#include "coropact/gateway/upstream.h"
+#include "coropact/gateway/upstream_peer.h"
+#include "coropact/gateway/upstream_registry.h"
+#include "coropact/luring/connector.h"
+#include "coropact/luring/server.h"
+#include "coropact/memory/pmr_pool_resource.h"
+#include "coropact/net/inet_address.h"
+#include "coropact/net/net_utils.h"
 
 namespace {
 
@@ -156,23 +156,23 @@ int main() {
   std::signal(SIGINT, OnSignal);
   std::signal(SIGTERM, OnSignal);
 
-  vexo::gateway::UpstreamRegistry registry;
-  vexo::gateway::UpstreamConfig upstream_config;
+  coropact::gateway::UpstreamRegistry registry;
+  coropact::gateway::UpstreamConfig upstream_config;
   upstream_config.name = "backend";
   upstream_config.max_concurrent_requests = max_concurrent;
-  auto upstream = std::make_shared<vexo::gateway::Upstream>(std::move(upstream_config));
+  auto upstream = std::make_shared<coropact::gateway::Upstream>(std::move(upstream_config));
   for (uint16_t port : ports) {
     upstream->AddPeer(
-        std::make_shared<vexo::gateway::UpstreamPeer>(vexo::gateway::UpstreamPeerConfig{
+        std::make_shared<coropact::gateway::UpstreamPeer>(coropact::gateway::UpstreamPeerConfig{
             .name = "127.0.0.1:" + std::to_string(port), .host = "127.0.0.1", .port = port}));
   }
   registry.Add(std::move(upstream));
 
-  using Service = vexo::gateway::GatewaySessionService<vexo::luring::LUringStream,
-                                                       vexo::luring::LUringConnector>;
+  using Service = coropact::gateway::GatewaySessionService<coropact::luring::LUringStream,
+                                                       coropact::luring::LUringConnector>;
   using WorkerPool = Service::Pool;
   Service service("BenchGatewayLUring", registry);
-  const vexo::gateway::PoolConfig pool_config{.max_idle_per_peer = max_idle_per_peer,
+  const coropact::gateway::PoolConfig pool_config{.max_idle_per_peer = max_idle_per_peer,
                                               .max_idle_total = max_idle_total,
                                               .collect_stats = dump_stats};
   service.set_pool_config(pool_config);
@@ -182,18 +182,18 @@ int main() {
   // worker so sessions on the same ring can reuse connections without
   // introducing cross-worker stream ownership.
   std::vector<std::unique_ptr<WorkerPool>> worker_pools;
-  std::unordered_map<vexo::luring::LUringLoop*, WorkerPool*> pools_by_loop;
+  std::unordered_map<coropact::luring::LUringLoop*, WorkerPool*> pools_by_loop;
   std::mutex pools_mutex;
   std::atomic_bool pools_ready{false};
   worker_pools.reserve(worker_num);
   pools_by_loop.reserve(worker_num);
 
-  std::vector<vexo::memory::MemoryResourceStats> frame_resource_stats;
-  std::vector<vexo::memory::MemoryResourceStats> frame_upstream_stats;
-  std::vector<std::unique_ptr<vexo::memory::CountingMemoryResource>> frame_upstream_counters;
-  std::vector<std::unique_ptr<vexo::coro::CoroFramePoolResource>> frame_pools;
-  std::vector<std::unique_ptr<vexo::memory::CountingMemoryResource>> frame_counters;
-  std::vector<std::unique_ptr<vexo::memory::CountingMemoryResource>> direct_frame_counters;
+  std::vector<coropact::memory::MemoryResourceStats> frame_resource_stats;
+  std::vector<coropact::memory::MemoryResourceStats> frame_upstream_stats;
+  std::vector<std::unique_ptr<coropact::memory::CountingMemoryResource>> frame_upstream_counters;
+  std::vector<std::unique_ptr<coropact::coro::CoroFramePoolResource>> frame_pools;
+  std::vector<std::unique_ptr<coropact::memory::CountingMemoryResource>> frame_counters;
+  std::vector<std::unique_ptr<coropact::memory::CountingMemoryResource>> direct_frame_counters;
   if (frame_stats_enabled) {
     frame_resource_stats.resize(worker_num);
     frame_upstream_stats.resize(worker_num);
@@ -206,25 +206,25 @@ int main() {
     frame_pools.reserve(worker_num);
     for (std::size_t i = 0; i < worker_num; ++i) {
       if (frame_stats_enabled) {
-        frame_upstream_counters.push_back(std::make_unique<vexo::memory::CountingMemoryResource>(
+        frame_upstream_counters.push_back(std::make_unique<coropact::memory::CountingMemoryResource>(
             *std::pmr::new_delete_resource(), frame_upstream_stats[i]));
         frame_pools.push_back(
-            std::make_unique<vexo::coro::CoroFramePoolResource>(*frame_upstream_counters.back()));
-        frame_counters.push_back(std::make_unique<vexo::memory::CountingMemoryResource>(
+            std::make_unique<coropact::coro::CoroFramePoolResource>(*frame_upstream_counters.back()));
+        frame_counters.push_back(std::make_unique<coropact::memory::CountingMemoryResource>(
             *frame_pools.back(), frame_resource_stats[i]));
       } else {
-        frame_pools.push_back(std::make_unique<vexo::coro::CoroFramePoolResource>());
+        frame_pools.push_back(std::make_unique<coropact::coro::CoroFramePoolResource>());
       }
     }
   } else if (frame_stats_enabled) {
     direct_frame_counters.reserve(worker_num);
     for (std::size_t i = 0; i < worker_num; ++i) {
-      direct_frame_counters.push_back(std::make_unique<vexo::memory::CountingMemoryResource>(
+      direct_frame_counters.push_back(std::make_unique<coropact::memory::CountingMemoryResource>(
           *std::pmr::new_delete_resource(), frame_resource_stats[i]));
     }
   }
 
-  vexo::luring::LUringServerOptions options;
+  coropact::luring::LUringServerOptions options;
   options.worker_group_options.worker_num = worker_num;
   if (!cpu_affinity.empty()) {
     options.worker_group_options.cpu_affinity_factory =
@@ -267,16 +267,16 @@ int main() {
                : nullptr;
   };
 
-  auto listen_addr = vexo::net::ParseIPv4Address(bind_host, listen_port);
+  auto listen_addr = coropact::net::ParseIPv4Address(bind_host, listen_port);
   if (!listen_addr.has_value()) {
     std::fprintf(stderr, "invalid BIND_HOST '%s': %s\n", bind_host.c_str(),
                  listen_addr.error().message().c_str());
     return 1;
   }
 
-  vexo::luring::LUringServer server(*listen_addr, std::move(options));
+  coropact::luring::LUringServer server(*listen_addr, std::move(options));
   server.set_thread_init_callback([&worker_pools, &pools_by_loop, &pools_mutex,
-                                   pool_config](vexo::luring::LUringWorkerContext& context) {
+                                   pool_config](coropact::luring::LUringWorkerContext& context) {
     auto pool = std::make_unique<WorkerPool>(pool_config);
     auto* pool_ptr = pool.get();
     std::lock_guard lock(pools_mutex);
@@ -284,8 +284,8 @@ int main() {
     pools_by_loop.emplace(&context.loop, pool_ptr);
   });
   server.set_session_handler([&service, &pools_by_loop, &pools_mutex, &pools_ready](
-                                 vexo::luring::LUringWorkerContext& context,
-                                 vexo::luring::LUringStream stream) -> vexo::coro::Task<void> {
+                                 coropact::luring::LUringWorkerContext& context,
+                                 coropact::luring::LUringStream stream) -> coropact::coro::Task<void> {
     auto& loop = context.loop;
     WorkerPool* pool = nullptr;
     if (!pools_ready.load(std::memory_order_acquire)) {
@@ -301,9 +301,9 @@ int main() {
       }
     }
     if (pool == nullptr) {
-      return service.Serve(std::move(stream), vexo::luring::LUringConnector(&loop));
+      return service.Serve(std::move(stream), coropact::luring::LUringConnector(&loop));
     }
-    return service.Serve(std::move(stream), vexo::luring::LUringConnector(&loop), *pool);
+    return service.Serve(std::move(stream), coropact::luring::LUringConnector(&loop), *pool);
   });
 
   auto started = server.Start();

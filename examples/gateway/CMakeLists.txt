@@ -1,4 +1,4 @@
-# gateway 层 examples —— 依赖 vexo_gateway
+# gateway 层 examples —— 依赖 coropact_gateway
 #   demo_gateway             : 反向代理最小示例
 #   demo_bench_gateway       : 单上游代理基准
 #   demo_bench_gateway_multi : 多上游 / 负载均衡基准
@@ -8,16 +8,16 @@ add_executable(demo_gateway
 )
 target_link_libraries(demo_gateway
     PRIVATE
-        vexo_gateway
+        coropact_gateway
 )
 
-if(TARGET vexo_gateway_config)
+if(TARGET coropact_gateway_config)
     add_executable(demo_gateway_config
         demo_gateway_config.cc
     )
     target_link_libraries(demo_gateway_config
         PRIVATE
-            vexo_gateway_config
+            coropact_gateway_config
     )
 endif()
 
@@ -26,7 +26,7 @@ add_executable(demo_bench_gateway
 )
 target_link_libraries(demo_bench_gateway
     PRIVATE
-        vexo_gateway
+        coropact_gateway
 )
 
 add_executable(demo_bench_gateway_multi
@@ -34,16 +34,16 @@ add_executable(demo_bench_gateway_multi
 )
 target_link_libraries(demo_bench_gateway_multi
     PRIVATE
-        vexo_gateway
+        coropact_gateway
 )
 
-if(VEXO_ENABLE_URING)
+if(COROPACT_ENABLE_URING)
     add_executable(demo_bench_gateway_luring
         demo_bench_gateway_luring.cc
     )
     target_link_libraries(demo_bench_gateway_luring
         PRIVATE
-            vexo_gateway
-            vexo_luring
+            coropact_gateway
+            coropact_luring
     )
 endif()

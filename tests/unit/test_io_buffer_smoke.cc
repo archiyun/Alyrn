@@ -11,7 +11,7 @@
 #include <string_view>
 #include <vector>
 
-#include "vexo/io/buffer.h"
+#include "coropact/io/buffer.h"
 
 namespace {
 
@@ -23,7 +23,7 @@ bool Expect(bool condition, std::string_view message) {
   return true;
 }
 
-std::string Gather(vexo::io::Buffer& buffer) {
+std::string Gather(coropact::io::Buffer& buffer) {
   std::string out;
   for (const iovec& iov : buffer.ReadableIov(32)) {
     out.append(static_cast<const char*>(iov.iov_base), iov.iov_len);
@@ -42,7 +42,7 @@ void CopyIntoIov(const std::vector<iovec>& iovs, std::string_view text) {
 }
 
 bool AppendAndDrainPreserveOrder() {
-  vexo::io::Buffer buffer(4);
+  coropact::io::Buffer buffer(4);
 
   buffer.Append("ab");
   buffer.Append("cdefg");
@@ -60,7 +60,7 @@ bool AppendAndDrainPreserveOrder() {
 }
 
 bool PreparedWriteAppendsAtTailOnly() {
-  vexo::io::Buffer buffer(4);
+  coropact::io::Buffer buffer(4);
 
   buffer.Append("abcd");
   buffer.Append("ef");
@@ -78,7 +78,7 @@ bool PreparedWriteAppendsAtTailOnly() {
 }
 
 bool AbortWriteDiscardsReservation() {
-  vexo::io::Buffer buffer(4);
+  coropact::io::Buffer buffer(4);
 
   auto iovs = buffer.PrepareWrite(4, 1);
   if (!Expect(iovs.size() == 1, "prepare write should reserve a writable block")) {
@@ -95,16 +95,16 @@ bool AbortWriteDiscardsReservation() {
 }
 
 bool MoveLeavesSourceEmpty() {
-  vexo::io::Buffer source(4);
+  coropact::io::Buffer source(4);
   source.Append("hello");
 
-  vexo::io::Buffer moved(std::move(source));
+  coropact::io::Buffer moved(std::move(source));
 
   bool ok = Expect(source.Empty(), "move construction should leave source empty");
   ok &= Expect(source.ReadableBytes() == 0, "moved-from source should report zero readable bytes");
   ok &= Expect(Gather(moved) == "hello", "moved buffer should keep original data");
 
-  vexo::io::Buffer assigned(4);
+  coropact::io::Buffer assigned(4);
   assigned.Append("old");
   assigned = std::move(moved);
 
@@ -114,7 +114,7 @@ bool MoveLeavesSourceEmpty() {
 }
 
 bool EmptyReservationDoesNotHideLaterData() {
-  vexo::io::Buffer buffer(4);
+  coropact::io::Buffer buffer(4);
 
   auto iovs = buffer.PrepareWrite(4, 1);
   if (!Expect(iovs.size() == 1, "prepare write should expose a writable block")) {

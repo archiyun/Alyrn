@@ -6,7 +6,7 @@
 #include <utility>
 #include <vector>
 
-#include "vexo/memory/pool.h"
+#include "coropact/memory/pool.h"
 
 namespace {
 
@@ -22,7 +22,7 @@ int g_cleanup_calls = 0;
     }                                                              \
   } while (0)
 
-using vexo::memory::Pool;
+using coropact::memory::Pool;
 
 bool IsAligned(const void* p, std::size_t align) {
   return (reinterpret_cast<std::uintptr_t>(p) % align) == 0;

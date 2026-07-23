@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "vexo/luring/stream.h"
+#include "coropact/luring/stream.h"
 
 #include <liburing.h>
 #include <sys/socket.h>
@@ -15,14 +15,14 @@
 #include <optional>
 #include <utility>
 
-#include "vexo/base/check.h"
-#include "vexo/base/ctrack.h"
-#include "vexo/base/error.h"
-#include "vexo/luring/loop.h"
-#include "vexo/luring/op.h"
-#include "vexo/net/inet_address.h"
+#include "coropact/base/check.h"
+#include "coropact/base/ctrack.h"
+#include "coropact/base/error.h"
+#include "coropact/luring/loop.h"
+#include "coropact/luring/op.h"
+#include "coropact/net/inet_address.h"
 
-namespace vexo::luring {
+namespace coropact::luring {
 
 namespace {
 
@@ -39,7 +39,7 @@ base::Result<std::size_t> ToSizeResult(const base::Result<int>& result) noexcept
 }  // namespace
 
 bool LUringStream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
-  VEXO_CTRACK_SCOPE("luring.read.prepare");
+  COROPACT_CTRACK_SCOPE("luring.read.prepare");
   if (stream_->closed_ || stream_->fd_ < 0) {
     immediate_ = std::unexpected(base::make_errno(EBADF));
     return false;
@@ -73,7 +73,7 @@ bool LUringStream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> contin
 }
 
 base::Result<std::size_t> LUringStream::ReadSomeAwaiter::await_resume() noexcept {
-  VEXO_CTRACK_SCOPE("luring.read.resume");
+  COROPACT_CTRACK_SCOPE("luring.read.resume");
   if (immediate_.has_value()) {
     return std::move(*immediate_);
   }
@@ -100,7 +100,7 @@ LUringStream::ReadSomeForAwaiter::ReadSomeForAwaiter(
 
 bool LUringStream::ReadSomeForAwaiter::await_suspend(
     std::coroutine_handle<> continuation) noexcept {
-  VEXO_CTRACK_SCOPE("luring.read.prepare");
+  COROPACT_CTRACK_SCOPE("luring.read.prepare");
   if (stream_->closed_ || stream_->fd_ < 0) {
     immediate_ = std::unexpected(base::make_errno(EBADF));
     return false;
@@ -144,7 +144,7 @@ bool LUringStream::ReadSomeForAwaiter::await_suspend(
 }
 
 base::Result<std::size_t> LUringStream::ReadSomeForAwaiter::await_resume() noexcept {
-  VEXO_CTRACK_SCOPE("luring.read.resume");
+  COROPACT_CTRACK_SCOPE("luring.read.resume");
   if (immediate_.has_value()) return std::move(*immediate_);
   assert(read_done_);
   if (read_op_.result.has_value() && *read_op_.result >= 0) {
@@ -218,7 +218,7 @@ bool LUringStream::WriteSomeAwaiter::await_suspend(std::coroutine_handle<> conti
 }
 
 base::Result<std::size_t> LUringStream::WriteSomeAwaiter::await_resume() noexcept {
-  VEXO_CTRACK_SCOPE("luring.write.resume");
+  COROPACT_CTRACK_SCOPE("luring.write.resume");
   if (immediate_.has_value()) {
     return std::move(*immediate_);
   }
@@ -346,7 +346,7 @@ LUringStream& LUringStream::operator=(LUringStream&& other) noexcept {
   }
 
   LUringLoop* other_loop = PrepareMove(other);
-  VEXO_CHECK(loop_ == nullptr || loop_ == other_loop,
+  COROPACT_CHECK(loop_ == nullptr || loop_ == other_loop,
              "LUringStream move requires both objects to use the same LUringLoop");
   if (loop_ != nullptr) {
     ResetForMove();
@@ -405,11 +405,11 @@ void LUringStream::NotifyCloseProgress() noexcept {
 }
 
 void LUringStream::ResetForMove() noexcept {
-  VEXO_CHECK(loop_ != nullptr, "LUringStream move destination is not initialized");
-  VEXO_CHECK(loop_->IsInLoopThread(), "LUringStream move called from wrong LUringLoop thread");
-  VEXO_CHECK(pending_read_ == nullptr, "LUringStream move destination has a pending read");
-  VEXO_CHECK(pending_write_ == nullptr, "LUringStream move destination has a pending write");
-  VEXO_CHECK(pending_close_ == nullptr, "LUringStream move destination has a pending close");
+  COROPACT_CHECK(loop_ != nullptr, "LUringStream move destination is not initialized");
+  COROPACT_CHECK(loop_->IsInLoopThread(), "LUringStream move called from wrong LUringLoop thread");
+  COROPACT_CHECK(pending_read_ == nullptr, "LUringStream move destination has a pending read");
+  COROPACT_CHECK(pending_write_ == nullptr, "LUringStream move destination has a pending write");
+  COROPACT_CHECK(pending_close_ == nullptr, "LUringStream move destination has a pending close");
 
   const int fd = std::exchange(fd_, -1);
   if (fd >= 0) {
@@ -418,14 +418,14 @@ void LUringStream::ResetForMove() noexcept {
 }
 
 LUringLoop* LUringStream::PrepareMove(LUringStream& other) noexcept {
-  VEXO_CHECK(other.loop_ != nullptr, "LUringStream move source is not initialized");
-  VEXO_CHECK(other.loop_->IsInLoopThread(),
+  COROPACT_CHECK(other.loop_ != nullptr, "LUringStream move source is not initialized");
+  COROPACT_CHECK(other.loop_->IsInLoopThread(),
              "LUringStream move called from wrong LUringLoop thread");
-  VEXO_CHECK(other.pending_read_ == nullptr,
+  COROPACT_CHECK(other.pending_read_ == nullptr,
              "LUringStream cannot move with a pending read operation");
-  VEXO_CHECK(other.pending_write_ == nullptr,
+  COROPACT_CHECK(other.pending_write_ == nullptr,
              "LUringStream cannot move with a pending write operation");
-  VEXO_CHECK(other.pending_close_ == nullptr,
+  COROPACT_CHECK(other.pending_close_ == nullptr,
              "LUringStream cannot move with a pending close operation");
 
   LUringLoop* loop = other.loop_;
@@ -433,4 +433,4 @@ LUringLoop* LUringStream::PrepareMove(LUringStream& other) noexcept {
   return loop;
 }
 
-}  // namespace vexo::luring
+}  // namespace coropact::luring

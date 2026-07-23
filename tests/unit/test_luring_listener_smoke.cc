@@ -13,15 +13,15 @@
 #include <system_error>
 #include <utility>
 
-#include "vexo/base/error.h"
-#include "vexo/coro/scheduler.h"
-#include "vexo/coro/spawn.h"
-#include "vexo/coro/task.h"
-#include "vexo/luring/listener.h"
-#include "vexo/luring/loop.h"
-#include "vexo/luring/options.h"
-#include "vexo/luring/stream.h"
-#include "vexo/net/inet_address.h"
+#include "coropact/base/error.h"
+#include "coropact/coro/scheduler.h"
+#include "coropact/coro/spawn.h"
+#include "coropact/coro/task.h"
+#include "coropact/luring/listener.h"
+#include "coropact/luring/loop.h"
+#include "coropact/luring/options.h"
+#include "coropact/luring/stream.h"
+#include "coropact/net/inet_address.h"
 
 namespace {
 
@@ -70,12 +70,12 @@ bool Check(bool condition, const char* message) {
   return true;
 }
 
-bool IsEnvironmentSkip(vexo::base::Error error) {
+bool IsEnvironmentSkip(coropact::base::Error error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 
-LoopInitStatus InitLoop(vexo::luring::LUringLoop& loop) {
-  vexo::luring::LUringOptions options;
+LoopInitStatus InitLoop(coropact::luring::LUringLoop& loop) {
+  coropact::luring::LUringOptions options;
   options.entries = 16;
   options.submit_batch = 1;
 
@@ -92,16 +92,16 @@ LoopInitStatus InitLoop(vexo::luring::LUringLoop& loop) {
   return LoopInitStatus::kFail;
 }
 
-vexo::base::Result<int> ConnectClient(const vexo::net::InetAddress& address) {
+coropact::base::Result<int> ConnectClient(const coropact::net::InetAddress& address) {
   int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, IPPROTO_TCP);
   if (fd < 0) {
-    return std::unexpected(vexo::base::CurrentErrno());
+    return std::unexpected(coropact::base::CurrentErrno());
   }
 
   const sockaddr_in& addr = address.sock_addr();
   int r = ::connect(fd, reinterpret_cast<const sockaddr*>(&addr), sizeof(addr));
   if (r < 0 && errno != EINPROGRESS) {
-    auto error = vexo::base::CurrentErrno();
+    auto error = coropact::base::CurrentErrno();
     ::close(fd);
     return std::unexpected(error);
   }
@@ -109,31 +109,31 @@ vexo::base::Result<int> ConnectClient(const vexo::net::InetAddress& address) {
   return fd;
 }
 
-vexo::net::InetAddress LoopbackAddress(std::uint16_t port) {
+coropact::net::InetAddress LoopbackAddress(std::uint16_t port) {
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   addr.sin_port = htons(port);
-  return vexo::net::InetAddress(addr);
+  return coropact::net::InetAddress(addr);
 }
 
-vexo::coro::Task<void> AcceptOnce(
-    vexo::luring::LUringListener* listener, vexo::luring::LUringLoop* loop,
-    std::optional<vexo::base::Result<vexo::luring::LUringStream>>* out,
+coropact::coro::Task<void> AcceptOnce(
+    coropact::luring::LUringListener* listener, coropact::luring::LUringLoop* loop,
+    std::optional<coropact::base::Result<coropact::luring::LUringStream>>* out,
     bool* resumed_with_scheduler) {
   auto result = co_await listener->Accept();
-  *resumed_with_scheduler = vexo::coro::Scheduler::Current() == loop;
+  *resumed_with_scheduler = coropact::coro::Scheduler::Current() == loop;
   out->emplace(std::move(result));
 }
 
-vexo::coro::Task<void> CloseOnce(vexo::luring::LUringListener* listener,
-                                 std::optional<vexo::base::Result<void>>* out) {
+coropact::coro::Task<void> CloseOnce(coropact::luring::LUringListener* listener,
+                                 std::optional<coropact::base::Result<void>>* out) {
   auto result = co_await listener->Close();
   out->emplace(std::move(result));
 }
 
 bool CheckAccept() {
-  vexo::luring::LUringLoop loop;
+  coropact::luring::LUringLoop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -143,7 +143,7 @@ bool CheckAccept() {
       return false;
   }
 
-  auto listener = vexo::luring::LUringListener::Create(&loop, LoopbackAddress(0));
+  auto listener = coropact::luring::LUringListener::Create(&loop, LoopbackAddress(0));
   if (!listener.has_value()) {
     std::cout << "FAIL: LUringListener::Create failed: " << listener.error().message() << '\n';
     return false;
@@ -162,10 +162,10 @@ bool CheckAccept() {
   }
   UniqueFd client(*client_fd);
 
-  std::optional<vexo::base::Result<vexo::luring::LUringStream>> accepted;
+  std::optional<coropact::base::Result<coropact::luring::LUringStream>> accepted;
   bool resumed_with_scheduler = false;
 
-  vexo::coro::Spawn(loop, AcceptOnce(&*listener, &loop, &accepted, &resumed_with_scheduler))
+  coropact::coro::Spawn(loop, AcceptOnce(&*listener, &loop, &accepted, &resumed_with_scheduler))
       .Detach();
 
   loop.RunReady();
@@ -186,7 +186,7 @@ bool CheckAccept() {
 }
 
 bool CheckCloseCancelsPendingAccept() {
-  vexo::luring::LUringLoop loop;
+  coropact::luring::LUringLoop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -196,21 +196,21 @@ bool CheckCloseCancelsPendingAccept() {
       return false;
   }
 
-  auto listener = vexo::luring::LUringListener::Create(&loop, LoopbackAddress(0));
+  auto listener = coropact::luring::LUringListener::Create(&loop, LoopbackAddress(0));
   if (!listener.has_value()) {
     std::cout << "FAIL: LUringListener::Create failed: " << listener.error().message() << '\n';
     return false;
   }
 
-  std::optional<vexo::base::Result<vexo::luring::LUringStream>> accepted;
+  std::optional<coropact::base::Result<coropact::luring::LUringStream>> accepted;
   bool resumed_with_scheduler = false;
-  vexo::coro::Spawn(loop, AcceptOnce(&*listener, &loop, &accepted, &resumed_with_scheduler))
+  coropact::coro::Spawn(loop, AcceptOnce(&*listener, &loop, &accepted, &resumed_with_scheduler))
       .Detach();
 
   loop.RunReady();
 
-  std::optional<vexo::base::Result<void>> close_result;
-  vexo::coro::Spawn(loop, CloseOnce(&*listener, &close_result)).Detach();
+  std::optional<coropact::base::Result<void>> close_result;
+  coropact::coro::Spawn(loop, CloseOnce(&*listener, &close_result)).Detach();
 
   loop.RunReady();
 

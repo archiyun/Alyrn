@@ -4,7 +4,7 @@
 #include <thread>
 #include <vector>
 
-#include "vexo/memory/memory_pool.h"
+#include "coropact/memory/memory_pool.h"
 
 namespace {
 
@@ -17,7 +17,7 @@ bool Expect(bool condition, const char* message) {
 }
 
 bool TestAllocateAndReuse() {
-    vexo::memory::MemoryPool<sizeof(int), alignof(int), 4> pool;
+    coropact::memory::MemoryPool<sizeof(int), alignof(int), 4> pool;
 
     void* a = pool.Allocate();
     void* b = pool.Allocate();
@@ -34,7 +34,7 @@ bool TestAllocateAndReuse() {
 }
 
 bool TestExhaustion() {
-    vexo::memory::MemoryPool<sizeof(int), alignof(int), 2> pool;
+    coropact::memory::MemoryPool<sizeof(int), alignof(int), 2> pool;
     void* a = pool.Allocate();
     void* b = pool.Allocate();
     void* c = pool.Allocate();
@@ -46,7 +46,7 @@ bool TestExhaustion() {
 }
 
 bool TestOwns() {
-    vexo::memory::MemoryPool<sizeof(std::uint64_t), alignof(std::uint64_t), 4> pool;
+    coropact::memory::MemoryPool<sizeof(std::uint64_t), alignof(std::uint64_t), 4> pool;
     void* p = pool.Allocate();
     int stack_value = 0;
 
@@ -59,7 +59,7 @@ bool TestOwns() {
 }
 
 bool TestConcurrentAllocateAndFree() {
-    vexo::memory::MemoryPool<sizeof(int), alignof(int), 256> pool;
+    coropact::memory::MemoryPool<sizeof(int), alignof(int), 256> pool;
     constexpr int kThreads = 8;
     constexpr int kIterations = 2000;
 

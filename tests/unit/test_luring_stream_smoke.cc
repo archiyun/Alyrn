@@ -15,14 +15,14 @@
 #include <system_error>
 #include <utility>
 
-#include "vexo/base/error.h"
-#include "vexo/coro/scheduler.h"
-#include "vexo/coro/spawn.h"
-#include "vexo/coro/task.h"
-#include "vexo/luring/loop.h"
-#include "vexo/luring/options.h"
-#include "vexo/luring/stream.h"
-#include "vexo/net/inet_address.h"
+#include "coropact/base/error.h"
+#include "coropact/coro/scheduler.h"
+#include "coropact/coro/spawn.h"
+#include "coropact/coro/task.h"
+#include "coropact/luring/loop.h"
+#include "coropact/luring/options.h"
+#include "coropact/luring/stream.h"
+#include "coropact/net/inet_address.h"
 
 namespace {
 
@@ -72,12 +72,12 @@ bool Check(bool condition, const char* message) {
   return true;
 }
 
-bool IsEnvironmentSkip(vexo::base::Error error) {
+bool IsEnvironmentSkip(coropact::base::Error error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 
-LoopInitStatus InitLoop(vexo::luring::LUringLoop& loop) {
-  vexo::luring::LUringOptions options;
+LoopInitStatus InitLoop(coropact::luring::LUringLoop& loop) {
+  coropact::luring::LUringOptions options;
   options.entries = 16;
   options.submit_batch = 1;
 
@@ -106,10 +106,10 @@ bool CreateSocketPair(UniqueFd& lhs, UniqueFd& rhs) {
   return true;
 }
 
-vexo::net::InetAddress EmptyPeerAddress() {
+coropact::net::InetAddress EmptyPeerAddress() {
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
-  return vexo::net::InetAddress(addr);
+  return coropact::net::InetAddress(addr);
 }
 
 bool WriteFd(int fd, std::string_view bytes) {
@@ -128,32 +128,32 @@ bool WriteFd(int fd, std::string_view bytes) {
   return true;
 }
 
-vexo::coro::Task<void> ReadOnce(vexo::luring::LUringStream* stream, vexo::luring::LUringLoop* loop,
+coropact::coro::Task<void> ReadOnce(coropact::luring::LUringStream* stream, coropact::luring::LUringLoop* loop,
                                 std::span<std::byte> buffer,
-                                std::optional<vexo::base::Result<std::size_t>>* out,
+                                std::optional<coropact::base::Result<std::size_t>>* out,
                                 bool* resumed_with_scheduler) {
   auto result = co_await stream->ReadSome(buffer);
-  *resumed_with_scheduler = vexo::coro::Scheduler::Current() == loop;
+  *resumed_with_scheduler = coropact::coro::Scheduler::Current() == loop;
   out->emplace(std::move(result));
 }
 
-vexo::coro::Task<void> WriteOnce(vexo::luring::LUringStream* stream, vexo::luring::LUringLoop* loop,
+coropact::coro::Task<void> WriteOnce(coropact::luring::LUringStream* stream, coropact::luring::LUringLoop* loop,
                                  std::span<const std::byte> buffer,
-                                 std::optional<vexo::base::Result<std::size_t>>* out,
+                                 std::optional<coropact::base::Result<std::size_t>>* out,
                                  bool* resumed_with_scheduler) {
   auto result = co_await stream->WriteSome(buffer);
-  *resumed_with_scheduler = vexo::coro::Scheduler::Current() == loop;
+  *resumed_with_scheduler = coropact::coro::Scheduler::Current() == loop;
   out->emplace(std::move(result));
 }
 
-vexo::coro::Task<void> CloseOnce(vexo::luring::LUringStream* stream,
-                                 std::optional<vexo::base::Result<void>>* out) {
+coropact::coro::Task<void> CloseOnce(coropact::luring::LUringStream* stream,
+                                 std::optional<coropact::base::Result<void>>* out) {
   auto result = co_await stream->Close();
   out->emplace(std::move(result));
 }
 
 bool CheckReadSome() {
-  vexo::luring::LUringLoop loop;
+  coropact::luring::LUringLoop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -167,16 +167,16 @@ bool CheckReadSome() {
   UniqueFd peer;
   if (!CreateSocketPair(local, peer)) return false;
 
-  vexo::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
 
   constexpr std::string_view kPayload = "hello";
   if (!WriteFd(peer.fd(), kPayload)) return false;
 
   std::array<std::byte, 16> buffer{};
-  std::optional<vexo::base::Result<std::size_t>> result;
+  std::optional<coropact::base::Result<std::size_t>> result;
   bool resumed_with_scheduler = false;
 
-  vexo::coro::Spawn(loop, ReadOnce(&stream, &loop, buffer, &result, &resumed_with_scheduler))
+  coropact::coro::Spawn(loop, ReadOnce(&stream, &loop, buffer, &result, &resumed_with_scheduler))
       .Detach();
 
   loop.RunReady();
@@ -200,7 +200,7 @@ bool CheckReadSome() {
 }
 
 bool CheckWriteSome() {
-  vexo::luring::LUringLoop loop;
+  coropact::luring::LUringLoop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -214,15 +214,15 @@ bool CheckWriteSome() {
   UniqueFd peer;
   if (!CreateSocketPair(local, peer)) return false;
 
-  vexo::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
 
   constexpr std::string_view kPayload = "pong";
   auto bytes = std::as_bytes(std::span<const char>(kPayload.data(), kPayload.size()));
 
-  std::optional<vexo::base::Result<std::size_t>> result;
+  std::optional<coropact::base::Result<std::size_t>> result;
   bool resumed_with_scheduler = false;
 
-  vexo::coro::Spawn(loop, WriteOnce(&stream, &loop, bytes, &result, &resumed_with_scheduler))
+  coropact::coro::Spawn(loop, WriteOnce(&stream, &loop, bytes, &result, &resumed_with_scheduler))
       .Detach();
 
   loop.RunReady();
@@ -253,7 +253,7 @@ bool CheckWriteSome() {
 }
 
 bool CheckCloseWithoutPending() {
-  vexo::luring::LUringLoop loop;
+  coropact::luring::LUringLoop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -267,10 +267,10 @@ bool CheckCloseWithoutPending() {
   UniqueFd peer;
   if (!CreateSocketPair(local, peer)) return false;
 
-  vexo::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
 
-  std::optional<vexo::base::Result<void>> result;
-  vexo::coro::Spawn(loop, CloseOnce(&stream, &result)).Detach();
+  std::optional<coropact::base::Result<void>> result;
+  coropact::coro::Spawn(loop, CloseOnce(&stream, &result)).Detach();
 
   loop.RunReady();
 
@@ -279,7 +279,7 @@ bool CheckCloseWithoutPending() {
 }
 
 bool CheckCloseCancelsPendingRead() {
-  vexo::luring::LUringLoop loop;
+  coropact::luring::LUringLoop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -293,20 +293,20 @@ bool CheckCloseCancelsPendingRead() {
   UniqueFd peer;
   if (!CreateSocketPair(local, peer)) return false;
 
-  vexo::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
 
   std::array<std::byte, 8> buffer{};
-  std::optional<vexo::base::Result<std::size_t>> read_result;
+  std::optional<coropact::base::Result<std::size_t>> read_result;
   bool read_resumed_with_scheduler = false;
 
-  vexo::coro::Spawn(loop,
+  coropact::coro::Spawn(loop,
                     ReadOnce(&stream, &loop, buffer, &read_result, &read_resumed_with_scheduler))
       .Detach();
 
   loop.RunReady();
 
-  std::optional<vexo::base::Result<void>> close_result;
-  vexo::coro::Spawn(loop, CloseOnce(&stream, &close_result)).Detach();
+  std::optional<coropact::base::Result<void>> close_result;
+  coropact::coro::Spawn(loop, CloseOnce(&stream, &close_result)).Detach();
 
   loop.RunReady();
 

@@ -9,22 +9,22 @@
 #include <thread>
 #include <vector>
 
-#include "vexo/ds/mpsc_bounded_queue.h"
+#include "coropact/ds/mpsc_bounded_queue.h"
 
 namespace {
 
 void CheckFifoAndWrapAround() {
-  using Queue = vexo::ds::MpscBoundedQueue<int, 8>;
+  using Queue = coropact::ds::MpscBoundedQueue<int, 8>;
   Queue queue;
 
   assert(!queue.TryPop().has_value());
 
   for (int value = 0; value < 8; ++value) {
     assert(queue.TryPush(value) ==
-           vexo::ds::MpscQueuePushResult::kPushed);
+           coropact::ds::MpscQueuePushResult::kPushed);
   }
   assert(queue.TryPush(8) ==
-         vexo::ds::MpscQueuePushResult::kFull);
+         coropact::ds::MpscQueuePushResult::kFull);
 
   for (int value = 0; value < 4; ++value) {
     auto popped = queue.TryPop();
@@ -34,7 +34,7 @@ void CheckFifoAndWrapAround() {
 
   for (int value = 8; value < 12; ++value) {
     assert(queue.TryPush(value) ==
-           vexo::ds::MpscQueuePushResult::kPushed);
+           coropact::ds::MpscQueuePushResult::kPushed);
   }
 
   for (int value = 4; value < 12; ++value) {
@@ -47,7 +47,7 @@ void CheckFifoAndWrapAround() {
 }
 
 void CheckMultipleProducers() {
-  using Queue = vexo::ds::MpscBoundedQueue<int, 1024>;
+  using Queue = coropact::ds::MpscBoundedQueue<int, 1024>;
 
   constexpr int kProducerCount = 4;
   constexpr int kItemsPerProducer = 10000;
@@ -79,7 +79,7 @@ void CheckMultipleProducers() {
         const int value = producer * kItemsPerProducer + i;
 
         while (queue.TryPush(value) ==
-               vexo::ds::MpscQueuePushResult::kFull) {
+               coropact::ds::MpscQueuePushResult::kFull) {
           std::this_thread::yield();
         }
       }

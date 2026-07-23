@@ -3,7 +3,7 @@
 #include <iostream>
 #include <string>
 
-#include "vexo/memory/object_pool.h"
+#include "coropact/memory/object_pool.h"
 
 namespace {
 
@@ -37,7 +37,7 @@ bool TestAcquireAndRelease() {
     TrackedObject::live_count = 0;
     TrackedObject::dtor_count = 0;
 
-    vexo::memory::ObjectPool<TrackedObject, 2> pool;
+    coropact::memory::ObjectPool<TrackedObject, 2> pool;
     auto* first = pool.Acquire(1, "alpha");
     auto* second = pool.Acquire(2, "beta");
 
@@ -60,7 +60,7 @@ bool TestAcquireScoped() {
     TrackedObject::live_count = 0;
     TrackedObject::dtor_count = 0;
 
-    vexo::memory::ObjectPool<TrackedObject, 1> pool;
+    coropact::memory::ObjectPool<TrackedObject, 1> pool;
     {
         auto scoped = pool.AcquireScoped(7, "scoped");
         if (!Expect(static_cast<bool>(scoped), "AcquireScoped should return a valid handle")) return false;
@@ -75,7 +75,7 @@ bool TestAcquireScoped() {
 }
 
 bool TestExhaustion() {
-    vexo::memory::ObjectPool<TrackedObject, 1> pool;
+    coropact::memory::ObjectPool<TrackedObject, 1> pool;
 
     auto* first = pool.Acquire(3, "only");
     auto* second = pool.Acquire(4, "extra");
@@ -92,7 +92,7 @@ bool TestExhaustion() {
 }
 
 bool TestOwns() {
-    vexo::memory::ObjectPool<TrackedObject, 1> pool;
+    coropact::memory::ObjectPool<TrackedObject, 1> pool;
 
     auto* obj = pool.Acquire(5, "owned");
     TrackedObject external(6, "external");

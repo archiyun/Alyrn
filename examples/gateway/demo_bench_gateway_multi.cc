@@ -32,16 +32,16 @@
 #include <utility>
 #include <vector>
 
-#include "vexo/gateway/gateway_server.h"
-#include "vexo/gateway/gateway_session_service.h"
-#include "vexo/gateway/upstream.h"
-#include "vexo/gateway/upstream_peer.h"
-#include "vexo/net/event_loop.h"
-#include "vexo/net/event_loop_scheduler.h"
-#include "vexo/net/inet_address.h"
-#include "vexo/net/reactor_connect.h"
-#include "vexo/net/reactor_listener.h"
-#include "vexo/net/reactor_worker_group.h"
+#include "coropact/gateway/gateway_server.h"
+#include "coropact/gateway/gateway_session_service.h"
+#include "coropact/gateway/upstream.h"
+#include "coropact/gateway/upstream_peer.h"
+#include "coropact/net/event_loop.h"
+#include "coropact/net/event_loop_scheduler.h"
+#include "coropact/net/inet_address.h"
+#include "coropact/net/reactor_connect.h"
+#include "coropact/net/reactor_listener.h"
+#include "coropact/net/reactor_worker_group.h"
 
 namespace {
 
@@ -105,23 +105,23 @@ int main() {
   std::signal(SIGINT, OnSignal);
   std::signal(SIGTERM, OnSignal);
 
-  vexo::gateway::UpstreamRegistry reg;
-  vexo::gateway::UpstreamConfig upstream_cfg;
+  coropact::gateway::UpstreamRegistry reg;
+  coropact::gateway::UpstreamConfig upstream_cfg;
   upstream_cfg.name = "backend";
   upstream_cfg.max_concurrent_requests = max_concurrent;
-  auto us = std::make_shared<vexo::gateway::Upstream>(std::move(upstream_cfg));
+  auto us = std::make_shared<coropact::gateway::Upstream>(std::move(upstream_cfg));
   for (uint16_t p : ports) {
-    us->AddPeer(std::make_shared<vexo::gateway::UpstreamPeer>(vexo::gateway::UpstreamPeerConfig{
+    us->AddPeer(std::make_shared<coropact::gateway::UpstreamPeer>(coropact::gateway::UpstreamPeerConfig{
         .name = "127.0.0.1:" + std::to_string(p), .host = "127.0.0.1", .port = p}));
   }
   reg.Add(us);
 
   using Service =
-      vexo::gateway::GatewaySessionService<vexo::net::ReactorStream, vexo::net::ReactorConnector>;
+      coropact::gateway::GatewaySessionService<coropact::net::ReactorStream, coropact::net::ReactorConnector>;
   using WorkerPool = Service::Pool;
 
   Service service("BenchGatewayMulti", reg);
-  const vexo::gateway::PoolConfig pool_config{.max_idle_per_peer = max_idle_per_peer,
+  const coropact::gateway::PoolConfig pool_config{.max_idle_per_peer = max_idle_per_peer,
                                               .max_idle_total = max_idle_total};
   service.set_pool_config(pool_config);
   service.AddProxyRoute("/", "backend", algo);
@@ -130,20 +130,20 @@ int main() {
   // so sessions on the same loop can reuse connections without crossing
   // worker boundaries.
   std::vector<std::unique_ptr<WorkerPool>> worker_pools;
-  std::unordered_map<vexo::net::EventLoop*, WorkerPool*> pools_by_loop;
+  std::unordered_map<coropact::net::EventLoop*, WorkerPool*> pools_by_loop;
   std::mutex pools_mutex;
   worker_pools.reserve(worker_num);
   pools_by_loop.reserve(worker_num);
 
-  vexo::net::ReactorWorkerGroupOptions options;
+  coropact::net::ReactorWorkerGroupOptions options;
   options.worker_num = worker_num;
   options.worker_options.listener_options.reuse_addr = true;
   options.worker_options.listener_options.reuse_port = true;
 
-  vexo::net::ReactorWorkerGroup workers(
-      vexo::net::InetAddress(listen_port), std::move(options),
+  coropact::net::ReactorWorkerGroup workers(
+      coropact::net::InetAddress(listen_port), std::move(options),
       [&worker_pools, &pools_by_loop, &pools_mutex,
-       pool_config](vexo::net::ReactorWorkerContext& context) {
+       pool_config](coropact::net::ReactorWorkerContext& context) {
         auto pool = std::make_unique<WorkerPool>(pool_config);
         auto* pool_ptr = pool.get();
         std::lock_guard lock(pools_mutex);
@@ -151,8 +151,8 @@ int main() {
         pools_by_loop.emplace(&context.loop, pool_ptr);
       },
       [&service, &pools_by_loop, &pools_mutex](
-          vexo::net::ReactorWorkerContext& context,
-          vexo::net::ReactorStream stream) -> vexo::coro::Task<void> {
+          coropact::net::ReactorWorkerContext& context,
+          coropact::net::ReactorStream stream) -> coropact::coro::Task<void> {
         WorkerPool* pool = nullptr;
         {
           std::lock_guard lock(pools_mutex);
@@ -163,10 +163,10 @@ int main() {
         }
 
         if (pool == nullptr) {
-          co_await service.Serve(std::move(stream), vexo::net::ReactorConnector(&context.loop));
+          co_await service.Serve(std::move(stream), coropact::net::ReactorConnector(&context.loop));
           co_return;
         }
-        co_await service.Serve(std::move(stream), vexo::net::ReactorConnector(&context.loop),
+        co_await service.Serve(std::move(stream), coropact::net::ReactorConnector(&context.loop),
                                *pool);
       });
 

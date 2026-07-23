@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 //
-// Smoke test for the vexo::coro module (M0):
+// Smoke test for the coropact::coro module (M0):
 //   a) Task<int> awaited by another Task<int>, result via SyncWait;
 //   b) Task<void> path;
 //   c) Spawn + JoinHandle on a drain-queue Scheduler: Wait, Detach, async join;
@@ -15,23 +15,23 @@
 #include <memory>
 #include <system_error>
 
-#include "vexo/base/error.h"
-#include "vexo/coro/awaitable.h"
-#include "vexo/coro/scheduler.h"
-#include "vexo/coro/spawn.h"
-#include "vexo/coro/sync_wait.h"
-#include "vexo/coro/task.h"
-#include "vexo/coro/work.h"
+#include "coropact/base/error.h"
+#include "coropact/coro/awaitable.h"
+#include "coropact/coro/scheduler.h"
+#include "coropact/coro/spawn.h"
+#include "coropact/coro/sync_wait.h"
+#include "coropact/coro/task.h"
+#include "coropact/coro/work.h"
 
-using vexo::base::make_errno;
-using vexo::base::Result;
-using vexo::coro::JoinHandle;
-using vexo::coro::Scheduler;
-using vexo::coro::Spawn;
-using vexo::coro::SyncWait;
-using vexo::coro::Task;
-using vexo::coro::Work;
-using vexo::coro::WorkQueue;
+using coropact::base::make_errno;
+using coropact::base::Result;
+using coropact::coro::JoinHandle;
+using coropact::coro::Scheduler;
+using coropact::coro::Spawn;
+using coropact::coro::SyncWait;
+using coropact::coro::Task;
+using coropact::coro::Work;
+using coropact::coro::WorkQueue;
 
 namespace {
 
@@ -78,17 +78,17 @@ struct BadAwaiter {
 
 // The leaf Task and its composition. Task<int> is the awaitable that satisfies
 // the Awaitable concept used to constrain Spawn/SyncWait inputs.
-static_assert(vexo::coro::Awaitable<Task<int>>);
-static_assert(vexo::coro::Awaitable<Task<void>>);
-static_assert(vexo::coro::Awaitable<RawAwaiter>);
-static_assert(vexo::coro::Awaitable<MemberAwaitable>);
-static_assert(vexo::coro::Awaitable<AdlAwaitable>);
-static_assert(vexo::coro::Awaitable<BothAwaitable>);
-static_assert(std::same_as<vexo::coro::AwaitResult<AdlAwaitable>, int>);
-static_assert(vexo::coro::AwaiterFor<PromiseAwareAwaiter, PromiseMarker>);
-static_assert(vexo::coro::PromiseTransformedAwaitable<TransformPromise, int>);
-static_assert(!vexo::coro::Awaiter<PromiseAwareAwaiter>);
-static_assert(!vexo::coro::Awaiter<BadAwaiter>);
+static_assert(coropact::coro::Awaitable<Task<int>>);
+static_assert(coropact::coro::Awaitable<Task<void>>);
+static_assert(coropact::coro::Awaitable<RawAwaiter>);
+static_assert(coropact::coro::Awaitable<MemberAwaitable>);
+static_assert(coropact::coro::Awaitable<AdlAwaitable>);
+static_assert(coropact::coro::Awaitable<BothAwaitable>);
+static_assert(std::same_as<coropact::coro::AwaitResult<AdlAwaitable>, int>);
+static_assert(coropact::coro::AwaiterFor<PromiseAwareAwaiter, PromiseMarker>);
+static_assert(coropact::coro::PromiseTransformedAwaitable<TransformPromise, int>);
+static_assert(!coropact::coro::Awaiter<PromiseAwareAwaiter>);
+static_assert(!coropact::coro::Awaiter<BadAwaiter>);
 
 Task<int> Add(int a, int b) { co_return a + b; }
 

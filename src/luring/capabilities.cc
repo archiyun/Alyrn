@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "vexo/luring/capabilities.h"
+#include "coropact/luring/capabilities.h"
 
 #include <liburing.h>
 #include <liburing/io_uring.h>
@@ -8,28 +8,28 @@
 #include <cerrno>
 #include <expected>
 
-#include "vexo/base/error.h"
-#include "vexo/io/io_backend.h"
-#include "vexo/luring/options.h"
+#include "coropact/base/error.h"
+#include "coropact/io/io_backend.h"
+#include "coropact/luring/options.h"
 
-namespace vexo::luring {
+namespace coropact::luring {
 
 namespace {
 
-void EnableCore(vexo::io::CapabilitySet& set) noexcept {
-  set.Enable(vexo::io::IoCapability::kReadSome);
-  set.Enable(vexo::io::IoCapability::kWriteSome);
-  set.Enable(vexo::io::IoCapability::kAccept);
-  set.Enable(vexo::io::IoCapability::kConnect);
-  set.Enable(vexo::io::IoCapability::kShutdown);
-  set.Enable(vexo::io::IoCapability::kClose);
-  set.Enable(vexo::io::IoCapability::kCancelByClose);
-  set.Enable(vexo::io::IoCapability::kTimeout);
+void EnableCore(coropact::io::CapabilitySet& set) noexcept {
+  set.Enable(coropact::io::IoCapability::kReadSome);
+  set.Enable(coropact::io::IoCapability::kWriteSome);
+  set.Enable(coropact::io::IoCapability::kAccept);
+  set.Enable(coropact::io::IoCapability::kConnect);
+  set.Enable(coropact::io::IoCapability::kShutdown);
+  set.Enable(coropact::io::IoCapability::kClose);
+  set.Enable(coropact::io::IoCapability::kCancelByClose);
+  set.Enable(coropact::io::IoCapability::kTimeout);
 }
 
-void EnableBasicLuringTags(vexo::io::CapabilitySet& set) noexcept {
-  set.Enable(vexo::io::IoCapability::kSubmitRead);
-  set.Enable(vexo::io::IoCapability::kSubmitWrite);
+void EnableBasicLuringTags(coropact::io::CapabilitySet& set) noexcept {
+  set.Enable(coropact::io::IoCapability::kSubmitRead);
+  set.Enable(coropact::io::IoCapability::kSubmitWrite);
 }
 
 bool ProbeSupports(io_uring_probe* probe, unsigned op) noexcept {
@@ -38,7 +38,7 @@ bool ProbeSupports(io_uring_probe* probe, unsigned op) noexcept {
 
 }  // namespace
 
-base::Result<vexo::io::CapabilitySet> ProbeCapabilities(const LUringOptions& options) noexcept {
+base::Result<coropact::io::CapabilitySet> ProbeCapabilities(const LUringOptions& options) noexcept {
   io_uring ring{};
   io_uring_params params{};
 
@@ -82,54 +82,54 @@ base::Result<vexo::io::CapabilitySet> ProbeCapabilities(const LUringOptions& opt
     return std::unexpected(base::make_errno(ENOTSUP));
   }
 
-  vexo::io::CapabilitySet caps;
+  coropact::io::CapabilitySet caps;
   EnableCore(caps);
   EnableBasicLuringTags(caps);
 
   if (options.setup_sqpoll) {
-    caps.Enable(vexo::io::IoCapability::kSqPoll);
+    caps.Enable(coropact::io::IoCapability::kSqPoll);
   }
   if (options.setup_iopoll) {
-    caps.Enable(vexo::io::IoCapability::kIoPoll);
+    caps.Enable(coropact::io::IoCapability::kIoPoll);
   }
 
   if (ProbeSupports(probe, IORING_OP_PROVIDE_BUFFERS) ||
       ProbeSupports(probe, IORING_OP_REMOVE_BUFFERS)) {
-    caps.Enable(vexo::io::IoCapability::kProvidedBuffer);
+    caps.Enable(coropact::io::IoCapability::kProvidedBuffer);
   }
 
   if (ProbeSupports(probe, IORING_OP_ACCEPT)) {
-    caps.Enable(vexo::io::IoCapability::kMultishotAccept);
+    caps.Enable(coropact::io::IoCapability::kMultishotAccept);
   }
 
   if (ProbeSupports(probe, IORING_OP_MSG_RING)) {
-    caps.Enable(vexo::io::IoCapability::kMsgRing);
+    caps.Enable(coropact::io::IoCapability::kMsgRing);
   }
 #ifdef IORING_OP_RECV
   if (ProbeSupports(probe, IORING_OP_RECV)) {
-    caps.Enable(vexo::io::IoCapability::kMultishotRecv);
+    caps.Enable(coropact::io::IoCapability::kMultishotRecv);
   }
 #endif
 
 #ifdef IORING_OP_SEND_ZC
   if (ProbeSupports(probe, IORING_OP_SEND_ZC)) {
-    caps.Enable(vexo::io::IoCapability::kSendZeroCopy);
+    caps.Enable(coropact::io::IoCapability::kSendZeroCopy);
   }
 #endif
 
-  caps.Enable(vexo::io::IoCapability::kLinkedOps);
+  caps.Enable(coropact::io::IoCapability::kLinkedOps);
   io_uring_free_probe(probe);
   io_uring_queue_exit(&ring);
   return caps;
 }
 
-base::Result<vexo::io::BackendBinding> BindLUring(const LUringOptions& options,
-                                                  vexo::io::CapabilitySet active_profile) noexcept {
+base::Result<coropact::io::BackendBinding> BindLUring(const LUringOptions& options,
+                                                  coropact::io::CapabilitySet active_profile) noexcept {
   auto caps = ProbeCapabilities(options);
   if (!caps.has_value()) {
     return std::unexpected(caps.error());
   }
-  return vexo::io::BindBackend(vexo::io::Backend::kLuring, *caps, active_profile);
+  return coropact::io::BindBackend(coropact::io::Backend::kLuring, *caps, active_profile);
 }
 
-}  // namespace vexo::luring
+}  // namespace coropact::luring

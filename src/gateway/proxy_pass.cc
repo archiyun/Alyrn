@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "vexo/gateway/proxy_pass.h"
+#include "coropact/gateway/proxy_pass.h"
 
 #include <algorithm>
 #include <array>
@@ -8,7 +8,7 @@
 #include <chrono>
 #include <cstring>
 
-namespace vexo::gateway {
+namespace coropact::gateway {
 namespace {
 
 bool AsciiCaseEqual(std::string_view lhs, std::string_view rhs) {
@@ -70,8 +70,8 @@ uint64_t ProxyPass::NowMs() {
                                    .count());
 }
 
-bool ProxyPass::IsIdempotent(vexo::http::Method method) {
-  using vexo::http::Method;
+bool ProxyPass::IsIdempotent(coropact::http::Method method) {
+  using coropact::http::Method;
   switch (method) {
     case Method::Get:
     case Method::Head:
@@ -96,7 +96,7 @@ std::shared_ptr<UpstreamPeer> ProxyPass::SelectFailoverPeer(Upstream& upstream,
 }
 
 ProxyPass::ResponseState ProxyPass::RewriteHeaders(std::string_view raw_headers, std::string& out,
-                                                   vexo::http::Method request_method) {
+                                                   coropact::http::Method request_method) {
   ResponseState state;
   out.reserve(raw_headers.size() + 64);
 
@@ -113,7 +113,7 @@ ProxyPass::ResponseState ProxyPass::RewriteHeaders(std::string_view raw_headers,
     pos = first_cr + 2;
   }
 
-  const bool no_body = request_method == vexo::http::Method::Head || state.status == 204 ||
+  const bool no_body = request_method == coropact::http::Method::Head || state.status == 204 ||
                        state.status == 304 || (state.status >= 100 && state.status < 200);
   if (no_body) {
     state.framing = BodyFraming::kNoBody;
@@ -167,18 +167,18 @@ ProxyPass::ResponseState ProxyPass::RewriteHeaders(std::string_view raw_headers,
   return state;
 }
 
-std::string ProxyPass::BuildRequest(const vexo::http::HttpRequest& req, const UpstreamPeer& peer,
+std::string ProxyPass::BuildRequest(const coropact::http::HttpRequest& req, const UpstreamPeer& peer,
                                     ForwardedHeaderContext forwarded) {
   std::string out;
   BuildRequestInto(req, peer, out, forwarded);
   return out;
 }
 
-void ProxyPass::BuildRequestInto(const vexo::http::HttpRequest& req, const UpstreamPeer& peer,
+void ProxyPass::BuildRequestInto(const coropact::http::HttpRequest& req, const UpstreamPeer& peer,
                                  std::string& out, ForwardedHeaderContext forwarded) {
   out.clear();
   out.reserve(256);
-  out += vexo::http::MethodToString(req.method());
+  out += coropact::http::MethodToString(req.method());
   out += ' ';
   out += req.path().empty() ? "/" : req.path();
   if (!req.query().empty()) {
@@ -262,4 +262,4 @@ void ProxyPass::BuildRequestInto(const vexo::http::HttpRequest& req, const Upstr
   if (!req.body().empty()) out += req.body();
 }
 
-}  // namespace vexo::gateway
+}  // namespace coropact::gateway

@@ -1,17 +1,17 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "vexo/http/http_request.h"
+#include "coropact/http/http_request.h"
 
 #include <utility>
 
 #include "header_utils.h"
-#include "vexo/http/http_types.h"
+#include "coropact/http/http_types.h"
 
-namespace vexo::http {
+namespace coropact::http {
 
 HttpRequest::HttpRequest()
-    : pool_{vexo::memory::Pool::Create()},
-      res_{std::make_unique<vexo::memory::PoolResource>(*pool_)},
+    : pool_{coropact::memory::Pool::Create()},
+      res_{std::make_unique<coropact::memory::PoolResource>(*pool_)},
       path_{res_.get()},
       query_{res_.get()},
       body_{res_.get()},
@@ -135,4 +135,4 @@ void HttpRequest::Reset() {
   receive_time_ = {};
 }
 
-}  // namespace vexo::http
+}  // namespace coropact::http

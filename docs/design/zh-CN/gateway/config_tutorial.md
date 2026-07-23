@@ -1,12 +1,12 @@
 # 配置化网关教程
 
-这篇教程说明如何用 YAML 文件启动 `vexo::gateway`，把上游、路由、健康检查、限流、熔断和 fallback 从 C++ 代码里移到配置文件里。
+这篇教程说明如何用 YAML 文件启动 `coropact::gateway`，把上游、路由、健康检查、限流、熔断和 fallback 从 C++ 代码里移到配置文件里。
 
 当前配置加载是启动期能力：进程启动时读取并校验配置，校验失败直接退出；运行中热更新还没有实现。
 
 ## 一、准备依赖
 
-配置解析使用 `yaml-cpp`。如果系统没有这个库，`vexo_gateway_config` 目标不会构建，但核心 `vexo_gateway` 仍然可用。
+配置解析使用 `yaml-cpp`。如果系统没有这个库，`coropact_gateway_config` 目标不会构建，但核心 `coropact_gateway` 仍然可用。
 
 Ubuntu / Debian：
 
@@ -28,10 +28,10 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_EXAMPLES=ON
 cmake --build build --target demo_gateway_config -j"$(nproc)"
 ```
 
-`VEXO_ENABLE_GATEWAY_YAML_CONFIG` 默认是 `ON`。如果你只想构建核心库，不需要 YAML 配置能力，可以关闭：
+`COROPACT_ENABLE_GATEWAY_YAML_CONFIG` 默认是 `ON`。如果你只想构建核心库，不需要 YAML 配置能力，可以关闭：
 
 ```bash
-cmake -B build -DVEXO_ENABLE_GATEWAY_YAML_CONFIG=OFF
+cmake -B build -DCOROPACT_ENABLE_GATEWAY_YAML_CONFIG=OFF
 ```
 
 ## 三、先校验配置
@@ -287,7 +287,7 @@ routes:
 
 ### `yaml-cpp was not found`
 
-CMake 找不到 `yaml-cpp`，只会跳过 `vexo_gateway_config`。安装依赖后重新配置：
+CMake 找不到 `yaml-cpp`，只会跳过 `coropact_gateway_config`。安装依赖后重新配置：
 
 ```bash
 cmake -B build -DBUILD_EXAMPLES=ON
@@ -311,34 +311,34 @@ cmake -B build -DBUILD_EXAMPLES=ON
 
 ## 十、在自己的程序中使用配置加载器
 
-链接 `vexo_gateway_config`：
+链接 `coropact_gateway_config`：
 
 ```cmake
-target_link_libraries(my_gateway PRIVATE vexo_gateway_config)
+target_link_libraries(my_gateway PRIVATE coropact_gateway_config)
 ```
 
 启动代码：
 
 ```cpp
-#include "vexo/gateway/gateway_config.h"
-#include "vexo/gateway/gateway_server.h"
-#include "vexo/gateway/upstream_registry.h"
-#include "vexo/net/event_loop.h"
+#include "coropact/gateway/gateway_config.h"
+#include "coropact/gateway/gateway_server.h"
+#include "coropact/gateway/upstream_registry.h"
+#include "coropact/net/event_loop.h"
 
 int main() {
-  auto config = vexo::gateway::LoadGatewayConfigFromYaml("gateway.yaml");
+  auto config = coropact::gateway::LoadGatewayConfigFromYaml("gateway.yaml");
 
-  vexo::gateway::UpstreamRegistry registry;
-  vexo::gateway::BuildGatewayUpstreamRegistry(config, registry);
+  coropact::gateway::UpstreamRegistry registry;
+  coropact::gateway::BuildGatewayUpstreamRegistry(config, registry);
 
-  vexo::net::EventLoop loop;
-  vexo::gateway::GatewayServer gateway(
+  coropact::net::EventLoop loop;
+  coropact::gateway::GatewayServer gateway(
       &loop,
-      vexo::gateway::MakeGatewayListenAddress(config),
+      coropact::gateway::MakeGatewayListenAddress(config),
       config.server.name,
       registry);
 
-  vexo::gateway::ApplyGatewayConfig(config, gateway);
+  coropact::gateway::ApplyGatewayConfig(config, gateway);
   gateway.Start();
   loop.Loop();
 }

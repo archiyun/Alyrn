@@ -1,10 +1,10 @@
 #include <iostream>
 #include <string>
 
-#include "vexo/http/http_parser.h"
-#include "vexo/http/http_request.h"
-#include "vexo/http/http_response.h"
-#include "vexo/http/router.h"
+#include "coropact/http/http_parser.h"
+#include "coropact/http/http_request.h"
+#include "coropact/http/http_response.h"
+#include "coropact/http/router.h"
 
 namespace {
 
@@ -16,12 +16,12 @@ bool Expect(bool condition, const char* message) {
   return true;
 }
 
-bool ParseOk(vexo::http::ParseStatus s) {
-  return s == vexo::http::ParseStatus::Continue || s == vexo::http::ParseStatus::GotAll;
+bool ParseOk(coropact::http::ParseStatus s) {
+  return s == coropact::http::ParseStatus::Continue || s == coropact::http::ParseStatus::GotAll;
 }
 
 bool TestParsesHttp11KeepAliveRequest() {
-  vexo::http::HttpParser parser;
+  coropact::http::HttpParser parser;
   const std::string request =
       "GET /api/health?verbose=1 HTTP/1.1\r\n"
       "Host: localhost\r\n"
@@ -31,8 +31,8 @@ bool TestParsesHttp11KeepAliveRequest() {
   bool ok = Expect(ParseOk(parser.Feed(request)), "parser should accept a valid HTTP/1.1 request");
   ok &= Expect(parser.GotAll(), "parser should complete the request");
 
-  const vexo::http::HttpRequest parsed = parser.TakeRequest();
-  ok &= Expect(parsed.method() == vexo::http::Method::Get, "request method should be GET");
+  const coropact::http::HttpRequest parsed = parser.TakeRequest();
+  ok &= Expect(parsed.method() == coropact::http::Method::Get, "request method should be GET");
   ok &= Expect(parsed.path() == "/api/health", "path should be parsed");
   ok &= Expect(parsed.query() == "verbose=1", "query string should be parsed");
   ok &= Expect(parsed.keep_alive(), "HTTP/1.1 keep-alive should be enabled");
@@ -42,7 +42,7 @@ bool TestParsesHttp11KeepAliveRequest() {
 }
 
 bool TestMutatesHeadersCaseInsensitively() {
-  vexo::http::HttpRequest request;
+  coropact::http::HttpRequest request;
   request.AddHeader("X-Trace-ID", "first");
   request.set_header("x-TRACE-id", "second");
 
@@ -58,8 +58,8 @@ bool TestMutatesHeadersCaseInsensitively() {
 }
 
 bool TestBuildsHttpResponse() {
-  vexo::http::HttpResponse response(false);
-  response.set_status_code(vexo::http::StatusCode::Ok);
+  coropact::http::HttpResponse response(false);
+  response.set_status_code(coropact::http::StatusCode::Ok);
   response.set_content_type("application/json; charset=utf-8");
   response.AddHeader("X-Trace-Id", "trace-abc");
   response.set_body("{\"ok\":true}");
@@ -77,7 +77,7 @@ bool TestBuildsHttpResponse() {
 }
 
 bool TestParsesRequestBodyAcrossChunks() {
-  vexo::http::HttpParser parser;
+  coropact::http::HttpParser parser;
   const std::string head =
       "POST /api/echo?src=test HTTP/1.1\r\n"
       "Host: localhost\r\n"
@@ -90,18 +90,18 @@ bool TestParsesRequestBodyAcrossChunks() {
   ok &= Expect(ParseOk(parser.Feed("hello")), "parser should accept the completed body");
   ok &= Expect(parser.GotAll(), "parser should complete after receiving the body");
 
-  const vexo::http::HttpRequest parsed = parser.TakeRequest();
-  ok &= Expect(parsed.method() == vexo::http::Method::Post, "request method should be POST");
+  const coropact::http::HttpRequest parsed = parser.TakeRequest();
+  ok &= Expect(parsed.method() == coropact::http::Method::Post, "request method should be POST");
   ok &= Expect(parsed.body() == "hello", "body should be parsed from the buffer");
   ok &= Expect(parsed.query() == "src=test", "query string should remain available");
   return ok;
 }
 
 bool TestMatchesStaticRoute() {
-  vexo::http::Router router;
-  router.Get("/api/health", [](const vexo::http::HttpRequest&, vexo::http::HttpResponse&) {});
+  coropact::http::Router router;
+  router.Get("/api/health", [](const coropact::http::HttpRequest&, coropact::http::HttpResponse&) {});
 
-  const auto match = router.Match(vexo::http::Method::Get, "/api/health");
+  const auto match = router.Match(coropact::http::Method::Get, "/api/health");
   bool ok = Expect(static_cast<bool>(match.handler), "static route should return a handler");
   ok &= Expect(match.path_matched, "matched static route should set path_matched");
   ok &= Expect(match.params.empty(), "static route should not produce params");
@@ -109,15 +109,15 @@ bool TestMatchesStaticRoute() {
 }
 
 bool TestMatchesDynamicRouteAndParams() {
-  vexo::http::Router router;
+  coropact::http::Router router;
   router.Get("/users/:id/posts/:post_id",
-             [](const vexo::http::HttpRequest&, vexo::http::HttpResponse&) {});
+             [](const coropact::http::HttpRequest&, coropact::http::HttpResponse&) {});
 
-  const auto match = router.Match(vexo::http::Method::Get, "/users/42/posts/7");
+  const auto match = router.Match(coropact::http::Method::Get, "/users/42/posts/7");
   bool ok = Expect(static_cast<bool>(match.handler), "dynamic route should return a handler");
   ok &= Expect(match.path_matched, "dynamic route should mark path as matched");
 
-  auto find_param = [&](std::string_view key) -> const vexo::http::PathParam* {
+  auto find_param = [&](std::string_view key) -> const coropact::http::PathParam* {
     for (const auto& p : match.params) {
       if (p.key == key) return &p;
     }
@@ -133,25 +133,25 @@ bool TestMatchesDynamicRouteAndParams() {
 }
 
 bool TestPrefersStaticRouteOverParamRoute() {
-  vexo::http::Router router;
+  coropact::http::Router router;
   bool static_handler_called = false;
   bool param_handler_called = false;
 
-  router.Get("/users/me", [&](const vexo::http::HttpRequest&, vexo::http::HttpResponse&) {
+  router.Get("/users/me", [&](const coropact::http::HttpRequest&, coropact::http::HttpResponse&) {
     static_handler_called = true;
   });
-  router.Get("/users/:id", [&](const vexo::http::HttpRequest&, vexo::http::HttpResponse&) {
+  router.Get("/users/:id", [&](const coropact::http::HttpRequest&, coropact::http::HttpResponse&) {
     param_handler_called = true;
   });
 
-  const auto match = router.Match(vexo::http::Method::Get, "/users/me");
+  const auto match = router.Match(coropact::http::Method::Get, "/users/me");
   bool ok = Expect(static_cast<bool>(match.handler), "static route should still produce a handler");
   ok &=
       Expect(match.params.empty(), "static route should not capture params when exact path exists");
 
   if (match.handler) {
-    vexo::http::HttpRequest request;
-    vexo::http::HttpResponse response(true);
+    coropact::http::HttpRequest request;
+    coropact::http::HttpResponse response(true);
     match.handler(request, response);
   }
 
@@ -162,21 +162,21 @@ bool TestPrefersStaticRouteOverParamRoute() {
 }
 
 bool TestDistinguishes404And405() {
-  vexo::http::Router router;
-  router.Get("/users/:id", [](const vexo::http::HttpRequest&, vexo::http::HttpResponse&) {});
+  coropact::http::Router router;
+  router.Get("/users/:id", [](const coropact::http::HttpRequest&, coropact::http::HttpResponse&) {});
 
-  const auto wrong_method = router.Match(vexo::http::Method::Post, "/users/42");
+  const auto wrong_method = router.Match(coropact::http::Method::Post, "/users/42");
   bool ok = Expect(!wrong_method.handler, "wrong method should not return a handler");
   ok &= Expect(wrong_method.path_matched, "wrong method should still mark path as matched for 405");
 
-  const auto missing = router.Match(vexo::http::Method::Get, "/articles/42");
+  const auto missing = router.Match(coropact::http::Method::Get, "/articles/42");
   ok &= Expect(!missing.handler, "missing route should not return a handler");
   ok &= Expect(!missing.path_matched, "missing route should leave path_matched false for 404");
   return ok;
 }
 
 bool TestRejectsTransferEncoding() {
-  vexo::http::HttpParser parser;
+  coropact::http::HttpParser parser;
   return Expect(!ParseOk(parser.Feed("POST / HTTP/1.1\r\n"
                                      "Host: x\r\n"
                                      "Transfer-Encoding: chunked\r\n"
@@ -185,7 +185,7 @@ bool TestRejectsTransferEncoding() {
 }
 
 bool TestRejectsCLAndTEBoth() {
-  vexo::http::HttpParser parser;
+  coropact::http::HttpParser parser;
   return Expect(!ParseOk(parser.Feed("POST / HTTP/1.1\r\n"
                                      "Host: x\r\n"
                                      "Content-Length: 5\r\n"
@@ -195,7 +195,7 @@ bool TestRejectsCLAndTEBoth() {
 }
 
 bool TestRejectsDuplicateContentLength() {
-  vexo::http::HttpParser parser;
+  coropact::http::HttpParser parser;
   return Expect(!ParseOk(parser.Feed("POST / HTTP/1.1\r\n"
                                      "Host: x\r\n"
                                      "Content-Length: 10\r\n"
@@ -211,7 +211,7 @@ bool TestRejectsTooManyHeaders() {
     request += "X-Spam-" + std::to_string(i) + ": v\r\n";
   }
   request += "\r\n";
-  vexo::http::HttpParser parser;
+  coropact::http::HttpParser parser;
   return Expect(!ParseOk(parser.Feed(request)),
                 "parser should reject when header count exceeds the cap");
 }
@@ -219,7 +219,7 @@ bool TestRejectsTooManyHeaders() {
 bool TestRejectsOversizedRequestLine() {
   const std::string request =
       "GET /" + std::string(9000, 'a') + " HTTP/1.1\r\n\r\n";  // > kMaxRequestLine (8 KiB)
-  vexo::http::HttpParser parser;
+  coropact::http::HttpParser parser;
   return Expect(!ParseOk(parser.Feed(request)), "parser should reject request line beyond the cap");
 }
 
@@ -227,21 +227,21 @@ bool TestRejectsObsFold() {
   // RFC 9112 §5.2: obsolete line folding (continuation line starting with
   // whitespace) must be rejected. The fold line lacks a colon, so the parser
   // rejects it as a malformed header — lock that behavior down.
-  vexo::http::HttpParser parser;
+  coropact::http::HttpParser parser;
   const auto s = parser.Feed(
       "GET / HTTP/1.1\r\n"
       "Host: x\r\n"
       "X-Foo: bar\r\n"
       " continuation\r\n"
       "\r\n");
-  return Expect(s == vexo::http::ParseStatus::BadRequest,
+  return Expect(s == coropact::http::ParseStatus::BadRequest,
                 "obs-fold continuation must yield BadRequest");
 }
 
 bool TestMapsParseStatusToStatusCode() {
-  using vexo::http::ParseStatus;
-  using vexo::http::ParseStatusToStatusCode;
-  using vexo::http::StatusCode;
+  using coropact::http::ParseStatus;
+  using coropact::http::ParseStatusToStatusCode;
+  using coropact::http::StatusCode;
   bool ok = true;
   ok &= Expect(ParseStatusToStatusCode(ParseStatus::UriTooLong) == StatusCode::UriTooLong, "414");
   ok &= Expect(ParseStatusToStatusCode(ParseStatus::HeaderTooLarge) ==
@@ -259,7 +259,7 @@ bool TestMapsParseStatusToStatusCode() {
 }
 
 bool TestReusesParserOwnedRequest() {
-  vexo::http::HttpParser parser;
+  coropact::http::HttpParser parser;
   bool ok = Expect(ParseOk(parser.Feed("GET /first HTTP/1.1\r\nHost: localhost\r\n\r\n")),
                    "parser should complete the first request");
   auto* first = &parser.CurrentRequest();
@@ -276,25 +276,25 @@ bool TestReusesParserOwnedRequest() {
 }
 
 bool TestParsesConnectMethod() {
-  vexo::http::HttpParser parser;
+  coropact::http::HttpParser parser;
   bool ok = Expect(ParseOk(parser.Feed("CONNECT example.com:443 HTTP/1.1\r\n"
                                        "Host: example.com:443\r\n"
                                        "\r\n")),
                    "CONNECT should parse");
   const auto request = parser.TakeRequest();
-  ok &= Expect(request.method() == vexo::http::Method::Connect, "method enum should be Connect");
+  ok &= Expect(request.method() == coropact::http::Method::Connect, "method enum should be Connect");
   return ok;
 }
 
 }  // namespace
 
 bool TestRouterPathNormalization() {
-  vexo::http::Router r;
+  coropact::http::Router r;
   bool hit = false;
-  r.Get("/foo", [&](const vexo::http::HttpRequest&, vexo::http::HttpResponse&) { hit = true; });
+  r.Get("/foo", [&](const coropact::http::HttpRequest&, coropact::http::HttpResponse&) { hit = true; });
 
   for (auto p : {"/foo", "/foo/", "//foo", "/foo//"}) {
-    auto m = r.Match(vexo::http::Method::Get, p);
+    auto m = r.Match(coropact::http::Method::Get, p);
     if (!m.handler) {
       std::fprintf(stderr, "missed: %s\n", p);
       return false;

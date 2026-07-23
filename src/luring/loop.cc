@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 
-#include "vexo/luring/loop.h"
+#include "coropact/luring/loop.h"
 
 #include <liburing.h>
 #include <poll.h>
@@ -18,15 +18,15 @@
 #include <stop_token>
 #include <utility>
 
-#include "vexo/base/ctrack.h"
-#include "vexo/base/current_thread.h"
-#include "vexo/base/error.h"
-#include "vexo/coro/scheduler.h"
-#include "vexo/luring/op.h"
-#include "vexo/luring/options.h"
-#include "vexo/luring/ring.h"
+#include "coropact/base/ctrack.h"
+#include "coropact/base/current_thread.h"
+#include "coropact/base/error.h"
+#include "coropact/coro/scheduler.h"
+#include "coropact/luring/op.h"
+#include "coropact/luring/options.h"
+#include "coropact/luring/ring.h"
 
-namespace vexo::luring {
+namespace coropact::luring {
 
 namespace {
 
@@ -344,7 +344,7 @@ void LUringLoop::RunReady() noexcept {
       }
     }
     {
-      VEXO_CTRACK_SCOPE("luring.ready.work");
+      COROPACT_CTRACK_SCOPE("luring.ready.work");
       Run(work);
     }
     if (stats_enabled_) {
@@ -399,7 +399,7 @@ base::Result<void> LUringLoop::FlushSubmit() noexcept {
   while (pending_submit_ > 0) {
     base::Result<std::size_t> submitted;
     {
-      VEXO_CTRACK_SCOPE("luring.ring.submit");
+      COROPACT_CTRACK_SCOPE("luring.ring.submit");
       submitted = ring_.Submit();
     }
     if (!submitted.has_value()) {
@@ -430,7 +430,7 @@ base::Result<std::size_t> LUringLoop::PollCompletions() noexcept {
   }
 
   {
-    VEXO_CTRACK_SCOPE("luring.ring.reap");
+    COROPACT_CTRACK_SCOPE("luring.ring.reap");
     auto reaped = ring_.Reap([this](io_uring_cqe* cqe) { HandleCqe(cqe); }, max_cqe_per_turn_);
     if (stats_enabled_) {
       ++stats_.poll_count;
@@ -463,7 +463,7 @@ base::Result<std::size_t> LUringLoop::WaitCompletionsFor(
   io_uring_cqe* cqe = nullptr;
   int r = 0;
   {
-    VEXO_CTRACK_SCOPE("luring.ring.wait");
+    COROPACT_CTRACK_SCOPE("luring.ring.wait");
     if (timeout == std::chrono::nanoseconds::max()) {
       r = io_uring_wait_cqe(ring_.native(), &cqe);
     } else {
@@ -480,7 +480,7 @@ base::Result<std::size_t> LUringLoop::WaitCompletionsFor(
   }
 
   {
-    VEXO_CTRACK_SCOPE("luring.ring.reap");
+    COROPACT_CTRACK_SCOPE("luring.ring.reap");
     auto reaped = ring_.Reap([this](io_uring_cqe* completed_cqe) { HandleCqe(completed_cqe); },
                              max_cqe_per_turn_);
     if (stats_enabled_) {
@@ -535,7 +535,7 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
 
   const std::uint64_t event_ns = stats_enabled_ ? NowNs() : 0;
   {
-    VEXO_CTRACK_SCOPE("luring.cqe.complete");
+    COROPACT_CTRACK_SCOPE("luring.cqe.complete");
     op->Complete(cqe->res);
   }
   if (op->resume_work.handle) {
@@ -666,4 +666,4 @@ void LUringLoop::DumpStats() const noexcept {
       static_cast<double>(stats.work_run_time_max_ns) / 1'000.0);
 }
 
-}  // namespace vexo::luring
+}  // namespace coropact::luring

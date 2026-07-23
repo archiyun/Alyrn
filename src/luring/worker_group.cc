@@ -1,16 +1,16 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "vexo/luring/worker_group.h"
+#include "coropact/luring/worker_group.h"
 
 #include <cerrno>
 #include <expected>
 #include <memory>
 #include <utility>
 
-#include "vexo/luring/worker.h"
-#include "vexo/net/inet_address.h"
+#include "coropact/luring/worker.h"
+#include "coropact/net/inet_address.h"
 
-namespace vexo::luring {
+namespace coropact::luring {
 
 LUringWorkerGroup::LUringWorkerGroup(net::InetAddress listen_addr, LUringWorkerGroupOptions options,
                                      ThreadInitCallback init_callback,
@@ -66,4 +66,4 @@ void LUringWorkerGroup::Stop() noexcept {
   started_ = false;
 }
 
-}  // namespace vexo::luring
+}  // namespace coropact::luring

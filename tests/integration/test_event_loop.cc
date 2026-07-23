@@ -3,9 +3,9 @@
 #include <future>
 #include <thread>
 
-#include "vexo/net/event_loop.h"
+#include "coropact/net/event_loop.h"
 
-namespace vexo::net {
+namespace coropact::net {
 namespace {
 
 using namespace std::chrono_literals;
@@ -84,4 +84,4 @@ TEST(EventLoopTest, QueueInLoopFromPendingFunctorSchedulesNextTurn) {
 }
 
 }  // namespace
-}  // namespace vexo::net
+}  // namespace coropact::net

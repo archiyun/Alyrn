@@ -9,8 +9,8 @@
 #include <utility>
 #include <vector>
 
-#include "vexo/memory/pmr_pool_resource.h"
-#include "vexo/memory/pool.h"
+#include "coropact/memory/pmr_pool_resource.h"
+#include "coropact/memory/pool.h"
 
 namespace {
 
@@ -25,10 +25,10 @@ int g_failures = 0;
     }                                                              \
   } while (0)
 
-using vexo::memory::CountingMemoryResource;
-using vexo::memory::MemoryResourceStats;
-using vexo::memory::Pool;
-using vexo::memory::PoolResource;
+using coropact::memory::CountingMemoryResource;
+using coropact::memory::MemoryResourceStats;
+using coropact::memory::Pool;
+using coropact::memory::PoolResource;
 
 using PmrString = std::pmr::string;
 

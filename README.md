@@ -1,4 +1,4 @@
-# Vexo⚡
+# CoroPact⚡
 
 ![C++](https://img.shields.io/badge/C++-23-blue)
 ![Platform](https://img.shields.io/badge/platform-Linux-lightgrey)
@@ -7,7 +7,7 @@
 
 ***A C++23 asynchronous networking runtime and L7 gateway for Linux, powered by coroutines, epoll, and io_uring.***
 
-Vexo provides a unified and explicit coroutine programming model over independent Reactor and io_uring networking backends:
+CoroPact provides a unified and explicit coroutine programming model over independent Reactor and io_uring networking backends:
 
 * 🔀 **A unified asynchronous I/O contract**
   The epoll and io_uring modules own independent event loops while exposing consistent coroutine Stream semantics. Application code depends on `Task<T>`, `AsyncStream`, and `AsyncListener` rather than backend details such as `epoll_event`, SQE, or CQE.
@@ -16,7 +16,7 @@ Vexo provides a unified and explicit coroutine programming model over independen
   Each Worker owns its thread, event loop, connections, and I/O operations. Operations complete in their owning execution context and coroutine continuations resume in that same context, with explicit rules for buffer lifetimes, cancellation, and asynchronous close.
 
 * 🚀 **Networking runtime and L7 gateway**
-  Vexo provides asynchronous accept, connect, read, write, and close, together with an incremental HTTP/1.1 parser, reverse proxy, upstream connection pool, load balancing, health checking, circuit breaking, and rate limiting.
+  CoroPact provides asynchronous accept, connect, read, write, and close, together with an incremental HTTP/1.1 parser, reverse proxy, upstream connection pool, load balancing, health checking, circuit breaking, and rate limiting.
 
 Although Linux is the current primary platform, the coroutine and I/O contracts can be used to add other backends such as macOS kqueue and Windows IOCP.
 
@@ -26,10 +26,10 @@ Although Linux is the current primary platform, the coroutine and I/O contracts 
 #include <array>
 #include <cstddef>
 
-#include "vexo/coro/task.h"
-#include "vexo/io/stream_algorithms.h"
+#include "coropact/coro/task.h"
+#include "coropact/io/stream_algorithms.h"
 
-vexo::coro::Task<void> Echo(vexo::io::AsyncStream auto& stream) {
+coropact::coro::Task<void> Echo(coropact::io::AsyncStream auto& stream) {
     std::array<std::byte, 4096> buffer{};
 
     for (;;) {
@@ -39,7 +39,7 @@ vexo::coro::Task<void> Echo(vexo::io::AsyncStream auto& stream) {
         }
 
         auto written =
-            co_await vexo::io::WriteAll(stream, buffer.first(*read));
+            co_await coropact::io::WriteAll(stream, buffer.first(*read));
 
         if (!written.has_value()) {
             break;
@@ -71,7 +71,7 @@ cmake -B build-uring \
   -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_TESTS=ON \
   -DBUILD_EXAMPLES=ON \
-  -DVEXO_ENABLE_URING=ON
+  -DCOROPACT_ENABLE_URING=ON
 
 cmake --build build-uring -j"$(nproc)"
 ctest --test-dir build-uring --output-on-failure
@@ -92,7 +92,7 @@ HTTP / Gateway / Custom Session
         |             |
         v             v
  Reactor / epoll   luring / io_uring
-   vexo::net         vexo::luring
+   coropact::net         coropact::luring
 ```
 
 The two backends do not share an event loop, and their internal state machines do not need to be identical. They only need to satisfy the same business-observable asynchronous I/O contract.
@@ -111,7 +111,7 @@ Connections, I/O operations, and coroutine continuations remain owned by the Wor
 
 ## Performance Benchmarks
 
-Vexo includes reproducible `wrk` benchmarks covering:
+CoroPact includes reproducible `wrk` benchmarks covering:
 
 * Reactor and io_uring backends
 * raw liburing
@@ -138,7 +138,7 @@ Most documentation is still being written and may lag behind the current impleme
 
 ## Current Status
 
-Vexo is still an experimental networking runtime and is not yet a production-ready replacement for mature networking frameworks.
+CoroPact is still an experimental networking runtime and is not yet a production-ready replacement for mature networking frameworks.
 
 Current work includes:
 

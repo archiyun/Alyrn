@@ -11,7 +11,7 @@ target_include_directories(panic_check_smoke_test
 
 target_link_libraries(panic_check_smoke_test
     PRIVATE
-        vexo_foundation
+        coropact_foundation
 )
 
 add_test(NAME panic_check_smoke_test COMMAND panic_check_smoke_test)
@@ -49,8 +49,8 @@ target_include_directories(upstream_conn_pool_smoke_test
 
 target_link_libraries(upstream_conn_pool_smoke_test
     PRIVATE
-        vexo_coro
-        vexo_foundation
+        coropact_coro
+        coropact_foundation
 )
 
 add_test(NAME upstream_conn_pool_smoke_test COMMAND upstream_conn_pool_smoke_test)
@@ -76,7 +76,7 @@ target_include_directories(coro_smoke_test
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
 
-target_link_libraries(coro_smoke_test PRIVATE vexo_coro vexo_foundation)
+target_link_libraries(coro_smoke_test PRIVATE coropact_coro coropact_foundation)
 
 add_test(NAME coro_smoke_test COMMAND coro_smoke_test)
 
@@ -89,7 +89,7 @@ target_include_directories(coro_frame_allocator_smoke_test
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
 
-target_link_libraries(coro_frame_allocator_smoke_test PRIVATE vexo_coro)
+target_link_libraries(coro_frame_allocator_smoke_test PRIVATE coropact_coro)
 
 add_test(NAME coro_frame_allocator_smoke_test COMMAND coro_frame_allocator_smoke_test)
 
@@ -104,12 +104,12 @@ target_include_directories(io_buffer_smoke_test
 
 target_link_libraries(io_buffer_smoke_test
     PRIVATE
-        vexo_io
+        coropact_io
 )
 
 add_test(NAME io_buffer_smoke_test COMMAND io_buffer_smoke_test)
 
-# C3:detached 连接协程(Spawn)park→resume→自毁,无泄漏/无 UAF。链 vexo_net。
+# C3:detached 连接协程(Spawn)park→resume→自毁,无泄漏/无 UAF。链 coropact_net。
 add_executable(spawn_c3_smoke_test
     unit/test_spawn_c3_smoke.cc
 )
@@ -121,7 +121,7 @@ target_include_directories(spawn_c3_smoke_test
 
 target_link_libraries(spawn_c3_smoke_test
     PRIVATE
-        vexo_net
+        coropact_net
 )
 
 add_test(NAME spawn_c3_smoke_test COMMAND spawn_c3_smoke_test)
@@ -137,7 +137,7 @@ target_include_directories(reactor_stream_smoke_test
 
 target_link_libraries(reactor_stream_smoke_test
     PRIVATE
-        vexo_net
+        coropact_net
 )
 
 add_test(NAME reactor_stream_smoke_test COMMAND reactor_stream_smoke_test)
@@ -153,7 +153,7 @@ target_include_directories(reactor_listener_smoke_test
 
 target_link_libraries(reactor_listener_smoke_test
     PRIVATE
-        vexo_net
+        coropact_net
 )
 
 add_test(NAME reactor_listener_smoke_test COMMAND reactor_listener_smoke_test)
@@ -169,12 +169,12 @@ target_include_directories(reactor_worker_group_smoke_test
 
 target_link_libraries(reactor_worker_group_smoke_test
     PRIVATE
-        vexo_net
+        coropact_net
 )
 
 add_test(NAME reactor_worker_group_smoke_test COMMAND reactor_worker_group_smoke_test)
 
-if(VEXO_ENABLE_URING)
+if(COROPACT_ENABLE_URING)
     add_executable(luring_coro_smoke_test
         unit/test_luring_coro_smoke.cc
     )
@@ -187,10 +187,10 @@ if(VEXO_ENABLE_URING)
 
     target_link_libraries(luring_coro_smoke_test
         PRIVATE
-            vexo_luring
+            coropact_luring
     )
 
-    target_compile_definitions(luring_coro_smoke_test PRIVATE VEXO_ENABLE_URING)
+    target_compile_definitions(luring_coro_smoke_test PRIVATE COROPACT_ENABLE_URING)
 
     add_test(NAME luring_coro_smoke_test COMMAND luring_coro_smoke_test)
 
@@ -206,10 +206,10 @@ if(VEXO_ENABLE_URING)
 
     target_link_libraries(luring_timer_smoke_test
         PRIVATE
-            vexo_luring
+            coropact_luring
     )
 
-    target_compile_definitions(luring_timer_smoke_test PRIVATE VEXO_ENABLE_URING)
+    target_compile_definitions(luring_timer_smoke_test PRIVATE COROPACT_ENABLE_URING)
 
     add_test(NAME luring_timer_smoke_test COMMAND luring_timer_smoke_test)
 
@@ -225,10 +225,10 @@ if(VEXO_ENABLE_URING)
 
     target_link_libraries(luring_msg_ring_smoke_test
         PRIVATE
-            vexo_luring
+            coropact_luring
     )
 
-    target_compile_definitions(luring_msg_ring_smoke_test PRIVATE VEXO_ENABLE_URING)
+    target_compile_definitions(luring_msg_ring_smoke_test PRIVATE COROPACT_ENABLE_URING)
 
     add_test(NAME luring_msg_ring_smoke_test COMMAND luring_msg_ring_smoke_test)
 
@@ -244,10 +244,10 @@ if(VEXO_ENABLE_URING)
 
     target_link_libraries(luring_connector_smoke_test
         PRIVATE
-            vexo_luring
+            coropact_luring
     )
 
-    target_compile_definitions(luring_connector_smoke_test PRIVATE VEXO_ENABLE_URING)
+    target_compile_definitions(luring_connector_smoke_test PRIVATE COROPACT_ENABLE_URING)
 
     add_test(NAME luring_connector_smoke_test COMMAND luring_connector_smoke_test)
 
@@ -263,10 +263,10 @@ if(VEXO_ENABLE_URING)
 
     target_link_libraries(luring_stream_smoke_test
         PRIVATE
-            vexo_luring
+            coropact_luring
     )
 
-    target_compile_definitions(luring_stream_smoke_test PRIVATE VEXO_ENABLE_URING)
+    target_compile_definitions(luring_stream_smoke_test PRIVATE COROPACT_ENABLE_URING)
 
     add_test(NAME luring_stream_smoke_test COMMAND luring_stream_smoke_test)
 
@@ -282,11 +282,11 @@ if(VEXO_ENABLE_URING)
 
     target_link_libraries(luring_move_smoke_test
         PRIVATE
-            vexo_luring
-            vexo_net
+            coropact_luring
+            coropact_net
     )
 
-    target_compile_definitions(luring_move_smoke_test PRIVATE VEXO_ENABLE_URING)
+    target_compile_definitions(luring_move_smoke_test PRIVATE COROPACT_ENABLE_URING)
 
     add_test(NAME luring_move_smoke_test COMMAND luring_move_smoke_test)
 
@@ -302,10 +302,10 @@ if(VEXO_ENABLE_URING)
 
     target_link_libraries(luring_listener_smoke_test
         PRIVATE
-            vexo_luring
+            coropact_luring
     )
 
-    target_compile_definitions(luring_listener_smoke_test PRIVATE VEXO_ENABLE_URING)
+    target_compile_definitions(luring_listener_smoke_test PRIVATE COROPACT_ENABLE_URING)
 
     add_test(NAME luring_listener_smoke_test COMMAND luring_listener_smoke_test)
 
@@ -321,10 +321,10 @@ if(VEXO_ENABLE_URING)
 
     target_link_libraries(luring_worker_group_smoke_test
         PRIVATE
-            vexo_luring
+            coropact_luring
     )
 
-    target_compile_definitions(luring_worker_group_smoke_test PRIVATE VEXO_ENABLE_URING)
+    target_compile_definitions(luring_worker_group_smoke_test PRIVATE COROPACT_ENABLE_URING)
 
     add_test(NAME luring_worker_group_smoke_test COMMAND luring_worker_group_smoke_test)
 
@@ -340,10 +340,10 @@ if(VEXO_ENABLE_URING)
 
     target_link_libraries(luring_server_smoke_test
         PRIVATE
-            vexo_luring
+            coropact_luring
     )
 
-    target_compile_definitions(luring_server_smoke_test PRIVATE VEXO_ENABLE_URING)
+    target_compile_definitions(luring_server_smoke_test PRIVATE COROPACT_ENABLE_URING)
 
     add_test(NAME luring_server_smoke_test COMMAND luring_server_smoke_test)
 
@@ -359,11 +359,11 @@ if(VEXO_ENABLE_URING)
 
     target_link_libraries(luring_gateway_smoke_test
         PRIVATE
-            vexo_gateway
-            vexo_luring
+            coropact_gateway
+            coropact_luring
     )
 
-    target_compile_definitions(luring_gateway_smoke_test PRIVATE VEXO_ENABLE_URING)
+    target_compile_definitions(luring_gateway_smoke_test PRIVATE COROPACT_ENABLE_URING)
 
     add_test(NAME luring_gateway_smoke_test COMMAND luring_gateway_smoke_test)
 endif()
@@ -379,7 +379,7 @@ target_include_directories(pool_smoke_test
 
 target_link_libraries(pool_smoke_test
     PRIVATE
-        vexo_foundation
+        coropact_foundation
 )
 
 add_test(NAME pool_smoke_test COMMAND pool_smoke_test)
@@ -395,7 +395,7 @@ target_include_directories(pmr_pool_resource_smoke_test
 
 target_link_libraries(pmr_pool_resource_smoke_test
     PRIVATE
-        vexo_foundation
+        coropact_foundation
 )
 
 add_test(NAME pmr_pool_resource_smoke_test COMMAND pmr_pool_resource_smoke_test)
@@ -411,7 +411,7 @@ target_include_directories(logger_smoke_test
 
 target_link_libraries(logger_smoke_test
     PRIVATE
-        vexo_foundation
+        coropact_foundation
 )
 
 add_test(NAME logger_smoke_test COMMAND logger_smoke_test)
@@ -427,7 +427,7 @@ target_include_directories(http_smoke_test
 
 target_link_libraries(http_smoke_test
     PRIVATE
-        vexo_http_core
+        coropact_http_core
 )
 
 add_test(NAME http_smoke_test COMMAND http_smoke_test)
@@ -456,7 +456,7 @@ target_include_directories(epoll_poller_smoke_test
 
 target_link_libraries(epoll_poller_smoke_test
     PRIVATE
-        vexo_net
+        coropact_net
 )
 
 add_test(NAME epoll_poller_smoke_test COMMAND epoll_poller_smoke_test)
@@ -472,7 +472,7 @@ target_include_directories(net_move_smoke_test
 
 target_link_libraries(net_move_smoke_test
     PRIVATE
-        vexo_net
+        coropact_net
 )
 
 add_test(NAME net_move_smoke_test COMMAND net_move_smoke_test)
@@ -488,7 +488,7 @@ target_include_directories(event_loop_smoke_test
 
 target_link_libraries(event_loop_smoke_test
     PRIVATE
-        vexo_net
+        coropact_net
 )
 
 add_test(NAME event_loop_smoke_test COMMAND event_loop_smoke_test)
@@ -504,7 +504,7 @@ target_include_directories(timer_tree_smoke_test
 
 target_link_libraries(timer_tree_smoke_test
     PRIVATE
-        vexo_foundation
+        coropact_foundation
 )
 
 add_test(NAME timer_tree_smoke_test COMMAND timer_tree_smoke_test)
@@ -553,7 +553,7 @@ target_include_directories(lru_cache_test
 
 target_link_libraries(lru_cache_test
     PRIVATE
-        vexo_foundation
+        coropact_foundation
 )
 
 add_test(NAME lru_cache_test COMMAND lru_cache_test)
@@ -613,7 +613,7 @@ target_include_directories(load_balancer_smoke_test
 
 target_link_libraries(load_balancer_smoke_test
     PRIVATE
-        vexo_gateway
+        coropact_gateway
 )
 
 add_test(NAME load_balancer_smoke_test COMMAND load_balancer_smoke_test)
@@ -629,7 +629,7 @@ target_include_directories(circuit_breaker_smoke_test
 
 target_link_libraries(circuit_breaker_smoke_test
     PRIVATE
-        vexo_gateway
+        coropact_gateway
 )
 
 add_test(NAME circuit_breaker_smoke_test COMMAND circuit_breaker_smoke_test)
@@ -645,7 +645,7 @@ target_include_directories(fallback_config_smoke_test
 
 target_link_libraries(fallback_config_smoke_test
     PRIVATE
-        vexo_gateway
+        coropact_gateway
 )
 
 add_test(NAME fallback_config_smoke_test COMMAND fallback_config_smoke_test)
@@ -661,7 +661,7 @@ target_include_directories(rate_limiter_smoke_test
 
 target_link_libraries(rate_limiter_smoke_test
     PRIVATE
-        vexo_gateway
+        coropact_gateway
 )
 
 add_test(NAME rate_limiter_smoke_test COMMAND rate_limiter_smoke_test)
@@ -677,7 +677,7 @@ target_include_directories(gateway_core_smoke_test
 
 target_link_libraries(gateway_core_smoke_test
     PRIVATE
-        vexo_gateway_core
+        coropact_gateway_core
 )
 
 add_test(NAME gateway_core_smoke_test COMMAND gateway_core_smoke_test)
@@ -693,8 +693,8 @@ target_include_directories(proxy_e2e_smoke_test
 
 target_link_libraries(proxy_e2e_smoke_test
     PRIVATE
-        vexo_gateway
-        vexo_net
+        coropact_gateway
+        coropact_net
 )
 
 add_test(NAME proxy_e2e_smoke_test COMMAND proxy_e2e_smoke_test)
@@ -710,7 +710,7 @@ target_include_directories(resilience_integration_smoke_test
 
 target_link_libraries(resilience_integration_smoke_test
     PRIVATE
-        vexo_gateway
+        coropact_gateway
 )
 
 add_test(NAME resilience_integration_smoke_test COMMAND resilience_integration_smoke_test)
@@ -726,8 +726,8 @@ target_include_directories(gateway_adversarial_test
 
 target_link_libraries(gateway_adversarial_test
     PRIVATE
-        vexo_gateway
-        vexo_net
+        coropact_gateway
+        coropact_net
 )
 
 add_test(NAME gateway_adversarial_test COMMAND gateway_adversarial_test)
@@ -748,7 +748,7 @@ find_package(GTest CONFIG QUIET)
 if(GTest_FOUND)
     include(GoogleTest)
 
-    add_executable(vexo_unit_tests
+    add_executable(coropact_unit_tests
         unit/test_logger.cc
         unit/test_memory_pool.cc
         unit/test_net_utils.cc
@@ -756,27 +756,27 @@ if(GTest_FOUND)
         unit/test_sanity.cc
     )
 
-    target_link_libraries(vexo_unit_tests
+    target_link_libraries(coropact_unit_tests
         PRIVATE
             GTest::gtest_main
-            vexo_net
+            coropact_net
     )
 
-    gtest_discover_tests(vexo_unit_tests DISCOVERY_MODE PRE_TEST)
+    gtest_discover_tests(coropact_unit_tests DISCOVERY_MODE PRE_TEST)
 
     set(INTEGRATION_TEST_SOURCES
         integration/test_event_loop.cc
     )
 
-    add_executable(vexo_integration_tests ${INTEGRATION_TEST_SOURCES})
+    add_executable(coropact_integration_tests ${INTEGRATION_TEST_SOURCES})
 
-    target_link_libraries(vexo_integration_tests
+    target_link_libraries(coropact_integration_tests
         PRIVATE
             GTest::gtest_main
-            vexo_net
+            coropact_net
     )
 
-    gtest_discover_tests(vexo_integration_tests DISCOVERY_MODE PRE_TEST)
+    gtest_discover_tests(coropact_integration_tests DISCOVERY_MODE PRE_TEST)
 else()
     message(STATUS "GTest not found; skipping gtest-based unit tests.")
 endif()

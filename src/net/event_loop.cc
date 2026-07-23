@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "vexo/net/event_loop.h"
+#include "coropact/net/event_loop.h"
 
 #include <sys/eventfd.h>
 #include <unistd.h>
@@ -9,15 +9,15 @@
 #include <cstdint>
 #include <cstring>
 
-#include "vexo/base/check.h"
-#include "vexo/log/logger.h"
-#include "vexo/net/channel.h"
-#include "vexo/net/poller.h"
-#include "vexo/net/timer_queue.h"
-#include "vexo/time/timer_id.h"
-#include "vexo/time/timestamp.h"
+#include "coropact/base/check.h"
+#include "coropact/log/logger.h"
+#include "coropact/net/channel.h"
+#include "coropact/net/poller.h"
+#include "coropact/net/timer_queue.h"
+#include "coropact/time/timer_id.h"
+#include "coropact/time/timestamp.h"
 
-namespace vexo::net {
+namespace coropact::net {
 
 namespace {
 
@@ -27,7 +27,7 @@ int CreateEventfd() {
   const int evtfd = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
   if (evtfd < 0) {
     LOG_FATALF("eventfd creation failed: errno={} message={}", errno, std::strerror(errno));
-    VEXO_CHECK(false, "EventLoop: eventfd creation failed");
+    COROPACT_CHECK(false, "EventLoop: eventfd creation failed");
   }
   return evtfd;
 }
@@ -83,21 +83,21 @@ EventLoop::EventLoop()
       wakeup_fd_(CreateEventfd()),
       wakeup_channel_(this, wakeup_fd_),
       timer_queue_(std::make_unique<TimerQueue>(this)) {
-  VEXO_DCHECK(t_loop_in_this_thread == nullptr,
+  COROPACT_DCHECK(t_loop_in_this_thread == nullptr,
               "EventLoop: only one EventLoop may exist per thread");
   t_loop_in_this_thread = this;
 
   // The wakeup fd is monitored like a normal Channel so other threads can
   // interrupt epoll_wait when they queue work into this loop.
-  wakeup_channel_.set_read_callback([this](vexo::time::Timestamp) { HandleRead(); });
+  wakeup_channel_.set_read_callback([this](coropact::time::Timestamp) { HandleRead(); });
   wakeup_channel_.EnableReading();
 
   LOG_DEBUGF("event loop created: wakeup_fd={}", wakeup_fd_);
 }
 
 EventLoop::~EventLoop() {
-  VEXO_DCHECK(IsInLoopThread(), "EventLoop destructor called from wrong thread");
-  VEXO_DCHECK(!looping_, "EventLoop destroyed while looping");
+  COROPACT_DCHECK(IsInLoopThread(), "EventLoop destructor called from wrong thread");
+  COROPACT_DCHECK(!looping_, "EventLoop destroyed while looping");
 
   wakeup_channel_.DisableAll();
   wakeup_channel_.Remove();
@@ -112,8 +112,8 @@ EventLoop::~EventLoop() {
 }
 
 void EventLoop::Loop() {
-  VEXO_DCHECK(IsInLoopThread(), "EventLoop::Loop called from wrong thread");
-  VEXO_DCHECK(!looping_, "EventLoop::Loop called while already looping");
+  COROPACT_DCHECK(IsInLoopThread(), "EventLoop::Loop called from wrong thread");
+  COROPACT_DCHECK(!looping_, "EventLoop::Loop called while already looping");
 
   looping_.store(true, std::memory_order_relaxed);
 
@@ -178,7 +178,7 @@ void EventLoop::QueueInLoop(Functor cb) {
 }
 
 bool EventLoop::HasImmediateWork() {
-  VEXO_DCHECK(IsInLoopThread(), "EventLoop::HasImmediateWork called from wrong thread");
+  COROPACT_DCHECK(IsInLoopThread(), "EventLoop::HasImmediateWork called from wrong thread");
 
   {
     std::lock_guard lk{mutex_};
@@ -187,17 +187,17 @@ bool EventLoop::HasImmediateWork() {
 }
 
 void EventLoop::UpdateChannel(Channel* channel) {
-  VEXO_DCHECK(IsInLoopThread(), "EventLoop::UpdateChannel called from wrong thread");
+  COROPACT_DCHECK(IsInLoopThread(), "EventLoop::UpdateChannel called from wrong thread");
   poller_->UpdateChannel(channel);
 }
 
 void EventLoop::RemoveChannel(Channel* channel) {
-  VEXO_DCHECK(IsInLoopThread(), "EventLoop::RemoveChannel called from wrong thread");
+  COROPACT_DCHECK(IsInLoopThread(), "EventLoop::RemoveChannel called from wrong thread");
   poller_->RemoveChannel(channel);
 }
 
 bool EventLoop::HasChannel(Channel* channel) const {
-  VEXO_DCHECK(IsInLoopThread(), "EventLoop::HasChannel called from wrong thread");
+  COROPACT_DCHECK(IsInLoopThread(), "EventLoop::HasChannel called from wrong thread");
   return poller_->HasChannel(channel);
 }
 
@@ -231,22 +231,22 @@ void EventLoop::DoPendingFunctors() {
   calling_pending_functors_.store(false, std::memory_order_relaxed);
 }
 
-vexo::time::TimerId EventLoop::RunAt(vexo::time::Timestamp time, Functor cb) {
+coropact::time::TimerId EventLoop::RunAt(coropact::time::Timestamp time, Functor cb) {
   return timer_queue_->AddTimer(std::move(cb), time, 0.0);
 }
 
-vexo::time::TimerId EventLoop::RunAfter(double delay, Functor cb) {
-  using vexo::time::AddTime;
-  using vexo::time::Timestamp;
+coropact::time::TimerId EventLoop::RunAfter(double delay, Functor cb) {
+  using coropact::time::AddTime;
+  using coropact::time::Timestamp;
   return timer_queue_->AddTimer(std::move(cb), AddTime(Timestamp::Now(), delay), 0.0);
 }
 
-vexo::time::TimerId EventLoop::RunEvery(double interval, Functor cb) {
-  using vexo::time::AddTime;
-  using vexo::time::Timestamp;
+coropact::time::TimerId EventLoop::RunEvery(double interval, Functor cb) {
+  using coropact::time::AddTime;
+  using coropact::time::Timestamp;
   return timer_queue_->AddTimer(std::move(cb), AddTime(Timestamp::Now(), interval), interval);
 }
 
-void EventLoop::Cancel(vexo::time::TimerId id) { timer_queue_->Cancel(id); }
+void EventLoop::Cancel(coropact::time::TimerId id) { timer_queue_->Cancel(id); }
 
-}  // namespace vexo::net
+}  // namespace coropact::net

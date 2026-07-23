@@ -7,7 +7,7 @@
 #include <unordered_set>
 #include <vector>
 
-#include "vexo/ds/bloom_filter.h"
+#include "coropact/ds/bloom_filter.h"
 
 namespace {
 
@@ -22,7 +22,7 @@ bool Expect(bool condition, const char* message) {
 // --- Basic insert and query ---
 
 bool TestBasicInsertQuery() {
-  vexo::ds::BloomFilter<1000> bf;
+  coropact::ds::BloomFilter<1000> bf;
 
   bf.Insert(std::string_view("hello"));
   bf.Insert(std::string_view("world"));
@@ -40,7 +40,7 @@ bool TestBasicInsertQuery() {
 // --- Deterministic negative for uninserted keys ---
 
 bool TestDeterministicNegative() {
-  vexo::ds::BloomFilter<1000> bf;
+  coropact::ds::BloomFilter<1000> bf;
 
   bf.Insert(std::string_view("exists"));
 
@@ -57,7 +57,7 @@ bool TestDeterministicNegative() {
 // --- Empty filter: everything is negative ---
 
 bool TestEmptyFilter() {
-  vexo::ds::BloomFilter<1000> bf;
+  coropact::ds::BloomFilter<1000> bf;
 
   if (!Expect(bf.empty(), "new filter should be empty")) return false;
   if (!Expect(!bf.MayContain(std::string_view("anything")),
@@ -73,7 +73,7 @@ bool TestEmptyFilter() {
 // --- Clear resets the filter ---
 
 bool TestClear() {
-  vexo::ds::BloomFilter<1000> bf;
+  coropact::ds::BloomFilter<1000> bf;
 
   bf.Insert(std::string_view("key1"));
   bf.Insert(std::string_view("key2"));
@@ -92,7 +92,7 @@ bool TestClear() {
 // --- Template Insert<T> for trivially copyable types ---
 
 bool TestTriviallyCopyableInsert() {
-  vexo::ds::BloomFilter<1000> bf;
+  coropact::ds::BloomFilter<1000> bf;
 
   uint32_t value = 0xDEADBEEF;
   bf.Insert(value);
@@ -112,7 +112,7 @@ bool TestTriviallyCopyableInsert() {
 // --- Compile-time parameter queries ---
 
 bool TestStaticParameters() {
-  using BF = vexo::ds::BloomFilter<1000, 0.01>;
+  using BF = coropact::ds::BloomFilter<1000, 0.01>;
 
   if (!Expect(BF::bit_count() > 0, "bit_count should be positive"))
     return false;
@@ -133,7 +133,7 @@ bool TestStaticParameters() {
 // --- Estimated count accuracy ---
 
 bool TestEstimatedCount() {
-  vexo::ds::BloomFilter<10000, 0.01> bf;
+  coropact::ds::BloomFilter<10000, 0.01> bf;
 
   constexpr std::size_t kInsertCount = 1000;
   for (std::size_t i = 0; i < kInsertCount; ++i) {
@@ -154,7 +154,7 @@ bool TestEstimatedCount() {
 
 bool TestFalsePositiveRate() {
   // Use a higher FP rate so we can measure it reliably with fewer queries
-  vexo::ds::BloomFilter<1000, 0.05> bf;
+  coropact::ds::BloomFilter<1000, 0.05> bf;
 
   // Insert n items
   std::unordered_set<std::string> inserted;
@@ -193,14 +193,14 @@ bool TestFalsePositiveRate() {
 
 bool TestMultipleInstantiations() {
   // Small filter
-  vexo::ds::BloomFilter<10, 0.1> small;
+  coropact::ds::BloomFilter<10, 0.1> small;
   small.Insert(std::string_view("a"));
   if (!Expect(small.MayContain(std::string_view("a")),
               "small filter works"))
     return false;
 
   // Large filter with tight FP rate
-  vexo::ds::BloomFilter<1'000'000, 0.001> large;
+  coropact::ds::BloomFilter<1'000'000, 0.001> large;
   large.Insert(std::string_view("needle"));
   if (!Expect(large.MayContain(std::string_view("needle")),
               "large filter works"))
@@ -212,7 +212,7 @@ bool TestMultipleInstantiations() {
 // --- string_view overload consistency with template T overload ---
 
 bool TestStringViewConsistency() {
-  vexo::ds::BloomFilter<1000> bf;
+  coropact::ds::BloomFilter<1000> bf;
 
   // Insert via string_view, query via string_view
   std::string hello = "hello";
@@ -228,7 +228,7 @@ bool TestStringViewConsistency() {
 // --- No false negatives (fundamental guarantee) ---
 
 bool TestNoFalseNegatives() {
-  vexo::ds::BloomFilter<500, 0.01> bf;
+  coropact::ds::BloomFilter<500, 0.01> bf;
 
   std::vector<std::string> keys;
   for (int i = 0; i < 500; ++i) {

@@ -7,11 +7,11 @@
 #include <thread>
 #include <vector>
 
-#include "vexo/log/async_logger.h"
-#include "vexo/log/log_buffer.h"
-#include "vexo/log/logger.h"
+#include "coropact/log/async_logger.h"
+#include "coropact/log/log_buffer.h"
+#include "coropact/log/logger.h"
 
-namespace vexo::log {
+namespace coropact::log {
 namespace {
 
 std::string ReadFile(const std::filesystem::path& path) {
@@ -165,4 +165,4 @@ TEST(LoggerIntegrationTest, ConcurrentProducersFlushOnShutdown) {
 }
 
 }  // namespace
-}  // namespace vexo::log
+}  // namespace coropact::log

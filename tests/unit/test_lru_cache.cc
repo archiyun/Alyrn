@@ -10,11 +10,11 @@
 #include <type_traits>
 #include <vector>
 
-#include "vexo/cache/lru_cache.h"
-#include "vexo/cache/sharded_lru_cache.h"
+#include "coropact/cache/lru_cache.h"
+#include "coropact/cache/sharded_lru_cache.h"
 
-using vexo::cache::LRUCache;
-using vexo::cache::ShardedLRUCache;
+using coropact::cache::LRUCache;
+using coropact::cache::ShardedLRUCache;
 
 [[noreturn]] void Fail(const char* expression, int line) {
   std::fprintf(stderr, "FAIL line %d: %s\n", line, expression);
@@ -68,13 +68,13 @@ void LruOrderTest() {
 
 void ExpirationTest() {
   Cache cache(4);
-  cache.Put(1, "expired", vexo::time::Timestamp(1));
+  cache.Put(1, "expired", coropact::time::Timestamp(1));
   cache.Put(2, "live");
   CHECK(!cache.Get(1).has_value());
   CHECK(cache.Size() == 1);
   CHECK(cache.Get(2) == "live");
 
-  cache.Put(3, "expired", vexo::time::Timestamp(1));
+  cache.Put(3, "expired", coropact::time::Timestamp(1));
   CHECK(cache.PruneExpired() == 1);
   CHECK(cache.Size() == 1);
 }

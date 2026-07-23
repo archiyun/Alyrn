@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "vexo/luring/connector.h"
+#include "coropact/luring/connector.h"
 
 #include <arpa/inet.h>
 #include <fcntl.h>
@@ -17,14 +17,14 @@
 #include <string_view>
 #include <utility>
 
-#include "vexo/base/error.h"
-#include "vexo/luring/loop.h"
-#include "vexo/luring/op.h"
-#include "vexo/luring/stream.h"
-#include "vexo/luring/timer.h"
-#include "vexo/net/inet_address.h"
+#include "coropact/base/error.h"
+#include "coropact/luring/loop.h"
+#include "coropact/luring/op.h"
+#include "coropact/luring/stream.h"
+#include "coropact/luring/timer.h"
+#include "coropact/net/inet_address.h"
 
-namespace vexo::luring {
+namespace coropact::luring {
 
 namespace {
 
@@ -175,8 +175,8 @@ coro::Task<base::Result<LUringStream>> LUringConnector::Connect(std::string_view
 }
 
 coro::Task<void> LUringConnector::SleepFor(std::chrono::milliseconds delay) {
-  auto result = co_await vexo::luring::SleepFor(*loop_, delay);
+  auto result = co_await coropact::luring::SleepFor(*loop_, delay);
   (void)result;
 }
 
-}  // namespace vexo::luring
+}  // namespace coropact::luring

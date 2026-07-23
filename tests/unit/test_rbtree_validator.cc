@@ -27,13 +27,13 @@
 #include <set>
 #include <vector>
 
-#include "vexo/ds/intrusive_rbtree.h"
+#include "coropact/ds/intrusive_rbtree.h"
 
 // ----------------------------------------------------------------
 // Element type
 // ----------------------------------------------------------------
 
-struct Job : vexo::ds::RBTNode<Job> {
+struct Job : coropact::ds::RBTNode<Job> {
   Job() = default;
 
   int         id;
@@ -45,7 +45,7 @@ bool JobLess(const Job* a, const Job* b) {
   return a->id < b->id;
 }
 
-using JobTree = vexo::ds::IntrusiveRBTree<Job, JobLess>;
+using JobTree = coropact::ds::IntrusiveRBTree<Job, JobLess>;
 
 struct JobCmp {
   bool operator()(const Job* a, const Job* b) const { return JobLess(a, b); }

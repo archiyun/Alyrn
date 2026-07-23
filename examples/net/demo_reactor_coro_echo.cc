@@ -27,18 +27,18 @@
 #include <string_view>
 #include <utility>
 
-#include "vexo/base/error.h"
-#include "vexo/coro/scheduler.h"
-#include "vexo/coro/spawn.h"
-#include "vexo/coro/task.h"
-#include "vexo/io/async_listener.h"
-#include "vexo/io/async_stream.h"
-#include "vexo/io/stream_algorithms.h"
-#include "vexo/net/event_loop.h"
-#include "vexo/net/event_loop_scheduler.h"
-#include "vexo/net/inet_address.h"
-#include "vexo/net/reactor_listener.h"
-#include "vexo/net/reactor_stream.h"
+#include "coropact/base/error.h"
+#include "coropact/coro/scheduler.h"
+#include "coropact/coro/spawn.h"
+#include "coropact/coro/task.h"
+#include "coropact/io/async_listener.h"
+#include "coropact/io/async_stream.h"
+#include "coropact/io/stream_algorithms.h"
+#include "coropact/net/event_loop.h"
+#include "coropact/net/event_loop_scheduler.h"
+#include "coropact/net/inet_address.h"
+#include "coropact/net/reactor_listener.h"
+#include "coropact/net/reactor_stream.h"
 
 namespace {
 
@@ -61,11 +61,11 @@ std::string_view StripLineEnding(std::string_view line) {
   return line;
 }
 
-template <vexo::io::AsyncStream Stream>
-[[maybe_unused]] vexo::coro::Task<void> EchoOnceSession(Stream stream) {
+template <coropact::io::AsyncStream Stream>
+[[maybe_unused]] coropact::coro::Task<void> EchoOnceSession(Stream stream) {
   std::array<std::byte, 4096> buffer{};
 
-  auto result = co_await vexo::io::EchoOnce(stream, buffer);
+  auto result = co_await coropact::io::EchoOnce(stream, buffer);
   if (!result.has_value()) {
     std::cerr << "echo once failed: " << result.error().message() << '\n';
   }
@@ -73,8 +73,8 @@ template <vexo::io::AsyncStream Stream>
   co_await stream.Close();
 }
 
-template <vexo::io::AsyncStream Stream>
-vexo::coro::Task<void> Session(Stream stream, long long* active_sessions,
+template <coropact::io::AsyncStream Stream>
+coropact::coro::Task<void> Session(Stream stream, long long* active_sessions,
                                long long* total_messages) {
   ++(*active_sessions);
 
@@ -92,14 +92,14 @@ vexo::coro::Task<void> Session(Stream stream, long long* active_sessions,
     if (n == 0) {
       if (!pending.empty()) {
         ++(*total_messages);
-        co_await vexo::io::WriteAll(stream, Bytes(pending));
+        co_await coropact::io::WriteAll(stream, Bytes(pending));
       }
       break;
     }
 
     pending.append(reinterpret_cast<const char*>(buffer.data()), n);
     if (pending.size() > 64 * 1024) {
-      co_await vexo::io::WriteAll(stream, Bytes("ERR line too long\n"));
+      co_await coropact::io::WriteAll(stream, Bytes("ERR line too long\n"));
       break;
     }
 
@@ -113,7 +113,7 @@ vexo::coro::Task<void> Session(Stream stream, long long* active_sessions,
       const std::string_view command = StripLineEnding(line);
 
       if (command == "/quit") {
-        co_await vexo::io::WriteAll(stream, Bytes("bye\n"));
+        co_await coropact::io::WriteAll(stream, Bytes("bye\n"));
         co_await stream.Close();
         --(*active_sessions);
         co_return;
@@ -122,14 +122,14 @@ vexo::coro::Task<void> Session(Stream stream, long long* active_sessions,
       if (command == "/stats") {
         std::string reply = "active_sessions=" + std::to_string(*active_sessions) +
                             " total_messages=" + std::to_string(*total_messages) + "\n";
-        co_await vexo::io::WriteAll(stream, Bytes(reply));
+        co_await coropact::io::WriteAll(stream, Bytes(reply));
         pending.erase(0, line_end + 1);
         continue;
       }
 
       ++(*total_messages);
 
-      auto write_result = co_await vexo::io::WriteAll(stream, Bytes(line));
+      auto write_result = co_await coropact::io::WriteAll(stream, Bytes(line));
       if (!write_result.has_value()) {
         std::cerr << "write failed: " << write_result.error().message() << '\n';
         break;
@@ -143,8 +143,8 @@ vexo::coro::Task<void> Session(Stream stream, long long* active_sessions,
   --(*active_sessions);
 }
 
-template <vexo::io::AsyncListener Listener>
-vexo::coro::Task<void> AcceptLoop(Listener* listener, vexo::coro::Scheduler* scheduler,
+template <coropact::io::AsyncListener Listener>
+coropact::coro::Task<void> AcceptLoop(Listener* listener, coropact::coro::Scheduler* scheduler,
                                   long long* active_sessions, long long* total_messages) {
   using Stream = typename Listener::Stream;
 
@@ -155,12 +155,12 @@ vexo::coro::Task<void> AcceptLoop(Listener* listener, vexo::coro::Scheduler* sch
       co_return;
     }
 
-    vexo::coro::Spawn(*scheduler,
+    coropact::coro::Spawn(*scheduler,
                       Session<Stream>(std::move(*accepted), active_sessions, total_messages))
         .Detach();
 
     // To start with the smallest possible demo, replace the Spawn above with:
-    // vexo::coro::Spawn(*scheduler, EchoOnceSession<Stream>(std::move(*accepted))).Detach();
+    // coropact::coro::Spawn(*scheduler, EchoOnceSession<Stream>(std::move(*accepted))).Detach();
   }
 }
 
@@ -171,9 +171,9 @@ int main() {
 
   const auto port = static_cast<std::uint16_t>(EnvInt("PORT", 9090));
 
-  vexo::net::EventLoop loop;
-  vexo::net::EventLoopScheduler scheduler(&loop);
-  auto listener_result = vexo::net::ReactorListener::Create(&loop, vexo::net::InetAddress(port));
+  coropact::net::EventLoop loop;
+  coropact::net::EventLoopScheduler scheduler(&loop);
+  auto listener_result = coropact::net::ReactorListener::Create(&loop, coropact::net::InetAddress(port));
   if (!listener_result.has_value()) {
     std::cerr << "failed to create listener: " << listener_result.error().message() << '\n';
     return 1;
@@ -183,7 +183,7 @@ int main() {
   long long active_sessions = 0;
   long long total_messages = 0;
 
-  vexo::coro::Spawn(scheduler, AcceptLoop(&listener, &scheduler, &active_sessions, &total_messages))
+  coropact::coro::Spawn(scheduler, AcceptLoop(&listener, &scheduler, &active_sessions, &total_messages))
       .Detach();
 
   std::cout << "reactor coro echo listening on 127.0.0.1:" << port << '\n';

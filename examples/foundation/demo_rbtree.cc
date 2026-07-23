@@ -15,9 +15,9 @@
 #include <cstdio>
 #include <string>
 
-#include "vexo/ds/intrusive_rbtree.h"
+#include "coropact/ds/intrusive_rbtree.h"
 
-using namespace vexo::ds;
+using namespace coropact::ds;
 
 // ------------------------------------------------------------
 // 1. 定义任务元素类型，并公开继承红黑树节点

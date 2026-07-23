@@ -1,0 +1,386 @@
+// Copyright (c) 2026 Arsenova
+// SPDX-License-Identifier: MIT
+#pragma once
+
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <chrono>
+#include <concepts>
+#include <cstddef>
+#include <cstdint>
+#include <expected>
+#include <optional>
+#include <span>
+#include <string>
+#include <string_view>
+
+#include "coropact/base/error.h"
+#include "coropact/coro/task.h"
+#include "coropact/gateway/forwarded_header_context.h"
+#include "coropact/gateway/load_balancer.h"
+#include "coropact/gateway/upstream.h"
+#include "coropact/gateway/upstream_conn_pool.h"
+#include "coropact/gateway/upstream_peer.h"
+#include "coropact/http/http_request.h"
+#include "coropact/http/http_types.h"
+#include "coropact/io/async_stream.h"
+#include "coropact/io/stream_algorithms.h"
+
+namespace coropact::gateway {
+
+enum class BodyFraming : uint8_t {
+  kCloseDelimited,
+  kContentLength,
+  kChunked,
+  kNoBody,
+};
+
+enum class ProxyForwardStatus : uint8_t {
+  kCompleted,
+  kNoPeer,
+  kClientClosed,
+  kUpstreamFailed,
+};
+
+struct ProxyForwardResult {
+  ProxyForwardStatus status{ProxyForwardStatus::kCompleted};
+  bool started{false};
+};
+
+// Reusable buffers for one serial client session. A session must not share
+// these buffers with another in-flight request.
+struct ProxyForwardBuffers {
+  std::string request;
+  std::string response_pending;
+  std::string response_outbound;
+};
+
+template <class T>
+concept UpstreamConnector = requires(T& connector, std::string_view host, std::uint16_t port) {
+  typename T::Stream;
+  requires coropact::io::AsyncStream<typename T::Stream>;
+  {
+    connector.Connect(host, port)
+  } -> std::same_as<coropact::coro::Task<coropact::base::Result<typename T::Stream>>>;
+};
+
+class ProxyPass {
+public:
+  template <coropact::io::AsyncStream ClientStream, UpstreamConnector Connector>
+  static coropact::coro::Task<ProxyForwardResult> Forward(
+      ClientStream& client, const coropact::http::HttpRequest& request, Upstream& upstream,
+      LoadBalancer& lb, UpstreamStreamPool<typename Connector::Stream>& pool, Connector& connector,
+      const RequestContext& ctx = {}, CircuitBreaker* cb = nullptr,
+      ForwardedHeaderContext forwarded = {}, ProxyForwardBuffers* buffers = nullptr);
+
+  static std::string BuildRequest(const coropact::http::HttpRequest& req, const UpstreamPeer& peer,
+                                  ForwardedHeaderContext forwarded = {});
+
+private:
+  struct ResponseState {
+    BodyFraming framing{BodyFraming::kCloseDelimited};
+    uint64_t body_remaining{0};
+    bool upstream_keepalive{true};
+    int status{0};
+  };
+
+  static uint64_t NowMs();
+  static bool IsIdempotent(coropact::http::Method method);
+  static ResponseState RewriteHeaders(std::string_view raw_headers, std::string& out,
+                                      coropact::http::Method request_method);
+  static void BuildRequestInto(const coropact::http::HttpRequest& req, const UpstreamPeer& peer,
+                               std::string& out, ForwardedHeaderContext forwarded);
+  static std::shared_ptr<UpstreamPeer> SelectFailoverPeer(Upstream& upstream,
+                                                          const UpstreamPeer& current);
+
+  template <coropact::io::AsyncReadStream Stream>
+  static decltype(auto) ReadSomeWithTimeout(
+      Stream& stream, std::span<std::byte> buffer, std::chrono::milliseconds timeout);
+
+  template <coropact::io::AsyncWriteStream Stream>
+  static coropact::coro::Task<coropact::base::Result<void>> WriteString(Stream& stream,
+                                                                std::string_view bytes);
+
+  template <coropact::io::AsyncWriteStream Stream>
+  static coropact::coro::Task<void> Send502(Stream& client);
+
+  template <coropact::io::AsyncStream ClientStream, coropact::io::AsyncStream UpstreamStream>
+  static coropact::coro::Task<coropact::base::Result<bool>> RelayResponse(
+      ClientStream& client, UpstreamStream& upstream, UpstreamPeer& peer, CircuitBreaker* cb,
+      bool& cb_reported, coropact::http::Method request_method,
+      std::chrono::milliseconds request_timeout, std::string& pending, std::string& outbound);
+};
+
+template <coropact::io::AsyncReadStream Stream>
+decltype(auto) ProxyPass::ReadSomeWithTimeout(
+    Stream& stream, std::span<std::byte> buffer, std::chrono::milliseconds timeout) {
+  if constexpr (requires { stream.ReadSomeFor(buffer, timeout); }) {
+    return stream.ReadSomeFor(buffer, timeout);
+  } else {
+    return stream.ReadSome(buffer);
+  }
+}
+
+template <coropact::io::AsyncWriteStream Stream>
+coropact::coro::Task<coropact::base::Result<void>> ProxyPass::WriteString(Stream& stream,
+                                                                  std::string_view bytes) {
+  auto result = co_await coropact::io::WriteAll(
+      stream, std::as_bytes(std::span<const char>(bytes.data(), bytes.size())));
+  co_return result;
+}
+
+template <coropact::io::AsyncWriteStream Stream>
+coropact::coro::Task<void> ProxyPass::Send502(Stream& client) {
+  static constexpr std::string_view kResp =
+      "HTTP/1.1 502 Bad Gateway\r\n"
+      "Content-Type: text/plain\r\n"
+      "Content-Length: 11\r\n"
+      "Connection: close\r\n"
+      "\r\n"
+      "Bad Gateway";
+  co_await WriteString(client, kResp);
+  if constexpr (coropact::io::AsyncClosableStream<Stream>) {
+    co_await client.Shutdown();
+  }
+}
+
+template <coropact::io::AsyncStream ClientStream, coropact::io::AsyncStream UpstreamStream>
+coropact::coro::Task<coropact::base::Result<bool>> ProxyPass::RelayResponse(
+    ClientStream& client, UpstreamStream& upstream, UpstreamPeer& peer, CircuitBreaker* cb,
+    bool& cb_reported, coropact::http::Method request_method, std::chrono::milliseconds request_timeout,
+    std::string& pending, std::string& outbound) {
+  std::array<std::byte, 4096> read_buffer{};
+  pending.clear();
+  outbound.clear();
+
+  for (;;) {
+    const std::size_t header_end = pending.find("\r\n\r\n");
+    if (header_end != std::string::npos) {
+      const std::size_t raw_size = header_end + 4;
+      const std::string_view raw_headers(pending.data(), raw_size);
+      ResponseState state;
+
+      const std::size_t body_available = pending.size() - raw_size;
+      outbound.clear();
+      outbound.reserve(raw_headers.size() + 64 + body_available);
+      state = RewriteHeaders(raw_headers, outbound, request_method);
+
+      if (!cb_reported) {
+        cb_reported = true;
+        if (state.status >= 500) {
+          if (cb) cb->OnFailure();
+        } else {
+          peer.OnSuccess();
+          if (cb) cb->OnSuccess();
+        }
+      }
+
+      if (body_available != 0) {
+        const uint64_t n = (state.framing == BodyFraming::kContentLength)
+                               ? std::min<uint64_t>(body_available, state.body_remaining)
+                               : body_available;
+        outbound.append(pending.data() + raw_size, static_cast<std::size_t>(n));
+        if (state.framing == BodyFraming::kContentLength) {
+          state.body_remaining -= n;
+        }
+      }
+
+      if (!outbound.empty()) {
+        auto write = co_await WriteString(client, outbound);
+        if (!write.has_value()) co_return std::unexpected(write.error());
+      }
+
+      if (state.framing == BodyFraming::kNoBody ||
+          (state.framing == BodyFraming::kContentLength && state.body_remaining == 0)) {
+        co_return state.upstream_keepalive;
+      }
+
+      for (;;) {
+        auto read = co_await ReadSomeWithTimeout(upstream, read_buffer, request_timeout);
+        if (!read.has_value()) co_return std::unexpected(read.error());
+        if (*read == 0) {
+          co_return false;
+        }
+        std::string_view chunk(reinterpret_cast<const char*>(read_buffer.data()), *read);
+        if (state.framing == BodyFraming::kContentLength) {
+          const uint64_t n = std::min<uint64_t>(chunk.size(), state.body_remaining);
+          auto write = co_await WriteString(client, chunk.substr(0, static_cast<std::size_t>(n)));
+          if (!write.has_value()) co_return std::unexpected(write.error());
+          state.body_remaining -= n;
+          if (state.body_remaining == 0) {
+            co_return state.upstream_keepalive;
+          }
+        } else {
+          auto write = co_await WriteString(client, chunk);
+          if (!write.has_value()) co_return std::unexpected(write.error());
+        }
+      }
+    }
+
+    auto read = co_await ReadSomeWithTimeout(upstream, read_buffer, request_timeout);
+    if (!read.has_value()) co_return std::unexpected(read.error());
+    if (*read == 0) co_return std::unexpected(coropact::base::make_errno(EPIPE));
+    pending.append(reinterpret_cast<const char*>(read_buffer.data()), *read);
+  }
+}
+
+template <coropact::io::AsyncStream ClientStream, UpstreamConnector Connector>
+coropact::coro::Task<ProxyForwardResult> ProxyPass::Forward(
+    ClientStream& client, const coropact::http::HttpRequest& request, Upstream& upstream,
+    LoadBalancer& lb, UpstreamStreamPool<typename Connector::Stream>& pool, Connector& connector,
+    const RequestContext& ctx, CircuitBreaker* cb, ForwardedHeaderContext forwarded,
+    ProxyForwardBuffers* buffers) {
+  using UpstreamStream = typename Connector::Stream;
+
+  if (!upstream.TryAcquireRequestSlot()) {
+    if (cb) cb->OnFailure();
+    co_return ProxyForwardResult{.status = ProxyForwardStatus::kNoPeer};
+  }
+
+  auto release_upstream = [&upstream] { upstream.ReleaseRequestSlot(); };
+  auto peer = lb.Select(upstream, ctx);
+  if (!peer) {
+    release_upstream();
+    if (cb) cb->OnFailure();
+    co_return ProxyForwardResult{.status = ProxyForwardStatus::kNoPeer};
+  }
+
+  peer->state().active.fetch_add(1, std::memory_order_relaxed);
+  peer->state().requests.fetch_add(1, std::memory_order_relaxed);
+  auto release_peer = [&peer] {
+    if (peer) peer->state().active.fetch_sub(1, std::memory_order_relaxed);
+  };
+
+  ProxyForwardBuffers local_buffers;
+  if (buffers == nullptr) {
+    local_buffers.request.reserve(512);
+    local_buffers.response_pending.reserve(4096);
+    local_buffers.response_outbound.reserve(4096);
+    buffers = &local_buffers;
+  }
+  BuildRequestInto(request, *peer, buffers->request, forwarded);
+  bool cb_reported = false;
+  int retries_left = 2;
+  bool request_on_wire = false;
+  const bool collect_stats = pool.stats_enabled();
+
+  for (;;) {
+    std::optional<UpstreamStream> upstream_stream = pool.Acquire(peer.get());
+    if (!upstream_stream) {
+      const auto connect_started = collect_stats ? std::chrono::steady_clock::now()
+                                                 : std::chrono::steady_clock::time_point{};
+      auto connected = co_await connector.Connect(peer->config().host, peer->config().port);
+      if (collect_stats) {
+        const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                 std::chrono::steady_clock::now() - connect_started)
+                                 .count();
+        pool.RecordConnect(static_cast<std::uint64_t>(elapsed), connected.has_value());
+      }
+      if (!connected.has_value()) {
+        peer->OnFailure(NowMs());
+        if ((!request_on_wire || IsIdempotent(request.method())) && retries_left-- > 0) {
+          auto next = lb.Select(upstream, ctx);
+          if (!next || next.get() == peer.get()) next = SelectFailoverPeer(upstream, *peer);
+          if (next && next.get() != peer.get()) {
+            release_peer();
+            peer = std::move(next);
+            peer->state().active.fetch_add(1, std::memory_order_relaxed);
+            peer->state().requests.fetch_add(1, std::memory_order_relaxed);
+            BuildRequestInto(request, *peer, buffers->request, forwarded);
+            continue;
+          }
+        }
+        if (!cb_reported) {
+          cb_reported = true;
+          if (cb) cb->OnFailure();
+        }
+        co_await Send502(client);
+        release_peer();
+        release_upstream();
+        co_return ProxyForwardResult{.status = ProxyForwardStatus::kUpstreamFailed,
+                                     .started = true};
+      }
+      upstream_stream = std::move(*connected);
+    }
+
+    const auto write_started =
+        collect_stats ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+    auto written = co_await WriteString(*upstream_stream, buffers->request);
+    if (collect_stats) {
+      const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                               std::chrono::steady_clock::now() - write_started)
+                               .count();
+      pool.RecordUpstreamWrite(static_cast<std::uint64_t>(elapsed));
+    }
+    request_on_wire = true;
+    if (!written.has_value()) {
+      peer->OnFailure(NowMs());
+      if (IsIdempotent(request.method()) && retries_left-- > 0) {
+        auto next = lb.Select(upstream, ctx);
+        if (!next || next.get() == peer.get()) next = SelectFailoverPeer(upstream, *peer);
+        if (next && next.get() != peer.get()) {
+          release_peer();
+          peer = std::move(next);
+          peer->state().active.fetch_add(1, std::memory_order_relaxed);
+          peer->state().requests.fetch_add(1, std::memory_order_relaxed);
+          BuildRequestInto(request, *peer, buffers->request, forwarded);
+          continue;
+        }
+      }
+      if (!cb_reported) {
+        cb_reported = true;
+        if (cb) cb->OnFailure();
+      }
+      co_await Send502(client);
+      release_peer();
+      release_upstream();
+      co_return ProxyForwardResult{.status = ProxyForwardStatus::kUpstreamFailed, .started = true};
+    }
+
+    const auto relay_started =
+        collect_stats ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+    auto reusable = co_await RelayResponse(client, *upstream_stream, *peer, cb, cb_reported,
+                                           request.method(), upstream.config().request_timeout,
+                                           buffers->response_pending, buffers->response_outbound);
+    if (collect_stats) {
+      const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                               std::chrono::steady_clock::now() - relay_started)
+                               .count();
+      pool.RecordRelay(static_cast<std::uint64_t>(elapsed));
+    }
+    if (!reusable.has_value()) {
+      peer->OnFailure(NowMs());
+      if (IsIdempotent(request.method()) && retries_left-- > 0) {
+        auto next = lb.Select(upstream, ctx);
+        if (!next || next.get() == peer.get()) next = SelectFailoverPeer(upstream, *peer);
+        if (next && next.get() != peer.get()) {
+          release_peer();
+          peer = std::move(next);
+          peer->state().active.fetch_add(1, std::memory_order_relaxed);
+          peer->state().requests.fetch_add(1, std::memory_order_relaxed);
+          BuildRequestInto(request, *peer, buffers->request, forwarded);
+          request_on_wire = false;
+          continue;
+        }
+      }
+      if (!cb_reported) {
+        cb_reported = true;
+        if (cb) cb->OnFailure();
+      }
+      co_await Send502(client);
+      release_peer();
+      release_upstream();
+      co_return ProxyForwardResult{.status = ProxyForwardStatus::kUpstreamFailed, .started = true};
+    }
+
+    if (*reusable) {
+      pool.Release(peer.get(), std::move(upstream_stream));
+    }
+    release_peer();
+    release_upstream();
+    co_return ProxyForwardResult{.status = ProxyForwardStatus::kCompleted, .started = true};
+  }
+}
+
+}  // namespace coropact::gateway

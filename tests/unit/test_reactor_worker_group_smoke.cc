@@ -18,12 +18,12 @@
 #include <utility>
 #include <vector>
 
-#include "vexo/base/error.h"
-#include "vexo/coro/scheduler.h"
-#include "vexo/coro/task.h"
-#include "vexo/net/inet_address.h"
-#include "vexo/net/reactor_worker.h"
-#include "vexo/net/reactor_worker_group.h"
+#include "coropact/base/error.h"
+#include "coropact/coro/scheduler.h"
+#include "coropact/coro/task.h"
+#include "coropact/net/inet_address.h"
+#include "coropact/net/reactor_worker.h"
+#include "coropact/net/reactor_worker_group.h"
 
 namespace {
 
@@ -48,7 +48,7 @@ private:
 struct WorkerState {
   std::condition_variable cv;
   std::mutex mutex;
-  std::optional<vexo::net::InetAddress> listen_address;
+  std::optional<coropact::net::InetAddress> listen_address;
   bool init_failed{false};
   bool connection_finished{false};
   bool scheduler_is_current{false};
@@ -58,7 +58,7 @@ struct WorkerState {
 struct GroupState {
   std::condition_variable cv;
   std::mutex mutex;
-  std::vector<vexo::net::InetAddress> listen_addresses;
+  std::vector<coropact::net::InetAddress> listen_addresses;
   std::vector<std::thread::id> init_threads;
 };
 
@@ -70,10 +70,10 @@ bool Check(bool condition, const char* message) {
   return true;
 }
 
-vexo::base::Result<std::uint16_t> PickFreePort() {
+coropact::base::Result<std::uint16_t> PickFreePort() {
   UniqueFd socket(::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP));
   if (socket.get() < 0) {
-    return std::unexpected(vexo::base::CurrentErrno());
+    return std::unexpected(coropact::base::CurrentErrno());
   }
 
   sockaddr_in address{};
@@ -81,38 +81,38 @@ vexo::base::Result<std::uint16_t> PickFreePort() {
   address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   address.sin_port = htons(0);
   if (::bind(socket.get(), reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0) {
-    return std::unexpected(vexo::base::CurrentErrno());
+    return std::unexpected(coropact::base::CurrentErrno());
   }
 
   socklen_t length = sizeof(address);
   if (::getsockname(socket.get(), reinterpret_cast<sockaddr*>(&address), &length) < 0) {
-    return std::unexpected(vexo::base::CurrentErrno());
+    return std::unexpected(coropact::base::CurrentErrno());
   }
   return ntohs(address.sin_port);
 }
 
-vexo::base::Result<int> ConnectClient(const vexo::net::InetAddress& address) {
+coropact::base::Result<int> ConnectClient(const coropact::net::InetAddress& address) {
   const int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, IPPROTO_TCP);
   if (fd < 0) {
-    return std::unexpected(vexo::base::CurrentErrno());
+    return std::unexpected(coropact::base::CurrentErrno());
   }
 
   const sockaddr_in& socket_address = address.sock_addr();
   if (::connect(fd, reinterpret_cast<const sockaddr*>(&socket_address), sizeof(socket_address)) <
           0 &&
       errno != EINPROGRESS) {
-    const auto error = vexo::base::CurrentErrno();
+    const auto error = coropact::base::CurrentErrno();
     ::close(fd);
     return std::unexpected(error);
   }
   return fd;
 }
 
-vexo::coro::Task<void> HandleConnection(vexo::net::ReactorWorkerContext& context,
-                                        vexo::net::ReactorStream stream, WorkerState* state) {
+coropact::coro::Task<void> HandleConnection(coropact::net::ReactorWorkerContext& context,
+                                        coropact::net::ReactorStream stream, WorkerState* state) {
   {
     std::lock_guard lock{state->mutex};
-    state->scheduler_is_current = vexo::coro::Scheduler::Current() == &context.scheduler;
+    state->scheduler_is_current = coropact::coro::Scheduler::Current() == &context.scheduler;
   }
   state->cv.notify_all();
 
@@ -127,9 +127,9 @@ vexo::coro::Task<void> HandleConnection(vexo::net::ReactorWorkerContext& context
 
 bool CheckWorkerAcceptAndStop() {
   WorkerState state;
-  vexo::net::ReactorWorker worker(
-      0, vexo::net::InetAddress(0), {},
-      [&state](vexo::net::ReactorWorkerContext& context) {
+  coropact::net::ReactorWorker worker(
+      0, coropact::net::InetAddress(0), {},
+      [&state](coropact::net::ReactorWorkerContext& context) {
         auto address = context.listener.LocalAddress();
         std::lock_guard lock{state.mutex};
         if (!address.has_value()) {
@@ -139,7 +139,7 @@ bool CheckWorkerAcceptAndStop() {
         }
         state.init_thread_is_worker = !context.loop.IsInLoopThread();
       },
-      [&state](vexo::net::ReactorWorkerContext& context, vexo::net::ReactorStream stream) {
+      [&state](coropact::net::ReactorWorkerContext& context, coropact::net::ReactorStream stream) {
         return HandleConnection(context, std::move(stream), &state);
       });
 
@@ -187,12 +187,12 @@ bool CheckWorkerGroupStartAndStop() {
   }
 
   GroupState state;
-  vexo::net::ReactorWorkerGroupOptions options;
+  coropact::net::ReactorWorkerGroupOptions options;
   options.worker_num = 2;
   options.worker_options.listener_options.reuse_port = true;
 
-  vexo::net::ReactorWorkerGroup group(vexo::net::InetAddress(*port), options,
-                                      [&state](vexo::net::ReactorWorkerContext& context) {
+  coropact::net::ReactorWorkerGroup group(coropact::net::InetAddress(*port), options,
+                                      [&state](coropact::net::ReactorWorkerContext& context) {
                                         auto address = context.listener.LocalAddress();
                                         std::lock_guard lock{state.mutex};
                                         if (address.has_value()) {
@@ -244,9 +244,9 @@ bool CheckWorkerGroupStartAndStop() {
 }
 
 bool CheckZeroWorkersRejected() {
-  vexo::net::ReactorWorkerGroupOptions options;
+  coropact::net::ReactorWorkerGroupOptions options;
   options.worker_num = 0;
-  vexo::net::ReactorWorkerGroup group(vexo::net::InetAddress(0), options);
+  coropact::net::ReactorWorkerGroup group(coropact::net::InetAddress(0), options);
   auto result = group.Start();
   return Check(!result.has_value(), "zero-worker group should be rejected") &&
          Check(result.error() == std::errc::invalid_argument,

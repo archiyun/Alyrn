@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "vexo/log/async_logger.h"
+#include "coropact/log/async_logger.h"
 
 #include <errno.h>
 
@@ -14,7 +14,7 @@
 #include <system_error>
 #include <utility>
 
-namespace vexo::log {
+namespace coropact::log {
 
 namespace {
 
@@ -292,4 +292,4 @@ void AsyncLogger::ThreadFunc(std::stop_token stop_token) {
 
   FlushFile();
 }
-} // namespace vexo::log
+} // namespace coropact::log

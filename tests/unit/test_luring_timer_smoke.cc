@@ -4,39 +4,39 @@
 #include <chrono>
 #include <iostream>
 
-#include "vexo/coro/spawn.h"
-#include "vexo/coro/task.h"
-#include "vexo/luring/connector.h"
-#include "vexo/luring/loop.h"
-#include "vexo/luring/options.h"
-#include "vexo/luring/timer.h"
+#include "coropact/coro/spawn.h"
+#include "coropact/coro/task.h"
+#include "coropact/luring/connector.h"
+#include "coropact/luring/loop.h"
+#include "coropact/luring/options.h"
+#include "coropact/luring/timer.h"
 
 namespace {
 
 using namespace std::chrono_literals;
 
-static_assert(requires(vexo::luring::LUringConnector& connector) { connector.SleepFor(1ms); });
+static_assert(requires(coropact::luring::LUringConnector& connector) { connector.SleepFor(1ms); });
 
 bool Check(bool condition, const char* message) {
   if (!condition) std::cout << "FAIL: " << message << '\n';
   return condition;
 }
 
-bool IsEnvironmentSkip(vexo::base::Error error) {
+bool IsEnvironmentSkip(coropact::base::Error error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 
-vexo::coro::Task<void> SleepTask(vexo::luring::LUringLoop* loop, bool* resumed,
+coropact::coro::Task<void> SleepTask(coropact::luring::LUringLoop* loop, bool* resumed,
                                  bool* scheduler_ok) {
-  auto result = co_await vexo::luring::SleepFor(*loop, 1ms);
+  auto result = co_await coropact::luring::SleepFor(*loop, 1ms);
   *resumed = true;
-  *scheduler_ok = vexo::coro::Scheduler::Current() == loop;
+  *scheduler_ok = coropact::coro::Scheduler::Current() == loop;
   if (!result.has_value()) co_return;
 }
 
 bool TestTimers() {
-  vexo::luring::LUringLoop loop;
-  vexo::luring::LUringOptions options;
+  coropact::luring::LUringLoop loop;
+  coropact::luring::LUringOptions options;
   options.entries = 16;
   options.submit_batch = 1;
 
@@ -77,7 +77,7 @@ bool TestTimers() {
 
   bool resumed = false;
   bool scheduler_ok = false;
-  vexo::coro::Spawn(loop, SleepTask(&loop, &resumed, &scheduler_ok)).Detach();
+  coropact::coro::Spawn(loop, SleepTask(&loop, &resumed, &scheduler_ok)).Detach();
   loop.RunReady();
   auto completed = loop.WaitCompletions();
   loop.RunReady();

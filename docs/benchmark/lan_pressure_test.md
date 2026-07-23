@@ -1,6 +1,6 @@
 # 局域网压测运行手册
 
-本文用于让局域网内的压测机 Agent 压测本机上的 Vexo 上游和 io_uring 网关。
+本文用于让局域网内的压测机 Agent 压测本机上的 CoroPact 上游和 io_uring 网关。
 
 拓扑如下：
 
@@ -8,10 +8,10 @@
 压测机
    │ HTTP 压测
    ▼
-本机 LAN_IP:8081  Vexo io_uring Gateway
+本机 LAN_IP:8081  CoroPact io_uring Gateway
    │ 仅本机回环连接
    ▼
-127.0.0.1:9001  Vexo HTTP upstream
+127.0.0.1:9001  CoroPact HTTP upstream
 ```
 
 上游只绑定 `127.0.0.1`，不会暴露给局域网；网关绑定 `0.0.0.0:8081`，压测机访问本机的 LAN 地址即可。
@@ -22,7 +22,7 @@
 
 ```bash
 cmake -S . -B build-uring \
-  -DVEXO_ENABLE_URING=ON \
+  -DCOROPACT_ENABLE_URING=ON \
   -DBUILD_TESTS=ON \
   -DBUILD_EXAMPLES=ON
 
@@ -53,11 +53,11 @@ sudo ufw allow 8081/tcp
 启动一个本机 HTTP 上游：
 
 ```bash
-UPSTREAM_PIDFILE=/tmp/vexo-upstream-9001.pid
+UPSTREAM_PIDFILE=/tmp/coropact-upstream-9001.pid
 
 env PORT=9001 IO_THREADS=4 \
   ./build-uring/examples/http/demo_http_server \
-  > /tmp/vexo-upstream-9001.log 2>&1 &
+  > /tmp/coropact-upstream-9001.log 2>&1 &
 echo $! > "$UPSTREAM_PIDFILE"
 ```
 
@@ -79,7 +79,7 @@ OK
 先使用单 worker 做连通性验证：
 
 ```bash
-GATEWAY_PIDFILE=/tmp/vexo-gateway-8081.pid
+GATEWAY_PIDFILE=/tmp/coropact-gateway-8081.pid
 
 env BIND_HOST=0.0.0.0 \
   PORT=8081 \
@@ -90,7 +90,7 @@ env BIND_HOST=0.0.0.0 \
   URING_ENTRIES=8192 \
   MAX_CONCURRENT_REQUESTS=20000 \
   ./build-uring/examples/gateway/demo_bench_gateway_luring \
-  > /tmp/vexo-gateway-8081.log 2>&1 &
+  > /tmp/coropact-gateway-8081.log 2>&1 &
 echo $! > "$GATEWAY_PIDFILE"
 ```
 
@@ -119,7 +119,7 @@ env BIND_HOST=0.0.0.0 \
   URING_ENTRIES=32768 \
   MAX_CONCURRENT_REQUESTS=20000 \
   ./build-uring/examples/gateway/demo_bench_gateway_luring \
-  > /tmp/vexo-gateway-8081.log 2>&1 &
+  > /tmp/coropact-gateway-8081.log 2>&1 &
 ```
 
 不要同时启动两个占用 8081 的网关实例。若需要重启，先按 PID 清理旧实例。
@@ -171,11 +171,11 @@ done
 本机可以观察：
 
 ```bash
-pidstat -p "$(cat /tmp/vexo-gateway-8081.pid)" -t 1
+pidstat -p "$(cat /tmp/coropact-gateway-8081.pid)" -t 1
 vmstat 1
 mpstat -P ALL 1
 sar -n DEV 1
-tail -f /tmp/vexo-gateway-8081.log /tmp/vexo-upstream-9001.log
+tail -f /tmp/coropact-gateway-8081.log /tmp/coropact-upstream-9001.log
 ```
 
 ## 多上游负载均衡压测
@@ -186,8 +186,8 @@ tail -f /tmp/vexo-gateway-8081.log /tmp/vexo-upstream-9001.log
 for P in 9002 9003 9004; do
   env PORT="$P" IO_THREADS=4 \
     ./build-uring/examples/http/demo_http_server \
-    > "/tmp/vexo-upstream-${P}.log" 2>&1 &
-  echo $! > "/tmp/vexo-upstream-${P}.pid"
+    > "/tmp/coropact-upstream-${P}.log" 2>&1 &
+  echo $! > "/tmp/coropact-upstream-${P}.pid"
 done
 ```
 
@@ -202,11 +202,11 @@ UPSTREAM_PORTS=9001,9002,9003,9004
 只按保存的 PID 停止本次压测进程，不要使用宽泛的 `pkill -f`：
 
 ```bash
-for F in /tmp/vexo-gateway-8081.pid \
-         /tmp/vexo-upstream-9001.pid \
-         /tmp/vexo-upstream-9002.pid \
-         /tmp/vexo-upstream-9003.pid \
-         /tmp/vexo-upstream-9004.pid; do
+for F in /tmp/coropact-gateway-8081.pid \
+         /tmp/coropact-upstream-9001.pid \
+         /tmp/coropact-upstream-9002.pid \
+         /tmp/coropact-upstream-9003.pid \
+         /tmp/coropact-upstream-9004.pid; do
   if [ -f "$F" ]; then
     PID=$(cat "$F")
     kill -TERM "$PID" 2>/dev/null || true
@@ -245,7 +245,7 @@ curl --noproxy '*' -i --max-time 5 "http://${TARGET_HOST}:8081/"
 
 ```bash
 curl --noproxy '*' -i --max-time 5 http://127.0.0.1:9001/
-tail -100 /tmp/vexo-gateway-8081.log
+tail -100 /tmp/coropact-gateway-8081.log
 ```
 
 网关到上游使用 `127.0.0.1:9001`，不需要压测机访问 9001。

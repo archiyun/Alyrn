@@ -1,5 +1,5 @@
 // Copyright (c) 2026 Arsenova
-#include "vexo/luring/listener.h"
+#include "coropact/luring/listener.h"
 
 #include <liburing.h>
 #include <netinet/in.h>
@@ -13,14 +13,14 @@
 #include <optional>
 #include <utility>
 
-#include "vexo/base/check.h"
-#include "vexo/base/error.h"
-#include "vexo/luring/loop.h"
-#include "vexo/luring/op.h"
-#include "vexo/luring/stream.h"
-#include "vexo/net/inet_address.h"
+#include "coropact/base/check.h"
+#include "coropact/base/error.h"
+#include "coropact/luring/loop.h"
+#include "coropact/luring/op.h"
+#include "coropact/luring/stream.h"
+#include "coropact/net/inet_address.h"
 
-namespace vexo::luring {
+namespace coropact::luring {
 
 namespace {
 
@@ -268,7 +268,7 @@ LUringListener& LUringListener::operator=(LUringListener&& other) noexcept {
   }
 
   LUringLoop* other_loop = PrepareMove(other);
-  VEXO_CHECK(loop_ == nullptr || loop_ == other_loop,
+  COROPACT_CHECK(loop_ == nullptr || loop_ == other_loop,
              "LUringListener move requires both objects to use the same LUringLoop");
   if (loop_ != nullptr) {
     ResetForMove();
@@ -311,11 +311,11 @@ void LUringListener::NotifyCloseProgress() noexcept {
 }
 
 void LUringListener::ResetForMove() noexcept {
-  VEXO_CHECK(loop_ != nullptr, "LUringListener move destination is not initialized");
-  VEXO_CHECK(loop_->IsInLoopThread(), "LUringListener move called from wrong LUringLoop thread");
-  VEXO_CHECK(pending_accepts_ == 0,
+  COROPACT_CHECK(loop_ != nullptr, "LUringListener move destination is not initialized");
+  COROPACT_CHECK(loop_->IsInLoopThread(), "LUringListener move called from wrong LUringLoop thread");
+  COROPACT_CHECK(pending_accepts_ == 0,
              "LUringListener move destination has pending accept operations");
-  VEXO_CHECK(pending_close_ == nullptr,
+  COROPACT_CHECK(pending_close_ == nullptr,
              "LUringListener move destination has a pending close operation");
 
   const int fd = std::exchange(fd_, -1);
@@ -325,12 +325,12 @@ void LUringListener::ResetForMove() noexcept {
 }
 
 LUringLoop* LUringListener::PrepareMove(LUringListener& other) noexcept {
-  VEXO_CHECK(other.loop_ != nullptr, "LUringListener move source is not initialized");
-  VEXO_CHECK(other.loop_->IsInLoopThread(),
+  COROPACT_CHECK(other.loop_ != nullptr, "LUringListener move source is not initialized");
+  COROPACT_CHECK(other.loop_->IsInLoopThread(),
              "LUringListener move called from wrong LUringLoop thread");
-  VEXO_CHECK(other.pending_accepts_ == 0,
+  COROPACT_CHECK(other.pending_accepts_ == 0,
              "LUringListener cannot move with pending accept operations");
-  VEXO_CHECK(other.pending_close_ == nullptr,
+  COROPACT_CHECK(other.pending_close_ == nullptr,
              "LUringListener cannot move with a pending close operation");
 
   LUringLoop* loop = other.loop_;
@@ -338,4 +338,4 @@ LUringLoop* LUringListener::PrepareMove(LUringListener& other) noexcept {
   return loop;
 }
 
-}  // namespace vexo::luring
+}  // namespace coropact::luring

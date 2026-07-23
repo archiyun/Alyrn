@@ -16,9 +16,9 @@
 #include <thread>
 #include <utility>
 
-#include "vexo/base/error.h"
-#include "vexo/luring/worker_group.h"
-#include "vexo/net/inet_address.h"
+#include "coropact/base/error.h"
+#include "coropact/luring/worker_group.h"
+#include "coropact/net/inet_address.h"
 
 namespace {
 
@@ -59,22 +59,22 @@ bool Check(bool condition, const char* message) {
   return true;
 }
 
-bool IsEnvironmentSkip(vexo::base::Error error) {
+bool IsEnvironmentSkip(coropact::base::Error error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 
-vexo::net::InetAddress LoopbackAddress(std::uint16_t port) {
+coropact::net::InetAddress LoopbackAddress(std::uint16_t port) {
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   addr.sin_port = htons(port);
-  return vexo::net::InetAddress(addr);
+  return coropact::net::InetAddress(addr);
 }
 
-vexo::base::Result<std::uint16_t> PickFreePort() {
+coropact::base::Result<std::uint16_t> PickFreePort() {
   int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
   if (fd < 0) {
-    return std::unexpected(vexo::base::CurrentErrno());
+    return std::unexpected(coropact::base::CurrentErrno());
   }
 
   sockaddr_in addr{};
@@ -83,14 +83,14 @@ vexo::base::Result<std::uint16_t> PickFreePort() {
   addr.sin_port = htons(0);
 
   if (::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
-    auto error = vexo::base::CurrentErrno();
+    auto error = coropact::base::CurrentErrno();
     ::close(fd);
     return std::unexpected(error);
   }
 
   socklen_t len = sizeof(addr);
   if (::getsockname(fd, reinterpret_cast<sockaddr*>(&addr), &len) < 0) {
-    auto error = vexo::base::CurrentErrno();
+    auto error = coropact::base::CurrentErrno();
     ::close(fd);
     return std::unexpected(error);
   }
@@ -99,16 +99,16 @@ vexo::base::Result<std::uint16_t> PickFreePort() {
   return ntohs(addr.sin_port);
 }
 
-vexo::base::Result<int> ConnectClient(const vexo::net::InetAddress& address) {
+coropact::base::Result<int> ConnectClient(const coropact::net::InetAddress& address) {
   int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, IPPROTO_TCP);
   if (fd < 0) {
-    return std::unexpected(vexo::base::CurrentErrno());
+    return std::unexpected(coropact::base::CurrentErrno());
   }
 
   const sockaddr_in& addr = address.sock_addr();
   int r = ::connect(fd, reinterpret_cast<const sockaddr*>(&addr), sizeof(addr));
   if (r < 0 && errno != EINPROGRESS) {
-    auto error = vexo::base::CurrentErrno();
+    auto error = coropact::base::CurrentErrno();
     ::close(fd);
     return std::unexpected(error);
   }
@@ -127,7 +127,7 @@ bool CheckWorkerGroupStartStop() {
     return false;
   }
 
-  vexo::luring::LUringWorkerGroupOptions options;
+  coropact::luring::LUringWorkerGroupOptions options;
   options.worker_num = 2;
   options.worker_options.loop_options.entries = 16;
   options.worker_options.loop_options.submit_batch = 1;
@@ -138,8 +138,8 @@ bool CheckWorkerGroupStartStop() {
   std::atomic_bool invalid_index{false};
   std::atomic_bool invalid_listener{false};
 
-  vexo::luring::LUringWorkerGroup group(LoopbackAddress(*port), options,
-                                        [&](vexo::luring::LUringWorkerContext& context) {
+  coropact::luring::LUringWorkerGroup group(LoopbackAddress(*port), options,
+                                        [&](coropact::luring::LUringWorkerContext& context) {
                                           if (!context.loop.IsInLoopThread()) {
                                             bad_thread.store(true, std::memory_order_relaxed);
                                           }
@@ -190,7 +190,7 @@ bool CheckWorkerGroupAcceptCallback() {
     return false;
   }
 
-  vexo::luring::LUringWorkerGroupOptions options;
+  coropact::luring::LUringWorkerGroupOptions options;
   options.worker_num = 1;
   options.worker_options.loop_options.entries = 16;
   options.worker_options.loop_options.submit_batch = 1;
@@ -201,10 +201,10 @@ bool CheckWorkerGroupAcceptCallback() {
   std::atomic_bool bad_thread{false};
 
   const auto listen_addr = LoopbackAddress(*port);
-  vexo::luring::LUringWorkerGroup group(
+  coropact::luring::LUringWorkerGroup group(
       listen_addr, options, {},
-      [&](vexo::luring::LUringWorkerContext& context,
-          vexo::luring::LUringStream stream) -> vexo::coro::Task<void> {
+      [&](coropact::luring::LUringWorkerContext& context,
+          coropact::luring::LUringStream stream) -> coropact::coro::Task<void> {
         if (!context.loop.IsInLoopThread()) {
           bad_thread.store(true, std::memory_order_relaxed);
         }

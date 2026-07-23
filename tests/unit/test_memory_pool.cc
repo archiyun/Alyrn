@@ -4,10 +4,10 @@
 #include <thread>
 #include <vector>
 
-#include "vexo/memory/memory_pool.h"
+#include "coropact/memory/memory_pool.h"
 
 TEST(MemoryPoolTest, AllocateAndDeallocateReuseSlots) {
-    vexo::memory::MemoryPool<sizeof(int), alignof(int), 4> pool;
+    coropact::memory::MemoryPool<sizeof(int), alignof(int), 4> pool;
 
     void* a = pool.Allocate();
     void* b = pool.Allocate();
@@ -27,7 +27,7 @@ TEST(MemoryPoolTest, AllocateAndDeallocateReuseSlots) {
 }
 
 TEST(MemoryPoolTest, ReturnsNullWhenExhausted) {
-    vexo::memory::MemoryPool<sizeof(int), alignof(int), 2> pool;
+    coropact::memory::MemoryPool<sizeof(int), alignof(int), 2> pool;
 
     void* a = pool.Allocate();
     void* b = pool.Allocate();
@@ -41,7 +41,7 @@ TEST(MemoryPoolTest, ReturnsNullWhenExhausted) {
 }
 
 TEST(MemoryPoolTest, OwnsRecognizesPoolAddresses) {
-    vexo::memory::MemoryPool<sizeof(std::uint64_t), alignof(std::uint64_t), 4> pool;
+    coropact::memory::MemoryPool<sizeof(std::uint64_t), alignof(std::uint64_t), 4> pool;
 
     void* p = pool.Allocate();
     ASSERT_NE(p, nullptr);
@@ -56,7 +56,7 @@ TEST(MemoryPoolTest, OwnsRecognizesPoolAddresses) {
 }
 
 TEST(MemoryPoolTest, ConcurrentAllocateAndDeallocatePreservesCapacity) {
-    vexo::memory::MemoryPool<sizeof(int), alignof(int), 256> pool;
+    coropact::memory::MemoryPool<sizeof(int), alignof(int), 256> pool;
     constexpr int kThreads = 8;
     constexpr int kIterations = 2000;
 

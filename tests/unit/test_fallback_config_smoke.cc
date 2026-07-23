@@ -8,8 +8,8 @@
 #include <iostream>
 #include <string>
 
-#include "vexo/gateway/fallback_config.h"
-#include "vexo/http/http_types.h"
+#include "coropact/gateway/fallback_config.h"
+#include "coropact/http/http_types.h"
 
 namespace {
 
@@ -30,22 +30,22 @@ void Passed(const char* name) {
 // ================================================================
 
 bool TestDefaultDisabled() {
-  vexo::gateway::FallbackConfig cfg;
+  coropact::gateway::FallbackConfig cfg;
   if (!Expect(!cfg.enabled, "default enabled must be false")) return false;
   Passed("TestDefaultDisabled");
   return true;
 }
 
 bool TestDefaultStatusCodeIs503() {
-  vexo::gateway::FallbackConfig cfg;
-  if (!Expect(cfg.status_code == vexo::http::StatusCode::ServiceUnavailable,
+  coropact::gateway::FallbackConfig cfg;
+  if (!Expect(cfg.status_code == coropact::http::StatusCode::ServiceUnavailable,
               "default status_code must be 503")) return false;
   Passed("TestDefaultStatusCodeIs503");
   return true;
 }
 
 bool TestDefaultContentType() {
-  vexo::gateway::FallbackConfig cfg;
+  coropact::gateway::FallbackConfig cfg;
   if (!Expect(cfg.content_type == "application/json; charset=utf-8",
               "default content_type must be application/json")) return false;
   Passed("TestDefaultContentType");
@@ -53,7 +53,7 @@ bool TestDefaultContentType() {
 }
 
 bool TestDefaultBody() {
-  vexo::gateway::FallbackConfig cfg;
+  coropact::gateway::FallbackConfig cfg;
   if (!Expect(cfg.body.find("service temporarily unavailable") != std::string::npos,
               "default body must mention 'service temporarily unavailable'")) return false;
   Passed("TestDefaultBody");
@@ -65,7 +65,7 @@ bool TestDefaultBody() {
 // ================================================================
 
 bool TestInitNoOpWhenDisabled() {
-  vexo::gateway::FallbackConfig cfg;
+  coropact::gateway::FallbackConfig cfg;
   cfg.Init();
   if (!Expect(cfg.pre_rendered.empty(),
               "pre_rendered must be empty when enabled=false")) return false;
@@ -74,7 +74,7 @@ bool TestInitNoOpWhenDisabled() {
 }
 
 bool TestInitProducesValidHttpResponse() {
-  vexo::gateway::FallbackConfig cfg;
+  coropact::gateway::FallbackConfig cfg;
   cfg.enabled = true;
   cfg.Init();
 
@@ -94,7 +94,7 @@ bool TestInitProducesValidHttpResponse() {
 }
 
 bool TestInitContainsDefaultBody() {
-  vexo::gateway::FallbackConfig cfg;
+  coropact::gateway::FallbackConfig cfg;
   cfg.enabled = true;
   cfg.Init();
 
@@ -109,9 +109,9 @@ bool TestInitContainsDefaultBody() {
 // ================================================================
 
 bool TestCustomStatusCodeAppearsInResponse() {
-  vexo::gateway::FallbackConfig cfg;
+  coropact::gateway::FallbackConfig cfg;
   cfg.enabled = true;
-  cfg.status_code = vexo::http::StatusCode::BadGateway;
+  cfg.status_code = coropact::http::StatusCode::BadGateway;
   cfg.body = "bad gateway";
   cfg.Init();
 
@@ -125,7 +125,7 @@ bool TestCustomStatusCodeAppearsInResponse() {
 }
 
 bool TestCustomContentTypeAppearsInResponse() {
-  vexo::gateway::FallbackConfig cfg;
+  coropact::gateway::FallbackConfig cfg;
   cfg.enabled = true;
   cfg.content_type = "text/html; charset=utf-8";
   cfg.body = "<html><body>down</body></html>";
@@ -138,7 +138,7 @@ bool TestCustomContentTypeAppearsInResponse() {
 }
 
 bool TestCloseConnectionFlagIsSet() {
-  vexo::gateway::FallbackConfig cfg;
+  coropact::gateway::FallbackConfig cfg;
   cfg.enabled = true;
   cfg.Init();
 
@@ -154,7 +154,7 @@ bool TestCloseConnectionFlagIsSet() {
 // ================================================================
 
 bool TestInitIdempotent() {
-  vexo::gateway::FallbackConfig cfg;
+  coropact::gateway::FallbackConfig cfg;
   cfg.enabled = true;
   cfg.Init();
   std::string first = cfg.pre_rendered;

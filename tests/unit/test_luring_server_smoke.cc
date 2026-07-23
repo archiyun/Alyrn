@@ -17,11 +17,11 @@
 #include <thread>
 #include <utility>
 
-#include "vexo/base/error.h"
-#include "vexo/coro/task.h"
-#include "vexo/luring/server.h"
-#include "vexo/luring/stream.h"
-#include "vexo/net/inet_address.h"
+#include "coropact/base/error.h"
+#include "coropact/coro/task.h"
+#include "coropact/luring/server.h"
+#include "coropact/luring/stream.h"
+#include "coropact/net/inet_address.h"
 
 namespace {
 
@@ -62,22 +62,22 @@ bool Check(bool condition, const char* message) {
   return true;
 }
 
-bool IsEnvironmentSkip(vexo::base::Error error) {
+bool IsEnvironmentSkip(coropact::base::Error error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 
-vexo::net::InetAddress LoopbackAddress(std::uint16_t port) {
+coropact::net::InetAddress LoopbackAddress(std::uint16_t port) {
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   addr.sin_port = htons(port);
-  return vexo::net::InetAddress(addr);
+  return coropact::net::InetAddress(addr);
 }
 
-vexo::base::Result<std::uint16_t> PickFreePort() {
+coropact::base::Result<std::uint16_t> PickFreePort() {
   int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
   if (fd < 0) {
-    return std::unexpected(vexo::base::CurrentErrno());
+    return std::unexpected(coropact::base::CurrentErrno());
   }
 
   sockaddr_in addr{};
@@ -86,14 +86,14 @@ vexo::base::Result<std::uint16_t> PickFreePort() {
   addr.sin_port = htons(0);
 
   if (::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
-    auto error = vexo::base::CurrentErrno();
+    auto error = coropact::base::CurrentErrno();
     ::close(fd);
     return std::unexpected(error);
   }
 
   socklen_t len = sizeof(addr);
   if (::getsockname(fd, reinterpret_cast<sockaddr*>(&addr), &len) < 0) {
-    auto error = vexo::base::CurrentErrno();
+    auto error = coropact::base::CurrentErrno();
     ::close(fd);
     return std::unexpected(error);
   }
@@ -102,16 +102,16 @@ vexo::base::Result<std::uint16_t> PickFreePort() {
   return ntohs(addr.sin_port);
 }
 
-vexo::base::Result<int> ConnectClient(const vexo::net::InetAddress& address) {
+coropact::base::Result<int> ConnectClient(const coropact::net::InetAddress& address) {
   int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, IPPROTO_TCP);
   if (fd < 0) {
-    return std::unexpected(vexo::base::CurrentErrno());
+    return std::unexpected(coropact::base::CurrentErrno());
   }
 
   const sockaddr_in& addr = address.sock_addr();
   int r = ::connect(fd, reinterpret_cast<const sockaddr*>(&addr), sizeof(addr));
   if (r < 0 && errno != EINPROGRESS) {
-    auto error = vexo::base::CurrentErrno();
+    auto error = coropact::base::CurrentErrno();
     ::close(fd);
     return std::unexpected(error);
   }
@@ -119,8 +119,8 @@ vexo::base::Result<int> ConnectClient(const vexo::net::InetAddress& address) {
   return fd;
 }
 
-vexo::luring::LUringServerOptions MakeOptions(std::size_t worker_num = 1) {
-  vexo::luring::LUringServerOptions options;
+coropact::luring::LUringServerOptions MakeOptions(std::size_t worker_num = 1) {
+  coropact::luring::LUringServerOptions options;
   options.worker_group_options.worker_num = worker_num;
   options.worker_group_options.worker_options.loop_options.entries = 16;
   options.worker_group_options.worker_options.loop_options.submit_batch = 1;
@@ -139,7 +139,7 @@ bool CheckServerStartStop() {
     return false;
   }
 
-  vexo::luring::LUringServer server(LoopbackAddress(*port), MakeOptions());
+  coropact::luring::LUringServer server(LoopbackAddress(*port), MakeOptions());
 
   auto started = server.Start();
   if (!started.has_value()) {
@@ -173,13 +173,13 @@ bool CheckServerSessionHandler() {
   }
 
   const auto listen_addr = LoopbackAddress(*port);
-  vexo::luring::LUringServer server(listen_addr, MakeOptions());
+  coropact::luring::LUringServer server(listen_addr, MakeOptions());
 
   std::atomic_size_t session_count{0};
   std::atomic_bool invalid_stream{false};
   std::atomic_bool wrong_loop{false};
-  server.set_session_handler([&](vexo::luring::LUringWorkerContext& context,
-                                 vexo::luring::LUringStream stream) -> vexo::coro::Task<void> {
+  server.set_session_handler([&](coropact::luring::LUringWorkerContext& context,
+                                 coropact::luring::LUringStream stream) -> coropact::coro::Task<void> {
     if (!context.loop.IsInLoopThread()) {
       wrong_loop.store(true, std::memory_order_relaxed);
     }

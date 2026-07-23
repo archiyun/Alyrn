@@ -10,12 +10,12 @@
 #include <type_traits>
 #include <utility>
 
-#include "vexo/base/error.h"
-#include "vexo/luring/listener.h"
-#include "vexo/luring/loop.h"
-#include "vexo/luring/options.h"
-#include "vexo/luring/stream.h"
-#include "vexo/net/inet_address.h"
+#include "coropact/base/error.h"
+#include "coropact/luring/listener.h"
+#include "coropact/luring/loop.h"
+#include "coropact/luring/options.h"
+#include "coropact/luring/stream.h"
+#include "coropact/net/inet_address.h"
 
 namespace {
 
@@ -33,12 +33,12 @@ bool Check(bool condition, const char* message) {
   return true;
 }
 
-bool IsEnvironmentSkip(vexo::base::Error error) {
+bool IsEnvironmentSkip(coropact::base::Error error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 
-LoopInitStatus InitLoop(vexo::luring::LUringLoop& loop) {
-  vexo::luring::LUringOptions options;
+LoopInitStatus InitLoop(coropact::luring::LUringLoop& loop) {
+  coropact::luring::LUringOptions options;
   options.entries = 16;
   options.submit_batch = 1;
 
@@ -55,7 +55,7 @@ LoopInitStatus InitLoop(vexo::luring::LUringLoop& loop) {
   return LoopInitStatus::kFail;
 }
 
-bool TestStreamMove(vexo::luring::LUringLoop& loop) {
+bool TestStreamMove(coropact::luring::LUringLoop& loop) {
   int fds[2]{-1, -1};
   if (!Check(::socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, fds) == 0,
              "LUringStream socketpair creation failed")) {
@@ -63,9 +63,9 @@ bool TestStreamMove(vexo::luring::LUringLoop& loop) {
   }
 
   {
-    vexo::luring::LUringStream source(&loop, fds[0], vexo::net::InetAddress(0));
-    vexo::luring::LUringStream moved(std::move(source));
-    vexo::luring::LUringStream target(&loop, fds[1], vexo::net::InetAddress(0));
+    coropact::luring::LUringStream source(&loop, fds[0], coropact::net::InetAddress(0));
+    coropact::luring::LUringStream moved(std::move(source));
+    coropact::luring::LUringStream target(&loop, fds[1], coropact::net::InetAddress(0));
     target = std::move(moved);
 
     if (!Check(source.fd() == -1 && moved.fd() == -1 && target.fd() == fds[0],
@@ -77,8 +77,8 @@ bool TestStreamMove(vexo::luring::LUringLoop& loop) {
   return true;
 }
 
-bool TestListenerMove(vexo::luring::LUringLoop& loop) {
-  auto source = vexo::luring::LUringListener::Create(&loop, vexo::net::InetAddress(0));
+bool TestListenerMove(coropact::luring::LUringLoop& loop) {
+  auto source = coropact::luring::LUringListener::Create(&loop, coropact::net::InetAddress(0));
   if (!Check(source.has_value(), "LUringListener creation failed")) {
     return false;
   }
@@ -87,14 +87,14 @@ bool TestListenerMove(vexo::luring::LUringLoop& loop) {
     return false;
   }
 
-  vexo::luring::LUringListener moved(std::move(*source));
+  coropact::luring::LUringListener moved(std::move(*source));
   auto moved_address = moved.LocalAddress();
   if (!Check(moved_address.has_value() && moved_address->ToPort() == source_address->ToPort(),
              "LUringListener move construction did not transfer the socket")) {
     return false;
   }
 
-  auto target = vexo::luring::LUringListener::Create(&loop, vexo::net::InetAddress(0));
+  auto target = coropact::luring::LUringListener::Create(&loop, coropact::net::InetAddress(0));
   if (!Check(target.has_value(), "LUringListener move target creation failed")) {
     return false;
   }
@@ -109,12 +109,12 @@ bool TestListenerMove(vexo::luring::LUringLoop& loop) {
 }  // namespace
 
 int main() {
-  static_assert(std::is_move_constructible_v<vexo::luring::LUringStream>);
-  static_assert(std::is_move_assignable_v<vexo::luring::LUringStream>);
-  static_assert(std::is_move_constructible_v<vexo::luring::LUringListener>);
-  static_assert(std::is_move_assignable_v<vexo::luring::LUringListener>);
+  static_assert(std::is_move_constructible_v<coropact::luring::LUringStream>);
+  static_assert(std::is_move_assignable_v<coropact::luring::LUringStream>);
+  static_assert(std::is_move_constructible_v<coropact::luring::LUringListener>);
+  static_assert(std::is_move_assignable_v<coropact::luring::LUringListener>);
 
-  vexo::luring::LUringLoop loop;
+  coropact::luring::LUringLoop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;

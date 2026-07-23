@@ -27,13 +27,13 @@
 #include <type_traits>
 #include <vector>
 
-#include "vexo/ds/intrusive_splaytree.h"
+#include "coropact/ds/intrusive_splaytree.h"
 
 // ----------------------------------------------------------------
 // Element type
 // ----------------------------------------------------------------
 
-struct Job : vexo::ds::SplayNode<Job> {
+struct Job : coropact::ds::SplayNode<Job> {
   Job() = default;
 
   int     id;
@@ -45,7 +45,7 @@ bool JobLess(const Job* a, const Job* b) {
   return a->id < b->id;
 }
 
-using JobTree = vexo::ds::IntrusiveSplayTree<Job, JobLess>;
+using JobTree = coropact::ds::IntrusiveSplayTree<Job, JobLess>;
 
 static_assert(!std::is_copy_constructible_v<JobTree>);
 static_assert(!std::is_copy_assignable_v<JobTree>);
@@ -58,8 +58,8 @@ struct JobCmp {
 
 struct SecondaryHook {};
 
-struct MultiHookJob : vexo::ds::SplayNode<MultiHookJob>,
-                     vexo::ds::SplayNode<MultiHookJob, SecondaryHook> {
+struct MultiHookJob : coropact::ds::SplayNode<MultiHookJob>,
+                     coropact::ds::SplayNode<MultiHookJob, SecondaryHook> {
   MultiHookJob() = default;
 
   int key = 0;
@@ -70,9 +70,9 @@ bool MultiHookJobLess(const MultiHookJob* a, const MultiHookJob* b) {
 }
 
 using PrimaryMultiHookTree =
-    vexo::ds::IntrusiveSplayTree<MultiHookJob, MultiHookJobLess>;
+    coropact::ds::IntrusiveSplayTree<MultiHookJob, MultiHookJobLess>;
 using SecondaryMultiHookTree =
-    vexo::ds::IntrusiveSplayTree<MultiHookJob, MultiHookJobLess, SecondaryHook>;
+    coropact::ds::IntrusiveSplayTree<MultiHookJob, MultiHookJobLess, SecondaryHook>;
 
 // ----------------------------------------------------------------
 // Helpers
@@ -196,8 +196,8 @@ static bool tag_test() {
 
   primary.Clear();
   secondary.Clear();
-  using PrimaryHook = vexo::ds::SplayNode<MultiHookJob>;
-  using SecondaryHookNode = vexo::ds::SplayNode<MultiHookJob, SecondaryHook>;
+  using PrimaryHook = coropact::ds::SplayNode<MultiHookJob>;
+  using SecondaryHookNode = coropact::ds::SplayNode<MultiHookJob, SecondaryHook>;
   return CheckAt(!static_cast<PrimaryHook*>(&first)->InTree() &&
                      !static_cast<SecondaryHookNode*>(&first)->InTree() &&
                      !static_cast<PrimaryHook*>(&second)->InTree() &&

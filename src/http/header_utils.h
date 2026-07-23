@@ -10,9 +10,9 @@
 #include <string>
 #include <string_view>
 
-#include "vexo/http/http_types.h"
+#include "coropact/http/http_types.h"
 
-namespace vexo::http::detail {
+namespace coropact::http::detail {
 
 inline constexpr std::string_view kServerSignature = "aresna/0.1";
 
@@ -93,4 +93,4 @@ inline std::string FormatHttpDateNow() {
   return FormatHttpDate(std::time(nullptr));
 }
 
-}  // namespace vexo::http::detail
+}  // namespace coropact::http::detail

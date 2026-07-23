@@ -37,7 +37,7 @@ Boundary violations or warning signs:
 - The former callback-oriented TCP layer mixed transport lifetime with gateway
   policy. It is now removed; the Reactor stream and gateway connector contracts
   keep those responsibilities separate.
-- The single `vexo_foundation` target combines L0 memory/ds concerns with L1
+- The single `coropact_foundation` target combines L0 memory/ds concerns with L1
   time/log concerns, so CMake cannot enforce the intended boundaries.
 - README claims upstreams can be added at runtime, while `UpstreamRegistry` and
   `Upstream` are implemented as startup-built, read-only objects.
@@ -48,7 +48,7 @@ This is an incremental destination. Keep compatibility forwarding headers when
 moving public APIs.
 
 ```text
-include/vexo/
+include/coropact/
   base/
   ds/
   memory/                 # arena, fixed block pool, object pool only
@@ -68,7 +68,7 @@ include/vexo/
     upstream/
     load_balance/
 
-src/                       # mirrors include/vexo
+src/                       # mirrors include/coropact
 examples/
 tools/
 benchmarks/                # move executable benchmark drivers here over time
@@ -84,10 +84,10 @@ runtime_ds
 runtime_memory
 runtime_time       -> base, ds
 runtime_log        -> base, time
-vexo_task       -> base
-vexo_net        -> base, ds, memory, time, log
-vexo_http_core  -> foundation
-vexo_gateway    -> http, net, time, log, ds
+coropact_task       -> base
+coropact_net        -> base, ds, memory, time, log
+coropact_http_core  -> foundation
+coropact_gateway    -> http, net, time, log, ds
 ```
 
 Do not perform all moves in one commit. First add dependency checks and
@@ -113,19 +113,19 @@ new-module rules, threading/lifetime rules, and AI patch requirements.
 
 ## E. Module `SKILL.md` Drafts
 
-The version-controlled drafts are under `docs/skills/vexo`:
+The version-controlled drafts are under `docs/skills/coropact`:
 
-- [net](skills/vexo/net/SKILL.md)
-- [time](skills/vexo/time/SKILL.md)
-- [ds](skills/vexo/ds/SKILL.md)
-- [memory](skills/vexo/memory/SKILL.md)
-- [gateway](skills/vexo/gateway/SKILL.md)
-- [gateway/health](skills/vexo/gateway/health/SKILL.md)
-- [gateway/rate_limit](skills/vexo/gateway/rate_limit/SKILL.md)
-- [gateway/circuit_breaker](skills/vexo/gateway/circuit_breaker/SKILL.md)
-- [gateway/proxy](skills/vexo/gateway/proxy/SKILL.md)
-- [gateway/upstream](skills/vexo/gateway/upstream/SKILL.md)
-- [gateway/load_balance](skills/vexo/gateway/load_balance/SKILL.md)
+- [net](skills/coropact/net/SKILL.md)
+- [time](skills/coropact/time/SKILL.md)
+- [ds](skills/coropact/ds/SKILL.md)
+- [memory](skills/coropact/memory/SKILL.md)
+- [gateway](skills/coropact/gateway/SKILL.md)
+- [gateway/health](skills/coropact/gateway/health/SKILL.md)
+- [gateway/rate_limit](skills/coropact/gateway/rate_limit/SKILL.md)
+- [gateway/circuit_breaker](skills/coropact/gateway/circuit_breaker/SKILL.md)
+- [gateway/proxy](skills/coropact/gateway/proxy/SKILL.md)
+- [gateway/upstream](skills/coropact/gateway/upstream/SKILL.md)
+- [gateway/load_balance](skills/coropact/gateway/load_balance/SKILL.md)
 
 These are repository maintenance instructions. They can later be mirrored into
 an agent-specific skill directory without making `.claude/` the canonical copy.

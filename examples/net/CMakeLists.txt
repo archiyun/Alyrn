@@ -12,7 +12,7 @@ add_executable(demo_bench_timer
 )
 target_link_libraries(demo_bench_timer
     PRIVATE
-        vexo_net
+        coropact_net
 )
 
 add_executable(demo_reactor_coro_echo
@@ -20,16 +20,16 @@ add_executable(demo_reactor_coro_echo
 )
 target_link_libraries(demo_reactor_coro_echo
     PRIVATE
-        vexo_net
+        coropact_net
 )
 
-if(VEXO_ENABLE_URING)
+if(COROPACT_ENABLE_URING)
     add_executable(demo_luring_raw_echo_server
         demo_luring_raw_echo_server.cc
     )
     target_link_libraries(demo_luring_raw_echo_server
         PRIVATE
-            vexo_luring
-            vexo_net
+            coropact_luring
+            coropact_net
     )
 endif()

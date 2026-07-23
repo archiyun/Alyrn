@@ -1,16 +1,16 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "vexo/luring/server.h"
+#include "coropact/luring/server.h"
 
 #include <cerrno>
 #include <expected>
 #include <memory>
 #include <utility>
 
-#include "vexo/base/error.h"
-#include "vexo/luring/stream.h"
+#include "coropact/base/error.h"
+#include "coropact/luring/stream.h"
 
-namespace vexo::luring {
+namespace coropact::luring {
 
 LUringServer::LUringServer(net::InetAddress listen_addr, LUringServerOptions options)
     : listen_addr_(listen_addr), options_(std::move(options)) {}
@@ -49,4 +49,4 @@ void LUringServer::Stop() noexcept {
   started_ = false;
 }
 
-}  // namespace vexo::luring
+}  // namespace coropact::luring

@@ -15,9 +15,9 @@
 #include <string_view>
 #include <thread>
 
-#include "vexo/gateway/circuit_breaker.h"
-#include "vexo/gateway/fallback_config.h"
-#include "vexo/gateway/rate_limiter.h"
+#include "coropact/gateway/circuit_breaker.h"
+#include "coropact/gateway/fallback_config.h"
+#include "coropact/gateway/rate_limiter.h"
 
 namespace {
 
@@ -52,8 +52,8 @@ enum class Outcome {
   kCircuitOpen,  // 熔断，返回 fallback
 };
 
-Outcome Dispatch(vexo::gateway::RateLimiter* rl,
-                 vexo::gateway::CircuitBreaker* cb,
+Outcome Dispatch(coropact::gateway::RateLimiter* rl,
+                 coropact::gateway::CircuitBreaker* cb,
                  std::string_view client_ip) {
   if (rl) {
     if (!rl->AllowGlobal() || !rl->AllowPerIP(client_ip)) {
@@ -71,17 +71,17 @@ Outcome Dispatch(vexo::gateway::RateLimiter* rl,
 // ================================================================
 
 bool TestNormalFlowPassesThrough() {
-  vexo::gateway::RateLimiterConfig rl_cfg;
+  coropact::gateway::RateLimiterConfig rl_cfg;
   rl_cfg.global_enabled = true;
   rl_cfg.global_rate = 10000.0;
   rl_cfg.global_burst = 100.0;
   rl_cfg.per_ip_enabled = true;
   rl_cfg.per_ip_rate = 1000.0;
   rl_cfg.per_ip_burst = 10.0;
-  vexo::gateway::RateLimiter rl(rl_cfg);
+  coropact::gateway::RateLimiter rl(rl_cfg);
 
-  vexo::gateway::CircuitBreakerConfig cb_cfg;
-  vexo::gateway::CircuitBreaker cb(cb_cfg);
+  coropact::gateway::CircuitBreakerConfig cb_cfg;
+  coropact::gateway::CircuitBreaker cb(cb_cfg);
 
   for (int i = 0; i < 5; ++i) {
     auto r = Dispatch(&rl, &cb, "10.0.0.1");
@@ -97,11 +97,11 @@ bool TestNormalFlowPassesThrough() {
 // ================================================================
 
 bool TestGlobalRateLimitTriggered() {
-  vexo::gateway::RateLimiterConfig rl_cfg;
+  coropact::gateway::RateLimiterConfig rl_cfg;
   rl_cfg.global_enabled = true;
   rl_cfg.global_rate = 0.001; // 几乎不补充
   rl_cfg.global_burst = 2.0;
-  vexo::gateway::RateLimiter rl(rl_cfg);
+  coropact::gateway::RateLimiter rl(rl_cfg);
 
   // 前 2 次通过
   if (!Expect(Dispatch(&rl, nullptr, "1.1.1.1") == Outcome::kForwarded,
@@ -123,14 +123,14 @@ bool TestGlobalRateLimitTriggered() {
 // ================================================================
 
 bool TestPerIPRateLimitTriggered() {
-  vexo::gateway::RateLimiterConfig rl_cfg;
+  coropact::gateway::RateLimiterConfig rl_cfg;
   rl_cfg.global_enabled = true;
   rl_cfg.global_rate = 10000.0;
   rl_cfg.global_burst = 1000.0;  // 全局宽松
   rl_cfg.per_ip_enabled = true;
   rl_cfg.per_ip_rate = 0.001;
   rl_cfg.per_ip_burst = 1.0;    // per-ip 严格
-  vexo::gateway::RateLimiter rl(rl_cfg);
+  coropact::gateway::RateLimiter rl(rl_cfg);
 
   // ip1 通过一次后被限
   if (!Expect(Dispatch(&rl, nullptr, "2.2.2.2") == Outcome::kForwarded,
@@ -151,22 +151,22 @@ bool TestPerIPRateLimitTriggered() {
 // ================================================================
 
 bool TestCircuitBreakerOpenReturnsFallback() {
-  vexo::gateway::RateLimiterConfig rl_cfg;
+  coropact::gateway::RateLimiterConfig rl_cfg;
   rl_cfg.global_enabled = true;
   rl_cfg.global_rate = 10000.0;
   rl_cfg.global_burst = 1000.0;
-  vexo::gateway::RateLimiter rl(rl_cfg);
+  coropact::gateway::RateLimiter rl(rl_cfg);
 
-  vexo::gateway::CircuitBreakerConfig cb_cfg;
+  coropact::gateway::CircuitBreakerConfig cb_cfg;
   cb_cfg.failure_threshold = 3;
   cb_cfg.open_timeout = 60000ms; // 很长，确保测试期间不会变回 HALF_OPEN
-  vexo::gateway::CircuitBreaker cb(cb_cfg);
+  coropact::gateway::CircuitBreaker cb(cb_cfg);
 
   // 触发 3 次失败 → CB OPEN
   cb.OnFailure();
   cb.OnFailure();
   cb.OnFailure();
-  if (!Expect(cb.state() == vexo::gateway::CircuitBreakerState::kOpen,
+  if (!Expect(cb.state() == coropact::gateway::CircuitBreakerState::kOpen,
               "CB must be open after failures")) return false;
 
   // 后续所有请求被熔断，即使 RL 通过
@@ -185,19 +185,19 @@ bool TestCircuitBreakerOpenReturnsFallback() {
 // ================================================================
 
 bool TestRateLimitFiresBeforeCircuitBreaker() {
-  vexo::gateway::RateLimiterConfig rl_cfg;
+  coropact::gateway::RateLimiterConfig rl_cfg;
   rl_cfg.global_enabled = true;
   rl_cfg.global_rate = 0.001;
   rl_cfg.global_burst = 1.0; // 只放 1 个
-  vexo::gateway::RateLimiter rl(rl_cfg);
+  coropact::gateway::RateLimiter rl(rl_cfg);
 
-  vexo::gateway::CircuitBreakerConfig cb_cfg;
+  coropact::gateway::CircuitBreakerConfig cb_cfg;
   cb_cfg.failure_threshold = 1;
-  vexo::gateway::CircuitBreaker cb(cb_cfg);
+  coropact::gateway::CircuitBreaker cb(cb_cfg);
 
   // 让 CB 先打开
   cb.OnFailure();
-  if (!Expect(cb.state() == vexo::gateway::CircuitBreakerState::kOpen,
+  if (!Expect(cb.state() == coropact::gateway::CircuitBreakerState::kOpen,
               "CB must be open")) return false;
 
   // 消耗唯一的 RL 令牌
@@ -218,23 +218,23 @@ bool TestRateLimitFiresBeforeCircuitBreaker() {
 // ================================================================
 
 bool TestCircuitBreakerRecovery() {
-  vexo::gateway::RateLimiterConfig rl_cfg;
+  coropact::gateway::RateLimiterConfig rl_cfg;
   rl_cfg.global_enabled = true;
   rl_cfg.global_rate = 10000.0;
   rl_cfg.global_burst = 1000.0;
-  vexo::gateway::RateLimiter rl(rl_cfg);
+  coropact::gateway::RateLimiter rl(rl_cfg);
 
-  vexo::gateway::CircuitBreakerConfig cb_cfg;
+  coropact::gateway::CircuitBreakerConfig cb_cfg;
   cb_cfg.failure_threshold = 2;
   cb_cfg.success_threshold = 1;
   cb_cfg.open_timeout = 30ms; // 短超时
   cb_cfg.half_open_max_requests = 1;
-  vexo::gateway::CircuitBreaker cb(cb_cfg);
+  coropact::gateway::CircuitBreaker cb(cb_cfg);
 
   // 阶段 1：触发熔断
   cb.OnFailure();
   cb.OnFailure();
-  if (!Expect(cb.state() == vexo::gateway::CircuitBreakerState::kOpen,
+  if (!Expect(cb.state() == coropact::gateway::CircuitBreakerState::kOpen,
               "phase1: CB must be open")) return false;
   if (!Expect(Dispatch(&rl, &cb, "6.6.6.6") == Outcome::kCircuitOpen,
               "phase1: request must be rejected")) return false;
@@ -243,12 +243,12 @@ bool TestCircuitBreakerRecovery() {
   std::this_thread::sleep_for(50ms);
   if (!Expect(Dispatch(&rl, &cb, "6.6.6.6") == Outcome::kForwarded,
               "phase2: probe must be forwarded (HALF_OPEN)")) return false;
-  if (!Expect(cb.state() == vexo::gateway::CircuitBreakerState::kHalfOpen,
+  if (!Expect(cb.state() == coropact::gateway::CircuitBreakerState::kHalfOpen,
               "phase2: CB must be HALF_OPEN")) return false;
 
   // 阶段 3：探测成功 → CLOSED
   cb.OnSuccess();
-  if (!Expect(cb.state() == vexo::gateway::CircuitBreakerState::kClosed,
+  if (!Expect(cb.state() == coropact::gateway::CircuitBreakerState::kClosed,
               "phase3: CB must recover to CLOSED")) return false;
 
   // 阶段 4：恢复后正常流量通过
@@ -266,11 +266,11 @@ bool TestCircuitBreakerRecovery() {
 // ================================================================
 
 bool TestHalfOpenProbeFails() {
-  vexo::gateway::CircuitBreakerConfig cb_cfg;
+  coropact::gateway::CircuitBreakerConfig cb_cfg;
   cb_cfg.failure_threshold = 1;
   cb_cfg.open_timeout = 10ms;
   cb_cfg.half_open_max_requests = 2;
-  vexo::gateway::CircuitBreaker cb(cb_cfg);
+  coropact::gateway::CircuitBreaker cb(cb_cfg);
 
   cb.OnFailure(); // → OPEN
   std::this_thread::sleep_for(20ms);
@@ -280,7 +280,7 @@ bool TestHalfOpenProbeFails() {
 
   // 探测失败 → 重新 OPEN
   cb.OnFailure();
-  if (!Expect(cb.state() == vexo::gateway::CircuitBreakerState::kOpen,
+  if (!Expect(cb.state() == coropact::gateway::CircuitBreakerState::kOpen,
               "probe failure must re-open CB")) return false;
 
   Passed("TestHalfOpenProbeFails");
@@ -292,9 +292,9 @@ bool TestHalfOpenProbeFails() {
 // ================================================================
 
 bool TestFallbackPreRenderedContent() {
-  vexo::gateway::FallbackConfig fallback;
+  coropact::gateway::FallbackConfig fallback;
   fallback.enabled = true;
-  fallback.status_code = vexo::http::StatusCode::ServiceUnavailable;
+  fallback.status_code = coropact::http::StatusCode::ServiceUnavailable;
   fallback.body = R"({"error":"upstream unavailable"})";
   fallback.Init();
 
@@ -317,19 +317,19 @@ bool TestFallbackPreRenderedContent() {
 // ================================================================
 
 bool TestFullResilienceLifecycle() {
-  vexo::gateway::RateLimiterConfig rl_cfg;
+  coropact::gateway::RateLimiterConfig rl_cfg;
   rl_cfg.global_enabled = true;
   rl_cfg.global_rate = 10000.0;
   rl_cfg.global_burst = 100.0;
-  vexo::gateway::RateLimiter rl(rl_cfg);
+  coropact::gateway::RateLimiter rl(rl_cfg);
 
-  vexo::gateway::CircuitBreakerConfig cb_cfg;
+  coropact::gateway::CircuitBreakerConfig cb_cfg;
   cb_cfg.failure_threshold = 3;
   cb_cfg.success_threshold = 1;
   cb_cfg.open_timeout = 30ms;
-  vexo::gateway::CircuitBreaker cb(cb_cfg);
+  coropact::gateway::CircuitBreaker cb(cb_cfg);
 
-  vexo::gateway::FallbackConfig fallback;
+  coropact::gateway::FallbackConfig fallback;
   fallback.enabled = true;
   fallback.Init();
 
@@ -346,7 +346,7 @@ bool TestFullResilienceLifecycle() {
   cb.OnFailure();
   cb.OnFailure();
   cb.OnFailure();
-  if (!Expect(cb.state() == vexo::gateway::CircuitBreakerState::kOpen,
+  if (!Expect(cb.state() == coropact::gateway::CircuitBreakerState::kOpen,
               "lifecycle phase2: CB must open")) return false;
 
   // 阶段 3：熔断期间 → 降级响应（RL 通过，CB 拒绝）
@@ -365,7 +365,7 @@ bool TestFullResilienceLifecycle() {
 
   // 阶段 5：探测成功 → 恢复
   cb.OnSuccess();
-  if (!Expect(cb.state() == vexo::gateway::CircuitBreakerState::kClosed,
+  if (!Expect(cb.state() == coropact::gateway::CircuitBreakerState::kClosed,
               "lifecycle phase5: CB must recover to CLOSED")) return false;
 
   // 阶段 6：正常服务恢复
@@ -384,15 +384,15 @@ bool TestFullResilienceLifecycle() {
 // ================================================================
 
 bool TestRateLimitRecoveryIndependentOfCB() {
-  vexo::gateway::RateLimiterConfig rl_cfg;
+  coropact::gateway::RateLimiterConfig rl_cfg;
   rl_cfg.global_enabled = true;
   rl_cfg.global_rate = 200.0; // 1 token per 5ms
   rl_cfg.global_burst = 1.0;
-  vexo::gateway::RateLimiter rl(rl_cfg);
+  coropact::gateway::RateLimiter rl(rl_cfg);
 
-  vexo::gateway::CircuitBreakerConfig cb_cfg;
+  coropact::gateway::CircuitBreakerConfig cb_cfg;
   cb_cfg.failure_threshold = 10; // 很高，CB 不会打开
-  vexo::gateway::CircuitBreaker cb(cb_cfg);
+  coropact::gateway::CircuitBreaker cb(cb_cfg);
 
   // 消耗 RL 令牌
   if (!Expect(Dispatch(&rl, &cb, "8.8.8.8") == Outcome::kForwarded,

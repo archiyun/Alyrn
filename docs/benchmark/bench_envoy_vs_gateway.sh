@@ -32,7 +32,7 @@ cleanup() {
   [[ -n "${GW_PID:-}" ]] && kill "$GW_PID" 2>/dev/null
   [[ -n "${ENVOY_PID:-}" ]] && kill "$ENVOY_PID" 2>/dev/null
   wait 2>/dev/null
-  rm -f /tmp/vexo_gateway.pid /tmp/envoy_gateway.pid
+  rm -f /tmp/coropact_gateway.pid /tmp/envoy_gateway.pid
 }
 trap cleanup EXIT
 
@@ -57,11 +57,11 @@ echo "==> starting runtime gateway (:8080)"
 UPSTREAM_PORTS=9001,9002,9003,9004 LB_ALGO=round_robin PORT=8080 \
   "$GW_BIN" > "$OUTDIR/gateway.log" 2>&1 &
 GW_PID=$!
-echo "$GW_PID" > /tmp/vexo_gateway.pid
+echo "$GW_PID" > /tmp/coropact_gateway.pid
 sleep 1
 curl -fs http://127.0.0.1:8080/ >/dev/null
 echo "    gateway ok"
-"$BD/run_bench.sh" http://127.0.0.1:8080/ gateway "@/tmp/vexo_gateway.pid" "$OUTDIR"
+"$BD/run_bench.sh" http://127.0.0.1:8080/ gateway "@/tmp/coropact_gateway.pid" "$OUTDIR"
 kill "$GW_PID" 2>/dev/null; wait "$GW_PID" 2>/dev/null || true; GW_PID=""
 
 echo "==> starting envoy (:8090)"

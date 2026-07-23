@@ -29,36 +29,36 @@
 #include <cstdio>
 #include <utility>
 
-#include "vexo/gateway/gateway_server.h"
-#include "vexo/gateway/upstream.h"
-#include "vexo/gateway/upstream_peer.h"
-#include "vexo/gateway/upstream_registry.h"
-#include "vexo/net/event_loop.h"
-#include "vexo/net/event_loop_scheduler.h"
-#include "vexo/net/inet_address.h"
-#include "vexo/net/reactor_connect.h"
-#include "vexo/net/reactor_listener.h"
+#include "coropact/gateway/gateway_server.h"
+#include "coropact/gateway/upstream.h"
+#include "coropact/gateway/upstream_peer.h"
+#include "coropact/gateway/upstream_registry.h"
+#include "coropact/net/event_loop.h"
+#include "coropact/net/event_loop_scheduler.h"
+#include "coropact/net/inet_address.h"
+#include "coropact/net/reactor_connect.h"
+#include "coropact/net/reactor_listener.h"
 
 int main() {
   // 1. 创建服务注册中心 和 配置上游
-  vexo::gateway::UpstreamRegistry reg;
+  coropact::gateway::UpstreamRegistry reg;
 
-  auto upstream = std::make_shared<vexo::gateway::Upstream>(
-      vexo::gateway::UpstreamConfig{.name = "user_service"});
+  auto upstream = std::make_shared<coropact::gateway::Upstream>(
+      coropact::gateway::UpstreamConfig{.name = "user_service"});
 
-  upstream->AddPeer(std::make_shared<vexo::gateway::UpstreamPeer>(vexo::gateway::UpstreamPeerConfig{
+  upstream->AddPeer(std::make_shared<coropact::gateway::UpstreamPeer>(coropact::gateway::UpstreamPeerConfig{
       .name = "127.0.0.1:9001", .host = "127.0.0.1", .port = 9001}));
 
-  upstream->AddPeer(std::make_shared<vexo::gateway::UpstreamPeer>(vexo::gateway::UpstreamPeerConfig{
+  upstream->AddPeer(std::make_shared<coropact::gateway::UpstreamPeer>(coropact::gateway::UpstreamPeerConfig{
       .name = "127.0.0.1:9002", .host = "127.0.0.1", .port = 9002}));
 
   reg.Add(upstream);
 
   // 2. 创建网关
-  vexo::net::EventLoop loop;
-  vexo::net::EventLoopScheduler scheduler(&loop);
-  vexo::net::InetAddress addr(8080);
-  auto listener_result = vexo::net::ReactorListener::Create(&loop, addr);
+  coropact::net::EventLoop loop;
+  coropact::net::EventLoopScheduler scheduler(&loop);
+  coropact::net::InetAddress addr(8080);
+  auto listener_result = coropact::net::ReactorListener::Create(&loop, addr);
   if (!listener_result.has_value()) {
     std::fprintf(stderr, "failed to create listener: %s\n",
                  listener_result.error().message().c_str());
@@ -66,19 +66,19 @@ int main() {
   }
   auto listener = std::move(*listener_result);
 
-  auto connector_result = vexo::net::ReactorConnector::Create(&loop);
+  auto connector_result = coropact::net::ReactorConnector::Create(&loop);
   if (!connector_result.has_value()) {
     std::fprintf(stderr, "failed to create connector: %s\n",
                  connector_result.error().message().c_str());
     return 1;
   }
   auto connector = std::move(*connector_result);
-  vexo::gateway::GatewayServer<vexo::net::ReactorListener, vexo::net::ReactorConnector> gw(
+  coropact::gateway::GatewayServer<coropact::net::ReactorListener, coropact::net::ReactorConnector> gw(
       listener, scheduler, "gateway", reg, connector);
 
   // 直接路由
-  gw.Get("/healthz", [](const vexo::http::HttpRequest&, vexo::http::HttpResponse& resp) {
-    resp.set_status_code(vexo::http::StatusCode::Ok);
+  gw.Get("/healthz", [](const coropact::http::HttpRequest&, coropact::http::HttpResponse& resp) {
+    resp.set_status_code(coropact::http::StatusCode::Ok);
     resp.set_content_type("application/json");
     resp.set_body("{\"status\":\"ok\"}");
   });
