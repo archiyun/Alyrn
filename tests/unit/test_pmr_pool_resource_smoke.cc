@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
+#include <cstddef>
 #include <cstdint>
 #include <iostream>
 #include <memory_resource>
@@ -24,8 +25,8 @@ int g_failures = 0;
     }                                                              \
   } while (0)
 
-
-
+using vexo::memory::CountingMemoryResource;
+using vexo::memory::MemoryResourceStats;
 using vexo::memory::Pool;
 using vexo::memory::PoolResource;
 
@@ -67,10 +68,8 @@ void TestPmrStringGrowsThroughArena() {
     s.push_back('a' + (i % 26));
   }
   EXPECT(s.size() == 200, "pmr::string accumulates characters");
-  EXPECT(pool->ByteUsed() > bytes_before,
-         "Pool::ByteUsed increased after pmr::string activity");
-  EXPECT(PointerLooksInsideArena(s.data(), *pool),
-         "pmr::string buffer pointer is reasonable");
+  EXPECT(pool->ByteUsed() > bytes_before, "Pool::ByteUsed increased after pmr::string activity");
+  EXPECT(PointerLooksInsideArena(s.data(), *pool), "pmr::string buffer pointer is reasonable");
 }
 
 void TestPmrVectorReallocation() {
@@ -86,8 +85,7 @@ void TestPmrVectorReallocation() {
   for (int i = 0; i < 1024; ++i) {
     EXPECT(v[i] == i, "pmr::vector preserves values across reallocate");
   }
-  EXPECT(pool->chunk_count() > chunks_before,
-         "vector reallocates spilled into new arena chunk(s)");
+  EXPECT(pool->chunk_count() > chunks_before, "vector reallocates spilled into new arena chunk(s)");
 }
 
 void TestPmrUnorderedMapInsertAndLookup() {
@@ -153,6 +151,28 @@ void TestAlignmentRoutedToPool() {
   }
 }
 
+void TestCountingResourceSeparatesRequestsFromUpstreamChunks() {
+  MemoryResourceStats upstream_stats;
+  MemoryResourceStats request_stats;
+  CountingMemoryResource upstream(*std::pmr::new_delete_resource(), upstream_stats);
+  std::pmr::unsynchronized_pool_resource pool(std::pmr::pool_options{}, &upstream);
+  CountingMemoryResource counted(pool, request_stats);
+
+  void* first = counted.allocate(64, alignof(std::max_align_t));
+  void* second = counted.allocate(512, alignof(std::max_align_t));
+  EXPECT(request_stats.allocate_calls == 2, "counter records caller allocation requests");
+  EXPECT(upstream_stats.allocate_calls > 0, "pool obtains storage from counted upstream");
+
+  counted.deallocate(first, 64, alignof(std::max_align_t));
+  counted.deallocate(second, 512, alignof(std::max_align_t));
+  EXPECT(request_stats.deallocate_calls == 2, "counter records caller deallocations");
+  EXPECT(request_stats.outstanding_allocations == 0, "caller allocation count returns to zero");
+  EXPECT(upstream_stats.outstanding_bytes > 0, "pool retains upstream chunks before release");
+
+  pool.release();
+  EXPECT(upstream_stats.outstanding_bytes == 0, "pool release returns upstream chunks");
+}
+
 }  // namespace
 
 int main() {
@@ -162,12 +182,12 @@ int main() {
   TestPmrUnorderedMapInsertAndLookup();
   TestResetInvalidatesAndReuses();
   TestAlignmentRoutedToPool();
+  TestCountingResourceSeparatesRequestsFromUpstreamChunks();
 
   if (g_failures == 0) {
     std::cout << "[PASS] pmr_pool_resource_smoke_test (all checks ok)\n";
     return 0;
   }
-  std::cerr << "[FAIL] pmr_pool_resource_smoke_test ("
-            << g_failures << " failures)\n";
+  std::cerr << "[FAIL] pmr_pool_resource_smoke_test (" << g_failures << " failures)\n";
   return 1;
 }

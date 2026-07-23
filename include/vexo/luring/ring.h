@@ -45,7 +45,7 @@ public:
   [[nodiscard]] int fd() const noexcept { return initialized_ ? ring_.ring_fd : -1; }
 
   template <class F>
-  [[nodiscard]] base::Result<std::size_t> Reap(F&& on_cqe) noexcept {
+  [[nodiscard]] base::Result<std::size_t> Reap(F&& on_cqe, std::size_t max_count = 0) noexcept {
     io_uring_cqe* cqe = nullptr;
     int result = io_uring_peek_cqe(&ring_, &cqe);
     if (result == -EAGAIN) {
@@ -58,6 +58,9 @@ public:
     unsigned head = 0;
     std::size_t count = 0;
     io_uring_for_each_cqe(&ring_, head, cqe) {
+      if (max_count != 0 && count >= max_count) {
+        break;
+      }
       on_cqe(cqe);
       ++count;
     }

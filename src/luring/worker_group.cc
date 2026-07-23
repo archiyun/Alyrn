@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Arsenova
+// SPDX-License-Identifier: MIT
 #include "vexo/luring/worker_group.h"
 
 #include <cerrno>
@@ -35,6 +37,9 @@ base::Result<void> LUringWorkerGroup::Start() {
     LUringWorkerOptions worker_options = options_.worker_options;
     if (options_.frame_resource_factory) {
       worker_options.frame_resource = options_.frame_resource_factory(i);
+    }
+    if (options_.cpu_affinity_factory) {
+      worker_options.cpu_affinity = options_.cpu_affinity_factory(i);
     }
 
     auto worker = std::make_unique<LUringWorker>(i, listen_addr_, std::move(worker_options),

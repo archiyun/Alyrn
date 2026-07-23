@@ -41,8 +41,8 @@ struct HeaderNameEqual {
   bool operator()(std::string_view lhs, std::string_view rhs) const noexcept {
     if (lhs.size() != rhs.size()) return false;
     for (std::size_t i = 0; i < lhs.size(); ++i) {
-      unsigned char a = static_cast<unsigned char>(lhs[i]);
-      unsigned char b = static_cast<unsigned char>(rhs[i]);
+      auto a = static_cast<unsigned char>(lhs[i]);
+      auto b = static_cast<unsigned char>(rhs[i]);
       if (a >= 'A' && a <= 'Z') a = static_cast<unsigned char>(a + ('a' - 'A'));
       if (b >= 'A' && b <= 'Z') b = static_cast<unsigned char>(b + ('a' - 'A'));
       if (a != b) return false;

@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Arsenova
+// SPDX-License-Identifier: MIT
 #pragma once
 
 #include <coroutine>
@@ -18,6 +20,7 @@ enum class LUringOpKind : std::uint8_t {
   kClose,
   kTimeout,
   kMsgRing,
+  kWake,
   kCount,
 };
 

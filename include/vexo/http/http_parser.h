@@ -20,6 +20,12 @@ public:
   ParseStatus ParseAvailable();
 
   bool GotAll() const { return got_all_; }
+  // Returns the parser-owned request without moving it. The reference remains
+  // valid until Reset() or the next parsing operation. This is the hot-path
+  // API for servers that finish handling a request before parsing the next
+  // pipelined request.
+  HttpRequest& CurrentRequest() { return request_; }
+  const HttpRequest& CurrentRequest() const { return request_; }
   HttpRequest TakeRequest();
   void Reset();
 

@@ -96,7 +96,14 @@ int main() {
   const auto entries = static_cast<std::uint32_t>(EnvSize("URING_ENTRIES", 8192));
   const auto accept_depth = std::max<std::size_t>(1, EnvSize("ACCEPT_DEPTH", 4));
   const auto ready_budget = EnvSize("MAX_READY_WORK_PER_TURN", 256);
+  const auto cqe_budget = EnvSize("MAX_CQE_PER_TURN", 256);
+  const auto ready_time_us = EnvSize("MAX_READY_TIME_US", 50);
+  const auto completion_budget = EnvSize("MAX_COMPLETION_WORK_PER_TURN", 64);
+  const auto completion_age_threshold_us = EnvSize("COMPLETION_AGE_THRESHOLD_US", 0);
+  const auto urgent_completion_budget = EnvSize("MAX_URGENT_COMPLETION_WORK_PER_TURN", 80);
+  const auto normal_age_threshold_us = EnvSize("NORMAL_QUEUE_AGE_THRESHOLD_US", 5000);
   const bool frame_pool = EnvBool("FRAME_POOL", true);
+  const bool dump_stats = EnvBool("LURING_DUMP_STATS", false);
 
   if (workers == 0) {
     std::fprintf(stderr, "URING_WORKERS must be greater than zero\n");
@@ -110,11 +117,11 @@ int main() {
     return 1;
   }
 
-  std::vector<std::unique_ptr<std::pmr::unsynchronized_pool_resource>> frame_pools;
+  std::vector<std::unique_ptr<vexo::coro::CoroFramePoolResource>> frame_pools;
   if (frame_pool) {
     frame_pools.reserve(workers);
     for (std::size_t i = 0; i < workers; ++i) {
-      frame_pools.push_back(std::make_unique<std::pmr::unsynchronized_pool_resource>());
+      frame_pools.push_back(std::make_unique<vexo::coro::CoroFramePoolResource>());
     }
   }
 
@@ -122,6 +129,18 @@ int main() {
   options.worker_group_options.worker_num = workers;
   options.worker_group_options.worker_options.loop_options.entries = entries;
   options.worker_group_options.worker_options.loop_options.max_ready_work_per_turn = ready_budget;
+  options.worker_group_options.worker_options.loop_options.max_cqe_per_turn = cqe_budget;
+  options.worker_group_options.worker_options.loop_options.max_ready_time_per_turn =
+      std::chrono::microseconds(ready_time_us);
+  options.worker_group_options.worker_options.loop_options.max_completion_work_per_turn =
+      completion_budget;
+  options.worker_group_options.worker_options.loop_options.completion_queue_age_threshold =
+      std::chrono::microseconds(completion_age_threshold_us);
+  options.worker_group_options.worker_options.loop_options.max_urgent_completion_work_per_turn =
+      urgent_completion_budget;
+  options.worker_group_options.worker_options.loop_options.normal_queue_age_threshold =
+      std::chrono::microseconds(normal_age_threshold_us);
+  options.worker_group_options.worker_options.loop_options.dump_stats_on_exit = dump_stats;
   options.worker_group_options.worker_options.listen_options.reuse_port = true;
   options.worker_group_options.worker_options.listen_options.accept_depth = accept_depth;
   options.worker_group_options.frame_resource_factory =
@@ -143,8 +162,11 @@ int main() {
 
   std::printf(
       "RawEchoLUring bind=%s port=%u workers=%zu entries=%u accept_depth=%zu frame_pool=%s "
-      "ready_budget=%zu\n",
-      bind_host, port, workers, entries, accept_depth, frame_pool ? "on" : "off", ready_budget);
+      "ready_budget=%zu cqe_budget=%zu ready_time_us=%zu completion_budget=%zu "
+      "completion_age_us=%zu urgent_completion_budget=%zu normal_age_us=%zu dump_stats=%s\n",
+      bind_host, port, workers, entries, accept_depth, frame_pool ? "on" : "off", ready_budget,
+      cqe_budget, ready_time_us, completion_budget, completion_age_threshold_us,
+      urgent_completion_budget, normal_age_threshold_us, dump_stats ? "on" : "off");
   std::fflush(stdout);
 
   while (!g_stop.load(std::memory_order_relaxed)) {

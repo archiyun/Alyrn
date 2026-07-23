@@ -7,6 +7,7 @@
 #include <functional>
 #include <memory_resource>
 #include <mutex>
+#include <optional>
 #include <thread>
 
 #include "vexo/base/error.h"
@@ -40,6 +41,10 @@ struct LUringWorkerOptions {
   // Optional resource for coroutine frames created while this worker resumes
   // work. The resource must outlive the worker group.
   std::pmr::memory_resource* frame_resource{nullptr};
+
+  // Optional CPU to which this worker thread is pinned. Leave unset to use
+  // the process scheduler's normal placement policy.
+  std::optional<unsigned> cpu_affinity;
 };
 
 class LUringWorker {

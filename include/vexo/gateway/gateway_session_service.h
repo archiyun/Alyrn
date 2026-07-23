@@ -91,6 +91,10 @@ private:
     // need to be large enough for the complete HTTP request. Keeping this at
     // 4 KiB materially reduces the frame footprint at high connection counts.
     std::array<std::byte, 4096> read_buffer{};
+    ProxyForwardBuffers proxy_buffers;
+    proxy_buffers.request.reserve(512);
+    proxy_buffers.response_pending.reserve(4096);
+    proxy_buffers.response_outbound.reserve(4096);
     const std::string client_ip = ClientIp(stream);
 
     for (;;) {
@@ -107,13 +111,15 @@ private:
       }
 
       while (parser.GotAll()) {
-        http::HttpRequest request = parser.TakeRequest();
+        http::HttpRequest& request = parser.CurrentRequest();
         auto action = core_.HandleRequest(request, client_ip);
-        if (!co_await ApplyAction(stream, request, std::move(action), pool, connector)) {
+        if (!co_await ApplyAction(stream, request, std::move(action), pool, connector,
+                                  proxy_buffers)) {
           co_await stream.Close();
           co_return;
         }
 
+        parser.Reset();
         parse_status = parser.ParseAvailable();
         if (!co_await HandleParseStatus(stream, parse_status)) {
           co_await stream.Close();
@@ -151,7 +157,8 @@ private:
   }
 
   coro::Task<bool> ApplyAction(ClientStream& stream, const http::HttpRequest& request,
-                               GatewayCore::Action action, Pool& pool, Connector& connector) {
+                               GatewayCore::Action action, Pool& pool, Connector& connector,
+                               ProxyForwardBuffers& proxy_buffers) {
     if (action.kind == GatewayActionKind::Send) {
       auto written = co_await io::WriteAll(stream, Bytes(action.response));
       if (!written.has_value()) {
@@ -167,7 +174,7 @@ private:
     auto result = co_await ProxyPass::Forward(
         stream, request, *action.proxy.upstream, *action.proxy.load_balancer, pool, connector,
         action.proxy.request_ctx, action.proxy.circuit_breaker,
-        core_.MakeForwardedContext(action.proxy));
+        core_.MakeForwardedContext(action.proxy), &proxy_buffers);
 
     if (result.status == ProxyForwardStatus::kNoPeer) {
       auto fallback = core_.ProxyUnavailable(*action.proxy.route, "no available upstream peer");

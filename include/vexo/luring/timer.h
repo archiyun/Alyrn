@@ -38,7 +38,8 @@ private:
 
 inline bool SleepAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   resume_work_.handle = continuation;
-  auto timer = loop_->RunAfter(delay_, [this]() noexcept { loop_->Schedule(&resume_work_); });
+  auto timer =
+      loop_->RunAfter(delay_, [this]() noexcept { loop_->ScheduleCompletion(&resume_work_); });
   if (!timer.has_value()) {
     error_ = std::unexpected(timer.error());
     return false;

@@ -1,4 +1,9 @@
+// Copyright (c) 2026 Arsenova
+// SPDX-License-Identifier: MIT
 #include "vexo/luring/worker.h"
+
+#include <pthread.h>
+#include <sched.h>
 
 #include <algorithm>
 #include <cerrno>
@@ -62,6 +67,17 @@ void CloseListenerAndDrain(LUringLoop& loop, LUringListener& listener) noexcept 
   loop.RunReady();
 }
 
+base::Result<void> SetCurrentThreadAffinity(unsigned cpu) noexcept {
+  cpu_set_t cpuset;
+  CPU_ZERO(&cpuset);
+  CPU_SET(cpu, &cpuset);
+  const int result = pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
+  if (result != 0) {
+    return std::unexpected(base::make_errno(result));
+  }
+  return {};
+}
+
 }  // namespace
 
 LUringWorker::LUringWorker(std::size_t index, net::InetAddress listen_addr,
@@ -104,10 +120,6 @@ void LUringWorker::Stop() noexcept {
 }
 
 void LUringWorker::WorkLoop(std::stop_token token) noexcept {
-  coro::FrameAllocatorScope frame_scope{options_.frame_resource};
-
-  LUringLoop loop(options_.frame_resource);
-
   auto publish_start = [this](base::Result<void> result) noexcept {
     {
       std::lock_guard lock{mutex_};
@@ -116,6 +128,17 @@ void LUringWorker::WorkLoop(std::stop_token token) noexcept {
     }
     cv_.notify_one();
   };
+
+  if (options_.cpu_affinity.has_value()) {
+    auto affinity = SetCurrentThreadAffinity(*options_.cpu_affinity);
+    if (!affinity.has_value()) {
+      publish_start(std::unexpected(affinity.error()));
+      return;
+    }
+  }
+
+  coro::FrameAllocatorScope frame_scope{options_.frame_resource};
+  LUringLoop loop(options_.frame_resource);
 
   auto loop_init = loop.Init(options_.loop_options);
   if (!loop_init.has_value()) {

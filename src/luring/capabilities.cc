@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Arsenova
+// SPDX-License-Identifier: MIT
 #include "vexo/luring/capabilities.h"
 
 #include <liburing.h>
@@ -49,6 +51,12 @@ base::Result<vexo::io::CapabilitySet> ProbeCapabilities(const LUringOptions& opt
     params.flags |= IORING_SETUP_SINGLE_ISSUER;
   }
 
+  if (options.setup_defer_taskrun) {
+    params.flags |= IORING_SETUP_COOP_TASKRUN;
+    params.flags |= IORING_SETUP_TASKRUN_FLAG;
+    params.flags |= IORING_SETUP_DEFER_TASKRUN;
+  }
+
   if (options.cq_entries != 0) {
     params.flags |= IORING_SETUP_CQSIZE;
     params.cq_entries = options.cq_entries;
@@ -63,9 +71,9 @@ base::Result<vexo::io::CapabilitySet> ProbeCapabilities(const LUringOptions& opt
     params.flags |= IORING_SETUP_IOPOLL;
   }
 
-  int r = io_uring_queue_init_params(options.entries, &ring, &params);
-  if (r < 0) {
-    return std::unexpected(base::make_neg_errno(r));
+  int result = io_uring_queue_init_params(options.entries, &ring, &params);
+  if (result < 0) {
+    return std::unexpected(base::make_neg_errno(result));
   }
 
   io_uring_probe* probe = io_uring_get_probe_ring(&ring);
@@ -123,4 +131,5 @@ base::Result<vexo::io::BackendBinding> BindLUring(const LUringOptions& options,
   }
   return vexo::io::BindBackend(vexo::io::Backend::kLuring, *caps, active_profile);
 }
+
 }  // namespace vexo::luring

@@ -170,6 +170,13 @@ ProxyPass::ResponseState ProxyPass::RewriteHeaders(std::string_view raw_headers,
 std::string ProxyPass::BuildRequest(const vexo::http::HttpRequest& req, const UpstreamPeer& peer,
                                     ForwardedHeaderContext forwarded) {
   std::string out;
+  BuildRequestInto(req, peer, out, forwarded);
+  return out;
+}
+
+void ProxyPass::BuildRequestInto(const vexo::http::HttpRequest& req, const UpstreamPeer& peer,
+                                 std::string& out, ForwardedHeaderContext forwarded) {
+  out.clear();
   out.reserve(256);
   out += vexo::http::MethodToString(req.method());
   out += ' ';
@@ -253,7 +260,6 @@ std::string ProxyPass::BuildRequest(const vexo::http::HttpRequest& req, const Up
   AppendHeader(out, "host", peer.host_port());
   out += "connection: keep-alive\r\n\r\n";
   if (!req.body().empty()) out += req.body();
-  return out;
 }
 
 }  // namespace vexo::gateway

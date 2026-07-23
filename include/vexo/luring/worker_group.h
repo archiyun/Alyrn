@@ -6,6 +6,7 @@
 #include <functional>
 #include <memory>
 #include <memory_resource>
+#include <optional>
 #include <vector>
 
 #include "vexo/base/error.h"
@@ -23,6 +24,10 @@ struct LUringWorkerGroupOptions {
   // outlive the worker group and must be private to the selected worker when
   // using an unsynchronized PMR resource.
   std::function<std::pmr::memory_resource*(std::size_t)> frame_resource_factory;
+
+  // Optional per-worker CPU selector. The selected CPU is applied before the
+  // worker initializes its ring and publishes successful startup.
+  std::function<std::optional<unsigned>(std::size_t)> cpu_affinity_factory;
 };
 
 class LUringWorkerGroup {

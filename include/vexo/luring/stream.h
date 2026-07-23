@@ -2,9 +2,12 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <linux/time_types.h>
+
 #include <chrono>
 #include <coroutine>
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <span>
 
@@ -24,6 +27,7 @@ public:
   VEXO_DELETE_COPY(LUringStream);
 
   class ReadSomeAwaiter;
+  class ReadSomeForAwaiter;
   class WriteSomeAwaiter;
 
   LUringStream(LUringLoop* loop, int fd, net::InetAddress peer) noexcept;
@@ -35,8 +39,8 @@ public:
   LUringStream& operator=(LUringStream&& other) noexcept;
 
   [[nodiscard]] ReadSomeAwaiter ReadSome(std::span<std::byte> buffer) noexcept;
-  coro::Task<base::Result<std::size_t>> ReadSomeFor(std::span<std::byte> buffer,
-                                                    std::chrono::milliseconds timeout);
+  [[nodiscard]] ReadSomeForAwaiter ReadSomeFor(std::span<std::byte> buffer,
+                                               std::chrono::milliseconds timeout) noexcept;
   [[nodiscard]] WriteSomeAwaiter WriteSome(std::span<const std::byte> buffer) noexcept;
   coro::Task<base::Result<void>> Shutdown();
   coro::Task<base::Result<void>> Close();
@@ -45,7 +49,6 @@ public:
   [[nodiscard]] int fd() const noexcept { return fd_; }
 
 private:
-  class ReadForAwaiter;
   class CloseAwaiter;
 
   void NotifyCloseProgress() noexcept;
@@ -79,6 +82,36 @@ private:
   std::span<std::byte> buffer_;
   LUringOp op_{.kind = LUringOpKind::kRead};
   std::optional<base::Result<std::size_t>> immediate_;
+};
+
+class LUringStream::ReadSomeForAwaiter {
+public:
+  VEXO_DELETE_COPY_MOVE(ReadSomeForAwaiter);
+
+  ReadSomeForAwaiter(LUringStream& stream, std::span<std::byte> buffer,
+                     std::chrono::milliseconds timeout) noexcept;
+
+  [[nodiscard]] bool await_ready() const noexcept { return false; }
+  [[nodiscard]] bool await_suspend(std::coroutine_handle<> continuation) noexcept;
+  base::Result<std::size_t> await_resume() noexcept;
+
+private:
+  static void OnReadComplete(LUringOp* op) noexcept;
+  static void OnTimeoutComplete(LUringOp* op) noexcept;
+
+  void CompleteRead(LUringOp* current) noexcept;
+  void CompleteTimeout(LUringOp* current) noexcept;
+  void FinishIfReady(LUringOp* current) noexcept;
+
+  LUringStream* stream_;
+  std::span<std::byte> buffer_;
+  __kernel_timespec timeout_ts_{};
+  std::coroutine_handle<> continuation_{};
+  LUringOp read_op_{.kind = LUringOpKind::kRead};
+  LUringOp timeout_op_{.kind = LUringOpKind::kTimeout};
+  std::optional<base::Result<std::size_t>> immediate_;
+  bool read_done_{false};
+  bool timeout_done_{false};
 };
 
 class LUringStream::WriteSomeAwaiter {

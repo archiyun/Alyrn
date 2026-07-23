@@ -1,4 +1,5 @@
-// Copyright (c) 2026 Arsenova. All Rights Reserved.
+// Copyright (c) 2026 Arsenova
+// SPDX-License-Identifier: MIT
 #include "vexo/luring/server.h"
 
 #include <cerrno>

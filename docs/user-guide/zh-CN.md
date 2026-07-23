@@ -170,7 +170,7 @@ vexo::coro::Task<int> Parent(vexo::coro::Scheduler& scheduler) {
 
 默认情况下，`Task`、`SpawnRoot` 和 `SyncWaitRoot` 的 coroutine frame 使用
 `std::pmr::new_delete_resource()`，因此不需要修改现有代码。需要降低 frame 的堆分配开销时，
-可以使用任意 `std::pmr::memory_resource`，例如标准库的 pool resource：
+可以使用专用的 worker-local size-class frame pool：
 
 ```cpp
 #include <memory_resource>
@@ -178,7 +178,7 @@ vexo::coro::Task<int> Parent(vexo::coro::Scheduler& scheduler) {
 #include "vexo/coro/frame_allocator.h"
 #include "vexo/net/event_loop_scheduler.h"
 
-std::pmr::unsynchronized_pool_resource frame_pool;
+vexo::coro::CoroFramePoolResource frame_pool;
 vexo::net::EventLoopScheduler scheduler(&loop, &frame_pool);
 
 {
@@ -190,8 +190,8 @@ vexo::net::EventLoopScheduler scheduler(&loop, &frame_pool);
 
 `FrameAllocatorScope` 记录在每个 frame 的分配元数据中，所以 frame 可以在作用域结束后恢复和
 销毁。`Scheduler` 的 resource 会在每次 `Work` 恢复期间重新激活，协程运行中创建的嵌套 Task
-也会使用同一个 resource。内存 resource 必须存活到所有相关 frame 销毁之后；使用
-`vexo::memory::PoolResource` 时，还应在所有 frame 完成后再 `Pool::Reset()`。
+也会使用同一个 resource。内存 resource 必须存活到所有相关 frame 销毁之后；
+`CoroFramePoolResource` 会在自身析构时释放各个 size-class 的 chunk。
 
 ## Scheduler 和协程恢复
 

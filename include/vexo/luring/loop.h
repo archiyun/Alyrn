@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <memory_resource>
 #include <new>
@@ -22,6 +23,7 @@
 #include "vexo/luring/op.h"
 #include "vexo/luring/options.h"
 #include "vexo/luring/ring.h"
+#include "vexo/luring/stats.h"
 #include "vexo/luring/timer_queue.h"
 #include "vexo/time/timer_id.h"
 
@@ -34,7 +36,8 @@ namespace vexo::luring {
 // their coroutine work through the Scheduler interface.
 //
 // Notify function:
-//   target.PostMessage() -> source.Notify() -> target.HandleCqe() -> target.Schedule(work)
+//   target.PostMessage() -> source.Notify() -> target.HandleCqe() ->
+//   target.ScheduleCompletion(work)
 class LUringLoop final : public coro::Scheduler {
 public:
   VEXO_DELETE_COPY_MOVE(LUringLoop);
@@ -45,6 +48,8 @@ public:
   // Initializes the underlying io_uring instance.
   // Must be called from the loop thread before Loop().
   [[nodiscard]] base::Result<void> Init(const LUringOptions& options) noexcept;
+
+  ~LUringLoop() noexcept;
 
   [[nodiscard]] bool initialized() const noexcept { return initialized_; }
 
@@ -60,11 +65,20 @@ public:
 
   [[nodiscard]] int ring_fd() const noexcept { return ring_.fd(); }
 
-  [[nodiscard]] std::size_t PendingSubmitCount() const noexcept { return pending_submit_; }
+  // Internal wake polling is not part of the user-visible operation count.
+  [[nodiscard]] std::size_t PendingSubmitCount() const noexcept {
+    return pending_submit_ - (wake_pending_ ? 1 : 0);
+  }
 
-  [[nodiscard]] std::size_t InflightCount() const noexcept { return inflight_; }
+  [[nodiscard]] std::size_t InflightCount() const noexcept {
+    return inflight_ - (wake_inflight_ ? 1 : 0);
+  }
 
-  [[nodiscard]] bool IsDrained() const noexcept { return pending_submit_ == 0 && inflight_ == 0; }
+  [[nodiscard]] LUringLoopStats GetStats() const noexcept { return stats_; }
+
+  [[nodiscard]] bool IsDrained() const noexcept {
+    return PendingSubmitCount() == 0 && InflightCount() == 0;
+  }
 
   [[nodiscard]] base::Result<time::TimerId> RunAfter(std::chrono::steady_clock::duration delay,
                                                      LUringTimerQueue::TimerCallback callback) {
@@ -85,6 +99,10 @@ public:
 
   // Enqueues coroutine work to be resumed by RunReady().
   void Schedule(coro::Work* work) noexcept override;
+
+  // Enqueues work produced by a CQE, timeout, or mailbox completion. These
+  // works receive bounded priority over ordinary ready work.
+  void ScheduleCompletion(coro::Work* work) noexcept;
 
   // Thread-safe enqueue
   // The event loop is not woken yet; msg_ring will provide notification later.
@@ -174,10 +192,18 @@ private:
 
   void HandleCqe(io_uring_cqe* cqe) noexcept;
   void HandleMailbox() noexcept;
+  void DumpStats() const noexcept;
+  void ScheduleCompletionAt(coro::Work* work, std::uint64_t event_ns) noexcept;
+
+  struct ReadySample {
+    std::uint64_t enqueued_ns{0};
+    std::uint64_t event_ns{0};
+  };
 
   const int thread_id_;
   LUringRing ring_;
   coro::WorkQueue ready_;
+  coro::WorkQueue completion_ready_;
   bool initialized_{false};
 
   // Prepared SQEs that have not yet produced a CQE.
@@ -192,11 +218,54 @@ private:
   // Fairness budget for one RunReady() pass. Zero means unlimited.
   std::size_t max_ready_work_per_turn_{256};
 
+  // Completion budget for one PollCompletions() or WaitCompletionsFor() pass.
+  // Zero means unlimited.
+  std::size_t max_cqe_per_turn_{256};
+
+  // Wall-clock fairness budget for one RunReady() pass. Zero means unlimited.
+  std::chrono::microseconds max_ready_time_per_turn_{50};
+
+  // Completion-ready sub-budget for one RunReady() pass. Zero means unlimited.
+  std::size_t max_completion_work_per_turn_{64};
+
+  // Age threshold for promoting completion-ready work to the urgent budget.
+  std::chrono::microseconds completion_queue_age_threshold_{0};
+
+  // Bounded completion budget used after age-based promotion.
+  std::size_t max_urgent_completion_work_per_turn_{80};
+
+  // Age threshold for suppressing completion promotion when normal work is
+  // already overdue.
+  std::chrono::microseconds normal_queue_age_threshold_{5000};
+
+  bool stats_enabled_{false};
+  bool dump_stats_on_exit_{false};
+
+  std::size_t ready_depth_{0};
+  std::size_t completion_ready_depth_{0};
+  std::uint64_t ready_nonempty_since_ns_{0};
+  std::uint64_t completion_ready_nonempty_since_ns_{0};
+  std::deque<ReadySample> ready_samples_;
+  std::deque<ReadySample> completion_ready_samples_;
+  LUringLoopStats stats_;
+
+  [[nodiscard]] bool HasReadyWork() const noexcept {
+    return !ready_.empty() || !completion_ready_.empty();
+  }
+
+  [[nodiscard]] base::Result<void> ArmWakePoll() noexcept;
+  void DrainWakeFd() noexcept;
+  void Wake() noexcept;
+
   // Cross-thread exit request observed by the event loop.
   std::atomic_bool quit_{false};
 
   LUringMailbox mailbox_;
   LUringTimerQueue timers_;
+  int wake_fd_{-1};
+  bool wake_pending_{false};
+  bool wake_inflight_{false};
+  LUringOp wake_op_{.kind = LUringOpKind::kWake};
 };
 
 }  // namespace vexo::luring

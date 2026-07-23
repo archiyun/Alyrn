@@ -1,3 +1,4 @@
+// Copyright (c) 2026 Arsenova
 #include "vexo/luring/listener.h"
 
 #include <liburing.h>
@@ -204,7 +205,7 @@ public:
     listener_->pending_close_ = nullptr;
     result_ = CloseFd();
     listener_ = nullptr;
-    loop->Schedule(&resume_work_);
+    loop->ScheduleCompletion(&resume_work_);
   }
 
 private:

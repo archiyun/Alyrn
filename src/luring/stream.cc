@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Arsenova
+// SPDX-License-Identifier: MIT
 #include "vexo/luring/stream.h"
 
 #include <liburing.h>
@@ -87,112 +89,99 @@ void LUringStream::ReadSomeAwaiter::OnComplete(LUringOp* op) noexcept {
   }
 }
 
-class LUringStream::ReadForAwaiter {
-public:
-  ReadForAwaiter(LUringStream& stream, std::span<std::byte> buffer,
-                 std::chrono::milliseconds timeout) noexcept
-      : stream_(&stream), buffer_(buffer) {
-    const std::int64_t milliseconds = timeout.count() > 0 ? timeout.count() : 1;
-    timeout_ts_.tv_sec = static_cast<__kernel_time64_t>(milliseconds / 1000);
-    timeout_ts_.tv_nsec = static_cast<long>(milliseconds % 1000) * 1'000'000;
+LUringStream::ReadSomeForAwaiter::ReadSomeForAwaiter(
+    LUringStream& stream, std::span<std::byte> buffer,
+    std::chrono::milliseconds timeout) noexcept
+    : stream_(&stream), buffer_(buffer) {
+  const std::int64_t milliseconds = timeout.count() > 0 ? timeout.count() : 1;
+  timeout_ts_.tv_sec = static_cast<__kernel_time64_t>(milliseconds / 1000);
+  timeout_ts_.tv_nsec = static_cast<long>(milliseconds % 1000) * 1'000'000;
+}
+
+bool LUringStream::ReadSomeForAwaiter::await_suspend(
+    std::coroutine_handle<> continuation) noexcept {
+  VEXO_CTRACK_SCOPE("luring.read.prepare");
+  if (stream_->closed_ || stream_->fd_ < 0) {
+    immediate_ = std::unexpected(base::make_errno(EBADF));
+    return false;
+  }
+  if (buffer_.empty()) {
+    immediate_ = std::size_t{0};
+    return false;
+  }
+  if (stream_->pending_read_ != nullptr) {
+    immediate_ = std::unexpected(base::make_errno(EBUSY));
+    return false;
   }
 
-  bool await_ready() const noexcept { return false; }
+  continuation_ = continuation;
+  stream_->pending_read_ = this;
+  read_op_.owner = this;
+  read_op_.on_complete = &ReadSomeForAwaiter::OnReadComplete;
+  timeout_op_.owner = this;
+  timeout_op_.on_complete = &ReadSomeForAwaiter::OnTimeoutComplete;
 
-  bool await_suspend(std::coroutine_handle<> continuation) noexcept {
-    VEXO_CTRACK_SCOPE("luring.write.prepare");
-    if (stream_->closed_ || stream_->fd_ < 0) {
-      immediate_ = std::unexpected(base::make_errno(EBADF));
-      return false;
-    }
-    if (buffer_.empty()) {
-      immediate_ = std::size_t{0};
-      return false;
-    }
-    if (stream_->pending_read_ != nullptr) {
-      immediate_ = std::unexpected(base::make_errno(EBUSY));
-      return false;
-    }
-
-    continuation_ = continuation;
-    stream_->pending_read_ = this;
-    read_op_.owner = this;
-    read_op_.on_complete = &ReadForAwaiter::OnReadComplete;
-    timeout_op_.owner = this;
-    timeout_op_.on_complete = &ReadForAwaiter::OnTimeoutComplete;
-
-    auto submitted = stream_->loop_->SubmitOp(
-        &read_op_, [fd = stream_->fd_, buffer = buffer_](io_uring_sqe* sqe) noexcept {
-          io_uring_prep_recv(sqe, fd, buffer.data(), buffer.size(), 0);
-          sqe->flags |= IOSQE_IO_LINK;
-        });
-    if (!submitted.has_value()) {
-      stream_->pending_read_ = nullptr;
-      immediate_ = std::unexpected(submitted.error());
-      return false;
-    }
-
-    submitted = stream_->loop_->SubmitOp(&timeout_op_, [this](io_uring_sqe* sqe) noexcept {
-      io_uring_prep_link_timeout(sqe, &timeout_ts_, 0);
-    });
-    if (!submitted.has_value()) {
-      // The receive is already queued. It will complete normally without the
-      // optional timeout, and the awaiter remains alive until that CQE.
-      timeout_done_ = true;
-    }
-    return true;
+  auto submitted = stream_->loop_->SubmitOp(
+      &read_op_, [fd = stream_->fd_, buffer = buffer_](io_uring_sqe* sqe) noexcept {
+        io_uring_prep_recv(sqe, fd, buffer.data(), buffer.size(), 0);
+        sqe->flags |= IOSQE_IO_LINK;
+      });
+  if (!submitted.has_value()) {
+    stream_->pending_read_ = nullptr;
+    immediate_ = std::unexpected(submitted.error());
+    return false;
   }
 
-  base::Result<std::size_t> await_resume() noexcept {
-    if (immediate_.has_value()) return std::move(*immediate_);
-    assert(read_done_);
-    if (read_op_.result.has_value() && *read_op_.result >= 0) {
-      return static_cast<std::size_t>(*read_op_.result);
-    }
-    if (timeout_op_.result.has_value() && *timeout_op_.result == -ETIME) {
-      return std::unexpected(base::make_errno(ETIMEDOUT));
-    }
-    return ToSizeResult(read_op_.result);
-  }
-
-private:
-  static void OnReadComplete(LUringOp* op) noexcept {
-    static_cast<ReadForAwaiter*>(op->owner)->CompleteRead(op);
-  }
-
-  static void OnTimeoutComplete(LUringOp* op) noexcept {
-    static_cast<ReadForAwaiter*>(op->owner)->CompleteTimeout(op);
-  }
-
-  void CompleteRead(LUringOp* current) noexcept {
-    read_done_ = true;
-    FinishIfReady(current);
-  }
-
-  void CompleteTimeout(LUringOp* current) noexcept {
+  submitted = stream_->loop_->SubmitOp(&timeout_op_, [this](io_uring_sqe* sqe) noexcept {
+    io_uring_prep_link_timeout(sqe, &timeout_ts_, 0);
+  });
+  if (!submitted.has_value()) {
+    // The receive is already queued. It will complete normally without the
+    // optional timeout, and the awaiter remains alive until that CQE.
     timeout_done_ = true;
-    FinishIfReady(current);
   }
+  return true;
+}
 
-  void FinishIfReady(LUringOp* current) noexcept {
-    if (!read_done_ || !timeout_done_) return;
-    if (stream_->pending_read_ == this) {
-      stream_->pending_read_ = nullptr;
-      stream_->NotifyCloseProgress();
-    }
-    current->resume_work.handle = continuation_;
+base::Result<std::size_t> LUringStream::ReadSomeForAwaiter::await_resume() noexcept {
+  VEXO_CTRACK_SCOPE("luring.read.resume");
+  if (immediate_.has_value()) return std::move(*immediate_);
+  assert(read_done_);
+  if (read_op_.result.has_value() && *read_op_.result >= 0) {
+    return static_cast<std::size_t>(*read_op_.result);
   }
+  if (timeout_op_.result.has_value() && *timeout_op_.result == -ETIME) {
+    return std::unexpected(base::make_errno(ETIMEDOUT));
+  }
+  return ToSizeResult(read_op_.result);
+}
 
-  LUringStream* stream_;
-  std::span<std::byte> buffer_;
-  __kernel_timespec timeout_ts_{};
-  std::coroutine_handle<> continuation_{};
-  LUringOp read_op_{.kind = LUringOpKind::kRead};
-  LUringOp timeout_op_{.kind = LUringOpKind::kTimeout};
-  std::optional<base::Result<std::size_t>> immediate_;
-  bool read_done_{false};
-  bool timeout_done_{false};
-};
+void LUringStream::ReadSomeForAwaiter::OnReadComplete(LUringOp* op) noexcept {
+  static_cast<ReadSomeForAwaiter*>(op->owner)->CompleteRead(op);
+}
+
+void LUringStream::ReadSomeForAwaiter::OnTimeoutComplete(LUringOp* op) noexcept {
+  static_cast<ReadSomeForAwaiter*>(op->owner)->CompleteTimeout(op);
+}
+
+void LUringStream::ReadSomeForAwaiter::CompleteRead(LUringOp* current) noexcept {
+  read_done_ = true;
+  FinishIfReady(current);
+}
+
+void LUringStream::ReadSomeForAwaiter::CompleteTimeout(LUringOp* current) noexcept {
+  timeout_done_ = true;
+  FinishIfReady(current);
+}
+
+void LUringStream::ReadSomeForAwaiter::FinishIfReady(LUringOp* current) noexcept {
+  if (!read_done_ || !timeout_done_) return;
+  if (stream_->pending_read_ == this) {
+    stream_->pending_read_ = nullptr;
+    stream_->NotifyCloseProgress();
+  }
+  current->resume_work.handle = continuation_;
+}
 
 bool LUringStream::WriteSomeAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   if (stream_->closed_ || stream_->fd_ < 0) {
@@ -305,7 +294,7 @@ public:
     stream_->pending_close_ = nullptr;
     result_ = CloseFd();
     stream_ = nullptr;
-    loop->Schedule(&resume_work_);
+    loop->ScheduleCompletion(&resume_work_);
   }
 
 private:
@@ -387,9 +376,9 @@ LUringStream::ReadSomeAwaiter LUringStream::ReadSome(std::span<std::byte> buffer
   return ReadSomeAwaiter(*this, buffer);
 }
 
-coro::Task<base::Result<std::size_t>> LUringStream::ReadSomeFor(std::span<std::byte> buffer,
-                                                                std::chrono::milliseconds timeout) {
-  co_return co_await ReadForAwaiter(*this, buffer, timeout);
+LUringStream::ReadSomeForAwaiter LUringStream::ReadSomeFor(
+    std::span<std::byte> buffer, std::chrono::milliseconds timeout) noexcept {
+  return ReadSomeForAwaiter(*this, buffer, timeout);
 }
 
 LUringStream::WriteSomeAwaiter LUringStream::WriteSome(std::span<const std::byte> buffer) noexcept {

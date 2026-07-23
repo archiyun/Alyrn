@@ -45,6 +45,10 @@ private:
   std::size_t deallocations_{0};
 };
 
+struct alignas(64) OverAlignedBlock {
+  std::byte data[64];
+};
+
 class DrainScheduler final : public vexo::coro::Scheduler {
 public:
   explicit DrainScheduler(std::pmr::memory_resource* resource) noexcept : Scheduler(resource) {}
@@ -72,9 +76,40 @@ vexo::coro::Task<int> Nested() {
   co_return value + 1;
 }
 
+void TestSizeClassReuseAndFallback() {
+  RecordingResource upstream;
+  {
+    vexo::coro::CoroFramePoolResource pool{upstream};
+    void* first = pool.allocate(128, alignof(std::max_align_t));
+    const std::size_t chunk_allocations = upstream.allocations();
+    pool.deallocate(first, 128, alignof(std::max_align_t));
+
+    void* second = pool.allocate(128, alignof(std::max_align_t));
+    Check(upstream.allocations() == chunk_allocations,
+          "same size class should reuse a returned slot");
+    pool.deallocate(second, 128, alignof(std::max_align_t));
+
+    void* large = pool.allocate(vexo::coro::CoroFramePoolResource::kMaxPooledBytes + 1,
+                                alignof(std::max_align_t));
+    Check(upstream.allocations() == chunk_allocations + 1,
+          "large allocations should bypass size classes");
+    pool.deallocate(large, vexo::coro::CoroFramePoolResource::kMaxPooledBytes + 1,
+                    alignof(std::max_align_t));
+
+    void* over_aligned = pool.allocate(sizeof(OverAlignedBlock), alignof(OverAlignedBlock));
+    Check(upstream.allocations() == chunk_allocations + 2,
+          "over-aligned allocations should bypass size classes");
+    pool.deallocate(over_aligned, sizeof(OverAlignedBlock), alignof(OverAlignedBlock));
+  }
+  Check(upstream.allocations() == upstream.deallocations(),
+        "size-class chunks and fallback allocations should be released");
+}
+
 }  // namespace
 
 int main() {
+  TestSizeClassReuseAndFallback();
+
   RecordingResource resource;
 
   // The default path remains independent of the recording resource.
@@ -103,13 +138,13 @@ int main() {
     return 1;
   }
 
-  // The public option accepts a real standard-library pool resource, not only
-  // a tracking test resource.
+  // The dedicated worker-local size-class resource must support coroutine
+  // frames of different sizes and return every frame before destruction.
   {
-    std::pmr::unsynchronized_pool_resource pool;
+    vexo::coro::CoroFramePoolResource pool;
     vexo::coro::FrameAllocatorScope frame_scope{pool};
-    if (!Check(vexo::coro::SyncWait(Immediate()) == 42,
-               "unsynchronized_pool_resource should back coroutine frames")) {
+    if (!Check(vexo::coro::SyncWait(Nested()) == 43,
+               "size-class frame pool should preserve nested results")) {
       return 1;
     }
   }

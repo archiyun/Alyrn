@@ -32,6 +32,12 @@ namespace {
     params.flags |= IORING_SETUP_SINGLE_ISSUER;
   }
 
+  if (options.setup_defer_taskrun) {
+    params.flags |= IORING_SETUP_COOP_TASKRUN;
+    params.flags |= IORING_SETUP_TASKRUN_FLAG;
+    params.flags |= IORING_SETUP_DEFER_TASKRUN;
+  }
+
   if (options.cq_entries != 0) {
     params.flags |= IORING_SETUP_CQSIZE;
     params.cq_entries = options.cq_entries;
@@ -50,7 +56,7 @@ namespace {
 
 }  // namespace
 
-LUringRing::~LUringRing() {
+LUringRing::~LUringRing() noexcept{
   if (initialized_) {
     io_uring_queue_exit(&ring_);
   }
@@ -106,4 +112,5 @@ void LUringRing::PrepMsgRing(io_uring_sqe* sqe, int target_ring_fd, std::uint32_
 
   io_uring_prep_msg_ring(sqe, target_ring_fd, type, data, IORING_MSG_DATA);
 }
+
 }  // namespace vexo::luring

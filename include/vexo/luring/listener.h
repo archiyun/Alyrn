@@ -1,3 +1,5 @@
+// Copyright (c) 2026 Arsenova
+// SPDX-License-Identifier: MIT
 #pragma once
 
 #include <sys/socket.h>
@@ -50,7 +52,7 @@ private:
   class AcceptAwaiter;
   class CloseAwaiter;
 
-  LUringListener(LUringLoop* loop, int fd) noexcept;
+  [[nodiscard]] LUringListener(LUringLoop* loop, int fd) noexcept;
   void NotifyCloseProgress() noexcept;
   void ResetForMove() noexcept;
   static LUringLoop* PrepareMove(LUringListener& other) noexcept;

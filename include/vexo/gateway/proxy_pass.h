@@ -48,6 +48,14 @@ struct ProxyForwardResult {
   bool started{false};
 };
 
+// Reusable buffers for one serial client session. A session must not share
+// these buffers with another in-flight request.
+struct ProxyForwardBuffers {
+  std::string request;
+  std::string response_pending;
+  std::string response_outbound;
+};
+
 template <class T>
 concept UpstreamConnector = requires(T& connector, std::string_view host, std::uint16_t port) {
   typename T::Stream;
@@ -64,7 +72,7 @@ public:
       ClientStream& client, const vexo::http::HttpRequest& request, Upstream& upstream,
       LoadBalancer& lb, UpstreamStreamPool<typename Connector::Stream>& pool, Connector& connector,
       const RequestContext& ctx = {}, CircuitBreaker* cb = nullptr,
-      ForwardedHeaderContext forwarded = {});
+      ForwardedHeaderContext forwarded = {}, ProxyForwardBuffers* buffers = nullptr);
 
   static std::string BuildRequest(const vexo::http::HttpRequest& req, const UpstreamPeer& peer,
                                   ForwardedHeaderContext forwarded = {});
@@ -81,11 +89,13 @@ private:
   static bool IsIdempotent(vexo::http::Method method);
   static ResponseState RewriteHeaders(std::string_view raw_headers, std::string& out,
                                       vexo::http::Method request_method);
+  static void BuildRequestInto(const vexo::http::HttpRequest& req, const UpstreamPeer& peer,
+                               std::string& out, ForwardedHeaderContext forwarded);
   static std::shared_ptr<UpstreamPeer> SelectFailoverPeer(Upstream& upstream,
                                                           const UpstreamPeer& current);
 
   template <vexo::io::AsyncReadStream Stream>
-  static vexo::coro::Task<vexo::base::Result<std::size_t>> ReadSomeWithTimeout(
+  static decltype(auto) ReadSomeWithTimeout(
       Stream& stream, std::span<std::byte> buffer, std::chrono::milliseconds timeout);
 
   template <vexo::io::AsyncWriteStream Stream>
@@ -99,16 +109,16 @@ private:
   static vexo::coro::Task<vexo::base::Result<bool>> RelayResponse(
       ClientStream& client, UpstreamStream& upstream, UpstreamPeer& peer, CircuitBreaker* cb,
       bool& cb_reported, vexo::http::Method request_method,
-      std::chrono::milliseconds request_timeout);
+      std::chrono::milliseconds request_timeout, std::string& pending, std::string& outbound);
 };
 
 template <vexo::io::AsyncReadStream Stream>
-vexo::coro::Task<vexo::base::Result<std::size_t>> ProxyPass::ReadSomeWithTimeout(
+decltype(auto) ProxyPass::ReadSomeWithTimeout(
     Stream& stream, std::span<std::byte> buffer, std::chrono::milliseconds timeout) {
   if constexpr (requires { stream.ReadSomeFor(buffer, timeout); }) {
-    co_return co_await stream.ReadSomeFor(buffer, timeout);
+    return stream.ReadSomeFor(buffer, timeout);
   } else {
-    co_return co_await stream.ReadSome(buffer);
+    return stream.ReadSome(buffer);
   }
 }
 
@@ -138,10 +148,11 @@ vexo::coro::Task<void> ProxyPass::Send502(Stream& client) {
 template <vexo::io::AsyncStream ClientStream, vexo::io::AsyncStream UpstreamStream>
 vexo::coro::Task<vexo::base::Result<bool>> ProxyPass::RelayResponse(
     ClientStream& client, UpstreamStream& upstream, UpstreamPeer& peer, CircuitBreaker* cb,
-    bool& cb_reported, vexo::http::Method request_method,
-    std::chrono::milliseconds request_timeout) {
+    bool& cb_reported, vexo::http::Method request_method, std::chrono::milliseconds request_timeout,
+    std::string& pending, std::string& outbound) {
   std::array<std::byte, 4096> read_buffer{};
-  std::string pending;
+  pending.clear();
+  outbound.clear();
 
   for (;;) {
     const std::size_t header_end = pending.find("\r\n\r\n");
@@ -150,8 +161,8 @@ vexo::coro::Task<vexo::base::Result<bool>> ProxyPass::RelayResponse(
       const std::string_view raw_headers(pending.data(), raw_size);
       ResponseState state;
 
-      std::string outbound;
       const std::size_t body_available = pending.size() - raw_size;
+      outbound.clear();
       outbound.reserve(raw_headers.size() + 64 + body_available);
       state = RewriteHeaders(raw_headers, outbound, request_method);
 
@@ -218,7 +229,8 @@ template <vexo::io::AsyncStream ClientStream, UpstreamConnector Connector>
 vexo::coro::Task<ProxyForwardResult> ProxyPass::Forward(
     ClientStream& client, const vexo::http::HttpRequest& request, Upstream& upstream,
     LoadBalancer& lb, UpstreamStreamPool<typename Connector::Stream>& pool, Connector& connector,
-    const RequestContext& ctx, CircuitBreaker* cb, ForwardedHeaderContext forwarded) {
+    const RequestContext& ctx, CircuitBreaker* cb, ForwardedHeaderContext forwarded,
+    ProxyForwardBuffers* buffers) {
   using UpstreamStream = typename Connector::Stream;
 
   if (!upstream.TryAcquireRequestSlot()) {
@@ -240,15 +252,31 @@ vexo::coro::Task<ProxyForwardResult> ProxyPass::Forward(
     if (peer) peer->state().active.fetch_sub(1, std::memory_order_relaxed);
   };
 
-  std::string request_bytes = BuildRequest(request, *peer, forwarded);
+  ProxyForwardBuffers local_buffers;
+  if (buffers == nullptr) {
+    local_buffers.request.reserve(512);
+    local_buffers.response_pending.reserve(4096);
+    local_buffers.response_outbound.reserve(4096);
+    buffers = &local_buffers;
+  }
+  BuildRequestInto(request, *peer, buffers->request, forwarded);
   bool cb_reported = false;
   int retries_left = 2;
   bool request_on_wire = false;
+  const bool collect_stats = pool.stats_enabled();
 
   for (;;) {
     std::optional<UpstreamStream> upstream_stream = pool.Acquire(peer.get());
     if (!upstream_stream) {
+      const auto connect_started = collect_stats ? std::chrono::steady_clock::now()
+                                                 : std::chrono::steady_clock::time_point{};
       auto connected = co_await connector.Connect(peer->config().host, peer->config().port);
+      if (collect_stats) {
+        const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                 std::chrono::steady_clock::now() - connect_started)
+                                 .count();
+        pool.RecordConnect(static_cast<std::uint64_t>(elapsed), connected.has_value());
+      }
       if (!connected.has_value()) {
         peer->OnFailure(NowMs());
         if ((!request_on_wire || IsIdempotent(request.method())) && retries_left-- > 0) {
@@ -259,7 +287,7 @@ vexo::coro::Task<ProxyForwardResult> ProxyPass::Forward(
             peer = std::move(next);
             peer->state().active.fetch_add(1, std::memory_order_relaxed);
             peer->state().requests.fetch_add(1, std::memory_order_relaxed);
-            request_bytes = BuildRequest(request, *peer, forwarded);
+            BuildRequestInto(request, *peer, buffers->request, forwarded);
             continue;
           }
         }
@@ -276,7 +304,15 @@ vexo::coro::Task<ProxyForwardResult> ProxyPass::Forward(
       upstream_stream = std::move(*connected);
     }
 
-    auto written = co_await WriteString(*upstream_stream, request_bytes);
+    const auto write_started =
+        collect_stats ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+    auto written = co_await WriteString(*upstream_stream, buffers->request);
+    if (collect_stats) {
+      const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                               std::chrono::steady_clock::now() - write_started)
+                               .count();
+      pool.RecordUpstreamWrite(static_cast<std::uint64_t>(elapsed));
+    }
     request_on_wire = true;
     if (!written.has_value()) {
       peer->OnFailure(NowMs());
@@ -288,7 +324,7 @@ vexo::coro::Task<ProxyForwardResult> ProxyPass::Forward(
           peer = std::move(next);
           peer->state().active.fetch_add(1, std::memory_order_relaxed);
           peer->state().requests.fetch_add(1, std::memory_order_relaxed);
-          request_bytes = BuildRequest(request, *peer, forwarded);
+          BuildRequestInto(request, *peer, buffers->request, forwarded);
           continue;
         }
       }
@@ -302,8 +338,17 @@ vexo::coro::Task<ProxyForwardResult> ProxyPass::Forward(
       co_return ProxyForwardResult{.status = ProxyForwardStatus::kUpstreamFailed, .started = true};
     }
 
+    const auto relay_started =
+        collect_stats ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     auto reusable = co_await RelayResponse(client, *upstream_stream, *peer, cb, cb_reported,
-                                           request.method(), upstream.config().request_timeout);
+                                           request.method(), upstream.config().request_timeout,
+                                           buffers->response_pending, buffers->response_outbound);
+    if (collect_stats) {
+      const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                               std::chrono::steady_clock::now() - relay_started)
+                               .count();
+      pool.RecordRelay(static_cast<std::uint64_t>(elapsed));
+    }
     if (!reusable.has_value()) {
       peer->OnFailure(NowMs());
       if (IsIdempotent(request.method()) && retries_left-- > 0) {
@@ -314,7 +359,7 @@ vexo::coro::Task<ProxyForwardResult> ProxyPass::Forward(
           peer = std::move(next);
           peer->state().active.fetch_add(1, std::memory_order_relaxed);
           peer->state().requests.fetch_add(1, std::memory_order_relaxed);
-          request_bytes = BuildRequest(request, *peer, forwarded);
+          BuildRequestInto(request, *peer, buffers->request, forwarded);
           request_on_wire = false;
           continue;
         }

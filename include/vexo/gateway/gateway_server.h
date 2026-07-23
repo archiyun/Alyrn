@@ -123,6 +123,10 @@ private:
   vexo::coro::Task<void> Session(Stream stream) {
     vexo::http::HttpParser parser;
     std::array<std::byte, 4096> read_buffer{};
+    ProxyForwardBuffers proxy_buffers;
+    proxy_buffers.request.reserve(512);
+    proxy_buffers.response_pending.reserve(4096);
+    proxy_buffers.response_outbound.reserve(4096);
     const std::string client_ip = ClientIp(stream);
 
     for (;;) {
@@ -137,12 +141,13 @@ private:
       }
 
       while (parser.GotAll()) {
-        vexo::http::HttpRequest req = parser.TakeRequest();
+        vexo::http::HttpRequest& req = parser.CurrentRequest();
         auto action = core_.HandleRequest(req, client_ip);
-        if (!co_await ApplyAction(stream, req, std::move(action))) {
+        if (!co_await ApplyAction(stream, req, std::move(action), proxy_buffers)) {
           co_await stream.Close();
           co_return;
         }
+        parser.Reset();
         parse_status = parser.ParseAvailable();
         if (!co_await HandleParseStatus(stream, parse_status)) {
           co_await stream.Close();
@@ -168,7 +173,8 @@ private:
   }
 
   vexo::coro::Task<bool> ApplyAction(Stream& stream, const vexo::http::HttpRequest& req,
-                                     GatewayCore::Action action) {
+                                     GatewayCore::Action action,
+                                     ProxyForwardBuffers& proxy_buffers) {
     if (action.kind == GatewayActionKind::Send) {
       auto written = co_await vexo::io::WriteAll(stream, Bytes(action.response));
       if (!written.has_value()) co_return false;
@@ -182,7 +188,7 @@ private:
     auto result = co_await ProxyPass::Forward(
         stream, req, *action.proxy.upstream, *action.proxy.load_balancer, pool_, connector_,
         action.proxy.request_ctx, action.proxy.circuit_breaker,
-        core_.MakeForwardedContext(action.proxy));
+        core_.MakeForwardedContext(action.proxy), &proxy_buffers);
     if (result.status == ProxyForwardStatus::kNoPeer) {
       auto fallback = core_.ProxyUnavailable(*action.proxy.route, "no available upstream peer");
       co_await vexo::io::WriteAll(stream, Bytes(fallback.response));
@@ -196,12 +202,12 @@ private:
   }
 
   template <vexo::io::AsyncReadStream AnyStream>
-  static vexo::coro::Task<vexo::base::Result<std::size_t>> ReadSomeForHealth(
+  static decltype(auto) ReadSomeForHealth(
       AnyStream& stream, std::span<std::byte> buffer, std::chrono::milliseconds timeout) {
     if constexpr (requires { stream.ReadSomeFor(buffer, timeout); }) {
-      co_return co_await stream.ReadSomeFor(buffer, timeout);
+      return stream.ReadSomeFor(buffer, timeout);
     } else {
-      co_return co_await stream.ReadSome(buffer);
+      return stream.ReadSome(buffer);
     }
   }
 
