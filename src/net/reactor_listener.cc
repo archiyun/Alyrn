@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "vexo/net/reactor_listener.h"
+#include "coropact/net/reactor_listener.h"
 
 #include <sys/socket.h>
 #include <unistd.h>
@@ -11,14 +11,14 @@
 #include <optional>
 #include <utility>
 
-#include "vexo/base/check.h"
-#include "vexo/base/error.h"
-#include "vexo/coro/scheduler.h"
-#include "vexo/coro/work.h"
-#include "vexo/log/logger.h"
-#include "vexo/net/net_utils.h"
+#include "coropact/base/check.h"
+#include "coropact/base/error.h"
+#include "coropact/coro/scheduler.h"
+#include "coropact/coro/work.h"
+#include "coropact/log/logger.h"
+#include "coropact/net/net_utils.h"
 
-namespace vexo::net {
+namespace coropact::net {
 namespace {
 
 bool IsWouldBlock(int err) noexcept { return err == EAGAIN || err == EWOULDBLOCK; }
@@ -36,7 +36,7 @@ base::Error SocketError(int fd) noexcept {
 }
 
 EventLoop* CheckLoop(EventLoop* loop) noexcept {
-  VEXO_CHECK(loop != nullptr, "ReactorListener: loop must not be null");
+  COROPACT_CHECK(loop != nullptr, "ReactorListener: loop must not be null");
   return loop;
 }
 
@@ -78,7 +78,7 @@ int CreateListenSocket() {
   if (!fd.has_value()) {
     LOG_FATAL() << "failed to create reactor listener socket: error=" << fd.error().value()
                 << " message=" << fd.error().message();
-    VEXO_CHECK(false, "ReactorListener: failed to create listening socket");
+    COROPACT_CHECK(false, "ReactorListener: failed to create listening socket");
   }
   return *fd;
 }
@@ -92,8 +92,8 @@ public:
   [[nodiscard]] bool await_ready() const noexcept { return false; }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
-    VEXO_DCHECK(listener_->loop_->IsInLoopThread(), "AcceptAwaiter: wrong EventLoop thread");
-    VEXO_DCHECK(listener_->pending_accept_ == nullptr,
+    COROPACT_DCHECK(listener_->loop_->IsInLoopThread(), "AcceptAwaiter: wrong EventLoop thread");
+    COROPACT_DCHECK(listener_->pending_accept_ == nullptr,
                 "AcceptAwaiter: only one pending accept is supported per listener");
 
     scheduler_ = &coro::Scheduler::RequireCurrent();
@@ -113,13 +113,13 @@ public:
   }
 
   base::Result<ReactorStream> await_resume() noexcept {
-    VEXO_DCHECK(result_.has_value(), "AcceptAwaiter: result is not ready");
+    COROPACT_DCHECK(result_.has_value(), "AcceptAwaiter: result is not ready");
     return std::move(*result_);
   }
 
   void Complete(base::Result<ReactorStream> result) noexcept {
     result_ = std::move(result);
-    VEXO_DCHECK(scheduler_ != nullptr, "AcceptAwaiter: scheduler is not bound");
+    COROPACT_DCHECK(scheduler_ != nullptr, "AcceptAwaiter: scheduler is not bound");
     scheduler_->Schedule(&resume_work_);
   }
 
@@ -199,7 +199,7 @@ ReactorListener& ReactorListener::operator=(ReactorListener&& other) noexcept {
   }
 
   EventLoop* other_loop = PrepareMove(other);
-  VEXO_CHECK(loop_ == nullptr || loop_ == other_loop,
+  COROPACT_CHECK(loop_ == nullptr || loop_ == other_loop,
              "ReactorListener move requires both objects to use the same EventLoop");
   if (loop_ != nullptr) {
     ResetForMove();
@@ -219,8 +219,8 @@ ReactorListener::~ReactorListener() {
   if (loop_ == nullptr) {
     return;
   }
-  VEXO_DCHECK(loop_->IsInLoopThread(), "ReactorListener destructor called from wrong thread");
-  VEXO_DCHECK(pending_accept_ == nullptr, "ReactorListener destroyed with a pending accept");
+  COROPACT_DCHECK(loop_->IsInLoopThread(), "ReactorListener destructor called from wrong thread");
+  COROPACT_DCHECK(pending_accept_ == nullptr, "ReactorListener destroyed with a pending accept");
   DetachChannel();
 }
 
@@ -252,20 +252,20 @@ base::Result<InetAddress> ReactorListener::LocalAddress() const {
   return get_local_addr(socket_.fd());
 }
 
-void ReactorListener::HandleRead(vexo::time::Timestamp /*receive_time*/) {
-  VEXO_DCHECK(loop_->IsInLoopThread(), "ReactorListener::HandleRead called from wrong thread");
+void ReactorListener::HandleRead(coropact::time::Timestamp /*receive_time*/) {
+  COROPACT_DCHECK(loop_->IsInLoopThread(), "ReactorListener::HandleRead called from wrong thread");
   if (pending_accept_ != nullptr) {
     pending_accept_->OnReady();
   }
 }
 
 void ReactorListener::HandleError() {
-  VEXO_DCHECK(loop_->IsInLoopThread(), "ReactorListener::HandleError called from wrong thread");
+  COROPACT_DCHECK(loop_->IsInLoopThread(), "ReactorListener::HandleError called from wrong thread");
   CompleteAccept(std::unexpected(SocketError(socket_.fd())));
 }
 
 void ReactorListener::CompleteAccept(base::Result<ReactorStream> result) {
-  VEXO_DCHECK(loop_->IsInLoopThread(), "ReactorListener::CompleteAccept called from wrong thread");
+  COROPACT_DCHECK(loop_->IsInLoopThread(), "ReactorListener::CompleteAccept called from wrong thread");
   AcceptAwaiter* awaiter = std::exchange(pending_accept_, nullptr);
   if (awaiter == nullptr) {
     return;
@@ -277,7 +277,7 @@ void ReactorListener::CompleteAccept(base::Result<ReactorStream> result) {
 }
 
 void ReactorListener::DetachChannel() {
-  VEXO_DCHECK(loop_->IsInLoopThread(), "ReactorListener::DetachChannel called from wrong thread");
+  COROPACT_DCHECK(loop_->IsInLoopThread(), "ReactorListener::DetachChannel called from wrong thread");
   if (!channel_.IsNoneEvent()) {
     channel_.DisableAll();
   }
@@ -288,26 +288,26 @@ void ReactorListener::DetachChannel() {
 
 void ReactorListener::BindChannelCallbacks() noexcept {
   try {
-    channel_.set_read_callback([this](vexo::time::Timestamp ts) { HandleRead(ts); });
+    channel_.set_read_callback([this](coropact::time::Timestamp ts) { HandleRead(ts); });
     channel_.set_error_callback([this] { HandleError(); });
   } catch (...) {
-    VEXO_CHECK(false, "ReactorListener: failed to bind channel callbacks");
+    COROPACT_CHECK(false, "ReactorListener: failed to bind channel callbacks");
   }
 }
 
 void ReactorListener::ResetForMove() noexcept {
-  VEXO_CHECK(loop_ != nullptr, "ReactorListener move destination is not initialized");
-  VEXO_CHECK(loop_->IsInLoopThread(), "ReactorListener move called from wrong EventLoop thread");
-  VEXO_CHECK(pending_accept_ == nullptr, "ReactorListener move destination has a pending accept");
+  COROPACT_CHECK(loop_ != nullptr, "ReactorListener move destination is not initialized");
+  COROPACT_CHECK(loop_->IsInLoopThread(), "ReactorListener move called from wrong EventLoop thread");
+  COROPACT_CHECK(pending_accept_ == nullptr, "ReactorListener move destination has a pending accept");
   DetachChannel();
   socket_.Close();
 }
 
 EventLoop* ReactorListener::PrepareMove(ReactorListener& other) noexcept {
-  VEXO_CHECK(other.loop_ != nullptr, "ReactorListener move source is not initialized");
-  VEXO_CHECK(other.loop_->IsInLoopThread(),
+  COROPACT_CHECK(other.loop_ != nullptr, "ReactorListener move source is not initialized");
+  COROPACT_CHECK(other.loop_->IsInLoopThread(),
              "ReactorListener move called from wrong EventLoop thread");
-  VEXO_CHECK(other.pending_accept_ == nullptr,
+  COROPACT_CHECK(other.pending_accept_ == nullptr,
              "ReactorListener cannot move with a pending accept operation");
 
   other.DetachChannel();
@@ -316,4 +316,4 @@ EventLoop* ReactorListener::PrepareMove(ReactorListener& other) noexcept {
   return loop;
 }
 
-}  // namespace vexo::net
+}  // namespace coropact::net

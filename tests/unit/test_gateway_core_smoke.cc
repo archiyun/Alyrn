@@ -5,8 +5,8 @@
 #include <memory>
 #include <string>
 
-#include "vexo/gateway/gateway_core.h"
-#include "vexo/gateway/upstream_peer.h"
+#include "coropact/gateway/gateway_core.h"
+#include "coropact/gateway/upstream_peer.h"
 
 namespace {
 
@@ -15,24 +15,24 @@ bool Expect(bool ok, const char* msg) {
   return ok;
 }
 
-vexo::http::HttpRequest MakeRequest(std::string_view path) {
-  vexo::http::HttpRequest req;
-  req.set_method(vexo::http::Method::Get);
-  req.set_version(vexo::http::Version::Http11);
+coropact::http::HttpRequest MakeRequest(std::string_view path) {
+  coropact::http::HttpRequest req;
+  req.set_method(coropact::http::Method::Get);
+  req.set_version(coropact::http::Version::Http11);
   req.set_path(path);
   return req;
 }
 
 bool TestDirectRoute() {
-  vexo::gateway::UpstreamRegistry registry;
-  vexo::gateway::GatewayCore core("gw-core", registry);
-  core.Get("/hello", [](const vexo::http::HttpRequest&, vexo::http::HttpResponse& resp) {
-    resp.set_status_code(vexo::http::StatusCode::Ok);
+  coropact::gateway::UpstreamRegistry registry;
+  coropact::gateway::GatewayCore core("gw-core", registry);
+  core.Get("/hello", [](const coropact::http::HttpRequest&, coropact::http::HttpResponse& resp) {
+    resp.set_status_code(coropact::http::StatusCode::Ok);
     resp.set_body("ok");
   });
 
   auto action = core.HandleRequest(MakeRequest("/hello"), "127.0.0.1");
-  if (!Expect(action.kind == vexo::gateway::GatewayActionKind::Send,
+  if (!Expect(action.kind == coropact::gateway::GatewayActionKind::Send,
               "direct route should produce a send action")) {
     return false;
   }
@@ -45,18 +45,18 @@ bool TestDirectRoute() {
 }
 
 bool TestProxyDecision() {
-  vexo::gateway::UpstreamRegistry registry;
+  coropact::gateway::UpstreamRegistry registry;
   auto upstream =
-      std::make_shared<vexo::gateway::Upstream>(vexo::gateway::UpstreamConfig{.name = "backend"});
-  upstream->AddPeer(std::make_shared<vexo::gateway::UpstreamPeer>(
-      vexo::gateway::UpstreamPeerConfig{.name = "backend-1", .host = "127.0.0.1", .port = 9001}));
+      std::make_shared<coropact::gateway::Upstream>(coropact::gateway::UpstreamConfig{.name = "backend"});
+  upstream->AddPeer(std::make_shared<coropact::gateway::UpstreamPeer>(
+      coropact::gateway::UpstreamPeerConfig{.name = "backend-1", .host = "127.0.0.1", .port = 9001}));
   registry.Add(upstream);
 
-  vexo::gateway::GatewayCore core("gw-core", registry);
+  coropact::gateway::GatewayCore core("gw-core", registry);
   core.AddProxyRoute("/api", "backend", "round_robin");
 
   auto action = core.HandleRequest(MakeRequest("/api/users"), "203.0.113.7");
-  if (!Expect(action.kind == vexo::gateway::GatewayActionKind::Proxy,
+  if (!Expect(action.kind == coropact::gateway::GatewayActionKind::Proxy,
               "proxy route should produce a proxy action")) {
     return false;
   }
@@ -76,11 +76,11 @@ bool TestProxyDecision() {
 }
 
 bool TestParseErrorAction() {
-  vexo::gateway::UpstreamRegistry registry;
-  vexo::gateway::GatewayCore core("gw-core", registry);
+  coropact::gateway::UpstreamRegistry registry;
+  coropact::gateway::GatewayCore core("gw-core", registry);
 
-  auto action = core.HandleParseError(vexo::http::ParseStatus::HeaderTooLarge);
-  if (!Expect(action.kind == vexo::gateway::GatewayActionKind::Send,
+  auto action = core.HandleParseError(coropact::http::ParseStatus::HeaderTooLarge);
+  if (!Expect(action.kind == coropact::gateway::GatewayActionKind::Send,
               "parse error should produce a send action")) {
     return false;
   }

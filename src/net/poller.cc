@@ -1,11 +1,11 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "vexo/net/poller.h"
+#include "coropact/net/poller.h"
 
-#include "vexo/net/channel.h"
-#include "vexo/net/epoll_poller.h"
+#include "coropact/net/channel.h"
+#include "coropact/net/epoll_poller.h"
 
-namespace vexo::net {
+namespace coropact::net {
 
 Poller::Poller(EventLoop* loop)
     : owner_loop_(loop) {}
@@ -19,4 +19,4 @@ Poller* Poller::NewDefaultPoller(EventLoop* loop) {
   return new EPollPoller(loop);
 }
 
-}  // namespace vexo::net
+}  // namespace coropact::net

@@ -1,13 +1,13 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "vexo/time/timestamp.h"
+#include "coropact/time/timestamp.h"
 
 #include <chrono>
 #include <ctime>
 #include <iomanip>
 #include <sstream>
 
-namespace vexo::time {
+namespace coropact::time {
 
 // static
 Timestamp Timestamp::Now() {
@@ -108,4 +108,4 @@ Timestamp AddTime(const Timestamp& timestamp, double seconds) {
   return Timestamp(micros + delta);
 }
 
-}  // namespace vexo::time
+}  // namespace coropact::time

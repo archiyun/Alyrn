@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "vexo/net/reactor_connect.h"
+#include "coropact/net/reactor_connect.h"
 
 #include <sys/socket.h>
 #include <unistd.h>
@@ -12,14 +12,14 @@
 #include <optional>
 #include <utility>
 
-#include "vexo/base/check.h"
-#include "vexo/coro/scheduler.h"
-#include "vexo/coro/work.h"
-#include "vexo/net/channel.h"
-#include "vexo/net/inet_address.h"
-#include "vexo/net/net_utils.h"
+#include "coropact/base/check.h"
+#include "coropact/coro/scheduler.h"
+#include "coropact/coro/work.h"
+#include "coropact/net/channel.h"
+#include "coropact/net/inet_address.h"
+#include "coropact/net/net_utils.h"
 
-namespace vexo::net {
+namespace coropact::net {
 namespace {
 
 base::Result<int> ConnectError(int fd) noexcept {
@@ -44,7 +44,7 @@ public:
   [[nodiscard]] bool await_ready() const noexcept { return false; }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
-    VEXO_DCHECK(loop_->IsInLoopThread(), "ConnectAwaiter: wrong EventLoop thread");
+    COROPACT_DCHECK(loop_->IsInLoopThread(), "ConnectAwaiter: wrong EventLoop thread");
     scheduler_ = &coro::Scheduler::RequireCurrent();
     resume_work_.handle = continuation;
 
@@ -78,7 +78,7 @@ public:
   }
 
   base::Result<ReactorStream> await_resume() noexcept {
-    VEXO_DCHECK(result_.has_value(), "ConnectAwaiter: result is not ready");
+    COROPACT_DCHECK(result_.has_value(), "ConnectAwaiter: result is not ready");
     return std::move(*result_);
   }
 
@@ -132,7 +132,7 @@ public:
   [[nodiscard]] bool await_ready() const noexcept { return delay_.count() <= 0; }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
-    VEXO_DCHECK(loop_->IsInLoopThread(), "SleepAwaiter: wrong EventLoop thread");
+    COROPACT_DCHECK(loop_->IsInLoopThread(), "SleepAwaiter: wrong EventLoop thread");
     scheduler_ = &coro::Scheduler::RequireCurrent();
     resume_work_.handle = continuation;
     const auto seconds = std::chrono::duration<double>(delay_).count();
@@ -152,7 +152,7 @@ private:
 }  // namespace
 
 ReactorConnector::ReactorConnector(EventLoop* loop) noexcept : loop_(loop) {
-  VEXO_CHECK(loop_ != nullptr, "ReactorConnector: loop must not be null");
+  COROPACT_CHECK(loop_ != nullptr, "ReactorConnector: loop must not be null");
 }
 
 [[nodiscard]] base::Result<ReactorConnector> ReactorConnector::Create(EventLoop* loop) noexcept {
@@ -189,4 +189,4 @@ coro::Task<void> ReactorConnector::SleepFor(std::chrono::milliseconds delay) {
   co_await SleepAwaiter(loop_, delay);
 }
 
-}  // namespace vexo::net
+}  // namespace coropact::net

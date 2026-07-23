@@ -1,13 +1,13 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "vexo/http/router.h"
+#include "coropact/http/router.h"
 
 #include <iostream>
 #include <sstream>
 #include <utility>
 
-#include "vexo/log/logger.h"
-namespace vexo::http {
+#include "coropact/log/logger.h"
+namespace coropact::http {
 
 namespace {
 [[noreturn]] void RouteFail(std::string_view reason,
@@ -173,4 +173,4 @@ RouteMatch Router::Match(Method method, std::string_view path) const {
   return result;
 }
 
-}  // namespace vexo::http
+}  // namespace coropact::http

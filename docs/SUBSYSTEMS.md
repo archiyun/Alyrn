@@ -41,16 +41,16 @@ about higher-layer policy.
 
 | Current directory | Layer | Notes |
 |---|---:|---|
-| `include/vexo/base` | L0 | Thread identity, checks, panic, and singleton primitives. |
-| `include/vexo/ds` | L0 | Header-only intrusive containers and hashes. |
-| `include/vexo/memory` | L0/L1 | Pools are L0. TTL/LRU cache code currently depends on `time` and should be split into an L1 cache module. |
-| `include/vexo/time`, `src/time` | L1 | Time values, timers, and timer indexes. No fd or EventLoop ownership. |
-| `include/vexo/log`, `src/log` | L1 | Process logging; may depend on base and time. |
-| `include/vexo/task`, `src/task` | L2 | Blocking/thread-pool execution. Must remain independent of net. |
-| `include/vexo/net`, `src/net` | L2 | Reactor, sockets, channels, timers bound to EventLoop, TCP lifecycle. |
-| `include/vexo/uring`, `src/uring` | L2 | Optional I/O backend. It may reuse net value types but must not expose gateway policy. |
-| `include/vexo/http`, `src/http` | L2 | HTTP parser, router, request/response, and server adapter over net/task. |
-| `include/vexo/gateway`, `src/gateway` | L3 | Currently flat; should be split by policy responsibility. |
+| `include/coropact/base` | L0 | Thread identity, checks, panic, and singleton primitives. |
+| `include/coropact/ds` | L0 | Header-only intrusive containers and hashes. |
+| `include/coropact/memory` | L0/L1 | Pools are L0. TTL/LRU cache code currently depends on `time` and should be split into an L1 cache module. |
+| `include/coropact/time`, `src/time` | L1 | Time values, timers, and timer indexes. No fd or EventLoop ownership. |
+| `include/coropact/log`, `src/log` | L1 | Process logging; may depend on base and time. |
+| `include/coropact/task`, `src/task` | L2 | Blocking/thread-pool execution. Must remain independent of net. |
+| `include/coropact/net`, `src/net` | L2 | Reactor, sockets, channels, timers bound to EventLoop, TCP lifecycle. |
+| `include/coropact/uring`, `src/uring` | L2 | Optional I/O backend. It may reuse net value types but must not expose gateway policy. |
+| `include/coropact/http`, `src/http` | L2 | HTTP parser, router, request/response, and server adapter over net/task. |
+| `include/coropact/gateway`, `src/gateway` | L3 | Currently flat; should be split by policy responsibility. |
 | `examples`, `docs/benchmark`, `tests` | L4 | Consumers and validation only. |
 
 ## Allowed Dependencies
@@ -103,7 +103,7 @@ The following are hard failures:
 - `net` including `http` or `gateway`, or inspecting gateway-specific names.
 - `task` including `net`, and `net` including `task`.
 - `http` including `gateway`.
-- A gateway policy type being placed in `vexo::net` or another lower namespace
+- A gateway policy type being placed in `coropact::net` or another lower namespace
   merely to make it reusable.
 - Tests or benchmarks becoming required runtime link dependencies.
 

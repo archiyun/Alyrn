@@ -29,16 +29,16 @@
 #include <utility>
 #include <vector>
 
-#include "vexo/ds/murmurhash32.h"
-#include "vexo/gateway/gateway_server.h"
-#include "vexo/gateway/upstream.h"
-#include "vexo/gateway/upstream_peer.h"
-#include "vexo/gateway/upstream_registry.h"
-#include "vexo/net/event_loop.h"
-#include "vexo/net/event_loop_scheduler.h"
-#include "vexo/net/inet_address.h"
-#include "vexo/net/reactor_connect.h"
-#include "vexo/net/reactor_listener.h"
+#include "coropact/ds/murmurhash32.h"
+#include "coropact/gateway/gateway_server.h"
+#include "coropact/gateway/upstream.h"
+#include "coropact/gateway/upstream_peer.h"
+#include "coropact/gateway/upstream_registry.h"
+#include "coropact/net/event_loop.h"
+#include "coropact/net/event_loop_scheduler.h"
+#include "coropact/net/inet_address.h"
+#include "coropact/net/reactor_connect.h"
+#include "coropact/net/reactor_listener.h"
 
 using namespace std::chrono_literals;
 
@@ -65,12 +65,12 @@ uint16_t ReservePort() {
 namespace {
 
 using TestGateway =
-    vexo::gateway::GatewayServer<vexo::net::ReactorListener, vexo::net::ReactorConnector>;
+    coropact::gateway::GatewayServer<coropact::net::ReactorListener, coropact::net::ReactorConnector>;
 
 struct GatewayRuntime {
-  std::unique_ptr<vexo::net::EventLoopScheduler> scheduler;
-  std::unique_ptr<vexo::net::ReactorListener> listener;
-  std::unique_ptr<vexo::net::ReactorConnector> connector;
+  std::unique_ptr<coropact::net::EventLoopScheduler> scheduler;
+  std::unique_ptr<coropact::net::ReactorListener> listener;
+  std::unique_ptr<coropact::net::ReactorConnector> connector;
   std::unique_ptr<TestGateway> gateway;
 };
 
@@ -82,7 +82,7 @@ bool Expect(bool ok, const char* msg) {
 void Passed(const char* name) { std::cout << "[PASS] " << name << '\n'; }
 
 template <typename F>
-void RunInLoopAndWait(vexo::net::EventLoop* loop, F&& fn) {
+void RunInLoopAndWait(coropact::net::EventLoop* loop, F&& fn) {
   std::promise<void> done_promise;
   auto done = done_promise.get_future();
   loop->RunInLoop([fn = std::forward<F>(fn), &done_promise]() mutable {
@@ -95,11 +95,11 @@ void RunInLoopAndWait(vexo::net::EventLoop* loop, F&& fn) {
 struct LoopThread {
   std::jthread thread;
 
-  vexo::net::EventLoop* StartLoop() {
-    std::promise<vexo::net::EventLoop*> ready;
+  coropact::net::EventLoop* StartLoop() {
+    std::promise<coropact::net::EventLoop*> ready;
     auto future = ready.get_future();
     thread = std::jthread([ready = std::move(ready)](std::stop_token token) mutable {
-      vexo::net::EventLoop loop;
+      coropact::net::EventLoop loop;
       std::stop_callback on_stop{token, [&loop] { loop.Quit(); }};
       ready.set_value(&loop);
       loop.Loop();
@@ -108,26 +108,26 @@ struct LoopThread {
   }
 };
 
-void InitGateway(GatewayRuntime& runtime, vexo::net::EventLoop* loop, uint16_t port,
-                 std::string name, vexo::gateway::UpstreamRegistry& registry) {
-  runtime.scheduler = std::make_unique<vexo::net::EventLoopScheduler>(loop);
+void InitGateway(GatewayRuntime& runtime, coropact::net::EventLoop* loop, uint16_t port,
+                 std::string name, coropact::gateway::UpstreamRegistry& registry) {
+  runtime.scheduler = std::make_unique<coropact::net::EventLoopScheduler>(loop);
   runtime.listener =
-      std::make_unique<vexo::net::ReactorListener>(loop, vexo::net::InetAddress(port));
-  runtime.connector = std::make_unique<vexo::net::ReactorConnector>(loop);
+      std::make_unique<coropact::net::ReactorListener>(loop, coropact::net::InetAddress(port));
+  runtime.connector = std::make_unique<coropact::net::ReactorConnector>(loop);
   runtime.gateway = std::make_unique<TestGateway>(*runtime.listener, *runtime.scheduler,
                                                   std::move(name), registry, *runtime.connector);
 }
 
-vexo::coro::Task<void> StopGatewayTask(TestGateway* gateway, std::promise<void>* done) {
+coropact::coro::Task<void> StopGatewayTask(TestGateway* gateway, std::promise<void>* done) {
   co_await gateway->Stop();
   done->set_value();
 }
 
-void StopGateway(vexo::net::EventLoop* loop, GatewayRuntime& runtime) {
+void StopGateway(coropact::net::EventLoop* loop, GatewayRuntime& runtime) {
   std::promise<void> done_promise;
   auto done = done_promise.get_future();
   loop->RunInLoop([&runtime, &done_promise] {
-    vexo::coro::Spawn(*runtime.scheduler, StopGatewayTask(runtime.gateway.get(), &done_promise))
+    coropact::coro::Spawn(*runtime.scheduler, StopGatewayTask(runtime.gateway.get(), &done_promise))
         .Detach();
   });
   done.wait();
@@ -293,10 +293,10 @@ struct UpstreamStub {
   }
 };
 
-void AddPeersWithHashSelectingFirst(const std::shared_ptr<vexo::gateway::Upstream>& upstream,
-                                    const std::shared_ptr<vexo::gateway::UpstreamPeer>& selected,
-                                    const std::shared_ptr<vexo::gateway::UpstreamPeer>& failover) {
-  const auto hash = vexo::ds::MurmurHash3("127.0.0.1");
+void AddPeersWithHashSelectingFirst(const std::shared_ptr<coropact::gateway::Upstream>& upstream,
+                                    const std::shared_ptr<coropact::gateway::UpstreamPeer>& selected,
+                                    const std::shared_ptr<coropact::gateway::UpstreamPeer>& failover) {
+  const auto hash = coropact::ds::MurmurHash3("127.0.0.1");
   if ((hash % 2) == 0) {
     upstream->AddPeer(selected);
     upstream->AddPeer(failover);
@@ -316,11 +316,11 @@ bool TestProxyPreservesRequestLineAndReusesConnection() {
   stub.Start(up_port);
 
   // 2. 网关起来 (单线程,简化生命周期)
-  vexo::gateway::UpstreamRegistry reg;
+  coropact::gateway::UpstreamRegistry reg;
   auto up =
-      std::make_shared<vexo::gateway::Upstream>(vexo::gateway::UpstreamConfig{.name = "stub"});
-  up->AddPeer(std::make_shared<vexo::gateway::UpstreamPeer>(
-      vexo::gateway::UpstreamPeerConfig{.name = "stub-1", .host = "127.0.0.1", .port = up_port}));
+      std::make_shared<coropact::gateway::Upstream>(coropact::gateway::UpstreamConfig{.name = "stub"});
+  up->AddPeer(std::make_shared<coropact::gateway::UpstreamPeer>(
+      coropact::gateway::UpstreamPeerConfig{.name = "stub-1", .host = "127.0.0.1", .port = up_port}));
   reg.Add(up);
 
   LoopThread gw_thr;
@@ -433,11 +433,11 @@ bool TestPrefixBoundary() {
   UpstreamStub stub;
   stub.Start(up_port);
 
-  vexo::gateway::UpstreamRegistry reg;
+  coropact::gateway::UpstreamRegistry reg;
   auto up =
-      std::make_shared<vexo::gateway::Upstream>(vexo::gateway::UpstreamConfig{.name = "stub"});
-  up->AddPeer(std::make_shared<vexo::gateway::UpstreamPeer>(
-      vexo::gateway::UpstreamPeerConfig{.name = "stub-1", .host = "127.0.0.1", .port = up_port}));
+      std::make_shared<coropact::gateway::Upstream>(coropact::gateway::UpstreamConfig{.name = "stub"});
+  up->AddPeer(std::make_shared<coropact::gateway::UpstreamPeer>(
+      coropact::gateway::UpstreamPeerConfig{.name = "stub-1", .host = "127.0.0.1", .port = up_port}));
   reg.Add(up);
 
   LoopThread gw_thr;
@@ -477,14 +477,14 @@ bool TestProxyDeadlineReleasesBulkheadSlot() {
   stub.respond = false;
   stub.Start(up_port);
 
-  vexo::gateway::UpstreamRegistry reg;
-  vexo::gateway::UpstreamConfig cfg;
+  coropact::gateway::UpstreamRegistry reg;
+  coropact::gateway::UpstreamConfig cfg;
   cfg.name = "slow";
   cfg.max_concurrent_requests = 1;
   cfg.request_timeout = 100ms;
-  auto up = std::make_shared<vexo::gateway::Upstream>(cfg);
-  auto peer = std::make_shared<vexo::gateway::UpstreamPeer>(
-      vexo::gateway::UpstreamPeerConfig{.name = "slow-1", .host = "127.0.0.1", .port = up_port});
+  auto up = std::make_shared<coropact::gateway::Upstream>(cfg);
+  auto peer = std::make_shared<coropact::gateway::UpstreamPeer>(
+      coropact::gateway::UpstreamPeerConfig{.name = "slow-1", .host = "127.0.0.1", .port = up_port});
   up->AddPeer(peer);
   reg.Add(up);
 
@@ -546,15 +546,15 @@ bool TestIPHashConnectFailureFailsOver() {
   UpstreamStub good;
   good.Start(good_port);
 
-  vexo::gateway::UpstreamRegistry reg;
-  vexo::gateway::UpstreamConfig cfg;
+  coropact::gateway::UpstreamRegistry reg;
+  coropact::gateway::UpstreamConfig cfg;
   cfg.name = "hash-failover";
   cfg.request_timeout = 1s;
-  auto up = std::make_shared<vexo::gateway::Upstream>(cfg);
-  auto bad_peer = std::make_shared<vexo::gateway::UpstreamPeer>(vexo::gateway::UpstreamPeerConfig{
+  auto up = std::make_shared<coropact::gateway::Upstream>(cfg);
+  auto bad_peer = std::make_shared<coropact::gateway::UpstreamPeer>(coropact::gateway::UpstreamPeerConfig{
       .name = "accept-then-close", .host = "127.0.0.1", .port = closing_port});
-  auto good_peer = std::make_shared<vexo::gateway::UpstreamPeer>(
-      vexo::gateway::UpstreamPeerConfig{.name = "healthy", .host = "127.0.0.1", .port = good_port});
+  auto good_peer = std::make_shared<coropact::gateway::UpstreamPeer>(
+      coropact::gateway::UpstreamPeerConfig{.name = "healthy", .host = "127.0.0.1", .port = good_port});
   AddPeersWithHashSelectingFirst(up, bad_peer, good_peer);
   reg.Add(up);
 
@@ -598,15 +598,15 @@ bool TestPostIsNotReplayedAfterFlush() {
   UpstreamStub good;
   good.Start(good_port);
 
-  vexo::gateway::UpstreamRegistry reg;
-  vexo::gateway::UpstreamConfig cfg;
+  coropact::gateway::UpstreamRegistry reg;
+  coropact::gateway::UpstreamConfig cfg;
   cfg.name = "post-no-replay";
   cfg.request_timeout = 1s;
-  auto up = std::make_shared<vexo::gateway::Upstream>(cfg);
+  auto up = std::make_shared<coropact::gateway::Upstream>(cfg);
   auto closing_peer =
-      std::make_shared<vexo::gateway::UpstreamPeer>(vexo::gateway::UpstreamPeerConfig{
+      std::make_shared<coropact::gateway::UpstreamPeer>(coropact::gateway::UpstreamPeerConfig{
           .name = "accept-then-close", .host = "127.0.0.1", .port = closing_port});
-  auto good_peer = std::make_shared<vexo::gateway::UpstreamPeer>(vexo::gateway::UpstreamPeerConfig{
+  auto good_peer = std::make_shared<coropact::gateway::UpstreamPeer>(coropact::gateway::UpstreamPeerConfig{
       .name = "must-not-receive", .host = "127.0.0.1", .port = good_port});
   AddPeersWithHashSelectingFirst(up, closing_peer, good_peer);
   reg.Add(up);

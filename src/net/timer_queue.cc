@@ -1,29 +1,29 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "vexo/net/timer_queue.h"
+#include "coropact/net/timer_queue.h"
 
 #include <sys/timerfd.h>
 #include <unistd.h>
 
 #include <cstring>
 
-#include "vexo/base/check.h"
-#include "vexo/net/event_loop.h"
-#include "vexo/time/timer.h"
-#include "vexo/time/timer_id.h"
-#include "vexo/time/timestamp.h"
+#include "coropact/base/check.h"
+#include "coropact/net/event_loop.h"
+#include "coropact/time/timer.h"
+#include "coropact/time/timer_id.h"
+#include "coropact/time/timestamp.h"
 
-namespace vexo::net {
+namespace coropact::net {
 
 static int CreateTimerfd() {
   int fd = ::timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
-  VEXO_CHECK(fd >= 0, "TimerQueue: timerfd_create failed");
+  COROPACT_CHECK(fd >= 0, "TimerQueue: timerfd_create failed");
   return fd;
 }
 
-static void set_timerfd(int timerfd, vexo::time::Timestamp expiration) {
+static void set_timerfd(int timerfd, coropact::time::Timestamp expiration) {
   itimerspec new_value{};
-  int64_t us = static_cast<int64_t>(TimeDifference(expiration, vexo::time::Timestamp::Now()) * 1e6);
+  int64_t us = static_cast<int64_t>(TimeDifference(expiration, coropact::time::Timestamp::Now()) * 1e6);
   if (us < 100) {
     us = 100;
   }
@@ -40,7 +40,7 @@ static void ReadTimerfd(int timerfd) {
 
 TimerQueue::TimerQueue(EventLoop* loop)
     : loop_(loop), timerfd_(CreateTimerfd()), timerfd_channel_(loop, timerfd_) {
-  timerfd_channel_.set_read_callback([this](vexo::time::Timestamp) { HandleRead(); });
+  timerfd_channel_.set_read_callback([this](coropact::time::Timestamp) { HandleRead(); });
   timerfd_channel_.EnableReading();
 }
 
@@ -49,16 +49,16 @@ TimerQueue::~TimerQueue() {
   timerfd_channel_.Remove();
   ::close(timerfd_);
   while (!timers_.empty()) {
-    vexo::time::Timer* timer = timers_.earliest();
+    coropact::time::Timer* timer = timers_.earliest();
     active_timers_.Erase(timer);
     timers_.Erase(timer);
     timer_pool_.Release(timer);
   }
 }
 
-vexo::time::TimerId TimerQueue::AddTimer(TimerCallback cb, vexo::time::Timestamp when,
+coropact::time::TimerId TimerQueue::AddTimer(TimerCallback cb, coropact::time::Timestamp when,
                                          double interval) {
-  vexo::time::Timer* t = timer_pool_.Acquire(std::move(cb), when, interval);
+  coropact::time::Timer* t = timer_pool_.Acquire(std::move(cb), when, interval);
   loop_->RunInLoop([this, t] {
     bool earliest_changed = timers_.empty() || t->expiration() < timers_.earliest()->expiration();
     timers_.Insert(t);
@@ -70,9 +70,9 @@ vexo::time::TimerId TimerQueue::AddTimer(TimerCallback cb, vexo::time::Timestamp
   return {t->sequence()};
 }
 
-void TimerQueue::Cancel(vexo::time::TimerId id) {
+void TimerQueue::Cancel(coropact::time::TimerId id) {
   loop_->RunInLoop([this, seq = id.sequence] {
-    vexo::time::Timer* active_timer = active_timers_.Find(seq);
+    coropact::time::Timer* active_timer = active_timers_.Find(seq);
     if (active_timer != nullptr) {
       active_timers_.Erase(active_timer);
       timers_.Erase(active_timer);
@@ -89,11 +89,11 @@ void TimerQueue::Cancel(vexo::time::TimerId id) {
 }
 
 void TimerQueue::HandleRead() {
-  vexo::time::Timestamp now = vexo::time::Timestamp::Now();
+  coropact::time::Timestamp now = coropact::time::Timestamp::Now();
   ReadTimerfd(timerfd_);
 
-  timers_.PopWhile([now](const vexo::time::Timer* timer) { return timer->expiration() <= now; },
-                   [this, now](vexo::time::Timer* timer) {
+  timers_.PopWhile([now](const coropact::time::Timer* timer) { return timer->expiration() <= now; },
+                   [this, now](coropact::time::Timer* timer) {
                      active_timers_.Erase(timer);
                      processing_timer_ = timer;
                      processing_timer_cancelled_ = false;
@@ -117,8 +117,8 @@ void TimerQueue::HandleRead() {
   }
 }
 
-void TimerQueue::ResetTimerfd(vexo::time::Timestamp expiration) {
+void TimerQueue::ResetTimerfd(coropact::time::Timestamp expiration) {
   set_timerfd(timerfd_, expiration);
 }
 
-}  // namespace vexo::net
+}  // namespace coropact::net

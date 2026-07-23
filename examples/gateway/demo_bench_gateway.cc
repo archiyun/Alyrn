@@ -83,15 +83,15 @@ NGINXEOF
 #include <thread>
 #include <utility>
 
-#include "vexo/gateway/gateway_server.h"
-#include "vexo/gateway/upstream.h"
-#include "vexo/gateway/upstream_peer.h"
-#include "vexo/gateway/upstream_registry.h"
-#include "vexo/net/event_loop.h"
-#include "vexo/net/event_loop_scheduler.h"
-#include "vexo/net/inet_address.h"
-#include "vexo/net/reactor_connect.h"
-#include "vexo/net/reactor_listener.h"
+#include "coropact/gateway/gateway_server.h"
+#include "coropact/gateway/upstream.h"
+#include "coropact/gateway/upstream_peer.h"
+#include "coropact/gateway/upstream_registry.h"
+#include "coropact/net/event_loop.h"
+#include "coropact/net/event_loop_scheduler.h"
+#include "coropact/net/inet_address.h"
+#include "coropact/net/reactor_connect.h"
+#include "coropact/net/reactor_listener.h"
 
 static std::atomic<long long> g_proxied{0};
 
@@ -119,20 +119,20 @@ int main() {
   std::signal(SIGPIPE, SIG_IGN);
 
   // 1. 注册上游
-  vexo::gateway::UpstreamRegistry reg;
+  coropact::gateway::UpstreamRegistry reg;
   auto us =
-      std::make_shared<vexo::gateway::Upstream>(vexo::gateway::UpstreamConfig{.name = "backend"});
-  us->AddPeer(std::make_shared<vexo::gateway::UpstreamPeer>(
-      vexo::gateway::UpstreamPeerConfig{.name = "127.0.0.1:" + std::to_string(upstream_port),
+      std::make_shared<coropact::gateway::Upstream>(coropact::gateway::UpstreamConfig{.name = "backend"});
+  us->AddPeer(std::make_shared<coropact::gateway::UpstreamPeer>(
+      coropact::gateway::UpstreamPeerConfig{.name = "127.0.0.1:" + std::to_string(upstream_port),
                                         .host = "127.0.0.1",
                                         .port = upstream_port}));
   reg.Add(us);
 
   // 2. 网关
-  vexo::net::EventLoop loop;
-  vexo::net::EventLoopScheduler scheduler(&loop);
+  coropact::net::EventLoop loop;
+  coropact::net::EventLoopScheduler scheduler(&loop);
   auto listener_result =
-      vexo::net::ReactorListener::Create(&loop, vexo::net::InetAddress(listen_port));
+      coropact::net::ReactorListener::Create(&loop, coropact::net::InetAddress(listen_port));
   if (!listener_result.has_value()) {
     std::fprintf(stderr, "failed to create listener: %s\n",
                  listener_result.error().message().c_str());
@@ -140,14 +140,14 @@ int main() {
   }
   auto listener = std::move(*listener_result);
 
-  auto connector_result = vexo::net::ReactorConnector::Create(&loop);
+  auto connector_result = coropact::net::ReactorConnector::Create(&loop);
   if (!connector_result.has_value()) {
     std::fprintf(stderr, "failed to create connector: %s\n",
                  connector_result.error().message().c_str());
     return 1;
   }
   auto connector = std::move(*connector_result);
-  vexo::gateway::GatewayServer<vexo::net::ReactorListener, vexo::net::ReactorConnector> gw(
+  coropact::gateway::GatewayServer<coropact::net::ReactorListener, coropact::net::ReactorConnector> gw(
       listener, scheduler, "BenchGateway", reg, connector);
   gw.set_pool_config({.max_idle_per_peer = 64});  // 与 nginx keepalive 64 对齐
 

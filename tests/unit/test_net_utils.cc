@@ -6,10 +6,10 @@
 
 #include <cerrno>
 
-#include "vexo/net/inet_address.h"
-#include "vexo/net/net_utils.h"
+#include "coropact/net/inet_address.h"
+#include "coropact/net/net_utils.h"
 
-namespace vexo::net {
+namespace coropact::net {
 namespace {
 
 class ScopedFd {
@@ -169,4 +169,4 @@ TEST(NetUtilsTest, QueriesConnectedIPv4Endpoints) {
 }
 
 }  // namespace
-}  // namespace vexo::net
+}  // namespace coropact::net

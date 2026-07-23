@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "vexo/gateway/gateway_core.h"
+#include "coropact/gateway/gateway_core.h"
 
 #include <atomic>
 #include <cstdio>
@@ -8,12 +8,12 @@
 #include <memory>
 #include <utility>
 
-namespace vexo::gateway {
+namespace coropact::gateway {
 
 GatewayCore::GatewayCore(std::string name, UpstreamRegistry& registry)
     : name_(std::move(name)), registry_(registry) {
-  vexo::http::HttpResponse rate_limit_resp(true);
-  rate_limit_resp.set_status_code(vexo::http::StatusCode::TooManyRequests);
+  coropact::http::HttpResponse rate_limit_resp(true);
+  rate_limit_resp.set_status_code(coropact::http::StatusCode::TooManyRequests);
   rate_limit_resp.set_content_type("application/json; charset=utf-8");
   rate_limit_resp.set_body(R"({"error":"rate limit exceeded"})");
   rate_limit_response_429_ = rate_limit_resp.ToString();
@@ -106,12 +106,12 @@ const GatewayCore::Route* GatewayCore::MatchRoute(std::string_view path) const {
   return nullptr;
 }
 
-GatewayCore::Action GatewayCore::HandleParseError(vexo::http::ParseStatus parse_status) {
-  const vexo::http::StatusCode code = vexo::http::ParseStatusToStatusCode(parse_status);
-  return SendResponse(MakeError(code, vexo::http::StatusMessage(code)).ToString(), true);
+GatewayCore::Action GatewayCore::HandleParseError(coropact::http::ParseStatus parse_status) {
+  const coropact::http::StatusCode code = coropact::http::ParseStatusToStatusCode(parse_status);
+  return SendResponse(MakeError(code, coropact::http::StatusMessage(code)).ToString(), true);
 }
 
-GatewayCore::Action GatewayCore::HandleRequest(const vexo::http::HttpRequest& req,
+GatewayCore::Action GatewayCore::HandleRequest(const coropact::http::HttpRequest& req,
                                                std::string_view client_ip) {
   if (rate_limiter_) {
     const bool global_ok = rate_limiter_->AllowGlobal();
@@ -123,7 +123,7 @@ GatewayCore::Action GatewayCore::HandleRequest(const vexo::http::HttpRequest& re
 
   const Route* route = MatchRoute(req.path());
   if (!route) {
-    return SendResponse(MakeError(vexo::http::StatusCode::NotFound, "not found").ToString());
+    return SendResponse(MakeError(coropact::http::StatusCode::NotFound, "not found").ToString());
   }
 
   if (route->type == RouteType::Proxy) {
@@ -161,11 +161,11 @@ GatewayCore::Action GatewayCore::HandleRequest(const vexo::http::HttpRequest& re
   }
 
   const bool keep_alive = req.keep_alive();
-  vexo::http::HttpResponse resp(!keep_alive);
+  coropact::http::HttpResponse resp(!keep_alive);
   try {
     route->handler(req, resp);
   } catch (const std::exception& ex) {
-    resp = MakeError(vexo::http::StatusCode::InternalServerError, ex.what());
+    resp = MakeError(coropact::http::StatusCode::InternalServerError, ex.what());
     resp.set_close_connection(true);
   }
   return SendResponse(resp.ToString(), resp.close_connection());
@@ -184,9 +184,9 @@ ForwardedHeaderContext GatewayCore::MakeForwardedContext(const ProxyTarget& prox
   };
 }
 
-vexo::http::HttpResponse GatewayCore::MakeError(vexo::http::StatusCode code,
+coropact::http::HttpResponse GatewayCore::MakeError(coropact::http::StatusCode code,
                                                 std::string_view msg) const {
-  vexo::http::HttpResponse resp(true);
+  coropact::http::HttpResponse resp(true);
   resp.set_status_code(code);
   resp.set_content_type("application/json; charset=utf-8");
   resp.set_body("{\"error\":\"" + std::string(msg) + "\"}");
@@ -197,7 +197,7 @@ std::string GatewayCore::RenderFallback(const Route& route, std::string_view rea
   if (route.fallback.enabled) {
     return route.fallback.pre_rendered;
   }
-  return MakeError(vexo::http::StatusCode::ServiceUnavailable, reason).ToString();
+  return MakeError(coropact::http::StatusCode::ServiceUnavailable, reason).ToString();
 }
 
 GatewayCore::Action GatewayCore::SendResponse(std::string response, bool close_after_send) const {
@@ -219,4 +219,4 @@ std::string GatewayCore::GenRequestId() {
   return std::string(buf, 33);
 }
 
-}  // namespace vexo::gateway
+}  // namespace coropact::gateway

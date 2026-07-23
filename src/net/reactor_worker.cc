@@ -1,16 +1,16 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "vexo/net/reactor_worker.h"
+#include "coropact/net/reactor_worker.h"
 
 #include <cerrno>
 #include <expected>
 #include <stop_token>
 #include <utility>
 
-#include "vexo/coro/frame_allocator.h"
-#include "vexo/coro/spawn.h"
+#include "coropact/coro/frame_allocator.h"
+#include "coropact/coro/spawn.h"
 
-namespace vexo::net {
+namespace coropact::net {
 
 namespace {
 
@@ -140,4 +140,4 @@ void ReactorWorker::WorkLoop(std::stop_token token) noexcept {
   loop.Loop();
 }
 
-}  // namespace vexo::net
+}  // namespace coropact::net

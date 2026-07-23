@@ -1,12 +1,12 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "vexo/http/http_parser.h"
+#include "coropact/http/http_parser.h"
 
 #include <charconv>
 #include <string_view>
 #include <utility>
 
-namespace vexo::http {
+namespace coropact::http {
 namespace {
 
 constexpr std::size_t kMaxRequestLine = 8 * 1024;
@@ -216,4 +216,4 @@ ParseStatus HttpParser::ParseHeaderLine(std::string_view line) {
   return ParseStatus::Continue;
 }
 
-}  // namespace vexo::http
+}  // namespace coropact::http

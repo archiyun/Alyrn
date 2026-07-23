@@ -13,10 +13,10 @@
 #include <utility>
 #include <vector>
 
-#include "vexo/ds/intrusive_list.h"
+#include "coropact/ds/intrusive_list.h"
 
-using vexo::ds::IntrusiveList;
-using vexo::ds::ListNode;
+using coropact::ds::IntrusiveList;
+using coropact::ds::ListNode;
 
 // Element with a stable identity (id) used to match nodes against oracle values.
 struct Item : ListNode<Item> {

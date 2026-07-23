@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "vexo/log/logger.h"
+#include "coropact/log/logger.h"
 
 #include <charconv>
 #include <cstdint>
@@ -10,11 +10,11 @@
 #include <string>
 #include <string_view>
 
-#include "vexo/base/current_thread.h"
-#include "vexo/log/async_logger.h"
-#include "vexo/time/timestamp.h"
+#include "coropact/base/current_thread.h"
+#include "coropact/log/async_logger.h"
+#include "coropact/time/timestamp.h"
 
-namespace vexo::log {
+namespace coropact::log {
 
 namespace {
 
@@ -25,7 +25,7 @@ void AppendUnsigned(std::string& output, std::uint64_t value) {
 }
 
 void AppendTimestamp(std::string& output) {
-  const auto timestamp = vexo::time::Timestamp::Now();
+  const auto timestamp = coropact::time::Timestamp::Now();
   const auto seconds = static_cast<std::time_t>(timestamp.SecondsSinceEpoch());
   std::tm tm_time{};
 #if defined(_WIN32)
@@ -63,7 +63,7 @@ std::string FormatLogMessage(LogLevel level, const char* file, int line, const c
   result += "] [";
   result += ToString(level);
   result += "] [tid:";
-  AppendUnsigned(result, static_cast<std::uint64_t>(vexo::base::tid()));
+  AppendUnsigned(result, static_cast<std::uint64_t>(coropact::base::tid()));
   result += "] [";
   result += file;
   result += ':';
@@ -154,4 +154,4 @@ const char* ToString(LogLevel level) {
   }
 }
 
-}  // namespace vexo::log
+}  // namespace coropact::log

@@ -1,16 +1,16 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "vexo/net/channel.h"
+#include "coropact/net/channel.h"
 
-#include "vexo/base/check.h"
-#include "vexo/net/event_loop.h"
+#include "coropact/base/check.h"
+#include "coropact/net/event_loop.h"
 
-namespace vexo::net {
+namespace coropact::net {
 
 Channel::Channel(EventLoop* loop, int fd)
     : loop_(loop), fd_(fd), events_(0), revents_(0), index_(-1), tied_(false) {
-  VEXO_DCHECK(loop_ != nullptr, "Channel: loop must not be null");
-  VEXO_DCHECK(fd_ >= 0, "Channel: fd must be a valid non-negative descriptor");
+  COROPACT_DCHECK(loop_ != nullptr, "Channel: loop must not be null");
+  COROPACT_DCHECK(fd_ >= 0, "Channel: fd must be a valid non-negative descriptor");
 }
 
 Channel::Channel(Channel&& other) noexcept
@@ -21,7 +21,7 @@ Channel::Channel(Channel&& other) noexcept
       index_(-1),
       trigger_mode_(TriggerMode::kLevelTriggered),
       tied_(false) {
-  VEXO_CHECK(other.index_ == -1, "Channel move requires the source to be detached from the Poller");
+  COROPACT_CHECK(other.index_ == -1, "Channel move requires the source to be detached from the Poller");
 
   loop_ = std::exchange(other.loop_, nullptr);
   fd_ = std::exchange(other.fd_, -1);
@@ -42,9 +42,9 @@ Channel& Channel::operator=(Channel&& other) noexcept {
     return *this;
   }
 
-  VEXO_CHECK(index_ == -1,
+  COROPACT_CHECK(index_ == -1,
              "Channel move assignment requires the destination to be detached from the Poller");
-  VEXO_CHECK(other.index_ == -1, "Channel move requires the source to be detached from the Poller");
+  COROPACT_CHECK(other.index_ == -1, "Channel move requires the source to be detached from the Poller");
 
   loop_ = std::exchange(other.loop_, nullptr);
   fd_ = std::exchange(other.fd_, -1);
@@ -62,24 +62,24 @@ Channel& Channel::operator=(Channel&& other) noexcept {
 }
 
 void Channel::Tie(const std::shared_ptr<void>& obj) {
-  VEXO_DCHECK(!tied_, "Channel::Tie called more than once");
+  COROPACT_DCHECK(!tied_, "Channel::Tie called more than once");
   tie_ = obj;
   tied_ = true;
 }
 
 void Channel::Update() {
-  VEXO_DCHECK(loop_->IsInLoopThread(), "Channel::Update called from wrong thread");
+  COROPACT_DCHECK(loop_->IsInLoopThread(), "Channel::Update called from wrong thread");
   loop_->UpdateChannel(this);
 }
 
 void Channel::Remove() {
-  VEXO_DCHECK(loop_->IsInLoopThread(), "Channel::Remove called from wrong thread");
-  VEXO_DCHECK(IsNoneEvent(), "Channel::Remove called while events are still enabled");
+  COROPACT_DCHECK(loop_->IsInLoopThread(), "Channel::Remove called from wrong thread");
+  COROPACT_DCHECK(IsNoneEvent(), "Channel::Remove called while events are still enabled");
   loop_->RemoveChannel(this);
 }
 
-void Channel::HandleEvent(vexo::time::Timestamp receive_time) {
-  VEXO_DCHECK(loop_->IsInLoopThread(), "Channel::HandleEvent called from wrong thread");
+void Channel::HandleEvent(coropact::time::Timestamp receive_time) {
+  COROPACT_DCHECK(loop_->IsInLoopThread(), "Channel::HandleEvent called from wrong thread");
   if (tied_) {
     // Hold a temporary shared reference while dispatching callbacks so the
     // owner cannot be destroyed in the middle of event handling.
@@ -92,7 +92,7 @@ void Channel::HandleEvent(vexo::time::Timestamp receive_time) {
   }
 }
 
-void Channel::HandleEventWithGuard(vexo::time::Timestamp receive_time) {
+void Channel::HandleEventWithGuard(coropact::time::Timestamp receive_time) {
   // kHupEvent without kReadEvent usually means the peer has closed the connection
   // and there is no more readable data left in the socket buffer.
   if (static_cast<bool>((revents_ & kHupEvent)) && !static_cast<bool>((revents_ & kReadEvent))) {
@@ -112,4 +112,4 @@ void Channel::HandleEventWithGuard(vexo::time::Timestamp receive_time) {
   }
 }
 
-}  // namespace vexo::net
+}  // namespace coropact::net

@@ -9,15 +9,15 @@
 #include <unordered_set>
 #include <utility>
 
-#include "vexo/gateway/gateway_config.h"
-#include "vexo/gateway/gateway_server.h"
-#include "vexo/gateway/load_balancer.h"
-#include "vexo/gateway/upstream_registry.h"
-#include "vexo/http/http_request.h"
-#include "vexo/http/http_response.h"
-#include "vexo/net/net_utils.h"
+#include "coropact/gateway/gateway_config.h"
+#include "coropact/gateway/gateway_server.h"
+#include "coropact/gateway/load_balancer.h"
+#include "coropact/gateway/upstream_registry.h"
+#include "coropact/http/http_request.h"
+#include "coropact/http/http_response.h"
+#include "coropact/net/net_utils.h"
 
-namespace vexo::gateway {
+namespace coropact::gateway {
 namespace {
 
 std::string ToString(std::string_view value) { return std::string(value); }
@@ -110,8 +110,8 @@ std::chrono::milliseconds ReadMilliseconds(const YAML::Node& node, std::string_v
       ReadInteger(node, ctx, min_value, std::numeric_limits<int>::max()));
 }
 
-vexo::http::StatusCode ParseStatusCode(int code, std::string_view ctx) {
-  using vexo::http::StatusCode;
+coropact::http::StatusCode ParseStatusCode(int code, std::string_view ctx) {
+  using coropact::http::StatusCode;
   switch (code) {
     case 400:
       return StatusCode::BadRequest;
@@ -423,7 +423,7 @@ void ValidatePath(std::string_view path, std::string_view ctx) {
 }
 
 void ValidateIPv4Endpoint(std::string_view host, std::uint16_t port, std::string_view ctx) {
-  auto parsed = vexo::net::ParseIPv4Address(host, port);
+  auto parsed = coropact::net::ParseIPv4Address(host, port);
   if (!parsed) {
     Fail(ctx, "expected a numeric IPv4 address");
   }
@@ -546,4 +546,4 @@ void BuildGatewayUpstreamRegistry(const GatewayConfig& config, UpstreamRegistry&
   }
 }
 
-}  // namespace vexo::gateway
+}  // namespace coropact::gateway

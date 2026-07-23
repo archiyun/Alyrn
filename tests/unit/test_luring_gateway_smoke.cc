@@ -18,17 +18,17 @@
 #include <thread>
 #include <utility>
 
-#include "vexo/base/error.h"
-#include "vexo/coro/task.h"
-#include "vexo/gateway/gateway_session_service.h"
-#include "vexo/gateway/upstream.h"
-#include "vexo/gateway/upstream_peer.h"
-#include "vexo/gateway/upstream_registry.h"
-#include "vexo/http/http_response.h"
-#include "vexo/luring/connector.h"
-#include "vexo/luring/server.h"
-#include "vexo/luring/stream.h"
-#include "vexo/net/inet_address.h"
+#include "coropact/base/error.h"
+#include "coropact/coro/task.h"
+#include "coropact/gateway/gateway_session_service.h"
+#include "coropact/gateway/upstream.h"
+#include "coropact/gateway/upstream_peer.h"
+#include "coropact/gateway/upstream_registry.h"
+#include "coropact/http/http_response.h"
+#include "coropact/luring/connector.h"
+#include "coropact/luring/server.h"
+#include "coropact/luring/stream.h"
+#include "coropact/net/inet_address.h"
 
 namespace {
 
@@ -75,32 +75,32 @@ bool Check(bool condition, const char* message) {
   return true;
 }
 
-bool IsEnvironmentSkip(vexo::base::Error error) {
+bool IsEnvironmentSkip(coropact::base::Error error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 
-vexo::net::InetAddress LoopbackAddress(std::uint16_t port) {
+coropact::net::InetAddress LoopbackAddress(std::uint16_t port) {
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   addr.sin_port = htons(port);
-  return vexo::net::InetAddress(addr);
+  return coropact::net::InetAddress(addr);
 }
 
-vexo::base::Result<ListenEndpoint> ListenLoopback() {
+coropact::base::Result<ListenEndpoint> ListenLoopback() {
   int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
   if (fd < 0) {
-    return std::unexpected(vexo::base::CurrentErrno());
+    return std::unexpected(coropact::base::CurrentErrno());
   }
 
-  auto fail = [fd](vexo::base::Error error) -> vexo::base::Result<ListenEndpoint> {
+  auto fail = [fd](coropact::base::Error error) -> coropact::base::Result<ListenEndpoint> {
     ::close(fd);
     return std::unexpected(error);
   };
 
   int reuse = 1;
   if (::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse)) < 0) {
-    return fail(vexo::base::CurrentErrno());
+    return fail(coropact::base::CurrentErrno());
   }
 
   sockaddr_in addr{};
@@ -108,21 +108,21 @@ vexo::base::Result<ListenEndpoint> ListenLoopback() {
   addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   addr.sin_port = htons(0);
   if (::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
-    return fail(vexo::base::CurrentErrno());
+    return fail(coropact::base::CurrentErrno());
   }
   if (::listen(fd, SOMAXCONN) < 0) {
-    return fail(vexo::base::CurrentErrno());
+    return fail(coropact::base::CurrentErrno());
   }
 
   socklen_t length = sizeof(addr);
   if (::getsockname(fd, reinterpret_cast<sockaddr*>(&addr), &length) < 0) {
-    return fail(vexo::base::CurrentErrno());
+    return fail(coropact::base::CurrentErrno());
   }
 
   return ListenEndpoint{.fd = UniqueFd(fd), .port = ntohs(addr.sin_port)};
 }
 
-vexo::base::Result<std::uint16_t> PickFreePort() {
+coropact::base::Result<std::uint16_t> PickFreePort() {
   auto endpoint = ListenLoopback();
   if (!endpoint.has_value()) {
     return std::unexpected(endpoint.error());
@@ -130,15 +130,15 @@ vexo::base::Result<std::uint16_t> PickFreePort() {
   return endpoint->port;
 }
 
-vexo::base::Result<int> ConnectClient(const vexo::net::InetAddress& address) {
+coropact::base::Result<int> ConnectClient(const coropact::net::InetAddress& address) {
   int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
   if (fd < 0) {
-    return std::unexpected(vexo::base::CurrentErrno());
+    return std::unexpected(coropact::base::CurrentErrno());
   }
 
   const sockaddr_in& peer = address.sock_addr();
   if (::connect(fd, reinterpret_cast<const sockaddr*>(&peer), sizeof(peer)) < 0) {
-    auto error = vexo::base::CurrentErrno();
+    auto error = coropact::base::CurrentErrno();
     ::close(fd);
     return std::unexpected(error);
   }
@@ -202,8 +202,8 @@ std::string ReadHttpResponse(int fd) {
   return response;
 }
 
-vexo::luring::LUringServerOptions MakeOptions() {
-  vexo::luring::LUringServerOptions options;
+coropact::luring::LUringServerOptions MakeOptions() {
+  coropact::luring::LUringServerOptions options;
   options.worker_group_options.worker_num = 1;
   options.worker_group_options.worker_options.loop_options.entries = 64;
   options.worker_group_options.worker_options.loop_options.submit_batch = 1;
@@ -265,11 +265,11 @@ private:
 };
 
 template <class Service>
-void BindServer(Service& service, vexo::luring::LUringServer& server) {
+void BindServer(Service& service, coropact::luring::LUringServer& server) {
   server.set_session_handler(
-      [&service](vexo::luring::LUringWorkerContext& context,
-                 vexo::luring::LUringStream stream) -> vexo::coro::Task<void> {
-        return service.Serve(std::move(stream), vexo::luring::LUringConnector(&context.loop));
+      [&service](coropact::luring::LUringWorkerContext& context,
+                 coropact::luring::LUringStream stream) -> coropact::coro::Task<void> {
+        return service.Serve(std::move(stream), coropact::luring::LUringConnector(&context.loop));
       });
 }
 
@@ -284,17 +284,17 @@ bool CheckDirectRoute() {
     return false;
   }
 
-  vexo::gateway::UpstreamRegistry registry;
-  using Service = vexo::gateway::GatewaySessionService<vexo::luring::LUringStream,
-                                                       vexo::luring::LUringConnector>;
+  coropact::gateway::UpstreamRegistry registry;
+  using Service = coropact::gateway::GatewaySessionService<coropact::luring::LUringStream,
+                                                       coropact::luring::LUringConnector>;
   Service service("luring-gateway", registry);
-  service.Get("/healthz", [](const vexo::http::HttpRequest&, vexo::http::HttpResponse& response) {
-    response.set_status_code(vexo::http::StatusCode::Ok);
+  service.Get("/healthz", [](const coropact::http::HttpRequest&, coropact::http::HttpResponse& response) {
+    response.set_status_code(coropact::http::StatusCode::Ok);
     response.set_content_type("text/plain");
     response.set_body("ok");
   });
 
-  vexo::luring::LUringServer server(LoopbackAddress(*port), MakeOptions());
+  coropact::luring::LUringServer server(LoopbackAddress(*port), MakeOptions());
   BindServer(service, server);
   auto started = server.Start();
   if (!started.has_value()) {
@@ -331,7 +331,7 @@ bool CheckProxyRoute() {
   auto upstream_endpoint = ListenLoopback();
   auto gateway_port = PickFreePort();
   if (!upstream_endpoint.has_value() || !gateway_port.has_value()) {
-    const vexo::base::Error error =
+    const coropact::base::Error error =
         !upstream_endpoint.has_value() ? upstream_endpoint.error() : gateway_port.error();
     if (IsEnvironmentSkip(error)) {
       std::cout << "SKIP: TCP bind unavailable: " << error.message() << '\n';
@@ -342,19 +342,19 @@ bool CheckProxyRoute() {
   }
 
   UpstreamStub upstream(std::move(*upstream_endpoint));
-  vexo::gateway::UpstreamRegistry registry;
+  coropact::gateway::UpstreamRegistry registry;
   auto backend =
-      std::make_shared<vexo::gateway::Upstream>(vexo::gateway::UpstreamConfig{.name = "backend"});
-  backend->AddPeer(std::make_shared<vexo::gateway::UpstreamPeer>(vexo::gateway::UpstreamPeerConfig{
+      std::make_shared<coropact::gateway::Upstream>(coropact::gateway::UpstreamConfig{.name = "backend"});
+  backend->AddPeer(std::make_shared<coropact::gateway::UpstreamPeer>(coropact::gateway::UpstreamPeerConfig{
       .name = "loopback", .host = "127.0.0.1", .port = upstream.port()}));
   registry.Add(backend);
 
-  using Service = vexo::gateway::GatewaySessionService<vexo::luring::LUringStream,
-                                                       vexo::luring::LUringConnector>;
+  using Service = coropact::gateway::GatewaySessionService<coropact::luring::LUringStream,
+                                                       coropact::luring::LUringConnector>;
   Service service("luring-gateway", registry);
   service.AddProxyRoute("/api", "backend", "round_robin");
 
-  vexo::luring::LUringServer server(LoopbackAddress(*gateway_port), MakeOptions());
+  coropact::luring::LUringServer server(LoopbackAddress(*gateway_port), MakeOptions());
   BindServer(service, server);
   auto started = server.Start();
   if (!started.has_value()) {

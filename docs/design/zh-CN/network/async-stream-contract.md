@@ -19,8 +19,8 @@
 当前项目有两种网络机制：
 
 ```text
-vexo::net       Reactor / epoll / nonblocking syscall
-vexo::luring    io_uring / SQE / CQE
+coropact::net       Reactor / epoll / nonblocking syscall
+coropact::luring    io_uring / SQE / CQE
 ```
 
 它们是两个独立的机制模块，不是同一个网络库的两个公开模式。两者通过公共协程 I/O
@@ -28,12 +28,12 @@ vexo::luring    io_uring / SQE / CQE
 
 ```text
 业务层
-  -> vexo::io::AsyncStream / AsyncListener
+  -> coropact::io::AsyncStream / AsyncListener
   -> ReactorStream / LUringStream
   -> Reactor 或 io_uring
 ```
 
-公共概念位于 `vexo::io`，不是 `vexo::net`。`net` 只是历史上承载 Reactor 实现的模块名。
+公共概念位于 `coropact::io`，不是 `coropact::net`。`net` 只是历史上承载 Reactor 实现的模块名。
 
 本文的核心边界是：
 
@@ -67,10 +67,10 @@ Close()
 对应的公共概念是：
 
 ```cpp
-vexo::io::AsyncReadStream
-vexo::io::AsyncWriteStream
-vexo::io::AsyncClosableStream
-vexo::io::AsyncStream
+coropact::io::AsyncReadStream
+coropact::io::AsyncWriteStream
+coropact::io::AsyncClosableStream
+coropact::io::AsyncStream
 ```
 
 `AsyncStream` 是四个方法的语义组合，不是某个具体类的基类，也不要求虚函数。当前
@@ -90,8 +90,8 @@ Close()
     -> coro::Task<base::Result<void>>
 ```
 
-`Stream` 必须满足 `vexo::io::AsyncStream`。当前 `ReactorListener` 和 `LUringListener`
-都满足 `vexo::io::AsyncListener`。
+`Stream` 必须满足 `coropact::io::AsyncStream`。当前 `ReactorListener` 和 `LUringListener`
+都满足 `coropact::io::AsyncListener`。
 
 `Connect()` 不属于 `AsyncStream` 或 `AsyncListener`。它是建立 outbound stream 的另一项
 能力，由 gateway 使用的 `UpstreamConnector` concept 单独约束。
@@ -119,7 +119,7 @@ auto result = co_await stream.ReadSome(buffer);
 stream.ReadSome(buffer);  // 错误：没有等待该 I/O operation
 ```
 
-I/O 方法本身不抛出业务异常。结果通过 `vexo::base::Result<T>` 返回，它是
+I/O 方法本身不抛出业务异常。结果通过 `coropact::base::Result<T>` 返回，它是
 `std::expected<T, std::error_code>` 的别名。协程未处理异常会终止进程，不属于网络错误
 传播机制。
 
@@ -342,7 +342,7 @@ P_active ⊆ P_backend
 ```
 
 能力 bit 只负责门卫，不能凭空创建 C++ 方法、返回类型或生命周期保证。内核 probe 报告
-某个 opcode 存在，也不等于 vexo 已经提供了对应的业务 concept。
+某个 opcode 存在，也不等于 coropact 已经提供了对应的业务 concept。
 
 ## 5. AsyncStream 语义
 
@@ -401,7 +401,7 @@ unexpected(error)
   写入失败，error 是 errno 风格的 std::error_code。
 ```
 
-调用方不能假设一次 `WriteSome` 写完整个 buffer。应使用 `vexo::io::WriteAll` 或等价
+调用方不能假设一次 `WriteSome` 写完整个 buffer。应使用 `coropact::io::WriteAll` 或等价
 循环。buffer 在该 `WriteSome` 的 awaitable 完成前不能修改、移动或释放。
 
 普通 `WriteSome` 的完成表示该调用使用的 buffer 已经不再被该 operation 访问。send
@@ -522,7 +522,7 @@ co_await stream.WriteSome(buffer)
 错误示例：
 
 ```cpp
-vexo::coro::Task<void> Bad(vexo::io::AsyncStream auto& stream) {
+coropact::coro::Task<void> Bad(coropact::io::AsyncStream auto& stream) {
   std::vector<std::byte> local(4096);
   auto task = stream.ReadSome(local);
   local = {};                    // 错误：底层 operation 仍可能使用这块内存
@@ -534,7 +534,7 @@ vexo::coro::Task<void> Bad(vexo::io::AsyncStream auto& stream) {
 正确写法是让 buffer 由协程 frame、调用方对象或更长生命周期的 pool 持有：
 
 ```cpp
-vexo::coro::Task<void> Good(vexo::io::AsyncStream auto& stream) {
+coropact::coro::Task<void> Good(coropact::io::AsyncStream auto& stream) {
   std::array<std::byte, 4096> buffer{};
   auto result = co_await stream.ReadSome(buffer);
   (void)result;
@@ -543,7 +543,7 @@ vexo::coro::Task<void> Good(vexo::io::AsyncStream auto& stream) {
 
 ### 7.2 io::Buffer
 
-`ReactorStream` 和 `stream_algorithms.h` 还提供 `vexo::io::Buffer` 重载。这是 buffer
+`ReactorStream` 和 `stream_algorithms.h` 还提供 `coropact::io::Buffer` 重载。这是 buffer
 管理层的扩展，不改变 CoreStream 的 span 契约：
 
 ```text
@@ -597,7 +597,7 @@ CapabilitySet 中的 kTimeout 已被标为 core，但 TimedStream/TimedGateway
 ```text
 不能仅凭 kTimeout 通过 capability bind 就调用 ReadSomeFor；
 gateway 的 timeout fallback 只能在具体 stream 提供该方法时启用；
-ProbeCapabilities 报告内核 opcode 不等于 vexo TimedStream 已实现。
+ProbeCapabilities 报告内核 opcode 不等于 coropact TimedStream 已实现。
 ```
 
 这是当前设计的迁移缺口，不是允许后端静默降级的理由。最终应把 timeout 作为明确的公共

@@ -10,6 +10,6 @@ __     __
    \_/ \___/_/\_\\___/
 )logo");
   std::println("C++23 is working now.");
-  std::println("Welcome to Vexo.");
+  std::println("Welcome to CoroPact.");
   return 0;
 }

@@ -4,11 +4,11 @@
 #include <cassert>
 #include <utility>
 
-#include "vexo/ds/intrusive_queue.h"
+#include "coropact/ds/intrusive_queue.h"
 
 namespace {
 
-struct Item : vexo::ds::QueueNode<Item> {
+struct Item : coropact::ds::QueueNode<Item> {
   explicit Item(int value) : value(value) {}
 
   int value;
@@ -22,7 +22,7 @@ int main() {
   Item three(3);
   Item four(4);
 
-  vexo::ds::IntrusiveQueue<Item> queue;
+  coropact::ds::IntrusiveQueue<Item> queue;
   assert(queue.empty());
   assert(queue.PushBack(&two));
   assert(queue.PushFront(&one));
@@ -38,19 +38,19 @@ int main() {
   assert(queue.front() == &one);
   assert(queue.back() == &three);
 
-  vexo::ds::IntrusiveQueue<Item> moved(std::move(queue));
+  coropact::ds::IntrusiveQueue<Item> moved(std::move(queue));
   assert(queue.empty());
   assert(moved.front() == &one);
   assert(moved.back() == &three);
 
-  vexo::ds::IntrusiveQueue<Item> suffix;
+  coropact::ds::IntrusiveQueue<Item> suffix;
   assert(suffix.PushBack(&four));
   moved.Splice(suffix);
   assert(suffix.empty());
   assert(moved.size() == 3);
   assert(moved.back() == &four);
 
-  vexo::ds::IntrusiveQueue<Item> assigned;
+  coropact::ds::IntrusiveQueue<Item> assigned;
   assigned = std::move(moved);
   assert(moved.empty());
   assert(assigned.size() == 3);

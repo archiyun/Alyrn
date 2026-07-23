@@ -6,12 +6,12 @@ Accepted for the initial coroutine implementation.
 
 ## Context
 
-Vexo must allow the same business coroutine to run on the epoll/Reactor backend
+CoroPact must allow the same business coroutine to run on the epoll/Reactor backend
 and a future io_uring backend. The coroutine return type therefore cannot own
 network descriptors, submit I/O, or depend on either runtime.
 
 Condy separates a lazy structured coroutine (`Coro<T>`) from a coroutine that
-has already been submitted to a runtime (`Task<T>`). Vexo adopts that semantic
+has already been submitted to a runtime (`Task<T>`). CoroPact adopts that semantic
 boundary while retaining its value-based error model.
 
 ## Decision

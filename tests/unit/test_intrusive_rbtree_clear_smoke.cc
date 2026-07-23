@@ -3,11 +3,11 @@
 #include <iostream>
 #include <vector>
 
-#include "vexo/ds/intrusive_rbtree.h"
+#include "coropact/ds/intrusive_rbtree.h"
 
 namespace {
 
-struct Item : vexo::ds::RBTNode<Item> {
+struct Item : coropact::ds::RBTNode<Item> {
   int key{0};
   int id{0};
 };
@@ -17,7 +17,7 @@ bool ItemLess(const Item* a, const Item* b) {
   return a->id < b->id;
 }
 
-using ItemTree = vexo::ds::IntrusiveRBTree<Item, ItemLess>;
+using ItemTree = coropact::ds::IntrusiveRBTree<Item, ItemLess>;
 
 bool Expect(bool condition, const char* message) {
   if (!condition) {

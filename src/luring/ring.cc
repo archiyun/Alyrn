@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "vexo/luring/ring.h"
+#include "coropact/luring/ring.h"
 
 #include <liburing.h>
 #include <liburing/io_uring.h>
@@ -12,10 +12,10 @@
 #include <expected>
 #include <utility>
 
-#include "vexo/base/error.h"
-#include "vexo/luring/options.h"
+#include "coropact/base/error.h"
+#include "coropact/luring/options.h"
 
-namespace vexo::luring {
+namespace coropact::luring {
 
 namespace {
 
@@ -30,6 +30,12 @@ namespace {
 
   if (options.setup_single_issuer) {
     params.flags |= IORING_SETUP_SINGLE_ISSUER;
+  }
+
+  if (options.setup_defer_taskrun) {
+    params.flags |= IORING_SETUP_COOP_TASKRUN;
+    params.flags |= IORING_SETUP_TASKRUN_FLAG;
+    params.flags |= IORING_SETUP_DEFER_TASKRUN;
   }
 
   if (options.cq_entries != 0) {
@@ -50,7 +56,7 @@ namespace {
 
 }  // namespace
 
-LUringRing::~LUringRing() {
+LUringRing::~LUringRing() noexcept{
   if (initialized_) {
     io_uring_queue_exit(&ring_);
   }
@@ -82,7 +88,7 @@ base::Result<LUringRing> LUringRing::Create(const LUringOptions& options) noexce
 
   const int result = io_uring_queue_init_params(options.entries, &ring, &params);
   if (result < 0) {
-    return std::unexpected(vexo::base::make_neg_errno(result));
+    return std::unexpected(coropact::base::make_neg_errno(result));
   }
 
   return LUringRing(ring);
@@ -106,4 +112,5 @@ void LUringRing::PrepMsgRing(io_uring_sqe* sqe, int target_ring_fd, std::uint32_
 
   io_uring_prep_msg_ring(sqe, target_ring_fd, type, data, IORING_MSG_DATA);
 }
-}  // namespace vexo::luring
+
+}  // namespace coropact::luring

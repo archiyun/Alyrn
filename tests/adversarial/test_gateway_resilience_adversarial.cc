@@ -7,9 +7,9 @@
 #include <iostream>
 #include <string>
 
-#include "vexo/gateway/circuit_breaker.h"
-#include "vexo/gateway/rate_limiter.h"
-#include "vexo/gateway/upstream.h"
+#include "coropact/gateway/circuit_breaker.h"
+#include "coropact/gateway/rate_limiter.h"
+#include "coropact/gateway/upstream.h"
 
 namespace {
 
@@ -26,10 +26,10 @@ void Passed(const char* name) {
 }
 
 bool TestCircuitBreakerRequiresConsecutiveSuccesses() {
-  vexo::gateway::CircuitBreakerConfig cfg;
+  coropact::gateway::CircuitBreakerConfig cfg;
   cfg.failure_threshold = 100;
   cfg.success_threshold = 2;
-  vexo::gateway::CircuitBreaker breaker(cfg);
+  coropact::gateway::CircuitBreaker breaker(cfg);
 
   breaker.OnFailure();
   breaker.OnSuccess();
@@ -47,12 +47,12 @@ bool TestCircuitBreakerRequiresConsecutiveSuccesses() {
 }
 
 bool TestPerIPBucketLimitIsHard() {
-  vexo::gateway::RateLimiterConfig cfg;
+  coropact::gateway::RateLimiterConfig cfg;
   cfg.per_ip_enabled = true;
   cfg.per_ip_rate = 0.000001;
   cfg.per_ip_burst = 1.0;
   cfg.per_ip_max_buckets = 8;
-  vexo::gateway::RateLimiter limiter(cfg);
+  coropact::gateway::RateLimiter limiter(cfg);
 
   // Simulate a high-cardinality identity spray. Every bucket remains active,
   // so an eviction policy that only drops full buckets cannot enforce the cap.
@@ -73,10 +73,10 @@ bool TestPerIPBucketLimitIsHard() {
 }
 
 bool TestUpstreamBulkheadIsHard() {
-  vexo::gateway::UpstreamConfig cfg;
+  coropact::gateway::UpstreamConfig cfg;
   cfg.name = "bulkhead";
   cfg.max_concurrent_requests = 2;
-  vexo::gateway::Upstream upstream(cfg);
+  coropact::gateway::Upstream upstream(cfg);
 
   if (!Expect(upstream.TryAcquireRequestSlot(), "bulkhead slot 1 must pass")) {
     return false;

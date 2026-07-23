@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 
-#include "vexo/luring/timer_queue.h"
+#include "coropact/luring/timer_queue.h"
 
 #include <liburing.h>
 
@@ -12,10 +12,10 @@
 #include <cstdint>
 #include <utility>
 
-#include "vexo/luring/loop.h"
-#include "vexo/time/timestamp.h"
+#include "coropact/luring/loop.h"
+#include "coropact/time/timestamp.h"
 
-namespace vexo::luring {
+namespace coropact::luring {
 
 namespace {
 
@@ -202,4 +202,4 @@ void LUringTimerQueue::Update(time::Timestamp deadline) noexcept {
   if (result.has_value()) control_pending_ = true;
 }
 
-}  // namespace vexo::luring
+}  // namespace coropact::luring

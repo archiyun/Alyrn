@@ -10,19 +10,19 @@
 #include <system_error>
 #include <utility>
 
-#include "vexo/base/error.h"
-#include "vexo/coro/scheduler.h"
-#include "vexo/coro/spawn.h"
-#include "vexo/coro/task.h"
-#include "vexo/luring/loop.h"
-#include "vexo/luring/op.h"
-#include "vexo/luring/options.h"
+#include "coropact/base/error.h"
+#include "coropact/coro/scheduler.h"
+#include "coropact/coro/spawn.h"
+#include "coropact/coro/task.h"
+#include "coropact/luring/loop.h"
+#include "coropact/luring/op.h"
+#include "coropact/luring/options.h"
 
 namespace {
 
 class NopAwaiter {
 public:
-  explicit NopAwaiter(vexo::luring::LUringLoop& loop) noexcept : loop_(&loop) {}
+  explicit NopAwaiter(coropact::luring::LUringLoop& loop) noexcept : loop_(&loop) {}
 
   bool await_ready() const noexcept { return false; }
 
@@ -41,7 +41,7 @@ public:
     return true;
   }
 
-  vexo::base::Result<int> await_resume() noexcept {
+  coropact::base::Result<int> await_resume() noexcept {
     if (result_.has_value()) {
       return std::move(*result_);
     }
@@ -49,15 +49,15 @@ public:
       return std::unexpected(op_.result.error());
     }
     if (*op_.result < 0) {
-      return std::unexpected(vexo::base::make_neg_errno(*op_.result));
+      return std::unexpected(coropact::base::make_neg_errno(*op_.result));
     }
     return *op_.result;
   }
 
 private:
-  vexo::luring::LUringLoop* loop_;
-  vexo::luring::LUringOp op_{.kind = vexo::luring::LUringOpKind::kTimeout};
-  std::optional<vexo::base::Result<int>> result_;
+  coropact::luring::LUringLoop* loop_;
+  coropact::luring::LUringOp op_{.kind = coropact::luring::LUringOpKind::kTimeout};
+  std::optional<coropact::base::Result<int>> result_;
 };
 
 bool Check(bool condition, const char* message) {
@@ -68,22 +68,22 @@ bool Check(bool condition, const char* message) {
   return true;
 }
 
-bool IsEnvironmentSkip(vexo::base::Error error) {
+bool IsEnvironmentSkip(coropact::base::Error error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 
-vexo::coro::Task<void> AwaitNop(vexo::luring::LUringLoop* loop,
-                                std::optional<vexo::base::Result<int>>* out,
+coropact::coro::Task<void> AwaitNop(coropact::luring::LUringLoop* loop,
+                                std::optional<coropact::base::Result<int>>* out,
                                 bool* resumed_with_scheduler) {
   auto result = co_await NopAwaiter(*loop);
-  *resumed_with_scheduler = vexo::coro::Scheduler::Current() == loop;
+  *resumed_with_scheduler = coropact::coro::Scheduler::Current() == loop;
   out->emplace(std::move(result));
 }
 
 bool CheckNopResumesCoroutine() {
-  vexo::luring::LUringLoop loop;
+  coropact::luring::LUringLoop loop;
 
-  vexo::luring::LUringOptions options;
+  coropact::luring::LUringOptions options;
   options.entries = 8;
   options.submit_batch = 1;
 
@@ -103,10 +103,10 @@ bool CheckNopResumesCoroutine() {
     return false;
   }
 
-  std::optional<vexo::base::Result<int>> result;
+  std::optional<coropact::base::Result<int>> result;
   bool resumed_with_scheduler = false;
 
-  vexo::coro::Spawn(loop, AwaitNop(&loop, &result, &resumed_with_scheduler)).Detach();
+  coropact::coro::Spawn(loop, AwaitNop(&loop, &result, &resumed_with_scheduler)).Detach();
 
   loop.RunReady();
 

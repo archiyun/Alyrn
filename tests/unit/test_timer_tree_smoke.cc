@@ -3,16 +3,16 @@
 #include <iostream>
 #include <vector>
 
-#include "vexo/ds/intrusive_rbtree.h"
-#include "vexo/time/timer.h"
-#include "vexo/time/timer_tree.h"
-#include "vexo/time/timestamp.h"
+#include "coropact/ds/intrusive_rbtree.h"
+#include "coropact/time/timer.h"
+#include "coropact/time/timer_tree.h"
+#include "coropact/time/timestamp.h"
 
 namespace {
 
 static_assert(
-    std::derived_from<vexo::time::Timer,
-                      vexo::ds::RBTNode<vexo::time::Timer>>);
+    std::derived_from<coropact::time::Timer,
+                      coropact::ds::RBTNode<coropact::time::Timer>>);
 
 bool Expect(bool condition, const char* message) {
   if (!condition) {
@@ -23,12 +23,12 @@ bool Expect(bool condition, const char* message) {
 }
 
 bool TestOrdersByExpirationThenSequence() {
-  const vexo::time::Timestamp early_deadline(1'000'000);
-  const vexo::time::Timestamp late_deadline(2'000'000);
-  vexo::time::Timer first([] {}, late_deadline, 0.0);
-  vexo::time::Timer second([] {}, late_deadline, 0.0);
-  vexo::time::Timer early([] {}, early_deadline, 0.0);
-  vexo::time::TimerTree timers;
+  const coropact::time::Timestamp early_deadline(1'000'000);
+  const coropact::time::Timestamp late_deadline(2'000'000);
+  coropact::time::Timer first([] {}, late_deadline, 0.0);
+  coropact::time::Timer second([] {}, late_deadline, 0.0);
+  coropact::time::Timer early([] {}, early_deadline, 0.0);
+  coropact::time::TimerTree timers;
 
   timers.Insert(&second);
   timers.Insert(&first);
@@ -54,12 +54,12 @@ bool TestOrdersByExpirationThenSequence() {
 }
 
 bool TestPopWhileUnlinksAndPreservesOrder() {
-  const vexo::time::Timestamp deadline(3'000'000);
-  vexo::time::Timer first([] {}, deadline, 0.0);
-  vexo::time::Timer second([] {}, deadline, 0.0);
-  vexo::time::Timer later(
-      [] {}, vexo::time::Timestamp(4'000'000), 0.0);
-  vexo::time::TimerTree timers;
+  const coropact::time::Timestamp deadline(3'000'000);
+  coropact::time::Timer first([] {}, deadline, 0.0);
+  coropact::time::Timer second([] {}, deadline, 0.0);
+  coropact::time::Timer later(
+      [] {}, coropact::time::Timestamp(4'000'000), 0.0);
+  coropact::time::TimerTree timers;
 
   timers.Insert(&later);
   timers.Insert(&second);
@@ -67,10 +67,10 @@ bool TestPopWhileUnlinksAndPreservesOrder() {
 
   std::vector<std::int64_t> popped_sequences;
   const std::size_t popped = timers.PopWhile(
-      [deadline](const vexo::time::Timer* timer) {
+      [deadline](const coropact::time::Timer* timer) {
         return timer->expiration() <= deadline;
       },
-      [&](vexo::time::Timer* timer) {
+      [&](coropact::time::Timer* timer) {
         if (!timer->InTree()) {
           popped_sequences.push_back(timer->sequence());
         }
@@ -93,16 +93,16 @@ bool TestPopWhileUnlinksAndPreservesOrder() {
 }
 
 bool TestTimerCanBeReinsertedAfterRestart() {
-  vexo::time::Timer repeating(
-      [] {}, vexo::time::Timestamp(5'000'000), 0.01);
-  vexo::time::TimerTree timers;
+  coropact::time::Timer repeating(
+      [] {}, coropact::time::Timestamp(5'000'000), 0.01);
+  coropact::time::TimerTree timers;
 
   timers.Insert(&repeating);
   if (!Expect(timers.Erase(&repeating), "repeating timer should be erasable")) {
     return false;
   }
 
-  repeating.Restart(vexo::time::Timestamp(6'000'000));
+  repeating.Restart(coropact::time::Timestamp(6'000'000));
   timers.Insert(&repeating);
 
   return Expect(repeating.InTree(), "restarted timer should be linked") &&

@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "vexo/http/parse_status.h"
+#include "coropact/http/parse_status.h"
 
-namespace vexo::http {
+namespace coropact::http {
 
 StatusCode ParseStatusToStatusCode(ParseStatus s) noexcept {
   switch (s) {
@@ -24,4 +24,4 @@ StatusCode ParseStatusToStatusCode(ParseStatus s) noexcept {
   return StatusCode::BadRequest;
 }
 
-}  // namespace vexo::http
+}  // namespace coropact::http

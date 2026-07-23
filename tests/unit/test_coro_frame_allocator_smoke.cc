@@ -6,12 +6,12 @@
 #include <iostream>
 #include <memory_resource>
 
-#include "vexo/coro/frame_allocator.h"
-#include "vexo/coro/scheduler.h"
-#include "vexo/coro/spawn.h"
-#include "vexo/coro/sync_wait.h"
-#include "vexo/coro/task.h"
-#include "vexo/coro/work.h"
+#include "coropact/coro/frame_allocator.h"
+#include "coropact/coro/scheduler.h"
+#include "coropact/coro/spawn.h"
+#include "coropact/coro/sync_wait.h"
+#include "coropact/coro/task.h"
+#include "coropact/coro/work.h"
 
 namespace {
 
@@ -45,40 +45,75 @@ private:
   std::size_t deallocations_{0};
 };
 
-class DrainScheduler final : public vexo::coro::Scheduler {
+struct alignas(64) OverAlignedBlock {
+  std::byte data[64];
+};
+
+class DrainScheduler final : public coropact::coro::Scheduler {
 public:
   explicit DrainScheduler(std::pmr::memory_resource* resource) noexcept : Scheduler(resource) {}
 
-  void Schedule(vexo::coro::Work* work) noexcept override {
+  void Schedule(coropact::coro::Work* work) noexcept override {
     const bool queued = queue_.PushBack(work);
     assert(queued);
     (void)queued;
   }
 
   void Drain() noexcept {
-    while (vexo::coro::Work* work = queue_.PopFront()) {
+    while (coropact::coro::Work* work = queue_.PopFront()) {
       Run(work);
     }
   }
 
 private:
-  vexo::coro::WorkQueue queue_;
+  coropact::coro::WorkQueue queue_;
 };
 
-vexo::coro::Task<int> Immediate() { co_return 42; }
+coropact::coro::Task<int> Immediate() { co_return 42; }
 
-vexo::coro::Task<int> Nested() {
+coropact::coro::Task<int> Nested() {
   const int value = co_await Immediate();
   co_return value + 1;
+}
+
+void TestSizeClassReuseAndFallback() {
+  RecordingResource upstream;
+  {
+    coropact::coro::CoroFramePoolResource pool{upstream};
+    void* first = pool.allocate(128, alignof(std::max_align_t));
+    const std::size_t chunk_allocations = upstream.allocations();
+    pool.deallocate(first, 128, alignof(std::max_align_t));
+
+    void* second = pool.allocate(128, alignof(std::max_align_t));
+    Check(upstream.allocations() == chunk_allocations,
+          "same size class should reuse a returned slot");
+    pool.deallocate(second, 128, alignof(std::max_align_t));
+
+    void* large = pool.allocate(coropact::coro::CoroFramePoolResource::kMaxPooledBytes + 1,
+                                alignof(std::max_align_t));
+    Check(upstream.allocations() == chunk_allocations + 1,
+          "large allocations should bypass size classes");
+    pool.deallocate(large, coropact::coro::CoroFramePoolResource::kMaxPooledBytes + 1,
+                    alignof(std::max_align_t));
+
+    void* over_aligned = pool.allocate(sizeof(OverAlignedBlock), alignof(OverAlignedBlock));
+    Check(upstream.allocations() == chunk_allocations + 2,
+          "over-aligned allocations should bypass size classes");
+    pool.deallocate(over_aligned, sizeof(OverAlignedBlock), alignof(OverAlignedBlock));
+  }
+  Check(upstream.allocations() == upstream.deallocations(),
+        "size-class chunks and fallback allocations should be released");
 }
 
 }  // namespace
 
 int main() {
+  TestSizeClassReuseAndFallback();
+
   RecordingResource resource;
 
   // The default path remains independent of the recording resource.
-  if (!Check(vexo::coro::SyncWait(Immediate()) == 42,
+  if (!Check(coropact::coro::SyncWait(Immediate()) == 42,
              "default frame allocation should still work")) {
     return 1;
   }
@@ -89,8 +124,8 @@ int main() {
   // The scope covers argument evaluation, so both the leaf Task and the
   // eager SyncWait root are allocated from the selected resource.
   {
-    vexo::coro::FrameAllocatorScope frame_scope{resource};
-    if (!Check(vexo::coro::SyncWait(Immediate()) == 42,
+    coropact::coro::FrameAllocatorScope frame_scope{resource};
+    if (!Check(coropact::coro::SyncWait(Immediate()) == 42,
                "SyncWait should run with a custom frame resource")) {
       return 1;
     }
@@ -103,13 +138,13 @@ int main() {
     return 1;
   }
 
-  // The public option accepts a real standard-library pool resource, not only
-  // a tracking test resource.
+  // The dedicated worker-local size-class resource must support coroutine
+  // frames of different sizes and return every frame before destruction.
   {
-    std::pmr::unsynchronized_pool_resource pool;
-    vexo::coro::FrameAllocatorScope frame_scope{pool};
-    if (!Check(vexo::coro::SyncWait(Immediate()) == 42,
-               "unsynchronized_pool_resource should back coroutine frames")) {
+    coropact::coro::CoroFramePoolResource pool;
+    coropact::coro::FrameAllocatorScope frame_scope{pool};
+    if (!Check(coropact::coro::SyncWait(Nested()) == 43,
+               "size-class frame pool should preserve nested results")) {
       return 1;
     }
   }
@@ -119,10 +154,10 @@ int main() {
   // creation scope has ended.
   {
     DrainScheduler scheduler{&resource};
-    vexo::coro::JoinHandle<int> handle{nullptr};
+    coropact::coro::JoinHandle<int> handle{nullptr};
     {
-      vexo::coro::FrameAllocatorScope frame_scope{resource};
-      handle = vexo::coro::Spawn(scheduler, Nested());
+      coropact::coro::FrameAllocatorScope frame_scope{resource};
+      handle = coropact::coro::Spawn(scheduler, Nested());
     }
 
     scheduler.Drain();

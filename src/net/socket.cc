@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "vexo/net/socket.h"
+#include "coropact/net/socket.h"
 
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
@@ -10,11 +10,11 @@
 #include <cerrno>
 #include <cstring>
 
-#include "vexo/base/check.h"
-#include "vexo/log/logger.h"
-#include "vexo/net/net_utils.h"
+#include "coropact/base/check.h"
+#include "coropact/log/logger.h"
+#include "coropact/net/net_utils.h"
 
-namespace vexo::net {
+namespace coropact::net {
 
 Socket::Socket(int sockfd) : sockfd_(sockfd) {}
 
@@ -29,7 +29,7 @@ void Socket::BindAddress(const InetAddress& localAddr) {
 
   LOG_FATALF("bind failed: fd={} address={} errno={} message={}", sockfd_, localAddr.ToIpPort(),
              errno, std::strerror(errno));
-  VEXO_CHECK(false, "Socket::BindAddress: bind failed");
+  COROPACT_CHECK(false, "Socket::BindAddress: bind failed");
 }
 
 void Socket::Listen() {
@@ -39,7 +39,7 @@ void Socket::Listen() {
   }
 
   LOG_FATALF("listen failed: fd={} errno={} message={}", sockfd_, errno, std::strerror(errno));
-  VEXO_CHECK(false, "Socket::Listen: listen failed");
+  COROPACT_CHECK(false, "Socket::Listen: listen failed");
 }
 
 int Socket::Accept(InetAddress* peeraddr) {
@@ -86,7 +86,7 @@ void Socket::Close() noexcept {
 }
 
 void Socket::set_tcp_no_delay(bool on) {
-  const auto result = vexo::net::set_tcp_non_delay(sockfd_, on);
+  const auto result = coropact::net::set_tcp_non_delay(sockfd_, on);
   if (result) {
     return;
   }
@@ -96,7 +96,7 @@ void Socket::set_tcp_no_delay(bool on) {
 }
 
 void Socket::set_reuse_addr(bool on) {
-  const auto result = vexo::net::set_reuse_addr(sockfd_, on);
+  const auto result = coropact::net::set_reuse_addr(sockfd_, on);
   if (result) {
     return;
   }
@@ -106,7 +106,7 @@ void Socket::set_reuse_addr(bool on) {
 }
 
 void Socket::set_reuse_port(bool on) {
-  const auto result = vexo::net::set_reuse_port(sockfd_, on);
+  const auto result = coropact::net::set_reuse_port(sockfd_, on);
   if (result) {
     return;
   }
@@ -116,7 +116,7 @@ void Socket::set_reuse_port(bool on) {
 }
 
 void Socket::set_keep_alive(bool on) {
-  const auto result = vexo::net::set_keep_alive(sockfd_, on);
+  const auto result = coropact::net::set_keep_alive(sockfd_, on);
   if (result) {
     return;
   }
@@ -125,4 +125,4 @@ void Socket::set_keep_alive(bool on) {
              result.error().value(), result.error().message());
 }
 
-}  // namespace vexo::net
+}  // namespace coropact::net

@@ -1,14 +1,16 @@
-#include "vexo/luring/worker_group.h"
+// Copyright (c) 2026 Arsenova
+// SPDX-License-Identifier: MIT
+#include "coropact/luring/worker_group.h"
 
 #include <cerrno>
 #include <expected>
 #include <memory>
 #include <utility>
 
-#include "vexo/luring/worker.h"
-#include "vexo/net/inet_address.h"
+#include "coropact/luring/worker.h"
+#include "coropact/net/inet_address.h"
 
-namespace vexo::luring {
+namespace coropact::luring {
 
 LUringWorkerGroup::LUringWorkerGroup(net::InetAddress listen_addr, LUringWorkerGroupOptions options,
                                      ThreadInitCallback init_callback,
@@ -36,6 +38,9 @@ base::Result<void> LUringWorkerGroup::Start() {
     if (options_.frame_resource_factory) {
       worker_options.frame_resource = options_.frame_resource_factory(i);
     }
+    if (options_.cpu_affinity_factory) {
+      worker_options.cpu_affinity = options_.cpu_affinity_factory(i);
+    }
 
     auto worker = std::make_unique<LUringWorker>(i, listen_addr_, std::move(worker_options),
                                                  init_callback_, connection_callback_);
@@ -61,4 +66,4 @@ void LUringWorkerGroup::Stop() noexcept {
   started_ = false;
 }
 
-}  // namespace vexo::luring
+}  // namespace coropact::luring

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 //
-// Raw TCP echo server built directly on vexo_luring.
+// Raw TCP echo server built directly on coropact_luring.
 //
 // The session only performs io_uring accept/read/write operations. There is no
 // HTTP parser, gateway, upstream connection, or application timer involved.
@@ -21,14 +21,14 @@
 #include <thread>
 #include <vector>
 
-#if defined(VEXO_ENABLE_CTRACK)
+#if defined(COROPACT_ENABLE_CTRACK)
 #include <ctrack.hpp>
 #endif
 
-#include "vexo/coro/frame_allocator.h"
-#include "vexo/luring/server.h"
-#include "vexo/net/inet_address.h"
-#include "vexo/net/net_utils.h"
+#include "coropact/coro/frame_allocator.h"
+#include "coropact/luring/server.h"
+#include "coropact/net/inet_address.h"
+#include "coropact/net/net_utils.h"
 
 namespace {
 
@@ -59,7 +59,7 @@ bool EnvBool(const char* key, bool fallback) {
   return value != nullptr ? std::atoi(value) != 0 : fallback;
 }
 
-vexo::coro::Task<void> EchoSession(vexo::luring::LUringStream stream) {
+coropact::coro::Task<void> EchoSession(coropact::luring::LUringStream stream) {
   std::array<std::byte, 16 * 1024> buffer{};
 
   for (;;) {
@@ -96,32 +96,51 @@ int main() {
   const auto entries = static_cast<std::uint32_t>(EnvSize("URING_ENTRIES", 8192));
   const auto accept_depth = std::max<std::size_t>(1, EnvSize("ACCEPT_DEPTH", 4));
   const auto ready_budget = EnvSize("MAX_READY_WORK_PER_TURN", 256);
+  const auto cqe_budget = EnvSize("MAX_CQE_PER_TURN", 256);
+  const auto ready_time_us = EnvSize("MAX_READY_TIME_US", 50);
+  const auto completion_budget = EnvSize("MAX_COMPLETION_WORK_PER_TURN", 64);
+  const auto completion_age_threshold_us = EnvSize("COMPLETION_AGE_THRESHOLD_US", 0);
+  const auto urgent_completion_budget = EnvSize("MAX_URGENT_COMPLETION_WORK_PER_TURN", 80);
+  const auto normal_age_threshold_us = EnvSize("NORMAL_QUEUE_AGE_THRESHOLD_US", 5000);
   const bool frame_pool = EnvBool("FRAME_POOL", true);
+  const bool dump_stats = EnvBool("LURING_DUMP_STATS", false);
 
   if (workers == 0) {
     std::fprintf(stderr, "URING_WORKERS must be greater than zero\n");
     return 1;
   }
 
-  auto listen_addr = vexo::net::ParseIPv4Address(bind_host, port);
+  auto listen_addr = coropact::net::ParseIPv4Address(bind_host, port);
   if (!listen_addr.has_value()) {
     std::fprintf(stderr, "invalid BIND_HOST '%s': %s\n", bind_host,
                  listen_addr.error().message().c_str());
     return 1;
   }
 
-  std::vector<std::unique_ptr<std::pmr::unsynchronized_pool_resource>> frame_pools;
+  std::vector<std::unique_ptr<coropact::coro::CoroFramePoolResource>> frame_pools;
   if (frame_pool) {
     frame_pools.reserve(workers);
     for (std::size_t i = 0; i < workers; ++i) {
-      frame_pools.push_back(std::make_unique<std::pmr::unsynchronized_pool_resource>());
+      frame_pools.push_back(std::make_unique<coropact::coro::CoroFramePoolResource>());
     }
   }
 
-  vexo::luring::LUringServerOptions options;
+  coropact::luring::LUringServerOptions options;
   options.worker_group_options.worker_num = workers;
   options.worker_group_options.worker_options.loop_options.entries = entries;
   options.worker_group_options.worker_options.loop_options.max_ready_work_per_turn = ready_budget;
+  options.worker_group_options.worker_options.loop_options.max_cqe_per_turn = cqe_budget;
+  options.worker_group_options.worker_options.loop_options.max_ready_time_per_turn =
+      std::chrono::microseconds(ready_time_us);
+  options.worker_group_options.worker_options.loop_options.max_completion_work_per_turn =
+      completion_budget;
+  options.worker_group_options.worker_options.loop_options.completion_queue_age_threshold =
+      std::chrono::microseconds(completion_age_threshold_us);
+  options.worker_group_options.worker_options.loop_options.max_urgent_completion_work_per_turn =
+      urgent_completion_budget;
+  options.worker_group_options.worker_options.loop_options.normal_queue_age_threshold =
+      std::chrono::microseconds(normal_age_threshold_us);
+  options.worker_group_options.worker_options.loop_options.dump_stats_on_exit = dump_stats;
   options.worker_group_options.worker_options.listen_options.reuse_port = true;
   options.worker_group_options.worker_options.listen_options.accept_depth = accept_depth;
   options.worker_group_options.frame_resource_factory =
@@ -129,9 +148,9 @@ int main() {
     return index < frame_pools.size() ? frame_pools[index].get() : nullptr;
   };
 
-  vexo::luring::LUringServer server(*listen_addr, std::move(options));
+  coropact::luring::LUringServer server(*listen_addr, std::move(options));
   server.set_session_handler(
-      [](vexo::luring::LUringWorkerContext&, vexo::luring::LUringStream stream) {
+      [](coropact::luring::LUringWorkerContext&, coropact::luring::LUringStream stream) {
         return EchoSession(std::move(stream));
       });
 
@@ -143,14 +162,17 @@ int main() {
 
   std::printf(
       "RawEchoLUring bind=%s port=%u workers=%zu entries=%u accept_depth=%zu frame_pool=%s "
-      "ready_budget=%zu\n",
-      bind_host, port, workers, entries, accept_depth, frame_pool ? "on" : "off", ready_budget);
+      "ready_budget=%zu cqe_budget=%zu ready_time_us=%zu completion_budget=%zu "
+      "completion_age_us=%zu urgent_completion_budget=%zu normal_age_us=%zu dump_stats=%s\n",
+      bind_host, port, workers, entries, accept_depth, frame_pool ? "on" : "off", ready_budget,
+      cqe_budget, ready_time_us, completion_budget, completion_age_threshold_us,
+      urgent_completion_budget, normal_age_threshold_us, dump_stats ? "on" : "off");
   std::fflush(stdout);
 
   while (!g_stop.load(std::memory_order_relaxed)) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
-#if defined(VEXO_ENABLE_CTRACK)
+#if defined(COROPACT_ENABLE_CTRACK)
   std::fputs(ctrack::result_as_string().c_str(), stdout);
 #endif
   server.Stop();

@@ -1,13 +1,13 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "vexo/net/reactor_worker_group.h"
+#include "coropact/net/reactor_worker_group.h"
 
 #include <cerrno>
 #include <expected>
 #include <memory>
 #include <utility>
 
-namespace vexo::net {
+namespace coropact::net {
 
 ReactorWorkerGroup::ReactorWorkerGroup(InetAddress listen_addr, ReactorWorkerGroupOptions options,
                                        ThreadInitCallback init_callback,
@@ -62,4 +62,4 @@ void ReactorWorkerGroup::Stop() noexcept {
   started_ = false;
 }
 
-}  // namespace vexo::net
+}  // namespace coropact::net

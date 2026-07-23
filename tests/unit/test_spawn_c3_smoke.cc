@@ -28,20 +28,20 @@
 #include <thread>
 #include <utility>
 
-#include "vexo/base/error.h"
-#include "vexo/coro/scheduler.h"
-#include "vexo/coro/spawn.h"
-#include "vexo/coro/task.h"
-#include "vexo/coro/work.h"
-#include "vexo/net/event_loop.h"
-#include "vexo/net/event_loop_scheduler.h"
+#include "coropact/base/error.h"
+#include "coropact/coro/scheduler.h"
+#include "coropact/coro/spawn.h"
+#include "coropact/coro/task.h"
+#include "coropact/coro/work.h"
+#include "coropact/net/event_loop.h"
+#include "coropact/net/event_loop_scheduler.h"
 
-using vexo::base::make_errno;
-using vexo::base::Result;
-using vexo::coro::Spawn;
-using vexo::coro::Task;
-using vexo::coro::Work;
-using vexo::net::EventLoop;
+using coropact::base::make_errno;
+using coropact::base::Result;
+using coropact::coro::Spawn;
+using coropact::coro::Task;
+using coropact::coro::Work;
+using coropact::net::EventLoop;
 
 namespace {
 
@@ -122,7 +122,7 @@ int main() {
   // deliveries for the following loop iteration, after both roots have parked on
   // their first Read.
   g_loop->RunInLoop([&] {
-    static vexo::net::EventLoopScheduler sched(g_loop);
+    static coropact::net::EventLoopScheduler sched(g_loop);
     Spawn(sched, Serve(&conn_a)).Detach();
     Spawn(sched, Serve(&conn_b)).Detach();
     g_loop->QueueInLoop([&] { conn_a.Deliver(Result<int>{0}, g_loop); });  // EOF

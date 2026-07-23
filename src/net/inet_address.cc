@@ -1,12 +1,12 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "vexo/net/inet_address.h"
+#include "coropact/net/inet_address.h"
 
 #include <arpa/inet.h>
 
-#include "vexo/base/check.h"
+#include "coropact/base/check.h"
 
-namespace vexo::net {
+namespace coropact::net {
 
 InetAddress::InetAddress(std::uint16_t port) {
   addr_.sin_family = AF_INET;
@@ -17,7 +17,7 @@ InetAddress::InetAddress(std::uint16_t port) {
 std::string InetAddress::ToIp() const {
   char buffer[INET_ADDRSTRLEN] = {0};
   const char* result = ::inet_ntop(AF_INET, &addr_.sin_addr, buffer, sizeof(buffer));
-  VEXO_CHECK(result != nullptr, "InetAddress::ToIp: inet_ntop failed");
+  COROPACT_CHECK(result != nullptr, "InetAddress::ToIp: inet_ntop failed");
   return result;
 }
 
@@ -30,4 +30,4 @@ bool operator==(const InetAddress& lhs, const InetAddress& rhs) noexcept {
          lhs.addr_.sin_addr.s_addr == rhs.addr_.sin_addr.s_addr;
 }
 
-}  // namespace vexo::net
+}  // namespace coropact::net

@@ -10,17 +10,17 @@
 #include <system_error>
 #include <thread>
 
-#include "vexo/base/error.h"
-#include "vexo/coro/work.h"
-#include "vexo/io/io_backend.h"
-#include "vexo/luring/capabilities.h"
-#include "vexo/luring/loop.h"
-#include "vexo/luring/op.h"
-#include "vexo/luring/options.h"
+#include "coropact/base/error.h"
+#include "coropact/coro/work.h"
+#include "coropact/io/io_backend.h"
+#include "coropact/luring/capabilities.h"
+#include "coropact/luring/loop.h"
+#include "coropact/luring/op.h"
+#include "coropact/luring/options.h"
 
 namespace {
 
-using vexo::base::Error;
+using coropact::base::Error;
 
 bool IsEnvironmentSkip(Error error) {
   return error == std::errc::operation_not_supported ||
@@ -37,14 +37,14 @@ bool Check(bool condition, const char* message) {
   return true;
 }
 
-class SignalWork final : public vexo::coro::Work {
+class SignalWork final : public coropact::coro::Work {
 public:
   explicit SignalWork(std::atomic_bool* completed) noexcept : completed_(completed) {
     run = &RunWork;
   }
 
 private:
-  static void RunWork(vexo::coro::Work* base) noexcept {
+  static void RunWork(coropact::coro::Work* base) noexcept {
     auto* self = static_cast<SignalWork*>(base);
     self->completed_->store(true, std::memory_order_release);
   }
@@ -53,22 +53,22 @@ private:
 };
 
 bool CheckMailboxNotificationState() {
-  vexo::luring::LUringMailbox mailbox;
+  coropact::luring::LUringMailbox mailbox;
 
-  const vexo::luring::LUringMessage message{
-      .type = vexo::luring::LUringMessage::Type::kResume,
+  const coropact::luring::LUringMessage message{
+      .type = coropact::luring::LUringMessage::Type::kResume,
       .data = 1,
   };
 
   if (!Check(
           mailbox.Push(message) ==
-              vexo::luring::LUringMailboxPushResult::kQueuedNeedsNotification,
+              coropact::luring::LUringMailboxPushResult::kQueuedNeedsNotification,
           "first mailbox message should arm notification")) {
     return false;
   }
   if (!Check(
           mailbox.Push(message) ==
-              vexo::luring::LUringMailboxPushResult::kQueued,
+              coropact::luring::LUringMailboxPushResult::kQueued,
           "second mailbox message should coalesce notification")) {
     return false;
   }
@@ -78,7 +78,7 @@ bool CheckMailboxNotificationState() {
   }
 
   const std::size_t drained =
-      mailbox.Drain([](const vexo::luring::LUringMessage&) noexcept {});
+      mailbox.Drain([](const coropact::luring::LUringMessage&) noexcept {});
   if (!Check(drained == 2, "mailbox drain should consume both messages")) {
     return false;
   }
@@ -88,11 +88,11 @@ bool CheckMailboxNotificationState() {
 }
 
 bool CheckMsgRingMailboxSchedule() {
-  vexo::luring::LUringOptions options;
+  coropact::luring::LUringOptions options;
   options.entries = 16;
   options.submit_batch = 1;
 
-  auto capabilities = vexo::luring::ProbeCapabilities(options);
+  auto capabilities = coropact::luring::ProbeCapabilities(options);
   if (!capabilities.has_value()) {
     if (IsEnvironmentSkip(capabilities.error())) {
       std::cout << "SKIP: io_uring capability probe unavailable: "
@@ -103,19 +103,19 @@ bool CheckMsgRingMailboxSchedule() {
     return false;
   }
 
-  if (!capabilities->Has(vexo::io::IoCapability::kMsgRing)) {
+  if (!capabilities->Has(coropact::io::IoCapability::kMsgRing)) {
     std::cout << "SKIP: kernel does not support IORING_OP_MSG_RING\n";
     return true;
   }
 
   std::atomic_bool failed{false};
   std::atomic_bool work_completed{false};
-  std::atomic<vexo::luring::LUringLoop*> target_ptr{nullptr};
+  std::atomic<coropact::luring::LUringLoop*> target_ptr{nullptr};
   std::barrier sync_point(3);
   SignalWork work(&work_completed);
 
   std::jthread target_thread([&] {
-    vexo::luring::LUringLoop target;
+    coropact::luring::LUringLoop target;
     auto init = target.Init(options);
     if (!init.has_value()) {
       failed.store(true, std::memory_order_release);
@@ -150,7 +150,7 @@ bool CheckMsgRingMailboxSchedule() {
   });
 
   std::jthread source_thread([&] {
-    vexo::luring::LUringLoop source;
+    coropact::luring::LUringLoop source;
     auto init = source.Init(options);
     if (!init.has_value()) {
       failed.store(true, std::memory_order_release);
@@ -169,24 +169,24 @@ bool CheckMsgRingMailboxSchedule() {
     }
 
     const auto push_result = target->PostMessage({
-        .type = vexo::luring::LUringMessage::Type::kResume,
+        .type = coropact::luring::LUringMessage::Type::kResume,
         .data = static_cast<std::uint64_t>(
             reinterpret_cast<std::uintptr_t>(&work)),
     });
 
-    if (push_result == vexo::luring::LUringMailboxPushResult::kFull) {
+    if (push_result == coropact::luring::LUringMailboxPushResult::kFull) {
       failed.store(true, std::memory_order_release);
       return;
     }
 
     if (push_result !=
-        vexo::luring::LUringMailboxPushResult::kQueuedNeedsNotification) {
+        coropact::luring::LUringMailboxPushResult::kQueuedNeedsNotification) {
       failed.store(true, std::memory_order_release);
       return;
     }
 
-    vexo::luring::LUringOp notify_op{
-        .kind = vexo::luring::LUringOpKind::kMsgRing};
+    coropact::luring::LUringOp notify_op{
+        .kind = coropact::luring::LUringOpKind::kMsgRing};
 
     auto submitted = source.SubmitMsgRing(
         &notify_op,

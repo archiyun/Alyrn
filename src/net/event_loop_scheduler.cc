@@ -1,11 +1,11 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 
-#include "vexo/net/event_loop_scheduler.h"
+#include "coropact/net/event_loop_scheduler.h"
 
-#include "vexo/base/check.h"
+#include "coropact/base/check.h"
 
-namespace vexo::net {
+namespace coropact::net {
 
 EventLoopScheduler::EventLoopScheduler(EventLoop* loop, std::pmr::memory_resource* frame_resource)
     : loop_(loop), Scheduler(frame_resource) {}
@@ -28,4 +28,4 @@ EventLoopScheduler& EventLoopScheduler::operator=(EventLoopScheduler&& other) no
   return *this;
 }
 
-}  // namespace vexo::net
+}  // namespace coropact::net

@@ -1,17 +1,17 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "vexo/net/epoll_poller.h"
+#include "coropact/net/epoll_poller.h"
 
 #include <unistd.h>
 
 #include <cerrno>
 #include <cstring>
 
-#include "vexo/base/check.h"
-#include "vexo/log/logger.h"
-#include "vexo/net/channel.h"
+#include "coropact/base/check.h"
+#include "coropact/log/logger.h"
+#include "coropact/net/channel.h"
 
-namespace vexo::net {
+namespace coropact::net {
 namespace {
 
 // Channel registration state within EPollPoller.
@@ -70,7 +70,7 @@ EPollPoller::EPollPoller(EventLoop* loop)
     : Poller(loop), epollfd_(::epoll_create1(EPOLL_CLOEXEC)), events_(kInitEventListSize) {
   if (epollfd_ < 0) {
     LOG_FATAL() << "epoll_create1 failed: errno=" << errno << " message=" << std::strerror(errno);
-    VEXO_CHECK(false, "EPollPoller: epoll_create1 failed");
+    COROPACT_CHECK(false, "EPollPoller: epoll_create1 failed");
   }
 }
 
@@ -80,11 +80,11 @@ EPollPoller::~EPollPoller() {
   }
 }
 
-vexo::time::Timestamp EPollPoller::Poll(int timeout_ms, ChannelList* active_channels) {
+coropact::time::Timestamp EPollPoller::Poll(int timeout_ms, ChannelList* active_channels) {
   const int max_events = static_cast<int>(events_.size());
   const int num_events = ::epoll_wait(epollfd_, events_.data(), max_events, timeout_ms);
   const int saved_errno = errno;
-  const auto now = vexo::time::Timestamp::Now();
+  const auto now = coropact::time::Timestamp::Now();
 
   if (num_events > 0) {
     FillActiveChannels(num_events, active_channels);
@@ -164,4 +164,4 @@ void EPollPoller::Update(int operation, Channel* channel) {
   }
 }
 
-}  // namespace vexo::net
+}  // namespace coropact::net

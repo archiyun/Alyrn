@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "vexo/net/reactor_stream.h"
+#include "coropact/net/reactor_stream.h"
 
 #include <sys/socket.h>
 #include <sys/uio.h>
@@ -18,13 +18,13 @@
 #include <utility>
 #include <vector>
 
-#include "vexo/base/check.h"
-#include "vexo/base/error.h"
-#include "vexo/coro/scheduler.h"
-#include "vexo/coro/work.h"
-#include "vexo/net/net_utils.h"
+#include "coropact/base/check.h"
+#include "coropact/base/error.h"
+#include "coropact/coro/scheduler.h"
+#include "coropact/coro/work.h"
+#include "coropact/net/net_utils.h"
 
-namespace vexo::net {
+namespace coropact::net {
 namespace {
 
 bool IsWouldBlock(int err) noexcept { return err == EAGAIN || err == EWOULDBLOCK; }
@@ -134,8 +134,8 @@ bool ReactorStream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> conti
     return false;
   }
 
-  VEXO_DCHECK(stream_->loop_->IsInLoopThread(), "ReadSomeAwaiter: wrong EventLoop thread");
-  VEXO_DCHECK(stream_->pending_read_ == nullptr,
+  COROPACT_DCHECK(stream_->loop_->IsInLoopThread(), "ReadSomeAwaiter: wrong EventLoop thread");
+  COROPACT_DCHECK(stream_->pending_read_ == nullptr,
               "ReadSomeAwaiter: only one pending read is supported per stream");
 
   scheduler_ = &coro::Scheduler::RequireCurrent();
@@ -164,7 +164,7 @@ bool ReactorStream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> conti
 }
 
 base::Result<std::size_t> ReactorStream::ReadSomeAwaiter::await_resume() noexcept {
-  VEXO_DCHECK(result_.has_value(), "ReadSomeAwaiter: result is not ready");
+  COROPACT_DCHECK(result_.has_value(), "ReadSomeAwaiter: result is not ready");
   return std::move(*result_);
 }
 
@@ -175,7 +175,7 @@ void ReactorStream::ReadSomeAwaiter::Complete(base::Result<std::size_t> result) 
   }
   stream_ = nullptr;
   result_ = std::move(result);
-  VEXO_DCHECK(scheduler_ != nullptr, "ReadSomeAwaiter: scheduler is not bound");
+  COROPACT_DCHECK(scheduler_ != nullptr, "ReadSomeAwaiter: scheduler is not bound");
   scheduler_->Schedule(&resume_work_);
 }
 
@@ -202,8 +202,8 @@ bool ReactorStream::BufferReadAwaiter::await_suspend(
     return false;
   }
 
-  VEXO_DCHECK(stream_->loop_->IsInLoopThread(), "BufferReadAwaiter: wrong EventLoop thread");
-  VEXO_DCHECK(stream_->pending_read_ == nullptr,
+  COROPACT_DCHECK(stream_->loop_->IsInLoopThread(), "BufferReadAwaiter: wrong EventLoop thread");
+  COROPACT_DCHECK(stream_->pending_read_ == nullptr,
               "BufferReadAwaiter: only one pending read is supported per stream");
 
   scheduler_ = &coro::Scheduler::RequireCurrent();
@@ -237,7 +237,7 @@ bool ReactorStream::BufferReadAwaiter::await_suspend(
 }
 
 base::Result<std::size_t> ReactorStream::BufferReadAwaiter::await_resume() noexcept {
-  VEXO_DCHECK(result_.has_value(), "BufferReadAwaiter: result is not ready");
+  COROPACT_DCHECK(result_.has_value(), "BufferReadAwaiter: result is not ready");
   return std::move(*result_);
 }
 
@@ -248,7 +248,7 @@ void ReactorStream::BufferReadAwaiter::Complete(base::Result<std::size_t> result
   }
   FinishAttempt(std::move(result));
   stream_ = nullptr;
-  VEXO_DCHECK(scheduler_ != nullptr, "BufferReadAwaiter: scheduler is not bound");
+  COROPACT_DCHECK(scheduler_ != nullptr, "BufferReadAwaiter: scheduler is not bound");
   scheduler_->Schedule(&resume_work_);
 }
 
@@ -290,8 +290,8 @@ bool ReactorStream::WriteSomeAwaiter::await_suspend(std::coroutine_handle<> cont
     return false;
   }
 
-  VEXO_DCHECK(stream_->loop_->IsInLoopThread(), "WriteSomeAwaiter: wrong EventLoop thread");
-  VEXO_DCHECK(stream_->pending_write_ == nullptr,
+  COROPACT_DCHECK(stream_->loop_->IsInLoopThread(), "WriteSomeAwaiter: wrong EventLoop thread");
+  COROPACT_DCHECK(stream_->pending_write_ == nullptr,
               "WriteSomeAwaiter: only one pending write is supported per stream");
 
   scheduler_ = &coro::Scheduler::RequireCurrent();
@@ -310,13 +310,13 @@ bool ReactorStream::WriteSomeAwaiter::await_suspend(std::coroutine_handle<> cont
 }
 
 base::Result<std::size_t> ReactorStream::WriteSomeAwaiter::await_resume() noexcept {
-  VEXO_DCHECK(result_.has_value(), "WriteSomeAwaiter: result is not ready");
+  COROPACT_DCHECK(result_.has_value(), "WriteSomeAwaiter: result is not ready");
   return std::move(*result_);
 }
 
 void ReactorStream::WriteSomeAwaiter::Complete(base::Result<std::size_t> result) noexcept {
   result_ = std::move(result);
-  VEXO_DCHECK(scheduler_ != nullptr, "WriteSomeAwaiter: scheduler is not bound");
+  COROPACT_DCHECK(scheduler_ != nullptr, "WriteSomeAwaiter: scheduler is not bound");
   scheduler_->Schedule(&resume_work_);
 }
 
@@ -339,8 +339,8 @@ bool ReactorStream::BufferWriteAwaiter::await_suspend(
     return false;
   }
 
-  VEXO_DCHECK(stream_->loop_->IsInLoopThread(), "BufferWriteAwaiter: wrong EventLoop thread");
-  VEXO_DCHECK(stream_->pending_write_ == nullptr,
+  COROPACT_DCHECK(stream_->loop_->IsInLoopThread(), "BufferWriteAwaiter: wrong EventLoop thread");
+  COROPACT_DCHECK(stream_->pending_write_ == nullptr,
               "BufferWriteAwaiter: only one pending write is supported per stream");
 
   scheduler_ = &coro::Scheduler::RequireCurrent();
@@ -364,13 +364,13 @@ bool ReactorStream::BufferWriteAwaiter::await_suspend(
 }
 
 base::Result<std::size_t> ReactorStream::BufferWriteAwaiter::await_resume() noexcept {
-  VEXO_DCHECK(result_.has_value(), "BufferWriteAwaiter: result is not ready");
+  COROPACT_DCHECK(result_.has_value(), "BufferWriteAwaiter: result is not ready");
   return std::move(*result_);
 }
 
 void ReactorStream::BufferWriteAwaiter::Complete(base::Result<std::size_t> result) noexcept {
   FinishAttempt(std::move(result));
-  VEXO_DCHECK(scheduler_ != nullptr, "BufferWriteAwaiter: scheduler is not bound");
+  COROPACT_DCHECK(scheduler_ != nullptr, "BufferWriteAwaiter: scheduler is not bound");
   scheduler_->Schedule(&resume_work_);
 }
 
@@ -411,9 +411,9 @@ void ReactorStream::BufferWriteAwaiter::FinishAttempt(base::Result<std::size_t> 
 
 ReactorStream::ReactorStream(EventLoop* loop, int fd, InetAddress peer)
     : loop_(loop), socket_(fd), channel_(loop, fd), peer_(peer) {
-  VEXO_DCHECK(loop_ != nullptr, "ReactorStream: loop must not be null");
+  COROPACT_DCHECK(loop_ != nullptr, "ReactorStream: loop must not be null");
   [[maybe_unused]] auto nonblocking = set_non_blocking(fd, true);
-  VEXO_DCHECK(nonblocking.has_value(), "ReactorStream: failed to set non-blocking mode");
+  COROPACT_DCHECK(nonblocking.has_value(), "ReactorStream: failed to set non-blocking mode");
 
   BindChannelCallbacks();
 }
@@ -436,7 +436,7 @@ ReactorStream& ReactorStream::operator=(ReactorStream&& other) noexcept {
   }
 
   EventLoop* other_loop = PrepareMove(other);
-  VEXO_CHECK(loop_ == nullptr || loop_ == other_loop,
+  COROPACT_CHECK(loop_ == nullptr || loop_ == other_loop,
              "ReactorStream move requires both objects to use the same EventLoop");
   if (loop_ != nullptr) {
     ResetForMove();
@@ -458,9 +458,9 @@ ReactorStream::~ReactorStream() {
   if (loop_ == nullptr) {
     return;
   }
-  VEXO_DCHECK(loop_->IsInLoopThread(), "ReactorStream destructor called from wrong thread");
-  VEXO_DCHECK(pending_read_ == nullptr, "ReactorStream destroyed with a pending read");
-  VEXO_DCHECK(pending_write_ == nullptr, "ReactorStream destroyed with a pending write");
+  COROPACT_DCHECK(loop_->IsInLoopThread(), "ReactorStream destructor called from wrong thread");
+  COROPACT_DCHECK(pending_read_ == nullptr, "ReactorStream destroyed with a pending read");
+  COROPACT_DCHECK(pending_write_ == nullptr, "ReactorStream destroyed with a pending write");
   DetachChannel();
 }
 
@@ -518,35 +518,35 @@ coro::Task<base::Result<void>> ReactorStream::Close() {
   co_return base::Result<void>{};
 }
 
-void ReactorStream::HandleRead(vexo::time::Timestamp /*receive_time*/) {
-  VEXO_DCHECK(loop_->IsInLoopThread(), "ReactorStream::HandleRead called from wrong thread");
+void ReactorStream::HandleRead(coropact::time::Timestamp /*receive_time*/) {
+  COROPACT_DCHECK(loop_->IsInLoopThread(), "ReactorStream::HandleRead called from wrong thread");
   if (pending_read_ != nullptr) {
     pending_read_->OnReady();
   }
 }
 
 void ReactorStream::HandleWrite() {
-  VEXO_DCHECK(loop_->IsInLoopThread(), "ReactorStream::HandleWrite called from wrong thread");
+  COROPACT_DCHECK(loop_->IsInLoopThread(), "ReactorStream::HandleWrite called from wrong thread");
   if (pending_write_ != nullptr) {
     pending_write_->OnReady();
   }
 }
 
 void ReactorStream::HandleClose() {
-  VEXO_DCHECK(loop_->IsInLoopThread(), "ReactorStream::HandleClose called from wrong thread");
+  COROPACT_DCHECK(loop_->IsInLoopThread(), "ReactorStream::HandleClose called from wrong thread");
   CompleteRead(base::Result<std::size_t>{0});
   CompleteWrite(std::unexpected(base::make_errno(EPIPE)));
 }
 
 void ReactorStream::HandleError() {
-  VEXO_DCHECK(loop_->IsInLoopThread(), "ReactorStream::HandleError called from wrong thread");
+  COROPACT_DCHECK(loop_->IsInLoopThread(), "ReactorStream::HandleError called from wrong thread");
   base::Error error = SocketError(socket_.fd());
   CompleteRead(std::unexpected(error));
   CompleteWrite(std::unexpected(error));
 }
 
 void ReactorStream::CompleteRead(base::Result<std::size_t> result) {
-  VEXO_DCHECK(loop_->IsInLoopThread(), "ReactorStream::CompleteRead called from wrong thread");
+  COROPACT_DCHECK(loop_->IsInLoopThread(), "ReactorStream::CompleteRead called from wrong thread");
   ReadOperation* awaiter = std::exchange(pending_read_, nullptr);
   if (awaiter == nullptr) {
     return;
@@ -558,7 +558,7 @@ void ReactorStream::CompleteRead(base::Result<std::size_t> result) {
 }
 
 void ReactorStream::CompleteWrite(base::Result<std::size_t> result) {
-  VEXO_DCHECK(loop_->IsInLoopThread(), "ReactorStream::CompleteWrite called from wrong thread");
+  COROPACT_DCHECK(loop_->IsInLoopThread(), "ReactorStream::CompleteWrite called from wrong thread");
   WriteOperation* awaiter = std::exchange(pending_write_, nullptr);
   if (awaiter == nullptr) {
     return;
@@ -570,7 +570,7 @@ void ReactorStream::CompleteWrite(base::Result<std::size_t> result) {
 }
 
 void ReactorStream::DetachChannel() {
-  VEXO_DCHECK(loop_->IsInLoopThread(), "ReactorStream::DetachChannel called from wrong thread");
+  COROPACT_DCHECK(loop_->IsInLoopThread(), "ReactorStream::DetachChannel called from wrong thread");
   if (!channel_.IsNoneEvent()) {
     channel_.DisableAll();
   }
@@ -581,31 +581,31 @@ void ReactorStream::DetachChannel() {
 
 void ReactorStream::BindChannelCallbacks() noexcept {
   try {
-    channel_.set_read_callback([this](vexo::time::Timestamp ts) { HandleRead(ts); });
+    channel_.set_read_callback([this](coropact::time::Timestamp ts) { HandleRead(ts); });
     channel_.set_write_callback([this] { HandleWrite(); });
     channel_.set_close_callback([this] { HandleClose(); });
     channel_.set_error_callback([this] { HandleError(); });
   } catch (...) {
-    VEXO_CHECK(false, "ReactorStream: failed to bind channel callbacks");
+    COROPACT_CHECK(false, "ReactorStream: failed to bind channel callbacks");
   }
 }
 
 void ReactorStream::ResetForMove() noexcept {
-  VEXO_CHECK(loop_ != nullptr, "ReactorStream move destination is not initialized");
-  VEXO_CHECK(loop_->IsInLoopThread(), "ReactorStream move called from wrong EventLoop thread");
-  VEXO_CHECK(pending_read_ == nullptr, "ReactorStream move destination has a pending read");
-  VEXO_CHECK(pending_write_ == nullptr, "ReactorStream move destination has a pending write");
+  COROPACT_CHECK(loop_ != nullptr, "ReactorStream move destination is not initialized");
+  COROPACT_CHECK(loop_->IsInLoopThread(), "ReactorStream move called from wrong EventLoop thread");
+  COROPACT_CHECK(pending_read_ == nullptr, "ReactorStream move destination has a pending read");
+  COROPACT_CHECK(pending_write_ == nullptr, "ReactorStream move destination has a pending write");
   DetachChannel();
   socket_.Close();
 }
 
 EventLoop* ReactorStream::PrepareMove(ReactorStream& other) noexcept {
-  VEXO_CHECK(other.loop_ != nullptr, "ReactorStream move source is not initialized");
-  VEXO_CHECK(other.loop_->IsInLoopThread(),
+  COROPACT_CHECK(other.loop_ != nullptr, "ReactorStream move source is not initialized");
+  COROPACT_CHECK(other.loop_->IsInLoopThread(),
              "ReactorStream move called from wrong EventLoop thread");
-  VEXO_CHECK(other.pending_read_ == nullptr,
+  COROPACT_CHECK(other.pending_read_ == nullptr,
              "ReactorStream cannot move with a pending read operation");
-  VEXO_CHECK(other.pending_write_ == nullptr,
+  COROPACT_CHECK(other.pending_write_ == nullptr,
              "ReactorStream cannot move with a pending write operation");
 
   other.DetachChannel();
@@ -614,4 +614,4 @@ EventLoop* ReactorStream::PrepareMove(ReactorStream& other) noexcept {
   return loop;
 }
 
-}  // namespace vexo::net
+}  // namespace coropact::net
