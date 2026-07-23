@@ -1,317 +1,153 @@
-# high-concurrency-runtime
+# Vexo⚡
 
-**English** | [中文](README.zh-CN.md) | [Documentation](https://akiba-miku.github.io/high-concurrency-runtime/)
+![C++](https://img.shields.io/badge/C++-23-blue)
+![Platform](https://img.shields.io/badge/platform-Linux-lightgrey)
+![License](https://img.shields.io/github/license/akiba-miku/high-concurrency-runtime)
+![Stars](https://img.shields.io/github/stars/akiba-miku/high-concurrency-runtime?style=social)
 
-A C++23 high-concurrency network runtime for Linux. The project is layered — you can use it as a full **reverse-proxy gateway**, as an **HTTP protocol core**, as a raw **TCP/event-loop framework**, or as individual **data-structure / allocator / scheduler** libraries. Every upper layer is built on top of the lower ones with no circular dependencies.
+***A C++23 asynchronous networking runtime and L7 gateway for Linux, powered by coroutines, epoll, and io_uring.***
 
+Vexo provides a unified and explicit coroutine programming model over independent Reactor and io_uring networking backends:
+
+* 🔀 **A unified asynchronous I/O contract**
+  The epoll and io_uring modules own independent event loops while exposing consistent coroutine Stream semantics. Application code depends on `Task<T>`, `AsyncStream`, and `AsyncListener` rather than backend details such as `epoll_event`, SQE, or CQE.
+
+* 🧩 **Explicit ownership and completion semantics**
+  Each Worker owns its thread, event loop, connections, and I/O operations. Operations complete in their owning execution context and coroutine continuations resume in that same context, with explicit rules for buffer lifetimes, cancellation, and asynchronous close.
+
+* 🚀 **Networking runtime and L7 gateway**
+  Vexo provides asynchronous accept, connect, read, write, and close, together with an incremental HTTP/1.1 parser, reverse proxy, upstream connection pool, load balancing, health checking, circuit breaking, and rate limiting.
+
+Although Linux is the current primary platform, the coroutine and I/O contracts can be used to add other backends such as macOS kqueue and Windows IOCP.
+
+## Quick Start
+
+```cpp
+#include <array>
+#include <cstddef>
+
+#include "vexo/coro/task.h"
+#include "vexo/io/stream_algorithms.h"
+
+vexo::coro::Task<void> Echo(vexo::io::AsyncStream auto& stream) {
+    std::array<std::byte, 4096> buffer{};
+
+    for (;;) {
+        auto read = co_await stream.ReadSome(buffer);
+        if (!read.has_value() || *read == 0) {
+            break;
+        }
+
+        auto written =
+            co_await vexo::io::WriteAll(stream, buffer.first(*read));
+
+        if (!written.has_value()) {
+            break;
+        }
+    }
+
+    co_await stream.Close();
+}
 ```
-Gateway Layer  ─── vexo::gateway
-HTTP Layer     ─── vexo::http        (depends on net)
-Net Layer      ─── vexo::net         (depends on foundation)
-Foundation     ─── vexo::base / ds / log / time / task / memory
-```
 
-## Features
-
-### Gateway (`vexo::gateway`)
-
-- **Reverse proxy** — transparent HTTP forwarding to upstream backends over persistent connections
-- **Upstream management** — `UpstreamRegistry` + `Upstream` + `UpstreamPeer`; topology is published at startup
-- **Load balancing** — Round Robin, Smooth Weighted Round Robin, Least Connections, Random, Weighted Random, IP Hash, Consistent Hash, and P2C; pluggable via `LoadBalancer` interface
-- **Active health checking** — `GatewayServer` runs periodic bounded HTTP probes per backend; automatic mark-down after N consecutive failures and mark-up after M consecutive successes
-- **Passive failure tracking** — `ProxySession` records per-request failures; backends are fenced for `fail_timeout` after `max_fails`
-- **Connection pooling** — `UpstreamConnPool` maintains persistent connections to each backend, one pool per I/O thread (no cross-thread contention)
-- **Direct routes** — register synchronous handlers directly on the gateway
-- **Startup configuration** — wire upstreams and routes in C++ or declare them in YAML
-
-### HTTP protocol core (`vexo::http`)
-
-- Incremental HTTP/1.1 parser (`HttpParser`) — consumes byte slices and supports keep-alive via `Reset()`
-- Trie router with static/dynamic segments and path parameters (`:param` syntax)
-
-### Networking (`vexo::net`)
-
-- `EventLoop`, `EpollPoller`, `Channel`, `ReactorListener`, `ReactorConnector`, `ReactorStream`, `Socket`
-- Timer queue driven by `timerfd`, indexing `vexo::time::Timer` objects through `TimerTree`
-- Level-triggered and edge-triggered epoll modes
-
-### Foundation
-
-- Asynchronous double-buffered logger
-- `MemoryPool`, `ObjectPool` allocators
-- `Scheduler`, `ThreadPool`, `WorkQueue` with cooperative cancellation
-- `vexo::ds::IntrusiveRBTree<T, kMember, kLess>` and `IntrusiveQuadHeap` — generic intrusive data structures with zero per-node heap allocation
-
-## Requirements
-
-Required:
-
-- Linux (uses `epoll`)
-- CMake ≥ 3.20
-- GCC 13+ or Clang 17+ with C++23 support
-- POSIX threads
-
-Optional:
-
-- GoogleTest — if found by CMake, `vexo_unit_tests` and `vexo_integration_tests` are built automatically
-- `liburing` — for the `io_uring_echo` example only
-- `yaml-cpp` — required for the YAML gateway config loader and example
-
-On Ubuntu / Debian:
+Build the Reactor backend:
 
 ```bash
-sudo apt update
-sudo apt install -y build-essential cmake git libyaml-cpp-dev
-```
+cmake -B build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_TESTS=ON \
+  -DBUILD_EXAMPLES=ON
 
-## Download
-
-```bash
-git clone https://github.com/akiba-miku/high-concurrency-runtime.git
-cd high-concurrency-runtime
-```
-
-## Build
-
-```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j"$(nproc)"
-```
-
-Common CMake options:
-
-| Option | Default | Description |
-|---|---:|---|
-| `BUILD_EXAMPLES` | `ON` | Build programs under `examples/` |
-| `BUILD_TESTS` | `ON` | Build tests under `tests/` |
-| `VEXO_ENABLE_GATEWAY_YAML_CONFIG` | `ON` | Build the YAML gateway config loader; requires `yaml-cpp` |
-| `CMAKE_BUILD_TYPE` | empty | Use `Debug` or `Release` for single-config generators |
-
-## Run The Gateway
-
-Start two HTTP backends on ports 9001 and 9002:
-
-```bash
-# Replace these with the HTTP services used in your deployment.
-```
-
-Start the code-driven gateway (listens on `0.0.0.0:8080`):
-
-```bash
-./build/examples/gateway/demo_gateway
-```
-
-Or start the YAML-configured gateway:
-
-```bash
-./build/examples/gateway/demo_gateway_config --check examples/gateway/gateway.yaml
-./build/examples/gateway/demo_gateway_config examples/gateway/gateway.yaml
-```
-
-Exercise the gateway:
-
-```bash
-# Direct route — served by the gateway itself
-curl -i http://127.0.0.1:8080/healthz
-
-# Proxy routes — forwarded to 9001 / 9002 in round-robin
-curl -i http://127.0.0.1:8080/api/health
-curl -i http://127.0.0.1:8080/api/kv
-```
-
-Kill one backend and watch the health checker mark it down — requests stop going to it within one health-check interval.
-
-## Use In Your Own Project
-
-See the YAML gateway walkthrough in [docs/design/zh-CN/gateway/config_tutorial.md](docs/design/zh-CN/gateway/config_tutorial.md).
-
-Add the project as a CMake subdirectory and link only the layer you need:
-
-```cmake
-add_subdirectory(high-concurrency-runtime)
-
-# Full gateway
-target_link_libraries(my_gw    PRIVATE vexo_gateway)
-
-# HTTP protocol core only
-target_link_libraries(my_http  PRIVATE vexo_http_core)
-
-# Raw TCP / event loop only
-target_link_libraries(my_tcp   PRIVATE vexo_net)
-
-# Allocators / scheduler / data structures
-target_link_libraries(my_util  PRIVATE vexo_foundation)
-```
-
-### Gateway example
-
-```cpp
-#include "vexo/gateway/gateway_server.h"
-#include "vexo/gateway/upstream.h"
-#include "vexo/gateway/upstream_peer.h"
-#include "vexo/gateway/upstream_registry.h"
-#include "vexo/net/event_loop.h"
-#include "vexo/net/inet_address.h"
-
-int main() {
-    vexo::gateway::UpstreamRegistry reg;
-
-    auto us = std::make_shared<vexo::gateway::Upstream>(
-        vexo::gateway::UpstreamConfig{.name = "backend"});
-
-    us->AddPeer(std::make_shared<vexo::gateway::UpstreamPeer>(
-        vexo::gateway::UpstreamPeerConfig{.name = "127.0.0.1:9001",
-                                              .host = "127.0.0.1", .port = 9001}));
-    us->AddPeer(std::make_shared<vexo::gateway::UpstreamPeer>(
-        vexo::gateway::UpstreamPeerConfig{.name = "127.0.0.1:9002",
-                                              .host = "127.0.0.1", .port = 9002}));
-    reg.Add(us);
-
-    vexo::net::EventLoop loop;
-    vexo::gateway::GatewayServer gw(&loop, vexo::net::InetAddress(8080),
-                                       "gw", reg);
-    gw.set_thread_num(4);
-
-    // Direct route
-    gw.Get("/healthz", [](const vexo::http::HttpRequest&,
-                          vexo::http::HttpResponse& resp) {
-        resp.set_content_type("application/json");
-        resp.set_body("{\"status\":\"ok\"}");
-    });
-
-    // Proxy routes
-    gw.AddProxyRoute("/api/", "backend", "round_robin");
-
-    // Active health check
-    gw.EnableHealthCheck({.path = "/api/health", .interval_sec = 10.0});
-
-    gw.Start();
-    loop.Loop();
-}
-```
-
-### Task scheduler example
-
-```cpp
-#include "vexo/task/scheduler.h"
-#include <iostream>
-
-int main() {
-    vexo::task::Scheduler scheduler(4);
-    auto handle = scheduler.Submit([] { std::cout << "hello\n"; });
-    handle.Wait();
-}
-```
-
-Library targets:
-
-| Target | Provides |
-|---|---|
-| `vexo_gateway` | Gateway, proxy, load balancers, active health loop |
-| `vexo_http_core` | HTTP parser, Trie router, request/response |
-| `vexo_net` | Reactor EventLoop, Channel, Poller, streams, Socket, TimerQueue |
-| `vexo_task` | Scheduler, ThreadPool, Task, WorkQueue |
-| `vexo_foundation` | Logger, Timestamp, MemoryPool, ObjectPool, `vexo::ds` |
-
-## Run Tests
-
-```bash
 ctest --test-dir build --output-on-failure
 ```
 
-Run one test:
+Build with the io_uring backend enabled:
 
 ```bash
-ctest --test-dir build -R rbtree_validator --output-on-failure
-```
+# Make sure liburing is installed first.
 
-Notable tests:
+cmake -B build-uring \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_TESTS=ON \
+  -DBUILD_EXAMPLES=ON \
+  -DVEXO_ENABLE_URING=ON
 
-| Binary | What it tests |
-|---|---|
-| `rbtree_validator` | 10 M ops vs `std::set` oracle + `CheckRBInvariants()` every step |
-| `quad_heap_test` | intrusive 4-ary heap insert, erase, duplicate insert, cross-heap safety, and ordered `PopWhile()` |
-| `http_smoke_test` | HTTP parsing and routing (no GTest required) |
-| `io_buffer_smoke_test` | Backend-neutral I/O buffer read / write |
-| `vexo_unit_tests` | GTest suite: logger, memory pool, scheduler, current net utilities |
-| `vexo_integration_tests` | GTest suite: EventLoop and current HTTP/gateway integration |
-
-Notes:
-
-- Smoke tests build without GoogleTest
-- If CMake finds GoogleTest, it also builds `vexo_unit_tests` and `vexo_integration_tests`
-
-## Repository Layout
-
-```text
-.
-├── include/vexo/
-│   ├── base/        # CurrentThread, checks, panic, singleton
-│   ├── ds/          # IntrusiveRBTree, IntrusiveQuadHeap, MurmurHash3
-│   ├── gateway/     # GatewayServer, Upstream, LoadBalancer, active health, ProxyPass
-│   ├── http/        # HttpParser, Router, HttpRequest, HttpResponse
-│   ├── log/         # Logger, AsyncLogger
-│   ├── memory/      # MemoryPool, ObjectPool
-│   ├── net/         # EventLoop, Reactor streams, Channel, Poller, TimerQueue
-│   ├── task/        # Scheduler, ThreadPool, Task, WorkQueue
-│   ├── time/        # Timestamp, Timer, TimerId, TimerTree
-│   └── trace/       # TraceId, LifecycleTrace
-├── src/             # Implementations (mirrors include layout)
-├── examples/        # gateway, Reactor/io_uring, and foundation demos
-├── tests/           # Unit, integration, smoke tests, oracle validator
-└── docs/            # Design notes
+cmake --build build-uring -j"$(nproc)"
+ctest --test-dir build-uring --output-on-failure
 ```
 
 ## Architecture
 
 ```text
-Gateway Layer   vexo::gateway
-  GatewayServer, UpstreamRegistry, Upstream, UpstreamPeer
-  LoadBalancer (RoundRobin / WeightedRoundRobin / LeastConn / Random /
-  WeightedRandom / IPHash / ConsistentHash / P2C)
-  active health loop, ProxyPass, UpstreamStreamPool
-
-HTTP Core       vexo::http
-  HttpParser, Router (Trie), HttpRequest, HttpResponse
-
-Net Layer       vexo::net
-  ReactorListener, ReactorConnector, ReactorStream, EventLoop
-  EpollPoller, Channel, Socket, TimerQueue (timerfd-backed)
-
-Foundation      vexo::base / ds / log / time / task / memory
-  AsyncLogger, Scheduler, ThreadPool
-  MemoryPool, ObjectPool
-  vexo::ds::IntrusiveRBTree<T, kMember, kLess>, IntrusiveQuadHeap
-  Timestamp, Timer, TimerTree, Counter, Gauge, Histogram
+HTTP / Gateway / Custom Session
+               |
+               v
+ Task<T> + Scheduler + AsyncStream
+               |
+       Submit -> Suspend
+       Complete -> Resume
+               |
+        +------+------+
+        |             |
+        v             v
+ Reactor / epoll   luring / io_uring
+   vexo::net         vexo::luring
 ```
 
-Typical gateway request flow:
+The two backends do not share an event loop, and their internal state machines do not need to be identical. They only need to satisfy the same business-observable asynchronous I/O contract.
+
+The io_uring server uses a thread-per-ring topology:
 
 ```text
-kernel
-  → ReactorListener::Accept()
-  → ReactorStream read operation
-  → HttpParser::Feed()                (incremental state machine)
-  → GatewayServer::MatchRoute()
-      ├── Direct  → synchronous Handler → HttpResponse
-      ├── Proxy   → LoadBalancer::Select() → UpstreamStreamPool
-      │             → UpstreamConnector / AsyncStream
-  → downstream ReactorStream write operation
+LUringServer
+  |
+  +-- Worker 0 -> Thread 0 -> LUringLoop 0 -> Ring 0
+  +-- Worker 1 -> Thread 1 -> LUringLoop 1 -> Ring 1
+  `-- Worker N -> Thread N -> LUringLoop N -> Ring N
 ```
 
-Typical HTTP request flow:
+Connections, I/O operations, and coroutine continuations remain owned by the Worker and Ring that created them; they do not migrate between Rings during execution.
 
-```text
-kernel
-  → ReactorListener::Accept()
-  → ReactorStream read operation
-  → HttpParser::Feed()
-  → Router::Match()
-  → user handler
-  → HttpResponse::ToString()
-  → ReactorStream write operation
-```
+## Performance Benchmarks
 
-## License
+Vexo includes reproducible `wrk` benchmarks covering:
 
-This project is licensed under the [MIT License](LICENSE).
+* Reactor and io_uring backends
+* raw liburing
+* standalone Asio
+* Monoio
+* Compio
+* the libaio poll compatibility path
+* an Nginx reference configuration
+
+Results depend strongly on the workload and must not be interpreted as a universal ranking of networking frameworks. The complete seven-target fixed-HTTP comparison, including charts, summary data, per-round data, latency anomalies, CPU usage, memory usage, and error counts, is available in the [unified network-library benchmark report](docs/benchmark/network-libraries.md). Other benchmark scripts, raw results, and optimization records are under [`docs/benchmark`](docs/benchmark/).
+
+## Documentation
+
+Most documentation is still being written and may lag behind the current implementation. Treat it as design and development reference material.
+
+* **[Networking architecture](docs/design/zh-CN/network/index.md)**: runtime layering, backend boundaries, and ownership models.
+* **Coroutine state-machine formalization**: planned documentation under the design tree.
+* **[AsyncStream semantics](docs/design/zh-CN/network/async-stream-contract.md)**: read, write, close, cancellation, and buffer-lifetime semantics.
+* **[Gateway architecture](docs/design/zh-CN/gateway/index.md)**: HTTP handling, reverse proxying, and upstream management.
+* **[Data structures](docs/design/zh-CN/datastructure/index.md)**: modern C++ intrusive data structures, intrusive red-black trees, intrusive lists, MPSC queues, and their use in the project.
+* **[Performance benchmarks](docs/benchmark/network-libraries.md)**: the unified network-library report; additional methods, raw results, and optimization records are in [`docs/benchmark`](docs/benchmark/).
+* **[Examples](examples/)**: Reactor, io_uring, and Gateway examples.
+* **[Tests](tests/)**: coroutine, networking, lifecycle, and gateway validation.
+
+## Current Status
+
+Vexo is still an experimental networking runtime and is not yet a production-ready replacement for mature networking frameworks.
+
+Current work includes:
+
+* Formal state-machine proofs, invariant tests, and concurrency validation for additional backends.
+* Modern liburing networking options and io_uring optimizations.
+* More realistic workload benchmarks and bottleneck analysis.
+
+## Contributing
+
+* Please open an [Issue](https://github.com/akiba-miku/high-concurrency-runtime/issues) for bugs, questions, or feature requests.
+* Pull Requests are welcome: [open a PR](https://github.com/akiba-miku/high-concurrency-runtime/pulls).
+* This project is released under the [MIT License](LICENSE).

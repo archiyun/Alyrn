@@ -1,318 +1,156 @@
-# high-concurrency-runtime
+# Vexo⚡
 
-[English](README.md) | **中文** | [文档站](https://akiba-miku.github.io/high-concurrency-runtime/)
+![C++](https://img.shields.io/badge/C++-23-blue)
+![Platform](https://img.shields.io/badge/platform-Linux-lightgrey)
+![License](https://img.shields.io/github/license/akiba-miku/high-concurrency-runtime)
+![Stars](https://img.shields.io/github/stars/akiba-miku/high-concurrency-runtime?style=social)
 
-一个 C++23 高并发 Linux 网络运行时。项目采用分层设计——你可以把它当作完整的**反向代理网关**使用，也可以只用 **HTTP 协议核心**层、裸 **TCP/事件循环**层，或者单独使用其中的**数据结构 / 内存分配器 / 调度器**库。上层依赖下层，无循环依赖。
+***面向 Linux 的 C++23 异步网络运行时与 L7 网关，由协程、epoll 与 io_uring 驱动***
 
+Vexo 致力于在相互独立的 Reactor 与 io_uring 网络后端之上，提供统一、直观且高性能的协程编程模型：
+
+* 🔀 **统一的异步 I/O 契约**
+  epoll 与 io_uring 模块拥有各自独立的事件循环，但对外提供一致的协程 Stream 语义。业务代码依赖 `Task<T>`、`AsyncStream` 与 `AsyncListener`，而不需要接触 `epoll_event`、SQE 或 CQE 等后端细节。
+
+* 🧩 **明确的所有权与完成语义**
+  每个 Worker 独占自己的线程、事件循环、连接与 I/O 操作。操作在所属执行上下文中完成，协程 continuation 也在相同上下文中恢复，同时明确约束 buffer 生命周期、取消行为与异步关闭流程。
+
+* 🚀 **网络运行时与 L7 网关**
+  Vexo 提供异步 accept、connect、read、write 与 close，并实现了增量式 HTTP/1.1 解析器、反向代理、上游连接池、负载均衡、健康检查、熔断与限流等能力。
+
+事实上, 它不仅限于Linux, 你可以遵守协程/IO抽象的契约机制, 编写支持MacOS(kqueue), Windows(IOCP)等其它OS后端.
+
+## 快速开始
+
+```cpp
+#include <array>
+#include <cstddef>
+
+#include "vexo/coro/task.h"
+#include "vexo/io/stream_algorithms.h"
+
+vexo::coro::Task<void> Echo(vexo::io::AsyncStream auto& stream) {
+    std::array<std::byte, 4096> buffer{};
+
+    for (;;) {
+        auto read = co_await stream.ReadSome(buffer);
+        if (!read.has_value() || *read == 0) {
+            break;
+        }
+
+        auto written =
+            co_await vexo::io::WriteAll(stream, buffer.first(*read));
+
+        if (!written.has_value()) {
+            break;
+        }
+    }
+
+    co_await stream.Close();
+}
 ```
-Gateway Layer  ─── vexo::gateway
-HTTP Layer     ─── vexo::http        (依赖 net)
-Net Layer      ─── vexo::net         (依赖 foundation)
-Foundation     ─── vexo::base / ds / log / time / task / memory
-```
 
-## 功能概览
-
-### 网关层（`vexo::gateway`）
-
-- **反向代理** — 将 HTTP 请求透明转发到上游 backend，底层使用持久连接
-- **上游管理** — `UpstreamRegistry` + `Upstream` + `UpstreamPeer`；拓扑在启动阶段构建并发布
-- **负载均衡** — 轮询、平滑加权轮询、最少连接、随机、加权随机、IP 哈希、一致性哈希、P2C；通过 `LoadBalancer` 接口可插拔
-- **主动健康检查** — `GatewayServer` 执行有界的定时 HTTP 探针；连续失败 N 次摘除 backend，连续成功 M 次恢复
-- **被动故障追踪** — `ProxySession` 记录每次请求的失败；达到 `max_fails` 后隔离 `fail_timeout`
-- **连接池** — `UpstreamConnPool` 对每个 backend 维护持久连接，每个 I/O 线程独立一个池，无跨线程竞争
-- **直接路由** — 在网关上直接注册同步 handler
-- **启动期配置** — 可在 C++ 代码中注册上游和路由，也可用 YAML 文件声明网关配置
-
-### HTTP 服务层（`vexo::http`）
-
-- `epoll` 事件驱动，One-Loop-Per-Thread I/O 线程模型
-- 增量式 HTTP/1.1 解析器（`HttpParser`）——消费字节片段，keep-alive 通过 `Reset()` 复用解析状态
-- 前缀树路由，支持静态段和动态路径参数（`:param` 语法）
-
-### 网络层（`vexo::net`）
-
-- `EventLoop`、`EpollPoller`、`Channel`、`ReactorListener`、`ReactorConnector`、`ReactorStream`、`Socket`
-- 定时器队列由 `timerfd` 驱动，并通过 `TimerTree` 索引 `vexo::time::Timer`
-- 支持水平触发和边缘触发两种 epoll 模式
-
-### 基础设施
-
-- 异步双缓冲日志
-- `MemoryPool`、`ObjectPool` 内存分配器
-- `Scheduler`、`ThreadPool`、`WorkQueue`，支持协作式任务取消
-- `vexo::ds::IntrusiveRBTree<T, kMember, kLess>` 和 `IntrusiveQuadHeap` — 泛型侵入式数据结构，节点零堆分配
-- `Counter`、`Gauge`、`Histogram`、`Registry` 指标接口
-
-## 环境要求
-
-基础依赖：
-
-- Linux（使用 `epoll`）
-- CMake ≥ 3.20
-- GCC 13+ 或 Clang 17+，支持 C++23
-- POSIX threads
-
-可选依赖：
-
-- GoogleTest — 若 CMake 检测到则自动构建 `vexo_unit_tests` 和 `vexo_integration_tests`
-- `liburing` — 仅 `io_uring_echo` 示例需要
-- `yaml-cpp` — 构建 YAML 配置化网关示例和 `vexo_gateway_config` 时需要
-
-Ubuntu / Debian 安装常用依赖：
+构建 Reactor 后端：
 
 ```bash
-sudo apt update
-sudo apt install -y build-essential cmake git libyaml-cpp-dev
-```
+cmake -B build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_TESTS=ON \
+  -DBUILD_EXAMPLES=ON
 
-## 下载项目
-
-```bash
-git clone https://github.com/akiba-miku/high-concurrency-runtime.git
-cd high-concurrency-runtime
-```
-
-## 快速构建
-
-```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j"$(nproc)"
-```
-
-常用 CMake 选项：
-
-| 选项 | 默认值 | 说明 |
-|---|---:|---|
-| `BUILD_EXAMPLES` | `ON` | 构建 `examples/` 下的示例程序 |
-| `BUILD_TESTS` | `ON` | 构建 `tests/` 下的测试 |
-| `VEXO_ENABLE_GATEWAY_YAML_CONFIG` | `ON` | 构建 YAML 配置加载器；需要 `yaml-cpp` |
-| `CMAKE_BUILD_TYPE` | 空 | 单配置生成器下建议设为 `Debug` 或 `Release` |
-
-## 运行网关示例
-
-先启动两个上游 HTTP 服务模拟 backend：
-
-```bash
-# 替换为实际部署中的两个 HTTP 上游服务（9001 / 9002）
-```
-
-启动代码驱动网关（监听 `0.0.0.0:8080`）：
-
-```bash
-./build/examples/gateway/demo_gateway
-```
-
-也可以启动 YAML 配置驱动网关：
-
-```bash
-./build/examples/gateway/demo_gateway_config --check examples/gateway/gateway.yaml
-./build/examples/gateway/demo_gateway_config examples/gateway/gateway.yaml
-```
-
-验证各路由：
-
-```bash
-# 直接路由——由网关自己处理
-curl -i http://127.0.0.1:8080/healthz
-
-# 代理路由——轮询转发到 9001 / 9002
-curl -i http://127.0.0.1:8080/api/health
-curl -i http://127.0.0.1:8080/api/kv
-```
-
-关掉其中一个 backend，观察健康检查在一个探测周期内将其摘除，请求不再转发给它。
-
-## 在自己的程序中使用
-
-配置化网关的完整教程见 [docs/design/zh-CN/gateway/config_tutorial.md](docs/design/zh-CN/gateway/config_tutorial.md)。
-
-将本项目作为 CMake 子目录引入，按需链接对应层级：
-
-```cmake
-add_subdirectory(high-concurrency-runtime)
-
-# 完整网关
-target_link_libraries(my_gw    PRIVATE vexo_gateway)
-
-# 只要 HTTP 协议核心
-target_link_libraries(my_http  PRIVATE vexo_http_core)
-
-# 只要 TCP 事件循环
-target_link_libraries(my_tcp   PRIVATE vexo_net)
-
-# 只要分配器 / 调度器 / 数据结构
-target_link_libraries(my_util  PRIVATE vexo_foundation)
-```
-
-### 网关示例
-
-```cpp
-#include "vexo/gateway/gateway_server.h"
-#include "vexo/gateway/upstream.h"
-#include "vexo/gateway/upstream_peer.h"
-#include "vexo/gateway/upstream_registry.h"
-#include "vexo/net/event_loop.h"
-#include "vexo/net/inet_address.h"
-
-int main() {
-    vexo::gateway::UpstreamRegistry reg;
-
-    auto us = std::make_shared<vexo::gateway::Upstream>(
-        vexo::gateway::UpstreamConfig{.name = "backend"});
-
-    us->AddPeer(std::make_shared<vexo::gateway::UpstreamPeer>(
-        vexo::gateway::UpstreamPeerConfig{.name = "127.0.0.1:9001",
-                                              .host = "127.0.0.1", .port = 9001}));
-    us->AddPeer(std::make_shared<vexo::gateway::UpstreamPeer>(
-        vexo::gateway::UpstreamPeerConfig{.name = "127.0.0.1:9002",
-                                              .host = "127.0.0.1", .port = 9002}));
-    reg.Add(us);
-
-    vexo::net::EventLoop loop;
-    vexo::gateway::GatewayServer gw(&loop, vexo::net::InetAddress(8080),
-                                       "gw", reg);
-    gw.set_thread_num(4);
-
-    // 直接路由——网关自己响应
-    gw.Get("/healthz", [](const vexo::http::HttpRequest&,
-                          vexo::http::HttpResponse& resp) {
-        resp.set_content_type("application/json");
-        resp.set_body("{\"status\":\"ok\"}");
-    });
-
-    // 代理路由——转发到 backend
-    gw.AddProxyRoute("/api/", "backend", "round_robin");
-
-    // 主动健康检查
-    gw.EnableHealthCheck({.path = "/api/health", .interval_sec = 10.0});
-
-    gw.Start();
-    loop.Loop();
-}
-```
-
-### 任务调度示例
-
-```cpp
-#include "vexo/task/scheduler.h"
-#include <iostream>
-
-int main() {
-    vexo::task::Scheduler scheduler(4);
-    auto handle = scheduler.Submit([] { std::cout << "hello\n"; });
-    handle.Wait();
-}
-```
-
-库目标关系：
-
-| 目标 | 提供 |
-|---|---|
-| `vexo_gateway` | 网关、反向代理、负载均衡器、主动健康循环 |
-| `vexo_http_core` | HTTP 解析器、Trie 路由、请求/响应 |
-| `vexo_net` | Reactor EventLoop、Channel、Poller、流、Socket、TimerQueue |
-| `vexo_task` | Scheduler、ThreadPool、Task、WorkQueue |
-| `vexo_foundation` | 日志、时间戳、MemoryPool、ObjectPool、`vexo::ds`、指标 |
-
-## 运行测试
-
-```bash
 ctest --test-dir build --output-on-failure
 ```
 
-只运行某个测试：
+构建并启用 io_uring 后端：
 
 ```bash
-ctest --test-dir build -R rbtree_validator --output-on-failure
+# 请确保系统已经安装 liburing。
+
+cmake -B build-uring \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_TESTS=ON \
+  -DBUILD_EXAMPLES=ON \
+  -DVEXO_ENABLE_URING=ON
+
+cmake --build build-uring -j"$(nproc)"
+ctest --test-dir build-uring --output-on-failure
 ```
 
-主要测试：
-
-| 二进制 | 测试内容 |
-|---|---|
-| `rbtree_validator` | 1000 万次操作对比 `std::set` 对数器 + 每步 `CheckRBInvariants()` |
-| `http_smoke_test` | HTTP 解析与路由（不依赖 GTest） |
-| `io_buffer_smoke_test` | 与后端无关的 I/O buffer 读写 |
-| `vexo_unit_tests` | GTest 套件：logger、内存池、调度器、当前 net 工具 |
-| `vexo_integration_tests` | GTest 套件：EventLoop 与当前 HTTP/gateway 集成 |
-
-说明：
-
-- smoke 测试不依赖 GTest
-- 如果 CMake 找到 GTest，会额外构建 `vexo_unit_tests` 和 `vexo_integration_tests`
-
-## 目录结构
+## 架构
 
 ```text
-.
-├── include/vexo/
-│   ├── base/        # CurrentThread、检查、panic、singleton
-│   ├── ds/          # IntrusiveRBTree、IntrusiveQuadHeap、MurmurHash3
-│   ├── gateway/     # GatewayServer、Upstream、LoadBalancer、主动健康、ProxyPass
-│   ├── http/        # HttpParser、Router、HttpRequest、HttpResponse
-│   ├── log/         # Logger、AsyncLogger
-│   ├── memory/      # MemoryPool、ObjectPool
-│   ├── net/         # EventLoop、Reactor 流、Channel、Poller、TimerQueue
-│   ├── task/        # Scheduler、ThreadPool、Task、WorkQueue
-│   ├── time/        # Timestamp、Timer、TimerId、TimerTree
-│   └── trace/       # TraceId、LifecycleTrace
-├── src/             # 各模块实现（目录结构与 include 对称）
-├── examples/        # gateway、Reactor/io_uring、基础设施示例
-├── tests/           # 单元测试、集成测试、smoke 测试、对数器验证
-└── docs/            # 设计文档
+HTTP / Gateway / 自定义 Session
+               |
+               v
+ Task<T> + Scheduler + AsyncStream
+               |
+       Submit -> Suspend
+       Complete -> Resume
+               |
+        +------+------+
+        |             |
+        v             v
+ Reactor / epoll   luring / io_uring
+   vexo::net         vexo::luring
 ```
 
-## 架构分层
+两个后端不共享事件循环，内部状态机也不需要完全一致。它们只需要遵守相同的业务可观察异步 I/O 契约。
+
+io_uring Server 采用 thread-per-ring 模型：
 
 ```text
-Gateway Layer   vexo::gateway
-  GatewayServer、UpstreamRegistry、Upstream、UpstreamPeer
-  LoadBalancer（RoundRobin / WeightedRoundRobin / LeastConn / Random /
-  WeightedRandom / IPHash / ConsistentHash / P2C）
-  主动健康循环、ProxyPass、UpstreamStreamPool
-
-HTTP Core       vexo::http
-  HttpParser、Router（Trie）、HttpRequest、HttpResponse
-
-Net Layer       vexo::net
-  ReactorListener、ReactorConnector、ReactorStream、EventLoop
-  EpollPoller、Channel、Socket、TimerQueue（基于 timerfd）
-
-Foundation      vexo::base / ds / log / time / task / memory
-  AsyncLogger、Scheduler、ThreadPool
-  MemoryPool、ObjectPool
-  vexo::ds::IntrusiveRBTree<T, kMember, kLess>、IntrusiveQuadHeap
-  Timestamp、Timer、TimerTree、Counter、Gauge、Histogram
+LUringServer
+  |
+  +-- Worker 0 -> Thread 0 -> LUringLoop 0 -> Ring 0
+  +-- Worker 1 -> Thread 1 -> LUringLoop 1 -> Ring 1
+  `-- Worker N -> Thread N -> LUringLoop N -> Ring N
 ```
 
-典型网关请求路径：
+连接、I/O 操作与协程 continuation 始终归属于创建它们的 Worker 和 Ring，不会在运行过程中跨 Ring 迁移。
 
-```text
-kernel
-  → ReactorListener::Accept()
-  → ReactorStream 读操作
-  → HttpParser::Feed()                 增量状态机解析
-  → GatewayServer::MatchRoute()
-      ├── Direct  → 同步 Handler → HttpResponse
-      ├── Proxy   → LoadBalancer::Select() → UpstreamStreamPool
-      │             → UpstreamConnector / AsyncStream
-  → 下游 ReactorStream 写操作
-```
+## 性能测试
 
-典型 HTTP 请求路径：
+Vexo 提供了可复现的 `wrk` 性能测试，用于比较：
 
-```text
-kernel
-  → ReactorListener::Accept()
-  → ReactorStream 读操作
-  → HttpParser::Feed()
-  → Router::Match()
-  → 用户 handler
-  → HttpResponse::ToString()
-  → ReactorStream 写操作
-```
+* Reactor 与 io_uring 后端
+* raw liburing
+* standalone Asio
+* Monoio
+* Compio
+* libaio poll 兼容路径
+* Nginx 参考配置
 
-## License
+性能测试结果与具体 workload 密切相关，不应被解释为网络框架的综合排名。测试报告会完整保留实验拓扑、原始轮次、延迟异常、CPU 使用率、内存占用与错误数量。
 
-本项目使用 [MIT License](LICENSE)。
+完整的七个网络库统一公平压测报告（包含图表、汇总数据和每轮关键数据）请参阅
+[网络库统一公平压测](docs/benchmark/network-libraries.md)。其它测试脚本、原始结果和专项优化记录请参阅 [`docs/benchmark`](docs/benchmark/)。
+
+## 文档
+
+目前多数内容仍然在编写中, 且随版本更新内容会出现迟滞, 仅供参考.
+
+* **[网络架构](docs/design/zh-CN/network/index.md)：** 运行时分层、后端边界与所有权模型。
+* **[协程六元组状态机形式化建模](docs/design/zh-CN/theory/index.md):**
+* **[AsyncStream 语义契约](docs/design/zh-CN/network/async-stream-contract.md)：** read、write、close、取消与 buffer 生命周期语义。
+* **[网关架构](docs/design/zh-CN/gateway/index.md)：** HTTP 处理、反向代理与上游管理。
+* **[数据结构](docs/design/zh-CN/datastructure/index.md):** C++现代风格的侵入式数据结构, 侵入式红黑树, 侵入式链表, MSPC队列的设计与实现, 以及它们在项目各处的应用.
+* **[性能测试](docs/benchmark/network-libraries.md)：** Reactor、Vexo luring、raw liburing、Asio、Monoio、Compio 与 libaio 的统一网络压测报告；其它测试方法、原始结果与性能优化记录见 [`docs/benchmark`](docs/benchmark/)。
+* **[示例](examples/)：** Reactor、io_uring 与 Gateway 使用示例。
+* **[测试](tests/)：** 协程、网络、生命周期与网关行为验证。
+
+## 当前状态
+
+Vexo 目前仍是一个实验性网络运行时，尚不适合作为成熟网络框架的生产级替代方案。
+
+当前正在推进的方向包括：
+
+* 给出状态机的形式化证明, 并编写不变量测试和并发检验接入的后端.
+* io_uring, 提供liburing库最新版本的网络选项配置和现代优化.
+* 更贴近实际环境的数据压测和瓶颈分析.
+
+## 参与项目
+
+* 遇到问题、发现 Bug 或希望提出新功能，请创建 [Issue](https://github.com/akiba-miku/high-concurrency-runtime/issues)。
+* 欢迎提交 [Pull Request](https://github.com/akiba-miku/high-concurrency-runtime/pulls)。
+* 本项目使用 [MIT License](LICENSE)。
