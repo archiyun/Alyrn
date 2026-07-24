@@ -609,8 +609,7 @@ EventLoop* ReactorStream::PrepareMove(ReactorStream& other) noexcept {
              "ReactorStream cannot move with a pending write operation");
 
   other.DetachChannel();
-  EventLoop* loop = other.loop_;
-  other.loop_ = nullptr;
+  EventLoop* loop = std::exchange(other.loop_, nullptr);
   return loop;
 }
 

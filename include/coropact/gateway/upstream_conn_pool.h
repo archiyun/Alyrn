@@ -4,16 +4,21 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
 #include <list>
+#include <memory>
 #include <optional>
-#include <vector>
+#include <utility>
 
+#include "coropact/cache/intrusive_lru.h"
+#include "coropact/ds/intrusive_list.h"
 #include "coropact/gateway/upstream_peer.h"
 #include "coropact/io/async_stream.h"
+#include "coropact/utils/macros.h"
 
 namespace coropact::gateway {
 
@@ -55,10 +60,71 @@ struct UpstreamStreamPoolStats {
 // AsyncStream objects and keys them by stable UpstreamPeer address.
 template <coropact::io::AsyncStream Stream>
 class UpstreamStreamPool {
+private:
+  struct GlobalIdleTag {};
+  struct PeerIdleTag {};
+
+  struct PeerQueue;
+
+  struct IdleEntry
+      : coropact::ds::ListNode<IdleEntry, GlobalIdleTag>,
+        coropact::ds::ListNode<IdleEntry, PeerIdleTag> {
+    IdleEntry(Stream value,
+              const UpstreamPeer* upstream_peer,
+              PeerQueue* queue,
+              std::chrono::steady_clock::time_point idle_time)
+        : stream(std::move(value)),
+          peer(upstream_peer),
+          owner_queue(queue),
+          idle_since(idle_time) {}
+
+    Stream stream;
+    const UpstreamPeer* peer;
+    PeerQueue* owner_queue;
+    std::chrono::steady_clock::time_point idle_since;
+  };
+
+  using PeerIdleList = coropact::ds::IntrusiveList<IdleEntry, PeerIdleTag>;
+
+  struct PeerQueue {
+    explicit PeerQueue(const UpstreamPeer* upstream_peer) : peer(upstream_peer) {}
+
+    const UpstreamPeer* peer;
+    PeerIdleList idle;
+  };
+
+  using GlobalIdleLRU = coropact::cache::IntrusiveLRU<IdleEntry, GlobalIdleTag>;
+
 public:
   using StreamHolder = std::optional<Stream>;
 
   explicit UpstreamStreamPool(PoolConfig cfg = {}) : config_(cfg) {}
+
+  COROPACT_DELETE_COPY(UpstreamStreamPool);
+
+  UpstreamStreamPool(UpstreamStreamPool&& other) noexcept
+      : config_(other.config_),
+        stats_(other.stats_),
+        idle_total_(other.idle_total_),
+        peer_queues_(std::move(other.peer_queues_)),
+        global_idle_(std::move(other.global_idle_)) {
+    other.idle_total_ = 0;
+  }
+
+  UpstreamStreamPool& operator=(UpstreamStreamPool&& other) noexcept {
+    if (this != &other) {
+      ClearEntries();
+      config_ = other.config_;
+      stats_ = other.stats_;
+      idle_total_ = other.idle_total_;
+      peer_queues_ = std::move(other.peer_queues_);
+      global_idle_ = std::move(other.global_idle_);
+      other.idle_total_ = 0;
+    }
+    return *this;
+  }
+
+  ~UpstreamStreamPool() { ClearEntries(); }
 
   StreamHolder Acquire(const UpstreamPeer* peer) {
     if (config_.collect_stats) {
@@ -72,24 +138,28 @@ public:
       return std::nullopt;
     }
 
-    auto& idle = it->idle;
-    while (!idle.empty()) {
-      auto entry = idle.back();
-      idle.pop_back();
-      auto stream = std::move(entry->stream);
-      idle_entries_.erase(entry);
-      --idle_total_;
+    PeerQueue* queue = &*it;
+    auto* entry = queue->idle.PopBack();
+    if (entry == nullptr) {
+      peer_queues_.erase(it);
       if (config_.collect_stats) {
-        ++stats_.acquire_hit_count;
+        ++stats_.acquire_miss_count;
       }
-      return stream;
+      return std::nullopt;
     }
 
-    peer_queues_.erase(it);
-    if (config_.collect_stats) {
-      ++stats_.acquire_miss_count;
+    const bool erased = global_idle_.Erase(entry);
+    assert(erased);
+    --idle_total_;
+    StreamHolder stream{std::move(entry->stream)};
+    delete entry;
+    if (queue->idle.empty()) {
+      peer_queues_.erase(it);
     }
-    return std::nullopt;
+    if (config_.collect_stats) {
+      ++stats_.acquire_hit_count;
+    }
+    return stream;
   }
 
   void Release(const UpstreamPeer* peer, StreamHolder stream) {
@@ -116,28 +186,27 @@ public:
       return;
     }
 
-    // EvictOldest may remove the last entry from this peer and invalidate it.
     it = FindPeer(peer);
     if (it == peer_queues_.end()) {
-      peer_queues_.push_back(PeerQueue{.peer = peer});
-      it = std::prev(peer_queues_.end());
-      if (config_.max_idle_per_peer > 0) {
-        it->idle.reserve(static_cast<std::size_t>(config_.max_idle_per_peer));
-      }
+      it = peer_queues_.emplace(peer_queues_.end(), peer);
     }
 
-    auto& idle = it->idle;
-    if (config_.max_idle_per_peer > 0 &&
-        static_cast<int>(idle.size()) >= config_.max_idle_per_peer) {
+    auto owned = std::make_unique<IdleEntry>(std::move(*stream), peer, &*it,
+                                             std::chrono::steady_clock::now());
+    auto* entry = owned.get();
+    if (!global_idle_.PushMRU(entry)) {
       if (config_.collect_stats) {
         ++stats_.release_drop_count;
       }
       return;
     }
-    idle_entries_.push_back(IdleEntry{.stream = std::move(*stream),
-                                      .idle_since = std::chrono::steady_clock::now(),
-                                      .peer = peer});
-    idle.push_back(std::prev(idle_entries_.end()));
+    const bool linked_to_peer = it->idle.PushBack(entry);
+    assert(linked_to_peer);
+    if (!linked_to_peer) {
+      global_idle_.Erase(entry);
+      return;
+    }
+    owned.release();
     ++idle_total_;
     if (config_.collect_stats) {
       ++stats_.release_count;
@@ -147,7 +216,8 @@ public:
   void EvictStale() {
     const auto now = std::chrono::steady_clock::now();
     const auto timeout = std::chrono::duration<double>(config_.keepalive_timeout_sec);
-    while (!idle_entries_.empty() && now - idle_entries_.front().idle_since >= timeout) {
+    while (auto* oldest = global_idle_.Oldest()) {
+      if (now - oldest->idle_since < timeout) break;
       if (!EvictOldest()) break;
     }
   }
@@ -200,51 +270,53 @@ private:
   }
 
   bool EvictOldest() {
-    if (idle_entries_.empty()) return false;
+    auto* oldest = global_idle_.PopLRU();
+    if (oldest == nullptr) return false;
 
-    auto oldest = idle_entries_.begin();
-    auto peer = FindPeer(oldest->peer);
-    if (peer == peer_queues_.end()) return false;
-
-    auto peer_entry = std::find(peer->idle.begin(), peer->idle.end(), oldest);
-    if (peer_entry == peer->idle.end()) return false;
-    peer->idle.erase(peer_entry);
-    idle_entries_.erase(oldest);
+    PeerQueue* queue = oldest->owner_queue;
+    const bool erased = queue->idle.Erase(oldest);
+    assert(erased);
     --idle_total_;
-    if (peer->idle.empty()) {
-      peer_queues_.erase(peer);
-    }
+    delete oldest;
+    EraseEmptyPeerQueue(queue);
     return true;
   }
-
-  struct IdleEntry {
-    Stream stream;
-    std::chrono::steady_clock::time_point idle_since;
-    const UpstreamPeer* peer;
-  };
-
-  using IdleList = std::list<IdleEntry>;
-  using IdleIterator = IdleList::iterator;
-
-  struct PeerQueue {
-    const UpstreamPeer* peer;
-    std::vector<IdleIterator> idle;
-  };
 
   auto FindPeer(const UpstreamPeer* peer) {
     return std::find_if(peer_queues_.begin(), peer_queues_.end(),
                         [peer](const PeerQueue& entry) { return entry.peer == peer; });
   }
 
+  void EraseEmptyPeerQueue(PeerQueue* queue) {
+    if (queue == nullptr || !queue->idle.empty()) return;
+    auto it = std::find_if(peer_queues_.begin(), peer_queues_.end(),
+                           [queue](const PeerQueue& entry) { return &entry == queue; });
+    if (it != peer_queues_.end()) {
+      peer_queues_.erase(it);
+    }
+  }
+
+  void ClearEntries() noexcept {
+    while (auto* entry = global_idle_.PopLRU()) {
+      PeerQueue* queue = entry->owner_queue;
+      const bool erased = queue->idle.Erase(entry);
+      assert(erased);
+      delete entry;
+      --idle_total_;
+    }
+    peer_queues_.clear();
+    idle_total_ = 0;
+  }
+
   PoolConfig config_;
   UpstreamStreamPoolStats stats_;
   std::size_t idle_total_{0};
   // A pool is worker-local and upstream groups are normally small (the benchmark
-  // uses four peers). Linear pointer lookup avoids a per-request hash. Per-peer
-  // vectors retain LIFO reuse while the list keeps a global release order for
-  // O(1) insertion and oldest-first eviction.
-  std::vector<PeerQueue> peer_queues_;
-  IdleList idle_entries_;
+  // uses four peers). Linear pointer lookup avoids a per-request hash. Each
+  // entry has one hook for the global LRU and one hook for its peer's LIFO
+  // queue, so cross-list removal does not scan a peer vector.
+  std::list<PeerQueue> peer_queues_;
+  GlobalIdleLRU global_idle_;
 };
 
 }  // namespace coropact::gateway

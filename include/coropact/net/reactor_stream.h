@@ -89,7 +89,7 @@ private:
   bool closed_{false};
 };
 
-class ReactorStream::ReadSomeAwaiter : public ReactorStream::ReadOperation {
+class ReactorStream::ReadSomeAwaiter final : public ReactorStream::ReadOperation {
 public:
   COROPACT_DELETE_COPY_MOVE(ReadSomeAwaiter);
 
@@ -115,7 +115,7 @@ private:
   bool timer_armed_{false};
 };
 
-class ReactorStream::WriteSomeAwaiter : public ReactorStream::WriteOperation {
+class ReactorStream::WriteSomeAwaiter final : public ReactorStream::WriteOperation {
 public:
   COROPACT_DELETE_COPY_MOVE(WriteSomeAwaiter);
 
