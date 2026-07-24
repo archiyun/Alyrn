@@ -1,5 +1,6 @@
 # gateway 层 examples —— 依赖 coropact_gateway
 #   demo_gateway             : 反向代理最小示例
+#   demo_gateway_luring      : io_uring 反向代理最小示例
 #   demo_bench_gateway       : 单上游代理基准
 #   demo_bench_gateway_multi : 多上游 / 负载均衡基准
 
@@ -38,6 +39,15 @@ target_link_libraries(demo_bench_gateway_multi
 )
 
 if(COROPACT_ENABLE_URING)
+    add_executable(demo_gateway_luring
+        demo_gateway_luring.cc
+    )
+    target_link_libraries(demo_gateway_luring
+        PRIVATE
+            coropact_gateway
+            coropact_luring
+    )
+
     add_executable(demo_bench_gateway_luring
         demo_bench_gateway_luring.cc
     )

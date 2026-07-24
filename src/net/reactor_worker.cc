@@ -45,12 +45,13 @@ coro::Task<void> CloseListenerAndQuit(EventLoop& loop, ReactorListener& listener
 
 ReactorWorker::ReactorWorker(std::size_t index, InetAddress listen_addr,
                              ReactorWorkerOptions options, ThreadInitCallback init_callback,
-                             ConnectionCallback connection_callback)
+                             ConnectionCallback connection_callback, ThreadExitCallback exit_callback)
     : index_(index),
       listen_addr_(listen_addr),
       options_(std::move(options)),
       init_callback_(std::move(init_callback)),
-      connection_callback_(std::move(connection_callback)) {}
+      connection_callback_(std::move(connection_callback)),
+      exit_callback_(std::move(exit_callback)) {}
 
 ReactorWorker::~ReactorWorker() noexcept { Stop(); }
 
@@ -138,6 +139,14 @@ void ReactorWorker::WorkLoop(std::stop_token token) noexcept {
 
   publish_start(base::Result<void>{});
   loop.Loop();
+
+  if (exit_callback_) {
+    try {
+      exit_callback_(context);
+    } catch (...) {
+      // Worker exit cleanup must not escape WorkLoop's noexcept boundary.
+    }
+  }
 }
 
 }  // namespace coropact::net

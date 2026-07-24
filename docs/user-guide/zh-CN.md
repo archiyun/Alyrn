@@ -540,17 +540,15 @@ API。
 
 ## Gateway 接入
 
-### 为什么不是直接套 GatewayServer
+### 为什么网络层与网关 session 分开
 
-旧的 `GatewayServer<Listener, Connector>` 自己拥有 listener、accept loop 和 scheduler，主要
-服务 Reactor 形状。`LUringServer` 已经拥有 accept loop 和 worker，因此两者不能互相接管同一
-个 accept loop。
-
-当前的拆分是：
+网关不再拥有 listener、accept loop、scheduler 或 worker。Reactor 的
+`ReactorWorkerGroup` 与 io_uring 的 `LUringServer` 都负责网络生命周期，并在接收连接后把
+stream 和当前 worker 的 connector 交给同一个 session service：
 
 ```text
-LUringServer
-  accept、worker、ring、连接所有权
+Network server (ReactorWorkerGroup / LUringServer)
+  listen、accept、worker、连接所有权
 
 GatewaySessionService
   HTTP parser、路由、限流、代理和单连接 session
@@ -592,7 +590,7 @@ int main() {
           .host = "127.0.0.1",
           .port = 9001,
       }));
-  registry.Add(backend);
+  if (!registry.Register(backend).has_value()) return 1;
 
   LuringGateway gateway("gateway", registry);
 
@@ -637,15 +635,17 @@ int main() {
 3. 每个 session 使用当前 worker 的 `LUringLoop` 创建 connector。
 4. 客户端 stream、upstream connector 和 I/O 协程不会跨 ring 移动。
 
-当前 `GatewaySessionService` 的 upstream pool 是每个 client session 一个实例，保证 loop-bound
-stream 不跨线程；跨 client session 的 per-ring keep-alive pool 尚未接入。`set_pool_config` 目前
-只影响 session 内 pool 的配置。
+网络层可以把 worker-local 的 `UpstreamStreamPool` 传给 `Serve`，让同一 worker 上的 client
+session 复用 loop-bound upstream stream；不能把这个 pool 跨 worker 或跨 ring 共享。两参数
+`Serve` 仍可用于不需要跨 session 复用的场景。
 
 ### Gateway 的当前限制
 
 - luring session service 已覆盖 direct route 和 proxy route；
-- 旧的主动 health-check 实现仍绑定 Reactor 的 timer/connector 模型；
-- YAML `ApplyGatewayConfig` 的 health-check 路径不能直接当作 luring health-check 使用；
+- 主动 health-check 不属于 session service；如需启用，应由进程级 health component 持有其
+  scheduler、connector 和停止生命周期；
+- YAML gateway 配置不再接受 `health_check` 或 `server.threads`，worker 数量由网络 server
+  配置；
 - gateway 路由和 `UpstreamRegistry` 应在 `server.Start()` 前完成配置；
 - 多 worker 下 direct handler、业务状态和自定义指标逻辑必须满足并发访问要求。
 

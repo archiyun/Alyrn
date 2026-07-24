@@ -52,10 +52,14 @@ public:
   COROPACT_DELETE_COPY_MOVE(LUringWorker);
 
   using ThreadInitCallback = std::function<void(LUringWorkerContext&)>;
+  // Runs on the worker thread after the loop has drained and before loop-bound
+  // listener/connector resources are destroyed.
+  using ThreadExitCallback = std::function<void(LUringWorkerContext&)>;
   using ConnectionCallback = std::function<coro::Task<void>(LUringWorkerContext&, LUringStream)>;
 
   LUringWorker(std::size_t index, net::InetAddress listen_addr, LUringWorkerOptions options = {},
-               ThreadInitCallback init_callback = {}, ConnectionCallback connection_callback = {});
+               ThreadInitCallback init_callback = {}, ConnectionCallback connection_callback = {},
+               ThreadExitCallback exit_callback = {});
   ~LUringWorker() noexcept;
 
   [[nodiscard]] base::Result<void> Start();
@@ -71,6 +75,7 @@ private:
   LUringWorkerOptions options_;
   ThreadInitCallback init_callback_;
   ConnectionCallback connection_callback_;
+  ThreadExitCallback exit_callback_;
 
   std::mutex mutex_;
   std::condition_variable_any cv_;

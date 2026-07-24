@@ -24,6 +24,7 @@ public:
 
   using Stream = LUringStream;
   using ThreadInitCallback = LUringWorkerGroup::ThreadInitCallback;
+  using ThreadExitCallback = LUringWorkerGroup::ThreadExitCallback;
   using SessionHandler = std::function<coro::Task<void>(LUringWorkerContext&, Stream)>;
 
   explicit LUringServer(net::InetAddress listen_addr, LUringServerOptions options = {});
@@ -31,6 +32,9 @@ public:
 
   void set_thread_init_callback(ThreadInitCallback callback) noexcept {
     thread_init_callback_ = std::move(callback);
+  }
+  void set_thread_exit_callback(ThreadExitCallback callback) noexcept {
+    thread_exit_callback_ = std::move(callback);
   }
   void set_session_handler(SessionHandler handler) noexcept {
     session_handler_ = std::move(handler);
@@ -46,6 +50,7 @@ private:
   LUringServerOptions options_{};
 
   ThreadInitCallback thread_init_callback_;
+  ThreadExitCallback thread_exit_callback_;
   SessionHandler session_handler_;
 
   std::unique_ptr<LUringWorkerGroup> workers_;

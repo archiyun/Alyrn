@@ -347,7 +347,7 @@ bool CheckProxyRoute() {
       std::make_shared<coropact::gateway::Upstream>(coropact::gateway::UpstreamConfig{.name = "backend"});
   backend->AddPeer(std::make_shared<coropact::gateway::UpstreamPeer>(coropact::gateway::UpstreamPeerConfig{
       .name = "loopback", .host = "127.0.0.1", .port = upstream.port()}));
-  registry.Add(backend);
+  if (!registry.Register(backend).has_value()) return false;
 
   using Service = coropact::gateway::GatewaySessionService<coropact::luring::LUringStream,
                                                        coropact::luring::LUringConnector>;

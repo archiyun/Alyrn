@@ -1,6 +1,6 @@
 # 配置化网关教程
 
-这篇教程说明如何用 YAML 文件启动 `coropact::gateway`，把上游、路由、健康检查、限流、熔断和 fallback 从 C++ 代码里移到配置文件里。
+这篇教程说明如何用 YAML 文件启动 `coropact::gateway`，把上游、路由、限流、熔断和 fallback 从 C++ 代码里移到配置文件里。
 
 当前配置加载是启动期能力：进程启动时读取并校验配置，校验失败直接退出；运行中热更新还没有实现。
 
@@ -82,7 +82,6 @@ curl -i http://127.0.0.1:8080/api/kv
 server:
   name: gateway
   listen: 0.0.0.0:8080
-  threads: 1
 
 status_endpoint:
   enabled: true
@@ -111,19 +110,10 @@ routes:
 server:
   name: gateway
   listen: 0.0.0.0:8080
-  threads: 1
 
 status_endpoint:
   enabled: true
   path: /healthz
-
-health_check:
-  enabled: true
-  path: /api/health
-  interval_sec: 10
-  timeout_sec: 3
-  unhealthy_threshold: 3
-  healthy_threshold: 2
 
 rate_limit:
   global:
@@ -183,7 +173,6 @@ routes:
 | `listen` | `127.0.0.1:8080` | 监听地址，当前只支持数字 IPv4 |
 | `host` | `127.0.0.1` | 可替代 `listen` 的拆分写法 |
 | `port` | `8080` | 可替代 `listen` 的拆分写法 |
-| `threads` | `0` | 当前只允许 `0` 或 `1`；`GatewayServer` 不创建线程，未来由 `ReactorServer` 消费该配置 |
 
 ### `upstreams`
 
@@ -229,19 +218,6 @@ routes:
 - `consistent_hash`
 - `maglev_hash`
 - `p2c`
-
-### `health_check`
-
-| 字段 | 默认值 | 说明 |
-|---|---:|---|
-| `enabled` | `false` | 是否启用主动健康检查 |
-| `path` | `/health` | 探针请求路径 |
-| `interval_sec` | `10` | 探测间隔 |
-| `timeout_sec` | `3` | 单次探测超时 |
-| `unhealthy_threshold` | `3` | 连续失败多少次后标记 down |
-| `healthy_threshold` | `2` | 连续成功多少次后恢复 up |
-
-主动健康检查会探测所有 upstream 的所有 peer，所以 `path` 应该是所有后端都能处理的健康检查路径。
 
 ### `rate_limit`
 
@@ -307,7 +283,8 @@ cmake -B build -DBUILD_EXAMPLES=ON
 
 ### `only 'prefix' proxy routes are supported`
 
-配置层当前只暴露前缀代理路由。要支持 exact proxy、path rewrite、header rewrite，需要先扩展 `GatewayServer` 的公开 API，再扩展配置 schema。
+配置层当前只暴露前缀代理路由。要支持 exact proxy、path rewrite、header rewrite，需要先扩展
+`GatewaySessionService` 的公开 API，再扩展配置 schema。
 
 ## 十、在自己的程序中使用配置加载器
 
@@ -320,10 +297,15 @@ target_link_libraries(my_gateway PRIVATE coropact_gateway_config)
 启动代码：
 
 ```cpp
+#include <iostream>
+#include <utility>
+
 #include "coropact/gateway/gateway_config.h"
-#include "coropact/gateway/gateway_server.h"
+#include "coropact/gateway/gateway_session_service.h"
 #include "coropact/gateway/upstream_registry.h"
-#include "coropact/net/event_loop.h"
+#include "coropact/net/net_utils.h"
+#include "coropact/net/reactor_connect.h"
+#include "coropact/net/reactor_worker_group.h"
 
 int main() {
   auto config = coropact::gateway::LoadGatewayConfigFromYaml("gateway.yaml");
@@ -331,16 +313,27 @@ int main() {
   coropact::gateway::UpstreamRegistry registry;
   coropact::gateway::BuildGatewayUpstreamRegistry(config, registry);
 
-  coropact::net::EventLoop loop;
-  coropact::gateway::GatewayServer gateway(
-      &loop,
-      coropact::gateway::MakeGatewayListenAddress(config),
-      config.server.name,
-      registry);
+  using Gateway = coropact::gateway::GatewaySessionService<
+      coropact::net::ReactorStream, coropact::net::ReactorConnector>;
+  Gateway gateway(config.server.name, registry);
 
   coropact::gateway::ApplyGatewayConfig(config, gateway);
-  gateway.Start();
-  loop.Loop();
+
+  auto listen_addr = coropact::net::ParseIPv4Address(config.server.host, config.server.port);
+  if (!listen_addr) return 1;
+
+  coropact::net::ReactorWorkerGroup server(
+      *listen_addr, {}, {},
+      [&gateway](coropact::net::ReactorWorkerContext& context,
+                 coropact::net::ReactorStream stream) -> coropact::coro::Task<void> {
+        co_await gateway.Serve(std::move(stream),
+                               coropact::net::ReactorConnector(&context.loop));
+      });
+
+  auto started = server.Start();
+  if (!started.has_value()) return 1;
+  std::cin.get();
+  server.Stop();
 }
 ```
 

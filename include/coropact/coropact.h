@@ -32,7 +32,6 @@
 #include "coropact/ds/murmurhash64.h"
 #include "coropact/gateway/circuit_breaker.h"
 #include "coropact/gateway/fallback_config.h"
-#include "coropact/gateway/gateway_server.h"
 #include "coropact/gateway/health_check_config.h"
 #include "coropact/gateway/load_balancer.h"
 #include "coropact/gateway/proxy_pass.h"

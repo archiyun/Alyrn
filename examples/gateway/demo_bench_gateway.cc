@@ -77,23 +77,26 @@ NGINXEOF
  */
 
 #include <atomic>
+#include <chrono>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
+#include <cstdint>
 #include <thread>
 #include <utility>
 
-#include "coropact/gateway/gateway_server.h"
+#include "coropact/gateway/gateway_session_service.h"
 #include "coropact/gateway/upstream.h"
 #include "coropact/gateway/upstream_peer.h"
 #include "coropact/gateway/upstream_registry.h"
-#include "coropact/net/event_loop.h"
-#include "coropact/net/event_loop_scheduler.h"
 #include "coropact/net/inet_address.h"
 #include "coropact/net/reactor_connect.h"
-#include "coropact/net/reactor_listener.h"
+#include "coropact/net/reactor_worker_group.h"
 
 static std::atomic<long long> g_proxied{0};
+static std::atomic_bool g_stop{false};
+
+static void OnSignal(int) noexcept { g_stop.store(true, std::memory_order_relaxed); }
 
 static void StatsPrinter() {
   long long prev = 0;
@@ -117,6 +120,8 @@ int main() {
 
   // -- 忽略 SIGPIPE -- （客户端断联时不 Crash)
   std::signal(SIGPIPE, SIG_IGN);
+  std::signal(SIGINT, OnSignal);
+  std::signal(SIGTERM, OnSignal);
 
   // 1. 注册上游
   coropact::gateway::UpstreamRegistry reg;
@@ -126,30 +131,20 @@ int main() {
       coropact::gateway::UpstreamPeerConfig{.name = "127.0.0.1:" + std::to_string(upstream_port),
                                         .host = "127.0.0.1",
                                         .port = upstream_port}));
-  reg.Add(us);
-
-  // 2. 网关
-  coropact::net::EventLoop loop;
-  coropact::net::EventLoopScheduler scheduler(&loop);
-  auto listener_result =
-      coropact::net::ReactorListener::Create(&loop, coropact::net::InetAddress(listen_port));
-  if (!listener_result.has_value()) {
-    std::fprintf(stderr, "failed to create listener: %s\n",
-                 listener_result.error().message().c_str());
+  auto registered = reg.Register(std::move(us));
+  if (!registered.has_value()) {
+    std::fprintf(stderr, "failed to register upstream: %s\n",
+                 registered.error().message().c_str());
     return 1;
   }
-  auto listener = std::move(*listener_result);
 
-  auto connector_result = coropact::net::ReactorConnector::Create(&loop);
-  if (!connector_result.has_value()) {
-    std::fprintf(stderr, "failed to create connector: %s\n",
-                 connector_result.error().message().c_str());
-    return 1;
-  }
-  auto connector = std::move(*connector_result);
-  coropact::gateway::GatewayServer<coropact::net::ReactorListener, coropact::net::ReactorConnector> gw(
-      listener, scheduler, "BenchGateway", reg, connector);
-  gw.set_pool_config({.max_idle_per_peer = 64});  // 与 nginx keepalive 64 对齐
+  // 2. 网关 session service。accept、worker 和连接生命周期由网络层拥有。
+  using Service =
+      coropact::gateway::GatewaySessionService<coropact::net::ReactorStream,
+                                               coropact::net::ReactorConnector>;
+  const coropact::gateway::PoolConfig pool_config{.max_idle_per_peer = 64};
+  Service gw("BenchGateway", reg, pool_config);
+  Service::Pool pool(pool_config);
 
   // 3. 代理路由
   gw.AddProxyRoute("/", "backend", "round_robin");
@@ -157,9 +152,27 @@ int main() {
   std::thread stats_thr(StatsPrinter);
   stats_thr.detach();
 
-  gw.Start();
-  std::printf("BenchGateway listen=%u upstream=127.0.0.1:%u event_loop_threads=1\n", listen_port,
+  coropact::net::ReactorWorkerGroupOptions options;
+  options.worker_num = 1;
+  coropact::net::ReactorWorkerGroup workers(
+      coropact::net::InetAddress(listen_port), std::move(options), {},
+      [&gw, &pool](coropact::net::ReactorWorkerContext& context,
+                   coropact::net::ReactorStream stream) -> coropact::coro::Task<void> {
+        co_await gw.Serve(std::move(stream), coropact::net::ReactorConnector(&context.loop), pool);
+      });
+
+  auto started = workers.Start();
+  if (!started.has_value()) {
+    std::fprintf(stderr, "failed to start worker group: %s\n",
+                 started.error().message().c_str());
+    return 1;
+  }
+
+  std::printf("BenchGateway listen=%u upstream=127.0.0.1:%u workers=1\n", listen_port,
               upstream_port);
-  loop.Loop();
+  while (!g_stop.load(std::memory_order_relaxed)) {
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+  }
+  workers.Stop();
   return 0;
 }

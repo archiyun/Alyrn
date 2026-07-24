@@ -50,7 +50,7 @@ bool TestProxyDecision() {
       std::make_shared<coropact::gateway::Upstream>(coropact::gateway::UpstreamConfig{.name = "backend"});
   upstream->AddPeer(std::make_shared<coropact::gateway::UpstreamPeer>(
       coropact::gateway::UpstreamPeerConfig{.name = "backend-1", .host = "127.0.0.1", .port = 9001}));
-  registry.Add(upstream);
+  if (!registry.Register(upstream).has_value()) return false;
 
   coropact::gateway::GatewayCore core("gw-core", registry);
   core.AddProxyRoute("/api", "backend", "round_robin");

@@ -35,11 +35,13 @@ public:
   COROPACT_DELETE_COPY_MOVE(LUringWorkerGroup);
 
   using ThreadInitCallback = LUringWorker::ThreadInitCallback;
+  using ThreadExitCallback = LUringWorker::ThreadExitCallback;
   using ConnectionCallback = LUringWorker::ConnectionCallback;
 
   LUringWorkerGroup(net::InetAddress listen_addr, LUringWorkerGroupOptions options = {},
                     ThreadInitCallback init_callback = {},
-                    ConnectionCallback connection_callback = {});
+                    ConnectionCallback connection_callback = {},
+                    ThreadExitCallback exit_callback = {});
   ~LUringWorkerGroup() noexcept;
 
   [[nodiscard]] base::Result<void> Start();
@@ -60,6 +62,7 @@ private:
   LUringWorkerGroupOptions options_;
   ThreadInitCallback init_callback_;
   ConnectionCallback connection_callback_;
+  ThreadExitCallback exit_callback_;
 
   bool started_{false};
   std::vector<std::unique_ptr<LUringWorker>> workers_;

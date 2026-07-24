@@ -71,7 +71,7 @@ factory: algorithm name -> valid strategy | configuration error
 - Integer overflow in total weights or cross-products.
 - Availability changing between multi-pass count and pick.
 - Retry using the same affinity-selected failed peer.
-- `CreateLoadBalancer` returning null and GatewayServer dereferencing it.
+- `CreateLoadBalancer` returning null and the session service dereferencing it.
 
 ## Required tests
 

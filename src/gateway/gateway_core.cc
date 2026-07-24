@@ -51,10 +51,13 @@ void GatewayCore::AddProxyRoute(std::string_view path, std::string_view upstream
                                 std::string_view algo) {
   fallback.Init();
   if (circuit_breaker_enabled) {
-    auto upstream = registry_.Find(upstream_name);
-    if (upstream && upstream->config().circuit_breaker_enabled && !upstream->circuit_breaker()) {
-      upstream->set_circuit_breaker(
-          std::make_shared<CircuitBreaker>(upstream->config().circuit_breaker));
+    auto resolved = registry_.Resolve(upstream_name);
+    if (resolved.has_value()) {
+      auto upstream = *resolved;
+      if (upstream && upstream->config().circuit_breaker_enabled && !upstream->circuit_breaker()) {
+        upstream->set_circuit_breaker(
+            std::make_shared<CircuitBreaker>(upstream->config().circuit_breaker));
+      }
     }
   }
   routes_.push_back(Route{
@@ -127,11 +130,12 @@ GatewayCore::Action GatewayCore::HandleRequest(const coropact::http::HttpRequest
   }
 
   if (route->type == RouteType::Proxy) {
-    auto upstream = registry_.Find(route->upstream_name);
-    if (!upstream) {
+    auto resolved = registry_.Resolve(route->upstream_name);
+    if (!resolved.has_value()) {
       return SendResponse(
           RenderFallback(*route, std::string("upstream not found: ") + route->upstream_name));
     }
+    auto upstream = *resolved;
 
     CircuitBreaker* cb = nullptr;
     if (route->circuit_breaker_enabled) {

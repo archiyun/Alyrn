@@ -1,7 +1,7 @@
 // 熔断 + 限流 + 降级 集成测试
 //
 // 不依赖 GTest，不依赖真实 TCP 连接。
-// 通过复现 GatewayServer::OnMessage 中的策略决策逻辑，
+// 通过复现 GatewaySessionService 的策略决策逻辑，
 // 验证三个组件在协同工作时的正确行为。
 //
 // 编译
@@ -39,7 +39,7 @@ void Passed(const char* name) {
   std::cout << "[PASS] " << name << '\n';
 }
 
-// 复现 GatewayServer::OnMessage 中的策略决策顺序：
+// 复现 GatewaySessionService 中的策略决策顺序：
 //   1. 全局限流
 //   2. Per-IP 限流
 //   3. 熔断检查

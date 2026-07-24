@@ -1,6 +1,6 @@
 // Proxy E2E smoke test
 //
-// 端到端验证 GatewayServer 的代理路径：
+// 端到端验证 GatewaySessionService 的代理路径：
 //   1. 转发到 upstream 的请求行包含完整 path + query
 //   2. 当 upstream 返回 Content-Length 响应时连接进入 pool 并被复用
 //   3. 哈希负载均衡首选节点连接失败时会切换到其他节点
@@ -20,7 +20,6 @@
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
-#include <future>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -30,15 +29,13 @@
 #include <vector>
 
 #include "coropact/ds/murmurhash32.h"
-#include "coropact/gateway/gateway_server.h"
+#include "coropact/gateway/gateway_session_service.h"
 #include "coropact/gateway/upstream.h"
 #include "coropact/gateway/upstream_peer.h"
 #include "coropact/gateway/upstream_registry.h"
-#include "coropact/net/event_loop.h"
-#include "coropact/net/event_loop_scheduler.h"
 #include "coropact/net/inet_address.h"
 #include "coropact/net/reactor_connect.h"
-#include "coropact/net/reactor_listener.h"
+#include "coropact/net/reactor_worker_group.h"
 
 using namespace std::chrono_literals;
 
@@ -65,13 +62,14 @@ uint16_t ReservePort() {
 namespace {
 
 using TestGateway =
-    coropact::gateway::GatewayServer<coropact::net::ReactorListener, coropact::net::ReactorConnector>;
+    coropact::gateway::GatewaySessionService<coropact::net::ReactorStream,
+                                             coropact::net::ReactorConnector>;
+using TestPool = TestGateway::Pool;
 
 struct GatewayRuntime {
-  std::unique_ptr<coropact::net::EventLoopScheduler> scheduler;
-  std::unique_ptr<coropact::net::ReactorListener> listener;
-  std::unique_ptr<coropact::net::ReactorConnector> connector;
   std::unique_ptr<TestGateway> gateway;
+  std::unique_ptr<TestPool> pool;
+  std::unique_ptr<coropact::net::ReactorWorkerGroup> workers;
 };
 
 bool Expect(bool ok, const char* msg) {
@@ -81,62 +79,39 @@ bool Expect(bool ok, const char* msg) {
 
 void Passed(const char* name) { std::cout << "[PASS] " << name << '\n'; }
 
-template <typename F>
-void RunInLoopAndWait(coropact::net::EventLoop* loop, F&& fn) {
-  std::promise<void> done_promise;
-  auto done = done_promise.get_future();
-  loop->RunInLoop([fn = std::forward<F>(fn), &done_promise]() mutable {
-    fn();
-    done_promise.set_value();
-  });
-  done.wait();
-}
-
-struct LoopThread {
-  std::jthread thread;
-
-  coropact::net::EventLoop* StartLoop() {
-    std::promise<coropact::net::EventLoop*> ready;
-    auto future = ready.get_future();
-    thread = std::jthread([ready = std::move(ready)](std::stop_token token) mutable {
-      coropact::net::EventLoop loop;
-      std::stop_callback on_stop{token, [&loop] { loop.Quit(); }};
-      ready.set_value(&loop);
-      loop.Loop();
-    });
-    return future.get();
-  }
-};
-
-void InitGateway(GatewayRuntime& runtime, coropact::net::EventLoop* loop, uint16_t port,
+void InitGateway(GatewayRuntime& runtime, uint16_t port,
                  std::string name, coropact::gateway::UpstreamRegistry& registry) {
-  runtime.scheduler = std::make_unique<coropact::net::EventLoopScheduler>(loop);
-  runtime.listener =
-      std::make_unique<coropact::net::ReactorListener>(loop, coropact::net::InetAddress(port));
-  runtime.connector = std::make_unique<coropact::net::ReactorConnector>(loop);
-  runtime.gateway = std::make_unique<TestGateway>(*runtime.listener, *runtime.scheduler,
-                                                  std::move(name), registry, *runtime.connector);
+  runtime.gateway = std::make_unique<TestGateway>(std::move(name), registry);
+  runtime.pool = std::make_unique<TestPool>();
+
+  coropact::net::ReactorWorkerGroupOptions options;
+  options.worker_num = 1;
+  runtime.workers = std::make_unique<coropact::net::ReactorWorkerGroup>(
+      coropact::net::InetAddress(port), std::move(options),
+      coropact::net::ReactorWorkerGroup::ThreadInitCallback{},
+      [&runtime](coropact::net::ReactorWorkerContext& context,
+                 coropact::net::ReactorStream stream) -> coropact::coro::Task<void> {
+        co_await runtime.gateway->Serve(std::move(stream),
+                                        coropact::net::ReactorConnector(&context.loop),
+                                        *runtime.pool);
+      },
+      [&runtime](coropact::net::ReactorWorkerContext&) { runtime.pool.reset(); });
 }
 
-coropact::coro::Task<void> StopGatewayTask(TestGateway* gateway, std::promise<void>* done) {
-  co_await gateway->Stop();
-  done->set_value();
+bool StartGateway(GatewayRuntime& runtime) {
+  auto started = runtime.workers->Start();
+  if (!started.has_value()) {
+    std::cerr << "[FAIL] gateway start: " << started.error().message() << '\n';
+    return false;
+  }
+  return true;
 }
 
-void StopGateway(coropact::net::EventLoop* loop, GatewayRuntime& runtime) {
-  std::promise<void> done_promise;
-  auto done = done_promise.get_future();
-  loop->RunInLoop([&runtime, &done_promise] {
-    coropact::coro::Spawn(*runtime.scheduler, StopGatewayTask(runtime.gateway.get(), &done_promise))
-        .Detach();
-  });
-  done.wait();
-  RunInLoopAndWait(loop, [&] {
-    runtime.gateway.reset();
-    runtime.connector.reset();
-    runtime.listener.reset();
-    runtime.scheduler.reset();
-  });
+void StopGateway(GatewayRuntime& runtime) {
+  if (runtime.workers) runtime.workers->Stop();
+  runtime.pool.reset();
+  runtime.gateway.reset();
+  runtime.workers.reset();
 }
 
 // 简单的 blocking 客户端：写完整请求并读到 EOF 或固定字节数。
@@ -321,16 +296,12 @@ bool TestProxyPreservesRequestLineAndReusesConnection() {
       std::make_shared<coropact::gateway::Upstream>(coropact::gateway::UpstreamConfig{.name = "stub"});
   up->AddPeer(std::make_shared<coropact::gateway::UpstreamPeer>(
       coropact::gateway::UpstreamPeerConfig{.name = "stub-1", .host = "127.0.0.1", .port = up_port}));
-  reg.Add(up);
+  if (!reg.Register(up).has_value()) return false;
 
-  LoopThread gw_thr;
-  auto* gw_loop = gw_thr.StartLoop();
   GatewayRuntime gw;
-  RunInLoopAndWait(gw_loop, [&] {
-    InitGateway(gw, gw_loop, gw_port, "gw", reg);
-    gw.gateway->AddProxyRoute("/api/", "stub", "round_robin");
-    gw.gateway->Start();
-  });
+  InitGateway(gw, gw_port, "gw", reg);
+  gw.gateway->AddProxyRoute("/api/", "stub", "round_robin");
+  if (!Expect(StartGateway(gw), "gateway must start")) return false;
 
   // 3. 发两个请求，验证：
   //    (a) upstream 收到 "GET /api/foo?x=1 HTTP/1.1"
@@ -420,7 +391,7 @@ bool TestProxyPreservesRequestLineAndReusesConnection() {
   }
 
   Passed("TestProxyPreservesRequestLineAndReusesConnection");
-  StopGateway(gw_loop, gw);
+  StopGateway(gw);
   return true;
 }
 
@@ -438,16 +409,12 @@ bool TestPrefixBoundary() {
       std::make_shared<coropact::gateway::Upstream>(coropact::gateway::UpstreamConfig{.name = "stub"});
   up->AddPeer(std::make_shared<coropact::gateway::UpstreamPeer>(
       coropact::gateway::UpstreamPeerConfig{.name = "stub-1", .host = "127.0.0.1", .port = up_port}));
-  reg.Add(up);
+  if (!reg.Register(up).has_value()) return false;
 
-  LoopThread gw_thr;
-  auto* gw_loop = gw_thr.StartLoop();
   GatewayRuntime gw;
-  RunInLoopAndWait(gw_loop, [&] {
-    InitGateway(gw, gw_loop, gw_port, "gw2", reg);
-    gw.gateway->AddProxyRoute("/api", "stub", "round_robin");
-    gw.gateway->Start();
-  });
+  InitGateway(gw, gw_port, "gw2", reg);
+  gw.gateway->AddProxyRoute("/api", "stub", "round_robin");
+  if (!Expect(StartGateway(gw), "gateway must start")) return false;
 
   // /apifoo 不应代理，应该 404
   const std::string req = "GET /apifoo HTTP/1.1\r\nHost: gw2\r\nConnection: close\r\n\r\n";
@@ -464,7 +431,7 @@ bool TestPrefixBoundary() {
     return false;
 
   Passed("TestPrefixBoundary");
-  StopGateway(gw_loop, gw);
+  StopGateway(gw);
   return true;
 }
 
@@ -486,16 +453,12 @@ bool TestProxyDeadlineReleasesBulkheadSlot() {
   auto peer = std::make_shared<coropact::gateway::UpstreamPeer>(
       coropact::gateway::UpstreamPeerConfig{.name = "slow-1", .host = "127.0.0.1", .port = up_port});
   up->AddPeer(peer);
-  reg.Add(up);
+  if (!reg.Register(up).has_value()) return false;
 
-  LoopThread gw_thr;
-  auto* gw_loop = gw_thr.StartLoop();
   GatewayRuntime gw;
-  RunInLoopAndWait(gw_loop, [&] {
-    InitGateway(gw, gw_loop, gw_port, "deadline-gw", reg);
-    gw.gateway->AddProxyRoute("/slow", "slow", "round_robin");
-    gw.gateway->Start();
-  });
+  InitGateway(gw, gw_port, "deadline-gw", reg);
+  gw.gateway->AddProxyRoute("/slow", "slow", "round_robin");
+  if (!Expect(StartGateway(gw), "gateway must start")) return false;
 
   const std::string req = "GET /slow HTTP/1.1\r\nHost: deadline-gw\r\nConnection: close\r\n\r\n";
   const auto started = std::chrono::steady_clock::now();
@@ -527,7 +490,7 @@ bool TestProxyDeadlineReleasesBulkheadSlot() {
     return false;
 
   Passed("TestProxyDeadlineReleasesBulkheadSlot");
-  StopGateway(gw_loop, gw);
+  StopGateway(gw);
   return true;
 }
 
@@ -556,16 +519,12 @@ bool TestIPHashConnectFailureFailsOver() {
   auto good_peer = std::make_shared<coropact::gateway::UpstreamPeer>(
       coropact::gateway::UpstreamPeerConfig{.name = "healthy", .host = "127.0.0.1", .port = good_port});
   AddPeersWithHashSelectingFirst(up, bad_peer, good_peer);
-  reg.Add(up);
+  if (!reg.Register(up).has_value()) return false;
 
-  LoopThread gw_thr;
-  auto* gw_loop = gw_thr.StartLoop();
   GatewayRuntime gw;
-  RunInLoopAndWait(gw_loop, [&] {
-    InitGateway(gw, gw_loop, gw_port, "hash-failover-gw", reg);
-    gw.gateway->AddProxyRoute("/hash", "hash-failover", "ip_hash");
-    gw.gateway->Start();
-  });
+  InitGateway(gw, gw_port, "hash-failover-gw", reg);
+  gw.gateway->AddProxyRoute("/hash", "hash-failover", "ip_hash");
+  if (!Expect(StartGateway(gw), "gateway must start")) return false;
 
   bool ok = true;
   const auto response = BlockingHttpCall(gw_port,
@@ -579,7 +538,7 @@ bool TestIPHashConnectFailureFailsOver() {
                "healthy failover peer must receive the retry exactly once");
 
   if (ok) Passed("TestIPHashConnectFailureFailsOver");
-  StopGateway(gw_loop, gw);
+  StopGateway(gw);
   return ok;
 }
 
@@ -609,16 +568,12 @@ bool TestPostIsNotReplayedAfterFlush() {
   auto good_peer = std::make_shared<coropact::gateway::UpstreamPeer>(coropact::gateway::UpstreamPeerConfig{
       .name = "must-not-receive", .host = "127.0.0.1", .port = good_port});
   AddPeersWithHashSelectingFirst(up, closing_peer, good_peer);
-  reg.Add(up);
+  if (!reg.Register(up).has_value()) return false;
 
-  LoopThread gw_thr;
-  auto* gw_loop = gw_thr.StartLoop();
   GatewayRuntime gw;
-  RunInLoopAndWait(gw_loop, [&] {
-    InitGateway(gw, gw_loop, gw_port, "post-no-replay-gw", reg);
-    gw.gateway->AddProxyRoute("/write", "post-no-replay", "ip_hash");
-    gw.gateway->Start();
-  });
+  InitGateway(gw, gw_port, "post-no-replay-gw", reg);
+  gw.gateway->AddProxyRoute("/write", "post-no-replay", "ip_hash");
+  if (!Expect(StartGateway(gw), "gateway must start")) return false;
 
   bool ok = true;
   const auto response = BlockingHttpCall(gw_port,
@@ -630,7 +585,7 @@ bool TestPostIsNotReplayedAfterFlush() {
   ok &= Expect(good.request_count.load() == 0, "failover peer must never receive a replayed POST");
 
   if (ok) Passed("TestPostIsNotReplayedAfterFlush");
-  StopGateway(gw_loop, gw);
+  StopGateway(gw);
   return ok;
 }
 

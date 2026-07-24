@@ -11,11 +11,13 @@ namespace coropact::net {
 
 ReactorWorkerGroup::ReactorWorkerGroup(InetAddress listen_addr, ReactorWorkerGroupOptions options,
                                        ThreadInitCallback init_callback,
-                                       ConnectionCallback connection_callback)
+                                       ConnectionCallback connection_callback,
+                                       ThreadExitCallback exit_callback)
     : listen_addr_(listen_addr),
       options_(std::move(options)),
       init_callback_(std::move(init_callback)),
-      connection_callback_(std::move(connection_callback)) {}
+      connection_callback_(std::move(connection_callback)),
+      exit_callback_(std::move(exit_callback)) {}
 
 ReactorWorkerGroup::~ReactorWorkerGroup() noexcept { Stop(); }
 
@@ -37,7 +39,7 @@ base::Result<void> ReactorWorkerGroup::Start() {
     }
 
     auto worker = std::make_unique<ReactorWorker>(i, listen_addr_, worker_options, init_callback_,
-                                                  connection_callback_);
+                                                  connection_callback_, exit_callback_);
     auto result = worker->Start();
     if (!result.has_value()) {
       Stop();

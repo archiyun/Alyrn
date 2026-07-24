@@ -28,11 +28,13 @@ public:
   COROPACT_DELETE_COPY_MOVE(ReactorWorkerGroup);
 
   using ThreadInitCallback = ReactorWorker::ThreadInitCallback;
+  using ThreadExitCallback = ReactorWorker::ThreadExitCallback;
   using ConnectionCallback = ReactorWorker::ConnectionCallback;
 
   ReactorWorkerGroup(InetAddress listen_addr, ReactorWorkerGroupOptions options = {},
                      ThreadInitCallback init_callback = {},
-                     ConnectionCallback connection_callback = {});
+                     ConnectionCallback connection_callback = {},
+                     ThreadExitCallback exit_callback = {});
 
   ~ReactorWorkerGroup() noexcept;
 
@@ -54,6 +56,7 @@ private:
   ReactorWorkerGroupOptions options_;
   ThreadInitCallback init_callback_;
   ConnectionCallback connection_callback_;
+  ThreadExitCallback exit_callback_;
 
   bool started_{false};
   std::vector<std::unique_ptr<ReactorWorker>> workers_;

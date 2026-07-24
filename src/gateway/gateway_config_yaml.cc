@@ -10,7 +10,6 @@
 #include <utility>
 
 #include "coropact/gateway/gateway_config.h"
-#include "coropact/gateway/gateway_server.h"
 #include "coropact/gateway/load_balancer.h"
 #include "coropact/gateway/upstream_registry.h"
 #include "coropact/http/http_request.h"
@@ -152,7 +151,7 @@ coropact::http::StatusCode ParseStatusCode(int code, std::string_view ctx) {
   }
 }
 
-void ParseListenScalar(std::string_view value, GatewayServerConfig* server, std::string_view ctx) {
+void ParseListenScalar(std::string_view value, GatewayListenConfig* server, std::string_view ctx) {
   const std::size_t colon = value.rfind(':');
   if (colon == std::string_view::npos) {
     const long long port = ReadInteger(YAML::Load(ToString(value)), ctx, 1, 65535);
@@ -198,7 +197,9 @@ void ParseServer(const YAML::Node& root, GatewayConfig* config) {
   ReadOptionalString(node, "host", "server", &config->server.host);
   YAML::Node port = Field(node, "port");
   if (port) config->server.port = ReadPort(port, "server.port");
-  ReadOptionalInt(node, "threads", "server", &config->server.threads, 0, 1);
+  if (Field(node, "threads")) {
+    Fail("server.threads", "worker count belongs to the network server");
+  }
 }
 
 void ParseStatusEndpoint(const YAML::Node& root, GatewayConfig* config) {
@@ -216,29 +217,6 @@ void ParseStatusEndpoint(const YAML::Node& root, GatewayConfig* config) {
   ReadOptionalString(node, "content_type", "status_endpoint",
                      &config->status_endpoint.content_type);
   ReadOptionalString(node, "body", "status_endpoint", &config->status_endpoint.body);
-}
-
-void ParseHealthCheck(const YAML::Node& root, GatewayConfig* config) {
-  YAML::Node node = Field(root, "health_check");
-  if (!node) return;
-  if (node.IsScalar()) {
-    config->health_check.enabled = As<bool>(node, "health_check");
-    return;
-  }
-
-  RequireMap(node, "health_check");
-  config->health_check.enabled = true;
-  ReadOptionalBool(node, "enabled", "health_check", &config->health_check.enabled);
-  ReadOptionalString(node, "path", "health_check", &config->health_check.config.path);
-  ReadOptionalDouble(node, "interval_sec", "health_check",
-                     &config->health_check.config.interval_sec);
-  ReadOptionalDouble(node, "timeout_sec", "health_check", &config->health_check.config.timeout_sec);
-  ReadOptionalInt(node, "unhealthy_threshold", "health_check",
-                  &config->health_check.config.unhealthy_threshold, 1,
-                  std::numeric_limits<int>::max());
-  ReadOptionalInt(node, "healthy_threshold", "health_check",
-                  &config->health_check.config.healthy_threshold, 1,
-                  std::numeric_limits<int>::max());
 }
 
 GatewayRateLimitBucketConfig ParseRateLimitBucket(const YAML::Node& node, std::string_view ctx,
@@ -440,9 +418,12 @@ GatewayConfig LoadGatewayConfigFromYaml(std::string_view path) {
     }
 
     GatewayConfig config;
+    if (Field(root, "health_check")) {
+      throw GatewayConfigError(
+          "health_check is not owned by GatewaySessionService; configure a standalone checker");
+    }
     ParseServer(root, &config);
     ParseStatusEndpoint(root, &config);
-    ParseHealthCheck(root, &config);
     ParseRateLimit(root, &config);
     ParseUpstreams(root, &config);
     ParseRoutes(root, &config);
@@ -458,23 +439,9 @@ GatewayConfig LoadGatewayConfigFromYaml(std::string_view path) {
 void ValidateGatewayConfig(const GatewayConfig& config) {
   if (config.server.name.empty()) Fail("server.name", "must not be empty");
   ValidateIPv4Endpoint(config.server.host, config.server.port, "server.listen");
-  if (config.server.threads < 0 || config.server.threads > 1) {
-    Fail("server.threads", "must be 0 or 1 until ReactorServer owns worker creation");
-  }
-
   if (config.status_endpoint.enabled) {
     ValidatePath(config.status_endpoint.path, "status_endpoint.path");
   }
-  if (config.health_check.enabled) {
-    ValidatePath(config.health_check.config.path, "health_check.path");
-    if (config.health_check.config.interval_sec <= 0.0) {
-      Fail("health_check.interval_sec", "must be > 0");
-    }
-    if (config.health_check.config.timeout_sec <= 0.0) {
-      Fail("health_check.timeout_sec", "must be > 0");
-    }
-  }
-
   auto validate_bucket = [](const GatewayRateLimitBucketConfig& bucket, std::string_view ctx) {
     if (!bucket.enabled) return;
     if (bucket.rate <= 0.0) Fail(JoinPath(ctx, "rate"), "must be > 0");
@@ -542,7 +509,12 @@ void BuildGatewayUpstreamRegistry(const GatewayConfig& config, UpstreamRegistry&
     for (const UpstreamPeerConfig& peer_config : upstream_config.peers) {
       upstream->AddPeer(std::make_shared<UpstreamPeer>(peer_config));
     }
-    registry.Add(std::move(upstream));
+    auto registered = registry.Register(std::move(upstream));
+    if (!registered.has_value()) {
+      throw GatewayConfigError("failed to register upstream '" +
+                               upstream_config.config.name + "': " +
+                               registered.error().message());
+    }
   }
 }
 

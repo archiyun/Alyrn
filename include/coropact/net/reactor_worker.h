@@ -48,10 +48,14 @@ public:
   COROPACT_DELETE_COPY_MOVE(ReactorWorker);
 
   using ThreadInitCallback = std::function<void(ReactorWorkerContext&)>;
+  // Runs on the worker thread after the loop stops and before loop-bound
+  // listener/connector resources are destroyed.
+  using ThreadExitCallback = std::function<void(ReactorWorkerContext&)>;
   using ConnectionCallback = std::function<coro::Task<void>(ReactorWorkerContext&, ReactorStream)>;
 
   ReactorWorker(std::size_t index, InetAddress listen_addr, ReactorWorkerOptions options = {},
-                ThreadInitCallback init_callback = {}, ConnectionCallback connection_callback = {});
+                ThreadInitCallback init_callback = {}, ConnectionCallback connection_callback = {},
+                ThreadExitCallback exit_callback = {});
   ~ReactorWorker() noexcept;
 
   [[nodiscard]] base::Result<void> Start();
@@ -70,6 +74,7 @@ private:
   ReactorWorkerOptions options_;
   ThreadInitCallback init_callback_;
   ConnectionCallback connection_callback_;
+  ThreadExitCallback exit_callback_;
 
   std::mutex mutex_;
   std::condition_variable_any cv_;

@@ -11,7 +11,7 @@
 //  * Per-peer atomic state (effective_weight, active, fails, ...) is read
 //    relaxed; load balancing tolerates slightly stale values.
 //  * CreateLoadBalancer(name) is the string-to-factory entry point used by
-//    GatewayServer::AddProxyRoute.
+//    GatewaySessionService::AddProxyRoute.
 //
 // References:
 //  * Consistent hashing: Karger et al., "Consistent Hashing and Random Trees"
@@ -52,7 +52,7 @@ inline uint64_t SteadyClockMs() noexcept {
 }  // namespace detail
 
 // Per-request signals forwarded to LBs that route on request attributes
-// (IP hash, consistent hash on a specific field). Populated by GatewayServer
+// (IP hash, consistent hash on a specific field). Populated by the gateway
 // before calling Select(); empty strings mean "not provided".
 struct RequestContext {
   std::string client_ip;
@@ -730,7 +730,7 @@ inline std::unique_ptr<LoadBalancer> MakeP2CLB() { return std::make_unique<P2CLB
 
 }  // namespace detail
 
-// String-to-factory entry point used by GatewayServer when registering a route.
+// String-to-factory entry point used when registering a route.
 // Returns nullptr for an unknown algorithm name so the caller can reject the
 // route configuration explicitly instead of silently defaulting.
 inline std::unique_ptr<LoadBalancer> CreateLoadBalancer(std::string_view algo) {

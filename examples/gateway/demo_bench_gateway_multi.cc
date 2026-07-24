@@ -18,6 +18,7 @@
 //   wrk -t4 -c100 -d15s --latency http://127.0.0.1:8088/
 
 #include <atomic>
+#include <algorithm>
 #include <chrono>
 #include <csignal>
 #include <cstdint>
@@ -32,15 +33,12 @@
 #include <utility>
 #include <vector>
 
-#include "coropact/gateway/gateway_server.h"
 #include "coropact/gateway/gateway_session_service.h"
 #include "coropact/gateway/upstream.h"
 #include "coropact/gateway/upstream_peer.h"
 #include "coropact/net/event_loop.h"
-#include "coropact/net/event_loop_scheduler.h"
 #include "coropact/net/inet_address.h"
 #include "coropact/net/reactor_connect.h"
-#include "coropact/net/reactor_listener.h"
 #include "coropact/net/reactor_worker_group.h"
 
 namespace {
@@ -114,7 +112,12 @@ int main() {
     us->AddPeer(std::make_shared<coropact::gateway::UpstreamPeer>(coropact::gateway::UpstreamPeerConfig{
         .name = "127.0.0.1:" + std::to_string(p), .host = "127.0.0.1", .port = p}));
   }
-  reg.Add(us);
+  auto registered = reg.Register(std::move(us));
+  if (!registered.has_value()) {
+    std::fprintf(stderr, "failed to register upstream: %s\n",
+                 registered.error().message().c_str());
+    return 1;
+  }
 
   using Service =
       coropact::gateway::GatewaySessionService<coropact::net::ReactorStream, coropact::net::ReactorConnector>;
@@ -168,6 +171,18 @@ int main() {
         }
         co_await service.Serve(std::move(stream), coropact::net::ReactorConnector(&context.loop),
                                *pool);
+      },
+      [&worker_pools, &pools_by_loop, &pools_mutex](coropact::net::ReactorWorkerContext& context) {
+        std::lock_guard lock(pools_mutex);
+        auto map_it = pools_by_loop.find(&context.loop);
+        if (map_it == pools_by_loop.end()) return;
+        WorkerPool* pool = map_it->second;
+        pools_by_loop.erase(map_it);
+        auto pool_it = std::find_if(worker_pools.begin(), worker_pools.end(),
+                                    [pool](const auto& candidate) {
+                                      return candidate.get() == pool;
+                                    });
+        if (pool_it != worker_pools.end()) pool_it->reset();
       });
 
   auto started = workers.Start();

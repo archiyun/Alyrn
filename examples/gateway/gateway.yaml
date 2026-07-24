@@ -1,19 +1,10 @@
 server:
   name: gateway
   listen: 0.0.0.0:8080
-  threads: 1
 
 status_endpoint:
   enabled: true
   path: /healthz
-
-health_check:
-  enabled: true
-  path: /api/health
-  interval_sec: 10
-  timeout_sec: 3
-  unhealthy_threshold: 3
-  healthy_threshold: 2
 
 rate_limit:
   global:
