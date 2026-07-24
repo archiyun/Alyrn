@@ -38,11 +38,16 @@ int main() {
 
     IntrusiveList<Item> list;
     IntrusiveList<Item> other;
-    assert(!list.PushBack(nullptr));
-    assert(list.PushBack(&first));
-    assert(!list.PushBack(&first));
-    assert(list.InsertBefore(&first, &second));
-    assert(list.InsertAfter(&first, &third));
+    bool inserted = list.PushBack(nullptr);
+    assert(!inserted);
+    inserted = list.PushBack(&first);
+    assert(inserted);
+    inserted = list.PushBack(&first);
+    assert(!inserted);
+    inserted = list.InsertBefore(&first, &second);
+    assert(inserted);
+    inserted = list.InsertAfter(&first, &third);
+    assert(inserted);
 
     const auto& view = list;
     assert(view.front() == &second);
@@ -59,11 +64,13 @@ int main() {
     assert(!first.InList());
     assert(list.size() == 2);
 
-    assert(list.RemoveIf([](Item& item) { return item.id == 2; }) == 1);
+    std::size_t removed = list.RemoveIf([](Item& item) { return item.id == 2; });
+    assert(removed == 1);
     assert(!second.InList());
     assert(list.front() == &third);
 
-    assert(other.PushBack(&fourth));
+    inserted = other.PushBack(&fourth);
+    assert(inserted);
     list.Swap(other);
     assert(list.front() == &fourth);
     assert(other.front() == &third);
@@ -84,8 +91,10 @@ int main() {
     replacement.id = 3;
 
     IntrusiveList<Item> source;
-    assert(source.PushBack(&one));
-    assert(source.PushBack(&two));
+    bool inserted = source.PushBack(&one);
+    assert(inserted);
+    inserted = source.PushBack(&two);
+    assert(inserted);
 
     IntrusiveList<Item> moved(std::move(source));
     assert(source.empty());
@@ -93,7 +102,8 @@ int main() {
     assert(moved.front() == &one);
     assert(moved.back() == &two);
 
-    assert(source.PushBack(&replacement));
+    inserted = source.PushBack(&replacement);
+    assert(inserted);
     moved = std::move(source);
     assert(source.empty());
     assert(moved.size() == 1);
@@ -146,7 +156,8 @@ int main() {
       case 0: {  // PushFront: only link nodes not already in the list (idempotent)
         int id = rng() % N;
         if (!pool[id].InList()) {
-          assert(il.PushFront(&pool[id]));
+          bool inserted = il.PushFront(&pool[id]);
+          assert(inserted);
           oracle.push_front(id);
         }
         break;
@@ -154,7 +165,8 @@ int main() {
       case 1: {  // PushBack
         int id = rng() % N;
         if (!pool[id].InList()) {
-          assert(il.PushBack(&pool[id]));
+          bool inserted = il.PushBack(&pool[id]);
+          assert(inserted);
           oracle.push_back(id);
         }
         break;

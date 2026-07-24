@@ -32,37 +32,53 @@ int main() {
   PeerList peer_a;
   PeerList peer_b;
 
-  assert(global.PushMRU(&first));
-  assert(peer_a.PushBack(&first));
-  assert(global.PushMRU(&second));
-  assert(peer_a.PushBack(&second));
-  assert(global.PushMRU(&third));
-  assert(peer_b.PushBack(&third));
+  bool inserted = global.PushMRU(&first);
+  assert(inserted);
+  inserted = peer_a.PushBack(&first);
+  assert(inserted);
+  inserted = global.PushMRU(&second);
+  assert(inserted);
+  inserted = peer_a.PushBack(&second);
+  assert(inserted);
+  inserted = global.PushMRU(&third);
+  assert(inserted);
+  inserted = peer_b.PushBack(&third);
+  assert(inserted);
 
   assert(global.Oldest() == &first);
   assert(global.Newest() == &third);
 
   // Acquiring from a peer removes the same object from the global LRU.
-  assert(peer_a.PopBack() == &second);
-  assert(global.Erase(&second));
+  Item* popped = peer_a.PopBack();
+  assert(popped == &second);
+  bool erased = global.Erase(&second);
+  assert(erased);
   assert(global.Oldest() == &first);
 
   // Global eviction removes the corresponding peer entry as well.
-  assert(global.PopLRU() == &first);
-  assert(peer_a.Erase(&first));
-  assert(global.PopLRU() == &third);
-  assert(peer_b.Erase(&third));
+  popped = global.PopLRU();
+  assert(popped == &first);
+  erased = peer_a.Erase(&first);
+  assert(erased);
+  popped = global.PopLRU();
+  assert(popped == &third);
+  erased = peer_b.Erase(&third);
+  assert(erased);
   assert(global.Empty());
   assert(peer_a.empty());
   assert(peer_b.empty());
 
   // A removed node can be inserted again and touched to MRU.
-  assert(global.PushMRU(&first));
-  assert(peer_a.PushBack(&first));
+  inserted = global.PushMRU(&first);
+  assert(inserted);
+  inserted = peer_a.PushBack(&first);
+  assert(inserted);
   global.Touch(&first);
   assert(global.Newest() == &first);
-  assert(global.Erase(&first));
-  assert(peer_a.Erase(&first));
+  erased = global.Erase(&first);
+  assert(erased);
+  erased = peer_a.Erase(&first);
+  assert(erased);
 
   std::puts("intrusive_lru_test passed");
   return 0;
