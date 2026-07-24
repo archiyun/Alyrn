@@ -19,7 +19,7 @@ namespace coropact::cache {
 template <typename T, class Tag = void>
 class IntrusiveLRU {
 public:
-  COROPACT_DELETE_COPY_MOVE(IntrusiveLRU);
+  COROPACT_DISABLE_COPY_ALLOW_MOVE(IntrusiveLRU);
 
   IntrusiveLRU() = default;
 

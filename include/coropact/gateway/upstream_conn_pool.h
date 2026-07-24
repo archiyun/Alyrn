@@ -18,6 +18,7 @@
 #include "coropact/ds/intrusive_list.h"
 #include "coropact/gateway/upstream_peer.h"
 #include "coropact/io/async_stream.h"
+#include "coropact/utils/macros.h"
 
 namespace coropact::gateway {
 
@@ -98,6 +99,30 @@ public:
   using StreamHolder = std::optional<Stream>;
 
   explicit UpstreamStreamPool(PoolConfig cfg = {}) : config_(cfg) {}
+
+  COROPACT_DELETE_COPY(UpstreamStreamPool);
+
+  UpstreamStreamPool(UpstreamStreamPool&& other) noexcept
+      : config_(other.config_),
+        stats_(other.stats_),
+        idle_total_(other.idle_total_),
+        peer_queues_(std::move(other.peer_queues_)),
+        global_idle_(std::move(other.global_idle_)) {
+    other.idle_total_ = 0;
+  }
+
+  UpstreamStreamPool& operator=(UpstreamStreamPool&& other) noexcept {
+    if (this != &other) {
+      ClearEntries();
+      config_ = other.config_;
+      stats_ = other.stats_;
+      idle_total_ = other.idle_total_;
+      peer_queues_ = std::move(other.peer_queues_);
+      global_idle_ = std::move(other.global_idle_);
+      other.idle_total_ = 0;
+    }
+    return *this;
+  }
 
   ~UpstreamStreamPool() { ClearEntries(); }
 

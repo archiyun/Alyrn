@@ -6,6 +6,7 @@
 #include <optional>
 #include <span>
 #include <thread>
+#include <utility>
 
 #include "coropact/base/error.h"
 #include "coropact/coro/task.h"
@@ -106,11 +107,41 @@ bool TestSharedCapacity() {
   return ok;
 }
 
+bool TestMovePreservesEntries() {
+  coropact::gateway::UpstreamPeer first({.name = "first", .host = "127.0.0.1", .port = 9001});
+  coropact::gateway::UpstreamPeer second({.name = "second", .host = "127.0.0.1", .port = 9002});
+
+  Pool source({.max_idle_per_peer = 2});
+  source.Release(&first, std::optional<FakeStream>{FakeStream(1)});
+  source.Release(&second, std::optional<FakeStream>{FakeStream(2)});
+
+  Pool moved(std::move(source));
+  bool ok = Expect(!Take(source, &first), "moved-from pool should be empty");
+  auto first_stream = Take(moved, &first);
+  auto second_stream = Take(moved, &second);
+  ok &= Expect(first_stream && first_stream->id() == 1,
+               "move construction should preserve the first peer entry");
+  ok &= Expect(second_stream && second_stream->id() == 2,
+               "move construction should preserve the second peer entry");
+
+  Pool assigned;
+  assigned.Release(&first, std::optional<FakeStream>{FakeStream(3)});
+  Pool replacement;
+  replacement.Release(&second, std::optional<FakeStream>{FakeStream(4)});
+  assigned = std::move(replacement);
+  auto assigned_stream = Take(assigned, &second);
+  ok &= Expect(assigned_stream && assigned_stream->id() == 4,
+               "move assignment should transfer peer entries");
+  ok &= Expect(!Take(replacement, &second), "move-assigned-from pool should be empty");
+  return ok;
+}
+
 }  // namespace
 
 int main() {
   const bool ok =
-      TestPeerIsolationAndCapacity() && TestZeroCapacityAndStaleEviction() && TestSharedCapacity();
+      TestPeerIsolationAndCapacity() && TestZeroCapacityAndStaleEviction() &&
+      TestSharedCapacity() && TestMovePreservesEntries();
   if (ok) std::cout << "[PASS] upstream connection pool smoke tests\n";
   return ok ? 0 : 1;
 }
