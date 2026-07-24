@@ -192,7 +192,10 @@ private:
   void EnsureOneTailBlock(std::size_t hint) {
     Block* tail = blocks_.back();
     if (tail != nullptr && tail->WritableBytes() > 0) return;
-    blocks_.PushBack(NewBlock(std::max(block_size_, hint)));
+    Block* block = NewBlock(std::max(block_size_, hint));
+    const bool linked = blocks_.PushBack(block);
+    assert(linked);
+    if (!linked) delete block;
   }
 
   void EnsureTailWritable(std::size_t hint, std::size_t max_iov) {
@@ -208,10 +211,15 @@ private:
 
     while (writable < hint && reserved < max_iov) {
       Block* block = NewBlock(std::max(block_size_, hint - writable));
+      const bool linked = blocks_.PushBack(block);
+      assert(linked);
+      if (!linked) {
+        delete block;
+        break;
+      }
       block->reserved_for_write = true;
       writable += block->WritableBytes();
       reserved += 1;
-      blocks_.PushBack(block);
     }
   }
 

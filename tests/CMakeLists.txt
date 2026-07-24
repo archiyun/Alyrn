@@ -558,6 +558,17 @@ target_link_libraries(lru_cache_test
 
 add_test(NAME lru_cache_test COMMAND lru_cache_test)
 
+add_executable(intrusive_lru_test
+    unit/test_intrusive_lru.cc
+)
+
+target_include_directories(intrusive_lru_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+add_test(NAME intrusive_lru_test COMMAND intrusive_lru_test)
+
 add_executable(quad_heap_test
     unit/test_quad_heap.cc
 )

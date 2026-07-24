@@ -12,6 +12,7 @@
 #include "coropact/base/panic.h"
 #include "coropact/base/singleton.h"
 #include "coropact/base/try.h"
+#include "coropact/cache/intrusive_lru.h"
 #include "coropact/cache/lru_cache.h"
 #include "coropact/cache/sharded_lru_cache.h"
 #include "coropact/coro/awaitable.h"

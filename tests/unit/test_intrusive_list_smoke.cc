@@ -27,6 +27,55 @@ struct Item : ListNode<Item> {
 
 int main() {
   {
+    Item first{};
+    Item second{};
+    Item third{};
+    Item fourth{};
+    first.id = 1;
+    second.id = 2;
+    third.id = 3;
+    fourth.id = 4;
+
+    IntrusiveList<Item> list;
+    IntrusiveList<Item> other;
+    assert(!list.PushBack(nullptr));
+    assert(list.PushBack(&first));
+    assert(!list.PushBack(&first));
+    assert(list.InsertBefore(&first, &second));
+    assert(list.InsertAfter(&first, &third));
+
+    const auto& view = list;
+    assert(view.front() == &second);
+    assert(view.back() == &third);
+    int const_sum = 0;
+    for (const Item& item : view) {
+      const_sum += item.id;
+    }
+    assert(const_sum == 6);
+
+    auto it = list.cbegin();
+    ++it;
+    list.Erase(it);
+    assert(!first.InList());
+    assert(list.size() == 2);
+
+    assert(list.RemoveIf([](Item& item) { return item.id == 2; }) == 1);
+    assert(!second.InList());
+    assert(list.front() == &third);
+
+    assert(other.PushBack(&fourth));
+    list.Swap(other);
+    assert(list.front() == &fourth);
+    assert(other.front() == &third);
+    assert(list.size() == 1);
+    assert(other.size() == 1);
+
+    swap(list, other);
+    assert(list.front() == &third);
+    assert(other.front() == &fourth);
+  }
+
+  {
     Item one{};
     Item two{};
     Item replacement{};
@@ -35,8 +84,8 @@ int main() {
     replacement.id = 3;
 
     IntrusiveList<Item> source;
-    source.PushBack(&one);
-    source.PushBack(&two);
+    assert(source.PushBack(&one));
+    assert(source.PushBack(&two));
 
     IntrusiveList<Item> moved(std::move(source));
     assert(source.empty());
@@ -44,7 +93,7 @@ int main() {
     assert(moved.front() == &one);
     assert(moved.back() == &two);
 
-    source.PushBack(&replacement);
+    assert(source.PushBack(&replacement));
     moved = std::move(source);
     assert(source.empty());
     assert(moved.size() == 1);
@@ -97,7 +146,7 @@ int main() {
       case 0: {  // PushFront: only link nodes not already in the list (idempotent)
         int id = rng() % N;
         if (!pool[id].InList()) {
-          il.PushFront(&pool[id]);
+          assert(il.PushFront(&pool[id]));
           oracle.push_front(id);
         }
         break;
@@ -105,7 +154,7 @@ int main() {
       case 1: {  // PushBack
         int id = rng() % N;
         if (!pool[id].InList()) {
-          il.PushBack(&pool[id]);
+          assert(il.PushBack(&pool[id]));
           oracle.push_back(id);
         }
         break;
