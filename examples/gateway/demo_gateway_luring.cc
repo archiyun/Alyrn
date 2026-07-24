@@ -31,7 +31,6 @@
 
 #include <cstdio>
 #include <memory>
-#include <print>
 #include <iostream>
 #include <utility>
 
@@ -72,7 +71,8 @@ int main() {
   // 注册中心挂载服务
   auto reg_result = reg.Register(upstream);
   if (!reg_result.has_value()) {
-    std::println(stderr, "failed to register upstream: {}", reg_result.error().message());
+    std::fprintf(stderr, "failed to register upstream: %s\n",
+                 reg_result.error().message().c_str());
     return 1;
   }
 
@@ -100,10 +100,10 @@ int main() {
   options.worker_num = 1;
 
   auto on_worker_init = [](coropact::luring::LUringWorkerContext& context) {
-    std::println("luring worker {} initialized", context.index);
+    std::printf("luring worker %zu initialized\n", context.index);
   };
   auto on_worker_exit = [](coropact::luring::LUringWorkerContext& context) {
-    std::println("luring worker {} exited", context.index);
+    std::printf("luring worker %zu exited\n", context.index);
   };
 
   coropact::luring::LUringWorkerGroup workers(
@@ -117,11 +117,12 @@ int main() {
 
   auto started = workers.Start();
   if (!started.has_value()) {
-    std::println(stderr, "failed to start worker group: {}", started.error().message());
+    std::fprintf(stderr, "failed to start worker group: %s\n",
+                 started.error().message().c_str());
     return 1;
   }
 
-  std::println("gateway listening on 127.0.0.1:8080; press Enter to stop");
+  std::printf("gateway listening on 127.0.0.1:8080; press Enter to stop\n");
   std::cin.get();
   workers.Stop();
   return 0;

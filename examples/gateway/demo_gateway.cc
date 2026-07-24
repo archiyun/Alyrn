@@ -27,7 +27,6 @@
  *
  * ... 自行扩展
  */
-#include <print>
 #include <cstdio>
 #include <iostream>
 #include <memory>
@@ -61,7 +60,8 @@ int main() {
 
   auto registered = reg.Register(std::move(upstream));
   if (!registered.has_value()) {
-    std::println(stderr, "failed to register upstream: {}", registered.error().message());
+    std::fprintf(stderr, "failed to register upstream: %s\n",
+                 registered.error().message().c_str());
     return 1;
   }
 
@@ -86,10 +86,10 @@ int main() {
   options.worker_num = 1;
 
   auto on_worker_init = [](coropact::net::ReactorWorkerContext& context) {
-    std::println("reactor worker {} initialized", context.index);
+    std::printf("reactor worker %zu initialized\n", context.index);
   };
   auto on_worker_exit = [](coropact::net::ReactorWorkerContext& context) {
-    std::println("reactor worker {} exited", context.index);
+    std::printf("reactor worker %zu exited\n", context.index);
   };
 
   coropact::net::ReactorWorkerGroup workers(
@@ -103,11 +103,12 @@ int main() {
 
   auto started = workers.Start();
   if (!started.has_value()) {
-    std::println(stderr, "failed to start worker group: {}", started.error().message());
+    std::fprintf(stderr, "failed to start worker group: %s\n",
+                 started.error().message().c_str());
     return 1;
   }
 
-  std::println("gateway listening on 127.0.0.1:8080; press Enter to stop");
+  std::printf("gateway listening on 127.0.0.1:8080; press Enter to stop\n");
   std::cin.get();
   workers.Stop();
   return 0;
