@@ -37,12 +37,17 @@ public:
   void* owner{nullptr};
   CompleteHook on_complete{nullptr};
 
-  void Complete(int cqe_res) noexcept {
+  [[nodiscard]] bool Complete(int cqe_res) noexcept {
+    if (completed) {
+      return false;
+    }
+
     result = cqe_res;
     completed = true;
     if (on_complete != nullptr) {
       on_complete(this);
     }
+    return true;
   }
 };
 

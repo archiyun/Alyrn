@@ -577,6 +577,388 @@ runtime.CurrentLogicalClock();
 
 否则所谓热插拔只是一个危险的状态突变。
 
+## 面向 CoroPact 的最小可证明模型
+
+前面的六元组给出了运行时的总体结构，但要让它能够指导 CoroPact 的实现和证明，
+还需要把“协程能观察到什么”与“后端内部如何实现”明确分开。
+
+第一版模型不描述整个 gateway，也不描述所有 io_uring 扩展。先限制在以下范围：
+
+```text
+一个 event loop；
+一个 stream；
+一个等待该 stream 的协程；
+一个 pending read 和一个 pending write；
+Close、Cancel 和一次性 Timeout。
+```
+
+这已经足以覆盖后端替换最重要的语义边界。multishot、provided buffer、send
+zero-copy 和跨 worker 迁移都属于后续扩展，不应在第一版模型中混入。
+
+### 抽象状态与具体状态
+
+先定义不包含后端细节的协程层状态：
+
+```text
+C = { Running, Waiting(op), Ready(result), Done }
+
+R = { Open, Closing, Closed }
+
+O = {
+  None,
+  Pending(c, r, kind, buffer),
+  Completed(result),
+  Cancelled(error)
+}
+
+S_abs = (C, R, O)
+```
+
+`S_abs` 是两个后端都必须解释的抽象状态。后端再把自己的内部状态附加在抽象状态
+上：
+
+```text
+S_Reactor = (S_abs, Q_Reactor, Reactor, P, H)
+S_LUring  = (S_abs, Q_LUring,  LUring,  P, H)
+```
+
+其中：
+
+```text
+Q_Reactor = ready queue、Channel、Poller、TimerQueue
+Q_LUring  = ready queue、completion queue、SQ、CQ、Mailbox、TimerQueue
+B          = 当前后端解释器
+P          = 当前 active capability profile
+H          = 用于证明的 happens-before 关系
+```
+
+`H` 首先是模型中的关系，不要求在生产运行时保存 Lamport 整数时钟。实际代码中的
+队列顺序、线程归属、原子同步和完成回调可以为这组关系提供证明依据。
+
+### 两层事件字母表
+
+项目需要把协程层事件与后端内部事件分开：
+
+```text
+E_obs = {
+  Submit(c, op),
+  Suspend(c, op),
+  Complete(op, result),
+  Resume(c, result),
+  Cancel(op),
+  Close(r),
+  Timeout(op)
+}
+```
+
+`E_obs` 是协程语义契约使用的事件。业务协程可以通过 await 的结果和恢复顺序间接
+观察它们，但不应该依赖事件的具体实现。
+
+Reactor 的内部事件可以写成：
+
+```text
+E_int^Reactor = {
+  TryRead,
+  TryWrite,
+  EAGAIN,
+  EpollReadable,
+  EpollWritable,
+  TimerFired,
+  ChannelCallback
+}
+```
+
+io_uring 的内部事件可以写成：
+
+```text
+E_int^LUring = {
+  SQEPrepared,
+  SQESubmitted,
+  CQEReaped,
+  MsgRingNotification,
+  TimerCQE,
+  OpCompletionHook
+}
+```
+
+外部环境产生的数据到达、对端 EOF、连接错误和时间流逝，首先进入某个具体后端的
+内部事件集合；它们只有在被后端解释后，才会产生 `E_obs` 中的 `Complete` 或
+`Timeout`。
+
+因此完整的事件集合应写成：
+
+```text
+E_B = E_obs ∪ E_ext^B ∪ E_int^B
+```
+
+### 协程观察函数
+
+仅仅比较两个后端的事件集合是不够的，因为它们的内部事件本来就不同。需要定义
+从具体执行轨迹到协程轨迹的观察函数：
+
+```text
+Obs_B : Trace_B -> CoroutineTrace
+```
+
+它会删除后端内部事件，并保留或生成协程可观察事件：
+
+```text
+Obs_Reactor(
+  TryRead, EAGAIN, EpollReadable, recv(128), ResumeWork
+)
+  = [Complete(read, 128), Resume(read, 128)]
+
+Obs_LUring(
+  SQEPrepared, SQESubmitted, CQEReaped, CompleteHook, ResumeWork
+)
+  = [Complete(read, 128), Resume(read, 128)]
+```
+
+对同一个抽象操作，两个后端的目标不是产生相同的内部轨迹，而是产生满足同一
+协程契约的观察轨迹：
+
+```text
+Submit
+  -> [Suspend]
+  -> Complete(result)
+  -> Resume(result)
+```
+
+第一版核心语义默认不观察 epoll/CQE 的存在、提交批量大小和实际延迟。若未来要把
+公平性、延迟上界或背压加入契约，必须把它们明确加入观察函数，而不能依赖直觉。
+
+### 固定机制的可检查形式
+
+在这个模型中，`Σ_core` 不是 epoll 或 SQE 的功能列表，而是所有后端必须满足的
+转移约束：
+
+```text
+σ_submit:
+  resource = Open，且对应方向没有其他 pending operation 时，才能成功提交。
+
+σ_complete:
+  Pending operation 才能完成；single-shot operation 最多完成一次。
+
+σ_resume:
+  只有正在 Waiting(op) 的协程，才能被 op 的完成结果恢复。
+
+σ_cancel:
+  Cancel 不能丢弃 operation，必须最终收敛为 Complete(cancelled/error)。
+
+σ_close:
+  resource 进入 Closing 后，不再允许新的成功 I/O 提交。
+
+σ_lifetime:
+  backend 仍可能访问的 fd、buffer、awaiter 和 coroutine handle 必须保持有效。
+
+σ_profile:
+  active profile 中的每项核心能力都必须有真实的语义解释。
+```
+
+例如 `Submit` 的抽象转移可以写成：
+
+```text
+前置条件：
+  c = Running
+  r = Open
+  对应方向没有 pending operation
+  buffer 生命周期覆盖本次 operation
+
+状态变化：
+  O := Pending(c, r, kind, buffer)
+  C := Waiting(op)
+```
+
+`Complete` 的前置条件是 `O = Pending(...)` 且该 operation 尚未完成；后置状态是
+`O = Completed(result)`，并产生唯一的 `Resume` 许可。
+
+### `δ`：两个后端如何解释同一转移
+
+Reactor 的典型映射是：
+
+```text
+co_await
+  -> ReactorStream::ReadSomeAwaiter::await_suspend
+  -> nonblocking recv/send
+  -> 立即得到结果，或遇到 EAGAIN
+  -> EAGAIN 时注册 Channel 并保持 Waiting
+  -> epoll readiness
+  -> 重试 I/O
+  -> Complete
+  -> Schedule(ResumeWork)
+  -> Resume
+```
+
+io_uring 的典型映射是：
+
+```text
+co_await
+  -> LUringStream::ReadSomeAwaiter::await_suspend
+  -> LUringLoop::SubmitOp
+  -> 准备并提交 SQE
+  -> CQE 被回收
+  -> LUringOp::Complete
+  -> ScheduleCompletion(ResumeWork)
+  -> Resume
+```
+
+因此可以定义两个后端到抽象机的 refinement 映射：
+
+```text
+Refine_Reactor : ConcreteReactorState -> S_abs
+Refine_LUring  : ConcreteLUringState  -> S_abs
+```
+
+证明义务不是让两个具体状态相同，而是要求：
+
+```text
+每个合法的 Reactor 转移都能映射成一个合法的 S_abs 转移；
+每个合法的 io_uring 转移也能映射成一个合法的 S_abs 转移；
+映射后的观察轨迹都满足 Σ_core 和 Inv。
+```
+
+这也解释了项目中的固定边界：`coropact::io::AsyncStream` 是抽象语义入口，
+`ReactorStream` 和 `LUringStream` 是两个具体解释器，epoll、SQE、CQE 和 mailbox
+属于具体后端的状态与事件。
+
+### 不变量与活性条件
+
+现有不变量主要描述安全性，还需要把最终收敛条件单独列出。
+
+安全性条件包括：
+
+```text
+I1  single-shot operation 至多 Complete 一次；
+I2  Complete 必须先存在对应的 Submit；
+I3  Resume 只能恢复等待该 operation 的协程；
+I4  Close 后不能产生新的成功提交；
+I5  Complete 前 buffer、fd、awaiter 和 coroutine handle 必须存活；
+I6  同一个 stream 的同方向 operation 不能重复占用 pending 槽位；
+I7  operation 在任意时刻只能归属于一个 backend。
+```
+
+活性条件包括：
+
+```text
+L1  合法提交的 operation 最终会 Complete；
+L2  Close 之后的 pending operation 最终会收敛；
+L3  Complete 产生的 Resume 最终会被所属 loop 调度。
+```
+
+活性条件不能凭空成立，需要明确假设：所属 loop 持续运行，backend 不永久丢失事件，
+ready queue 最终获得调度机会。若调度策略允许永久饿死某个 operation，就只能证明
+安全性，不能声称完整的协程语义等价。
+
+### 先验证模型，再讨论热插拔
+
+第一版 TLA+ 模型只需要包含以下变量和动作：
+
+```text
+变量：
+  coroutineState、resourceState、operationState、readyQueue
+
+动作：
+  Submit、Suspend、Complete、Cancel、Close、Resume
+```
+
+先检查单个 read/write、立即完成、真正挂起、Close 与 Complete 竞争等情况。模型不
+需要复制真实的 fd、SQE、CQE 或 gateway；这些属于 `Refine_Reactor` 和
+`Refine_LUring` 的实现证明对象。
+
+对应的 C++ 测试则应该让 Reactor 和 io_uring 运行同一组契约场景：正常完成、EOF、
+Close 取消、Close 后提交、重复完成、read/write 并行 pending 以及 buffer 生命周期。
+
+只有当两个后端都能映射到同一个 `S_abs`，热插拔才可以定义为：
+
+```text
+Freeze(b1)
+  -> 保持 S_abs 和 pending operation 的语义状态
+  -> 建立 Refine_b2
+  -> Install(b2)
+  -> 继续产生满足同一 Obs 和 Inv 的事件
+```
+
+在此之前，CoroPact 只能说已经有两个满足 `AsyncStream` 契约的后端，不能声称已经
+实现了任意时刻的 backend hot swap。
+
+### 当前项目的符合度
+
+截至当前实现，CoroPact 已经具备这套模型的工程基础，但尚未完成形式化证明，也尚未
+实现运行时后端热插拔。应当把当前状态区分为以下几层：
+
+```text
+协程层公共接口：       基本成立
+两个后端解释同一接口： 已有 ReactorStream 和 LUringStream
+核心不变量：           主要由线程归属、pending 槽位和 Close 路径维护
+观察函数 Obs：          尚未实现
+Refine_Reactor：        已有有限路径映射模型
+Refine_LUring：         已有有限路径映射模型
+有限 backend refinement：已有 Reactor/io_uring 路径模型
+TLA+ 状态模型：          core 与 backend refinement 模型均已存在
+运行时 SwitchBackend：  尚不存在
+```
+
+当前的 [`async_stream_core.tla`](formal/async_stream_core.tla) 已由 TLC 运行检查：
+
+```text
+75 states generated
+48 distinct states found
+0 states left on queue
+No error has been found
+```
+
+这只说明有限状态模型中的当前不变量成立，不等于已经证明 Reactor 和 io_uring 的
+refinement，也不等于已经证明活性或热插拔安全。模型暂时关闭了 TLC 的 deadlock
+检查，因为一次性 operation 的 `Closed` 和 `Done` 状态被设计为合法终点。
+
+当前的 [`async_stream_backend_refinement.tla`](formal/async_stream_backend_refinement.tla)
+进一步将两条具体路径放入同一个有限模型：
+
+```text
+Reactor： EAGAIN -> Channel readiness -> Complete
+io_uring：SQE -> submit -> CQE -> Complete
+```
+
+该模型由 TLC 检查得到：
+
+```text
+153 states generated
+96 distinct states found
+0 states left on queue
+No error has been found
+```
+
+这一步验证的是“抽象后的具体路径模型满足当前安全不变量”。它还不是对 C++ 源码的
+逐行形式化证明；buffer 生命周期和真实内核行为仍是独立的证明义务。当前源码中的
+`LUringOp::Complete` 已保持首次结果并拒绝重复 completion hook，`HandleCqe` 也只为
+首次 completion 调度恢复工作；这实现了 single-shot 的运行时保护，但不替代对所有
+operation owner 和 buffer 生命周期的证明。动态 `SwitchBackend` 不属于当前证明范围。
+
+因此，当前项目可以表述为：
+
+```text
+Reactor 和 io_uring 已经有共同的协程语义接口，
+并且存在映射到同一个抽象状态机的现实基础。
+```
+
+但还不能表述为：
+
+```text
+两个后端已经被形式化证明语义等价，或已经支持任意时刻热插拔。
+```
+
+当前实现中的 [`AsyncStream`](https://github.com/akiba-miku/CoroPact/blob/main/include/coropact/io/async_stream.h) 主要检查
+接口形状，不能在编译期检查“最多完成一次”“Close 后不能成功提交”或“buffer 在
+Complete 前有效”等动态性质。这些性质目前依赖具体实现、调试断言和 smoke test。
+
+此外，`BackendBinding` 目前只是启动期的 capability profile 检查；Reactor 和 luring
+的 stream 都是 loop-bound，pending operation 不能直接迁移。因此现阶段最多只能把
+quiescent switch 作为未来设计目标，不能把它描述成已有能力。
+
+timeout 也仍处于迁移状态：`ReactorStream` 和 `LUringStream` 都已有 `ReadSomeFor`，
+但 `AsyncStream` 尚未包含统一的 timed concept。`kTimeout` 的 capability 标记不能替代
+公共接口和语义验证。
+
 ## 结论
 
 协程网络运行时的统一，不应该建立在“哪个后端更强”上，而应该建立在协程可观察语义上。

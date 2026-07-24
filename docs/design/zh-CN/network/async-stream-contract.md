@@ -586,17 +586,19 @@ ReadSomeFor(std::span<std::byte> buffer, std::chrono::milliseconds timeout)
 
 ```text
 ReactorStream 已提供 ReadSomeFor；
-LUringStream 尚未提供 ReadSomeFor；
+LUringStream 也已提供 ReadSomeFor；
 AsyncStream concept 尚未包含 ReadSomeFor；
 CapabilitySet 中的 kTimeout 已被标为 core，但 TimedStream/TimedGateway
 尚未成为两种后端都可直接使用的公共业务契约。
 ```
 
-因此，在 luring 实现和公共 concept 完成前：
+因此，目前可以直接在具体的 `ReactorStream` 或 `LUringStream` 上调用 `ReadSomeFor`，
+但不能仅凭 `AsyncStream` 约束要求该方法存在：
 
 ```text
-不能仅凭 kTimeout 通过 capability bind 就调用 ReadSomeFor；
 gateway 的 timeout fallback 只能在具体 stream 提供该方法时启用；
+公共 TimedStream/TimedGateway 尚未成为统一的 compile-time concept；
+不能仅凭 kTimeout 通过 capability bind 就改变已有 C++ concept 的接口；
 ProbeCapabilities 报告内核 opcode 不等于 coropact TimedStream 已实现。
 ```
 

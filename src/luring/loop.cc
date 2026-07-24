@@ -534,11 +534,12 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
   }
 
   const std::uint64_t event_ns = stats_enabled_ ? NowNs() : 0;
+  bool first_completion = false;
   {
     COROPACT_CTRACK_SCOPE("luring.cqe.complete");
-    op->Complete(cqe->res);
+    first_completion = op->Complete(cqe->res);
   }
-  if (op->resume_work.handle) {
+  if (first_completion && op->resume_work.handle) {
     ScheduleCompletionAt(&op->resume_work, event_ns);
   }
 }
