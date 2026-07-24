@@ -947,7 +947,7 @@ Reactor 和 io_uring 已经有共同的协程语义接口，
 两个后端已经被形式化证明语义等价，或已经支持任意时刻热插拔。
 ```
 
-当前实现中的 [`AsyncStream`](../../../include/coropact/io/async_stream.h) 主要检查
+当前实现中的 [`AsyncStream`](https://github.com/akiba-miku/CoroPact/blob/main/include/coropact/io/async_stream.h) 主要检查
 接口形状，不能在编译期检查“最多完成一次”“Close 后不能成功提交”或“buffer 在
 Complete 前有效”等动态性质。这些性质目前依赖具体实现、调试断言和 smoke test。
 
