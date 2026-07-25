@@ -1,6 +1,6 @@
 /**
  * 底层基于 io_uring
- * 同目录下 demo_gateway.cc 基于 net 模块 (Reactor/epoll)
+ * 同目录下 demo_gateway.cc 基于 reactor 模块 (Reactor/epoll)
  * 示例:
  *   配置同 demo_gateway.cc, 详情参考上方注释.
  *
@@ -44,7 +44,7 @@
 #include "coropact/http/http_types.h"
 #include "coropact/luring/stream.h"
 #include "coropact/luring/worker.h"
-#include "coropact/net/inet_address.h"
+#include "coropact/net/endpoint.h"
 #include "coropact/luring/connector.h"
 #include "coropact/luring/worker_group.h"
 
@@ -107,7 +107,7 @@ int main() {
   };
 
   coropact::luring::LUringWorkerGroup workers(
-      coropact::net::InetAddress(8080), std::move(options), std::move(on_worker_init),
+      coropact::net::Endpoint(8080), std::move(options), std::move(on_worker_init),
       [&gateway](coropact::luring::LUringWorkerContext& context,
                  coropact::luring::LUringStream stream) -> coropact::coro::Task<void> {
         co_await gateway.Serve(std::move(stream),

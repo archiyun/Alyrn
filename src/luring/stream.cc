@@ -20,7 +20,7 @@
 #include "coropact/base/error.h"
 #include "coropact/luring/loop.h"
 #include "coropact/luring/op.h"
-#include "coropact/net/inet_address.h"
+#include "coropact/net/endpoint.h"
 
 namespace coropact::luring {
 
@@ -323,7 +323,7 @@ private:
   bool completed_{false};
 };
 
-LUringStream::LUringStream(LUringLoop* loop, int fd, net::InetAddress peer) noexcept
+LUringStream::LUringStream(LUringLoop* loop, int fd, net::Endpoint peer) noexcept
     : loop_(loop), fd_(fd), peer_(std::move(peer)) {
   assert(loop_ != nullptr);
   assert(fd_ >= 0);

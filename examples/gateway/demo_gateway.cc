@@ -40,9 +40,9 @@
 #include "coropact/http/http_request.h"
 #include "coropact/http/http_response.h"
 #include "coropact/http/http_types.h"
-#include "coropact/net/inet_address.h"
-#include "coropact/net/reactor_connect.h"
-#include "coropact/net/reactor_worker_group.h"
+#include "coropact/net/endpoint.h"
+#include "coropact/reactor/reactor_connect.h"
+#include "coropact/reactor/reactor_worker_group.h"
 
 int main() {
   // 1. 创建服务注册中心 和 配置上游
@@ -67,8 +67,8 @@ int main() {
 
   // 2. 创建网关 session service。net拥有 listener/accept/worker 生命周期。
   using Service =
-      coropact::gateway::GatewaySessionService<coropact::net::ReactorStream,
-                                               coropact::net::ReactorConnector>;
+      coropact::gateway::GatewaySessionService<coropact::reactor::ReactorStream,
+                                               coropact::reactor::ReactorConnector>;
   Service gateway("gateway", reg);
 
   // 直接路由
@@ -82,22 +82,22 @@ int main() {
   gateway.AddProxyRoute("/api/health", "user_service", "round_robin");
   gateway.AddProxyRoute("/api/kv", "user_service", "round_robin");
 
-  coropact::net::ReactorWorkerGroupOptions options;
+  coropact::reactor::ReactorWorkerGroupOptions options;
   options.worker_num = 1;
 
-  auto on_worker_init = [](coropact::net::ReactorWorkerContext& context) {
+  auto on_worker_init = [](coropact::reactor::ReactorWorkerContext& context) {
     std::println("reactor worker {} initialized", context.index);
   };
-  auto on_worker_exit = [](coropact::net::ReactorWorkerContext& context) {
+  auto on_worker_exit = [](coropact::reactor::ReactorWorkerContext& context) {
     std::println("reactor worker {} exited", context.index);
   };
 
-  coropact::net::ReactorWorkerGroup workers(
-      coropact::net::InetAddress(8080), std::move(options), std::move(on_worker_init),
-      [&gateway](coropact::net::ReactorWorkerContext& context,
-                 coropact::net::ReactorStream stream) -> coropact::coro::Task<void> {
+  coropact::reactor::ReactorWorkerGroup workers(
+      coropact::net::Endpoint(8080), std::move(options), std::move(on_worker_init),
+      [&gateway](coropact::reactor::ReactorWorkerContext& context,
+                 coropact::reactor::ReactorStream stream) -> coropact::coro::Task<void> {
         co_await gateway.Serve(std::move(stream),
-                               coropact::net::ReactorConnector(&context.loop));
+                               coropact::reactor::ReactorConnector(&context.loop));
       },
       std::move(on_worker_exit));
 

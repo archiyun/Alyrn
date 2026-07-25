@@ -11,7 +11,7 @@
 
 #include "coropact/base/error.h"
 #include "coropact/luring/worker.h"
-#include "coropact/net/inet_address.h"
+#include "coropact/net/endpoint.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::luring {
@@ -38,7 +38,7 @@ public:
   using ThreadExitCallback = LUringWorker::ThreadExitCallback;
   using ConnectionCallback = LUringWorker::ConnectionCallback;
 
-  LUringWorkerGroup(net::InetAddress listen_addr, LUringWorkerGroupOptions options = {},
+  LUringWorkerGroup(net::Endpoint listen_addr, LUringWorkerGroupOptions options = {},
                     ThreadInitCallback init_callback = {},
                     ConnectionCallback connection_callback = {},
                     ThreadExitCallback exit_callback = {});
@@ -58,7 +58,7 @@ public:
   }
 
 private:
-  net::InetAddress listen_addr_;
+  net::Endpoint listen_addr_;
   LUringWorkerGroupOptions options_;
   ThreadInitCallback init_callback_;
   ConnectionCallback connection_callback_;

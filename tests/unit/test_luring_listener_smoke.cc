@@ -21,7 +21,7 @@
 #include "coropact/luring/loop.h"
 #include "coropact/luring/options.h"
 #include "coropact/luring/stream.h"
-#include "coropact/net/inet_address.h"
+#include "coropact/net/endpoint.h"
 
 namespace {
 
@@ -92,14 +92,13 @@ LoopInitStatus InitLoop(coropact::luring::LUringLoop& loop) {
   return LoopInitStatus::kFail;
 }
 
-coropact::base::Result<int> ConnectClient(const coropact::net::InetAddress& address) {
+coropact::base::Result<int> ConnectClient(const coropact::net::Endpoint& address) {
   int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, IPPROTO_TCP);
   if (fd < 0) {
     return std::unexpected(coropact::base::CurrentErrno());
   }
 
-  const sockaddr_in& addr = address.sock_addr();
-  int r = ::connect(fd, reinterpret_cast<const sockaddr*>(&addr), sizeof(addr));
+  int r = ::connect(fd, address.sock_addr(), address.sock_addr_len());
   if (r < 0 && errno != EINPROGRESS) {
     auto error = coropact::base::CurrentErrno();
     ::close(fd);
@@ -109,12 +108,12 @@ coropact::base::Result<int> ConnectClient(const coropact::net::InetAddress& addr
   return fd;
 }
 
-coropact::net::InetAddress LoopbackAddress(std::uint16_t port) {
+coropact::net::Endpoint LoopbackAddress(std::uint16_t port) {
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   addr.sin_port = htons(port);
-  return coropact::net::InetAddress(addr);
+  return coropact::net::Endpoint(addr);
 }
 
 coropact::coro::Task<void> AcceptOnce(

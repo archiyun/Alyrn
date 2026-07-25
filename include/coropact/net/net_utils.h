@@ -5,7 +5,7 @@
 #include <string_view>
 
 #include "coropact/base/error.h"
-#include "coropact/net/inet_address.h"
+#include "coropact/net/endpoint.h"
 
 #if !defined(__linux__)
 #error "coropact::net currently requires Linux"
@@ -13,12 +13,13 @@
 
 namespace coropact::net {
 
-// Parses a numeric IPv4 address. Hostnames are not resolved.
-[[nodiscard]] coropact::base::Result<InetAddress> ParseIPv4Address(std::string_view ip,
-                                                               std::uint16_t port);
+// Parses a numeric IPv4 or IPv6 address. Hostnames are not resolved.
+[[nodiscard]] coropact::base::Result<Endpoint> ParseIpAddress(std::string_view ip,
+                                                              std::uint16_t port);
 
-// Creates a non-blocking IPv4 TCP socket with close-on-exec enabled atomically.
-[[nodiscard]] coropact::base::Result<int> CreateNonBlockingSocket();
+// Creates a non-blocking TCP socket with close-on-exec enabled atomically.
+[[nodiscard]] coropact::base::Result<int> CreateNonBlockingSocket(
+    sa_family_t family = AF_INET);
 
 // Sets or clears O_NONBLOCK on the given fd.
 [[nodiscard]] coropact::base::Result<void> set_non_blocking(int fd, bool on = true);
@@ -39,10 +40,10 @@ namespace coropact::net {
 [[nodiscard]] coropact::base::Result<void> set_keep_alive(int fd, bool on = true);
 
 // Returns the local socket address bound to fd.
-[[nodiscard]] coropact::base::Result<InetAddress> get_local_addr(int fd);
+[[nodiscard]] coropact::base::Result<Endpoint> get_local_addr(int fd);
 
 // Returns the peer socket address connected to fd.
-[[nodiscard]] coropact::base::Result<InetAddress> get_peer_addr(int fd);
+[[nodiscard]] coropact::base::Result<Endpoint> get_peer_addr(int fd);
 
 // Returns true if fd is connected to itself.
 //

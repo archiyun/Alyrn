@@ -18,8 +18,8 @@
 #include "coropact/gateway/gateway_session_service.h"
 #include "coropact/gateway/upstream_registry.h"
 #include "coropact/net/net_utils.h"
-#include "coropact/net/reactor_connect.h"
-#include "coropact/net/reactor_worker_group.h"
+#include "coropact/reactor/reactor_connect.h"
+#include "coropact/reactor/reactor_worker_group.h"
 
 int main(int argc, char** argv) {
   const bool check_only = argc > 1 && std::string_view(argv[1]) == "--check";
@@ -37,25 +37,25 @@ int main(int argc, char** argv) {
       return 0;
     }
 
-    auto listen_addr = coropact::net::ParseIPv4Address(config.server.host, config.server.port);
+    auto listen_addr = coropact::net::ParseIpAddress(config.server.host, config.server.port);
     if (!listen_addr) {
       throw coropact::gateway::GatewayConfigError("server.listen: expected a numeric IPv4 address");
     }
     using Service =
-        coropact::gateway::GatewaySessionService<coropact::net::ReactorStream,
-                                                 coropact::net::ReactorConnector>;
+        coropact::gateway::GatewaySessionService<coropact::reactor::ReactorStream,
+                                                 coropact::reactor::ReactorConnector>;
     Service gateway(config.server.name, registry);
 
     coropact::gateway::ApplyGatewayConfig(config, gateway);
 
-    coropact::net::ReactorWorkerGroupOptions options;
+    coropact::reactor::ReactorWorkerGroupOptions options;
     options.worker_num = 1;
-    coropact::net::ReactorWorkerGroup workers(
+    coropact::reactor::ReactorWorkerGroup workers(
         *listen_addr, std::move(options), {},
-        [&gateway](coropact::net::ReactorWorkerContext& context,
-                   coropact::net::ReactorStream stream) -> coropact::coro::Task<void> {
+        [&gateway](coropact::reactor::ReactorWorkerContext& context,
+                   coropact::reactor::ReactorStream stream) -> coropact::coro::Task<void> {
           co_await gateway.Serve(std::move(stream),
-                                  coropact::net::ReactorConnector(&context.loop));
+                                  coropact::reactor::ReactorConnector(&context.loop));
         });
 
     auto started = workers.Start();

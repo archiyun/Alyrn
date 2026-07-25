@@ -304,8 +304,8 @@ target_link_libraries(my_gateway PRIVATE coropact_gateway_config)
 #include "coropact/gateway/gateway_session_service.h"
 #include "coropact/gateway/upstream_registry.h"
 #include "coropact/net/net_utils.h"
-#include "coropact/net/reactor_connect.h"
-#include "coropact/net/reactor_worker_group.h"
+#include "coropact/reactor/reactor_connect.h"
+#include "coropact/reactor/reactor_worker_group.h"
 
 int main() {
   auto config = coropact::gateway::LoadGatewayConfigFromYaml("gateway.yaml");
@@ -314,20 +314,20 @@ int main() {
   coropact::gateway::BuildGatewayUpstreamRegistry(config, registry);
 
   using Gateway = coropact::gateway::GatewaySessionService<
-      coropact::net::ReactorStream, coropact::net::ReactorConnector>;
+      coropact::reactor::ReactorStream, coropact::reactor::ReactorConnector>;
   Gateway gateway(config.server.name, registry);
 
   coropact::gateway::ApplyGatewayConfig(config, gateway);
 
-  auto listen_addr = coropact::net::ParseIPv4Address(config.server.host, config.server.port);
+  auto listen_addr = coropact::net::ParseIpAddress(config.server.host, config.server.port);
   if (!listen_addr) return 1;
 
-  coropact::net::ReactorWorkerGroup server(
+  coropact::reactor::ReactorWorkerGroup server(
       *listen_addr, {}, {},
-      [&gateway](coropact::net::ReactorWorkerContext& context,
-                 coropact::net::ReactorStream stream) -> coropact::coro::Task<void> {
+      [&gateway](coropact::reactor::ReactorWorkerContext& context,
+                 coropact::reactor::ReactorStream stream) -> coropact::coro::Task<void> {
         co_await gateway.Serve(std::move(stream),
-                               coropact::net::ReactorConnector(&context.loop));
+                               coropact::reactor::ReactorConnector(&context.loop));
       });
 
   auto started = server.Start();

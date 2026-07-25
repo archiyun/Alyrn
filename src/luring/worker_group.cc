@@ -8,11 +8,11 @@
 #include <utility>
 
 #include "coropact/luring/worker.h"
-#include "coropact/net/inet_address.h"
+#include "coropact/net/endpoint.h"
 
 namespace coropact::luring {
 
-LUringWorkerGroup::LUringWorkerGroup(net::InetAddress listen_addr, LUringWorkerGroupOptions options,
+LUringWorkerGroup::LUringWorkerGroup(net::Endpoint listen_addr, LUringWorkerGroupOptions options,
                                      ThreadInitCallback init_callback,
                                      ConnectionCallback connection_callback,
                                      ThreadExitCallback exit_callback)

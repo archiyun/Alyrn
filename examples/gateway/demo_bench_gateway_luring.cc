@@ -36,7 +36,7 @@
 #include "coropact/luring/connector.h"
 #include "coropact/luring/server.h"
 #include "coropact/memory/pmr_pool_resource.h"
-#include "coropact/net/inet_address.h"
+#include "coropact/net/endpoint.h"
 #include "coropact/net/net_utils.h"
 
 namespace {
@@ -272,7 +272,7 @@ int main() {
                : nullptr;
   };
 
-  auto listen_addr = coropact::net::ParseIPv4Address(bind_host, listen_port);
+  auto listen_addr = coropact::net::ParseIpAddress(bind_host, listen_port);
   if (!listen_addr.has_value()) {
     std::fprintf(stderr, "invalid BIND_HOST '%s': %s\n", bind_host.c_str(),
                  listen_addr.error().message().c_str());

@@ -22,7 +22,7 @@
 #include "coropact/luring/loop.h"
 #include "coropact/luring/options.h"
 #include "coropact/luring/stream.h"
-#include "coropact/net/inet_address.h"
+#include "coropact/net/endpoint.h"
 
 namespace {
 
@@ -106,10 +106,10 @@ bool CreateSocketPair(UniqueFd& lhs, UniqueFd& rhs) {
   return true;
 }
 
-coropact::net::InetAddress EmptyPeerAddress() {
+coropact::net::Endpoint EmptyPeerAddress() {
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
-  return coropact::net::InetAddress(addr);
+  return coropact::net::Endpoint(addr);
 }
 
 bool WriteFd(int fd, std::string_view bytes) {

@@ -87,20 +87,8 @@ target_link_libraries(coropact_io INTERFACE coropact_coro coropact_foundation)
 target_compile_features(coropact_io INTERFACE cxx_std_23)
 
 add_library(coropact_net STATIC
-    src/net/channel.cc
-    src/net/epoll_poller.cc
-    src/net/event_loop.cc
-    src/net/event_loop_scheduler.cc
     src/net/net_utils.cc
-    src/net/poller.cc
-    src/net/reactor_connect.cc
-    src/net/reactor_listener.cc
-    src/net/reactor_stream.cc
-    src/net/reactor_worker.cc
-    src/net/reactor_worker_group.cc
     src/net/socket.cc
-    src/net/timer_queue.cc
-    src/net/inet_address.cc
 )
 
 target_include_directories(coropact_net
@@ -110,14 +98,44 @@ target_include_directories(coropact_net
 
 target_link_libraries(coropact_net
     PUBLIC
-        coropact_io
         coropact_foundation
         Threads::Threads
 )
 
 target_compile_features(coropact_net PUBLIC cxx_std_23)
 
-# coropact_luring —— io_uring proactor 网络模块。它和 coropact_net/reactor 并列，
+# coropact_reactor —— 基于 epoll 的 Reactor 网络后端。它依赖 coropact_net
+# 中的地址和 socket 基础类型，但与 io_uring 后端保持并列。
+add_library(coropact_reactor STATIC
+    src/reactor/channel.cc
+    src/reactor/epoll_poller.cc
+    src/reactor/event_loop.cc
+    src/reactor/event_loop_scheduler.cc
+    src/reactor/poller.cc
+    src/reactor/reactor_connect.cc
+    src/reactor/reactor_listener.cc
+    src/reactor/reactor_stream.cc
+    src/reactor/reactor_worker.cc
+    src/reactor/reactor_worker_group.cc
+    src/reactor/timer_queue.cc
+)
+
+target_include_directories(coropact_reactor
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_link_libraries(coropact_reactor
+    PUBLIC
+        coropact_net
+        coropact_io
+        coropact_foundation
+        Threads::Threads
+)
+
+target_compile_features(coropact_reactor PUBLIC cxx_std_23)
+
+# coropact_luring —— io_uring proactor 网络模块。它与 coropact_reactor 并列，
 # 共同解释 coropact_io 的协程可观察 I/O 契约。
 if(COROPACT_ENABLE_URING)
     add_library(coropact_luring STATIC
@@ -141,6 +159,7 @@ if(COROPACT_ENABLE_URING)
 
     target_link_libraries(coropact_luring
         PUBLIC
+            coropact_net
             coropact_io
             coropact_ctrack
             ${URING_LIBRARIES}
@@ -150,12 +169,10 @@ if(COROPACT_ENABLE_URING)
     target_compile_features(coropact_luring PUBLIC cxx_std_23)
 endif()
 
-# coropact_coro_reactor —— 把协程绑到 epoll/reactor 后端,坐在 net 之上(用
-# Socket/Channel/EventLoop)。当前是 header-only 骨架;awaitable 的 .cc 落地后
-# 改成 add_library(coropact_coro_reactor STATIC src/coro/reactor/*.cc)。
+# coropact_coro_reactor —— 把协程绑定到 coropact_reactor 后端。
 add_library(coropact_coro_reactor INTERFACE)
 target_include_directories(coropact_coro_reactor INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(coropact_coro_reactor INTERFACE coropact_coro coropact_net)
+target_link_libraries(coropact_coro_reactor INTERFACE coropact_reactor)
 target_compile_features(coropact_coro_reactor INTERFACE cxx_std_23)
 
 # coropact_coro_luring —— 把协程绑到 io_uring proactor 后端。头文件经 ring.h 引入
@@ -218,7 +235,6 @@ target_include_directories(coropact_gateway PUBLIC
 
 target_link_libraries(coropact_gateway PUBLIC
     coropact_gateway_core
-    coropact_net
     coropact_foundation
     Threads::Threads
 )
@@ -253,6 +269,7 @@ if(COROPACT_ENABLE_GATEWAY_YAML_CONFIG)
         target_link_libraries(coropact_gateway_config
             PUBLIC
                 coropact_gateway
+                coropact_net
             PRIVATE
                 ${COROPACT_YAML_CPP_TARGET}
         )

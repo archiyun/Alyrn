@@ -4,7 +4,7 @@
 #include <thread>
 #include <vector>
 
-#include "coropact/net/event_loop.h"
+#include "coropact/reactor/event_loop.h"
 #include "coropact/time/timestamp.h"
 
 namespace {
@@ -20,7 +20,7 @@ bool Expect(bool condition, const char* message) {
 }
 
 bool TestRunInLoopExecutesImmediately() {
-    coropact::net::EventLoop loop;
+    coropact::reactor::EventLoop loop;
     bool called = false;
     std::thread::id callback_thread;
 
@@ -35,7 +35,7 @@ bool TestRunInLoopExecutesImmediately() {
 }
 
 bool TestQueueInLoopWakesLoop() {
-    std::promise<coropact::net::EventLoop*> ready_promise;
+    std::promise<coropact::reactor::EventLoop*> ready_promise;
     std::promise<std::thread::id> callback_thread_promise;
     std::promise<void> exited_promise;
 
@@ -44,13 +44,13 @@ bool TestQueueInLoopWakesLoop() {
     auto exited_future = exited_promise.get_future();
 
     std::thread loop_thread([&] {
-        coropact::net::EventLoop loop;
+        coropact::reactor::EventLoop loop;
         ready_promise.set_value(&loop);
         loop.Loop();
         exited_promise.set_value();
     });
 
-    coropact::net::EventLoop* loop = ready_future.get();
+    coropact::reactor::EventLoop* loop = ready_future.get();
     loop->QueueInLoop([&] {
         callback_thread_promise.set_value(std::this_thread::get_id());
         loop->Quit();
@@ -73,7 +73,7 @@ bool TestQueueInLoopWakesLoop() {
 }
 
 bool TestNestedQueueInLoopSchedulesNextTurn() {
-    std::promise<coropact::net::EventLoop*> ready_promise;
+    std::promise<coropact::reactor::EventLoop*> ready_promise;
     std::promise<void> nested_functor_promise;
     std::promise<void> exited_promise;
 
@@ -82,13 +82,13 @@ bool TestNestedQueueInLoopSchedulesNextTurn() {
     auto exited_future = exited_promise.get_future();
 
     std::thread loop_thread([&] {
-        coropact::net::EventLoop loop;
+        coropact::reactor::EventLoop loop;
         ready_promise.set_value(&loop);
         loop.Loop();
         exited_promise.set_value();
     });
 
-    coropact::net::EventLoop* loop = ready_future.get();
+    coropact::reactor::EventLoop* loop = ready_future.get();
     loop->QueueInLoop([&] {
         loop->QueueInLoop([&] {
             nested_functor_promise.set_value();
@@ -109,7 +109,7 @@ bool TestNestedQueueInLoopSchedulesNextTurn() {
 }
 
 bool TestRepeatingTimerCanCancelItself() {
-    std::promise<coropact::net::EventLoop*> ready_promise;
+    std::promise<coropact::reactor::EventLoop*> ready_promise;
     std::promise<void> exited_promise;
 
     auto ready_future = ready_promise.get_future();
@@ -119,13 +119,13 @@ bool TestRepeatingTimerCanCancelItself() {
     coropact::time::TimerId timer_id;
 
     std::thread loop_thread([&] {
-        coropact::net::EventLoop loop;
+        coropact::reactor::EventLoop loop;
         ready_promise.set_value(&loop);
         loop.Loop();
         exited_promise.set_value();
     });
 
-    coropact::net::EventLoop* loop = ready_future.get();
+    coropact::reactor::EventLoop* loop = ready_future.get();
     loop->QueueInLoop([&] {
         timer_id = loop->RunEvery(0.01, [&] {
             ++fire_count;
@@ -149,7 +149,7 @@ bool TestRepeatingTimerCanCancelItself() {
 }
 
 bool TestSameDeadlineTimersKeepSequenceOrder() {
-    coropact::net::EventLoop loop;
+    coropact::reactor::EventLoop loop;
     std::vector<int> fired;
     const auto deadline =
         coropact::time::AddTime(coropact::time::Timestamp::Now(), 0.01);
@@ -167,7 +167,7 @@ bool TestSameDeadlineTimersKeepSequenceOrder() {
 }
 
 bool TestCancelEarliestKeepsNextTimerScheduled() {
-    coropact::net::EventLoop loop;
+    coropact::reactor::EventLoop loop;
     bool cancelled_timer_fired = false;
     bool next_timer_fired = false;
     bool timed_out = false;
@@ -194,7 +194,7 @@ bool TestCancelEarliestKeepsNextTimerScheduled() {
 }
 
 bool TestStaleTimerIdCannotCancelReplacement() {
-    coropact::net::EventLoop loop;
+    coropact::reactor::EventLoop loop;
     bool replacement_fired = false;
     bool timed_out = false;
 

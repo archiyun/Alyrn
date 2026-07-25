@@ -89,9 +89,9 @@ NGINXEOF
 #include "coropact/gateway/upstream.h"
 #include "coropact/gateway/upstream_peer.h"
 #include "coropact/gateway/upstream_registry.h"
-#include "coropact/net/inet_address.h"
-#include "coropact/net/reactor_connect.h"
-#include "coropact/net/reactor_worker_group.h"
+#include "coropact/net/endpoint.h"
+#include "coropact/reactor/reactor_connect.h"
+#include "coropact/reactor/reactor_worker_group.h"
 
 static std::atomic<long long> g_proxied{0};
 static std::atomic_bool g_stop{false};
@@ -140,8 +140,8 @@ int main() {
 
   // 2. 网关 session service。accept、worker 和连接生命周期由网络层拥有。
   using Service =
-      coropact::gateway::GatewaySessionService<coropact::net::ReactorStream,
-                                               coropact::net::ReactorConnector>;
+      coropact::gateway::GatewaySessionService<coropact::reactor::ReactorStream,
+                                               coropact::reactor::ReactorConnector>;
   const coropact::gateway::PoolConfig pool_config{.max_idle_per_peer = 64};
   Service gw("BenchGateway", reg, pool_config);
   Service::Pool pool(pool_config);
@@ -152,13 +152,13 @@ int main() {
   std::thread stats_thr(StatsPrinter);
   stats_thr.detach();
 
-  coropact::net::ReactorWorkerGroupOptions options;
+  coropact::reactor::ReactorWorkerGroupOptions options;
   options.worker_num = 1;
-  coropact::net::ReactorWorkerGroup workers(
-      coropact::net::InetAddress(listen_port), std::move(options), {},
-      [&gw, &pool](coropact::net::ReactorWorkerContext& context,
-                   coropact::net::ReactorStream stream) -> coropact::coro::Task<void> {
-        co_await gw.Serve(std::move(stream), coropact::net::ReactorConnector(&context.loop), pool);
+  coropact::reactor::ReactorWorkerGroup workers(
+      coropact::net::Endpoint(listen_port), std::move(options), {},
+      [&gw, &pool](coropact::reactor::ReactorWorkerContext& context,
+                   coropact::reactor::ReactorStream stream) -> coropact::coro::Task<void> {
+        co_await gw.Serve(std::move(stream), coropact::reactor::ReactorConnector(&context.loop), pool);
       });
 
   auto started = workers.Start();

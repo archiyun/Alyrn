@@ -91,8 +91,8 @@ HTTP / Gateway / 自定义 Session
         +------+------+
         |             |
         v             v
- Reactor / epoll   luring / io_uring
-   coropact::net         coropact::luring
+Reactor / epoll   luring / io_uring
+  coropact::reactor     coropact::luring
 ```
 
 两个后端不共享事件循环，内部状态机也不需要完全一致。它们只需要遵守相同的业务可观察异步 I/O 契约。

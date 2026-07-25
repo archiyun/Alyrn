@@ -23,7 +23,7 @@
 #include "coropact/luring/loop.h"
 #include "coropact/luring/options.h"
 #include "coropact/luring/stream.h"
-#include "coropact/net/inet_address.h"
+#include "coropact/net/endpoint.h"
 
 namespace {
 

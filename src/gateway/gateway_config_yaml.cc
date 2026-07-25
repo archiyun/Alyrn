@@ -401,7 +401,7 @@ void ValidatePath(std::string_view path, std::string_view ctx) {
 }
 
 void ValidateIPv4Endpoint(std::string_view host, std::uint16_t port, std::string_view ctx) {
-  auto parsed = coropact::net::ParseIPv4Address(host, port);
+  auto parsed = coropact::net::ParseIpAddress(host, port);
   if (!parsed) {
     Fail(ctx, "expected a numeric IPv4 address");
   }

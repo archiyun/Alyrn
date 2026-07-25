@@ -16,7 +16,7 @@
 #include "coropact/luring/listener.h"
 #include "coropact/luring/loop.h"
 #include "coropact/luring/options.h"
-#include "coropact/net/inet_address.h"
+#include "coropact/net/endpoint.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::luring {
@@ -57,7 +57,7 @@ public:
   using ThreadExitCallback = std::function<void(LUringWorkerContext&)>;
   using ConnectionCallback = std::function<coro::Task<void>(LUringWorkerContext&, LUringStream)>;
 
-  LUringWorker(std::size_t index, net::InetAddress listen_addr, LUringWorkerOptions options = {},
+  LUringWorker(std::size_t index, net::Endpoint listen_addr, LUringWorkerOptions options = {},
                ThreadInitCallback init_callback = {}, ConnectionCallback connection_callback = {},
                ThreadExitCallback exit_callback = {});
   ~LUringWorker() noexcept;
@@ -71,7 +71,7 @@ private:
   void WorkLoop(std::stop_token token) noexcept;
 
   std::size_t index_;
-  net::InetAddress listen_addr_;
+  net::Endpoint listen_addr_;
   LUringWorkerOptions options_;
   ThreadInitCallback init_callback_;
   ConnectionCallback connection_callback_;

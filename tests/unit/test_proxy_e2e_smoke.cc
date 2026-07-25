@@ -33,9 +33,9 @@
 #include "coropact/gateway/upstream.h"
 #include "coropact/gateway/upstream_peer.h"
 #include "coropact/gateway/upstream_registry.h"
-#include "coropact/net/inet_address.h"
-#include "coropact/net/reactor_connect.h"
-#include "coropact/net/reactor_worker_group.h"
+#include "coropact/net/endpoint.h"
+#include "coropact/reactor/reactor_connect.h"
+#include "coropact/reactor/reactor_worker_group.h"
 
 using namespace std::chrono_literals;
 
@@ -62,14 +62,14 @@ uint16_t ReservePort() {
 namespace {
 
 using TestGateway =
-    coropact::gateway::GatewaySessionService<coropact::net::ReactorStream,
-                                             coropact::net::ReactorConnector>;
+    coropact::gateway::GatewaySessionService<coropact::reactor::ReactorStream,
+                                             coropact::reactor::ReactorConnector>;
 using TestPool = TestGateway::Pool;
 
 struct GatewayRuntime {
   std::unique_ptr<TestGateway> gateway;
   std::unique_ptr<TestPool> pool;
-  std::unique_ptr<coropact::net::ReactorWorkerGroup> workers;
+  std::unique_ptr<coropact::reactor::ReactorWorkerGroup> workers;
 };
 
 bool Expect(bool ok, const char* msg) {
@@ -84,18 +84,18 @@ void InitGateway(GatewayRuntime& runtime, uint16_t port,
   runtime.gateway = std::make_unique<TestGateway>(std::move(name), registry);
   runtime.pool = std::make_unique<TestPool>();
 
-  coropact::net::ReactorWorkerGroupOptions options;
+  coropact::reactor::ReactorWorkerGroupOptions options;
   options.worker_num = 1;
-  runtime.workers = std::make_unique<coropact::net::ReactorWorkerGroup>(
-      coropact::net::InetAddress(port), std::move(options),
-      coropact::net::ReactorWorkerGroup::ThreadInitCallback{},
-      [&runtime](coropact::net::ReactorWorkerContext& context,
-                 coropact::net::ReactorStream stream) -> coropact::coro::Task<void> {
+  runtime.workers = std::make_unique<coropact::reactor::ReactorWorkerGroup>(
+      coropact::net::Endpoint(port), std::move(options),
+      coropact::reactor::ReactorWorkerGroup::ThreadInitCallback{},
+      [&runtime](coropact::reactor::ReactorWorkerContext& context,
+                 coropact::reactor::ReactorStream stream) -> coropact::coro::Task<void> {
         co_await runtime.gateway->Serve(std::move(stream),
-                                        coropact::net::ReactorConnector(&context.loop),
+                                        coropact::reactor::ReactorConnector(&context.loop),
                                         *runtime.pool);
       },
-      [&runtime](coropact::net::ReactorWorkerContext&) { runtime.pool.reset(); });
+      [&runtime](coropact::reactor::ReactorWorkerContext&) { runtime.pool.reset(); });
 }
 
 bool StartGateway(GatewayRuntime& runtime) {

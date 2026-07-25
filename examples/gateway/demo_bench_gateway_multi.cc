@@ -36,10 +36,10 @@
 #include "coropact/gateway/gateway_session_service.h"
 #include "coropact/gateway/upstream.h"
 #include "coropact/gateway/upstream_peer.h"
-#include "coropact/net/event_loop.h"
-#include "coropact/net/inet_address.h"
-#include "coropact/net/reactor_connect.h"
-#include "coropact/net/reactor_worker_group.h"
+#include "coropact/reactor/event_loop.h"
+#include "coropact/net/endpoint.h"
+#include "coropact/reactor/reactor_connect.h"
+#include "coropact/reactor/reactor_worker_group.h"
 
 namespace {
 
@@ -120,7 +120,7 @@ int main() {
   }
 
   using Service =
-      coropact::gateway::GatewaySessionService<coropact::net::ReactorStream, coropact::net::ReactorConnector>;
+      coropact::gateway::GatewaySessionService<coropact::reactor::ReactorStream, coropact::reactor::ReactorConnector>;
   using WorkerPool = Service::Pool;
 
   Service service("BenchGatewayMulti", reg);
@@ -133,20 +133,20 @@ int main() {
   // so sessions on the same loop can reuse connections without crossing
   // worker boundaries.
   std::vector<std::unique_ptr<WorkerPool>> worker_pools;
-  std::unordered_map<coropact::net::EventLoop*, WorkerPool*> pools_by_loop;
+  std::unordered_map<coropact::reactor::EventLoop*, WorkerPool*> pools_by_loop;
   std::mutex pools_mutex;
   worker_pools.reserve(worker_num);
   pools_by_loop.reserve(worker_num);
 
-  coropact::net::ReactorWorkerGroupOptions options;
+  coropact::reactor::ReactorWorkerGroupOptions options;
   options.worker_num = worker_num;
   options.worker_options.listener_options.reuse_addr = true;
   options.worker_options.listener_options.reuse_port = true;
 
-  coropact::net::ReactorWorkerGroup workers(
-      coropact::net::InetAddress(listen_port), std::move(options),
+  coropact::reactor::ReactorWorkerGroup workers(
+      coropact::net::Endpoint(listen_port), std::move(options),
       [&worker_pools, &pools_by_loop, &pools_mutex,
-       pool_config](coropact::net::ReactorWorkerContext& context) {
+       pool_config](coropact::reactor::ReactorWorkerContext& context) {
         auto pool = std::make_unique<WorkerPool>(pool_config);
         auto* pool_ptr = pool.get();
         std::lock_guard lock(pools_mutex);
@@ -154,8 +154,8 @@ int main() {
         pools_by_loop.emplace(&context.loop, pool_ptr);
       },
       [&service, &pools_by_loop, &pools_mutex](
-          coropact::net::ReactorWorkerContext& context,
-          coropact::net::ReactorStream stream) -> coropact::coro::Task<void> {
+          coropact::reactor::ReactorWorkerContext& context,
+          coropact::reactor::ReactorStream stream) -> coropact::coro::Task<void> {
         WorkerPool* pool = nullptr;
         {
           std::lock_guard lock(pools_mutex);
@@ -166,13 +166,13 @@ int main() {
         }
 
         if (pool == nullptr) {
-          co_await service.Serve(std::move(stream), coropact::net::ReactorConnector(&context.loop));
+          co_await service.Serve(std::move(stream), coropact::reactor::ReactorConnector(&context.loop));
           co_return;
         }
-        co_await service.Serve(std::move(stream), coropact::net::ReactorConnector(&context.loop),
+        co_await service.Serve(std::move(stream), coropact::reactor::ReactorConnector(&context.loop),
                                *pool);
       },
-      [&worker_pools, &pools_by_loop, &pools_mutex](coropact::net::ReactorWorkerContext& context) {
+      [&worker_pools, &pools_by_loop, &pools_mutex](coropact::reactor::ReactorWorkerContext& context) {
         std::lock_guard lock(pools_mutex);
         auto map_it = pools_by_loop.find(&context.loop);
         if (map_it == pools_by_loop.end()) return;

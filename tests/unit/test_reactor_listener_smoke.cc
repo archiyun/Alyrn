@@ -15,18 +15,18 @@
 #include "coropact/coro/task.h"
 #include "coropact/io/async_listener.h"
 #include "coropact/io/io_backend.h"
-#include "coropact/net/event_loop.h"
-#include "coropact/net/event_loop_scheduler.h"
-#include "coropact/net/inet_address.h"
-#include "coropact/net/reactor_connect.h"
-#include "coropact/net/reactor_listener.h"
-#include "coropact/net/reactor_stream.h"
+#include "coropact/reactor/event_loop.h"
+#include "coropact/reactor/event_loop_scheduler.h"
+#include "coropact/net/endpoint.h"
+#include "coropact/reactor/reactor_connect.h"
+#include "coropact/reactor/reactor_listener.h"
+#include "coropact/reactor/reactor_stream.h"
 
 namespace {
 
-using AcceptResult = coropact::base::Result<typename coropact::net::ReactorListener::Stream>;
+using AcceptResult = coropact::base::Result<typename coropact::reactor::ReactorListener::Stream>;
 
-static_assert(coropact::io::AsyncListener<coropact::net::ReactorListener>);
+static_assert(coropact::io::AsyncListener<coropact::reactor::ReactorListener>);
 
 bool Check(bool condition, const char* message) {
   if (!condition) {
@@ -36,14 +36,13 @@ bool Check(bool condition, const char* message) {
   return true;
 }
 
-int ConnectNonBlocking(const coropact::net::InetAddress& address) {
+int ConnectNonBlocking(const coropact::net::Endpoint& address) {
   int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
   if (fd < 0) {
     return -1;
   }
 
-  const sockaddr_in& addr = address.sock_addr();
-  int rc = ::connect(fd, reinterpret_cast<const sockaddr*>(&addr), sizeof(addr));
+  int rc = ::connect(fd, address.sock_addr(), address.sock_addr_len());
   if (rc == 0 || errno == EINPROGRESS) {
     return fd;
   }
@@ -52,27 +51,27 @@ int ConnectNonBlocking(const coropact::net::InetAddress& address) {
   return -1;
 }
 
-coropact::coro::Task<void> AcceptOnce(coropact::net::ReactorListener* listener, coropact::net::EventLoop* loop,
+coropact::coro::Task<void> AcceptOnce(coropact::reactor::ReactorListener* listener, coropact::reactor::EventLoop* loop,
                                   std::optional<AcceptResult>* out) {
   out->emplace(co_await listener->Accept());
   loop->Quit();
 }
 
 bool CheckFactories() {
-  auto null_listener = coropact::net::ReactorListener::Create(nullptr, coropact::net::InetAddress(0));
+  auto null_listener = coropact::reactor::ReactorListener::Create(nullptr, coropact::net::Endpoint(0));
   if (!Check(!null_listener.has_value() && null_listener.error() == std::errc::invalid_argument,
              "listener factory accepted a null EventLoop")) {
     return false;
   }
 
-  auto null_connector = coropact::net::ReactorConnector::Create(nullptr);
+  auto null_connector = coropact::reactor::ReactorConnector::Create(nullptr);
   if (!Check(!null_connector.has_value() && null_connector.error() == std::errc::invalid_argument,
              "connector factory accepted a null EventLoop")) {
     return false;
   }
 
-  coropact::net::EventLoop loop;
-  auto listener = coropact::net::ReactorListener::Create(&loop, coropact::net::InetAddress(0));
+  coropact::reactor::EventLoop loop;
+  auto listener = coropact::reactor::ReactorListener::Create(&loop, coropact::net::Endpoint(0));
   if (!Check(listener.has_value(), "listener factory failed for a valid socket")) {
     if (!listener.has_value()) {
       std::cout << "factory error: " << listener.error().message() << '\n';
@@ -85,16 +84,16 @@ bool CheckFactories() {
     return false;
   }
 
-  auto conflicting_listener = coropact::net::ReactorListener::Create(&loop, *address);
+  auto conflicting_listener = coropact::reactor::ReactorListener::Create(&loop, *address);
   return Check(!conflicting_listener.has_value() &&
                    conflicting_listener.error() == std::errc::address_in_use,
                "listener factory did not return bind errors");
 }
 
 bool CheckPendingAccept() {
-  coropact::net::EventLoop loop;
-  coropact::net::ReactorListener listener(&loop, coropact::net::InetAddress(0));
-  coropact::net::EventLoopScheduler scheduler(&loop);
+  coropact::reactor::EventLoop loop;
+  coropact::reactor::ReactorListener listener(&loop, coropact::net::Endpoint(0));
+  coropact::reactor::EventLoopScheduler scheduler(&loop);
 
   auto listen_addr = listener.LocalAddress();
   if (!listen_addr.has_value()) {
@@ -119,9 +118,9 @@ bool CheckPendingAccept() {
 }
 
 bool CheckCloseCancelsPendingAccept() {
-  coropact::net::EventLoop loop;
-  coropact::net::ReactorListener listener(&loop, coropact::net::InetAddress(0));
-  coropact::net::EventLoopScheduler scheduler(&loop);
+  coropact::reactor::EventLoop loop;
+  coropact::reactor::ReactorListener listener(&loop, coropact::net::Endpoint(0));
+  coropact::reactor::EventLoopScheduler scheduler(&loop);
 
   std::optional<AcceptResult> result;
 

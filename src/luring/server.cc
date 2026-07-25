@@ -12,7 +12,7 @@
 
 namespace coropact::luring {
 
-LUringServer::LUringServer(net::InetAddress listen_addr, LUringServerOptions options)
+LUringServer::LUringServer(net::Endpoint listen_addr, LUringServerOptions options)
     : listen_addr_(listen_addr), options_(std::move(options)) {}
 
 LUringServer::~LUringServer() noexcept { Stop(); }

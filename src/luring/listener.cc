@@ -18,7 +18,7 @@
 #include "coropact/luring/loop.h"
 #include "coropact/luring/op.h"
 #include "coropact/luring/stream.h"
-#include "coropact/net/inet_address.h"
+#include "coropact/net/endpoint.h"
 
 namespace coropact::luring {
 
@@ -26,9 +26,10 @@ namespace {
 
 using AcceptResult = base::Result<LUringStream>;
 
-base::Result<int> CreatedListenFd(const net::InetAddress& listen_addr,
+base::Result<int> CreatedListenFd(const net::Endpoint& listen_addr,
                                   const LUringListenOptions& options) noexcept {
-  const int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, IPPROTO_TCP);
+  const int fd = ::socket(listen_addr.native_family(),
+                          SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, IPPROTO_TCP);
   if (fd < 0) {
     return std::unexpected(base::CurrentErrno());
   }
@@ -52,8 +53,7 @@ base::Result<int> CreatedListenFd(const net::InetAddress& listen_addr,
     }
   }
 
-  const sockaddr_in addr = listen_addr.sock_addr();
-  if (::bind(fd, reinterpret_cast<const sockaddr*>(&addr), sizeof(addr)) < 0) {
+  if (::bind(fd, listen_addr.sock_addr(), listen_addr.sock_addr_len()) < 0) {
     return fail(base::CurrentErrno());
   }
 
@@ -64,17 +64,19 @@ base::Result<int> CreatedListenFd(const net::InetAddress& listen_addr,
   return fd;
 }
 
-base::Result<net::InetAddress> GetLocalAddress(int fd) noexcept {
-  sockaddr_in addr{};
+base::Result<net::Endpoint> GetLocalAddress(int fd) noexcept {
+  sockaddr_storage addr{};
   auto len = static_cast<socklen_t>(sizeof(addr));
   if (::getsockname(fd, reinterpret_cast<sockaddr*>(&addr), &len) < 0) {
     return std::unexpected(base::CurrentErrno());
   }
-  return net::InetAddress(addr);
+  return net::Endpoint(reinterpret_cast<const sockaddr*>(&addr), len);
 }
 
-AcceptResult MakeStream(LUringLoop* loop, int fd, const sockaddr_in& peer_addr) noexcept {
-  return LUringStream(loop, fd, net::InetAddress(peer_addr));
+AcceptResult MakeStream(LUringLoop* loop, int fd, const sockaddr_storage& peer_addr,
+                        socklen_t peer_len) noexcept {
+  return LUringStream(loop, fd,
+                      net::Endpoint(reinterpret_cast<const sockaddr*>(&peer_addr), peer_len));
 }
 
 }  // namespace
@@ -130,7 +132,8 @@ private:
       } else if (*op->result < 0) {
         self->immediate_ = std::unexpected(base::make_neg_errno(*op->result));
       } else {
-        self->immediate_ = MakeStream(listener->loop_, *op->result, self->peer_addr_);
+        self->immediate_ =
+            MakeStream(listener->loop_, *op->result, self->peer_addr_, self->peer_len_);
       }
 
       self->listener_ = nullptr;
@@ -140,7 +143,7 @@ private:
 
   LUringListener* listener_;
   LUringOp op_{.kind = LUringOpKind::kAccept};
-  sockaddr_in peer_addr_{};
+  sockaddr_storage peer_addr_{};
   socklen_t peer_len_{sizeof(peer_addr_)};
   std::optional<AcceptResult> immediate_;
 };
@@ -235,7 +238,7 @@ private:
 };
 
 base::Result<LUringListener> LUringListener::Create(LUringLoop* loop,
-                                                    const net::InetAddress& listen_addr,
+                                                    const net::Endpoint& listen_addr,
                                                     LUringListenOptions options) noexcept {
   assert(loop != nullptr);
   assert(loop->IsInLoopThread());
@@ -297,7 +300,7 @@ coro::Task<base::Result<LUringStream>> LUringListener::Accept() {
 
 coro::Task<base::Result<void>> LUringListener::Close() { co_return co_await CloseAwaiter(*this); }
 
-base::Result<net::InetAddress> LUringListener::LocalAddress() const noexcept {
+base::Result<net::Endpoint> LUringListener::LocalAddress() const noexcept {
   if (closed_ || fd_ < 0) {
     return std::unexpected(base::make_errno(EBADF));
   }

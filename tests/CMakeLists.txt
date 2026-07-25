@@ -109,7 +109,7 @@ target_link_libraries(io_buffer_smoke_test
 
 add_test(NAME io_buffer_smoke_test COMMAND io_buffer_smoke_test)
 
-# C3:detached 连接协程(Spawn)park→resume→自毁,无泄漏/无 UAF。链 coropact_net。
+# C3:detached 连接协程(Spawn)park→resume→自毁,无泄漏/无 UAF。链 coropact_reactor。
 add_executable(spawn_c3_smoke_test
     unit/test_spawn_c3_smoke.cc
 )
@@ -121,7 +121,7 @@ target_include_directories(spawn_c3_smoke_test
 
 target_link_libraries(spawn_c3_smoke_test
     PRIVATE
-        coropact_net
+        coropact_reactor
 )
 
 add_test(NAME spawn_c3_smoke_test COMMAND spawn_c3_smoke_test)
@@ -137,7 +137,7 @@ target_include_directories(reactor_stream_smoke_test
 
 target_link_libraries(reactor_stream_smoke_test
     PRIVATE
-        coropact_net
+        coropact_reactor
 )
 
 add_test(NAME reactor_stream_smoke_test COMMAND reactor_stream_smoke_test)
@@ -153,7 +153,7 @@ target_include_directories(reactor_listener_smoke_test
 
 target_link_libraries(reactor_listener_smoke_test
     PRIVATE
-        coropact_net
+        coropact_reactor
 )
 
 add_test(NAME reactor_listener_smoke_test COMMAND reactor_listener_smoke_test)
@@ -169,7 +169,7 @@ target_include_directories(reactor_worker_group_smoke_test
 
 target_link_libraries(reactor_worker_group_smoke_test
     PRIVATE
-        coropact_net
+        coropact_reactor
 )
 
 add_test(NAME reactor_worker_group_smoke_test COMMAND reactor_worker_group_smoke_test)
@@ -283,7 +283,6 @@ if(COROPACT_ENABLE_URING)
     target_link_libraries(luring_move_smoke_test
         PRIVATE
             coropact_luring
-            coropact_net
     )
 
     target_compile_definitions(luring_move_smoke_test PRIVATE COROPACT_ENABLE_URING)
@@ -456,7 +455,7 @@ target_include_directories(epoll_poller_smoke_test
 
 target_link_libraries(epoll_poller_smoke_test
     PRIVATE
-        coropact_net
+        coropact_reactor
 )
 
 add_test(NAME epoll_poller_smoke_test COMMAND epoll_poller_smoke_test)
@@ -472,7 +471,7 @@ target_include_directories(net_move_smoke_test
 
 target_link_libraries(net_move_smoke_test
     PRIVATE
-        coropact_net
+        coropact_reactor
 )
 
 add_test(NAME net_move_smoke_test COMMAND net_move_smoke_test)
@@ -488,7 +487,7 @@ target_include_directories(event_loop_smoke_test
 
 target_link_libraries(event_loop_smoke_test
     PRIVATE
-        coropact_net
+        coropact_reactor
 )
 
 add_test(NAME event_loop_smoke_test COMMAND event_loop_smoke_test)
@@ -705,7 +704,7 @@ target_include_directories(proxy_e2e_smoke_test
 target_link_libraries(proxy_e2e_smoke_test
     PRIVATE
         coropact_gateway
-        coropact_net
+        coropact_reactor
 )
 
 add_test(NAME proxy_e2e_smoke_test COMMAND proxy_e2e_smoke_test)
@@ -738,7 +737,6 @@ target_include_directories(gateway_adversarial_test
 target_link_libraries(gateway_adversarial_test
     PRIVATE
         coropact_gateway
-        coropact_net
 )
 
 add_test(NAME gateway_adversarial_test COMMAND gateway_adversarial_test)
@@ -784,7 +782,7 @@ if(GTest_FOUND)
     target_link_libraries(coropact_integration_tests
         PRIVATE
             GTest::gtest_main
-            coropact_net
+            coropact_reactor
     )
 
     gtest_discover_tests(coropact_integration_tests DISCOVERY_MODE PRE_TEST)

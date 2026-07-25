@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 #include "coropact/luring/connector.h"
 
-#include <arpa/inet.h>
 #include <fcntl.h>
 #include <liburing.h>
 #include <sys/socket.h>
@@ -22,34 +21,15 @@
 #include "coropact/luring/op.h"
 #include "coropact/luring/stream.h"
 #include "coropact/luring/timer.h"
-#include "coropact/net/inet_address.h"
+#include "coropact/net/endpoint.h"
+#include "coropact/net/net_utils.h"
 
 namespace coropact::luring {
 
 namespace {
 
-base::Result<net::InetAddress> ParseIPv4Address(std::string_view ip, std::uint16_t port) {
-  if (ip.find('\0') != std::string_view::npos) {
-    return std::unexpected(base::make_errno(EINVAL));
-  }
-
-  sockaddr_in addr{};
-  addr.sin_family = AF_INET;
-  addr.sin_port = htons(port);
-
-  const std::string ip_string(ip);
-  const int parsed = ::inet_pton(AF_INET, ip_string.c_str(), &addr.sin_addr);
-  if (parsed == 1) {
-    return net::InetAddress(addr);
-  }
-  if (parsed == 0) {
-    return std::unexpected(base::make_errno(EINVAL));
-  }
-  return std::unexpected(base::CurrentErrno());
-}
-
-base::Result<int> CreateSocket() noexcept {
-  const int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
+base::Result<int> CreateSocket(sa_family_t family) noexcept {
+  const int fd = ::socket(family, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
   if (fd < 0) {
     return std::unexpected(base::CurrentErrno());
   }
@@ -72,7 +52,7 @@ base::Result<void> SetNonBlocking(int fd) noexcept {
 
 class ConnectAwaiter {
 public:
-  ConnectAwaiter(LUringLoop* loop, net::InetAddress peer) noexcept
+  ConnectAwaiter(LUringLoop* loop, net::Endpoint peer) noexcept
       : loop_(loop), peer_(std::move(peer)) {}
 
   ~ConnectAwaiter() {
@@ -87,7 +67,7 @@ public:
     assert(loop_ != nullptr);
     assert(loop_->IsInLoopThread());
 
-    auto fd = CreateSocket();
+    auto fd = CreateSocket(peer_.native_family());
     if (!fd.has_value()) {
       result_ = std::unexpected(fd.error());
       return false;
@@ -100,8 +80,7 @@ public:
     op_.owner = this;
 
     auto submitted = loop_->SubmitOp(&op_, [this, fd = fd_](io_uring_sqe* sqe) noexcept {
-      const sockaddr_in& peer = peer_.sock_addr();
-      io_uring_prep_connect(sqe, fd, reinterpret_cast<const sockaddr*>(&peer), sizeof(peer));
+      io_uring_prep_connect(sqe, fd, peer_.sock_addr(), peer_.sock_addr_len());
     });
     if (!submitted.has_value()) {
       result_ = std::unexpected(submitted.error());
@@ -136,7 +115,7 @@ public:
 
 private:
   LUringLoop* loop_;
-  net::InetAddress peer_;
+  net::Endpoint peer_;
   int fd_{-1};
   LUringOp op_{.kind = LUringOpKind::kConnect};
   std::optional<base::Result<LUringStream>> result_;
@@ -166,7 +145,7 @@ LUringConnector& LUringConnector::operator=(LUringConnector&& other) noexcept {
 
 coro::Task<base::Result<LUringStream>> LUringConnector::Connect(std::string_view host,
                                                                 std::uint16_t port) {
-  auto peer = ParseIPv4Address(host, port);
+  auto peer = net::ParseIpAddress(host, port);
   if (!peer.has_value()) {
     co_return std::unexpected(peer.error());
   }

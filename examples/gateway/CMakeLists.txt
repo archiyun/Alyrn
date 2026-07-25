@@ -10,6 +10,7 @@ add_executable(demo_gateway
 target_link_libraries(demo_gateway
     PRIVATE
         coropact_gateway
+        coropact_reactor
 )
 
 if(TARGET coropact_gateway_config)
@@ -19,6 +20,7 @@ if(TARGET coropact_gateway_config)
     target_link_libraries(demo_gateway_config
         PRIVATE
             coropact_gateway_config
+            coropact_reactor
     )
 endif()
 
@@ -28,6 +30,7 @@ add_executable(demo_bench_gateway
 target_link_libraries(demo_bench_gateway
     PRIVATE
         coropact_gateway
+        coropact_reactor
 )
 
 add_executable(demo_bench_gateway_multi
@@ -36,6 +39,7 @@ add_executable(demo_bench_gateway_multi
 target_link_libraries(demo_bench_gateway_multi
     PRIVATE
         coropact_gateway
+        coropact_reactor
 )
 
 if(COROPACT_ENABLE_URING)

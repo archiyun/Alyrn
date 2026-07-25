@@ -28,8 +28,8 @@
 #include <memory>
 #include <vector>
 
-#include "coropact/net/channel.h"
-#include "coropact/net/event_loop.h"
+#include "coropact/reactor/channel.h"
+#include "coropact/reactor/event_loop.h"
 #include "coropact/time/timestamp.h"
 
 namespace {
@@ -48,7 +48,7 @@ bool Expect(bool condition, const char* message) {
 bool TestConstruction() {
     // EventLoop creates the default poller, which is EPollPoller on Linux.
     // Reaching this point means epoll_create1 succeeded.
-    coropact::net::EventLoop loop;
+    coropact::reactor::EventLoop loop;
     return true;
 }
 
@@ -56,7 +56,7 @@ bool TestConstruction() {
 // Test 2: Channel registration issues epoll_ctl ADD.
 // ──────────────────────────────────────────────
 bool TestChannelRegistration() {
-    coropact::net::EventLoop loop;
+    coropact::reactor::EventLoop loop;
 
     std::array<int, 2> fds{};
     if (!Expect(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds.data()) == 0,
@@ -64,7 +64,7 @@ bool TestChannelRegistration() {
         return false;
     }
 
-    coropact::net::Channel ch(&loop, fds[0]);
+    coropact::reactor::Channel ch(&loop, fds[0]);
     ch.set_read_callback([](coropact::time::Timestamp) {});
     ch.EnableReading();
 
@@ -82,7 +82,7 @@ bool TestChannelRegistration() {
 // Test 3: Channel removal erases the poller map entry.
 // ──────────────────────────────────────────────
 bool TestChannelRemoval() {
-    coropact::net::EventLoop loop;
+    coropact::reactor::EventLoop loop;
 
     std::array<int, 2> fds{};
     if (!Expect(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds.data()) == 0,
@@ -90,7 +90,7 @@ bool TestChannelRemoval() {
         return false;
     }
 
-    coropact::net::Channel ch(&loop, fds[0]);
+    coropact::reactor::Channel ch(&loop, fds[0]);
     ch.set_read_callback([](coropact::time::Timestamp) {});
     ch.EnableReading();
 
@@ -109,7 +109,7 @@ bool TestChannelRemoval() {
 // Test 4: epoll_wait detects a readable event.
 // ──────────────────────────────────────────────
 bool TestPollDetectsReadEvent() {
-    coropact::net::EventLoop loop;
+    coropact::reactor::EventLoop loop;
 
     std::array<int, 2> fds{};
     if (!Expect(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds.data()) == 0,
@@ -118,7 +118,7 @@ bool TestPollDetectsReadEvent() {
     }
 
     bool read_called = false;
-    coropact::net::Channel ch(&loop, fds[0]);
+    coropact::reactor::Channel ch(&loop, fds[0]);
     ch.set_read_callback([&](coropact::time::Timestamp) {
         char buf[4];
         ::read(fds[0], buf, sizeof(buf));
@@ -148,7 +148,7 @@ bool TestPollDetectsReadEvent() {
 // Test 5: DisableAll keeps the map entry but suppresses delivery.
 // ──────────────────────────────────────────────
 bool TestDisableAllKeepsChannelInMap() {
-    coropact::net::EventLoop loop;
+    coropact::reactor::EventLoop loop;
 
     std::array<int, 2> fds{};
     if (!Expect(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds.data()) == 0,
@@ -156,7 +156,7 @@ bool TestDisableAllKeepsChannelInMap() {
         return false;
     }
 
-    coropact::net::Channel ch(&loop, fds[0]);
+    coropact::reactor::Channel ch(&loop, fds[0]);
     ch.set_read_callback([](coropact::time::Timestamp) {});
     ch.EnableReading();
 
@@ -187,7 +187,7 @@ bool TestDisableAllKeepsChannelInMap() {
 // Test 6: Re-enabling after DisableAll registers the channel again.
 // ──────────────────────────────────────────────
 bool TestReenableAfterDisable() {
-    coropact::net::EventLoop loop;
+    coropact::reactor::EventLoop loop;
 
     std::array<int, 2> fds{};
     if (!Expect(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds.data()) == 0,
@@ -196,7 +196,7 @@ bool TestReenableAfterDisable() {
     }
 
     bool read_called = false;
-    coropact::net::Channel ch(&loop, fds[0]);
+    coropact::reactor::Channel ch(&loop, fds[0]);
     ch.set_read_callback([&](coropact::time::Timestamp) {
         char buf[4];
         ::read(fds[0], buf, sizeof(buf));
@@ -223,7 +223,7 @@ bool TestReenableAfterDisable() {
 // Test 7: The events_ vector grows when many channels fire together.
 // ──────────────────────────────────────────────
 bool TestEventsVectorResizes() {
-    coropact::net::EventLoop loop;
+    coropact::reactor::EventLoop loop;
 
     // Register 20 channels so the initial event list must grow.
     constexpr int N = 20;
@@ -238,11 +238,11 @@ bool TestEventsVectorResizes() {
     }
 
     int trigger_count = 0;
-    std::vector<std::unique_ptr<coropact::net::Channel>> channels;
+    std::vector<std::unique_ptr<coropact::reactor::Channel>> channels;
     channels.reserve(N);
 
     for (int i = 0; i < N; ++i) {
-        auto ch = std::make_unique<coropact::net::Channel>(&loop, pairs[i][0]);
+        auto ch = std::make_unique<coropact::reactor::Channel>(&loop, pairs[i][0]);
         // Consume the byte to avoid repeated delivery in level-triggered mode.
         const int read_fd = pairs[i][0];
         ch->set_read_callback([&, read_fd](coropact::time::Timestamp) {

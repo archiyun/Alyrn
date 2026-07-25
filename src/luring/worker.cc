@@ -80,7 +80,7 @@ base::Result<void> SetCurrentThreadAffinity(unsigned cpu) noexcept {
 
 }  // namespace
 
-LUringWorker::LUringWorker(std::size_t index, net::InetAddress listen_addr,
+LUringWorker::LUringWorker(std::size_t index, net::Endpoint listen_addr,
                            LUringWorkerOptions options, ThreadInitCallback init_callback,
                            ConnectionCallback connection_callback, ThreadExitCallback exit_callback)
     : index_(index),

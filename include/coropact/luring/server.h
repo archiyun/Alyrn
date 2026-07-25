@@ -9,7 +9,7 @@
 #include "coropact/coro/task.h"
 #include "coropact/luring/stream.h"
 #include "coropact/luring/worker_group.h"
-#include "coropact/net/inet_address.h"
+#include "coropact/net/endpoint.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::luring {
@@ -27,7 +27,7 @@ public:
   using ThreadExitCallback = LUringWorkerGroup::ThreadExitCallback;
   using SessionHandler = std::function<coro::Task<void>(LUringWorkerContext&, Stream)>;
 
-  explicit LUringServer(net::InetAddress listen_addr, LUringServerOptions options = {});
+  explicit LUringServer(net::Endpoint listen_addr, LUringServerOptions options = {});
   ~LUringServer() noexcept;
 
   void set_thread_init_callback(ThreadInitCallback callback) noexcept {
@@ -46,7 +46,7 @@ public:
   [[nodiscard]] bool started() const noexcept { return started_; }
 
 private:
-  net::InetAddress listen_addr_;
+  net::Endpoint listen_addr_;
   LUringServerOptions options_{};
 
   ThreadInitCallback thread_init_callback_;
