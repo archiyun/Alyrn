@@ -53,14 +53,14 @@ enum class Outcome {
 };
 
 Outcome Dispatch(coropact::gateway::RateLimiter* rl,
-                 coropact::gateway::CircuitBreaker* cb,
+                 coropact::gateway::CircuitBreaker* circuitbreaker,
                  std::string_view client_ip) {
   if (rl) {
     if (!rl->AllowGlobal() || !rl->AllowPerIP(client_ip)) {
       return Outcome::kRateLimited;
     }
   }
-  if (cb && !cb->AllowRequest()) {
+  if (circuitbreaker && !circuitbreaker->AllowRequest()) {
     return Outcome::kCircuitOpen;
   }
   return Outcome::kForwarded;

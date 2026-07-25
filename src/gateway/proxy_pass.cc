@@ -64,12 +64,6 @@ void AppendHeader(std::string& out, std::string_view name, std::string_view valu
 
 }  // namespace
 
-uint64_t ProxyPass::NowMs() {
-  return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
-                                   std::chrono::steady_clock::now().time_since_epoch())
-                                   .count());
-}
-
 bool ProxyPass::IsIdempotent(coropact::http::Method method) {
   using coropact::http::Method;
   switch (method) {
@@ -87,7 +81,7 @@ bool ProxyPass::IsIdempotent(coropact::http::Method method) {
 
 std::shared_ptr<UpstreamPeer> ProxyPass::SelectFailoverPeer(Upstream& upstream,
                                                             const UpstreamPeer& current) {
-  const uint64_t now_ms = NowMs();
+  const uint64_t now_ms = time::SteadyNowMs();
   for (const auto& peer : upstream.peers()) {
     if (peer.get() == &current) continue;
     if (peer->AvailableAt(now_ms)) return peer;

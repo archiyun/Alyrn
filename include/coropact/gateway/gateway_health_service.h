@@ -23,7 +23,7 @@
 #include "coropact/coro/spawn.h"
 #include "coropact/coro/task.h"
 #include "coropact/gateway/health_check_config.h"
-#include "coropact/gateway/upstream_connector.h"
+#include "coropact/io/async_connector.h"
 #include "coropact/gateway/upstream_registry.h"
 #include "coropact/io/stream_algorithms.h"
 #include "coropact/utils/macros.h"
@@ -43,7 +43,7 @@ namespace coropact::gateway {
 // The last rule matters because a probe is scheduled on the worker's event
 // loop. StopAndJoin waits for the coroutine to finish, so stopping the loop
 // first would leave the join unresolved.
-template <UpstreamConnector Connector>
+template <coropact::io::AsyncConnector Connector>
 class GatewayHealthService {
 public:
   COROPACT_DELETE_COPY_MOVE(GatewayHealthService);
