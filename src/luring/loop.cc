@@ -228,6 +228,50 @@ void LUringLoop::RunReady() noexcept {
   coro::Scheduler* previous = coro::Scheduler::Current();
   coro::Scheduler::SetCurrent(this);
 
+  // The common throughput configuration does not need wall-clock fairness or
+  // scheduler statistics. Avoid reading the clock for every resumed work item
+  // in that mode; the budgeted path below keeps the latency/fairness policy
+  // unchanged when any timing control is enabled.
+  const bool timing_required =
+      stats_enabled_ || max_ready_time_per_turn_ > std::chrono::microseconds::zero() ||
+      completion_queue_age_threshold_ > std::chrono::microseconds::zero() ||
+      normal_queue_age_threshold_ > std::chrono::microseconds::zero();
+  if (!timing_required) {
+    std::size_t resumed = 0;
+    std::size_t completion_resumed = 0;
+    while (HasReadyWork() &&
+           (max_ready_work_per_turn_ == 0 || resumed < max_ready_work_per_turn_)) {
+      coro::Work* work = nullptr;
+      const bool run_completion =
+          !completion_ready_.empty() &&
+          (ready_.empty() || max_completion_work_per_turn_ == 0 ||
+           completion_resumed < max_completion_work_per_turn_);
+      if (run_completion) {
+        work = completion_ready_.PopFront();
+        assert(completion_ready_depth_ > 0);
+        --completion_ready_depth_;
+        if (completion_ready_depth_ == 0) {
+          completion_ready_nonempty_since_ns_ = 0;
+        }
+        ++completion_resumed;
+      } else {
+        work = ready_.PopFront();
+        assert(ready_depth_ > 0);
+        --ready_depth_;
+        if (ready_depth_ == 0) {
+          ready_nonempty_since_ns_ = 0;
+        }
+      }
+      {
+        COROPACT_CTRACK_SCOPE("luring.ready.work");
+        Run(work);
+      }
+      ++resumed;
+    }
+    coro::Scheduler::SetCurrent(previous);
+    return;
+  }
+
   const std::uint64_t turn_start_ns = NowNs();
   const auto configured_time_budget = max_ready_time_per_turn_ > std::chrono::microseconds::zero()
                                           ? max_ready_time_per_turn_
