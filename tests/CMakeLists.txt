@@ -508,6 +508,17 @@ target_link_libraries(timer_tree_smoke_test
 
 add_test(NAME timer_tree_smoke_test COMMAND timer_tree_smoke_test)
 
+add_executable(clock_smoke_test
+    unit/test_clock_smoke.cc
+)
+
+target_include_directories(clock_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+add_test(NAME clock_smoke_test COMMAND clock_smoke_test)
+
 add_executable(intrusive_rbtree_clear_smoke_test
     unit/test_intrusive_rbtree_clear_smoke.cc
 )

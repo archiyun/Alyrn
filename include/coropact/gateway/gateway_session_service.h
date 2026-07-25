@@ -31,7 +31,7 @@ namespace coropact::gateway {
 // loop-bound upstream streams can be reused by all sessions on that worker
 // without crossing worker/ring boundaries. The two-argument overload remains
 // available and keeps the historical per-session pool behavior.
-template <coropact::io::AsyncStream ClientStream, UpstreamConnector Connector>
+template <io::AsyncStream ClientStream, io::AsyncConnector Connector>
 class GatewaySessionService {
 public:
   using Handler = GatewayCore::Handler;

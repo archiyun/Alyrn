@@ -19,14 +19,15 @@
 #include "coropact/coro/task.h"
 #include "coropact/gateway/forwarded_header_context.h"
 #include "coropact/gateway/load_balancer.h"
-#include "coropact/gateway/upstream_connector.h"
 #include "coropact/gateway/upstream.h"
 #include "coropact/gateway/upstream_conn_pool.h"
 #include "coropact/gateway/upstream_peer.h"
 #include "coropact/http/http_request.h"
 #include "coropact/http/http_types.h"
+#include "coropact/io/async_connector.h"
 #include "coropact/io/async_stream.h"
 #include "coropact/io/stream_algorithms.h"
+#include "coropact/time/clock.h"
 
 namespace coropact::gateway {
 
@@ -59,14 +60,15 @@ struct ProxyForwardBuffers {
 
 class ProxyPass {
 public:
-  template <coropact::io::AsyncStream ClientStream, UpstreamConnector Connector>
-  static coropact::coro::Task<ProxyForwardResult> Forward(
-      ClientStream& client, const coropact::http::HttpRequest& request, Upstream& upstream,
-      LoadBalancer& lb, UpstreamStreamPool<typename Connector::Stream>& pool, Connector& connector,
-      const RequestContext& ctx = {}, CircuitBreaker* cb = nullptr,
-      ForwardedHeaderContext forwarded = {}, ProxyForwardBuffers* buffers = nullptr);
+  template <io::AsyncStream ClientStream, io::AsyncConnector Connector>
+  static coro::Task<ProxyForwardResult> Forward(
+      ClientStream& client, const http::HttpRequest& request, Upstream& upstream,
+      LoadBalancer& loadbalancer, UpstreamStreamPool<typename Connector::Stream>& pool,
+      Connector& connector, const RequestContext& ctx = {},
+      CircuitBreaker* circuitbreaker = nullptr, ForwardedHeaderContext forwarded = {},
+      ProxyForwardBuffers* buffers = nullptr);
 
-  static std::string BuildRequest(const coropact::http::HttpRequest& req, const UpstreamPeer& peer,
+  static std::string BuildRequest(const http::HttpRequest& req, const UpstreamPeer& peer,
                                   ForwardedHeaderContext forwarded = {});
 
 private:
@@ -77,36 +79,34 @@ private:
     int status{0};
   };
 
-  static uint64_t NowMs();
-  static bool IsIdempotent(coropact::http::Method method);
+  static bool IsIdempotent(http::Method method);
   static ResponseState RewriteHeaders(std::string_view raw_headers, std::string& out,
-                                      coropact::http::Method request_method);
-  static void BuildRequestInto(const coropact::http::HttpRequest& req, const UpstreamPeer& peer,
+                                      http::Method request_method);
+  static void BuildRequestInto(const http::HttpRequest& req, const UpstreamPeer& peer,
                                std::string& out, ForwardedHeaderContext forwarded);
   static std::shared_ptr<UpstreamPeer> SelectFailoverPeer(Upstream& upstream,
                                                           const UpstreamPeer& current);
 
-  template <coropact::io::AsyncReadStream Stream>
-  static decltype(auto) ReadSomeWithTimeout(
-      Stream& stream, std::span<std::byte> buffer, std::chrono::milliseconds timeout);
+  template <io::AsyncReadStream Stream>
+  static decltype(auto) ReadSomeWithTimeout(Stream& stream, std::span<std::byte> buffer,
+                                            std::chrono::milliseconds timeout);
 
-  template <coropact::io::AsyncWriteStream Stream>
-  static coropact::coro::Task<coropact::base::Result<void>> WriteString(Stream& stream,
-                                                                std::string_view bytes);
+  template <io::AsyncWriteStream Stream>
+  static coro::Task<base::Result<void>> WriteString(Stream& stream, std::string_view bytes);
 
-  template <coropact::io::AsyncWriteStream Stream>
-  static coropact::coro::Task<void> Send502(Stream& client);
+  template <io::AsyncWriteStream Stream>
+  static coro::Task<void> Send502(Stream& client);
 
-  template <coropact::io::AsyncStream ClientStream, coropact::io::AsyncStream UpstreamStream>
-  static coropact::coro::Task<coropact::base::Result<bool>> RelayResponse(
-      ClientStream& client, UpstreamStream& upstream, UpstreamPeer& peer, CircuitBreaker* cb,
-      bool& cb_reported, coropact::http::Method request_method,
+  template <io::AsyncStream ClientStream, io::AsyncStream UpstreamStream>
+  static coro::Task<base::Result<bool>> RelayResponse(
+      ClientStream& client, UpstreamStream& upstream, UpstreamPeer& peer,
+      CircuitBreaker* circuitbreaker, bool& circuitbreaker_reported, http::Method request_method,
       std::chrono::milliseconds request_timeout, std::string& pending, std::string& outbound);
 };
 
-template <coropact::io::AsyncReadStream Stream>
-decltype(auto) ProxyPass::ReadSomeWithTimeout(
-    Stream& stream, std::span<std::byte> buffer, std::chrono::milliseconds timeout) {
+template <io::AsyncReadStream Stream>
+decltype(auto) ProxyPass::ReadSomeWithTimeout(Stream& stream, std::span<std::byte> buffer,
+                                              std::chrono::milliseconds timeout) {
   if constexpr (requires { stream.ReadSomeFor(buffer, timeout); }) {
     return stream.ReadSomeFor(buffer, timeout);
   } else {
@@ -114,16 +114,15 @@ decltype(auto) ProxyPass::ReadSomeWithTimeout(
   }
 }
 
-template <coropact::io::AsyncWriteStream Stream>
-coropact::coro::Task<coropact::base::Result<void>> ProxyPass::WriteString(Stream& stream,
-                                                                  std::string_view bytes) {
-  auto result = co_await coropact::io::WriteAll(
+template <io::AsyncWriteStream Stream>
+coro::Task<base::Result<void>> ProxyPass::WriteString(Stream& stream, std::string_view bytes) {
+  auto result = co_await io::WriteAll(
       stream, std::as_bytes(std::span<const char>(bytes.data(), bytes.size())));
   co_return result;
 }
 
-template <coropact::io::AsyncWriteStream Stream>
-coropact::coro::Task<void> ProxyPass::Send502(Stream& client) {
+template <io::AsyncWriteStream Stream>
+coro::Task<void> ProxyPass::Send502(Stream& client) {
   static constexpr std::string_view kResp =
       "HTTP/1.1 502 Bad Gateway\r\n"
       "Content-Type: text/plain\r\n"
@@ -132,16 +131,16 @@ coropact::coro::Task<void> ProxyPass::Send502(Stream& client) {
       "\r\n"
       "Bad Gateway";
   co_await WriteString(client, kResp);
-  if constexpr (coropact::io::AsyncClosableStream<Stream>) {
+  if constexpr (io::AsyncClosableStream<Stream>) {
     co_await client.Shutdown();
   }
 }
 
-template <coropact::io::AsyncStream ClientStream, coropact::io::AsyncStream UpstreamStream>
-coropact::coro::Task<coropact::base::Result<bool>> ProxyPass::RelayResponse(
-    ClientStream& client, UpstreamStream& upstream, UpstreamPeer& peer, CircuitBreaker* cb,
-    bool& cb_reported, coropact::http::Method request_method, std::chrono::milliseconds request_timeout,
-    std::string& pending, std::string& outbound) {
+template <io::AsyncStream ClientStream, io::AsyncStream UpstreamStream>
+coro::Task<base::Result<bool>> ProxyPass::RelayResponse(
+    ClientStream& client, UpstreamStream& upstream, UpstreamPeer& peer,
+    CircuitBreaker* circuitbreaker, bool& circuitbreaker_reported, http::Method request_method,
+    std::chrono::milliseconds request_timeout, std::string& pending, std::string& outbound) {
   std::array<std::byte, 4096> read_buffer{};
   pending.clear();
   outbound.clear();
@@ -158,13 +157,17 @@ coropact::coro::Task<coropact::base::Result<bool>> ProxyPass::RelayResponse(
       outbound.reserve(raw_headers.size() + 64 + body_available);
       state = RewriteHeaders(raw_headers, outbound, request_method);
 
-      if (!cb_reported) {
-        cb_reported = true;
+      if (!circuitbreaker_reported) {
+        circuitbreaker_reported = true;
         if (state.status >= 500) {
-          if (cb) cb->OnFailure();
+          if (circuitbreaker) {
+            circuitbreaker->OnFailure();
+          }
         } else {
           peer.OnSuccess();
-          if (cb) cb->OnSuccess();
+          if (circuitbreaker) {
+            circuitbreaker->OnSuccess();
+          }
         }
       }
 
@@ -211,30 +214,38 @@ coropact::coro::Task<coropact::base::Result<bool>> ProxyPass::RelayResponse(
     }
 
     auto read = co_await ReadSomeWithTimeout(upstream, read_buffer, request_timeout);
-    if (!read.has_value()) co_return std::unexpected(read.error());
-    if (*read == 0) co_return std::unexpected(coropact::base::make_errno(EPIPE));
+    if (!read.has_value()) {
+      co_return std::unexpected(read.error());
+    }
+    if (*read == 0) {
+      co_return std::unexpected(base::make_errno(EPIPE));
+    }
     pending.append(reinterpret_cast<const char*>(read_buffer.data()), *read);
   }
 }
 
-template <coropact::io::AsyncStream ClientStream, UpstreamConnector Connector>
-coropact::coro::Task<ProxyForwardResult> ProxyPass::Forward(
-    ClientStream& client, const coropact::http::HttpRequest& request, Upstream& upstream,
-    LoadBalancer& lb, UpstreamStreamPool<typename Connector::Stream>& pool, Connector& connector,
-    const RequestContext& ctx, CircuitBreaker* cb, ForwardedHeaderContext forwarded,
-    ProxyForwardBuffers* buffers) {
+template <io::AsyncStream ClientStream, io::AsyncConnector Connector>
+coro::Task<ProxyForwardResult> ProxyPass::Forward(
+    ClientStream& client, const http::HttpRequest& request, Upstream& upstream,
+    LoadBalancer& loadbalancer, UpstreamStreamPool<typename Connector::Stream>& pool,
+    Connector& connector, const RequestContext& ctx, CircuitBreaker* circuitbreaker,
+    ForwardedHeaderContext forwarded, ProxyForwardBuffers* buffers) {
   using UpstreamStream = typename Connector::Stream;
 
   if (!upstream.TryAcquireRequestSlot()) {
-    if (cb) cb->OnFailure();
+    if (circuitbreaker) {
+      circuitbreaker->OnFailure();
+    }
     co_return ProxyForwardResult{.status = ProxyForwardStatus::kNoPeer};
   }
 
   auto release_upstream = [&upstream] { upstream.ReleaseRequestSlot(); };
-  auto peer = lb.Select(upstream, ctx);
+  auto peer = loadbalancer.Select(upstream, ctx);
   if (!peer) {
     release_upstream();
-    if (cb) cb->OnFailure();
+    if (circuitbreaker) {
+      circuitbreaker->OnFailure();
+    }
     co_return ProxyForwardResult{.status = ProxyForwardStatus::kNoPeer};
   }
 
@@ -252,7 +263,7 @@ coropact::coro::Task<ProxyForwardResult> ProxyPass::Forward(
     buffers = &local_buffers;
   }
   BuildRequestInto(request, *peer, buffers->request, forwarded);
-  bool cb_reported = false;
+  bool circuitbreaker_reported = false;
   int retries_left = 2;
   bool request_on_wire = false;
   const bool collect_stats = pool.stats_enabled();
@@ -270,9 +281,9 @@ coropact::coro::Task<ProxyForwardResult> ProxyPass::Forward(
         pool.RecordConnect(static_cast<std::uint64_t>(elapsed), connected.has_value());
       }
       if (!connected.has_value()) {
-        peer->OnFailure(NowMs());
+        peer->OnFailure(time::SteadyNowMs());
         if ((!request_on_wire || IsIdempotent(request.method())) && retries_left-- > 0) {
-          auto next = lb.Select(upstream, ctx);
+          auto next = loadbalancer.Select(upstream, ctx);
           if (!next || next.get() == peer.get()) next = SelectFailoverPeer(upstream, *peer);
           if (next && next.get() != peer.get()) {
             release_peer();
@@ -283,9 +294,9 @@ coropact::coro::Task<ProxyForwardResult> ProxyPass::Forward(
             continue;
           }
         }
-        if (!cb_reported) {
-          cb_reported = true;
-          if (cb) cb->OnFailure();
+        if (!circuitbreaker_reported) {
+          circuitbreaker_reported = true;
+          if (circuitbreaker) circuitbreaker->OnFailure();
         }
         co_await Send502(client);
         release_peer();
@@ -307,9 +318,9 @@ coropact::coro::Task<ProxyForwardResult> ProxyPass::Forward(
     }
     request_on_wire = true;
     if (!written.has_value()) {
-      peer->OnFailure(NowMs());
+      peer->OnFailure(time::SteadyNowMs());
       if (IsIdempotent(request.method()) && retries_left-- > 0) {
-        auto next = lb.Select(upstream, ctx);
+        auto next = loadbalancer.Select(upstream, ctx);
         if (!next || next.get() == peer.get()) next = SelectFailoverPeer(upstream, *peer);
         if (next && next.get() != peer.get()) {
           release_peer();
@@ -320,9 +331,9 @@ coropact::coro::Task<ProxyForwardResult> ProxyPass::Forward(
           continue;
         }
       }
-      if (!cb_reported) {
-        cb_reported = true;
-        if (cb) cb->OnFailure();
+      if (!circuitbreaker_reported) {
+        circuitbreaker_reported = true;
+        if (circuitbreaker) circuitbreaker->OnFailure();
       }
       co_await Send502(client);
       release_peer();
@@ -332,9 +343,9 @@ coropact::coro::Task<ProxyForwardResult> ProxyPass::Forward(
 
     const auto relay_started =
         collect_stats ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
-    auto reusable = co_await RelayResponse(client, *upstream_stream, *peer, cb, cb_reported,
-                                           request.method(), upstream.config().request_timeout,
-                                           buffers->response_pending, buffers->response_outbound);
+    auto reusable = co_await RelayResponse(
+        client, *upstream_stream, *peer, circuitbreaker, circuitbreaker_reported, request.method(),
+        upstream.config().request_timeout, buffers->response_pending, buffers->response_outbound);
     if (collect_stats) {
       const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
                                std::chrono::steady_clock::now() - relay_started)
@@ -342,9 +353,9 @@ coropact::coro::Task<ProxyForwardResult> ProxyPass::Forward(
       pool.RecordRelay(static_cast<std::uint64_t>(elapsed));
     }
     if (!reusable.has_value()) {
-      peer->OnFailure(NowMs());
+      peer->OnFailure(time::SteadyNowMs());
       if (IsIdempotent(request.method()) && retries_left-- > 0) {
-        auto next = lb.Select(upstream, ctx);
+        auto next = loadbalancer.Select(upstream, ctx);
         if (!next || next.get() == peer.get()) next = SelectFailoverPeer(upstream, *peer);
         if (next && next.get() != peer.get()) {
           release_peer();
@@ -356,9 +367,9 @@ coropact::coro::Task<ProxyForwardResult> ProxyPass::Forward(
           continue;
         }
       }
-      if (!cb_reported) {
-        cb_reported = true;
-        if (cb) cb->OnFailure();
+      if (!circuitbreaker_reported) {
+        circuitbreaker_reported = true;
+        if (circuitbreaker) circuitbreaker->OnFailure();
       }
       co_await Send502(client);
       release_peer();

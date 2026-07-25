@@ -4,6 +4,7 @@
 
 // Public umbrella header for time and timer components.
 
+#include "coropact/time/clock.h" // IWYU pragma: export
 #include "coropact/time/timer.h" // IWYU pragma: export
 #include "coropact/time/timer_id.h" // IWYU pragma: export
 #include "coropact/time/timer_tree.h" // IWYU pragma: export

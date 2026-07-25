@@ -23,8 +23,8 @@
 #define COROPACT_LOG_HAS_STD_FORMAT 0
 #endif
 
-#include "coropact/base/singleton.h"
 #include "coropact/utils/macros.h"
+#include "coropact/utils/singleton.h"
 
 namespace coropact::log {
 
@@ -79,7 +79,7 @@ class AsyncLogger;
 enum class LogLevel : uint8_t { DEBUG = 0, INFO, WARN, ERROR, FATAL };
 
 // Logger formats log records and forwards them to AsyncLogger.
-class Logger : public coropact::base::Singleton<Logger> {
+class Logger : public coropact::utils::Singleton<Logger> {
 public:
   void Init(const std::string& filename, LogLevel level = LogLevel::INFO,
             int flush_interval_ms = 1000, std::size_t roll_size = 10 * 1024 * 1024);
@@ -118,7 +118,7 @@ public:
   }
 
 private:
-  friend class coropact::base::Singleton<Logger>;
+  friend class coropact::utils::Singleton<Logger>;
 
   Logger();
   ~Logger();

@@ -171,11 +171,11 @@ GatewayCore::Action GatewayCore::HandleRequest(const coropact::http::HttpRequest
     }
     auto upstream = *resolved;
 
-    CircuitBreaker* cb = nullptr;
+    CircuitBreaker* circuitbreaker = nullptr;
     if (route->circuit_breaker_enabled) {
-      cb = upstream->circuit_breaker().get();
+      circuitbreaker = upstream->circuit_breaker().get();
     }
-    if (cb && !cb->AllowRequest()) {
+    if (circuitbreaker && !circuitbreaker->AllowRequest()) {
       return SendResponse(RenderFallback(*route, "circuit open"));
     }
 
@@ -188,7 +188,7 @@ GatewayCore::Action GatewayCore::HandleRequest(const coropact::http::HttpRequest
                 .client_ip = std::string(client_ip),
                 .uri = std::string(req.path()),
             },
-        .circuit_breaker = cb,
+        .circuit_breaker = circuitbreaker,
         .client_ip = std::string(client_ip),
         .request_id = GenRequestId(),
     };

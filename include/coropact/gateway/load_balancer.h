@@ -25,7 +25,6 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
-#include <chrono>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -37,19 +36,9 @@
 #include "coropact/ds/murmurhash32.h"
 #include "coropact/ds/murmurhash64.h"
 #include "coropact/gateway/upstream.h"
+#include "coropact/time/clock.h"
 
 namespace coropact::gateway {
-
-namespace detail {
-
-inline uint64_t SteadyClockMs() noexcept {
-  return static_cast<uint64_t>(
-      std::chrono::duration_cast<std::chrono::milliseconds>(
-          std::chrono::steady_clock::now().time_since_epoch())
-          .count());
-}
-
-}  // namespace detail
 
 // Per-request signals forwarded to LBs that route on request attributes
 // (IP hash, consistent hash on a specific field). Populated by the gateway
@@ -81,7 +70,7 @@ class RoundRobinLB : public LoadBalancer {
 public:
   std::shared_ptr<UpstreamPeer> Select(Upstream& upstream, const RequestContext ctx = {}) override {
     const auto& peers = upstream.peers();
-    const uint64_t now_ms = detail::SteadyClockMs();
+    const uint64_t now_ms = time::SteadyNowMs();
     std::size_t avail = 0;
     for (const auto& p : peers) {
       if (p->AvailableAt(now_ms)) {
@@ -110,7 +99,7 @@ class SmoothWeightedRoundRobinLB : public LoadBalancer {
 public:
   std::shared_ptr<UpstreamPeer> Select(Upstream& upstream, const RequestContext ctx = {}) override {
     const auto& peers = upstream.peers();
-    const uint64_t now_ms = detail::SteadyClockMs();
+    const uint64_t now_ms = time::SteadyNowMs();
     std::lock_guard lk{mutex_};
 
     int total = 0;
@@ -151,7 +140,7 @@ class LeastConnectionLB : public LoadBalancer {
 public:
   std::shared_ptr<UpstreamPeer> Select(Upstream& upstream, const RequestContext ctx = {}) override {
     const auto& peers = upstream.peers();
-    const uint64_t now_ms = detail::SteadyClockMs();
+    const uint64_t now_ms = time::SteadyNowMs();
     std::shared_ptr<UpstreamPeer> best;
     int min_active = std::numeric_limits<int>::max();
 
@@ -176,7 +165,7 @@ class WeightedLeastConnectionLB : public LoadBalancer {
 public:
   std::shared_ptr<UpstreamPeer> Select(Upstream& upstream, const RequestContext ctx = {}) override {
     const auto& peers = upstream.peers();
-    const uint64_t now_ms = detail::SteadyClockMs();
+    const uint64_t now_ms = time::SteadyNowMs();
     std::shared_ptr<UpstreamPeer> best;
     int best_weight = 1;  // weight of `best`, clamped to >= 1 (see std::max below).
 
@@ -209,7 +198,7 @@ class RandomLB : public LoadBalancer {
 public:
   std::shared_ptr<UpstreamPeer> Select(Upstream& upstream, const RequestContext ctx = {}) override {
     const auto& peers = upstream.peers();
-    const uint64_t now_ms = detail::SteadyClockMs();
+    const uint64_t now_ms = time::SteadyNowMs();
     std::size_t avail = 0;
     for (const auto& p : peers)
       if (p->AvailableAt(now_ms)) ++avail;
@@ -232,7 +221,7 @@ class WeightedRandomLB : public LoadBalancer {
 public:
   std::shared_ptr<UpstreamPeer> Select(Upstream& upstream, const RequestContext ctx = {}) override {
     const auto& peers = upstream.peers();
-    const uint64_t now_ms = detail::SteadyClockMs();
+    const uint64_t now_ms = time::SteadyNowMs();
     int total_weight = 0;
     for (const auto& peer : peers) {
       if (!peer->AvailableAt(now_ms)) continue;
@@ -262,7 +251,7 @@ class IPHashLB : public LoadBalancer {
 public:
   std::shared_ptr<UpstreamPeer> Select(Upstream& upstream, const RequestContext ctx = {}) override {
     const auto& peers = upstream.peers();
-    const uint64_t now_ms = detail::SteadyClockMs();
+    const uint64_t now_ms = time::SteadyNowMs();
     std::size_t avail = 0;
     for (const auto& p : peers)
       if (p->AvailableAt(now_ms)) ++avail;
@@ -310,7 +299,7 @@ public:
         hash_on_(ParseHashOn(hash_on)) {}
   std::shared_ptr<UpstreamPeer> Select(Upstream& upstream, const RequestContext ctx = {}) override {
     const auto& peers = upstream.peers();
-    const uint64_t now_ms = detail::SteadyClockMs();
+    const uint64_t now_ms = time::SteadyNowMs();
     auto fp = ComputeFingerprint(peers, now_ms);
     if (fp.empty()) return nullptr;  // No peer is currently available.
 
@@ -481,7 +470,7 @@ public:
 
   std::shared_ptr<UpstreamPeer> Select(Upstream& upstream, const RequestContext ctx = {} ) override {
     const auto& peers = upstream.peers();
-    const uint64_t now_ms = detail::SteadyClockMs();
+    const uint64_t now_ms = time::SteadyNowMs();
     auto fp = ComputeFingerprint(peers, now_ms);
     if (fp.empty()) return nullptr;
 
@@ -652,7 +641,7 @@ class P2CLB : public LoadBalancer {
 public:
   std::shared_ptr<UpstreamPeer> Select(Upstream& upstream, const RequestContext ctx = {}) override {
     const auto& peers = upstream.peers();
-    const uint64_t now_ms = detail::SteadyClockMs();
+    const uint64_t now_ms = time::SteadyNowMs();
     std::size_t avail = 0;
     for (const auto& p : peers) {
       if (p->AvailableAt(now_ms)) ++avail;

@@ -65,10 +65,12 @@ public:
   // Circuit breaker is attached lazily by GatewaySessionService::AddProxyRoute when
   // circuit_breaker_enabled is set on a Route. Stored as shared_ptr so
   // the gateway and proxy code can share the same instance across requests.
-  void set_circuit_breaker(std::shared_ptr<CircuitBreaker> cb) { cb_ = std::move(cb); }
+  void set_circuit_breaker(std::shared_ptr<CircuitBreaker> circuitbreaker) {
+    circuitbreaker_ = std::move(circuitbreaker);
+  }
   [[nodiscard]]
   std::shared_ptr<CircuitBreaker> circuit_breaker() const {
-    return cb_;
+    return circuitbreaker_;
   }
 
   bool TryAcquireRequestSlot() noexcept {
@@ -98,7 +100,7 @@ public:
 private:
   UpstreamConfig config_;
   std::vector<std::shared_ptr<UpstreamPeer>> peers_;
-  std::shared_ptr<CircuitBreaker> cb_;
+  std::shared_ptr<CircuitBreaker> circuitbreaker_;
   std::atomic<std::size_t> active_requests_{0};
 };
 

@@ -4,7 +4,7 @@
 
 #include "coropact/utils/macros.h"
 
-namespace coropact::base {
+namespace coropact::utils {
 
 // CRTP singleton base. Derived types inherit as Singleton<Derived> and usually
 // declare Singleton<Derived> as a friend when their constructors are private.
@@ -23,4 +23,4 @@ protected:
   ~Singleton() = default;
 };
 
-}  // namespace coropact::base
+}  // namespace coropact::utils

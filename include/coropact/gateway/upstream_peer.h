@@ -31,8 +31,8 @@ struct UpstreamPeerConfig {
 // across IO threads. Relaxed ordering is intentional — load balancing tolerates slightly
 // stale counts.
 struct UpstreamPeerState {
-  std::atomic<bool> down{false};        // Hard-down; owned by the active gateway health loop.
-  std::atomic<int> active{0};           // In-flight request count; used by LeastConn.
+  std::atomic<bool> down{false};  // Hard-down; owned by the active gateway health loop.
+  std::atomic<int> active{0};     // In-flight request count; used by LeastConn.
   std::atomic<uint64_t> requests{0};
   std::atomic<uint64_t> fails{0};
   std::atomic<uint64_t> checked_ms{0};  // Timestamp of last failure; used for fail_timeout window.
@@ -57,13 +57,20 @@ public:
     host_port_.append(config_.host).append(":").append(std::to_string(config_.port));
   }
 
-  const UpstreamPeerConfig& config() const { return config_; }
-  const std::string& host_port() const { return host_port_; }
+  [[nodiscard]]
+  const UpstreamPeerConfig& config() const {
+    return config_;
+  }
+  [[nodiscard]]
+  const std::string& host_port() const {
+    return host_port_;
+  }
   UpstreamPeerState& state() { return state_; }
 
   // Active-health status only. This intentionally ignores passive failure
   // cooldowns so callers do not have to pass a fake timestamp when they only
   // need the binary health-check state.
+  [[nodiscard]]
   bool IsUp() const {
     return !state_.down.load(std::memory_order_relaxed);
   }
@@ -77,19 +84,29 @@ public:
   // Returns false if: (1) marked down by health checker, or (2) fail count has reached
   // max_fails and the fail_timeout cooldown has not yet elapsed. `now_ms` must use
   // the same steady-clock millisecond source passed to OnFailure().
+  [[nodiscard]]
   bool AvailableAt(uint64_t now_ms) const {
-    if (!IsUp()) return false;
+    if (!IsUp()) {
+      return false;
+    }
     const int fails = static_cast<int>(state_.fails.load(std::memory_order_relaxed));
-    if (fails < config_.max_fails) return true;
+    if (fails < config_.max_fails) {
+      return true;
+    }
     const uint64_t checked = state_.checked_ms.load(std::memory_order_relaxed);
     return now_ms >= checked &&
            (now_ms - checked) >= static_cast<uint64_t>(config_.fail_timeout.count());
   }
 
-  int weight() const { return config_.weight; }
+  [[nodiscard]]
+  int weight() const {
+    return config_.weight;
+  }
+  [[nodiscard]]
   int effective_weight() const {
     return state_.effective_weight.load(std::memory_order_relaxed);
   }
+  [[nodiscard]]
   int active_request() const {
     return state_.active.load(std::memory_order_relaxed);
   }
@@ -101,9 +118,8 @@ public:
     state_.fails.fetch_add(1, std::memory_order_relaxed);
     state_.checked_ms.store(now_ms, std::memory_order_relaxed);
     int cur = state_.effective_weight.load(std::memory_order_relaxed);
-    while (cur > 0 &&
-           !state_.effective_weight.compare_exchange_weak(
-               cur, cur - 1, std::memory_order_relaxed)) {
+    while (cur > 0 && !state_.effective_weight.compare_exchange_weak(cur, cur - 1,
+                                                                     std::memory_order_relaxed)) {
       // CAS reloads cur on failure; loop until success or floor (0) is hit.
     }
   }
@@ -116,9 +132,8 @@ public:
     // NOTE: does NOT clear state_.down - the active gateway health loop owns
     // that flag and lifts it only after healthy_threshold consecutive probes.
     int cur = state_.effective_weight.load(std::memory_order_relaxed);
-    while (cur < config_.weight &&
-           !state_.effective_weight.compare_exchange_weak(
-               cur, cur + 1, std::memory_order_relaxed)) {
+    while (cur < config_.weight && !state_.effective_weight.compare_exchange_weak(
+                                       cur, cur + 1, std::memory_order_relaxed)) {
       // CAS reloads cur on failure; loop until success or ceiling (weight) is hit.
     }
   }

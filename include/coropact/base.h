@@ -9,5 +9,4 @@
 #include "coropact/base/current_thread.h" // IWYU pragma: export
 #include "coropact/base/error.h" // IWYU pragma: export
 #include "coropact/base/panic.h" // IWYU pragma: export
-#include "coropact/base/singleton.h" // IWYU pragma: export
 #include "coropact/base/try.h" // IWYU pragma: export
