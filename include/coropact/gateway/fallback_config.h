@@ -11,7 +11,7 @@ namespace coropact::gateway {
 
 // Static fallback response configuration for a proxy route.
 //
-// When enabled, GatewayServer serves this pre-rendered response instead of the
+// When enabled, the session service serves this pre-rendered response instead of the
 // generated default error response for unavailable upstreams, open circuit
 // breakers, and other proxy failure paths.
 struct FallbackConfig {

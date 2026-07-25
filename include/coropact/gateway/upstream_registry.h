@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <cstddef>
+#include <cerrno>
+#include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -9,6 +12,7 @@
 #include <utility>
 
 #include "coropact/gateway/upstream.h"
+#include "coropact/base/error.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::gateway {
@@ -23,26 +27,50 @@ struct StringHash {
 // Built during startup. After startup, it is read-only and can be resolved without locks.
 class UpstreamRegistry {
 public:
-  UpstreamRegistry() = default;
-
   COROPACT_DELETE_COPY_MOVE(UpstreamRegistry);
 
+  UpstreamRegistry() noexcept = default;
+  ~UpstreamRegistry() noexcept = default;
+
   using UpstreamRegistryMap = std::unordered_map<
-      std::string, 
+      std::string,
       std::shared_ptr<Upstream>,
       StringHash,
       std::equal_to<>>;
 
-  void Add(std::shared_ptr<Upstream> upstream) {
-    registry_.emplace(upstream->name(), std::move(upstream));
+  [[nodiscard]]
+  base::Result<void> Register(std::shared_ptr<Upstream> upstream) {
+    if (upstream == nullptr) {
+      return std::unexpected(base::make_errno(EINVAL));
+    }
+
+    const std::string name = upstream->name();
+    if (name.empty()) {
+      return std::unexpected(base::make_errno(EINVAL));
+    }
+
+    const bool inserted = registry_.emplace(name, std::move(upstream)).second;
+    if (!inserted) {
+      return std::unexpected(base::make_errno(EEXIST));
+    }
+
+    return {};
   }
 
-  std::shared_ptr<Upstream> Find(std::string_view name) const {
-    auto it = registry_.find(name);
-    return it != registry_.end() ? it->second : nullptr;
+  [[nodiscard]]
+  base::Result<std::shared_ptr<Upstream>> Resolve(std::string_view name) const {
+    if (name.empty()) {
+      return std::unexpected(base::make_errno(EINVAL));
+    }
+
+    auto iterator = registry_.find(name);
+    if (iterator == registry_.end()) {
+      return std::unexpected(base::make_errno(ENOENT));
+    }
+    return iterator->second;
   }
-  
-  const UpstreamRegistryMap& all() const {
+
+  const UpstreamRegistryMap& all() const noexcept {
     return registry_;
   }
 

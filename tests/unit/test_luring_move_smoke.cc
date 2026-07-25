@@ -15,7 +15,7 @@
 #include "coropact/luring/loop.h"
 #include "coropact/luring/options.h"
 #include "coropact/luring/stream.h"
-#include "coropact/net/inet_address.h"
+#include "coropact/net/endpoint.h"
 
 namespace {
 
@@ -63,9 +63,9 @@ bool TestStreamMove(coropact::luring::LUringLoop& loop) {
   }
 
   {
-    coropact::luring::LUringStream source(&loop, fds[0], coropact::net::InetAddress(0));
+    coropact::luring::LUringStream source(&loop, fds[0], coropact::net::Endpoint(0));
     coropact::luring::LUringStream moved(std::move(source));
-    coropact::luring::LUringStream target(&loop, fds[1], coropact::net::InetAddress(0));
+    coropact::luring::LUringStream target(&loop, fds[1], coropact::net::Endpoint(0));
     target = std::move(moved);
 
     if (!Check(source.fd() == -1 && moved.fd() == -1 && target.fd() == fds[0],
@@ -78,7 +78,7 @@ bool TestStreamMove(coropact::luring::LUringLoop& loop) {
 }
 
 bool TestListenerMove(coropact::luring::LUringLoop& loop) {
-  auto source = coropact::luring::LUringListener::Create(&loop, coropact::net::InetAddress(0));
+  auto source = coropact::luring::LUringListener::Create(&loop, coropact::net::Endpoint(0));
   if (!Check(source.has_value(), "LUringListener creation failed")) {
     return false;
   }
@@ -94,7 +94,7 @@ bool TestListenerMove(coropact::luring::LUringLoop& loop) {
     return false;
   }
 
-  auto target = coropact::luring::LUringListener::Create(&loop, coropact::net::InetAddress(0));
+  auto target = coropact::luring::LUringListener::Create(&loop, coropact::net::Endpoint(0));
   if (!Check(target.has_value(), "LUringListener move target creation failed")) {
     return false;
   }

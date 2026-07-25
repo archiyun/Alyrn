@@ -32,7 +32,7 @@ retry, queue, and byte budgets.
 - `ProxyPass::BuildRequest`
 - `UpstreamConnector`
 - `UpstreamStreamPool`
-- GatewayServer proxy-route dispatch integration
+- GatewaySessionService proxy-route dispatch integration
 
 ## Thread model
 
@@ -45,7 +45,7 @@ retry, queue, and byte budgets.
 ## Lifetime rules
 
 - The serving task retains request state until its terminal operation completes.
-- GatewayServer, route load balancer, Upstream, pool, and breaker outlive requests.
+- GatewaySessionService, route load balancer, Upstream, pool, and breaker outlive requests.
 - Cancellation makes later completions inert before stream or owner release.
 - Cleanup releases timer, peer count, upstream slot, breaker outcome, and stream
   exactly once.

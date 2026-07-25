@@ -36,7 +36,7 @@
 #include "coropact/luring/connector.h"
 #include "coropact/luring/server.h"
 #include "coropact/memory/pmr_pool_resource.h"
-#include "coropact/net/inet_address.h"
+#include "coropact/net/endpoint.h"
 #include "coropact/net/net_utils.h"
 
 namespace {
@@ -166,7 +166,12 @@ int main() {
         std::make_shared<coropact::gateway::UpstreamPeer>(coropact::gateway::UpstreamPeerConfig{
             .name = "127.0.0.1:" + std::to_string(port), .host = "127.0.0.1", .port = port}));
   }
-  registry.Add(std::move(upstream));
+  auto registered = registry.Register(std::move(upstream));
+  if (!registered.has_value()) {
+    std::fprintf(stderr, "failed to register upstream: %s\n",
+                 registered.error().message().c_str());
+    return 1;
+  }
 
   using Service = coropact::gateway::GatewaySessionService<coropact::luring::LUringStream,
                                                        coropact::luring::LUringConnector>;
@@ -267,7 +272,7 @@ int main() {
                : nullptr;
   };
 
-  auto listen_addr = coropact::net::ParseIPv4Address(bind_host, listen_port);
+  auto listen_addr = coropact::net::ParseIpAddress(bind_host, listen_port);
   if (!listen_addr.has_value()) {
     std::fprintf(stderr, "invalid BIND_HOST '%s': %s\n", bind_host.c_str(),
                  listen_addr.error().message().c_str());

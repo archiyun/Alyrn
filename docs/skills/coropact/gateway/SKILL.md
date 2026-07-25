@@ -1,6 +1,6 @@
 ---
 name: runtime-gateway-maintenance
-description: Maintain coropact/gateway orchestration and cross-subsystem policy. Use for GatewayServer, routing admission, lifecycle, resilience integration, and gateway boundary reviews.
+description: Maintain coropact/gateway session orchestration and cross-subsystem policy. Use for GatewaySessionService, routing admission, resilience integration, and gateway boundary reviews.
 ---
 
 # coropact/gateway Maintenance
@@ -23,7 +23,7 @@ product.
 
 ## Owned resources
 
-- GatewayServer configuration and route table.
+- GatewaySessionService configuration and route table.
 - Component lifecycle and startup/teardown ordering.
 - Per-connection gateway context.
 - Per-loop upstream connection pools and their maintenance timers.
@@ -31,9 +31,9 @@ product.
 
 ## Public API / entry points
 
-- `GatewayServer`
-- Route registration and `Start`
-- Health and rate-limit enablement
+- `GatewaySessionService`
+- Route registration and `Serve`
+- Rate-limit enablement
 - Public upstream, proxy, load-balancer, and resilience configuration types
 
 ## Thread model
@@ -46,16 +46,15 @@ product.
 
 ## Lifetime rules
 
-- EventLoops and UpstreamRegistry outlive GatewayServer.
-- GatewayServer outlives callbacks installed in its server, routes, handlers,
-  health checker, requests, and recurring timers.
-- Teardown cancels component timers before destroying referenced state.
+- The network server owns EventLoops, listeners, accepts, workers, and shutdown.
+- The network server and UpstreamRegistry outlive GatewaySessionService sessions.
+- GatewaySessionService outlives callbacks installed in its routes and handlers.
 - One request object owns one upstream attempt lifecycle and idempotent cleanup.
 
 ## State machine
 
 ```text
-GatewayServer: configuring -> started -> stopping -> stopped/destroyed
+GatewaySessionService: configuring -> serving -> destroyed
 Connection: accepted -> parsing/dispatching -> closing
 Proxy request: admitted -> active -> terminal cleanup
 ```
@@ -72,7 +71,7 @@ Proxy request: admitted -> active -> terminal cleanup
 
 ## Common bugs
 
-- Raw `this` server/handler/timer callbacks surviving GatewayServer.
+- Raw `this` callbacks surviving GatewaySessionService or the network server.
 - Recurring pool timer UAF.
 - Pipelined requests overwriting one active request slot.
 - Backend-specific downcast leaking into policy.
@@ -96,8 +95,8 @@ Proxy request: admitted -> active -> terminal cleanup
 
 ## Patch rules
 
-- Prefer a narrow submodule patch over editing GatewayServer for every policy.
-- Record timer IDs and define teardown before adding recurring work.
+- Prefer a narrow submodule patch over adding network lifecycle to GatewaySessionService.
+- Keep recurring health or maintenance work in an owner with an explicit shutdown contract.
 - Keep route/config mutation startup-only unless implementing snapshot
   publication as a complete feature.
 - Preserve existing external includes with forwarding headers during moves.

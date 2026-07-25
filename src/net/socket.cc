@@ -20,9 +20,8 @@ Socket::Socket(int sockfd) : sockfd_(sockfd) {}
 
 Socket::~Socket() { Close(); }
 
-void Socket::BindAddress(const InetAddress& localAddr) {
-  const int ret = ::bind(sockfd_, reinterpret_cast<const sockaddr*>(&localAddr.sock_addr()),
-                         static_cast<socklen_t>(sizeof(sockaddr_in)));
+void Socket::BindAddress(const Endpoint& localAddr) {
+  const int ret = ::bind(sockfd_, localAddr.sock_addr(), localAddr.sock_addr_len());
   if (ret == 0) {
     return;
   }
@@ -42,14 +41,14 @@ void Socket::Listen() {
   COROPACT_CHECK(false, "Socket::Listen: listen failed");
 }
 
-int Socket::Accept(InetAddress* peeraddr) {
-  sockaddr_in addr{};
+int Socket::Accept(Endpoint* peeraddr) {
+  sockaddr_storage addr{};
   auto len = static_cast<socklen_t>(sizeof(addr));
 
   int connfd =
       ::accept4(sockfd_, reinterpret_cast<sockaddr*>(&addr), &len, SOCK_NONBLOCK | SOCK_CLOEXEC);
   if (connfd >= 0 && peeraddr != nullptr) {
-    *peeraddr = InetAddress(addr);
+    *peeraddr = Endpoint(reinterpret_cast<const sockaddr*>(&addr), len);
   } else if (connfd < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
     LOG_ERRORF("accept failed: listen_fd={} errno={} message={}", sockfd_, errno,
                std::strerror(errno));

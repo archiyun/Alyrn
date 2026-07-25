@@ -28,7 +28,7 @@
 #include "coropact/luring/connector.h"
 #include "coropact/luring/server.h"
 #include "coropact/luring/stream.h"
-#include "coropact/net/inet_address.h"
+#include "coropact/net/endpoint.h"
 
 namespace {
 
@@ -79,12 +79,12 @@ bool IsEnvironmentSkip(coropact::base::Error error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 
-coropact::net::InetAddress LoopbackAddress(std::uint16_t port) {
+coropact::net::Endpoint LoopbackAddress(std::uint16_t port) {
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   addr.sin_port = htons(port);
-  return coropact::net::InetAddress(addr);
+  return coropact::net::Endpoint(addr);
 }
 
 coropact::base::Result<ListenEndpoint> ListenLoopback() {
@@ -130,14 +130,13 @@ coropact::base::Result<std::uint16_t> PickFreePort() {
   return endpoint->port;
 }
 
-coropact::base::Result<int> ConnectClient(const coropact::net::InetAddress& address) {
+coropact::base::Result<int> ConnectClient(const coropact::net::Endpoint& address) {
   int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
   if (fd < 0) {
     return std::unexpected(coropact::base::CurrentErrno());
   }
 
-  const sockaddr_in& peer = address.sock_addr();
-  if (::connect(fd, reinterpret_cast<const sockaddr*>(&peer), sizeof(peer)) < 0) {
+  if (::connect(fd, address.sock_addr(), address.sock_addr_len()) < 0) {
     auto error = coropact::base::CurrentErrno();
     ::close(fd);
     return std::unexpected(error);
@@ -347,7 +346,7 @@ bool CheckProxyRoute() {
       std::make_shared<coropact::gateway::Upstream>(coropact::gateway::UpstreamConfig{.name = "backend"});
   backend->AddPeer(std::make_shared<coropact::gateway::UpstreamPeer>(coropact::gateway::UpstreamPeerConfig{
       .name = "loopback", .host = "127.0.0.1", .port = upstream.port()}));
-  registry.Add(backend);
+  if (!registry.Register(backend).has_value()) return false;
 
   using Service = coropact::gateway::GatewaySessionService<coropact::luring::LUringStream,
                                                        coropact::luring::LUringConnector>;

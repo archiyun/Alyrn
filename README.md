@@ -91,8 +91,8 @@ HTTP / Gateway / Custom Session
         +------+------+
         |             |
         v             v
- Reactor / epoll   luring / io_uring
-   coropact::net         coropact::luring
+Reactor / epoll   luring / io_uring
+  coropact::reactor     coropact::luring
 ```
 
 The two backends do not share an event loop, and their internal state machines do not need to be identical. They only need to satisfy the same business-observable asynchronous I/O contract.

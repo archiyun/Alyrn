@@ -33,15 +33,15 @@
 #include "coropact/coro/spawn.h"
 #include "coropact/coro/task.h"
 #include "coropact/coro/work.h"
-#include "coropact/net/event_loop.h"
-#include "coropact/net/event_loop_scheduler.h"
+#include "coropact/reactor/event_loop.h"
+#include "coropact/reactor/event_loop_scheduler.h"
 
 using coropact::base::make_errno;
 using coropact::base::Result;
 using coropact::coro::Spawn;
 using coropact::coro::Task;
 using coropact::coro::Work;
-using coropact::net::EventLoop;
+using coropact::reactor::EventLoop;
 
 namespace {
 
@@ -122,7 +122,7 @@ int main() {
   // deliveries for the following loop iteration, after both roots have parked on
   // their first Read.
   g_loop->RunInLoop([&] {
-    static coropact::net::EventLoopScheduler sched(g_loop);
+    static coropact::reactor::EventLoopScheduler sched(g_loop);
     Spawn(sched, Serve(&conn_a)).Detach();
     Spawn(sched, Serve(&conn_b)).Detach();
     g_loop->QueueInLoop([&] { conn_a.Deliver(Result<int>{0}, g_loop); });  // EOF

@@ -28,7 +28,7 @@ objects per scheduling domain.
 
 ## Public API / entry points
 
-- `UpstreamRegistry::{Add,Find,all}`
+- `UpstreamRegistry::{Register,Resolve,all}`
 - `Upstream::{AddPeer,peers,TryAcquireRequestSlot,ReleaseRequestSlot}`
 - `UpstreamPeer::{AvailableAt,OnFailure,OnSuccess}`
 - `UpstreamStreamPool::{Acquire,Release,EvictStale}`
@@ -42,7 +42,7 @@ objects per scheduling domain.
 
 ## Lifetime rules
 
-- Registry outlives GatewayServer, the active health loop, routes, and requests.
+- Registry outlives GatewaySessionService, routes, and requests.
 - Upstream outlives route strategies and active requests.
 - Peer shared ownership remains stable after publication.
 - Pool owns whole `AsyncStream` objects, not detached transport state.

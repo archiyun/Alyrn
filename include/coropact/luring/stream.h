@@ -15,7 +15,7 @@
 #include "coropact/coro/task.h"
 #include "coropact/io/async_stream.h"
 #include "coropact/luring/op.h"
-#include "coropact/net/inet_address.h"
+#include "coropact/net/endpoint.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::luring {
@@ -30,7 +30,7 @@ public:
   class ReadSomeForAwaiter;
   class WriteSomeAwaiter;
 
-  LUringStream(LUringLoop* loop, int fd, net::InetAddress peer) noexcept;
+  LUringStream(LUringLoop* loop, int fd, net::Endpoint peer) noexcept;
   ~LUringStream();
 
   // A stream may move only on its owning loop thread and only while no
@@ -45,7 +45,7 @@ public:
   coro::Task<base::Result<void>> Shutdown();
   coro::Task<base::Result<void>> Close();
 
-  [[nodiscard]] const net::InetAddress& PeerAddress() const noexcept { return peer_; }
+  [[nodiscard]] const net::Endpoint& PeerAddress() const noexcept { return peer_; }
   [[nodiscard]] int fd() const noexcept { return fd_; }
 
 private:
@@ -57,7 +57,7 @@ private:
 
   LUringLoop* loop_;
   int fd_{-1};
-  net::InetAddress peer_;
+  net::Endpoint peer_;
   void* pending_read_{nullptr};
   WriteSomeAwaiter* pending_write_{nullptr};
   CloseAwaiter* pending_close_{nullptr};

@@ -10,10 +10,10 @@
 #include <vector>
 
 #include "coropact/gateway/fallback_config.h"
-#include "coropact/gateway/health_check_config.h"
 #include "coropact/gateway/rate_limiter.h"
 #include "coropact/gateway/upstream.h"
 #include "coropact/gateway/upstream_peer.h"
+#include "coropact/gateway/health_check_config.h"
 #include "coropact/http/http_request.h"
 #include "coropact/http/http_response.h"
 #include "coropact/http/http_types.h"
@@ -27,13 +27,15 @@ public:
   explicit GatewayConfigError(const std::string& what_arg) : std::runtime_error(what_arg) {}
 };
 
-struct GatewayServerConfig {
+struct GatewayListenConfig {
   std::string name{"gateway"};
   std::string host{"127.0.0.1"};
   std::uint16_t port{8080};
-  // Reserved for the future ReactorServer owner. GatewayServer itself always
-  // runs on the single EventLoop/Scheduler pair supplied by its caller.
-  int threads{0};
+};
+
+struct GatewayHealthCheckConfig {
+  bool enabled{false};
+  HealthCheckConfig config{};
 };
 
 struct GatewayStatusEndpointConfig {
@@ -41,11 +43,6 @@ struct GatewayStatusEndpointConfig {
   std::string path{"/healthz"};
   std::string content_type{"application/json; charset=utf-8"};
   std::string body{R"({"status":"ok"})"};
-};
-
-struct GatewayHealthCheckConfig {
-  bool enabled{false};
-  HealthCheckConfig config{};
 };
 
 struct GatewayRateLimitBucketConfig {
@@ -75,7 +72,7 @@ struct GatewayRouteConfig {
 };
 
 struct GatewayConfig {
-  GatewayServerConfig server{};
+  GatewayListenConfig server{};
   GatewayStatusEndpointConfig status_endpoint{};
   GatewayHealthCheckConfig health_check{};
   GatewayRateLimitConfig rate_limit{};
@@ -115,10 +112,6 @@ void ApplyGatewayConfig(const GatewayConfig& config, Gateway& gateway) {
   for (const GatewayRouteConfig& route : config.routes) {
     gateway.AddProxyRoute(route.path, route.upstream_name, route.fallback,
                           route.circuit_breaker_enabled, route.load_balance);
-  }
-
-  if (config.health_check.enabled) {
-    gateway.EnableHealthCheck(config.health_check.config);
   }
 }
 

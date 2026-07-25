@@ -22,7 +22,7 @@ L3  gateway policy and orchestration
                          |
                          v
 L2  execution, transport, and protocol
-    task / net / uring / http
+    task / net / reactor / luring / http
                          |
                          v
 L1  process services and value utilities
@@ -47,8 +47,9 @@ about higher-layer policy.
 | `include/coropact/time`, `src/time` | L1 | Time values, timers, and timer indexes. No fd or EventLoop ownership. |
 | `include/coropact/log`, `src/log` | L1 | Process logging; may depend on base and time. |
 | `include/coropact/task`, `src/task` | L2 | Blocking/thread-pool execution. Must remain independent of net. |
-| `include/coropact/net`, `src/net` | L2 | Reactor, sockets, channels, timers bound to EventLoop, TCP lifecycle. |
-| `include/coropact/uring`, `src/uring` | L2 | Optional I/O backend. It may reuse net value types but must not expose gateway policy. |
+| `include/coropact/net`, `src/net` | L2 | Shared address, socket, and network utility types. It must not own an event loop backend. |
+| `include/coropact/reactor`, `src/reactor` | L2 | epoll Reactor, EventLoop, channels, timers bound to the loop, and Reactor TCP lifecycle. |
+| `include/coropact/luring`, `src/luring` | L2 | Optional io_uring backend. It may reuse net value types but must not expose gateway policy. |
 | `include/coropact/http`, `src/http` | L2 | HTTP parser, router, request/response, and server adapter over net/task. |
 | `include/coropact/gateway`, `src/gateway` | L3 | Currently flat; should be split by policy responsibility. |
 | `examples`, `docs/benchmark`, `tests` | L4 | Consumers and validation only. |
@@ -74,9 +75,10 @@ about higher-layer policy.
 
 - May depend on L0 and L1.
 - `task` and `net` are peers and must not depend on each other.
-- `http` may depend on both `net` and `task`.
-- `net` may use `time`, `log`, `ds`, and `memory-core`.
-- `uring` may implement a net-owned backend interface. It must not require
+- `reactor` may depend on `net`, `io`, and the lower-level utility modules.
+- `http` may depend on `net`, `reactor`, and `task`.
+- `net` may use `time`, `log`, `ds`, and `memory-core`, but not reactor types.
+- `luring` may reuse net value types and implement the `io` contracts. It must not require
   gateway types.
 
 ### L3

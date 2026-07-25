@@ -80,14 +80,15 @@ base::Result<void> SetCurrentThreadAffinity(unsigned cpu) noexcept {
 
 }  // namespace
 
-LUringWorker::LUringWorker(std::size_t index, net::InetAddress listen_addr,
+LUringWorker::LUringWorker(std::size_t index, net::Endpoint listen_addr,
                            LUringWorkerOptions options, ThreadInitCallback init_callback,
-                           ConnectionCallback connection_callback)
+                           ConnectionCallback connection_callback, ThreadExitCallback exit_callback)
     : index_(index),
       listen_addr_(listen_addr),
       options_(std::move(options)),
       init_callback_(std::move(init_callback)),
-      connection_callback_(std::move(connection_callback)) {}
+      connection_callback_(std::move(connection_callback)),
+      exit_callback_(std::move(exit_callback)) {}
 
 LUringWorker::~LUringWorker() noexcept { Stop(); }
 
@@ -182,6 +183,14 @@ void LUringWorker::WorkLoop(std::stop_token token) noexcept {
   publish_start(base::Result<void>{});
   loop.Loop(token);
   CloseListenerAndDrain(loop, *listener);
+
+  if (exit_callback_) {
+    try {
+      exit_callback_(context);
+    } catch (...) {
+      // Worker exit cleanup must not escape WorkLoop's noexcept boundary.
+    }
+  }
 }
 
 }  // namespace coropact::luring

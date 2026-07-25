@@ -19,7 +19,7 @@
 当前项目有两种网络机制：
 
 ```text
-coropact::net       Reactor / epoll / nonblocking syscall
+coropact::reactor   Reactor / epoll / nonblocking syscall
 coropact::luring    io_uring / SQE / CQE
 ```
 
@@ -33,7 +33,8 @@ coropact::luring    io_uring / SQE / CQE
   -> Reactor 或 io_uring
 ```
 
-公共概念位于 `coropact::io`，不是 `coropact::net`。`net` 只是历史上承载 Reactor 实现的模块名。
+公共概念位于 `coropact::io`。`coropact::net` 提供共享的地址、socket 和网络工具，
+`coropact::reactor` 承载 epoll/EventLoop 实现。
 
 本文的核心边界是：
 

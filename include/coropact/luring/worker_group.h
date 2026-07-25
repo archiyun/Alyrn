@@ -11,7 +11,7 @@
 
 #include "coropact/base/error.h"
 #include "coropact/luring/worker.h"
-#include "coropact/net/inet_address.h"
+#include "coropact/net/endpoint.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::luring {
@@ -35,11 +35,13 @@ public:
   COROPACT_DELETE_COPY_MOVE(LUringWorkerGroup);
 
   using ThreadInitCallback = LUringWorker::ThreadInitCallback;
+  using ThreadExitCallback = LUringWorker::ThreadExitCallback;
   using ConnectionCallback = LUringWorker::ConnectionCallback;
 
-  LUringWorkerGroup(net::InetAddress listen_addr, LUringWorkerGroupOptions options = {},
+  LUringWorkerGroup(net::Endpoint listen_addr, LUringWorkerGroupOptions options = {},
                     ThreadInitCallback init_callback = {},
-                    ConnectionCallback connection_callback = {});
+                    ConnectionCallback connection_callback = {},
+                    ThreadExitCallback exit_callback = {});
   ~LUringWorkerGroup() noexcept;
 
   [[nodiscard]] base::Result<void> Start();
@@ -56,10 +58,11 @@ public:
   }
 
 private:
-  net::InetAddress listen_addr_;
+  net::Endpoint listen_addr_;
   LUringWorkerGroupOptions options_;
   ThreadInitCallback init_callback_;
   ConnectionCallback connection_callback_;
+  ThreadExitCallback exit_callback_;
 
   bool started_{false};
   std::vector<std::unique_ptr<LUringWorker>> workers_;

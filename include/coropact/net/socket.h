@@ -4,7 +4,7 @@
 
 #include <utility>
 
-#include "coropact/net/inet_address.h"
+#include "coropact/net/endpoint.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::net {
@@ -34,13 +34,13 @@ public:
   [[nodiscard]] int fd() const { return sockfd_; }
 
   // Binds the socket to a local address.
-  void BindAddress(const InetAddress& localaddr);
+  void BindAddress(const Endpoint& localaddr);
 
   // Marks the socket as a passive listening socket.
   void Listen();
 
   // Accepts a new inbound connection and optionally fills the peer address.
-  int Accept(InetAddress* peeraddr);
+  int Accept(Endpoint* peeraddr);
 
   // Shuts down the write side of the socket.
   void ShutdownWrite();

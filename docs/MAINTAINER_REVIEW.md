@@ -85,9 +85,11 @@ runtime_memory
 runtime_time       -> base, ds
 runtime_log        -> base, time
 coropact_task       -> base
-coropact_net        -> base, ds, memory, time, log
+coropact_net        -> foundation
+coropact_reactor    -> net, io, foundation, time
+coropact_luring     -> net, io, foundation, liburing
 coropact_http_core  -> foundation
-coropact_gateway    -> http, net, time, log, ds
+coropact_gateway    -> http, time, log, ds
 ```
 
 Do not perform all moves in one commit. First add dependency checks and
@@ -115,7 +117,7 @@ new-module rules, threading/lifetime rules, and AI patch requirements.
 
 The version-controlled drafts are under `docs/skills/coropact`:
 
-- [net](skills/coropact/net/SKILL.md)
+- [reactor](skills/coropact/reactor/SKILL.md)
 - [time](skills/coropact/time/SKILL.md)
 - [ds](skills/coropact/ds/SKILL.md)
 - [memory](skills/coropact/memory/SKILL.md)

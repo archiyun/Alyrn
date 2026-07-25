@@ -9,9 +9,9 @@ C++23 API；设计推导和完整语义证明请阅读：
 - [AsyncStream 与 AsyncListener 协程语义契约](../design/zh-CN/network/async-stream-contract.md)
 - [网关总览](../design/zh-CN/gateway/index.md)
 
-当前项目是 Linux 优先的 C++23 运行时。`coropact::net` 是 Reactor/epoll 网络模块，
-`coropact::luring` 是 io_uring 网络模块；两者共享 `coropact::io` 中的异步 I/O 语义，但不共享
-底层事件循环。
+当前项目是 Linux 优先的 C++23 运行时。`coropact::net` 提供共享的地址和 socket 基础能力，
+`coropact::reactor` 是 Reactor/epoll 网络模块，`coropact::luring` 是 io_uring 网络模块；两者
+共享 `coropact::io` 中的异步 I/O 语义，但不共享底层事件循环。
 
 ## 先理解分层
 
@@ -27,11 +27,23 @@ C++23 API；设计推导和完整语义证明请阅读：
        +------+----------------+
        |                       |
 Reactor / epoll            luring / io_uring
-coropact::net                  coropact::luring
+coropact::reactor              coropact::luring
 ```
 
 `luring` 不是 `net` 的 backend 枚举，也不是 `net` 内部的一个实现选项。应用选择一个
 网络模块；HTTP 和 gateway session 只接触公共 stream 语义。
+
+## 头文件入口
+
+快速试用时可以包含统一入口：
+
+```cpp
+#include <coropact/coropact.h>
+```
+
+该入口会导出各应用级和运行时模块的聚合头；对编译时间敏感的工程，建议按需包含
+`<coropact/coro.h>`、`<coropact/io.h>`、`<coropact/net.h>`、`<coropact/reactor.h>`
+或 `<coropact/luring.h>` 等模块头。io_uring 聚合头只会在启用该后端的构建目标中导出。
 
 ## 构建项目
 
@@ -66,7 +78,7 @@ cmake --build build-uring -j"$(nproc)"
 ctest --test-dir build-uring --output-on-failure
 ```
 
-没有 liburing 时，基础 `coropact_coro`、`coropact_io`、`coropact_net` 和 gateway 的 Reactor 路径仍可
+没有 liburing 时，基础 `coropact_coro`、`coropact_io`、`coropact_net`、`coropact_reactor` 和 gateway 的 Reactor 路径仍可
 单独构建。`COROPACT_ENABLE_URING=ON` 时，CMake 会通过 pkg-config 查找 `liburing`。
 
 ### 可选配置
@@ -176,10 +188,10 @@ coropact::coro::Task<int> Parent(coropact::coro::Scheduler& scheduler) {
 #include <memory_resource>
 
 #include "coropact/coro/frame_allocator.h"
-#include "coropact/net/event_loop_scheduler.h"
+#include "coropact/reactor/event_loop_scheduler.h"
 
 coropact::coro::CoroFramePoolResource frame_pool;
-coropact::net::EventLoopScheduler scheduler(&loop, &frame_pool);
+coropact::reactor::EventLoopScheduler scheduler(&loop, &frame_pool);
 
 {
   // 必须覆盖 Task 函数的调用；Task frame 在函数调用时就已经分配。
@@ -204,7 +216,7 @@ coropact::coro::Scheduler* current = coropact::coro::Scheduler::Current();
 
 具体实现有两个：
 
-- `coropact::net::EventLoopScheduler`：把 `Work` 放入 Reactor 的 EventLoop。
+- `coropact::reactor::EventLoopScheduler`：把 `Work` 放入 Reactor 的 EventLoop。
 - `coropact::luring::LUringLoop`：把 `Work` 放入当前 ring 的 ready queue。
 
 业务协程不应该依赖具体 scheduler 的队列实现。后端 awaiter 负责把一次 I/O completion 转成
@@ -246,10 +258,10 @@ Task<Result<void>> Close();
 awaitable；调用方统一使用 `co_await`。当前两个后端的 span 重载都直接返回 awaitable，
 避免为单次读写创建额外的子协程帧；`io::Buffer` 等扩展重载仍可返回 `Task`。
 
-`coropact::net::ReactorStream` 和 `coropact::luring::LUringStream` 都满足这个概念：
+`coropact::reactor::ReactorStream` 和 `coropact::luring::LUringStream` 都满足这个概念：
 
 ```cpp
-static_assert(coropact::io::AsyncStream<coropact::net::ReactorStream>);
+static_assert(coropact::io::AsyncStream<coropact::reactor::ReactorStream>);
 static_assert(coropact::io::AsyncStream<coropact::luring::LUringStream>);
 ```
 
@@ -363,7 +375,7 @@ accept，并让等待中的协程恢复。multishot accept 尚未进入公共 li
 #include "coropact/io/stream_algorithms.h"
 #include "coropact/luring/server.h"
 #include "coropact/luring/stream.h"
-#include "coropact/net/inet_address.h"
+#include "coropact/net/endpoint.h"
 
 coropact::coro::Task<void> EchoSession(coropact::luring::LUringStream stream) {
   std::array<std::byte, 4096> buffer{};
@@ -390,7 +402,7 @@ int main() {
   options.worker_group_options.worker_options.loop_options.submit_batch = 32;
 
   coropact::luring::LUringServer server(
-      coropact::net::InetAddress(9090), options);
+      coropact::net::Endpoint(9090), options);
 
   server.set_session_handler(
       [](coropact::luring::LUringLoop&, coropact::luring::LUringStream stream) {
@@ -540,17 +552,15 @@ API。
 
 ## Gateway 接入
 
-### 为什么不是直接套 GatewayServer
+### 为什么网络层与网关 session 分开
 
-旧的 `GatewayServer<Listener, Connector>` 自己拥有 listener、accept loop 和 scheduler，主要
-服务 Reactor 形状。`LUringServer` 已经拥有 accept loop 和 worker，因此两者不能互相接管同一
-个 accept loop。
-
-当前的拆分是：
+网关不再拥有 listener、accept loop、scheduler 或 worker。Reactor 的
+`ReactorWorkerGroup` 与 io_uring 的 `LUringServer` 都负责网络生命周期，并在接收连接后把
+stream 和当前 worker 的 connector 交给同一个 session service：
 
 ```text
-LUringServer
-  accept、worker、ring、连接所有权
+Network server (ReactorWorkerGroup / LUringServer)
+  listen、accept、worker、连接所有权
 
 GatewaySessionService
   HTTP parser、路由、限流、代理和单连接 session
@@ -575,7 +585,7 @@ server handler 的位置选择具体 stream 和 connector 类型。
 #include "coropact/luring/connector.h"
 #include "coropact/luring/server.h"
 #include "coropact/luring/stream.h"
-#include "coropact/net/inet_address.h"
+#include "coropact/net/endpoint.h"
 
 using LuringGateway = coropact::gateway::GatewaySessionService<
     coropact::luring::LUringStream,
@@ -592,7 +602,7 @@ int main() {
           .host = "127.0.0.1",
           .port = 9001,
       }));
-  registry.Add(backend);
+  if (!registry.Register(backend).has_value()) return 1;
 
   LuringGateway gateway("gateway", registry);
 
@@ -609,7 +619,7 @@ int main() {
 
   // 声明顺序保证 server 在 gateway 和 registry 之前析构。
   coropact::luring::LUringServer server(
-      coropact::net::InetAddress(8080), options);
+      coropact::net::Endpoint(8080), options);
   server.set_session_handler(
       [&gateway](coropact::luring::LUringLoop& loop,
                  coropact::luring::LUringStream stream) {
@@ -637,15 +647,17 @@ int main() {
 3. 每个 session 使用当前 worker 的 `LUringLoop` 创建 connector。
 4. 客户端 stream、upstream connector 和 I/O 协程不会跨 ring 移动。
 
-当前 `GatewaySessionService` 的 upstream pool 是每个 client session 一个实例，保证 loop-bound
-stream 不跨线程；跨 client session 的 per-ring keep-alive pool 尚未接入。`set_pool_config` 目前
-只影响 session 内 pool 的配置。
+网络层可以把 worker-local 的 `UpstreamStreamPool` 传给 `Serve`，让同一 worker 上的 client
+session 复用 loop-bound upstream stream；不能把这个 pool 跨 worker 或跨 ring 共享。两参数
+`Serve` 仍可用于不需要跨 session 复用的场景。
 
 ### Gateway 的当前限制
 
 - luring session service 已覆盖 direct route 和 proxy route；
-- 旧的主动 health-check 实现仍绑定 Reactor 的 timer/connector 模型；
-- YAML `ApplyGatewayConfig` 的 health-check 路径不能直接当作 luring health-check 使用；
+- 主动 health-check 不属于 session service；如需启用，应由进程级 health component 持有其
+  scheduler、connector 和停止生命周期；
+- YAML gateway 配置不再接受 `health_check` 或 `server.threads`，worker 数量由网络 server
+  配置；
 - gateway 路由和 `UpstreamRegistry` 应在 `server.Start()` 前完成配置；
 - 多 worker 下 direct handler、业务状态和自定义指标逻辑必须满足并发访问要求。
 

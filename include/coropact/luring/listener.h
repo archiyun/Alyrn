@@ -10,7 +10,7 @@
 #include "coropact/coro/task.h"
 #include "coropact/io/async_listener.h"
 #include "coropact/luring/stream.h"
-#include "coropact/net/inet_address.h"
+#include "coropact/net/endpoint.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::luring {
@@ -32,7 +32,7 @@ public:
 
   using Stream = LUringStream;
 
-  static base::Result<LUringListener> Create(LUringLoop* loop, const net::InetAddress& listen_addr,
+  static base::Result<LUringListener> Create(LUringLoop* loop, const net::Endpoint& listen_addr,
                                              LUringListenOptions options = {}) noexcept;
 
   ~LUringListener();
@@ -45,7 +45,7 @@ public:
   coro::Task<base::Result<LUringStream>> Accept();
   coro::Task<base::Result<void>> Close();
 
-  [[nodiscard]] base::Result<net::InetAddress> LocalAddress() const noexcept;
+  [[nodiscard]] base::Result<net::Endpoint> LocalAddress() const noexcept;
   [[nodiscard]] int fd() const noexcept { return fd_; }
 
 private:

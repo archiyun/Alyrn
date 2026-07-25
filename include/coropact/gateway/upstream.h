@@ -5,7 +5,7 @@
 // breaker. Built once at startup and treated as read-only thereafter; per-peer
 // mutable state lives inside each UpstreamPeer. The load-balancing strategy is
 // not stored here — it is owned per-route (Route::lb, built from the algo string
-// passed to GatewayServer::AddProxyRoute).
+// passed to GatewaySessionService::AddProxyRoute).
 #pragma once
 
 #include <atomic>
@@ -55,9 +55,9 @@ public:
   // inline on each Select to avoid per-call allocation of a snapshot vector.
   const std::vector<std::shared_ptr<UpstreamPeer>>& peers() const { return peers_; }
 
-  // Circuit breaker is attached lazily by GatewayServer::AddProxyRoute when
+  // Circuit breaker is attached lazily by GatewaySessionService::AddProxyRoute when
   // circuit_breaker_enabled is set on a Route. Stored as shared_ptr so
-  // GatewayServer and proxy code can share the same instance across requests.
+  // the gateway and proxy code can share the same instance across requests.
   void set_circuit_breaker(std::shared_ptr<CircuitBreaker> cb) { cb_ = std::move(cb); }
   std::shared_ptr<CircuitBreaker> circuit_breaker() const { return cb_; }
 

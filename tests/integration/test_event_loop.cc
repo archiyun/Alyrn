@@ -3,9 +3,9 @@
 #include <future>
 #include <thread>
 
-#include "coropact/net/event_loop.h"
+#include "coropact/reactor/event_loop.h"
 
-namespace coropact::net {
+namespace coropact::reactor {
 namespace {
 
 using namespace std::chrono_literals;
@@ -84,4 +84,4 @@ TEST(EventLoopTest, QueueInLoopFromPendingFunctorSchedulesNextTurn) {
 }
 
 }  // namespace
-}  // namespace coropact::net
+}  // namespace coropact::reactor

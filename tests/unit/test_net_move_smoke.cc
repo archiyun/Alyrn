@@ -16,12 +16,12 @@
 #include "coropact/base/error.h"
 #include "coropact/coro/spawn.h"
 #include "coropact/coro/task.h"
-#include "coropact/net/channel.h"
-#include "coropact/net/event_loop.h"
-#include "coropact/net/event_loop_scheduler.h"
-#include "coropact/net/inet_address.h"
-#include "coropact/net/reactor_listener.h"
-#include "coropact/net/reactor_stream.h"
+#include "coropact/reactor/channel.h"
+#include "coropact/reactor/event_loop.h"
+#include "coropact/reactor/event_loop_scheduler.h"
+#include "coropact/net/endpoint.h"
+#include "coropact/reactor/reactor_listener.h"
+#include "coropact/reactor/reactor_stream.h"
 #include "coropact/net/socket.h"
 
 namespace {
@@ -39,7 +39,7 @@ bool MakeSocketPair(int fds[2]) {
 }
 
 bool TestChannelMove() {
-  coropact::net::EventLoop loop;
+  coropact::reactor::EventLoop loop;
   int first[2]{-1, -1};
   int second[2]{-1, -1};
   if (!Check(MakeSocketPair(first) && MakeSocketPair(second), "socketpair creation failed")) {
@@ -53,7 +53,7 @@ bool TestChannelMove() {
   }
 
   bool read_called = false;
-  coropact::net::Channel source(&loop, first[0]);
+  coropact::reactor::Channel source(&loop, first[0]);
   source.set_edge_triggered(true);
   source.set_read_callback([&](coropact::time::Timestamp) {
     char byte = 0;
@@ -62,7 +62,7 @@ bool TestChannelMove() {
     loop.Quit();
   });
 
-  coropact::net::Channel moved(std::move(source));
+  coropact::reactor::Channel moved(std::move(source));
   if (!Check(source.fd() == -1 && moved.fd() == first[0],
              "Channel move construction should transfer the fd association") ||
       !Check(moved.IsEdgeTriggered(), "Channel move construction should transfer mode")) {
@@ -73,7 +73,7 @@ bool TestChannelMove() {
     return false;
   }
 
-  coropact::net::Channel target(&loop, second[0]);
+  coropact::reactor::Channel target(&loop, second[0]);
   target = std::move(moved);
   ::close(second[0]);
 
@@ -122,21 +122,21 @@ bool TestSocketMove() {
 }
 
 using ReadResult = coropact::base::Result<std::size_t>;
-using AcceptResult = coropact::base::Result<coropact::net::ReactorListener::Stream>;
+using AcceptResult = coropact::base::Result<coropact::reactor::ReactorListener::Stream>;
 
-static_assert(std::is_move_constructible_v<coropact::net::ReactorStream>);
-static_assert(std::is_move_assignable_v<coropact::net::ReactorStream>);
-static_assert(std::is_move_constructible_v<coropact::net::ReactorListener>);
-static_assert(std::is_move_assignable_v<coropact::net::ReactorListener>);
+static_assert(std::is_move_constructible_v<coropact::reactor::ReactorStream>);
+static_assert(std::is_move_assignable_v<coropact::reactor::ReactorStream>);
+static_assert(std::is_move_constructible_v<coropact::reactor::ReactorListener>);
+static_assert(std::is_move_assignable_v<coropact::reactor::ReactorListener>);
 
-coropact::coro::Task<void> ReadOnce(coropact::net::ReactorStream* stream, coropact::net::EventLoop* loop,
+coropact::coro::Task<void> ReadOnce(coropact::reactor::ReactorStream* stream, coropact::reactor::EventLoop* loop,
                                 std::array<std::byte, 16>* buffer,
                                 std::optional<ReadResult>* result) {
   result->emplace(co_await stream->ReadSome(*buffer));
   loop->Quit();
 }
 
-coropact::coro::Task<void> AcceptOnce(coropact::net::ReactorListener* listener, coropact::net::EventLoop* loop,
+coropact::coro::Task<void> AcceptOnce(coropact::reactor::ReactorListener* listener, coropact::reactor::EventLoop* loop,
                                   std::optional<AcceptResult>* result) {
   result->emplace(co_await listener->Accept());
   loop->Quit();
@@ -159,10 +159,10 @@ bool TestReactorStreamMove() {
   std::optional<ReadResult> constructed_result;
   std::array<std::byte, 16> constructed_buffer{};
   {
-    coropact::net::EventLoop loop;
-    coropact::net::ReactorStream source(&loop, source_pair[0]);
-    coropact::net::ReactorStream moved(std::move(source));
-    coropact::net::EventLoopScheduler scheduler(&loop);
+    coropact::reactor::EventLoop loop;
+    coropact::reactor::ReactorStream source(&loop, source_pair[0]);
+    coropact::reactor::ReactorStream moved(std::move(source));
+    coropact::reactor::EventLoopScheduler scheduler(&loop);
 
     coropact::coro::Spawn(scheduler, ReadOnce(&moved, &loop, &constructed_buffer, &constructed_result))
         .Detach();
@@ -183,11 +183,11 @@ bool TestReactorStreamMove() {
   std::optional<ReadResult> assigned_result;
   std::array<std::byte, 16> assigned_buffer{};
   {
-    coropact::net::EventLoop loop;
-    coropact::net::ReactorStream source(&loop, target_pair[0]);
-    coropact::net::ReactorStream target(&loop, source_pair[1]);
+    coropact::reactor::EventLoop loop;
+    coropact::reactor::ReactorStream source(&loop, target_pair[0]);
+    coropact::reactor::ReactorStream target(&loop, source_pair[1]);
     target = std::move(source);
-    coropact::net::EventLoopScheduler scheduler(&loop);
+    coropact::reactor::EventLoopScheduler scheduler(&loop);
 
     coropact::coro::Spawn(scheduler, ReadOnce(&target, &loop, &assigned_buffer, &assigned_result))
         .Detach();
@@ -202,14 +202,13 @@ bool TestReactorStreamMove() {
       "ReactorStream move assignment lost the read callback");
 }
 
-int ConnectNonBlocking(const coropact::net::InetAddress& address) {
+int ConnectNonBlocking(const coropact::net::Endpoint& address) {
   int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
   if (fd < 0) {
     return -1;
   }
 
-  const sockaddr_in& addr = address.sock_addr();
-  const int rc = ::connect(fd, reinterpret_cast<const sockaddr*>(&addr), sizeof(addr));
+  const int rc = ::connect(fd, address.sock_addr(), address.sock_addr_len());
   if (rc == 0 || errno == EINPROGRESS) {
     return fd;
   }
@@ -219,8 +218,8 @@ int ConnectNonBlocking(const coropact::net::InetAddress& address) {
 }
 
 bool TestReactorListenerMove() {
-  coropact::net::EventLoop loop;
-  coropact::net::ReactorListener source(&loop, coropact::net::InetAddress(0));
+  coropact::reactor::EventLoop loop;
+  coropact::reactor::ReactorListener source(&loop, coropact::net::Endpoint(0));
   auto source_address = source.LocalAddress();
   if (!Check(source_address.has_value(), "ReactorListener local address lookup failed")) {
     return false;
@@ -229,14 +228,14 @@ bool TestReactorListenerMove() {
   std::optional<AcceptResult> accepted;
   int client_fd = -1;
   {
-    coropact::net::ReactorListener moved(std::move(source));
+    coropact::reactor::ReactorListener moved(std::move(source));
     auto moved_address = moved.LocalAddress();
     if (!Check(moved_address.has_value() && moved_address->ToPort() == source_address->ToPort(),
                "ReactorListener move construction did not transfer the socket")) {
       return false;
     }
 
-    coropact::net::EventLoopScheduler scheduler(&loop);
+    coropact::reactor::EventLoopScheduler scheduler(&loop);
     coropact::coro::Spawn(scheduler, AcceptOnce(&moved, &loop, &accepted)).Detach();
     loop.QueueInLoop([&] { client_fd = ConnectNonBlocking(*moved_address); });
     loop.RunAfter(0.2, [&] { loop.Quit(); });
@@ -252,9 +251,9 @@ bool TestReactorListenerMove() {
     return false;
   }
 
-  coropact::net::ReactorListener assigned_source(&loop, coropact::net::InetAddress(0));
+  coropact::reactor::ReactorListener assigned_source(&loop, coropact::net::Endpoint(0));
   auto assigned_source_address = assigned_source.LocalAddress();
-  coropact::net::ReactorListener assigned_target(&loop, coropact::net::InetAddress(0));
+  coropact::reactor::ReactorListener assigned_target(&loop, coropact::net::Endpoint(0));
   assigned_target = std::move(assigned_source);
   auto assigned_target_address = assigned_target.LocalAddress();
   return Check(assigned_source_address.has_value() && assigned_target_address.has_value() &&

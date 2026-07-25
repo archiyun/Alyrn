@@ -8,17 +8,19 @@
 #include <utility>
 
 #include "coropact/luring/worker.h"
-#include "coropact/net/inet_address.h"
+#include "coropact/net/endpoint.h"
 
 namespace coropact::luring {
 
-LUringWorkerGroup::LUringWorkerGroup(net::InetAddress listen_addr, LUringWorkerGroupOptions options,
+LUringWorkerGroup::LUringWorkerGroup(net::Endpoint listen_addr, LUringWorkerGroupOptions options,
                                      ThreadInitCallback init_callback,
-                                     ConnectionCallback connection_callback)
+                                     ConnectionCallback connection_callback,
+                                     ThreadExitCallback exit_callback)
     : listen_addr_(listen_addr),
       options_(std::move(options)),
       init_callback_(std::move(init_callback)),
-      connection_callback_(std::move(connection_callback)) {}
+      connection_callback_(std::move(connection_callback)),
+      exit_callback_(std::move(exit_callback)) {}
 
 LUringWorkerGroup::~LUringWorkerGroup() noexcept { Stop(); }
 
@@ -43,7 +45,7 @@ base::Result<void> LUringWorkerGroup::Start() {
     }
 
     auto worker = std::make_unique<LUringWorker>(i, listen_addr_, std::move(worker_options),
-                                                 init_callback_, connection_callback_);
+                                                 init_callback_, connection_callback_, exit_callback_);
     auto started = worker->Start();
     if (!started.has_value()) {
       Stop();

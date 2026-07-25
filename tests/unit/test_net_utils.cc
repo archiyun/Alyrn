@@ -6,7 +6,7 @@
 
 #include <cerrno>
 
-#include "coropact/net/inet_address.h"
+#include "coropact/net/endpoint.h"
 #include "coropact/net/net_utils.h"
 
 namespace coropact::net {
@@ -45,8 +45,8 @@ int get_socket_option(int fd, int level, int option) {
   return value;
 }
 
-TEST(InetAddressTest, ParsesAndFormatsNumericIPv4) {
-  auto address = ParseIPv4Address("127.0.0.1", 8080);
+TEST(EndpointTest, ParsesAndFormatsNumericIPv4) {
+  auto address = ParseIpAddress("127.0.0.1", 8080);
 
   ASSERT_TRUE(address);
   EXPECT_EQ(address->ToIp(), "127.0.0.1");
@@ -54,13 +54,26 @@ TEST(InetAddressTest, ParsesAndFormatsNumericIPv4) {
   EXPECT_EQ(address->ToIpPort(), "127.0.0.1:8080");
 }
 
-TEST(InetAddressTest, RejectsInvalidIPv4WithoutLoopbackFallback) {
-  auto address = ParseIPv4Address("not-an-ip", 8080);
+TEST(EndpointTest, ParsesAndFormatsNumericIPv6) {
+  auto address = ParseIpAddress("::1", 8080);
+
+  ASSERT_TRUE(address);
+  EXPECT_EQ(address->family(), Endpoint::Family::kIPv6);
+  EXPECT_EQ(address->ToIp(), "::1");
+  EXPECT_EQ(address->ToPort(), 8080);
+  EXPECT_EQ(address->ToIpPort(), "[::1]:8080");
+
+  const Endpoint loopback = Endpoint::Loopback(8080, Endpoint::Family::kIPv6);
+  EXPECT_EQ(loopback, *address);
+}
+
+TEST(EndpointTest, RejectsInvalidIpWithoutLoopbackFallback) {
+  auto address = ParseIpAddress("not-an-ip", 8080);
 
   EXPECT_FALSE(address);
   EXPECT_EQ(address.error(), std::make_error_code(std::errc::invalid_argument));
 
-  auto hostname = ParseIPv4Address("localhost", 8080);
+  auto hostname = ParseIpAddress("localhost", 8080);
   EXPECT_FALSE(hostname);
   EXPECT_EQ(hostname.error(), std::make_error_code(std::errc::invalid_argument));
 }
@@ -132,10 +145,8 @@ TEST(NetUtilsTest, QueriesConnectedIPv4Endpoints) {
   ScopedFd listener(::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP));
   ASSERT_GE(listener.get(), 0);
 
-  const InetAddress bind_address(0);
-  ASSERT_EQ(::bind(listener.get(), reinterpret_cast<const sockaddr*>(&bind_address.sock_addr()),
-                   sizeof(bind_address.sock_addr())),
-            0);
+  const Endpoint bind_address(0);
+  ASSERT_EQ(::bind(listener.get(), bind_address.sock_addr(), bind_address.sock_addr_len()), 0);
   ASSERT_EQ(::listen(listener.get(), 1), 0);
 
   auto listening_address = get_local_addr(listener.get());
@@ -143,10 +154,9 @@ TEST(NetUtilsTest, QueriesConnectedIPv4Endpoints) {
 
   ScopedFd client(::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP));
   ASSERT_GE(client.get(), 0);
-  ASSERT_EQ(
-      ::connect(client.get(), reinterpret_cast<const sockaddr*>(&listening_address->sock_addr()),
-                sizeof(listening_address->sock_addr())),
-      0);
+  ASSERT_EQ(::connect(client.get(), listening_address->sock_addr(),
+                      listening_address->sock_addr_len()),
+            0);
 
   ScopedFd accepted(::accept4(listener.get(), nullptr, nullptr, SOCK_CLOEXEC));
   ASSERT_GE(accepted.get(), 0);
