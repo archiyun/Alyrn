@@ -15,9 +15,10 @@ bool Expect(bool ok, const char* msg) {
   return ok;
 }
 
-coropact::http::HttpRequest MakeRequest(std::string_view path) {
+coropact::http::HttpRequest MakeRequest(
+    std::string_view path, coropact::http::Method method = coropact::http::Method::Get) {
   coropact::http::HttpRequest req;
-  req.set_method(coropact::http::Method::Get);
+  req.set_method(method);
   req.set_version(coropact::http::Version::Http11);
   req.set_path(path);
   return req;
@@ -40,8 +41,15 @@ bool TestDirectRoute() {
               "direct response should be 200")) {
     return false;
   }
-  return Expect(action.response.find("ok") != std::string::npos,
-                "direct response should contain handler body");
+  if (!Expect(action.response.find("ok") != std::string::npos,
+              "direct response should contain handler body")) {
+    return false;
+  }
+
+  auto wrong_method = core.HandleRequest(
+      MakeRequest("/hello", coropact::http::Method::Post), "127.0.0.1");
+  return Expect(wrong_method.response.find("405 Method Not Allowed") != std::string::npos,
+                "GET route should reject POST with 405");
 }
 
 bool TestProxyDecision() {
@@ -55,7 +63,8 @@ bool TestProxyDecision() {
   coropact::gateway::GatewayCore core("gw-core", registry);
   core.AddProxyRoute("/api", "backend", "round_robin");
 
-  auto action = core.HandleRequest(MakeRequest("/api/users"), "203.0.113.7");
+  auto action = core.HandleRequest(
+      MakeRequest("/api/users", coropact::http::Method::Post), "203.0.113.7");
   if (!Expect(action.kind == coropact::gateway::GatewayActionKind::Proxy,
               "proxy route should produce a proxy action")) {
     return false;

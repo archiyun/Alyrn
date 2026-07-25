@@ -31,9 +31,11 @@
 #include <cstdio>
 #include <iostream>
 #include <memory>
+#include <stdexcept>
 #include <utility>
 
 #include "coropact/gateway/gateway_session_service.h"
+#include "coropact/gateway/gateway_health_service.h"
 #include "coropact/gateway/upstream.h"
 #include "coropact/gateway/upstream_peer.h"
 #include "coropact/gateway/upstream_registry.h"
@@ -70,6 +72,13 @@ int main() {
       coropact::gateway::GatewaySessionService<coropact::reactor::ReactorStream,
                                                coropact::reactor::ReactorConnector>;
   Service gateway("gateway", reg);
+  Service::Pool pool;
+  coropact::gateway::GatewayHealthService<coropact::reactor::ReactorConnector> health(
+      reg, coropact::gateway::HealthCheckConfig{.path = "/api/health",
+                                                .interval_sec = 5.0,
+                                                .timeout_sec = 1.0,
+                                                .unhealthy_threshold = 3,
+                                                .healthy_threshold = 2});
 
   // 直接路由
   gateway.Get("/healthz", [](const coropact::http::HttpRequest&, coropact::http::HttpResponse& resp) {
@@ -85,8 +94,13 @@ int main() {
   coropact::reactor::ReactorWorkerGroupOptions options;
   options.worker_num = 1;
 
-  auto on_worker_init = [](coropact::reactor::ReactorWorkerContext& context) {
+  auto on_worker_init = [&health](coropact::reactor::ReactorWorkerContext& context) {
     std::println("reactor worker {} initialized", context.index);
+    if (context.index == 0 &&
+        !health.Start(context.scheduler,
+                      coropact::reactor::ReactorConnector(&context.loop))) {
+      throw std::runtime_error("gateway health service already started");
+    }
   };
   auto on_worker_exit = [](coropact::reactor::ReactorWorkerContext& context) {
     std::println("reactor worker {} exited", context.index);
@@ -94,10 +108,10 @@ int main() {
 
   coropact::reactor::ReactorWorkerGroup workers(
       coropact::net::Endpoint(8080), std::move(options), std::move(on_worker_init),
-      [&gateway](coropact::reactor::ReactorWorkerContext& context,
-                 coropact::reactor::ReactorStream stream) -> coropact::coro::Task<void> {
+      [&gateway, &pool](coropact::reactor::ReactorWorkerContext& context,
+                        coropact::reactor::ReactorStream stream) -> coropact::coro::Task<void> {
         co_await gateway.Serve(std::move(stream),
-                               coropact::reactor::ReactorConnector(&context.loop));
+                               coropact::reactor::ReactorConnector(&context.loop), pool);
       },
       std::move(on_worker_exit));
 
@@ -109,6 +123,7 @@ int main() {
 
   std::println("gateway listening on 127.0.0.1:8080; press Enter to stop");
   std::cin.get();
+  health.StopAndJoin();
   workers.Stop();
   return 0;
 }

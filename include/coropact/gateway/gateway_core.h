@@ -80,7 +80,8 @@ public:
 
   GatewayCore(std::string name, UpstreamRegistry& registry);
 
-  [[nodiscard]] const std::string& name() const { return name_; }
+  [[nodiscard]]
+  const std::string& name() const { return name_; }
 
   void Get(std::string_view path, Handler handler);
   void Post(std::string_view path, Handler handler);
@@ -94,17 +95,22 @@ public:
   void EnableGlobalRateLimit(double rate, double burst);
   void EnablePerIPRateLimit(double rate, double burst);
 
-  [[nodiscard]] const Route* MatchRoute(std::string_view path) const;
+  [[nodiscard]]
+  const Route* MatchRoute(std::string_view path) const;
+
+  [[nodiscard]]
+  const Route* MatchRoute(std::string_view path, coropact::http::Method method) const;
 
   Action HandleParseError(coropact::http::ParseStatus parse_status);
   Action HandleRequest(const coropact::http::HttpRequest& req, std::string_view client_ip);
 
   Action ProxyUnavailable(const Route& route, std::string_view reason);
 
-  ForwardedHeaderContext MakeForwardedContext(const ProxyTarget& proxy) const;
+  [[nodiscard]] ForwardedHeaderContext MakeForwardedContext(const ProxyTarget& proxy) const;
 
 private:
-  [[nodiscard]] coropact::http::HttpResponse MakeError(coropact::http::StatusCode code, std::string_view msg) const;
+  [[nodiscard]] coropact::http::HttpResponse MakeError(coropact::http::StatusCode code,
+                                                       std::string_view msg) const;
   [[nodiscard]] std::string RenderFallback(const Route& route, std::string_view reason) const;
   [[nodiscard]] Action SendResponse(std::string response, bool close_after_send = false) const;
   static std::string GenRequestId();

@@ -16,6 +16,7 @@
 #include "coropact/gateway/proxy_pass.h" // IWYU pragma: export
 #include "coropact/gateway/rate_limiter.h" // IWYU pragma: export
 #include "coropact/gateway/upstream.h" // IWYU pragma: export
+#include "coropact/gateway/upstream_connector.h" // IWYU pragma: export
 #include "coropact/gateway/upstream_conn_pool.h" // IWYU pragma: export
 #include "coropact/gateway/upstream_peer.h" // IWYU pragma: export
 #include "coropact/gateway/upstream_registry.h" // IWYU pragma: export

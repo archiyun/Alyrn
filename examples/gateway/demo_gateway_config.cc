@@ -10,11 +10,13 @@
 //   ./build/examples/gateway/demo_gateway_config examples/gateway/gateway.yaml
 #include <exception>
 #include <iostream>
+#include <stdexcept>
 #include <string_view>
 #include <system_error>
 #include <utility>
 
 #include "coropact/gateway/gateway_config.h"
+#include "coropact/gateway/gateway_health_service.h"
 #include "coropact/gateway/gateway_session_service.h"
 #include "coropact/gateway/upstream_registry.h"
 #include "coropact/net/net_utils.h"
@@ -45,17 +47,28 @@ int main(int argc, char** argv) {
         coropact::gateway::GatewaySessionService<coropact::reactor::ReactorStream,
                                                  coropact::reactor::ReactorConnector>;
     Service gateway(config.server.name, registry);
+    Service::Pool pool;
+    coropact::gateway::GatewayHealthService<coropact::reactor::ReactorConnector> health(
+        registry, config.health_check.config);
 
     coropact::gateway::ApplyGatewayConfig(config, gateway);
 
     coropact::reactor::ReactorWorkerGroupOptions options;
     options.worker_num = 1;
+    const bool health_enabled = config.health_check.enabled;
+    auto on_worker_init = [&health, health_enabled](coropact::reactor::ReactorWorkerContext& context) {
+      if (health_enabled && context.index == 0 &&
+          !health.Start(context.scheduler,
+                        coropact::reactor::ReactorConnector(&context.loop))) {
+        throw std::runtime_error("gateway health service already started");
+      }
+    };
     coropact::reactor::ReactorWorkerGroup workers(
-        *listen_addr, std::move(options), {},
-        [&gateway](coropact::reactor::ReactorWorkerContext& context,
-                   coropact::reactor::ReactorStream stream) -> coropact::coro::Task<void> {
+        *listen_addr, std::move(options), std::move(on_worker_init),
+        [&gateway, &pool](coropact::reactor::ReactorWorkerContext& context,
+                          coropact::reactor::ReactorStream stream) -> coropact::coro::Task<void> {
           co_await gateway.Serve(std::move(stream),
-                                  coropact::reactor::ReactorConnector(&context.loop));
+                                  coropact::reactor::ReactorConnector(&context.loop), pool);
         });
 
     auto started = workers.Start();
@@ -66,6 +79,7 @@ int main(int argc, char** argv) {
     std::cout << "gateway listening on " << config.server.host << ':' << config.server.port
               << "; press Enter to stop\n";
     std::cin.get();
+    health.StopAndJoin();
     workers.Stop();
   } catch (const std::exception& ex) {
     std::cerr << "demo_gateway_config: " << ex.what() << '\n';

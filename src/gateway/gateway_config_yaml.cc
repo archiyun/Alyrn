@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 #include <yaml-cpp/yaml.h>
 
+#include <cmath>
 #include <limits>
 #include <memory>
 #include <string>
@@ -219,6 +220,30 @@ void ParseStatusEndpoint(const YAML::Node& root, GatewayConfig* config) {
   ReadOptionalString(node, "body", "status_endpoint", &config->status_endpoint.body);
 }
 
+void ParseHealthCheck(const YAML::Node& root, GatewayConfig* config) {
+  YAML::Node node = Field(root, "health_check");
+  if (!node) return;
+  if (node.IsScalar()) {
+    config->health_check.enabled = As<bool>(node, "health_check");
+    return;
+  }
+
+  RequireMap(node, "health_check");
+  config->health_check.enabled = true;
+  ReadOptionalBool(node, "enabled", "health_check", &config->health_check.enabled);
+  ReadOptionalString(node, "path", "health_check", &config->health_check.config.path);
+  ReadOptionalDouble(node, "interval_sec", "health_check",
+                     &config->health_check.config.interval_sec);
+  ReadOptionalDouble(node, "timeout_sec", "health_check",
+                     &config->health_check.config.timeout_sec);
+  ReadOptionalInt(node, "unhealthy_threshold", "health_check",
+                  &config->health_check.config.unhealthy_threshold, 1,
+                  std::numeric_limits<int>::max());
+  ReadOptionalInt(node, "healthy_threshold", "health_check",
+                  &config->health_check.config.healthy_threshold, 1,
+                  std::numeric_limits<int>::max());
+}
+
 GatewayRateLimitBucketConfig ParseRateLimitBucket(const YAML::Node& node, std::string_view ctx,
                                                   GatewayRateLimitBucketConfig defaults) {
   if (node.IsScalar()) {
@@ -398,6 +423,9 @@ void ValidatePath(std::string_view path, std::string_view ctx) {
   if (path.empty() || path.front() != '/') {
     Fail(ctx, "path must start with '/'");
   }
+  if (path.find_first_of("\r\n") != std::string_view::npos) {
+    Fail(ctx, "path must not contain CR or LF");
+  }
 }
 
 void ValidateIPv4Endpoint(std::string_view host, std::uint16_t port, std::string_view ctx) {
@@ -418,12 +446,9 @@ GatewayConfig LoadGatewayConfigFromYaml(std::string_view path) {
     }
 
     GatewayConfig config;
-    if (Field(root, "health_check")) {
-      throw GatewayConfigError(
-          "health_check is not owned by GatewaySessionService; configure a standalone checker");
-    }
     ParseServer(root, &config);
     ParseStatusEndpoint(root, &config);
+    ParseHealthCheck(root, &config);
     ParseRateLimit(root, &config);
     ParseUpstreams(root, &config);
     ParseRoutes(root, &config);
@@ -441,6 +466,23 @@ void ValidateGatewayConfig(const GatewayConfig& config) {
   ValidateIPv4Endpoint(config.server.host, config.server.port, "server.listen");
   if (config.status_endpoint.enabled) {
     ValidatePath(config.status_endpoint.path, "status_endpoint.path");
+  }
+  if (config.health_check.enabled) {
+    ValidatePath(config.health_check.config.path, "health_check.path");
+    if (!(config.health_check.config.interval_sec > 0.0) ||
+        !std::isfinite(config.health_check.config.interval_sec)) {
+      Fail("health_check.interval_sec", "must be finite and > 0");
+    }
+    if (!(config.health_check.config.timeout_sec > 0.0) ||
+        !std::isfinite(config.health_check.config.timeout_sec)) {
+      Fail("health_check.timeout_sec", "must be finite and > 0");
+    }
+    if (config.health_check.config.unhealthy_threshold <= 0) {
+      Fail("health_check.unhealthy_threshold", "must be > 0");
+    }
+    if (config.health_check.config.healthy_threshold <= 0) {
+      Fail("health_check.healthy_threshold", "must be > 0");
+    }
   }
   auto validate_bucket = [](const GatewayRateLimitBucketConfig& bucket, std::string_view ctx) {
     if (!bucket.enabled) return;

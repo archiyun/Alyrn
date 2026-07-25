@@ -6,6 +6,14 @@ status_endpoint:
   enabled: true
   path: /healthz
 
+health_check:
+  enabled: true
+  path: /api/health
+  interval_sec: 5
+  timeout_sec: 1
+  unhealthy_threshold: 3
+  healthy_threshold: 2
+
 rate_limit:
   global:
     enabled: true

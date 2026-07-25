@@ -68,6 +68,10 @@ public:
 
   const Route* MatchRoute(std::string_view path) const { return core_.MatchRoute(path); }
 
+  const Route* MatchRoute(std::string_view path, coropact::http::Method method) const {
+    return core_.MatchRoute(path, method);
+  }
+
   // Serve one accepted connection. The connector is moved into the coroutine
   // frame so a loop-bound connector cannot dangle after the handler returns.
   // The caller must construct it from the same loop that owns stream.
