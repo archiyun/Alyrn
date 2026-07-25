@@ -7,9 +7,6 @@
 namespace coropact::gateway {
 
 struct HealthCheckConfig {
-  // Configuration data only. Active probes are intentionally not owned by
-  // GatewaySessionService; a process-level health component should own their
-  // scheduler and shutdown lifecycle.
   // Request path used by active health probes.
   std::string path{"/health"};
 

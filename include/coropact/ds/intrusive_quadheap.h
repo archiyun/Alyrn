@@ -57,8 +57,8 @@ public:
   static_assert(HeapNodeBaseHook<T, Tag>,
                 "T must publicly and non-virtually inherit HeapNode<T, Tag>");
 
-  IntrusiveQuadHeap() = default;
-  ~IntrusiveQuadHeap() = default;
+  IntrusiveQuadHeap() noexcept = default;
+  ~IntrusiveQuadHeap() noexcept { Clear(); }
 
   // O(1)
   [[nodiscard]] bool empty() const noexcept { return heap_.empty(); }
@@ -76,6 +76,8 @@ public:
 
   // O(1)
   T* earliest() const { return empty() ? nullptr : elem_of(heap_.front()); }
+
+  void Clear() noexcept;
 
   // O(k log n) where k is the number of extracted elements.
   // Extracts (and erases) the earliest elements satisfying pred in key order.
@@ -171,6 +173,14 @@ bool IQH_TYPE::Erase(T* elem) {
     SiftDown(index);
   }
   return true;
+}
+
+IQH_TMPL
+void IQH_TYPE::Clear() noexcept {
+  for (Node* node : heap_) {
+    node->clear_hook();
+  }
+  heap_.clear();
 }
 
 IQH_TMPL

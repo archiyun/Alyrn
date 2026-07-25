@@ -19,6 +19,7 @@
 #include "coropact/coro/task.h"
 #include "coropact/gateway/forwarded_header_context.h"
 #include "coropact/gateway/load_balancer.h"
+#include "coropact/gateway/upstream_connector.h"
 #include "coropact/gateway/upstream.h"
 #include "coropact/gateway/upstream_conn_pool.h"
 #include "coropact/gateway/upstream_peer.h"
@@ -54,15 +55,6 @@ struct ProxyForwardBuffers {
   std::string request;
   std::string response_pending;
   std::string response_outbound;
-};
-
-template <class T>
-concept UpstreamConnector = requires(T& connector, std::string_view host, std::uint16_t port) {
-  typename T::Stream;
-  requires coropact::io::AsyncStream<typename T::Stream>;
-  {
-    connector.Connect(host, port)
-  } -> std::same_as<coropact::coro::Task<coropact::base::Result<typename T::Stream>>>;
 };
 
 class ProxyPass {

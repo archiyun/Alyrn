@@ -22,6 +22,7 @@ GatewayCore::GatewayCore(std::string name, UpstreamRegistry& registry)
 void GatewayCore::Get(std::string_view path, Handler handler) {
   routes_.push_back(Route{
       .type = RouteType::Direct,
+      .method = coropact::http::Method::Get,
       .path = std::string(path),
       .handler = std::move(handler),
   });
@@ -30,6 +31,7 @@ void GatewayCore::Get(std::string_view path, Handler handler) {
 void GatewayCore::Post(std::string_view path, Handler handler) {
   routes_.push_back(Route{
       .type = RouteType::Direct,
+      .method = coropact::http::Method::Post,
       .path = std::string(path),
       .handler = std::move(handler),
   });
@@ -40,6 +42,7 @@ void GatewayCore::AddProxyRoute(std::string_view path, std::string_view upstream
   routes_.push_back(Route{
       .type = RouteType::Proxy,
       .match_type = MatchType::Prefix,
+      .match_all_methods = true,
       .path = std::string(path),
       .upstream_name = std::string(upstream_name),
       .lb = CreateLoadBalancer(algo),
@@ -63,6 +66,7 @@ void GatewayCore::AddProxyRoute(std::string_view path, std::string_view upstream
   routes_.push_back(Route{
       .type = RouteType::Proxy,
       .match_type = MatchType::Prefix,
+      .match_all_methods = true,
       .path = std::string(path),
       .upstream_name = std::string(upstream_name),
       .lb = CreateLoadBalancer(algo),
@@ -109,6 +113,32 @@ const GatewayCore::Route* GatewayCore::MatchRoute(std::string_view path) const {
   return nullptr;
 }
 
+const GatewayCore::Route* GatewayCore::MatchRoute(std::string_view path,
+                                                  coropact::http::Method method) const {
+  bool has_exact_path = false;
+  for (const auto& route : routes_) {
+    if (route.match_type != MatchType::Exact || route.path != path) continue;
+    has_exact_path = true;
+    if (route.match_all_methods || route.method == method) return &route;
+  }
+
+  // An exact path takes precedence over every prefix route, even when the
+  // exact route rejects the method. The caller can then return 405 instead of
+  // unexpectedly falling through to a less specific proxy route.
+  if (has_exact_path) return nullptr;
+
+  for (const auto& route : routes_) {
+    if (route.match_type != MatchType::Prefix) continue;
+    if (!path.starts_with(route.path)) continue;
+    if (path.size() != route.path.size() && !route.path.empty() &&
+        route.path.back() != '/' && path[route.path.size()] != '/') {
+      continue;
+    }
+    if (route.match_all_methods || route.method == method) return &route;
+  }
+  return nullptr;
+}
+
 GatewayCore::Action GatewayCore::HandleParseError(coropact::http::ParseStatus parse_status) {
   const coropact::http::StatusCode code = coropact::http::ParseStatusToStatusCode(parse_status);
   return SendResponse(MakeError(code, coropact::http::StatusMessage(code)).ToString(), true);
@@ -124,8 +154,12 @@ GatewayCore::Action GatewayCore::HandleRequest(const coropact::http::HttpRequest
     }
   }
 
-  const Route* route = MatchRoute(req.path());
+  const Route* route = MatchRoute(req.path(), req.method());
   if (!route) {
+    if (MatchRoute(req.path()) != nullptr) {
+      return SendResponse(
+          MakeError(coropact::http::StatusCode::MethodNotAllowed, "method not allowed").ToString());
+    }
     return SendResponse(MakeError(coropact::http::StatusCode::NotFound, "not found").ToString());
   }
 

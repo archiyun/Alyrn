@@ -28,6 +28,10 @@
 #include <unordered_map>
 #include <vector>
 
+#if defined(COROPACT_ENABLE_CTRACK)
+#include <ctrack.hpp>
+#endif
+
 #include "coropact/coro/frame_allocator.h"
 #include "coropact/gateway/gateway_session_service.h"
 #include "coropact/gateway/upstream.h"
@@ -338,6 +342,9 @@ int main() {
   }
 
   server.Stop();
+#if defined(COROPACT_ENABLE_CTRACK)
+  std::fputs(ctrack::result_as_string().c_str(), stdout);
+#endif
   if (dump_stats) {
     const auto to_us = [](std::uint64_t nanoseconds) {
       return static_cast<double>(nanoseconds) / 1000.0;

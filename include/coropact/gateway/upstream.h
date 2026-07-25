@@ -45,21 +45,31 @@ public:
 
   // Append a peer. Call only during startup, before any IO thread observes
   // this Upstream — there is no synchronization on peers_.
-  void AddPeer(std::shared_ptr<UpstreamPeer> peer) {
-    peers_.push_back(std::move(peer));
-  }
+  void AddPeer(std::shared_ptr<UpstreamPeer> peer) { peers_.push_back(std::move(peer)); }
 
-  const std::string& name() const { return config_.name; }
-  const UpstreamConfig& config() const { return config_; }
+  [[nodiscard]]
+  const std::string& name() const {
+    return config_.name;
+  }
+  [[nodiscard]]
+  const UpstreamConfig& config() const {
+    return config_;
+  }
   // Returns the full peer list; load balancers filter via UpstreamPeer::AvailableAt()
   // inline on each Select to avoid per-call allocation of a snapshot vector.
-  const std::vector<std::shared_ptr<UpstreamPeer>>& peers() const { return peers_; }
+  [[nodiscard]]
+  const std::vector<std::shared_ptr<UpstreamPeer>>& peers() const {
+    return peers_;
+  }
 
   // Circuit breaker is attached lazily by GatewaySessionService::AddProxyRoute when
   // circuit_breaker_enabled is set on a Route. Stored as shared_ptr so
   // the gateway and proxy code can share the same instance across requests.
   void set_circuit_breaker(std::shared_ptr<CircuitBreaker> cb) { cb_ = std::move(cb); }
-  std::shared_ptr<CircuitBreaker> circuit_breaker() const { return cb_; }
+  [[nodiscard]]
+  std::shared_ptr<CircuitBreaker> circuit_breaker() const {
+    return cb_;
+  }
 
   bool TryAcquireRequestSlot() noexcept {
     const std::size_t limit = config_.max_concurrent_requests;
@@ -68,22 +78,19 @@ public:
       return true;
     }
 
-    std::size_t current =
-        active_requests_.load(std::memory_order_relaxed);
+    std::size_t current = active_requests_.load(std::memory_order_relaxed);
     while (current < limit) {
-      if (active_requests_.compare_exchange_weak(
-              current, current + 1,
-              std::memory_order_acq_rel, std::memory_order_relaxed)) {
+      if (active_requests_.compare_exchange_weak(current, current + 1, std::memory_order_acq_rel,
+                                                 std::memory_order_relaxed)) {
         return true;
       }
     }
     return false;
   }
 
-  void ReleaseRequestSlot() noexcept {
-    active_requests_.fetch_sub(1, std::memory_order_acq_rel);
-  }
+  void ReleaseRequestSlot() noexcept { active_requests_.fetch_sub(1, std::memory_order_acq_rel); }
 
+  [[nodiscard]]
   std::size_t active_requests() const noexcept {
     return active_requests_.load(std::memory_order_relaxed);
   }

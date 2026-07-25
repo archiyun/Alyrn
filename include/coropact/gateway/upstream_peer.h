@@ -68,6 +68,12 @@ public:
     return !state_.down.load(std::memory_order_relaxed);
   }
 
+  // Active health checks own the binary hard-down flag. Passive request
+  // failures must not call these methods: they only affect fail_timeout and
+  // effective_weight.
+  void SetActiveHealthy() noexcept { state_.down.store(false, std::memory_order_relaxed); }
+  void SetActiveUnhealthy() noexcept { state_.down.store(true, std::memory_order_relaxed); }
+
   // Returns false if: (1) marked down by health checker, or (2) fail count has reached
   // max_fails and the fail_timeout cooldown has not yet elapsed. `now_ms` must use
   // the same steady-clock millisecond source passed to OnFailure().

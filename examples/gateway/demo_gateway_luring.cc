@@ -33,9 +33,11 @@
 #include <memory>
 #include <print>
 #include <iostream>
+#include <stdexcept>
 #include <utility>
 
 #include "coropact/gateway/gateway_session_service.h"
+#include "coropact/gateway/gateway_health_service.h"
 #include "coropact/gateway/upstream.h"
 #include "coropact/gateway/upstream_peer.h"
 #include "coropact/gateway/upstream_registry.h"
@@ -82,6 +84,13 @@ int main() {
                                              coropact::luring::LUringConnector>;
 
   Service gateway("gateway", reg);
+  Service::Pool pool;
+  coropact::gateway::GatewayHealthService<coropact::luring::LUringConnector> health(
+      reg, coropact::gateway::HealthCheckConfig{.path = "/api/health",
+                                                .interval_sec = 5.0,
+                                                .timeout_sec = 1.0,
+                                                .unhealthy_threshold = 3,
+                                                .healthy_threshold = 2});
 
   // 直接路由
   gateway.Get("/healthz",
@@ -99,8 +108,13 @@ int main() {
   coropact::luring::LUringWorkerGroupOptions options;
   options.worker_num = 1;
 
-  auto on_worker_init = [](coropact::luring::LUringWorkerContext& context) {
+  auto on_worker_init = [&health](coropact::luring::LUringWorkerContext& context) {
     std::println("luring worker {} initialized", context.index);
+    if (context.index == 0 &&
+        !health.Start(context.loop,
+                      coropact::luring::LUringConnector(&context.loop))) {
+      throw std::runtime_error("gateway health service already started");
+    }
   };
   auto on_worker_exit = [](coropact::luring::LUringWorkerContext& context) {
     std::println("luring worker {} exited", context.index);
@@ -108,10 +122,10 @@ int main() {
 
   coropact::luring::LUringWorkerGroup workers(
       coropact::net::Endpoint(8080), std::move(options), std::move(on_worker_init),
-      [&gateway](coropact::luring::LUringWorkerContext& context,
-                 coropact::luring::LUringStream stream) -> coropact::coro::Task<void> {
+      [&gateway, &pool](coropact::luring::LUringWorkerContext& context,
+                        coropact::luring::LUringStream stream) -> coropact::coro::Task<void> {
         co_await gateway.Serve(std::move(stream),
-                               coropact::luring::LUringConnector(&context.loop));
+                               coropact::luring::LUringConnector(&context.loop), pool);
       },
       std::move(on_worker_exit));
 
@@ -123,6 +137,7 @@ int main() {
 
   std::println("gateway listening on 127.0.0.1:8080; press Enter to stop");
   std::cin.get();
+  health.StopAndJoin();
   workers.Stop();
   return 0;
 }
