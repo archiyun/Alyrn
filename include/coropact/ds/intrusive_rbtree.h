@@ -163,13 +163,13 @@ public:
   static_assert(RBTNodeBaseHook<T, Tag>,
                 "T must publicly and non-virtually inherit RBTNode<T, Tag>");
 
-  IntrusiveRBTree() {
+  IntrusiveRBTree() noexcept {
     sentinel_.set_left(&sentinel_);
     sentinel_.set_right(&sentinel_);
     sentinel_.set_parent(&sentinel_);
     sentinel_.set_red(false);
   }
-  ~IntrusiveRBTree() = default;
+  ~IntrusiveRBTree() noexcept { Clear(); }
 
   // O(1)
   [[nodiscard]] bool empty() const { return size_ == 0; }

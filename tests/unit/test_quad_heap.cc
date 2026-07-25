@@ -126,6 +126,39 @@ bool TestEraseUnlinkedReturnsFalse() {
   return true;
 }
 
+bool TestClearReleasesNodes() {
+  std::deque<TimerJob> jobs;
+  jobs.emplace_back(1, 30);
+  jobs.emplace_back(2, 10);
+  jobs.emplace_back(3, 20);
+
+  {
+    TimerHeap heap;
+    for (auto& job : jobs) {
+      if (!Expect(heap.Insert(&job), "clear: insert linked element")) return false;
+    }
+
+    heap.Clear();
+
+    if (!Expect(heap.empty(), "clear: heap is empty")) return false;
+    if (!Expect(heap.size() == 0, "clear: size is zero")) return false;
+    if (!Expect(heap.earliest() == nullptr, "clear: earliest is nullptr")) return false;
+    for (auto& job : jobs) {
+      if (!Expect(!job.InHeap(), "clear: node hook is reset")) return false;
+    }
+
+    // Clear must make every node reusable, not merely discard the pointer array.
+    for (auto& job : jobs) {
+      if (!Expect(heap.Insert(&job), "clear: node can be reinserted")) return false;
+    }
+  }
+
+  for (auto& job : jobs) {
+    if (!Expect(!job.InHeap(), "destructor: node hook is reset")) return false;
+  }
+  return true;
+}
+
 // Randomized differential test: against a brute-force sorted reference, the
 // heap must always surrender the minimum, across interleaved inserts/erases.
 bool TestRandomizedStress() {
@@ -178,6 +211,7 @@ int main() {
   if (!TestInsertEraseAndPopWhile()) return 1;
   if (!TestPopWhileOnPop()) return 1;
   if (!TestEraseUnlinkedReturnsFalse()) return 1;
+  if (!TestClearReleasesNodes()) return 1;
   if (!TestRandomizedStress()) return 1;
 
   std::cout << "[PASS] quad_heap_test\n";
