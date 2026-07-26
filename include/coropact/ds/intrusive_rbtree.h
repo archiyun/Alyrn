@@ -78,7 +78,8 @@ class RBTNode {
 
 public:
   COROPACT_DELETE_COPY(RBTNode);
-  [[nodiscard]] bool InTree() const noexcept { return linked(); }
+  [[nodiscard]]
+  bool InTree() const noexcept { return linked(); }
 
 protected:
   RBTNode() = default;
@@ -113,7 +114,8 @@ private:
   Node* right() const noexcept { return right_; }
   void set_right(Node* right) noexcept { right_ = right; }
 
-  [[nodiscard]] bool red() const noexcept { return (parent_and_flags_ & kRed) != 0; }
+  [[nodiscard]]
+  bool red() const noexcept { return (parent_and_flags_ & kRed) != 0; }
 
   void set_red(bool red) noexcept {
     if (red) {
@@ -123,7 +125,8 @@ private:
     }
   }
 
-  [[nodiscard]] bool linked() const noexcept { return (parent_and_flags_ & kLinked) != 0; }
+  [[nodiscard]]
+  bool linked() const noexcept { return (parent_and_flags_ & kLinked) != 0; }
 
   void set_linked(const bool linked) noexcept {
     if (linked) {
@@ -172,9 +175,11 @@ public:
   ~IntrusiveRBTree() noexcept { Clear(); }
 
   // O(1)
-  [[nodiscard]] bool empty() const { return size_ == 0; }
+  [[nodiscard]]
+  bool empty() const { return size_ == 0; }
   // O(1)
-  [[nodiscard]] std::size_t size() const noexcept { return size_; }
+  [[nodiscard]]
+  std::size_t size() const noexcept { return size_; }
   // O(log n) worst-case; return false if elem is already in the tree.
   bool Insert(T* elem);
 
@@ -204,7 +209,8 @@ public:
   // O(n) - debug only. Verifies RB invariants, BST order, parent/child links,
   // linked state, subtree size and cached root/min state. If kMaintainMax is
   // enabled, this also verifies cached max state.
-  [[nodiscard]] bool CheckRBInvariants() const;
+  [[nodiscard]]
+  bool CheckRBInvariants() const;
 
 private:
   static constexpr bool kMaintainMax = false;

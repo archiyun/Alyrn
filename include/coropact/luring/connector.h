@@ -23,7 +23,8 @@ public:
   LUringConnector(LUringConnector&&) noexcept;
   LUringConnector& operator=(LUringConnector&&) noexcept;
 
-  [[nodiscard]] static base::Result<LUringConnector> Create(LUringLoop* loop) noexcept;
+  [[nodiscard]]
+  static base::Result<LUringConnector> Create(LUringLoop* loop) noexcept;
   explicit LUringConnector(LUringLoop* loop) noexcept;
 
   coro::Task<base::Result<LUringStream>> Connect(std::string_view host, std::uint16_t port);

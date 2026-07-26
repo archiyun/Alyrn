@@ -87,7 +87,8 @@ public:
     return shard.cache.Erase(key);
   }
 
-  [[nodiscard]] std::size_t Size() const {
+  [[nodiscard]]
+  std::size_t Size() const {
     std::size_t result = 0;
     for (const auto& shard_ptr : shards_) {
       const Shard& shard = *shard_ptr;
@@ -97,10 +98,13 @@ public:
     return result;
   }
 
-  [[nodiscard]] bool Empty() const { return Size() == 0; }
+  [[nodiscard]]
+  bool Empty() const { return Size() == 0; }
 
-  [[nodiscard]] std::size_t Capacity() const noexcept { return capacity_; }
-  [[nodiscard]] std::size_t ShardCount() const noexcept { return shard_count_; }
+  [[nodiscard]]
+  std::size_t Capacity() const noexcept { return capacity_; }
+  [[nodiscard]]
+  std::size_t ShardCount() const noexcept { return shard_count_; }
 
   void Clear() noexcept {
     for (const auto& shard_ptr : shards_) {

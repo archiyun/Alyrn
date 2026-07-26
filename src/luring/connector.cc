@@ -11,7 +11,6 @@
 #include <cerrno>
 #include <coroutine>
 #include <expected>
-#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -50,10 +49,12 @@ base::Result<void> SetNonBlocking(int fd) noexcept {
   return {};
 }
 
-class ConnectAwaiter {
+class ConnectAwaiter : public detail::LUringOpHook<ConnectAwaiter> {
 public:
+  using OpHook = detail::LUringOpHook<ConnectAwaiter>;
+
   ConnectAwaiter(LUringLoop* loop, net::Endpoint peer) noexcept
-      : loop_(loop), peer_(std::move(peer)) {}
+      : OpHook(LUringOpKind::kConnect), loop_(loop), peer_(std::move(peer)) {}
 
   ~ConnectAwaiter() {
     if (fd_ >= 0) {
@@ -69,20 +70,19 @@ public:
 
     auto fd = CreateSocket(peer_.native_family());
     if (!fd.has_value()) {
-      result_ = std::unexpected(fd.error());
+      op()->SetImmediateError(fd.error());
       return false;
     }
     fd_ = *fd;
 
-    op_.kind = LUringOpKind::kConnect;
-    op_.resume_work.SetHandle(continuation);
-    op_.owner = this;
+    op()->kind = LUringOpKind::kConnect;
+    op()->resume_work.SetHandle(continuation);
 
-    auto submitted = loop_->SubmitOp(&op_, [this, fd = fd_](io_uring_sqe* sqe) noexcept {
+    auto submitted = loop_->SubmitOp(op(), [this, fd = fd_](io_uring_sqe* sqe) noexcept {
       io_uring_prep_connect(sqe, fd, peer_.sock_addr(), peer_.sock_addr_len());
     });
     if (!submitted.has_value()) {
-      result_ = std::unexpected(submitted.error());
+      op()->SetImmediateError(submitted.error());
       return false;
     }
 
@@ -90,16 +90,17 @@ public:
   }
 
   base::Result<LUringStream> await_resume() noexcept {
-    if (result_.has_value()) {
-      return std::move(*result_);
+    if (!op()->IsCompleted()) {
+      assert(op()->result.has_value());
+      return std::unexpected(base::make_neg_errno(*op()->result));
     }
 
-    assert(op_.completed);
-    if (!op_.result.has_value()) {
-      return std::unexpected(op_.result.error());
+    assert(op()->IsCompleted());
+    if (!op()->result.has_value()) {
+      return std::unexpected(op()->result.error());
     }
-    if (*op_.result < 0) {
-      return std::unexpected(base::make_neg_errno(*op_.result));
+    if (*op()->result < 0) {
+      return std::unexpected(base::make_neg_errno(*op()->result));
     }
 
     auto nonblocking = SetNonBlocking(fd_);
@@ -113,11 +114,11 @@ public:
   }
 
 private:
+  LUringOp* op() noexcept { return static_cast<OpHook*>(this); }
+
   LUringLoop* loop_;
   net::Endpoint peer_;
   int fd_{-1};
-  LUringOp op_{.kind = LUringOpKind::kConnect};
-  std::optional<base::Result<LUringStream>> result_;
 };
 
 }  // namespace

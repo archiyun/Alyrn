@@ -25,7 +25,8 @@ public:
 
   using Stream = ReactorStream;
 
-  [[nodiscard]] static base::Result<ReactorListener> Create(
+  [[nodiscard]]
+  static base::Result<ReactorListener> Create(
       EventLoop* loop, const net::Endpoint& listen_addr,
       ReactorListenerOptions options = {}) noexcept;
 
@@ -41,7 +42,8 @@ public:
   coro::Task<base::Result<ReactorStream>> Accept();
   coro::Task<base::Result<void>> Close();
 
-  [[nodiscard]] base::Result<net::Endpoint> LocalAddress() const;
+  [[nodiscard]]
+  base::Result<net::Endpoint> LocalAddress() const;
 
 private:
   class AcceptAwaiter;

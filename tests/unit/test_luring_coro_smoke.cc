@@ -55,7 +55,7 @@ public:
 
 private:
   coropact::luring::LUringLoop* loop_;
-  coropact::luring::LUringOp op_{.kind = coropact::luring::LUringOpKind::kTimeout};
+  coropact::luring::LUringOp op_{.kind = coropact::luring::LUringOpKind::kNop};
   std::optional<coropact::base::Result<int>> result_;
 };
 
@@ -71,32 +71,19 @@ bool IsEnvironmentSkip(coropact::base::Error error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 
-struct CompletionCounter {
-  int count{0};
-};
-
-void CountCompletion(coropact::luring::LUringOp* op) noexcept {
-  auto* counter = static_cast<CompletionCounter*>(op->owner);
-  ++counter->count;
-}
-
 bool CheckSingleShotCompletion() {
   coropact::luring::LUringOp op{
       .kind = coropact::luring::LUringOpKind::kNop,
   };
-  CompletionCounter counter;
-  op.owner = &counter;
-  op.on_complete = &CountCompletion;
 
   const bool first = op.Complete(17);
   const bool second = op.Complete(23);
 
   return Check(first, "first completion should be accepted") &&
          Check(!second, "duplicate completion should be rejected") &&
-         Check(op.completed, "operation should remain completed") &&
+         Check(op.IsCompleted(), "operation should remain completed") &&
          Check(op.result.has_value(), "first completion should store a result") &&
-         Check(*op.result == 17, "duplicate completion must not overwrite the result") &&
-         Check(counter.count == 1, "completion hook must run once");
+         Check(*op.result == 17, "duplicate completion must not overwrite the result");
 }
 
 coropact::coro::Task<void> AwaitNop(coropact::luring::LUringLoop* loop,

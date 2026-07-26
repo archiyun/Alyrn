@@ -20,7 +20,8 @@ namespace coropact::luring {
 namespace {
 
 // Convert the high-level LUringOptions into native liburing parameters.
-[[nodiscard]] io_uring_params MakeParams(const LUringOptions& options) noexcept {
+[[nodiscard]]
+io_uring_params MakeParams(const LUringOptions& options) noexcept {
   io_uring_params params{};
   params.flags |= IORING_SETUP_CLAMP;
 

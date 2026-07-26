@@ -47,7 +47,8 @@ inline SyncWaitRoot SyncWaitRun(Task<void> task, std::binary_semaphore* done) {
 
 template <Returnable T>
   requires(!std::is_void_v<T>)
-[[nodiscard]] T SyncWait(Task<T> task) {
+[[nodiscard]]
+T SyncWait(Task<T> task) {
   std::optional<T> out;
   std::binary_semaphore done{0};
   detail::SyncWaitRun(std::move(task), &out, &done);

@@ -21,7 +21,8 @@ public:
 
   using Stream = ReactorStream;
 
-  [[nodiscard]] static base::Result<ReactorConnector> Create(EventLoop* loop) noexcept;
+  [[nodiscard]]
+  static base::Result<ReactorConnector> Create(EventLoop* loop) noexcept;
 
   explicit ReactorConnector(EventLoop* loop) noexcept;
 

@@ -153,7 +153,8 @@ private:
     return (value + alignment - 1) / alignment * alignment;
   }
 
-  [[nodiscard]] std::size_t FindSizeClass(std::size_t bytes, std::size_t alignment) const noexcept {
+  [[nodiscard]]
+  std::size_t FindSizeClass(std::size_t bytes, std::size_t alignment) const noexcept {
     if (bytes > kMaxPooledBytes || alignment > kSlotAlignment) {
       return kSizeClassCount;
     }

@@ -20,7 +20,8 @@ class EventLoopScheduler final : public coro::Scheduler {
 public:
   COROPACT_DELETE_COPY(EventLoopScheduler);
 
-  [[nodiscard]] static base::Result<EventLoopScheduler> Create(
+  [[nodiscard]]
+  static base::Result<EventLoopScheduler> Create(
       EventLoop* loop, std::pmr::memory_resource* frame_resource = nullptr) noexcept;
 
   explicit EventLoopScheduler(EventLoop* loop, std::pmr::memory_resource* frame_resource = nullptr);
@@ -43,7 +44,8 @@ public:
     });
   }
 
-  [[nodiscard]] EventLoop* loop() const noexcept { return loop_; }
+  [[nodiscard]]
+  EventLoop* loop() const noexcept { return loop_; }
 
 private:
   EventLoop* loop_;

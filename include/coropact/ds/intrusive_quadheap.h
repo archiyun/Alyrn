@@ -22,7 +22,8 @@ class HeapNode {
   friend class IntrusiveQuadHeap;
 
 public:
-  [[nodiscard]] bool InHeap() const noexcept { return linked(); }
+  [[nodiscard]]
+  bool InHeap() const noexcept { return linked(); }
 
 protected:
   COROPACT_DELETE_COPY(HeapNode);
@@ -32,10 +33,12 @@ protected:
 private:
   using Node = HeapNode<T, Tag>;
 
-  [[nodiscard]] std::size_t heap_index() const noexcept { return heap_index_; }
+  [[nodiscard]]
+  std::size_t heap_index() const noexcept { return heap_index_; }
   void set_heap_index(std::size_t index) noexcept { heap_index_ = index; }
 
-  [[nodiscard]] bool linked() const noexcept { return heap_index_ != kNotInHeap; }
+  [[nodiscard]]
+  bool linked() const noexcept { return heap_index_ != kNotInHeap; }
   void clear_hook() noexcept { heap_index_ = kNotInHeap; }
 
   std::size_t heap_index_{kNotInHeap};  // slot in heap_, or kNotInHeap
@@ -61,8 +64,10 @@ public:
   ~IntrusiveQuadHeap() noexcept { Clear(); }
 
   // O(1)
-  [[nodiscard]] bool empty() const noexcept { return heap_.empty(); }
-  [[nodiscard]] std::size_t size() const noexcept { return heap_.size(); }
+  [[nodiscard]]
+  bool empty() const noexcept { return heap_.empty(); }
+  [[nodiscard]]
+  std::size_t size() const noexcept { return heap_.size(); }
 
   // O(log n); returns false if elem is already linked in this heap.
   bool Insert(T* elem);

@@ -40,18 +40,25 @@ public:
   class BufferReadAwaiter;
   class BufferWriteAwaiter;
 
-  [[nodiscard]] ReadSomeAwaiter ReadSome(std::span<std::byte> buffer) noexcept;
-  [[nodiscard]] BufferReadAwaiter ReadSome(io::Buffer& buffer, std::size_t reserve = 4096) noexcept;
-  [[nodiscard]] ReadSomeAwaiter ReadSomeFor(std::span<std::byte> buffer,
+  [[nodiscard]]
+  ReadSomeAwaiter ReadSome(std::span<std::byte> buffer) noexcept;
+  [[nodiscard]]
+  BufferReadAwaiter ReadSome(io::Buffer& buffer, std::size_t reserve = 4096) noexcept;
+  [[nodiscard]]
+  ReadSomeAwaiter ReadSomeFor(std::span<std::byte> buffer,
                                             std::chrono::milliseconds timeout) noexcept;
-  [[nodiscard]] BufferReadAwaiter ReadSomeFor(io::Buffer& buffer, std::chrono::milliseconds timeout,
+  [[nodiscard]]
+  BufferReadAwaiter ReadSomeFor(io::Buffer& buffer, std::chrono::milliseconds timeout,
                                               std::size_t reserve = 4096) noexcept;
-  [[nodiscard]] WriteSomeAwaiter WriteSome(std::span<const std::byte> buffer) noexcept;
-  [[nodiscard]] BufferWriteAwaiter WriteSome(io::Buffer& buffer) noexcept;
+  [[nodiscard]]
+  WriteSomeAwaiter WriteSome(std::span<const std::byte> buffer) noexcept;
+  [[nodiscard]]
+  BufferWriteAwaiter WriteSome(io::Buffer& buffer) noexcept;
   coro::Task<base::Result<void>> Shutdown();
   coro::Task<base::Result<void>> Close();
 
-  [[nodiscard]] const net::Endpoint& PeerAddress() const noexcept { return peer_; }
+  [[nodiscard]]
+  const net::Endpoint& PeerAddress() const noexcept { return peer_; }
 
 private:
   class ReadOperation {
@@ -97,8 +104,10 @@ public:
                   std::chrono::milliseconds timeout = std::chrono::milliseconds{0}) noexcept
       : stream_(&stream), buffer_(buffer), timeout_(timeout) {}
 
-  [[nodiscard]] bool await_ready() const noexcept { return false; }
-  [[nodiscard]] bool await_suspend(std::coroutine_handle<> continuation) noexcept;
+  [[nodiscard]]
+  bool await_ready() const noexcept { return false; }
+  [[nodiscard]]
+  bool await_suspend(std::coroutine_handle<> continuation) noexcept;
   base::Result<std::size_t> await_resume() noexcept;
 
 private:
@@ -122,8 +131,10 @@ public:
   WriteSomeAwaiter(ReactorStream& stream, std::span<const std::byte> buffer) noexcept
       : stream_(&stream), buffer_(buffer) {}
 
-  [[nodiscard]] bool await_ready() const noexcept { return false; }
-  [[nodiscard]] bool await_suspend(std::coroutine_handle<> continuation) noexcept;
+  [[nodiscard]]
+  bool await_ready() const noexcept { return false; }
+  [[nodiscard]]
+  bool await_suspend(std::coroutine_handle<> continuation) noexcept;
   base::Result<std::size_t> await_resume() noexcept;
 
 private:
@@ -144,8 +155,10 @@ public:
   BufferReadAwaiter(ReactorStream& stream, io::Buffer& buffer, std::size_t reserve,
                     std::chrono::milliseconds timeout = std::chrono::milliseconds{0}) noexcept;
 
-  [[nodiscard]] bool await_ready() const noexcept { return false; }
-  [[nodiscard]] bool await_suspend(std::coroutine_handle<> continuation) noexcept;
+  [[nodiscard]]
+  bool await_ready() const noexcept { return false; }
+  [[nodiscard]]
+  bool await_suspend(std::coroutine_handle<> continuation) noexcept;
   base::Result<std::size_t> await_resume() noexcept;
 
 private:
@@ -172,8 +185,10 @@ public:
 
   BufferWriteAwaiter(ReactorStream& stream, io::Buffer& buffer) noexcept;
 
-  [[nodiscard]] bool await_ready() const noexcept { return false; }
-  [[nodiscard]] bool await_suspend(std::coroutine_handle<> continuation) noexcept;
+  [[nodiscard]]
+  bool await_ready() const noexcept { return false; }
+  [[nodiscard]]
+  bool await_suspend(std::coroutine_handle<> continuation) noexcept;
   base::Result<std::size_t> await_resume() noexcept;
 
 private:

@@ -73,9 +73,12 @@ public:
   // returned data storage is allocated from the arena itself.
   void* RegisterCleanup(void (*handler)(void*), std::size_t data_size);
 
-  [[nodiscard]] std::size_t chunk_count() const noexcept;
-  [[nodiscard]] std::size_t large_count() const noexcept;
-  [[nodiscard]] std::size_t ByteUsed() const noexcept;
+  [[nodiscard]]
+  std::size_t chunk_count() const noexcept;
+  [[nodiscard]]
+  std::size_t large_count() const noexcept;
+  [[nodiscard]]
+  std::size_t ByteUsed() const noexcept;
 
 private:
   struct ChunkHeader {

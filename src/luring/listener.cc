@@ -15,6 +15,7 @@
 
 #include "coropact/base/check.h"
 #include "coropact/base/error.h"
+#include "coropact/luring/detail/close_state.h"
 #include "coropact/luring/loop.h"
 #include "coropact/luring/op.h"
 #include "coropact/luring/stream.h"
@@ -81,9 +82,15 @@ AcceptResult MakeStream(LUringLoop* loop, int fd, const sockaddr_storage& peer_a
 
 }  // namespace
 
-class LUringListener::AcceptAwaiter {
+class LUringListener::AcceptAwaiter
+    : public detail::LUringOpHook<LUringListener::AcceptAwaiter> {
+  friend void detail::DispatchAcceptComplete(LUringOp* op) noexcept;
+
 public:
-  explicit AcceptAwaiter(LUringListener& listener) noexcept : listener_(&listener) {}
+  using OpHook = detail::LUringOpHook<AcceptAwaiter>;
+
+  explicit AcceptAwaiter(LUringListener& listener) noexcept
+      : OpHook(LUringOpKind::kAcceptComplete), listener_(&listener) {}
 
   bool await_ready() const noexcept { return false; }
 
@@ -93,14 +100,12 @@ public:
       return false;
     }
     ++listener_->pending_accepts_;
-    op_.kind = LUringOpKind::kAccept;
-    op_.resume_work.SetHandle(continuation);
-    op_.owner = this;
-    op_.on_complete = &AcceptAwaiter::OnComplete;
+    op()->kind = LUringOpKind::kAcceptComplete;
+    op()->resume_work.SetHandle(continuation);
     peer_len_ = static_cast<socklen_t>(sizeof(peer_addr_));
 
     auto submitted =
-        listener_->loop_->SubmitOp(&op_, [this, fd = listener_->fd_](io_uring_sqe* sqe) noexcept {
+        listener_->loop_->SubmitOp(op(), [this, fd = listener_->fd_](io_uring_sqe* sqe) noexcept {
           io_uring_prep_accept(sqe, fd, reinterpret_cast<sockaddr*>(&peer_addr_), &peer_len_,
                                SOCK_NONBLOCK | SOCK_CLOEXEC);
         });
@@ -120,7 +125,7 @@ public:
 
 private:
   static void OnComplete(LUringOp* op) noexcept {
-    auto* self = static_cast<AcceptAwaiter*>(op->owner);
+    auto* self = static_cast<OpHook*>(op)->owner();
     if (self->listener_ != nullptr) {
       LUringListener* listener = self->listener_;
       assert(listener->pending_accepts_ > 0);
@@ -140,49 +145,54 @@ private:
     }
   }
 
+  LUringOp* op() noexcept { return static_cast<OpHook*>(this); }
+
   LUringListener* listener_;
-  LUringOp op_{.kind = LUringOpKind::kAccept};
   sockaddr_storage peer_addr_{};
   socklen_t peer_len_{sizeof(peer_addr_)};
   std::optional<AcceptResult> immediate_;
 };
 
-class LUringListener::CloseAwaiter {
+class LUringListener::CloseAwaiter
+    : public detail::LUringOpHook<LUringListener::CloseAwaiter> {
+  friend void detail::DispatchListenerCloseComplete(LUringOp* op) noexcept;
+
 public:
-  explicit CloseAwaiter(LUringListener& listener) noexcept : listener_(&listener) {}
+  using OpHook = detail::LUringOpHook<CloseAwaiter>;
+
+  explicit CloseAwaiter(LUringListener& listener) noexcept
+      : OpHook(LUringOpKind::kListenerCloseComplete), listener_(&listener) {}
 
   bool await_ready() const noexcept { return false; }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     if (listener_->pending_close_ != nullptr) {
-      result_ = std::unexpected(base::make_errno(EBUSY));
+      state_.SetError(base::make_errno(EBUSY));
       return false;
     }
     if (listener_->closed_ || listener_->fd_ < 0) {
-      result_ = base::Result<void>{};
+      state_.SetSuccess();
       return false;
     }
 
     listener_->closed_ = true;
     if (listener_->pending_accepts_ == 0) {
-      result_ = CloseFd();
+      state_.SetResult(CloseFd());
       return false;
     }
 
     listener_->pending_close_ = this;
-    resume_work_.SetHandle(continuation);
-    cancel_op_.kind = LUringOpKind::kClose;
-    cancel_op_.owner = this;
-    cancel_op_.on_complete = &CloseAwaiter::OnCancelComplete;
+    continuation_ = continuation;
+    op()->kind = LUringOpKind::kListenerCloseComplete;
 
     auto submitted =
-        listener_->loop_->SubmitOp(&cancel_op_, [fd = listener_->fd_](io_uring_sqe* sqe) noexcept {
+        listener_->loop_->SubmitOp(op(), [fd = listener_->fd_](io_uring_sqe* sqe) noexcept {
           io_uring_prep_cancel_fd(sqe, fd, IORING_ASYNC_CANCEL_ALL);
         });
     if (!submitted.has_value()) {
       listener_->pending_close_ = nullptr;
       listener_->closed_ = false;
-      result_ = std::unexpected(submitted.error());
+      state_.SetError(submitted.error());
       return false;
     }
 
@@ -190,32 +200,37 @@ public:
   }
 
   base::Result<void> await_resume() noexcept {
-    assert(result_.has_value());
-    return std::move(*result_);
+    assert(state_.HasResult());
+    return state_.TakeResult();
   }
 
-  void TryComplete() noexcept {
-    if (completed_ || listener_ == nullptr || !cancel_completed_) {
+  void TryComplete(LUringOp* current = nullptr) noexcept {
+    if (state_.Completed() || listener_ == nullptr || !state_.CancelCompleted()) {
       return;
     }
     if (listener_->pending_accepts_ != 0) {
       return;
     }
 
-    completed_ = true;
+    state_.MarkCompleted();
     LUringLoop* loop = listener_->loop_;
     listener_->pending_close_ = nullptr;
-    result_ = CloseFd();
+    state_.SetResult(CloseFd());
     listener_ = nullptr;
-    loop->ScheduleCompletion(&resume_work_);
+    op()->resume_work.SetHandle(continuation_);
+    if (current != op()) {
+      loop->ScheduleCompletion(&op()->resume_work);
+    }
   }
 
 private:
   static void OnCancelComplete(LUringOp* op) noexcept {
-    auto* self = static_cast<CloseAwaiter*>(op->owner);
-    self->cancel_completed_ = true;
-    self->TryComplete();
+    auto* self = static_cast<OpHook*>(op)->owner();
+    self->state_.MarkCancelCompleted();
+    self->TryComplete(op);
   }
+
+  LUringOp* op() noexcept { return static_cast<OpHook*>(this); }
 
   base::Result<void> CloseFd() noexcept {
     const int fd = std::exchange(listener_->fd_, -1);
@@ -229,12 +244,21 @@ private:
   }
 
   LUringListener* listener_;
-  LUringOp cancel_op_{.kind = LUringOpKind::kClose};
-  coro::ResumeWork resume_work_{};
-  std::optional<base::Result<void>> result_;
-  bool cancel_completed_{false};
-  bool completed_{false};
+  std::coroutine_handle<> continuation_{};
+  detail::LUringCloseState state_;
 };
+
+namespace detail {
+
+void DispatchAcceptComplete(LUringOp* op) noexcept {
+  LUringListener::AcceptAwaiter::OnComplete(op);
+}
+
+void DispatchListenerCloseComplete(LUringOp* op) noexcept {
+  LUringListener::CloseAwaiter::OnCancelComplete(op);
+}
+
+}  // namespace detail
 
 base::Result<LUringListener> LUringListener::Create(LUringLoop* loop,
                                                     const net::Endpoint& listen_addr,

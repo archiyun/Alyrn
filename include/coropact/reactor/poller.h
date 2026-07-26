@@ -40,7 +40,8 @@ public:
   virtual void RemoveChannel(Channel* channel) = 0;
 
   // Returns true if channel is currently tracked by this Poller.
-  [[nodiscard]] bool HasChannel(Channel* channel) const;
+  [[nodiscard]]
+  bool HasChannel(Channel* channel) const;
 
   // Creates the epoll-backed Poller implementation.
   static Poller* NewDefaultPoller(EventLoop* loop);

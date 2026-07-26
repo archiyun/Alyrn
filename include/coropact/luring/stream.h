@@ -9,12 +9,13 @@
 #include <coroutine>
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 #include <span>
 
 #include "coropact/base/error.h"
 #include "coropact/coro/task.h"
 #include "coropact/io/async_stream.h"
+#include "coropact/luring/detail/completion_dispatch.h"
+#include "coropact/luring/detail/op_hook.h"
 #include "coropact/luring/op.h"
 #include "coropact/net/endpoint.h"
 #include "coropact/utils/macros.h"
@@ -22,6 +23,13 @@
 namespace coropact::luring {
 
 class LUringLoop;
+
+namespace detail {
+
+struct ReadSomeForReadTag;
+struct ReadSomeForTimeoutTag;
+
+}  // namespace detail
 
 class LUringStream {
 public:
@@ -66,6 +74,8 @@ public:
   }
 
 private:
+  friend void detail::DispatchStreamCloseComplete(LUringOp* op) noexcept;
+
   class CloseAwaiter;
 
   void NotifyCloseProgress() noexcept;
@@ -81,12 +91,15 @@ private:
   bool closed_{false};
 };
 
-class LUringStream::ReadSomeAwaiter {
+class LUringStream::ReadSomeAwaiter
+    : public detail::LUringOpHook<LUringStream::ReadSomeAwaiter> {
 public:
+  using OpHook = detail::LUringOpHook<ReadSomeAwaiter>;
+
   COROPACT_DELETE_COPY_MOVE(ReadSomeAwaiter);
 
   ReadSomeAwaiter(LUringStream& stream, std::span<std::byte> buffer) noexcept
-      : stream_(&stream), buffer_(buffer) {}
+      : OpHook(LUringOpKind::kReadComplete), stream_(&stream), buffer_(buffer) {}
 
   [[nodiscard]]
   bool await_ready() const noexcept {
@@ -99,16 +112,27 @@ public:
   base::Result<std::size_t> await_resume() noexcept;
 
 private:
+  friend void detail::DispatchStreamReadComplete(LUringOp* op) noexcept;
+
   static void OnComplete(LUringOp* op) noexcept;
+
+  LUringOp* op() noexcept { return static_cast<OpHook*>(this); }
 
   LUringStream* stream_;
   std::span<std::byte> buffer_;
-  LUringOp op_{.kind = LUringOpKind::kRead};
-  std::optional<base::Result<std::size_t>> immediate_;
 };
 
-class LUringStream::ReadSomeForAwaiter {
+class LUringStream::ReadSomeForAwaiter
+    : public detail::LUringOpHook<LUringStream::ReadSomeForAwaiter,
+                                  detail::ReadSomeForReadTag>,
+      public detail::LUringOpHook<LUringStream::ReadSomeForAwaiter,
+                                  detail::ReadSomeForTimeoutTag> {
 public:
+  using ReadOpHook =
+      detail::LUringOpHook<ReadSomeForAwaiter, detail::ReadSomeForReadTag>;
+  using TimeoutOpHook =
+      detail::LUringOpHook<ReadSomeForAwaiter, detail::ReadSomeForTimeoutTag>;
+
   COROPACT_DELETE_COPY_MOVE(ReadSomeForAwaiter);
 
   ReadSomeForAwaiter(LUringStream& stream, std::span<std::byte> buffer,
@@ -125,8 +149,14 @@ public:
   base::Result<std::size_t> await_resume() noexcept;
 
 private:
+  friend void detail::DispatchTimedReadComplete(LUringOp* op) noexcept;
+  friend void detail::DispatchTimedReadTimeoutComplete(LUringOp* op) noexcept;
+
   static void OnReadComplete(LUringOp* op) noexcept;
   static void OnTimeoutComplete(LUringOp* op) noexcept;
+
+  LUringOp* read_op() noexcept { return static_cast<ReadOpHook*>(this); }
+  LUringOp* timeout_op() noexcept { return static_cast<TimeoutOpHook*>(this); }
 
   void CompleteRead(LUringOp* current) noexcept;
   void CompleteTimeout(LUringOp* current) noexcept;
@@ -136,19 +166,19 @@ private:
   std::span<std::byte> buffer_;
   __kernel_timespec timeout_ts_{};
   std::coroutine_handle<> continuation_{};
-  LUringOp read_op_{.kind = LUringOpKind::kRead};
-  LUringOp timeout_op_{.kind = LUringOpKind::kTimeout};
-  std::optional<base::Result<std::size_t>> immediate_;
   bool read_done_{false};
   bool timeout_done_{false};
 };
 
-class LUringStream::WriteSomeAwaiter {
+class LUringStream::WriteSomeAwaiter
+    : public detail::LUringOpHook<LUringStream::WriteSomeAwaiter> {
 public:
+  using OpHook = detail::LUringOpHook<WriteSomeAwaiter>;
+
   COROPACT_DELETE_COPY_MOVE(WriteSomeAwaiter);
 
   WriteSomeAwaiter(LUringStream& stream, std::span<const std::byte> buffer) noexcept
-      : stream_(&stream), buffer_(buffer) {}
+      : OpHook(LUringOpKind::kWriteComplete), stream_(&stream), buffer_(buffer) {}
 
   [[nodiscard]]
   bool await_ready() const noexcept {
@@ -161,20 +191,25 @@ public:
   base::Result<std::size_t> await_resume() noexcept;
 
 private:
+  friend void detail::DispatchStreamWriteComplete(LUringOp* op) noexcept;
+
   static void OnComplete(LUringOp* op) noexcept;
+
+  LUringOp* op() noexcept { return static_cast<OpHook*>(this); }
 
   LUringStream* stream_;
   std::span<const std::byte> buffer_;
-  LUringOp op_{.kind = LUringOpKind::kWrite};
-  std::optional<base::Result<std::size_t>> immediate_;
 };
 
-class LUringStream::WriteSomePartsAwaiter {
+class LUringStream::WriteSomePartsAwaiter
+    : public detail::LUringOpHook<LUringStream::WriteSomePartsAwaiter> {
 public:
+  using OpHook = detail::LUringOpHook<WriteSomePartsAwaiter>;
+
   COROPACT_DELETE_COPY_MOVE(WriteSomePartsAwaiter);
 
   WriteSomePartsAwaiter(LUringStream& stream, std::span<const io::WritePart> buffers) noexcept
-      : stream_(&stream), buffers_(buffers) {}
+      : OpHook(LUringOpKind::kWritePartsComplete), stream_(&stream), buffers_(buffers) {}
 
   [[nodiscard]]
   bool await_ready() const noexcept {
@@ -187,7 +222,11 @@ public:
   base::Result<std::size_t> await_resume() noexcept;
 
 private:
+  friend void detail::DispatchStreamWritePartsComplete(LUringOp* op) noexcept;
+
   static void OnComplete(LUringOp* op) noexcept;
+
+  LUringOp* op() noexcept { return static_cast<OpHook*>(this); }
 
   static constexpr std::size_t kMaxParts = 8;
 
@@ -197,8 +236,6 @@ private:
   std::array<iovec, kMaxParts> iovecs_{};
   msghdr message_{};
 
-  LUringOp op_{.kind = LUringOpKind::kWrite};
-  std::optional<base::Result<std::size_t>> immediate_;
 };
 
 static_assert(io::AsyncStream<LUringStream>);

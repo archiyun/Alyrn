@@ -54,7 +54,8 @@ enum class CapabilityRole : uint8_t {
   kExtension,
 };
 
-[[nodiscard]] constexpr CapabilityRole RoleOf(IoCapability cap) noexcept {
+[[nodiscard]]
+constexpr CapabilityRole RoleOf(IoCapability cap) noexcept {
   switch (cap) {
     case IoCapability::kReadSome:
     case IoCapability::kWriteSome:
@@ -95,16 +96,19 @@ public:
 
   constexpr void Enable(IoCapability cap) noexcept { enabled_[Index(cap)] = true; }
 
-  [[nodiscard]] constexpr bool Has(IoCapability cap) const noexcept { return enabled_[Index(cap)]; }
+  [[nodiscard]]
+  constexpr bool Has(IoCapability cap) const noexcept { return enabled_[Index(cap)]; }
 
-  [[nodiscard]] constexpr bool ContainsAll(CapabilitySet required) const noexcept {
+  [[nodiscard]]
+  constexpr bool ContainsAll(CapabilitySet required) const noexcept {
     for (std::size_t i = 0; i < enabled_.size(); ++i) {
       if (required.enabled_[i] && !enabled_[i]) return false;
     }
     return true;
   }
 
-  [[nodiscard]] constexpr bool HasImplementationTags() const noexcept {
+  [[nodiscard]]
+  constexpr bool HasImplementationTags() const noexcept {
     for (std::size_t i = 0; i < enabled_.size(); ++i) {
       if (!enabled_[i]) continue;
       if (RoleOf(static_cast<IoCapability>(i)) == CapabilityRole::kImplementationTag) {
@@ -162,7 +166,8 @@ struct BackendBinding {
   CapabilitySet backend_capabilities{};
 };
 
-[[nodiscard]] constexpr base::Result<BackendBinding> BindBackend(
+[[nodiscard]]
+constexpr base::Result<BackendBinding> BindBackend(
     Backend backend, CapabilitySet backend_capabilities,
     CapabilitySet active_profile = CapabilitySet::CoreGateway()) noexcept {
   if (active_profile.HasImplementationTags()) {
@@ -178,7 +183,8 @@ struct BackendBinding {
   };
 }
 
-[[nodiscard]] constexpr base::Result<BackendBinding> BindReactor(
+[[nodiscard]]
+constexpr base::Result<BackendBinding> BindReactor(
     CapabilitySet active_profile = CapabilitySet::CoreGateway()) noexcept {
   return BindBackend(Backend::kReactor, CapabilitySet::Reactor(), active_profile);
 }

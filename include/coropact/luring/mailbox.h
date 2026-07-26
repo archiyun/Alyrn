@@ -34,7 +34,8 @@ public:
   static constexpr std::size_t kCapacity = 1024;
   using Queue = coropact::ds::MpscBoundedQueue<LUringMessage, kCapacity>;
 
-  [[nodiscard]] LUringMailboxPushResult Push(
+  [[nodiscard]]
+  LUringMailboxPushResult Push(
       LUringMessage message) noexcept {
     const auto result = queue_.TryPush(std::move(message));
 
@@ -51,7 +52,8 @@ public:
     return LUringMailboxPushResult::kQueuedNeedsNotification;
   }
 
-  [[nodiscard]] bool RetryNotification() noexcept {
+  [[nodiscard]]
+  bool RetryNotification() noexcept {
     if (queue_.Empty()) {
       notification_pending_.store(
           false,
@@ -104,11 +106,13 @@ public:
     return count;
   }
 
-  [[nodiscard]] std::size_t size() const noexcept {
+  [[nodiscard]]
+  std::size_t size() const noexcept {
     return queue_.Size();
   }
 
-  [[nodiscard]] static constexpr std::size_t capacity() noexcept {
+  [[nodiscard]]
+  static constexpr std::size_t capacity() noexcept {
     return kCapacity;
   }
 

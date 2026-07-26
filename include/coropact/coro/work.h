@@ -73,7 +73,8 @@ struct Work : public coropact::ds::QueueNode<Work> {
 private:
   static constexpr std::uintptr_t kResumeTag = 1;
 
-  [[nodiscard]] bool IsResume() const noexcept { return (action_ & kResumeTag) != 0; }
+  [[nodiscard]]
+  bool IsResume() const noexcept { return (action_ & kResumeTag) != 0; }
 
   static_assert(sizeof(RunFn) == sizeof(std::uintptr_t));
   std::uintptr_t action_{0};

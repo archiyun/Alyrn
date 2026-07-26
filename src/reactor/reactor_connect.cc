@@ -41,7 +41,8 @@ public:
     }
   }
 
-  [[nodiscard]] bool await_ready() const noexcept { return false; }
+  [[nodiscard]]
+  bool await_ready() const noexcept { return false; }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     COROPACT_DCHECK(loop_->IsInLoopThread(), "ConnectAwaiter: wrong EventLoop thread");
@@ -128,7 +129,8 @@ public:
   SleepAwaiter(EventLoop* loop, std::chrono::milliseconds delay) noexcept
       : loop_(loop), delay_(delay) {}
 
-  [[nodiscard]] bool await_ready() const noexcept { return delay_.count() <= 0; }
+  [[nodiscard]]
+  bool await_ready() const noexcept { return delay_.count() <= 0; }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     COROPACT_DCHECK(loop_->IsInLoopThread(), "SleepAwaiter: wrong EventLoop thread");
@@ -154,7 +156,8 @@ ReactorConnector::ReactorConnector(EventLoop* loop) noexcept : loop_(loop) {
   COROPACT_CHECK(loop_ != nullptr, "ReactorConnector: loop must not be null");
 }
 
-[[nodiscard]] base::Result<ReactorConnector> ReactorConnector::Create(EventLoop* loop) noexcept {
+[[nodiscard]]
+base::Result<ReactorConnector> ReactorConnector::Create(EventLoop* loop) noexcept {
   if (loop == nullptr) {
     return std::unexpected(base::make_errno(EINVAL));
   }

@@ -88,7 +88,8 @@ class ReactorListener::AcceptAwaiter {
 public:
   explicit AcceptAwaiter(ReactorListener& listener) noexcept : listener_(&listener) {}
 
-  [[nodiscard]] bool await_ready() const noexcept { return false; }
+  [[nodiscard]]
+  bool await_ready() const noexcept { return false; }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     COROPACT_DCHECK(listener_->loop_->IsInLoopThread(), "AcceptAwaiter: wrong EventLoop thread");

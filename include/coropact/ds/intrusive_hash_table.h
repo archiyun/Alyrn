@@ -58,7 +58,8 @@ public:
   friend class IntrusiveHashTable;
 
   // Only says "linked into some table", not which one.
-  [[nodiscard]] bool InTable() const noexcept { return pprev_ != nullptr; }
+  [[nodiscard]]
+  bool InTable() const noexcept { return pprev_ != nullptr; }
 
 protected:
   COROPACT_DELETE_COPY(HashNode);
@@ -97,11 +98,14 @@ public:
   IntrusiveHashTable() = default;
   ~IntrusiveHashTable() { Clear(); }
 
-  [[nodiscard]] bool empty() const noexcept { return size_ == 0; }
+  [[nodiscard]]
+  bool empty() const noexcept { return size_ == 0; }
 
-  [[nodiscard]] std::size_t size() const noexcept { return size_; }
+  [[nodiscard]]
+  std::size_t size() const noexcept { return size_; }
 
-  [[nodiscard]] std::size_t bucket_count() const noexcept { return buckets_.size(); }
+  [[nodiscard]]
+  std::size_t bucket_count() const noexcept { return buckets_.size(); }
 
   bool Insert(T* elem);
 
@@ -123,7 +127,8 @@ public:
 
   // O(n) - debug only. Verifies bucket placement, pprev links, hook state,
   // element count and the power-of-two bucket invariant.
-  [[nodiscard]] bool CheckInvariants() const;
+  [[nodiscard]]
+  bool CheckInvariants() const;
 
 private:
   static constexpr std::size_t kMinBuckets = 16;  // 2^4
@@ -137,7 +142,8 @@ private:
   static T* elem_of(Node* node) { return static_cast<T*>(node); }
   static const T* elem_of(const Node* node) { return static_cast<const T*>(node); }
 
-  [[nodiscard]] std::size_t BucketIdx(std::size_t h) const {
+  [[nodiscard]]
+  std::size_t BucketIdx(std::size_t h) const {
     assert(std::has_single_bit(buckets_.size()));
     return h & (buckets_.size() - 1);
   }

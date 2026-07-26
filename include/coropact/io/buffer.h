@@ -41,21 +41,26 @@ public:
 
   ~Buffer() { Clear(); }
 
-  [[nodiscard]] std::size_t ReadableBytes() const noexcept { return readable_bytes_; }
-  [[nodiscard]] bool Empty() const noexcept { return readable_bytes_ == 0; }
+  [[nodiscard]]
+  std::size_t ReadableBytes() const noexcept { return readable_bytes_; }
+  [[nodiscard]]
+  bool Empty() const noexcept { return readable_bytes_ == 0; }
 
-  [[nodiscard]] std::span<const std::byte> ContiguousView() const noexcept {
+  [[nodiscard]]
+  std::span<const std::byte> ContiguousView() const noexcept {
     const Block* block = FirstReadableBlock();
     if (block == nullptr) return {};
     return {block->ReadData(), block->ReadableBytes()};
   }
 
-  [[nodiscard]] std::string_view ContiguousText() const noexcept {
+  [[nodiscard]]
+  std::string_view ContiguousText() const noexcept {
     auto view = ContiguousView();
     return {reinterpret_cast<const char*>(view.data()), view.size()};
   }
 
-  [[nodiscard]] std::vector<iovec> ReadableIov(std::size_t max_iov = 16) const {
+  [[nodiscard]]
+  std::vector<iovec> ReadableIov(std::size_t max_iov = 16) const {
     std::vector<iovec> out;
     out.reserve(max_iov);
 
@@ -73,7 +78,8 @@ public:
     return out;
   }
 
-  [[nodiscard]] std::vector<iovec> PrepareWrite(std::size_t hint, std::size_t max_iov = 16) {
+  [[nodiscard]]
+  std::vector<iovec> PrepareWrite(std::size_t hint, std::size_t max_iov = 16) {
     assert(!write_reserved_ && "nested Buffer::PrepareWrite is not allowed");
     if (max_iov == 0) return {};
 
@@ -170,18 +176,23 @@ private:
     std::size_t write_pos{0};
     bool reserved_for_write{false};
 
-    [[nodiscard]] std::size_t ReadableBytes() const noexcept { return write_pos - read_pos; }
-    [[nodiscard]] std::size_t WritableBytes() const noexcept { return capacity - write_pos; }
+    [[nodiscard]]
+    std::size_t ReadableBytes() const noexcept { return write_pos - read_pos; }
+    [[nodiscard]]
+    std::size_t WritableBytes() const noexcept { return capacity - write_pos; }
 
-    [[nodiscard]] const std::byte* ReadData() const noexcept { return data.get() + read_pos; }
-    [[nodiscard]] std::byte* WriteData() noexcept { return data.get() + write_pos; }
+    [[nodiscard]]
+    const std::byte* ReadData() const noexcept { return data.get() + read_pos; }
+    [[nodiscard]]
+    std::byte* WriteData() noexcept { return data.get() + write_pos; }
   };
 
   using BlockList = coropact::ds::IntrusiveList<Block, BlockTag>;
 
   static Block* NewBlock(std::size_t capacity) { return new Block(capacity); }
 
-  [[nodiscard]] const Block* FirstReadableBlock() const noexcept {
+  [[nodiscard]]
+  const Block* FirstReadableBlock() const noexcept {
     auto& blocks = const_cast<BlockList&>(blocks_);
     for (const Block& block : blocks) {
       if (block.ReadableBytes() > 0) return &block;

@@ -44,7 +44,8 @@ class SplayNode {
   friend class IntrusiveSplayTree;
 
 public:
-  [[nodiscard]] bool InTree() const noexcept { return linked(); }
+  [[nodiscard]]
+  bool InTree() const noexcept { return linked(); }
 
 protected:
   COROPACT_DELETE_COPY(SplayNode);
@@ -77,7 +78,8 @@ private:
   Node* right() const noexcept { return right_; }
   void set_right(Node* right) noexcept { right_ = right; }
 
-  [[nodiscard]] bool linked() const noexcept { return (parent_and_flags_ & kLinked) != 0; }
+  [[nodiscard]]
+  bool linked() const noexcept { return (parent_and_flags_ & kLinked) != 0; }
   void set_linked(const bool linked) noexcept {
     if (linked) {
       parent_and_flags_ |= kLinked;
@@ -123,9 +125,11 @@ public:
   ~IntrusiveSplayTree() { Clear(); }
 
   // O(1)
-  [[nodiscard]] bool empty() const noexcept { return size_ == 0; }
+  [[nodiscard]]
+  bool empty() const noexcept { return size_ == 0; }
   // O(1)
-  [[nodiscard]] std::size_t size() const noexcept { return size_; }
+  [[nodiscard]]
+  std::size_t size() const noexcept { return size_; }
 
   // O(n). Unlinks every element without invoking the comparator.
   void Clear() noexcept;
@@ -140,8 +144,10 @@ public:
   bool Erase(T* elem);
 
   // O(1) — cached pointer, updated on Insert and Erase.
-  [[nodiscard]] T* earliest() noexcept { return min_ == nullptr ? nullptr : elem_of(min_); }
-  [[nodiscard]] const T* earliest() const noexcept {
+  [[nodiscard]]
+  T* earliest() noexcept { return min_ == nullptr ? nullptr : elem_of(min_); }
+  [[nodiscard]]
+  const T* earliest() const noexcept {
     return min_ == nullptr ? nullptr : elem_of(static_cast<const Node*>(min_));
   }
 
@@ -158,7 +164,8 @@ public:
 
   // O(n) - debug only. Verifies BST order, parent/child links, linked state,
   // subtree size and the cached minimum.
-  [[nodiscard]] bool CheckInvariants() const;
+  [[nodiscard]]
+  bool CheckInvariants() const;
 
 private:
   struct CheckResult {
