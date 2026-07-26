@@ -50,7 +50,12 @@ public:
   auto operator co_await() && noexcept {
     struct Awaiter {
       State* state;
-      [[nodiscard]] bool await_ready() const noexcept { return state->IsFinished(); }
+
+      [[nodiscard]]
+      bool await_ready() const noexcept {
+        return state->IsFinished();
+      }
+      [[nodiscard]]
       bool await_suspend(std::coroutine_handle<> joiner) noexcept {
         return state->TryParkJoiner(joiner);
       }
@@ -79,8 +84,8 @@ struct SpawnRoot {
     SpawnRoot get_return_object() noexcept {
       return SpawnRoot{std::coroutine_handle<promise_type>::from_promise(*this)};
     }
-    std::suspend_always initial_suspend() const noexcept { return {}; }
-    std::suspend_never final_suspend() const noexcept { return {}; }
+    std::suspend_always initial_suspend() const noexcept { return std::suspend_always{}; }
+    std::suspend_never final_suspend() const noexcept { return std::suspend_never{}; }
     void return_void() const noexcept {}
     void unhandled_exception() noexcept { std::terminate(); }
   };
@@ -101,8 +106,9 @@ SpawnRoot RunSpawn(JoinState<T>* state, Task<T> task) {
 }  // namespace detail
 
 template <Returnable T>
-[[nodiscard]] JoinHandle<T> Spawn(Scheduler& scheduler, Task<T> task) {
-  auto* state = new detail::JoinState<T>();
+[[nodiscard]]
+JoinHandle<T> Spawn(Scheduler& scheduler, Task<T> task) {
+  auto* state = new detail::JoinState<T>(scheduler);
   detail::SpawnRoot root = detail::RunSpawn<T>(state, std::move(task));
   state->set_start_handle(root.handle);
   scheduler.Schedule(state->start_work());

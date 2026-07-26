@@ -124,6 +124,15 @@ public:
     }
   }
 
+  bool DrainOne() {
+    Work* work = queue_.PopFront();
+    if (work == nullptr) {
+      return false;
+    }
+    work->Run();
+    return true;
+  }
+
 private:
   WorkQueue queue_;
 };
@@ -133,6 +142,12 @@ Task<int> JoinChildren(DrainScheduler* sched) {
   int a = co_await Spawn(*sched, Add(100, 0));
   int b = co_await Spawn(*sched, Add(0, 11));
   co_return a + b;
+}
+
+Task<void> JoinChildAndMark(DrainScheduler* sched, bool* parent_resumed) {
+  auto child = Spawn(*sched, Add(40, 2));
+  (void)co_await std::move(child);
+  *parent_resumed = true;
 }
 
 }  // namespace
@@ -168,6 +183,18 @@ int main() {
     detached.Detach();
     sched.Drain();
     if (!Check(g_void_marker == 7, "spawn+Detach should still run the body")) return 1;
+
+    // Async join resumes through a scheduled ResumeWork rather than directly
+    // from JoinState::Complete(). The parent must not resume inline while the
+    // child Work is still running.
+    bool parent_resumed = false;
+    JoinHandle<void> deferred_parent = Spawn(sched, JoinChildAndMark(&sched, &parent_resumed));
+    if (!Check(sched.DrainOne(), "deferred join should have a parent root Work")) return 1;
+    if (!Check(sched.DrainOne(), "deferred join should have a child root Work")) return 1;
+    if (!Check(!parent_resumed, "async join parent must not resume inline")) return 1;
+    sched.Drain();
+    if (!Check(parent_resumed, "async join parent should resume from scheduled Work")) return 1;
+    deferred_parent.Wait();
 
     // Async join: a spawned parent co_awaits two spawned children.
     JoinHandle<int> parent = Spawn(sched, JoinChildren(&sched));

@@ -4,9 +4,10 @@
 // Single responsibility: the atomic join/detach state machine shared by a
 // spawned coroutine (the producer) and its JoinHandle (the consumer). It
 // resolves the three-way race between "coroutine finished", "caller joined", and
-// "caller detached", and decides which side frees the heap state. It holds a
-// parked continuation handle and the initial ResumeWork, but knows nothing about
-// schedulers or IO beyond that.
+// "caller detached", and decides which side frees the heap state. It owns the
+// initial ResumeWork and the scheduler used to re-submit a parked joiner. The
+// current implementation assumes the parent and spawned task use that same
+// scheduler; cross-scheduler joins are not supported yet.
 #pragma once
 
 #include <atomic>
@@ -17,6 +18,7 @@
 #include <semaphore>
 #include <utility>
 
+#include "coropact/coro/scheduler.h"
 #include "coropact/coro/work.h"
 
 namespace coropact::coro::detail {
@@ -65,10 +67,13 @@ public:
     kRunningJoining,   // caller parked a joiner awaiting completion
     kRunningDetached,  // caller released while the root was still running
     kFinished,         // root finished, caller still attached
-    kZombie,           // finished and a parked joiner was already resumed
+    kZombie,           // finished and a parked joiner has been scheduled.
   };
 
-  JoinState() noexcept = default;
+  // The scheduler is used both for the initial root submission and for the
+  // parked joiner continuation. Spawn currently assumes parent and child share
+  // this scheduler; capture of a distinct parent scheduler can be added later.
+  explicit JoinState(Scheduler& scheduler) noexcept : scheduler_(&scheduler) {}
 
   // -- initial scheduling -------------------------------------------------
   void set_start_handle(std::coroutine_handle<> handle) noexcept { start_work_.handle = handle; }
@@ -89,10 +94,10 @@ public:
       return;
     }
     if (expected == Phase::kRunningJoining) {
-      std::coroutine_handle<> joiner = joiner_;
       phase_.store(Phase::kZombie, std::memory_order_release);
       ready_.release();
-      joiner.resume();  // the caller's JoinHandle frees the state after this
+
+      scheduler_->Schedule(&joiner_work_);
       return;
     }
     // expected == kRunningDetached: the caller is gone and handed us ownership.
@@ -100,20 +105,22 @@ public:
   }
 
   // -- consumer side (the JoinHandle) -------------------------------------
+  [[nodiscard]]
   bool IsFinished() const noexcept {
     return phase_.load(std::memory_order_acquire) == Phase::kFinished;
   }
 
   // Async join. Returns true when the joiner was parked (the caller suspends);
   // false when the result is already available (resume immediately).
+  [[nodiscard]]
   bool TryParkJoiner(std::coroutine_handle<> joiner) noexcept {
-    joiner_ = joiner;
+    joiner_work_.handle = joiner;
     Phase expected = Phase::kRunningJoinable;
     if (phase_.compare_exchange_strong(expected, Phase::kRunningJoining,
                                        std::memory_order_acq_rel)) {
       return true;
     }
-    joiner_ = {};
+    joiner_work_.handle = {};
     return false;  // already kFinished
   }
 
@@ -139,9 +146,10 @@ public:
 
 private:
   ResultSlot<T> result_;
-  ResumeWork start_work_{};
+  ResumeWork start_work_;
+  coro::Scheduler* scheduler_{nullptr};
+  ResumeWork joiner_work_;
   std::atomic<Phase> phase_{Phase::kRunningJoinable};
-  std::coroutine_handle<> joiner_{};
   std::binary_semaphore ready_{0};
 };
 
