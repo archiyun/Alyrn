@@ -166,6 +166,13 @@ int result = handle.Wait();
 coropact::coro::Spawn(scheduler, Work()).Detach();
 ```
 
+如果不需要等待结果，可以直接使用轻量的 `SpawnDetach`。它不创建
+`JoinHandle` 或 `SpawnState`，任务完成后自动销毁；调用者也不能通过这个接口等待或取消任务：
+
+```cpp
+coropact::coro::SpawnDetach(scheduler, Serve(&connection));
+```
+
 在协程内部可以异步等待 `JoinHandle`：
 
 ```cpp
@@ -180,7 +187,7 @@ coropact::coro::Task<int> Parent(coropact::coro::Scheduler& scheduler) {
 
 ### 可选的协程帧内存池
 
-默认情况下，`Task`、`SpawnDriver` 和 `SyncWaitRoot` 的 coroutine frame 使用
+默认情况下，`Task`、`SpawnDriver`、`DetachedDriver` 和 `SyncWaitRoot` 的 coroutine frame 使用
 `std::pmr::new_delete_resource()`，因此不需要修改现有代码。需要降低 frame 的堆分配开销时，
 可以使用专用的 worker-local size-class frame pool：
 

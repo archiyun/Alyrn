@@ -1,11 +1,11 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 //
-// Single responsibility: Spawn(Scheduler&, Task<T>) -> JoinHandle<T>. An internal
-// driver coroutine runs the leaf Task on the scheduler and publishes its result
-// to a SpawnState. JoinHandle exposes async co_await, synchronous Wait(), and
-// Detach(). This is the only place that touches both SpawnState and Scheduler;
-// the Task itself is unaware it was spawned.
+// Single responsibility: Spawn(Scheduler&, Task<T>) -> JoinHandle<T> and
+// SpawnDetach(Scheduler&, Task<T>) -> void. Spawn uses an internal driver
+// coroutine to publish its result to a SpawnState; SpawnDetach uses a smaller
+// self-destroying driver with no join state. The Task itself is unaware it was
+// spawned.
 #pragma once
 
 #include <coroutine>
@@ -14,6 +14,7 @@
 #include <utility>
 
 #include "coropact/coro/detail/spawn_state.h"
+#include "coropact/coro/frame_allocator.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/task.h"
 #include "coropact/coro/work.h"
@@ -86,8 +87,8 @@ struct SpawnDriver {
     SpawnDriver get_return_object() noexcept {
       return SpawnDriver{std::coroutine_handle<promise_type>::from_promise(*this)};
     }
-    std::suspend_always initial_suspend() const noexcept { return std::suspend_always{}; }
-    std::suspend_never final_suspend() const noexcept { return std::suspend_never{}; }
+    auto initial_suspend() const noexcept { return std::suspend_always{}; }
+    auto final_suspend() const noexcept { return std::suspend_never{}; }
     void return_void() const noexcept {}
     void unhandled_exception() noexcept { std::terminate(); }
   };
@@ -105,6 +106,36 @@ SpawnDriver RunSpawn(SpawnState<T>* state, Task<T> task) {
   state->Finish();  // may delete state; do not touch it afterwards
 }
 
+// Self-destroying fire-and-forget driver. The ResumeWork lives in the promise
+// frame because Scheduler stores a non-owning Work* until the work is run.
+struct DetachedDriver {
+  struct promise_type : FrameAllocationSupport {
+    ResumeWork driver_work;
+
+    DetachedDriver get_return_object() noexcept {
+      return DetachedDriver{std::coroutine_handle<promise_type>::from_promise(*this)};
+    }
+
+    auto initial_suspend() const noexcept { return std::suspend_always{}; }
+    auto final_suspend() const noexcept { return std::suspend_never{}; }
+    void return_void() const noexcept {}
+    void unhandled_exception() const noexcept { std::terminate(); }
+  };
+
+  std::coroutine_handle<promise_type> handle;
+};
+
+template <Returnable T>
+DetachedDriver RunDetached(Task<T> task) {
+  // A detached caller has no result consumer. Task<T> is still supported for
+  // convenience, but Task<void> avoids constructing and moving a discarded T.
+  if constexpr (std::is_void_v<T>) {
+    co_await std::move(task);
+  } else {
+    static_cast<void>(co_await std::move(task));
+  }
+}
+
 }  // namespace detail
 
 template <Returnable T>
@@ -115,6 +146,20 @@ JoinHandle<T> Spawn(Scheduler& scheduler, Task<T> task) {
   state->set_driver_handle(driver.handle);
   scheduler.Schedule(state->driver_work());
   return JoinHandle<T>{state};
+}
+
+// Schedules task without creating SpawnState or returning a JoinHandle. The
+// task continues until completion, but cannot be joined or cancelled through
+// this API.
+template <Returnable T>
+void SpawnDetach(Scheduler& scheduler, Task<T> task) {
+  auto driver = detail::RunDetached(std::move(task));
+
+  auto handle = driver.handle;
+  auto& promise = handle.promise();
+
+  promise.driver_work.handle = handle;
+  scheduler.Schedule(&promise.driver_work);
 }
 
 }  // namespace coropact::coro

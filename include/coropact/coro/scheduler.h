@@ -39,7 +39,8 @@ public:
     SetCurrent(previous);
   }
 
-  [[nodiscard]] std::pmr::memory_resource* frame_resource() const noexcept {
+  [[nodiscard]]
+  std::pmr::memory_resource* frame_resource() const noexcept {
     return frame_resource_;
   }
 

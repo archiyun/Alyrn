@@ -87,8 +87,8 @@ inline void DeallocateFrame(void* frame) noexcept {
 }
 
 // Inherited by every promise type that owns a coroutine frame. The allocation
-// operators are deliberately centralized so Task, SpawnDriver, and SyncWaitRoot
-// all honor the same selected resource.
+// operators are deliberately centralized so Task, SpawnDriver, DetachedDriver,
+// and SyncWaitRoot all honor the same selected resource.
 class FrameAllocationSupport {
 public:
   static void* operator new(std::size_t frame_size) {

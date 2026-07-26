@@ -152,13 +152,14 @@ bool CheckNopResumesCoroutine() {
 
   if (!Check(loop.PendingSubmitCount() == 0, "pending submit should be empty after wait") ||
       !Check(loop.InflightCount() == 0, "inflight should be empty after NOP CQE") ||
-      !Check(loop.IsDrained(), "loop should be drained after NOP CQE")) {
+      !Check(!loop.IsDrained(), "completion should queue coroutine resume work")) {
     return false;
   }
 
   loop.RunReady();
 
-  return Check(*completions >= 1, "NOP did not produce a completion") &&
+  return Check(loop.IsDrained(), "loop should be drained after coroutine resume") &&
+         Check(*completions >= 1, "NOP did not produce a completion") &&
          Check(result.has_value(), "coroutine did not resume") &&
          Check(result->has_value(), "NOP returned an error") &&
          Check(**result == 0, "NOP result must be zero") &&
