@@ -47,11 +47,15 @@ public:
 
   // Initializes the underlying io_uring instance.
   // Must be called from the loop thread before Loop().
-  [[nodiscard]] base::Result<void> Init(const LUringOptions& options) noexcept;
+  [[nodiscard]]
+  base::Result<void> Init(const LUringOptions& options) noexcept;
 
   ~LUringLoop() noexcept;
 
-  [[nodiscard]] bool initialized() const noexcept { return initialized_; }
+  [[nodiscard]]
+  bool initialized() const noexcept {
+    return initialized_;
+  }
 
   // Runs the event loop until cancellation or Quit().
   void Loop(std::stop_token token) noexcept;
@@ -60,24 +64,35 @@ public:
   // This function may be called from another thread.
   void Quit() noexcept;
 
-  [[nodiscard]] bool IsInLoopThread() const noexcept { return thread_id_ == base::tid(); }
-  [[nodiscard]] int thread_id() const noexcept { return thread_id_; }
+  [[nodiscard]]
+  bool IsInLoopThread() const noexcept {
+    return thread_id_ == base::tid();
+  }
+  [[nodiscard]]
+  int thread_id() const noexcept {
+    return thread_id_;
+  }
 
-  [[nodiscard]] int ring_fd() const noexcept { return ring_.fd(); }
+  [[nodiscard]]
+  int ring_fd() const noexcept {
+    return ring_.fd();
+  }
 
   // Internal wake polling is not part of the user-visible operation count.
-  [[nodiscard]] std::size_t PendingSubmitCount() const noexcept {
+  [[nodiscard]]
+  std::size_t PendingSubmitCount() const noexcept {
     return pending_submit_ - (wake_pending_ ? 1 : 0);
   }
 
-  [[nodiscard]] std::size_t InflightCount() const noexcept {
+  [[nodiscard]]
+  std::size_t InflightCount() const noexcept {
     return inflight_ - (wake_inflight_ ? 1 : 0);
   }
 
   [[nodiscard]] LUringLoopStats GetStats() const noexcept { return stats_; }
 
   [[nodiscard]] bool IsDrained() const noexcept {
-    return PendingSubmitCount() == 0 && InflightCount() == 0;
+    return !HasReadyWork() && PendingSubmitCount() == 0 && InflightCount() == 0;
   }
 
   [[nodiscard]] base::Result<time::TimerId> RunAfter(std::chrono::steady_clock::duration delay,
@@ -180,6 +195,10 @@ public:
   }
 
   [[nodiscard]] base::Result<void> FlushSubmit() noexcept;
+  // Cancels all user operations currently pending in this ring. The resulting
+  // CQEs are still delivered through the normal completion path so awaiters
+  // can release their stream ownership before the ring is destroyed.
+  [[nodiscard]] base::Result<void> CancelPendingOperations() noexcept;
   [[nodiscard]] base::Result<std::size_t> PollCompletions() noexcept;
   [[nodiscard]] base::Result<std::size_t> WaitCompletions() noexcept;
 
@@ -266,6 +285,8 @@ private:
   bool wake_pending_{false};
   bool wake_inflight_{false};
   LUringOp wake_op_{.kind = LUringOpKind::kWake};
+  bool cancel_all_pending_{false};
+  LUringOp cancel_all_op_{.kind = LUringOpKind::kCancelAll};
 };
 
 }  // namespace coropact::luring

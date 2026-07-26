@@ -26,13 +26,17 @@ public:
   // - work stays alive until it is run or cancelled by owner-side protocol
   virtual void Schedule(Work* work) noexcept = 0;
 
-  // Runs a work item with this scheduler's frame resource active. Concrete
-  // schedulers should use this wrapper instead of calling Work::Run() directly
-  // so coroutine frames created during a resume inherit the selected resource.
+  // Runs a work item with this scheduler's frame resource and execution context
+  // active. Concrete schedulers should use this wrapper instead of calling
+  // Work::Run() directly so coroutine frames and awaiters created during a
+  // resume observe the selected resource and Scheduler::Current().
   void Run(Work* work) noexcept {
     assert(work != nullptr);
+    Scheduler* previous = Current();
+    SetCurrent(this);
     FrameAllocatorScope frame_scope{frame_resource_};
     work->Run();
+    SetCurrent(previous);
   }
 
   [[nodiscard]] std::pmr::memory_resource* frame_resource() const noexcept {

@@ -6,6 +6,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <array>
 #include <atomic>
 #include <cerrno>
 #include <chrono>
@@ -227,11 +228,75 @@ bool CheckServerSessionHandler() {
   return ok && Check(!server.started(), "server should stop after session test");
 }
 
+bool CheckServerStopsActiveSession() {
+  auto port = PickFreePort();
+  if (!port.has_value()) {
+    if (IsEnvironmentSkip(port.error())) {
+      std::cout << "SKIP: TCP bind unavailable: " << port.error().message() << '\n';
+      return true;
+    }
+    std::cout << "FAIL: PickFreePort failed: " << port.error().message() << '\n';
+    return false;
+  }
+
+  const auto listen_addr = LoopbackAddress(*port);
+  coropact::luring::LUringServer server(listen_addr, MakeOptions());
+  std::atomic_bool session_started{false};
+  std::atomic_bool session_cancelled{false};
+
+  server.set_session_handler(
+      [&](coropact::luring::LUringWorkerContext&, coropact::luring::LUringStream stream)
+          -> coropact::coro::Task<void> {
+        session_started.store(true, std::memory_order_release);
+        std::array<std::byte, 1> buffer{};
+        auto result = co_await stream.ReadSome(buffer);
+        if (!result.has_value() && result.error().value() == ECANCELED) {
+          session_cancelled.store(true, std::memory_order_release);
+        }
+      });
+
+  auto started = server.Start();
+  if (!started.has_value()) {
+    if (IsEnvironmentSkip(started.error())) {
+      std::cout << "SKIP: io_uring unavailable: " << started.error().message() << '\n';
+      return true;
+    }
+    std::cout << "FAIL: LUringServer::Start failed: " << started.error().message() << '\n';
+    return false;
+  }
+
+  auto client_fd = ConnectClient(listen_addr);
+  if (!client_fd.has_value()) {
+    server.Stop();
+    if (IsEnvironmentSkip(client_fd.error())) {
+      std::cout << "SKIP: TCP connect unavailable: " << client_fd.error().message() << '\n';
+      return true;
+    }
+    std::cout << "FAIL: client connect failed: " << client_fd.error().message() << '\n';
+    return false;
+  }
+  UniqueFd client(*client_fd);
+
+  for (int i = 0; i < 200 && !session_started.load(std::memory_order_acquire); ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+
+  const bool accepted = Check(session_started.load(std::memory_order_acquire),
+                              "active session should start before stop");
+  server.Stop();
+
+  return accepted &&
+         Check(session_cancelled.load(std::memory_order_acquire),
+               "active session should receive ECANCELED during stop") &&
+         Check(!server.started(), "server should stop after cancelling active session");
+}
+
 }  // namespace
 
 int main() {
   if (!CheckServerStartStop()) return 1;
   if (!CheckServerSessionHandler()) return 1;
+  if (!CheckServerStopsActiveSession()) return 1;
 
   std::cout << "luring server smoke: PASS\n";
   return 0;

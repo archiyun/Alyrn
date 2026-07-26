@@ -28,6 +28,7 @@
 #include "coropact/io/async_stream.h"
 #include "coropact/io/stream_algorithms.h"
 #include "coropact/time/clock.h"
+#include "coropact/utils/span_traits.h"
 
 namespace coropact::gateway {
 
@@ -92,9 +93,6 @@ private:
                                             std::chrono::milliseconds timeout);
 
   template <io::AsyncWriteStream Stream>
-  static coro::Task<base::Result<void>> WriteString(Stream& stream, std::string_view bytes);
-
-  template <io::AsyncWriteStream Stream>
   static coro::Task<void> Send502(Stream& client);
 
   template <io::AsyncStream ClientStream, io::AsyncStream UpstreamStream>
@@ -115,13 +113,6 @@ decltype(auto) ProxyPass::ReadSomeWithTimeout(Stream& stream, std::span<std::byt
 }
 
 template <io::AsyncWriteStream Stream>
-coro::Task<base::Result<void>> ProxyPass::WriteString(Stream& stream, std::string_view bytes) {
-  auto result = co_await io::WriteAll(
-      stream, std::as_bytes(std::span<const char>(bytes.data(), bytes.size())));
-  co_return result;
-}
-
-template <io::AsyncWriteStream Stream>
 coro::Task<void> ProxyPass::Send502(Stream& client) {
   static constexpr std::string_view kResp =
       "HTTP/1.1 502 Bad Gateway\r\n"
@@ -130,7 +121,7 @@ coro::Task<void> ProxyPass::Send502(Stream& client) {
       "Connection: close\r\n"
       "\r\n"
       "Bad Gateway";
-  co_await WriteString(client, kResp);
+  co_await io::WriteAll(client, utils::AsBytes(kResp));
   if constexpr (io::AsyncClosableStream<Stream>) {
     co_await client.Shutdown();
   }
@@ -182,8 +173,10 @@ coro::Task<base::Result<bool>> ProxyPass::RelayResponse(
       }
 
       if (!outbound.empty()) {
-        auto write = co_await WriteString(client, outbound);
-        if (!write.has_value()) co_return std::unexpected(write.error());
+        auto write = co_await io::WriteAll(client, utils::AsBytes(outbound));
+        if (!write.has_value()) {
+          co_return std::unexpected(write.error());
+        }
       }
 
       if (state.framing == BodyFraming::kNoBody ||
@@ -193,22 +186,31 @@ coro::Task<base::Result<bool>> ProxyPass::RelayResponse(
 
       for (;;) {
         auto read = co_await ReadSomeWithTimeout(upstream, read_buffer, request_timeout);
-        if (!read.has_value()) co_return std::unexpected(read.error());
+        if (!read.has_value()) {
+          co_return std::unexpected(read.error());
+        }
+
         if (*read == 0) {
           co_return false;
         }
         std::string_view chunk(reinterpret_cast<const char*>(read_buffer.data()), *read);
         if (state.framing == BodyFraming::kContentLength) {
           const uint64_t n = std::min<uint64_t>(chunk.size(), state.body_remaining);
-          auto write = co_await WriteString(client, chunk.substr(0, static_cast<std::size_t>(n)));
-          if (!write.has_value()) co_return std::unexpected(write.error());
+          auto write = co_await io::WriteAll(
+              client, utils::AsBytes(chunk.substr(0, static_cast<std::size_t>(n))));
+          if (!write.has_value()) {
+            co_return std::unexpected(write.error());
+          }
+
           state.body_remaining -= n;
           if (state.body_remaining == 0) {
             co_return state.upstream_keepalive;
           }
         } else {
-          auto write = co_await WriteString(client, chunk);
-          if (!write.has_value()) co_return std::unexpected(write.error());
+          auto write = co_await io::WriteAll(client, utils::AsBytes(chunk));
+          if (!write.has_value()) {
+            co_return std::unexpected(write.error());
+          }
         }
       }
     }
@@ -284,7 +286,9 @@ coro::Task<ProxyForwardResult> ProxyPass::Forward(
         peer->OnFailure(time::SteadyNowMs());
         if ((!request_on_wire || IsIdempotent(request.method())) && retries_left-- > 0) {
           auto next = loadbalancer.Select(upstream, ctx);
-          if (!next || next.get() == peer.get()) next = SelectFailoverPeer(upstream, *peer);
+          if (!next || next.get() == peer.get()) {
+            next = SelectFailoverPeer(upstream, *peer);
+          }
           if (next && next.get() != peer.get()) {
             release_peer();
             peer = std::move(next);
@@ -296,7 +300,9 @@ coro::Task<ProxyForwardResult> ProxyPass::Forward(
         }
         if (!circuitbreaker_reported) {
           circuitbreaker_reported = true;
-          if (circuitbreaker) circuitbreaker->OnFailure();
+          if (circuitbreaker) {
+            circuitbreaker->OnFailure();
+          }
         }
         co_await Send502(client);
         release_peer();
@@ -309,7 +315,7 @@ coro::Task<ProxyForwardResult> ProxyPass::Forward(
 
     const auto write_started =
         collect_stats ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
-    auto written = co_await WriteString(*upstream_stream, buffers->request);
+    auto written = co_await io::WriteAll(*upstream_stream, utils::AsBytes(buffers->request));
     if (collect_stats) {
       const auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>(
                                std::chrono::steady_clock::now() - write_started)
@@ -321,7 +327,9 @@ coro::Task<ProxyForwardResult> ProxyPass::Forward(
       peer->OnFailure(time::SteadyNowMs());
       if (IsIdempotent(request.method()) && retries_left-- > 0) {
         auto next = loadbalancer.Select(upstream, ctx);
-        if (!next || next.get() == peer.get()) next = SelectFailoverPeer(upstream, *peer);
+        if (!next || next.get() == peer.get()) {
+          next = SelectFailoverPeer(upstream, *peer);
+        }
         if (next && next.get() != peer.get()) {
           release_peer();
           peer = std::move(next);
@@ -333,7 +341,9 @@ coro::Task<ProxyForwardResult> ProxyPass::Forward(
       }
       if (!circuitbreaker_reported) {
         circuitbreaker_reported = true;
-        if (circuitbreaker) circuitbreaker->OnFailure();
+        if (circuitbreaker) {
+          circuitbreaker->OnFailure();
+        }
       }
       co_await Send502(client);
       release_peer();
@@ -356,7 +366,9 @@ coro::Task<ProxyForwardResult> ProxyPass::Forward(
       peer->OnFailure(time::SteadyNowMs());
       if (IsIdempotent(request.method()) && retries_left-- > 0) {
         auto next = loadbalancer.Select(upstream, ctx);
-        if (!next || next.get() == peer.get()) next = SelectFailoverPeer(upstream, *peer);
+        if (!next || next.get() == peer.get()) {
+          next = SelectFailoverPeer(upstream, *peer);
+        }
         if (next && next.get() != peer.get()) {
           release_peer();
           peer = std::move(next);
@@ -369,7 +381,9 @@ coro::Task<ProxyForwardResult> ProxyPass::Forward(
       }
       if (!circuitbreaker_reported) {
         circuitbreaker_reported = true;
-        if (circuitbreaker) circuitbreaker->OnFailure();
+        if (circuitbreaker) {
+          circuitbreaker->OnFailure();
+        }
       }
       co_await Send502(client);
       release_peer();

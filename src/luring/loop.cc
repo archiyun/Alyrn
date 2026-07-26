@@ -128,6 +128,9 @@ base::Result<void> LUringLoop::Init(const LUringOptions& options) noexcept {
   inflight_ = 0;
   wake_pending_ = false;
   wake_inflight_ = false;
+  cancel_all_pending_ = false;
+  cancel_all_op_.completed = false;
+  cancel_all_op_.result = {};
   quit_.store(false, std::memory_order_relaxed);
   initialized_ = true;
   auto armed = ArmWakePoll();
@@ -177,6 +180,32 @@ void LUringLoop::Quit() noexcept {
   if (!quit_.exchange(true, std::memory_order_acq_rel)) {
     Wake();
   }
+}
+
+base::Result<void> LUringLoop::CancelPendingOperations() noexcept {
+  assert(IsInLoopThread());
+
+  if (cancel_all_pending_ ||
+      (PendingSubmitCount() == 0 && InflightCount() == 0)) {
+    return {};
+  }
+
+  cancel_all_op_.completed = false;
+  cancel_all_op_.result = {};
+  cancel_all_op_.continuation_ = {};
+  cancel_all_op_.resume_work.handle = {};
+  cancel_all_op_.owner = this;
+  cancel_all_op_.on_complete = nullptr;
+
+  auto submitted = SubmitOp(
+      &cancel_all_op_, [](io_uring_sqe* sqe) noexcept {
+        io_uring_prep_cancel(sqe, nullptr,
+                             IORING_ASYNC_CANCEL_ANY | IORING_ASYNC_CANCEL_ALL);
+      });
+  if (submitted.has_value()) {
+    cancel_all_pending_ = true;
+  }
+  return submitted;
 }
 
 void LUringLoop::Schedule(coro::Work* work) noexcept {
@@ -574,6 +603,12 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
         quit_.store(true, std::memory_order_release);
       }
     }
+    return;
+  }
+
+  if (op == &cancel_all_op_) {
+    cancel_all_pending_ = false;
+    static_cast<void>(op->Complete(cqe->res));
     return;
   }
 
