@@ -139,7 +139,7 @@ bool ReactorStream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> conti
               "ReadSomeAwaiter: only one pending read is supported per stream");
 
   scheduler_ = &coro::Scheduler::RequireCurrent();
-  resume_work_.handle = continuation;
+  resume_work_.SetHandle(continuation);
   IoAttempt attempt = TryRead(stream_->socket_.fd(), buffer_);
   if (!attempt.pending) {
     result_ = std::move(attempt.result);
@@ -207,7 +207,7 @@ bool ReactorStream::BufferReadAwaiter::await_suspend(
               "BufferReadAwaiter: only one pending read is supported per stream");
 
   scheduler_ = &coro::Scheduler::RequireCurrent();
-  resume_work_.handle = continuation;
+  resume_work_.SetHandle(continuation);
 
   if (!PrepareReservation()) {
     return false;
@@ -295,7 +295,7 @@ bool ReactorStream::WriteSomeAwaiter::await_suspend(std::coroutine_handle<> cont
               "WriteSomeAwaiter: only one pending write is supported per stream");
 
   scheduler_ = &coro::Scheduler::RequireCurrent();
-  resume_work_.handle = continuation;
+  resume_work_.SetHandle(continuation);
   IoAttempt attempt = TryWrite(stream_->socket_.fd(), buffer_);
   if (!attempt.pending) {
     result_ = std::move(attempt.result);
@@ -344,7 +344,7 @@ bool ReactorStream::BufferWriteAwaiter::await_suspend(
               "BufferWriteAwaiter: only one pending write is supported per stream");
 
   scheduler_ = &coro::Scheduler::RequireCurrent();
-  resume_work_.handle = continuation;
+  resume_work_.SetHandle(continuation);
 
   if (!PrepareReadable()) {
     return false;

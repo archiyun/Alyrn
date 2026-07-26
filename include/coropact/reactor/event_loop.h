@@ -79,7 +79,8 @@ private:
   // Runs all functors queued through QueueInLoop().
   void DoPendingFunctors();
 
-  [[nodiscard]] bool HasImmediateWork();
+  [[nodiscard]]
+  bool HasImmediateWork();
 
   std::atomic<bool> looping_;
   std::atomic<bool> quit_;

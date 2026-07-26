@@ -50,7 +50,7 @@ auto AcceptLoop(Listener& listener, Scheduler& scheduler) -> Task<void> {
       co_return;
     }
 
-    Spawn(scheduler, EchoSession(std::move(*accepted))).Detach();
+    SpawnDetach(scheduler, EchoSession(std::move(*accepted)));
   }
 }
 

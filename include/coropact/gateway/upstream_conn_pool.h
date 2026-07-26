@@ -222,9 +222,11 @@ public:
     }
   }
 
-  [[nodiscard]] const UpstreamStreamPoolStats& stats() const noexcept { return stats_; }
+  [[nodiscard]]
+  const UpstreamStreamPoolStats& stats() const noexcept { return stats_; }
 
-  [[nodiscard]] bool stats_enabled() const noexcept { return config_.collect_stats; }
+  [[nodiscard]]
+  bool stats_enabled() const noexcept { return config_.collect_stats; }
 
   void RecordConnect(std::uint64_t elapsed_ns, bool success) noexcept {
     if (!config_.collect_stats) return;
@@ -255,7 +257,8 @@ public:
     RecordHistogram(&stats_.relay_time_histogram, elapsed_ns);
   }
 
-  [[nodiscard]] std::size_t idle_count() const noexcept { return idle_total_; }
+  [[nodiscard]]
+  std::size_t idle_count() const noexcept { return idle_total_; }
 
 private:
   static void RecordHistogram(

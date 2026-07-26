@@ -14,12 +14,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
-#include <optional>
 #include <utility>
 
 #include "coropact/base/check.h"
 #include "coropact/base/ctrack.h"
 #include "coropact/base/error.h"
+#include "coropact/luring/detail/close_state.h"
 #include "coropact/luring/loop.h"
 #include "coropact/luring/op.h"
 #include "coropact/net/endpoint.h"
@@ -28,7 +28,7 @@ namespace coropact::luring {
 
 namespace {
 
-base::Result<std::size_t> ToSizeResult(const base::Result<int>& result) noexcept {
+base::Result<std::size_t> ToSizeResult(const LUringCqeResult& result) noexcept {
   if (!result.has_value()) {
     return std::unexpected(result.error());
   }
@@ -44,33 +44,30 @@ base::Result<std::size_t> ToSizeResult(const base::Result<int>& result) noexcept
 bool LUringStream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   COROPACT_CTRACK_SCOPE("luring.read.prepare");
   if (stream_->closed_ || stream_->fd_ < 0) {
-    immediate_ = std::unexpected(base::make_errno(EBADF));
+    op()->SetImmediateError(base::make_errno(EBADF));
     return false;
   }
   if (buffer_.empty()) {
-    immediate_ = std::size_t{0};
+    op()->SetImmediateSuccess();
     return false;
   }
   if (stream_->pending_read_ != nullptr) {
-    immediate_ = std::unexpected(base::make_errno(EBUSY));
+    op()->SetImmediateError(base::make_errno(EBUSY));
     return false;
   }
 
   stream_->pending_read_ = this;
-  op_.kind = LUringOpKind::kRead;
-  op_.continuation_ = continuation;
-  op_.resume_work.handle = continuation;
-  op_.owner = this;
-  op_.on_complete = &ReadSomeAwaiter::OnComplete;
+  op()->kind = LUringOpKind::kReadComplete;
+  op()->resume_work.SetHandle(continuation);
 
   auto submitted = stream_->loop_->SubmitOp(
-      &op_, [fd = stream_->fd_, buffer = buffer_](io_uring_sqe* sqe) noexcept {
+      op(), [fd = stream_->fd_, buffer = buffer_](io_uring_sqe* sqe) noexcept {
         io_uring_prep_recv(sqe, fd, buffer.data(), buffer.size(), 0);
       });
 
   if (!submitted.has_value()) {
     stream_->pending_read_ = nullptr;
-    immediate_ = std::unexpected(submitted.error());
+    op()->SetImmediateError(submitted.error());
     return false;
   }
 
@@ -79,15 +76,11 @@ bool LUringStream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> contin
 
 base::Result<std::size_t> LUringStream::ReadSomeAwaiter::await_resume() noexcept {
   COROPACT_CTRACK_SCOPE("luring.read.resume");
-  if (immediate_.has_value()) {
-    return std::move(*immediate_);
-  }
-  assert(op_.completed);
-  return ToSizeResult(op_.result);
+  return ToSizeResult(op()->result);
 }
 
 void LUringStream::ReadSomeAwaiter::OnComplete(LUringOp* op) noexcept {
-  auto* self = static_cast<ReadSomeAwaiter*>(op->owner);
+  auto* self = static_cast<OpHook*>(op)->owner();
   if (self->stream_ != nullptr && self->stream_->pending_read_ == self) {
     self->stream_->pending_read_ = nullptr;
     self->stream_->NotifyCloseProgress();
@@ -98,7 +91,9 @@ void LUringStream::ReadSomeAwaiter::OnComplete(LUringOp* op) noexcept {
 LUringStream::ReadSomeForAwaiter::ReadSomeForAwaiter(LUringStream& stream,
                                                      std::span<std::byte> buffer,
                                                      std::chrono::milliseconds timeout) noexcept
-    : stream_(&stream), buffer_(buffer) {
+    : ReadOpHook(LUringOpKind::kTimedReadComplete),
+      TimeoutOpHook(LUringOpKind::kTimedReadTimeoutComplete),
+      stream_(&stream), buffer_(buffer) {
   const std::int64_t milliseconds = timeout.count() > 0 ? timeout.count() : 1;
   timeout_ts_.tv_sec = static_cast<__kernel_time64_t>(milliseconds / 1000);
   timeout_ts_.tv_nsec = static_cast<long>(milliseconds % 1000) * 1'000'000;
@@ -108,37 +103,33 @@ bool LUringStream::ReadSomeForAwaiter::await_suspend(
     std::coroutine_handle<> continuation) noexcept {
   COROPACT_CTRACK_SCOPE("luring.read.prepare");
   if (stream_->closed_ || stream_->fd_ < 0) {
-    immediate_ = std::unexpected(base::make_errno(EBADF));
+    read_op()->SetImmediateError(base::make_errno(EBADF));
     return false;
   }
   if (buffer_.empty()) {
-    immediate_ = std::size_t{0};
+    read_op()->SetImmediateSuccess();
     return false;
   }
   if (stream_->pending_read_ != nullptr) {
-    immediate_ = std::unexpected(base::make_errno(EBUSY));
+    read_op()->SetImmediateError(base::make_errno(EBUSY));
     return false;
   }
 
   continuation_ = continuation;
   stream_->pending_read_ = this;
-  read_op_.owner = this;
-  read_op_.on_complete = &ReadSomeForAwaiter::OnReadComplete;
-  timeout_op_.owner = this;
-  timeout_op_.on_complete = &ReadSomeForAwaiter::OnTimeoutComplete;
 
   auto submitted = stream_->loop_->SubmitOp(
-      &read_op_, [fd = stream_->fd_, buffer = buffer_](io_uring_sqe* sqe) noexcept {
+      read_op(), [fd = stream_->fd_, buffer = buffer_](io_uring_sqe* sqe) noexcept {
         io_uring_prep_recv(sqe, fd, buffer.data(), buffer.size(), 0);
         sqe->flags |= IOSQE_IO_LINK;
       });
   if (!submitted.has_value()) {
     stream_->pending_read_ = nullptr;
-    immediate_ = std::unexpected(submitted.error());
+    read_op()->SetImmediateError(submitted.error());
     return false;
   }
 
-  submitted = stream_->loop_->SubmitOp(&timeout_op_, [this](io_uring_sqe* sqe) noexcept {
+  submitted = stream_->loop_->SubmitOp(timeout_op(), [this](io_uring_sqe* sqe) noexcept {
     io_uring_prep_link_timeout(sqe, &timeout_ts_, 0);
   });
   if (!submitted.has_value()) {
@@ -151,26 +142,26 @@ bool LUringStream::ReadSomeForAwaiter::await_suspend(
 
 base::Result<std::size_t> LUringStream::ReadSomeForAwaiter::await_resume() noexcept {
   COROPACT_CTRACK_SCOPE("luring.read.resume");
-  if (immediate_.has_value()) {
-    return std::move(*immediate_);
+  if (!read_op()->IsCompleted()) {
+    return ToSizeResult(read_op()->result);
   }
 
   assert(read_done_);
-  if (read_op_.result.has_value() && *read_op_.result >= 0) {
-    return static_cast<std::size_t>(*read_op_.result);
+  if (read_op()->result.has_value() && *read_op()->result >= 0) {
+    return static_cast<std::size_t>(*read_op()->result);
   }
-  if (timeout_op_.result.has_value() && *timeout_op_.result == -ETIME) {
+  if (timeout_op()->result.has_value() && *timeout_op()->result == -ETIME) {
     return std::unexpected(base::make_errno(ETIMEDOUT));
   }
-  return ToSizeResult(read_op_.result);
+  return ToSizeResult(read_op()->result);
 }
 
 void LUringStream::ReadSomeForAwaiter::OnReadComplete(LUringOp* op) noexcept {
-  static_cast<ReadSomeForAwaiter*>(op->owner)->CompleteRead(op);
+  static_cast<ReadOpHook*>(op)->owner()->CompleteRead(op);
 }
 
 void LUringStream::ReadSomeForAwaiter::OnTimeoutComplete(LUringOp* op) noexcept {
-  static_cast<ReadSomeForAwaiter*>(op->owner)->CompleteTimeout(op);
+  static_cast<TimeoutOpHook*>(op)->owner()->CompleteTimeout(op);
 }
 
 void LUringStream::ReadSomeForAwaiter::CompleteRead(LUringOp* current) noexcept {
@@ -192,39 +183,36 @@ void LUringStream::ReadSomeForAwaiter::FinishIfReady(LUringOp* current) noexcept
     stream_->pending_read_ = nullptr;
     stream_->NotifyCloseProgress();
   }
-  current->resume_work.handle = continuation_;
+  current->resume_work.SetHandle(continuation_);
 }
 
 // --- WriteSomeAwaiter ---
 bool LUringStream::WriteSomeAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   if (stream_->closed_ || stream_->fd_ < 0) {
-    immediate_ = std::unexpected(base::make_errno(EBADF));
+    op()->SetImmediateError(base::make_errno(EBADF));
     return false;
   }
   if (buffer_.empty()) {
-    immediate_ = std::size_t{0};
+    op()->SetImmediateSuccess();
     return false;
   }
   if (stream_->pending_write_ != nullptr) {
-    immediate_ = std::unexpected(base::make_errno(EBUSY));
+    op()->SetImmediateError(base::make_errno(EBUSY));
     return false;
   }
 
   stream_->pending_write_ = this;
-  op_.kind = LUringOpKind::kWrite;
-  op_.continuation_ = continuation;
-  op_.resume_work.handle = continuation;
-  op_.owner = this;
-  op_.on_complete = &WriteSomeAwaiter::OnComplete;
+  op()->kind = LUringOpKind::kWriteComplete;
+  op()->resume_work.SetHandle(continuation);
 
   auto submitted = stream_->loop_->SubmitOp(
-      &op_, [fd = stream_->fd_, buffer = buffer_](io_uring_sqe* sqe) noexcept {
+      op(), [fd = stream_->fd_, buffer = buffer_](io_uring_sqe* sqe) noexcept {
         io_uring_prep_send(sqe, fd, buffer.data(), buffer.size(), MSG_NOSIGNAL);
       });
 
   if (!submitted.has_value()) {
     stream_->pending_write_ = nullptr;
-    immediate_ = std::unexpected(submitted.error());
+    op()->SetImmediateError(submitted.error());
     return false;
   }
   return true;
@@ -232,57 +220,59 @@ bool LUringStream::WriteSomeAwaiter::await_suspend(std::coroutine_handle<> conti
 
 base::Result<std::size_t> LUringStream::WriteSomeAwaiter::await_resume() noexcept {
   COROPACT_CTRACK_SCOPE("luring.write.resume");
-  if (immediate_.has_value()) {
-    return std::move(*immediate_);
-  }
-  assert(op_.completed);
-  return ToSizeResult(op_.result);
+  return ToSizeResult(op()->result);
 }
 
 void LUringStream::WriteSomeAwaiter::OnComplete(LUringOp* op) noexcept {
-  auto* self = static_cast<WriteSomeAwaiter*>(op->owner);
+  auto* self = static_cast<OpHook*>(op)->owner();
   if (self->stream_ != nullptr && self->stream_->pending_write_ == self) {
     self->stream_->pending_write_ = nullptr;
     self->stream_->NotifyCloseProgress();
   }
 }
 
-class LUringStream::CloseAwaiter {
+class LUringStream::CloseAwaiter
+    : public detail::LUringOpHook<LUringStream::CloseAwaiter> {
+  friend void detail::DispatchStreamCloseComplete(LUringOp* op) noexcept;
+
 public:
-  explicit CloseAwaiter(LUringStream& stream) noexcept : stream_(&stream) {}
+  using OpHook = detail::LUringOpHook<CloseAwaiter>;
+
+  explicit CloseAwaiter(LUringStream& stream) noexcept
+      : OpHook(LUringOpKind::kStreamCloseComplete), stream_(&stream) {}
 
   bool await_ready() const noexcept { return false; }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     if (stream_->pending_close_ != nullptr) {
-      result_ = std::unexpected(base::make_errno(EBUSY));
+      state_.SetError(base::make_errno(EBUSY));
       return false;
     }
     if (stream_->closed_ || stream_->fd_ < 0) {
-      result_ = base::Result<void>{};
+      state_.SetSuccess();
       return false;
     }
 
     stream_->closed_ = true;
     if (stream_->pending_read_ == nullptr && stream_->pending_write_ == nullptr) {
-      result_ = CloseFd();
+      state_.SetResult(CloseFd());
       return false;
     }
 
     stream_->pending_close_ = this;
-    resume_work_.handle = continuation;
-    cancel_op_.kind = LUringOpKind::kClose;
-    cancel_op_.owner = this;
-    cancel_op_.on_complete = &CloseAwaiter::OnCancelComplete;
+    // The cancel CQE may arrive before the pending stream operations drain.
+    // Keep the work handle empty until TryComplete() observes both conditions.
+    continuation_ = continuation;
+    cancel_op()->kind = LUringOpKind::kStreamCloseComplete;
 
     auto submitted =
-        stream_->loop_->SubmitOp(&cancel_op_, [fd = stream_->fd_](io_uring_sqe* sqe) noexcept {
+        stream_->loop_->SubmitOp(cancel_op(), [fd = stream_->fd_](io_uring_sqe* sqe) noexcept {
           io_uring_prep_cancel_fd(sqe, fd, IORING_ASYNC_CANCEL_ALL);
         });
     if (!submitted.has_value()) {
       stream_->pending_close_ = nullptr;
       stream_->closed_ = false;
-      result_ = std::unexpected(submitted.error());
+      state_.SetError(submitted.error());
       return false;
     }
 
@@ -290,32 +280,39 @@ public:
   }
 
   base::Result<void> await_resume() noexcept {
-    assert(result_.has_value());
-    return std::move(*result_);
+    assert(state_.HasResult());
+    return state_.TakeResult();
   }
 
-  void TryComplete() noexcept {
-    if (completed_ || stream_ == nullptr || !cancel_completed_) {
+  void TryComplete(LUringOp* current = nullptr) noexcept {
+    if (state_.Completed() || stream_ == nullptr || !state_.CancelCompleted()) {
       return;
     }
     if (stream_->pending_read_ != nullptr || stream_->pending_write_ != nullptr) {
       return;
     }
 
-    completed_ = true;
+    state_.MarkCompleted();
     LUringLoop* loop = stream_->loop_;
     stream_->pending_close_ = nullptr;
-    result_ = CloseFd();
+    state_.SetResult(CloseFd());
     stream_ = nullptr;
-    loop->ScheduleCompletion(&resume_work_);
+    // The cancel operation is no longer waiting for a CQE, so its embedded
+    // work slot can carry the final coroutine resumption.
+    cancel_op()->resume_work.SetHandle(continuation_);
+    if (current != cancel_op()) {
+      loop->ScheduleCompletion(&cancel_op()->resume_work);
+    }
   }
 
 private:
   static void OnCancelComplete(LUringOp* op) noexcept {
-    auto* self = static_cast<CloseAwaiter*>(op->owner);
-    self->cancel_completed_ = true;
-    self->TryComplete();
+    auto* self = static_cast<OpHook*>(op)->owner();
+    self->state_.MarkCancelCompleted();
+    self->TryComplete(op);
   }
+
+  LUringOp* cancel_op() noexcept { return static_cast<OpHook*>(this); }
 
   base::Result<void> CloseFd() noexcept {
     const int fd = std::exchange(stream_->fd_, -1);
@@ -329,28 +326,25 @@ private:
   }
 
   LUringStream* stream_;
-  LUringOp cancel_op_{.kind = LUringOpKind::kClose};
-  coro::ResumeWork resume_work_{};
-  std::optional<base::Result<void>> result_;
-  bool cancel_completed_{false};
-  bool completed_{false};
+  std::coroutine_handle<> continuation_{};
+  detail::LUringCloseState state_;
 };
 
 // --- WriteSomePartsAwaiter ---
 bool LUringStream::WriteSomePartsAwaiter::await_suspend(
     std::coroutine_handle<> continuation) noexcept {
   if (stream_->closed_ || stream_->fd_ < 0) {
-    immediate_ = std::unexpected(base::make_errno(EBADF));
+    op()->SetImmediateError(base::make_errno(EBADF));
     return false;
   }
 
   if (stream_->pending_write_ != nullptr) {
-    immediate_ = std::unexpected(base::make_errno(EBUSY));
+    op()->SetImmediateError(base::make_errno(EBUSY));
     return false;
   }
 
   if (buffers_.size() > kMaxParts) {
-    immediate_ = std::unexpected(base::make_errno(EINVAL));
+    op()->SetImmediateError(base::make_errno(EINVAL));
     return false;
   }
 
@@ -366,7 +360,7 @@ bool LUringStream::WriteSomePartsAwaiter::await_suspend(
   }
 
   if (count == 0) {
-    immediate_ = std::size_t{0};
+    op()->SetImmediateSuccess();
     return false;
   }
 
@@ -376,19 +370,16 @@ bool LUringStream::WriteSomePartsAwaiter::await_suspend(
 
   stream_->pending_write_ = this;
 
-  op_.continuation_ = continuation;
-  op_.resume_work.handle = continuation;
-  op_.owner = this;
-  op_.on_complete = &WriteSomePartsAwaiter::OnComplete;
+  op()->resume_work.SetHandle(continuation);
 
   auto submitted = stream_->loop_->SubmitOp(
-      &op_, [fd = stream_->fd_, message = &message_](io_uring_sqe* sqe) noexcept {
+      op(), [fd = stream_->fd_, message = &message_](io_uring_sqe* sqe) noexcept {
         io_uring_prep_sendmsg(sqe, fd, message, MSG_NOSIGNAL);
       });
 
   if (!submitted.has_value()) {
     stream_->pending_write_ = nullptr;
-    immediate_ = std::unexpected(submitted.error());
+    op()->SetImmediateError(submitted.error());
     return false;
   }
 
@@ -396,22 +387,45 @@ bool LUringStream::WriteSomePartsAwaiter::await_suspend(
 }
 
 base::Result<std::size_t> LUringStream::WriteSomePartsAwaiter::await_resume() noexcept {
-  if (immediate_->has_value()) {
-    return std::move(*immediate_);
-  }
-
-  assert(op_.completed);
-  return ToSizeResult(op_.result);
+  return ToSizeResult(op()->result);
 }
 
 void LUringStream::WriteSomePartsAwaiter::OnComplete(LUringOp* op) noexcept {
-  auto* self = static_cast<WriteSomePartsAwaiter*>(op->owner);
+  auto* self = static_cast<OpHook*>(op)->owner();
 
   if (self->stream_ != nullptr && self->stream_->pending_write_ == self) {
     self->stream_->pending_write_ = nullptr;
     self->stream_->NotifyCloseProgress();
   }
 }
+
+namespace detail {
+
+void DispatchStreamReadComplete(LUringOp* op) noexcept {
+  LUringStream::ReadSomeAwaiter::OnComplete(op);
+}
+
+void DispatchTimedReadComplete(LUringOp* op) noexcept {
+  LUringStream::ReadSomeForAwaiter::OnReadComplete(op);
+}
+
+void DispatchTimedReadTimeoutComplete(LUringOp* op) noexcept {
+  LUringStream::ReadSomeForAwaiter::OnTimeoutComplete(op);
+}
+
+void DispatchStreamWriteComplete(LUringOp* op) noexcept {
+  LUringStream::WriteSomeAwaiter::OnComplete(op);
+}
+
+void DispatchStreamWritePartsComplete(LUringOp* op) noexcept {
+  LUringStream::WriteSomePartsAwaiter::OnComplete(op);
+}
+
+void DispatchStreamCloseComplete(LUringOp* op) noexcept {
+  LUringStream::CloseAwaiter::OnCancelComplete(op);
+}
+
+}  // namespace detail
 
 LUringStream::WriteSomePartsAwaiter LUringStream::WriteSome(
     std::span<const io::WritePart> buffers) noexcept {

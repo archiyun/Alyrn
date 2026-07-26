@@ -31,7 +31,8 @@ public:
     return *this;
   }
 
-  [[nodiscard]] int fd() const { return sockfd_; }
+  [[nodiscard]]
+  int fd() const { return sockfd_; }
 
   // Binds the socket to a local address.
   void BindAddress(const Endpoint& localaddr);

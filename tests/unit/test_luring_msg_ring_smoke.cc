@@ -40,7 +40,7 @@ bool Check(bool condition, const char* message) {
 class SignalWork final : public coropact::coro::Work {
 public:
   explicit SignalWork(std::atomic_bool* completed) noexcept : completed_(completed) {
-    run = &RunWork;
+    SetRun(&RunWork);
   }
 
 private:
@@ -200,7 +200,7 @@ bool CheckMsgRingMailboxSchedule() {
 
     constexpr int kPollLimit = 2000;
     for (int i = 0; i < kPollLimit && !failed.load(std::memory_order_acquire) &&
-                                      !notify_op.completed;
+                                      !notify_op.IsCompleted();
          ++i) {
       auto completed = source.PollCompletions();
       if (!completed.has_value()) {
@@ -208,12 +208,12 @@ bool CheckMsgRingMailboxSchedule() {
         return;
       }
 
-      if (*completed == 0 && !notify_op.completed) {
+      if (*completed == 0 && !notify_op.IsCompleted()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
       }
     }
 
-    if (!notify_op.completed) {
+    if (!notify_op.IsCompleted()) {
       failed.store(true, std::memory_order_release);
     }
   });

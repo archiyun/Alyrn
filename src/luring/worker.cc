@@ -34,7 +34,7 @@ coro::Task<void> AcceptLoop(LUringWorkerContext& context,
       continue;
     }
     if (*callback) {
-      coro::Spawn(context.loop, (*callback)(context, std::move(*accepted))).Detach();
+      coro::SpawnDetach(context.loop, (*callback)(context, std::move(*accepted)));
     }
   }
 }
@@ -46,7 +46,7 @@ coro::Task<void> CloseListener(LUringListener* listener,
 
 void CloseListenerAndDrain(LUringLoop& loop, LUringListener& listener) noexcept {
   std::optional<base::Result<void>> close_result;
-  coro::Spawn(loop, CloseListener(&listener, &close_result)).Detach();
+  coro::SpawnDetach(loop, CloseListener(&listener, &close_result));
 
   for (;;) {
     loop.RunReady();
@@ -187,7 +187,7 @@ void LUringWorker::WorkLoop(std::stop_token token) noexcept {
   if (connection_callback_) {
     const std::size_t accept_depth = std::max<std::size_t>(1, options_.listen_options.accept_depth);
     for (std::size_t i = 0; i < accept_depth; ++i) {
-      coro::Spawn(loop, AcceptLoop(context, &connection_callback_)).Detach();
+      coro::SpawnDetach(loop, AcceptLoop(context, &connection_callback_));
     }
   }
 

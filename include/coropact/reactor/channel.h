@@ -60,9 +60,12 @@ public:
   // the owner has already been destroyed.
   void Tie(const std::shared_ptr<void>&);
 
-  [[nodiscard]] int fd() const { return fd_; }
-  [[nodiscard]] int events() const { return events_; }
-  [[nodiscard]] int revents() const { return revents_; }
+  [[nodiscard]]
+  int fd() const { return fd_; }
+  [[nodiscard]]
+  int events() const { return events_; }
+  [[nodiscard]]
+  int revents() const { return revents_; }
   void set_revents(int revt) { revents_ = revt; }
 
   // Updates the local interest set and immediately synchronizes it with the
@@ -88,16 +91,20 @@ public:
     Update();
   }
 
-  [[nodiscard]] bool IsNoneEvent() const { return events_ == kNoneEvent; }
-  [[nodiscard]] bool IsWriting() const { return static_cast<bool>(events_ & kWriteEvent); }
-  [[nodiscard]] bool IsReading() const { return static_cast<bool>(events_ & kReadEvent); }
+  [[nodiscard]]
+  bool IsNoneEvent() const { return events_ == kNoneEvent; }
+  [[nodiscard]]
+  bool IsWriting() const { return static_cast<bool>(events_ & kWriteEvent); }
+  [[nodiscard]]
+  bool IsReading() const { return static_cast<bool>(events_ & kReadEvent); }
 
   // Switches the Channel between level-triggered and edge-triggered mode.
   void set_edge_triggered(bool et_mode) {
     trigger_mode_ = et_mode ? TriggerMode::kEdgeTriggered : TriggerMode::kLevelTriggered;
   }
 
-  [[nodiscard]] bool IsEdgeTriggered() const {
+  [[nodiscard]]
+  bool IsEdgeTriggered() const {
     return trigger_mode_ == TriggerMode::kEdgeTriggered;
   }
 
@@ -122,7 +129,8 @@ private:
   // only legitimate users.
   friend class EPollPoller;
 
-  [[nodiscard]] int index() const { return index_; }
+  [[nodiscard]]
+  int index() const { return index_; }
   void set_index(int idx) { index_ = idx; }
 
   // Pushes the current interest set to the Poller.

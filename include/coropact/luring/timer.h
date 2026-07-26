@@ -4,11 +4,10 @@
 
 #include <chrono>
 #include <coroutine>
-#include <expected>
-#include <utility>
 
 #include "coropact/base/error.h"
 #include "coropact/coro/work.h"
+#include "coropact/luring/detail/result_state.h"
 #include "coropact/luring/loop.h"
 
 namespace coropact::luring {
@@ -21,34 +20,41 @@ public:
   SleepAwaiter(LUringLoop& loop, std::chrono::steady_clock::duration delay) noexcept
       : loop_(&loop), delay_(delay) {}
 
-  [[nodiscard]] bool await_ready() const noexcept {
+  [[nodiscard]]
+  bool await_ready() const noexcept {
     return delay_ <= std::chrono::steady_clock::duration::zero();
   }
 
+  [[nodiscard]]
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
 
-  base::Result<void> await_resume() noexcept { return std::move(error_); }
+  base::Result<void> await_resume() noexcept {
+    if (!result_.IsImmediate()) {
+      return {};
+    }
+    return result_.Take();
+  }
 
 private:
   LUringLoop* loop_;
   std::chrono::steady_clock::duration delay_;
-  base::Result<void> error_{};
+  detail::LUringResultState<void> result_;
   coro::ResumeWork resume_work_{};
 };
 
 inline bool SleepAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
-  resume_work_.handle = continuation;
+  resume_work_.SetHandle(continuation);
   auto timer =
       loop_->RunAfter(delay_, [this]() noexcept { loop_->ScheduleCompletion(&resume_work_); });
   if (!timer.has_value()) {
-    error_ = std::unexpected(timer.error());
+    result_.SetError(timer.error());
     return false;
   }
   return true;
 }
 
 inline SleepAwaiter SleepFor(LUringLoop& loop, std::chrono::steady_clock::duration delay) noexcept {
-  return SleepAwaiter(loop, delay);
+  return SleepAwaiter{loop, delay};
 }
 
 }  // namespace coropact::luring

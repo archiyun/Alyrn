@@ -27,6 +27,9 @@ struct LUringListenOptions {
 };
 
 class LUringListener {
+  friend void detail::DispatchAcceptComplete(LUringOp* op) noexcept;
+  friend void detail::DispatchListenerCloseComplete(LUringOp* op) noexcept;
+
 public:
   COROPACT_DELETE_COPY(LUringListener);
 
@@ -45,14 +48,17 @@ public:
   coro::Task<base::Result<LUringStream>> Accept();
   coro::Task<base::Result<void>> Close();
 
-  [[nodiscard]] base::Result<net::Endpoint> LocalAddress() const noexcept;
-  [[nodiscard]] int fd() const noexcept { return fd_; }
+  [[nodiscard]]
+  base::Result<net::Endpoint> LocalAddress() const noexcept;
+  [[nodiscard]]
+  int fd() const noexcept { return fd_; }
 
 private:
   class AcceptAwaiter;
   class CloseAwaiter;
 
-  [[nodiscard]] LUringListener(LUringLoop* loop, int fd) noexcept;
+  [[nodiscard]]
+  LUringListener(LUringLoop* loop, int fd) noexcept;
   void NotifyCloseProgress() noexcept;
   void ResetForMove() noexcept;
   static LUringLoop* PrepareMove(LUringListener& other) noexcept;

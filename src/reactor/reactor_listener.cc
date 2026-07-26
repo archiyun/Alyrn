@@ -88,7 +88,8 @@ class ReactorListener::AcceptAwaiter {
 public:
   explicit AcceptAwaiter(ReactorListener& listener) noexcept : listener_(&listener) {}
 
-  [[nodiscard]] bool await_ready() const noexcept { return false; }
+  [[nodiscard]]
+  bool await_ready() const noexcept { return false; }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     COROPACT_DCHECK(listener_->loop_->IsInLoopThread(), "AcceptAwaiter: wrong EventLoop thread");
@@ -96,7 +97,7 @@ public:
                 "AcceptAwaiter: only one pending accept is supported per listener");
 
     scheduler_ = &coro::Scheduler::RequireCurrent();
-    resume_work_.handle = continuation;
+    resume_work_.SetHandle(continuation);
 
     base::Result<ReactorStream> result = TryAccept();
     if (result.has_value() || !IsWouldBlock(result.error().value())) {

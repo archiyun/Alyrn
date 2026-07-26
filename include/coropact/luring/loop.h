@@ -89,13 +89,16 @@ public:
     return inflight_ - (wake_inflight_ ? 1 : 0);
   }
 
-  [[nodiscard]] LUringLoopStats GetStats() const noexcept { return stats_; }
+  [[nodiscard]]
+  LUringLoopStats GetStats() const noexcept { return stats_; }
 
-  [[nodiscard]] bool IsDrained() const noexcept {
+  [[nodiscard]]
+  bool IsDrained() const noexcept {
     return !HasReadyWork() && PendingSubmitCount() == 0 && InflightCount() == 0;
   }
 
-  [[nodiscard]] base::Result<time::TimerId> RunAfter(std::chrono::steady_clock::duration delay,
+  [[nodiscard]]
+  base::Result<time::TimerId> RunAfter(std::chrono::steady_clock::duration delay,
                                                      LUringTimerQueue::TimerCallback callback) {
     assert(IsInLoopThread());
     if (!initialized_) {
@@ -121,12 +124,14 @@ public:
 
   // Thread-safe enqueue
   // The event loop is not woken yet; msg_ring will provide notification later.
-  [[nodiscard]] LUringMailboxPushResult PostMessage(LUringMessage message) {
+  [[nodiscard]]
+  LUringMailboxPushResult PostMessage(LUringMessage message) {
     return mailbox_.Push(std::move(message));
   }
 
   // Re-arms notification after a source-side msg_ring submission failure.
-  [[nodiscard]] bool RetryMessageNotification() noexcept { return mailbox_.RetryNotification(); }
+  [[nodiscard]]
+  bool RetryMessageNotification() noexcept { return mailbox_.RetryNotification(); }
 
   template <class F>
   std::size_t DrainMessages(F&& handler) {
@@ -142,7 +147,8 @@ public:
   // The operation is not guaranteed to reach the kernel until FlushSubmit()
   // or another submission path is executed.
   template <class Prep>
-  [[nodiscard]] base::Result<void> SubmitOp(LUringOp* op, Prep&& prep) noexcept {
+  [[nodiscard]]
+  base::Result<void> SubmitOp(LUringOp* op, Prep&& prep) noexcept {
     assert(IsInLoopThread());
 
     if (!initialized_) {
@@ -171,7 +177,8 @@ public:
     return {};
   }
 
-  [[nodiscard]] base::Result<void> SubmitMsgRing(LUringOp* op, int target_ring_fd,
+  [[nodiscard]]
+  base::Result<void> SubmitMsgRing(LUringOp* op, int target_ring_fd,
                                                  std::uint32_t type) noexcept {
     assert(IsInLoopThread());
 
@@ -184,7 +191,8 @@ public:
     });
   }
 
-  [[nodiscard]] base::Result<void> Notify(LUringLoop& target, LUringOp* op) noexcept {
+  [[nodiscard]]
+  base::Result<void> Notify(LUringLoop& target, LUringOp* op) noexcept {
     assert(IsInLoopThread());
 
     if (op == nullptr) {
@@ -194,19 +202,24 @@ public:
     return SubmitMsgRing(op, target.ring_fd(), 0);
   }
 
-  [[nodiscard]] base::Result<void> FlushSubmit() noexcept;
+  [[nodiscard]]
+  base::Result<void> FlushSubmit() noexcept;
   // Cancels all user operations currently pending in this ring. The resulting
   // CQEs are still delivered through the normal completion path so awaiters
   // can release their stream ownership before the ring is destroyed.
-  [[nodiscard]] base::Result<void> CancelPendingOperations() noexcept;
-  [[nodiscard]] base::Result<std::size_t> PollCompletions() noexcept;
-  [[nodiscard]] base::Result<std::size_t> WaitCompletions() noexcept;
+  [[nodiscard]]
+  base::Result<void> CancelPendingOperations() noexcept;
+  [[nodiscard]]
+  base::Result<std::size_t> PollCompletions() noexcept;
+  [[nodiscard]]
+  base::Result<std::size_t> WaitCompletions() noexcept;
 
   void RunReady() noexcept;
   void RunUntilIdle();
 
 private:
-  [[nodiscard]] base::Result<std::size_t> WaitCompletionsFor(
+  [[nodiscard]]
+  base::Result<std::size_t> WaitCompletionsFor(
       std::chrono::nanoseconds timeout) noexcept;
 
   void HandleCqe(io_uring_cqe* cqe) noexcept;
@@ -268,11 +281,13 @@ private:
   std::deque<ReadySample> completion_ready_samples_;
   LUringLoopStats stats_;
 
-  [[nodiscard]] bool HasReadyWork() const noexcept {
+  [[nodiscard]]
+  bool HasReadyWork() const noexcept {
     return !ready_.empty() || !completion_ready_.empty();
   }
 
-  [[nodiscard]] base::Result<void> ArmWakePoll() noexcept;
+  [[nodiscard]]
+  base::Result<void> ArmWakePoll() noexcept;
   void DrainWakeFd() noexcept;
   void Wake() noexcept;
 

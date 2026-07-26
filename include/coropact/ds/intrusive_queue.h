@@ -19,7 +19,8 @@ class QueueNode {
   friend class IntrusiveQueue;
 
 public:
-  [[nodiscard]] bool InQueue() const noexcept { return next_ != nullptr; }
+  [[nodiscard]]
+  bool InQueue() const noexcept { return next_ != nullptr; }
 
 protected:
   QueueNode() = default;
@@ -68,8 +69,10 @@ public:
   static T* elem_of(Node* node) { return static_cast<T*>(node); }
   static Node* node_of(T* elem) { return static_cast<Node*>(elem); }
 
-  [[nodiscard]] bool empty() const { return head_.next_ == &head_; }
-  [[nodiscard]] std::size_t size() const { return size_; }
+  [[nodiscard]]
+  bool empty() const { return head_.next_ == &head_; }
+  [[nodiscard]]
+  std::size_t size() const { return size_; }
 
   T* front() const { return empty() ? nullptr : elem_of(head_.next_); }
   T* back() const { return empty() ? nullptr : elem_of(tail_); }

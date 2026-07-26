@@ -19,7 +19,8 @@ public:
   explicit EPollPoller(EventLoop* loop);
   ~EPollPoller() override;
 
-  [[nodiscard]] coropact::time::Timestamp Poll(int timeout_ms,
+  [[nodiscard]]
+  coropact::time::Timestamp Poll(int timeout_ms,
                                 ChannelList* active_channels) override;
   void UpdateChannel(Channel* channel) override;
   void RemoveChannel(Channel* channel) override;

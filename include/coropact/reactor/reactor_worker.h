@@ -58,13 +58,15 @@ public:
                 ThreadExitCallback exit_callback = {});
   ~ReactorWorker() noexcept;
 
-  [[nodiscard]] base::Result<void> Start();
+  [[nodiscard]]
+  base::Result<void> Start();
 
   // Requests shutdown. The worker thread is joined by the destructor or by
   // the owning ReactorWorkerGroup.
   void Stop() noexcept;
 
-  [[nodiscard]] std::size_t index() const noexcept { return index_; }
+  [[nodiscard]]
+  std::size_t index() const noexcept { return index_; }
 
 private:
   void WorkLoop(std::stop_token token) noexcept;

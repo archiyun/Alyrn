@@ -27,7 +27,7 @@ coro::Task<void> AcceptLoop(ReactorWorkerContext& context,
     }
 
     if (*callback) {
-      coro::Spawn(context.scheduler, (*callback)(context, std::move(*accepted))).Detach();
+      coro::SpawnDetach(context.scheduler, (*callback)(context, std::move(*accepted)));
     }
   }
 }
@@ -45,7 +45,8 @@ coro::Task<void> CloseListenerAndQuit(EventLoop& loop, ReactorListener& listener
 
 ReactorWorker::ReactorWorker(std::size_t index, net::Endpoint listen_addr,
                              ReactorWorkerOptions options, ThreadInitCallback init_callback,
-                             ConnectionCallback connection_callback, ThreadExitCallback exit_callback)
+                             ConnectionCallback connection_callback,
+                             ThreadExitCallback exit_callback)
     : index_(index),
       listen_addr_(listen_addr),
       options_(std::move(options)),
@@ -126,15 +127,15 @@ void ReactorWorker::WorkLoop(std::stop_token token) noexcept {
     }
   }
 
-  std::stop_callback on_stop{
-      token, [&loop, &scheduler, &listener] {
-        loop.QueueInLoop([&loop, &scheduler, &listener] {
-          coro::Spawn(*scheduler, CloseListenerAndQuit(loop, *listener)).Detach();
-        });
-      }};
+  std::stop_callback on_stop{token, [&loop, &scheduler, &listener] {
+                               loop.QueueInLoop([&loop, &scheduler, &listener] {
+                                 coro::SpawnDetach(*scheduler,
+                                                   CloseListenerAndQuit(loop, *listener));
+                               });
+                             }};
 
   if (connection_callback_) {
-    coro::Spawn(*scheduler, AcceptLoop(context, &connection_callback_)).Detach();
+    coro::SpawnDetach(*scheduler, AcceptLoop(context, &connection_callback_));
   }
 
   publish_start(base::Result<void>{});

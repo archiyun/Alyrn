@@ -22,6 +22,7 @@
 #include "coropact/base/current_thread.h"
 #include "coropact/base/error.h"
 #include "coropact/coro/scheduler.h"
+#include "coropact/luring/detail/completion_dispatch.h"
 #include "coropact/luring/op.h"
 #include "coropact/luring/options.h"
 #include "coropact/luring/ring.h"
@@ -32,7 +33,8 @@ namespace {
 
 constexpr std::chrono::milliseconds kStopPollInterval{100};
 
-[[nodiscard]] std::uint64_t NowNs() noexcept {
+[[nodiscard]]
+std::uint64_t NowNs() noexcept {
   return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
                                         std::chrono::steady_clock::now().time_since_epoch())
                                         .count());
@@ -48,7 +50,8 @@ void RecordLatency(std::array<std::uint64_t, kLatencyHistogramBucketCount>& hist
   ++histogram[bucket];
 }
 
-[[nodiscard]] std::uint64_t HistogramPercentileNs(
+[[nodiscard]]
+std::uint64_t HistogramPercentileNs(
     const std::array<std::uint64_t, kLatencyHistogramBucketCount>& histogram, std::uint64_t samples,
     std::uint64_t percentile) noexcept {
   if (samples == 0) {
@@ -69,11 +72,64 @@ void RecordLatency(std::array<std::uint64_t, kLatencyHistogramBucketCount>& hist
   return UINT64_MAX;
 }
 
-[[nodiscard]] LUringOp* DecodeOp(io_uring_cqe* cqe) noexcept {
+[[nodiscard]]
+LUringOp* DecodeOp(io_uring_cqe* cqe) noexcept {
   return reinterpret_cast<LUringOp*>(io_uring_cqe_get_data(cqe));
 }
 
 }  // namespace
+
+namespace detail {
+
+void DispatchCompletion(LUringOp* op) noexcept {
+  assert(op != nullptr);
+
+  switch (op->DispatchKind()) {
+    case LUringOpKind::kAcceptComplete:
+      DispatchAcceptComplete(op);
+      return;
+    case LUringOpKind::kListenerCloseComplete:
+      DispatchListenerCloseComplete(op);
+      return;
+    case LUringOpKind::kReadComplete:
+      DispatchStreamReadComplete(op);
+      return;
+    case LUringOpKind::kTimedReadComplete:
+      DispatchTimedReadComplete(op);
+      return;
+    case LUringOpKind::kTimedReadTimeoutComplete:
+      DispatchTimedReadTimeoutComplete(op);
+      return;
+    case LUringOpKind::kWriteComplete:
+      DispatchStreamWriteComplete(op);
+      return;
+    case LUringOpKind::kWritePartsComplete:
+      DispatchStreamWritePartsComplete(op);
+      return;
+    case LUringOpKind::kStreamCloseComplete:
+      DispatchStreamCloseComplete(op);
+      return;
+    case LUringOpKind::kTimerDriverComplete:
+      DispatchTimerDriverComplete(op);
+      return;
+    case LUringOpKind::kTimerControlComplete:
+      DispatchTimerControlComplete(op);
+      return;
+    case LUringOpKind::kNone:
+    case LUringOpKind::kConnect:
+    case LUringOpKind::kMsgRing:
+    case LUringOpKind::kWake:
+    case LUringOpKind::kCancelAll:
+    case LUringOpKind::kNop:
+      return;
+    case LUringOpKind::kCount:
+      break;
+  }
+
+  assert(false && "invalid LUring completion dispatch id");
+}
+
+}  // namespace detail
 
 LUringLoop::LUringLoop(std::pmr::memory_resource* frame_resource)
     : Scheduler(frame_resource), thread_id_(base::tid()), timers_(this) {}
@@ -129,7 +185,7 @@ base::Result<void> LUringLoop::Init(const LUringOptions& options) noexcept {
   wake_pending_ = false;
   wake_inflight_ = false;
   cancel_all_pending_ = false;
-  cancel_all_op_.completed = false;
+  cancel_all_op_.ResetCompletion();
   cancel_all_op_.result = {};
   quit_.store(false, std::memory_order_relaxed);
   initialized_ = true;
@@ -190,12 +246,9 @@ base::Result<void> LUringLoop::CancelPendingOperations() noexcept {
     return {};
   }
 
-  cancel_all_op_.completed = false;
+  cancel_all_op_.ResetCompletion();
   cancel_all_op_.result = {};
-  cancel_all_op_.continuation_ = {};
-  cancel_all_op_.resume_work.handle = {};
-  cancel_all_op_.owner = this;
-  cancel_all_op_.on_complete = nullptr;
+  cancel_all_op_.resume_work.ClearHandle();
 
   auto submitted = SubmitOp(
       &cancel_all_op_, [](io_uring_sqe* sqe) noexcept {
@@ -596,7 +649,7 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
     wake_inflight_ = false;
     DrainWakeFd();
     if (!quit_.load(std::memory_order_acquire)) {
-      wake_op_.completed = false;
+      wake_op_.ResetCompletion();
       wake_op_.result = {};
       auto armed = ArmWakePoll();
       if (!armed.has_value()) {
@@ -618,8 +671,11 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
     COROPACT_CTRACK_SCOPE("luring.cqe.complete");
     first_completion = op->Complete(cqe->res);
   }
-  if (first_completion && op->resume_work.handle) {
-    ScheduleCompletionAt(&op->resume_work, event_ns);
+  if (first_completion) {
+    detail::DispatchCompletion(op);
+    if (op->resume_work.HasHandle()) {
+      ScheduleCompletionAt(&op->resume_work, event_ns);
+    }
   }
 }
 
@@ -630,10 +686,7 @@ base::Result<void> LUringLoop::ArmWakePoll() noexcept {
   }
 
   wake_op_.kind = LUringOpKind::kWake;
-  wake_op_.continuation_ = {};
-  wake_op_.resume_work.handle = {};
-  wake_op_.owner = this;
-  wake_op_.on_complete = nullptr;
+  wake_op_.resume_work.ClearHandle();
   auto submitted = SubmitOp(&wake_op_, [fd = wake_fd_](io_uring_sqe* sqe) noexcept {
     io_uring_prep_poll_add(sqe, fd, POLLIN);
   });

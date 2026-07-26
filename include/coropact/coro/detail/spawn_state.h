@@ -20,6 +20,7 @@
 #include <utility>
 
 #include "coropact/coro/scheduler.h"
+#include "coropact/coro/detail/spawn_stats.h"
 #include "coropact/coro/work.h"
 
 namespace coropact::coro::detail {
@@ -77,9 +78,13 @@ public:
 
   SpawnState() noexcept = default;
 
+#if defined(COROPACT_ENABLE_SPAWN_STATS)
+  ~SpawnState() noexcept { RecordSpawnStateDeallocation(sizeof(SpawnState)); }
+#endif
+
   // -- driver scheduling --------------------------------------------------
   void set_driver_handle(std::coroutine_handle<> handle) noexcept {
-    driver_work_.handle = handle;
+    driver_work_.SetHandle(handle);
   }
 
   [[nodiscard]]
@@ -125,14 +130,14 @@ public:
   [[nodiscard]]
   bool TryParkWaiter(Scheduler& scheduler, std::coroutine_handle<> waiter) noexcept {
     waiter_scheduler_ = &scheduler;
-    waiter_resume_.handle = waiter;
+    waiter_resume_.SetHandle(waiter);
     Phase expected = Phase::kRunningJoinable;
     if (phase_.compare_exchange_strong(expected, Phase::kWaiterParked,
                                        std::memory_order_acq_rel)) {
       return true;
     }
     waiter_scheduler_ = nullptr;
-    waiter_resume_.handle = {};
+    waiter_resume_.ClearHandle();
     return false;  // already kFinished
   }
 

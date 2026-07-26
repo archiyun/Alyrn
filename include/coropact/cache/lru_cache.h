@@ -36,9 +36,12 @@ public:
 
   ~LRUCache() { Clear(); }
 
-  [[nodiscard]] bool Empty() const noexcept { return index_.empty(); }
-  [[nodiscard]] std::size_t Size() const noexcept { return index_.size(); }
-  [[nodiscard]] std::size_t Capacity() const noexcept { return capacity_; }
+  [[nodiscard]]
+  bool Empty() const noexcept { return index_.empty(); }
+  [[nodiscard]]
+  std::size_t Size() const noexcept { return index_.size(); }
+  [[nodiscard]]
+  std::size_t Capacity() const noexcept { return capacity_; }
 
   // Returns a copy and promotes a live entry to the MRU position.
   std::optional<Value> Get(const Key& key) {
@@ -134,7 +137,8 @@ private:
   using Map = std::unordered_map<Key, ListIt, Hash, KeyEqual>;
   using MapIt = typename Map::iterator;
 
-  [[nodiscard]] bool IsExpired(ListIt entry) const {
+  [[nodiscard]]
+  bool IsExpired(ListIt entry) const {
     return entry->expire_at.has_value() && coropact::time::Timestamp::Now() >= *entry->expire_at;
   }
 

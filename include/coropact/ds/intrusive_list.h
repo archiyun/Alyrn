@@ -20,7 +20,8 @@ class ListNode {
   friend class IntrusiveList;
 
 public:
-  [[nodiscard]] bool InList() const noexcept { return next_ != nullptr; }
+  [[nodiscard]]
+  bool InList() const noexcept { return next_ != nullptr; }
 
 protected:
   COROPACT_DELETE_COPY_MOVE(ListNode);
@@ -142,8 +143,10 @@ public:
   static const T* elem_of(const Node* node) noexcept { return static_cast<const T*>(node); }
   static Node* node_of(T* elem) noexcept { return static_cast<Node*>(elem); }
 
-  [[nodiscard]] bool empty() const noexcept { return head_.next_ == &head_; }
-  [[nodiscard]] std::size_t size() const noexcept { return size_; }
+  [[nodiscard]]
+  bool empty() const noexcept { return head_.next_ == &head_; }
+  [[nodiscard]]
+  std::size_t size() const noexcept { return size_; }
 
   T* front() noexcept;
   const T* front() const noexcept;
@@ -152,12 +155,16 @@ public:
 
   // Insert. Returns false for nullptr or when elem is already linked (in this
   // or any list).
-  [[nodiscard]] bool PushFront(T*) noexcept;
-  [[nodiscard]] bool PushBack(T*) noexcept;
+  [[nodiscard]]
+  bool PushFront(T*) noexcept;
+  [[nodiscard]]
+  bool PushBack(T*) noexcept;
   // Link elem adjacent to pos. Precondition: pos is linked in *this*; elem is
   // not linked. Returns false for nullptr or when elem is already linked.
-  [[nodiscard]] bool InsertBefore(T* pos, T* elem) noexcept;
-  [[nodiscard]] bool InsertAfter(T* pos, T* elem) noexcept;
+  [[nodiscard]]
+  bool InsertBefore(T* pos, T* elem) noexcept;
+  [[nodiscard]]
+  bool InsertAfter(T* pos, T* elem) noexcept;
 
   // Pop. Returns nullptr when empty.
   T* PopFront() noexcept;
@@ -166,7 +173,8 @@ public:
   // Erase by element. O(1). Returns false if elem was not linked.
   // Precondition: if linked, elem is linked in *this* (cross-list erase is UB,
   // same caveat as IntrusiveRBTree::Erase). InList() only says "linked somewhere".
-  [[nodiscard]] bool Erase(T* elem) noexcept;
+  [[nodiscard]]
+  bool Erase(T* elem) noexcept;
 
   // Erase by iterator. O(1). Returns the iterator following the erased element,
   // which stays valid for continued traversal. Precondition: it != end().

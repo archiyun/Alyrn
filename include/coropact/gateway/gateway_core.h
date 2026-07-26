@@ -106,13 +106,17 @@ public:
 
   Action ProxyUnavailable(const Route& route, std::string_view reason);
 
-  [[nodiscard]] ForwardedHeaderContext MakeForwardedContext(const ProxyTarget& proxy) const;
+  [[nodiscard]]
+  ForwardedHeaderContext MakeForwardedContext(const ProxyTarget& proxy) const;
 
 private:
-  [[nodiscard]] coropact::http::HttpResponse MakeError(coropact::http::StatusCode code,
+  [[nodiscard]]
+  coropact::http::HttpResponse MakeError(coropact::http::StatusCode code,
                                                        std::string_view msg) const;
-  [[nodiscard]] std::string RenderFallback(const Route& route, std::string_view reason) const;
-  [[nodiscard]] Action SendResponse(std::string response, bool close_after_send = false) const;
+  [[nodiscard]]
+  std::string RenderFallback(const Route& route, std::string_view reason) const;
+  [[nodiscard]]
+  Action SendResponse(std::string response, bool close_after_send = false) const;
   static std::string GenRequestId();
 
   std::string name_;

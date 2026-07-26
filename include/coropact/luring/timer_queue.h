@@ -11,6 +11,8 @@
 #include <unordered_map>
 
 #include "coropact/base/error.h"
+#include "coropact/luring/detail/completion_dispatch.h"
+#include "coropact/luring/detail/op_hook.h"
 #include "coropact/luring/op.h"
 #include "coropact/time/timer.h"
 #include "coropact/time/timer_id.h"
@@ -20,22 +22,41 @@ namespace coropact::luring {
 
 class LUringLoop;
 
+namespace detail {
+
+struct TimerDriverTag;
+struct TimerControlTag;
+
+}  // namespace detail
+
 // One timer queue belongs to one LUringLoop and is only accessed by that
 // loop's thread. The timer tree stays in user space; one io_uring timeout is
 // used to wake the loop for the earliest timer.
-class LUringTimerQueue final {
+class LUringTimerQueue final
+    : public detail::LUringOpHook<LUringTimerQueue, detail::TimerDriverTag>,
+      public detail::LUringOpHook<LUringTimerQueue, detail::TimerControlTag> {
+  friend void detail::DispatchTimerDriverComplete(LUringOp* op) noexcept;
+  friend void detail::DispatchTimerControlComplete(LUringOp* op) noexcept;
+
 public:
+  using DriverOpHook = detail::LUringOpHook<LUringTimerQueue, detail::TimerDriverTag>;
+  using ControlOpHook = detail::LUringOpHook<LUringTimerQueue, detail::TimerControlTag>;
   using TimerCallback = std::function<void()>;
 
-  explicit LUringTimerQueue(LUringLoop* loop) noexcept : loop_(loop) {}
+  explicit LUringTimerQueue(LUringLoop* loop) noexcept
+      : DriverOpHook(LUringOpKind::kTimerDriverComplete),
+        ControlOpHook(LUringOpKind::kTimerControlComplete),
+        loop_(loop) {}
   ~LUringTimerQueue() noexcept;
 
   LUringTimerQueue(const LUringTimerQueue&) = delete;
   LUringTimerQueue& operator=(const LUringTimerQueue&) = delete;
 
-  [[nodiscard]] base::Result<time::TimerId> AddAfter(std::chrono::steady_clock::duration delay,
+  [[nodiscard]]
+  base::Result<time::TimerId> AddAfter(std::chrono::steady_clock::duration delay,
                                                      TimerCallback callback);
-  [[nodiscard]] base::Result<time::TimerId> AddTimer(TimerCallback callback, time::Timestamp when);
+  [[nodiscard]]
+  base::Result<time::TimerId> AddTimer(TimerCallback callback, time::Timestamp when);
   base::Result<void> Cancel(time::TimerId id) noexcept;
 
 private:
@@ -50,12 +71,13 @@ private:
   void ArmFallback(time::Timestamp deadline) noexcept;
   void Update(time::Timestamp deadline) noexcept;
 
+  LUringOp* driver_op() noexcept { return static_cast<DriverOpHook*>(this); }
+  LUringOp* control_op() noexcept { return static_cast<ControlOpHook*>(this); }
+
   LUringLoop* loop_;
   time::TimerTree timers_;
   std::unordered_map<std::int64_t, std::unique_ptr<time::Timer>> active_;
 
-  LUringOp driver_op_{.kind = LUringOpKind::kTimeout};
-  LUringOp control_op_{.kind = LUringOpKind::kTimeout};
   bool driver_armed_{false};
   bool control_pending_{false};
   bool control_is_fallback_{false};

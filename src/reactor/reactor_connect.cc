@@ -41,12 +41,13 @@ public:
     }
   }
 
-  [[nodiscard]] bool await_ready() const noexcept { return false; }
+  [[nodiscard]]
+  bool await_ready() const noexcept { return false; }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     COROPACT_DCHECK(loop_->IsInLoopThread(), "ConnectAwaiter: wrong EventLoop thread");
     scheduler_ = &coro::Scheduler::RequireCurrent();
-    resume_work_.handle = continuation;
+    resume_work_.SetHandle(continuation);
 
     auto fd = net::CreateNonBlockingSocket(peer_.native_family());
     if (!fd.has_value()) {
@@ -128,12 +129,13 @@ public:
   SleepAwaiter(EventLoop* loop, std::chrono::milliseconds delay) noexcept
       : loop_(loop), delay_(delay) {}
 
-  [[nodiscard]] bool await_ready() const noexcept { return delay_.count() <= 0; }
+  [[nodiscard]]
+  bool await_ready() const noexcept { return delay_.count() <= 0; }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     COROPACT_DCHECK(loop_->IsInLoopThread(), "SleepAwaiter: wrong EventLoop thread");
     scheduler_ = &coro::Scheduler::RequireCurrent();
-    resume_work_.handle = continuation;
+    resume_work_.SetHandle(continuation);
     const auto seconds = std::chrono::duration<double>(delay_).count();
     loop_->RunAfter(seconds, [this] { scheduler_->Schedule(&resume_work_); });
     return true;
@@ -154,7 +156,8 @@ ReactorConnector::ReactorConnector(EventLoop* loop) noexcept : loop_(loop) {
   COROPACT_CHECK(loop_ != nullptr, "ReactorConnector: loop must not be null");
 }
 
-[[nodiscard]] base::Result<ReactorConnector> ReactorConnector::Create(EventLoop* loop) noexcept {
+[[nodiscard]]
+base::Result<ReactorConnector> ReactorConnector::Create(EventLoop* loop) noexcept {
   if (loop == nullptr) {
     return std::unexpected(base::make_errno(EINVAL));
   }

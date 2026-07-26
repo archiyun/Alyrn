@@ -56,7 +56,8 @@ public:
   template <class U>
     requires std::constructible_from<T, U&&> &&
              std::is_nothrow_constructible_v<T, U&&>
-  [[nodiscard]] MpscQueuePushResult TryPush(U&& value) noexcept {
+  [[nodiscard]]
+  MpscQueuePushResult TryPush(U&& value) noexcept {
     constexpr std::size_t mask = Capacity - 1;
 
     std::size_t position =
@@ -92,7 +93,8 @@ public:
     return MpscQueuePushResult::kPushed;
   }
 
-  [[nodiscard]] std::optional<T> TryPop() noexcept {
+  [[nodiscard]]
+  std::optional<T> TryPop() noexcept {
     constexpr std::size_t mask = Capacity - 1;
 
     std::size_t position =
@@ -145,17 +147,20 @@ public:
   }
 
   // These values are snapshots and may change immediately after returning.
-  [[nodiscard]] bool Empty() const noexcept {
+  [[nodiscard]]
+  bool Empty() const noexcept {
     return enqueue_position_.load(std::memory_order_acquire) ==
            dequeue_position_.load(std::memory_order_acquire);
   }
 
-  [[nodiscard]] std::size_t Size() const noexcept {
+  [[nodiscard]]
+  std::size_t Size() const noexcept {
     return enqueue_position_.load(std::memory_order_acquire) -
            dequeue_position_.load(std::memory_order_acquire);
   }
 
-  [[nodiscard]] static constexpr std::size_t CapacityValue() noexcept {
+  [[nodiscard]]
+  static constexpr std::size_t CapacityValue() noexcept {
     return Capacity;
   }
 
@@ -164,7 +169,8 @@ private:
     std::atomic<std::size_t> sequence{0};
     alignas(T) std::byte storage[sizeof(T)];
 
-    [[nodiscard]] T* Value() noexcept {
+    [[nodiscard]]
+    T* Value() noexcept {
       return std::launder(reinterpret_cast<T*>(storage));
     }
   };

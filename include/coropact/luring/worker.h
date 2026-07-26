@@ -62,10 +62,12 @@ public:
                ThreadExitCallback exit_callback = {});
   ~LUringWorker() noexcept;
 
-  [[nodiscard]] base::Result<void> Start();
+  [[nodiscard]]
+  base::Result<void> Start();
   void Stop() noexcept;
 
-  [[nodiscard]] std::size_t index() const noexcept { return index_; }
+  [[nodiscard]]
+  std::size_t index() const noexcept { return index_; }
 
 private:
   void WorkLoop(std::stop_token token) noexcept;

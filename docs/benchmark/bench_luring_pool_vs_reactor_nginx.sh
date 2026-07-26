@@ -18,6 +18,9 @@
 # Environment variables are forwarded to run_bench.sh. Typical quick run:
 #   DURATION=10s ROUNDS=2 LEVELS="1000 5000 10000" \
 #     docs/benchmark/bench_luring_pool_vs_reactor_nginx.sh
+#
+# The fair comparison keeps FRAME_POOL disabled. Set
+# ALLOW_FRAME_POOL_BENCH=1 explicitly when measuring the io_uring frame pool.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -32,6 +35,7 @@ URING_ENTRIES=${URING_ENTRIES:-8192}
 MAX_IDLE_PER_PEER=${MAX_IDLE_PER_PEER:-0}
 MAX_IDLE_TOTAL=${MAX_IDLE_TOTAL:-64}
 FRAME_POOL=${FRAME_POOL:-0}
+ALLOW_FRAME_POOL_BENCH=${ALLOW_FRAME_POOL_BENCH:-0}
 URING_SQPOLL=${URING_SQPOLL:-0}
 URING_SQPOLL_IDLE_MS=${URING_SQPOLL_IDLE_MS:-1000}
 URING_DEFER_TASKRUN=${URING_DEFER_TASKRUN:-0}
@@ -57,7 +61,7 @@ if [[ "$MAX_IDLE_PER_PEER" != 0 || "$MAX_IDLE_TOTAL" != 64 ]]; then
   echo "fair comparison requires MAX_IDLE_PER_PEER=0 and MAX_IDLE_TOTAL=64" >&2
   exit 1
 fi
-if [[ "$FRAME_POOL" != 0 ]]; then
+if [[ "$FRAME_POOL" != 0 && "$ALLOW_FRAME_POOL_BENCH" != 1 ]]; then
   echo "fair comparison requires FRAME_POOL=0; Reactor has no frame pool" >&2
   exit 1
 fi

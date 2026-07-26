@@ -5,11 +5,13 @@
 //   a) Task<int> awaited by another Task<int>, result via SyncWait;
 //   b) Task<void> path;
 //   c) Spawn + JoinHandle on a drain-queue Scheduler: Wait, Detach, async join;
-//   d) error path: Task<Result<int>> co_return std::unexpected(...).
+//   d) SpawnDetach: discarded result and suspended/resumed fire-and-forget work;
+//   e) error path: Task<Result<int>> co_return std::unexpected(...).
 // The module is IO-agnostic: the only scheduler here is a test-local container.
 
 #include <cassert>
 #include <cerrno>
+#include <coroutine>
 #include <expected>
 #include <iostream>
 #include <memory>
@@ -28,6 +30,7 @@ using coropact::base::Result;
 using coropact::coro::JoinHandle;
 using coropact::coro::Scheduler;
 using coropact::coro::Spawn;
+using coropact::coro::SpawnDetach;
 using coropact::coro::SyncWait;
 using coropact::coro::Task;
 using coropact::coro::Work;
@@ -108,6 +111,12 @@ Task<void> SetMarker() {
   co_return;
 }
 
+Task<int> DetachedReturn(bool* ran, Scheduler** resumed_scheduler) {
+  *ran = true;
+  *resumed_scheduler = Scheduler::Current();
+  co_return 99;
+}
+
 // Drain-queue Scheduler: collects Work* and runs them FIFO. Running a Work may
 // enqueue more (e.g. a parked joiner being resumed), so the loop re-checks.
 class DrainScheduler final : public Scheduler {
@@ -136,6 +145,39 @@ public:
 private:
   WorkQueue queue_;
 };
+
+// A one-shot awaitable used to prove that SpawnDetach keeps its driver frame
+// alive while the child Task is suspended. The ResumeWork is owned by this
+// test gate and is submitted only when Open() is called.
+struct ManualGate {
+  struct Awaiter {
+    ManualGate* gate;
+
+    bool await_ready() const noexcept { return false; }
+
+    bool await_suspend(std::coroutine_handle<> waiter) noexcept {
+      gate->resume_work.SetHandle(waiter);
+      return true;
+    }
+
+    void await_resume() const noexcept {}
+  };
+
+  Awaiter Wait() noexcept { return Awaiter{this}; }
+
+  void Open(DrainScheduler& scheduler) noexcept {
+    assert(resume_work.HasHandle());
+    scheduler.Schedule(&resume_work);
+  }
+
+  coropact::coro::ResumeWork resume_work;
+};
+
+Task<void> WaitForGate(ManualGate* gate, bool* resumed, Scheduler** resumed_scheduler) {
+  co_await gate->Wait();
+  *resumed = true;
+  *resumed_scheduler = Scheduler::Current();
+}
 
 // Parent coroutine that joins two spawned children asynchronously.
 Task<int> JoinChildren(DrainScheduler* sched) {
@@ -192,6 +234,35 @@ int main() {
     sched.Drain();
     if (!Check(g_void_marker == 7, "spawn+Detach should still run the body")) return 1;
 
+    // Direct SpawnDetach path: a non-void result is discarded, while the body
+    // still runs under the scheduler that accepted the work.
+    bool direct_detached_ran = false;
+    Scheduler* direct_detached_scheduler = nullptr;
+    SpawnDetach(sched, DetachedReturn(&direct_detached_ran, &direct_detached_scheduler));
+    if (!Check(!direct_detached_ran, "SpawnDetach should be lazy until scheduled")) return 1;
+    if (!Check(sched.DrainOne(), "SpawnDetach should enqueue a driver Work")) return 1;
+    if (!Check(direct_detached_ran, "SpawnDetach should run the body")) return 1;
+    if (!Check(direct_detached_scheduler == &sched,
+               "SpawnDetach should run under the current scheduler")) {
+      return 1;
+    }
+
+    // Suspended SpawnDetach path: the driver and its Work must remain alive
+    // until the external completion schedules the child back to this loop.
+    ManualGate gate;
+    bool gate_resumed = false;
+    Scheduler* gate_scheduler = nullptr;
+    SpawnDetach(sched, WaitForGate(&gate, &gate_resumed, &gate_scheduler));
+    if (!Check(sched.DrainOne(), "SpawnDetach should start the suspended task")) return 1;
+    if (!Check(!gate_resumed, "suspended SpawnDetach must not finish early")) return 1;
+    gate.Open(sched);
+    if (!Check(sched.DrainOne(), "opened gate should resume SpawnDetach")) return 1;
+    if (!Check(gate_resumed, "resumed SpawnDetach should finish")) return 1;
+    if (!Check(gate_scheduler == &sched,
+               "resumed SpawnDetach should use the current scheduler")) {
+      return 1;
+    }
+
     // Async join resumes through a scheduled ResumeWork rather than directly
     // from SpawnState::Finish(). The parent must not resume inline while the
     // child Work is still running.
@@ -231,7 +302,7 @@ int main() {
     if (!Check(parent.Wait() == 111, "async join should yield 111")) return 1;
   }
 
-  // d) Error path travels through the value channel, no exceptions.
+  // e) Error path travels through the value channel, no exceptions.
   {
     Result<int> r = SyncWait(Fail());
     if (!Check(!r.has_value(), "Fail should not hold a value")) return 1;
