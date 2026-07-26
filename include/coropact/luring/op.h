@@ -18,6 +18,7 @@ enum class LUringOpKind : std::uint8_t {
   kAccept,
   kConnect,
   kClose,
+  kCancelAll,
   kTimeout,
   kMsgRing,
   kWake,
@@ -30,14 +31,15 @@ public:
 
   LUringOpKind kind{};
   std::coroutine_handle<> continuation_;
-  coropact::coro::ResumeWork resume_work;
+  coro::ResumeWork resume_work;
   base::Result<int> result;
   bool completed{false};
 
   void* owner{nullptr};
   CompleteHook on_complete{nullptr};
 
-  [[nodiscard]] bool Complete(int cqe_res) noexcept {
+  [[nodiscard]]
+  bool Complete(int cqe_res) noexcept {
     if (completed) {
       return false;
     }

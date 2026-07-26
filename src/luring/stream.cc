@@ -4,8 +4,10 @@
 
 #include <liburing.h>
 #include <sys/socket.h>
+#include <sys/uio.h>
 #include <unistd.h>
 
+#include <array>
 #include <cassert>
 #include <cerrno>
 #include <coroutine>
@@ -38,6 +40,7 @@ base::Result<std::size_t> ToSizeResult(const base::Result<int>& result) noexcept
 
 }  // namespace
 
+// ---- ReadSomeAwaiter ---
 bool LUringStream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   COROPACT_CTRACK_SCOPE("luring.read.prepare");
   if (stream_->closed_ || stream_->fd_ < 0) {
@@ -64,11 +67,13 @@ bool LUringStream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> contin
       &op_, [fd = stream_->fd_, buffer = buffer_](io_uring_sqe* sqe) noexcept {
         io_uring_prep_recv(sqe, fd, buffer.data(), buffer.size(), 0);
       });
+
   if (!submitted.has_value()) {
     stream_->pending_read_ = nullptr;
     immediate_ = std::unexpected(submitted.error());
     return false;
   }
+
   return true;
 }
 
@@ -89,9 +94,10 @@ void LUringStream::ReadSomeAwaiter::OnComplete(LUringOp* op) noexcept {
   }
 }
 
-LUringStream::ReadSomeForAwaiter::ReadSomeForAwaiter(
-    LUringStream& stream, std::span<std::byte> buffer,
-    std::chrono::milliseconds timeout) noexcept
+// --- ReadSomeForAwaiter ---
+LUringStream::ReadSomeForAwaiter::ReadSomeForAwaiter(LUringStream& stream,
+                                                     std::span<std::byte> buffer,
+                                                     std::chrono::milliseconds timeout) noexcept
     : stream_(&stream), buffer_(buffer) {
   const std::int64_t milliseconds = timeout.count() > 0 ? timeout.count() : 1;
   timeout_ts_.tv_sec = static_cast<__kernel_time64_t>(milliseconds / 1000);
@@ -145,7 +151,10 @@ bool LUringStream::ReadSomeForAwaiter::await_suspend(
 
 base::Result<std::size_t> LUringStream::ReadSomeForAwaiter::await_resume() noexcept {
   COROPACT_CTRACK_SCOPE("luring.read.resume");
-  if (immediate_.has_value()) return std::move(*immediate_);
+  if (immediate_.has_value()) {
+    return std::move(*immediate_);
+  }
+
   assert(read_done_);
   if (read_op_.result.has_value() && *read_op_.result >= 0) {
     return static_cast<std::size_t>(*read_op_.result);
@@ -175,7 +184,10 @@ void LUringStream::ReadSomeForAwaiter::CompleteTimeout(LUringOp* current) noexce
 }
 
 void LUringStream::ReadSomeForAwaiter::FinishIfReady(LUringOp* current) noexcept {
-  if (!read_done_ || !timeout_done_) return;
+  if (!read_done_ || !timeout_done_) {
+    return;
+  }
+
   if (stream_->pending_read_ == this) {
     stream_->pending_read_ = nullptr;
     stream_->NotifyCloseProgress();
@@ -183,6 +195,7 @@ void LUringStream::ReadSomeForAwaiter::FinishIfReady(LUringOp* current) noexcept
   current->resume_work.handle = continuation_;
 }
 
+// --- WriteSomeAwaiter ---
 bool LUringStream::WriteSomeAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   if (stream_->closed_ || stream_->fd_ < 0) {
     immediate_ = std::unexpected(base::make_errno(EBADF));
@@ -323,6 +336,88 @@ private:
   bool completed_{false};
 };
 
+// --- WriteSomePartsAwaiter ---
+bool LUringStream::WriteSomePartsAwaiter::await_suspend(
+    std::coroutine_handle<> continuation) noexcept {
+  if (stream_->closed_ || stream_->fd_ < 0) {
+    immediate_ = std::unexpected(base::make_errno(EBADF));
+    return false;
+  }
+
+  if (stream_->pending_write_ != nullptr) {
+    immediate_ = std::unexpected(base::make_errno(EBUSY));
+    return false;
+  }
+
+  if (buffers_.size() > kMaxParts) {
+    immediate_ = std::unexpected(base::make_errno(EINVAL));
+    return false;
+  }
+
+  std::size_t count = 0;
+  for (const auto& part : buffers_) {
+    if (part.bytes.empty()) {
+      continue;
+    }
+
+    iovecs_[count].iov_base = const_cast<std::byte*>(part.bytes.data());
+    iovecs_[count].iov_len = part.bytes.size();
+    ++count;
+  }
+
+  if (count == 0) {
+    immediate_ = std::size_t{0};
+    return false;
+  }
+
+  message_ = {};
+  message_.msg_iov = iovecs_.data();
+  message_.msg_iovlen = count;
+
+  stream_->pending_write_ = this;
+
+  op_.continuation_ = continuation;
+  op_.resume_work.handle = continuation;
+  op_.owner = this;
+  op_.on_complete = &WriteSomePartsAwaiter::OnComplete;
+
+  auto submitted = stream_->loop_->SubmitOp(
+      &op_, [fd = stream_->fd_, message = &message_](io_uring_sqe* sqe) noexcept {
+        io_uring_prep_sendmsg(sqe, fd, message, MSG_NOSIGNAL);
+      });
+
+  if (!submitted.has_value()) {
+    stream_->pending_write_ = nullptr;
+    immediate_ = std::unexpected(submitted.error());
+    return false;
+  }
+
+  return true;
+}
+
+base::Result<std::size_t> LUringStream::WriteSomePartsAwaiter::await_resume() noexcept {
+  if (immediate_->has_value()) {
+    return std::move(*immediate_);
+  }
+
+  assert(op_.completed);
+  return ToSizeResult(op_.result);
+}
+
+void LUringStream::WriteSomePartsAwaiter::OnComplete(LUringOp* op) noexcept {
+  auto* self = static_cast<WriteSomePartsAwaiter*>(op->owner);
+
+  if (self->stream_ != nullptr && self->stream_->pending_write_ == self) {
+    self->stream_->pending_write_ = nullptr;
+    self->stream_->NotifyCloseProgress();
+  }
+}
+
+LUringStream::WriteSomePartsAwaiter LUringStream::WriteSome(
+    std::span<const io::WritePart> buffers) noexcept {
+  return WriteSomePartsAwaiter{*this, buffers};
+}
+
 LUringStream::LUringStream(LUringLoop* loop, int fd, net::Endpoint peer) noexcept
     : loop_(loop), fd_(fd), peer_(std::move(peer)) {
   assert(loop_ != nullptr);
@@ -347,7 +442,7 @@ LUringStream& LUringStream::operator=(LUringStream&& other) noexcept {
 
   LUringLoop* other_loop = PrepareMove(other);
   COROPACT_CHECK(loop_ == nullptr || loop_ == other_loop,
-             "LUringStream move requires both objects to use the same LUringLoop");
+                 "LUringStream move requires both objects to use the same LUringLoop");
   if (loop_ != nullptr) {
     ResetForMove();
   }
@@ -363,7 +458,7 @@ LUringStream& LUringStream::operator=(LUringStream&& other) noexcept {
   return *this;
 }
 
-LUringStream::~LUringStream() {
+LUringStream::~LUringStream() noexcept {
   assert(pending_read_ == nullptr);
   assert(pending_write_ == nullptr);
   assert(pending_close_ == nullptr);
@@ -373,16 +468,16 @@ LUringStream::~LUringStream() {
 }
 
 LUringStream::ReadSomeAwaiter LUringStream::ReadSome(std::span<std::byte> buffer) noexcept {
-  return ReadSomeAwaiter(*this, buffer);
+  return ReadSomeAwaiter{*this, buffer};
 }
 
 LUringStream::ReadSomeForAwaiter LUringStream::ReadSomeFor(
     std::span<std::byte> buffer, std::chrono::milliseconds timeout) noexcept {
-  return ReadSomeForAwaiter(*this, buffer, timeout);
+  return ReadSomeForAwaiter{*this, buffer, timeout};
 }
 
 LUringStream::WriteSomeAwaiter LUringStream::WriteSome(std::span<const std::byte> buffer) noexcept {
-  return WriteSomeAwaiter(*this, buffer);
+  return WriteSomeAwaiter{*this, buffer};
 }
 
 coro::Task<base::Result<void>> LUringStream::Shutdown() {
@@ -420,16 +515,15 @@ void LUringStream::ResetForMove() noexcept {
 LUringLoop* LUringStream::PrepareMove(LUringStream& other) noexcept {
   COROPACT_CHECK(other.loop_ != nullptr, "LUringStream move source is not initialized");
   COROPACT_CHECK(other.loop_->IsInLoopThread(),
-             "LUringStream move called from wrong LUringLoop thread");
+                 "LUringStream move called from wrong LUringLoop thread");
   COROPACT_CHECK(other.pending_read_ == nullptr,
-             "LUringStream cannot move with a pending read operation");
+                 "LUringStream cannot move with a pending read operation");
   COROPACT_CHECK(other.pending_write_ == nullptr,
-             "LUringStream cannot move with a pending write operation");
+                 "LUringStream cannot move with a pending write operation");
   COROPACT_CHECK(other.pending_close_ == nullptr,
-             "LUringStream cannot move with a pending close operation");
+                 "LUringStream cannot move with a pending close operation");
 
-  LUringLoop* loop = other.loop_;
-  other.loop_ = nullptr;
+  LUringLoop* loop = std::exchange(other.loop_, nullptr);
   return loop;
 }
 

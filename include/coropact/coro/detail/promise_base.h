@@ -19,19 +19,26 @@ public:
   COROPACT_DELETE_COPY_MOVE(PromiseBase);
 
   // Lazy: the body does not run until a consumer resumes the frame.
-  std::suspend_always initial_suspend() const noexcept { return {}; }
+  auto initial_suspend() const noexcept { return std::suspend_always{}; }
 
   // On completion, tail-call into the awaiting coroutine. When nothing awaits,
   // continuation_ stays std::noop_coroutine and resume returns to its caller.
   struct FinalAwaiter {
     std::coroutine_handle<> continuation;
 
-    bool await_ready() const noexcept { return false; }
+    [[nodiscard]]
+    bool await_ready() const noexcept {
+      return false;
+    }
+
+    [[nodiscard]]
     std::coroutine_handle<> await_suspend(std::coroutine_handle<>) const noexcept {
       return continuation;
     }
+
     void await_resume() const noexcept {}
   };
+
   FinalAwaiter final_suspend() noexcept { return FinalAwaiter{continuation_}; }
 
   // Exceptions are banned project-wide; reaching here is an unrecoverable bug.
@@ -40,7 +47,11 @@ public:
   void set_continuation(std::coroutine_handle<> continuation) noexcept {
     continuation_ = continuation ? continuation : std::noop_coroutine();
   }
-  std::coroutine_handle<> continuation() const noexcept { return continuation_; }
+
+  [[nodiscard]]
+  std::coroutine_handle<> continuation() const noexcept {
+    return continuation_;
+  }
 
 protected:
   PromiseBase() = default;

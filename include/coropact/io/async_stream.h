@@ -35,4 +35,16 @@ concept AsyncClosableStream = requires(T& stream) {
 template <class T>
 concept AsyncStream = AsyncReadStream<T> && AsyncWriteStream<T> && AsyncClosableStream<T>;
 
+struct WritePart {
+  std::span<const std::byte> bytes;
+};
+
+template <class T>
+concept AsyncScatterWriteStream =
+    AsyncWriteStream<T> && requires(T& stream, std::span<const WritePart> buffers) {
+      requires coro::Awaitable<decltype(stream.WriteSome(buffers))>;
+      requires std::same_as<coro::AwaitResult<decltype(stream.WriteSome(buffers))>,
+                            base::Result<std::size_t>>;
+    };
+
 }  // namespace coropact::io

@@ -48,14 +48,25 @@ void CloseListenerAndDrain(LUringLoop& loop, LUringListener& listener) noexcept 
   std::optional<base::Result<void>> close_result;
   coro::Spawn(loop, CloseListener(&listener, &close_result)).Detach();
 
-  while (!close_result.has_value()) {
+  for (;;) {
     loop.RunReady();
-    if (close_result.has_value()) {
+    if (close_result.has_value() && loop.IsDrained()) {
       break;
     }
 
-    if (loop.PendingSubmitCount() == 0 && loop.InflightCount() == 0) {
+    if (!close_result.has_value() && loop.IsDrained()) {
       break;
+    }
+
+    if (close_result.has_value()) {
+      auto cancelled = loop.CancelPendingOperations();
+      if (!cancelled.has_value()) {
+        break;
+      }
+    }
+
+    if (loop.PendingSubmitCount() == 0 && loop.InflightCount() == 0) {
+      continue;
     }
 
     auto completed = loop.WaitCompletions();

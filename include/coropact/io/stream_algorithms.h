@@ -98,4 +98,51 @@ coro::Task<base::Result<void>> WriteAll(Stream& stream, Buffer& buffer) {
   co_return base::Result<void>{};
 }
 
+template <AsyncScatterWriteStream Stream>
+coro::Task<base::Result<void>> WriteAll(Stream& stream, std::span<const WritePart> buffers) {
+  std::array<WritePart, 8> pending{};
+  std::size_t count = 0;
+
+  for (const auto& part : buffers) {
+    if (part.bytes.size()) {
+      continue;
+    }
+
+    if (count == pending.size()) {
+      co_return std::unexpected(base::make_errno(EINVAL));
+    }
+
+    pending[count++] = part;
+  }
+
+  while (count != 0) {
+    auto result = co_await stream.WriteSome(std::span<const WritePart>(pending.data(), count));
+
+    if (!result.has_value()) {
+      co_return std::unexpected(result.error());
+    }
+
+    if (*result == 0) {
+      co_return std::unexpected(base::make_errno(EPIPE));
+    }
+
+    std::size_t written = *result;
+
+    while (count != 0 && written >= pending[0].bytes.size()) {
+      written -= pending[0].bytes.size();
+
+      for (std::size_t i = 1; i < count; ++i) {
+        pending[i - 1] = pending[i];
+      }
+      --count;
+    }
+
+    if (written != 0 && count != 0) {
+      pending[0].bytes = pending[0].bytes.subspan(written);
+    }
+  }
+
+  co_return base::Result<void>{};
+}
+
 }  // namespace coropact::io

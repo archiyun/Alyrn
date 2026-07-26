@@ -3,6 +3,7 @@
 #pragma once
 
 #include <linux/time_types.h>
+#include <sys/socket.h>
 
 #include <chrono>
 #include <coroutine>
@@ -29,24 +30,40 @@ public:
   class ReadSomeAwaiter;
   class ReadSomeForAwaiter;
   class WriteSomeAwaiter;
+  class WriteSomePartsAwaiter;
 
   LUringStream(LUringLoop* loop, int fd, net::Endpoint peer) noexcept;
-  ~LUringStream();
+  ~LUringStream() noexcept;
 
   // A stream may move only on its owning loop thread and only while no
   // operation is waiting for a CQE.
   LUringStream(LUringStream&& other) noexcept;
   LUringStream& operator=(LUringStream&& other) noexcept;
 
-  [[nodiscard]] ReadSomeAwaiter ReadSome(std::span<std::byte> buffer) noexcept;
-  [[nodiscard]] ReadSomeForAwaiter ReadSomeFor(std::span<std::byte> buffer,
-                                               std::chrono::milliseconds timeout) noexcept;
-  [[nodiscard]] WriteSomeAwaiter WriteSome(std::span<const std::byte> buffer) noexcept;
+  [[nodiscard]]
+  ReadSomeAwaiter ReadSome(std::span<std::byte> buffer) noexcept;
+
+  [[nodiscard]]
+  ReadSomeForAwaiter ReadSomeFor(std::span<std::byte> buffer,
+                                 std::chrono::milliseconds timeout) noexcept;
+  [[nodiscard]]
+  WriteSomeAwaiter WriteSome(std::span<const std::byte> buffer) noexcept;
+
+  [[nodiscard]]
+  WriteSomePartsAwaiter WriteSome(std::span<const io::WritePart> buffers) noexcept;
+
   coro::Task<base::Result<void>> Shutdown();
   coro::Task<base::Result<void>> Close();
 
-  [[nodiscard]] const net::Endpoint& PeerAddress() const noexcept { return peer_; }
-  [[nodiscard]] int fd() const noexcept { return fd_; }
+  [[nodiscard]]
+  const net::Endpoint& PeerAddress() const noexcept {
+    return peer_;
+  }
+
+  [[nodiscard]]
+  int fd() const noexcept {
+    return fd_;
+  }
 
 private:
   class CloseAwaiter;
@@ -59,7 +76,7 @@ private:
   int fd_{-1};
   net::Endpoint peer_;
   void* pending_read_{nullptr};
-  WriteSomeAwaiter* pending_write_{nullptr};
+  void* pending_write_{nullptr};
   CloseAwaiter* pending_close_{nullptr};
   bool closed_{false};
 };
@@ -71,8 +88,14 @@ public:
   ReadSomeAwaiter(LUringStream& stream, std::span<std::byte> buffer) noexcept
       : stream_(&stream), buffer_(buffer) {}
 
-  [[nodiscard]] bool await_ready() const noexcept { return false; }
-  [[nodiscard]] bool await_suspend(std::coroutine_handle<> continuation) noexcept;
+  [[nodiscard]]
+  bool await_ready() const noexcept {
+    return false;
+  }
+
+  [[nodiscard]]
+  bool await_suspend(std::coroutine_handle<> continuation) noexcept;
+
   base::Result<std::size_t> await_resume() noexcept;
 
 private:
@@ -91,8 +114,14 @@ public:
   ReadSomeForAwaiter(LUringStream& stream, std::span<std::byte> buffer,
                      std::chrono::milliseconds timeout) noexcept;
 
-  [[nodiscard]] bool await_ready() const noexcept { return false; }
-  [[nodiscard]] bool await_suspend(std::coroutine_handle<> continuation) noexcept;
+  [[nodiscard]]
+  bool await_ready() const noexcept {
+    return false;
+  }
+
+  [[nodiscard]]
+  bool await_suspend(std::coroutine_handle<> continuation) noexcept;
+
   base::Result<std::size_t> await_resume() noexcept;
 
 private:
@@ -121,8 +150,14 @@ public:
   WriteSomeAwaiter(LUringStream& stream, std::span<const std::byte> buffer) noexcept
       : stream_(&stream), buffer_(buffer) {}
 
-  [[nodiscard]] bool await_ready() const noexcept { return false; }
-  [[nodiscard]] bool await_suspend(std::coroutine_handle<> continuation) noexcept;
+  [[nodiscard]]
+  bool await_ready() const noexcept {
+    return false;
+  }
+
+  [[nodiscard]]
+  bool await_suspend(std::coroutine_handle<> continuation) noexcept;
+
   base::Result<std::size_t> await_resume() noexcept;
 
 private:
@@ -130,6 +165,38 @@ private:
 
   LUringStream* stream_;
   std::span<const std::byte> buffer_;
+  LUringOp op_{.kind = LUringOpKind::kWrite};
+  std::optional<base::Result<std::size_t>> immediate_;
+};
+
+class LUringStream::WriteSomePartsAwaiter {
+public:
+  COROPACT_DELETE_COPY_MOVE(WriteSomePartsAwaiter);
+
+  WriteSomePartsAwaiter(LUringStream& stream, std::span<const io::WritePart> buffers) noexcept
+      : stream_(&stream), buffers_(buffers) {}
+
+  [[nodiscard]]
+  bool await_ready() const noexcept {
+    return false;
+  }
+
+  [[nodiscard]]
+  bool await_suspend(std::coroutine_handle<> continuation) noexcept;
+
+  base::Result<std::size_t> await_resume() noexcept;
+
+private:
+  static void OnComplete(LUringOp* op) noexcept;
+
+  static constexpr std::size_t kMaxParts = 8;
+
+  LUringStream* stream_;
+  std::span<const io::WritePart> buffers_;
+
+  std::array<iovec, kMaxParts> iovecs_{};
+  msghdr message_{};
+
   LUringOp op_{.kind = LUringOpKind::kWrite};
   std::optional<base::Result<std::size_t>> immediate_;
 };

@@ -44,16 +44,27 @@ public:
                     ThreadExitCallback exit_callback = {});
   ~LUringWorkerGroup() noexcept;
 
-  [[nodiscard]] base::Result<void> Start();
+  [[nodiscard]]
+  base::Result<void> Start();
+
   void Stop() noexcept;
 
-  [[nodiscard]] bool started() const noexcept { return started_; }
-  [[nodiscard]] std::size_t size() const noexcept { return workers_.size(); }
+  [[nodiscard]]
+  bool started() const noexcept {
+    return started_;
+  }
 
-  [[nodiscard]] LUringWorker* worker(std::size_t index) noexcept {
+  [[nodiscard]]
+  std::size_t size() const noexcept {
+    return workers_.size();
+  }
+
+  [[nodiscard]]
+  LUringWorker* worker(std::size_t index) noexcept {
     return index < workers_.size() ? workers_[index].get() : nullptr;
   }
-  [[nodiscard]] const LUringWorker* worker(std::size_t index) const noexcept {
+  [[nodiscard]]
+  const LUringWorker* worker(std::size_t index) const noexcept {
     return index < workers_.size() ? workers_[index].get() : nullptr;
   }
 

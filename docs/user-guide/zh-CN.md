@@ -180,7 +180,7 @@ coropact::coro::Task<int> Parent(coropact::coro::Scheduler& scheduler) {
 
 ### 可选的协程帧内存池
 
-默认情况下，`Task`、`SpawnRoot` 和 `SyncWaitRoot` 的 coroutine frame 使用
+默认情况下，`Task`、`SpawnDriver` 和 `SyncWaitRoot` 的 coroutine frame 使用
 `std::pmr::new_delete_resource()`，因此不需要修改现有代码。需要降低 frame 的堆分配开销时，
 可以使用专用的 worker-local size-class frame pool：
 
@@ -726,9 +726,10 @@ Reactor 构建或把该测试标记为环境跳过。
 
 ### 停止服务
 
-`LUringServer::Stop()` 会请求 worker 停止并关闭 listener。当前实现的重点是停止接收新连接；
-应用需要确保 session 生命周期和外部资源在 server 停止前后满足自己的关闭策略。完整的 active
-session graceful drain、超时和跨 ring 消息机制仍属于后续工作。
+`LUringServer::Stop()` 会请求 worker 停止、关闭 listener，并取消该 worker ring 上仍在等待的
+I/O。取消产生的 CQE 仍会经过正常 awaiter 路径，因此 active session 能收到
+`ECANCELED` 并完成 stream/frame 清理；worker 会继续运行 ready work 和 CQE，直到 ring
+排空。session handler 仍应把取消错误当作退出信号，并负责清理自己的外部资源。
 
 ## 已实现与后续方向
 

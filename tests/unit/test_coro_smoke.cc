@@ -120,7 +120,7 @@ public:
 
   void Drain() {
     while (Work* work = queue_.PopFront()) {
-      work->Run();
+      Run(work);
     }
   }
 
@@ -129,7 +129,7 @@ public:
     if (work == nullptr) {
       return false;
     }
-    work->Run();
+    Run(work);
     return true;
   }
 
@@ -148,6 +148,14 @@ Task<void> JoinChildAndMark(DrainScheduler* sched, bool* parent_resumed) {
   auto child = Spawn(*sched, Add(40, 2));
   (void)co_await std::move(child);
   *parent_resumed = true;
+}
+
+Task<void> JoinChildFromOtherScheduler(DrainScheduler* child_sched, bool* parent_resumed,
+                                       Scheduler** resumed_scheduler) {
+  auto child = Spawn(*child_sched, Add(40, 2));
+  (void)co_await std::move(child);
+  *parent_resumed = true;
+  *resumed_scheduler = Scheduler::Current();
 }
 
 }  // namespace
@@ -185,7 +193,7 @@ int main() {
     if (!Check(g_void_marker == 7, "spawn+Detach should still run the body")) return 1;
 
     // Async join resumes through a scheduled ResumeWork rather than directly
-    // from JoinState::Complete(). The parent must not resume inline while the
+    // from SpawnState::Finish(). The parent must not resume inline while the
     // child Work is still running.
     bool parent_resumed = false;
     JoinHandle<void> deferred_parent = Spawn(sched, JoinChildAndMark(&sched, &parent_resumed));
@@ -195,6 +203,27 @@ int main() {
     sched.Drain();
     if (!Check(parent_resumed, "async join parent should resume from scheduled Work")) return 1;
     deferred_parent.Wait();
+
+    // The joiner must return to the parent's Scheduler even when the child is
+    // started on another Scheduler.
+    DrainScheduler child_sched;
+    bool cross_parent_resumed = false;
+    Scheduler* resumed_scheduler = nullptr;
+    JoinHandle<void> cross_parent =
+        Spawn(sched, JoinChildFromOtherScheduler(&child_sched, &cross_parent_resumed,
+                                                 &resumed_scheduler));
+    if (!Check(sched.DrainOne(), "cross-scheduler join should start the parent")) return 1;
+    if (!Check(child_sched.DrainOne(), "cross-scheduler join should start the child")) return 1;
+    if (!Check(!cross_parent_resumed, "cross-scheduler parent must remain parked")) return 1;
+    if (!Check(sched.DrainOne(), "cross-scheduler join should schedule the parent on its loop")) {
+      return 1;
+    }
+    if (!Check(cross_parent_resumed, "cross-scheduler parent should resume")) return 1;
+    if (!Check(resumed_scheduler == &sched,
+               "cross-scheduler parent should resume on the parent scheduler")) {
+      return 1;
+    }
+    cross_parent.Wait();
 
     // Async join: a spawned parent co_awaits two spawned children.
     JoinHandle<int> parent = Spawn(sched, JoinChildren(&sched));
