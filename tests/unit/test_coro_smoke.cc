@@ -156,7 +156,7 @@ struct ManualGate {
     bool await_ready() const noexcept { return false; }
 
     bool await_suspend(std::coroutine_handle<> waiter) noexcept {
-      gate->resume_work.handle = waiter;
+      gate->resume_work.SetHandle(waiter);
       return true;
     }
 
@@ -166,7 +166,7 @@ struct ManualGate {
   Awaiter Wait() noexcept { return Awaiter{this}; }
 
   void Open(DrainScheduler& scheduler) noexcept {
-    assert(resume_work.handle);
+    assert(resume_work.HasHandle());
     scheduler.Schedule(&resume_work);
   }
 

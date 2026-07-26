@@ -156,7 +156,7 @@ void LUringTimerQueue::Arm(time::Timestamp deadline) noexcept {
   driver_op_.owner = this;
   driver_op_.on_complete = &LUringTimerQueue::OnDriverComplete;
   driver_op_.completed = false;
-  driver_op_.resume_work.handle = {};
+  driver_op_.resume_work.ClearHandle();
 
   auto result = loop_->SubmitOp(&driver_op_, [this](io_uring_sqe* sqe) noexcept {
     io_uring_prep_timeout(sqe, &driver_timespec_, 0, IORING_TIMEOUT_ABS | IORING_TIMEOUT_REALTIME);

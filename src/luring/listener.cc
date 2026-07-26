@@ -94,8 +94,7 @@ public:
     }
     ++listener_->pending_accepts_;
     op_.kind = LUringOpKind::kAccept;
-    op_.continuation_ = continuation;
-    op_.resume_work.handle = continuation;
+    op_.resume_work.SetHandle(continuation);
     op_.owner = this;
     op_.on_complete = &AcceptAwaiter::OnComplete;
     peer_len_ = static_cast<socklen_t>(sizeof(peer_addr_));
@@ -171,7 +170,7 @@ public:
     }
 
     listener_->pending_close_ = this;
-    resume_work_.handle = continuation;
+    resume_work_.SetHandle(continuation);
     cancel_op_.kind = LUringOpKind::kClose;
     cancel_op_.owner = this;
     cancel_op_.on_complete = &CloseAwaiter::OnCancelComplete;

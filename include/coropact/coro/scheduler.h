@@ -21,7 +21,7 @@ public:
 
   // Preconditions:
   // - work != nullptr
-  // - work->run != nullptr
+  // - work has a configured action (SetRun() or a ResumeWork handle)
   // - work is not already enqueued
   // - work stays alive until it is run or cancelled by owner-side protocol
   virtual void Schedule(Work* work) noexcept = 0;

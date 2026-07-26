@@ -37,7 +37,7 @@ private:
 };
 
 inline bool SleepAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
-  resume_work_.handle = continuation;
+  resume_work_.SetHandle(continuation);
   auto timer =
       loop_->RunAfter(delay_, [this]() noexcept { loop_->ScheduleCompletion(&resume_work_); });
   if (!timer.has_value()) {

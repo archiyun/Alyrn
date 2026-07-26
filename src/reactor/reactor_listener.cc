@@ -96,7 +96,7 @@ public:
                 "AcceptAwaiter: only one pending accept is supported per listener");
 
     scheduler_ = &coro::Scheduler::RequireCurrent();
-    resume_work_.handle = continuation;
+    resume_work_.SetHandle(continuation);
 
     base::Result<ReactorStream> result = TryAccept();
     if (result.has_value() || !IsWouldBlock(result.error().value())) {

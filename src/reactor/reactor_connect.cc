@@ -46,7 +46,7 @@ public:
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     COROPACT_DCHECK(loop_->IsInLoopThread(), "ConnectAwaiter: wrong EventLoop thread");
     scheduler_ = &coro::Scheduler::RequireCurrent();
-    resume_work_.handle = continuation;
+    resume_work_.SetHandle(continuation);
 
     auto fd = net::CreateNonBlockingSocket(peer_.native_family());
     if (!fd.has_value()) {
@@ -133,7 +133,7 @@ public:
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     COROPACT_DCHECK(loop_->IsInLoopThread(), "SleepAwaiter: wrong EventLoop thread");
     scheduler_ = &coro::Scheduler::RequireCurrent();
-    resume_work_.handle = continuation;
+    resume_work_.SetHandle(continuation);
     const auto seconds = std::chrono::duration<double>(delay_).count();
     loop_->RunAfter(seconds, [this] { scheduler_->Schedule(&resume_work_); });
     return true;

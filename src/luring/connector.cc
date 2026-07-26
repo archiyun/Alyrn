@@ -75,8 +75,7 @@ public:
     fd_ = *fd;
 
     op_.kind = LUringOpKind::kConnect;
-    op_.continuation_ = continuation;
-    op_.resume_work.handle = continuation;
+    op_.resume_work.SetHandle(continuation);
     op_.owner = this;
 
     auto submitted = loop_->SubmitOp(&op_, [this, fd = fd_](io_uring_sqe* sqe) noexcept {

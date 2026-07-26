@@ -28,7 +28,7 @@ namespace coropact::luring {
 
 namespace {
 
-base::Result<std::size_t> ToSizeResult(const base::Result<int>& result) noexcept {
+base::Result<std::size_t> ToSizeResult(const LUringCqeResult& result) noexcept {
   if (!result.has_value()) {
     return std::unexpected(result.error());
   }
@@ -58,8 +58,7 @@ bool LUringStream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> contin
 
   stream_->pending_read_ = this;
   op_.kind = LUringOpKind::kRead;
-  op_.continuation_ = continuation;
-  op_.resume_work.handle = continuation;
+  op_.resume_work.SetHandle(continuation);
   op_.owner = this;
   op_.on_complete = &ReadSomeAwaiter::OnComplete;
 
@@ -192,7 +191,7 @@ void LUringStream::ReadSomeForAwaiter::FinishIfReady(LUringOp* current) noexcept
     stream_->pending_read_ = nullptr;
     stream_->NotifyCloseProgress();
   }
-  current->resume_work.handle = continuation_;
+  current->resume_work.SetHandle(continuation_);
 }
 
 // --- WriteSomeAwaiter ---
@@ -212,8 +211,7 @@ bool LUringStream::WriteSomeAwaiter::await_suspend(std::coroutine_handle<> conti
 
   stream_->pending_write_ = this;
   op_.kind = LUringOpKind::kWrite;
-  op_.continuation_ = continuation;
-  op_.resume_work.handle = continuation;
+  op_.resume_work.SetHandle(continuation);
   op_.owner = this;
   op_.on_complete = &WriteSomeAwaiter::OnComplete;
 
@@ -270,7 +268,7 @@ public:
     }
 
     stream_->pending_close_ = this;
-    resume_work_.handle = continuation;
+    resume_work_.SetHandle(continuation);
     cancel_op_.kind = LUringOpKind::kClose;
     cancel_op_.owner = this;
     cancel_op_.on_complete = &CloseAwaiter::OnCancelComplete;
@@ -376,8 +374,7 @@ bool LUringStream::WriteSomePartsAwaiter::await_suspend(
 
   stream_->pending_write_ = this;
 
-  op_.continuation_ = continuation;
-  op_.resume_work.handle = continuation;
+  op_.resume_work.SetHandle(continuation);
   op_.owner = this;
   op_.on_complete = &WriteSomePartsAwaiter::OnComplete;
 

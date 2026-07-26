@@ -142,6 +142,9 @@ template <Returnable T>
 [[nodiscard]]
 JoinHandle<T> Spawn(Scheduler& scheduler, Task<T> task) {
   auto* state = new detail::SpawnState<T>();
+#if defined(COROPACT_ENABLE_SPAWN_STATS)
+  detail::RecordSpawnStateAllocation(sizeof(detail::SpawnState<T>));
+#endif
   detail::SpawnDriver driver = detail::RunSpawn<T>(state, std::move(task));
   state->set_driver_handle(driver.handle);
   scheduler.Schedule(state->driver_work());
@@ -158,7 +161,7 @@ void SpawnDetach(Scheduler& scheduler, Task<T> task) {
   auto handle = driver.handle;
   auto& promise = handle.promise();
 
-  promise.driver_work.handle = handle;
+  promise.driver_work.SetHandle(handle);
   scheduler.Schedule(&promise.driver_work);
 }
 

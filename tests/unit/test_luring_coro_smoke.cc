@@ -27,8 +27,7 @@ public:
   bool await_ready() const noexcept { return false; }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
-    op_.continuation_ = continuation;
-    op_.resume_work.handle = continuation;
+    op_.resume_work.SetHandle(continuation);
 
     auto submitted = loop_->SubmitOp(&op_, [](io_uring_sqe* sqe) noexcept {
       io_uring_prep_nop(sqe);

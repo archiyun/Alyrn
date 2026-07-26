@@ -192,8 +192,7 @@ base::Result<void> LUringLoop::CancelPendingOperations() noexcept {
 
   cancel_all_op_.completed = false;
   cancel_all_op_.result = {};
-  cancel_all_op_.continuation_ = {};
-  cancel_all_op_.resume_work.handle = {};
+  cancel_all_op_.resume_work.ClearHandle();
   cancel_all_op_.owner = this;
   cancel_all_op_.on_complete = nullptr;
 
@@ -618,7 +617,7 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
     COROPACT_CTRACK_SCOPE("luring.cqe.complete");
     first_completion = op->Complete(cqe->res);
   }
-  if (first_completion && op->resume_work.handle) {
+  if (first_completion && op->resume_work.HasHandle()) {
     ScheduleCompletionAt(&op->resume_work, event_ns);
   }
 }
@@ -630,8 +629,7 @@ base::Result<void> LUringLoop::ArmWakePoll() noexcept {
   }
 
   wake_op_.kind = LUringOpKind::kWake;
-  wake_op_.continuation_ = {};
-  wake_op_.resume_work.handle = {};
+  wake_op_.resume_work.ClearHandle();
   wake_op_.owner = this;
   wake_op_.on_complete = nullptr;
   auto submitted = SubmitOp(&wake_op_, [fd = wake_fd_](io_uring_sqe* sqe) noexcept {

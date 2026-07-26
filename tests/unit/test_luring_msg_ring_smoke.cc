@@ -40,7 +40,7 @@ bool Check(bool condition, const char* message) {
 class SignalWork final : public coropact::coro::Work {
 public:
   explicit SignalWork(std::atomic_bool* completed) noexcept : completed_(completed) {
-    run = &RunWork;
+    SetRun(&RunWork);
   }
 
 private:
