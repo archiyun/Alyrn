@@ -66,6 +66,11 @@ if [[ "$FRAME_POOL" != 0 && "$ALLOW_FRAME_POOL_BENCH" != 1 ]]; then
   exit 1
 fi
 
+FRAME_POOL_STATE=off
+if [[ "$FRAME_POOL" != 0 ]]; then
+  FRAME_POOL_STATE=on
+fi
+
 export NO_PROXY="127.0.0.1,localhost${NO_PROXY:+,$NO_PROXY}"
 export no_proxy="$NO_PROXY"
 
@@ -134,7 +139,7 @@ kill "$REACTOR_PID" 2>/dev/null
 wait "$REACTOR_PID" 2>/dev/null || true
 REACTOR_PID=""
 
-echo "==> starting io_uring gateway (8081, ${URING_WORKERS} workers/rings, frame pool disabled)"
+echo "==> starting io_uring gateway (8081, ${URING_WORKERS} workers/rings, frame_pool=${FRAME_POOL_STATE})"
 UPSTREAM_PORTS=9001,9002,9003,9004 LB_ALGO=round_robin FRAME_POOL="$FRAME_POOL" \
   URING_WORKERS="$URING_WORKERS" URING_ENTRIES="$URING_ENTRIES" \
   URING_SQPOLL="$URING_SQPOLL" URING_SQPOLL_IDLE_MS="$URING_SQPOLL_IDLE_MS" \
