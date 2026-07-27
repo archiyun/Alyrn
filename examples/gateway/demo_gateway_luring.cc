@@ -123,7 +123,7 @@ int main() {
   coropact::luring::LUringWorkerGroup workers(
       coropact::net::Endpoint(8080), std::move(options), std::move(on_worker_init),
       [&gateway, &pool](coropact::luring::LUringWorkerContext& context,
-                        coropact::luring::LUringStream stream) -> coropact::coro::Task<void> {
+                        coropact::luring::LUringStream stream) -> coropact::coro::DetachedTask {
         co_await gateway.Serve(std::move(stream),
                                coropact::luring::LUringConnector(&context.loop), pool);
       },

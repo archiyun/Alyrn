@@ -4,8 +4,8 @@
 // C3 acceptance: a detached connection coroutine (Spawn + Detach) must be driven
 // to completion by RESUMING it -- never destroyed from outside while suspended --
 // and the spawn machinery must self-destruct with no leak and no use-after-free.
-// SpawnState is what makes Detach safe: the producer (the spawned driver) frees the
-// state on completion once the consumer has detached.
+// SpawnState is embedded in the SpawnRoot frame. It makes Detach safe: once the
+// consumer has detached, the producer destroys its own root frame on completion.
 //
 // No real Channel: FakeConn stands in for the Channel read slot. Read() parks the
 // coroutine handle; Deliver() (run on the loop thread) hands back a result and

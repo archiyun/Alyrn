@@ -21,6 +21,15 @@ bool Check(bool condition, const char* message) {
   return false;
 }
 
+void TestPackedFrameMetadata() {
+  constexpr std::size_t kBytes = 123456;
+  const auto metadata = coropact::coro::detail::PackFrameMetadata(kBytes, 64);
+  Check(coropact::coro::detail::UnpackFrameBytes(metadata) == kBytes,
+        "packed metadata should preserve frame bytes");
+  Check(coropact::coro::detail::UnpackFrameAlignment(metadata) == 64,
+        "packed metadata should preserve frame alignment");
+}
+
 class RecordingResource final : public std::pmr::memory_resource {
 public:
   std::size_t allocations() const noexcept { return allocations_; }
@@ -108,6 +117,7 @@ void TestSizeClassReuseAndFallback() {
 }  // namespace
 
 int main() {
+  TestPackedFrameMetadata();
   TestSizeClassReuseAndFallback();
 
   RecordingResource resource;
@@ -165,7 +175,7 @@ int main() {
   }
 
   if (!Check(resource.allocations() >= 5,
-             "Task, SpawnDriver, SyncWaitRoot, and nested frames should be pooled")) {
+             "Task, SpawnRoot, SyncWaitRoot, and nested frames should be pooled")) {
     return 1;
   }
   if (!Check(resource.allocations() == resource.deallocations(),

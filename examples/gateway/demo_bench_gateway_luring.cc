@@ -294,7 +294,7 @@ int main() {
   });
   server.set_session_handler([&service, &pools_by_loop, &pools_mutex, &pools_ready](
                                  coropact::luring::LUringWorkerContext& context,
-                                 coropact::luring::LUringStream stream) -> coropact::coro::Task<void> {
+                                 coropact::luring::LUringStream stream) -> coropact::coro::DetachedTask {
     auto& loop = context.loop;
     WorkerPool* pool = nullptr;
     if (!pools_ready.load(std::memory_order_acquire)) {
@@ -310,9 +310,10 @@ int main() {
       }
     }
     if (pool == nullptr) {
-      return service.Serve(std::move(stream), coropact::luring::LUringConnector(&loop));
+      co_await service.Serve(std::move(stream), coropact::luring::LUringConnector(&loop));
+      co_return;
     }
-    return service.Serve(std::move(stream), coropact::luring::LUringConnector(&loop), *pool);
+    co_await service.Serve(std::move(stream), coropact::luring::LUringConnector(&loop), *pool);
   });
 
   auto started = server.Start();

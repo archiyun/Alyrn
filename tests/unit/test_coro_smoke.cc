@@ -5,17 +5,20 @@
 //   a) Task<int> awaited by another Task<int>, result via SyncWait;
 //   b) Task<void> path;
 //   c) Spawn + JoinHandle on a drain-queue Scheduler: Wait, Detach, async join;
-//   d) SpawnDetach: discarded result and suspended/resumed fire-and-forget work;
+//   d) DetachedTask: suspended/resumed one-frame fire-and-forget work;
 //   e) error path: Task<Result<int>> co_return std::unexpected(...).
 // The module is IO-agnostic: the only scheduler here is a test-local container.
 
+#include <atomic>
 #include <cassert>
 #include <cerrno>
 #include <coroutine>
 #include <expected>
+#include <future>
 #include <iostream>
 #include <memory>
 #include <system_error>
+#include <thread>
 
 #include "coropact/base/error.h"
 #include "coropact/coro/awaitable.h"
@@ -27,6 +30,7 @@
 
 using coropact::base::make_errno;
 using coropact::base::Result;
+using coropact::coro::DetachedTask;
 using coropact::coro::JoinHandle;
 using coropact::coro::Scheduler;
 using coropact::coro::Spawn;
@@ -111,12 +115,6 @@ Task<void> SetMarker() {
   co_return;
 }
 
-Task<int> DetachedReturn(bool* ran, Scheduler** resumed_scheduler) {
-  *ran = true;
-  *resumed_scheduler = Scheduler::Current();
-  co_return 99;
-}
-
 // Drain-queue Scheduler: collects Work* and runs them FIFO. Running a Work may
 // enqueue more (e.g. a parked joiner being resumed), so the loop re-checks.
 class DrainScheduler final : public Scheduler {
@@ -146,9 +144,9 @@ private:
   WorkQueue queue_;
 };
 
-// A one-shot awaitable used to prove that SpawnDetach keeps its driver frame
-// alive while the child Task is suspended. The ResumeWork is owned by this
-// test gate and is submitted only when Open() is called.
+// A one-shot awaitable used to prove that a DetachedTask keeps its frame alive
+// while suspended. The ResumeWork is owned by this test gate and is submitted
+// only when Open() is called.
 struct ManualGate {
   struct Awaiter {
     ManualGate* gate;
@@ -173,10 +171,23 @@ struct ManualGate {
   coropact::coro::ResumeWork resume_work;
 };
 
-Task<void> WaitForGate(ManualGate* gate, bool* resumed, Scheduler** resumed_scheduler) {
+// The DetachedTask promise inherits ResumeWork, so the business coroutine and
+// its root scheduling Work share one coroutine frame.
+DetachedTask DetachedReturnOneFrame(bool* ran, Scheduler** resumed_scheduler) {
+  *ran = true;
+  *resumed_scheduler = Scheduler::Current();
+  co_return;
+}
+
+DetachedTask DetachedWaitForGate(ManualGate* gate, bool* resumed, Scheduler** resumed_scheduler) {
   co_await gate->Wait();
   *resumed = true;
   *resumed_scheduler = Scheduler::Current();
+}
+
+Task<int> ReturnAfterGate(ManualGate* gate) {
+  co_await gate->Wait();
+  co_return 42;
 }
 
 // Parent coroutine that joins two spawned children asynchronously.
@@ -227,6 +238,33 @@ int main() {
     sched.Drain();
     if (!Check(joinable.Wait() == 42, "spawn+Wait should yield 42")) return 1;
 
+    // Exercise the blocking path while the root is genuinely incomplete.
+    // The completion thread publishes kFinished and notifies the atomic wait
+    // word; no semaphore or polling loop is involved.
+    ManualGate wait_gate;
+    JoinHandle<int> blocking_join = Spawn(sched, ReturnAfterGate(&wait_gate));
+    if (!Check(sched.DrainOne(), "blocking Wait child should start and park")) return 1;
+
+    std::promise<void> wait_started;
+    auto wait_started_future = wait_started.get_future();
+    std::atomic<bool> wait_finished{false};
+    int blocking_result = 0;
+    std::thread wait_thread([&] {
+      wait_started.set_value();
+      blocking_result = blocking_join.Wait();
+      wait_finished.store(true, std::memory_order_release);
+    });
+    wait_started_future.wait();
+    const bool blocked_before_completion = !wait_finished.load(std::memory_order_acquire);
+
+    wait_gate.Open(sched);
+    sched.Drain();
+    wait_thread.join();
+    if (!Check(blocked_before_completion, "JoinHandle::Wait should block before completion")) {
+      return 1;
+    }
+    if (!Check(blocking_result == 42, "blocking JoinHandle::Wait should yield 42")) return 1;
+
     // Detach path: result discarded, coroutine still runs to completion.
     g_void_marker = 0;
     JoinHandle<void> detached = Spawn(sched, SetMarker());
@@ -234,32 +272,37 @@ int main() {
     sched.Drain();
     if (!Check(g_void_marker == 7, "spawn+Detach should still run the body")) return 1;
 
-    // Direct SpawnDetach path: a non-void result is discarded, while the body
-    // still runs under the scheduler that accepted the work.
-    bool direct_detached_ran = false;
-    Scheduler* direct_detached_scheduler = nullptr;
-    SpawnDetach(sched, DetachedReturn(&direct_detached_ran, &direct_detached_scheduler));
-    if (!Check(!direct_detached_ran, "SpawnDetach should be lazy until scheduled")) return 1;
-    if (!Check(sched.DrainOne(), "SpawnDetach should enqueue a driver Work")) return 1;
-    if (!Check(direct_detached_ran, "SpawnDetach should run the body")) return 1;
-    if (!Check(direct_detached_scheduler == &sched,
-               "SpawnDetach should run under the current scheduler")) {
+    // A completed root keeps its frame alive until the last JoinHandle release.
+    // This exercises the consumer-side destruction path after final_suspend.
+    JoinHandle<void> completed_detach = Spawn(sched, SetMarker());
+    sched.Drain();
+    completed_detach.Detach();
+
+    // One-frame DetachedTask path: the business coroutine itself owns the
+    // ResumeWork, so no additional driver frame is created.
+    bool one_frame_ran = false;
+    Scheduler* one_frame_scheduler = nullptr;
+    SpawnDetach(sched, DetachedReturnOneFrame(&one_frame_ran, &one_frame_scheduler));
+    if (!Check(!one_frame_ran, "DetachedTask should be lazy until scheduled")) return 1;
+    if (!Check(sched.DrainOne(), "DetachedTask should enqueue its embedded Work")) return 1;
+    if (!Check(one_frame_ran, "DetachedTask should run the body")) return 1;
+    if (!Check(one_frame_scheduler == &sched,
+               "DetachedTask should run under the current scheduler")) {
       return 1;
     }
 
-    // Suspended SpawnDetach path: the driver and its Work must remain alive
-    // until the external completion schedules the child back to this loop.
-    ManualGate gate;
-    bool gate_resumed = false;
-    Scheduler* gate_scheduler = nullptr;
-    SpawnDetach(sched, WaitForGate(&gate, &gate_resumed, &gate_scheduler));
-    if (!Check(sched.DrainOne(), "SpawnDetach should start the suspended task")) return 1;
-    if (!Check(!gate_resumed, "suspended SpawnDetach must not finish early")) return 1;
-    gate.Open(sched);
-    if (!Check(sched.DrainOne(), "opened gate should resume SpawnDetach")) return 1;
-    if (!Check(gate_resumed, "resumed SpawnDetach should finish")) return 1;
-    if (!Check(gate_scheduler == &sched,
-               "resumed SpawnDetach should use the current scheduler")) {
+    // The embedded Work must remain valid while the DetachedTask is suspended.
+    ManualGate detached_gate;
+    bool detached_resumed = false;
+    Scheduler* detached_scheduler = nullptr;
+    SpawnDetach(sched, DetachedWaitForGate(&detached_gate, &detached_resumed, &detached_scheduler));
+    if (!Check(sched.DrainOne(), "DetachedTask should start and suspend")) return 1;
+    if (!Check(!detached_resumed, "suspended DetachedTask must not finish early")) return 1;
+    detached_gate.Open(sched);
+    if (!Check(sched.DrainOne(), "DetachedTask should resume from its gate")) return 1;
+    if (!Check(detached_resumed, "resumed DetachedTask should finish")) return 1;
+    if (!Check(detached_scheduler == &sched,
+               "resumed DetachedTask should use the current scheduler")) {
       return 1;
     }
 
@@ -281,8 +324,8 @@ int main() {
     bool cross_parent_resumed = false;
     Scheduler* resumed_scheduler = nullptr;
     JoinHandle<void> cross_parent =
-        Spawn(sched, JoinChildFromOtherScheduler(&child_sched, &cross_parent_resumed,
-                                                 &resumed_scheduler));
+        Spawn(sched,
+              JoinChildFromOtherScheduler(&child_sched, &cross_parent_resumed, &resumed_scheduler));
     if (!Check(sched.DrainOne(), "cross-scheduler join should start the parent")) return 1;
     if (!Check(child_sched.DrainOne(), "cross-scheduler join should start the child")) return 1;
     if (!Check(!cross_parent_resumed, "cross-scheduler parent must remain parked")) return 1;

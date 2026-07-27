@@ -14,7 +14,6 @@
 
 #include "coropact/base/error.h"
 #include "coropact/coro/spawn.h"
-#include "coropact/coro/task.h"
 #include "coropact/luring/listener.h"
 #include "coropact/luring/loop.h"
 
@@ -22,8 +21,8 @@ namespace coropact::luring {
 
 namespace {
 
-coro::Task<void> AcceptLoop(LUringWorkerContext& context,
-                            LUringWorker::ConnectionCallback* callback) {
+coro::DetachedTask AcceptLoop(LUringWorkerContext& context,
+                               LUringWorker::ConnectionCallback* callback) {
   while (true) {
     auto accepted = co_await context.listener.Accept();
     if (!accepted.has_value()) {
@@ -39,8 +38,8 @@ coro::Task<void> AcceptLoop(LUringWorkerContext& context,
   }
 }
 
-coro::Task<void> CloseListener(LUringListener* listener,
-                               std::optional<base::Result<void>>* result) {
+coro::DetachedTask CloseListener(LUringListener* listener,
+                                 std::optional<base::Result<void>>* result) {
   result->emplace(co_await listener->Close());
 }
 

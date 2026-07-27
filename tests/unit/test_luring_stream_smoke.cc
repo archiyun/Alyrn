@@ -128,26 +128,28 @@ bool WriteFd(int fd, std::string_view bytes) {
   return true;
 }
 
-coropact::coro::Task<void> ReadOnce(coropact::luring::LUringStream* stream, coropact::luring::LUringLoop* loop,
-                                std::span<std::byte> buffer,
-                                std::optional<coropact::base::Result<std::size_t>>* out,
-                                bool* resumed_with_scheduler) {
+coropact::coro::DetachedTask ReadOnce(coropact::luring::LUringStream* stream,
+                                      coropact::luring::LUringLoop* loop,
+                                      std::span<std::byte> buffer,
+                                      std::optional<coropact::base::Result<std::size_t>>* out,
+                                      bool* resumed_with_scheduler) {
   auto result = co_await stream->ReadSome(buffer);
   *resumed_with_scheduler = coropact::coro::Scheduler::Current() == loop;
   out->emplace(std::move(result));
 }
 
-coropact::coro::Task<void> WriteOnce(coropact::luring::LUringStream* stream, coropact::luring::LUringLoop* loop,
-                                 std::span<const std::byte> buffer,
-                                 std::optional<coropact::base::Result<std::size_t>>* out,
-                                 bool* resumed_with_scheduler) {
+coropact::coro::DetachedTask WriteOnce(coropact::luring::LUringStream* stream,
+                                       coropact::luring::LUringLoop* loop,
+                                       std::span<const std::byte> buffer,
+                                       std::optional<coropact::base::Result<std::size_t>>* out,
+                                       bool* resumed_with_scheduler) {
   auto result = co_await stream->WriteSome(buffer);
   *resumed_with_scheduler = coropact::coro::Scheduler::Current() == loop;
   out->emplace(std::move(result));
 }
 
-coropact::coro::Task<void> CloseOnce(coropact::luring::LUringStream* stream,
-                                 std::optional<coropact::base::Result<void>>* out) {
+coropact::coro::DetachedTask CloseOnce(coropact::luring::LUringStream* stream,
+                                       std::optional<coropact::base::Result<void>>* out) {
   auto result = co_await stream->Close();
   out->emplace(std::move(result));
 }
@@ -176,8 +178,8 @@ bool CheckReadSome() {
   std::optional<coropact::base::Result<std::size_t>> result;
   bool resumed_with_scheduler = false;
 
-  coropact::coro::Spawn(loop, ReadOnce(&stream, &loop, buffer, &result, &resumed_with_scheduler))
-      .Detach();
+  coropact::coro::SpawnDetach(loop,
+                              ReadOnce(&stream, &loop, buffer, &result, &resumed_with_scheduler));
 
   loop.RunReady();
 
@@ -222,8 +224,8 @@ bool CheckWriteSome() {
   std::optional<coropact::base::Result<std::size_t>> result;
   bool resumed_with_scheduler = false;
 
-  coropact::coro::Spawn(loop, WriteOnce(&stream, &loop, bytes, &result, &resumed_with_scheduler))
-      .Detach();
+  coropact::coro::SpawnDetach(loop,
+                              WriteOnce(&stream, &loop, bytes, &result, &resumed_with_scheduler));
 
   loop.RunReady();
 
@@ -270,7 +272,7 @@ bool CheckCloseWithoutPending() {
   coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
 
   std::optional<coropact::base::Result<void>> result;
-  coropact::coro::Spawn(loop, CloseOnce(&stream, &result)).Detach();
+  coropact::coro::SpawnDetach(loop, CloseOnce(&stream, &result));
 
   loop.RunReady();
 
@@ -299,14 +301,13 @@ bool CheckCloseCancelsPendingRead() {
   std::optional<coropact::base::Result<std::size_t>> read_result;
   bool read_resumed_with_scheduler = false;
 
-  coropact::coro::Spawn(loop,
-                    ReadOnce(&stream, &loop, buffer, &read_result, &read_resumed_with_scheduler))
-      .Detach();
+  coropact::coro::SpawnDetach(
+      loop, ReadOnce(&stream, &loop, buffer, &read_result, &read_resumed_with_scheduler));
 
   loop.RunReady();
 
   std::optional<coropact::base::Result<void>> close_result;
-  coropact::coro::Spawn(loop, CloseOnce(&stream, &close_result)).Detach();
+  coropact::coro::SpawnDetach(loop, CloseOnce(&stream, &close_result));
 
   loop.RunReady();
 

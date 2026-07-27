@@ -26,8 +26,8 @@ bool IsEnvironmentSkip(coropact::base::Error error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 
-coropact::coro::Task<void> SleepTask(coropact::luring::LUringLoop* loop, bool* resumed,
-                                 bool* scheduler_ok) {
+coropact::coro::DetachedTask SleepTask(coropact::luring::LUringLoop* loop, bool* resumed,
+                                       bool* scheduler_ok) {
   auto result = co_await coropact::luring::SleepFor(*loop, 1ms);
   *resumed = true;
   *scheduler_ok = coropact::coro::Scheduler::Current() == loop;
@@ -77,7 +77,7 @@ bool TestTimers() {
 
   bool resumed = false;
   bool scheduler_ok = false;
-  coropact::coro::Spawn(loop, SleepTask(&loop, &resumed, &scheduler_ok)).Detach();
+  coropact::coro::SpawnDetach(loop, SleepTask(&loop, &resumed, &scheduler_ok));
   loop.RunReady();
   auto completed = loop.WaitCompletions();
   loop.RunReady();

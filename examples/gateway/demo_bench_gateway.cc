@@ -157,7 +157,7 @@ int main() {
   coropact::reactor::ReactorWorkerGroup workers(
       coropact::net::Endpoint(listen_port), std::move(options), {},
       [&gw, &pool](coropact::reactor::ReactorWorkerContext& context,
-                   coropact::reactor::ReactorStream stream) -> coropact::coro::Task<void> {
+                   coropact::reactor::ReactorStream stream) -> coropact::coro::DetachedTask {
         co_await gw.Serve(std::move(stream), coropact::reactor::ReactorConnector(&context.loop), pool);
       });
 

@@ -203,7 +203,7 @@ bool CheckWorkerGroupAcceptCallback() {
   coropact::luring::LUringWorkerGroup group(
       listen_addr, options, {},
       [&](coropact::luring::LUringWorkerContext& context,
-          coropact::luring::LUringStream stream) -> coropact::coro::Task<void> {
+          coropact::luring::LUringStream stream) -> coropact::coro::DetachedTask {
         if (!context.loop.IsInLoopThread()) {
           bad_thread.store(true, std::memory_order_relaxed);
         }

@@ -6,7 +6,7 @@
 #include <memory>
 
 #include "coropact/base/error.h"
-#include "coropact/coro/task.h"
+#include "coropact/coro/detached_task.h"
 #include "coropact/luring/stream.h"
 #include "coropact/luring/worker_group.h"
 #include "coropact/net/endpoint.h"
@@ -35,7 +35,8 @@ public:
   using Stream = LUringStream;
   using ThreadInitCallback = LUringWorkerGroup::ThreadInitCallback;
   using ThreadExitCallback = LUringWorkerGroup::ThreadExitCallback;
-  using SessionHandler = std::function<coro::Task<void>(LUringWorkerContext&, Stream)>;
+  using SessionHandler =
+      std::function<coro::DetachedTask(LUringWorkerContext&, Stream)>;
 
   explicit LUringServer(net::Endpoint listen_addr, LUringServerOptions options = {});
   ~LUringServer() noexcept;

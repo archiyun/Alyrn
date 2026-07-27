@@ -22,8 +22,8 @@
 // operations do not create an unrelated one-million-frame live set.
 // frame_allocated_bytes is the byte count passed to the selected frame
 // resource, including the frame allocator's header/alignment overhead.
-// spawn_state_allocated_bytes counts the ordinary heap allocation made by
-// Spawn() for SpawnState; SpawnDetach does not create that state.
+// spawn_state_allocated_bytes is retained as a regression counter for a
+// standalone SpawnState allocation; the embedded SpawnRoot path reports zero.
 
 #include <algorithm>
 #include <array>
@@ -38,6 +38,7 @@
 #include <string_view>
 #include <utility>
 
+#include "coropact/coro/detail/spawn_stats.h"
 #include "coropact/coro/frame_allocator.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/spawn.h"
@@ -48,6 +49,7 @@
 namespace {
 
 using coropact::coro::CoroFramePoolResource;
+using coropact::coro::DetachedTask;
 using coropact::coro::FrameAllocatorScope;
 using coropact::coro::Scheduler;
 using coropact::coro::Spawn;
@@ -98,6 +100,11 @@ Task<void> MicroTask(std::uint64_t* completed) {
   co_return;
 }
 
+DetachedTask MicroDetachedTask(std::uint64_t* completed) {
+  ++*completed;
+  co_return;
+}
+
 template <typename FrameResource>
 BenchmarkResult RunBenchmark(FrameResource& frame_resource, SpawnMode mode, bool frame_pool,
                              std::uint64_t iterations) {
@@ -115,7 +122,7 @@ BenchmarkResult RunBenchmark(FrameResource& frame_resource, SpawnMode mode, bool
         if (mode == SpawnMode::kSpawnThenDetach) {
           Spawn(scheduler, MicroTask(&completed)).Detach();
         } else {
-          SpawnDetach(scheduler, MicroTask(&completed));
+          SpawnDetach(scheduler, MicroDetachedTask(&completed));
         }
       }
     }
@@ -123,8 +130,7 @@ BenchmarkResult RunBenchmark(FrameResource& frame_resource, SpawnMode mode, bool
   }
 
   const auto elapsed = std::chrono::steady_clock::now() - start;
-  const double elapsed_ms =
-      std::chrono::duration<double, std::milli>(elapsed).count();
+  const double elapsed_ms = std::chrono::duration<double, std::milli>(elapsed).count();
 
   return BenchmarkResult{
       .mode = mode,
@@ -137,14 +143,12 @@ BenchmarkResult RunBenchmark(FrameResource& frame_resource, SpawnMode mode, bool
 }
 
 template <typename FrameResource>
-BenchmarkResult RunCountedBenchmark(FrameResource& frame_resource, SpawnMode mode,
-                                    bool frame_pool, std::uint64_t iterations,
-                                    MemoryResourceStats& frame_stats,
+BenchmarkResult RunCountedBenchmark(FrameResource& frame_resource, SpawnMode mode, bool frame_pool,
+                                    std::uint64_t iterations, MemoryResourceStats& frame_stats,
                                     SpawnAllocationStats& spawn_stats) {
   CountingMemoryResource counted_resource{frame_resource, frame_stats};
   SpawnAllocationScope spawn_scope{spawn_stats};
-  BenchmarkResult result =
-      RunBenchmark(counted_resource, mode, frame_pool, iterations);
+  BenchmarkResult result = RunBenchmark(counted_resource, mode, frame_pool, iterations);
   result.frame_stats = frame_stats;
   result.spawn_stats = spawn_stats;
   return result;
@@ -203,9 +207,8 @@ std::size_t ModeIndex(SpawnMode mode) noexcept {
   return mode == SpawnMode::kSpawnThenDetach ? 0 : 1;
 }
 
-BenchmarkResult MedianResult(
-    const std::array<std::array<BenchmarkResult, 2>, kRounds>& results,
-    std::size_t mode_index) {
+BenchmarkResult MedianResult(const std::array<std::array<BenchmarkResult, 2>, kRounds>& results,
+                             std::size_t mode_index) {
   BenchmarkResult median = results[0][mode_index];
   std::array<double, kRounds> elapsed_ms{};
   std::array<std::uint64_t, kRounds> frame_allocate_calls{};
@@ -257,8 +260,7 @@ void PrintResult(const char* record, std::size_t round, const BenchmarkResult& r
 
 int main() {
   constexpr std::array<std::uint64_t, 3> kIterationCounts{10'000, 100'000, 1'000'000};
-  constexpr std::array<SpawnMode, 2> kModes{SpawnMode::kSpawnThenDetach,
-                                            SpawnMode::kSpawnDetach};
+  constexpr std::array<SpawnMode, 2> kModes{SpawnMode::kSpawnThenDetach, SpawnMode::kSpawnDetach};
 
   bool frame_pool_values[2]{};
   std::size_t frame_pool_count = 0;
@@ -281,8 +283,8 @@ int main() {
           const SpawnMode mode = kModes[mode_index];
           results[round][mode_index] = RunOne(mode, frame_pool_values[pool_index], iterations);
           if (results[round][mode_index].completed != iterations) {
-            std::cerr << "benchmark completed " << results[round][mode_index].completed
-                      << " of " << iterations << " tasks\n";
+            std::cerr << "benchmark completed " << results[round][mode_index].completed << " of "
+                      << iterations << " tasks\n";
             return 1;
           }
         }

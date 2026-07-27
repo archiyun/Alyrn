@@ -49,7 +49,7 @@ int main() {
   }
 
   auto listener = std::move(*listener_result);
-  coro::Spawn(scheduler, simple_echo::AcceptLoop(listener, scheduler)).Detach();
+  coro::SpawnDetach(scheduler, simple_echo::AcceptLoop(listener, scheduler));
 
   std::cout << "simple echo (Reactor) listening on 127.0.0.1:" << kPort << '\n';
   loop.Loop();

@@ -44,12 +44,12 @@ public:
   // Exceptions are banned project-wide; reaching here is an unrecoverable bug.
   void unhandled_exception() noexcept { std::terminate(); }
 
-  void set_continuation(std::coroutine_handle<> continuation) noexcept {
+  void SetContinuation(std::coroutine_handle<> continuation) noexcept {
     continuation_ = continuation ? continuation : std::noop_coroutine();
   }
 
   [[nodiscard]]
-  std::coroutine_handle<> continuation() const noexcept {
+  std::coroutine_handle<> Continuation() const noexcept {
     return continuation_;
   }
 

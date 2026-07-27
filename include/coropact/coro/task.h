@@ -101,7 +101,7 @@ public:
 
   Handle await_suspend(std::coroutine_handle<> caller) noexcept {
     assert(handle_);
-    handle_.promise().set_continuation(caller);
+    handle_.promise().SetContinuation(caller);
     return handle_;
   }
 

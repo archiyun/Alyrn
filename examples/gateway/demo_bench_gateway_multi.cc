@@ -155,7 +155,7 @@ int main() {
       },
       [&service, &pools_by_loop, &pools_mutex](
           coropact::reactor::ReactorWorkerContext& context,
-          coropact::reactor::ReactorStream stream) -> coropact::coro::Task<void> {
+          coropact::reactor::ReactorStream stream) -> coropact::coro::DetachedTask {
         WorkerPool* pool = nullptr;
         {
           std::lock_guard lock(pools_mutex);

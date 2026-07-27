@@ -66,7 +66,7 @@ int main(int argc, char** argv) {
     coropact::reactor::ReactorWorkerGroup workers(
         *listen_addr, std::move(options), std::move(on_worker_init),
         [&gateway, &pool](coropact::reactor::ReactorWorkerContext& context,
-                          coropact::reactor::ReactorStream stream) -> coropact::coro::Task<void> {
+                          coropact::reactor::ReactorStream stream) -> coropact::coro::DetachedTask {
           co_await gateway.Serve(std::move(stream),
                                   coropact::reactor::ReactorConnector(&context.loop), pool);
         });

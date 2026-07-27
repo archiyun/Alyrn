@@ -16,13 +16,13 @@
 #include "coropact/base/error.h"
 #include "coropact/coro/spawn.h"
 #include "coropact/coro/task.h"
+#include "coropact/net/endpoint.h"
+#include "coropact/net/socket.h"
 #include "coropact/reactor/channel.h"
 #include "coropact/reactor/event_loop.h"
 #include "coropact/reactor/event_loop_scheduler.h"
-#include "coropact/net/endpoint.h"
 #include "coropact/reactor/reactor_listener.h"
 #include "coropact/reactor/reactor_stream.h"
-#include "coropact/net/socket.h"
 
 namespace {
 
@@ -129,15 +129,17 @@ static_assert(std::is_move_assignable_v<coropact::reactor::ReactorStream>);
 static_assert(std::is_move_constructible_v<coropact::reactor::ReactorListener>);
 static_assert(std::is_move_assignable_v<coropact::reactor::ReactorListener>);
 
-coropact::coro::Task<void> ReadOnce(coropact::reactor::ReactorStream* stream, coropact::reactor::EventLoop* loop,
-                                std::array<std::byte, 16>* buffer,
-                                std::optional<ReadResult>* result) {
+coropact::coro::DetachedTask ReadOnce(coropact::reactor::ReactorStream* stream,
+                                      coropact::reactor::EventLoop* loop,
+                                      std::array<std::byte, 16>* buffer,
+                                      std::optional<ReadResult>* result) {
   result->emplace(co_await stream->ReadSome(*buffer));
   loop->Quit();
 }
 
-coropact::coro::Task<void> AcceptOnce(coropact::reactor::ReactorListener* listener, coropact::reactor::EventLoop* loop,
-                                  std::optional<AcceptResult>* result) {
+coropact::coro::DetachedTask AcceptOnce(coropact::reactor::ReactorListener* listener,
+                                        coropact::reactor::EventLoop* loop,
+                                        std::optional<AcceptResult>* result) {
   result->emplace(co_await listener->Accept());
   loop->Quit();
 }
@@ -164,8 +166,8 @@ bool TestReactorStreamMove() {
     coropact::reactor::ReactorStream moved(std::move(source));
     coropact::reactor::EventLoopScheduler scheduler(&loop);
 
-    coropact::coro::Spawn(scheduler, ReadOnce(&moved, &loop, &constructed_buffer, &constructed_result))
-        .Detach();
+    coropact::coro::SpawnDetach(scheduler,
+                                ReadOnce(&moved, &loop, &constructed_buffer, &constructed_result));
     loop.QueueInLoop([peer_fd = source_pair[1]] { ::write(peer_fd, "c", 1); });
     loop.RunAfter(0.2, [&] { loop.Quit(); });
     loop.Loop();
@@ -189,8 +191,8 @@ bool TestReactorStreamMove() {
     target = std::move(source);
     coropact::reactor::EventLoopScheduler scheduler(&loop);
 
-    coropact::coro::Spawn(scheduler, ReadOnce(&target, &loop, &assigned_buffer, &assigned_result))
-        .Detach();
+    coropact::coro::SpawnDetach(scheduler,
+                                ReadOnce(&target, &loop, &assigned_buffer, &assigned_result));
     loop.QueueInLoop([peer_fd = target_pair[1]] { ::write(peer_fd, "a", 1); });
     loop.RunAfter(0.2, [&] { loop.Quit(); });
     loop.Loop();
@@ -236,7 +238,7 @@ bool TestReactorListenerMove() {
     }
 
     coropact::reactor::EventLoopScheduler scheduler(&loop);
-    coropact::coro::Spawn(scheduler, AcceptOnce(&moved, &loop, &accepted)).Detach();
+    coropact::coro::SpawnDetach(scheduler, AcceptOnce(&moved, &loop, &accepted));
     loop.QueueInLoop([&] { client_fd = ConnectNonBlocking(*moved_address); });
     loop.RunAfter(0.2, [&] { loop.Quit(); });
     loop.Loop();

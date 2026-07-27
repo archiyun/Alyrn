@@ -14,8 +14,8 @@ namespace coropact::reactor {
 
 namespace {
 
-coro::Task<void> AcceptLoop(ReactorWorkerContext& context,
-                            ReactorWorker::ConnectionCallback* callback) {
+coro::DetachedTask AcceptLoop(ReactorWorkerContext& context,
+                               ReactorWorker::ConnectionCallback* callback) {
   while (true) {
     auto accepted = co_await context.listener.Accept();
     if (!accepted.has_value()) {
@@ -32,7 +32,7 @@ coro::Task<void> AcceptLoop(ReactorWorkerContext& context,
   }
 }
 
-coro::Task<void> CloseListenerAndQuit(EventLoop& loop, ReactorListener& listener) {
+coro::DetachedTask CloseListenerAndQuit(EventLoop& loop, ReactorListener& listener) {
   auto result = co_await listener.Close();
   (void)result;
 

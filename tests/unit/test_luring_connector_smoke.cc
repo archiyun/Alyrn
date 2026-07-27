@@ -136,9 +136,10 @@ coropact::base::Result<ListenEndpoint> ListenLoopback() {
   return ListenEndpoint{.fd = UniqueFd(fd), .port = ntohs(addr.sin_port)};
 }
 
-coropact::coro::Task<void> ConnectOnce(
-    coropact::luring::LUringConnector* connector, coropact::luring::LUringLoop* loop, std::string_view host,
-    std::uint16_t port, std::optional<coropact::base::Result<coropact::luring::LUringStream>>* out,
+coropact::coro::DetachedTask ConnectOnce(
+    coropact::luring::LUringConnector* connector, coropact::luring::LUringLoop* loop,
+    std::string_view host, std::uint16_t port,
+    std::optional<coropact::base::Result<coropact::luring::LUringStream>>* out,
     bool* resumed_with_scheduler) {
   auto connected = co_await connector->Connect(host, port);
   *resumed_with_scheduler = coropact::coro::Scheduler::Current() == loop;
@@ -170,9 +171,8 @@ bool CheckConnectSuccess() {
   std::optional<coropact::base::Result<coropact::luring::LUringStream>> connected;
   bool resumed_with_scheduler = false;
 
-  coropact::coro::Spawn(loop, ConnectOnce(&connector, &loop, "127.0.0.1", listener->port, &connected,
-                                      &resumed_with_scheduler))
-      .Detach();
+  coropact::coro::SpawnDetach(loop, ConnectOnce(&connector, &loop, "127.0.0.1", listener->port,
+                                                &connected, &resumed_with_scheduler));
 
   loop.RunReady();
 
@@ -198,9 +198,8 @@ bool CheckConnectRejectsInvalidHost() {
   std::optional<coropact::base::Result<coropact::luring::LUringStream>> connected;
   bool resumed_with_scheduler = false;
 
-  coropact::coro::Spawn(
-      loop, ConnectOnce(&connector, &loop, "not-an-ip", 80, &connected, &resumed_with_scheduler))
-      .Detach();
+  coropact::coro::SpawnDetach(
+      loop, ConnectOnce(&connector, &loop, "not-an-ip", 80, &connected, &resumed_with_scheduler));
 
   loop.RunReady();
 

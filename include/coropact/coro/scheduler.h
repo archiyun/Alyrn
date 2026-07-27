@@ -40,7 +40,7 @@ public:
   }
 
   [[nodiscard]]
-  std::pmr::memory_resource* frame_resource() const noexcept {
+  std::pmr::memory_resource* FrameResource() const noexcept {
     return frame_resource_;
   }
 
