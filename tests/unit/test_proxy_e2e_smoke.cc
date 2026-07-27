@@ -90,7 +90,7 @@ void InitGateway(GatewayRuntime& runtime, uint16_t port,
       coropact::net::Endpoint(port), std::move(options),
       coropact::reactor::ReactorWorkerGroup::ThreadInitCallback{},
       [&runtime](coropact::reactor::ReactorWorkerContext& context,
-                 coropact::reactor::ReactorStream stream) -> coropact::coro::Task<void> {
+                 coropact::reactor::ReactorStream stream) -> coropact::coro::DetachedTask {
         co_await runtime.gateway->Serve(std::move(stream),
                                         coropact::reactor::ReactorConnector(&context.loop),
                                         *runtime.pool);

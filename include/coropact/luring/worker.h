@@ -11,7 +11,7 @@
 #include <thread>
 
 #include "coropact/base/error.h"
-#include "coropact/coro/task.h"
+#include "coropact/coro/detached_task.h"
 #include "coropact/luring/connector.h"
 #include "coropact/luring/listener.h"
 #include "coropact/luring/loop.h"
@@ -55,7 +55,8 @@ public:
   // Runs on the worker thread after the loop has drained and before loop-bound
   // listener/connector resources are destroyed.
   using ThreadExitCallback = std::function<void(LUringWorkerContext&)>;
-  using ConnectionCallback = std::function<coro::Task<void>(LUringWorkerContext&, LUringStream)>;
+  using ConnectionCallback =
+      std::function<coro::DetachedTask(LUringWorkerContext&, LUringStream)>;
 
   LUringWorker(std::size_t index, net::Endpoint listen_addr, LUringWorkerOptions options = {},
                ThreadInitCallback init_callback = {}, ConnectionCallback connection_callback = {},

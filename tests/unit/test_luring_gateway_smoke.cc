@@ -267,8 +267,9 @@ template <class Service>
 void BindServer(Service& service, coropact::luring::LUringServer& server) {
   server.set_session_handler(
       [&service](coropact::luring::LUringWorkerContext& context,
-                 coropact::luring::LUringStream stream) -> coropact::coro::Task<void> {
-        return service.Serve(std::move(stream), coropact::luring::LUringConnector(&context.loop));
+                 coropact::luring::LUringStream stream) -> coropact::coro::DetachedTask {
+        co_await service.Serve(std::move(stream),
+                               coropact::luring::LUringConnector(&context.loop));
       });
 }
 

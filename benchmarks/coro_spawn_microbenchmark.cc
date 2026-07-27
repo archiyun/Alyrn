@@ -48,6 +48,7 @@
 namespace {
 
 using coropact::coro::CoroFramePoolResource;
+using coropact::coro::DetachedTask;
 using coropact::coro::FrameAllocatorScope;
 using coropact::coro::Scheduler;
 using coropact::coro::Spawn;
@@ -98,6 +99,11 @@ Task<void> MicroTask(std::uint64_t* completed) {
   co_return;
 }
 
+DetachedTask MicroDetachedTask(std::uint64_t* completed) {
+  ++*completed;
+  co_return;
+}
+
 template <typename FrameResource>
 BenchmarkResult RunBenchmark(FrameResource& frame_resource, SpawnMode mode, bool frame_pool,
                              std::uint64_t iterations) {
@@ -115,7 +121,7 @@ BenchmarkResult RunBenchmark(FrameResource& frame_resource, SpawnMode mode, bool
         if (mode == SpawnMode::kSpawnThenDetach) {
           Spawn(scheduler, MicroTask(&completed)).Detach();
         } else {
-          SpawnDetach(scheduler, MicroTask(&completed));
+          SpawnDetach(scheduler, MicroDetachedTask(&completed));
         }
       }
     }

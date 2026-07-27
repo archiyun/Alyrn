@@ -11,7 +11,7 @@
 #include <thread>
 
 #include "coropact/base/error.h"
-#include "coropact/coro/task.h"
+#include "coropact/coro/detached_task.h"
 #include "coropact/reactor/event_loop.h"
 #include "coropact/reactor/event_loop_scheduler.h"
 #include "coropact/reactor/reactor_connect.h"
@@ -51,7 +51,8 @@ public:
   // Runs on the worker thread after the loop stops and before loop-bound
   // listener/connector resources are destroyed.
   using ThreadExitCallback = std::function<void(ReactorWorkerContext&)>;
-  using ConnectionCallback = std::function<coro::Task<void>(ReactorWorkerContext&, ReactorStream)>;
+  using ConnectionCallback =
+      std::function<coro::DetachedTask(ReactorWorkerContext&, ReactorStream)>;
 
   ReactorWorker(std::size_t index, net::Endpoint listen_addr, ReactorWorkerOptions options = {},
                 ThreadInitCallback init_callback = {}, ConnectionCallback connection_callback = {},

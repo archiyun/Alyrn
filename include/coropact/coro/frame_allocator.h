@@ -10,7 +10,9 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <memory>
 #include <memory_resource>
@@ -32,13 +34,49 @@ inline void SetCurrentFrameResource(std::pmr::memory_resource* resource) noexcep
 
 // The coroutine frame contains no user-visible pointer to the allocator. Keep
 // the allocation metadata immediately before the frame and recover it from a
-// marker slot during promise destruction.
+// marker slot during promise destruction. The header is constructed at the
+// original allocation address, so the header pointer is also the address that
+// must be passed back to the resource.
+//
+// A frame allocation only needs the resource, the exact byte count, and the
+// exact alignment for deallocation. On the supported 64-bit targets, keep the
+// latter two values in one word: the low 60 bits hold bytes and the high four
+// bits hold log2(alignment).
+static_assert(sizeof(std::size_t) == sizeof(std::uint64_t),
+              "packed frame metadata requires 64-bit size_t");
+
+inline constexpr unsigned kFrameMetadataAlignmentBits = 4;
+inline constexpr unsigned kFrameMetadataBytesBits =
+    std::numeric_limits<std::uint64_t>::digits - kFrameMetadataAlignmentBits;  // 60
+inline constexpr std::uint64_t kFrameMetadataBytesMask =
+    (std::uint64_t{1} << kFrameMetadataBytesBits) - 1;  // 15
+inline constexpr unsigned kFrameMetadataMaxAlignmentExponent =
+    (1 << kFrameMetadataAlignmentBits) - 1;  // 2^60 - 1
+
+inline std::uint64_t PackFrameMetadata(std::size_t bytes, std::size_t alignment) {
+  assert(bytes <= kFrameMetadataBytesMask);
+  assert(alignment != 0 && std::has_single_bit(alignment));
+  const auto exponent = static_cast<unsigned>(std::countr_zero(alignment));
+  assert(exponent <= kFrameMetadataMaxAlignmentExponent);
+  return static_cast<std::uint64_t>(bytes) |
+         (static_cast<std::uint64_t>(exponent) << kFrameMetadataBytesBits);
+}
+
+inline std::size_t UnpackFrameBytes(std::uint64_t metadata) noexcept {
+  return static_cast<std::size_t>(metadata & kFrameMetadataBytesMask);
+}
+
+inline std::size_t UnpackFrameAlignment(std::uint64_t metadata) noexcept {
+  const auto exponent = static_cast<unsigned>(metadata >> kFrameMetadataBytesBits);
+  return std::size_t{1} << exponent;
+}
+
 struct FrameAllocationHeader {
   std::pmr::memory_resource* resource;
-  void* raw;
-  std::size_t bytes;
-  std::size_t alignment;
+  std::uint64_t metadata;
 };
+
+static_assert(sizeof(FrameAllocationHeader) == 2 * sizeof(void*));
 
 inline constexpr std::size_t FrameAllocationMarkerSize = sizeof(FrameAllocationHeader*);
 
@@ -52,15 +90,22 @@ inline void* AllocateFrame(std::size_t frame_size, std::size_t frame_alignment) 
   }
 
   const std::size_t bytes = prefix + frame_size + alignment - 1;
-  auto* resource = CurrentFrameResource();
-  void* raw = resource->allocate(bytes, alignment);
+  const auto alignment_exponent = static_cast<unsigned>(std::countr_zero(alignment));
+  if (bytes > kFrameMetadataBytesMask || !std::has_single_bit(alignment) ||
+      alignment_exponent > kFrameMetadataMaxAlignmentExponent) {
+    throw std::bad_alloc();
+  }
 
-  auto* header = ::new (raw) FrameAllocationHeader{resource, raw, bytes, alignment};
-  void* frame = static_cast<std::byte*>(raw) + prefix;
+  auto* resource = CurrentFrameResource();
+  void* allocation = resource->allocate(bytes, alignment);
+
+  auto* header =
+      ::new (allocation) FrameAllocationHeader{resource, PackFrameMetadata(bytes, alignment)};
+  void* frame = static_cast<std::byte*>(allocation) + prefix;
   std::size_t available = bytes - prefix;
   if (std::align(frame_alignment, frame_size, frame, available) == nullptr) {
     header->~FrameAllocationHeader();
-    resource->deallocate(raw, bytes, alignment);
+    resource->deallocate(allocation, bytes, alignment);
     throw std::bad_alloc();
   }
 
@@ -79,15 +124,15 @@ inline void DeallocateFrame(void* frame) noexcept {
                                                             FrameAllocationMarkerSize);
   FrameAllocationHeader* header = *marker;
   auto* resource = header->resource;
-  void* raw = header->raw;
-  const std::size_t bytes = header->bytes;
-  const std::size_t alignment = header->alignment;
+  void* allocation = header;
+  const std::size_t bytes = UnpackFrameBytes(header->metadata);
+  const std::size_t alignment = UnpackFrameAlignment(header->metadata);
   header->~FrameAllocationHeader();
-  resource->deallocate(raw, bytes, alignment);
+  resource->deallocate(allocation, bytes, alignment);
 }
 
 // Inherited by every promise type that owns a coroutine frame. The allocation
-// operators are deliberately centralized so Task, SpawnDriver, DetachedDriver,
+// operators are deliberately centralized so Task, SpawnDriver, DetachedTask,
 // and SyncWaitRoot all honor the same selected resource.
 class FrameAllocationSupport {
 public:
@@ -115,11 +160,11 @@ public:
 // confined to the worker thread that owns it.
 class CoroFramePoolResource final : public std::pmr::memory_resource {
 public:
-  static constexpr std::size_t kSizeClassCount = 9;
+  static constexpr std::size_t kSizeClassCount = 8;
   static constexpr std::size_t kChunkBytes = 64 * 1024;
   static constexpr std::size_t kMaxPooledBytes = 16 * 1024;
   inline static constexpr std::array<std::size_t, kSizeClassCount> kSizeClasses{
-      64, 128, 256, 512, 1024, 2048, 4096, 8192, 16384};
+      128, 256, 512, 1024, 2048, 4096, 8192, 16384};
 
   CoroFramePoolResource() noexcept : CoroFramePoolResource(*std::pmr::new_delete_resource()) {}
 
@@ -137,7 +182,6 @@ private:
 
   struct ChunkHeader {
     ChunkHeader* next;
-    void* raw;
     std::size_t bytes;
     std::size_t alignment;
   };
@@ -161,13 +205,10 @@ private:
     if (bytes <= kSizeClasses[0]) {
       return 0;
     }
-
-    // The size classes are powers of two starting at 64 bytes. This turns the
-    // common classification path into a few integer instructions instead of a
-    // linear scan through every class.
-    const auto first_width = static_cast<std::size_t>(std::bit_width(kSizeClasses[0] - 1));
+    // The classes are powers of two starting at 128 bytes. This keeps the
+    // common classification path to one branch and a bit-width operation.
     const auto width = static_cast<std::size_t>(std::bit_width(bytes - 1));
-    const std::size_t index = width - first_width;
+    const std::size_t index = width - 7;
     if (index < kSizeClassCount) {
       return index;
     }
@@ -182,12 +223,12 @@ private:
     }
 
     const std::size_t bytes = header_bytes + slot_count * block_size;
-    void* raw = upstream_->allocate(bytes, kSlotAlignment);
-    auto* chunk = ::new (raw) ChunkHeader{
-        .next = size_class.chunks, .raw = raw, .bytes = bytes, .alignment = kSlotAlignment};
+    void* allocation = upstream_->allocate(bytes, kSlotAlignment);
+    auto* chunk = ::new (allocation)
+        ChunkHeader{.next = size_class.chunks, .bytes = bytes, .alignment = kSlotAlignment};
     size_class.chunks = chunk;
 
-    auto* slot = static_cast<std::byte*>(raw) + header_bytes;
+    auto* slot = static_cast<std::byte*>(allocation) + header_bytes;
     for (std::size_t i = 0; i < slot_count; ++i) {
       auto* node = reinterpret_cast<FreeNode*>(slot + i * block_size);
       node->next = size_class.free_list;
@@ -199,11 +240,11 @@ private:
     for (auto& size_class : classes_) {
       for (ChunkHeader* chunk = size_class.chunks; chunk != nullptr;) {
         ChunkHeader* next = chunk->next;
-        void* raw = chunk->raw;
+        void* allocation = chunk;
         const std::size_t bytes = chunk->bytes;
         const std::size_t alignment = chunk->alignment;
         chunk->~ChunkHeader();
-        upstream_->deallocate(raw, bytes, alignment);
+        upstream_->deallocate(allocation, bytes, alignment);
         chunk = next;
       }
       size_class.free_list = nullptr;

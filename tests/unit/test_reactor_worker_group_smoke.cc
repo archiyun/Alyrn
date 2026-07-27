@@ -106,8 +106,9 @@ coropact::base::Result<int> ConnectClient(const coropact::net::Endpoint& address
   return fd;
 }
 
-coropact::coro::Task<void> HandleConnection(coropact::reactor::ReactorWorkerContext& context,
-                                        coropact::reactor::ReactorStream stream, WorkerState* state) {
+coropact::coro::DetachedTask HandleConnection(
+    coropact::reactor::ReactorWorkerContext& context,
+    coropact::reactor::ReactorStream stream, WorkerState* state) {
   {
     std::lock_guard lock{state->mutex};
     state->scheduler_is_current = coropact::coro::Scheduler::Current() == &context.scheduler;

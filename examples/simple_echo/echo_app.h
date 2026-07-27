@@ -17,7 +17,7 @@ using namespace coropact::io;
 using namespace coropact::coro;
 
 template <AsyncStream Stream>
-auto EchoSession(Stream stream) -> Task<void> {
+auto EchoSession(Stream stream) -> DetachedTask {
   std::array<std::byte, 4096> buffer{};
 
   for (;;) {
@@ -42,7 +42,7 @@ auto EchoSession(Stream stream) -> Task<void> {
 }
 
 template <AsyncListener Listener>
-auto AcceptLoop(Listener& listener, Scheduler& scheduler) -> Task<void> {
+auto AcceptLoop(Listener& listener, Scheduler& scheduler) -> DetachedTask {
   for (;;) {
     auto accepted = co_await listener.Accept();
     if (!accepted.has_value()) {

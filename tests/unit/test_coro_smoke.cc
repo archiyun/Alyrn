@@ -5,7 +5,7 @@
 //   a) Task<int> awaited by another Task<int>, result via SyncWait;
 //   b) Task<void> path;
 //   c) Spawn + JoinHandle on a drain-queue Scheduler: Wait, Detach, async join;
-//   d) SpawnDetach: discarded result and suspended/resumed fire-and-forget work;
+//   d) DetachedTask: suspended/resumed one-frame fire-and-forget work;
 //   e) error path: Task<Result<int>> co_return std::unexpected(...).
 // The module is IO-agnostic: the only scheduler here is a test-local container.
 
@@ -27,6 +27,7 @@
 
 using coropact::base::make_errno;
 using coropact::base::Result;
+using coropact::coro::DetachedTask;
 using coropact::coro::JoinHandle;
 using coropact::coro::Scheduler;
 using coropact::coro::Spawn;
@@ -111,12 +112,6 @@ Task<void> SetMarker() {
   co_return;
 }
 
-Task<int> DetachedReturn(bool* ran, Scheduler** resumed_scheduler) {
-  *ran = true;
-  *resumed_scheduler = Scheduler::Current();
-  co_return 99;
-}
-
 // Drain-queue Scheduler: collects Work* and runs them FIFO. Running a Work may
 // enqueue more (e.g. a parked joiner being resumed), so the loop re-checks.
 class DrainScheduler final : public Scheduler {
@@ -146,9 +141,9 @@ private:
   WorkQueue queue_;
 };
 
-// A one-shot awaitable used to prove that SpawnDetach keeps its driver frame
-// alive while the child Task is suspended. The ResumeWork is owned by this
-// test gate and is submitted only when Open() is called.
+// A one-shot awaitable used to prove that a DetachedTask keeps its frame alive
+// while suspended. The ResumeWork is owned by this test gate and is submitted
+// only when Open() is called.
 struct ManualGate {
   struct Awaiter {
     ManualGate* gate;
@@ -173,7 +168,16 @@ struct ManualGate {
   coropact::coro::ResumeWork resume_work;
 };
 
-Task<void> WaitForGate(ManualGate* gate, bool* resumed, Scheduler** resumed_scheduler) {
+// The DetachedTask promise inherits ResumeWork, so the business coroutine and
+// its root scheduling Work share one coroutine frame.
+DetachedTask DetachedReturnOneFrame(bool* ran, Scheduler** resumed_scheduler) {
+  *ran = true;
+  *resumed_scheduler = Scheduler::Current();
+  co_return;
+}
+
+DetachedTask DetachedWaitForGate(ManualGate* gate, bool* resumed,
+                                 Scheduler** resumed_scheduler) {
   co_await gate->Wait();
   *resumed = true;
   *resumed_scheduler = Scheduler::Current();
@@ -234,32 +238,33 @@ int main() {
     sched.Drain();
     if (!Check(g_void_marker == 7, "spawn+Detach should still run the body")) return 1;
 
-    // Direct SpawnDetach path: a non-void result is discarded, while the body
-    // still runs under the scheduler that accepted the work.
-    bool direct_detached_ran = false;
-    Scheduler* direct_detached_scheduler = nullptr;
-    SpawnDetach(sched, DetachedReturn(&direct_detached_ran, &direct_detached_scheduler));
-    if (!Check(!direct_detached_ran, "SpawnDetach should be lazy until scheduled")) return 1;
-    if (!Check(sched.DrainOne(), "SpawnDetach should enqueue a driver Work")) return 1;
-    if (!Check(direct_detached_ran, "SpawnDetach should run the body")) return 1;
-    if (!Check(direct_detached_scheduler == &sched,
-               "SpawnDetach should run under the current scheduler")) {
+    // One-frame DetachedTask path: the business coroutine itself owns the
+    // ResumeWork, so no additional driver frame is created.
+    bool one_frame_ran = false;
+    Scheduler* one_frame_scheduler = nullptr;
+    SpawnDetach(sched, DetachedReturnOneFrame(&one_frame_ran, &one_frame_scheduler));
+    if (!Check(!one_frame_ran, "DetachedTask should be lazy until scheduled")) return 1;
+    if (!Check(sched.DrainOne(), "DetachedTask should enqueue its embedded Work")) return 1;
+    if (!Check(one_frame_ran, "DetachedTask should run the body")) return 1;
+    if (!Check(one_frame_scheduler == &sched,
+               "DetachedTask should run under the current scheduler")) {
       return 1;
     }
 
-    // Suspended SpawnDetach path: the driver and its Work must remain alive
-    // until the external completion schedules the child back to this loop.
-    ManualGate gate;
-    bool gate_resumed = false;
-    Scheduler* gate_scheduler = nullptr;
-    SpawnDetach(sched, WaitForGate(&gate, &gate_resumed, &gate_scheduler));
-    if (!Check(sched.DrainOne(), "SpawnDetach should start the suspended task")) return 1;
-    if (!Check(!gate_resumed, "suspended SpawnDetach must not finish early")) return 1;
-    gate.Open(sched);
-    if (!Check(sched.DrainOne(), "opened gate should resume SpawnDetach")) return 1;
-    if (!Check(gate_resumed, "resumed SpawnDetach should finish")) return 1;
-    if (!Check(gate_scheduler == &sched,
-               "resumed SpawnDetach should use the current scheduler")) {
+    // The embedded Work must remain valid while the DetachedTask is suspended.
+    ManualGate detached_gate;
+    bool detached_resumed = false;
+    Scheduler* detached_scheduler = nullptr;
+    SpawnDetach(sched,
+                DetachedWaitForGate(&detached_gate, &detached_resumed,
+                                    &detached_scheduler));
+    if (!Check(sched.DrainOne(), "DetachedTask should start and suspend")) return 1;
+    if (!Check(!detached_resumed, "suspended DetachedTask must not finish early")) return 1;
+    detached_gate.Open(sched);
+    if (!Check(sched.DrainOne(), "DetachedTask should resume from its gate")) return 1;
+    if (!Check(detached_resumed, "resumed DetachedTask should finish")) return 1;
+    if (!Check(detached_scheduler == &sched,
+               "resumed DetachedTask should use the current scheduler")) {
       return 1;
     }
 

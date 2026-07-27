@@ -59,7 +59,7 @@ bool EnvBool(const char* key, bool fallback) {
   return value != nullptr ? std::atoi(value) != 0 : fallback;
 }
 
-coropact::coro::Task<void> EchoSession(coropact::luring::LUringStream stream) {
+coropact::coro::DetachedTask EchoSession(coropact::luring::LUringStream stream) {
   std::array<std::byte, 16 * 1024> buffer{};
 
   for (;;) {

@@ -179,7 +179,7 @@ bool CheckServerSessionHandler() {
   std::atomic_bool invalid_stream{false};
   std::atomic_bool wrong_loop{false};
   server.set_session_handler([&](coropact::luring::LUringWorkerContext& context,
-                                 coropact::luring::LUringStream stream) -> coropact::coro::Task<void> {
+                                 coropact::luring::LUringStream stream) -> coropact::coro::DetachedTask {
     if (!context.loop.IsInLoopThread()) {
       wrong_loop.store(true, std::memory_order_relaxed);
     }
@@ -246,7 +246,7 @@ bool CheckServerStopsActiveSession() {
 
   server.set_session_handler(
       [&](coropact::luring::LUringWorkerContext&, coropact::luring::LUringStream stream)
-          -> coropact::coro::Task<void> {
+          -> coropact::coro::DetachedTask {
         session_started.store(true, std::memory_order_release);
         std::array<std::byte, 1> buffer{};
         auto result = co_await stream.ReadSome(buffer);
