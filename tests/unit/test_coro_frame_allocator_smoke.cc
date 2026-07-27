@@ -175,7 +175,7 @@ int main() {
   }
 
   if (!Check(resource.allocations() >= 5,
-             "Task, SpawnDriver, SyncWaitRoot, and nested frames should be pooled")) {
+             "Task, SpawnRoot, SyncWaitRoot, and nested frames should be pooled")) {
     return 1;
   }
   if (!Check(resource.allocations() == resource.deallocations(),

@@ -9,13 +9,16 @@
 //   e) error path: Task<Result<int>> co_return std::unexpected(...).
 // The module is IO-agnostic: the only scheduler here is a test-local container.
 
+#include <atomic>
 #include <cassert>
 #include <cerrno>
 #include <coroutine>
 #include <expected>
+#include <future>
 #include <iostream>
 #include <memory>
 #include <system_error>
+#include <thread>
 
 #include "coropact/base/error.h"
 #include "coropact/coro/awaitable.h"
@@ -176,11 +179,15 @@ DetachedTask DetachedReturnOneFrame(bool* ran, Scheduler** resumed_scheduler) {
   co_return;
 }
 
-DetachedTask DetachedWaitForGate(ManualGate* gate, bool* resumed,
-                                 Scheduler** resumed_scheduler) {
+DetachedTask DetachedWaitForGate(ManualGate* gate, bool* resumed, Scheduler** resumed_scheduler) {
   co_await gate->Wait();
   *resumed = true;
   *resumed_scheduler = Scheduler::Current();
+}
+
+Task<int> ReturnAfterGate(ManualGate* gate) {
+  co_await gate->Wait();
+  co_return 42;
 }
 
 // Parent coroutine that joins two spawned children asynchronously.
@@ -231,12 +238,45 @@ int main() {
     sched.Drain();
     if (!Check(joinable.Wait() == 42, "spawn+Wait should yield 42")) return 1;
 
+    // Exercise the blocking path while the root is genuinely incomplete.
+    // The completion thread publishes kFinished and notifies the atomic wait
+    // word; no semaphore or polling loop is involved.
+    ManualGate wait_gate;
+    JoinHandle<int> blocking_join = Spawn(sched, ReturnAfterGate(&wait_gate));
+    if (!Check(sched.DrainOne(), "blocking Wait child should start and park")) return 1;
+
+    std::promise<void> wait_started;
+    auto wait_started_future = wait_started.get_future();
+    std::atomic<bool> wait_finished{false};
+    int blocking_result = 0;
+    std::thread wait_thread([&] {
+      wait_started.set_value();
+      blocking_result = blocking_join.Wait();
+      wait_finished.store(true, std::memory_order_release);
+    });
+    wait_started_future.wait();
+    const bool blocked_before_completion = !wait_finished.load(std::memory_order_acquire);
+
+    wait_gate.Open(sched);
+    sched.Drain();
+    wait_thread.join();
+    if (!Check(blocked_before_completion, "JoinHandle::Wait should block before completion")) {
+      return 1;
+    }
+    if (!Check(blocking_result == 42, "blocking JoinHandle::Wait should yield 42")) return 1;
+
     // Detach path: result discarded, coroutine still runs to completion.
     g_void_marker = 0;
     JoinHandle<void> detached = Spawn(sched, SetMarker());
     detached.Detach();
     sched.Drain();
     if (!Check(g_void_marker == 7, "spawn+Detach should still run the body")) return 1;
+
+    // A completed root keeps its frame alive until the last JoinHandle release.
+    // This exercises the consumer-side destruction path after final_suspend.
+    JoinHandle<void> completed_detach = Spawn(sched, SetMarker());
+    sched.Drain();
+    completed_detach.Detach();
 
     // One-frame DetachedTask path: the business coroutine itself owns the
     // ResumeWork, so no additional driver frame is created.
@@ -255,9 +295,7 @@ int main() {
     ManualGate detached_gate;
     bool detached_resumed = false;
     Scheduler* detached_scheduler = nullptr;
-    SpawnDetach(sched,
-                DetachedWaitForGate(&detached_gate, &detached_resumed,
-                                    &detached_scheduler));
+    SpawnDetach(sched, DetachedWaitForGate(&detached_gate, &detached_resumed, &detached_scheduler));
     if (!Check(sched.DrainOne(), "DetachedTask should start and suspend")) return 1;
     if (!Check(!detached_resumed, "suspended DetachedTask must not finish early")) return 1;
     detached_gate.Open(sched);
@@ -286,8 +324,8 @@ int main() {
     bool cross_parent_resumed = false;
     Scheduler* resumed_scheduler = nullptr;
     JoinHandle<void> cross_parent =
-        Spawn(sched, JoinChildFromOtherScheduler(&child_sched, &cross_parent_resumed,
-                                                 &resumed_scheduler));
+        Spawn(sched,
+              JoinChildFromOtherScheduler(&child_sched, &cross_parent_resumed, &resumed_scheduler));
     if (!Check(sched.DrainOne(), "cross-scheduler join should start the parent")) return 1;
     if (!Check(child_sched.DrainOne(), "cross-scheduler join should start the child")) return 1;
     if (!Check(!cross_parent_resumed, "cross-scheduler parent must remain parked")) return 1;

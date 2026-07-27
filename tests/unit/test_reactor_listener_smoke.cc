@@ -15,9 +15,9 @@
 #include "coropact/coro/task.h"
 #include "coropact/io/async_listener.h"
 #include "coropact/io/io_backend.h"
+#include "coropact/net/endpoint.h"
 #include "coropact/reactor/event_loop.h"
 #include "coropact/reactor/event_loop_scheduler.h"
-#include "coropact/net/endpoint.h"
 #include "coropact/reactor/reactor_connect.h"
 #include "coropact/reactor/reactor_listener.h"
 #include "coropact/reactor/reactor_stream.h"
@@ -51,14 +51,16 @@ int ConnectNonBlocking(const coropact::net::Endpoint& address) {
   return -1;
 }
 
-coropact::coro::Task<void> AcceptOnce(coropact::reactor::ReactorListener* listener, coropact::reactor::EventLoop* loop,
-                                  std::optional<AcceptResult>* out) {
+coropact::coro::DetachedTask AcceptOnce(coropact::reactor::ReactorListener* listener,
+                                        coropact::reactor::EventLoop* loop,
+                                        std::optional<AcceptResult>* out) {
   out->emplace(co_await listener->Accept());
   loop->Quit();
 }
 
 bool CheckFactories() {
-  auto null_listener = coropact::reactor::ReactorListener::Create(nullptr, coropact::net::Endpoint(0));
+  auto null_listener =
+      coropact::reactor::ReactorListener::Create(nullptr, coropact::net::Endpoint(0));
   if (!Check(!null_listener.has_value() && null_listener.error() == std::errc::invalid_argument,
              "listener factory accepted a null EventLoop")) {
     return false;
@@ -104,7 +106,7 @@ bool CheckPendingAccept() {
   std::optional<AcceptResult> result;
   int client_fd = -1;
 
-  coropact::coro::Spawn(scheduler, AcceptOnce(&listener, &loop, &result)).Detach();
+  coropact::coro::SpawnDetach(scheduler, AcceptOnce(&listener, &loop, &result));
   loop.QueueInLoop([&] { client_fd = ConnectNonBlocking(*listen_addr); });
 
   loop.Loop();
@@ -124,7 +126,7 @@ bool CheckCloseCancelsPendingAccept() {
 
   std::optional<AcceptResult> result;
 
-  coropact::coro::Spawn(scheduler, AcceptOnce(&listener, &loop, &result)).Detach();
+  coropact::coro::SpawnDetach(scheduler, AcceptOnce(&listener, &loop, &result));
   loop.QueueInLoop([&] { coropact::coro::Spawn(scheduler, listener.Close()).Detach(); });
 
   loop.Loop();

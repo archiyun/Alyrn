@@ -29,9 +29,8 @@ public:
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     op_.resume_work.SetHandle(continuation);
 
-    auto submitted = loop_->SubmitOp(&op_, [](io_uring_sqe* sqe) noexcept {
-      io_uring_prep_nop(sqe);
-    });
+    auto submitted =
+        loop_->SubmitOp(&op_, [](io_uring_sqe* sqe) noexcept { io_uring_prep_nop(sqe); });
     if (!submitted.has_value()) {
       result_.emplace(std::unexpected(submitted.error()));
       return false;
@@ -86,9 +85,9 @@ bool CheckSingleShotCompletion() {
          Check(*op.result == 17, "duplicate completion must not overwrite the result");
 }
 
-coropact::coro::Task<void> AwaitNop(coropact::luring::LUringLoop* loop,
-                                std::optional<coropact::base::Result<int>>* out,
-                                bool* resumed_with_scheduler) {
+coropact::coro::DetachedTask AwaitNop(coropact::luring::LUringLoop* loop,
+                                      std::optional<coropact::base::Result<int>>* out,
+                                      bool* resumed_with_scheduler) {
   auto result = co_await NopAwaiter(*loop);
   *resumed_with_scheduler = coropact::coro::Scheduler::Current() == loop;
   out->emplace(std::move(result));
@@ -120,7 +119,7 @@ bool CheckNopResumesCoroutine() {
   std::optional<coropact::base::Result<int>> result;
   bool resumed_with_scheduler = false;
 
-  coropact::coro::Spawn(loop, AwaitNop(&loop, &result, &resumed_with_scheduler)).Detach();
+  coropact::coro::SpawnDetach(loop, AwaitNop(&loop, &result, &resumed_with_scheduler));
 
   loop.RunReady();
 

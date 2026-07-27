@@ -1,12 +1,11 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 //
-// Single responsibility: the atomic lifecycle state shared by a
-// spawned coroutine (the producer) and its JoinHandle (the consumer). It
-// resolves the race between task completion, waiting, and detach, and decides
-// which side frees the heap state. It owns the driver Work and the scheduler
-// selected by the parent to re-submit a parked waiter. The scheduler used to
-// start the driver is supplied by Spawn and need not resume the waiter.
+// Single responsibility: the atomic lifecycle state shared by a spawned root
+// coroutine and its JoinHandle. The state is embedded in SpawnRoot's frame;
+// it resolves completion, waiting, and detach races and decides which side
+// destroys that frame. The scheduler selected by the parent re-submits a
+// parked waiter; it need not be the scheduler that starts the root.
 #pragma once
 
 #include <atomic>
@@ -15,12 +14,10 @@
 #include <cstdint>
 #include <memory>
 #include <new>
-#include <semaphore>
 #include <type_traits>
 #include <utility>
 
 #include "coropact/coro/scheduler.h"
-#include "coropact/coro/detail/spawn_stats.h"
 #include "coropact/coro/work.h"
 
 namespace coropact::coro::detail {
@@ -68,55 +65,66 @@ class SpawnState {
 public:
   // A SpawnState is constructed directly in kRunningJoinable. The state names
   // describe ownership and waiter progress, not coroutine frame states.
-  enum class Phase : std::uint8_t {
-    kRunningJoinable,  // running, caller attached, no joiner parked
-    kWaiterParked,      // caller parked a waiter awaiting completion
-    kRunningDetached,  // caller released while the root was still running
-    kFinished,         // driver finished, caller still attached
+  // Keep the wait word 32-bit and naturally aligned. C++20 atomic wait is
+  // portable at the API level; on Linux this representation lets libstdc++
+  // wait directly on the object's futex-compatible word instead of using a
+  // proxy waiter for sub-word atomics.
+  enum class Phase : std::uint32_t {
+    kRunningJoinable,           // running, caller attached, no joiner parked
+    kWaiterParked,              // caller parked a waiter awaiting completion
+    kRunningDetached,           // caller released while the root was still running
+    kFinished,                  // root reached final_suspend, caller still attached
     kCompletedWaiterScheduled,  // finished and waiter ResumeWork is queued
+  };
+
+  static_assert(sizeof(Phase) == sizeof(std::uint32_t));
+  static_assert(alignof(Phase) >= alignof(std::uint32_t));
+  static_assert(std::atomic<Phase>::is_always_lock_free);
+
+  enum class FinishAction : std::uint8_t {
+    kKeepRoot,
+    kDestroyRoot,
   };
 
   SpawnState() noexcept = default;
 
-#if defined(COROPACT_ENABLE_SPAWN_STATS)
-  ~SpawnState() noexcept { RecordSpawnStateDeallocation(sizeof(SpawnState)); }
-#endif
-
-  // -- driver scheduling --------------------------------------------------
-  void set_driver_handle(std::coroutine_handle<> handle) noexcept {
-    driver_work_.SetHandle(handle);
+  void SetRootHandle(std::coroutine_handle<> handle) noexcept {
+    assert(handle);
+    root_work_.SetHandle(handle);
   }
 
   [[nodiscard]]
-  Work* driver_work() noexcept {
-    return &driver_work_;
+  Work* RootWork() noexcept {
+    return &root_work_;
   }
 
-  // -- producer side (the spawned driver coroutine) -----------------------
   template <class U>
   void StoreResult(U&& value) {
     result_.Set(std::forward<U>(value));
   }
 
-  // Called exactly once when the driver completes. May delete *this in the
-  // detached case; the caller must not touch the state afterwards.
-  void Finish() noexcept {
+  // Called exactly once from SpawnRoot::final_suspend. The detached path
+  // returns kDestroyRoot so the final awaiter can destroy the containing frame
+  // after scheduling/completion bookkeeping is finished.
+  [[nodiscard]]
+  FinishAction Finish() noexcept {
     Phase expected = Phase::kRunningJoinable;
     if (phase_.compare_exchange_strong(expected, Phase::kFinished, std::memory_order_acq_rel)) {
-      ready_.release();  // unblock a possible Wait(); the caller frees later
-      return;
+      phase_.notify_one();  // unblock a possible Wait(); the caller destroys later
+      return FinishAction::kKeepRoot;
     }
     if (expected == Phase::kWaiterParked) {
       phase_.store(Phase::kCompletedWaiterScheduled, std::memory_order_release);
-      ready_.release();
 
       Scheduler* scheduler = waiter_scheduler_;
       assert(scheduler != nullptr);
       scheduler->Schedule(&waiter_resume_);
-      return;
+      return FinishAction::kKeepRoot;
     }
-    // expected == kRunningDetached: the caller is gone and handed us ownership.
-    delete this;
+    // expected == kRunningDetached: the caller is gone and handed the root
+    // frame's final destruction to the producer.
+    assert(expected == Phase::kRunningDetached);
+    return FinishAction::kDestroyRoot;
   }
 
   // -- consumer side (the JoinHandle) -------------------------------------
@@ -132,8 +140,7 @@ public:
     waiter_scheduler_ = &scheduler;
     waiter_resume_.SetHandle(waiter);
     Phase expected = Phase::kRunningJoinable;
-    if (phase_.compare_exchange_strong(expected, Phase::kWaiterParked,
-                                       std::memory_order_acq_rel)) {
+    if (phase_.compare_exchange_strong(expected, Phase::kWaiterParked, std::memory_order_acq_rel)) {
       return true;
     }
     waiter_scheduler_ = nullptr;
@@ -143,32 +150,53 @@ public:
 
   // Synchronous join: block until the root completes, then take the result.
   decltype(auto) Wait() noexcept {
-    ready_.acquire();
+    Phase phase = phase_.load(std::memory_order_acquire);
+    while (phase == Phase::kRunningJoinable) {
+      phase_.wait(phase, std::memory_order_acquire);
+      phase = phase_.load(std::memory_order_acquire);
+    }
+    // JoinHandle has single-consumer semantics: Wait() and co_await cannot
+    // race on the same handle. A completed async waiter has its own resume
+    // path and must not also call Wait().
+    assert(phase == Phase::kFinished);
     return result_.Take();
   }
 
   decltype(auto) TakeResult() noexcept { return result_.Take(); }
 
   // The caller relinquishes the handle (Detach or destruction). Either the
-  // producer takes ownership (still running) or we free now (already finished).
+  // producer takes ownership (still running) or the caller destroys the root
+  // frame now (already finished). DestroyRoot() must be the final operation in
+  // the latter path because this state object lives inside that frame.
   void ReleaseHandle() noexcept {
     Phase expected = Phase::kRunningJoinable;
     if (phase_.compare_exchange_strong(expected, Phase::kRunningDetached,
                                        std::memory_order_acq_rel)) {
-      return;  // producer deletes on Finish()
+      return;  // producer destroys the root frame in Finish()
     }
     // expected is kFinished or kCompletedWaiterScheduled: the producer is done;
-    // we own and free.
-    delete this;
+    // we own and destroy the suspended root frame.
+    assert(expected == Phase::kFinished || expected == Phase::kCompletedWaiterScheduled);
+    DestroyRoot();
   }
 
+  void ClearRootHandle() noexcept { root_work_.ClearHandle(); }
+
 private:
-  ResultSlot<T> result_;
-  ResumeWork driver_work_;
+  void DestroyRoot() noexcept {
+    auto root = root_work_.Handle();
+    root_work_.ClearHandle();
+    assert(root);
+    root.destroy();
+  }
+
+  ResumeWork root_work_;
+  // ResultSlot<void> is empty; let it overlap the root Work instead of
+  // introducing an alignment-only hole in every void root frame.
+  [[no_unique_address]] ResultSlot<T> result_;
   Scheduler* waiter_scheduler_{nullptr};
   ResumeWork waiter_resume_;
   std::atomic<Phase> phase_{Phase::kRunningJoinable};
-  std::binary_semaphore ready_{0};
 };
 
 }  // namespace coropact::coro::detail

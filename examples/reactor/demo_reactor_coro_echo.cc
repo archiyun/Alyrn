@@ -34,9 +34,9 @@
 #include "coropact/io/async_listener.h"
 #include "coropact/io/async_stream.h"
 #include "coropact/io/stream_algorithms.h"
+#include "coropact/net/endpoint.h"
 #include "coropact/reactor/event_loop.h"
 #include "coropact/reactor/event_loop_scheduler.h"
-#include "coropact/net/endpoint.h"
 #include "coropact/reactor/reactor_listener.h"
 #include "coropact/reactor/reactor_stream.h"
 
@@ -62,7 +62,7 @@ std::string_view StripLineEnding(std::string_view line) {
 }
 
 template <coropact::io::AsyncStream Stream>
-[[maybe_unused]] coropact::coro::Task<void> EchoOnceSession(Stream stream) {
+[[maybe_unused]] coropact::coro::DetachedTask EchoOnceSession(Stream stream) {
   std::array<std::byte, 4096> buffer{};
 
   auto result = co_await coropact::io::EchoOnce(stream, buffer);
@@ -74,8 +74,8 @@ template <coropact::io::AsyncStream Stream>
 }
 
 template <coropact::io::AsyncStream Stream>
-coropact::coro::Task<void> Session(Stream stream, long long* active_sessions,
-                               long long* total_messages) {
+coropact::coro::DetachedTask Session(Stream stream, long long* active_sessions,
+                                     long long* total_messages) {
   ++(*active_sessions);
 
   std::array<std::byte, 4096> buffer{};
@@ -144,8 +144,8 @@ coropact::coro::Task<void> Session(Stream stream, long long* active_sessions,
 }
 
 template <coropact::io::AsyncListener Listener>
-coropact::coro::Task<void> AcceptLoop(Listener* listener, coropact::coro::Scheduler* scheduler,
-                                  long long* active_sessions, long long* total_messages) {
+coropact::coro::DetachedTask AcceptLoop(Listener* listener, coropact::coro::Scheduler* scheduler,
+                                        long long* active_sessions, long long* total_messages) {
   using Stream = typename Listener::Stream;
 
   for (;;) {
@@ -155,12 +155,12 @@ coropact::coro::Task<void> AcceptLoop(Listener* listener, coropact::coro::Schedu
       co_return;
     }
 
-    coropact::coro::Spawn(*scheduler,
-                      Session<Stream>(std::move(*accepted), active_sessions, total_messages))
-        .Detach();
+    coropact::coro::SpawnDetach(
+        *scheduler, Session<Stream>(std::move(*accepted), active_sessions, total_messages));
 
-    // To start with the smallest possible demo, replace the Spawn above with:
-    // coropact::coro::Spawn(*scheduler, EchoOnceSession<Stream>(std::move(*accepted))).Detach();
+    // To start with the smallest possible demo, replace the session above with:
+    // coropact::coro::SpawnDetach(*scheduler,
+    //                             EchoOnceSession<Stream>(std::move(*accepted)));
   }
 }
 
@@ -173,7 +173,8 @@ int main() {
 
   coropact::reactor::EventLoop loop;
   coropact::reactor::EventLoopScheduler scheduler(&loop);
-  auto listener_result = coropact::reactor::ReactorListener::Create(&loop, coropact::net::Endpoint(port));
+  auto listener_result =
+      coropact::reactor::ReactorListener::Create(&loop, coropact::net::Endpoint(port));
   if (!listener_result.has_value()) {
     std::cerr << "failed to create listener: " << listener_result.error().message() << '\n';
     return 1;
@@ -183,8 +184,8 @@ int main() {
   long long active_sessions = 0;
   long long total_messages = 0;
 
-  coropact::coro::Spawn(scheduler, AcceptLoop(&listener, &scheduler, &active_sessions, &total_messages))
-      .Detach();
+  coropact::coro::SpawnDetach(scheduler,
+                              AcceptLoop(&listener, &scheduler, &active_sessions, &total_messages));
 
   std::cout << "reactor coro echo listening on 127.0.0.1:" << port << '\n';
   std::cout << "try: nc 127.0.0.1 " << port << '\n';

@@ -116,7 +116,7 @@ coropact::net::Endpoint LoopbackAddress(std::uint16_t port) {
   return coropact::net::Endpoint(addr);
 }
 
-coropact::coro::Task<void> AcceptOnce(
+coropact::coro::DetachedTask AcceptOnce(
     coropact::luring::LUringListener* listener, coropact::luring::LUringLoop* loop,
     std::optional<coropact::base::Result<coropact::luring::LUringStream>>* out,
     bool* resumed_with_scheduler) {
@@ -125,8 +125,8 @@ coropact::coro::Task<void> AcceptOnce(
   out->emplace(std::move(result));
 }
 
-coropact::coro::Task<void> CloseOnce(coropact::luring::LUringListener* listener,
-                                 std::optional<coropact::base::Result<void>>* out) {
+coropact::coro::DetachedTask CloseOnce(coropact::luring::LUringListener* listener,
+                                       std::optional<coropact::base::Result<void>>* out) {
   auto result = co_await listener->Close();
   out->emplace(std::move(result));
 }
@@ -164,8 +164,8 @@ bool CheckAccept() {
   std::optional<coropact::base::Result<coropact::luring::LUringStream>> accepted;
   bool resumed_with_scheduler = false;
 
-  coropact::coro::Spawn(loop, AcceptOnce(&*listener, &loop, &accepted, &resumed_with_scheduler))
-      .Detach();
+  coropact::coro::SpawnDetach(loop,
+                              AcceptOnce(&*listener, &loop, &accepted, &resumed_with_scheduler));
 
   loop.RunReady();
 
@@ -203,13 +203,13 @@ bool CheckCloseCancelsPendingAccept() {
 
   std::optional<coropact::base::Result<coropact::luring::LUringStream>> accepted;
   bool resumed_with_scheduler = false;
-  coropact::coro::Spawn(loop, AcceptOnce(&*listener, &loop, &accepted, &resumed_with_scheduler))
-      .Detach();
+  coropact::coro::SpawnDetach(loop,
+                              AcceptOnce(&*listener, &loop, &accepted, &resumed_with_scheduler));
 
   loop.RunReady();
 
   std::optional<coropact::base::Result<void>> close_result;
-  coropact::coro::Spawn(loop, CloseOnce(&*listener, &close_result)).Detach();
+  coropact::coro::SpawnDetach(loop, CloseOnce(&*listener, &close_result));
 
   loop.RunReady();
 
