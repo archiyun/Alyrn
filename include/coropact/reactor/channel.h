@@ -34,7 +34,7 @@ public:
   COROPACT_DELETE_COPY(Channel);
 
   using EventCallback = void (*)(void*) noexcept;
-  using ReadEventCallback = void (*)(void*, coropact::time::Timestamp) noexcept;
+  using ReadEventCallback = void (*)(void*, time::Timestamp) noexcept;
 
   explicit Channel(EventLoop* loop, int fd);
   ~Channel() = default;
@@ -48,7 +48,7 @@ public:
 
   // Dispatches the active events stored in revents_ to the corresponding
   // callbacks.
-  void HandleEvent(coropact::time::Timestamp receive_time);
+  void HandleEvent(time::Timestamp receive_time);
 
   void SetReadCallback(ReadEventCallback callback, void* context) noexcept {
     read_callback_ = callback;
@@ -72,11 +72,17 @@ public:
   void Tie(const std::shared_ptr<void>&);
 
   [[nodiscard]]
-  int Fd() const { return fd_; }
+  int Fd() const {
+    return fd_;
+  }
   [[nodiscard]]
-  int Events() const { return events_; }
+  int Events() const {
+    return events_;
+  }
   [[nodiscard]]
-  int Revents() const { return revents_; }
+  int Revents() const {
+    return revents_;
+  }
   void SetRevents(int revt) { revents_ = revt; }
 
   // Updates the local interest set and immediately synchronizes it with the
@@ -103,11 +109,17 @@ public:
   }
 
   [[nodiscard]]
-  bool IsNoneEvent() const { return events_ == kNoneEvent; }
+  bool IsNoneEvent() const {
+    return events_ == kNoneEvent;
+  }
   [[nodiscard]]
-  bool IsWriting() const { return static_cast<bool>(events_ & kWriteEvent); }
+  bool IsWriting() const {
+    return static_cast<bool>(events_ & kWriteEvent);
+  }
   [[nodiscard]]
-  bool IsReading() const { return static_cast<bool>(events_ & kReadEvent); }
+  bool IsReading() const {
+    return static_cast<bool>(events_ & kReadEvent);
+  }
 
   // Switches the Channel between level-triggered and edge-triggered mode.
   void SetEdgeTriggered(bool et_mode) {
@@ -141,14 +153,16 @@ private:
   friend class EPollPoller;
 
   [[nodiscard]]
-  int index() const { return index_; }
+  int index() const {
+    return index_;
+  }
   void set_index(int idx) { index_ = idx; }
 
   // Pushes the current interest set to the Poller.
   void Update();
 
   // Dispatches events only after verifying that the tied owner is still alive.
-  void HandleEventWithGuard(coropact::time::Timestamp receive_time);
+  void HandleEventWithGuard(time::Timestamp receive_time);
 
   EventLoop* loop_{nullptr};
   int fd_;

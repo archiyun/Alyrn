@@ -109,6 +109,22 @@ target_link_libraries(io_buffer_smoke_test
 
 add_test(NAME io_buffer_smoke_test COMMAND io_buffer_smoke_test)
 
+add_executable(accept_source_state_smoke_test
+    unit/test_accept_source_state_smoke.cc
+)
+
+target_include_directories(accept_source_state_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(accept_source_state_smoke_test
+    PRIVATE
+        coropact_net
+)
+
+add_test(NAME accept_source_state_smoke_test COMMAND accept_source_state_smoke_test)
+
 # C3:detached 连接协程(Spawn)park→resume→自毁,无泄漏/无 UAF。链 coropact_reactor。
 add_executable(spawn_c3_smoke_test
     unit/test_spawn_c3_smoke.cc

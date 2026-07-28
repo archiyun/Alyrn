@@ -3,7 +3,7 @@
 
 #include "coropact/reactor/event_loop_scheduler.h"
 
-#include "coropact/base/check.h"
+#include "coropact/base/error.h"
 
 namespace coropact::reactor {
 
@@ -13,7 +13,7 @@ EventLoopScheduler::EventLoopScheduler(EventLoop* loop, std::pmr::memory_resourc
 base::Result<EventLoopScheduler> EventLoopScheduler::Create(
     EventLoop* loop, std::pmr::memory_resource* frame_resource) noexcept {
   if (loop == nullptr) {
-    return std::unexpected(base::make_errno(EINVAL));
+    return std::unexpected(base::MakeErrno(EINVAL));
   }
   return EventLoopScheduler{loop, frame_resource};
 }

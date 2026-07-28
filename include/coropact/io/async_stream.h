@@ -9,6 +9,7 @@
 #include "coropact/base/error.h"
 #include "coropact/coro/awaitable.h"
 #include "coropact/coro/task.h"
+#include "coropact/net/write_part.h"
 
 namespace coropact::io {
 
@@ -35,9 +36,7 @@ concept AsyncClosableStream = requires(T& stream) {
 template <class T>
 concept AsyncStream = AsyncReadStream<T> && AsyncWriteStream<T> && AsyncClosableStream<T>;
 
-struct WritePart {
-  std::span<const std::byte> bytes;
-};
+using WritePart = ::coropact::net::WritePart;
 
 template <class T>
 concept AsyncScatterWriteStream =

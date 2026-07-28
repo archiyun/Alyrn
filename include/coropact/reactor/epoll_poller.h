@@ -20,8 +20,7 @@ public:
   ~EPollPoller() override;
 
   [[nodiscard]]
-  coropact::time::Timestamp Poll(int timeout_ms,
-                                ChannelList* active_channels) override;
+  time::Timestamp Poll(int timeout_ms, ChannelList* active_channels) override;
   void UpdateChannel(Channel* channel) override;
   void RemoveChannel(Channel* channel) override;
 
@@ -30,8 +29,7 @@ private:
   void Update(int operation, Channel* channel);
 
   // Converts ready epoll events into active Channel objects.
-  void FillActiveChannels(int num_events,
-                          ChannelList* active_channels) const;
+  void FillActiveChannels(int num_events, ChannelList* active_channels) const;
 
   // Initial capacity of the epoll event buffer. The buffer may grow when the
   // number of returned events reaches the current capacity.

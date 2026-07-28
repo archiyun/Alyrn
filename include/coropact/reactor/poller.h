@@ -30,8 +30,7 @@ public:
 
   // Waits for I/O events and fills active_channels with the Channels that
   // became active before the timeout expires.
-  virtual coropact::time::Timestamp Poll(int timeout_ms,
-                                        ChannelList* active_channels) = 0;
+  virtual time::Timestamp Poll(int timeout_ms, ChannelList* active_channels) = 0;
 
   // Adds or updates a Channel registration in the underlying poller.
   virtual void UpdateChannel(Channel* channel) = 0;

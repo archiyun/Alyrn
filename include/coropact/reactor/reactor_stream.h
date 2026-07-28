@@ -14,13 +14,13 @@
 #include "coropact/base/error.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/task.h"
-#include "coropact/io/buffer.h"
+#include "coropact/net/buffer.h"
+#include "coropact/net/endpoint.h"
+#include "coropact/net/socket.h"
 #include "coropact/reactor/channel.h"
 #include "coropact/reactor/detail/op_hook.h"
 #include "coropact/reactor/detail/result_state.h"
 #include "coropact/reactor/event_loop.h"
-#include "coropact/net/endpoint.h"
-#include "coropact/net/socket.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::reactor {
@@ -45,30 +45,32 @@ public:
   [[nodiscard]]
   ReadSomeAwaiter ReadSome(std::span<std::byte> buffer) noexcept;
   [[nodiscard]]
-  BufferReadAwaiter ReadSome(io::Buffer& buffer, std::size_t reserve = 4096) noexcept;
+  BufferReadAwaiter ReadSome(net::Buffer& buffer, std::size_t reserve = 4096) noexcept;
   [[nodiscard]]
   ReadSomeAwaiter ReadSomeFor(std::span<std::byte> buffer,
-                                            std::chrono::milliseconds timeout) noexcept;
+                              std::chrono::milliseconds timeout) noexcept;
   [[nodiscard]]
-  BufferReadAwaiter ReadSomeFor(io::Buffer& buffer, std::chrono::milliseconds timeout,
-                                              std::size_t reserve = 4096) noexcept;
+  BufferReadAwaiter ReadSomeFor(net::Buffer& buffer, std::chrono::milliseconds timeout,
+                                std::size_t reserve = 4096) noexcept;
   [[nodiscard]]
   WriteSomeAwaiter WriteSome(std::span<const std::byte> buffer) noexcept;
   [[nodiscard]]
-  BufferWriteAwaiter WriteSome(io::Buffer& buffer) noexcept;
+  BufferWriteAwaiter WriteSome(net::Buffer& buffer) noexcept;
   coro::Task<base::Result<void>> Shutdown();
   coro::Task<base::Result<void>> Close();
 
   [[nodiscard]]
-  const net::Endpoint& PeerAddress() const noexcept { return peer_; }
+  const net::Endpoint& PeerAddress() const noexcept {
+    return peer_;
+  }
 
 private:
-  void HandleRead(coropact::time::Timestamp receive_time);
+  void HandleRead(time::Timestamp receive_time);
   void HandleWrite();
   void HandleClose();
   void HandleError();
 
-  static void DispatchRead(void* context, coropact::time::Timestamp receive_time) noexcept;
+  static void DispatchRead(void* context, time::Timestamp receive_time) noexcept;
   static void DispatchWrite(void* context) noexcept;
   static void DispatchClose(void* context) noexcept;
   static void DispatchError(void* context) noexcept;
@@ -112,7 +114,9 @@ public:
       : stream_(&stream), buffer_(buffer), timeout_(timeout) {}
 
   [[nodiscard]]
-  bool await_ready() const noexcept { return false; }
+  bool await_ready() const noexcept {
+    return false;
+  }
   [[nodiscard]]
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
   base::Result<std::size_t> await_resume() noexcept;
@@ -141,7 +145,9 @@ public:
       : stream_(&stream), buffer_(buffer) {}
 
   [[nodiscard]]
-  bool await_ready() const noexcept { return false; }
+  bool await_ready() const noexcept {
+    return false;
+  }
   [[nodiscard]]
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
   base::Result<std::size_t> await_resume() noexcept;
@@ -164,11 +170,13 @@ class ReactorStream::BufferReadAwaiter
 public:
   COROPACT_DELETE_COPY_MOVE(BufferReadAwaiter);
 
-  BufferReadAwaiter(ReactorStream& stream, io::Buffer& buffer, std::size_t reserve,
+  BufferReadAwaiter(ReactorStream& stream, net::Buffer& buffer, std::size_t reserve,
                     std::chrono::milliseconds timeout = std::chrono::milliseconds{0}) noexcept;
 
   [[nodiscard]]
-  bool await_ready() const noexcept { return false; }
+  bool await_ready() const noexcept {
+    return false;
+  }
   [[nodiscard]]
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
   base::Result<std::size_t> await_resume() noexcept;
@@ -182,14 +190,14 @@ private:
   void FinishAttempt(base::Result<std::size_t> result) noexcept;
 
   ReactorStream* stream_;
-  io::Buffer* buffer_;
+  net::Buffer* buffer_;
   std::size_t reserve_;
   std::chrono::milliseconds timeout_;
   std::vector<iovec> iovs_;
   coro::Scheduler* scheduler_{nullptr};
   coro::ResumeWork resume_work_;
   detail::ReactorIoResultState result_;
-  coropact::time::TimerId timer_;
+  time::TimerId timer_;
 };
 
 class ReactorStream::BufferWriteAwaiter
@@ -197,10 +205,12 @@ class ReactorStream::BufferWriteAwaiter
 public:
   COROPACT_DELETE_COPY_MOVE(BufferWriteAwaiter);
 
-  BufferWriteAwaiter(ReactorStream& stream, io::Buffer& buffer) noexcept;
+  BufferWriteAwaiter(ReactorStream& stream, net::Buffer& buffer) noexcept;
 
   [[nodiscard]]
-  bool await_ready() const noexcept { return false; }
+  bool await_ready() const noexcept {
+    return false;
+  }
   [[nodiscard]]
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
   base::Result<std::size_t> await_resume() noexcept;
@@ -214,7 +224,7 @@ private:
   void FinishAttempt(base::Result<std::size_t> result) noexcept;
 
   ReactorStream* stream_;
-  io::Buffer* buffer_;
+  net::Buffer* buffer_;
   std::vector<iovec> iovs_;
   coro::Scheduler* scheduler_{nullptr};
   coro::ResumeWork resume_work_;
