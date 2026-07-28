@@ -17,10 +17,10 @@ namespace coropact::reactor {
 
 class EventLoop;
 
-inline constexpr auto kTimerSequenceOf = [](const coropact::time::Timer* timer) -> int64_t {
+inline constexpr auto kTimerSequenceOf = [](const time::Timer* timer) -> int64_t {
   return timer->sequence();
 };
-using ActiveTimerTable = coropact::ds::IntrusiveHashTable<coropact::time::Timer, kTimerSequenceOf>;
+using ActiveTimerTable = ds::IntrusiveHashTable<time::Timer, kTimerSequenceOf>;
 
 // TimerQueue manages timerfd-driven timer scheduling for one EventLoop.
 //
@@ -35,24 +35,23 @@ public:
   explicit TimerQueue(EventLoop* loop);
   ~TimerQueue();
 
-  coropact::time::TimerId AddTimer(TimerCallback callback, coropact::time::Timestamp when,
-                               double interval_sec);
-  void Cancel(coropact::time::TimerId id);
+  time::TimerId AddTimer(TimerCallback callback, time::Timestamp when, double interval_sec);
+  void Cancel(time::TimerId id);
 
 private:
   static constexpr std::size_t kTimerQueueMax = 1 << 15;
 
   void HandleRead();
-  static void DispatchRead(void* context, coropact::time::Timestamp receive_time) noexcept;
-  void ResetTimerfd(coropact::time::Timestamp expiration);
+  static void DispatchRead(void* context, time::Timestamp receive_time) noexcept;
+  void ResetTimerfd(time::Timestamp expiration);
 
   EventLoop* loop_;
   int timerfd_;
   Channel timerfd_channel_;
-  coropact::time::TimerTree timers_;
-  coropact::memory::ObjectPool<coropact::time::Timer, kTimerQueueMax> timer_pool_;
+  time::TimerTree timers_;
+  memory::ObjectPool<time::Timer, kTimerQueueMax> timer_pool_;
   ActiveTimerTable active_timers_;
-  coropact::time::Timer* processing_timer_{nullptr};
+  time::Timer* processing_timer_{nullptr};
   bool processing_timer_cancelled_{false};
 };
 

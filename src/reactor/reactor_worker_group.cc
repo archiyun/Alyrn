@@ -7,6 +7,8 @@
 #include <memory>
 #include <utility>
 
+#include "coropact/base/error.h"
+
 namespace coropact::reactor {
 
 ReactorWorkerGroup::ReactorWorkerGroup(net::Endpoint listen_addr, ReactorWorkerGroupOptions options,
@@ -23,11 +25,11 @@ ReactorWorkerGroup::~ReactorWorkerGroup() noexcept { Stop(); }
 
 base::Result<void> ReactorWorkerGroup::Start() {
   if (started_) {
-    return std::unexpected(base::make_errno(EALREADY));
+    return std::unexpected(base::MakeErrno(EALREADY));
   }
 
   if (options_.worker_num == 0) {
-    return std::unexpected(base::make_errno(EINVAL));
+    return std::unexpected(base::MakeErrno(EINVAL));
   }
 
   workers_.reserve(options_.worker_num);

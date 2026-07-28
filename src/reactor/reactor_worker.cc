@@ -7,6 +7,7 @@
 #include <stop_token>
 #include <utility>
 
+#include "coropact/base/error.h"
 #include "coropact/coro/frame_allocator.h"
 #include "coropact/coro/spawn.h"
 
@@ -15,7 +16,7 @@ namespace coropact::reactor {
 namespace {
 
 coro::DetachedTask AcceptLoop(ReactorWorkerContext& context,
-                               ReactorWorker::ConnectionCallback* callback) {
+                              ReactorWorker::ConnectionCallback* callback) {
   while (true) {
     auto accepted = co_await context.listener.Accept();
     if (!accepted.has_value()) {
@@ -58,7 +59,7 @@ ReactorWorker::~ReactorWorker() noexcept { Stop(); }
 
 base::Result<void> ReactorWorker::Start() {
   if (thread_.joinable()) {
-    return std::unexpected(base::make_errno(EALREADY));
+    return std::unexpected(base::MakeErrno(EALREADY));
   }
 
   {
@@ -73,7 +74,7 @@ base::Result<void> ReactorWorker::Start() {
   cv_.wait(lock, thread_.get_stop_token(), [this] { return init_done_; });
 
   if (!init_done_) {
-    return std::unexpected(base::make_errno(ECANCELED));
+    return std::unexpected(base::MakeErrno(ECANCELED));
   }
   return start_result_;
 }
@@ -122,7 +123,7 @@ void ReactorWorker::WorkLoop(std::stop_token token) noexcept {
     try {
       init_callback_(context);
     } catch (...) {
-      publish_start(std::unexpected(base::make_errno(EFAULT)));
+      publish_start(std::unexpected(base::MakeErrno(EFAULT)));
       return;
     }
   }

@@ -47,7 +47,7 @@ IoAttempt TryRead(int fd, std::span<std::byte> buffer) noexcept {
     if (IsWouldBlock(err)) {
       return {.pending = true, .result = 0};
     }
-    return {.pending = false, .result = std::unexpected(base::make_errno(err))};
+    return {.pending = false, .result = std::unexpected(base::MakeErrno(err))};
   }
 }
 
@@ -65,7 +65,7 @@ IoAttempt TryWrite(int fd, std::span<const std::byte> buffer) noexcept {
     if (IsWouldBlock(err)) {
       return {.pending = true, .result = 0};
     }
-    return {.pending = false, .result = std::unexpected(base::make_errno(err))};
+    return {.pending = false, .result = std::unexpected(base::MakeErrno(err))};
   }
 }
 
@@ -87,7 +87,7 @@ IoAttempt TryReadv(int fd, const std::vector<iovec>& iovs) noexcept {
     if (IsWouldBlock(err)) {
       return {.pending = true, .result = 0};
     }
-    return {.pending = false, .result = std::unexpected(base::make_errno(err))};
+    return {.pending = false, .result = std::unexpected(base::MakeErrno(err))};
   }
 }
 
@@ -109,7 +109,7 @@ IoAttempt TryWritev(int fd, const std::vector<iovec>& iovs) noexcept {
     if (IsWouldBlock(err)) {
       return {.pending = true, .result = 0};
     }
-    return {.pending = false, .result = std::unexpected(base::make_errno(err))};
+    return {.pending = false, .result = std::unexpected(base::MakeErrno(err))};
   }
 }
 
@@ -122,20 +122,20 @@ base::Error SocketError(int fd) noexcept {
   if (err == 0) {
     err = EIO;
   }
-  return base::make_errno(err);
+  return base::MakeErrno(err);
 }
 
 }  // namespace
 
 bool ReactorStream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   if (stream_->closed_ || stream_->socket_.fd() < 0) {
-    result_.SetError(base::make_errno(EBADF));
+    result_.SetError(base::MakeErrno(EBADF));
     return false;
   }
 
   COROPACT_DCHECK(stream_->loop_->IsInLoopThread(), "ReadSomeAwaiter: wrong EventLoop thread");
   COROPACT_DCHECK(stream_->pending_read_ == nullptr,
-              "ReadSomeAwaiter: only one pending read is supported per stream");
+                  "ReadSomeAwaiter: only one pending read is supported per stream");
 
   scheduler_ = &coro::Scheduler::RequireCurrent();
   resume_work_.SetHandle(continuation);
@@ -155,7 +155,7 @@ bool ReactorStream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> conti
         std::chrono::duration<double>(std::max(timeout_, std::chrono::milliseconds{1})).count();
     timer_ = stream_->loop_->RunAfter(seconds, [this] {
       if (stream_ != nullptr && stream_->pending_read_ == this) {
-        stream_->CompleteRead(std::unexpected(base::make_errno(ETIMEDOUT)));
+        stream_->CompleteRead(std::unexpected(base::MakeErrno(ETIMEDOUT)));
       }
     });
   }
@@ -186,7 +186,7 @@ void ReactorStream::ReadSomeAwaiter::OnReadyImpl() noexcept {
   stream_->CompleteRead(std::move(attempt.result));
 }
 
-ReactorStream::BufferReadAwaiter::BufferReadAwaiter(ReactorStream& stream, io::Buffer& buffer,
+ReactorStream::BufferReadAwaiter::BufferReadAwaiter(ReactorStream& stream, net::Buffer& buffer,
                                                     std::size_t reserve,
                                                     std::chrono::milliseconds timeout) noexcept
     : stream_(&stream),
@@ -197,13 +197,13 @@ ReactorStream::BufferReadAwaiter::BufferReadAwaiter(ReactorStream& stream, io::B
 bool ReactorStream::BufferReadAwaiter::await_suspend(
     std::coroutine_handle<> continuation) noexcept {
   if (stream_->closed_ || stream_->socket_.fd() < 0) {
-    result_.SetError(base::make_errno(EBADF));
+    result_.SetError(base::MakeErrno(EBADF));
     return false;
   }
 
   COROPACT_DCHECK(stream_->loop_->IsInLoopThread(), "BufferReadAwaiter: wrong EventLoop thread");
   COROPACT_DCHECK(stream_->pending_read_ == nullptr,
-              "BufferReadAwaiter: only one pending read is supported per stream");
+                  "BufferReadAwaiter: only one pending read is supported per stream");
 
   scheduler_ = &coro::Scheduler::RequireCurrent();
   resume_work_.SetHandle(continuation);
@@ -228,7 +228,7 @@ bool ReactorStream::BufferReadAwaiter::await_suspend(
         std::chrono::duration<double>(std::max(timeout_, std::chrono::milliseconds{1})).count();
     timer_ = stream_->loop_->RunAfter(seconds, [this] {
       if (stream_ != nullptr && stream_->pending_read_ == this) {
-        stream_->CompleteRead(std::unexpected(base::make_errno(ETIMEDOUT)));
+        stream_->CompleteRead(std::unexpected(base::MakeErrno(ETIMEDOUT)));
       }
     });
   }
@@ -263,12 +263,12 @@ bool ReactorStream::BufferReadAwaiter::PrepareReservation() noexcept {
   try {
     iovs_ = buffer_->PrepareWrite(reserve_, 16);
   } catch (const std::bad_alloc&) {
-    result_.SetError(base::make_errno(ENOMEM));
+    result_.SetError(base::MakeErrno(ENOMEM));
     return false;
   }
 
   if (iovs_.empty()) {
-    result_.SetError(base::make_errno(ENOMEM));
+    result_.SetError(base::MakeErrno(ENOMEM));
     return false;
   }
   return true;
@@ -285,13 +285,13 @@ void ReactorStream::BufferReadAwaiter::FinishAttempt(base::Result<std::size_t> r
 
 bool ReactorStream::WriteSomeAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   if (stream_->closed_ || stream_->socket_.fd() < 0) {
-    result_.SetError(base::make_errno(EBADF));
+    result_.SetError(base::MakeErrno(EBADF));
     return false;
   }
 
   COROPACT_DCHECK(stream_->loop_->IsInLoopThread(), "WriteSomeAwaiter: wrong EventLoop thread");
   COROPACT_DCHECK(stream_->pending_write_ == nullptr,
-              "WriteSomeAwaiter: only one pending write is supported per stream");
+                  "WriteSomeAwaiter: only one pending write is supported per stream");
 
   scheduler_ = &coro::Scheduler::RequireCurrent();
   resume_work_.SetHandle(continuation);
@@ -329,19 +329,19 @@ void ReactorStream::WriteSomeAwaiter::OnReadyImpl() noexcept {
 }
 
 ReactorStream::BufferWriteAwaiter::BufferWriteAwaiter(ReactorStream& stream,
-                                                      io::Buffer& buffer) noexcept
+                                                      net::Buffer& buffer) noexcept
     : stream_(&stream), buffer_(&buffer) {}
 
 bool ReactorStream::BufferWriteAwaiter::await_suspend(
     std::coroutine_handle<> continuation) noexcept {
   if (stream_->closed_ || stream_->socket_.fd() < 0) {
-    result_.SetError(base::make_errno(EBADF));
+    result_.SetError(base::MakeErrno(EBADF));
     return false;
   }
 
   COROPACT_DCHECK(stream_->loop_->IsInLoopThread(), "BufferWriteAwaiter: wrong EventLoop thread");
   COROPACT_DCHECK(stream_->pending_write_ == nullptr,
-              "BufferWriteAwaiter: only one pending write is supported per stream");
+                  "BufferWriteAwaiter: only one pending write is supported per stream");
 
   scheduler_ = &coro::Scheduler::RequireCurrent();
   resume_work_.SetHandle(continuation);
@@ -392,7 +392,7 @@ bool ReactorStream::BufferWriteAwaiter::PrepareReadable() noexcept {
   try {
     iovs_ = buffer_->ReadableIov(16);
   } catch (const std::bad_alloc&) {
-    result_.SetError(base::make_errno(ENOMEM));
+    result_.SetError(base::MakeErrno(ENOMEM));
     return false;
   }
 
@@ -438,7 +438,7 @@ ReactorStream& ReactorStream::operator=(ReactorStream&& other) noexcept {
 
   EventLoop* other_loop = PrepareMove(other);
   COROPACT_CHECK(loop_ == nullptr || loop_ == other_loop,
-             "ReactorStream move requires both objects to use the same EventLoop");
+                 "ReactorStream move requires both objects to use the same EventLoop");
   if (loop_ != nullptr) {
     ResetForMove();
   }
@@ -469,7 +469,7 @@ ReactorStream::ReadSomeAwaiter ReactorStream::ReadSome(std::span<std::byte> buff
   return ReadSomeAwaiter(*this, buffer);
 }
 
-ReactorStream::BufferReadAwaiter ReactorStream::ReadSome(io::Buffer& buffer,
+ReactorStream::BufferReadAwaiter ReactorStream::ReadSome(net::Buffer& buffer,
                                                          std::size_t reserve) noexcept {
   return BufferReadAwaiter(*this, buffer, reserve);
 }
@@ -479,7 +479,7 @@ ReactorStream::ReadSomeAwaiter ReactorStream::ReadSomeFor(
   return ReadSomeAwaiter(*this, buffer, timeout);
 }
 
-ReactorStream::BufferReadAwaiter ReactorStream::ReadSomeFor(io::Buffer& buffer,
+ReactorStream::BufferReadAwaiter ReactorStream::ReadSomeFor(net::Buffer& buffer,
                                                             std::chrono::milliseconds timeout,
                                                             std::size_t reserve) noexcept {
   return BufferReadAwaiter(*this, buffer, reserve, timeout);
@@ -490,13 +490,13 @@ ReactorStream::WriteSomeAwaiter ReactorStream::WriteSome(
   return WriteSomeAwaiter(*this, buffer);
 }
 
-ReactorStream::BufferWriteAwaiter ReactorStream::WriteSome(io::Buffer& buffer) noexcept {
+ReactorStream::BufferWriteAwaiter ReactorStream::WriteSome(net::Buffer& buffer) noexcept {
   return BufferWriteAwaiter(*this, buffer);
 }
 
 coro::Task<base::Result<void>> ReactorStream::Shutdown() {
   if (closed_) {
-    co_return std::unexpected(base::make_errno(EBADF));
+    co_return std::unexpected(base::MakeErrno(EBADF));
   }
   socket_.ShutdownWrite();
   co_return base::Result<void>{};
@@ -509,10 +509,10 @@ coro::Task<base::Result<void>> ReactorStream::Close() {
 
   closed_ = true;
   if (pending_read_ != nullptr) {
-    CompleteRead(std::unexpected(base::make_errno(ECANCELED)));
+    CompleteRead(std::unexpected(base::MakeErrno(ECANCELED)));
   }
   if (pending_write_ != nullptr) {
-    CompleteWrite(std::unexpected(base::make_errno(ECANCELED)));
+    CompleteWrite(std::unexpected(base::MakeErrno(ECANCELED)));
   }
   DetachChannel();
   socket_.Close();
@@ -556,7 +556,7 @@ void ReactorStream::HandleWrite() {
 void ReactorStream::HandleClose() {
   COROPACT_DCHECK(loop_->IsInLoopThread(), "ReactorStream::HandleClose called from wrong thread");
   CompleteRead(base::Result<std::size_t>{0});
-  CompleteWrite(std::unexpected(base::make_errno(EPIPE)));
+  CompleteWrite(std::unexpected(base::MakeErrno(EPIPE)));
 }
 
 void ReactorStream::HandleError() {
@@ -622,8 +622,7 @@ void ReactorStream::DetachChannel() {
   }
 }
 
-void ReactorStream::DispatchRead(void* context,
-                                 coropact::time::Timestamp receive_time) noexcept {
+void ReactorStream::DispatchRead(void* context, coropact::time::Timestamp receive_time) noexcept {
   static_cast<ReactorStream*>(context)->HandleRead(receive_time);
 }
 
@@ -662,11 +661,11 @@ void ReactorStream::ResetForMove() noexcept {
 EventLoop* ReactorStream::PrepareMove(ReactorStream& other) noexcept {
   COROPACT_CHECK(other.loop_ != nullptr, "ReactorStream move source is not initialized");
   COROPACT_CHECK(other.loop_->IsInLoopThread(),
-             "ReactorStream move called from wrong EventLoop thread");
+                 "ReactorStream move called from wrong EventLoop thread");
   COROPACT_CHECK(other.pending_read_ == nullptr,
-             "ReactorStream cannot move with a pending read operation");
+                 "ReactorStream cannot move with a pending read operation");
   COROPACT_CHECK(other.pending_write_ == nullptr,
-             "ReactorStream cannot move with a pending write operation");
+                 "ReactorStream cannot move with a pending write operation");
 
   other.DetachChannel();
   EventLoop* loop = std::exchange(other.loop_, nullptr);

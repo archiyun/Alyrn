@@ -39,7 +39,10 @@ public:
   // Requests the loop to exit. The loop stops after the current iteration.
   void Quit();
 
-  coropact::time::Timestamp PollReturnTime() const { return poll_return_time_; }
+  [[nodiscard]]
+  time::Timestamp PollReturnTime() const {
+    return poll_return_time_;
+  }
 
   // Runs cb immediately if called from the owning loop thread; otherwise,
   // schedules it to run in the loop thread. Thread-safe.
@@ -55,19 +58,20 @@ public:
   bool HasChannel(Channel* channel) const;
 
   // Returns true if the caller is running in the owning loop thread.
+  [[nodiscard]]
   bool IsInLoopThread() const;
 
   // Schedules cb to run once at the specified time point.
-  coropact::time::TimerId RunAt(coropact::time::Timestamp time, Functor cb);
+  time::TimerId RunAt(time::Timestamp time, Functor cb);
 
   // Schedules cb to run once after delay_sec seconds.
-  coropact::time::TimerId RunAfter(double delay_sec, Functor cb);
+  time::TimerId RunAfter(double delay_sec, Functor cb);
 
   // Schedules cb to run repeatedly every interval_sec seconds.
-  coropact::time::TimerId RunEvery(double interval_sec, Functor cb);
+  time::TimerId RunEvery(double interval_sec, Functor cb);
 
   // Cancels a previously scheduled timer.
-  void Cancel(coropact::time::TimerId id);
+  void Cancel(time::TimerId id);
 
 private:
   // Wakes up the loop when work is queued from another thread.
@@ -75,8 +79,7 @@ private:
 
   // Handles readability on the wakeup fd.
   void HandleRead();
-  static void DispatchWakeupRead(void* context,
-                                 coropact::time::Timestamp receive_time) noexcept;
+  static void DispatchWakeupRead(void* context, time::Timestamp receive_time) noexcept;
 
   // Runs all functors queued through QueueInLoop().
   void DoPendingFunctors();
@@ -89,7 +92,7 @@ private:
   std::atomic<bool> calling_pending_functors_;
 
   const std::thread::id thread_id_;
-  coropact::time::Timestamp poll_return_time_;
+  time::Timestamp poll_return_time_;
 
   std::unique_ptr<Poller> poller_;
   std::vector<Channel*> active_channels_;

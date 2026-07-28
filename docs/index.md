@@ -1,4 +1,4 @@
-# high-concurrency-runtime
+# CoroPact
 
 项目文档正在重写。
 目前只提供中文。

@@ -25,6 +25,8 @@
 namespace {
 
 using AcceptResult = coropact::base::Result<typename coropact::reactor::ReactorListener::Stream>;
+using AcceptSource = coropact::reactor::ReactorAcceptSource;
+using AcceptSourceResult = AcceptSource::Result;
 
 static_assert(coropact::io::AsyncListener<coropact::reactor::ReactorListener>);
 
@@ -56,6 +58,35 @@ coropact::coro::DetachedTask AcceptOnce(coropact::reactor::ReactorListener* list
                                         std::optional<AcceptResult>* out) {
   out->emplace(co_await listener->Accept());
   loop->Quit();
+}
+
+coropact::coro::DetachedTask AcceptSourceTwice(
+    AcceptSource* source, coropact::reactor::EventLoop* loop,
+    std::optional<AcceptSourceResult>* first,
+    std::optional<AcceptSourceResult>* second, bool* stop_succeeded) {
+  first->emplace(co_await source->Next());
+  second->emplace(co_await source->Next());
+  auto stopped = co_await source->Stop();
+  *stop_succeeded = stopped.has_value();
+  loop->Quit();
+}
+
+coropact::coro::DetachedTask WaitForSourceEnd(
+    AcceptSource* source, coropact::reactor::EventLoop* loop, bool* got_end) {
+  auto result = co_await source->Next();
+  *got_end = result.has_value() && !result->has_value();
+  loop->Quit();
+}
+
+coropact::coro::DetachedTask StopSource(AcceptSource* source, bool* succeeded) {
+  auto result = co_await source->Stop();
+  *succeeded = result.has_value();
+}
+
+coropact::coro::DetachedTask CloseListener(
+    coropact::reactor::ReactorListener* listener, bool* succeeded) {
+  auto result = co_await listener->Close();
+  *succeeded = result.has_value();
 }
 
 bool CheckFactories() {
@@ -137,6 +168,98 @@ bool CheckCloseCancelsPendingAccept() {
                "cancelled accept did not return ECANCELED");
 }
 
+bool CheckAcceptSourceQueueAndStop() {
+  coropact::reactor::EventLoop loop;
+  coropact::reactor::ReactorListener listener(&loop, coropact::net::Endpoint(0));
+  coropact::reactor::EventLoopScheduler scheduler(&loop);
+
+  auto source_result = listener.AcceptSource({.pending_depth = 1, .event_capacity = 1});
+  if (!Check(source_result.has_value(), "failed to create reactor AcceptSource")) {
+    return false;
+  }
+  AcceptSource source = std::move(*source_result);
+
+  auto listen_addr = listener.LocalAddress();
+  if (!Check(listen_addr.has_value(), "AcceptSource listener address lookup failed")) {
+    return false;
+  }
+
+  std::optional<AcceptSourceResult> first;
+  std::optional<AcceptSourceResult> second;
+  bool stop_succeeded = false;
+  int first_client = -1;
+  int second_client = -1;
+
+  coropact::coro::SpawnDetach(
+      scheduler, AcceptSourceTwice(&source, &loop, &first, &second, &stop_succeeded));
+  loop.QueueInLoop([&] {
+    first_client = ConnectNonBlocking(*listen_addr);
+    second_client = ConnectNonBlocking(*listen_addr);
+  });
+  loop.Loop();
+
+  if (first_client >= 0) {
+    ::close(first_client);
+  }
+  if (second_client >= 0) {
+    ::close(second_client);
+  }
+
+  return Check(first_client >= 0 && second_client >= 0,
+               "AcceptSource clients failed to connect") &&
+         Check(first.has_value() && first->has_value() && first->value().has_value(),
+               "AcceptSource did not deliver its first stream") &&
+         Check(second.has_value() && second->has_value() && second->value().has_value(),
+               "AcceptSource did not deliver its second stream") &&
+         Check(stop_succeeded, "AcceptSource Stop failed after queued events drained");
+}
+
+bool CheckAcceptSourceStopWakesPendingNext() {
+  coropact::reactor::EventLoop loop;
+  coropact::reactor::ReactorListener listener(&loop, coropact::net::Endpoint(0));
+  coropact::reactor::EventLoopScheduler scheduler(&loop);
+
+  auto source_result = listener.AcceptSource();
+  if (!Check(source_result.has_value(), "failed to create pending reactor AcceptSource")) {
+    return false;
+  }
+  AcceptSource source = std::move(*source_result);
+
+  bool got_end = false;
+  bool stop_succeeded = false;
+  coropact::coro::SpawnDetach(scheduler, WaitForSourceEnd(&source, &loop, &got_end));
+  loop.QueueInLoop([&] {
+    coropact::coro::SpawnDetach(scheduler, StopSource(&source, &stop_succeeded));
+  });
+  loop.Loop();
+
+  return Check(got_end, "AcceptSource Stop did not wake pending Next with end-of-source") &&
+         Check(stop_succeeded, "AcceptSource Stop returned an error");
+}
+
+bool CheckAcceptSourceListenerCloseWakesPendingNext() {
+  coropact::reactor::EventLoop loop;
+  coropact::reactor::ReactorListener listener(&loop, coropact::net::Endpoint(0));
+  coropact::reactor::EventLoopScheduler scheduler(&loop);
+
+  auto source_result = listener.AcceptSource();
+  if (!Check(source_result.has_value(), "failed to create close-test AcceptSource")) {
+    return false;
+  }
+  AcceptSource source = std::move(*source_result);
+
+  bool got_end = false;
+  bool close_succeeded = false;
+  coropact::coro::SpawnDetach(scheduler, WaitForSourceEnd(&source, &loop, &got_end));
+  loop.QueueInLoop([&] {
+    coropact::coro::SpawnDetach(scheduler, CloseListener(&listener, &close_succeeded));
+  });
+  loop.Loop();
+
+  return Check(got_end, "listener Close did not terminate pending AcceptSource::Next") &&
+         Check(close_succeeded, "listener Close returned an error");
+}
+
 bool CheckBackendBindingProfile() {
   auto binding = coropact::io::BindReactor();
   if (!Check(binding.has_value(), "reactor backend binding failed")) {
@@ -171,6 +294,9 @@ int main() {
   if (!CheckFactories()) return 1;
   if (!CheckPendingAccept()) return 1;
   if (!CheckCloseCancelsPendingAccept()) return 1;
+  if (!CheckAcceptSourceQueueAndStop()) return 1;
+  if (!CheckAcceptSourceStopWakesPendingNext()) return 1;
+  if (!CheckAcceptSourceListenerCloseWakesPendingNext()) return 1;
   if (!CheckBackendBindingProfile()) return 1;
 
   std::cout << "reactor listener smoke: PASS\n";

@@ -84,7 +84,7 @@ EventLoop::EventLoop()
       wakeup_channel_(this, wakeup_fd_),
       timer_queue_(std::make_unique<TimerQueue>(this)) {
   COROPACT_DCHECK(t_loop_in_this_thread == nullptr,
-              "EventLoop: only one EventLoop may exist per thread");
+                  "EventLoop: only one EventLoop may exist per thread");
   t_loop_in_this_thread = this;
 
   // The wakeup fd is monitored like a normal Channel so other threads can
@@ -102,7 +102,7 @@ EventLoop::~EventLoop() {
   wakeup_channel_.DisableAll();
   wakeup_channel_.Remove();
   {
-    std::lock_guard lk{wakeup_mutex_};
+    std::lock_guard lock{wakeup_mutex_};
     if (wakeup_fd_ >= 0) {
       ::close(wakeup_fd_);
       wakeup_fd_ = -1;
@@ -165,7 +165,7 @@ void EventLoop::RunInLoop(Functor cb) {
 
 void EventLoop::QueueInLoop(Functor cb) {
   {
-    std::lock_guard lk{mutex_};
+    std::lock_guard lock{mutex_};
     pending_functors_.push_back(std::move(cb));
   }
 
@@ -181,7 +181,7 @@ bool EventLoop::HasImmediateWork() {
   COROPACT_DCHECK(IsInLoopThread(), "EventLoop::HasImmediateWork called from wrong thread");
 
   {
-    std::lock_guard lk{mutex_};
+    std::lock_guard lock{mutex_};
     return !pending_functors_.empty();
   }
 }
@@ -204,7 +204,7 @@ bool EventLoop::HasChannel(Channel* channel) const {
 bool EventLoop::IsInLoopThread() const { return thread_id_ == std::this_thread::get_id(); }
 
 void EventLoop::Wakeup() {
-  std::lock_guard lk{wakeup_mutex_};
+  std::lock_guard lock{wakeup_mutex_};
   if (wakeup_fd_ >= 0) {
     WriteEventfd(wakeup_fd_);
   }
@@ -212,8 +212,7 @@ void EventLoop::Wakeup() {
 
 void EventLoop::HandleRead() { ReadEventfd(wakeup_fd_); }
 
-void EventLoop::DispatchWakeupRead(void* context,
-                                   coropact::time::Timestamp /*receive_time*/) noexcept {
+void EventLoop::DispatchWakeupRead(void* context, time::Timestamp /*receive_time*/) noexcept {
   static_cast<EventLoop*>(context)->HandleRead();
 }
 
@@ -222,7 +221,7 @@ void EventLoop::DoPendingFunctors() {
   calling_pending_functors_.store(true, std::memory_order_relaxed);
 
   {
-    std::lock_guard lk{mutex_};
+    std::lock_guard lock{mutex_};
     functors.swap(pending_functors_);
   }
 
@@ -236,22 +235,18 @@ void EventLoop::DoPendingFunctors() {
   calling_pending_functors_.store(false, std::memory_order_relaxed);
 }
 
-coropact::time::TimerId EventLoop::RunAt(coropact::time::Timestamp time, Functor cb) {
+time::TimerId EventLoop::RunAt(time::Timestamp time, Functor cb) {
   return timer_queue_->AddTimer(std::move(cb), time, 0.0);
 }
 
-coropact::time::TimerId EventLoop::RunAfter(double delay, Functor cb) {
-  using coropact::time::AddTime;
-  using coropact::time::Timestamp;
-  return timer_queue_->AddTimer(std::move(cb), AddTime(Timestamp::Now(), delay), 0.0);
+time::TimerId EventLoop::RunAfter(double delay, Functor cb) {
+  return timer_queue_->AddTimer(std::move(cb), AddTime(time::Timestamp::Now(), delay), 0.0);
 }
 
-coropact::time::TimerId EventLoop::RunEvery(double interval, Functor cb) {
-  using coropact::time::AddTime;
-  using coropact::time::Timestamp;
-  return timer_queue_->AddTimer(std::move(cb), AddTime(Timestamp::Now(), interval), interval);
+time::TimerId EventLoop::RunEvery(double interval, Functor cb) {
+  return timer_queue_->AddTimer(std::move(cb), AddTime(time::Timestamp::Now(), interval), interval);
 }
 
-void EventLoop::Cancel(coropact::time::TimerId id) { timer_queue_->Cancel(id); }
+void EventLoop::Cancel(time::TimerId id) { timer_queue_->Cancel(id); }
 
 }  // namespace coropact::reactor

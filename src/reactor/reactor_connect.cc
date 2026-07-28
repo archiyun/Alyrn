@@ -13,6 +13,7 @@
 #include <utility>
 
 #include "coropact/base/check.h"
+#include "coropact/base/error.h"
 #include "coropact/base/try.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/work.h"
@@ -106,7 +107,7 @@ private:
       result_.SetResult(MakeStream());
     } else {
       DetachChannel();
-      result_.SetError(base::make_errno(*error));
+      result_.SetError(base::MakeErrno(*error));
     }
     scheduler_->Schedule(&resume_work_);
   }
@@ -168,7 +169,7 @@ ReactorConnector::ReactorConnector(EventLoop* loop) noexcept : loop_(loop) {
 [[nodiscard]]
 base::Result<ReactorConnector> ReactorConnector::Create(EventLoop* loop) noexcept {
   if (loop == nullptr) {
-    return std::unexpected(base::make_errno(EINVAL));
+    return std::unexpected(base::MakeErrno(EINVAL));
   }
   return ReactorConnector(loop);
 }

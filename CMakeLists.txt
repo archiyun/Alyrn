@@ -80,11 +80,18 @@ if(COROPACT_ENABLE_CTRACK)
         CTRACK_DISABLE_EXECUTION_POLICY)
 endif()
 
-# coropact_io —— 协程可观察 I/O 契约和启动期 backend/capability profile。
-# 这里不包含 fd、Channel、epoll_wait、SQE/CQE 等后端内部状态。
+# coropact_io_contract —— 后端实现使用的 I/O concepts、Result 算法和 capability
+# profile。它不包含具体 backend，也不依赖具体 backend。
+add_library(coropact_io_contract INTERFACE)
+target_include_directories(coropact_io_contract INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(coropact_io_contract INTERFACE coropact_coro coropact_foundation)
+target_compile_features(coropact_io_contract INTERFACE cxx_std_23)
+
+# coropact_io —— 面向应用的 I/O facade。具体 backend 在各自 target 定义完成后
+# 注入到这个 facade，避免 backend 反向依赖 facade 造成循环。
 add_library(coropact_io INTERFACE)
 target_include_directories(coropact_io INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(coropact_io INTERFACE coropact_coro coropact_foundation)
+target_link_libraries(coropact_io INTERFACE coropact_io_contract)
 target_compile_features(coropact_io INTERFACE cxx_std_23)
 
 add_library(coropact_net STATIC
@@ -104,6 +111,10 @@ target_link_libraries(coropact_net
 )
 
 target_compile_features(coropact_net PUBLIC cxx_std_23)
+
+# io contracts expose net primitives through compatibility aliases, so their
+# consumers receive the lower networking target transitively.
+target_link_libraries(coropact_io_contract INTERFACE coropact_net)
 
 # coropact_reactor —— 基于 epoll 的 Reactor 网络后端。它依赖 coropact_net
 # 中的地址和 socket 基础类型，但与 io_uring 后端保持并列。
@@ -129,12 +140,16 @@ target_include_directories(coropact_reactor
 target_link_libraries(coropact_reactor
     PUBLIC
         coropact_net
-        coropact_io
+        coropact_coro
         coropact_foundation
         Threads::Threads
 )
 
 target_compile_features(coropact_reactor PUBLIC cxx_std_23)
+
+# The facade depends on the concrete Reactor backend; the Reactor target itself
+# remains independent of both io targets.
+target_link_libraries(coropact_io INTERFACE coropact_reactor)
 
 # coropact_luring —— io_uring proactor 网络模块。它与 coropact_reactor 并列，
 # 共同解释 coropact_io 的协程可观察 I/O 契约。
@@ -161,13 +176,17 @@ if(COROPACT_ENABLE_URING)
     target_link_libraries(coropact_luring
         PUBLIC
             coropact_net
-            coropact_io
+            coropact_io_contract
             coropact_ctrack
             ${URING_LIBRARIES}
     )
 
     target_compile_definitions(coropact_luring PUBLIC COROPACT_ENABLE_URING)
     target_compile_features(coropact_luring PUBLIC cxx_std_23)
+
+    # Add the optional concrete backend to the higher-level facade only after
+    # luring has been defined. This keeps luring -> io_contract acyclic.
+    target_link_libraries(coropact_io INTERFACE coropact_luring)
 endif()
 
 # coropact_coro_reactor —— 把协程绑定到 coropact_reactor 后端。

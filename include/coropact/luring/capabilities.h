@@ -9,12 +9,11 @@
 namespace coropact::luring {
 
 [[nodiscard]]
-base::Result<coropact::io::CapabilitySet> ProbeCapabilities(
-    const LUringOptions& options) noexcept;
+base::Result<io::CapabilitySet> ProbeCapabilities(const LUringOptions& options) noexcept;
 
 [[nodiscard]]
-base::Result<coropact::io::BackendBinding> BindLUring(
+base::Result<io::BackendBinding> BindLUring(
     const LUringOptions& options,
-    coropact::io::CapabilitySet active_profile = coropact::io::CapabilitySet::CoreGateway()) noexcept;
+    io::CapabilitySet active_profile = io::CapabilitySet::CoreGateway()) noexcept;
 
 }  // namespace coropact::luring

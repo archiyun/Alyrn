@@ -5,8 +5,6 @@
 #include <sys/timerfd.h>
 #include <unistd.h>
 
-#include <cstring>
-
 #include "coropact/base/check.h"
 #include "coropact/reactor/event_loop.h"
 #include "coropact/time/timer.h"
@@ -21,9 +19,9 @@ static int CreateTimerfd() {
   return fd;
 }
 
-static void set_timerfd(int timerfd, coropact::time::Timestamp expiration) {
+static void SetTimerfd(int timerfd, coropact::time::Timestamp expiration) {
   itimerspec new_value{};
-  int64_t us = static_cast<int64_t>(TimeDifference(expiration, coropact::time::Timestamp::Now()) * 1e6);
+  int64_t us = static_cast<int64_t>(TimeDifference(expiration, time::Timestamp::Now()) * 1e6);
   if (us < 100) {
     us = 100;
   }
@@ -49,16 +47,15 @@ TimerQueue::~TimerQueue() {
   timerfd_channel_.Remove();
   ::close(timerfd_);
   while (!timers_.Empty()) {
-    coropact::time::Timer* timer = timers_.Earliest();
+    time::Timer* timer = timers_.Earliest();
     active_timers_.Erase(timer);
     timers_.Erase(timer);
     timer_pool_.Release(timer);
   }
 }
 
-coropact::time::TimerId TimerQueue::AddTimer(TimerCallback cb, coropact::time::Timestamp when,
-                                         double interval) {
-  coropact::time::Timer* t = timer_pool_.Acquire(std::move(cb), when, interval);
+time::TimerId TimerQueue::AddTimer(TimerCallback cb, time::Timestamp when, double interval) {
+  time::Timer* t = timer_pool_.Acquire(std::move(cb), when, interval);
   loop_->RunInLoop([this, t] {
     bool earliest_changed = timers_.Empty() || t->expiration() < timers_.Earliest()->expiration();
     timers_.Insert(t);
@@ -72,7 +69,7 @@ coropact::time::TimerId TimerQueue::AddTimer(TimerCallback cb, coropact::time::T
 
 void TimerQueue::Cancel(coropact::time::TimerId id) {
   loop_->RunInLoop([this, seq = id.sequence] {
-    coropact::time::Timer* active_timer = active_timers_.Find(seq);
+    time::Timer* active_timer = active_timers_.Find(seq);
     if (active_timer != nullptr) {
       active_timers_.Erase(active_timer);
       timers_.Erase(active_timer);
@@ -88,13 +85,12 @@ void TimerQueue::Cancel(coropact::time::TimerId id) {
   });
 }
 
-void TimerQueue::DispatchRead(void* context,
-                              coropact::time::Timestamp /*receive_time*/) noexcept {
+void TimerQueue::DispatchRead(void* context, time::Timestamp /*receive_time*/) noexcept {
   static_cast<TimerQueue*>(context)->HandleRead();
 }
 
 void TimerQueue::HandleRead() {
-  coropact::time::Timestamp now = coropact::time::Timestamp::Now();
+  time::Timestamp now = time::Timestamp::Now();
   ReadTimerfd(timerfd_);
 
   timers_.PopWhile([now](const coropact::time::Timer* timer) { return timer->expiration() <= now; },
@@ -122,8 +118,6 @@ void TimerQueue::HandleRead() {
   }
 }
 
-void TimerQueue::ResetTimerfd(coropact::time::Timestamp expiration) {
-  set_timerfd(timerfd_, expiration);
-}
+void TimerQueue::ResetTimerfd(time::Timestamp expiration) { SetTimerfd(timerfd_, expiration); }
 
 }  // namespace coropact::reactor
