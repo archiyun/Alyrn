@@ -14,9 +14,9 @@ using coropact::net::detail::AcceptSourceState;
 using coropact::net::detail::AcceptSourceStateMachine;
 
 void CheckOptions() {
-  assert(!AcceptSourceOptions{0, 1}.Valid());
-  assert(!AcceptSourceOptions{4, 3}.Valid());
-  assert(AcceptSourceOptions{4, 4}.Valid());
+  assert((!AcceptSourceOptions{0, 1}.Valid()));
+  assert((!AcceptSourceOptions{4, 3}.Valid()));
+  assert((AcceptSourceOptions{4, 4}.Valid()));
 
   auto invalid = AcceptSourceStateMachine::Create({0, 1});
   assert(!invalid.has_value());
