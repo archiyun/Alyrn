@@ -33,7 +33,7 @@ auto EchoSession(Stream stream) -> DetachedTask {
     const std::span<const std::byte> payload(buffer.data(), *read);
     auto written = co_await WriteAll(stream, payload);
     if (!written.has_value()) {
-      std::println(stderr, "read failed: {}", read.error().message());
+      std::println(stderr, "read failed: {}", written.error().message());
       break;
     }
   }

@@ -15,6 +15,7 @@
 
 #include "coropact/base/check.h"
 #include "coropact/base/error.h"
+#include "coropact/base/try.h"
 #include "coropact/luring/detail/close_state.h"
 #include "coropact/luring/loop.h"
 #include "coropact/luring/op.h"
@@ -29,7 +30,7 @@ using AcceptResult = base::Result<LUringStream>;
 
 base::Result<int> CreatedListenFd(const net::Endpoint& listen_addr,
                                   const LUringListenOptions& options) noexcept {
-  const int fd = ::socket(listen_addr.native_family(),
+  const int fd = ::socket(listen_addr.NativeFamily(),
                           SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, IPPROTO_TCP);
   if (fd < 0) {
     return std::unexpected(base::CurrentErrno());
@@ -54,7 +55,7 @@ base::Result<int> CreatedListenFd(const net::Endpoint& listen_addr,
     }
   }
 
-  if (::bind(fd, listen_addr.sock_addr(), listen_addr.sock_addr_len()) < 0) {
+  if (::bind(fd, listen_addr.SockAddr(), listen_addr.SockAddrLen()) < 0) {
     return fail(base::CurrentErrno());
   }
 
@@ -96,16 +97,16 @@ public:
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     if (listener_->closed_ || listener_->fd_ < 0) {
-      immediate_.emplace(std::unexpected(base::make_errno(EBADF)));
+      immediate_.emplace(std::unexpected(base::MakeErrno(EBADF)));
       return false;
     }
     ++listener_->pending_accepts_;
-    op()->kind = LUringOpKind::kAcceptComplete;
-    op()->resume_work.SetHandle(continuation);
+    Op()->kind = LUringOpKind::kAcceptComplete;
+    Op()->resume_work.SetHandle(continuation);
     peer_len_ = static_cast<socklen_t>(sizeof(peer_addr_));
 
     auto submitted =
-        listener_->loop_->SubmitOp(op(), [this, fd = listener_->fd_](io_uring_sqe* sqe) noexcept {
+        listener_->loop_->SubmitOp(Op(), [this, fd = listener_->fd_](io_uring_sqe* sqe) noexcept {
           io_uring_prep_accept(sqe, fd, reinterpret_cast<sockaddr*>(&peer_addr_), &peer_len_,
                                SOCK_NONBLOCK | SOCK_CLOEXEC);
         });
@@ -125,16 +126,16 @@ public:
 
 private:
   static void OnComplete(LUringOp* op) noexcept {
-    auto* self = static_cast<OpHook*>(op)->owner();
+    auto* self = static_cast<OpHook*>(op)->Owner();
     if (self->listener_ != nullptr) {
       LUringListener* listener = self->listener_;
       assert(listener->pending_accepts_ > 0);
       --listener->pending_accepts_;
 
-      if (!op->result.has_value()) {
-        self->immediate_ = std::unexpected(op->result.error());
+      if (!op->result.HasValue()) {
+        self->immediate_ = std::unexpected(op->result.Error());
       } else if (*op->result < 0) {
-        self->immediate_ = std::unexpected(base::make_neg_errno(*op->result));
+        self->immediate_ = std::unexpected(base::MakeNegErrno(*op->result));
       } else {
         self->immediate_ =
             MakeStream(listener->loop_, *op->result, self->peer_addr_, self->peer_len_);
@@ -145,7 +146,7 @@ private:
     }
   }
 
-  LUringOp* op() noexcept { return static_cast<OpHook*>(this); }
+  LUringOp* Op() noexcept { return static_cast<OpHook*>(this); }
 
   LUringListener* listener_;
   sockaddr_storage peer_addr_{};
@@ -167,7 +168,7 @@ public:
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     if (listener_->pending_close_ != nullptr) {
-      state_.SetError(base::make_errno(EBUSY));
+      state_.SetError(base::MakeErrno(EBUSY));
       return false;
     }
     if (listener_->closed_ || listener_->fd_ < 0) {
@@ -183,10 +184,10 @@ public:
 
     listener_->pending_close_ = this;
     continuation_ = continuation;
-    op()->kind = LUringOpKind::kListenerCloseComplete;
+    Op()->kind = LUringOpKind::kListenerCloseComplete;
 
     auto submitted =
-        listener_->loop_->SubmitOp(op(), [fd = listener_->fd_](io_uring_sqe* sqe) noexcept {
+        listener_->loop_->SubmitOp(Op(), [fd = listener_->fd_](io_uring_sqe* sqe) noexcept {
           io_uring_prep_cancel_fd(sqe, fd, IORING_ASYNC_CANCEL_ALL);
         });
     if (!submitted.has_value()) {
@@ -217,20 +218,20 @@ public:
     listener_->pending_close_ = nullptr;
     state_.SetResult(CloseFd());
     listener_ = nullptr;
-    op()->resume_work.SetHandle(continuation_);
-    if (current != op()) {
-      loop->ScheduleCompletion(&op()->resume_work);
+    Op()->resume_work.SetHandle(continuation_);
+    if (current != Op()) {
+      loop->ScheduleCompletion(&Op()->resume_work);
     }
   }
 
 private:
   static void OnCancelComplete(LUringOp* op) noexcept {
-    auto* self = static_cast<OpHook*>(op)->owner();
+    auto* self = static_cast<OpHook*>(op)->Owner();
     self->state_.MarkCancelCompleted();
     self->TryComplete(op);
   }
 
-  LUringOp* op() noexcept { return static_cast<OpHook*>(this); }
+  LUringOp* Op() noexcept { return static_cast<OpHook*>(this); }
 
   base::Result<void> CloseFd() noexcept {
     const int fd = std::exchange(listener_->fd_, -1);
@@ -266,12 +267,7 @@ base::Result<LUringListener> LUringListener::Create(LUringLoop* loop,
   assert(loop != nullptr);
   assert(loop->IsInLoopThread());
 
-  auto fd = CreatedListenFd(listen_addr, options);
-  if (!fd.has_value()) {
-    return std::unexpected(fd.error());
-  }
-
-  return LUringListener(loop, *fd);
+  return LUringListener(loop, COROPACT_TRY(CreatedListenFd(listen_addr, options)));
 }
 
 LUringListener::LUringListener(LUringLoop* loop, int fd) noexcept : loop_(loop), fd_(fd) {
@@ -325,7 +321,7 @@ coro::Task<base::Result<void>> LUringListener::Close() { co_return co_await Clos
 
 base::Result<net::Endpoint> LUringListener::LocalAddress() const noexcept {
   if (closed_ || fd_ < 0) {
-    return std::unexpected(base::make_errno(EBADF));
+    return std::unexpected(base::MakeErrno(EBADF));
   }
   return GetLocalAddress(fd_);
 }

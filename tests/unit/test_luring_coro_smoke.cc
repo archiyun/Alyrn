@@ -43,11 +43,11 @@ public:
     if (result_.has_value()) {
       return std::move(*result_);
     }
-    if (!op_.result.has_value()) {
-      return std::unexpected(op_.result.error());
+    if (!op_.result.HasValue()) {
+      return std::unexpected(op_.result.Error());
     }
     if (*op_.result < 0) {
-      return std::unexpected(coropact::base::make_neg_errno(*op_.result));
+      return std::unexpected(coropact::base::MakeNegErrno(*op_.result));
     }
     return *op_.result;
   }
@@ -81,7 +81,7 @@ bool CheckSingleShotCompletion() {
   return Check(first, "first completion should be accepted") &&
          Check(!second, "duplicate completion should be rejected") &&
          Check(op.IsCompleted(), "operation should remain completed") &&
-         Check(op.result.has_value(), "first completion should store a result") &&
+         Check(op.result.HasValue(), "first completion should store a result") &&
          Check(*op.result == 17, "duplicate completion must not overwrite the result");
 }
 

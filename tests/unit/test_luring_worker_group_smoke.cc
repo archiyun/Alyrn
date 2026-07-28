@@ -105,7 +105,7 @@ coropact::base::Result<int> ConnectClient(const coropact::net::Endpoint& address
     return std::unexpected(coropact::base::CurrentErrno());
   }
 
-  int r = ::connect(fd, address.sock_addr(), address.sock_addr_len());
+  int r = ::connect(fd, address.SockAddr(), address.SockAddrLen());
   if (r < 0 && errno != EINPROGRESS) {
     auto error = coropact::base::CurrentErrno();
     ::close(fd);
@@ -145,7 +145,7 @@ bool CheckWorkerGroupStartStop() {
                                           if (context.index >= 2) {
                                             invalid_index.store(true, std::memory_order_relaxed);
                                           }
-                                          if (context.listener.fd() < 0) {
+                                          if (context.listener.Fd() < 0) {
                                             invalid_listener.store(true, std::memory_order_relaxed);
                                           }
                                           init_count.fetch_add(1, std::memory_order_relaxed);
@@ -161,8 +161,8 @@ bool CheckWorkerGroupStartStop() {
     return false;
   }
 
-  bool ok = Check(group.started(), "group should be started") &&
-            Check(group.size() == 2, "group size should be 2") &&
+  bool ok = Check(group.Started(), "group should be started") &&
+            Check(group.Size() == 2, "group size should be 2") &&
             Check(init_count.load(std::memory_order_relaxed) == 2,
                   "init callback should run for each worker") &&
             Check(!bad_thread.load(std::memory_order_relaxed),
@@ -174,8 +174,8 @@ bool CheckWorkerGroupStartStop() {
 
   group.Stop();
 
-  return ok && Check(!group.started(), "group should stop") &&
-         Check(group.size() == 0, "workers should be cleared after stop");
+  return ok && Check(!group.Started(), "group should stop") &&
+         Check(group.Size() == 0, "workers should be cleared after stop");
 }
 
 bool CheckWorkerGroupAcceptCallback() {
@@ -207,7 +207,7 @@ bool CheckWorkerGroupAcceptCallback() {
         if (!context.loop.IsInLoopThread()) {
           bad_thread.store(true, std::memory_order_relaxed);
         }
-        if (stream.fd() < 0) {
+        if (stream.Fd() < 0) {
           invalid_stream.store(true, std::memory_order_relaxed);
         }
         connection_count.fetch_add(1, std::memory_order_relaxed);
@@ -249,8 +249,8 @@ bool CheckWorkerGroupAcceptCallback() {
 
   group.Stop();
 
-  return ok && Check(!group.started(), "group should stop after accept callback test") &&
-         Check(group.size() == 0, "workers should be cleared after accept callback test");
+  return ok && Check(!group.Started(), "group should stop after accept callback test") &&
+         Check(group.Size() == 0, "workers should be cleared after accept callback test");
 }
 
 }  // namespace

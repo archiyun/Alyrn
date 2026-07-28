@@ -43,16 +43,16 @@ public:
   void Stop() noexcept;
 
   [[nodiscard]]
-  bool started() const noexcept { return started_; }
+  bool Started() const noexcept { return started_; }
   [[nodiscard]]
-  std::size_t size() const noexcept { return workers_.size(); }
+  std::size_t Size() const noexcept { return workers_.size(); }
 
   [[nodiscard]]
-  ReactorWorker* worker(std::size_t index) noexcept {
+  ReactorWorker* Worker(std::size_t index) noexcept {
     return index < workers_.size() ? workers_[index].get() : nullptr;
   }
   [[nodiscard]]
-  const ReactorWorker* worker(std::size_t index) const noexcept {
+  const ReactorWorker* Worker(std::size_t index) const noexcept {
     return index < workers_.size() ? workers_[index].get() : nullptr;
   }
 

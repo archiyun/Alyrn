@@ -37,7 +37,7 @@ bool TestCircuitBreakerRequiresConsecutiveSuccesses() {
   breaker.OnSuccess();
 
   if (!Expect(
-          breaker.failure_count() == 2,
+          breaker.FailureCount() == 2,
           "circuit breaker resets failures after non-consecutive successes")) {
     return false;
   }
@@ -61,10 +61,10 @@ bool TestPerIPBucketLimitIsHard() {
   }
 
   if (!Expect(
-          limiter.per_ip_bucket_count() <= cfg.per_ip_max_buckets,
+          limiter.PerIPBucketCount() <= cfg.per_ip_max_buckets,
           "per-IP bucket spray exceeds the configured cap and grows memory")) {
     std::cerr << "  configured cap=" << cfg.per_ip_max_buckets
-              << " live buckets=" << limiter.per_ip_bucket_count() << '\n';
+              << " live buckets=" << limiter.PerIPBucketCount() << '\n';
     return false;
   }
 
@@ -88,7 +88,7 @@ bool TestUpstreamBulkheadIsHard() {
               "bulkhead must reject above max_concurrent_requests")) {
     return false;
   }
-  if (!Expect(upstream.active_requests() == 2,
+  if (!Expect(upstream.ActiveRequests() == 2,
               "rejected request must not inflate active slot count")) {
     return false;
   }
@@ -101,7 +101,7 @@ bool TestUpstreamBulkheadIsHard() {
   upstream.ReleaseRequestSlot();
   upstream.ReleaseRequestSlot();
 
-  if (!Expect(upstream.active_requests() == 0,
+  if (!Expect(upstream.ActiveRequests() == 0,
               "all bulkhead slots must be released exactly once")) {
     return false;
   }

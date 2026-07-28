@@ -16,7 +16,7 @@ namespace coropact::memory {
 //
 // Template parameters:
 //   T           - Type of objects to allocate.
-//   Capacity    - Maximum number of objects (default: 1024).
+//   kCapacity   - Maximum number of objects (default: 1024).
 //   MutexPolicy - Forwarded to the underlying MemoryPool (default: std::mutex).
 //
 // Responsibilities:
@@ -32,7 +32,7 @@ namespace coropact::memory {
 //   }  // automatically returned to the pool here
 template <
     typename    T,
-    std::size_t Capacity    = 1024,
+    std::size_t kCapacity   = 1024,
     typename    MutexPolicy = std::mutex
 >
 class ObjectPool {
@@ -62,7 +62,7 @@ class ObjectPool {
   // Constructs an object of type T using forwarded arguments. When the pool
   // is exhausted, falls back to heap allocation so callers never observe
   // nullptr. The fallback path is slower than a pool hit; a sustained
-  // non-zero overflow_count() indicates Capacity is undersized for the load.
+  // non-zero OverflowCount() indicates Capacity is undersized for the load.
   // Throws: any exception thrown by T's constructor (slot is returned on throw).
   template <typename... Args>
   T* Acquire(Args&&... args) {
@@ -92,7 +92,7 @@ class ObjectPool {
     if (ptr == nullptr) {
       return;
     }
-    if (pool_.owns(ptr)) {
+    if (pool_.Owns(ptr)) {
       ptr->~T();
       pool_.Deallocate(static_cast<void*>(ptr));
     } else {
@@ -101,22 +101,22 @@ class ObjectPool {
   }
 
   // Returns true if the pointer belongs to this pool.
-  bool owns(const T* ptr) const noexcept {
-    return pool_.owns(ptr);
+  bool Owns(const T* ptr) const noexcept {
+    return pool_.Owns(ptr);
   }
 
-  constexpr std::size_t capacity()   const noexcept { return pool_.capacity();   }
-  std::size_t           free_count() const noexcept { return pool_.free_count(); }
-  std::size_t           used_count() const noexcept { return pool_.used_count(); }
+  constexpr std::size_t Capacity() const noexcept { return pool_.Capacity(); }
+  std::size_t FreeCount() const noexcept { return pool_.FreeCount(); }
+  std::size_t UsedCount() const noexcept { return pool_.UsedCount(); }
 
   // Number of times Acquire() spilled to the heap because the pool was full.
   // Monotonically increasing; never reset. Useful for sizing Capacity in prod.
-  std::size_t overflow_count() const noexcept {
+  std::size_t OverflowCount() const noexcept {
     return overflow_count_.load(std::memory_order_relaxed);
   }
 
  private:
-  MemoryPool<sizeof(T), alignof(T), Capacity, MutexPolicy> pool_;
+  MemoryPool<sizeof(T), alignof(T), kCapacity, MutexPolicy> pool_;
   std::atomic<std::size_t> overflow_count_{0};
 };
 

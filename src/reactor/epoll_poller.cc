@@ -107,13 +107,13 @@ void EPollPoller::FillActiveChannels(int num_events, ChannelList* active_channel
   active_channels->reserve(active_channels->size() + static_cast<std::size_t>(num_events));
   for (int i = 0; i < num_events; ++i) {
     auto* channel = static_cast<Channel*>(events_[i].data.ptr);
-    channel->set_revents(FromEpollEvents(events_[i].events));
+    channel->SetRevents(FromEpollEvents(events_[i].events));
     active_channels->push_back(channel);
   }
 }
 
 void EPollPoller::UpdateChannel(Channel* channel) {
-  const int fd = channel->fd();
+  const int fd = channel->Fd();
   const auto state = static_cast<ChannelState>(channel->index());
 
   // New and previously deleted channels both need an ADD before they can
@@ -138,7 +138,7 @@ void EPollPoller::UpdateChannel(Channel* channel) {
 }
 
 void EPollPoller::RemoveChannel(Channel* channel) {
-  const int fd = channel->fd();
+  const int fd = channel->Fd();
   channels_.erase(fd);
 
   if (static_cast<ChannelState>(channel->index()) == ChannelState::kAdded) {
@@ -150,16 +150,16 @@ void EPollPoller::RemoveChannel(Channel* channel) {
 
 void EPollPoller::Update(int operation, Channel* channel) {
   epoll_event event{};
-  event.events = ToEpollEvents(channel->events());
+  event.events = ToEpollEvents(channel->Events());
   if (channel->IsEdgeTriggered()) {
     // Preserve the caller's edge-triggered preference in epoll.
     event.events |= EPOLLET;
   }
   event.data.ptr = channel;
 
-  if (::epoll_ctl(epollfd_, operation, channel->fd(), &event) < 0) {
-    LOG_ERROR() << "epoll_ctl failed: op=" << OpName(operation) << " fd=" << channel->fd()
-                << " events=" << channel->events() << " errno=" << errno
+  if (::epoll_ctl(epollfd_, operation, channel->Fd(), &event) < 0) {
+    LOG_ERROR() << "epoll_ctl failed: op=" << OpName(operation) << " fd=" << channel->Fd()
+                << " events=" << channel->Events() << " errno=" << errno
                 << " message=" << std::strerror(errno);
   }
 }

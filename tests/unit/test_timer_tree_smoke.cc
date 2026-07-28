@@ -34,8 +34,8 @@ bool TestOrdersByExpirationThenSequence() {
   timers.Insert(&first);
   timers.Insert(&early);
 
-  if (!Expect(timers.size() == 3, "tree should contain all timers") ||
-      !Expect(timers.earliest() == &early,
+  if (!Expect(timers.Size() == 3, "tree should contain all timers") ||
+      !Expect(timers.Earliest() == &early,
               "earliest expiration should sort first") ||
       !Expect(timers.CheckRBInvariants(),
               "tree invariants should hold after insertion")) {
@@ -44,7 +44,7 @@ bool TestOrdersByExpirationThenSequence() {
 
   if (!Expect(timers.Erase(&early), "earliest timer should be erasable") ||
       !Expect(!early.InTree(), "erased timer hook should be unlinked") ||
-      !Expect(timers.earliest() == &first,
+      !Expect(timers.Earliest() == &first,
               "equal deadlines should use timer sequence order")) {
     return false;
   }
@@ -83,7 +83,7 @@ bool TestPopWhileUnlinksAndPreservesOrder() {
               "first equal-deadline timer order mismatch") ||
       !Expect(popped_sequences[1] == second.sequence(),
               "second equal-deadline timer order mismatch") ||
-      !Expect(timers.earliest() == &later,
+      !Expect(timers.Earliest() == &later,
               "non-matching timer should remain in the tree")) {
     return false;
   }
@@ -106,7 +106,7 @@ bool TestTimerCanBeReinsertedAfterRestart() {
   timers.Insert(&repeating);
 
   return Expect(repeating.InTree(), "restarted timer should be linked") &&
-         Expect(timers.earliest() == &repeating,
+         Expect(timers.Earliest() == &repeating,
                 "restarted timer should be available as earliest") &&
          Expect(timers.CheckRBInvariants(),
                 "tree invariants should hold after reinsertion");

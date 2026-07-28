@@ -65,8 +65,8 @@ int main() {
   erased = peer_b.Erase(&third);
   assert(erased);
   assert(global.Empty());
-  assert(peer_a.empty());
-  assert(peer_b.empty());
+  assert(peer_a.Empty());
+  assert(peer_b.Empty());
 
   // A removed node can be inserted again and touched to MRU.
   inserted = global.PushMRU(&first);

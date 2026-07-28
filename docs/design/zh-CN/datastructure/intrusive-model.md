@@ -105,8 +105,8 @@ struct Connection : public coropact::ds::ListNode<Connection, PeerTag>,
 具体说一下,
 在所有侵入式容器都能看到这么两行接口
 ```cpp
-  static T* elem_of(Node* node) noexcept { return static_cast<T*>(node); }
-  static Node* node_of(T* elem) noexcept { return static_cast<Node*>(elem); }
+  static T* ElemOf(Node* node) noexcept { return static_cast<T*>(node); }
+  static Node* NodeOf(T* elem) noexcept { return static_cast<Node*>(elem); }
 ```
 优雅的对称结构
 hook -> object

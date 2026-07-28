@@ -16,6 +16,7 @@
 #include <string_view>
 
 #include "coropact/base/error.h"
+#include "coropact/base/try.h"
 #include "coropact/coro/task.h"
 #include "coropact/gateway/forwarded_header_context.h"
 #include "coropact/gateway/load_balancer.h"
@@ -185,15 +186,13 @@ coro::Task<base::Result<bool>> ProxyPass::RelayResponse(
       }
 
       for (;;) {
-        auto read = co_await ReadSomeWithTimeout(upstream, read_buffer, request_timeout);
-        if (!read.has_value()) {
-          co_return std::unexpected(read.error());
-        }
+        COROPACT_CO_TRY(read,
+                        co_await ReadSomeWithTimeout(upstream, read_buffer, request_timeout));
 
-        if (*read == 0) {
+        if (read == 0) {
           co_return false;
         }
-        std::string_view chunk(reinterpret_cast<const char*>(read_buffer.data()), *read);
+        std::string_view chunk(reinterpret_cast<const char*>(read_buffer.data()), read);
         if (state.framing == BodyFraming::kContentLength) {
           const uint64_t n = std::min<uint64_t>(chunk.size(), state.body_remaining);
           auto write = co_await io::WriteAll(
@@ -215,14 +214,12 @@ coro::Task<base::Result<bool>> ProxyPass::RelayResponse(
       }
     }
 
-    auto read = co_await ReadSomeWithTimeout(upstream, read_buffer, request_timeout);
-    if (!read.has_value()) {
-      co_return std::unexpected(read.error());
+    COROPACT_CO_TRY(read,
+                    co_await ReadSomeWithTimeout(upstream, read_buffer, request_timeout));
+    if (read == 0) {
+      co_return std::unexpected(base::MakeErrno(EPIPE));
     }
-    if (*read == 0) {
-      co_return std::unexpected(base::make_errno(EPIPE));
-    }
-    pending.append(reinterpret_cast<const char*>(read_buffer.data()), *read);
+    pending.append(reinterpret_cast<const char*>(read_buffer.data()), read);
   }
 }
 
@@ -268,7 +265,7 @@ coro::Task<ProxyForwardResult> ProxyPass::Forward(
   bool circuitbreaker_reported = false;
   int retries_left = 2;
   bool request_on_wire = false;
-  const bool collect_stats = pool.stats_enabled();
+  const bool collect_stats = pool.StatsEnabled();
 
   for (;;) {
     std::optional<UpstreamStream> upstream_stream = pool.Acquire(peer.get());

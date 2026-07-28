@@ -18,18 +18,18 @@ class HttpResponse {
   // connection after sending the response.
   explicit HttpResponse(bool close_connection);
 
-  void set_status_code(StatusCode code);
-  void set_body(std::string body);
-  void set_content_type(std::string_view content_type);
+  void SetStatusCode(StatusCode code);
+  void SetBody(std::string body);
+  void SetContentType(std::string_view content_type);
   void AddHeader(std::string_view key, std::string_view value);
-  void set_close_connection(bool close);
+  void SetCloseConnection(bool close);
 
-  bool close_connection() const;
+  bool CloseConnection() const;
 
-  StatusCode status_code() const { return status_code_; }
+  StatusCode StatusCodeValue() const { return status_code_; }
   const std::string& body() const { return body_; }
   const std::unordered_map<std::string, std::string>& headers() const { return headers_; }
-  std::string content_type() const {
+  std::string ContentType() const {
     auto it = headers_.find("Content-Type");
     return it != headers_.end() ? it->second : std::string{};
   }

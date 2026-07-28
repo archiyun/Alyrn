@@ -54,7 +54,7 @@ void TestIsEqual() {
 
   EXPECT(ra1 == ra2, "two resources on same Pool compare equal");
   EXPECT(!(ra1 == rb), "resources on different Pools are not equal");
-  EXPECT(ra1.pool().chunk_count() >= 1, "underlying pool reachable via pool()");
+  EXPECT(ra1.pool().ChunkCount() >= 1, "underlying pool reachable via pool()");
 }
 
 void TestPmrStringGrowsThroughArena() {
@@ -75,7 +75,7 @@ void TestPmrStringGrowsThroughArena() {
 void TestPmrVectorReallocation() {
   auto pool = Pool::Create(/*chunk_size=*/512);
   PoolResource res(*pool);
-  const std::size_t chunks_before = pool->chunk_count();
+  const std::size_t chunks_before = pool->ChunkCount();
 
   PmrVector<int> v(&res);
   for (int i = 0; i < 1024; ++i) {
@@ -85,7 +85,7 @@ void TestPmrVectorReallocation() {
   for (int i = 0; i < 1024; ++i) {
     EXPECT(v[i] == i, "pmr::vector preserves values across reallocate");
   }
-  EXPECT(pool->chunk_count() > chunks_before, "vector reallocates spilled into new arena chunk(s)");
+  EXPECT(pool->ChunkCount() > chunks_before, "vector reallocates spilled into new arena chunk(s)");
 }
 
 void TestPmrUnorderedMapInsertAndLookup() {

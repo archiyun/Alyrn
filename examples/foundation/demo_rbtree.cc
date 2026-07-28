@@ -71,7 +71,7 @@ int main() {
   std::printf("backup_db in tree: %s\n", jobs[1].InTree() ? "yes" : "no");
 
   // 查看截止时间最早的任务
-  Job* earliest = tree.earliest();
+  Job* earliest = tree.Earliest();
   std::printf("Earliest: %s (deadline=%lld)\n",
               earliest->name.c_str(), (long long)earliest->deadline_ms);
   // → backup_db (deadline=100)
@@ -93,7 +93,7 @@ int main() {
   // → backup_db (100), flush_cache (100)
 
   // 树中剩余任务数量
-  std::printf("Remaining in tree: %zu\n", tree.size());
+  std::printf("Remaining in tree: %zu\n", tree.Size());
   // → 1 (send_email)
 
   // 回调版本不创建结果 vector；回调执行前，节点已经从树中移除。
@@ -104,6 +104,6 @@ int main() {
                     j->name.c_str(), j->InTree() ? "yes" : "no");
       });
 
-  std::printf("Tree empty: %s\n", tree.empty() ? "yes" : "no");
+  std::printf("Tree empty: %s\n", tree.Empty() ? "yes" : "no");
   return 0;
 }

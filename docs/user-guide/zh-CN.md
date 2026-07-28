@@ -416,7 +416,7 @@ int main() {
   coropact::luring::LUringServer server(
       coropact::net::Endpoint(9090), options);
 
-  server.set_session_handler(
+  server.SetSessionHandler(
       [](coropact::luring::LUringLoop&, coropact::luring::LUringStream stream) {
         return EchoSession(std::move(stream));
       });
@@ -632,7 +632,7 @@ int main() {
   // 声明顺序保证 server 在 gateway 和 registry 之前析构。
   coropact::luring::LUringServer server(
       coropact::net::Endpoint(8080), options);
-  server.set_session_handler(
+  server.SetSessionHandler(
       [&gateway](coropact::luring::LUringLoop& loop,
                  coropact::luring::LUringStream stream) {
         // connector 由当前 loop 构造，并按值进入 session 协程 frame。

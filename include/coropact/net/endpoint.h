@@ -79,9 +79,11 @@ public:
   }
 
   [[nodiscard]]
-  sa_family_t native_family() const noexcept {
+  sa_family_t NativeFamily() const noexcept {
     return addr_.ss_family;
   }
+
+  sa_family_t native_family() const noexcept { return NativeFamily(); }
 
   [[nodiscard]]
   std::string ToIp() const {
@@ -89,7 +91,7 @@ public:
     const void* address = nullptr;
     const char* result = nullptr;
 
-    switch (native_family()) {
+    switch (NativeFamily()) {
       case AF_INET:
         address = &reinterpret_cast<const sockaddr_in&>(addr_).sin_addr;
         result = ::inet_ntop(AF_INET, address, buffer, sizeof(buffer));
@@ -108,7 +110,7 @@ public:
 
   [[nodiscard]]
   std::string ToIpPort() const {
-    if (native_family() == AF_INET6) {
+    if (NativeFamily() == AF_INET6) {
       return "[" + ToIp() + "]:" + std::to_string(ToPort());
     }
     return ToIp() + ":" + std::to_string(ToPort());
@@ -116,7 +118,7 @@ public:
 
   [[nodiscard]]
   std::uint16_t ToPort() const noexcept {
-    switch (native_family()) {
+    switch (NativeFamily()) {
       case AF_INET:
         return ntohs(reinterpret_cast<const sockaddr_in&>(addr_).sin_port);
       case AF_INET6:
@@ -127,21 +129,24 @@ public:
   }
 
   [[nodiscard]]
-  const sockaddr* sock_addr() const noexcept {
+  const sockaddr* SockAddr() const noexcept {
     return reinterpret_cast<const sockaddr*>(&addr_);
   }
 
   [[nodiscard]]
-  socklen_t sock_addr_len() const noexcept {
+  socklen_t SockAddrLen() const noexcept {
     return addr_len_;
   }
+
+  const sockaddr* sock_addr() const noexcept { return SockAddr(); }
+  socklen_t sock_addr_len() const noexcept { return SockAddrLen(); }
 
   friend bool operator==(const Endpoint& lhs, const Endpoint& rhs) noexcept {
     if (lhs.family() != rhs.family() || lhs.ToPort() != rhs.ToPort()) {
       return false;
     }
 
-    switch (lhs.native_family()) {
+    switch (lhs.NativeFamily()) {
       case AF_INET:
         return reinterpret_cast<const sockaddr_in&>(lhs.addr_).sin_addr.s_addr ==
                reinterpret_cast<const sockaddr_in&>(rhs.addr_).sin_addr.s_addr;

@@ -19,11 +19,11 @@ struct MurmurHash128 {
     uint64_t h2;
 };
 
-inline uint64_t rotl64(uint64_t x, int8_t r) {
+inline uint64_t Rotl64(uint64_t x, int8_t r) {
     return (x << r) | (x >> (64 - r));
 }
 
-inline uint64_t fmix64(uint64_t k) {
+inline uint64_t Fmix64(uint64_t k) {
     k ^= k >> 33;
     k *= 0xff51afd7ed558ccdULL;
     k ^= k >> 33;
@@ -61,20 +61,20 @@ inline MurmurHash128 MurmurHash3_x64_128(const void* key, size_t len, uint32_t s
         uint64_t k2 = Load64LE(data + i * 16 + 8);
 
         k1 *= c1;
-        k1 = rotl64(k1, 31);
+        k1 = Rotl64(k1, 31);
         k1 *= c2;
         h1 ^= k1;
 
-        h1 = rotl64(h1, 27);
+        h1 = Rotl64(h1, 27);
         h1 += h2;
         h1 = h1 * 5 + 0x52dce729ULL;
 
         k2 *= c2;
-        k2 = rotl64(k2, 33);
+        k2 = Rotl64(k2, 33);
         k2 *= c1;
         h2 ^= k2;
 
-        h2 = rotl64(h2, 31);
+        h2 = Rotl64(h2, 31);
         h2 += h1;
         h2 = h2 * 5 + 0x38495ab5ULL;
     }
@@ -93,7 +93,7 @@ inline MurmurHash128 MurmurHash3_x64_128(const void* key, size_t len, uint32_t s
         case 9:
             k2 ^= static_cast<uint64_t>(tail[8]);
             k2 *= c2;
-            k2 = rotl64(k2, 33);
+            k2 = Rotl64(k2, 33);
             k2 *= c1;
             h2 ^= k2;
             [[fallthrough]];
@@ -107,7 +107,7 @@ inline MurmurHash128 MurmurHash3_x64_128(const void* key, size_t len, uint32_t s
         case 1:
             k1 ^= static_cast<uint64_t>(tail[0]);
             k1 *= c1;
-            k1 = rotl64(k1, 31);
+            k1 = Rotl64(k1, 31);
             k1 *= c2;
             h1 ^= k1;
     }
@@ -118,8 +118,8 @@ inline MurmurHash128 MurmurHash3_x64_128(const void* key, size_t len, uint32_t s
     h1 += h2;
     h2 += h1;
 
-    h1 = fmix64(h1);
-    h2 = fmix64(h2);
+    h1 = Fmix64(h1);
+    h2 = Fmix64(h2);
 
     h1 += h2;
     h2 += h1;

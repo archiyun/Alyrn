@@ -136,7 +136,7 @@ coropact::base::Result<int> ConnectClient(const coropact::net::Endpoint& address
     return std::unexpected(coropact::base::CurrentErrno());
   }
 
-  if (::connect(fd, address.sock_addr(), address.sock_addr_len()) < 0) {
+  if (::connect(fd, address.SockAddr(), address.SockAddrLen()) < 0) {
     auto error = coropact::base::CurrentErrno();
     ::close(fd);
     return std::unexpected(error);
@@ -265,7 +265,7 @@ private:
 
 template <class Service>
 void BindServer(Service& service, coropact::luring::LUringServer& server) {
-  server.set_session_handler(
+  server.SetSessionHandler(
       [&service](coropact::luring::LUringWorkerContext& context,
                  coropact::luring::LUringStream stream) -> coropact::coro::DetachedTask {
         co_await service.Serve(std::move(stream),
@@ -289,9 +289,9 @@ bool CheckDirectRoute() {
                                                        coropact::luring::LUringConnector>;
   Service service("luring-gateway", registry);
   service.Get("/healthz", [](const coropact::http::HttpRequest&, coropact::http::HttpResponse& response) {
-    response.set_status_code(coropact::http::StatusCode::Ok);
-    response.set_content_type("text/plain");
-    response.set_body("ok");
+    response.SetStatusCode(coropact::http::StatusCode::Ok);
+    response.SetContentType("text/plain");
+    response.SetBody("ok");
   });
 
   coropact::luring::LUringServer server(LoopbackAddress(*port), MakeOptions());

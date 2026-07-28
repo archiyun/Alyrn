@@ -8,11 +8,11 @@
 #include <cerrno>
 #include <coroutine>
 #include <expected>
-#include <optional>
 #include <utility>
 
 #include "coropact/base/check.h"
 #include "coropact/base/error.h"
+#include "coropact/base/try.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/work.h"
 #include "coropact/log/logger.h"
@@ -42,23 +42,13 @@ EventLoop* CheckLoop(EventLoop* loop) noexcept {
 
 base::Result<net::Socket> TryCreateListenSocket(const net::Endpoint& listen_addr,
                                                ReactorListenerOptions options) noexcept {
-  auto fd = net::CreateNonBlockingSocket(listen_addr.native_family());
-  if (!fd.has_value()) {
-    return std::unexpected(fd.error());
-  }
+  net::Socket socket(
+      COROPACT_TRY(net::CreateNonBlockingSocket(listen_addr.native_family())));
 
-  net::Socket socket(*fd);
-
-  auto reuse_addr = net::set_reuse_addr(socket.fd(), options.reuse_addr);
-  if (!reuse_addr.has_value()) {
-    return std::unexpected(reuse_addr.error());
-  }
+  COROPACT_TRY(net::set_reuse_addr(socket.fd(), options.reuse_addr));
 
   if (options.reuse_port) {
-    auto reuse_port = net::set_reuse_port(socket.fd(), true);
-    if (!reuse_port.has_value()) {
-      return std::unexpected(reuse_port.error());
-    }
+    COROPACT_TRY(net::set_reuse_port(socket.fd(), true));
   }
 
   if (::bind(socket.fd(), listen_addr.sock_addr(), listen_addr.sock_addr_len()) < 0) {
@@ -101,7 +91,7 @@ public:
 
     base::Result<ReactorStream> result = TryAccept();
     if (result.has_value() || !IsWouldBlock(result.error().value())) {
-      result_ = std::move(result);
+      result_.SetResult(std::move(result));
       return false;
     }
 
@@ -113,12 +103,12 @@ public:
   }
 
   base::Result<ReactorStream> await_resume() noexcept {
-    COROPACT_DCHECK(result_.has_value(), "AcceptAwaiter: result is not ready");
-    return std::move(*result_);
+    COROPACT_DCHECK(result_.HasResult(), "AcceptAwaiter: result is not ready");
+    return result_.Take();
   }
 
   void Complete(base::Result<ReactorStream> result) noexcept {
-    result_ = std::move(result);
+    result_.SetResult(std::move(result));
     COROPACT_DCHECK(scheduler_ != nullptr, "AcceptAwaiter: scheduler is not bound");
     scheduler_->Schedule(&resume_work_);
   }
@@ -148,7 +138,7 @@ private:
   ReactorListener* listener_;
   coro::Scheduler* scheduler_{nullptr};
   coro::ResumeWork resume_work_;
-  std::optional<base::Result<ReactorStream>> result_;
+  detail::ReactorValueResultState<ReactorStream> result_;
 };
 
 ReactorListener::ReactorListener(EventLoop* loop, const net::Endpoint& listen_addr,
@@ -178,11 +168,7 @@ base::Result<ReactorListener> ReactorListener::Create(EventLoop* loop,
     return std::unexpected(base::make_errno(EINVAL));
   }
 
-  auto socket = TryCreateListenSocket(listen_addr, options);
-  if (!socket.has_value()) {
-    return std::unexpected(socket.error());
-  }
-  return ReactorListener(loop, std::move(*socket));
+  return ReactorListener(loop, COROPACT_TRY(TryCreateListenSocket(listen_addr, options)));
 }
 
 ReactorListener::ReactorListener(ReactorListener&& other) noexcept
@@ -266,6 +252,15 @@ void ReactorListener::HandleError() {
   CompleteAccept(std::unexpected(SocketError(socket_.fd())));
 }
 
+void ReactorListener::DispatchRead(void* context,
+                                   coropact::time::Timestamp receive_time) noexcept {
+  static_cast<ReactorListener*>(context)->HandleRead(receive_time);
+}
+
+void ReactorListener::DispatchError(void* context) noexcept {
+  static_cast<ReactorListener*>(context)->HandleError();
+}
+
 void ReactorListener::CompleteAccept(base::Result<ReactorStream> result) {
   COROPACT_DCHECK(loop_->IsInLoopThread(), "ReactorListener::CompleteAccept called from wrong thread");
   AcceptAwaiter* awaiter = std::exchange(pending_accept_, nullptr);
@@ -290,8 +285,8 @@ void ReactorListener::DetachChannel() {
 
 void ReactorListener::BindChannelCallbacks() noexcept {
   try {
-    channel_.set_read_callback([this](coropact::time::Timestamp ts) { HandleRead(ts); });
-    channel_.set_error_callback([this] { HandleError(); });
+    channel_.SetReadCallback(&ReactorListener::DispatchRead, this);
+    channel_.SetErrorCallback(&ReactorListener::DispatchError, this);
   } catch (...) {
     COROPACT_CHECK(false, "ReactorListener: failed to bind channel callbacks");
   }

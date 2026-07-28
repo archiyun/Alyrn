@@ -50,21 +50,21 @@ public:
   void Stop() noexcept;
 
   [[nodiscard]]
-  bool started() const noexcept {
+  bool Started() const noexcept {
     return started_;
   }
 
   [[nodiscard]]
-  std::size_t size() const noexcept {
+  std::size_t Size() const noexcept {
     return workers_.size();
   }
 
   [[nodiscard]]
-  LUringWorker* worker(std::size_t index) noexcept {
+  LUringWorker* Worker(std::size_t index) noexcept {
     return index < workers_.size() ? workers_[index].get() : nullptr;
   }
   [[nodiscard]]
-  const LUringWorker* worker(std::size_t index) const noexcept {
+  const LUringWorker* Worker(std::size_t index) const noexcept {
     return index < workers_.size() ? workers_[index].get() : nullptr;
   }
 

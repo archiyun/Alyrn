@@ -28,9 +28,9 @@ struct FallbackConfig {
       return;
     }
     http::HttpResponse resp(true);
-    resp.set_status_code(status_code);
-    resp.set_content_type(content_type);
-    resp.set_body(body);
+    resp.SetStatusCode(status_code);
+    resp.SetContentType(content_type);
+    resp.SetBody(body);
     pre_rendered = resp.ToString();
   }
 };

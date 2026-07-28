@@ -57,20 +57,20 @@ void EmptyReserveConstAndReuseTest() {
 
   static_assert(std::is_same_v<decltype(const_table.Find(0)), const Item*>);
 
-  CHECK(table.empty());
-  CHECK(table.size() == 0);
-  CHECK(table.bucket_count() == 0);
+  CHECK(table.Empty());
+  CHECK(table.Size() == 0);
+  CHECK(table.BucketCount() == 0);
   CHECK(table.Find(11) == nullptr);
   CHECK(!table.Contains(11));
   CHECK(!table.Erase(&item));
   CHECK(table.CheckInvariants());
 
   table.Reserve(1);
-  CHECK(table.bucket_count() == 16);
+  CHECK(table.BucketCount() == 16);
   table.Reserve(17);
-  CHECK(table.bucket_count() == 32);
+  CHECK(table.BucketCount() == 32);
   table.Reserve(2);
-  CHECK(table.bucket_count() == 32);
+  CHECK(table.BucketCount() == 32);
   CHECK(table.CheckInvariants());
 
   CHECK(table.Insert(&item));
@@ -78,8 +78,8 @@ void EmptyReserveConstAndReuseTest() {
   CHECK(const_table.Contains(11));
   table.Clear();
   CHECK(!item.InTable());
-  CHECK(table.empty());
-  CHECK(table.bucket_count() == 32);
+  CHECK(table.Empty());
+  CHECK(table.BucketCount() == 32);
   CHECK(table.CheckInvariants());
 
   CHECK(table.Insert(&item));
@@ -94,12 +94,12 @@ void GrowthBoundaryTest() {
   for (int i = 0; i < static_cast<int>(pool.size()); ++i) {
     pool[i].key = i;
     CHECK(table.Insert(&pool[i]));
-    if (i == 0) CHECK(table.bucket_count() == 16);
-    if (i == 15) CHECK(table.bucket_count() == 16);
-    if (i == 16) CHECK(table.bucket_count() == 32);
-    if (i == 31) CHECK(table.bucket_count() == 32);
-    if (i == 32) CHECK(table.bucket_count() == 64);
-    if (i == 64) CHECK(table.bucket_count() == 128);
+    if (i == 0) CHECK(table.BucketCount() == 16);
+    if (i == 15) CHECK(table.BucketCount() == 16);
+    if (i == 16) CHECK(table.BucketCount() == 32);
+    if (i == 31) CHECK(table.BucketCount() == 32);
+    if (i == 32) CHECK(table.BucketCount() == 64);
+    if (i == 64) CHECK(table.BucketCount() == 128);
     CHECK(table.CheckInvariants());
   }
 
@@ -144,8 +144,8 @@ void RunOracle(unsigned seed, int pool_size, int steps) {
   // Full equivalence check: same size, and for every pool node the same
   // membership, the same pointer from Find, and a matching hook state.
   auto check = [&] {
-    CHECK(table.size() == oracle.size());
-    CHECK(table.empty() == oracle.empty());
+    CHECK(table.Size() == oracle.size());
+    CHECK(table.Empty() == oracle.empty());
     CHECK(table.CheckInvariants());
     for (auto& it : pool) {
       auto found = oracle.find(it.key);
@@ -191,7 +191,7 @@ void RunOracle(unsigned seed, int pool_size, int steps) {
       case 7: {  // occasional Clear: every node must come back unhooked
         if (rng() % 16 == 0) {
           table.Clear();
-          CHECK(table.empty() && table.size() == 0);
+          CHECK(table.Empty() && table.Size() == 0);
           CHECK(table.CheckInvariants());
           for (auto& [key, node] : oracle) {
             CHECK(!node->InTable());
@@ -218,7 +218,7 @@ void ChainSurgeryTest() {
   c.key = 16;
 
   CHECK(table.Insert(&a) && table.Insert(&b) && table.Insert(&c));
-  CHECK(table.size() == 3);  // chain (head to tail): c -> b -> a
+  CHECK(table.Size() == 3);  // chain (head to tail): c -> b -> a
   CHECK(table.CheckInvariants());
 
   CHECK(table.Erase(&b));  // middle
@@ -236,7 +236,7 @@ void ChainSurgeryTest() {
   CHECK(table.CheckInvariants());
 
   CHECK(table.Erase(&c));  // only remaining element
-  CHECK(table.empty() && !a.InTable() && !b.InTable() && !c.InTable());
+  CHECK(table.Empty() && !a.InTable() && !b.InTable() && !c.InTable());
   CHECK(table.CheckInvariants());
 }
 
@@ -250,17 +250,17 @@ void DuplicateKeyTest() {
 
   CHECK(table.Insert(&a));
   CHECK(table.Insert(&b));  // same key, distinct node: allowed
-  CHECK(table.size() == 2);
+  CHECK(table.Size() == 2);
   CHECK(table.Find(7) == &b);  // newest first
   CHECK(table.Erase(&b));
   CHECK(table.Find(7) == &a);
   CHECK(table.Erase(&a));
-  CHECK(table.empty());
+  CHECK(table.Empty());
 
   // Re-inserting the same node twice must fail without touching size.
   CHECK(table.Insert(&a));
   CHECK(!table.Insert(&a));
-  CHECK(table.size() == 1);
+  CHECK(table.Size() == 1);
   CHECK(table.Erase(&a) && !table.Erase(&a));
   CHECK(table.CheckInvariants());
 }

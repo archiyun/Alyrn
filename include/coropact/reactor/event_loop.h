@@ -39,7 +39,7 @@ public:
   // Requests the loop to exit. The loop stops after the current iteration.
   void Quit();
 
-  coropact::time::Timestamp poll_return_time() const { return poll_return_time_; }
+  coropact::time::Timestamp PollReturnTime() const { return poll_return_time_; }
 
   // Runs cb immediately if called from the owning loop thread; otherwise,
   // schedules it to run in the loop thread. Thread-safe.
@@ -75,6 +75,8 @@ private:
 
   // Handles readability on the wakeup fd.
   void HandleRead();
+  static void DispatchWakeupRead(void* context,
+                                 coropact::time::Timestamp receive_time) noexcept;
 
   // Runs all functors queued through QueueInLoop().
   void DoPendingFunctors();

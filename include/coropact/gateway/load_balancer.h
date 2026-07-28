@@ -105,7 +105,7 @@ public:
     int total = 0;
     for (const auto& peer : peers) {
       if (!peer->AvailableAt(now_ms)) continue;
-      total += std::max(peer->effective_weight(), 0);
+      total += std::max(peer->EffectiveWeight(), 0);
     }
     if (total <= 0) return nullptr;
 
@@ -114,7 +114,7 @@ public:
 
     for (const auto& peer : peers) {
       if (!peer->AvailableAt(now_ms)) continue;
-      int weight = std::max(peer->effective_weight(), 0);
+      int weight = std::max(peer->EffectiveWeight(), 0);
       // peer pointers are stable after startup; using them as the key avoids
       // the cost of hashing/comparing peer name strings on every call.
       auto& cur = current_weights_[peer.get()];
@@ -146,7 +146,7 @@ public:
 
     for (const auto& peer : peers) {
       if (!peer->AvailableAt(now_ms)) continue;
-      int active = peer->active_request();
+      int active = peer->ActiveRequest();
       if (active < min_active) {
         min_active = active;
         best = peer;
@@ -182,8 +182,8 @@ public:
       // peer is less loaded  <=>  peer.active/weight < best.active/best_weight
       //                      <=>  peer.active * best_weight < best.active * weight
       // Widen one operand to int64_t first so the product can't overflow int.
-      const int64_t peer_load = static_cast<int64_t>(peer->active_request()) * best_weight;
-      const int64_t best_load = static_cast<int64_t>(best->active_request()) * weight;
+      const int64_t peer_load = static_cast<int64_t>(peer->ActiveRequest()) * best_weight;
+      const int64_t best_load = static_cast<int64_t>(best->ActiveRequest()) * weight;
       if (peer_load < best_load) {
         best = peer;
         best_weight = weight;
@@ -677,8 +677,8 @@ public:
     int w1 = std::max(peer1->weight(), 1);
     int w2 = std::max(peer2->weight(), 1);
     // load1 < load2  <=>  active1 * w2 < active2 * w1
-    int64_t load1 = static_cast<int64_t>(peer1->active_request()) * w2;
-    int64_t load2 = static_cast<int64_t>(peer2->active_request()) * w1;
+    int64_t load1 = static_cast<int64_t>(peer1->ActiveRequest()) * w2;
+    int64_t load2 = static_cast<int64_t>(peer2->ActiveRequest()) * w1;
     return load1 <= load2 ? peer1 : peer2;
   }
 };

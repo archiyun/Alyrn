@@ -184,7 +184,7 @@ public:
   }
 
   // Number of live per-IP buckets. Exposed for diagnostics and tests.
-  std::size_t per_ip_bucket_count() const noexcept {
+  std::size_t PerIPBucketCount() const noexcept {
     std::lock_guard lock{ip_mutex_};
     return ip_buckets_.size();
   }

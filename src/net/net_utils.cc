@@ -74,31 +74,31 @@ coropact::base::Result<int> CreateNonBlockingSocket(sa_family_t family) {
   return sockfd;
 }
 
-coropact::base::Result<void> set_non_blocking(int fd, bool on) {
+coropact::base::Result<void> SetNonBlocking(int fd, bool on) {
   return set_fd_flag(fd, F_GETFL, F_SETFL, O_NONBLOCK, on);
 }
 
-coropact::base::Result<void> set_close_on_exec(int fd, bool on) {
+coropact::base::Result<void> SetCloseOnExec(int fd, bool on) {
   return set_fd_flag(fd, F_GETFD, F_SETFD, FD_CLOEXEC, on);
 }
 
-coropact::base::Result<void> set_reuse_addr(int fd, bool on) {
+coropact::base::Result<void> SetReuseAddr(int fd, bool on) {
   return set_socket_option(fd, SOL_SOCKET, SO_REUSEADDR, on);
 }
 
-coropact::base::Result<void> set_reuse_port(int fd, bool on) {
+coropact::base::Result<void> SetReusePort(int fd, bool on) {
   return set_socket_option(fd, SOL_SOCKET, SO_REUSEPORT, on);
 }
 
-coropact::base::Result<void> set_tcp_non_delay(int fd, bool on) {
+coropact::base::Result<void> SetTcpNonDelay(int fd, bool on) {
   return set_socket_option(fd, IPPROTO_TCP, TCP_NODELAY, on);
 }
 
-coropact::base::Result<void> set_keep_alive(int fd, bool on) {
+coropact::base::Result<void> SetKeepAlive(int fd, bool on) {
   return set_socket_option(fd, SOL_SOCKET, SO_KEEPALIVE, on);
 }
 
-coropact::base::Result<Endpoint> get_local_addr(int fd) {
+coropact::base::Result<Endpoint> GetLocalAddr(int fd) {
   sockaddr_storage localaddr{};
   socklen_t addrlen = static_cast<socklen_t>(sizeof(localaddr));
   if (::getsockname(fd, reinterpret_cast<sockaddr*>(&localaddr), &addrlen) < 0) {
@@ -111,7 +111,7 @@ coropact::base::Result<Endpoint> get_local_addr(int fd) {
   return Endpoint(reinterpret_cast<const sockaddr*>(&localaddr), addrlen);
 }
 
-coropact::base::Result<Endpoint> get_peer_addr(int fd) {
+coropact::base::Result<Endpoint> GetPeerAddr(int fd) {
   sockaddr_storage peeraddr{};
   socklen_t addrlen = static_cast<socklen_t>(sizeof(peeraddr));
   if (::getpeername(fd, reinterpret_cast<sockaddr*>(&peeraddr), &addrlen) < 0) {
@@ -125,9 +125,9 @@ coropact::base::Result<Endpoint> get_peer_addr(int fd) {
 }
 
 coropact::base::Result<bool> IsSelfConnect(int fd) {
-  auto localaddr = get_local_addr(fd);
+  auto localaddr = GetLocalAddr(fd);
   if (!localaddr) return std::unexpected(localaddr.error());
-  auto peeraddr = get_peer_addr(fd);
+  auto peeraddr = GetPeerAddr(fd);
   if (!peeraddr) return std::unexpected(peeraddr.error());
   return *localaddr == *peeraddr;
 }

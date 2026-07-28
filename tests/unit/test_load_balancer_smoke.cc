@@ -474,7 +474,7 @@ bool TestPassivePeerRecoversAfterFailTimeout() {
 
   constexpr uint64_t t0 = 1'000'000;
   if (!Expect(peer.AvailableAt(t0), "fresh peer must be available")) return false;
-  if (!Expect(peer.effective_weight() == 4,
+  if (!Expect(peer.EffectiveWeight() == 4,
               "fresh peer starts at config weight")) return false;
 
   // One failure is below max_fails: still eligible.
@@ -500,12 +500,12 @@ bool TestPassivePeerRecoversAfterFailTimeout() {
   peer.OnSuccess();
   if (!Expect(peer.AvailableAt(t0),
               "OnSuccess must make the peer immediately available")) return false;
-  if (!Expect(peer.effective_weight() == 3,
+  if (!Expect(peer.EffectiveWeight() == 3,
               "OnSuccess must restore effective_weight toward config weight")) {
     return false;
   }
   peer.OnSuccess();
-  if (!Expect(peer.effective_weight() == 4,
+  if (!Expect(peer.EffectiveWeight() == 4,
               "effective_weight is capped at config weight")) return false;
 
   Passed("TestPassivePeerRecoversAfterFailTimeout");

@@ -68,7 +68,7 @@ ParseStatus HttpParser::ParseAvailable() {
   }
 
   if (body_bytes_expected_ != 0) {
-    request_.set_body(std::string_view(pending_.data() + body_begin, body_bytes_expected_));
+    request_.SetBody(std::string_view(pending_.data() + body_begin, body_bytes_expected_));
   }
 
   pending_.erase(0, body_begin + body_bytes_expected_);
@@ -95,47 +95,47 @@ bool HttpParser::ParseMethod(std::string_view method_sv) {
   switch (method_sv.size()) {
     case 3:
       if (method_sv == "GET") {
-        request_.set_method(Method::Get);
+    request_.SetMethod(Method::Get);
         return true;
       }
       if (method_sv == "PUT") {
-        request_.set_method(Method::Put);
+    request_.SetMethod(Method::Put);
         return true;
       }
       break;
     case 4:
       if (method_sv == "POST") {
-        request_.set_method(Method::Post);
+    request_.SetMethod(Method::Post);
         return true;
       }
       if (method_sv == "HEAD") {
-        request_.set_method(Method::Head);
+    request_.SetMethod(Method::Head);
         return true;
       }
       break;
     case 5:
       if (method_sv == "PATCH") {
-        request_.set_method(Method::Patch);
+    request_.SetMethod(Method::Patch);
         return true;
       }
       if (method_sv == "TRACE") {
-        request_.set_method(Method::Trace);
+    request_.SetMethod(Method::Trace);
         return true;
       }
       break;
     case 6:
       if (method_sv == "DELETE") {
-        request_.set_method(Method::Delete);
+    request_.SetMethod(Method::Delete);
         return true;
       }
       break;
     case 7:
       if (method_sv == "OPTIONS") {
-        request_.set_method(Method::Options);
+    request_.SetMethod(Method::Options);
         return true;
       }
       if (method_sv == "CONNECT") {
-        request_.set_method(Method::Connect);
+    request_.SetMethod(Method::Connect);
         return true;
       }
       break;
@@ -147,11 +147,11 @@ bool HttpParser::ParseMethod(std::string_view method_sv) {
 
 bool HttpParser::ParseVersion(std::string_view version_sv) {
   if (version_sv == "HTTP/1.1") {
-    request_.set_version(Version::Http11);
+    request_.SetVersion(Version::Http11);
     return true;
   }
   if (version_sv == "HTTP/1.0") {
-    request_.set_version(Version::Http10);
+    request_.SetVersion(Version::Http10);
     return true;
   }
   return false;
@@ -173,11 +173,11 @@ ParseStatus HttpParser::ParseRequestLine(std::string_view line) {
 
   const auto q_pos = uri_sv.find('?');
   if (q_pos == std::string_view::npos) {
-    request_.set_path(uri_sv);
-    request_.set_query("");
+    request_.SetPath(uri_sv);
+    request_.SetQuery("");
   } else {
-    request_.set_path(uri_sv.substr(0, q_pos));
-    request_.set_query(uri_sv.substr(q_pos + 1));
+    request_.SetPath(uri_sv.substr(0, q_pos));
+    request_.SetQuery(uri_sv.substr(q_pos + 1));
   }
   return ParseStatus::Continue;
 }

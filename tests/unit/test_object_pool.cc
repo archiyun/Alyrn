@@ -43,14 +43,14 @@ TEST(ObjectPoolTest, AcquireAndReleaseManageLifetime) {
     ASSERT_NE(second, nullptr);
     EXPECT_EQ(first->value, 1);
     EXPECT_EQ(second->payload, "beta");
-    EXPECT_EQ(pool.used_count(), 2u);
+    EXPECT_EQ(pool.UsedCount(), 2u);
     EXPECT_EQ(TrackedObject::live_count.load(), 2);
 
     pool.Release(first);
     pool.Release(second);
 
-    EXPECT_EQ(pool.used_count(), 0u);
-    EXPECT_EQ(pool.free_count(), 2u);
+    EXPECT_EQ(pool.UsedCount(), 0u);
+    EXPECT_EQ(pool.FreeCount(), 2u);
     EXPECT_EQ(TrackedObject::live_count.load(), 0);
     EXPECT_EQ(TrackedObject::dtor_count.load(), 2);
 }
@@ -63,9 +63,9 @@ TEST(ObjectPoolTest, AcquireFallsBackToHeapWhenExhausted) {
 
     ASSERT_NE(first, nullptr);
     ASSERT_NE(second, nullptr);
-    EXPECT_TRUE(pool.owns(first));
-    EXPECT_FALSE(pool.owns(second));
-    EXPECT_EQ(pool.overflow_count(), 1u);
+    EXPECT_TRUE(pool.Owns(first));
+    EXPECT_FALSE(pool.Owns(second));
+    EXPECT_EQ(pool.OverflowCount(), 1u);
 
     pool.Release(first);
     pool.Release(second);
@@ -82,12 +82,12 @@ TEST(ObjectPoolTest, AcquireScopedReturnsObjectAutomatically) {
         auto scoped = pool.AcquireScoped(9, "scoped");
         ASSERT_NE(scoped, nullptr);
         EXPECT_EQ(scoped->value, 9);
-        EXPECT_EQ(pool.used_count(), 1u);
+        EXPECT_EQ(pool.UsedCount(), 1u);
         EXPECT_EQ(TrackedObject::live_count.load(), 1);
     }
 
-    EXPECT_EQ(pool.used_count(), 0u);
-    EXPECT_EQ(pool.free_count(), 1u);
+        EXPECT_EQ(pool.UsedCount(), 0u);
+        EXPECT_EQ(pool.FreeCount(), 1u);
     EXPECT_EQ(TrackedObject::live_count.load(), 0);
     EXPECT_EQ(TrackedObject::dtor_count.load(), 1);
 }
@@ -97,10 +97,10 @@ TEST(ObjectPoolTest, OwnsRecognizesPoolPointers) {
 
     auto* obj = pool.Acquire(11, "owned");
     ASSERT_NE(obj, nullptr);
-    EXPECT_TRUE(pool.owns(obj));
+        EXPECT_TRUE(pool.Owns(obj));
 
     TrackedObject external(12, "external");
-    EXPECT_FALSE(pool.owns(&external));
+        EXPECT_FALSE(pool.Owns(&external));
 
     pool.Release(obj);
 }

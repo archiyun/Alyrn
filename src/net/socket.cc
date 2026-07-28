@@ -21,7 +21,7 @@ Socket::Socket(int sockfd) : sockfd_(sockfd) {}
 Socket::~Socket() { Close(); }
 
 void Socket::BindAddress(const Endpoint& localAddr) {
-  const int ret = ::bind(sockfd_, localAddr.sock_addr(), localAddr.sock_addr_len());
+  const int ret = ::bind(sockfd_, localAddr.SockAddr(), localAddr.SockAddrLen());
   if (ret == 0) {
     return;
   }
@@ -84,8 +84,8 @@ void Socket::Close() noexcept {
   LOG_ERRORF("socket close failed: fd={} errno={} message={}", fd, errno, std::strerror(errno));
 }
 
-void Socket::set_tcp_no_delay(bool on) {
-  const auto result = coropact::net::set_tcp_non_delay(sockfd_, on);
+void Socket::SetTcpNoDelay(bool on) {
+  const auto result = coropact::net::SetTcpNonDelay(sockfd_, on);
   if (result) {
     return;
   }
@@ -94,8 +94,8 @@ void Socket::set_tcp_no_delay(bool on) {
              result.error().value(), result.error().message());
 }
 
-void Socket::set_reuse_addr(bool on) {
-  const auto result = coropact::net::set_reuse_addr(sockfd_, on);
+void Socket::SetReuseAddr(bool on) {
+  const auto result = coropact::net::SetReuseAddr(sockfd_, on);
   if (result) {
     return;
   }
@@ -104,8 +104,8 @@ void Socket::set_reuse_addr(bool on) {
              result.error().value(), result.error().message());
 }
 
-void Socket::set_reuse_port(bool on) {
-  const auto result = coropact::net::set_reuse_port(sockfd_, on);
+void Socket::SetReusePort(bool on) {
+  const auto result = coropact::net::SetReusePort(sockfd_, on);
   if (result) {
     return;
   }
@@ -114,8 +114,8 @@ void Socket::set_reuse_port(bool on) {
              result.error().value(), result.error().message());
 }
 
-void Socket::set_keep_alive(bool on) {
-  const auto result = coropact::net::set_keep_alive(sockfd_, on);
+void Socket::SetKeepAlive(bool on) {
+  const auto result = coropact::net::SetKeepAlive(sockfd_, on);
   if (result) {
     return;
   }

@@ -59,7 +59,7 @@ int main() {
   server_options.worker_group_options.worker_options.listen_options.accept_depth = 1;
 
   luring::LUringServer server(net::Endpoint::Loopback(kPort), std::move(server_options));
-  server.set_session_handler([](luring::LUringWorkerContext&, luring::LUringStream stream) {
+  server.SetSessionHandler([](luring::LUringWorkerContext&, luring::LUringStream stream) {
     return simple_echo::EchoSession(std::move(stream));
   });
 

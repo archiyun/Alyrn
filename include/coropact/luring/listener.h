@@ -51,7 +51,7 @@ public:
   [[nodiscard]]
   base::Result<net::Endpoint> LocalAddress() const noexcept;
   [[nodiscard]]
-  int fd() const noexcept { return fd_; }
+  int Fd() const noexcept { return fd_; }
 
 private:
   class AcceptAwaiter;

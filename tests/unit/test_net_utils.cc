@@ -86,13 +86,13 @@ TEST(NetUtilsTest, CreatesSocketWithAtomicFlagsAndSupportsClearingThem) {
   EXPECT_NE(::fcntl(fd.get(), F_GETFL, 0) & O_NONBLOCK, 0);
   EXPECT_NE(::fcntl(fd.get(), F_GETFD, 0) & FD_CLOEXEC, 0);
 
-  EXPECT_TRUE(set_non_blocking(fd.get(), false));
-  EXPECT_TRUE(set_close_on_exec(fd.get(), false));
+  EXPECT_TRUE(SetNonBlocking(fd.get(), false));
+  EXPECT_TRUE(SetCloseOnExec(fd.get(), false));
   EXPECT_EQ(::fcntl(fd.get(), F_GETFL, 0) & O_NONBLOCK, 0);
   EXPECT_EQ(::fcntl(fd.get(), F_GETFD, 0) & FD_CLOEXEC, 0);
 
-  EXPECT_TRUE(set_non_blocking(fd.get(), true));
-  EXPECT_TRUE(set_close_on_exec(fd.get(), true));
+  EXPECT_TRUE(SetNonBlocking(fd.get(), true));
+  EXPECT_TRUE(SetCloseOnExec(fd.get(), true));
   EXPECT_NE(::fcntl(fd.get(), F_GETFL, 0) & O_NONBLOCK, 0);
   EXPECT_NE(::fcntl(fd.get(), F_GETFD, 0) & FD_CLOEXEC, 0);
 }
@@ -102,37 +102,37 @@ TEST(NetUtilsTest, ReportsSocketOptionErrorsAndSupportsOnOff) {
   ASSERT_TRUE(socket);
   ScopedFd fd(*socket);
 
-  EXPECT_TRUE(set_reuse_addr(fd.get(), true));
+  EXPECT_TRUE(SetReuseAddr(fd.get(), true));
   EXPECT_EQ(get_socket_option(fd.get(), SOL_SOCKET, SO_REUSEADDR), 1);
-  EXPECT_TRUE(set_reuse_addr(fd.get(), false));
+  EXPECT_TRUE(SetReuseAddr(fd.get(), false));
   EXPECT_EQ(get_socket_option(fd.get(), SOL_SOCKET, SO_REUSEADDR), 0);
 
-  EXPECT_TRUE(set_reuse_port(fd.get(), true));
+  EXPECT_TRUE(SetReusePort(fd.get(), true));
   EXPECT_EQ(get_socket_option(fd.get(), SOL_SOCKET, SO_REUSEPORT), 1);
-  EXPECT_TRUE(set_reuse_port(fd.get(), false));
+  EXPECT_TRUE(SetReusePort(fd.get(), false));
   EXPECT_EQ(get_socket_option(fd.get(), SOL_SOCKET, SO_REUSEPORT), 0);
 
-  EXPECT_TRUE(set_tcp_non_delay(fd.get(), true));
+  EXPECT_TRUE(SetTcpNonDelay(fd.get(), true));
   EXPECT_EQ(get_socket_option(fd.get(), IPPROTO_TCP, TCP_NODELAY), 1);
-  EXPECT_TRUE(set_tcp_non_delay(fd.get(), false));
+  EXPECT_TRUE(SetTcpNonDelay(fd.get(), false));
   EXPECT_EQ(get_socket_option(fd.get(), IPPROTO_TCP, TCP_NODELAY), 0);
 
-  EXPECT_TRUE(set_keep_alive(fd.get(), true));
+  EXPECT_TRUE(SetKeepAlive(fd.get(), true));
   EXPECT_EQ(get_socket_option(fd.get(), SOL_SOCKET, SO_KEEPALIVE), 1);
-  EXPECT_TRUE(set_keep_alive(fd.get(), false));
+  EXPECT_TRUE(SetKeepAlive(fd.get(), false));
   EXPECT_EQ(get_socket_option(fd.get(), SOL_SOCKET, SO_KEEPALIVE), 0);
 
-  EXPECT_EQ(set_non_blocking(-1).error().value(), EBADF);
-  EXPECT_EQ(set_close_on_exec(-1).error().value(), EBADF);
-  EXPECT_EQ(set_reuse_addr(-1).error().value(), EBADF);
+  EXPECT_EQ(SetNonBlocking(-1).error().value(), EBADF);
+  EXPECT_EQ(SetCloseOnExec(-1).error().value(), EBADF);
+  EXPECT_EQ(SetReuseAddr(-1).error().value(), EBADF);
 }
 
 TEST(NetUtilsTest, AddressQueriesPreserveErrors) {
-  auto local = get_local_addr(-1);
+  auto local = GetLocalAddr(-1);
   EXPECT_FALSE(local);
   EXPECT_EQ(local.error().value(), EBADF);
 
-  auto peer = get_peer_addr(-1);
+  auto peer = GetPeerAddr(-1);
   EXPECT_FALSE(peer);
   EXPECT_EQ(peer.error().value(), EBADF);
 
@@ -146,28 +146,28 @@ TEST(NetUtilsTest, QueriesConnectedIPv4Endpoints) {
   ASSERT_GE(listener.get(), 0);
 
   const Endpoint bind_address(0);
-  ASSERT_EQ(::bind(listener.get(), bind_address.sock_addr(), bind_address.sock_addr_len()), 0);
+  ASSERT_EQ(::bind(listener.get(), bind_address.SockAddr(), bind_address.SockAddrLen()), 0);
   ASSERT_EQ(::listen(listener.get(), 1), 0);
 
-  auto listening_address = get_local_addr(listener.get());
+  auto listening_address = GetLocalAddr(listener.get());
   ASSERT_TRUE(listening_address);
 
   ScopedFd client(::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP));
   ASSERT_GE(client.get(), 0);
-  ASSERT_EQ(::connect(client.get(), listening_address->sock_addr(),
-                      listening_address->sock_addr_len()),
+  ASSERT_EQ(::connect(client.get(), listening_address->SockAddr(),
+                      listening_address->SockAddrLen()),
             0);
 
   ScopedFd accepted(::accept4(listener.get(), nullptr, nullptr, SOCK_CLOEXEC));
   ASSERT_GE(accepted.get(), 0);
 
-  auto client_local = get_local_addr(client.get());
+  auto client_local = GetLocalAddr(client.get());
   ASSERT_TRUE(client_local);
-  auto client_peer = get_peer_addr(client.get());
+  auto client_peer = GetPeerAddr(client.get());
   ASSERT_TRUE(client_peer);
-  auto server_local = get_local_addr(accepted.get());
+  auto server_local = GetLocalAddr(accepted.get());
   ASSERT_TRUE(server_local);
-  auto server_peer = get_peer_addr(accepted.get());
+  auto server_peer = GetPeerAddr(accepted.get());
   ASSERT_TRUE(server_peer);
 
   EXPECT_EQ(*client_local, *server_peer);

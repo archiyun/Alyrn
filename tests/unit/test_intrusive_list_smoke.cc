@@ -50,36 +50,36 @@ int main() {
     assert(inserted);
 
     const auto& view = list;
-    assert(view.front() == &second);
-    assert(view.back() == &third);
+    assert(view.Front() == &second);
+    assert(view.Back() == &third);
     int const_sum = 0;
     for (const Item& item : view) {
       const_sum += item.id;
     }
     assert(const_sum == 6);
 
-    auto it = list.cbegin();
+    auto it = list.CBegin();
     ++it;
     list.Erase(it);
     assert(!first.InList());
-    assert(list.size() == 2);
+    assert(list.Size() == 2);
 
     std::size_t removed = list.RemoveIf([](Item& item) { return item.id == 2; });
     assert(removed == 1);
     assert(!second.InList());
-    assert(list.front() == &third);
+    assert(list.Front() == &third);
 
     inserted = other.PushBack(&fourth);
     assert(inserted);
     list.Swap(other);
-    assert(list.front() == &fourth);
-    assert(other.front() == &third);
-    assert(list.size() == 1);
-    assert(other.size() == 1);
+    assert(list.Front() == &fourth);
+    assert(other.Front() == &third);
+    assert(list.Size() == 1);
+    assert(other.Size() == 1);
 
     swap(list, other);
-    assert(list.front() == &third);
-    assert(other.front() == &fourth);
+    assert(list.Front() == &third);
+    assert(other.Front() == &fourth);
   }
 
   {
@@ -97,28 +97,28 @@ int main() {
     assert(inserted);
 
     IntrusiveList<Item> moved(std::move(source));
-    assert(source.empty());
-    assert(moved.size() == 2);
-    assert(moved.front() == &one);
-    assert(moved.back() == &two);
+    assert(source.Empty());
+    assert(moved.Size() == 2);
+    assert(moved.Front() == &one);
+    assert(moved.Back() == &two);
 
     inserted = source.PushBack(&replacement);
     assert(inserted);
     moved = std::move(source);
-    assert(source.empty());
-    assert(moved.size() == 1);
-    assert(moved.front() == &replacement);
-    assert(moved.back() == &replacement);
+    assert(source.Empty());
+    assert(moved.Size() == 1);
+    assert(moved.Front() == &replacement);
+    assert(moved.Back() == &replacement);
     assert(!one.InList());
     assert(!two.InList());
 
     moved = std::move(moved);
-    assert(moved.size() == 1);
-    assert(moved.front() == &replacement);
+    assert(moved.Size() == 1);
+    assert(moved.Front() == &replacement);
 
     IntrusiveList<Item> empty;
     moved = std::move(empty);
-    assert(moved.empty());
+    assert(moved.Empty());
     assert(!replacement.InList());
   }
 
@@ -135,7 +135,7 @@ int main() {
 
   // Full equivalence check: same size, same forward order, same endpoints.
   auto check = [&] {
-    assert(il.size() == oracle.size());
+    assert(il.Size() == oracle.size());
     auto oit = oracle.begin();
     for (auto& x : il) {
       assert(x.id == *oit);
@@ -143,10 +143,10 @@ int main() {
     }
     assert(oit == oracle.end());
     if (oracle.empty()) {
-      assert(il.empty() && il.front() == nullptr && il.back() == nullptr);
+      assert(il.Empty() && il.Front() == nullptr && il.Back() == nullptr);
     } else {
-      assert(il.front()->id == oracle.front());
-      assert(il.back()->id == oracle.back());
+      assert(il.Front()->id == oracle.front());
+      assert(il.Back()->id == oracle.back());
     }
   };
 

@@ -18,9 +18,9 @@ bool Expect(bool ok, const char* msg) {
 coropact::http::HttpRequest MakeRequest(
     std::string_view path, coropact::http::Method method = coropact::http::Method::Get) {
   coropact::http::HttpRequest req;
-  req.set_method(method);
-  req.set_version(coropact::http::Version::Http11);
-  req.set_path(path);
+  req.SetMethod(method);
+  req.SetVersion(coropact::http::Version::Http11);
+  req.SetPath(path);
   return req;
 }
 
@@ -28,8 +28,8 @@ bool TestDirectRoute() {
   coropact::gateway::UpstreamRegistry registry;
   coropact::gateway::GatewayCore core("gw-core", registry);
   core.Get("/hello", [](const coropact::http::HttpRequest&, coropact::http::HttpResponse& resp) {
-    resp.set_status_code(coropact::http::StatusCode::Ok);
-    resp.set_body("ok");
+    resp.SetStatusCode(coropact::http::StatusCode::Ok);
+    resp.SetBody("ok");
   });
 
   auto action = core.HandleRequest(MakeRequest("/hello"), "127.0.0.1");

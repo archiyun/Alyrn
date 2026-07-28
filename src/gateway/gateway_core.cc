@@ -13,9 +13,9 @@ namespace coropact::gateway {
 GatewayCore::GatewayCore(std::string name, UpstreamRegistry& registry)
     : name_(std::move(name)), registry_(registry) {
   coropact::http::HttpResponse rate_limit_resp(true);
-  rate_limit_resp.set_status_code(coropact::http::StatusCode::TooManyRequests);
-  rate_limit_resp.set_content_type("application/json; charset=utf-8");
-  rate_limit_resp.set_body(R"({"error":"rate limit exceeded"})");
+  rate_limit_resp.SetStatusCode(coropact::http::StatusCode::TooManyRequests);
+  rate_limit_resp.SetContentType("application/json; charset=utf-8");
+  rate_limit_resp.SetBody(R"({"error":"rate limit exceeded"})");
   rate_limit_response_429_ = rate_limit_resp.ToString();
 }
 
@@ -57,8 +57,8 @@ void GatewayCore::AddProxyRoute(std::string_view path, std::string_view upstream
     auto resolved = registry_.Resolve(upstream_name);
     if (resolved.has_value()) {
       auto upstream = *resolved;
-      if (upstream && upstream->config().circuit_breaker_enabled && !upstream->circuit_breaker()) {
-        upstream->set_circuit_breaker(
+      if (upstream && upstream->config().circuit_breaker_enabled && !upstream->GetCircuitBreaker()) {
+        upstream->SetCircuitBreaker(
             std::make_shared<CircuitBreaker>(upstream->config().circuit_breaker));
       }
     }
@@ -173,7 +173,7 @@ GatewayCore::Action GatewayCore::HandleRequest(const coropact::http::HttpRequest
 
     CircuitBreaker* circuitbreaker = nullptr;
     if (route->circuit_breaker_enabled) {
-      circuitbreaker = upstream->circuit_breaker().get();
+      circuitbreaker = upstream->GetCircuitBreaker().get();
     }
     if (circuitbreaker && !circuitbreaker->AllowRequest()) {
       return SendResponse(RenderFallback(*route, "circuit open"));
@@ -198,15 +198,15 @@ GatewayCore::Action GatewayCore::HandleRequest(const coropact::http::HttpRequest
     };
   }
 
-  const bool keep_alive = req.keep_alive();
+  const bool keep_alive = req.KeepAlive();
   coropact::http::HttpResponse resp(!keep_alive);
   try {
     route->handler(req, resp);
   } catch (const std::exception& ex) {
     resp = MakeError(coropact::http::StatusCode::InternalServerError, ex.what());
-    resp.set_close_connection(true);
+    resp.SetCloseConnection(true);
   }
-  return SendResponse(resp.ToString(), resp.close_connection());
+  return SendResponse(resp.ToString(), resp.CloseConnection());
 }
 
 GatewayCore::Action GatewayCore::ProxyUnavailable(const Route& route, std::string_view reason) {
@@ -225,9 +225,9 @@ ForwardedHeaderContext GatewayCore::MakeForwardedContext(const ProxyTarget& prox
 coropact::http::HttpResponse GatewayCore::MakeError(coropact::http::StatusCode code,
                                                 std::string_view msg) const {
   coropact::http::HttpResponse resp(true);
-  resp.set_status_code(code);
-  resp.set_content_type("application/json; charset=utf-8");
-  resp.set_body("{\"error\":\"" + std::string(msg) + "\"}");
+  resp.SetStatusCode(code);
+  resp.SetContentType("application/json; charset=utf-8");
+  resp.SetBody("{\"error\":\"" + std::string(msg) + "\"}");
   return resp;
 }
 

@@ -83,7 +83,7 @@ base::Result<void> SetCurrentThreadAffinity(unsigned cpu) noexcept {
   CPU_SET(cpu, &cpuset);
   const int result = pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
   if (result != 0) {
-    return std::unexpected(base::make_errno(result));
+    return std::unexpected(base::MakeErrno(result));
   }
   return {};
 }
@@ -104,7 +104,7 @@ LUringWorker::~LUringWorker() noexcept { Stop(); }
 
 base::Result<void> LUringWorker::Start() {
   if (thread_.joinable()) {
-    return std::unexpected(base::make_errno(EALREADY));
+    return std::unexpected(base::MakeErrno(EALREADY));
   }
 
   {
@@ -119,7 +119,7 @@ base::Result<void> LUringWorker::Start() {
   cv_.wait(lock, thread_.get_stop_token(), [this] { return init_done_; });
 
   if (!init_done_) {
-    return std::unexpected(base::make_errno(ECANCELED));
+    return std::unexpected(base::MakeErrno(ECANCELED));
   }
   return start_result_;
 }
@@ -131,7 +131,7 @@ void LUringWorker::Stop() noexcept {
 }
 
 void LUringWorker::WorkLoop(std::stop_token token) noexcept {
-  auto publish_start = [this](base::Result<void> result) noexcept {
+  auto PublishStart = [this](base::Result<void> result) noexcept {
     {
       std::lock_guard lock{mutex_};
       start_result_ = std::move(result);
@@ -143,7 +143,7 @@ void LUringWorker::WorkLoop(std::stop_token token) noexcept {
   if (options_.cpu_affinity.has_value()) {
     auto affinity = SetCurrentThreadAffinity(*options_.cpu_affinity);
     if (!affinity.has_value()) {
-      publish_start(std::unexpected(affinity.error()));
+      PublishStart(std::unexpected(affinity.error()));
       return;
     }
   }
@@ -153,20 +153,20 @@ void LUringWorker::WorkLoop(std::stop_token token) noexcept {
 
   auto loop_init = loop.Init(options_.loop_options);
   if (!loop_init.has_value()) {
-    publish_start(std::unexpected(loop_init.error()));
+    PublishStart(std::unexpected(loop_init.error()));
     return;
   }
 
   auto listener = LUringListener::Create(&loop, listen_addr_, options_.listen_options);
 
   if (!listener.has_value()) {
-    publish_start(std::unexpected(listener.error()));
+    PublishStart(std::unexpected(listener.error()));
     return;
   }
 
   auto connector = LUringConnector::Create(&loop);
   if (!connector.has_value()) {
-    publish_start(std::unexpected(connector.error()));
+    PublishStart(std::unexpected(connector.error()));
     return;
   }
 
@@ -176,7 +176,7 @@ void LUringWorker::WorkLoop(std::stop_token token) noexcept {
     try {
       init_callback_(context);
     } catch (...) {
-      publish_start(std::unexpected(base::make_errno(EFAULT)));
+      PublishStart(std::unexpected(base::MakeErrno(EFAULT)));
       return;
     }
   }
@@ -190,7 +190,7 @@ void LUringWorker::WorkLoop(std::stop_token token) noexcept {
     }
   }
 
-  publish_start(base::Result<void>{});
+  PublishStart(base::Result<void>{});
   loop.Loop(token);
   CloseListenerAndDrain(loop, *listener);
 

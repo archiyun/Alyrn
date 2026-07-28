@@ -16,6 +16,7 @@
 #include <utility>
 
 #include "coropact/base/error.h"
+#include "coropact/base/try.h"
 #include "coropact/luring/loop.h"
 #include "coropact/luring/op.h"
 #include "coropact/luring/stream.h"
@@ -68,21 +69,21 @@ public:
     assert(loop_ != nullptr);
     assert(loop_->IsInLoopThread());
 
-    auto fd = CreateSocket(peer_.native_family());
+    auto fd = CreateSocket(peer_.NativeFamily());
     if (!fd.has_value()) {
-      op()->SetImmediateError(fd.error());
+      Op()->SetImmediateError(fd.error());
       return false;
     }
     fd_ = *fd;
 
-    op()->kind = LUringOpKind::kConnect;
-    op()->resume_work.SetHandle(continuation);
+  Op()->kind = LUringOpKind::kConnect;
+  Op()->resume_work.SetHandle(continuation);
 
-    auto submitted = loop_->SubmitOp(op(), [this, fd = fd_](io_uring_sqe* sqe) noexcept {
-      io_uring_prep_connect(sqe, fd, peer_.sock_addr(), peer_.sock_addr_len());
+    auto submitted = loop_->SubmitOp(Op(), [this, fd = fd_](io_uring_sqe* sqe) noexcept {
+      io_uring_prep_connect(sqe, fd, peer_.SockAddr(), peer_.SockAddrLen());
     });
     if (!submitted.has_value()) {
-      op()->SetImmediateError(submitted.error());
+      Op()->SetImmediateError(submitted.error());
       return false;
     }
 
@@ -90,23 +91,20 @@ public:
   }
 
   base::Result<LUringStream> await_resume() noexcept {
-    if (!op()->IsCompleted()) {
-      assert(op()->result.has_value());
-      return std::unexpected(base::make_neg_errno(*op()->result));
+    if (!Op()->IsCompleted()) {
+      assert(Op()->result.HasValue());
+      return std::unexpected(base::MakeNegErrno(*Op()->result));
     }
 
-    assert(op()->IsCompleted());
-    if (!op()->result.has_value()) {
-      return std::unexpected(op()->result.error());
+    assert(Op()->IsCompleted());
+    if (!Op()->result.HasValue()) {
+      return std::unexpected(Op()->result.Error());
     }
-    if (*op()->result < 0) {
-      return std::unexpected(base::make_neg_errno(*op()->result));
+    if (*Op()->result < 0) {
+      return std::unexpected(base::MakeNegErrno(*Op()->result));
     }
 
-    auto nonblocking = SetNonBlocking(fd_);
-    if (!nonblocking.has_value()) {
-      return std::unexpected(nonblocking.error());
-    }
+    COROPACT_TRY(SetNonBlocking(fd_));
 
     LUringStream stream(loop_, fd_, peer_);
     fd_ = -1;
@@ -114,7 +112,7 @@ public:
   }
 
 private:
-  LUringOp* op() noexcept { return static_cast<OpHook*>(this); }
+  LUringOp* Op() noexcept { return static_cast<OpHook*>(this); }
 
   LUringLoop* loop_;
   net::Endpoint peer_;
@@ -127,7 +125,7 @@ LUringConnector::LUringConnector(LUringLoop* loop) noexcept : loop_(loop) {}
 
 base::Result<LUringConnector> LUringConnector::Create(LUringLoop* loop) noexcept {
   if (loop == nullptr) {
-    return std::unexpected(base::make_errno(EINVAL));
+    return std::unexpected(base::MakeErrno(EINVAL));
   }
   return LUringConnector{loop};
 }
@@ -145,12 +143,8 @@ LUringConnector& LUringConnector::operator=(LUringConnector&& other) noexcept {
 
 coro::Task<base::Result<LUringStream>> LUringConnector::Connect(std::string_view host,
                                                                 std::uint16_t port) {
-  auto peer = net::ParseIpAddress(host, port);
-  if (!peer.has_value()) {
-    co_return std::unexpected(peer.error());
-  }
-
-  co_return co_await ConnectAwaiter(loop_, *peer);
+  COROPACT_CO_TRY(peer, net::ParseIpAddress(host, port));
+  co_return co_await ConnectAwaiter(loop_, std::move(peer));
 }
 
 coro::Task<void> LUringConnector::SleepFor(std::chrono::milliseconds delay) {

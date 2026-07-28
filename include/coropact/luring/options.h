@@ -61,13 +61,6 @@ struct LUringOptions {
   // current turn. Zero disables this protection.
   std::chrono::microseconds normal_queue_age_threshold{5000};
 
-  // Enables per-loop scheduler counters. Counters are local to the loop
-  // thread and have no cross-worker synchronization cost.
-  bool collect_stats{false};
-
-  // Emits one scheduler-counter line when the loop exits. Implies
-  // collect_stats.
-  bool dump_stats_on_exit{false};
 };
 
 }  // namespace coropact::luring

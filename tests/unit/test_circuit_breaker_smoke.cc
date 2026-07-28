@@ -246,13 +246,13 @@ bool TestClosedFailureBreaksSuccessStreak() {
   cb.OnFailure();  // Breaks the recovery-success streak.
   cb.OnSuccess();
 
-  if (!Expect(cb.failure_count() == 2,
+  if (!Expect(cb.FailureCount() == 2,
               "non-consecutive successes must not reset failure count")) {
     return false;
   }
 
   cb.OnSuccess();
-  if (!Expect(cb.failure_count() == 0,
+  if (!Expect(cb.FailureCount() == 0,
               "two consecutive successes must reset failure count")) {
     return false;
   }
@@ -272,20 +272,20 @@ bool TestTransitionCount() {
   cfg.open_timeout = 1ms;
   coropact::gateway::CircuitBreaker cb(cfg);
 
-  if (!Expect(cb.transition_count() == 0,
+  if (!Expect(cb.TransitionCount() == 0,
               "transition_count must start at 0")) return false;
 
   cb.OnFailure();  // CLOSED → OPEN (1)
-  if (!Expect(cb.transition_count() == 1,
+  if (!Expect(cb.TransitionCount() == 1,
               "must be 1 after CLOSED→OPEN")) return false;
 
   std::this_thread::sleep_for(5ms);
   cb.AllowRequest();  // OPEN → HALF_OPEN (2)
-  if (!Expect(cb.transition_count() == 2,
+  if (!Expect(cb.TransitionCount() == 2,
               "must be 2 after OPEN→HALF_OPEN")) return false;
 
   cb.OnSuccess();  // HALF_OPEN → CLOSED (3)
-  if (!Expect(cb.transition_count() == 3,
+  if (!Expect(cb.TransitionCount() == 3,
               "must be 3 after HALF_OPEN→CLOSED")) return false;
   Passed("TestTransitionCount");
   return true;
@@ -380,10 +380,10 @@ bool TestFailureCountExposed() {
   cfg.failure_threshold = 10;
   coropact::gateway::CircuitBreaker cb(cfg);
 
-  if (!Expect(cb.failure_count() == 0, "failure_count must start at 0")) return false;
+  if (!Expect(cb.FailureCount() == 0, "FailureCount must start at 0")) return false;
   cb.OnFailure();
   cb.OnFailure();
-  if (!Expect(cb.failure_count() == 2, "failure_count must be 2")) return false;
+  if (!Expect(cb.FailureCount() == 2, "FailureCount must be 2")) return false;
   Passed("TestFailureCountExposed");
   return true;
 }

@@ -12,7 +12,7 @@
 //
 // Every access (Insert/Erase, and a found duplicate) splays the touched node to
 // the root, giving O(log n) amortized operations. The minimum node is cached so
-// earliest() is O(1); rotations, splays and joins never change which node holds
+// Earliest() is O(1); rotations, splays and joins never change which node holds
 // the minimum key, so the cache only needs refreshing when the min is erased.
 //
 // Template parameters:
@@ -126,10 +126,10 @@ public:
 
   // O(1)
   [[nodiscard]]
-  bool empty() const noexcept { return size_ == 0; }
+  bool Empty() const noexcept { return size_ == 0; }
   // O(1)
   [[nodiscard]]
-  std::size_t size() const noexcept { return size_; }
+  std::size_t Size() const noexcept { return size_; }
 
   // O(n). Unlinks every element without invoking the comparator.
   void Clear() noexcept;
@@ -145,9 +145,9 @@ public:
 
   // O(1) — cached pointer, updated on Insert and Erase.
   [[nodiscard]]
-  T* earliest() noexcept { return min_ == nullptr ? nullptr : elem_of(min_); }
+  T* Earliest() noexcept { return min_ == nullptr ? nullptr : elem_of(min_); }
   [[nodiscard]]
-  const T* earliest() const noexcept {
+  const T* Earliest() const noexcept {
     return min_ == nullptr ? nullptr : elem_of(static_cast<const Node*>(min_));
   }
 
@@ -237,7 +237,7 @@ bool ISPLAY_TYPE::Insert(T* elem) {
   node->set_owner(this);
 #endif
 
-  if (empty()) {
+  if (Empty()) {
     root_ = node;
     min_ = node;
     ++size_;
@@ -457,8 +457,8 @@ ISPLAY_TMPL
 template <typename Pred>
 std::vector<T*> ISPLAY_TYPE::PopWhile(Pred pred) {
   std::vector<T*> result;
-  while (!empty()) {
-    T* elem = earliest();
+  while (!Empty()) {
+    T* elem = Earliest();
     if (!pred(elem)) break;
     result.push_back(elem);
     Erase(elem);
@@ -470,8 +470,8 @@ ISPLAY_TMPL
 template <typename Pred, typename OnPop>
 std::size_t ISPLAY_TYPE::PopWhile(Pred pred, OnPop on_pop) {
   std::size_t popped = 0;
-  while (!empty()) {
-    T* elem = earliest();
+  while (!Empty()) {
+    T* elem = Earliest();
     if (!pred(elem)) break;
     Erase(elem);
     on_pop(elem);

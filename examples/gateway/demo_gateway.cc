@@ -82,9 +82,9 @@ int main() {
 
   // 直接路由
   gateway.Get("/healthz", [](const coropact::http::HttpRequest&, coropact::http::HttpResponse& resp) {
-    resp.set_status_code(coropact::http::StatusCode::Ok);
-    resp.set_content_type("application/json");
-    resp.set_body(R"({"status":"ok"})");
+    resp.SetStatusCode(coropact::http::StatusCode::Ok);
+    resp.SetContentType("application/json");
+    resp.SetBody(R"({"status":"ok"})");
   });
 
   // 代理路由：把 /api/health 和 /api/kv 转发到 user_service

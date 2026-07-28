@@ -153,7 +153,7 @@ public:
     --idle_total_;
     StreamHolder stream{std::move(entry->stream)};
     delete entry;
-    if (queue->idle.empty()) {
+    if (queue->idle.Empty()) {
       peer_queues_.erase(it);
     }
     if (config_.collect_stats) {
@@ -172,7 +172,7 @@ public:
 
     auto it = FindPeer(peer);
     if (it != peer_queues_.end() && config_.max_idle_per_peer > 0 &&
-        static_cast<int>(it->idle.size()) >= config_.max_idle_per_peer) {
+        static_cast<int>(it->idle.Size()) >= config_.max_idle_per_peer) {
       if (config_.collect_stats) {
         ++stats_.release_drop_count;
       }
@@ -226,7 +226,7 @@ public:
   const UpstreamStreamPoolStats& stats() const noexcept { return stats_; }
 
   [[nodiscard]]
-  bool stats_enabled() const noexcept { return config_.collect_stats; }
+  bool StatsEnabled() const noexcept { return config_.collect_stats; }
 
   void RecordConnect(std::uint64_t elapsed_ns, bool success) noexcept {
     if (!config_.collect_stats) return;
@@ -258,7 +258,7 @@ public:
   }
 
   [[nodiscard]]
-  std::size_t idle_count() const noexcept { return idle_total_; }
+  std::size_t IdleCount() const noexcept { return idle_total_; }
 
 private:
   static void RecordHistogram(
@@ -291,7 +291,7 @@ private:
   }
 
   void EraseEmptyPeerQueue(PeerQueue* queue) {
-    if (queue == nullptr || !queue->idle.empty()) return;
+    if (queue == nullptr || !queue->idle.Empty()) return;
     auto it = std::find_if(peer_queues_.begin(), peer_queues_.end(),
                            [queue](const PeerQueue& entry) { return &entry == queue; });
     if (it != peer_queues_.end()) {

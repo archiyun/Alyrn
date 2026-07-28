@@ -66,19 +66,19 @@ public:
   ~IntrusiveQueue() { Clear(); }
 
   static Node* Next(Node* node) { return node->next_; }
-  static T* elem_of(Node* node) { return static_cast<T*>(node); }
-  static Node* node_of(T* elem) { return static_cast<Node*>(elem); }
+  static T* ElemOf(Node* node) { return static_cast<T*>(node); }
+  static Node* NodeOf(T* elem) { return static_cast<Node*>(elem); }
 
   [[nodiscard]]
-  bool empty() const { return head_.next_ == &head_; }
+  bool Empty() const { return head_.next_ == &head_; }
   [[nodiscard]]
-  std::size_t size() const { return size_; }
+  std::size_t Size() const { return size_; }
 
-  T* front() const { return empty() ? nullptr : elem_of(head_.next_); }
-  T* back() const { return empty() ? nullptr : elem_of(tail_); }
+  T* Front() const { return Empty() ? nullptr : ElemOf(head_.next_); }
+  T* Back() const { return Empty() ? nullptr : ElemOf(tail_); }
 
   [[maybe_unused]] bool PushBack(T* elem) {
-    Node* node = node_of(elem);
+    Node* node = NodeOf(elem);
     if (node->InQueue()) return false;
 
     tail_->next_ = node;
@@ -89,10 +89,10 @@ public:
   }
 
   [[maybe_unused]] bool PushFront(T* elem) {
-    Node* node = node_of(elem);
+    Node* node = NodeOf(elem);
     if (node->InQueue()) return false;
 
-    const bool was_empty = empty();
+    const bool was_empty = Empty();
     node->next_ = head_.next_;
     head_.next_ = node;
     if (was_empty) {
@@ -103,15 +103,15 @@ public:
   }
 
   T* PopFront() {
-    if (empty()) return nullptr;
+    if (Empty()) return nullptr;
     Node* node = head_.next_;
     head_.next_ = node->next_;
     node->clear_hook();
     --size_;
-    if (empty()) {
+    if (Empty()) {
       tail_ = &head_;
     }
-    return elem_of(node);
+    return ElemOf(node);
   }
 
   void Clear() {
@@ -125,7 +125,7 @@ public:
 
   void Splice(IntrusiveQueue& other) {
     assert(&other != this);
-    if (other.empty()) return;
+    if (other.Empty()) return;
     Node* first = other.head_.next_;
     Node* last = other.tail_;
     tail_->next_ = first;
@@ -141,7 +141,7 @@ public:
     Node* prev = &head_;
     for (Node* cur = head_.next_; cur != &head_;) {
       Node* next = cur->next_;
-      if (fn(*elem_of(cur))) {
+      if (fn(*ElemOf(cur))) {
         prev->next_ = next;
         if (tail_ == cur) {
           tail_ = prev;
@@ -163,7 +163,7 @@ private:
   }
 
   void TakeFrom(IntrusiveQueue& other) noexcept {
-    if (other.empty()) return;
+    if (other.Empty()) return;
 
     head_.next_ = other.head_.next_;
     tail_ = other.tail_;

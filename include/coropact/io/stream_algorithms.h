@@ -8,6 +8,7 @@
 #include <span>
 
 #include "coropact/base/error.h"
+#include "coropact/base/try.h"
 #include "coropact/coro/task.h"
 #include "coropact/io/async_stream.h"
 #include "coropact/io/buffer.h"
@@ -17,29 +18,23 @@ namespace coropact::io {
 template <AsyncWriteStream Stream>
 coro::Task<base::Result<void>> WriteAll(Stream& stream, std::span<const std::byte> buffer) {
   while (!buffer.empty()) {
-    base::Result<std::size_t> result = co_await stream.WriteSome(buffer);
-    if (!result.has_value()) {
-      co_return std::unexpected(result.error());
+    COROPACT_CO_TRY(written, co_await stream.WriteSome(buffer));
+    if (written == 0) {
+      co_return std::unexpected(base::MakeErrno(EPIPE));
     }
-    if (*result == 0) {
-      co_return std::unexpected(base::make_errno(EPIPE));
-    }
-    buffer = buffer.subspan(*result);
+    buffer = buffer.subspan(written);
   }
   co_return base::Result<void>{};
 }
 
 template <AsyncStream Stream>
 coro::Task<base::Result<void>> EchoOnce(Stream& stream, std::span<std::byte> buffer) {
-  base::Result<std::size_t> nread = co_await stream.ReadSome(buffer);
-  if (!nread.has_value()) {
-    co_return std::unexpected(nread.error());
-  }
-  if (*nread == 0) {
+  COROPACT_CO_TRY(nread, co_await stream.ReadSome(buffer));
+  if (nread == 0) {
     co_return base::Result<void>{};
   }
 
-  base::Result<void> written = co_await WriteAll(stream, buffer.first(*nread));
+  base::Result<void> written = co_await WriteAll(stream, buffer.first(nread));
   if (!written.has_value()) {
     co_return std::unexpected(written.error());
   }
@@ -55,7 +50,7 @@ coro::Task<base::Result<std::size_t>> ReadSome(Stream& stream, Buffer& buffer,
 
   auto iovs = buffer.PrepareWrite(reserve, 1);
   if (iovs.empty()) {
-    co_return std::unexpected(base::make_errno(ENOMEM));
+    co_return std::unexpected(base::MakeErrno(ENOMEM));
   }
 
   auto writable = std::span<std::byte>(static_cast<std::byte*>(iovs[0].iov_base), iovs[0].iov_len);
@@ -74,12 +69,9 @@ template <AsyncWriteStream Stream>
 coro::Task<base::Result<void>> WriteAll(Stream& stream, Buffer& buffer) {
   if constexpr (requires { stream.WriteSome(buffer); }) {
     while (!buffer.Empty()) {
-      auto result = co_await stream.WriteSome(buffer);
-      if (!result.has_value()) {
-        co_return std::unexpected(result.error());
-      }
-      if (*result == 0) {
-        co_return std::unexpected(base::make_errno(EPIPE));
+      COROPACT_CO_TRY(written, co_await stream.WriteSome(buffer));
+      if (written == 0) {
+        co_return std::unexpected(base::MakeErrno(EPIPE));
       }
     }
 
@@ -109,24 +101,21 @@ coro::Task<base::Result<void>> WriteAll(Stream& stream, std::span<const WritePar
     }
 
     if (count == pending.size()) {
-      co_return std::unexpected(base::make_errno(EINVAL));
+      co_return std::unexpected(base::MakeErrno(EINVAL));
     }
 
     pending[count++] = part;
   }
 
   while (count != 0) {
-    auto result = co_await stream.WriteSome(std::span<const WritePart>(pending.data(), count));
+    COROPACT_CO_TRY(bytes_written,
+                    co_await stream.WriteSome(std::span<const WritePart>(pending.data(), count)));
 
-    if (!result.has_value()) {
-      co_return std::unexpected(result.error());
+    if (bytes_written == 0) {
+      co_return std::unexpected(base::MakeErrno(EPIPE));
     }
 
-    if (*result == 0) {
-      co_return std::unexpected(base::make_errno(EPIPE));
-    }
-
-    std::size_t written = *result;
+    std::size_t written = bytes_written;
 
     while (count != 0 && written >= pending[0].bytes.size()) {
       written -= pending[0].bytes.size();

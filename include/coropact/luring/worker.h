@@ -68,7 +68,7 @@ public:
   void Stop() noexcept;
 
   [[nodiscard]]
-  std::size_t index() const noexcept { return index_; }
+  std::size_t Index() const noexcept { return index_; }
 
 private:
   void WorkLoop(std::stop_token token) noexcept;

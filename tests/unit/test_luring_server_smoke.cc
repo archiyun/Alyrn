@@ -109,7 +109,7 @@ coropact::base::Result<int> ConnectClient(const coropact::net::Endpoint& address
     return std::unexpected(coropact::base::CurrentErrno());
   }
 
-  int r = ::connect(fd, address.sock_addr(), address.sock_addr_len());
+  int r = ::connect(fd, address.SockAddr(), address.SockAddrLen());
   if (r < 0 && errno != EINPROGRESS) {
     auto error = coropact::base::CurrentErrno();
     ::close(fd);
@@ -152,13 +152,13 @@ bool CheckServerStartStop() {
   }
 
   auto second_start = server.Start();
-  bool ok = Check(server.started(), "server should be started") &&
+  bool ok = Check(server.Started(), "server should be started") &&
             Check(!second_start.has_value(), "second Start should fail") &&
             Check(second_start.error().value() == EALREADY, "second Start should return EALREADY");
 
   server.Stop();
 
-  return ok && Check(!server.started(), "server should stop");
+  return ok && Check(!server.Started(), "server should stop");
 }
 
 bool CheckServerSessionHandler() {
@@ -178,12 +178,12 @@ bool CheckServerSessionHandler() {
   std::atomic_size_t session_count{0};
   std::atomic_bool invalid_stream{false};
   std::atomic_bool wrong_loop{false};
-  server.set_session_handler([&](coropact::luring::LUringWorkerContext& context,
+  server.SetSessionHandler([&](coropact::luring::LUringWorkerContext& context,
                                  coropact::luring::LUringStream stream) -> coropact::coro::DetachedTask {
     if (!context.loop.IsInLoopThread()) {
       wrong_loop.store(true, std::memory_order_relaxed);
     }
-    if (stream.fd() < 0) {
+    if (stream.Fd() < 0) {
       invalid_stream.store(true, std::memory_order_relaxed);
     }
     session_count.fetch_add(1, std::memory_order_relaxed);
@@ -225,7 +225,7 @@ bool CheckServerSessionHandler() {
 
   server.Stop();
 
-  return ok && Check(!server.started(), "server should stop after session test");
+  return ok && Check(!server.Started(), "server should stop after session test");
 }
 
 bool CheckServerStopsActiveSession() {
@@ -244,7 +244,7 @@ bool CheckServerStopsActiveSession() {
   std::atomic_bool session_started{false};
   std::atomic_bool session_cancelled{false};
 
-  server.set_session_handler(
+  server.SetSessionHandler(
       [&](coropact::luring::LUringWorkerContext&, coropact::luring::LUringStream stream)
           -> coropact::coro::DetachedTask {
         session_started.store(true, std::memory_order_release);
@@ -288,7 +288,7 @@ bool CheckServerStopsActiveSession() {
   return accepted &&
          Check(session_cancelled.load(std::memory_order_acquire),
                "active session should receive ECANCELED during stop") &&
-         Check(!server.started(), "server should stop after cancelling active session");
+         Check(!server.Started(), "server should stop after cancelling active session");
 }
 
 }  // namespace

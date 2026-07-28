@@ -13,11 +13,12 @@
 #include <utility>
 
 #include "coropact/base/check.h"
+#include "coropact/base/try.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/work.h"
-#include "coropact/reactor/channel.h"
 #include "coropact/net/endpoint.h"
 #include "coropact/net/net_utils.h"
+#include "coropact/reactor/channel.h"
 
 namespace coropact::reactor {
 namespace {
@@ -42,7 +43,9 @@ public:
   }
 
   [[nodiscard]]
-  bool await_ready() const noexcept { return false; }
+  bool await_ready() const noexcept {
+    return false;
+  }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     COROPACT_DCHECK(loop_->IsInLoopThread(), "ConnectAwaiter: wrong EventLoop thread");
@@ -51,7 +54,7 @@ public:
 
     auto fd = net::CreateNonBlockingSocket(peer_.native_family());
     if (!fd.has_value()) {
-      result_ = std::unexpected(fd.error());
+      result_.SetError(fd.error());
       return false;
     }
     fd_ = *fd;
@@ -62,27 +65,31 @@ public:
     } while (rc < 0 && errno == EINTR);
 
     if (rc == 0) {
-      result_ = MakeStream();
+      result_.SetResult(MakeStream());
       return false;
     }
     if (errno != EINPROGRESS) {
-      result_ = std::unexpected(base::CurrentErrno());
+      result_.SetError(base::CurrentErrno());
       return false;
     }
 
     channel_.emplace(loop_, fd_);
-    channel_->set_write_callback([this] { OnReady(); });
-    channel_->set_error_callback([this] { OnReady(); });
+    channel_->SetWriteCallback(&ConnectAwaiter::DispatchReady, this);
+    channel_->SetErrorCallback(&ConnectAwaiter::DispatchReady, this);
     channel_->EnableWriting();
     return true;
   }
 
   base::Result<ReactorStream> await_resume() noexcept {
-    COROPACT_DCHECK(result_.has_value(), "ConnectAwaiter: result is not ready");
-    return std::move(*result_);
+    COROPACT_DCHECK(result_.HasResult(), "ConnectAwaiter: result is not ready");
+    return result_.Take();
   }
 
 private:
+  static void DispatchReady(void* context) noexcept {
+    static_cast<ConnectAwaiter*>(context)->OnReady();
+  }
+
   base::Result<ReactorStream> MakeStream() noexcept {
     DetachChannel();
     ReactorStream stream(loop_, fd_, peer_);
@@ -94,12 +101,12 @@ private:
     auto error = ConnectError(fd_);
     if (!error.has_value()) {
       DetachChannel();
-      result_ = std::unexpected(error.error());
+      result_.SetError(error.error());
     } else if (*error == 0) {
-      result_ = MakeStream();
+      result_.SetResult(MakeStream());
     } else {
       DetachChannel();
-      result_ = std::unexpected(base::make_errno(*error));
+      result_.SetError(base::make_errno(*error));
     }
     scheduler_->Schedule(&resume_work_);
   }
@@ -121,7 +128,7 @@ private:
   std::optional<Channel> channel_;
   coro::Scheduler* scheduler_{nullptr};
   coro::ResumeWork resume_work_{};
-  std::optional<base::Result<ReactorStream>> result_;
+  detail::ReactorValueResultState<ReactorStream> result_;
 };
 
 class SleepAwaiter {
@@ -130,7 +137,9 @@ public:
       : loop_(loop), delay_(delay) {}
 
   [[nodiscard]]
-  bool await_ready() const noexcept { return delay_.count() <= 0; }
+  bool await_ready() const noexcept {
+    return delay_.count() <= 0;
+  }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     COROPACT_DCHECK(loop_->IsInLoopThread(), "SleepAwaiter: wrong EventLoop thread");
@@ -180,11 +189,8 @@ coro::Task<base::Result<ReactorStream>> ReactorConnector::Connect(const net::End
 
 coro::Task<base::Result<ReactorStream>> ReactorConnector::Connect(std::string_view host,
                                                                   std::uint16_t port) {
-  auto peer = net::ParseIpAddress(host, port);
-  if (!peer.has_value()) {
-    co_return std::unexpected(peer.error());
-  }
-  co_return co_await Connect(*peer);
+  COROPACT_CO_TRY(peer, net::ParseIpAddress(host, port));
+  co_return co_await Connect(peer);
 }
 
 coro::Task<void> ReactorConnector::SleepFor(std::chrono::milliseconds delay) {

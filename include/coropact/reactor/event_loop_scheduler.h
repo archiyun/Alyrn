@@ -45,7 +45,7 @@ public:
   }
 
   [[nodiscard]]
-  EventLoop* loop() const noexcept { return loop_; }
+  EventLoop* Loop() const noexcept { return loop_; }
 
 private:
   EventLoop* loop_;

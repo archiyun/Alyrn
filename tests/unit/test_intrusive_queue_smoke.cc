@@ -23,44 +23,44 @@ int main() {
   Item four(4);
 
   coropact::ds::IntrusiveQueue<Item> queue;
-  assert(queue.empty());
+  assert(queue.Empty());
   assert(queue.PushBack(&two));
   assert(queue.PushFront(&one));
   assert(queue.PushBack(&three));
   assert(!queue.PushBack(&three));
-  assert(queue.size() == 3);
-  assert(queue.front() == &one);
-  assert(queue.back() == &three);
+  assert(queue.Size() == 3);
+  assert(queue.Front() == &one);
+  assert(queue.Back() == &three);
 
   queue.ForEachSafe([](Item& item) { return item.value % 2 == 0; });
   assert(!two.InQueue());
-  assert(queue.size() == 2);
-  assert(queue.front() == &one);
-  assert(queue.back() == &three);
+  assert(queue.Size() == 2);
+  assert(queue.Front() == &one);
+  assert(queue.Back() == &three);
 
   coropact::ds::IntrusiveQueue<Item> moved(std::move(queue));
-  assert(queue.empty());
-  assert(moved.front() == &one);
-  assert(moved.back() == &three);
+  assert(queue.Empty());
+  assert(moved.Front() == &one);
+  assert(moved.Back() == &three);
 
   coropact::ds::IntrusiveQueue<Item> suffix;
   assert(suffix.PushBack(&four));
   moved.Splice(suffix);
-  assert(suffix.empty());
-  assert(moved.size() == 3);
-  assert(moved.back() == &four);
+  assert(suffix.Empty());
+  assert(moved.Size() == 3);
+  assert(moved.Back() == &four);
 
   coropact::ds::IntrusiveQueue<Item> assigned;
   assigned = std::move(moved);
-  assert(moved.empty());
-  assert(assigned.size() == 3);
+  assert(moved.Empty());
+  assert(assigned.Size() == 3);
   assert(assigned.PopFront() == &one);
   assert(assigned.PopFront() == &three);
   assert(assigned.PopFront() == &four);
   assert(assigned.PopFront() == nullptr);
-  assert(assigned.empty());
-  assert(assigned.front() == nullptr);
-  assert(assigned.back() == nullptr);
+  assert(assigned.Empty());
+  assert(assigned.Front() == nullptr);
+  assert(assigned.Back() == nullptr);
 
   return 0;
 }

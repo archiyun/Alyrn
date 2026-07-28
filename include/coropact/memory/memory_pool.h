@@ -25,7 +25,7 @@ struct NullMutex {
 // Template parameters:
 //   BlockSize   - Size in bytes of each allocation slot.
 //   Alignment   - Required alignment of each slot (default: max platform alignment).
-//   Capacity    - Maximum number of slots (default: 1024).
+//   kCapacity   - Maximum number of slots (default: 1024).
 //   MutexPolicy - Lock type; must satisfy BasicLockable (default: std::mutex).
 //                 Use NullMutex for single-threaded use.
 //
@@ -42,12 +42,12 @@ struct NullMutex {
 template <
     std::size_t BlockSize,
     std::size_t Alignment   = alignof(std::max_align_t),
-    std::size_t Capacity    = 1024,
+    std::size_t kCapacity   = 1024,
     typename    MutexPolicy = std::mutex
 >
 class MemoryPool {
   static_assert(BlockSize > 0,  "MemoryPool: BlockSize must be > 0");
-  static_assert(Capacity  > 0,  "MemoryPool: Capacity must be > 0");
+  static_assert(kCapacity > 0, "MemoryPool: kCapacity must be > 0");
   static_assert(Alignment > 0 && (Alignment & (Alignment - 1)) == 0,
                 "MemoryPool: Alignment must be a power of two");
 
@@ -88,28 +88,28 @@ class MemoryPool {
   }
 
   // Returns the maximum number of slots in the pool.
-  constexpr std::size_t capacity() const noexcept { return Capacity; }
+  constexpr std::size_t Capacity() const noexcept { return kCapacity; }
 
   // Returns the number of currently free slots.
-  std::size_t free_count() const noexcept {
+  std::size_t FreeCount() const noexcept {
     std::lock_guard<MutexPolicy> lock(mutex_);
     return free_count_;
   }
 
   // Returns the number of currently allocated slots.
-  std::size_t used_count() const noexcept {
+  std::size_t UsedCount() const noexcept {
     std::lock_guard<MutexPolicy> lock(mutex_);
-    return Capacity - free_count_;
+    return kCapacity - free_count_;
   }
 
   // Returns true if ptr was allocated from this pool.
-  bool owns(const void* ptr) const noexcept {
+  bool Owns(const void* ptr) const noexcept {
     if (ptr == nullptr || buffer_ == nullptr) {
       return false;
     }
 
     const std::uintptr_t begin = reinterpret_cast<std::uintptr_t>(buffer_);
-    const std::uintptr_t end   = begin + kSlotSize * Capacity;
+    const std::uintptr_t end   = begin + kSlotSize * kCapacity;
     const std::uintptr_t p     = reinterpret_cast<std::uintptr_t>(ptr);
 
     if (p < begin || p >= end) {
@@ -132,10 +132,10 @@ class MemoryPool {
 
   void Initialize() {
     buffer_ = static_cast<std::byte*>(
-        ::operator new(kSlotSize * Capacity, std::align_val_t{kAlignment}));
+        ::operator new(kSlotSize * kCapacity, std::align_val_t{kAlignment}));
 
     std::byte* current = buffer_;
-    for (std::size_t i = 0; i < Capacity - 1; ++i) {
+    for (std::size_t i = 0; i < kCapacity - 1; ++i) {
       std::byte* next = current + kSlotSize;
       *reinterpret_cast<void**>(current) = next;
       current = next;
@@ -143,7 +143,7 @@ class MemoryPool {
 
     *reinterpret_cast<void**>(current) = nullptr;
     free_list_head_ = buffer_;
-    free_count_     = Capacity;
+    free_count_     = kCapacity;
   }
 
   std::byte*  buffer_{nullptr};

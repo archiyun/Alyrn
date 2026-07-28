@@ -35,8 +35,8 @@ bool TestParsesHttp11KeepAliveRequest() {
   ok &= Expect(parsed.method() == coropact::http::Method::Get, "request method should be GET");
   ok &= Expect(parsed.path() == "/api/health", "path should be parsed");
   ok &= Expect(parsed.query() == "verbose=1", "query string should be parsed");
-  ok &= Expect(parsed.keep_alive(), "HTTP/1.1 keep-alive should be enabled");
-  ok &= Expect(parsed.header("X-TrAcE-Id") == "trace-123",
+  ok &= Expect(parsed.KeepAlive(), "HTTP/1.1 keep-alive should be enabled");
+  ok &= Expect(parsed.Header("X-TrAcE-Id") == "trace-123",
                "trace id header should be accessible case-insensitively");
   return ok;
 }
@@ -44,25 +44,25 @@ bool TestParsesHttp11KeepAliveRequest() {
 bool TestMutatesHeadersCaseInsensitively() {
   coropact::http::HttpRequest request;
   request.AddHeader("X-Trace-ID", "first");
-  request.set_header("x-TRACE-id", "second");
+  request.SetHeader("x-TRACE-id", "second");
 
-  bool ok = Expect(request.header("X-Trace-Id") == "second",
+  bool ok = Expect(request.Header("X-Trace-Id") == "second",
                    "set_header should find an existing header without normalizing a lookup key");
   ok &= Expect(request.headers().size() == 1,
                "case variants should not create duplicate header entries");
   ok &= Expect(request.RemoveHeader("X-tRaCe-iD"),
                "RemoveHeader should support a mixed-case heterogeneous lookup");
   ok &=
-      Expect(request.header("x-trace-id").empty(), "removed header should no longer be accessible");
+      Expect(request.Header("x-trace-id").empty(), "removed header should no longer be accessible");
   return ok;
 }
 
 bool TestBuildsHttpResponse() {
   coropact::http::HttpResponse response(false);
-  response.set_status_code(coropact::http::StatusCode::Ok);
-  response.set_content_type("application/json; charset=utf-8");
+  response.SetStatusCode(coropact::http::StatusCode::Ok);
+  response.SetContentType("application/json; charset=utf-8");
   response.AddHeader("X-Trace-Id", "trace-abc");
-  response.set_body("{\"ok\":true}");
+  response.SetBody("{\"ok\":true}");
 
   const std::string encoded = response.ToString();
   bool ok =

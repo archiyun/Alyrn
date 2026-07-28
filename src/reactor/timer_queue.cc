@@ -40,7 +40,7 @@ static void ReadTimerfd(int timerfd) {
 
 TimerQueue::TimerQueue(EventLoop* loop)
     : loop_(loop), timerfd_(CreateTimerfd()), timerfd_channel_(loop, timerfd_) {
-  timerfd_channel_.set_read_callback([this](coropact::time::Timestamp) { HandleRead(); });
+  timerfd_channel_.SetReadCallback(&TimerQueue::DispatchRead, this);
   timerfd_channel_.EnableReading();
 }
 
@@ -48,8 +48,8 @@ TimerQueue::~TimerQueue() {
   timerfd_channel_.DisableAll();
   timerfd_channel_.Remove();
   ::close(timerfd_);
-  while (!timers_.empty()) {
-    coropact::time::Timer* timer = timers_.earliest();
+  while (!timers_.Empty()) {
+    coropact::time::Timer* timer = timers_.Earliest();
     active_timers_.Erase(timer);
     timers_.Erase(timer);
     timer_pool_.Release(timer);
@@ -60,7 +60,7 @@ coropact::time::TimerId TimerQueue::AddTimer(TimerCallback cb, coropact::time::T
                                          double interval) {
   coropact::time::Timer* t = timer_pool_.Acquire(std::move(cb), when, interval);
   loop_->RunInLoop([this, t] {
-    bool earliest_changed = timers_.empty() || t->expiration() < timers_.earliest()->expiration();
+    bool earliest_changed = timers_.Empty() || t->expiration() < timers_.Earliest()->expiration();
     timers_.Insert(t);
     active_timers_.Insert(t);
     if (earliest_changed) {
@@ -88,6 +88,11 @@ void TimerQueue::Cancel(coropact::time::TimerId id) {
   });
 }
 
+void TimerQueue::DispatchRead(void* context,
+                              coropact::time::Timestamp /*receive_time*/) noexcept {
+  static_cast<TimerQueue*>(context)->HandleRead();
+}
+
 void TimerQueue::HandleRead() {
   coropact::time::Timestamp now = coropact::time::Timestamp::Now();
   ReadTimerfd(timerfd_);
@@ -112,8 +117,8 @@ void TimerQueue::HandleRead() {
                      }
                    });
 
-  if (!timers_.empty()) {
-    ResetTimerfd(timers_.earliest()->expiration());
+  if (!timers_.Empty()) {
+    ResetTimerfd(timers_.Earliest()->expiration());
   }
 }
 

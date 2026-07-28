@@ -19,7 +19,7 @@ LUringServer::~LUringServer() noexcept { Stop(); }
 
 base::Result<void> LUringServer::Start() {
   if (started_) {
-    return std::unexpected(base::make_errno(EALREADY));
+    return std::unexpected(base::MakeErrno(EALREADY));
   }
 
   LUringWorkerGroup::ConnectionCallback connection_callback;

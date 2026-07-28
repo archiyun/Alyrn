@@ -24,9 +24,9 @@ public:
   IntrusiveLRU() = default;
 
   [[nodiscard]]
-  bool Empty() const noexcept { return list_.empty(); }
+  bool Empty() const noexcept { return list_.Empty(); }
   [[nodiscard]]
-  std::size_t Size() const noexcept { return list_.size(); }
+  std::size_t Size() const noexcept { return list_.Size(); }
 
   // Returns false for nullptr or when the node is already linked through this
   // hook. IntrusiveList intentionally does not own the node.
@@ -39,13 +39,13 @@ public:
   T* PopLRU() { return list_.PopFront(); }
 
   [[nodiscard]]
-  T* Oldest() noexcept { return list_.front(); }
+  T* Oldest() noexcept { return list_.Front(); }
   [[nodiscard]]
-  const T* Oldest() const noexcept { return list_.front(); }
+  const T* Oldest() const noexcept { return list_.Front(); }
   [[nodiscard]]
-  T* Newest() noexcept { return list_.back(); }
+  T* Newest() noexcept { return list_.Back(); }
   [[nodiscard]]
-  const T* Newest() const noexcept { return list_.back(); }
+  const T* Newest() const noexcept { return list_.Back(); }
 
   // Moves an existing node to the most recently used position.
   // Precondition: node is linked in this exact LRU.

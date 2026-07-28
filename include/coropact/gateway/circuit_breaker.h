@@ -67,13 +67,13 @@ public:
 
   // Cumulative consecutive failure count for diagnostics and tests.
   [[nodiscard]]
-  uint64_t failure_count() const noexcept {
+  uint64_t FailureCount() const noexcept {
     return ClosedFailures(closed_counts_.load(std::memory_order_relaxed));
   }
 
   // Total number of state transitions since construction.
   [[nodiscard]]
-  uint64_t transition_count() const noexcept {
+  uint64_t TransitionCount() const noexcept {
     return transition_count_.load(std::memory_order_relaxed);
   }
 

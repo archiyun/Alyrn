@@ -107,9 +107,9 @@ void Logger::Shutdown() {
   }
 }
 
-void Logger::set_log_level(LogLevel level) { level_.store(level, std::memory_order_relaxed); }
+void Logger::SetLogLevel(LogLevel level) { level_.store(level, std::memory_order_relaxed); }
 
-LogLevel Logger::log_level() const { return level_.load(std::memory_order_relaxed); }
+LogLevel Logger::LogLevelValue() const { return level_.load(std::memory_order_relaxed); }
 
 bool Logger::ShouldLog(LogLevel level) const {
   return level >= level_.load(std::memory_order_relaxed);

@@ -13,19 +13,19 @@ namespace coropact::luring::detail {
 // then use the real base relationship to recover the owner. This is the same
 // invariant used by the intrusive data structures: the pointer must name the
 // matching base subobject, and inheritance must be public and non-virtual.
-template <typename Owner, typename Tag = void>
+template <typename TOwner, typename Tag = void>
 class LUringOpHook : public LUringOp {
 public:
   explicit LUringOpHook(LUringOpKind kind) noexcept { this->kind = kind; }
 
   [[nodiscard]]
-  Owner* owner() noexcept {
-    return static_cast<Owner*>(this);
+  TOwner* Owner() noexcept {
+    return static_cast<TOwner*>(this);
   }
 
   [[nodiscard]]
-  const Owner* owner() const noexcept {
-    return static_cast<const Owner*>(this);
+  const TOwner* Owner() const noexcept {
+    return static_cast<const TOwner*>(this);
   }
 };
 

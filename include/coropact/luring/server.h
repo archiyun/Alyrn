@@ -41,13 +41,13 @@ public:
   explicit LUringServer(net::Endpoint listen_addr, LUringServerOptions options = {});
   ~LUringServer() noexcept;
 
-  void set_thread_init_callback(ThreadInitCallback callback) noexcept {
+  void SetThreadInitCallback(ThreadInitCallback callback) noexcept {
     thread_init_callback_ = std::move(callback);
   }
-  void set_thread_exit_callback(ThreadExitCallback callback) noexcept {
+  void SetThreadExitCallback(ThreadExitCallback callback) noexcept {
     thread_exit_callback_ = std::move(callback);
   }
-  void set_session_handler(SessionHandler handler) noexcept {
+  void SetSessionHandler(SessionHandler handler) noexcept {
     session_handler_ = std::move(handler);
   }
 
@@ -57,7 +57,7 @@ public:
   void Stop() noexcept;
 
   [[nodiscard]]
-  bool started() const noexcept {
+  bool Started() const noexcept {
     return started_;
   }
 

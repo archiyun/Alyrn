@@ -187,7 +187,7 @@ bool CheckConnectSuccess() {
   return Check(*completions >= 1, "connect did not produce a completion") &&
          Check(connected.has_value(), "connect coroutine did not resume") &&
          Check(connected->has_value(), "Connect returned an error") &&
-         Check(connected->value().fd() >= 0, "Connect returned an invalid stream") &&
+         Check(connected->value().Fd() >= 0, "Connect returned an invalid stream") &&
          Check(resumed_with_scheduler, "connect resumed without current scheduler");
 }
 
