@@ -41,17 +41,17 @@ public:
   [[nodiscard]]
   base::Result<void> Register(std::shared_ptr<Upstream> upstream) {
     if (upstream == nullptr) {
-      return std::unexpected(base::make_errno(EINVAL));
+      return std::unexpected(base::MakeErrno(EINVAL));
     }
 
     const std::string name = upstream->name();
     if (name.empty()) {
-      return std::unexpected(base::make_errno(EINVAL));
+      return std::unexpected(base::MakeErrno(EINVAL));
     }
 
     const bool inserted = registry_.emplace(name, std::move(upstream)).second;
     if (!inserted) {
-      return std::unexpected(base::make_errno(EEXIST));
+      return std::unexpected(base::MakeErrno(EEXIST));
     }
 
     return {};
@@ -60,12 +60,12 @@ public:
   [[nodiscard]]
   base::Result<std::shared_ptr<Upstream>> Resolve(std::string_view name) const {
     if (name.empty()) {
-      return std::unexpected(base::make_errno(EINVAL));
+      return std::unexpected(base::MakeErrno(EINVAL));
     }
 
     auto iterator = registry_.find(name);
     if (iterator == registry_.end()) {
-      return std::unexpected(base::make_errno(ENOENT));
+      return std::unexpected(base::MakeErrno(ENOENT));
     }
     return iterator->second;
   }

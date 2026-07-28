@@ -69,7 +69,7 @@ public:
   }
 
   [[nodiscard]]
-  int fd() const noexcept {
+  int Fd() const noexcept {
     return fd_;
   }
 
@@ -116,7 +116,7 @@ private:
 
   static void OnComplete(LUringOp* op) noexcept;
 
-  LUringOp* op() noexcept { return static_cast<OpHook*>(this); }
+  LUringOp* Op() noexcept { return static_cast<OpHook*>(this); }
 
   LUringStream* stream_;
   std::span<std::byte> buffer_;
@@ -155,8 +155,8 @@ private:
   static void OnReadComplete(LUringOp* op) noexcept;
   static void OnTimeoutComplete(LUringOp* op) noexcept;
 
-  LUringOp* read_op() noexcept { return static_cast<ReadOpHook*>(this); }
-  LUringOp* timeout_op() noexcept { return static_cast<TimeoutOpHook*>(this); }
+  LUringOp* ReadOp() noexcept { return static_cast<ReadOpHook*>(this); }
+  LUringOp* TimeoutOp() noexcept { return static_cast<TimeoutOpHook*>(this); }
 
   void CompleteRead(LUringOp* current) noexcept;
   void CompleteTimeout(LUringOp* current) noexcept;
@@ -195,7 +195,7 @@ private:
 
   static void OnComplete(LUringOp* op) noexcept;
 
-  LUringOp* op() noexcept { return static_cast<OpHook*>(this); }
+  LUringOp* Op() noexcept { return static_cast<OpHook*>(this); }
 
   LUringStream* stream_;
   std::span<const std::byte> buffer_;
@@ -226,7 +226,7 @@ private:
 
   static void OnComplete(LUringOp* op) noexcept;
 
-  LUringOp* op() noexcept { return static_cast<OpHook*>(this); }
+  LUringOp* Op() noexcept { return static_cast<OpHook*>(this); }
 
   static constexpr std::size_t kMaxParts = 8;
 

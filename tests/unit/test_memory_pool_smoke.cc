@@ -29,7 +29,7 @@ bool TestAllocateAndReuse() {
     void* c = pool.Allocate();
 
     if (!Expect(c == a, "pool should reuse returned slot")) return false;
-    if (!Expect(pool.free_count() == 2, "free_count should match after reuse")) return false;
+    if (!Expect(pool.FreeCount() == 2, "FreeCount should match after reuse")) return false;
     return true;
 }
 
@@ -41,7 +41,7 @@ bool TestExhaustion() {
 
     if (!Expect(a != nullptr && b != nullptr, "initial allocations should succeed")) return false;
     if (!Expect(c == nullptr, "allocation past capacity should return nullptr")) return false;
-    if (!Expect(pool.used_count() == 2, "used_count should equal capacity when exhausted")) return false;
+    if (!Expect(pool.UsedCount() == 2, "UsedCount should equal capacity when exhausted")) return false;
     return true;
 }
 
@@ -50,9 +50,9 @@ bool TestOwns() {
     void* p = pool.Allocate();
     int stack_value = 0;
 
-    if (!Expect(pool.owns(p), "owns should accept pool pointers")) return false;
-    if (!Expect(!pool.owns(&stack_value), "owns should reject stack pointers")) return false;
-    if (!Expect(!pool.owns(nullptr), "owns should reject nullptr")) return false;
+    if (!Expect(pool.Owns(p), "Owns should accept pool pointers")) return false;
+    if (!Expect(!pool.Owns(&stack_value), "Owns should reject stack pointers")) return false;
+    if (!Expect(!pool.Owns(nullptr), "Owns should reject nullptr")) return false;
 
     pool.Deallocate(p);
     return true;
@@ -99,8 +99,8 @@ bool TestConcurrentAllocateAndFree() {
         thread.join();
     }
 
-    if (!Expect(pool.free_count() == pool.capacity(), "all slots should be returned after concurrent test")) return false;
-    if (!Expect(pool.used_count() == 0, "used_count should be zero after concurrent test")) return false;
+    if (!Expect(pool.FreeCount() == pool.Capacity(), "all slots should be returned after concurrent test")) return false;
+    if (!Expect(pool.UsedCount() == 0, "UsedCount should be zero after concurrent test")) return false;
     return true;
 }
 

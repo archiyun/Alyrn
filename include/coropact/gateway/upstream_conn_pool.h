@@ -226,7 +226,7 @@ public:
   const UpstreamStreamPoolStats& stats() const noexcept { return stats_; }
 
   [[nodiscard]]
-  bool stats_enabled() const noexcept { return config_.collect_stats; }
+  bool StatsEnabled() const noexcept { return config_.collect_stats; }
 
   void RecordConnect(std::uint64_t elapsed_ns, bool success) noexcept {
     if (!config_.collect_stats) return;
@@ -258,7 +258,7 @@ public:
   }
 
   [[nodiscard]]
-  std::size_t idle_count() const noexcept { return idle_total_; }
+  std::size_t IdleCount() const noexcept { return idle_total_; }
 
 private:
   static void RecordHistogram(

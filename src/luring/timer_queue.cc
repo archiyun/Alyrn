@@ -30,7 +30,7 @@ __kernel_timespec ToKernelTimespec(time::Timestamp timestamp) noexcept {
 }  // namespace
 
 LUringTimerQueue::~LUringTimerQueue() noexcept {
-  assert(timers_.empty());
+  assert(timers_.Empty());
   assert(active_.empty());
 }
 
@@ -47,18 +47,18 @@ base::Result<time::TimerId> LUringTimerQueue::AddTimer(TimerCallback callback,
   assert(loop_->IsInLoopThread());
 
   if (!when.Valid()) {
-    return std::unexpected(base::make_errno(EINVAL));
+    return std::unexpected(base::MakeErrno(EINVAL));
   }
 
   auto timer = std::make_unique<time::Timer>(std::move(callback), when, 0.0);
   const time::TimerId id{timer->sequence()};
   auto [it, inserted] = active_.emplace(id.sequence, std::move(timer));
   if (!inserted) {
-    return std::unexpected(base::make_errno(EEXIST));
+    return std::unexpected(base::MakeErrno(EEXIST));
   }
   if (!timers_.Insert(it->second.get())) {
     active_.erase(it);
-    return std::unexpected(base::make_errno(EEXIST));
+    return std::unexpected(base::MakeErrno(EEXIST));
   }
 
   Reconcile();
@@ -71,7 +71,7 @@ base::Result<void> LUringTimerQueue::Cancel(time::TimerId id) noexcept {
 
   auto it = active_.find(id.sequence);
   if (it == active_.end()) {
-    return std::unexpected(base::make_errno(ENOENT));
+    return std::unexpected(base::MakeErrno(ENOENT));
   }
 
   timers_.Erase(it->second.get());
@@ -84,11 +84,11 @@ base::Result<void> LUringTimerQueue::Cancel(time::TimerId id) noexcept {
 }
 
 void LUringTimerQueue::OnDriverComplete(LUringOp* op) noexcept {
-  static_cast<DriverOpHook*>(op)->owner()->HandleDriverComplete(op);
+  static_cast<DriverOpHook*>(op)->Owner()->HandleDriverComplete(op);
 }
 
 void LUringTimerQueue::OnControlComplete(LUringOp* op) noexcept {
-  static_cast<ControlOpHook*>(op)->owner()->HandleControlComplete(op);
+  static_cast<ControlOpHook*>(op)->Owner()->HandleControlComplete(op);
 }
 
 namespace detail {
@@ -121,7 +121,7 @@ void LUringTimerQueue::HandleControlComplete(LUringOp* op) noexcept {
     return;
   }
 
-  if (op->result.has_value() && *op->result == 0) {
+  if (op->result.HasValue() && *op->result == 0) {
     driver_deadline_ = requested_deadline_;
   } else {
     // Some kernels/liburing combinations reject timeout updates with EINVAL.
@@ -148,7 +148,7 @@ void LUringTimerQueue::ProcessExpired() noexcept {
 void LUringTimerQueue::Reconcile() noexcept {
   if (control_pending_) return;
 
-  auto* earliest = timers_.earliest();
+  auto* earliest = timers_.Earliest();
   if (!driver_armed_) {
     if (earliest != nullptr) Arm(earliest->expiration());
     return;
@@ -165,10 +165,10 @@ void LUringTimerQueue::Reconcile() noexcept {
 
 void LUringTimerQueue::Arm(time::Timestamp deadline) noexcept {
   driver_timespec_ = ToKernelTimespec(deadline);
-  driver_op()->ResetCompletion();
-  driver_op()->resume_work.ClearHandle();
+    DriverOp()->ResetCompletion();
+    DriverOp()->resume_work.ClearHandle();
 
-  auto result = loop_->SubmitOp(driver_op(), [this](io_uring_sqe* sqe) noexcept {
+  auto result = loop_->SubmitOp(DriverOp(), [this](io_uring_sqe* sqe) noexcept {
     io_uring_prep_timeout(sqe, &driver_timespec_, 0, IORING_TIMEOUT_ABS | IORING_TIMEOUT_REALTIME);
   });
   if (!result.has_value()) return;
@@ -179,10 +179,10 @@ void LUringTimerQueue::Arm(time::Timestamp deadline) noexcept {
 
 void LUringTimerQueue::ArmFallback(time::Timestamp deadline) noexcept {
   fallback_timespec_ = ToKernelTimespec(deadline);
-  control_op()->ResetCompletion();
+    ControlOp()->ResetCompletion();
   control_is_fallback_ = true;
 
-  auto result = loop_->SubmitOp(control_op(), [this](io_uring_sqe* sqe) noexcept {
+  auto result = loop_->SubmitOp(ControlOp(), [this](io_uring_sqe* sqe) noexcept {
     io_uring_prep_timeout(sqe, &fallback_timespec_, 0,
                           IORING_TIMEOUT_ABS | IORING_TIMEOUT_REALTIME);
   });
@@ -197,12 +197,12 @@ void LUringTimerQueue::ArmFallback(time::Timestamp deadline) noexcept {
 void LUringTimerQueue::Update(time::Timestamp deadline) noexcept {
   update_timespec_ = ToKernelTimespec(deadline);
   requested_deadline_ = deadline;
-  control_op()->ResetCompletion();
+    ControlOp()->ResetCompletion();
   control_is_fallback_ = false;
 
-  auto result = loop_->SubmitOp(control_op(), [this](io_uring_sqe* sqe) noexcept {
+    auto result = loop_->SubmitOp(ControlOp(), [this](io_uring_sqe* sqe) noexcept {
     io_uring_prep_timeout_update(sqe, &update_timespec_,
-                                 reinterpret_cast<std::uint64_t>(driver_op()),
+                                 reinterpret_cast<std::uint64_t>(DriverOp()),
                                  IORING_TIMEOUT_ABS | IORING_TIMEOUT_REALTIME);
   });
   if (result.has_value()) control_pending_ = true;

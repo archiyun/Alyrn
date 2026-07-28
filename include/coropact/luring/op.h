@@ -57,23 +57,23 @@ public:
   }
 
   [[nodiscard]]
-  bool has_value() const noexcept {
+  bool HasValue() const noexcept {
     return encoded_ != kEmpty;
   }
 
   [[nodiscard]]
   int operator*() const noexcept {
-    assert(has_value());
+    assert(HasValue());
     return static_cast<int>(encoded_);
   }
 
   // There is no stored error object: CQE failures are the negative integer
-  // itself and are converted by the awaiter. Calling error() for an empty
+  // itself and are converted by the awaiter. Calling Error() for an empty
   // result is only a defensive fallback for the invalid pre-completion path.
   [[nodiscard]]
-  base::Error error() const noexcept {
-    assert(!has_value());
-    return base::make_errno(EIO);
+  base::Error Error() const noexcept {
+    assert(!HasValue());
+    return base::MakeErrno(EIO);
   }
 
 private:

@@ -42,6 +42,43 @@ bool Expect(bool condition, const char* message) {
     return true;
 }
 
+void NoopRead(void*, coropact::time::Timestamp) noexcept {}
+
+struct ReadAndQuitContext {
+    int fd;
+    bool* called;
+    coropact::reactor::EventLoop* loop;
+};
+
+void DrainReadAndQuit(void* raw, coropact::time::Timestamp) noexcept {
+    auto& context = *static_cast<ReadAndQuitContext*>(raw);
+    char buf[4];
+    ::read(context.fd, buf, sizeof(buf));
+    *context.called = true;
+    context.loop->Quit();
+}
+
+void MarkRead(void* raw, coropact::time::Timestamp) noexcept {
+    *static_cast<bool*>(raw) = true;
+}
+
+struct ReadManyContext {
+    int fd;
+    int* count;
+    int total;
+    coropact::reactor::EventLoop* loop;
+};
+
+void DrainReadMany(void* raw, coropact::time::Timestamp) noexcept {
+    auto& context = *static_cast<ReadManyContext*>(raw);
+    char buf[4];
+    ::read(context.fd, buf, sizeof(buf));
+    ++*context.count;
+    if (*context.count == context.total) {
+        context.loop->Quit();
+    }
+}
+
 // ──────────────────────────────────────────────
 // Test 1: EPollPoller construction succeeds (epoll_create1).
 // ──────────────────────────────────────────────
@@ -65,7 +102,7 @@ bool TestChannelRegistration() {
     }
 
     coropact::reactor::Channel ch(&loop, fds[0]);
-    ch.set_read_callback([](coropact::time::Timestamp) {});
+    ch.SetReadCallback(NoopRead, nullptr);
     ch.EnableReading();
 
     const bool registered = Expect(loop.HasChannel(&ch),
@@ -91,7 +128,7 @@ bool TestChannelRemoval() {
     }
 
     coropact::reactor::Channel ch(&loop, fds[0]);
-    ch.set_read_callback([](coropact::time::Timestamp) {});
+    ch.SetReadCallback(NoopRead, nullptr);
     ch.EnableReading();
 
     ch.DisableAll();
@@ -119,12 +156,8 @@ bool TestPollDetectsReadEvent() {
 
     bool read_called = false;
     coropact::reactor::Channel ch(&loop, fds[0]);
-    ch.set_read_callback([&](coropact::time::Timestamp) {
-        char buf[4];
-        ::read(fds[0], buf, sizeof(buf));
-        read_called = true;
-        loop.Quit();
-    });
+    ReadAndQuitContext context{fds[0], &read_called, &loop};
+    ch.SetReadCallback(DrainReadAndQuit, &context);
     ch.EnableReading();
 
     // Write first so the initial epoll_wait returns immediately.
@@ -157,7 +190,7 @@ bool TestDisableAllKeepsChannelInMap() {
     }
 
     coropact::reactor::Channel ch(&loop, fds[0]);
-    ch.set_read_callback([](coropact::time::Timestamp) {});
+    ch.SetReadCallback(NoopRead, nullptr);
     ch.EnableReading();
 
     ch.DisableAll();
@@ -167,7 +200,7 @@ bool TestDisableAllKeepsChannelInMap() {
 
     // The channel is removed from epoll, so no callback should fire.
     bool read_called = false;
-    ch.set_read_callback([&](coropact::time::Timestamp) { read_called = true; });
+    ch.SetReadCallback(MarkRead, &read_called);
     ::write(fds[1], "x", 1);
 
     // Use a timer to exit instead of depending on a read event.
@@ -197,12 +230,8 @@ bool TestReenableAfterDisable() {
 
     bool read_called = false;
     coropact::reactor::Channel ch(&loop, fds[0]);
-    ch.set_read_callback([&](coropact::time::Timestamp) {
-        char buf[4];
-        ::read(fds[0], buf, sizeof(buf));
-        read_called = true;
-        loop.Quit();
-    });
+    ReadAndQuitContext context{fds[0], &read_called, &loop};
+    ch.SetReadCallback(DrainReadAndQuit, &context);
 
     ch.EnableReading();
     ch.DisableAll();
@@ -240,19 +269,13 @@ bool TestEventsVectorResizes() {
     int trigger_count = 0;
     std::vector<std::unique_ptr<coropact::reactor::Channel>> channels;
     channels.reserve(N);
+    std::array<ReadManyContext, N> contexts{};
 
     for (int i = 0; i < N; ++i) {
         auto ch = std::make_unique<coropact::reactor::Channel>(&loop, pairs[i][0]);
         // Consume the byte to avoid repeated delivery in level-triggered mode.
-        const int read_fd = pairs[i][0];
-        ch->set_read_callback([&, read_fd](coropact::time::Timestamp) {
-            char buf[4];
-            ::read(read_fd, buf, sizeof(buf));
-            ++trigger_count;
-            if (trigger_count == N) {
-                loop.Quit();
-            }
-        });
+        contexts[i] = ReadManyContext{pairs[i][0], &trigger_count, N, &loop};
+        ch->SetReadCallback(DrainReadMany, &contexts[i]);
         ch->EnableReading();
         channels.push_back(std::move(ch));
     }

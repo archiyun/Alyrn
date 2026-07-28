@@ -96,14 +96,14 @@ bool TestSharedCapacity() {
   pool.Release(&second, std::optional<FakeStream>{FakeStream(3)});
   pool.Release(&second, std::optional<FakeStream>{FakeStream(4)});
 
-  bool ok = Expect(pool.idle_count() == 3, "shared budget should cap all peer queues together");
+  bool ok = Expect(pool.IdleCount() == 3, "shared budget should cap all peer queues together");
   auto first_stream = Take(pool, &first);
   auto second_stream = Take(pool, &second);
   ok &= Expect(first_stream && first_stream->id() == 2,
                "shared budget should preserve per-peer LIFO reuse");
   ok &= Expect(second_stream && second_stream->id() == 4,
                "shared budget should evict the globally oldest idle stream");
-  ok &= Expect(pool.idle_count() == 1, "acquiring streams should reduce the shared idle count");
+  ok &= Expect(pool.IdleCount() == 1, "acquiring streams should reduce the shared idle count");
   return ok;
 }
 

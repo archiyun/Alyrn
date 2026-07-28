@@ -28,7 +28,7 @@
 #include "coropact/coro/task.h"
 #include "coropact/coro/work.h"
 
-using coropact::base::make_errno;
+using coropact::base::MakeErrno;
 using coropact::base::Result;
 using coropact::coro::DetachedTask;
 using coropact::coro::JoinHandle;
@@ -107,7 +107,7 @@ Task<int> Sum() {
 
 Task<std::unique_ptr<int>> MoveOnly() { co_return std::make_unique<int>(99); }
 
-Task<Result<int>> Fail() { co_return std::unexpected(make_errno(EINVAL)); }
+Task<Result<int>> Fail() { co_return std::unexpected(MakeErrno(EINVAL)); }
 
 int g_void_marker = 0;
 Task<void> SetMarker() {

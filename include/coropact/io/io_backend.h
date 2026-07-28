@@ -171,10 +171,10 @@ constexpr base::Result<BackendBinding> BindBackend(
     Backend backend, CapabilitySet backend_capabilities,
     CapabilitySet active_profile = CapabilitySet::CoreGateway()) noexcept {
   if (active_profile.HasImplementationTags()) {
-    return std::unexpected(base::make_errno(EINVAL));
+    return std::unexpected(base::MakeErrno(EINVAL));
   }
   if (!backend_capabilities.ContainsAll(active_profile)) {
-    return std::unexpected(base::make_errno(ENOTSUP));
+    return std::unexpected(base::MakeErrno(ENOTSUP));
   }
   return BackendBinding{
       .backend = backend,

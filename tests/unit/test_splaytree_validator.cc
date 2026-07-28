@@ -2,8 +2,8 @@
 // 同时每步验证 BST 结构不变量与缓存 min。
 //
 // 验证项：
-//   1. tree.size()     == oracle.size()
-//   2. tree.earliest() == *oracle.begin()  (按 JobLess 排序最小值)
+//   1. tree.Size()     == oracle.size()
+//   2. tree.Earliest() == *oracle.begin()  (按 JobLess 排序最小值)
 //   3. PopWhile 弹出结果与 oracle 一致（顺序、内容）
 //   4. 每步 CheckInvariants() 均为 true
 //   5. 未入树 Erase 返回 false，重复 Insert 返回 false 且不改变树
@@ -89,12 +89,12 @@ static int g_failures = 0;
 static void verify(const JobTree& tree,
                    const std::set<Job*, JobCmp>& oracle,
                    int op_idx) {
-  CHECK(tree.size() == oracle.size(), "size mismatch");
+  CHECK(tree.Size() == oracle.size(), "size mismatch");
   CHECK(tree.CheckInvariants(), "BST invariants violated");
   if (!oracle.empty()) {
-    CHECK(tree.earliest() == *oracle.begin(), "earliest() mismatch");
+    CHECK(tree.Earliest() == *oracle.begin(), "Earliest() mismatch");
   } else {
-    CHECK(tree.earliest() == nullptr, "earliest() should be null on empty tree");
+    CHECK(tree.Earliest() == nullptr, "Earliest() should be null on empty tree");
   }
 }
 
@@ -112,12 +112,12 @@ static bool full_check(const JobTree& tree,
                        const std::set<Job*, JobCmp>& oracle,
                        const char* where) {
   bool ok = true;
-  ok &= CheckAt(tree.size() == oracle.size(), where, "size mismatch");
+  ok &= CheckAt(tree.Size() == oracle.size(), where, "size mismatch");
   ok &= CheckAt(tree.CheckInvariants(), where, "BST invariants violated");
   if (oracle.empty()) {
-    ok &= CheckAt(tree.earliest() == nullptr, where, "earliest should be null");
+    ok &= CheckAt(tree.Earliest() == nullptr, where, "Earliest should be null");
   } else {
-    ok &= CheckAt(tree.earliest() == *oracle.begin(), where, "earliest mismatch");
+    ok &= CheckAt(tree.Earliest() == *oracle.begin(), where, "Earliest mismatch");
   }
   return ok;
 }
@@ -132,13 +132,13 @@ static bool lifecycle_test() {
       tree.Insert(&job);
     }
 
-    if (!CheckAt(tree.size() == pool.size(), "lifecycle-clear",
+    if (!CheckAt(tree.Size() == pool.size(), "lifecycle-clear",
                  "tree should contain every element before Clear")) {
       return false;
     }
     tree.Clear();
-    if (!CheckAt(tree.empty(), "lifecycle-clear", "Clear should empty the tree") ||
-        !CheckAt(tree.earliest() == nullptr, "lifecycle-clear",
+    if (!CheckAt(tree.Empty(), "lifecycle-clear", "Clear should empty the tree") ||
+        !CheckAt(tree.Earliest() == nullptr, "lifecycle-clear",
                  "Clear should reset earliest")) {
       return false;
     }
@@ -187,7 +187,7 @@ static bool tag_test() {
     return false;
   }
 
-  if (!CheckAt(primary.size() == 2 && secondary.size() == 2, "tag",
+  if (!CheckAt(primary.Size() == 2 && secondary.Size() == 2, "tag",
                "tagged hooks should maintain independent memberships") ||
       !CheckAt(primary.CheckInvariants() && secondary.CheckInvariants(), "tag",
                "tagged trees should satisfy invariants")) {
@@ -490,11 +490,11 @@ int main() {
     CHECK(!tree.Erase(&a), "erase unlinked element should fail");
     CHECK(tree.Insert(&a), "first insert should succeed");
     CHECK(!tree.Insert(&a), "duplicate insert should return false");
-    CHECK(tree.size() == 1, "duplicate insert should be ignored");
-    CHECK(tree.earliest() == &a, "single inserted element should be earliest");
+    CHECK(tree.Size() == 1, "duplicate insert should be ignored");
+    CHECK(tree.Earliest() == &a, "single inserted element should be earliest");
     CHECK(tree.CheckInvariants(), "single-node tree invariants");
     CHECK(tree.Erase(&a), "erase linked element should succeed");
-    CHECK(tree.empty(), "tree should be empty after erasing only element");
+    CHECK(tree.Empty(), "tree should be empty after erasing only element");
   }
 
   auto remove_from_active = [&](Job* j) {
@@ -552,11 +552,11 @@ int main() {
   }
 
   // ---- Final drain: compare full sorted order ----
-  std::printf("Draining remaining %zu elements...\n", tree.size());
+  std::printf("Draining remaining %zu elements...\n", tree.Size());
   std::vector<Job*> drain_tree, drain_oracle(oracle.begin(), oracle.end());
-  while (!tree.empty()) {
-    drain_tree.push_back(tree.earliest());
-    tree.Erase(tree.earliest());
+  while (!tree.Empty()) {
+    drain_tree.push_back(tree.Earliest());
+    tree.Erase(tree.Earliest());
   }
   int drain_ok = 1;
   if (drain_tree.size() == drain_oracle.size()) {

@@ -8,7 +8,6 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <deque>
 #include <memory>
 #include <memory_resource>
 #include <new>
@@ -17,13 +16,13 @@
 
 #include "coropact/base/current_thread.h"
 #include "coropact/base/error.h"
+#include "coropact/base/try.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/work.h"
 #include "coropact/luring/mailbox.h"
 #include "coropact/luring/op.h"
 #include "coropact/luring/options.h"
 #include "coropact/luring/ring.h"
-#include "coropact/luring/stats.h"
 #include "coropact/luring/timer_queue.h"
 #include "coropact/time/timer_id.h"
 
@@ -53,7 +52,7 @@ public:
   ~LUringLoop() noexcept;
 
   [[nodiscard]]
-  bool initialized() const noexcept {
+  bool Initialized() const noexcept {
     return initialized_;
   }
 
@@ -69,13 +68,13 @@ public:
     return thread_id_ == base::tid();
   }
   [[nodiscard]]
-  int thread_id() const noexcept {
+  int ThreadId() const noexcept {
     return thread_id_;
   }
 
   [[nodiscard]]
-  int ring_fd() const noexcept {
-    return ring_.fd();
+  int RingFd() const noexcept {
+    return ring_.Fd();
   }
 
   // Internal wake polling is not part of the user-visible operation count.
@@ -90,9 +89,6 @@ public:
   }
 
   [[nodiscard]]
-  LUringLoopStats GetStats() const noexcept { return stats_; }
-
-  [[nodiscard]]
   bool IsDrained() const noexcept {
     return !HasReadyWork() && PendingSubmitCount() == 0 && InflightCount() == 0;
   }
@@ -102,7 +98,7 @@ public:
                                                      LUringTimerQueue::TimerCallback callback) {
     assert(IsInLoopThread());
     if (!initialized_) {
-      return std::unexpected(base::make_errno(EBADF));
+      return std::unexpected(base::MakeErrno(EBADF));
     }
     return timers_.AddAfter(delay, std::move(callback));
   }
@@ -110,7 +106,7 @@ public:
   base::Result<void> CancelTimer(time::TimerId id) noexcept {
     assert(IsInLoopThread());
     if (!initialized_) {
-      return std::unexpected(base::make_errno(EBADF));
+      return std::unexpected(base::MakeErrno(EBADF));
     }
     return timers_.Cancel(id);
   }
@@ -152,22 +148,19 @@ public:
     assert(IsInLoopThread());
 
     if (!initialized_) {
-      return std::unexpected(base::make_errno(EBADF));
+      return std::unexpected(base::MakeErrno(EBADF));
     }
     if (op == nullptr) {
-      return std::unexpected(base::make_errno(EINVAL));
+      return std::unexpected(base::MakeErrno(EINVAL));
     }
 
     io_uring_sqe* sqe = ring_.GetSqe();
     if (sqe == nullptr) {
-      auto flushed = FlushSubmit();
-      if (!flushed.has_value()) {
-        return std::unexpected(flushed.error());
-      }
+      COROPACT_TRY(FlushSubmit());
 
       sqe = ring_.GetSqe();
       if (sqe == nullptr) {
-        return std::unexpected(base::make_errno(ENOSPC));
+        return std::unexpected(base::MakeErrno(ENOSPC));
       }
     }
 
@@ -183,7 +176,7 @@ public:
     assert(IsInLoopThread());
 
     if (target_ring_fd < 0) {
-      return std::unexpected(base::make_errno(EBADF));
+      return std::unexpected(base::MakeErrno(EBADF));
     }
 
     return SubmitOp(op, [this, target_ring_fd, type](io_uring_sqe* sqe) noexcept {
@@ -196,10 +189,10 @@ public:
     assert(IsInLoopThread());
 
     if (op == nullptr) {
-      return std::unexpected(base::make_errno(EINVAL));
+      return std::unexpected(base::MakeErrno(EINVAL));
     }
 
-    return SubmitMsgRing(op, target.ring_fd(), 0);
+    return SubmitMsgRing(op, target.RingFd(), 0);
   }
 
   [[nodiscard]]
@@ -224,13 +217,6 @@ private:
 
   void HandleCqe(io_uring_cqe* cqe) noexcept;
   void HandleMailbox() noexcept;
-  void DumpStats() const noexcept;
-  void ScheduleCompletionAt(coro::Work* work, std::uint64_t event_ns) noexcept;
-
-  struct ReadySample {
-    std::uint64_t enqueued_ns{0};
-    std::uint64_t event_ns{0};
-  };
 
   const int thread_id_;
   LUringRing ring_;
@@ -270,20 +256,14 @@ private:
   // already overdue.
   std::chrono::microseconds normal_queue_age_threshold_{5000};
 
-  bool stats_enabled_{false};
-  bool dump_stats_on_exit_{false};
-
   std::size_t ready_depth_{0};
   std::size_t completion_ready_depth_{0};
   std::uint64_t ready_nonempty_since_ns_{0};
   std::uint64_t completion_ready_nonempty_since_ns_{0};
-  std::deque<ReadySample> ready_samples_;
-  std::deque<ReadySample> completion_ready_samples_;
-  LUringLoopStats stats_;
 
   [[nodiscard]]
   bool HasReadyWork() const noexcept {
-    return !ready_.empty() || !completion_ready_.empty();
+    return !ready_.Empty() || !completion_ready_.Empty();
   }
 
   [[nodiscard]]

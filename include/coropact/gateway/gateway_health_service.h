@@ -77,7 +77,7 @@ public:
   }
 
   [[nodiscard]]
-  bool started() const noexcept {
+  bool Started() const noexcept {
     return started_;
   }
 
@@ -130,7 +130,7 @@ private:
     if (!connected.has_value()) co_return false;
 
     Stream stream = std::move(*connected);
-    const std::string request = "GET " + config_.path + " HTTP/1.1\r\nHost: " + peer.host_port() +
+    const std::string request = "GET " + config_.path + " HTTP/1.1\r\nHost: " + peer.HostPort() +
                                 "\r\nConnection: close\r\n\r\n";
     auto written = co_await io::WriteAll(stream, Bytes(request));
     if (!written.has_value()) {

@@ -312,7 +312,7 @@ bool TestPerIPEvictsIdleFullBuckets() {
   for (int i = 0; i < 4; ++i) {
     rl.AllowPerIP("10.0.0." + std::to_string(i));
   }
-  if (!Expect(rl.per_ip_bucket_count() == 4, "4 buckets created (at cap)")) return false;
+  if (!Expect(rl.PerIPBucketCount() == 4, "4 buckets created (at cap)")) return false;
 
   // Let every bucket refill to full so it becomes evictable.
   std::this_thread::sleep_for(20ms);
@@ -320,7 +320,7 @@ bool TestPerIPEvictsIdleFullBuckets() {
   // The 5th distinct IP hits the cap, triggers a sweep that drops the 4 idle
   // full buckets, then inserts itself.
   rl.AllowPerIP("10.0.0.99");
-  if (!Expect(rl.per_ip_bucket_count() == 1,
+  if (!Expect(rl.PerIPBucketCount() == 1,
               "idle full buckets evicted; only the new one remains")) return false;
 
   // Loss-less: an evicted IP works exactly as before (a fresh full bucket).
@@ -352,7 +352,7 @@ bool TestPerIPEvictionKeepsActiveBuckets() {
               "new identity must be rejected when active buckets fill cap")) {
     return false;
   }
-  if (!Expect(rl.per_ip_bucket_count() == 2,
+  if (!Expect(rl.PerIPBucketCount() == 2,
               "per-ip bucket count must never exceed the hard cap")) return false;
   // The drained bucket is intact: still limited, not silently reset.
   if (!Expect(!rl.AllowPerIP("a"), "a stays limited after the over-cap insert")) return false;

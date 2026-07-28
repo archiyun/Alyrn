@@ -62,7 +62,7 @@ public:
     return config_;
   }
   [[nodiscard]]
-  const std::string& host_port() const {
+  const std::string& HostPort() const {
     return host_port_;
   }
   UpstreamPeerState& state() { return state_; }
@@ -103,11 +103,11 @@ public:
     return config_.weight;
   }
   [[nodiscard]]
-  int effective_weight() const {
+  int EffectiveWeight() const {
     return state_.effective_weight.load(std::memory_order_relaxed);
   }
   [[nodiscard]]
-  int active_request() const {
+  int ActiveRequest() const {
     return state_.active.load(std::memory_order_relaxed);
   }
 

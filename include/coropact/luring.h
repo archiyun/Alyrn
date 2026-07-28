@@ -13,7 +13,6 @@
 #include "coropact/luring/options.h" // IWYU pragma: export
 #include "coropact/luring/ring.h" // IWYU pragma: export
 #include "coropact/luring/server.h" // IWYU pragma: export
-#include "coropact/luring/stats.h" // IWYU pragma: export
 #include "coropact/luring/stream.h" // IWYU pragma: export
 #include "coropact/luring/timer.h" // IWYU pragma: export
 #include "coropact/luring/timer_queue.h" // IWYU pragma: export

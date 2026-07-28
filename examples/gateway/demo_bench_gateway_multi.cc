@@ -126,7 +126,7 @@ int main() {
   Service service("BenchGatewayMulti", reg);
   const coropact::gateway::PoolConfig pool_config{.max_idle_per_peer = max_idle_per_peer,
                                               .max_idle_total = max_idle_total};
-  service.set_pool_config(pool_config);
+  service.SetPoolConfig(pool_config);
   service.AddProxyRoute("/", "backend", algo);
 
   // Upstream streams are owned by their EventLoop. Keep one pool per worker

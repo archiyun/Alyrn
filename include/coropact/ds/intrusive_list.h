@@ -80,8 +80,8 @@ public:
     using reference = T&;
     using pointer = T*;
 
-    T& operator*() const noexcept { return *elem_of(node_); }
-    T* operator->() const noexcept { return elem_of(node_); }
+    T& operator*() const noexcept { return *ElemOf(node_); }
+    T* operator->() const noexcept { return ElemOf(node_); }
     iterator& operator++() noexcept {
       node_ = Next(node_);
       return *this;
@@ -109,8 +109,8 @@ public:
     const_iterator() noexcept = default;
     const_iterator(const iterator& it) noexcept : node_(it.node_) {}
 
-    const T& operator*() const noexcept { return *elem_of(node_); }
-    const T* operator->() const noexcept { return elem_of(node_); }
+    const T& operator*() const noexcept { return *ElemOf(node_); }
+    const T* operator->() const noexcept { return ElemOf(node_); }
     const_iterator& operator++() noexcept {
       node_ = Next(node_);
       return *this;
@@ -128,30 +128,30 @@ public:
     const Node* node_{nullptr};
   };
 
-  iterator begin() noexcept { return iterator(Next(&head_)); }
-  iterator end() noexcept { return iterator(&head_); }
-  const_iterator begin() const noexcept { return const_iterator(Next(&head_)); }
-  const_iterator end() const noexcept { return const_iterator(&head_); }
-  const_iterator cbegin() const noexcept { return begin(); }
-  const_iterator cend() const noexcept { return end(); }
+  iterator Begin() noexcept { return iterator(Next(&head_)); }
+  iterator End() noexcept { return iterator(&head_); }
+  const_iterator Begin() const noexcept { return const_iterator(Next(&head_)); }
+  const_iterator End() const noexcept { return const_iterator(&head_); }
+  const_iterator CBegin() const noexcept { return Begin(); }
+  const_iterator CEnd() const noexcept { return End(); }
 
   static Node* Next(Node* node) noexcept { return node->next_; }
   static const Node* Next(const Node* node) noexcept { return node->next_; }
   static Node* Prev(Node* node) noexcept { return node->prev_; }
   static const Node* Prev(const Node* node) noexcept { return node->prev_; }
-  static T* elem_of(Node* node) noexcept { return static_cast<T*>(node); }
-  static const T* elem_of(const Node* node) noexcept { return static_cast<const T*>(node); }
-  static Node* node_of(T* elem) noexcept { return static_cast<Node*>(elem); }
+  static T* ElemOf(Node* node) noexcept { return static_cast<T*>(node); }
+  static const T* ElemOf(const Node* node) noexcept { return static_cast<const T*>(node); }
+  static Node* NodeOf(T* elem) noexcept { return static_cast<Node*>(elem); }
 
   [[nodiscard]]
-  bool empty() const noexcept { return head_.next_ == &head_; }
+  bool Empty() const noexcept { return head_.next_ == &head_; }
   [[nodiscard]]
-  std::size_t size() const noexcept { return size_; }
+  std::size_t Size() const noexcept { return size_; }
 
-  T* front() noexcept;
-  const T* front() const noexcept;
-  T* back() noexcept;
-  const T* back() const noexcept;
+  T* Front() noexcept;
+  const T* Front() const noexcept;
+  T* Back() noexcept;
+  const T* Back() const noexcept;
 
   // Insert. Returns false for nullptr or when elem is already linked (in this
   // or any list).
@@ -177,7 +177,7 @@ public:
   bool Erase(T* elem) noexcept;
 
   // Erase by iterator. O(1). Returns the iterator following the erased element,
-  // which stays valid for continued traversal. Precondition: it != end().
+  // which stays valid for continued traversal. Precondition: it != End().
   iterator Erase(iterator it) noexcept;
   iterator Erase(const_iterator it) noexcept;
 
@@ -213,7 +213,7 @@ private:
   }
 
   void TakeFrom(IntrusiveList& other) noexcept {
-    if (other.empty()) return;
+    if (other.Empty()) return;
 
     head_.next_ = other.head_.next_;
     head_.prev_ = other.head_.prev_;
@@ -247,29 +247,51 @@ private:
   std::size_t size_{0};
 };
 
+// Range-for customization points. The container API itself uses Begin/End;
+// these lowercase overloads remain only for the language range protocol.
+template <class T, class Tag>
+auto begin(IntrusiveList<T, Tag>& list) noexcept {
+  return list.Begin();
+}
+
+template <class T, class Tag>
+auto end(IntrusiveList<T, Tag>& list) noexcept {
+  return list.End();
+}
+
+template <class T, class Tag>
+auto begin(const IntrusiveList<T, Tag>& list) noexcept {
+  return list.Begin();
+}
+
+template <class T, class Tag>
+auto end(const IntrusiveList<T, Tag>& list) noexcept {
+  return list.End();
+}
+
 #define ILIST_TMPL template <class T, class Tag>
 #define ILIST_TYPE IntrusiveList<T, Tag>
 
 ILIST_TMPL
-T* ILIST_TYPE::front() noexcept { return empty() ? nullptr : elem_of(head_.next_); }
+T* ILIST_TYPE::Front() noexcept { return Empty() ? nullptr : ElemOf(head_.next_); }
 
 ILIST_TMPL
-const T* ILIST_TYPE::front() const noexcept {
-  return empty() ? nullptr : elem_of(head_.next_);
+const T* ILIST_TYPE::Front() const noexcept {
+  return Empty() ? nullptr : ElemOf(head_.next_);
 }
 
 ILIST_TMPL
-T* ILIST_TYPE::back() noexcept { return empty() ? nullptr : elem_of(head_.prev_); }
+T* ILIST_TYPE::Back() noexcept { return Empty() ? nullptr : ElemOf(head_.prev_); }
 
 ILIST_TMPL
-const T* ILIST_TYPE::back() const noexcept {
-  return empty() ? nullptr : elem_of(head_.prev_);
+const T* ILIST_TYPE::Back() const noexcept {
+  return Empty() ? nullptr : ElemOf(head_.prev_);
 }
 
 ILIST_TMPL
 bool ILIST_TYPE::PushFront(T* elem) noexcept {
   if (elem == nullptr) return false;
-  Node* node = node_of(elem);
+  Node* node = NodeOf(elem);
   if (node->InList()) return false;
   LinkBetween(node, &head_, head_.next_);
   ++size_;
@@ -279,7 +301,7 @@ bool ILIST_TYPE::PushFront(T* elem) noexcept {
 ILIST_TMPL
 bool ILIST_TYPE::PushBack(T* elem) noexcept {
   if (elem == nullptr) return false;
-  Node* node = node_of(elem);
+  Node* node = NodeOf(elem);
   if (node->InList()) return false;
   LinkBetween(node, head_.prev_, &head_);
   ++size_;
@@ -289,8 +311,8 @@ bool ILIST_TYPE::PushBack(T* elem) noexcept {
 ILIST_TMPL
 bool ILIST_TYPE::InsertBefore(T* pos, T* elem) noexcept {
   if (pos == nullptr || elem == nullptr) return false;
-  Node* anchor = node_of(pos);
-  Node* node = node_of(elem);
+  Node* anchor = NodeOf(pos);
+  Node* node = NodeOf(elem);
   assert(anchor->InList());
   if (!anchor->InList() || node->InList()) return false;
   LinkBetween(node, anchor->prev_, anchor);
@@ -301,8 +323,8 @@ bool ILIST_TYPE::InsertBefore(T* pos, T* elem) noexcept {
 ILIST_TMPL
 bool ILIST_TYPE::InsertAfter(T* pos, T* elem) noexcept {
   if (pos == nullptr || elem == nullptr) return false;
-  Node* anchor = node_of(pos);
-  Node* node = node_of(elem);
+  Node* anchor = NodeOf(pos);
+  Node* node = NodeOf(elem);
   assert(anchor->InList());
   if (!anchor->InList() || node->InList()) return false;
   LinkBetween(node, anchor, anchor->next_);
@@ -312,24 +334,24 @@ bool ILIST_TYPE::InsertAfter(T* pos, T* elem) noexcept {
 
 ILIST_TMPL
 T* ILIST_TYPE::PopFront() noexcept {
-  if (empty()) return nullptr;
+  if (Empty()) return nullptr;
   Node* node = head_.next_;
   Unlink(node);
-  return elem_of(node);
+  return ElemOf(node);
 }
 
 ILIST_TMPL
 T* ILIST_TYPE::PopBack() noexcept {
-  if (empty()) return nullptr;
+  if (Empty()) return nullptr;
   Node* node = head_.prev_;
   Unlink(node);
-  return elem_of(node);
+  return ElemOf(node);
 }
 
 ILIST_TMPL
 bool ILIST_TYPE::Erase(T* elem) noexcept {
   if (elem == nullptr) return false;
-  Node* node = node_of(elem);
+  Node* node = NodeOf(elem);
   if (!node->InList()) return false;
   Unlink(node);
   return true;
@@ -371,7 +393,7 @@ std::size_t ILIST_TYPE::RemoveIf(Pred pred) {
   std::size_t removed = 0;
   for (Node* cur = head_.next_; cur != &head_;) {
     Node* next = cur->next_;
-    if (pred(*elem_of(cur))) {
+    if (pred(*ElemOf(cur))) {
       Unlink(cur);
       ++removed;
     }
@@ -382,7 +404,7 @@ std::size_t ILIST_TYPE::RemoveIf(Pred pred) {
 
 ILIST_TMPL
 void ILIST_TYPE::MoveToBack(T* elem) noexcept {
-  Node* node = node_of(elem);
+  Node* node = NodeOf(elem);
   assert(node->InList());
   SpliceOut(node);
   LinkBetween(node, head_.prev_, &head_);
@@ -390,7 +412,7 @@ void ILIST_TYPE::MoveToBack(T* elem) noexcept {
 
 ILIST_TMPL
 void ILIST_TYPE::MoveToFront(T* elem) noexcept {
-  Node* node = node_of(elem);
+  Node* node = NodeOf(elem);
   assert(node->InList());
   SpliceOut(node);
   LinkBetween(node, &head_, head_.next_);
@@ -399,7 +421,7 @@ void ILIST_TYPE::MoveToFront(T* elem) noexcept {
 ILIST_TMPL
 void ILIST_TYPE::Splice(IntrusiveList& other) noexcept {
   assert(&other != this);
-  if (other.empty()) return;
+  if (other.Empty()) return;
   Node* first = other.head_.next_;
   Node* last = other.head_.prev_;
   Node* tail = head_.prev_;

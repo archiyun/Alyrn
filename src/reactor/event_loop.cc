@@ -89,7 +89,7 @@ EventLoop::EventLoop()
 
   // The wakeup fd is monitored like a normal Channel so other threads can
   // interrupt epoll_wait when they queue work into this loop.
-  wakeup_channel_.set_read_callback([this](coropact::time::Timestamp) { HandleRead(); });
+  wakeup_channel_.SetReadCallback(&EventLoop::DispatchWakeupRead, this);
   wakeup_channel_.EnableReading();
 
   LOG_DEBUGF("event loop created: wakeup_fd={}", wakeup_fd_);
@@ -211,6 +211,11 @@ void EventLoop::Wakeup() {
 }
 
 void EventLoop::HandleRead() { ReadEventfd(wakeup_fd_); }
+
+void EventLoop::DispatchWakeupRead(void* context,
+                                   coropact::time::Timestamp /*receive_time*/) noexcept {
+  static_cast<EventLoop*>(context)->HandleRead();
+}
 
 void EventLoop::DoPendingFunctors() {
   std::vector<Functor> functors;

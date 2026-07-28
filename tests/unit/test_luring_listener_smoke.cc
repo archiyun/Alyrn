@@ -98,7 +98,7 @@ coropact::base::Result<int> ConnectClient(const coropact::net::Endpoint& address
     return std::unexpected(coropact::base::CurrentErrno());
   }
 
-  int r = ::connect(fd, address.sock_addr(), address.sock_addr_len());
+  int r = ::connect(fd, address.SockAddr(), address.SockAddrLen());
   if (r < 0 && errno != EINPROGRESS) {
     auto error = coropact::base::CurrentErrno();
     ::close(fd);
@@ -180,7 +180,7 @@ bool CheckAccept() {
   return Check(*completions >= 1, "accept did not produce a completion") &&
          Check(accepted.has_value(), "accept coroutine did not resume") &&
          Check(accepted->has_value(), "Accept returned an error") &&
-         Check(accepted->value().fd() >= 0, "Accept returned an invalid stream") &&
+         Check(accepted->value().Fd() >= 0, "Accept returned an invalid stream") &&
          Check(resumed_with_scheduler, "accept resumed without current scheduler");
 }
 

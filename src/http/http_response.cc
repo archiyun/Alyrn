@@ -9,11 +9,11 @@ namespace coropact::http {
 HttpResponse::HttpResponse(bool close_connection)
     : close_connection_(close_connection) {}
 
-void HttpResponse::set_status_code(StatusCode code) { status_code_ = code; }
+void HttpResponse::SetStatusCode(StatusCode code) { status_code_ = code; }
 
-void HttpResponse::set_body(std::string body) { body_ = std::move(body); }
+void HttpResponse::SetBody(std::string body) { body_ = std::move(body); }
 
-void HttpResponse::set_content_type(std::string_view content_type) {
+void HttpResponse::SetContentType(std::string_view content_type) {
   headers_["Content-Type"] = std::string(content_type);
 }
 
@@ -23,9 +23,9 @@ void HttpResponse::AddHeader(std::string_view key, std::string_view value) {
   headers_.insert_or_assign(std::string(key), std::string(value));
 }
 
-void HttpResponse::set_close_connection(bool close) { close_connection_ = close; }
+void HttpResponse::SetCloseConnection(bool close) { close_connection_ = close; }
 
-bool HttpResponse::close_connection() const { return close_connection_; }
+bool HttpResponse::CloseConnection() const { return close_connection_; }
 
 std::string HttpResponse::ToString() const {
   std::string out;

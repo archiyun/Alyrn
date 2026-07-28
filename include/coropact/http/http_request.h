@@ -65,52 +65,54 @@ class HttpRequest {
   HttpRequest(HttpRequest&&) noexcept = default;
   HttpRequest& operator=(HttpRequest&&) noexcept = default;
 
-  void set_method(Method m) { method_ = m; }
+  void SetMethod(Method m) { method_ = m; }
   Method method() const { return method_; }
 
-  void set_version(Version v) { version_ = v; }
+  void SetVersion(Version v) { version_ = v; }
   Version version() const { return version_; }
 
-  void set_path(std::string_view p) { path_.assign(p); }
+  void SetPath(std::string_view p) { path_.assign(p); }
   std::string_view path() const { return path_; }
 
-  void set_query(std::string_view q) { query_.assign(q); }
+  void SetQuery(std::string_view q) { query_.assign(q); }
   std::string_view query() const { return query_; }
 
   void AddHeader(std::string_view field, std::string_view value);
   HttpString MakeHeaderKey(std::string_view field) const;
   void AddHeaderLowered(HttpString field, std::string_view value);
-  void set_header(std::string_view field, std::string_view value);
+  void SetHeader(std::string_view field, std::string_view value);
   bool RemoveHeader(std::string_view field);
 
-  std::string_view header(std::string_view field) const;
+  std::string_view Header(std::string_view field) const;
   std::string_view host() const { return host_; }
   std::string_view connection() const { return connection_; }
-  std::string_view content_length() const { return content_length_; }
+  std::string_view ContentLength() const { return content_length_; }
   const HeaderMap& headers() const { return headers_; }
 
-  void set_body(std::string_view b) { body_.assign(b); }
+  void SetBody(std::string_view b) { body_.assign(b); }
   std::string_view body() const { return body_; }
 
-  bool keep_alive() const;
+  bool KeepAlive() const;
 
   // path_params_ is a plain std::vector (not HttpVector) because Router
   // produces std::vector<PathParam> and PathParam itself holds std::string
   // members; pmr-fying just the spine of this 0~2-entry vector is not
   // worth the type ripple through the router.
-  void set_path_params(std::vector<PathParam> p) { path_params_ = std::move(p); }
+  void SetPathParams(std::vector<coropact::http::PathParam> p) {
+    path_params_ = std::move(p);
+  }
 
   // Linear scan: path_params_ typically holds 0~2 entries, where linear
   // search beats hashing both in instructions and in allocation cost.
-  std::string_view path_param(std::string_view key) const {
+  std::string_view PathParam(std::string_view key) const {
     for (const auto& p : path_params_) {
       if (p.key == key) return p.value;
     }
     return {};
   }
 
-  void set_receive_time(coropact::time::Timestamp ts) { receive_time_ = ts; }
-  coropact::time::Timestamp receive_time() const { return receive_time_; }
+  void SetReceiveTime(coropact::time::Timestamp ts) { receive_time_ = ts; }
+  coropact::time::Timestamp ReceiveTime() const { return receive_time_; }
 
   void Reset();
 
@@ -129,7 +131,7 @@ class HttpRequest {
   std::string_view host_;
   std::string_view connection_;
   std::string_view content_length_;
-  std::vector<PathParam> path_params_;       // e.g. /users/:id -> id = 123
+  std::vector<coropact::http::PathParam> path_params_;  // e.g. /users/:id -> id = 123
   coropact::time::Timestamp receive_time_;
 };
 

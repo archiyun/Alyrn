@@ -46,7 +46,7 @@ public:
   void PrepMsgRing(io_uring_sqe* sqe, int target_ring_fd, std::uint32_t type,
                    std::uint64_t data) noexcept;
   [[nodiscard]]
-  int fd() const noexcept { return initialized_ ? ring_.ring_fd : -1; }
+  int Fd() const noexcept { return initialized_ ? ring_.ring_fd : -1; }
 
   template <class F>
   [[nodiscard]]
@@ -57,7 +57,7 @@ public:
       return std::size_t{0};
     }
     if (result < 0) {
-      return std::unexpected(base::make_neg_errno(result));
+      return std::unexpected(base::MakeNegErrno(result));
     }
 
     unsigned head = 0;
@@ -73,7 +73,7 @@ public:
     return count;
   }
 
-  io_uring* native() noexcept { return &ring_; }
+  io_uring* Native() noexcept { return &ring_; }
 
 private:
   explicit LUringRing(io_uring ring) noexcept : ring_(ring), initialized_(true) {}

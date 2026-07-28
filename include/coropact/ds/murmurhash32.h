@@ -15,7 +15,7 @@
 
 namespace coropact::ds {
 
-inline uint32_t rotl32(uint32_t x, int8_t r) {
+inline uint32_t Rotl32(uint32_t x, int8_t r) {
     return (x << r) | (x >> (32 - r));
 }
 
@@ -37,11 +37,11 @@ inline uint32_t MurmurHash3_x86_32(const void* key, size_t len, uint32_t seed = 
         uint32_t k1 = blocks[i];
 
         k1 *= c1;
-        k1 = rotl32(k1, 15);
+        k1 = Rotl32(k1, 15);
         k1 *= c2;
 
         h1 ^= k1;
-        h1 = rotl32(h1, 13);
+        h1 = Rotl32(h1, 13);
         h1 = h1 * 5 + 0xe6546b64;
     }
 
@@ -54,7 +54,7 @@ inline uint32_t MurmurHash3_x86_32(const void* key, size_t len, uint32_t seed = 
         case 1:
             k1 ^= static_cast<uint32_t>(tail[0]);
             k1 *= c1;
-            k1 = rotl32(k1, 15);
+            k1 = Rotl32(k1, 15);
             k1 *= c2;
             h1 ^= k1;
     }

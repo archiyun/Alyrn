@@ -33,7 +33,7 @@ void TestSingleSmallAlloc() {
   void* a = pool->Allocate(64);
   EXPECT(a != nullptr,             "small alloc returns non-null");
   EXPECT(IsAligned(a, alignof(std::max_align_t)), "default-aligned");
-  EXPECT(pool->chunk_count() == 1,  "still 1 chunk");
+  EXPECT(pool->ChunkCount() == 1,  "still 1 chunk");
   EXPECT(pool->ByteUsed() >= 64,   "ByteUsed >= request");
 }
 
@@ -48,7 +48,7 @@ void TestManyAllocsCrossChunk() {
     ptrs.push_back(p);
   }
 
-  EXPECT(pool->chunk_count() > 1, "must have spilled into new chunk(s)");
+  EXPECT(pool->ChunkCount() > 1, "must have spilled into new chunk(s)");
 
   for (std::size_t i = 0; i < ptrs.size(); ++i) {
     for (std::size_t j = i + 1; j < ptrs.size(); ++j) {
@@ -74,7 +74,7 @@ void TestLargeAllocBypass() {
   auto pool = Pool::Create(/*chunk_size=*/256);
   void* big = pool->Allocate(8192);
   EXPECT(big != nullptr,            "large alloc returns non-null");
-  EXPECT(pool->large_count() == 1,   "LargeCount incremented");
+  EXPECT(pool->LargeCount() == 1,   "LargeCount incremented");
   std::memset(big, 0xAB, 8192);
 }
 
@@ -82,13 +82,13 @@ void TestFreeAndReuseLargeSlot() {
   auto pool = Pool::Create(/*chunk_size=*/256);
   void* a = pool->Allocate(8192);
   void* b = pool->Allocate(8192);
-  EXPECT(pool->large_count() == 2, "two large blocks");
+  EXPECT(pool->LargeCount() == 2, "two large blocks");
 
   pool->Free(a);
-  EXPECT(pool->large_count() == 1, "free dropped one large slot");
+  EXPECT(pool->LargeCount() == 1, "free dropped one large slot");
 
   void* c = pool->Allocate(8192);
-  EXPECT(pool->large_count() == 2, "new large alloc reuses slot");
+  EXPECT(pool->LargeCount() == 2, "new large alloc reuses slot");
   (void)b; (void)c;
 }
 
@@ -151,13 +151,13 @@ void TestCleanupWithDataPayload() {
 void TestResetReusesChunks() {
   auto pool = Pool::Create(/*chunk_size=*/256);
   for (int i = 0; i < 16; ++i) (void)pool->Allocate(64);
-  std::size_t chunks_before = pool->chunk_count();
+  std::size_t chunks_before = pool->ChunkCount();
   EXPECT(chunks_before > 1, "spilled into more than one chunk");
 
   pool->Reset();
-  EXPECT(pool->chunk_count() == chunks_before, "Reset keeps chunks");
+  EXPECT(pool->ChunkCount() == chunks_before, "Reset keeps chunks");
   EXPECT(pool->ByteUsed() == 0,               "Reset zeros used bytes");
-  EXPECT(pool->large_count() == 0,             "Reset drops large blocks");
+  EXPECT(pool->LargeCount() == 0,             "Reset drops large blocks");
 
   void* p = pool->Allocate(64);
   EXPECT(p != nullptr, "alloc after Reset works");
@@ -203,12 +203,12 @@ void TestStressNoCrash() {
     else if (i % 7 == 0)  pool->RegisterCleanup(&CleanupHandler, 32);
     else                  (void)pool->Allocate(64);
   }
-  EXPECT(pool->chunk_count() >= 2,  "stress test grew chunks");
-  EXPECT(pool->large_count() >= 1,  "stress test grew large list");
+  EXPECT(pool->ChunkCount() >= 2,  "stress test grew chunks");
+  EXPECT(pool->LargeCount() >= 1,  "stress test grew large list");
 
   pool->Reset();
   EXPECT(pool->ByteUsed() == 0,    "stress Reset clean");
-  EXPECT(pool->large_count() == 0,  "stress Reset large gone");
+  EXPECT(pool->LargeCount() == 0,  "stress Reset large gone");
 }
 
 }  // namespace

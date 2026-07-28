@@ -71,8 +71,8 @@ private:
   void ArmFallback(time::Timestamp deadline) noexcept;
   void Update(time::Timestamp deadline) noexcept;
 
-  LUringOp* driver_op() noexcept { return static_cast<DriverOpHook*>(this); }
-  LUringOp* control_op() noexcept { return static_cast<ControlOpHook*>(this); }
+  LUringOp* DriverOp() noexcept { return static_cast<DriverOpHook*>(this); }
+  LUringOp* ControlOp() noexcept { return static_cast<ControlOpHook*>(this); }
 
   LUringLoop* loop_;
   time::TimerTree timers_;

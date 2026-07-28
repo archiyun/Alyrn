@@ -138,7 +138,7 @@ public:
     while (!bytes.empty()) {
       EnsureOneTailBlock(bytes.size());
 
-      Block* tail = blocks_.back();
+      Block* tail = blocks_.Back();
       const std::size_t n = std::min(bytes.size(), tail->WritableBytes());
       std::memcpy(tail->WriteData(), bytes.data(), n);
 
@@ -201,7 +201,7 @@ private:
   }
 
   void EnsureOneTailBlock(std::size_t hint) {
-    Block* tail = blocks_.back();
+    Block* tail = blocks_.Back();
     if (tail != nullptr && tail->WritableBytes() > 0) return;
     Block* block = NewBlock(std::max(block_size_, hint));
     const bool linked = blocks_.PushBack(block);
@@ -213,7 +213,7 @@ private:
     std::size_t writable = 0;
     std::size_t reserved = 0;
 
-    Block* tail = blocks_.back();
+    Block* tail = blocks_.Back();
     if (tail != nullptr && tail->WritableBytes() > 0) {
       tail->reserved_for_write = true;
       writable += tail->WritableBytes();
@@ -252,7 +252,7 @@ private:
 
   void DrainCommitted(std::size_t n) noexcept {
     while (n > 0) {
-      Block* front = blocks_.front();
+      Block* front = blocks_.Front();
       if (front == nullptr) break;
 
       const std::size_t m = std::min(n, front->ReadableBytes());

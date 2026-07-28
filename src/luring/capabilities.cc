@@ -9,6 +9,7 @@
 #include <expected>
 
 #include "coropact/base/error.h"
+#include "coropact/base/try.h"
 #include "coropact/io/io_backend.h"
 #include "coropact/luring/options.h"
 
@@ -73,13 +74,13 @@ base::Result<coropact::io::CapabilitySet> ProbeCapabilities(const LUringOptions&
 
   int result = io_uring_queue_init_params(options.entries, &ring, &params);
   if (result < 0) {
-    return std::unexpected(base::make_neg_errno(result));
+    return std::unexpected(base::MakeNegErrno(result));
   }
 
   io_uring_probe* probe = io_uring_get_probe_ring(&ring);
   if (probe == nullptr) {
     io_uring_queue_exit(&ring);
-    return std::unexpected(base::make_errno(ENOTSUP));
+    return std::unexpected(base::MakeErrno(ENOTSUP));
   }
 
   coropact::io::CapabilitySet caps;
@@ -123,13 +124,10 @@ base::Result<coropact::io::CapabilitySet> ProbeCapabilities(const LUringOptions&
   return caps;
 }
 
-base::Result<coropact::io::BackendBinding> BindLUring(const LUringOptions& options,
-                                                  coropact::io::CapabilitySet active_profile) noexcept {
-  auto caps = ProbeCapabilities(options);
-  if (!caps.has_value()) {
-    return std::unexpected(caps.error());
-  }
-  return coropact::io::BindBackend(coropact::io::Backend::kLuring, *caps, active_profile);
+base::Result<coropact::io::BackendBinding> BindLUring(
+    const LUringOptions& options, coropact::io::CapabilitySet active_profile) noexcept {
+  auto caps = COROPACT_TRY(ProbeCapabilities(options));
+  return coropact::io::BindBackend(coropact::io::Backend::kLuring, caps, active_profile);
 }
 
 }  // namespace coropact::luring

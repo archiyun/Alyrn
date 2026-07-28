@@ -36,9 +36,9 @@ bool Expect(bool condition, const char* message) {
 
 bool TestEmpty() {
   TimerHeap heap;
-  if (!Expect(heap.empty(), "fresh heap is empty")) return false;
-  if (!Expect(heap.size() == 0, "fresh heap size is 0")) return false;
-  if (!Expect(heap.earliest() == nullptr, "earliest() on empty is nullptr")) {
+  if (!Expect(heap.Empty(), "fresh heap is empty")) return false;
+  if (!Expect(heap.Size() == 0, "fresh heap size is 0")) return false;
+  if (!Expect(heap.Earliest() == nullptr, "Earliest() on empty is nullptr")) {
     return false;
   }
   return true;
@@ -60,14 +60,14 @@ bool TestInsertEraseAndPopWhile() {
     if (!Expect(job.InHeap(), "InHeap() is true after Insert")) return false;
   }
 
-  if (!Expect(heap.size() == jobs.size(), "heap size after insert")) return false;
+  if (!Expect(heap.Size() == jobs.size(), "heap size after insert")) return false;
   // deadlines 30,10,20,10,40 -> min deadline 10, tie broken by smaller id (2).
-  if (!Expect(heap.earliest() == &jobs[1], "earliest after insert")) return false;
+  if (!Expect(heap.Earliest() == &jobs[1], "earliest after insert")) return false;
 
   if (!Expect(!heap.Insert(&jobs[1]), "duplicate Insert returns false")) {
     return false;
   }
-  if (!Expect(heap.size() == jobs.size(), "duplicate insert keeps size")) {
+  if (!Expect(heap.Size() == jobs.size(), "duplicate insert keeps size")) {
     return false;
   }
 
@@ -76,7 +76,7 @@ bool TestInsertEraseAndPopWhile() {
   if (!Expect(!heap.Erase(&jobs[1]), "erase missing element returns false")) {
     return false;
   }
-  if (!Expect(heap.earliest() == &jobs[3], "earliest after erase")) return false;
+  if (!Expect(heap.Earliest() == &jobs[3], "earliest after erase")) return false;
 
   auto popped =
       heap.PopWhile([](const TimerJob* job) { return job->deadline_ms <= 30; });
@@ -85,8 +85,8 @@ bool TestInsertEraseAndPopWhile() {
   if (!Expect(popped == expected, "PopWhile returns sorted matching elements")) {
     return false;
   }
-  if (!Expect(heap.size() == 1, "heap size after PopWhile")) return false;
-  if (!Expect(heap.earliest() == &jobs[4], "remaining earliest after PopWhile")) {
+  if (!Expect(heap.Size() == 1, "heap size after PopWhile")) return false;
+  if (!Expect(heap.Earliest() == &jobs[4], "remaining earliest after PopWhile")) {
     return false;
   }
   return true;
@@ -108,7 +108,7 @@ bool TestPopWhileOnPop() {
   if (!Expect((seen == std::vector<int>{0, 1, 2}), "on_pop sees key order")) {
     return false;
   }
-  if (!Expect(heap.size() == 3, "remaining size after on_pop PopWhile")) {
+  if (!Expect(heap.Size() == 3, "remaining size after on_pop PopWhile")) {
     return false;
   }
   return true;
@@ -140,9 +140,9 @@ bool TestClearReleasesNodes() {
 
     heap.Clear();
 
-    if (!Expect(heap.empty(), "clear: heap is empty")) return false;
-    if (!Expect(heap.size() == 0, "clear: size is zero")) return false;
-    if (!Expect(heap.earliest() == nullptr, "clear: earliest is nullptr")) return false;
+    if (!Expect(heap.Empty(), "clear: heap is empty")) return false;
+    if (!Expect(heap.Size() == 0, "clear: size is zero")) return false;
+    if (!Expect(heap.Earliest() == nullptr, "clear: Earliest is nullptr")) return false;
     for (auto& job : jobs) {
       if (!Expect(!job.InHeap(), "clear: node hook is reset")) return false;
     }
@@ -171,7 +171,7 @@ bool TestRandomizedStress() {
       jobs.emplace_back(i, static_cast<int64_t>(rng() % 500));
     }
     for (auto& job : jobs) heap.Insert(&job);
-    if (!Expect(heap.size() == static_cast<std::size_t>(n), "stress: size")) {
+    if (!Expect(heap.Size() == static_cast<std::size_t>(n), "stress: size")) {
       return false;
     }
 
@@ -183,15 +183,15 @@ bool TestRandomizedStress() {
         ++erased;
       }
     }
-    if (!Expect(heap.size() == static_cast<std::size_t>(n) - erased,
+    if (!Expect(heap.Size() == static_cast<std::size_t>(n) - erased,
                 "stress: size after erase")) {
       return false;
     }
 
     // Drain: earliest() must be non-decreasing under TimerJobLess.
     const TimerJob* prev = nullptr;
-    while (!heap.empty()) {
-      TimerJob* top = heap.earliest();
+    while (!heap.Empty()) {
+      TimerJob* top = heap.Earliest();
       if (prev != nullptr &&
           !Expect(!TimerJobLess(top, prev), "stress: monotonic drain")) {
         return false;
@@ -199,7 +199,7 @@ bool TestRandomizedStress() {
       prev = top;
       if (!Expect(heap.Erase(top), "stress: drain erase")) return false;
     }
-    if (!Expect(heap.empty(), "stress: empty after drain")) return false;
+    if (!Expect(heap.Empty(), "stress: empty after drain")) return false;
   }
   return true;
 }

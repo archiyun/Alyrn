@@ -91,9 +91,9 @@ void ApplyGatewayConfig(const GatewayConfig& config, Gateway& gateway) {
     const GatewayStatusEndpointConfig endpoint = config.status_endpoint;
     gateway.Get(endpoint.path,
                 [endpoint](const coropact::http::HttpRequest&, coropact::http::HttpResponse& resp) {
-                  resp.set_status_code(coropact::http::StatusCode::Ok);
-                  resp.set_content_type(endpoint.content_type);
-                  resp.set_body(endpoint.body);
+                  resp.SetStatusCode(coropact::http::StatusCode::Ok);
+                  resp.SetContentType(endpoint.content_type);
+                  resp.SetBody(endpoint.body);
                 });
   }
 

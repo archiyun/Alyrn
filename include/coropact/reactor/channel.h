@@ -3,7 +3,6 @@
 #pragma once
 
 #include <cstdint>
-#include <functional>
 #include <memory>
 #include <utility>
 
@@ -34,8 +33,8 @@ class Channel {
 public:
   COROPACT_DELETE_COPY(Channel);
 
-  using EventCallback = std::function<void()>;
-  using ReadEventCallback = std::function<void(coropact::time::Timestamp)>;
+  using EventCallback = void (*)(void*) noexcept;
+  using ReadEventCallback = void (*)(void*, coropact::time::Timestamp) noexcept;
 
   explicit Channel(EventLoop* loop, int fd);
   ~Channel() = default;
@@ -51,22 +50,34 @@ public:
   // callbacks.
   void HandleEvent(coropact::time::Timestamp receive_time);
 
-  void set_read_callback(ReadEventCallback callback) { read_callback_ = std::move(callback); }
-  void set_write_callback(EventCallback callback) { write_callback_ = std::move(callback); }
-  void set_close_callback(EventCallback callback) { close_callback_ = std::move(callback); }
-  void set_error_callback(EventCallback callback) { error_callback_ = std::move(callback); }
+  void SetReadCallback(ReadEventCallback callback, void* context) noexcept {
+    read_callback_ = callback;
+    read_context_ = context;
+  }
+  void SetWriteCallback(EventCallback callback, void* context) noexcept {
+    write_callback_ = callback;
+    write_context_ = context;
+  }
+  void SetCloseCallback(EventCallback callback, void* context) noexcept {
+    close_callback_ = callback;
+    close_context_ = context;
+  }
+  void SetErrorCallback(EventCallback callback, void* context) noexcept {
+    error_callback_ = callback;
+    error_context_ = context;
+  }
 
   // Ties the Channel to an owner object so callbacks are not dispatched after
   // the owner has already been destroyed.
   void Tie(const std::shared_ptr<void>&);
 
   [[nodiscard]]
-  int fd() const { return fd_; }
+  int Fd() const { return fd_; }
   [[nodiscard]]
-  int events() const { return events_; }
+  int Events() const { return events_; }
   [[nodiscard]]
-  int revents() const { return revents_; }
-  void set_revents(int revt) { revents_ = revt; }
+  int Revents() const { return revents_; }
+  void SetRevents(int revt) { revents_ = revt; }
 
   // Updates the local interest set and immediately synchronizes it with the
   // underlying Poller.
@@ -99,7 +110,7 @@ public:
   bool IsReading() const { return static_cast<bool>(events_ & kReadEvent); }
 
   // Switches the Channel between level-triggered and edge-triggered mode.
-  void set_edge_triggered(bool et_mode) {
+  void SetEdgeTriggered(bool et_mode) {
     trigger_mode_ = et_mode ? TriggerMode::kEdgeTriggered : TriggerMode::kLevelTriggered;
   }
 
@@ -149,10 +160,14 @@ private:
   std::weak_ptr<void> tie_;
   bool tied_;
 
-  ReadEventCallback read_callback_;
-  EventCallback write_callback_;
-  EventCallback close_callback_;
-  EventCallback error_callback_;
+  ReadEventCallback read_callback_{nullptr};
+  EventCallback write_callback_{nullptr};
+  EventCallback close_callback_{nullptr};
+  EventCallback error_callback_{nullptr};
+  void* read_context_{nullptr};
+  void* write_context_{nullptr};
+  void* close_context_{nullptr};
+  void* error_context_{nullptr};
 };
 
 }  // namespace coropact::reactor

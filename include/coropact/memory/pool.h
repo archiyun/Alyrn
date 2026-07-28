@@ -74,9 +74,9 @@ public:
   void* RegisterCleanup(void (*handler)(void*), std::size_t data_size);
 
   [[nodiscard]]
-  std::size_t chunk_count() const noexcept;
+  std::size_t ChunkCount() const noexcept;
   [[nodiscard]]
-  std::size_t large_count() const noexcept;
+  std::size_t LargeCount() const noexcept;
   [[nodiscard]]
   std::size_t ByteUsed() const noexcept;
 
@@ -265,7 +265,7 @@ inline void* Pool::RegisterCleanup(void (*cleanup_handler)(void*), std::size_t d
   return node->data;
 }
 
-inline std::size_t Pool::chunk_count() const noexcept {
+inline std::size_t Pool::ChunkCount() const noexcept {
   std::size_t count = 1;  // The first chunk contains the Pool object.
   for (auto* chunk = first_chunk_.next; chunk != nullptr; chunk = chunk->next) {
     ++count;
@@ -273,7 +273,7 @@ inline std::size_t Pool::chunk_count() const noexcept {
   return count;
 }
 
-inline std::size_t Pool::large_count() const noexcept {
+inline std::size_t Pool::LargeCount() const noexcept {
   std::size_t count = 0;
   for (auto* node = large_head_; node != nullptr; node = node->next) {
     if (node->allocation != nullptr) {

@@ -470,12 +470,12 @@ bool TestProxyDeadlineReleasesBulkheadSlot() {
     return false;
   if (!Expect(elapsed < 1500ms, "upstream deadline must bound client latency")) return false;
 
-  for (int i = 0; i < 100 && (peer->active_request() != 0 || up->active_requests() != 0); ++i) {
+  for (int i = 0; i < 100 && (peer->ActiveRequest() != 0 || up->ActiveRequests() != 0); ++i) {
     std::this_thread::sleep_for(5ms);
   }
-  if (!Expect(peer->active_request() == 0, "deadline must release peer active accounting"))
+  if (!Expect(peer->ActiveRequest() == 0, "deadline must release peer active accounting"))
     return false;
-  if (!Expect(up->active_requests() == 0, "deadline must release upstream bulkhead slot"))
+  if (!Expect(up->ActiveRequests() == 0, "deadline must release upstream bulkhead slot"))
     return false;
 
   // A second request must acquire the same single slot and reach the backend;

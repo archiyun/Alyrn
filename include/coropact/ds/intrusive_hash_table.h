@@ -99,13 +99,13 @@ public:
   ~IntrusiveHashTable() { Clear(); }
 
   [[nodiscard]]
-  bool empty() const noexcept { return size_ == 0; }
+  bool Empty() const noexcept { return size_ == 0; }
 
   [[nodiscard]]
-  std::size_t size() const noexcept { return size_; }
+  std::size_t Size() const noexcept { return size_; }
 
   [[nodiscard]]
-  std::size_t bucket_count() const noexcept { return buckets_.size(); }
+  std::size_t BucketCount() const noexcept { return buckets_.size(); }
 
   bool Insert(T* elem);
 

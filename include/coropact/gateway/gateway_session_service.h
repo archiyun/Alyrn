@@ -64,7 +64,7 @@ public:
 
   void EnablePerIPRateLimit(double rate, double burst) { core_.EnablePerIPRateLimit(rate, burst); }
 
-  void set_pool_config(PoolConfig cfg) { pool_config_ = cfg; }
+  void SetPoolConfig(PoolConfig cfg) { pool_config_ = cfg; }
 
   const Route* MatchRoute(std::string_view path) const { return core_.MatchRoute(path); }
 

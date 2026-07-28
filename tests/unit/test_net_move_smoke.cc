@@ -34,6 +34,20 @@ bool Check(bool condition, const char* message) {
   return true;
 }
 
+struct ChannelReadContext {
+  int fd;
+  bool* called;
+  coropact::reactor::EventLoop* loop;
+};
+
+void DrainChannelRead(void* raw, coropact::time::Timestamp) noexcept {
+  auto& context = *static_cast<ChannelReadContext*>(raw);
+  char byte = 0;
+  ::read(context.fd, &byte, sizeof(byte));
+  *context.called = true;
+  context.loop->Quit();
+}
+
 bool MakeSocketPair(int fds[2]) {
   return ::socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, fds) == 0;
 }
@@ -54,16 +68,12 @@ bool TestChannelMove() {
 
   bool read_called = false;
   coropact::reactor::Channel source(&loop, first[0]);
-  source.set_edge_triggered(true);
-  source.set_read_callback([&](coropact::time::Timestamp) {
-    char byte = 0;
-    ::read(first[0], &byte, sizeof(byte));
-    read_called = true;
-    loop.Quit();
-  });
+  source.SetEdgeTriggered(true);
+  ChannelReadContext context{first[0], &read_called, &loop};
+  source.SetReadCallback(DrainChannelRead, &context);
 
   coropact::reactor::Channel moved(std::move(source));
-  if (!Check(source.fd() == -1 && moved.fd() == first[0],
+  if (!Check(source.Fd() == -1 && moved.Fd() == first[0],
              "Channel move construction should transfer the fd association") ||
       !Check(moved.IsEdgeTriggered(), "Channel move construction should transfer mode")) {
     ::close(first[0]);
@@ -87,7 +97,7 @@ bool TestChannelMove() {
   ::close(first[0]);
   ::close(first[1]);
   ::close(second[1]);
-  return Check(moved.fd() == -1 && target.fd() == first[0] && read_called,
+  return Check(moved.Fd() == -1 && target.Fd() == first[0] && read_called,
                "Channel move assignment should preserve callbacks and registration use");
 }
 
@@ -210,7 +220,7 @@ int ConnectNonBlocking(const coropact::net::Endpoint& address) {
     return -1;
   }
 
-  const int rc = ::connect(fd, address.sock_addr(), address.sock_addr_len());
+  const int rc = ::connect(fd, address.SockAddr(), address.SockAddrLen());
   if (rc == 0 || errno == EINPROGRESS) {
     return fd;
   }

@@ -251,7 +251,7 @@ void ProxyPass::BuildRequestInto(const coropact::http::HttpRequest& req, const U
     AppendHeader(out, "x-request-id", forwarded.request_id);
   }
 
-  AppendHeader(out, "host", peer.host_port());
+  AppendHeader(out, "host", peer.HostPort());
   out += "connection: keep-alive\r\n\r\n";
   if (!req.body().empty()) out += req.body();
 }

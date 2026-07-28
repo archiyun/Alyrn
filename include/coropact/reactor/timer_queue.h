@@ -43,6 +43,7 @@ private:
   static constexpr std::size_t kTimerQueueMax = 1 << 15;
 
   void HandleRead();
+  static void DispatchRead(void* context, coropact::time::Timestamp receive_time) noexcept;
   void ResetTimerfd(coropact::time::Timestamp expiration);
 
   EventLoop* loop_;

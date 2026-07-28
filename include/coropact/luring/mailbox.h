@@ -107,12 +107,12 @@ public:
   }
 
   [[nodiscard]]
-  std::size_t size() const noexcept {
+  std::size_t Size() const noexcept {
     return queue_.Size();
   }
 
   [[nodiscard]]
-  static constexpr std::size_t capacity() noexcept {
+  static constexpr std::size_t Capacity() noexcept {
     return kCapacity;
   }
 

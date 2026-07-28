@@ -33,7 +33,7 @@ void HttpRequest::AddHeaderLowered(HttpString field, std::string_view value) {
   }
 }
 
-std::string_view HttpRequest::header(std::string_view field) const {
+std::string_view HttpRequest::Header(std::string_view field) const {
   const HeaderNameEqual equal;
   if (equal(field, "host")) return host_;
   if (equal(field, "connection")) return connection_;
@@ -46,7 +46,7 @@ std::string_view HttpRequest::header(std::string_view field) const {
   return it->second;
 }
 
-void HttpRequest::set_header(std::string_view field, std::string_view value) {
+void HttpRequest::SetHeader(std::string_view field, std::string_view value) {
   auto val = detail::Trim(value, res_.get());
   auto it = headers_.find(field);
   if (it == headers_.end()) {
@@ -66,7 +66,7 @@ bool HttpRequest::RemoveHeader(std::string_view field) {
   return true;
 }
 
-bool HttpRequest::keep_alive() const {
+bool HttpRequest::KeepAlive() const {
   const auto conn = connection_;
   if (version_ == Version::Http11) {
     return conn != "close";

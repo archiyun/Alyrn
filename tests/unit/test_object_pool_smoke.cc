@@ -43,14 +43,14 @@ bool TestAcquireAndRelease() {
 
     if (!Expect(first != nullptr, "first acquire should succeed")) return false;
     if (!Expect(second != nullptr, "second acquire should succeed")) return false;
-    if (!Expect(pool.used_count() == 2, "used_count should be updated after acquire")) return false;
+    if (!Expect(pool.UsedCount() == 2, "UsedCount should be updated after acquire")) return false;
     if (!Expect(first->payload == "alpha", "first object payload should match")) return false;
 
     pool.Release(first);
     pool.Release(second);
 
-    if (!Expect(pool.used_count() == 0, "used_count should return to zero after release")) return false;
-    if (!Expect(pool.free_count() == pool.capacity(), "all slots should be returned after release")) return false;
+        if (!Expect(pool.UsedCount() == 0, "UsedCount should return to zero after release")) return false;
+        if (!Expect(pool.FreeCount() == pool.Capacity(), "all slots should be returned after release")) return false;
     if (!Expect(TrackedObject::live_count.load() == 0, "all tracked objects should be destroyed")) return false;
     if (!Expect(TrackedObject::dtor_count.load() == 2, "destructor should be called for each released object")) return false;
     return true;
@@ -64,12 +64,12 @@ bool TestAcquireScoped() {
     {
         auto scoped = pool.AcquireScoped(7, "scoped");
         if (!Expect(static_cast<bool>(scoped), "AcquireScoped should return a valid handle")) return false;
-        if (!Expect(pool.used_count() == 1, "used_count should increase while scoped object is alive")) return false;
+        if (!Expect(pool.UsedCount() == 1, "UsedCount should increase while scoped object is alive")) return false;
         if (!Expect(scoped->value == 7, "scoped object should preserve constructor value")) return false;
     }
 
-    if (!Expect(pool.used_count() == 0, "scoped object should be returned automatically")) return false;
-    if (!Expect(pool.free_count() == pool.capacity(), "all slots should be available after scoped object destruction")) return false;
+    if (!Expect(pool.UsedCount() == 0, "scoped object should be returned automatically")) return false;
+    if (!Expect(pool.FreeCount() == pool.Capacity(), "all slots should be available after scoped object destruction")) return false;
     if (!Expect(TrackedObject::live_count.load() == 0, "scoped object should be destroyed")) return false;
     return true;
 }
@@ -82,9 +82,9 @@ bool TestExhaustion() {
 
     if (!Expect(first != nullptr, "first acquire should succeed")) return false;
     if (!Expect(second != nullptr, "acquire past capacity should fall back to heap, not return null")) return false;
-    if (!Expect(pool.owns(first), "first should be pool-owned")) return false;
-    if (!Expect(!pool.owns(second), "overflow object should not be pool-owned")) return false;
-    if (!Expect(pool.overflow_count() == 1, "overflow_count should record the spill")) return false;
+    if (!Expect(pool.Owns(first), "first should be pool-owned")) return false;
+    if (!Expect(!pool.Owns(second), "overflow object should not be pool-owned")) return false;
+    if (!Expect(pool.OverflowCount() == 1, "OverflowCount should record the spill")) return false;
 
     pool.Release(first);
     pool.Release(second);
@@ -98,8 +98,8 @@ bool TestOwns() {
     TrackedObject external(6, "external");
 
     if (!Expect(obj != nullptr, "acquire should succeed")) return false;
-    if (!Expect(pool.owns(obj), "owns should accept object allocated from the pool")) return false;
-    if (!Expect(!pool.owns(&external), "owns should reject external object")) return false;
+    if (!Expect(pool.Owns(obj), "Owns should accept object allocated from the pool")) return false;
+    if (!Expect(!pool.Owns(&external), "Owns should reject external object")) return false;
 
     pool.Release(obj);
     return true;

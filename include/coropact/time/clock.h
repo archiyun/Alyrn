@@ -7,16 +7,31 @@
 
 namespace coropact::time {
 
-// Returns elapsed milliseconds from the steady clock's epoch.
-//
-// This value is suitable for measuring intervals and enforcing timeouts. It
-// must not be converted to a calendar time; use Timestamp::Now() for wall
-// clock timestamps instead.
+// Returns monotonic elapsed time in whole seconds from the steady clock's
+// epoch. Use this value for measuring intervals and enforcing timeouts; it has
+// no calendar-time meaning.
+inline std::uint64_t SteadyNow() noexcept {
+  return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::seconds>(
+                                        std::chrono::steady_clock::now().time_since_epoch())
+                                        .count());
+}
+
+// Returns monotonic elapsed time in whole milliseconds from the steady clock's
+// epoch. Use this value for measuring intervals and enforcing timeouts; it has
+// no calendar-time meaning.
 inline std::uint64_t SteadyNowMs() noexcept {
-  return static_cast<std::uint64_t>(
-      std::chrono::duration_cast<std::chrono::milliseconds>(
-          std::chrono::steady_clock::now().time_since_epoch())
-          .count());
+  return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+                                        std::chrono::steady_clock::now().time_since_epoch())
+                                        .count());
+}
+
+// Returns monotonic elapsed time in whole nanoseconds from the steady clock's
+// epoch. Use this value for measuring intervals and enforcing timeouts; it has
+// no calendar-time meaning.
+inline std::uint64_t SteadyNowNs() noexcept {
+  return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                        std::chrono::steady_clock::now().time_since_epoch())
+                                        .count());
 }
 
 }  // namespace coropact::time

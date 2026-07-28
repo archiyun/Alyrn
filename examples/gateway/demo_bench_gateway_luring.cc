@@ -17,7 +17,6 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
-#include <limits>
 #include <memory>
 #include <memory_resource>
 #include <mutex>
@@ -27,10 +26,6 @@
 #include <thread>
 #include <unordered_map>
 #include <vector>
-
-#if defined(COROPACT_ENABLE_CTRACK)
-#include <ctrack.hpp>
-#endif
 
 #include "coropact/coro/frame_allocator.h"
 #include "coropact/gateway/gateway_session_service.h"
@@ -133,7 +128,6 @@ int main() {
   const auto sqpoll_idle_ms = static_cast<std::uint32_t>(EnvSize("URING_SQPOLL_IDLE_MS", 1000));
   const bool setup_defer_taskrun = EnvBool("URING_DEFER_TASKRUN", false);
   const bool frame_pool = EnvBool("FRAME_POOL", true);
-  const bool dump_stats = EnvBool("LURING_DUMP_STATS", false);
   const bool frame_stats_enabled = EnvBool("LURING_FRAME_STATS", false);
 
   if (worker_num == 0) {
@@ -182,9 +176,8 @@ int main() {
   using WorkerPool = Service::Pool;
   Service service("BenchGatewayLUring", registry);
   const coropact::gateway::PoolConfig pool_config{.max_idle_per_peer = max_idle_per_peer,
-                                              .max_idle_total = max_idle_total,
-                                              .collect_stats = dump_stats};
-  service.set_pool_config(pool_config);
+                                              .max_idle_total = max_idle_total};
+      service.SetPoolConfig(pool_config);
   service.AddProxyRoute("/", "backend", algo);
 
   // Upstream streams are owned by their io_uring loop. Keep one pool per
@@ -259,7 +252,6 @@ int main() {
       max_urgent_completion_work_per_turn;
   options.worker_group_options.worker_options.loop_options.normal_queue_age_threshold =
       std::chrono::microseconds(normal_age_threshold_us);
-  options.worker_group_options.worker_options.loop_options.dump_stats_on_exit = dump_stats;
   options.worker_group_options.worker_options.listen_options.reuse_port = true;
   options.worker_group_options.frame_resource_factory =
       [&frame_pools, &frame_counters, &direct_frame_counters, frame_pool,
@@ -284,7 +276,7 @@ int main() {
   }
 
   coropact::luring::LUringServer server(*listen_addr, std::move(options));
-  server.set_thread_init_callback([&worker_pools, &pools_by_loop, &pools_mutex,
+  server.SetThreadInitCallback([&worker_pools, &pools_by_loop, &pools_mutex,
                                    pool_config](coropact::luring::LUringWorkerContext& context) {
     auto pool = std::make_unique<WorkerPool>(pool_config);
     auto* pool_ptr = pool.get();
@@ -292,7 +284,7 @@ int main() {
     worker_pools.push_back(std::move(pool));
     pools_by_loop.emplace(&context.loop, pool_ptr);
   });
-  server.set_session_handler([&service, &pools_by_loop, &pools_mutex, &pools_ready](
+  server.SetSessionHandler([&service, &pools_by_loop, &pools_mutex, &pools_ready](
                                  coropact::luring::LUringWorkerContext& context,
                                  coropact::luring::LUringStream stream) -> coropact::coro::DetachedTask {
     auto& loop = context.loop;
@@ -330,78 +322,18 @@ int main() {
       "ready_time_us=%zu completion_budget=%zu completion_age_us=%zu "
       "urgent_completion_budget=%zu normal_age_us=%zu sqpoll=%s sqpoll_idle_ms=%u "
       "defer_taskrun=%s "
-      "cpu_affinity=%s dump_stats=%s frame_stats=%s\n",
+      "cpu_affinity=%s frame_stats=%s\n",
       bind_host.c_str(), listen_port, ports_csv.c_str(), algo.c_str(), frame_pool ? "on" : "off",
       worker_num, ring_entries, max_idle_per_peer, max_idle_total, max_ready_work_per_turn,
       max_cqe_per_turn, max_ready_time_us, max_completion_work_per_turn,
       completion_age_threshold_us, max_urgent_completion_work_per_turn, normal_age_threshold_us,
       setup_sqpoll ? "on" : "off", sqpoll_idle_ms, setup_defer_taskrun ? "on" : "off",
-      cpu_affinity.empty() ? "off" : cpu_affinity_csv.c_str(), dump_stats ? "on" : "off",
-      frame_stats_enabled ? "on" : "off");
+      cpu_affinity.empty() ? "off" : cpu_affinity_csv.c_str(), frame_stats_enabled ? "on" : "off");
   while (!g_stop.load(std::memory_order_relaxed)) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
 
   server.Stop();
-#if defined(COROPACT_ENABLE_CTRACK)
-  std::fputs(ctrack::result_as_string().c_str(), stdout);
-#endif
-  if (dump_stats) {
-    const auto to_us = [](std::uint64_t nanoseconds) {
-      return static_cast<double>(nanoseconds) / 1000.0;
-    };
-    const auto average_us = [](std::uint64_t total_ns, std::uint64_t samples) {
-      return samples == 0 ? 0.0
-                          : static_cast<double>(total_ns) / static_cast<double>(samples) / 1000.0;
-    };
-    const auto percentile_ms = [](const auto& histogram, std::uint64_t samples, double percentile) {
-      if (samples == 0) return 0.0;
-      std::uint64_t target = static_cast<std::uint64_t>(samples * percentile);
-      if (target == 0) target = 1;
-      std::uint64_t cumulative = 0;
-      for (std::size_t bucket = 0; bucket < histogram.size(); ++bucket) {
-        cumulative += histogram[bucket];
-        if (cumulative >= target) {
-          const std::uint64_t upper_ns = bucket + 1 < histogram.size()
-                                             ? (std::uint64_t{1} << bucket)
-                                             : std::numeric_limits<std::uint64_t>::max();
-          return static_cast<double>(upper_ns) / 1'000'000.0;
-        }
-      }
-      return static_cast<double>(std::numeric_limits<std::uint64_t>::max()) / 1'000'000.0;
-    };
-    for (std::size_t i = 0; i < worker_pools.size(); ++i) {
-      const auto& stats = worker_pools[i]->stats();
-      std::fprintf(
-          stderr,
-          "[gateway.pool] worker=%zu acquires=%llu hits=%llu misses=%llu releases=%llu "
-          "release_drops=%llu idle=%zu connect_attempts=%llu connect_success=%llu "
-          "connect_failures=%llu connect_avg_us=%.3f connect_max_us=%.3f "
-          "connect_p95_ms=%.3f connect_p99_ms=%.3f "
-          "upstream_write_avg_us=%.3f upstream_write_max_us=%.3f relay_avg_us=%.3f "
-          "relay_max_us=%.3f relay_p95_ms=%.3f relay_p99_ms=%.3f "
-          "upstream_write_p95_ms=%.3f upstream_write_p99_ms=%.3f\n",
-          i, static_cast<unsigned long long>(stats.acquire_count),
-          static_cast<unsigned long long>(stats.acquire_hit_count),
-          static_cast<unsigned long long>(stats.acquire_miss_count),
-          static_cast<unsigned long long>(stats.release_count),
-          static_cast<unsigned long long>(stats.release_drop_count), worker_pools[i]->idle_count(),
-          static_cast<unsigned long long>(stats.connect_attempt_count),
-          static_cast<unsigned long long>(stats.connect_success_count),
-          static_cast<unsigned long long>(stats.connect_failure_count),
-          average_us(stats.connect_time_ns_sum, stats.connect_attempt_count),
-          to_us(stats.connect_time_ns_max),
-          percentile_ms(stats.connect_time_histogram, stats.connect_attempt_count, 0.95),
-          percentile_ms(stats.connect_time_histogram, stats.connect_attempt_count, 0.99),
-          average_us(stats.upstream_write_time_ns_sum, stats.upstream_write_count),
-          to_us(stats.upstream_write_time_ns_max),
-          average_us(stats.relay_time_ns_sum, stats.relay_count), to_us(stats.relay_time_ns_max),
-          percentile_ms(stats.relay_time_histogram, stats.relay_count, 0.95),
-          percentile_ms(stats.relay_time_histogram, stats.relay_count, 0.99),
-          percentile_ms(stats.upstream_write_time_histogram, stats.upstream_write_count, 0.95),
-          percentile_ms(stats.upstream_write_time_histogram, stats.upstream_write_count, 0.99));
-    }
-  }
   if (frame_stats_enabled) {
     for (std::size_t i = 0; i < worker_num; ++i) {
       const auto& frame = frame_resource_stats[i];

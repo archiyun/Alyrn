@@ -43,7 +43,7 @@ public:
 
 protected:
   [[nodiscard]]
-  std::int32_t encoded() const noexcept {
+  std::int32_t Encoded() const noexcept {
     return encoded_;
   }
 
@@ -65,10 +65,10 @@ public:
   [[nodiscard]]
   base::Result<std::size_t> Take() const noexcept {
     assert(IsImmediate());
-    if (encoded() == 0) {
+    if (Encoded() == 0) {
       return std::size_t{0};
     }
-    return std::unexpected(base::make_errno(encoded()));
+    return std::unexpected(base::MakeErrno(Encoded()));
   }
 };
 
@@ -83,10 +83,10 @@ public:
   [[nodiscard]]
   base::Result<void> Take() const noexcept {
     assert(IsImmediate());
-    if (encoded() == 0) {
+    if (Encoded() == 0) {
       return {};
     }
-    return std::unexpected(base::make_errno(encoded()));
+    return std::unexpected(base::MakeErrno(Encoded()));
   }
 };
 

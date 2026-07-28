@@ -7,7 +7,7 @@
 #include <chrono>
 #include <coroutine>
 #include <cstddef>
-#include <optional>
+#include <cstdint>
 #include <span>
 #include <vector>
 
@@ -16,6 +16,8 @@
 #include "coropact/coro/task.h"
 #include "coropact/io/buffer.h"
 #include "coropact/reactor/channel.h"
+#include "coropact/reactor/detail/op_hook.h"
+#include "coropact/reactor/detail/result_state.h"
 #include "coropact/reactor/event_loop.h"
 #include "coropact/net/endpoint.h"
 #include "coropact/net/socket.h"
@@ -61,24 +63,15 @@ public:
   const net::Endpoint& PeerAddress() const noexcept { return peer_; }
 
 private:
-  class ReadOperation {
-  public:
-    virtual ~ReadOperation() = default;
-    virtual void Complete(base::Result<std::size_t> result) noexcept = 0;
-    virtual void OnReady() noexcept = 0;
-  };
-
-  class WriteOperation {
-  public:
-    virtual ~WriteOperation() = default;
-    virtual void Complete(base::Result<std::size_t> result) noexcept = 0;
-    virtual void OnReady() noexcept = 0;
-  };
-
   void HandleRead(coropact::time::Timestamp receive_time);
   void HandleWrite();
   void HandleClose();
   void HandleError();
+
+  static void DispatchRead(void* context, coropact::time::Timestamp receive_time) noexcept;
+  static void DispatchWrite(void* context) noexcept;
+  static void DispatchClose(void* context) noexcept;
+  static void DispatchError(void* context) noexcept;
 
   void CompleteRead(base::Result<std::size_t> result);
   void CompleteWrite(base::Result<std::size_t> result);
@@ -91,12 +84,26 @@ private:
   net::Socket socket_;
   Channel channel_;
   net::Endpoint peer_;
-  ReadOperation* pending_read_{nullptr};
-  WriteOperation* pending_write_{nullptr};
+  enum class PendingReadKind : std::uint8_t {
+    kNone,
+    kReadSome,
+    kBufferRead,
+  };
+  enum class PendingWriteKind : std::uint8_t {
+    kNone,
+    kWriteSome,
+    kBufferWrite,
+  };
+
+  void* pending_read_{nullptr};
+  void* pending_write_{nullptr};
+  PendingReadKind pending_read_kind_{PendingReadKind::kNone};
+  PendingWriteKind pending_write_kind_{PendingWriteKind::kNone};
   bool closed_{false};
 };
 
-class ReactorStream::ReadSomeAwaiter final : public ReactorStream::ReadOperation {
+class ReactorStream::ReadSomeAwaiter final
+    : public detail::ReactorOperationHook<ReactorStream::ReadSomeAwaiter> {
 public:
   COROPACT_DELETE_COPY_MOVE(ReadSomeAwaiter);
 
@@ -111,20 +118,22 @@ public:
   base::Result<std::size_t> await_resume() noexcept;
 
 private:
-  void Complete(base::Result<std::size_t> result) noexcept override;
-  void OnReady() noexcept override;
+  friend class detail::ReactorOperationHook<ReadSomeAwaiter>;
+
+  void CompleteImpl(base::Result<std::size_t> result) noexcept;
+  void OnReadyImpl() noexcept;
 
   ReactorStream* stream_;
   std::span<std::byte> buffer_;
   std::chrono::milliseconds timeout_;
   coro::Scheduler* scheduler_{nullptr};
   coro::ResumeWork resume_work_;
-  std::optional<base::Result<std::size_t>> result_;
+  detail::ReactorIoResultState result_;
   time::TimerId timer_;
-  bool timer_armed_{false};
 };
 
-class ReactorStream::WriteSomeAwaiter final : public ReactorStream::WriteOperation {
+class ReactorStream::WriteSomeAwaiter final
+    : public detail::ReactorOperationHook<ReactorStream::WriteSomeAwaiter> {
 public:
   COROPACT_DELETE_COPY_MOVE(WriteSomeAwaiter);
 
@@ -138,17 +147,20 @@ public:
   base::Result<std::size_t> await_resume() noexcept;
 
 private:
-  void Complete(base::Result<std::size_t> result) noexcept override;
-  void OnReady() noexcept override;
+  friend class detail::ReactorOperationHook<WriteSomeAwaiter>;
+
+  void CompleteImpl(base::Result<std::size_t> result) noexcept;
+  void OnReadyImpl() noexcept;
 
   ReactorStream* stream_;
   std::span<const std::byte> buffer_;
   coro::Scheduler* scheduler_{nullptr};
   coro::ResumeWork resume_work_;
-  std::optional<base::Result<std::size_t>> result_;
+  detail::ReactorIoResultState result_;
 };
 
-class ReactorStream::BufferReadAwaiter : public ReactorStream::ReadOperation {
+class ReactorStream::BufferReadAwaiter
+    : public detail::ReactorOperationHook<ReactorStream::BufferReadAwaiter> {
 public:
   COROPACT_DELETE_COPY_MOVE(BufferReadAwaiter);
 
@@ -162,8 +174,10 @@ public:
   base::Result<std::size_t> await_resume() noexcept;
 
 private:
-  void Complete(base::Result<std::size_t> result) noexcept override;
-  void OnReady() noexcept override;
+  friend class detail::ReactorOperationHook<BufferReadAwaiter>;
+
+  void CompleteImpl(base::Result<std::size_t> result) noexcept;
+  void OnReadyImpl() noexcept;
   bool PrepareReservation() noexcept;
   void FinishAttempt(base::Result<std::size_t> result) noexcept;
 
@@ -174,12 +188,12 @@ private:
   std::vector<iovec> iovs_;
   coro::Scheduler* scheduler_{nullptr};
   coro::ResumeWork resume_work_;
-  std::optional<base::Result<std::size_t>> result_;
+  detail::ReactorIoResultState result_;
   coropact::time::TimerId timer_;
-  bool timer_armed_{false};
 };
 
-class ReactorStream::BufferWriteAwaiter : public ReactorStream::WriteOperation {
+class ReactorStream::BufferWriteAwaiter
+    : public detail::ReactorOperationHook<ReactorStream::BufferWriteAwaiter> {
 public:
   COROPACT_DELETE_COPY_MOVE(BufferWriteAwaiter);
 
@@ -192,8 +206,10 @@ public:
   base::Result<std::size_t> await_resume() noexcept;
 
 private:
-  void Complete(base::Result<std::size_t> result) noexcept override;
-  void OnReady() noexcept override;
+  friend class detail::ReactorOperationHook<BufferWriteAwaiter>;
+
+  void CompleteImpl(base::Result<std::size_t> result) noexcept;
+  void OnReadyImpl() noexcept;
   bool PrepareReadable() noexcept;
   void FinishAttempt(base::Result<std::size_t> result) noexcept;
 
@@ -202,7 +218,7 @@ private:
   std::vector<iovec> iovs_;
   coro::Scheduler* scheduler_{nullptr};
   coro::ResumeWork resume_work_;
-  std::optional<base::Result<std::size_t>> result_;
+  detail::ReactorIoResultState result_;
 };
 
 }  // namespace coropact::reactor

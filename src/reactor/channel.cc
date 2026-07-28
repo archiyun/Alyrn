@@ -31,10 +31,14 @@ Channel::Channel(Channel&& other) noexcept
   trigger_mode_ = std::exchange(other.trigger_mode_, TriggerMode::kLevelTriggered);
   tie_ = std::move(other.tie_);
   tied_ = std::exchange(other.tied_, false);
-  read_callback_ = std::move(other.read_callback_);
-  write_callback_ = std::move(other.write_callback_);
-  close_callback_ = std::move(other.close_callback_);
-  error_callback_ = std::move(other.error_callback_);
+  read_callback_ = std::exchange(other.read_callback_, nullptr);
+  write_callback_ = std::exchange(other.write_callback_, nullptr);
+  close_callback_ = std::exchange(other.close_callback_, nullptr);
+  error_callback_ = std::exchange(other.error_callback_, nullptr);
+  read_context_ = std::exchange(other.read_context_, nullptr);
+  write_context_ = std::exchange(other.write_context_, nullptr);
+  close_context_ = std::exchange(other.close_context_, nullptr);
+  error_context_ = std::exchange(other.error_context_, nullptr);
 }
 
 Channel& Channel::operator=(Channel&& other) noexcept {
@@ -54,10 +58,14 @@ Channel& Channel::operator=(Channel&& other) noexcept {
   trigger_mode_ = std::exchange(other.trigger_mode_, TriggerMode::kLevelTriggered);
   tie_ = std::move(other.tie_);
   tied_ = std::exchange(other.tied_, false);
-  read_callback_ = std::move(other.read_callback_);
-  write_callback_ = std::move(other.write_callback_);
-  close_callback_ = std::move(other.close_callback_);
-  error_callback_ = std::move(other.error_callback_);
+  read_callback_ = std::exchange(other.read_callback_, nullptr);
+  write_callback_ = std::exchange(other.write_callback_, nullptr);
+  close_callback_ = std::exchange(other.close_callback_, nullptr);
+  error_callback_ = std::exchange(other.error_callback_, nullptr);
+  read_context_ = std::exchange(other.read_context_, nullptr);
+  write_context_ = std::exchange(other.write_context_, nullptr);
+  close_context_ = std::exchange(other.close_context_, nullptr);
+  error_context_ = std::exchange(other.error_context_, nullptr);
   return *this;
 }
 
@@ -96,19 +104,19 @@ void Channel::HandleEventWithGuard(coropact::time::Timestamp receive_time) {
   // kHupEvent without kReadEvent usually means the peer has closed the connection
   // and there is no more readable data left in the socket buffer.
   if (static_cast<bool>((revents_ & kHupEvent)) && !static_cast<bool>((revents_ & kReadEvent))) {
-    if (close_callback_) close_callback_();
+    if (close_callback_) close_callback_(close_context_);
   }
 
   if (static_cast<bool>(revents_ & kErrorEvent)) {
-    if (error_callback_) error_callback_();
+    if (error_callback_) error_callback_(error_context_);
   }
 
   if (static_cast<bool>(revents_ & kReadEvent)) {
-    if (read_callback_) read_callback_(receive_time);
+    if (read_callback_) read_callback_(read_context_, receive_time);
   }
 
   if (static_cast<bool>(revents_ & kWriteEvent)) {
-    if (write_callback_) write_callback_();
+    if (write_callback_) write_callback_(write_context_);
   }
 }
 

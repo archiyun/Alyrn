@@ -15,15 +15,15 @@ TEST(MemoryPoolTest, AllocateAndDeallocateReuseSlots) {
     ASSERT_NE(a, nullptr);
     ASSERT_NE(b, nullptr);
     EXPECT_NE(a, b);
-    EXPECT_EQ(pool.free_count(), 2u);
-    EXPECT_EQ(pool.used_count(), 2u);
+    EXPECT_EQ(pool.FreeCount(), 2u);
+    EXPECT_EQ(pool.UsedCount(), 2u);
 
     pool.Deallocate(a);
-    EXPECT_EQ(pool.free_count(), 3u);
+    EXPECT_EQ(pool.FreeCount(), 3u);
 
     void* c = pool.Allocate();
     EXPECT_EQ(c, a);
-    EXPECT_EQ(pool.free_count(), 2u);
+    EXPECT_EQ(pool.FreeCount(), 2u);
 }
 
 TEST(MemoryPoolTest, ReturnsNullWhenExhausted) {
@@ -36,8 +36,8 @@ TEST(MemoryPoolTest, ReturnsNullWhenExhausted) {
     ASSERT_NE(a, nullptr);
     ASSERT_NE(b, nullptr);
     EXPECT_EQ(c, nullptr);
-    EXPECT_EQ(pool.free_count(), 0u);
-    EXPECT_EQ(pool.used_count(), 2u);
+    EXPECT_EQ(pool.FreeCount(), 0u);
+    EXPECT_EQ(pool.UsedCount(), 2u);
 }
 
 TEST(MemoryPoolTest, OwnsRecognizesPoolAddresses) {
@@ -46,11 +46,11 @@ TEST(MemoryPoolTest, OwnsRecognizesPoolAddresses) {
     void* p = pool.Allocate();
     ASSERT_NE(p, nullptr);
 
-    EXPECT_TRUE(pool.owns(p));
+    EXPECT_TRUE(pool.Owns(p));
 
     int stack_value = 0;
-    EXPECT_FALSE(pool.owns(&stack_value));
-    EXPECT_FALSE(pool.owns(nullptr));
+    EXPECT_FALSE(pool.Owns(&stack_value));
+    EXPECT_FALSE(pool.Owns(nullptr));
 
     pool.Deallocate(p);
 }
@@ -96,6 +96,6 @@ TEST(MemoryPoolTest, ConcurrentAllocateAndDeallocatePreservesCapacity) {
         thread.join();
     }
 
-    EXPECT_EQ(pool.free_count(), pool.capacity());
-    EXPECT_EQ(pool.used_count(), 0u);
+    EXPECT_EQ(pool.FreeCount(), pool.Capacity());
+    EXPECT_EQ(pool.UsedCount(), 0u);
 }

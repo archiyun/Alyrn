@@ -229,17 +229,17 @@ bool CheckWorkerGroupStartAndStop() {
     }
   }
 
-  const bool ok = Check(group.started(), "group should be started") &&
-                  Check(group.size() == 2, "group should own two workers") &&
+  const bool ok = Check(group.Started(), "group should be started") &&
+                  Check(group.Size() == 2, "group should own two workers") &&
                   Check(all_initialized, "init callback should run for each worker") &&
                   Check(worker_threads_are_distinct, "workers should use distinct loop threads") &&
                   Check(ports_are_shared, "reuse_port workers should share the listen port") &&
-                  Check(group.worker(0) != nullptr && group.worker(1) != nullptr,
+                  Check(group.Worker(0) != nullptr && group.Worker(1) != nullptr,
                         "group worker accessors should return both workers");
 
   group.Stop();
-  return ok && Check(!group.started(), "group should be stopped") &&
-         Check(group.size() == 0, "group should release all workers");
+  return ok && Check(!group.Started(), "group should be stopped") &&
+         Check(group.Size() == 0, "group should release all workers");
 }
 
 bool CheckZeroWorkersRejected() {

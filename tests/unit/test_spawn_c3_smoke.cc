@@ -36,7 +36,7 @@
 #include "coropact/reactor/event_loop.h"
 #include "coropact/reactor/event_loop_scheduler.h"
 
-using coropact::base::make_errno;
+using coropact::base::MakeErrno;
 using coropact::base::Result;
 using coropact::coro::Spawn;
 using coropact::coro::Task;
@@ -126,7 +126,7 @@ int main() {
     Spawn(sched, Serve(&conn_a)).Detach();
     Spawn(sched, Serve(&conn_b)).Detach();
     g_loop->QueueInLoop([&] { conn_a.Deliver(Result<int>{0}, g_loop); });  // EOF
-    g_loop->QueueInLoop([&] { conn_b.Deliver(std::unexpected(make_errno(ECONNRESET)), g_loop); });
+    g_loop->QueueInLoop([&] { conn_b.Deliver(std::unexpected(MakeErrno(ECONNRESET)), g_loop); });
   });
 
   auto fut = g_all_done.get_future();

@@ -28,8 +28,8 @@ bool Expect(bool condition, const char* message) {
 }
 
 bool ExpectEmpty(const ItemTree& tree, const char* context) {
-  return Expect(tree.empty(), context) && Expect(tree.size() == 0, "size should be zero") &&
-         Expect(tree.earliest() == nullptr, "earliest should be null") &&
+  return Expect(tree.Empty(), context) && Expect(tree.Size() == 0, "size should be zero") &&
+         Expect(tree.Earliest() == nullptr, "Earliest should be null") &&
          Expect(tree.CheckRBInvariants(), "empty tree invariants should hold");
 }
 
@@ -70,7 +70,7 @@ bool TestClearManyNodes() {
     tree.Insert(&items[i]);
   }
 
-  if (!Expect(tree.size() == items.size(), "all items should be inserted") ||
+  if (!Expect(tree.Size() == items.size(), "all items should be inserted") ||
       !Expect(tree.CheckRBInvariants(), "tree invariants should hold before Clear")) {
     return false;
   }
@@ -86,7 +86,7 @@ bool TestClearManyNodes() {
     if (!Expect(tree.Insert(&*it), "cleared node should reinsert")) return false;
   }
 
-  if (!Expect(tree.size() == items.size(), "all cleared items should reinsert") ||
+  if (!Expect(tree.Size() == items.size(), "all cleared items should reinsert") ||
       !Expect(tree.CheckRBInvariants(), "tree invariants should hold after reinsertion")) {
     return false;
   }

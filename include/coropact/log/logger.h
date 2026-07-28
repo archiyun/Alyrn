@@ -86,8 +86,8 @@ public:
 
   void Shutdown();
 
-  void set_log_level(LogLevel level);
-  LogLevel log_level() const;
+  void SetLogLevel(LogLevel level);
+  LogLevel LogLevelValue() const;
   bool ShouldLog(LogLevel level) const;
 
   // Log filters by level, formats the record, and appends it asynchronously.

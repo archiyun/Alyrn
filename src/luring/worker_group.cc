@@ -26,11 +26,11 @@ LUringWorkerGroup::~LUringWorkerGroup() noexcept { Stop(); }
 
 base::Result<void> LUringWorkerGroup::Start() {
   if (started_) {
-    return std::unexpected(base::make_errno(EALREADY));
+    return std::unexpected(base::MakeErrno(EALREADY));
   }
 
   if (options_.worker_num == 0) {
-    return std::unexpected(base::make_errno(EINVAL));
+    return std::unexpected(base::MakeErrno(EINVAL));
   }
 
   workers_.reserve(options_.worker_num);

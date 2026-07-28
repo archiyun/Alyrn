@@ -50,16 +50,21 @@ public:
   void Close() noexcept;
 
   // Enables or disables TCP_NODELAY.
-  void set_tcp_no_delay(bool on);
+  void SetTcpNoDelay(bool on);
 
   // Enables or disables SO_REUSEADDR.
-  void set_reuse_addr(bool on);
+  void SetReuseAddr(bool on);
 
   // Enables or disables SO_REUSEPORT.
-  void set_reuse_port(bool on);
+  void SetReusePort(bool on);
 
   // Enables or disables SO_KEEPALIVE.
-  void set_keep_alive(bool on);
+  void SetKeepAlive(bool on);
+
+  void set_tcp_no_delay(bool on) { SetTcpNoDelay(on); }
+  void set_reuse_addr(bool on) { SetReuseAddr(on); }
+  void set_reuse_port(bool on) { SetReusePort(on); }
+  void set_keep_alive(bool on) { SetKeepAlive(on); }
 
 private:
   int sockfd_;

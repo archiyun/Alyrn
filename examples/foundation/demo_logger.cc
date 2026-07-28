@@ -38,7 +38,7 @@ static void DemoStdout() {
     LOG_WARN()  << "connection pool at " << 80 << "% capacity";
 
     // Raise the threshold at runtime — INFO and DEBUG are now silently dropped.
-    logger.set_log_level(coropact::log::LogLevel::ERROR);
+    logger.SetLogLevel(coropact::log::LogLevel::ERROR);
     LOG_INFO()  << "this line is filtered and produces no output";
     LOG_ERROR() << "disk usage critical: " << 95 << "%";
 

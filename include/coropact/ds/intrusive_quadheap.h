@@ -65,9 +65,9 @@ public:
 
   // O(1)
   [[nodiscard]]
-  bool empty() const noexcept { return heap_.empty(); }
+  bool Empty() const noexcept { return heap_.empty(); }
   [[nodiscard]]
-  std::size_t size() const noexcept { return heap_.size(); }
+  std::size_t Size() const noexcept { return heap_.size(); }
 
   // O(log n); returns false if elem is already linked in this heap.
   bool Insert(T* elem);
@@ -80,7 +80,7 @@ public:
   bool Erase(T* elem);
 
   // O(1)
-  T* earliest() const { return empty() ? nullptr : elem_of(heap_.front()); }
+  T* Earliest() const { return Empty() ? nullptr : ElemOf(heap_.front()); }
 
   void Clear() noexcept;
 
@@ -101,8 +101,8 @@ private:
   static std::size_t Parent(std::size_t child) { return (child - 1) >> 2; }
   static std::size_t FirstChild(std::size_t parent) { return (parent << 2) | 1; }
 
-  static Node* node_of(T* elem) { return static_cast<Node*>(elem); }
-  static T* elem_of(Node* node) { return static_cast<T*>(node); }
+  static Node* NodeOf(T* elem) { return static_cast<Node*>(elem); }
+  static T* ElemOf(Node* node) { return static_cast<T*>(node); }
 
   void SwapNodes(std::size_t i, std::size_t j);
   void SiftUp(std::size_t child);
@@ -125,14 +125,14 @@ IQH_TMPL
 void IQH_TYPE::SiftUp(std::size_t child) {
   while (child > 0) {
     std::size_t parent = Parent(child);
-    if (!kLess(elem_of(heap_[child]), elem_of(heap_[parent]))) break;
+    if (!kLess(ElemOf(heap_[child]), ElemOf(heap_[parent]))) break;
     SwapNodes(child, parent);
     child = parent;
   }
 }
 IQH_TMPL
 bool IQH_TYPE::Insert(T* elem) {
-  auto* node = node_of(elem);
+  auto* node = NodeOf(elem);
   if (node->InHeap()) return false;
   heap_.push_back(node);
   node->set_heap_index(heap_.size() - 1);
@@ -149,11 +149,11 @@ void IQH_TYPE::SiftDown(std::size_t parent) {
     std::size_t end = std::min(first_child + kArity, sz);
     std::size_t smallest = first_child;
     for (std::size_t next_child = first_child + 1; next_child < end; ++next_child) {
-      if (kLess(elem_of(heap_[next_child]), elem_of(heap_[smallest]))) {
+      if (kLess(ElemOf(heap_[next_child]), ElemOf(heap_[smallest]))) {
         smallest = next_child;
       }
     }
-    if (!kLess(elem_of(heap_[smallest]), elem_of(heap_[parent]))) break;
+    if (!kLess(ElemOf(heap_[smallest]), ElemOf(heap_[parent]))) break;
 
     SwapNodes(parent, smallest);
     parent = smallest;
@@ -162,7 +162,7 @@ void IQH_TYPE::SiftDown(std::size_t parent) {
 
 IQH_TMPL
 bool IQH_TYPE::Erase(T* elem) {
-  auto* node = node_of(elem);
+  auto* node = NodeOf(elem);
   if (!node->InHeap()) return false;
   auto* last = heap_.back();
   std::size_t index = node->heap_index();
@@ -172,7 +172,7 @@ bool IQH_TYPE::Erase(T* elem) {
 
   heap_[index] = last;
   last->set_heap_index(index);
-  if (index > 0 && kLess(elem_of(heap_[index]), elem_of(heap_[Parent(index)]))) {
+  if (index > 0 && kLess(ElemOf(heap_[index]), ElemOf(heap_[Parent(index)]))) {
     SiftUp(index);
   } else {
     SiftDown(index);
@@ -192,8 +192,8 @@ IQH_TMPL
 template <typename Pred>
 std::vector<T*> IQH_TYPE::PopWhile(Pred pred) {
   std::vector<T*> result;
-  while (!empty()) {
-    T* top = earliest();
+  while (!Empty()) {
+    T* top = Earliest();
     if (!pred(top)) break;
     result.push_back(top);
     Erase(top);
@@ -205,8 +205,8 @@ IQH_TMPL
 template <typename Pred, typename OnPop>
 std::size_t IQH_TYPE::PopWhile(Pred pred, OnPop on_pop) {
   std::size_t popped = 0;
-  while (!empty()) {
-    T* elem = earliest();
+  while (!Empty()) {
+    T* elem = Earliest();
     if (!pred(elem)) break;
     Erase(elem);
     on_pop(elem);

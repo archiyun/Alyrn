@@ -68,7 +68,7 @@ bool TestStreamMove(coropact::luring::LUringLoop& loop) {
     coropact::luring::LUringStream target(&loop, fds[1], coropact::net::Endpoint(0));
     target = std::move(moved);
 
-    if (!Check(source.fd() == -1 && moved.fd() == -1 && target.fd() == fds[0],
+    if (!Check(source.Fd() == -1 && moved.Fd() == -1 && target.Fd() == fds[0],
                "LUringStream move did not transfer fd ownership")) {
       return false;
     }
@@ -101,7 +101,7 @@ bool TestListenerMove(coropact::luring::LUringLoop& loop) {
   *target = std::move(moved);
 
   auto target_address = target->LocalAddress();
-  return Check(source->fd() == -1 && moved.fd() == -1 && target_address.has_value() &&
+  return Check(source->Fd() == -1 && moved.Fd() == -1 && target_address.has_value() &&
                    target_address->ToPort() == source_address->ToPort(),
                "LUringListener move assignment did not transfer the socket");
 }

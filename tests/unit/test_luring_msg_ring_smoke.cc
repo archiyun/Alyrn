@@ -190,7 +190,7 @@ bool CheckMsgRingMailboxSchedule() {
 
     auto submitted = source.SubmitMsgRing(
         &notify_op,
-        target->ring_fd(),
+        target->RingFd(),
         0);
     if (!submitted.has_value()) {
       static_cast<void>(target->RetryMessageNotification());

@@ -52,6 +52,8 @@ private:
 
   void HandleRead(coropact::time::Timestamp receive_time);
   void HandleError();
+  static void DispatchRead(void* context, coropact::time::Timestamp receive_time) noexcept;
+  static void DispatchError(void* context) noexcept;
   void CompleteAccept(base::Result<ReactorStream> result);
   void DetachChannel();
   void BindChannelCallbacks() noexcept;
