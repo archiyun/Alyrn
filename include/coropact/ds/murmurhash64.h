@@ -93,7 +93,7 @@ inline MurmurHash128 MurmurHash3_x64_128(const void* key, size_t len, uint32_t s
         case 9:
             k2 ^= static_cast<uint64_t>(tail[8]);
             k2 *= c2;
-            k2 = rotl64(k2, 33);
+            k2 = Rotl64(k2, 33);
             k2 *= c1;
             h2 ^= k2;
             [[fallthrough]];
@@ -107,7 +107,7 @@ inline MurmurHash128 MurmurHash3_x64_128(const void* key, size_t len, uint32_t s
         case 1:
             k1 ^= static_cast<uint64_t>(tail[0]);
             k1 *= c1;
-            k1 = rotl64(k1, 31);
+            k1 = Rotl64(k1, 31);
             k1 *= c2;
             h1 ^= k1;
     }

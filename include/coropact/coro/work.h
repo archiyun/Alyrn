@@ -24,9 +24,9 @@ struct Work : public coropact::ds::QueueNode<Work> {
   Work() noexcept = default;
 
   // Stores a callback in the same word that ResumeWork uses for its coroutine
-  // handle. Function pointers and coroutine frame addresses are both at least
-  // two-byte aligned on the supported Linux targets, so bit zero identifies
-  // the action kind without adding a discriminator byte (and its padding).
+  // handle. The high bit identifies the action kind without adding a
+  // discriminator byte (and its padding). Linux user-space function and frame
+  // addresses leave this bit clear on the supported 64-bit targets.
   void SetRun(RunFn run_fn) noexcept {
     assert(run_fn != nullptr);
     const auto encoded = std::bit_cast<std::uintptr_t>(run_fn);
@@ -71,7 +71,8 @@ struct Work : public coropact::ds::QueueNode<Work> {
   void ClearHandle() noexcept { action_ = kResumeTag; }
 
 private:
-  static constexpr std::uintptr_t kResumeTag = 1;
+  static constexpr std::uintptr_t kResumeTag =
+      std::uintptr_t{1} << (sizeof(std::uintptr_t) * 8 - 1);
 
   [[nodiscard]]
   bool IsResume() const noexcept { return (action_ & kResumeTag) != 0; }
