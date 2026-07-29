@@ -2,8 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 #include <cstdio>
+#include <coroutine>
 
+#include "coropact/coro/scheduler.h"
 #include "coropact/operation/detail/completion_gate.h"
+#include "coropact/operation/detail/scheduler_continuation.h"
 
 namespace {
 
@@ -35,10 +38,33 @@ bool TestResetForReusablePhysicalSlot() {
          Expect(gate.TryComplete(), "a reopened slot must accept its next completion");
 }
 
+class RecordingScheduler final : public coropact::coro::Scheduler {
+ public:
+  void Schedule(coropact::coro::Work* work) noexcept override { scheduled_ = work; }
+
+  coropact::coro::Work* scheduled_{nullptr};
+};
+
+bool TestSchedulerContinuationPreservesAffinity() {
+  RecordingScheduler scheduler;
+  auto* const previous = coropact::coro::Scheduler::Current();
+  coropact::coro::Scheduler::SetCurrent(&scheduler);
+
+  coropact::operation::detail::SchedulerContinuation continuation;
+  continuation.Bind(std::noop_coroutine());
+  coropact::coro::Scheduler::SetCurrent(previous);
+
+  continuation.Schedule();
+  return Expect(continuation.Bound(), "a bound continuation must retain its scheduler") &&
+         Expect(scheduler.scheduled_ != nullptr,
+                "completion must schedule through the captured scheduler");
+}
+
 }  // namespace
 
 int main() {
-  const bool ok = TestOneShotTransition() && TestResetForReusablePhysicalSlot();
+  const bool ok = TestOneShotTransition() && TestResetForReusablePhysicalSlot() &&
+                  TestSchedulerContinuationPreservesAffinity();
   if (ok) {
     std::puts("completion gate smoke: PASS");
     return 0;

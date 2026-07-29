@@ -15,10 +15,10 @@
 #include "coropact/base/check.h"
 #include "coropact/base/error.h"
 #include "coropact/base/try.h"
-#include "coropact/coro/scheduler.h"
-#include "coropact/coro/work.h"
 #include "coropact/net/endpoint.h"
 #include "coropact/net/net_utils.h"
+#include "coropact/operation/detail/completion_gate.h"
+#include "coropact/operation/detail/scheduler_continuation.h"
 #include "coropact/reactor/channel.h"
 
 namespace coropact::reactor {
@@ -50,12 +50,12 @@ public:
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     COROPACT_DCHECK(loop_->IsInLoopThread(), "ConnectAwaiter: wrong EventLoop thread");
-    scheduler_ = &coro::Scheduler::RequireCurrent();
-    resume_work_.SetHandle(continuation);
+    continuation_.Bind(continuation);
 
     auto fd = net::CreateNonBlockingSocket(peer_.native_family());
     if (!fd.has_value()) {
       result_.SetError(fd.error());
+      static_cast<void>(completion_gate_.TryComplete());
       return false;
     }
     fd_ = *fd;
@@ -67,10 +67,12 @@ public:
 
     if (rc == 0) {
       result_.SetResult(MakeStream());
+      static_cast<void>(completion_gate_.TryComplete());
       return false;
     }
     if (errno != EINPROGRESS) {
       result_.SetError(base::CurrentErrno());
+      static_cast<void>(completion_gate_.TryComplete());
       return false;
     }
 
@@ -99,6 +101,9 @@ private:
   }
 
   void OnReady() noexcept {
+    if (!completion_gate_.TryComplete()) {
+      return;
+    }
     auto error = ConnectError(fd_);
     if (!error.has_value()) {
       DetachChannel();
@@ -109,7 +114,7 @@ private:
       DetachChannel();
       result_.SetError(base::MakeErrno(*error));
     }
-    scheduler_->Schedule(&resume_work_);
+    continuation_.Schedule();
   }
 
   void DetachChannel() noexcept {
@@ -127,8 +132,8 @@ private:
   net::Endpoint peer_;
   int fd_{-1};
   std::optional<Channel> channel_;
-  coro::Scheduler* scheduler_{nullptr};
-  coro::ResumeWork resume_work_{};
+  operation::detail::SchedulerContinuation continuation_;
+  operation::detail::CompletionGate completion_gate_;
   detail::ReactorValueResultState<ReactorStream> result_;
 };
 
@@ -144,10 +149,13 @@ public:
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     COROPACT_DCHECK(loop_->IsInLoopThread(), "SleepAwaiter: wrong EventLoop thread");
-    scheduler_ = &coro::Scheduler::RequireCurrent();
-    resume_work_.SetHandle(continuation);
+    continuation_.Bind(continuation);
     const auto seconds = std::chrono::duration<double>(delay_).count();
-    loop_->RunAfter(seconds, [this] { scheduler_->Schedule(&resume_work_); });
+    loop_->RunAfter(seconds, [this] {
+      if (completion_gate_.TryComplete()) {
+        continuation_.Schedule();
+      }
+    });
     return true;
   }
 
@@ -156,8 +164,8 @@ public:
 private:
   EventLoop* loop_;
   std::chrono::milliseconds delay_;
-  coro::Scheduler* scheduler_{nullptr};
-  coro::ResumeWork resume_work_;
+  operation::detail::SchedulerContinuation continuation_;
+  operation::detail::CompletionGate completion_gate_;
 };
 
 }  // namespace

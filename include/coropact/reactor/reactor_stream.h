@@ -12,12 +12,12 @@
 #include <vector>
 
 #include "coropact/base/error.h"
-#include "coropact/coro/scheduler.h"
 #include "coropact/coro/task.h"
 #include "coropact/net/buffer.h"
 #include "coropact/net/endpoint.h"
 #include "coropact/net/socket.h"
 #include "coropact/operation/detail/completion_gate.h"
+#include "coropact/operation/detail/scheduler_continuation.h"
 #include "coropact/reactor/channel.h"
 #include "coropact/reactor/detail/op_hook.h"
 #include "coropact/reactor/detail/result_state.h"
@@ -131,8 +131,7 @@ private:
   ReactorStream* stream_;
   std::span<std::byte> buffer_;
   std::chrono::milliseconds timeout_;
-  coro::Scheduler* scheduler_{nullptr};
-  coro::ResumeWork resume_work_;
+  operation::detail::SchedulerContinuation continuation_;
   operation::detail::CompletionGate completion_gate_;
   detail::ReactorIoResultState result_;
   time::TimerId timer_;
@@ -162,8 +161,7 @@ private:
 
   ReactorStream* stream_;
   std::span<const std::byte> buffer_;
-  coro::Scheduler* scheduler_{nullptr};
-  coro::ResumeWork resume_work_;
+  operation::detail::SchedulerContinuation continuation_;
   operation::detail::CompletionGate completion_gate_;
   detail::ReactorIoResultState result_;
 };
@@ -197,8 +195,8 @@ private:
   std::size_t reserve_;
   std::chrono::milliseconds timeout_;
   std::vector<iovec> iovs_;
-  coro::Scheduler* scheduler_{nullptr};
-  coro::ResumeWork resume_work_;
+  operation::detail::SchedulerContinuation continuation_;
+  operation::detail::CompletionGate completion_gate_;
   detail::ReactorIoResultState result_;
   time::TimerId timer_;
 };
@@ -229,8 +227,8 @@ private:
   ReactorStream* stream_;
   net::Buffer* buffer_;
   std::vector<iovec> iovs_;
-  coro::Scheduler* scheduler_{nullptr};
-  coro::ResumeWork resume_work_;
+  operation::detail::SchedulerContinuation continuation_;
+  operation::detail::CompletionGate completion_gate_;
   detail::ReactorIoResultState result_;
 };
 

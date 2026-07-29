@@ -19,8 +19,6 @@
 
 #include "coropact/base/check.h"
 #include "coropact/base/error.h"
-#include "coropact/coro/scheduler.h"
-#include "coropact/coro/work.h"
 #include "coropact/net/net_utils.h"
 
 namespace coropact::reactor {
@@ -138,8 +136,7 @@ bool ReactorStream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> conti
   COROPACT_DCHECK(stream_->pending_read_ == nullptr,
                   "ReadSomeAwaiter: only one pending read is supported per stream");
 
-  scheduler_ = &coro::Scheduler::RequireCurrent();
-  resume_work_.SetHandle(continuation);
+  continuation_.Bind(continuation);
   IoAttempt attempt = TryRead(stream_->socket_.fd(), buffer_);
   if (!attempt.pending) {
     result_.SetResult(attempt.result);
@@ -179,8 +176,7 @@ void ReactorStream::ReadSomeAwaiter::CompleteImpl(base::Result<std::size_t> resu
   }
   stream_ = nullptr;
   result_.SetResult(result);
-  COROPACT_DCHECK(scheduler_ != nullptr, "ReadSomeAwaiter: scheduler is not bound");
-  scheduler_->Schedule(&resume_work_);
+  continuation_.Schedule();
 }
 
 void ReactorStream::ReadSomeAwaiter::OnReadyImpl() noexcept {
@@ -203,6 +199,7 @@ bool ReactorStream::BufferReadAwaiter::await_suspend(
     std::coroutine_handle<> continuation) noexcept {
   if (stream_->closed_ || stream_->socket_.fd() < 0) {
     result_.SetError(base::MakeErrno(EBADF));
+    static_cast<void>(completion_gate_.TryComplete());
     return false;
   }
 
@@ -210,16 +207,17 @@ bool ReactorStream::BufferReadAwaiter::await_suspend(
   COROPACT_DCHECK(stream_->pending_read_ == nullptr,
                   "BufferReadAwaiter: only one pending read is supported per stream");
 
-  scheduler_ = &coro::Scheduler::RequireCurrent();
-  resume_work_.SetHandle(continuation);
+  continuation_.Bind(continuation);
 
   if (!PrepareReservation()) {
+    static_cast<void>(completion_gate_.TryComplete());
     return false;
   }
 
   IoAttempt attempt = TryReadv(stream_->socket_.fd(), iovs_);
   if (!attempt.pending) {
     FinishAttempt(std::move(attempt.result));
+    static_cast<void>(completion_gate_.TryComplete());
     return false;
   }
 
@@ -246,14 +244,16 @@ base::Result<std::size_t> ReactorStream::BufferReadAwaiter::await_resume() noexc
 }
 
 void ReactorStream::BufferReadAwaiter::CompleteImpl(base::Result<std::size_t> result) noexcept {
+  if (!completion_gate_.TryComplete()) {
+    return;
+  }
   if (timer_.Valid()) {
     stream_->loop_->Cancel(timer_);
     timer_ = {};
   }
   FinishAttempt(std::move(result));
   stream_ = nullptr;
-  COROPACT_DCHECK(scheduler_ != nullptr, "BufferReadAwaiter: scheduler is not bound");
-  scheduler_->Schedule(&resume_work_);
+  continuation_.Schedule();
 }
 
 void ReactorStream::BufferReadAwaiter::OnReadyImpl() noexcept {
@@ -299,8 +299,7 @@ bool ReactorStream::WriteSomeAwaiter::await_suspend(std::coroutine_handle<> cont
   COROPACT_DCHECK(stream_->pending_write_ == nullptr,
                   "WriteSomeAwaiter: only one pending write is supported per stream");
 
-  scheduler_ = &coro::Scheduler::RequireCurrent();
-  resume_work_.SetHandle(continuation);
+  continuation_.Bind(continuation);
   IoAttempt attempt = TryWrite(stream_->socket_.fd(), buffer_);
   if (!attempt.pending) {
     result_.SetResult(attempt.result);
@@ -326,8 +325,7 @@ void ReactorStream::WriteSomeAwaiter::CompleteImpl(base::Result<std::size_t> res
     return;
   }
   result_.SetResult(result);
-  COROPACT_DCHECK(scheduler_ != nullptr, "WriteSomeAwaiter: scheduler is not bound");
-  scheduler_->Schedule(&resume_work_);
+  continuation_.Schedule();
 }
 
 void ReactorStream::WriteSomeAwaiter::OnReadyImpl() noexcept {
@@ -346,6 +344,7 @@ bool ReactorStream::BufferWriteAwaiter::await_suspend(
     std::coroutine_handle<> continuation) noexcept {
   if (stream_->closed_ || stream_->socket_.fd() < 0) {
     result_.SetError(base::MakeErrno(EBADF));
+    static_cast<void>(completion_gate_.TryComplete());
     return false;
   }
 
@@ -353,16 +352,17 @@ bool ReactorStream::BufferWriteAwaiter::await_suspend(
   COROPACT_DCHECK(stream_->pending_write_ == nullptr,
                   "BufferWriteAwaiter: only one pending write is supported per stream");
 
-  scheduler_ = &coro::Scheduler::RequireCurrent();
-  resume_work_.SetHandle(continuation);
+  continuation_.Bind(continuation);
 
   if (!PrepareReadable()) {
+    static_cast<void>(completion_gate_.TryComplete());
     return false;
   }
 
   IoAttempt attempt = TryWritev(stream_->socket_.fd(), iovs_);
   if (!attempt.pending) {
     FinishAttempt(std::move(attempt.result));
+    static_cast<void>(completion_gate_.TryComplete());
     return false;
   }
 
@@ -380,9 +380,11 @@ base::Result<std::size_t> ReactorStream::BufferWriteAwaiter::await_resume() noex
 }
 
 void ReactorStream::BufferWriteAwaiter::CompleteImpl(base::Result<std::size_t> result) noexcept {
+  if (!completion_gate_.TryComplete()) {
+    return;
+  }
   FinishAttempt(std::move(result));
-  COROPACT_DCHECK(scheduler_ != nullptr, "BufferWriteAwaiter: scheduler is not bound");
-  scheduler_->Schedule(&resume_work_);
+  continuation_.Schedule();
 }
 
 void ReactorStream::BufferWriteAwaiter::OnReadyImpl() noexcept {
