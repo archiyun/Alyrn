@@ -16,7 +16,6 @@
 #include "coropact/coro.h"     // IWYU pragma: export
 #include "coropact/ds.h"       // IWYU pragma: export
 #include "coropact/io.h"       // IWYU pragma: export
-#include "coropact/log.h"      // IWYU pragma: export
 #include "coropact/memory.h"   // IWYU pragma: export
 #include "coropact/metrics.h"  // IWYU pragma: export
 #include "coropact/net.h"      // IWYU pragma: export

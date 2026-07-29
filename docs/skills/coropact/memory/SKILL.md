@@ -87,7 +87,6 @@ Object slot: raw free -> constructed -> destroyed/raw free
 - `coropact/net`
 - `coropact/http`
 - `coropact/gateway`
-- `coropact/log`
 - `coropact/time` for allocator primitives
 
 ## Patch rules

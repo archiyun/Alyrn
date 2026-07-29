@@ -39,22 +39,19 @@ if(COROPACT_SANITIZER)
     add_link_options(-fsanitize=${COROPACT_SANITIZER})
 endif()
 
-add_library(coropact_foundation STATIC
-    src/log/async_logger.cc
-    src/log/logger.cc
-)
+add_library(coropact_foundation INTERFACE)
 
 target_include_directories(coropact_foundation
-    PUBLIC
+    INTERFACE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 target_link_libraries(coropact_foundation
-    PUBLIC
+    INTERFACE
         Threads::Threads
 )
 
-target_compile_features(coropact_foundation PUBLIC cxx_std_23)
+target_compile_features(coropact_foundation INTERFACE cxx_std_23)
 
 # ── Coroutine and IO contracts ──────────────────────────────────────────────
 #

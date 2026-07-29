@@ -26,7 +26,7 @@ namespace coropact::time {
 //
 // Example usage:
 //   Timestamp now = Timestamp::Now();
-//   LOG(INFO) << "Current time: " << now.ToFormattedString();
+//   const auto formatted = now.ToFormattedString();
 //
 //   Timestamp later = AddTime(now, 5.0);  // 5 seconds later
 //   double elapsed = TimeDifference(later, now);  // 5.0

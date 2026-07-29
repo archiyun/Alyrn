@@ -1,6 +1,6 @@
 # examples —— 按 runtime 各层拆分到子目录
 #
-#   foundation/  → coropact_foundation （log / base 等基础设施）
+#   foundation/  → coropact_foundation （base 等基础设施）
 #   net/         → coropact_net        （地址 / socket 基础能力）
 #   reactor/     → coropact_reactor    （epoll / EventLoop / Reactor stream）
 #

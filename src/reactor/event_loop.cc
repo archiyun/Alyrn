@@ -7,10 +7,8 @@
 
 #include <cerrno>
 #include <cstdint>
-#include <cstring>
 
 #include "coropact/base/check.h"
-#include "coropact/log/logger.h"
 #include "coropact/reactor/channel.h"
 #include "coropact/reactor/poller.h"
 #include "coropact/reactor/timer_queue.h"
@@ -25,10 +23,7 @@ static constexpr int kPollTimeMs = 10000;
 
 int CreateEventfd() {
   const int evtfd = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
-  if (evtfd < 0) {
-    LOG_FATALF("eventfd creation failed: errno={} message={}", errno, std::strerror(errno));
-    COROPACT_CHECK(false, "EventLoop: eventfd creation failed");
-  }
+  COROPACT_CHECK(evtfd >= 0, "EventLoop: eventfd creation failed");
   return evtfd;
 }
 
@@ -46,8 +41,7 @@ void WriteEventfd(int fd) {
       return;
     }
 
-    LOG_ERRORF("eventfd write failed: fd={} errno={} message={}", fd, errno, std::strerror(errno));
-    return;
+    COROPACT_CHECK(false, "EventLoop: eventfd write failed");
   }
 }
 
@@ -65,8 +59,7 @@ void ReadEventfd(int fd) {
       return;
     }
 
-    LOG_ERRORF("eventfd read failed: fd={} errno={} message={}", fd, errno, std::strerror(errno));
-    return;
+    COROPACT_CHECK(false, "EventLoop: eventfd read failed");
   }
 }
 
@@ -91,8 +84,6 @@ EventLoop::EventLoop()
   // interrupt epoll_wait when they queue work into this loop.
   wakeup_channel_.SetReadCallback(&EventLoop::DispatchWakeupRead, this);
   wakeup_channel_.EnableReading();
-
-  LOG_DEBUGF("event loop created: wakeup_fd={}", wakeup_fd_);
 }
 
 EventLoop::~EventLoop() {
@@ -120,8 +111,6 @@ void EventLoop::Loop() {
   // Do not reset quit_ here: a Quit() that races in before Loop() begins (e.g.
   // another thread holds the loop pointer and stops it during startup) must be
   // honored, otherwise the loop would clear the request and block forever.
-  LOG_INFOF("event loop entering loop");
-
   while (!quit_.load(std::memory_order_relaxed)) {
     DoPendingFunctors();
 
@@ -142,7 +131,6 @@ void EventLoop::Loop() {
   }
 
   looping_.store(false, std::memory_order_relaxed);
-  LOG_INFOF("event loop exited loop");
 }
 
 void EventLoop::Quit() {

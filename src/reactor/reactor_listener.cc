@@ -15,7 +15,6 @@
 #include "coropact/base/try.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/work.h"
-#include "coropact/log/logger.h"
 #include "coropact/net/accept_source.h"
 #include "coropact/net/net_utils.h"
 #include "coropact/reactor/detail/result_state.h"
@@ -65,11 +64,7 @@ base::Result<net::Socket> TryCreateListenSocket(const net::Endpoint& listen_addr
 
 int CreateListenSocket(sa_family_t family) {
   auto fd = net::CreateNonBlockingSocket(family);
-  if (!fd.has_value()) {
-    LOG_FATAL() << "failed to create reactor listener socket: error=" << fd.error().value()
-                << " message=" << fd.error().message();
-    COROPACT_CHECK(false, "ReactorListener: failed to create listening socket");
-  }
+  COROPACT_CHECK(fd.has_value(), "ReactorListener: failed to create listening socket");
   return *fd;
 }
 

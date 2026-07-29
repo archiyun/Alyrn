@@ -85,7 +85,6 @@ container: empty <-> populated -> Clear/destruction unlinks all hooks
 ## Forbidden dependencies
 
 - `coropact/time`
-- `coropact/log`
 - `coropact/net`
 - `coropact/http`
 - `coropact/gateway`

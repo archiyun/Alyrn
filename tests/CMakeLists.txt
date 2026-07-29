@@ -497,22 +497,6 @@ target_link_libraries(pmr_pool_resource_smoke_test
 
 add_test(NAME pmr_pool_resource_smoke_test COMMAND pmr_pool_resource_smoke_test)
 
-add_executable(logger_smoke_test
-    unit/test_logger_smoke.cc
-)
-
-target_include_directories(logger_smoke_test
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
-
-target_link_libraries(logger_smoke_test
-    PRIVATE
-        coropact_foundation
-)
-
-add_test(NAME logger_smoke_test COMMAND logger_smoke_test)
-
 add_executable(facade_smoke_test
     unit/test_facade_smoke.cc
 )
@@ -710,7 +694,6 @@ if(GTest_FOUND)
     include(GoogleTest)
 
     add_executable(coropact_unit_tests
-        unit/test_logger.cc
         unit/test_memory_pool.cc
         unit/test_net_utils.cc
         unit/test_object_pool.cc
