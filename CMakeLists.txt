@@ -12,7 +12,6 @@ option(BUILD_TESTS "Build tests" ON)
 option(BUILD_EXAMPLES "Build example programs" ON)
 option(BUILD_BENCHMARKS "Build standalone microbenchmarks" OFF)
 option(COROPACT_ENABLE_URING "Enable io_uring proactor backend (requires liburing, Linux 5.19+)" OFF)
-option(COROPACT_ENABLE_GATEWAY_YAML_CONFIG "Build YAML gateway config support (requires yaml-cpp)" ON)
 option(COROPACT_ENABLE_CTRACK "Enable optional CTRACK instrumentation" OFF)
 option(COROPACT_ENABLE_TEST_HOOKS
        "Enable deterministic fault-injection hooks for runtime tests" OFF)
@@ -40,23 +39,19 @@ if(COROPACT_SANITIZER)
     add_link_options(-fsanitize=${COROPACT_SANITIZER})
 endif()
 
-add_library(coropact_foundation STATIC
-    src/log/async_logger.cc
-    src/log/logger.cc
-    src/time/timestamp.cc
-)
+add_library(coropact_foundation INTERFACE)
 
 target_include_directories(coropact_foundation
-    PUBLIC
+    INTERFACE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 target_link_libraries(coropact_foundation
-    PUBLIC
+    INTERFACE
         Threads::Threads
 )
 
-target_compile_features(coropact_foundation PUBLIC cxx_std_23)
+target_compile_features(coropact_foundation INTERFACE cxx_std_23)
 
 # ── Coroutine and IO contracts ──────────────────────────────────────────────
 #
@@ -230,102 +225,6 @@ if(COROPACT_ENABLE_URING)
     target_compile_definitions(coropact_coro_luring INTERFACE COROPACT_ENABLE_URING)
     target_compile_features(coropact_coro_luring INTERFACE cxx_std_23)
 endif()
-
-set(COROPACT_HTTP_CORE_SOURCES
-    src/http/http_types.cc
-    src/http/http_request.cc
-    src/http/http_response.cc
-    src/http/http_parser.cc
-    src/http/parse_status.cc
-    src/http/router.cc
-)
-
-add_library(coropact_http_core STATIC ${COROPACT_HTTP_CORE_SOURCES})
-
-target_include_directories(coropact_http_core
-    PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-target_link_libraries(coropact_http_core
-    PUBLIC
-        coropact_foundation
-)
-
-target_compile_features(coropact_http_core PUBLIC cxx_std_23)
-
-add_library(coropact_gateway_core STATIC
-    src/gateway/gateway_core.cc
-)
-
-target_include_directories(coropact_gateway_core PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-target_link_libraries(coropact_gateway_core PUBLIC
-    coropact_http_core
-    coropact_foundation
-    Threads::Threads
-)
-
-target_compile_features(coropact_gateway_core PUBLIC cxx_std_23)
-
-add_library(coropact_gateway STATIC
-    src/gateway/proxy_pass.cc
-)
-
-target_include_directories(coropact_gateway PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-target_link_libraries(coropact_gateway PUBLIC
-    coropact_gateway_core
-    coropact_foundation
-    Threads::Threads
-)
-
-target_compile_features(coropact_gateway PUBLIC cxx_std_23)
-
-if(COROPACT_ENABLE_GATEWAY_YAML_CONFIG)
-    find_package(yaml-cpp QUIET CONFIG)
-    if(TARGET yaml-cpp::yaml-cpp)
-        set(COROPACT_YAML_CPP_TARGET yaml-cpp::yaml-cpp)
-    elseif(TARGET yaml-cpp)
-        set(COROPACT_YAML_CPP_TARGET yaml-cpp)
-    else()
-        find_package(PkgConfig QUIET)
-        if(PkgConfig_FOUND)
-            pkg_check_modules(YAML_CPP QUIET IMPORTED_TARGET yaml-cpp)
-            if(TARGET PkgConfig::YAML_CPP)
-                set(COROPACT_YAML_CPP_TARGET PkgConfig::YAML_CPP)
-            endif()
-        endif()
-    endif()
-
-    if(COROPACT_YAML_CPP_TARGET)
-        add_library(coropact_gateway_config STATIC
-            src/gateway/gateway_config_yaml.cc
-        )
-
-        target_include_directories(coropact_gateway_config PUBLIC
-            ${CMAKE_CURRENT_SOURCE_DIR}/include
-        )
-
-        target_link_libraries(coropact_gateway_config
-            PUBLIC
-                coropact_gateway
-                coropact_net
-            PRIVATE
-                ${COROPACT_YAML_CPP_TARGET}
-        )
-
-        target_compile_features(coropact_gateway_config PUBLIC cxx_std_23)
-        target_compile_definitions(coropact_gateway_config PUBLIC COROPACT_HAS_GATEWAY_YAML_CONFIG=1)
-    else()
-        message(WARNING "yaml-cpp was not found; coropact_gateway_config will not be built")
-    endif()
-endif()
-
 
 if(BUILD_TESTS)
     enable_testing()

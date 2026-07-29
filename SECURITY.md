@@ -21,8 +21,7 @@ unbounded resource consumption, parser flaw, etc.):
 
 In scope:
 - `coropact_foundation`, `coropact_task`, `coropact_net`, `coropact_reactor`,
-  `coropact_luring`, `coropact_http_core`, `coropact_gateway` library code
-- HTTP/1.1 parsing and routing
+  `coropact_luring` library code
 
 Out of scope:
 - Example programs under `examples/`

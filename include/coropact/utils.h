@@ -5,4 +5,3 @@
 // Public umbrella header for utility components.
 
 #include "coropact/utils/macros.h" // IWYU pragma: export
-#include "coropact/utils/singleton.h" // IWYU pragma: export

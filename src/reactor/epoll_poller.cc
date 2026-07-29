@@ -5,10 +5,8 @@
 #include <unistd.h>
 
 #include <cerrno>
-#include <cstring>
 
 #include "coropact/base/check.h"
-#include "coropact/log/logger.h"
 #include "coropact/reactor/channel.h"
 
 namespace coropact::reactor {
@@ -20,19 +18,6 @@ enum class ChannelState : int8_t {
   kAdded = 1,
   kDeleted = 2,
 };
-
-const char* OpName(int op) {
-  switch (op) {
-    case EPOLL_CTL_ADD:
-      return "ADD";
-    case EPOLL_CTL_MOD:
-      return "MOD";
-    case EPOLL_CTL_DEL:
-      return "DEL";
-    default:
-      return "UNKNOWN";
-  }
-}
 
 // Entrance， Channel->events()
 static uint32_t ToEpollEvents(int abstract_events) {
@@ -69,7 +54,6 @@ static int FromEpollEvents(uint32_t epoll_events) {
 EPollPoller::EPollPoller(EventLoop* loop)
     : Poller(loop), epollfd_(::epoll_create1(EPOLL_CLOEXEC)), events_(kInitEventListSize) {
   if (epollfd_ < 0) {
-    LOG_FATAL() << "epoll_create1 failed: errno=" << errno << " message=" << std::strerror(errno);
     COROPACT_CHECK(false, "EPollPoller: epoll_create1 failed");
   }
 }
@@ -95,9 +79,7 @@ coropact::time::Timestamp EPollPoller::Poll(int timeout_ms, ChannelList* active_
       events_.resize(events_.size() * 2);
     }
   } else if (num_events < 0 && saved_errno != EINTR) {
-    errno = saved_errno;
-    LOG_ERROR() << "epoll_wait failed: errno=" << saved_errno
-                << " message=" << std::strerror(saved_errno);
+    COROPACT_CHECK(false, "EPollPoller: epoll_wait failed");
   }
 
   return now;
@@ -158,9 +140,7 @@ void EPollPoller::Update(int operation, Channel* channel) {
   event.data.ptr = channel;
 
   if (::epoll_ctl(epollfd_, operation, channel->Fd(), &event) < 0) {
-    LOG_ERROR() << "epoll_ctl failed: op=" << OpName(operation) << " fd=" << channel->Fd()
-                << " events=" << channel->Events() << " errno=" << errno
-                << " message=" << std::strerror(errno);
+    COROPACT_CHECK(false, "EPollPoller: epoll_ctl failed");
   }
 }
 

@@ -267,7 +267,7 @@ bool CheckBackendBindingProfile() {
   }
 
   if (!Check(binding->active_profile.ContainsAll(
-                 coropact::io::CapabilitySet::CoreGateway()),
+                 coropact::io::CapabilitySet::CoreNetwork()),
              "reactor binding does not activate core gateway profile")) {
     return false;
   }
@@ -278,14 +278,14 @@ bool CheckBackendBindingProfile() {
   }
 
   auto timed = coropact::io::BindReactor(
-      coropact::io::CapabilitySet::TimedGateway());
+      coropact::io::CapabilitySet::TimedNetwork());
   if (!Check(timed.has_value(),
              "reactor should support the timed gateway profile")) {
     return false;
   }
 
   const auto unsupported_extension =
-      coropact::io::CapabilitySet::CoreGateway().Require(
+      coropact::io::CapabilitySet::CoreNetwork().Require(
           coropact::io::IoRequirement::kSendZeroCopy);
   auto unsupported = coropact::io::BindReactor(unsupported_extension);
   return Check(!unsupported.has_value(),

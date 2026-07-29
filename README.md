@@ -5,7 +5,7 @@
 ![License](https://img.shields.io/github/license/akiba-miku/high-concurrency-runtime)
 ![Stars](https://img.shields.io/github/stars/akiba-miku/high-concurrency-runtime?style=social)
 
-***A C++23 asynchronous networking runtime and L7 gateway for Linux, powered by coroutines, epoll, and io_uring.***
+***A C++23 asynchronous networking runtime for Linux, powered by coroutines, epoll, and io_uring.***
 
 CoroPact provides a unified and explicit coroutine programming model over independent Reactor and io_uring networking backends:
 
@@ -15,8 +15,8 @@ CoroPact provides a unified and explicit coroutine programming model over indepe
 * 🧩 **Explicit ownership and completion semantics**
   Each Worker owns its thread, event loop, connections, and I/O operations. Operations complete in their owning execution context and coroutine continuations resume in that same context, with explicit rules for buffer lifetimes, cancellation, and asynchronous close.
 
-* 🚀 **Networking runtime and L7 gateway**
-  CoroPact provides asynchronous accept, connect, read, write, and close, together with an incremental HTTP/1.1 parser, reverse proxy, upstream connection pool, load balancing, health checking, circuit breaking, and rate limiting.
+* 🚀 **Networking runtime**
+  CoroPact provides asynchronous accept, connect, read, write, close, timers, and backend-specific extensions such as multishot receive and zero-copy send. HTTP and gateway policy live in [CoroGateway](https://github.com/archiyun/CoroGateway).
 
 Although Linux is the current primary platform, the coroutine and I/O contracts can be used to add other backends such as macOS kqueue and Windows IOCP.
 
@@ -80,7 +80,7 @@ ctest --test-dir build-uring --output-on-failure
 ## Architecture
 
 ```text
-HTTP / Gateway / Custom Session
+Custom Session / Application
                |
                v
  Task<T> + Scheduler + AsyncStream
@@ -130,11 +130,10 @@ Most documentation is still being written and may lag behind the current impleme
 * **[Networking architecture](docs/design/zh-CN/network/index.md)**: runtime layering, backend boundaries, and ownership models.
 * **Coroutine state-machine formalization**: planned documentation under the design tree.
 * **[AsyncStream semantics](docs/design/zh-CN/network/async-stream-contract.md)**: read, write, close, cancellation, and buffer-lifetime semantics.
-* **[Gateway architecture](docs/design/zh-CN/gateway/index.md)**: HTTP handling, reverse proxying, and upstream management.
 * **[Data structures](docs/design/zh-CN/datastructure/index.md)**: modern C++ intrusive data structures, intrusive red-black trees, intrusive lists, MPSC queues, and their use in the project.
 * **[Performance benchmarks](docs/benchmark/network-libraries.md)**: the unified network-library report; additional methods, raw results, and optimization records are in [`docs/benchmark`](docs/benchmark/).
-* **[Examples](examples/)**: Reactor, io_uring, and Gateway examples.
-* **[Tests](tests/)**: coroutine, networking, lifecycle, and gateway validation.
+* **[Examples](examples/)**: Reactor and io_uring examples.
+* **[Tests](tests/)**: coroutine, networking, lifecycle, and backend validation.
 
 ## Current Status
 

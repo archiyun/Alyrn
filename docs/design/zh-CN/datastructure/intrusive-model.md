@@ -229,7 +229,7 @@ if (item.InList()) {
 
    结构                  使用位置
   ━━━━━━━━━━━━━━━━━━━━  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   IntrusiveList         IntrusiveLRU、连接池、IO buffer
+   IntrusiveList         连接池、IO buffer
   ────────────────────  ─────────────────────────────────
    IntrusiveQueue        协程 WorkQueue
   ────────────────────  ─────────────────────────────────
@@ -249,7 +249,6 @@ if (item.InList()) {
   实现位于：
 
   - include/coropact/ds/
-  - include/coropact/cache/
   - include/coropact/time/
 
   验证测试位于：

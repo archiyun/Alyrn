@@ -29,7 +29,7 @@ public:
 
   coro::Task<base::Result<LUringStream>> Connect(std::string_view host, std::uint16_t port);
 
-  // Backend-selected timer used by the generic gateway health-check loop.
+  // Backend-selected timer for application-level health-check loops.
   coro::Task<void> SleepFor(std::chrono::milliseconds delay);
 
 private:

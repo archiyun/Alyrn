@@ -95,7 +95,7 @@ Close()
 都满足 `coropact::io::AsyncListener`。
 
 `Connect()` 不属于 `AsyncStream` 或 `AsyncListener`。它是建立 outbound stream 的另一项
-能力，由 gateway 使用的 `UpstreamConnector` concept 单独约束。
+能力，由应用层需要的 connector concept 单独约束。
 
 ### 2.3 Awaitable 的使用规则
 
@@ -594,7 +594,7 @@ ReadSomeFor(std::span<std::byte> buffer, std::chrono::milliseconds timeout)
 ReactorStream 已提供 ReadSomeFor；
 LUringStream 也已提供 ReadSomeFor；
 AsyncStream concept 尚未包含 ReadSomeFor；
-io::CapabilitySet 中的 kTimeout 已被标为 core，但 TimedStream/TimedGateway
+io::CapabilitySet 中的 kTimeout 已被标为 core，但 TimedStream/TimedNetwork
 尚未成为两种后端都可直接使用的公共业务契约。
 ```
 
@@ -603,7 +603,7 @@ io::CapabilitySet 中的 kTimeout 已被标为 core，但 TimedStream/TimedGatew
 
 ```text
 gateway 的 timeout fallback 只能在具体 stream 提供该方法时启用；
-公共 TimedStream/TimedGateway 尚未成为统一的 compile-time concept；
+公共 TimedStream/TimedNetwork 尚未成为统一的 compile-time concept；
 不能仅凭 kTimeout 通过 capability bind 就改变已有 C++ concept 的接口；
 ProbeCapabilities 报告 luring native capability 不等于 coropact TimedStream 已实现。
 ```
@@ -625,8 +625,8 @@ kWriteSome
 kShutdown
 kClose
 kCancelByClose
-kAccept       // CoreGateway
-kConnect      // CoreGateway / UpstreamConnector
+kAccept       // CoreNetwork
+kConnect      // CoreNetwork / Connector
 kTimeout      // 目标 CoreTimedStream，当前仍在迁移
 ```
 
@@ -644,7 +644,7 @@ kSqPoll
 kIoPoll
 ```
 
-业务请求的是 `CoreStream` 或 `CoreGateway`，不是“我要 readiness”或“我要 SQE”。
+业务请求的是 `CoreStream` 或 `CoreNetwork`，不是“我要 readiness”或“我要 SQE”。
 
 ### C 类：不透明扩展
 

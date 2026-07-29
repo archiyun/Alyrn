@@ -81,7 +81,6 @@ TimerId: invalid | issued -> stale after cancel/fire
 - `coropact/net`
 - `coropact/http`
 - `coropact/gateway`
-- `coropact/log`
 - OS event-dispatch APIs such as epoll/timerfd
 
 ## Patch rules
