@@ -546,10 +546,10 @@ connector 是 loop-bound 对象，不应在 worker 之间共享。
 可以在启动期探测和绑定 luring：
 
 ```cpp
-#include "coropact/luring/capabilities.h"
+#include "coropact/io/luring_backend.h"
 
 coropact::luring::LUringOptions options;
-auto binding = coropact::luring::BindLUring(
+auto binding = coropact::io::BindLuring(
     options, coropact::io::CapabilitySet::CoreGateway());
 
 if (!binding.has_value()) {
@@ -559,11 +559,22 @@ if (!binding.has_value()) {
 ```
 
 `CapabilitySet` 表示应用请求的语义 profile，不表示内核已经具备的能力；它只能通过
-`Require()` 生成新 profile，不能直接修改或伪造 backend 检测结果。
-`ProbeCapabilities()` 返回不可变的 `BackendCapabilities`，其中包含具体 backend 来源；
-`BindBackend()` 会同时校验 profile、backend 类型和实际能力覆盖关系。探测发生在启动期，
-绑定成功后 profile 应视为固定配置。业务依赖的是 `CoreGateway` 等语义 profile，而不是
-`kSubmitRead` 之类的实现标签。
+`Require()` 生成新 profile。`io::BindLuring()` 位于上层 adapter，会把语义 profile
+翻译为 luring 的 `RuntimeProfile`，再调用 luring 自己的探测和绑定逻辑。luring 核心只
+暴露 `NativeFeature` 和 `Capabilities`，不会反向包含 `io` facade。
+
+直接创建 `LUringLoop` 时，也可以把 profile 放进 loop options：
+
+```cpp
+auto profile = coropact::io::CapabilitySet::CoreGateway().Require(
+    coropact::io::IoRequirement::kSendZeroCopy);
+auto binding = coropact::io::BindLuring(options, profile);
+auto initialized = loop.Init(options);
+```
+
+`LUringLoop` 会保存 luring 自己的 `RuntimeBinding`。`SendZeroCopy()`、`LUringRecvSource` 的 provided-buffer
+以及 `F_BUF_MORE` 增量消费，只有同时满足 active profile 和实际 ring capability 时才会提交；
+否则在提交前返回 `ENOTSUP`。
 
 ### 当前能力边界
 

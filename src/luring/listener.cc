@@ -265,8 +265,12 @@ base::Result<LUringStream> LUringAcceptSource::MakeStream(int accepted_fd) noexc
     return std::unexpected(error);
   }
 
-  return LUringStream(listener_->loop_, accepted_fd,
-                      net::Endpoint(reinterpret_cast<const sockaddr*>(&peer), peer_len));
+  LUringStream stream(
+      listener_->loop_, accepted_fd,
+      net::Endpoint(reinterpret_cast<const sockaddr*>(&peer), peer_len));
+  stream.SetZeroCopyWritesEnabled(listener_->zero_copy_writes_);
+  stream.SetZeroCopyDiagnostics(listener_->zero_copy_diagnostics_);
+  return stream;
 }
 
 base::Result<void> LUringAcceptSource::StartOperation() noexcept {
@@ -672,6 +676,12 @@ private:
       } else {
         self->immediate_ =
             MakeStream(listener->loop_, *op->result, self->peer_addr_, self->peer_len_);
+        if (self->immediate_->has_value()) {
+          self->immediate_->value().SetZeroCopyWritesEnabled(
+              listener->zero_copy_writes_);
+          self->immediate_->value().SetZeroCopyDiagnostics(
+              listener->zero_copy_diagnostics_);
+        }
       }
 
       self->listener_ = nullptr;
@@ -817,10 +827,20 @@ base::Result<LUringListener> LUringListener::Create(LUringLoop* loop,
   assert(loop != nullptr);
   assert(loop->IsInLoopThread());
 
-  return LUringListener(loop, COROPACT_TRY(CreatedListenFd(listen_addr, options)));
+  return LUringListener(
+      loop, COROPACT_TRY(CreatedListenFd(listen_addr, options)),
+      options.zero_copy_writes, options.zero_copy_diagnostics);
 }
 
-LUringListener::LUringListener(LUringLoop* loop, int fd) noexcept : loop_(loop), fd_(fd) {
+LUringListener::LUringListener(
+    LUringLoop* loop,
+    int fd,
+    bool zero_copy_writes,
+    ZeroCopySendDiagnostics* zero_copy_diagnostics) noexcept
+    : loop_(loop),
+      fd_(fd),
+      zero_copy_writes_(zero_copy_writes),
+      zero_copy_diagnostics_(zero_copy_diagnostics) {
   assert(loop_ != nullptr);
   assert(fd_ >= 0);
 }
@@ -831,6 +851,8 @@ LUringListener::LUringListener(LUringListener&& other) noexcept
       pending_accepts_(0),
       pending_close_(nullptr),
       accept_source_(nullptr),
+      zero_copy_writes_(other.zero_copy_writes_),
+      zero_copy_diagnostics_(other.zero_copy_diagnostics_),
       closed_(other.closed_) {
   other.closed_ = true;
 }
@@ -852,6 +874,8 @@ LUringListener& LUringListener::operator=(LUringListener&& other) noexcept {
   pending_accepts_ = 0;
   pending_close_ = nullptr;
   accept_source_ = nullptr;
+  zero_copy_writes_ = other.zero_copy_writes_;
+  zero_copy_diagnostics_ = other.zero_copy_diagnostics_;
   closed_ = other.closed_;
   other.closed_ = true;
   return *this;

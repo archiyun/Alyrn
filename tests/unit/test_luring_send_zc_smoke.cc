@@ -4,12 +4,14 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
 #include <array>
 #include <cerrno>
 #include <cstddef>
+#include <cstdio>
 #include <expected>
 #include <iostream>
 #include <optional>
@@ -21,6 +23,8 @@
 #include "coropact/base/error.h"
 #include "coropact/coro/detached_task.h"
 #include "coropact/coro/spawn.h"
+#include "coropact/io/stream_algorithms.h"
+#include "coropact/luring/capability.h"
 #include "coropact/luring/loop.h"
 #include "coropact/luring/options.h"
 #include "coropact/luring/stream.h"
@@ -34,6 +38,9 @@ using coropact::coro::DetachedTask;
 using coropact::luring::LUringLoop;
 using coropact::luring::LUringOptions;
 using coropact::luring::LUringStream;
+using coropact::luring::NativeFeature;
+using coropact::luring::RuntimeProfile;
+using coropact::luring::ZeroCopySendDiagnostics;
 using coropact::luring::ZeroCopySendResult;
 
 class UniqueFd final {
@@ -78,10 +85,13 @@ bool IsEnvironmentSkip(Error error) {
          error.value() == EINVAL || error.value() == EOPNOTSUPP;
 }
 
-bool InitLoop(LUringLoop& loop) {
+bool InitLoop(
+    LUringLoop& loop,
+    RuntimeProfile profile = RuntimeProfile::Core()) {
   LUringOptions options;
   options.entries = 32;
   options.submit_batch = 1;
+  options.active_profile = profile;
   auto initialized = loop.Init(options);
   if (initialized.has_value()) {
     return true;
@@ -155,9 +165,69 @@ DetachedTask SendOnce(
   result->emplace(co_await stream->SendZeroCopy(payload));
 }
 
+DetachedTask WriteAllOnce(
+    LUringStream* stream,
+    std::span<const std::byte> payload,
+    std::optional<Result<void>>* result) {
+  result->emplace(co_await coropact::io::WriteAll(*stream, payload));
+}
+
+template <typename T>
+bool DriveUntilResult(
+    LUringLoop& loop,
+    std::optional<Result<T>>& result,
+    const char* operation) {
+  for (int i = 0; i < 4 && !result.has_value(); ++i) {
+    loop.RunReady();
+  }
+  for (int i = 0; i < 16 && !result.has_value(); ++i) {
+    auto completions = loop.WaitCompletions();
+    if (!completions.has_value()) {
+      std::cout << "FAIL: waiting for " << operation << " CQE failed: "
+                << completions.error().message() << '\n';
+      return false;
+    }
+    loop.RunReady();
+  }
+  return Check(result.has_value(), "operation did not reach terminal CQE");
+}
+
+bool ReadExact(int fd, std::span<const char> expected) {
+  std::array<char, 4096> received{};
+  if (expected.size() > received.size()) {
+    return false;
+  }
+
+  std::size_t offset = 0;
+  while (offset < expected.size()) {
+    const ssize_t count = ::read(
+        fd, received.data() + offset, expected.size() - offset);
+    if (count > 0) {
+      offset += static_cast<std::size_t>(count);
+      continue;
+    }
+    if (count == 0) {
+      return false;
+    }
+    if (errno != EAGAIN && errno != EWOULDBLOCK) {
+      return false;
+    }
+
+    pollfd poll_fd{.fd = fd, .events = POLLIN, .revents = 0};
+    if (::poll(&poll_fd, 1, 1000) <= 0) {
+      return false;
+    }
+  }
+
+  return std::string_view(received.data(), expected.size()) ==
+         std::string_view(expected.data(), expected.size());
+}
+
 bool CheckSendZeroCopy() {
   LUringLoop loop;
-  if (!InitLoop(loop)) {
+  if (!InitLoop(
+          loop,
+          RuntimeProfile::Core().Require(NativeFeature::kSendZeroCopy))) {
     return true;
   }
 
@@ -170,14 +240,18 @@ bool CheckSendZeroCopy() {
   auto local = std::move(pair->first);
   auto peer = std::move(pair->second);
 
+  ZeroCopySendDiagnostics diagnostics;
   LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  stream.SetZeroCopyDiagnostics(&diagnostics);
   constexpr std::string_view text = "io_uring-send-zero-copy";
   const auto payload = std::as_bytes(
       std::span<const char>(text.data(), text.size()));
 
   std::optional<Result<ZeroCopySendResult>> result;
   coropact::coro::SpawnDetach(loop, SendOnce(&stream, payload, &result));
-  loop.RunReady();
+  for (int i = 0; i < 4 && !result.has_value(); ++i) {
+    loop.RunReady();
+  }
 
   for (int i = 0; i < 8 && !result.has_value(); ++i) {
     auto completions = loop.WaitCompletions();
@@ -200,6 +274,22 @@ bool CheckSendZeroCopy() {
   }
   if (!Check(result->has_value(), "send zerocopy returned an error")) {
     std::cout << "send zerocopy error: " << result->error().message() << '\n';
+    std::cout << "send zerocopy diagnostics: attempts="
+              << diagnostics.attempts.load(std::memory_order_relaxed)
+              << " completions="
+              << diagnostics.logical_completions.load(std::memory_order_relaxed)
+              << " primary_events="
+              << diagnostics.primary_events.load(std::memory_order_relaxed)
+              << " last_primary="
+              << diagnostics.last_primary_result.load(std::memory_order_relaxed)
+              << " notifications="
+              << diagnostics.notification_events.load(std::memory_order_relaxed)
+              << " last_notification="
+              << diagnostics.last_notification_result.load(std::memory_order_relaxed)
+              << " errors=" << diagnostics.errors.load(std::memory_order_relaxed)
+              << " primary=" << diagnostics.primary_errors.load(std::memory_order_relaxed)
+              << " protocol=" << diagnostics.protocol_errors.load(std::memory_order_relaxed)
+              << '\n';
     return false;
   }
 
@@ -215,10 +305,122 @@ bool CheckSendZeroCopy() {
                "send zerocopy notification CQE was not observed");
 }
 
+bool CheckZeroCopyWriteAllIntegrity() {
+  LUringLoop loop;
+  if (!InitLoop(
+          loop,
+          RuntimeProfile::Core().Require(NativeFeature::kSendZeroCopy))) {
+    return true;
+  }
+
+  auto pair = MakeTcpPair();
+  if (!pair.has_value()) {
+    std::cout << "FAIL: TCP pair failed: "
+              << pair.error().message() << '\n';
+    return false;
+  }
+  auto local = std::move(pair->first);
+  auto peer = std::move(pair->second);
+
+  ZeroCopySendDiagnostics diagnostics;
+  LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  stream.SetZeroCopyWritesEnabled(true);
+  stream.SetZeroCopyDiagnostics(&diagnostics);
+
+  constexpr std::size_t kRounds = 64;
+  std::array<char, 4096> payload{};
+  for (std::size_t round = 0; round < kRounds; ++round) {
+    const int prefix = std::snprintf(
+        payload.data(), payload.size(), "HTTP/1.1 200 OK\\r\\nX-Zc-Round: %04zu\\r\\n\\r\\n", round);
+    if (!Check(prefix > 0 && static_cast<std::size_t>(prefix) < payload.size(),
+               "zero-copy integrity payload prefix overflow")) {
+      return false;
+    }
+    for (std::size_t i = static_cast<std::size_t>(prefix); i < payload.size(); ++i) {
+      payload[i] = static_cast<char>((round * 31 + i) & 0x7f);
+    }
+
+    const auto bytes = std::as_bytes(std::span<const char>(payload));
+    std::optional<Result<void>> result;
+    coropact::coro::SpawnDetach(loop, WriteAllOnce(&stream, bytes, &result));
+    if (!DriveUntilResult(loop, result, "zero-copy WriteAll")) {
+      return false;
+    }
+    if (!result->has_value()) {
+      if (IsEnvironmentSkip(result->error())) {
+        std::cout << "SKIP: send zerocopy unsupported: "
+                  << result->error().message() << '\n';
+        return true;
+      }
+      std::cout << "FAIL: zero-copy WriteAll error: "
+                << result->error().message() << '\n';
+      return false;
+    }
+    if (!Check(ReadExact(peer.Get(), std::span<const char>(payload)),
+               "zero-copy WriteAll response payload mismatch")) {
+      return false;
+    }
+  }
+
+  const auto attempts = diagnostics.attempts.load(std::memory_order_relaxed);
+  return Check(attempts >= kRounds,
+               "zero-copy WriteAll did not submit every response") &&
+         Check(diagnostics.logical_completions.load(std::memory_order_relaxed) == attempts,
+               "zero-copy WriteAll completion count mismatch") &&
+         Check(diagnostics.notification_events.load(std::memory_order_relaxed) == attempts,
+               "zero-copy WriteAll notification count mismatch") &&
+         Check(diagnostics.errors.load(std::memory_order_relaxed) == 0,
+               "zero-copy WriteAll recorded a classified error") &&
+         Check(diagnostics.protocol_errors.load(std::memory_order_relaxed) == 0,
+               "zero-copy WriteAll recorded a protocol error");
+}
+
+bool CheckSendZeroCopyRequiresProfile() {
+  LUringLoop loop;
+  if (!InitLoop(loop)) {
+    return true;
+  }
+
+  auto pair = MakeTcpPair();
+  if (!pair.has_value()) {
+    std::cout << "FAIL: TCP pair failed: " << pair.error().message() << '\n';
+    return false;
+  }
+  auto local = std::move(pair->first);
+  auto peer = std::move(pair->second);
+  LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+
+  constexpr std::string_view text = "profile-gate";
+  const auto payload = std::as_bytes(
+      std::span<const char>(text.data(), text.size()));
+  std::optional<Result<ZeroCopySendResult>> result;
+  coropact::coro::SpawnDetach(loop, SendOnce(&stream, payload, &result));
+  for (int i = 0; i < 4 && !result.has_value(); ++i) {
+    loop.RunReady();
+  }
+
+  if (!Check(result.has_value(),
+             "send zerocopy profile gate did not complete immediately")) {
+    return false;
+  }
+  if (!Check(!result->has_value(),
+             "send zerocopy bypassed the active profile gate")) {
+    return false;
+  }
+  return Check(result->error().value() == ENOTSUP,
+               "send zerocopy profile gate returned the wrong error");
+}
+
 }  // namespace
 
 int main() {
+  if (!CheckSendZeroCopyRequiresProfile()) {
+    return 1;
+  }
   if (!CheckSendZeroCopy()) {
+    return 1;
+  }
+  if (!CheckZeroCopyWriteAllIntegrity()) {
     return 1;
   }
   std::cout << "luring send zerocopy smoke: PASS\n";

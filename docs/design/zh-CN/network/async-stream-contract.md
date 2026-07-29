@@ -594,7 +594,7 @@ ReadSomeFor(std::span<std::byte> buffer, std::chrono::milliseconds timeout)
 ReactorStream 已提供 ReadSomeFor；
 LUringStream 也已提供 ReadSomeFor；
 AsyncStream concept 尚未包含 ReadSomeFor；
-CapabilitySet 中的 kTimeout 已被标为 core，但 TimedStream/TimedGateway
+io::CapabilitySet 中的 kTimeout 已被标为 core，但 TimedStream/TimedGateway
 尚未成为两种后端都可直接使用的公共业务契约。
 ```
 
@@ -605,7 +605,7 @@ CapabilitySet 中的 kTimeout 已被标为 core，但 TimedStream/TimedGateway
 gateway 的 timeout fallback 只能在具体 stream 提供该方法时启用；
 公共 TimedStream/TimedGateway 尚未成为统一的 compile-time concept；
 不能仅凭 kTimeout 通过 capability bind 就改变已有 C++ concept 的接口；
-ProbeCapabilities 报告内核 opcode 不等于 coropact TimedStream 已实现。
+ProbeCapabilities 报告 luring native capability 不等于 coropact TimedStream 已实现。
 ```
 
 这是当前设计的迁移缺口，不是允许后端静默降级的理由。最终应把 timeout 作为明确的公共

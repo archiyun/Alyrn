@@ -37,6 +37,14 @@ struct CompletionEvent {
   }
 };
 
+// A split-release operation can have separate kernel and user-visible
+// completion boundaries.  The loop owns inflight accounting, while the
+// operation family decides when its continuation may resume.
+struct CompletionDisposition {
+  bool kernel_operation_done{false};
+  bool logical_completion_ready{false};
+};
+
 enum class LUringOpKind : std::uint8_t {
   kNone = 0,
 

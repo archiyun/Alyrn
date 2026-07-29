@@ -6,6 +6,8 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "coropact/luring/capability.h"
+
 namespace coropact::luring {
 
 // LUringOptions configures the ownership, queue sizing, polling mode,
@@ -13,6 +15,10 @@ namespace coropact::luring {
 struct LUringOptions {
   std::uint32_t entries{4096};
   std::uint32_t cq_entries{0};
+
+  // The loop binds this native profile during Init(). Core is the safe
+  // default; optional io_uring mechanisms must be opted into explicitly.
+  RuntimeProfile active_profile{RuntimeProfile::Core()};
 
   // SQPOLL creates a kernel submission thread per ring and is opt-in.
   bool setup_sqpoll{false};

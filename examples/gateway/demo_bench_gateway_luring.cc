@@ -33,6 +33,7 @@
 #include "coropact/gateway/upstream_peer.h"
 #include "coropact/gateway/upstream_registry.h"
 #include "coropact/luring/connector.h"
+#include "coropact/luring/recv_source_stream.h"
 #include "coropact/luring/server.h"
 #include "coropact/memory/pmr_pool_resource.h"
 #include "coropact/net/endpoint.h"
@@ -127,8 +128,12 @@ int main() {
   const bool setup_sqpoll = EnvBool("URING_SQPOLL", false);
   const auto sqpoll_idle_ms = static_cast<std::uint32_t>(EnvSize("URING_SQPOLL_IDLE_MS", 1000));
   const bool setup_defer_taskrun = EnvBool("URING_DEFER_TASKRUN", false);
+  const bool multishot_accept = EnvBool("URING_MULTISHOT_ACCEPT", false);
+  const bool multishot_recv = EnvBool("URING_MULTISHOT_RECV", false);
+  const bool send_zerocopy = EnvBool("URING_SEND_ZEROCOPY", false);
   const bool frame_pool = EnvBool("FRAME_POOL", true);
   const bool frame_stats_enabled = EnvBool("LURING_FRAME_STATS", false);
+  coropact::luring::ZeroCopySendDiagnostics zero_copy_diagnostics;
 
   if (worker_num == 0) {
     std::fprintf(stderr, "URING_WORKERS must be greater than zero\n");
@@ -173,12 +178,18 @@ int main() {
 
   using Service = coropact::gateway::GatewaySessionService<coropact::luring::LUringStream,
                                                        coropact::luring::LUringConnector>;
+  using RecvSourceStream = coropact::luring::LUringRecvSourceStream;
+  using RecvSourceService =
+      coropact::gateway::GatewaySessionService<RecvSourceStream, coropact::luring::LUringConnector>;
   using WorkerPool = Service::Pool;
   Service service("BenchGatewayLUring", registry);
+  RecvSourceService recv_source_service("BenchGatewayLUringRecvSource", registry);
   const coropact::gateway::PoolConfig pool_config{.max_idle_per_peer = max_idle_per_peer,
                                               .max_idle_total = max_idle_total};
-      service.SetPoolConfig(pool_config);
+  service.SetPoolConfig(pool_config);
+  recv_source_service.SetPoolConfig(pool_config);
   service.AddProxyRoute("/", "backend", algo);
+  recv_source_service.AddProxyRoute("/", "backend", algo);
 
   // Upstream streams are owned by their io_uring loop. Keep one pool per
   // worker so sessions on the same ring can reuse connections without
@@ -235,6 +246,19 @@ int main() {
     };
   }
   options.worker_group_options.worker_options.loop_options.entries = ring_entries;
+  options.worker_group_options.worker_options.loop_options.active_profile =
+      coropact::luring::RuntimeProfile::Core();
+  if (multishot_recv) {
+    options.worker_group_options.worker_options.loop_options.active_profile =
+        options.worker_group_options.worker_options.loop_options.active_profile
+            .Require(coropact::luring::NativeFeature::kMultishotRecv)
+            .Require(coropact::luring::NativeFeature::kProvidedBufferRing);
+  }
+  if (send_zerocopy) {
+    options.worker_group_options.worker_options.loop_options.active_profile =
+        options.worker_group_options.worker_options.loop_options.active_profile.Require(
+            coropact::luring::NativeFeature::kSendZeroCopy);
+  }
   options.worker_group_options.worker_options.loop_options.setup_sqpoll = setup_sqpoll;
   options.worker_group_options.worker_options.loop_options.sqpoll_idle_ms = sqpoll_idle_ms;
   options.worker_group_options.worker_options.loop_options.setup_defer_taskrun =
@@ -253,6 +277,12 @@ int main() {
   options.worker_group_options.worker_options.loop_options.normal_queue_age_threshold =
       std::chrono::microseconds(normal_age_threshold_us);
   options.worker_group_options.worker_options.listen_options.reuse_port = true;
+  options.worker_group_options.worker_options.listen_options.zero_copy_writes = send_zerocopy;
+  options.worker_group_options.worker_options.listen_options.zero_copy_diagnostics =
+      send_zerocopy ? &zero_copy_diagnostics : nullptr;
+  options.worker_group_options.worker_options.accept_mode =
+      multishot_accept ? coropact::luring::AcceptMode::kMultishot
+                       : coropact::luring::AcceptMode::kSingleShot;
   options.worker_group_options.frame_resource_factory =
       [&frame_pools, &frame_counters, &direct_frame_counters, frame_pool,
        frame_stats_enabled](std::size_t index) -> std::pmr::memory_resource* {
@@ -284,7 +314,8 @@ int main() {
     worker_pools.push_back(std::move(pool));
     pools_by_loop.emplace(&context.loop, pool_ptr);
   });
-  server.SetSessionHandler([&service, &pools_by_loop, &pools_mutex, &pools_ready](
+  server.SetSessionHandler([&service, &recv_source_service, multishot_recv,
+                            &pools_by_loop, &pools_mutex, &pools_ready](
                                  coropact::luring::LUringWorkerContext& context,
                                  coropact::luring::LUringStream stream) -> coropact::coro::DetachedTask {
     auto& loop = context.loop;
@@ -300,6 +331,23 @@ int main() {
       if (it != pools_by_loop.end()) {
         pool = it->second;
       }
+    }
+    if (multishot_recv) {
+      auto recv_stream = RecvSourceStream::Create(
+          std::move(stream),
+          {.source = {.pending_depth = 1, .event_capacity = 16, .buffer_capacity = 16},
+           .buffer_size = 4096});
+      if (!recv_stream.has_value()) {
+        co_return;
+      }
+      if (pool == nullptr) {
+        co_await recv_source_service.Serve(
+            std::move(*recv_stream), coropact::luring::LUringConnector(&loop));
+        co_return;
+      }
+      co_await recv_source_service.Serve(
+          std::move(*recv_stream), coropact::luring::LUringConnector(&loop), *pool);
+      co_return;
     }
     if (pool == nullptr) {
       co_await service.Serve(std::move(stream), coropact::luring::LUringConnector(&loop));
@@ -322,18 +370,71 @@ int main() {
       "ready_time_us=%zu completion_budget=%zu completion_age_us=%zu "
       "urgent_completion_budget=%zu normal_age_us=%zu sqpoll=%s sqpoll_idle_ms=%u "
       "defer_taskrun=%s "
-      "cpu_affinity=%s frame_stats=%s\n",
+      "multishot_accept=%s multishot_recv=%s send_zerocopy=%s cpu_affinity=%s frame_stats=%s\n",
       bind_host.c_str(), listen_port, ports_csv.c_str(), algo.c_str(), frame_pool ? "on" : "off",
       worker_num, ring_entries, max_idle_per_peer, max_idle_total, max_ready_work_per_turn,
       max_cqe_per_turn, max_ready_time_us, max_completion_work_per_turn,
       completion_age_threshold_us, max_urgent_completion_work_per_turn, normal_age_threshold_us,
       setup_sqpoll ? "on" : "off", sqpoll_idle_ms, setup_defer_taskrun ? "on" : "off",
+      multishot_accept ? "on" : "off",
+      multishot_recv ? "on" : "off",
+      send_zerocopy ? "on" : "off",
       cpu_affinity.empty() ? "off" : cpu_affinity_csv.c_str(), frame_stats_enabled ? "on" : "off");
   while (!g_stop.load(std::memory_order_relaxed)) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
 
   server.Stop();
+  if (send_zerocopy) {
+    std::fprintf(
+        stderr,
+        "[luring.send_zc] attempts=%llu logical_completions=%llu primary_events=%llu "
+        "notifications=%llu copied=%llu copy_fallbacks=%llu errors=%llu closed=%llu profile=%llu "
+        "busy=%llu submit=%llu primary=%llu primary_enomem=%llu primary_epipe=%llu "
+        "primary_reset=%llu primary_cancelled=%llu "
+        "primary_other=%llu protocol=%llu last_primary=%d "
+        "last_notification=%d first_primary_error=%d last_primary_error=%d\n",
+        static_cast<unsigned long long>(
+            zero_copy_diagnostics.attempts.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(
+            zero_copy_diagnostics.logical_completions.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(
+            zero_copy_diagnostics.primary_events.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(
+            zero_copy_diagnostics.notification_events.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(
+            zero_copy_diagnostics.copied_completions.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(
+            zero_copy_diagnostics.copy_fallbacks.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(
+            zero_copy_diagnostics.errors.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(
+            zero_copy_diagnostics.closed_errors.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(
+            zero_copy_diagnostics.profile_errors.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(
+            zero_copy_diagnostics.busy_errors.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(
+            zero_copy_diagnostics.submission_errors.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(
+            zero_copy_diagnostics.primary_errors.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(
+            zero_copy_diagnostics.primary_enomem_errors.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(
+            zero_copy_diagnostics.primary_epipe_errors.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(
+            zero_copy_diagnostics.primary_connection_reset_errors.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(
+            zero_copy_diagnostics.primary_cancelled_errors.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(
+            zero_copy_diagnostics.primary_other_errors.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(
+            zero_copy_diagnostics.protocol_errors.load(std::memory_order_relaxed)),
+        zero_copy_diagnostics.last_primary_result.load(std::memory_order_relaxed),
+        zero_copy_diagnostics.last_notification_result.load(std::memory_order_relaxed),
+        zero_copy_diagnostics.first_primary_error.load(std::memory_order_relaxed),
+        zero_copy_diagnostics.last_primary_error.load(std::memory_order_relaxed));
+  }
   if (frame_stats_enabled) {
     for (std::size_t i = 0; i < worker_num; ++i) {
       const auto& frame = frame_resource_stats[i];

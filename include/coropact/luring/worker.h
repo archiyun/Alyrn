@@ -4,6 +4,7 @@
 
 #include <condition_variable>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory_resource>
 #include <mutex>
@@ -21,6 +22,11 @@
 
 namespace coropact::luring {
 
+enum class AcceptMode : std::uint8_t {
+  kSingleShot,
+  kMultishot,
+};
+
 struct LUringWorkerContext {
   LUringWorkerContext(std::size_t index, LUringLoop& loop, LUringListener& listener,
                       LUringConnector& connector) noexcept
@@ -37,6 +43,11 @@ struct LUringWorkerContext {
 struct LUringWorkerOptions {
   LUringOptions loop_options{};
   LUringListenOptions listen_options{};
+
+  // Selects the logical accept implementation used by the worker. The
+  // multishot source preserves the same ConnectionCallback contract while
+  // allowing one native accept request to produce multiple accepted streams.
+  AcceptMode accept_mode{AcceptMode::kSingleShot};
 
   // Optional resource for coroutine frames created while this worker resumes
   // work. The resource must outlive the worker group.

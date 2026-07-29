@@ -2,25 +2,15 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include <concepts>
-#include <optional>
-
-#include "coropact/coro/task.h"
-#include "coropact/net/recv_source.h"
+#include "coropact/backend/recv_source.h"
 
 namespace coropact::io {
 
-using BufferLease = ::coropact::net::BufferLease;
-using RecvEvent = ::coropact::net::RecvEvent;
-using RecvSourceOptions = ::coropact::net::RecvSourceOptions;
+using BufferLease = backend::BufferLease;
+using RecvEvent = backend::RecvEvent;
+using RecvSourceOptions = backend::RecvSourceOptions;
 
 template <class T>
-concept AsyncRecvSource = requires(T& source) {
-  typename T::Event;
-  requires std::same_as<typename T::Event, RecvEvent>;
-  { source.Next() } -> std::same_as<
-      coro::Task<base::Result<std::optional<typename T::Event>>>>;
-  { source.Stop() } -> std::same_as<coro::Task<base::Result<void>>>;
-};
+concept AsyncRecvSource = backend::AsyncRecvSource<T>;
 
 }  // namespace coropact::io

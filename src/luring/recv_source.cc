@@ -132,6 +132,12 @@ base::Result<LUringRecvSource> LUringRecvSource::Create(
   if (!options.Valid()) {
     return std::unexpected(base::MakeErrno(EINVAL));
   }
+  if (!loop->HasCapability(NativeFeature::kMultishotRecv) ||
+      !loop->HasCapability(NativeFeature::kProvidedBufferRing) ||
+      (options.incremental_buffer_consumption &&
+       !loop->HasCapability(NativeFeature::kProvidedBufferRingIncremental))) {
+    return std::unexpected(base::MakeErrno(ENOTSUP));
+  }
 
   const std::size_t capacity = options.source.buffer_capacity;
   if (capacity > std::numeric_limits<std::size_t>::max() / options.buffer_size) {
@@ -800,6 +806,21 @@ coro::Task<LUringRecvSource::Result> LUringRecvSource::Next() {
   }
 
   co_return co_await NextAwaiter(*this);
+}
+
+base::Result<void> LUringRecvSource::RequestStop() noexcept {
+  if (loop_ == nullptr || fd_ < 0) {
+    return std::unexpected(base::MakeErrno(EBADF));
+  }
+  if (!loop_->IsInLoopThread()) {
+    return std::unexpected(base::MakeErrno(EINVAL));
+  }
+
+  auto waiting = BeginStop();
+  if (!waiting.has_value()) {
+    return std::unexpected(waiting.error());
+  }
+  return {};
 }
 
 coro::Task<base::Result<void>> LUringRecvSource::Stop() {

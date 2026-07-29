@@ -42,7 +42,7 @@ inflight 是否应该减少
 
 ## 2. 能力矩阵与运行期路径选择
 
-`IoCapability` 的一个标记不能同时代表所有可用性。每项能力至少要经过以下五层：
+`io::CapabilitySet` 的一个语义要求不能同时代表所有可用性。每项能力至少要经过以下五层：
 
 | 维度 | 要回答的问题 | 例子 |
 | --- | --- | --- |
@@ -53,7 +53,9 @@ inflight 是否应该减少
 | 运行期 | 当前 operation 的对象、资源和状态是否允许走该路径？ | buffer ring 有可用 buffer、send zerocopy 满足 buffer 条件 |
 
 前四层决定能力是否可以进入 active profile；运行期条件不应写入静态
-`CapabilitySet`，而应由 operation path selector 在每次提交前判断：
+`io::CapabilitySet`，而应由上层 adapter 翻译为 luring 的 `RuntimeProfile`。当前
+`LUringLoop` 在 `Init()` 保存 luring 自己的 `RuntimeBinding`，扩展 operation 会同时检查
+native active profile 与实际 probe：
 
 ```cpp
 enum class OperationPath {
@@ -76,8 +78,9 @@ Compiled
   = OperationPathSelected
 ```
 
-例如，capability 可能支持 provided buffer ring，但当前 ring 暂时没有可用 buffer；这时
-本次操作应选择 `kFallback` 或返回明确的资源耗尽结果，而不是修改全局 capability。
+例如，ring 可能支持 provided buffer ring，但 native active profile 没有请求它；这时
+本次操作直接返回 `ENOTSUP`，而不是绕过 binding。即使 profile 已请求扩展，具体 operation
+仍需处理 buffer 耗尽、socket 条件和提交失败。
 
 特别是：
 

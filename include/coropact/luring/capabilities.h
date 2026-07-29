@@ -3,18 +3,18 @@
 #pragma once
 
 #include "coropact/base/error.h"
-#include "coropact/io/io_backend.h"
+#include "coropact/luring/capability.h"
 #include "coropact/luring/options.h"
 
 namespace coropact::luring {
 
 [[nodiscard]]
-base::Result<io::BackendCapabilities> ProbeCapabilities(
+base::Result<Capabilities> ProbeCapabilities(
     const LUringOptions& options) noexcept;
 
 [[nodiscard]]
-base::Result<io::BackendBinding> BindLUring(
+base::Result<RuntimeBinding> BindLUring(
     const LUringOptions& options,
-    io::CapabilitySet active_profile = io::CapabilitySet::CoreGateway()) noexcept;
+    RuntimeProfile active_profile = RuntimeProfile::Core()) noexcept;
 
 }  // namespace coropact::luring

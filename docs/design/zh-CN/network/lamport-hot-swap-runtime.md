@@ -951,7 +951,7 @@ Reactor 和 io_uring 已经有共同的协程语义接口，
 接口形状，不能在编译期检查“最多完成一次”“Close 后不能成功提交”或“buffer 在
 Complete 前有效”等动态性质。这些性质目前依赖具体实现、调试断言和 smoke test。
 
-此外，`BackendBinding` 现在是带 backend provenance 的启动期 capability profile 检查；
+此外，具体 backend 的 `RuntimeBinding` 现在负责启动期 native capability profile 检查；
 Reactor 和 luring 的 stream 都是 loop-bound，pending operation 不能直接迁移。因此现阶段
 最多只能把 quiescent switch 作为未来设计目标，不能把它描述成已有能力。
 

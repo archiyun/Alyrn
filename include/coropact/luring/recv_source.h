@@ -13,7 +13,7 @@
 
 #include "coropact/base/error.h"
 #include "coropact/coro/task.h"
-#include "coropact/io/recv_source.h"
+#include "coropact/backend/recv_source.h"
 #include "coropact/luring/detail/completion_dispatch.h"
 #include "coropact/luring/op.h"
 #include "coropact/luring/options.h"
@@ -66,6 +66,14 @@ public:
   LUringRecvSource& operator=(LUringRecvSource&& other) noexcept;
 
   coro::Task<Result> Next();
+
+  // Begins cancellation without waiting for queued events or outstanding
+  // BufferLease instances. This lets an owning adapter stop admission, drain
+  // its already-produced events, and then await Stop() for the final lease
+  // boundary.
+  [[nodiscard]]
+  base::Result<void> RequestStop() noexcept;
+
   coro::Task<base::Result<void>> Stop();
 
 private:
@@ -193,6 +201,6 @@ private:
   bool cancel_submitted_{false};
 };
 
-static_assert(io::AsyncRecvSource<LUringRecvSource>);
+static_assert(backend::AsyncRecvSource<LUringRecvSource>);
 
 }  // namespace coropact::luring

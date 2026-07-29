@@ -13,7 +13,9 @@ void DispatchAcceptSourceComplete(LUringOp* op, CompletionEvent event) noexcept;
 void DispatchAcceptSourceCancelComplete(LUringOp* op) noexcept;
 void DispatchRecvSourceComplete(LUringOp* op, CompletionEvent event) noexcept;
 void DispatchRecvSourceCancelComplete(LUringOp* op) noexcept;
-void DispatchSendZeroCopyComplete(LUringOp* op, CompletionEvent event) noexcept;
+CompletionDisposition DispatchSendZeroCopyComplete(
+    LUringOp* op,
+    CompletionEvent event) noexcept;
 void DispatchListenerCloseComplete(LUringOp* op) noexcept;
 void DispatchStreamReadComplete(LUringOp* op) noexcept;
 void DispatchTimedReadComplete(LUringOp* op) noexcept;

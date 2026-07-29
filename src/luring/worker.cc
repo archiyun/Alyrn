@@ -7,15 +7,18 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <chrono>
 #include <expected>
 #include <optional>
 #include <stop_token>
+#include <thread>
 #include <utility>
 
 #include "coropact/base/error.h"
 #include "coropact/coro/spawn.h"
 #include "coropact/luring/listener.h"
 #include "coropact/luring/loop.h"
+#include "coropact/net/accept_source.h"
 
 namespace coropact::luring {
 
@@ -36,6 +39,39 @@ coro::DetachedTask AcceptLoop(LUringWorkerContext& context,
       coro::SpawnDetach(context.loop, (*callback)(context, std::move(*accepted)));
     }
   }
+}
+
+coro::DetachedTask MultishotAcceptLoop(
+    LUringWorkerContext& context,
+    LUringWorker::ConnectionCallback* callback) {
+  auto source_result = context.listener.AcceptSource({
+      .pending_depth = 1,
+      .event_capacity = 1024,
+  });
+  if (!source_result.has_value()) {
+    co_return;
+  }
+
+  auto source = std::move(*source_result);
+  for (;;) {
+    auto accepted = co_await source.Next();
+    if (!accepted.has_value()) {
+      break;
+    }
+    if (!*accepted) {
+      break;
+    }
+
+    if (*callback) {
+      coro::SpawnDetach(context.loop, (*callback)(context, std::move(**accepted)));
+    }
+  }
+
+  // Stop() is idempotent and also covers an error or listener-close path. It
+  // keeps the source's operation/cancel state converged before its frame is
+  // destroyed.
+  auto stopped = co_await source.Stop();
+  (void)stopped;
 }
 
 coro::DetachedTask CloseListener(LUringListener* listener,
@@ -68,9 +104,17 @@ void CloseListenerAndDrain(LUringLoop& loop, LUringListener& listener) noexcept 
       continue;
     }
 
-    auto completed = loop.WaitCompletions();
+    // Shutdown must keep revisiting ready work and cancellation state even if
+    // the kernel has not produced a CQE for this turn. A blocking wait can
+    // strand the drain loop behind a split-release notification (notably a
+    // send-zc notification) while the remaining cancellation work is ready
+    // to be observed by the next poll.
+    auto completed = loop.PollCompletions();
     if (!completed.has_value()) {
       break;
+    }
+    if (*completed == 0) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
   }
 
@@ -184,9 +228,14 @@ void LUringWorker::WorkLoop(std::stop_token token) noexcept {
   std::stop_callback on_stop{token, [&loop] { loop.Quit(); }};
 
   if (connection_callback_) {
-    const std::size_t accept_depth = std::max<std::size_t>(1, options_.listen_options.accept_depth);
-    for (std::size_t i = 0; i < accept_depth; ++i) {
-      coro::SpawnDetach(loop, AcceptLoop(context, &connection_callback_));
+    if (options_.accept_mode == AcceptMode::kMultishot) {
+      coro::SpawnDetach(loop, MultishotAcceptLoop(context, &connection_callback_));
+    } else {
+      const std::size_t accept_depth =
+          std::max<std::size_t>(1, options_.listen_options.accept_depth);
+      for (std::size_t i = 0; i < accept_depth; ++i) {
+        coro::SpawnDetach(loop, AcceptLoop(context, &connection_callback_));
+      }
     }
   }
 

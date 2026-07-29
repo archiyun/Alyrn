@@ -15,10 +15,54 @@
 
 namespace coropact::io {
 
+namespace detail {
+
+template <class Stream>
+concept ZeroCopyWriteExtension = requires(
+    Stream& stream,
+    std::span<const std::byte> buffer) {
+  { stream.ZeroCopyWritesEnabled() } -> std::convertible_to<bool>;
+  stream.SendZeroCopy(buffer);
+};
+
+template <class Stream>
+concept ZeroCopyWriteFallbackObserver = requires(Stream& stream) {
+  stream.RecordZeroCopyFallback();
+};
+
+template <AsyncWriteStream Stream>
+coro::Task<base::Result<std::size_t>> WriteSomeForAll(
+    Stream& stream,
+    std::span<const std::byte> buffer) {
+  if constexpr (ZeroCopyWriteExtension<Stream>) {
+    if (stream.ZeroCopyWritesEnabled()) {
+      auto result = co_await stream.SendZeroCopy(buffer);
+      if (!result.has_value()) {
+        // send-zc can fail with ENOMEM while the kernel is unable to reserve
+        // zero-copy resources. SendZeroCopy() waits through its notification
+        // boundary before returning, so retrying with ordinary send is safe
+        // for the caller's buffer and preserves WriteAll's availability.
+        if (result.error().value() == ENOMEM) {
+          if constexpr (ZeroCopyWriteFallbackObserver<Stream>) {
+            stream.RecordZeroCopyFallback();
+          }
+          co_return co_await stream.WriteSome(buffer);
+        }
+        co_return std::unexpected(result.error());
+      }
+      co_return result->bytes;
+    }
+  }
+
+  co_return co_await stream.WriteSome(buffer);
+}
+
+}  // namespace detail
+
 template <AsyncWriteStream Stream>
 coro::Task<base::Result<void>> WriteAll(Stream& stream, std::span<const std::byte> buffer) {
   while (!buffer.empty()) {
-    COROPACT_CO_TRY(written, co_await stream.WriteSome(buffer));
+    COROPACT_CO_TRY(written, co_await detail::WriteSomeForAll(stream, buffer));
     if (written == 0) {
       co_return std::unexpected(base::MakeErrno(EPIPE));
     }

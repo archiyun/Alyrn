@@ -12,6 +12,7 @@
 #include <memory_resource>
 #include <new>
 #include <limits>
+#include <optional>
 #include <stop_token>
 #include <utility>
 
@@ -20,6 +21,7 @@
 #include "coropact/base/try.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/work.h"
+#include "coropact/luring/capability.h"
 #include "coropact/luring/mailbox.h"
 #include "coropact/luring/op.h"
 #include "coropact/luring/options.h"
@@ -50,13 +52,31 @@ public:
   // Initializes the underlying io_uring instance.
   // Must be called from the loop thread before Loop().
   [[nodiscard]]
-  base::Result<void> Init(const LUringOptions& options) noexcept;
+  base::Result<void> Init(const LUringOptions& options) noexcept {
+    return Init(options, options.active_profile);
+  }
+
+  // Explicit profile overload used by callers that keep loop configuration
+  // separate from the backend binding request.
+  [[nodiscard]]
+  base::Result<void> Init(
+      const LUringOptions& options,
+      RuntimeProfile active_profile) noexcept;
 
   ~LUringLoop() noexcept;
 
   [[nodiscard]]
   bool Initialized() const noexcept {
     return initialized_;
+  }
+
+  // An explicit extension requires both a startup profile request and
+  // support reported by the actual ring probe.
+  [[nodiscard]]
+  bool HasCapability(NativeFeature feature) const noexcept {
+    return binding_.has_value() &&
+           binding_->active_profile.Has(feature) &&
+           binding_->capabilities.Has(feature);
   }
 
   // Runs the event loop until cancellation or Quit().
@@ -255,6 +275,7 @@ private:
   coro::WorkQueue ready_;
   coro::WorkQueue completion_ready_;
   bool initialized_{false};
+  std::optional<RuntimeBinding> binding_;
 
   // Prepared SQEs that have not yet produced a CQE.
   std::size_t pending_submit_{0};

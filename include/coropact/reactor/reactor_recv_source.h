@@ -10,7 +10,7 @@
 
 #include "coropact/base/error.h"
 #include "coropact/coro/task.h"
-#include "coropact/io/recv_source.h"
+#include "coropact/backend/recv_source.h"
 #include "coropact/net/recv_source.h"
 #include "coropact/reactor/channel.h"
 #include "coropact/reactor/event_loop.h"
@@ -100,6 +100,6 @@ private:
   std::vector<std::uint32_t> available_buffers_;
 };
 
-static_assert(io::AsyncRecvSource<ReactorRecvSource>);
+static_assert(backend::AsyncRecvSource<ReactorRecvSource>);
 
 }  // namespace coropact::reactor

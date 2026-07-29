@@ -12,7 +12,7 @@
 
 #include "coropact/base/error.h"
 #include "coropact/coro/work.h"
-#include "coropact/io/io_backend.h"
+#include "coropact/luring/capability.h"
 #include "coropact/luring/capabilities.h"
 #include "coropact/luring/loop.h"
 #include "coropact/luring/op.h"
@@ -103,7 +103,7 @@ bool CheckMsgRingMailboxSchedule() {
     return false;
   }
 
-  if (!capabilities->Has(coropact::io::IoCapability::kMsgRing)) {
+  if (!capabilities->Has(coropact::luring::NativeFeature::kMsgRing)) {
     std::cout << "SKIP: kernel does not support IORING_OP_MSG_RING\n";
     return true;
   }

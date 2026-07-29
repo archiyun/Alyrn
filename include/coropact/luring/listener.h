@@ -11,8 +11,8 @@
 
 #include "coropact/base/error.h"
 #include "coropact/coro/task.h"
-#include "coropact/io/accept_source.h"
-#include "coropact/io/async_listener.h"
+#include "coropact/backend/accept_source.h"
+#include "coropact/backend/async_listener.h"
 #include "coropact/luring/detail/completion_dispatch.h"
 #include "coropact/luring/op.h"
 #include "coropact/luring/stream.h"
@@ -28,6 +28,12 @@ class LUringListener;
 struct LUringListenOptions {
   bool reuse_addr{true};
   bool reuse_port{true};
+  // Exposes the luring stream's explicit zero-copy send extension to generic
+  // write algorithms. It is opt-in and does not change WriteSome() itself.
+  bool zero_copy_writes{false};
+  // Optional process-shared diagnostics sink for accepted streams. The sink
+  // must outlive the listener and all accepted streams.
+  ZeroCopySendDiagnostics* zero_copy_diagnostics{nullptr};
   int backlog{SOMAXCONN};
   // Number of accepts kept in flight by each worker. A value greater than one
   // prevents a connection burst from being serialized behind one accept CQE.
@@ -161,7 +167,7 @@ private:
   bool multishot_enabled_{true};
 };
 
-static_assert(io::AsyncAcceptSource<LUringAcceptSource>);
+static_assert(backend::AsyncAcceptSource<LUringAcceptSource>);
 
 class LUringListener {
   friend class LUringAcceptSource;
@@ -204,7 +210,8 @@ private:
   class CloseAwaiter;
 
   [[nodiscard]]
-  LUringListener(LUringLoop* loop, int fd) noexcept;
+  LUringListener(LUringLoop* loop, int fd, bool zero_copy_writes,
+                 ZeroCopySendDiagnostics* zero_copy_diagnostics) noexcept;
 
   void NotifyCloseProgress() noexcept;
   void ResetForMove() noexcept;
@@ -215,9 +222,11 @@ private:
   std::size_t pending_accepts_{0};
   CloseAwaiter* pending_close_{nullptr};
   LUringAcceptSource* accept_source_{nullptr};
+  bool zero_copy_writes_{false};
+  ZeroCopySendDiagnostics* zero_copy_diagnostics_{nullptr};
   bool closed_{false};
 };
 
-static_assert(io::AsyncListener<LUringListener>);
+static_assert(backend::AsyncListener<LUringListener>);
 
 }  // namespace coropact::luring

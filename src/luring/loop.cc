@@ -22,6 +22,7 @@
 #include "coropact/base/error.h"
 #include "coropact/base/try.h"
 #include "coropact/coro/scheduler.h"
+#include "coropact/luring/capabilities.h"
 #include "coropact/luring/detail/completion_dispatch.h"
 #include "coropact/luring/op.h"
 #include "coropact/luring/options.h"
@@ -117,12 +118,16 @@ LUringLoop::~LUringLoop() noexcept {
   }
 }
 
-base::Result<void> LUringLoop::Init(const LUringOptions& options) noexcept {
+base::Result<void> LUringLoop::Init(
+    const LUringOptions& options,
+    RuntimeProfile active_profile) noexcept {
   assert(IsInLoopThread());
 
   if (initialized_) {
     return std::unexpected(base::MakeErrno(EALREADY));
   }
+
+  auto binding = COROPACT_TRY(BindLUring(options, active_profile));
 
   ring_ = COROPACT_TRY(LUringRing::Create(options));
   wake_fd_ = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
@@ -143,6 +148,7 @@ base::Result<void> LUringLoop::Init(const LUringOptions& options) noexcept {
       options.normal_queue_age_threshold > std::chrono::microseconds::zero()
           ? options.normal_queue_age_threshold
           : std::chrono::microseconds::zero();
+  binding_ = std::move(binding);
   ready_depth_ = 0;
   completion_ready_depth_ = 0;
   ready_nonempty_since_ns_ = 0;
@@ -159,6 +165,7 @@ base::Result<void> LUringLoop::Init(const LUringOptions& options) noexcept {
   auto armed = ArmWakePoll();
   if (!armed.has_value()) {
     initialized_ = false;
+    binding_.reset();
     ::close(std::exchange(wake_fd_, -1));
     return std::unexpected(armed.error());
   }
@@ -459,7 +466,6 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
   // F_MORE CQEs belong to the same physical request and keep one inflight
   // slot. Only the terminal CQE releases it.
   if ((!is_multishot && !is_split_release) ||
-      (is_split_release && (!request_still_active || event.Notification())) ||
       (is_multishot && !request_still_active)) {
     assert(inflight_ > 0);
     if (inflight_ > 0) {
@@ -493,9 +499,16 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
   }
 
   if (is_split_release) {
-    detail::DispatchCompletion(op, event);
-    const bool terminal = event.Notification() || !request_still_active;
-    if (terminal && op->CompleteWithoutResult() && op->resume_work.HasHandle()) {
+    const CompletionDisposition disposition =
+        detail::DispatchSendZeroCopyComplete(op, event);
+    if (disposition.kernel_operation_done) {
+      assert(inflight_ > 0);
+      if (inflight_ > 0) {
+        --inflight_;
+      }
+    }
+    if (disposition.logical_completion_ready && op->CompleteWithoutResult() &&
+        op->resume_work.HasHandle()) {
       ScheduleCompletion(&op->resume_work);
     }
     return;

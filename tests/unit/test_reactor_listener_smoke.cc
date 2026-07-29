@@ -14,7 +14,7 @@
 #include "coropact/coro/spawn.h"
 #include "coropact/coro/task.h"
 #include "coropact/io/async_listener.h"
-#include "coropact/io/io_backend.h"
+#include "coropact/io/backend.h"
 #include "coropact/net/endpoint.h"
 #include "coropact/reactor/event_loop.h"
 #include "coropact/reactor/event_loop_scheduler.h"
@@ -266,41 +266,27 @@ bool CheckBackendBindingProfile() {
     return false;
   }
 
-  if (!Check(binding->active_profile.ContainsAll(coropact::io::CapabilitySet::CoreGateway()),
+  if (!Check(binding->active_profile.ContainsAll(
+                 coropact::io::CapabilitySet::CoreGateway()),
              "reactor binding does not activate core gateway profile")) {
     return false;
   }
 
-  if (!Check(binding->backend_capabilities.ContainsAll(binding->active_profile),
-             "reactor backend capabilities do not cover active profile")) {
+  if (!Check(binding->backend == coropact::io::Backend::kReactor,
+             "reactor binding reports the wrong backend")) {
     return false;
   }
 
-  if (!Check(binding->backend_capabilities.ContainsAll(coropact::io::CapabilitySet::TimedGateway()),
-             "reactor backend should advertise timeout-capable gateway profile")) {
-    return false;
-  }
-
-  const auto invalid_profile = coropact::io::CapabilitySet{}
-                                   .Require(coropact::io::IoCapability::kReadinessPoll);
-  auto invalid = coropact::io::BindReactor(invalid_profile);
-  if (!Check(!invalid.has_value(),
-             "reactor binding unexpectedly accepted implementation tags in active profile")) {
-    return false;
-  }
-
-  auto wrong_backend = coropact::io::BindBackend(
-      coropact::io::Backend::kLuring,
-      coropact::io::BackendCapabilities::Reactor(),
-      coropact::io::CapabilitySet::CoreGateway());
-  if (!Check(!wrong_backend.has_value(),
-             "backend binding accepted capabilities from another backend")) {
+  auto timed = coropact::io::BindReactor(
+      coropact::io::CapabilitySet::TimedGateway());
+  if (!Check(timed.has_value(),
+             "reactor should support the timed gateway profile")) {
     return false;
   }
 
   const auto unsupported_extension =
       coropact::io::CapabilitySet::CoreGateway().Require(
-          coropact::io::IoCapability::kSendZeroCopy);
+          coropact::io::IoRequirement::kSendZeroCopy);
   auto unsupported = coropact::io::BindReactor(unsupported_extension);
   return Check(!unsupported.has_value(),
                "reactor binding accepted an unsupported extension profile");

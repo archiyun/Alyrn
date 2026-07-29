@@ -2,48 +2,25 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include <concepts>
-#include <cstddef>
-#include <span>
-
-#include "coropact/base/error.h"
-#include "coropact/coro/awaitable.h"
-#include "coropact/coro/task.h"
-#include "coropact/net/write_part.h"
+#include "coropact/backend/async_stream.h"
 
 namespace coropact::io {
 
 template <class T>
-concept AsyncReadStream = requires(T& stream, std::span<std::byte> buffer) {
-  requires coro::Awaitable<decltype(stream.ReadSome(buffer))>;
-  requires std::same_as<coro::AwaitResult<decltype(stream.ReadSome(buffer))>,
-                        base::Result<std::size_t>>;
-};
+concept AsyncReadStream = backend::AsyncReadStream<T>;
 
 template <class T>
-concept AsyncWriteStream = requires(T& stream, std::span<const std::byte> buffer) {
-  requires coro::Awaitable<decltype(stream.WriteSome(buffer))>;
-  requires std::same_as<coro::AwaitResult<decltype(stream.WriteSome(buffer))>,
-                        base::Result<std::size_t>>;
-};
+concept AsyncWriteStream = backend::AsyncWriteStream<T>;
 
 template <class T>
-concept AsyncClosableStream = requires(T& stream) {
-  { stream.Shutdown() } -> std::same_as<coro::Task<base::Result<void>>>;
-  { stream.Close() } -> std::same_as<coro::Task<base::Result<void>>>;
-};
+concept AsyncClosableStream = backend::AsyncClosableStream<T>;
 
 template <class T>
-concept AsyncStream = AsyncReadStream<T> && AsyncWriteStream<T> && AsyncClosableStream<T>;
+concept AsyncStream = backend::AsyncStream<T>;
 
-using WritePart = ::coropact::net::WritePart;
+using WritePart = backend::WritePart;
 
 template <class T>
-concept AsyncScatterWriteStream =
-    AsyncWriteStream<T> && requires(T& stream, std::span<const WritePart> buffers) {
-      requires coro::Awaitable<decltype(stream.WriteSome(buffers))>;
-      requires std::same_as<coro::AwaitResult<decltype(stream.WriteSome(buffers))>,
-                            base::Result<std::size_t>>;
-    };
+concept AsyncScatterWriteStream = backend::AsyncScatterWriteStream<T>;
 
 }  // namespace coropact::io
