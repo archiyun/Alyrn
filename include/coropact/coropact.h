@@ -16,8 +16,6 @@
 #include "coropact/cache.h"    // IWYU pragma: export
 #include "coropact/coro.h"     // IWYU pragma: export
 #include "coropact/ds.h"       // IWYU pragma: export
-#include "coropact/gateway.h"  // IWYU pragma: export
-#include "coropact/http.h"     // IWYU pragma: export
 #include "coropact/io.h"       // IWYU pragma: export
 #include "coropact/log.h"      // IWYU pragma: export
 #include "coropact/memory.h"   // IWYU pragma: export

@@ -25,7 +25,7 @@ int main() {
   options.entries = 16;
 
   auto binding = coropact::io::BindLuring(
-      options, coropact::io::CapabilitySet::CoreGateway());
+      options, coropact::io::CapabilitySet::CoreNetwork());
   if (!binding.has_value()) {
     if (IsEnvironmentSkip(binding.error())) {
       std::cout << "SKIP: io_uring adapter unavailable: "

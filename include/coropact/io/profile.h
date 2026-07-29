@@ -70,18 +70,18 @@ public:
     return CoreStream().Require(IoRequirement::kTimeout);
   }
 
-  static constexpr CapabilitySet CoreGateway() noexcept {
+  static constexpr CapabilitySet CoreNetwork() noexcept {
     return CoreStream()
         .Require(IoRequirement::kAccept)
         .Require(IoRequirement::kConnect);
   }
 
-  static constexpr CapabilitySet TimedGateway() noexcept {
-    return CoreGateway().Require(IoRequirement::kTimeout);
+  static constexpr CapabilitySet TimedNetwork() noexcept {
+    return CoreNetwork().Require(IoRequirement::kTimeout);
   }
 
   static constexpr CapabilitySet Reactor() noexcept {
-    return CoreGateway()
+    return CoreNetwork()
         .Require(IoRequirement::kTimeout)
         .Require(IoRequirement::kAcceptSource)
         .Require(IoRequirement::kRecvSource);

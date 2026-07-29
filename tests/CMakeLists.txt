@@ -38,23 +38,6 @@ target_include_directories(object_pool_smoke_test
 
 add_test(NAME object_pool_smoke_test COMMAND object_pool_smoke_test)
 
-add_executable(upstream_conn_pool_smoke_test
-    unit/test_upstream_conn_pool_smoke.cc
-)
-
-target_include_directories(upstream_conn_pool_smoke_test
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
-
-target_link_libraries(upstream_conn_pool_smoke_test
-    PRIVATE
-        coropact_coro
-        coropact_foundation
-)
-
-add_test(NAME upstream_conn_pool_smoke_test COMMAND upstream_conn_pool_smoke_test)
-
 add_executable(mpsc_bounded_queue_smoke_test
     unit/test_mpsc_bounded_queue_smoke.cc
 )
@@ -480,25 +463,6 @@ if(COROPACT_ENABLE_URING)
 
     add_test(NAME luring_server_smoke_test COMMAND luring_server_smoke_test)
 
-    add_executable(luring_gateway_smoke_test
-        unit/test_luring_gateway_smoke.cc
-    )
-
-    target_include_directories(luring_gateway_smoke_test
-        PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/../include
-            ${URING_INCLUDE_DIRS}
-    )
-
-    target_link_libraries(luring_gateway_smoke_test
-        PRIVATE
-            coropact_gateway
-            coropact_luring
-    )
-
-    target_compile_definitions(luring_gateway_smoke_test PRIVATE COROPACT_ENABLE_URING)
-
-    add_test(NAME luring_gateway_smoke_test COMMAND luring_gateway_smoke_test)
 endif()
 
 add_executable(pool_smoke_test
@@ -548,22 +512,6 @@ target_link_libraries(logger_smoke_test
 )
 
 add_test(NAME logger_smoke_test COMMAND logger_smoke_test)
-
-add_executable(http_smoke_test
-    unit/test_http_smoke.cc
-)
-
-target_include_directories(http_smoke_test
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
-
-target_link_libraries(http_smoke_test
-    PRIVATE
-        coropact_http_core
-)
-
-add_test(NAME http_smoke_test COMMAND http_smoke_test)
 
 add_executable(facade_smoke_test
     unit/test_facade_smoke.cc
@@ -772,136 +720,6 @@ target_include_directories(intrusive_hash_table_smoke_test
 )
 
 add_test(NAME intrusive_hash_table_smoke_test COMMAND intrusive_hash_table_smoke_test)
-
-add_executable(load_balancer_smoke_test
-    unit/test_load_balancer_smoke.cc
-)
-
-target_include_directories(load_balancer_smoke_test
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
-
-target_link_libraries(load_balancer_smoke_test
-    PRIVATE
-        coropact_gateway
-)
-
-add_test(NAME load_balancer_smoke_test COMMAND load_balancer_smoke_test)
-
-add_executable(circuit_breaker_smoke_test
-    unit/test_circuit_breaker_smoke.cc
-)
-
-target_include_directories(circuit_breaker_smoke_test
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
-
-target_link_libraries(circuit_breaker_smoke_test
-    PRIVATE
-        coropact_gateway
-)
-
-add_test(NAME circuit_breaker_smoke_test COMMAND circuit_breaker_smoke_test)
-
-add_executable(fallback_config_smoke_test
-    unit/test_fallback_config_smoke.cc
-)
-
-target_include_directories(fallback_config_smoke_test
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
-
-target_link_libraries(fallback_config_smoke_test
-    PRIVATE
-        coropact_gateway
-)
-
-add_test(NAME fallback_config_smoke_test COMMAND fallback_config_smoke_test)
-
-add_executable(rate_limiter_smoke_test
-    unit/test_rate_limiter_smoke.cc
-)
-
-target_include_directories(rate_limiter_smoke_test
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
-
-target_link_libraries(rate_limiter_smoke_test
-    PRIVATE
-        coropact_gateway
-)
-
-add_test(NAME rate_limiter_smoke_test COMMAND rate_limiter_smoke_test)
-
-add_executable(gateway_core_smoke_test
-    unit/test_gateway_core_smoke.cc
-)
-
-target_include_directories(gateway_core_smoke_test
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
-
-target_link_libraries(gateway_core_smoke_test
-    PRIVATE
-        coropact_gateway_core
-)
-
-add_test(NAME gateway_core_smoke_test COMMAND gateway_core_smoke_test)
-
-add_executable(proxy_e2e_smoke_test
-    unit/test_proxy_e2e_smoke.cc
-)
-
-target_include_directories(proxy_e2e_smoke_test
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
-
-target_link_libraries(proxy_e2e_smoke_test
-    PRIVATE
-        coropact_gateway
-        coropact_reactor
-)
-
-add_test(NAME proxy_e2e_smoke_test COMMAND proxy_e2e_smoke_test)
-
-add_executable(resilience_integration_smoke_test
-    unit/test_resilience_integration_smoke.cc
-)
-
-target_include_directories(resilience_integration_smoke_test
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
-
-target_link_libraries(resilience_integration_smoke_test
-    PRIVATE
-        coropact_gateway
-)
-
-add_test(NAME resilience_integration_smoke_test COMMAND resilience_integration_smoke_test)
-
-add_executable(gateway_adversarial_test
-    adversarial/test_gateway_resilience_adversarial.cc
-)
-
-target_include_directories(gateway_adversarial_test
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
-
-target_link_libraries(gateway_adversarial_test
-    PRIVATE
-        coropact_gateway
-)
-
-add_test(NAME gateway_adversarial_test COMMAND gateway_adversarial_test)
-set_tests_properties(gateway_adversarial_test PROPERTIES LABELS "adversarial")
 
 add_executable(memory_pool_bench
     unit/bench_memory_pool.cc

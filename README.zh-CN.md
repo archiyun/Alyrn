@@ -5,7 +5,7 @@
 ![License](https://img.shields.io/github/license/akiba-miku/high-concurrency-runtime)
 ![Stars](https://img.shields.io/github/stars/akiba-miku/high-concurrency-runtime?style=social)
 
-***面向 Linux 的 C++23 异步网络运行时与 L7 网关，由协程、epoll 与 io_uring 驱动***
+***面向 Linux 的 C++23 异步网络运行时，由协程、epoll 与 io_uring 驱动***
 
 CoroPact 致力于在相互独立的 Reactor 与 io_uring 网络后端之上，提供统一、直观且高性能的协程编程模型：
 
@@ -15,8 +15,8 @@ CoroPact 致力于在相互独立的 Reactor 与 io_uring 网络后端之上，�
 * 🧩 **明确的所有权与完成语义**
   每个 Worker 独占自己的线程、事件循环、连接与 I/O 操作。操作在所属执行上下文中完成，协程 continuation 也在相同上下文中恢复，同时明确约束 buffer 生命周期、取消行为与异步关闭流程。
 
-* 🚀 **网络运行时与 L7 网关**
-  CoroPact 提供异步 accept、connect、read、write 与 close，并实现了增量式 HTTP/1.1 解析器、反向代理、上游连接池、负载均衡、健康检查、熔断与限流等能力。
+* 🚀 **网络运行时**
+  CoroPact 提供异步 accept、connect、read、write、close、timer，以及 multishot receive、zero-copy send 等后端扩展。HTTP 与网关策略已迁移至 [CoroGateway](https://github.com/archiyun/CoroGateway)。
 
 事实上, 它不仅限于Linux, 你可以遵守协程/IO抽象的契约机制, 编写支持MacOS(kqueue), Windows(IOCP)等其它OS后端.
 
@@ -80,7 +80,7 @@ ctest --test-dir build-uring --output-on-failure
 ## 架构
 
 ```text
-HTTP / Gateway / 自定义 Session
+自定义 Session / 应用
                |
                v
  Task<T> + Scheduler + AsyncStream
@@ -133,11 +133,10 @@ CoroPact 提供了可复现的 `wrk` 性能测试，用于比较：
 * **[网络架构](docs/design/zh-CN/network/index.md)：** 运行时分层、后端边界与所有权模型。
 * **[协程六元组状态机形式化建模](docs/design/zh-CN/theory/index.md):**
 * **[AsyncStream 语义契约](docs/design/zh-CN/network/async-stream-contract.md)：** read、write、close、取消与 buffer 生命周期语义。
-* **[网关架构](docs/design/zh-CN/gateway/index.md)：** HTTP 处理、反向代理与上游管理。
 * **[数据结构](docs/design/zh-CN/datastructure/index.md):** C++现代风格的侵入式数据结构, 侵入式红黑树, 侵入式链表, MSPC队列的设计与实现, 以及它们在项目各处的应用.
 * **[性能测试](docs/benchmark/network-libraries.md)：** Reactor、CoroPact luring、raw liburing、Asio、Monoio、Compio 与 libaio 的统一网络压测报告；其它测试方法、原始结果与性能优化记录见 [`docs/benchmark`](docs/benchmark/)。
-* **[示例](examples/)：** Reactor、io_uring 与 Gateway 使用示例。
-* **[测试](tests/)：** 协程、网络、生命周期与网关行为验证。
+* **[示例](examples/)：** Reactor 与 io_uring 使用示例。
+* **[测试](tests/)：** 协程、网络、生命周期与后端行为验证。
 
 ## 当前状态
 
