@@ -14,7 +14,7 @@
 #include "coropact/coro/spawn.h"
 #include "coropact/coro/task.h"
 #include "coropact/io/async_listener.h"
-#include "coropact/io/io_backend.h"
+#include "coropact/io/backend.h"
 #include "coropact/net/endpoint.h"
 #include "coropact/reactor/event_loop.h"
 #include "coropact/reactor/event_loop_scheduler.h"
@@ -266,26 +266,30 @@ bool CheckBackendBindingProfile() {
     return false;
   }
 
-  if (!Check(binding->active_profile.ContainsAll(coropact::io::CapabilitySet::CoreGateway()),
+  if (!Check(binding->active_profile.ContainsAll(
+                 coropact::io::CapabilitySet::CoreGateway()),
              "reactor binding does not activate core gateway profile")) {
     return false;
   }
 
-  if (!Check(binding->backend_capabilities.ContainsAll(binding->active_profile),
-             "reactor backend capabilities do not cover active profile")) {
+  if (!Check(binding->backend == coropact::io::Backend::kReactor,
+             "reactor binding reports the wrong backend")) {
     return false;
   }
 
-  if (!Check(binding->backend_capabilities.ContainsAll(coropact::io::CapabilitySet::TimedGateway()),
-             "reactor backend should advertise timeout-capable gateway profile")) {
+  auto timed = coropact::io::BindReactor(
+      coropact::io::CapabilitySet::TimedGateway());
+  if (!Check(timed.has_value(),
+             "reactor should support the timed gateway profile")) {
     return false;
   }
 
-  coropact::io::CapabilitySet invalid_profile;
-  invalid_profile.Enable(coropact::io::IoCapability::kReadinessPoll);
-  auto invalid = coropact::io::BindReactor(invalid_profile);
-  return Check(!invalid.has_value(),
-               "reactor binding unexpectedly accepted implementation tags in active profile");
+  const auto unsupported_extension =
+      coropact::io::CapabilitySet::CoreGateway().Require(
+          coropact::io::IoRequirement::kSendZeroCopy);
+  auto unsupported = coropact::io::BindReactor(unsupported_extension);
+  return Check(!unsupported.has_value(),
+               "reactor binding accepted an unsupported extension profile");
 }
 
 }  // namespace

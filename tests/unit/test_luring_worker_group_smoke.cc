@@ -194,6 +194,7 @@ bool CheckWorkerGroupAcceptCallback() {
   options.worker_options.loop_options.entries = 16;
   options.worker_options.loop_options.submit_batch = 1;
   options.worker_options.listen_options.reuse_port = true;
+  options.worker_options.accept_mode = coropact::luring::AcceptMode::kMultishot;
 
   std::atomic_size_t connection_count{0};
   std::atomic_bool invalid_stream{false};

@@ -4,6 +4,7 @@
 #include "coropact/luring/loop.h"
 
 #include <liburing.h>
+#include <liburing/io_uring.h>
 #include <poll.h>
 #include <sys/eventfd.h>
 #include <unistd.h>
@@ -21,6 +22,7 @@
 #include "coropact/base/error.h"
 #include "coropact/base/try.h"
 #include "coropact/coro/scheduler.h"
+#include "coropact/luring/capabilities.h"
 #include "coropact/luring/detail/completion_dispatch.h"
 #include "coropact/luring/op.h"
 #include "coropact/luring/options.h"
@@ -42,7 +44,7 @@ LUringOp* DecodeOp(io_uring_cqe* cqe) noexcept {
 
 namespace detail {
 
-void DispatchCompletion(LUringOp* op) noexcept {
+void DispatchCompletion(LUringOp* op, CompletionEvent event) noexcept {
   assert(op != nullptr);
 
   switch (op->DispatchKind()) {
@@ -76,6 +78,21 @@ void DispatchCompletion(LUringOp* op) noexcept {
     case LUringOpKind::kTimerControlComplete:
       DispatchTimerControlComplete(op);
       return;
+    case LUringOpKind::kAcceptSourceComplete:
+      DispatchAcceptSourceComplete(op, event);
+      return;
+    case LUringOpKind::kAcceptSourceCancelComplete:
+      DispatchAcceptSourceCancelComplete(op);
+      return;
+    case LUringOpKind::kRecvSourceComplete:
+      DispatchRecvSourceComplete(op, event);
+      return;
+    case LUringOpKind::kSendZeroCopyComplete:
+      DispatchSendZeroCopyComplete(op, event);
+      return;
+    case LUringOpKind::kRecvSourceCancelComplete:
+      DispatchRecvSourceCancelComplete(op);
+      return;
     case LUringOpKind::kNone:
     case LUringOpKind::kConnect:
     case LUringOpKind::kMsgRing:
@@ -101,12 +118,16 @@ LUringLoop::~LUringLoop() noexcept {
   }
 }
 
-base::Result<void> LUringLoop::Init(const LUringOptions& options) noexcept {
+base::Result<void> LUringLoop::Init(
+    const LUringOptions& options,
+    RuntimeProfile active_profile) noexcept {
   assert(IsInLoopThread());
 
   if (initialized_) {
     return std::unexpected(base::MakeErrno(EALREADY));
   }
+
+  auto binding = COROPACT_TRY(BindLUring(options, active_profile));
 
   ring_ = COROPACT_TRY(LUringRing::Create(options));
   wake_fd_ = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
@@ -127,6 +148,7 @@ base::Result<void> LUringLoop::Init(const LUringOptions& options) noexcept {
       options.normal_queue_age_threshold > std::chrono::microseconds::zero()
           ? options.normal_queue_age_threshold
           : std::chrono::microseconds::zero();
+  binding_ = std::move(binding);
   ready_depth_ = 0;
   completion_ready_depth_ = 0;
   ready_nonempty_since_ns_ = 0;
@@ -143,6 +165,7 @@ base::Result<void> LUringLoop::Init(const LUringOptions& options) noexcept {
   auto armed = ArmWakePoll();
   if (!armed.has_value()) {
     initialized_ = false;
+    binding_.reset();
     ::close(std::exchange(wake_fd_, -1));
     return std::unexpected(armed.error());
   }
@@ -432,9 +455,22 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
     return;
   }
 
-  assert(inflight_ > 0);
-  if (inflight_ > 0) {
-    --inflight_;
+  const auto kind = op->DispatchKind();
+  const bool is_multishot =
+      kind == LUringOpKind::kAcceptSourceComplete ||
+      kind == LUringOpKind::kRecvSourceComplete;
+  const bool is_split_release = kind == LUringOpKind::kSendZeroCopyComplete;
+  const CompletionEvent event{cqe->res, cqe->flags};
+  const bool request_still_active = event.More();
+
+  // F_MORE CQEs belong to the same physical request and keep one inflight
+  // slot. Only the terminal CQE releases it.
+  if ((!is_multishot && !is_split_release) ||
+      (is_multishot && !request_still_active)) {
+    assert(inflight_ > 0);
+    if (inflight_ > 0) {
+      --inflight_;
+    }
   }
 
   if (op == &wake_op_) {
@@ -457,9 +493,30 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
     return;
   }
 
+  if (is_multishot && request_still_active) {
+    detail::DispatchCompletion(op, event);
+    return;
+  }
+
+  if (is_split_release) {
+    const CompletionDisposition disposition =
+        detail::DispatchSendZeroCopyComplete(op, event);
+    if (disposition.kernel_operation_done) {
+      assert(inflight_ > 0);
+      if (inflight_ > 0) {
+        --inflight_;
+      }
+    }
+    if (disposition.logical_completion_ready && op->CompleteWithoutResult() &&
+        op->resume_work.HasHandle()) {
+      ScheduleCompletion(&op->resume_work);
+    }
+    return;
+  }
+
   const bool first_completion = op->Complete(cqe->res);
   if (first_completion) {
-    detail::DispatchCompletion(op);
+    detail::DispatchCompletion(op, event);
     if (op->resume_work.HasHandle()) {
       ScheduleCompletion(&op->resume_work);
     }

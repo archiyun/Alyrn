@@ -7,39 +7,49 @@
 
 #include <cerrno>
 #include <expected>
+#include <utility>
 
 #include "coropact/base/error.h"
 #include "coropact/base/try.h"
-#include "coropact/io/io_backend.h"
+#include "coropact/luring/detail/capability_builder.h"
 #include "coropact/luring/options.h"
 
 namespace coropact::luring {
 
 namespace {
 
-void EnableCore(coropact::io::CapabilitySet& set) noexcept {
-  set.Enable(coropact::io::IoCapability::kReadSome);
-  set.Enable(coropact::io::IoCapability::kWriteSome);
-  set.Enable(coropact::io::IoCapability::kAccept);
-  set.Enable(coropact::io::IoCapability::kConnect);
-  set.Enable(coropact::io::IoCapability::kShutdown);
-  set.Enable(coropact::io::IoCapability::kClose);
-  set.Enable(coropact::io::IoCapability::kCancelByClose);
-  set.Enable(coropact::io::IoCapability::kTimeout);
+void Enable(
+    Capabilities& set,
+    NativeFeature feature) noexcept {
+  detail::CapabilityBuilder::Enable(set, feature);
 }
 
-void EnableBasicLuringTags(coropact::io::CapabilitySet& set) noexcept {
-  set.Enable(coropact::io::IoCapability::kSubmitRead);
-  set.Enable(coropact::io::IoCapability::kSubmitWrite);
+void EnableCore(Capabilities& set) noexcept {
+  Enable(set, NativeFeature::kSubmitRead);
+  Enable(set, NativeFeature::kSubmitWrite);
 }
 
 bool ProbeSupports(io_uring_probe* probe, unsigned op) noexcept {
   return probe != nullptr && io_uring_opcode_supported(probe, op) != 0;
 }
 
+bool ProbeProvidedBufferRing(
+    io_uring* ring,
+    unsigned flags,
+    unsigned buffer_group) noexcept {
+  int error = 0;
+  io_uring_buf_ring* buffer_ring =
+      io_uring_setup_buf_ring(ring, 1, buffer_group, flags, &error);
+  if (buffer_ring == nullptr) {
+    return false;
+  }
+  return io_uring_free_buf_ring(ring, buffer_ring, 1, buffer_group) == 0;
+}
+
 }  // namespace
 
-base::Result<coropact::io::CapabilitySet> ProbeCapabilities(const LUringOptions& options) noexcept {
+base::Result<Capabilities> ProbeCapabilities(
+    const LUringOptions& options) noexcept {
   io_uring ring{};
   io_uring_params params{};
 
@@ -83,51 +93,53 @@ base::Result<coropact::io::CapabilitySet> ProbeCapabilities(const LUringOptions&
     return std::unexpected(base::MakeErrno(ENOTSUP));
   }
 
-  coropact::io::CapabilitySet caps;
+  auto caps = detail::CapabilityBuilder::Create();
   EnableCore(caps);
-  EnableBasicLuringTags(caps);
 
   if (options.setup_sqpoll) {
-    caps.Enable(coropact::io::IoCapability::kSqPoll);
+    Enable(caps, NativeFeature::kSqPoll);
   }
   if (options.setup_iopoll) {
-    caps.Enable(coropact::io::IoCapability::kIoPoll);
+    Enable(caps, NativeFeature::kIoPoll);
   }
 
   if (ProbeSupports(probe, IORING_OP_PROVIDE_BUFFERS) ||
       ProbeSupports(probe, IORING_OP_REMOVE_BUFFERS)) {
-    caps.Enable(coropact::io::IoCapability::kProvidedBuffer);
+    Enable(caps, NativeFeature::kProvidedBuffer);
+  }
+
+  if (ProbeProvidedBufferRing(&ring, 0, 1)) {
+    Enable(caps, NativeFeature::kProvidedBufferRing);
+    if (ProbeProvidedBufferRing(&ring, IOU_PBUF_RING_INC, 2)) {
+      Enable(caps, NativeFeature::kProvidedBufferRingIncremental);
+    }
   }
 
   if (ProbeSupports(probe, IORING_OP_ACCEPT)) {
-    caps.Enable(coropact::io::IoCapability::kMultishotAccept);
+    Enable(caps, NativeFeature::kMultishotAccept);
   }
 
   if (ProbeSupports(probe, IORING_OP_MSG_RING)) {
-    caps.Enable(coropact::io::IoCapability::kMsgRing);
+    Enable(caps, NativeFeature::kMsgRing);
   }
-#ifdef IORING_OP_RECV
   if (ProbeSupports(probe, IORING_OP_RECV)) {
-    caps.Enable(coropact::io::IoCapability::kMultishotRecv);
+    Enable(caps, NativeFeature::kMultishotRecv);
   }
-#endif
 
-#ifdef IORING_OP_SEND_ZC
   if (ProbeSupports(probe, IORING_OP_SEND_ZC)) {
-    caps.Enable(coropact::io::IoCapability::kSendZeroCopy);
+    Enable(caps, NativeFeature::kSendZeroCopy);
   }
-#endif
 
-  caps.Enable(coropact::io::IoCapability::kLinkedOps);
+  Enable(caps, NativeFeature::kLinkedOps);
   io_uring_free_probe(probe);
   io_uring_queue_exit(&ring);
   return caps;
 }
 
-base::Result<coropact::io::BackendBinding> BindLUring(
-    const LUringOptions& options, coropact::io::CapabilitySet active_profile) noexcept {
+base::Result<RuntimeBinding> BindLUring(
+    const LUringOptions& options, RuntimeProfile active_profile) noexcept {
   auto caps = COROPACT_TRY(ProbeCapabilities(options));
-  return coropact::io::BindBackend(coropact::io::Backend::kLuring, caps, active_profile);
+  return BindCapabilities(std::move(caps), active_profile);
 }
 
 }  // namespace coropact::luring

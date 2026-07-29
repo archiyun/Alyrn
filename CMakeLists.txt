@@ -14,6 +14,8 @@ option(BUILD_BENCHMARKS "Build standalone microbenchmarks" OFF)
 option(COROPACT_ENABLE_URING "Enable io_uring proactor backend (requires liburing, Linux 5.19+)" OFF)
 option(COROPACT_ENABLE_GATEWAY_YAML_CONFIG "Build YAML gateway config support (requires yaml-cpp)" ON)
 option(COROPACT_ENABLE_CTRACK "Enable optional CTRACK instrumentation" OFF)
+option(COROPACT_ENABLE_TEST_HOOKS
+       "Enable deterministic fault-injection hooks for runtime tests" OFF)
 set(COROPACT_CTRACK_ROOT "" CACHE PATH "Path to a CTRACK checkout containing include/ctrack.hpp")
 
 find_package(Threads REQUIRED)
@@ -80,7 +82,7 @@ if(COROPACT_ENABLE_CTRACK)
         CTRACK_DISABLE_EXECUTION_POLICY)
 endif()
 
-# coropact_io_contract —— 后端实现使用的 I/O concepts、Result 算法和 capability
+# coropact_io_contract —— 后端实现使用的 I/O concepts、Result 算法和语义 profile
 # profile。它不包含具体 backend，也不依赖具体 backend。
 add_library(coropact_io_contract INTERFACE)
 target_include_directories(coropact_io_contract INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -88,7 +90,7 @@ target_link_libraries(coropact_io_contract INTERFACE coropact_coro coropact_foun
 target_compile_features(coropact_io_contract INTERFACE cxx_std_23)
 
 # coropact_io —— 面向应用的 I/O facade。具体 backend 在各自 target 定义完成后
-# 注入到这个 facade，避免 backend 反向依赖 facade 造成循环。
+# 通过 adapter 注入到这个 facade，backend 核心不反向依赖 facade。
 add_library(coropact_io INTERFACE)
 target_include_directories(coropact_io INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(coropact_io INTERFACE coropact_io_contract)
@@ -126,6 +128,7 @@ add_library(coropact_reactor STATIC
     src/reactor/poller.cc
     src/reactor/reactor_connect.cc
     src/reactor/reactor_listener.cc
+    src/reactor/reactor_recv_source.cc
     src/reactor/reactor_stream.cc
     src/reactor/reactor_worker.cc
     src/reactor/reactor_worker_group.cc
@@ -147,8 +150,8 @@ target_link_libraries(coropact_reactor
 
 target_compile_features(coropact_reactor PUBLIC cxx_std_23)
 
-# The facade depends on the concrete Reactor backend; the Reactor target itself
-# remains independent of both io targets.
+# The facade depends on the concrete Reactor backend only at the composition
+# root; the Reactor target itself remains independent of io targets.
 target_link_libraries(coropact_io INTERFACE coropact_reactor)
 
 # coropact_luring —— io_uring proactor 网络模块。它与 coropact_reactor 并列，
@@ -158,6 +161,8 @@ if(COROPACT_ENABLE_URING)
         src/luring/capabilities.cc
         src/luring/connector.cc
         src/luring/listener.cc
+        src/luring/recv_source.cc
+        src/luring/recv_source_stream.cc
         src/luring/loop.cc
         src/luring/ring.cc
         src/luring/server.cc
@@ -182,11 +187,31 @@ if(COROPACT_ENABLE_URING)
     )
 
     target_compile_definitions(coropact_luring PUBLIC COROPACT_ENABLE_URING)
+    if(COROPACT_ENABLE_TEST_HOOKS)
+        target_compile_definitions(coropact_luring PUBLIC COROPACT_ENABLE_TEST_HOOKS)
+    endif()
     target_compile_features(coropact_luring PUBLIC cxx_std_23)
 
-    # Add the optional concrete backend to the higher-level facade only after
-    # luring has been defined. This keeps luring -> io_contract acyclic.
+    # The luring core remains independent of the application facade. Only the
+    # separate adapter is added to the higher-level facade below.
     target_link_libraries(coropact_io INTERFACE coropact_luring)
+
+    add_library(coropact_io_luring_adapter STATIC
+        src/io/luring_backend.cc
+    )
+    target_include_directories(coropact_io_luring_adapter
+        PUBLIC
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${URING_INCLUDE_DIRS}
+    )
+    target_link_libraries(coropact_io_luring_adapter
+        PUBLIC
+            coropact_io_contract
+            coropact_luring
+    )
+    target_compile_definitions(coropact_io_luring_adapter PUBLIC COROPACT_ENABLE_URING)
+    target_compile_features(coropact_io_luring_adapter PUBLIC cxx_std_23)
+    target_link_libraries(coropact_io INTERFACE coropact_io_luring_adapter)
 endif()
 
 # coropact_coro_reactor —— 把协程绑定到 coropact_reactor 后端。

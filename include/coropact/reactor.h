@@ -14,6 +14,7 @@
 #include "coropact/reactor/poller.h" // IWYU pragma: export
 #include "coropact/reactor/reactor_connect.h" // IWYU pragma: export
 #include "coropact/reactor/reactor_listener.h" // IWYU pragma: export
+#include "coropact/reactor/reactor_recv_source.h" // IWYU pragma: export
 #include "coropact/reactor/reactor_stream.h" // IWYU pragma: export
 #include "coropact/reactor/timer_queue.h" // IWYU pragma: export
 #include "coropact/reactor/reactor_worker.h" // IWYU pragma: export

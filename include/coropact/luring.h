@@ -11,6 +11,7 @@
 #include "coropact/luring/mailbox.h" // IWYU pragma: export
 #include "coropact/luring/op.h" // IWYU pragma: export
 #include "coropact/luring/options.h" // IWYU pragma: export
+#include "coropact/luring/recv_source.h" // IWYU pragma: export
 #include "coropact/luring/ring.h" // IWYU pragma: export
 #include "coropact/luring/server.h" // IWYU pragma: export
 #include "coropact/luring/stream.h" // IWYU pragma: export

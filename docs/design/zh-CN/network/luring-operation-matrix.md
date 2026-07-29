@@ -42,7 +42,7 @@ inflight 是否应该减少
 
 ## 2. 能力矩阵与运行期路径选择
 
-`IoCapability` 的一个标记不能同时代表所有可用性。每项能力至少要经过以下五层：
+`io::CapabilitySet` 的一个语义要求不能同时代表所有可用性。每项能力至少要经过以下五层：
 
 | 维度 | 要回答的问题 | 例子 |
 | --- | --- | --- |
@@ -53,7 +53,9 @@ inflight 是否应该减少
 | 运行期 | 当前 operation 的对象、资源和状态是否允许走该路径？ | buffer ring 有可用 buffer、send zerocopy 满足 buffer 条件 |
 
 前四层决定能力是否可以进入 active profile；运行期条件不应写入静态
-`CapabilitySet`，而应由 operation path selector 在每次提交前判断：
+`io::CapabilitySet`，而应由上层 adapter 翻译为 luring 的 `RuntimeProfile`。当前
+`LUringLoop` 在 `Init()` 保存 luring 自己的 `RuntimeBinding`，扩展 operation 会同时检查
+native active profile 与实际 probe：
 
 ```cpp
 enum class OperationPath {
@@ -76,8 +78,9 @@ Compiled
   = OperationPathSelected
 ```
 
-例如，capability 可能支持 provided buffer ring，但当前 ring 暂时没有可用 buffer；这时
-本次操作应选择 `kFallback` 或返回明确的资源耗尽结果，而不是修改全局 capability。
+例如，ring 可能支持 provided buffer ring，但 native active profile 没有请求它；这时
+本次操作直接返回 `ENOTSUP`，而不是绕过 binding。即使 profile 已请求扩展，具体 operation
+仍需处理 buffer 耗尽、socket 条件和提交失败。
 
 特别是：
 
@@ -110,15 +113,15 @@ IORING_RECV_MULTISHOT 可用
 `inflight_`，调用一次 `LUringOp::Complete()`，然后最多调度一次 `ResumeWork`。这个行为适合
 上表中的 single-shot operation；它不能直接承载 multishot operation。
 
-## 4. 计划中的扩展 operation
+## 4. 扩展 operation
 
 | 扩展 | 提交与完成 | 业务结果 | buffer / operation 生命周期 | Reactor 解释 | 当前状态 |
 | --- | --- | --- | --- | --- | --- |
-| multishot accept | 1 个 SQE，多个 CQE；`F_MORE` 表示 operation 继续 | 每个 CQE 产生一个新 stream；无 `F_MORE` 的 CQE 结束 source | source 在终止 CQE、错误或取消收敛后释放；不能每个 CQE 都销毁 operation | readiness 后反复 `accept()`，每次成功 emit 一个 stream | 未实现；当前 opcode probe 不能证明该语义可用 |
-| multishot recv | 1 个 SQE，多个 CQE；每个 CQE 可能产生数据事件 | 每个 CQE 是一个 `ReadEvent`，最终 CQE/错误结束 source | source 持续存活；每个数据 buffer 必须有独立 lease | readiness + `recv()` 循环 emit 事件 | 未实现；不得塞进 `ReadSome` |
+| multishot accept | 1 个 SQE，多个 CQE；`F_MORE` 表示 operation 继续 | 每个 CQE 产生一个新 stream；无 `F_MORE` 的 CQE 结束 source | source 在终止 CQE、错误或取消收敛后释放；不能每个 CQE 都销毁 operation | readiness 后反复 `accept()`，每次成功 emit 一个 stream | luring 原生实现；不支持时降级 single-shot |
+| multishot recv | 1 个 SQE，多个 CQE；每个 CQE 可能产生数据事件 | 每个 CQE 是一个 `RecvEvent`，最终 CQE/错误结束 source | source 持续存活；每个数据 buffer 必须有独立 `BufferLease` | readiness + 非阻塞 `recv()` 循环 emit 事件 | `LUringRecvSource` 使用 provided buffer ring；`ReactorRecvSource` 使用 readiness drain + 固定 buffer pool；两者共享 `AsyncRecvSource` |
 | legacy provided buffers | 注册 buffer group，CQE 返回 buffer id | 结果包含字节数和 buffer id | consumer 归还 buffer 前不得重新提供 | buffer pool 由应用选择和管理 | 仅有 opcode 探测；无公共 API |
-| provided buffer ring | 注册 buffer ring，CQE flags 返回 buffer id；可带 `F_BUF_MORE` | 结果包含字节数、buffer id 和继续消费信息 | `BufferLease` 归还 ring 后才能复用 | 应用层 buffer pool；没有内核选择 id 的等价语义 | 未实现；应与 legacy provided buffers 分开 |
-| send zerocopy | 一个 send CQE，可能另有 `F_NOTIF` notification CQE | send CQE 确定发送结果；notification 确定 memory 可复用 | send result 和 buffer release 是两个边界；notification 之前不能释放 buffer | 普通 write 完成后释放发送 buffer；没有同等的两阶段 zc 协议 | 仅有 opcode 探测；无公共 API |
+| provided buffer ring | 注册 buffer ring，CQE flags 返回 buffer id；可带 `F_BUF_MORE` | 结果包含字节数、buffer id 和继续消费信息；增量 CQE 使用同一 id 的连续 offset | `BufferLease` 归还 ring 后才能复用；`F_BUF_MORE` 结束前以及所有 segment lease 释放前都不能归还 | 应用层 buffer pool；没有内核选择 id 的等价语义 | `LUringRecvSource` 已实现 `IOU_PBUF_RING_INC`、`F_BUF_MORE` offset 跟踪和 lease 延迟归还 |
+| send zerocopy | 一个 send CQE，可能另有 `F_NOTIF` notification CQE | send CQE 确定发送结果；notification 确定 memory 可复用 | send result 和 buffer release 是两个边界；notification 之前不能释放 buffer | 普通 write 完成后释放发送 buffer；没有同等的两阶段 zc 协议 | `LUringStream::SendZeroCopy` 已实现；等待 primary result 与 terminal notification |
 | registered fixed buffer | 使用注册 buffer 的固定索引/切片 | 结果仍可为 single-shot 或其它 family | registration 的 owner 必须覆盖所有 in-flight operation | 普通用户 buffer；没有固定 buffer 的相同语义 | capability 枚举存在，未实现 |
 | fixed file | SQE 使用注册 file slot | 结果语义由具体 operation 决定 | file table slot 释放前不能有引用 | 普通 fd 所有权 | capability 枚举存在，未实现 |
 | linked operations | 多个 SQE 组成一个逻辑操作 | 可能有多个物理 CQE，但业务结果通常只确定一次 | 所有影响结果或资源的 link member 都必须收敛 | Reactor 通过组合 awaiter/状态机模拟 | timed read 已内部使用；通用公共 API 未实现 |
@@ -160,14 +163,24 @@ send zerocopy 至少要区分两个事件：
 ```text
 send CQE
   -> 业务发送结果确定
-  -> 可选择恢复等待发送结果的协程
+  -> CoroPact 当前继续等待 split-release operation 的 terminal CQE
 
 notification CQE(F_NOTIF)
   -> 内核不再使用发送内存
-  -> 释放 BufferLease
+  -> operation 完成，恢复协程；调用方此时可以复用发送 buffer
 ```
 
 因此不能复用普通 `WriteSome()` 的“收到一个 CQE 就释放所有状态”规则。
+当前显式扩展接口为：
+
+```cpp
+auto result = co_await stream.SendZeroCopy(buffer);
+// await 返回后，buffer 已离开 io_uring 的发送使用窗口。
+```
+
+如果内核对该 socket 或该次发送退化为 copy path，接口仍返回发送字节数，并通过
+`ZeroCopySendResult::copied` 标记实际使用了 copy；`notification_received` 记录本次是否确实
+观察到了独立的 `F_NOTIF` CQE。
 
 ## 5. 当前 capability 探测的注意事项
 
@@ -177,8 +190,10 @@ notification CQE(F_NOTIF)
 | --- | --- | --- |
 | `kMultishotAccept` | 仅探测 `IORING_OP_ACCEPT` | opcode 存在不代表 accept multishot flag 和终止语义可用 |
 | `kMultishotRecv` | 仅探测 `IORING_OP_RECV` | opcode 存在不代表 `IORING_RECV_MULTISHOT` 可用 |
-| `kProvidedBuffer` | 探测 `PROVIDE_BUFFERS` / `REMOVE_BUFFERS` | 只覆盖 legacy 机制，未覆盖 provided buffer ring |
-| `kSendZeroCopy` | 探测 `IORING_OP_SEND_ZC` | 没有 send CQE 与 notification CQE 的生命周期实现 |
+| `kProvidedBuffer` | 探测 `PROVIDE_BUFFERS` / `REMOVE_BUFFERS` | 只代表 legacy 机制 |
+| `kProvidedBufferRing` | 实际创建并注销 1-entry buffer ring | 只代表 ring 注册能力，不代表具体 recv source 已经启动 |
+| `kProvidedBufferRingIncremental` | 使用 `IOU_PBUF_RING_INC` 创建并注销 1-entry buffer ring | 代表 ring 支持增量 buffer 消费；具体 source 仍需启用 `incremental_buffer_consumption` |
+| `kSendZeroCopy` | 探测 `IORING_OP_SEND_ZC` | `LUringStream::SendZeroCopy` 已实现 primary/notification split-release 生命周期 |
 | `kLinkedOps` | 当前无条件启用 | timed read 有内部使用，但通用 linked-operation API 尚未定义 |
 | `kRegisteredBuffer` | capability 枚举存在 | 当前 probe 和公共接口都未完成 |
 | `kFixedFile` | capability 枚举存在 | 当前 probe 和公共接口都未完成 |
@@ -238,17 +253,55 @@ operation destruction
 - `formal/async_stream_core.tla`：单个 single-shot stream operation；
 - `formal/async_stream_backend_refinement.tla`：Reactor 与 io_uring 的 single-shot refinement；
 - `formal/async_operation_families.tla`：single-shot、multishot、composite 的完成基数。
+- `formal/accept_source_refinement.tla`：Reactor readiness、io_uring one-shot re-arm 和
+  native multishot 三条 AcceptSource 路径的有界业务语义 refinement；
+- `formal/recv_source_lease.tla`：provided-buffer multishot recv 的 queue、BufferLease、
+  cancel 和 Stop 收敛不变量。
+
+这些 TLA+ 模型检查的是协议级 safety，不是 C++ 实现的自动内存安全证明。当前配置使用：
+
+```text
+accept_source_refinement.cfg:
+  MaxEvents = 2, MaxRequests = 3
+
+recv_source_lease.cfg:
+  BufferCapacity = 2, EventCapacity = 2, MaxEvents = 4
+```
+
+可用 TLC 复现有界检查：
+
+```bash
+tlc docs/design/zh-CN/network/formal/accept_source_refinement.tla \
+  -config docs/design/zh-CN/network/formal/accept_source_refinement.cfg
+tlc docs/design/zh-CN/network/formal/recv_source_lease.tla \
+  -config docs/design/zh-CN/network/formal/recv_source_lease.cfg
+```
+
+当前模型覆盖的核心 safety 条件是：
+
+```text
+AcceptSource:
+  event 至多交付一次；terminal 至多观察一次；Stop 后不再 admission；
+  Reactor / UringSingle / UringMulti 都只能通过 Terminal/Draining 收敛。
+
+RecvSource:
+  available、queued、leased buffer 两两不重叠且覆盖 buffer pool；
+  queue 和 lease 受容量限制；Stop 完成前没有 outstanding lease；
+  cancel CQE 不替代 recv request 自己的 terminal CQE。
+```
 
 ## 7. 实施顺序
 
-1. 为 `CompletionEvent` 和 operation family handler 建立不改变现有 ABI 的内部测试模型。
+1. 为 `CompletionEvent` 和 operation family handler 建立不改变现有 ABI 的内部测试模型。（已完成。）
 2. 覆盖 immediate、普通 CQE、重复 CQE、cancel-before-complete、complete-before-cancel、
-   close 与 pending I/O 交错。
+   close 与 pending I/O 交错。（已完成核心路径和提交失败注入。）
 3. 修正 capability 探测，拆分 multishot、legacy provided buffers 与 provided buffer ring；
-   再为实际提交增加运行期 path selector。
-4. 单独实现 `AcceptSource`，保留现有一次性 `Accept()`。
-5. 实现带 `BufferLease` 的 multishot recv。
-6. 最后实现 send zerocopy 的结果与 notification 双阶段生命周期。
+   再为实际提交增加运行期 path selector。（基础 buffer-ring probe 已完成。）
+4. 单独实现 `AcceptSource`，保留现有一次性 `Accept()`。（已完成。）
+5. 实现带 `BufferLease` 的 multishot recv。（luring provided-buffer ring 与 Reactor readiness
+   source、lease safety 模型已完成；luring 路径已支持 `F_BUF_MORE` 增量消费和连续 offset。）
+6. 实现 send zerocopy 的结果与 notification 双阶段生命周期。（`LUringStream::SendZeroCopy`
+   已完成；Reactor 保持普通 send 语义，不伪造 zerocopy notification。）
 
 ## 参考
 

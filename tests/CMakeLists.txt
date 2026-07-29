@@ -125,6 +125,23 @@ target_link_libraries(accept_source_state_smoke_test
 
 add_test(NAME accept_source_state_smoke_test COMMAND accept_source_state_smoke_test)
 
+add_executable(recv_source_state_smoke_test
+    unit/test_recv_source_state_smoke.cc
+)
+
+target_include_directories(recv_source_state_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(recv_source_state_smoke_test
+    PRIVATE
+        coropact_coro
+        coropact_net
+)
+
+add_test(NAME recv_source_state_smoke_test COMMAND recv_source_state_smoke_test)
+
 # C3:detached 连接协程(Spawn)park→resume→自毁,无泄漏/无 UAF。链 coropact_reactor。
 add_executable(spawn_c3_smoke_test
     unit/test_spawn_c3_smoke.cc
@@ -174,6 +191,22 @@ target_link_libraries(reactor_listener_smoke_test
 
 add_test(NAME reactor_listener_smoke_test COMMAND reactor_listener_smoke_test)
 
+add_executable(reactor_recv_source_smoke_test
+    unit/test_reactor_recv_source_smoke.cc
+)
+
+target_include_directories(reactor_recv_source_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(reactor_recv_source_smoke_test
+    PRIVATE
+        coropact_reactor
+)
+
+add_test(NAME reactor_recv_source_smoke_test COMMAND reactor_recv_source_smoke_test)
+
 add_executable(reactor_worker_group_smoke_test
     unit/test_reactor_worker_group_smoke.cc
 )
@@ -191,6 +224,25 @@ target_link_libraries(reactor_worker_group_smoke_test
 add_test(NAME reactor_worker_group_smoke_test COMMAND reactor_worker_group_smoke_test)
 
 if(COROPACT_ENABLE_URING)
+    add_executable(luring_backend_adapter_smoke_test
+        unit/test_luring_backend_adapter_smoke.cc
+    )
+
+    target_include_directories(luring_backend_adapter_smoke_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../include
+            ${URING_INCLUDE_DIRS}
+    )
+
+    target_link_libraries(luring_backend_adapter_smoke_test
+        PRIVATE
+            coropact_io_luring_adapter
+    )
+
+    target_compile_definitions(luring_backend_adapter_smoke_test PRIVATE COROPACT_ENABLE_URING)
+
+    add_test(NAME luring_backend_adapter_smoke_test COMMAND luring_backend_adapter_smoke_test)
+
     add_executable(luring_coro_smoke_test
         unit/test_luring_coro_smoke.cc
     )
@@ -323,6 +375,72 @@ if(COROPACT_ENABLE_URING)
     target_compile_definitions(luring_listener_smoke_test PRIVATE COROPACT_ENABLE_URING)
 
     add_test(NAME luring_listener_smoke_test COMMAND luring_listener_smoke_test)
+
+    add_executable(luring_multishot_accept_smoke_test
+        unit/test_luring_multishot_accept_smoke.cc
+    )
+
+    target_include_directories(luring_multishot_accept_smoke_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../include
+            ${URING_INCLUDE_DIRS}
+    )
+
+    target_link_libraries(luring_multishot_accept_smoke_test
+        PRIVATE
+            coropact_luring
+    )
+
+    target_compile_definitions(luring_multishot_accept_smoke_test
+        PRIVATE
+            COROPACT_ENABLE_URING
+    )
+
+    add_test(NAME luring_multishot_accept_smoke_test
+        COMMAND luring_multishot_accept_smoke_test
+    )
+
+    add_executable(luring_recv_source_smoke_test
+        unit/test_luring_recv_source_smoke.cc
+    )
+
+    target_include_directories(luring_recv_source_smoke_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../include
+            ${URING_INCLUDE_DIRS}
+    )
+
+    target_link_libraries(luring_recv_source_smoke_test
+        PRIVATE
+            coropact_luring
+    )
+
+    target_compile_definitions(luring_recv_source_smoke_test PRIVATE COROPACT_ENABLE_URING)
+
+    add_test(NAME luring_recv_source_smoke_test
+        COMMAND luring_recv_source_smoke_test
+    )
+
+    add_executable(luring_send_zc_smoke_test
+        unit/test_luring_send_zc_smoke.cc
+    )
+
+    target_include_directories(luring_send_zc_smoke_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../include
+            ${URING_INCLUDE_DIRS}
+    )
+
+    target_link_libraries(luring_send_zc_smoke_test
+        PRIVATE
+            coropact_luring
+    )
+
+    target_compile_definitions(luring_send_zc_smoke_test PRIVATE COROPACT_ENABLE_URING)
+
+    add_test(NAME luring_send_zc_smoke_test
+        COMMAND luring_send_zc_smoke_test
+    )
 
     add_executable(luring_worker_group_smoke_test
         unit/test_luring_worker_group_smoke.cc

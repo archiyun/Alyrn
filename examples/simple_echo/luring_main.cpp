@@ -47,7 +47,7 @@ int main() {
   luring::LUringOptions loop_options;
   loop_options.entries = kEntries;
 
-  auto binding = luring::BindLUring(loop_options, io::CapabilitySet::CoreGateway());
+  auto binding = luring::BindLUring(loop_options, luring::RuntimeProfile::Core());
   if (!binding.has_value()) {
     std::cerr << "failed to bind Luring backend: " << binding.error().message() << '\n';
     return 1;

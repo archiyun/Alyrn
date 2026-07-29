@@ -11,6 +11,8 @@
 #include <memory>
 #include <memory_resource>
 #include <new>
+#include <limits>
+#include <optional>
 #include <stop_token>
 #include <utility>
 
@@ -19,6 +21,7 @@
 #include "coropact/base/try.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/work.h"
+#include "coropact/luring/capability.h"
 #include "coropact/luring/mailbox.h"
 #include "coropact/luring/op.h"
 #include "coropact/luring/options.h"
@@ -27,6 +30,8 @@
 #include "coropact/time/timer_id.h"
 
 namespace coropact::luring {
+
+class LUringRecvSource;
 
 // Single-threaded io_uring event loop
 //
@@ -47,13 +52,31 @@ public:
   // Initializes the underlying io_uring instance.
   // Must be called from the loop thread before Loop().
   [[nodiscard]]
-  base::Result<void> Init(const LUringOptions& options) noexcept;
+  base::Result<void> Init(const LUringOptions& options) noexcept {
+    return Init(options, options.active_profile);
+  }
+
+  // Explicit profile overload used by callers that keep loop configuration
+  // separate from the backend binding request.
+  [[nodiscard]]
+  base::Result<void> Init(
+      const LUringOptions& options,
+      RuntimeProfile active_profile) noexcept;
 
   ~LUringLoop() noexcept;
 
   [[nodiscard]]
   bool Initialized() const noexcept {
     return initialized_;
+  }
+
+  // An explicit extension requires both a startup profile request and
+  // support reported by the actual ring probe.
+  [[nodiscard]]
+  bool HasCapability(NativeFeature feature) const noexcept {
+    return binding_.has_value() &&
+           binding_->active_profile.Has(feature) &&
+           binding_->capabilities.Has(feature);
   }
 
   // Runs the event loop until cancellation or Quit().
@@ -92,6 +115,18 @@ public:
   bool IsDrained() const noexcept {
     return !HasReadyWork() && PendingSubmitCount() == 0 && InflightCount() == 0;
   }
+
+#if defined(COROPACT_ENABLE_TEST_HOOKS)
+  // Test-only deterministic failure injection. It is intentionally kept out
+  // of normal builds so production LUringLoop has no fault-injection state.
+  void FailNextSubmissionsForTesting(
+      std::size_t count,
+      int error = EIO) noexcept {
+    assert(error > 0);
+    test_submit_failures_ = count;
+    test_submit_error_ = error;
+  }
+#endif
 
   [[nodiscard]]
   base::Result<time::TimerId> RunAfter(std::chrono::steady_clock::duration delay,
@@ -154,6 +189,13 @@ public:
       return std::unexpected(base::MakeErrno(EINVAL));
     }
 
+#if defined(COROPACT_ENABLE_TEST_HOOKS)
+    if (test_submit_failures_ != 0) {
+      --test_submit_failures_;
+      return std::unexpected(base::MakeErrno(test_submit_error_));
+    }
+#endif
+
     io_uring_sqe* sqe = ring_.GetSqe();
     if (sqe == nullptr) {
       COROPACT_TRY(FlushSubmit());
@@ -211,6 +253,16 @@ public:
   void RunUntilIdle();
 
 private:
+  friend class LUringRecvSource;
+
+  [[nodiscard]]
+  base::Result<std::uint16_t> AllocateBufferGroupId() noexcept {
+    if (next_buffer_group_id_ > std::numeric_limits<std::uint16_t>::max()) {
+      return std::unexpected(base::MakeErrno(EOVERFLOW));
+    }
+    return static_cast<std::uint16_t>(next_buffer_group_id_++);
+  }
+
   [[nodiscard]]
   base::Result<std::size_t> WaitCompletionsFor(
       std::chrono::nanoseconds timeout) noexcept;
@@ -223,6 +275,7 @@ private:
   coro::WorkQueue ready_;
   coro::WorkQueue completion_ready_;
   bool initialized_{false};
+  std::optional<RuntimeBinding> binding_;
 
   // Prepared SQEs that have not yet produced a CQE.
   std::size_t pending_submit_{0};
@@ -282,6 +335,12 @@ private:
   LUringOp wake_op_{.kind = LUringOpKind::kWake};
   bool cancel_all_pending_{false};
   LUringOp cancel_all_op_{.kind = LUringOpKind::kCancelAll};
+  std::uint32_t next_buffer_group_id_{1};
+
+#if defined(COROPACT_ENABLE_TEST_HOOKS)
+  std::size_t test_submit_failures_{0};
+  int test_submit_error_{EIO};
+#endif
 };
 
 }  // namespace coropact::luring

@@ -7,6 +7,7 @@
 #include <cstdint>
 
 #include "coropact/base/error.h"
+#include "coropact/net/source_state.h"
 
 namespace coropact::net {
 
@@ -25,13 +26,7 @@ struct AcceptSourceOptions {
 
 namespace detail {
 
-enum class AcceptSourceState : std::uint8_t {
-  kIdle,
-  kActive,
-  kStopping,
-  kDraining,
-  kTerminal,
-};
+using AcceptSourceState = SourceState;
 
 // Backend-neutral lifecycle and admission state. It owns no Stream values and
 // performs no scheduling; a backend stores one instance in its AcceptSource
@@ -82,6 +77,30 @@ public:
 
     --armed_requests_;
     if (produced_event) {
+      ++queued_events_;
+    }
+    ReconcileStopping();
+    return {};
+  }
+
+  // Records one CQE from a multi-shot request. F_MORE keeps the physical
+  // request armed; only its terminal CQE releases the armed request slot.
+  [[nodiscard]]
+  base::Result<void> CompleteMultishotEvent(
+      EventDisposition event,
+      MultishotRequestDisposition request) noexcept {
+    if (armed_requests_ == 0) {
+      return std::unexpected(base::MakeErrno(EINVAL));
+    }
+    if (event == EventDisposition::kProduced &&
+        queued_events_ >= options_.event_capacity) {
+      return std::unexpected(base::MakeErrno(ENOBUFS));
+    }
+
+    if (request == MultishotRequestDisposition::kTerminal) {
+      --armed_requests_;
+    }
+    if (event == EventDisposition::kProduced) {
       ++queued_events_;
     }
     ReconcileStopping();

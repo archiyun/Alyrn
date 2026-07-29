@@ -366,7 +366,22 @@ Task<Result<void>> Close();
 ```
 
 当前 `coropact::luring::LUringListener` 默认只保证一个 pending accept。`Close()` 会取消 pending
-accept，并让等待中的协程恢复。multishot accept 尚未进入公共 listener 接口。
+accept，并让等待中的协程恢复。需要持续接收事件时，使用独立的
+`coropact::luring::LUringAcceptSource` 扩展接口；它不改变 `AsyncListener::Accept()` 的
+single-shot 语义。
+
+对于需要长期事件源或特殊 buffer 生命周期的 luring 代码，可以使用显式扩展接口：
+
+```text
+LUringAcceptSource       多个 accept 事件
+LUringRecvSource         provided buffer + BufferLease；可选 F_BUF_MORE 增量消费
+LUringStream::SendZeroCopy  send CQE + notification CQE 的两阶段发送
+```
+
+这些扩展不改变 `AsyncListener::Accept()`、`AsyncStream::ReadSome()` 和
+`AsyncStream::WriteSome()` 的 single-shot 契约。`SendZeroCopy()` 返回后，调用方才可以复用
+传入的发送 buffer；若内核实际走 copy path，结果中的 `ZeroCopySendResult::copied` 会标记该
+情况，`notification_received` 则表示是否观察到独立的 notification CQE。
 
 直接使用 `LUringListener` 时，listener 和 stream 必须在同一个 `LUringLoop` 所属线程创建和
 使用。大多数服务应直接使用后面的 `LUringServer`，让它管理 accept loop 和 worker。
@@ -531,10 +546,10 @@ connector 是 loop-bound 对象，不应在 worker 之间共享。
 可以在启动期探测和绑定 luring：
 
 ```cpp
-#include "coropact/luring/capabilities.h"
+#include "coropact/io/luring_backend.h"
 
 coropact::luring::LUringOptions options;
-auto binding = coropact::luring::BindLUring(
+auto binding = coropact::io::BindLuring(
     options, coropact::io::CapabilitySet::CoreGateway());
 
 if (!binding.has_value()) {
@@ -543,24 +558,40 @@ if (!binding.has_value()) {
 }
 ```
 
-探测发生在启动期，绑定成功后 profile 应视为固定配置。业务依赖的是 `CoreGateway` 等
-语义 profile，而不是 `kSubmitRead` 之类的实现标签。
+`CapabilitySet` 表示应用请求的语义 profile，不表示内核已经具备的能力；它只能通过
+`Require()` 生成新 profile。`io::BindLuring()` 位于上层 adapter，会把语义 profile
+翻译为 luring 的 `RuntimeProfile`，再调用 luring 自己的探测和绑定逻辑。luring 核心只
+暴露 `NativeFeature` 和 `Capabilities`，不会反向包含 `io` facade。
+
+直接创建 `LUringLoop` 时，也可以把 profile 放进 loop options：
+
+```cpp
+auto profile = coropact::io::CapabilitySet::CoreGateway().Require(
+    coropact::io::IoRequirement::kSendZeroCopy);
+auto binding = coropact::io::BindLuring(options, profile);
+auto initialized = loop.Init(options);
+```
+
+`LUringLoop` 会保存 luring 自己的 `RuntimeBinding`。`SendZeroCopy()`、`LUringRecvSource` 的 provided-buffer
+以及 `F_BUF_MORE` 增量消费，只有同时满足 active profile 和实际 ring capability 时才会提交；
+否则在提交前返回 `ENOTSUP`。
 
 ### 当前能力边界
 
 当前可以稳定使用的是 single-shot TCP stream/listener/connect/close，以及其协程恢复语义。
-以下能力虽然在 capability 枚举或 probe 设计中预留，尚未作为公共业务接口提供：
+此外，Reactor 与 luring 都已提供独立的 `AcceptSource` / `RecvSource` 扩展接口。
+其中 `LUringRecvSource` 使用 provided buffer ring，`ReactorRecvSource` 使用
+readiness-driven 非阻塞 `recv()` 和固定 buffer pool；两者都通过 `BufferLease` 表达
+数据 buffer 的归还边界。
+以下能力仍未作为公共业务接口提供：
 
-- multishot accept / recv；
-- provided buffer；
-- send zero-copy；
 - fixed file / registered buffer 的业务接口；
 - 暴露给业务的 linked operation；
 - `ReadSomeFor` 形式的统一超时 stream API。
 
-当前 `ProbeCapabilities` 会把部分内核 opcode 的存在报告为扩展能力，但“内核支持 opcode”不
-等于“coropact 已经提供对应的业务 concept”。应用不要仅凭 capability bit 直接构造尚未存在的
-API。
+`LUringStream::SendZeroCopy()` 已作为 luring 专用扩展提供，但仍需通过 luring binding 或
+调用时的运行期错误处理确认当前 ring/socket 路径可用。即使 probe 报告某个 opcode，应用也
+不能据此推断所有对象都支持该扩展；具体 operation 仍需满足自己的资源与生命周期条件。
 
 ## Gateway 接入
 
@@ -755,13 +786,14 @@ I/O。取消产生的 CQE 仍会经过正常 awaiter 路径，因此 active sess
 - thread-per-ring `LUringServer`；
 - gateway session 接入和 upstream proxy。
 
-后续能力必须在新 concept 和 profile gate 下增加，而不是修改现有 `ReadSome` 的含义：
+扩展能力必须在独立 concept 和 profile gate 下增加，而不是修改现有 `ReadSome` 的含义：
 
 - `ReadSomeFor` / 统一 timeout；
 - per-ring upstream connection pool；
 - `msg_ring` 跨 ring 投递；
-- multishot accept/recv；
-- provided buffer；
+- multishot accept/recv 已通过 `AcceptSource` / `RecvSource` 暴露；Reactor 使用 readiness
+  drain，luring 使用原生 multishot/provided buffer ring；
+- provided buffer ring 已作为 luring `RecvSource` 的资源实现，legacy provided buffers 仍未提供公共 API；
 - registered buffer / fixed file 优化；
 - send zero-copy；
 - full graceful session drain。
