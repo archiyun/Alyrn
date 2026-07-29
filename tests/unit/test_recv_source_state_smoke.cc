@@ -60,9 +60,9 @@ void ReleaseStateLease(void* context, std::uint32_t /*buffer_id*/) noexcept {
 }
 
 void CheckOptions() {
-  assert(!RecvSourceOptions{0, 1, 1}.Valid());
-  assert(!RecvSourceOptions{1, 0, 1}.Valid());
-  assert(!RecvSourceOptions{1, 2, 1}.Valid());
+  assert((!RecvSourceOptions{0, 1, 1}.Valid()));
+  assert((!RecvSourceOptions{1, 0, 1}.Valid()));
+  assert((!RecvSourceOptions{1, 2, 1}.Valid()));
   assert((RecvSourceOptions{1, 2, 2}.Valid()));
 }
 
