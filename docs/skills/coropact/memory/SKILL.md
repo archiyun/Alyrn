@@ -29,7 +29,6 @@ pools, alignment, cleanup registration, reset, and PMR adaptation.
 - `MemoryPool`
 - `ObjectPool`
 - `PoolResource`
-- Cache headers are currently colocated but should be treated as L1 cache code
 
 ## Thread model
 
@@ -85,8 +84,7 @@ Object slot: raw free -> constructed -> destroyed/raw free
 ## Forbidden dependencies
 
 - `coropact/net`
-- `coropact/http`
-- `coropact/gateway`
+- CoroGateway
 - `coropact/time` for allocator primitives
 
 ## Patch rules
@@ -96,4 +94,4 @@ Object slot: raw free -> constructed -> destroyed/raw free
 - Do not convert clear single ownership into shared_ptr.
 - Preserve bulk-free semantics; do not add per-object deallocation to the arena.
 - Add failure-path tests for exhaustion, overflow, reset, and cleanup.
-- Move clock-aware cache changes toward a separate cache subsystem.
+- Do not add cache policy to this module.

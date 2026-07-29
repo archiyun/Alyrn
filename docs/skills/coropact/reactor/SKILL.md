@@ -92,13 +92,11 @@ Timer: pending-insert -> active -> executing -> active(repeat) | released
 - `timer_tree_smoke_test`
 - `io_buffer_smoke_test` for the backend-neutral `coropact::io::Buffer`
 - `coropact_integration_tests` EventLoop coverage
-- `proxy_e2e_smoke_test` when a public transport contract changes
 - ASan/UBSan lifetime tests and TSan for cross-thread API changes
 
 ## Forbidden dependencies
 
-- `coropact/http`
-- `coropact/gateway`
+- CoroGateway
 - `coropact/task`
 - Peer health, retries, route policy, or connection-name conventions
 

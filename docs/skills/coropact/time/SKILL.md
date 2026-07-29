@@ -79,8 +79,7 @@ TimerId: invalid | issued -> stale after cancel/fire
 ## Forbidden dependencies
 
 - `coropact/net`
-- `coropact/http`
-- `coropact/gateway`
+- CoroGateway
 - OS event-dispatch APIs such as epoll/timerfd
 
 ## Patch rules
