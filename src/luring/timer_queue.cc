@@ -165,8 +165,7 @@ void LUringTimerQueue::Reconcile() noexcept {
 
 void LUringTimerQueue::Arm(time::Timestamp deadline) noexcept {
   driver_timespec_ = ToKernelTimespec(deadline);
-    DriverOp()->ResetCompletion();
-    DriverOp()->resume_work.ClearHandle();
+    DriverOp()->BeginNextRequest();
 
   auto result = loop_->SubmitOp(DriverOp(), [this](io_uring_sqe* sqe) noexcept {
     io_uring_prep_timeout(sqe, &driver_timespec_, 0, IORING_TIMEOUT_ABS | IORING_TIMEOUT_REALTIME);
@@ -179,7 +178,7 @@ void LUringTimerQueue::Arm(time::Timestamp deadline) noexcept {
 
 void LUringTimerQueue::ArmFallback(time::Timestamp deadline) noexcept {
   fallback_timespec_ = ToKernelTimespec(deadline);
-    ControlOp()->ResetCompletion();
+    ControlOp()->BeginNextRequest();
   control_is_fallback_ = true;
 
   auto result = loop_->SubmitOp(ControlOp(), [this](io_uring_sqe* sqe) noexcept {
@@ -197,7 +196,7 @@ void LUringTimerQueue::ArmFallback(time::Timestamp deadline) noexcept {
 void LUringTimerQueue::Update(time::Timestamp deadline) noexcept {
   update_timespec_ = ToKernelTimespec(deadline);
   requested_deadline_ = deadline;
-    ControlOp()->ResetCompletion();
+    ControlOp()->BeginNextRequest();
   control_is_fallback_ = false;
 
     auto result = loop_->SubmitOp(ControlOp(), [this](io_uring_sqe* sqe) noexcept {

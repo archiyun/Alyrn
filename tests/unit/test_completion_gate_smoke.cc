@@ -7,6 +7,7 @@
 #include "coropact/coro/scheduler.h"
 #include "coropact/operation/detail/completion_gate.h"
 #include "coropact/operation/detail/scheduler_continuation.h"
+#include "coropact/utils/macros.h"
 
 namespace {
 
@@ -18,6 +19,19 @@ bool Expect(bool condition, const char* message) {
   return false;
 }
 
+template <typename T>
+concept ResettableCompletionGate = requires(T& gate) {
+  gate.Reset();
+};
+
+template <typename T>
+concept ReassignableCompletionGate = requires(T& gate) {
+  gate = {};
+};
+
+static_assert(!ResettableCompletionGate<coropact::operation::detail::CompletionGate>);
+static_assert(!ReassignableCompletionGate<coropact::operation::detail::CompletionGate>);
+
 bool TestOneShotTransition() {
   coropact::operation::detail::CompletionGate gate;
 
@@ -27,15 +41,6 @@ bool TestOneShotTransition() {
   ok &= Expect(gate.Completed(), "a winning completion must become terminal");
   ok &= Expect(!gate.TryComplete(), "a duplicate completion must be rejected");
   return ok;
-}
-
-bool TestResetForReusablePhysicalSlot() {
-  coropact::operation::detail::CompletionGate gate;
-  static_cast<void>(gate.TryComplete());
-  gate.Reset();
-
-  return Expect(!gate.Completed(), "reset must reopen a reusable physical slot") &&
-         Expect(gate.TryComplete(), "a reopened slot must accept its next completion");
 }
 
 class RecordingScheduler final : public coropact::coro::Scheduler {
@@ -63,8 +68,7 @@ bool TestSchedulerContinuationPreservesAffinity() {
 }  // namespace
 
 int main() {
-  const bool ok = TestOneShotTransition() && TestResetForReusablePhysicalSlot() &&
-                  TestSchedulerContinuationPreservesAffinity();
+  const bool ok = TestOneShotTransition() && TestSchedulerContinuationPreservesAffinity();
   if (ok) {
     std::puts("completion gate smoke: PASS");
     return 0;

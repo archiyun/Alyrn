@@ -89,7 +89,7 @@ public:
     base::Result<ReactorStream> result = TryAccept();
     if (result.has_value() || !IsWouldBlock(result.error().value())) {
       result_.SetResult(std::move(result));
-      static_cast<void>(completion_gate_.TryComplete());
+      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
       return false;
     }
 
@@ -165,7 +165,7 @@ public:
     Result result;
     if (source_->TryTakeNext(result)) {
       result_.SetResult(std::move(result));
-      static_cast<void>(completion_gate_.TryComplete());
+      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
       return false;
     }
 
@@ -178,7 +178,7 @@ public:
     if (source_->TryTakeNext(result)) {
       source_->pending_next_ = nullptr;
       result_.SetResult(std::move(result));
-      static_cast<void>(completion_gate_.TryComplete());
+      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
       return false;
     }
     return true;

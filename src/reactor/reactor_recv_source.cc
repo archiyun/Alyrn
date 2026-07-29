@@ -51,7 +51,7 @@ public:
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     if (source_->pending_next_ != nullptr) {
       result_.emplace(std::unexpected(base::MakeErrno(EBUSY)));
-      static_cast<void>(completion_gate_.TryComplete());
+      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
       return false;
     }
 
@@ -60,7 +60,7 @@ public:
     ReactorRecvSource::Result result;
     if (source_->TryTakeNext(result)) {
       result_.emplace(std::move(result));
-      static_cast<void>(completion_gate_.TryComplete());
+      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
       return false;
     }
 
@@ -72,7 +72,7 @@ public:
     if (source_->TryTakeNext(result)) {
       source_->pending_next_ = nullptr;
       result_.emplace(std::move(result));
-      static_cast<void>(completion_gate_.TryComplete());
+      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
       return false;
     }
     return true;
@@ -108,7 +108,7 @@ public:
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     if (source_->pending_stop_ != nullptr) {
       result_.emplace(std::unexpected(base::MakeErrno(EBUSY)));
-      static_cast<void>(completion_gate_.TryComplete());
+      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
       return false;
     }
 
@@ -119,13 +119,13 @@ public:
     if (!waiting.has_value()) {
       source_->pending_stop_ = nullptr;
       result_.emplace(std::unexpected(waiting.error()));
-      static_cast<void>(completion_gate_.TryComplete());
+      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
       return false;
     }
     if (!*waiting) {
       source_->pending_stop_ = nullptr;
       result_.emplace(base::Result<void>{});
-      static_cast<void>(completion_gate_.TryComplete());
+      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
       return false;
     }
     return true;

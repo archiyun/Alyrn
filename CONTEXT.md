@@ -16,7 +16,8 @@ changing module boundaries.
 - `operation/detail` is an internal logical-completion core. It may express
   once-only completion and scheduler-bound continuation resumption, but it
   must not own a result, fd, buffer, Channel, SQE, CQE, or application-visible
-  operation type.
+  operation type. A logical completion gate is never reopened; reusable
+  physical backend slots install a fresh gate only after their release point.
 - `net`: `Socket`, `Endpoint`, and buffers are backend-shared network values.
 - `io` and `backend`: `AsyncStream`, `AsyncListener`, and `AsyncConnector`
   define application-visible transport contracts. They must not require an

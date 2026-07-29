@@ -28,6 +28,7 @@
 #include "coropact/luring/options.h"
 #include "coropact/luring/ring.h"
 #include "coropact/time/clock.h"
+#include "coropact/utils/macros.h"
 
 namespace coropact::luring {
 
@@ -158,8 +159,7 @@ base::Result<void> LUringLoop::Init(
   wake_pending_ = false;
   wake_inflight_ = false;
   cancel_all_pending_ = false;
-  cancel_all_op_.ResetCompletion();
-  cancel_all_op_.result = {};
+  cancel_all_op_.BeginNextRequest();
   quit_.store(false, std::memory_order_relaxed);
   initialized_ = true;
   auto armed = ArmWakePoll();
@@ -215,9 +215,7 @@ base::Result<void> LUringLoop::CancelPendingOperations() noexcept {
     return {};
   }
 
-  cancel_all_op_.ResetCompletion();
-  cancel_all_op_.result = {};
-  cancel_all_op_.resume_work.ClearHandle();
+  cancel_all_op_.BeginNextRequest();
 
   auto submitted = SubmitOp(&cancel_all_op_, [](io_uring_sqe* sqe) noexcept {
     io_uring_prep_cancel(sqe, nullptr, IORING_ASYNC_CANCEL_ANY | IORING_ASYNC_CANCEL_ALL);
@@ -477,8 +475,7 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
     wake_inflight_ = false;
     DrainWakeFd();
     if (!quit_.load(std::memory_order_acquire)) {
-      wake_op_.ResetCompletion();
-      wake_op_.result = {};
+      wake_op_.BeginNextRequest();
       auto armed = ArmWakePoll();
       if (!armed.has_value()) {
         quit_.store(true, std::memory_order_release);
@@ -489,7 +486,7 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
 
   if (op == &cancel_all_op_) {
     cancel_all_pending_ = false;
-    static_cast<void>(op->Complete(cqe->res));
+    COROPACT_IGNORE_RESULT(op->Complete(cqe->res));
     return;
   }
 

@@ -128,7 +128,7 @@ base::Error SocketError(int fd) noexcept {
 bool ReactorStream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   if (stream_->closed_ || stream_->socket_.fd() < 0) {
     result_.SetError(base::MakeErrno(EBADF));
-    static_cast<void>(completion_gate_.TryComplete());
+    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
     return false;
   }
 
@@ -140,7 +140,7 @@ bool ReactorStream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> conti
   IoAttempt attempt = TryRead(stream_->socket_.fd(), buffer_);
   if (!attempt.pending) {
     result_.SetResult(attempt.result);
-    static_cast<void>(completion_gate_.TryComplete());
+    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
     return false;
   }
 
@@ -199,7 +199,7 @@ bool ReactorStream::BufferReadAwaiter::await_suspend(
     std::coroutine_handle<> continuation) noexcept {
   if (stream_->closed_ || stream_->socket_.fd() < 0) {
     result_.SetError(base::MakeErrno(EBADF));
-    static_cast<void>(completion_gate_.TryComplete());
+    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
     return false;
   }
 
@@ -210,14 +210,14 @@ bool ReactorStream::BufferReadAwaiter::await_suspend(
   continuation_.Bind(continuation);
 
   if (!PrepareReservation()) {
-    static_cast<void>(completion_gate_.TryComplete());
+    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
     return false;
   }
 
   IoAttempt attempt = TryReadv(stream_->socket_.fd(), iovs_);
   if (!attempt.pending) {
     FinishAttempt(std::move(attempt.result));
-    static_cast<void>(completion_gate_.TryComplete());
+    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
     return false;
   }
 
@@ -291,7 +291,7 @@ void ReactorStream::BufferReadAwaiter::FinishAttempt(base::Result<std::size_t> r
 bool ReactorStream::WriteSomeAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   if (stream_->closed_ || stream_->socket_.fd() < 0) {
     result_.SetError(base::MakeErrno(EBADF));
-    static_cast<void>(completion_gate_.TryComplete());
+    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
     return false;
   }
 
@@ -303,7 +303,7 @@ bool ReactorStream::WriteSomeAwaiter::await_suspend(std::coroutine_handle<> cont
   IoAttempt attempt = TryWrite(stream_->socket_.fd(), buffer_);
   if (!attempt.pending) {
     result_.SetResult(attempt.result);
-    static_cast<void>(completion_gate_.TryComplete());
+    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
     return false;
   }
 
@@ -344,7 +344,7 @@ bool ReactorStream::BufferWriteAwaiter::await_suspend(
     std::coroutine_handle<> continuation) noexcept {
   if (stream_->closed_ || stream_->socket_.fd() < 0) {
     result_.SetError(base::MakeErrno(EBADF));
-    static_cast<void>(completion_gate_.TryComplete());
+    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
     return false;
   }
 
@@ -355,14 +355,14 @@ bool ReactorStream::BufferWriteAwaiter::await_suspend(
   continuation_.Bind(continuation);
 
   if (!PrepareReadable()) {
-    static_cast<void>(completion_gate_.TryComplete());
+    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
     return false;
   }
 
   IoAttempt attempt = TryWritev(stream_->socket_.fd(), iovs_);
   if (!attempt.pending) {
     FinishAttempt(std::move(attempt.result));
-    static_cast<void>(completion_gate_.TryComplete());
+    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
     return false;
   }
 

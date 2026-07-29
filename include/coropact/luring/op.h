@@ -11,7 +11,7 @@
 
 #include "coropact/base/error.h"
 #include "coropact/coro/work.h"
-#include "coropact/operation/detail/completion_gate.h"
+#include "coropact/luring/detail/reusable_completion_slot.h"
 
 namespace coropact::luring {
 
@@ -109,6 +109,8 @@ public:
     return static_cast<int>(encoded_);
   }
 
+  void Clear() noexcept { encoded_ = kEmpty; }
+
   // There is no stored error object: CQE failures are the negative integer
   // itself and are converted by the awaiter. Calling Error() for an empty
   // result is only a defensive fallback for the invalid pre-completion path.
@@ -137,7 +139,7 @@ public:
 
   [[nodiscard]]
   bool Complete(int cqe_res) noexcept {
-    if (!completion_gate_.TryComplete()) {
+    if (!completion_slot_.TryComplete()) {
       return false;
     }
 
@@ -149,7 +151,7 @@ public:
   // result outside LUringOp. They mark the operation terminal only after the
   // final CQE has been interpreted by the family handler.
   bool CompleteWithoutResult() noexcept {
-    if (!completion_gate_.TryComplete()) {
+    if (!completion_slot_.TryComplete()) {
       return false;
     }
     return true;
@@ -166,12 +168,20 @@ public:
   LUringOpKind DispatchKind() const noexcept { return kind; }
 
   [[nodiscard]]
-  bool IsCompleted() const noexcept { return completion_gate_.Completed(); }
+  bool IsCompleted() const noexcept { return completion_slot_.Completed(); }
 
-  void ResetCompletion() noexcept { completion_gate_.Reset(); }
+  // Starts the next request in a reusable physical slot. Call only after the
+  // previous request reached its operation-family release point. This clears
+  // the prior CQE result and continuation so stale state cannot leak across
+  // physical requests.
+  void BeginNextRequest() noexcept {
+    completion_slot_.BeginNextRequest();
+    result.Clear();
+    resume_work.ClearHandle();
+  }
 
 private:
-  operation::detail::CompletionGate completion_gate_;
+  detail::ReusableCompletionSlot completion_slot_;
 };
 
 static_assert(sizeof(LUringOp) == 24);

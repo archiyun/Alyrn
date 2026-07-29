@@ -83,7 +83,7 @@ struct ZeroCopySendDiagnostics {
 
     primary_errors.fetch_add(1, std::memory_order_relaxed);
     int expected = 0;
-    static_cast<void>(first_primary_error.compare_exchange_strong(
+    COROPACT_IGNORE_RESULT(first_primary_error.compare_exchange_strong(
         expected, result, std::memory_order_relaxed));
     last_primary_error.store(result, std::memory_order_relaxed);
 

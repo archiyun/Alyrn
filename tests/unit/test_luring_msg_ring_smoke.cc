@@ -17,6 +17,7 @@
 #include "coropact/luring/loop.h"
 #include "coropact/luring/op.h"
 #include "coropact/luring/options.h"
+#include "coropact/utils/macros.h"
 
 namespace {
 
@@ -192,7 +193,7 @@ bool CheckMsgRingMailboxSchedule() {
         target->RingFd(),
         0);
     if (!submitted.has_value()) {
-      static_cast<void>(target->RetryMessageNotification());
+      COROPACT_IGNORE_RESULT(target->RetryMessageNotification());
       failed.store(true, std::memory_order_release);
       return;
     }

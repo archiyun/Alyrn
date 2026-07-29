@@ -55,7 +55,7 @@ public:
     auto fd = net::CreateNonBlockingSocket(peer_.native_family());
     if (!fd.has_value()) {
       result_.SetError(fd.error());
-      static_cast<void>(completion_gate_.TryComplete());
+    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
       return false;
     }
     fd_ = *fd;
@@ -67,12 +67,12 @@ public:
 
     if (rc == 0) {
       result_.SetResult(MakeStream());
-      static_cast<void>(completion_gate_.TryComplete());
+    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
       return false;
     }
     if (errno != EINPROGRESS) {
       result_.SetError(base::CurrentErrno());
-      static_cast<void>(completion_gate_.TryComplete());
+    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
       return false;
     }
 

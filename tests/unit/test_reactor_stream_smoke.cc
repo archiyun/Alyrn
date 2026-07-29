@@ -63,6 +63,18 @@ coropact::coro::DetachedTask ReadOnce(coropact::reactor::ReactorStream* stream,
   loop->Quit();
 }
 
+coropact::coro::DetachedTask ReadWithoutQuit(coropact::reactor::ReactorStream* stream,
+                                             coropact::reactor::EventLoopScheduler* scheduler,
+                                             std::array<std::byte, 16>* buffer,
+                                             std::optional<ReadResult>* out,
+                                             int* resume_count,
+                                             bool* resumed_with_scheduler) {
+  ReadResult result = co_await stream->ReadSome(*buffer);
+  ++*resume_count;
+  *resumed_with_scheduler = coropact::coro::Scheduler::Current() == scheduler;
+  out->emplace(std::move(result));
+}
+
 coropact::coro::DetachedTask ReadBufferOnce(coropact::reactor::ReactorStream* stream,
                                             coropact::reactor::EventLoop* loop,
                                             coropact::reactor::EventLoopScheduler* scheduler,
@@ -362,6 +374,50 @@ bool CheckCloseCancelsPendingRead() {
          Check(resumed_with_scheduler, "cancelled read resumed without current scheduler");
 }
 
+bool CheckReadableThenCloseResumesOnce() {
+  int sv[2] = {-1, -1};
+  if (!MakeSocketPair(sv)) {
+    std::cout << "FAIL: socketpair failed\n";
+    return false;
+  }
+
+  coropact::reactor::EventLoop loop;
+  coropact::reactor::ReactorStream stream(&loop, sv[0]);
+  coropact::reactor::EventLoopScheduler scheduler(&loop);
+
+  std::array<std::byte, 16> buffer{};
+  std::optional<ReadResult> result;
+  int resume_count = 0;
+  bool resumed_with_scheduler = false;
+
+  coropact::coro::SpawnDetach(
+      scheduler,
+      ReadWithoutQuit(&stream, &scheduler, &buffer, &result, &resume_count,
+                      &resumed_with_scheduler));
+  loop.QueueInLoop([&] {
+    const char payload[] = "race";
+    COROPACT_IGNORE_RESULT(::write(sv[1], payload, sizeof(payload) - 1));
+    coropact::coro::Spawn(scheduler, stream.Close()).Detach();
+  });
+  loop.RunAfter(0.01, [&] { loop.Quit(); });
+  loop.Loop();
+
+  ::close(sv[1]);
+
+  if (!Check(result.has_value(), "readable-close race did not finish") ||
+      !Check(resume_count == 1, "readable-close race resumed the coroutine more than once") ||
+      !Check(resumed_with_scheduler,
+             "readable-close race resumed without the captured scheduler")) {
+    return false;
+  }
+
+  if (result->has_value()) {
+    return Check(**result == 4, "readable-close race returned wrong byte count");
+  }
+  return Check(result->error() == std::errc::operation_canceled,
+               "readable-close race failed with an unexpected error");
+}
+
 bool CheckEchoAlgorithmUsesAsyncStream() {
   int sv[2] = {-1, -1};
   if (!MakeSocketPair(sv)) {
@@ -446,6 +502,7 @@ int main() {
   if (!CheckReadIntoIoBuffer()) return 1;
   if (!CheckWriteFromIoBuffer()) return 1;
   if (!CheckCloseCancelsPendingRead()) return 1;
+  if (!CheckReadableThenCloseResumesOnce()) return 1;
   if (!CheckEchoAlgorithmUsesAsyncStream()) return 1;
   if (!CheckCloseRejectsLaterSubmit()) return 1;
 

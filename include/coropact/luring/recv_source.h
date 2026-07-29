@@ -101,9 +101,7 @@ private:
 
     void Prepare() noexcept {
       kind = LUringOpKind::kRecvSourceComplete;
-      ResetCompletion();
-      result = {};
-      resume_work.ClearHandle();
+      BeginNextRequest();
     }
 
   private:
@@ -124,9 +122,7 @@ private:
 
     void Prepare() noexcept {
       kind = LUringOpKind::kRecvSourceCancelComplete;
-      ResetCompletion();
-      result = {};
-      resume_work.ClearHandle();
+      BeginNextRequest();
     }
 
   private:

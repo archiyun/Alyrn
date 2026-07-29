@@ -16,6 +16,12 @@ namespace coropact::operation::detail {
 // completion when appropriate.
 class CompletionGate {
 public:
+  CompletionGate() noexcept = default;
+  CompletionGate(const CompletionGate&) = delete;
+  CompletionGate& operator=(const CompletionGate&) = delete;
+  CompletionGate(CompletionGate&&) = delete;
+  CompletionGate& operator=(CompletionGate&&) = delete;
+
   [[nodiscard]]
   bool TryComplete() noexcept {
     if (completed_) {
@@ -29,8 +35,6 @@ public:
   bool Completed() const noexcept {
     return completed_;
   }
-
-  void Reset() noexcept { completed_ = false; }
 
 private:
   bool completed_{false};
