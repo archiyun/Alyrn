@@ -42,7 +42,6 @@ endif()
 add_library(coropact_foundation STATIC
     src/log/async_logger.cc
     src/log/logger.cc
-    src/time/timestamp.cc
 )
 
 target_include_directories(coropact_foundation
