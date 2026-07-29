@@ -21,7 +21,6 @@
 #include "coropact/metrics.h"  // IWYU pragma: export
 #include "coropact/net.h"      // IWYU pragma: export
 #include "coropact/reactor.h"  // IWYU pragma: export
-#include "coropact/sync.h"     // IWYU pragma: export
 #include "coropact/time.h"     // IWYU pragma: export
 #include "coropact/utils.h"    // IWYU pragma: export
 
