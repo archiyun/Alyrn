@@ -13,6 +13,9 @@ changing module boundaries.
 - `coro`: `Task`, `DetachedTask`, `Scheduler`, and `Work` define coroutine
   ownership and scheduling. This module does not own an event loop or an I/O
   queue.
+- `operation/detail` is an internal logical-completion core. It may express
+  once-only completion, but it must not own a result, fd, buffer, Channel, SQE,
+  CQE, or application-visible operation type.
 - `net`: `Socket`, `Endpoint`, and buffers are backend-shared network values.
 - `io` and `backend`: `AsyncStream`, `AsyncListener`, and `AsyncConnector`
   define application-visible transport contracts. They must not require an

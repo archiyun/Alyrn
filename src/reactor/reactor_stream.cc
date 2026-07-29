@@ -130,6 +130,7 @@ base::Error SocketError(int fd) noexcept {
 bool ReactorStream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   if (stream_->closed_ || stream_->socket_.fd() < 0) {
     result_.SetError(base::MakeErrno(EBADF));
+    static_cast<void>(completion_gate_.TryComplete());
     return false;
   }
 
@@ -142,6 +143,7 @@ bool ReactorStream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> conti
   IoAttempt attempt = TryRead(stream_->socket_.fd(), buffer_);
   if (!attempt.pending) {
     result_.SetResult(attempt.result);
+    static_cast<void>(completion_gate_.TryComplete());
     return false;
   }
 
@@ -168,6 +170,9 @@ base::Result<std::size_t> ReactorStream::ReadSomeAwaiter::await_resume() noexcep
 }
 
 void ReactorStream::ReadSomeAwaiter::CompleteImpl(base::Result<std::size_t> result) noexcept {
+  if (!completion_gate_.TryComplete()) {
+    return;
+  }
   if (timer_.Valid()) {
     stream_->loop_->Cancel(timer_);
     timer_ = {};
@@ -286,6 +291,7 @@ void ReactorStream::BufferReadAwaiter::FinishAttempt(base::Result<std::size_t> r
 bool ReactorStream::WriteSomeAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   if (stream_->closed_ || stream_->socket_.fd() < 0) {
     result_.SetError(base::MakeErrno(EBADF));
+    static_cast<void>(completion_gate_.TryComplete());
     return false;
   }
 
@@ -298,6 +304,7 @@ bool ReactorStream::WriteSomeAwaiter::await_suspend(std::coroutine_handle<> cont
   IoAttempt attempt = TryWrite(stream_->socket_.fd(), buffer_);
   if (!attempt.pending) {
     result_.SetResult(attempt.result);
+    static_cast<void>(completion_gate_.TryComplete());
     return false;
   }
 
@@ -315,6 +322,9 @@ base::Result<std::size_t> ReactorStream::WriteSomeAwaiter::await_resume() noexce
 }
 
 void ReactorStream::WriteSomeAwaiter::CompleteImpl(base::Result<std::size_t> result) noexcept {
+  if (!completion_gate_.TryComplete()) {
+    return;
+  }
   result_.SetResult(result);
   COROPACT_DCHECK(scheduler_ != nullptr, "WriteSomeAwaiter: scheduler is not bound");
   scheduler_->Schedule(&resume_work_);

@@ -332,9 +332,9 @@ private:
   int wake_fd_{-1};
   bool wake_pending_{false};
   bool wake_inflight_{false};
-  LUringOp wake_op_{.kind = LUringOpKind::kWake};
+  LUringOp wake_op_{LUringOpKind::kWake};
   bool cancel_all_pending_{false};
-  LUringOp cancel_all_op_{.kind = LUringOpKind::kCancelAll};
+  LUringOp cancel_all_op_{LUringOpKind::kCancelAll};
   std::uint32_t next_buffer_group_id_{1};
 
 #if defined(COROPACT_ENABLE_TEST_HOOKS)

@@ -17,6 +17,7 @@
 #include "coropact/net/buffer.h"
 #include "coropact/net/endpoint.h"
 #include "coropact/net/socket.h"
+#include "coropact/operation/detail/completion_gate.h"
 #include "coropact/reactor/channel.h"
 #include "coropact/reactor/detail/op_hook.h"
 #include "coropact/reactor/detail/result_state.h"
@@ -132,6 +133,7 @@ private:
   std::chrono::milliseconds timeout_;
   coro::Scheduler* scheduler_{nullptr};
   coro::ResumeWork resume_work_;
+  operation::detail::CompletionGate completion_gate_;
   detail::ReactorIoResultState result_;
   time::TimerId timer_;
 };
@@ -162,6 +164,7 @@ private:
   std::span<const std::byte> buffer_;
   coro::Scheduler* scheduler_{nullptr};
   coro::ResumeWork resume_work_;
+  operation::detail::CompletionGate completion_gate_;
   detail::ReactorIoResultState result_;
 };
 

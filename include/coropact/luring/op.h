@@ -11,6 +11,7 @@
 
 #include "coropact/base/error.h"
 #include "coropact/coro/work.h"
+#include "coropact/operation/detail/completion_gate.h"
 
 namespace coropact::luring {
 
@@ -127,21 +128,20 @@ static_assert(sizeof(LUringCqeResult) == 4);
 
 class LUringOp {
 public:
-  // The top bit of kind is reserved for completion state. Add operation kinds
-  // below 0x80 and use IsCompleted()/ResetCompletion() instead of treating
-  // the raw kind byte as an ordinary enum after completion.
+  LUringOp() noexcept = default;
+  explicit LUringOp(LUringOpKind operation_kind) noexcept : kind(operation_kind) {}
+
   coro::ResumeWork resume_work;
   LUringCqeResult result;
   LUringOpKind kind{};
 
   [[nodiscard]]
   bool Complete(int cqe_res) noexcept {
-    if (IsCompleted()) {
+    if (!completion_gate_.TryComplete()) {
       return false;
     }
 
     result = cqe_res;
-    MarkCompleted();
     return true;
   }
 
@@ -149,10 +149,9 @@ public:
   // result outside LUringOp. They mark the operation terminal only after the
   // final CQE has been interpreted by the family handler.
   bool CompleteWithoutResult() noexcept {
-    if (IsCompleted()) {
+    if (!completion_gate_.TryComplete()) {
       return false;
     }
-    MarkCompleted();
     return true;
   }
 
@@ -164,28 +163,15 @@ public:
   }
 
   [[nodiscard]]
-  LUringOpKind DispatchKind() const noexcept {
-    return static_cast<LUringOpKind>(static_cast<std::uint8_t>(kind) & kDispatchMask);
-  }
+  LUringOpKind DispatchKind() const noexcept { return kind; }
 
   [[nodiscard]]
-  bool IsCompleted() const noexcept {
-    return (static_cast<std::uint8_t>(kind) & kCompletedBit) != 0;
-  }
+  bool IsCompleted() const noexcept { return completion_gate_.Completed(); }
 
-  void ResetCompletion() noexcept {
-    kind = static_cast<LUringOpKind>(static_cast<std::uint8_t>(kind) & ~kCompletedBit);
-  }
+  void ResetCompletion() noexcept { completion_gate_.Reset(); }
 
 private:
-  static constexpr std::uint8_t kCompletedBit = 0x80;
-  static constexpr std::uint8_t kDispatchMask = 0x7f;
-
-  static_assert(static_cast<std::uint8_t>(LUringOpKind::kCount) < kCompletedBit);
-
-  void MarkCompleted() noexcept {
-    kind = static_cast<LUringOpKind>(static_cast<std::uint8_t>(kind) | kCompletedBit);
-  }
+  operation::detail::CompletionGate completion_gate_;
 };
 
 static_assert(sizeof(LUringOp) == 24);

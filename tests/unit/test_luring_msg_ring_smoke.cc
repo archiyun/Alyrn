@@ -185,8 +185,7 @@ bool CheckMsgRingMailboxSchedule() {
       return;
     }
 
-    coropact::luring::LUringOp notify_op{
-        .kind = coropact::luring::LUringOpKind::kMsgRing};
+    coropact::luring::LUringOp notify_op{coropact::luring::LUringOpKind::kMsgRing};
 
     auto submitted = source.SubmitMsgRing(
         &notify_op,
