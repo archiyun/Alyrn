@@ -281,11 +281,29 @@ bool CheckBackendBindingProfile() {
     return false;
   }
 
-  coropact::io::CapabilitySet invalid_profile;
-  invalid_profile.Enable(coropact::io::IoCapability::kReadinessPoll);
+  const auto invalid_profile = coropact::io::CapabilitySet{}
+                                   .Require(coropact::io::IoCapability::kReadinessPoll);
   auto invalid = coropact::io::BindReactor(invalid_profile);
-  return Check(!invalid.has_value(),
-               "reactor binding unexpectedly accepted implementation tags in active profile");
+  if (!Check(!invalid.has_value(),
+             "reactor binding unexpectedly accepted implementation tags in active profile")) {
+    return false;
+  }
+
+  auto wrong_backend = coropact::io::BindBackend(
+      coropact::io::Backend::kLuring,
+      coropact::io::BackendCapabilities::Reactor(),
+      coropact::io::CapabilitySet::CoreGateway());
+  if (!Check(!wrong_backend.has_value(),
+             "backend binding accepted capabilities from another backend")) {
+    return false;
+  }
+
+  const auto unsupported_extension =
+      coropact::io::CapabilitySet::CoreGateway().Require(
+          coropact::io::IoCapability::kSendZeroCopy);
+  auto unsupported = coropact::io::BindReactor(unsupported_extension);
+  return Check(!unsupported.has_value(),
+               "reactor binding accepted an unsupported extension profile");
 }
 
 }  // namespace

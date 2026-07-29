@@ -393,6 +393,83 @@ void LUringStream::WriteSomePartsAwaiter::OnComplete(LUringOp* op) noexcept {
   }
 }
 
+// --- SendZeroCopyAwaiter ---
+bool LUringStream::SendZeroCopyAwaiter::await_suspend(
+    std::coroutine_handle<> continuation) noexcept {
+  if (stream_->closed_ || stream_->fd_ < 0) {
+    Op()->SetImmediateError(base::MakeErrno(EBADF));
+    return false;
+  }
+  if (buffer_.empty()) {
+    Op()->SetImmediateSuccess();
+    primary_seen_ = true;
+    return false;
+  }
+  if (stream_->pending_write_ != nullptr) {
+    Op()->SetImmediateError(base::MakeErrno(EBUSY));
+    return false;
+  }
+
+  stream_->pending_write_ = this;
+  Op()->kind = LUringOpKind::kSendZeroCopyComplete;
+  Op()->resume_work.SetHandle(continuation);
+
+  auto submitted = stream_->loop_->SubmitOp(
+      Op(), [fd = stream_->fd_, buffer = buffer_](io_uring_sqe* sqe) noexcept {
+        io_uring_prep_send_zc(
+            sqe,
+            fd,
+            buffer.data(),
+            buffer.size(),
+            MSG_NOSIGNAL,
+            IORING_SEND_ZC_REPORT_USAGE);
+      });
+  if (!submitted.has_value()) {
+    stream_->pending_write_ = nullptr;
+    Op()->SetImmediateError(submitted.error());
+    return false;
+  }
+  return true;
+}
+
+base::Result<ZeroCopySendResult>
+LUringStream::SendZeroCopyAwaiter::await_resume() noexcept {
+  if (!Op()->result.HasValue()) {
+    return std::unexpected(base::MakeErrno(EIO));
+  }
+  const int result = *Op()->result;
+  if (result < 0) {
+    return std::unexpected(base::MakeNegErrno(result));
+  }
+  return ZeroCopySendResult{
+      .bytes = static_cast<std::size_t>(result),
+      .copied = copied_,
+      .notification_received = notification_received_,
+  };
+}
+
+void LUringStream::SendZeroCopyAwaiter::OnComplete(
+    LUringOp* op,
+    CompletionEvent event) noexcept {
+  auto* self = static_cast<OpHook*>(op)->Owner();
+
+  if (event.Notification()) {
+    self->notification_received_ = true;
+    self->copied_ =
+        (event.result & static_cast<int>(IORING_NOTIF_USAGE_ZC_COPIED)) != 0;
+  } else if (!self->primary_seen_) {
+    self->primary_seen_ = true;
+    op->result = event.result;
+  }
+
+  if (event.Notification() || !event.More()) {
+    if (self->stream_ != nullptr && self->stream_->pending_write_ == self) {
+      self->stream_->pending_write_ = nullptr;
+      self->stream_->NotifyCloseProgress();
+    }
+  }
+}
+
 namespace detail {
 
 void DispatchStreamReadComplete(LUringOp* op) noexcept {
@@ -413,6 +490,12 @@ void DispatchStreamWriteComplete(LUringOp* op) noexcept {
 
 void DispatchStreamWritePartsComplete(LUringOp* op) noexcept {
   LUringStream::WriteSomePartsAwaiter::OnComplete(op);
+}
+
+void DispatchSendZeroCopyComplete(
+    LUringOp* op,
+    CompletionEvent event) noexcept {
+  LUringStream::SendZeroCopyAwaiter::OnComplete(op, event);
 }
 
 void DispatchStreamCloseComplete(LUringOp* op) noexcept {
@@ -500,6 +583,11 @@ coro::Task<base::Result<void>> LUringStream::Shutdown() {
 }
 
 coro::Task<base::Result<void>> LUringStream::Close() { co_return co_await CloseAwaiter(*this); }
+
+LUringStream::SendZeroCopyAwaiter LUringStream::SendZeroCopy(
+    std::span<const std::byte> buffer) noexcept {
+  return SendZeroCopyAwaiter{*this, buffer};
+}
 
 void LUringStream::NotifyCloseProgress() noexcept {
   if (pending_close_ != nullptr) {

@@ -553,8 +553,13 @@ PrepareWrite / ReadableIov 返回的内存必须覆盖 pending operation；
 写成功后 Drain 已写出的字节。
 ```
 
-如果未来 luring 提供 registered buffer 或 provided buffer，必须明确 buffer id、归还
-时机和 RAII 所有权，不能把这些状态隐藏在普通 `std::span` 的成功结果里。
+扩展 `RecvSource` 已明确提供 buffer 的所有权边界：luring 使用 provided buffer ring，
+Reactor 使用固定 buffer pool；每个 `RecvEvent` 携带一个 `BufferLease`，consumer 必须
+在 source 销毁前释放它。buffer id、归还时机和 RAII 所有权不能隐藏在普通 `std::span`
+的成功结果里。luring 的 `LUringRecvSource` 在显式开启
+`incremental_buffer_consumption` 后使用 `IOU_PBUF_RING_INC`，并根据 `F_BUF_MORE` 为同一个
+buffer id 追踪连续 offset；每个 segment 仍有独立 `BufferLease`，只有终止 CQE 到达且全部
+segment lease 释放后才把 buffer 归还 ring。registered fixed buffer 仍属于后续扩展。
 
 ### 7.3 fd、stream 和 operation owner
 
@@ -663,6 +668,16 @@ multishot recv：一次 Submit -> 多次 Complete -> cancel/close 终止
 
 因此 multishot 不能塞进 `ReadSome`，provided buffer 不能伪装成普通 span，send zero-copy
 不能复用普通 `WriteSome` 的 buffer 完成边界。
+
+当前 luring 还提供显式扩展：
+
+```cpp
+auto result = co_await stream.SendZeroCopy(buffer);
+```
+
+该 awaiter 将 send CQE 与可选的 `F_NOTIF` notification 作为同一个 split-release operation
+处理；只有 terminal CQE 到达后才恢复调用方，因此 `buffer` 在 `co_await` 返回前必须保持有效。
+Reactor 没有对应的两阶段内核通知，不为普通 send 伪造该扩展语义。
 
 ## 10. 两个后端如何解释同一契约
 

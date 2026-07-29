@@ -24,6 +24,15 @@ namespace coropact::luring {
 
 class LUringLoop;
 
+struct ZeroCopySendResult {
+  std::size_t bytes{0};
+  bool copied{false};
+  // False means this send completed with its primary CQE and did not require
+  // a separate F_NOTIF notification. When true, the notification CQE has
+  // already been observed before SendZeroCopy() returned.
+  bool notification_received{false};
+};
+
 namespace detail {
 
 struct ReadSomeForReadTag;
@@ -39,6 +48,7 @@ public:
   class ReadSomeForAwaiter;
   class WriteSomeAwaiter;
   class WriteSomePartsAwaiter;
+  class SendZeroCopyAwaiter;
 
   LUringStream(LUringLoop* loop, int fd, net::Endpoint peer) noexcept;
   ~LUringStream() noexcept;
@@ -59,6 +69,12 @@ public:
 
   [[nodiscard]]
   WriteSomePartsAwaiter WriteSome(std::span<const io::WritePart> buffers) noexcept;
+
+  // Explicit extension API. The await completes only after the send result
+  // and, when required, the zero-copy notification have both arrived. This
+  // keeps the caller's buffer alive through the kernel's resource lifetime.
+  [[nodiscard]]
+  SendZeroCopyAwaiter SendZeroCopy(std::span<const std::byte> buffer) noexcept;
 
   coro::Task<base::Result<void>> Shutdown();
   coro::Task<base::Result<void>> Close();
@@ -236,6 +252,44 @@ private:
   std::array<iovec, kMaxParts> iovecs_{};
   msghdr message_{};
 
+};
+
+class LUringStream::SendZeroCopyAwaiter
+    : public detail::LUringOpHook<LUringStream::SendZeroCopyAwaiter> {
+public:
+  using OpHook = detail::LUringOpHook<SendZeroCopyAwaiter>;
+
+  COROPACT_DELETE_COPY_MOVE(SendZeroCopyAwaiter);
+
+  SendZeroCopyAwaiter(
+      LUringStream& stream,
+      std::span<const std::byte> buffer) noexcept
+      : OpHook(LUringOpKind::kSendZeroCopyComplete),
+        stream_(&stream),
+        buffer_(buffer) {}
+
+  [[nodiscard]]
+  bool await_ready() const noexcept { return false; }
+
+  [[nodiscard]]
+  bool await_suspend(std::coroutine_handle<> continuation) noexcept;
+
+  base::Result<ZeroCopySendResult> await_resume() noexcept;
+
+private:
+  friend void detail::DispatchSendZeroCopyComplete(
+      LUringOp* op,
+      CompletionEvent event) noexcept;
+
+  static void OnComplete(LUringOp* op, CompletionEvent event) noexcept;
+
+  LUringOp* Op() noexcept { return static_cast<OpHook*>(this); }
+
+  LUringStream* stream_;
+  std::span<const std::byte> buffer_;
+  bool primary_seen_{false};
+  bool copied_{false};
+  bool notification_received_{false};
 };
 
 static_assert(io::AsyncStream<LUringStream>);

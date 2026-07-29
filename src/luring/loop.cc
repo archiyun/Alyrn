@@ -4,6 +4,7 @@
 #include "coropact/luring/loop.h"
 
 #include <liburing.h>
+#include <liburing/io_uring.h>
 #include <poll.h>
 #include <sys/eventfd.h>
 #include <unistd.h>
@@ -42,7 +43,7 @@ LUringOp* DecodeOp(io_uring_cqe* cqe) noexcept {
 
 namespace detail {
 
-void DispatchCompletion(LUringOp* op) noexcept {
+void DispatchCompletion(LUringOp* op, CompletionEvent event) noexcept {
   assert(op != nullptr);
 
   switch (op->DispatchKind()) {
@@ -75,6 +76,21 @@ void DispatchCompletion(LUringOp* op) noexcept {
       return;
     case LUringOpKind::kTimerControlComplete:
       DispatchTimerControlComplete(op);
+      return;
+    case LUringOpKind::kAcceptSourceComplete:
+      DispatchAcceptSourceComplete(op, event);
+      return;
+    case LUringOpKind::kAcceptSourceCancelComplete:
+      DispatchAcceptSourceCancelComplete(op);
+      return;
+    case LUringOpKind::kRecvSourceComplete:
+      DispatchRecvSourceComplete(op, event);
+      return;
+    case LUringOpKind::kSendZeroCopyComplete:
+      DispatchSendZeroCopyComplete(op, event);
+      return;
+    case LUringOpKind::kRecvSourceCancelComplete:
+      DispatchRecvSourceCancelComplete(op);
       return;
     case LUringOpKind::kNone:
     case LUringOpKind::kConnect:
@@ -432,9 +448,23 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
     return;
   }
 
-  assert(inflight_ > 0);
-  if (inflight_ > 0) {
-    --inflight_;
+  const auto kind = op->DispatchKind();
+  const bool is_multishot =
+      kind == LUringOpKind::kAcceptSourceComplete ||
+      kind == LUringOpKind::kRecvSourceComplete;
+  const bool is_split_release = kind == LUringOpKind::kSendZeroCopyComplete;
+  const CompletionEvent event{cqe->res, cqe->flags};
+  const bool request_still_active = event.More();
+
+  // F_MORE CQEs belong to the same physical request and keep one inflight
+  // slot. Only the terminal CQE releases it.
+  if ((!is_multishot && !is_split_release) ||
+      (is_split_release && (!request_still_active || event.Notification())) ||
+      (is_multishot && !request_still_active)) {
+    assert(inflight_ > 0);
+    if (inflight_ > 0) {
+      --inflight_;
+    }
   }
 
   if (op == &wake_op_) {
@@ -457,9 +487,23 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
     return;
   }
 
+  if (is_multishot && request_still_active) {
+    detail::DispatchCompletion(op, event);
+    return;
+  }
+
+  if (is_split_release) {
+    detail::DispatchCompletion(op, event);
+    const bool terminal = event.Notification() || !request_still_active;
+    if (terminal && op->CompleteWithoutResult() && op->resume_work.HasHandle()) {
+      ScheduleCompletion(&op->resume_work);
+    }
+    return;
+  }
+
   const bool first_completion = op->Complete(cqe->res);
   if (first_completion) {
-    detail::DispatchCompletion(op);
+    detail::DispatchCompletion(op, event);
     if (op->resume_work.HasHandle()) {
       ScheduleCompletion(&op->resume_work);
     }

@@ -11,6 +11,7 @@
 #include <memory>
 #include <memory_resource>
 #include <new>
+#include <limits>
 #include <stop_token>
 #include <utility>
 
@@ -27,6 +28,8 @@
 #include "coropact/time/timer_id.h"
 
 namespace coropact::luring {
+
+class LUringRecvSource;
 
 // Single-threaded io_uring event loop
 //
@@ -93,6 +96,18 @@ public:
     return !HasReadyWork() && PendingSubmitCount() == 0 && InflightCount() == 0;
   }
 
+#if defined(COROPACT_ENABLE_TEST_HOOKS)
+  // Test-only deterministic failure injection. It is intentionally kept out
+  // of normal builds so production LUringLoop has no fault-injection state.
+  void FailNextSubmissionsForTesting(
+      std::size_t count,
+      int error = EIO) noexcept {
+    assert(error > 0);
+    test_submit_failures_ = count;
+    test_submit_error_ = error;
+  }
+#endif
+
   [[nodiscard]]
   base::Result<time::TimerId> RunAfter(std::chrono::steady_clock::duration delay,
                                                      LUringTimerQueue::TimerCallback callback) {
@@ -154,6 +169,13 @@ public:
       return std::unexpected(base::MakeErrno(EINVAL));
     }
 
+#if defined(COROPACT_ENABLE_TEST_HOOKS)
+    if (test_submit_failures_ != 0) {
+      --test_submit_failures_;
+      return std::unexpected(base::MakeErrno(test_submit_error_));
+    }
+#endif
+
     io_uring_sqe* sqe = ring_.GetSqe();
     if (sqe == nullptr) {
       COROPACT_TRY(FlushSubmit());
@@ -211,6 +233,16 @@ public:
   void RunUntilIdle();
 
 private:
+  friend class LUringRecvSource;
+
+  [[nodiscard]]
+  base::Result<std::uint16_t> AllocateBufferGroupId() noexcept {
+    if (next_buffer_group_id_ > std::numeric_limits<std::uint16_t>::max()) {
+      return std::unexpected(base::MakeErrno(EOVERFLOW));
+    }
+    return static_cast<std::uint16_t>(next_buffer_group_id_++);
+  }
+
   [[nodiscard]]
   base::Result<std::size_t> WaitCompletionsFor(
       std::chrono::nanoseconds timeout) noexcept;
@@ -282,6 +314,12 @@ private:
   LUringOp wake_op_{.kind = LUringOpKind::kWake};
   bool cancel_all_pending_{false};
   LUringOp cancel_all_op_{.kind = LUringOpKind::kCancelAll};
+  std::uint32_t next_buffer_group_id_{1};
+
+#if defined(COROPACT_ENABLE_TEST_HOOKS)
+  std::size_t test_submit_failures_{0};
+  int test_submit_error_{EIO};
+#endif
 };
 
 }  // namespace coropact::luring

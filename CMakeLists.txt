@@ -14,6 +14,8 @@ option(BUILD_BENCHMARKS "Build standalone microbenchmarks" OFF)
 option(COROPACT_ENABLE_URING "Enable io_uring proactor backend (requires liburing, Linux 5.19+)" OFF)
 option(COROPACT_ENABLE_GATEWAY_YAML_CONFIG "Build YAML gateway config support (requires yaml-cpp)" ON)
 option(COROPACT_ENABLE_CTRACK "Enable optional CTRACK instrumentation" OFF)
+option(COROPACT_ENABLE_TEST_HOOKS
+       "Enable deterministic fault-injection hooks for runtime tests" OFF)
 set(COROPACT_CTRACK_ROOT "" CACHE PATH "Path to a CTRACK checkout containing include/ctrack.hpp")
 
 find_package(Threads REQUIRED)
@@ -126,6 +128,7 @@ add_library(coropact_reactor STATIC
     src/reactor/poller.cc
     src/reactor/reactor_connect.cc
     src/reactor/reactor_listener.cc
+    src/reactor/reactor_recv_source.cc
     src/reactor/reactor_stream.cc
     src/reactor/reactor_worker.cc
     src/reactor/reactor_worker_group.cc
@@ -158,6 +161,7 @@ if(COROPACT_ENABLE_URING)
         src/luring/capabilities.cc
         src/luring/connector.cc
         src/luring/listener.cc
+        src/luring/recv_source.cc
         src/luring/loop.cc
         src/luring/ring.cc
         src/luring/server.cc
@@ -182,6 +186,9 @@ if(COROPACT_ENABLE_URING)
     )
 
     target_compile_definitions(coropact_luring PUBLIC COROPACT_ENABLE_URING)
+    if(COROPACT_ENABLE_TEST_HOOKS)
+        target_compile_definitions(coropact_luring PUBLIC COROPACT_ENABLE_TEST_HOOKS)
+    endif()
     target_compile_features(coropact_luring PUBLIC cxx_std_23)
 
     # Add the optional concrete backend to the higher-level facade only after

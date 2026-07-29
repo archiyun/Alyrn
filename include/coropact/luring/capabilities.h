@@ -9,7 +9,8 @@
 namespace coropact::luring {
 
 [[nodiscard]]
-base::Result<io::CapabilitySet> ProbeCapabilities(const LUringOptions& options) noexcept;
+base::Result<io::BackendCapabilities> ProbeCapabilities(
+    const LUringOptions& options) noexcept;
 
 [[nodiscard]]
 base::Result<io::BackendBinding> BindLUring(

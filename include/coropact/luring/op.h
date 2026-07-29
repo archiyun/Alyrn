@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <liburing/io_uring.h>
+
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -12,10 +14,41 @@
 
 namespace coropact::luring {
 
+// Raw completion data passed from the loop to an operation-family handler.
+// Keeping the CQE result and flags together prevents a handler from silently
+// interpreting a result without the completion flags that qualify it.
+struct CompletionEvent {
+  int result{0};
+  std::uint32_t flags{0};
+
+  [[nodiscard]]
+  bool More() const noexcept {
+    return (flags & IORING_CQE_F_MORE) != 0;
+  }
+
+  [[nodiscard]]
+  bool Notification() const noexcept {
+    return (flags & IORING_CQE_F_NOTIF) != 0;
+  }
+
+  [[nodiscard]]
+  bool BufferMore() const noexcept {
+    return (flags & IORING_CQE_F_BUF_MORE) != 0;
+  }
+};
+
 enum class LUringOpKind : std::uint8_t {
   kNone = 0,
 
   kAcceptComplete,
+  // AcceptSource uses this family for both native multishot accept and its
+  // single-shot fallback. The CQE flags determine whether a request remains
+  // active; the operation kind identifies the source completion handler.
+  kAcceptSourceComplete,
+  kAcceptSourceCancelComplete,
+  kRecvSourceComplete,
+  kRecvSourceCancelComplete,
+  kSendZeroCopyComplete,
   kListenerCloseComplete,
 
   kReadComplete,
@@ -104,6 +137,17 @@ public:
     return true;
   }
 
+  // Some operation families have more than one CQE and keep their primary
+  // result outside LUringOp. They mark the operation terminal only after the
+  // final CQE has been interpreted by the family handler.
+  bool CompleteWithoutResult() noexcept {
+    if (IsCompleted()) {
+      return false;
+    }
+    MarkCompleted();
+    return true;
+  }
+
   void SetImmediateSuccess() noexcept { result = 0; }
 
   void SetImmediateError(base::Error error) noexcept {
@@ -128,6 +172,7 @@ public:
 private:
   static constexpr std::uint8_t kCompletedBit = 0x80;
   static constexpr std::uint8_t kDispatchMask = 0x7f;
+
   static_assert(static_cast<std::uint8_t>(LUringOpKind::kCount) < kCompletedBit);
 
   void MarkCompleted() noexcept {

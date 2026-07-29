@@ -951,9 +951,9 @@ Reactor 和 io_uring 已经有共同的协程语义接口，
 接口形状，不能在编译期检查“最多完成一次”“Close 后不能成功提交”或“buffer 在
 Complete 前有效”等动态性质。这些性质目前依赖具体实现、调试断言和 smoke test。
 
-此外，`BackendBinding` 目前只是启动期的 capability profile 检查；Reactor 和 luring
-的 stream 都是 loop-bound，pending operation 不能直接迁移。因此现阶段最多只能把
-quiescent switch 作为未来设计目标，不能把它描述成已有能力。
+此外，`BackendBinding` 现在是带 backend provenance 的启动期 capability profile 检查；
+Reactor 和 luring 的 stream 都是 loop-bound，pending operation 不能直接迁移。因此现阶段
+最多只能把 quiescent switch 作为未来设计目标，不能把它描述成已有能力。
 
 timeout 也仍处于迁移状态：`ReactorStream` 和 `LUringStream` 都已有 `ReadSomeFor`，
 但 `AsyncStream` 尚未包含统一的 timed concept。`kTimeout` 的 capability 标记不能替代
