@@ -119,8 +119,11 @@ coropact::net::Endpoint LoopbackAddress(std::uint16_t port) {
 coropact::coro::DetachedTask AcceptOnce(
     coropact::luring::LUringListener* listener, coropact::luring::LUringLoop* loop,
     std::optional<coropact::base::Result<coropact::luring::LUringStream>>* out,
-    bool* resumed_with_scheduler) {
+    bool* resumed_with_scheduler, int* resume_count = nullptr) {
   auto result = co_await listener->Accept();
+  if (resume_count != nullptr) {
+    ++*resume_count;
+  }
   *resumed_with_scheduler = coropact::coro::Scheduler::Current() == loop;
   out->emplace(std::move(result));
 }
@@ -234,11 +237,61 @@ bool CheckCloseCancelsPendingAccept() {
          Check(resumed_with_scheduler, "pending accept resumed without current scheduler");
 }
 
+#if defined(COROPACT_ENABLE_TEST_HOOKS)
+bool CheckAcceptSubmitFailureRollsBack() {
+  coropact::luring::LUringLoop loop;
+  switch (InitLoop(loop)) {
+    case LoopInitStatus::kReady:
+      break;
+    case LoopInitStatus::kSkip:
+      return true;
+    case LoopInitStatus::kFail:
+      return false;
+  }
+
+  auto listener = coropact::luring::LUringListener::Create(&loop, LoopbackAddress(0));
+  if (!listener.has_value()) {
+    std::cout << "FAIL: LUringListener::Create failed: " << listener.error().message() << '\n';
+    return false;
+  }
+
+  std::optional<coropact::base::Result<coropact::luring::LUringStream>> accept_result;
+  bool accept_with_scheduler = false;
+  int accept_resume_count = 0;
+  loop.FailNextSubmissionsForTesting(1, EIO);
+  coropact::coro::SpawnDetach(
+      loop, AcceptOnce(&*listener, &loop, &accept_result, &accept_with_scheduler,
+                       &accept_resume_count));
+  loop.RunReady();
+
+  if (!Check(accept_result.has_value(), "failed accept coroutine did not finish") ||
+      !Check(!accept_result->has_value(), "failed accept unexpectedly succeeded") ||
+      !Check(accept_result->error().value() == EIO, "failed accept returned wrong error") ||
+      !Check(accept_resume_count == 1, "failed accept resumed more than once") ||
+      !Check(accept_with_scheduler, "failed accept resumed without current scheduler")) {
+    return false;
+  }
+
+  // A failed submission must undo pending_accepts_. Otherwise Close() would
+  // submit a cancel and remain suspended for an operation that never entered
+  // the ring.
+  std::optional<coropact::base::Result<void>> close_result;
+  coropact::coro::SpawnDetach(loop, CloseOnce(&*listener, &close_result));
+  loop.RunReady();
+
+  return Check(close_result.has_value(), "Close after failed accept did not finish") &&
+         Check(close_result->has_value(), "Close after failed accept returned an error");
+}
+#endif
+
 }  // namespace
 
 int main() {
   if (!CheckAccept()) return 1;
   if (!CheckCloseCancelsPendingAccept()) return 1;
+#if defined(COROPACT_ENABLE_TEST_HOOKS)
+  if (!CheckAcceptSubmitFailureRollsBack()) return 1;
+#endif
 
   std::cout << "luring listener smoke: PASS\n";
   return 0;

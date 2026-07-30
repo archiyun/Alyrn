@@ -15,8 +15,10 @@
 #include <string_view>
 #include <utility>
 
+#include "coropact/base/check.h"
 #include "coropact/base/error.h"
 #include "coropact/base/try.h"
+#include "coropact/luring/detail/operation_submission.h"
 #include "coropact/luring/loop.h"
 #include "coropact/luring/op.h"
 #include "coropact/luring/stream.h"
@@ -66,8 +68,9 @@ public:
   bool await_ready() const noexcept { return false; }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
-    assert(loop_ != nullptr);
-    assert(loop_->IsInLoopThread());
+    COROPACT_CHECK(loop_ != nullptr, "LUringConnector operation has no owner loop");
+    COROPACT_CHECK(loop_->IsInLoopThread(),
+                   "LUringConnector operation called from wrong LUringLoop thread");
 
     auto fd = CreateSocket(peer_.NativeFamily());
     if (!fd.has_value()) {
@@ -76,18 +79,13 @@ public:
     }
     fd_ = *fd;
 
-  Op()->kind = LUringOpKind::kConnect;
-  Op()->resume_work.SetHandle(continuation);
-
-    auto submitted = loop_->SubmitOp(Op(), [this, fd = fd_](io_uring_sqe* sqe) noexcept {
-      io_uring_prep_connect(sqe, fd, peer_.SockAddr(), peer_.SockAddrLen());
-    });
-    if (!submitted.has_value()) {
-      Op()->SetImmediateError(submitted.error());
-      return false;
-    }
-
-    return true;
+    Op()->kind = LUringOpKind::kConnect;
+    return detail::SubmitAwaitingOperation(
+        *loop_, *Op(), continuation,
+        [this, fd = fd_](io_uring_sqe* sqe) noexcept {
+          io_uring_prep_connect(sqe, fd, peer_.SockAddr(), peer_.SockAddrLen());
+        },
+        [this](base::Error error) noexcept { Op()->SetImmediateError(error); });
   }
 
   base::Result<LUringStream> await_resume() noexcept {
