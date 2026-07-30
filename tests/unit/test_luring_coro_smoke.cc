@@ -54,7 +54,7 @@ public:
 
 private:
   coropact::luring::LUringLoop* loop_;
-  coropact::luring::LUringOp op_{.kind = coropact::luring::LUringOpKind::kNop};
+  coropact::luring::LUringOp op_{coropact::luring::LUringOpKind::kNop};
   std::optional<coropact::base::Result<int>> result_;
 };
 
@@ -71,9 +71,7 @@ bool IsEnvironmentSkip(coropact::base::Error error) {
 }
 
 bool CheckSingleShotCompletion() {
-  coropact::luring::LUringOp op{
-      .kind = coropact::luring::LUringOpKind::kNop,
-  };
+  coropact::luring::LUringOp op{coropact::luring::LUringOpKind::kNop};
 
   const bool first = op.Complete(17);
   const bool second = op.Complete(23);

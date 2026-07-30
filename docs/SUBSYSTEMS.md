@@ -16,11 +16,11 @@ L2  coroutine execution and network transport
                          |
                          v
 L1  process services and value utilities
-    time / log / cache
+    time
                          |
                          v
 L0  dependency-free foundations
-    base / ds / memory / sync
+    base / ds / memory
 ```
 
 Higher layers may depend on lower layers. A lower layer must never inspect an
@@ -30,9 +30,10 @@ application protocol, route, peer, proxy, or gateway policy.
 
 | Directory | Layer | Ownership |
 |---|---:|---|
-| `include/coropact/base`, `ds`, `memory`, `sync` | L0 | Primitive values, intrusive structures, and pools. |
-| `include/coropact/time`, `log`, `cache` | L1 | Process services; no fd or event-loop ownership. |
+| `include/coropact/base`, `ds`, `memory` | L0 | Primitive values, intrusive structures, and pools. |
+| `include/coropact/time` | L1 | Time values and timer indexes; no fd or event-loop ownership. |
 | `include/coropact/coro` | L2 | Coroutine ownership, scheduling, frame allocation, and continuation rules. |
+| `include/coropact/operation/detail` | L2 | Internal completion and lifecycle authorization shared by backend adapters: one-shot, composite, and split-release families plus scheduler-bound continuations; no transport resource ownership. |
 | `include/coropact/net`, `src/net` | L2 | Socket and address values shared by backends. |
 | `include/coropact/io`, `include/coropact/backend` | L2 | Backend-neutral I/O contracts and algorithms. |
 | `include/coropact/reactor`, `src/reactor` | L2 | epoll readiness backend. |
@@ -41,8 +42,10 @@ application protocol, route, peer, proxy, or gateway policy.
 
 ## Hard Dependency Rules
 
-- `base`, `ds`, `memory`, and `sync` must not depend on networking or any
+- `base`, `ds`, and `memory` must not depend on networking or any
   application-layer library.
+- `operation/detail` may depend on backend-neutral runtime primitives, but not
+  on `net`, `io`, Reactor, luring, or CoroGateway.
 - `net` must not depend on `io`, Reactor, luring, or CoroGateway.
 - Reactor and luring may depend on `net` and coroutine contracts, but neither
   may include the application-level `io` facade.

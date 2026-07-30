@@ -23,6 +23,10 @@
   COROPACT_DELETE_COPY(cls);           \
   COROPACT_DELETE_MOVE(cls)
 
+// Evaluates expression and explicitly discards its result. Use this when a
+// result is intentionally ignored, rather than repeating static_cast<void>.
+#define COROPACT_IGNORE_RESULT(expression) static_cast<void>(expression)
+
 // Deletes copy operations and explicitly requests default move operations for
 // cls. The move operations can still be implicitly deleted when a base class
 // or data member is not movable.

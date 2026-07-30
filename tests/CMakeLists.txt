@@ -16,6 +16,28 @@ target_link_libraries(panic_check_smoke_test
 
 add_test(NAME panic_check_smoke_test COMMAND panic_check_smoke_test)
 
+add_executable(completion_gate_smoke_test
+    unit/test_completion_gate_smoke.cc
+)
+
+target_include_directories(completion_gate_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+add_test(NAME completion_gate_smoke_test COMMAND completion_gate_smoke_test)
+
+add_executable(split_release_lifecycle_smoke_test
+    unit/test_split_release_lifecycle_smoke.cc
+)
+
+target_include_directories(split_release_lifecycle_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+add_test(NAME split_release_lifecycle_smoke_test COMMAND split_release_lifecycle_smoke_test)
+
 add_executable(memory_pool_smoke_test
     unit/test_memory_pool_smoke.cc
 )
@@ -207,6 +229,25 @@ target_link_libraries(reactor_worker_group_smoke_test
 add_test(NAME reactor_worker_group_smoke_test COMMAND reactor_worker_group_smoke_test)
 
 if(COROPACT_ENABLE_URING)
+    add_executable(luring_op_smoke_test
+        unit/test_luring_op_smoke.cc
+    )
+
+    target_include_directories(luring_op_smoke_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../include
+            ${URING_INCLUDE_DIRS}
+    )
+
+    target_link_libraries(luring_op_smoke_test
+        PRIVATE
+            coropact_luring
+    )
+
+    target_compile_definitions(luring_op_smoke_test PRIVATE COROPACT_ENABLE_URING)
+
+    add_test(NAME luring_op_smoke_test COMMAND luring_op_smoke_test)
+
     add_executable(luring_backend_adapter_smoke_test
         unit/test_luring_backend_adapter_smoke.cc
     )

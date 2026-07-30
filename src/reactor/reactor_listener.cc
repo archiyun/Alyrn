@@ -13,10 +13,10 @@
 #include "coropact/base/check.h"
 #include "coropact/base/error.h"
 #include "coropact/base/try.h"
-#include "coropact/coro/scheduler.h"
-#include "coropact/coro/work.h"
 #include "coropact/net/accept_source.h"
 #include "coropact/net/net_utils.h"
+#include "coropact/operation/detail/completion_gate.h"
+#include "coropact/operation/detail/scheduler_continuation.h"
 #include "coropact/reactor/detail/result_state.h"
 
 namespace coropact::reactor {
@@ -84,12 +84,12 @@ public:
     COROPACT_DCHECK(listener_->pending_accept_ == nullptr,
                     "AcceptAwaiter: only one pending accept is supported per listener");
 
-    scheduler_ = &coro::Scheduler::RequireCurrent();
-    resume_work_.SetHandle(continuation);
+    continuation_.Bind(continuation);
 
     base::Result<ReactorStream> result = TryAccept();
     if (result.has_value() || !IsWouldBlock(result.error().value())) {
       result_.SetResult(std::move(result));
+      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
       return false;
     }
 
@@ -106,9 +106,11 @@ public:
   }
 
   void Complete(base::Result<ReactorStream> result) noexcept {
+    if (!completion_gate_.TryComplete()) {
+      return;
+    }
     result_.SetResult(std::move(result));
-    COROPACT_DCHECK(scheduler_ != nullptr, "AcceptAwaiter: scheduler is not bound");
-    scheduler_->Schedule(&resume_work_);
+    continuation_.Schedule();
   }
 
   void OnReady() noexcept {
@@ -134,8 +136,8 @@ private:
   }
 
   ReactorListener* listener_;
-  coro::Scheduler* scheduler_{nullptr};
-  coro::ResumeWork resume_work_;
+  operation::detail::SchedulerContinuation continuation_;
+  operation::detail::CompletionGate completion_gate_;
   detail::ReactorValueResultState<ReactorStream> result_;
 };
 
@@ -158,12 +160,12 @@ public:
     COROPACT_DCHECK(source_->pending_next_ == nullptr,
                     "ReactorAcceptSource::Next: only one pending Next is supported");
 
-    scheduler_ = &coro::Scheduler::RequireCurrent();
-    resume_work_.SetHandle(continuation);
+    continuation_.Bind(continuation);
 
     Result result;
     if (source_->TryTakeNext(result)) {
       result_.SetResult(std::move(result));
+      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
       return false;
     }
 
@@ -176,6 +178,7 @@ public:
     if (source_->TryTakeNext(result)) {
       source_->pending_next_ = nullptr;
       result_.SetResult(std::move(result));
+      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
       return false;
     }
     return true;
@@ -187,15 +190,17 @@ public:
   }
 
   void Complete(Result result) noexcept {
+    if (!completion_gate_.TryComplete()) {
+      return;
+    }
     result_.SetResult(std::move(result));
-    COROPACT_DCHECK(scheduler_ != nullptr, "ReactorAcceptSource::Next: scheduler is not bound");
-    scheduler_->Schedule(&resume_work_);
+    continuation_.Schedule();
   }
 
 private:
   ReactorAcceptSource* source_;
-  coro::Scheduler* scheduler_{nullptr};
-  coro::ResumeWork resume_work_;
+  operation::detail::SchedulerContinuation continuation_;
+  operation::detail::CompletionGate completion_gate_;
   detail::ReactorValueResultState<std::optional<ReactorStream>> result_;
 };
 

@@ -13,11 +13,12 @@ CONSTANT MaxCqes
 (*                                                                         *)
 (* 一个 Composite operation 由多个 physical request 组成；一个            *)
 (* MultiShot request 只有一次 submit，但可以产生多个 CQE。                *)
+(* SplitRelease request 的业务结果与其资源释放由不同 CQE 决定。           *)
 (* async_operation_families.cfg 使用 MaxCqes = 4 做有界状态检查。          *)
 (* 该检查验证协议形状，不宣称对无界 CQE 序列完成形式证明。               *)
 (***************************************************************************)
 
-RequestKinds  == {"SingleShot", "MultiShot", "Composite"}
+RequestKinds  == {"SingleShot", "MultiShot", "Composite", "SplitRelease"}
 RequestStates == {"Idle", "Active", "Terminal", "Cancelled", "Released"}
 ResultStates  == {"NoResult", "Success", "Cancelled", "Ended"}
 
@@ -32,7 +33,9 @@ VARIABLES requestKind,
           consumedEvents,
           logicalTerminalCount,
           logicalResult,
-          cancelRequested
+          cancelRequested,
+          releaseCount,
+          resumeCount
 
 vars == <<requestKind,
           requestState,
@@ -45,7 +48,9 @@ vars == <<requestKind,
           consumedEvents,
           logicalTerminalCount,
           logicalResult,
-          cancelRequested>>
+          cancelRequested,
+          releaseCount,
+          resumeCount>>
 
 Init ==
   /\ MaxCqes \in Nat
@@ -62,6 +67,8 @@ Init ==
   /\ logicalTerminalCount = 0
   /\ logicalResult = "NoResult"
   /\ cancelRequested = FALSE
+  /\ releaseCount = 0
+  /\ resumeCount = 0
 
 (*
  * submitCount 是 logical operation 的聚合计数：
@@ -85,7 +92,9 @@ Submit ==
                  consumedEvents,
                  logicalTerminalCount,
                  logicalResult,
-                 cancelRequested>>
+                 cancelRequested,
+                 releaseCount,
+                 resumeCount>>
 
 (* Single-shot request: one CQE is both the physical and logical completion. *)
 SingleShotComplete ==
@@ -104,7 +113,9 @@ SingleShotComplete ==
                  completedMembers,
                  eventCount,
                  consumedEvents,
-                 cancelRequested>>
+                 cancelRequested,
+                 releaseCount,
+                 resumeCount>>
 
 (*
  * MultiShot 的 F_MORE CQE：已经产生一个业务事件，但 request 仍然 active。
@@ -126,7 +137,9 @@ MultiShotEvent ==
                  consumedEvents,
                  logicalTerminalCount,
                  logicalResult,
-                 cancelRequested>>
+                 cancelRequested,
+                 releaseCount,
+                 resumeCount>>
 
 (* MultiShot 的终止 CQE：不再允许后续事件。 *)
 MultiShotTerminate ==
@@ -145,7 +158,9 @@ MultiShotTerminate ==
                  completedMembers,
                  eventCount,
                  consumedEvents,
-                 cancelRequested>>
+                 cancelRequested,
+                 releaseCount,
+                 resumeCount>>
 
 (* Composite 的一个 physical member 完成；最后一个 member 才确定逻辑结果。 *)
 CompositeMemberComplete ==
@@ -168,7 +183,9 @@ CompositeMemberComplete ==
                  memberCount,
                  eventCount,
                  consumedEvents,
-                 cancelRequested>>
+                 cancelRequested,
+                 releaseCount,
+                 resumeCount>>
 
 (* 取消请求本身不是终态；仍然要等待对应 physical completion。 *)
 RequestCancel ==
@@ -185,7 +202,9 @@ RequestCancel ==
                  eventCount,
                  consumedEvents,
                  logicalTerminalCount,
-                 logicalResult>>
+                 logicalResult,
+                 releaseCount,
+                 resumeCount>>
 
 (*
  * 取消完成也按 physical request 计数：
@@ -193,6 +212,7 @@ RequestCancel ==
  *   - Composite 要逐个收敛 member，最后一个 member 才能结束逻辑操作。
  *)
 CancelComplete ==
+  /\ requestKind # "SplitRelease"
   /\ requestState = "Active"
   /\ cancelRequested = TRUE
   /\ cqeCount < MaxCqes
@@ -219,7 +239,9 @@ CancelComplete ==
                  memberCount,
                  eventCount,
                  consumedEvents,
-                 cancelRequested>>
+                 cancelRequested,
+                 releaseCount,
+                 resumeCount>>
 
 (* 已经产生的 multishot 事件可以在 source 终止后继续被消费。 *)
 ConsumeEvent ==
@@ -236,10 +258,13 @@ ConsumeEvent ==
                  eventCount,
                  logicalTerminalCount,
                  logicalResult,
-                 cancelRequested>>
+                 cancelRequested,
+                 releaseCount,
+                 resumeCount>>
 
 (* request 只有在逻辑终态确定且所有已产生事件被消费后才能释放。 *)
 ReleaseRequest ==
+  /\ requestKind # "SplitRelease"
   /\ requestState \in {"Terminal", "Cancelled"}
   /\ logicalTerminalCount = 1
   /\ consumedEvents = eventCount
@@ -254,7 +279,102 @@ ReleaseRequest ==
                  consumedEvents,
                  logicalTerminalCount,
                  logicalResult,
-                 cancelRequested>>
+                 cancelRequested,
+                 releaseCount,
+                 resumeCount>>
+
+(*
+ * send zerocopy 的 primary CQE 决定业务结果，但内核仍可能引用调用者的
+ * buffer。即使 cancel 已请求，target request 的 primary CQE 仍是结果
+ * 边界；cancel CQE 本身不是这个 request 的 terminal completion。
+ *)
+SplitPrimaryComplete ==
+  /\ requestKind = "SplitRelease"
+  /\ requestState \in {"Active", "Terminal"}
+  /\ logicalTerminalCount = 0
+  /\ cqeCount < MaxCqes
+  /\ cqeCount' = cqeCount + 1
+  /\ logicalTerminalCount' = 1
+  /\ logicalResult' = IF cancelRequested THEN "Cancelled" ELSE "Success"
+  /\ UNCHANGED <<requestKind,
+                 requestState,
+                 submitCount,
+                 terminalCqeCount,
+                 memberCount,
+                 completedMembers,
+                 eventCount,
+                 consumedEvents,
+                 cancelRequested,
+                 releaseCount,
+                 resumeCount>>
+
+(*
+ * F_NOTIF is the physical terminal boundary for the submitted send-zc
+ * request. It may be observed before the primary CQE in this abstract model,
+ * so release authorization remains a separate action.
+ *)
+SplitNotification ==
+  /\ requestKind = "SplitRelease"
+  /\ requestState = "Active"
+  /\ terminalCqeCount = 0
+  /\ cqeCount < MaxCqes
+  /\ requestState' = "Terminal"
+  /\ cqeCount' = cqeCount + 1
+  /\ terminalCqeCount' = 1
+  /\ UNCHANGED <<requestKind,
+                 submitCount,
+                 memberCount,
+                 completedMembers,
+                 eventCount,
+                 consumedEvents,
+                 logicalTerminalCount,
+                 logicalResult,
+                 cancelRequested,
+                 releaseCount,
+                 resumeCount>>
+
+(* Buffer reuse is legal only after both boundaries have been observed. *)
+AuthorizeSplitRelease ==
+  /\ requestKind = "SplitRelease"
+  /\ requestState = "Terminal"
+  /\ logicalTerminalCount = 1
+  /\ terminalCqeCount = 1
+  /\ releaseCount = 0
+  /\ requestState' = "Released"
+  /\ releaseCount' = 1
+  /\ UNCHANGED <<requestKind,
+                 submitCount,
+                 cqeCount,
+                 terminalCqeCount,
+                 memberCount,
+                 completedMembers,
+                 eventCount,
+                 consumedEvents,
+                 logicalTerminalCount,
+                 logicalResult,
+                 cancelRequested,
+                 resumeCount>>
+
+(* The awaiting coroutine is resumed only after its buffer is reusable. *)
+ResumeSplitContinuation ==
+  /\ requestKind = "SplitRelease"
+  /\ requestState = "Released"
+  /\ releaseCount = 1
+  /\ resumeCount = 0
+  /\ resumeCount' = 1
+  /\ UNCHANGED <<requestKind,
+                 requestState,
+                 submitCount,
+                 cqeCount,
+                 terminalCqeCount,
+                 memberCount,
+                 completedMembers,
+                 eventCount,
+                 consumedEvents,
+                 logicalTerminalCount,
+                 logicalResult,
+                 cancelRequested,
+                 releaseCount>>
 
 Next ==
   \/ Submit
@@ -266,6 +386,10 @@ Next ==
   \/ CancelComplete
   \/ ConsumeEvent
   \/ ReleaseRequest
+  \/ SplitPrimaryComplete
+  \/ SplitNotification
+  \/ AuthorizeSplitRelease
+  \/ ResumeSplitContinuation
 
 Spec == Init /\ [][Next]_vars
 
@@ -282,6 +406,8 @@ TypeOK ==
   /\ logicalTerminalCount \in Nat
   /\ logicalResult \in ResultStates
   /\ cancelRequested \in BOOLEAN
+  /\ releaseCount \in Nat
+  /\ resumeCount \in Nat
   /\ cqeCount <= MaxCqes
   /\ eventCount <= MaxCqes
 
@@ -310,6 +436,17 @@ CompositeShape ==
        /\ terminalCqeCount <= memberCount
        /\ logicalTerminalCount <= 1
 
+(* One send-zc request emits a primary CQE and one terminal notification. *)
+SplitReleaseShape ==
+  requestKind = "SplitRelease"
+    => /\ memberCount = 1
+       /\ submitCount <= 1
+       /\ cqeCount <= 2
+       /\ terminalCqeCount <= 1
+       /\ logicalTerminalCount <= 1
+       /\ releaseCount <= 1
+       /\ resumeCount <= 1
+
 (* 一个物理请求 family 的终止不能被重复宣告为逻辑终态。 *)
 LogicalTerminalOnce == logicalTerminalCount <= 1
 
@@ -317,24 +454,20 @@ LogicalTerminalOnce == logicalTerminalCount <= 1
 ReleaseAuthorization ==
   requestState = "Released" => logicalTerminalCount = 1
 
+(* Split release requires both the business result and the notification. *)
+SplitReleaseAuthorization ==
+  requestKind = "SplitRelease"
+    => /\ releaseCount = 1
+          => /\ logicalTerminalCount = 1
+             /\ terminalCqeCount = 1
+       /\ resumeCount = 1 => releaseCount = 1
+
 (* 逻辑终态只能对应已停止产生事件的 request 状态。 *)
 TerminalState ==
-  logicalTerminalCount = 1
+  requestKind # "SplitRelease" /\ logicalTerminalCount = 1
     => requestState \in {"Terminal", "Cancelled", "Released"}
 
 (* 事件只能消费已经产生的事件。 *)
 ConsumedEventsBound == consumedEvents <= eventCount
 
 ========================================================================================
-SPECIFICATION Spec
-
-CHECK_DEADLOCK FALSE
-
-INVARIANT TypeOK
-INVARIANT SingleShotShape
-INVARIANT MultiShotShape
-INVARIANT CompositeShape
-INVARIANT LogicalTerminalOnce
-INVARIANT ReleaseAuthorization
-INVARIANT TerminalState
-INVARIANT ConsumedEventsBound

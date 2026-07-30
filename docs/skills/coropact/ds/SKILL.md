@@ -86,8 +86,7 @@ container: empty <-> populated -> Clear/destruction unlinks all hooks
 
 - `coropact/time`
 - `coropact/net`
-- `coropact/http`
-- `coropact/gateway`
+- CoroGateway
 - Allocator or scheduling policy
 
 ## Patch rules

@@ -20,6 +20,8 @@
 #include "coropact/luring/detail/op_hook.h"
 #include "coropact/luring/op.h"
 #include "coropact/net/endpoint.h"
+#include "coropact/operation/detail/composite_lifecycle.h"
+#include "coropact/operation/detail/split_release_lifecycle.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::luring {
@@ -83,7 +85,7 @@ struct ZeroCopySendDiagnostics {
 
     primary_errors.fetch_add(1, std::memory_order_relaxed);
     int expected = 0;
-    static_cast<void>(first_primary_error.compare_exchange_strong(
+    COROPACT_IGNORE_RESULT(first_primary_error.compare_exchange_strong(
         expected, result, std::memory_order_relaxed));
     last_primary_error.store(result, std::memory_order_relaxed);
 
@@ -320,8 +322,7 @@ private:
   std::span<std::byte> buffer_;
   __kernel_timespec timeout_ts_{};
   std::coroutine_handle<> continuation_{};
-  bool read_done_{false};
-  bool timeout_done_{false};
+  operation::detail::CompositeLifecycle lifecycle_;
 };
 
 class LUringStream::WriteSomeAwaiter
@@ -438,9 +439,7 @@ private:
   LUringStream* stream_;
   std::span<const std::byte> buffer_;
   ZeroCopySendDiagnostics* diagnostics_;
-  bool primary_seen_{false};
-  bool notification_seen_{false};
-  bool notification_required_{false};
+  operation::detail::SplitReleaseLifecycle lifecycle_;
   bool copied_{false};
   bool notification_received_{false};
 };

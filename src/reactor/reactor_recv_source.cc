@@ -14,7 +14,8 @@
 
 #include "coropact/base/check.h"
 #include "coropact/base/error.h"
-#include "coropact/coro/scheduler.h"
+#include "coropact/operation/detail/completion_gate.h"
+#include "coropact/operation/detail/scheduler_continuation.h"
 
 namespace coropact::reactor {
 
@@ -50,15 +51,16 @@ public:
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     if (source_->pending_next_ != nullptr) {
       result_.emplace(std::unexpected(base::MakeErrno(EBUSY)));
+      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
       return false;
     }
 
-    scheduler_ = &coro::Scheduler::RequireCurrent();
-    resume_work_.SetHandle(continuation);
+    continuation_.Bind(continuation);
 
     ReactorRecvSource::Result result;
     if (source_->TryTakeNext(result)) {
       result_.emplace(std::move(result));
+      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
       return false;
     }
 
@@ -70,6 +72,7 @@ public:
     if (source_->TryTakeNext(result)) {
       source_->pending_next_ = nullptr;
       result_.emplace(std::move(result));
+      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
       return false;
     }
     return true;
@@ -81,14 +84,17 @@ public:
   }
 
   void Complete(ReactorRecvSource::Result result) noexcept {
+    if (!completion_gate_.TryComplete()) {
+      return;
+    }
     result_.emplace(std::move(result));
-    scheduler_->Schedule(&resume_work_);
+    continuation_.Schedule();
   }
 
 private:
   ReactorRecvSource* source_;
-  coro::Scheduler* scheduler_{nullptr};
-  coro::ResumeWork resume_work_;
+  operation::detail::SchedulerContinuation continuation_;
+  operation::detail::CompletionGate completion_gate_;
   std::optional<ReactorRecvSource::Result> result_;
 };
 
@@ -102,22 +108,24 @@ public:
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     if (source_->pending_stop_ != nullptr) {
       result_.emplace(std::unexpected(base::MakeErrno(EBUSY)));
+      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
       return false;
     }
 
-    scheduler_ = &coro::Scheduler::RequireCurrent();
-    resume_work_.SetHandle(continuation);
+    continuation_.Bind(continuation);
     source_->pending_stop_ = this;
 
     auto waiting = source_->BeginStop();
     if (!waiting.has_value()) {
       source_->pending_stop_ = nullptr;
       result_.emplace(std::unexpected(waiting.error()));
+      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
       return false;
     }
     if (!*waiting) {
       source_->pending_stop_ = nullptr;
       result_.emplace(base::Result<void>{});
+      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
       return false;
     }
     return true;
@@ -129,14 +137,17 @@ public:
   }
 
   void Complete(base::Result<void> result) noexcept {
+    if (!completion_gate_.TryComplete()) {
+      return;
+    }
     result_.emplace(std::move(result));
-    scheduler_->Schedule(&resume_work_);
+    continuation_.Schedule();
   }
 
 private:
   ReactorRecvSource* source_;
-  coro::Scheduler* scheduler_{nullptr};
-  coro::ResumeWork resume_work_;
+  operation::detail::SchedulerContinuation continuation_;
+  operation::detail::CompletionGate completion_gate_;
   std::optional<base::Result<void>> result_;
 };
 

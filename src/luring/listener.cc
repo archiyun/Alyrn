@@ -21,6 +21,8 @@
 #include "coropact/luring/op.h"
 #include "coropact/luring/stream.h"
 #include "coropact/net/endpoint.h"
+#include "coropact/operation/detail/completion_gate.h"
+#include "coropact/operation/detail/scheduler_continuation.h"
 
 namespace coropact::luring {
 
@@ -99,15 +101,16 @@ public:
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     if (source_->pending_next_ != nullptr) {
       result_.emplace(std::unexpected(base::MakeErrno(EBUSY)));
+      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
       return false;
     }
 
-    scheduler_ = &coro::Scheduler::RequireCurrent();
-    resume_work_.SetHandle(continuation);
+    continuation_.Bind(continuation);
 
     LUringAcceptSource::Result result;
     if (source_->TryTakeNext(result)) {
       result_.emplace(std::move(result));
+      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
       return false;
     }
 
@@ -121,14 +124,17 @@ public:
   }
 
   void Complete(LUringAcceptSource::Result result) noexcept {
+    if (!completion_gate_.TryComplete()) {
+      return;
+    }
     result_.emplace(std::move(result));
-    scheduler_->Schedule(&resume_work_);
+    continuation_.Schedule();
   }
 
 private:
   LUringAcceptSource* source_;
-  coro::Scheduler* scheduler_{nullptr};
-  coro::ResumeWork resume_work_;
+  operation::detail::SchedulerContinuation continuation_;
+  operation::detail::CompletionGate completion_gate_;
   std::optional<LUringAcceptSource::Result> result_;
 };
 
@@ -142,20 +148,21 @@ public:
   }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
-    scheduler_ = &coro::Scheduler::RequireCurrent();
-    resume_work_.SetHandle(continuation);
+    continuation_.Bind(continuation);
     source_->pending_stop_ = this;
 
     auto waiting = source_->BeginStop();
     if (!waiting.has_value()) {
       source_->pending_stop_ = nullptr;
       result_.emplace(std::unexpected(waiting.error()));
+      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
       return false;
     }
 
     if (!*waiting) {
       source_->pending_stop_ = nullptr;
       result_.emplace(base::Result<void>{});
+      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
       return false;
     }
 
@@ -168,14 +175,17 @@ public:
   }
 
   void Complete(base::Result<void> result) noexcept {
+    if (!completion_gate_.TryComplete()) {
+      return;
+    }
     result_.emplace(std::move(result));
-    scheduler_->Schedule(&resume_work_);
+    continuation_.Schedule();
   }
 
 private:
   LUringAcceptSource* source_;
-  coro::Scheduler* scheduler_{nullptr};
-  coro::ResumeWork resume_work_;
+  operation::detail::SchedulerContinuation continuation_;
+  operation::detail::CompletionGate completion_gate_;
   std::optional<base::Result<void>> result_;
 };
 
@@ -466,8 +476,7 @@ void LUringAcceptSource::OnCompletion(CompletionEvent event) noexcept {
   }
 
   if (!request_still_active) {
-    accept_op_.ResetCompletion();
-    accept_op_.result = {};
+    accept_op_.BeginNextRequest();
   }
 
   if (request_still_active && state_.State() == net::detail::AcceptSourceState::kActive &&
