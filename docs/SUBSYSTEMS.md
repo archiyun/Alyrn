@@ -33,7 +33,7 @@ application protocol, route, peer, proxy, or gateway policy.
 | `include/coropact/base`, `ds`, `memory` | L0 | Primitive values, intrusive structures, and pools. |
 | `include/coropact/time` | L1 | Time values and timer indexes; no fd or event-loop ownership. |
 | `include/coropact/coro` | L2 | Coroutine ownership, scheduling, frame allocation, and continuation rules. |
-| `include/coropact/operation/detail` | L2 | Internal completion gates and scheduler-bound continuations shared by backend adapters; no transport resource ownership. |
+| `include/coropact/operation/detail` | L2 | Internal completion and lifecycle authorization shared by backend adapters: one-shot, composite, and split-release families plus scheduler-bound continuations; no transport resource ownership. |
 | `include/coropact/net`, `src/net` | L2 | Socket and address values shared by backends. |
 | `include/coropact/io`, `include/coropact/backend` | L2 | Backend-neutral I/O contracts and algorithms. |
 | `include/coropact/reactor`, `src/reactor` | L2 | epoll readiness backend. |

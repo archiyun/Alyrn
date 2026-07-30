@@ -228,6 +228,12 @@ CompositeOperation:
     每个 member 各自只 submit 一次
     logicalTerminalCount <= 1
 
+SplitReleaseOperation:
+    primary CQE → logical result
+    notification CQE → physical terminal
+    logical result / notification 都已观察 → release
+    release 后 → continuation resume <= 1
+
 LogicalEventSource:
     eventCount >= 0
     terminalCount <= 1
@@ -238,7 +244,7 @@ LogicalEventSource:
 physical request 可以产生多个 CQE，但只能有一个终止 CQE。Composite 则是多个
 single-shot physical request 的聚合，不能把聚合计数误当成一个 request 的 CQE 计数。
 
-timed read、close 和 send zerocopy 还需要分别记录：
+timed read、close 和 send zerocopy 分别记录：
 
 ```text
 physical completion count
@@ -251,8 +257,19 @@ operation destruction
 对应模型文件：
 
 - `formal/async_stream_core.tla`：单个 single-shot stream operation；
+- `formal/async_stream_multiop.tla`：并发 read/write 的 operation identity、owner coroutine
+  与 Close 收敛；
+- `formal/linked_timeout_submission_failure.tla`：linked read 已提交但 timeout SQE 提交失败时，
+  synthetic timeout completion 与 read CQE 的一次性收敛；
+- `formal/scheduler_completion_liveness.tla`：在 worker 持续执行 turn 的公平性假设下，
+  completion-ready continuation 最终被调度，且 normal ready backlog 不会令其饥饿；
+- `formal/async_stream_multiop_backend_refinement.tla`：Reactor readiness 与 io_uring
+  SQE/CQE 的内部 stuttering 映射到同一条并发 read/write 可观察 trace；
+- `formal/send_zc_split_release_refinement.tla`：`SendZeroCopy` 的 primary CQE、`F_NOTIF`、
+  buffer release 与 completion-ready resume 的具体 io_uring refinement；
 - `formal/async_stream_backend_refinement.tla`：Reactor 与 io_uring 的 single-shot refinement；
-- `formal/async_operation_families.tla`：single-shot、multishot、composite 的完成基数。
+- `formal/async_operation_families.tla`：single-shot、multishot、composite 与
+  split-release 的完成基数和 release/resume 授权。
 - `formal/accept_source_refinement.tla`：Reactor readiness、io_uring one-shot re-arm 和
   native multishot 三条 AcceptSource 路径的有界业务语义 refinement；
 - `formal/recv_source_lease.tla`：provided-buffer multishot recv 的 queue、BufferLease、
@@ -271,6 +288,20 @@ recv_source_lease.cfg:
 可用 TLC 复现有界检查：
 
 ```bash
+tlc docs/design/zh-CN/network/formal/async_stream_core.tla \
+  -config docs/design/zh-CN/network/formal/async_stream_core.cfg
+tlc docs/design/zh-CN/network/formal/async_stream_multiop.tla \
+  -config docs/design/zh-CN/network/formal/async_stream_multiop.cfg
+tlc docs/design/zh-CN/network/formal/async_operation_families.tla \
+  -config docs/design/zh-CN/network/formal/async_operation_families.cfg
+tlc docs/design/zh-CN/network/formal/linked_timeout_submission_failure.tla \
+  -config docs/design/zh-CN/network/formal/linked_timeout_submission_failure.cfg
+tlc docs/design/zh-CN/network/formal/scheduler_completion_liveness.tla \
+  -config docs/design/zh-CN/network/formal/scheduler_completion_liveness.cfg
+tlc docs/design/zh-CN/network/formal/async_stream_multiop_backend_refinement.tla \
+  -config docs/design/zh-CN/network/formal/async_stream_multiop_backend_refinement.cfg
+tlc docs/design/zh-CN/network/formal/send_zc_split_release_refinement.tla \
+  -config docs/design/zh-CN/network/formal/send_zc_split_release_refinement.cfg
 tlc docs/design/zh-CN/network/formal/accept_source_refinement.tla \
   -config docs/design/zh-CN/network/formal/accept_source_refinement.cfg
 tlc docs/design/zh-CN/network/formal/recv_source_lease.tla \
@@ -287,8 +318,12 @@ AcceptSource:
 RecvSource:
   available、queued、leased buffer 两两不重叠且覆盖 buffer pool；
   queue 和 lease 受容量限制；Stop 完成前没有 outstanding lease；
-  cancel CQE 不替代 recv request 自己的 terminal CQE。
+ cancel CQE 不替代 recv request 自己的 terminal CQE。
 ```
+
+`scheduler_completion_liveness.tla` 的 liveness 是条件性的：它假设 worker 未退出且持续执行
+`RunReady()` turn。它证明 completion-ready 队列的选择规则不会被 normal ready backlog 饿死；
+它不替代内核、线程或进程调度的系统级公平性保证。
 
 ## 7. 实施顺序
 

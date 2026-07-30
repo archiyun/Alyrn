@@ -6,6 +6,7 @@
 
 #include <array>
 #include <cerrno>
+#include <chrono>
 #include <cstddef>
 #include <expected>
 #include <iostream>
@@ -132,12 +133,23 @@ coropact::coro::DetachedTask ReadOnce(coropact::luring::LUringStream* stream,
                                       coropact::luring::LUringLoop* loop,
                                       std::span<std::byte> buffer,
                                       std::optional<coropact::base::Result<std::size_t>>* out,
-                                      bool* resumed_with_scheduler,
-                                      int* resume_count = nullptr) {
+                                      bool* resumed_with_scheduler, int* resume_count = nullptr) {
   auto result = co_await stream->ReadSome(buffer);
   if (resume_count != nullptr) {
     ++*resume_count;
   }
+  *resumed_with_scheduler = coropact::coro::Scheduler::Current() == loop;
+  out->emplace(std::move(result));
+}
+
+coropact::coro::DetachedTask ReadForOnce(coropact::luring::LUringStream* stream,
+                                         coropact::luring::LUringLoop* loop,
+                                         std::span<std::byte> buffer,
+                                         std::chrono::milliseconds timeout,
+                                         std::optional<coropact::base::Result<std::size_t>>* out,
+                                         bool* resumed_with_scheduler, int* resume_count) {
+  auto result = co_await stream->ReadSomeFor(buffer, timeout);
+  ++*resume_count;
   *resumed_with_scheduler = coropact::coro::Scheduler::Current() == loop;
   out->emplace(std::move(result));
 }
@@ -204,6 +216,144 @@ bool CheckReadSome() {
          Check(actual == kPayload, "ReadSome payload mismatch") &&
          Check(resumed_with_scheduler, "read resumed without current scheduler");
 }
+
+bool CheckTimedReadSuccessResumesOnce() {
+  coropact::luring::LUringLoop loop;
+  switch (InitLoop(loop)) {
+    case LoopInitStatus::kReady:
+      break;
+    case LoopInitStatus::kSkip:
+      return true;
+    case LoopInitStatus::kFail:
+      return false;
+  }
+
+  UniqueFd local;
+  UniqueFd peer;
+  if (!CreateSocketPair(local, peer)) return false;
+
+  coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  constexpr std::string_view kPayload = "timed";
+  if (!WriteFd(peer.fd(), kPayload)) return false;
+
+  std::array<std::byte, 16> buffer{};
+  std::optional<coropact::base::Result<std::size_t>> result;
+  bool resumed_with_scheduler = false;
+  int resume_count = 0;
+  coropact::coro::SpawnDetach(loop, ReadForOnce(&stream, &loop, buffer, std::chrono::seconds(1),
+                                                &result, &resumed_with_scheduler, &resume_count));
+  loop.RunReady();
+
+  for (int i = 0; i < 4 && !result.has_value(); ++i) {
+    auto completions = loop.WaitCompletions();
+    if (!completions.has_value()) {
+      std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+      return false;
+    }
+    loop.RunReady();
+  }
+
+  std::string_view actual(reinterpret_cast<const char*>(buffer.data()), kPayload.size());
+  return Check(result.has_value(), "timed read success coroutine did not resume") &&
+         Check(result->has_value(), "timed read success returned an error") &&
+         Check(**result == kPayload.size(), "timed read success returned wrong byte count") &&
+         Check(actual == kPayload, "timed read success payload mismatch") &&
+         Check(resume_count == 1, "timed read success resumed more than once") &&
+         Check(resumed_with_scheduler, "timed read success resumed without current scheduler");
+}
+
+bool CheckTimedReadTimeoutResumesOnce() {
+  coropact::luring::LUringLoop loop;
+  switch (InitLoop(loop)) {
+    case LoopInitStatus::kReady:
+      break;
+    case LoopInitStatus::kSkip:
+      return true;
+    case LoopInitStatus::kFail:
+      return false;
+  }
+
+  UniqueFd local;
+  UniqueFd peer;
+  if (!CreateSocketPair(local, peer)) return false;
+
+  coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  std::array<std::byte, 16> buffer{};
+  std::optional<coropact::base::Result<std::size_t>> result;
+  bool resumed_with_scheduler = false;
+  int resume_count = 0;
+  coropact::coro::SpawnDetach(
+      loop, ReadForOnce(&stream, &loop, buffer, std::chrono::milliseconds(1), &result,
+                        &resumed_with_scheduler, &resume_count));
+  loop.RunReady();
+
+  for (int i = 0; i < 4 && !result.has_value(); ++i) {
+    auto completions = loop.WaitCompletions();
+    if (!completions.has_value()) {
+      std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+      return false;
+    }
+    loop.RunReady();
+  }
+
+  return Check(result.has_value(), "timed read timeout coroutine did not resume") &&
+         Check(!result->has_value(), "timed read timeout unexpectedly succeeded") &&
+         Check(result->error().value() == ETIMEDOUT, "timed read did not return ETIMEDOUT") &&
+         Check(resume_count == 1, "timed read timeout resumed more than once") &&
+         Check(resumed_with_scheduler, "timed read timeout resumed without current scheduler");
+}
+
+#if defined(COROPACT_ENABLE_TEST_HOOKS)
+bool CheckTimedReadTimeoutSubmitFailureResumesOnce() {
+  coropact::luring::LUringLoop loop;
+  switch (InitLoop(loop)) {
+    case LoopInitStatus::kReady:
+      break;
+    case LoopInitStatus::kSkip:
+      return true;
+    case LoopInitStatus::kFail:
+      return false;
+  }
+
+  UniqueFd local;
+  UniqueFd peer;
+  if (!CreateSocketPair(local, peer)) return false;
+
+  coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  constexpr std::string_view kPayload = "fallback";
+  if (!WriteFd(peer.fd(), kPayload)) return false;
+
+  std::array<std::byte, 16> buffer{};
+  std::optional<coropact::base::Result<std::size_t>> result;
+  bool resumed_with_scheduler = false;
+  int resume_count = 0;
+
+  // ReadSomeFor first submits the linked recv, then the linked timeout. Let
+  // the recv reach the kernel and fail only the optional timeout SQE.
+  loop.FailSubmissionAfterForTesting(1, EIO);
+  coropact::coro::SpawnDetach(
+      loop, ReadForOnce(&stream, &loop, buffer, std::chrono::seconds(1), &result,
+                         &resumed_with_scheduler, &resume_count));
+  loop.RunReady();
+
+  for (int i = 0; i < 4 && !result.has_value(); ++i) {
+    auto completions = loop.WaitCompletions();
+    if (!completions.has_value()) {
+      std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+      return false;
+    }
+    loop.RunReady();
+  }
+
+  std::string_view actual(reinterpret_cast<const char*>(buffer.data()), kPayload.size());
+  return Check(result.has_value(), "timed read fallback coroutine did not resume") &&
+         Check(result->has_value(), "timed read fallback returned an error") &&
+         Check(**result == kPayload.size(), "timed read fallback returned wrong byte count") &&
+         Check(actual == kPayload, "timed read fallback payload mismatch") &&
+         Check(resume_count == 1, "timed read fallback resumed more than once") &&
+         Check(resumed_with_scheduler, "timed read fallback resumed without current scheduler");
+}
+#endif
 
 bool CheckWriteSome() {
   coropact::luring::LUringLoop loop;
@@ -306,9 +456,8 @@ bool CheckCloseCancelsPendingRead() {
   bool read_resumed_with_scheduler = false;
   int read_resume_count = 0;
 
-  coropact::coro::SpawnDetach(
-      loop, ReadOnce(&stream, &loop, buffer, &read_result, &read_resumed_with_scheduler,
-                     &read_resume_count));
+  coropact::coro::SpawnDetach(loop, ReadOnce(&stream, &loop, buffer, &read_result,
+                                             &read_resumed_with_scheduler, &read_resume_count));
 
   loop.RunReady();
 
@@ -360,9 +509,8 @@ bool CheckReadCompletionCancelRaceResumesOnce() {
   bool read_resumed_with_scheduler = false;
   int read_resume_count = 0;
 
-  coropact::coro::SpawnDetach(
-      loop, ReadOnce(&stream, &loop, buffer, &read_result, &read_resumed_with_scheduler,
-                     &read_resume_count));
+  coropact::coro::SpawnDetach(loop, ReadOnce(&stream, &loop, buffer, &read_result,
+                                             &read_resumed_with_scheduler, &read_resume_count));
   loop.RunReady();
 
   constexpr std::string_view kPayload = "race";
@@ -400,6 +548,11 @@ bool CheckReadCompletionCancelRaceResumesOnce() {
 
 int main() {
   if (!CheckReadSome()) return 1;
+  if (!CheckTimedReadSuccessResumesOnce()) return 1;
+  if (!CheckTimedReadTimeoutResumesOnce()) return 1;
+#if defined(COROPACT_ENABLE_TEST_HOOKS)
+  if (!CheckTimedReadTimeoutSubmitFailureResumesOnce()) return 1;
+#endif
   if (!CheckWriteSome()) return 1;
   if (!CheckCloseWithoutPending()) return 1;
   if (!CheckCloseCancelsPendingRead()) return 1;

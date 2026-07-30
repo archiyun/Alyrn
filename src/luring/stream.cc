@@ -131,7 +131,8 @@ bool LUringStream::ReadSomeForAwaiter::await_suspend(
   if (!submitted.has_value()) {
     // The receive is already queued. It will complete normally without the
     // optional timeout, and the awaiter remains alive until that CQE.
-    timeout_done_ = true;
+    COROPACT_IGNORE_RESULT(
+        lifecycle_.RecordMemberCompletion(operation::detail::CompositeMember::kSecond));
   }
   return true;
 }
@@ -141,7 +142,7 @@ base::Result<std::size_t> LUringStream::ReadSomeForAwaiter::await_resume() noexc
     return ToSizeResult(ReadOp()->result);
   }
 
-  assert(read_done_);
+  assert(lifecycle_.MemberCompleted(operation::detail::CompositeMember::kFirst));
   if (ReadOp()->result.HasValue() && *ReadOp()->result >= 0) {
     return static_cast<std::size_t>(*ReadOp()->result);
   }
@@ -160,17 +161,21 @@ void LUringStream::ReadSomeForAwaiter::OnTimeoutComplete(LUringOp* op) noexcept 
 }
 
 void LUringStream::ReadSomeForAwaiter::CompleteRead(LUringOp* current) noexcept {
-  read_done_ = true;
+  if (!lifecycle_.RecordMemberCompletion(operation::detail::CompositeMember::kFirst)) {
+    return;
+  }
   FinishIfReady(current);
 }
 
 void LUringStream::ReadSomeForAwaiter::CompleteTimeout(LUringOp* current) noexcept {
-  timeout_done_ = true;
+  if (!lifecycle_.RecordMemberCompletion(operation::detail::CompositeMember::kSecond)) {
+    return;
+  }
   FinishIfReady(current);
 }
 
 void LUringStream::ReadSomeForAwaiter::FinishIfReady(LUringOp* current) noexcept {
-  if (!read_done_ || !timeout_done_) {
+  if (!lifecycle_.TryAuthorizeLogicalResult()) {
     return;
   }
 
@@ -178,7 +183,9 @@ void LUringStream::ReadSomeForAwaiter::FinishIfReady(LUringOp* current) noexcept
     stream_->pending_read_ = nullptr;
     stream_->NotifyCloseProgress();
   }
-  current->resume_work.SetHandle(continuation_);
+  if (lifecycle_.TryAuthorizeContinuation()) {
+    current->resume_work.SetHandle(continuation_);
+  }
 }
 
 // --- WriteSomeAwaiter ---
@@ -411,7 +418,6 @@ bool LUringStream::SendZeroCopyAwaiter::await_suspend(
   }
   if (buffer_.empty()) {
     Op()->SetImmediateSuccess();
-    primary_seen_ = true;
     if (diagnostics_ != nullptr) {
       diagnostics_->RecordLogicalCompletion();
     }
@@ -470,7 +476,11 @@ CompletionDisposition LUringStream::SendZeroCopyAwaiter::OnComplete(
   CompletionDisposition disposition;
 
   if (event.Notification()) {
-    self->notification_seen_ = true;
+    const bool physical_terminal = self->lifecycle_.MarkPhysicalTerminal();
+    if (!physical_terminal) {
+      return disposition;
+    }
+
     self->notification_received_ = true;
     // A send-zc notification stores usage bits in cqe_res.  In particular,
     // IORING_NOTIF_USAGE_ZC_COPIED occupies the high bit, so cqe_res may look
@@ -481,12 +491,10 @@ CompletionDisposition LUringStream::SendZeroCopyAwaiter::OnComplete(
       self->diagnostics_->RecordNotification(event.result, self->copied_);
     }
     disposition.kernel_operation_done = true;
-  } else if (!self->primary_seen_) {
-    self->primary_seen_ = true;
+  } else if (self->lifecycle_.RecordLogicalResult()) {
     // REPORT_USAGE keeps a notification boundary for every submitted send.
     // Some kernels do not advertise it through F_MORE on the primary CQE, so
     // F_MORE and a primary -errno cannot be the ownership/lifetime boundary.
-    self->notification_required_ = true;
     op->result = event.result;
     if (self->diagnostics_ != nullptr) {
       self->diagnostics_->RecordPrimary(event.result);
@@ -495,18 +503,16 @@ CompletionDisposition LUringStream::SendZeroCopyAwaiter::OnComplete(
     // ENOMEM only after this awaiter has observed the notification boundary.
   }
 
-  const bool complete =
-      self->primary_seen_ && (!self->notification_required_ || self->notification_seen_);
-  if (complete) {
-    if (self->diagnostics_ != nullptr) {
-      self->diagnostics_->RecordLogicalCompletion();
-    }
+  if (self->lifecycle_.TryAuthorizeRelease()) {
     if (self->stream_ != nullptr && self->stream_->pending_write_ == self) {
       self->stream_->pending_write_ = nullptr;
       self->stream_->NotifyCloseProgress();
     }
   }
-  disposition.logical_completion_ready = complete;
+  disposition.logical_completion_ready = self->lifecycle_.TryAuthorizeContinuation();
+  if (disposition.logical_completion_ready && self->diagnostics_ != nullptr) {
+    self->diagnostics_->RecordLogicalCompletion();
+  }
   return disposition;
 }
 

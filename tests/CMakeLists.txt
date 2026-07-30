@@ -27,6 +27,17 @@ target_include_directories(completion_gate_smoke_test
 
 add_test(NAME completion_gate_smoke_test COMMAND completion_gate_smoke_test)
 
+add_executable(split_release_lifecycle_smoke_test
+    unit/test_split_release_lifecycle_smoke.cc
+)
+
+target_include_directories(split_release_lifecycle_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+add_test(NAME split_release_lifecycle_smoke_test COMMAND split_release_lifecycle_smoke_test)
+
 add_executable(memory_pool_smoke_test
     unit/test_memory_pool_smoke.cc
 )

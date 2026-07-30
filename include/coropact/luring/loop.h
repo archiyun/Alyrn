@@ -124,6 +124,19 @@ public:
       int error = EIO) noexcept {
     assert(error > 0);
     test_submit_failures_ = count;
+    test_successful_submissions_before_failure_ = 0;
+    test_submit_error_ = error;
+  }
+
+  // Fails one submission after exactly `successful_submissions` test-visible
+  // submissions have succeeded. This makes linked-operation tests able to
+  // target their second SQE without failing the first physical request.
+  void FailSubmissionAfterForTesting(
+      std::size_t successful_submissions,
+      int error = EIO) noexcept {
+    assert(error > 0);
+    test_submit_failures_ = 1;
+    test_successful_submissions_before_failure_ = successful_submissions;
     test_submit_error_ = error;
   }
 #endif
@@ -191,8 +204,12 @@ public:
 
 #if defined(COROPACT_ENABLE_TEST_HOOKS)
     if (test_submit_failures_ != 0) {
-      --test_submit_failures_;
-      return std::unexpected(base::MakeErrno(test_submit_error_));
+      if (test_successful_submissions_before_failure_ != 0) {
+        --test_successful_submissions_before_failure_;
+      } else {
+        --test_submit_failures_;
+        return std::unexpected(base::MakeErrno(test_submit_error_));
+      }
     }
 #endif
 
@@ -339,6 +356,7 @@ private:
 
 #if defined(COROPACT_ENABLE_TEST_HOOKS)
   std::size_t test_submit_failures_{0};
+  std::size_t test_successful_submissions_before_failure_{0};
   int test_submit_error_{EIO};
 #endif
 };

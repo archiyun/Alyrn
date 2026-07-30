@@ -18,6 +18,9 @@ changing module boundaries.
   must not own a result, fd, buffer, Channel, SQE, CQE, or application-visible
   operation type. A logical completion gate is never reopened; reusable
   physical backend slots install a fresh gate only after their release point.
+  Composite families record each physical member before authorizing one logical
+  result; split-release families separately authorize result, release, and
+  continuation.
 - `net`: `Socket`, `Endpoint`, and buffers are backend-shared network values.
 - `io` and `backend`: `AsyncStream`, `AsyncListener`, and `AsyncConnector`
   define application-visible transport contracts. They must not require an
