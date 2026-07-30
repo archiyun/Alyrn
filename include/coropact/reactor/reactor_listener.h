@@ -90,6 +90,10 @@ public:
   base::Result<ReactorAcceptSource> AcceptSource(net::AcceptSourceOptions options = {}) noexcept;
   coro::Task<base::Result<void>> Close();
 
+  // Accept, Close, AcceptSource, and destruction are loop-affine. The caller
+  // must use this listener from its owning EventLoop thread; a foreign thread
+  // is a runtime-contract violation checked in every build configuration.
+
   [[nodiscard]]
   base::Result<net::Endpoint> LocalAddress() const;
 
@@ -106,6 +110,7 @@ private:
   static void DispatchError(void* context) noexcept;
   void CompleteAccept(base::Result<ReactorStream> result);
   void DetachChannel();
+  void RequireOwnerLoop() const noexcept;
   void BindChannelCallbacks() noexcept;
   void ResetForMove() noexcept;
   static EventLoop* PrepareMove(ReactorListener& other) noexcept;

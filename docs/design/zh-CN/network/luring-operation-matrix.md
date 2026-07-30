@@ -274,6 +274,8 @@ operation destruction
   native multishot 三条 AcceptSource 路径的有界业务语义 refinement；
 - `formal/recv_source_lease.tla`：provided-buffer multishot recv 的 queue、BufferLease、
   cancel 和 Stop 收敛不变量。
+- `formal/recv_source_incremental_lease.tla`：`F_BUF_MORE` 对同一 provided buffer 的连续
+  segment、offset 不重叠、最后 segment 与全部 lease 释放后才归还 buffer ring。
 
 这些 TLA+ 模型检查的是协议级 safety，不是 C++ 实现的自动内存安全证明。当前配置使用：
 
@@ -306,6 +308,8 @@ tlc docs/design/zh-CN/network/formal/accept_source_refinement.tla \
   -config docs/design/zh-CN/network/formal/accept_source_refinement.cfg
 tlc docs/design/zh-CN/network/formal/recv_source_lease.tla \
   -config docs/design/zh-CN/network/formal/recv_source_lease.cfg
+tlc docs/design/zh-CN/network/formal/recv_source_incremental_lease.tla \
+  -config docs/design/zh-CN/network/formal/recv_source_incremental_lease.cfg
 ```
 
 当前模型覆盖的核心 safety 条件是：
@@ -319,6 +323,11 @@ RecvSource:
   available、queued、leased buffer 两两不重叠且覆盖 buffer pool；
   queue 和 lease 受容量限制；Stop 完成前没有 outstanding lease；
  cancel CQE 不替代 recv request 自己的 terminal CQE。
+
+Incremental RecvSource (`F_BUF_MORE`):
+  同一 provided buffer 的 segment 区间不重叠；terminal CQE 前必须结束其
+  incremental buffer；只有 final segment 已观察且该 buffer 的全部 segment
+  lease 已释放，buffer 才能归还 ring。
 ```
 
 `scheduler_completion_liveness.tla` 的 liveness 是条件性的：它假设 worker 未退出且持续执行

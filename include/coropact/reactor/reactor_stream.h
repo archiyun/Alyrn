@@ -60,6 +60,11 @@ public:
   coro::Task<base::Result<void>> Shutdown();
   coro::Task<base::Result<void>> Close();
 
+  // Stream operations and destruction are loop-affine. The coroutine must
+  // reach await_suspend() on this stream's owning EventLoop; a foreign thread
+  // violates the runtime contract and terminates through COROPACT_CHECK in
+  // every build configuration.
+
   [[nodiscard]]
   const net::Endpoint& PeerAddress() const noexcept {
     return peer_;
@@ -79,6 +84,7 @@ private:
   void CompleteRead(base::Result<std::size_t> result);
   void CompleteWrite(base::Result<std::size_t> result);
   void DetachChannel();
+  void RequireOwnerLoop() const noexcept;
   void BindChannelCallbacks() noexcept;
   void ResetForMove() noexcept;
   static EventLoop* PrepareMove(ReactorStream& other) noexcept;

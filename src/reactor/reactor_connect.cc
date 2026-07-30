@@ -49,13 +49,14 @@ public:
   }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
-    COROPACT_DCHECK(loop_->IsInLoopThread(), "ConnectAwaiter: wrong EventLoop thread");
+    COROPACT_CHECK(loop_ != nullptr, "ConnectAwaiter has no owner EventLoop");
+    COROPACT_CHECK(loop_->IsInLoopThread(), "ConnectAwaiter called from wrong EventLoop thread");
     continuation_.Bind(continuation);
 
     auto fd = net::CreateNonBlockingSocket(peer_.native_family());
     if (!fd.has_value()) {
       result_.SetError(fd.error());
-    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
       return false;
     }
     fd_ = *fd;
@@ -67,12 +68,12 @@ public:
 
     if (rc == 0) {
       result_.SetResult(MakeStream());
-    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
       return false;
     }
     if (errno != EINPROGRESS) {
       result_.SetError(base::CurrentErrno());
-    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
       return false;
     }
 
@@ -148,7 +149,8 @@ public:
   }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
-    COROPACT_DCHECK(loop_->IsInLoopThread(), "SleepAwaiter: wrong EventLoop thread");
+    COROPACT_CHECK(loop_ != nullptr, "SleepAwaiter has no owner EventLoop");
+    COROPACT_CHECK(loop_->IsInLoopThread(), "SleepAwaiter called from wrong EventLoop thread");
     continuation_.Bind(continuation);
     const auto seconds = std::chrono::duration<double>(delay_).count();
     loop_->RunAfter(seconds, [this] {
@@ -172,6 +174,7 @@ private:
 
 ReactorConnector::ReactorConnector(EventLoop* loop) noexcept : loop_(loop) {
   COROPACT_CHECK(loop_ != nullptr, "ReactorConnector: loop must not be null");
+  COROPACT_CHECK(loop_->IsInLoopThread(), "ReactorConnector created from wrong EventLoop thread");
 }
 
 [[nodiscard]]
@@ -193,6 +196,7 @@ ReactorConnector& ReactorConnector::operator=(ReactorConnector&& other) noexcept
 }
 
 coro::Task<base::Result<ReactorStream>> ReactorConnector::Connect(const net::Endpoint& peer) {
+  RequireOwnerLoop();
   co_return co_await ConnectAwaiter(loop_, peer);
 }
 
@@ -203,7 +207,14 @@ coro::Task<base::Result<ReactorStream>> ReactorConnector::Connect(std::string_vi
 }
 
 coro::Task<void> ReactorConnector::SleepFor(std::chrono::milliseconds delay) {
+  RequireOwnerLoop();
   co_await SleepAwaiter(loop_, delay);
+}
+
+void ReactorConnector::RequireOwnerLoop() const noexcept {
+  COROPACT_CHECK(loop_ != nullptr, "ReactorConnector operation has no owner EventLoop");
+  COROPACT_CHECK(loop_->IsInLoopThread(),
+                 "ReactorConnector operation called from wrong EventLoop thread");
 }
 
 }  // namespace coropact::reactor

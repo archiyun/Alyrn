@@ -3,9 +3,11 @@
 
 #include <sys/socket.h>
 #include <sys/uio.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <array>
+#include <csignal>
 #include <cstddef>
 #include <cstring>
 #include <expected>
@@ -13,11 +15,13 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "coropact/base/error.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/spawn.h"
+#include "coropact/coro/sync_wait.h"
 #include "coropact/coro/task.h"
 #include "coropact/io/stream_algorithms.h"
 #include "coropact/reactor/event_loop.h"
@@ -66,8 +70,7 @@ coropact::coro::DetachedTask ReadOnce(coropact::reactor::ReactorStream* stream,
 coropact::coro::DetachedTask ReadWithoutQuit(coropact::reactor::ReactorStream* stream,
                                              coropact::reactor::EventLoopScheduler* scheduler,
                                              std::array<std::byte, 16>* buffer,
-                                             std::optional<ReadResult>* out,
-                                             int* resume_count,
+                                             std::optional<ReadResult>* out, int* resume_count,
                                              bool* resumed_with_scheduler) {
   ReadResult result = co_await stream->ReadSome(*buffer);
   ++*resume_count;
@@ -160,6 +163,45 @@ coropact::coro::DetachedTask CloseThenSubmit(coropact::reactor::ReactorStream* s
     write_result->emplace(co_await stream->WriteSome(write_buffer));
   }
   loop->Quit();
+}
+
+coropact::coro::Task<ReadResult> ReadFromForeignLoopThread(coropact::reactor::ReactorStream* stream,
+                                                           std::array<std::byte, 16>* buffer) {
+  co_return co_await stream->ReadSome(*buffer);
+}
+
+bool CheckForeignLoopReadTerminates() {
+  int sv[2] = {-1, -1};
+  if (!MakeSocketPair(sv)) {
+    std::cout << "FAIL: socketpair failed for owner-loop check\n";
+    return false;
+  }
+
+  coropact::reactor::EventLoop loop;
+  coropact::reactor::ReactorStream stream(&loop, sv[0]);
+  const pid_t child = ::fork();
+  if (child < 0) {
+    ::close(sv[1]);
+    return false;
+  }
+  if (child == 0) {
+    ::close(sv[1]);
+    ::alarm(3);
+    std::thread foreign_thread([&stream] {
+      std::array<std::byte, 16> buffer{};
+      static_cast<void>(coropact::coro::SyncWait(ReadFromForeignLoopThread(&stream, &buffer)));
+    });
+    foreign_thread.join();
+    ::_exit(0);
+  }
+
+  ::close(sv[1]);
+  int status = 0;
+  while (::waitpid(child, &status, 0) < 0 && errno == EINTR) {
+  }
+  return Check(WIFSIGNALED(status), "foreign-loop stream operation did not terminate") &&
+         Check(WTERMSIG(status) == SIGABRT,
+               "foreign-loop stream operation must terminate through COROPACT_CHECK");
 }
 
 bool CheckImmediateRead() {
@@ -390,10 +432,8 @@ bool CheckReadableThenCloseResumesOnce() {
   int resume_count = 0;
   bool resumed_with_scheduler = false;
 
-  coropact::coro::SpawnDetach(
-      scheduler,
-      ReadWithoutQuit(&stream, &scheduler, &buffer, &result, &resume_count,
-                      &resumed_with_scheduler));
+  coropact::coro::SpawnDetach(scheduler, ReadWithoutQuit(&stream, &scheduler, &buffer, &result,
+                                                         &resume_count, &resumed_with_scheduler));
   loop.QueueInLoop([&] {
     const char payload[] = "race";
     COROPACT_IGNORE_RESULT(::write(sv[1], payload, sizeof(payload) - 1));
@@ -496,6 +536,7 @@ bool CheckCloseRejectsLaterSubmit() {
 }  // namespace
 
 int main() {
+  if (!CheckForeignLoopReadTerminates()) return 1;
   if (!CheckImmediateRead()) return 1;
   if (!CheckImmediateWrite()) return 1;
   if (!CheckPendingRead()) return 1;

@@ -38,6 +38,7 @@ base::Error SocketError(int fd) noexcept {
 
 EventLoop* CheckLoop(EventLoop* loop) noexcept {
   COROPACT_CHECK(loop != nullptr, "ReactorListener: loop must not be null");
+  COROPACT_CHECK(loop->IsInLoopThread(), "ReactorListener created from wrong EventLoop thread");
   return loop;
 }
 
@@ -80,7 +81,7 @@ public:
   }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
-    COROPACT_DCHECK(listener_->loop_->IsInLoopThread(), "AcceptAwaiter: wrong EventLoop thread");
+    listener_->RequireOwnerLoop();
     COROPACT_DCHECK(listener_->pending_accept_ == nullptr,
                     "AcceptAwaiter: only one pending accept is supported per listener");
 
@@ -566,7 +567,7 @@ ReactorListener::~ReactorListener() {
   if (loop_ == nullptr) {
     return;
   }
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "ReactorListener destructor called from wrong thread");
+  RequireOwnerLoop();
   COROPACT_DCHECK(pending_accept_ == nullptr, "ReactorListener destroyed with a pending accept");
   COROPACT_DCHECK(accept_source_ == nullptr,
                   "ReactorListener destroyed with an active AcceptSource");
@@ -574,6 +575,7 @@ ReactorListener::~ReactorListener() {
 }
 
 coro::Task<base::Result<ReactorStream>> ReactorListener::Accept() {
+  RequireOwnerLoop();
   if (closed_) {
     co_return std::unexpected(base::MakeErrno(EBADF));
   }
@@ -585,6 +587,7 @@ coro::Task<base::Result<ReactorStream>> ReactorListener::Accept() {
 
 base::Result<ReactorAcceptSource> ReactorListener::AcceptSource(
     net::AcceptSourceOptions options) noexcept {
+  RequireOwnerLoop();
   if (closed_) {
     return std::unexpected(base::MakeErrno(EBADF));
   }
@@ -596,6 +599,7 @@ base::Result<ReactorAcceptSource> ReactorListener::AcceptSource(
 }
 
 coro::Task<base::Result<void>> ReactorListener::Close() {
+  RequireOwnerLoop();
   if (closed_) {
     co_return base::Result<void>{};
   }
@@ -613,6 +617,7 @@ coro::Task<base::Result<void>> ReactorListener::Close() {
 }
 
 base::Result<net::Endpoint> ReactorListener::LocalAddress() const {
+  RequireOwnerLoop();
   if (closed_) {
     return std::unexpected(base::MakeErrno(EBADF));
   }
@@ -667,6 +672,12 @@ void ReactorListener::DetachChannel() {
   if (loop_->HasChannel(&channel_)) {
     channel_.Remove();
   }
+}
+
+void ReactorListener::RequireOwnerLoop() const noexcept {
+  COROPACT_CHECK(loop_ != nullptr, "ReactorListener operation has no owner EventLoop");
+  COROPACT_CHECK(loop_->IsInLoopThread(),
+                 "ReactorListener operation called from wrong EventLoop thread");
 }
 
 void ReactorListener::BindChannelCallbacks() noexcept {
