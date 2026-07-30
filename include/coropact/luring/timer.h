@@ -5,6 +5,7 @@
 #include <chrono>
 #include <coroutine>
 
+#include "coropact/base/check.h"
 #include "coropact/base/error.h"
 #include "coropact/coro/work.h"
 #include "coropact/luring/detail/result_state.h"
@@ -43,6 +44,9 @@ private:
 };
 
 inline bool SleepAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
+  COROPACT_CHECK(loop_ != nullptr, "LUring sleep operation has no owner loop");
+  COROPACT_CHECK(loop_->IsInLoopThread(),
+                 "LUring sleep operation called from wrong LUringLoop thread");
   resume_work_.SetHandle(continuation);
   auto timer =
       loop_->RunAfter(delay_, [this]() noexcept { loop_->ScheduleCompletion(&resume_work_); });

@@ -19,6 +19,7 @@
 #include "coropact/base/check.h"
 #include "coropact/base/error.h"
 #include "coropact/luring/detail/close_state.h"
+#include "coropact/luring/detail/operation_submission.h"
 #include "coropact/luring/loop.h"
 #include "coropact/luring/op.h"
 #include "coropact/net/endpoint.h"
@@ -41,6 +42,7 @@ base::Result<std::size_t> ToSizeResult(const LUringCqeResult& result) noexcept {
 
 // ---- ReadSomeAwaiter ---
 bool LUringStream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
+  stream_->RequireOwnerLoop();
   if (stream_->closed_ || stream_->fd_ < 0) {
     Op()->SetImmediateError(base::MakeErrno(EBADF));
     return false;
@@ -56,20 +58,15 @@ bool LUringStream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> contin
 
   stream_->pending_read_ = this;
   Op()->kind = LUringOpKind::kReadComplete;
-  Op()->resume_work.SetHandle(continuation);
-
-  auto submitted = stream_->loop_->SubmitOp(
-      Op(), [fd = stream_->fd_, buffer = buffer_](io_uring_sqe* sqe) noexcept {
+  return detail::SubmitAwaitingOperation(
+      *stream_->loop_, *Op(), continuation,
+      [fd = stream_->fd_, buffer = buffer_](io_uring_sqe* sqe) noexcept {
         io_uring_prep_recv(sqe, fd, buffer.data(), buffer.size(), 0);
+      },
+      [this](base::Error error) noexcept {
+        stream_->pending_read_ = nullptr;
+        Op()->SetImmediateError(error);
       });
-
-  if (!submitted.has_value()) {
-    stream_->pending_read_ = nullptr;
-    Op()->SetImmediateError(submitted.error());
-    return false;
-  }
-
-  return true;
 }
 
 base::Result<std::size_t> LUringStream::ReadSomeAwaiter::await_resume() noexcept {
@@ -90,7 +87,8 @@ LUringStream::ReadSomeForAwaiter::ReadSomeForAwaiter(LUringStream& stream,
                                                      std::chrono::milliseconds timeout) noexcept
     : ReadOpHook(LUringOpKind::kTimedReadComplete),
       TimeoutOpHook(LUringOpKind::kTimedReadTimeoutComplete),
-      stream_(&stream), buffer_(buffer) {
+      stream_(&stream),
+      buffer_(buffer) {
   const std::int64_t milliseconds = timeout.count() > 0 ? timeout.count() : 1;
   timeout_ts_.tv_sec = static_cast<__kernel_time64_t>(milliseconds / 1000);
   timeout_ts_.tv_nsec = static_cast<long>(milliseconds % 1000) * 1'000'000;
@@ -98,6 +96,7 @@ LUringStream::ReadSomeForAwaiter::ReadSomeForAwaiter(LUringStream& stream,
 
 bool LUringStream::ReadSomeForAwaiter::await_suspend(
     std::coroutine_handle<> continuation) noexcept {
+  stream_->RequireOwnerLoop();
   if (stream_->closed_ || stream_->fd_ < 0) {
     ReadOp()->SetImmediateError(base::MakeErrno(EBADF));
     return false;
@@ -190,6 +189,7 @@ void LUringStream::ReadSomeForAwaiter::FinishIfReady(LUringOp* current) noexcept
 
 // --- WriteSomeAwaiter ---
 bool LUringStream::WriteSomeAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
+  stream_->RequireOwnerLoop();
   if (stream_->closed_ || stream_->fd_ < 0) {
     Op()->SetImmediateError(base::MakeErrno(EBADF));
     return false;
@@ -205,19 +205,15 @@ bool LUringStream::WriteSomeAwaiter::await_suspend(std::coroutine_handle<> conti
 
   stream_->pending_write_ = this;
   Op()->kind = LUringOpKind::kWriteComplete;
-  Op()->resume_work.SetHandle(continuation);
-
-  auto submitted = stream_->loop_->SubmitOp(
-      Op(), [fd = stream_->fd_, buffer = buffer_](io_uring_sqe* sqe) noexcept {
+  return detail::SubmitAwaitingOperation(
+      *stream_->loop_, *Op(), continuation,
+      [fd = stream_->fd_, buffer = buffer_](io_uring_sqe* sqe) noexcept {
         io_uring_prep_send(sqe, fd, buffer.data(), buffer.size(), MSG_NOSIGNAL);
+      },
+      [this](base::Error error) noexcept {
+        stream_->pending_write_ = nullptr;
+        Op()->SetImmediateError(error);
       });
-
-  if (!submitted.has_value()) {
-    stream_->pending_write_ = nullptr;
-    Op()->SetImmediateError(submitted.error());
-    return false;
-  }
-  return true;
 }
 
 base::Result<std::size_t> LUringStream::WriteSomeAwaiter::await_resume() noexcept {
@@ -232,8 +228,7 @@ void LUringStream::WriteSomeAwaiter::OnComplete(LUringOp* op) noexcept {
   }
 }
 
-class LUringStream::CloseAwaiter
-    : public detail::LUringOpHook<LUringStream::CloseAwaiter> {
+class LUringStream::CloseAwaiter : public detail::LUringOpHook<LUringStream::CloseAwaiter> {
   friend void detail::DispatchStreamCloseComplete(LUringOp* op) noexcept;
 
 public:
@@ -245,6 +240,7 @@ public:
   bool await_ready() const noexcept { return false; }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
+    stream_->RequireOwnerLoop();
     if (stream_->pending_close_ != nullptr) {
       state_.SetError(base::MakeErrno(EBUSY));
       return false;
@@ -334,6 +330,7 @@ private:
 // --- WriteSomePartsAwaiter ---
 bool LUringStream::WriteSomePartsAwaiter::await_suspend(
     std::coroutine_handle<> continuation) noexcept {
+  stream_->RequireOwnerLoop();
   if (stream_->closed_ || stream_->fd_ < 0) {
     Op()->SetImmediateError(base::MakeErrno(EBADF));
     return false;
@@ -370,21 +367,15 @@ bool LUringStream::WriteSomePartsAwaiter::await_suspend(
   message_.msg_iovlen = count;
 
   stream_->pending_write_ = this;
-
-  Op()->resume_work.SetHandle(continuation);
-
-  auto submitted = stream_->loop_->SubmitOp(
-      Op(), [fd = stream_->fd_, message = &message_](io_uring_sqe* sqe) noexcept {
+  return detail::SubmitAwaitingOperation(
+      *stream_->loop_, *Op(), continuation,
+      [fd = stream_->fd_, message = &message_](io_uring_sqe* sqe) noexcept {
         io_uring_prep_sendmsg(sqe, fd, message, MSG_NOSIGNAL);
+      },
+      [this](base::Error error) noexcept {
+        stream_->pending_write_ = nullptr;
+        Op()->SetImmediateError(error);
       });
-
-  if (!submitted.has_value()) {
-    stream_->pending_write_ = nullptr;
-    Op()->SetImmediateError(submitted.error());
-    return false;
-  }
-
-  return true;
 }
 
 base::Result<std::size_t> LUringStream::WriteSomePartsAwaiter::await_resume() noexcept {
@@ -403,6 +394,7 @@ void LUringStream::WriteSomePartsAwaiter::OnComplete(LUringOp* op) noexcept {
 // --- SendZeroCopyAwaiter ---
 bool LUringStream::SendZeroCopyAwaiter::await_suspend(
     std::coroutine_handle<> continuation) noexcept {
+  stream_->RequireOwnerLoop();
   if (diagnostics_ != nullptr) {
     diagnostics_->attempts.fetch_add(1, std::memory_order_relaxed);
   }
@@ -435,13 +427,8 @@ bool LUringStream::SendZeroCopyAwaiter::await_suspend(
 
   auto submitted = stream_->loop_->SubmitOp(
       Op(), [fd = stream_->fd_, buffer = buffer_](io_uring_sqe* sqe) noexcept {
-        io_uring_prep_send_zc(
-            sqe,
-            fd,
-            buffer.data(),
-            buffer.size(),
-            MSG_NOSIGNAL,
-            IORING_SEND_ZC_REPORT_USAGE);
+        io_uring_prep_send_zc(sqe, fd, buffer.data(), buffer.size(), MSG_NOSIGNAL,
+                              IORING_SEND_ZC_REPORT_USAGE);
       });
   if (!submitted.has_value()) {
     stream_->pending_write_ = nullptr;
@@ -452,8 +439,7 @@ bool LUringStream::SendZeroCopyAwaiter::await_suspend(
   return true;
 }
 
-base::Result<ZeroCopySendResult>
-LUringStream::SendZeroCopyAwaiter::await_resume() noexcept {
+base::Result<ZeroCopySendResult> LUringStream::SendZeroCopyAwaiter::await_resume() noexcept {
   if (!Op()->result.HasValue()) {
     RecordFailure(ZeroCopySendErrorKind::kProtocol);
     return std::unexpected(base::MakeErrno(EIO));
@@ -470,8 +456,7 @@ LUringStream::SendZeroCopyAwaiter::await_resume() noexcept {
 }
 
 CompletionDisposition LUringStream::SendZeroCopyAwaiter::OnComplete(
-    LUringOp* op,
-    CompletionEvent event) noexcept {
+    LUringOp* op, CompletionEvent event) noexcept {
   auto* self = static_cast<OpHook*>(op)->Owner();
   CompletionDisposition disposition;
 
@@ -538,9 +523,7 @@ void DispatchStreamWritePartsComplete(LUringOp* op) noexcept {
   LUringStream::WriteSomePartsAwaiter::OnComplete(op);
 }
 
-CompletionDisposition DispatchSendZeroCopyComplete(
-    LUringOp* op,
-    CompletionEvent event) noexcept {
+CompletionDisposition DispatchSendZeroCopyComplete(LUringOp* op, CompletionEvent event) noexcept {
   return LUringStream::SendZeroCopyAwaiter::OnComplete(op, event);
 }
 
@@ -557,8 +540,10 @@ LUringStream::WriteSomePartsAwaiter LUringStream::WriteSome(
 
 LUringStream::LUringStream(LUringLoop* loop, int fd, net::Endpoint peer) noexcept
     : loop_(loop), fd_(fd), peer_(std::move(peer)) {
-  assert(loop_ != nullptr);
-  assert(fd_ >= 0);
+  COROPACT_CHECK(loop_ != nullptr, "LUringStream requires an owner loop");
+  COROPACT_CHECK(loop_->IsInLoopThread(),
+                 "LUringStream created from wrong LUringLoop thread");
+  COROPACT_CHECK(fd_ >= 0, "LUringStream requires a valid file descriptor");
 }
 
 LUringStream::LUringStream(LUringStream&& other) noexcept
@@ -608,6 +593,12 @@ LUringStream::~LUringStream() noexcept {
   }
 }
 
+void LUringStream::RequireOwnerLoop() const noexcept {
+  COROPACT_CHECK(loop_ != nullptr, "LUringStream operation has no owner loop");
+  COROPACT_CHECK(loop_->IsInLoopThread(),
+                 "LUringStream operation called from wrong LUringLoop thread");
+}
+
 LUringStream::ReadSomeAwaiter LUringStream::ReadSome(std::span<std::byte> buffer) noexcept {
   return ReadSomeAwaiter{*this, buffer};
 }
@@ -622,6 +613,7 @@ LUringStream::WriteSomeAwaiter LUringStream::WriteSome(std::span<const std::byte
 }
 
 coro::Task<base::Result<void>> LUringStream::Shutdown() {
+  RequireOwnerLoop();
   if (closed_ || fd_ < 0) {
     co_return std::unexpected(base::MakeErrno(EBADF));
   }

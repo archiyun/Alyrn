@@ -13,9 +13,9 @@
 #include <cstdint>
 #include <span>
 
+#include "coropact/backend/async_stream.h"
 #include "coropact/base/error.h"
 #include "coropact/coro/task.h"
-#include "coropact/backend/async_stream.h"
 #include "coropact/luring/detail/completion_dispatch.h"
 #include "coropact/luring/detail/op_hook.h"
 #include "coropact/luring/op.h"
@@ -85,8 +85,8 @@ struct ZeroCopySendDiagnostics {
 
     primary_errors.fetch_add(1, std::memory_order_relaxed);
     int expected = 0;
-    COROPACT_IGNORE_RESULT(first_primary_error.compare_exchange_strong(
-        expected, result, std::memory_order_relaxed));
+    COROPACT_IGNORE_RESULT(
+        first_primary_error.compare_exchange_strong(expected, result, std::memory_order_relaxed));
     last_primary_error.store(result, std::memory_order_relaxed);
 
     std::atomic<std::uint64_t>* counter = &primary_other_errors;
@@ -113,11 +113,21 @@ struct ZeroCopySendDiagnostics {
     errors.fetch_add(1, std::memory_order_relaxed);
     std::atomic<std::uint64_t>* counter = nullptr;
     switch (kind) {
-      case ZeroCopySendErrorKind::kClosed: counter = &closed_errors; break;
-      case ZeroCopySendErrorKind::kProfileUnavailable: counter = &profile_errors; break;
-      case ZeroCopySendErrorKind::kBusy: counter = &busy_errors; break;
-      case ZeroCopySendErrorKind::kSubmission: counter = &submission_errors; break;
-      case ZeroCopySendErrorKind::kProtocol: counter = &protocol_errors; break;
+      case ZeroCopySendErrorKind::kClosed:
+        counter = &closed_errors;
+        break;
+      case ZeroCopySendErrorKind::kProfileUnavailable:
+        counter = &profile_errors;
+        break;
+      case ZeroCopySendErrorKind::kBusy:
+        counter = &busy_errors;
+        break;
+      case ZeroCopySendErrorKind::kSubmission:
+        counter = &submission_errors;
+        break;
+      case ZeroCopySendErrorKind::kProtocol:
+        counter = &protocol_errors;
+        break;
     }
     counter->fetch_add(1, std::memory_order_relaxed);
   }
@@ -134,9 +144,7 @@ struct ZeroCopySendDiagnostics {
     logical_completions.fetch_add(1, std::memory_order_relaxed);
   }
 
-  void RecordCopyFallback() noexcept {
-    copy_fallbacks.fetch_add(1, std::memory_order_relaxed);
-  }
+  void RecordCopyFallback() noexcept { copy_fallbacks.fetch_add(1, std::memory_order_relaxed); }
 };
 
 namespace detail {
@@ -164,6 +172,10 @@ public:
   LUringStream(LUringStream&& other) noexcept;
   LUringStream& operator=(LUringStream&& other) noexcept;
 
+  // I/O and lifecycle operations are loop-affine: the coroutine must reach
+  // await_suspend() on this stream's owner LUringLoop. Calling them from a
+  // different thread violates the runtime contract and terminates through
+  // COROPACT_CHECK in every build configuration.
   [[nodiscard]]
   ReadSomeAwaiter ReadSome(std::span<std::byte> buffer) noexcept;
 
@@ -174,8 +186,7 @@ public:
   WriteSomeAwaiter WriteSome(std::span<const std::byte> buffer) noexcept;
 
   [[nodiscard]]
-  WriteSomePartsAwaiter WriteSome(
-      std::span<const backend::WritePart> buffers) noexcept;
+  WriteSomePartsAwaiter WriteSome(std::span<const backend::WritePart> buffers) noexcept;
 
   // Optional extension consumed by io::WriteAll. The default remains the
   // ordinary WriteSome() path; enabled streams use SendZeroCopy() and keep
@@ -185,9 +196,7 @@ public:
     return zero_copy_writes_enabled_;
   }
 
-  void SetZeroCopyWritesEnabled(bool enabled) noexcept {
-    zero_copy_writes_enabled_ = enabled;
-  }
+  void SetZeroCopyWritesEnabled(bool enabled) noexcept { zero_copy_writes_enabled_ = enabled; }
 
   void SetZeroCopyDiagnostics(ZeroCopySendDiagnostics* diagnostics) noexcept {
     zero_copy_diagnostics_ = diagnostics;
@@ -232,6 +241,7 @@ private:
 
   class CloseAwaiter;
 
+  void RequireOwnerLoop() const noexcept;
   void NotifyCloseProgress() noexcept;
   void ResetForMove() noexcept;
   static LUringLoop* PrepareMove(LUringStream& other) noexcept;
@@ -247,8 +257,7 @@ private:
   bool closed_{false};
 };
 
-class LUringStream::ReadSomeAwaiter
-    : public detail::LUringOpHook<LUringStream::ReadSomeAwaiter> {
+class LUringStream::ReadSomeAwaiter : public detail::LUringOpHook<LUringStream::ReadSomeAwaiter> {
 public:
   using OpHook = detail::LUringOpHook<ReadSomeAwaiter>;
 
@@ -279,15 +288,11 @@ private:
 };
 
 class LUringStream::ReadSomeForAwaiter
-    : public detail::LUringOpHook<LUringStream::ReadSomeForAwaiter,
-                                  detail::ReadSomeForReadTag>,
-      public detail::LUringOpHook<LUringStream::ReadSomeForAwaiter,
-                                  detail::ReadSomeForTimeoutTag> {
+    : public detail::LUringOpHook<LUringStream::ReadSomeForAwaiter, detail::ReadSomeForReadTag>,
+      public detail::LUringOpHook<LUringStream::ReadSomeForAwaiter, detail::ReadSomeForTimeoutTag> {
 public:
-  using ReadOpHook =
-      detail::LUringOpHook<ReadSomeForAwaiter, detail::ReadSomeForReadTag>;
-  using TimeoutOpHook =
-      detail::LUringOpHook<ReadSomeForAwaiter, detail::ReadSomeForTimeoutTag>;
+  using ReadOpHook = detail::LUringOpHook<ReadSomeForAwaiter, detail::ReadSomeForReadTag>;
+  using TimeoutOpHook = detail::LUringOpHook<ReadSomeForAwaiter, detail::ReadSomeForTimeoutTag>;
 
   COROPACT_DELETE_COPY_MOVE(ReadSomeForAwaiter);
 
@@ -325,8 +330,7 @@ private:
   operation::detail::CompositeLifecycle lifecycle_;
 };
 
-class LUringStream::WriteSomeAwaiter
-    : public detail::LUringOpHook<LUringStream::WriteSomeAwaiter> {
+class LUringStream::WriteSomeAwaiter : public detail::LUringOpHook<LUringStream::WriteSomeAwaiter> {
 public:
   using OpHook = detail::LUringOpHook<WriteSomeAwaiter>;
 
@@ -363,9 +367,7 @@ public:
 
   COROPACT_DELETE_COPY_MOVE(WriteSomePartsAwaiter);
 
-  WriteSomePartsAwaiter(
-      LUringStream& stream,
-      std::span<const backend::WritePart> buffers) noexcept
+  WriteSomePartsAwaiter(LUringStream& stream, std::span<const backend::WritePart> buffers) noexcept
       : OpHook(LUringOpKind::kWritePartsComplete), stream_(&stream), buffers_(buffers) {}
 
   [[nodiscard]]
@@ -392,7 +394,6 @@ private:
 
   std::array<iovec, kMaxParts> iovecs_{};
   msghdr message_{};
-
 };
 
 class LUringStream::SendZeroCopyAwaiter
@@ -402,16 +403,16 @@ public:
 
   COROPACT_DELETE_COPY_MOVE(SendZeroCopyAwaiter);
 
-  SendZeroCopyAwaiter(
-      LUringStream& stream,
-      std::span<const std::byte> buffer) noexcept
+  SendZeroCopyAwaiter(LUringStream& stream, std::span<const std::byte> buffer) noexcept
       : OpHook(LUringOpKind::kSendZeroCopyComplete),
         stream_(&stream),
         buffer_(buffer),
         diagnostics_(stream.zero_copy_diagnostics_) {}
 
   [[nodiscard]]
-  bool await_ready() const noexcept { return false; }
+  bool await_ready() const noexcept {
+    return false;
+  }
 
   [[nodiscard]]
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
@@ -419,14 +420,11 @@ public:
   base::Result<ZeroCopySendResult> await_resume() noexcept;
 
 private:
-  friend CompletionDisposition detail::DispatchSendZeroCopyComplete(
-      LUringOp* op,
-      CompletionEvent event) noexcept;
+  friend CompletionDisposition detail::DispatchSendZeroCopyComplete(LUringOp* op,
+                                                                    CompletionEvent event) noexcept;
 
   [[nodiscard]]
-  static CompletionDisposition OnComplete(
-      LUringOp* op,
-      CompletionEvent event) noexcept;
+  static CompletionDisposition OnComplete(LUringOp* op, CompletionEvent event) noexcept;
 
   void RecordFailure(ZeroCopySendErrorKind kind) noexcept {
     if (diagnostics_ != nullptr) {

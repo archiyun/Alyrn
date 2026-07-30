@@ -9,10 +9,10 @@
 #include <deque>
 #include <optional>
 
-#include "coropact/base/error.h"
-#include "coropact/coro/task.h"
 #include "coropact/backend/accept_source.h"
 #include "coropact/backend/async_listener.h"
+#include "coropact/base/error.h"
+#include "coropact/coro/task.h"
 #include "coropact/luring/detail/completion_dispatch.h"
 #include "coropact/luring/op.h"
 #include "coropact/luring/stream.h"
@@ -43,12 +43,9 @@ struct LUringListenOptions {
 class LUringAcceptSource {
   friend class LUringListener;
 
-  friend void detail::DispatchAcceptSourceComplete(
-      LUringOp* op,
-      CompletionEvent event) noexcept;
+  friend void detail::DispatchAcceptSourceComplete(LUringOp* op, CompletionEvent event) noexcept;
 
-  friend void detail::DispatchAcceptSourceCancelComplete(
-      LUringOp* op) noexcept;
+  friend void detail::DispatchAcceptSourceCancelComplete(LUringOp* op) noexcept;
 
 public:
   COROPACT_DELETE_COPY(LUringAcceptSource);
@@ -71,8 +68,7 @@ private:
 
   class AcceptOperation final : public LUringOp {
   public:
-    explicit AcceptOperation(LUringAcceptSource* source) noexcept
-        : source_(source) {
+    explicit AcceptOperation(LUringAcceptSource* source) noexcept : source_(source) {
       kind = LUringOpKind::kAcceptSourceComplete;
     }
 
@@ -92,8 +88,7 @@ private:
 
   class CancelOperation final : public LUringOp {
   public:
-    explicit CancelOperation(LUringAcceptSource* source) noexcept
-        : source_(source) {
+    explicit CancelOperation(LUringAcceptSource* source) noexcept : source_(source) {
       kind = LUringOpKind::kAcceptSourceCancelComplete;
     }
 
@@ -111,9 +106,8 @@ private:
     LUringAcceptSource* source_;
   };
 
-  LUringAcceptSource(
-      LUringListener* listener,
-      net::detail::AcceptSourceStateMachine state) noexcept;
+  LUringAcceptSource(LUringListener* listener,
+                     net::detail::AcceptSourceStateMachine state) noexcept;
 
   [[nodiscard]]
   base::Result<void> Start() noexcept;
@@ -128,8 +122,7 @@ private:
   base::Result<bool> BeginStop() noexcept;
 
   void EnsureSubmission() noexcept;
-  void RequestBackendStop(
-      std::optional<base::Error> error = std::nullopt) noexcept;
+  void RequestBackendStop(std::optional<base::Error> error = std::nullopt) noexcept;
 
   void OnCompletion(CompletionEvent event) noexcept;
   void OnCancelComplete(int cqe_res) noexcept;
@@ -175,21 +168,21 @@ public:
 
   using Stream = LUringStream;
 
-  static base::Result<LUringListener> Create(
-      LUringLoop* loop,
-      const net::Endpoint& listen_addr,
-      LUringListenOptions options = {}) noexcept;
+  static base::Result<LUringListener> Create(LUringLoop* loop, const net::Endpoint& listen_addr,
+                                             LUringListenOptions options = {}) noexcept;
 
   ~LUringListener();
 
   LUringListener(LUringListener&& other) noexcept;
   LUringListener& operator=(LUringListener&& other) noexcept;
 
+  // Accept, Close, and AcceptSource are loop-affine. Their coroutine or
+  // factory call must execute on this listener's owner LUringLoop; a foreign
+  // thread is a runtime-contract violation checked in every build.
   coro::Task<base::Result<LUringStream>> Accept();
 
   [[nodiscard]]
-  base::Result<LUringAcceptSource> AcceptSource(
-      net::AcceptSourceOptions options = {}) noexcept;
+  base::Result<LUringAcceptSource> AcceptSource(net::AcceptSourceOptions options = {}) noexcept;
 
   coro::Task<base::Result<void>> Close();
 
@@ -209,6 +202,7 @@ private:
   LUringListener(LUringLoop* loop, int fd, bool zero_copy_writes,
                  ZeroCopySendDiagnostics* zero_copy_diagnostics) noexcept;
 
+  void RequireOwnerLoop() const noexcept;
   void NotifyCloseProgress() noexcept;
   void ResetForMove() noexcept;
   static LUringLoop* PrepareMove(LUringListener& other) noexcept;

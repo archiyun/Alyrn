@@ -158,8 +158,12 @@ coropact::coro::DetachedTask WriteOnce(coropact::luring::LUringStream* stream,
                                        coropact::luring::LUringLoop* loop,
                                        std::span<const std::byte> buffer,
                                        std::optional<coropact::base::Result<std::size_t>>* out,
-                                       bool* resumed_with_scheduler) {
+                                       bool* resumed_with_scheduler,
+                                       int* resume_count = nullptr) {
   auto result = co_await stream->WriteSome(buffer);
+  if (resume_count != nullptr) {
+    ++*resume_count;
+  }
   *resumed_with_scheduler = coropact::coro::Scheduler::Current() == loop;
   out->emplace(std::move(result));
 }
@@ -304,6 +308,135 @@ bool CheckTimedReadTimeoutResumesOnce() {
 }
 
 #if defined(COROPACT_ENABLE_TEST_HOOKS)
+bool CheckReadSubmitFailureRollsBack() {
+  coropact::luring::LUringLoop loop;
+  switch (InitLoop(loop)) {
+    case LoopInitStatus::kReady:
+      break;
+    case LoopInitStatus::kSkip:
+      return true;
+    case LoopInitStatus::kFail:
+      return false;
+  }
+
+  UniqueFd local;
+  UniqueFd peer;
+  if (!CreateSocketPair(local, peer)) return false;
+
+  coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  std::array<std::byte, 16> buffer{};
+  std::optional<coropact::base::Result<std::size_t>> failed_result;
+  bool failed_with_scheduler = false;
+  int failed_resume_count = 0;
+
+  loop.FailNextSubmissionsForTesting(1, EIO);
+  coropact::coro::SpawnDetach(
+      loop, ReadOnce(&stream, &loop, buffer, &failed_result, &failed_with_scheduler,
+                     &failed_resume_count));
+  loop.RunReady();
+
+  if (!Check(failed_result.has_value(), "failed read coroutine did not finish") ||
+      !Check(!failed_result->has_value(), "failed read unexpectedly succeeded") ||
+      !Check(failed_result->error().value() == EIO, "failed read returned wrong error") ||
+      !Check(failed_resume_count == 1, "failed read resumed more than once") ||
+      !Check(failed_with_scheduler, "failed read resumed without current scheduler")) {
+    return false;
+  }
+
+  // A failed submission must release pending_read_. Otherwise this second
+  // read would report EBUSY rather than submitting normally.
+  constexpr std::string_view kPayload = "retry";
+  if (!WriteFd(peer.fd(), kPayload)) return false;
+
+  std::optional<coropact::base::Result<std::size_t>> retried_result;
+  bool retried_with_scheduler = false;
+  int retried_resume_count = 0;
+  coropact::coro::SpawnDetach(
+      loop, ReadOnce(&stream, &loop, buffer, &retried_result, &retried_with_scheduler,
+                     &retried_resume_count));
+  loop.RunReady();
+
+  auto completions = loop.WaitCompletions();
+  if (!completions.has_value()) {
+    std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+    return false;
+  }
+  loop.RunReady();
+
+  return Check(retried_result.has_value(), "retried read coroutine did not finish") &&
+         Check(retried_result->has_value(), "retried read returned an error") &&
+         Check(**retried_result == kPayload.size(), "retried read returned wrong byte count") &&
+         Check(retried_resume_count == 1, "retried read resumed more than once") &&
+         Check(retried_with_scheduler, "retried read resumed without current scheduler");
+}
+
+bool CheckWriteSubmitFailureRollsBack() {
+  coropact::luring::LUringLoop loop;
+  switch (InitLoop(loop)) {
+    case LoopInitStatus::kReady:
+      break;
+    case LoopInitStatus::kSkip:
+      return true;
+    case LoopInitStatus::kFail:
+      return false;
+  }
+
+  UniqueFd local;
+  UniqueFd peer;
+  if (!CreateSocketPair(local, peer)) return false;
+
+  coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  constexpr std::string_view kPayload = "retry";
+  auto bytes = std::as_bytes(std::span<const char>(kPayload.data(), kPayload.size()));
+
+  std::optional<coropact::base::Result<std::size_t>> failed_result;
+  bool failed_with_scheduler = false;
+  int failed_resume_count = 0;
+  loop.FailNextSubmissionsForTesting(1, EIO);
+  coropact::coro::SpawnDetach(
+      loop, WriteOnce(&stream, &loop, bytes, &failed_result, &failed_with_scheduler,
+                      &failed_resume_count));
+  loop.RunReady();
+
+  if (!Check(failed_result.has_value(), "failed write coroutine did not finish") ||
+      !Check(!failed_result->has_value(), "failed write unexpectedly succeeded") ||
+      !Check(failed_result->error().value() == EIO, "failed write returned wrong error") ||
+      !Check(failed_resume_count == 1, "failed write resumed more than once") ||
+      !Check(failed_with_scheduler, "failed write resumed without current scheduler")) {
+    return false;
+  }
+
+  std::optional<coropact::base::Result<std::size_t>> retried_result;
+  bool retried_with_scheduler = false;
+  int retried_resume_count = 0;
+  coropact::coro::SpawnDetach(
+      loop, WriteOnce(&stream, &loop, bytes, &retried_result, &retried_with_scheduler,
+                      &retried_resume_count));
+  loop.RunReady();
+
+  auto completions = loop.WaitCompletions();
+  if (!completions.has_value()) {
+    std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+    return false;
+  }
+  loop.RunReady();
+
+  std::array<char, 16> read_buffer{};
+  const ssize_t received = ::read(peer.fd(), read_buffer.data(), read_buffer.size());
+  if (received < 0) {
+    std::cout << "FAIL: peer read failed: " << errno << '\n';
+    return false;
+  }
+
+  return Check(retried_result.has_value(), "retried write coroutine did not finish") &&
+         Check(retried_result->has_value(), "retried write returned an error") &&
+         Check(**retried_result == kPayload.size(), "retried write returned wrong byte count") &&
+         Check(retried_resume_count == 1, "retried write resumed more than once") &&
+         Check(retried_with_scheduler, "retried write resumed without current scheduler") &&
+         Check(std::string_view(read_buffer.data(), static_cast<std::size_t>(received)) == kPayload,
+               "retried write payload mismatch");
+}
+
 bool CheckTimedReadTimeoutSubmitFailureResumesOnce() {
   coropact::luring::LUringLoop loop;
   switch (InitLoop(loop)) {
@@ -551,6 +684,8 @@ int main() {
   if (!CheckTimedReadSuccessResumesOnce()) return 1;
   if (!CheckTimedReadTimeoutResumesOnce()) return 1;
 #if defined(COROPACT_ENABLE_TEST_HOOKS)
+  if (!CheckReadSubmitFailureRollsBack()) return 1;
+  if (!CheckWriteSubmitFailureRollsBack()) return 1;
   if (!CheckTimedReadTimeoutSubmitFailureResumesOnce()) return 1;
 #endif
   if (!CheckWriteSome()) return 1;

@@ -17,6 +17,7 @@
 #include "coropact/base/error.h"
 #include "coropact/base/try.h"
 #include "coropact/luring/detail/close_state.h"
+#include "coropact/luring/detail/operation_submission.h"
 #include "coropact/luring/loop.h"
 #include "coropact/luring/op.h"
 #include "coropact/luring/stream.h"
@@ -275,9 +276,8 @@ base::Result<LUringStream> LUringAcceptSource::MakeStream(int accepted_fd) noexc
     return std::unexpected(error);
   }
 
-  LUringStream stream(
-      listener_->loop_, accepted_fd,
-      net::Endpoint(reinterpret_cast<const sockaddr*>(&peer), peer_len));
+  LUringStream stream(listener_->loop_, accepted_fd,
+                      net::Endpoint(reinterpret_cast<const sockaddr*>(&peer), peer_len));
   stream.SetZeroCopyWritesEnabled(listener_->zero_copy_writes_);
   stream.SetZeroCopyDiagnostics(listener_->zero_copy_diagnostics_);
   return stream;
@@ -300,13 +300,12 @@ base::Result<void> LUringAcceptSource::StartOperation() noexcept {
   ++listener_->pending_accepts_;
 
   auto submitted = listener_->loop_->SubmitOp(
-      &accept_op_, [fd = listener_->fd_, multishot = multishot_enabled_](io_uring_sqe* sqe) noexcept {
+      &accept_op_,
+      [fd = listener_->fd_, multishot = multishot_enabled_](io_uring_sqe* sqe) noexcept {
         if (multishot) {
-          io_uring_prep_multishot_accept(
-              sqe, fd, nullptr, nullptr, SOCK_NONBLOCK | SOCK_CLOEXEC);
+          io_uring_prep_multishot_accept(sqe, fd, nullptr, nullptr, SOCK_NONBLOCK | SOCK_CLOEXEC);
         } else {
-          io_uring_prep_accept(
-              sqe, fd, nullptr, nullptr, SOCK_NONBLOCK | SOCK_CLOEXEC);
+          io_uring_prep_accept(sqe, fd, nullptr, nullptr, SOCK_NONBLOCK | SOCK_CLOEXEC);
         }
       });
 
@@ -638,6 +637,7 @@ public:
   bool await_ready() const noexcept { return false; }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
+    listener_->RequireOwnerLoop();
     if (listener_->closed_ || listener_->fd_ < 0) {
       immediate_.emplace(std::unexpected(base::MakeErrno(EBADF)));
       return false;
@@ -648,21 +648,18 @@ public:
     }
     ++listener_->pending_accepts_;
     Op()->kind = LUringOpKind::kAcceptComplete;
-    Op()->resume_work.SetHandle(continuation);
     peer_len_ = static_cast<socklen_t>(sizeof(peer_addr_));
 
-    auto submitted =
-        listener_->loop_->SubmitOp(Op(), [this, fd = listener_->fd_](io_uring_sqe* sqe) noexcept {
+    return detail::SubmitAwaitingOperation(
+        *listener_->loop_, *Op(), continuation,
+        [this, fd = listener_->fd_](io_uring_sqe* sqe) noexcept {
           io_uring_prep_accept(sqe, fd, reinterpret_cast<sockaddr*>(&peer_addr_), &peer_len_,
                                SOCK_NONBLOCK | SOCK_CLOEXEC);
+        },
+        [this](base::Error error) noexcept {
+          --listener_->pending_accepts_;
+          immediate_.emplace(std::unexpected(error));
         });
-
-    if (!submitted.has_value()) {
-      --listener_->pending_accepts_;
-      immediate_.emplace(std::unexpected(submitted.error()));
-      return false;
-    }
-    return true;
   }
 
   AcceptResult await_resume() noexcept {
@@ -686,10 +683,8 @@ private:
         self->immediate_ =
             MakeStream(listener->loop_, *op->result, self->peer_addr_, self->peer_len_);
         if (self->immediate_->has_value()) {
-          self->immediate_->value().SetZeroCopyWritesEnabled(
-              listener->zero_copy_writes_);
-          self->immediate_->value().SetZeroCopyDiagnostics(
-              listener->zero_copy_diagnostics_);
+          self->immediate_->value().SetZeroCopyWritesEnabled(listener->zero_copy_writes_);
+          self->immediate_->value().SetZeroCopyDiagnostics(listener->zero_copy_diagnostics_);
         }
       }
 
@@ -718,6 +713,7 @@ public:
   bool await_ready() const noexcept { return false; }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
+    listener_->RequireOwnerLoop();
     if (listener_->pending_close_ != nullptr) {
       state_.SetError(base::MakeErrno(EBUSY));
       return false;
@@ -831,27 +827,26 @@ void DispatchAcceptSourceCancelComplete(LUringOp* op) noexcept {
 }  // namespace detail
 
 base::Result<LUringListener> LUringListener::Create(LUringLoop* loop,
-                                                    const net::Endpoint& listen_addr,
-                                                    LUringListenOptions options) noexcept {
-  assert(loop != nullptr);
-  assert(loop->IsInLoopThread());
+                                                     const net::Endpoint& listen_addr,
+                                                     LUringListenOptions options) noexcept {
+  COROPACT_CHECK(loop != nullptr, "LUringListener requires an owner loop");
+  COROPACT_CHECK(loop->IsInLoopThread(),
+                 "LUringListener created from wrong LUringLoop thread");
 
-  return LUringListener(
-      loop, COROPACT_TRY(CreatedListenFd(listen_addr, options)),
-      options.zero_copy_writes, options.zero_copy_diagnostics);
+  return LUringListener(loop, COROPACT_TRY(CreatedListenFd(listen_addr, options)),
+                        options.zero_copy_writes, options.zero_copy_diagnostics);
 }
 
-LUringListener::LUringListener(
-    LUringLoop* loop,
-    int fd,
-    bool zero_copy_writes,
-    ZeroCopySendDiagnostics* zero_copy_diagnostics) noexcept
+LUringListener::LUringListener(LUringLoop* loop, int fd, bool zero_copy_writes,
+                               ZeroCopySendDiagnostics* zero_copy_diagnostics) noexcept
     : loop_(loop),
       fd_(fd),
       zero_copy_writes_(zero_copy_writes),
       zero_copy_diagnostics_(zero_copy_diagnostics) {
-  assert(loop_ != nullptr);
-  assert(fd_ >= 0);
+  COROPACT_CHECK(loop_ != nullptr, "LUringListener requires an owner loop");
+  COROPACT_CHECK(loop_->IsInLoopThread(),
+                 "LUringListener created from wrong LUringLoop thread");
+  COROPACT_CHECK(fd_ >= 0, "LUringListener requires a valid file descriptor");
 }
 
 LUringListener::LUringListener(LUringListener&& other) noexcept
@@ -914,6 +909,7 @@ base::Result<net::Endpoint> LUringListener::LocalAddress() const noexcept {
 
 base::Result<LUringAcceptSource> LUringListener::AcceptSource(
     net::AcceptSourceOptions options) noexcept {
+  RequireOwnerLoop();
   if (closed_ || fd_ < 0) {
     return std::unexpected(base::MakeErrno(EBADF));
   }
@@ -923,6 +919,12 @@ base::Result<LUringAcceptSource> LUringListener::AcceptSource(
 
   auto state = COROPACT_TRY(net::detail::AcceptSourceStateMachine::Create(options));
   return LUringAcceptSource(this, std::move(state));
+}
+
+void LUringListener::RequireOwnerLoop() const noexcept {
+  COROPACT_CHECK(loop_ != nullptr, "LUringListener operation has no owner loop");
+  COROPACT_CHECK(loop_->IsInLoopThread(),
+                 "LUringListener operation called from wrong LUringLoop thread");
 }
 
 void LUringListener::NotifyCloseProgress() noexcept {
