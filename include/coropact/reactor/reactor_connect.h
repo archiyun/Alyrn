@@ -8,8 +8,8 @@
 
 #include "coropact/base/error.h"
 #include "coropact/coro/task.h"
-#include "coropact/reactor/event_loop.h"
 #include "coropact/net/endpoint.h"
+#include "coropact/reactor/event_loop.h"
 #include "coropact/reactor/reactor_stream.h"
 #include "coropact/utils/macros.h"
 
@@ -34,6 +34,8 @@ public:
   coro::Task<void> SleepFor(std::chrono::milliseconds delay);
 
 private:
+  void RequireOwnerLoop() const noexcept;
+
   EventLoop* loop_;
 };
 

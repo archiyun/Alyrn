@@ -126,13 +126,13 @@ base::Error SocketError(int fd) noexcept {
 }  // namespace
 
 bool ReactorStream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
+  stream_->RequireOwnerLoop();
   if (stream_->closed_ || stream_->socket_.fd() < 0) {
     result_.SetError(base::MakeErrno(EBADF));
     COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
     return false;
   }
 
-  COROPACT_DCHECK(stream_->loop_->IsInLoopThread(), "ReadSomeAwaiter: wrong EventLoop thread");
   COROPACT_DCHECK(stream_->pending_read_ == nullptr,
                   "ReadSomeAwaiter: only one pending read is supported per stream");
 
@@ -197,13 +197,13 @@ ReactorStream::BufferReadAwaiter::BufferReadAwaiter(ReactorStream& stream, net::
 
 bool ReactorStream::BufferReadAwaiter::await_suspend(
     std::coroutine_handle<> continuation) noexcept {
+  stream_->RequireOwnerLoop();
   if (stream_->closed_ || stream_->socket_.fd() < 0) {
     result_.SetError(base::MakeErrno(EBADF));
     COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
     return false;
   }
 
-  COROPACT_DCHECK(stream_->loop_->IsInLoopThread(), "BufferReadAwaiter: wrong EventLoop thread");
   COROPACT_DCHECK(stream_->pending_read_ == nullptr,
                   "BufferReadAwaiter: only one pending read is supported per stream");
 
@@ -289,13 +289,13 @@ void ReactorStream::BufferReadAwaiter::FinishAttempt(base::Result<std::size_t> r
 }
 
 bool ReactorStream::WriteSomeAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
+  stream_->RequireOwnerLoop();
   if (stream_->closed_ || stream_->socket_.fd() < 0) {
     result_.SetError(base::MakeErrno(EBADF));
     COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
     return false;
   }
 
-  COROPACT_DCHECK(stream_->loop_->IsInLoopThread(), "WriteSomeAwaiter: wrong EventLoop thread");
   COROPACT_DCHECK(stream_->pending_write_ == nullptr,
                   "WriteSomeAwaiter: only one pending write is supported per stream");
 
@@ -342,13 +342,13 @@ ReactorStream::BufferWriteAwaiter::BufferWriteAwaiter(ReactorStream& stream,
 
 bool ReactorStream::BufferWriteAwaiter::await_suspend(
     std::coroutine_handle<> continuation) noexcept {
+  stream_->RequireOwnerLoop();
   if (stream_->closed_ || stream_->socket_.fd() < 0) {
     result_.SetError(base::MakeErrno(EBADF));
     COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
     return false;
   }
 
-  COROPACT_DCHECK(stream_->loop_->IsInLoopThread(), "BufferWriteAwaiter: wrong EventLoop thread");
   COROPACT_DCHECK(stream_->pending_write_ == nullptr,
                   "BufferWriteAwaiter: only one pending write is supported per stream");
 
@@ -424,7 +424,8 @@ void ReactorStream::BufferWriteAwaiter::FinishAttempt(base::Result<std::size_t> 
 
 ReactorStream::ReactorStream(EventLoop* loop, int fd, net::Endpoint peer)
     : loop_(loop), socket_(fd), channel_(loop, fd), peer_(peer) {
-  COROPACT_DCHECK(loop_ != nullptr, "ReactorStream: loop must not be null");
+  COROPACT_CHECK(loop_ != nullptr, "ReactorStream: loop must not be null");
+  COROPACT_CHECK(loop_->IsInLoopThread(), "ReactorStream created from wrong EventLoop thread");
   [[maybe_unused]] auto nonblocking = net::set_non_blocking(fd, true);
   COROPACT_DCHECK(nonblocking.has_value(), "ReactorStream: failed to set non-blocking mode");
 
@@ -471,7 +472,7 @@ ReactorStream::~ReactorStream() {
   if (loop_ == nullptr) {
     return;
   }
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "ReactorStream destructor called from wrong thread");
+  RequireOwnerLoop();
   COROPACT_DCHECK(pending_read_ == nullptr, "ReactorStream destroyed with a pending read");
   COROPACT_DCHECK(pending_write_ == nullptr, "ReactorStream destroyed with a pending write");
   DetachChannel();
@@ -507,6 +508,7 @@ ReactorStream::BufferWriteAwaiter ReactorStream::WriteSome(net::Buffer& buffer) 
 }
 
 coro::Task<base::Result<void>> ReactorStream::Shutdown() {
+  RequireOwnerLoop();
   if (closed_) {
     co_return std::unexpected(base::MakeErrno(EBADF));
   }
@@ -515,6 +517,7 @@ coro::Task<base::Result<void>> ReactorStream::Shutdown() {
 }
 
 coro::Task<base::Result<void>> ReactorStream::Close() {
+  RequireOwnerLoop();
   if (closed_) {
     co_return base::Result<void>{};
   }
@@ -632,6 +635,12 @@ void ReactorStream::DetachChannel() {
   if (loop_->HasChannel(&channel_)) {
     channel_.Remove();
   }
+}
+
+void ReactorStream::RequireOwnerLoop() const noexcept {
+  COROPACT_CHECK(loop_ != nullptr, "ReactorStream operation has no owner EventLoop");
+  COROPACT_CHECK(loop_->IsInLoopThread(),
+                 "ReactorStream operation called from wrong EventLoop thread");
 }
 
 void ReactorStream::DispatchRead(void* context, coropact::time::Timestamp receive_time) noexcept {
