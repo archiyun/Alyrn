@@ -32,6 +32,7 @@ public:
   using Event = RecvEvent;
 
   Task<Result<std::optional<Event>>> Next();
+  Result<void> RequestStop() noexcept;
   Task<Result<void>> Stop();
 };
 

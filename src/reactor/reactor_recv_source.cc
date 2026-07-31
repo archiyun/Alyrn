@@ -565,6 +565,20 @@ coro::Task<ReactorRecvSource::Result> ReactorRecvSource::Next() {
   co_return co_await NextAwaiter(*this);
 }
 
+base::Result<void> ReactorRecvSource::RequestStop() noexcept {
+  if (loop_ == nullptr) {
+    return {};
+  }
+  if (!loop_->IsInLoopThread()) {
+    return std::unexpected(base::MakeErrno(EINVAL));
+  }
+  auto waiting = BeginStop();
+  if (!waiting.has_value()) {
+    return std::unexpected(waiting.error());
+  }
+  return {};
+}
+
 coro::Task<base::Result<void>> ReactorRecvSource::Stop() {
   if (loop_ == nullptr) {
     co_return base::Result<void>{};

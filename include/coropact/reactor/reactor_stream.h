@@ -75,6 +75,19 @@ public:
     return peer_;
   }
 
+  // Native extensions such as ReactorRecvSource may borrow this descriptor
+  // while this stream retains ownership. They must run on the owning loop and
+  // finish before Close() releases the descriptor.
+  [[nodiscard]]
+  int Fd() const noexcept {
+    return socket_.fd();
+  }
+
+  [[nodiscard]]
+  EventLoop* Loop() const noexcept {
+    return loop_;
+  }
+
 private:
   void HandleRead(time::Timestamp receive_time);
   void HandleWrite();
