@@ -30,6 +30,12 @@ namespace {
 std::atomic_bool g_stop{false};
 void OnSignal(int) noexcept { g_stop.store(true, std::memory_order_relaxed); }
 
+#if defined(COROPACT_LIBUV_HAS_TCP_REUSEPORT)
+constexpr int kLibuvBindFlags = UV_TCP_REUSEPORT;
+#else
+constexpr int kLibuvBindFlags = 0;
+#endif
+
 struct Worker;
 struct Connection {
   uv_tcp_t tcp{};
@@ -155,7 +161,7 @@ void RunWorker(Worker* worker) {
   sockaddr_in address{};
   uv_ip4_addr("127.0.0.1", worker->port, &address);
   if (uv_tcp_bind(&worker->listener, reinterpret_cast<const sockaddr*>(&address),
-                  UV_TCP_REUSEPORT) < 0 ||
+                  kLibuvBindFlags) < 0 ||
       uv_listen(reinterpret_cast<uv_stream_t*>(&worker->listener), 4096, OnConnection) < 0) {
     uv_close(reinterpret_cast<uv_handle_t*>(&worker->listener), nullptr);
     uv_run(&worker->loop, UV_RUN_DEFAULT);
@@ -179,8 +185,13 @@ int main() {
   std::signal(SIGINT, OnSignal);
   std::signal(SIGTERM, OnSignal);
   const auto port = static_cast<std::uint16_t>(coropact_bench::EnvInt("PORT", 19090));
-  const std::size_t workers = coropact_bench::EnvSize("LIBUV_WORKERS", 4);
-  if (port == 0 || workers == 0) return 2;
+  const std::size_t requested_workers = coropact_bench::EnvSize("LIBUV_WORKERS", 4);
+  if (port == 0 || requested_workers == 0) return 2;
+#if defined(COROPACT_LIBUV_HAS_TCP_REUSEPORT)
+  const std::size_t workers = requested_workers;
+#else
+  const std::size_t workers = 1;
+#endif
 
   std::vector<Worker> worker_state(workers);
   std::vector<std::thread> worker_threads;
