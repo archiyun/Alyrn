@@ -3,6 +3,8 @@
 
 #include "coropact/reactor/event_loop_scheduler.h"
 
+#include <utility>
+
 #include "coropact/base/error.h"
 
 namespace coropact::reactor {
@@ -19,11 +21,12 @@ base::Result<EventLoopScheduler> EventLoopScheduler::Create(
 }
 
 EventLoopScheduler::EventLoopScheduler(EventLoopScheduler&& other) noexcept
-    : loop_(std::exchange(other.loop_, nullptr)) {}
+    : Scheduler(other.FrameResource()), loop_(std::exchange(other.loop_, nullptr)) {}
 
 EventLoopScheduler& EventLoopScheduler::operator=(EventLoopScheduler&& other) noexcept {
   if (this != &other) {
     loop_ = std::exchange(other.loop_, nullptr);
+    SetFrameResource(other.FrameResource());
   }
   return *this;
 }
