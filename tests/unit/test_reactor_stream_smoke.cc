@@ -24,6 +24,7 @@
 #include "coropact/coro/sync_wait.h"
 #include "coropact/coro/task.h"
 #include "coropact/io/async_stream.h"
+#include "coropact/io/buffer.h"
 #include "coropact/io/stream_algorithms.h"
 #include "coropact/reactor/event_loop.h"
 #include "coropact/reactor/event_loop_scheduler.h"
