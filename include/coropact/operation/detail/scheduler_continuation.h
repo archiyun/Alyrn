@@ -7,6 +7,7 @@
 
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/work.h"
+#include "coropact/utils/macros.h"
 
 namespace coropact::operation::detail {
 
@@ -19,8 +20,13 @@ namespace coropact::operation::detail {
 // and destroy the awaiter that owns this object, so callers must not access the
 // owner after calling it.
 class SchedulerContinuation {
- public:
+public:
+  COROPACT_DELETE_COPY_MOVE(SchedulerContinuation);
+
+  SchedulerContinuation() noexcept = default;
+
   void Bind(std::coroutine_handle<> handle) noexcept {
+    assert(!Bound());
     scheduler_ = &coro::Scheduler::RequireCurrent();
     resume_work_.SetHandle(handle);
   }
@@ -32,7 +38,7 @@ class SchedulerContinuation {
     scheduler_->Schedule(&resume_work_);
   }
 
- private:
+private:
   coro::Scheduler* scheduler_{nullptr};
   coro::ResumeWork resume_work_;
 };

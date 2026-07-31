@@ -479,33 +479,33 @@ ReactorStream::~ReactorStream() {
 }
 
 ReactorStream::ReadSomeAwaiter ReactorStream::ReadSome(std::span<std::byte> buffer) noexcept {
-  return ReadSomeAwaiter(*this, buffer);
+  return ReadSomeAwaiter{*this, buffer};
 }
 
 ReactorStream::BufferReadAwaiter ReactorStream::ReadSome(
     net::SegmentedBuffer& buffer, std::size_t reserve) noexcept {
-  return BufferReadAwaiter(*this, buffer, reserve);
+  return BufferReadAwaiter{*this, buffer, reserve};
 }
 
 ReactorStream::ReadSomeAwaiter ReactorStream::ReadSomeFor(
     std::span<std::byte> buffer, std::chrono::milliseconds timeout) noexcept {
-  return ReadSomeAwaiter(*this, buffer, timeout);
+  return ReadSomeAwaiter{*this, buffer, timeout};
 }
 
 ReactorStream::BufferReadAwaiter ReactorStream::ReadSomeFor(
     net::SegmentedBuffer& buffer, std::chrono::milliseconds timeout,
     std::size_t reserve) noexcept {
-  return BufferReadAwaiter(*this, buffer, reserve, timeout);
+  return BufferReadAwaiter{*this, buffer, reserve, timeout};
 }
 
 ReactorStream::WriteSomeAwaiter ReactorStream::WriteSome(
     std::span<const std::byte> buffer) noexcept {
-  return WriteSomeAwaiter(*this, buffer);
+  return WriteSomeAwaiter{*this, buffer};
 }
 
 ReactorStream::BufferWriteAwaiter ReactorStream::WriteSome(
     net::SegmentedBuffer& buffer) noexcept {
-  return BufferWriteAwaiter(*this, buffer);
+  return BufferWriteAwaiter{*this, buffer};
 }
 
 coro::Task<base::Result<void>> ReactorStream::Shutdown() {

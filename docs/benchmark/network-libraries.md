@@ -25,7 +25,8 @@
 
 ## 对比目标
 
-- **Reactor**：CoroPact 的 epoll `ReactorWorkerGroup` 后端。
+- **Reactor**：CoroPact 的 epoll `ReactorWorkerGroup` 后端；本轮 A/B 可通过
+  `FRAME_POOL=0/1` 切换每 worker 的协程帧池。
 - **CoroPact luring**：CoroPact 的协程 io_uring 后端，`FRAME_POOL=1`。
 - **raw liburing**：原生 liburing 状态机，不使用 CoroPact 协程封装。
 - **Asio**：standalone Asio 1.38.2。
@@ -132,7 +133,7 @@ OUTDIR=/tmp/coropact-network-libraries-$(date +%Y%m%d-%H%M%S) \
 ./docs/benchmark/summarize_network_libraries.sh "$OUTDIR"
 ```
 
-可用环境变量覆盖 `LEVELS`、`WARMUP`、`DURATION`、`ROUNDS`、`THREADS`、`WORKERS`、`FRAME_POOL` 和 `TARGETS`。例如短试跑：
+可用环境变量覆盖 `LEVELS`、`WARMUP`、`DURATION`、`ROUNDS`、`THREADS`、`WORKERS`、`FRAME_POOL` 和 `TARGETS`。Reactor 的 `FRAME_POOL` 默认关闭；开启时每个 worker 使用独立的 `CoroFramePoolResource`。例如短试跑：
 
 ```bash
 WARMUP=1s DURATION=2s ROUNDS=1 LEVELS="100 1000" \
