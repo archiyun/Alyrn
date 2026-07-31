@@ -11,11 +11,12 @@
 #include <chrono>
 #include <coroutine>
 #include <cstddef>
+#include <cstdint>
 #include <expected>
+#include <limits>
 #include <new>
 #include <span>
 #include <utility>
-#include <vector>
 
 #include "coropact/base/check.h"
 #include "coropact/base/error.h"
@@ -24,94 +25,133 @@
 namespace coropact::reactor {
 namespace {
 
-bool IsWouldBlock(int err) noexcept { return err == EAGAIN || err == EWOULDBLOCK; }
+[[nodiscard]]
+constexpr bool IsWouldBlock(int error) noexcept {
+  return error == EAGAIN || error == EWOULDBLOCK;
+}
 
-struct IoAttempt {
-  bool pending{false};
-  base::Result<std::size_t> result{0};
+enum class IoAttemptState : std::uint8_t {
+  kCompleted,
+  kWouldBlock,
 };
 
+struct IoAttempt {
+  IoAttemptState state{IoAttemptState::kCompleted};
+  base::Result<std::size_t> result{0};
+
+  [[nodiscard]]
+  static IoAttempt Completed(std::size_t bytes) noexcept {
+    return {
+        .state = IoAttemptState::kCompleted,
+        .result = bytes,
+    };
+  }
+
+  [[nodiscard]]
+  static IoAttempt WouldBlock() noexcept {
+    return {
+        .state = IoAttemptState::kWouldBlock,
+        .result = std::size_t{0},
+    };
+  }
+
+  [[nodiscard]]
+  static IoAttempt Failed(base::Error error) noexcept {
+    return {
+        .state = IoAttemptState::kCompleted,
+        .result = std::unexpected(error),
+    };
+  }
+
+  [[nodiscard]]
+  bool Pending() const noexcept {
+    return state == IoAttemptState::kWouldBlock;
+  }
+};
+
+template <typename Operation>
+[[nodiscard]]
+IoAttempt RetryNonBlockingIo(Operation&& operation) noexcept {
+  while (true) {
+    const ssize_t result = operation();
+    if (result >= 0) {
+      return IoAttempt::Completed(static_cast<std::size_t>(result));
+    }
+
+    const int error = errno;
+    if (error == EINTR) {
+      continue;
+    }
+    if (IsWouldBlock(error)) {
+      return IoAttempt::WouldBlock();
+    }
+    return IoAttempt::Failed(base::MakeErrno(error));
+  }
+}
+
+[[nodiscard]]
 IoAttempt TryRead(int fd, std::span<std::byte> buffer) noexcept {
-  while (true) {
-    const ssize_t n = ::read(fd, buffer.data(), buffer.size());
-    if (n >= 0) {
-      return {.pending = false, .result = static_cast<std::size_t>(n)};
-    }
-
-    const int err = errno;
-    if (err == EINTR) {
-      continue;
-    }
-    if (IsWouldBlock(err)) {
-      return {.pending = true, .result = 0};
-    }
-    return {.pending = false, .result = std::unexpected(base::MakeErrno(err))};
-  }
+  return RetryNonBlockingIo(
+      [fd, buffer]() noexcept { return ::read(fd, buffer.data(), buffer.size()); });
 }
 
+[[nodiscard]]
 IoAttempt TryWrite(int fd, std::span<const std::byte> buffer) noexcept {
-  while (true) {
-    const ssize_t n = ::write(fd, buffer.data(), buffer.size());
-    if (n >= 0) {
-      return {.pending = false, .result = static_cast<std::size_t>(n)};
-    }
-
-    const int err = errno;
-    if (err == EINTR) {
-      continue;
-    }
-    if (IsWouldBlock(err)) {
-      return {.pending = true, .result = 0};
-    }
-    return {.pending = false, .result = std::unexpected(base::MakeErrno(err))};
-  }
+  return RetryNonBlockingIo(
+      [fd, buffer]() noexcept { return ::write(fd, buffer.data(), buffer.size()); });
 }
 
-IoAttempt TryReadv(int fd, const std::vector<iovec>& iovs) noexcept {
-  if (iovs.empty()) {
-    return {.pending = false, .result = 0};
+[[nodiscard]]
+base::Result<int> CheckedIovCount(std::size_t count) noexcept {
+  if (count > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+    return std::unexpected(base::MakeErrno(EINVAL));
   }
 
-  while (true) {
-    const ssize_t n = ::readv(fd, iovs.data(), static_cast<int>(iovs.size()));
-    if (n >= 0) {
-      return {.pending = false, .result = static_cast<std::size_t>(n)};
-    }
-
-    const int err = errno;
-    if (err == EINTR) {
-      continue;
-    }
-    if (IsWouldBlock(err)) {
-      return {.pending = true, .result = 0};
-    }
-    return {.pending = false, .result = std::unexpected(base::MakeErrno(err))};
+#if defined(IOV_MAX)
+  if (count > static_cast<std::size_t>(IOV_MAX)) {
+    return std::unexpected(base::MakeErrno(EINVAL));
   }
+#endif
+
+  return static_cast<int>(count);
 }
 
-IoAttempt TryWritev(int fd, const std::vector<iovec>& iovs) noexcept {
-  if (iovs.empty()) {
-    return {.pending = false, .result = 0};
+[[nodiscard]]
+IoAttempt TryReadv(int fd, std::span<const iovec> buffers) noexcept {
+  if (buffers.empty()) {
+    return IoAttempt::Completed(0);
   }
 
-  while (true) {
-    const ssize_t n = ::writev(fd, iovs.data(), static_cast<int>(iovs.size()));
-    if (n >= 0) {
-      return {.pending = false, .result = static_cast<std::size_t>(n)};
-    }
-
-    const int err = errno;
-    if (err == EINTR) {
-      continue;
-    }
-    if (IsWouldBlock(err)) {
-      return {.pending = true, .result = 0};
-    }
-    return {.pending = false, .result = std::unexpected(base::MakeErrno(err))};
+  auto count = CheckedIovCount(buffers.size());
+  if (!count.has_value()) {
+    return IoAttempt::Failed(count.error());
   }
+
+  return RetryNonBlockingIo([fd, buffers, iov_count = *count]() noexcept {
+    return ::readv(fd, buffers.data(), iov_count);
+  });
 }
 
-base::Error SocketError(int fd) noexcept {
+[[nodiscard]]
+IoAttempt TryWritev(int fd, std::span<const iovec> buffers) noexcept {
+  if (buffers.empty()) {
+    return IoAttempt::Completed(0);
+  }
+
+  auto count = CheckedIovCount(buffers.size());
+  if (!count.has_value()) {
+    return IoAttempt::Failed(count.error());
+  }
+
+  return RetryNonBlockingIo([fd, buffers, iov_count = *count]() noexcept {
+    return ::writev(fd, buffers.data(), iov_count);
+  });
+}
+
+// Called only after a reactor error event. SO_ERROR == 0 is inconsistent with
+// that event, so use EIO as a stable error result rather than reporting errno 0.
+[[nodiscard]]
+base::Error ErrorFromSocketErrorEvent(int fd) noexcept {
   int err = 0;
   auto len = static_cast<socklen_t>(sizeof(err));
   if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) < 0) {
@@ -138,7 +178,7 @@ bool ReactorStream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> conti
 
   continuation_.Bind(continuation);
   IoAttempt attempt = TryRead(stream_->socket_.fd(), buffer_);
-  if (!attempt.pending) {
+  if (!attempt.Pending()) {
     result_.SetResult(attempt.result);
     COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
     return false;
@@ -181,7 +221,7 @@ void ReactorStream::ReadSomeAwaiter::CompleteImpl(base::Result<std::size_t> resu
 
 void ReactorStream::ReadSomeAwaiter::OnReadyImpl() noexcept {
   IoAttempt attempt = TryRead(stream_->socket_.fd(), buffer_);
-  if (attempt.pending) {
+  if (attempt.Pending()) {
     return;
   }
   stream_->CompleteRead(std::move(attempt.result));
@@ -215,7 +255,7 @@ bool ReactorStream::BufferReadAwaiter::await_suspend(
   }
 
   IoAttempt attempt = TryReadv(stream_->socket_.fd(), iovs_);
-  if (!attempt.pending) {
+  if (!attempt.Pending()) {
     FinishAttempt(std::move(attempt.result));
     COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
     return false;
@@ -258,7 +298,7 @@ void ReactorStream::BufferReadAwaiter::CompleteImpl(base::Result<std::size_t> re
 
 void ReactorStream::BufferReadAwaiter::OnReadyImpl() noexcept {
   IoAttempt attempt = TryReadv(stream_->socket_.fd(), iovs_);
-  if (attempt.pending) {
+  if (attempt.Pending()) {
     return;
   }
   stream_->CompleteRead(std::move(attempt.result));
@@ -288,6 +328,98 @@ void ReactorStream::BufferReadAwaiter::FinishAttempt(base::Result<std::size_t> r
   result_.SetResult(result);
 }
 
+ReactorStream::ReadIntoAwaiter::ReadIntoAwaiter(ReactorStream& stream, net::Buffer buffer,
+                                                std::size_t reserve) noexcept
+    : stream_(&stream), buffer_(std::move(buffer)), reserve_(std::max<std::size_t>(reserve, 1)) {}
+
+bool ReactorStream::ReadIntoAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
+  stream_->RequireOwnerLoop();
+  if (stream_->closed_ || stream_->socket_.fd() < 0) {
+    result_.SetError(base::MakeErrno(EBADF));
+    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+    return false;
+  }
+  if (stream_->pending_read_ != nullptr) {
+    result_.SetError(base::MakeErrno(EBUSY));
+    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+    return false;
+  }
+
+  continuation_.Bind(continuation);
+  if (!PrepareReservation()) {
+    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+    return false;
+  }
+
+  IoAttempt attempt = TryReadv(stream_->socket_.fd(), iovs_);
+  if (!attempt.Pending()) {
+    FinishAttempt(std::move(attempt.result));
+    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+    return false;
+  }
+
+  stream_->pending_read_ = this;
+  stream_->pending_read_kind_ = ReactorStream::PendingReadKind::kReadInto;
+  if (!stream_->channel_.IsReading()) {
+    stream_->channel_.EnableReading();
+  }
+  return true;
+}
+
+net::ReadIntoOutcome ReactorStream::ReadIntoAwaiter::await_resume() noexcept {
+  COROPACT_DCHECK(result_.HasResult(), "ReadIntoAwaiter: result is not ready");
+  return {
+      .result = result_.Take(),
+      .buffer = std::move(buffer_),
+  };
+}
+
+void ReactorStream::ReadIntoAwaiter::CompleteImpl(base::Result<std::size_t> result) noexcept {
+  if (!completion_gate_.TryComplete()) {
+    return;
+  }
+  FinishAttempt(std::move(result));
+  stream_ = nullptr;
+  continuation_.Schedule();
+}
+
+void ReactorStream::ReadIntoAwaiter::OnReadyImpl() noexcept {
+  IoAttempt attempt = TryReadv(stream_->socket_.fd(), iovs_);
+  if (attempt.Pending()) {
+    return;
+  }
+  stream_->CompleteRead(std::move(attempt.result));
+}
+
+bool ReactorStream::ReadIntoAwaiter::PrepareReservation() noexcept {
+  try {
+    iovs_ = buffer_.PrepareWrite(reserve_, 16);
+  } catch (const std::bad_alloc&) {
+    buffer_.AbortWrite();
+    result_.SetError(base::MakeErrno(ENOMEM));
+    return false;
+  }
+
+  if (iovs_.empty()) {
+    buffer_.AbortWrite();
+    result_.SetError(base::MakeErrno(ENOMEM));
+    return false;
+  }
+  reservation_active_ = true;
+  return true;
+}
+
+void ReactorStream::ReadIntoAwaiter::FinishAttempt(base::Result<std::size_t> result) noexcept {
+  COROPACT_CHECK(reservation_active_, "ReadIntoAwaiter completion without a buffer reservation");
+  if (result.has_value()) {
+    buffer_.CommitWrite(*result);
+  } else {
+    buffer_.AbortWrite();
+  }
+  reservation_active_ = false;
+  result_.SetResult(result);
+}
+
 bool ReactorStream::WriteSomeAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   stream_->RequireOwnerLoop();
   if (stream_->closed_ || stream_->socket_.fd() < 0) {
@@ -301,7 +433,7 @@ bool ReactorStream::WriteSomeAwaiter::await_suspend(std::coroutine_handle<> cont
 
   continuation_.Bind(continuation);
   IoAttempt attempt = TryWrite(stream_->socket_.fd(), buffer_);
-  if (!attempt.pending) {
+  if (!attempt.Pending()) {
     result_.SetResult(attempt.result);
     COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
     return false;
@@ -330,7 +462,7 @@ void ReactorStream::WriteSomeAwaiter::CompleteImpl(base::Result<std::size_t> res
 
 void ReactorStream::WriteSomeAwaiter::OnReadyImpl() noexcept {
   IoAttempt attempt = TryWrite(stream_->socket_.fd(), buffer_);
-  if (attempt.pending) {
+  if (attempt.Pending()) {
     return;
   }
   stream_->CompleteWrite(std::move(attempt.result));
@@ -360,7 +492,7 @@ bool ReactorStream::BufferWriteAwaiter::await_suspend(
   }
 
   IoAttempt attempt = TryWritev(stream_->socket_.fd(), iovs_);
-  if (!attempt.pending) {
+  if (!attempt.Pending()) {
     FinishAttempt(std::move(attempt.result));
     COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
     return false;
@@ -389,7 +521,7 @@ void ReactorStream::BufferWriteAwaiter::CompleteImpl(base::Result<std::size_t> r
 
 void ReactorStream::BufferWriteAwaiter::OnReadyImpl() noexcept {
   IoAttempt attempt = TryWritev(stream_->socket_.fd(), iovs_);
-  if (attempt.pending) {
+  if (attempt.Pending()) {
     return;
   }
   stream_->CompleteWrite(std::move(attempt.result));
@@ -482,6 +614,11 @@ ReactorStream::ReadSomeAwaiter ReactorStream::ReadSome(std::span<std::byte> buff
   return ReadSomeAwaiter(*this, buffer);
 }
 
+ReactorStream::ReadIntoAwaiter ReactorStream::ReadInto(net::Buffer buffer,
+                                                       std::size_t reserve) noexcept {
+  return ReadIntoAwaiter(*this, std::move(buffer), reserve);
+}
+
 ReactorStream::BufferReadAwaiter ReactorStream::ReadSome(net::Buffer& buffer,
                                                          std::size_t reserve) noexcept {
   return BufferReadAwaiter(*this, buffer, reserve);
@@ -543,6 +680,9 @@ void ReactorStream::HandleRead(coropact::time::Timestamp /*receive_time*/) {
     case PendingReadKind::kReadSome:
       static_cast<ReadSomeAwaiter*>(pending_read_)->OnReady();
       return;
+    case PendingReadKind::kReadInto:
+      static_cast<ReadIntoAwaiter*>(pending_read_)->OnReady();
+      return;
     case PendingReadKind::kBufferRead:
       static_cast<BufferReadAwaiter*>(pending_read_)->OnReady();
       return;
@@ -576,7 +716,7 @@ void ReactorStream::HandleClose() {
 
 void ReactorStream::HandleError() {
   COROPACT_DCHECK(loop_->IsInLoopThread(), "ReactorStream::HandleError called from wrong thread");
-  base::Error error = SocketError(socket_.fd());
+  base::Error error = ErrorFromSocketErrorEvent(socket_.fd());
   CompleteRead(std::unexpected(error));
   CompleteWrite(std::unexpected(error));
 }
@@ -594,6 +734,9 @@ void ReactorStream::CompleteRead(base::Result<std::size_t> result) {
   switch (kind) {
     case PendingReadKind::kReadSome:
       static_cast<ReadSomeAwaiter*>(awaiter)->Complete(std::move(result));
+      return;
+    case PendingReadKind::kReadInto:
+      static_cast<ReadIntoAwaiter*>(awaiter)->Complete(std::move(result));
       return;
     case PendingReadKind::kBufferRead:
       static_cast<BufferReadAwaiter*>(awaiter)->Complete(std::move(result));

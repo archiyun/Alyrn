@@ -23,6 +23,7 @@
 #include "coropact/coro/spawn.h"
 #include "coropact/coro/sync_wait.h"
 #include "coropact/coro/task.h"
+#include "coropact/io/async_stream.h"
 #include "coropact/io/stream_algorithms.h"
 #include "coropact/reactor/event_loop.h"
 #include "coropact/reactor/event_loop_scheduler.h"
@@ -32,8 +33,10 @@ namespace {
 
 using ReadResult = coropact::base::Result<std::size_t>;
 using WriteResult = coropact::base::Result<std::size_t>;
+using OwnedReadOutcome = coropact::net::ReadIntoOutcome;
 
 static_assert(coropact::io::AsyncStream<coropact::reactor::ReactorStream>);
+static_assert(coropact::io::AsyncOwnedReadStream<coropact::reactor::ReactorStream>);
 
 bool Check(bool condition, const char* message) {
   if (!condition) {
@@ -87,6 +90,18 @@ coropact::coro::DetachedTask ReadBufferOnce(coropact::reactor::ReactorStream* st
   ReadResult result = co_await stream->ReadSome(*buffer, 32);
   *resumed_with_scheduler = coropact::coro::Scheduler::Current() == scheduler;
   out->emplace(std::move(result));
+  loop->Quit();
+}
+
+coropact::coro::DetachedTask ReadIntoOnce(coropact::reactor::ReactorStream* stream,
+                                          coropact::reactor::EventLoop* loop,
+                                          coropact::reactor::EventLoopScheduler* scheduler,
+                                          coropact::net::Buffer buffer,
+                                          std::optional<OwnedReadOutcome>* out,
+                                          bool* resumed_with_scheduler) {
+  OwnedReadOutcome outcome = co_await stream->ReadInto(std::move(buffer), 32);
+  *resumed_with_scheduler = coropact::coro::Scheduler::Current() == scheduler;
+  out->emplace(std::move(outcome));
   loop->Quit();
 }
 
@@ -349,6 +364,82 @@ bool CheckReadIntoIoBuffer() {
          Check(resumed_with_scheduler, "buffer read resumed without current scheduler");
 }
 
+bool CheckOwnedReadIntoReturnsBuffer() {
+  int sv[2] = {-1, -1};
+  if (!MakeSocketPair(sv)) {
+    std::cout << "FAIL: socketpair failed\n";
+    return false;
+  }
+
+  constexpr std::string_view kPayload = "owned-read";
+  if (::write(sv[1], kPayload.data(), kPayload.size()) != static_cast<ssize_t>(kPayload.size())) {
+    std::cout << "FAIL: peer write failed\n";
+    ::close(sv[0]);
+    ::close(sv[1]);
+    return false;
+  }
+
+  coropact::reactor::EventLoop loop;
+  coropact::reactor::ReactorStream stream(&loop, sv[0]);
+  coropact::reactor::EventLoopScheduler scheduler(&loop);
+  std::optional<OwnedReadOutcome> outcome;
+  bool resumed_with_scheduler = false;
+
+  coropact::coro::SpawnDetach(
+      scheduler, ReadIntoOnce(&stream, &loop, &scheduler, coropact::net::Buffer(4), &outcome,
+                              &resumed_with_scheduler));
+  loop.Loop();
+
+  ::close(sv[1]);
+  if (!Check(outcome.has_value(), "owned read did not finish") ||
+      !Check(outcome->result.has_value(), "owned read returned an error") ||
+      !Check(*outcome->result == kPayload.size(), "owned read byte count mismatch") ||
+      !Check(Gather(outcome->buffer) == kPayload, "owned read payload mismatch") ||
+      !Check(resumed_with_scheduler, "owned read resumed without current scheduler")) {
+    return false;
+  }
+
+  auto reusable = outcome->buffer.PrepareWrite(8, 1);
+  const bool reusable_after_resume = !reusable.empty();
+  outcome->buffer.AbortWrite();
+  return Check(reusable_after_resume, "owned read returned a buffer with a live reservation");
+}
+
+bool CheckOwnedReadIntoCloseReturnsBuffer() {
+  int sv[2] = {-1, -1};
+  if (!MakeSocketPair(sv)) {
+    std::cout << "FAIL: socketpair failed\n";
+    return false;
+  }
+
+  coropact::reactor::EventLoop loop;
+  coropact::reactor::ReactorStream stream(&loop, sv[0]);
+  coropact::reactor::EventLoopScheduler scheduler(&loop);
+  std::optional<OwnedReadOutcome> outcome;
+  bool resumed_with_scheduler = false;
+
+  coropact::coro::SpawnDetach(
+      scheduler, ReadIntoOnce(&stream, &loop, &scheduler, coropact::net::Buffer(8), &outcome,
+                              &resumed_with_scheduler));
+  loop.QueueInLoop([&] { coropact::coro::Spawn(scheduler, stream.Close()).Detach(); });
+  loop.Loop();
+
+  ::close(sv[1]);
+  if (!Check(outcome.has_value(), "owned cancelled read did not finish") ||
+      !Check(!outcome->result.has_value(), "owned cancelled read unexpectedly succeeded") ||
+      !Check(outcome->result.error() == std::errc::operation_canceled,
+             "owned cancelled read did not return ECANCELED") ||
+      !Check(resumed_with_scheduler, "owned cancelled read resumed without current scheduler")) {
+    return false;
+  }
+
+  auto reusable = outcome->buffer.PrepareWrite(8, 1);
+  const bool reusable_after_cancel = !reusable.empty();
+  outcome->buffer.AbortWrite();
+  return Check(reusable_after_cancel,
+               "owned cancelled read returned a buffer with a live reservation");
+}
+
 bool CheckWriteFromIoBuffer() {
   int sv[2] = {-1, -1};
   if (!MakeSocketPair(sv)) {
@@ -541,6 +632,8 @@ int main() {
   if (!CheckImmediateWrite()) return 1;
   if (!CheckPendingRead()) return 1;
   if (!CheckReadIntoIoBuffer()) return 1;
+  if (!CheckOwnedReadIntoReturnsBuffer()) return 1;
+  if (!CheckOwnedReadIntoCloseReturnsBuffer()) return 1;
   if (!CheckWriteFromIoBuffer()) return 1;
   if (!CheckCloseCancelsPendingRead()) return 1;
   if (!CheckReadableThenCloseResumesOnce()) return 1;

@@ -58,6 +58,9 @@ void DispatchCompletion(LUringOp* op, CompletionEvent event) noexcept {
     case LUringOpKind::kReadComplete:
       DispatchStreamReadComplete(op);
       return;
+    case LUringOpKind::kReadIntoComplete:
+      DispatchStreamReadIntoComplete(op);
+      return;
     case LUringOpKind::kTimedReadComplete:
       DispatchTimedReadComplete(op);
       return;
@@ -119,9 +122,8 @@ LUringLoop::~LUringLoop() noexcept {
   }
 }
 
-base::Result<void> LUringLoop::Init(
-    const LUringOptions& options,
-    RuntimeProfile active_profile) noexcept {
+base::Result<void> LUringLoop::Init(const LUringOptions& options,
+                                    RuntimeProfile active_profile) noexcept {
   assert(IsInLoopThread());
 
   if (initialized_) {
@@ -455,16 +457,14 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
 
   const auto kind = op->DispatchKind();
   const bool is_multishot =
-      kind == LUringOpKind::kAcceptSourceComplete ||
-      kind == LUringOpKind::kRecvSourceComplete;
+      kind == LUringOpKind::kAcceptSourceComplete || kind == LUringOpKind::kRecvSourceComplete;
   const bool is_split_release = kind == LUringOpKind::kSendZeroCopyComplete;
   const CompletionEvent event{cqe->res, cqe->flags};
   const bool request_still_active = event.More();
 
   // F_MORE CQEs belong to the same physical request and keep one inflight
   // slot. Only the terminal CQE releases it.
-  if ((!is_multishot && !is_split_release) ||
-      (is_multishot && !request_still_active)) {
+  if ((!is_multishot && !is_split_release) || (is_multishot && !request_still_active)) {
     assert(inflight_ > 0);
     if (inflight_ > 0) {
       --inflight_;
@@ -496,8 +496,7 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
   }
 
   if (is_split_release) {
-    const CompletionDisposition disposition =
-        detail::DispatchSendZeroCopyComplete(op, event);
+    const CompletionDisposition disposition = detail::DispatchSendZeroCopyComplete(op, event);
     if (disposition.kernel_operation_done) {
       assert(inflight_ > 0);
       if (inflight_ > 0) {
@@ -511,6 +510,7 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
     return;
   }
 
+  // single-shot path
   const bool first_completion = op->Complete(cqe->res);
   if (first_completion) {
     detail::DispatchCompletion(op, event);

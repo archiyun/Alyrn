@@ -10,6 +10,9 @@ template <class T>
 concept AsyncReadStream = backend::AsyncReadStream<T>;
 
 template <class T>
+concept AsyncOwnedReadStream = backend::AsyncOwnedReadStream<T>;
+
+template <class T>
 concept AsyncWriteStream = backend::AsyncWriteStream<T>;
 
 template <class T>

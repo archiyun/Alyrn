@@ -77,7 +77,41 @@ coropact::io::AsyncStream
 `AsyncStream` 是四个方法的语义组合，不是某个具体类的基类，也不要求虚函数。当前
 `ReactorStream` 和 `LUringStream` 都满足它。
 
-### 2.2 CoreListener
+### 2.2 Buffer ownership extension
+
+`ReadSome(std::span<std::byte>)` 是核心的 borrowed-buffer 路径：调用者拥有 storage，
+并且必须在 `await_resume()` 前保持对象存活、地址稳定，不能释放、扩容、移动或并发访问
+同一段内存。这个约束包括 close 和 cancel 路径。
+
+对 borrowed-buffer read，用户可观察完成不能早于后端放弃该地址：
+
+```text
+backend no longer accesses storage
+  -> logical result becomes observable
+  -> await_resume()
+```
+
+`AsyncOwnedReadStream` 是独立的可选 extension，不属于 `AsyncStream` 的最小接口：
+
+```cpp
+ReadInto(net::Buffer buffer, std::size_t reserve)
+    -> 可 await，await_resume() 为 net::ReadIntoOutcome
+```
+
+它按值接收 move-only `net::Buffer`，awaiter 在整个 pending interval 内持有该 owner，并在
+所有终态路径返回：
+
+```cpp
+struct net::ReadIntoOutcome {
+  base::Result<std::size_t> result;
+  net::Buffer buffer;
+};
+```
+
+因此提交失败、关闭和取消也不会吞掉调用者转交的 buffer。`BufferLease` 则属于
+`AsyncRecvSource`：它代表后端/池提供的存储及其归还协议，不能替代普通 `net::Buffer`。
+
+### 2.3 CoreListener
 
 listener 的最小接口是：
 
@@ -97,7 +131,7 @@ Close()
 `Connect()` 不属于 `AsyncStream` 或 `AsyncListener`。它是建立 outbound stream 的另一项
 能力，由应用层需要的 connector concept 单独约束。
 
-### 2.3 Awaitable 的使用规则
+### 2.4 Awaitable 的使用规则
 
 `ReadSome` 和 `WriteSome` 的返回值必须是可 await 对象，并产生约定的
 `base::Result`。后端可以返回惰性的 `coro::Task<T>`，也可以返回直接承载操作状态的
