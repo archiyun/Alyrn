@@ -1,0 +1,19 @@
+[package]
+name = "coropact-network-library-bench"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "bench-http-monoio"
+path = "src/bin/monoio.rs"
+
+[[bin]]
+name = "bench-http-compio"
+path = "src/bin/compio.rs"
+
+[dependencies]
+libc = "0.2.189"
+monoio = { version = "0.2.4", features = ["iouring"] }
+compio = { version = "0.19.1", features = ["net"] }
+socket2 = "0.5.10"

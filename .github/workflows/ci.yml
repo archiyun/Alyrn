@@ -31,7 +31,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build libgtest-dev ${{ matrix.compiler.pkgs }}
+            cmake ninja-build libgtest-dev \
+            libuv1-dev libevent-dev libev-dev libaio-dev \
+            ${{ matrix.compiler.pkgs }}
 
       - name: Configure
         run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
@@ -61,7 +63,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build libgtest-dev g++-14
+            cmake ninja-build libgtest-dev \
+            libuv1-dev libevent-dev libev-dev libaio-dev g++-14
 
       - name: Configure
         run: >
