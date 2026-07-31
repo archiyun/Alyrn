@@ -4,6 +4,7 @@
 
 #include <sys/uio.h>
 
+#include <algorithm>
 #include <chrono>
 #include <coroutine>
 #include <cstddef>
@@ -15,6 +16,7 @@
 #include "coropact/coro/task.h"
 #include "coropact/net/buffer.h"
 #include "coropact/net/endpoint.h"
+#include "coropact/net/read_into.h"
 #include "coropact/net/socket.h"
 #include "coropact/operation/detail/completion_gate.h"
 #include "coropact/operation/detail/scheduler_continuation.h"
@@ -39,12 +41,15 @@ public:
   ReactorStream& operator=(ReactorStream&& other) noexcept;
 
   class ReadSomeAwaiter;
+  class ReadIntoAwaiter;
   class WriteSomeAwaiter;
   class BufferReadAwaiter;
   class BufferWriteAwaiter;
 
   [[nodiscard]]
   ReadSomeAwaiter ReadSome(std::span<std::byte> buffer) noexcept;
+  [[nodiscard]]
+  ReadIntoAwaiter ReadInto(net::Buffer buffer, std::size_t reserve = 4096) noexcept;
   [[nodiscard]]
   BufferReadAwaiter ReadSome(net::Buffer& buffer, std::size_t reserve = 4096) noexcept;
   [[nodiscard]]
@@ -96,6 +101,7 @@ private:
   enum class PendingReadKind : std::uint8_t {
     kNone,
     kReadSome,
+    kReadInto,
     kBufferRead,
   };
   enum class PendingWriteKind : std::uint8_t {
@@ -205,6 +211,42 @@ private:
   operation::detail::CompletionGate completion_gate_;
   detail::ReactorIoResultState result_;
   time::TimerId timer_;
+};
+
+// Owns the destination buffer while a read is pending. Unlike ReadSome(Buffer&),
+// this awaiter returns the Buffer on every terminal path, so callers cannot
+// invalidate its storage while the backend may still access it.
+class ReactorStream::ReadIntoAwaiter
+    : public detail::ReactorOperationHook<ReactorStream::ReadIntoAwaiter> {
+public:
+  COROPACT_DELETE_COPY_MOVE(ReadIntoAwaiter);
+
+  ReadIntoAwaiter(ReactorStream& stream, net::Buffer buffer, std::size_t reserve) noexcept;
+
+  [[nodiscard]]
+  bool await_ready() const noexcept {
+    return false;
+  }
+  [[nodiscard]]
+  bool await_suspend(std::coroutine_handle<> continuation) noexcept;
+  net::ReadIntoOutcome await_resume() noexcept;
+
+private:
+  friend class detail::ReactorOperationHook<ReadIntoAwaiter>;
+
+  void CompleteImpl(base::Result<std::size_t> result) noexcept;
+  void OnReadyImpl() noexcept;
+  bool PrepareReservation() noexcept;
+  void FinishAttempt(base::Result<std::size_t> result) noexcept;
+
+  ReactorStream* stream_;
+  net::Buffer buffer_;
+  std::size_t reserve_;
+  std::vector<iovec> iovs_;
+  operation::detail::SchedulerContinuation continuation_;
+  operation::detail::CompletionGate completion_gate_;
+  detail::ReactorIoResultState result_;
+  bool reservation_active_{false};
 };
 
 class ReactorStream::BufferWriteAwaiter

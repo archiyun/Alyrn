@@ -19,7 +19,9 @@
 #include "coropact/luring/detail/completion_dispatch.h"
 #include "coropact/luring/detail/op_hook.h"
 #include "coropact/luring/op.h"
+#include "coropact/net/buffer.h"
 #include "coropact/net/endpoint.h"
+#include "coropact/net/read_into.h"
 #include "coropact/operation/detail/composite_lifecycle.h"
 #include "coropact/operation/detail/split_release_lifecycle.h"
 #include "coropact/utils/macros.h"
@@ -159,6 +161,7 @@ public:
   COROPACT_DELETE_COPY(LUringStream);
 
   class ReadSomeAwaiter;
+  class ReadIntoAwaiter;
   class ReadSomeForAwaiter;
   class WriteSomeAwaiter;
   class WriteSomePartsAwaiter;
@@ -178,6 +181,11 @@ public:
   // COROPACT_CHECK in every build configuration.
   [[nodiscard]]
   ReadSomeAwaiter ReadSome(std::span<std::byte> buffer) noexcept;
+
+  // Transfers the destination Buffer into the awaiter. The result returns the
+  // owner after the CQE has made the kernel's access to its storage terminal.
+  [[nodiscard]]
+  ReadIntoAwaiter ReadInto(net::Buffer buffer, std::size_t reserve = 4096) noexcept;
 
   [[nodiscard]]
   ReadSomeForAwaiter ReadSomeFor(std::span<std::byte> buffer,
@@ -285,6 +293,46 @@ private:
 
   LUringStream* stream_;
   std::span<std::byte> buffer_;
+};
+
+class LUringStream::ReadIntoAwaiter : public detail::LUringOpHook<LUringStream::ReadIntoAwaiter> {
+public:
+  using OpHook = detail::LUringOpHook<ReadIntoAwaiter>;
+
+  COROPACT_DELETE_COPY_MOVE(ReadIntoAwaiter);
+
+  ReadIntoAwaiter(LUringStream& stream, net::Buffer buffer, std::size_t reserve) noexcept
+      : OpHook(LUringOpKind::kReadIntoComplete),
+        stream_(&stream),
+        buffer_(std::move(buffer)),
+        reserve_(reserve) {}
+
+  [[nodiscard]]
+  bool await_ready() const noexcept {
+    return false;
+  }
+
+  [[nodiscard]]
+  bool await_suspend(std::coroutine_handle<> continuation) noexcept;
+
+  net::ReadIntoOutcome await_resume() noexcept;
+
+private:
+  friend void detail::DispatchStreamReadIntoComplete(LUringOp* op) noexcept;
+
+  static void OnComplete(LUringOp* op) noexcept;
+
+  [[nodiscard]]
+  bool PrepareReservation() noexcept;
+  void FinishReservation(base::Result<std::size_t> result) noexcept;
+
+  LUringOp* Op() noexcept { return static_cast<OpHook*>(this); }
+
+  LUringStream* stream_;
+  net::Buffer buffer_;
+  std::size_t reserve_;
+  std::span<std::byte> writable_;
+  bool reservation_active_{false};
 };
 
 class LUringStream::ReadSomeForAwaiter
@@ -443,5 +491,6 @@ private:
 };
 
 static_assert(backend::AsyncStream<LUringStream>);
+static_assert(backend::AsyncOwnedReadStream<LUringStream>);
 
 }  // namespace coropact::luring
