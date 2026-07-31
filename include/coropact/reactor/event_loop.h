@@ -46,10 +46,10 @@ public:
 
   // Runs cb immediately if called from the owning loop thread; otherwise,
   // schedules it to run in the loop thread. Thread-safe.
-  void RunInLoop(Functor cb);
+  void RunInLoop(Functor callback);
 
   // Queues cb to run in the loop thread on a later iteration. Thread-safe.
-  void QueueInLoop(Functor cb);
+  void QueueInLoop(Functor callback);
 
   // The following Channel-management methods must be called from the owning
   // loop thread. They mutate the Poller's channel set and are not thread-safe.
@@ -62,13 +62,13 @@ public:
   bool IsInLoopThread() const;
 
   // Schedules cb to run once at the specified time point.
-  time::TimerId RunAt(time::Timestamp time, Functor cb);
+  time::TimerId RunAt(time::Timestamp time, Functor callback);
 
   // Schedules cb to run once after delay_sec seconds.
-  time::TimerId RunAfter(double delay_sec, Functor cb);
+  time::TimerId RunAfter(double delay_sec, Functor callback);
 
   // Schedules cb to run repeatedly every interval_sec seconds.
-  time::TimerId RunEvery(double interval_sec, Functor cb);
+  time::TimerId RunEvery(double interval_sec, Functor callback);
 
   // Cancels a previously scheduled timer.
   void Cancel(time::TimerId id);
