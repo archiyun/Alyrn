@@ -8,4 +8,25 @@ if(COROPACT_ENABLE_URING)
         PRIVATE
             coropact_luring
     )
+
+    add_executable(demo_bench_http_luring
+        demo_bench_http_luring.cc
+    )
+    target_link_libraries(demo_bench_http_luring
+        PRIVATE
+            coropact_luring
+    )
+
+    add_executable(demo_bench_http_liburing
+        demo_bench_http_liburing.cc
+    )
+    target_include_directories(demo_bench_http_liburing
+        PRIVATE
+            ${URING_INCLUDE_DIRS}
+    )
+    target_link_libraries(demo_bench_http_liburing
+        PRIVATE
+            ${URING_LIBRARIES}
+            Threads::Threads
+    )
 endif()

@@ -1,161 +1,143 @@
-# 七个网络库统一公平压测：Reactor、CoroPact luring 与外部库
+# 网络库统一 HTTP 压测
 
-本报告记录 CoroPact Reactor、CoroPact luring 与外部网络库在同一台机器、同一批次、同一套 `wrk` 参数下的固定 HTTP 网络压测。图表、汇总数据和每轮关键结果都保存在本文件中；原始进程日志和临时适配器源码不纳入仓库。
+本报告记录当前 CoroPact checkout 中 Reactor、CoroPact luring、raw liburing、Asio、Monoio、Compio、libaio、libuv、libevent 和 libev 的统一压测结果。
 
 ## 结论
 
-清点后目标实际是 7 个：Reactor、CoroPact luring、raw liburing、Asio、Monoio、Compio、libaio。七个目标全部在同一批次、同一台机器、同一套 wrk 参数下重测。
+- CoroPact luring 与 raw liburing 位于吞吐第一梯队。两者在 10000 并发的吞吐几乎相同：luring `475.1k RPS`，raw liburing `474.3k RPS`；luring P99 为 `30.82 ms`，raw liburing 受少量长尾样本影响为 `494.08 ms`，但本轮没有 wrk timeout。
+- luring 在 200/500/1000 并发领先 raw liburing，raw liburing 在 100/2000/5000 略高；这组差异属于同一量级，不能当作稳定的绝对排名。
+- Reactor 没有错误或 timeout，10000 并发为 `350.1k RPS / 37.16 ms P99`，但 CPU 快照最高之一（约 `293%`）。
+- Asio、Compio、libaio、libev 在本轮均无正式错误；10000 并发分别为 `458.1k / 124.81 ms`、`388.2k / 43.45 ms`、`407.5k / 37.61 ms`、`344.4k / 44.75 ms`。
+- Monoio 在 10000 并发出现 `566` 个 timeout，平均 P99 `699.35 ms`；libuv 出现 `1839` 个 timeout，平均 P99 `2913.33 ms`。两者的高并发结果应视为本轮稳定性异常，不是正常稳态尾延迟。
+- libevent 没有 timeout，但 10000 并发吞吐为 `219.8k RPS`，明显低于其他适配器。
+- libaio 使用 `IO_CMD_POLL + 非阻塞 socket` 兼容路径，completion 到达后再执行 `accept4`/`recv`/`send`，因此只作兼容性参考，不能与原生异步 socket read/write 结果完全等价比较。
 
-- 吞吐第一梯队是 raw liburing 与 CoroPact luring；c=1000 raw liburing 最高，c=5000/10000 CoroPact luring 与 raw liburing 接近。
-- CoroPact luring 在 c=10000 达到 554.9k RPS、24.693 ms P99，是本轮吞吐和尾延迟综合最好的实现之一。
-- Reactor 在三个并发档位都明显低于其他实现：487.0k、416.9k、403.6k RPS；CPU 也最高，约 288%–297%。
-- Asio 的 c=10000 P99 为 97.403 ms，明显高于其他稳定实现。
-- Monoio 在 c=10000 的三轮产生 156 个 wrk timeout，P99 平均 450.057 ms；这不是单纯吞吐差，而是高并发尾延迟稳定性问题。
-- libaio 仍然是 `IO_CMD_POLL + 非阻塞 socket` 兼容路径，不是原生异步 socket read/write，因此其结果只作为兼容性参考。
-
-这不是网络框架的综合排名。测试只覆盖 loopback 上的固定 HTTP accept/read/write 路径，不包含 TLS、上游代理、HTTP 路由、业务逻辑或真实网卡。
+这不是网络框架的综合排名。工作负载只覆盖 loopback 上的固定 HTTP accept/read/write 路径，不包含 TLS、上游代理、HTTP 路由、业务逻辑或真实网卡。
 
 ## 测试环境
 
-- **CPU**: 12th Gen Intel(R) Core(TM) i5-12450H，12 个可见逻辑 CPU
-- **Compiler**: GCC 16.1.1；Rust `rustc 1.96.0`
-- **OS**: Arch Linux
-- **Kernel**: `7.1.4-arch1-1`
-- **Client**: `wrk f8eb608 [epoll]`
-- **Date**: 2026-07-23
+- CPU：12th Gen Intel(R) Core(TM) i5-12450H，12 个逻辑 CPU
+- Compiler：GCC 16.1.1；Rust `rustc 1.97.1`
+- Kernel：`7.1.5-arch1-2`
+- Client：`wrk f8eb608 [epoll]`
+- 系统库：libuv `1.52.1`、libevent `2.1.13`、libev `4.33`、libaio `0.3.113`、liburing `2.15`
+- 测试日期：2026-07-31
 
-## Baselines
+## 对比目标
 
-- **Reactor**: CoroPact 自己的 epoll/`ReactorWorkerGroup` 后端。
-- **CoroPact luring**: CoroPact 自己的协程 io_uring 后端。
-- **[libaio](https://pagure.io/libaio)**: Linux 上早于 io_uring 的 AIO 接口；本测试使用 poll-only 兼容适配器。
-- **[liburing](https://github.com/axboe/liburing)**: raw io_uring helper library，不使用协程封装。
-- **[Asio](https://github.com/chriskohlhoff/asio)**: standalone Asio 1.38.2。
-- **[Monoio](https://github.com/bytedance/monoio)**: Monoio 0.2.4，Rust thread-per-core runtime。
-- **[Compio](https://github.com/compio-rs/compio)**: Compio 0.19.1，Rust completion runtime。
-
-本机系统包版本：libaio `0.3.113-4`，liburing `2.15-1`。
+- **Reactor**：CoroPact 的 epoll `ReactorWorkerGroup` 后端。
+- **CoroPact luring**：CoroPact 的协程 io_uring 后端，`FRAME_POOL=1`。
+- **raw liburing**：原生 liburing 状态机，不使用 CoroPact 协程封装。
+- **Asio**：standalone Asio 1.38.2。
+- **Monoio**：Monoio 0.2.4，Rust thread-per-core io_uring runtime。
+- **Compio**：Compio 0.19.1，Rust completion runtime。
+- **libaio**：Linux AIO poll-only 兼容适配器。
+- **libuv**：libuv 1.52.1。
+- **libevent**：libevent 2.1.13，使用 bufferevent。
+- **libev**：libev 4.33，使用非阻塞 socket + ev_io。
 
 ## 测试口径
 
-- 目标：每个库一个固定 HTTP keep-alive 服务，收到请求头后返回 `HTTP 200`、512-byte body。
-- 业务：无 TLS、无上游、无磁盘 I/O、无 HTTP 路由和代理逻辑；只保留 accept/read/write 和最小请求头检测。
-- 拓扑：4 个独立进程，每个进程一个 loop/runtime/ring；所有目标均使用 `SO_REUSEPORT` 监听同一端口。
-- Reactor：每个进程使用 `ReactorWorkerGroup(worker_num=1)`，即一个 EventLoop。
-- CoroPact luring：每个进程使用 `LUringServer(worker_num=1)`，即一个 io_uring ring；`FRAME_POOL=0`。
-- raw liburing：每进程一个 raw io_uring ring，entries=8192。
-- 客户端：`wrk -t8`，并发 1000/5000/10000。
-- 每档：warmup 5 秒，正式 3 轮，每轮 10 秒，socket timeout 5 秒。
-- 表中 RPS、P99、CPU、RSS 均为三轮算术平均；P99 是三轮 wrk 报告值的平均，不是合并样本后的全局 percentile。
-- CPU 是 4 个目标进程累计 CPU 百分比，因此可超过 100%。
+- 每个目标是一个固定 HTTP keep-alive 服务：请求头检测到 `\r\n\r\n` 后返回 HTTP 200 和 512-byte body。
+- 所有响应使用相同的 `Server: unified-http-bench`、`Content-Length: 512` 和 keep-alive 头。
+- 每个服务使用 4 个 worker thread；每个 worker 拥有自己的 loop/runtime/ring/listener，并使用 `SO_REUSEPORT`。
+- raw liburing、luring、Monoio 和 Compio 使用 io_uring 路径；libaio 使用 poll completion 兼容路径。
+- 客户端：`wrk -t8`。
+- 并发档位：`100 200 500 1000 2000 5000 10000`。
+- 每档：预热 5 秒，正式 3 轮，每轮 10 秒，socket timeout 5 秒。
+- 表中 RPS、P99 是三轮算术平均；P99 是三轮 wrk 报告值的平均，不是合并样本后的全局 percentile。
+- CPU/RSS 是每轮结束时的进程快照；4 个 worker 的 CPU 会累计，因此可能超过 100%。
 
-## 吞吐与 P99
+## 三轮平均结果
 
-吞吐单位为 requests/sec，P99 单位为 ms。
+单元为 `RPS / P99(ms)`；timeout 另见错误表。
 
-| 并发 | Reactor | CoroPact luring | raw liburing | Asio | Monoio | Compio | libaio-poll |
-| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1,000 RPS / P99 | 487,028 / 3.437 | 769,100 / 4.103 | 776,587 / 4.497 | 663,371 / 4.670 | 656,035 / 4.397 | 646,683 / 3.350 | 713,655 / 3.113 |
-| 5,000 RPS / P99 | 416,885 / 15.100 | 562,708 / 12.420 | 573,184 / 14.900 | 481,549 / 25.063 | 546,762 / 13.490 | 499,189 / 13.490 | 517,637 / 13.183 |
-| 10,000 RPS / P99 | 403,598 / 32.140 | 554,946 / 24.693 | 557,446 / 28.967 | 473,014 / 97.403 | 486,452 / 450.057 | 480,133 / 27.280 | 498,016 / 25.407 |
+| 并发 | Reactor | luring | raw liburing | Asio | Monoio | Compio | libaio | libuv | libevent | libev |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 100 | 618,509 / 1.03 | 711,153 / 2.28 | 736,643 / 2.53 | 667,868 / 2.28 | 683,299 / 2.46 | 609,839 / 2.73 | 571,251 / 1.75 | 612,731 / 2.18 | 380,352 / 1.16 | 630,789 / 2.45 |
+| 200 | 549,768 / 0.91 | 777,894 / 2.80 | 759,918 / 2.99 | 679,233 / 2.54 | 655,562 / 3.33 | 646,335 / 3.07 | 591,260 / 2.30 | 615,357 / 2.89 | 388,402 / 1.51 | 626,218 / 2.77 |
+| 500 | 491,186 / 1.75 | 752,050 / 3.69 | 728,497 / 3.68 | 701,554 / 3.48 | 587,888 / 4.21 | 563,998 / 3.89 | 543,199 / 3.32 | 578,668 / 3.35 | 380,650 / 2.62 | 580,510 / 3.79 |
+| 1000 | 423,971 / 3.48 | 691,530 / 4.42 | 637,535 / 4.61 | 618,217 / 4.33 | 554,357 / 5.12 | 467,535 / 5.63 | 567,087 / 4.26 | 499,518 / 5.07 | 305,686 / 5.32 | 554,259 / 5.00 |
+| 2000 | 382,813 / 8.03 | 541,005 / 6.50 | 564,016 / 6.58 | 493,303 / 7.63 | 480,174 / 8.90 | 459,801 / 7.77 | 459,271 / 7.92 | 460,497 / 10.00 | 259,548 / 10.03 | 465,398 / 8.49 |
+| 5000 | 348,043 / 19.66 | 500,613 / 15.54 | 510,084 / 15.28 | 462,954 / 22.29 | 437,028 / 21.19 | 422,423 / 18.23 | 437,416 / 19.27 | 387,715 / 228.94 | 245,845 / 25.35 | 370,213 / 22.81 |
+| 10000 | 350,073 / 37.16 | 475,104 / 30.82 | 474,344 / 494.08 | 458,078 / 124.81 | 404,608 / 699.35 | 388,214 / 43.45 | 407,503 / 37.61 | 360,719 / 2913.33 | 219,797 / 62.21 | 344,378 / 44.75 |
 
-## 图表
+## 10000 并发资源快照
 
-### 吞吐
+这是 10000 并发三轮快照的平均值，RSS 单位为 MiB。
 
-<div align="center">
-  <img src="network-libraries/throughput.png" width="80%">
-</div>
+| 目标 | CPU | RSS |
+| --- | ---: | ---: |
+| Reactor | 293.0% | 181.8 |
+| luring | 253.7% | 146.3 |
+| raw liburing | 241.0% | 163.6 |
+| Asio | 261.0% | 166.6 |
+| Monoio | 237.7% | 249.2 |
+| Compio | 257.7% | 234.1 |
+| libaio | 261.0% | 158.4 |
+| libuv | 270.0% | 5.5 |
+| libevent | 312.0% | 26.8 |
+| libev | 258.7% | 163.4 |
 
-### P99 尾延迟
-
-P99 使用对数纵轴，便于同时观察 Monoio 的秒级异常和其他实现的毫秒级差异。
-
-<div align="center">
-  <img src="network-libraries/p99.png" width="80%">
-</div>
-
-### CPU 与 RSS
-
-<div align="center">
-  <img src="network-libraries/resources.png" width="80%">
-</div>
-
-## CPU 与 RSS
-
-| 目标 | c=1000 CPU / RSS | c=5000 CPU / RSS | c=10000 CPU / RSS |
-| --- | ---: | ---: | ---: |
-| Reactor ×4 | 288.4% / 56.0 MB | 295.4% / 124.0 MB | 296.5% / 207.1 MB |
-| CoroPact luring ×4 | 251.1% / 45.2 MB | 263.5% / 111.5 MB | 263.9% / 194.0 MB |
-| raw liburing ×4 | 236.5% / 42.1 MB | 251.6% / 104.7 MB | 255.8% / 184.4 MB |
-| Asio ×4 | 255.3% / 40.4 MB | 263.8% / 106.2 MB | 264.6% / 187.5 MB |
-| Monoio ×4 | 253.4% / 29.0 MB | 271.3% / 67.6 MB | 273.3% / 145.0 MB |
-| Compio ×4 | 268.5% / 27.8 MB | 276.1% / 73.9 MB | 276.0% / 149.2 MB |
-| libaio-poll ×4 | 261.9% / 39.3 MB | 277.8% / 102.0 MB | 278.4% / 181.5 MB |
+RSS 是每轮结束时的一次进程快照；各库的连接对象、缓冲区和事件对象生命周期不同，因此这里只作相对参考，不作为 allocator 对比结论。
 
 ## 错误与异常
 
-| 目标 | non-2xx/3xx | socket error | timeout |
+| 目标 | 正常 HTTP 响应错误 | socket error | timeout 总数 |
 | --- | ---: | ---: | ---: |
 | Reactor | 0 | 0 | 0 |
-| CoroPact luring | 0 | 0 | 0 |
+| luring | 0 | 0 | 0 |
 | raw liburing | 0 | 0 | 0 |
 | Asio | 0 | 0 | 0 |
-| Monoio | 0 | 0 | 156 |
+| Monoio | 0 | 0 | 566 |
 | Compio | 0 | 0 | 0 |
-| libaio-poll | 0 | 0 | 0 |
+| libaio | 0 | 0 | 0 |
+| libuv | 0 | 0 | 1839 |
+| libevent | 0 | 0 | 0 |
+| libev | 0 | 0 | 0 |
 
-Monoio 的 c=10000 三轮 P99 为 `28.070 / 1110.000 / 212.100 ms`，timeout 为 `0 / 140 / 16`。由于 timeout 会使平均 P99 失真，Monoio 的 450.057 ms 应理解为“本次稳定性失败的汇总信号”，不能当作正常稳态 P99。
+10000 并发的异常轮次：
 
-## 每轮关键测试数据
-
-下表保留每一轮的 RPS、P99 和 timeout；CPU/RSS 采用上面的三轮平均表。RPS 单位为 requests/sec，P99 单位为 ms。
-
-| 目标 | 并发 | Round 1 RPS / P99 / timeout | Round 2 RPS / P99 / timeout | Round 3 RPS / P99 / timeout |
-| --- | ---: | ---: | ---: | ---: |
-| Reactor | 1,000 | 489,565 / 3.560 / 0 | 487,332 / 3.360 / 0 | 484,187 / 3.390 / 0 |
-| Reactor | 5,000 | 419,497 / 14.910 / 0 | 417,580 / 14.940 / 0 | 413,579 / 15.450 / 0 |
-| Reactor | 10,000 | 405,962 / 31.130 / 0 | 401,775 / 33.140 / 0 | 403,059 / 32.150 / 0 |
-| CoroPact luring | 1,000 | 771,478 / 4.090 / 0 | 767,809 / 4.180 / 0 | 768,014 / 4.040 / 0 |
-| CoroPact luring | 5,000 | 564,164 / 12.390 / 0 | 561,429 / 12.320 / 0 | 562,531 / 12.550 / 0 |
-| CoroPact luring | 10,000 | 564,595 / 23.230 / 0 | 545,063 / 26.150 / 0 | 555,180 / 24.700 / 0 |
-| raw liburing | 1,000 | 832,349 / 4.290 / 0 | 755,283 / 4.510 / 0 | 742,128 / 4.690 / 0 |
-| raw liburing | 5,000 | 581,185 / 15.030 / 0 | 569,145 / 15.150 / 0 | 569,221 / 14.520 / 0 |
-| raw liburing | 10,000 | 537,699 / 30.530 / 0 | 575,371 / 27.690 / 0 | 559,267 / 28.680 / 0 |
-| Asio | 1,000 | 686,836 / 4.610 / 0 | 662,047 / 4.820 / 0 | 641,229 / 4.580 / 0 |
-| Asio | 5,000 | 479,102 / 25.740 / 0 | 483,383 / 25.350 / 0 | 482,163 / 24.100 / 0 |
-| Asio | 10,000 | 465,007 / 128.720 / 0 | 480,195 / 79.990 / 0 | 473,842 / 83.500 / 0 |
-| Monoio | 1,000 | 675,419 / 3.970 / 0 | 651,526 / 4.620 / 0 | 641,159 / 4.600 / 0 |
-| Monoio | 5,000 | 542,249 / 14.020 / 0 | 554,823 / 12.580 / 0 | 543,216 / 13.870 / 0 |
-| Monoio | 10,000 | 493,002 / 28.070 / 0 | 481,600 / 1110.000 / 140 | 484,755 / 212.100 / 16 |
-| Compio | 1,000 | 633,937 / 3.300 / 0 | 664,946 / 3.190 / 0 | 641,165 / 3.560 / 0 |
-| Compio | 5,000 | 506,423 / 13.310 / 0 | 494,762 / 13.590 / 0 | 496,381 / 13.570 / 0 |
-| Compio | 10,000 | 478,264 / 28.170 / 0 | 481,914 / 24.640 / 0 | 480,221 / 29.030 / 0 |
-| libaio-poll | 1,000 | 718,071 / 3.170 / 0 | 717,258 / 3.270 / 0 | 705,637 / 2.900 / 0 |
-| libaio-poll | 5,000 | 524,130 / 13.150 / 0 | 512,987 / 12.920 / 0 | 515,793 / 13.480 / 0 |
-| libaio-poll | 10,000 | 501,162 / 24.810 / 0 | 501,514 / 25.410 / 0 | 491,372 / 26.000 / 0 |
-
-## libaio 语义说明
-
-libaio 的传统接口主要面向文件 AIO。本次网络测试使用 `io_prep_poll`/`io_submit`/`io_getevents` 等 readiness 兼容路径，收到 poll completion 后再由用户态执行非阻塞 `accept4`、`recv` 和 `send`，并重新 arm poll。因此它可以作为网络可用性参考，但不应和 liburing、Monoio、Compio 的原生异步 socket read/write 结果直接等价解释。
+- Monoio：三轮 timeout 为 `0 / 504 / 62`，P99 为 `43.28 / 1710 / 344.77 ms`。
+- libuv：三轮 timeout 为 `861 / 610 / 368`，P99 为 `2860 / 3350 / 2530 ms`。
+- raw liburing 没有 timeout，但三轮 P99 为 `723.07 / 469.71 / 289.45 ms`，说明仍存在严重长尾样本。
 
 ## Reproduce
 
-测试参数如下；临时适配器和启动脚本没有提交到仓库：
+C++ 目标需要先配置 io_uring Release build；Asio checkout 路径可通过 `ASIO_ROOT` 指定：
 
-```text
-workers:       4 independent processes
-wrk threads:   8
-connections:   1000, 5000, 10000
-warmup:        5s per level
-rounds:        3 per level
-duration:      10s per round
-timeout:       5s
-response:      HTTP keep-alive, fixed 512-byte body
+```bash
+cmake -S . -B build-uring \
+  -DASIO_ROOT=/tmp/asio-1-38-2 \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_EXAMPLES=ON \
+  -DBUILD_TESTS=OFF \
+  -DBUILD_BENCHMARKS=OFF \
+  -DCOROPACT_ENABLE_URING=ON
+cmake --build build-uring -j2
 ```
 
-原始 CSV 和 wrk 日志保留在本次工作区的临时目录：
+Rust 目标：
 
-```text
-/tmp/coropact-network-libs-bench.DSUTCQ/results-unified-7/
+```bash
+CARGO_NET_OFFLINE=true cargo build --release --bins \
+  --manifest-path benchmarks/network-libraries-rust/Cargo.toml
 ```
+
+正式压测和汇总：
+
+```bash
+OUTDIR=/tmp/coropact-network-libraries-$(date +%Y%m%d-%H%M%S) \
+  ./docs/benchmark/run_network_libraries.sh
+./docs/benchmark/summarize_network_libraries.sh "$OUTDIR"
+```
+
+可用环境变量覆盖 `LEVELS`、`WARMUP`、`DURATION`、`ROUNDS`、`THREADS`、`WORKERS`、`FRAME_POOL` 和 `TARGETS`。例如短试跑：
+
+```bash
+WARMUP=1s DURATION=2s ROUNDS=1 LEVELS="100 1000" \
+  TARGETS="luring raw-liburing libuv libevent libev" \
+  ./docs/benchmark/run_network_libraries.sh
+```
+
+本轮原始结果保存在 `/tmp/coropact-network-libraries-20260731/`，其中 `raw/` 是每轮 wrk 输出，`runs.csv` 是运行索引，`resources.csv` 是资源快照，`averages.csv` 是三轮均值。临时结果不纳入仓库。
