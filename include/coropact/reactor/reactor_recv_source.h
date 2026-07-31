@@ -48,6 +48,13 @@ public:
   ReactorRecvSource& operator=(ReactorRecvSource&& other) noexcept;
 
   coro::Task<Result> Next();
+
+  // Stops new readiness admission without waiting for queued events or
+  // BufferLease instances. An owning consumer drains those events and then
+  // awaits Stop() for the final ownership boundary.
+  [[nodiscard]]
+  base::Result<void> RequestStop() noexcept;
+
   coro::Task<base::Result<void>> Stop();
 
 private:

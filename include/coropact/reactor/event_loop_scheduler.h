@@ -31,17 +31,7 @@ public:
 
   void Schedule(coro::Work* work) noexcept override {
     COROPACT_DCHECK(work != nullptr, "EventLoopScheduler::Schedule: work must not be null");
-    loop_->QueueInLoop([this, work] {
-      coro::Scheduler* previous = coro::Scheduler::Current();
-      coro::Scheduler::SetCurrent(this);
-      auto restore = [previous] { coro::Scheduler::SetCurrent(previous); };
-
-      Run(work);
-
-      // Work may resume and destroy the coroutine frame it belongs to, so only
-      // restore thread-local scheduler state after touching no work-owned data.
-      restore();
-    });
+    loop_->QueueInLoop([this, work] { Run(work); });
   }
 
   [[nodiscard]]

@@ -54,6 +54,11 @@ public:
 protected:
   explicit Scheduler(std::pmr::memory_resource* frame_resource = nullptr) noexcept
       : frame_resource_(frame_resource) {}
+
+  void SetFrameResource(std::pmr::memory_resource* frame_resource) noexcept {
+    frame_resource_ = frame_resource;
+  }
+
   COROPACT_DELETE_COPY_MOVE(Scheduler);
 
 private:

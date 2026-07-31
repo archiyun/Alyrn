@@ -2,8 +2,9 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-// Compatibility spelling for the buffer primitive. The implementation lives
-// below the backend facade so Reactor and io_uring do not depend on io.
+// Public spelling for the backend-neutral byte store. The implementation
+// remains in net because Reactor and luring use it below the io facade; this
+// alias deliberately adds neither allocation nor a backend dependency.
 #include "coropact/net/buffer.h"
 
 namespace coropact::io {

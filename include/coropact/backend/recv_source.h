@@ -20,6 +20,7 @@ concept AsyncRecvSource = requires(T& source) {
   requires std::same_as<typename T::Event, RecvEvent>;
   { source.Next() } -> std::same_as<
       coro::Task<base::Result<std::optional<typename T::Event>>>>;
+  { source.RequestStop() } -> std::same_as<base::Result<void>>;
   { source.Stop() } -> std::same_as<coro::Task<base::Result<void>>>;
 };
 

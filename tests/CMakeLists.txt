@@ -109,7 +109,7 @@ target_include_directories(io_buffer_smoke_test
 
 target_link_libraries(io_buffer_smoke_test
     PRIVATE
-        coropact_io
+        coropact_io_contract
 )
 
 add_test(NAME io_buffer_smoke_test COMMAND io_buffer_smoke_test)

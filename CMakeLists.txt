@@ -109,8 +109,8 @@ target_link_libraries(coropact_net
 
 target_compile_features(coropact_net PUBLIC cxx_std_23)
 
-# io contracts expose net primitives through compatibility aliases, so their
-# consumers receive the lower networking target transitively.
+# I/O contracts expose lower net primitives through lightweight public
+# spellings, while remaining independent of concrete backend adapters.
 target_link_libraries(coropact_io_contract INTERFACE coropact_net)
 
 # coropact_reactor —— 基于 epoll 的 Reactor 网络后端。它依赖 coropact_net

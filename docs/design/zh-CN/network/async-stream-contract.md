@@ -579,7 +579,8 @@ coropact::coro::Task<void> Good(coropact::io::AsyncStream auto& stream) {
 ### 7.2 io::Buffer
 
 `ReactorStream` 和 `stream_algorithms.h` 还提供 `coropact::io::Buffer` 重载。这是 buffer
-管理层的扩展，不改变 CoreStream 的 span 契约：
+管理层的扩展，不改变 CoreStream 的 span 契约。公开的 `io::Buffer` 是
+`net::Buffer` 的零成本 alias：实现留在后端之下，调用者应使用 `io` spelling：
 
 ```text
 PrepareWrite / ReadableIov 返回的内存必须覆盖 pending operation；
