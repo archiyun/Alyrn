@@ -13,8 +13,8 @@
 
 #include "coropact/base/error.h"
 #include "coropact/coro/task.h"
-#include "coropact/net/buffer.h"
 #include "coropact/net/endpoint.h"
+#include "coropact/net/segmented_buffer.h"
 #include "coropact/net/socket.h"
 #include "coropact/operation/detail/completion_gate.h"
 #include "coropact/operation/detail/scheduler_continuation.h"
@@ -46,17 +46,19 @@ public:
   [[nodiscard]]
   ReadSomeAwaiter ReadSome(std::span<std::byte> buffer) noexcept;
   [[nodiscard]]
-  BufferReadAwaiter ReadSome(net::Buffer& buffer, std::size_t reserve = 4096) noexcept;
+  BufferReadAwaiter ReadSome(net::SegmentedBuffer& buffer,
+                             std::size_t reserve = 4096) noexcept;
   [[nodiscard]]
   ReadSomeAwaiter ReadSomeFor(std::span<std::byte> buffer,
                               std::chrono::milliseconds timeout) noexcept;
   [[nodiscard]]
-  BufferReadAwaiter ReadSomeFor(net::Buffer& buffer, std::chrono::milliseconds timeout,
+  BufferReadAwaiter ReadSomeFor(net::SegmentedBuffer& buffer,
+                                std::chrono::milliseconds timeout,
                                 std::size_t reserve = 4096) noexcept;
   [[nodiscard]]
   WriteSomeAwaiter WriteSome(std::span<const std::byte> buffer) noexcept;
   [[nodiscard]]
-  BufferWriteAwaiter WriteSome(net::Buffer& buffer) noexcept;
+  BufferWriteAwaiter WriteSome(net::SegmentedBuffer& buffer) noexcept;
   coro::Task<base::Result<void>> Shutdown();
   coro::Task<base::Result<void>> Close();
 
@@ -190,7 +192,7 @@ class ReactorStream::BufferReadAwaiter
 public:
   COROPACT_DELETE_COPY_MOVE(BufferReadAwaiter);
 
-  BufferReadAwaiter(ReactorStream& stream, net::Buffer& buffer, std::size_t reserve,
+  BufferReadAwaiter(ReactorStream& stream, net::SegmentedBuffer& buffer, std::size_t reserve,
                     std::chrono::milliseconds timeout = std::chrono::milliseconds{0}) noexcept;
 
   [[nodiscard]]
@@ -210,7 +212,7 @@ private:
   void FinishAttempt(base::Result<std::size_t> result) noexcept;
 
   ReactorStream* stream_;
-  net::Buffer* buffer_;
+  net::SegmentedBuffer* buffer_;
   std::size_t reserve_;
   std::chrono::milliseconds timeout_;
   std::vector<iovec> iovs_;
@@ -225,7 +227,7 @@ class ReactorStream::BufferWriteAwaiter
 public:
   COROPACT_DELETE_COPY_MOVE(BufferWriteAwaiter);
 
-  BufferWriteAwaiter(ReactorStream& stream, net::Buffer& buffer) noexcept;
+  BufferWriteAwaiter(ReactorStream& stream, net::SegmentedBuffer& buffer) noexcept;
 
   [[nodiscard]]
   bool await_ready() const noexcept {
@@ -244,7 +246,7 @@ private:
   void FinishAttempt(base::Result<std::size_t> result) noexcept;
 
   ReactorStream* stream_;
-  net::Buffer* buffer_;
+  net::SegmentedBuffer* buffer_;
   std::vector<iovec> iovs_;
   operation::detail::SchedulerContinuation continuation_;
   operation::detail::CompletionGate completion_gate_;

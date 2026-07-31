@@ -187,9 +187,9 @@ void ReactorStream::ReadSomeAwaiter::OnReadyImpl() noexcept {
   stream_->CompleteRead(std::move(attempt.result));
 }
 
-ReactorStream::BufferReadAwaiter::BufferReadAwaiter(ReactorStream& stream, net::Buffer& buffer,
-                                                    std::size_t reserve,
-                                                    std::chrono::milliseconds timeout) noexcept
+ReactorStream::BufferReadAwaiter::BufferReadAwaiter(
+    ReactorStream& stream, net::SegmentedBuffer& buffer, std::size_t reserve,
+    std::chrono::milliseconds timeout) noexcept
     : stream_(&stream),
       buffer_(&buffer),
       reserve_(std::max<std::size_t>(reserve, 1)),
@@ -336,8 +336,8 @@ void ReactorStream::WriteSomeAwaiter::OnReadyImpl() noexcept {
   stream_->CompleteWrite(std::move(attempt.result));
 }
 
-ReactorStream::BufferWriteAwaiter::BufferWriteAwaiter(ReactorStream& stream,
-                                                      net::Buffer& buffer) noexcept
+ReactorStream::BufferWriteAwaiter::BufferWriteAwaiter(
+    ReactorStream& stream, net::SegmentedBuffer& buffer) noexcept
     : stream_(&stream), buffer_(&buffer) {}
 
 bool ReactorStream::BufferWriteAwaiter::await_suspend(
@@ -482,8 +482,8 @@ ReactorStream::ReadSomeAwaiter ReactorStream::ReadSome(std::span<std::byte> buff
   return ReadSomeAwaiter(*this, buffer);
 }
 
-ReactorStream::BufferReadAwaiter ReactorStream::ReadSome(net::Buffer& buffer,
-                                                         std::size_t reserve) noexcept {
+ReactorStream::BufferReadAwaiter ReactorStream::ReadSome(
+    net::SegmentedBuffer& buffer, std::size_t reserve) noexcept {
   return BufferReadAwaiter(*this, buffer, reserve);
 }
 
@@ -492,9 +492,9 @@ ReactorStream::ReadSomeAwaiter ReactorStream::ReadSomeFor(
   return ReadSomeAwaiter(*this, buffer, timeout);
 }
 
-ReactorStream::BufferReadAwaiter ReactorStream::ReadSomeFor(net::Buffer& buffer,
-                                                            std::chrono::milliseconds timeout,
-                                                            std::size_t reserve) noexcept {
+ReactorStream::BufferReadAwaiter ReactorStream::ReadSomeFor(
+    net::SegmentedBuffer& buffer, std::chrono::milliseconds timeout,
+    std::size_t reserve) noexcept {
   return BufferReadAwaiter(*this, buffer, reserve, timeout);
 }
 
@@ -503,7 +503,8 @@ ReactorStream::WriteSomeAwaiter ReactorStream::WriteSome(
   return WriteSomeAwaiter(*this, buffer);
 }
 
-ReactorStream::BufferWriteAwaiter ReactorStream::WriteSome(net::Buffer& buffer) noexcept {
+ReactorStream::BufferWriteAwaiter ReactorStream::WriteSome(
+    net::SegmentedBuffer& buffer) noexcept {
   return BufferWriteAwaiter(*this, buffer);
 }
 

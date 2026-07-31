@@ -90,7 +90,7 @@ Timer: pending-insert -> active -> executing -> active(repeat) | released
 - `reactor_listener_smoke_test`
 - `net_move_smoke_test` for detached Channel and Socket ownership transfer
 - `timer_tree_smoke_test`
-- `io_buffer_smoke_test` for the backend-neutral `coropact::io::Buffer`
+- `io_buffer_smoke_test` for the public `coropact::io::Buffer`
 - `coropact_integration_tests` EventLoop coverage
 - ASan/UBSan lifetime tests and TSan for cross-thread API changes
 

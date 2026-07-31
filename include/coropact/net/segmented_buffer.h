@@ -19,18 +19,21 @@
 
 namespace coropact::net {
 
-class Buffer {
+// A move-only byte chain with explicit write reservation. It owns storage but
+// has no socket, scheduler, or backend dependency; adapters use its iovec
+// views only at the POSIX scatter/gather boundary.
+class SegmentedBuffer {
 public:
   static constexpr std::size_t kDefaultBlockSize = 16 * 1024;
 
-  explicit Buffer(std::size_t block_size = kDefaultBlockSize)
+  explicit SegmentedBuffer(std::size_t block_size = kDefaultBlockSize)
       : block_size_(std::max<std::size_t>(block_size, 1)) {}
 
-  COROPACT_DELETE_COPY(Buffer);
+  COROPACT_DELETE_COPY(SegmentedBuffer);
 
-  Buffer(Buffer&& other) noexcept { MoveFromObject(std::move(other)); }
+  SegmentedBuffer(SegmentedBuffer&& other) noexcept { MoveFromObject(std::move(other)); }
 
-  Buffer& operator=(Buffer&& other) noexcept {
+  SegmentedBuffer& operator=(SegmentedBuffer&& other) noexcept {
     if (this != &other) {
       AssertNoWriteReservation();
       Clear();
@@ -39,7 +42,7 @@ public:
     return *this;
   }
 
-  ~Buffer() { Clear(); }
+  ~SegmentedBuffer() { Clear(); }
 
   [[nodiscard]]
   std::size_t ReadableBytes() const noexcept { return readable_bytes_; }
@@ -80,7 +83,7 @@ public:
 
   [[nodiscard]]
   std::vector<iovec> PrepareWrite(std::size_t hint, std::size_t max_iov = 16) {
-    assert(!write_reserved_ && "nested Buffer::PrepareWrite is not allowed");
+    assert(!write_reserved_ && "nested SegmentedBuffer::PrepareWrite is not allowed");
     if (max_iov == 0) return {};
 
     if (hint == 0) hint = block_size_;
@@ -112,8 +115,8 @@ public:
   }
 
   void CommitWrite(std::size_t n) {
-    assert(write_reserved_ && "Buffer::CommitWrite without PrepareWrite");
-    assert(n <= reserved_bytes_ && "Buffer::CommitWrite exceeds reserved bytes");
+    assert(write_reserved_ && "SegmentedBuffer::CommitWrite without PrepareWrite");
+    assert(n <= reserved_bytes_ && "SegmentedBuffer::CommitWrite exceeds reserved bytes");
 
     std::size_t remaining = n;
     for (Block& block : blocks_) {
@@ -247,7 +250,7 @@ private:
   }
 
   void AssertNoWriteReservation() const noexcept {
-    assert(!write_reserved_ && "Buffer mutation during pending write reservation");
+    assert(!write_reserved_ && "SegmentedBuffer mutation during pending write reservation");
   }
 
   void DrainCommitted(std::size_t n) noexcept {
@@ -277,8 +280,9 @@ private:
     readable_bytes_ = 0;
   }
 
-  void MoveFromObject(Buffer&& other) noexcept {
-    assert(!other.write_reserved_ && "moving a Buffer with pending write reservation");
+  void MoveFromObject(SegmentedBuffer&& other) noexcept {
+    assert(!other.write_reserved_ &&
+           "moving a SegmentedBuffer with pending write reservation");
 
     block_size_ = other.block_size_;
     readable_bytes_ = other.readable_bytes_;
