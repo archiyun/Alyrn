@@ -65,6 +65,8 @@ void CheckOptions() {
   assert((!RecvSourceOptions{1, 0, 1}.Valid()));
   assert((!RecvSourceOptions{1, 2, 1}.Valid()));
   assert((RecvSourceOptions{1, 2, 2}.Valid()));
+  assert((!RecvSourceOptions{1, 2, 2, 2}.Valid()));
+  assert(RecvSourceOptions{1, 2, 2}.ResumeThreshold() == 1);
 }
 
 void CheckBufferLease() {
@@ -195,6 +197,36 @@ void CheckBufferCapacityFailure() {
   assert(state.State() == RecvSourceState::kTerminal);
 }
 
+void CheckPauseAndResume() {
+  auto state_result = RecvSourceStateMachine::Create({
+      .pending_depth = 1,
+      .event_capacity = 2,
+      .buffer_capacity = 2,
+      .resume_threshold = 0,
+  });
+  assert(state_result.has_value());
+  auto state = std::move(*state_result);
+
+  assert(state.Start().has_value());
+  assert(state.TryArm());
+  assert(state.CompleteMultishotEvent(
+                 EventDisposition::kProduced,
+                 MultishotRequestDisposition::kMore)
+             .has_value());
+
+  assert(state.RequestPause().has_value());
+  assert(state.State() == RecvSourceState::kPausing);
+  assert(state.CompleteMultishotEvent(
+                 EventDisposition::kNone,
+                 MultishotRequestDisposition::kTerminal)
+             .has_value());
+  assert(state.State() == RecvSourceState::kPaused);
+
+  assert(state.AcquireEvent());
+  assert(state.TryResume());
+  assert(state.State() == RecvSourceState::kActive);
+}
+
 }  // namespace
 
 int main() {
@@ -202,6 +234,7 @@ int main() {
   CheckBufferLease();
   CheckLeaseLifetimeAndStop();
   CheckBufferCapacityFailure();
+  CheckPauseAndResume();
   std::cout << "recv source/BufferLease state smoke: PASS\n";
   return 0;
 }

@@ -443,7 +443,7 @@ base::Result<bool> LUringRecvSource::BeginStop() noexcept {
 void LUringRecvSource::EnsureSubmission() noexcept {
   if (loop_ == nullptr || !loop_->Initialized() ||
       state_.State() != net::detail::RecvSourceState::kActive ||
-      recv_submitted_) {
+      recv_submitted_ || cancel_submitted_) {
     return;
   }
 
@@ -451,6 +451,29 @@ void LUringRecvSource::EnsureSubmission() noexcept {
   if (!submitted.has_value()) {
     RequestBackendStop(submitted.error());
     DeliverNextIfReady();
+  }
+}
+
+void LUringRecvSource::RequestBackendPause() noexcept {
+  auto paused = state_.RequestPause();
+  assert(paused.has_value());
+
+  if (recv_submitted_ && !cancel_submitted_) {
+    auto cancelled = StartCancel();
+    if (!cancelled.has_value()) {
+      RequestBackendStop(cancelled.error());
+    }
+  }
+}
+
+void LUringRecvSource::MaybeResume() noexcept {
+  if (terminal_error_.has_value() || loop_ == nullptr || !loop_->Initialized() ||
+      cancel_submitted_) {
+    return;
+  }
+
+  if (state_.TryResume()) {
+    EnsureSubmission();
   }
 }
 
@@ -516,7 +539,7 @@ void LUringRecvSource::HoldOrFinalizeBuffer(
   MaybeReturnBuffer(buffer_id);
 }
 
-void LUringRecvSource::OnCompletion(CompletionEvent event) noexcept {
+CompletionDisposition LUringRecvSource::OnCompletion(CompletionEvent event) noexcept {
   const bool request_still_active = event.More();
   const int cqe_result = event.result;
 
@@ -593,7 +616,7 @@ void LUringRecvSource::OnCompletion(CompletionEvent event) noexcept {
       if (buffer_prepared) {
         MaybeReturnBuffer(buffer_id);
       }
-      RequestBackendStop(base::MakeErrno(ENOBUFS));
+      RequestBackendPause();
     } else {
       auto recorded = state_.CompleteMultishotEvent(
           net::detail::EventDisposition::kProduced,
@@ -644,6 +667,8 @@ void LUringRecvSource::OnCompletion(CompletionEvent event) noexcept {
     }
     const auto state = state_.State();
     const bool stopping = state == net::detail::RecvSourceState::kStopping ||
+                          state == net::detail::RecvSourceState::kPausing ||
+                          state == net::detail::RecvSourceState::kPaused ||
                           state == net::detail::RecvSourceState::kDraining ||
                           state == net::detail::RecvSourceState::kTerminal;
     if (!stopping) {
@@ -670,9 +695,9 @@ void LUringRecvSource::OnCompletion(CompletionEvent event) noexcept {
     recv_op_.BeginNextRequest();
   }
 
-  if (request_still_active && state_.State() == net::detail::RecvSourceState::kActive &&
+  if (state_.State() == net::detail::RecvSourceState::kActive &&
       state_.QueuedEvents() >= state_.Options().event_capacity) {
-    RequestBackendStop(base::MakeErrno(ENOBUFS));
+    RequestBackendPause();
   }
 
   if (!request_still_active && state_.State() == net::detail::RecvSourceState::kActive &&
@@ -681,7 +706,14 @@ void LUringRecvSource::OnCompletion(CompletionEvent event) noexcept {
   }
 
   DeliverNextIfReady();
+  MaybeResume();
   CompleteStopIfReady();
+
+  return CompletionDisposition{
+      .kernel_request_terminal = !request_still_active,
+      .decrement_inflight = !request_still_active,
+      .resume_continuation = false,
+  };
 }
 
 void LUringRecvSource::OnCancelComplete(int cqe_result) noexcept {
@@ -690,6 +722,7 @@ void LUringRecvSource::OnCancelComplete(int cqe_result) noexcept {
       !terminal_error_.has_value()) {
     terminal_error_ = base::MakeNegErrno(cqe_result);
   }
+  MaybeResume();
   CompleteStopIfReady();
 }
 
@@ -724,6 +757,9 @@ bool LUringRecvSource::TryTakeNext(Result& result) noexcept {
     COROPACT_CHECK(state_.AcquireEvent(),
                    "LUringRecvSource: queue and state became inconsistent");
     result = Result(std::in_place, std::move(event));
+    if (state_.State() == net::detail::RecvSourceState::kPaused) {
+      MaybeResume();
+    }
     return true;
   }
 
@@ -853,9 +889,11 @@ coro::Task<base::Result<void>> LUringRecvSource::Stop() {
 
 namespace detail {
 
-void DispatchRecvSourceComplete(LUringOp* op, CompletionEvent event) noexcept {
+CompletionDisposition DispatchRecvSourceComplete(
+    LUringOp* op,
+    CompletionEvent event) noexcept {
   auto* operation = static_cast<LUringRecvSource::RecvOperation*>(op);
-  operation->Source()->OnCompletion(event);
+  return operation->Source()->OnCompletion(event);
 }
 
 void DispatchRecvSourceCancelComplete(LUringOp* op) noexcept {

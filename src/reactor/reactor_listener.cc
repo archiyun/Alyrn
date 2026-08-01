@@ -284,9 +284,7 @@ coro::Task<ReactorAcceptSource::Result> ReactorAcceptSource::Next() {
 
   if (state_.State() == net::detail::AcceptSourceState::kIdle) {
     if (listener_->closed_) {
-      auto stopped = state_.RequestStop();
-      COROPACT_CHECK(stopped.has_value(),
-                     "ReactorAcceptSource::Next: failed to stop closed source");
+      state_.RequestStop();
       co_return Event{};
     }
     if (listener_->pending_accept_ != nullptr ||
@@ -315,10 +313,7 @@ coro::Task<base::Result<void>> ReactorAcceptSource::Stop() {
                   "ReactorAcceptSource::Stop called from wrong thread");
 
   if (state_.State() == net::detail::AcceptSourceState::kIdle) {
-    auto stopped = state_.RequestStop();
-    if (!stopped.has_value()) {
-      co_return std::unexpected(stopped.error());
-    }
+    state_.RequestStop();
     ReleaseListenerReservation();
     co_return base::Result<void>{};
   }
@@ -334,10 +329,7 @@ coro::Task<base::Result<void>> ReactorAcceptSource::Stop() {
         co_return std::unexpected(completed.error());
       }
     }
-    auto stopped = state_.RequestStop();
-    if (!stopped.has_value()) {
-      co_return std::unexpected(stopped.error());
-    }
+    state_.RequestStop();
   }
 
   DeliverNextIfReady();
@@ -411,8 +403,7 @@ void ReactorAcceptSource::OnListenerClosed() noexcept {
     auto completed = state_.CompleteRequest(false);
     COROPACT_CHECK(completed.has_value(), "ReactorAcceptSource: failed to drain close completion");
   }
-  auto stopped = state_.RequestStop();
-  COROPACT_CHECK(stopped.has_value(), "ReactorAcceptSource: failed to stop on close");
+  state_.RequestStop();
   DeliverNextIfReady();
 }
 
@@ -481,8 +472,7 @@ void ReactorAcceptSource::Fail(base::Error error) noexcept {
   if (listener_->channel_.IsReading()) {
     listener_->channel_.DisableReading();
   }
-  auto stopped = state_.RequestStop();
-  COROPACT_CHECK(stopped.has_value(), "ReactorAcceptSource: failed to enter terminal state");
+  state_.RequestStop();
   DeliverNextIfReady();
 }
 
