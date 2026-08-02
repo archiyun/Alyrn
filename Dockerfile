@@ -2,12 +2,40 @@
 
 # This image is an artifact builder, not a runtime image: CoroPact is a
 # library, so the useful Docker output is the installable package.
+FROM ubuntu:24.04 AS liburing-build
+
+ARG LIBURING_VERSION=2.9
+
+ENV DEBIAN_FRONTEND=noninteractive
+WORKDIR /tmp
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        git \
+        pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git clone --depth=1 --branch "liburing-${LIBURING_VERSION}" \
+        https://github.com/axboe/liburing.git \
+        /tmp/liburing
+
+WORKDIR /tmp/liburing
+RUN ./configure --prefix=/opt/liburing \
+    && make -j"$(nproc)" \
+    && make install
+
 FROM ubuntu:24.04 AS build
 
 ARG COROPACT_ENABLE_URING=ON
 
 ENV DEBIAN_FRONTEND=noninteractive
+ENV PKG_CONFIG_PATH=/opt/liburing/lib/pkgconfig
+ENV LD_LIBRARY_PATH=/opt/liburing/lib
 WORKDIR /src
+
+COPY --from=liburing-build /opt/liburing /opt/liburing
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -15,9 +43,7 @@ RUN apt-get update \
         cmake \
         dpkg-dev \
         g++ \
-        git \
         libgtest-dev \
-        liburing-dev \
         ninja-build \
         pkg-config \
     && rm -rf /var/lib/apt/lists/*

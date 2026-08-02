@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing or new release tag to publish"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -12,6 +18,8 @@ jobs:
   package:
     name: Build and publish release artifacts
     runs-on: ubuntu-24.04
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
 
@@ -26,13 +34,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          release_notes="docs/releases/${GITHUB_REF_NAME}.md"
+          release_notes="docs/releases/${RELEASE_TAG}.md"
           if [[ -f "${release_notes}" ]]; then
-            gh release create "${GITHUB_REF_NAME}" dist/* \
+            gh release create "${RELEASE_TAG}" dist/* \
               --repo "${GITHUB_REPOSITORY}" \
               --notes-file "${release_notes}"
           else
-            gh release create "${GITHUB_REF_NAME}" dist/* \
+            gh release create "${RELEASE_TAG}" dist/* \
               --repo "${GITHUB_REPOSITORY}" \
               --generate-notes
           fi

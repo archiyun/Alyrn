@@ -24,7 +24,7 @@ find_package(Threads REQUIRED)
 
 if(COROPACT_ENABLE_URING)
     find_package(PkgConfig REQUIRED)
-    pkg_check_modules(URING REQUIRED IMPORTED_TARGET liburing)
+    pkg_check_modules(URING REQUIRED IMPORTED_TARGET liburing>=2.6)
 endif()
 
 # Sanitizer toggle. Empty/OFF = no instrumentation (default). Accepts any
@@ -323,6 +323,6 @@ set(CPACK_RESOURCE_FILE_LICENSE ${CMAKE_CURRENT_SOURCE_DIR}/LICENSE)
 set(CPACK_GENERATOR "TGZ;DEB")
 set(CPACK_PACKAGING_INSTALL_PREFIX "/usr")
 if(COROPACT_ENABLE_URING)
-    set(CPACK_DEBIAN_PACKAGE_DEPENDS "liburing-dev")
+    set(CPACK_DEBIAN_PACKAGE_DEPENDS "liburing-dev (>= 2.6)")
 endif()
 include(CPack)
