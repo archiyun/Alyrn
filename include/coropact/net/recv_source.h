@@ -10,6 +10,7 @@
 
 #include "coropact/base/error.h"
 #include "coropact/net/source_state.h"
+#include "coropact/utils/macros.h"
 
 namespace coropact::net {
 
@@ -19,23 +20,14 @@ namespace coropact::net {
 // every outstanding lease has been released.
 class BufferLease final {
 public:
+  COROPACT_DELETE_COPY(BufferLease);
   using ReclaimFn = void (*)(void* context, std::uint32_t buffer_id) noexcept;
 
   BufferLease() noexcept = default;
 
-  BufferLease(std::byte* data,
-              std::size_t size,
-              std::uint32_t buffer_id,
-              void* context,
+  BufferLease(std::byte* data, std::size_t size, std::uint32_t buffer_id, void* context,
               ReclaimFn reclaim) noexcept
-      : data_(data),
-        size_(size),
-        buffer_id_(buffer_id),
-        context_(context),
-        reclaim_(reclaim) {}
-
-  BufferLease(const BufferLease&) = delete;
-  BufferLease& operator=(const BufferLease&) = delete;
+      : data_(data), size_(size), buffer_id_(buffer_id), context_(context), reclaim_(reclaim) {}
 
   BufferLease(BufferLease&& other) noexcept
       : data_(std::exchange(other.data_, nullptr)),
@@ -59,16 +51,24 @@ public:
   ~BufferLease() noexcept { Release(); }
 
   [[nodiscard]]
-  bool Valid() const noexcept { return reclaim_ != nullptr; }
+  bool Valid() const noexcept {
+    return reclaim_ != nullptr;
+  }
 
   [[nodiscard]]
-  std::span<const std::byte> Bytes() const noexcept { return {data_, size_}; }
+  std::span<const std::byte> Bytes() const noexcept {
+    return {data_, size_};
+  }
 
   [[nodiscard]]
-  std::size_t Size() const noexcept { return size_; }
+  std::size_t Size() const noexcept {
+    return size_;
+  }
 
   [[nodiscard]]
-  std::uint32_t BufferId() const noexcept { return buffer_id_; }
+  std::uint32_t BufferId() const noexcept {
+    return buffer_id_;
+  }
 
   // Idempotent. Moving a lease transfers the only reclaim obligation to the
   // destination; a moved-from lease is empty and does nothing on destruction.
@@ -99,11 +99,19 @@ struct RecvSourceOptions {
   std::size_t pending_depth{1};
   std::size_t event_capacity{16};
   std::size_t buffer_capacity{16};
+  // Zero selects event_capacity / 2. The threshold must stay below the
+  // admission capacity so a paused source has room to re-arm safely.
+  std::size_t resume_threshold{0};
 
   [[nodiscard]]
   constexpr bool Valid() const noexcept {
-    return pending_depth > 0 && event_capacity > 0 &&
-           buffer_capacity >= event_capacity;
+    return pending_depth > 0 && event_capacity > 0 && buffer_capacity >= event_capacity &&
+           (resume_threshold == 0 || resume_threshold < event_capacity);
+  }
+
+  [[nodiscard]]
+  constexpr std::size_t ResumeThreshold() const noexcept {
+    return resume_threshold == 0 ? event_capacity / 2 : resume_threshold;
   }
 };
 
@@ -124,8 +132,7 @@ using RecvSourceState = SourceState;
 class RecvSourceStateMachine final {
 public:
   [[nodiscard]]
-  static base::Result<RecvSourceStateMachine> Create(
-      RecvSourceOptions options) noexcept {
+  static base::Result<RecvSourceStateMachine> Create(RecvSourceOptions options) noexcept {
     if (!options.Valid()) {
       return std::unexpected(base::MakeErrno(EINVAL));
     }
@@ -150,13 +157,39 @@ public:
     return true;
   }
 
+  // Pausing is a recoverable admission state. The backend owns the physical
+  // cancel/re-arm sequence; this machine only records the logical boundary.
+  [[nodiscard]]
+  base::Result<void> RequestPause() noexcept {
+    if (state_ == RecvSourceState::kTerminal || state_ == RecvSourceState::kDraining ||
+        state_ == RecvSourceState::kStopping || state_ == RecvSourceState::kPausing ||
+        state_ == RecvSourceState::kPaused) {
+      return {};
+    }
+    if (state_ != RecvSourceState::kActive) {
+      return std::unexpected(base::MakeErrno(EINVAL));
+    }
+
+    state_ = RecvSourceState::kPausing;
+    ReconcilePause();
+    return {};
+  }
+
+  [[nodiscard]]
+  bool TryResume() noexcept {
+    if (state_ != RecvSourceState::kPaused || queued_events_ > options_.ResumeThreshold()) {
+      return false;
+    }
+    state_ = RecvSourceState::kActive;
+    return true;
+  }
+
   // F_MORE keeps the physical request armed. Only its terminal CQE releases
   // one armed request slot. A produced event consumes one buffer slot even
   // before the consumer acquires its lease.
   [[nodiscard]]
-  base::Result<void> CompleteMultishotEvent(
-      EventDisposition event,
-      MultishotRequestDisposition request) noexcept {
+  base::Result<void> CompleteMultishotEvent(EventDisposition event,
+                                            MultishotRequestDisposition request) noexcept {
     if (armed_requests_ == 0) {
       return std::unexpected(base::MakeErrno(EINVAL));
     }
@@ -211,8 +244,7 @@ public:
 
   [[nodiscard]]
   base::Result<void> RequestStop() noexcept {
-    if (state_ == RecvSourceState::kTerminal ||
-        state_ == RecvSourceState::kDraining ||
+    if (state_ == RecvSourceState::kTerminal || state_ == RecvSourceState::kDraining ||
         state_ == RecvSourceState::kStopping) {
       return {};
     }
@@ -228,16 +260,24 @@ public:
   }
 
   [[nodiscard]]
-  RecvSourceState State() const noexcept { return state_; }
+  RecvSourceState State() const noexcept {
+    return state_;
+  }
 
   [[nodiscard]]
-  const RecvSourceOptions& Options() const noexcept { return options_; }
+  const RecvSourceOptions& Options() const noexcept {
+    return options_;
+  }
 
   [[nodiscard]]
-  std::size_t QueuedEvents() const noexcept { return queued_events_; }
+  std::size_t QueuedEvents() const noexcept {
+    return queued_events_;
+  }
 
   [[nodiscard]]
-  std::size_t ArmedRequests() const noexcept { return armed_requests_; }
+  std::size_t ArmedRequests() const noexcept {
+    return armed_requests_;
+  }
 
   [[nodiscard]]
   std::size_t OutstandingLeases() const noexcept {
@@ -246,10 +286,8 @@ public:
 
   [[nodiscard]]
   bool CanArm() const noexcept {
-    return state_ == RecvSourceState::kActive &&
-           armed_requests_ < options_.pending_depth &&
-           CanQueueEvent() &&
-           outstanding_leases_ + armed_requests_ < options_.buffer_capacity;
+    return state_ == RecvSourceState::kActive && armed_requests_ < options_.pending_depth &&
+           CanQueueEvent() && outstanding_leases_ + armed_requests_ < options_.buffer_capacity;
   }
 
   [[nodiscard]]
@@ -259,23 +297,28 @@ public:
   }
 
 private:
-  explicit RecvSourceStateMachine(RecvSourceOptions options) noexcept
-      : options_(options) {}
+  explicit RecvSourceStateMachine(RecvSourceOptions options) noexcept : options_(options) {}
 
   void ReconcileStopping() noexcept {
+    ReconcilePause();
     if (state_ == RecvSourceState::kStopping) {
       if (armed_requests_ != 0) {
         return;
       }
-      state_ = queued_events_ == 0 && outstanding_leases_ == 0
-                   ? RecvSourceState::kTerminal
-                   : RecvSourceState::kDraining;
+      state_ = queued_events_ == 0 && outstanding_leases_ == 0 ? RecvSourceState::kTerminal
+                                                               : RecvSourceState::kDraining;
       return;
     }
 
-    if (state_ == RecvSourceState::kDraining && armed_requests_ == 0 &&
-        queued_events_ == 0 && outstanding_leases_ == 0) {
+    if (state_ == RecvSourceState::kDraining && armed_requests_ == 0 && queued_events_ == 0 &&
+        outstanding_leases_ == 0) {
       state_ = RecvSourceState::kTerminal;
+    }
+  }
+
+  void ReconcilePause() noexcept {
+    if (state_ == RecvSourceState::kPausing && armed_requests_ == 0) {
+      state_ = RecvSourceState::kPaused;
     }
   }
 

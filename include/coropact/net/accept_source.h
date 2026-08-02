@@ -17,10 +17,19 @@ namespace coropact::net {
 struct AcceptSourceOptions {
   std::size_t pending_depth{4};
   std::size_t event_capacity{64};
+  // Zero selects event_capacity / 2. The threshold must stay below the
+  // admission capacity so a paused source has room to re-arm safely.
+  std::size_t resume_threshold{0};
 
   [[nodiscard]]
   constexpr bool Valid() const noexcept {
-    return pending_depth > 0 && event_capacity >= pending_depth;
+    return pending_depth > 0 && event_capacity >= pending_depth &&
+           (resume_threshold == 0 || resume_threshold < event_capacity);
+  }
+
+  [[nodiscard]]
+  constexpr std::size_t ResumeThreshold() const noexcept {
+    return resume_threshold == 0 ? event_capacity / 2 : resume_threshold;
   }
 };
 
@@ -61,6 +70,39 @@ public:
       return false;
     }
     ++armed_requests_;
+    return true;
+  }
+
+  // Backpressure pauses admission without making the logical source
+  // terminal. The backend must cancel the active physical request and feed
+  // its terminal CQE back through CompleteMultishotEvent/CompleteRequest.
+  [[nodiscard]]
+  base::Result<void> RequestPause() noexcept {
+    if (state_ == AcceptSourceState::kTerminal ||
+        state_ == AcceptSourceState::kDraining ||
+        state_ == AcceptSourceState::kStopping ||
+        state_ == AcceptSourceState::kPausing ||
+        state_ == AcceptSourceState::kPaused) {
+      return {};
+    }
+    if (state_ != AcceptSourceState::kActive) {
+      return std::unexpected(base::MakeErrno(EINVAL));
+    }
+
+    state_ = AcceptSourceState::kPausing;
+    ReconcilePause();
+    return {};
+  }
+
+  // Returns true only when a paused source crossed its low-water mark and
+  // can accept a new physical request.
+  [[nodiscard]]
+  bool TryResume() noexcept {
+    if (state_ != AcceptSourceState::kPaused ||
+        queued_events_ > options_.ResumeThreshold()) {
+      return false;
+    }
+    state_ = AcceptSourceState::kActive;
     return true;
   }
 
@@ -122,22 +164,20 @@ public:
   // Stop is idempotent. Existing queued events remain available to Next();
   // after pending requests drain and the queue is consumed, the source is
   // terminal and Next() returns the normal end result.
-  [[nodiscard]]
-  base::Result<void> RequestStop() noexcept {
+  void RequestStop() noexcept {
     if (state_ == AcceptSourceState::kTerminal ||
         state_ == AcceptSourceState::kDraining ||
         state_ == AcceptSourceState::kStopping) {
-      return {};
+      return;
     }
 
     if (state_ == AcceptSourceState::kIdle) {
       state_ = AcceptSourceState::kTerminal;
-      return {};
+      return;
     }
 
     state_ = AcceptSourceState::kStopping;
     ReconcileStopping();
-    return {};
   }
 
   [[nodiscard]]
@@ -164,6 +204,7 @@ private:
       : options_(options) {}
 
   void ReconcileStopping() noexcept {
+    ReconcilePause();
     if (state_ == AcceptSourceState::kStopping) {
       if (armed_requests_ != 0) {
         return;
@@ -176,6 +217,12 @@ private:
     if (state_ == AcceptSourceState::kDraining && queued_events_ == 0 &&
         armed_requests_ == 0) {
       state_ = AcceptSourceState::kTerminal;
+    }
+  }
+
+  void ReconcilePause() noexcept {
+    if (state_ == AcceptSourceState::kPausing && armed_requests_ == 0) {
+      state_ = AcceptSourceState::kPaused;
     }
   }
 

@@ -45,8 +45,8 @@ bool TestEmpty() {
 }
 
 bool TestInsertEraseAndPopWhile() {
-  TimerHeap heap;
   std::deque<TimerJob> jobs;
+  TimerHeap heap;
   jobs.emplace_back(1, 30);
   jobs.emplace_back(2, 10);
   jobs.emplace_back(3, 20);
@@ -94,8 +94,8 @@ bool TestInsertEraseAndPopWhile() {
 
 // The second PopWhile overload: no result vector, runs on_pop per element.
 bool TestPopWhileOnPop() {
-  TimerHeap heap;
   std::deque<TimerJob> jobs;
+  TimerHeap heap;
   for (int i = 0; i < 6; ++i) jobs.emplace_back(i, i * 10);  // deadlines 0..50
   for (auto& job : jobs) heap.Insert(&job);
 
@@ -164,8 +164,8 @@ bool TestClearReleasesNodes() {
 bool TestRandomizedStress() {
   std::mt19937 rng(0xC0FFEE);
   for (int trial = 0; trial < 300; ++trial) {
-    TimerHeap heap;
     std::deque<TimerJob> jobs;
+    TimerHeap heap;
     int n = static_cast<int>(rng() % 120) + 1;
     for (int i = 0; i < n; ++i) {
       jobs.emplace_back(i, static_cast<int64_t>(rng() % 500));

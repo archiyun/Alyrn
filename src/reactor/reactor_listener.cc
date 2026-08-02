@@ -133,7 +133,7 @@ private:
     if (fd < 0) {
       return std::unexpected(base::CurrentErrno());
     }
-    return ReactorStream(listener_->loop_, fd, peer_addr);
+    return ReactorStream(listener_->loop_, fd, peer_addr, listener_->stream_options_);
   }
 
   ReactorListener* listener_;
@@ -284,9 +284,7 @@ coro::Task<ReactorAcceptSource::Result> ReactorAcceptSource::Next() {
 
   if (state_.State() == net::detail::AcceptSourceState::kIdle) {
     if (listener_->closed_) {
-      auto stopped = state_.RequestStop();
-      COROPACT_CHECK(stopped.has_value(),
-                     "ReactorAcceptSource::Next: failed to stop closed source");
+      state_.RequestStop();
       co_return Event{};
     }
     if (listener_->pending_accept_ != nullptr ||
@@ -315,10 +313,7 @@ coro::Task<base::Result<void>> ReactorAcceptSource::Stop() {
                   "ReactorAcceptSource::Stop called from wrong thread");
 
   if (state_.State() == net::detail::AcceptSourceState::kIdle) {
-    auto stopped = state_.RequestStop();
-    if (!stopped.has_value()) {
-      co_return std::unexpected(stopped.error());
-    }
+    state_.RequestStop();
     ReleaseListenerReservation();
     co_return base::Result<void>{};
   }
@@ -334,10 +329,7 @@ coro::Task<base::Result<void>> ReactorAcceptSource::Stop() {
         co_return std::unexpected(completed.error());
       }
     }
-    auto stopped = state_.RequestStop();
-    if (!stopped.has_value()) {
-      co_return std::unexpected(stopped.error());
-    }
+    state_.RequestStop();
   }
 
   DeliverNextIfReady();
@@ -345,7 +337,7 @@ coro::Task<base::Result<void>> ReactorAcceptSource::Stop() {
   co_return base::Result<void>{};
 }
 
-void ReactorAcceptSource::OnReady(coropact::time::Timestamp /*receive_time*/) noexcept {
+void ReactorAcceptSource::OnReady() noexcept {
   if (state_.State() != net::detail::AcceptSourceState::kActive) {
     return;
   }
@@ -411,8 +403,7 @@ void ReactorAcceptSource::OnListenerClosed() noexcept {
     auto completed = state_.CompleteRequest(false);
     COROPACT_CHECK(completed.has_value(), "ReactorAcceptSource: failed to drain close completion");
   }
-  auto stopped = state_.RequestStop();
-  COROPACT_CHECK(stopped.has_value(), "ReactorAcceptSource: failed to stop on close");
+  state_.RequestStop();
   DeliverNextIfReady();
 }
 
@@ -481,8 +472,7 @@ void ReactorAcceptSource::Fail(base::Error error) noexcept {
   if (listener_->channel_.IsReading()) {
     listener_->channel_.DisableReading();
   }
-  auto stopped = state_.RequestStop();
-  COROPACT_CHECK(stopped.has_value(), "ReactorAcceptSource: failed to enter terminal state");
+  state_.RequestStop();
   DeliverNextIfReady();
 }
 
@@ -496,14 +486,15 @@ base::Result<ReactorStream> ReactorAcceptSource::TryAccept() noexcept {
   if (fd < 0) {
     return std::unexpected(base::CurrentErrno());
   }
-  return ReactorStream(listener_->loop_, fd, peer_addr);
+  return ReactorStream(listener_->loop_, fd, peer_addr, listener_->stream_options_);
 }
 
 ReactorListener::ReactorListener(EventLoop* loop, const net::Endpoint& listen_addr,
                                  ReactorListenerOptions options)
     : loop_(CheckLoop(loop)),
       socket_(CreateListenSocket(listen_addr.native_family())),
-      channel_(loop_, socket_.fd()) {
+      channel_(loop_, socket_.fd()),
+      stream_options_(options.stream_options) {
   socket_.set_reuse_addr(options.reuse_addr);
   if (options.reuse_port) {
     socket_.set_reuse_port(true);
@@ -514,8 +505,12 @@ ReactorListener::ReactorListener(EventLoop* loop, const net::Endpoint& listen_ad
   BindChannelCallbacks();
 }
 
-ReactorListener::ReactorListener(EventLoop* loop, net::Socket socket) noexcept
-    : loop_(CheckLoop(loop)), socket_(std::move(socket)), channel_(loop_, socket_.fd()) {
+ReactorListener::ReactorListener(EventLoop* loop, net::Socket socket,
+                                 ReactorStreamOptions stream_options) noexcept
+    : loop_(CheckLoop(loop)),
+      socket_(std::move(socket)),
+      channel_(loop_, socket_.fd()),
+      stream_options_(stream_options) {
   BindChannelCallbacks();
 }
 
@@ -526,13 +521,15 @@ base::Result<ReactorListener> ReactorListener::Create(EventLoop* loop,
     return std::unexpected(base::MakeErrno(EINVAL));
   }
 
-  return ReactorListener(loop, COROPACT_TRY(TryCreateListenSocket(listen_addr, options)));
+  return ReactorListener(loop, COROPACT_TRY(TryCreateListenSocket(listen_addr, options)),
+                         options.stream_options);
 }
 
 ReactorListener::ReactorListener(ReactorListener&& other) noexcept
     : loop_(PrepareMove(other)),
       socket_(std::move(other.socket_)),
       channel_(std::move(other.channel_)),
+      stream_options_(other.stream_options_),
       pending_accept_(nullptr),
       accept_source_(nullptr),
       closed_(other.closed_) {
@@ -555,6 +552,7 @@ ReactorListener& ReactorListener::operator=(ReactorListener&& other) noexcept {
   loop_ = other_loop;
   socket_ = std::move(other.socket_);
   channel_ = std::move(other.channel_);
+  stream_options_ = other.stream_options_;
   pending_accept_ = nullptr;
   accept_source_ = nullptr;
   closed_ = other.closed_;
@@ -624,12 +622,12 @@ base::Result<net::Endpoint> ReactorListener::LocalAddress() const {
   return net::get_local_addr(socket_.fd());
 }
 
-void ReactorListener::HandleRead(time::Timestamp receive_time) {
+void ReactorListener::HandleRead() {
   COROPACT_DCHECK(loop_->IsInLoopThread(), "ReactorListener::HandleRead called from wrong thread");
   if (pending_accept_ != nullptr) {
     pending_accept_->OnReady();
   } else if (accept_source_ != nullptr) {
-    accept_source_->OnReady(receive_time);
+    accept_source_->OnReady();
   }
 }
 
@@ -642,8 +640,8 @@ void ReactorListener::HandleError() {
   }
 }
 
-void ReactorListener::DispatchRead(void* context, time::Timestamp receive_time) noexcept {
-  static_cast<ReactorListener*>(context)->HandleRead(receive_time);
+void ReactorListener::DispatchRead(void* context) noexcept {
+  static_cast<ReactorListener*>(context)->HandleRead();
 }
 
 void ReactorListener::DispatchError(void* context) noexcept {

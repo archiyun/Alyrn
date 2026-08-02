@@ -91,6 +91,7 @@ AcceptSource owns pending accept state and queued Stream values
 struct AcceptSourceOptions {
   std::size_t pending_depth{4};
   std::size_t event_capacity{64};
+  std::size_t resume_threshold{0}; // 0 表示 event_capacity / 2
 };
 ```
 
@@ -99,6 +100,7 @@ struct AcceptSourceOptions {
 ```text
 pending_depth > 0
 event_capacity >= pending_depth
+resume_threshold == 0 || resume_threshold < event_capacity
 ```
 
 `pending_depth` 表示最多有多少个 physical accept request 同时交给后端；
@@ -125,16 +127,17 @@ queued_events + armed_accept_requests <= event_capacity
 有空闲 budget
   -> 可以提交/重新提交 accept request
 
-没有空闲 budget
-  -> 不再 re-arm 新 request
+达到 high-water mark
+  -> source 进入 Pausing（不是终止）
   -> Reactor 暂停 accept readiness
-  -> io_uring one-shot 等待现有 request 收敛
-  -> native multishot 请求进入 cancel/terminal 收敛路径
+  -> io_uring one-shot 不再 re-arm；已有 request 自然收敛
+  -> native multishot 提交 cancel，并等待目标 request 的 terminal CQE
+  -> 目标 request 的 terminal CQE 到达后，source 进入 Paused
+  -> cancel CQE 也收敛后才允许重新提交 request
 
-consumer 成功 Next()
-  -> queued_events 减一
-  -> 释放一个 admission slot
-  -> source 恢复 re-arm
+consumer 成功 Next()，且 queued_events <= resume_threshold
+  -> source 从 Paused 回到 Active
+  -> 恢复 readiness 或提交新的 request
 ```
 
 `pending_depth` 是吞吐和 burst 吸收能力；`event_capacity` 是内存和连接资源的硬上限，
@@ -147,6 +150,9 @@ consumer 成功 Next()
 ```text
 Idle
   -> Active
+  -> Pausing
+  -> Paused
+  -> Active
   -> Stopping
   -> Draining
   -> Terminal
@@ -158,6 +164,8 @@ Idle
 | --- | --- |
 | `Idle` | source 已创建，尚未提交 accept request |
 | `Active` | 允许 admission，source 可以产生新连接 |
+| `Pausing` | 已达到 high-water mark，正在等待既有 physical request 收敛 |
+| `Paused` | target request 已终态；保留 queue，等待 low-water 与在途 cancel CQE 收敛后恢复 |
 | `Stopping` | 已请求停止，不再提交新的 accept |
 | `Draining` | pending request 已收敛，只交付已有 queue 内容 |
 | `Terminal` | queue 已排空，后续只返回 sticky terminal result |
@@ -175,8 +183,10 @@ Native multishot:
   一个 request 对应多个 CQE，最后一个 CQE 才结束 request
 ```
 
-source 进入 `Stopping` 不等于所有 physical request 已经释放；只有所有 pending request
-都观察到终止结果后，source 才能进入 `Draining`。
+source 进入 `Pausing` 或 `Stopping` 不等于所有 physical request 已经释放；前者必须等到
+目标 request 的终态后才进入 `Paused`，后者则进入 `Draining` 或 `Terminal`。取消 request
+自己的 CQE 可以稍后到达；在它到达前 source 不得 re-arm。两条路径的区别在于：pause 不
+产生业务可见 terminal result，也不设置 stop 语义。
 
 ## 5. 错误与终止策略
 
@@ -188,7 +198,8 @@ source 进入 `Stopping` 不等于所有 physical request 已经释放；只有�
 | Reactor `EAGAIN` | 本轮没有事件，重新等待 readiness |
 | `ECONNABORTED` | 丢弃该连接尝试，继续 re-arm；不终止 source |
 | `EMFILE` / `ENFILE` | source 进入终止错误；避免 busy retry |
-| `ENOBUFS` / `ENOMEM` | source 进入终止错误；由上层决定重建 source |
+| source queue 达到容量 | pause admission；不是 `ENOBUFS` 终止错误 |
+| backend allocation `ENOMEM` | source 进入终止错误；由上层决定重建 source |
 | listener close | source 停止 admission，排空已有 queue 后正常结束 |
 | explicit `Stop()` | 取消 pending request，排空已有 queue 后正常结束 |
 | 后端未知错误 | source 进入 sticky 终止错误 |
@@ -206,8 +217,8 @@ source Active
   -> 注册 listen fd readable
   -> callback 中循环 accept() 直到 EAGAIN 或 admission budget 用尽
   -> 每个成功 fd 入队一个 Stream
-  -> queue 满时移除/暂停 readable interest
-  -> Next() 消费后重新注册 readiness
+  -> queue 达到 high-water 时移除/暂停 readable interest
+  -> Next() 使 queue 降到 low-water 后重新注册 readiness
 ```
 
 Reactor 的 readiness 本身不是业务事件；业务事件只由成功的 `accept()` 产生。
@@ -233,9 +244,10 @@ native multishot accept 作为第二种内部 path：
 ```text
 一个 multishot request
   -> CQE(F_MORE)：入队一个 Stream，request 保持 active
-  -> queue 达到 watermark：取消 request
-  -> 最终 CQE：记录 source terminal
-  -> 等待 queue 排空后释放 source
+  -> queue 达到 high-water：source 进入 Pausing，取消 request
+  -> 目标 request 的最终 CQE：source 进入 Paused（不交付 terminal）
+  -> Next() 使 queue 降到 low-water：重新提交 request 并回到 Active
+  -> Stop/Close 才进入 Stopping/Draining/Terminal
 ```
 
 两种 path 对业务都只暴露 `Next()`；区别保留在 luring 内部的 operation family 和
@@ -257,10 +269,13 @@ capability/path selector 中。
 - [x] 增加 `AcceptSourceOptions`、`AsyncAcceptSource` 和 source 状态机的单元测试；
 - [x] 在 Reactor 实现 bounded accept-drain 与 readiness pause/resume；
 - [x] 覆盖 source `Stop()`、listener `Close()`、队列消费和 listener 生命周期回归。
+- [x] 覆盖 io_uring native multishot 的 high-water pause、terminal CQE 收敛和 low-water
+  re-arm；测试中只有第三个、在低水位后新建的连接能够证明重挂成功。
 
 后续顺序：
 
 1. 在 io_uring 实现 one-shot accept re-arm，复用现有 `accept_depth` 作为初始
    `pending_depth`；
 2. 增加 Reactor/io_uring source 与 listener close/cancel 的交错测试；
-3. 确认 one-shot source 的生命周期和背压后，再接 native multishot accept。
+3. 为 Reactor 增加同一 high-water/low-water 可观察序列的 integration test，保持两个
+   backend 的 logical source trace 一致。

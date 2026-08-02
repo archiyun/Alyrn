@@ -552,7 +552,8 @@ CompletionDisposition LUringStream::SendZeroCopyAwaiter::OnComplete(
     if (self->diagnostics_ != nullptr) {
       self->diagnostics_->RecordNotification(event.result, self->copied_);
     }
-    disposition.kernel_operation_done = true;
+    disposition.kernel_request_terminal = true;
+    disposition.decrement_inflight = true;
   } else if (self->lifecycle_.RecordLogicalResult()) {
     // REPORT_USAGE keeps a notification boundary for every submitted send.
     // Some kernels do not advertise it through F_MORE on the primary CQE, so
@@ -571,8 +572,8 @@ CompletionDisposition LUringStream::SendZeroCopyAwaiter::OnComplete(
       self->stream_->NotifyCloseProgress();
     }
   }
-  disposition.logical_completion_ready = self->lifecycle_.TryAuthorizeContinuation();
-  if (disposition.logical_completion_ready && self->diagnostics_ != nullptr) {
+  disposition.resume_continuation = self->lifecycle_.TryAuthorizeContinuation();
+  if (disposition.resume_continuation && self->diagnostics_ != nullptr) {
     self->diagnostics_->RecordLogicalCompletion();
   }
   return disposition;

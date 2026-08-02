@@ -43,7 +43,7 @@ struct LUringRecvSourceOptions {
 // must remain alive until every BufferLease returned by Next() has been
 // released; Stop() waits for that lease boundary before completing.
 class LUringRecvSource final {
-  friend void detail::DispatchRecvSourceComplete(
+  friend CompletionDisposition detail::DispatchRecvSourceComplete(
       LUringOp* op,
       CompletionEvent event) noexcept;
   friend void detail::DispatchRecvSourceCancelComplete(LUringOp* op) noexcept;
@@ -153,10 +153,12 @@ private:
   base::Result<bool> BeginStop() noexcept;
 
   void EnsureSubmission() noexcept;
+  void MaybeResume() noexcept;
+  void RequestBackendPause() noexcept;
   void RequestBackendStop(
       std::optional<base::Error> error = std::nullopt) noexcept;
 
-  void OnCompletion(CompletionEvent event) noexcept;
+  CompletionDisposition OnCompletion(CompletionEvent event) noexcept;
   void OnCancelComplete(int cqe_result) noexcept;
 
   void DeliverNextIfReady() noexcept;

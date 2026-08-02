@@ -13,11 +13,16 @@ EXTENDS Naturals, Sequences, FiniteSets
 (*                                                                         *)
 (* 后归还 provided-buffer ring。模型只描述一个 multishot request 的       *)
 (* 生命周期；request 终态与每个 buffer 的 final boundary 相互独立。      *)
+(* 达到 high-water 后，request 先进入 Pausing；其终态只暂停 source，   *)
+(* 不会制造业务可观察的 terminal。                                     *)
 (***************************************************************************)
 
-CONSTANT BufferCapacity, BufferSize, EventCapacity, MaxSegments
+(* MaxRequests bounds re-arms that produce no segment. Without it, a paused
+ * source could be re-armed and receive an immediate terminal CQE forever,
+ * which is correct at runtime but not enumerable by TLC. *)
+CONSTANT BufferCapacity, BufferSize, EventCapacity, MaxSegments, MaxRequests
 
-SourceStates  == {"Idle", "Active", "Stopping", "Draining", "Terminal"}
+SourceStates  == {"Idle", "Active", "Pausing", "Paused", "Stopping", "Draining", "Terminal"}
 RequestStates == {"Idle", "Armed"}
 BufferIds     == 1..BufferCapacity
 Lengths       == 1..BufferSize
@@ -37,6 +42,7 @@ VARIABLES sourceState,
           producedCount,
           deliveredCount,
           terminalRequestCount,
+          submitCount,
           resumeCount
 
 vars == <<sourceState,
@@ -50,6 +56,7 @@ vars == <<sourceState,
           producedCount,
           deliveredCount,
           terminalRequestCount,
+          submitCount,
           resumeCount>>
 
 QueueSet == {queue[i] : i \in 1..Len(queue)}
@@ -58,10 +65,12 @@ OutstandingFor(buffer) == {segment \in Outstanding : segment.buffer = buffer}
 ReturnEligible(buffer) == buffer \in finalSeen /\ OutstandingFor(buffer) = {}
 
 AfterTerminal ==
-  IF Outstanding = {} THEN "Terminal" ELSE "Draining"
+  IF sourceState = "Pausing"
+  THEN "Paused"
+  ELSE IF Outstanding = {} THEN "Terminal" ELSE "Draining"
 
 AfterRelease ==
-  IF requestState = "Idle" /\ Outstanding = {}
+  IF sourceState = "Draining" /\ requestState = "Idle" /\ Outstanding = {}
   THEN "Terminal"
   ELSE sourceState
 
@@ -75,6 +84,8 @@ Init ==
   /\ EventCapacity <= MaxSegments
   /\ MaxSegments \in Nat
   /\ MaxSegments > 0
+  /\ MaxRequests \in Nat
+  /\ MaxRequests > 0
   /\ sourceState = "Idle"
   /\ requestState = "Idle"
   /\ available = BufferIds
@@ -86,12 +97,14 @@ Init ==
   /\ producedCount = 0
   /\ deliveredCount = 0
   /\ terminalRequestCount = 0
+  /\ submitCount = 0
   /\ resumeCount = 0
 
 Start ==
   /\ sourceState = "Idle"
   /\ sourceState' = "Active"
   /\ requestState' = "Armed"
+  /\ submitCount' = 1
   /\ UNCHANGED <<available, activeBuffer, nextOffset, finalSeen, queue, leased,
                  producedCount, deliveredCount, terminalRequestCount, resumeCount>>
 
@@ -101,7 +114,7 @@ Start ==
 (* activeBuffer but cannot return its buffer while any segment remains.    *)
 (***************************************************************************)
 KernelSegment(buffer, length, bufferMore) ==
-  /\ sourceState \in {"Active", "Stopping"}
+  /\ sourceState \in {"Active", "Pausing", "Stopping"}
   /\ requestState = "Armed"
   /\ length \in Lengths
   /\ producedCount < MaxSegments
@@ -117,18 +130,18 @@ KernelSegment(buffer, length, bufferMore) ==
        /\ queue' = Append(queue, segment)
   /\ producedCount' = producedCount + 1
   /\ UNCHANGED <<sourceState, requestState, leased, deliveredCount,
-                 terminalRequestCount, resumeCount>>
+                 terminalRequestCount, submitCount, resumeCount>>
 
 (* EOF, error, or cancellation terminates the physical multishot request. *)
 KernelTerminal ==
-  /\ sourceState \in {"Active", "Stopping"}
+  /\ sourceState \in {"Active", "Pausing", "Stopping"}
   /\ requestState = "Armed"
   /\ activeBuffer = NoBuffer
   /\ requestState' = "Idle"
   /\ sourceState' = AfterTerminal
   /\ terminalRequestCount' = terminalRequestCount + 1
   /\ UNCHANGED <<available, activeBuffer, nextOffset, finalSeen, queue, leased,
-                 producedCount, deliveredCount, resumeCount>>
+                 producedCount, deliveredCount, submitCount, resumeCount>>
 
 (* A terminal CQE can close a buffer without producing another segment. *)
 FinalizeIncrementalBuffer ==
@@ -136,13 +149,41 @@ FinalizeIncrementalBuffer ==
   /\ activeBuffer' = NoBuffer
   /\ finalSeen' = finalSeen \cup {activeBuffer}
   /\ UNCHANGED <<sourceState, requestState, available, nextOffset, queue, leased,
+                 producedCount, deliveredCount, terminalRequestCount, submitCount, resumeCount>>
+
+(* High-water stops new logical admission but leaves all current segment
+ * leases intact until the native request reports its terminal CQE. *)
+RequestPause ==
+  /\ sourceState = "Active"
+  /\ requestState = "Armed"
+  /\ (Len(queue) >= EventCapacity \/ Cardinality(Outstanding) >= BufferCapacity)
+  /\ sourceState' = "Pausing"
+  /\ UNCHANGED <<requestState, available, activeBuffer, nextOffset, finalSeen,
+                 queue, leased, producedCount, deliveredCount,
+                 terminalRequestCount, submitCount, resumeCount>>
+
+(* This model has one physical request slot, so resume and the next submit
+ * are represented by one transition. The source is still non-terminal. *)
+ResumeAdmission ==
+  /\ sourceState = "Paused"
+  /\ requestState = "Idle"
+  /\ Len(queue) <= EventCapacity \div 2
+  /\ producedCount < MaxSegments
+  /\ submitCount < MaxRequests
+  /\ sourceState' = "Active"
+  /\ requestState' = "Armed"
+  /\ submitCount' = submitCount + 1
+  /\ UNCHANGED <<available, activeBuffer, nextOffset, finalSeen, queue, leased,
                  producedCount, deliveredCount, terminalRequestCount, resumeCount>>
 
 RequestStop ==
-  /\ sourceState = "Active"
-  /\ sourceState' = "Stopping"
+  /\ sourceState \in {"Active", "Pausing", "Paused"}
+  /\ sourceState' =
+       IF requestState = "Armed"
+       THEN "Stopping"
+       ELSE IF Outstanding = {} THEN "Terminal" ELSE "Draining"
   /\ UNCHANGED <<requestState, available, activeBuffer, nextOffset, finalSeen, queue, leased,
-                 producedCount, deliveredCount, terminalRequestCount, resumeCount>>
+                 producedCount, deliveredCount, terminalRequestCount, submitCount, resumeCount>>
 
 AcquireEvent ==
   /\ queue # <<>>
@@ -152,7 +193,7 @@ AcquireEvent ==
   /\ deliveredCount' = deliveredCount + 1
   /\ resumeCount' = resumeCount + 1
   /\ UNCHANGED <<sourceState, requestState, available, activeBuffer, nextOffset, finalSeen,
-                 producedCount, terminalRequestCount>>
+                 producedCount, terminalRequestCount, submitCount>>
 
 (* The consumer releases one segment lease. The buffer is not yet reusable  *)
 (* unless its final boundary was observed and this was its final lease.     *)
@@ -161,7 +202,7 @@ ReleaseLease ==
     /\ leased' = leased \ {segment}
     /\ sourceState' = AfterRelease
     /\ UNCHANGED <<requestState, available, activeBuffer, nextOffset, finalSeen, queue,
-                   producedCount, deliveredCount, terminalRequestCount, resumeCount>>
+                   producedCount, deliveredCount, terminalRequestCount, submitCount, resumeCount>>
 
 ReturnBuffer ==
   \E buffer \in BufferIds:
@@ -170,7 +211,7 @@ ReturnBuffer ==
     /\ nextOffset' = [nextOffset EXCEPT ![buffer] = 0]
     /\ finalSeen' = finalSeen \ {buffer}
     /\ UNCHANGED <<sourceState, requestState, activeBuffer, queue, leased,
-                   producedCount, deliveredCount, terminalRequestCount, resumeCount>>
+                   producedCount, deliveredCount, terminalRequestCount, submitCount, resumeCount>>
 
 Next ==
   \/ Start
@@ -178,6 +219,8 @@ Next ==
        KernelSegment(buffer, length, more)
   \/ KernelTerminal
   \/ FinalizeIncrementalBuffer
+  \/ RequestPause
+  \/ ResumeAdmission
   \/ RequestStop
   \/ AcquireEvent
   \/ ReleaseLease
@@ -196,7 +239,9 @@ TypeOK ==
   /\ leased \subseteq [buffer: BufferIds, start: 0..(BufferSize - 1), length: Lengths]
   /\ producedCount \in 0..MaxSegments
   /\ deliveredCount \in Nat
-  /\ terminalRequestCount \in 0..1
+  /\ terminalRequestCount \in Nat
+  /\ submitCount \in Nat
+  /\ submitCount <= MaxRequests
   /\ resumeCount \in Nat
 
 BufferOwnership ==
@@ -224,8 +269,12 @@ ReturnAuthorization ==
     /\ buffer \notin finalSeen
 
 RequestAccounting ==
-  /\ terminalRequestCount <= 1
-  /\ requestState = "Armed" => terminalRequestCount = 0
+  /\ terminalRequestCount <= submitCount
+  /\ submitCount = terminalRequestCount +
+       IF requestState = "Armed" THEN 1 ELSE 0
+
+PauseSafety ==
+  sourceState = "Paused" => requestState = "Idle"
 
 ExactlyOnceDelivery == resumeCount = deliveredCount
 

@@ -59,7 +59,9 @@ public:
 
   // Only says "linked into some table", not which one.
   [[nodiscard]]
-  bool InTable() const noexcept { return pprev_ != nullptr; }
+  bool InTable() const noexcept {
+    return pprev_ != nullptr;
+  }
 
 protected:
   COROPACT_DELETE_COPY(HashNode);
@@ -96,30 +98,43 @@ public:
                 "T must publicly and non-virtually inherit HashNode<T, Tag>");
 
   IntrusiveHashTable() = default;
-  ~IntrusiveHashTable() { Clear(); }
+  ~IntrusiveHashTable() noexcept { Clear(); }
 
   [[nodiscard]]
-  bool Empty() const noexcept { return size_ == 0; }
+  bool Empty() const noexcept {
+    return size_ == 0;
+  }
 
   [[nodiscard]]
-  std::size_t Size() const noexcept { return size_; }
+  std::size_t Size() const noexcept {
+    return size_;
+  }
 
   [[nodiscard]]
-  std::size_t BucketCount() const noexcept { return buckets_.size(); }
+  std::size_t BucketCount() const noexcept {
+    return buckets_.size();
+  }
 
+  [[nodiscard]]
   bool Insert(T* elem);
 
   // Returns false if elem is not linked.
   //
   // Precondition: if elem is linked, it must be linked in this exact table.
   // InTable() only reports whether the hook is linked somewhere.
+  [[nodiscard]]
   bool Erase(T* elem);
 
-  T* Find(const Key& key);
+  [[nodiscard]]
+  T* Find(const Key& key) noexcept;
 
-  const T* Find(const Key& key) const;
+  [[nodiscard]]
+  const T* Find(const Key& key) const noexcept;
 
-  bool Contains(const Key& key) const { return Find(key) != nullptr; }
+  [[nodiscard]]
+  bool Contains(const Key& key) const {
+    return Find(key) != nullptr;
+  }
 
   void Reserve(std::size_t n);
 
@@ -194,14 +209,16 @@ bool IHT_TYPE::Erase(T* elem) {
 }
 
 IHT_TMPL
-T* IHT_TYPE::Find(const Key& key) { return const_cast<T*>(std::as_const(*this).Find(key)); }
+T* IHT_TYPE::Find(const Key& key) noexcept {
+  return const_cast<T*>(std::as_const(*this).Find(key));
+}
 
 IHT_TMPL
-const T* IHT_TYPE::Find(const Key& key) const {
+const T* IHT_TYPE::Find(const Key& key) const noexcept {
   if (buckets_.empty()) return nullptr;
   for (const Node* n = buckets_[BucketIdx(Hash{}(key))]; n != nullptr; n = n->next_) {
     if (Eq{}(kKeyOf(elem_of(n)), key)) {
-      return elem_of(n);
+      return const_cast<const T*>(elem_of(n));
     }
   }
   return nullptr;

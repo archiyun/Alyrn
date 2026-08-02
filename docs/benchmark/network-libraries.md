@@ -2,6 +2,8 @@
 
 本报告记录当前 CoroPact checkout 中 Reactor、CoroPact luring、raw liburing、Asio、Monoio、Compio、libaio、libuv、libevent 和 libev 的统一压测结果。
 
+Reactor 与 luring 的独立 ET/LT 对照见 [CoroPact luring 与 Reactor 独立对比](luring-reactor-comparison-20260802.md)。注意：LT/ET 只属于 Reactor 的 epoll readiness 路径，luring 使用 io_uring CQE，不存在 luring LT/ET。
+
 ## 结论
 
 - CoroPact luring 与 raw liburing 位于吞吐第一梯队。两者在 10000 并发的吞吐几乎相同：luring `475.1k RPS`，raw liburing `474.3k RPS`；luring P99 为 `30.82 ms`，raw liburing 受少量长尾样本影响为 `494.08 ms`，但本轮没有 wrk timeout。
@@ -133,12 +135,19 @@ OUTDIR=/tmp/coropact-network-libraries-$(date +%Y%m%d-%H%M%S) \
 ./docs/benchmark/summarize_network_libraries.sh "$OUTDIR"
 ```
 
-可用环境变量覆盖 `LEVELS`、`WARMUP`、`DURATION`、`ROUNDS`、`THREADS`、`WORKERS`、`FRAME_POOL` 和 `TARGETS`。Reactor 的 `FRAME_POOL` 默认关闭；开启时每个 worker 使用独立的 `CoroFramePoolResource`。例如短试跑：
+可用环境变量覆盖 `LEVELS`、`WARMUP`、`DURATION`、`ROUNDS`、`THREADS`、`WORKERS`、`FRAME_POOL`、`REACTOR_TRIGGER_MODE` 和 `TARGETS`。Reactor 的 `FRAME_POOL` 默认关闭；开启时每个 worker 使用独立的 `CoroFramePoolResource`。`REACTOR_TRIGGER_MODE` 支持 `et`（默认）和 `lt`，用于对比流 socket 的 edge-triggered 与 level-triggered 路径。例如短试跑：
 
 ```bash
 WARMUP=1s DURATION=2s ROUNDS=1 LEVELS="100 1000" \
   TARGETS="luring raw-liburing libuv libevent libev" \
   ./docs/benchmark/run_network_libraries.sh
+```
+
+只压测 Reactor 的 LT 路径：
+
+```bash
+REACTOR_TRIGGER_MODE=lt WARMUP=1s DURATION=2s ROUNDS=1 LEVELS="100 1000" \
+  TARGETS="reactor" ./docs/benchmark/run_network_libraries.sh
 ```
 
 本轮原始结果保存在 `/tmp/coropact-network-libraries-20260731/`，其中 `raw/` 是每轮 wrk 输出，`runs.csv` 是运行索引，`resources.csv` 是资源快照，`averages.csv` 是三轮均值。临时结果不纳入仓库。

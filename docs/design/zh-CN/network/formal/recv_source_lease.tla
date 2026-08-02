@@ -11,7 +11,7 @@ EXTENDS Naturals, Sequences, FiniteSets
 (*                                                                         *)
 (* 本模型重点检查：                                                       *)
 (*   - queued / leased / available 三者不重叠且覆盖整个 buffer pool；      *)
-(*   - Stop 不会在 queue 或 lease 未收敛时完成；                           *)
+(*   - pause 不会伪造 logical terminal，Stop 不会在 queue 或 lease 未收敛时完成； *)
 (*   - 一个事件和一个 terminal result 只恢复一次；                       *)
 (*   - cancel CQE 不代替目标 recv 的 terminal CQE。                       *)
 (*                                                                         *)
@@ -20,7 +20,7 @@ EXTENDS Naturals, Sequences, FiniteSets
 
 CONSTANT BufferCapacity, EventCapacity, MaxEvents
 
-SourceStates  == {"Idle", "Active", "Stopping", "Draining", "Terminal"}
+SourceStates  == {"Idle", "Active", "Pausing", "Paused", "Stopping", "Draining", "Terminal"}
 RequestStates == {"Idle", "Armed"}
 CancelStates  == {"Idle", "Submitted"}
 BufferIds     == 1..BufferCapacity
@@ -60,7 +60,9 @@ vars == <<sourceState,
 QueueSet == {queue[i] : i \in 1..Len(queue)}
 
 StateAfterRequestTerminal ==
-  IF Len(queue) = 0 /\ leased = {}
+  IF sourceState = "Pausing"
+  THEN "Paused"
+  ELSE IF Len(queue) = 0 /\ leased = {}
   THEN "Terminal"
   ELSE "Draining"
 
@@ -142,7 +144,7 @@ Arm ==
 (* A positive F_MORE CQE selects one currently available provided buffer. *)
 KernelEvent ==
   \E b \in available :
-    /\ sourceState \in {"Active", "Stopping"}
+    /\ sourceState \in {"Active", "Pausing", "Stopping"}
     /\ requestState = "Armed"
     /\ Len(queue) < EventCapacity
     /\ Len(queue) + Cardinality(leased) < BufferCapacity
@@ -166,11 +168,11 @@ KernelEvent ==
 (* The final CQE (EOF, error, or cancellation of the target recv) ends the
  * physical request. It does not release queued or consumer-held buffers. *)
 KernelTerminal ==
-  /\ sourceState \in {"Active", "Stopping"}
+  /\ sourceState \in {"Active", "Pausing", "Stopping"}
   /\ requestState = "Armed"
   /\ requestState' = "Idle"
   /\ sourceState' = StateAfterRequestTerminal
-  /\ stopRequested' = TRUE
+  /\ stopRequested' = IF sourceState = "Pausing" THEN stopRequested ELSE TRUE
   /\ terminalRequestCount' = terminalRequestCount + 1
   /\ UNCHANGED <<cancelState,
                  available,
@@ -184,16 +186,16 @@ KernelTerminal ==
                  stopCompleted,
                  submitCount>>
 
-(* Once admission is exhausted the implementation stops the backend request;
- * this is a logical Stop transition, not a buffer release. *)
-BackpressureStop ==
+(* High-water pauses admission without producing a logical terminal. The
+ * target recv remains live until its terminal CQE; BufferLease ownership is
+ * unchanged throughout this physical convergence. *)
+RequestPause ==
   /\ sourceState = "Active"
   /\ stopRequested = FALSE
   /\ requestState = "Armed"
   /\ (Len(queue) >= EventCapacity \/
       Len(queue) + Cardinality(leased) >= BufferCapacity)
-  /\ sourceState' = "Stopping"
-  /\ stopRequested' = TRUE
+  /\ sourceState' = "Pausing"
   /\ cancelState' = "Submitted"
   /\ UNCHANGED <<requestState,
                  available,
@@ -204,12 +206,36 @@ BackpressureStop ==
                  resumeCount,
                  terminalObserved,
                  logicalTerminalCount,
+                 stopRequested,
+                 stopCompleted,
+                 submitCount,
+                 terminalRequestCount>>
+
+(* The target terminal CQE and cancel CQE are independent. Once both have
+ * converged, low-water makes a fresh recv request eligible for submission. *)
+ResumeAdmission ==
+  /\ sourceState = "Paused"
+  /\ requestState = "Idle"
+  /\ cancelState = "Idle"
+  /\ Len(queue) <= EventCapacity \div 2
+  /\ sourceState' = "Active"
+  /\ UNCHANGED <<requestState,
+                 cancelState,
+                 available,
+                 queue,
+                 leased,
+                 eventCount,
+                 deliveredCount,
+                 resumeCount,
+                 terminalObserved,
+                 logicalTerminalCount,
+                 stopRequested,
                  stopCompleted,
                  submitCount,
                  terminalRequestCount>>
 
 RequestStop ==
-  /\ sourceState = "Active"
+  /\ sourceState \in {"Active", "Pausing", "Paused"}
   /\ stopRequested = FALSE
   /\ sourceState' =
        IF requestState = "Armed"
@@ -219,7 +245,8 @@ RequestStop ==
             ELSE "Draining"
   /\ stopRequested' = TRUE
   /\ cancelState' =
-       IF requestState = "Armed" THEN "Submitted" ELSE "Idle"
+       IF requestState = "Armed" /\ cancelState = "Idle"
+       THEN "Submitted" ELSE cancelState
   /\ UNCHANGED <<requestState,
                  available,
                  queue,
@@ -254,7 +281,7 @@ CancelComplete ==
 (* Moving an event to the consumer creates the BufferLease lifetime. *)
 AcquireEvent ==
   /\ queue # <<>>
-  /\ sourceState \in {"Active", "Stopping", "Draining"}
+  /\ sourceState \in {"Active", "Pausing", "Paused", "Stopping", "Draining"}
   /\ Head(queue) \notin leased
   /\ queue' = Tail(queue)
   /\ leased' = leased \cup {Head(queue)}
@@ -342,7 +369,8 @@ Next ==
   \/ Arm
   \/ KernelEvent
   \/ KernelTerminal
-  \/ BackpressureStop
+  \/ RequestPause
+  \/ ResumeAdmission
   \/ RequestStop
   \/ CancelComplete
   \/ AcquireEvent
@@ -390,7 +418,6 @@ ExactlyOnceResume ==
   resumeCount = deliveredCount + logicalTerminalCount
 
 RequestAccounting ==
-  /\ submitCount <= 1
   /\ terminalRequestCount <= submitCount
   /\ submitCount = terminalRequestCount +
        IF requestState = "Armed" THEN 1 ELSE 0
@@ -398,6 +425,12 @@ RequestAccounting ==
 StopAdmission ==
   sourceState \in {"Stopping", "Draining", "Terminal"}
     => stopRequested
+
+PauseSafety ==
+  sourceState = "Paused"
+    => /\ requestState = "Idle"
+       /\ stopRequested = FALSE
+       /\ logicalTerminalCount = 0
 
 TerminalSafety ==
   sourceState = "Terminal"

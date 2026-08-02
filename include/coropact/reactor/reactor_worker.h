@@ -13,7 +13,6 @@
 #include "coropact/base/error.h"
 #include "coropact/coro/detached_task.h"
 #include "coropact/reactor/event_loop.h"
-#include "coropact/reactor/event_loop_scheduler.h"
 #include "coropact/reactor/reactor_connect.h"
 #include "coropact/reactor/reactor_listener.h"
 #include "coropact/reactor/reactor_stream.h"
@@ -22,15 +21,14 @@
 namespace coropact::reactor {
 
 struct ReactorWorkerContext {
-  ReactorWorkerContext(std::size_t index, EventLoop& loop, EventLoopScheduler& scheduler,
-                       ReactorListener& listener, ReactorConnector& connector) noexcept
-      : index(index), loop(loop), scheduler(scheduler), listener(listener), connector(connector) {}
+  ReactorWorkerContext(std::size_t index, EventLoop& loop, ReactorListener& listener,
+                       ReactorConnector& connector) noexcept
+      : index(index), loop(loop), listener(listener), connector(connector) {}
 
   COROPACT_DELETE_COPY_MOVE(ReactorWorkerContext);
 
   const std::size_t index;
   EventLoop& loop;
-  EventLoopScheduler& scheduler;
   ReactorListener& listener;
   ReactorConnector& connector;
 };
@@ -41,6 +39,8 @@ struct ReactorWorkerOptions {
   // Must outlive the worker. It should be private to one worker when it is
   // unsynchronized.
   std::pmr::memory_resource* frame_resource{nullptr};
+
+  ReactorConnectorOptions connector_options{};
 };
 
 class ReactorWorker {

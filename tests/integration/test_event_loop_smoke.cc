@@ -1,5 +1,5 @@
+#include <chrono>
 #include <exception>
-#include <future>
 #include <iostream>
 #include <memory_resource>
 #include <thread>
@@ -9,12 +9,8 @@
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/work.h"
 #include "coropact/reactor/event_loop.h"
-#include "coropact/reactor/event_loop_scheduler.h"
-#include "coropact/time/timestamp.h"
 
 namespace {
-
-using namespace std::chrono_literals;
 
 bool Expect(bool condition, const char* message) {
     if (!condition) {
@@ -24,93 +20,19 @@ bool Expect(bool condition, const char* message) {
     return true;
 }
 
-bool TestRunInLoopExecutesImmediately() {
+bool TestRunOnOwnerExecutesImmediately() {
     coropact::reactor::EventLoop loop;
     bool called = false;
     std::thread::id callback_thread;
 
-    loop.RunInLoop([&] {
+    loop.RunOnOwner([&] {
         called = true;
         callback_thread = std::this_thread::get_id();
     });
 
-    return Expect(called, "RunInLoop should execute immediately on owner thread") &&
+    return Expect(called, "RunOnOwner should execute immediately on owner thread") &&
            Expect(callback_thread == std::this_thread::get_id(),
-                  "RunInLoop callback should execute on owner thread");
-}
-
-bool TestQueueInLoopWakesLoop() {
-    std::promise<coropact::reactor::EventLoop*> ready_promise;
-    std::promise<std::thread::id> callback_thread_promise;
-    std::promise<void> exited_promise;
-
-    auto ready_future = ready_promise.get_future();
-    auto callback_future = callback_thread_promise.get_future();
-    auto exited_future = exited_promise.get_future();
-
-    std::thread loop_thread([&] {
-        coropact::reactor::EventLoop loop;
-        ready_promise.set_value(&loop);
-        loop.Loop();
-        exited_promise.set_value();
-    });
-
-    coropact::reactor::EventLoop* loop = ready_future.get();
-    loop->QueueInLoop([&] {
-        callback_thread_promise.set_value(std::this_thread::get_id());
-        loop->Quit();
-    });
-
-    const bool callback_ready =
-        callback_future.wait_for(2s) == std::future_status::ready;
-    const bool exited_ready =
-        exited_future.wait_for(2s) == std::future_status::ready;
-    bool ok = true;
-    ok &= Expect(callback_ready, "QueueInLoop should wake the blocked loop");
-    if (callback_ready) {
-        ok &= Expect(callback_future.get() == loop_thread.get_id(),
-                     "queued callback should run on the loop thread");
-    }
-    ok &= Expect(exited_ready, "loop should exit after Quit from queued callback");
-
-    loop_thread.join();
-    return ok;
-}
-
-bool TestNestedQueueInLoopSchedulesNextTurn() {
-    std::promise<coropact::reactor::EventLoop*> ready_promise;
-    std::promise<void> nested_functor_promise;
-    std::promise<void> exited_promise;
-
-    auto ready_future = ready_promise.get_future();
-    auto nested_future = nested_functor_promise.get_future();
-    auto exited_future = exited_promise.get_future();
-
-    std::thread loop_thread([&] {
-        coropact::reactor::EventLoop loop;
-        ready_promise.set_value(&loop);
-        loop.Loop();
-        exited_promise.set_value();
-    });
-
-    coropact::reactor::EventLoop* loop = ready_future.get();
-    loop->QueueInLoop([&] {
-        loop->QueueInLoop([&] {
-            nested_functor_promise.set_value();
-            loop->Quit();
-        });
-    });
-
-    const bool nested_ready =
-        nested_future.wait_for(2s) == std::future_status::ready;
-    const bool exited_ready =
-        exited_future.wait_for(2s) == std::future_status::ready;
-
-    bool ok = true;
-    ok &= Expect(nested_ready, "functor queued from pending functor should run");
-    ok &= Expect(exited_ready, "loop should exit after nested functor quits");
-    loop_thread.join();
-    return ok;
+                  "RunOnOwner callback should execute on owner thread");
 }
 
 class SchedulerProbeWork final : public coropact::coro::Work {
@@ -141,13 +63,12 @@ private:
 
 bool TestSchedulerWorkIsDeferredAndBound() {
   coropact::reactor::EventLoop loop;
-  coropact::reactor::EventLoopScheduler scheduler(&loop);
 
   bool ran = false;
   bool scheduler_matched = false;
-  SchedulerProbeWork work(&scheduler, &ran, &scheduler_matched, &loop);
+  SchedulerProbeWork work(&loop, &ran, &scheduler_matched, &loop);
 
-  scheduler.Schedule(&work);
+  loop.Schedule(&work);
 
   bool ok = true;
   ok &= Expect(!ran, "scheduler work must not run inline");
@@ -161,63 +82,16 @@ bool TestSchedulerWorkIsDeferredAndBound() {
   return ok;
 }
 
-bool TestSchedulerMoveRetainsFrameResource() {
-  coropact::reactor::EventLoop loop;
+bool TestEventLoopOwnsFrameResource() {
   std::pmr::monotonic_buffer_resource first_resource;
-  std::pmr::monotonic_buffer_resource second_resource;
-
-  auto created = coropact::reactor::EventLoopScheduler::Create(&loop, &first_resource);
-  if (!Expect(created.has_value(), "scheduler creation should succeed")) {
-    return false;
-  }
-
-  coropact::reactor::EventLoopScheduler moved(std::move(*created));
-  coropact::reactor::EventLoopScheduler assigned(&loop, &second_resource);
-  assigned = std::move(moved);
-
-  return Expect(assigned.FrameResource() == &first_resource,
-                "moved scheduler should retain its original frame resource");
-}
-
-bool TestSchedulerWorkFromForeignThreadWakesLoop() {
-  using SchedulerContext =
-      std::pair<coropact::reactor::EventLoop*, coropact::reactor::EventLoopScheduler*>;
-
-  std::promise<SchedulerContext> ready_promise;
-  std::promise<void> exited_promise;
-  auto ready_future = ready_promise.get_future();
-  auto exited_future = exited_promise.get_future();
-
-  std::thread loop_thread([&] {
-    coropact::reactor::EventLoop loop;
-    coropact::reactor::EventLoopScheduler scheduler(&loop);
-    ready_promise.set_value({&loop, &scheduler});
-    loop.Loop();
-    exited_promise.set_value();
-  });
-
-  const auto [loop, scheduler] = ready_future.get();
-  bool ran = false;
-  bool scheduler_matched = false;
-  SchedulerProbeWork work(scheduler, &ran, &scheduler_matched, loop);
-
-  scheduler->Schedule(&work);
-
-  const bool exited = exited_future.wait_for(2s) == std::future_status::ready;
-  if (!exited) {
-    loop->Quit();
-  }
-  loop_thread.join();
-
-  return Expect(exited, "foreign scheduler work should wake and finish the EventLoop") &&
-         Expect(ran, "foreign scheduler work should run") &&
-         Expect(scheduler_matched,
-                "foreign scheduler work should preserve Scheduler::Current affinity");
+  coropact::reactor::EventLoop loop(&first_resource);
+  return Expect(loop.FrameResource() == &first_resource,
+                "EventLoop should retain its configured frame resource");
 }
 
 class ScheduleNextWork final : public coropact::coro::Work {
 public:
-  ScheduleNextWork(coropact::reactor::EventLoopScheduler* scheduler, coropact::coro::Work* next,
+  ScheduleNextWork(coropact::reactor::EventLoop* scheduler, coropact::coro::Work* next,
                    bool* next_ran, bool* next_was_deferred) noexcept
       : scheduler_(scheduler),
         next_(next),
@@ -233,7 +107,7 @@ private:
     *self->next_was_deferred_ = !*self->next_ran_;
   }
 
-  coropact::reactor::EventLoopScheduler* scheduler_;
+  coropact::reactor::EventLoop* scheduler_;
   coropact::coro::Work* next_;
   bool* next_ran_;
   bool* next_was_deferred_;
@@ -241,15 +115,14 @@ private:
 
 bool TestSchedulerWorkScheduledDuringResumeIsDeferred() {
   coropact::reactor::EventLoop loop;
-  coropact::reactor::EventLoopScheduler scheduler(&loop);
 
   bool second_ran = false;
   bool scheduler_matched = false;
   bool second_was_deferred = false;
-  SchedulerProbeWork second(&scheduler, &second_ran, &scheduler_matched, &loop);
-  ScheduleNextWork first(&scheduler, &second, &second_ran, &second_was_deferred);
+  SchedulerProbeWork second(&loop, &second_ran, &scheduler_matched, &loop);
+  ScheduleNextWork first(&loop, &second, &second_ran, &second_was_deferred);
 
-  scheduler.Schedule(&first);
+  loop.Schedule(&first);
   loop.Loop();
 
   return Expect(second_was_deferred,
@@ -259,50 +132,27 @@ bool TestSchedulerWorkScheduledDuringResumeIsDeferred() {
 }
 
 bool TestRepeatingTimerCanCancelItself() {
-    std::promise<coropact::reactor::EventLoop*> ready_promise;
-    std::promise<void> exited_promise;
-
-    auto ready_future = ready_promise.get_future();
-    auto exited_future = exited_promise.get_future();
-
+    coropact::reactor::EventLoop loop;
     int fire_count = 0;
     coropact::time::TimerId timer_id;
 
-    std::thread loop_thread([&] {
-        coropact::reactor::EventLoop loop;
-        ready_promise.set_value(&loop);
-        loop.Loop();
-        exited_promise.set_value();
+    timer_id = loop.RunEvery(0.01, [&] {
+        ++fire_count;
+        if (fire_count == 1) {
+            loop.Cancel(timer_id);
+            loop.RunAfter(0.05, [&loop] { loop.Quit(); });
+        }
     });
+    loop.Loop();
 
-    coropact::reactor::EventLoop* loop = ready_future.get();
-    loop->QueueInLoop([&] {
-        timer_id = loop->RunEvery(0.01, [&] {
-            ++fire_count;
-            if (fire_count == 1) {
-                loop->Cancel(timer_id);
-                loop->RunAfter(0.05, [loop] { loop->Quit(); });
-            }
-        });
-    });
-
-    const bool exited_ready =
-        exited_future.wait_for(2s) == std::future_status::ready;
-    if (!exited_ready) {
-        loop->Quit();
-    }
-    loop_thread.join();
-
-    return Expect(exited_ready, "self-cancelling timer should not stall the loop") &&
-           Expect(fire_count == 1,
+    return Expect(fire_count == 1,
                   "self-cancelling repeating timer should fire exactly once");
 }
 
 bool TestSameDeadlineTimersKeepSequenceOrder() {
     coropact::reactor::EventLoop loop;
     std::vector<int> fired;
-    const auto deadline =
-        coropact::time::AddTime(coropact::time::Timestamp::Now(), 0.01);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(10);
 
     loop.RunAt(deadline, [&] { fired.push_back(1); });
     loop.RunAt(deadline, [&] { fired.push_back(2); });
@@ -376,12 +226,9 @@ bool TestStaleTimerIdCannotCancelReplacement() {
 
 int main() {
     try {
-        if (!TestRunInLoopExecutesImmediately()) return 1;
-        if (!TestQueueInLoopWakesLoop()) return 1;
-        if (!TestNestedQueueInLoopSchedulesNextTurn()) return 1;
+        if (!TestRunOnOwnerExecutesImmediately()) return 1;
         if (!TestSchedulerWorkIsDeferredAndBound()) return 1;
-        if (!TestSchedulerMoveRetainsFrameResource()) return 1;
-        if (!TestSchedulerWorkFromForeignThreadWakesLoop()) return 1;
+        if (!TestEventLoopOwnsFrameResource()) return 1;
         if (!TestSchedulerWorkScheduledDuringResumeIsDeferred()) return 1;
         if (!TestRepeatingTimerCanCancelItself()) return 1;
         if (!TestSameDeadlineTimersKeepSequenceOrder()) return 1;

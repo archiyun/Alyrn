@@ -119,7 +119,6 @@ add_library(coropact_reactor STATIC
     src/reactor/channel.cc
     src/reactor/epoll_poller.cc
     src/reactor/event_loop.cc
-    src/reactor/event_loop_scheduler.cc
     src/reactor/poller.cc
     src/reactor/reactor_connect.cc
     src/reactor/reactor_listener.cc

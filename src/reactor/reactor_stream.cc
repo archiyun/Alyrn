@@ -554,13 +554,18 @@ void ReactorStream::BufferWriteAwaiter::FinishAttempt(base::Result<std::size_t> 
   result_.SetResult(result);
 }
 
-ReactorStream::ReactorStream(EventLoop* loop, int fd, net::Endpoint peer)
+ReactorStream::ReactorStream(EventLoop* loop, int fd, net::Endpoint peer,
+                             ReactorStreamOptions options)
     : loop_(loop), socket_(fd), channel_(loop, fd), peer_(peer) {
   COROPACT_CHECK(loop_ != nullptr, "ReactorStream: loop must not be null");
   COROPACT_CHECK(loop_->IsInLoopThread(), "ReactorStream created from wrong EventLoop thread");
   [[maybe_unused]] auto nonblocking = net::set_non_blocking(fd, true);
   COROPACT_DCHECK(nonblocking.has_value(), "ReactorStream: failed to set non-blocking mode");
 
+  // A stream keeps read interest across successful reads. Edge-triggered
+  // delivery avoids the level-triggered disable/re-enable epoll_ctl pair on
+  // every keep-alive request; every ReadSome still probes the socket first.
+  channel_.SetEdgeTriggered(options.trigger_mode == TriggerMode::kEdgeTriggered);
   BindChannelCallbacks();
 }
 
@@ -671,9 +676,15 @@ coro::Task<base::Result<void>> ReactorStream::Close() {
   co_return base::Result<void>{};
 }
 
-void ReactorStream::HandleRead(coropact::time::Timestamp /*receive_time*/) {
+void ReactorStream::HandleRead() {
   COROPACT_DCHECK(loop_->IsInLoopThread(), "ReactorStream::HandleRead called from wrong thread");
   if (pending_read_ == nullptr) {
+    // Keep LT cheap for back-to-back reads, but disarm stale readiness when a
+    // consumer did not submit the next read before the event loop polled
+    // again. This prevents an unread remainder from spinning the loop.
+    if (!channel_.IsEdgeTriggered() && channel_.IsReading()) {
+      channel_.DisableReading();
+    }
     return;
   }
   switch (pending_read_kind_) {
@@ -728,8 +739,14 @@ void ReactorStream::CompleteRead(base::Result<std::size_t> result) {
   if (awaiter == nullptr) {
     return;
   }
-  if (channel_.IsReading()) {
-    channel_.DisableReading();
+  // Successful reads keep interest armed in both modes so a continuation can
+  // immediately submit the next read without an epoll_ctl pair. LT disarms
+  // lazily in HandleRead when readiness arrives without a pending operation.
+  // Terminal results remove the interest in both modes.
+  if (!result.has_value() || *result == 0) {
+    if (channel_.IsReading()) {
+      channel_.DisableReading();
+    }
   }
   switch (kind) {
     case PendingReadKind::kReadSome:
@@ -786,8 +803,8 @@ void ReactorStream::RequireOwnerLoop() const noexcept {
                  "ReactorStream operation called from wrong EventLoop thread");
 }
 
-void ReactorStream::DispatchRead(void* context, coropact::time::Timestamp receive_time) noexcept {
-  static_cast<ReactorStream*>(context)->HandleRead(receive_time);
+void ReactorStream::DispatchRead(void* context) noexcept {
+  static_cast<ReactorStream*>(context)->HandleRead();
 }
 
 void ReactorStream::DispatchWrite(void* context) noexcept {

@@ -5,11 +5,11 @@
 #include <sys/timerfd.h>
 #include <unistd.h>
 
+#include <chrono>
+
 #include "coropact/base/check.h"
 #include "coropact/reactor/event_loop.h"
-#include "coropact/time/timer.h"
 #include "coropact/time/timer_id.h"
-#include "coropact/time/timestamp.h"
 
 namespace coropact::reactor {
 
@@ -19,9 +19,11 @@ static int CreateTimerfd() {
   return fd;
 }
 
-static void SetTimerfd(int timerfd, coropact::time::Timestamp expiration) {
+static void SetTimerfd(int timerfd, detail::ReactorTimer::TimePoint expiration) {
   itimerspec new_value{};
-  int64_t us = static_cast<int64_t>(TimeDifference(expiration, time::Timestamp::Now()) * 1e6);
+  int64_t us = std::chrono::duration_cast<std::chrono::microseconds>(
+                   expiration - detail::ReactorTimer::Clock::now())
+                   .count();
   if (us < 100) {
     us = 100;
   }
@@ -47,55 +49,57 @@ TimerQueue::~TimerQueue() {
   timerfd_channel_.Remove();
   ::close(timerfd_);
   while (!timers_.Empty()) {
-    time::Timer* timer = timers_.Earliest();
-    active_timers_.Erase(timer);
+    detail::ReactorTimer* timer = timers_.Earliest();
+    COROPACT_IGNORE_RESULT(active_timers_.Erase(timer));
     timers_.Erase(timer);
     timer_pool_.Release(timer);
   }
 }
 
-time::TimerId TimerQueue::AddTimer(TimerCallback cb, time::Timestamp when, double interval) {
-  time::Timer* t = timer_pool_.Acquire(std::move(cb), when, interval);
-  loop_->RunInLoop([this, t] {
-    bool earliest_changed = timers_.Empty() || t->expiration() < timers_.Earliest()->expiration();
-    timers_.Insert(t);
-    active_timers_.Insert(t);
-    if (earliest_changed) {
-      ResetTimerfd(t->expiration());
-    }
-  });
+time::TimerId TimerQueue::AddTimer(TimerCallback cb, TimePoint when, Duration interval) {
+  detail::ReactorTimer* t = timer_pool_.Acquire(std::move(cb), when, interval);
+  bool earliest_changed = timers_.Empty() || t->expiration() < timers_.Earliest()->expiration();
+  timers_.Insert(t);
+  COROPACT_IGNORE_RESULT(active_timers_.Insert(t));
+  if (earliest_changed) {
+    ResetTimerfd(t->expiration());
+  }
   return {t->sequence()};
 }
 
 void TimerQueue::Cancel(coropact::time::TimerId id) {
-  loop_->RunInLoop([this, seq = id.sequence] {
-    time::Timer* active_timer = active_timers_.Find(seq);
-    if (active_timer != nullptr) {
-      active_timers_.Erase(active_timer);
-      timers_.Erase(active_timer);
-      timer_pool_.Release(active_timer);
-      return;
+  detail::ReactorTimer* active_timer = active_timers_.Find(id.sequence);
+  if (active_timer != nullptr) {
+    const bool earliest_removed = active_timer == timers_.Earliest();
+    COROPACT_IGNORE_RESULT(active_timers_.Erase(active_timer));
+    timers_.Erase(active_timer);
+    timer_pool_.Release(active_timer);
+    if (earliest_removed && !timers_.Empty()) {
+      ResetTimerfd(timers_.Earliest()->expiration());
     }
+    return;
+  }
 
-    // Missed the registry: the target is mid-callback (its sequence was already
-    // erased when it fired), so flag the in-flight timer instead of touching it.
-    if (processing_timer_ != nullptr && processing_timer_->sequence() == seq) {
-      processing_timer_cancelled_ = true;
-    }
-  });
+  // Missed the registry: the target is mid-callback (its sequence was already
+  // erased when it fired), so flag the in-flight timer instead of touching it.
+  if (processing_timer_ != nullptr && processing_timer_->sequence() == id.sequence) {
+    processing_timer_cancelled_ = true;
+  }
 }
 
-void TimerQueue::DispatchRead(void* context, time::Timestamp /*receive_time*/) noexcept {
+void TimerQueue::DispatchRead(void* context) noexcept {
   static_cast<TimerQueue*>(context)->HandleRead();
 }
 
 void TimerQueue::HandleRead() {
-  time::Timestamp now = time::Timestamp::Now();
+  const auto now = detail::ReactorTimer::Clock::now();
   ReadTimerfd(timerfd_);
 
-  timers_.PopWhile([now](const coropact::time::Timer* timer) { return timer->expiration() <= now; },
-                   [this, now](coropact::time::Timer* timer) {
-                     active_timers_.Erase(timer);
+  timers_.PopWhile([now](const detail::ReactorTimer* timer) {
+                     return timer->expiration() <= now;
+                   },
+                   [this, now](detail::ReactorTimer* timer) {
+                     COROPACT_IGNORE_RESULT(active_timers_.Erase(timer));
                      processing_timer_ = timer;
                      processing_timer_cancelled_ = false;
                      timer->Run();
@@ -107,7 +111,7 @@ void TimerQueue::HandleRead() {
                      if (timer->repeat() && !cancelled) {
                        timer->Restart(now);
                        timers_.Insert(timer);
-                       active_timers_.Insert(timer);
+                       COROPACT_IGNORE_RESULT(active_timers_.Insert(timer));
                      } else {
                        timer_pool_.Release(timer);
                      }
@@ -118,6 +122,6 @@ void TimerQueue::HandleRead() {
   }
 }
 
-void TimerQueue::ResetTimerfd(time::Timestamp expiration) { SetTimerfd(timerfd_, expiration); }
+void TimerQueue::ResetTimerfd(TimePoint expiration) { SetTimerfd(timerfd_, expiration); }
 
 }  // namespace coropact::reactor

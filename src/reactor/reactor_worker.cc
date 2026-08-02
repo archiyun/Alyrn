@@ -28,18 +28,14 @@ coro::DetachedTask AcceptLoop(ReactorWorkerContext& context,
     }
 
     if (*callback) {
-      coro::SpawnDetach(context.scheduler, (*callback)(context, std::move(*accepted)));
+      coro::SpawnDetach(context.loop, (*callback)(context, std::move(*accepted)));
     }
   }
 }
 
-coro::DetachedTask CloseListenerAndQuit(EventLoop& loop, ReactorListener& listener) {
+coro::DetachedTask CloseListener(ReactorListener& listener) {
   auto result = co_await listener.Close();
   (void)result;
-
-  // Closing a listener may schedule the pending Accept continuation. Queue the
-  // quit request so that continuation gets one more EventLoop turn.
-  loop.QueueInLoop([&loop] { loop.Quit(); });
 }
 
 }  // namespace
@@ -88,8 +84,6 @@ void ReactorWorker::Stop() noexcept {
 void ReactorWorker::WorkLoop(std::stop_token token) noexcept {
   coro::FrameAllocatorScope frame_scope{options_.frame_resource};
 
-  EventLoop loop;
-
   auto publish_start = [this](base::Result<void> result) noexcept {
     {
       std::lock_guard lock{mutex_};
@@ -99,11 +93,7 @@ void ReactorWorker::WorkLoop(std::stop_token token) noexcept {
     cv_.notify_one();
   };
 
-  auto scheduler = EventLoopScheduler::Create(&loop, options_.frame_resource);
-  if (!scheduler.has_value()) {
-    publish_start(std::unexpected(scheduler.error()));
-    return;
-  }
+  EventLoop loop{options_.frame_resource};
 
   auto listener = ReactorListener::Create(&loop, listen_addr_, options_.listener_options);
   if (!listener.has_value()) {
@@ -111,13 +101,13 @@ void ReactorWorker::WorkLoop(std::stop_token token) noexcept {
     return;
   }
 
-  auto connector = ReactorConnector::Create(&loop);
+  auto connector = ReactorConnector::Create(&loop, options_.connector_options);
   if (!connector.has_value()) {
     publish_start(std::unexpected(connector.error()));
     return;
   }
 
-  ReactorWorkerContext context{index_, loop, *scheduler, *listener, *connector};
+  ReactorWorkerContext context{index_, loop, *listener, *connector};
 
   if (init_callback_) {
     try {
@@ -128,19 +118,18 @@ void ReactorWorker::WorkLoop(std::stop_token token) noexcept {
     }
   }
 
-  std::stop_callback on_stop{token, [&loop, &scheduler, &listener] {
-                               loop.QueueInLoop([&loop, &scheduler, &listener] {
-                                 coro::SpawnDetach(*scheduler,
-                                                   CloseListenerAndQuit(loop, *listener));
-                               });
-                             }};
-
   if (connection_callback_) {
-    coro::SpawnDetach(*scheduler, AcceptLoop(context, &connection_callback_));
+    coro::SpawnDetach(loop, AcceptLoop(context, &connection_callback_));
   }
 
   publish_start(base::Result<void>{});
-  loop.Loop();
+  loop.Loop(token);
+
+  // The loop owns all Reactor objects, so shutdown stays on this thread. The
+  // close coroutine may resume the parked AcceptLoop; drain both the close and
+  // that continuation before destroying the scheduler and listener.
+  coro::SpawnDetach(loop, CloseListener(*listener));
+  loop.RunPending();
 
   if (exit_callback_) {
     try {

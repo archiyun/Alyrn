@@ -9,22 +9,19 @@
 //
 // No real Channel: FakeConn stands in for the Channel read slot. Read() parks the
 // coroutine handle; Deliver() (run on the loop thread) hands back a result and
-// Schedules the resume. Two exit paths are covered:
+// defers the resume. Two exit paths are covered:
 //   conn A: Deliver(0)            -> EOF, graceful co_return
 //   conn B: Deliver(unexpected)   -> teardown via resume-with-error
-// EventLoopScheduler adapts the coro Scheduler onto the EventLoop: the initial
-// root submission and subsequent IO resumes run through the EventLoop callback
-// queue. Run under ASan (leak check proves self-destruct) and TSan.
+// EventLoop implements the coro Scheduler directly: the initial root submission
+// and subsequent IO resumes run through its owner-local Work queue. Run under
+// ASan (leak check proves self-destruct) and TSan.
 
 #include <atomic>
 #include <cerrno>
 #include <chrono>
-#include <condition_variable>
 #include <coroutine>
 #include <expected>
-#include <future>
 #include <iostream>
-#include <mutex>
 #include <thread>
 #include <utility>
 
@@ -34,7 +31,6 @@
 #include "coropact/coro/task.h"
 #include "coropact/coro/work.h"
 #include "coropact/reactor/event_loop.h"
-#include "coropact/reactor/event_loop_scheduler.h"
 
 using coropact::base::MakeErrno;
 using coropact::base::Result;
@@ -59,12 +55,12 @@ struct FakeConn {
   };
   ReadAwaiter Read() noexcept { return ReadAwaiter{this}; }
 
-  // Loop-thread side: deliver `r`, then queue the parked coroutine's resume as
-  // an ordinary EventLoop callback.
+  // Owner-thread side: deliver `r`, then schedule the parked coroutine's
+  // resume on the next EventLoop turn.
   void Deliver(Result<int> r, EventLoop* loop) {
     next = std::move(r);
     if (auto h = std::exchange(parked, {})) {
-      loop->QueueInLoop([h] {
+      loop->RunAfter(0.0, [h] {
         if (!h.done()) h.resume();
       });
     }
@@ -76,7 +72,6 @@ std::atomic<int> g_completed{0};
 std::atomic<int> g_on_loop{0};
 EventLoop* g_loop = nullptr;
 std::thread::id g_loop_tid;
-std::promise<void> g_all_done;
 
 // Top-level connection coroutine: read until EOF or read error, then exit.
 // Errors are consumed here (the real one would close the connection); the
@@ -88,55 +83,30 @@ Task<void> Serve(FakeConn* c) {
     if (*r == 0) break;  // EOF
   }
   if (std::this_thread::get_id() == g_loop_tid) g_on_loop.fetch_add(1);
-  if (g_completed.fetch_add(1) + 1 == kConns) g_all_done.set_value();
+  if (g_completed.fetch_add(1) + 1 == kConns) g_loop->Quit();
   co_return;
 }
 
 }  // namespace
 
 int main() {
-  std::mutex m;
-  std::condition_variable cv;
-
-  std::jthread worker([&] {
-    EventLoop loop;
-    {
-      std::lock_guard lk{m};
-      g_loop = &loop;
-      g_loop_tid = std::this_thread::get_id();
-    }
-    cv.notify_one();
-    loop.Loop();
-  });
-
-  {
-    std::unique_lock lk{m};
-    cv.wait(lk, [] { return g_loop != nullptr; });
-  }
+  EventLoop loop;
+  g_loop = &loop;
+  g_loop_tid = std::this_thread::get_id();
 
   // FakeConns must outlive their coroutines (they finish before join below).
   FakeConn conn_a;
   FakeConn conn_b;
 
-  // Spawn both detached coroutines on the owning scheduler, then queue the
-  // deliveries for the following loop iteration, after both roots have parked on
-  // their first Read.
-  g_loop->RunInLoop([&] {
-    static coropact::reactor::EventLoopScheduler sched(g_loop);
-    Spawn(sched, Serve(&conn_a)).Detach();
-    Spawn(sched, Serve(&conn_b)).Detach();
-    g_loop->QueueInLoop([&] { conn_a.Deliver(Result<int>{0}, g_loop); });  // EOF
-    g_loop->QueueInLoop([&] { conn_b.Deliver(std::unexpected(MakeErrno(ECONNRESET)), g_loop); });
-  });
-
-  auto fut = g_all_done.get_future();
-  if (fut.wait_for(std::chrono::seconds(3)) != std::future_status::ready) {
-    std::cout << "FAIL: watchdog timed out -- detached coroutines never finished\n";
-    g_loop->Quit();
-    return 1;
-  }
-  g_loop->Quit();
-  worker.join();
+  // Spawn both detached coroutines on the owning scheduler, then schedule the
+  // deliveries for the following loop iteration, after both roots have parked
+  // on their first Read.
+  Spawn(loop, Serve(&conn_a)).Detach();
+  Spawn(loop, Serve(&conn_b)).Detach();
+  g_loop->RunAfter(0.0, [&] { conn_a.Deliver(Result<int>{0}, g_loop); });  // EOF
+  g_loop->RunAfter(0.0,
+      [&] { conn_b.Deliver(std::unexpected(MakeErrno(ECONNRESET)), g_loop); });
+  loop.Loop();
 
   const int done = g_completed.load();
   const int on_loop = g_on_loop.load();

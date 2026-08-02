@@ -28,11 +28,19 @@
 
 namespace coropact::reactor {
 
+struct ReactorStreamOptions {
+  // ET keeps successful-read interest armed. LT keeps it armed for an
+  // immediate re-arm and lazily removes it if readiness arrives without a
+  // pending read. Both modes still probe the non-blocking socket first.
+  TriggerMode trigger_mode{TriggerMode::kEdgeTriggered};
+};
+
 class ReactorStream {
 public:
   COROPACT_DELETE_COPY(ReactorStream);
 
-  ReactorStream(EventLoop* loop, int fd, net::Endpoint peer = net::Endpoint(0));
+  ReactorStream(EventLoop* loop, int fd, net::Endpoint peer = net::Endpoint(0),
+                ReactorStreamOptions options = {});
   ~ReactorStream();
 
   // Moves are loop-affine: the source must be used from its owning loop
@@ -89,12 +97,12 @@ public:
   }
 
 private:
-  void HandleRead(time::Timestamp receive_time);
+  void HandleRead();
   void HandleWrite();
   void HandleClose();
   void HandleError();
 
-  static void DispatchRead(void* context, time::Timestamp receive_time) noexcept;
+  static void DispatchRead(void* context) noexcept;
   static void DispatchWrite(void* context) noexcept;
   static void DispatchClose(void* context) noexcept;
   static void DispatchError(void* context) noexcept;

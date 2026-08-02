@@ -110,7 +110,22 @@ struct BackpressureObservation {
   bool first_received{false};
   bool queued_received{false};
   bool stop_succeeded{false};
-  bool overflow_error{false};
+  bool normal_end{false};
+  bool unsupported{false};
+  std::optional<Error> error;
+  bool done{false};
+};
+
+// This observation deliberately separates the high-water and low-water
+// phases. A successful third accept proves that the source did not turn a
+// full queue into a logical terminal: it cancelled the old physical request,
+// observed its terminal CQE, and armed a fresh request after consumption.
+struct PauseResumeObservation {
+  bool first_received{false};
+  bool low_water_consumed{false};
+  bool resumed_received{false};
+  bool stop_succeeded{false};
+  bool normal_end{false};
   bool unsupported{false};
   std::optional<Error> error;
   bool done{false};
@@ -316,8 +331,7 @@ private:
           EventDisposition::kNone,
           MultishotRequestDisposition::kTerminal);
       assert(rolled_back.has_value());
-      auto stopped = state_.RequestStop();
-      assert(stopped.has_value());
+      state_.RequestStop();
       terminal_error_ = error;
       return std::unexpected(error);
     }
@@ -568,11 +582,83 @@ coropact::coro::DetachedTask FillQueueThenStop(
 
   auto terminal = co_await source->Next();
   if (!terminal.has_value()) {
-    if (terminal.error().value() == ENOBUFS) {
-      observation->overflow_error = true;
+    observation->error = terminal.error();
+  } else if (!terminal->has_value()) {
+    observation->normal_end = true;
+  } else {
+    observation->error = coropact::base::MakeErrno(ECONNABORTED);
+  }
+  observation->done = true;
+}
+
+coropact::coro::DetachedTask PauseThenResume(
+    LUringAcceptSource* source,
+    LUringLoop* loop,
+    PauseResumeObservation* observation) {
+  auto first = co_await source->Next();
+  if (!first.has_value()) {
+    if (IsUnsupported(first.error())) {
+      observation->unsupported = true;
     } else {
-      observation->error = terminal.error();
+      observation->error = first.error();
     }
+    observation->done = true;
+    co_return;
+  }
+  if (!first->has_value()) {
+    observation->error = coropact::base::MakeErrno(ECONNABORTED);
+    observation->done = true;
+    co_return;
+  }
+  observation->first_received = true;
+
+  // The test sends the second connection while this coroutine is asleep.
+  // With event_capacity == 1 that event fills the source queue and starts
+  // the native cancel/terminal-CQE convergence path.
+  auto delay = co_await coropact::luring::SleepFor(
+      *loop, std::chrono::milliseconds(50));
+  if (!delay.has_value()) {
+    observation->error = delay.error();
+    observation->done = true;
+    co_return;
+  }
+
+  auto queued = co_await source->Next();
+  if (!queued.has_value() || !queued->has_value()) {
+    observation->error = queued.has_value()
+                             ? coropact::base::MakeErrno(ECONNABORTED)
+                             : queued.error();
+    observation->done = true;
+    co_return;
+  }
+  observation->low_water_consumed = true;
+
+  // This await must be fulfilled by a connection sent only after the queue
+  // crossed the low-water mark. It therefore proves physical re-arm, not
+  // merely draining an already queued accept.
+  auto resumed = co_await source->Next();
+  if (!resumed.has_value() || !resumed->has_value()) {
+    observation->error = resumed.has_value()
+                             ? coropact::base::MakeErrno(ECONNABORTED)
+                             : resumed.error();
+    observation->done = true;
+    co_return;
+  }
+  observation->resumed_received = true;
+
+  auto stopped = co_await source->Stop();
+  observation->stop_succeeded = stopped.has_value();
+  if (!stopped.has_value()) {
+    observation->error = stopped.error();
+    observation->done = true;
+    co_return;
+  }
+
+  auto terminal = co_await source->Next();
+  if (!terminal.has_value()) {
+    observation->error = terminal.error();
+  } else if (!terminal->has_value()) {
+    observation->normal_end = true;
   } else {
     observation->error = coropact::base::MakeErrno(ECONNABORTED);
   }
@@ -949,7 +1035,7 @@ bool CheckQueueBackpressure() {
   }
 
   // First connection wakes the pending Next. The remaining burst is sent
-  // while the consumer is sleeping, so the one-event queue must overflow.
+  // while the consumer is sleeping, so the one-event queue pauses admission.
   std::vector<UniqueFd> clients;
   clients.reserve(8);
   auto first_client = ConnectClient(*address);
@@ -1005,7 +1091,120 @@ bool CheckQueueBackpressure() {
   return observation.first_received &&
          observation.queued_received &&
          observation.stop_succeeded &&
-         observation.overflow_error;
+         observation.normal_end;
+}
+
+bool CheckQueuePauseThenRearm() {
+  LUringLoop loop;
+  switch (InitLoop(loop)) {
+    case LoopInitStatus::kReady:
+      break;
+    case LoopInitStatus::kSkip:
+      return true;
+    case LoopInitStatus::kFail:
+      return false;
+  }
+
+  auto listener_result = LUringListener::Create(&loop, LoopbackAddress(0));
+  if (!listener_result.has_value()) {
+    std::cout << "FAIL: listener creation failed: "
+              << listener_result.error().message() << '\n';
+    return false;
+  }
+  auto listener = std::move(*listener_result);
+  auto source_result = listener.AcceptSource({.pending_depth = 1,
+                                              .event_capacity = 1});
+  if (!source_result.has_value()) {
+    std::cout << "FAIL: source creation failed: "
+              << source_result.error().message() << '\n';
+    return false;
+  }
+  auto source = std::move(*source_result);
+
+  PauseResumeObservation observation;
+  coropact::coro::SpawnDetach(loop, PauseThenResume(&source, &loop, &observation));
+  loop.RunReady();
+
+  auto address = listener.LocalAddress();
+  if (!address.has_value()) {
+    std::cout << "FAIL: LocalAddress failed: "
+              << address.error().message() << '\n';
+    return false;
+  }
+
+  std::vector<UniqueFd> clients;
+  clients.reserve(3);
+  auto connect = [&]() -> bool {
+    auto client = ConnectClient(*address);
+    if (!client.has_value()) {
+      std::cout << "FAIL: client connect failed: "
+                << client.error().message() << '\n';
+      return false;
+    }
+    clients.emplace_back(*client);
+    return true;
+  };
+
+  if (!connect()) {
+    return false;
+  }
+  if (!PumpUntil(loop, [&] {
+        return observation.unsupported || observation.error.has_value() ||
+               observation.first_received;
+      })) {
+    return false;
+  }
+  if (observation.unsupported) {
+    std::cout << "SKIP: multishot accept unavailable\n";
+    return true;
+  }
+  if (observation.error.has_value()) {
+    std::cout << "FAIL: first accept failed: "
+              << observation.error->message() << '\n';
+    return false;
+  }
+
+  if (!connect()) {
+    return false;
+  }
+  if (!PumpUntil(loop, [&] {
+        return observation.unsupported || observation.error.has_value() ||
+               observation.low_water_consumed;
+      }, 128)) {
+    return false;
+  }
+  if (observation.unsupported) {
+    std::cout << "SKIP: multishot accept unavailable\n";
+    return true;
+  }
+  if (observation.error.has_value()) {
+    std::cout << "FAIL: source did not drain to low-water: "
+              << observation.error->message() << '\n';
+    return false;
+  }
+
+  if (!connect()) {
+    return false;
+  }
+  if (!PumpUntil(loop, [&] {
+        return observation.unsupported || observation.error.has_value() ||
+               observation.done;
+      }, 128)) {
+    return false;
+  }
+  if (observation.unsupported) {
+    std::cout << "SKIP: multishot accept unavailable\n";
+    return true;
+  }
+  if (observation.error.has_value()) {
+    std::cout << "FAIL: source did not re-arm after low-water: "
+              << observation.error->message() << '\n';
+    return false;
+  }
+
+  return observation.first_received && observation.low_water_consumed &&
+         observation.resumed_received && observation.stop_succeeded &&
+         observation.normal_end;
 }
 
 }  // namespace
@@ -1032,6 +1231,9 @@ int main() {
     return 1;
   }
   if (!CheckQueueBackpressure()) {
+    return 1;
+  }
+  if (!CheckQueuePauseThenRearm()) {
     return 1;
   }
 

@@ -13,7 +13,6 @@
 #include "coropact/reactor/channel.h"
 #include "coropact/reactor/event_loop.h"
 #include "coropact/reactor/reactor_stream.h"
-#include "coropact/time/timestamp.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::reactor {
@@ -44,7 +43,7 @@ private:
   ReactorAcceptSource(ReactorListener* listener,
                       net::detail::AcceptSourceStateMachine state) noexcept;
 
-  void OnReady(time::Timestamp receive_time) noexcept;
+  void OnReady() noexcept;
   void OnError(base::Error error) noexcept;
   void OnListenerClosed() noexcept;
   void EnsureAdmission() noexcept;
@@ -64,6 +63,8 @@ private:
 struct ReactorListenerOptions {
   bool reuse_addr{true};
   bool reuse_port{false};
+  // Applies to every ReactorStream returned by Accept and AcceptSource.
+  ReactorStreamOptions stream_options{};
 };
 
 class ReactorListener {
@@ -102,11 +103,12 @@ private:
 
   class AcceptAwaiter;
 
-  ReactorListener(EventLoop* loop, net::Socket socket) noexcept;
+  ReactorListener(EventLoop* loop, net::Socket socket,
+                  ReactorStreamOptions stream_options) noexcept;
 
-  void HandleRead(time::Timestamp receive_time);
+  void HandleRead();
   void HandleError();
-  static void DispatchRead(void* context, time::Timestamp receive_time) noexcept;
+  static void DispatchRead(void* context) noexcept;
   static void DispatchError(void* context) noexcept;
   void CompleteAccept(base::Result<ReactorStream> result);
   void DetachChannel();
@@ -118,6 +120,7 @@ private:
   EventLoop* loop_;
   net::Socket socket_;
   Channel channel_;
+  ReactorStreamOptions stream_options_;
   AcceptAwaiter* pending_accept_{nullptr};
   ReactorAcceptSource* accept_source_{nullptr};
   bool closed_{false};

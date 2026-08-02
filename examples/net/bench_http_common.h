@@ -50,4 +50,9 @@ inline std::size_t EnvSize(const char* key, std::size_t fallback) {
   return end != value ? static_cast<std::size_t>(parsed) : fallback;
 }
 
+inline std::string_view EnvString(const char* key) {
+  const char* value = std::getenv(key);
+  return value != nullptr ? std::string_view(value) : std::string_view{};
+}
+
 }  // namespace coropact_bench

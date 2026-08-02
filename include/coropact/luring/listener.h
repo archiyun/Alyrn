@@ -43,7 +43,9 @@ struct LUringListenOptions {
 class LUringAcceptSource {
   friend class LUringListener;
 
-  friend void detail::DispatchAcceptSourceComplete(LUringOp* op, CompletionEvent event) noexcept;
+  friend CompletionDisposition detail::DispatchAcceptSourceComplete(
+      LUringOp* op,
+      CompletionEvent event) noexcept;
 
   friend void detail::DispatchAcceptSourceCancelComplete(LUringOp* op) noexcept;
 
@@ -122,9 +124,11 @@ private:
   base::Result<bool> BeginStop() noexcept;
 
   void EnsureSubmission() noexcept;
+  void MaybeResume() noexcept;
+  void RequestBackendPause() noexcept;
   void RequestBackendStop(std::optional<base::Error> error = std::nullopt) noexcept;
 
-  void OnCompletion(CompletionEvent event) noexcept;
+  CompletionDisposition OnCompletion(CompletionEvent event) noexcept;
   void OnCancelComplete(int cqe_res) noexcept;
   void OnListenerClosed() noexcept;
 

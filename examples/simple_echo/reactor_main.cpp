@@ -34,24 +34,24 @@ int main() {
 
   auto binding = io::BindReactor(io::CapabilitySet::CoreNetwork());
   if (!binding.has_value()) {
-    std::cerr << "failed to bind Reactor backend: " << binding.error().message() << '\n';
+    std::println(stderr, "failed to bind Reactor backend: {}", binding.error().message());
     return 1;
   }
 
   reactor::EventLoop loop;
-  reactor::EventLoopScheduler scheduler(&loop);
   const auto address = net::Endpoint::Loopback(kPort);
 
   auto listener_result = reactor::ReactorListener::Create(&loop, address);
   if (!listener_result.has_value()) {
-    std::cerr << "failed to create Reactor listener: " << listener_result.error().message() << '\n';
+    std::println(stderr, "failed to create Reactor listener: {}",
+                 listener_result.error().message());
     return 1;
   }
 
   auto listener = std::move(*listener_result);
-  coro::SpawnDetach(scheduler, simple_echo::AcceptLoop(listener, scheduler));
+  coro::SpawnDetach(loop, simple_echo::AcceptLoop(listener, loop));
 
-  std::cout << "simple echo (Reactor) listening on 127.0.0.1:" << kPort << '\n';
+  std::println(std::cout, "simple echo (Reactor) listening on 127.0.0.1:{}", kPort);
   loop.Loop();
   return 0;
 }
