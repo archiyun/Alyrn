@@ -29,8 +29,9 @@
 namespace coropact::reactor {
 
 struct ReactorStreamOptions {
-  // ET keeps successful-read interest armed; LT removes it after completion.
-  // Both modes still probe the non-blocking socket before arming the Channel.
+  // ET keeps successful-read interest armed. LT keeps it armed for an
+  // immediate re-arm and lazily removes it if readiness arrives without a
+  // pending read. Both modes still probe the non-blocking socket first.
   TriggerMode trigger_mode{TriggerMode::kEdgeTriggered};
 };
 

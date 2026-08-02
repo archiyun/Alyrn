@@ -679,6 +679,12 @@ coro::Task<base::Result<void>> ReactorStream::Close() {
 void ReactorStream::HandleRead(coropact::time::Timestamp /*receive_time*/) {
   COROPACT_DCHECK(loop_->IsInLoopThread(), "ReactorStream::HandleRead called from wrong thread");
   if (pending_read_ == nullptr) {
+    // Keep LT cheap for back-to-back reads, but disarm stale readiness when a
+    // consumer did not submit the next read before the event loop polled
+    // again. This prevents an unread remainder from spinning the loop.
+    if (!channel_.IsEdgeTriggered() && channel_.IsReading()) {
+      channel_.DisableReading();
+    }
     return;
   }
   switch (pending_read_kind_) {
@@ -733,9 +739,10 @@ void ReactorStream::CompleteRead(base::Result<std::size_t> result) {
   if (awaiter == nullptr) {
     return;
   }
-  // A successful read leaves the stream's edge-triggered read interest armed.
-  // The next ReadSome probes the fd synchronously and reuses that interest if
-  // it would block. Terminal results must still remove the interest.
+  // Successful reads keep interest armed in both modes so a continuation can
+  // immediately submit the next read without an epoll_ctl pair. LT disarms
+  // lazily in HandleRead when readiness arrives without a pending operation.
+  // Terminal results remove the interest in both modes.
   if (!result.has_value() || *result == 0) {
     if (channel_.IsReading()) {
       channel_.DisableReading();
