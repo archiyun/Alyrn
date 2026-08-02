@@ -2,6 +2,8 @@
 
 本报告记录当前 CoroPact checkout 中 Reactor、CoroPact luring、raw liburing、Asio、Monoio、Compio、libaio、libuv、libevent 和 libev 的统一压测结果。
 
+Reactor 与 luring 的独立 ET/LT 对照见 [CoroPact luring 与 Reactor 独立对比](luring-reactor-comparison-20260802.md)。注意：LT/ET 只属于 Reactor 的 epoll readiness 路径，luring 使用 io_uring CQE，不存在 luring LT/ET。
+
 ## 结论
 
 - CoroPact luring 与 raw liburing 位于吞吐第一梯队。两者在 10000 并发的吞吐几乎相同：luring `475.1k RPS`，raw liburing `474.3k RPS`；luring P99 为 `30.82 ms`，raw liburing 受少量长尾样本影响为 `494.08 ms`，但本轮没有 wrk timeout。

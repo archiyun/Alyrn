@@ -24,7 +24,7 @@ layer.
 
 ## Owned resources
 
-- EventLoop thread affinity and wakeup fd.
+- EventLoop thread affinity and owner-local work queues.
 - Poller registrations and Channel event masks.
 - Listening and connected socket fds.
 - `ReactorListener`, `ReactorConnector`, and `ReactorStream` state.
@@ -32,7 +32,7 @@ layer.
 
 ## Public API / entry points
 
-- `EventLoop::{Loop,Quit,RunInLoop,QueueInLoop,RunAt,RunAfter,RunEvery,Cancel}`
+- `EventLoop::{Loop,Quit,RunOnOwner,DeferOnOwner,Schedule,RunAt,RunAfter,RunEvery,Cancel}`
 - `Channel`, `Poller`, and `EPollPoller`
 - `ReactorListener`, `ReactorConnector`, and `ReactorStream`
 
@@ -40,15 +40,17 @@ layer.
 
 - One EventLoop is constructed, run, and destroyed on one owning thread.
 - Channel, Poller, fd, stream state, and timer mutation belong to that loop.
-- Only explicitly documented posting APIs are cross-thread safe.
-- Do not add a global lock to compensate for wrong-thread access.
+- `RunOnOwner`, `DeferOnOwner`, `Schedule`, timers, and `Quit` are owner-thread
+  APIs; they are not cross-thread safe.
+- Cross-thread delivery belongs to a separate mailbox design. Do not add a
+  global lock or wakeup fd to compensate for wrong-thread access.
 
 ## Lifetime rules
 
-- EventLoop outlives every registered Channel and queued callback target.
+- EventLoop outlives every registered Channel and owner-local queued callback/work target.
 - Channel does not own its fd or callback owner; remove it before either is destroyed.
 - A Reactor stream owns its transport state and is destroyed on its owning loop.
-- Awaiting or posted operations must complete or become inert before their owner dies.
+- Awaiting or owner-local deferred operations must complete or become inert before their owner dies.
 - Raw `this` callbacks require owner-controlled cancellation and drain ordering.
 
 ## State machine
@@ -69,7 +71,7 @@ Timer: pending-insert -> active -> executing -> active(repeat) | released
 - Socket and Channel always refer to the same live fd.
 - Transport callbacks execute on the owning loop.
 - ET paths drain until `EAGAIN`; LT paths preserve unread bytes correctly.
-- Cross-thread operations post to the owner and do not inspect loop-owned state first.
+- Owner-only operations do not inspect or mutate loop-owned state from another thread.
 - Reactor code contains no gateway-specific naming or policy.
 
 ## Common bugs
@@ -103,7 +105,7 @@ Timer: pending-insert -> active -> executing -> active(repeat) | released
 ## Patch rules
 
 - State the owning loop for each new resource.
-- Post work to the loop instead of locking loop-owned state.
+- Keep work on the owning loop; cross-thread delivery requires the separate mailbox seam.
 - Every fd path must identify one owner and one close point.
 - Every async terminal path must be idempotent.
 - Add a teardown/race test for lifetime fixes.

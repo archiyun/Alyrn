@@ -10,7 +10,6 @@
 #include "coropact/reactor/channel.h" // IWYU pragma: export
 #include "coropact/reactor/epoll_poller.h" // IWYU pragma: export
 #include "coropact/reactor/event_loop.h" // IWYU pragma: export
-#include "coropact/reactor/event_loop_scheduler.h" // IWYU pragma: export
 #include "coropact/reactor/poller.h" // IWYU pragma: export
 #include "coropact/reactor/reactor_connect.h" // IWYU pragma: export
 #include "coropact/reactor/reactor_listener.h" // IWYU pragma: export

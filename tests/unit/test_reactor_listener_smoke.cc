@@ -17,7 +17,6 @@
 #include "coropact/io/backend.h"
 #include "coropact/net/endpoint.h"
 #include "coropact/reactor/event_loop.h"
-#include "coropact/reactor/event_loop_scheduler.h"
 #include "coropact/reactor/reactor_connect.h"
 #include "coropact/reactor/reactor_listener.h"
 #include "coropact/reactor/reactor_stream.h"
@@ -126,7 +125,6 @@ bool CheckFactories() {
 bool CheckPendingAccept() {
   coropact::reactor::EventLoop loop;
   coropact::reactor::ReactorListener listener(&loop, coropact::net::Endpoint(0));
-  coropact::reactor::EventLoopScheduler scheduler(&loop);
 
   auto listen_addr = listener.LocalAddress();
   if (!listen_addr.has_value()) {
@@ -137,8 +135,8 @@ bool CheckPendingAccept() {
   std::optional<AcceptResult> result;
   int client_fd = -1;
 
-  coropact::coro::SpawnDetach(scheduler, AcceptOnce(&listener, &loop, &result));
-  loop.QueueInLoop([&] { client_fd = ConnectNonBlocking(*listen_addr); });
+  coropact::coro::SpawnDetach(loop, AcceptOnce(&listener, &loop, &result));
+  loop.DeferOnOwner([&] { client_fd = ConnectNonBlocking(*listen_addr); });
 
   loop.Loop();
 
@@ -153,12 +151,11 @@ bool CheckPendingAccept() {
 bool CheckCloseCancelsPendingAccept() {
   coropact::reactor::EventLoop loop;
   coropact::reactor::ReactorListener listener(&loop, coropact::net::Endpoint(0));
-  coropact::reactor::EventLoopScheduler scheduler(&loop);
 
   std::optional<AcceptResult> result;
 
-  coropact::coro::SpawnDetach(scheduler, AcceptOnce(&listener, &loop, &result));
-  loop.QueueInLoop([&] { coropact::coro::Spawn(scheduler, listener.Close()).Detach(); });
+  coropact::coro::SpawnDetach(loop, AcceptOnce(&listener, &loop, &result));
+  loop.DeferOnOwner([&] { coropact::coro::Spawn(loop, listener.Close()).Detach(); });
 
   loop.Loop();
 
@@ -171,7 +168,6 @@ bool CheckCloseCancelsPendingAccept() {
 bool CheckAcceptSourceQueueAndStop() {
   coropact::reactor::EventLoop loop;
   coropact::reactor::ReactorListener listener(&loop, coropact::net::Endpoint(0));
-  coropact::reactor::EventLoopScheduler scheduler(&loop);
 
   auto source_result = listener.AcceptSource({.pending_depth = 1, .event_capacity = 1});
   if (!Check(source_result.has_value(), "failed to create reactor AcceptSource")) {
@@ -191,8 +187,8 @@ bool CheckAcceptSourceQueueAndStop() {
   int second_client = -1;
 
   coropact::coro::SpawnDetach(
-      scheduler, AcceptSourceTwice(&source, &loop, &first, &second, &stop_succeeded));
-  loop.QueueInLoop([&] {
+      loop, AcceptSourceTwice(&source, &loop, &first, &second, &stop_succeeded));
+  loop.DeferOnOwner([&] {
     first_client = ConnectNonBlocking(*listen_addr);
     second_client = ConnectNonBlocking(*listen_addr);
   });
@@ -217,7 +213,6 @@ bool CheckAcceptSourceQueueAndStop() {
 bool CheckAcceptSourceStopWakesPendingNext() {
   coropact::reactor::EventLoop loop;
   coropact::reactor::ReactorListener listener(&loop, coropact::net::Endpoint(0));
-  coropact::reactor::EventLoopScheduler scheduler(&loop);
 
   auto source_result = listener.AcceptSource();
   if (!Check(source_result.has_value(), "failed to create pending reactor AcceptSource")) {
@@ -227,9 +222,9 @@ bool CheckAcceptSourceStopWakesPendingNext() {
 
   bool got_end = false;
   bool stop_succeeded = false;
-  coropact::coro::SpawnDetach(scheduler, WaitForSourceEnd(&source, &loop, &got_end));
-  loop.QueueInLoop([&] {
-    coropact::coro::SpawnDetach(scheduler, StopSource(&source, &stop_succeeded));
+  coropact::coro::SpawnDetach(loop, WaitForSourceEnd(&source, &loop, &got_end));
+  loop.DeferOnOwner([&] {
+    coropact::coro::SpawnDetach(loop, StopSource(&source, &stop_succeeded));
   });
   loop.Loop();
 
@@ -240,7 +235,6 @@ bool CheckAcceptSourceStopWakesPendingNext() {
 bool CheckAcceptSourceListenerCloseWakesPendingNext() {
   coropact::reactor::EventLoop loop;
   coropact::reactor::ReactorListener listener(&loop, coropact::net::Endpoint(0));
-  coropact::reactor::EventLoopScheduler scheduler(&loop);
 
   auto source_result = listener.AcceptSource();
   if (!Check(source_result.has_value(), "failed to create close-test AcceptSource")) {
@@ -250,9 +244,9 @@ bool CheckAcceptSourceListenerCloseWakesPendingNext() {
 
   bool got_end = false;
   bool close_succeeded = false;
-  coropact::coro::SpawnDetach(scheduler, WaitForSourceEnd(&source, &loop, &got_end));
-  loop.QueueInLoop([&] {
-    coropact::coro::SpawnDetach(scheduler, CloseListener(&listener, &close_succeeded));
+  coropact::coro::SpawnDetach(loop, WaitForSourceEnd(&source, &loop, &got_end));
+  loop.DeferOnOwner([&] {
+    coropact::coro::SpawnDetach(loop, CloseListener(&listener, &close_succeeded));
   });
   loop.Loop();
 

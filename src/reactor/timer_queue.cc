@@ -56,33 +56,33 @@ TimerQueue::~TimerQueue() {
 
 time::TimerId TimerQueue::AddTimer(TimerCallback cb, time::Timestamp when, double interval) {
   time::Timer* t = timer_pool_.Acquire(std::move(cb), when, interval);
-  loop_->RunInLoop([this, t] {
-    bool earliest_changed = timers_.Empty() || t->expiration() < timers_.Earliest()->expiration();
-    timers_.Insert(t);
-    active_timers_.Insert(t);
-    if (earliest_changed) {
-      ResetTimerfd(t->expiration());
-    }
-  });
+  bool earliest_changed = timers_.Empty() || t->expiration() < timers_.Earliest()->expiration();
+  timers_.Insert(t);
+  active_timers_.Insert(t);
+  if (earliest_changed) {
+    ResetTimerfd(t->expiration());
+  }
   return {t->sequence()};
 }
 
 void TimerQueue::Cancel(coropact::time::TimerId id) {
-  loop_->RunInLoop([this, seq = id.sequence] {
-    time::Timer* active_timer = active_timers_.Find(seq);
-    if (active_timer != nullptr) {
-      active_timers_.Erase(active_timer);
-      timers_.Erase(active_timer);
-      timer_pool_.Release(active_timer);
-      return;
+  time::Timer* active_timer = active_timers_.Find(id.sequence);
+  if (active_timer != nullptr) {
+    const bool earliest_removed = active_timer == timers_.Earliest();
+    active_timers_.Erase(active_timer);
+    timers_.Erase(active_timer);
+    timer_pool_.Release(active_timer);
+    if (earliest_removed && !timers_.Empty()) {
+      ResetTimerfd(timers_.Earliest()->expiration());
     }
+    return;
+  }
 
-    // Missed the registry: the target is mid-callback (its sequence was already
-    // erased when it fired), so flag the in-flight timer instead of touching it.
-    if (processing_timer_ != nullptr && processing_timer_->sequence() == seq) {
-      processing_timer_cancelled_ = true;
-    }
-  });
+  // Missed the registry: the target is mid-callback (its sequence was already
+  // erased when it fired), so flag the in-flight timer instead of touching it.
+  if (processing_timer_ != nullptr && processing_timer_->sequence() == id.sequence) {
+    processing_timer_cancelled_ = true;
+  }
 }
 
 void TimerQueue::DispatchRead(void* context, time::Timestamp /*receive_time*/) noexcept {

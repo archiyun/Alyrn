@@ -111,7 +111,7 @@ coropact::coro::DetachedTask HandleConnection(
     coropact::reactor::ReactorStream stream, WorkerState* state) {
   {
     std::lock_guard lock{state->mutex};
-    state->scheduler_is_current = coropact::coro::Scheduler::Current() == &context.scheduler;
+    state->scheduler_is_current = coropact::coro::Scheduler::Current() == &context.loop;
   }
   state->cv.notify_all();
 
