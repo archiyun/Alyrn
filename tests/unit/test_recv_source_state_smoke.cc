@@ -66,7 +66,7 @@ void CheckOptions() {
   assert((!RecvSourceOptions{1, 2, 1}.Valid()));
   assert((RecvSourceOptions{1, 2, 2}.Valid()));
   assert((!RecvSourceOptions{1, 2, 2, 2}.Valid()));
-  assert(RecvSourceOptions{1, 2, 2}.ResumeThreshold() == 1);
+  assert((RecvSourceOptions{1, 2, 2}.ResumeThreshold() == 1));
 }
 
 void CheckBufferLease() {

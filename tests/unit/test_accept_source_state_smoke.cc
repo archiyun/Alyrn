@@ -21,7 +21,7 @@ void CheckOptions() {
   assert((AcceptSourceOptions{4, 4}.Valid()));
   assert((AcceptSourceOptions{1, 1}.Valid()));
   assert((!AcceptSourceOptions{1, 4, 4}.Valid()));
-  assert(AcceptSourceOptions{1, 4}.ResumeThreshold() == 2);
+  assert((AcceptSourceOptions{1, 4}.ResumeThreshold() == 2));
 
   auto invalid = AcceptSourceStateMachine::Create({0, 1});
   assert(!invalid.has_value());
