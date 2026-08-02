@@ -21,7 +21,8 @@ Channel::Channel(Channel&& other) noexcept
       index_(-1),
       trigger_mode_(TriggerMode::kLevelTriggered),
       tied_(false) {
-  COROPACT_CHECK(other.index_ == -1, "Channel move requires the source to be detached from the Poller");
+  COROPACT_CHECK(other.index_ == -1,
+                 "Channel move requires the source to be detached from the Poller");
 
   loop_ = std::exchange(other.loop_, nullptr);
   fd_ = std::exchange(other.fd_, -1);
@@ -47,8 +48,9 @@ Channel& Channel::operator=(Channel&& other) noexcept {
   }
 
   COROPACT_CHECK(index_ == -1,
-             "Channel move assignment requires the destination to be detached from the Poller");
-  COROPACT_CHECK(other.index_ == -1, "Channel move requires the source to be detached from the Poller");
+                 "Channel move assignment requires the destination to be detached from the Poller");
+  COROPACT_CHECK(other.index_ == -1,
+                 "Channel move requires the source to be detached from the Poller");
 
   loop_ = std::exchange(other.loop_, nullptr);
   fd_ = std::exchange(other.fd_, -1);
@@ -104,19 +106,27 @@ void Channel::HandleEventWithGuard(coropact::time::Timestamp receive_time) {
   // kHupEvent without kReadEvent usually means the peer has closed the connection
   // and there is no more readable data left in the socket buffer.
   if (static_cast<bool>((revents_ & kHupEvent)) && !static_cast<bool>((revents_ & kReadEvent))) {
-    if (close_callback_) close_callback_(close_context_);
+    if (close_callback_ != nullptr) {
+      close_callback_(close_context_);
+    }
   }
 
   if (static_cast<bool>(revents_ & kErrorEvent)) {
-    if (error_callback_) error_callback_(error_context_);
+    if (error_callback_ != nullptr) {
+      error_callback_(error_context_);
+    }
   }
 
   if (static_cast<bool>(revents_ & kReadEvent)) {
-    if (read_callback_) read_callback_(read_context_, receive_time);
+    if (read_callback_ != nullptr) {
+      read_callback_(read_context_, receive_time);
+    }
   }
 
   if (static_cast<bool>(revents_ & kWriteEvent)) {
-    if (write_callback_) write_callback_(write_context_);
+    if (write_callback_ != nullptr) {
+      write_callback_(write_context_);
+    }
   }
 }
 

@@ -143,20 +143,19 @@ void EventLoop::Quit() {
   }
 }
 
-void EventLoop::RunInLoop(Functor cb) {
+void EventLoop::RunInLoop(Functor callback) {
   if (IsInLoopThread()) {
-    cb();
+    callback();
   } else {
-    QueueInLoop(std::move(cb));
+    QueueInLoop(std::move(callback));
   }
 }
 
-void EventLoop::QueueInLoop(Functor cb) {
+void EventLoop::QueueInLoop(Functor callback) {
   {
     std::lock_guard lock{mutex_};
-    pending_functors_.push_back(std::move(cb));
+    pending_functors_.push_back(std::move(callback));
   }
-
   // Wake the loop when work is queued from another thread, or when the loop is
   // already executing pending functors and needs to observe newly queued work
   // in a later iteration.
@@ -168,10 +167,8 @@ void EventLoop::QueueInLoop(Functor cb) {
 bool EventLoop::HasImmediateWork() {
   COROPACT_DCHECK(IsInLoopThread(), "EventLoop::HasImmediateWork called from wrong thread");
 
-  {
-    std::lock_guard lock{mutex_};
-    return !pending_functors_.empty();
-  }
+  std::lock_guard lock{mutex_};
+  return !pending_functors_.empty();
 }
 
 void EventLoop::UpdateChannel(Channel* channel) {
@@ -223,16 +220,17 @@ void EventLoop::DoPendingFunctors() {
   calling_pending_functors_.store(false, std::memory_order_relaxed);
 }
 
-time::TimerId EventLoop::RunAt(time::Timestamp time, Functor cb) {
-  return timer_queue_->AddTimer(std::move(cb), time, 0.0);
+time::TimerId EventLoop::RunAt(time::Timestamp time, Functor callback) {
+  return timer_queue_->AddTimer(std::move(callback), time, 0.0);
 }
 
-time::TimerId EventLoop::RunAfter(double delay, Functor cb) {
-  return timer_queue_->AddTimer(std::move(cb), AddTime(time::Timestamp::Now(), delay), 0.0);
+time::TimerId EventLoop::RunAfter(double delay, Functor callback) {
+  return timer_queue_->AddTimer(std::move(callback), AddTime(time::Timestamp::Now(), delay), 0.0);
 }
 
-time::TimerId EventLoop::RunEvery(double interval, Functor cb) {
-  return timer_queue_->AddTimer(std::move(cb), AddTime(time::Timestamp::Now(), interval), interval);
+time::TimerId EventLoop::RunEvery(double interval, Functor callback) {
+  return timer_queue_->AddTimer(std::move(callback), AddTime(time::Timestamp::Now(), interval),
+                                interval);
 }
 
 void EventLoop::Cancel(time::TimerId id) { timer_queue_->Cancel(id); }

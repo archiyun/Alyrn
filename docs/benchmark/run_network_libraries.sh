@@ -71,7 +71,8 @@ start_target() {
 
   case "$target" in
     reactor)
-      PORT="$port" REACTOR_WORKERS="$WORKERS" "$binary" >"$log" 2>&1 & ;;
+      PORT="$port" REACTOR_WORKERS="$WORKERS" FRAME_POOL="$FRAME_POOL" \
+        "$binary" >"$log" 2>&1 & ;;
     luring)
       BIND_HOST=127.0.0.1 PORT="$port" URING_WORKERS="$WORKERS" URING_ENTRIES="$ENTRIES" \
         FRAME_POOL="$FRAME_POOL" "$binary" >"$log" 2>&1 & ;;
