@@ -1,13 +1,204 @@
-# Packaging and installation
+# Packaging and installation on Linux
 
-CoroPact is distributed as a CMake package. A release contains a Debian
-package and a tarball, both containing headers, static libraries, and the
-`CoroPactConfig.cmake` package metadata.
+CoroPact supports two installation layers:
 
-## Build release artifacts with Docker
+1. **Portable CMake installation** — the recommended path for every Linux
+   distribution. It installs headers, static libraries, and relocatable
+   `CoroPactConfig.cmake` metadata into any prefix.
+2. **Native distribution packages** — optional convenience packages such as
+   Debian `.deb` and Arch `PKGBUILD` packages. These are not interchangeable:
+   a `.deb` is for Debian-family systems, not Arch or Fedora.
 
-The root `Dockerfile` is a multi-stage artifact builder. It runs the tests in
-the builder stage and copies only the generated packages to the host:
+The Reactor backend does not require liburing. The io_uring backend requires
+the liburing development package and a kernel with the capabilities used by
+the selected runtime path.
+
+## 1. Install build dependencies
+
+The package names below are common names for current releases. If a
+distribution has renamed one of them, install the equivalent C++23 compiler,
+CMake, Ninja, pkg-config/pkgconf, and liburing development package.
+
+### Arch Linux
+
+```bash
+sudo pacman -Syu --needed base-devel cmake ninja pkgconf liburing
+```
+
+`base-devel` supplies the compiler and standard build tools. Add `gtest` if
+you want to build the optional test suite from the distribution package.
+
+### Debian and Ubuntu
+
+```bash
+sudo apt update
+sudo apt install build-essential cmake ninja-build pkg-config liburing-dev
+```
+
+### Fedora, RHEL-compatible systems, and CentOS Stream
+
+```bash
+sudo dnf install gcc-c++ cmake ninja-build pkgconf-pkg-config liburing-devel
+```
+
+### openSUSE
+
+```bash
+sudo zypper install gcc-c++ cmake ninja pkg-config liburing-devel
+```
+
+### Alpine Linux
+
+```bash
+sudo apk add build-base cmake ninja pkgconf liburing-dev
+```
+
+For a Reactor-only build, omit the liburing package and pass
+`-DCOROPACT_ENABLE_URING=OFF` in the configure command below.
+
+## 2. Portable installation from a release source archive
+
+This path works on Arch, Fedora, openSUSE, Alpine, Debian, Ubuntu, and other
+Linux distributions with a supported C++23 compiler. It does not depend on
+`apt`, `dnf`, `pacman`, or a particular system library layout.
+
+Download the source archive for the release:
+
+```bash
+VERSION=0.1.0
+curl -fL \
+  "https://github.com/archiyun/CoroPact/archive/refs/tags/v${VERSION}.tar.gz" \
+  -o "CoroPact-${VERSION}.tar.gz"
+tar -xzf "CoroPact-${VERSION}.tar.gz"
+```
+
+Build and install the io_uring-enabled package into `/usr/local`:
+
+```bash
+cmake -S "CoroPact-${VERSION}" -B "build-coropact-${VERSION}" -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_TESTS=OFF \
+  -DBUILD_EXAMPLES=OFF \
+  -DBUILD_BENCHMARKS=OFF \
+  -DCOROPACT_ENABLE_URING=ON \
+  -DCMAKE_INSTALL_PREFIX=/usr/local
+
+cmake --build "build-coropact-${VERSION}"
+sudo cmake --install "build-coropact-${VERSION}"
+```
+
+For a Reactor-only install, use the same command with
+`-DCOROPACT_ENABLE_URING=OFF` and without the liburing dependency.
+
+To install without root privileges, use a user prefix:
+
+```bash
+cmake -S "CoroPact-${VERSION}" -B build-coropact-user -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_TESTS=OFF \
+  -DBUILD_EXAMPLES=OFF \
+  -DCMAKE_INSTALL_PREFIX=/home/your-user/.local
+cmake --build build-coropact-user
+cmake --install build-coropact-user
+```
+
+When consuming a user-prefix installation, provide the prefix to CMake:
+
+```bash
+cmake -S my-app -B build-my-app \
+  -DCMAKE_PREFIX_PATH=/home/your-user/.local
+```
+
+## 3. Verify the installation
+
+The install tree contains files similar to:
+
+```text
+/usr/local/include/coropact/...
+/usr/local/lib/libcoropact_net.a
+/usr/local/lib/libcoropact_reactor.a
+/usr/local/lib/cmake/CoroPact/CoroPactConfig.cmake
+```
+
+A consuming application's `CMakeLists.txt` can use the exported targets:
+
+```cmake
+find_package(CoroPact CONFIG REQUIRED)
+
+add_executable(my_app main.cc)
+target_link_libraries(my_app PRIVATE CoroPact::coropact_reactor)
+```
+
+For io_uring:
+
+```cmake
+find_package(CoroPact CONFIG REQUIRED)
+target_link_libraries(my_app PRIVATE CoroPact::coropact_luring)
+```
+
+The installed package recreates external dependencies through CMake; it does
+not embed absolute paths from the developer's source tree.
+
+## 4. Native package installation
+
+### Debian and Ubuntu: `.deb`
+
+Download the Debian asset from the GitHub release and install it with `apt`:
+
+```bash
+gh release download v0.1.0 \
+  --repo archiyun/CoroPact \
+  --pattern '*.deb'
+sudo apt install ./*.deb
+```
+
+This package is intended for Debian-family systems. Do not pass it to
+`pacman`, `dnf`, or `zypper`.
+
+### Arch Linux: `PKGBUILD`
+
+Arch users can build a native package with `makepkg`:
+
+```bash
+git clone --depth=1 --branch v0.1.0 \
+  https://github.com/archiyun/CoroPact.git
+cd CoroPact/packaging/arch
+makepkg -si
+```
+
+The package installs under `/usr`, records the files in pacman's database, and
+declares `liburing` as a dependency for the io_uring-enabled build. The
+maintainer should run `updpkgsums` and review the checksum before publishing a
+stable Arch package.
+
+### Fedora, openSUSE, Alpine, and other distributions
+
+Use the portable CMake installation in section 2. It is the supported
+cross-distribution path for this release. A future release may add native RPM
+or APK packages, but their absence does not prevent installation or CMake
+consumption on those systems.
+
+## 5. Prebuilt tarball
+
+The release `.tar.gz` is a system-layout artifact. It can be extracted at the
+filesystem root on a compatible Linux host:
+
+```bash
+gh release download v0.1.0 \
+  --repo archiyun/CoroPact \
+  --pattern '*.tar.gz'
+sudo tar -xzf coropact-*.tar.gz -C /
+```
+
+This does not register files with `pacman`, `rpm`, or another package manager.
+Use the source-install path or a native package when package-manager tracking
+and clean removal matter.
+
+## 6. Docker release artifacts
+
+The root `Dockerfile` is a multi-stage artifact builder. It runs the test suite
+and emits `.deb` and `.tar.gz` files; it is not a runtime image because
+CoroPact is a library rather than a daemon:
 
 ```bash
 docker buildx build \
@@ -16,8 +207,7 @@ docker buildx build \
   .
 ```
 
-The default artifact includes the io_uring backend. To build the Reactor-only
-package:
+To build a Reactor-only artifact:
 
 ```bash
 docker buildx build \
@@ -27,93 +217,18 @@ docker buildx build \
   .
 ```
 
-The Docker build is intentionally an artifact build. CoroPact has no daemon
-or executable runtime image to launch; applications install the package on
-their own build hosts or inside their own application image.
+The Docker builder currently uses Ubuntu as a reproducible packaging
+environment. That choice does not restrict the host distribution: Arch and
+other systems should use the source install or their native package path.
 
-## Download a release
+## 7. Creating a release
 
-For a tagged GitHub release, download either asset from the release page or
-with the GitHub CLI:
-
-```bash
-gh release download v0.1.0 \
-  --repo archiyun/CoroPact \
-  --pattern '*.deb'
-```
-
-The tarball can be downloaded with `--pattern '*.tar.gz'` instead.
-
-## Install into system paths
-
-The Debian package is the recommended Linux installation method:
-
-```bash
-sudo apt install ./*.deb
-```
-
-The package installs headers under `/usr/include`, libraries under `/usr/lib`,
-and CMake package files under `/usr/lib/cmake/CoroPact`. The io_uring package
-also declares `liburing-dev` as a Debian dependency.
-
-The tarball has the same `/usr`-relative layout and can be installed without a
-package manager:
-
-```bash
-sudo tar -xzf coropact-*.tar.gz -C /
-```
-
-For a non-root or custom-prefix installation, build from source with an
-explicit prefix instead of unpacking the system-layout tarball:
-
-```bash
-cmake -S . -B build-install \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DBUILD_TESTS=OFF \
-  -DBUILD_EXAMPLES=OFF \
-  -DCMAKE_INSTALL_PREFIX="$HOME/.local"
-cmake --build build-install
-cmake --install build-install
-```
-
-## Consume the installed package
-
-An application can use the exported targets from any standard CMake prefix:
-
-```cmake
-find_package(CoroPact CONFIG REQUIRED)
-
-target_link_libraries(my_app PRIVATE CoroPact::coropact_reactor)
-```
-
-For a custom prefix, pass it during configuration:
-
-```bash
-cmake -S . -B build -DCMAKE_PREFIX_PATH="$HOME/.local"
-```
-
-The io_uring targets are available when the package was built with
-`COROPACT_ENABLE_URING=ON`:
-
-```cmake
-find_package(CoroPact CONFIG REQUIRED)
-target_link_libraries(my_app PRIVATE CoroPact::coropact_luring)
-```
-
-The installed package remains relocatable within its prefix: consumers use
-the exported `CoroPact::` targets rather than hard-coded include or library
-paths.
-
-## Creating a GitHub release
-
-Update the `project(... VERSION ...)` value in the root `CMakeLists.txt`, commit
-it, and push a matching tag:
+Keep the project version and Git tag aligned:
 
 ```bash
 git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The tag workflow builds the Docker artifacts, runs the test suite as part of
-the image build, and uploads the `.deb` and `.tar.gz` files to the GitHub
-release.
+The tag workflow builds the Debian/tarball artifacts and uploads them to the
+GitHub Release. The Arch `PKGBUILD` consumes the same tag and source archive.

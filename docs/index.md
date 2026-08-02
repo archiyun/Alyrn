@@ -11,3 +11,4 @@
 ## 发布与安装
 
 - [Packaging and installation](packaging.md)
+- [Release notes: CoroPact 0.1.0](releases/v0.1.0.md)
