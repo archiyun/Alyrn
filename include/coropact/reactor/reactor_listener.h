@@ -64,6 +64,8 @@ private:
 struct ReactorListenerOptions {
   bool reuse_addr{true};
   bool reuse_port{false};
+  // Applies to every ReactorStream returned by Accept and AcceptSource.
+  ReactorStreamOptions stream_options{};
 };
 
 class ReactorListener {
@@ -102,7 +104,8 @@ private:
 
   class AcceptAwaiter;
 
-  ReactorListener(EventLoop* loop, net::Socket socket) noexcept;
+  ReactorListener(EventLoop* loop, net::Socket socket,
+                  ReactorStreamOptions stream_options) noexcept;
 
   void HandleRead(time::Timestamp receive_time);
   void HandleError();
@@ -118,6 +121,7 @@ private:
   EventLoop* loop_;
   net::Socket socket_;
   Channel channel_;
+  ReactorStreamOptions stream_options_;
   AcceptAwaiter* pending_accept_{nullptr};
   ReactorAcceptSource* accept_source_{nullptr};
   bool closed_{false};

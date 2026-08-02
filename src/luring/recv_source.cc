@@ -18,9 +18,11 @@
 
 namespace coropact::luring {
 
+using namespace net::detail;
+
 namespace {
 
-std::size_t BufferCapacity(const net::detail::RecvSourceStateMachine& state) noexcept {
+std::size_t BufferCapacity(const RecvSourceStateMachine& state) noexcept {
   return state.Options().buffer_capacity;
 }
 
@@ -154,7 +156,7 @@ base::Result<LUringRecvSource> LUringRecvSource::Create(
     return std::unexpected(base::MakeErrno(EOVERFLOW));
   }
 
-  auto state_result = net::detail::RecvSourceStateMachine::Create(options.source);
+  auto state_result = RecvSourceStateMachine::Create(options.source);
   if (!state_result.has_value()) {
     return std::unexpected(state_result.error());
   }
@@ -212,7 +214,7 @@ base::Result<LUringRecvSource> LUringRecvSource::Create(
 LUringRecvSource::LUringRecvSource(
     LUringLoop* loop,
     int fd,
-    net::detail::RecvSourceStateMachine state,
+    RecvSourceStateMachine state,
     io_uring_buf_ring* buffer_ring,
     std::uint16_t buffer_group,
     std::size_t buffer_size,
@@ -246,8 +248,8 @@ LUringRecvSource::~LUringRecvSource() {
                  "LUringRecvSource destroyed with active recv");
   COROPACT_DCHECK(!cancel_submitted_,
                  "LUringRecvSource destroyed with active cancel");
-  COROPACT_DCHECK(state_.State() == net::detail::RecvSourceState::kIdle ||
-                     state_.State() == net::detail::RecvSourceState::kTerminal,
+  COROPACT_DCHECK(state_.State() == RecvSourceState::kIdle ||
+                     state_.State() == RecvSourceState::kTerminal,
                  "LUringRecvSource destroyed before Stop completed");
   COROPACT_DCHECK(events_.empty(),
                  "LUringRecvSource destroyed with queued events");
@@ -292,8 +294,8 @@ LUringRecvSource::LUringRecvSource(LUringRecvSource&& other) noexcept
                  "LUringRecvSource cannot move while cancelling");
   COROPACT_CHECK(other.state_.OutstandingLeases() == 0,
                  "LUringRecvSource cannot move with outstanding leases");
-  COROPACT_CHECK(other.state_.State() == net::detail::RecvSourceState::kIdle ||
-                     other.state_.State() == net::detail::RecvSourceState::kTerminal,
+  COROPACT_CHECK(other.state_.State() == RecvSourceState::kIdle ||
+                     other.state_.State() == RecvSourceState::kTerminal,
                  "LUringRecvSource cannot move before Stop completed");
   COROPACT_CHECK(other.events_.empty(),
                  "LUringRecvSource cannot move with queued events");
@@ -327,8 +329,8 @@ LUringRecvSource& LUringRecvSource::operator=(LUringRecvSource&& other) noexcept
                  "LUringRecvSource source is cancelling");
   COROPACT_CHECK(other.state_.OutstandingLeases() == 0,
                  "LUringRecvSource source has outstanding leases");
-  COROPACT_CHECK(other.state_.State() == net::detail::RecvSourceState::kIdle ||
-                     other.state_.State() == net::detail::RecvSourceState::kTerminal,
+  COROPACT_CHECK(other.state_.State() == RecvSourceState::kIdle ||
+                     other.state_.State() == RecvSourceState::kTerminal,
                  "LUringRecvSource source has not completed Stop");
   COROPACT_CHECK(other.events_.empty(),
                  "LUringRecvSource source has queued events");
@@ -373,8 +375,7 @@ base::Result<void> LUringRecvSource::StartOperation() noexcept {
 
   if (!submitted.has_value()) {
     auto completed = state_.CompleteMultishotEvent(
-        net::detail::EventDisposition::kNone,
-        net::detail::MultishotRequestDisposition::kTerminal);
+        EventDisposition::kNone, MultishotRequestDisposition::kTerminal);
     assert(completed.has_value());
     return std::unexpected(submitted.error());
   }
@@ -384,7 +385,7 @@ base::Result<void> LUringRecvSource::StartOperation() noexcept {
 }
 
 base::Result<void> LUringRecvSource::Start() noexcept {
-  if (state_.State() != net::detail::RecvSourceState::kIdle) {
+  if (state_.State() != RecvSourceState::kIdle) {
     return std::unexpected(base::MakeErrno(EALREADY));
   }
   if (loop_ == nullptr || !loop_->Initialized() || fd_ < 0) {
@@ -436,13 +437,13 @@ base::Result<bool> LUringRecvSource::BeginStop() noexcept {
     }
   }
 
-  return state_.State() != net::detail::RecvSourceState::kTerminal ||
+  return state_.State() != RecvSourceState::kTerminal ||
          recv_submitted_ || cancel_submitted_;
 }
 
 void LUringRecvSource::EnsureSubmission() noexcept {
   if (loop_ == nullptr || !loop_->Initialized() ||
-      state_.State() != net::detail::RecvSourceState::kActive ||
+      state_.State() != RecvSourceState::kActive ||
       recv_submitted_ || cancel_submitted_) {
     return;
   }
@@ -619,9 +620,9 @@ CompletionDisposition LUringRecvSource::OnCompletion(CompletionEvent event) noex
       RequestBackendPause();
     } else {
       auto recorded = state_.CompleteMultishotEvent(
-          net::detail::EventDisposition::kProduced,
-          request_still_active ? net::detail::MultishotRequestDisposition::kMore
-                               : net::detail::MultishotRequestDisposition::kTerminal);
+          EventDisposition::kProduced,
+          request_still_active ? MultishotRequestDisposition::kMore
+                               : MultishotRequestDisposition::kTerminal);
       if (!recorded.has_value()) {
         // The failed accounting attempt did not consume the state-machine
         // event; the fallback below will record its terminal/non-terminal
@@ -666,11 +667,11 @@ CompletionDisposition LUringRecvSource::OnCompletion(CompletionEvent event) noex
       FinalizeActiveIncrementalBuffer();
     }
     const auto state = state_.State();
-    const bool stopping = state == net::detail::RecvSourceState::kStopping ||
-                          state == net::detail::RecvSourceState::kPausing ||
-                          state == net::detail::RecvSourceState::kPaused ||
-                          state == net::detail::RecvSourceState::kDraining ||
-                          state == net::detail::RecvSourceState::kTerminal;
+    const bool stopping = state == RecvSourceState::kStopping ||
+                          state == RecvSourceState::kPausing ||
+                          state == RecvSourceState::kPaused ||
+                          state == RecvSourceState::kDraining ||
+                          state == RecvSourceState::kTerminal;
     if (!stopping) {
       RequestBackendStop(base::MakeNegErrno(cqe_result));
     }
@@ -682,9 +683,9 @@ CompletionDisposition LUringRecvSource::OnCompletion(CompletionEvent event) noex
 
   if (!state_recorded) {
     auto recorded = state_.CompleteMultishotEvent(
-        net::detail::EventDisposition::kNone,
-        request_still_active ? net::detail::MultishotRequestDisposition::kMore
-                             : net::detail::MultishotRequestDisposition::kTerminal);
+        EventDisposition::kNone,
+        request_still_active ? MultishotRequestDisposition::kMore
+                             : MultishotRequestDisposition::kTerminal);
     if (!recorded.has_value()) {
       terminal_error_ = recorded.error();
       RequestBackendStop(recorded.error());
@@ -695,12 +696,12 @@ CompletionDisposition LUringRecvSource::OnCompletion(CompletionEvent event) noex
     recv_op_.BeginNextRequest();
   }
 
-  if (state_.State() == net::detail::RecvSourceState::kActive &&
+  if (state_.State() == RecvSourceState::kActive &&
       state_.QueuedEvents() >= state_.Options().event_capacity) {
     RequestBackendPause();
   }
 
-  if (!request_still_active && state_.State() == net::detail::RecvSourceState::kActive &&
+  if (!request_still_active && state_.State() == RecvSourceState::kActive &&
       !terminal_error_.has_value()) {
     EnsureSubmission();
   }
@@ -742,7 +743,7 @@ void LUringRecvSource::DeliverNextIfReady() noexcept {
 
 void LUringRecvSource::CompleteStopIfReady() noexcept {
   if (pending_stop_ == nullptr || recv_submitted_ || cancel_submitted_ ||
-      state_.State() != net::detail::RecvSourceState::kTerminal) {
+      state_.State() != RecvSourceState::kTerminal) {
     return;
   }
 
@@ -757,13 +758,13 @@ bool LUringRecvSource::TryTakeNext(Result& result) noexcept {
     COROPACT_CHECK(state_.AcquireEvent(),
                    "LUringRecvSource: queue and state became inconsistent");
     result = Result(std::in_place, std::move(event));
-    if (state_.State() == net::detail::RecvSourceState::kPaused) {
+    if (state_.State() == RecvSourceState::kPaused) {
       MaybeResume();
     }
     return true;
   }
 
-  if (state_.State() == net::detail::RecvSourceState::kTerminal) {
+  if (state_.State() == RecvSourceState::kTerminal) {
     if (terminal_error_.has_value()) {
       result = std::unexpected(*terminal_error_);
     } else {
@@ -838,7 +839,7 @@ coro::Task<LUringRecvSource::Result> LUringRecvSource::Next() {
     co_return std::unexpected(base::MakeErrno(EBUSY));
   }
 
-  if (state_.State() == net::detail::RecvSourceState::kIdle) {
+  if (state_.State() == RecvSourceState::kIdle) {
     auto started = Start();
     if (!started.has_value()) {
       co_return std::unexpected(started.error());
@@ -879,7 +880,7 @@ coro::Task<base::Result<void>> LUringRecvSource::Stop() {
     co_return std::unexpected(base::MakeErrno(EBUSY));
   }
 
-  if (state_.State() == net::detail::RecvSourceState::kTerminal &&
+  if (state_.State() == RecvSourceState::kTerminal &&
       !recv_submitted_ && !cancel_submitted_) {
     co_return base::Result<void>{};
   }

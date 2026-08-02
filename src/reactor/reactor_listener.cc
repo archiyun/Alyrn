@@ -133,7 +133,7 @@ private:
     if (fd < 0) {
       return std::unexpected(base::CurrentErrno());
     }
-    return ReactorStream(listener_->loop_, fd, peer_addr);
+    return ReactorStream(listener_->loop_, fd, peer_addr, listener_->stream_options_);
   }
 
   ReactorListener* listener_;
@@ -486,14 +486,15 @@ base::Result<ReactorStream> ReactorAcceptSource::TryAccept() noexcept {
   if (fd < 0) {
     return std::unexpected(base::CurrentErrno());
   }
-  return ReactorStream(listener_->loop_, fd, peer_addr);
+  return ReactorStream(listener_->loop_, fd, peer_addr, listener_->stream_options_);
 }
 
 ReactorListener::ReactorListener(EventLoop* loop, const net::Endpoint& listen_addr,
                                  ReactorListenerOptions options)
     : loop_(CheckLoop(loop)),
       socket_(CreateListenSocket(listen_addr.native_family())),
-      channel_(loop_, socket_.fd()) {
+      channel_(loop_, socket_.fd()),
+      stream_options_(options.stream_options) {
   socket_.set_reuse_addr(options.reuse_addr);
   if (options.reuse_port) {
     socket_.set_reuse_port(true);
@@ -504,8 +505,12 @@ ReactorListener::ReactorListener(EventLoop* loop, const net::Endpoint& listen_ad
   BindChannelCallbacks();
 }
 
-ReactorListener::ReactorListener(EventLoop* loop, net::Socket socket) noexcept
-    : loop_(CheckLoop(loop)), socket_(std::move(socket)), channel_(loop_, socket_.fd()) {
+ReactorListener::ReactorListener(EventLoop* loop, net::Socket socket,
+                                 ReactorStreamOptions stream_options) noexcept
+    : loop_(CheckLoop(loop)),
+      socket_(std::move(socket)),
+      channel_(loop_, socket_.fd()),
+      stream_options_(stream_options) {
   BindChannelCallbacks();
 }
 
@@ -516,13 +521,15 @@ base::Result<ReactorListener> ReactorListener::Create(EventLoop* loop,
     return std::unexpected(base::MakeErrno(EINVAL));
   }
 
-  return ReactorListener(loop, COROPACT_TRY(TryCreateListenSocket(listen_addr, options)));
+  return ReactorListener(loop, COROPACT_TRY(TryCreateListenSocket(listen_addr, options)),
+                         options.stream_options);
 }
 
 ReactorListener::ReactorListener(ReactorListener&& other) noexcept
     : loop_(PrepareMove(other)),
       socket_(std::move(other.socket_)),
       channel_(std::move(other.channel_)),
+      stream_options_(other.stream_options_),
       pending_accept_(nullptr),
       accept_source_(nullptr),
       closed_(other.closed_) {
@@ -545,6 +552,7 @@ ReactorListener& ReactorListener::operator=(ReactorListener&& other) noexcept {
   loop_ = other_loop;
   socket_ = std::move(other.socket_);
   channel_ = std::move(other.channel_);
+  stream_options_ = other.stream_options_;
   pending_accept_ = nullptr;
   accept_source_ = nullptr;
   closed_ = other.closed_;

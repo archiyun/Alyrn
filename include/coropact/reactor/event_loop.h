@@ -9,6 +9,7 @@
 #include <thread>
 #include <vector>
 
+#include "coropact/base/current_thread.h"
 #include "coropact/reactor/channel.h"
 #include "coropact/time/timer_id.h"
 #include "coropact/time/timestamp.h"
@@ -91,7 +92,7 @@ private:
   std::atomic<bool> quit_;
   std::atomic<bool> calling_pending_functors_;
 
-  const std::thread::id thread_id_;
+  const int thread_id_;
   time::Timestamp poll_return_time_;
 
   std::unique_ptr<Poller> poller_;

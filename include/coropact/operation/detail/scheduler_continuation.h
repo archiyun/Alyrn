@@ -31,7 +31,10 @@ public:
     resume_work_.SetHandle(handle);
   }
 
-  [[nodiscard]] bool Bound() const noexcept { return scheduler_ != nullptr; }
+  [[nodiscard]]
+  bool Bound() const noexcept {
+    return scheduler_ != nullptr;
+  }
 
   void Schedule() noexcept {
     assert(scheduler_ != nullptr);

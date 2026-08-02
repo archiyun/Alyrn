@@ -554,13 +554,18 @@ void ReactorStream::BufferWriteAwaiter::FinishAttempt(base::Result<std::size_t> 
   result_.SetResult(result);
 }
 
-ReactorStream::ReactorStream(EventLoop* loop, int fd, net::Endpoint peer)
+ReactorStream::ReactorStream(EventLoop* loop, int fd, net::Endpoint peer,
+                             ReactorStreamOptions options)
     : loop_(loop), socket_(fd), channel_(loop, fd), peer_(peer) {
   COROPACT_CHECK(loop_ != nullptr, "ReactorStream: loop must not be null");
   COROPACT_CHECK(loop_->IsInLoopThread(), "ReactorStream created from wrong EventLoop thread");
   [[maybe_unused]] auto nonblocking = net::set_non_blocking(fd, true);
   COROPACT_DCHECK(nonblocking.has_value(), "ReactorStream: failed to set non-blocking mode");
 
+  // A stream keeps read interest across successful reads. Edge-triggered
+  // delivery avoids the level-triggered disable/re-enable epoll_ctl pair on
+  // every keep-alive request; every ReadSome still probes the socket first.
+  channel_.SetEdgeTriggered(options.trigger_mode == TriggerMode::kEdgeTriggered);
   BindChannelCallbacks();
 }
 
@@ -728,8 +733,13 @@ void ReactorStream::CompleteRead(base::Result<std::size_t> result) {
   if (awaiter == nullptr) {
     return;
   }
-  if (channel_.IsReading()) {
-    channel_.DisableReading();
+  // A successful read leaves the stream's edge-triggered read interest armed.
+  // The next ReadSome probes the fd synchronously and reuses that interest if
+  // it would block. Terminal results must still remove the interest.
+  if (!result.has_value() || *result == 0) {
+    if (channel_.IsReading()) {
+      channel_.DisableReading();
+    }
   }
   switch (kind) {
     case PendingReadKind::kReadSome:

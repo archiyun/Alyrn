@@ -28,11 +28,18 @@
 
 namespace coropact::reactor {
 
+struct ReactorStreamOptions {
+  // ET keeps successful-read interest armed; LT removes it after completion.
+  // Both modes still probe the non-blocking socket before arming the Channel.
+  TriggerMode trigger_mode{TriggerMode::kEdgeTriggered};
+};
+
 class ReactorStream {
 public:
   COROPACT_DELETE_COPY(ReactorStream);
 
-  ReactorStream(EventLoop* loop, int fd, net::Endpoint peer = net::Endpoint(0));
+  ReactorStream(EventLoop* loop, int fd, net::Endpoint peer = net::Endpoint(0),
+                ReactorStreamOptions options = {});
   ~ReactorStream();
 
   // Moves are loop-affine: the source must be used from its owning loop

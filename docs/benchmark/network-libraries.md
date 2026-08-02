@@ -133,12 +133,19 @@ OUTDIR=/tmp/coropact-network-libraries-$(date +%Y%m%d-%H%M%S) \
 ./docs/benchmark/summarize_network_libraries.sh "$OUTDIR"
 ```
 
-可用环境变量覆盖 `LEVELS`、`WARMUP`、`DURATION`、`ROUNDS`、`THREADS`、`WORKERS`、`FRAME_POOL` 和 `TARGETS`。Reactor 的 `FRAME_POOL` 默认关闭；开启时每个 worker 使用独立的 `CoroFramePoolResource`。例如短试跑：
+可用环境变量覆盖 `LEVELS`、`WARMUP`、`DURATION`、`ROUNDS`、`THREADS`、`WORKERS`、`FRAME_POOL`、`REACTOR_TRIGGER_MODE` 和 `TARGETS`。Reactor 的 `FRAME_POOL` 默认关闭；开启时每个 worker 使用独立的 `CoroFramePoolResource`。`REACTOR_TRIGGER_MODE` 支持 `et`（默认）和 `lt`，用于对比流 socket 的 edge-triggered 与 level-triggered 路径。例如短试跑：
 
 ```bash
 WARMUP=1s DURATION=2s ROUNDS=1 LEVELS="100 1000" \
   TARGETS="luring raw-liburing libuv libevent libev" \
   ./docs/benchmark/run_network_libraries.sh
+```
+
+只压测 Reactor 的 LT 路径：
+
+```bash
+REACTOR_TRIGGER_MODE=lt WARMUP=1s DURATION=2s ROUNDS=1 LEVELS="100 1000" \
+  TARGETS="reactor" ./docs/benchmark/run_network_libraries.sh
 ```
 
 本轮原始结果保存在 `/tmp/coropact-network-libraries-20260731/`，其中 `raw/` 是每轮 wrk 输出，`runs.csv` 是运行索引，`resources.csv` 是资源快照，`averages.csv` 是三轮均值。临时结果不纳入仓库。

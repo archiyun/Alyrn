@@ -298,7 +298,10 @@ bool CheckPendingRead() {
   }
 
   coropact::reactor::EventLoop loop;
-  coropact::reactor::ReactorStream stream(&loop, sv[0]);
+  coropact::reactor::ReactorStreamOptions stream_options{
+      .trigger_mode = coropact::reactor::TriggerMode::kLevelTriggered};
+  coropact::reactor::ReactorStream stream(&loop, sv[0], coropact::net::Endpoint(0),
+                                          stream_options);
   coropact::reactor::EventLoopScheduler scheduler(&loop);
 
   std::array<std::byte, 16> buffer{};

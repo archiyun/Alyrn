@@ -111,7 +111,7 @@ void ReactorWorker::WorkLoop(std::stop_token token) noexcept {
     return;
   }
 
-  auto connector = ReactorConnector::Create(&loop);
+  auto connector = ReactorConnector::Create(&loop, options_.connector_options);
   if (!connector.has_value()) {
     publish_start(std::unexpected(connector.error()));
     return;

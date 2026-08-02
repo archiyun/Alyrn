@@ -41,6 +41,8 @@ struct ReactorWorkerOptions {
   // Must outlive the worker. It should be private to one worker when it is
   // unsynchronized.
   std::pmr::memory_resource* frame_resource{nullptr};
+
+  ReactorConnectorOptions connector_options{};
 };
 
 class ReactorWorker {

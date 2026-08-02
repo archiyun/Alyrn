@@ -71,7 +71,7 @@ EventLoop::EventLoop()
     : looping_(false),
       quit_(false),
       calling_pending_functors_(false),
-      thread_id_(std::this_thread::get_id()),
+      thread_id_(base::tid()),
       poller_(Poller::NewDefaultPoller(this)),
       wakeup_fd_(CreateEventfd()),
       wakeup_channel_(this, wakeup_fd_),
@@ -186,7 +186,7 @@ bool EventLoop::HasChannel(Channel* channel) const {
   return poller_->HasChannel(channel);
 }
 
-bool EventLoop::IsInLoopThread() const { return thread_id_ == std::this_thread::get_id(); }
+bool EventLoop::IsInLoopThread() const { return thread_id_ == base::tid(); }
 
 void EventLoop::Wakeup() {
   std::lock_guard lock{wakeup_mutex_};
