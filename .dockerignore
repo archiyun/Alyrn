@@ -1,0 +1,9 @@
+.git
+.github
+.agents
+.codex
+build
+build-*
+dist
+*.swp
+compile_commands.json
