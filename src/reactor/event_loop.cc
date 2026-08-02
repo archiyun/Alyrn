@@ -10,7 +10,6 @@
 #include "coropact/reactor/poller.h"
 #include "coropact/reactor/timer_queue.h"
 #include "coropact/time/timer_id.h"
-#include "coropact/time/timestamp.h"
 
 namespace coropact::reactor {
 
@@ -35,8 +34,6 @@ EventLoop::~EventLoop() {
   COROPACT_DCHECK(IsInLoopThread(), "EventLoop destructor called from wrong thread");
   COROPACT_DCHECK(!looping_, "EventLoop destroyed while looping");
 
-  COROPACT_DCHECK(pending_functors_.empty(),
-                  "EventLoop destroyed with pending owner callbacks");
   COROPACT_DCHECK(pending_work_.Empty(), "EventLoop destroyed with pending owner work");
   t_loop_in_this_thread = nullptr;
 }
@@ -51,9 +48,8 @@ void EventLoop::Loop(std::stop_token token) {
   // Loop() begins must be honored.
   while (!quit_ && !token.stop_requested()) {
     DoPendingWork();
-    DoPendingFunctors();
 
-    // Quit() may have been called by a pending functor.
+    // Quit() may have been called by pending work.
     // Do not enter a potentially blocking poll after the stop request.
     if (quit_ || token.stop_requested()) {
       break;
@@ -61,13 +57,12 @@ void EventLoop::Loop(std::stop_token token) {
 
     active_channels_.clear();
 
-    const int timeout_ms = HasImmediateWork()
-                               ? 0
-                               : (token.stop_possible() ? std::min(kPollTimeMs, 10) : kPollTimeMs);
-    poll_return_time_ = poller_->Poll(timeout_ms, &active_channels_);
+    const int timeout_ms =
+        HasImmediateWork() ? 0 : (token.stop_possible() ? std::min(kPollTimeMs, 10) : kPollTimeMs);
+    poller_->Poll(timeout_ms, &active_channels_);
 
     for (Channel* channel : active_channels_) {
-      channel->HandleEvent(poll_return_time_);
+      channel->HandleEvent();
     }
   }
 
@@ -84,11 +79,6 @@ void EventLoop::RunOnOwner(Functor callback) {
   callback();
 }
 
-void EventLoop::DeferOnOwner(Functor callback) {
-  COROPACT_CHECK(IsInLoopThread(), "EventLoop::DeferOnOwner called from wrong thread");
-  pending_functors_.push_back(std::move(callback));
-}
-
 void EventLoop::Schedule(coro::Work* work) noexcept {
   COROPACT_CHECK(IsInLoopThread(), "EventLoop::Schedule called from wrong thread");
   COROPACT_CHECK(work != nullptr, "EventLoop::Schedule received null work");
@@ -100,7 +90,6 @@ void EventLoop::RunPending() {
   COROPACT_CHECK(IsInLoopThread(), "EventLoop::RunPending called from wrong thread");
   while (HasImmediateWork()) {
     DoPendingWork();
-    DoPendingFunctors();
   }
 }
 
@@ -121,17 +110,6 @@ bool EventLoop::HasChannel(Channel* channel) const {
 
 bool EventLoop::IsInLoopThread() const { return thread_id_ == base::tid(); }
 
-void EventLoop::DoPendingFunctors() {
-  std::vector<Functor> functors;
-  functors.swap(pending_functors_);
-
-  // Move the pending queue into a local vector before running callbacks so
-  // callbacks scheduled during this drain are deferred to the next turn.
-  for (auto& functor : functors) {
-    functor();
-  }
-}
-
 void EventLoop::DoPendingWork() {
   if (pending_work_.Empty()) {
     return;
@@ -145,23 +123,29 @@ void EventLoop::DoPendingWork() {
 
 bool EventLoop::HasImmediateWork() const {
   COROPACT_DCHECK(IsInLoopThread(), "EventLoop::HasImmediateWork called from wrong thread");
-  return !pending_functors_.empty() || !pending_work_.Empty();
+  return !pending_work_.Empty();
 }
 
-time::TimerId EventLoop::RunAt(time::Timestamp time, Functor callback) {
+time::TimerId EventLoop::RunAt(std::chrono::steady_clock::time_point time, Functor callback) {
   COROPACT_CHECK(IsInLoopThread(), "EventLoop::RunAt called from wrong thread");
-  return timer_queue_->AddTimer(std::move(callback), time, 0.0);
+  return timer_queue_->AddTimer(std::move(callback), time,
+                                std::chrono::steady_clock::duration::zero());
 }
 
 time::TimerId EventLoop::RunAfter(double delay, Functor callback) {
   COROPACT_CHECK(IsInLoopThread(), "EventLoop::RunAfter called from wrong thread");
-  return timer_queue_->AddTimer(std::move(callback), AddTime(time::Timestamp::Now(), delay), 0.0);
+  const auto duration = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+      std::chrono::duration<double>(delay));
+  return timer_queue_->AddTimer(std::move(callback), std::chrono::steady_clock::now() + duration,
+                                std::chrono::steady_clock::duration::zero());
 }
 
 time::TimerId EventLoop::RunEvery(double interval, Functor callback) {
   COROPACT_CHECK(IsInLoopThread(), "EventLoop::RunEvery called from wrong thread");
-  return timer_queue_->AddTimer(std::move(callback), AddTime(time::Timestamp::Now(), interval),
-                                interval);
+  const auto duration = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+      std::chrono::duration<double>(interval));
+  return timer_queue_->AddTimer(std::move(callback), std::chrono::steady_clock::now() + duration,
+                                duration);
 }
 
 void EventLoop::Cancel(time::TimerId id) {

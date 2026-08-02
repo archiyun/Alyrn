@@ -55,12 +55,12 @@ struct FakeConn {
   };
   ReadAwaiter Read() noexcept { return ReadAwaiter{this}; }
 
-  // Owner-thread side: deliver `r`, then defer the parked coroutine's resume
-  // to the next EventLoop turn.
+  // Owner-thread side: deliver `r`, then schedule the parked coroutine's
+  // resume on the next EventLoop turn.
   void Deliver(Result<int> r, EventLoop* loop) {
     next = std::move(r);
     if (auto h = std::exchange(parked, {})) {
-      loop->DeferOnOwner([h] {
+      loop->RunAfter(0.0, [h] {
         if (!h.done()) h.resume();
       });
     }
@@ -98,13 +98,13 @@ int main() {
   FakeConn conn_a;
   FakeConn conn_b;
 
-  // Spawn both detached coroutines on the owning scheduler, then defer the
-  // deliveries for the following loop iteration, after both roots have parked on
-  // their first Read.
+  // Spawn both detached coroutines on the owning scheduler, then schedule the
+  // deliveries for the following loop iteration, after both roots have parked
+  // on their first Read.
   Spawn(loop, Serve(&conn_a)).Detach();
   Spawn(loop, Serve(&conn_b)).Detach();
-  g_loop->DeferOnOwner([&] { conn_a.Deliver(Result<int>{0}, g_loop); });  // EOF
-  g_loop->DeferOnOwner(
+  g_loop->RunAfter(0.0, [&] { conn_a.Deliver(Result<int>{0}, g_loop); });  // EOF
+  g_loop->RunAfter(0.0,
       [&] { conn_b.Deliver(std::unexpected(MakeErrno(ECONNRESET)), g_loop); });
   loop.Loop();
 

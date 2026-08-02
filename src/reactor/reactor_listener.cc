@@ -337,7 +337,7 @@ coro::Task<base::Result<void>> ReactorAcceptSource::Stop() {
   co_return base::Result<void>{};
 }
 
-void ReactorAcceptSource::OnReady(coropact::time::Timestamp /*receive_time*/) noexcept {
+void ReactorAcceptSource::OnReady() noexcept {
   if (state_.State() != net::detail::AcceptSourceState::kActive) {
     return;
   }
@@ -622,12 +622,12 @@ base::Result<net::Endpoint> ReactorListener::LocalAddress() const {
   return net::get_local_addr(socket_.fd());
 }
 
-void ReactorListener::HandleRead(time::Timestamp receive_time) {
+void ReactorListener::HandleRead() {
   COROPACT_DCHECK(loop_->IsInLoopThread(), "ReactorListener::HandleRead called from wrong thread");
   if (pending_accept_ != nullptr) {
     pending_accept_->OnReady();
   } else if (accept_source_ != nullptr) {
-    accept_source_->OnReady(receive_time);
+    accept_source_->OnReady();
   }
 }
 
@@ -640,8 +640,8 @@ void ReactorListener::HandleError() {
   }
 }
 
-void ReactorListener::DispatchRead(void* context, time::Timestamp receive_time) noexcept {
-  static_cast<ReactorListener*>(context)->HandleRead(receive_time);
+void ReactorListener::DispatchRead(void* context) noexcept {
+  static_cast<ReactorListener*>(context)->HandleRead();
 }
 
 void ReactorListener::DispatchError(void* context) noexcept {

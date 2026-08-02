@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <memory_resource>
@@ -12,7 +13,6 @@
 #include "coropact/coro/scheduler.h"
 #include "coropact/reactor/channel.h"
 #include "coropact/time/timer_id.h"
-#include "coropact/time/timestamp.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::reactor {
@@ -45,11 +45,6 @@ public:
   // Runs callback immediately on the owning loop thread.
   void RunOnOwner(Functor callback);
 
-  // Runs callback at the beginning of a later loop turn. Must be called from
-  // the owning loop thread; callbacks queued while draining are deferred to
-  // the following turn.
-  void DeferOnOwner(Functor callback);
-
   // Schedules a coroutine work item for a later loop turn. The EventLoop is
   // itself the Scheduler; submission must happen on its owner thread.
   void Schedule(coro::Work* work) noexcept override;
@@ -57,11 +52,6 @@ public:
   // Drains owner-local callbacks and coroutine work without polling. This is
   // used by worker shutdown after the stop token has ended the poll loop.
   void RunPending();
-
-  [[nodiscard]]
-  time::Timestamp PollReturnTime() const {
-    return poll_return_time_;
-  }
 
   // The following Channel-management methods must be called from the owning
   // loop thread. They mutate the Poller's channel set and are not thread-safe.
@@ -73,22 +63,19 @@ public:
   [[nodiscard]]
   bool IsInLoopThread() const;
 
-  // Schedules cb to run once at the specified time point.
-  time::TimerId RunAt(time::Timestamp time, Functor callback);
+  // Schedules callback to run once at the specified time point.
+  time::TimerId RunAt(std::chrono::steady_clock::time_point time, Functor callback);
 
-  // Schedules cb to run once after delay_sec seconds.
+  // Schedules callback to run once after delay_sec seconds.
   time::TimerId RunAfter(double delay_sec, Functor callback);
 
-  // Schedules cb to run repeatedly every interval_sec seconds.
+  // Schedules callback to run repeatedly every interval_sec seconds.
   time::TimerId RunEvery(double interval_sec, Functor callback);
 
   // Cancels a previously scheduled timer.
   void Cancel(time::TimerId id);
 
 private:
-  // Runs all callbacks queued through DeferOnOwner().
-  void DoPendingFunctors();
-
   // Runs all work submitted through Schedule().
   void DoPendingWork();
 
@@ -99,12 +86,9 @@ private:
   bool quit_{false};
 
   const int thread_id_;
-  time::Timestamp poll_return_time_;
-
   std::unique_ptr<Poller> poller_;
   std::vector<Channel*> active_channels_;
 
-  std::vector<Functor> pending_functors_;
   coro::WorkQueue pending_work_;
 
   std::unique_ptr<TimerQueue> timer_queue_;

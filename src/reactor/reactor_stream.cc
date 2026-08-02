@@ -676,7 +676,7 @@ coro::Task<base::Result<void>> ReactorStream::Close() {
   co_return base::Result<void>{};
 }
 
-void ReactorStream::HandleRead(coropact::time::Timestamp /*receive_time*/) {
+void ReactorStream::HandleRead() {
   COROPACT_DCHECK(loop_->IsInLoopThread(), "ReactorStream::HandleRead called from wrong thread");
   if (pending_read_ == nullptr) {
     // Keep LT cheap for back-to-back reads, but disarm stale readiness when a
@@ -803,8 +803,8 @@ void ReactorStream::RequireOwnerLoop() const noexcept {
                  "ReactorStream operation called from wrong EventLoop thread");
 }
 
-void ReactorStream::DispatchRead(void* context, coropact::time::Timestamp receive_time) noexcept {
-  static_cast<ReactorStream*>(context)->HandleRead(receive_time);
+void ReactorStream::DispatchRead(void* context) noexcept {
+  static_cast<ReactorStream*>(context)->HandleRead();
 }
 
 void ReactorStream::DispatchWrite(void* context) noexcept {

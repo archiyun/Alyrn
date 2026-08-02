@@ -13,7 +13,6 @@
 #include "coropact/reactor/channel.h"
 #include "coropact/reactor/event_loop.h"
 #include "coropact/reactor/reactor_stream.h"
-#include "coropact/time/timestamp.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::reactor {
@@ -44,7 +43,7 @@ private:
   ReactorAcceptSource(ReactorListener* listener,
                       net::detail::AcceptSourceStateMachine state) noexcept;
 
-  void OnReady(time::Timestamp receive_time) noexcept;
+  void OnReady() noexcept;
   void OnError(base::Error error) noexcept;
   void OnListenerClosed() noexcept;
   void EnsureAdmission() noexcept;
@@ -107,9 +106,9 @@ private:
   ReactorListener(EventLoop* loop, net::Socket socket,
                   ReactorStreamOptions stream_options) noexcept;
 
-  void HandleRead(time::Timestamp receive_time);
+  void HandleRead();
   void HandleError();
-  static void DispatchRead(void* context, time::Timestamp receive_time) noexcept;
+  static void DispatchRead(void* context) noexcept;
   static void DispatchError(void* context) noexcept;
   void CompleteAccept(base::Result<ReactorStream> result);
   void DetachChannel();

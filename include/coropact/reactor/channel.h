@@ -5,7 +5,6 @@
 #include <cstdint>
 #include <utility>
 
-#include "coropact/time/timestamp.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::reactor {
@@ -33,7 +32,7 @@ public:
   COROPACT_DELETE_COPY(Channel);
 
   using EventCallback = void (*)(void*) noexcept;
-  using ReadEventCallback = void (*)(void*, time::Timestamp) noexcept;
+  using ReadEventCallback = void (*)(void*) noexcept;
 
   explicit Channel(EventLoop* loop, int fd);
   ~Channel() = default;
@@ -47,7 +46,7 @@ public:
 
   // Dispatches the active events stored in revents_ to the corresponding
   // callbacks.
-  void HandleEvent(time::Timestamp receive_time);
+  void HandleEvent();
 
   void SetReadCallback(ReadEventCallback callback, void* context) noexcept {
     read_callback_ = callback;

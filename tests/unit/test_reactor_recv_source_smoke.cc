@@ -116,7 +116,7 @@ DetachedTask ReceiveTwo(
 
   // Write the second record after the first lease has been returned. This
   // keeps the two logical events distinct even on a stream socket.
-  loop->DeferOnOwner([sender] {
+  loop->RunAfter(0.0, [sender] {
     constexpr std::string_view kSecond = "second";
     (void)::send(sender, kSecond.data(), kSecond.size(), MSG_NOSIGNAL);
   });
@@ -217,7 +217,7 @@ bool CheckPendingReceive() {
       loop,
       ReceivePending(&source, &loop, &result, &received_event,
                      &stop_succeeded));
-  loop.DeferOnOwner([sender = fds[1]] {
+  loop.RunAfter(0.0, [sender = fds[1]] {
     constexpr std::string_view kPayload = "reactor-pending";
     (void)::send(sender, kPayload.data(), kPayload.size(), MSG_NOSIGNAL);
   });
@@ -365,7 +365,7 @@ bool CheckStopWakesPendingNext() {
   std::optional<ReactorRecvSource::Result> result;
   bool stop_succeeded = false;
   coropact::coro::SpawnDetach(loop, WaitForEnd(&source, &loop, &result));
-  loop.DeferOnOwner([&] {
+  loop.RunAfter(0.0, [&] {
     coropact::coro::SpawnDetach(loop, StopOnly(&source, &stop_succeeded));
   });
   loop.Loop();

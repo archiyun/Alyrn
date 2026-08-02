@@ -77,7 +77,7 @@ void Channel::Remove() {
   loop_->RemoveChannel(this);
 }
 
-void Channel::HandleEvent(coropact::time::Timestamp receive_time) {
+void Channel::HandleEvent() {
   COROPACT_DCHECK(loop_->IsInLoopThread(), "Channel::HandleEvent called from wrong thread");
   // Channel callbacks are non-owning. Owners must detach the Channel before
   // destruction; keeping that lifetime rule explicit avoids a per-event
@@ -97,7 +97,7 @@ void Channel::HandleEvent(coropact::time::Timestamp receive_time) {
 
   if (static_cast<bool>(revents_ & kReadEvent)) {
     if (read_callback_ != nullptr) {
-      read_callback_(read_context_, receive_time);
+      read_callback_(read_context_);
     }
   }
 

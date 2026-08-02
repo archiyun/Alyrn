@@ -136,7 +136,7 @@ bool CheckPendingAccept() {
   int client_fd = -1;
 
   coropact::coro::SpawnDetach(loop, AcceptOnce(&listener, &loop, &result));
-  loop.DeferOnOwner([&] { client_fd = ConnectNonBlocking(*listen_addr); });
+  loop.RunAfter(0.0, [&] { client_fd = ConnectNonBlocking(*listen_addr); });
 
   loop.Loop();
 
@@ -155,7 +155,7 @@ bool CheckCloseCancelsPendingAccept() {
   std::optional<AcceptResult> result;
 
   coropact::coro::SpawnDetach(loop, AcceptOnce(&listener, &loop, &result));
-  loop.DeferOnOwner([&] { coropact::coro::Spawn(loop, listener.Close()).Detach(); });
+  loop.RunAfter(0.0, [&] { coropact::coro::Spawn(loop, listener.Close()).Detach(); });
 
   loop.Loop();
 
@@ -188,7 +188,7 @@ bool CheckAcceptSourceQueueAndStop() {
 
   coropact::coro::SpawnDetach(
       loop, AcceptSourceTwice(&source, &loop, &first, &second, &stop_succeeded));
-  loop.DeferOnOwner([&] {
+  loop.RunAfter(0.0, [&] {
     first_client = ConnectNonBlocking(*listen_addr);
     second_client = ConnectNonBlocking(*listen_addr);
   });
@@ -223,7 +223,7 @@ bool CheckAcceptSourceStopWakesPendingNext() {
   bool got_end = false;
   bool stop_succeeded = false;
   coropact::coro::SpawnDetach(loop, WaitForSourceEnd(&source, &loop, &got_end));
-  loop.DeferOnOwner([&] {
+  loop.RunAfter(0.0, [&] {
     coropact::coro::SpawnDetach(loop, StopSource(&source, &stop_succeeded));
   });
   loop.Loop();
@@ -245,7 +245,7 @@ bool CheckAcceptSourceListenerCloseWakesPendingNext() {
   bool got_end = false;
   bool close_succeeded = false;
   coropact::coro::SpawnDetach(loop, WaitForSourceEnd(&source, &loop, &got_end));
-  loop.DeferOnOwner([&] {
+  loop.RunAfter(0.0, [&] {
     coropact::coro::SpawnDetach(loop, CloseListener(&listener, &close_succeeded));
   });
   loop.Loop();

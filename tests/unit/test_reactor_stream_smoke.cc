@@ -308,7 +308,7 @@ bool CheckPendingRead() {
       loop, ReadOnce(&stream, &loop, &loop, &buffer, &result, &resumed_with_scheduler));
 
   const char payload[] = "pending";
-  loop.DeferOnOwner([fd = sv[1]] {
+  loop.RunAfter(0.0, [fd = sv[1]] {
     const char data[] = "pending";
     (void)::write(fd, data, sizeof(data) - 1);
   });
@@ -418,7 +418,7 @@ bool CheckOwnedReadIntoCloseReturnsBuffer() {
   coropact::coro::SpawnDetach(
       loop, ReadIntoOnce(&stream, &loop, &loop, coropact::net::Buffer(8), &outcome,
                               &resumed_with_scheduler));
-  loop.DeferOnOwner([&] { coropact::coro::Spawn(loop, stream.Close()).Detach(); });
+  loop.RunAfter(0.0, [&] { coropact::coro::Spawn(loop, stream.Close()).Detach(); });
   loop.Loop();
 
   ::close(sv[1]);
@@ -489,7 +489,7 @@ bool CheckCloseCancelsPendingRead() {
 
   coropact::coro::SpawnDetach(
       loop, ReadOnce(&stream, &loop, &loop, &buffer, &result, &resumed_with_scheduler));
-  loop.DeferOnOwner([&] { coropact::coro::Spawn(loop, stream.Close()).Detach(); });
+  loop.RunAfter(0.0, [&] { coropact::coro::Spawn(loop, stream.Close()).Detach(); });
 
   loop.Loop();
 
@@ -519,7 +519,7 @@ bool CheckReadableThenCloseResumesOnce() {
 
   coropact::coro::SpawnDetach(loop, ReadWithoutQuit(&stream, &loop, &buffer, &result,
                                                          &resume_count, &resumed_with_scheduler));
-  loop.DeferOnOwner([&] {
+  loop.RunAfter(0.0, [&] {
     const char payload[] = "race";
     COROPACT_IGNORE_RESULT(::write(sv[1], payload, sizeof(payload) - 1));
     coropact::coro::Spawn(loop, stream.Close()).Detach();

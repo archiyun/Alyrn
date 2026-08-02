@@ -1,3 +1,4 @@
+#include <chrono>
 #include <exception>
 #include <iostream>
 #include <memory_resource>
@@ -8,7 +9,6 @@
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/work.h"
 #include "coropact/reactor/event_loop.h"
-#include "coropact/time/timestamp.h"
 
 namespace {
 
@@ -33,41 +33,6 @@ bool TestRunOnOwnerExecutesImmediately() {
     return Expect(called, "RunOnOwner should execute immediately on owner thread") &&
            Expect(callback_thread == std::this_thread::get_id(),
                   "RunOnOwner callback should execute on owner thread");
-}
-
-bool TestDeferOnOwnerRunsOnNextTurn() {
-    coropact::reactor::EventLoop loop;
-    bool called = false;
-    std::thread::id callback_thread;
-
-    loop.DeferOnOwner([&] {
-        called = true;
-        callback_thread = std::this_thread::get_id();
-        loop.Quit();
-    });
-    loop.Loop();
-
-    return Expect(called, "DeferOnOwner should run on a later loop turn") &&
-           Expect(callback_thread == std::this_thread::get_id(),
-                  "deferred callback should run on the owner thread");
-}
-
-bool TestNestedDeferOnOwnerRunsOnFollowingTurn() {
-    coropact::reactor::EventLoop loop;
-    bool first_called = false;
-    bool second_called = false;
-
-    loop.DeferOnOwner([&] {
-        first_called = true;
-        loop.DeferOnOwner([&] {
-            second_called = true;
-            loop.Quit();
-        });
-    });
-    loop.Loop();
-
-    return Expect(first_called, "first deferred callback should run") &&
-           Expect(second_called, "nested deferred callback should run");
 }
 
 class SchedulerProbeWork final : public coropact::coro::Work {
@@ -187,8 +152,7 @@ bool TestRepeatingTimerCanCancelItself() {
 bool TestSameDeadlineTimersKeepSequenceOrder() {
     coropact::reactor::EventLoop loop;
     std::vector<int> fired;
-    const auto deadline =
-        coropact::time::AddTime(coropact::time::Timestamp::Now(), 0.01);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(10);
 
     loop.RunAt(deadline, [&] { fired.push_back(1); });
     loop.RunAt(deadline, [&] { fired.push_back(2); });
@@ -263,8 +227,6 @@ bool TestStaleTimerIdCannotCancelReplacement() {
 int main() {
     try {
         if (!TestRunOnOwnerExecutesImmediately()) return 1;
-        if (!TestDeferOnOwnerRunsOnNextTurn()) return 1;
-        if (!TestNestedDeferOnOwnerRunsOnFollowingTurn()) return 1;
         if (!TestSchedulerWorkIsDeferredAndBound()) return 1;
         if (!TestEventLoopOwnsFrameResource()) return 1;
         if (!TestSchedulerWorkScheduledDuringResumeIsDeferred()) return 1;

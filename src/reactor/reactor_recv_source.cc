@@ -364,7 +364,7 @@ void ReactorRecvSource::RequestBackendStop(std::optional<base::Error> error) noe
   CompleteStopIfReady();
 }
 
-void ReactorRecvSource::OnReady(time::Timestamp /*receive_time*/) noexcept {
+void ReactorRecvSource::OnReady() noexcept {
   if (state_.State() != net::detail::RecvSourceState::kActive ||
       state_.ArmedRequests() == 0) {
     return;
@@ -524,8 +524,8 @@ void ReactorRecvSource::DetachChannel() noexcept {
 
 void ReactorRecvSource::BindChannelCallbacks() noexcept {
   channel_.SetReadCallback(
-      [](void* context, time::Timestamp receive_time) noexcept {
-        static_cast<ReactorRecvSource*>(context)->OnReady(receive_time);
+      [](void* context) noexcept {
+        static_cast<ReactorRecvSource*>(context)->OnReady();
       },
       this);
   channel_.SetCloseCallback(

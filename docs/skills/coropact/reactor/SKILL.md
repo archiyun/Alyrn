@@ -32,7 +32,7 @@ layer.
 
 ## Public API / entry points
 
-- `EventLoop::{Loop,Quit,RunOnOwner,DeferOnOwner,Schedule,RunAt,RunAfter,RunEvery,Cancel}`
+- `EventLoop::{Loop,Quit,RunOnOwner,Schedule,RunAt,RunAfter,RunEvery,Cancel}`
 - `Channel`, `Poller`, and `EPollPoller`
 - `ReactorListener`, `ReactorConnector`, and `ReactorStream`
 
@@ -40,7 +40,7 @@ layer.
 
 - One EventLoop is constructed, run, and destroyed on one owning thread.
 - Channel, Poller, fd, stream state, and timer mutation belong to that loop.
-- `RunOnOwner`, `DeferOnOwner`, `Schedule`, timers, and `Quit` are owner-thread
+- `RunOnOwner`, `Schedule`, timers, and `Quit` are owner-thread
   APIs; they are not cross-thread safe.
 - Cross-thread delivery belongs to a separate mailbox design. Do not add a
   global lock or wakeup fd to compensate for wrong-thread access.

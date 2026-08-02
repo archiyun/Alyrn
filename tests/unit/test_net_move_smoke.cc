@@ -39,7 +39,7 @@ struct ChannelReadContext {
   coropact::reactor::EventLoop* loop;
 };
 
-void DrainChannelRead(void* raw, coropact::time::Timestamp) noexcept {
+void DrainChannelRead(void* raw) noexcept {
   auto& context = *static_cast<ChannelReadContext*>(raw);
   char byte = 0;
   ::read(context.fd, &byte, sizeof(byte));
@@ -176,7 +176,7 @@ bool TestReactorStreamMove() {
 
     coropact::coro::SpawnDetach(loop,
                                 ReadOnce(&moved, &loop, &constructed_buffer, &constructed_result));
-    loop.DeferOnOwner([peer_fd = source_pair[1]] { ::write(peer_fd, "c", 1); });
+    loop.RunAfter(0.0, [peer_fd = source_pair[1]] { ::write(peer_fd, "c", 1); });
     loop.RunAfter(0.2, [&] { loop.Quit(); });
     loop.Loop();
   }
@@ -200,7 +200,7 @@ bool TestReactorStreamMove() {
 
     coropact::coro::SpawnDetach(loop,
                                 ReadOnce(&target, &loop, &assigned_buffer, &assigned_result));
-    loop.DeferOnOwner([peer_fd = target_pair[1]] { ::write(peer_fd, "a", 1); });
+    loop.RunAfter(0.0, [peer_fd = target_pair[1]] { ::write(peer_fd, "a", 1); });
     loop.RunAfter(0.2, [&] { loop.Quit(); });
     loop.Loop();
   }
@@ -245,7 +245,7 @@ bool TestReactorListenerMove() {
     }
 
     coropact::coro::SpawnDetach(loop, AcceptOnce(&moved, &loop, &accepted));
-    loop.DeferOnOwner([&] { client_fd = ConnectNonBlocking(*moved_address); });
+    loop.RunAfter(0.0, [&] { client_fd = ConnectNonBlocking(*moved_address); });
     loop.RunAfter(0.2, [&] { loop.Quit(); });
     loop.Loop();
   }
