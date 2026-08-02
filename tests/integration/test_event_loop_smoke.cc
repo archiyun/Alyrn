@@ -161,6 +161,38 @@ bool TestSchedulerWorkIsDeferredAndBound() {
   return ok;
 }
 
+bool TestEventLoopWorkQueueRejectsDuplicateAdmission() {
+  coropact::reactor::EventLoop loop;
+  coropact::reactor::EventLoopScheduler scheduler(&loop);
+
+  bool ran = false;
+  bool scheduler_matched = false;
+  SchedulerProbeWork work(&scheduler, &ran, &scheduler_matched, &loop);
+
+  const bool first_admission = loop.QueueWork(&work);
+  const bool duplicate_admission = loop.QueueWork(&work);
+
+  bool ok = true;
+  ok &= Expect(first_admission, "first Work admission should succeed");
+  ok &= Expect(!duplicate_admission, "duplicate Work admission should be rejected");
+  ok &= Expect(!ran, "queued Work must remain deferred before Loop");
+
+  loop.Loop();
+
+  ok &= Expect(ran, "admitted Work should run through EventLoop");
+  ok &= Expect(scheduler_matched, "admitted Work should preserve scheduler affinity");
+  return ok;
+}
+
+bool TestEventLoopWorkQueueRequiresSchedulerBinding() {
+  coropact::reactor::EventLoop loop;
+  coropact::coro::Work work;
+  work.SetRun([](coropact::coro::Work*) noexcept {});
+
+  return Expect(!loop.QueueWork(&work),
+                "Work admission should fail when no EventLoop scheduler is bound");
+}
+
 bool TestSchedulerMoveRetainsFrameResource() {
   coropact::reactor::EventLoop loop;
   std::pmr::monotonic_buffer_resource first_resource;
@@ -380,6 +412,8 @@ int main() {
         if (!TestQueueInLoopWakesLoop()) return 1;
         if (!TestNestedQueueInLoopSchedulesNextTurn()) return 1;
         if (!TestSchedulerWorkIsDeferredAndBound()) return 1;
+        if (!TestEventLoopWorkQueueRejectsDuplicateAdmission()) return 1;
+        if (!TestEventLoopWorkQueueRequiresSchedulerBinding()) return 1;
         if (!TestSchedulerMoveRetainsFrameResource()) return 1;
         if (!TestSchedulerWorkFromForeignThreadWakesLoop()) return 1;
         if (!TestSchedulerWorkScheduledDuringResumeIsDeferred()) return 1;

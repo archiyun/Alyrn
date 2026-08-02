@@ -10,15 +10,21 @@
 #include <vector>
 
 #include "coropact/base/current_thread.h"
+#include "coropact/coro/work.h"
 #include "coropact/reactor/channel.h"
 #include "coropact/time/timer_id.h"
 #include "coropact/time/timestamp.h"
 #include "coropact/utils/macros.h"
 
+namespace coropact::coro {
+class Scheduler;
+}
+
 namespace coropact::reactor {
 
 class Poller;
 class TimerQueue;
+class EventLoopScheduler;
 
 // EventLoop is the core event dispatcher in the Reactor model.
 //
@@ -52,6 +58,10 @@ public:
   // Queues cb to run in the loop thread on a later iteration. Thread-safe.
   void QueueInLoop(Functor callback);
 
+  // Queues a non-owning coroutine Work item for the loop scheduler. Returns
+  // false when work is null or is already queued. Thread-safe.
+  bool QueueWork(coro::Work* work) noexcept;
+
   // The following Channel-management methods must be called from the owning
   // loop thread. They mutate the Poller's channel set and are not thread-safe.
   void UpdateChannel(Channel* channel);
@@ -75,6 +85,8 @@ public:
   void Cancel(time::TimerId id);
 
 private:
+  friend class EventLoopScheduler;
+
   // Wakes up the loop when work is queued from another thread.
   void Wakeup();
 
@@ -84,6 +96,11 @@ private:
 
   // Runs all functors queued through QueueInLoop().
   void DoPendingFunctors();
+
+  // Runs the Work items admitted through QueueWork().
+  void DoPendingWork();
+
+  void BindScheduler(coro::Scheduler* scheduler) noexcept;
 
   [[nodiscard]]
   bool HasImmediateWork();
@@ -106,6 +123,8 @@ private:
 
   std::mutex mutex_;
   std::vector<Functor> pending_functors_;
+  coro::WorkQueue pending_work_;
+  coro::Scheduler* work_scheduler_{nullptr};
 
   std::unique_ptr<TimerQueue> timer_queue_;
 };

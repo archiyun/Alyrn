@@ -31,7 +31,9 @@ public:
 
   void Schedule(coro::Work* work) noexcept override {
     COROPACT_DCHECK(work != nullptr, "EventLoopScheduler::Schedule: work must not be null");
-    loop_->QueueInLoop([this, work] { Run(work); });
+    const bool queued = loop_->QueueWork(work);
+    COROPACT_DCHECK(queued, "EventLoopScheduler::Schedule: work is already queued");
+    (void)queued;
   }
 
   [[nodiscard]]

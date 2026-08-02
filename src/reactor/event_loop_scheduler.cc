@@ -10,7 +10,10 @@
 namespace coropact::reactor {
 
 EventLoopScheduler::EventLoopScheduler(EventLoop* loop, std::pmr::memory_resource* frame_resource)
-    : loop_(loop), Scheduler(frame_resource) {}
+    : loop_(loop), Scheduler(frame_resource) {
+  COROPACT_DCHECK(loop_ != nullptr, "EventLoopScheduler: loop must not be null");
+  loop_->BindScheduler(this);
+}
 
 base::Result<EventLoopScheduler> EventLoopScheduler::Create(
     EventLoop* loop, std::pmr::memory_resource* frame_resource) noexcept {
@@ -21,12 +24,19 @@ base::Result<EventLoopScheduler> EventLoopScheduler::Create(
 }
 
 EventLoopScheduler::EventLoopScheduler(EventLoopScheduler&& other) noexcept
-    : Scheduler(other.FrameResource()), loop_(std::exchange(other.loop_, nullptr)) {}
+    : Scheduler(other.FrameResource()), loop_(std::exchange(other.loop_, nullptr)) {
+  if (loop_ != nullptr) {
+    loop_->BindScheduler(this);
+  }
+}
 
 EventLoopScheduler& EventLoopScheduler::operator=(EventLoopScheduler&& other) noexcept {
   if (this != &other) {
     loop_ = std::exchange(other.loop_, nullptr);
     SetFrameResource(other.FrameResource());
+    if (loop_ != nullptr) {
+      loop_->BindScheduler(this);
+    }
   }
   return *this;
 }
