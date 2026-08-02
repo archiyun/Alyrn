@@ -907,9 +907,10 @@ TLA+ 状态模型：          core 与 backend refinement 模型均已存在
 No error has been found
 ```
 
-这只说明有限状态模型中的当前不变量成立，不等于已经证明 Reactor 和 io_uring 的
-refinement，也不等于已经证明活性或热插拔安全。模型暂时关闭了 TLC 的 deadlock
-检查，因为一次性 operation 的 `Closed` 和 `Done` 状态被设计为合法终点。
+这说明有限状态模型中的当前安全不变量成立；更新后的 core 模型还在显式公平假设下检查
+pending settlement、settled waiter resume 和 Closing 收敛。它仍不等于已经证明 Reactor 和
+io_uring 的完整 refinement、真实内核调度公平性或热插拔安全。模型暂时关闭了 TLC 的
+deadlock 检查，因为一次性 operation 的 `Closed` 和 `Done` 状态被设计为合法终点。
 
 当前的 [`async_stream_backend_refinement.tla`](formal/async_stream_backend_refinement.tla)
 进一步将两条具体路径放入同一个有限模型：
@@ -951,13 +952,13 @@ Reactor 和 io_uring 已经有共同的协程语义接口，
 接口形状，不能在编译期检查“最多完成一次”“Close 后不能成功提交”或“buffer 在
 Complete 前有效”等动态性质。这些性质目前依赖具体实现、调试断言和 smoke test。
 
-此外，具体 backend 的 `RuntimeBinding` 现在负责启动期 native capability profile 检查；
+此外，具体 backend 的 `BackendBinding` 现在负责启动期 native capability profile 检查；
 Reactor 和 luring 的 stream 都是 loop-bound，pending operation 不能直接迁移。因此现阶段
 最多只能把 quiescent switch 作为未来设计目标，不能把它描述成已有能力。
 
-timeout 也仍处于迁移状态：`ReactorStream` 和 `LUringStream` 都已有 `ReadSomeFor`，
-但 `AsyncStream` 尚未包含统一的 timed concept。`kTimeout` 的 capability 标记不能替代
-公共接口和语义验证。
+timeout 现在由独立的 `AsyncTimedReadStream` / `AsyncTimedStream` interface 表达：
+`ReactorStream` 和 `LUringStream` 都满足该 extension，而 `AsyncStream` 仍刻意保持最小。
+`kTimeout` 负责 profile 选择和 bind 验证，不能替代公共 interface 或语义验证。
 
 ## 结论
 
@@ -971,13 +972,16 @@ Submit -> Complete -> Resume
 
 这类因果链不被破坏。
 
-用六元组状态机看，问题可以写成：
+用由后端、profile 与策略参数化的六元组状态机看，问题可以写成：
 
 ```text
-M = (S, s0, E, Σ, π, δ)
+M(B, P, π) = (X, x0, E_obs, δ_B, Inv, Live)
 ```
 
-其中 `Σ` 固定语义机制，`π` 选择调度和后端策略，`δ` 执行状态转移，`Inv` 给出不可破坏的不变量集合。
+其中 `X = (C, R, O, Q, L)`；`O` 以 operation identity 绑定 owner、resource、family 与
+physical request，`L` 表示 buffer/frame/fd/lease 的 release authorization。`H(trace)` 是从
+trace 推导的 happens-before 关系，不是一个可随意修改的状态变量。`π` 选择调度和后端策略，
+`δ_B` 解释物理事件，`Inv` 与 `Live` 分别给出安全和最终性义务。
 
 因此，热插拔不是一个“支持多少后端”的问题，而是一个“状态转移是否保持不变量和 happens-before 偏序”的问题。
 

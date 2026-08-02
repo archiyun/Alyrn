@@ -51,6 +51,7 @@ public:
   class ReadSomeAwaiter;
   class ReadIntoAwaiter;
   class WriteSomeAwaiter;
+  class WriteAllAwaiter;
   class BufferReadAwaiter;
   class BufferWriteAwaiter;
 
@@ -68,6 +69,8 @@ public:
                                 std::size_t reserve = 4096) noexcept;
   [[nodiscard]]
   WriteSomeAwaiter WriteSome(std::span<const std::byte> buffer) noexcept;
+  [[nodiscard]]
+  WriteAllAwaiter WriteAll(std::span<const std::byte> buffer) noexcept;
   [[nodiscard]]
   BufferWriteAwaiter WriteSome(net::Buffer& buffer) noexcept;
   coro::Task<base::Result<void>> Shutdown();
@@ -128,6 +131,7 @@ private:
   enum class PendingWriteKind : std::uint8_t {
     kNone,
     kWriteSome,
+    kWriteAll,
     kBufferWrite,
   };
 
@@ -188,6 +192,38 @@ public:
 
 private:
   friend class detail::ReactorOperationHook<WriteSomeAwaiter>;
+
+  void CompleteImpl(base::Result<std::size_t> result) noexcept;
+  void OnReadyImpl() noexcept;
+
+  ReactorStream* stream_;
+  std::span<const std::byte> buffer_;
+  operation::detail::SchedulerContinuation continuation_;
+  operation::detail::CompletionGate completion_gate_;
+  detail::ReactorIoResultState result_;
+};
+
+// Keeps the write loop in the caller's coroutine frame. ReactorStream uses
+// this native extension so a buffered response does not allocate a nested
+// Task frame just to repeat WriteSome until the span is drained.
+class ReactorStream::WriteAllAwaiter final
+    : public detail::ReactorOperationHook<ReactorStream::WriteAllAwaiter> {
+public:
+  COROPACT_DELETE_COPY_MOVE(WriteAllAwaiter);
+
+  WriteAllAwaiter(ReactorStream& stream, std::span<const std::byte> buffer) noexcept
+      : stream_(&stream), buffer_(buffer) {}
+
+  [[nodiscard]]
+  bool await_ready() const noexcept {
+    return false;
+  }
+  [[nodiscard]]
+  bool await_suspend(std::coroutine_handle<> continuation) noexcept;
+  base::Result<void> await_resume() noexcept;
+
+private:
+  friend class detail::ReactorOperationHook<WriteAllAwaiter>;
 
   void CompleteImpl(base::Result<std::size_t> result) noexcept;
   void OnReadyImpl() noexcept;

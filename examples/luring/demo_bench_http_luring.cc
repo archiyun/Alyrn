@@ -14,14 +14,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <csignal>
-#include <memory>
-#include <memory_resource>
 #include <span>
 #include <string>
 #include <thread>
-#include <vector>
 
-#include "coropact/coro/frame_allocator.h"
 #include "coropact/io.h"
 #include "coropact/luring/server.h"
 #include "coropact/net/endpoint.h"
@@ -46,11 +42,6 @@ std::size_t EnvSize(const char* key, std::size_t fallback) {
   char* end = nullptr;
   const auto parsed = std::strtoull(value, &end, 10);
   return end != value ? static_cast<std::size_t>(parsed) : fallback;
-}
-
-bool EnvBool(const char* key, bool fallback) {
-  const char* value = std::getenv(key);
-  return value != nullptr ? std::atoi(value) != 0 : fallback;
 }
 
 const std::string& Response() {
@@ -115,7 +106,6 @@ int main() {
   const auto port = static_cast<std::uint16_t>(EnvInt("PORT", 19090));
   const std::size_t workers = EnvSize("URING_WORKERS", 4);
   const auto entries = static_cast<std::uint32_t>(EnvSize("URING_ENTRIES", 8192));
-  const bool frame_pool = EnvBool("FRAME_POOL", true);
 
   if (workers == 0 || port == 0) {
     std::fprintf(stderr, "URING_WORKERS and PORT must be non-zero\n");
@@ -138,14 +128,6 @@ int main() {
     return 1;
   }
 
-  std::vector<std::unique_ptr<coropact::coro::CoroFramePoolResource>> frame_pools;
-  if (frame_pool) {
-    frame_pools.reserve(workers);
-    for (std::size_t i = 0; i < workers; ++i) {
-      frame_pools.push_back(std::make_unique<coropact::coro::CoroFramePoolResource>());
-    }
-  }
-
   coropact::luring::LUringServerOptions options;
   options.worker_group_options.worker_num = workers;
   options.worker_group_options.worker_options.loop_options = loop_options;
@@ -153,11 +135,6 @@ int main() {
   options.worker_group_options.worker_options.listen_options.reuse_port = true;
   options.worker_group_options.worker_options.listen_options.accept_depth =
       std::max<std::size_t>(1, EnvSize("ACCEPT_DEPTH", 4));
-  options.worker_group_options.frame_resource_factory =
-      [&frame_pools](std::size_t index) -> std::pmr::memory_resource* {
-    return index < frame_pools.size() ? frame_pools[index].get() : nullptr;
-  };
-
   coropact::luring::LUringServer server(*listen_addr, std::move(options));
   server.SetSessionHandler(
       [](coropact::luring::LUringWorkerContext&, coropact::luring::LUringStream stream) {
@@ -171,10 +148,10 @@ int main() {
   }
 
   std::printf("HttpLuringBench bind=%s port=%u workers=%zu entries=%u accept_depth=%zu "
-              "frame_pool=%s response_body=%zu\n",
+              "response_body=%zu\n",
               host, port, workers, entries,
               options.worker_group_options.worker_options.listen_options.accept_depth,
-              frame_pool ? "on" : "off", kResponseBodySize);
+              kResponseBodySize);
   std::fflush(stdout);
 
   while (!g_stop.load(std::memory_order_relaxed)) {

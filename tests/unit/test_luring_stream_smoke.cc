@@ -33,6 +33,7 @@ namespace {
 using OwnedReadOutcome = coropact::net::ReadIntoOutcome;
 
 static_assert(coropact::io::AsyncOwnedReadStream<coropact::luring::LUringStream>);
+static_assert(coropact::io::AsyncTimedStream<coropact::luring::LUringStream>);
 
 class UniqueFd {
 public:

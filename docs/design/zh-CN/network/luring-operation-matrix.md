@@ -277,7 +277,10 @@ operation destruction
 - `formal/recv_source_incremental_lease.tla`：`F_BUF_MORE` 对同一 provided buffer 的连续
   segment、offset 不重叠、最后 segment 与全部 lease 释放后才归还 buffer ring。
 
-这些 TLA+ 模型检查的是协议级 safety，不是 C++ 实现的自动内存安全证明。当前配置使用：
+这些 TLA+ 模型主要检查协议级 safety，不是 C++ 实现的自动内存安全证明。
+`async_stream_core.tla` 另外在显式的 backend/owner-loop 公平假设下检查 pending settlement、
+settled waiter resume 和 Closing 收敛三条活性；这不等于证明真实内核或任意调度策略天然公平。
+当前配置使用：
 
 ```text
 accept_source_refinement.cfg:
