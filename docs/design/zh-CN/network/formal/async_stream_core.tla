@@ -148,7 +148,18 @@ Next ==
   \/ Resume
   \/ Finish
 
-Spec == Init /\ [][Next]_vars
+(***************************************************************************)
+(* 活性假设刻意只建模 owner loop 与已提交 backend work 的公平推进。      *)
+(* 它不假设外部一定调用 Close，也不把真实内核调度公平性当作已证明事实。 *)
+(***************************************************************************)
+Fairness ==
+  /\ WF_vars(Suspend)
+  /\ WF_vars(Complete)
+  /\ WF_vars(Cancel)
+  /\ WF_vars(Resume)
+  /\ WF_vars(FinalizeClose)
+
+Spec == Init /\ [][Next]_vars /\ Fairness
 
 (* 所有状态变量都必须保持在模型定义的集合中。 *)
 TypeOK ==
@@ -173,5 +184,20 @@ ResumeAuthorization ==
 (* Closed 状态不能再持有 pending operation。 *)
 ClosedHasNoPending ==
   resourceState = "Closed" => operationState # "Pending"
+
+(* 在上述公平前提下，single-result operation 不会永久停在 pending。 *)
+PendingEventuallySettles ==
+  (operationState = "Pending") ~>
+    (operationState \in {"Completed", "Cancelled"})
+
+(* 已结算且仍在等待的协程最终被其所属 operation 唤醒。 *)
+SettledWaiterEventuallyReady ==
+  ((coroutineState = "Waiting") /\
+   (operationState \in {"Completed", "Cancelled"}))
+    ~> (coroutineState = "Ready")
+
+(* Closing 不能永久持有已收敛的资源。 *)
+ClosingEventuallyClosed ==
+  (resourceState = "Closing") ~> (resourceState = "Closed")
 
 ========================================================================================

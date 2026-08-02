@@ -491,6 +491,7 @@ private:
 };
 
 static_assert(backend::AsyncStream<LUringStream>);
+static_assert(backend::AsyncTimedStream<LUringStream>);
 static_assert(backend::AsyncOwnedReadStream<LUringStream>);
 
 }  // namespace coropact::luring

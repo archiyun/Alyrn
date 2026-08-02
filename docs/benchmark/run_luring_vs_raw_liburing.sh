@@ -16,7 +16,6 @@ ROUNDS=${ROUNDS:-3}
 TIMEOUT=${TIMEOUT:-5s}
 WORKERS=${URING_WORKERS:-4}
 ENTRIES=${URING_ENTRIES:-8192}
-FRAME_POOL=${FRAME_POOL:-0}
 PORT=${PORT:-19090}
 
 LURING_BIN=${LURING_BIN:-"$BUILD_DIR/examples/luring/demo_bench_http_luring"}
@@ -43,7 +42,7 @@ run_target() {
   echo "starting $target on port $port"
   if [[ "$target" == "luring" ]]; then
     BIND_HOST=127.0.0.1 PORT="$port" URING_WORKERS="$WORKERS" \
-      URING_ENTRIES="$ENTRIES" FRAME_POOL="$FRAME_POOL" \
+      URING_ENTRIES="$ENTRIES" \
       "$binary" >"$server_log" 2>&1 &
   else
     PORT="$port" URING_WORKERS="$WORKERS" URING_ENTRIES="$ENTRIES" \

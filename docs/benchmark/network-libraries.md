@@ -2,6 +2,8 @@
 
 本报告记录当前 CoroPact checkout 中 Reactor、CoroPact luring、raw liburing、Asio、Monoio、Compio、libaio、libuv、libevent 和 libev 的统一压测结果。
 
+帧池接入实验已经撤回：当前网络 benchmark 使用默认的 `new_delete_resource()` 路径。本文中此前以 `FRAME_POOL=1` 获得的历史数据仅作实验记录，不代表当前默认配置。
+
 Reactor 与 luring 的独立 ET/LT 对照见 [CoroPact luring 与 Reactor 独立对比](luring-reactor-comparison-20260802.md)。注意：LT/ET 只属于 Reactor 的 epoll readiness 路径，luring 使用 io_uring CQE，不存在 luring LT/ET。
 
 ## 结论
@@ -27,9 +29,8 @@ Reactor 与 luring 的独立 ET/LT 对照见 [CoroPact luring 与 Reactor 独立
 
 ## 对比目标
 
-- **Reactor**：CoroPact 的 epoll `ReactorWorkerGroup` 后端；本轮 A/B 可通过
-  `FRAME_POOL=0/1` 切换每 worker 的协程帧池。
-- **CoroPact luring**：CoroPact 的协程 io_uring 后端，`FRAME_POOL=1`。
+- **Reactor**：CoroPact 的 epoll `ReactorWorkerGroup` 后端。
+- **CoroPact luring**：CoroPact 的协程 io_uring 后端。
 - **raw liburing**：原生 liburing 状态机，不使用 CoroPact 协程封装。
 - **Asio**：standalone Asio 1.38.2。
 - **Monoio**：Monoio 0.2.4，Rust thread-per-core io_uring runtime。
@@ -135,7 +136,7 @@ OUTDIR=/tmp/coropact-network-libraries-$(date +%Y%m%d-%H%M%S) \
 ./docs/benchmark/summarize_network_libraries.sh "$OUTDIR"
 ```
 
-可用环境变量覆盖 `LEVELS`、`WARMUP`、`DURATION`、`ROUNDS`、`THREADS`、`WORKERS`、`FRAME_POOL`、`REACTOR_TRIGGER_MODE` 和 `TARGETS`。Reactor 的 `FRAME_POOL` 默认关闭；开启时每个 worker 使用独立的 `CoroFramePoolResource`。`REACTOR_TRIGGER_MODE` 支持 `et`（默认）和 `lt`，用于对比流 socket 的 edge-triggered 与 level-triggered 路径。例如短试跑：
+可用环境变量覆盖 `LEVELS`、`WARMUP`、`DURATION`、`ROUNDS`、`THREADS`、`WORKERS`、`REACTOR_TRIGGER_MODE` 和 `TARGETS`。`REACTOR_TRIGGER_MODE` 支持 `et`（默认）和 `lt`，用于对比流 socket 的 edge-triggered 与 level-triggered 路径。例如短试跑：
 
 ```bash
 WARMUP=1s DURATION=2s ROUNDS=1 LEVELS="100 1000" \

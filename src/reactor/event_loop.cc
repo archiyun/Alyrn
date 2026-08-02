@@ -116,9 +116,7 @@ void EventLoop::DoPendingWork() {
   }
   coro::WorkQueue work;
   work.Splice(pending_work_);
-  while (coro::Work* item = work.PopFront()) {
-    Run(item);
-  }
+  RunBatch(work);
 }
 
 bool EventLoop::HasImmediateWork() const {

@@ -468,6 +468,88 @@ void ReactorStream::WriteSomeAwaiter::OnReadyImpl() noexcept {
   stream_->CompleteWrite(std::move(attempt.result));
 }
 
+ReactorStream::WriteAllAwaiter ReactorStream::WriteAll(
+    std::span<const std::byte> buffer) noexcept {
+  return WriteAllAwaiter{*this, buffer};
+}
+
+bool ReactorStream::WriteAllAwaiter::await_suspend(
+    std::coroutine_handle<> continuation) noexcept {
+  stream_->RequireOwnerLoop();
+  if (stream_->closed_ || stream_->socket_.fd() < 0) {
+    result_.SetError(base::MakeErrno(EBADF));
+    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+    return false;
+  }
+
+  COROPACT_DCHECK(stream_->pending_write_ == nullptr,
+                  "WriteAllAwaiter: only one pending write is supported per stream");
+
+  continuation_.Bind(continuation);
+  while (!buffer_.empty()) {
+    IoAttempt attempt = TryWrite(stream_->socket_.fd(), buffer_);
+    if (attempt.Pending()) {
+      stream_->pending_write_ = this;
+      stream_->pending_write_kind_ = ReactorStream::PendingWriteKind::kWriteAll;
+      if (!stream_->channel_.IsWriting()) {
+        stream_->channel_.EnableWriting();
+      }
+      return true;
+    }
+    if (!attempt.result.has_value()) {
+      result_.SetError(attempt.result.error());
+      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+      return false;
+    }
+    if (*attempt.result == 0) {
+      result_.SetError(base::MakeErrno(EPIPE));
+      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+      return false;
+    }
+    buffer_ = buffer_.subspan(*attempt.result);
+  }
+
+  result_.SetSuccess(0);
+  COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+  return false;
+}
+
+base::Result<void> ReactorStream::WriteAllAwaiter::await_resume() noexcept {
+  auto result = result_.Take();
+  if (!result.has_value()) {
+    return std::unexpected(result.error());
+  }
+  return base::Result<void>{};
+}
+
+void ReactorStream::WriteAllAwaiter::CompleteImpl(base::Result<std::size_t> result) noexcept {
+  if (!completion_gate_.TryComplete()) {
+    return;
+  }
+  result_.SetResult(result);
+  continuation_.Schedule();
+}
+
+void ReactorStream::WriteAllAwaiter::OnReadyImpl() noexcept {
+  while (!buffer_.empty()) {
+    IoAttempt attempt = TryWrite(stream_->socket_.fd(), buffer_);
+    if (attempt.Pending()) {
+      return;
+    }
+    if (!attempt.result.has_value()) {
+      stream_->CompleteWrite(std::move(attempt.result));
+      return;
+    }
+    if (*attempt.result == 0) {
+      stream_->CompleteWrite(std::unexpected(base::MakeErrno(EPIPE)));
+      return;
+    }
+    buffer_ = buffer_.subspan(*attempt.result);
+  }
+
+  stream_->CompleteWrite(base::Result<std::size_t>{0});
+}
+
 ReactorStream::BufferWriteAwaiter::BufferWriteAwaiter(ReactorStream& stream,
                                                       net::Buffer& buffer) noexcept
     : stream_(&stream), buffer_(&buffer) {}
@@ -711,6 +793,9 @@ void ReactorStream::HandleWrite() {
     case PendingWriteKind::kWriteSome:
       static_cast<WriteSomeAwaiter*>(pending_write_)->OnReady();
       return;
+    case PendingWriteKind::kWriteAll:
+      static_cast<WriteAllAwaiter*>(pending_write_)->OnReady();
+      return;
     case PendingWriteKind::kBufferWrite:
       static_cast<BufferWriteAwaiter*>(pending_write_)->OnReady();
       return;
@@ -777,6 +862,9 @@ void ReactorStream::CompleteWrite(base::Result<std::size_t> result) {
   switch (kind) {
     case PendingWriteKind::kWriteSome:
       static_cast<WriteSomeAwaiter*>(awaiter)->Complete(std::move(result));
+      return;
+    case PendingWriteKind::kWriteAll:
+      static_cast<WriteAllAwaiter*>(awaiter)->Complete(std::move(result));
       return;
     case PendingWriteKind::kBufferWrite:
       static_cast<BufferWriteAwaiter*>(awaiter)->Complete(std::move(result));

@@ -30,6 +30,14 @@ concept ZeroCopyWriteFallbackObserver = requires(Stream& stream) {
   stream.RecordZeroCopyFallback();
 };
 
+template <class Stream>
+concept NativeWriteAllExtension =
+    requires(Stream& stream, std::span<const std::byte> buffer) {
+      requires coro::Awaitable<decltype(stream.WriteAll(buffer))>;
+      requires std::same_as<coro::AwaitResult<decltype(stream.WriteAll(buffer))>,
+                            base::Result<void>>;
+    };
+
 template <AsyncWriteStream Stream>
 coro::Task<base::Result<std::size_t>> WriteSomeForAll(
     Stream& stream,
@@ -57,10 +65,9 @@ coro::Task<base::Result<std::size_t>> WriteSomeForAll(
   co_return co_await stream.WriteSome(buffer);
 }
 
-}  // namespace detail
-
 template <AsyncWriteStream Stream>
-coro::Task<base::Result<void>> WriteAll(Stream& stream, std::span<const std::byte> buffer) {
+coro::Task<base::Result<void>> WriteAllTask(Stream& stream,
+                                           std::span<const std::byte> buffer) {
   while (!buffer.empty()) {
     COROPACT_CO_TRY(written, co_await detail::WriteSomeForAll(stream, buffer));
     if (written == 0) {
@@ -69,6 +76,17 @@ coro::Task<base::Result<void>> WriteAll(Stream& stream, std::span<const std::byt
     buffer = buffer.subspan(written);
   }
   co_return base::Result<void>{};
+}
+
+}  // namespace detail
+
+template <AsyncWriteStream Stream>
+auto WriteAll(Stream& stream, std::span<const std::byte> buffer) {
+  if constexpr (detail::NativeWriteAllExtension<Stream>) {
+    return stream.WriteAll(buffer);
+  } else {
+    return detail::WriteAllTask(stream, buffer);
+  }
 }
 
 template <AsyncStream Stream>

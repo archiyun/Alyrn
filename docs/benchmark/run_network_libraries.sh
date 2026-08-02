@@ -18,7 +18,6 @@ ROUNDS=${ROUNDS:-3}
 TIMEOUT=${TIMEOUT:-5s}
 WORKERS=${WORKERS:-4}
 ENTRIES=${ENTRIES:-8192}
-FRAME_POOL=${FRAME_POOL:-1}
 REACTOR_TRIGGER_MODE=${REACTOR_TRIGGER_MODE:-et}
 PORT_BASE=${PORT_BASE:-19090}
 TARGETS=${TARGETS:-"reactor luring raw-liburing asio monoio compio libaio libuv libevent libev"}
@@ -72,12 +71,12 @@ start_target() {
 
   case "$target" in
     reactor)
-      PORT="$port" REACTOR_WORKERS="$WORKERS" FRAME_POOL="$FRAME_POOL" \
+      PORT="$port" REACTOR_WORKERS="$WORKERS" \
         REACTOR_TRIGGER_MODE="$REACTOR_TRIGGER_MODE" \
         "$binary" >"$log" 2>&1 & ;;
     luring)
       BIND_HOST=127.0.0.1 PORT="$port" URING_WORKERS="$WORKERS" URING_ENTRIES="$ENTRIES" \
-        FRAME_POOL="$FRAME_POOL" "$binary" >"$log" 2>&1 & ;;
+        "$binary" >"$log" 2>&1 & ;;
     raw-liburing)
       PORT="$port" URING_WORKERS="$WORKERS" URING_ENTRIES="$ENTRIES" \
         "$binary" >"$log" 2>&1 & ;;

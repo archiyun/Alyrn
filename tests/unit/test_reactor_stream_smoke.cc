@@ -36,6 +36,7 @@ using WriteResult = coropact::base::Result<std::size_t>;
 using OwnedReadOutcome = coropact::net::ReadIntoOutcome;
 
 static_assert(coropact::io::AsyncStream<coropact::reactor::ReactorStream>);
+static_assert(coropact::io::AsyncTimedStream<coropact::reactor::ReactorStream>);
 static_assert(coropact::io::AsyncOwnedReadStream<coropact::reactor::ReactorStream>);
 
 bool Check(bool condition, const char* message) {

@@ -15,13 +15,9 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <memory>
-#include <memory_resource>
 #include <span>
 #include <thread>
-#include <vector>
 
-#include "coropact/coro/frame_allocator.h"
 #include "coropact/luring/server.h"
 #include "coropact/net/endpoint.h"
 #include "coropact/net/net_utils.h"
@@ -48,11 +44,6 @@ std::size_t EnvSize(const char* key, std::size_t fallback) {
 const char* EnvOr(const char* key, const char* fallback) {
   const char* value = std::getenv(key);
   return value != nullptr ? value : fallback;
-}
-
-bool EnvBool(const char* key, bool fallback) {
-  const char* value = std::getenv(key);
-  return value != nullptr ? std::atoi(value) != 0 : fallback;
 }
 
 coropact::coro::DetachedTask EchoSession(coropact::luring::LUringStream stream) {
@@ -98,7 +89,6 @@ int main() {
   const auto completion_age_threshold_us = EnvSize("COMPLETION_AGE_THRESHOLD_US", 0);
   const auto urgent_completion_budget = EnvSize("MAX_URGENT_COMPLETION_WORK_PER_TURN", 80);
   const auto normal_age_threshold_us = EnvSize("NORMAL_QUEUE_AGE_THRESHOLD_US", 5000);
-  const bool frame_pool = EnvBool("FRAME_POOL", true);
 
   if (workers == 0) {
     std::fprintf(stderr, "URING_WORKERS must be greater than zero\n");
@@ -110,14 +100,6 @@ int main() {
     std::fprintf(stderr, "invalid BIND_HOST '%s': %s\n", bind_host,
                  listen_addr.error().message().c_str());
     return 1;
-  }
-
-  std::vector<std::unique_ptr<coropact::coro::CoroFramePoolResource>> frame_pools;
-  if (frame_pool) {
-    frame_pools.reserve(workers);
-    for (std::size_t i = 0; i < workers; ++i) {
-      frame_pools.push_back(std::make_unique<coropact::coro::CoroFramePoolResource>());
-    }
   }
 
   coropact::luring::LUringServerOptions options;
@@ -137,11 +119,6 @@ int main() {
       std::chrono::microseconds(normal_age_threshold_us);
   options.worker_group_options.worker_options.listen_options.reuse_port = true;
   options.worker_group_options.worker_options.listen_options.accept_depth = accept_depth;
-  options.worker_group_options.frame_resource_factory =
-      [&frame_pools](std::size_t index) -> std::pmr::memory_resource* {
-    return index < frame_pools.size() ? frame_pools[index].get() : nullptr;
-  };
-
   coropact::luring::LUringServer server(*listen_addr, std::move(options));
   server.SetSessionHandler(
       [](coropact::luring::LUringWorkerContext&, coropact::luring::LUringStream stream) {
@@ -155,10 +132,10 @@ int main() {
   }
 
   std::printf(
-      "RawEchoLUring bind=%s port=%u workers=%zu entries=%u accept_depth=%zu frame_pool=%s "
+      "RawEchoLUring bind=%s port=%u workers=%zu entries=%u accept_depth=%zu "
       "ready_budget=%zu cqe_budget=%zu ready_time_us=%zu completion_budget=%zu "
       "completion_age_us=%zu urgent_completion_budget=%zu normal_age_us=%zu\n",
-      bind_host, port, workers, entries, accept_depth, frame_pool ? "on" : "off", ready_budget,
+      bind_host, port, workers, entries, accept_depth, ready_budget,
       cqe_budget, ready_time_us, completion_budget, completion_age_threshold_us,
       urgent_completion_budget, normal_age_threshold_us);
   std::fflush(stdout);
