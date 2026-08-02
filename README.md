@@ -77,6 +77,9 @@ cmake --build build-uring -j"$(nproc)"
 ctest --test-dir build-uring --output-on-failure
 ```
 
+Installable Debian/tarball artifacts and Docker release builds are described
+in [Packaging and installation](docs/packaging.md).
+
 ## Architecture
 
 ```text
