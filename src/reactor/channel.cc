@@ -90,14 +90,41 @@ void Channel::Remove() {
 
 void Channel::HandleEvent(coropact::time::Timestamp receive_time) {
   COROPACT_DCHECK(loop_->IsInLoopThread(), "Channel::HandleEvent called from wrong thread");
-  if (tied_) {
-    // Hold a temporary shared reference while dispatching callbacks so the
-    // owner cannot be destroyed in the middle of event handling.
-    std::shared_ptr<void> guard = tie_.lock();
-    if (guard) {
-      HandleEventWithGuard(receive_time);
+  if (!tied_) {
+    // Reactor-owned channels are loop-affine and do not need the shared-owner
+    // guard. Keep this common path inline with the event entry point so every
+    // readiness notification avoids an extra helper call.
+    if (static_cast<bool>((revents_ & kHupEvent)) &&
+        !static_cast<bool>((revents_ & kReadEvent))) {
+      if (close_callback_ != nullptr) {
+        close_callback_(close_context_);
+      }
     }
-  } else {
+
+    if (static_cast<bool>(revents_ & kErrorEvent)) {
+      if (error_callback_ != nullptr) {
+        error_callback_(error_context_);
+      }
+    }
+
+    if (static_cast<bool>(revents_ & kReadEvent)) {
+      if (read_callback_ != nullptr) {
+        read_callback_(read_context_, receive_time);
+      }
+    }
+
+    if (static_cast<bool>(revents_ & kWriteEvent)) {
+      if (write_callback_ != nullptr) {
+        write_callback_(write_context_);
+      }
+    }
+    return;
+  }
+
+  // Hold a temporary shared reference while dispatching callbacks so the
+  // owner cannot be destroyed in the middle of event handling.
+  std::shared_ptr<void> guard = tie_.lock();
+  if (guard) {
     HandleEventWithGuard(receive_time);
   }
 }
