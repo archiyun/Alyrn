@@ -9,7 +9,6 @@
 #include <cstdint>
 
 #include "coropact/base/check.h"
-#include "coropact/coro/scheduler.h"
 #include "coropact/reactor/channel.h"
 #include "coropact/reactor/poller.h"
 #include "coropact/reactor/timer_queue.h"
@@ -114,7 +113,6 @@ void EventLoop::Loop() {
   // honored, otherwise the loop would clear the request and block forever.
   while (!quit_.load(std::memory_order_relaxed)) {
     DoPendingFunctors();
-    DoPendingWork();
 
     // Quit() may have been called by a pending functor.
     // Do not enter a potentially blocking poll after the stop request.
@@ -166,33 +164,11 @@ void EventLoop::QueueInLoop(Functor callback) {
   }
 }
 
-bool EventLoop::QueueWork(coro::Work* work) noexcept {
-  if (work == nullptr) {
-    COROPACT_DCHECK(false, "EventLoop::QueueWork: work must not be null");
-    return false;
-  }
-
-  {
-    std::lock_guard lock{mutex_};
-    if (work_scheduler_ == nullptr) {
-      return false;
-    }
-    if (!pending_work_.PushBack(work)) {
-      return false;
-    }
-  }
-
-  if (!IsInLoopThread()) {
-    Wakeup();
-  }
-  return true;
-}
-
 bool EventLoop::HasImmediateWork() {
   COROPACT_DCHECK(IsInLoopThread(), "EventLoop::HasImmediateWork called from wrong thread");
 
   std::lock_guard lock{mutex_};
-  return !pending_functors_.empty() || !pending_work_.Empty();
+  return !pending_functors_.empty();
 }
 
 void EventLoop::UpdateChannel(Channel* channel) {
@@ -242,30 +218,6 @@ void EventLoop::DoPendingFunctors() {
   }
 
   calling_pending_functors_.store(false, std::memory_order_relaxed);
-}
-
-void EventLoop::DoPendingWork() {
-  coro::WorkQueue work;
-  {
-    std::lock_guard lock{mutex_};
-    work.Splice(pending_work_);
-  }
-
-  if (work.Empty()) {
-    return;
-  }
-
-  COROPACT_DCHECK(work_scheduler_ != nullptr,
-                 "EventLoop::DoPendingWork requires a bound scheduler");
-  while (coro::Work* item = work.PopFront()) {
-    work_scheduler_->Run(item);
-  }
-}
-
-void EventLoop::BindScheduler(coro::Scheduler* scheduler) noexcept {
-  COROPACT_DCHECK(IsInLoopThread(), "EventLoop::BindScheduler called from wrong thread");
-  COROPACT_DCHECK(scheduler != nullptr, "EventLoop::BindScheduler requires a scheduler");
-  work_scheduler_ = scheduler;
 }
 
 time::TimerId EventLoop::RunAt(time::Timestamp time, Functor callback) {
