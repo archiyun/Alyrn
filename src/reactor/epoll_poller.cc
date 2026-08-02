@@ -64,11 +64,11 @@ EPollPoller::~EPollPoller() {
   }
 }
 
-coropact::time::Timestamp EPollPoller::Poll(int timeout_ms, ChannelList* active_channels) {
+time::Timestamp EPollPoller::Poll(int timeout_ms, ChannelList* active_channels) {
   const int max_events = static_cast<int>(events_.size());
   const int num_events = ::epoll_wait(epollfd_, events_.data(), max_events, timeout_ms);
   const int saved_errno = errno;
-  const auto now = coropact::time::Timestamp::Now();
+  const auto now = time::Timestamp::Now();
 
   if (num_events > 0) {
     FillActiveChannels(num_events, active_channels);
