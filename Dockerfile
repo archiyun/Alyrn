@@ -59,7 +59,7 @@ RUN cmake -S . -B build -G Ninja \
         -DCMAKE_INSTALL_PREFIX=/usr \
     && cmake --build build -j"$(nproc)" \
     && ctest --test-dir build --output-on-failure \
-    && cpack --config build/CPackConfig.cmake
+    && cpack --config build/CPackConfig.cmake -B build
 
 # `docker buildx build --target artifacts --output=type=local,dest=dist .`
 # copies these files to the host without creating a runtime container image.
