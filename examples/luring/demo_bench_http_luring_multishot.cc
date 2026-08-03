@@ -226,11 +226,6 @@ int main() {
   const auto port = static_cast<std::uint16_t>(EnvInt("PORT", 19190));
   const std::size_t workers = EnvSize("URING_WORKERS", 4);
   const auto entries = static_cast<std::uint32_t>(EnvSize("URING_ENTRIES", 1024));
-  const auto storage_kind =
-      std::getenv("BUFFER_STORAGE") != nullptr &&
-              std::string_view(std::getenv("BUFFER_STORAGE")) == "mmap"
-          ? coropact::luring::ProvidedBufferStorageKind::kMmap
-          : coropact::luring::ProvidedBufferStorageKind::kVector;
   const auto shared_buffer_capacity =
       EnvSize("SHARED_BUFFER_CAPACITY", kDefaultSharedBufferCapacity);
   const bool direct_consume =
@@ -253,7 +248,6 @@ int main() {
   loop_options.entries = entries;
   loop_options.shared_buffer_capacity = shared_buffer_capacity;
   loop_options.shared_buffer_size = kProvidedBufferSize;
-  loop_options.shared_buffer_storage = storage_kind;
   loop_options.active_profile =
       coropact::luring::RuntimeProfile::Core()
           .Require(coropact::luring::NativeFeature::kMultishotRecv)
@@ -284,12 +278,9 @@ int main() {
 
   std::printf(
       "HttpLuringMultishotBench bind=%s port=%u workers=%zu entries=%u "
-      "storage=%s consumer=%s buffer_size=%zu buffer_capacity=%zu "
+      "storage=mmap consumer=%s buffer_size=%zu buffer_capacity=%zu "
       "shared_buffer_capacity=%zu\n",
       host, port, workers, entries,
-      storage_kind == coropact::luring::ProvidedBufferStorageKind::kMmap
-          ? "mmap"
-          : "vector",
       direct_consume ? "direct" : "adapter",
       kProvidedBufferSize, kProvidedBufferCapacity, shared_buffer_capacity);
   std::fflush(stdout);

@@ -8,19 +8,17 @@
 #include <utility>
 
 #include "coropact/base/error.h"
-#include "coropact/luring/buffer_storage.h"
 #include "coropact/luring/detail/provided_buffer_storage.h"
 
 namespace {
 
-using coropact::luring::ProvidedBufferStorageKind;
 using coropact::luring::detail::ProvidedBufferStorage;
 
-void CheckStorage(ProvidedBufferStorageKind kind) {
+void CheckStorage() {
   constexpr std::size_t kCapacity = 4;
   constexpr std::size_t kBufferSize = 4096;
 
-  auto result = ProvidedBufferStorage::Create(kCapacity, kBufferSize, kind);
+  auto result = ProvidedBufferStorage::Create(kCapacity, kBufferSize);
   assert(result.has_value());
 
   auto storage = std::move(*result);
@@ -49,18 +47,16 @@ void CheckStorage(ProvidedBufferStorageKind kind) {
 
 void CheckInvalidArguments() {
   auto zero_capacity = ProvidedBufferStorage::Create(
-      0, 4096, ProvidedBufferStorageKind::kVector);
+      0, 4096);
   assert(!zero_capacity.has_value());
   assert(zero_capacity.error() == std::errc::invalid_argument);
 
-  auto zero_size = ProvidedBufferStorage::Create(
-      4, 0, ProvidedBufferStorageKind::kMmap);
+  auto zero_size = ProvidedBufferStorage::Create(4, 0);
   assert(!zero_size.has_value());
   assert(zero_size.error() == std::errc::invalid_argument);
 
   auto overflow = ProvidedBufferStorage::Create(
-      std::numeric_limits<std::size_t>::max(), 2,
-      ProvidedBufferStorageKind::kVector);
+      std::numeric_limits<std::size_t>::max(), 2);
   assert(!overflow.has_value());
   assert(overflow.error() == std::errc::value_too_large);
 }
@@ -68,8 +64,7 @@ void CheckInvalidArguments() {
 }  // namespace
 
 int main() {
-  CheckStorage(ProvidedBufferStorageKind::kVector);
-  CheckStorage(ProvidedBufferStorageKind::kMmap);
+  CheckStorage();
   CheckInvalidArguments();
   return 0;
 }

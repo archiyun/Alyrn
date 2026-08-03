@@ -277,8 +277,7 @@ private:
 
   [[nodiscard]]
   base::Result<detail::ProvidedBufferPool*> GetSharedProvidedBufferPool(
-      std::size_t buffer_size,
-      ProvidedBufferStorageKind storage_kind) noexcept;
+      std::size_t buffer_size) noexcept;
 
   [[nodiscard]]
   base::Result<std::uint16_t> AllocateBufferGroupId() noexcept {
@@ -364,8 +363,6 @@ private:
   std::unique_ptr<detail::ProvidedBufferPool> shared_buffer_pool_;
   std::size_t shared_buffer_capacity_{0};
   std::size_t shared_buffer_size_{0};
-  ProvidedBufferStorageKind shared_buffer_storage_{
-      ProvidedBufferStorageKind::kVector};
 
 #if defined(COROPACT_ENABLE_TEST_HOOKS)
   std::size_t test_submit_failures_{0};

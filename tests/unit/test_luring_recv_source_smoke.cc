@@ -35,7 +35,6 @@ using coropact::luring::LUringOptions;
 using coropact::luring::LUringRecvSource;
 using coropact::luring::LUringRecvSourceOptions;
 using coropact::luring::NativeFeature;
-using coropact::luring::ProvidedBufferStorageKind;
 using coropact::luring::RuntimeProfile;
 
 class UniqueFd final {
@@ -119,9 +118,7 @@ LoopInitStatus InitLoop(
             .Require(NativeFeature::kMultishotRecv)
             .Require(NativeFeature::kProvidedBufferRing),
     std::size_t shared_buffer_capacity = 64,
-    std::size_t shared_buffer_size = 16 * 1024,
-    ProvidedBufferStorageKind shared_buffer_storage =
-        ProvidedBufferStorageKind::kVector) {
+    std::size_t shared_buffer_size = 16 * 1024) {
   LUringOptions options;
   options.entries = 32;
   options.submit_batch = 1;
@@ -129,7 +126,6 @@ LoopInitStatus InitLoop(
   options.active_profile = profile;
   options.shared_buffer_capacity = shared_buffer_capacity;
   options.shared_buffer_size = shared_buffer_size;
-  options.shared_buffer_storage = shared_buffer_storage;
   auto initialized = loop.Init(options);
   if (initialized.has_value()) {
     return LoopInitStatus::kReady;
@@ -285,12 +281,12 @@ DetachedTask ReceivePauseThenResume(
   observation->done = true;
 }
 
-bool CheckRecvAndLease(ProvidedBufferStorageKind storage_kind) {
+bool CheckRecvAndLease() {
   LUringLoop loop;
   switch (InitLoop(loop, RuntimeProfile::Core()
                             .Require(NativeFeature::kMultishotRecv)
                             .Require(NativeFeature::kProvidedBufferRing),
-                   64, 256, storage_kind)) {
+                   64, 256)) {
     case LoopInitStatus::kReady:
       break;
     case LoopInitStatus::kSkip:
@@ -349,12 +345,12 @@ bool CheckRecvAndLease(ProvidedBufferStorageKind storage_kind) {
   return observation.payload == kPayload && observation.stopped && !observation.eof;
 }
 
-bool CheckSharedBufferPool(ProvidedBufferStorageKind storage_kind) {
+bool CheckSharedBufferPool() {
   LUringLoop loop;
   switch (InitLoop(loop, RuntimeProfile::Core()
                             .Require(NativeFeature::kMultishotRecv)
                             .Require(NativeFeature::kProvidedBufferRing),
-                   4, 256, storage_kind)) {
+                   4, 256)) {
     case LoopInitStatus::kReady:
       break;
     case LoopInitStatus::kSkip:
@@ -710,16 +706,10 @@ bool CheckCancelSubmitFailure() {
 }  // namespace
 
 int main() {
-  if (!CheckRecvAndLease(ProvidedBufferStorageKind::kVector)) {
+  if (!CheckRecvAndLease()) {
     return 1;
   }
-  if (!CheckRecvAndLease(ProvidedBufferStorageKind::kMmap)) {
-    return 1;
-  }
-  if (!CheckSharedBufferPool(ProvidedBufferStorageKind::kVector)) {
-    return 1;
-  }
-  if (!CheckSharedBufferPool(ProvidedBufferStorageKind::kMmap)) {
+  if (!CheckSharedBufferPool()) {
     return 1;
   }
   if (!CheckEof()) {

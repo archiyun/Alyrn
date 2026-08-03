@@ -62,20 +62,13 @@ run_target() {
   local target=$1
   local binary=$2
   local port=$3
-  local storage=${4:-}
   local server_log="$OUTDIR/${target}.log"
 
   echo "starting $target on port $port"
-  if [[ -n "$storage" ]]; then
-    BIND_HOST=127.0.0.1 PORT="$port" URING_WORKERS="$WORKERS" \
-      URING_ENTRIES="$ENTRIES" BUFFER_STORAGE="$storage" \
-      BUFFER_CONSUMER="$CONSUMER" SHARED_BUFFER_CAPACITY="$SHARED_BUFFER_CAPACITY" \
-      "$binary" >"$server_log" 2>&1 &
-  else
-    BIND_HOST=127.0.0.1 PORT="$port" URING_WORKERS="$WORKERS" \
-      URING_ENTRIES="$ENTRIES" SHARED_BUFFER_CAPACITY="$SHARED_BUFFER_CAPACITY" \
-      "$binary" >"$server_log" 2>&1 &
-  fi
+  BIND_HOST=127.0.0.1 PORT="$port" URING_WORKERS="$WORKERS" \
+    URING_ENTRIES="$ENTRIES" BUFFER_CONSUMER="$CONSUMER" \
+    SHARED_BUFFER_CAPACITY="$SHARED_BUFFER_CAPACITY" \
+    "$binary" >"$server_log" 2>&1 &
   server_pid=$!
 
   if ! wait_ready "$port"; then
@@ -106,7 +99,6 @@ run_target() {
 }
 
 run_target regular "$BASELINE_BIN" "$BASE_PORT"
-run_target multishot-vector "$MULTISHOT_BIN" "$((BASE_PORT + 1))" vector
-run_target multishot-mmap "$MULTISHOT_BIN" "$((BASE_PORT + 2))" mmap
+run_target multishot-mmap "$MULTISHOT_BIN" "$((BASE_PORT + 1))"
 
 echo "results: $OUTDIR"

@@ -6,7 +6,6 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "coropact/luring/buffer_storage.h"
 #include "coropact/luring/capability.h"
 
 namespace coropact::luring {
@@ -73,8 +72,6 @@ struct LUringOptions {
   // to disable RecvSource creation.
   std::size_t shared_buffer_capacity{64};
   std::size_t shared_buffer_size{16 * 1024};
-  ProvidedBufferStorageKind shared_buffer_storage{
-      ProvidedBufferStorageKind::kVector};
 
 };
 

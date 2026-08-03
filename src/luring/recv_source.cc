@@ -145,8 +145,7 @@ base::Result<LUringRecvSource> LUringRecvSource::Create(
     return std::unexpected(state_result.error());
   }
 
-  auto shared_pool = loop->GetSharedProvidedBufferPool(
-      options.buffer_size, loop->shared_buffer_storage_);
+  auto shared_pool = loop->GetSharedProvidedBufferPool(options.buffer_size);
   if (!shared_pool.has_value()) {
     if (shared_pool.error().value() == ENOENT) {
       return std::unexpected(base::MakeErrno(ENOTSUP));

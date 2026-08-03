@@ -166,7 +166,6 @@ base::Result<void> LUringLoop::Init(const LUringOptions& options,
   shared_buffer_pool_.reset();
   shared_buffer_capacity_ = options.shared_buffer_capacity;
   shared_buffer_size_ = options.shared_buffer_size;
-  shared_buffer_storage_ = options.shared_buffer_storage;
   cancel_all_op_.BeginNextRequest();
   quit_.store(false, std::memory_order_relaxed);
   initialized_ = true;
@@ -181,15 +180,12 @@ base::Result<void> LUringLoop::Init(const LUringOptions& options,
 }
 
 base::Result<detail::ProvidedBufferPool*>
-LUringLoop::GetSharedProvidedBufferPool(
-    std::size_t buffer_size,
-    ProvidedBufferStorageKind storage_kind) noexcept {
+LUringLoop::GetSharedProvidedBufferPool(std::size_t buffer_size) noexcept {
   assert(IsInLoopThread());
   if (shared_buffer_capacity_ == 0) {
     return std::unexpected(base::MakeErrno(ENOENT));
   }
-  if (buffer_size != shared_buffer_size_ ||
-      storage_kind != shared_buffer_storage_) {
+  if (buffer_size != shared_buffer_size_) {
     return std::unexpected(base::MakeErrno(EINVAL));
   }
   if (shared_buffer_pool_ != nullptr) {
@@ -205,7 +201,7 @@ LUringLoop::GetSharedProvidedBufferPool(
   }
   auto pool = detail::ProvidedBufferPool::Create(
       ring_.Native(), *group, shared_buffer_capacity_,
-      shared_buffer_size_, shared_buffer_storage_);
+      shared_buffer_size_);
   if (!pool.has_value()) {
     return std::unexpected(pool.error());
   }

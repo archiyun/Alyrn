@@ -13,7 +13,6 @@
 #include <vector>
 
 #include "coropact/base/error.h"
-#include "coropact/luring/buffer_storage.h"
 #include "coropact/luring/detail/provided_buffer_storage.h"
 #include "coropact/utils/macros.h"
 
@@ -63,16 +62,14 @@ public:
       io_uring* ring,
       std::uint16_t buffer_group,
       std::size_t capacity,
-      std::size_t buffer_size,
-      ProvidedBufferStorageKind storage_kind) noexcept {
+      std::size_t buffer_size) noexcept {
     if (ring == nullptr || capacity == 0 || capacity > 32 * 1024 ||
         (capacity & (capacity - 1)) != 0 || buffer_size == 0 ||
         buffer_size > std::numeric_limits<std::uint32_t>::max()) {
       return std::unexpected(base::MakeErrno(EINVAL));
     }
 
-    auto storage = ProvidedBufferStorage::Create(
-        capacity, buffer_size, storage_kind);
+    auto storage = ProvidedBufferStorage::Create(capacity, buffer_size);
     if (!storage.has_value()) {
       return std::unexpected(storage.error());
     }
