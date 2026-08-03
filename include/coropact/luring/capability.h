@@ -22,7 +22,6 @@ enum class NativeFeature : std::uint8_t {
   kMsgRing,
   kProvidedBuffer,
   kProvidedBufferRing,
-  kProvidedBufferRingIncremental,
   kMultishotRecv,
   kMultishotAccept,
   kLinkedOps,
@@ -44,9 +43,6 @@ public:
   constexpr RuntimeProfile Require(NativeFeature feature) const noexcept {
     RuntimeProfile result = *this;
     result.enabled_[Index(feature)] = true;
-    if (feature == NativeFeature::kProvidedBufferRingIncremental) {
-      result.enabled_[Index(NativeFeature::kProvidedBufferRing)] = true;
-    }
     return result;
   }
 

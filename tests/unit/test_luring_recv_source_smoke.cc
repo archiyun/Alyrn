@@ -35,6 +35,7 @@ using coropact::luring::LUringOptions;
 using coropact::luring::LUringRecvSource;
 using coropact::luring::LUringRecvSourceOptions;
 using coropact::luring::NativeFeature;
+using coropact::luring::ProvidedBufferStorageKind;
 using coropact::luring::RuntimeProfile;
 
 class UniqueFd final {
@@ -91,18 +92,6 @@ struct StopObservation {
   std::optional<Error> error;
 };
 
-struct IncrementalObservation {
-  bool done{false};
-  bool stopped{false};
-  std::string first;
-  std::string second;
-  std::uint32_t first_buffer{0};
-  std::uint32_t second_buffer{0};
-  std::uintptr_t first_address{0};
-  std::uintptr_t second_address{0};
-  std::optional<Error> error;
-};
-
 struct PauseResumeObservation {
   bool first_received{false};
   bool low_water_consumed{false};
@@ -128,12 +117,19 @@ LoopInitStatus InitLoop(
     RuntimeProfile profile =
         RuntimeProfile::Core()
             .Require(NativeFeature::kMultishotRecv)
-            .Require(NativeFeature::kProvidedBufferRing)) {
+            .Require(NativeFeature::kProvidedBufferRing),
+    std::size_t shared_buffer_capacity = 64,
+    std::size_t shared_buffer_size = 16 * 1024,
+    ProvidedBufferStorageKind shared_buffer_storage =
+        ProvidedBufferStorageKind::kVector) {
   LUringOptions options;
   options.entries = 32;
   options.submit_batch = 1;
 
   options.active_profile = profile;
+  options.shared_buffer_capacity = shared_buffer_capacity;
+  options.shared_buffer_size = shared_buffer_size;
+  options.shared_buffer_storage = shared_buffer_storage;
   auto initialized = loop.Init(options);
   if (initialized.has_value()) {
     return LoopInitStatus::kReady;
@@ -186,7 +182,7 @@ DetachedTask ReceiveOne(LUringRecvSource* source, Observation* observation) {
     observation->payload.assign(
         reinterpret_cast<const char*>(bytes.data()), bytes.size());
     // Stop must not complete while this lease is still alive. Release it
-    // before awaiting Stop so the source can unregister its buffer ring.
+    // before awaiting Stop so the shared pool can reuse the slot.
     received->reset();
   }
 
@@ -289,76 +285,12 @@ DetachedTask ReceivePauseThenResume(
   observation->done = true;
 }
 
-DetachedTask ReceiveIncremental(
-    LUringRecvSource* source,
-    int sender,
-    IncrementalObservation* observation) {
-  auto first = co_await source->Next();
-  if (!first.has_value() || !first->has_value()) {
-    observation->error = first.has_value()
-                             ? coropact::base::MakeErrno(EPROTO)
-                             : first.error();
-    (void)co_await source->Stop();
-    observation->done = true;
-    co_return;
-  }
-  const auto first_bytes = (*first)->buffer.Bytes();
-  observation->first.assign(
-      reinterpret_cast<const char*>(first_bytes.data()), first_bytes.size());
-  observation->first_buffer = (*first)->buffer.BufferId();
-  observation->first_address =
-      reinterpret_cast<std::uintptr_t>(first_bytes.data());
-
-  constexpr std::string_view kSecond = "defgh";
-  const auto sent = ::send(sender, kSecond.data(), kSecond.size(), MSG_NOSIGNAL);
-  if (sent != static_cast<ssize_t>(kSecond.size())) {
-    observation->error = coropact::base::CurrentErrno();
-    (void)co_await source->Stop();
-    observation->done = true;
-    co_return;
-  }
-
-  auto second = co_await source->Next();
-  if (!second.has_value() || !second->has_value()) {
-    observation->error = second.has_value()
-                              ? coropact::base::MakeErrno(EPROTO)
-                              : second.error();
-    (void)co_await source->Stop();
-    observation->done = true;
-    co_return;
-  }
-  const auto second_bytes = (*second)->buffer.Bytes();
-  observation->second.assign(
-      reinterpret_cast<const char*>(second_bytes.data()), second_bytes.size());
-  observation->second_buffer = (*second)->buffer.BufferId();
-  observation->second_address =
-      reinterpret_cast<std::uintptr_t>(second_bytes.data());
-  // Keep both leases alive while the second segment is delivered. The ring
-  // must not recycle the incrementally consumed buffer until the terminal
-  // CQE and both consumer leases have been observed.
-  const bool contiguous = observation->second_address ==
-                           observation->first_address + observation->first.size();
-  first->reset();
-  second->reset();
-  if (!contiguous) {
-    observation->error = coropact::base::MakeErrno(EPROTO);
-    (void)co_await source->Stop();
-    observation->done = true;
-    co_return;
-  }
-
-  auto stopped = co_await source->Stop();
-  if (!stopped.has_value()) {
-    observation->error = stopped.error();
-  } else {
-    observation->stopped = true;
-  }
-  observation->done = true;
-}
-
-bool CheckRecvAndLease() {
+bool CheckRecvAndLease(ProvidedBufferStorageKind storage_kind) {
   LUringLoop loop;
-  switch (InitLoop(loop)) {
+  switch (InitLoop(loop, RuntimeProfile::Core()
+                            .Require(NativeFeature::kMultishotRecv)
+                            .Require(NativeFeature::kProvidedBufferRing),
+                   64, 256, storage_kind)) {
     case LoopInitStatus::kReady:
       break;
     case LoopInitStatus::kSkip:
@@ -417,6 +349,95 @@ bool CheckRecvAndLease() {
   return observation.payload == kPayload && observation.stopped && !observation.eof;
 }
 
+bool CheckSharedBufferPool(ProvidedBufferStorageKind storage_kind) {
+  LUringLoop loop;
+  switch (InitLoop(loop, RuntimeProfile::Core()
+                            .Require(NativeFeature::kMultishotRecv)
+                            .Require(NativeFeature::kProvidedBufferRing),
+                   4, 256, storage_kind)) {
+    case LoopInitStatus::kReady:
+      break;
+    case LoopInitStatus::kSkip:
+      return true;
+    case LoopInitStatus::kFail:
+      return false;
+  }
+
+  auto first_pair = MakeSocketPair();
+  auto second_pair = MakeSocketPair();
+  if (!first_pair.has_value() || !second_pair.has_value()) {
+    std::cout << "FAIL: shared-pool socketpair failed\n";
+    return false;
+  }
+  auto first_receiver = std::move(first_pair->first);
+  auto first_sender = std::move(first_pair->second);
+  auto second_receiver = std::move(second_pair->first);
+  auto second_sender = std::move(second_pair->second);
+
+  LUringRecvSourceOptions options;
+  options.source.event_capacity = 2;
+  options.source.buffer_capacity = 2;
+  options.buffer_size = 256;
+
+  auto first_source_result = LUringRecvSource::Create(
+      &loop, first_receiver.Get(), options);
+  auto second_source_result = LUringRecvSource::Create(
+      &loop, second_receiver.Get(), options);
+  if (!first_source_result.has_value() || !second_source_result.has_value()) {
+    const auto& error = !first_source_result.has_value()
+                            ? first_source_result.error()
+                            : second_source_result.error();
+    if (IsEnvironmentSkip(error)) {
+      std::cout << "SKIP: shared provided buffer ring unavailable: "
+                << error.message() << '\n';
+      return true;
+    }
+    std::cout << "FAIL: shared RecvSource creation failed: "
+              << error.message() << '\n';
+    return false;
+  }
+  auto first_source = std::move(*first_source_result);
+  auto second_source = std::move(*second_source_result);
+
+  Observation first_observation;
+  Observation second_observation;
+  coropact::coro::SpawnDetach(
+      loop, ReceiveOne(&first_source, &first_observation));
+  coropact::coro::SpawnDetach(
+      loop, ReceiveOne(&second_source, &second_observation));
+  loop.RunReady();
+
+  constexpr std::string_view kFirstPayload = "shared-first";
+  constexpr std::string_view kSecondPayload = "shared-second";
+  if (::send(first_sender.Get(), kFirstPayload.data(), kFirstPayload.size(),
+             MSG_NOSIGNAL) != static_cast<ssize_t>(kFirstPayload.size()) ||
+      ::send(second_sender.Get(), kSecondPayload.data(), kSecondPayload.size(),
+             MSG_NOSIGNAL) != static_cast<ssize_t>(kSecondPayload.size())) {
+    std::cout << "FAIL: shared-pool send failed: "
+              << coropact::base::CurrentErrno().message() << '\n';
+    return false;
+  }
+
+  if (!PumpUntil(loop, [&] {
+        return (first_observation.done || first_observation.error.has_value()) &&
+               (second_observation.done || second_observation.error.has_value());
+      })) {
+    return false;
+  }
+  if (first_observation.error.has_value() ||
+      second_observation.error.has_value()) {
+    std::cout << "FAIL: shared-pool recv failed: "
+              << (first_observation.error.has_value()
+                      ? first_observation.error->message()
+                      : second_observation.error->message())
+              << '\n';
+    return false;
+  }
+  return first_observation.payload == kFirstPayload &&
+         second_observation.payload == kSecondPayload &&
+         first_observation.stopped && second_observation.stopped;
+}
+
 bool CheckEof() {
   LUringLoop loop;
   switch (InitLoop(loop)) {
@@ -467,7 +488,10 @@ bool CheckEof() {
 
 bool CheckQueuePauseThenRearm() {
   LUringLoop loop;
-  switch (InitLoop(loop)) {
+  switch (InitLoop(loop, RuntimeProfile::Core()
+                            .Require(NativeFeature::kMultishotRecv)
+                            .Require(NativeFeature::kProvidedBufferRing),
+                   64, 256)) {
     case LoopInitStatus::kReady:
       break;
     case LoopInitStatus::kSkip:
@@ -568,105 +592,6 @@ bool CheckQueuePauseThenRearm() {
          observation.resumed == kResumed && observation.first_received &&
          observation.low_water_consumed && observation.resumed_received &&
          observation.stopped;
-}
-
-bool CheckIncrementalBufferConsumption() {
-  LUringLoop loop;
-  switch (InitLoop(
-      loop,
-      RuntimeProfile::Core().Require(
-          NativeFeature::kProvidedBufferRingIncremental))) {
-    case LoopInitStatus::kReady:
-      break;
-    case LoopInitStatus::kSkip:
-      return true;
-    case LoopInitStatus::kFail:
-      return false;
-  }
-
-  auto pair = MakeSocketPair();
-  if (!pair.has_value()) {
-    std::cout << "FAIL: socketpair failed: " << pair.error().message() << '\n';
-    return false;
-  }
-  auto receiver = std::move(pair->first);
-  auto sender = std::move(pair->second);
-
-  LUringRecvSourceOptions options;
-  options.source.pending_depth = 1;
-  options.source.event_capacity = 2;
-  options.source.buffer_capacity = 2;
-  options.buffer_size = 8;
-  options.incremental_buffer_consumption = true;
-
-  auto source_result = LUringRecvSource::Create(&loop, receiver.Get(), options);
-  if (!source_result.has_value()) {
-    if (IsEnvironmentSkip(source_result.error())) {
-      std::cout << "SKIP: incremental provided buffer ring unavailable: "
-                << source_result.error().message() << '\n';
-      return true;
-    }
-    std::cout << "FAIL: incremental RecvSource creation failed: "
-              << source_result.error().message() << '\n';
-    return false;
-  }
-  auto source = std::move(*source_result);
-
-  IncrementalObservation observation;
-  coropact::coro::SpawnDetach(
-      loop, ReceiveIncremental(&source, sender.Get(), &observation));
-  loop.RunReady();
-
-  constexpr std::string_view kFirst = "abc";
-  const auto sent = ::send(sender.Get(), kFirst.data(), kFirst.size(), MSG_NOSIGNAL);
-  if (sent != static_cast<ssize_t>(kFirst.size())) {
-    std::cout << "FAIL: incremental first send failed: "
-              << coropact::base::CurrentErrno().message() << '\n';
-    return false;
-  }
-
-  if (!PumpUntil(loop, [&] { return observation.done || observation.error.has_value(); })) {
-    return false;
-  }
-  if (observation.error.has_value()) {
-    std::cout << "FAIL: incremental recv source failed: "
-              << observation.error->message() << '\n';
-    return false;
-  }
-
-  return observation.first == kFirst && observation.second == "defgh" &&
-         observation.first_buffer == observation.second_buffer &&
-         observation.second_address ==
-             observation.first_address + observation.first.size() &&
-         observation.stopped;
-}
-
-bool CheckIncrementalRequiresProfile() {
-  LUringLoop loop;
-  if (InitLoop(loop, RuntimeProfile::Core()) !=
-      LoopInitStatus::kReady) {
-    return true;
-  }
-
-  auto pair = MakeSocketPair();
-  if (!pair.has_value()) {
-    std::cout << "FAIL: socketpair failed: " << pair.error().message() << '\n';
-    return false;
-  }
-  auto receiver = std::move(pair->first);
-
-  LUringRecvSourceOptions options;
-  options.incremental_buffer_consumption = true;
-  auto source = LUringRecvSource::Create(&loop, receiver.Get(), options);
-  if (source.has_value()) {
-    std::cout << "FAIL: F_BUF_MORE source bypassed the active profile gate\n";
-    return false;
-  }
-  if (source.error().value() != ENOTSUP) {
-    std::cout << "FAIL: F_BUF_MORE profile gate returned the wrong error\n";
-    return false;
-  }
-  return true;
 }
 
 #if defined(COROPACT_ENABLE_TEST_HOOKS)
@@ -785,19 +710,22 @@ bool CheckCancelSubmitFailure() {
 }  // namespace
 
 int main() {
-  if (!CheckIncrementalRequiresProfile()) {
+  if (!CheckRecvAndLease(ProvidedBufferStorageKind::kVector)) {
     return 1;
   }
-  if (!CheckRecvAndLease()) {
+  if (!CheckRecvAndLease(ProvidedBufferStorageKind::kMmap)) {
+    return 1;
+  }
+  if (!CheckSharedBufferPool(ProvidedBufferStorageKind::kVector)) {
+    return 1;
+  }
+  if (!CheckSharedBufferPool(ProvidedBufferStorageKind::kMmap)) {
     return 1;
   }
   if (!CheckEof()) {
     return 1;
   }
   if (!CheckQueuePauseThenRearm()) {
-    return 1;
-  }
-  if (!CheckIncrementalBufferConsumption()) {
     return 1;
   }
 #if defined(COROPACT_ENABLE_TEST_HOOKS)

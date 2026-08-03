@@ -25,6 +25,14 @@ if(COROPACT_ENABLE_URING)
             coropact_luring
     )
 
+    add_executable(demo_bench_http_luring_multishot
+        demo_bench_http_luring_multishot.cc
+    )
+    target_link_libraries(demo_bench_http_luring_multishot
+        PRIVATE
+            coropact_luring
+    )
+
     add_executable(demo_bench_http_liburing
         demo_bench_http_liburing.cc
     )

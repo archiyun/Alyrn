@@ -9,7 +9,6 @@
 #include <deque>
 #include <limits>
 #include <optional>
-#include <vector>
 
 #include "coropact/base/error.h"
 #include "coropact/coro/task.h"
@@ -23,11 +22,13 @@
 namespace coropact::luring {
 
 class LUringLoop;
+namespace detail {
+class ProvidedBufferPool;
+}
 
 struct LUringRecvSourceOptions {
   net::RecvSourceOptions source{};
   std::size_t buffer_size{16 * 1024};
-  bool incremental_buffer_consumption{false};
 
   [[nodiscard]]
   bool Valid() const noexcept {
@@ -77,13 +78,6 @@ public:
   coro::Task<base::Result<void>> Stop();
 
 private:
-  struct BufferState {
-    std::size_t offset{0};
-    std::size_t leases{0};
-    bool in_use{false};
-    bool final_seen{false};
-  };
-
   class NextAwaiter;
   class StopAwaiter;
 
@@ -133,12 +127,8 @@ private:
       LUringLoop* loop,
       int fd,
       net::detail::RecvSourceStateMachine state,
-      io_uring_buf_ring* buffer_ring,
-      std::uint16_t buffer_group,
       std::size_t buffer_size,
-      bool incremental_buffer_consumption,
-      std::vector<BufferState> buffer_states,
-      std::vector<std::byte> storage) noexcept;
+      detail::ProvidedBufferPool* shared_buffer_pool) noexcept;
 
   [[nodiscard]]
   base::Result<void> Start() noexcept;
@@ -165,13 +155,6 @@ private:
   void CompleteStopIfReady() noexcept;
   bool TryTakeNext(Result& result) noexcept;
   void ReturnBuffer(std::uint32_t buffer_id) noexcept;
-  void ReturnBufferToRing(std::uint32_t buffer_id) noexcept;
-  void HoldOrFinalizeBuffer(
-      std::uint32_t buffer_id,
-      bool more_completions) noexcept;
-  void FinalizeActiveIncrementalBuffer() noexcept;
-  void MaybeReturnBuffer(std::uint32_t buffer_id) noexcept;
-  void ReleaseBufferRing() noexcept;
 
   static void ReclaimBuffer(void* context, std::uint32_t buffer_id) noexcept;
 
@@ -187,13 +170,8 @@ private:
   RecvOperation recv_op_;
   CancelOperation cancel_op_;
 
-  io_uring_buf_ring* buffer_ring_{nullptr};
-  std::uint16_t buffer_group_{0};
   std::size_t buffer_size_{0};
-  bool incremental_buffer_consumption_{false};
-  std::optional<std::uint32_t> active_incremental_buffer_;
-  std::vector<BufferState> buffer_states_;
-  std::vector<std::byte> storage_;
+  detail::ProvidedBufferPool* shared_buffer_pool_{nullptr};
 
   bool recv_submitted_{false};
   bool cancel_submitted_{false};

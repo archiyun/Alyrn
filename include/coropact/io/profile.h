@@ -21,7 +21,6 @@ enum class IoRequirement : std::uint8_t {
   kTimeout,
   kAcceptSource,
   kRecvSource,
-  kIncrementalBufferLease,
   kSendZeroCopy,
   kCount,
 };
@@ -40,9 +39,6 @@ public:
   constexpr CapabilitySet Require(IoRequirement requirement) const noexcept {
     CapabilitySet result = *this;
     result.enabled_[Index(requirement)] = true;
-    if (requirement == IoRequirement::kIncrementalBufferLease) {
-      result.enabled_[Index(IoRequirement::kRecvSource)] = true;
-    }
     return result;
   }
 

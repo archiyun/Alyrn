@@ -110,9 +110,6 @@ base::Result<Capabilities> ProbeCapabilities(
 
   if (ProbeProvidedBufferRing(&ring, 0, 1)) {
     Enable(caps, NativeFeature::kProvidedBufferRing);
-    if (ProbeProvidedBufferRing(&ring, IOU_PBUF_RING_INC, 2)) {
-      Enable(caps, NativeFeature::kProvidedBufferRingIncremental);
-    }
   }
 
   if (ProbeSupports(probe, IORING_OP_ACCEPT)) {

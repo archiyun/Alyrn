@@ -16,10 +16,6 @@ luring::RuntimeProfile ToLuringProfile(
   if (requested_profile.Has(IoRequirement::kRecvSource)) {
     profile = profile.Require(luring::NativeFeature::kProvidedBufferRing);
   }
-  if (requested_profile.Has(IoRequirement::kIncrementalBufferLease)) {
-    profile = profile.Require(
-        luring::NativeFeature::kProvidedBufferRingIncremental);
-  }
   if (requested_profile.Has(IoRequirement::kSendZeroCopy)) {
     profile = profile.Require(luring::NativeFeature::kSendZeroCopy);
   }

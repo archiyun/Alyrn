@@ -24,6 +24,7 @@
 #include "coropact/coro/scheduler.h"
 #include "coropact/luring/capabilities.h"
 #include "coropact/luring/detail/completion_dispatch.h"
+#include "coropact/luring/detail/provided_buffer_pool.h"
 #include "coropact/luring/op.h"
 #include "coropact/luring/options.h"
 #include "coropact/luring/ring.h"
@@ -162,6 +163,10 @@ base::Result<void> LUringLoop::Init(const LUringOptions& options,
   wake_pending_ = false;
   wake_inflight_ = false;
   cancel_all_pending_ = false;
+  shared_buffer_pool_.reset();
+  shared_buffer_capacity_ = options.shared_buffer_capacity;
+  shared_buffer_size_ = options.shared_buffer_size;
+  shared_buffer_storage_ = options.shared_buffer_storage;
   cancel_all_op_.BeginNextRequest();
   quit_.store(false, std::memory_order_relaxed);
   initialized_ = true;
@@ -173,6 +178,44 @@ base::Result<void> LUringLoop::Init(const LUringOptions& options,
     return std::unexpected(armed.error());
   }
   return {};
+}
+
+base::Result<detail::ProvidedBufferPool*>
+LUringLoop::GetSharedProvidedBufferPool(
+    std::size_t buffer_size,
+    ProvidedBufferStorageKind storage_kind) noexcept {
+  assert(IsInLoopThread());
+  if (shared_buffer_capacity_ == 0) {
+    return std::unexpected(base::MakeErrno(ENOENT));
+  }
+  if (buffer_size != shared_buffer_size_ ||
+      storage_kind != shared_buffer_storage_) {
+    return std::unexpected(base::MakeErrno(EINVAL));
+  }
+  if (shared_buffer_pool_ != nullptr) {
+    return shared_buffer_pool_.get();
+  }
+  if (!HasCapability(NativeFeature::kProvidedBufferRing)) {
+    return std::unexpected(base::MakeErrno(ENOTSUP));
+  }
+
+  auto group = AllocateBufferGroupId();
+  if (!group.has_value()) {
+    return std::unexpected(group.error());
+  }
+  auto pool = detail::ProvidedBufferPool::Create(
+      ring_.Native(), *group, shared_buffer_capacity_,
+      shared_buffer_size_, shared_buffer_storage_);
+  if (!pool.has_value()) {
+    return std::unexpected(pool.error());
+  }
+  try {
+    shared_buffer_pool_ = std::make_unique<detail::ProvidedBufferPool>(
+        std::move(*pool));
+  } catch (...) {
+    return std::unexpected(base::MakeErrno(ENOMEM));
+  }
+  return shared_buffer_pool_.get();
 }
 
 void LUringLoop::Loop(std::stop_token token) noexcept {

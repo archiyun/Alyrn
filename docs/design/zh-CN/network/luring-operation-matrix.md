@@ -120,7 +120,7 @@ IORING_RECV_MULTISHOT 可用
 | multishot accept | 1 个 SQE，多个 CQE；`F_MORE` 表示 operation 继续 | 每个 CQE 产生一个新 stream；无 `F_MORE` 的 CQE 结束 source | source 在终止 CQE、错误或取消收敛后释放；不能每个 CQE 都销毁 operation | readiness 后反复 `accept()`，每次成功 emit 一个 stream | luring 原生实现；不支持时降级 single-shot |
 | multishot recv | 1 个 SQE，多个 CQE；每个 CQE 可能产生数据事件 | 每个 CQE 是一个 `RecvEvent`，最终 CQE/错误结束 source | source 持续存活；每个数据 buffer 必须有独立 `BufferLease` | readiness + 非阻塞 `recv()` 循环 emit 事件 | `LUringRecvSource` 使用 provided buffer ring；`ReactorRecvSource` 使用 readiness drain + 固定 buffer pool；两者共享 `AsyncRecvSource` |
 | legacy provided buffers | 注册 buffer group，CQE 返回 buffer id | 结果包含字节数和 buffer id | consumer 归还 buffer 前不得重新提供 | buffer pool 由应用选择和管理 | 仅有 opcode 探测；无公共 API |
-| provided buffer ring | 注册 buffer ring，CQE flags 返回 buffer id；可带 `F_BUF_MORE` | 结果包含字节数、buffer id 和继续消费信息；增量 CQE 使用同一 id 的连续 offset | `BufferLease` 归还 ring 后才能复用；`F_BUF_MORE` 结束前以及所有 segment lease 释放前都不能归还 | 应用层 buffer pool；没有内核选择 id 的等价语义 | `LUringRecvSource` 已实现 `IOU_PBUF_RING_INC`、`F_BUF_MORE` offset 跟踪和 lease 延迟归还 |
+| provided buffer ring | 注册 buffer ring，CQE flags 返回 buffer id；可带 `F_BUF_MORE` | 结果包含字节数、buffer id 和继续消费信息；增量 CQE 使用同一 id 的连续 offset | `BufferLease` 归还 ring 后才能复用；`F_BUF_MORE` 结束前以及所有 segment lease 释放前都不能归还 | 应用层 buffer pool；没有内核选择 id 的等价语义 | `LUringRecvSource` 的非增量路径共享每 worker 一个 ring；逐 source ring 已删除；`F_BUF_MORE` source 路径待后续单独实现 |
 | send zerocopy | 一个 send CQE，可能另有 `F_NOTIF` notification CQE | send CQE 确定发送结果；notification 确定 memory 可复用 | send result 和 buffer release 是两个边界；notification 之前不能释放 buffer | 普通 write 完成后释放发送 buffer；没有同等的两阶段 zc 协议 | `LUringStream::SendZeroCopy` 已实现；等待 primary result 与 terminal notification |
 | registered fixed buffer | 使用注册 buffer 的固定索引/切片 | 结果仍可为 single-shot 或其它 family | registration 的 owner 必须覆盖所有 in-flight operation | 普通用户 buffer；没有固定 buffer 的相同语义 | capability 枚举存在，未实现 |
 | fixed file | SQE 使用注册 file slot | 结果语义由具体 operation 决定 | file table slot 释放前不能有引用 | 普通 fd 所有权 | capability 枚举存在，未实现 |
@@ -192,7 +192,6 @@ auto result = co_await stream.SendZeroCopy(buffer);
 | `kMultishotRecv` | 仅探测 `IORING_OP_RECV` | opcode 存在不代表 `IORING_RECV_MULTISHOT` 可用 |
 | `kProvidedBuffer` | 探测 `PROVIDE_BUFFERS` / `REMOVE_BUFFERS` | 只代表 legacy 机制 |
 | `kProvidedBufferRing` | 实际创建并注销 1-entry buffer ring | 只代表 ring 注册能力，不代表具体 recv source 已经启动 |
-| `kProvidedBufferRingIncremental` | 使用 `IOU_PBUF_RING_INC` 创建并注销 1-entry buffer ring | 代表 ring 支持增量 buffer 消费；具体 source 仍需启用 `incremental_buffer_consumption` |
 | `kSendZeroCopy` | 探测 `IORING_OP_SEND_ZC` | `LUringStream::SendZeroCopy` 已实现 primary/notification split-release 生命周期 |
 | `kLinkedOps` | 当前无条件启用 | timed read 有内部使用，但通用 linked-operation API 尚未定义 |
 | `kRegisteredBuffer` | capability 枚举存在 | 当前 probe 和公共接口都未完成 |
@@ -274,8 +273,9 @@ operation destruction
   native multishot 三条 AcceptSource 路径的有界业务语义 refinement；
 - `formal/recv_source_lease.tla`：provided-buffer multishot recv 的 queue、BufferLease、
   cancel 和 Stop 收敛不变量。
-- `formal/recv_source_incremental_lease.tla`：`F_BUF_MORE` 对同一 provided buffer 的连续
-  segment、offset 不重叠、最后 segment 与全部 lease 释放后才归还 buffer ring。
+- `formal/recv_source_incremental_lease.tla`：未来 `F_BUF_MORE` source 路径的设计模型；它描述
+  同一 provided buffer 的连续 segment、offset 不重叠、最后 segment 与全部 lease 释放后才归还
+  buffer ring。
 
 这些 TLA+ 模型主要检查协议级 safety，不是 C++ 实现的自动内存安全证明。
 `async_stream_core.tla` 另外在显式的 backend/owner-loop 公平假设下检查 pending settlement、
@@ -345,8 +345,9 @@ Incremental RecvSource (`F_BUF_MORE`):
 3. 修正 capability 探测，拆分 multishot、legacy provided buffers 与 provided buffer ring；
    再为实际提交增加运行期 path selector。（基础 buffer-ring probe 已完成。）
 4. 单独实现 `AcceptSource`，保留现有一次性 `Accept()`。（已完成。）
-5. 实现带 `BufferLease` 的 multishot recv。（luring provided-buffer ring 与 Reactor readiness
-   source、lease safety 模型已完成；luring 路径已支持 `F_BUF_MORE` 增量消费和连续 offset。）
+5. 实现带 `BufferLease` 的 multishot recv。（luring 使用每 worker 共享的 provided-buffer ring，
+   Reactor 使用 readiness source；当前两条路径都完成了 lease safety，`F_BUF_MORE` 增量消费仍是
+   后续独立设计。）
 6. 实现 send zerocopy 的结果与 notification 双阶段生命周期。（`LUringStream::SendZeroCopy`
    已完成；Reactor 保持普通 send 语义，不伪造 zerocopy notification。）
 
