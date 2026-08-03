@@ -41,7 +41,7 @@ class ProvidedBufferPool;
 // their coroutine work through the Scheduler interface.
 //
 // Notify function:
-//   target.PostMessage() -> source.Notify() -> target.HandleCqe() ->
+//   target.PostMessage() -> source.SubmitMsgRing() -> target.HandleCqe() ->
 //   target.ScheduleCompletion(work)
 class LUringLoop final : public coro::Scheduler {
 public:
@@ -73,11 +73,6 @@ public:
   bool IsInLoopThread() const noexcept {
     return thread_id_ == base::tid();
   }
-  [[nodiscard]]
-  int ThreadId() const noexcept {
-    return thread_id_;
-  }
-
   [[nodiscard]]
   int RingFd() const noexcept {
     return ring_.Fd();
@@ -160,12 +155,6 @@ public:
   [[nodiscard]]
   bool RetryMessageNotification() noexcept { return mailbox_.RetryNotification(); }
 
-  template <class F>
-  std::size_t DrainMessages(F&& handler) {
-    assert(IsInLoopThread());
-    return mailbox_.Drain(std::forward<F>(handler));
-  }
-
   // Prepares one io_uring operation.
   //
   // State transition:
@@ -224,17 +213,6 @@ public:
     return SubmitOp(op, [this, target_ring_fd, type](io_uring_sqe* sqe) noexcept {
       ring_.PrepMsgRing(sqe, target_ring_fd, type, kMsgRingNotificationUserData);
     });
-  }
-
-  [[nodiscard]]
-  base::Result<void> Notify(LUringLoop& target, LUringOp* op) noexcept {
-    assert(IsInLoopThread());
-
-    if (op == nullptr) {
-      return std::unexpected(base::MakeErrno(EINVAL));
-    }
-
-    return SubmitMsgRing(op, target.RingFd(), 0);
   }
 
   [[nodiscard]]

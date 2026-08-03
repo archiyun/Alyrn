@@ -558,23 +558,13 @@ void LUringLoop::Wake() noexcept {
 void LUringLoop::HandleMailbox() noexcept {
   assert(IsInLoopThread());
 
-  DrainMessages([this](const LUringMessage& message) noexcept {
-    switch (message.type) {
-      case LUringMessage::Type::kResume: {
-        auto* work = reinterpret_cast<coro::Work*>(static_cast<std::uintptr_t>(message.data));
-        if (work == nullptr) {
-          assert(false && "mailbox resume message contains a null work pointer");
-          return;
-        }
-        ScheduleCompletion(work);
-        return;
-      }
-      case LUringMessage::Type::kFunction:
-        assert(false && "mailbox function messages are not implemented");
-        return;
+  mailbox_.Drain([this](const LUringMessage& message) noexcept {
+    auto* work = reinterpret_cast<coro::Work*>(static_cast<std::uintptr_t>(message.data));
+    if (work == nullptr) {
+      assert(false && "mailbox message contains a null work pointer");
+      return;
     }
-
-    assert(false && "unknown mailbox message type");
+    ScheduleCompletion(work);
   });
 }
 

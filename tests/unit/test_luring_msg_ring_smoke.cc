@@ -55,7 +55,6 @@ bool CheckMailboxNotificationState() {
   coropact::luring::LUringMailbox mailbox;
 
   const coropact::luring::LUringMessage message{
-      .type = coropact::luring::LUringMessage::Type::kResume,
       .data = 1,
   };
 
@@ -155,7 +154,6 @@ bool CheckMsgRingMailboxSchedule() {
     }
 
     const auto push_result = target->PostMessage({
-        .type = coropact::luring::LUringMessage::Type::kResume,
         .data = static_cast<std::uint64_t>(
             reinterpret_cast<std::uintptr_t>(&work)),
     });
