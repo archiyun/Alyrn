@@ -47,10 +47,32 @@ bool TestReusablePhysicalSlot() {
                 "reset must preserve dispatch kind");
 }
 
+bool TestCompletionModels() {
+  using coropact::luring::CompletionModelFor;
+  using coropact::luring::LUringCompletionModel;
+  using coropact::luring::LUringOpKind;
+
+  bool ok = true;
+  ok &= Expect(CompletionModelFor(LUringOpKind::kReadComplete) ==
+                   LUringCompletionModel::kSingleShot,
+               "ordinary I/O must use the single-shot completion model");
+  ok &= Expect(CompletionModelFor(LUringOpKind::kAcceptSourceComplete) ==
+                   LUringCompletionModel::kEventStream,
+               "accept sources must use the event-stream completion model");
+  ok &= Expect(CompletionModelFor(LUringOpKind::kRecvSourceComplete) ==
+                   LUringCompletionModel::kEventStream,
+               "recv sources must use the event-stream completion model");
+  ok &= Expect(CompletionModelFor(LUringOpKind::kSendZeroCopyComplete) ==
+                   LUringCompletionModel::kSplitRelease,
+               "zero-copy send must use the split-release completion model");
+  return ok;
+}
+
 }  // namespace
 
 int main() {
-  const bool ok = TestSingleResultCompletion() && TestReusablePhysicalSlot();
+  const bool ok = TestSingleResultCompletion() && TestReusablePhysicalSlot() &&
+                  TestCompletionModels();
   if (ok) {
     std::puts("luring op smoke: PASS");
     return 0;

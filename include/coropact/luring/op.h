@@ -38,12 +38,23 @@ struct CompletionEvent {
   }
 };
 
-// A split-release operation can have separate kernel and user-visible
-// completion boundaries.  The loop owns inflight accounting, while the
-// operation family decides when its continuation may resume.
+// Completion handling is selected by the operation family, not by the loop's
+// CQE path.  An event stream may produce multiple CQEs for one physical
+// request; a split-release operation has separate kernel and logical release
+// boundaries; all other operations are one-shot.
+enum class LUringCompletionModel : std::uint8_t {
+  kSingleShot,
+  kEventStream,
+  kSplitRelease,
+};
+
+// A completion handler returns physical bookkeeping decisions to the loop.
+// It deliberately does not describe source state, queue draining, or buffer
+// lease ownership; those remain in the operation-family adapter.
 struct CompletionDisposition {
-  bool kernel_operation_done{false};
-  bool logical_completion_ready{false};
+  bool kernel_request_terminal{false};
+  bool decrement_inflight{false};
+  bool resume_continuation{false};
 };
 
 enum class LUringOpKind : std::uint8_t {
@@ -80,6 +91,40 @@ enum class LUringOpKind : std::uint8_t {
   // Count/placeholder sentinel. It is not a submit-able operation kind.
   kCount,
 };
+
+[[nodiscard]]
+constexpr LUringCompletionModel CompletionModelFor(LUringOpKind kind) noexcept {
+  switch (kind) {
+    case LUringOpKind::kAcceptSourceComplete:
+    case LUringOpKind::kRecvSourceComplete:
+      return LUringCompletionModel::kEventStream;
+    case LUringOpKind::kSendZeroCopyComplete:
+      return LUringCompletionModel::kSplitRelease;
+    case LUringOpKind::kNone:
+    case LUringOpKind::kAcceptComplete:
+    case LUringOpKind::kAcceptSourceCancelComplete:
+    case LUringOpKind::kRecvSourceCancelComplete:
+    case LUringOpKind::kListenerCloseComplete:
+    case LUringOpKind::kReadComplete:
+    case LUringOpKind::kReadIntoComplete:
+    case LUringOpKind::kTimedReadComplete:
+    case LUringOpKind::kTimedReadTimeoutComplete:
+    case LUringOpKind::kWriteComplete:
+    case LUringOpKind::kWritePartsComplete:
+    case LUringOpKind::kStreamCloseComplete:
+    case LUringOpKind::kTimerDriverComplete:
+    case LUringOpKind::kTimerControlComplete:
+    case LUringOpKind::kConnect:
+    case LUringOpKind::kMsgRing:
+    case LUringOpKind::kWake:
+    case LUringOpKind::kCancelAll:
+    case LUringOpKind::kNop:
+    case LUringOpKind::kCount:
+      return LUringCompletionModel::kSingleShot;
+  }
+
+  return LUringCompletionModel::kSingleShot;
+}
 
 // A CQE result is always an integer. Kernel errors are represented by a
 // negative cqe_res and converted to base::Error by the awaiter, so storing a

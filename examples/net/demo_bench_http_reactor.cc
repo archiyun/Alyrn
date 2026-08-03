@@ -7,14 +7,10 @@
 #include <csignal>
 #include <cstddef>
 #include <iostream>
-#include <memory>
-#include <memory_resource>
 #include <span>
 #include <thread>
-#include <vector>
 
 #include "bench_http_common.h"
-#include "coropact/coro/frame_allocator.h"
 #include "coropact/io.h"
 #include "coropact/net/endpoint.h"
 #include "coropact/reactor/reactor_worker_group.h"
@@ -55,7 +51,9 @@ int main() {
 
   const auto port = static_cast<std::uint16_t>(coropact_bench::EnvInt("PORT", 19090));
   const std::size_t workers = coropact_bench::EnvSize("REACTOR_WORKERS", 4);
-  const bool frame_pool = coropact_bench::EnvInt("FRAME_POOL", 0) != 0;
+  const bool level_triggered = coropact_bench::EnvString("REACTOR_TRIGGER_MODE") == "lt";
+  const auto trigger_mode = level_triggered ? coropact::reactor::TriggerMode::kLevelTriggered
+                                            : coropact::reactor::TriggerMode::kEdgeTriggered;
   if (port == 0 || workers == 0) return 2;
 
   auto address = coropact::net::Endpoint::Loopback(port);
@@ -63,20 +61,8 @@ int main() {
   options.worker_num = workers;
   options.worker_options.listener_options.reuse_addr = true;
   options.worker_options.listener_options.reuse_port = true;
-
-  // Keep one unsynchronized frame resource per worker.  The pools must be
-  // created before the server and therefore outlive all worker threads.
-  std::vector<std::unique_ptr<coropact::coro::CoroFramePoolResource>> frame_pools;
-  if (frame_pool) {
-    frame_pools.reserve(workers);
-    for (std::size_t i = 0; i < workers; ++i) {
-      frame_pools.push_back(std::make_unique<coropact::coro::CoroFramePoolResource>());
-    }
-    options.frame_resource_factory =
-        [&frame_pools](std::size_t index) -> std::pmr::memory_resource* {
-      return index < frame_pools.size() ? frame_pools[index].get() : nullptr;
-    };
-  }
+  options.worker_options.listener_options.stream_options.trigger_mode = trigger_mode;
+  options.worker_options.connector_options.stream_options.trigger_mode = trigger_mode;
 
   coropact::reactor::ReactorWorkerGroup server(
       address, std::move(options), {},
@@ -90,7 +76,7 @@ int main() {
   }
 
   std::cout << "HttpReactorBench bind=127.0.0.1 port=" << port << " workers=" << workers
-            << " frame_pool=" << (frame_pool ? "on" : "off")
+            << " trigger_mode=" << (level_triggered ? "lt" : "et")
             << " response_body=" << coropact_bench::kResponseBodySize << '\n';
   while (!g_stop.load(std::memory_order_relaxed)) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));

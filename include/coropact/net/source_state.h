@@ -11,6 +11,8 @@ namespace coropact::net::detail {
 enum class SourceState : std::uint8_t {
   kIdle,
   kActive,
+  kPausing,
+  kPaused,
   kStopping,
   kDraining,
   kTerminal,

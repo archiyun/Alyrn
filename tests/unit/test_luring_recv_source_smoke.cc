@@ -5,6 +5,7 @@
 #include <unistd.h>
 
 #include <cerrno>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -21,6 +22,7 @@
 #include "coropact/luring/loop.h"
 #include "coropact/luring/options.h"
 #include "coropact/luring/recv_source.h"
+#include "coropact/luring/timer.h"
 
 namespace {
 
@@ -95,6 +97,18 @@ struct IncrementalObservation {
   std::uint32_t second_buffer{0};
   std::uintptr_t first_address{0};
   std::uintptr_t second_address{0};
+  std::optional<Error> error;
+};
+
+struct PauseResumeObservation {
+  bool first_received{false};
+  bool low_water_consumed{false};
+  bool resumed_received{false};
+  bool stopped{false};
+  bool done{false};
+  std::string first;
+  std::string queued;
+  std::string resumed;
   std::optional<Error> error;
 };
 
@@ -198,6 +212,70 @@ DetachedTask StopSource(
     observation->error = stopped.error();
   } else {
     observation->succeeded = true;
+  }
+  observation->done = true;
+}
+
+DetachedTask ReceivePauseThenResume(
+    LUringRecvSource* source,
+    LUringLoop* loop,
+    PauseResumeObservation* observation) {
+  const auto take = [observation](LUringRecvSource::Result received,
+                                  std::string* target) -> bool {
+    if (!received.has_value()) {
+      observation->error = received.error();
+      return false;
+    }
+    if (!received->has_value()) {
+      observation->error = coropact::base::MakeErrno(ECONNRESET);
+      return false;
+    }
+    const auto bytes = (*received)->buffer.Bytes();
+    target->assign(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+    received->reset();
+    return true;
+  };
+
+  auto first = co_await source->Next();
+  if (!take(std::move(first), &observation->first)) {
+    observation->done = true;
+    co_return;
+  }
+  observation->first_received = true;
+
+  // The second datagram is sent while this coroutine sleeps. With a one
+  // element event queue it reaches the high-water mark and pauses the native
+  // multishot request before this coroutine consumes it.
+  auto delay = co_await coropact::luring::SleepFor(
+      *loop, std::chrono::milliseconds(50));
+  if (!delay.has_value()) {
+    observation->error = delay.error();
+    observation->done = true;
+    co_return;
+  }
+
+  auto queued = co_await source->Next();
+  if (!take(std::move(queued), &observation->queued)) {
+    observation->done = true;
+    co_return;
+  }
+  observation->low_water_consumed = true;
+
+  // This cannot be fulfilled by the queue above: the test sends its payload
+  // only after low_water_consumed is visible. A result proves that the
+  // cancel target reached terminal and a fresh multishot recv was submitted.
+  auto resumed = co_await source->Next();
+  if (!take(std::move(resumed), &observation->resumed)) {
+    observation->done = true;
+    co_return;
+  }
+  observation->resumed_received = true;
+
+  auto stopped = co_await source->Stop();
+  if (!stopped.has_value()) {
+    observation->error = stopped.error();
+  } else {
+    observation->stopped = true;
   }
   observation->done = true;
 }
@@ -376,6 +454,111 @@ bool CheckEof() {
     return false;
   }
   return observation.eof && observation.stopped;
+}
+
+bool CheckQueuePauseThenRearm() {
+  LUringLoop loop;
+  switch (InitLoop(loop)) {
+    case LoopInitStatus::kReady:
+      break;
+    case LoopInitStatus::kSkip:
+      return true;
+    case LoopInitStatus::kFail:
+      return false;
+  }
+
+  auto pair = MakeSocketPair();
+  if (!pair.has_value()) {
+    std::cout << "FAIL: socketpair failed: " << pair.error().message() << '\n';
+    return false;
+  }
+  auto receiver = std::move(pair->first);
+  auto sender = std::move(pair->second);
+
+  LUringRecvSourceOptions options;
+  options.source.pending_depth = 1;
+  options.source.event_capacity = 1;
+  options.source.buffer_capacity = 2;
+  options.buffer_size = 256;
+
+  auto source_result = LUringRecvSource::Create(&loop, receiver.Get(), options);
+  if (!source_result.has_value()) {
+    if (IsEnvironmentSkip(source_result.error())) {
+      std::cout << "SKIP: provided buffer ring unavailable: "
+                << source_result.error().message() << '\n';
+      return true;
+    }
+    std::cout << "FAIL: RecvSource creation failed: "
+              << source_result.error().message() << '\n';
+    return false;
+  }
+  auto source = std::move(*source_result);
+
+  PauseResumeObservation observation;
+  coropact::coro::SpawnDetach(
+      loop, ReceivePauseThenResume(&source, &loop, &observation));
+  loop.RunReady();
+
+  const auto send_payload = [&sender](std::string_view payload) -> bool {
+    const auto sent = ::send(
+        sender.Get(), payload.data(), payload.size(), MSG_NOSIGNAL);
+    if (sent == static_cast<ssize_t>(payload.size())) {
+      return true;
+    }
+    std::cout << "FAIL: send failed: "
+              << coropact::base::CurrentErrno().message() << '\n';
+    return false;
+  };
+
+  constexpr std::string_view kFirst = "first";
+  constexpr std::string_view kQueued = "queued";
+  constexpr std::string_view kResumed = "resumed";
+  if (!send_payload(kFirst)) {
+    return false;
+  }
+  if (!PumpUntil(loop, [&] {
+        return observation.error.has_value() || observation.first_received;
+      })) {
+    return false;
+  }
+  if (observation.error.has_value()) {
+    std::cout << "FAIL: first recv failed: "
+              << observation.error->message() << '\n';
+    return false;
+  }
+
+  if (!send_payload(kQueued)) {
+    return false;
+  }
+  if (!PumpUntil(loop, [&] {
+        return observation.error.has_value() || observation.low_water_consumed;
+      }, 128)) {
+    return false;
+  }
+  if (observation.error.has_value()) {
+    std::cout << "FAIL: recv source did not drain to low-water: "
+              << observation.error->message() << '\n';
+    return false;
+  }
+
+  if (!send_payload(kResumed)) {
+    return false;
+  }
+  if (!PumpUntil(loop, [&] {
+        return observation.error.has_value() || observation.done;
+      }, 128)) {
+    return false;
+  }
+  if (observation.error.has_value()) {
+    std::cout << "FAIL: recv source did not re-arm after low-water: "
+              << observation.error->message() << '\n';
+    return false;
+  }
+
+  return observation.first == kFirst && observation.queued == kQueued &&
+         observation.resumed == kResumed && observation.first_received &&
+         observation.low_water_consumed && observation.resumed_received &&
+         observation.stopped;
 }
 
 bool CheckIncrementalBufferConsumption() {
@@ -566,6 +749,9 @@ int main() {
     return 1;
   }
   if (!CheckEof()) {
+    return 1;
+  }
+  if (!CheckQueuePauseThenRearm()) {
     return 1;
   }
   if (!CheckIncrementalBufferConsumption()) {

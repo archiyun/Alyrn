@@ -27,6 +27,8 @@
 
 namespace coropact::luring {
 
+using namespace net::detail;
+
 namespace {
 
 using AcceptResult = base::Result<LUringStream>;
@@ -191,7 +193,7 @@ private:
 };
 
 LUringAcceptSource::LUringAcceptSource(LUringListener* listener,
-                                       net::detail::AcceptSourceStateMachine state) noexcept
+                                       AcceptSourceStateMachine state) noexcept
     : listener_(listener), state_(std::move(state)), accept_op_(this), cancel_op_(this) {}
 
 LUringAcceptSource::~LUringAcceptSource() {
@@ -312,7 +314,7 @@ base::Result<void> LUringAcceptSource::StartOperation() noexcept {
   if (!submitted.has_value()) {
     --listener_->pending_accepts_;
     auto completed = state_.CompleteMultishotEvent(
-        net::detail::EventDisposition::kNone, net::detail::MultishotRequestDisposition::kTerminal);
+        EventDisposition::kNone, MultishotRequestDisposition::kTerminal);
     assert(completed.has_value());
     return std::unexpected(submitted.error());
   }
@@ -322,7 +324,7 @@ base::Result<void> LUringAcceptSource::StartOperation() noexcept {
 }
 
 base::Result<void> LUringAcceptSource::Start() noexcept {
-  if (state_.State() != net::detail::AcceptSourceState::kIdle) {
+  if (state_.State() != AcceptSourceState::kIdle) {
     return std::unexpected(base::MakeErrno(EALREADY));
   }
 
@@ -371,10 +373,7 @@ base::Result<void> LUringAcceptSource::StartCancel() noexcept {
 }
 
 base::Result<bool> LUringAcceptSource::BeginStop() noexcept {
-  auto stopped = state_.RequestStop();
-  if (!stopped.has_value()) {
-    return std::unexpected(stopped.error());
-  }
+  state_.RequestStop();
 
   if (!accept_submitted_ && !cancel_submitted_) {
     return false;
@@ -395,8 +394,7 @@ void LUringAcceptSource::RequestBackendStop(std::optional<base::Error> error) no
     terminal_error_ = *error;
   }
 
-  auto stopped = state_.RequestStop();
-  assert(stopped.has_value());
+  state_.RequestStop();
 
   if (accept_submitted_ && !cancel_submitted_) {
     auto cancelled = StartCancel();
@@ -406,9 +404,22 @@ void LUringAcceptSource::RequestBackendStop(std::optional<base::Error> error) no
   }
 }
 
+void LUringAcceptSource::RequestBackendPause() noexcept {
+  auto paused = state_.RequestPause();
+  assert(paused.has_value());
+
+  if (accept_submitted_ && !cancel_submitted_) {
+    auto cancelled = StartCancel();
+    if (!cancelled.has_value()) {
+      RequestBackendStop(cancelled.error());
+    }
+  }
+}
+
 void LUringAcceptSource::EnsureSubmission() noexcept {
   if (listener_ == nullptr || listener_->closed_ ||
-      state_.State() != net::detail::AcceptSourceState::kActive || accept_submitted_) {
+      state_.State() != AcceptSourceState::kActive || accept_submitted_ ||
+      cancel_submitted_) {
     return;
   }
 
@@ -419,7 +430,19 @@ void LUringAcceptSource::EnsureSubmission() noexcept {
   }
 }
 
-void LUringAcceptSource::OnCompletion(CompletionEvent event) noexcept {
+void LUringAcceptSource::MaybeResume() noexcept {
+  if (terminal_error_.has_value() || listener_ == nullptr || listener_->closed_ ||
+      cancel_submitted_) {
+    return;
+  }
+
+  if (state_.TryResume()) {
+    EnsureSubmission();
+  }
+}
+
+// Translates an io_uring CQE into a logical source transition.
+CompletionDisposition LUringAcceptSource::OnCompletion(CompletionEvent event) noexcept {
   const bool request_still_active = event.More();
   const int cqe_res = event.result;
 
@@ -434,7 +457,7 @@ void LUringAcceptSource::OnCompletion(CompletionEvent event) noexcept {
   if (cqe_res >= 0) {
     if (state_.QueuedEvents() >= state_.Options().event_capacity) {
       ::close(cqe_res);
-      RequestBackendStop(base::MakeErrno(ENOBUFS));
+      RequestBackendPause();
     } else {
       auto stream = MakeStream(cqe_res);
       if (!stream.has_value()) {
@@ -450,9 +473,11 @@ void LUringAcceptSource::OnCompletion(CompletionEvent event) noexcept {
     }
   } else if (!request_still_active) {
     const auto state = state_.State();
-    const bool stopping = state == net::detail::AcceptSourceState::kStopping ||
-                          state == net::detail::AcceptSourceState::kDraining ||
-                          state == net::detail::AcceptSourceState::kTerminal;
+    const bool stopping = state == AcceptSourceState::kStopping ||
+                          state == AcceptSourceState::kPausing ||
+                          state == AcceptSourceState::kPaused ||
+                          state == AcceptSourceState::kDraining ||
+                          state == AcceptSourceState::kTerminal;
 
     if (!stopping && multishot_enabled_ && IsMultishotUnsupported(cqe_res)) {
       // The opcode probe only proves that ACCEPT exists; it cannot prove that
@@ -466,10 +491,9 @@ void LUringAcceptSource::OnCompletion(CompletionEvent event) noexcept {
   }
 
   auto recorded = state_.CompleteMultishotEvent(
-      produced_event ? net::detail::EventDisposition::kProduced
-                     : net::detail::EventDisposition::kNone,
-      request_still_active ? net::detail::MultishotRequestDisposition::kMore
-                           : net::detail::MultishotRequestDisposition::kTerminal);
+      produced_event ? EventDisposition::kProduced : EventDisposition::kNone,
+      request_still_active ? MultishotRequestDisposition::kMore
+                           : MultishotRequestDisposition::kTerminal);
   if (!recorded.has_value()) {
     RequestBackendStop(recorded.error());
   }
@@ -478,23 +502,30 @@ void LUringAcceptSource::OnCompletion(CompletionEvent event) noexcept {
     accept_op_.BeginNextRequest();
   }
 
-  if (request_still_active && state_.State() == net::detail::AcceptSourceState::kActive &&
+  if (state_.State() == AcceptSourceState::kActive &&
       state_.QueuedEvents() >= state_.Options().event_capacity) {
-    RequestBackendStop(base::MakeErrno(ENOBUFS));
+    RequestBackendPause();
   }
 
-  if (!request_still_active && state_.State() == net::detail::AcceptSourceState::kActive &&
+  if (!request_still_active && state_.State() == AcceptSourceState::kActive &&
       !terminal_error_.has_value()) {
     EnsureSubmission();
   }
 
   DeliverNextIfReady();
+  MaybeResume();
 
   if (!request_still_active) {
     listener_->NotifyCloseProgress();
   }
 
   CompleteStopIfReady();
+
+  return CompletionDisposition{
+      .kernel_request_terminal = !request_still_active,
+      .decrement_inflight = !request_still_active,
+      .resume_continuation = false,
+  };
 }
 
 void LUringAcceptSource::OnCancelComplete(int cqe_res) noexcept {
@@ -504,12 +535,12 @@ void LUringAcceptSource::OnCancelComplete(int cqe_res) noexcept {
     terminal_error_ = base::MakeNegErrno(cqe_res);
   }
 
+  MaybeResume();
   CompleteStopIfReady();
 }
 
 void LUringAcceptSource::OnListenerClosed() noexcept {
-  auto stopped = state_.RequestStop();
-  assert(stopped.has_value());
+  state_.RequestStop();
   DeliverNextIfReady();
   CompleteStopIfReady();
 }
@@ -523,11 +554,15 @@ bool LUringAcceptSource::TryTakeNext(Result& result) noexcept {
     assert(consumed);
 
     result = Result(std::in_place, std::move(event));
-    EnsureSubmission();
+    if (state_.State() == AcceptSourceState::kPaused) {
+      MaybeResume();
+    } else {
+      EnsureSubmission();
+    }
     return true;
   }
 
-  if (state_.State() == net::detail::AcceptSourceState::kTerminal) {
+  if (state_.State() == AcceptSourceState::kTerminal) {
     if (terminal_error_.has_value()) {
       result = std::unexpected(*terminal_error_);
     } else {
@@ -569,7 +604,7 @@ void LUringAcceptSource::CompleteStopIfReady() noexcept {
 }
 
 void LUringAcceptSource::ReleaseListenerReservation() noexcept {
-  if (listener_ != nullptr && state_.State() == net::detail::AcceptSourceState::kTerminal &&
+  if (listener_ != nullptr && state_.State() == AcceptSourceState::kTerminal &&
       listener_->accept_source_ == this) {
     listener_->accept_source_ = nullptr;
   }
@@ -586,7 +621,7 @@ coro::Task<LUringAcceptSource::Result> LUringAcceptSource::Next() {
     co_return std::unexpected(base::MakeErrno(EBUSY));
   }
 
-  if (state_.State() == net::detail::AcceptSourceState::kIdle) {
+  if (state_.State() == AcceptSourceState::kIdle) {
     auto started = Start();
     if (!started.has_value()) {
       co_return std::unexpected(started.error());
@@ -613,10 +648,7 @@ coro::Task<base::Result<void>> LUringAcceptSource::Stop() {
   }
 
   if (!accept_submitted_ && !cancel_submitted_) {
-    auto stopped = state_.RequestStop();
-    if (!stopped.has_value()) {
-      co_return std::unexpected(stopped.error());
-    }
+    state_.RequestStop();
     DeliverNextIfReady();
     ReleaseListenerReservation();
     co_return base::Result<void>{};
@@ -809,9 +841,9 @@ void DispatchListenerCloseComplete(LUringOp* op) noexcept {
   LUringListener::CloseAwaiter::OnCancelComplete(op);
 }
 
-void DispatchAcceptSourceComplete(LUringOp* op, CompletionEvent event) noexcept {
+CompletionDisposition DispatchAcceptSourceComplete(LUringOp* op, CompletionEvent event) noexcept {
   auto* operation = static_cast<LUringAcceptSource::AcceptOperation*>(op);
-  operation->Source()->OnCompletion(event);
+  return operation->Source()->OnCompletion(event);
 }
 
 void DispatchAcceptSourceCancelComplete(LUringOp* op) noexcept {
@@ -827,11 +859,10 @@ void DispatchAcceptSourceCancelComplete(LUringOp* op) noexcept {
 }  // namespace detail
 
 base::Result<LUringListener> LUringListener::Create(LUringLoop* loop,
-                                                     const net::Endpoint& listen_addr,
-                                                     LUringListenOptions options) noexcept {
+                                                    const net::Endpoint& listen_addr,
+                                                    LUringListenOptions options) noexcept {
   COROPACT_CHECK(loop != nullptr, "LUringListener requires an owner loop");
-  COROPACT_CHECK(loop->IsInLoopThread(),
-                 "LUringListener created from wrong LUringLoop thread");
+  COROPACT_CHECK(loop->IsInLoopThread(), "LUringListener created from wrong LUringLoop thread");
 
   return LUringListener(loop, COROPACT_TRY(CreatedListenFd(listen_addr, options)),
                         options.zero_copy_writes, options.zero_copy_diagnostics);
@@ -844,8 +875,7 @@ LUringListener::LUringListener(LUringLoop* loop, int fd, bool zero_copy_writes,
       zero_copy_writes_(zero_copy_writes),
       zero_copy_diagnostics_(zero_copy_diagnostics) {
   COROPACT_CHECK(loop_ != nullptr, "LUringListener requires an owner loop");
-  COROPACT_CHECK(loop_->IsInLoopThread(),
-                 "LUringListener created from wrong LUringLoop thread");
+  COROPACT_CHECK(loop_->IsInLoopThread(), "LUringListener created from wrong LUringLoop thread");
   COROPACT_CHECK(fd_ >= 0, "LUringListener requires a valid file descriptor");
 }
 
@@ -917,7 +947,7 @@ base::Result<LUringAcceptSource> LUringListener::AcceptSource(
     return std::unexpected(base::MakeErrno(EBUSY));
   }
 
-  auto state = COROPACT_TRY(net::detail::AcceptSourceStateMachine::Create(options));
+  auto state = COROPACT_TRY(AcceptSourceStateMachine::Create(options));
   return LUringAcceptSource(this, std::move(state));
 }
 

@@ -33,7 +33,8 @@ coropact::luring    io_uring / SQE / CQE
   -> Reactor 或 io_uring
 ```
 
-公共概念位于 `coropact::io`。`coropact::net` 提供共享的地址、socket 和网络工具，
+公共 facade 位于 `coropact::io`；其 canonical concept 定义位于不依赖具体后端的
+`coropact::backend`。`coropact::net` 提供共享的地址、socket 和网络工具，
 `coropact::reactor` 承载 epoll/EventLoop 实现。
 
 本文的核心边界是：
@@ -77,7 +78,59 @@ coropact::io::AsyncStream
 `AsyncStream` 是四个方法的语义组合，不是某个具体类的基类，也不要求虚函数。当前
 `ReactorStream` 和 `LUringStream` 都满足它。
 
-### 2.2 CoreListener
+### 2.2 TimedStream extension
+
+timeout 不是 `AsyncStream` 的隐含开关。它把一次 read 解释为 read 与 timer/cancel 的
+composite operation，因此使用独立 concept：
+
+```cpp
+ReadSomeFor(std::span<std::byte> buffer, std::chrono::milliseconds timeout)
+    -> 可 await，await_resume() 为 base::Result<std::size_t>
+
+coropact::io::AsyncTimedReadStream
+coropact::io::AsyncTimedStream
+```
+
+`AsyncTimedStream` 表示完整的 `AsyncStream` 加上 timed read。当前 `ReactorStream` 与
+`LUringStream` 都满足它；只满足 `AsyncStream` 的 adapter 不承诺 `ReadSomeFor`。
+`CapabilitySet::TimedStream()` 是选择和验证此 extension 的 profile，不能替代上述编译期
+interface。
+
+### 2.3 Buffer ownership extension
+
+`ReadSome(std::span<std::byte>)` 是核心的 borrowed-buffer 路径：调用者拥有 storage，
+并且必须在 `await_resume()` 前保持对象存活、地址稳定，不能释放、扩容、移动或并发访问
+同一段内存。这个约束包括 close 和 cancel 路径。
+
+对 borrowed-buffer read，用户可观察完成不能早于后端放弃该地址：
+
+```text
+backend no longer accesses storage
+  -> logical result becomes observable
+  -> await_resume()
+```
+
+`AsyncOwnedReadStream` 是独立的可选 extension，不属于 `AsyncStream` 的最小接口：
+
+```cpp
+ReadInto(net::Buffer buffer, std::size_t reserve)
+    -> 可 await，await_resume() 为 net::ReadIntoOutcome
+```
+
+它按值接收 move-only `net::Buffer`，awaiter 在整个 pending interval 内持有该 owner，并在
+所有终态路径返回：
+
+```cpp
+struct net::ReadIntoOutcome {
+  base::Result<std::size_t> result;
+  net::Buffer buffer;
+};
+```
+
+因此提交失败、关闭和取消也不会吞掉调用者转交的 buffer。`BufferLease` 则属于
+`AsyncRecvSource`：它代表后端/池提供的存储及其归还协议，不能替代普通 `net::Buffer`。
+
+### 2.3 CoreListener
 
 listener 的最小接口是：
 
@@ -97,7 +150,7 @@ Close()
 `Connect()` 不属于 `AsyncStream` 或 `AsyncListener`。它是建立 outbound stream 的另一项
 能力，由应用层需要的 connector concept 单独约束。
 
-### 2.3 Awaitable 的使用规则
+### 2.4 Awaitable 的使用规则
 
 `ReadSome` 和 `WriteSome` 的返回值必须是可 await 对象，并产生约定的
 `base::Result`。后端可以返回惰性的 `coro::Task<T>`，也可以返回直接承载操作状态的
@@ -126,41 +179,61 @@ I/O 方法本身不抛出业务异常。结果通过 `coropact::base::Result<T>`
 
 ## 3. 六元组状态机
 
-把一个后端解释的协程 I/O 运行时写成：
+本文使用的是**由后端、profile 和策略参数化**的六元组，而不是把这些固定解释条件误写成
+运行时可变状态：
 
 ```text
-M = (S, s0, E, Σ, π, δ)
+M(B, P, π) = (X, x0, E_obs, δ_B, Inv, Live)
 ```
 
-### 3.1 状态空间 S
+```text
+B : 解释器（Reactor 或 luring），在实例生命周期内固定。
+P : 已绑定且验证过的 active capability profile，在启动期固定。
+π : 调度/批处理策略，在实例生命周期内固定或只按显式策略转换。
+```
 
-状态空间由以下部分组成：
+`H(trace)` 不是状态变量；它是从一次执行 trace 推导出的 happens-before 偏序。证明时需要
+验证 `Submit(op) -> Complete(op) -> Resume(owner(op))` 等边存在，而不需要在每个状态复制一份
+偏序图。
+
+### 3.1 状态空间 X
 
 ```text
-S = (C, R, O, Q, B, P, H)
+X = (C, R, O, Q, L)
 ```
 
 其中：
 
 ```text
-C : 协程状态集合
-    Running | Suspended | Ready | Done
+C : CoroutineId -> {Running, Waiting(opId), Ready, Done}
 
-R : 资源状态集合
-    Open | Closing | Closed
+R : ResourceId -> {Open, Closing, Closed}
 
-O : 未完成操作集合
-    Created | Submitted | Completing | Completed
+O : OpId -> OperationRecord
+    OperationRecord = {
+      family,              // SingleResult | Composite | EventSource | SplitRelease
+      owner_coroutine,
+      resource,
+      scheduler_affinity,
+      phase,
+      physical_requests,
+      logical_result_or_events
+    }
 
-Q : ready queue、completion queue 和后端内部队列
-B : 当前解释器，例如 Reactor 或 luring
-P : 启动期固定的 active capability profile
-H : 协程层的 happens-before 偏序
+Q : 后端 refinement 的队列投影。
+    抽象层只关心“已投递但未 Resume”的逻辑 continuation；Reactor 的 ready list、
+    epoll ready set 与 luring 的 SQ/CQ 不要求具有相同数据结构。
+
+L : OpId -> LifetimeRecord。
+    记录 awaiter、coroutine frame、fd、borrowed/owned buffer、BufferLease 与
+    physical request 在哪个阶段仍被后端持有，以及何时获得 release authorization。
 ```
 
-`s0` 表示资源已创建、没有 pending operation、协程尚未等待该资源操作的初始状态。
+`x0` 表示资源已创建、没有 pending operation、协程尚未等待该资源操作的初始状态。
+`OpId` 是逻辑归属的最小单位：一个 CQE、readiness、timer 或 cancel 只能改变其对应记录，
+不能仅凭“当前有一个 read awaiter”恢复任意协程。
 
-### 3.2 事件集合 E
+### 3.2 可观察事件 E_obs
 
 语义事件分为两层：
 
@@ -208,21 +281,19 @@ io_uring 也可能在准备阶段立即拒绝操作。此时没有真实挂起�
 `Schedule(ResumeWork)`；只有发生实际挂起时，恢复才需要经过后端的 ready queue 或等价
 调度路径。
 
-### 3.3 固定机制 Σ
+### 3.3 转移 δ_B、策略 π 与不变量
 
-`Σ` 是所有后端都必须满足的语义机制：
+`δ_B` 是后端对物理事件的解释；它必须保持以下语义机制（也就是 `Inv` 的基础）：
 
 ```text
 σ_submit   : 一次提交尝试创建唯一 operation 归属。
-σ_complete : 一个 single-shot operation 最多 Complete 一次。
-σ_resume   : 协程只能由自己的 operation 结果恢复。
-σ_cancel   : 取消不能静默丢弃，必须收敛为完成结果。
+σ_complete : 一个 single-result operation 最多 Complete 一次。
+σ_resume   : 协程只能由自己的 operation 结果或 source 的 Next() 结果恢复。
+σ_cancel   : 取消必须产生该 operation family 定义的收敛状态，不能静默丢弃。
 σ_close    : 资源关闭后不能产生新的成功 I/O。
 σ_lifetime : backend 仍可能访问的对象必须保持存活。
 σ_profile  : active profile 中的能力必须有真实语义解释。
 ```
-
-### 3.4 策略 π 和状态转移 δ
 
 `π` 负责选择调度和实现策略，例如：
 
@@ -233,7 +304,7 @@ io_uring 也可能在准备阶段立即拒绝操作。此时没有真实挂起�
 π_resume      : completion 到 coroutine resume 的投递策略
 ```
 
-`δ` 执行状态转移。后端可以有不同的 `δ_B`，但必须在 `Σ` 和不变量约束下解释同一组
+后端可以有不同的 `δ_B`，但必须在上述机制和不变量约束下解释同一组
 核心事件：
 
 ```text
@@ -245,7 +316,28 @@ io_uring 也可能在准备阶段立即拒绝操作。此时没有真实挂起�
 ```
 
 `π` 可以改变批量、调度顺序和延迟，但不能把一次完成变成两次恢复，也不能把一次
-single-shot 操作变成多次业务结果。
+single-result 操作变成多次业务结果。
+
+`Live` 单独描述最终性，而不是混入安全不变量：在公平的后端投递和 owner-loop 调度假设下，
+pending single-result operation 最终 settled、已 settled 的等待协程最终 Ready、`Closing`
+资源最终 `Closed`。`async_stream_core.tla` 已对这个最小模型检查这些性质；多 operation 与
+source refinement 继续分别检查自己的终态条件。
+
+### 3.4 按 operation family 解释取消
+
+取消不是所有 family 共用的“立刻得到 ECANCELED”：
+
+```text
+SingleResult : cancel 的物理收敛产生一次 terminal logical result。
+Composite   : 子 request 可先后完成；聚合结果只确定一次。
+EventSource : Stop/error 才使 logical source terminal。高水位 pause 取消当前 multishot
+              physical request 后可以进入 Paused，并在低水位 re-arm，不产生 source terminal。
+SplitRelease: logical result、continuation resume 与 buffer/resource release 可以由不同
+              physical completion 授权。
+```
+
+因此，`Cancel(op) -> Complete(op, ECANCELED)` 只适用于 single-result 的简化模型；它不能
+作为 `AcceptSource`、`RecvSource` 或 send zero-copy 的通用规则。
 
 ## 4. 核心不变量
 
@@ -330,9 +422,10 @@ read 和 write 可以同时 pending；同方向的两个 operation 不能同时 
 必须发生在对象所属的 loop 线程。
 ```
 
-`EventLoop::QueueInLoop` 的跨线程投递能力不等于 stream 本身线程安全。当前
-`LUringLoop::Schedule` 也要求调用者位于 loop 线程。跨 ring 投递需要单独的消息机制；
-`eventfd` 和 `msg_ring` 都不属于当前 CoreStream 契约。
+`EventLoop::RunOnOwner` 和 `Schedule` 都要求调用者位于所属 loop
+线程；它们不提供跨线程投递能力。当前 `LUringLoop::Schedule` 也要求调用者位于 loop
+线程。跨 loop 投递需要单独的 mailbox/message 机制；`eventfd` 和 `msg_ring` 都不属于
+当前 CoreStream 契约。
 
 ### I8：能力 profile 固定
 
@@ -546,8 +639,7 @@ coropact::coro::Task<void> Good(coropact::io::AsyncStream auto& stream) {
 
 `ReactorStream` 和 `stream_algorithms.h` 还提供 `coropact::io::Buffer` 重载。这是 buffer
 管理层的扩展，不改变 CoreStream 的 span 契约。公开的 `io::Buffer` 是
-`net::SegmentedBuffer` 的零成本 alias：实现留在后端之下，调用者无需暴露或依赖内部
-`net` spelling：
+`net::Buffer` 的零成本 alias：实现留在后端之下，调用者应使用 `io` spelling：
 
 ```text
 PrepareWrite / ReadableIov 返回的内存必须覆盖 pending operation；
@@ -569,13 +661,13 @@ segment lease 释放后才把 buffer 归还 ring。registered fixed buffer 仍�
 保持有效。`Close()` 只能结束后端访问；它不能让调用方提前释放仍被 pending Task 引用的
 协程 frame 或 buffer。
 
-## 8. Timeout 语义和当前迁移状态
+## 8. Timeout 语义
 
 timeout 的目标业务语义是：
 
 ```cpp
 ReadSomeFor(std::span<std::byte> buffer, std::chrono::milliseconds timeout)
-    -> coro::Task<base::Result<std::size_t>>
+    -> 可 await，await_resume() 为 base::Result<std::size_t>
 ```
 
 结果应为：
@@ -590,28 +682,28 @@ ReadSomeFor(std::span<std::byte> buffer, std::chrono::milliseconds timeout)
 实现可以使用 Reactor 的 TimerQueue，或 io_uring 的 linked timeout/cancel，但业务不应
 观察这些内部机制。
 
-当前代码状态必须单独说明：
+它由 `AsyncTimedReadStream` / `AsyncTimedStream` 明确表达。当前代码状态为：
 
 ```text
 ReactorStream 已提供 ReadSomeFor；
 LUringStream 也已提供 ReadSomeFor；
-AsyncStream concept 尚未包含 ReadSomeFor；
-io::CapabilitySet 中的 kTimeout 已被标为 core，但 TimedStream/TimedNetwork
-尚未成为两种后端都可直接使用的公共业务契约。
+两者满足 io::AsyncTimedStream；
+kTimeout 只在 TimedStream/TimedNetwork profile 中选择这一已存在的 extension，
+不扩张 AsyncStream 的最小 interface。
 ```
 
-因此，目前可以直接在具体的 `ReactorStream` 或 `LUringStream` 上调用 `ReadSomeFor`，
-但不能仅凭 `AsyncStream` 约束要求该方法存在：
+因此，通用算法必须按需要约束正确的 concept：
 
 ```text
-gateway 的 timeout fallback 只能在具体 stream 提供该方法时启用；
-公共 TimedStream/TimedNetwork 尚未成为统一的 compile-time concept；
-不能仅凭 kTimeout 通过 capability bind 就改变已有 C++ concept 的接口；
-ProbeCapabilities 报告 luring native capability 不等于 coropact TimedStream 已实现。
+AsyncStream       不要求 ReadSomeFor；
+AsyncTimedStream  才要求 ReadSomeFor；
+profile bind      验证选择的 backend 已实现 timed extension；
+native probe      仍不等于 CoroPact 已经提供可观察 timed 语义。
 ```
 
-这是当前设计的迁移缺口，不是允许后端静默降级的理由。最终应把 timeout 作为明确的公共
-能力，或者把它从 active profile 中移除，不能保持“bit 已满足、接口未满足”的状态。
+超时由后端作为 composite operation 实现：Reactor 使用 TimerQueue，luring 使用 linked
+timeout/cancel；业务不观察这些内部机制。profile 不满足时应在 bind 阶段拒绝，而不是让
+`AsyncStream` 调用在运行时静默降级。
 
 ## 9. Capability 分层
 
@@ -629,7 +721,7 @@ kClose
 kCancelByClose
 kAccept       // CoreNetwork
 kConnect      // CoreNetwork / Connector
-kTimeout      // 目标 CoreTimedStream，当前仍在迁移
+kTimeout      // TimedStream / TimedNetwork 的 AsyncTimedStream extension
 ```
 
 ### B 类：实现标签
@@ -697,8 +789,8 @@ TryRead/TryWrite
   -> Resume
 ```
 
-TimerQueue、Channel、eventfd 和 remote-ready queue 都是 Reactor 内部机制。它们不能泄漏到
-CoreStream 的业务接口。
+TimerQueue、Channel 和 owner-local ready/work queue 都是 Reactor 内部机制。它们不能泄漏
+到 CoreStream 的业务接口。
 
 ### luring
 
@@ -773,7 +865,11 @@ EOF、本地取消、连接失败、上游失败和超时。
 9. buffer 在 Complete 前被修改或释放时不属于合法用法；
 10. listener 的 pending accept 可被 Close 收敛；
 11. Reactor 和 luring 对同一测试场景的核心结果投影一致；
-12. timeout 只有在对应 concept、profile 和后端实现同时存在时才测试为核心能力。
+12. timeout 在 AsyncTimedStream、对应 profile 与后端实现同时存在时，验证 read/timeout
+    竞争只产生一个逻辑结果和一次恢复；
+13. EventSource 的 high-water pause 只终止当前 physical request，不把 logical source
+    误报为 terminal；
+14. SplitRelease 的业务结果、恢复和 buffer/resource release 按各自授权边界发生。
 ```
 
 测试应覆盖成功、EOF、ECANCELED、EBADF、EPIPE、资源关闭竞争和 loop 归属，而不是只
@@ -801,7 +897,7 @@ per-ring upstream keep-alive pool
 这套抽象的最小可替换单元不是 epoll API，也不是 io_uring API，而是：
 
 ```text
-一个 single-shot operation
+一个 single-result operation
   -> 一个语义提交
   -> 至多一个完成
   -> 至多一次正确协程恢复
@@ -810,7 +906,8 @@ per-ring upstream keep-alive pool
 并且：
 
 ```text
-buffer 活到 Complete；
+operation identity 把 completion、continuation 与 resource owner 绑定；
+buffer 活到后端 release authorization，而 borrowed buffer 至少活到 Complete；
 Close 支配后续提交，但不抹掉已经完成的结果；
 EOF、取消、closed error 和传输错误保持可区分；
 read/write/accept 的槽位归属唯一；
@@ -828,4 +925,8 @@ Reactor 和 luring 是不同解释器；
 不支持的能力在 bind 阶段拒绝，而不是运行时静默妥协。
 ```
 
-六元组状态机的完整形式化讨论见：[Lamport 视角下的运行时语义](lamport-hot-swap-runtime.md)。
+六元组状态机及其 refinement 讨论见：[Lamport 视角下的运行时语义](lamport-hot-swap-runtime.md)。
+`async_stream_core.tla` 验证最小 single-result 模型；`async_stream_multiop.tla` 验证
+read/write 并行归属；`accept_source_refinement.tla` 与 `recv_source_lease.tla` 验证
+EventSource 的 pause/re-arm 与 lease 生命周期。它们是同一抽象模型的不同有界检查，
+不是对无限执行空间的全自动定理证明。

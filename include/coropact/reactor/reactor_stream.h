@@ -4,6 +4,7 @@
 
 #include <sys/uio.h>
 
+#include <algorithm>
 #include <chrono>
 #include <coroutine>
 #include <cstddef>
@@ -13,8 +14,9 @@
 
 #include "coropact/base/error.h"
 #include "coropact/coro/task.h"
+#include "coropact/net/buffer.h"
 #include "coropact/net/endpoint.h"
-#include "coropact/net/segmented_buffer.h"
+#include "coropact/net/read_into.h"
 #include "coropact/net/socket.h"
 #include "coropact/operation/detail/completion_gate.h"
 #include "coropact/operation/detail/scheduler_continuation.h"
@@ -26,11 +28,19 @@
 
 namespace coropact::reactor {
 
+struct ReactorStreamOptions {
+  // ET keeps successful-read interest armed. LT keeps it armed for an
+  // immediate re-arm and lazily removes it if readiness arrives without a
+  // pending read. Both modes still probe the non-blocking socket first.
+  TriggerMode trigger_mode{TriggerMode::kEdgeTriggered};
+};
+
 class ReactorStream {
 public:
   COROPACT_DELETE_COPY(ReactorStream);
 
-  ReactorStream(EventLoop* loop, int fd, net::Endpoint peer = net::Endpoint(0));
+  ReactorStream(EventLoop* loop, int fd, net::Endpoint peer = net::Endpoint(0),
+                ReactorStreamOptions options = {});
   ~ReactorStream();
 
   // Moves are loop-affine: the source must be used from its owning loop
@@ -39,26 +49,30 @@ public:
   ReactorStream& operator=(ReactorStream&& other) noexcept;
 
   class ReadSomeAwaiter;
+  class ReadIntoAwaiter;
   class WriteSomeAwaiter;
+  class WriteAllAwaiter;
   class BufferReadAwaiter;
   class BufferWriteAwaiter;
 
   [[nodiscard]]
   ReadSomeAwaiter ReadSome(std::span<std::byte> buffer) noexcept;
   [[nodiscard]]
-  BufferReadAwaiter ReadSome(net::SegmentedBuffer& buffer,
-                             std::size_t reserve = 4096) noexcept;
+  ReadIntoAwaiter ReadInto(net::Buffer buffer, std::size_t reserve = 4096) noexcept;
+  [[nodiscard]]
+  BufferReadAwaiter ReadSome(net::Buffer& buffer, std::size_t reserve = 4096) noexcept;
   [[nodiscard]]
   ReadSomeAwaiter ReadSomeFor(std::span<std::byte> buffer,
                               std::chrono::milliseconds timeout) noexcept;
   [[nodiscard]]
-  BufferReadAwaiter ReadSomeFor(net::SegmentedBuffer& buffer,
-                                std::chrono::milliseconds timeout,
+  BufferReadAwaiter ReadSomeFor(net::Buffer& buffer, std::chrono::milliseconds timeout,
                                 std::size_t reserve = 4096) noexcept;
   [[nodiscard]]
   WriteSomeAwaiter WriteSome(std::span<const std::byte> buffer) noexcept;
   [[nodiscard]]
-  BufferWriteAwaiter WriteSome(net::SegmentedBuffer& buffer) noexcept;
+  WriteAllAwaiter WriteAll(std::span<const std::byte> buffer) noexcept;
+  [[nodiscard]]
+  BufferWriteAwaiter WriteSome(net::Buffer& buffer) noexcept;
   coro::Task<base::Result<void>> Shutdown();
   coro::Task<base::Result<void>> Close();
 
@@ -111,11 +125,13 @@ private:
   enum class PendingReadKind : std::uint8_t {
     kNone,
     kReadSome,
+    kReadInto,
     kBufferRead,
   };
   enum class PendingWriteKind : std::uint8_t {
     kNone,
     kWriteSome,
+    kWriteAll,
     kBufferWrite,
   };
 
@@ -187,12 +203,44 @@ private:
   detail::ReactorIoResultState result_;
 };
 
+// Keeps the write loop in the caller's coroutine frame. ReactorStream uses
+// this native extension so a buffered response does not allocate a nested
+// Task frame just to repeat WriteSome until the span is drained.
+class ReactorStream::WriteAllAwaiter final
+    : public detail::ReactorOperationHook<ReactorStream::WriteAllAwaiter> {
+public:
+  COROPACT_DELETE_COPY_MOVE(WriteAllAwaiter);
+
+  WriteAllAwaiter(ReactorStream& stream, std::span<const std::byte> buffer) noexcept
+      : stream_(&stream), buffer_(buffer) {}
+
+  [[nodiscard]]
+  bool await_ready() const noexcept {
+    return false;
+  }
+  [[nodiscard]]
+  bool await_suspend(std::coroutine_handle<> continuation) noexcept;
+  base::Result<void> await_resume() noexcept;
+
+private:
+  friend class detail::ReactorOperationHook<WriteAllAwaiter>;
+
+  void CompleteImpl(base::Result<std::size_t> result) noexcept;
+  void OnReadyImpl() noexcept;
+
+  ReactorStream* stream_;
+  std::span<const std::byte> buffer_;
+  operation::detail::SchedulerContinuation continuation_;
+  operation::detail::CompletionGate completion_gate_;
+  detail::ReactorIoResultState result_;
+};
+
 class ReactorStream::BufferReadAwaiter
     : public detail::ReactorOperationHook<ReactorStream::BufferReadAwaiter> {
 public:
   COROPACT_DELETE_COPY_MOVE(BufferReadAwaiter);
 
-  BufferReadAwaiter(ReactorStream& stream, net::SegmentedBuffer& buffer, std::size_t reserve,
+  BufferReadAwaiter(ReactorStream& stream, net::Buffer& buffer, std::size_t reserve,
                     std::chrono::milliseconds timeout = std::chrono::milliseconds{0}) noexcept;
 
   [[nodiscard]]
@@ -212,7 +260,7 @@ private:
   void FinishAttempt(base::Result<std::size_t> result) noexcept;
 
   ReactorStream* stream_;
-  net::SegmentedBuffer* buffer_;
+  net::Buffer* buffer_;
   std::size_t reserve_;
   std::chrono::milliseconds timeout_;
   std::vector<iovec> iovs_;
@@ -222,12 +270,48 @@ private:
   time::TimerId timer_;
 };
 
+// Owns the destination buffer while a read is pending. Unlike ReadSome(Buffer&),
+// this awaiter returns the Buffer on every terminal path, so callers cannot
+// invalidate its storage while the backend may still access it.
+class ReactorStream::ReadIntoAwaiter
+    : public detail::ReactorOperationHook<ReactorStream::ReadIntoAwaiter> {
+public:
+  COROPACT_DELETE_COPY_MOVE(ReadIntoAwaiter);
+
+  ReadIntoAwaiter(ReactorStream& stream, net::Buffer buffer, std::size_t reserve) noexcept;
+
+  [[nodiscard]]
+  bool await_ready() const noexcept {
+    return false;
+  }
+  [[nodiscard]]
+  bool await_suspend(std::coroutine_handle<> continuation) noexcept;
+  net::ReadIntoOutcome await_resume() noexcept;
+
+private:
+  friend class detail::ReactorOperationHook<ReadIntoAwaiter>;
+
+  void CompleteImpl(base::Result<std::size_t> result) noexcept;
+  void OnReadyImpl() noexcept;
+  bool PrepareReservation() noexcept;
+  void FinishAttempt(base::Result<std::size_t> result) noexcept;
+
+  ReactorStream* stream_;
+  net::Buffer buffer_;
+  std::size_t reserve_;
+  std::vector<iovec> iovs_;
+  operation::detail::SchedulerContinuation continuation_;
+  operation::detail::CompletionGate completion_gate_;
+  detail::ReactorIoResultState result_;
+  bool reservation_active_{false};
+};
+
 class ReactorStream::BufferWriteAwaiter
     : public detail::ReactorOperationHook<ReactorStream::BufferWriteAwaiter> {
 public:
   COROPACT_DELETE_COPY_MOVE(BufferWriteAwaiter);
 
-  BufferWriteAwaiter(ReactorStream& stream, net::SegmentedBuffer& buffer) noexcept;
+  BufferWriteAwaiter(ReactorStream& stream, net::Buffer& buffer) noexcept;
 
   [[nodiscard]]
   bool await_ready() const noexcept {
@@ -246,7 +330,7 @@ private:
   void FinishAttempt(base::Result<std::size_t> result) noexcept;
 
   ReactorStream* stream_;
-  net::SegmentedBuffer* buffer_;
+  net::Buffer* buffer_;
   std::vector<iovec> iovs_;
   operation::detail::SchedulerContinuation continuation_;
   operation::detail::CompletionGate completion_gate_;

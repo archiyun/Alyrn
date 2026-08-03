@@ -16,6 +16,11 @@ CONSTANT MaxCqes
 (* SplitRelease request 的业务结果与其资源释放由不同 CQE 决定。           *)
 (* async_operation_families.cfg 使用 MaxCqes = 4 做有界状态检查。          *)
 (* 该检查验证协议形状，不宣称对无界 CQE 序列完成形式证明。               *)
+(*                                                                         *)
+(* 此处的 MultiShot CancelComplete 描述 logical EventSource 的 terminal  *)
+(* cancellation。高水位 pause 取消一个 physical request 后再 re-arm、但   *)
+(* source 仍保持逻辑存活的情形，由 accept_source_refinement.tla 与       *)
+(* recv_source_lease.tla 单独建模。                                       *)
 (***************************************************************************)
 
 RequestKinds  == {"SingleShot", "MultiShot", "Composite", "SplitRelease"}

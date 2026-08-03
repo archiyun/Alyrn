@@ -15,6 +15,11 @@
 
 namespace coropact::reactor {
 
+struct ReactorConnectorOptions {
+  // Applies to every ReactorStream returned by Connect.
+  ReactorStreamOptions stream_options{};
+};
+
 class ReactorConnector {
 public:
   COROPACT_DELETE_COPY(ReactorConnector);
@@ -22,9 +27,10 @@ public:
   using Stream = ReactorStream;
 
   [[nodiscard]]
-  static base::Result<ReactorConnector> Create(EventLoop* loop) noexcept;
+  static base::Result<ReactorConnector> Create(
+      EventLoop* loop, ReactorConnectorOptions options = {}) noexcept;
 
-  explicit ReactorConnector(EventLoop* loop) noexcept;
+  explicit ReactorConnector(EventLoop* loop, ReactorConnectorOptions options = {}) noexcept;
 
   ReactorConnector(ReactorConnector&& other) noexcept;
   ReactorConnector& operator=(ReactorConnector&& other) noexcept;
@@ -37,6 +43,7 @@ private:
   void RequireOwnerLoop() const noexcept;
 
   EventLoop* loop_;
+  ReactorConnectorOptions options_;
 };
 
 }  // namespace coropact::reactor

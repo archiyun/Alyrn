@@ -173,11 +173,10 @@ bool TestReactorStreamMove() {
     coropact::reactor::EventLoop loop;
     coropact::reactor::ReactorStream source(&loop, source_pair[0]);
     coropact::reactor::ReactorStream moved(std::move(source));
-    auto& scheduler = loop;
 
-    coropact::coro::SpawnDetach(scheduler,
+    coropact::coro::SpawnDetach(loop,
                                 ReadOnce(&moved, &loop, &constructed_buffer, &constructed_result));
-    loop.QueueInLoop([peer_fd = source_pair[1]] { ::write(peer_fd, "c", 1); });
+    loop.RunAfter(0.0, [peer_fd = source_pair[1]] { ::write(peer_fd, "c", 1); });
     loop.RunAfter(0.2, [&] { loop.Quit(); });
     loop.Loop();
   }
@@ -198,11 +197,10 @@ bool TestReactorStreamMove() {
     coropact::reactor::ReactorStream source(&loop, target_pair[0]);
     coropact::reactor::ReactorStream target(&loop, source_pair[1]);
     target = std::move(source);
-    auto& scheduler = loop;
 
-    coropact::coro::SpawnDetach(scheduler,
+    coropact::coro::SpawnDetach(loop,
                                 ReadOnce(&target, &loop, &assigned_buffer, &assigned_result));
-    loop.QueueInLoop([peer_fd = target_pair[1]] { ::write(peer_fd, "a", 1); });
+    loop.RunAfter(0.0, [peer_fd = target_pair[1]] { ::write(peer_fd, "a", 1); });
     loop.RunAfter(0.2, [&] { loop.Quit(); });
     loop.Loop();
   }
@@ -246,9 +244,8 @@ bool TestReactorListenerMove() {
       return false;
     }
 
-    auto& scheduler = loop;
-    coropact::coro::SpawnDetach(scheduler, AcceptOnce(&moved, &loop, &accepted));
-    loop.QueueInLoop([&] { client_fd = ConnectNonBlocking(*moved_address); });
+    coropact::coro::SpawnDetach(loop, AcceptOnce(&moved, &loop, &accepted));
+    loop.RunAfter(0.0, [&] { client_fd = ConnectNonBlocking(*moved_address); });
     loop.RunAfter(0.2, [&] { loop.Quit(); });
     loop.Loop();
   }

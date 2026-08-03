@@ -39,6 +39,21 @@ public:
     SetCurrent(previous);
   }
 
+  // Runs an owner-local batch under one scheduler/frame-resource context.
+  // Work::Run() may enqueue more work on the scheduler, but those entries stay
+  // in the scheduler's queue and are intentionally handled by a later batch.
+  // This preserves the single-resume boundary while avoiding a TLS/resource
+  // scope transition for every item in a ready queue drain.
+  void RunBatch(WorkQueue& batch) noexcept {
+    Scheduler* previous = Current();
+    SetCurrent(this);
+    FrameAllocatorScope frame_scope{frame_resource_};
+    while (Work* work = batch.PopFront()) {
+      work->Run();
+    }
+    SetCurrent(previous);
+  }
+
   [[nodiscard]]
   std::pmr::memory_resource* FrameResource() const noexcept {
     return frame_resource_;

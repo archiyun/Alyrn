@@ -31,7 +31,8 @@ changing module boundaries.
 ## Ownership and thread affinity
 
 - An `EventLoop` and all of its Channels, fds, timers, and stream state belong
-  to one thread. Cross-thread Reactor work uses documented posting methods.
+  to one thread. Reactor callback, timer, and coroutine scheduling APIs are
+  owner-thread-only; cross-thread delivery is a separate mailbox concern.
 - An `LUringLoop` owns one ring and is bound to its creating worker thread.
   Ring submission, CQE dispatch, connection state, and timer mutation occur on
   that thread.

@@ -143,7 +143,8 @@ coropact::coro::DetachedTask Session(Stream stream, long long* active_sessions,
 }
 
 template <coropact::io::AsyncListener Listener>
-coropact::coro::DetachedTask AcceptLoop(Listener* listener, coropact::coro::Scheduler* scheduler,
+coropact::coro::DetachedTask AcceptLoop(Listener* listener,
+                                        coropact::reactor::EventLoop* scheduler,
                                         long long* active_sessions, long long* total_messages) {
   using Stream = typename Listener::Stream;
 
@@ -182,8 +183,8 @@ int main() {
   long long active_sessions = 0;
   long long total_messages = 0;
 
-  coropact::coro::SpawnDetach(loop,
-                              AcceptLoop(&listener, &loop, &active_sessions, &total_messages));
+  coropact::coro::SpawnDetach(
+      loop, AcceptLoop(&listener, &loop, &active_sessions, &total_messages));
 
   std::cout << "reactor coro echo listening on 127.0.0.1:" << port << '\n';
   std::cout << "try: nc 127.0.0.1 " << port << '\n';

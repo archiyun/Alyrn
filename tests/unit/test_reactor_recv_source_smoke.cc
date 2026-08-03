@@ -25,7 +25,6 @@ namespace {
 using coropact::base::Error;
 using coropact::coro::DetachedTask;
 using coropact::reactor::EventLoop;
-using coropact::reactor::EventLoop;
 using coropact::reactor::ReactorRecvSource;
 using coropact::reactor::ReactorRecvSourceOptions;
 
@@ -117,7 +116,7 @@ DetachedTask ReceiveTwo(
 
   // Write the second record after the first lease has been returned. This
   // keeps the two logical events distinct even on a stream socket.
-  loop->QueueInLoop([sender] {
+  loop->RunAfter(0.0, [sender] {
     constexpr std::string_view kSecond = "second";
     (void)::send(sender, kSecond.data(), kSecond.size(), MSG_NOSIGNAL);
   });
@@ -169,7 +168,6 @@ bool CheckImmediateReceive() {
   }
 
   EventLoop loop;
-  auto& scheduler = loop;
   auto source_result = ReactorRecvSource::Create(&loop, fds[0]);
   if (!Check(source_result.has_value(), "immediate source creation failed")) {
     ::close(fds[0]);
@@ -183,7 +181,7 @@ bool CheckImmediateReceive() {
   bool received_event = false;
   bool stop_succeeded = false;
   coropact::coro::SpawnDetach(
-      scheduler,
+      loop,
       ReceiveOne(&source, &loop, &result, &payload, &received_event,
                  &stop_succeeded));
   loop.Loop();
@@ -204,7 +202,6 @@ bool CheckPendingReceive() {
   }
 
   EventLoop loop;
-  auto& scheduler = loop;
   auto source_result = ReactorRecvSource::Create(&loop, fds[0]);
   if (!Check(source_result.has_value(), "pending source creation failed")) {
     ::close(fds[0]);
@@ -217,10 +214,10 @@ bool CheckPendingReceive() {
   bool received_event = false;
   bool stop_succeeded = false;
   coropact::coro::SpawnDetach(
-      scheduler,
+      loop,
       ReceivePending(&source, &loop, &result, &received_event,
                      &stop_succeeded));
-  loop.QueueInLoop([sender = fds[1]] {
+  loop.RunAfter(0.0, [sender = fds[1]] {
     constexpr std::string_view kPayload = "reactor-pending";
     (void)::send(sender, kPayload.data(), kPayload.size(), MSG_NOSIGNAL);
   });
@@ -243,7 +240,6 @@ bool CheckEof() {
   }
 
   EventLoop loop;
-  auto& scheduler = loop;
   auto source_result = ReactorRecvSource::Create(&loop, fds[0]);
   if (!Check(source_result.has_value(), "EOF source creation failed")) {
     ::close(fds[0]);
@@ -259,7 +255,7 @@ bool CheckEof() {
   bool received_event = false;
   bool stop_succeeded = false;
   coropact::coro::SpawnDetach(
-      scheduler,
+      loop,
       ReceiveOne(&source, &loop, &result, &payload, &received_event,
                  &stop_succeeded));
   loop.Loop();
@@ -279,7 +275,6 @@ bool CheckQueuedEvents() {
   }
 
   EventLoop loop;
-  auto& scheduler = loop;
   ReactorRecvSourceOptions options;
   options.source.event_capacity = 2;
   options.source.buffer_capacity = 2;
@@ -303,7 +298,7 @@ bool CheckQueuedEvents() {
   }
 
   coropact::coro::SpawnDetach(
-      scheduler, ReceiveTwo(&source, &loop, fds[1], &payloads, &stop_succeeded));
+      loop, ReceiveTwo(&source, &loop, fds[1], &payloads, &stop_succeeded));
   loop.Loop();
 
   ::close(fds[1]);
@@ -328,7 +323,6 @@ bool CheckStopWaitsForLease() {
   }
 
   EventLoop loop;
-  auto& scheduler = loop;
   auto source_result = ReactorRecvSource::Create(&loop, fds[0]);
   if (!Check(source_result.has_value(), "lease source creation failed")) {
     ::close(fds[0]);
@@ -341,7 +335,7 @@ bool CheckStopWaitsForLease() {
   bool stop_started = false;
   bool stop_succeeded = false;
   coropact::coro::SpawnDetach(
-      scheduler,
+      loop,
       HoldLeaseThenStop(&source, &loop, &held, &stop_started, &stop_succeeded));
   loop.RunAfter(0.001, [&held] { held.reset(); });
   loop.Loop();
@@ -360,7 +354,6 @@ bool CheckStopWakesPendingNext() {
   }
 
   EventLoop loop;
-  auto& scheduler = loop;
   auto source_result = ReactorRecvSource::Create(&loop, fds[0]);
   if (!Check(source_result.has_value(), "stop source creation failed")) {
     ::close(fds[0]);
@@ -371,9 +364,9 @@ bool CheckStopWakesPendingNext() {
 
   std::optional<ReactorRecvSource::Result> result;
   bool stop_succeeded = false;
-  coropact::coro::SpawnDetach(scheduler, WaitForEnd(&source, &loop, &result));
-  loop.QueueInLoop([&] {
-    coropact::coro::SpawnDetach(scheduler, StopOnly(&source, &stop_succeeded));
+  coropact::coro::SpawnDetach(loop, WaitForEnd(&source, &loop, &result));
+  loop.RunAfter(0.0, [&] {
+    coropact::coro::SpawnDetach(loop, StopOnly(&source, &stop_succeeded));
   });
   loop.Loop();
 

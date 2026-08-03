@@ -32,7 +32,7 @@ public:
   COROPACT_DELETE_COPY(Channel);
 
   using EventCallback = void (*)(void*) noexcept;
-  using ReadEventCallback = EventCallback;
+  using ReadEventCallback = void (*)(void*) noexcept;
 
   explicit Channel(EventLoop* loop, int fd);
   ~Channel() = default;

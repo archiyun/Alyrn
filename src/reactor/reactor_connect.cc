@@ -35,7 +35,9 @@ base::Result<int> ConnectError(int fd) noexcept {
 
 class ConnectAwaiter {
 public:
-  ConnectAwaiter(EventLoop* loop, net::Endpoint peer) noexcept : loop_(loop), peer_(peer) {}
+  ConnectAwaiter(EventLoop* loop, net::Endpoint peer,
+                 ReactorStreamOptions stream_options) noexcept
+      : loop_(loop), peer_(peer), stream_options_(stream_options) {}
 
   ~ConnectAwaiter() {
     if (fd_ >= 0) {
@@ -96,7 +98,7 @@ private:
 
   base::Result<ReactorStream> MakeStream() noexcept {
     DetachChannel();
-    ReactorStream stream(loop_, fd_, peer_);
+    ReactorStream stream(loop_, fd_, peer_, stream_options_);
     fd_ = -1;
     return stream;
   }
@@ -131,6 +133,7 @@ private:
 
   EventLoop* loop_;
   net::Endpoint peer_;
+  ReactorStreamOptions stream_options_;
   int fd_{-1};
   std::optional<Channel> channel_;
   operation::detail::SchedulerContinuation continuation_;
@@ -172,32 +175,35 @@ private:
 
 }  // namespace
 
-ReactorConnector::ReactorConnector(EventLoop* loop) noexcept : loop_(loop) {
+ReactorConnector::ReactorConnector(EventLoop* loop, ReactorConnectorOptions options) noexcept
+    : loop_(loop), options_(options) {
   COROPACT_CHECK(loop_ != nullptr, "ReactorConnector: loop must not be null");
   COROPACT_CHECK(loop_->IsInLoopThread(), "ReactorConnector created from wrong EventLoop thread");
 }
 
 [[nodiscard]]
-base::Result<ReactorConnector> ReactorConnector::Create(EventLoop* loop) noexcept {
+base::Result<ReactorConnector> ReactorConnector::Create(EventLoop* loop,
+                                                        ReactorConnectorOptions options) noexcept {
   if (loop == nullptr) {
     return std::unexpected(base::MakeErrno(EINVAL));
   }
-  return ReactorConnector(loop);
+  return ReactorConnector(loop, options);
 }
 
 ReactorConnector::ReactorConnector(ReactorConnector&& other) noexcept
-    : loop_(std::exchange(other.loop_, nullptr)) {}
+    : loop_(std::exchange(other.loop_, nullptr)), options_(other.options_) {}
 
 ReactorConnector& ReactorConnector::operator=(ReactorConnector&& other) noexcept {
   if (this != &other) {
     loop_ = std::exchange(other.loop_, nullptr);
+    options_ = other.options_;
   }
   return *this;
 }
 
 coro::Task<base::Result<ReactorStream>> ReactorConnector::Connect(const net::Endpoint& peer) {
   RequireOwnerLoop();
-  co_return co_await ConnectAwaiter(loop_, peer);
+  co_return co_await ConnectAwaiter(loop_, peer, options_.stream_options);
 }
 
 coro::Task<base::Result<ReactorStream>> ReactorConnector::Connect(std::string_view host,

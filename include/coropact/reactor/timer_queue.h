@@ -2,30 +2,94 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <atomic>
+#include <chrono>
 #include <functional>
+#include <utility>
 
 #include "coropact/ds/intrusive_hash_table.h"
+#include "coropact/ds/intrusive_rbtree.h"
 #include "coropact/memory/object_pool.h"
 #include "coropact/reactor/channel.h"
-#include "coropact/time/timer.h"
 #include "coropact/time/timer_id.h"
-#include "coropact/time/timer_tree.h"
-#include "coropact/time/timestamp.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::reactor {
 
 class EventLoop;
 
-inline constexpr auto kTimerSequenceOf = [](const time::Timer* timer) -> int64_t {
+namespace detail {
+
+class ReactorTimer final : public ds::RBTNode<ReactorTimer>, public ds::HashNode<ReactorTimer> {
+public:
+  using Clock = std::chrono::steady_clock;
+  using TimePoint = Clock::time_point;
+  using Duration = Clock::duration;
+  using TimerCallback = std::function<void()>;
+
+  ReactorTimer(TimerCallback callback, TimePoint expiration, Duration interval)
+      : timer_callback_(std::move(callback)),
+        expiration_(expiration),
+        interval_(interval),
+        repeat_(interval > Duration::zero()),
+        sequence_(next_sequence_.fetch_add(1, std::memory_order_relaxed)) {}
+
+  COROPACT_DELETE_COPY_MOVE(ReactorTimer);
+
+  void Run() const {
+    if (timer_callback_) {
+      timer_callback_();
+    }
+  }
+
+  [[nodiscard]]
+  TimePoint expiration() const {
+    return expiration_;
+  }
+  [[nodiscard]]
+  bool repeat() const {
+    return repeat_;
+  }
+  [[nodiscard]]
+  int64_t sequence() const {
+    return sequence_;
+  }
+
+  void Restart(TimePoint now) { expiration_ = now + interval_; }
+
+private:
+  TimerCallback timer_callback_;
+  TimePoint expiration_;
+  Duration interval_;
+  bool repeat_;
+  int64_t sequence_;
+
+  inline static std::atomic<int64_t> next_sequence_;
+};
+
+inline bool ReactorTimerLess(const ReactorTimer* lhs, const ReactorTimer* rhs) {
+  if (lhs->expiration() < rhs->expiration()) {
+    return true;
+  }
+  if (lhs->expiration() > rhs->expiration()) {
+    return false;
+  }
+  return lhs->sequence() < rhs->sequence();
+}
+
+inline constexpr auto kTimerSequenceOf = [](const ReactorTimer* timer) -> int64_t {
   return timer->sequence();
 };
-using ActiveTimerTable = ds::IntrusiveHashTable<time::Timer, kTimerSequenceOf>;
+using ActiveTimerTable = ds::IntrusiveHashTable<ReactorTimer, kTimerSequenceOf>;
+using TimerTree = ds::IntrusiveRBTree<ReactorTimer, ReactorTimerLess>;
+
+}  // namespace detail
 
 // TimerQueue manages timerfd-driven timer scheduling for one EventLoop.
 //
-// TimerQueue owns Timer objects. TimerTree only indexes them by expiration
-// time using intrusive red-black tree nodes embedded inside Timer.
+// TimerQueue owns ReactorTimer objects. TimerTree only indexes them by
+// expiration time using intrusive red-black tree nodes embedded inside each
+// timer.
 class TimerQueue {
 public:
   COROPACT_DELETE_COPY_MOVE(TimerQueue);
@@ -35,7 +99,10 @@ public:
   explicit TimerQueue(EventLoop* loop);
   ~TimerQueue();
 
-  time::TimerId AddTimer(TimerCallback callback, time::Timestamp when, double interval_sec);
+  using TimePoint = detail::ReactorTimer::TimePoint;
+  using Duration = detail::ReactorTimer::Duration;
+
+  time::TimerId AddTimer(TimerCallback callback, TimePoint when, Duration interval);
   void Cancel(time::TimerId id);
 
 private:
@@ -43,15 +110,15 @@ private:
 
   void HandleRead();
   static void DispatchRead(void* context) noexcept;
-  void ResetTimerfd(time::Timestamp expiration);
+  void ResetTimerfd(TimePoint expiration);
 
   EventLoop* loop_;
   int timerfd_;
   Channel timerfd_channel_;
-  time::TimerTree timers_;
-  memory::ObjectPool<time::Timer, kTimerQueueMax> timer_pool_;
-  ActiveTimerTable active_timers_;
-  time::Timer* processing_timer_{nullptr};
+  detail::TimerTree timers_;
+  memory::ObjectPool<detail::ReactorTimer, kTimerQueueMax> timer_pool_;
+  detail::ActiveTimerTable active_timers_;
+  detail::ReactorTimer* processing_timer_{nullptr};
   bool processing_timer_cancelled_{false};
 };
 

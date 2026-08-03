@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 #include <sys/socket.h>
+#include <sys/uio.h>
 #include <unistd.h>
 
 #include <array>
@@ -12,6 +13,7 @@
 #include <iostream>
 #include <optional>
 #include <span>
+#include <string>
 #include <string_view>
 #include <system_error>
 #include <utility>
@@ -20,12 +22,18 @@
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/spawn.h"
 #include "coropact/coro/task.h"
+#include "coropact/io/async_stream.h"
 #include "coropact/luring/loop.h"
 #include "coropact/luring/options.h"
 #include "coropact/luring/stream.h"
 #include "coropact/net/endpoint.h"
 
 namespace {
+
+using OwnedReadOutcome = coropact::net::ReadIntoOutcome;
+
+static_assert(coropact::io::AsyncOwnedReadStream<coropact::luring::LUringStream>);
+static_assert(coropact::io::AsyncTimedStream<coropact::luring::LUringStream>);
 
 class UniqueFd {
 public:
@@ -142,6 +150,20 @@ coropact::coro::DetachedTask ReadOnce(coropact::luring::LUringStream* stream,
   out->emplace(std::move(result));
 }
 
+coropact::coro::DetachedTask ReadIntoOnce(coropact::luring::LUringStream* stream,
+                                          coropact::luring::LUringLoop* loop,
+                                          coropact::net::Buffer buffer,
+                                          std::optional<OwnedReadOutcome>* out,
+                                          bool* resumed_with_scheduler,
+                                          int* resume_count = nullptr) {
+  OwnedReadOutcome outcome = co_await stream->ReadInto(std::move(buffer), 32);
+  if (resume_count != nullptr) {
+    ++*resume_count;
+  }
+  *resumed_with_scheduler = coropact::coro::Scheduler::Current() == loop;
+  out->emplace(std::move(outcome));
+}
+
 coropact::coro::DetachedTask ReadForOnce(coropact::luring::LUringStream* stream,
                                          coropact::luring::LUringLoop* loop,
                                          std::span<std::byte> buffer,
@@ -158,8 +180,7 @@ coropact::coro::DetachedTask WriteOnce(coropact::luring::LUringStream* stream,
                                        coropact::luring::LUringLoop* loop,
                                        std::span<const std::byte> buffer,
                                        std::optional<coropact::base::Result<std::size_t>>* out,
-                                       bool* resumed_with_scheduler,
-                                       int* resume_count = nullptr) {
+                                       bool* resumed_with_scheduler, int* resume_count = nullptr) {
   auto result = co_await stream->WriteSome(buffer);
   if (resume_count != nullptr) {
     ++*resume_count;
@@ -219,6 +240,57 @@ bool CheckReadSome() {
          Check(**result == kPayload.size(), "ReadSome returned wrong byte count") &&
          Check(actual == kPayload, "ReadSome payload mismatch") &&
          Check(resumed_with_scheduler, "read resumed without current scheduler");
+}
+
+bool CheckOwnedReadIntoReturnsBuffer() {
+  coropact::luring::LUringLoop loop;
+  switch (InitLoop(loop)) {
+    case LoopInitStatus::kReady:
+      break;
+    case LoopInitStatus::kSkip:
+      return true;
+    case LoopInitStatus::kFail:
+      return false;
+  }
+
+  UniqueFd local;
+  UniqueFd peer;
+  if (!CreateSocketPair(local, peer)) return false;
+
+  coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  constexpr std::string_view kPayload = "owned-read";
+  if (!WriteFd(peer.fd(), kPayload)) return false;
+
+  std::optional<OwnedReadOutcome> outcome;
+  bool resumed_with_scheduler = false;
+  coropact::coro::SpawnDetach(loop, ReadIntoOnce(&stream, &loop, coropact::net::Buffer(4), &outcome,
+                                                 &resumed_with_scheduler));
+  loop.RunReady();
+
+  auto completions = loop.WaitCompletions();
+  if (!completions.has_value()) {
+    std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+    return false;
+  }
+  loop.RunReady();
+
+  if (!Check(*completions >= 1, "owned read did not produce a completion") ||
+      !Check(outcome.has_value(), "owned read coroutine did not resume") ||
+      !Check(outcome->result.has_value(), "owned read returned an error") ||
+      !Check(*outcome->result == kPayload.size(), "owned read byte count mismatch") ||
+      !Check(resumed_with_scheduler, "owned read resumed without current scheduler")) {
+    return false;
+  }
+
+  std::string actual;
+  for (const iovec& iov : outcome->buffer.ReadableIov(8)) {
+    actual.append(static_cast<const char*>(iov.iov_base), iov.iov_len);
+  }
+  auto reusable = outcome->buffer.PrepareWrite(8, 1);
+  const bool reusable_after_resume = !reusable.empty();
+  outcome->buffer.AbortWrite();
+  return Check(actual == kPayload, "owned read payload mismatch") &&
+         Check(reusable_after_resume, "owned read returned a buffer with a live reservation");
 }
 
 bool CheckTimedReadSuccessResumesOnce() {
@@ -368,6 +440,77 @@ bool CheckReadSubmitFailureRollsBack() {
          Check(**retried_result == kPayload.size(), "retried read returned wrong byte count") &&
          Check(retried_resume_count == 1, "retried read resumed more than once") &&
          Check(retried_with_scheduler, "retried read resumed without current scheduler");
+}
+
+bool CheckOwnedReadSubmitFailureReturnsBuffer() {
+  coropact::luring::LUringLoop loop;
+  switch (InitLoop(loop)) {
+    case LoopInitStatus::kReady:
+      break;
+    case LoopInitStatus::kSkip:
+      return true;
+    case LoopInitStatus::kFail:
+      return false;
+  }
+
+  UniqueFd local;
+  UniqueFd peer;
+  if (!CreateSocketPair(local, peer)) return false;
+
+  coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  std::optional<OwnedReadOutcome> failed_outcome;
+  bool failed_with_scheduler = false;
+  int failed_resume_count = 0;
+
+  loop.FailNextSubmissionsForTesting(1, EIO);
+  coropact::coro::SpawnDetach(
+      loop, ReadIntoOnce(&stream, &loop, coropact::net::Buffer(8), &failed_outcome,
+                         &failed_with_scheduler, &failed_resume_count));
+  loop.RunReady();
+
+  if (!Check(failed_outcome.has_value(), "failed owned read coroutine did not finish") ||
+      !Check(!failed_outcome->result.has_value(), "failed owned read unexpectedly succeeded") ||
+      !Check(failed_outcome->result.error().value() == EIO,
+             "failed owned read returned wrong error") ||
+      !Check(failed_resume_count == 1, "failed owned read resumed more than once") ||
+      !Check(failed_with_scheduler, "failed owned read resumed without current scheduler")) {
+    return false;
+  }
+
+  auto reusable = failed_outcome->buffer.PrepareWrite(8, 1);
+  const bool buffer_released_after_failure = !reusable.empty();
+  failed_outcome->buffer.AbortWrite();
+  if (!Check(buffer_released_after_failure,
+             "failed owned read returned a buffer with a live reservation")) {
+    return false;
+  }
+
+  // Submission rollback must release pending_read_. A later owned read must
+  // submit instead of being rejected as EBUSY.
+  constexpr std::string_view kPayload = "retry";
+  if (!WriteFd(peer.fd(), kPayload)) return false;
+
+  std::optional<OwnedReadOutcome> retried_outcome;
+  bool retried_with_scheduler = false;
+  int retried_resume_count = 0;
+  coropact::coro::SpawnDetach(
+      loop, ReadIntoOnce(&stream, &loop, coropact::net::Buffer(8), &retried_outcome,
+                         &retried_with_scheduler, &retried_resume_count));
+  loop.RunReady();
+
+  auto completions = loop.WaitCompletions();
+  if (!completions.has_value()) {
+    std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+    return false;
+  }
+  loop.RunReady();
+
+  return Check(retried_outcome.has_value(), "retried owned read did not finish") &&
+         Check(retried_outcome->result.has_value(), "retried owned read returned an error") &&
+         Check(*retried_outcome->result == kPayload.size(),
+               "retried owned read returned wrong byte count") &&
+         Check(retried_resume_count == 1, "retried owned read resumed more than once") &&
+         Check(retried_with_scheduler, "retried owned read resumed without current scheduler");
 }
 
 bool CheckWriteSubmitFailureRollsBack() {
@@ -621,6 +764,61 @@ bool CheckCloseCancelsPendingRead() {
          Check(read_resumed_with_scheduler, "pending read resumed without current scheduler");
 }
 
+bool CheckCloseReturnsOwnedReadBuffer() {
+  coropact::luring::LUringLoop loop;
+  switch (InitLoop(loop)) {
+    case LoopInitStatus::kReady:
+      break;
+    case LoopInitStatus::kSkip:
+      return true;
+    case LoopInitStatus::kFail:
+      return false;
+  }
+
+  UniqueFd local;
+  UniqueFd peer;
+  if (!CreateSocketPair(local, peer)) return false;
+
+  coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  std::optional<OwnedReadOutcome> read_outcome;
+  bool resumed_with_scheduler = false;
+  int resume_count = 0;
+  coropact::coro::SpawnDetach(loop,
+                              ReadIntoOnce(&stream, &loop, coropact::net::Buffer(8), &read_outcome,
+                                           &resumed_with_scheduler, &resume_count));
+  loop.RunReady();
+
+  std::optional<coropact::base::Result<void>> close_result;
+  coropact::coro::SpawnDetach(loop, CloseOnce(&stream, &close_result));
+  loop.RunReady();
+
+  for (int i = 0; i < 4 && (!close_result.has_value() || !read_outcome.has_value()); ++i) {
+    auto completions = loop.WaitCompletions();
+    if (!completions.has_value()) {
+      std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+      return false;
+    }
+    loop.RunReady();
+  }
+
+  if (!Check(close_result.has_value(), "owned read close coroutine did not finish") ||
+      !Check(close_result->has_value(), "owned read close returned an error") ||
+      !Check(read_outcome.has_value(), "owned cancelled read did not resume") ||
+      !Check(!read_outcome->result.has_value(), "owned cancelled read unexpectedly succeeded") ||
+      !Check(read_outcome->result.error().value() == ECANCELED,
+             "owned cancelled read did not return ECANCELED") ||
+      !Check(resume_count == 1, "owned cancelled read resumed more than once") ||
+      !Check(resumed_with_scheduler, "owned cancelled read resumed without current scheduler")) {
+    return false;
+  }
+
+  auto reusable = read_outcome->buffer.PrepareWrite(8, 1);
+  const bool reusable_after_cancel = !reusable.empty();
+  read_outcome->buffer.AbortWrite();
+  return Check(reusable_after_cancel,
+               "owned cancelled read returned a buffer with a live reservation");
+}
+
 bool CheckReadCompletionCancelRaceResumesOnce() {
   coropact::luring::LUringLoop loop;
   switch (InitLoop(loop)) {
@@ -681,16 +879,19 @@ bool CheckReadCompletionCancelRaceResumesOnce() {
 
 int main() {
   if (!CheckReadSome()) return 1;
+  if (!CheckOwnedReadIntoReturnsBuffer()) return 1;
   if (!CheckTimedReadSuccessResumesOnce()) return 1;
   if (!CheckTimedReadTimeoutResumesOnce()) return 1;
 #if defined(COROPACT_ENABLE_TEST_HOOKS)
   if (!CheckReadSubmitFailureRollsBack()) return 1;
+  if (!CheckOwnedReadSubmitFailureReturnsBuffer()) return 1;
   if (!CheckWriteSubmitFailureRollsBack()) return 1;
   if (!CheckTimedReadTimeoutSubmitFailureResumesOnce()) return 1;
 #endif
   if (!CheckWriteSome()) return 1;
   if (!CheckCloseWithoutPending()) return 1;
   if (!CheckCloseCancelsPendingRead()) return 1;
+  if (!CheckCloseReturnsOwnedReadBuffer()) return 1;
   if (!CheckReadCompletionCancelRaceResumesOnce()) return 1;
 
   std::cout << "luring stream smoke: PASS\n";

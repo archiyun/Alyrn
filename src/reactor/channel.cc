@@ -79,9 +79,11 @@ void Channel::Remove() {
 
 void Channel::HandleEvent() {
   COROPACT_DCHECK(loop_->IsInLoopThread(), "Channel::HandleEvent called from wrong thread");
-  // kHupEvent without kReadEvent usually means the peer has closed the connection
-  // and there is no more readable data left in the socket buffer.
-  if (static_cast<bool>((revents_ & kHupEvent)) && !static_cast<bool>((revents_ & kReadEvent))) {
+  // Channel callbacks are non-owning. Owners must detach the Channel before
+  // destruction; keeping that lifetime rule explicit avoids a per-event
+  // shared-owner lock on the loop-affine Reactor path.
+  if (static_cast<bool>((revents_ & kHupEvent)) &&
+      !static_cast<bool>((revents_ & kReadEvent))) {
     if (close_callback_ != nullptr) {
       close_callback_(close_context_);
     }

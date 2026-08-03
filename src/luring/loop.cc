@@ -44,67 +44,71 @@ LUringOp* DecodeOp(io_uring_cqe* cqe) noexcept {
 
 namespace detail {
 
-void DispatchCompletion(LUringOp* op, CompletionEvent event) noexcept {
+CompletionDisposition DispatchCompletion(LUringOp* op, CompletionEvent event) noexcept {
   assert(op != nullptr);
 
   switch (op->DispatchKind()) {
     case LUringOpKind::kAcceptComplete:
       DispatchAcceptComplete(op);
-      return;
+      break;
     case LUringOpKind::kListenerCloseComplete:
       DispatchListenerCloseComplete(op);
-      return;
+      break;
     case LUringOpKind::kReadComplete:
       DispatchStreamReadComplete(op);
-      return;
+      break;
+    case LUringOpKind::kReadIntoComplete:
+      DispatchStreamReadIntoComplete(op);
+      break;
     case LUringOpKind::kTimedReadComplete:
       DispatchTimedReadComplete(op);
-      return;
+      break;
     case LUringOpKind::kTimedReadTimeoutComplete:
       DispatchTimedReadTimeoutComplete(op);
-      return;
+      break;
     case LUringOpKind::kWriteComplete:
       DispatchStreamWriteComplete(op);
-      return;
+      break;
     case LUringOpKind::kWritePartsComplete:
       DispatchStreamWritePartsComplete(op);
-      return;
+      break;
     case LUringOpKind::kStreamCloseComplete:
       DispatchStreamCloseComplete(op);
-      return;
+      break;
     case LUringOpKind::kTimerDriverComplete:
       DispatchTimerDriverComplete(op);
-      return;
+      break;
     case LUringOpKind::kTimerControlComplete:
       DispatchTimerControlComplete(op);
-      return;
+      break;
     case LUringOpKind::kAcceptSourceComplete:
-      DispatchAcceptSourceComplete(op, event);
-      return;
+      return DispatchAcceptSourceComplete(op, event);
     case LUringOpKind::kAcceptSourceCancelComplete:
       DispatchAcceptSourceCancelComplete(op);
-      return;
+      break;
     case LUringOpKind::kRecvSourceComplete:
-      DispatchRecvSourceComplete(op, event);
-      return;
+      return DispatchRecvSourceComplete(op, event);
     case LUringOpKind::kSendZeroCopyComplete:
-      DispatchSendZeroCopyComplete(op, event);
-      return;
+      return DispatchSendZeroCopyComplete(op, event);
     case LUringOpKind::kRecvSourceCancelComplete:
       DispatchRecvSourceCancelComplete(op);
-      return;
+      break;
     case LUringOpKind::kNone:
     case LUringOpKind::kConnect:
     case LUringOpKind::kMsgRing:
     case LUringOpKind::kWake:
     case LUringOpKind::kCancelAll:
     case LUringOpKind::kNop:
-      return;
+      break;
     case LUringOpKind::kCount:
       break;
   }
 
-  assert(false && "invalid LUring completion dispatch id");
+  return CompletionDisposition{
+      .kernel_request_terminal = true,
+      .decrement_inflight = true,
+      .resume_continuation = op->resume_work.HasHandle(),
+  };
 }
 
 }  // namespace detail
@@ -348,6 +352,29 @@ void LUringLoop::RunReady() noexcept {
   coro::Scheduler::SetCurrent(previous);
 }
 
+void LUringLoop::RunUntilIdle() {
+  assert(IsInLoopThread());
+
+  if (!initialized_) {
+    return;
+  }
+
+  while (HasReadyWork() || PendingSubmitCount() > 0 || InflightCount() > 0) {
+    RunReady();
+
+    if (PendingSubmitCount() == 0 && InflightCount() == 0) {
+      continue;
+    }
+
+    auto completed = WaitCompletions();
+    if (!completed.has_value()) {
+      break;
+    }
+  }
+
+  RunReady();
+}
+
 base::Result<void> LUringLoop::FlushSubmit() noexcept {
   assert(IsInLoopThread());
 
@@ -423,25 +450,33 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
     return;
   }
 
-  const auto kind = op->DispatchKind();
-  const bool is_multishot =
-      kind == LUringOpKind::kAcceptSourceComplete ||
-      kind == LUringOpKind::kRecvSourceComplete;
-  const bool is_split_release = kind == LUringOpKind::kSendZeroCopyComplete;
   const CompletionEvent event{cqe->res, cqe->flags};
-  const bool request_still_active = event.More();
 
-  // F_MORE CQEs belong to the same physical request and keep one inflight
-  // slot. Only the terminal CQE releases it.
-  if ((!is_multishot && !is_split_release) ||
-      (is_multishot && !request_still_active)) {
-    assert(inflight_ > 0);
-    if (inflight_ > 0) {
-      --inflight_;
+  const auto apply_disposition = [this, op](CompletionDisposition disposition) noexcept {
+    if (disposition.kernel_request_terminal) {
+      assert(disposition.decrement_inflight);
     }
-  }
+    if (disposition.decrement_inflight) {
+      assert(inflight_ > 0);
+      if (inflight_ > 0) {
+        --inflight_;
+      }
+    }
+    if (disposition.resume_continuation) {
+      const bool logical_completion_ready =
+          op->IsCompleted() || op->CompleteWithoutResult();
+      if (logical_completion_ready && op->resume_work.HasHandle()) {
+        ScheduleCompletion(&op->resume_work);
+      }
+    }
+  };
 
   if (op == &wake_op_) {
+    apply_disposition(CompletionDisposition{
+        .kernel_request_terminal = true,
+        .decrement_inflight = true,
+        .resume_continuation = false,
+    });
     wake_inflight_ = false;
     DrainWakeFd();
     if (!quit_.load(std::memory_order_acquire)) {
@@ -457,37 +492,16 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
   if (op == &cancel_all_op_) {
     cancel_all_pending_ = false;
     COROPACT_IGNORE_RESULT(op->Complete(cqe->res));
+    apply_disposition(detail::DispatchCompletion(op, event));
     return;
   }
 
-  if (is_multishot && request_still_active) {
-    detail::DispatchCompletion(op, event);
+  if (CompletionModelFor(op->DispatchKind()) == LUringCompletionModel::kSingleShot &&
+      !op->Complete(cqe->res)) {
     return;
   }
 
-  if (is_split_release) {
-    const CompletionDisposition disposition =
-        detail::DispatchSendZeroCopyComplete(op, event);
-    if (disposition.kernel_operation_done) {
-      assert(inflight_ > 0);
-      if (inflight_ > 0) {
-        --inflight_;
-      }
-    }
-    if (disposition.logical_completion_ready && op->CompleteWithoutResult() &&
-        op->resume_work.HasHandle()) {
-      ScheduleCompletion(&op->resume_work);
-    }
-    return;
-  }
-
-  const bool first_completion = op->Complete(cqe->res);
-  if (first_completion) {
-    detail::DispatchCompletion(op, event);
-    if (op->resume_work.HasHandle()) {
-      ScheduleCompletion(&op->resume_work);
-    }
-  }
+  apply_disposition(detail::DispatchCompletion(op, event));
 }
 
 base::Result<void> LUringLoop::ArmWakePoll() noexcept {

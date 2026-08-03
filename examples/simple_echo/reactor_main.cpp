@@ -16,6 +16,7 @@
 #include <utility>
 
 #include "coropact/coro.h"
+#include "coropact/io.h"
 #include "coropact/net.h"
 #include "coropact/reactor.h"
 #include "echo_app.h"
@@ -36,14 +37,15 @@ int main() {
 
   auto listener_result = reactor::ReactorListener::Create(&loop, address);
   if (!listener_result.has_value()) {
-    std::cerr << "failed to create Reactor listener: " << listener_result.error().message() << '\n';
+    std::println(stderr, "failed to create Reactor listener: {}",
+                 listener_result.error().message());
     return 1;
   }
 
   auto listener = std::move(*listener_result);
   coro::SpawnDetach(loop, simple_echo::AcceptLoop(listener, loop));
 
-  std::cout << "simple echo (Reactor) listening on 127.0.0.1:" << kPort << '\n';
+  std::println(std::cout, "simple echo (Reactor) listening on 127.0.0.1:{}", kPort);
   loop.Loop();
   return 0;
 }

@@ -30,7 +30,6 @@
 
 #include "coropact/reactor/channel.h"
 #include "coropact/reactor/event_loop.h"
-#include "coropact/time/timestamp.h"
 
 namespace {
 

@@ -21,8 +21,8 @@
 namespace coropact::reactor {
 
 struct ReactorWorkerContext {
-  ReactorWorkerContext(std::size_t index, EventLoop& loop,
-                       ReactorListener& listener, ReactorConnector& connector) noexcept
+  ReactorWorkerContext(std::size_t index, EventLoop& loop, ReactorListener& listener,
+                       ReactorConnector& connector) noexcept
       : index(index), loop(loop), listener(listener), connector(connector) {}
 
   COROPACT_DELETE_COPY_MOVE(ReactorWorkerContext);
@@ -39,6 +39,8 @@ struct ReactorWorkerOptions {
   // Must outlive the worker. It should be private to one worker when it is
   // unsynchronized.
   std::pmr::memory_resource* frame_resource{nullptr};
+
+  ReactorConnectorOptions connector_options{};
 };
 
 class ReactorWorker {

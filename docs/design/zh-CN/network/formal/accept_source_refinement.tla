@@ -6,7 +6,8 @@ EXTENDS Naturals, Sequences, FiniteSets
 (* AcceptSource 的有界 backend-refinement 模型。                         *)
 (*                                                                         *)
 (* 抽象层只有一个 source 协议：                                           *)
-(*   Idle -> Active -> Stopping -> Draining -> Terminal                  *)
+(*   Idle -> Active -> Pausing -> Paused -> Active                       *)
+(*                  \-> Stopping -> Draining -> Terminal                 *)
 (*                                                                         *)
 (* Concrete backend 保留各自的物理路径：                                   *)
 (*   Reactor       readiness -> accept drain                              *)
@@ -20,7 +21,7 @@ EXTENDS Naturals, Sequences, FiniteSets
 CONSTANT MaxEvents, MaxRequests
 
 Backends      == {"Reactor", "UringSingle", "UringMulti"}
-SourceStates  == {"Idle", "Active", "Stopping", "Draining", "Terminal"}
+SourceStates  == {"Idle", "Active", "Pausing", "Paused", "Stopping", "Draining", "Terminal"}
 RequestStates == {"Idle", "Armed"}
 ReactorStates == {"Idle", "Armed", "Ready"}
 UringStates   == {"Idle", "Submitted"}
@@ -67,7 +68,9 @@ QueueSet == {queue[i] : i \in 1..Len(queue)}
  * source directly to Draining or Terminal. An active source remains active
  * and may arm a new request. *)
 StateAfterRequestTerminal(newQueue) ==
-  IF sourceState = "Stopping"
+  IF sourceState = "Pausing"
+  THEN "Paused"
+  ELSE IF sourceState = "Stopping"
   THEN IF Len(newQueue) = 0 THEN "Terminal" ELSE "Draining"
   ELSE sourceState
 
@@ -215,7 +218,7 @@ ReactorNoConnection ==
 
 UringSingleComplete ==
   /\ backend = "UringSingle"
-  /\ sourceState \in {"Active", "Stopping"}
+  /\ sourceState \in {"Active", "Pausing", "Stopping"}
   /\ requestState = "Armed"
   /\ uringState = "Submitted"
   /\ requestState' = "Idle"
@@ -237,7 +240,7 @@ UringSingleComplete ==
 
 UringSingleCompleteEvent ==
   /\ backend = "UringSingle"
-  /\ sourceState \in {"Active", "Stopping"}
+  /\ sourceState \in {"Active", "Pausing", "Stopping"}
   /\ requestState = "Armed"
   /\ uringState = "Submitted"
   /\ Len(queue) < MaxEvents
@@ -263,7 +266,7 @@ UringSingleCompleteEvent ==
  * submitted. *)
 UringMultiMore ==
   /\ backend = "UringMulti"
-  /\ sourceState \in {"Active", "Stopping"}
+  /\ sourceState \in {"Active", "Pausing", "Stopping"}
   /\ requestState = "Armed"
   /\ uringState = "Submitted"
   /\ Len(queue) < MaxEvents
@@ -287,7 +290,7 @@ UringMultiMore ==
 
 UringMultiTerminate ==
   /\ backend = "UringMulti"
-  /\ sourceState \in {"Active", "Stopping"}
+  /\ sourceState \in {"Active", "Pausing", "Stopping"}
   /\ requestState = "Armed"
   /\ uringState = "Submitted"
   /\ requestState' = "Idle"
@@ -310,7 +313,7 @@ UringMultiTerminate ==
 (* A terminal multishot CQE may itself carry one final accepted connection. *)
 UringMultiTerminateEvent ==
   /\ backend = "UringMulti"
-  /\ sourceState \in {"Active", "Stopping"}
+  /\ sourceState \in {"Active", "Pausing", "Stopping"}
   /\ requestState = "Armed"
   /\ uringState = "Submitted"
   /\ Len(queue) < MaxEvents
@@ -355,10 +358,86 @@ BackendFailure ==
                  terminalObserved,
                  resumeCount>>
 
+(* High-water is an admission boundary, not a logical terminal.  Native
+ * io_uring paths cancel the current request and wait for its terminal CQE;
+ * Reactor removes readiness interest and releases the modeled request
+ * immediately. *)
+RequestPause ==
+  /\ sourceState = "Active"
+  /\ stopRequested = FALSE
+  /\ Len(queue) >= MaxEvents
+  /\ sourceState' =
+       IF requestState = "Armed" THEN "Pausing" ELSE "Paused"
+  /\ cancelState' =
+       IF backend # "Reactor" /\ requestState = "Armed"
+       THEN "Submitted"
+       ELSE cancelState
+  /\ UNCHANGED <<backend,
+                 requestState,
+                 reactorState,
+                 uringState,
+                 queue,
+                 producedEvents,
+                 deliveredEvents,
+                 nextEventId,
+                 submitCount,
+                 terminalRequestCount,
+                 logicalTerminalCount,
+                 terminalObserved,
+                 stopRequested,
+                 resumeCount>>
+
+(* Reactor has no target CQE. Removing readable interest releases the one
+ * modeled readiness request and reaches the same abstract Paused state. *)
+ReactorPauseRelease ==
+  /\ backend = "Reactor"
+  /\ sourceState = "Pausing"
+  /\ requestState = "Armed"
+  /\ requestState' = "Idle"
+  /\ reactorState' = "Idle"
+  /\ sourceState' = "Paused"
+  /\ terminalRequestCount' = terminalRequestCount + 1
+  /\ UNCHANGED <<backend,
+                 uringState,
+                 cancelState,
+                 queue,
+                 producedEvents,
+                 deliveredEvents,
+                 nextEventId,
+                 submitCount,
+                 logicalTerminalCount,
+                 terminalObserved,
+                 stopRequested,
+                 resumeCount>>
+
+(* Low-water makes future admission possible again. Arming remains a
+ * separate action so all backends keep their native submission mechanism. *)
+ResumeAdmission ==
+  /\ sourceState = "Paused"
+  /\ requestState = "Idle"
+  /\ cancelState = "Idle"
+  /\ Len(queue) <= MaxEvents \div 2
+  /\ sourceState' = "Active"
+  /\ UNCHANGED <<backend,
+                 requestState,
+                 reactorState,
+                 uringState,
+                 cancelState,
+                 queue,
+                 producedEvents,
+                 deliveredEvents,
+                 nextEventId,
+                 submitCount,
+                 terminalRequestCount,
+                 logicalTerminalCount,
+                 terminalObserved,
+                 stopRequested,
+                 resumeCount>>
+
 (* Stop never directly destroys an armed request. For io_uring it starts a
  * separate cancel request; the target request still has to become terminal. *)
 RequestStop ==
-  /\ sourceState = "Active"
+  /\ sourceState \in {"Active", "Pausing", "Paused"}
   /\ stopRequested = FALSE
   /\ stopRequested' = TRUE
   /\ sourceState' =
@@ -366,7 +445,7 @@ RequestStop ==
        THEN "Stopping"
        ELSE IF Len(queue) = 0 THEN "Terminal" ELSE "Draining"
   /\ cancelState' =
-       IF backend # "Reactor" /\ requestState = "Armed"
+       IF backend # "Reactor" /\ requestState = "Armed" /\ cancelState = "Idle"
        THEN "Submitted"
        ELSE cancelState
   /\ UNCHANGED <<backend,
@@ -405,7 +484,7 @@ CancelComplete ==
 
 DeliverEvent ==
   /\ queue # <<>>
-  /\ sourceState \in {"Active", "Stopping", "Draining"}
+  /\ sourceState \in {"Active", "Pausing", "Paused", "Stopping", "Draining"}
   /\ Head(queue) \notin deliveredEvents
   /\ queue' = Tail(queue)
   /\ deliveredEvents' = deliveredEvents \cup {Head(queue)}
@@ -461,6 +540,9 @@ Next ==
   \/ UringMultiTerminate
   \/ UringMultiTerminateEvent
   \/ BackendFailure
+  \/ RequestPause
+  \/ ReactorPauseRelease
+  \/ ResumeAdmission
   \/ RequestStop
   \/ CancelComplete
   \/ DeliverEvent
@@ -518,6 +600,15 @@ StopAdmission ==
   sourceState \in {"Stopping", "Draining", "Terminal"}
     => stopRequested
 
+(* Paused is recoverable: the target request has converged, no logical
+ * terminal has been observed, and a later low-water transition may re-arm
+ * after the separate cancel CQE has also arrived. *)
+PauseSafety ==
+  sourceState = "Paused"
+    => /\ requestState = "Idle"
+       /\ stopRequested = FALSE
+       /\ logicalTerminalCount = 0
+
 (* Concrete backend state is not visible in the abstract source protocol. *)
 BackendShape ==
   /\ backend = "Reactor"
@@ -528,7 +619,7 @@ BackendShape ==
        => /\ reactorState = "Idle"
           /\ (requestState = "Idle" => uringState = "Idle")
   /\ requestState = "Armed"
-       => sourceState \in {"Active", "Stopping"}
+       => sourceState \in {"Active", "Pausing", "Stopping"}
 
 TerminalSafety ==
   sourceState = "Terminal"
