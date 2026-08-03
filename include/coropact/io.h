@@ -21,5 +21,4 @@
 
 #if defined(COROPACT_ENABLE_URING) && COROPACT_ENABLE_URING
 #include "coropact/luring.h" // IWYU pragma: export
-#include "coropact/io/luring_backend.h" // IWYU pragma: export
 #endif

@@ -2,8 +2,6 @@
 
 本报告记录当前 CoroPact checkout 中 Reactor、CoroPact luring、raw liburing、Asio、Monoio、Compio、libaio、libuv、libevent 和 libev 的统一压测结果。
 
-帧池接入实验已经撤回：当前网络 benchmark 使用默认的 `new_delete_resource()` 路径。本文中此前以 `FRAME_POOL=1` 获得的历史数据仅作实验记录，不代表当前默认配置。
-
 Reactor 与 luring 的独立 ET/LT 对照见 [CoroPact luring 与 Reactor 独立对比](luring-reactor-comparison-20260802.md)。注意：LT/ET 只属于 Reactor 的 epoll readiness 路径，luring 使用 io_uring CQE，不存在 luring LT/ET。
 
 ## 结论

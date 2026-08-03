@@ -264,25 +264,6 @@ if(COROPACT_ENABLE_URING)
 
     add_test(NAME luring_op_smoke_test COMMAND luring_op_smoke_test)
 
-    add_executable(luring_backend_adapter_smoke_test
-        unit/test_luring_backend_adapter_smoke.cc
-    )
-
-    target_include_directories(luring_backend_adapter_smoke_test
-        PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/../include
-            ${URING_INCLUDE_DIRS}
-    )
-
-    target_link_libraries(luring_backend_adapter_smoke_test
-        PRIVATE
-            coropact_io_luring_adapter
-    )
-
-    target_compile_definitions(luring_backend_adapter_smoke_test PRIVATE COROPACT_ENABLE_URING)
-
-    add_test(NAME luring_backend_adapter_smoke_test COMMAND luring_backend_adapter_smoke_test)
-
     add_executable(luring_coro_smoke_test
         unit/test_luring_coro_smoke.cc
     )

@@ -20,7 +20,6 @@
 #include <thread>
 
 #include "coropact/io.h"
-#include "coropact/luring/capability.h"
 #include "coropact/luring/recv_source_stream.h"
 #include "coropact/luring/server.h"
 #include "coropact/net/endpoint.h"
@@ -248,10 +247,6 @@ int main() {
   loop_options.entries = entries;
   loop_options.shared_buffer_capacity = shared_buffer_capacity;
   loop_options.shared_buffer_size = kProvidedBufferSize;
-  loop_options.active_profile =
-      coropact::luring::RuntimeProfile::Core()
-          .Require(coropact::luring::NativeFeature::kMultishotRecv)
-          .Require(coropact::luring::NativeFeature::kProvidedBufferRing);
 
   coropact::luring::LUringServerOptions options;
   options.worker_group_options.worker_num = workers;

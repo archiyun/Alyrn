@@ -19,7 +19,6 @@
 #include "coropact/base/error.h"
 #include "coropact/coro/detached_task.h"
 #include "coropact/coro/spawn.h"
-#include "coropact/luring/capability.h"
 #include "coropact/luring/loop.h"
 #include "coropact/luring/options.h"
 #include "coropact/luring/recv_source.h"
@@ -34,8 +33,6 @@ using coropact::luring::LUringLoop;
 using coropact::luring::LUringOptions;
 using coropact::luring::LUringRecvSource;
 using coropact::luring::LUringRecvSourceOptions;
-using coropact::luring::NativeFeature;
-using coropact::luring::RuntimeProfile;
 
 class UniqueFd final {
 public:
@@ -113,17 +110,12 @@ bool IsEnvironmentSkip(Error error) {
 
 LoopInitStatus InitLoop(
     LUringLoop& loop,
-    RuntimeProfile profile =
-        RuntimeProfile::Core()
-            .Require(NativeFeature::kMultishotRecv)
-            .Require(NativeFeature::kProvidedBufferRing),
     std::size_t shared_buffer_capacity = 64,
     std::size_t shared_buffer_size = 16 * 1024) {
   LUringOptions options;
   options.entries = 32;
   options.submit_batch = 1;
 
-  options.active_profile = profile;
   options.shared_buffer_capacity = shared_buffer_capacity;
   options.shared_buffer_size = shared_buffer_size;
   auto initialized = loop.Init(options);
@@ -283,10 +275,7 @@ DetachedTask ReceivePauseThenResume(
 
 bool CheckRecvAndLease() {
   LUringLoop loop;
-  switch (InitLoop(loop, RuntimeProfile::Core()
-                            .Require(NativeFeature::kMultishotRecv)
-                            .Require(NativeFeature::kProvidedBufferRing),
-                   64, 256)) {
+  switch (InitLoop(loop, 64, 256)) {
     case LoopInitStatus::kReady:
       break;
     case LoopInitStatus::kSkip:
@@ -347,10 +336,7 @@ bool CheckRecvAndLease() {
 
 bool CheckSharedBufferPool() {
   LUringLoop loop;
-  switch (InitLoop(loop, RuntimeProfile::Core()
-                            .Require(NativeFeature::kMultishotRecv)
-                            .Require(NativeFeature::kProvidedBufferRing),
-                   4, 256)) {
+  switch (InitLoop(loop, 4, 256)) {
     case LoopInitStatus::kReady:
       break;
     case LoopInitStatus::kSkip:
@@ -484,10 +470,7 @@ bool CheckEof() {
 
 bool CheckQueuePauseThenRearm() {
   LUringLoop loop;
-  switch (InitLoop(loop, RuntimeProfile::Core()
-                            .Require(NativeFeature::kMultishotRecv)
-                            .Require(NativeFeature::kProvidedBufferRing),
-                   64, 256)) {
+  switch (InitLoop(loop, 64, 256)) {
     case LoopInitStatus::kReady:
       break;
     case LoopInitStatus::kSkip:

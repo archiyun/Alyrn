@@ -130,11 +130,6 @@ base::Result<LUringRecvSource> LUringRecvSource::Create(
   if (!options.Valid()) {
     return std::unexpected(base::MakeErrno(EINVAL));
   }
-  if (!loop->HasCapability(NativeFeature::kMultishotRecv) ||
-      !loop->HasCapability(NativeFeature::kProvidedBufferRing)) {
-    return std::unexpected(base::MakeErrno(ENOTSUP));
-  }
-
   const std::size_t capacity = options.source.buffer_capacity;
   if (capacity > std::numeric_limits<std::size_t>::max() / options.buffer_size) {
     return std::unexpected(base::MakeErrno(EOVERFLOW));
@@ -298,8 +293,9 @@ base::Result<void> LUringRecvSource::StartOperation() noexcept {
       });
 
   if (!submitted.has_value()) {
-    auto completed = state_.CompleteMultishotEvent(
+    const auto completed = state_.CompleteMultishotEvent(
         EventDisposition::kNone, MultishotRequestDisposition::kTerminal);
+    COROPACT_IGNORE_RESULT(completed);
     assert(completed.has_value());
     return std::unexpected(submitted.error());
   }
@@ -380,8 +376,7 @@ void LUringRecvSource::EnsureSubmission() noexcept {
 }
 
 void LUringRecvSource::RequestBackendPause() noexcept {
-  auto paused = state_.RequestPause();
-  assert(paused.has_value());
+  COROPACT_IGNORE_RESULT(state_.RequestPause());
 
   if (recv_submitted_ && !cancel_submitted_) {
     auto cancelled = StartCancel();
@@ -407,8 +402,7 @@ void LUringRecvSource::RequestBackendStop(std::optional<base::Error> error) noex
     terminal_error_ = *error;
   }
 
-  auto stopped = state_.RequestStop();
-  assert(stopped.has_value());
+  COROPACT_IGNORE_RESULT(state_.RequestStop());
 
   if (recv_submitted_ && !cancel_submitted_) {
     auto cancelled = StartCancel();

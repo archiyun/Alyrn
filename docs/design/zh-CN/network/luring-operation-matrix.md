@@ -40,28 +40,26 @@ inflight 是否应该减少
 因此第一阶段的 loop 只应接收原始 CQE，并交给 operation family handler；handler 再决定这
 次事件是否产生业务事件、是否保持 operation、以及何时提交恢复工作。
 
-## 2. 能力矩阵与运行期路径选择
+## 2. 编译期接口与运行期路径选择
 
-`io::CapabilitySet` 的一个语义要求不能同时代表所有可用性。每项能力至少要经过以下五层：
+`io::*` concepts 描述应用可使用的语义接口；它们不尝试把内核探测结果编码成 luring 的
+第二套 profile。具体 backend 的实现可用性分为以下几层：
 
 | 维度 | 要回答的问题 | 例子 |
 | --- | --- | --- |
-| 编译期 | 当前 liburing 头文件是否提供接口或 flag？ | `IORING_OP_SEND_ZC`、`IORING_CQE_F_MORE` |
-| 内核期 | 当前 kernel/ring 是否接受该 opcode 或注册操作？ | probe 中存在 `IORING_OP_RECV` |
+| 构建期 | 当前构建是否启用了 io_uring，以及 liburing 头文件是否提供接口或 flag？ | `COROPACT_ENABLE_URING`、`IORING_CQE_F_MORE` |
+| 内核期 | 当前 kernel/ring 是否接受该 opcode 或注册操作？ | ring setup 成功，operation CQE 不返回 unsupported |
 | 配置期 | 当前 ring setup 是否满足使用条件？ | SQPOLL、CQ 大小、buffer ring 注册 |
 | 语义期 | 当前适配器是否实现了结果、取消和资源生命周期？ | multishot 的重复事件与终止 CQE |
 | 运行期 | 当前 operation 的对象、资源和状态是否允许走该路径？ | buffer ring 有可用 buffer、send zerocopy 满足 buffer 条件 |
 
-前四层决定能力是否可以进入 active profile；运行期条件不应写入静态
-`io::CapabilitySet`，而应由上层 adapter 翻译为 luring 的 `RuntimeProfile`。当前
-`LUringLoop` 在 `Init()` 保存 luring 自己的 `RuntimeBinding`，扩展 operation 会同时检查
-native active profile 与实际 probe：
+构建期条件决定具体 backend 是否参与编译；其余条件由 `LUringLoop::Init()`、source 创建
+或 operation 提交返回 `base::Result`。luring 不再维护独立的 native capability/profile 层：
 
 ```cpp
 enum class OperationPath {
   kSingleShot,
   kMultiShot,
-  kProvidedBuffer,
   kZeroCopy,
   kFallback,
 };
@@ -78,9 +76,9 @@ Compiled
   = OperationPathSelected
 ```
 
-例如，ring 可能支持 provided buffer ring，但 native active profile 没有请求它；这时
-本次操作直接返回 `ENOTSUP`，而不是绕过 binding。即使 profile 已请求扩展，具体 operation
-仍需处理 buffer 耗尽、socket 条件和提交失败。
+例如，provided buffer ring 注册失败时，`RecvSource::Create()` 直接返回对应错误；send
+zerocopy 的内核错误则从实际 CQE 返回。具体 operation 仍需处理 buffer 耗尽、socket 条件
+和提交失败。
 
 特别是：
 
@@ -90,8 +88,7 @@ IORING_OP_RECV 存在
 IORING_RECV_MULTISHOT 可用
 ```
 
-同样，legacy `provide_buffers` 与 registered provided buffer ring 不是同一项能力；应用层
-复用 buffer 也不等于内核选择 buffer。
+当前 RecvSource 使用 provided buffer ring；legacy `provide_buffers` 不属于本模块的运行时路径。
 
 ## 3. 当前核心 operation
 
@@ -119,11 +116,11 @@ IORING_RECV_MULTISHOT 可用
 | --- | --- | --- | --- | --- | --- |
 | multishot accept | 1 个 SQE，多个 CQE；`F_MORE` 表示 operation 继续 | 每个 CQE 产生一个新 stream；无 `F_MORE` 的 CQE 结束 source | source 在终止 CQE、错误或取消收敛后释放；不能每个 CQE 都销毁 operation | readiness 后反复 `accept()`，每次成功 emit 一个 stream | luring 原生实现；不支持时降级 single-shot |
 | multishot recv | 1 个 SQE，多个 CQE；每个 CQE 可能产生数据事件 | 每个 CQE 是一个 `RecvEvent`，最终 CQE/错误结束 source | source 持续存活；每个数据 buffer 必须有独立 `BufferLease` | readiness + 非阻塞 `recv()` 循环 emit 事件 | `LUringRecvSource` 使用 provided buffer ring；`ReactorRecvSource` 使用 readiness drain + 固定 buffer pool；两者共享 `AsyncRecvSource` |
-| legacy provided buffers | 注册 buffer group，CQE 返回 buffer id | 结果包含字节数和 buffer id | consumer 归还 buffer 前不得重新提供 | buffer pool 由应用选择和管理 | 仅有 opcode 探测；无公共 API |
+| legacy provided buffers | 当前 backend 不提交 legacy `provide_buffers` | 不属于当前公共结果契约 | 无 legacy buffer group 所有权规则 | 无对应的 Reactor 语义 | 未实现；当前路径不支持 |
 | provided buffer ring | 注册 buffer ring，CQE flags 返回 buffer id；可带 `F_BUF_MORE` | 结果包含字节数、buffer id 和继续消费信息；增量 CQE 使用同一 id 的连续 offset | `BufferLease` 归还 ring 后才能复用；`F_BUF_MORE` 结束前以及所有 segment lease 释放前都不能归还 | 应用层 buffer pool；没有内核选择 id 的等价语义 | `LUringRecvSource` 的非增量路径共享每 worker 一个 ring；逐 source ring 已删除；`F_BUF_MORE` source 路径待后续单独实现 |
 | send zerocopy | 一个 send CQE，可能另有 `F_NOTIF` notification CQE | send CQE 确定发送结果；notification 确定 memory 可复用 | send result 和 buffer release 是两个边界；notification 之前不能释放 buffer | 普通 write 完成后释放发送 buffer；没有同等的两阶段 zc 协议 | `LUringStream::SendZeroCopy` 已实现；等待 primary result 与 terminal notification |
-| registered fixed buffer | 使用注册 buffer 的固定索引/切片 | 结果仍可为 single-shot 或其它 family | registration 的 owner 必须覆盖所有 in-flight operation | 普通用户 buffer；没有固定 buffer 的相同语义 | capability 枚举存在，未实现 |
-| fixed file | SQE 使用注册 file slot | 结果语义由具体 operation 决定 | file table slot 释放前不能有引用 | 普通 fd 所有权 | capability 枚举存在，未实现 |
+| registered fixed buffer | 当前 backend 未提交 registered buffer SQE | 结果仍可为 single-shot 或其它 family | registration 的 owner 必须覆盖所有 in-flight operation | 普通用户 buffer；没有固定 buffer 的相同语义 | 未实现；当前没有公共接口 |
+| fixed file | 当前 backend 未提交 fixed-file SQE | 结果语义由具体 operation 决定 | file table slot 释放前不能有引用 | 普通 fd 所有权 | 未实现；当前没有公共接口 |
 | linked operations | 多个 SQE 组成一个逻辑操作 | 可能有多个物理 CQE，但业务结果通常只确定一次 | 所有影响结果或资源的 link member 都必须收敛 | Reactor 通过组合 awaiter/状态机模拟 | timed read 已内部使用；通用公共 API 未实现 |
 
 ### 4.1 multishot 的恢复规则
@@ -182,25 +179,7 @@ auto result = co_await stream.SendZeroCopy(buffer);
 `ZeroCopySendResult::copied` 标记实际使用了 copy；`notification_received` 记录本次是否确实
 观察到了独立的 `F_NOTIF` CQE。
 
-## 5. 当前 capability 探测的注意事项
-
-当前实现位置：`src/luring/capabilities.cc`。
-
-| 当前标记 | 当前做法 | 问题 |
-| --- | --- | --- |
-| `kMultishotAccept` | 仅探测 `IORING_OP_ACCEPT` | opcode 存在不代表 accept multishot flag 和终止语义可用 |
-| `kMultishotRecv` | 仅探测 `IORING_OP_RECV` | opcode 存在不代表 `IORING_RECV_MULTISHOT` 可用 |
-| `kProvidedBuffer` | 探测 `PROVIDE_BUFFERS` / `REMOVE_BUFFERS` | 只代表 legacy 机制 |
-| `kProvidedBufferRing` | 实际创建并注销 1-entry buffer ring | 只代表 ring 注册能力，不代表具体 recv source 已经启动 |
-| `kSendZeroCopy` | 探测 `IORING_OP_SEND_ZC` | `LUringStream::SendZeroCopy` 已实现 primary/notification split-release 生命周期 |
-| `kLinkedOps` | 当前无条件启用 | timed read 有内部使用，但通用 linked-operation API 尚未定义 |
-| `kRegisteredBuffer` | capability 枚举存在 | 当前 probe 和公共接口都未完成 |
-| `kFixedFile` | capability 枚举存在 | 当前 probe 和公共接口都未完成 |
-
-在这些问题修正前，extension capability 只能作为探测信息，不能作为业务 active profile 的
-充分条件。尤其不能让业务看到 `kMultishotRecv` 后就假设 `ReadSource` 已经可以使用。
-
-## 6. 与 TLA+ 模型的对应关系
+## 5. 与 TLA+ 模型的对应关系
 
 现有 `async_stream_core.tla` 明确是 single-shot stream 模型，它的不变量仍然成立：
 
@@ -337,13 +316,13 @@ Incremental RecvSource (`F_BUF_MORE`):
 `RunReady()` turn。它证明 completion-ready 队列的选择规则不会被 normal ready backlog 饿死；
 它不替代内核、线程或进程调度的系统级公平性保证。
 
-## 7. 实施顺序
+## 6. 实施顺序
 
 1. 为 `CompletionEvent` 和 operation family handler 建立不改变现有 ABI 的内部测试模型。（已完成。）
 2. 覆盖 immediate、普通 CQE、重复 CQE、cancel-before-complete、complete-before-cancel、
    close 与 pending I/O 交错。（已完成核心路径和提交失败注入。）
-3. 修正 capability 探测，拆分 multishot、legacy provided buffers 与 provided buffer ring；
-   再为实际提交增加运行期 path selector。（基础 buffer-ring probe 已完成。）
+3. 让具体 operation 直接处理 runtime unsupported、资源耗尽和提交失败，不再引入第二套
+   native capability/profile 层。（已完成。）
 4. 单独实现 `AcceptSource`，保留现有一次性 `Accept()`。（已完成。）
 5. 实现带 `BufferLease` 的 multishot recv。（luring 使用每 worker 共享的 provided-buffer ring，
    Reactor 使用 readiness source；当前两条路径都完成了 lease safety，`F_BUF_MORE` 增量消费仍是

@@ -22,7 +22,6 @@
 #include "coropact/base/error.h"
 #include "coropact/base/try.h"
 #include "coropact/coro/scheduler.h"
-#include "coropact/luring/capabilities.h"
 #include "coropact/luring/detail/completion_dispatch.h"
 #include "coropact/luring/detail/provided_buffer_pool.h"
 #include "coropact/luring/op.h"
@@ -124,15 +123,12 @@ LUringLoop::~LUringLoop() noexcept {
   }
 }
 
-base::Result<void> LUringLoop::Init(const LUringOptions& options,
-                                    RuntimeProfile active_profile) noexcept {
+base::Result<void> LUringLoop::Init(const LUringOptions& options) noexcept {
   assert(IsInLoopThread());
 
   if (initialized_) {
     return std::unexpected(base::MakeErrno(EALREADY));
   }
-
-  auto binding = COROPACT_TRY(BindLUring(options, active_profile));
 
   ring_ = COROPACT_TRY(LUringRing::Create(options));
   wake_fd_ = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
@@ -153,7 +149,6 @@ base::Result<void> LUringLoop::Init(const LUringOptions& options,
       options.normal_queue_age_threshold > std::chrono::microseconds::zero()
           ? options.normal_queue_age_threshold
           : std::chrono::microseconds::zero();
-  binding_ = std::move(binding);
   ready_depth_ = 0;
   completion_ready_depth_ = 0;
   ready_nonempty_since_ns_ = 0;
@@ -172,7 +167,6 @@ base::Result<void> LUringLoop::Init(const LUringOptions& options,
   auto armed = ArmWakePoll();
   if (!armed.has_value()) {
     initialized_ = false;
-    binding_.reset();
     ::close(std::exchange(wake_fd_, -1));
     return std::unexpected(armed.error());
   }
@@ -191,10 +185,6 @@ LUringLoop::GetSharedProvidedBufferPool(std::size_t buffer_size) noexcept {
   if (shared_buffer_pool_ != nullptr) {
     return shared_buffer_pool_.get();
   }
-  if (!HasCapability(NativeFeature::kProvidedBufferRing)) {
-    return std::unexpected(base::MakeErrno(ENOTSUP));
-  }
-
   auto group = AllocateBufferGroupId();
   if (!group.has_value()) {
     return std::unexpected(group.error());
@@ -395,29 +385,6 @@ void LUringLoop::RunReady() noexcept {
   }
 
   coro::Scheduler::SetCurrent(previous);
-}
-
-void LUringLoop::RunUntilIdle() {
-  assert(IsInLoopThread());
-
-  if (!initialized_) {
-    return;
-  }
-
-  while (HasReadyWork() || PendingSubmitCount() > 0 || InflightCount() > 0) {
-    RunReady();
-
-    if (PendingSubmitCount() == 0 && InflightCount() == 0) {
-      continue;
-    }
-
-    auto completed = WaitCompletions();
-    if (!completed.has_value()) {
-      break;
-    }
-  }
-
-  RunReady();
 }
 
 base::Result<void> LUringLoop::FlushSubmit() noexcept {

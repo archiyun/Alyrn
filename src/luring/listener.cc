@@ -313,8 +313,9 @@ base::Result<void> LUringAcceptSource::StartOperation() noexcept {
 
   if (!submitted.has_value()) {
     --listener_->pending_accepts_;
-    auto completed = state_.CompleteMultishotEvent(
+    const auto completed = state_.CompleteMultishotEvent(
         EventDisposition::kNone, MultishotRequestDisposition::kTerminal);
+    COROPACT_IGNORE_RESULT(completed);
     assert(completed.has_value());
     return std::unexpected(submitted.error());
   }
@@ -405,8 +406,7 @@ void LUringAcceptSource::RequestBackendStop(std::optional<base::Error> error) no
 }
 
 void LUringAcceptSource::RequestBackendPause() noexcept {
-  auto paused = state_.RequestPause();
-  assert(paused.has_value());
+  COROPACT_IGNORE_RESULT(state_.RequestPause());
 
   if (accept_submitted_ && !cancel_submitted_) {
     auto cancelled = StartCancel();
@@ -550,8 +550,8 @@ bool LUringAcceptSource::TryTakeNext(Result& result) noexcept {
     Event event(std::in_place, std::move(events_.front()));
     events_.pop_front();
 
-    const bool consumed = state_.ConsumeEvent();
-    assert(consumed);
+    COROPACT_CHECK(state_.ConsumeEvent(),
+                   "LUringAcceptSource: queue and state became inconsistent");
 
     result = Result(std::in_place, std::move(event));
     if (state_.State() == AcceptSourceState::kPaused) {

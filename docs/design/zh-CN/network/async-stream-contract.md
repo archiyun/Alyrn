@@ -92,9 +92,8 @@ coropact::io::AsyncTimedStream
 ```
 
 `AsyncTimedStream` 表示完整的 `AsyncStream` 加上 timed read。当前 `ReactorStream` 与
-`LUringStream` 都满足它；只满足 `AsyncStream` 的 adapter 不承诺 `ReadSomeFor`。
-`CapabilitySet::TimedStream()` 是选择和验证此 extension 的 profile，不能替代上述编译期
-interface。
+`LUringStream` 都满足它；只满足 `AsyncStream` 的 adapter 不承诺 `ReadSomeFor`。调用方应
+使用这些 concept 做编译期约束；具体内核或资源限制由 backend 的运行期 `Result` 报告。
 
 ### 2.3 Buffer ownership extension
 
@@ -179,7 +178,7 @@ I/O 方法本身不抛出业务异常。结果通过 `coropact::base::Result<T>`
 
 ## 3. 六元组状态机
 
-本文使用的是**由后端、profile 和策略参数化**的六元组，而不是把这些固定解释条件误写成
+本文使用的是**由后端、语义 contract 和策略参数化**的六元组，而不是把这些固定解释条件误写成
 运行时可变状态：
 
 ```text
@@ -188,7 +187,7 @@ M(B, P, π) = (X, x0, E_obs, δ_B, Inv, Live)
 
 ```text
 B : 解释器（Reactor 或 luring），在实例生命周期内固定。
-P : 已绑定且验证过的 active capability profile，在启动期固定。
+P : 可选的语义策略集合；具体方法和 extension 由 `io::*` concept 在编译期约束。
 π : 调度/批处理策略，在实例生命周期内固定或只按显式策略转换。
 ```
 
@@ -292,7 +291,7 @@ io_uring 也可能在准备阶段立即拒绝操作。此时没有真实挂起�
 σ_cancel   : 取消必须产生该 operation family 定义的收敛状态，不能静默丢弃。
 σ_close    : 资源关闭后不能产生新的成功 I/O。
 σ_lifetime : backend 仍可能访问的对象必须保持存活。
-σ_profile  : active profile 中的能力必须有真实语义解释。
+σ_contract : 对外暴露的每个 concept 都必须有真实且可测试的语义解释。
 ```
 
 `π` 负责选择调度和实现策略，例如：
@@ -427,16 +426,17 @@ read 和 write 可以同时 pending；同方向的两个 operation 不能同时 
 线程。跨 loop 投递需要单独的 mailbox/message 机制；`eventfd` 和 `msg_ring` 都不属于
 当前 CoreStream 契约。
 
-### I8：能力 profile 固定
+### I8：语义 contract 固定
 
-业务选择的 active profile 在后端绑定时检查，并在该运行实例的生命周期内固定：
+业务通过 `io::*` concept 选择所需的语义 interface；具体 backend 不得在运行实例中改变
+这些方法的含义：
 
 ```text
-P_active ⊆ P_backend
+AsyncTimedStream ⊆ AsyncStream + ReadSomeFor
 ```
 
-能力 bit 只负责门卫，不能凭空创建 C++ 方法、返回类型或生命周期保证。内核 probe 报告
-某个 opcode 存在，也不等于 coropact 已经提供了对应的业务 concept。
+concept 只负责编译期 interface 约束，不能凭空保证内核资源。内核或 ring 不支持某条具体
+路径时，由对应 operation 的 `Result` 返回错误。
 
 ## 5. AsyncStream 语义
 
@@ -687,7 +687,7 @@ ReadSomeFor(std::span<std::byte> buffer, std::chrono::milliseconds timeout)
 ReactorStream 已提供 ReadSomeFor；
 LUringStream 也已提供 ReadSomeFor；
 两者满足 io::AsyncTimedStream；
-kTimeout 只在 TimedStream/TimedNetwork profile 中选择这一已存在的 extension，
+kTimeout 只描述语义文档中的 timed extension，
 不扩张 AsyncStream 的最小 interface。
 ```
 
@@ -696,13 +696,12 @@ kTimeout 只在 TimedStream/TimedNetwork profile 中选择这一已存在的 ext
 ```text
 AsyncStream       不要求 ReadSomeFor；
 AsyncTimedStream  才要求 ReadSomeFor；
-profile bind      验证选择的 backend 已实现 timed extension；
-native probe      仍不等于 CoroPact 已经提供可观察 timed 语义。
+static_assert     验证具体 backend 已实现 timed extension；
+runtime Result    报告内核或资源层面的实际失败。
 ```
 
 超时由后端作为 composite operation 实现：Reactor 使用 TimerQueue，luring 使用 linked
-timeout/cancel；业务不观察这些内部机制。profile 不满足时应在 bind 阶段拒绝，而不是让
-`AsyncStream` 调用在运行时静默降级。
+timeout/cancel；业务不观察这些内部机制。`AsyncStream` 不应被静默扩展成 timed contract。
 
 ## 9. Capability 分层
 
@@ -731,8 +730,6 @@ B 类描述后端怎样实现核心语义，业务不声明，允许透明 fallb
 kReadinessPoll
 kSubmitRead
 kSubmitWrite
-kRegisteredBuffer
-kFixedFile
 kSqPoll
 kIoPoll
 ```
@@ -745,10 +742,7 @@ C 类会改变返回类型、完成基数、生命周期、所有权或组合语
 方法或 profile gate：
 
 ```text
-kProvidedBuffer
 kMultishotRecv
-kMultishotAccept
-kLinkedOps
 kSendZeroCopy
 ```
 
@@ -864,7 +858,7 @@ EOF、本地取消、连接失败、上游失败和超时。
 9. buffer 在 Complete 前被修改或释放时不属于合法用法；
 10. listener 的 pending accept 可被 Close 收敛；
 11. Reactor 和 luring 对同一测试场景的核心结果投影一致；
-12. timeout 在 AsyncTimedStream、对应 profile 与后端实现同时存在时，验证 read/timeout
+12. timeout 在 AsyncTimedStream concept 与后端实现同时存在时，验证 read/timeout
     竞争只产生一个逻辑结果和一次恢复；
 13. EventSource 的 high-water pause 只终止当前 physical request，不把 logical source
     误报为 terminal；
