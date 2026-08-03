@@ -10,14 +10,15 @@ CoroPact supports two installation layers:
    a `.deb` is for Debian-family systems, not Arch or Fedora.
 
 The Reactor backend does not require liburing. The io_uring backend requires
-the liburing development package and a kernel with the capabilities used by
-the selected runtime path.
+liburing >= 2.6 and a kernel with the capabilities used by the selected
+runtime path.
 
 ## 1. Install build dependencies
 
 The package names below are common names for current releases. If a
 distribution has renamed one of them, install the equivalent C++23 compiler,
-CMake, Ninja, pkg-config/pkgconf, and liburing development package.
+CMake, Ninja, pkg-config/pkgconf, and liburing development package. The
+liburing package must provide version 2.6 or newer for the io_uring backend.
 
 ### Arch Linux
 
@@ -55,6 +56,23 @@ sudo apk add build-base cmake ninja pkgconf liburing-dev
 
 For a Reactor-only build, omit the liburing package and pass
 `-DCOROPACT_ENABLE_URING=OFF` in the configure command below.
+
+Some stable distributions ship an older liburing development package. If
+`pkg-config --modversion liburing` reports a version below 2.6, either build
+liburing 2.9 or newer from the upstream project, or use the Reactor-only
+backend. The CMake configure step checks this requirement explicitly.
+
+To build the required liburing version into `/usr/local`:
+
+```bash
+git clone --depth=1 --branch liburing-2.9 \
+  https://github.com/axboe/liburing.git
+cd liburing
+./configure --prefix=/usr/local
+make -j2
+sudo make install
+export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/lib/pkgconfig
+```
 
 ## 2. Portable installation from a release source archive
 
@@ -217,9 +235,10 @@ docker buildx build \
   .
 ```
 
-The Docker builder currently uses Ubuntu as a reproducible packaging
-environment. That choice does not restrict the host distribution: Arch and
-other systems should use the source install or their native package path.
+The Docker builder currently uses Ubuntu for packaging but builds liburing 2.9
+from upstream instead of relying on Ubuntu 24.04's older system package. That
+choice does not restrict the host distribution: Arch and other systems should
+use the source install or their native package path.
 
 ## 7. Creating a release
 
