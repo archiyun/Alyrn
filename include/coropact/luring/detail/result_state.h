@@ -3,7 +3,6 @@
 #pragma once
 
 #include <cassert>
-#include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <limits>
@@ -55,24 +54,6 @@ template <typename T>
 class LUringResultState;
 
 template <>
-class LUringResultState<std::size_t> : private LUringResultStorage {
-public:
-  using LUringResultStorage::IsImmediate;
-  using LUringResultStorage::SetError;
-  using LUringResultStorage::SetResult;
-  using LUringResultStorage::SetSuccess;
-
-  [[nodiscard]]
-  base::Result<std::size_t> Take() const noexcept {
-    assert(IsImmediate());
-    if (Encoded() == 0) {
-      return std::size_t{0};
-    }
-    return std::unexpected(base::MakeErrno(Encoded()));
-  }
-};
-
-template <>
 class LUringResultState<void> : private LUringResultStorage {
 public:
   using LUringResultStorage::IsImmediate;
@@ -90,9 +71,6 @@ public:
   }
 };
 
-static_assert(sizeof(LUringResultState<std::size_t>) == 4);
 static_assert(sizeof(LUringResultState<void>) == 4);
-
-using LUringImmediateResult = LUringResultState<std::size_t>;
 
 }  // namespace coropact::luring::detail

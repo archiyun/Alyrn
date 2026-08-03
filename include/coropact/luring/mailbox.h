@@ -14,12 +14,6 @@ namespace coropact::luring {
 inline constexpr std::uint64_t kMsgRingNotificationUserData = 1;
 
 struct LUringMessage {
-  enum class Type : std::uint32_t {
-    kResume = 1,
-    kFunction = 2,
-  };
-
-  Type type{Type::kResume};
   std::uint64_t data{0};
 };
 
@@ -91,16 +85,6 @@ public:
     }
 
     return count;
-  }
-
-  [[nodiscard]]
-  std::size_t Size() const noexcept {
-    return queue_.Size();
-  }
-
-  [[nodiscard]]
-  static constexpr std::size_t Capacity() noexcept {
-    return kCapacity;
   }
 
 private:

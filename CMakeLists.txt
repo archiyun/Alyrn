@@ -199,6 +199,8 @@ if(COROPACT_ENABLE_URING)
     endif()
     target_compile_features(coropact_luring PUBLIC cxx_std_23)
 
+    # The luring core remains independent of the application facade. The
+    # composition target exposes it alongside the Reactor backend.
     target_link_libraries(coropact_io INTERFACE coropact_luring)
 endif()
 
@@ -211,8 +213,8 @@ target_include_directories(coropact_coro_reactor INTERFACE
 target_link_libraries(coropact_coro_reactor INTERFACE coropact_reactor)
 target_compile_features(coropact_coro_reactor INTERFACE cxx_std_23)
 
-# coropact_coro_luring —— 把协程绑到 io_uring proactor 后端。头文件经 ring.h 引入
-# <liburing.h>,故仅在 COROPACT_ENABLE_URING 下构建;待 coropact_uring 复活后改 link 它。
+# coropact_coro_luring —— 把协程绑定到 io_uring proactor 后端。
+# It is available only when COROPACT_ENABLE_URING is enabled.
 if(COROPACT_ENABLE_URING)
     add_library(coropact_coro_luring INTERFACE)
     target_include_directories(coropact_coro_luring INTERFACE

@@ -30,6 +30,9 @@
 namespace coropact::luring {
 
 class LUringRecvSource;
+namespace detail {
+class ProvidedBufferPool;
+}
 
 // Single-threaded io_uring event loop
 //
@@ -38,7 +41,7 @@ class LUringRecvSource;
 // their coroutine work through the Scheduler interface.
 //
 // Notify function:
-//   target.PostMessage() -> source.Notify() -> target.HandleCqe() ->
+//   target.PostMessage() -> source.SubmitMsgRing() -> target.HandleCqe() ->
 //   target.ScheduleCompletion(work)
 class LUringLoop final : public coro::Scheduler {
 public:
@@ -70,11 +73,6 @@ public:
   bool IsInLoopThread() const noexcept {
     return thread_id_ == base::tid();
   }
-  [[nodiscard]]
-  int ThreadId() const noexcept {
-    return thread_id_;
-  }
-
   [[nodiscard]]
   int RingFd() const noexcept {
     return ring_.Fd();
@@ -157,12 +155,6 @@ public:
   [[nodiscard]]
   bool RetryMessageNotification() noexcept { return mailbox_.RetryNotification(); }
 
-  template <class F>
-  std::size_t DrainMessages(F&& handler) {
-    assert(IsInLoopThread());
-    return mailbox_.Drain(std::forward<F>(handler));
-  }
-
   // Prepares one io_uring operation.
   //
   // State transition:
@@ -224,17 +216,6 @@ public:
   }
 
   [[nodiscard]]
-  base::Result<void> Notify(LUringLoop& target, LUringOp* op) noexcept {
-    assert(IsInLoopThread());
-
-    if (op == nullptr) {
-      return std::unexpected(base::MakeErrno(EINVAL));
-    }
-
-    return SubmitMsgRing(op, target.RingFd(), 0);
-  }
-
-  [[nodiscard]]
   base::Result<void> FlushSubmit() noexcept;
   // Cancels all user operations currently pending in this ring. The resulting
   // CQEs are still delivered through the normal completion path so awaiters
@@ -247,10 +228,13 @@ public:
   base::Result<std::size_t> WaitCompletions() noexcept;
 
   void RunReady() noexcept;
-  void RunUntilIdle();
 
 private:
   friend class LUringRecvSource;
+
+  [[nodiscard]]
+  base::Result<detail::ProvidedBufferPool*> GetSharedProvidedBufferPool(
+      std::size_t buffer_size) noexcept;
 
   [[nodiscard]]
   base::Result<std::uint16_t> AllocateBufferGroupId() noexcept {
@@ -332,6 +316,9 @@ private:
   bool cancel_all_pending_{false};
   LUringOp cancel_all_op_{LUringOpKind::kCancelAll};
   std::uint32_t next_buffer_group_id_{1};
+  std::unique_ptr<detail::ProvidedBufferPool> shared_buffer_pool_;
+  std::size_t shared_buffer_capacity_{0};
+  std::size_t shared_buffer_size_{0};
 
 #if defined(COROPACT_ENABLE_TEST_HOOKS)
   std::size_t test_submit_failures_{0};

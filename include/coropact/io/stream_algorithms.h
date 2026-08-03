@@ -26,11 +26,6 @@ concept ZeroCopyWriteExtension = requires(
 };
 
 template <class Stream>
-concept ZeroCopyWriteFallbackObserver = requires(Stream& stream) {
-  stream.RecordZeroCopyFallback();
-};
-
-template <class Stream>
 concept NativeWriteAllExtension =
     requires(Stream& stream, std::span<const std::byte> buffer) {
       requires coro::Awaitable<decltype(stream.WriteAll(buffer))>;
@@ -51,9 +46,6 @@ coro::Task<base::Result<std::size_t>> WriteSomeForAll(
         // boundary before returning, so retrying with ordinary send is safe
         // for the caller's buffer and preserves WriteAll's availability.
         if (result.error().value() == ENOMEM) {
-          if constexpr (ZeroCopyWriteFallbackObserver<Stream>) {
-            stream.RecordZeroCopyFallback();
-          }
           co_return co_await stream.WriteSome(buffer);
         }
         co_return std::unexpected(result.error());

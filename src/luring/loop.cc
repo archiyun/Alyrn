@@ -23,6 +23,7 @@
 #include "coropact/base/try.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/luring/detail/completion_dispatch.h"
+#include "coropact/luring/detail/provided_buffer_pool.h"
 #include "coropact/luring/op.h"
 #include "coropact/luring/options.h"
 #include "coropact/luring/ring.h"
@@ -157,6 +158,9 @@ base::Result<void> LUringLoop::Init(const LUringOptions& options) noexcept {
   wake_pending_ = false;
   wake_inflight_ = false;
   cancel_all_pending_ = false;
+  shared_buffer_pool_.reset();
+  shared_buffer_capacity_ = options.shared_buffer_capacity;
+  shared_buffer_size_ = options.shared_buffer_size;
   cancel_all_op_.BeginNextRequest();
   quit_.store(false, std::memory_order_relaxed);
   initialized_ = true;
@@ -167,6 +171,37 @@ base::Result<void> LUringLoop::Init(const LUringOptions& options) noexcept {
     return std::unexpected(armed.error());
   }
   return {};
+}
+
+base::Result<detail::ProvidedBufferPool*>
+LUringLoop::GetSharedProvidedBufferPool(std::size_t buffer_size) noexcept {
+  assert(IsInLoopThread());
+  if (shared_buffer_capacity_ == 0) {
+    return std::unexpected(base::MakeErrno(ENOENT));
+  }
+  if (buffer_size != shared_buffer_size_) {
+    return std::unexpected(base::MakeErrno(EINVAL));
+  }
+  if (shared_buffer_pool_ != nullptr) {
+    return shared_buffer_pool_.get();
+  }
+  auto group = AllocateBufferGroupId();
+  if (!group.has_value()) {
+    return std::unexpected(group.error());
+  }
+  auto pool = detail::ProvidedBufferPool::Create(
+      ring_.Native(), *group, shared_buffer_capacity_,
+      shared_buffer_size_);
+  if (!pool.has_value()) {
+    return std::unexpected(pool.error());
+  }
+  try {
+    shared_buffer_pool_ = std::make_unique<detail::ProvidedBufferPool>(
+        std::move(*pool));
+  } catch (...) {
+    return std::unexpected(base::MakeErrno(ENOMEM));
+  }
+  return shared_buffer_pool_.get();
 }
 
 void LUringLoop::Loop(std::stop_token token) noexcept {
@@ -352,29 +387,6 @@ void LUringLoop::RunReady() noexcept {
   coro::Scheduler::SetCurrent(previous);
 }
 
-void LUringLoop::RunUntilIdle() {
-  assert(IsInLoopThread());
-
-  if (!initialized_) {
-    return;
-  }
-
-  while (HasReadyWork() || PendingSubmitCount() > 0 || InflightCount() > 0) {
-    RunReady();
-
-    if (PendingSubmitCount() == 0 && InflightCount() == 0) {
-      continue;
-    }
-
-    auto completed = WaitCompletions();
-    if (!completed.has_value()) {
-      break;
-    }
-  }
-
-  RunReady();
-}
-
 base::Result<void> LUringLoop::FlushSubmit() noexcept {
   assert(IsInLoopThread());
 
@@ -546,23 +558,13 @@ void LUringLoop::Wake() noexcept {
 void LUringLoop::HandleMailbox() noexcept {
   assert(IsInLoopThread());
 
-  DrainMessages([this](const LUringMessage& message) noexcept {
-    switch (message.type) {
-      case LUringMessage::Type::kResume: {
-        auto* work = reinterpret_cast<coro::Work*>(static_cast<std::uintptr_t>(message.data));
-        if (work == nullptr) {
-          assert(false && "mailbox resume message contains a null work pointer");
-          return;
-        }
-        ScheduleCompletion(work);
-        return;
-      }
-      case LUringMessage::Type::kFunction:
-        assert(false && "mailbox function messages are not implemented");
-        return;
+  mailbox_.Drain([this](const LUringMessage& message) noexcept {
+    auto* work = reinterpret_cast<coro::Work*>(static_cast<std::uintptr_t>(message.data));
+    if (work == nullptr) {
+      assert(false && "mailbox message contains a null work pointer");
+      return;
     }
-
-    assert(false && "unknown mailbox message type");
+    ScheduleCompletion(work);
   });
 }
 

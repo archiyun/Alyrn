@@ -61,10 +61,6 @@ public:
     return stream_.SendZeroCopy(buffer);
   }
 
-  void RecordZeroCopyFallback() noexcept {
-    stream_.RecordZeroCopyFallback();
-  }
-
   coro::Task<base::Result<void>> Shutdown() {
     co_return co_await stream_.Shutdown();
   }

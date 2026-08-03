@@ -61,6 +61,12 @@ struct LUringOptions {
   // current turn. Zero disables this protection.
   std::chrono::microseconds normal_queue_age_threshold{5000};
 
+  // Loop-wide provided-buffer ring used by RecvSources. This is an aggregate
+  // per-worker capacity, shared by all sources on the loop. Set it to zero
+  // to disable RecvSource creation.
+  std::size_t shared_buffer_capacity{64};
+  std::size_t shared_buffer_size{16 * 1024};
+
 };
 
 }  // namespace coropact::luring
