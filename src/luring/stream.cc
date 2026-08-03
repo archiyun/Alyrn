@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <new>
 #include <utility>
 
 #include "coropact/base/check.h"
@@ -79,6 +80,85 @@ void LUringStream::ReadSomeAwaiter::OnComplete(LUringOp* op) noexcept {
     self->stream_->pending_read_ = nullptr;
     self->stream_->NotifyCloseProgress();
   }
+}
+
+// ---- ReadIntoAwaiter ---
+bool LUringStream::ReadIntoAwaiter::await_suspend(
+    std::coroutine_handle<> continuation) noexcept {
+  stream_->RequireOwnerLoop();
+  if (stream_->closed_ || stream_->fd_ < 0) {
+    Op()->SetImmediateError(base::MakeErrno(EBADF));
+    return false;
+  }
+  if (stream_->pending_read_ != nullptr) {
+    Op()->SetImmediateError(base::MakeErrno(EBUSY));
+    return false;
+  }
+  if (!PrepareReservation()) {
+    Op()->SetImmediateError(base::MakeErrno(ENOMEM));
+    return false;
+  }
+
+  stream_->pending_read_ = this;
+  Op()->kind = LUringOpKind::kReadIntoComplete;
+  return detail::SubmitAwaitingOperation(
+      *stream_->loop_, *Op(), continuation,
+      [fd = stream_->fd_, buffer = writable_](io_uring_sqe* sqe) noexcept {
+        io_uring_prep_recv(sqe, fd, buffer.data(), buffer.size(), 0);
+      },
+      [this](base::Error error) noexcept {
+        stream_->pending_read_ = nullptr;
+        FinishReservation(std::unexpected(error));
+        Op()->SetImmediateError(error);
+      });
+}
+
+net::ReadIntoOutcome LUringStream::ReadIntoAwaiter::await_resume() noexcept {
+  return {
+      .result = ToSizeResult(Op()->result),
+      .buffer = std::move(buffer_),
+  };
+}
+
+void LUringStream::ReadIntoAwaiter::OnComplete(LUringOp* op) noexcept {
+  auto* self = static_cast<OpHook*>(op)->Owner();
+  self->FinishReservation(ToSizeResult(op->result));
+  if (self->stream_ != nullptr && self->stream_->pending_read_ == self) {
+    self->stream_->pending_read_ = nullptr;
+    self->stream_->NotifyCloseProgress();
+  }
+}
+
+bool LUringStream::ReadIntoAwaiter::PrepareReservation() noexcept {
+  try {
+    auto iovs = buffer_.PrepareWrite(reserve_, 1);
+    if (iovs.empty()) {
+      buffer_.AbortWrite();
+      return false;
+    }
+    writable_ = {
+        static_cast<std::byte*>(iovs.front().iov_base),
+        iovs.front().iov_len,
+    };
+  } catch (const std::bad_alloc&) {
+    buffer_.AbortWrite();
+    return false;
+  }
+  reservation_active_ = true;
+  return true;
+}
+
+void LUringStream::ReadIntoAwaiter::FinishReservation(
+    base::Result<std::size_t> result) noexcept {
+  COROPACT_CHECK(reservation_active_,
+                 "ReadIntoAwaiter completion without a buffer reservation");
+  if (result.has_value()) {
+    buffer_.CommitWrite(*result);
+  } else {
+    buffer_.AbortWrite();
+  }
+  writable_ = {};
+  reservation_active_ = false;
 }
 
 // --- ReadSomeForAwaiter ---
@@ -503,6 +583,10 @@ void DispatchStreamReadComplete(LUringOp* op) noexcept {
   LUringStream::ReadSomeAwaiter::OnComplete(op);
 }
 
+void DispatchStreamReadIntoComplete(LUringOp* op) noexcept {
+  LUringStream::ReadIntoAwaiter::OnComplete(op);
+}
+
 void DispatchTimedReadComplete(LUringOp* op) noexcept {
   LUringStream::ReadSomeForAwaiter::OnReadComplete(op);
 }
@@ -597,6 +681,11 @@ void LUringStream::RequireOwnerLoop() const noexcept {
 
 LUringStream::ReadSomeAwaiter LUringStream::ReadSome(std::span<std::byte> buffer) noexcept {
   return ReadSomeAwaiter{*this, buffer};
+}
+
+LUringStream::ReadIntoAwaiter LUringStream::ReadInto(
+    net::Buffer buffer, std::size_t reserve) noexcept {
+  return ReadIntoAwaiter{*this, std::move(buffer), reserve};
 }
 
 LUringStream::ReadSomeForAwaiter LUringStream::ReadSomeFor(

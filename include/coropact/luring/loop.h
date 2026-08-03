@@ -247,6 +247,8 @@ public:
   base::Result<std::size_t> WaitCompletions() noexcept;
 
   void RunReady() noexcept;
+  void RunUntilIdle();
+
 private:
   friend class LUringRecvSource;
 

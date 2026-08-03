@@ -72,6 +72,7 @@ enum class LUringOpKind : std::uint8_t {
   kListenerCloseComplete,
 
   kReadComplete,
+  kReadIntoComplete,
   kTimedReadComplete,
   kTimedReadTimeoutComplete,
 

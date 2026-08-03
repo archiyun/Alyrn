@@ -22,6 +22,7 @@ CompletionDisposition DispatchSendZeroCopyComplete(
     CompletionEvent event) noexcept;
 void DispatchListenerCloseComplete(LUringOp* op) noexcept;
 void DispatchStreamReadComplete(LUringOp* op) noexcept;
+void DispatchStreamReadIntoComplete(LUringOp* op) noexcept;
 void DispatchTimedReadComplete(LUringOp* op) noexcept;
 void DispatchTimedReadTimeoutComplete(LUringOp* op) noexcept;
 void DispatchStreamWriteComplete(LUringOp* op) noexcept;
