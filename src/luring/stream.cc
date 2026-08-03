@@ -403,11 +403,6 @@ bool LUringStream::SendZeroCopyAwaiter::await_suspend(
     Op()->SetImmediateError(base::MakeErrno(EBADF));
     return false;
   }
-  if (!stream_->loop_->HasCapability(NativeFeature::kSendZeroCopy)) {
-    RecordFailure(ZeroCopySendErrorKind::kProfileUnavailable);
-    Op()->SetImmediateError(base::MakeErrno(ENOTSUP));
-    return false;
-  }
   if (buffer_.empty()) {
     Op()->SetImmediateSuccess();
     if (diagnostics_ != nullptr) {

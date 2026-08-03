@@ -131,13 +131,6 @@ int main() {
 
   coropact::luring::LUringOptions loop_options;
   loop_options.entries = entries;
-  auto binding = coropact::luring::BindLUring(loop_options,
-                                              coropact::luring::RuntimeProfile::Core());
-  if (!binding.has_value()) {
-    std::fprintf(stderr, "BindLUring failed: %s\n", binding.error().message().c_str());
-    return 1;
-  }
-
   std::vector<std::unique_ptr<coropact::coro::CoroFramePoolResource>> frame_pools;
   if (frame_pool) {
     frame_pools.reserve(workers);

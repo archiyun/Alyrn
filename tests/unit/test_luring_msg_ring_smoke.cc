@@ -5,30 +5,16 @@
 #include <barrier>
 #include <chrono>
 #include <cstdint>
-#include <expected>
 #include <iostream>
-#include <system_error>
 #include <thread>
 
-#include "coropact/base/error.h"
 #include "coropact/coro/work.h"
-#include "coropact/luring/capability.h"
-#include "coropact/luring/capabilities.h"
 #include "coropact/luring/loop.h"
 #include "coropact/luring/op.h"
 #include "coropact/luring/options.h"
 #include "coropact/utils/macros.h"
 
 namespace {
-
-using coropact::base::Error;
-
-bool IsEnvironmentSkip(Error error) {
-  return error == std::errc::operation_not_supported ||
-         error == std::errc::operation_not_permitted ||
-         error == std::errc::permission_denied ||
-         error == std::errc::function_not_supported;
-}
 
 bool Check(bool condition, const char* message) {
   if (!condition) {
@@ -92,22 +78,6 @@ bool CheckMsgRingMailboxSchedule() {
   coropact::luring::LUringOptions options;
   options.entries = 16;
   options.submit_batch = 1;
-
-  auto capabilities = coropact::luring::ProbeCapabilities(options);
-  if (!capabilities.has_value()) {
-    if (IsEnvironmentSkip(capabilities.error())) {
-      std::cout << "SKIP: io_uring capability probe unavailable: "
-                << capabilities.error().message() << '\n';
-      return true;
-    }
-    std::cout << "FAIL: capability probe failed: " << capabilities.error().message() << '\n';
-    return false;
-  }
-
-  if (!capabilities->Has(coropact::luring::NativeFeature::kMsgRing)) {
-    std::cout << "SKIP: kernel does not support IORING_OP_MSG_RING\n";
-    return true;
-  }
 
   std::atomic_bool failed{false};
   std::atomic_bool work_completed{false};

@@ -41,7 +41,6 @@ struct ZeroCopySendResult {
 // boundary at which a failure was observed without changing every Result.
 enum class ZeroCopySendErrorKind : std::uint8_t {
   kClosed,
-  kProfileUnavailable,
   kBusy,
   kSubmission,
   kProtocol,
@@ -59,7 +58,6 @@ struct ZeroCopySendDiagnostics {
   // a terminal write error.
   std::atomic<std::uint64_t> errors{0};
   std::atomic<std::uint64_t> closed_errors{0};
-  std::atomic<std::uint64_t> profile_errors{0};
   std::atomic<std::uint64_t> busy_errors{0};
   std::atomic<std::uint64_t> submission_errors{0};
   // Raw first-CQE failures, independently classified even when a higher-level
@@ -115,9 +113,6 @@ struct ZeroCopySendDiagnostics {
     switch (kind) {
       case ZeroCopySendErrorKind::kClosed:
         counter = &closed_errors;
-        break;
-      case ZeroCopySendErrorKind::kProfileUnavailable:
-        counter = &profile_errors;
         break;
       case ZeroCopySendErrorKind::kBusy:
         counter = &busy_errors;

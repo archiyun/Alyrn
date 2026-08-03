@@ -77,15 +77,14 @@ if(COROPACT_ENABLE_CTRACK)
         CTRACK_DISABLE_EXECUTION_POLICY)
 endif()
 
-# coropact_io_contract —— 后端实现使用的 I/O concepts、Result 算法和语义 profile
-# profile。它不包含具体 backend，也不依赖具体 backend。
+# coropact_io_contract —— 后端实现使用的 I/O concepts 和 Result 算法。
+# 它不包含具体 backend，也不依赖具体 backend。
 add_library(coropact_io_contract INTERFACE)
 target_include_directories(coropact_io_contract INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(coropact_io_contract INTERFACE coropact_coro coropact_foundation)
 target_compile_features(coropact_io_contract INTERFACE cxx_std_23)
 
-# coropact_io —— 面向应用的 I/O facade。具体 backend 在各自 target 定义完成后
-# 通过 adapter 注入到这个 facade，backend 核心不反向依赖 facade。
+# coropact_io —— 面向应用的 I/O facade。具体 backend 核心不反向依赖 facade。
 add_library(coropact_io INTERFACE)
 target_include_directories(coropact_io INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(coropact_io INTERFACE coropact_io_contract)
@@ -152,7 +151,6 @@ target_link_libraries(coropact_io INTERFACE coropact_reactor)
 # 共同解释 coropact_io 的协程可观察 I/O 契约。
 if(COROPACT_ENABLE_URING)
     add_library(coropact_luring STATIC
-        src/luring/capabilities.cc
         src/luring/connector.cc
         src/luring/listener.cc
         src/luring/recv_source.cc
@@ -186,26 +184,9 @@ if(COROPACT_ENABLE_URING)
     endif()
     target_compile_features(coropact_luring PUBLIC cxx_std_23)
 
-    # The luring core remains independent of the application facade. Only the
-    # separate adapter is added to the higher-level facade below.
+    # The luring core remains independent of the application facade. The
+    # composition target exposes it alongside the Reactor backend.
     target_link_libraries(coropact_io INTERFACE coropact_luring)
-
-    add_library(coropact_io_luring_adapter STATIC
-        src/io/luring_backend.cc
-    )
-    target_include_directories(coropact_io_luring_adapter
-        PUBLIC
-            ${CMAKE_CURRENT_SOURCE_DIR}/include
-            ${URING_INCLUDE_DIRS}
-    )
-    target_link_libraries(coropact_io_luring_adapter
-        PUBLIC
-            coropact_io_contract
-            coropact_luring
-    )
-    target_compile_definitions(coropact_io_luring_adapter PUBLIC COROPACT_ENABLE_URING)
-    target_compile_features(coropact_io_luring_adapter PUBLIC cxx_std_23)
-    target_link_libraries(coropact_io INTERFACE coropact_io_luring_adapter)
 endif()
 
 # coropact_coro_reactor —— 把协程绑定到 coropact_reactor 后端。
@@ -214,8 +195,8 @@ target_include_directories(coropact_coro_reactor INTERFACE ${CMAKE_CURRENT_SOURC
 target_link_libraries(coropact_coro_reactor INTERFACE coropact_reactor)
 target_compile_features(coropact_coro_reactor INTERFACE cxx_std_23)
 
-# coropact_coro_luring —— 把协程绑到 io_uring proactor 后端。头文件经 ring.h 引入
-# <liburing.h>,故仅在 COROPACT_ENABLE_URING 下构建;待 coropact_uring 复活后改 link 它。
+# coropact_coro_luring —— 把协程绑定到 io_uring proactor 后端。
+# It is available only when COROPACT_ENABLE_URING is enabled.
 if(COROPACT_ENABLE_URING)
     add_library(coropact_coro_luring INTERFACE)
     target_include_directories(coropact_coro_luring INTERFACE

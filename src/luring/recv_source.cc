@@ -142,13 +142,6 @@ base::Result<LUringRecvSource> LUringRecvSource::Create(
   if (!options.Valid()) {
     return std::unexpected(base::MakeErrno(EINVAL));
   }
-  if (!loop->HasCapability(NativeFeature::kMultishotRecv) ||
-      !loop->HasCapability(NativeFeature::kProvidedBufferRing) ||
-      (options.incremental_buffer_consumption &&
-       !loop->HasCapability(NativeFeature::kProvidedBufferRingIncremental))) {
-    return std::unexpected(base::MakeErrno(ENOTSUP));
-  }
-
   const std::size_t capacity = options.source.buffer_capacity;
   if (capacity > std::numeric_limits<std::size_t>::max() / options.buffer_size) {
     return std::unexpected(base::MakeErrno(EOVERFLOW));

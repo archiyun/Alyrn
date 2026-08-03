@@ -16,7 +16,6 @@
 #include <utility>
 
 #include "coropact/coro.h"
-#include "coropact/io.h"
 #include "coropact/net.h"
 #include "coropact/reactor.h"
 #include "echo_app.h"
@@ -31,12 +30,6 @@ constexpr std::uint16_t kPort = 9090;
 
 int main() {
   std::signal(SIGPIPE, SIG_IGN);
-
-  auto binding = io::BindReactor(io::CapabilitySet::CoreNetwork());
-  if (!binding.has_value()) {
-    std::cerr << "failed to bind Reactor backend: " << binding.error().message() << '\n';
-    return 1;
-  }
 
   reactor::EventLoop loop;
   const auto address = net::Endpoint::Loopback(kPort);

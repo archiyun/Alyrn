@@ -47,12 +47,6 @@ int main() {
   luring::LUringOptions loop_options;
   loop_options.entries = kEntries;
 
-  auto binding = luring::BindLUring(loop_options, luring::RuntimeProfile::Core());
-  if (!binding.has_value()) {
-    std::cerr << "failed to bind Luring backend: " << binding.error().message() << '\n';
-    return 1;
-  }
-
   luring::LUringServerOptions server_options;
   server_options.worker_group_options.worker_num = kWorkers;
   server_options.worker_group_options.worker_options.loop_options = loop_options;
