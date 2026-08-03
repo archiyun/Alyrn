@@ -4,8 +4,10 @@
 #include <atomic>
 #include <barrier>
 #include <chrono>
+#include <cerrno>
 #include <cstdint>
 #include <iostream>
+#include <system_error>
 #include <thread>
 
 #include "coropact/coro/work.h"
@@ -22,6 +24,14 @@ bool Check(bool condition, const char* message) {
     return false;
   }
   return true;
+}
+
+bool IsEnvironmentSkip(coropact::base::Error error) {
+  return error == std::errc::operation_not_supported ||
+         error == std::errc::operation_not_permitted ||
+         error == std::errc::permission_denied ||
+         error == std::errc::function_not_supported ||
+         error.value() == EINVAL;
 }
 
 class SignalWork final : public coropact::coro::Work {
