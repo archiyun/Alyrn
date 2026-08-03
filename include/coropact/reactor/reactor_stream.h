@@ -86,12 +86,12 @@ public:
   }
 
 private:
-  void HandleRead(time::Timestamp receive_time);
+  void HandleRead();
   void HandleWrite();
   void HandleClose();
   void HandleError();
 
-  static void DispatchRead(void* context, time::Timestamp receive_time) noexcept;
+  static void DispatchRead(void* context) noexcept;
   static void DispatchWrite(void* context) noexcept;
   static void DispatchClose(void* context) noexcept;
   static void DispatchError(void* context) noexcept;

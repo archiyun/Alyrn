@@ -40,7 +40,7 @@ struct ChannelReadContext {
   coropact::reactor::EventLoop* loop;
 };
 
-void DrainChannelRead(void* raw, coropact::time::Timestamp) noexcept {
+void DrainChannelRead(void* raw) noexcept {
   auto& context = *static_cast<ChannelReadContext*>(raw);
   char byte = 0;
   ::read(context.fd, &byte, sizeof(byte));

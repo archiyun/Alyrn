@@ -8,7 +8,7 @@
 namespace coropact::reactor {
 
 Channel::Channel(EventLoop* loop, int fd)
-    : loop_(loop), fd_(fd), events_(0), revents_(0), index_(-1), tied_(false) {
+    : loop_(loop), fd_(fd), events_(0), revents_(0), index_(-1) {
   COROPACT_DCHECK(loop_ != nullptr, "Channel: loop must not be null");
   COROPACT_DCHECK(fd_ >= 0, "Channel: fd must be a valid non-negative descriptor");
 }
@@ -19,8 +19,7 @@ Channel::Channel(Channel&& other) noexcept
       events_(kNoneEvent),
       revents_(kNoneEvent),
       index_(-1),
-      trigger_mode_(TriggerMode::kLevelTriggered),
-      tied_(false) {
+      trigger_mode_(TriggerMode::kLevelTriggered) {
   COROPACT_CHECK(other.index_ == -1,
                  "Channel move requires the source to be detached from the Poller");
 
@@ -30,8 +29,6 @@ Channel::Channel(Channel&& other) noexcept
   revents_ = std::exchange(other.revents_, kNoneEvent);
   index_ = std::exchange(other.index_, -1);
   trigger_mode_ = std::exchange(other.trigger_mode_, TriggerMode::kLevelTriggered);
-  tie_ = std::move(other.tie_);
-  tied_ = std::exchange(other.tied_, false);
   read_callback_ = std::exchange(other.read_callback_, nullptr);
   write_callback_ = std::exchange(other.write_callback_, nullptr);
   close_callback_ = std::exchange(other.close_callback_, nullptr);
@@ -58,8 +55,6 @@ Channel& Channel::operator=(Channel&& other) noexcept {
   revents_ = std::exchange(other.revents_, kNoneEvent);
   index_ = std::exchange(other.index_, -1);
   trigger_mode_ = std::exchange(other.trigger_mode_, TriggerMode::kLevelTriggered);
-  tie_ = std::move(other.tie_);
-  tied_ = std::exchange(other.tied_, false);
   read_callback_ = std::exchange(other.read_callback_, nullptr);
   write_callback_ = std::exchange(other.write_callback_, nullptr);
   close_callback_ = std::exchange(other.close_callback_, nullptr);
@@ -69,12 +64,6 @@ Channel& Channel::operator=(Channel&& other) noexcept {
   close_context_ = std::exchange(other.close_context_, nullptr);
   error_context_ = std::exchange(other.error_context_, nullptr);
   return *this;
-}
-
-void Channel::Tie(const std::shared_ptr<void>& obj) {
-  COROPACT_DCHECK(!tied_, "Channel::Tie called more than once");
-  tie_ = obj;
-  tied_ = true;
 }
 
 void Channel::Update() {
@@ -88,21 +77,8 @@ void Channel::Remove() {
   loop_->RemoveChannel(this);
 }
 
-void Channel::HandleEvent(coropact::time::Timestamp receive_time) {
+void Channel::HandleEvent() {
   COROPACT_DCHECK(loop_->IsInLoopThread(), "Channel::HandleEvent called from wrong thread");
-  if (tied_) {
-    // Hold a temporary shared reference while dispatching callbacks so the
-    // owner cannot be destroyed in the middle of event handling.
-    std::shared_ptr<void> guard = tie_.lock();
-    if (guard) {
-      HandleEventWithGuard(receive_time);
-    }
-  } else {
-    HandleEventWithGuard(receive_time);
-  }
-}
-
-void Channel::HandleEventWithGuard(coropact::time::Timestamp receive_time) {
   // kHupEvent without kReadEvent usually means the peer has closed the connection
   // and there is no more readable data left in the socket buffer.
   if (static_cast<bool>((revents_ & kHupEvent)) && !static_cast<bool>((revents_ & kReadEvent))) {
@@ -119,7 +95,7 @@ void Channel::HandleEventWithGuard(coropact::time::Timestamp receive_time) {
 
   if (static_cast<bool>(revents_ & kReadEvent)) {
     if (read_callback_ != nullptr) {
-      read_callback_(read_context_, receive_time);
+      read_callback_(read_context_);
     }
   }
 

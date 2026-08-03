@@ -123,10 +123,10 @@ void EventLoop::Loop() {
     active_channels_.clear();
 
     const int timeout_ms = HasImmediateWork() ? 0 : kPollTimeMs;
-    poll_return_time_ = poller_->Poll(timeout_ms, &active_channels_);
+    poller_->Poll(timeout_ms, &active_channels_);
 
     for (Channel* channel : active_channels_) {
-      channel->HandleEvent(poll_return_time_);
+      channel->HandleEvent();
     }
   }
 
@@ -197,7 +197,7 @@ void EventLoop::Wakeup() {
 
 void EventLoop::HandleRead() { ReadEventfd(wakeup_fd_); }
 
-void EventLoop::DispatchWakeupRead(void* context, time::Timestamp /*receive_time*/) noexcept {
+void EventLoop::DispatchWakeupRead(void* context) noexcept {
   static_cast<EventLoop*>(context)->HandleRead();
 }
 

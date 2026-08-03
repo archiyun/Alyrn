@@ -3,10 +3,8 @@
 #pragma once
 
 #include <cstdint>
-#include <memory>
 #include <utility>
 
-#include "coropact/time/timestamp.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::reactor {
@@ -34,7 +32,7 @@ public:
   COROPACT_DELETE_COPY(Channel);
 
   using EventCallback = void (*)(void*) noexcept;
-  using ReadEventCallback = void (*)(void*, time::Timestamp) noexcept;
+  using ReadEventCallback = EventCallback;
 
   explicit Channel(EventLoop* loop, int fd);
   ~Channel() = default;
@@ -48,7 +46,7 @@ public:
 
   // Dispatches the active events stored in revents_ to the corresponding
   // callbacks.
-  void HandleEvent(time::Timestamp receive_time);
+  void HandleEvent();
 
   void SetReadCallback(ReadEventCallback callback, void* context) noexcept {
     read_callback_ = callback;
@@ -66,10 +64,6 @@ public:
     error_callback_ = callback;
     error_context_ = context;
   }
-
-  // Ties the Channel to an owner object so callbacks are not dispatched after
-  // the owner has already been destroyed.
-  void Tie(const std::shared_ptr<void>&);
 
   [[nodiscard]]
   int Fd() const {
@@ -161,18 +155,12 @@ private:
   // Pushes the current interest set to the Poller.
   void Update();
 
-  // Dispatches events only after verifying that the tied owner is still alive.
-  void HandleEventWithGuard(time::Timestamp receive_time);
-
   EventLoop* loop_{nullptr};
   int fd_;
   int events_;
   int revents_;
   int index_;
   TriggerMode trigger_mode_{TriggerMode::kLevelTriggered};
-
-  std::weak_ptr<void> tie_;
-  bool tied_;
 
   ReadEventCallback read_callback_{nullptr};
   EventCallback write_callback_{nullptr};

@@ -78,7 +78,7 @@ private:
   void EnsureAdmission() noexcept;
   void RequestBackendStop(std::optional<base::Error> error = std::nullopt) noexcept;
   void CompleteReadiness() noexcept;
-  void OnReady(time::Timestamp receive_time) noexcept;
+  void OnReady() noexcept;
   void OnClose() noexcept;
   void OnError() noexcept;
 

@@ -42,7 +42,7 @@ private:
   static constexpr std::size_t kTimerQueueMax = 1 << 15;
 
   void HandleRead();
-  static void DispatchRead(void* context, time::Timestamp receive_time) noexcept;
+  static void DispatchRead(void* context) noexcept;
   void ResetTimerfd(time::Timestamp expiration);
 
   EventLoop* loop_;

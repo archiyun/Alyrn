@@ -39,11 +39,6 @@ public:
   // Requests the loop to exit. The loop stops after the current iteration.
   void Quit();
 
-  [[nodiscard]]
-  time::Timestamp PollReturnTime() const {
-    return poll_return_time_;
-  }
-
   // Runs cb immediately if called from the owning loop thread; otherwise,
   // schedules it to run in the loop thread. Thread-safe.
   void RunInLoop(Functor callback);
@@ -79,7 +74,7 @@ private:
 
   // Handles readability on the wakeup fd.
   void HandleRead();
-  static void DispatchWakeupRead(void* context, time::Timestamp receive_time) noexcept;
+  static void DispatchWakeupRead(void* context) noexcept;
 
   // Runs all functors queued through QueueInLoop().
   void DoPendingFunctors();
@@ -92,8 +87,6 @@ private:
   std::atomic<bool> calling_pending_functors_;
 
   const std::thread::id thread_id_;
-  time::Timestamp poll_return_time_;
-
   std::unique_ptr<Poller> poller_;
   std::vector<Channel*> active_channels_;
 

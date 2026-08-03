@@ -42,7 +42,7 @@ bool Expect(bool condition, const char* message) {
     return true;
 }
 
-void NoopRead(void*, coropact::time::Timestamp) noexcept {}
+void NoopRead(void*) noexcept {}
 
 struct ReadAndQuitContext {
     int fd;
@@ -50,7 +50,7 @@ struct ReadAndQuitContext {
     coropact::reactor::EventLoop* loop;
 };
 
-void DrainReadAndQuit(void* raw, coropact::time::Timestamp) noexcept {
+void DrainReadAndQuit(void* raw) noexcept {
     auto& context = *static_cast<ReadAndQuitContext*>(raw);
     char buf[4];
     ::read(context.fd, buf, sizeof(buf));
@@ -58,7 +58,7 @@ void DrainReadAndQuit(void* raw, coropact::time::Timestamp) noexcept {
     context.loop->Quit();
 }
 
-void MarkRead(void* raw, coropact::time::Timestamp) noexcept {
+void MarkRead(void* raw) noexcept {
     *static_cast<bool*>(raw) = true;
 }
 
@@ -69,7 +69,7 @@ struct ReadManyContext {
     coropact::reactor::EventLoop* loop;
 };
 
-void DrainReadMany(void* raw, coropact::time::Timestamp) noexcept {
+void DrainReadMany(void* raw) noexcept {
     auto& context = *static_cast<ReadManyContext*>(raw);
     char buf[4];
     ::read(context.fd, buf, sizeof(buf));

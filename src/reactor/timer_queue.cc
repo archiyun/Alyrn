@@ -85,7 +85,7 @@ void TimerQueue::Cancel(coropact::time::TimerId id) {
   });
 }
 
-void TimerQueue::DispatchRead(void* context, time::Timestamp /*receive_time*/) noexcept {
+void TimerQueue::DispatchRead(void* context) noexcept {
   static_cast<TimerQueue*>(context)->HandleRead();
 }
 
