@@ -12,8 +12,6 @@
 #include "coropact/io/async_stream.h" // IWYU pragma: export
 #include "coropact/io/accept_source.h" // IWYU pragma: export
 #include "coropact/io/buffer.h" // IWYU pragma: export
-#include "coropact/io/backend.h" // IWYU pragma: export
-#include "coropact/io/profile.h" // IWYU pragma: export
 #include "coropact/io/recv_source.h" // IWYU pragma: export
 #include "coropact/io/stream_algorithms.h" // IWYU pragma: export
 

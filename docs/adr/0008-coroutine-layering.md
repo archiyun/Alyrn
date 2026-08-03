@@ -49,10 +49,11 @@ scheduler or I/O backend.
   higher-level contract/facade layer and may depend on `net` or a selected
   backend, but concrete backends must not include `io` headers or link the
   `coropact_io` target.
-- `net::Buffer` owns backend-neutral byte storage; `net::WritePart` and
-  accept-source admission state remain network primitives. `io::Buffer` is
-  the public zero-cost spelling for `net::Buffer`. The `io` facade may compose
-  these lower modules but does not own their implementations.
+- `net::SegmentedBuffer` owns backend-neutral segmented byte storage;
+  `net::WritePart` and accept-source admission state remain network primitives.
+  `io::Buffer` is the public zero-cost spelling for `net::SegmentedBuffer`.
+  The `io` facade may compose these lower modules but does not own their
+  implementations.
 - Business and protocol code may depend on `Task` and abstract asynchronous
   stream operations, but not on either concrete I/O backend.
 

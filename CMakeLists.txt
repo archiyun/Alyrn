@@ -202,7 +202,6 @@ if(COROPACT_ENABLE_URING)
     # The luring core remains independent of the application facade. The
     # composition target exposes it alongside the Reactor backend.
     target_link_libraries(coropact_io INTERFACE coropact_luring)
-
 endif()
 
 # coropact_coro_reactor —— 把协程绑定到 coropact_reactor 后端。

@@ -573,6 +573,74 @@ bool CheckQueuePauseThenRearm() {
          observation.stopped;
 }
 
+bool CheckIncrementalBufferConsumption() {
+  LUringLoop loop;
+  switch (InitLoop(loop)) {
+    case LoopInitStatus::kReady:
+      break;
+    case LoopInitStatus::kSkip:
+      return true;
+    case LoopInitStatus::kFail:
+      return false;
+  }
+
+  auto pair = MakeSocketPair();
+  if (!pair.has_value()) {
+    std::cout << "FAIL: socketpair failed: " << pair.error().message() << '\n';
+    return false;
+  }
+  auto receiver = std::move(pair->first);
+  auto sender = std::move(pair->second);
+
+  LUringRecvSourceOptions options;
+  options.source.pending_depth = 1;
+  options.source.event_capacity = 2;
+  options.source.buffer_capacity = 2;
+  options.buffer_size = 8;
+  options.incremental_buffer_consumption = true;
+
+  auto source_result = LUringRecvSource::Create(&loop, receiver.Get(), options);
+  if (!source_result.has_value()) {
+    if (IsEnvironmentSkip(source_result.error())) {
+      std::cout << "SKIP: incremental provided buffer ring unavailable: "
+                << source_result.error().message() << '\n';
+      return true;
+    }
+    std::cout << "FAIL: incremental RecvSource creation failed: "
+              << source_result.error().message() << '\n';
+    return false;
+  }
+  auto source = std::move(*source_result);
+
+  IncrementalObservation observation;
+  coropact::coro::SpawnDetach(
+      loop, ReceiveIncremental(&source, sender.Get(), &observation));
+  loop.RunReady();
+
+  constexpr std::string_view kFirst = "abc";
+  const auto sent = ::send(sender.Get(), kFirst.data(), kFirst.size(), MSG_NOSIGNAL);
+  if (sent != static_cast<ssize_t>(kFirst.size())) {
+    std::cout << "FAIL: incremental first send failed: "
+              << coropact::base::CurrentErrno().message() << '\n';
+    return false;
+  }
+
+  if (!PumpUntil(loop, [&] { return observation.done || observation.error.has_value(); })) {
+    return false;
+  }
+  if (observation.error.has_value()) {
+    std::cout << "FAIL: incremental recv source failed: "
+              << observation.error->message() << '\n';
+    return false;
+  }
+
+  return observation.first == kFirst && observation.second == "defgh" &&
+         observation.first_buffer == observation.second_buffer &&
+         observation.second_address ==
+             observation.first_address + observation.first.size() &&
+         observation.stopped;
+}
+
 #if defined(COROPACT_ENABLE_TEST_HOOKS)
 
 bool CheckInitialSubmitFailure() {
@@ -699,6 +767,9 @@ int main() {
     return 1;
   }
   if (!CheckQueuePauseThenRearm()) {
+    return 1;
+  }
+  if (!CheckIncrementalBufferConsumption()) {
     return 1;
   }
 #if defined(COROPACT_ENABLE_TEST_HOOKS)

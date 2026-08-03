@@ -5,12 +5,9 @@
 #include <barrier>
 #include <chrono>
 #include <cstdint>
-#include <expected>
 #include <iostream>
-#include <system_error>
 #include <thread>
 
-#include "coropact/base/error.h"
 #include "coropact/coro/work.h"
 #include "coropact/luring/loop.h"
 #include "coropact/luring/op.h"
@@ -18,15 +15,6 @@
 #include "coropact/utils/macros.h"
 
 namespace {
-
-using coropact::base::Error;
-
-bool IsEnvironmentSkip(Error error) {
-  return error == std::errc::operation_not_supported ||
-         error == std::errc::operation_not_permitted ||
-         error == std::errc::permission_denied ||
-         error == std::errc::function_not_supported;
-}
 
 bool Check(bool condition, const char* message) {
   if (!condition) {
