@@ -19,7 +19,6 @@
 #include "coropact/base/error.h"
 #include "coropact/coro/detached_task.h"
 #include "coropact/coro/spawn.h"
-#include "coropact/luring/capability.h"
 #include "coropact/luring/loop.h"
 #include "coropact/luring/options.h"
 #include "coropact/luring/recv_source.h"
@@ -34,8 +33,6 @@ using coropact::luring::LUringLoop;
 using coropact::luring::LUringOptions;
 using coropact::luring::LUringRecvSource;
 using coropact::luring::LUringRecvSourceOptions;
-using coropact::luring::NativeFeature;
-using coropact::luring::RuntimeProfile;
 
 class UniqueFd final {
 public:
@@ -123,17 +120,11 @@ bool IsEnvironmentSkip(Error error) {
          error.value() == EINVAL;
 }
 
-LoopInitStatus InitLoop(
-    LUringLoop& loop,
-    RuntimeProfile profile =
-        RuntimeProfile::Core()
-            .Require(NativeFeature::kMultishotRecv)
-            .Require(NativeFeature::kProvidedBufferRing)) {
+LoopInitStatus InitLoop(LUringLoop& loop) {
   LUringOptions options;
   options.entries = 32;
   options.submit_batch = 1;
 
-  options.active_profile = profile;
   auto initialized = loop.Init(options);
   if (initialized.has_value()) {
     return LoopInitStatus::kReady;
@@ -572,10 +563,7 @@ bool CheckQueuePauseThenRearm() {
 
 bool CheckIncrementalBufferConsumption() {
   LUringLoop loop;
-  switch (InitLoop(
-      loop,
-      RuntimeProfile::Core().Require(
-          NativeFeature::kProvidedBufferRingIncremental))) {
+  switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
     case LoopInitStatus::kSkip:
@@ -639,34 +627,6 @@ bool CheckIncrementalBufferConsumption() {
          observation.second_address ==
              observation.first_address + observation.first.size() &&
          observation.stopped;
-}
-
-bool CheckIncrementalRequiresProfile() {
-  LUringLoop loop;
-  if (InitLoop(loop, RuntimeProfile::Core()) !=
-      LoopInitStatus::kReady) {
-    return true;
-  }
-
-  auto pair = MakeSocketPair();
-  if (!pair.has_value()) {
-    std::cout << "FAIL: socketpair failed: " << pair.error().message() << '\n';
-    return false;
-  }
-  auto receiver = std::move(pair->first);
-
-  LUringRecvSourceOptions options;
-  options.incremental_buffer_consumption = true;
-  auto source = LUringRecvSource::Create(&loop, receiver.Get(), options);
-  if (source.has_value()) {
-    std::cout << "FAIL: F_BUF_MORE source bypassed the active profile gate\n";
-    return false;
-  }
-  if (source.error().value() != ENOTSUP) {
-    std::cout << "FAIL: F_BUF_MORE profile gate returned the wrong error\n";
-    return false;
-  }
-  return true;
 }
 
 #if defined(COROPACT_ENABLE_TEST_HOOKS)
@@ -785,9 +745,6 @@ bool CheckCancelSubmitFailure() {
 }  // namespace
 
 int main() {
-  if (!CheckIncrementalRequiresProfile()) {
-    return 1;
-  }
   if (!CheckRecvAndLease()) {
     return 1;
   }

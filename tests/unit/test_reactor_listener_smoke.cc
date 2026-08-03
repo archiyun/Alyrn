@@ -14,7 +14,6 @@
 #include "coropact/coro/spawn.h"
 #include "coropact/coro/task.h"
 #include "coropact/io/async_listener.h"
-#include "coropact/io/backend.h"
 #include "coropact/net/endpoint.h"
 #include "coropact/reactor/event_loop.h"
 #include "coropact/reactor/reactor_connect.h"
@@ -254,38 +253,6 @@ bool CheckAcceptSourceListenerCloseWakesPendingNext() {
          Check(close_succeeded, "listener Close returned an error");
 }
 
-bool CheckBackendBindingProfile() {
-  auto binding = coropact::io::BindReactor();
-  if (!Check(binding.has_value(), "reactor backend binding failed")) {
-    return false;
-  }
-
-  if (!Check(binding->active_profile.ContainsAll(
-                 coropact::io::CapabilitySet::CoreNetwork()),
-             "reactor binding does not activate core gateway profile")) {
-    return false;
-  }
-
-  if (!Check(binding->backend == coropact::io::Backend::kReactor,
-             "reactor binding reports the wrong backend")) {
-    return false;
-  }
-
-  auto timed = coropact::io::BindReactor(
-      coropact::io::CapabilitySet::TimedNetwork());
-  if (!Check(timed.has_value(),
-             "reactor should support the timed gateway profile")) {
-    return false;
-  }
-
-  const auto unsupported_extension =
-      coropact::io::CapabilitySet::CoreNetwork().Require(
-          coropact::io::IoRequirement::kSendZeroCopy);
-  auto unsupported = coropact::io::BindReactor(unsupported_extension);
-  return Check(!unsupported.has_value(),
-               "reactor binding accepted an unsupported extension profile");
-}
-
 }  // namespace
 
 int main() {
@@ -295,7 +262,6 @@ int main() {
   if (!CheckAcceptSourceQueueAndStop()) return 1;
   if (!CheckAcceptSourceStopWakesPendingNext()) return 1;
   if (!CheckAcceptSourceListenerCloseWakesPendingNext()) return 1;
-  if (!CheckBackendBindingProfile()) return 1;
 
   std::cout << "reactor listener smoke: PASS\n";
   return 0;

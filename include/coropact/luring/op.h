@@ -196,7 +196,12 @@ public:
   // Some operation families have more than one CQE and keep their primary
   // result outside LUringOp. They mark the operation terminal only after the
   // final CQE has been interpreted by the family handler.
-  bool CompleteWithoutResult() noexcept { return completion_slot_.TryComplete(); }
+  bool CompleteWithoutResult() noexcept {
+    if (!completion_slot_.TryComplete()) {
+      return false;
+    }
+    return true;
+  }
 
   void SetImmediateSuccess() noexcept { result = 0; }
 
@@ -206,14 +211,10 @@ public:
   }
 
   [[nodiscard]]
-  LUringOpKind DispatchKind() const noexcept {
-    return kind;
-  }
+  LUringOpKind DispatchKind() const noexcept { return kind; }
 
   [[nodiscard]]
-  bool IsCompleted() const noexcept {
-    return completion_slot_.Completed();
-  }
+  bool IsCompleted() const noexcept { return completion_slot_.Completed(); }
 
   // Starts the next request in a reusable physical slot. Call only after the
   // previous request reached its operation-family release point. This clears

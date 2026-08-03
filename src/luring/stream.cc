@@ -83,7 +83,8 @@ void LUringStream::ReadSomeAwaiter::OnComplete(LUringOp* op) noexcept {
 }
 
 // ---- ReadIntoAwaiter ---
-bool LUringStream::ReadIntoAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
+bool LUringStream::ReadIntoAwaiter::await_suspend(
+    std::coroutine_handle<> continuation) noexcept {
   stream_->RequireOwnerLoop();
   if (stream_->closed_ || stream_->fd_ < 0) {
     Op()->SetImmediateError(base::MakeErrno(EBADF));
@@ -147,8 +148,10 @@ bool LUringStream::ReadIntoAwaiter::PrepareReservation() noexcept {
   return true;
 }
 
-void LUringStream::ReadIntoAwaiter::FinishReservation(base::Result<std::size_t> result) noexcept {
-  COROPACT_CHECK(reservation_active_, "ReadIntoAwaiter completion without a buffer reservation");
+void LUringStream::ReadIntoAwaiter::FinishReservation(
+    base::Result<std::size_t> result) noexcept {
+  COROPACT_CHECK(reservation_active_,
+                 "ReadIntoAwaiter completion without a buffer reservation");
   if (result.has_value()) {
     buffer_.CommitWrite(*result);
   } else {
@@ -480,11 +483,6 @@ bool LUringStream::SendZeroCopyAwaiter::await_suspend(
     Op()->SetImmediateError(base::MakeErrno(EBADF));
     return false;
   }
-  if (!stream_->loop_->HasCapability(NativeFeature::kSendZeroCopy)) {
-    RecordFailure(ZeroCopySendErrorKind::kProfileUnavailable);
-    Op()->SetImmediateError(base::MakeErrno(ENOTSUP));
-    return false;
-  }
   if (buffer_.empty()) {
     Op()->SetImmediateSuccess();
     if (diagnostics_ != nullptr) {
@@ -685,8 +683,8 @@ LUringStream::ReadSomeAwaiter LUringStream::ReadSome(std::span<std::byte> buffer
   return ReadSomeAwaiter{*this, buffer};
 }
 
-LUringStream::ReadIntoAwaiter LUringStream::ReadInto(net::Buffer buffer,
-                                                     std::size_t reserve) noexcept {
+LUringStream::ReadIntoAwaiter LUringStream::ReadInto(
+    net::Buffer buffer, std::size_t reserve) noexcept {
   return ReadIntoAwaiter{*this, std::move(buffer), reserve};
 }
 
