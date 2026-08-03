@@ -17,7 +17,6 @@
 #include "coropact/io/backend.h"
 #include "coropact/net/endpoint.h"
 #include "coropact/reactor/event_loop.h"
-#include "coropact/reactor/event_loop_scheduler.h"
 #include "coropact/reactor/reactor_connect.h"
 #include "coropact/reactor/reactor_listener.h"
 #include "coropact/reactor/reactor_stream.h"
@@ -126,7 +125,7 @@ bool CheckFactories() {
 bool CheckPendingAccept() {
   coropact::reactor::EventLoop loop;
   coropact::reactor::ReactorListener listener(&loop, coropact::net::Endpoint(0));
-  coropact::reactor::EventLoopScheduler scheduler(&loop);
+  auto& scheduler = loop;
 
   auto listen_addr = listener.LocalAddress();
   if (!listen_addr.has_value()) {
@@ -153,7 +152,7 @@ bool CheckPendingAccept() {
 bool CheckCloseCancelsPendingAccept() {
   coropact::reactor::EventLoop loop;
   coropact::reactor::ReactorListener listener(&loop, coropact::net::Endpoint(0));
-  coropact::reactor::EventLoopScheduler scheduler(&loop);
+  auto& scheduler = loop;
 
   std::optional<AcceptResult> result;
 
@@ -171,7 +170,7 @@ bool CheckCloseCancelsPendingAccept() {
 bool CheckAcceptSourceQueueAndStop() {
   coropact::reactor::EventLoop loop;
   coropact::reactor::ReactorListener listener(&loop, coropact::net::Endpoint(0));
-  coropact::reactor::EventLoopScheduler scheduler(&loop);
+  auto& scheduler = loop;
 
   auto source_result = listener.AcceptSource({.pending_depth = 1, .event_capacity = 1});
   if (!Check(source_result.has_value(), "failed to create reactor AcceptSource")) {
@@ -217,7 +216,7 @@ bool CheckAcceptSourceQueueAndStop() {
 bool CheckAcceptSourceStopWakesPendingNext() {
   coropact::reactor::EventLoop loop;
   coropact::reactor::ReactorListener listener(&loop, coropact::net::Endpoint(0));
-  coropact::reactor::EventLoopScheduler scheduler(&loop);
+  auto& scheduler = loop;
 
   auto source_result = listener.AcceptSource();
   if (!Check(source_result.has_value(), "failed to create pending reactor AcceptSource")) {
@@ -240,7 +239,7 @@ bool CheckAcceptSourceStopWakesPendingNext() {
 bool CheckAcceptSourceListenerCloseWakesPendingNext() {
   coropact::reactor::EventLoop loop;
   coropact::reactor::ReactorListener listener(&loop, coropact::net::Endpoint(0));
-  coropact::reactor::EventLoopScheduler scheduler(&loop);
+  auto& scheduler = loop;
 
   auto source_result = listener.AcceptSource();
   if (!Check(source_result.has_value(), "failed to create close-test AcceptSource")) {

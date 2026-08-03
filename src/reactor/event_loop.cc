@@ -67,8 +67,9 @@ thread_local EventLoop* t_loop_in_this_thread = nullptr;
 
 }  // namespace
 
-EventLoop::EventLoop()
-    : looping_(false),
+EventLoop::EventLoop(std::pmr::memory_resource* frame_resource)
+    : Scheduler(frame_resource),
+      looping_(false),
       quit_(false),
       calling_pending_functors_(false),
       thread_id_(std::this_thread::get_id()),
@@ -141,6 +142,11 @@ void EventLoop::Quit() {
   if (!IsInLoopThread()) {
     Wakeup();
   }
+}
+
+void EventLoop::Schedule(coro::Work* work) noexcept {
+  COROPACT_DCHECK(work != nullptr, "EventLoop::Schedule: work must not be null");
+  QueueInLoop([this, work] { Run(work); });
 }
 
 void EventLoop::RunInLoop(Functor callback) {

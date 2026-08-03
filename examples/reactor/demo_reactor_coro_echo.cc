@@ -36,7 +36,6 @@
 #include "coropact/io/stream_algorithms.h"
 #include "coropact/net/endpoint.h"
 #include "coropact/reactor/event_loop.h"
-#include "coropact/reactor/event_loop_scheduler.h"
 #include "coropact/reactor/reactor_listener.h"
 #include "coropact/reactor/reactor_stream.h"
 
@@ -172,7 +171,6 @@ int main() {
   const auto port = static_cast<std::uint16_t>(EnvInt("PORT", 9090));
 
   coropact::reactor::EventLoop loop;
-  coropact::reactor::EventLoopScheduler scheduler(&loop);
   auto listener_result =
       coropact::reactor::ReactorListener::Create(&loop, coropact::net::Endpoint(port));
   if (!listener_result.has_value()) {
@@ -184,8 +182,8 @@ int main() {
   long long active_sessions = 0;
   long long total_messages = 0;
 
-  coropact::coro::SpawnDetach(scheduler,
-                              AcceptLoop(&listener, &scheduler, &active_sessions, &total_messages));
+  coropact::coro::SpawnDetach(loop,
+                              AcceptLoop(&listener, &loop, &active_sessions, &total_messages));
 
   std::cout << "reactor coro echo listening on 127.0.0.1:" << port << '\n';
   std::cout << "try: nc 127.0.0.1 " << port << '\n';

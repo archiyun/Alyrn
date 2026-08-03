@@ -12,7 +12,7 @@
 // Schedules the resume. Two exit paths are covered:
 //   conn A: Deliver(0)            -> EOF, graceful co_return
 //   conn B: Deliver(unexpected)   -> teardown via resume-with-error
-// EventLoopScheduler adapts the coro Scheduler onto the EventLoop: the initial
+// EventLoop adapts the coro Scheduler onto the EventLoop: the initial
 // root submission and subsequent IO resumes run through the EventLoop callback
 // queue. Run under ASan (leak check proves self-destruct) and TSan.
 
@@ -34,7 +34,6 @@
 #include "coropact/coro/task.h"
 #include "coropact/coro/work.h"
 #include "coropact/reactor/event_loop.h"
-#include "coropact/reactor/event_loop_scheduler.h"
 
 using coropact::base::MakeErrno;
 using coropact::base::Result;
@@ -122,7 +121,7 @@ int main() {
   // deliveries for the following loop iteration, after both roots have parked on
   // their first Read.
   g_loop->RunInLoop([&] {
-    static coropact::reactor::EventLoopScheduler sched(g_loop);
+    auto& sched = *g_loop;
     Spawn(sched, Serve(&conn_a)).Detach();
     Spawn(sched, Serve(&conn_b)).Detach();
     g_loop->QueueInLoop([&] { conn_a.Deliver(Result<int>{0}, g_loop); });  // EOF

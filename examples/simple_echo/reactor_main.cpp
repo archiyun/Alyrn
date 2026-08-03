@@ -39,7 +39,6 @@ int main() {
   }
 
   reactor::EventLoop loop;
-  reactor::EventLoopScheduler scheduler(&loop);
   const auto address = net::Endpoint::Loopback(kPort);
 
   auto listener_result = reactor::ReactorListener::Create(&loop, address);
@@ -49,7 +48,7 @@ int main() {
   }
 
   auto listener = std::move(*listener_result);
-  coro::SpawnDetach(scheduler, simple_echo::AcceptLoop(listener, scheduler));
+  coro::SpawnDetach(loop, simple_echo::AcceptLoop(listener, loop));
 
   std::cout << "simple echo (Reactor) listening on 127.0.0.1:" << kPort << '\n';
   loop.Loop();

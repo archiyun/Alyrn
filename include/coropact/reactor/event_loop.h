@@ -9,6 +9,8 @@
 #include <thread>
 #include <vector>
 
+#include "coropact/coro/scheduler.h"
+#include "coropact/coro/work.h"
 #include "coropact/reactor/channel.h"
 #include "coropact/time/timer_id.h"
 #include "coropact/time/timestamp.h"
@@ -24,11 +26,11 @@ class TimerQueue;
 // Each EventLoop is bound to exactly one thread. It owns a Poller for waiting
 // on I/O events, dispatches active Channel callbacks, runs queued functors in
 // thread order, and manages timer callbacks through TimerQueue.
-class EventLoop {
+class EventLoop final : public coro::Scheduler {
 public:
   using Functor = std::function<void()>;
 
-  EventLoop();
+  explicit EventLoop(std::pmr::memory_resource* frame_resource = nullptr);
   ~EventLoop();
 
   COROPACT_DELETE_COPY_MOVE(EventLoop);
@@ -38,6 +40,9 @@ public:
 
   // Requests the loop to exit. The loop stops after the current iteration.
   void Quit();
+
+  // Schedules coroutine work on this loop's owning thread.
+  void Schedule(coro::Work* work) noexcept override;
 
   // Runs cb immediately if called from the owning loop thread; otherwise,
   // schedules it to run in the loop thread. Thread-safe.

@@ -20,7 +20,6 @@
 #include "coropact/net/socket.h"
 #include "coropact/reactor/channel.h"
 #include "coropact/reactor/event_loop.h"
-#include "coropact/reactor/event_loop_scheduler.h"
 #include "coropact/reactor/reactor_listener.h"
 #include "coropact/reactor/reactor_stream.h"
 
@@ -174,7 +173,7 @@ bool TestReactorStreamMove() {
     coropact::reactor::EventLoop loop;
     coropact::reactor::ReactorStream source(&loop, source_pair[0]);
     coropact::reactor::ReactorStream moved(std::move(source));
-    coropact::reactor::EventLoopScheduler scheduler(&loop);
+    auto& scheduler = loop;
 
     coropact::coro::SpawnDetach(scheduler,
                                 ReadOnce(&moved, &loop, &constructed_buffer, &constructed_result));
@@ -199,7 +198,7 @@ bool TestReactorStreamMove() {
     coropact::reactor::ReactorStream source(&loop, target_pair[0]);
     coropact::reactor::ReactorStream target(&loop, source_pair[1]);
     target = std::move(source);
-    coropact::reactor::EventLoopScheduler scheduler(&loop);
+    auto& scheduler = loop;
 
     coropact::coro::SpawnDetach(scheduler,
                                 ReadOnce(&target, &loop, &assigned_buffer, &assigned_result));
@@ -247,7 +246,7 @@ bool TestReactorListenerMove() {
       return false;
     }
 
-    coropact::reactor::EventLoopScheduler scheduler(&loop);
+    auto& scheduler = loop;
     coropact::coro::SpawnDetach(scheduler, AcceptOnce(&moved, &loop, &accepted));
     loop.QueueInLoop([&] { client_fd = ConnectNonBlocking(*moved_address); });
     loop.RunAfter(0.2, [&] { loop.Quit(); });

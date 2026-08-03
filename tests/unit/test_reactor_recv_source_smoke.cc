@@ -18,7 +18,6 @@
 #include "coropact/coro/spawn.h"
 #include "coropact/io/recv_source.h"
 #include "coropact/reactor/event_loop.h"
-#include "coropact/reactor/event_loop_scheduler.h"
 #include "coropact/reactor/reactor_recv_source.h"
 
 namespace {
@@ -26,7 +25,7 @@ namespace {
 using coropact::base::Error;
 using coropact::coro::DetachedTask;
 using coropact::reactor::EventLoop;
-using coropact::reactor::EventLoopScheduler;
+using coropact::reactor::EventLoop;
 using coropact::reactor::ReactorRecvSource;
 using coropact::reactor::ReactorRecvSourceOptions;
 
@@ -170,7 +169,7 @@ bool CheckImmediateReceive() {
   }
 
   EventLoop loop;
-  EventLoopScheduler scheduler(&loop);
+  auto& scheduler = loop;
   auto source_result = ReactorRecvSource::Create(&loop, fds[0]);
   if (!Check(source_result.has_value(), "immediate source creation failed")) {
     ::close(fds[0]);
@@ -205,7 +204,7 @@ bool CheckPendingReceive() {
   }
 
   EventLoop loop;
-  EventLoopScheduler scheduler(&loop);
+  auto& scheduler = loop;
   auto source_result = ReactorRecvSource::Create(&loop, fds[0]);
   if (!Check(source_result.has_value(), "pending source creation failed")) {
     ::close(fds[0]);
@@ -244,7 +243,7 @@ bool CheckEof() {
   }
 
   EventLoop loop;
-  EventLoopScheduler scheduler(&loop);
+  auto& scheduler = loop;
   auto source_result = ReactorRecvSource::Create(&loop, fds[0]);
   if (!Check(source_result.has_value(), "EOF source creation failed")) {
     ::close(fds[0]);
@@ -280,7 +279,7 @@ bool CheckQueuedEvents() {
   }
 
   EventLoop loop;
-  EventLoopScheduler scheduler(&loop);
+  auto& scheduler = loop;
   ReactorRecvSourceOptions options;
   options.source.event_capacity = 2;
   options.source.buffer_capacity = 2;
@@ -329,7 +328,7 @@ bool CheckStopWaitsForLease() {
   }
 
   EventLoop loop;
-  EventLoopScheduler scheduler(&loop);
+  auto& scheduler = loop;
   auto source_result = ReactorRecvSource::Create(&loop, fds[0]);
   if (!Check(source_result.has_value(), "lease source creation failed")) {
     ::close(fds[0]);
@@ -361,7 +360,7 @@ bool CheckStopWakesPendingNext() {
   }
 
   EventLoop loop;
-  EventLoopScheduler scheduler(&loop);
+  auto& scheduler = loop;
   auto source_result = ReactorRecvSource::Create(&loop, fds[0]);
   if (!Check(source_result.has_value(), "stop source creation failed")) {
     ::close(fds[0]);

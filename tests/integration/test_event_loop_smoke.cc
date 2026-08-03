@@ -9,7 +9,6 @@
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/work.h"
 #include "coropact/reactor/event_loop.h"
-#include "coropact/reactor/event_loop_scheduler.h"
 #include "coropact/time/timestamp.h"
 
 namespace {
@@ -141,7 +140,7 @@ private:
 
 bool TestSchedulerWorkIsDeferredAndBound() {
   coropact::reactor::EventLoop loop;
-  coropact::reactor::EventLoopScheduler scheduler(&loop);
+  auto& scheduler = loop;
 
   bool ran = false;
   bool scheduler_matched = false;
@@ -161,27 +160,16 @@ bool TestSchedulerWorkIsDeferredAndBound() {
   return ok;
 }
 
-bool TestSchedulerMoveRetainsFrameResource() {
-  coropact::reactor::EventLoop loop;
-  std::pmr::monotonic_buffer_resource first_resource;
-  std::pmr::monotonic_buffer_resource second_resource;
-
-  auto created = coropact::reactor::EventLoopScheduler::Create(&loop, &first_resource);
-  if (!Expect(created.has_value(), "scheduler creation should succeed")) {
-    return false;
-  }
-
-  coropact::reactor::EventLoopScheduler moved(std::move(*created));
-  coropact::reactor::EventLoopScheduler assigned(&loop, &second_resource);
-  assigned = std::move(moved);
-
-  return Expect(assigned.FrameResource() == &first_resource,
-                "moved scheduler should retain its original frame resource");
+bool TestEventLoopRetainsFrameResource() {
+  std::pmr::monotonic_buffer_resource resource;
+  coropact::reactor::EventLoop loop(&resource);
+  return Expect(loop.FrameResource() == &resource,
+                "event loop should retain its configured frame resource");
 }
 
 bool TestSchedulerWorkFromForeignThreadWakesLoop() {
   using SchedulerContext =
-      std::pair<coropact::reactor::EventLoop*, coropact::reactor::EventLoopScheduler*>;
+      std::pair<coropact::reactor::EventLoop*, coropact::reactor::EventLoop*>;
 
   std::promise<SchedulerContext> ready_promise;
   std::promise<void> exited_promise;
@@ -190,7 +178,7 @@ bool TestSchedulerWorkFromForeignThreadWakesLoop() {
 
   std::thread loop_thread([&] {
     coropact::reactor::EventLoop loop;
-    coropact::reactor::EventLoopScheduler scheduler(&loop);
+    auto& scheduler = loop;
     ready_promise.set_value({&loop, &scheduler});
     loop.Loop();
     exited_promise.set_value();
@@ -217,7 +205,7 @@ bool TestSchedulerWorkFromForeignThreadWakesLoop() {
 
 class ScheduleNextWork final : public coropact::coro::Work {
 public:
-  ScheduleNextWork(coropact::reactor::EventLoopScheduler* scheduler, coropact::coro::Work* next,
+  ScheduleNextWork(coropact::reactor::EventLoop* scheduler, coropact::coro::Work* next,
                    bool* next_ran, bool* next_was_deferred) noexcept
       : scheduler_(scheduler),
         next_(next),
@@ -233,7 +221,7 @@ private:
     *self->next_was_deferred_ = !*self->next_ran_;
   }
 
-  coropact::reactor::EventLoopScheduler* scheduler_;
+  coropact::reactor::EventLoop* scheduler_;
   coropact::coro::Work* next_;
   bool* next_ran_;
   bool* next_was_deferred_;
@@ -241,7 +229,7 @@ private:
 
 bool TestSchedulerWorkScheduledDuringResumeIsDeferred() {
   coropact::reactor::EventLoop loop;
-  coropact::reactor::EventLoopScheduler scheduler(&loop);
+  auto& scheduler = loop;
 
   bool second_ran = false;
   bool scheduler_matched = false;
@@ -380,7 +368,7 @@ int main() {
         if (!TestQueueInLoopWakesLoop()) return 1;
         if (!TestNestedQueueInLoopSchedulesNextTurn()) return 1;
         if (!TestSchedulerWorkIsDeferredAndBound()) return 1;
-        if (!TestSchedulerMoveRetainsFrameResource()) return 1;
+        if (!TestEventLoopRetainsFrameResource()) return 1;
         if (!TestSchedulerWorkFromForeignThreadWakesLoop()) return 1;
         if (!TestSchedulerWorkScheduledDuringResumeIsDeferred()) return 1;
         if (!TestRepeatingTimerCanCancelItself()) return 1;
