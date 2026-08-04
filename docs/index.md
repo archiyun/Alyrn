@@ -12,3 +12,8 @@
 
 - [网络库统一 HTTP 压测](benchmark/network-libraries.md)
 - [CoroPact luring 与 Reactor 独立对比](benchmark/luring-reactor-comparison-20260802.md)
+
+## 发布与安装
+
+- [Packaging and installation](packaging.md)
+- [Release notes: CoroPact 0.1.0](releases/v0.1.0.md)

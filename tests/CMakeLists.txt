@@ -147,6 +147,22 @@ target_link_libraries(recv_source_state_smoke_test
 
 add_test(NAME recv_source_state_smoke_test COMMAND recv_source_state_smoke_test)
 
+add_executable(luring_buffer_storage_smoke_test
+    unit/test_luring_buffer_storage_smoke.cc
+)
+
+target_include_directories(luring_buffer_storage_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(luring_buffer_storage_smoke_test
+    PRIVATE
+        coropact_foundation
+)
+
+add_test(NAME luring_buffer_storage_smoke_test COMMAND luring_buffer_storage_smoke_test)
+
 # C3:detached 连接协程(Spawn)park→resume→自毁,无泄漏/无 UAF。链 coropact_reactor。
 add_executable(spawn_c3_smoke_test
     unit/test_spawn_c3_smoke.cc
@@ -247,25 +263,6 @@ if(COROPACT_ENABLE_URING)
     target_compile_definitions(luring_op_smoke_test PRIVATE COROPACT_ENABLE_URING)
 
     add_test(NAME luring_op_smoke_test COMMAND luring_op_smoke_test)
-
-    add_executable(luring_backend_adapter_smoke_test
-        unit/test_luring_backend_adapter_smoke.cc
-    )
-
-    target_include_directories(luring_backend_adapter_smoke_test
-        PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/../include
-            ${URING_INCLUDE_DIRS}
-    )
-
-    target_link_libraries(luring_backend_adapter_smoke_test
-        PRIVATE
-            coropact_io_luring_adapter
-    )
-
-    target_compile_definitions(luring_backend_adapter_smoke_test PRIVATE COROPACT_ENABLE_URING)
-
-    add_test(NAME luring_backend_adapter_smoke_test COMMAND luring_backend_adapter_smoke_test)
 
     add_executable(luring_coro_smoke_test
         unit/test_luring_coro_smoke.cc

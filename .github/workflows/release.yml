@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing or new release tag to publish"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Build and publish release artifacts
+    runs-on: ubuntu-24.04
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build packages with Docker
+        run: |
+          docker buildx build \
+            --target artifacts \
+            --output=type=local,dest=dist \
+            .
+
+      - name: Verify release artifacts
+        run: |
+          shopt -s nullglob
+          artifacts=(dist/*.deb dist/*.tar.gz)
+          if (( ${#artifacts[@]} == 0 )); then
+            echo "::error::Docker build produced no Debian or tarball artifacts in dist/"
+            find dist -maxdepth 2 -print 2>/dev/null || true
+            exit 1
+          fi
+          printf 'Release artifacts:\n%s\n' "${artifacts[@]}"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s nullglob
+          artifacts=(dist/*.deb dist/*.tar.gz)
+          release_notes="docs/releases/${RELEASE_TAG}.md"
+          if [[ -f "${release_notes}" ]]; then
+            gh release create "${RELEASE_TAG}" "${artifacts[@]}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --notes-file "${release_notes}"
+          else
+            gh release create "${RELEASE_TAG}" "${artifacts[@]}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --generate-notes
+          fi

@@ -4,16 +4,13 @@
 #include <atomic>
 #include <barrier>
 #include <chrono>
+#include <cerrno>
 #include <cstdint>
-#include <expected>
 #include <iostream>
 #include <system_error>
 #include <thread>
 
-#include "coropact/base/error.h"
 #include "coropact/coro/work.h"
-#include "coropact/luring/capability.h"
-#include "coropact/luring/capabilities.h"
 #include "coropact/luring/loop.h"
 #include "coropact/luring/op.h"
 #include "coropact/luring/options.h"
@@ -21,21 +18,20 @@
 
 namespace {
 
-using coropact::base::Error;
-
-bool IsEnvironmentSkip(Error error) {
-  return error == std::errc::operation_not_supported ||
-         error == std::errc::operation_not_permitted ||
-         error == std::errc::permission_denied ||
-         error == std::errc::function_not_supported;
-}
-
 bool Check(bool condition, const char* message) {
   if (!condition) {
     std::cout << "FAIL: " << message << '\n';
     return false;
   }
   return true;
+}
+
+bool IsEnvironmentSkip(coropact::base::Error error) {
+  return error == std::errc::operation_not_supported ||
+         error == std::errc::operation_not_permitted ||
+         error == std::errc::permission_denied ||
+         error == std::errc::function_not_supported ||
+         error.value() == EINVAL;
 }
 
 class SignalWork final : public coropact::coro::Work {
@@ -57,7 +53,6 @@ bool CheckMailboxNotificationState() {
   coropact::luring::LUringMailbox mailbox;
 
   const coropact::luring::LUringMessage message{
-      .type = coropact::luring::LUringMessage::Type::kResume,
       .data = 1,
   };
 
@@ -93,23 +88,8 @@ bool CheckMsgRingMailboxSchedule() {
   options.entries = 16;
   options.submit_batch = 1;
 
-  auto capabilities = coropact::luring::ProbeCapabilities(options);
-  if (!capabilities.has_value()) {
-    if (IsEnvironmentSkip(capabilities.error())) {
-      std::cout << "SKIP: io_uring capability probe unavailable: "
-                << capabilities.error().message() << '\n';
-      return true;
-    }
-    std::cout << "FAIL: capability probe failed: " << capabilities.error().message() << '\n';
-    return false;
-  }
-
-  if (!capabilities->Has(coropact::luring::NativeFeature::kMsgRing)) {
-    std::cout << "SKIP: kernel does not support IORING_OP_MSG_RING\n";
-    return true;
-  }
-
   std::atomic_bool failed{false};
+  std::atomic_bool skipped{false};
   std::atomic_bool work_completed{false};
   std::atomic<coropact::luring::LUringLoop*> target_ptr{nullptr};
   std::barrier sync_point(3);
@@ -131,6 +111,7 @@ bool CheckMsgRingMailboxSchedule() {
 
     constexpr int kPollLimit = 2000;
     for (int i = 0; i < kPollLimit && !failed.load(std::memory_order_acquire) &&
+                                      !skipped.load(std::memory_order_acquire) &&
                                       !work_completed.load(std::memory_order_acquire);
          ++i) {
       auto completed = target.PollCompletions();
@@ -145,7 +126,8 @@ bool CheckMsgRingMailboxSchedule() {
       }
     }
 
-    if (!work_completed.load(std::memory_order_acquire)) {
+    if (!skipped.load(std::memory_order_acquire) &&
+        !work_completed.load(std::memory_order_acquire)) {
       failed.store(true, std::memory_order_release);
     }
   });
@@ -170,7 +152,6 @@ bool CheckMsgRingMailboxSchedule() {
     }
 
     const auto push_result = target->PostMessage({
-        .type = coropact::luring::LUringMessage::Type::kResume,
         .data = static_cast<std::uint64_t>(
             reinterpret_cast<std::uintptr_t>(&work)),
     });
@@ -194,12 +175,17 @@ bool CheckMsgRingMailboxSchedule() {
         0);
     if (!submitted.has_value()) {
       COROPACT_IGNORE_RESULT(target->RetryMessageNotification());
+      if (IsEnvironmentSkip(submitted.error())) {
+        skipped.store(true, std::memory_order_release);
+        return;
+      }
       failed.store(true, std::memory_order_release);
       return;
     }
 
     constexpr int kPollLimit = 2000;
     for (int i = 0; i < kPollLimit && !failed.load(std::memory_order_acquire) &&
+                                      !skipped.load(std::memory_order_acquire) &&
                                       !notify_op.IsCompleted();
          ++i) {
       auto completed = source.PollCompletions();
@@ -222,6 +208,11 @@ bool CheckMsgRingMailboxSchedule() {
 
   source_thread.join();
   target_thread.join();
+
+  if (skipped.load(std::memory_order_acquire)) {
+    std::cout << "SKIP: kernel does not support IORING_OP_MSG_RING\n";
+    return true;
+  }
 
   return Check(!failed.load(std::memory_order_acquire),
                "cross-ring message delivery failed") &&

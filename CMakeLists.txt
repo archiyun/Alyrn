@@ -3,6 +3,9 @@ project(high_concurrency_coropact
         VERSION 0.1.0
         LANGUAGES CXX)
 
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -20,7 +23,7 @@ find_package(Threads REQUIRED)
 
 if(COROPACT_ENABLE_URING)
     find_package(PkgConfig REQUIRED)
-    pkg_check_modules(URING REQUIRED liburing)
+    pkg_check_modules(URING REQUIRED IMPORTED_TARGET liburing>=2.6)
 endif()
 
 # Sanitizer toggle. Empty/OFF = no instrumentation (default). Accepts any
@@ -42,7 +45,8 @@ add_library(coropact_foundation INTERFACE)
 
 target_include_directories(coropact_foundation
     INTERFACE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
 target_link_libraries(coropact_foundation
@@ -58,20 +62,29 @@ target_compile_features(coropact_foundation INTERFACE cxx_std_23)
 # JoinHandle、SyncWait、可选 FrameAllocatorScope)。Task<T> 不定义错误策略；
 # I/O 层按需返回 Task<base::Result<T>>。
 add_library(coropact_coro INTERFACE)
-target_include_directories(coropact_coro INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(coropact_coro INTERFACE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
 target_compile_features(coropact_coro INTERFACE cxx_std_23)
 
 # coropact_io_contract —— 后端实现使用的 I/O concepts、Result 算法和语义 profile
 # profile。它不包含具体 backend，也不依赖具体 backend。
 add_library(coropact_io_contract INTERFACE)
-target_include_directories(coropact_io_contract INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(coropact_io_contract INTERFACE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
 target_link_libraries(coropact_io_contract INTERFACE coropact_coro coropact_foundation)
 target_compile_features(coropact_io_contract INTERFACE cxx_std_23)
 
 # coropact_io —— 面向应用的 I/O facade。具体 backend 在各自 target 定义完成后
 # 通过 adapter 注入到这个 facade，backend 核心不反向依赖 facade。
 add_library(coropact_io INTERFACE)
-target_include_directories(coropact_io INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(coropact_io INTERFACE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
 target_link_libraries(coropact_io INTERFACE coropact_io_contract)
 target_compile_features(coropact_io INTERFACE cxx_std_23)
 
@@ -82,7 +95,8 @@ add_library(coropact_net STATIC
 
 target_include_directories(coropact_net
     PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
 target_link_libraries(coropact_net
@@ -115,7 +129,8 @@ add_library(coropact_reactor STATIC
 
 target_include_directories(coropact_reactor
     PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
 target_link_libraries(coropact_reactor
@@ -136,7 +151,6 @@ target_link_libraries(coropact_io INTERFACE coropact_reactor)
 # 共同解释 coropact_io 的协程可观察 I/O 契约。
 if(COROPACT_ENABLE_URING)
     add_library(coropact_luring STATIC
-        src/luring/capabilities.cc
         src/luring/connector.cc
         src/luring/listener.cc
         src/luring/recv_source.cc
@@ -151,15 +165,15 @@ if(COROPACT_ENABLE_URING)
 
     target_include_directories(coropact_luring
         PUBLIC
-            ${CMAKE_CURRENT_SOURCE_DIR}/include
-            ${URING_INCLUDE_DIRS}
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
 
     target_link_libraries(coropact_luring
         PUBLIC
             coropact_net
             coropact_io_contract
-            ${URING_LIBRARIES}
+            PkgConfig::URING
     )
 
     target_compile_definitions(coropact_luring PUBLIC COROPACT_ENABLE_URING)
@@ -168,40 +182,27 @@ if(COROPACT_ENABLE_URING)
     endif()
     target_compile_features(coropact_luring PUBLIC cxx_std_23)
 
-    # The luring core remains independent of the application facade. Only the
-    # separate adapter is added to the higher-level facade below.
+    # The luring core remains independent of the application facade. The
+    # composition target exposes it alongside the Reactor backend.
     target_link_libraries(coropact_io INTERFACE coropact_luring)
-
-    add_library(coropact_io_luring_adapter STATIC
-        src/io/luring_backend.cc
-    )
-    target_include_directories(coropact_io_luring_adapter
-        PUBLIC
-            ${CMAKE_CURRENT_SOURCE_DIR}/include
-            ${URING_INCLUDE_DIRS}
-    )
-    target_link_libraries(coropact_io_luring_adapter
-        PUBLIC
-            coropact_io_contract
-            coropact_luring
-    )
-    target_compile_definitions(coropact_io_luring_adapter PUBLIC COROPACT_ENABLE_URING)
-    target_compile_features(coropact_io_luring_adapter PUBLIC cxx_std_23)
-    target_link_libraries(coropact_io INTERFACE coropact_io_luring_adapter)
 endif()
 
 # coropact_coro_reactor —— 把协程绑定到 coropact_reactor 后端。
 add_library(coropact_coro_reactor INTERFACE)
-target_include_directories(coropact_coro_reactor INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(coropact_coro_reactor INTERFACE
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
 target_link_libraries(coropact_coro_reactor INTERFACE coropact_reactor)
 target_compile_features(coropact_coro_reactor INTERFACE cxx_std_23)
 
-# coropact_coro_luring —— 把协程绑到 io_uring proactor 后端。头文件经 ring.h 引入
-# <liburing.h>,故仅在 COROPACT_ENABLE_URING 下构建;待 coropact_uring 复活后改 link 它。
+# coropact_coro_luring —— 把协程绑定到 io_uring proactor 后端。
+# It is available only when COROPACT_ENABLE_URING is enabled.
 if(COROPACT_ENABLE_URING)
     add_library(coropact_coro_luring INTERFACE)
     target_include_directories(coropact_coro_luring INTERFACE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include ${URING_INCLUDE_DIRS})
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
     target_link_libraries(coropact_coro_luring INTERFACE coropact_luring)
     target_compile_definitions(coropact_coro_luring INTERFACE COROPACT_ENABLE_URING)
     target_compile_features(coropact_coro_luring INTERFACE cxx_std_23)
@@ -222,3 +223,70 @@ endif()
 if(BUILD_TESTS)
     add_subdirectory(tests)
 endif()
+
+# ── Installation and package metadata ──────────────────────────────────────
+# Keep the build-tree and install-tree include paths separate so the exported
+# targets remain relocatable after the source tree is removed.
+set(COROPACT_INSTALL_CMAKEDIR
+    "${CMAKE_INSTALL_LIBDIR}/cmake/CoroPact")
+set(COROPACT_PACKAGE_HAS_URING ${COROPACT_ENABLE_URING})
+
+set(COROPACT_INSTALL_TARGETS
+    coropact_foundation
+    coropact_coro
+    coropact_io_contract
+    coropact_io
+    coropact_net
+    coropact_reactor
+    coropact_coro_reactor)
+
+if(COROPACT_ENABLE_URING)
+    list(APPEND COROPACT_INSTALL_TARGETS
+        coropact_luring
+        coropact_coro_luring)
+endif()
+
+install(TARGETS ${COROPACT_INSTALL_TARGETS}
+    EXPORT CoroPactTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+install(DIRECTORY include/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+
+install(EXPORT CoroPactTargets
+    FILE CoroPactTargets.cmake
+    NAMESPACE CoroPact::
+    DESTINATION ${COROPACT_INSTALL_CMAKEDIR})
+
+configure_package_config_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CoroPactConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/CoroPactConfig.cmake
+    INSTALL_DESTINATION ${COROPACT_INSTALL_CMAKEDIR}
+    PATH_VARS CMAKE_INSTALL_INCLUDEDIR CMAKE_INSTALL_LIBDIR)
+
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/CoroPactConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion)
+
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/CoroPactConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/CoroPactConfigVersion.cmake
+    DESTINATION ${COROPACT_INSTALL_CMAKEDIR})
+
+set(CPACK_PACKAGE_NAME "coropact")
+set(CPACK_PACKAGE_VENDOR "CoroPact contributors")
+set(CPACK_PACKAGE_CONTACT "archiyun/CoroPact maintainers")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
+    "C++23 coroutine networking runtime with Reactor and io_uring backends")
+set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
+set(CPACK_RESOURCE_FILE_LICENSE ${CMAKE_CURRENT_SOURCE_DIR}/LICENSE)
+set(CPACK_GENERATOR "TGZ;DEB")
+set(CPACK_PACKAGING_INSTALL_PREFIX "/usr")
+if(COROPACT_ENABLE_URING)
+    set(CPACK_DEBIAN_PACKAGE_DEPENDS "liburing-dev (>= 2.6)")
+endif()
+include(CPack)

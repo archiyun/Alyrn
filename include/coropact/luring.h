@@ -4,7 +4,6 @@
 
 // Public umbrella header for the optional io_uring backend.
 
-#include "coropact/luring/capabilities.h" // IWYU pragma: export
 #include "coropact/luring/connector.h" // IWYU pragma: export
 #include "coropact/luring/listener.h" // IWYU pragma: export
 #include "coropact/luring/loop.h" // IWYU pragma: export

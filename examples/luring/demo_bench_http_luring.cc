@@ -123,12 +123,6 @@ int main() {
 
   coropact::luring::LUringOptions loop_options;
   loop_options.entries = entries;
-  auto binding = coropact::luring::BindLUring(loop_options,
-                                              coropact::luring::RuntimeProfile::Core());
-  if (!binding.has_value()) {
-    std::fprintf(stderr, "BindLUring failed: %s\n", binding.error().message().c_str());
-    return 1;
-  }
 
   coropact::luring::LUringServerOptions options;
   options.worker_group_options.worker_num = workers;

@@ -17,13 +17,12 @@ Reactor 使用 epoll 监听 socket readiness，再通过非阻塞 `accept`、`re
 
 luring 使用 io_uring 的 SQE/CQE 完成路径，由每个 worker 独占自己的 ring、loop 和 listener。它等待 CQE，而不是等待 epoll readiness，所以没有 LT/ET 的概念。两次测试命令中虽然分别设置了 `REACTOR_TRIGGER_MODE=et` 和 `REACTOR_TRIGGER_MODE=lt`，但该变量在 luring 分支中不会被读取；两次 luring 数据只是两次独立重复运行，不能解释为“luring ET”和“luring LT”。
 
-本次 luring benchmark 使用 demo 的默认 single-shot accept，accept depth 为 4；本文数据来自帧池接入实验，当前网络路径已撤回该优化。
+本次 luring benchmark 使用 demo 的默认 single-shot accept，accept depth 为 4。
 
 ## 测试口径
 
 - 构建：`build-uring`，Release
 - worker：4；客户端：`wrk -t8`
-- 协程帧池：`FRAME_POOL=1`
 - luring ring entries：`URING_ENTRIES=1024`
 - 并发：`100 200 500 1000 2000 5000 10000`
 - 每档：预热 5 秒，正式测试 10 秒，3 轮
@@ -83,7 +82,7 @@ luring 使用 io_uring 的 SQE/CQE 完成路径，由每个 worker 独占自己�
 
 ## 原始结果
 
-- ET 批次：`/tmp/coropact-luring-reactor-20260802-et-framepool1-entries1024/`
-- LT 批次：`/tmp/coropact-luring-reactor-20260802-lt-framepool1-entries1024/`
+- ET 批次：`/tmp/coropact-luring-reactor-20260802-et-entries1024/`
+- LT 批次：`/tmp/coropact-luring-reactor-20260802-lt-entries1024/`
 
 临时目录不纳入仓库；本文件保留汇总数据和可复核的测试口径。

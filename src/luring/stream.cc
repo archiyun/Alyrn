@@ -81,7 +81,8 @@ void LUringStream::ReadSomeAwaiter::OnComplete(LUringOp* op) noexcept {
 }
 
 // ---- ReadIntoAwaiter ---
-bool LUringStream::ReadIntoAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
+bool LUringStream::ReadIntoAwaiter::await_suspend(
+    std::coroutine_handle<> continuation) noexcept {
   stream_->RequireOwnerLoop();
   if (stream_->closed_ || stream_->fd_ < 0) {
     Op()->SetImmediateError(base::MakeErrno(EBADF));
@@ -145,8 +146,10 @@ bool LUringStream::ReadIntoAwaiter::PrepareReservation() noexcept {
   return true;
 }
 
-void LUringStream::ReadIntoAwaiter::FinishReservation(base::Result<std::size_t> result) noexcept {
-  COROPACT_CHECK(reservation_active_, "ReadIntoAwaiter completion without a buffer reservation");
+void LUringStream::ReadIntoAwaiter::FinishReservation(
+    base::Result<std::size_t> result) noexcept {
+  COROPACT_CHECK(reservation_active_,
+                 "ReadIntoAwaiter completion without a buffer reservation");
   if (result.has_value()) {
     buffer_.CommitWrite(*result);
   } else {
@@ -406,28 +409,15 @@ private:
 bool LUringStream::SendZeroCopyAwaiter::await_suspend(
     std::coroutine_handle<> continuation) noexcept {
   stream_->RequireOwnerLoop();
-  if (diagnostics_ != nullptr) {
-    diagnostics_->attempts.fetch_add(1, std::memory_order_relaxed);
-  }
   if (stream_->closed_ || stream_->fd_ < 0) {
-    RecordFailure(ZeroCopySendErrorKind::kClosed);
     Op()->SetImmediateError(base::MakeErrno(EBADF));
-    return false;
-  }
-  if (!stream_->loop_->HasCapability(NativeFeature::kSendZeroCopy)) {
-    RecordFailure(ZeroCopySendErrorKind::kProfileUnavailable);
-    Op()->SetImmediateError(base::MakeErrno(ENOTSUP));
     return false;
   }
   if (buffer_.empty()) {
     Op()->SetImmediateSuccess();
-    if (diagnostics_ != nullptr) {
-      diagnostics_->RecordLogicalCompletion();
-    }
     return false;
   }
   if (stream_->pending_write_ != nullptr) {
-    RecordFailure(ZeroCopySendErrorKind::kBusy);
     Op()->SetImmediateError(base::MakeErrno(EBUSY));
     return false;
   }
@@ -443,7 +433,6 @@ bool LUringStream::SendZeroCopyAwaiter::await_suspend(
       });
   if (!submitted.has_value()) {
     stream_->pending_write_ = nullptr;
-    RecordFailure(ZeroCopySendErrorKind::kSubmission);
     Op()->SetImmediateError(submitted.error());
     return false;
   }
@@ -452,7 +441,6 @@ bool LUringStream::SendZeroCopyAwaiter::await_suspend(
 
 base::Result<ZeroCopySendResult> LUringStream::SendZeroCopyAwaiter::await_resume() noexcept {
   if (!Op()->result.HasValue()) {
-    RecordFailure(ZeroCopySendErrorKind::kProtocol);
     return std::unexpected(base::MakeErrno(EIO));
   }
   const int result = *Op()->result;
@@ -483,9 +471,6 @@ CompletionDisposition LUringStream::SendZeroCopyAwaiter::OnComplete(
     // negative when viewed as int; it is not a -errno error value.
     const auto usage = static_cast<std::uint32_t>(event.result);
     self->copied_ = (usage & IORING_NOTIF_USAGE_ZC_COPIED) != 0;
-    if (self->diagnostics_ != nullptr) {
-      self->diagnostics_->RecordNotification(event.result, self->copied_);
-    }
     disposition.kernel_request_terminal = true;
     disposition.decrement_inflight = true;
   } else if (self->lifecycle_.RecordLogicalResult()) {
@@ -493,9 +478,6 @@ CompletionDisposition LUringStream::SendZeroCopyAwaiter::OnComplete(
     // Some kernels do not advertise it through F_MORE on the primary CQE, so
     // F_MORE and a primary -errno cannot be the ownership/lifetime boundary.
     op->result = event.result;
-    if (self->diagnostics_ != nullptr) {
-      self->diagnostics_->RecordPrimary(event.result);
-    }
     // Keep a primary -errno as a raw kernel result. io::WriteAll may recover
     // ENOMEM only after this awaiter has observed the notification boundary.
   }
@@ -507,9 +489,6 @@ CompletionDisposition LUringStream::SendZeroCopyAwaiter::OnComplete(
     }
   }
   disposition.resume_continuation = self->lifecycle_.TryAuthorizeContinuation();
-  if (disposition.resume_continuation && self->diagnostics_ != nullptr) {
-    self->diagnostics_->RecordLogicalCompletion();
-  }
   return disposition;
 }
 
@@ -561,7 +540,6 @@ LUringStream::LUringStream(LUringStream&& other) noexcept
       pending_write_(nullptr),
       pending_close_(nullptr),
       zero_copy_writes_enabled_(other.zero_copy_writes_enabled_),
-      zero_copy_diagnostics_(other.zero_copy_diagnostics_),
       closed_(other.closed_) {
   other.closed_ = true;
 }
@@ -585,7 +563,6 @@ LUringStream& LUringStream::operator=(LUringStream&& other) noexcept {
   pending_write_ = nullptr;
   pending_close_ = nullptr;
   zero_copy_writes_enabled_ = other.zero_copy_writes_enabled_;
-  zero_copy_diagnostics_ = other.zero_copy_diagnostics_;
   closed_ = other.closed_;
   other.closed_ = true;
   return *this;
@@ -610,8 +587,8 @@ LUringStream::ReadSomeAwaiter LUringStream::ReadSome(std::span<std::byte> buffer
   return ReadSomeAwaiter{*this, buffer};
 }
 
-LUringStream::ReadIntoAwaiter LUringStream::ReadInto(net::Buffer buffer,
-                                                     std::size_t reserve) noexcept {
+LUringStream::ReadIntoAwaiter LUringStream::ReadInto(
+    net::Buffer buffer, std::size_t reserve) noexcept {
   return ReadIntoAwaiter{*this, std::move(buffer), reserve};
 }
 

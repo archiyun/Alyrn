@@ -11,16 +11,17 @@
 
 namespace coropact::luring::detail {
 
-// Bridges bool await_suspend() to LUringLoop::SubmitOp.
+// Submits one single-result awaiter operation without adding state to LUringOp.
 //
-// The caller owns resource-specific state, including validation, pending-slot
-// reservation, SQE preparation, and rollback. This helper only binds the
-// continuation and transfers completion responsibility to the loop:
-//`
-//   bind continuation -> submit -> clear continuation and rollback on failure
+// The caller owns all resource-specific state: validation, pending-slot
+// reservation, SQE preparation, and rollback after a submission failure. This
+// adapter owns only the common transition from a suspended coroutine to a
+// queued physical request:
 //
-// On failure, await_suspend() returns false, so the coroutine continues inline.
-// The continuation must therefore be cleared before invoking rollback.
+//   bind ResumeWork -> SubmitOp -> clear ResumeWork and rollback on failure
+//
+// It is deliberately luring-specific. Completion-family interpretation stays
+// with the submitting awaiter, while operation/detail remains resource-free.
 template <typename Prep, typename OnSubmitFailure>
 [[nodiscard]]
 bool SubmitAwaitingOperation(LUringLoop& loop, LUringOp& op, std::coroutine_handle<> continuation,

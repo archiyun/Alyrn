@@ -31,9 +31,6 @@ struct LUringListenOptions {
   // Exposes the luring stream's explicit zero-copy send extension to generic
   // write algorithms. It is opt-in and does not change WriteSome() itself.
   bool zero_copy_writes{false};
-  // Optional process-shared diagnostics sink for accepted streams. The sink
-  // must outlive the listener and all accepted streams.
-  ZeroCopySendDiagnostics* zero_copy_diagnostics{nullptr};
   int backlog{SOMAXCONN};
   // Number of accepts kept in flight by each worker. A value greater than one
   // prevents a connection burst from being serialized behind one accept CQE.
@@ -203,8 +200,7 @@ private:
   class CloseAwaiter;
 
   [[nodiscard]]
-  LUringListener(LUringLoop* loop, int fd, bool zero_copy_writes,
-                 ZeroCopySendDiagnostics* zero_copy_diagnostics) noexcept;
+  LUringListener(LUringLoop* loop, int fd, bool zero_copy_writes) noexcept;
 
   void RequireOwnerLoop() const noexcept;
   void NotifyCloseProgress() noexcept;
@@ -217,7 +213,6 @@ private:
   CloseAwaiter* pending_close_{nullptr};
   LUringAcceptSource* accept_source_{nullptr};
   bool zero_copy_writes_{false};
-  ZeroCopySendDiagnostics* zero_copy_diagnostics_{nullptr};
   bool closed_{false};
 };
 

@@ -24,7 +24,6 @@
 #include "coropact/coro/detached_task.h"
 #include "coropact/coro/spawn.h"
 #include "coropact/io/stream_algorithms.h"
-#include "coropact/luring/capability.h"
 #include "coropact/luring/loop.h"
 #include "coropact/luring/options.h"
 #include "coropact/luring/stream.h"
@@ -38,9 +37,6 @@ using coropact::coro::DetachedTask;
 using coropact::luring::LUringLoop;
 using coropact::luring::LUringOptions;
 using coropact::luring::LUringStream;
-using coropact::luring::NativeFeature;
-using coropact::luring::RuntimeProfile;
-using coropact::luring::ZeroCopySendDiagnostics;
 using coropact::luring::ZeroCopySendResult;
 
 class UniqueFd final {
@@ -85,13 +81,10 @@ bool IsEnvironmentSkip(Error error) {
          error.value() == EINVAL || error.value() == EOPNOTSUPP;
 }
 
-bool InitLoop(
-    LUringLoop& loop,
-    RuntimeProfile profile = RuntimeProfile::Core()) {
+bool InitLoop(LUringLoop& loop) {
   LUringOptions options;
   options.entries = 32;
   options.submit_batch = 1;
-  options.active_profile = profile;
   auto initialized = loop.Init(options);
   if (initialized.has_value()) {
     return true;
@@ -225,9 +218,7 @@ bool ReadExact(int fd, std::span<const char> expected) {
 
 bool CheckSendZeroCopy() {
   LUringLoop loop;
-  if (!InitLoop(
-          loop,
-          RuntimeProfile::Core().Require(NativeFeature::kSendZeroCopy))) {
+  if (!InitLoop(loop)) {
     return true;
   }
 
@@ -240,9 +231,7 @@ bool CheckSendZeroCopy() {
   auto local = std::move(pair->first);
   auto peer = std::move(pair->second);
 
-  ZeroCopySendDiagnostics diagnostics;
   LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
-  stream.SetZeroCopyDiagnostics(&diagnostics);
   constexpr std::string_view text = "io_uring-send-zero-copy";
   const auto payload = std::as_bytes(
       std::span<const char>(text.data(), text.size()));
@@ -274,22 +263,6 @@ bool CheckSendZeroCopy() {
   }
   if (!Check(result->has_value(), "send zerocopy returned an error")) {
     std::cout << "send zerocopy error: " << result->error().message() << '\n';
-    std::cout << "send zerocopy diagnostics: attempts="
-              << diagnostics.attempts.load(std::memory_order_relaxed)
-              << " completions="
-              << diagnostics.logical_completions.load(std::memory_order_relaxed)
-              << " primary_events="
-              << diagnostics.primary_events.load(std::memory_order_relaxed)
-              << " last_primary="
-              << diagnostics.last_primary_result.load(std::memory_order_relaxed)
-              << " notifications="
-              << diagnostics.notification_events.load(std::memory_order_relaxed)
-              << " last_notification="
-              << diagnostics.last_notification_result.load(std::memory_order_relaxed)
-              << " errors=" << diagnostics.errors.load(std::memory_order_relaxed)
-              << " primary=" << diagnostics.primary_errors.load(std::memory_order_relaxed)
-              << " protocol=" << diagnostics.protocol_errors.load(std::memory_order_relaxed)
-              << '\n';
     return false;
   }
 
@@ -307,9 +280,7 @@ bool CheckSendZeroCopy() {
 
 bool CheckZeroCopyWriteAllIntegrity() {
   LUringLoop loop;
-  if (!InitLoop(
-          loop,
-          RuntimeProfile::Core().Require(NativeFeature::kSendZeroCopy))) {
+  if (!InitLoop(loop)) {
     return true;
   }
 
@@ -322,10 +293,8 @@ bool CheckZeroCopyWriteAllIntegrity() {
   auto local = std::move(pair->first);
   auto peer = std::move(pair->second);
 
-  ZeroCopySendDiagnostics diagnostics;
   LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
   stream.SetZeroCopyWritesEnabled(true);
-  stream.SetZeroCopyDiagnostics(&diagnostics);
 
   constexpr std::size_t kRounds = 64;
   std::array<char, 4096> payload{};
@@ -362,61 +331,12 @@ bool CheckZeroCopyWriteAllIntegrity() {
     }
   }
 
-  const auto attempts = diagnostics.attempts.load(std::memory_order_relaxed);
-  return Check(attempts >= kRounds,
-               "zero-copy WriteAll did not submit every response") &&
-         Check(diagnostics.logical_completions.load(std::memory_order_relaxed) == attempts,
-               "zero-copy WriteAll completion count mismatch") &&
-         Check(diagnostics.notification_events.load(std::memory_order_relaxed) == attempts,
-               "zero-copy WriteAll notification count mismatch") &&
-         Check(diagnostics.errors.load(std::memory_order_relaxed) == 0,
-               "zero-copy WriteAll recorded a classified error") &&
-         Check(diagnostics.protocol_errors.load(std::memory_order_relaxed) == 0,
-               "zero-copy WriteAll recorded a protocol error");
-}
-
-bool CheckSendZeroCopyRequiresProfile() {
-  LUringLoop loop;
-  if (!InitLoop(loop)) {
-    return true;
-  }
-
-  auto pair = MakeTcpPair();
-  if (!pair.has_value()) {
-    std::cout << "FAIL: TCP pair failed: " << pair.error().message() << '\n';
-    return false;
-  }
-  auto local = std::move(pair->first);
-  auto peer = std::move(pair->second);
-  LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
-
-  constexpr std::string_view text = "profile-gate";
-  const auto payload = std::as_bytes(
-      std::span<const char>(text.data(), text.size()));
-  std::optional<Result<ZeroCopySendResult>> result;
-  coropact::coro::SpawnDetach(loop, SendOnce(&stream, payload, &result));
-  for (int i = 0; i < 4 && !result.has_value(); ++i) {
-    loop.RunReady();
-  }
-
-  if (!Check(result.has_value(),
-             "send zerocopy profile gate did not complete immediately")) {
-    return false;
-  }
-  if (!Check(!result->has_value(),
-             "send zerocopy bypassed the active profile gate")) {
-    return false;
-  }
-  return Check(result->error().value() == ENOTSUP,
-               "send zerocopy profile gate returned the wrong error");
+  return true;
 }
 
 }  // namespace
 
 int main() {
-  if (!CheckSendZeroCopyRequiresProfile()) {
-    return 1;
-  }
   if (!CheckSendZeroCopy()) {
     return 1;
   }

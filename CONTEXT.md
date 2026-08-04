@@ -26,8 +26,8 @@ changing module boundaries.
   define application-visible transport contracts. They must not require an
   application protocol. The `coropact/io.h` umbrella exports the
   backend-neutral stream, listener, buffer, receive-source, and algorithm
-  contracts; connector and backend/profile binding headers are included
-  explicitly by composition roots.
+  contracts; connector and concrete backend headers are included explicitly by
+  composition roots.
 - `reactor` and `luring` are parallel backend adapters. Do not make either
   backend depend on the `io` facade or on CoroGateway.
 
@@ -69,7 +69,7 @@ Before adding a module, document its owned resource, interface, lifetime and
 thread-affinity rules, permitted dependencies, and tests. Features involving
 HTTP messages, routing, upstream selection, retry policy, caching policy, or
 response generation belong in CoroGateway. Backend-specific capabilities belong
-behind an extension contract or capability profile and must not change the
+behind an extension contract or backend-owned capability check and must not change the
 meaning of the core stream operations.
 
 ## Validation

@@ -543,16 +543,17 @@ Submit/Complete/Cancel/Close
 
 这层定义所有后端必须满足的 `Σ` 和 `Inv`。
 
-第三层是后端能力解释：
+第三层是后端实现约束：
 
 ```text
 EpollBackend
 IoUringBackend
-CapabilitySet
-BackendProfile
+io::* concepts
+Backend-specific runtime state
 ```
 
-它允许不同后端保留自己的能力，而不是强行压平。
+它允许不同后端保留自己的实现状态；公共语义通过 `io::*` concepts 约束，而不是再维护
+一套 native capability/profile 位图。
 
 热插拔 API 不应该只是：
 
@@ -570,7 +571,7 @@ runtime.SwitchBackend(new_backend, SwitchMode::DrainAndTransfer);
 并且运行时需要能回答：
 
 ```cpp
-backend.Supports(profile);
+requires io::AsyncStream<BackendStream>;
 runtime.PendingOps();
 runtime.CurrentLogicalClock();
 ```
@@ -628,7 +629,7 @@ S_LUring  = (S_abs, Q_LUring,  LUring,  P, H)
 Q_Reactor = ready queue、Channel、Poller、TimerQueue
 Q_LUring  = ready queue、completion queue、SQ、CQ、Mailbox、TimerQueue
 B          = 当前后端解释器
-P          = 当前 active capability profile
+ P          = 编译期选定的 io 语义 contract
 H          = 用于证明的 happens-before 关系
 ```
 
@@ -952,13 +953,15 @@ Reactor 和 io_uring 已经有共同的协程语义接口，
 接口形状，不能在编译期检查“最多完成一次”“Close 后不能成功提交”或“buffer 在
 Complete 前有效”等动态性质。这些性质目前依赖具体实现、调试断言和 smoke test。
 
-此外，具体 backend 的 `BackendBinding` 现在负责启动期 native capability profile 检查；
-Reactor 和 luring 的 stream 都是 loop-bound，pending operation 不能直接迁移。因此现阶段
-最多只能把 quiescent switch 作为未来设计目标，不能把它描述成已有能力。
+此外，当前 luring 不再通过独立的 native capability profile 做启动期绑定；它在 ring 初始化、
+source 创建和 operation 提交处返回实际运行期错误。Reactor 仍可使用 `io::BindReactor` 做
+语义 profile 校验。Reactor 和 luring 的 stream 都是 loop-bound，pending operation 不能直接
+迁移。因此现阶段最多只能把 quiescent switch 作为未来设计目标，不能把它描述成已有能力。
 
 timeout 现在由独立的 `AsyncTimedReadStream` / `AsyncTimedStream` interface 表达：
 `ReactorStream` 和 `LUringStream` 都满足该 extension，而 `AsyncStream` 仍刻意保持最小。
-`kTimeout` 负责 profile 选择和 bind 验证，不能替代公共 interface 或语义验证。
+`io::AsyncTimedStream` 负责编译期 interface 约束，不能替代公共语义验证；实际 timeout
+失败仍由 backend 的 `Result` 返回。
 
 ## 结论
 

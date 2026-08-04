@@ -6,8 +6,6 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "coropact/luring/capability.h"
-
 namespace coropact::luring {
 
 // LUringOptions configures the ownership, queue sizing, polling mode,
@@ -15,10 +13,6 @@ namespace coropact::luring {
 struct LUringOptions {
   std::uint32_t entries{4096};
   std::uint32_t cq_entries{0};
-
-  // The loop binds this native profile during Init(). Core is the safe
-  // default; optional io_uring mechanisms must be opted into explicitly.
-  RuntimeProfile active_profile{RuntimeProfile::Core()};
 
   // SQPOLL creates a kernel submission thread per ring and is opt-in.
   bool setup_sqpoll{false};
@@ -66,6 +60,12 @@ struct LUringOptions {
   // Age at which normal ready work suppresses completion promotion for the
   // current turn. Zero disables this protection.
   std::chrono::microseconds normal_queue_age_threshold{5000};
+
+  // Loop-wide provided-buffer ring used by RecvSources. This is an aggregate
+  // per-worker capacity, shared by all sources on the loop. Set it to zero
+  // to disable RecvSource creation.
+  std::size_t shared_buffer_capacity{64};
+  std::size_t shared_buffer_size{16 * 1024};
 
 };
 
