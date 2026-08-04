@@ -12,13 +12,12 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(BUILD_TESTS "Build tests" ON)
+option(BUILD_EXPERIMENTAL_TESTS "Build experimental data-structure tests" OFF)
 option(BUILD_EXAMPLES "Build example programs" ON)
 option(BUILD_BENCHMARKS "Build standalone microbenchmarks" OFF)
 option(COROPACT_ENABLE_URING "Enable io_uring proactor backend (requires liburing, Linux 5.19+)" OFF)
-option(COROPACT_ENABLE_CTRACK "Enable optional CTRACK instrumentation" OFF)
 option(COROPACT_ENABLE_TEST_HOOKS
        "Enable deterministic fault-injection hooks for runtime tests" OFF)
-set(COROPACT_CTRACK_ROOT "" CACHE PATH "Path to a CTRACK checkout containing include/ctrack.hpp")
 
 find_package(Threads REQUIRED)
 
@@ -68,21 +67,6 @@ target_include_directories(coropact_coro INTERFACE
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 target_compile_features(coropact_coro INTERFACE cxx_std_23)
-
-# Optional profiling dependency. It remains a build-tree-only target and is
-# deliberately absent from exported release targets.
-add_library(coropact_ctrack INTERFACE)
-if(COROPACT_ENABLE_CTRACK)
-    if(NOT COROPACT_CTRACK_ROOT OR NOT EXISTS "${COROPACT_CTRACK_ROOT}/include/ctrack.hpp")
-        message(FATAL_ERROR
-            "COROPACT_ENABLE_CTRACK requires COROPACT_CTRACK_ROOT/include/ctrack.hpp")
-    endif()
-    target_include_directories(coropact_ctrack SYSTEM INTERFACE
-        ${COROPACT_CTRACK_ROOT}/include)
-    target_compile_definitions(coropact_ctrack INTERFACE
-        COROPACT_ENABLE_CTRACK
-        CTRACK_DISABLE_EXECUTION_POLICY)
-endif()
 
 # coropact_io_contract —— 后端实现使用的 I/O concepts、Result 算法和语义 profile
 # profile。它不包含具体 backend，也不依赖具体 backend。
@@ -170,7 +154,6 @@ if(COROPACT_ENABLE_URING)
         src/luring/connector.cc
         src/luring/listener.cc
         src/luring/recv_source.cc
-        src/luring/recv_source_stream.cc
         src/luring/loop.cc
         src/luring/ring.cc
         src/luring/server.cc

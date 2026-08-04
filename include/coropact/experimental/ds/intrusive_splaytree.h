@@ -33,7 +33,7 @@
 
 #include "coropact/utils/macros.h"
 
-namespace coropact::ds {
+namespace coropact::experimental::ds {
 
 template <typename T, auto kLess, class Tag = void>
 class IntrusiveSplayTree;
@@ -525,4 +525,4 @@ bool ISPLAY_TYPE::CheckInvariants() const {
 #undef ISPLAY_TMPL
 #undef ISPLAY_TYPE
 
-}  // namespace coropact::ds
+}  // namespace coropact::experimental::ds

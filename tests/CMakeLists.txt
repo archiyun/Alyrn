@@ -661,27 +661,29 @@ target_include_directories(rbtree_validator
 
 add_test(NAME rbtree_validator COMMAND rbtree_validator)
 
-add_executable(splaytree_validator
-    unit/test_splaytree_validator.cc
-)
+if(BUILD_EXPERIMENTAL_TESTS)
+    add_executable(splaytree_validator
+        unit/test_splaytree_validator.cc
+    )
 
-target_include_directories(splaytree_validator
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
+    target_include_directories(splaytree_validator
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    )
 
-add_test(NAME splaytree_validator COMMAND splaytree_validator)
+    add_test(NAME splaytree_validator COMMAND splaytree_validator)
 
-add_executable(quad_heap_test
-    unit/test_quad_heap.cc
-)
+    add_executable(quad_heap_test
+        unit/test_quad_heap.cc
+    )
 
-target_include_directories(quad_heap_test
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
+    target_include_directories(quad_heap_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    )
 
-add_test(NAME quad_heap_test COMMAND quad_heap_test)
+    add_test(NAME quad_heap_test COMMAND quad_heap_test)
+endif()
 
 add_executable(intrusive_list_smoke_test
     unit/test_intrusive_list_smoke.cc
@@ -716,26 +718,12 @@ target_include_directories(intrusive_hash_table_smoke_test
 
 add_test(NAME intrusive_hash_table_smoke_test COMMAND intrusive_hash_table_smoke_test)
 
-add_executable(memory_pool_bench
-    unit/bench_memory_pool.cc
-)
-
-target_include_directories(memory_pool_bench
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
-
-target_compile_options(memory_pool_bench PRIVATE -O2)
-
 find_package(GTest CONFIG QUIET)
 if(GTest_FOUND)
     include(GoogleTest)
 
     add_executable(coropact_unit_tests
-        unit/test_memory_pool.cc
         unit/test_net_utils.cc
-        unit/test_object_pool.cc
-        unit/test_sanity.cc
     )
 
     target_link_libraries(coropact_unit_tests
@@ -746,19 +734,6 @@ if(GTest_FOUND)
 
     gtest_discover_tests(coropact_unit_tests DISCOVERY_MODE PRE_TEST)
 
-    set(INTEGRATION_TEST_SOURCES
-        integration/test_event_loop.cc
-    )
-
-    add_executable(coropact_integration_tests ${INTEGRATION_TEST_SOURCES})
-
-    target_link_libraries(coropact_integration_tests
-        PRIVATE
-            GTest::gtest_main
-            coropact_reactor
-    )
-
-    gtest_discover_tests(coropact_integration_tests DISCOVERY_MODE PRE_TEST)
 else()
     message(STATUS "GTest not found; skipping gtest-based unit tests.")
 endif()

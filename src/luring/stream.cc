@@ -4,10 +4,8 @@
 
 #include <liburing.h>
 #include <sys/socket.h>
-#include <sys/uio.h>
 #include <unistd.h>
 
-#include <array>
 #include <cassert>
 #include <cerrno>
 #include <coroutine>
@@ -407,70 +405,6 @@ private:
   detail::LUringCloseState state_;
 };
 
-// --- WriteSomePartsAwaiter ---
-bool LUringStream::WriteSomePartsAwaiter::await_suspend(
-    std::coroutine_handle<> continuation) noexcept {
-  stream_->RequireOwnerLoop();
-  if (stream_->closed_ || stream_->fd_ < 0) {
-    Op()->SetImmediateError(base::MakeErrno(EBADF));
-    return false;
-  }
-
-  if (stream_->pending_write_ != nullptr) {
-    Op()->SetImmediateError(base::MakeErrno(EBUSY));
-    return false;
-  }
-
-  if (buffers_.size() > kMaxParts) {
-    Op()->SetImmediateError(base::MakeErrno(EINVAL));
-    return false;
-  }
-
-  std::size_t count = 0;
-  for (const auto& part : buffers_) {
-    if (part.bytes.empty()) {
-      continue;
-    }
-
-    iovecs_[count].iov_base = const_cast<std::byte*>(part.bytes.data());
-    iovecs_[count].iov_len = part.bytes.size();
-    ++count;
-  }
-
-  if (count == 0) {
-    Op()->SetImmediateSuccess();
-    return false;
-  }
-
-  message_ = {};
-  message_.msg_iov = iovecs_.data();
-  message_.msg_iovlen = count;
-
-  stream_->pending_write_ = this;
-  return detail::SubmitAwaitingOperation(
-      *stream_->loop_, *Op(), continuation,
-      [fd = stream_->fd_, message = &message_](io_uring_sqe* sqe) noexcept {
-        io_uring_prep_sendmsg(sqe, fd, message, MSG_NOSIGNAL);
-      },
-      [this](base::Error error) noexcept {
-        stream_->pending_write_ = nullptr;
-        Op()->SetImmediateError(error);
-      });
-}
-
-base::Result<std::size_t> LUringStream::WriteSomePartsAwaiter::await_resume() noexcept {
-  return ToSizeResult(Op()->result);
-}
-
-void LUringStream::WriteSomePartsAwaiter::OnComplete(LUringOp* op) noexcept {
-  auto* self = static_cast<OpHook*>(op)->Owner();
-
-  if (self->stream_ != nullptr && self->stream_->pending_write_ == self) {
-    self->stream_->pending_write_ = nullptr;
-    self->stream_->NotifyCloseProgress();
-  }
-}
-
 // --- SendZeroCopyAwaiter ---
 bool LUringStream::SendZeroCopyAwaiter::await_suspend(
     std::coroutine_handle<> continuation) noexcept {
@@ -580,10 +514,6 @@ void DispatchStreamWriteComplete(LUringOp* op) noexcept {
   LUringStream::WriteSomeAwaiter::OnComplete(op);
 }
 
-void DispatchStreamWritePartsComplete(LUringOp* op) noexcept {
-  LUringStream::WriteSomePartsAwaiter::OnComplete(op);
-}
-
 CompletionDisposition DispatchSendZeroCopyComplete(LUringOp* op, CompletionEvent event) noexcept {
   return LUringStream::SendZeroCopyAwaiter::OnComplete(op, event);
 }
@@ -593,11 +523,6 @@ void DispatchStreamCloseComplete(LUringOp* op) noexcept {
 }
 
 }  // namespace detail
-
-LUringStream::WriteSomePartsAwaiter LUringStream::WriteSome(
-    std::span<const backend::WritePart> buffers) noexcept {
-  return WriteSomePartsAwaiter{*this, buffers};
-}
 
 LUringStream::LUringStream(LUringLoop* loop, int fd, net::Endpoint peer) noexcept
     : loop_(loop), fd_(fd), peer_(std::move(peer)) {

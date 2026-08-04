@@ -27,9 +27,4 @@ concept AsyncStream = backend::AsyncStream<T>;
 template <class T>
 concept AsyncTimedStream = backend::AsyncTimedStream<T>;
 
-using WritePart = backend::WritePart;
-
-template <class T>
-concept AsyncScatterWriteStream = backend::AsyncScatterWriteStream<T>;
-
 }  // namespace coropact::io

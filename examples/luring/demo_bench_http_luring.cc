@@ -21,6 +21,7 @@
 #include "coropact/io.h"
 #include "coropact/luring/server.h"
 #include "coropact/net/endpoint.h"
+#include "coropact/net/net_utils.h"
 
 namespace {
 

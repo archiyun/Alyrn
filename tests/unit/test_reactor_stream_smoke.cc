@@ -134,7 +134,15 @@ coropact::coro::DetachedTask EchoServer(coropact::reactor::ReactorStream* stream
                                         std::array<std::byte, 64>* scratch,
                                         std::optional<coropact::base::Result<void>>* out,
                                         int* done_count, coropact::reactor::EventLoop* loop) {
-  out->emplace(co_await coropact::io::EchoOnce(*stream, *scratch));
+  ReadResult read_result = co_await stream->ReadSome(*scratch);
+  if (!read_result.has_value()) {
+    out->emplace(std::unexpected(read_result.error()));
+  } else if (*read_result == 0) {
+    out->emplace(coropact::base::Result<void>{});
+  } else {
+    out->emplace(co_await coropact::io::WriteAll(
+        *stream, std::span<const std::byte>(scratch->data(), *read_result)));
+  }
   if (++(*done_count) == 2) {
     loop->Quit();
   }

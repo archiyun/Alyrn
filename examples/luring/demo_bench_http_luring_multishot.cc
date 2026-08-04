@@ -16,13 +16,13 @@
 #include <cstring>
 #include <span>
 #include <string>
-#include <string_view>
 #include <thread>
 
 #include "coropact/io.h"
-#include "coropact/luring/recv_source_stream.h"
+#include "coropact/luring/recv_source.h"
 #include "coropact/luring/server.h"
 #include "coropact/net/endpoint.h"
+#include "coropact/net/net_utils.h"
 
 namespace {
 
@@ -91,55 +91,6 @@ bool HasHeaderTerminator(std::span<const std::byte> bytes) {
   return false;
 }
 
-coropact::coro::DetachedTask HttpSessionAdapter(
-    coropact::luring::LUringStream stream) {
-  coropact::luring::LUringRecvSourceOptions source_options;
-  source_options.source.event_capacity = kProvidedBufferCapacity;
-  source_options.source.buffer_capacity = kProvidedBufferCapacity;
-  source_options.buffer_size = kProvidedBufferSize;
-
-  auto source_stream = coropact::luring::LUringRecvSourceStream::Create(
-      std::move(stream), source_options);
-  if (!source_stream.has_value()) {
-    RecordError(g_source_create_errors, g_last_source_create_error,
-                source_stream.error().value());
-    co_return;
-  }
-  auto session = std::move(*source_stream);
-
-  std::array<std::byte, kRequestBufferSize> request{};
-  const auto response =
-      std::as_bytes(std::span(Response().data(), Response().size()));
-  std::size_t used = 0;
-
-  for (;;) {
-    auto read = co_await session.ReadSome(std::span(request).subspan(used));
-    if (!read.has_value()) {
-      RecordError(g_read_errors, g_last_read_error, read.error().value());
-      break;
-    }
-    if (*read == 0) break;
-
-    used += *read;
-    if (!HasHeaderTerminator(std::span<const std::byte>(request).first(used))) {
-      if (used == request.size()) break;
-      continue;
-    }
-
-    auto written = co_await coropact::io::WriteAll(session, response);
-    if (!written.has_value()) {
-      RecordError(g_write_errors, g_last_write_error, written.error().value());
-      break;
-    }
-    used = 0;
-  }
-
-  auto closed = co_await session.Close();
-  if (!closed.has_value()) {
-    RecordError(g_close_errors, g_last_close_error, closed.error().value());
-  }
-}
-
 coropact::coro::DetachedTask HttpSessionDirect(
     coropact::luring::LUringStream stream) {
   coropact::luring::LUringRecvSourceOptions source_options;
@@ -203,15 +154,6 @@ coropact::coro::DetachedTask HttpSessionDirect(
   }
 }
 
-coropact::coro::DetachedTask HttpSession(
-    coropact::luring::LUringStream stream,
-    bool direct_consume) {
-  if (direct_consume) {
-    return HttpSessionDirect(std::move(stream));
-  }
-  return HttpSessionAdapter(std::move(stream));
-}
-
 }  // namespace
 
 int main() {
@@ -227,10 +169,6 @@ int main() {
   const auto entries = static_cast<std::uint32_t>(EnvSize("URING_ENTRIES", 1024));
   const auto shared_buffer_capacity =
       EnvSize("SHARED_BUFFER_CAPACITY", kDefaultSharedBufferCapacity);
-  const bool direct_consume =
-      std::getenv("BUFFER_CONSUMER") != nullptr &&
-      std::string_view(std::getenv("BUFFER_CONSUMER")) == "direct";
-
   if (workers == 0 || port == 0) {
     std::fprintf(stderr, "URING_WORKERS and PORT must be non-zero\n");
     return 2;
@@ -259,9 +197,9 @@ int main() {
 
   coropact::luring::LUringServer server(*listen_addr, std::move(options));
   server.SetSessionHandler(
-      [direct_consume](coropact::luring::LUringWorkerContext&,
-                                     coropact::luring::LUringStream stream) {
-        return HttpSession(std::move(stream), direct_consume);
+      [](coropact::luring::LUringWorkerContext&,
+         coropact::luring::LUringStream stream) {
+        return HttpSessionDirect(std::move(stream));
       });
 
   auto started = server.Start();
@@ -273,11 +211,10 @@ int main() {
 
   std::printf(
       "HttpLuringMultishotBench bind=%s port=%u workers=%zu entries=%u "
-      "storage=mmap consumer=%s buffer_size=%zu buffer_capacity=%zu "
+      "storage=mmap consumer=direct buffer_size=%zu buffer_capacity=%zu "
       "shared_buffer_capacity=%zu\n",
-      host, port, workers, entries,
-      direct_consume ? "direct" : "adapter",
-      kProvidedBufferSize, kProvidedBufferCapacity, shared_buffer_capacity);
+      host, port, workers, entries, kProvidedBufferSize,
+      kProvidedBufferCapacity, shared_buffer_capacity);
   std::fflush(stdout);
 
   while (!g_stop.load(std::memory_order_relaxed)) {

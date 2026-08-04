@@ -9,7 +9,7 @@
 
 #include "coropact/utils/macros.h"
 
-namespace coropact::ds {
+namespace coropact::experimental::ds {
 
 inline constexpr std::size_t kNotInHeap = static_cast<std::size_t>(-1);
 
@@ -218,4 +218,4 @@ std::size_t IQH_TYPE::PopWhile(Pred pred, OnPop on_pop) {
 #undef IQH_TYPE
 #undef IQH_TMPL
 
-}  // namespace coropact::ds
+}  // namespace coropact::experimental::ds

@@ -26,7 +26,6 @@ void DispatchStreamReadIntoComplete(LUringOp* op) noexcept;
 void DispatchTimedReadComplete(LUringOp* op) noexcept;
 void DispatchTimedReadTimeoutComplete(LUringOp* op) noexcept;
 void DispatchStreamWriteComplete(LUringOp* op) noexcept;
-void DispatchStreamWritePartsComplete(LUringOp* op) noexcept;
 void DispatchStreamCloseComplete(LUringOp* op) noexcept;
 void DispatchTimerDriverComplete(LUringOp* op) noexcept;
 void DispatchTimerControlComplete(LUringOp* op) noexcept;

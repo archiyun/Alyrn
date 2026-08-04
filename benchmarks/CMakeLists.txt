@@ -1,5 +1,16 @@
 # Standalone benchmarks intentionally do not register with CTest: they are
 # workload probes whose output depends on compiler flags and machine state.
+add_executable(memory_pool_bench
+    bench_memory_pool.cc
+)
+
+target_include_directories(memory_pool_bench
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_compile_options(memory_pool_bench PRIVATE -O2)
+
 add_executable(coro_spawn_microbenchmark
     coro_spawn_microbenchmark.cc
 )

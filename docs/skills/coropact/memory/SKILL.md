@@ -76,8 +76,7 @@ Object slot: raw free -> constructed -> destroyed/raw free
 - `object_pool_smoke_test`
 - `pool_smoke_test`
 - `pmr_pool_resource_smoke_test`
-- `MemoryPoolTest` and `ObjectPoolTest` when GTest is available
-- `memory_pool_bench` for hot-path layout/performance changes
+- `memory_pool_bench` under `BUILD_BENCHMARKS=ON` for hot-path layout/performance changes
 - ASan/UBSan for reset, cleanup, overflow, and alignment changes
 - `timer_tree_smoke_test` if ObjectPool behavior affects TimerQueue
 

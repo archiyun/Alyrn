@@ -70,9 +70,6 @@ CompletionDisposition DispatchCompletion(LUringOp* op, CompletionEvent event) no
     case LUringOpKind::kWriteComplete:
       DispatchStreamWriteComplete(op);
       break;
-    case LUringOpKind::kWritePartsComplete:
-      DispatchStreamWritePartsComplete(op);
-      break;
     case LUringOpKind::kStreamCloseComplete:
       DispatchStreamCloseComplete(op);
       break;

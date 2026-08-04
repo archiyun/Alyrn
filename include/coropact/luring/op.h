@@ -77,7 +77,6 @@ enum class LUringOpKind : std::uint8_t {
   kTimedReadTimeoutComplete,
 
   kWriteComplete,
-  kWritePartsComplete,
   kStreamCloseComplete,
 
   kTimerDriverComplete,
@@ -111,7 +110,6 @@ constexpr LUringCompletionModel CompletionModelFor(LUringOpKind kind) noexcept {
     case LUringOpKind::kTimedReadComplete:
     case LUringOpKind::kTimedReadTimeoutComplete:
     case LUringOpKind::kWriteComplete:
-    case LUringOpKind::kWritePartsComplete:
     case LUringOpKind::kStreamCloseComplete:
     case LUringOpKind::kTimerDriverComplete:
     case LUringOpKind::kTimerControlComplete:
