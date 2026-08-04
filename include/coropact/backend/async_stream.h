@@ -12,7 +12,6 @@
 #include "coropact/coro/awaitable.h"
 #include "coropact/coro/task.h"
 #include "coropact/net/read_into.h"
-#include "coropact/net/write_part.h"
 
 namespace coropact::backend {
 
@@ -75,17 +74,5 @@ concept AsyncStream =
 // A complete stream with the optional timed-read semantic extension.
 template <class T>
 concept AsyncTimedStream = AsyncStream<T> && AsyncTimedReadStream<T>;
-
-using WritePart = ::coropact::net::WritePart;
-
-template <class T>
-concept AsyncScatterWriteStream =
-    AsyncWriteStream<T> &&
-    requires(T& stream, std::span<const WritePart> buffers) {
-      requires coro::Awaitable<decltype(stream.WriteSome(buffers))>;
-      requires std::same_as<
-          coro::AwaitResult<decltype(stream.WriteSome(buffers))>,
-          base::Result<std::size_t>>;
-    };
 
 }  // namespace coropact::backend

@@ -27,7 +27,6 @@
 4. 压缩具体 awaiter。
 
    - `ReadSome` / `WriteSome`：64B → 48B。
-   - `WriteSomeParts`：248B → 232B。
    - 带超时读取：120B → 104B。
    - `SleepAwaiter`：`expected<void>` 换成 4B result state，56B → 40B。
    - `ConnectAwaiter` 删除 `optional<Result<LUringStream>>`，立即错误直接复用 `op.result`。

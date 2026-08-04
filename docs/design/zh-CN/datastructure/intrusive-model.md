@@ -1,19 +1,23 @@
 # Intrusive-model
 
-本文将快速帮助读者熟悉侵入式结构并了解整个项目`ds`模块的侵入式结构.
+本文将快速帮助读者熟悉侵入式结构并了解项目核心 `ds` 模块的侵入式结构。
 
 ## 1. 适用范围
 
-本文适用于：
+本文涵盖核心容器和实验性容器：
 
  - `IntrusiveList`
  - `IntrusiveQueue`
  - `IntrusiveHashTable`
  - `IntrusiveRBTree`
+
+实验性实现位于 `include/coropact/experimental/ds/`，不由
+`coropact/ds.h` 导出：
+
  - `IntrusiveSplayTree`
  - `IntrusiveQuadHeap`
 
-很好区分, 前缀带有`Intrusive`, 目前它们几乎占据了整个`ds`模块.
+很好区分，前缀带有 `Intrusive`；实验性容器不属于核心 `ds` umbrella。
 
 ## 2. Intrusive 模型
 
@@ -134,9 +138,9 @@ object -> hook
   ────────────────────  ───────────────────
    IntrusiveRBTree       RBTNode<T, Tag>
   ────────────────────  ───────────────────
-   IntrusiveSplayTree    SplayNode<T, Tag>
+   experimental::ds::IntrusiveSplayTree    SplayNode<T, Tag>
   ────────────────────  ───────────────────
-   IntrusiveQuadHeap     HeapNode<T, Tag>
+   experimental::ds::IntrusiveQuadHeap     HeapNode<T, Tag>
 
 如前面的例子, 同一个对象可以通过不同的 Tag 同时加入多个同类型的容器
 
@@ -190,9 +194,9 @@ if (item.InList()) {
 | `IntrusiveList` | 是 |
 | `IntrusiveQueue` | 是 |
 | `IntrusiveHashTable` | 是 |
-| `IntrusiveSplayTree` | 是 |
+| `IntrusiveSplayTree`（实验性） | 是 |
 | `IntrusiveRBTree` | 是 |
-| `IntrusiveQuadHeap` | 是 |
+| `IntrusiveQuadHeap`（实验性） | 是 |
 
 当容器与元素生命周期存在交叉时, 仍建议显式写出
 `xxx.Clear()`
@@ -237,11 +241,10 @@ if (item.InList()) {
   ────────────────────  ─────────────────────────────────
    IntrusiveRBTree       TimerTree、deadline 调度
   ────────────────────  ─────────────────────────────────
-   IntrusiveQuadHeap     定时器的另一种替代,目前未使用
+   experimental::ds::IntrusiveQuadHeap     定时器的另一种替代,目前未使用
   ────────────────────  ─────────────────────────────────
-   IntrusiveSplayTree    目前没有用,但是感觉删除可惜
+   experimental::ds::IntrusiveSplayTree    目前没有用,但是感觉删除可惜
   ────────────────────  ─────────────────────────────────
-   IntrusiveTimingWheel  目前未实现, 仅创建... (粗精度的定时器)
 
 ## 11. 相关实现与测试
 

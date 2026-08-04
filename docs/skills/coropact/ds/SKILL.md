@@ -22,15 +22,15 @@ intrusive hooks, predictable complexity, and debug invariant validation.
 - Intrusive hook linkage while an element is a member.
 - Structural size, root/minimum, and index metadata.
 
-## Public API / entry points
+## Core public API / entry points
 
 - `IntrusiveList`
 - `IntrusiveHashTable`
 - `IntrusiveRBTree`
-- `IntrusiveSplayTree`
-- `IntrusiveQuadHeap`
-- `BloomFilter`
-- Murmur hash helpers
+
+`IntrusiveSplayTree` and `IntrusiveQuadHeap` are experimental and are not
+exported by `coropact/ds.h`. Include them explicitly from
+`coropact/experimental/ds/` when working on their validators or experiments.
 
 ## Thread model
 
@@ -76,8 +76,8 @@ container: empty <-> populated -> Clear/destruction unlinks all hooks
 - `intrusive_list_smoke_test`
 - `intrusive_hash_table_smoke_test`
 - `rbtree_validator`
-- `splaytree_validator`
-- `quad_heap_test`
+- `splaytree_validator` (experimental)
+- `quad_heap_test` (experimental)
 - `timer_tree_smoke_test` when tree behavior changes
 - `test_bloom_filter` for BloomFilter/hash changes
 - Add randomized differential and invariant checks for structural changes

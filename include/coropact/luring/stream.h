@@ -164,7 +164,6 @@ public:
   class ReadIntoAwaiter;
   class ReadSomeForAwaiter;
   class WriteSomeAwaiter;
-  class WriteSomePartsAwaiter;
   class SendZeroCopyAwaiter;
 
   LUringStream(LUringLoop* loop, int fd, net::Endpoint peer) noexcept;
@@ -192,9 +191,6 @@ public:
                                  std::chrono::milliseconds timeout) noexcept;
   [[nodiscard]]
   WriteSomeAwaiter WriteSome(std::span<const std::byte> buffer) noexcept;
-
-  [[nodiscard]]
-  WriteSomePartsAwaiter WriteSome(std::span<const backend::WritePart> buffers) noexcept;
 
   // Optional extension consumed by io::WriteAll. The default remains the
   // ordinary WriteSome() path; enabled streams use SendZeroCopy() and keep
@@ -406,42 +402,6 @@ private:
 
   LUringStream* stream_;
   std::span<const std::byte> buffer_;
-};
-
-class LUringStream::WriteSomePartsAwaiter
-    : public detail::LUringOpHook<LUringStream::WriteSomePartsAwaiter> {
-public:
-  using OpHook = detail::LUringOpHook<WriteSomePartsAwaiter>;
-
-  COROPACT_DELETE_COPY_MOVE(WriteSomePartsAwaiter);
-
-  WriteSomePartsAwaiter(LUringStream& stream, std::span<const backend::WritePart> buffers) noexcept
-      : OpHook(LUringOpKind::kWritePartsComplete), stream_(&stream), buffers_(buffers) {}
-
-  [[nodiscard]]
-  bool await_ready() const noexcept {
-    return false;
-  }
-
-  [[nodiscard]]
-  bool await_suspend(std::coroutine_handle<> continuation) noexcept;
-
-  base::Result<std::size_t> await_resume() noexcept;
-
-private:
-  friend void detail::DispatchStreamWritePartsComplete(LUringOp* op) noexcept;
-
-  static void OnComplete(LUringOp* op) noexcept;
-
-  LUringOp* Op() noexcept { return static_cast<OpHook*>(this); }
-
-  static constexpr std::size_t kMaxParts = 8;
-
-  LUringStream* stream_;
-  std::span<const backend::WritePart> buffers_;
-
-  std::array<iovec, kMaxParts> iovecs_{};
-  msghdr message_{};
 };
 
 class LUringStream::SendZeroCopyAwaiter

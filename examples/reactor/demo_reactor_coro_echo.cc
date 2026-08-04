@@ -61,18 +61,6 @@ std::string_view StripLineEnding(std::string_view line) {
 }
 
 template <coropact::io::AsyncStream Stream>
-[[maybe_unused]] coropact::coro::DetachedTask EchoOnceSession(Stream stream) {
-  std::array<std::byte, 4096> buffer{};
-
-  auto result = co_await coropact::io::EchoOnce(stream, buffer);
-  if (!result.has_value()) {
-    std::cerr << "echo once failed: " << result.error().message() << '\n';
-  }
-
-  co_await stream.Close();
-}
-
-template <coropact::io::AsyncStream Stream>
 coropact::coro::DetachedTask Session(Stream stream, long long* active_sessions,
                                      long long* total_messages) {
   ++(*active_sessions);
@@ -158,9 +146,6 @@ coropact::coro::DetachedTask AcceptLoop(Listener* listener,
     coropact::coro::SpawnDetach(
         *scheduler, Session<Stream>(std::move(*accepted), active_sessions, total_messages));
 
-    // To start with the smallest possible demo, replace the session above with:
-    // coropact::coro::SpawnDetach(*scheduler,
-    //                             EchoOnceSession<Stream>(std::move(*accepted)));
   }
 }
 
