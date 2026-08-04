@@ -101,7 +101,6 @@ IORING_RECV_MULTISHOT 可用
 | --- | --- | --- | --- | --- | --- |
 | `recv` / `ReadSome` | 1 个 SQE | 1 个 CQE | CQE 到达后确定 | CQE dispatch 后，await 结束时释放 awaiter frame；buffer 至少存活到 CQE | 已实现，single-shot |
 | `send` / `WriteSome` | 1 个 SQE | 1 个 CQE | CQE 到达后确定 | CQE 到达后 buffer 可按普通 send 语义释放 | 已实现，single-shot |
-| `sendmsg` / `WriteSome(parts)` | 1 个 SQE | 1 个 CQE | CQE 到达后确定 | `msghdr`、iovecs 和发送片段必须存活到 CQE | 已实现，single-shot |
 | `accept` / `Accept` | 1 个 SQE；listener 可以同时保持多个 pending accept | 每个 SQE 1 个 CQE | CQE 返回新 fd 后确定 | accept operation 和临时地址存储在 CQE dispatch 后释放；新 stream 转移 fd 所有权 | 已实现，single-shot |
 | `connect` / `Connect` | 1 个 SQE | 1 个 CQE | CQE 到达后确定 | connect operation 完成后释放 | 已实现，single-shot |
 | `link_timeout` / timed read | read SQE + timeout SQE | 最多 2 个 CQE | read 和 timeout 两个物理完成都观察到后确定 | 两个 operation 都结束后 awaiter 才能安全释放；只恢复一次 | 已实现，linked composite |
@@ -112,6 +111,10 @@ IORING_RECV_MULTISHOT 可用
 当前 `LUringLoop::HandleCqe()` 对普通 single-shot operation 的行为是：每个 CQE 减少一次
 `inflight_`，调用一次 `LUringOp::Complete()`，然后最多调度一次 `ResumeWork`。这个行为适合
 上表中的 single-shot operation；它不能直接承载 multishot operation。
+
+当前公共 API 不提供 `WritePart` 或 `WriteSome(parts)` scatter-write 路径。需要保证完整发送
+时使用 `coropact::io::WriteAll` 的连续 span 或 `io::Buffer` 重载；多片段发送不属于当前
+`AsyncStream` 契约。
 
 ## 4. 扩展 operation
 

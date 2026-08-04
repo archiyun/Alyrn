@@ -138,9 +138,9 @@ object -> hook
   ────────────────────  ───────────────────
    IntrusiveRBTree       RBTNode<T, Tag>
   ────────────────────  ───────────────────
-   experimental::ds::IntrusiveSplayTree    SplayNode<T, Tag>
+   coropact::experimental::ds::IntrusiveSplayTree    SplayNode<T, Tag>
   ────────────────────  ───────────────────
-   experimental::ds::IntrusiveQuadHeap     HeapNode<T, Tag>
+   coropact::experimental::ds::IntrusiveQuadHeap     HeapNode<T, Tag>
 
 如前面的例子, 同一个对象可以通过不同的 Tag 同时加入多个同类型的容器
 
@@ -241,17 +241,16 @@ if (item.InList()) {
   ────────────────────  ─────────────────────────────────
    IntrusiveRBTree       TimerTree、deadline 调度
   ────────────────────  ─────────────────────────────────
-   experimental::ds::IntrusiveQuadHeap     定时器的另一种替代,目前未使用
+   coropact::experimental::ds::IntrusiveQuadHeap     定时器的实验性替代，目前未接入运行时
   ────────────────────  ─────────────────────────────────
-   experimental::ds::IntrusiveSplayTree    目前没有用,但是感觉删除可惜
+   coropact::experimental::ds::IntrusiveSplayTree    实验性容器，仅由验证器覆盖
   ────────────────────  ─────────────────────────────────
 
 ## 11. 相关实现与测试
 
 实现位于 :
-  实现位于：
-
   - include/coropact/ds/
+  - include/coropact/experimental/ds/
   - include/coropact/time/
 
   验证测试位于：
@@ -260,7 +259,9 @@ if (item.InList()) {
   - tests/unit/test_intrusive_queue_smoke.cc
   - tests/unit/test_intrusive_hash_table_smoke.cc
   - tests/unit/test_rbtree_validator.cc
-  - tests/unit/test_splaytree_validator.cc
   - tests/unit/test_mpsc_bounded_queue_smoke.cc
+
+实验性容器验证器位于 `tests/unit/test_splaytree_validator.cc` 和
+`tests/unit/test_quad_heap.cc`，需要使用 `-DBUILD_EXPERIMENTAL_TESTS=ON` 构建。
 
 完.

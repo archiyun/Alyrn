@@ -2,8 +2,8 @@
 
 ![C++](https://img.shields.io/badge/C++-23-blue)
 ![Platform](https://img.shields.io/badge/platform-Linux-lightgrey)
-![License](https://img.shields.io/github/license/akiba-miku/high-concurrency-runtime)
-![Stars](https://img.shields.io/github/stars/akiba-miku/high-concurrency-runtime?style=social)
+![License](https://img.shields.io/github/license/archiyun/CoroPact)
+![Stars](https://img.shields.io/github/stars/archiyun/CoroPact?style=social)
 
 ***A C++23 asynchronous networking runtime for Linux, powered by coroutines, epoll, and io_uring.***
 
@@ -119,18 +119,19 @@ CoroPact includes reproducible `wrk` benchmarks covering:
 * Monoio
 * Compio
 * the libaio poll compatibility path
+* libuv, libevent, and libev reference adapters
 * an Nginx reference configuration
 
-Results depend strongly on the workload and must not be interpreted as a universal ranking of networking frameworks. The complete seven-target fixed-HTTP comparison, including charts, summary data, per-round data, latency anomalies, CPU usage, memory usage, and error counts, is available in the [unified network-library benchmark report](docs/benchmark/network-libraries.md). Other benchmark scripts, raw results, and optimization records are under [`docs/benchmark`](docs/benchmark/).
+Results depend strongly on the workload and must not be interpreted as a universal ranking of networking frameworks. The complete ten-target fixed-HTTP comparison, including charts, summary data, per-round data, latency anomalies, CPU usage, memory usage, and error counts, is available in the [unified network-library benchmark report](docs/benchmark/network-libraries.md). Other benchmark scripts, raw results, and optimization records are under [`docs/benchmark`](docs/benchmark/).
 
 ## Documentation
 
 Most documentation is still being written and may lag behind the current implementation. Treat it as design and development reference material.
 
 * **[Networking architecture](docs/design/zh-CN/network/index.md)**: runtime layering, backend boundaries, and ownership models.
-* **Coroutine state-machine formalization**: planned documentation under the design tree.
+* **[Coroutine state-machine models](docs/design/zh-CN/network/lamport-hot-swap-runtime.md)**: abstract stream invariants and backend refinement notes.
 * **[AsyncStream semantics](docs/design/zh-CN/network/async-stream-contract.md)**: read, write, close, cancellation, and buffer-lifetime semantics.
-* **[Data structures](docs/design/zh-CN/datastructure/index.md)**: modern C++ intrusive data structures, intrusive red-black trees, intrusive lists, MPSC queues, and their use in the project.
+* **[Data structures](docs/design/zh-CN/datastructure/index.md)**: modern C++ intrusive data structures, intrusive red-black trees, intrusive lists, MPSC queues, and their use in the project. SplayTree and QuadHeap are experimental explicit-header APIs; build their validators with `-DBUILD_EXPERIMENTAL_TESTS=ON`.
 * **[Performance benchmarks](docs/benchmark/network-libraries.md)**: the unified network-library report; additional methods, raw results, and optimization records are in [`docs/benchmark`](docs/benchmark/).
 * **[Examples](examples/)**: Reactor and io_uring examples.
 * **[Tests](tests/)**: coroutine, networking, lifecycle, and backend validation.
@@ -147,6 +148,6 @@ Current work includes:
 
 ## Contributing
 
-* Please open an [Issue](https://github.com/akiba-miku/high-concurrency-runtime/issues) for bugs, questions, or feature requests.
-* Pull Requests are welcome: [open a PR](https://github.com/akiba-miku/high-concurrency-runtime/pulls).
+* Please open an [Issue](https://github.com/archiyun/CoroPact/issues) for bugs, questions, or feature requests.
+* Pull Requests are welcome: [open a PR](https://github.com/archiyun/CoroPact/pulls).
 * This project is released under the [MIT License](LICENSE).

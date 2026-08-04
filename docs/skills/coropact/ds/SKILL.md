@@ -1,6 +1,6 @@
 ---
 name: runtime-ds-maintenance
-description: Maintain coropact/ds intrusive containers, heaps, trees, hash tables, bloom filters, and hash functions. Use for data-structure invariants and zero-ownership container patches.
+description: Maintain coropact/ds intrusive containers, heaps, trees, and hash tables. Use for data-structure invariants and zero-ownership container patches.
 ---
 
 # coropact/ds Maintenance
@@ -79,8 +79,10 @@ container: empty <-> populated -> Clear/destruction unlinks all hooks
 - `splaytree_validator` (experimental)
 - `quad_heap_test` (experimental)
 - `timer_tree_smoke_test` when tree behavior changes
-- `test_bloom_filter` for BloomFilter/hash changes
 - Add randomized differential and invariant checks for structural changes
+
+The SplayTree and QuadHeap validators are excluded from the default test build;
+enable them with `-DBUILD_EXPERIMENTAL_TESTS=ON`.
 
 ## Forbidden dependencies
 

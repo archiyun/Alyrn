@@ -24,7 +24,10 @@ changing module boundaries.
 - `net`: `Socket`, `Endpoint`, and buffers are backend-shared network values.
 - `io` and `backend`: `AsyncStream`, `AsyncListener`, and `AsyncConnector`
   define application-visible transport contracts. They must not require an
-  application protocol.
+  application protocol. The `coropact/io.h` umbrella exports the
+  backend-neutral stream, listener, buffer, receive-source, and algorithm
+  contracts; connector and backend/profile binding headers are included
+  explicitly by composition roots.
 - `reactor` and `luring` are parallel backend adapters. Do not make either
   backend depend on the `io` facade or on CoroGateway.
 

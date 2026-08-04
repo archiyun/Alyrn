@@ -2,8 +2,8 @@
 
 ![C++](https://img.shields.io/badge/C++-23-blue)
 ![Platform](https://img.shields.io/badge/platform-Linux-lightgrey)
-![License](https://img.shields.io/github/license/akiba-miku/high-concurrency-runtime)
-![Stars](https://img.shields.io/github/stars/akiba-miku/high-concurrency-runtime?style=social)
+![License](https://img.shields.io/github/license/archiyun/CoroPact)
+![Stars](https://img.shields.io/github/stars/archiyun/CoroPact?style=social)
 
 ***面向 Linux 的 C++23 异步网络运行时，由协程、epoll 与 io_uring 驱动***
 
@@ -119,11 +119,12 @@ CoroPact 提供了可复现的 `wrk` 性能测试，用于比较：
 * Monoio
 * Compio
 * libaio poll 兼容路径
+* libuv、libevent 与 libev 参考适配器
 * Nginx 参考配置
 
 性能测试结果与具体 workload 密切相关，不应被解释为网络框架的综合排名。测试报告会完整保留实验拓扑、原始轮次、延迟异常、CPU 使用率、内存占用与错误数量。
 
-完整的七个网络库统一公平压测报告（包含图表、汇总数据和每轮关键数据）请参阅
+完整的十个网络库统一公平压测报告（包含图表、汇总数据和每轮关键数据）请参阅
 [网络库统一公平压测](docs/benchmark/network-libraries.md)。其它测试脚本、原始结果和专项优化记录请参阅 [`docs/benchmark`](docs/benchmark/)。
 
 ## 文档
@@ -131,10 +132,10 @@ CoroPact 提供了可复现的 `wrk` 性能测试，用于比较：
 目前多数内容仍然在编写中, 且随版本更新内容会出现迟滞, 仅供参考.
 
 * **[网络架构](docs/design/zh-CN/network/index.md)：** 运行时分层、后端边界与所有权模型。
-* **[协程六元组状态机形式化建模](docs/design/zh-CN/theory/index.md):**
+* **[协程状态机模型](docs/design/zh-CN/network/lamport-hot-swap-runtime.md)：** 抽象 stream 不变量与后端 refinement 说明。
 * **[AsyncStream 语义契约](docs/design/zh-CN/network/async-stream-contract.md)：** read、write、close、取消与 buffer 生命周期语义。
-* **[数据结构](docs/design/zh-CN/datastructure/index.md):** C++现代风格的侵入式数据结构, 侵入式红黑树, 侵入式链表, MSPC队列的设计与实现, 以及它们在项目各处的应用.
-* **[性能测试](docs/benchmark/network-libraries.md)：** Reactor、CoroPact luring、raw liburing、Asio、Monoio、Compio 与 libaio 的统一网络压测报告；其它测试方法、原始结果与性能优化记录见 [`docs/benchmark`](docs/benchmark/)。
+* **[数据结构](docs/design/zh-CN/datastructure/index.md):** C++现代风格的侵入式数据结构, 侵入式红黑树, 侵入式链表, MPSC队列的设计与实现, 以及它们在项目各处的应用。SplayTree 与 QuadHeap 属于显式 include 的实验性 API；构建其验证器时使用 `-DBUILD_EXPERIMENTAL_TESTS=ON`。
+* **[性能测试](docs/benchmark/network-libraries.md)：** Reactor、CoroPact luring、raw liburing、Asio、Monoio、Compio、libaio、libuv、libevent 与 libev 的统一网络压测报告；其它测试方法、原始结果与性能优化记录见 [`docs/benchmark`](docs/benchmark/)。
 * **[示例](examples/)：** Reactor 与 io_uring 使用示例。
 * **[测试](tests/)：** 协程、网络、生命周期与后端行为验证。
 
@@ -150,6 +151,6 @@ CoroPact 目前仍是一个实验性网络运行时，尚不适合作为成熟�
 
 ## 参与项目
 
-* 遇到问题、发现 Bug 或希望提出新功能，请创建 [Issue](https://github.com/akiba-miku/high-concurrency-runtime/issues)。
-* 欢迎提交 [Pull Request](https://github.com/akiba-miku/high-concurrency-runtime/pulls)。
+* 遇到问题、发现 Bug 或希望提出新功能，请创建 [Issue](https://github.com/archiyun/CoroPact/issues)。
+* 欢迎提交 [Pull Request](https://github.com/archiyun/CoroPact/pulls)。
 * 本项目使用 [MIT License](LICENSE)。
