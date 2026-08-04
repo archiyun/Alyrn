@@ -16,9 +16,7 @@
 #include <utility>
 
 #include "coropact/coro.h"
-#include "coropact/io/backend.h"
 #include "coropact/io.h"
-#include "coropact/io/profile.h"
 #include "coropact/net.h"
 #include "coropact/reactor.h"
 #include "echo_app.h"
