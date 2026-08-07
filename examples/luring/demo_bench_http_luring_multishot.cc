@@ -189,8 +189,11 @@ int main() {
   coropact::luring::LUringServerOptions options;
   options.worker_group_options.worker_num = workers;
   options.worker_group_options.worker_options.loop_options = loop_options;
+  // Keep connection admission identical to the regular benchmark. This
+  // executable isolates the provided-buffer multishot recv path; native
+  // multishot accept has a separate example and smoke test.
   options.worker_group_options.worker_options.accept_mode =
-      coropact::luring::AcceptMode::kMultishot;
+      coropact::luring::AcceptMode::kSingleShot;
   options.worker_group_options.worker_options.listen_options.reuse_addr = true;
   options.worker_group_options.worker_options.listen_options.reuse_port = true;
   options.worker_group_options.worker_options.listen_options.accept_depth = 4;

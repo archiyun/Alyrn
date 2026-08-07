@@ -197,6 +197,38 @@ void CheckBufferCapacityFailure() {
   assert(state.State() == RecvSourceState::kTerminal);
 }
 
+void CheckDirectDeliveryAccounting() {
+  auto state_result = RecvSourceStateMachine::Create({
+      .pending_depth = 1,
+      .event_capacity = 2,
+      .buffer_capacity = 2,
+  });
+  assert(state_result.has_value());
+  auto state = std::move(*state_result);
+
+  assert(state.Start().has_value());
+  assert(state.TryArm());
+  assert(state.CompleteMultishotEvent(
+                 EventDisposition::kDelivered,
+                 MultishotRequestDisposition::kMore)
+             .has_value());
+  assert(state.ArmedRequests() == 1);
+  assert(state.QueuedEvents() == 0);
+  assert(state.OutstandingLeases() == 1);
+  assert(!state.AcquireEvent());
+
+  // A directly delivered lease still keeps Stop in the draining state until
+  // the consumer releases it.
+  assert(state.RequestStop().has_value());
+  assert(state.CompleteMultishotEvent(
+                 EventDisposition::kNone,
+                 MultishotRequestDisposition::kTerminal)
+             .has_value());
+  assert(state.State() == RecvSourceState::kDraining);
+  assert(state.ReleaseLease());
+  assert(state.State() == RecvSourceState::kTerminal);
+}
+
 void CheckPauseAndResume() {
   auto state_result = RecvSourceStateMachine::Create({
       .pending_depth = 1,
@@ -234,6 +266,7 @@ int main() {
   CheckBufferLease();
   CheckLeaseLifetimeAndStop();
   CheckBufferCapacityFailure();
+  CheckDirectDeliveryAccounting();
   CheckPauseAndResume();
   std::cout << "recv source/BufferLease state smoke: PASS\n";
   return 0;

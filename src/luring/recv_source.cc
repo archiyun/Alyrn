@@ -12,68 +12,76 @@
 
 #include "coropact/base/check.h"
 #include "coropact/base/error.h"
+#include "coropact/luring/detail/provided_buffer_pool.h"
 #include "coropact/luring/loop.h"
 #include "coropact/operation/detail/completion_gate.h"
 #include "coropact/operation/detail/scheduler_continuation.h"
-#include "coropact/luring/detail/provided_buffer_pool.h"
 
 namespace coropact::luring {
 
 using namespace net::detail;
 
-class LUringRecvSource::NextAwaiter {
-public:
-  explicit NextAwaiter(LUringRecvSource& source) noexcept : source_(&source) {}
+bool LUringRecvSource::NextAwaiter::await_suspend(
+    std::coroutine_handle<> continuation) noexcept {
+  if (source_->loop_ == nullptr || source_->fd_ < 0) {
+    result_.emplace(std::unexpected(base::MakeErrno(EBADF)));
+    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+    return false;
+  }
+  if (!source_->loop_->IsInLoopThread()) {
+    result_.emplace(std::unexpected(base::MakeErrno(EINVAL)));
+    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+    return false;
+  }
+  if (source_->pending_next_ != nullptr) {
+    result_.emplace(std::unexpected(base::MakeErrno(EBUSY)));
+    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+    return false;
+  }
 
-  [[nodiscard]]
-  bool await_ready() const noexcept { return false; }
-
-  bool await_suspend(std::coroutine_handle<> continuation) noexcept {
-    if (source_->pending_next_ != nullptr) {
-      result_.emplace(std::unexpected(base::MakeErrno(EBUSY)));
+  if (source_->state_.State() == RecvSourceState::kIdle) {
+    auto started = source_->Start();
+    if (!started.has_value()) {
+      result_.emplace(std::unexpected(started.error()));
       COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
       return false;
     }
-
-    continuation_.Bind(continuation);
-
-    LUringRecvSource::Result result;
-    if (source_->TryTakeNext(result)) {
-      result_.emplace(std::move(result));
-      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
-      return false;
-    }
-
-    source_->pending_next_ = this;
-    return true;
   }
 
-  LUringRecvSource::Result await_resume() noexcept {
-    assert(result_.has_value());
-    return std::move(*result_);
-  }
+  continuation_.Bind(continuation);
 
-  void Complete(LUringRecvSource::Result result) noexcept {
-    if (!completion_gate_.TryComplete()) {
-      return;
-    }
+  LUringRecvSource::Result result;
+  if (source_->TryTakeNext(result)) {
     result_.emplace(std::move(result));
-    continuation_.Schedule();
+    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+    return false;
   }
 
-private:
-  LUringRecvSource* source_;
-  operation::detail::SchedulerContinuation continuation_;
-  operation::detail::CompletionGate completion_gate_;
-  std::optional<LUringRecvSource::Result> result_;
-};
+  source_->pending_next_ = this;
+  return true;
+}
+
+LUringRecvSource::Result LUringRecvSource::NextAwaiter::await_resume() noexcept {
+  assert(result_.has_value());
+  return std::move(*result_);
+}
+
+void LUringRecvSource::NextAwaiter::Complete(Result result) noexcept {
+  if (!completion_gate_.TryComplete()) {
+    return;
+  }
+  result_.emplace(std::move(result));
+  continuation_.Schedule();
+}
 
 class LUringRecvSource::StopAwaiter {
 public:
   explicit StopAwaiter(LUringRecvSource& source) noexcept : source_(&source) {}
 
   [[nodiscard]]
-  bool await_ready() const noexcept { return false; }
+  bool await_ready() const noexcept {
+    return false;
+  }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     continuation_.Bind(continuation);
@@ -117,10 +125,8 @@ private:
   std::optional<base::Result<void>> result_;
 };
 
-base::Result<LUringRecvSource> LUringRecvSource::Create(
-    LUringLoop* loop,
-    int fd,
-    LUringRecvSourceOptions options) noexcept {
+base::Result<LUringRecvSource> LUringRecvSource::Create(LUringLoop* loop, int fd,
+                                                        LUringRecvSourceOptions options) noexcept {
   if (loop == nullptr || !loop->Initialized()) {
     return std::unexpected(base::MakeErrno(EBADF));
   }
@@ -151,23 +157,25 @@ base::Result<LUringRecvSource> LUringRecvSource::Create(
     return std::unexpected(base::MakeErrno(EINVAL));
   }
 
-  return LUringRecvSource(
-      loop,
-      fd,
-      std::move(*state_result),
-      options.buffer_size,
-      *shared_pool);
+  std::vector<LUringRecvSource::PendingEvent> event_storage;
+  try {
+    event_storage.resize(options.source.event_capacity);
+  } catch (...) {
+    return std::unexpected(base::MakeErrno(ENOMEM));
+  }
+
+  return LUringRecvSource(loop, fd, std::move(*state_result), options.buffer_size, *shared_pool,
+                          std::move(event_storage));
 }
 
-LUringRecvSource::LUringRecvSource(
-    LUringLoop* loop,
-    int fd,
-    RecvSourceStateMachine state,
-    std::size_t buffer_size,
-    detail::ProvidedBufferPool* shared_buffer_pool) noexcept
+LUringRecvSource::LUringRecvSource(LUringLoop* loop, int fd, RecvSourceStateMachine state,
+                                   std::size_t buffer_size,
+                                   detail::ProvidedBufferPool* shared_buffer_pool,
+                                   std::vector<PendingEvent> event_storage) noexcept
     : loop_(loop),
       fd_(fd),
       state_(std::move(state)),
+      events_(std::move(event_storage)),
       recv_op_(this),
       cancel_op_(this),
       buffer_size_(buffer_size),
@@ -178,23 +186,17 @@ LUringRecvSource::~LUringRecvSource() {
     return;
   }
 
-  COROPACT_DCHECK(loop_->IsInLoopThread(),
-                 "LUringRecvSource destroyed from wrong thread");
-  COROPACT_DCHECK(pending_next_ == nullptr,
-                 "LUringRecvSource destroyed with pending Next");
-  COROPACT_DCHECK(pending_stop_ == nullptr,
-                 "LUringRecvSource destroyed with pending Stop");
-  COROPACT_DCHECK(!recv_submitted_,
-                 "LUringRecvSource destroyed with active recv");
-  COROPACT_DCHECK(!cancel_submitted_,
-                 "LUringRecvSource destroyed with active cancel");
-  COROPACT_DCHECK(state_.State() == RecvSourceState::kIdle ||
-                     state_.State() == RecvSourceState::kTerminal,
-                 "LUringRecvSource destroyed before Stop completed");
-  COROPACT_DCHECK(events_.empty(),
-                 "LUringRecvSource destroyed with queued events");
+  COROPACT_DCHECK(loop_->IsInLoopThread(), "LUringRecvSource destroyed from wrong thread");
+  COROPACT_DCHECK(pending_next_ == nullptr, "LUringRecvSource destroyed with pending Next");
+  COROPACT_DCHECK(pending_stop_ == nullptr, "LUringRecvSource destroyed with pending Stop");
+  COROPACT_DCHECK(!recv_submitted_, "LUringRecvSource destroyed with active recv");
+  COROPACT_DCHECK(!cancel_submitted_, "LUringRecvSource destroyed with active cancel");
+  COROPACT_DCHECK(
+      state_.State() == RecvSourceState::kIdle || state_.State() == RecvSourceState::kTerminal,
+      "LUringRecvSource destroyed before Stop completed");
+  COROPACT_DCHECK(event_count_ == 0, "LUringRecvSource destroyed with queued events");
   COROPACT_DCHECK(state_.OutstandingLeases() == 0,
-                 "LUringRecvSource destroyed with outstanding leases");
+                  "LUringRecvSource destroyed with outstanding leases");
 }
 
 LUringRecvSource::LUringRecvSource(LUringRecvSource&& other) noexcept
@@ -202,6 +204,8 @@ LUringRecvSource::LUringRecvSource(LUringRecvSource&& other) noexcept
       fd_(std::exchange(other.fd_, -1)),
       state_(std::move(other.state_)),
       events_(std::move(other.events_)),
+      event_head_(std::exchange(other.event_head_, 0)),
+      event_count_(std::exchange(other.event_count_, 0)),
       terminal_error_(std::move(other.terminal_error_)),
       recv_op_(this),
       cancel_op_(this),
@@ -209,21 +213,16 @@ LUringRecvSource::LUringRecvSource(LUringRecvSource&& other) noexcept
       shared_buffer_pool_(std::exchange(other.shared_buffer_pool_, nullptr)),
       recv_submitted_(false),
       cancel_submitted_(false) {
-  COROPACT_CHECK(other.pending_next_ == nullptr,
-                 "LUringRecvSource cannot move with pending Next");
-  COROPACT_CHECK(other.pending_stop_ == nullptr,
-                 "LUringRecvSource cannot move with pending Stop");
-  COROPACT_CHECK(!other.recv_submitted_,
-                 "LUringRecvSource cannot move while active");
-  COROPACT_CHECK(!other.cancel_submitted_,
-                 "LUringRecvSource cannot move while cancelling");
+  COROPACT_CHECK(other.pending_next_ == nullptr, "LUringRecvSource cannot move with pending Next");
+  COROPACT_CHECK(other.pending_stop_ == nullptr, "LUringRecvSource cannot move with pending Stop");
+  COROPACT_CHECK(!other.recv_submitted_, "LUringRecvSource cannot move while active");
+  COROPACT_CHECK(!other.cancel_submitted_, "LUringRecvSource cannot move while cancelling");
   COROPACT_CHECK(other.state_.OutstandingLeases() == 0,
                  "LUringRecvSource cannot move with outstanding leases");
   COROPACT_CHECK(other.state_.State() == RecvSourceState::kIdle ||
                      other.state_.State() == RecvSourceState::kTerminal,
                  "LUringRecvSource cannot move before Stop completed");
-  COROPACT_CHECK(other.events_.empty(),
-                 "LUringRecvSource cannot move with queued events");
+  COROPACT_CHECK(other.event_count_ == 0, "LUringRecvSource cannot move with queued events");
 }
 
 LUringRecvSource& LUringRecvSource::operator=(LUringRecvSource&& other) noexcept {
@@ -231,38 +230,31 @@ LUringRecvSource& LUringRecvSource::operator=(LUringRecvSource&& other) noexcept
     return *this;
   }
 
-  COROPACT_CHECK(pending_next_ == nullptr,
-                 "LUringRecvSource destination has pending Next");
-  COROPACT_CHECK(pending_stop_ == nullptr,
-                 "LUringRecvSource destination has pending Stop");
-  COROPACT_CHECK(!recv_submitted_,
-                 "LUringRecvSource destination is active");
-  COROPACT_CHECK(!cancel_submitted_,
-                 "LUringRecvSource destination is cancelling");
+  COROPACT_CHECK(pending_next_ == nullptr, "LUringRecvSource destination has pending Next");
+  COROPACT_CHECK(pending_stop_ == nullptr, "LUringRecvSource destination has pending Stop");
+  COROPACT_CHECK(!recv_submitted_, "LUringRecvSource destination is active");
+  COROPACT_CHECK(!cancel_submitted_, "LUringRecvSource destination is cancelling");
   COROPACT_CHECK(state_.OutstandingLeases() == 0,
                  "LUringRecvSource destination has outstanding leases");
-  COROPACT_CHECK(events_.empty(),
-                 "LUringRecvSource destination has queued events");
+  COROPACT_CHECK(event_count_ == 0, "LUringRecvSource destination has queued events");
 
-  COROPACT_CHECK(other.pending_next_ == nullptr,
-                 "LUringRecvSource source has pending Next");
-  COROPACT_CHECK(other.pending_stop_ == nullptr,
-                 "LUringRecvSource source has pending Stop");
-  COROPACT_CHECK(!other.recv_submitted_,
-                 "LUringRecvSource source is active");
-  COROPACT_CHECK(!other.cancel_submitted_,
-                 "LUringRecvSource source is cancelling");
+  COROPACT_CHECK(other.pending_next_ == nullptr, "LUringRecvSource source has pending Next");
+  COROPACT_CHECK(other.pending_stop_ == nullptr, "LUringRecvSource source has pending Stop");
+  COROPACT_CHECK(!other.recv_submitted_, "LUringRecvSource source is active");
+  COROPACT_CHECK(!other.cancel_submitted_, "LUringRecvSource source is cancelling");
   COROPACT_CHECK(other.state_.OutstandingLeases() == 0,
                  "LUringRecvSource source has outstanding leases");
   COROPACT_CHECK(other.state_.State() == RecvSourceState::kIdle ||
                      other.state_.State() == RecvSourceState::kTerminal,
                  "LUringRecvSource source has not completed Stop");
-  COROPACT_CHECK(other.events_.empty(),
-                 "LUringRecvSource source has queued events");
+  COROPACT_CHECK(other.event_count_ == 0, "LUringRecvSource source has queued events");
 
   loop_ = std::exchange(other.loop_, nullptr);
   fd_ = std::exchange(other.fd_, -1);
   state_ = std::move(other.state_);
+  events_ = std::move(other.events_);
+  event_head_ = std::exchange(other.event_head_, 0);
+  event_count_ = std::exchange(other.event_count_, 0);
   terminal_error_ = std::move(other.terminal_error_);
   buffer_size_ = std::exchange(other.buffer_size_, 0);
   shared_buffer_pool_ = std::exchange(other.shared_buffer_pool_, nullptr);
@@ -270,8 +262,7 @@ LUringRecvSource& LUringRecvSource::operator=(LUringRecvSource&& other) noexcept
 }
 
 base::Result<void> LUringRecvSource::StartOperation() noexcept {
-  if (loop_ == nullptr || !loop_->Initialized() || fd_ < 0 ||
-      shared_buffer_pool_ == nullptr) {
+  if (loop_ == nullptr || !loop_->Initialized() || fd_ < 0 || shared_buffer_pool_ == nullptr) {
     return std::unexpected(base::MakeErrno(EBADF));
   }
   if (recv_submitted_) {
@@ -284,17 +275,15 @@ base::Result<void> LUringRecvSource::StartOperation() noexcept {
   recv_op_.Prepare();
   const auto buffer_group = shared_buffer_pool_->BufferGroup();
   auto submitted = loop_->SubmitOp(
-      &recv_op_,
-      [fd = fd_, buffer_size = buffer_size_, buffer_group](
-          io_uring_sqe* sqe) noexcept {
+      &recv_op_, [fd = fd_, buffer_size = buffer_size_, buffer_group](io_uring_sqe* sqe) noexcept {
         io_uring_prep_recv_multishot(sqe, fd, nullptr, buffer_size, 0);
         sqe->flags |= IOSQE_BUFFER_SELECT;
         sqe->buf_group = buffer_group;
       });
 
   if (!submitted.has_value()) {
-    const auto completed = state_.CompleteMultishotEvent(
-        EventDisposition::kNone, MultishotRequestDisposition::kTerminal);
+    const auto completed = state_.CompleteMultishotEvent(EventDisposition::kNone,
+                                                         MultishotRequestDisposition::kTerminal);
     COROPACT_IGNORE_RESULT(completed);
     assert(completed.has_value());
     return std::unexpected(submitted.error());
@@ -332,10 +321,9 @@ base::Result<void> LUringRecvSource::StartCancel() noexcept {
 
   cancel_op_.Prepare();
   const auto target = reinterpret_cast<std::uint64_t>(&recv_op_);
-  auto submitted = loop_->SubmitOp(
-      &cancel_op_, [target](io_uring_sqe* sqe) noexcept {
-        io_uring_prep_cancel64(sqe, target, IORING_ASYNC_CANCEL_ALL);
-      });
+  auto submitted = loop_->SubmitOp(&cancel_op_, [target](io_uring_sqe* sqe) noexcept {
+    io_uring_prep_cancel64(sqe, target, IORING_ASYNC_CANCEL_ALL);
+  });
   if (!submitted.has_value()) {
     return std::unexpected(submitted.error());
   }
@@ -357,13 +345,11 @@ base::Result<bool> LUringRecvSource::BeginStop() noexcept {
     }
   }
 
-  return state_.State() != RecvSourceState::kTerminal ||
-         recv_submitted_ || cancel_submitted_;
+  return state_.State() != RecvSourceState::kTerminal || recv_submitted_ || cancel_submitted_;
 }
 
 void LUringRecvSource::EnsureSubmission() noexcept {
-  if (loop_ == nullptr || !loop_->Initialized() ||
-      state_.State() != RecvSourceState::kActive ||
+  if (loop_ == nullptr || !loop_->Initialized() || state_.State() != RecvSourceState::kActive ||
       recv_submitted_ || cancel_submitted_) {
     return;
   }
@@ -421,12 +407,12 @@ CompletionDisposition LUringRecvSource::OnCompletion(CompletionEvent event) noex
   }
 
   const bool has_buffer = (event.flags & IORING_CQE_F_BUFFER) != 0;
-  const std::uint32_t buffer_id =
-      static_cast<std::uint32_t>(event.flags >> IORING_CQE_BUFFER_SHIFT);
-  const bool valid_buffer = has_buffer && shared_buffer_pool_ != nullptr &&
-                            buffer_id < shared_buffer_pool_->capacity();
+  const auto buffer_id = static_cast<std::uint32_t>(event.flags >> IORING_CQE_BUFFER_SHIFT);
+  const bool valid_buffer =
+      has_buffer && shared_buffer_pool_ != nullptr && buffer_id < shared_buffer_pool_->capacity();
 
   bool state_recorded = false;
+  bool direct_handoff = false;
   bool buffer_prepared = false;
   std::optional<base::Error> completion_error;
 
@@ -456,46 +442,49 @@ CompletionDisposition LUringRecvSource::OnCompletion(CompletionEvent event) noex
                        "LUringRecvSource failed to return shared buffer");
       }
       RequestBackendStop(*completion_error);
-    } else if (!state_.CanQueueEvent()) {
-      if (buffer_prepared) {
-        COROPACT_CHECK(shared_buffer_pool_->Return(buffer_id),
-                       "LUringRecvSource failed to return shared buffer");
-      }
-      RequestBackendPause();
     } else {
-      auto recorded = state_.CompleteMultishotEvent(
-          EventDisposition::kProduced,
-          request_still_active ? MultishotRequestDisposition::kMore
-                               : MultishotRequestDisposition::kTerminal);
-      if (!recorded.has_value()) {
-        // The failed accounting attempt did not consume the state-machine
-        // event; the fallback below will record its terminal/non-terminal
-        // request completion.
-        COROPACT_CHECK(shared_buffer_pool_->Return(buffer_id),
-                       "LUringRecvSource failed to return shared buffer");
-        RequestBackendStop(recorded.error());
+      // The common request/response path already has a consumer suspended in
+      // Next(). Keep the CQE on the hot path and avoid queueing a lease only to
+      // pop it again immediately. The queued path remains the bounded
+      // backpressure path for producers that outrun their consumer.
+      const bool direct_delivery =
+          pending_next_ != nullptr && event_count_ == 0 &&
+          state_.State() == RecvSourceState::kActive;
+      if (!direct_delivery && !state_.CanQueueEvent()) {
+        if (buffer_prepared) {
+          COROPACT_CHECK(shared_buffer_pool_->Return(buffer_id),
+                         "LUringRecvSource failed to return shared buffer");
+        }
+        RequestBackendPause();
       } else {
-        state_recorded = true;
-        net::BufferLease lease(
-            shared_buffer_pool_->slot(buffer_id),
-            static_cast<std::size_t>(cqe_result),
-            buffer_id,
-            this,
-            &ReclaimBuffer);
-        try {
-          events_.push_back(Event{.buffer = std::move(lease)});
-        } catch (...) {
-          // The temporary Event owns the lease while deque insertion is in
-          // progress. Its destruction returns the buffer and decrements the
-          // outstanding-buffer count; then remove the queue reservation.
-          assert(state_.DiscardQueuedEvent());
-          RequestBackendStop(base::MakeErrno(ENOMEM));
+        auto recorded = state_.CompleteMultishotEvent(
+            direct_delivery ? EventDisposition::kDelivered : EventDisposition::kProduced,
+            request_still_active ? MultishotRequestDisposition::kMore
+                                 : MultishotRequestDisposition::kTerminal);
+        if (!recorded.has_value()) {
+          // The failed accounting attempt did not consume the state-machine
+          // event; the fallback below will record the terminal/non-terminal
+          // request completion.
+          COROPACT_CHECK(shared_buffer_pool_->Return(buffer_id),
+                         "LUringRecvSource failed to return shared buffer");
+          RequestBackendStop(recorded.error());
+        } else {
+          state_recorded = true;
+          if (direct_delivery) {
+            net::BufferLease lease(shared_buffer_pool_->slot(buffer_id),
+                                   static_cast<std::size_t>(cqe_result), buffer_id, this,
+                                   &ReclaimBuffer);
+            auto* awaiter = std::exchange(pending_next_, nullptr);
+            awaiter->Complete(Result(std::in_place, Event{.buffer = std::move(lease)}));
+            direct_handoff = true;
+          } else {
+            QueueEvent(buffer_id, static_cast<std::size_t>(cqe_result));
+          }
         }
       }
     }
   } else if (cqe_result == 0) {
-    if (valid_buffer && !event.BufferMore() &&
-        shared_buffer_pool_->Acquire(buffer_id)) {
+    if (valid_buffer && !event.BufferMore() && shared_buffer_pool_->Acquire(buffer_id)) {
       COROPACT_CHECK(shared_buffer_pool_->Return(buffer_id),
                      "LUringRecvSource failed to return shared buffer");
     }
@@ -503,15 +492,13 @@ CompletionDisposition LUringRecvSource::OnCompletion(CompletionEvent event) noex
       RequestBackendStop();
     }
   } else {
-    if (valid_buffer && !event.BufferMore() &&
-        shared_buffer_pool_->Acquire(buffer_id)) {
+    if (valid_buffer && !event.BufferMore() && shared_buffer_pool_->Acquire(buffer_id)) {
       COROPACT_CHECK(shared_buffer_pool_->Return(buffer_id),
                      "LUringRecvSource failed to return shared buffer");
     }
     const auto state = state_.State();
     const bool stopping = state == RecvSourceState::kStopping ||
-                          state == RecvSourceState::kPausing ||
-                          state == RecvSourceState::kPaused ||
+                          state == RecvSourceState::kPausing || state == RecvSourceState::kPaused ||
                           state == RecvSourceState::kDraining ||
                           state == RecvSourceState::kTerminal;
     if (!stopping) {
@@ -519,11 +506,22 @@ CompletionDisposition LUringRecvSource::OnCompletion(CompletionEvent event) noex
     }
   }
 
+  // A successful F_MORE direct handoff leaves the request armed, the source
+  // active, and the queue empty. The continuation has already been scheduled
+  // by NextAwaiter::Complete, so all remaining reconciliation probes are cold
+  // paths for this common request/response case.
+  if (direct_handoff && request_still_active) {
+    return CompletionDisposition{
+        .kernel_request_terminal = false,
+        .decrement_inflight = false,
+        .resume_continuation = false,
+    };
+  }
+
   if (!state_recorded) {
     auto recorded = state_.CompleteMultishotEvent(
-        EventDisposition::kNone,
-        request_still_active ? MultishotRequestDisposition::kMore
-                             : MultishotRequestDisposition::kTerminal);
+        EventDisposition::kNone, request_still_active ? MultishotRequestDisposition::kMore
+                                                      : MultishotRequestDisposition::kTerminal);
     if (!recorded.has_value()) {
       terminal_error_ = recorded.error();
       RequestBackendStop(recorded.error());
@@ -590,11 +588,15 @@ void LUringRecvSource::CompleteStopIfReady() noexcept {
 }
 
 bool LUringRecvSource::TryTakeNext(Result& result) noexcept {
-  if (!events_.empty()) {
-    Event event = std::move(events_.front());
-    events_.pop_front();
-    COROPACT_CHECK(state_.AcquireEvent(),
-                   "LUringRecvSource: queue and state became inconsistent");
+  PendingEvent pending;
+  if (TryTakeQueuedEvent(pending)) {
+    COROPACT_CHECK(state_.AcquireEvent(), "LUringRecvSource: queue and state became inconsistent");
+    COROPACT_CHECK(shared_buffer_pool_ != nullptr,
+                   "LUringRecvSource missing shared buffer pool");
+    auto* data = shared_buffer_pool_->slot(pending.buffer_id);
+    COROPACT_CHECK(data != nullptr, "LUringRecvSource queued an invalid buffer");
+    Event event{.buffer = net::BufferLease(data, pending.size, pending.buffer_id, this,
+                                           &ReclaimBuffer)};
     result = Result(std::in_place, std::move(event));
     if (state_.State() == RecvSourceState::kPaused) {
       MaybeResume();
@@ -613,47 +615,45 @@ bool LUringRecvSource::TryTakeNext(Result& result) noexcept {
   return false;
 }
 
+void LUringRecvSource::QueueEvent(std::uint32_t buffer_id, std::size_t size) noexcept {
+  COROPACT_CHECK(!events_.empty() && event_count_ < events_.size(),
+                 "LUringRecvSource event queue overflow");
+  const std::size_t index = (event_head_ + event_count_) % events_.size();
+  events_[index] = PendingEvent{.buffer_id = buffer_id, .size = size};
+  ++event_count_;
+}
+
+bool LUringRecvSource::TryTakeQueuedEvent(PendingEvent& event) noexcept {
+  if (event_count_ == 0) {
+    return false;
+  }
+
+  event = events_[event_head_];
+  event_head_ = (event_head_ + 1) % events_.size();
+  --event_count_;
+  return true;
+}
+
 void LUringRecvSource::ReturnBuffer(std::uint32_t buffer_id) noexcept {
-  COROPACT_CHECK(shared_buffer_pool_ != nullptr,
-                 "LUringRecvSource missing shared buffer pool");
+  COROPACT_CHECK(shared_buffer_pool_ != nullptr, "LUringRecvSource missing shared buffer pool");
   COROPACT_CHECK(shared_buffer_pool_->Return(buffer_id),
                  "LUringRecvSource shared buffer lease released twice");
-  COROPACT_CHECK(state_.ReleaseLease(),
-                 "LUringRecvSource buffer lease released twice");
+  COROPACT_CHECK(state_.ReleaseLease(), "LUringRecvSource buffer lease released twice");
+
+  // A live multishot request already has admission. In the common direct
+  // delivery path, releasing the lease cannot re-arm anything or complete a
+  // pending Stop, so avoid two cold-path probes for every received buffer.
+  if (state_.State() == RecvSourceState::kActive && recv_submitted_ &&
+      pending_stop_ == nullptr) {
+    return;
+  }
+
   EnsureSubmission();
   CompleteStopIfReady();
 }
 
-void LUringRecvSource::ReclaimBuffer(
-    void* context,
-    std::uint32_t buffer_id) noexcept {
+void LUringRecvSource::ReclaimBuffer(void* context, std::uint32_t buffer_id) noexcept {
   static_cast<LUringRecvSource*>(context)->ReturnBuffer(buffer_id);
-}
-
-coro::Task<LUringRecvSource::Result> LUringRecvSource::Next() {
-  if (loop_ == nullptr || fd_ < 0) {
-    co_return std::unexpected(base::MakeErrno(EBADF));
-  }
-  if (!loop_->IsInLoopThread()) {
-    co_return std::unexpected(base::MakeErrno(EINVAL));
-  }
-  if (pending_next_ != nullptr) {
-    co_return std::unexpected(base::MakeErrno(EBUSY));
-  }
-
-  if (state_.State() == RecvSourceState::kIdle) {
-    auto started = Start();
-    if (!started.has_value()) {
-      co_return std::unexpected(started.error());
-    }
-  }
-
-  Result result;
-  if (TryTakeNext(result)) {
-    co_return result;
-  }
-
-  co_return co_await NextAwaiter(*this);
 }
 
 base::Result<void> LUringRecvSource::RequestStop() noexcept {
@@ -682,8 +682,7 @@ coro::Task<base::Result<void>> LUringRecvSource::Stop() {
     co_return std::unexpected(base::MakeErrno(EBUSY));
   }
 
-  if (state_.State() == RecvSourceState::kTerminal &&
-      !recv_submitted_ && !cancel_submitted_) {
+  if (state_.State() == RecvSourceState::kTerminal && !recv_submitted_ && !cancel_submitted_) {
     co_return base::Result<void>{};
   }
 
@@ -692,9 +691,7 @@ coro::Task<base::Result<void>> LUringRecvSource::Stop() {
 
 namespace detail {
 
-CompletionDisposition DispatchRecvSourceComplete(
-    LUringOp* op,
-    CompletionEvent event) noexcept {
+CompletionDisposition DispatchRecvSourceComplete(LUringOp* op, CompletionEvent event) noexcept {
   auto* operation = static_cast<LUringRecvSource::RecvOperation*>(op);
   return operation->Source()->OnCompletion(event);
 }
