@@ -16,6 +16,31 @@ target_link_libraries(panic_check_smoke_test
 
 add_test(NAME panic_check_smoke_test COMMAND panic_check_smoke_test)
 
+# Central compile-time seam: every enabled network backend must satisfy the
+# same CoreStream/CoreListener/CoreConnector concepts. Runtime lifecycle
+# behavior remains covered by the backend-specific smoke tests below.
+add_executable(io_contract_smoke_test
+    unit/test_io_contracts.cc
+)
+
+target_include_directories(io_contract_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+        ${CMAKE_CURRENT_SOURCE_DIR}/contracts
+)
+
+target_link_libraries(io_contract_smoke_test
+    PRIVATE
+        coropact_reactor
+)
+
+if(COROPACT_ENABLE_URING)
+    target_link_libraries(io_contract_smoke_test PRIVATE coropact_luring)
+    target_compile_definitions(io_contract_smoke_test PRIVATE COROPACT_ENABLE_URING)
+endif()
+
+add_test(NAME io_contract_smoke_test COMMAND io_contract_smoke_test)
+
 add_executable(completion_gate_smoke_test
     unit/test_completion_gate_smoke.cc
 )

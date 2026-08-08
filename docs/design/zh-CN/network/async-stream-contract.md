@@ -1,8 +1,14 @@
 # AsyncStream 与 AsyncListener 协程语义契约
 
-> 状态：核心设计契约。本文定义业务协程可以依赖的 I/O 语义，以及 Reactor 和
+> 状态：已冻结的 Core contract。本文定义业务协程可以依赖的 I/O 语义，以及 Reactor 和
 > luring 实现必须共同满足的不变量。本文不描述 io_uring 的具体 SQE/CQE API，也不
 > 把尚未落地的扩展能力写成核心能力。
+
+Core contract 的冻结范围是 `AsyncStream`、`AsyncListener`、`AsyncConnector` 及其
+可观察的结果、生命周期、buffer 和线程归属语义。后端可以继续更换内部队列、提交
+批处理、completion dispatch 和内存池实现，但不得改变这些语义。`AsyncTimedStream`、
+`AsyncOwnedReadStream`、`AsyncRecvSource`、`BufferLease` 和 zero-copy 属于独立的
+extension，不得通过扩大 Core contract 的隐含行为加入。
 
 ## 1. 这份契约解决什么问题
 
