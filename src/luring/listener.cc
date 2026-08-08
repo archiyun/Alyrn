@@ -92,6 +92,7 @@ bool IsMultishotUnsupported(int cqe_result) noexcept {
 
 }  // namespace
 
+// --- NextAwaiter ---
 class LUringAcceptSource::NextAwaiter {
 public:
   explicit NextAwaiter(LUringAcceptSource& source) noexcept : source_(&source) {}
@@ -141,6 +142,7 @@ private:
   std::optional<LUringAcceptSource::Result> result_;
 };
 
+// --- StopAwaiter ---
 class LUringAcceptSource::StopAwaiter {
 public:
   explicit StopAwaiter(LUringAcceptSource& source) noexcept : source_(&source) {}
@@ -218,12 +220,8 @@ LUringAcceptSource::LUringAcceptSource(LUringAcceptSource&& other) noexcept
       state_(std::move(other.state_)),
       events_(std::move(other.events_)),
       terminal_error_(std::move(other.terminal_error_)),
-      pending_next_(nullptr),
-      pending_stop_(nullptr),
       accept_op_(this),
       cancel_op_(this),
-      accept_submitted_(false),
-      cancel_submitted_(false),
       multishot_enabled_(other.multishot_enabled_) {
   COROPACT_CHECK(other.pending_next_ == nullptr,
                  "LUringAcceptSource cannot move with pending Next");
@@ -312,8 +310,8 @@ base::Result<void> LUringAcceptSource::StartOperation() noexcept {
 
   if (!submitted.has_value()) {
     --listener_->pending_accepts_;
-    const auto completed = state_.CompleteMultishotEvent(
-        EventDisposition::kNone, MultishotRequestDisposition::kTerminal);
+    const auto completed = state_.CompleteMultishotEvent(EventDisposition::kNone,
+                                                         MultishotRequestDisposition::kTerminal);
     COROPACT_IGNORE_RESULT(completed);
     assert(completed.has_value());
     return std::unexpected(submitted.error());
@@ -416,9 +414,8 @@ void LUringAcceptSource::RequestBackendPause() noexcept {
 }
 
 void LUringAcceptSource::EnsureSubmission() noexcept {
-  if (listener_ == nullptr || listener_->closed_ ||
-      state_.State() != AcceptSourceState::kActive || accept_submitted_ ||
-      cancel_submitted_) {
+  if (listener_ == nullptr || listener_->closed_ || state_.State() != AcceptSourceState::kActive ||
+      accept_submitted_ || cancel_submitted_) {
     return;
   }
 
@@ -472,11 +469,10 @@ CompletionDisposition LUringAcceptSource::OnCompletion(CompletionEvent event) no
     }
   } else if (!request_still_active) {
     const auto state = state_.State();
-    const bool stopping = state == AcceptSourceState::kStopping ||
-                          state == AcceptSourceState::kPausing ||
-                          state == AcceptSourceState::kPaused ||
-                          state == AcceptSourceState::kDraining ||
-                          state == AcceptSourceState::kTerminal;
+    const bool stopping =
+        state == AcceptSourceState::kStopping || state == AcceptSourceState::kPausing ||
+        state == AcceptSourceState::kPaused || state == AcceptSourceState::kDraining ||
+        state == AcceptSourceState::kTerminal;
 
     if (!stopping && multishot_enabled_ && IsMultishotUnsupported(cqe_res)) {
       // The opcode probe only proves that ACCEPT exists; it cannot prove that
@@ -656,6 +652,7 @@ coro::Task<base::Result<void>> LUringAcceptSource::Stop() {
   co_return co_await StopAwaiter(*this);
 }
 
+// --- AcceptAwaiter ---
 class LUringListener::AcceptAwaiter : public detail::LUringOpHook<LUringListener::AcceptAwaiter> {
   friend void detail::DispatchAcceptComplete(LUringOp* op) noexcept;
 
@@ -700,7 +697,7 @@ public:
 
 private:
   static void OnComplete(LUringOp* op) noexcept {
-    auto* self = static_cast<OpHook*>(op)->Owner();
+    auto* self = OpHook::OwnerFrom(op);
     if (self->listener_ != nullptr) {
       LUringListener* listener = self->listener_;
       assert(listener->pending_accepts_ > 0);
@@ -723,14 +720,13 @@ private:
     }
   }
 
-  LUringOp* Op() noexcept { return static_cast<OpHook*>(this); }
-
   LUringListener* listener_;
   sockaddr_storage peer_addr_{};
   socklen_t peer_len_{sizeof(peer_addr_)};
   std::optional<AcceptResult> immediate_;
 };
 
+// --- CloseAwaiter ---
 class LUringListener::CloseAwaiter : public detail::LUringOpHook<LUringListener::CloseAwaiter> {
   friend void detail::DispatchListenerCloseComplete(LUringOp* op) noexcept;
 
@@ -806,12 +802,10 @@ public:
 
 private:
   static void OnCancelComplete(LUringOp* op) noexcept {
-    auto* self = static_cast<OpHook*>(op)->Owner();
+    auto* self = OpHook::OwnerFrom(op);
     self->state_.MarkCancelCompleted();
     self->TryComplete(op);
   }
-
-  LUringOp* Op() noexcept { return static_cast<OpHook*>(this); }
 
   base::Result<void> CloseFd() noexcept {
     const int fd = std::exchange(listener_->fd_, -1);
@@ -867,9 +861,7 @@ base::Result<LUringListener> LUringListener::Create(LUringLoop* loop,
 }
 
 LUringListener::LUringListener(LUringLoop* loop, int fd, bool zero_copy_writes) noexcept
-    : loop_(loop),
-      fd_(fd),
-      zero_copy_writes_(zero_copy_writes) {
+    : loop_(loop), fd_(fd), zero_copy_writes_(zero_copy_writes) {
   COROPACT_CHECK(loop_ != nullptr, "LUringListener requires an owner loop");
   COROPACT_CHECK(loop_->IsInLoopThread(), "LUringListener created from wrong LUringLoop thread");
   COROPACT_CHECK(fd_ >= 0, "LUringListener requires a valid file descriptor");
@@ -878,9 +870,6 @@ LUringListener::LUringListener(LUringLoop* loop, int fd, bool zero_copy_writes) 
 LUringListener::LUringListener(LUringListener&& other) noexcept
     : loop_(PrepareMove(other)),
       fd_(std::exchange(other.fd_, -1)),
-      pending_accepts_(0),
-      pending_close_(nullptr),
-      accept_source_(nullptr),
       zero_copy_writes_(other.zero_copy_writes_),
       closed_(other.closed_) {
   other.closed_ = true;

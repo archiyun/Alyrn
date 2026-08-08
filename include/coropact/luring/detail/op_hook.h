@@ -19,6 +19,16 @@ public:
   explicit LUringOpHook(LUringOpKind kind) noexcept { this->kind = kind; }
 
   [[nodiscard]]
+  LUringOp* Op() noexcept {
+    return this;
+  }
+
+  [[nodiscard]]
+  const LUringOp* Op() const noexcept {
+    return this;
+  }
+
+  [[nodiscard]]
   TOwner* Owner() noexcept {
     return static_cast<TOwner*>(this);
   }
@@ -26,6 +36,16 @@ public:
   [[nodiscard]]
   const TOwner* Owner() const noexcept {
     return static_cast<const TOwner*>(this);
+  }
+
+  [[nodiscard]]
+  static TOwner* OwnerFrom(LUringOp* op) noexcept {
+    return static_cast<LUringOpHook*>(op)->Owner();
+  }
+
+  [[nodiscard]]
+  static const TOwner* OwnerFrom(const LUringOp* op) noexcept {
+    return static_cast<const LUringOpHook*>(op)->Owner();
   }
 };
 
