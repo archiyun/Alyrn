@@ -73,7 +73,7 @@ base::Result<std::size_t> LUringStream::ReadSomeAwaiter::await_resume() noexcept
 }
 
 void LUringStream::ReadSomeAwaiter::OnComplete(LUringOp* op) noexcept {
-  auto* self = static_cast<OpHook*>(op)->Owner();
+  auto* self = OpHook::OwnerFrom(op);
   if (self->stream_ != nullptr && self->stream_->pending_read_ == self) {
     self->stream_->pending_read_ = nullptr;
     self->stream_->NotifyCloseProgress();
@@ -81,8 +81,7 @@ void LUringStream::ReadSomeAwaiter::OnComplete(LUringOp* op) noexcept {
 }
 
 // ---- ReadIntoAwaiter ---
-bool LUringStream::ReadIntoAwaiter::await_suspend(
-    std::coroutine_handle<> continuation) noexcept {
+bool LUringStream::ReadIntoAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   stream_->RequireOwnerLoop();
   if (stream_->closed_ || stream_->fd_ < 0) {
     Op()->SetImmediateError(base::MakeErrno(EBADF));
@@ -119,7 +118,7 @@ net::ReadIntoOutcome LUringStream::ReadIntoAwaiter::await_resume() noexcept {
 }
 
 void LUringStream::ReadIntoAwaiter::OnComplete(LUringOp* op) noexcept {
-  auto* self = static_cast<OpHook*>(op)->Owner();
+  auto* self = OpHook::OwnerFrom(op);
   self->FinishReservation(ToSizeResult(op->result));
   if (self->stream_ != nullptr && self->stream_->pending_read_ == self) {
     self->stream_->pending_read_ = nullptr;
@@ -146,10 +145,8 @@ bool LUringStream::ReadIntoAwaiter::PrepareReservation() noexcept {
   return true;
 }
 
-void LUringStream::ReadIntoAwaiter::FinishReservation(
-    base::Result<std::size_t> result) noexcept {
-  COROPACT_CHECK(reservation_active_,
-                 "ReadIntoAwaiter completion without a buffer reservation");
+void LUringStream::ReadIntoAwaiter::FinishReservation(base::Result<std::size_t> result) noexcept {
+  COROPACT_CHECK(reservation_active_, "ReadIntoAwaiter completion without a buffer reservation");
   if (result.has_value()) {
     buffer_.CommitWrite(*result);
   } else {
@@ -230,11 +227,11 @@ base::Result<std::size_t> LUringStream::ReadSomeForAwaiter::await_resume() noexc
 }
 
 void LUringStream::ReadSomeForAwaiter::OnReadComplete(LUringOp* op) noexcept {
-  static_cast<ReadOpHook*>(op)->Owner()->CompleteRead(op);
+  ReadOpHook::OwnerFrom(op)->CompleteRead(op);
 }
 
 void LUringStream::ReadSomeForAwaiter::OnTimeoutComplete(LUringOp* op) noexcept {
-  static_cast<TimeoutOpHook*>(op)->Owner()->CompleteTimeout(op);
+  TimeoutOpHook::OwnerFrom(op)->CompleteTimeout(op);
 }
 
 void LUringStream::ReadSomeForAwaiter::CompleteRead(LUringOp* current) noexcept {
@@ -299,13 +296,14 @@ base::Result<std::size_t> LUringStream::WriteSomeAwaiter::await_resume() noexcep
 }
 
 void LUringStream::WriteSomeAwaiter::OnComplete(LUringOp* op) noexcept {
-  auto* self = static_cast<OpHook*>(op)->Owner();
+  auto* self = OpHook::OwnerFrom(op);
   if (self->stream_ != nullptr && self->stream_->pending_write_ == self) {
     self->stream_->pending_write_ = nullptr;
     self->stream_->NotifyCloseProgress();
   }
 }
 
+// ----- CloseAwaiter ------
 class LUringStream::CloseAwaiter : public detail::LUringOpHook<LUringStream::CloseAwaiter> {
   friend void detail::DispatchStreamCloseComplete(LUringOp* op) noexcept;
 
@@ -338,10 +336,10 @@ public:
     // The cancel CQE may arrive before the pending stream operations drain.
     // Keep the work handle empty until TryComplete() observes both conditions.
     continuation_ = continuation;
-    CancelOp()->kind = LUringOpKind::kStreamCloseComplete;
+    Op()->kind = LUringOpKind::kStreamCloseComplete;
 
     auto submitted =
-        stream_->loop_->SubmitOp(CancelOp(), [fd = stream_->fd_](io_uring_sqe* sqe) noexcept {
+        stream_->loop_->SubmitOp(Op(), [fd = stream_->fd_](io_uring_sqe* sqe) noexcept {
           io_uring_prep_cancel_fd(sqe, fd, IORING_ASYNC_CANCEL_ALL);
         });
     if (!submitted.has_value()) {
@@ -374,20 +372,18 @@ public:
     stream_ = nullptr;
     // The cancel operation is no longer waiting for a CQE, so its embedded
     // work slot can carry the final coroutine resumption.
-    CancelOp()->resume_work.SetHandle(continuation_);
-    if (current != CancelOp()) {
-      loop->ScheduleCompletion(&CancelOp()->resume_work);
+    Op()->resume_work.SetHandle(continuation_);
+    if (current != Op()) {
+      loop->ScheduleCompletion(&Op()->resume_work);
     }
   }
 
 private:
   static void OnCancelComplete(LUringOp* op) noexcept {
-    auto* self = static_cast<OpHook*>(op)->Owner();
+    auto* self = OpHook::OwnerFrom(op);
     self->state_.MarkCancelCompleted();
     self->TryComplete(op);
   }
-
-  LUringOp* CancelOp() noexcept { return static_cast<OpHook*>(this); }
 
   base::Result<void> CloseFd() noexcept {
     const int fd = std::exchange(stream_->fd_, -1);
@@ -456,7 +452,7 @@ base::Result<ZeroCopySendResult> LUringStream::SendZeroCopyAwaiter::await_resume
 
 CompletionDisposition LUringStream::SendZeroCopyAwaiter::OnComplete(
     LUringOp* op, CompletionEvent event) noexcept {
-  auto* self = static_cast<OpHook*>(op)->Owner();
+  auto* self = OpHook::OwnerFrom(op);
   CompletionDisposition disposition;
 
   if (event.Notification()) {
@@ -527,8 +523,7 @@ void DispatchStreamCloseComplete(LUringOp* op) noexcept {
 LUringStream::LUringStream(LUringLoop* loop, int fd, net::Endpoint peer) noexcept
     : loop_(loop), fd_(fd), peer_(std::move(peer)) {
   COROPACT_CHECK(loop_ != nullptr, "LUringStream requires an owner loop");
-  COROPACT_CHECK(loop_->IsInLoopThread(),
-                 "LUringStream created from wrong LUringLoop thread");
+  COROPACT_CHECK(loop_->IsInLoopThread(), "LUringStream created from wrong LUringLoop thread");
   COROPACT_CHECK(fd_ >= 0, "LUringStream requires a valid file descriptor");
 }
 
@@ -536,9 +531,6 @@ LUringStream::LUringStream(LUringStream&& other) noexcept
     : loop_(PrepareMove(other)),
       fd_(std::exchange(other.fd_, -1)),
       peer_(std::move(other.peer_)),
-      pending_read_(nullptr),
-      pending_write_(nullptr),
-      pending_close_(nullptr),
       zero_copy_writes_enabled_(other.zero_copy_writes_enabled_),
       closed_(other.closed_) {
   other.closed_ = true;
@@ -587,8 +579,8 @@ LUringStream::ReadSomeAwaiter LUringStream::ReadSome(std::span<std::byte> buffer
   return ReadSomeAwaiter{*this, buffer};
 }
 
-LUringStream::ReadIntoAwaiter LUringStream::ReadInto(
-    net::Buffer buffer, std::size_t reserve) noexcept {
+LUringStream::ReadIntoAwaiter LUringStream::ReadInto(net::Buffer buffer,
+                                                     std::size_t reserve) noexcept {
   return ReadIntoAwaiter{*this, std::move(buffer), reserve};
 }
 

@@ -170,8 +170,7 @@ base::Result<void> LUringLoop::Init(const LUringOptions& options) noexcept {
   return {};
 }
 
-base::Result<detail::ProvidedBufferPool*>
-LUringLoop::GetSharedProvidedBufferPool(
+base::Result<detail::ProvidedBufferPool*> LUringLoop::GetSharedProvidedBufferPool(
     std::size_t buffer_size, std::size_t source_capacity) noexcept {
   assert(IsInLoopThread());
   if (shared_buffer_capacity_ == 0) {
@@ -191,15 +190,13 @@ LUringLoop::GetSharedProvidedBufferPool(
   if (!group.has_value()) {
     return std::unexpected(group.error());
   }
-  auto pool = detail::ProvidedBufferPool::Create(
-      ring_.Native(), *group, shared_buffer_capacity_,
-      shared_buffer_size_, source_capacity);
+  auto pool = detail::ProvidedBufferPool::Create(ring_.Native(), *group, shared_buffer_capacity_,
+                                                 shared_buffer_size_, source_capacity);
   if (!pool.has_value()) {
     return std::unexpected(pool.error());
   }
   try {
-    shared_buffer_pool_ = std::make_unique<detail::ProvidedBufferPool>(
-        std::move(*pool));
+    shared_buffer_pool_ = std::make_unique<detail::ProvidedBufferPool>(std::move(*pool));
   } catch (...) {
     return std::unexpected(base::MakeErrno(ENOMEM));
   }
@@ -398,10 +395,10 @@ base::Result<void> LUringLoop::FlushSubmit() noexcept {
       return std::unexpected(base::MakeErrno(EAGAIN));
     }
 
-    const std::size_t n = std::min(submitted, pending_submit_);
-    pending_submit_ -= n;
-    inflight_ += n;
-    if (wake_pending_ && n > 0) {
+    const std::size_t count = std::min(submitted, pending_submit_);
+    pending_submit_ -= count;
+    inflight_ += count;
+    if (wake_pending_ && count > 0) {
       wake_pending_ = false;
       wake_inflight_ = true;
     }
@@ -477,8 +474,7 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
       }
     }
     if (disposition.resume_continuation) {
-      const bool logical_completion_ready =
-          op->IsCompleted() || op->CompleteWithoutResult();
+      const bool logical_completion_ready = op->IsCompleted() || op->CompleteWithoutResult();
       if (logical_completion_ready && op->resume_work.HasHandle()) {
         ScheduleCompletion(&op->resume_work);
       }

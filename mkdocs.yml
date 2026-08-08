@@ -7,6 +7,20 @@ repo_name: archiyun/CoroPact
 theme:
     name: material
     language: zh
+    font:
+        text: Ubuntu Mono
+        code: Ubuntu Mono
+    palette:
+        - media: "(prefers-color-scheme: light)"
+          scheme: default
+          toggle:
+              icon: material/weather-sunny
+              name: 切换到深色模式
+        - media: "(prefers-color-scheme: dark)"
+          scheme: slate
+          toggle:
+              icon: material/weather-night
+              name: 切换到浅色模式
     features:
         - navigation.tabs
         - navigation.sections
@@ -15,6 +29,9 @@ theme:
         - search.suggest
         - search.highlight
         - content.code.copy
+
+extra_css:
+    - stylesheets/extra.css
 
 markdown_extensions:
     - admonition
@@ -29,7 +46,19 @@ markdown_extensions:
 nav:
     - 首页: index.md
     - 设计:
-          - 网络库: design/zh-CN/network/index.md
+          - 网络库:
+                - 网络库概览: design/zh-CN/network/index.md
+                - luring:
+                      - 功能说明: design/zh-CN/network/luring/index.md
+                      - operation 生命周期: design/zh-CN/network/luring/operation-lifecycle.md
+                      - loop、ring 与 worker: design/zh-CN/network/luring/loop-and-workers.md
+                      - stream 操作: design/zh-CN/network/luring/stream.md
+                      - listener 与 AcceptSource: design/zh-CN/network/luring/listener-and-accept.md
+                      - multishot recv 与 provided buffer: design/zh-CN/network/luring/recv-source.md
+                      - SendZeroCopy: design/zh-CN/network/luring/zero-copy-send.md
+                      - timer、超时与停止: design/zh-CN/network/luring/timers-and-timeouts.md
+                      - 注册资源的边界: design/zh-CN/network/luring/registered-resources.md
+                      - 跨 worker mailbox: design/zh-CN/network/luring/cross-worker-mailbox.md
           - 数据结构: design/zh-CN/datastructure/index.md
     - 基准:
           - 网络库统一 HTTP 压测: benchmark/network-libraries.md
