@@ -30,7 +30,7 @@ constexpr std::size_t kResponseBodySize = 512;
 constexpr std::size_t kRequestBufferSize = 16 * 1024;
 constexpr std::size_t kProvidedBufferSize = 4096;
 constexpr std::size_t kProvidedBufferCapacity = 4;
-constexpr std::size_t kDefaultSharedBufferCapacity = 1024;
+constexpr std::size_t kDefaultSharedBufferCapacity = 256;
 
 std::atomic_bool g_stop{false};
 std::atomic_uint64_t g_source_create_errors{0};
@@ -189,8 +189,11 @@ int main() {
   coropact::luring::LUringServerOptions options;
   options.worker_group_options.worker_num = workers;
   options.worker_group_options.worker_options.loop_options = loop_options;
+  // Keep connection admission identical to the regular benchmark. This
+  // executable isolates the provided-buffer multishot recv path; native
+  // multishot accept has a separate example and smoke test.
   options.worker_group_options.worker_options.accept_mode =
-      coropact::luring::AcceptMode::kMultishot;
+      coropact::luring::AcceptMode::kSingleShot;
   options.worker_group_options.worker_options.listen_options.reuse_addr = true;
   options.worker_group_options.worker_options.listen_options.reuse_port = true;
   options.worker_group_options.worker_options.listen_options.accept_depth = 4;

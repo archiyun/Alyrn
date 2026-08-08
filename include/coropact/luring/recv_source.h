@@ -4,19 +4,23 @@
 
 #include <liburing/io_uring.h>
 
+#include <coroutine>
+
 #include <cstddef>
 #include <cstdint>
-#include <deque>
 #include <limits>
 #include <optional>
+#include <vector>
 
 #include "coropact/base/error.h"
 #include "coropact/coro/task.h"
+#include "coropact/coro/work.h"
 #include "coropact/backend/recv_source.h"
 #include "coropact/luring/detail/completion_dispatch.h"
 #include "coropact/luring/op.h"
 #include "coropact/luring/options.h"
 #include "coropact/net/recv_source.h"
+#include "coropact/operation/detail/completion_gate.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::luring {
@@ -55,6 +59,29 @@ public:
   using Event = net::RecvEvent;
   using Result = base::Result<std::optional<Event>>;
 
+  // Direct awaiter for the single-consumer receive loop. It keeps the same
+  // result and ownership semantics without creating a child Task frame for
+  // every received buffer.
+  class NextAwaiter {
+  public:
+    explicit NextAwaiter(LUringRecvSource& source) noexcept : source_(&source) {}
+
+    [[nodiscard]]
+    bool await_ready() const noexcept { return false; }
+
+    bool await_suspend(std::coroutine_handle<> continuation) noexcept;
+
+    Result await_resume() noexcept;
+
+    void Complete(Result result) noexcept;
+
+  private:
+    LUringRecvSource* source_;
+    coro::ResumeWork resume_work_;
+    operation::detail::CompletionGate completion_gate_;
+    std::optional<Result> result_;
+  };
+
   [[nodiscard]]
   static base::Result<LUringRecvSource> Create(
       LUringLoop* loop,
@@ -66,7 +93,8 @@ public:
   LUringRecvSource(LUringRecvSource&& other) noexcept;
   LUringRecvSource& operator=(LUringRecvSource&& other) noexcept;
 
-  coro::Task<Result> Next();
+  [[nodiscard]]
+  NextAwaiter Next() noexcept { return NextAwaiter(*this); }
 
   // Begins cancellation without waiting for queued events or outstanding
   // BufferLease instances. This lets an owning adapter stop admission, drain
@@ -78,7 +106,6 @@ public:
   coro::Task<base::Result<void>> Stop();
 
 private:
-  class NextAwaiter;
   class StopAwaiter;
 
   class RecvOperation final : public LUringOp {
@@ -123,12 +150,18 @@ private:
     LUringRecvSource* source_;
   };
 
+  struct PendingEvent {
+    std::uint32_t buffer_id{0};
+    std::size_t size{0};
+  };
+
   LUringRecvSource(
       LUringLoop* loop,
       int fd,
       net::detail::RecvSourceStateMachine state,
       std::size_t buffer_size,
-      detail::ProvidedBufferPool* shared_buffer_pool) noexcept;
+      detail::ProvidedBufferPool* shared_buffer_pool,
+      std::vector<PendingEvent> event_storage) noexcept;
 
   [[nodiscard]]
   base::Result<void> Start() noexcept;
@@ -154,6 +187,8 @@ private:
   void DeliverNextIfReady() noexcept;
   void CompleteStopIfReady() noexcept;
   bool TryTakeNext(Result& result) noexcept;
+  void QueueEvent(std::uint32_t buffer_id, std::size_t size) noexcept;
+  bool TryTakeQueuedEvent(PendingEvent& event) noexcept;
   void ReturnBuffer(std::uint32_t buffer_id) noexcept;
 
   static void ReclaimBuffer(void* context, std::uint32_t buffer_id) noexcept;
@@ -161,7 +196,9 @@ private:
   LUringLoop* loop_{nullptr};
   int fd_{-1};
   net::detail::RecvSourceStateMachine state_;
-  std::deque<Event> events_;
+  std::vector<PendingEvent> events_;
+  std::size_t event_head_{0};
+  std::size_t event_count_{0};
   std::optional<base::Error> terminal_error_;
 
   NextAwaiter* pending_next_{nullptr};

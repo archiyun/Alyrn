@@ -36,6 +36,7 @@ public:
         buffer_ring_(std::exchange(other.buffer_ring_, nullptr)),
         buffer_group_(std::exchange(other.buffer_group_, 0)),
         capacity_(std::exchange(other.capacity_, 0)),
+        published_capacity_(std::exchange(other.published_capacity_, 0)),
         buffer_size_(std::exchange(other.buffer_size_, 0)),
         mask_(std::exchange(other.mask_, 0)),
         storage_(std::move(other.storage_)),
@@ -50,6 +51,7 @@ public:
     buffer_ring_ = std::exchange(other.buffer_ring_, nullptr);
     buffer_group_ = std::exchange(other.buffer_group_, 0);
     capacity_ = std::exchange(other.capacity_, 0);
+    published_capacity_ = std::exchange(other.published_capacity_, 0);
     buffer_size_ = std::exchange(other.buffer_size_, 0);
     mask_ = std::exchange(other.mask_, 0);
     storage_ = std::move(other.storage_);
@@ -62,10 +64,12 @@ public:
       io_uring* ring,
       std::uint16_t buffer_group,
       std::size_t capacity,
-      std::size_t buffer_size) noexcept {
+      std::size_t buffer_size,
+      std::size_t initial_capacity) noexcept {
     if (ring == nullptr || capacity == 0 || capacity > 32 * 1024 ||
         (capacity & (capacity - 1)) != 0 || buffer_size == 0 ||
-        buffer_size > std::numeric_limits<std::uint32_t>::max()) {
+        buffer_size > std::numeric_limits<std::uint32_t>::max() ||
+        initial_capacity == 0 || initial_capacity > capacity) {
       return std::unexpected(base::MakeErrno(EINVAL));
     }
 
@@ -91,6 +95,7 @@ public:
     pool.buffer_ring_ = buffer_ring;
     pool.buffer_group_ = buffer_group;
     pool.capacity_ = capacity;
+    pool.published_capacity_ = initial_capacity;
     pool.buffer_size_ = buffer_size;
     pool.mask_ = io_uring_buf_ring_mask(static_cast<unsigned>(capacity));
     pool.storage_ = std::move(*storage);
@@ -102,7 +107,7 @@ public:
     }
 
     io_uring_buf_ring_init(pool.buffer_ring_);
-    for (std::size_t id = 0; id < capacity; ++id) {
+    for (std::size_t id = 0; id < initial_capacity; ++id) {
       io_uring_buf_ring_add(
           pool.buffer_ring_, pool.storage_.slot(id),
           static_cast<unsigned>(buffer_size),
@@ -110,7 +115,7 @@ public:
           static_cast<int>(id));
     }
     io_uring_buf_ring_advance(
-        pool.buffer_ring_, static_cast<int>(capacity));
+        pool.buffer_ring_, static_cast<int>(initial_capacity));
     return pool;
   }
 
@@ -119,6 +124,28 @@ public:
 
   [[nodiscard]]
   std::size_t capacity() const noexcept { return capacity_; }
+
+  // Publishes more slots into the already allocated ring. The configured
+  // capacity is an upper bound; keeping only the slots currently needed by
+  // receive sources resident avoids committing the whole mmap at loop start.
+  void EnsurePublished(std::size_t additional) noexcept {
+    if (additional == 0 || published_capacity_ == capacity_) {
+      return;
+    }
+
+    const std::size_t available = capacity_ - published_capacity_;
+    const std::size_t count = additional < available ? additional : available;
+    for (std::size_t offset = 0; offset < count; ++offset) {
+      const std::size_t buffer_id = published_capacity_ + offset;
+      io_uring_buf_ring_add(
+          buffer_ring_, storage_.slot(buffer_id),
+          static_cast<unsigned>(buffer_size_),
+          static_cast<unsigned short>(buffer_id), mask_,
+          static_cast<int>(offset));
+    }
+    io_uring_buf_ring_advance(buffer_ring_, static_cast<int>(count));
+    published_capacity_ += count;
+  }
 
   [[nodiscard]]
   std::size_t buffer_size() const noexcept { return buffer_size_; }
@@ -166,6 +193,7 @@ private:
     buffer_ring_ = nullptr;
     buffer_group_ = 0;
     capacity_ = 0;
+    published_capacity_ = 0;
     buffer_size_ = 0;
     mask_ = 0;
     in_use_.clear();
@@ -175,6 +203,7 @@ private:
   io_uring_buf_ring* buffer_ring_{nullptr};
   std::uint16_t buffer_group_{0};
   std::size_t capacity_{0};
+  std::size_t published_capacity_{0};
   std::size_t buffer_size_{0};
   int mask_{0};
   ProvidedBufferStorage storage_;

@@ -171,15 +171,20 @@ base::Result<void> LUringLoop::Init(const LUringOptions& options) noexcept {
 }
 
 base::Result<detail::ProvidedBufferPool*>
-LUringLoop::GetSharedProvidedBufferPool(std::size_t buffer_size) noexcept {
+LUringLoop::GetSharedProvidedBufferPool(
+    std::size_t buffer_size, std::size_t source_capacity) noexcept {
   assert(IsInLoopThread());
   if (shared_buffer_capacity_ == 0) {
     return std::unexpected(base::MakeErrno(ENOENT));
+  }
+  if (source_capacity == 0 || source_capacity > shared_buffer_capacity_) {
+    return std::unexpected(base::MakeErrno(EINVAL));
   }
   if (buffer_size != shared_buffer_size_) {
     return std::unexpected(base::MakeErrno(EINVAL));
   }
   if (shared_buffer_pool_ != nullptr) {
+    shared_buffer_pool_->EnsurePublished(source_capacity);
     return shared_buffer_pool_.get();
   }
   auto group = AllocateBufferGroupId();
@@ -188,7 +193,7 @@ LUringLoop::GetSharedProvidedBufferPool(std::size_t buffer_size) noexcept {
   }
   auto pool = detail::ProvidedBufferPool::Create(
       ring_.Native(), *group, shared_buffer_capacity_,
-      shared_buffer_size_);
+      shared_buffer_size_, source_capacity);
   if (!pool.has_value()) {
     return std::unexpected(pool.error());
   }

@@ -185,8 +185,8 @@ public:
   }
 
   // F_MORE keeps the physical request armed. Only its terminal CQE releases
-  // one armed request slot. A produced event consumes one buffer slot even
-  // before the consumer acquires its lease.
+  // one armed request slot. A queued or directly delivered event consumes one
+  // buffer slot until its lease is released.
   [[nodiscard]]
   base::Result<void> CompleteMultishotEvent(EventDisposition event,
                                             MultishotRequestDisposition request) noexcept {
@@ -196,15 +196,23 @@ public:
     if (event == EventDisposition::kProduced && !CanQueueEvent()) {
       return std::unexpected(base::MakeErrno(ENOBUFS));
     }
+    if (event == EventDisposition::kDelivered && !CanDeliverEvent()) {
+      return std::unexpected(base::MakeErrno(ENOBUFS));
+    }
 
     if (request == MultishotRequestDisposition::kTerminal) {
       --armed_requests_;
     }
     if (event == EventDisposition::kProduced) {
       ++queued_events_;
+    }
+    if (event == EventDisposition::kProduced ||
+        event == EventDisposition::kDelivered) {
       ++outstanding_leases_;
     }
-    ReconcileStopping();
+    if (state_ != RecvSourceState::kActive) {
+      ReconcileStopping();
+    }
     return {};
   }
 
@@ -215,7 +223,9 @@ public:
       return false;
     }
     --queued_events_;
-    ReconcileStopping();
+    if (state_ != RecvSourceState::kActive) {
+      ReconcileStopping();
+    }
     return true;
   }
 
@@ -228,7 +238,9 @@ public:
       return false;
     }
     --queued_events_;
-    ReconcileStopping();
+    if (state_ != RecvSourceState::kActive) {
+      ReconcileStopping();
+    }
     return true;
   }
 
@@ -238,7 +250,9 @@ public:
       return false;
     }
     --outstanding_leases_;
-    ReconcileStopping();
+    if (state_ != RecvSourceState::kActive) {
+      ReconcileStopping();
+    }
     return true;
   }
 
@@ -297,6 +311,11 @@ public:
   }
 
 private:
+  [[nodiscard]]
+  bool CanDeliverEvent() const noexcept {
+    return outstanding_leases_ < options_.buffer_capacity;
+  }
+
   explicit RecvSourceStateMachine(RecvSourceOptions options) noexcept : options_(options) {}
 
   void ReconcileStopping() noexcept {
