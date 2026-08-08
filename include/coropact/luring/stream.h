@@ -5,7 +5,6 @@
 #include <linux/time_types.h>
 #include <sys/socket.h>
 
-#include <cerrno>
 #include <chrono>
 #include <coroutine>
 #include <cstddef>
@@ -159,8 +158,6 @@ private:
 
   static void OnComplete(LUringOp* op) noexcept;
 
-  LUringOp* Op() noexcept { return static_cast<OpHook*>(this); }
-
   LUringStream* stream_;
   std::span<std::byte> buffer_;
 };
@@ -195,8 +192,6 @@ private:
   [[nodiscard]]
   bool PrepareReservation() noexcept;
   void FinishReservation(base::Result<std::size_t> result) noexcept;
-
-  LUringOp* Op() noexcept { return static_cast<OpHook*>(this); }
 
   LUringStream* stream_;
   net::Buffer buffer_;
@@ -234,8 +229,8 @@ private:
   static void OnReadComplete(LUringOp* op) noexcept;
   static void OnTimeoutComplete(LUringOp* op) noexcept;
 
-  LUringOp* ReadOp() noexcept { return static_cast<ReadOpHook*>(this); }
-  LUringOp* TimeoutOp() noexcept { return static_cast<TimeoutOpHook*>(this); }
+  LUringOp* ReadOp() noexcept { return ReadOpHook::Op(); }
+  LUringOp* TimeoutOp() noexcept { return TimeoutOpHook::Op(); }
 
   void CompleteRead(LUringOp* current) noexcept;
   void CompleteTimeout(LUringOp* current) noexcept;
@@ -272,8 +267,6 @@ private:
 
   static void OnComplete(LUringOp* op) noexcept;
 
-  LUringOp* Op() noexcept { return static_cast<OpHook*>(this); }
-
   LUringStream* stream_;
   std::span<const std::byte> buffer_;
 };
@@ -286,9 +279,7 @@ public:
   COROPACT_DELETE_COPY_MOVE(SendZeroCopyAwaiter);
 
   SendZeroCopyAwaiter(LUringStream& stream, std::span<const std::byte> buffer) noexcept
-      : OpHook(LUringOpKind::kSendZeroCopyComplete),
-        stream_(&stream),
-        buffer_(buffer) {}
+      : OpHook(LUringOpKind::kSendZeroCopyComplete), stream_(&stream), buffer_(buffer) {}
 
   [[nodiscard]]
   bool await_ready() const noexcept {
@@ -306,8 +297,6 @@ private:
 
   [[nodiscard]]
   static CompletionDisposition OnComplete(LUringOp* op, CompletionEvent event) noexcept;
-
-  LUringOp* Op() noexcept { return static_cast<OpHook*>(this); }
 
   LUringStream* stream_;
   std::span<const std::byte> buffer_;

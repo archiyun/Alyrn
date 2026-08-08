@@ -84,11 +84,11 @@ base::Result<void> LUringTimerQueue::Cancel(time::TimerId id) noexcept {
 }
 
 void LUringTimerQueue::OnDriverComplete(LUringOp* op) noexcept {
-  static_cast<DriverOpHook*>(op)->Owner()->HandleDriverComplete(op);
+  DriverOpHook::OwnerFrom(op)->HandleDriverComplete(op);
 }
 
 void LUringTimerQueue::OnControlComplete(LUringOp* op) noexcept {
-  static_cast<ControlOpHook*>(op)->Owner()->HandleControlComplete(op);
+  ControlOpHook::OwnerFrom(op)->HandleControlComplete(op);
 }
 
 namespace detail {

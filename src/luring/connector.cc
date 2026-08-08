@@ -110,8 +110,6 @@ public:
   }
 
 private:
-  LUringOp* Op() noexcept { return static_cast<OpHook*>(this); }
-
   LUringLoop* loop_;
   net::Endpoint peer_;
   int fd_{-1};
