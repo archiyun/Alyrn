@@ -30,7 +30,7 @@ constexpr std::size_t kResponseBodySize = 512;
 constexpr std::size_t kRequestBufferSize = 16 * 1024;
 constexpr std::size_t kProvidedBufferSize = 4096;
 constexpr std::size_t kProvidedBufferCapacity = 4;
-constexpr std::size_t kDefaultSharedBufferCapacity = 1024;
+constexpr std::size_t kDefaultSharedBufferCapacity = 256;
 
 std::atomic_bool g_stop{false};
 std::atomic_uint64_t g_source_create_errors{0};

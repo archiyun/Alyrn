@@ -48,8 +48,6 @@ bool LUringRecvSource::NextAwaiter::await_suspend(
     }
   }
 
-  continuation_.Bind(continuation);
-
   LUringRecvSource::Result result;
   if (source_->TryTakeNext(result)) {
     result_.emplace(std::move(result));
@@ -57,6 +55,7 @@ bool LUringRecvSource::NextAwaiter::await_suspend(
     return false;
   }
 
+  resume_work_.SetHandle(continuation);
   source_->pending_next_ = this;
   return true;
 }
@@ -71,7 +70,7 @@ void LUringRecvSource::NextAwaiter::Complete(Result result) noexcept {
     return;
   }
   result_.emplace(std::move(result));
-  continuation_.Schedule();
+  source_->loop_->ScheduleCompletion(&resume_work_);
 }
 
 class LUringRecvSource::StopAwaiter {
@@ -146,7 +145,8 @@ base::Result<LUringRecvSource> LUringRecvSource::Create(LUringLoop* loop, int fd
     return std::unexpected(state_result.error());
   }
 
-  auto shared_pool = loop->GetSharedProvidedBufferPool(options.buffer_size);
+  auto shared_pool = loop->GetSharedProvidedBufferPool(
+      options.buffer_size, options.source.buffer_capacity);
   if (!shared_pool.has_value()) {
     if (shared_pool.error().value() == ENOENT) {
       return std::unexpected(base::MakeErrno(ENOTSUP));

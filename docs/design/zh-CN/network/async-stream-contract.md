@@ -650,7 +650,8 @@ PrepareWrite / ReadableIov 返回的内存必须覆盖 pending operation；
 扩展 `RecvSource` 已明确提供 buffer 的所有权边界：luring 使用每 worker 共享的 provided
 buffer ring，Reactor 使用固定 buffer pool；每个 `RecvEvent` 携带一个 `BufferLease`，consumer
 必须在 source 销毁前释放它。buffer id、归还时机和 RAII 所有权不能隐藏在普通 `std::span`
-的成功结果里。`LUringOptions::shared_buffer_capacity` 配置该 worker 的聚合容量，CQE 返回的
+的成功结果里。`LUringOptions::shared_buffer_capacity` 配置该 worker 的聚合上限，buffer slot
+会随着 RecvSource 创建惰性发布；CQE 返回的
 buffer id 在这个共享 pool 内解释。`F_BUF_MORE` 增量 source 尚未接入当前 `RecvSource` 路径，
 registered fixed buffer 仍属于后续扩展。
 

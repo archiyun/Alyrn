@@ -234,7 +234,8 @@ private:
 
   [[nodiscard]]
   base::Result<detail::ProvidedBufferPool*> GetSharedProvidedBufferPool(
-      std::size_t buffer_size) noexcept;
+      std::size_t buffer_size,
+      std::size_t source_capacity) noexcept;
 
   [[nodiscard]]
   base::Result<std::uint16_t> AllocateBufferGroupId() noexcept {

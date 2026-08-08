@@ -14,13 +14,13 @@
 
 #include "coropact/base/error.h"
 #include "coropact/coro/task.h"
+#include "coropact/coro/work.h"
 #include "coropact/backend/recv_source.h"
 #include "coropact/luring/detail/completion_dispatch.h"
 #include "coropact/luring/op.h"
 #include "coropact/luring/options.h"
 #include "coropact/net/recv_source.h"
 #include "coropact/operation/detail/completion_gate.h"
-#include "coropact/operation/detail/scheduler_continuation.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::luring {
@@ -77,7 +77,7 @@ public:
 
   private:
     LUringRecvSource* source_;
-    operation::detail::SchedulerContinuation continuation_;
+    coro::ResumeWork resume_work_;
     operation::detail::CompletionGate completion_gate_;
     std::optional<Result> result_;
   };
