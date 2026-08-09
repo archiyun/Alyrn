@@ -11,6 +11,7 @@
 #include "coropact/net/endpoint.h"
 #include "coropact/net/socket.h"
 #include "coropact/reactor/detail/channel.h"
+#include "coropact/reactor/detail/loop_shutdown.h"
 #include "coropact/reactor/loop.h"
 #include "coropact/reactor/stream.h"
 #include "coropact/utils/macros.h"
@@ -111,11 +112,13 @@ private:
   static void DispatchRead(void* context) noexcept;
   static void DispatchError(void* context) noexcept;
   void CompleteAccept(base::Result<ReactorStream> result);
+  void CloseNow() noexcept;
   void DetachChannel();
   void RequireOwnerLoop() const noexcept;
   void BindChannelCallbacks() noexcept;
   void ResetForMove() noexcept;
   static EventLoop* PrepareMove(ReactorListener& other) noexcept;
+  static void DispatchLoopStop(void* context) noexcept;
 
   EventLoop* loop_;
   net::Socket socket_;
@@ -124,6 +127,7 @@ private:
   AcceptAwaiter* pending_accept_{nullptr};
   ReactorAcceptSource* accept_source_{nullptr};
   bool closed_{false};
+  detail::LoopShutdownParticipant shutdown_participant_{this, &DispatchLoopStop};
 };
 
 }  // namespace coropact::reactor

@@ -20,9 +20,12 @@
 #include "coropact/operation/detail/completion_gate.h"
 #include "coropact/operation/detail/scheduler_continuation.h"
 #include "coropact/reactor/detail/channel.h"
+#include "coropact/reactor/detail/loop_access.h"
 
 namespace coropact::reactor {
 namespace {
+
+using namespace detail;
 
 base::Result<int> ConnectError(int fd) noexcept {
   int err = 0;
@@ -40,6 +43,9 @@ public:
       : loop_(loop), peer_(peer), stream_options_(stream_options) {}
 
   ~ConnectAwaiter() {
+    if (shutdown_participant_.InList()) {
+      LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
+    }
     if (fd_ >= 0) {
       ::close(fd_);
     }
@@ -53,7 +59,14 @@ public:
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     COROPACT_CHECK(loop_ != nullptr, "ConnectAwaiter has no owner EventLoop");
     COROPACT_CHECK(loop_->IsInLoopThread(), "ConnectAwaiter called from wrong EventLoop thread");
+    if (loop_->State() == backend::LoopState::kStopping ||
+        loop_->State() == backend::LoopState::kStopped) {
+      result_.SetError(base::MakeErrno(ECANCELED));
+      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+      return false;
+    }
     continuation_.Bind(continuation);
+    LoopAccess::RegisterShutdownParticipant(*loop_, shutdown_participant_);
 
     auto fd = net::CreateNonBlockingSocket(peer_.native_family());
     if (!fd.has_value()) {
@@ -96,6 +109,16 @@ private:
     static_cast<ConnectAwaiter*>(context)->OnReady();
   }
 
+  static void DispatchLoopStop(void* context) noexcept {
+    auto* self = static_cast<ConnectAwaiter*>(context);
+    if (!self->completion_gate_.TryComplete()) {
+      return;
+    }
+    self->DetachChannel();
+    self->result_.SetError(base::MakeErrno(ECANCELED));
+    self->continuation_.Schedule();
+  }
+
   base::Result<ReactorStream> MakeStream() noexcept {
     DetachChannel();
     ReactorStream stream(loop_, fd_, peer_, stream_options_);
@@ -135,10 +158,11 @@ private:
   net::Endpoint peer_;
   ReactorStreamOptions stream_options_;
   int fd_{-1};
-  std::optional<detail::Channel> channel_;
+  std::optional<Channel> channel_;
   operation::detail::SchedulerContinuation continuation_;
   operation::detail::CompletionGate completion_gate_;
-  detail::ReactorValueResultState<ReactorStream> result_;
+  ReactorValueResultState<ReactorStream> result_;
+  LoopShutdownParticipant shutdown_participant_{this, &DispatchLoopStop};
 };
 
 class SleepAwaiter {
@@ -154,9 +178,15 @@ public:
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     COROPACT_CHECK(loop_ != nullptr, "SleepAwaiter has no owner EventLoop");
     COROPACT_CHECK(loop_->IsInLoopThread(), "SleepAwaiter called from wrong EventLoop thread");
+    if (loop_->State() == backend::LoopState::kStopping ||
+        loop_->State() == backend::LoopState::kStopped) {
+      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+      return false;
+    }
     continuation_.Bind(continuation);
+    LoopAccess::RegisterShutdownParticipant(*loop_, shutdown_participant_);
     const auto seconds = std::chrono::duration<double>(delay_).count();
-    loop_->RunAfter(seconds, [this] {
+    timer_ = loop_->RunAfter(seconds, [this] {
       if (completion_gate_.TryComplete()) {
         continuation_.Schedule();
       }
@@ -166,11 +196,31 @@ public:
 
   void await_resume() const noexcept {}
 
+  ~SleepAwaiter() {
+    if (shutdown_participant_.InList()) {
+      LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
+    }
+  }
+
 private:
+  static void DispatchLoopStop(void* context) noexcept {
+    auto* self = static_cast<SleepAwaiter*>(context);
+    if (!self->completion_gate_.TryComplete()) {
+      return;
+    }
+    if (self->timer_.Valid()) {
+      self->loop_->Cancel(self->timer_);
+      self->timer_ = {};
+    }
+    self->continuation_.Schedule();
+  }
+
   EventLoop* loop_;
   std::chrono::milliseconds delay_;
   operation::detail::SchedulerContinuation continuation_;
   operation::detail::CompletionGate completion_gate_;
+  time::TimerId timer_;
+  LoopShutdownParticipant shutdown_participant_{this, &DispatchLoopStop};
 };
 
 }  // namespace

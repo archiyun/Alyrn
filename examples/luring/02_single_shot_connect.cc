@@ -27,14 +27,14 @@ constexpr std::string_view kMessage = "hello from connector";
 // reads the complete echo, and then closes the stream.
 //
 // exit_code is a reference to main's state. The coroutine always runs on the
-// same LUringLoop thread, so it is safe to update it before calling Quit().
+// same LUringLoop thread, so it is safe to update it before RequestStop().
 coro::DetachedTask ConnectOnce(luring::LUringLoop& loop, int& exit_code) {
   luring::LUringConnector connector(&loop);
 
   auto connected = co_await connector.Connect("127.0.0.1", kEchoPort);
   if (!connected.has_value()) {
     std::println(stderr, "connect failed: {}", connected.error().message());
-    loop.Quit();
+    loop.RequestStop();
     co_return;
   }
 
@@ -48,7 +48,7 @@ coro::DetachedTask ConnectOnce(luring::LUringLoop& loop, int& exit_code) {
   if (!write_result.has_value()) {
     std::println(stderr, "write failed: {}", write_result.error().message());
     (void)co_await stream.Close();
-    loop.Quit();
+    loop.RequestStop();
     co_return;
   }
 
@@ -66,14 +66,14 @@ coro::DetachedTask ConnectOnce(luring::LUringLoop& loop, int& exit_code) {
     if (!read.has_value()) {
       std::println(stderr, "read failed: {}", read.error().message());
       (void)co_await stream.Close();
-      loop.Quit();
+      loop.RequestStop();
       co_return;
     }
 
     if (*read == 0) {
       std::println(stderr, "peer closed before the complete echo arrived");
       (void)co_await stream.Close();
-      loop.Quit();
+      loop.RequestStop();
       co_return;
     }
 
@@ -82,7 +82,7 @@ coro::DetachedTask ConnectOnce(luring::LUringLoop& loop, int& exit_code) {
     if (received.size() > kMessage.size()) {
       std::println(stderr, "received more bytes than expected");
       (void)co_await stream.Close();
-      loop.Quit();
+      loop.RequestStop();
       co_return;
     }
   }
@@ -92,7 +92,7 @@ coro::DetachedTask ConnectOnce(luring::LUringLoop& loop, int& exit_code) {
     std::println(stderr, "expected: {}", kMessage);
     std::println(stderr, "received: {}", received);
     (void)co_await stream.Close();
-    loop.Quit();
+    loop.RequestStop();
     co_return;
   }
 
@@ -102,13 +102,13 @@ coro::DetachedTask ConnectOnce(luring::LUringLoop& loop, int& exit_code) {
   auto closed = co_await stream.Close();
   if (!closed.has_value()) {
     std::println(stderr, "close failed: {}", closed.error().message());
-    loop.Quit();
+    loop.RequestStop();
     co_return;
   }
 
   std::println("stream closed");
   exit_code = 0;
-  loop.Quit();
+  loop.RequestStop();
 }
 
 }  // namespace
@@ -132,7 +132,7 @@ int main() {
   coro::SpawnDetach(loop, ConnectOnce(loop, exit_code));
 
   std::println("connecting to 127.0.0.1:{}", kEchoPort);
-  loop.Loop(std::stop_token{});
+  loop.Run(std::stop_token{});
 
   return exit_code;
 }

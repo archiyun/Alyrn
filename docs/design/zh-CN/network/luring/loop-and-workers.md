@@ -22,11 +22,13 @@ auto initialized = loop.Init(options);
 if (!initialized.has_value()) {
   // 根据 error 判断环境不支持或配置错误
 }
-loop.Loop(stop_token);
+loop.Run(stop_token);
 ```
 
-`Init()` 和 loop-affine 资源的创建必须发生在 loop 所属线程。`Quit()` 可以由其他线程
-调用，它只请求 loop 退出；真正的资源销毁仍由 owner loop 完成。
+`Init()` 和 loop-affine 资源的创建必须发生在 loop 所属线程。`RequestStop()` 可以由其他
+线程调用：它唤醒 ring wait，并由 owner loop 提交全局取消、消费目标 CQE、drain ready work，
+然后才进入 `Stopped`。这仍不等价于销毁 listener/stream 或归还 BufferLease；这些对象的最终
+close/release 仍属于 worker/runtime 的 owner-thread 协议。
 
 ## loop 配置
 

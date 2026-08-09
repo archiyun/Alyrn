@@ -73,7 +73,7 @@ int main(int argc, char** argv) {
       loop.RunAfter(0.005 + i * 1e-9, [&fired, &loop, N]() {
         ++fired;
         if (fired == N) {
-          loop.Quit();
+          loop.RequestStop();
         }
       });
     }
@@ -87,9 +87,9 @@ int main(int argc, char** argv) {
     const auto t_expire_start = clk::now();
     loop.RunAfter(3.0, [&] {
       std::printf("  ! timeout: fired=%d/%d\n", fired, N);
-      loop.Quit();
+      loop.RequestStop();
     });
-    loop.Loop();
+    loop.Run();
     const auto t_expire_end = clk::now();
     const long long expire_ns =
         std::chrono::duration_cast<ns_t>(t_expire_end - t_expire_start).count();

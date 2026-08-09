@@ -22,9 +22,11 @@ changing module boundaries.
   result; split-release families separately authorize result, release, and
   continuation.
 - `net`: `Socket`, `Endpoint`, and buffers are backend-shared network values.
-- `io` and `backend`: `AsyncStream`, `AsyncListener`, and `AsyncConnector`
-  define application-visible transport contracts. They must not require an
-  application protocol. The `coropact/io.h` umbrella exports the
+- `io` and `backend`: `AsyncStream`, `AsyncListener`, `AsyncConnector`, and
+  `ManagedLoop` define application-visible transport and dispatcher-control
+  contracts. `RequestStop` begins backend-specific cancellation and drain; it
+  is not stream `Close` and does not by itself destroy application-owned
+  resources. They must not require an application protocol. The `coropact/io.h` umbrella exports the
   backend-neutral stream, listener, buffer, receive-source, and algorithm
   contracts; connector and concrete backend headers are included explicitly by
   composition roots.
@@ -55,6 +57,10 @@ those types.
   work twice.
 - Continuations resume through their recorded scheduler. Cross-worker code
   must enqueue or post; it must not directly resume a foreign-loop coroutine.
+- `RequestStop` is thread-safe and idempotent. `Run` is owner-thread-only;
+  `Stopped` means the loop has drained its registered/pending backend
+  operations, not that application-owned descriptors, leases, or objects have
+  been destroyed. Object release remains a separate owner protocol.
 
 ## Coroutine frames
 
