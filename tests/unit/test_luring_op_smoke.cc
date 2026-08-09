@@ -4,7 +4,7 @@
 #include <cstdio>
 #include <coroutine>
 
-#include "coropact/luring/op.h"
+#include "coropact/luring/detail/op.h"
 #include "coropact/utils/macros.h"
 
 namespace {
@@ -18,8 +18,8 @@ bool Expect(bool condition, const char* message) {
 }
 
 bool TestSingleResultCompletion() {
-  coropact::luring::LUringOp op;
-  op.kind = coropact::luring::LUringOpKind::kReadComplete;
+  coropact::luring::detail::LUringOp op;
+  op.kind = coropact::luring::detail::LUringOpKind::kReadComplete;
 
   bool ok = true;
   ok &= Expect(op.Complete(17), "the first CQE must complete the operation");
@@ -27,14 +27,14 @@ bool TestSingleResultCompletion() {
   ok &= Expect(*op.result == 17, "the winning CQE result must be retained");
   ok &= Expect(!op.Complete(-5), "a duplicate CQE must not overwrite the result");
   ok &= Expect(*op.result == 17, "a duplicate CQE must preserve the original result");
-  ok &= Expect(op.DispatchKind() == coropact::luring::LUringOpKind::kReadComplete,
+  ok &= Expect(op.DispatchKind() == coropact::luring::detail::LUringOpKind::kReadComplete,
                "completion state must not alter dispatch kind");
   return ok;
 }
 
 bool TestReusablePhysicalSlot() {
-  coropact::luring::LUringOp op;
-  op.kind = coropact::luring::LUringOpKind::kWake;
+  coropact::luring::detail::LUringOp op;
+  op.kind = coropact::luring::detail::LUringOpKind::kWake;
   COROPACT_IGNORE_RESULT(op.Complete(0));
   op.resume_work.SetHandle(std::noop_coroutine());
   op.BeginNextRequest();
@@ -43,14 +43,14 @@ bool TestReusablePhysicalSlot() {
          Expect(!op.result.HasValue(), "next request must not retain a prior CQE result") &&
          Expect(!op.resume_work.HasHandle(), "next request must not retain a prior continuation") &&
          Expect(op.Complete(0), "a reopened operation slot must accept a CQE") &&
-         Expect(op.DispatchKind() == coropact::luring::LUringOpKind::kWake,
+         Expect(op.DispatchKind() == coropact::luring::detail::LUringOpKind::kWake,
                 "reset must preserve dispatch kind");
 }
 
 bool TestCompletionModels() {
-  using coropact::luring::CompletionModelFor;
-  using coropact::luring::LUringCompletionModel;
-  using coropact::luring::LUringOpKind;
+  using coropact::luring::detail::CompletionModelFor;
+  using coropact::luring::detail::LUringCompletionModel;
+  using coropact::luring::detail::LUringOpKind;
 
   bool ok = true;
   ok &= Expect(CompletionModelFor(LUringOpKind::kReadComplete) ==

@@ -17,7 +17,7 @@
 #include "coropact/coro/work.h"
 #include "coropact/backend/recv_source.h"
 #include "coropact/luring/detail/completion_dispatch.h"
-#include "coropact/luring/op.h"
+#include "coropact/luring/detail/op.h"
 #include "coropact/luring/options.h"
 #include "coropact/net/recv_source.h"
 #include "coropact/operation/detail/completion_gate.h"
@@ -48,10 +48,10 @@ struct LUringRecvSourceOptions {
 // must remain alive until every BufferLease returned by Next() has been
 // released; Stop() waits for that lease boundary before completing.
 class LUringRecvSource final {
-  friend CompletionDisposition detail::DispatchRecvSourceComplete(
-      LUringOp* op,
-      CompletionEvent event) noexcept;
-  friend void detail::DispatchRecvSourceCancelComplete(LUringOp* op) noexcept;
+  friend detail::CompletionDisposition detail::DispatchRecvSourceComplete(
+      detail::LUringOp* op,
+      detail::CompletionEvent event) noexcept;
+  friend void detail::DispatchRecvSourceCancelComplete(detail::LUringOp* op) noexcept;
 
 public:
   COROPACT_DELETE_COPY(LUringRecvSource);
@@ -108,11 +108,11 @@ public:
 private:
   class StopAwaiter;
 
-  class RecvOperation final : public LUringOp {
+  class RecvOperation final : public detail::LUringOp {
   public:
     explicit RecvOperation(LUringRecvSource* source) noexcept
         : source_(source) {
-      kind = LUringOpKind::kRecvSourceComplete;
+      kind = detail::LUringOpKind::kRecvSourceComplete;
     }
 
     [[nodiscard]]
@@ -121,7 +121,7 @@ private:
     }
 
     void Prepare() noexcept {
-      kind = LUringOpKind::kRecvSourceComplete;
+      kind = detail::LUringOpKind::kRecvSourceComplete;
       BeginNextRequest();
     }
 
@@ -129,11 +129,11 @@ private:
     LUringRecvSource* source_;
   };
 
-  class CancelOperation final : public LUringOp {
+  class CancelOperation final : public detail::LUringOp {
   public:
     explicit CancelOperation(LUringRecvSource* source) noexcept
         : source_(source) {
-      kind = LUringOpKind::kRecvSourceCancelComplete;
+      kind = detail::LUringOpKind::kRecvSourceCancelComplete;
     }
 
     [[nodiscard]]
@@ -142,7 +142,7 @@ private:
     }
 
     void Prepare() noexcept {
-      kind = LUringOpKind::kRecvSourceCancelComplete;
+      kind = detail::LUringOpKind::kRecvSourceCancelComplete;
       BeginNextRequest();
     }
 
@@ -181,7 +181,7 @@ private:
   void RequestBackendStop(
       std::optional<base::Error> error = std::nullopt) noexcept;
 
-  CompletionDisposition OnCompletion(CompletionEvent event) noexcept;
+  detail::CompletionDisposition OnCompletion(detail::CompletionEvent event) noexcept;
   void OnCancelComplete(int cqe_result) noexcept;
 
   void DeliverNextIfReady() noexcept;

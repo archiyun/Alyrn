@@ -8,11 +8,11 @@
 #include "coropact/base/error.h"
 #include "coropact/coro/detached_task.h"
 #include "coropact/luring/stream.h"
-#include "coropact/luring/worker_group.h"
+#include "coropact/luring/detail/worker_group.h"
 #include "coropact/net/endpoint.h"
 #include "coropact/utils/macros.h"
 
-namespace coropact::luring {
+namespace coropact::luring::detail {
 
 struct LUringServerOptions {
   LUringWorkerGroupOptions worker_group_options{};
@@ -73,4 +73,4 @@ private:
   bool started_{false};
 };
 
-}  // namespace coropact::luring
+}  // namespace coropact::luring::detail

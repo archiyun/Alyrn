@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "coropact/reactor/reactor_connect.h"
+#include "coropact/reactor/connector.h"
 
 #include <sys/socket.h>
 #include <unistd.h>
@@ -19,7 +19,7 @@
 #include "coropact/net/net_utils.h"
 #include "coropact/operation/detail/completion_gate.h"
 #include "coropact/operation/detail/scheduler_continuation.h"
-#include "coropact/reactor/channel.h"
+#include "coropact/reactor/detail/channel.h"
 
 namespace coropact::reactor {
 namespace {
@@ -125,7 +125,7 @@ private:
     if (!channel_->IsNoneEvent()) {
       channel_->DisableAll();
     }
-    if (loop_->HasChannel(&*channel_)) {
+    if (channel_->IsRegistered()) {
       channel_->Remove();
     }
     channel_.reset();
@@ -135,7 +135,7 @@ private:
   net::Endpoint peer_;
   ReactorStreamOptions stream_options_;
   int fd_{-1};
-  std::optional<Channel> channel_;
+  std::optional<detail::Channel> channel_;
   operation::detail::SchedulerContinuation continuation_;
   operation::detail::CompletionGate completion_gate_;
   detail::ReactorValueResultState<ReactorStream> result_;

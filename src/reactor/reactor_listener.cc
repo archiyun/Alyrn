@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "coropact/reactor/reactor_listener.h"
+#include "coropact/reactor/listener.h"
 
 #include <sys/socket.h>
 #include <unistd.h>
@@ -667,7 +667,7 @@ void ReactorListener::DetachChannel() {
   if (!channel_.IsNoneEvent()) {
     channel_.DisableAll();
   }
-  if (loop_->HasChannel(&channel_)) {
+  if (channel_.IsRegistered()) {
     channel_.Remove();
   }
 }

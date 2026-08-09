@@ -14,7 +14,7 @@
 #include "coropact/base/error.h"
 #include "coropact/coro/task.h"
 #include "coropact/luring/detail/completion_dispatch.h"
-#include "coropact/luring/op.h"
+#include "coropact/luring/detail/op.h"
 #include "coropact/luring/stream.h"
 #include "coropact/net/accept_source.h"
 #include "coropact/net/endpoint.h"
@@ -40,11 +40,11 @@ struct LUringListenOptions {
 class LUringAcceptSource {
   friend class LUringListener;
 
-  friend CompletionDisposition detail::DispatchAcceptSourceComplete(
-      LUringOp* op,
-      CompletionEvent event) noexcept;
+  friend detail::CompletionDisposition detail::DispatchAcceptSourceComplete(
+      detail::LUringOp* op,
+      detail::CompletionEvent event) noexcept;
 
-  friend void detail::DispatchAcceptSourceCancelComplete(LUringOp* op) noexcept;
+  friend void detail::DispatchAcceptSourceCancelComplete(detail::LUringOp* op) noexcept;
 
 public:
   COROPACT_DELETE_COPY(LUringAcceptSource);
@@ -65,10 +65,10 @@ private:
   class NextAwaiter;
   class StopAwaiter;
 
-  class AcceptOperation final : public LUringOp {
+  class AcceptOperation final : public detail::LUringOp {
   public:
     explicit AcceptOperation(LUringAcceptSource* source) noexcept : source_(source) {
-      kind = LUringOpKind::kAcceptSourceComplete;
+      kind = detail::LUringOpKind::kAcceptSourceComplete;
     }
 
     [[nodiscard]]
@@ -77,7 +77,7 @@ private:
     }
 
     void Prepare() noexcept {
-      kind = LUringOpKind::kAcceptSourceComplete;
+      kind = detail::LUringOpKind::kAcceptSourceComplete;
       BeginNextRequest();
     }
 
@@ -85,10 +85,10 @@ private:
     LUringAcceptSource* source_;
   };
 
-  class CancelOperation final : public LUringOp {
+  class CancelOperation final : public detail::LUringOp {
   public:
     explicit CancelOperation(LUringAcceptSource* source) noexcept : source_(source) {
-      kind = LUringOpKind::kAcceptSourceCancelComplete;
+      kind = detail::LUringOpKind::kAcceptSourceCancelComplete;
     }
 
     [[nodiscard]]
@@ -97,7 +97,7 @@ private:
     }
 
     void Prepare() noexcept {
-      kind = LUringOpKind::kAcceptSourceCancelComplete;
+      kind = detail::LUringOpKind::kAcceptSourceCancelComplete;
       BeginNextRequest();
     }
 
@@ -125,7 +125,7 @@ private:
   void RequestBackendPause() noexcept;
   void RequestBackendStop(std::optional<base::Error> error = std::nullopt) noexcept;
 
-  CompletionDisposition OnCompletion(CompletionEvent event) noexcept;
+  detail::CompletionDisposition OnCompletion(detail::CompletionEvent event) noexcept;
   void OnCancelComplete(int cqe_res) noexcept;
   void OnListenerClosed() noexcept;
 
@@ -161,8 +161,8 @@ static_assert(backend::AsyncAcceptSource<LUringAcceptSource>);
 
 class LUringListener {
   friend class LUringAcceptSource;
-  friend void detail::DispatchAcceptComplete(LUringOp* op) noexcept;
-  friend void detail::DispatchListenerCloseComplete(LUringOp* op) noexcept;
+  friend void detail::DispatchAcceptComplete(detail::LUringOp* op) noexcept;
+  friend void detail::DispatchListenerCloseComplete(detail::LUringOp* op) noexcept;
 
 public:
   COROPACT_DELETE_COPY(LUringListener);

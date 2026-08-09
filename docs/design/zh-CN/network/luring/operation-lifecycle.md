@@ -77,6 +77,29 @@ RequestStop / Close
 看到 cancel CQE 不代表原 operation 的 CQE 不会再到达。测试应专门覆盖“正常完成和取消
 同时到达”的顺序变化，并检查不会 double resume、double release 或使用已关闭 fd。
 
+更严格地说，`Close()` 是 resource-level drain barrier，而 cancel 只是促使某个 physical
+request 尽快终态的协议。下列边界必须分开：
+
+```text
+cancel intent
+  -> cancel SQE submitted
+  -> cancel CQE acknowledged
+  -> original target CQE terminal
+  -> buffer / awaiter release authorized
+  -> fd/channel/ring registration released
+  -> Close continuation resumed
+```
+
+cancel CQE 只说明 cancel command 已被内核处理；它不是 original request 已终态的证据。
+因此 fd 的释放条件是**所有 active physical use**均已 drain，而不是“每个 read/write 槽位
+都有一个 terminal operation”。未使用槽位不会阻塞关闭；已提交的 target、已提交的 cancel
+command，以及 backend 仍持有的 borrowed/owned storage 都会阻塞关闭。
+
+该规则由 [`resource_close_cancel.tla`](../formal/resource_close_cancel.tla) 独立建模。模型
+覆盖 read/write、target CQE 与 cancel CQE 的任意顺序、一次 transient cancel-submit failure
+后的重试、borrowed storage release、fd release 和 Close continuation。其活性结论只在
+“owner loop 继续运行、已提交请求最终得到 CQE、局部 submit failure 是暂时的”前提下成立。
+
 ## 测试观察点
 
 - 成功、负 errno、提交失败三条路径都能结束；

@@ -8,7 +8,7 @@
 
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/work.h"
-#include "coropact/reactor/event_loop.h"
+#include "coropact/reactor/loop.h"
 
 namespace {
 

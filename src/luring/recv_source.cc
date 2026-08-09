@@ -12,6 +12,7 @@
 
 #include "coropact/base/check.h"
 #include "coropact/base/error.h"
+#include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/detail/provided_buffer_pool.h"
 #include "coropact/luring/loop.h"
 #include "coropact/operation/detail/completion_gate.h"
@@ -19,6 +20,7 @@
 
 namespace coropact::luring {
 
+using namespace detail;
 using namespace net::detail;
 
 bool LUringRecvSource::NextAwaiter::await_suspend(
@@ -70,7 +72,7 @@ void LUringRecvSource::NextAwaiter::Complete(Result result) noexcept {
     return;
   }
   result_.emplace(std::move(result));
-  source_->loop_->ScheduleCompletion(&resume_work_);
+  detail::LoopAccess::ScheduleCompletion(*source_->loop_, &resume_work_);
 }
 
 class LUringRecvSource::StopAwaiter {
@@ -145,7 +147,7 @@ base::Result<LUringRecvSource> LUringRecvSource::Create(LUringLoop* loop, int fd
     return std::unexpected(state_result.error());
   }
 
-  auto shared_pool = loop->GetSharedProvidedBufferPool(
+  auto shared_pool = detail::LoopAccess::GetSharedProvidedBufferPool(*loop,
       options.buffer_size, options.source.buffer_capacity);
   if (!shared_pool.has_value()) {
     if (shared_pool.error().value() == ENOENT) {
@@ -274,7 +276,7 @@ base::Result<void> LUringRecvSource::StartOperation() noexcept {
 
   recv_op_.Prepare();
   const auto buffer_group = shared_buffer_pool_->BufferGroup();
-  auto submitted = loop_->SubmitOp(
+  auto submitted = detail::LoopAccess::SubmitOp(*loop_,
       &recv_op_, [fd = fd_, buffer_size = buffer_size_, buffer_group](io_uring_sqe* sqe) noexcept {
         io_uring_prep_recv_multishot(sqe, fd, nullptr, buffer_size, 0);
         sqe->flags |= IOSQE_BUFFER_SELECT;
@@ -321,7 +323,8 @@ base::Result<void> LUringRecvSource::StartCancel() noexcept {
 
   cancel_op_.Prepare();
   const auto target = reinterpret_cast<std::uint64_t>(&recv_op_);
-  auto submitted = loop_->SubmitOp(&cancel_op_, [target](io_uring_sqe* sqe) noexcept {
+  auto submitted = detail::LoopAccess::SubmitOp(*loop_, &cancel_op_,
+                                                 [target](io_uring_sqe* sqe) noexcept {
     io_uring_prep_cancel64(sqe, target, IORING_ASYNC_CANCEL_ALL);
   });
   if (!submitted.has_value()) {

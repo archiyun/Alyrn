@@ -15,7 +15,8 @@
 #include "coropact/coro/spawn.h"
 #include "coropact/coro/task.h"
 #include "coropact/luring/loop.h"
-#include "coropact/luring/op.h"
+#include "coropact/luring/detail/loop_access.h"
+#include "coropact/luring/detail/op.h"
 #include "coropact/luring/options.h"
 
 namespace {
@@ -29,8 +30,8 @@ public:
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     op_.resume_work.SetHandle(continuation);
 
-    auto submitted =
-        loop_->SubmitOp(&op_, [](io_uring_sqe* sqe) noexcept { io_uring_prep_nop(sqe); });
+    auto submitted = coropact::luring::detail::LoopAccess::SubmitOp(
+        *loop_, &op_, [](io_uring_sqe* sqe) noexcept { io_uring_prep_nop(sqe); });
     if (!submitted.has_value()) {
       result_.emplace(std::unexpected(submitted.error()));
       return false;
@@ -54,7 +55,7 @@ public:
 
 private:
   coropact::luring::LUringLoop* loop_;
-  coropact::luring::LUringOp op_{coropact::luring::LUringOpKind::kNop};
+  coropact::luring::detail::LUringOp op_{coropact::luring::detail::LUringOpKind::kNop};
   std::optional<coropact::base::Result<int>> result_;
 };
 
@@ -97,7 +98,7 @@ bool CheckNopResumesCoroutine() {
   if (!Check(loop.IsInLoopThread(), "loop should be bound to the creating thread")) {
     return false;
   }
-  if (!Check(loop.IsDrained(), "fresh loop should be drained")) {
+  if (!Check(coropact::luring::detail::LoopAccess::IsDrained(loop), "fresh loop should be drained")) {
     return false;
   }
 
@@ -106,29 +107,29 @@ bool CheckNopResumesCoroutine() {
 
   coropact::coro::SpawnDetach(loop, AwaitNop(&loop, &result, &resumed_with_scheduler));
 
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
-  if (!Check(loop.PendingSubmitCount() == 1, "NOP should be pending submit after suspension") ||
-      !Check(loop.InflightCount() == 0, "NOP should not be inflight before submit") ||
-      !Check(!loop.IsDrained(), "loop should not be drained before NOP completion")) {
+  if (!Check(coropact::luring::detail::LoopAccess::PendingSubmitCount(loop) == 1, "NOP should be pending submit after suspension") ||
+      !Check(coropact::luring::detail::LoopAccess::InflightCount(loop) == 0, "NOP should not be inflight before submit") ||
+      !Check(!coropact::luring::detail::LoopAccess::IsDrained(loop), "loop should not be drained before NOP completion")) {
     return false;
   }
 
-  auto completions = loop.WaitCompletions();
+  auto completions = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
   if (!completions.has_value()) {
     std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
     return false;
   }
 
-  if (!Check(loop.PendingSubmitCount() == 0, "pending submit should be empty after wait") ||
-      !Check(loop.InflightCount() == 0, "inflight should be empty after NOP CQE") ||
-      !Check(!loop.IsDrained(), "completion should queue coroutine resume work")) {
+  if (!Check(coropact::luring::detail::LoopAccess::PendingSubmitCount(loop) == 0, "pending submit should be empty after wait") ||
+      !Check(coropact::luring::detail::LoopAccess::InflightCount(loop) == 0, "inflight should be empty after NOP CQE") ||
+      !Check(!coropact::luring::detail::LoopAccess::IsDrained(loop), "completion should queue coroutine resume work")) {
     return false;
   }
 
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
-  return Check(loop.IsDrained(), "loop should be drained after coroutine resume") &&
+  return Check(coropact::luring::detail::LoopAccess::IsDrained(loop), "loop should be drained after coroutine resume") &&
          Check(*completions >= 1, "NOP did not produce a completion") &&
          Check(result.has_value(), "coroutine did not resume") &&
          Check(result->has_value(), "NOP returned an error") &&

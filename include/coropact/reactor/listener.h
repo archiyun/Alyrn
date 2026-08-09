@@ -10,9 +10,9 @@
 #include "coropact/net/accept_source.h"
 #include "coropact/net/endpoint.h"
 #include "coropact/net/socket.h"
-#include "coropact/reactor/channel.h"
-#include "coropact/reactor/event_loop.h"
-#include "coropact/reactor/reactor_stream.h"
+#include "coropact/reactor/detail/channel.h"
+#include "coropact/reactor/loop.h"
+#include "coropact/reactor/stream.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::reactor {
@@ -119,7 +119,7 @@ private:
 
   EventLoop* loop_;
   net::Socket socket_;
-  Channel channel_;
+  detail::Channel channel_;
   ReactorStreamOptions stream_options_;
   AcceptAwaiter* pending_accept_{nullptr};
   ReactorAcceptSource* accept_source_{nullptr};

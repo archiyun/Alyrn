@@ -19,6 +19,7 @@
 #include "coropact/coro/task.h"
 #include "coropact/luring/listener.h"
 #include "coropact/luring/loop.h"
+#include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/options.h"
 #include "coropact/luring/stream.h"
 #include "coropact/net/endpoint.h"
@@ -170,15 +171,15 @@ bool CheckAccept() {
   coropact::coro::SpawnDetach(loop,
                               AcceptOnce(&*listener, &loop, &accepted, &resumed_with_scheduler));
 
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
-  auto completions = loop.WaitCompletions();
+  auto completions = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
   if (!completions.has_value()) {
     std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
     return false;
   }
 
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   return Check(*completions >= 1, "accept did not produce a completion") &&
          Check(accepted.has_value(), "accept coroutine did not resume") &&
@@ -209,24 +210,24 @@ bool CheckCloseCancelsPendingAccept() {
   coropact::coro::SpawnDetach(loop,
                               AcceptOnce(&*listener, &loop, &accepted, &resumed_with_scheduler));
 
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   std::optional<coropact::base::Result<void>> close_result;
   coropact::coro::SpawnDetach(loop, CloseOnce(&*listener, &close_result));
 
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   if (!Check(!close_result.has_value(), "Close with pending accept should suspend")) {
     return false;
   }
 
   for (int i = 0; i < 4 && (!close_result.has_value() || !accepted.has_value()); ++i) {
-    auto completions = loop.WaitCompletions();
+    auto completions = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
     if (!completions.has_value()) {
       std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
       return false;
     }
-    loop.RunReady();
+    coropact::luring::detail::LoopAccess::RunReady(loop);
   }
 
   return Check(close_result.has_value(), "close coroutine did not resume") &&
@@ -262,7 +263,7 @@ bool CheckAcceptSubmitFailureRollsBack() {
   coropact::coro::SpawnDetach(
       loop, AcceptOnce(&*listener, &loop, &accept_result, &accept_with_scheduler,
                        &accept_resume_count));
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   if (!Check(accept_result.has_value(), "failed accept coroutine did not finish") ||
       !Check(!accept_result->has_value(), "failed accept unexpectedly succeeded") ||
@@ -277,7 +278,7 @@ bool CheckAcceptSubmitFailureRollsBack() {
   // the ring.
   std::optional<coropact::base::Result<void>> close_result;
   coropact::coro::SpawnDetach(loop, CloseOnce(&*listener, &close_result));
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   return Check(close_result.has_value(), "Close after failed accept did not finish") &&
          Check(close_result->has_value(), "Close after failed accept returned an error");

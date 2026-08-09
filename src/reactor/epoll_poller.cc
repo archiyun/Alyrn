@@ -1,15 +1,15 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "coropact/reactor/epoll_poller.h"
+#include "coropact/reactor/detail/epoll_poller.h"
 
 #include <unistd.h>
 
 #include <cerrno>
 
 #include "coropact/base/check.h"
-#include "coropact/reactor/channel.h"
+#include "coropact/reactor/detail/channel.h"
 
-namespace coropact::reactor {
+namespace coropact::reactor::detail {
 namespace {
 
 // Channel registration state within EPollPoller.
@@ -142,4 +142,4 @@ void EPollPoller::Update(int operation, Channel* channel) {
   }
 }
 
-}  // namespace coropact::reactor
+}  // namespace coropact::reactor::detail

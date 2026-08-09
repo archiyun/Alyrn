@@ -17,13 +17,14 @@ using namespace coropact::io;
 using namespace coropact::coro;
 
 template <AsyncStream Stream>
-auto EchoSession(Stream stream) -> DetachedTask {
+auto EchoSession(Stream stream) -> Task<coropact::base::Result<void>> {
   std::array<std::byte, 4096> buffer{};
+  coropact::base::Result<void> session_result{};
 
   for (;;) {
     auto read = co_await stream.ReadSome(buffer);
     if (!read.has_value()) {
-      std::println(stderr, "read failed: {}", read.error().message());
+      session_result = std::unexpected(read.error());
       break;
     }
     if (*read == 0) {
@@ -33,12 +34,29 @@ auto EchoSession(Stream stream) -> DetachedTask {
     const std::span<const std::byte> payload(buffer.data(), *read);
     auto written = co_await WriteAll(stream, payload);
     if (!written.has_value()) {
-      std::println(stderr, "read failed: {}", written.error().message());
+      session_result = std::unexpected(written.error());
       break;
     }
   }
 
-  co_await stream.Close();
+  auto closed = co_await stream.Close();
+  if (!closed.has_value()) {
+    if (session_result.has_value()) {
+      session_result = std::unexpected(closed.error());
+    } else {
+      std::println(stderr, "close failed: {}", closed.error().message());
+    }
+  }
+  co_return session_result;
+}
+
+inline auto ObserveSession(JoinHandle<coropact::base::Result<void>> handle)
+    -> DetachedTask {
+  auto result = co_await std::move(handle);
+  if (!result.has_value()) {
+    std::println(stderr, "session failed: {}", result.error().message());
+  }
+  co_return;
 }
 
 template <AsyncListener Listener>
@@ -50,7 +68,8 @@ auto AcceptLoop(Listener& listener, Scheduler& scheduler) -> DetachedTask {
       co_return;
     }
 
-    SpawnDetach(scheduler, EchoSession(std::move(*accepted)));
+    auto session = Spawn(scheduler, EchoSession(std::move(*accepted)));
+    SpawnDetach(scheduler, ObserveSession(std::move(session)));
   }
 }
 

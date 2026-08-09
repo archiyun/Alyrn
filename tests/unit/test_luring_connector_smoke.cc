@@ -21,6 +21,7 @@
 #include "coropact/coro/task.h"
 #include "coropact/luring/connector.h"
 #include "coropact/luring/loop.h"
+#include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/options.h"
 #include "coropact/luring/stream.h"
 #include "coropact/net/endpoint.h"
@@ -174,15 +175,15 @@ bool CheckConnectSuccess() {
   coropact::coro::SpawnDetach(loop, ConnectOnce(&connector, &loop, "127.0.0.1", listener->port,
                                                 &connected, &resumed_with_scheduler));
 
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
-  auto completions = loop.WaitCompletions();
+  auto completions = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
   if (!completions.has_value()) {
     std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
     return false;
   }
 
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   return Check(*completions >= 1, "connect did not produce a completion") &&
          Check(connected.has_value(), "connect coroutine did not resume") &&
@@ -201,7 +202,7 @@ bool CheckConnectRejectsInvalidHost() {
   coropact::coro::SpawnDetach(
       loop, ConnectOnce(&connector, &loop, "not-an-ip", 80, &connected, &resumed_with_scheduler));
 
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   return Check(connected.has_value(), "invalid host connect did not finish immediately") &&
          Check(!connected->has_value(), "invalid host connect unexpectedly succeeded") &&

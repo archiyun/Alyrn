@@ -1,11 +1,11 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "coropact/reactor/channel.h"
+#include "coropact/reactor/detail/channel.h"
 
 #include "coropact/base/check.h"
-#include "coropact/reactor/event_loop.h"
+#include "coropact/reactor/loop.h"
 
-namespace coropact::reactor {
+namespace coropact::reactor::detail {
 
 Channel::Channel(EventLoop* loop, int fd)
     : loop_(loop), fd_(fd), events_(0), revents_(0), index_(-1) {
@@ -77,6 +77,8 @@ void Channel::Remove() {
   loop_->RemoveChannel(this);
 }
 
+bool Channel::IsRegistered() const { return loop_->HasChannel(const_cast<Channel*>(this)); }
+
 void Channel::HandleEvent() {
   COROPACT_DCHECK(loop_->IsInLoopThread(), "Channel::HandleEvent called from wrong thread");
   // Channel callbacks are non-owning. Owners must detach the Channel before
@@ -108,4 +110,4 @@ void Channel::HandleEvent() {
   }
 }
 
-}  // namespace coropact::reactor
+}  // namespace coropact::reactor::detail

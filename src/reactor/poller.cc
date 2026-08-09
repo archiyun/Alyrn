@@ -1,11 +1,11 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "coropact/reactor/poller.h"
+#include "coropact/reactor/detail/poller.h"
 
-#include "coropact/reactor/channel.h"
-#include "coropact/reactor/epoll_poller.h"
+#include "coropact/reactor/detail/channel.h"
+#include "coropact/reactor/detail/epoll_poller.h"
 
-namespace coropact::reactor {
+namespace coropact::reactor::detail {
 
 Poller::Poller(EventLoop* loop)
     : owner_loop_(loop) {}
@@ -19,4 +19,4 @@ Poller* Poller::NewDefaultPoller(EventLoop* loop) {
   return new EPollPoller(loop);
 }
 
-}  // namespace coropact::reactor
+}  // namespace coropact::reactor::detail
