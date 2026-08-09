@@ -33,11 +33,6 @@ coro::DetachedTask AcceptLoop(ReactorWorkerContext& context,
   }
 }
 
-coro::DetachedTask CloseListener(ReactorListener& listener) {
-  auto result = co_await listener.Close();
-  (void)result;
-}
-
 }  // namespace
 
 ReactorWorker::ReactorWorker(std::size_t index, net::Endpoint listen_addr,
@@ -123,13 +118,7 @@ void ReactorWorker::WorkLoop(std::stop_token token) noexcept {
   }
 
   publish_start(base::Result<void>{});
-  loop.Loop(token);
-
-  // The loop owns all Reactor objects, so shutdown stays on this thread. The
-  // close coroutine may resume the parked AcceptLoop; drain both the close and
-  // that continuation before destroying the scheduler and listener.
-  coro::SpawnDetach(loop, CloseListener(*listener));
-  loop.RunPending();
+  loop.Run(token);
 
   if (exit_callback_) {
     try {

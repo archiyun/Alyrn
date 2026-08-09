@@ -54,6 +54,38 @@ coropact::luring    io_uring / SQE / CQE
 
 ## 2. API 边界
 
+### 2.0 ManagedLoop lifecycle extension
+
+loop 的停止控制与 `AsyncStream::Close()` 是不同的语义层。公共 contract 使用：
+
+```cpp
+coropact::io::LoopState
+coropact::io::ManagedLoop
+
+Run(stop_token)
+RequestStop()
+State()
+```
+
+`RequestStop()` 可跨线程调用、幂等，并唤醒正在等待后端事件的 dispatcher；`Run()` 只能在
+owner thread 调用。进入 `Stopping` 后，后端必须取消/结算已登记的 physical operation 并 drain
+其 continuation；因此 `LoopState::kStopped` 表示 loop 自己不再持有 pending backend operation，
+但**不**单独证明 listener、stream、borrowed buffer、BufferLease 或 coroutine frame 已经释放。
+
+完整 runtime shutdown 必须在 `RequestStop()` 后显式执行资源 close/cancel 与 completion drain：
+
+```text
+RequestStop
+  -> dispatcher enters Stopping
+  -> resource Close / operation cancel
+  -> backend completion drain
+  -> dispatcher enters Stopped
+  -> resource release authorization
+  -> destroy loop-owned resources
+```
+
+这条区分避免把“退出 `epoll_wait` / ring wait”错误地当成所有 operation 都已经结束。
+
 ### 2.1 CoreStream
 
 当前公共概念约束的最小接口是：

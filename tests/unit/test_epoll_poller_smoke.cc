@@ -54,7 +54,7 @@ void DrainReadAndQuit(void* raw) noexcept {
     char buf[4];
     ::read(context.fd, buf, sizeof(buf));
     *context.called = true;
-    context.loop->Quit();
+    context.loop->RequestStop();
 }
 
 void MarkRead(void* raw) noexcept {
@@ -74,7 +74,7 @@ void DrainReadMany(void* raw) noexcept {
     ::read(context.fd, buf, sizeof(buf));
     ++*context.count;
     if (*context.count == context.total) {
-        context.loop->Quit();
+        context.loop->RequestStop();
     }
 }
 
@@ -166,7 +166,7 @@ bool TestPollDetectsReadEvent() {
         return false;
     }
 
-    loop.Loop();
+    loop.Run();
 
     ch.DisableAll();
     ch.Remove();
@@ -203,8 +203,8 @@ bool TestDisableAllKeepsChannelInMap() {
     ::write(fds[1], "x", 1);
 
     // Use a timer to exit instead of depending on a read event.
-    loop.RunAfter(0.02, [&] { loop.Quit(); });
-    loop.Loop();
+    loop.RunAfter(0.02, [&] { loop.RequestStop(); });
+    loop.Run();
 
     const bool not_fired = Expect(!read_called,
         "disabled channel must not receive read events");
@@ -237,7 +237,7 @@ bool TestReenableAfterDisable() {
     ch.EnableReading();
 
     ::write(fds[1], "x", 1);
-    loop.Loop();
+    loop.Run();
 
     ch.DisableAll();
     ch.Remove();
@@ -285,8 +285,8 @@ bool TestEventsVectorResizes() {
     }
 
     // Backstop in case delivery is spread across multiple poll rounds.
-    loop.RunAfter(2.0, [&] { loop.Quit(); });
-    loop.Loop();
+    loop.RunAfter(2.0, [&] { loop.RequestStop(); });
+    loop.Run();
 
     for (auto& ch : channels) { ch->DisableAll(); ch->Remove(); }
     for (auto& p : pairs) { ::close(p[0]); ::close(p[1]); }

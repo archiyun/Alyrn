@@ -1,6 +1,11 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
+#include <sys/eventfd.h>
+#include <unistd.h>
+
 #include <algorithm>
+#include <cerrno>
+#include <cstdint>
 
 #include "coropact/base/check.h"
 #include "coropact/base/current_thread.h"
@@ -28,6 +33,12 @@ EventLoop::EventLoop(std::pmr::memory_resource* frame_resource)
   COROPACT_DCHECK(t_loop_in_this_thread == nullptr,
                   "EventLoop: only one EventLoop may exist per thread");
   t_loop_in_this_thread = this;
+
+  wakeup_fd_ = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+  COROPACT_CHECK(wakeup_fd_ >= 0, "EventLoop: eventfd creation failed");
+  wakeup_channel_ = std::make_unique<detail::Channel>(this, wakeup_fd_);
+  wakeup_channel_->SetReadCallback(&EventLoop::DispatchWakeup, this);
+  wakeup_channel_->EnableReading();
 }
 
 EventLoop::~EventLoop() {
@@ -35,30 +46,40 @@ EventLoop::~EventLoop() {
   COROPACT_DCHECK(!looping_, "EventLoop destroyed while looping");
 
   COROPACT_DCHECK(pending_work_.Empty(), "EventLoop destroyed with pending owner work");
+  COROPACT_DCHECK(shutdown_registry_.Empty(),
+                  "EventLoop destroyed with registered shutdown resources");
+  DetachWakeupChannel();
+  if (wakeup_fd_ >= 0) {
+    ::close(wakeup_fd_);
+  }
   t_loop_in_this_thread = nullptr;
 }
 
-void EventLoop::Loop(std::stop_token token) {
-  COROPACT_DCHECK(IsInLoopThread(), "EventLoop::Loop called from wrong thread");
-  COROPACT_DCHECK(!looping_, "EventLoop::Loop called while already looping");
+void EventLoop::Run(std::stop_token token) {
+  COROPACT_CHECK(IsInLoopThread(), "EventLoop::Run called from wrong thread");
+  COROPACT_CHECK(!looping_, "EventLoop::Run called while already running");
+
+  backend::LoopState expected = backend::LoopState::kCreated;
+  if (!state_.compare_exchange_strong(expected, backend::LoopState::kRunning,
+                                      std::memory_order_acq_rel,
+                                      std::memory_order_acquire)) {
+    COROPACT_CHECK(expected == backend::LoopState::kStopping,
+                   "EventLoop::Run may only run a created or stopping loop");
+  }
 
   looping_ = true;
+  std::stop_callback on_stop{token, [this] { RequestStop(); }};
 
-  // Do not reset quit_ here: a quit request made by owner-thread setup before
-  // Loop() begins must be honored.
-  while (!quit_ && !token.stop_requested()) {
+  while (State() == backend::LoopState::kRunning) {
     DoPendingWork();
 
-    // Quit() may have been called by pending work.
-    // Do not enter a potentially blocking poll after the stop request.
-    if (quit_ || token.stop_requested()) {
+    if (State() != backend::LoopState::kRunning) {
       break;
     }
 
     active_channels_.clear();
 
-    const int timeout_ms =
-        HasImmediateWork() ? 0 : (token.stop_possible() ? std::min(kPollTimeMs, 10) : kPollTimeMs);
+    const int timeout_ms = HasImmediateWork() ? 0 : kPollTimeMs;
     poller_->Poll(timeout_ms, &active_channels_);
 
     for (detail::Channel* channel : active_channels_) {
@@ -66,12 +87,22 @@ void EventLoop::Loop(std::stop_token token) {
     }
   }
 
+  BeginShutdown();
+  RunPending();
   looping_ = false;
+  state_.store(backend::LoopState::kStopped, std::memory_order_release);
 }
 
-void EventLoop::Quit() {
-  COROPACT_CHECK(IsInLoopThread(), "EventLoop::Quit called from wrong thread");
-  quit_ = true;
+void EventLoop::RequestStop() noexcept {
+  backend::LoopState observed = state_.load(std::memory_order_acquire);
+  while (observed == backend::LoopState::kCreated || observed == backend::LoopState::kRunning) {
+    if (state_.compare_exchange_weak(observed, backend::LoopState::kStopping,
+                                     std::memory_order_acq_rel,
+                                     std::memory_order_acquire)) {
+      Wakeup();
+      return;
+    }
+  }
 }
 
 void EventLoop::RunOnOwner(Functor callback) {
@@ -108,7 +139,23 @@ bool EventLoop::HasChannel(detail::Channel* channel) const {
   return poller_->HasChannel(channel);
 }
 
-bool EventLoop::IsInLoopThread() const { return thread_id_ == base::tid(); }
+void EventLoop::RegisterShutdownParticipant(
+    detail::LoopShutdownParticipant& participant) noexcept {
+  COROPACT_CHECK(IsInLoopThread(),
+                 "EventLoop::RegisterShutdownParticipant called from wrong thread");
+  COROPACT_CHECK(shutdown_registry_.Register(&participant),
+                 "EventLoop shutdown participant registered twice");
+}
+
+void EventLoop::UnregisterShutdownParticipant(
+    detail::LoopShutdownParticipant& participant) noexcept {
+  COROPACT_CHECK(IsInLoopThread(),
+                 "EventLoop::UnregisterShutdownParticipant called from wrong thread");
+  COROPACT_CHECK(shutdown_registry_.Unregister(&participant),
+                 "EventLoop shutdown participant was not registered");
+}
+
+bool EventLoop::IsInLoopThread() const noexcept { return thread_id_ == base::tid(); }
 
 void EventLoop::DoPendingWork() {
   if (pending_work_.Empty()) {
@@ -117,6 +164,65 @@ void EventLoop::DoPendingWork() {
   coro::WorkQueue work;
   work.Splice(pending_work_);
   RunBatch(work);
+}
+
+void EventLoop::BeginShutdown() noexcept {
+  COROPACT_DCHECK(IsInLoopThread(), "EventLoop::BeginShutdown called from wrong thread");
+  if (shutdown_started_) {
+    return;
+  }
+  shutdown_started_ = true;
+  shutdown_registry_.RequestStop();
+}
+
+void EventLoop::DispatchWakeup(void* context) noexcept {
+  static_cast<EventLoop*>(context)->DrainWakeup();
+}
+
+void EventLoop::DrainWakeup() noexcept {
+  COROPACT_DCHECK(IsInLoopThread(), "EventLoop::DrainWakeup called from wrong thread");
+  std::uint64_t value = 0;
+  for (;;) {
+    const ssize_t read = ::read(wakeup_fd_, &value, sizeof(value));
+    if (read == static_cast<ssize_t>(sizeof(value))) {
+      continue;
+    }
+    if (read < 0 && errno == EINTR) {
+      continue;
+    }
+    COROPACT_DCHECK(read < 0 && (errno == EAGAIN || errno == EWOULDBLOCK),
+                    "EventLoop wakeup fd read failed");
+    return;
+  }
+}
+
+void EventLoop::Wakeup() noexcept {
+  const std::uint64_t one = 1;
+  for (;;) {
+    const ssize_t written = ::write(wakeup_fd_, &one, sizeof(one));
+    if (written == static_cast<ssize_t>(sizeof(one))) {
+      return;
+    }
+    if (written < 0 && errno == EINTR) {
+      continue;
+    }
+    COROPACT_DCHECK(written < 0 && (errno == EAGAIN || errno == EWOULDBLOCK),
+                    "EventLoop wakeup fd write failed");
+    return;
+  }
+}
+
+void EventLoop::DetachWakeupChannel() noexcept {
+  if (wakeup_channel_ == nullptr) {
+    return;
+  }
+  if (!wakeup_channel_->IsNoneEvent()) {
+    wakeup_channel_->DisableAll();
+  }
+  if (wakeup_channel_->IsRegistered()) {
+    wakeup_channel_->Remove();
+  }
+  wakeup_channel_.reset();
 }
 
 bool EventLoop::HasImmediateWork() const {

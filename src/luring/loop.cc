@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <expected>
 #include <stop_token>
+#include <thread>
 #include <utility>
 
 #include "coropact/base/current_thread.h"
@@ -161,7 +162,6 @@ base::Result<void> LUringLoop::Init(const LUringOptions& options) noexcept {
   shared_buffer_capacity_ = options.shared_buffer_capacity;
   shared_buffer_size_ = options.shared_buffer_size;
   cancel_all_op_.BeginNextRequest();
-  quit_.store(false, std::memory_order_relaxed);
   initialized_ = true;
   auto armed = ArmWakePoll();
   if (!armed.has_value()) {
@@ -205,22 +205,32 @@ base::Result<detail::ProvidedBufferPool*> LUringLoop::GetSharedProvidedBufferPoo
   return shared_buffer_pool_.get();
 }
 
-void LUringLoop::Loop(std::stop_token token) noexcept {
+void LUringLoop::Run(std::stop_token token) noexcept {
   assert(IsInLoopThread());
 
   if (!initialized_) {
     return;
   }
 
-  while (!token.stop_requested() && !quit_.load(std::memory_order_relaxed)) {
+  backend::LoopState expected = backend::LoopState::kCreated;
+  if (!state_.compare_exchange_strong(expected, backend::LoopState::kRunning,
+                                      std::memory_order_acq_rel,
+                                      std::memory_order_acquire) &&
+      expected != backend::LoopState::kStopping) {
+    return;
+  }
+
+  std::stop_callback on_stop{token, [this] { RequestStop(); }};
+  while (State() == backend::LoopState::kRunning) {
     // Observe already available completions before spending the turn on
     // ready work. This prevents a ready backlog from delaying CQE handling.
     auto completed = PollCompletions();
     if (!completed.has_value()) {
+      RequestStop();
       break;
     }
 
-    if (token.stop_requested() || quit_.load(std::memory_order_relaxed)) {
+    if (State() != backend::LoopState::kRunning) {
       break;
     }
 
@@ -229,15 +239,27 @@ void LUringLoop::Loop(std::stop_token token) noexcept {
     if (*completed == 0 && !HasReadyWork() && inflight_ > 0) {
       completed = WaitCompletionsFor(kStopPollInterval);
       if (!completed.has_value() && completed.error().value() != ETIME) {
+        RequestStop();
         break;
       }
     }
   }
+
+  if (State() == backend::LoopState::kStopping) {
+    DrainStoppedOperations();
+  }
+  state_.store(backend::LoopState::kStopped, std::memory_order_release);
 }
 
-void LUringLoop::Quit() noexcept {
-  if (!quit_.exchange(true, std::memory_order_acq_rel)) {
-    Wake();
+void LUringLoop::RequestStop() noexcept {
+  backend::LoopState observed = state_.load(std::memory_order_acquire);
+  while (observed == backend::LoopState::kCreated || observed == backend::LoopState::kRunning) {
+    if (state_.compare_exchange_weak(observed, backend::LoopState::kStopping,
+                                     std::memory_order_acq_rel,
+                                     std::memory_order_acquire)) {
+      Wake();
+      return;
+    }
   }
 }
 
@@ -257,6 +279,36 @@ base::Result<void> LUringLoop::CancelPendingOperations() noexcept {
     cancel_all_pending_ = true;
   }
   return submitted;
+}
+
+void LUringLoop::DrainStoppedOperations() noexcept {
+  assert(IsInLoopThread());
+
+  while (!IsDrained()) {
+    RunReady();
+    if (IsDrained()) {
+      break;
+    }
+
+    auto cancelled = CancelPendingOperations();
+    if (!cancelled.has_value()) {
+      break;
+    }
+
+    if (PendingSubmitCount() == 0 && InflightCount() == 0) {
+      continue;
+    }
+
+    auto completed = PollCompletions();
+    if (!completed.has_value()) {
+      break;
+    }
+    if (*completed == 0) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+  }
+
+  RunReady();
 }
 
 void LUringLoop::Schedule(coro::Work* work) noexcept {
@@ -315,7 +367,7 @@ void LUringLoop::RunReady() noexcept {
           ready_nonempty_since_ns_ = 0;
         }
       }
-      Run(work);
+      coro::Scheduler::Run(work);
       ++resumed;
     }
     coro::Scheduler::SetCurrent(previous);
@@ -377,7 +429,7 @@ void LUringLoop::RunReady() noexcept {
         ready_nonempty_since_ns_ = 0;
       }
     }
-    Run(work);
+    coro::Scheduler::Run(work);
     ++resumed;
 
     if (time_budget_ns != 0 && time::SteadyNowNs() - turn_start_ns >= time_budget_ns) {
@@ -491,11 +543,11 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
     });
     wake_inflight_ = false;
     DrainWakeFd();
-    if (!quit_.load(std::memory_order_acquire)) {
+    if (State() == backend::LoopState::kRunning) {
       wake_op_.BeginNextRequest();
       auto armed = ArmWakePoll();
       if (!armed.has_value()) {
-        quit_.store(true, std::memory_order_release);
+        RequestStop();
       }
     }
     return;
@@ -551,7 +603,7 @@ void LUringLoop::Wake() noexcept {
   constexpr std::uint64_t kWakeValue = 1;
   const ssize_t written = ::write(wake_fd_, &kWakeValue, sizeof(kWakeValue));
   if (written < 0 && errno != EAGAIN && errno != EINTR) {
-    quit_.store(true, std::memory_order_release);
+    RequestStop();
   }
 }
 

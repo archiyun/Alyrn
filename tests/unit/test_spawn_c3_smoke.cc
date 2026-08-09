@@ -83,7 +83,7 @@ Task<void> Serve(FakeConn* c) {
     if (*r == 0) break;  // EOF
   }
   if (std::this_thread::get_id() == g_loop_tid) g_on_loop.fetch_add(1);
-  if (g_completed.fetch_add(1) + 1 == kConns) g_loop->Quit();
+  if (g_completed.fetch_add(1) + 1 == kConns) g_loop->RequestStop();
   co_return;
 }
 
@@ -106,7 +106,7 @@ int main() {
   g_loop->RunAfter(0.0, [&] { conn_a.Deliver(Result<int>{0}, g_loop); });  // EOF
   g_loop->RunAfter(0.0,
       [&] { conn_b.Deliver(std::unexpected(MakeErrno(ECONNRESET)), g_loop); });
-  loop.Loop();
+  loop.Run();
 
   const int done = g_completed.load();
   const int on_loop = g_on_loop.load();

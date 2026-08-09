@@ -7,6 +7,7 @@
 #include <unistd.h>
 
 #include <array>
+#include <chrono>
 #include <csignal>
 #include <cstddef>
 #include <cstring>
@@ -68,7 +69,7 @@ coropact::coro::DetachedTask ReadOnce(coropact::reactor::ReactorStream* stream,
   ReadResult result = co_await stream->ReadSome(*buffer);
   *resumed_with_scheduler = coropact::coro::Scheduler::Current() == scheduler;
   out->emplace(std::move(result));
-  loop->Quit();
+  loop->RequestStop();
 }
 
 coropact::coro::DetachedTask ReadWithoutQuit(coropact::reactor::ReactorStream* stream,
@@ -91,7 +92,7 @@ coropact::coro::DetachedTask ReadBufferOnce(coropact::reactor::ReactorStream* st
   ReadResult result = co_await stream->ReadSome(*buffer, 32);
   *resumed_with_scheduler = coropact::coro::Scheduler::Current() == scheduler;
   out->emplace(std::move(result));
-  loop->Quit();
+  loop->RequestStop();
 }
 
 coropact::coro::DetachedTask ReadIntoOnce(coropact::reactor::ReactorStream* stream,
@@ -103,7 +104,7 @@ coropact::coro::DetachedTask ReadIntoOnce(coropact::reactor::ReactorStream* stre
   OwnedReadOutcome outcome = co_await stream->ReadInto(std::move(buffer), 32);
   *resumed_with_scheduler = coropact::coro::Scheduler::Current() == scheduler;
   out->emplace(std::move(outcome));
-  loop->Quit();
+  loop->RequestStop();
 }
 
 coropact::coro::DetachedTask WriteOnce(coropact::reactor::ReactorStream* stream,
@@ -115,7 +116,7 @@ coropact::coro::DetachedTask WriteOnce(coropact::reactor::ReactorStream* stream,
   WriteResult result = co_await stream->WriteSome(payload);
   *resumed_with_scheduler = coropact::coro::Scheduler::Current() == scheduler;
   out->emplace(std::move(result));
-  loop->Quit();
+  loop->RequestStop();
 }
 
 coropact::coro::DetachedTask WriteBufferOnce(coropact::reactor::ReactorStream* stream,
@@ -127,7 +128,7 @@ coropact::coro::DetachedTask WriteBufferOnce(coropact::reactor::ReactorStream* s
   WriteResult result = co_await stream->WriteSome(*buffer);
   *resumed_with_scheduler = coropact::coro::Scheduler::Current() == scheduler;
   out->emplace(std::move(result));
-  loop->Quit();
+  loop->RequestStop();
 }
 
 coropact::coro::DetachedTask EchoServer(coropact::reactor::ReactorStream* stream,
@@ -144,7 +145,7 @@ coropact::coro::DetachedTask EchoServer(coropact::reactor::ReactorStream* stream
         *stream, std::span<const std::byte>(scratch->data(), *read_result)));
   }
   if (++(*done_count) == 2) {
-    loop->Quit();
+    loop->RequestStop();
   }
 }
 
@@ -168,7 +169,7 @@ coropact::coro::DetachedTask EchoClient(coropact::reactor::ReactorStream* stream
   }
 
   if (++(*done_count) == 2) {
-    loop->Quit();
+    loop->RequestStop();
   }
 }
 
@@ -186,7 +187,7 @@ coropact::coro::DetachedTask CloseThenSubmit(coropact::reactor::ReactorStream* s
     read_result->emplace(co_await stream->ReadSome(*read_buffer));
     write_result->emplace(co_await stream->WriteSome(write_buffer));
   }
-  loop->Quit();
+  loop->RequestStop();
 }
 
 coropact::coro::Task<ReadResult> ReadFromForeignLoopThread(coropact::reactor::ReactorStream* stream,
@@ -252,7 +253,7 @@ bool CheckImmediateRead() {
 
   coropact::coro::SpawnDetach(
       loop, ReadOnce(&stream, &loop, &loop, &buffer, &result, &resumed_with_scheduler));
-  loop.Loop();
+  loop.Run();
 
   ::close(sv[1]);
 
@@ -281,7 +282,7 @@ bool CheckImmediateWrite() {
 
   coropact::coro::SpawnDetach(
       loop, WriteOnce(&stream, &loop, &loop, bytes, &result, &resumed_with_scheduler));
-  loop.Loop();
+  loop.Run();
 
   std::array<char, 16> received{};
   const ssize_t n = ::read(sv[1], received.data(), received.size());
@@ -322,7 +323,7 @@ bool CheckPendingRead() {
     (void)::write(fd, data, sizeof(data) - 1);
   });
 
-  loop.Loop();
+  loop.Run();
 
   ::close(sv[1]);
 
@@ -358,7 +359,7 @@ bool CheckReadIntoIoBuffer() {
 
   coropact::coro::SpawnDetach(loop, ReadBufferOnce(&stream, &loop, &loop, &buffer,
                                                         &result, &resumed_with_scheduler));
-  loop.Loop();
+  loop.Run();
 
   ::close(sv[1]);
 
@@ -395,7 +396,7 @@ bool CheckOwnedReadIntoReturnsBuffer() {
   coropact::coro::SpawnDetach(
       loop, ReadIntoOnce(&stream, &loop, &loop, coropact::net::Buffer(4), &outcome,
                               &resumed_with_scheduler));
-  loop.Loop();
+  loop.Run();
 
   ::close(sv[1]);
   if (!Check(outcome.has_value(), "owned read did not finish") ||
@@ -428,7 +429,7 @@ bool CheckOwnedReadIntoCloseReturnsBuffer() {
       loop, ReadIntoOnce(&stream, &loop, &loop, coropact::net::Buffer(8), &outcome,
                               &resumed_with_scheduler));
   loop.RunAfter(0.0, [&] { coropact::coro::Spawn(loop, stream.Close()).Detach(); });
-  loop.Loop();
+  loop.Run();
 
   ::close(sv[1]);
   if (!Check(outcome.has_value(), "owned cancelled read did not finish") ||
@@ -466,7 +467,7 @@ bool CheckWriteFromIoBuffer() {
 
   coropact::coro::SpawnDetach(loop, WriteBufferOnce(&stream, &loop, &loop, &buffer,
                                                          &result, &resumed_with_scheduler));
-  loop.Loop();
+  loop.Run();
 
   std::array<char, 64> received{};
   const ssize_t n = ::read(sv[1], received.data(), received.size());
@@ -500,7 +501,7 @@ bool CheckCloseCancelsPendingRead() {
       loop, ReadOnce(&stream, &loop, &loop, &buffer, &result, &resumed_with_scheduler));
   loop.RunAfter(0.0, [&] { coropact::coro::Spawn(loop, stream.Close()).Detach(); });
 
-  loop.Loop();
+  loop.Run();
 
   ::close(sv[1]);
 
@@ -509,6 +510,41 @@ bool CheckCloseCancelsPendingRead() {
          Check(result->error() == std::errc::operation_canceled,
                "cancelled read did not return ECANCELED") &&
          Check(resumed_with_scheduler, "cancelled read resumed without current scheduler");
+}
+
+bool CheckLoopStopCancelsPendingRead() {
+  int sv[2] = {-1, -1};
+  if (!MakeSocketPair(sv)) {
+    std::cout << "FAIL: socketpair failed\n";
+    return false;
+  }
+
+  coropact::reactor::EventLoop loop;
+  coropact::reactor::ReactorStream stream(&loop, sv[0]);
+
+  std::array<std::byte, 16> buffer{};
+  std::optional<ReadResult> result;
+  int resume_count = 0;
+  bool resumed_with_scheduler = false;
+
+  coropact::coro::SpawnDetach(loop, ReadWithoutQuit(&stream, &loop, &buffer, &result,
+                                                       &resume_count, &resumed_with_scheduler));
+  std::thread stopper([&] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    loop.RequestStop();
+  });
+  loop.Run();
+  stopper.join();
+
+  ::close(sv[1]);
+
+  return Check(result.has_value(), "loop stop did not settle the pending read") &&
+         Check(!result->has_value(), "loop stop unexpectedly completed the read") &&
+         Check(result->error() == std::errc::operation_canceled,
+               "loop stop did not return ECANCELED") &&
+         Check(resume_count == 1, "loop stop resumed the read continuation more than once") &&
+         Check(resumed_with_scheduler,
+               "loop stop resumed the read without scheduler affinity");
 }
 
 bool CheckReadableThenCloseResumesOnce() {
@@ -533,8 +569,8 @@ bool CheckReadableThenCloseResumesOnce() {
     COROPACT_IGNORE_RESULT(::write(sv[1], payload, sizeof(payload) - 1));
     coropact::coro::Spawn(loop, stream.Close()).Detach();
   });
-  loop.RunAfter(0.01, [&] { loop.Quit(); });
-  loop.Loop();
+  loop.RunAfter(0.01, [&] { loop.RequestStop(); });
+  loop.Run();
 
   ::close(sv[1]);
 
@@ -578,7 +614,7 @@ bool CheckEchoAlgorithmUsesAsyncStream() {
   coropact::coro::SpawnDetach(loop, EchoClient(&client, bytes, &client_buffer, &client_result,
                                                     &received_size, &done_count, &loop));
 
-  loop.Loop();
+  loop.Run();
 
   return Check(server_result.has_value(), "echo server did not finish") &&
          Check(server_result->has_value(), "echo server returned error") &&
@@ -608,7 +644,7 @@ bool CheckCloseRejectsLaterSubmit() {
   coropact::coro::SpawnDetach(
       loop, CloseThenSubmit(&stream, &loop, &read_buffer, bytes, &read_result, &write_result));
 
-  loop.Loop();
+  loop.Run();
 
   std::array<char, 1> peer_buffer{};
   const ssize_t peer_read = ::read(sv[1], peer_buffer.data(), peer_buffer.size());
@@ -637,6 +673,7 @@ int main() {
   if (!CheckOwnedReadIntoCloseReturnsBuffer()) return 1;
   if (!CheckWriteFromIoBuffer()) return 1;
   if (!CheckCloseCancelsPendingRead()) return 1;
+  if (!CheckLoopStopCancelsPendingRead()) return 1;
   if (!CheckReadableThenCloseResumesOnce()) return 1;
   if (!CheckEchoAlgorithmUsesAsyncStream()) return 1;
   if (!CheckCloseRejectsLaterSubmit()) return 1;

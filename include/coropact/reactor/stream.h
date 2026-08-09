@@ -21,6 +21,7 @@
 #include "coropact/operation/detail/completion_gate.h"
 #include "coropact/operation/detail/scheduler_continuation.h"
 #include "coropact/reactor/detail/channel.h"
+#include "coropact/reactor/detail/loop_shutdown.h"
 #include "coropact/reactor/detail/op_hook.h"
 #include "coropact/reactor/detail/result_state.h"
 #include "coropact/reactor/loop.h"
@@ -113,11 +114,13 @@ private:
 
   void CompleteRead(base::Result<std::size_t> result);
   void CompleteWrite(base::Result<std::size_t> result);
+  void CloseNow() noexcept;
   void DetachChannel();
   void RequireOwnerLoop() const noexcept;
   void BindChannelCallbacks() noexcept;
   void ResetForMove() noexcept;
   static EventLoop* PrepareMove(ReactorStream& other) noexcept;
+  static void DispatchLoopStop(void* context) noexcept;
 
   EventLoop* loop_;
   net::Socket socket_;
@@ -141,6 +144,7 @@ private:
   PendingReadKind pending_read_kind_{PendingReadKind::kNone};
   PendingWriteKind pending_write_kind_{PendingWriteKind::kNone};
   bool closed_{false};
+  detail::LoopShutdownParticipant shutdown_participant_{this, &DispatchLoopStop};
 };
 
 class ReactorStream::ReadSomeAwaiter final

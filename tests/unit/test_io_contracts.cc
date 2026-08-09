@@ -5,13 +5,16 @@
 #include <iostream>
 
 #include "async_io_contracts.h"
+#include "coropact/io/loop.h"
 #include "coropact/reactor/connector.h"
 #include "coropact/reactor/listener.h"
+#include "coropact/reactor/loop.h"
 #include "coropact/reactor/stream.h"
 
 #if defined(COROPACT_ENABLE_URING)
 #include "coropact/luring/connector.h"
 #include "coropact/luring/listener.h"
+#include "coropact/luring/loop.h"
 #include "coropact/luring/stream.h"
 #endif
 
@@ -29,6 +32,7 @@ consteval bool CheckReactorContracts() {
 }
 
 static_assert(CheckReactorContracts());
+static_assert(coropact::io::ManagedLoop<coropact::reactor::EventLoop>);
 
 #if defined(COROPACT_ENABLE_URING)
 consteval bool CheckLuringContracts() {
@@ -39,6 +43,7 @@ consteval bool CheckLuringContracts() {
 }
 
 static_assert(CheckLuringContracts());
+static_assert(coropact::io::ManagedLoop<coropact::luring::LUringLoop>);
 #endif
 
 }  // namespace

@@ -1,3 +1,4 @@
+#include <atomic>
 #include <chrono>
 #include <exception>
 #include <iostream>
@@ -7,7 +8,10 @@
 #include <vector>
 
 #include "coropact/coro/scheduler.h"
+#include "coropact/coro/spawn.h"
 #include "coropact/coro/work.h"
+#include "coropact/io/loop.h"
+#include "coropact/reactor/connector.h"
 #include "coropact/reactor/loop.h"
 
 namespace {
@@ -52,7 +56,7 @@ private:
     *self->scheduler_matched_ =
         &coropact::coro::Scheduler::RequireCurrent() == self->expected_scheduler_;
     *self->ran_ = true;
-    self->loop_->Quit();
+    self->loop_->RequestStop();
   }
 
   coropact::coro::Scheduler* expected_scheduler_;
@@ -73,7 +77,7 @@ bool TestSchedulerWorkIsDeferredAndBound() {
   bool ok = true;
   ok &= Expect(!ran, "scheduler work must not run inline");
 
-  loop.Loop();
+  loop.Run();
 
   ok &= Expect(ran, "scheduler work should run through EventLoop");
   ok &= Expect(scheduler_matched, "scheduler work should run with its Scheduler::Current affinity");
@@ -123,7 +127,7 @@ bool TestSchedulerWorkScheduledDuringResumeIsDeferred() {
   ScheduleNextWork first(&loop, &second, &second_ran, &second_was_deferred);
 
   loop.Schedule(&first);
-  loop.Loop();
+  loop.Run();
 
   return Expect(second_was_deferred,
                 "work scheduled during a resumed work item must not run inline") &&
@@ -140,10 +144,10 @@ bool TestRepeatingTimerCanCancelItself() {
         ++fire_count;
         if (fire_count == 1) {
             loop.Cancel(timer_id);
-            loop.RunAfter(0.05, [&loop] { loop.Quit(); });
+            loop.RunAfter(0.05, [&loop] { loop.RequestStop(); });
         }
     });
-    loop.Loop();
+    loop.Run();
 
     return Expect(fire_count == 1,
                   "self-cancelling repeating timer should fire exactly once");
@@ -158,9 +162,9 @@ bool TestSameDeadlineTimersKeepSequenceOrder() {
     loop.RunAt(deadline, [&] { fired.push_back(2); });
     loop.RunAt(deadline, [&] {
         fired.push_back(3);
-        loop.Quit();
+        loop.RequestStop();
     });
-    loop.Loop();
+    loop.Run();
 
     return Expect(fired == std::vector<int>({1, 2, 3}),
                   "same-deadline timers should follow sequence order");
@@ -177,14 +181,14 @@ bool TestCancelEarliestKeepsNextTimerScheduled() {
     });
     loop.RunAfter(0.03, [&] {
         next_timer_fired = true;
-        loop.Quit();
+        loop.RequestStop();
     });
     loop.RunAfter(0.5, [&] {
         timed_out = true;
-        loop.Quit();
+        loop.RequestStop();
     });
     loop.Cancel(cancelled);
-    loop.Loop();
+    loop.Run();
 
     return Expect(!timed_out, "next timer should fire before watchdog") &&
            Expect(!cancelled_timer_fired,
@@ -203,15 +207,15 @@ bool TestStaleTimerIdCannotCancelReplacement() {
 
     auto replacement = loop.RunAfter(0.01, [&] {
         replacement_fired = true;
-        loop.Quit();
+        loop.RequestStop();
     });
     loop.RunAfter(0.5, [&] {
         timed_out = true;
-        loop.Quit();
+        loop.RequestStop();
     });
 
     loop.Cancel(stale);
-    loop.Loop();
+    loop.Run();
 
     // The pool slot reuse that makes this an ABA hazard is deliberately no
     // longer observable through the handle: TimerId carries only the sequence.
@@ -220,6 +224,53 @@ bool TestStaleTimerIdCannotCancelReplacement() {
            Expect(!timed_out, "replacement timer should fire before watchdog") &&
            Expect(replacement_fired,
                   "stale TimerId should not cancel a replacement timer");
+}
+
+bool TestCrossThreadRequestStopWakesPoll() {
+    coropact::reactor::EventLoop loop;
+    std::atomic_bool stop_sent{false};
+
+    std::jthread stopper([&] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        loop.RequestStop();
+        stop_sent.store(true, std::memory_order_release);
+    });
+
+    const auto start = std::chrono::steady_clock::now();
+    loop.Run();
+    stopper.join();
+    const auto elapsed = std::chrono::steady_clock::now() - start;
+
+    return Expect(stop_sent.load(std::memory_order_acquire),
+                  "cross-thread stop request should be delivered") &&
+           Expect(loop.State() == coropact::io::LoopState::kStopped,
+                  "EventLoop should reach stopped after RequestStop") &&
+           Expect(elapsed < std::chrono::seconds(1),
+                  "RequestStop should wake epoll_wait instead of waiting for its poll timeout");
+}
+
+coropact::coro::DetachedTask SleepUntilLoopStops(coropact::reactor::ReactorConnector* connector,
+                                                  bool* resumed) {
+  co_await connector->SleepFor(std::chrono::hours(1));
+  *resumed = true;
+}
+
+bool TestLoopStopCancelsConnectorTimer() {
+  coropact::reactor::EventLoop loop;
+  coropact::reactor::ReactorConnector connector(&loop);
+  bool resumed = false;
+
+  coropact::coro::SpawnDetach(loop, SleepUntilLoopStops(&connector, &resumed));
+  std::jthread stopper([&] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    loop.RequestStop();
+  });
+  loop.Run();
+  stopper.join();
+
+  return Expect(resumed, "loop stop should settle ReactorConnector::SleepFor") &&
+         Expect(loop.State() == coropact::io::LoopState::kStopped,
+                "timer cancellation should leave EventLoop stopped");
 }
 
 }  // namespace
@@ -234,6 +285,8 @@ int main() {
         if (!TestSameDeadlineTimersKeepSequenceOrder()) return 1;
         if (!TestCancelEarliestKeepsNextTimerScheduled()) return 1;
         if (!TestStaleTimerIdCannotCancelReplacement()) return 1;
+        if (!TestCrossThreadRequestStopWakesPoll()) return 1;
+        if (!TestLoopStopCancelsConnectorTimer()) return 1;
     } catch (const std::exception& ex) {
         std::cerr << "[FAIL] unexpected exception: " << ex.what() << '\n';
         return 1;

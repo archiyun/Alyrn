@@ -13,6 +13,7 @@
 #include "coropact/backend/recv_source.h"
 #include "coropact/net/recv_source.h"
 #include "coropact/reactor/detail/channel.h"
+#include "coropact/reactor/detail/loop_shutdown.h"
 #include "coropact/reactor/loop.h"
 #include "coropact/utils/macros.h"
 
@@ -91,6 +92,7 @@ private:
 
   void DetachChannel() noexcept;
   void BindChannelCallbacks() noexcept;
+  static void DispatchLoopStop(void* context) noexcept;
 
   EventLoop* loop_{nullptr};
   int fd_{-1};
@@ -105,6 +107,7 @@ private:
   std::size_t buffer_size_{0};
   std::vector<std::byte> storage_;
   std::vector<std::uint32_t> available_buffers_;
+  detail::LoopShutdownParticipant shutdown_participant_{this, &DispatchLoopStop};
 };
 
 static_assert(backend::AsyncRecvSource<ReactorRecvSource>);

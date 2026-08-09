@@ -16,7 +16,6 @@
 #include <utility>
 
 #include "coropact/coro.h"
-#include "coropact/io.h"
 #include "coropact/net.h"
 #include "coropact/reactor.h"
 #include "echo_app.h"
@@ -46,6 +45,6 @@ int main() {
   coro::SpawnDetach(loop, simple_echo::AcceptLoop(listener, loop));
 
   std::println(std::cout, "simple echo (Reactor) listening on 127.0.0.1:{}", kPort);
-  loop.Loop();
+  loop.Run();
   return 0;
 }
