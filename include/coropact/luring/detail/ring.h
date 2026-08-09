@@ -12,7 +12,7 @@
 #include "coropact/luring/options.h"
 #include "coropact/utils/macros.h"
 
-namespace coropact::luring {
+namespace coropact::luring::detail {
 
 // Thin RAII wrapper around a single io_uring instance.
 //
@@ -82,4 +82,4 @@ private:
   bool initialized_{false};
 };
 
-}  // namespace coropact::luring
+}  // namespace coropact::luring::detail

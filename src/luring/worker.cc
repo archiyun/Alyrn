@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "coropact/luring/worker.h"
+#include "coropact/luring/detail/worker.h"
 
 #include <pthread.h>
 #include <sched.h>
@@ -16,11 +16,12 @@
 
 #include "coropact/base/error.h"
 #include "coropact/coro/spawn.h"
+#include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/listener.h"
 #include "coropact/luring/loop.h"
 #include "coropact/net/accept_source.h"
 
-namespace coropact::luring {
+namespace coropact::luring::detail {
 
 namespace {
 
@@ -84,23 +85,23 @@ void CloseListenerAndDrain(LUringLoop& loop, LUringListener& listener) noexcept 
   coro::SpawnDetach(loop, CloseListener(&listener, &close_result));
 
   for (;;) {
-    loop.RunReady();
-    if (close_result.has_value() && loop.IsDrained()) {
+    LoopAccess::RunReady(loop);
+    if (close_result.has_value() && LoopAccess::IsDrained(loop)) {
       break;
     }
 
-    if (!close_result.has_value() && loop.IsDrained()) {
+    if (!close_result.has_value() && LoopAccess::IsDrained(loop)) {
       break;
     }
 
     if (close_result.has_value()) {
-      auto cancelled = loop.CancelPendingOperations();
+      auto cancelled = LoopAccess::CancelPendingOperations(loop);
       if (!cancelled.has_value()) {
         break;
       }
     }
 
-    if (loop.PendingSubmitCount() == 0 && loop.InflightCount() == 0) {
+    if (LoopAccess::PendingSubmitCount(loop) == 0 && LoopAccess::InflightCount(loop) == 0) {
       continue;
     }
 
@@ -109,7 +110,7 @@ void CloseListenerAndDrain(LUringLoop& loop, LUringListener& listener) noexcept 
     // strand the drain loop behind a split-release notification (notably a
     // send-zc notification) while the remaining cancellation work is ready
     // to be observed by the next poll.
-    auto completed = loop.PollCompletions();
+    auto completed = LoopAccess::PollCompletions(loop);
     if (!completed.has_value()) {
       break;
     }
@@ -118,7 +119,7 @@ void CloseListenerAndDrain(LUringLoop& loop, LUringListener& listener) noexcept 
     }
   }
 
-  loop.RunReady();
+  LoopAccess::RunReady(loop);
 }
 
 base::Result<void> SetCurrentThreadAffinity(unsigned cpu) noexcept {
@@ -252,4 +253,4 @@ void LUringWorker::WorkLoop(std::stop_token token) noexcept {
   }
 }
 
-}  // namespace coropact::luring
+}  // namespace coropact::luring::detail

@@ -9,8 +9,8 @@
 #include "coropact/base/error.h"
 #include "coropact/coro/task.h"
 #include "coropact/net/endpoint.h"
-#include "coropact/reactor/event_loop.h"
-#include "coropact/reactor/reactor_stream.h"
+#include "coropact/reactor/loop.h"
+#include "coropact/reactor/stream.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::reactor {

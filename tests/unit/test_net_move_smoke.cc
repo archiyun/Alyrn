@@ -18,10 +18,10 @@
 #include "coropact/coro/task.h"
 #include "coropact/net/endpoint.h"
 #include "coropact/net/socket.h"
-#include "coropact/reactor/channel.h"
-#include "coropact/reactor/event_loop.h"
-#include "coropact/reactor/reactor_listener.h"
-#include "coropact/reactor/reactor_stream.h"
+#include "coropact/reactor/detail/channel.h"
+#include "coropact/reactor/listener.h"
+#include "coropact/reactor/loop.h"
+#include "coropact/reactor/stream.h"
 
 namespace {
 
@@ -66,12 +66,12 @@ bool TestChannelMove() {
   }
 
   bool read_called = false;
-  coropact::reactor::Channel source(&loop, first[0]);
+  coropact::reactor::detail::Channel source(&loop, first[0]);
   source.SetEdgeTriggered(true);
   ChannelReadContext context{first[0], &read_called, &loop};
   source.SetReadCallback(DrainChannelRead, &context);
 
-  coropact::reactor::Channel moved(std::move(source));
+  coropact::reactor::detail::Channel moved(std::move(source));
   if (!Check(source.Fd() == -1 && moved.Fd() == first[0],
              "Channel move construction should transfer the fd association") ||
       !Check(moved.IsEdgeTriggered(), "Channel move construction should transfer mode")) {
@@ -82,7 +82,7 @@ bool TestChannelMove() {
     return false;
   }
 
-  coropact::reactor::Channel target(&loop, second[0]);
+  coropact::reactor::detail::Channel target(&loop, second[0]);
   target = std::move(moved);
   ::close(second[0]);
 

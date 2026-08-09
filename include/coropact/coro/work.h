@@ -17,7 +17,7 @@
 
 namespace coropact::coro {
 
-struct Work : public coropact::ds::QueueNode<Work> {
+struct Work : public ds::QueueNode<Work> {
   COROPACT_DELETE_COPY_MOVE(Work);
   using RunFn = void (*)(Work*) noexcept;
 
@@ -71,17 +71,19 @@ struct Work : public coropact::ds::QueueNode<Work> {
   void ClearHandle() noexcept { action_ = kResumeTag; }
 
 private:
-  static constexpr std::uintptr_t kResumeTag =
-      std::uintptr_t{1} << (sizeof(std::uintptr_t) * 8 - 1);
+  static constexpr std::uintptr_t kResumeTag = std::uintptr_t{1}
+                                               << (sizeof(std::uintptr_t) * 8 - 1);
 
   [[nodiscard]]
-  bool IsResume() const noexcept { return (action_ & kResumeTag) != 0; }
+  bool IsResume() const noexcept {
+    return (action_ & kResumeTag) != 0;
+  }
 
   static_assert(sizeof(RunFn) == sizeof(std::uintptr_t));
   std::uintptr_t action_{0};
 };
 
-using WorkQueue = coropact::ds::IntrusiveQueue<Work>;
+using WorkQueue = ds::IntrusiveQueue<Work>;
 
 // A Work that resumes a coroutine. This is the only place Work meets a frame.
 struct ResumeWork : public Work {

@@ -9,8 +9,5 @@
 #include "coropact/luring/loop.h" // IWYU pragma: export
 #include "coropact/luring/options.h" // IWYU pragma: export
 #include "coropact/luring/recv_source.h" // IWYU pragma: export
-#include "coropact/luring/server.h" // IWYU pragma: export
 #include "coropact/luring/stream.h" // IWYU pragma: export
 #include "coropact/luring/timer.h" // IWYU pragma: export
-#include "coropact/luring/worker.h" // IWYU pragma: export
-#include "coropact/luring/worker_group.h" // IWYU pragma: export

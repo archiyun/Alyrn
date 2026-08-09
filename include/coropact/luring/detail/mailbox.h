@@ -5,11 +5,10 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
-#include <utility>
 
 #include "coropact/ds/mpsc_bounded_queue.h"
 
-namespace coropact::luring {
+namespace coropact::luring::detail {
 
 inline constexpr std::uint64_t kMsgRingNotificationUserData = 1;
 
@@ -30,7 +29,7 @@ public:
 
   [[nodiscard]]
   LUringMailboxPushResult Push(LUringMessage message) noexcept {
-    const auto result = queue_.TryPush(std::move(message));
+    const auto result = queue_.TryPush(message);
 
     if (result == ds::MpscQueuePushResult::kFull) {
       return LUringMailboxPushResult::kFull;
@@ -92,4 +91,4 @@ private:
   std::atomic_bool notification_pending_{false};
 };
 
-}  // namespace coropact::luring
+}  // namespace coropact::luring::detail

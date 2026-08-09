@@ -18,12 +18,15 @@
 #include "coropact/base/check.h"
 #include "coropact/base/error.h"
 #include "coropact/luring/detail/close_state.h"
+#include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/detail/operation_submission.h"
 #include "coropact/luring/loop.h"
-#include "coropact/luring/op.h"
+#include "coropact/luring/detail/op.h"
 #include "coropact/net/endpoint.h"
 
 namespace coropact::luring {
+
+using namespace detail;
 
 namespace {
 
@@ -188,7 +191,7 @@ bool LUringStream::ReadSomeForAwaiter::await_suspend(
   continuation_ = continuation;
   stream_->pending_read_ = this;
 
-  auto submitted = stream_->loop_->SubmitOp(
+  auto submitted = detail::LoopAccess::SubmitOp(*stream_->loop_,
       ReadOp(), [fd = stream_->fd_, buffer = buffer_](io_uring_sqe* sqe) noexcept {
         io_uring_prep_recv(sqe, fd, buffer.data(), buffer.size(), 0);
         sqe->flags |= IOSQE_IO_LINK;
@@ -199,7 +202,8 @@ bool LUringStream::ReadSomeForAwaiter::await_suspend(
     return false;
   }
 
-  submitted = stream_->loop_->SubmitOp(TimeoutOp(), [this](io_uring_sqe* sqe) noexcept {
+  submitted = detail::LoopAccess::SubmitOp(*stream_->loop_, TimeoutOp(),
+                                            [this](io_uring_sqe* sqe) noexcept {
     io_uring_prep_link_timeout(sqe, &timeout_ts_, 0);
   });
   if (!submitted.has_value()) {
@@ -339,7 +343,8 @@ public:
     Op()->kind = LUringOpKind::kStreamCloseComplete;
 
     auto submitted =
-        stream_->loop_->SubmitOp(Op(), [fd = stream_->fd_](io_uring_sqe* sqe) noexcept {
+        detail::LoopAccess::SubmitOp(*stream_->loop_, Op(),
+                                     [fd = stream_->fd_](io_uring_sqe* sqe) noexcept {
           io_uring_prep_cancel_fd(sqe, fd, IORING_ASYNC_CANCEL_ALL);
         });
     if (!submitted.has_value()) {
@@ -374,7 +379,7 @@ public:
     // work slot can carry the final coroutine resumption.
     Op()->resume_work.SetHandle(continuation_);
     if (current != Op()) {
-      loop->ScheduleCompletion(&Op()->resume_work);
+      detail::LoopAccess::ScheduleCompletion(*loop, &Op()->resume_work);
     }
   }
 
@@ -422,7 +427,7 @@ bool LUringStream::SendZeroCopyAwaiter::await_suspend(
   Op()->kind = LUringOpKind::kSendZeroCopyComplete;
   Op()->resume_work.SetHandle(continuation);
 
-  auto submitted = stream_->loop_->SubmitOp(
+  auto submitted = detail::LoopAccess::SubmitOp(*stream_->loop_,
       Op(), [fd = stream_->fd_, buffer = buffer_](io_uring_sqe* sqe) noexcept {
         io_uring_prep_send_zc(sqe, fd, buffer.data(), buffer.size(), MSG_NOSIGNAL,
                               IORING_SEND_ZC_REPORT_USAGE);

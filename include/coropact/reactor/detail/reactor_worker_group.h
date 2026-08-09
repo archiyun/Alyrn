@@ -9,10 +9,10 @@
 #include <vector>
 
 #include "coropact/base/error.h"
-#include "coropact/reactor/reactor_worker.h"
+#include "coropact/reactor/detail/reactor_worker.h"
 #include "coropact/utils/macros.h"
 
-namespace coropact::reactor {
+namespace coropact::reactor::detail {
 
 struct ReactorWorkerGroupOptions {
   std::size_t worker_num{1};
@@ -67,4 +67,4 @@ private:
   std::vector<std::unique_ptr<ReactorWorker>> workers_;
 };
 
-}  // namespace coropact::reactor
+}  // namespace coropact::reactor::detail

@@ -2,19 +2,15 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-// Public umbrella header for the epoll-based Reactor backend.
+// Public umbrella header for the epoll-based Reactor backend. It exports the
+// event-loop and transport adapters, not the epoll implementation machinery.
 
 #include "coropact/net/endpoint.h" // IWYU pragma: export
 #include "coropact/net/net_utils.h" // IWYU pragma: export
 #include "coropact/net/socket.h" // IWYU pragma: export
-#include "coropact/reactor/channel.h" // IWYU pragma: export
-#include "coropact/reactor/epoll_poller.h" // IWYU pragma: export
-#include "coropact/reactor/event_loop.h" // IWYU pragma: export
-#include "coropact/reactor/poller.h" // IWYU pragma: export
-#include "coropact/reactor/reactor_connect.h" // IWYU pragma: export
-#include "coropact/reactor/reactor_listener.h" // IWYU pragma: export
-#include "coropact/reactor/reactor_recv_source.h" // IWYU pragma: export
-#include "coropact/reactor/reactor_stream.h" // IWYU pragma: export
-#include "coropact/reactor/timer_queue.h" // IWYU pragma: export
-#include "coropact/reactor/reactor_worker.h" // IWYU pragma: export
-#include "coropact/reactor/reactor_worker_group.h" // IWYU pragma: export
+#include "coropact/reactor/connector.h" // IWYU pragma: export
+#include "coropact/reactor/listener.h" // IWYU pragma: export
+#include "coropact/reactor/loop.h" // IWYU pragma: export
+#include "coropact/reactor/options.h" // IWYU pragma: export
+#include "coropact/reactor/recv_source.h" // IWYU pragma: export
+#include "coropact/reactor/stream.h" // IWYU pragma: export

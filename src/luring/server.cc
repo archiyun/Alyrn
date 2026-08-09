@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "coropact/luring/server.h"
+#include "coropact/luring/detail/server.h"
 
 #include <cerrno>
 #include <expected>
@@ -10,7 +10,7 @@
 #include "coropact/base/error.h"
 #include "coropact/luring/stream.h"
 
-namespace coropact::luring {
+namespace coropact::luring::detail {
 
 LUringServer::LUringServer(net::Endpoint listen_addr, LUringServerOptions options)
     : listen_addr_(listen_addr), options_(std::move(options)) {}
@@ -50,4 +50,4 @@ void LUringServer::Stop() noexcept {
   started_ = false;
 }
 
-}  // namespace coropact::luring
+}  // namespace coropact::luring::detail

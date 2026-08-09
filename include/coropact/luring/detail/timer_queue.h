@@ -13,7 +13,7 @@
 #include "coropact/base/error.h"
 #include "coropact/luring/detail/completion_dispatch.h"
 #include "coropact/luring/detail/op_hook.h"
-#include "coropact/luring/op.h"
+#include "coropact/luring/detail/op.h"
 #include "coropact/time/timer.h"
 #include "coropact/time/timer_id.h"
 #include "coropact/time/timer_tree.h"
@@ -27,20 +27,18 @@ namespace detail {
 struct TimerDriverTag;
 struct TimerControlTag;
 
-}  // namespace detail
-
 // One timer queue belongs to one LUringLoop and is only accessed by that
 // loop's thread. The timer tree stays in user space; one io_uring timeout is
 // used to wake the loop for the earliest timer.
 class LUringTimerQueue final
-    : public detail::LUringOpHook<LUringTimerQueue, detail::TimerDriverTag>,
-      public detail::LUringOpHook<LUringTimerQueue, detail::TimerControlTag> {
-  friend void detail::DispatchTimerDriverComplete(LUringOp* op) noexcept;
-  friend void detail::DispatchTimerControlComplete(LUringOp* op) noexcept;
+    : public LUringOpHook<LUringTimerQueue, TimerDriverTag>,
+      public LUringOpHook<LUringTimerQueue, TimerControlTag> {
+  friend void DispatchTimerDriverComplete(LUringOp* op) noexcept;
+  friend void DispatchTimerControlComplete(LUringOp* op) noexcept;
 
 public:
-  using DriverOpHook = detail::LUringOpHook<LUringTimerQueue, detail::TimerDriverTag>;
-  using ControlOpHook = detail::LUringOpHook<LUringTimerQueue, detail::TimerControlTag>;
+  using DriverOpHook = LUringOpHook<LUringTimerQueue, TimerDriverTag>;
+  using ControlOpHook = LUringOpHook<LUringTimerQueue, TimerControlTag>;
   using TimerCallback = std::function<void()>;
 
   explicit LUringTimerQueue(LUringLoop* loop) noexcept
@@ -94,4 +92,5 @@ private:
   __kernel_timespec update_timespec_{};
 };
 
+}  // namespace detail
 }  // namespace coropact::luring

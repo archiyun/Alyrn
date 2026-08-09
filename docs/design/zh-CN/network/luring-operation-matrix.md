@@ -238,6 +238,8 @@ operation destruction
 对应模型文件：
 
 - `formal/async_stream_core.tla`：单个 single-shot stream operation；
+- `formal/resource_close_cancel.tla`：resource-level Close barrier、cancel command 与 target
+  request 的分离、borrowed storage release，以及 fd release 的 quiescence 条件；
 - `formal/async_stream_multiop.tla`：并发 read/write 的 operation identity、owner coroutine
   与 Close 收敛；
 - `formal/linked_timeout_submission_failure.tla`：linked read 已提交但 timeout SQE 提交失败时，
@@ -277,6 +279,8 @@ recv_source_lease.cfg:
 ```bash
 tlc docs/design/zh-CN/network/formal/async_stream_core.tla \
   -config docs/design/zh-CN/network/formal/async_stream_core.cfg
+tlc docs/design/zh-CN/network/formal/resource_close_cancel.tla \
+  -config docs/design/zh-CN/network/formal/resource_close_cancel.cfg
 tlc docs/design/zh-CN/network/formal/async_stream_multiop.tla \
   -config docs/design/zh-CN/network/formal/async_stream_multiop.cfg
 tlc docs/design/zh-CN/network/formal/async_operation_families.tla \

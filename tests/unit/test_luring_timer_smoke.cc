@@ -8,6 +8,7 @@
 #include "coropact/coro/task.h"
 #include "coropact/luring/connector.h"
 #include "coropact/luring/loop.h"
+#include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/options.h"
 #include "coropact/luring/timer.h"
 
@@ -60,7 +61,7 @@ bool TestTimers() {
   // Updating an already armed timeout may produce one or more control CQEs
   // before the updated timer itself expires.
   while (!early_fired && !late_fired) {
-    auto completed = loop.WaitCompletions();
+    auto completed = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
     if (!Check(completed.has_value(), "timer completion should be received")) {
       return false;
     }
@@ -78,9 +79,9 @@ bool TestTimers() {
   bool resumed = false;
   bool scheduler_ok = false;
   coropact::coro::SpawnDetach(loop, SleepTask(&loop, &resumed, &scheduler_ok));
-  loop.RunReady();
-  auto completed = loop.WaitCompletions();
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
+  auto completed = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   return Check(completed.has_value(), "sleep should complete") &&
          Check(resumed, "SleepFor should resume the coroutine") &&

@@ -10,11 +10,11 @@
 #include <vector>
 
 #include "coropact/base/error.h"
-#include "coropact/luring/worker.h"
+#include "coropact/luring/detail/worker.h"
 #include "coropact/net/endpoint.h"
 #include "coropact/utils/macros.h"
 
-namespace coropact::luring {
+namespace coropact::luring::detail {
 
 struct LUringWorkerGroupOptions {
   std::size_t worker_num{1};
@@ -59,15 +59,6 @@ public:
     return workers_.size();
   }
 
-  [[nodiscard]]
-  LUringWorker* Worker(std::size_t index) noexcept {
-    return index < workers_.size() ? workers_[index].get() : nullptr;
-  }
-  [[nodiscard]]
-  const LUringWorker* Worker(std::size_t index) const noexcept {
-    return index < workers_.size() ? workers_[index].get() : nullptr;
-  }
-
 private:
   net::Endpoint listen_addr_;
   LUringWorkerGroupOptions options_;
@@ -79,4 +70,4 @@ private:
   std::vector<std::unique_ptr<LUringWorker>> workers_;
 };
 
-}  // namespace coropact::luring
+}  // namespace coropact::luring::detail

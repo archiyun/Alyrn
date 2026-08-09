@@ -15,10 +15,10 @@
 #include "coropact/coro/task.h"
 #include "coropact/io/async_listener.h"
 #include "coropact/net/endpoint.h"
-#include "coropact/reactor/event_loop.h"
-#include "coropact/reactor/reactor_connect.h"
-#include "coropact/reactor/reactor_listener.h"
-#include "coropact/reactor/reactor_stream.h"
+#include "coropact/reactor/connector.h"
+#include "coropact/reactor/listener.h"
+#include "coropact/reactor/loop.h"
+#include "coropact/reactor/stream.h"
 
 namespace {
 

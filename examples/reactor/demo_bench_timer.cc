@@ -18,7 +18,7 @@
 #include <thread>
 #include <vector>
 
-#include "coropact/reactor/event_loop.h"
+#include "coropact/reactor/loop.h"
 #include "coropact/time/timer_id.h"
 
 using clk = std::chrono::steady_clock;

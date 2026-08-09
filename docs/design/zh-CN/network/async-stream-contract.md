@@ -930,3 +930,7 @@ Reactor 和 luring 是不同解释器；
 read/write 并行归属；`accept_source_refinement.tla` 与 `recv_source_lease.tla` 验证
 EventSource 的 pause/re-arm 与 lease 生命周期。它们是同一抽象模型的不同有界检查，
 不是对无限执行空间的全自动定理证明。
+
+`resource_close_cancel.tla` 则单独验证 Close 作为 resource-level drain barrier：cancel CQE
+不等于 target completion，fd release 必须等待 active physical use、cancel command 与
+backend-held storage 一并收敛。

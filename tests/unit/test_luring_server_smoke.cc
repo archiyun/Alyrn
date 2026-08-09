@@ -20,7 +20,7 @@
 
 #include "coropact/base/error.h"
 #include "coropact/coro/task.h"
-#include "coropact/luring/server.h"
+#include "coropact/luring/detail/server.h"
 #include "coropact/luring/stream.h"
 #include "coropact/net/endpoint.h"
 
@@ -119,8 +119,8 @@ coropact::base::Result<int> ConnectClient(const coropact::net::Endpoint& address
   return fd;
 }
 
-coropact::luring::LUringServerOptions MakeOptions(std::size_t worker_num = 1) {
-  coropact::luring::LUringServerOptions options;
+coropact::luring::detail::LUringServerOptions MakeOptions(std::size_t worker_num = 1) {
+  coropact::luring::detail::LUringServerOptions options;
   options.worker_group_options.worker_num = worker_num;
   options.worker_group_options.worker_options.loop_options.entries = 16;
   options.worker_group_options.worker_options.loop_options.submit_batch = 1;
@@ -139,7 +139,7 @@ bool CheckServerStartStop() {
     return false;
   }
 
-  coropact::luring::LUringServer server(LoopbackAddress(*port), MakeOptions());
+  coropact::luring::detail::LUringServer server(LoopbackAddress(*port), MakeOptions());
 
   auto started = server.Start();
   if (!started.has_value()) {
@@ -173,12 +173,12 @@ bool CheckServerSessionHandler() {
   }
 
   const auto listen_addr = LoopbackAddress(*port);
-  coropact::luring::LUringServer server(listen_addr, MakeOptions());
+  coropact::luring::detail::LUringServer server(listen_addr, MakeOptions());
 
   std::atomic_size_t session_count{0};
   std::atomic_bool invalid_stream{false};
   std::atomic_bool wrong_loop{false};
-  server.SetSessionHandler([&](coropact::luring::LUringWorkerContext& context,
+  server.SetSessionHandler([&](coropact::luring::detail::LUringWorkerContext& context,
                                  coropact::luring::LUringStream stream) -> coropact::coro::DetachedTask {
     if (!context.loop.IsInLoopThread()) {
       wrong_loop.store(true, std::memory_order_relaxed);
@@ -240,12 +240,12 @@ bool CheckServerStopsActiveSession() {
   }
 
   const auto listen_addr = LoopbackAddress(*port);
-  coropact::luring::LUringServer server(listen_addr, MakeOptions());
+  coropact::luring::detail::LUringServer server(listen_addr, MakeOptions());
   std::atomic_bool session_started{false};
   std::atomic_bool session_cancelled{false};
 
   server.SetSessionHandler(
-      [&](coropact::luring::LUringWorkerContext&, coropact::luring::LUringStream stream)
+      [&](coropact::luring::detail::LUringWorkerContext&, coropact::luring::LUringStream stream)
           -> coropact::coro::DetachedTask {
         session_started.store(true, std::memory_order_release);
         std::array<std::byte, 1> buffer{};

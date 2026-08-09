@@ -31,6 +31,17 @@ changing module boundaries.
 - `reactor` and `luring` are parallel backend adapters. Do not make either
   backend depend on the `io` facade or on CoroGateway.
 
+The Reactor public interface is `EventLoop` plus its stream, listener,
+connector, receive-source, and option adapters. `reactor/detail` contains the
+epoll poller, channel registration, timer queue, and multi-worker bootstrap
+machinery; applications must not depend on those types.
+
+The luring public interface is `LUringLoop` plus its stream, listener,
+connector, receive-source, timer, and option adapters. `luring/detail` owns
+raw SQE/CQE operations, ring and mailbox transport, timer queue, and
+multi-worker/server bootstrap machinery; applications must not depend on
+those types.
+
 ## Ownership and thread affinity
 
 - An `EventLoop` and all of its Channels, fds, timers, and stream state belong

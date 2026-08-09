@@ -10,7 +10,7 @@
 #include "coropact/ds/intrusive_hash_table.h"
 #include "coropact/ds/intrusive_rbtree.h"
 #include "coropact/memory/object_pool.h"
-#include "coropact/reactor/channel.h"
+#include "coropact/reactor/detail/channel.h"
 #include "coropact/time/timer_id.h"
 #include "coropact/utils/macros.h"
 
@@ -19,6 +19,7 @@ namespace coropact::reactor {
 class EventLoop;
 
 namespace detail {
+
 
 class ReactorTimer final : public ds::RBTNode<ReactorTimer>, public ds::HashNode<ReactorTimer> {
 public:
@@ -83,8 +84,6 @@ inline constexpr auto kTimerSequenceOf = [](const ReactorTimer* timer) -> int64_
 using ActiveTimerTable = ds::IntrusiveHashTable<ReactorTimer, kTimerSequenceOf>;
 using TimerTree = ds::IntrusiveRBTree<ReactorTimer, ReactorTimerLess>;
 
-}  // namespace detail
-
 // TimerQueue manages timerfd-driven timer scheduling for one EventLoop.
 //
 // TimerQueue owns ReactorTimer objects. TimerTree only indexes them by
@@ -99,8 +98,8 @@ public:
   explicit TimerQueue(EventLoop* loop);
   ~TimerQueue();
 
-  using TimePoint = detail::ReactorTimer::TimePoint;
-  using Duration = detail::ReactorTimer::Duration;
+  using TimePoint = ReactorTimer::TimePoint;
+  using Duration = ReactorTimer::Duration;
 
   time::TimerId AddTimer(TimerCallback callback, TimePoint when, Duration interval);
   void Cancel(time::TimerId id);
@@ -115,11 +114,12 @@ private:
   EventLoop* loop_;
   int timerfd_;
   Channel timerfd_channel_;
-  detail::TimerTree timers_;
-  memory::ObjectPool<detail::ReactorTimer, kTimerQueueMax> timer_pool_;
-  detail::ActiveTimerTable active_timers_;
-  detail::ReactorTimer* processing_timer_{nullptr};
+  TimerTree timers_;
+  memory::ObjectPool<ReactorTimer, kTimerQueueMax> timer_pool_;
+  ActiveTimerTable active_timers_;
+  ReactorTimer* processing_timer_{nullptr};
   bool processing_timer_cancelled_{false};
 };
 
+}  // namespace detail
 }  // namespace coropact::reactor
