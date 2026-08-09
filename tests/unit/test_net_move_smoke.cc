@@ -44,7 +44,7 @@ void DrainChannelRead(void* raw) noexcept {
   char byte = 0;
   ::read(context.fd, &byte, sizeof(byte));
   *context.called = true;
-  context.loop->Quit();
+  context.loop->RequestStop();
 }
 
 bool MakeSocketPair(int fds[2]) {
@@ -88,8 +88,8 @@ bool TestChannelMove() {
 
   target.EnableReading();
   ::write(first[1], "x", 1);
-  loop.RunAfter(0.1, [&] { loop.Quit(); });
-  loop.Loop();
+  loop.RunAfter(0.1, [&] { loop.RequestStop(); });
+  loop.Run();
 
   target.DisableAll();
   target.Remove();
@@ -143,14 +143,14 @@ coropact::coro::DetachedTask ReadOnce(coropact::reactor::ReactorStream* stream,
                                       std::array<std::byte, 16>* buffer,
                                       std::optional<ReadResult>* result) {
   result->emplace(co_await stream->ReadSome(*buffer));
-  loop->Quit();
+  loop->RequestStop();
 }
 
 coropact::coro::DetachedTask AcceptOnce(coropact::reactor::ReactorListener* listener,
                                         coropact::reactor::EventLoop* loop,
                                         std::optional<AcceptResult>* result) {
   result->emplace(co_await listener->Accept());
-  loop->Quit();
+  loop->RequestStop();
 }
 
 bool TestReactorStreamMove() {
@@ -177,8 +177,8 @@ bool TestReactorStreamMove() {
     coropact::coro::SpawnDetach(loop,
                                 ReadOnce(&moved, &loop, &constructed_buffer, &constructed_result));
     loop.RunAfter(0.0, [peer_fd = source_pair[1]] { ::write(peer_fd, "c", 1); });
-    loop.RunAfter(0.2, [&] { loop.Quit(); });
-    loop.Loop();
+    loop.RunAfter(0.2, [&] { loop.RequestStop(); });
+    loop.Run();
   }
 
   if (!Check(constructed_result.has_value() && constructed_result->has_value() &&
@@ -201,8 +201,8 @@ bool TestReactorStreamMove() {
     coropact::coro::SpawnDetach(loop,
                                 ReadOnce(&target, &loop, &assigned_buffer, &assigned_result));
     loop.RunAfter(0.0, [peer_fd = target_pair[1]] { ::write(peer_fd, "a", 1); });
-    loop.RunAfter(0.2, [&] { loop.Quit(); });
-    loop.Loop();
+    loop.RunAfter(0.2, [&] { loop.RequestStop(); });
+    loop.Run();
   }
   ::close(target_pair[1]);
 
@@ -246,8 +246,8 @@ bool TestReactorListenerMove() {
 
     coropact::coro::SpawnDetach(loop, AcceptOnce(&moved, &loop, &accepted));
     loop.RunAfter(0.0, [&] { client_fd = ConnectNonBlocking(*moved_address); });
-    loop.RunAfter(0.2, [&] { loop.Quit(); });
-    loop.Loop();
+    loop.RunAfter(0.2, [&] { loop.RequestStop(); });
+    loop.Run();
   }
 
   if (client_fd >= 0) {

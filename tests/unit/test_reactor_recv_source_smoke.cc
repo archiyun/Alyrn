@@ -67,7 +67,7 @@ DetachedTask ReceiveOne(
 
   auto stopped = co_await source->Stop();
   *stop_succeeded = stopped.has_value();
-  loop->Quit();
+  loop->RequestStop();
 }
 
 DetachedTask ReceivePending(
@@ -84,7 +84,7 @@ DetachedTask ReceivePending(
   result->emplace(std::move(received));
   auto stopped = co_await source->Stop();
   *stop_succeeded = stopped.has_value();
-  loop->Quit();
+  loop->RequestStop();
 }
 
 DetachedTask WaitForEnd(
@@ -92,7 +92,7 @@ DetachedTask WaitForEnd(
     EventLoop* loop,
     std::optional<ReactorRecvSource::Result>* result) {
   result->emplace(co_await source->Next());
-  loop->Quit();
+  loop->RequestStop();
 }
 
 DetachedTask StopOnly(ReactorRecvSource* source, bool* stop_succeeded) {
@@ -108,7 +108,7 @@ DetachedTask ReceiveTwo(
     bool* stop_succeeded) {
   auto first = co_await source->Next();
   if (!first.has_value() || !first->has_value()) {
-    loop->Quit();
+    loop->RequestStop();
     co_return;
   }
   (*payloads)[0] = BytesToString(**first);
@@ -123,7 +123,7 @@ DetachedTask ReceiveTwo(
 
   auto second = co_await source->Next();
   if (!second.has_value() || !second->has_value()) {
-    loop->Quit();
+    loop->RequestStop();
     co_return;
   }
   (*payloads)[1] = BytesToString(**second);
@@ -131,7 +131,7 @@ DetachedTask ReceiveTwo(
 
   auto stopped = co_await source->Stop();
   *stop_succeeded = stopped.has_value();
-  loop->Quit();
+  loop->RequestStop();
 }
 
 DetachedTask HoldLeaseThenStop(
@@ -142,7 +142,7 @@ DetachedTask HoldLeaseThenStop(
     bool* stop_succeeded) {
   auto received = co_await source->Next();
   if (!received.has_value() || !received->has_value()) {
-    loop->Quit();
+    loop->RequestStop();
     co_return;
   }
   held->emplace(std::move(**received));
@@ -150,7 +150,7 @@ DetachedTask HoldLeaseThenStop(
   *stop_started = true;
   auto stopped = co_await source->Stop();
   *stop_succeeded = stopped.has_value();
-  loop->Quit();
+  loop->RequestStop();
 }
 
 bool CheckImmediateReceive() {
@@ -184,7 +184,7 @@ bool CheckImmediateReceive() {
       loop,
       ReceiveOne(&source, &loop, &result, &payload, &received_event,
                  &stop_succeeded));
-  loop.Loop();
+  loop.Run();
 
   ::close(fds[1]);
   ::close(fds[0]);
@@ -221,7 +221,7 @@ bool CheckPendingReceive() {
     constexpr std::string_view kPayload = "reactor-pending";
     (void)::send(sender, kPayload.data(), kPayload.size(), MSG_NOSIGNAL);
   });
-  loop.Loop();
+  loop.Run();
 
   ::close(fds[1]);
   ::close(fds[0]);
@@ -258,7 +258,7 @@ bool CheckEof() {
       loop,
       ReceiveOne(&source, &loop, &result, &payload, &received_event,
                  &stop_succeeded));
-  loop.Loop();
+  loop.Run();
 
   ::close(fds[0]);
   return Check(result.has_value(), "EOF receive did not finish") &&
@@ -299,7 +299,7 @@ bool CheckQueuedEvents() {
 
   coropact::coro::SpawnDetach(
       loop, ReceiveTwo(&source, &loop, fds[1], &payloads, &stop_succeeded));
-  loop.Loop();
+  loop.Run();
 
   ::close(fds[1]);
   ::close(fds[0]);
@@ -338,7 +338,7 @@ bool CheckStopWaitsForLease() {
       loop,
       HoldLeaseThenStop(&source, &loop, &held, &stop_started, &stop_succeeded));
   loop.RunAfter(0.001, [&held] { held.reset(); });
-  loop.Loop();
+  loop.Run();
 
   ::close(fds[1]);
   ::close(fds[0]);
@@ -368,7 +368,7 @@ bool CheckStopWakesPendingNext() {
   loop.RunAfter(0.0, [&] {
     coropact::coro::SpawnDetach(loop, StopOnly(&source, &stop_succeeded));
   });
-  loop.Loop();
+  loop.Run();
 
   ::close(fds[1]);
   ::close(fds[0]);

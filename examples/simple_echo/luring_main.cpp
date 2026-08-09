@@ -59,6 +59,6 @@ int main() {
   coro::SpawnDetach(loop, simple_echo::AcceptLoop(listener, loop));
 
   std::println(std::cout, "simple echo (Luring) listening on 127.0.0.1:{}", kPort);
-  loop.Loop(std::stop_token{});
+  loop.Run(std::stop_token{});
   return 0;
 }

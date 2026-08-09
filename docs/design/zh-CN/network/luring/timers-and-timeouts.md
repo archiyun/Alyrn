@@ -36,9 +36,9 @@ read 和 timeout 可能按任意顺序产生 CQE。业务协程只能恢复一�
 
 ## loop 停止
 
-停止 loop 时，timer 和网络 operation 都经过 completion/cancel drain。测试不能用“调用
-`Quit()` 后立刻析构 loop”替代停止协议；应等待 loop 观察到 quit、收割 pending CQE，并确认
-`IsDrained()`。
+`RequestStop()` 会让 owner loop 进入取消与 completion drain，不能替代应用资源的 `Close()`。
+测试不能把“调用 `RequestStop()`”等同于“所有对象已经析构”：只有 pending CQE 和 ready work
+收敛后 loop 才会进入 `Stopped`；fd、BufferLease 和 coroutine owner 仍必须遵循各自的释放协议。
 
 ## 测试观察点
 

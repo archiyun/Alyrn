@@ -18,6 +18,7 @@
 #include "coropact/base/current_thread.h"
 #include "coropact/base/error.h"
 #include "coropact/base/try.h"
+#include "coropact/backend/loop.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/work.h"
 #include "coropact/luring/detail/mailbox.h"
@@ -51,7 +52,7 @@ public:
   explicit LUringLoop(std::pmr::memory_resource* frame_resource = nullptr);
 
   // Initializes the underlying io_uring instance.
-  // Must be called from the loop thread before Loop().
+  // Must be called from the loop thread before Run().
   [[nodiscard]]
   base::Result<void> Init(const LUringOptions& options) noexcept;
 
@@ -62,12 +63,20 @@ public:
     return initialized_;
   }
 
-  // Runs the event loop until cancellation or Quit().
-  void Loop(std::stop_token token) noexcept;
+  // Runs the dispatcher until RequestStop() or token cancellation. Run() is
+  // owner-thread-only. Once stopping begins, it cancels and drains all
+  // submitted ring operations before transitioning to Stopped. Application
+  // objects still own descriptor destruction and their final Close() calls.
+  void Run(std::stop_token token = {}) noexcept;
 
-  // Requests the event loop to exit.
-  // This function may be called from another thread.
-  void Quit() noexcept;
+  // Requests dispatcher shutdown. This function is thread-safe, idempotent,
+  // and wakes a blocked ring wait. It does not itself release user resources.
+  void RequestStop() noexcept;
+
+  [[nodiscard]]
+  backend::LoopState State() const noexcept {
+    return state_.load(std::memory_order_acquire);
+  }
 
   [[nodiscard]]
   bool IsInLoopThread() const noexcept {
@@ -169,6 +178,11 @@ private:
     if (op == nullptr) {
       return std::unexpected(base::MakeErrno(EINVAL));
     }
+    const backend::LoopState state = State();
+    if ((state == backend::LoopState::kStopping || state == backend::LoopState::kStopped) &&
+        op != &cancel_all_op_ && op != &wake_op_) {
+      return std::unexpected(base::MakeErrno(ECANCELED));
+    }
 
 #if defined(COROPACT_ENABLE_TEST_HOOKS)
     if (test_submit_failures_ != 0) {
@@ -240,6 +254,7 @@ private:
   [[nodiscard]]
   base::Result<std::size_t> WaitCompletionsFor(std::chrono::nanoseconds timeout) noexcept;
 
+  void DrainStoppedOperations() noexcept;
   void HandleCqe(io_uring_cqe* cqe) noexcept;
   void HandleMailbox() noexcept;
 
@@ -296,8 +311,8 @@ private:
   void DrainWakeFd() noexcept;
   void Wake() noexcept;
 
-  // Cross-thread exit request observed by the event loop.
-  std::atomic_bool quit_{false};
+  // Cross-thread lifecycle state observed by the event loop.
+  std::atomic<backend::LoopState> state_{backend::LoopState::kCreated};
 
   detail::LUringMailbox mailbox_;
   detail::LUringTimerQueue timers_;

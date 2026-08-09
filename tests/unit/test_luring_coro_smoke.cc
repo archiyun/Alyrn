@@ -2,12 +2,17 @@
 // SPDX-License-Identifier: MIT
 
 #include <liburing.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
+#include <array>
+#include <chrono>
 #include <coroutine>
 #include <expected>
 #include <iostream>
 #include <optional>
 #include <system_error>
+#include <thread>
 #include <utility>
 
 #include "coropact/base/error.h"
@@ -18,6 +23,8 @@
 #include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/detail/op.h"
 #include "coropact/luring/options.h"
+#include "coropact/luring/stream.h"
+#include "coropact/io/loop.h"
 
 namespace {
 
@@ -137,10 +144,103 @@ bool CheckNopResumesCoroutine() {
          Check(resumed_with_scheduler, "coroutine resumed without current scheduler");
 }
 
+bool CheckCrossThreadRequestStopWakesRing() {
+  coropact::luring::LUringLoop loop;
+  coropact::luring::LUringOptions options;
+  options.entries = 8;
+
+  auto init = loop.Init(options);
+  if (!init.has_value()) {
+    if (IsEnvironmentSkip(init.error())) {
+      std::cout << "SKIP: io_uring unavailable: " << init.error().message() << '\n';
+      return true;
+    }
+    std::cout << "FAIL: LUringLoop init failed: " << init.error().message() << '\n';
+    return false;
+  }
+
+  std::jthread stopper([&loop] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    loop.RequestStop();
+  });
+
+  const auto start = std::chrono::steady_clock::now();
+  loop.Run();
+  stopper.join();
+  const auto elapsed = std::chrono::steady_clock::now() - start;
+
+  return Check(loop.State() == coropact::io::LoopState::kStopped,
+               "LUringLoop should reach stopped after RequestStop") &&
+         Check(elapsed < std::chrono::seconds(1),
+               "RequestStop should wake the io_uring wait promptly");
+}
+
+coropact::coro::DetachedTask AwaitPendingRead(
+    coropact::luring::LUringStream* stream,
+    std::array<std::byte, 16>* buffer,
+    std::optional<coropact::base::Result<std::size_t>>* result,
+    bool* resumed_with_scheduler) {
+  auto read = co_await stream->ReadSome(*buffer);
+  *resumed_with_scheduler = coropact::coro::Scheduler::Current() == stream->Loop();
+  result->emplace(std::move(read));
+}
+
+bool CheckLoopStopDrainsPendingRead() {
+  int fds[2] = {-1, -1};
+  if (::socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, fds) != 0) {
+    std::cout << "FAIL: socketpair failed\n";
+    return false;
+  }
+
+  coropact::luring::LUringLoop loop;
+  coropact::luring::LUringOptions options;
+  options.entries = 8;
+
+  auto init = loop.Init(options);
+  if (!init.has_value()) {
+    ::close(fds[0]);
+    ::close(fds[1]);
+    if (IsEnvironmentSkip(init.error())) {
+      std::cout << "SKIP: io_uring unavailable: " << init.error().message() << '\n';
+      return true;
+    }
+    std::cout << "FAIL: LUringLoop init failed: " << init.error().message() << '\n';
+    return false;
+  }
+
+  coropact::luring::LUringStream stream(&loop, fds[0], coropact::net::Endpoint(0));
+  std::array<std::byte, 16> buffer{};
+  std::optional<coropact::base::Result<std::size_t>> result;
+  bool resumed_with_scheduler = false;
+  coropact::coro::SpawnDetach(
+      loop, AwaitPendingRead(&stream, &buffer, &result, &resumed_with_scheduler));
+
+  std::jthread stopper([&loop] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    loop.RequestStop();
+  });
+  loop.Run();
+  stopper.join();
+  ::close(fds[1]);
+
+  return Check(loop.State() == coropact::io::LoopState::kStopped,
+               "stopped loop did not report kStopped") &&
+         Check(coropact::luring::detail::LoopAccess::IsDrained(loop),
+               "stopped loop retained pending ring work") &&
+         Check(result.has_value(), "stopped loop did not resume the pending read") &&
+         Check(!result->has_value(), "stopped loop unexpectedly completed the read") &&
+         Check(result->error() == std::errc::operation_canceled,
+               "stopped loop did not cancel the pending read") &&
+         Check(resumed_with_scheduler,
+               "stopped loop resumed the read without scheduler affinity");
+}
+
 }  // namespace
 
 int main() {
   if (!CheckNopResumesCoroutine()) return 1;
+  if (!CheckCrossThreadRequestStopWakesRing()) return 1;
+  if (!CheckLoopStopDrainsPendingRead()) return 1;
   std::cout << "luring coro smoke: PASS\n";
   return 0;
 }
