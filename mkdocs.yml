@@ -8,8 +8,8 @@ theme:
     name: material
     language: zh
     font:
-        text: Ubuntu Mono
-        code: Ubuntu Mono
+        text: Noto Sans SC
+        code: JetBrains Mono
     palette:
         - media: "(prefers-color-scheme: light)"
           scheme: default
@@ -26,9 +26,14 @@ theme:
         - navigation.sections
         - navigation.indexes
         - navigation.top
+        - navigation.footer
+        - navigation.tracking
         - search.suggest
         - search.highlight
+        - search.share
         - content.code.copy
+        - content.code.annotate
+        - toc.follow
 
 extra_css:
     - stylesheets/extra.css
@@ -44,22 +49,47 @@ markdown_extensions:
     - pymdownx.superfences
 
 nav:
-    - 首页: index.md
-    - 设计:
-          - 网络库:
-                - 网络库概览: design/zh-CN/network/index.md
-                - luring:
-                      - 功能说明: design/zh-CN/network/luring/index.md
-                      - operation 生命周期: design/zh-CN/network/luring/operation-lifecycle.md
-                      - loop、ring 与 worker: design/zh-CN/network/luring/loop-and-workers.md
-                      - stream 操作: design/zh-CN/network/luring/stream.md
-                      - listener 与 AcceptSource: design/zh-CN/network/luring/listener-and-accept.md
-                      - multishot recv 与 provided buffer: design/zh-CN/network/luring/recv-source.md
-                      - SendZeroCopy: design/zh-CN/network/luring/zero-copy-send.md
-                      - timer、超时与停止: design/zh-CN/network/luring/timers-and-timeouts.md
-                      - 注册资源的边界: design/zh-CN/network/luring/registered-resources.md
-                      - 跨 worker mailbox: design/zh-CN/network/luring/cross-worker-mailbox.md
-          - 数据结构: design/zh-CN/datastructure/index.md
-    - 基准:
-          - 网络库统一 HTTP 压测: benchmark/network-libraries.md
-          - luring 与 Reactor 对比: benchmark/luring-reactor-comparison-20260802.md
+    - 开始:
+          - 概览: index.md
+          - 子系统边界: SUBSYSTEMS.md
+          - 构建与安装: packaging.md
+    - 架构:
+          - 协程与调度:
+                - 协程分层: adr/0008-coroutine-layering.md
+                - 后端无关 I/O contract: adr/0009-backend-neutral-io-contract.md
+          - 网络语义:
+                - 概览: design/zh-CN/network/index.md
+                - AsyncStream / AsyncListener 契约: design/zh-CN/network/async-stream-contract.md
+                - AcceptSource 契约: design/zh-CN/network/accept-source-contract.md
+                - 生命周期统一与 happens-before: design/zh-CN/network/lamport-hot-swap-runtime.md
+          - 形式模型:
+                - 阅读指南: design/zh-CN/network/formal/index.md
+    - 后端:
+          - Reactor / epoll:
+                - 概览: design/zh-CN/network/reactor/index.md
+                - EventLoop、readiness 与取消/关闭: design/zh-CN/network/reactor/loop-and-cancellation.md
+          - luring / io_uring:
+                - 概览: design/zh-CN/network/luring/index.md
+                - operation 生命周期: design/zh-CN/network/luring/operation-lifecycle.md
+                - loop、ring 与 worker: design/zh-CN/network/luring/loop-and-workers.md
+                - stream 操作: design/zh-CN/network/luring/stream.md
+                - listener 与 AcceptSource: design/zh-CN/network/luring/listener-and-accept.md
+                - multishot recv 与 provided buffer: design/zh-CN/network/luring/recv-source.md
+                - SendZeroCopy: design/zh-CN/network/luring/zero-copy-send.md
+                - timer、超时与停止: design/zh-CN/network/luring/timers-and-timeouts.md
+                - 注册资源的边界: design/zh-CN/network/luring/registered-resources.md
+                - 跨 worker mailbox: design/zh-CN/network/luring/cross-worker-mailbox.md
+                - operation 语义矩阵: design/zh-CN/network/luring-operation-matrix.md
+    - 基础模块:
+          - 数据结构:
+                - 概览: design/zh-CN/datastructure/index.md
+                - Intrusive 模型与契约: design/zh-CN/datastructure/intrusive-model.md
+          - ADR:
+                - intrusive rbtree timer: adr/0001-intrusive-rbtree-timer.md
+                - intrusive quad heap: adr/0003-intrusive-quad-heap.md
+    - 验证与发布:
+          - 基准:
+                - 网络库统一 HTTP 压测: benchmark/network-libraries.md
+                - luring 与 Reactor 对比: benchmark/luring-reactor-comparison-20260802.md
+          - 发布记录:
+                - v0.1.0: releases/v0.1.0.md
