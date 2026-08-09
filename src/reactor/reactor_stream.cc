@@ -21,8 +21,12 @@
 #include "coropact/base/check.h"
 #include "coropact/base/error.h"
 #include "coropact/net/net_utils.h"
+#include "coropact/reactor/detail/loop_access.h"
 
 namespace coropact::reactor {
+
+using detail::LoopAccess;
+
 namespace {
 
 [[nodiscard]]
@@ -167,6 +171,12 @@ base::Error ErrorFromSocketErrorEvent(int fd) noexcept {
 
 bool ReactorStream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   stream_->RequireOwnerLoop();
+  if (stream_->loop_->State() == backend::LoopState::kStopping ||
+      stream_->loop_->State() == backend::LoopState::kStopped) {
+    result_.SetError(base::MakeErrno(ECANCELED));
+    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+    return false;
+  }
   if (stream_->closed_ || stream_->socket_.fd() < 0) {
     result_.SetError(base::MakeErrno(EBADF));
     COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
@@ -238,6 +248,12 @@ ReactorStream::BufferReadAwaiter::BufferReadAwaiter(ReactorStream& stream, net::
 bool ReactorStream::BufferReadAwaiter::await_suspend(
     std::coroutine_handle<> continuation) noexcept {
   stream_->RequireOwnerLoop();
+  if (stream_->loop_->State() == backend::LoopState::kStopping ||
+      stream_->loop_->State() == backend::LoopState::kStopped) {
+    result_.SetError(base::MakeErrno(ECANCELED));
+    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+    return false;
+  }
   if (stream_->closed_ || stream_->socket_.fd() < 0) {
     result_.SetError(base::MakeErrno(EBADF));
     COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
@@ -334,6 +350,12 @@ ReactorStream::ReadIntoAwaiter::ReadIntoAwaiter(ReactorStream& stream, net::Buff
 
 bool ReactorStream::ReadIntoAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   stream_->RequireOwnerLoop();
+  if (stream_->loop_->State() == backend::LoopState::kStopping ||
+      stream_->loop_->State() == backend::LoopState::kStopped) {
+    result_.SetError(base::MakeErrno(ECANCELED));
+    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+    return false;
+  }
   if (stream_->closed_ || stream_->socket_.fd() < 0) {
     result_.SetError(base::MakeErrno(EBADF));
     COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
@@ -422,6 +444,12 @@ void ReactorStream::ReadIntoAwaiter::FinishAttempt(base::Result<std::size_t> res
 
 bool ReactorStream::WriteSomeAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   stream_->RequireOwnerLoop();
+  if (stream_->loop_->State() == backend::LoopState::kStopping ||
+      stream_->loop_->State() == backend::LoopState::kStopped) {
+    result_.SetError(base::MakeErrno(ECANCELED));
+    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+    return false;
+  }
   if (stream_->closed_ || stream_->socket_.fd() < 0) {
     result_.SetError(base::MakeErrno(EBADF));
     COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
@@ -476,6 +504,12 @@ ReactorStream::WriteAllAwaiter ReactorStream::WriteAll(
 bool ReactorStream::WriteAllAwaiter::await_suspend(
     std::coroutine_handle<> continuation) noexcept {
   stream_->RequireOwnerLoop();
+  if (stream_->loop_->State() == backend::LoopState::kStopping ||
+      stream_->loop_->State() == backend::LoopState::kStopped) {
+    result_.SetError(base::MakeErrno(ECANCELED));
+    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+    return false;
+  }
   if (stream_->closed_ || stream_->socket_.fd() < 0) {
     result_.SetError(base::MakeErrno(EBADF));
     COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
@@ -557,6 +591,12 @@ ReactorStream::BufferWriteAwaiter::BufferWriteAwaiter(ReactorStream& stream,
 bool ReactorStream::BufferWriteAwaiter::await_suspend(
     std::coroutine_handle<> continuation) noexcept {
   stream_->RequireOwnerLoop();
+  if (stream_->loop_->State() == backend::LoopState::kStopping ||
+      stream_->loop_->State() == backend::LoopState::kStopped) {
+    result_.SetError(base::MakeErrno(ECANCELED));
+    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+    return false;
+  }
   if (stream_->closed_ || stream_->socket_.fd() < 0) {
     result_.SetError(base::MakeErrno(EBADF));
     COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
@@ -649,6 +689,7 @@ ReactorStream::ReactorStream(EventLoop* loop, int fd, net::Endpoint peer,
   // every keep-alive request; every ReadSome still probes the socket first.
   channel_.SetEdgeTriggered(options.trigger_mode == TriggerMode::kEdgeTriggered);
   BindChannelCallbacks();
+  LoopAccess::RegisterShutdownParticipant(*loop_, shutdown_participant_);
 }
 
 ReactorStream::ReactorStream(ReactorStream&& other) noexcept
@@ -660,6 +701,7 @@ ReactorStream::ReactorStream(ReactorStream&& other) noexcept
       pending_write_(nullptr),
       closed_(other.closed_) {
   BindChannelCallbacks();
+  LoopAccess::RegisterShutdownParticipant(*loop_, shutdown_participant_);
   other.closed_ = true;
 }
 
@@ -683,6 +725,7 @@ ReactorStream& ReactorStream::operator=(ReactorStream&& other) noexcept {
   pending_write_ = nullptr;
   closed_ = other.closed_;
   BindChannelCallbacks();
+  LoopAccess::RegisterShutdownParticipant(*loop_, shutdown_participant_);
   other.closed_ = true;
   return *this;
 }
@@ -694,6 +737,7 @@ ReactorStream::~ReactorStream() {
   RequireOwnerLoop();
   COROPACT_DCHECK(pending_read_ == nullptr, "ReactorStream destroyed with a pending read");
   COROPACT_DCHECK(pending_write_ == nullptr, "ReactorStream destroyed with a pending write");
+  LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
   DetachChannel();
 }
 
@@ -742,19 +786,7 @@ coro::Task<base::Result<void>> ReactorStream::Shutdown() {
 
 coro::Task<base::Result<void>> ReactorStream::Close() {
   RequireOwnerLoop();
-  if (closed_) {
-    co_return base::Result<void>{};
-  }
-
-  closed_ = true;
-  if (pending_read_ != nullptr) {
-    CompleteRead(std::unexpected(base::MakeErrno(ECANCELED)));
-  }
-  if (pending_write_ != nullptr) {
-    CompleteWrite(std::unexpected(base::MakeErrno(ECANCELED)));
-  }
-  DetachChannel();
-  socket_.Close();
+  CloseNow();
   co_return base::Result<void>{};
 }
 
@@ -875,6 +907,23 @@ void ReactorStream::CompleteWrite(base::Result<std::size_t> result) {
   }
 }
 
+void ReactorStream::CloseNow() noexcept {
+  COROPACT_DCHECK(loop_->IsInLoopThread(), "ReactorStream::CloseNow called from wrong thread");
+  if (closed_) {
+    return;
+  }
+
+  closed_ = true;
+  if (pending_read_ != nullptr) {
+    CompleteRead(std::unexpected(base::MakeErrno(ECANCELED)));
+  }
+  if (pending_write_ != nullptr) {
+    CompleteWrite(std::unexpected(base::MakeErrno(ECANCELED)));
+  }
+  DetachChannel();
+  socket_.Close();
+}
+
 void ReactorStream::DetachChannel() {
   COROPACT_DCHECK(loop_->IsInLoopThread(), "ReactorStream::DetachChannel called from wrong thread");
   if (!channel_.IsNoneEvent()) {
@@ -923,6 +972,7 @@ void ReactorStream::ResetForMove() noexcept {
   COROPACT_CHECK(loop_->IsInLoopThread(), "ReactorStream move called from wrong EventLoop thread");
   COROPACT_CHECK(pending_read_ == nullptr, "ReactorStream move destination has a pending read");
   COROPACT_CHECK(pending_write_ == nullptr, "ReactorStream move destination has a pending write");
+  LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
   DetachChannel();
   socket_.Close();
 }
@@ -937,8 +987,13 @@ EventLoop* ReactorStream::PrepareMove(ReactorStream& other) noexcept {
                  "ReactorStream cannot move with a pending write operation");
 
   other.DetachChannel();
+  LoopAccess::UnregisterShutdownParticipant(*other.loop_, other.shutdown_participant_);
   EventLoop* loop = std::exchange(other.loop_, nullptr);
   return loop;
+}
+
+void ReactorStream::DispatchLoopStop(void* context) noexcept {
+  static_cast<ReactorStream*>(context)->CloseNow();
 }
 
 }  // namespace coropact::reactor

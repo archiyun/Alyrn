@@ -174,6 +174,6 @@ int main() {
   std::cout << "reactor coro echo listening on 127.0.0.1:" << port << '\n';
   std::cout << "try: nc 127.0.0.1 " << port << '\n';
 
-  loop.Loop();
+  loop.Run();
   return 0;
 }

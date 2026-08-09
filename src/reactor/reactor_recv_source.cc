@@ -16,8 +16,11 @@
 #include "coropact/base/error.h"
 #include "coropact/operation/detail/completion_gate.h"
 #include "coropact/operation/detail/scheduler_continuation.h"
+#include "coropact/reactor/detail/loop_access.h"
 
 namespace coropact::reactor {
+
+using detail::LoopAccess;
 
 namespace {
 
@@ -207,6 +210,7 @@ ReactorRecvSource::ReactorRecvSource(
       storage_(std::move(storage)),
       available_buffers_(std::move(available_buffers)) {
   BindChannelCallbacks();
+  LoopAccess::RegisterShutdownParticipant(*loop_, shutdown_participant_);
 }
 
 ReactorRecvSource::~ReactorRecvSource() {
@@ -230,11 +234,12 @@ ReactorRecvSource::~ReactorRecvSource() {
   COROPACT_DCHECK(available_buffers_.size() == state_.Options().buffer_capacity,
                  "ReactorRecvSource destroyed with a missing buffer");
 
+  LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
   DetachChannel();
 }
 
 ReactorRecvSource::ReactorRecvSource(ReactorRecvSource&& other) noexcept
-    : loop_(std::exchange(other.loop_, nullptr)),
+    : loop_(other.loop_),
       fd_(std::exchange(other.fd_, -1)),
       state_(std::move(other.state_)),
       channel_(std::move(other.channel_)),
@@ -254,7 +259,10 @@ ReactorRecvSource::ReactorRecvSource(ReactorRecvSource&& other) noexcept
                  "ReactorRecvSource cannot move with queued events");
   COROPACT_CHECK(other.state_.OutstandingLeases() == 0,
                  "ReactorRecvSource cannot move with outstanding leases");
+  LoopAccess::UnregisterShutdownParticipant(*other.loop_, other.shutdown_participant_);
+  other.loop_ = nullptr;
   BindChannelCallbacks();
+  LoopAccess::RegisterShutdownParticipant(*loop_, shutdown_participant_);
 }
 
 ReactorRecvSource& ReactorRecvSource::operator=(ReactorRecvSource&& other) noexcept {
@@ -286,7 +294,11 @@ ReactorRecvSource& ReactorRecvSource::operator=(ReactorRecvSource&& other) noexc
   COROPACT_CHECK(other.state_.OutstandingLeases() == 0,
                  "ReactorRecvSource source has outstanding leases");
 
+  if (loop_ != nullptr) {
+    LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
+  }
   DetachChannel();
+  LoopAccess::UnregisterShutdownParticipant(*other.loop_, other.shutdown_participant_);
   loop_ = std::exchange(other.loop_, nullptr);
   fd_ = std::exchange(other.fd_, -1);
   state_ = std::move(other.state_);
@@ -296,6 +308,7 @@ ReactorRecvSource& ReactorRecvSource::operator=(ReactorRecvSource&& other) noexc
   storage_ = std::move(other.storage_);
   available_buffers_ = std::move(other.available_buffers_);
   BindChannelCallbacks();
+  LoopAccess::RegisterShutdownParticipant(*loop_, shutdown_participant_);
   return *this;
 }
 
@@ -540,6 +553,10 @@ void ReactorRecvSource::BindChannelCallbacks() noexcept {
       this);
 }
 
+void ReactorRecvSource::DispatchLoopStop(void* context) noexcept {
+  static_cast<ReactorRecvSource*>(context)->RequestBackendStop();
+}
+
 coro::Task<ReactorRecvSource::Result> ReactorRecvSource::Next() {
   if (loop_ == nullptr || fd_ < 0) {
     co_return std::unexpected(base::MakeErrno(EBADF));
@@ -552,6 +569,10 @@ coro::Task<ReactorRecvSource::Result> ReactorRecvSource::Next() {
   }
 
   if (state_.State() == net::detail::RecvSourceState::kIdle) {
+    if (loop_->State() == backend::LoopState::kStopping ||
+        loop_->State() == backend::LoopState::kStopped) {
+      co_return std::unexpected(base::MakeErrno(ECANCELED));
+    }
     auto started = Start();
     if (!started.has_value()) {
       co_return std::unexpected(started.error());

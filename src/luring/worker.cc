@@ -7,7 +7,6 @@
 
 #include <algorithm>
 #include <cerrno>
-#include <chrono>
 #include <expected>
 #include <optional>
 #include <stop_token>
@@ -80,46 +79,12 @@ coro::DetachedTask CloseListener(LUringListener* listener,
   result->emplace(co_await listener->Close());
 }
 
-void CloseListenerAndDrain(LUringLoop& loop, LUringListener& listener) noexcept {
+void CloseListenerAfterLoopDrain(LUringLoop& loop, LUringListener& listener) noexcept {
   std::optional<base::Result<void>> close_result;
   coro::SpawnDetach(loop, CloseListener(&listener, &close_result));
-
-  for (;;) {
-    LoopAccess::RunReady(loop);
-    if (close_result.has_value() && LoopAccess::IsDrained(loop)) {
-      break;
-    }
-
-    if (!close_result.has_value() && LoopAccess::IsDrained(loop)) {
-      break;
-    }
-
-    if (close_result.has_value()) {
-      auto cancelled = LoopAccess::CancelPendingOperations(loop);
-      if (!cancelled.has_value()) {
-        break;
-      }
-    }
-
-    if (LoopAccess::PendingSubmitCount(loop) == 0 && LoopAccess::InflightCount(loop) == 0) {
-      continue;
-    }
-
-    // Shutdown must keep revisiting ready work and cancellation state even if
-    // the kernel has not produced a CQE for this turn. A blocking wait can
-    // strand the drain loop behind a split-release notification (notably a
-    // send-zc notification) while the remaining cancellation work is ready
-    // to be observed by the next poll.
-    auto completed = LoopAccess::PollCompletions(loop);
-    if (!completed.has_value()) {
-      break;
-    }
-    if (*completed == 0) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-  }
-
   LoopAccess::RunReady(loop);
+  COROPACT_CHECK(close_result.has_value(),
+                 "LUringLoop drain left listener Close coroutine pending");
 }
 
 base::Result<void> SetCurrentThreadAffinity(unsigned cpu) noexcept {
@@ -226,8 +191,6 @@ void LUringWorker::WorkLoop(std::stop_token token) noexcept {
     }
   }
 
-  std::stop_callback on_stop{token, [&loop] { loop.Quit(); }};
-
   if (connection_callback_) {
     if (options_.accept_mode == AcceptMode::kMultishot) {
       coro::SpawnDetach(loop, MultishotAcceptLoop(context, &connection_callback_));
@@ -241,8 +204,8 @@ void LUringWorker::WorkLoop(std::stop_token token) noexcept {
   }
 
   PublishStart(base::Result<void>{});
-  loop.Loop(token);
-  CloseListenerAndDrain(loop, *listener);
+  loop.Run(token);
+  CloseListenerAfterLoopDrain(loop, *listener);
 
   if (exit_callback_) {
     try {

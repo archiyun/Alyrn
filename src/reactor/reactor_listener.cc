@@ -17,9 +17,13 @@
 #include "coropact/net/net_utils.h"
 #include "coropact/operation/detail/completion_gate.h"
 #include "coropact/operation/detail/scheduler_continuation.h"
+#include "coropact/reactor/detail/loop_access.h"
 #include "coropact/reactor/detail/result_state.h"
 
 namespace coropact::reactor {
+
+using detail::LoopAccess;
+
 namespace {
 
 bool IsWouldBlock(int err) noexcept { return err == EAGAIN || err == EWOULDBLOCK; }
@@ -82,6 +86,12 @@ public:
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     listener_->RequireOwnerLoop();
+    if (listener_->loop_->State() == backend::LoopState::kStopping ||
+        listener_->loop_->State() == backend::LoopState::kStopped) {
+      result_.SetError(base::MakeErrno(ECANCELED));
+      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+      return false;
+    }
     COROPACT_DCHECK(listener_->pending_accept_ == nullptr,
                     "AcceptAwaiter: only one pending accept is supported per listener");
 
@@ -283,6 +293,10 @@ coro::Task<ReactorAcceptSource::Result> ReactorAcceptSource::Next() {
   }
 
   if (state_.State() == net::detail::AcceptSourceState::kIdle) {
+    if (listener_->loop_->State() == backend::LoopState::kStopping ||
+        listener_->loop_->State() == backend::LoopState::kStopped) {
+      co_return std::unexpected(base::MakeErrno(ECANCELED));
+    }
     if (listener_->closed_) {
       state_.RequestStop();
       co_return Event{};
@@ -503,6 +517,7 @@ ReactorListener::ReactorListener(EventLoop* loop, const net::Endpoint& listen_ad
   socket_.Listen();
 
   BindChannelCallbacks();
+  LoopAccess::RegisterShutdownParticipant(*loop_, shutdown_participant_);
 }
 
 ReactorListener::ReactorListener(EventLoop* loop, net::Socket socket,
@@ -512,6 +527,7 @@ ReactorListener::ReactorListener(EventLoop* loop, net::Socket socket,
       channel_(loop_, socket_.fd()),
       stream_options_(stream_options) {
   BindChannelCallbacks();
+  LoopAccess::RegisterShutdownParticipant(*loop_, shutdown_participant_);
 }
 
 base::Result<ReactorListener> ReactorListener::Create(EventLoop* loop,
@@ -534,6 +550,7 @@ ReactorListener::ReactorListener(ReactorListener&& other) noexcept
       accept_source_(nullptr),
       closed_(other.closed_) {
   BindChannelCallbacks();
+  LoopAccess::RegisterShutdownParticipant(*loop_, shutdown_participant_);
   other.closed_ = true;
 }
 
@@ -557,6 +574,7 @@ ReactorListener& ReactorListener::operator=(ReactorListener&& other) noexcept {
   accept_source_ = nullptr;
   closed_ = other.closed_;
   BindChannelCallbacks();
+  LoopAccess::RegisterShutdownParticipant(*loop_, shutdown_participant_);
   other.closed_ = true;
   return *this;
 }
@@ -569,6 +587,7 @@ ReactorListener::~ReactorListener() {
   COROPACT_DCHECK(pending_accept_ == nullptr, "ReactorListener destroyed with a pending accept");
   COROPACT_DCHECK(accept_source_ == nullptr,
                   "ReactorListener destroyed with an active AcceptSource");
+  LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
   DetachChannel();
 }
 
@@ -586,6 +605,10 @@ coro::Task<base::Result<ReactorStream>> ReactorListener::Accept() {
 base::Result<ReactorAcceptSource> ReactorListener::AcceptSource(
     net::AcceptSourceOptions options) noexcept {
   RequireOwnerLoop();
+  if (loop_->State() == backend::LoopState::kStopping ||
+      loop_->State() == backend::LoopState::kStopped) {
+    return std::unexpected(base::MakeErrno(ECANCELED));
+  }
   if (closed_) {
     return std::unexpected(base::MakeErrno(EBADF));
   }
@@ -598,8 +621,14 @@ base::Result<ReactorAcceptSource> ReactorListener::AcceptSource(
 
 coro::Task<base::Result<void>> ReactorListener::Close() {
   RequireOwnerLoop();
+  CloseNow();
+  co_return base::Result<void>{};
+}
+
+void ReactorListener::CloseNow() noexcept {
+  COROPACT_DCHECK(loop_->IsInLoopThread(), "ReactorListener::CloseNow called from wrong thread");
   if (closed_) {
-    co_return base::Result<void>{};
+    return;
   }
 
   closed_ = true;
@@ -611,7 +640,6 @@ coro::Task<base::Result<void>> ReactorListener::Close() {
   }
   DetachChannel();
   socket_.Close();
-  co_return base::Result<void>{};
 }
 
 base::Result<net::Endpoint> ReactorListener::LocalAddress() const {
@@ -695,6 +723,7 @@ void ReactorListener::ResetForMove() noexcept {
                  "ReactorListener move destination has a pending accept");
   COROPACT_CHECK(accept_source_ == nullptr,
                  "ReactorListener move destination has an active AcceptSource");
+  LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
   DetachChannel();
   socket_.Close();
 }
@@ -709,9 +738,14 @@ EventLoop* ReactorListener::PrepareMove(ReactorListener& other) noexcept {
                  "ReactorListener cannot move with an active AcceptSource");
 
   other.DetachChannel();
+  LoopAccess::UnregisterShutdownParticipant(*other.loop_, other.shutdown_participant_);
   EventLoop* loop = other.loop_;
   other.loop_ = nullptr;
   return loop;
+}
+
+void ReactorListener::DispatchLoopStop(void* context) noexcept {
+  static_cast<ReactorListener*>(context)->CloseNow();
 }
 
 }  // namespace coropact::reactor
