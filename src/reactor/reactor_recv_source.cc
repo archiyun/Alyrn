@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "coropact/reactor/reactor_recv_source.h"
+#include "coropact/reactor/recv_source.h"
 
 #include <sys/socket.h>
 
@@ -517,7 +517,7 @@ void ReactorRecvSource::DetachChannel() noexcept {
   if (!channel_.IsNoneEvent()) {
     channel_.DisableAll();
   }
-  if (loop_->HasChannel(&channel_)) {
+  if (channel_.IsRegistered()) {
     channel_.Remove();
   }
 }

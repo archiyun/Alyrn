@@ -1,14 +1,14 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "coropact/reactor/event_loop.h"
-
 #include <algorithm>
 
 #include "coropact/base/check.h"
+#include "coropact/base/current_thread.h"
 #include "coropact/coro/scheduler.h"
-#include "coropact/reactor/channel.h"
-#include "coropact/reactor/poller.h"
-#include "coropact/reactor/timer_queue.h"
+#include "coropact/reactor/detail/channel.h"
+#include "coropact/reactor/detail/poller.h"
+#include "coropact/reactor/detail/timer_queue.h"
+#include "coropact/reactor/loop.h"
 #include "coropact/time/timer_id.h"
 
 namespace coropact::reactor {
@@ -23,8 +23,8 @@ thread_local EventLoop* t_loop_in_this_thread = nullptr;
 EventLoop::EventLoop(std::pmr::memory_resource* frame_resource)
     : Scheduler(frame_resource),
       thread_id_(base::tid()),
-      poller_(Poller::NewDefaultPoller(this)),
-      timer_queue_(std::make_unique<TimerQueue>(this)) {
+      poller_(detail::Poller::NewDefaultPoller(this)),
+      timer_queue_(std::make_unique<detail::TimerQueue>(this)) {
   COROPACT_DCHECK(t_loop_in_this_thread == nullptr,
                   "EventLoop: only one EventLoop may exist per thread");
   t_loop_in_this_thread = this;
@@ -61,7 +61,7 @@ void EventLoop::Loop(std::stop_token token) {
         HasImmediateWork() ? 0 : (token.stop_possible() ? std::min(kPollTimeMs, 10) : kPollTimeMs);
     poller_->Poll(timeout_ms, &active_channels_);
 
-    for (Channel* channel : active_channels_) {
+    for (detail::Channel* channel : active_channels_) {
       channel->HandleEvent();
     }
   }
@@ -93,17 +93,17 @@ void EventLoop::RunPending() {
   }
 }
 
-void EventLoop::UpdateChannel(Channel* channel) {
+void EventLoop::UpdateChannel(detail::Channel* channel) {
   COROPACT_DCHECK(IsInLoopThread(), "EventLoop::UpdateChannel called from wrong thread");
   poller_->UpdateChannel(channel);
 }
 
-void EventLoop::RemoveChannel(Channel* channel) {
+void EventLoop::RemoveChannel(detail::Channel* channel) {
   COROPACT_DCHECK(IsInLoopThread(), "EventLoop::RemoveChannel called from wrong thread");
   poller_->RemoveChannel(channel);
 }
 
-bool EventLoop::HasChannel(Channel* channel) const {
+bool EventLoop::HasChannel(detail::Channel* channel) const {
   COROPACT_DCHECK(IsInLoopThread(), "EventLoop::HasChannel called from wrong thread");
   return poller_->HasChannel(channel);
 }

@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "coropact/reactor/reactor_stream.h"
+#include "coropact/reactor/stream.h"
 
 #include <sys/socket.h>
 #include <sys/uio.h>
@@ -880,7 +880,7 @@ void ReactorStream::DetachChannel() {
   if (!channel_.IsNoneEvent()) {
     channel_.DisableAll();
   }
-  if (loop_->HasChannel(&channel_)) {
+  if (channel_.IsRegistered()) {
     channel_.Remove();
   }
 }

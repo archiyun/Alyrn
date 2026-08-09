@@ -35,9 +35,9 @@
 #include "coropact/io/async_stream.h"
 #include "coropact/io/stream_algorithms.h"
 #include "coropact/net/endpoint.h"
-#include "coropact/reactor/event_loop.h"
-#include "coropact/reactor/reactor_listener.h"
-#include "coropact/reactor/reactor_stream.h"
+#include "coropact/reactor/listener.h"
+#include "coropact/reactor/loop.h"
+#include "coropact/reactor/stream.h"
 
 namespace {
 

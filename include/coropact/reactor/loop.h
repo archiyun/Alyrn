@@ -9,16 +9,17 @@
 #include <stop_token>
 #include <vector>
 
-#include "coropact/base/current_thread.h"
 #include "coropact/coro/scheduler.h"
-#include "coropact/reactor/channel.h"
 #include "coropact/time/timer_id.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::reactor {
 
+namespace detail {
+class Channel;
 class Poller;
 class TimerQueue;
+}  // namespace detail
 
 // EventLoop is the core event dispatcher in the Reactor model.
 //
@@ -53,12 +54,6 @@ public:
   // used by worker shutdown after the stop token has ended the poll loop.
   void RunPending();
 
-  // The following Channel-management methods must be called from the owning
-  // loop thread. They mutate the Poller's channel set and are not thread-safe.
-  void UpdateChannel(Channel* channel);
-  void RemoveChannel(Channel* channel);
-  bool HasChannel(Channel* channel) const;
-
   // Returns true if the caller is running in the owning loop thread.
   [[nodiscard]]
   bool IsInLoopThread() const;
@@ -76,6 +71,14 @@ public:
   void Cancel(time::TimerId id);
 
 private:
+  friend class detail::Channel;
+
+  // Channel registration belongs to the implementation of EventLoop. These
+  // methods are intentionally unavailable to Reactor callers.
+  void UpdateChannel(detail::Channel* channel);
+  void RemoveChannel(detail::Channel* channel);
+  bool HasChannel(detail::Channel* channel) const;
+
   // Runs all work submitted through Schedule().
   void DoPendingWork();
 
@@ -86,12 +89,12 @@ private:
   bool quit_{false};
 
   const int thread_id_;
-  std::unique_ptr<Poller> poller_;
-  std::vector<Channel*> active_channels_;
+  std::unique_ptr<detail::Poller> poller_;
+  std::vector<detail::Channel*> active_channels_;
 
   coro::WorkQueue pending_work_;
 
-  std::unique_ptr<TimerQueue> timer_queue_;
+  std::unique_ptr<detail::TimerQueue> timer_queue_;
 };
 
 }  // namespace coropact::reactor

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 
-#include "coropact/luring/timer_queue.h"
+#include "coropact/luring/detail/timer_queue.h"
 
 #include <liburing.h>
 
@@ -12,10 +12,11 @@
 #include <cstdint>
 #include <utility>
 
+#include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/loop.h"
 #include "coropact/time/timestamp.h"
 
-namespace coropact::luring {
+namespace coropact::luring::detail {
 
 namespace {
 
@@ -91,8 +92,6 @@ void LUringTimerQueue::OnControlComplete(LUringOp* op) noexcept {
   ControlOpHook::OwnerFrom(op)->HandleControlComplete(op);
 }
 
-namespace detail {
-
 void DispatchTimerDriverComplete(LUringOp* op) noexcept {
   LUringTimerQueue::OnDriverComplete(op);
 }
@@ -100,8 +99,6 @@ void DispatchTimerDriverComplete(LUringOp* op) noexcept {
 void DispatchTimerControlComplete(LUringOp* op) noexcept {
   LUringTimerQueue::OnControlComplete(op);
 }
-
-}  // namespace detail
 
 void LUringTimerQueue::HandleDriverComplete(LUringOp*) noexcept {
   driver_armed_ = false;
@@ -167,7 +164,7 @@ void LUringTimerQueue::Arm(time::Timestamp deadline) noexcept {
   driver_timespec_ = ToKernelTimespec(deadline);
     DriverOp()->BeginNextRequest();
 
-  auto result = loop_->SubmitOp(DriverOp(), [this](io_uring_sqe* sqe) noexcept {
+  auto result = LoopAccess::SubmitOp(*loop_, DriverOp(), [this](io_uring_sqe* sqe) noexcept {
     io_uring_prep_timeout(sqe, &driver_timespec_, 0, IORING_TIMEOUT_ABS | IORING_TIMEOUT_REALTIME);
   });
   if (!result.has_value()) return;
@@ -181,7 +178,7 @@ void LUringTimerQueue::ArmFallback(time::Timestamp deadline) noexcept {
     ControlOp()->BeginNextRequest();
   control_is_fallback_ = true;
 
-  auto result = loop_->SubmitOp(ControlOp(), [this](io_uring_sqe* sqe) noexcept {
+  auto result = LoopAccess::SubmitOp(*loop_, ControlOp(), [this](io_uring_sqe* sqe) noexcept {
     io_uring_prep_timeout(sqe, &fallback_timespec_, 0,
                           IORING_TIMEOUT_ABS | IORING_TIMEOUT_REALTIME);
   });
@@ -199,7 +196,7 @@ void LUringTimerQueue::Update(time::Timestamp deadline) noexcept {
     ControlOp()->BeginNextRequest();
   control_is_fallback_ = false;
 
-    auto result = loop_->SubmitOp(ControlOp(), [this](io_uring_sqe* sqe) noexcept {
+    auto result = LoopAccess::SubmitOp(*loop_, ControlOp(), [this](io_uring_sqe* sqe) noexcept {
     io_uring_prep_timeout_update(sqe, &update_timespec_,
                                  reinterpret_cast<std::uint64_t>(DriverOp()),
                                  IORING_TIMEOUT_ABS | IORING_TIMEOUT_REALTIME);
@@ -207,4 +204,4 @@ void LUringTimerQueue::Update(time::Timestamp deadline) noexcept {
   if (result.has_value()) control_pending_ = true;
 }
 
-}  // namespace coropact::luring
+}  // namespace coropact::luring::detail

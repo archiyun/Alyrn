@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "coropact/reactor/reactor_worker_group.h"
+#include "coropact/reactor/detail/reactor_worker_group.h"
 
 #include <cerrno>
 #include <expected>
@@ -9,7 +9,7 @@
 
 #include "coropact/base/error.h"
 
-namespace coropact::reactor {
+namespace coropact::reactor::detail {
 
 ReactorWorkerGroup::ReactorWorkerGroup(net::Endpoint listen_addr, ReactorWorkerGroupOptions options,
                                        ThreadInitCallback init_callback,
@@ -66,4 +66,4 @@ void ReactorWorkerGroup::Stop() noexcept {
   started_ = false;
 }
 
-}  // namespace coropact::reactor
+}  // namespace coropact::reactor::detail

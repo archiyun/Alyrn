@@ -20,10 +20,11 @@
 #include "coropact/net/socket.h"
 #include "coropact/operation/detail/completion_gate.h"
 #include "coropact/operation/detail/scheduler_continuation.h"
-#include "coropact/reactor/channel.h"
+#include "coropact/reactor/detail/channel.h"
 #include "coropact/reactor/detail/op_hook.h"
 #include "coropact/reactor/detail/result_state.h"
-#include "coropact/reactor/event_loop.h"
+#include "coropact/reactor/loop.h"
+#include "coropact/reactor/options.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::reactor {
@@ -120,7 +121,7 @@ private:
 
   EventLoop* loop_;
   net::Socket socket_;
-  Channel channel_;
+  detail::Channel channel_;
   net::Endpoint peer_;
   enum class PendingReadKind : std::uint8_t {
     kNone,

@@ -20,6 +20,7 @@
 #include "coropact/coro/detached_task.h"
 #include "coropact/coro/spawn.h"
 #include "coropact/luring/loop.h"
+#include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/options.h"
 #include "coropact/luring/recv_source.h"
 #include "coropact/luring/timer.h"
@@ -136,13 +137,13 @@ LoopInitStatus InitLoop(
 template <typename Predicate>
 bool PumpUntil(LUringLoop& loop, Predicate&& predicate, int max_iterations = 64) {
   for (int i = 0; i < max_iterations && !predicate(); ++i) {
-    auto completed = loop.WaitCompletions();
+    auto completed = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
     if (!completed.has_value()) {
       std::cout << "FAIL: waiting for CQE failed: "
                 << completed.error().message() << '\n';
       return false;
     }
-    loop.RunReady();
+    coropact::luring::detail::LoopAccess::RunReady(loop);
   }
   return predicate();
 }
@@ -313,7 +314,7 @@ bool CheckRecvAndLease() {
 
   Observation observation;
   coropact::coro::SpawnDetach(loop, ReceiveOne(&source, &observation));
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   constexpr std::string_view kPayload = "provided-buffer-recv";
   const auto sent = ::send(sender.Get(), kPayload.data(), kPayload.size(), MSG_NOSIGNAL);
@@ -387,7 +388,7 @@ bool CheckSharedBufferPool() {
       loop, ReceiveOne(&first_source, &first_observation));
   coropact::coro::SpawnDetach(
       loop, ReceiveOne(&second_source, &second_observation));
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   constexpr std::string_view kFirstPayload = "shared-first";
   constexpr std::string_view kSecondPayload = "shared-second";
@@ -454,7 +455,7 @@ bool CheckEof() {
 
   Observation observation;
   coropact::coro::SpawnDetach(loop, ReceiveOne(&source, &observation));
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
   sender.Reset();
 
   if (!PumpUntil(loop, [&] { return observation.done || observation.error.has_value(); })) {
@@ -509,7 +510,7 @@ bool CheckQueuePauseThenRearm() {
   PauseResumeObservation observation;
   coropact::coro::SpawnDetach(
       loop, ReceivePauseThenResume(&source, &loop, &observation));
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   const auto send_payload = [&sender](std::string_view payload) -> bool {
     const auto sent = ::send(
@@ -611,7 +612,7 @@ bool CheckInitialSubmitFailure() {
   Observation observation;
   coropact::coro::SpawnDetach(
       loop, WaitForNext(&source, &observation));
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   if (!PumpUntil(loop, [&] { return observation.done; })) {
     return false;
@@ -654,13 +655,13 @@ bool CheckCancelSubmitFailure() {
   Observation next_observation;
   coropact::coro::SpawnDetach(
       loop, WaitForNext(&source, &next_observation));
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   loop.FailNextSubmissionsForTesting(1, EIO);
   StopObservation first_stop;
   coropact::coro::SpawnDetach(
       loop, StopSource(&source, &first_stop));
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   if (!PumpUntil(loop, [&] { return first_stop.done; })) {
     return false;
@@ -673,7 +674,7 @@ bool CheckCancelSubmitFailure() {
   StopObservation retry_stop;
   coropact::coro::SpawnDetach(
       loop, StopSource(&source, &retry_stop));
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   if (!PumpUntil(loop, [&] {
         return retry_stop.done && next_observation.done;

@@ -5,7 +5,6 @@
 #include <liburing/io_uring.h>
 
 #include <cassert>
-#include <cstddef>
 #include <cstdint>
 #include <limits>
 
@@ -13,7 +12,7 @@
 #include "coropact/coro/work.h"
 #include "coropact/luring/detail/reusable_completion_slot.h"
 
-namespace coropact::luring {
+namespace coropact::luring::detail {
 
 // Raw completion data passed from the loop to an operation-family handler.
 // Keeping the CQE result and flags together prevents a handler from silently
@@ -229,4 +228,4 @@ private:
 
 static_assert(sizeof(LUringOp) == 24);
 
-}  // namespace coropact::luring
+}  // namespace coropact::luring::detail

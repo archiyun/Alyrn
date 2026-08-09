@@ -22,8 +22,8 @@
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/task.h"
 #include "coropact/net/endpoint.h"
-#include "coropact/reactor/reactor_worker.h"
-#include "coropact/reactor/reactor_worker_group.h"
+#include "coropact/reactor/detail/reactor_worker.h"
+#include "coropact/reactor/detail/reactor_worker_group.h"
 
 namespace {
 
@@ -107,7 +107,7 @@ coropact::base::Result<int> ConnectClient(const coropact::net::Endpoint& address
 }
 
 coropact::coro::DetachedTask HandleConnection(
-    coropact::reactor::ReactorWorkerContext& context,
+    coropact::reactor::detail::ReactorWorkerContext& context,
     coropact::reactor::ReactorStream stream, WorkerState* state) {
   {
     std::lock_guard lock{state->mutex};
@@ -126,9 +126,9 @@ coropact::coro::DetachedTask HandleConnection(
 
 bool CheckWorkerAcceptAndStop() {
   WorkerState state;
-  coropact::reactor::ReactorWorker worker(
+  coropact::reactor::detail::ReactorWorker worker(
       0, coropact::net::Endpoint(0), {},
-      [&state](coropact::reactor::ReactorWorkerContext& context) {
+      [&state](coropact::reactor::detail::ReactorWorkerContext& context) {
         auto address = context.listener.LocalAddress();
         std::lock_guard lock{state.mutex};
         if (!address.has_value()) {
@@ -138,7 +138,7 @@ bool CheckWorkerAcceptAndStop() {
         }
         state.init_thread_is_worker = !context.loop.IsInLoopThread();
       },
-      [&state](coropact::reactor::ReactorWorkerContext& context, coropact::reactor::ReactorStream stream) {
+      [&state](coropact::reactor::detail::ReactorWorkerContext& context, coropact::reactor::ReactorStream stream) {
         return HandleConnection(context, std::move(stream), &state);
       });
 
@@ -186,12 +186,12 @@ bool CheckWorkerGroupStartAndStop() {
   }
 
   GroupState state;
-  coropact::reactor::ReactorWorkerGroupOptions options;
+  coropact::reactor::detail::ReactorWorkerGroupOptions options;
   options.worker_num = 2;
   options.worker_options.listener_options.reuse_port = true;
 
-  coropact::reactor::ReactorWorkerGroup group(coropact::net::Endpoint(*port), options,
-                                      [&state](coropact::reactor::ReactorWorkerContext& context) {
+  coropact::reactor::detail::ReactorWorkerGroup group(coropact::net::Endpoint(*port), options,
+                                      [&state](coropact::reactor::detail::ReactorWorkerContext& context) {
                                         auto address = context.listener.LocalAddress();
                                         std::lock_guard lock{state.mutex};
                                         if (address.has_value()) {
@@ -243,9 +243,9 @@ bool CheckWorkerGroupStartAndStop() {
 }
 
 bool CheckZeroWorkersRejected() {
-  coropact::reactor::ReactorWorkerGroupOptions options;
+  coropact::reactor::detail::ReactorWorkerGroupOptions options;
   options.worker_num = 0;
-  coropact::reactor::ReactorWorkerGroup group(coropact::net::Endpoint(0), options);
+  coropact::reactor::detail::ReactorWorkerGroup group(coropact::net::Endpoint(0), options);
   auto result = group.Start();
   return Check(!result.has_value(), "zero-worker group should be rejected") &&
          Check(result.error() == std::errc::invalid_argument,

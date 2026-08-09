@@ -17,8 +17,8 @@
 #include "coropact/coro/detached_task.h"
 #include "coropact/coro/spawn.h"
 #include "coropact/io/recv_source.h"
-#include "coropact/reactor/event_loop.h"
-#include "coropact/reactor/reactor_recv_source.h"
+#include "coropact/reactor/loop.h"
+#include "coropact/reactor/recv_source.h"
 
 namespace {
 

@@ -4,7 +4,7 @@
 
 #include <cstdint>
 
-#include "coropact/luring/op.h"
+#include "coropact/luring/detail/op.h"
 
 namespace coropact::luring::detail {
 

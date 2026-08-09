@@ -23,7 +23,6 @@ struct LUringOptions {
   // running and the SQ task-run hint used by liburing's peek path.
   bool setup_defer_taskrun{false};
 
-  bool setup_iopoll{false};  // don't set it true.
   bool setup_submit_all{true};
   bool setup_single_issuer{true};
 
@@ -67,7 +66,6 @@ struct LUringOptions {
   // RecvSource creation.
   std::size_t shared_buffer_capacity{64};
   std::size_t shared_buffer_size{16 * 1024};
-
 };
 
 }  // namespace coropact::luring

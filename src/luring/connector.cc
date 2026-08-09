@@ -11,7 +11,6 @@
 #include <cerrno>
 #include <coroutine>
 #include <expected>
-#include <string>
 #include <string_view>
 #include <utility>
 
@@ -20,13 +19,15 @@
 #include "coropact/base/try.h"
 #include "coropact/luring/detail/operation_submission.h"
 #include "coropact/luring/loop.h"
-#include "coropact/luring/op.h"
+#include "coropact/luring/detail/op.h"
 #include "coropact/luring/stream.h"
 #include "coropact/luring/timer.h"
 #include "coropact/net/endpoint.h"
 #include "coropact/net/net_utils.h"
 
 namespace coropact::luring {
+
+using namespace detail;
 
 namespace {
 
@@ -52,6 +53,7 @@ base::Result<void> SetNonBlocking(int fd) noexcept {
   return {};
 }
 
+// --- ConnectAwaiter ---
 class ConnectAwaiter : public detail::LUringOpHook<ConnectAwaiter> {
 public:
   using OpHook = detail::LUringOpHook<ConnectAwaiter>;
@@ -59,13 +61,16 @@ public:
   ConnectAwaiter(LUringLoop* loop, net::Endpoint peer) noexcept
       : OpHook(LUringOpKind::kConnect), loop_(loop), peer_(std::move(peer)) {}
 
-  ~ConnectAwaiter() {
+  ~ConnectAwaiter() noexcept {
     if (fd_ >= 0) {
       ::close(fd_);
     }
   }
 
-  bool await_ready() const noexcept { return false; }
+  [[nodiscard]]
+  bool await_ready() const noexcept {
+    return false;
+  }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     COROPACT_CHECK(loop_ != nullptr, "LUringConnector operation has no owner loop");
@@ -126,9 +131,8 @@ base::Result<LUringConnector> LUringConnector::Create(LUringLoop* loop) noexcept
   return LUringConnector{loop};
 }
 
-LUringConnector::LUringConnector(LUringConnector&& other) noexcept : loop_(other.loop_) {
-  other.loop_ = nullptr;
-}
+LUringConnector::LUringConnector(LUringConnector&& other) noexcept
+    : loop_(std::exchange(other.loop_, nullptr)) {}
 
 LUringConnector& LUringConnector::operator=(LUringConnector&& other) noexcept {
   if (this != &other) {

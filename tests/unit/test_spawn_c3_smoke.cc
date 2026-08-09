@@ -30,7 +30,7 @@
 #include "coropact/coro/spawn.h"
 #include "coropact/coro/task.h"
 #include "coropact/coro/work.h"
-#include "coropact/reactor/event_loop.h"
+#include "coropact/reactor/loop.h"
 
 using coropact::base::MakeErrno;
 using coropact::base::Result;

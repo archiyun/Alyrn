@@ -24,6 +24,7 @@
 #include "coropact/coro/task.h"
 #include "coropact/io/async_stream.h"
 #include "coropact/luring/loop.h"
+#include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/options.h"
 #include "coropact/luring/stream.h"
 #include "coropact/net/endpoint.h"
@@ -222,15 +223,15 @@ bool CheckReadSome() {
   coropact::coro::SpawnDetach(loop,
                               ReadOnce(&stream, &loop, buffer, &result, &resumed_with_scheduler));
 
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
-  auto completions = loop.WaitCompletions();
+  auto completions = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
   if (!completions.has_value()) {
     std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
     return false;
   }
 
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   std::string_view actual(reinterpret_cast<const char*>(buffer.data()), kPayload.size());
 
@@ -265,14 +266,14 @@ bool CheckOwnedReadIntoReturnsBuffer() {
   bool resumed_with_scheduler = false;
   coropact::coro::SpawnDetach(loop, ReadIntoOnce(&stream, &loop, coropact::net::Buffer(4), &outcome,
                                                  &resumed_with_scheduler));
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
-  auto completions = loop.WaitCompletions();
+  auto completions = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
   if (!completions.has_value()) {
     std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
     return false;
   }
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   if (!Check(*completions >= 1, "owned read did not produce a completion") ||
       !Check(outcome.has_value(), "owned read coroutine did not resume") ||
@@ -318,15 +319,15 @@ bool CheckTimedReadSuccessResumesOnce() {
   int resume_count = 0;
   coropact::coro::SpawnDetach(loop, ReadForOnce(&stream, &loop, buffer, std::chrono::seconds(1),
                                                 &result, &resumed_with_scheduler, &resume_count));
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   for (int i = 0; i < 4 && !result.has_value(); ++i) {
-    auto completions = loop.WaitCompletions();
+    auto completions = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
     if (!completions.has_value()) {
       std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
       return false;
     }
-    loop.RunReady();
+    coropact::luring::detail::LoopAccess::RunReady(loop);
   }
 
   std::string_view actual(reinterpret_cast<const char*>(buffer.data()), kPayload.size());
@@ -361,15 +362,15 @@ bool CheckTimedReadTimeoutResumesOnce() {
   coropact::coro::SpawnDetach(
       loop, ReadForOnce(&stream, &loop, buffer, std::chrono::milliseconds(1), &result,
                         &resumed_with_scheduler, &resume_count));
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   for (int i = 0; i < 4 && !result.has_value(); ++i) {
-    auto completions = loop.WaitCompletions();
+    auto completions = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
     if (!completions.has_value()) {
       std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
       return false;
     }
-    loop.RunReady();
+    coropact::luring::detail::LoopAccess::RunReady(loop);
   }
 
   return Check(result.has_value(), "timed read timeout coroutine did not resume") &&
@@ -405,7 +406,7 @@ bool CheckReadSubmitFailureRollsBack() {
   coropact::coro::SpawnDetach(
       loop, ReadOnce(&stream, &loop, buffer, &failed_result, &failed_with_scheduler,
                      &failed_resume_count));
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   if (!Check(failed_result.has_value(), "failed read coroutine did not finish") ||
       !Check(!failed_result->has_value(), "failed read unexpectedly succeeded") ||
@@ -426,14 +427,14 @@ bool CheckReadSubmitFailureRollsBack() {
   coropact::coro::SpawnDetach(
       loop, ReadOnce(&stream, &loop, buffer, &retried_result, &retried_with_scheduler,
                      &retried_resume_count));
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
-  auto completions = loop.WaitCompletions();
+  auto completions = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
   if (!completions.has_value()) {
     std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
     return false;
   }
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   return Check(retried_result.has_value(), "retried read coroutine did not finish") &&
          Check(retried_result->has_value(), "retried read returned an error") &&
@@ -466,7 +467,7 @@ bool CheckOwnedReadSubmitFailureReturnsBuffer() {
   coropact::coro::SpawnDetach(
       loop, ReadIntoOnce(&stream, &loop, coropact::net::Buffer(8), &failed_outcome,
                          &failed_with_scheduler, &failed_resume_count));
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   if (!Check(failed_outcome.has_value(), "failed owned read coroutine did not finish") ||
       !Check(!failed_outcome->result.has_value(), "failed owned read unexpectedly succeeded") ||
@@ -496,14 +497,14 @@ bool CheckOwnedReadSubmitFailureReturnsBuffer() {
   coropact::coro::SpawnDetach(
       loop, ReadIntoOnce(&stream, &loop, coropact::net::Buffer(8), &retried_outcome,
                          &retried_with_scheduler, &retried_resume_count));
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
-  auto completions = loop.WaitCompletions();
+  auto completions = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
   if (!completions.has_value()) {
     std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
     return false;
   }
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   return Check(retried_outcome.has_value(), "retried owned read did not finish") &&
          Check(retried_outcome->result.has_value(), "retried owned read returned an error") &&
@@ -539,7 +540,7 @@ bool CheckWriteSubmitFailureRollsBack() {
   coropact::coro::SpawnDetach(
       loop, WriteOnce(&stream, &loop, bytes, &failed_result, &failed_with_scheduler,
                       &failed_resume_count));
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   if (!Check(failed_result.has_value(), "failed write coroutine did not finish") ||
       !Check(!failed_result->has_value(), "failed write unexpectedly succeeded") ||
@@ -555,14 +556,14 @@ bool CheckWriteSubmitFailureRollsBack() {
   coropact::coro::SpawnDetach(
       loop, WriteOnce(&stream, &loop, bytes, &retried_result, &retried_with_scheduler,
                       &retried_resume_count));
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
-  auto completions = loop.WaitCompletions();
+  auto completions = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
   if (!completions.has_value()) {
     std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
     return false;
   }
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   std::array<char, 16> read_buffer{};
   const ssize_t received = ::read(peer.fd(), read_buffer.data(), read_buffer.size());
@@ -610,15 +611,15 @@ bool CheckTimedReadTimeoutSubmitFailureResumesOnce() {
   coropact::coro::SpawnDetach(
       loop, ReadForOnce(&stream, &loop, buffer, std::chrono::seconds(1), &result,
                          &resumed_with_scheduler, &resume_count));
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   for (int i = 0; i < 4 && !result.has_value(); ++i) {
-    auto completions = loop.WaitCompletions();
+    auto completions = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
     if (!completions.has_value()) {
       std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
       return false;
     }
-    loop.RunReady();
+    coropact::luring::detail::LoopAccess::RunReady(loop);
   }
 
   std::string_view actual(reinterpret_cast<const char*>(buffer.data()), kPayload.size());
@@ -657,15 +658,15 @@ bool CheckWriteSome() {
   coropact::coro::SpawnDetach(loop,
                               WriteOnce(&stream, &loop, bytes, &result, &resumed_with_scheduler));
 
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
-  auto completions = loop.WaitCompletions();
+  auto completions = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
   if (!completions.has_value()) {
     std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
     return false;
   }
 
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   std::array<char, 16> read_buffer{};
   ssize_t n = ::read(peer.fd(), read_buffer.data(), read_buffer.size());
@@ -704,7 +705,7 @@ bool CheckCloseWithoutPending() {
   std::optional<coropact::base::Result<void>> result;
   coropact::coro::SpawnDetach(loop, CloseOnce(&stream, &result));
 
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   return Check(result.has_value(), "close coroutine did not run") &&
          Check(result->has_value(), "Close without pending op returned an error");
@@ -735,24 +736,24 @@ bool CheckCloseCancelsPendingRead() {
   coropact::coro::SpawnDetach(loop, ReadOnce(&stream, &loop, buffer, &read_result,
                                              &read_resumed_with_scheduler, &read_resume_count));
 
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   std::optional<coropact::base::Result<void>> close_result;
   coropact::coro::SpawnDetach(loop, CloseOnce(&stream, &close_result));
 
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   if (!Check(!close_result.has_value(), "Close with pending read should suspend")) {
     return false;
   }
 
   for (int i = 0; i < 4 && (!close_result.has_value() || !read_result.has_value()); ++i) {
-    auto completions = loop.WaitCompletions();
+    auto completions = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
     if (!completions.has_value()) {
       std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
       return false;
     }
-    loop.RunReady();
+    coropact::luring::detail::LoopAccess::RunReady(loop);
   }
 
   return Check(close_result.has_value(), "busy close coroutine did not run") &&
@@ -786,19 +787,19 @@ bool CheckCloseReturnsOwnedReadBuffer() {
   coropact::coro::SpawnDetach(loop,
                               ReadIntoOnce(&stream, &loop, coropact::net::Buffer(8), &read_outcome,
                                            &resumed_with_scheduler, &resume_count));
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   std::optional<coropact::base::Result<void>> close_result;
   coropact::coro::SpawnDetach(loop, CloseOnce(&stream, &close_result));
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   for (int i = 0; i < 4 && (!close_result.has_value() || !read_outcome.has_value()); ++i) {
-    auto completions = loop.WaitCompletions();
+    auto completions = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
     if (!completions.has_value()) {
       std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
       return false;
     }
-    loop.RunReady();
+    coropact::luring::detail::LoopAccess::RunReady(loop);
   }
 
   if (!Check(close_result.has_value(), "owned read close coroutine did not finish") ||
@@ -842,22 +843,22 @@ bool CheckReadCompletionCancelRaceResumesOnce() {
 
   coropact::coro::SpawnDetach(loop, ReadOnce(&stream, &loop, buffer, &read_result,
                                              &read_resumed_with_scheduler, &read_resume_count));
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   constexpr std::string_view kPayload = "race";
   if (!WriteFd(peer.fd(), kPayload)) return false;
 
   std::optional<coropact::base::Result<void>> close_result;
   coropact::coro::SpawnDetach(loop, CloseOnce(&stream, &close_result));
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   for (int i = 0; i < 6 && (!close_result.has_value() || !read_result.has_value()); ++i) {
-    auto completions = loop.WaitCompletions();
+    auto completions = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
     if (!completions.has_value()) {
       std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
       return false;
     }
-    loop.RunReady();
+    coropact::luring::detail::LoopAccess::RunReady(loop);
   }
 
   if (!Check(close_result.has_value(), "race close coroutine did not finish") ||
