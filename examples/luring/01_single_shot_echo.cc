@@ -1,3 +1,6 @@
+/**
+ *
+ */
 #include <array>
 #include <csignal>
 #include <cstddef>
@@ -20,7 +23,7 @@ namespace {
 
 constexpr std::uint16_t kPort = 19090;
 
-coro::DetachedTask EchoSession(luring::LUringStream stream) {
+auto EchoSession(luring::LUringStream stream) -> coro::DetachedTask {
   std::array<std::byte, 4096> buffer{};
 
   for (;;) {
@@ -50,7 +53,7 @@ coro::DetachedTask EchoSession(luring::LUringStream stream) {
   }
 }
 
-coro::DetachedTask AcceptLoop(luring::LUringLoop& loop, luring::LUringListener& listener) {
+auto AcceptLoop(luring::LUringLoop& loop, luring::LUringListener& listener) -> coro::DetachedTask {
   for (;;) {
     auto accepted = co_await listener.Accept();
 
@@ -65,7 +68,7 @@ coro::DetachedTask AcceptLoop(luring::LUringLoop& loop, luring::LUringListener& 
 
 }  // namespace
 
-int main() {
+auto main() -> int {
   std::signal(SIGPIPE, SIG_IGN);
 
   luring::LUringLoop loop;
@@ -95,4 +98,6 @@ int main() {
   std::println("single-shot echo listening on 127.0.0.1:{}", kPort);
 
   loop.Loop(std::stop_token{});
+
+  return 0;
 }

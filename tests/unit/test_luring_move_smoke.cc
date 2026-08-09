@@ -13,6 +13,7 @@
 #include "coropact/base/error.h"
 #include "coropact/luring/listener.h"
 #include "coropact/luring/loop.h"
+#include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/options.h"
 #include "coropact/luring/stream.h"
 #include "coropact/net/endpoint.h"

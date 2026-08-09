@@ -17,9 +17,10 @@
 #include "coropact/base/error.h"
 #include "coropact/base/try.h"
 #include "coropact/luring/detail/close_state.h"
+#include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/detail/operation_submission.h"
 #include "coropact/luring/loop.h"
-#include "coropact/luring/op.h"
+#include "coropact/luring/detail/op.h"
 #include "coropact/luring/stream.h"
 #include "coropact/net/endpoint.h"
 #include "coropact/operation/detail/completion_gate.h"
@@ -27,6 +28,7 @@
 
 namespace coropact::luring {
 
+using namespace detail;
 using namespace net::detail;
 
 namespace {
@@ -298,7 +300,7 @@ base::Result<void> LUringAcceptSource::StartOperation() noexcept {
   accept_op_.Prepare();
   ++listener_->pending_accepts_;
 
-  auto submitted = listener_->loop_->SubmitOp(
+  auto submitted = detail::LoopAccess::SubmitOp(*listener_->loop_,
       &accept_op_,
       [fd = listener_->fd_, multishot = multishot_enabled_](io_uring_sqe* sqe) noexcept {
         if (multishot) {
@@ -358,7 +360,8 @@ base::Result<void> LUringAcceptSource::StartCancel() noexcept {
   cancel_op_.Prepare();
   const auto target = reinterpret_cast<std::uint64_t>(&accept_op_);
 
-  auto submitted = listener_->loop_->SubmitOp(&cancel_op_, [target](io_uring_sqe* sqe) noexcept {
+  auto submitted = detail::LoopAccess::SubmitOp(*listener_->loop_, &cancel_op_,
+                                                 [target](io_uring_sqe* sqe) noexcept {
     io_uring_prep_cancel64(sqe, target, IORING_ASYNC_CANCEL_ALL);
   });
 
@@ -763,7 +766,8 @@ public:
     Op()->kind = LUringOpKind::kListenerCloseComplete;
 
     auto submitted =
-        listener_->loop_->SubmitOp(Op(), [fd = listener_->fd_](io_uring_sqe* sqe) noexcept {
+        detail::LoopAccess::SubmitOp(*listener_->loop_, Op(),
+                                     [fd = listener_->fd_](io_uring_sqe* sqe) noexcept {
           io_uring_prep_cancel_fd(sqe, fd, IORING_ASYNC_CANCEL_ALL);
         });
     if (!submitted.has_value()) {
@@ -796,7 +800,7 @@ public:
     listener_ = nullptr;
     Op()->resume_work.SetHandle(continuation_);
     if (current != Op()) {
-      loop->ScheduleCompletion(&Op()->resume_work);
+      detail::LoopAccess::ScheduleCompletion(*loop, &Op()->resume_work);
     }
   }
 

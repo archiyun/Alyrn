@@ -1,9 +1,9 @@
 /**
  * EPollPoller smoke tests
  *
- * EPollPoller is the concrete epoll backend accessed through EventLoop.
- * Channel::EnableReading / DisableAll / Remove each delegate to
- * EventLoop::UpdateChannel / RemoveChannel which call into EPollPoller.
+ * detail::EPollPoller is the concrete epoll backend owned by EventLoop.
+ * detail::Channel::EnableReading / DisableAll / Remove each delegate to the
+ * loop's private poller-registration path.
  * Every test creates a fresh EventLoop (which owns its own EPollPoller),
  * exercises a specific code path, then tears down cleanly.
  *
@@ -28,8 +28,8 @@
 #include <memory>
 #include <vector>
 
-#include "coropact/reactor/channel.h"
-#include "coropact/reactor/event_loop.h"
+#include "coropact/reactor/detail/channel.h"
+#include "coropact/reactor/loop.h"
 
 namespace {
 
@@ -79,10 +79,10 @@ void DrainReadMany(void* raw) noexcept {
 }
 
 // ──────────────────────────────────────────────
-// Test 1: EPollPoller construction succeeds (epoll_create1).
+// Test 1: EventLoop construction succeeds (epoll_create1).
 // ──────────────────────────────────────────────
 bool TestConstruction() {
-    // EventLoop creates the default poller, which is EPollPoller on Linux.
+    // EventLoop creates the default poller, which is detail::EPollPoller on Linux.
     // Reaching this point means epoll_create1 succeeded.
     coropact::reactor::EventLoop loop;
     return true;
@@ -100,11 +100,11 @@ bool TestChannelRegistration() {
         return false;
     }
 
-    coropact::reactor::Channel ch(&loop, fds[0]);
+    coropact::reactor::detail::Channel ch(&loop, fds[0]);
     ch.SetReadCallback(NoopRead, nullptr);
     ch.EnableReading();
 
-    const bool registered = Expect(loop.HasChannel(&ch),
+    const bool registered = Expect(ch.IsRegistered(),
         "channel should appear in Poller after EnableReading");
 
     ch.DisableAll();
@@ -126,14 +126,14 @@ bool TestChannelRemoval() {
         return false;
     }
 
-    coropact::reactor::Channel ch(&loop, fds[0]);
+    coropact::reactor::detail::Channel ch(&loop, fds[0]);
     ch.SetReadCallback(NoopRead, nullptr);
     ch.EnableReading();
 
     ch.DisableAll();
     ch.Remove();
 
-    const bool removed = Expect(!loop.HasChannel(&ch),
+    const bool removed = Expect(!ch.IsRegistered(),
         "channel should be absent from Poller after Remove");
 
     ::close(fds[0]);
@@ -154,7 +154,7 @@ bool TestPollDetectsReadEvent() {
     }
 
     bool read_called = false;
-    coropact::reactor::Channel ch(&loop, fds[0]);
+    coropact::reactor::detail::Channel ch(&loop, fds[0]);
     ReadAndQuitContext context{fds[0], &read_called, &loop};
     ch.SetReadCallback(DrainReadAndQuit, &context);
     ch.EnableReading();
@@ -188,13 +188,13 @@ bool TestDisableAllKeepsChannelInMap() {
         return false;
     }
 
-    coropact::reactor::Channel ch(&loop, fds[0]);
+    coropact::reactor::detail::Channel ch(&loop, fds[0]);
     ch.SetReadCallback(NoopRead, nullptr);
     ch.EnableReading();
 
     ch.DisableAll();
 
-    const bool still_in_map = Expect(loop.HasChannel(&ch),
+    const bool still_in_map = Expect(ch.IsRegistered(),
         "DisableAll should keep channel in Poller map (kDeleted state)");
 
     // The channel is removed from epoll, so no callback should fire.
@@ -228,7 +228,7 @@ bool TestReenableAfterDisable() {
     }
 
     bool read_called = false;
-    coropact::reactor::Channel ch(&loop, fds[0]);
+    coropact::reactor::detail::Channel ch(&loop, fds[0]);
     ReadAndQuitContext context{fds[0], &read_called, &loop};
     ch.SetReadCallback(DrainReadAndQuit, &context);
 
@@ -266,12 +266,12 @@ bool TestEventsVectorResizes() {
     }
 
     int trigger_count = 0;
-    std::vector<std::unique_ptr<coropact::reactor::Channel>> channels;
+    std::vector<std::unique_ptr<coropact::reactor::detail::Channel>> channels;
     channels.reserve(N);
     std::array<ReadManyContext, N> contexts{};
 
     for (int i = 0; i < N; ++i) {
-        auto ch = std::make_unique<coropact::reactor::Channel>(&loop, pairs[i][0]);
+        auto ch = std::make_unique<coropact::reactor::detail::Channel>(&loop, pairs[i][0]);
         // Consume the byte to avoid repeated delivery in level-triggered mode.
         contexts[i] = ReadManyContext{pairs[i][0], &trigger_count, N, &loop};
         ch->SetReadCallback(DrainReadMany, &contexts[i]);

@@ -12,8 +12,8 @@
 #include "coropact/coro/task.h"
 #include "coropact/backend/recv_source.h"
 #include "coropact/net/recv_source.h"
-#include "coropact/reactor/channel.h"
-#include "coropact/reactor/event_loop.h"
+#include "coropact/reactor/detail/channel.h"
+#include "coropact/reactor/loop.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::reactor {
@@ -95,7 +95,7 @@ private:
   EventLoop* loop_{nullptr};
   int fd_{-1};
   net::detail::RecvSourceStateMachine state_;
-  Channel channel_;
+  detail::Channel channel_;
   std::deque<Event> events_;
   std::optional<base::Error> terminal_error_;
 

@@ -12,13 +12,13 @@
 
 #include "coropact/base/error.h"
 #include "coropact/coro/detached_task.h"
-#include "coropact/reactor/event_loop.h"
-#include "coropact/reactor/reactor_connect.h"
-#include "coropact/reactor/reactor_listener.h"
-#include "coropact/reactor/reactor_stream.h"
+#include "coropact/reactor/connector.h"
+#include "coropact/reactor/listener.h"
+#include "coropact/reactor/loop.h"
+#include "coropact/reactor/stream.h"
 #include "coropact/utils/macros.h"
 
-namespace coropact::reactor {
+namespace coropact::reactor::detail {
 
 struct ReactorWorkerContext {
   ReactorWorkerContext(std::size_t index, EventLoop& loop, ReactorListener& listener,
@@ -87,4 +87,4 @@ private:
   std::jthread thread_;
 };
 
-}  // namespace coropact::reactor
+}  // namespace coropact::reactor::detail

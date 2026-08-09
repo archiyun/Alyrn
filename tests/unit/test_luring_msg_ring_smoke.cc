@@ -12,7 +12,8 @@
 
 #include "coropact/coro/work.h"
 #include "coropact/luring/loop.h"
-#include "coropact/luring/op.h"
+#include "coropact/luring/detail/loop_access.h"
+#include "coropact/luring/detail/op.h"
 #include "coropact/luring/options.h"
 #include "coropact/utils/macros.h"
 
@@ -50,21 +51,21 @@ private:
 };
 
 bool CheckMailboxNotificationState() {
-  coropact::luring::LUringMailbox mailbox;
+  coropact::luring::detail::LUringMailbox mailbox;
 
-  const coropact::luring::LUringMessage message{
+  const coropact::luring::detail::LUringMessage message{
       .data = 1,
   };
 
   if (!Check(
           mailbox.Push(message) ==
-              coropact::luring::LUringMailboxPushResult::kQueuedNeedsNotification,
+              coropact::luring::detail::LUringMailboxPushResult::kQueuedNeedsNotification,
           "first mailbox message should arm notification")) {
     return false;
   }
   if (!Check(
           mailbox.Push(message) ==
-              coropact::luring::LUringMailboxPushResult::kQueued,
+              coropact::luring::detail::LUringMailboxPushResult::kQueued,
           "second mailbox message should coalesce notification")) {
     return false;
   }
@@ -74,7 +75,7 @@ bool CheckMailboxNotificationState() {
   }
 
   const std::size_t drained =
-      mailbox.Drain([](const coropact::luring::LUringMessage&) noexcept {});
+      mailbox.Drain([](const coropact::luring::detail::LUringMessage&) noexcept {});
   if (!Check(drained == 2, "mailbox drain should consume both messages")) {
     return false;
   }
@@ -114,13 +115,13 @@ bool CheckMsgRingMailboxSchedule() {
                                       !skipped.load(std::memory_order_acquire) &&
                                       !work_completed.load(std::memory_order_acquire);
          ++i) {
-      auto completed = target.PollCompletions();
+      auto completed = coropact::luring::detail::LoopAccess::PollCompletions(target);
       if (!completed.has_value()) {
         failed.store(true, std::memory_order_release);
         return;
       }
 
-      target.RunReady();
+      coropact::luring::detail::LoopAccess::RunReady(target);
       if (*completed == 0 && !work_completed.load(std::memory_order_acquire)) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
       }
@@ -151,30 +152,32 @@ bool CheckMsgRingMailboxSchedule() {
       return;
     }
 
-    const auto push_result = target->PostMessage({
+    const auto push_result = coropact::luring::detail::LoopAccess::PostMessage(*target, {
         .data = static_cast<std::uint64_t>(
             reinterpret_cast<std::uintptr_t>(&work)),
     });
 
-    if (push_result == coropact::luring::LUringMailboxPushResult::kFull) {
+    if (push_result == coropact::luring::detail::LUringMailboxPushResult::kFull) {
       failed.store(true, std::memory_order_release);
       return;
     }
 
     if (push_result !=
-        coropact::luring::LUringMailboxPushResult::kQueuedNeedsNotification) {
+        coropact::luring::detail::LUringMailboxPushResult::kQueuedNeedsNotification) {
       failed.store(true, std::memory_order_release);
       return;
     }
 
-    coropact::luring::LUringOp notify_op{coropact::luring::LUringOpKind::kMsgRing};
+    coropact::luring::detail::LUringOp notify_op{coropact::luring::detail::LUringOpKind::kMsgRing};
 
-    auto submitted = source.SubmitMsgRing(
+    auto submitted = coropact::luring::detail::LoopAccess::SubmitMsgRing(
+        source,
         &notify_op,
-        target->RingFd(),
+        coropact::luring::detail::LoopAccess::RingFd(*target),
         0);
     if (!submitted.has_value()) {
-      COROPACT_IGNORE_RESULT(target->RetryMessageNotification());
+      COROPACT_IGNORE_RESULT(
+          coropact::luring::detail::LoopAccess::RetryMessageNotification(*target));
       if (IsEnvironmentSkip(submitted.error())) {
         skipped.store(true, std::memory_order_release);
         return;
@@ -188,7 +191,7 @@ bool CheckMsgRingMailboxSchedule() {
                                       !skipped.load(std::memory_order_acquire) &&
                                       !notify_op.IsCompleted();
          ++i) {
-      auto completed = source.PollCompletions();
+      auto completed = coropact::luring::detail::LoopAccess::PollCompletions(source);
       if (!completed.has_value()) {
         failed.store(true, std::memory_order_release);
         return;

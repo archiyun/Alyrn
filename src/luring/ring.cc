@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "coropact/luring/ring.h"
+#include "coropact/luring/detail/ring.h"
 
 #include <liburing.h>
 #include <liburing/io_uring.h>
@@ -15,7 +15,7 @@
 #include "coropact/base/error.h"
 #include "coropact/luring/options.h"
 
-namespace coropact::luring {
+namespace coropact::luring::detail {
 
 namespace {
 
@@ -49,9 +49,6 @@ io_uring_params MakeParams(const LUringOptions& options) noexcept {
     params.sq_thread_idle = options.sqpoll_idle_ms;
   }
 
-  if (options.setup_iopoll) {
-    params.flags |= IORING_SETUP_IOPOLL;
-  }
   return params;
 }
 
@@ -114,4 +111,4 @@ void LUringRing::PrepMsgRing(io_uring_sqe* sqe, int target_ring_fd, std::uint32_
   io_uring_prep_msg_ring(sqe, target_ring_fd, type, data, IORING_MSG_DATA);
 }
 
-}  // namespace coropact::luring
+}  // namespace coropact::luring::detail

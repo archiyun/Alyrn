@@ -6,9 +6,9 @@
 
 #include <vector>
 
-#include "coropact/reactor/poller.h"
+#include "coropact/reactor/detail/poller.h"
 
-namespace coropact::reactor {
+namespace coropact::reactor::detail {
 
 // EPollPoller is the Linux epoll-based implementation of Poller.
 //
@@ -38,4 +38,4 @@ private:
   std::vector<epoll_event> events_;
 };
 
-}  // namespace coropact::reactor
+}  // namespace coropact::reactor::detail

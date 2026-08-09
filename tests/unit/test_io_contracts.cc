@@ -5,9 +5,9 @@
 #include <iostream>
 
 #include "async_io_contracts.h"
-#include "coropact/reactor/reactor_connect.h"
-#include "coropact/reactor/reactor_listener.h"
-#include "coropact/reactor/reactor_stream.h"
+#include "coropact/reactor/connector.h"
+#include "coropact/reactor/listener.h"
+#include "coropact/reactor/stream.h"
 
 #if defined(COROPACT_ENABLE_URING)
 #include "coropact/luring/connector.h"

@@ -36,8 +36,8 @@ application protocol, route, peer, proxy, or gateway policy.
 | `include/coropact/operation/detail` | L2 | Internal completion and lifecycle authorization shared by backend adapters: one-shot, composite, and split-release families plus scheduler-bound continuations; no transport resource ownership. |
 | `include/coropact/net`, `src/net` | L2 | Socket and address values shared by backends. |
 | `include/coropact/io`, `include/coropact/backend` | L2 | Backend-neutral I/O contracts and algorithms. |
-| `include/coropact/reactor`, `src/reactor` | L2 | epoll readiness backend. |
-| `include/coropact/luring`, `src/luring` | L2 | io_uring completion backend. |
+| `include/coropact/reactor`, `src/reactor` | L2 | epoll readiness adapter. `EventLoop` and transport adapters are public; `reactor/detail` owns channel registration, epoll polling, timers, and worker bootstrap implementation. |
+| `include/coropact/luring`, `src/luring` | L2 | io_uring completion adapter. `LUringLoop` and transport adapters are public; `luring/detail` owns raw SQE/CQE operations, ring/mailbox transport, timer queue, and worker/server bootstrap implementation. |
 | `examples`, `benchmarks`, `tests` | L3 | Consumers and validation; never runtime dependencies. |
 
 ## Hard Dependency Rules
@@ -55,6 +55,14 @@ application protocol, route, peer, proxy, or gateway policy.
   depend on CoroGateway.
 - A backend extension belongs behind a separate contract or capability profile;
   it must not change the meaning of `ReadSome`, `WriteSome`, or `Close`.
+- `reactor/detail` is not a supported application interface. It may depend on
+  public Reactor adapter types, while callers outside the Reactor
+  implementation, validation, and benchmark code must use `EventLoop` and the
+  public transport adapters instead.
+- `luring/detail` is not a supported application interface. It may depend on
+  public luring adapter types, while callers outside the luring implementation
+  and validation code must use `LUringLoop` and the public transport adapters
+  instead.
 
 ## New Module Decision
 

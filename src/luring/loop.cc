@@ -24,13 +24,15 @@
 #include "coropact/coro/scheduler.h"
 #include "coropact/luring/detail/completion_dispatch.h"
 #include "coropact/luring/detail/provided_buffer_pool.h"
-#include "coropact/luring/op.h"
+#include "coropact/luring/detail/op.h"
 #include "coropact/luring/options.h"
-#include "coropact/luring/ring.h"
+#include "coropact/luring/detail/ring.h"
 #include "coropact/time/clock.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::luring {
+
+using namespace detail;
 
 namespace {
 

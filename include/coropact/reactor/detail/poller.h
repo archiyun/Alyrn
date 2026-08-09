@@ -9,8 +9,11 @@
 
 namespace coropact::reactor {
 
-class Channel;
 class EventLoop;
+
+namespace detail {
+
+class Channel;
 
 // Poller is the user-space abstraction over the underlying I/O multiplexing
 // mechanism, such as epoll.
@@ -53,4 +56,5 @@ private:
   EventLoop* owner_loop_;
 };
 
+}  // namespace detail
 }  // namespace coropact::reactor

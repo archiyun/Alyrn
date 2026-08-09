@@ -15,7 +15,7 @@
 #include "coropact/coro/task.h"
 #include "coropact/luring/detail/completion_dispatch.h"
 #include "coropact/luring/detail/op_hook.h"
-#include "coropact/luring/op.h"
+#include "coropact/luring/detail/op.h"
 #include "coropact/net/buffer.h"
 #include "coropact/net/endpoint.h"
 #include "coropact/net/read_into.h"
@@ -115,7 +115,7 @@ public:
   }
 
 private:
-  friend void detail::DispatchStreamCloseComplete(LUringOp* op) noexcept;
+  friend void detail::DispatchStreamCloseComplete(detail::LUringOp* op) noexcept;
 
   class CloseAwaiter;
 
@@ -141,7 +141,7 @@ public:
   COROPACT_DELETE_COPY_MOVE(ReadSomeAwaiter);
 
   ReadSomeAwaiter(LUringStream& stream, std::span<std::byte> buffer) noexcept
-      : OpHook(LUringOpKind::kReadComplete), stream_(&stream), buffer_(buffer) {}
+      : OpHook(detail::LUringOpKind::kReadComplete), stream_(&stream), buffer_(buffer) {}
 
   [[nodiscard]]
   bool await_ready() const noexcept {
@@ -154,9 +154,9 @@ public:
   base::Result<std::size_t> await_resume() noexcept;
 
 private:
-  friend void detail::DispatchStreamReadComplete(LUringOp* op) noexcept;
+  friend void detail::DispatchStreamReadComplete(detail::LUringOp* op) noexcept;
 
-  static void OnComplete(LUringOp* op) noexcept;
+  static void OnComplete(detail::LUringOp* op) noexcept;
 
   LUringStream* stream_;
   std::span<std::byte> buffer_;
@@ -169,7 +169,7 @@ public:
   COROPACT_DELETE_COPY_MOVE(ReadIntoAwaiter);
 
   ReadIntoAwaiter(LUringStream& stream, net::Buffer buffer, std::size_t reserve) noexcept
-      : OpHook(LUringOpKind::kReadIntoComplete),
+      : OpHook(detail::LUringOpKind::kReadIntoComplete),
         stream_(&stream),
         buffer_(std::move(buffer)),
         reserve_(reserve) {}
@@ -185,9 +185,9 @@ public:
   net::ReadIntoOutcome await_resume() noexcept;
 
 private:
-  friend void detail::DispatchStreamReadIntoComplete(LUringOp* op) noexcept;
+  friend void detail::DispatchStreamReadIntoComplete(detail::LUringOp* op) noexcept;
 
-  static void OnComplete(LUringOp* op) noexcept;
+  static void OnComplete(detail::LUringOp* op) noexcept;
 
   [[nodiscard]]
   bool PrepareReservation() noexcept;
@@ -223,18 +223,18 @@ public:
   base::Result<std::size_t> await_resume() noexcept;
 
 private:
-  friend void detail::DispatchTimedReadComplete(LUringOp* op) noexcept;
-  friend void detail::DispatchTimedReadTimeoutComplete(LUringOp* op) noexcept;
+  friend void detail::DispatchTimedReadComplete(detail::LUringOp* op) noexcept;
+  friend void detail::DispatchTimedReadTimeoutComplete(detail::LUringOp* op) noexcept;
 
-  static void OnReadComplete(LUringOp* op) noexcept;
-  static void OnTimeoutComplete(LUringOp* op) noexcept;
+  static void OnReadComplete(detail::LUringOp* op) noexcept;
+  static void OnTimeoutComplete(detail::LUringOp* op) noexcept;
 
-  LUringOp* ReadOp() noexcept { return ReadOpHook::Op(); }
-  LUringOp* TimeoutOp() noexcept { return TimeoutOpHook::Op(); }
+  detail::LUringOp* ReadOp() noexcept { return ReadOpHook::Op(); }
+  detail::LUringOp* TimeoutOp() noexcept { return TimeoutOpHook::Op(); }
 
-  void CompleteRead(LUringOp* current) noexcept;
-  void CompleteTimeout(LUringOp* current) noexcept;
-  void FinishIfReady(LUringOp* current) noexcept;
+  void CompleteRead(detail::LUringOp* current) noexcept;
+  void CompleteTimeout(detail::LUringOp* current) noexcept;
+  void FinishIfReady(detail::LUringOp* current) noexcept;
 
   LUringStream* stream_;
   std::span<std::byte> buffer_;
@@ -250,7 +250,7 @@ public:
   COROPACT_DELETE_COPY_MOVE(WriteSomeAwaiter);
 
   WriteSomeAwaiter(LUringStream& stream, std::span<const std::byte> buffer) noexcept
-      : OpHook(LUringOpKind::kWriteComplete), stream_(&stream), buffer_(buffer) {}
+      : OpHook(detail::LUringOpKind::kWriteComplete), stream_(&stream), buffer_(buffer) {}
 
   [[nodiscard]]
   bool await_ready() const noexcept {
@@ -263,9 +263,9 @@ public:
   base::Result<std::size_t> await_resume() noexcept;
 
 private:
-  friend void detail::DispatchStreamWriteComplete(LUringOp* op) noexcept;
+  friend void detail::DispatchStreamWriteComplete(detail::LUringOp* op) noexcept;
 
-  static void OnComplete(LUringOp* op) noexcept;
+  static void OnComplete(detail::LUringOp* op) noexcept;
 
   LUringStream* stream_;
   std::span<const std::byte> buffer_;
@@ -279,7 +279,7 @@ public:
   COROPACT_DELETE_COPY_MOVE(SendZeroCopyAwaiter);
 
   SendZeroCopyAwaiter(LUringStream& stream, std::span<const std::byte> buffer) noexcept
-      : OpHook(LUringOpKind::kSendZeroCopyComplete), stream_(&stream), buffer_(buffer) {}
+      : OpHook(detail::LUringOpKind::kSendZeroCopyComplete), stream_(&stream), buffer_(buffer) {}
 
   [[nodiscard]]
   bool await_ready() const noexcept {
@@ -292,11 +292,11 @@ public:
   base::Result<ZeroCopySendResult> await_resume() noexcept;
 
 private:
-  friend CompletionDisposition detail::DispatchSendZeroCopyComplete(LUringOp* op,
-                                                                    CompletionEvent event) noexcept;
+  friend detail::CompletionDisposition detail::DispatchSendZeroCopyComplete(detail::LUringOp* op,
+                                                                    detail::CompletionEvent event) noexcept;
 
   [[nodiscard]]
-  static CompletionDisposition OnComplete(LUringOp* op, CompletionEvent event) noexcept;
+  static detail::CompletionDisposition OnComplete(detail::LUringOp* op, detail::CompletionEvent event) noexcept;
 
   LUringStream* stream_;
   std::span<const std::byte> buffer_;

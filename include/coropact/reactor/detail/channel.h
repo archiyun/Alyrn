@@ -2,21 +2,17 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include <cstdint>
 #include <utility>
 
+#include "coropact/reactor/options.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::reactor {
 
 class EventLoop;
 
-// TriggerMode controls whether epoll registration uses level-triggered or
-// edge-triggered delivery.
-enum class TriggerMode : uint8_t {
-  kLevelTriggered,
-  kEdgeTriggered,
-};
+namespace detail {
+
 
 // Channel is the event dispatch unit for a single file descriptor.
 //
@@ -125,6 +121,12 @@ public:
     return trigger_mode_ == TriggerMode::kEdgeTriggered;
   }
 
+  // Returns whether the owning poller currently tracks this Channel. This is
+  // an implementation-only lifecycle query; EventLoop deliberately keeps its
+  // poller membership private from Reactor callers.
+  [[nodiscard]]
+  bool IsRegistered() const;
+
   // Returns the EventLoop that owns this Channel.
   EventLoop* OwnerLoop() { return loop_; }
 
@@ -172,4 +174,5 @@ private:
   void* error_context_{nullptr};
 };
 
+}  // namespace detail
 }  // namespace coropact::reactor

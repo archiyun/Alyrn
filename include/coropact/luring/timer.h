@@ -8,6 +8,7 @@
 #include "coropact/base/check.h"
 #include "coropact/base/error.h"
 #include "coropact/coro/work.h"
+#include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/detail/result_state.h"
 #include "coropact/luring/loop.h"
 
@@ -48,8 +49,9 @@ inline bool SleepAwaiter::await_suspend(std::coroutine_handle<> continuation) no
   COROPACT_CHECK(loop_->IsInLoopThread(),
                  "LUring sleep operation called from wrong LUringLoop thread");
   resume_work_.SetHandle(continuation);
-  auto timer =
-      loop_->RunAfter(delay_, [this]() noexcept { loop_->ScheduleCompletion(&resume_work_); });
+  auto timer = loop_->RunAfter(delay_, [this]() noexcept {
+    detail::LoopAccess::ScheduleCompletion(*loop_, &resume_work_);
+  });
   if (!timer.has_value()) {
     result_.SetError(timer.error());
     return false;

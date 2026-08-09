@@ -13,7 +13,7 @@
 #include "bench_http_common.h"
 #include "coropact/io.h"
 #include "coropact/net/endpoint.h"
-#include "coropact/reactor/reactor_worker_group.h"
+#include "coropact/reactor/detail/reactor_worker_group.h"
 
 namespace {
 
@@ -57,16 +57,16 @@ int main() {
   if (port == 0 || workers == 0) return 2;
 
   auto address = coropact::net::Endpoint::Loopback(port);
-  coropact::reactor::ReactorWorkerGroupOptions options;
+  coropact::reactor::detail::ReactorWorkerGroupOptions options;
   options.worker_num = workers;
   options.worker_options.listener_options.reuse_addr = true;
   options.worker_options.listener_options.reuse_port = true;
   options.worker_options.listener_options.stream_options.trigger_mode = trigger_mode;
   options.worker_options.connector_options.stream_options.trigger_mode = trigger_mode;
 
-  coropact::reactor::ReactorWorkerGroup server(
+  coropact::reactor::detail::ReactorWorkerGroup server(
       address, std::move(options), {},
-      [](coropact::reactor::ReactorWorkerContext&, coropact::reactor::ReactorStream stream) {
+      [](coropact::reactor::detail::ReactorWorkerContext&, coropact::reactor::ReactorStream stream) {
         return HttpSession(std::move(stream));
       });
   auto started = server.Start();

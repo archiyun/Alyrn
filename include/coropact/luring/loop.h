@@ -8,10 +8,10 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <limits>
 #include <memory>
 #include <memory_resource>
-#include <new>
-#include <limits>
 #include <stop_token>
 #include <utility>
 
@@ -20,17 +20,18 @@
 #include "coropact/base/try.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/work.h"
-#include "coropact/luring/mailbox.h"
-#include "coropact/luring/op.h"
+#include "coropact/luring/detail/mailbox.h"
+#include "coropact/luring/detail/op.h"
 #include "coropact/luring/options.h"
-#include "coropact/luring/ring.h"
-#include "coropact/luring/timer_queue.h"
+#include "coropact/luring/detail/ring.h"
+#include "coropact/luring/detail/timer_queue.h"
 #include "coropact/time/timer_id.h"
 
 namespace coropact::luring {
 
 class LUringRecvSource;
 namespace detail {
+class LoopAccess;
 class ProvidedBufferPool;
 }
 
@@ -40,9 +41,8 @@ class ProvidedBufferPool;
 // it. IO operations are submitted to the ring, and completed operations resume
 // their coroutine work through the Scheduler interface.
 //
-// Notify function:
-//   target.PostMessage() -> source.SubmitMsgRing() -> target.HandleCqe() ->
-//   target.ScheduleCompletion(work)
+// Cross-loop mailbox and SQE/CQE dispatch remain implementation details. The
+// public loop only owns initialization, execution, timers, and scheduling.
 class LUringLoop final : public coro::Scheduler {
 public:
   COROPACT_DELETE_COPY_MOVE(LUringLoop);
@@ -73,6 +73,52 @@ public:
   bool IsInLoopThread() const noexcept {
     return thread_id_ == base::tid();
   }
+#if defined(COROPACT_ENABLE_TEST_HOOKS)
+  // Test-only deterministic failure injection. It is intentionally kept out
+  // of normal builds so production LUringLoop has no fault-injection state.
+  void FailNextSubmissionsForTesting(std::size_t count, int error = EIO) noexcept {
+    assert(error > 0);
+    test_submit_failures_ = count;
+    test_successful_submissions_before_failure_ = 0;
+    test_submit_error_ = error;
+  }
+
+  // Fails one submission after exactly `successful_submissions` test-visible
+  // submissions have succeeded. This makes linked-operation tests able to
+  // target their second SQE without failing the first physical request.
+  void FailSubmissionAfterForTesting(std::size_t successful_submissions, int error = EIO) noexcept {
+    assert(error > 0);
+    test_submit_failures_ = 1;
+    test_successful_submissions_before_failure_ = successful_submissions;
+    test_submit_error_ = error;
+  }
+#endif
+
+  [[nodiscard]]
+  base::Result<time::TimerId> RunAfter(std::chrono::steady_clock::duration delay,
+                                       std::function<void()> callback) {
+    assert(IsInLoopThread());
+    if (!initialized_) {
+      return std::unexpected(base::MakeErrno(EBADF));
+    }
+    return timers_.AddAfter(delay, std::move(callback));
+  }
+
+  base::Result<void> CancelTimer(time::TimerId id) noexcept {
+    assert(IsInLoopThread());
+    if (!initialized_) {
+      return std::unexpected(base::MakeErrno(EBADF));
+    }
+    return timers_.Cancel(id);
+  }
+
+  // Enqueues coroutine work to be resumed by RunReady().
+  void Schedule(coro::Work* work) noexcept override;
+
+private:
+  friend class detail::LoopAccess;
+  friend class LUringRecvSource;
+
   [[nodiscard]]
   int RingFd() const noexcept {
     return ring_.Fd();
@@ -94,77 +140,27 @@ public:
     return !HasReadyWork() && PendingSubmitCount() == 0 && InflightCount() == 0;
   }
 
-#if defined(COROPACT_ENABLE_TEST_HOOKS)
-  // Test-only deterministic failure injection. It is intentionally kept out
-  // of normal builds so production LUringLoop has no fault-injection state.
-  void FailNextSubmissionsForTesting(
-      std::size_t count,
-      int error = EIO) noexcept {
-    assert(error > 0);
-    test_submit_failures_ = count;
-    test_successful_submissions_before_failure_ = 0;
-    test_submit_error_ = error;
-  }
-
-  // Fails one submission after exactly `successful_submissions` test-visible
-  // submissions have succeeded. This makes linked-operation tests able to
-  // target their second SQE without failing the first physical request.
-  void FailSubmissionAfterForTesting(
-      std::size_t successful_submissions,
-      int error = EIO) noexcept {
-    assert(error > 0);
-    test_submit_failures_ = 1;
-    test_successful_submissions_before_failure_ = successful_submissions;
-    test_submit_error_ = error;
-  }
-#endif
-
-  [[nodiscard]]
-  base::Result<time::TimerId> RunAfter(std::chrono::steady_clock::duration delay,
-                                                     LUringTimerQueue::TimerCallback callback) {
-    assert(IsInLoopThread());
-    if (!initialized_) {
-      return std::unexpected(base::MakeErrno(EBADF));
-    }
-    return timers_.AddAfter(delay, std::move(callback));
-  }
-
-  base::Result<void> CancelTimer(time::TimerId id) noexcept {
-    assert(IsInLoopThread());
-    if (!initialized_) {
-      return std::unexpected(base::MakeErrno(EBADF));
-    }
-    return timers_.Cancel(id);
-  }
-
-  // Enqueues coroutine work to be resumed by RunReady().
-  void Schedule(coro::Work* work) noexcept override;
-
   // Enqueues work produced by a CQE, timeout, or mailbox completion. These
   // works receive bounded priority over ordinary ready work.
   void ScheduleCompletion(coro::Work* work) noexcept;
 
-  // Thread-safe enqueue
-  // The event loop is not woken yet; msg_ring will provide notification later.
+  // Thread-safe enqueue. The event loop is not woken yet; msg_ring provides
+  // notification later.
   [[nodiscard]]
-  LUringMailboxPushResult PostMessage(LUringMessage message) {
+  detail::LUringMailboxPushResult PostMessage(detail::LUringMessage message) {
     return mailbox_.Push(std::move(message));
   }
 
-  // Re-arms notification after a source-side msg_ring submission failure.
   [[nodiscard]]
-  bool RetryMessageNotification() noexcept { return mailbox_.RetryNotification(); }
+  bool RetryMessageNotification() noexcept {
+    return mailbox_.RetryNotification();
+  }
 
-  // Prepares one io_uring operation.
-  //
-  // State transition:
-  //   free SQE -> prepared SQE -> pending_submit_
-  //
-  // The operation is not guaranteed to reach the kernel until FlushSubmit()
-  // or another submission path is executed.
+  // Prepares one io_uring operation. The operation reaches the kernel only
+  // after FlushSubmit() or another submission path.
   template <class Prep>
   [[nodiscard]]
-  base::Result<void> SubmitOp(LUringOp* op, Prep&& prep) noexcept {
+  base::Result<void> SubmitOp(detail::LUringOp* op, Prep&& prep) noexcept {
     assert(IsInLoopThread());
 
     if (!initialized_) {
@@ -202,8 +198,8 @@ public:
   }
 
   [[nodiscard]]
-  base::Result<void> SubmitMsgRing(LUringOp* op, int target_ring_fd,
-                                                 std::uint32_t type) noexcept {
+  base::Result<void> SubmitMsgRing(detail::LUringOp* op, int target_ring_fd,
+                                   std::uint32_t type) noexcept {
     assert(IsInLoopThread());
 
     if (target_ring_fd < 0) {
@@ -211,7 +207,7 @@ public:
     }
 
     return SubmitOp(op, [this, target_ring_fd, type](io_uring_sqe* sqe) noexcept {
-      ring_.PrepMsgRing(sqe, target_ring_fd, type, kMsgRingNotificationUserData);
+      ring_.PrepMsgRing(sqe, target_ring_fd, type, detail::kMsgRingNotificationUserData);
     });
   }
 
@@ -229,13 +225,9 @@ public:
 
   void RunReady() noexcept;
 
-private:
-  friend class LUringRecvSource;
-
   [[nodiscard]]
   base::Result<detail::ProvidedBufferPool*> GetSharedProvidedBufferPool(
-      std::size_t buffer_size,
-      std::size_t source_capacity) noexcept;
+      std::size_t buffer_size, std::size_t source_capacity) noexcept;
 
   [[nodiscard]]
   base::Result<std::uint16_t> AllocateBufferGroupId() noexcept {
@@ -246,14 +238,13 @@ private:
   }
 
   [[nodiscard]]
-  base::Result<std::size_t> WaitCompletionsFor(
-      std::chrono::nanoseconds timeout) noexcept;
+  base::Result<std::size_t> WaitCompletionsFor(std::chrono::nanoseconds timeout) noexcept;
 
   void HandleCqe(io_uring_cqe* cqe) noexcept;
   void HandleMailbox() noexcept;
 
   const int thread_id_;
-  LUringRing ring_;
+  detail::LUringRing ring_;
   coro::WorkQueue ready_;
   coro::WorkQueue completion_ready_;
   bool initialized_{false};
@@ -308,14 +299,14 @@ private:
   // Cross-thread exit request observed by the event loop.
   std::atomic_bool quit_{false};
 
-  LUringMailbox mailbox_;
-  LUringTimerQueue timers_;
+  detail::LUringMailbox mailbox_;
+  detail::LUringTimerQueue timers_;
   int wake_fd_{-1};
   bool wake_pending_{false};
   bool wake_inflight_{false};
-  LUringOp wake_op_{LUringOpKind::kWake};
+  detail::LUringOp wake_op_{detail::LUringOpKind::kWake};
   bool cancel_all_pending_{false};
-  LUringOp cancel_all_op_{LUringOpKind::kCancelAll};
+  detail::LUringOp cancel_all_op_{detail::LUringOpKind::kCancelAll};
   std::uint32_t next_buffer_group_id_{1};
   std::unique_ptr<detail::ProvidedBufferPool> shared_buffer_pool_;
   std::size_t shared_buffer_capacity_{0};

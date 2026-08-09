@@ -1,16 +1,16 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "coropact/luring/worker_group.h"
+#include "coropact/luring/detail/worker_group.h"
 
 #include <cerrno>
 #include <expected>
 #include <memory>
 #include <utility>
 
-#include "coropact/luring/worker.h"
+#include "coropact/luring/detail/worker.h"
 #include "coropact/net/endpoint.h"
 
-namespace coropact::luring {
+namespace coropact::luring::detail {
 
 LUringWorkerGroup::LUringWorkerGroup(net::Endpoint listen_addr, LUringWorkerGroupOptions options,
                                      ThreadInitCallback init_callback,
@@ -68,4 +68,4 @@ void LUringWorkerGroup::Stop() noexcept {
   started_ = false;
 }
 
-}  // namespace coropact::luring
+}  // namespace coropact::luring::detail

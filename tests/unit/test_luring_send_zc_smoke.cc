@@ -25,6 +25,7 @@
 #include "coropact/coro/spawn.h"
 #include "coropact/io/stream_algorithms.h"
 #include "coropact/luring/loop.h"
+#include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/options.h"
 #include "coropact/luring/stream.h"
 #include "coropact/net/endpoint.h"
@@ -171,16 +172,16 @@ bool DriveUntilResult(
     std::optional<Result<T>>& result,
     const char* operation) {
   for (int i = 0; i < 4 && !result.has_value(); ++i) {
-    loop.RunReady();
+    coropact::luring::detail::LoopAccess::RunReady(loop);
   }
   for (int i = 0; i < 16 && !result.has_value(); ++i) {
-    auto completions = loop.WaitCompletions();
+    auto completions = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
     if (!completions.has_value()) {
       std::cout << "FAIL: waiting for " << operation << " CQE failed: "
                 << completions.error().message() << '\n';
       return false;
     }
-    loop.RunReady();
+    coropact::luring::detail::LoopAccess::RunReady(loop);
   }
   return Check(result.has_value(), "operation did not reach terminal CQE");
 }
@@ -239,17 +240,17 @@ bool CheckSendZeroCopy() {
   std::optional<Result<ZeroCopySendResult>> result;
   coropact::coro::SpawnDetach(loop, SendOnce(&stream, payload, &result));
   for (int i = 0; i < 4 && !result.has_value(); ++i) {
-    loop.RunReady();
+    coropact::luring::detail::LoopAccess::RunReady(loop);
   }
 
   for (int i = 0; i < 8 && !result.has_value(); ++i) {
-    auto completions = loop.WaitCompletions();
+    auto completions = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
     if (!completions.has_value()) {
       std::cout << "FAIL: waiting for send zerocopy CQE failed: "
                 << completions.error().message() << '\n';
       return false;
     }
-    loop.RunReady();
+    coropact::luring::detail::LoopAccess::RunReady(loop);
   }
 
   if (!result.has_value()) {

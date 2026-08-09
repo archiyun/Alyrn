@@ -20,7 +20,7 @@
 #include "coropact/net/endpoint.h"
 #include "coropact/utils/macros.h"
 
-namespace coropact::luring {
+namespace coropact::luring::detail {
 
 enum class AcceptMode : std::uint8_t {
   kSingleShot,
@@ -99,4 +99,4 @@ private:
   std::jthread thread_;
 };
 
-}  // namespace coropact::luring
+}  // namespace coropact::luring::detail

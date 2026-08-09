@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "coropact/reactor/reactor_worker.h"
+#include "coropact/reactor/detail/reactor_worker.h"
 
 #include <cerrno>
 #include <expected>
@@ -11,7 +11,7 @@
 #include "coropact/coro/frame_allocator.h"
 #include "coropact/coro/spawn.h"
 
-namespace coropact::reactor {
+namespace coropact::reactor::detail {
 
 namespace {
 
@@ -140,4 +140,4 @@ void ReactorWorker::WorkLoop(std::stop_token token) noexcept {
   }
 }
 
-}  // namespace coropact::reactor
+}  // namespace coropact::reactor::detail

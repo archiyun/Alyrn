@@ -6,8 +6,8 @@
 #include <utility>
 
 #include "coropact/base/check.h"
+#include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/loop.h"
-#include "coropact/luring/op.h"
 
 namespace coropact::luring::detail {
 
@@ -29,7 +29,7 @@ bool SubmitAwaitingOperation(LUringLoop& loop, LUringOp& op, std::coroutine_hand
   COROPACT_CHECK(loop.IsInLoopThread(), "LUring operation submitted from a non-owner loop thread");
 
   op.resume_work.SetHandle(continuation);
-  auto submitted = loop.SubmitOp(&op, std::forward<Prep>(prep));
+  auto submitted = LoopAccess::SubmitOp(loop, &op, std::forward<Prep>(prep));
   if (submitted.has_value()) {
     return true;
   }

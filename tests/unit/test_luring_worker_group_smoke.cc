@@ -17,7 +17,7 @@
 #include <utility>
 
 #include "coropact/base/error.h"
-#include "coropact/luring/worker_group.h"
+#include "coropact/luring/detail/worker_group.h"
 #include "coropact/net/endpoint.h"
 
 namespace {
@@ -126,7 +126,7 @@ bool CheckWorkerGroupStartStop() {
     return false;
   }
 
-  coropact::luring::LUringWorkerGroupOptions options;
+  coropact::luring::detail::LUringWorkerGroupOptions options;
   options.worker_num = 2;
   options.worker_options.loop_options.entries = 16;
   options.worker_options.loop_options.submit_batch = 1;
@@ -137,8 +137,8 @@ bool CheckWorkerGroupStartStop() {
   std::atomic_bool invalid_index{false};
   std::atomic_bool invalid_listener{false};
 
-  coropact::luring::LUringWorkerGroup group(LoopbackAddress(*port), options,
-                                        [&](coropact::luring::LUringWorkerContext& context) {
+  coropact::luring::detail::LUringWorkerGroup group(LoopbackAddress(*port), options,
+                                        [&](coropact::luring::detail::LUringWorkerContext& context) {
                                           if (!context.loop.IsInLoopThread()) {
                                             bad_thread.store(true, std::memory_order_relaxed);
                                           }
@@ -189,21 +189,21 @@ bool CheckWorkerGroupAcceptCallback() {
     return false;
   }
 
-  coropact::luring::LUringWorkerGroupOptions options;
+  coropact::luring::detail::LUringWorkerGroupOptions options;
   options.worker_num = 1;
   options.worker_options.loop_options.entries = 16;
   options.worker_options.loop_options.submit_batch = 1;
   options.worker_options.listen_options.reuse_port = true;
-  options.worker_options.accept_mode = coropact::luring::AcceptMode::kMultishot;
+  options.worker_options.accept_mode = coropact::luring::detail::AcceptMode::kMultishot;
 
   std::atomic_size_t connection_count{0};
   std::atomic_bool invalid_stream{false};
   std::atomic_bool bad_thread{false};
 
   const auto listen_addr = LoopbackAddress(*port);
-  coropact::luring::LUringWorkerGroup group(
+  coropact::luring::detail::LUringWorkerGroup group(
       listen_addr, options, {},
-      [&](coropact::luring::LUringWorkerContext& context,
+      [&](coropact::luring::detail::LUringWorkerContext& context,
           coropact::luring::LUringStream stream) -> coropact::coro::DetachedTask {
         if (!context.loop.IsInLoopThread()) {
           bad_thread.store(true, std::memory_order_relaxed);

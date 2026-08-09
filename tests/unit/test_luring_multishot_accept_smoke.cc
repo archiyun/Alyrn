@@ -23,6 +23,7 @@
 #include "coropact/coro/spawn.h"
 #include "coropact/luring/listener.h"
 #include "coropact/luring/loop.h"
+#include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/options.h"
 #include "coropact/luring/timer.h"
 #include "coropact/net/accept_source.h"
@@ -33,7 +34,7 @@ namespace {
 using coropact::base::Error;
 using coropact::base::Result;
 using coropact::luring::LUringAcceptSource;
-using coropact::luring::CompletionEvent;
+using coropact::luring::detail::CompletionEvent;
 using coropact::luring::LUringListener;
 using coropact::luring::LUringLoop;
 using coropact::luring::LUringOptions;
@@ -181,13 +182,13 @@ LoopInitStatus InitLoop(LUringLoop& loop) {
 template <typename Predicate>
 bool PumpUntil(LUringLoop& loop, Predicate&& predicate, int max_iterations = 64) {
   for (int i = 0; i < max_iterations && !predicate(); ++i) {
-    auto completed = loop.WaitCompletions();
+    auto completed = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
     if (!completed.has_value()) {
       std::cout << "FAIL: waiting for CQE failed: "
                 << completed.error().message() << '\n';
       return false;
     }
-    loop.RunReady();
+    coropact::luring::detail::LoopAccess::RunReady(loop);
   }
   return predicate();
 }
@@ -700,7 +701,7 @@ bool CheckInitialSubmitFailure() {
   CloseObservation observation;
   coropact::coro::SpawnDetach(
       loop, WaitForSourceEnd(&source, &observation));
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   if (!PumpUntil(loop, [&] {
         return observation.done || observation.unsupported ||
@@ -751,7 +752,7 @@ bool CheckCancelSubmitFailure() {
   StopObservation stop_observation;
   coropact::coro::SpawnDetach(
       loop, WaitForSourceEnd(&source, &end_observation));
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   // The accept request is active now. Fail only the cancellation submit;
   // Listener::Close must still be able to cancel the physical accept and
@@ -759,11 +760,11 @@ bool CheckCancelSubmitFailure() {
   loop.FailNextSubmissionsForTesting(1, EIO);
   coropact::coro::SpawnDetach(
       loop, StopSource(&source, &stop_observation));
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   coropact::coro::SpawnDetach(
       loop, CloseListener(&listener, &end_observation));
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   if (!PumpUntil(loop, [&] {
         return end_observation.unsupported ||
@@ -830,7 +831,7 @@ bool CheckMultishotAccept() {
       Consume(&source, &observation));
 
   // Start the consumer and submit the multishot request.
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   auto address = listener.LocalAddress();
   if (!address.has_value()) {
@@ -904,7 +905,7 @@ bool CheckStopCancelsActiveSource() {
   CancelObservation observation;
   coropact::coro::SpawnDetach(
       loop, ConsumeOneThenStop(&source, &observation));
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   auto address = listener.LocalAddress();
   if (!address.has_value()) {
@@ -969,11 +970,11 @@ bool CheckListenerCloseCancelsActiveSource() {
   CloseObservation observation;
   coropact::coro::SpawnDetach(
       loop, WaitForSourceEnd(&source, &observation));
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   coropact::coro::SpawnDetach(
       loop, CloseListener(&listener, &observation));
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   if (!PumpUntil(loop, [&] {
         return observation.unsupported || observation.error.has_value() ||
@@ -1025,7 +1026,7 @@ bool CheckQueueBackpressure() {
   BackpressureObservation observation;
   coropact::coro::SpawnDetach(
       loop, FillQueueThenStop(&source, &loop, &observation));
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   auto address = listener.LocalAddress();
   if (!address.has_value()) {
@@ -1123,7 +1124,7 @@ bool CheckQueuePauseThenRearm() {
 
   PauseResumeObservation observation;
   coropact::coro::SpawnDetach(loop, PauseThenResume(&source, &loop, &observation));
-  loop.RunReady();
+  coropact::luring::detail::LoopAccess::RunReady(loop);
 
   auto address = listener.LocalAddress();
   if (!address.has_value()) {
