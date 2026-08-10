@@ -40,6 +40,9 @@ public:
 
   [[nodiscard]]
   base::Result<void> Start();
+
+  // Asks every worker loop to stop without joining its thread.
+  void RequestStop() noexcept;
   void Stop() noexcept;
 
   [[nodiscard]]

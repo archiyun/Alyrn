@@ -50,7 +50,7 @@ TimerQueue::~TimerQueue() {
   ::close(timerfd_);
   while (!timers_.Empty()) {
     ReactorTimer* timer = timers_.Earliest();
-    COROPACT_IGNORE_RESULT(active_timers_.Erase(timer));
+    (void)(active_timers_.Erase(timer));
     timers_.Erase(timer);
     timer_pool_.Release(timer);
   }
@@ -60,7 +60,7 @@ time::TimerId TimerQueue::AddTimer(TimerCallback cb, TimePoint when, Duration in
   ReactorTimer* t = timer_pool_.Acquire(std::move(cb), when, interval);
   bool earliest_changed = timers_.Empty() || t->expiration() < timers_.Earliest()->expiration();
   timers_.Insert(t);
-  COROPACT_IGNORE_RESULT(active_timers_.Insert(t));
+  (void)(active_timers_.Insert(t));
   if (earliest_changed) {
     ResetTimerfd(t->expiration());
   }
@@ -71,7 +71,7 @@ void TimerQueue::Cancel(coropact::time::TimerId id) {
   ReactorTimer* active_timer = active_timers_.Find(id.sequence);
   if (active_timer != nullptr) {
     const bool earliest_removed = active_timer == timers_.Earliest();
-    COROPACT_IGNORE_RESULT(active_timers_.Erase(active_timer));
+    (void)(active_timers_.Erase(active_timer));
     timers_.Erase(active_timer);
     timer_pool_.Release(active_timer);
     if (earliest_removed && !timers_.Empty()) {
@@ -99,7 +99,7 @@ void TimerQueue::HandleRead() {
                      return timer->expiration() <= now;
                    },
                    [this, now](ReactorTimer* timer) {
-                     COROPACT_IGNORE_RESULT(active_timers_.Erase(timer));
+                     (void)(active_timers_.Erase(timer));
                      processing_timer_ = timer;
                      processing_timer_cancelled_ = false;
                      timer->Run();
@@ -111,7 +111,7 @@ void TimerQueue::HandleRead() {
                      if (timer->repeat() && !cancelled) {
                        timer->Restart(now);
                        timers_.Insert(timer);
-                       COROPACT_IGNORE_RESULT(active_timers_.Insert(timer));
+                       (void)(active_timers_.Insert(timer));
                      } else {
                        timer_pool_.Release(timer);
                      }

@@ -176,7 +176,7 @@ bool CheckMsgRingMailboxSchedule() {
         coropact::luring::detail::LoopAccess::RingFd(*target),
         0);
     if (!submitted.has_value()) {
-      COROPACT_IGNORE_RESULT(
+      (void)(
           coropact::luring::detail::LoopAccess::RetryMessageNotification(*target));
       if (IsEnvironmentSkip(submitted.error())) {
         skipped.store(true, std::memory_order_release);

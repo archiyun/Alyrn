@@ -555,7 +555,7 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
 
   if (op == &cancel_all_op_) {
     cancel_all_pending_ = false;
-    COROPACT_IGNORE_RESULT(op->Complete(cqe->res));
+    (void)(op->Complete(cqe->res));
     apply_disposition(detail::DispatchCompletion(op, event));
     return;
   }

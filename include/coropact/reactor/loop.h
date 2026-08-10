@@ -4,7 +4,6 @@
 
 #include <atomic>
 #include <chrono>
-#include <cstdint>
 #include <functional>
 #include <memory>
 #include <memory_resource>
@@ -87,13 +86,18 @@ private:
   friend class detail::Channel;
   friend class detail::LoopAccess;
 
+  using Channel = detail::Channel;
+  using LoopShutdownParticipant = detail::LoopShutdownParticipant;
+  using Poller = detail::Poller;
+  using TimerQueue = detail::TimerQueue;
+
   // Channel registration belongs to the implementation of EventLoop. These
   // methods are intentionally unavailable to Reactor callers.
-  void UpdateChannel(detail::Channel* channel);
-  void RemoveChannel(detail::Channel* channel);
-  bool HasChannel(detail::Channel* channel) const;
-  void RegisterShutdownParticipant(detail::LoopShutdownParticipant& participant) noexcept;
-  void UnregisterShutdownParticipant(detail::LoopShutdownParticipant& participant) noexcept;
+  void UpdateChannel(Channel* channel);
+  void RemoveChannel(Channel* channel);
+  bool HasChannel(Channel* channel) const;
+  void RegisterShutdownParticipant(LoopShutdownParticipant& participant) noexcept;
+  void UnregisterShutdownParticipant(LoopShutdownParticipant& participant) noexcept;
 
   // Runs all work submitted through Schedule().
   void DoPendingWork();

@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "coropact/utils/macros.h"
+
 namespace coropact::operation::detail {
 
 // Owns the logical terminal transition for one single-result operation.
@@ -16,11 +18,9 @@ namespace coropact::operation::detail {
 // completion when appropriate.
 class CompletionGate {
 public:
+  COROPACT_DELETE_COPY_MOVE(CompletionGate);
+
   CompletionGate() noexcept = default;
-  CompletionGate(const CompletionGate&) = delete;
-  CompletionGate& operator=(const CompletionGate&) = delete;
-  CompletionGate(CompletionGate&&) = delete;
-  CompletionGate& operator=(CompletionGate&&) = delete;
 
   [[nodiscard]]
   bool TryComplete() noexcept {

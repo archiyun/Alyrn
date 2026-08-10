@@ -27,3 +27,7 @@ endif()
 add_subdirectory(foundation)
 add_subdirectory(net)
 add_subdirectory(reactor)
+
+if(COROPACT_ENABLE_URING)
+    add_subdirectory(luring)
+endif()

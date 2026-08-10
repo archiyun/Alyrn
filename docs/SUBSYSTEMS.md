@@ -36,8 +36,9 @@ application protocol, route, peer, proxy, or gateway policy.
 | `include/coropact/operation/detail` | L2 | Internal completion and lifecycle authorization shared by backend adapters: one-shot, composite, and split-release families plus scheduler-bound continuations; no transport resource ownership. |
 | `include/coropact/net`, `src/net` | L2 | Socket and address values shared by backends. |
 | `include/coropact/io`, `include/coropact/backend` | L2 | Backend-neutral I/O and dispatcher lifecycle contracts and algorithms. |
-| `include/coropact/reactor`, `src/reactor` | L2 | epoll readiness adapter. `EventLoop` and transport adapters are public; `reactor/detail` owns channel registration, epoll polling, timers, and worker bootstrap implementation. |
-| `include/coropact/luring`, `src/luring` | L2 | io_uring completion adapter. `LUringLoop` and transport adapters are public; `luring/detail` owns raw SQE/CQE operations, ring/mailbox transport, timer queue, and worker/server bootstrap implementation. |
+| `include/coropact/runtime.h` | L2 | Backend-neutral application lifecycle facade. It type-erases only cold start/stop control; backend tags select a Builder specialization at compile time. |
+| `include/coropact/reactor`, `src/reactor` | L2 | epoll readiness adapter. `EventLoop`, the `Runtime::Builder<runtime::Reactor>` binding, and transport adapters are public; `reactor/detail` owns channel registration, epoll polling, timers, and worker bootstrap implementation. |
+| `include/coropact/luring`, `src/luring` | L2 | io_uring completion adapter. `LUringLoop`, the `Runtime::Builder<runtime::LUring>` binding, and transport adapters are public; `luring/detail` owns raw SQE/CQE operations, ring/mailbox transport, timer queue, and worker/server bootstrap implementation. |
 | `examples`, `benchmarks`, `tests` | L3 | Consumers and validation; never runtime dependencies. |
 
 ## Hard Dependency Rules
@@ -66,6 +67,10 @@ application protocol, route, peer, proxy, or gateway policy.
   public luring adapter types, while callers outside the luring implementation
   and validation code must use `LUringLoop` and the public transport adapters
   instead.
+- `Runtime` is the sole application composition root. Backend selection stays
+  compile-time through Builder tags; do not add a runtime backend enum,
+  type-erased stream handler, implementation-tuning knobs, or a main macro
+  without superseding ADR-0010.
 
 ## New Module Decision
 

@@ -3,7 +3,6 @@
 #include <sys/eventfd.h>
 #include <unistd.h>
 
-#include <algorithm>
 #include <cerrno>
 #include <cstdint>
 
@@ -20,7 +19,7 @@ namespace coropact::reactor {
 
 namespace {
 
-static constexpr int kPollTimeMs = 10000;
+constexpr int kPollTimeMs = 10000;
 thread_local EventLoop* t_loop_in_this_thread = nullptr;
 
 }  // namespace
@@ -28,15 +27,15 @@ thread_local EventLoop* t_loop_in_this_thread = nullptr;
 EventLoop::EventLoop(std::pmr::memory_resource* frame_resource)
     : Scheduler(frame_resource),
       thread_id_(base::tid()),
-      poller_(detail::Poller::NewDefaultPoller(this)),
-      timer_queue_(std::make_unique<detail::TimerQueue>(this)) {
+      poller_(Poller::NewDefaultPoller(this)),
+      timer_queue_(std::make_unique<TimerQueue>(this)) {
   COROPACT_DCHECK(t_loop_in_this_thread == nullptr,
                   "EventLoop: only one EventLoop may exist per thread");
   t_loop_in_this_thread = this;
 
   wakeup_fd_ = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
   COROPACT_CHECK(wakeup_fd_ >= 0, "EventLoop: eventfd creation failed");
-  wakeup_channel_ = std::make_unique<detail::Channel>(this, wakeup_fd_);
+  wakeup_channel_ = std::make_unique<Channel>(this, wakeup_fd_);
   wakeup_channel_->SetReadCallback(&EventLoop::DispatchWakeup, this);
   wakeup_channel_->EnableReading();
 }
@@ -61,8 +60,7 @@ void EventLoop::Run(std::stop_token token) {
 
   backend::LoopState expected = backend::LoopState::kCreated;
   if (!state_.compare_exchange_strong(expected, backend::LoopState::kRunning,
-                                      std::memory_order_acq_rel,
-                                      std::memory_order_acquire)) {
+                                      std::memory_order_acq_rel, std::memory_order_acquire)) {
     COROPACT_CHECK(expected == backend::LoopState::kStopping,
                    "EventLoop::Run may only run a created or stopping loop");
   }
@@ -82,7 +80,7 @@ void EventLoop::Run(std::stop_token token) {
     const int timeout_ms = HasImmediateWork() ? 0 : kPollTimeMs;
     poller_->Poll(timeout_ms, &active_channels_);
 
-    for (detail::Channel* channel : active_channels_) {
+    for (Channel* channel : active_channels_) {
       channel->HandleEvent();
     }
   }
@@ -97,8 +95,7 @@ void EventLoop::RequestStop() noexcept {
   backend::LoopState observed = state_.load(std::memory_order_acquire);
   while (observed == backend::LoopState::kCreated || observed == backend::LoopState::kRunning) {
     if (state_.compare_exchange_weak(observed, backend::LoopState::kStopping,
-                                     std::memory_order_acq_rel,
-                                     std::memory_order_acquire)) {
+                                     std::memory_order_acq_rel, std::memory_order_acquire)) {
       Wakeup();
       return;
     }
@@ -124,31 +121,29 @@ void EventLoop::RunPending() {
   }
 }
 
-void EventLoop::UpdateChannel(detail::Channel* channel) {
+void EventLoop::UpdateChannel(Channel* channel) {
   COROPACT_DCHECK(IsInLoopThread(), "EventLoop::UpdateChannel called from wrong thread");
   poller_->UpdateChannel(channel);
 }
 
-void EventLoop::RemoveChannel(detail::Channel* channel) {
+void EventLoop::RemoveChannel(Channel* channel) {
   COROPACT_DCHECK(IsInLoopThread(), "EventLoop::RemoveChannel called from wrong thread");
   poller_->RemoveChannel(channel);
 }
 
-bool EventLoop::HasChannel(detail::Channel* channel) const {
+bool EventLoop::HasChannel(Channel* channel) const {
   COROPACT_DCHECK(IsInLoopThread(), "EventLoop::HasChannel called from wrong thread");
   return poller_->HasChannel(channel);
 }
 
-void EventLoop::RegisterShutdownParticipant(
-    detail::LoopShutdownParticipant& participant) noexcept {
+void EventLoop::RegisterShutdownParticipant(LoopShutdownParticipant& participant) noexcept {
   COROPACT_CHECK(IsInLoopThread(),
                  "EventLoop::RegisterShutdownParticipant called from wrong thread");
   COROPACT_CHECK(shutdown_registry_.Register(&participant),
                  "EventLoop shutdown participant registered twice");
 }
 
-void EventLoop::UnregisterShutdownParticipant(
-    detail::LoopShutdownParticipant& participant) noexcept {
+void EventLoop::UnregisterShutdownParticipant(LoopShutdownParticipant& participant) noexcept {
   COROPACT_CHECK(IsInLoopThread(),
                  "EventLoop::UnregisterShutdownParticipant called from wrong thread");
   COROPACT_CHECK(shutdown_registry_.Unregister(&participant),

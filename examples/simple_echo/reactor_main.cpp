@@ -12,13 +12,15 @@
 
 #include <csignal>
 #include <cstdint>
-#include <iostream>
+#include <print>
+#include <stop_token>
+#include <thread>
 #include <utility>
 
-#include "coropact/coro.h"
 #include "coropact/net.h"
 #include "coropact/reactor.h"
 #include "echo_app.h"
+#include "signal_stop.h"
 
 using namespace coropact;
 
@@ -31,20 +33,25 @@ constexpr std::uint16_t kPort = 9090;
 int main() {
   std::signal(SIGPIPE, SIG_IGN);
 
-  reactor::EventLoop loop;
-  const auto address = net::Endpoint::Loopback(kPort);
-
-  auto listener_result = reactor::ReactorListener::Create(&loop, address);
-  if (!listener_result.has_value()) {
-    std::println(stderr, "failed to create Reactor listener: {}",
-                 listener_result.error().message());
+  std::stop_source stop_source;
+  auto blocked_signals = simple_echo::BlockTerminationSignals();
+  if (!blocked_signals.has_value()) {
+    std::println(stderr, "failed to block termination signals: {}",
+                 blocked_signals.error().message());
     return 1;
   }
+  std::jthread signal_forwarder{simple_echo::ForwardTerminationSignals, &stop_source};
 
-  auto listener = std::move(*listener_result);
-  coro::SpawnDetach(loop, simple_echo::AcceptLoop(listener, loop));
+  auto runtime = Runtime::Create<runtime::Reactor>(
+      net::Endpoint::Loopback(kPort),
+      [](auto stream) { return simple_echo::HandleConnection(std::move(stream)); });
 
-  std::println(std::cout, "simple echo (Reactor) listening on 127.0.0.1:{}", kPort);
-  loop.Run();
+  std::println("simple echo (Reactor) listening on 127.0.0.1:{}", kPort);
+  auto ran = runtime.Run(stop_source.get_token());
+  (void)stop_source.request_stop();
+  if (!ran.has_value()) {
+    std::println(stderr, "failed to run Reactor runtime: {}", ran.error().message());
+    return 1;
+  }
   return 0;
 }

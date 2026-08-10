@@ -19,9 +19,9 @@
 #include "coropact/base/error.h"
 #include "coropact/luring/detail/close_state.h"
 #include "coropact/luring/detail/loop_access.h"
+#include "coropact/luring/detail/op.h"
 #include "coropact/luring/detail/operation_submission.h"
 #include "coropact/luring/loop.h"
-#include "coropact/luring/detail/op.h"
 #include "coropact/net/endpoint.h"
 
 namespace coropact::luring {
@@ -101,16 +101,29 @@ bool LUringStream::ReadIntoAwaiter::await_suspend(std::coroutine_handle<> contin
 
   stream_->pending_read_ = this;
   Op()->kind = LUringOpKind::kReadIntoComplete;
+
+  auto on_submit_failure = [this](base::Error error) noexcept {
+    stream_->pending_read_ = nullptr;
+    FinishReservation(std::unexpected(error));
+    Op()->SetImmediateError(error);
+  };
+
+  if (iovs_.size() == 1) {
+    const iovec writable = iovs_.front();
+    return detail::SubmitAwaitingOperation(
+        *stream_->loop_, *Op(), continuation,
+        [fd = stream_->fd_, writable](io_uring_sqe* sqe) noexcept {
+          io_uring_prep_recv(sqe, fd, writable.iov_base, writable.iov_len, 0);
+        },
+        std::move(on_submit_failure));
+  }
+
   return detail::SubmitAwaitingOperation(
       *stream_->loop_, *Op(), continuation,
-      [fd = stream_->fd_, buffer = writable_](io_uring_sqe* sqe) noexcept {
-        io_uring_prep_recv(sqe, fd, buffer.data(), buffer.size(), 0);
+      [fd = stream_->fd_, this](io_uring_sqe* sqe) noexcept {
+        io_uring_prep_readv(sqe, fd, iovs_.data(), static_cast<unsigned>(iovs_.size()), -1);
       },
-      [this](base::Error error) noexcept {
-        stream_->pending_read_ = nullptr;
-        FinishReservation(std::unexpected(error));
-        Op()->SetImmediateError(error);
-      });
+      std::move(on_submit_failure));
 }
 
 net::ReadIntoOutcome LUringStream::ReadIntoAwaiter::await_resume() noexcept {
@@ -131,15 +144,11 @@ void LUringStream::ReadIntoAwaiter::OnComplete(LUringOp* op) noexcept {
 
 bool LUringStream::ReadIntoAwaiter::PrepareReservation() noexcept {
   try {
-    auto iovs = buffer_.PrepareWrite(reserve_, 1);
-    if (iovs.empty()) {
+    iovs_ = buffer_.PrepareWrite(reserve_, 16);
+    if (iovs_.empty()) {
       buffer_.AbortWrite();
       return false;
     }
-    writable_ = {
-        static_cast<std::byte*>(iovs.front().iov_base),
-        iovs.front().iov_len,
-    };
   } catch (const std::bad_alloc&) {
     buffer_.AbortWrite();
     return false;
@@ -155,7 +164,7 @@ void LUringStream::ReadIntoAwaiter::FinishReservation(base::Result<std::size_t> 
   } else {
     buffer_.AbortWrite();
   }
-  writable_ = {};
+  iovs_.clear();
   reservation_active_ = false;
 }
 
@@ -191,8 +200,8 @@ bool LUringStream::ReadSomeForAwaiter::await_suspend(
   continuation_ = continuation;
   stream_->pending_read_ = this;
 
-  auto submitted = detail::LoopAccess::SubmitOp(*stream_->loop_,
-      ReadOp(), [fd = stream_->fd_, buffer = buffer_](io_uring_sqe* sqe) noexcept {
+  auto submitted = detail::LoopAccess::SubmitOp(
+      *stream_->loop_, ReadOp(), [fd = stream_->fd_, buffer = buffer_](io_uring_sqe* sqe) noexcept {
         io_uring_prep_recv(sqe, fd, buffer.data(), buffer.size(), 0);
         sqe->flags |= IOSQE_IO_LINK;
       });
@@ -202,15 +211,13 @@ bool LUringStream::ReadSomeForAwaiter::await_suspend(
     return false;
   }
 
-  submitted = detail::LoopAccess::SubmitOp(*stream_->loop_, TimeoutOp(),
-                                            [this](io_uring_sqe* sqe) noexcept {
-    io_uring_prep_link_timeout(sqe, &timeout_ts_, 0);
-  });
+  submitted = detail::LoopAccess::SubmitOp(
+      *stream_->loop_, TimeoutOp(),
+      [this](io_uring_sqe* sqe) noexcept { io_uring_prep_link_timeout(sqe, &timeout_ts_, 0); });
   if (!submitted.has_value()) {
     // The receive is already queued. It will complete normally without the
     // optional timeout, and the awaiter remains alive until that CQE.
-    COROPACT_IGNORE_RESULT(
-        lifecycle_.RecordMemberCompletion(operation::detail::CompositeMember::kSecond));
+    (void)(lifecycle_.RecordMemberCompletion(operation::detail::CompositeMember::kSecond));
   }
   return true;
 }
@@ -342,9 +349,8 @@ public:
     continuation_ = continuation;
     Op()->kind = LUringOpKind::kStreamCloseComplete;
 
-    auto submitted =
-        detail::LoopAccess::SubmitOp(*stream_->loop_, Op(),
-                                     [fd = stream_->fd_](io_uring_sqe* sqe) noexcept {
+    auto submitted = detail::LoopAccess::SubmitOp(
+        *stream_->loop_, Op(), [fd = stream_->fd_](io_uring_sqe* sqe) noexcept {
           io_uring_prep_cancel_fd(sqe, fd, IORING_ASYNC_CANCEL_ALL);
         });
     if (!submitted.has_value()) {
@@ -427,8 +433,8 @@ bool LUringStream::SendZeroCopyAwaiter::await_suspend(
   Op()->kind = LUringOpKind::kSendZeroCopyComplete;
   Op()->resume_work.SetHandle(continuation);
 
-  auto submitted = detail::LoopAccess::SubmitOp(*stream_->loop_,
-      Op(), [fd = stream_->fd_, buffer = buffer_](io_uring_sqe* sqe) noexcept {
+  auto submitted = detail::LoopAccess::SubmitOp(
+      *stream_->loop_, Op(), [fd = stream_->fd_, buffer = buffer_](io_uring_sqe* sqe) noexcept {
         io_uring_prep_send_zc(sqe, fd, buffer.data(), buffer.size(), MSG_NOSIGNAL,
                               IORING_SEND_ZC_REPORT_USAGE);
       });
@@ -555,7 +561,7 @@ LUringStream& LUringStream::operator=(LUringStream&& other) noexcept {
 
   loop_ = other_loop;
   fd_ = std::exchange(other.fd_, -1);
-  peer_ = std::move(other.peer_);
+  peer_ = other.peer_;
   pending_read_ = nullptr;
   pending_write_ = nullptr;
   pending_close_ = nullptr;
