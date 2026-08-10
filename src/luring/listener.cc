@@ -107,7 +107,7 @@ public:
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     if (source_->pending_next_ != nullptr) {
       result_.emplace(std::unexpected(base::MakeErrno(EBUSY)));
-      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+      (void)(completion_gate_.TryComplete());
       return false;
     }
 
@@ -116,7 +116,7 @@ public:
     LUringAcceptSource::Result result;
     if (source_->TryTakeNext(result)) {
       result_.emplace(std::move(result));
-      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+      (void)(completion_gate_.TryComplete());
       return false;
     }
 
@@ -162,14 +162,14 @@ public:
     if (!waiting.has_value()) {
       source_->pending_stop_ = nullptr;
       result_.emplace(std::unexpected(waiting.error()));
-      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+      (void)(completion_gate_.TryComplete());
       return false;
     }
 
     if (!*waiting) {
       source_->pending_stop_ = nullptr;
       result_.emplace(base::Result<void>{});
-      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+      (void)(completion_gate_.TryComplete());
       return false;
     }
 
@@ -314,7 +314,7 @@ base::Result<void> LUringAcceptSource::StartOperation() noexcept {
     --listener_->pending_accepts_;
     const auto completed = state_.CompleteMultishotEvent(EventDisposition::kNone,
                                                          MultishotRequestDisposition::kTerminal);
-    COROPACT_IGNORE_RESULT(completed);
+    (void)(completed);
     assert(completed.has_value());
     return std::unexpected(submitted.error());
   }
@@ -406,7 +406,7 @@ void LUringAcceptSource::RequestBackendStop(std::optional<base::Error> error) no
 }
 
 void LUringAcceptSource::RequestBackendPause() noexcept {
-  COROPACT_IGNORE_RESULT(state_.RequestPause());
+  (void)(state_.RequestPause());
 
   if (accept_submitted_ && !cancel_submitted_) {
     auto cancelled = StartCancel();

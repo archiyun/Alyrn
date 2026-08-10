@@ -124,6 +124,7 @@ add_library(coropact_reactor STATIC
     src/reactor/reactor_stream.cc
     src/reactor/reactor_worker.cc
     src/reactor/reactor_worker_group.cc
+    src/reactor/runtime.cc
     src/reactor/timer_queue.cc
 )
 
@@ -156,6 +157,7 @@ if(COROPACT_ENABLE_URING)
         src/luring/recv_source.cc
         src/luring/loop.cc
         src/luring/ring.cc
+        src/luring/runtime.cc
         src/luring/server.cc
         src/luring/timer_queue.cc
         src/luring/stream.cc

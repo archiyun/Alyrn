@@ -33,7 +33,7 @@ provided buffer 和 zero-copy 的不同生命周期。
 以下能力保持为独立 extension：
 
 - `AsyncTimedStream`；
-- `AsyncOwnedReadStream`；
+- `AsyncReadIntoStream`；
 - `AsyncRecvSource`、`BufferLease` 和 provided buffer；
 - send zero-copy、multishot 以及其他 backend capability。
 

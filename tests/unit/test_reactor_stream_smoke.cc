@@ -26,6 +26,7 @@
 #include "coropact/coro/task.h"
 #include "coropact/io/async_stream.h"
 #include "coropact/io/buffer.h"
+#include "coropact/io/read_into.h"
 #include "coropact/io/stream_algorithms.h"
 #include "coropact/reactor/loop.h"
 #include "coropact/reactor/stream.h"
@@ -34,11 +35,11 @@ namespace {
 
 using ReadResult = coropact::base::Result<std::size_t>;
 using WriteResult = coropact::base::Result<std::size_t>;
-using OwnedReadOutcome = coropact::net::ReadIntoOutcome;
+using OwnedReadOutcome = coropact::io::ReadIntoOutcome;
 
 static_assert(coropact::io::AsyncStream<coropact::reactor::ReactorStream>);
 static_assert(coropact::io::AsyncTimedStream<coropact::reactor::ReactorStream>);
-static_assert(coropact::io::AsyncOwnedReadStream<coropact::reactor::ReactorStream>);
+static_assert(coropact::io::AsyncReadIntoStream<coropact::reactor::ReactorStream>);
 
 bool Check(bool condition, const char* message) {
   if (!condition) {
@@ -566,7 +567,7 @@ bool CheckReadableThenCloseResumesOnce() {
                                                          &resume_count, &resumed_with_scheduler));
   loop.RunAfter(0.0, [&] {
     const char payload[] = "race";
-    COROPACT_IGNORE_RESULT(::write(sv[1], payload, sizeof(payload) - 1));
+    (void)(::write(sv[1], payload, sizeof(payload) - 1));
     coropact::coro::Spawn(loop, stream.Close()).Detach();
   });
   loop.RunAfter(0.01, [&] { loop.RequestStop(); });

@@ -89,7 +89,7 @@ public:
     if (listener_->loop_->State() == backend::LoopState::kStopping ||
         listener_->loop_->State() == backend::LoopState::kStopped) {
       result_.SetError(base::MakeErrno(ECANCELED));
-      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+      (void)(completion_gate_.TryComplete());
       return false;
     }
     COROPACT_DCHECK(listener_->pending_accept_ == nullptr,
@@ -100,7 +100,7 @@ public:
     base::Result<ReactorStream> result = TryAccept();
     if (result.has_value() || !IsWouldBlock(result.error().value())) {
       result_.SetResult(std::move(result));
-      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+      (void)(completion_gate_.TryComplete());
       return false;
     }
 
@@ -176,7 +176,7 @@ public:
     Result result;
     if (source_->TryTakeNext(result)) {
       result_.SetResult(std::move(result));
-      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+      (void)(completion_gate_.TryComplete());
       return false;
     }
 
@@ -189,7 +189,7 @@ public:
     if (source_->TryTakeNext(result)) {
       source_->pending_next_ = nullptr;
       result_.SetResult(std::move(result));
-      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+      (void)(completion_gate_.TryComplete());
       return false;
     }
     return true;
