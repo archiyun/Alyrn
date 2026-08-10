@@ -19,12 +19,12 @@
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/spawn.h"
 #include "coropact/coro/task.h"
-#include "coropact/luring/loop.h"
+#include "coropact/io/loop.h"
 #include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/detail/op.h"
+#include "coropact/luring/loop.h"
 #include "coropact/luring/options.h"
 #include "coropact/luring/stream.h"
-#include "coropact/io/loop.h"
 
 namespace {
 
@@ -82,7 +82,7 @@ coropact::coro::DetachedTask AwaitNop(coropact::luring::LUringLoop* loop,
                                       std::optional<coropact::base::Result<int>>* out,
                                       bool* resumed_with_scheduler) {
   auto result = co_await NopAwaiter(*loop);
-  *resumed_with_scheduler = coropact::coro::Scheduler::Current() == loop;
+  *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == loop;
   out->emplace(std::move(result));
 }
 
@@ -105,7 +105,8 @@ bool CheckNopResumesCoroutine() {
   if (!Check(loop.IsInLoopThread(), "loop should be bound to the creating thread")) {
     return false;
   }
-  if (!Check(coropact::luring::detail::LoopAccess::IsDrained(loop), "fresh loop should be drained")) {
+  if (!Check(coropact::luring::detail::LoopAccess::IsDrained(loop),
+             "fresh loop should be drained")) {
     return false;
   }
 
@@ -116,9 +117,12 @@ bool CheckNopResumesCoroutine() {
 
   coropact::luring::detail::LoopAccess::RunReady(loop);
 
-  if (!Check(coropact::luring::detail::LoopAccess::PendingSubmitCount(loop) == 1, "NOP should be pending submit after suspension") ||
-      !Check(coropact::luring::detail::LoopAccess::InflightCount(loop) == 0, "NOP should not be inflight before submit") ||
-      !Check(!coropact::luring::detail::LoopAccess::IsDrained(loop), "loop should not be drained before NOP completion")) {
+  if (!Check(coropact::luring::detail::LoopAccess::PendingSubmitCount(loop) == 1,
+             "NOP should be pending submit after suspension") ||
+      !Check(coropact::luring::detail::LoopAccess::InflightCount(loop) == 0,
+             "NOP should not be inflight before submit") ||
+      !Check(!coropact::luring::detail::LoopAccess::IsDrained(loop),
+             "loop should not be drained before NOP completion")) {
     return false;
   }
 
@@ -128,15 +132,19 @@ bool CheckNopResumesCoroutine() {
     return false;
   }
 
-  if (!Check(coropact::luring::detail::LoopAccess::PendingSubmitCount(loop) == 0, "pending submit should be empty after wait") ||
-      !Check(coropact::luring::detail::LoopAccess::InflightCount(loop) == 0, "inflight should be empty after NOP CQE") ||
-      !Check(!coropact::luring::detail::LoopAccess::IsDrained(loop), "completion should queue coroutine resume work")) {
+  if (!Check(coropact::luring::detail::LoopAccess::PendingSubmitCount(loop) == 0,
+             "pending submit should be empty after wait") ||
+      !Check(coropact::luring::detail::LoopAccess::InflightCount(loop) == 0,
+             "inflight should be empty after NOP CQE") ||
+      !Check(!coropact::luring::detail::LoopAccess::IsDrained(loop),
+             "completion should queue coroutine resume work")) {
     return false;
   }
 
   coropact::luring::detail::LoopAccess::RunReady(loop);
 
-  return Check(coropact::luring::detail::LoopAccess::IsDrained(loop), "loop should be drained after coroutine resume") &&
+  return Check(coropact::luring::detail::LoopAccess::IsDrained(loop),
+               "loop should be drained after coroutine resume") &&
          Check(*completions >= 1, "NOP did not produce a completion") &&
          Check(result.has_value(), "coroutine did not resume") &&
          Check(result->has_value(), "NOP returned an error") &&
@@ -176,12 +184,10 @@ bool CheckCrossThreadRequestStopWakesRing() {
 }
 
 coropact::coro::DetachedTask AwaitPendingRead(
-    coropact::luring::LUringStream* stream,
-    std::array<std::byte, 16>* buffer,
-    std::optional<coropact::base::Result<std::size_t>>* result,
-    bool* resumed_with_scheduler) {
+    coropact::luring::LUringStream* stream, std::array<std::byte, 16>* buffer,
+    std::optional<coropact::base::Result<std::size_t>>* result, bool* resumed_with_scheduler) {
   auto read = co_await stream->ReadSome(*buffer);
-  *resumed_with_scheduler = coropact::coro::Scheduler::Current() == stream->Loop();
+  *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == stream->Loop();
   result->emplace(std::move(read));
 }
 
@@ -212,8 +218,8 @@ bool CheckLoopStopDrainsPendingRead() {
   std::array<std::byte, 16> buffer{};
   std::optional<coropact::base::Result<std::size_t>> result;
   bool resumed_with_scheduler = false;
-  coropact::coro::SpawnDetach(
-      loop, AwaitPendingRead(&stream, &buffer, &result, &resumed_with_scheduler));
+  coropact::coro::SpawnDetach(loop,
+                              AwaitPendingRead(&stream, &buffer, &result, &resumed_with_scheduler));
 
   std::jthread stopper([&loop] {
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
@@ -231,8 +237,7 @@ bool CheckLoopStopDrainsPendingRead() {
          Check(!result->has_value(), "stopped loop unexpectedly completed the read") &&
          Check(result->error() == std::errc::operation_canceled,
                "stopped loop did not cancel the pending read") &&
-         Check(resumed_with_scheduler,
-               "stopped loop resumed the read without scheduler affinity");
+         Check(resumed_with_scheduler, "stopped loop resumed the read without scheduler affinity");
 }
 
 }  // namespace

@@ -24,12 +24,11 @@
 #include "coropact/base/try.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/luring/detail/completion_dispatch.h"
-#include "coropact/luring/detail/provided_buffer_pool.h"
 #include "coropact/luring/detail/op.h"
-#include "coropact/luring/options.h"
+#include "coropact/luring/detail/provided_buffer_pool.h"
 #include "coropact/luring/detail/ring.h"
+#include "coropact/luring/options.h"
 #include "coropact/time/clock.h"
-#include "coropact/utils/macros.h"
 
 namespace coropact::luring {
 
@@ -214,8 +213,7 @@ void LUringLoop::Run(std::stop_token token) noexcept {
 
   backend::LoopState expected = backend::LoopState::kCreated;
   if (!state_.compare_exchange_strong(expected, backend::LoopState::kRunning,
-                                      std::memory_order_acq_rel,
-                                      std::memory_order_acquire) &&
+                                      std::memory_order_acq_rel, std::memory_order_acquire) &&
       expected != backend::LoopState::kStopping) {
     return;
   }
@@ -255,8 +253,7 @@ void LUringLoop::RequestStop() noexcept {
   backend::LoopState observed = state_.load(std::memory_order_acquire);
   while (observed == backend::LoopState::kCreated || observed == backend::LoopState::kRunning) {
     if (state_.compare_exchange_weak(observed, backend::LoopState::kStopping,
-                                     std::memory_order_acq_rel,
-                                     std::memory_order_acquire)) {
+                                     std::memory_order_acq_rel, std::memory_order_acquire)) {
       Wake();
       return;
     }
@@ -332,7 +329,7 @@ void LUringLoop::ScheduleCompletion(coro::Work* work) noexcept {
 void LUringLoop::RunReady() noexcept {
   assert(IsInLoopThread());
 
-  coro::Scheduler* previous = coro::Scheduler::Current();
+  coro::Scheduler* previous = coro::Scheduler::TryCurrent();
   coro::Scheduler::SetCurrent(this);
 
   // The common throughput configuration does not need wall-clock fairness.

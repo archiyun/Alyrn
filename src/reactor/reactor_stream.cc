@@ -18,7 +18,7 @@
 
 #include "coropact/base/check.h"
 #include "coropact/base/error.h"
-#include "coropact/net/net_utils.h"
+#include "coropact/net/socket.h"
 #include "coropact/reactor/detail/loop_access.h"
 #include "coropact/reactor/stream.h"
 
@@ -678,7 +678,7 @@ ReactorStream::ReactorStream(EventLoop* loop, int fd, net::Endpoint peer,
     : loop_(loop), socket_(fd), channel_(loop, fd), peer_(peer) {
   COROPACT_CHECK(loop_ != nullptr, "ReactorStream: loop must not be null");
   COROPACT_CHECK(loop_->IsInLoopThread(), "ReactorStream created from wrong EventLoop thread");
-  [[maybe_unused]] auto nonblocking = net::set_non_blocking(fd, true);
+  [[maybe_unused]] auto nonblocking = net::SetNonBlocking(fd, true);
   COROPACT_DCHECK(nonblocking.has_value(), "ReactorStream: failed to set non-blocking mode");
 
   // A stream keeps read interest across successful reads. Edge-triggered

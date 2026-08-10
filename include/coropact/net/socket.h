@@ -2,12 +2,137 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <fcntl.h>
+#include <netinet/tcp.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+#include <expected>
+#include <system_error>
 #include <utility>
 
+#include "coropact/base/check.h"
+#include "coropact/base/error.h"
 #include "coropact/net/endpoint.h"
 #include "coropact/utils/macros.h"
 
+#if !defined(__linux__)
+#error "coropact::net::Socket requires Linux socket extensions"
+#endif
+
 namespace coropact::net {
+
+namespace detail {
+
+[[nodiscard]]
+inline base::Result<void> SetDescriptorFlag(int fd, int get_command, int set_command, int flag,
+                                            bool enabled) noexcept {
+  const int old_flags = ::fcntl(fd, get_command, 0);
+  if (old_flags < 0) {
+    return std::unexpected(base::CurrentErrno());
+  }
+
+  const int new_flags = enabled ? (old_flags | flag) : (old_flags & ~flag);
+  if (new_flags != old_flags && ::fcntl(fd, set_command, new_flags) < 0) {
+    return std::unexpected(base::CurrentErrno());
+  }
+  return {};
+}
+
+[[nodiscard]]
+inline base::Result<void> SetSocketOption(int fd, int level, int option, bool enabled) noexcept {
+  const int value = enabled ? 1 : 0;
+  if (::setsockopt(fd, level, option, &value, static_cast<socklen_t>(sizeof(value))) < 0) {
+    return std::unexpected(base::CurrentErrno());
+  }
+  return {};
+}
+
+[[nodiscard]]
+inline base::Result<Endpoint> GetEndpoint(int fd, bool peer) noexcept {
+  sockaddr_storage address{};
+  auto length = static_cast<socklen_t>(sizeof(address));
+  const int result = peer ? ::getpeername(fd, reinterpret_cast<sockaddr*>(&address), &length)
+                          : ::getsockname(fd, reinterpret_cast<sockaddr*>(&address), &length);
+  if (result < 0) {
+    return std::unexpected(base::CurrentErrno());
+  }
+  if (address.ss_family != AF_INET && address.ss_family != AF_INET6) {
+    return std::unexpected(
+        base::Error(std::make_error_code(std::errc::address_family_not_supported)));
+  }
+  return Endpoint(reinterpret_cast<const sockaddr*>(&address), length);
+}
+
+}  // namespace detail
+
+// Creates a non-blocking TCP socket with close-on-exec enabled atomically.
+[[nodiscard]]
+inline base::Result<int> CreateNonBlockingSocket(sa_family_t family = AF_INET) noexcept {
+  if (family != AF_INET && family != AF_INET6) {
+    return std::unexpected(
+        base::Error(std::make_error_code(std::errc::address_family_not_supported)));
+  }
+
+  const int fd = ::socket(family, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, IPPROTO_TCP);
+  if (fd < 0) {
+    return std::unexpected(base::CurrentErrno());
+  }
+  return fd;
+}
+
+[[nodiscard]]
+inline base::Result<void> SetNonBlocking(int fd, bool enabled = true) noexcept {
+  return detail::SetDescriptorFlag(fd, F_GETFL, F_SETFL, O_NONBLOCK, enabled);
+}
+
+[[nodiscard]]
+inline base::Result<void> SetCloseOnExec(int fd, bool enabled = true) noexcept {
+  return detail::SetDescriptorFlag(fd, F_GETFD, F_SETFD, FD_CLOEXEC, enabled);
+}
+
+[[nodiscard]]
+inline base::Result<void> SetReuseAddr(int fd, bool enabled = true) noexcept {
+  return detail::SetSocketOption(fd, SOL_SOCKET, SO_REUSEADDR, enabled);
+}
+
+[[nodiscard]]
+inline base::Result<void> SetReusePort(int fd, bool enabled = true) noexcept {
+  return detail::SetSocketOption(fd, SOL_SOCKET, SO_REUSEPORT, enabled);
+}
+
+[[nodiscard]]
+inline base::Result<void> SetTcpNoDelay(int fd, bool enabled = true) noexcept {
+  return detail::SetSocketOption(fd, IPPROTO_TCP, TCP_NODELAY, enabled);
+}
+
+[[nodiscard]]
+inline base::Result<void> SetKeepAlive(int fd, bool enabled = true) noexcept {
+  return detail::SetSocketOption(fd, SOL_SOCKET, SO_KEEPALIVE, enabled);
+}
+
+[[nodiscard]]
+inline base::Result<Endpoint> GetLocalEndpoint(int fd) noexcept {
+  return detail::GetEndpoint(fd, false);
+}
+
+[[nodiscard]]
+inline base::Result<Endpoint> GetPeerEndpoint(int fd) noexcept {
+  return detail::GetEndpoint(fd, true);
+}
+
+[[nodiscard]]
+inline base::Result<bool> IsSelfConnected(int fd) noexcept {
+  auto local = GetLocalEndpoint(fd);
+  if (!local.has_value()) {
+    return std::unexpected(local.error());
+  }
+  auto peer = GetPeerEndpoint(fd);
+  if (!peer.has_value()) {
+    return std::unexpected(peer.error());
+  }
+  return *local == *peer;
+}
 
 // Socket is an RAII wrapper around a socket file descriptor.
 //
@@ -17,8 +142,14 @@ class Socket {
 public:
   COROPACT_DELETE_COPY(Socket);
 
-  explicit Socket(int sockfd);
-  ~Socket();
+  explicit Socket(int sockfd) noexcept : sockfd_(sockfd) {}
+
+  ~Socket() noexcept {
+    if (sockfd_ >= 0) {
+      const int fd = std::exchange(sockfd_, -1);
+      ::close(fd);
+    }
+  }
 
   // Move assignment closes the descriptor currently owned by *this before
   // taking ownership from other.
@@ -32,39 +163,92 @@ public:
   }
 
   [[nodiscard]]
-  int fd() const { return sockfd_; }
+  int fd() const noexcept {
+    return sockfd_;
+  }
 
   // Binds the socket to a local address.
-  void BindAddress(const Endpoint& localaddr);
+  void BindAddress(const Endpoint& localaddr) const noexcept {
+    const int ret = ::bind(sockfd_, localaddr.SockAddr(), localaddr.SockAddrLen());
+    COROPACT_CHECK(ret == 0, "Socket::BindAddress: bind failed");
+  }
 
   // Marks the socket as a passive listening socket.
-  void Listen();
+  void Listen() const noexcept {
+    const int ret = ::listen(sockfd_, SOMAXCONN);
+    COROPACT_CHECK(ret == 0, "Socket::Listen: listen failed");
+  }
 
   // Accepts a new inbound connection and optionally fills the peer address.
-  int Accept(Endpoint* peeraddr);
+  int Accept(Endpoint* peeraddr) const noexcept {
+    sockaddr_storage addr{};
+    auto len = static_cast<socklen_t>(sizeof(addr));
+
+    const int connfd =
+        ::accept4(sockfd_, reinterpret_cast<sockaddr*>(&addr), &len, SOCK_NONBLOCK | SOCK_CLOEXEC);
+    if (connfd >= 0 && peeraddr != nullptr) {
+      *peeraddr = Endpoint(reinterpret_cast<const sockaddr*>(&addr), len);
+    }
+
+    return connfd;
+  }
 
   // Shuts down the write side of the socket.
-  void ShutdownWrite();
+  void ShutdownWrite() const noexcept {
+    if (sockfd_ < 0) {
+      return;
+    }
+    (void)::shutdown(sockfd_, SHUT_WR);
+  }
 
   // Closes the descriptor before destruction. Idempotent.
-  void Close() noexcept;
+  void Close() noexcept {
+    if (sockfd_ < 0) {
+      return;
+    }
+
+    const int fd = std::exchange(sockfd_, -1);
+    (void)::close(fd);
+  }
 
   // Enables or disables TCP_NODELAY.
-  void SetTcpNoDelay(bool on);
+  void SetTcpNoDelay(bool on) noexcept {
+    const auto result = ::coropact::net::SetTcpNoDelay(sockfd_, on);
+    COROPACT_CHECK(result.has_value(), "Socket::SetTcpNoDelay: setsockopt failed");
+  }
 
   // Enables or disables SO_REUSEADDR.
-  void SetReuseAddr(bool on);
+  void SetReuseAddr(bool on) noexcept {
+    const auto result = ::coropact::net::SetReuseAddr(sockfd_, on);
+    COROPACT_CHECK(result.has_value(), "Socket::SetReuseAddr: setsockopt failed");
+  }
 
   // Enables or disables SO_REUSEPORT.
-  void SetReusePort(bool on);
+  void SetReusePort(bool on) noexcept {
+    const auto result = ::coropact::net::SetReusePort(sockfd_, on);
+    COROPACT_CHECK(result.has_value(), "Socket::SetReusePort: setsockopt failed");
+  }
 
   // Enables or disables SO_KEEPALIVE.
-  void SetKeepAlive(bool on);
+  void SetKeepAlive(bool on) noexcept {
+    const auto result = ::coropact::net::SetKeepAlive(sockfd_, on);
+    COROPACT_CHECK(result.has_value(), "Socket::SetKeepAlive: setsockopt failed");
+  }
 
-  void set_tcp_no_delay(bool on) { SetTcpNoDelay(on); }
-  void set_reuse_addr(bool on) { SetReuseAddr(on); }
-  void set_reuse_port(bool on) { SetReusePort(on); }
-  void set_keep_alive(bool on) { SetKeepAlive(on); }
+  [[nodiscard]]
+  base::Result<Endpoint> LocalEndpoint() const noexcept {
+    return GetLocalEndpoint(sockfd_);
+  }
+
+  [[nodiscard]]
+  base::Result<Endpoint> PeerEndpoint() const noexcept {
+    return GetPeerEndpoint(sockfd_);
+  }
+
+  [[nodiscard]]
+  base::Result<bool> IsSelfConnected() const noexcept {
+    return ::coropact::net::IsSelfConnected(sockfd_);
+  }
 
 private:
   int sockfd_;

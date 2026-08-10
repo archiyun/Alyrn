@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 
-#include <cstdio>
 #include <coroutine>
+#include <cstdio>
 
 #include "coropact/coro/scheduler.h"
 #include "coropact/operation/detail/completion_gate.h"
@@ -20,14 +20,10 @@ bool Expect(bool condition, const char* message) {
 }
 
 template <typename T>
-concept ResettableCompletionGate = requires(T& gate) {
-  gate.Reset();
-};
+concept ResettableCompletionGate = requires(T& gate) { gate.Reset(); };
 
 template <typename T>
-concept ReassignableCompletionGate = requires(T& gate) {
-  gate = {};
-};
+concept ReassignableCompletionGate = requires(T& gate) { gate = {}; };
 
 static_assert(!ResettableCompletionGate<coropact::operation::detail::CompletionGate>);
 static_assert(!ReassignableCompletionGate<coropact::operation::detail::CompletionGate>);
@@ -44,7 +40,7 @@ bool TestOneShotTransition() {
 }
 
 class RecordingScheduler final : public coropact::coro::Scheduler {
- public:
+public:
   void Schedule(coropact::coro::Work* work) noexcept override { scheduled_ = work; }
 
   coropact::coro::Work* scheduled_{nullptr};
@@ -52,7 +48,7 @@ class RecordingScheduler final : public coropact::coro::Scheduler {
 
 bool TestSchedulerContinuationPreservesAffinity() {
   RecordingScheduler scheduler;
-  auto* const previous = coropact::coro::Scheduler::Current();
+  auto* const previous = coropact::coro::Scheduler::TryCurrent();
   coropact::coro::Scheduler::SetCurrent(&scheduler);
 
   coropact::operation::detail::SchedulerContinuation continuation;

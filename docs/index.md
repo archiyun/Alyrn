@@ -10,6 +10,7 @@
 
 ## 基准报告
 
+- [2026-08-10 C++ 网络库基线](benchmark/network-libraries-20260810.md)
 - [网络库统一 HTTP 压测](benchmark/network-libraries.md)
 - [CoroPact luring 与 Reactor 独立对比](benchmark/luring-reactor-comparison-20260802.md)
 

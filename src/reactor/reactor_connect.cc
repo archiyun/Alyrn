@@ -1,7 +1,5 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "coropact/reactor/connector.h"
-
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -16,9 +14,10 @@
 #include "coropact/base/error.h"
 #include "coropact/base/try.h"
 #include "coropact/net/endpoint.h"
-#include "coropact/net/net_utils.h"
+#include "coropact/net/socket.h"
 #include "coropact/operation/detail/completion_gate.h"
 #include "coropact/operation/detail/scheduler_continuation.h"
+#include "coropact/reactor/connector.h"
 #include "coropact/reactor/detail/channel.h"
 #include "coropact/reactor/detail/loop_access.h"
 
@@ -38,8 +37,7 @@ base::Result<int> ConnectError(int fd) noexcept {
 
 class ConnectAwaiter {
 public:
-  ConnectAwaiter(EventLoop* loop, net::Endpoint peer,
-                 ReactorStreamOptions stream_options) noexcept
+  ConnectAwaiter(EventLoop* loop, net::Endpoint peer, ReactorStreamOptions stream_options) noexcept
       : loop_(loop), peer_(peer), stream_options_(stream_options) {}
 
   ~ConnectAwaiter() {

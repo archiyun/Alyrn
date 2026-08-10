@@ -92,6 +92,7 @@ nav:
                 - intrusive quad heap: adr/0003-intrusive-quad-heap.md
     - 验证与发布:
           - 基准:
+                - 2026-08-10 C++ 网络库基线: benchmark/network-libraries-20260810.md
                 - 网络库统一 HTTP 压测: benchmark/network-libraries.md
                 - luring 与 Reactor 对比: benchmark/luring-reactor-comparison-20260802.md
           - 发布记录:

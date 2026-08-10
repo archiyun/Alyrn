@@ -24,8 +24,8 @@
 #include "coropact/coro/task.h"
 #include "coropact/io/async_stream.h"
 #include "coropact/io/read_into.h"
-#include "coropact/luring/loop.h"
 #include "coropact/luring/detail/loop_access.h"
+#include "coropact/luring/loop.h"
 #include "coropact/luring/options.h"
 #include "coropact/luring/stream.h"
 #include "coropact/net/endpoint.h"
@@ -148,7 +148,7 @@ coropact::coro::DetachedTask ReadOnce(coropact::luring::LUringStream* stream,
   if (resume_count != nullptr) {
     ++*resume_count;
   }
-  *resumed_with_scheduler = coropact::coro::Scheduler::Current() == loop;
+  *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == loop;
   out->emplace(std::move(result));
 }
 
@@ -162,16 +162,18 @@ coropact::coro::DetachedTask ReadIntoOnce(coropact::luring::LUringStream* stream
   if (resume_count != nullptr) {
     ++*resume_count;
   }
-  *resumed_with_scheduler = coropact::coro::Scheduler::Current() == loop;
+  *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == loop;
   out->emplace(std::move(outcome));
 }
 
-coropact::coro::DetachedTask ReadIntoWithReserveOnce(
-    coropact::luring::LUringStream* stream, coropact::luring::LUringLoop* loop,
-    coropact::net::Buffer buffer, std::size_t reserve,
-    std::optional<OwnedReadOutcome>* out, bool* resumed_with_scheduler) {
+coropact::coro::DetachedTask ReadIntoWithReserveOnce(coropact::luring::LUringStream* stream,
+                                                     coropact::luring::LUringLoop* loop,
+                                                     coropact::net::Buffer buffer,
+                                                     std::size_t reserve,
+                                                     std::optional<OwnedReadOutcome>* out,
+                                                     bool* resumed_with_scheduler) {
   OwnedReadOutcome outcome = co_await stream->ReadInto(std::move(buffer), reserve);
-  *resumed_with_scheduler = coropact::coro::Scheduler::Current() == loop;
+  *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == loop;
   out->emplace(std::move(outcome));
 }
 
@@ -183,7 +185,7 @@ coropact::coro::DetachedTask ReadForOnce(coropact::luring::LUringStream* stream,
                                          bool* resumed_with_scheduler, int* resume_count) {
   auto result = co_await stream->ReadSomeFor(buffer, timeout);
   ++*resume_count;
-  *resumed_with_scheduler = coropact::coro::Scheduler::Current() == loop;
+  *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == loop;
   out->emplace(std::move(result));
 }
 
@@ -196,7 +198,7 @@ coropact::coro::DetachedTask WriteOnce(coropact::luring::LUringStream* stream,
   if (resume_count != nullptr) {
     ++*resume_count;
   }
-  *resumed_with_scheduler = coropact::coro::Scheduler::Current() == loop;
+  *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == loop;
   out->emplace(std::move(result));
 }
 
@@ -467,9 +469,8 @@ bool CheckReadSubmitFailureRollsBack() {
   int failed_resume_count = 0;
 
   loop.FailNextSubmissionsForTesting(1, EIO);
-  coropact::coro::SpawnDetach(
-      loop, ReadOnce(&stream, &loop, buffer, &failed_result, &failed_with_scheduler,
-                     &failed_resume_count));
+  coropact::coro::SpawnDetach(loop, ReadOnce(&stream, &loop, buffer, &failed_result,
+                                             &failed_with_scheduler, &failed_resume_count));
   coropact::luring::detail::LoopAccess::RunReady(loop);
 
   if (!Check(failed_result.has_value(), "failed read coroutine did not finish") ||
@@ -488,9 +489,8 @@ bool CheckReadSubmitFailureRollsBack() {
   std::optional<coropact::base::Result<std::size_t>> retried_result;
   bool retried_with_scheduler = false;
   int retried_resume_count = 0;
-  coropact::coro::SpawnDetach(
-      loop, ReadOnce(&stream, &loop, buffer, &retried_result, &retried_with_scheduler,
-                     &retried_resume_count));
+  coropact::coro::SpawnDetach(loop, ReadOnce(&stream, &loop, buffer, &retried_result,
+                                             &retried_with_scheduler, &retried_resume_count));
   coropact::luring::detail::LoopAccess::RunReady(loop);
 
   auto completions = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
@@ -601,9 +601,8 @@ bool CheckWriteSubmitFailureRollsBack() {
   bool failed_with_scheduler = false;
   int failed_resume_count = 0;
   loop.FailNextSubmissionsForTesting(1, EIO);
-  coropact::coro::SpawnDetach(
-      loop, WriteOnce(&stream, &loop, bytes, &failed_result, &failed_with_scheduler,
-                      &failed_resume_count));
+  coropact::coro::SpawnDetach(loop, WriteOnce(&stream, &loop, bytes, &failed_result,
+                                              &failed_with_scheduler, &failed_resume_count));
   coropact::luring::detail::LoopAccess::RunReady(loop);
 
   if (!Check(failed_result.has_value(), "failed write coroutine did not finish") ||
@@ -617,9 +616,8 @@ bool CheckWriteSubmitFailureRollsBack() {
   std::optional<coropact::base::Result<std::size_t>> retried_result;
   bool retried_with_scheduler = false;
   int retried_resume_count = 0;
-  coropact::coro::SpawnDetach(
-      loop, WriteOnce(&stream, &loop, bytes, &retried_result, &retried_with_scheduler,
-                      &retried_resume_count));
+  coropact::coro::SpawnDetach(loop, WriteOnce(&stream, &loop, bytes, &retried_result,
+                                              &retried_with_scheduler, &retried_resume_count));
   coropact::luring::detail::LoopAccess::RunReady(loop);
 
   auto completions = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
@@ -672,9 +670,8 @@ bool CheckTimedReadTimeoutSubmitFailureResumesOnce() {
   // ReadSomeFor first submits the linked recv, then the linked timeout. Let
   // the recv reach the kernel and fail only the optional timeout SQE.
   loop.FailSubmissionAfterForTesting(1, EIO);
-  coropact::coro::SpawnDetach(
-      loop, ReadForOnce(&stream, &loop, buffer, std::chrono::seconds(1), &result,
-                         &resumed_with_scheduler, &resume_count));
+  coropact::coro::SpawnDetach(loop, ReadForOnce(&stream, &loop, buffer, std::chrono::seconds(1),
+                                                &result, &resumed_with_scheduler, &resume_count));
   coropact::luring::detail::LoopAccess::RunReady(loop);
 
   for (int i = 0; i < 4 && !result.has_value(); ++i) {

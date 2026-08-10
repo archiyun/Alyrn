@@ -7,8 +7,8 @@
 #include "coropact/coro/spawn.h"
 #include "coropact/coro/task.h"
 #include "coropact/luring/connector.h"
-#include "coropact/luring/loop.h"
 #include "coropact/luring/detail/loop_access.h"
+#include "coropact/luring/loop.h"
 #include "coropact/luring/options.h"
 #include "coropact/luring/timer.h"
 
@@ -31,7 +31,7 @@ coropact::coro::DetachedTask SleepTask(coropact::luring::LUringLoop* loop, bool*
                                        bool* scheduler_ok) {
   auto result = co_await coropact::luring::SleepFor(*loop, 1ms);
   *resumed = true;
-  *scheduler_ok = coropact::coro::Scheduler::Current() == loop;
+  *scheduler_ok = coropact::coro::Scheduler::TryCurrent() == loop;
   if (!result.has_value()) co_return;
 }
 

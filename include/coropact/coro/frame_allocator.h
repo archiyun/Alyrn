@@ -306,7 +306,10 @@ public:
 
   ~FrameAllocatorScope() { detail::SetCurrentFrameResource(previous_); }
 
-  static std::pmr::memory_resource* Current() noexcept { return detail::CurrentFrameResource(); }
+  [[nodiscard]]
+  static std::pmr::memory_resource* TryCurrent() noexcept {
+    return detail::CurrentFrameResource();
+  }
 
 private:
   std::pmr::memory_resource* previous_;

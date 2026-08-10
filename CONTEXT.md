@@ -21,7 +21,9 @@ changing module boundaries.
   Composite families record each physical member before authorizing one logical
   result; split-release families separately authorize result, release, and
   continuation.
-- `net`: `Socket`, `Endpoint`, and buffers are backend-shared network values.
+- `net`: header-only `Socket`, `Endpoint`, and buffers are backend-shared
+  network values. `net/detail` holds source lifecycle accounting and is not an
+  application seam.
 - `Runtime`: the backend-neutral application composition root. Applications
   select a backend with `Runtime::Builder<runtime::Reactor>` or
   `Runtime::Builder<runtime::LUring>`; `Runtime::Create<Backend>` is the

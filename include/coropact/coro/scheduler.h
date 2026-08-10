@@ -4,7 +4,7 @@
 // Single responsibility: the Scheduler abstraction. Schedule(Work*) is the one
 // coarse-grained virtual boundary this module allows (the no-vtable-on-the-hot-
 // path rule covers per-resume/per-await code, not this submission edge).
-// Current()/SetCurrent() publish the per-thread active scheduler so an awaiter
+// TryCurrent()/SetCurrent() publish the per-thread active scheduler so an awaiter
 // can re-submit work without threading a pointer through every frame. The coro
 // module never implements a concrete scheduler or owns a queue.
 #pragma once
@@ -29,10 +29,10 @@ public:
   // Runs a work item with this scheduler's frame resource and execution context
   // active. Concrete schedulers should use this wrapper instead of calling
   // Work::Run() directly so coroutine frames and awaiters created during a
-  // resume observe the selected resource and Scheduler::Current().
+  // resume observe the selected resource and Scheduler::TryCurrent().
   void Run(Work* work) noexcept {
     assert(work != nullptr);
-    Scheduler* previous = Current();
+    Scheduler* previous = TryCurrent();
     SetCurrent(this);
     FrameAllocatorScope frame_scope{frame_resource_};
     work->Run();
@@ -45,7 +45,7 @@ public:
   // This preserves the single-resume boundary while avoiding a TLS/resource
   // scope transition for every item in a ready queue drain.
   void RunBatch(WorkQueue& batch) noexcept {
-    Scheduler* previous = Current();
+    Scheduler* previous = TryCurrent();
     SetCurrent(this);
     FrameAllocatorScope frame_scope{frame_resource_};
     while (Work* work = batch.PopFront()) {
@@ -59,7 +59,10 @@ public:
     return frame_resource_;
   }
 
-  static Scheduler* Current() noexcept { return current_; }
+  [[nodiscard]]
+  static Scheduler* TryCurrent() noexcept {
+    return current_;
+  }
   static Scheduler& RequireCurrent() noexcept {
     assert(current_ && "no current scheduler set for this thread");
     return *current_;
