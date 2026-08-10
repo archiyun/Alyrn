@@ -17,9 +17,9 @@
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/spawn.h"
 #include "coropact/coro/task.h"
+#include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/listener.h"
 #include "coropact/luring/loop.h"
-#include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/options.h"
 #include "coropact/luring/stream.h"
 #include "coropact/net/endpoint.h"
@@ -125,7 +125,7 @@ coropact::coro::DetachedTask AcceptOnce(
   if (resume_count != nullptr) {
     ++*resume_count;
   }
-  *resumed_with_scheduler = coropact::coro::Scheduler::Current() == loop;
+  *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == loop;
   out->emplace(std::move(result));
 }
 
@@ -260,9 +260,8 @@ bool CheckAcceptSubmitFailureRollsBack() {
   bool accept_with_scheduler = false;
   int accept_resume_count = 0;
   loop.FailNextSubmissionsForTesting(1, EIO);
-  coropact::coro::SpawnDetach(
-      loop, AcceptOnce(&*listener, &loop, &accept_result, &accept_with_scheduler,
-                       &accept_resume_count));
+  coropact::coro::SpawnDetach(loop, AcceptOnce(&*listener, &loop, &accept_result,
+                                               &accept_with_scheduler, &accept_resume_count));
   coropact::luring::detail::LoopAccess::RunReady(loop);
 
   if (!Check(accept_result.has_value(), "failed accept coroutine did not finish") ||

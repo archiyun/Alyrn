@@ -33,7 +33,8 @@ CoroPact 在相互独立的 Reactor 与 io_uring 网络后端之上，提供统�
 #include "coropact/reactor.h"  // 默认 Reactor backend
 ```
 
-入门或原型也可以使用总聚合头 `#include "coropact/coropact.h"`；对编译时间敏感的项目应按需包含。启用 io_uring 后端时，包含 `coropact/luring.h` 替代 `coropact/reactor.h`。
+请按实际使用的模块包含头文件。启用 io_uring 后端时，包含
+`coropact/luring.h` 替代 `coropact/reactor.h`。
 
 ### 2. 后端无关的连接处理协程
 
@@ -229,8 +230,7 @@ CoroPact 提供了可复现的 `wrk` 性能测试，用于比较：
 
 性能测试结果与具体 workload 密切相关，不应被解释为网络框架的综合排名。测试报告会完整保留实验拓扑、原始轮次、延迟异常、CPU 使用率、内存占用与错误数量。
 
-完整的十个网络库统一公平压测报告（包含图表、汇总数据和每轮关键数据）请参阅
-[网络库统一公平压测](docs/benchmark/network-libraries.md)。其它测试脚本、原始结果和专项优化记录请参阅 [`docs/benchmark`](docs/benchmark/)。
+最新的当前源码 C++ 对照基线见[2026-08-10 网络库基线](docs/benchmark/network-libraries-20260810.md)；它记录了 `wrk` 的文件描述符前置条件和无效样本。完整的十个网络库统一公平压测报告（包含图表、汇总数据和每轮关键数据）请参阅[网络库统一公平压测](docs/benchmark/network-libraries.md)。其它测试脚本、原始结果和专项优化记录请参阅 [`docs/benchmark`](docs/benchmark/)。
 
 ## 文档
 
@@ -240,7 +240,7 @@ CoroPact 提供了可复现的 `wrk` 性能测试，用于比较：
 * **[协程状态机模型](docs/design/zh-CN/network/lamport-hot-swap-runtime.md)：** 抽象 stream 不变量与后端 refinement 说明。
 * **[AsyncStream 语义契约](docs/design/zh-CN/network/async-stream-contract.md)：** read、write、close、取消与 buffer 生命周期语义。
 * **[数据结构](docs/design/zh-CN/datastructure/index.md):** C++现代风格的侵入式数据结构, 侵入式红黑树, 侵入式链表, MPSC队列的设计与实现, 以及它们在项目各处的应用。SplayTree 与 QuadHeap 属于显式 include 的实验性 API；构建其验证器时使用 `-DBUILD_EXPERIMENTAL_TESTS=ON`。
-* **[性能测试](docs/benchmark/network-libraries.md)：** Reactor、CoroPact luring、raw liburing、Asio、Monoio、Compio、libaio、libuv、libevent 与 libev 的统一网络压测报告；其它测试方法、原始结果与性能优化记录见 [`docs/benchmark`](docs/benchmark/)。
+* **[性能测试](docs/benchmark/network-libraries-20260810.md)：** 最新的当前源码 C++ 对照基线；完整统一网络库报告、测试方法、原始结果与优化记录见 [`docs/benchmark`](docs/benchmark/)。
 * **[示例](examples/)：** Reactor 与 io_uring 使用示例。
 * **[测试](tests/)：** 协程、网络、生命周期与后端行为验证。
 

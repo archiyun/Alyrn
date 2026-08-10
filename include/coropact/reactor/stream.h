@@ -37,8 +37,20 @@ struct ReactorStreamOptions {
 };
 
 class ReactorStream {
+private:
+  class ReadSomeAwaiter;
+  class ReadIntoAwaiter;
+  class WriteSomeAwaiter;
+  class WriteAllAwaiter;
+  class BufferReadAwaiter;
+  class BufferWriteAwaiter;
+
 public:
   COROPACT_DELETE_COPY(ReactorStream);
+
+  // Read/write methods intentionally return private awaiter types. Call them
+  // directly with co_await (or keep the result in auto); their registration,
+  // result storage, and cancellation protocol are not a stream interface.
 
   ReactorStream(EventLoop* loop, int fd, net::Endpoint peer = net::Endpoint(0),
                 ReactorStreamOptions options = {});
@@ -48,13 +60,6 @@ public:
   // thread and must not have a pending read or write operation.
   ReactorStream(ReactorStream&& other) noexcept;
   ReactorStream& operator=(ReactorStream&& other) noexcept;
-
-  class ReadSomeAwaiter;
-  class ReadIntoAwaiter;
-  class WriteSomeAwaiter;
-  class WriteAllAwaiter;
-  class BufferReadAwaiter;
-  class BufferWriteAwaiter;
 
   [[nodiscard]]
   ReadSomeAwaiter ReadSome(std::span<std::byte> buffer) noexcept;

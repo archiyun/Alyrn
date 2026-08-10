@@ -45,14 +45,19 @@ struct ReadSomeForTimeoutTag;
 }  // namespace detail
 
 class LUringStream {
-public:
-  COROPACT_DELETE_COPY(LUringStream);
-
+private:
   class ReadSomeAwaiter;
   class ReadIntoAwaiter;
   class ReadSomeForAwaiter;
   class WriteSomeAwaiter;
   class SendZeroCopyAwaiter;
+
+public:
+  COROPACT_DELETE_COPY(LUringStream);
+
+  // Read/write methods intentionally return private awaiter types. Call them
+  // directly with co_await (or keep the result in auto); SQE/CQE ownership is
+  // implementation detail, not a stream interface.
 
   LUringStream(LUringLoop* loop, int fd, net::Endpoint peer) noexcept;
   ~LUringStream() noexcept;
@@ -117,6 +122,13 @@ public:
   }
 
 private:
+  friend void detail::DispatchStreamReadComplete(detail::LUringOp* op) noexcept;
+  friend void detail::DispatchStreamReadIntoComplete(detail::LUringOp* op) noexcept;
+  friend void detail::DispatchTimedReadComplete(detail::LUringOp* op) noexcept;
+  friend void detail::DispatchTimedReadTimeoutComplete(detail::LUringOp* op) noexcept;
+  friend void detail::DispatchStreamWriteComplete(detail::LUringOp* op) noexcept;
+  friend detail::CompletionDisposition detail::DispatchSendZeroCopyComplete(
+      detail::LUringOp* op, detail::CompletionEvent event) noexcept;
   friend void detail::DispatchStreamCloseComplete(detail::LUringOp* op) noexcept;
 
   class CloseAwaiter;

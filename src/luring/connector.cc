@@ -17,13 +17,12 @@
 #include "coropact/base/check.h"
 #include "coropact/base/error.h"
 #include "coropact/base/try.h"
+#include "coropact/luring/detail/op.h"
 #include "coropact/luring/detail/operation_submission.h"
 #include "coropact/luring/loop.h"
-#include "coropact/luring/detail/op.h"
 #include "coropact/luring/stream.h"
 #include "coropact/luring/timer.h"
 #include "coropact/net/endpoint.h"
-#include "coropact/net/net_utils.h"
 
 namespace coropact::luring {
 

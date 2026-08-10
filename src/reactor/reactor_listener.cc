@@ -1,7 +1,5 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "coropact/reactor/listener.h"
-
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -14,11 +12,12 @@
 #include "coropact/base/error.h"
 #include "coropact/base/try.h"
 #include "coropact/net/accept_source.h"
-#include "coropact/net/net_utils.h"
+#include "coropact/net/socket.h"
 #include "coropact/operation/detail/completion_gate.h"
 #include "coropact/operation/detail/scheduler_continuation.h"
 #include "coropact/reactor/detail/loop_access.h"
 #include "coropact/reactor/detail/result_state.h"
+#include "coropact/reactor/listener.h"
 
 namespace coropact::reactor {
 
@@ -50,10 +49,10 @@ base::Result<net::Socket> TryCreateListenSocket(const net::Endpoint& listen_addr
                                                 ReactorListenerOptions options) noexcept {
   net::Socket socket(COROPACT_TRY(net::CreateNonBlockingSocket(listen_addr.native_family())));
 
-  COROPACT_TRY(net::set_reuse_addr(socket.fd(), options.reuse_addr));
+  COROPACT_TRY(net::SetReuseAddr(socket.fd(), options.reuse_addr));
 
   if (options.reuse_port) {
-    COROPACT_TRY(net::set_reuse_port(socket.fd(), true));
+    COROPACT_TRY(net::SetReusePort(socket.fd(), true));
   }
 
   if (::bind(socket.fd(), listen_addr.sock_addr(), listen_addr.sock_addr_len()) < 0) {
@@ -509,9 +508,9 @@ ReactorListener::ReactorListener(EventLoop* loop, const net::Endpoint& listen_ad
       socket_(CreateListenSocket(listen_addr.native_family())),
       channel_(loop_, socket_.fd()),
       stream_options_(options.stream_options) {
-  socket_.set_reuse_addr(options.reuse_addr);
+  socket_.SetReuseAddr(options.reuse_addr);
   if (options.reuse_port) {
-    socket_.set_reuse_port(true);
+    socket_.SetReusePort(true);
   }
   socket_.BindAddress(listen_addr);
   socket_.Listen();
@@ -647,7 +646,7 @@ base::Result<net::Endpoint> ReactorListener::LocalAddress() const {
   if (closed_) {
     return std::unexpected(base::MakeErrno(EBADF));
   }
-  return net::get_local_addr(socket_.fd());
+  return socket_.LocalEndpoint();
 }
 
 void ReactorListener::HandleRead() {

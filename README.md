@@ -33,7 +33,8 @@ Applications normally include the backend-neutral modules and one concrete backe
 #include "coropact/reactor.h"  // Default Reactor backend
 ```
 
-For prototypes, the aggregate header `#include "coropact/coropact.h"` is also available. Projects sensitive to compile time should include only the modules they use. In an io_uring-enabled build, include `coropact/luring.h` instead of `coropact/reactor.h`.
+Include only the modules your application uses. In an io_uring-enabled build,
+include `coropact/luring.h` instead of `coropact/reactor.h`.
 
 ### 2. Write backend-neutral connection code
 
@@ -230,7 +231,7 @@ CoroPact includes reproducible `wrk` benchmarks covering:
 * libuv, libevent, and libev reference adapters
 * an Nginx reference configuration
 
-Results depend strongly on the workload and must not be interpreted as a universal ranking of networking frameworks. The complete ten-target fixed-HTTP comparison, including charts, summary data, per-round data, latency anomalies, CPU usage, memory usage, and error counts, is available in the [unified network-library benchmark report](docs/benchmark/network-libraries.md). Other benchmark scripts, raw results, and optimization records are under [`docs/benchmark`](docs/benchmark/).
+Results depend strongly on the workload and must not be interpreted as a universal ranking of networking frameworks. The latest current-source C++ baseline is the [2026-08-10 network-library baseline](docs/benchmark/network-libraries-20260810.md); it records the `wrk` file-descriptor precondition and invalid samples. The complete ten-target fixed-HTTP comparison, including charts, summary data, per-round data, latency anomalies, CPU usage, memory usage, and error counts, is available in the [unified network-library benchmark report](docs/benchmark/network-libraries.md). Other benchmark scripts, raw results, and optimization records are under [`docs/benchmark`](docs/benchmark/).
 
 ## Documentation
 
@@ -240,7 +241,7 @@ Most documentation is still being written and may lag behind the current impleme
 * **[Coroutine state-machine models](docs/design/zh-CN/network/lamport-hot-swap-runtime.md)**: abstract stream invariants and backend refinement notes.
 * **[AsyncStream semantics](docs/design/zh-CN/network/async-stream-contract.md)**: read, write, close, cancellation, and buffer-lifetime semantics.
 * **[Data structures](docs/design/zh-CN/datastructure/index.md)**: modern C++ intrusive data structures, intrusive red-black trees, intrusive lists, MPSC queues, and their use in the project. SplayTree and QuadHeap are experimental explicit-header APIs; build their validators with `-DBUILD_EXPERIMENTAL_TESTS=ON`.
-* **[Performance benchmarks](docs/benchmark/network-libraries.md)**: the unified network-library report; additional methods, raw results, and optimization records are in [`docs/benchmark`](docs/benchmark/).
+* **[Performance benchmarks](docs/benchmark/network-libraries-20260810.md)**: the latest current-source C++ baseline; the broader unified network-library report and supporting material are in [`docs/benchmark`](docs/benchmark/).
 * **[Examples](examples/)**: Reactor and io_uring examples.
 * **[Tests](tests/)**: coroutine, networking, lifecycle, and backend validation.
 

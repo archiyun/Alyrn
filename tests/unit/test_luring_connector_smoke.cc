@@ -20,8 +20,8 @@
 #include "coropact/coro/spawn.h"
 #include "coropact/coro/task.h"
 #include "coropact/luring/connector.h"
-#include "coropact/luring/loop.h"
 #include "coropact/luring/detail/loop_access.h"
+#include "coropact/luring/loop.h"
 #include "coropact/luring/options.h"
 #include "coropact/luring/stream.h"
 #include "coropact/net/endpoint.h"
@@ -143,7 +143,7 @@ coropact::coro::DetachedTask ConnectOnce(
     std::optional<coropact::base::Result<coropact::luring::LUringStream>>* out,
     bool* resumed_with_scheduler) {
   auto connected = co_await connector->Connect(host, port);
-  *resumed_with_scheduler = coropact::coro::Scheduler::Current() == loop;
+  *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == loop;
   out->emplace(std::move(connected));
 }
 

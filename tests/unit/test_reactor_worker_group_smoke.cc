@@ -97,8 +97,7 @@ coropact::base::Result<int> ConnectClient(const coropact::net::Endpoint& address
     return std::unexpected(coropact::base::CurrentErrno());
   }
 
-  if (::connect(fd, address.sock_addr(), address.sock_addr_len()) < 0 &&
-      errno != EINPROGRESS) {
+  if (::connect(fd, address.sock_addr(), address.sock_addr_len()) < 0 && errno != EINPROGRESS) {
     const auto error = coropact::base::CurrentErrno();
     ::close(fd);
     return std::unexpected(error);
@@ -111,7 +110,7 @@ coropact::coro::DetachedTask HandleConnection(
     coropact::reactor::ReactorStream stream, WorkerState* state) {
   {
     std::lock_guard lock{state->mutex};
-    state->scheduler_is_current = coropact::coro::Scheduler::Current() == &context.loop;
+    state->scheduler_is_current = coropact::coro::Scheduler::TryCurrent() == &context.loop;
   }
   state->cv.notify_all();
 
@@ -138,7 +137,8 @@ bool CheckWorkerAcceptAndStop() {
         }
         state.init_thread_is_worker = !context.loop.IsInLoopThread();
       },
-      [&state](coropact::reactor::detail::ReactorWorkerContext& context, coropact::reactor::ReactorStream stream) {
+      [&state](coropact::reactor::detail::ReactorWorkerContext& context,
+               coropact::reactor::ReactorStream stream) {
         return HandleConnection(context, std::move(stream), &state);
       });
 
@@ -190,16 +190,17 @@ bool CheckWorkerGroupStartAndStop() {
   options.worker_num = 2;
   options.worker_options.listener_options.reuse_port = true;
 
-  coropact::reactor::detail::ReactorWorkerGroup group(coropact::net::Endpoint(*port), options,
-                                      [&state](coropact::reactor::detail::ReactorWorkerContext& context) {
-                                        auto address = context.listener.LocalAddress();
-                                        std::lock_guard lock{state.mutex};
-                                        if (address.has_value()) {
-                                          state.listen_addresses.push_back(*address);
-                                        }
-                                        state.init_threads.push_back(std::this_thread::get_id());
-                                        state.cv.notify_all();
-                                      });
+  coropact::reactor::detail::ReactorWorkerGroup group(
+      coropact::net::Endpoint(*port), options,
+      [&state](coropact::reactor::detail::ReactorWorkerContext& context) {
+        auto address = context.listener.LocalAddress();
+        std::lock_guard lock{state.mutex};
+        if (address.has_value()) {
+          state.listen_addresses.push_back(*address);
+        }
+        state.init_threads.push_back(std::this_thread::get_id());
+        state.cv.notify_all();
+      });
 
   auto started = group.Start();
   if (!started.has_value()) {

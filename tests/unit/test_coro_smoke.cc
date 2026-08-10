@@ -175,14 +175,14 @@ struct ManualGate {
 // its root scheduling Work share one coroutine frame.
 DetachedTask DetachedReturnOneFrame(bool* ran, Scheduler** resumed_scheduler) {
   *ran = true;
-  *resumed_scheduler = Scheduler::Current();
+  *resumed_scheduler = Scheduler::TryCurrent();
   co_return;
 }
 
 DetachedTask DetachedWaitForGate(ManualGate* gate, bool* resumed, Scheduler** resumed_scheduler) {
   co_await gate->Wait();
   *resumed = true;
-  *resumed_scheduler = Scheduler::Current();
+  *resumed_scheduler = Scheduler::TryCurrent();
 }
 
 Task<int> ReturnAfterGate(ManualGate* gate) {
@@ -208,7 +208,7 @@ Task<void> JoinChildFromOtherScheduler(DrainScheduler* child_sched, bool* parent
   auto child = Spawn(*child_sched, Add(40, 2));
   (void)co_await std::move(child);
   *parent_resumed = true;
-  *resumed_scheduler = Scheduler::Current();
+  *resumed_scheduler = Scheduler::TryCurrent();
 }
 
 }  // namespace

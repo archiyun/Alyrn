@@ -88,24 +88,23 @@ target_include_directories(coropact_io INTERFACE
 target_link_libraries(coropact_io INTERFACE coropact_io_contract)
 target_compile_features(coropact_io INTERFACE cxx_std_23)
 
-add_library(coropact_net STATIC
-    src/net/net_utils.cc
-    src/net/socket.cc
-)
+# coropact_net —— backend-shared socket/address/buffer value layer.  Its
+# implementation is entirely inline so consumers do not pay for a separate
+# transport utility library.
+add_library(coropact_net INTERFACE)
 
 target_include_directories(coropact_net
-    PUBLIC
+    INTERFACE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
 target_link_libraries(coropact_net
-    PUBLIC
+    INTERFACE
         coropact_foundation
-        Threads::Threads
 )
 
-target_compile_features(coropact_net PUBLIC cxx_std_23)
+target_compile_features(coropact_net INTERFACE cxx_std_23)
 
 # I/O contracts expose lower net primitives through lightweight public
 # spellings, while remaining independent of concrete backend adapters.
