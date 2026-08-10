@@ -4,18 +4,20 @@
 
 #include <linux/time_types.h>
 #include <sys/socket.h>
+#include <sys/uio.h>
 
 #include <chrono>
 #include <coroutine>
 #include <cstddef>
 #include <span>
+#include <vector>
 
 #include "coropact/backend/async_stream.h"
 #include "coropact/base/error.h"
 #include "coropact/coro/task.h"
 #include "coropact/luring/detail/completion_dispatch.h"
-#include "coropact/luring/detail/op_hook.h"
 #include "coropact/luring/detail/op.h"
+#include "coropact/luring/detail/op_hook.h"
 #include "coropact/net/buffer.h"
 #include "coropact/net/endpoint.h"
 #include "coropact/net/read_into.h"
@@ -134,6 +136,7 @@ private:
   bool closed_{false};
 };
 
+// --- ReadSomeAwaiter ---
 class LUringStream::ReadSomeAwaiter : public detail::LUringOpHook<LUringStream::ReadSomeAwaiter> {
 public:
   using OpHook = detail::LUringOpHook<ReadSomeAwaiter>;
@@ -162,6 +165,7 @@ private:
   std::span<std::byte> buffer_;
 };
 
+// --- ReadIntoAwaiter ---
 class LUringStream::ReadIntoAwaiter : public detail::LUringOpHook<LUringStream::ReadIntoAwaiter> {
 public:
   using OpHook = detail::LUringOpHook<ReadIntoAwaiter>;
@@ -196,10 +200,13 @@ private:
   LUringStream* stream_;
   net::Buffer buffer_;
   std::size_t reserve_;
-  std::span<std::byte> writable_;
+  // READV SQEs retain this array until their terminal CQE, so it must be
+  // owned by the awaiter rather than created as an await_suspend() local.
+  std::vector<iovec> iovs_;
   bool reservation_active_{false};
 };
 
+// --- ReadSomeForAwaiter ---
 class LUringStream::ReadSomeForAwaiter
     : public detail::LUringOpHook<LUringStream::ReadSomeForAwaiter, detail::ReadSomeForReadTag>,
       public detail::LUringOpHook<LUringStream::ReadSomeForAwaiter, detail::ReadSomeForTimeoutTag> {
@@ -292,11 +299,12 @@ public:
   base::Result<ZeroCopySendResult> await_resume() noexcept;
 
 private:
-  friend detail::CompletionDisposition detail::DispatchSendZeroCopyComplete(detail::LUringOp* op,
-                                                                    detail::CompletionEvent event) noexcept;
+  friend detail::CompletionDisposition detail::DispatchSendZeroCopyComplete(
+      detail::LUringOp* op, detail::CompletionEvent event) noexcept;
 
   [[nodiscard]]
-  static detail::CompletionDisposition OnComplete(detail::LUringOp* op, detail::CompletionEvent event) noexcept;
+  static detail::CompletionDisposition OnComplete(detail::LUringOp* op,
+                                                  detail::CompletionEvent event) noexcept;
 
   LUringStream* stream_;
   std::span<const std::byte> buffer_;
@@ -307,6 +315,6 @@ private:
 
 static_assert(backend::AsyncStream<LUringStream>);
 static_assert(backend::AsyncTimedStream<LUringStream>);
-static_assert(backend::AsyncOwnedReadStream<LUringStream>);
+static_assert(backend::AsyncReadIntoStream<LUringStream>);
 
 }  // namespace coropact::luring

@@ -41,6 +41,22 @@ endif()
 
 add_test(NAME io_contract_smoke_test COMMAND io_contract_smoke_test)
 
+add_executable(runtime_builder_smoke_test
+    unit/test_runtime_builder_smoke.cc
+)
+
+target_link_libraries(runtime_builder_smoke_test
+    PRIVATE
+        coropact_reactor
+)
+
+if(COROPACT_ENABLE_URING)
+    target_link_libraries(runtime_builder_smoke_test PRIVATE coropact_luring)
+    target_compile_definitions(runtime_builder_smoke_test PRIVATE COROPACT_ENABLE_URING)
+endif()
+
+add_test(NAME runtime_builder_smoke_test COMMAND runtime_builder_smoke_test)
+
 add_executable(completion_gate_smoke_test
     unit/test_completion_gate_smoke.cc
 )
@@ -51,6 +67,17 @@ target_include_directories(completion_gate_smoke_test
 )
 
 add_test(NAME completion_gate_smoke_test COMMAND completion_gate_smoke_test)
+
+add_executable(reactor_result_state_smoke_test
+    unit/test_reactor_result_state_smoke.cc
+)
+
+target_include_directories(reactor_result_state_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+add_test(NAME reactor_result_state_smoke_test COMMAND reactor_result_state_smoke_test)
 
 add_executable(split_release_lifecycle_smoke_test
     unit/test_split_release_lifecycle_smoke.cc

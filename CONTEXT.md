@@ -22,6 +22,11 @@ changing module boundaries.
   result; split-release families separately authorize result, release, and
   continuation.
 - `net`: `Socket`, `Endpoint`, and buffers are backend-shared network values.
+- `Runtime`: the backend-neutral application composition root. Applications
+  select a backend with `Runtime::Builder<runtime::Reactor>` or
+  `Runtime::Builder<runtime::LUring>`; `Runtime::Create<Backend>` is the
+  default-path shorthand. Runtime type-erases only cold start/stop control.
+  It must not erase streams, awaiters, operations, or worker-local resources.
 - `io` and `backend`: `AsyncStream`, `AsyncListener`, `AsyncConnector`, and
   `ManagedLoop` define application-visible transport and dispatcher-control
   contracts. `RequestStop` begins backend-specific cancellation and drain; it
@@ -33,16 +38,18 @@ changing module boundaries.
 - `reactor` and `luring` are parallel backend adapters. Do not make either
   backend depend on the `io` facade or on CoroGateway.
 
-The Reactor public interface is `EventLoop` plus its stream, listener,
-connector, receive-source, and option adapters. `reactor/detail` contains the
+The Reactor public interface is `EventLoop` plus stream, listener, connector,
+receive-source, and option adapters. Its `Runtime::Builder<runtime::Reactor>`
+binding configures the common composition root; `reactor/detail` contains the
 epoll poller, channel registration, timer queue, and multi-worker bootstrap
 machinery; applications must not depend on those types.
 
-The luring public interface is `LUringLoop` plus its stream, listener,
-connector, receive-source, timer, and option adapters. `luring/detail` owns
-raw SQE/CQE operations, ring and mailbox transport, timer queue, and
-multi-worker/server bootstrap machinery; applications must not depend on
-those types.
+The luring public interface is `LUringLoop` plus stream, listener, connector,
+receive-source, timer, and option adapters. Its
+`Runtime::Builder<runtime::LUring>` binding configures the common composition
+root; `luring/detail` owns raw SQE/CQE operations, ring and mailbox transport,
+timer queue, and multi-worker server bootstrap machinery; applications must
+not depend on those types.
 
 ## Ownership and thread affinity
 

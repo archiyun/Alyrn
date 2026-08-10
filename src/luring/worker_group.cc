@@ -60,12 +60,16 @@ base::Result<void> LUringWorkerGroup::Start() {
 }
 
 void LUringWorkerGroup::Stop() noexcept {
-  for (auto& worker : workers_) {
-    worker->Stop();
-  }
+  RequestStop();
 
   workers_.clear();
   started_ = false;
+}
+
+void LUringWorkerGroup::RequestStop() noexcept {
+  for (auto& worker : workers_) {
+    worker->Stop();
+  }
 }
 
 }  // namespace coropact::luring::detail

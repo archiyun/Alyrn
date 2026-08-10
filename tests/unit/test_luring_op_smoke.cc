@@ -35,7 +35,7 @@ bool TestSingleResultCompletion() {
 bool TestReusablePhysicalSlot() {
   coropact::luring::detail::LUringOp op;
   op.kind = coropact::luring::detail::LUringOpKind::kWake;
-  COROPACT_IGNORE_RESULT(op.Complete(0));
+  (void)(op.Complete(0));
   op.resume_work.SetHandle(std::noop_coroutine());
   op.BeginNextRequest();
 

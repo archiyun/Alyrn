@@ -27,17 +27,17 @@ bool LUringRecvSource::NextAwaiter::await_suspend(
     std::coroutine_handle<> continuation) noexcept {
   if (source_->loop_ == nullptr || source_->fd_ < 0) {
     result_.emplace(std::unexpected(base::MakeErrno(EBADF)));
-    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+    (void)(completion_gate_.TryComplete());
     return false;
   }
   if (!source_->loop_->IsInLoopThread()) {
     result_.emplace(std::unexpected(base::MakeErrno(EINVAL)));
-    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+    (void)(completion_gate_.TryComplete());
     return false;
   }
   if (source_->pending_next_ != nullptr) {
     result_.emplace(std::unexpected(base::MakeErrno(EBUSY)));
-    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+    (void)(completion_gate_.TryComplete());
     return false;
   }
 
@@ -45,7 +45,7 @@ bool LUringRecvSource::NextAwaiter::await_suspend(
     auto started = source_->Start();
     if (!started.has_value()) {
       result_.emplace(std::unexpected(started.error()));
-      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+      (void)(completion_gate_.TryComplete());
       return false;
     }
   }
@@ -53,7 +53,7 @@ bool LUringRecvSource::NextAwaiter::await_suspend(
   LUringRecvSource::Result result;
   if (source_->TryTakeNext(result)) {
     result_.emplace(std::move(result));
-    COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+    (void)(completion_gate_.TryComplete());
     return false;
   }
 
@@ -92,14 +92,14 @@ public:
     if (!waiting.has_value()) {
       source_->pending_stop_ = nullptr;
       result_.emplace(std::unexpected(waiting.error()));
-      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+      (void)(completion_gate_.TryComplete());
       return false;
     }
 
     if (!*waiting) {
       source_->pending_stop_ = nullptr;
       result_.emplace(base::Result<void>{});
-      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+      (void)(completion_gate_.TryComplete());
       return false;
     }
 
@@ -286,7 +286,7 @@ base::Result<void> LUringRecvSource::StartOperation() noexcept {
   if (!submitted.has_value()) {
     const auto completed = state_.CompleteMultishotEvent(EventDisposition::kNone,
                                                          MultishotRequestDisposition::kTerminal);
-    COROPACT_IGNORE_RESULT(completed);
+    (void)(completed);
     assert(completed.has_value());
     return std::unexpected(submitted.error());
   }
@@ -365,7 +365,7 @@ void LUringRecvSource::EnsureSubmission() noexcept {
 }
 
 void LUringRecvSource::RequestBackendPause() noexcept {
-  COROPACT_IGNORE_RESULT(state_.RequestPause());
+  (void)(state_.RequestPause());
 
   if (recv_submitted_ && !cancel_submitted_) {
     auto cancelled = StartCancel();
@@ -391,7 +391,7 @@ void LUringRecvSource::RequestBackendStop(std::optional<base::Error> error) noex
     terminal_error_ = *error;
   }
 
-  COROPACT_IGNORE_RESULT(state_.RequestStop());
+  (void)(state_.RequestStop());
 
   if (recv_submitted_ && !cancel_submitted_) {
     auto cancelled = StartCancel();
