@@ -53,13 +53,16 @@ nav:
           - 概览: index.md
           - 子系统边界: SUBSYSTEMS.md
           - 构建与安装: packaging.md
+          - Runtime Builder: design/zh-CN/network/runtime-builder.md
     - 架构:
           - 协程与调度:
                 - 协程分层: adr/0008-coroutine-layering.md
                 - 后端无关 I/O contract: adr/0009-backend-neutral-io-contract.md
+                - Runtime 组合根: adr/0010-runtime-composition-root.md
           - 网络语义:
                 - 概览: design/zh-CN/network/index.md
                 - AsyncStream / AsyncListener 契约: design/zh-CN/network/async-stream-contract.md
+                - ReadInto：所有权转移读取: design/zh-CN/network/read-into.md
                 - AcceptSource 契约: design/zh-CN/network/accept-source-contract.md
                 - 生命周期统一与 happens-before: design/zh-CN/network/lamport-hot-swap-runtime.md
           - 形式模型:

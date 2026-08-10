@@ -13,7 +13,7 @@ template <class T>
 concept AsyncTimedReadStream = backend::AsyncTimedReadStream<T>;
 
 template <class T>
-concept AsyncOwnedReadStream = backend::AsyncOwnedReadStream<T>;
+concept AsyncReadIntoStream = backend::AsyncReadIntoStream<T>;
 
 template <class T>
 concept AsyncWriteStream = backend::AsyncWriteStream<T>;

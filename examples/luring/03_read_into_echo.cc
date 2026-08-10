@@ -1,30 +1,43 @@
-#include <array>
+// Copyright (c) 2026 Arsenova
+// SPDX-License-Identifier: MIT
+//
+// LUring ReadInto echo demo
+//
+// Build:
+//   cmake --build build-uring --target demo_luring_read_into_echo -j"$(nproc)"
+//
+// Run:
+//   ./build-uring/examples/demo_luring_read_into_echo
+//
+// Try:
+//   nc 127.0.0.1 19092
+
 #include <csignal>
 #include <cstddef>
+#include <cstdint>
 #include <print>
-#include <span>
 #include <stop_token>
 #include <utility>
 
-#include "coropact/coro/detached_task.h"
-#include "coropact/coro/spawn.h"
+#include "coropact/coro.h"
 #include "coropact/io.h"
 #include "coropact/luring.h"
-#include "coropact/luring/listener.h"
-#include "coropact/luring/stream.h"
-#include "coropact/net/endpoint.h"
+#include "coropact/net.h"
 
 using namespace coropact;
 
 namespace {
 
-constexpr std::uint16_t kPort = 19090;
+constexpr std::uint16_t kPort = 19092;
+constexpr std::size_t kReadReserve = 4096;
 
 auto EchoSession(luring::LUringStream stream) -> coro::DetachedTask {
-  std::array<std::byte, 4096> buffer{};
+  io::Buffer buffer{kReadReserve};
 
   for (;;) {
-    auto read = co_await stream.ReadSome(buffer);
+    auto [read, returned_buffer] = co_await stream.ReadInto(std::move(buffer), kReadReserve);
+
+    buffer = std::move(returned_buffer);
 
     if (!read.has_value()) {
       std::println(stderr, "read failed: {}", read.error().message());
@@ -35,9 +48,7 @@ auto EchoSession(luring::LUringStream stream) -> coro::DetachedTask {
       break;
     }
 
-    auto payload = std::span<const std::byte>(buffer.data(), *read);
-
-    auto written = co_await io::WriteAll(stream, payload);
+    auto written = co_await io::WriteAll(stream, buffer);
     if (!written.has_value()) {
       std::println(stderr, "write failed: {}", written.error().message());
       break;
@@ -53,7 +64,6 @@ auto EchoSession(luring::LUringStream stream) -> coro::DetachedTask {
 auto AcceptLoop(luring::LUringLoop& loop, luring::LUringListener& listener) -> coro::DetachedTask {
   for (;;) {
     auto accepted = co_await listener.Accept();
-
     if (!accepted.has_value()) {
       std::println(stderr, "accept failed: {}", accepted.error().message());
       co_return;
@@ -75,26 +85,22 @@ auto main() -> int {
   options.submit_batch = 1;
 
   auto initialized = loop.Init(options);
-
   if (!initialized.has_value()) {
     std::println(stderr, "loop init failed: {}", initialized.error().message());
     return 1;
   }
 
   auto listener_result = luring::LUringListener::Create(&loop, net::Endpoint::Loopback(kPort));
-
   if (!listener_result.has_value()) {
     std::println(stderr, "listener create failed: {}", listener_result.error().message());
     return 1;
   }
 
   auto listener = std::move(*listener_result);
-
   coro::SpawnDetach(loop, AcceptLoop(loop, listener));
 
-  std::println("single-shot echo listening on 127.0.0.1:{}", kPort);
+  std::println("LUring ReadInto echo listening on 127.0.0.1:{}", kPort);
 
   loop.Run(std::stop_token{});
-
   return 0;
 }

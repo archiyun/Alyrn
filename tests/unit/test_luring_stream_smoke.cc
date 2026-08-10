@@ -23,6 +23,7 @@
 #include "coropact/coro/spawn.h"
 #include "coropact/coro/task.h"
 #include "coropact/io/async_stream.h"
+#include "coropact/io/read_into.h"
 #include "coropact/luring/loop.h"
 #include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/options.h"
@@ -31,9 +32,9 @@
 
 namespace {
 
-using OwnedReadOutcome = coropact::net::ReadIntoOutcome;
+using OwnedReadOutcome = coropact::io::ReadIntoOutcome;
 
-static_assert(coropact::io::AsyncOwnedReadStream<coropact::luring::LUringStream>);
+static_assert(coropact::io::AsyncReadIntoStream<coropact::luring::LUringStream>);
 static_assert(coropact::io::AsyncTimedStream<coropact::luring::LUringStream>);
 
 class UniqueFd {
@@ -165,6 +166,15 @@ coropact::coro::DetachedTask ReadIntoOnce(coropact::luring::LUringStream* stream
   out->emplace(std::move(outcome));
 }
 
+coropact::coro::DetachedTask ReadIntoWithReserveOnce(
+    coropact::luring::LUringStream* stream, coropact::luring::LUringLoop* loop,
+    coropact::net::Buffer buffer, std::size_t reserve,
+    std::optional<OwnedReadOutcome>* out, bool* resumed_with_scheduler) {
+  OwnedReadOutcome outcome = co_await stream->ReadInto(std::move(buffer), reserve);
+  *resumed_with_scheduler = coropact::coro::Scheduler::Current() == loop;
+  out->emplace(std::move(outcome));
+}
+
 coropact::coro::DetachedTask ReadForOnce(coropact::luring::LUringStream* stream,
                                          coropact::luring::LUringLoop* loop,
                                          std::span<std::byte> buffer,
@@ -292,6 +302,60 @@ bool CheckOwnedReadIntoReturnsBuffer() {
   outcome->buffer.AbortWrite();
   return Check(actual == kPayload, "owned read payload mismatch") &&
          Check(reusable_after_resume, "owned read returned a buffer with a live reservation");
+}
+
+bool CheckOwnedReadIntoSpansBufferBlocks() {
+  coropact::luring::LUringLoop loop;
+  switch (InitLoop(loop)) {
+    case LoopInitStatus::kReady:
+      break;
+    case LoopInitStatus::kSkip:
+      return true;
+    case LoopInitStatus::kFail:
+      return false;
+  }
+
+  UniqueFd local;
+  UniqueFd peer;
+  if (!CreateSocketPair(local, peer)) return false;
+
+  coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  constexpr std::string_view kPrefix = "abc";
+  constexpr std::string_view kPayload = "12345678";
+
+  coropact::net::Buffer buffer(4);
+  buffer.Append(kPrefix);
+  if (!WriteFd(peer.fd(), kPayload)) return false;
+
+  std::optional<OwnedReadOutcome> outcome;
+  bool resumed_with_scheduler = false;
+  coropact::coro::SpawnDetach(
+      loop, ReadIntoWithReserveOnce(&stream, &loop, std::move(buffer), kPayload.size(), &outcome,
+                                    &resumed_with_scheduler));
+  coropact::luring::detail::LoopAccess::RunReady(loop);
+
+  auto completions = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
+  if (!completions.has_value()) {
+    std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+    return false;
+  }
+  coropact::luring::detail::LoopAccess::RunReady(loop);
+
+  if (!Check(*completions >= 1, "vectored owned read did not produce a completion") ||
+      !Check(outcome.has_value(), "vectored owned read coroutine did not resume") ||
+      !Check(outcome->result.has_value(), "vectored owned read returned an error") ||
+      !Check(*outcome->result == kPayload.size(), "vectored owned read byte count mismatch") ||
+      !Check(resumed_with_scheduler, "vectored owned read resumed without current scheduler")) {
+    return false;
+  }
+
+  std::string actual;
+  for (const iovec& iov : outcome->buffer.ReadableIov(8)) {
+    actual.append(static_cast<const char*>(iov.iov_base), iov.iov_len);
+  }
+  std::string expected(kPrefix);
+  expected.append(kPayload);
+  return Check(actual == expected, "vectored owned read payload mismatch");
 }
 
 bool CheckTimedReadSuccessResumesOnce() {
@@ -881,6 +945,7 @@ bool CheckReadCompletionCancelRaceResumesOnce() {
 int main() {
   if (!CheckReadSome()) return 1;
   if (!CheckOwnedReadIntoReturnsBuffer()) return 1;
+  if (!CheckOwnedReadIntoSpansBufferBlocks()) return 1;
   if (!CheckTimedReadSuccessResumesOnce()) return 1;
   if (!CheckTimedReadTimeoutResumesOnce()) return 1;
 #if defined(COROPACT_ENABLE_TEST_HOOKS)

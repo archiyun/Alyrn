@@ -56,14 +56,18 @@ base::Result<void> ReactorWorkerGroup::Start() {
 }
 
 void ReactorWorkerGroup::Stop() noexcept {
-  for (auto& worker : workers_) {
-    worker->Stop();
-  }
+  RequestStop();
 
   // ReactorWorker owns a jthread. Clearing the vector joins each worker after
   // its stop request has been delivered.
   workers_.clear();
   started_ = false;
+}
+
+void ReactorWorkerGroup::RequestStop() noexcept {
+  for (auto& worker : workers_) {
+    worker->Stop();
+  }
 }
 
 }  // namespace coropact::reactor::detail

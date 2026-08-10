@@ -62,7 +62,7 @@ public:
     if (loop_->State() == backend::LoopState::kStopping ||
         loop_->State() == backend::LoopState::kStopped) {
       result_.SetError(base::MakeErrno(ECANCELED));
-      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+      (void)(completion_gate_.TryComplete());
       return false;
     }
     continuation_.Bind(continuation);
@@ -71,7 +71,7 @@ public:
     auto fd = net::CreateNonBlockingSocket(peer_.native_family());
     if (!fd.has_value()) {
       result_.SetError(fd.error());
-      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+      (void)(completion_gate_.TryComplete());
       return false;
     }
     fd_ = *fd;
@@ -83,12 +83,12 @@ public:
 
     if (rc == 0) {
       result_.SetResult(MakeStream());
-      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+      (void)(completion_gate_.TryComplete());
       return false;
     }
     if (errno != EINPROGRESS) {
       result_.SetError(base::CurrentErrno());
-      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+      (void)(completion_gate_.TryComplete());
       return false;
     }
 
@@ -180,7 +180,7 @@ public:
     COROPACT_CHECK(loop_->IsInLoopThread(), "SleepAwaiter called from wrong EventLoop thread");
     if (loop_->State() == backend::LoopState::kStopping ||
         loop_->State() == backend::LoopState::kStopped) {
-      COROPACT_IGNORE_RESULT(completion_gate_.TryComplete());
+      (void)(completion_gate_.TryComplete());
       return false;
     }
     continuation_.Bind(continuation);

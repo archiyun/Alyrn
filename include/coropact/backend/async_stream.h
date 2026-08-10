@@ -41,12 +41,12 @@ concept AsyncTimedReadStream =
           base::Result<std::size_t>>;
     };
 
-// Optional owning-read extension. ReadInto() consumes a move-only Buffer and
+// Optional ReadInto extension. ReadInto() consumes a move-only Buffer and
 // returns it on every terminal path together with the read status. It is kept
 // separate from AsyncReadStream so existing adapters retain the small core
 // transport interface.
 template <class T>
-concept AsyncOwnedReadStream = requires(T& stream, net::Buffer buffer, std::size_t reserve) {
+concept AsyncReadIntoStream = requires(T& stream, net::Buffer buffer, std::size_t reserve) {
   requires coro::Awaitable<decltype(stream.ReadInto(std::move(buffer), reserve))>;
   requires std::same_as<coro::AwaitResult<decltype(stream.ReadInto(std::move(buffer), reserve))>,
                         net::ReadIntoOutcome>;

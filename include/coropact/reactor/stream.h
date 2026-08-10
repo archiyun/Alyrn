@@ -4,7 +4,6 @@
 
 #include <sys/uio.h>
 
-#include <algorithm>
 #include <chrono>
 #include <coroutine>
 #include <cstddef>
@@ -102,6 +101,18 @@ public:
   }
 
 private:
+  // Private implementation vocabulary. Keep these aliases class-scoped: a
+  // public-header-level using-directive would leak reactor::detail names into
+  // every includer's coropact::reactor namespace.
+  using Channel = detail::Channel;
+  using LoopShutdownParticipant = detail::LoopShutdownParticipant;
+  using SchedulerContinuation = operation::detail::SchedulerContinuation;
+  using CompletionGate = operation::detail::CompletionGate;
+  using IoResultState = detail::ReactorIoResultState;
+
+  template <class Awaiter>
+  using OperationHook = detail::ReactorOperationHook<Awaiter>;
+
   void HandleRead();
   void HandleWrite();
   void HandleClose();
@@ -124,7 +135,7 @@ private:
 
   EventLoop* loop_;
   net::Socket socket_;
-  detail::Channel channel_;
+  Channel channel_;
   net::Endpoint peer_;
   enum class PendingReadKind : std::uint8_t {
     kNone,
@@ -144,11 +155,10 @@ private:
   PendingReadKind pending_read_kind_{PendingReadKind::kNone};
   PendingWriteKind pending_write_kind_{PendingWriteKind::kNone};
   bool closed_{false};
-  detail::LoopShutdownParticipant shutdown_participant_{this, &DispatchLoopStop};
+  LoopShutdownParticipant shutdown_participant_{this, &DispatchLoopStop};
 };
 
-class ReactorStream::ReadSomeAwaiter final
-    : public detail::ReactorOperationHook<ReactorStream::ReadSomeAwaiter> {
+class ReactorStream::ReadSomeAwaiter final : public OperationHook<ReactorStream::ReadSomeAwaiter> {
 public:
   COROPACT_DELETE_COPY_MOVE(ReadSomeAwaiter);
 
@@ -165,7 +175,7 @@ public:
   base::Result<std::size_t> await_resume() noexcept;
 
 private:
-  friend class detail::ReactorOperationHook<ReadSomeAwaiter>;
+  friend OperationHook<ReadSomeAwaiter>;
 
   void CompleteImpl(base::Result<std::size_t> result) noexcept;
   void OnReadyImpl() noexcept;
@@ -173,14 +183,14 @@ private:
   ReactorStream* stream_;
   std::span<std::byte> buffer_;
   std::chrono::milliseconds timeout_;
-  operation::detail::SchedulerContinuation continuation_;
-  operation::detail::CompletionGate completion_gate_;
-  detail::ReactorIoResultState result_;
+  SchedulerContinuation continuation_;
+  CompletionGate completion_gate_;
+  IoResultState result_;
   time::TimerId timer_;
 };
 
 class ReactorStream::WriteSomeAwaiter final
-    : public detail::ReactorOperationHook<ReactorStream::WriteSomeAwaiter> {
+    : public OperationHook<ReactorStream::WriteSomeAwaiter> {
 public:
   COROPACT_DELETE_COPY_MOVE(WriteSomeAwaiter);
 
@@ -196,23 +206,22 @@ public:
   base::Result<std::size_t> await_resume() noexcept;
 
 private:
-  friend class detail::ReactorOperationHook<WriteSomeAwaiter>;
+  friend OperationHook<WriteSomeAwaiter>;
 
   void CompleteImpl(base::Result<std::size_t> result) noexcept;
   void OnReadyImpl() noexcept;
 
   ReactorStream* stream_;
   std::span<const std::byte> buffer_;
-  operation::detail::SchedulerContinuation continuation_;
-  operation::detail::CompletionGate completion_gate_;
-  detail::ReactorIoResultState result_;
+  SchedulerContinuation continuation_;
+  CompletionGate completion_gate_;
+  IoResultState result_;
 };
 
 // Keeps the write loop in the caller's coroutine frame. ReactorStream uses
 // this native extension so a buffered response does not allocate a nested
 // Task frame just to repeat WriteSome until the span is drained.
-class ReactorStream::WriteAllAwaiter final
-    : public detail::ReactorOperationHook<ReactorStream::WriteAllAwaiter> {
+class ReactorStream::WriteAllAwaiter final : public OperationHook<ReactorStream::WriteAllAwaiter> {
 public:
   COROPACT_DELETE_COPY_MOVE(WriteAllAwaiter);
 
@@ -228,20 +237,19 @@ public:
   base::Result<void> await_resume() noexcept;
 
 private:
-  friend class detail::ReactorOperationHook<WriteAllAwaiter>;
+  friend OperationHook<WriteAllAwaiter>;
 
   void CompleteImpl(base::Result<std::size_t> result) noexcept;
   void OnReadyImpl() noexcept;
 
   ReactorStream* stream_;
   std::span<const std::byte> buffer_;
-  operation::detail::SchedulerContinuation continuation_;
-  operation::detail::CompletionGate completion_gate_;
-  detail::ReactorIoResultState result_;
+  SchedulerContinuation continuation_;
+  CompletionGate completion_gate_;
+  IoResultState result_;
 };
 
-class ReactorStream::BufferReadAwaiter
-    : public detail::ReactorOperationHook<ReactorStream::BufferReadAwaiter> {
+class ReactorStream::BufferReadAwaiter : public OperationHook<ReactorStream::BufferReadAwaiter> {
 public:
   COROPACT_DELETE_COPY_MOVE(BufferReadAwaiter);
 
@@ -257,7 +265,7 @@ public:
   base::Result<std::size_t> await_resume() noexcept;
 
 private:
-  friend class detail::ReactorOperationHook<BufferReadAwaiter>;
+  friend OperationHook<BufferReadAwaiter>;
 
   void CompleteImpl(base::Result<std::size_t> result) noexcept;
   void OnReadyImpl() noexcept;
@@ -269,17 +277,16 @@ private:
   std::size_t reserve_;
   std::chrono::milliseconds timeout_;
   std::vector<iovec> iovs_;
-  operation::detail::SchedulerContinuation continuation_;
-  operation::detail::CompletionGate completion_gate_;
-  detail::ReactorIoResultState result_;
+  SchedulerContinuation continuation_;
+  CompletionGate completion_gate_;
+  IoResultState result_;
   time::TimerId timer_;
 };
 
 // Owns the destination buffer while a read is pending. Unlike ReadSome(Buffer&),
 // this awaiter returns the Buffer on every terminal path, so callers cannot
 // invalidate its storage while the backend may still access it.
-class ReactorStream::ReadIntoAwaiter
-    : public detail::ReactorOperationHook<ReactorStream::ReadIntoAwaiter> {
+class ReactorStream::ReadIntoAwaiter : public OperationHook<ReactorStream::ReadIntoAwaiter> {
 public:
   COROPACT_DELETE_COPY_MOVE(ReadIntoAwaiter);
 
@@ -294,7 +301,7 @@ public:
   net::ReadIntoOutcome await_resume() noexcept;
 
 private:
-  friend class detail::ReactorOperationHook<ReadIntoAwaiter>;
+  friend OperationHook<ReadIntoAwaiter>;
 
   void CompleteImpl(base::Result<std::size_t> result) noexcept;
   void OnReadyImpl() noexcept;
@@ -305,14 +312,13 @@ private:
   net::Buffer buffer_;
   std::size_t reserve_;
   std::vector<iovec> iovs_;
-  operation::detail::SchedulerContinuation continuation_;
-  operation::detail::CompletionGate completion_gate_;
-  detail::ReactorIoResultState result_;
+  SchedulerContinuation continuation_;
+  CompletionGate completion_gate_;
+  IoResultState result_;
   bool reservation_active_{false};
 };
 
-class ReactorStream::BufferWriteAwaiter
-    : public detail::ReactorOperationHook<ReactorStream::BufferWriteAwaiter> {
+class ReactorStream::BufferWriteAwaiter : public OperationHook<ReactorStream::BufferWriteAwaiter> {
 public:
   COROPACT_DELETE_COPY_MOVE(BufferWriteAwaiter);
 
@@ -327,7 +333,7 @@ public:
   base::Result<std::size_t> await_resume() noexcept;
 
 private:
-  friend class detail::ReactorOperationHook<BufferWriteAwaiter>;
+  friend OperationHook<BufferWriteAwaiter>;
 
   void CompleteImpl(base::Result<std::size_t> result) noexcept;
   void OnReadyImpl() noexcept;
@@ -337,9 +343,9 @@ private:
   ReactorStream* stream_;
   net::Buffer* buffer_;
   std::vector<iovec> iovs_;
-  operation::detail::SchedulerContinuation continuation_;
-  operation::detail::CompletionGate completion_gate_;
-  detail::ReactorIoResultState result_;
+  SchedulerContinuation continuation_;
+  CompletionGate completion_gate_;
+  IoResultState result_;
 };
 
 }  // namespace coropact::reactor

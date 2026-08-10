@@ -9,11 +9,15 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 #include "coropact/io/buffer.h"
+#include "coropact/io/read_into.h"
 
 namespace {
+
+static_assert(std::same_as<coropact::io::ReadIntoOutcome, coropact::net::ReadIntoOutcome>);
 
 bool Expect(bool condition, std::string_view message) {
   if (!condition) {

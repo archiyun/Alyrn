@@ -7,7 +7,7 @@
 Core contract 的冻结范围是 `AsyncStream`、`AsyncListener`、`AsyncConnector` 及其
 可观察的结果、生命周期、buffer 和线程归属语义。后端可以继续更换内部队列、提交
 批处理、completion dispatch 和内存池实现，但不得改变这些语义。`AsyncTimedStream`、
-`AsyncOwnedReadStream`、`AsyncRecvSource`、`BufferLease` 和 zero-copy 属于独立的
+`AsyncReadIntoStream`、`AsyncRecvSource`、`BufferLease` 和 zero-copy 属于独立的
 extension，不得通过扩大 Core contract 的隐含行为加入。
 
 ## 1. 这份契约解决什么问题
@@ -147,7 +147,7 @@ backend no longer accesses storage
   -> await_resume()
 ```
 
-`AsyncOwnedReadStream` 是独立的可选 extension，不属于 `AsyncStream` 的最小接口：
+`AsyncReadIntoStream` 是独立的可选 extension，不属于 `AsyncStream` 的最小接口：
 
 ```cpp
 ReadInto(net::Buffer buffer, std::size_t reserve)
