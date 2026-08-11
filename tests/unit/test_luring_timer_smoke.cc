@@ -190,6 +190,7 @@ bool TestStopDiscardsUnexpiredTimer() {
   return Check(!fired, "loop shutdown must discard an unexpired timer without running it");
 }
 
+#if defined(COROPACT_ENABLE_TEST_HOOKS)
 bool TestRunAfterRejectsTimerPreparationFailure() {
   coropact::luring::LUringLoop loop;
   coropact::luring::LUringOptions options;
@@ -282,6 +283,7 @@ bool TestTimerRearmFailureStopsLoop() {
   const bool drained = StopAndDrain(loop);
   return failed_safe && drained;
 }
+#endif
 
 }  // namespace
 
@@ -289,9 +291,11 @@ int main() {
   if (!TestLoopAffinityIsEnforcedInRelease()) return 1;
   if (!TestTimers()) return 1;
   if (!TestStopDiscardsUnexpiredTimer()) return 1;
+#if defined(COROPACT_ENABLE_TEST_HOOKS)
   if (!TestRunAfterRejectsTimerPreparationFailure()) return 1;
   if (!TestRunAfterRejectsTimerUpdatePreparationFailure()) return 1;
   if (!TestTimerRearmFailureStopsLoop()) return 1;
+#endif
   std::cout << "luring timer smoke: PASS\n";
   return 0;
 }

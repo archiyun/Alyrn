@@ -69,6 +69,67 @@ public:
   coropact::coro::Work* scheduled_{nullptr};
 };
 
+class BindContinuationWork final : public coropact::coro::Work {
+public:
+  BindContinuationWork(coropact::operation::detail::SchedulerContinuation* continuation,
+                       bool bind_twice) noexcept
+      : continuation_(continuation), bind_twice_(bind_twice) {
+    SetRun(&RunBind);
+  }
+
+private:
+  static void RunBind(coropact::coro::Work* work) noexcept {
+    auto* self = static_cast<BindContinuationWork*>(work);
+    self->continuation_->Bind(std::noop_coroutine());
+    if (self->bind_twice_) {
+      self->continuation_->Bind(std::noop_coroutine());
+    }
+  }
+
+  coropact::operation::detail::SchedulerContinuation* continuation_;
+  bool bind_twice_;
+};
+
+class ObserveCurrentWork final : public coropact::coro::Work {
+public:
+  explicit ObserveCurrentWork(coropact::coro::Scheduler** observed) noexcept : observed_(observed) {
+    SetRun(&RunObserve);
+  }
+
+private:
+  static void RunObserve(coropact::coro::Work* work) noexcept {
+    auto* self = static_cast<ObserveCurrentWork*>(work);
+    *self->observed_ = coropact::coro::Scheduler::TryCurrent();
+  }
+
+  coropact::coro::Scheduler** observed_;
+};
+
+class RunNestedWork final : public coropact::coro::Work {
+public:
+  RunNestedWork(coropact::coro::Scheduler* nested_scheduler, coropact::coro::Work* nested_work,
+                coropact::coro::Scheduler** before, coropact::coro::Scheduler** after) noexcept
+      : nested_scheduler_(nested_scheduler),
+        nested_work_(nested_work),
+        before_(before),
+        after_(after) {
+    SetRun(&RunNested);
+  }
+
+private:
+  static void RunNested(coropact::coro::Work* work) noexcept {
+    auto* self = static_cast<RunNestedWork*>(work);
+    *self->before_ = coropact::coro::Scheduler::TryCurrent();
+    self->nested_scheduler_->Run(self->nested_work_);
+    *self->after_ = coropact::coro::Scheduler::TryCurrent();
+  }
+
+  coropact::coro::Scheduler* nested_scheduler_;
+  coropact::coro::Work* nested_work_;
+  coropact::coro::Scheduler** before_;
+  coropact::coro::Scheduler** after_;
+};
+
 void ScheduleUnboundContinuation() {
   coropact::operation::detail::SchedulerContinuation continuation;
   continuation.Schedule();
@@ -76,34 +137,47 @@ void ScheduleUnboundContinuation() {
 
 void BindContinuationTwice() {
   RecordingScheduler scheduler;
-  auto* const previous = coropact::coro::Scheduler::TryCurrent();
-  coropact::coro::Scheduler::SetCurrent(&scheduler);
-
   coropact::operation::detail::SchedulerContinuation continuation;
-  continuation.Bind(std::noop_coroutine());
-  continuation.Bind(std::noop_coroutine());
-  coropact::coro::Scheduler::SetCurrent(previous);
+  BindContinuationWork work{&continuation, true};
+  scheduler.Run(&work);
 }
 
 void BindContinuationWithoutScheduler() {
-  coropact::coro::Scheduler::SetCurrent(nullptr);
   coropact::operation::detail::SchedulerContinuation continuation;
   continuation.Bind(std::noop_coroutine());
 }
 
 bool TestSchedulerContinuationPreservesAffinity() {
   RecordingScheduler scheduler;
-  auto* const previous = coropact::coro::Scheduler::TryCurrent();
-  coropact::coro::Scheduler::SetCurrent(&scheduler);
-
   coropact::operation::detail::SchedulerContinuation continuation;
-  continuation.Bind(std::noop_coroutine());
-  coropact::coro::Scheduler::SetCurrent(previous);
+  BindContinuationWork work{&continuation, false};
+  scheduler.Run(&work);
 
   continuation.Schedule();
   return Expect(continuation.Bound(), "a bound continuation must retain its scheduler") &&
          Expect(scheduler.scheduled_ != nullptr,
                 "completion must schedule through the captured scheduler");
+}
+
+bool TestSchedulerRunRestoresNestedAffinity() {
+  RecordingScheduler outer_scheduler;
+  RecordingScheduler inner_scheduler;
+  coropact::coro::Scheduler* outer_before = nullptr;
+  coropact::coro::Scheduler* inner_observed = nullptr;
+  coropact::coro::Scheduler* outer_after = nullptr;
+
+  ObserveCurrentWork inner_work{&inner_observed};
+  RunNestedWork outer_work{&inner_scheduler, &inner_work, &outer_before, &outer_after};
+  outer_scheduler.Run(&outer_work);
+
+  return Expect(outer_before == &outer_scheduler,
+                "outer Scheduler::Run must publish the outer scheduler") &&
+         Expect(inner_observed == &inner_scheduler,
+                "nested Scheduler::Run must publish the nested scheduler") &&
+         Expect(outer_after == &outer_scheduler,
+                "nested Scheduler::Run must restore the outer scheduler") &&
+         Expect(coropact::coro::Scheduler::TryCurrent() == nullptr,
+                "outer Scheduler::Run must restore the prior scheduler");
 }
 
 bool TestSchedulerContinuationRejectsInvalidTransitions() {
@@ -119,6 +193,7 @@ bool TestSchedulerContinuationRejectsInvalidTransitions() {
 
 int main() {
   const bool ok = TestOneShotTransition() && TestSchedulerContinuationPreservesAffinity() &&
+                  TestSchedulerRunRestoresNestedAffinity() &&
                   TestSchedulerContinuationRejectsInvalidTransitions();
   if (ok) {
     std::puts("completion gate smoke: PASS");

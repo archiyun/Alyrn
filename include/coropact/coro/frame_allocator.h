@@ -28,8 +28,13 @@ inline thread_local std::pmr::memory_resource* current_frame_resource =
 
 inline std::pmr::memory_resource* CurrentFrameResource() noexcept { return current_frame_resource; }
 
+inline std::pmr::memory_resource* NormalizeFrameResource(
+    std::pmr::memory_resource* resource) noexcept {
+  return resource != nullptr ? resource : std::pmr::new_delete_resource();
+}
+
 inline void SetCurrentFrameResource(std::pmr::memory_resource* resource) noexcept {
-  current_frame_resource = resource != nullptr ? resource : std::pmr::new_delete_resource();
+  current_frame_resource = NormalizeFrameResource(resource);
 }
 
 // The coroutine frame contains no user-visible pointer to the allocator. Keep
@@ -298,16 +303,21 @@ public:
   COROPACT_DELETE_COPY(FrameAllocatorScope);
 
   explicit FrameAllocatorScope(std::pmr::memory_resource& resource) noexcept
-      : previous_(detail::CurrentFrameResource()) {
-    detail::SetCurrentFrameResource(&resource);
-  }
+      : FrameAllocatorScope(&resource) {}
 
   explicit FrameAllocatorScope(std::pmr::memory_resource* resource) noexcept
-      : previous_(detail::CurrentFrameResource()) {
-    detail::SetCurrentFrameResource(resource);
+      : previous_(detail::CurrentFrameResource()),
+        changed_(previous_ != detail::NormalizeFrameResource(resource)) {
+    if (changed_) {
+      detail::SetCurrentFrameResource(resource);
+    }
   }
 
-  ~FrameAllocatorScope() { detail::SetCurrentFrameResource(previous_); }
+  ~FrameAllocatorScope() {
+    if (changed_) {
+      detail::SetCurrentFrameResource(previous_);
+    }
+  }
 
   [[nodiscard]]
   static std::pmr::memory_resource* TryCurrent() noexcept {
@@ -316,6 +326,7 @@ public:
 
 private:
   std::pmr::memory_resource* previous_;
+  bool changed_;
 };
 
 }  // namespace coropact::coro

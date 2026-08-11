@@ -69,10 +69,21 @@ bool TestSingleResultCompletion() {
   op.kind = coropact::luring::detail::LUringOpKind::kReadComplete;
 
   bool ok = true;
-  ok &= Expect(op.Complete(17), "the first CQE must complete the operation");
-  ok &= Expect(op.IsCompleted(), "the operation must become terminal after its first CQE");
+  ok &= Expect(op.TryRecordCqeCompletion(17), "the first CQE must complete the operation");
+  ok &=
+      Expect(op.CqeCompletionRecorded(), "the operation must become terminal after its first CQE");
   ok &= Expect(*op.result == 17, "the winning CQE result must be retained");
-  ok &= Expect(!op.Complete(-5), "a duplicate CQE must not overwrite the result");
+  ok &= Expect(op.CoupledResultReady(), "the CQE result must enter the coupled result-ready phase");
+  ok &= Expect(!op.CoupledReleaseAuthorized(),
+               "result readiness must not implicitly authorize resource release");
+  ok &= Expect(op.TryAuthorizeCoupledRelease(),
+               "coupled release must be authorized after the CQE result is ready");
+  ok &= Expect(op.CoupledReleaseAuthorized(), "coupled release authorization must be observable");
+  ok &= Expect(op.TryAuthorizeCoupledContinuation(),
+               "continuation must be authorized after coupled release");
+  ok &= Expect(op.CoupledContinuationAuthorized(),
+               "coupled continuation authorization must be observable");
+  ok &= Expect(!op.TryRecordCqeCompletion(-5), "a duplicate CQE must not overwrite the result");
   ok &= Expect(*op.result == 17, "a duplicate CQE must preserve the original result");
   ok &= Expect(op.DispatchKind() == coropact::luring::detail::LUringOpKind::kReadComplete,
                "completion state must not alter dispatch kind");
@@ -82,16 +93,39 @@ bool TestSingleResultCompletion() {
 bool TestReusablePhysicalSlot() {
   coropact::luring::detail::LUringOp op;
   op.kind = coropact::luring::detail::LUringOpKind::kWake;
-  (void)(op.Complete(0));
+  (void)(op.TryRecordCqeCompletion(0));
   op.resume_work.SetHandle(std::noop_coroutine());
   op.BeginNextRequest();
 
-  return Expect(!op.IsCompleted(), "reset must reopen a reusable operation slot") &&
+  return Expect(!op.CqeCompletionRecorded(), "reset must reopen a reusable operation slot") &&
          Expect(!op.result.HasValue(), "next request must not retain a prior CQE result") &&
          Expect(!op.resume_work.HasHandle(), "next request must not retain a prior continuation") &&
-         Expect(op.Complete(0), "a reopened operation slot must accept a CQE") &&
+         Expect(op.TryRecordCqeCompletion(0), "a reopened operation slot must accept a CQE") &&
          Expect(op.DispatchKind() == coropact::luring::detail::LUringOpKind::kWake,
                 "reset must preserve dispatch kind");
+}
+
+bool TestReusableCoupledLifecycle() {
+  coropact::luring::detail::LUringOp op;
+  op.kind = coropact::luring::detail::LUringOpKind::kReadComplete;
+  if (!Expect(op.TryRecordCqeCompletion(3), "initial coupled request must accept its CQE") ||
+      !Expect(op.TryAuthorizeCoupledRelease(), "initial coupled request must authorize release") ||
+      !Expect(op.TryAuthorizeCoupledContinuation(),
+              "initial coupled request must authorize continuation")) {
+    return false;
+  }
+
+  op.BeginNextRequest();
+  return Expect(!op.CqeCompletionRecorded(),
+                "next coupled request must not retain a CQE completion") &&
+         Expect(!op.result.HasValue(), "next coupled request must not retain a CQE result") &&
+         Expect(!op.CoupledResultReady(), "next coupled request must reset result readiness") &&
+         Expect(!op.CoupledReleaseAuthorized(),
+                "next coupled request must reset release authorization") &&
+         Expect(!op.CoupledContinuationAuthorized(),
+                "next coupled request must reset continuation authorization") &&
+         Expect(op.TryRecordCqeCompletion(7), "reset coupled request must accept a new CQE") &&
+         Expect(*op.result == 7, "reset coupled request must retain its new CQE result");
 }
 
 bool TestCompletionModels() {
@@ -146,8 +180,8 @@ bool TestResultStatesRejectInvalidTransitions() {
 
 int main() {
   const bool ok = TestSingleResultCompletion() && TestReusablePhysicalSlot() &&
-                  TestCompletionModels() && TestCancelCqeClassification() &&
-                  TestResultStatesRejectInvalidTransitions();
+                  TestReusableCoupledLifecycle() && TestCompletionModels() &&
+                  TestCancelCqeClassification() && TestResultStatesRejectInvalidTransitions();
   if (ok) {
     std::puts("luring op smoke: PASS");
     return 0;

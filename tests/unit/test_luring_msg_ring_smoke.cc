@@ -189,7 +189,7 @@ bool CheckMsgRingMailboxSchedule() {
     constexpr int kPollLimit = 2000;
     for (int i = 0; i < kPollLimit && !failed.load(std::memory_order_acquire) &&
                                       !skipped.load(std::memory_order_acquire) &&
-                                      !notify_op.IsCompleted();
+                                      !notify_op.CqeCompletionRecorded();
          ++i) {
       auto completed = coropact::luring::detail::LoopAccess::PollCompletions(source);
       if (!completed.has_value()) {
@@ -197,12 +197,12 @@ bool CheckMsgRingMailboxSchedule() {
         return;
       }
 
-      if (*completed == 0 && !notify_op.IsCompleted()) {
+      if (*completed == 0 && !notify_op.CqeCompletionRecorded()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
       }
     }
 
-    if (!notify_op.IsCompleted()) {
+    if (!notify_op.CqeCompletionRecorded()) {
       failed.store(true, std::memory_order_release);
     }
   });

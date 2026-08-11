@@ -6,11 +6,13 @@
 
 #include <cstdint>
 #include <limits>
+#include <memory>
 
 #include "coropact/base/check.h"
 #include "coropact/base/error.h"
 #include "coropact/coro/work.h"
 #include "coropact/luring/detail/reusable_completion_slot.h"
+#include "coropact/operation/detail/single_result_lifecycle.h"
 
 namespace coropact::luring::detail {
 
@@ -124,6 +126,42 @@ constexpr LUringCompletionModel CompletionModelFor(LUringOpKind kind) noexcept {
   return LUringCompletionModel::kSingleShot;
 }
 
+// These awaiters expose the CQE result directly as their one logical result
+// and release one stream-owned reservation before their continuation runs.
+// Other kSingleShot kinds have different result construction or convergence
+// rules and deliberately retain their operation-specific lifecycle handling.
+[[nodiscard]]
+constexpr bool UsesCoupledSingleResultLifecycle(LUringOpKind kind) noexcept {
+  switch (kind) {
+    case LUringOpKind::kReadComplete:
+    case LUringOpKind::kReadIntoComplete:
+    case LUringOpKind::kWriteComplete:
+      return true;
+    case LUringOpKind::kNone:
+    case LUringOpKind::kAcceptComplete:
+    case LUringOpKind::kAcceptSourceComplete:
+    case LUringOpKind::kAcceptSourceCancelComplete:
+    case LUringOpKind::kRecvSourceComplete:
+    case LUringOpKind::kRecvSourceCancelComplete:
+    case LUringOpKind::kSendZeroCopyComplete:
+    case LUringOpKind::kListenerCloseComplete:
+    case LUringOpKind::kTimedReadComplete:
+    case LUringOpKind::kTimedReadTimeoutComplete:
+    case LUringOpKind::kStreamCloseComplete:
+    case LUringOpKind::kTimerDriverComplete:
+    case LUringOpKind::kTimerControlComplete:
+    case LUringOpKind::kConnect:
+    case LUringOpKind::kMsgRing:
+    case LUringOpKind::kWake:
+    case LUringOpKind::kCancelAll:
+    case LUringOpKind::kNop:
+    case LUringOpKind::kCount:
+      return false;
+  }
+
+  return false;
+}
+
 // A CQE result is always an integer. Kernel errors are represented by a
 // negative cqe_res and converted to base::Error by the awaiter, so storing a
 // full std::expected<int, Error> here needlessly adds the error union and its
@@ -172,20 +210,30 @@ public:
   LUringCqeResult result;
   LUringOpKind kind{};
 
+  // Records one physical CQE result. For coupled stream I/O this also enters
+  // the logical "result ready" phase; its adapter must then release the
+  // stream reservation before the loop authorizes continuation resumption.
   [[nodiscard]]
-  bool Complete(int cqe_res) noexcept {
+  bool TryRecordCqeCompletion(int cqe_res) noexcept {
     if (!completion_slot_.TryComplete()) {
       return false;
     }
 
     result = cqe_res;
+    if (UsesCoupledSingleResultLifecycle(kind)) {
+      COROPACT_CHECK(single_result_lifecycle_.TryAuthorizeResult(),
+                     "coupled single-result operation recorded a CQE twice");
+    }
     return true;
   }
 
   // Some operation protocols have more than one CQE and keep their primary
   // result outside LUringOp. They mark the operation terminal only after the
   // final CQE has been interpreted by the operation-specific handler.
-  bool CompleteWithoutResult() noexcept { return completion_slot_.TryComplete(); }
+  [[nodiscard]]
+  bool TryMarkCompletionWithoutCqeResult() noexcept {
+    return completion_slot_.TryComplete();
+  }
 
   void SetImmediateSuccess() noexcept { result = 0; }
 
@@ -200,8 +248,40 @@ public:
   }
 
   [[nodiscard]]
-  bool IsCompleted() const noexcept {
+  bool CqeCompletionRecorded() const noexcept {
     return completion_slot_.Completed();
+  }
+
+  // The coupled lifecycle is intentionally separate from the reusable
+  // physical completion slot. It does not govern composites, sources, close,
+  // or split-release operations.
+  [[nodiscard]]
+  bool TryAuthorizeCoupledRelease() noexcept {
+    COROPACT_CHECK(UsesCoupledSingleResultLifecycle(kind),
+                   "release authorization requested for a non-coupled LUring operation");
+    return single_result_lifecycle_.TryAuthorizeRelease();
+  }
+
+  [[nodiscard]]
+  bool TryAuthorizeCoupledContinuation() noexcept {
+    COROPACT_CHECK(UsesCoupledSingleResultLifecycle(kind),
+                   "continuation authorization requested for a non-coupled LUring operation");
+    return single_result_lifecycle_.TryAuthorizeContinuation();
+  }
+
+  [[nodiscard]]
+  bool CoupledResultReady() const noexcept {
+    return single_result_lifecycle_.ResultReady();
+  }
+
+  [[nodiscard]]
+  bool CoupledReleaseAuthorized() const noexcept {
+    return single_result_lifecycle_.ReleaseAuthorized();
+  }
+
+  [[nodiscard]]
+  bool CoupledContinuationAuthorized() const noexcept {
+    return single_result_lifecycle_.ContinuationAuthorized();
   }
 
   // Starts the next request in a reusable physical slot. Call only after the
@@ -210,12 +290,15 @@ public:
   // physical requests.
   void BeginNextRequest() noexcept {
     completion_slot_.BeginNextRequest();
+    std::destroy_at(std::addressof(single_result_lifecycle_));
+    std::construct_at(std::addressof(single_result_lifecycle_));
     result.Clear();
     resume_work.ClearHandle();
   }
 
 private:
   detail::ReusableCompletionSlot completion_slot_;
+  operation::detail::SingleResultLifecycle single_result_lifecycle_;
 };
 
 static_assert(sizeof(LUringOp) == 24);

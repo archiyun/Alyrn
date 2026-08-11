@@ -62,11 +62,13 @@ _Avoid_: wrapper, event conversion
 - `operation/detail` is an internal logical-completion core. It may express
   once-only completion and scheduler-bound continuation resumption, but it
   must not own a result, fd, buffer, Channel, SQE, CQE, or application-visible
-  operation type. A logical completion gate is never reopened; reusable
-  physical backend slots install a fresh gate only after their release point.
-  Composite families record each physical member before authorizing one logical
-  result; split-release families separately authorize result, release, and
-  continuation.
+  operation type. `SingleResultLifecycle` is the 1-byte ordered protocol for
+  coupled single-result paths: result readiness, release authorization, then
+  continuation authorization. A logical completion gate is never reopened;
+  reusable physical backend slots install a fresh gate only after their release
+  point. Composite families record each physical member before authorizing one
+  logical result; split-release families separately authorize result, release,
+  and continuation.
 - `net`: header-only `Socket`, `Endpoint`, and buffers are backend-shared
   network values. `net/detail` holds backend-neutral stream/source lifecycle
   accounting and is not an application seam.

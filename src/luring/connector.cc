@@ -60,7 +60,7 @@ public:
       : OpHook(LUringOpKind::kConnect), loop_(loop), peer_(std::move(peer)) {}
 
   ~ConnectAwaiter() noexcept {
-    COROPACT_CHECK(!Op()->resume_work.HasHandle() || Op()->IsCompleted(),
+    COROPACT_CHECK(!Op()->resume_work.HasHandle() || Op()->CqeCompletionRecorded(),
                    "ConnectAwaiter destroyed before its physical connect CQE settled");
     if (fd_ >= 0) {
       ::close(fd_);
@@ -99,7 +99,7 @@ public:
   }
 
   base::Result<LUringStream> await_resume() noexcept {
-    if (!Op()->IsCompleted()) {
+    if (!Op()->CqeCompletionRecorded()) {
       COROPACT_CHECK(Op()->result.HasValue(),
                      "LUring Connect resumed before its immediate result was ready");
       return std::unexpected(base::MakeNegErrno(*Op()->result));

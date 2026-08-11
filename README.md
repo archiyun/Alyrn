@@ -164,6 +164,9 @@ cmake --build build -j"$(nproc)"
 ctest --test-dir build --output-on-failure
 ```
 
+For an opt-in strict diagnostic build on GCC or Clang, add
+`-DCOROPACT_STRICT_WARNINGS=ON`.
+
 Build with the io_uring backend enabled:
 
 ```bash

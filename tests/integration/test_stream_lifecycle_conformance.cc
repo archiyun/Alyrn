@@ -271,6 +271,82 @@ bool CheckPendingReadSuccessContract() {
   return ok;
 }
 
+struct SequentialReadObservation {
+  std::optional<ReadResult> first;
+  std::optional<ReadResult> second;
+  bool resumed_with_scheduler{false};
+  bool timed_out{false};
+};
+
+template <coropact::io::AsyncReadStream Stream, class Loop>
+auto ObserveSequentialRead(Stream& stream, Loop& loop, std::span<std::byte> first_buffer,
+                           std::span<std::byte> second_buffer,
+                           SequentialReadObservation& observation) -> coropact::coro::DetachedTask {
+  observation.first.emplace(co_await stream.ReadSome(first_buffer));
+  observation.second.emplace(co_await stream.ReadSome(second_buffer));
+  observation.resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
+  loop.RequestStop();
+}
+
+template <class Harness>
+bool CheckReadReleaseBeforeContinuationContract() {
+  typename Harness::Loop loop;
+  if (!Harness::Init(loop)) {
+    if (Harness::Skip(loop)) {
+      return true;
+    }
+    std::cerr << "FAIL [" << Harness::Name() << "]: loop initialization\n";
+    return false;
+  }
+
+  UniqueFd local;
+  UniqueFd peer;
+  if (!MakeSocketPair(local, peer)) {
+    return false;
+  }
+
+  auto stream = Harness::MakeStream(loop, local.Release());
+  constexpr std::string_view kFirstPayload = "first";
+  constexpr std::string_view kSecondPayload = "second";
+  std::array<std::byte, kFirstPayload.size()> first_buffer{};
+  std::array<std::byte, kSecondPayload.size()> second_buffer{};
+  SequentialReadObservation observation;
+  std::string payload{kFirstPayload};
+  payload.append(kSecondPayload);
+
+  coropact::coro::SpawnDetach(
+      loop, ObserveSequentialRead(stream, loop, first_buffer, second_buffer, observation));
+  if (!Harness::RunAfter(loop, std::chrono::milliseconds(5),
+                         [fd = peer.Get(), payload] { (void)WriteExactly(fd, payload); })) {
+    return false;
+  }
+  if (!Harness::RunAfter(loop, std::chrono::milliseconds(500), [&] {
+        observation.timed_out = true;
+        loop.RequestStop();
+      })) {
+    return false;
+  }
+
+  Harness::Run(loop);
+
+  const std::string_view first_actual(reinterpret_cast<const char*>(first_buffer.data()),
+                                      kFirstPayload.size());
+  const std::string_view second_actual(reinterpret_cast<const char*>(second_buffer.data()),
+                                       kSecondPayload.size());
+  bool ok = true;
+  ok &= Expect(!observation.timed_out, Harness::Name(), "sequential read timed out");
+  ok &= Expect(observation.first.has_value() && observation.first->has_value() &&
+                   **observation.first == kFirstPayload.size() && first_actual == kFirstPayload,
+               Harness::Name(), "first sequential read returned the wrong result");
+  ok &= Expect(observation.second.has_value() && observation.second->has_value() &&
+                   **observation.second == kSecondPayload.size() && second_actual == kSecondPayload,
+               Harness::Name(),
+               "follow-up read observed a stale pending slot instead of the next payload");
+  ok &= Expect(observation.resumed_with_scheduler, Harness::Name(),
+               "sequential read lost scheduler affinity");
+  return ok;
+}
+
 struct OwnedReadObservation {
   std::optional<OwnedReadOutcome> outcome;
   int resume_count{0};
@@ -841,6 +917,7 @@ bool CheckPendingReadCloseContract() {
 template <class Harness>
 bool CheckBackend() {
   const bool pending_read = CheckPendingReadSuccessContract<Harness>();
+  const bool sequential_read = CheckReadReleaseBeforeContinuationContract<Harness>();
   const bool owned_read = CheckPendingOwnedReadSuccessContract<Harness>();
   const bool read_lane = CheckReadLaneExclusivityContract<Harness>();
   const bool loop_stop = CheckOwnedReadLoopStopContract<Harness>();
@@ -849,12 +926,12 @@ bool CheckBackend() {
   const bool pending_write_close = CheckPendingWriteCloseContract<Harness>();
   const bool closed_stream = CheckClosedStreamContract<Harness>();
   const bool pending_read_close = CheckPendingReadCloseContract<Harness>();
-  if (pending_read && owned_read && read_lane && loop_stop && stop_rejection && shutdown &&
-      pending_write_close && closed_stream && pending_read_close) {
+  if (pending_read && sequential_read && owned_read && read_lane && loop_stop && stop_rejection &&
+      shutdown && pending_write_close && closed_stream && pending_read_close) {
     std::cout << "lifecycle conformance [" << Harness::Name() << "]: PASS\n";
   }
-  return pending_read && owned_read && read_lane && loop_stop && stop_rejection && shutdown &&
-         pending_write_close && closed_stream && pending_read_close;
+  return pending_read && sequential_read && owned_read && read_lane && loop_stop &&
+         stop_rejection && shutdown && pending_write_close && closed_stream && pending_read_close;
 }
 
 }  // namespace

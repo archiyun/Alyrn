@@ -8,12 +8,13 @@
 
 namespace coropact::luring::detail {
 
-// Owns the completion state of one reusable io_uring operation slot.
+// Owns the physical settlement marker of one reusable io_uring operation slot.
 //
-// CompletionGate itself models one logical result and is never reopened. A
-// physical LUringOp is reused only after its prior request has reached its
-// backend-defined release point; BeginNextRequest() then installs a fresh
-// logical gate for the next request.
+// It rejects a duplicate terminal CQE and is reset only when the backend has
+// released the prior physical request. Coupled stream awaiters keep their
+// richer result/release/resume ordering in LUringOp's separate
+// SingleResultLifecycle; composite, source, and split-release operations own
+// their respective lifecycle state machines.
 class ReusableCompletionSlot {
  public:
   [[nodiscard]]

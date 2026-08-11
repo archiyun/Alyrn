@@ -43,6 +43,21 @@ buffer 可以复用，以及关闭和取消如何收敛。内部类、CQE 分发
 single-shot 通常是一条 SQE 对一条 CQE；multishot、超时和 zerocopy 会产生多个物理
 事件，因此必须经过自己的状态机。业务接口看到的是逻辑结果，不是 CQE 数量。
 
+对于普通的 single-shot awaiter，loop 的内部顺序也被固定为：
+
+```text
+CQE
+  -> LUringOp 记录原始 CQE result
+  -> operation adapter 解释结果，并释放 pending stream slot / buffer reservation
+  -> loop 将 ResumeWork 放入 completion queue
+  -> coroutine await_resume()
+```
+
+因此 coroutine 恢复后可以立刻开始同方向的下一次 stream operation；它不应因为上一项
+operation 的 slot 尚未释放而得到 `EBUSY`。这个规则只适用于 coupled single-shot 路径。
+timed read、close、multishot source 和 zerocopy 各自根据其 composite、event-source 或
+split-release 生命周期决定何时进入最后两步。
+
 ## 生命周期上的硬规则
 
 - `submit` 返回不等于 kernel 已经停止访问用户 buffer。

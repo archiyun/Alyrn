@@ -70,15 +70,26 @@ scheduler or I/O backend.
 | `coro/work.h` | Schedulable work and coroutine resume adapter |
 | `coro/frame_allocator.h` | Coroutine-frame allocation through PMR resources |
 | `coro/detail/promise_base.h` | Shared lazy coroutine promise and continuation protocol |
-| `coro/detail/spawn_state.h` | Join, detach, waiter, and root-frame ownership state |
+| `coro/detail/spawn_state.h` | Joinable root result, detach, waiter, and ownership state embedded in the root frame |
+| `coro/detail/spawn_root.h` | Joinable root coroutine, promise, final-suspend, and root-frame destruction protocol |
+| `operation/detail/` | Backend-neutral completion gates, composite/split-release lifecycle helpers, and scheduler-bound continuations; never fd, buffer, or CQE ownership |
 
-## Deferred Work
+## Remaining Boundaries
 
-The following remain deferred or require separate design work:
+The following are deliberate limits or require separate design work:
 
-- cancellation and propagation through `JoinHandle` and pending I/O;
-- scheduler affinity when a task and its waiter run on different workers;
-- runtime shutdown behavior for queued and suspended coroutine handles;
-- completion-protocol extensions such as multishot operations, provided buffers,
-  and split send/notification completions. These belong to the backend adapter
-  layer and must not change the ownership semantics of `Task<T>`.
+- `JoinHandle` does not expose cancellation. Detaching or destroying it only
+  relinquishes observation and result ownership; it never cancels the root
+  task or a pending I/O operation.
+- A parked `JoinHandle` waiter resumes through its captured `Scheduler`, and
+  backend awaiters use scheduler-bound continuations. General task migration
+  across workers is intentionally not a `Task<T>` feature; a backend must use
+  its explicit owner-transfer protocol such as a mailbox.
+- `RequestStop()` begins backend cancellation and completion drain. A stopped
+  loop is not proof that application-owned streams, leases, or coroutine
+  frames have been destroyed; their owner protocols remain responsible for
+  final release.
+- io_uring extensions now include composite close/timeout convergence,
+  multishot accept and receive sources, provided-buffer leases, and split
+  zero-copy send completion. Future extensions must refine the same logical
+  completion/lifetime protocol without changing `Task<T>` ownership semantics.

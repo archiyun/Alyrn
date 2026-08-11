@@ -140,10 +140,10 @@ EPOLLIN
 `ReactorStream::CompleteRead()` 会：
 
 ```text
-1. 取走 pending_read_，所以同一 awaiter 不再是完成目标；
-2. 对 EOF/错误取消 read interest；
-3. 调用 awaiter::Complete(result)；
-4. awaiter 的 CompletionGate 授权一次 SchedulerContinuation::Schedule()。
+1. awaiter 固定 result；
+2. SingleResultLifecycle 授权 release，随后清除 pending_read_；
+3. 对 EOF/错误取消 read interest；
+4. SingleResultLifecycle 授权一次 SchedulerContinuation::Schedule()。
 ```
 
 协程不是在 epoll callback 中直接 `resume()`，而是作为 `coro::Work` 放回 owner loop 的
@@ -171,9 +171,9 @@ awaiter 指针 + continuation + EPOLLIN interest
 而不是内核已接受、稍后会继续写 `buffer` 的 request。因此当 owner thread 取消等待时：
 
 ```text
-清除 pending_read_
+用 ECANCELED 固定 awaiter result
+  -> 授权并清除 pending_read_
   -> 从 epoll 移除/关闭 interest
-  -> 用 ECANCELED 完成 awaiter
   -> 调度 continuation
 ```
 
@@ -183,7 +183,7 @@ awaiter 指针 + continuation + EPOLLIN interest
 这也是 Core contract 能要求 borrowed `span` 在 await 返回前保持有效的原因；它不意味着
 调用者可以在协程真正恢复前提前释放 storage。
 
-### 4.2 `CompletionGate`：ready、timeout、close 的唯一裁决
+### 4.2 `SingleResultLifecycle`：ready、timeout、close 的唯一裁决
 
 同一个 awaiter 可能同时遇到多个终态来源：
 
@@ -195,18 +195,29 @@ loop RequestStop()
 EPOLLERR / HUP
 ```
 
-它们都必须经过 awaiter 的 `CompletionGate::TryComplete()`：
+它们都必须经过 awaiter 的 `SingleResultLifecycle`：
 
 ```text
-第一个到达者：保存 result，安排 continuation
-后续到达者：TryComplete() == false，什么也不做
+第一个到达者：授权 result，保存 result，授权并释放 pending slot，安排 continuation
+后续到达者：TryAuthorizeResult() == false，什么也不做
 ```
 
-Gate 是 owner-thread-confined 的 1-byte 状态；Reactor 不允许多个线程直接执行
-`Complete()`。跨线程 stop 先通过 `eventfd` 回到 owner loop，避免把 gate 变成一把热路径原子锁。
-获胜者只可向 awaiter 的 result storage 写入一次；`await_resume()` 只可取走一次并使 storage 回到
-pending。这两个状态转移同样在 Release 构建由 `COROPACT_CHECK` 约束，避免重复 completion 或错误的
-await protocol 读取未构造的 value storage。
+它是 owner-thread-confined 的 1-byte 阶段机：
+
+```text
+Result Ready -> Release Authorized -> Continuation Authorized
+```
+
+Reactor 不允许多个线程直接执行 `CompleteRead()` 或 `CompleteWrite()`。跨线程 stop 先通过
+`eventfd` 回到 owner loop，避免把阶段机变成一把热路径原子锁。获胜者只可向 awaiter 的
+result storage 写入一次；`await_resume()` 只可取走一次并使 storage 回到 pending。这两个状态
+转移同样在 Release 构建由 `COROPACT_CHECK` 约束，避免重复 completion 或错误的 await protocol
+读取未构造的 value storage。
+
+`ReactorListener::Accept()` 也遵循相同的 coupled single-result 顺序。其 pending accept
+槽位在结果固定后、恢复 continuation 前才释放；`reactor_listener_smoke_test` 的
+`CheckAcceptReleasesSlotBeforeContinuation()` 让同一协程连续执行两次 `Accept()`，验证第二次
+提交可以立即复用第一轮释放的槽位。
 
 ### 4.3 timeout 是“解除等待”，不是内核取消
 
@@ -214,7 +225,7 @@ await protocol 读取未构造的 value storage。
 
 ```text
 read readiness  ─┐
-                 ├─ CompleteRead(result) ─► CompletionGate
+                 ├─ CompleteRead(result) ─► SingleResultLifecycle
 timer expiry ────┘
 ```
 
@@ -229,6 +240,12 @@ EPOLLIN 已按终态收敛
 timer 已取消或已消费
 协程恰好恢复一次
 ```
+
+`reactor_stream_smoke_test` 的
+`CheckTimedReadReleasesSlotBeforeContinuation()` 让 timed read 在挂起后读取
+`"timednext"`，并在它恢复的同一协程中立刻提交第二个 read。第二次 read 必须能取得
+`"next"`：这验证 `CompleteRead()` 在安排 continuation 前已经清除了旧的
+`pending_read_` 槽位；否则第二次提交会得到 `EBUSY`。
 
 ### 4.4 `ReactorStream::Close()`：资源级取消
 
@@ -350,10 +367,11 @@ lease。这是资源归还协议，不应被 `EventLoop::Stopped` 偷偷绕过�
 阅读或修改 Reactor 时，优先检查下面六条：
 
 ```text
-1. 所有 Channel、pending slot、CompletionGate 都只由 owner loop 访问。
+1. 所有 Channel、pending slot、SingleResultLifecycle/CompletionGate 都只由 owner loop 访问。
 2. 一个 pending read/write/accept 至多完成一次。
 3. 完成前 awaiter、continuation、stream/listener 与 borrowed buffer 都还存活。
-4. 取消先清除 pending slot，再安排 continuation；之后的 readiness 不能再找到旧 awaiter。
+4. 取消先固定 result，再授权并清除 pending slot，最后安排 continuation；之后的 readiness
+   不能再找到旧 awaiter。
 5. Channel 必须在 owner 析构或 move 前 DisableAll()、Remove()。
 6. loop stop 只触发关闭与 drain；对象/lease 的最终释放仍需各自授权。
 ```

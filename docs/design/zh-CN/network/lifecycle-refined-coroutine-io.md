@@ -197,8 +197,8 @@ Logical ReadSome
             -> readiness                      [stuttering]
             -> retry recv
             -> Result Ready
-            -> Continuation Authorized
             -> Release Authorized
+            -> Continuation Authorized
 ```
 
 ### io_uring
@@ -212,8 +212,8 @@ Logical ReadSome
   -> interpret result
   -> Physical Terminal
   -> Result Ready
-  -> Continuation Authorized
   -> Release Authorized
+  -> Continuation Authorized
 ```
 
 投影后两者都呈现：
@@ -238,13 +238,15 @@ TLA+ observation + trace refinement
 cross-backend conformance tests
 ```
 
-代码中的 `CompletionGate`、`CompositeLifecycle`、`SplitReleaseLifecycle` 和 source lifecycle
-分别实现局部授权规则。它们不是四个互斥 family，也不拥有 fd、buffer、Channel、SQE 或 CQE；
-具体 Adapter 仍负责物理资源和结果存储。
+代码中的 `SingleResultLifecycle`、`CompletionGate`、`CompositeLifecycle`、
+`SplitReleaseLifecycle` 和 source lifecycle 分别实现局部授权规则。
+`SingleResultLifecycle` 将 coupled single-result 操作压缩为一个 1-byte 的严格阶段机；
+它们都不拥有 fd、buffer、Channel、SQE 或 CQE，具体 Adapter 仍负责物理资源和结果存储。
 
 TLA+ 检查有界 interleaving 和 observation projection。conformance tests 则对 Reactor 和
 io_uring 运行同一组应用可观察场景，例如 EOF、半关闭、pending I/O close、一次恢复和 buffer
-归还。两者不能互相替代。
+归还，以及完成后立刻发起同方向 follow-up read。最后一项直接验证 release 边界已在
+continuation 可运行前跨越：follow-up read 不会看到旧 operation 遗留的 `EBUSY`。两者不能互相替代。
 
 ## 7. 不属于 LRCI 的主张
 

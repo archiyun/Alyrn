@@ -350,9 +350,7 @@ void LUringLoop::ScheduleCompletion(coro::Work* work) noexcept {
 
 void LUringLoop::RunReady() noexcept {
   COROPACT_CHECK(IsInLoopThread(), "LUringLoop::RunReady called from wrong thread");
-
-  coro::Scheduler* previous = coro::Scheduler::TryCurrent();
-  coro::Scheduler::SetCurrent(this);
+  ExecutionScope execution_scope{*this};
 
   // The common throughput configuration does not need wall-clock fairness.
   // Avoid reading the clock for every resumed work item in that mode; the
@@ -386,10 +384,9 @@ void LUringLoop::RunReady() noexcept {
           ready_nonempty_since_ns_ = 0;
         }
       }
-      coro::Scheduler::Run(work);
+      RunInExecutionScope(work);
       ++resumed;
     }
-    coro::Scheduler::SetCurrent(previous);
     return;
   }
 
@@ -448,15 +445,13 @@ void LUringLoop::RunReady() noexcept {
         ready_nonempty_since_ns_ = 0;
       }
     }
-    coro::Scheduler::Run(work);
+    RunInExecutionScope(work);
     ++resumed;
 
     if (time_budget_ns != 0 && time::SteadyNowNs() - turn_start_ns >= time_budget_ns) {
       break;
     }
   }
-
-  coro::Scheduler::SetCurrent(previous);
 }
 
 base::Result<void> LUringLoop::FlushSubmit() noexcept {
@@ -553,8 +548,13 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
       --inflight_;
     }
     if (disposition.resume_continuation) {
-      const bool logical_completion_ready = op->IsCompleted() || op->CompleteWithoutResult();
-      if (logical_completion_ready && op->resume_work.HasHandle()) {
+      if (UsesCoupledSingleResultLifecycle(op->DispatchKind())) {
+        COROPACT_CHECK(op->TryAuthorizeCoupledContinuation(),
+                       "coupled LUring operation resumed before release authorization");
+      }
+      const bool resume_gate_won =
+          op->CqeCompletionRecorded() || op->TryMarkCompletionWithoutCqeResult();
+      if (resume_gate_won && op->resume_work.HasHandle()) {
         ScheduleCompletion(&op->resume_work);
       }
     }
@@ -580,16 +580,26 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
 
   if (op == &cancel_all_op_) {
     cancel_all_pending_ = false;
-    (void)(op->Complete(cqe->res));
+    (void)(op->TryRecordCqeCompletion(cqe->res));
     apply_disposition(detail::DispatchCompletion(op, event));
     return;
   }
 
   if (CompletionModelFor(op->DispatchKind()) == LUringCompletionModel::kSingleShot &&
-      !op->Complete(cqe->res)) {
+      !op->TryRecordCqeCompletion(cqe->res)) {
     return;
   }
 
+  // For coupled single-shot stream awaiters, TryRecordCqeCompletion() has
+  // entered the result-ready phase before DispatchCompletion() runs. Their
+  // adapter then authorizes and crosses its backend-owned release boundary;
+  // only apply_disposition() can authorize continuation resumption. This is
+  // the luring refinement of:
+  //
+  //   result ready -> release -> continuation resume
+  //
+  // Composite and split-release operations return an explicit disposition and
+  // retain their own stricter lifecycle state machines.
   apply_disposition(detail::DispatchCompletion(op, event));
 }
 

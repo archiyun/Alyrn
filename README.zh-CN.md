@@ -164,6 +164,9 @@ cmake --build build -j"$(nproc)"
 ctest --test-dir build --output-on-failure
 ```
 
+若使用 GCC 或 Clang 进行严格诊断构建，可额外加入
+`-DCOROPACT_STRICT_WARNINGS=ON`。
+
 构建并启用 io_uring 后端：
 
 ```bash

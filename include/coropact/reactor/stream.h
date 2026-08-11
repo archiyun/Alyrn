@@ -18,8 +18,8 @@
 #include "coropact/net/endpoint.h"
 #include "coropact/net/read_into.h"
 #include "coropact/net/socket.h"
-#include "coropact/operation/detail/completion_gate.h"
 #include "coropact/operation/detail/scheduler_continuation.h"
+#include "coropact/operation/detail/single_result_lifecycle.h"
 #include "coropact/reactor/detail/channel.h"
 #include "coropact/reactor/detail/loop_shutdown.h"
 #include "coropact/reactor/detail/op_hook.h"
@@ -108,7 +108,7 @@ private:
   using Channel = detail::Channel;
   using LoopShutdownParticipant = detail::LoopShutdownParticipant;
   using SchedulerContinuation = operation::detail::SchedulerContinuation;
-  using CompletionGate = operation::detail::CompletionGate;
+  using SingleResultLifecycle = operation::detail::SingleResultLifecycle;
   using IoResultState = detail::ReactorIoResultState;
 
   template <class Awaiter>
@@ -155,6 +155,15 @@ private:
 // continuation protocol; derived awaiters retain buffer ownership and terminal
 // cleanup, which differ between borrowed, buffered, and owned reads.
 class ReactorStream::ReadAwaiterState {
+public:
+  // Completion dispatch calls these in the lifecycle order after the derived
+  // awaiter has stored its result and before it schedules the continuation.
+  [[nodiscard]]
+  bool TryAuthorizeRelease() noexcept;
+  [[nodiscard]]
+  bool TryAuthorizeContinuation() noexcept;
+  void ScheduleContinuation() noexcept;
+
 protected:
   explicit ReadAwaiterState(ReactorStream& stream) noexcept : stream_(&stream) {}
 
@@ -167,17 +176,17 @@ protected:
   void CancelReadTimeout(time::TimerId& timer) noexcept;
 
   [[nodiscard]]
-  bool TryClaimCompletion() noexcept;
+  bool TryAuthorizeResult() noexcept;
   void CompleteInline(base::Result<std::size_t> result) noexcept;
+  void CompleteStoredInline() noexcept;
   void SetResult(base::Result<std::size_t> result) noexcept;
-  void ScheduleContinuation() noexcept;
 
   [[nodiscard]]
   base::Result<std::size_t> TakeResult() noexcept;
 
   ReactorStream* stream_;
   SchedulerContinuation continuation_;
-  CompletionGate completion_gate_;
+  SingleResultLifecycle lifecycle_;
   IoResultState result_;
 };
 
@@ -201,7 +210,7 @@ public:
 private:
   friend OperationHook<ReadSomeAwaiter>;
 
-  void CompleteImpl(base::Result<std::size_t> result) noexcept;
+  bool CompleteResultImpl(base::Result<std::size_t> result) noexcept;
   void OnReadyImpl() noexcept;
 
   std::span<std::byte> buffer_;
@@ -227,15 +236,20 @@ public:
   base::Result<void> await_resume() noexcept;
 
 private:
+  friend class ReactorStream;
   friend OperationHook<WriteAllAwaiter>;
 
-  void CompleteImpl(base::Result<std::size_t> result) noexcept;
+  void CompleteInline(base::Result<std::size_t> result) noexcept;
+  [[nodiscard]] bool CompleteResultImpl(base::Result<std::size_t> result) noexcept;
+  [[nodiscard]] bool TryAuthorizeRelease() noexcept;
+  [[nodiscard]] bool TryAuthorizeContinuation() noexcept;
+  void ScheduleContinuation() noexcept;
   void OnReadyImpl() noexcept;
 
   ReactorStream* stream_;
   std::span<const std::byte> buffer_;
   SchedulerContinuation continuation_;
-  CompletionGate completion_gate_;
+  SingleResultLifecycle lifecycle_;
   IoResultState result_;
 };
 
@@ -258,7 +272,7 @@ public:
 private:
   friend OperationHook<BufferReadAwaiter>;
 
-  void CompleteImpl(base::Result<std::size_t> result) noexcept;
+  bool CompleteResultImpl(base::Result<std::size_t> result) noexcept;
   void OnReadyImpl() noexcept;
   bool PrepareReservation() noexcept;
   void FinishAttempt(base::Result<std::size_t> result) noexcept;
@@ -291,7 +305,7 @@ public:
 private:
   friend OperationHook<ReadIntoAwaiter>;
 
-  void CompleteImpl(base::Result<std::size_t> result) noexcept;
+  bool CompleteResultImpl(base::Result<std::size_t> result) noexcept;
   void OnReadyImpl() noexcept;
   bool PrepareReservation() noexcept;
   void FinishAttempt(base::Result<std::size_t> result) noexcept;
