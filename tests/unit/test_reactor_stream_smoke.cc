@@ -34,7 +34,7 @@
 namespace {
 
 using ReadResult = coropact::base::Result<std::size_t>;
-using WriteResult = coropact::base::Result<std::size_t>;
+using WriteResult = coropact::base::Result<void>;
 using OwnedReadOutcome = coropact::io::ReadIntoOutcome;
 
 static_assert(coropact::io::AsyncStream<coropact::reactor::ReactorStream>);
@@ -114,19 +114,7 @@ coropact::coro::DetachedTask WriteOnce(coropact::reactor::ReactorStream* stream,
                                        std::span<const std::byte> payload,
                                        std::optional<WriteResult>* out,
                                        bool* resumed_with_scheduler) {
-  WriteResult result = co_await stream->WriteSome(payload);
-  *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == scheduler;
-  out->emplace(std::move(result));
-  loop->RequestStop();
-}
-
-coropact::coro::DetachedTask WriteBufferOnce(coropact::reactor::ReactorStream* stream,
-                                             coropact::reactor::EventLoop* loop,
-                                             coropact::reactor::EventLoop* scheduler,
-                                             coropact::io::Buffer* buffer,
-                                             std::optional<WriteResult>* out,
-                                             bool* resumed_with_scheduler) {
-  WriteResult result = co_await stream->WriteSome(*buffer);
+  WriteResult result = co_await stream->WriteAll(payload);
   *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == scheduler;
   out->emplace(std::move(result));
   loop->RequestStop();
@@ -142,8 +130,8 @@ coropact::coro::DetachedTask EchoServer(coropact::reactor::ReactorStream* stream
   } else if (*read_result == 0) {
     out->emplace(coropact::base::Result<void>{});
   } else {
-    out->emplace(co_await coropact::io::WriteAll(
-        *stream, std::span<const std::byte>(scratch->data(), *read_result)));
+    out->emplace(
+        co_await stream->WriteAll(std::span<const std::byte>(scratch->data(), *read_result)));
   }
   if (++(*done_count) == 2) {
     loop->RequestStop();
@@ -156,7 +144,7 @@ coropact::coro::DetachedTask EchoClient(coropact::reactor::ReactorStream* stream
                                         std::optional<coropact::base::Result<void>>* out,
                                         std::size_t* received_size, int* done_count,
                                         coropact::reactor::EventLoop* loop) {
-  coropact::base::Result<void> write_result = co_await coropact::io::WriteAll(*stream, payload);
+  coropact::base::Result<void> write_result = co_await stream->WriteAll(payload);
   if (!write_result.has_value()) {
     out->emplace(std::unexpected(write_result.error()));
   } else {
@@ -186,8 +174,20 @@ coropact::coro::DetachedTask CloseThenSubmit(coropact::reactor::ReactorStream* s
     write_result->emplace(std::unexpected(close_result.error()));
   } else {
     read_result->emplace(co_await stream->ReadSome(*read_buffer));
-    write_result->emplace(co_await stream->WriteSome(write_buffer));
+    write_result->emplace(co_await stream->WriteAll(write_buffer));
   }
+  loop->RequestStop();
+}
+
+coropact::coro::DetachedTask ShutdownThenReadAndWrite(
+    coropact::reactor::ReactorStream* stream, coropact::reactor::EventLoop* loop,
+    std::array<std::byte, 16>* read_buffer, std::span<const std::byte> write_buffer,
+    std::optional<WriteResult>* first_shutdown, std::optional<WriteResult>* second_shutdown,
+    std::optional<WriteResult>* write_result, std::optional<ReadResult>* read_result) {
+  first_shutdown->emplace(co_await stream->Shutdown());
+  second_shutdown->emplace(co_await stream->Shutdown());
+  write_result->emplace(co_await stream->WriteAll(write_buffer));
+  read_result->emplace(co_await stream->ReadSome(*read_buffer));
   loop->RequestStop();
 }
 
@@ -291,7 +291,6 @@ bool CheckImmediateWrite() {
 
   return Check(result.has_value(), "immediate write did not finish") &&
          Check(result->has_value(), "immediate write returned error") &&
-         Check(**result == sizeof(payload) - 1, "immediate write byte count mismatch") &&
          Check(n == static_cast<ssize_t>(sizeof(payload) - 1), "peer read byte count mismatch") &&
          Check(std::memcmp(received.data(), payload, sizeof(payload) - 1) == 0,
                "peer read payload mismatch") &&
@@ -443,42 +442,6 @@ bool CheckOwnedReadIntoCloseReturnsBuffer() {
   outcome->buffer.AbortWrite();
   return Check(reusable_after_cancel,
                "owned cancelled read returned a buffer with a live reservation");
-}
-
-bool CheckWriteFromIoBuffer() {
-  int sv[2] = {-1, -1};
-  if (!MakeSocketPair(sv)) {
-    std::cout << "FAIL: socketpair failed\n";
-    return false;
-  }
-
-  coropact::reactor::EventLoop loop;
-  coropact::reactor::ReactorStream stream(&loop, sv[0]);
-
-  const std::string payload = "write-from-io-buffer";
-  coropact::io::Buffer buffer(5);
-  buffer.Append(payload.substr(0, 7));
-  buffer.Append(payload.substr(7));
-
-  std::optional<WriteResult> result;
-  bool resumed_with_scheduler = false;
-
-  coropact::coro::SpawnDetach(
-      loop, WriteBufferOnce(&stream, &loop, &loop, &buffer, &result, &resumed_with_scheduler));
-  loop.Run();
-
-  std::array<char, 64> received{};
-  const ssize_t n = ::read(sv[1], received.data(), received.size());
-  ::close(sv[1]);
-
-  return Check(result.has_value(), "buffer write did not finish") &&
-         Check(result->has_value(), "buffer write returned error") &&
-         Check(**result == payload.size(), "buffer write byte count mismatch") &&
-         Check(buffer.Empty(), "buffer write should drain written bytes") &&
-         Check(n == static_cast<ssize_t>(payload.size()), "buffer write peer count mismatch") &&
-         Check(std::string(received.data(), static_cast<std::size_t>(n)) == payload,
-               "buffer write payload mismatch") &&
-         Check(resumed_with_scheduler, "buffer write resumed without current scheduler");
 }
 
 bool CheckCloseCancelsPendingRead() {
@@ -658,6 +621,58 @@ bool CheckCloseRejectsLaterSubmit() {
          Check(peer_read == 0, "peer did not observe local close");
 }
 
+bool CheckShutdownKeepsReadOpen() {
+  int sv[2] = {-1, -1};
+  if (!MakeSocketPair(sv)) {
+    std::cout << "FAIL: socketpair failed\n";
+    return false;
+  }
+
+  constexpr char kReply[] = "reply";
+  if (::write(sv[1], kReply, sizeof(kReply) - 1) != static_cast<ssize_t>(sizeof(kReply) - 1)) {
+    std::cout << "FAIL: peer write failed\n";
+    ::close(sv[0]);
+    ::close(sv[1]);
+    return false;
+  }
+
+  coropact::reactor::EventLoop loop;
+  coropact::reactor::ReactorStream stream(&loop, sv[0]);
+  std::array<std::byte, 16> read_buffer{};
+  constexpr char kWrite[] = "must-not-send";
+  auto write_buffer = std::as_bytes(std::span(kWrite, sizeof(kWrite) - 1));
+  std::optional<WriteResult> first_shutdown;
+  std::optional<WriteResult> second_shutdown;
+  std::optional<WriteResult> write_result;
+  std::optional<ReadResult> read_result;
+
+  coropact::coro::SpawnDetach(
+      loop, ShutdownThenReadAndWrite(&stream, &loop, &read_buffer, write_buffer, &first_shutdown,
+                                     &second_shutdown, &write_result, &read_result));
+  loop.Run();
+
+  std::array<char, 1> peer_buffer{};
+  const ssize_t peer_read = ::read(sv[1], peer_buffer.data(), peer_buffer.size());
+  ::close(sv[1]);
+
+  const std::string_view actual(reinterpret_cast<const char*>(read_buffer.data()),
+                                sizeof(kReply) - 1);
+  return Check(first_shutdown.has_value() && first_shutdown->has_value(),
+               "first Shutdown failed") &&
+         Check(second_shutdown.has_value() && second_shutdown->has_value(),
+               "second Shutdown was not idempotent") &&
+         Check(write_result.has_value() && !write_result->has_value(),
+               "WriteAll after Shutdown unexpectedly succeeded") &&
+         Check(write_result->error() == std::errc::broken_pipe,
+               "WriteAll after Shutdown did not return EPIPE") &&
+         Check(read_result.has_value() && read_result->has_value() &&
+                   **read_result == sizeof(kReply) - 1,
+               "ReadSome after Shutdown did not remain usable") &&
+         Check(actual == std::string_view(kReply, sizeof(kReply) - 1),
+               "ReadSome after Shutdown returned wrong payload") &&
+         Check(peer_read == 0, "peer did not observe Shutdown EOF");
+}
+
 }  // namespace
 
 int main() {
@@ -668,12 +683,12 @@ int main() {
   if (!CheckReadIntoIoBuffer()) return 1;
   if (!CheckOwnedReadIntoReturnsBuffer()) return 1;
   if (!CheckOwnedReadIntoCloseReturnsBuffer()) return 1;
-  if (!CheckWriteFromIoBuffer()) return 1;
   if (!CheckCloseCancelsPendingRead()) return 1;
   if (!CheckLoopStopCancelsPendingRead()) return 1;
   if (!CheckReadableThenCloseResumesOnce()) return 1;
   if (!CheckEchoAlgorithmUsesAsyncStream()) return 1;
   if (!CheckCloseRejectsLaterSubmit()) return 1;
+  if (!CheckShutdownKeepsReadOpen()) return 1;
 
   std::cout << "reactor stream smoke: PASS\n";
   return 0;

@@ -31,6 +31,7 @@ __kernel_timespec ToKernelTimespec(time::Timestamp timestamp) noexcept {
 }  // namespace
 
 LUringTimerQueue::~LUringTimerQueue() noexcept {
+  DiscardAll();
   assert(timers_.Empty());
   assert(active_.empty());
 }
@@ -84,6 +85,21 @@ base::Result<void> LUringTimerQueue::Cancel(time::TimerId id) noexcept {
   return {};
 }
 
+void LUringTimerQueue::DiscardAll() noexcept {
+  // TimerTree is intrusive: unlink every hook before destroying the owning
+  // unique_ptrs. Clearing active_ first would leave TimerTree with dangling
+  // nodes and make its destructor traverse freed storage.
+  timers_.Clear();
+  active_.clear();
+
+  driver_armed_ = false;
+  control_pending_ = false;
+  control_is_fallback_ = false;
+  fallback_armed_ = false;
+  driver_deadline_ = time::Timestamp::Invalid();
+  requested_deadline_ = time::Timestamp::Invalid();
+}
+
 void LUringTimerQueue::OnDriverComplete(LUringOp* op) noexcept {
   DriverOpHook::OwnerFrom(op)->HandleDriverComplete(op);
 }
@@ -92,9 +108,7 @@ void LUringTimerQueue::OnControlComplete(LUringOp* op) noexcept {
   ControlOpHook::OwnerFrom(op)->HandleControlComplete(op);
 }
 
-void DispatchTimerDriverComplete(LUringOp* op) noexcept {
-  LUringTimerQueue::OnDriverComplete(op);
-}
+void DispatchTimerDriverComplete(LUringOp* op) noexcept { LUringTimerQueue::OnDriverComplete(op); }
 
 void DispatchTimerControlComplete(LUringOp* op) noexcept {
   LUringTimerQueue::OnControlComplete(op);
@@ -162,7 +176,7 @@ void LUringTimerQueue::Reconcile() noexcept {
 
 void LUringTimerQueue::Arm(time::Timestamp deadline) noexcept {
   driver_timespec_ = ToKernelTimespec(deadline);
-    DriverOp()->BeginNextRequest();
+  DriverOp()->BeginNextRequest();
 
   auto result = LoopAccess::SubmitOp(*loop_, DriverOp(), [this](io_uring_sqe* sqe) noexcept {
     io_uring_prep_timeout(sqe, &driver_timespec_, 0, IORING_TIMEOUT_ABS | IORING_TIMEOUT_REALTIME);
@@ -175,7 +189,7 @@ void LUringTimerQueue::Arm(time::Timestamp deadline) noexcept {
 
 void LUringTimerQueue::ArmFallback(time::Timestamp deadline) noexcept {
   fallback_timespec_ = ToKernelTimespec(deadline);
-    ControlOp()->BeginNextRequest();
+  ControlOp()->BeginNextRequest();
   control_is_fallback_ = true;
 
   auto result = LoopAccess::SubmitOp(*loop_, ControlOp(), [this](io_uring_sqe* sqe) noexcept {
@@ -193,10 +207,10 @@ void LUringTimerQueue::ArmFallback(time::Timestamp deadline) noexcept {
 void LUringTimerQueue::Update(time::Timestamp deadline) noexcept {
   update_timespec_ = ToKernelTimespec(deadline);
   requested_deadline_ = deadline;
-    ControlOp()->BeginNextRequest();
+  ControlOp()->BeginNextRequest();
   control_is_fallback_ = false;
 
-    auto result = LoopAccess::SubmitOp(*loop_, ControlOp(), [this](io_uring_sqe* sqe) noexcept {
+  auto result = LoopAccess::SubmitOp(*loop_, ControlOp(), [this](io_uring_sqe* sqe) noexcept {
     io_uring_prep_timeout_update(sqe, &update_timespec_,
                                  reinterpret_cast<std::uint64_t>(DriverOp()),
                                  IORING_TIMEOUT_ABS | IORING_TIMEOUT_REALTIME);

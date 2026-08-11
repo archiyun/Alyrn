@@ -193,12 +193,17 @@ public:
     return connfd;
   }
 
-  // Shuts down the write side of the socket.
-  void ShutdownWrite() const noexcept {
+  // Shuts down the write side of the socket. This does not close the
+  // descriptor and therefore leaves reads available to the caller.
+  [[nodiscard]]
+  base::Result<void> ShutdownWrite() const noexcept {
     if (sockfd_ < 0) {
-      return;
+      return std::unexpected(base::MakeErrno(EBADF));
     }
-    (void)::shutdown(sockfd_, SHUT_WR);
+    if (::shutdown(sockfd_, SHUT_WR) < 0) {
+      return std::unexpected(base::CurrentErrno());
+    }
+    return {};
   }
 
   // Closes the descriptor before destruction. Idempotent.

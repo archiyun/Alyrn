@@ -5,7 +5,9 @@
 
 #include <algorithm>
 #include <cstring>
+#include <exception>
 #include <iostream>
+#include <limits>
 #include <span>
 #include <string>
 #include <string_view>
@@ -132,6 +134,36 @@ bool EmptyReservationDoesNotHideLaterData() {
                 "empty reserved block should not hide later readable data");
 }
 
+bool ZeroHintUsesBlockSize() {
+  coropact::io::Buffer buffer(4);
+
+  auto iovs = buffer.PrepareWrite(0, 1);
+  const bool ok = Expect(iovs.size() == 1 && iovs.front().iov_len == 4,
+                         "zero write hint should reserve one default-sized block");
+  buffer.AbortWrite();
+  return ok;
+}
+
+bool FailedPreparationReleasesReservation() {
+  coropact::io::Buffer buffer(4);
+  bool threw = false;
+  try {
+    (void)buffer.PrepareWrite(1, std::numeric_limits<std::size_t>::max());
+  } catch (const std::exception&) {
+    threw = true;
+  }
+
+  if (!Expect(threw, "oversized iovec preparation should fail")) {
+    return false;
+  }
+
+  auto retry = buffer.PrepareWrite(4, 1);
+  const bool reusable =
+      Expect(retry.size() == 1, "failed preparation must not retain a write reservation");
+  buffer.AbortWrite();
+  return reusable;
+}
+
 }  // namespace
 
 int main() {
@@ -141,6 +173,8 @@ int main() {
   ok &= AbortWriteDiscardsReservation();
   ok &= MoveLeavesSourceEmpty();
   ok &= EmptyReservationDoesNotHideLaterData();
+  ok &= ZeroHintUsesBlockSize();
+  ok &= FailedPreparationReleasesReservation();
 
   if (!ok) return 1;
 

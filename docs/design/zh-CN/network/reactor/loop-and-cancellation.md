@@ -228,20 +228,22 @@ timer 已取消或已消费
 `Close()` 必须在 owner loop 调用。它进入 `CloseNow()`，顺序为：
 
 ```text
-closed_ = true
+ResourceState: Open -> Closing
   -> pending read  完成 ECANCELED
   -> pending write 完成 ECANCELED
   -> Channel::DisableAll() / Remove()
   -> close(fd)
+  -> ResourceState: Closed
 ```
 
 它有两个效果：
 
 1. 已经挂起的 read/write 都得到一次 `ECANCELED`；
-2. 后续新操作因 `closed_` 或无效 fd 得到 `EBADF`，不会重新注册 epoll interest。
+2. 后续新操作因 `Closed` 或无效 fd 得到 `EBADF`，不会重新注册 epoll interest。
 
-`Shutdown()` 不等于 `Close()`：前者仅执行 socket 写方向 shutdown，不会取消本地 pending
-read/write，也不释放 fd。
+`Shutdown()` 不等于 `Close()`：前者仅执行 socket 写方向 shutdown，不会取消 pending read、
+也不释放 fd。它要求没有 pending write（否则返回 `EBUSY`），之后保持 read 可用，而新的
+`WriteAll()` 在进入 `send(MSG_NOSIGNAL)` 前返回 `EPIPE`；空 span 也不会绕过逻辑状态验证。
 
 ### 4.5 `EventLoop::RequestStop()`：dispatcher 级取消
 
@@ -302,6 +304,13 @@ listener 关闭时也走 source terminal 语义；真正的 listener 错误才�
 `ReactorRecvSource` 自己拥有一组 buffer slots。readiness 到来后它循环执行 `recv(MSG_DONTWAIT)`，
 将每次成功 read 转成带 `BufferLease` 的事件。
 
+事件队列或 buffer slot 到达 high-water 不是 `ENOBUFS` 终止错误。Reactor 会将当前
+readiness request 线性化为 terminal、移除 `EPOLLIN` interest，并让 source 经过
+`Pausing -> Paused` 保留已排队的 event。consumer 的 `Next()` 将队列降到
+`resume_threshold` 后回到 `Active`；若此时已有可用 slot，重新注册 readiness，否则等待已
+交付的 `BufferLease` 归还 slot 后再 arm。这个逻辑 trace 与 luring multishot recv 的
+cancel/terminal/re-arm 路径相同，物理机制不同。
+
 `RequestStop()` 只停止后续 admission：
 
 ```text
@@ -313,7 +322,8 @@ disable EPOLLIN
 ```
 
 因此 source 的最终销毁前必须满足：没有 pending `Next/Stop`、事件队列为空、没有 outstanding
-lease。这是资源归还协议，不应被 `EventLoop::Stopped` 偷偷绕过。
+lease。这是资源归还协议，不应被 `EventLoop::Stopped` 偷偷绕过；这些前提在 Release 构建中也
+通过 `COROPACT_CHECK` 强制检查，因为延后释放的 `BufferLease` 仍保存 source 的 reclaim context。
 
 ## 6. 必须保持的安全不变量
 

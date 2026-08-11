@@ -8,82 +8,15 @@
 #include <span>
 
 #include "coropact/base/error.h"
-#include "coropact/base/try.h"
 #include "coropact/coro/task.h"
 #include "coropact/io/async_stream.h"
 #include "coropact/io/buffer.h"
 
 namespace coropact::io {
 
-namespace detail {
-
-template <class Stream>
-concept ZeroCopyWriteExtension = requires(
-    Stream& stream,
-    std::span<const std::byte> buffer) {
-  { stream.ZeroCopyWritesEnabled() } -> std::convertible_to<bool>;
-  stream.SendZeroCopy(buffer);
-};
-
-template <class Stream>
-concept NativeWriteAllExtension =
-    requires(Stream& stream, std::span<const std::byte> buffer) {
-      requires coro::Awaitable<decltype(stream.WriteAll(buffer))>;
-      requires std::same_as<coro::AwaitResult<decltype(stream.WriteAll(buffer))>,
-                            base::Result<void>>;
-    };
-
-template <AsyncWriteStream Stream>
-coro::Task<base::Result<std::size_t>> WriteSomeForAll(
-    Stream& stream,
-    std::span<const std::byte> buffer) {
-  if constexpr (ZeroCopyWriteExtension<Stream>) {
-    if (stream.ZeroCopyWritesEnabled()) {
-      auto result = co_await stream.SendZeroCopy(buffer);
-      if (!result.has_value()) {
-        // send-zc can fail with ENOMEM while the kernel is unable to reserve
-        // zero-copy resources. SendZeroCopy() waits through its notification
-        // boundary before returning, so retrying with ordinary send is safe
-        // for the caller's buffer and preserves WriteAll's availability.
-        if (result.error().value() == ENOMEM) {
-          co_return co_await stream.WriteSome(buffer);
-        }
-        co_return std::unexpected(result.error());
-      }
-      co_return result->bytes;
-    }
-  }
-
-  co_return co_await stream.WriteSome(buffer);
-}
-
-template <AsyncWriteStream Stream>
-coro::Task<base::Result<void>> WriteAllTask(Stream& stream,
-                                           std::span<const std::byte> buffer) {
-  while (!buffer.empty()) {
-    COROPACT_CO_TRY(written, co_await detail::WriteSomeForAll(stream, buffer));
-    if (written == 0) {
-      co_return std::unexpected(base::MakeErrno(EPIPE));
-    }
-    buffer = buffer.subspan(written);
-  }
-  co_return base::Result<void>{};
-}
-
-}  // namespace detail
-
-template <AsyncWriteStream Stream>
-auto WriteAll(Stream& stream, std::span<const std::byte> buffer) {
-  if constexpr (detail::NativeWriteAllExtension<Stream>) {
-    return stream.WriteAll(buffer);
-  } else {
-    return detail::WriteAllTask(stream, buffer);
-  }
-}
-
 template <AsyncReadStream Stream>
-coro::Task<base::Result<std::size_t>> ReadSome(Stream& stream, Buffer& buffer,
-                                               std::size_t reserve = 4096) {
+auto ReadSome(Stream& stream, Buffer& buffer, std::size_t reserve = 4096)
+    -> coro::Task<base::Result<std::size_t>> {
   if constexpr (requires { stream.ReadSome(buffer, reserve); }) {
     co_return co_await stream.ReadSome(buffer, reserve);
   }
@@ -103,31 +36,6 @@ coro::Task<base::Result<std::size_t>> ReadSome(Stream& stream, Buffer& buffer,
 
   buffer.CommitWrite(*result);
   co_return *result;
-}
-
-template <AsyncWriteStream Stream>
-coro::Task<base::Result<void>> WriteAll(Stream& stream, Buffer& buffer) {
-  if constexpr (requires { stream.WriteSome(buffer); }) {
-    while (!buffer.Empty()) {
-      COROPACT_CO_TRY(written, co_await stream.WriteSome(buffer));
-      if (written == 0) {
-        co_return std::unexpected(base::MakeErrno(EPIPE));
-      }
-    }
-
-    co_return base::Result<void>{};
-  }
-
-  while (!buffer.Empty()) {
-    auto view = buffer.ContiguousView();
-    auto result = co_await WriteAll(stream, view);
-    if (!result.has_value()) {
-      co_return std::unexpected(result.error());
-    }
-    buffer.Drain(view.size());
-  }
-
-  co_return base::Result<void>{};
 }
 
 }  // namespace coropact::io

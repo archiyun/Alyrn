@@ -4,7 +4,6 @@
 #include <cstdio>
 
 #include "coropact/operation/detail/composite_lifecycle.h"
-#include "coropact/operation/detail/operation_family.h"
 #include "coropact/operation/detail/split_release_lifecycle.h"
 
 namespace {
@@ -21,8 +20,6 @@ bool TestPrimaryThenRelease() {
   coropact::operation::detail::SplitReleaseLifecycle lifecycle;
 
   bool ok = true;
-  ok &= Expect(lifecycle.Family() == coropact::operation::detail::OperationFamily::kSplitRelease,
-               "lifecycle must identify its operation family");
   ok &= Expect(lifecycle.RecordLogicalResult(), "the first logical result must win");
   ok &= Expect(!lifecycle.TryAuthorizeRelease(),
                "logical result alone must not authorize resource release");
@@ -53,12 +50,9 @@ bool TestPhysicalTerminalBeforeLogicalResult() {
 bool TestCompositeMembersAuthorizeOneContinuation() {
   using coropact::operation::detail::CompositeLifecycle;
   using coropact::operation::detail::CompositeMember;
-  using coropact::operation::detail::OperationFamily;
 
   CompositeLifecycle lifecycle;
   bool ok = true;
-  ok &= Expect(lifecycle.Family() == OperationFamily::kComposite,
-               "composite lifecycle must identify its operation family");
   ok &= Expect(lifecycle.RecordMemberCompletion(CompositeMember::kFirst),
                "the first member must complete once");
   ok &= Expect(!lifecycle.RecordMemberCompletion(CompositeMember::kFirst),

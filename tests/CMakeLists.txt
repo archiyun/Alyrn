@@ -41,6 +41,77 @@ endif()
 
 add_test(NAME io_contract_smoke_test COMMAND io_contract_smoke_test)
 
+# Runs one application-observable Shutdown/Close contract suite against every
+# enabled backend. Backend-specific smoke tests continue to cover physical
+# Channel and SQE/CQE interleavings.
+add_executable(stream_lifecycle_conformance_test
+    integration/test_stream_lifecycle_conformance.cc
+)
+
+target_include_directories(stream_lifecycle_conformance_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(stream_lifecycle_conformance_test
+    PRIVATE
+        coropact_reactor
+)
+
+if(COROPACT_ENABLE_URING)
+    target_link_libraries(stream_lifecycle_conformance_test PRIVATE coropact_luring)
+    target_compile_definitions(stream_lifecycle_conformance_test PRIVATE COROPACT_ENABLE_URING)
+endif()
+
+add_test(NAME stream_lifecycle_conformance_test COMMAND stream_lifecycle_conformance_test)
+
+# Runs one application-observable Accept/AcceptSource/Close contract suite
+# against every enabled backend. Backend-specific tests retain physical
+# readiness and SQE/CQE coverage.
+add_executable(listener_lifecycle_conformance_test
+    integration/test_listener_lifecycle_conformance.cc
+)
+
+target_include_directories(listener_lifecycle_conformance_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(listener_lifecycle_conformance_test
+    PRIVATE
+        coropact_reactor
+)
+
+if(COROPACT_ENABLE_URING)
+    target_link_libraries(listener_lifecycle_conformance_test PRIVATE coropact_luring)
+    target_compile_definitions(listener_lifecycle_conformance_test PRIVATE COROPACT_ENABLE_URING)
+endif()
+
+add_test(NAME listener_lifecycle_conformance_test COMMAND listener_lifecycle_conformance_test)
+
+# Runs one application-observable Connect contract suite against every
+# enabled backend. Backend-specific tests retain raw readiness and CQE details.
+add_executable(connector_lifecycle_conformance_test
+    integration/test_connector_lifecycle_conformance.cc
+)
+
+target_include_directories(connector_lifecycle_conformance_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(connector_lifecycle_conformance_test
+    PRIVATE
+        coropact_reactor
+)
+
+if(COROPACT_ENABLE_URING)
+    target_link_libraries(connector_lifecycle_conformance_test PRIVATE coropact_luring)
+    target_compile_definitions(connector_lifecycle_conformance_test PRIVATE COROPACT_ENABLE_URING)
+endif()
+
+add_test(NAME connector_lifecycle_conformance_test COMMAND connector_lifecycle_conformance_test)
+
 add_executable(runtime_builder_smoke_test
     unit/test_runtime_builder_smoke.cc
 )
@@ -198,6 +269,22 @@ target_link_libraries(recv_source_state_smoke_test
 )
 
 add_test(NAME recv_source_state_smoke_test COMMAND recv_source_state_smoke_test)
+
+add_executable(stream_lifecycle_smoke_test
+    unit/test_stream_lifecycle_smoke.cc
+)
+
+target_include_directories(stream_lifecycle_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(stream_lifecycle_smoke_test
+    PRIVATE
+        coropact_net
+)
+
+add_test(NAME stream_lifecycle_smoke_test COMMAND stream_lifecycle_smoke_test)
 
 add_executable(luring_buffer_storage_smoke_test
     unit/test_luring_buffer_storage_smoke.cc

@@ -13,7 +13,7 @@ namespace coropact::operation::detail {
 // calling TryComplete(). It does not own a result, continuation, fd, or
 // buffer, so the core has no I/O dependency.
 //
-// Multi-shot and split-release families decide when a physical event is
+// Multi-shot and split-release protocols decide when a physical event is
 // terminal through their own policy, then use this gate for a single logical
 // completion when appropriate.
 class CompletionGate {

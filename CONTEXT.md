@@ -8,6 +8,52 @@ to [CoroGateway](https://github.com/archiyun/CoroGateway).
 `docs/SUBSYSTEMS.md` is the normative dependency policy. Read it before
 changing module boundaries.
 
+## Language
+
+**Lifecycle-Refined Coroutine I/O (LRCI)**:
+The CoroPact model in which backend executions refine a shared logical I/O lifecycle before result readiness, continuation resumption, and resource release are observed.
+_Avoid_: unified event model, CQE-as-completion
+
+**Logical Operation**:
+One application-observable asynchronous action, independent of how many backend attempts, kernel requests, or events implement it.
+_Avoid_: request, CQE
+
+**Backend Execution**:
+The backend-specific process that implements one Logical Operation, including syscall attempts, readiness registration, kernel requests, and event interpretation.
+_Avoid_: Logical Operation
+
+**Physical Request**:
+A request submitted to the kernel with its own physical terminal condition; a Logical Operation may use zero, one, or multiple Physical Requests.
+_Avoid_: Logical Operation, Backend Event
+
+**Backend Event**:
+Backend evidence such as a syscall result, readiness notification, CQE, or cancellation acknowledgement.
+_Avoid_: completion
+
+**Result Readiness**:
+The logical boundary after which the application-visible result or event is fixed.
+_Avoid_: release, resume
+
+**Continuation Authorization**:
+The once-only boundary that permits the waiting coroutine to be scheduled for resumption.
+_Avoid_: Result Readiness
+
+**Physical Terminal**:
+The boundary after which a Physical Request can produce no further event and can no longer access its borrowed resources.
+_Avoid_: Result Readiness
+
+**Close Preparation**:
+An owner-local provisional exclusion of new operations before Close commits a physical drain. It may abort with a local submission error; a committed Close is irreversible.
+_Avoid_: Close, cancellation
+
+**Release Authorization**:
+The once-only boundary that permits operation state, buffers, descriptors, or leases governed by the protocol to be released or reused.
+_Avoid_: continuation completion
+
+**Backend Refinement**:
+The trace-preserving mapping from a backend-specific execution to the shared logical I/O specification; backend-internal transitions may project to stuttering steps.
+_Avoid_: wrapper, event conversion
+
 ## Public seams
 
 - `coro`: `Task`, `DetachedTask`, `Scheduler`, and `Work` define coroutine
@@ -22,8 +68,8 @@ changing module boundaries.
   result; split-release families separately authorize result, release, and
   continuation.
 - `net`: header-only `Socket`, `Endpoint`, and buffers are backend-shared
-  network values. `net/detail` holds source lifecycle accounting and is not an
-  application seam.
+  network values. `net/detail` holds backend-neutral stream/source lifecycle
+  accounting and is not an application seam.
 - `Runtime`: the backend-neutral application composition root. Applications
   select a backend with `Runtime::Builder<runtime::Reactor>` or
   `Runtime::Builder<runtime::LUring>`; `Runtime::Create<Backend>` is the

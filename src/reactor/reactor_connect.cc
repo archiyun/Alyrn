@@ -12,7 +12,6 @@
 
 #include "coropact/base/check.h"
 #include "coropact/base/error.h"
-#include "coropact/base/try.h"
 #include "coropact/net/endpoint.h"
 #include "coropact/net/socket.h"
 #include "coropact/operation/detail/completion_gate.h"
@@ -41,6 +40,8 @@ public:
       : loop_(loop), peer_(peer), stream_options_(stream_options) {}
 
   ~ConnectAwaiter() {
+    COROPACT_CHECK(!channel_.has_value() || !channel_->IsRegistered(),
+                   "ConnectAwaiter destroyed before its physical connect settled");
     if (shutdown_participant_.InList()) {
       LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
     }
@@ -163,6 +164,15 @@ private:
   LoopShutdownParticipant shutdown_participant_{this, &DispatchLoopStop};
 };
 
+coro::Task<base::Result<ReactorStream>> ConnectResolved(EventLoop* loop,
+                                                        ReactorStreamOptions stream_options,
+                                                        base::Result<net::Endpoint> peer) {
+  if (!peer.has_value()) {
+    co_return std::unexpected(peer.error());
+  }
+  co_return co_await ConnectAwaiter(loop, std::move(*peer), stream_options);
+}
+
 class SleepAwaiter {
 public:
   SleepAwaiter(EventLoop* loop, std::chrono::milliseconds delay) noexcept
@@ -249,15 +259,16 @@ ReactorConnector& ReactorConnector::operator=(ReactorConnector&& other) noexcept
   return *this;
 }
 
-coro::Task<base::Result<ReactorStream>> ReactorConnector::Connect(const net::Endpoint& peer) {
+coro::Task<base::Result<ReactorStream>> ReactorConnector::Connect(net::Endpoint peer) {
   RequireOwnerLoop();
-  co_return co_await ConnectAwaiter(loop_, peer, options_.stream_options);
+  return ConnectResolved(loop_, options_.stream_options,
+                         base::Result<net::Endpoint>(std::in_place, std::move(peer)));
 }
 
 coro::Task<base::Result<ReactorStream>> ReactorConnector::Connect(std::string_view host,
                                                                   std::uint16_t port) {
-  COROPACT_CO_TRY(peer, net::ParseIpAddress(host, port));
-  co_return co_await Connect(peer);
+  RequireOwnerLoop();
+  return ConnectResolved(loop_, options_.stream_options, net::ParseIpAddress(host, port));
 }
 
 coro::Task<void> ReactorConnector::SleepFor(std::chrono::milliseconds delay) {

@@ -1,9 +1,11 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 
-#include <cstdio>
+#include <cerrno>
 #include <coroutine>
+#include <cstdio>
 
+#include "coropact/luring/detail/cancel_result.h"
 #include "coropact/luring/detail/op.h"
 #include "coropact/utils/macros.h"
 
@@ -53,18 +55,34 @@ bool TestCompletionModels() {
   using coropact::luring::detail::LUringOpKind;
 
   bool ok = true;
-  ok &= Expect(CompletionModelFor(LUringOpKind::kReadComplete) ==
-                   LUringCompletionModel::kSingleShot,
-               "ordinary I/O must use the single-shot completion model");
+  ok &=
+      Expect(CompletionModelFor(LUringOpKind::kReadComplete) == LUringCompletionModel::kSingleShot,
+             "ordinary I/O must use the single-shot completion model");
   ok &= Expect(CompletionModelFor(LUringOpKind::kAcceptSourceComplete) ==
                    LUringCompletionModel::kEventStream,
                "accept sources must use the event-stream completion model");
-  ok &= Expect(CompletionModelFor(LUringOpKind::kRecvSourceComplete) ==
-                   LUringCompletionModel::kEventStream,
-               "recv sources must use the event-stream completion model");
+  ok &= Expect(
+      CompletionModelFor(LUringOpKind::kRecvSourceComplete) == LUringCompletionModel::kEventStream,
+      "recv sources must use the event-stream completion model");
   ok &= Expect(CompletionModelFor(LUringOpKind::kSendZeroCopyComplete) ==
                    LUringCompletionModel::kSplitRelease,
                "zero-copy send must use the split-release completion model");
+  return ok;
+}
+
+bool TestCancelCqeClassification() {
+  using coropact::luring::detail::IsExpectedCancelCqeResult;
+
+  bool ok = true;
+  ok &= Expect(IsExpectedCancelCqeResult(0), "successful cancellation must be expected");
+  ok &= Expect(IsExpectedCancelCqeResult(2), "cancel-all count must be expected");
+  ok &= Expect(IsExpectedCancelCqeResult(-ENOENT), "target completion race must be expected");
+  ok &= Expect(IsExpectedCancelCqeResult(-EALREADY),
+               "target-in-progress cancellation race must be expected");
+  ok &= Expect(IsExpectedCancelCqeResult(-ECANCELED),
+               "cancel command stopped by loop shutdown must be expected");
+  ok &= Expect(!IsExpectedCancelCqeResult(-EINVAL),
+               "invalid cancel SQE must remain a source terminal error");
   return ok;
 }
 
@@ -72,7 +90,7 @@ bool TestCompletionModels() {
 
 int main() {
   const bool ok = TestSingleResultCompletion() && TestReusablePhysicalSlot() &&
-                  TestCompletionModels();
+                  TestCompletionModels() && TestCancelCqeClassification();
   if (ok) {
     std::puts("luring op smoke: PASS");
     return 0;

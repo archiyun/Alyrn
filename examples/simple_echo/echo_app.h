@@ -33,7 +33,7 @@ auto EchoSession(Stream stream) -> Task<Result<void>> {
     }
 
     const std::span<const std::byte> payload(buffer.data(), *read);
-    auto written = co_await WriteAll(stream, payload);
+    auto written = co_await stream.WriteAll(payload);
     if (!written.has_value()) {
       session_result = std::unexpected(written.error());
       break;

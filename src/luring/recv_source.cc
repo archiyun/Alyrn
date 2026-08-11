@@ -12,6 +12,7 @@
 
 #include "coropact/base/check.h"
 #include "coropact/base/error.h"
+#include "coropact/luring/detail/cancel_result.h"
 #include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/detail/provided_buffer_pool.h"
 #include "coropact/luring/loop.h"
@@ -23,8 +24,7 @@ namespace coropact::luring {
 using namespace detail;
 using namespace net::detail;
 
-bool LUringRecvSource::NextAwaiter::await_suspend(
-    std::coroutine_handle<> continuation) noexcept {
+bool LUringRecvSource::NextAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   if (source_->loop_ == nullptr || source_->fd_ < 0) {
     result_.emplace(std::unexpected(base::MakeErrno(EBADF)));
     (void)(completion_gate_.TryComplete());
@@ -147,8 +147,8 @@ base::Result<LUringRecvSource> LUringRecvSource::Create(LUringLoop* loop, int fd
     return std::unexpected(state_result.error());
   }
 
-  auto shared_pool = detail::LoopAccess::GetSharedProvidedBufferPool(*loop,
-      options.buffer_size, options.source.buffer_capacity);
+  auto shared_pool = detail::LoopAccess::GetSharedProvidedBufferPool(
+      *loop, options.buffer_size, options.source.buffer_capacity);
   if (!shared_pool.has_value()) {
     if (shared_pool.error().value() == ENOENT) {
       return std::unexpected(base::MakeErrno(ENOTSUP));
@@ -188,17 +188,17 @@ LUringRecvSource::~LUringRecvSource() {
     return;
   }
 
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "LUringRecvSource destroyed from wrong thread");
-  COROPACT_DCHECK(pending_next_ == nullptr, "LUringRecvSource destroyed with pending Next");
-  COROPACT_DCHECK(pending_stop_ == nullptr, "LUringRecvSource destroyed with pending Stop");
-  COROPACT_DCHECK(!recv_submitted_, "LUringRecvSource destroyed with active recv");
-  COROPACT_DCHECK(!cancel_submitted_, "LUringRecvSource destroyed with active cancel");
-  COROPACT_DCHECK(
+  COROPACT_CHECK(loop_->IsInLoopThread(), "LUringRecvSource destroyed from wrong thread");
+  COROPACT_CHECK(pending_next_ == nullptr, "LUringRecvSource destroyed with pending Next");
+  COROPACT_CHECK(pending_stop_ == nullptr, "LUringRecvSource destroyed with pending Stop");
+  COROPACT_CHECK(!recv_submitted_, "LUringRecvSource destroyed with active recv");
+  COROPACT_CHECK(!cancel_submitted_, "LUringRecvSource destroyed with active cancel");
+  COROPACT_CHECK(
       state_.State() == RecvSourceState::kIdle || state_.State() == RecvSourceState::kTerminal,
       "LUringRecvSource destroyed before Stop completed");
-  COROPACT_DCHECK(event_count_ == 0, "LUringRecvSource destroyed with queued events");
-  COROPACT_DCHECK(state_.OutstandingLeases() == 0,
-                  "LUringRecvSource destroyed with outstanding leases");
+  COROPACT_CHECK(event_count_ == 0, "LUringRecvSource destroyed with queued events");
+  COROPACT_CHECK(state_.OutstandingLeases() == 0,
+                 "LUringRecvSource destroyed with outstanding leases");
 }
 
 LUringRecvSource::LUringRecvSource(LUringRecvSource&& other) noexcept
@@ -276,8 +276,9 @@ base::Result<void> LUringRecvSource::StartOperation() noexcept {
 
   recv_op_.Prepare();
   const auto buffer_group = shared_buffer_pool_->BufferGroup();
-  auto submitted = detail::LoopAccess::SubmitOp(*loop_,
-      &recv_op_, [fd = fd_, buffer_size = buffer_size_, buffer_group](io_uring_sqe* sqe) noexcept {
+  auto submitted = detail::LoopAccess::SubmitOp(
+      *loop_, &recv_op_,
+      [fd = fd_, buffer_size = buffer_size_, buffer_group](io_uring_sqe* sqe) noexcept {
         io_uring_prep_recv_multishot(sqe, fd, nullptr, buffer_size, 0);
         sqe->flags |= IOSQE_BUFFER_SELECT;
         sqe->buf_group = buffer_group;
@@ -323,10 +324,10 @@ base::Result<void> LUringRecvSource::StartCancel() noexcept {
 
   cancel_op_.Prepare();
   const auto target = reinterpret_cast<std::uint64_t>(&recv_op_);
-  auto submitted = detail::LoopAccess::SubmitOp(*loop_, &cancel_op_,
-                                                 [target](io_uring_sqe* sqe) noexcept {
-    io_uring_prep_cancel64(sqe, target, IORING_ASYNC_CANCEL_ALL);
-  });
+  auto submitted =
+      detail::LoopAccess::SubmitOp(*loop_, &cancel_op_, [target](io_uring_sqe* sqe) noexcept {
+        io_uring_prep_cancel64(sqe, target, IORING_ASYNC_CANCEL_ALL);
+      });
   if (!submitted.has_value()) {
     return std::unexpected(submitted.error());
   }
@@ -450,9 +451,8 @@ CompletionDisposition LUringRecvSource::OnCompletion(CompletionEvent event) noex
       // Next(). Keep the CQE on the hot path and avoid queueing a lease only to
       // pop it again immediately. The queued path remains the bounded
       // backpressure path for producers that outrun their consumer.
-      const bool direct_delivery =
-          pending_next_ != nullptr && event_count_ == 0 &&
-          state_.State() == RecvSourceState::kActive;
+      const bool direct_delivery = pending_next_ != nullptr && event_count_ == 0 &&
+                                   state_.State() == RecvSourceState::kActive;
       if (!direct_delivery && !state_.CanQueueEvent()) {
         if (buffer_prepared) {
           COROPACT_CHECK(shared_buffer_pool_->Return(buffer_id),
@@ -558,8 +558,7 @@ CompletionDisposition LUringRecvSource::OnCompletion(CompletionEvent event) noex
 
 void LUringRecvSource::OnCancelComplete(int cqe_result) noexcept {
   cancel_submitted_ = false;
-  if (cqe_result < 0 && cqe_result != -ENOENT && cqe_result != -ECANCELED &&
-      !terminal_error_.has_value()) {
+  if (!detail::IsExpectedCancelCqeResult(cqe_result) && !terminal_error_.has_value()) {
     terminal_error_ = base::MakeNegErrno(cqe_result);
   }
   MaybeResume();
@@ -594,12 +593,11 @@ bool LUringRecvSource::TryTakeNext(Result& result) noexcept {
   PendingEvent pending;
   if (TryTakeQueuedEvent(pending)) {
     COROPACT_CHECK(state_.AcquireEvent(), "LUringRecvSource: queue and state became inconsistent");
-    COROPACT_CHECK(shared_buffer_pool_ != nullptr,
-                   "LUringRecvSource missing shared buffer pool");
+    COROPACT_CHECK(shared_buffer_pool_ != nullptr, "LUringRecvSource missing shared buffer pool");
     auto* data = shared_buffer_pool_->slot(pending.buffer_id);
     COROPACT_CHECK(data != nullptr, "LUringRecvSource queued an invalid buffer");
-    Event event{.buffer = net::BufferLease(data, pending.size, pending.buffer_id, this,
-                                           &ReclaimBuffer)};
+    Event event{.buffer =
+                    net::BufferLease(data, pending.size, pending.buffer_id, this, &ReclaimBuffer)};
     result = Result(std::in_place, std::move(event));
     if (state_.State() == RecvSourceState::kPaused) {
       MaybeResume();
@@ -646,8 +644,7 @@ void LUringRecvSource::ReturnBuffer(std::uint32_t buffer_id) noexcept {
   // A live multishot request already has admission. In the common direct
   // delivery path, releasing the lease cannot re-arm anything or complete a
   // pending Stop, so avoid two cold-path probes for every received buffer.
-  if (state_.State() == RecvSourceState::kActive && recv_submitted_ &&
-      pending_stop_ == nullptr) {
+  if (state_.State() == RecvSourceState::kActive && recv_submitted_ && pending_stop_ == nullptr) {
     return;
   }
 

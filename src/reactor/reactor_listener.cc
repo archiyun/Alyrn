@@ -91,8 +91,11 @@ public:
       (void)(completion_gate_.TryComplete());
       return false;
     }
-    COROPACT_DCHECK(listener_->pending_accept_ == nullptr,
-                    "AcceptAwaiter: only one pending accept is supported per listener");
+    if (listener_->pending_accept_ != nullptr) {
+      result_.SetError(base::MakeErrno(EBUSY));
+      (void)(completion_gate_.TryComplete());
+      return false;
+    }
 
     continuation_.Bind(continuation);
 
@@ -267,14 +270,15 @@ ReactorAcceptSource::~ReactorAcceptSource() {
   if (listener_ == nullptr) {
     return;
   }
-  COROPACT_DCHECK(listener_->loop_->IsInLoopThread(),
-                  "ReactorAcceptSource destructor called from wrong thread");
-  COROPACT_DCHECK(pending_next_ == nullptr, "ReactorAcceptSource destroyed with a pending Next");
-  COROPACT_DCHECK(state_.State() != net::detail::AcceptSourceState::kActive &&
-                      state_.State() != net::detail::AcceptSourceState::kStopping,
-                  "ReactorAcceptSource destroyed while it is running");
-  COROPACT_DCHECK(state_.ArmedRequests() == 0,
-                  "ReactorAcceptSource destroyed with an armed accept");
+  COROPACT_CHECK(listener_->loop_->IsInLoopThread(),
+                 "ReactorAcceptSource destructor called from wrong thread");
+  COROPACT_CHECK(pending_next_ == nullptr, "ReactorAcceptSource destroyed with a pending Next");
+  const auto state = state_.State();
+  COROPACT_CHECK(state == net::detail::AcceptSourceState::kIdle ||
+                     state == net::detail::AcceptSourceState::kDraining ||
+                     state == net::detail::AcceptSourceState::kTerminal,
+                 "ReactorAcceptSource destroyed before reaching a safe lifecycle state");
+  COROPACT_CHECK(state_.ArmedRequests() == 0, "ReactorAcceptSource destroyed with an armed accept");
   if (listener_->accept_source_ == this) {
     listener_->accept_source_ = nullptr;
   }
@@ -332,6 +336,8 @@ coro::Task<base::Result<void>> ReactorAcceptSource::Stop() {
   }
 
   if (state_.State() == net::detail::AcceptSourceState::kActive ||
+      state_.State() == net::detail::AcceptSourceState::kPausing ||
+      state_.State() == net::detail::AcceptSourceState::kPaused ||
       state_.State() == net::detail::AcceptSourceState::kStopping) {
     if (listener_->channel_.IsReading()) {
       listener_->channel_.DisableReading();
@@ -389,6 +395,10 @@ void ReactorAcceptSource::OnReady() noexcept {
     auto completed = state_.CompleteRequest(true);
     COROPACT_CHECK(completed.has_value(), "ReactorAcceptSource: failed to record accepted stream");
     if (!state_.TryArm()) {
+      if (state_.QueuedEvents() >= state_.Options().event_capacity) {
+        auto paused = state_.RequestPause();
+        COROPACT_CHECK(paused.has_value(), "ReactorAcceptSource: failed to enter the paused state");
+      }
       break;
     }
   }
@@ -421,8 +431,13 @@ void ReactorAcceptSource::OnListenerClosed() noexcept {
 }
 
 void ReactorAcceptSource::EnsureAdmission() noexcept {
-  if (listener_ == nullptr || listener_->closed_ ||
-      state_.State() != net::detail::AcceptSourceState::kActive) {
+  if (listener_ == nullptr || listener_->closed_) {
+    return;
+  }
+  if (state_.State() != net::detail::AcceptSourceState::kActive) {
+    if (listener_->channel_.IsReading()) {
+      listener_->channel_.DisableReading();
+    }
     return;
   }
   if (state_.ArmedRequests() == 0 && state_.TryArm()) {
@@ -455,6 +470,9 @@ bool ReactorAcceptSource::TryTakeNext(Result& result) noexcept {
     COROPACT_CHECK(state_.ConsumeEvent(),
                    "ReactorAcceptSource: queue and state became inconsistent");
     result = Result(std::in_place, std::move(event));
+    if (state_.State() == net::detail::AcceptSourceState::kPaused) {
+      (void)(state_.TryResume());
+    }
     EnsureAdmission();
     return true;
   }
@@ -583,9 +601,9 @@ ReactorListener::~ReactorListener() {
     return;
   }
   RequireOwnerLoop();
-  COROPACT_DCHECK(pending_accept_ == nullptr, "ReactorListener destroyed with a pending accept");
-  COROPACT_DCHECK(accept_source_ == nullptr,
-                  "ReactorListener destroyed with an active AcceptSource");
+  COROPACT_CHECK(pending_accept_ == nullptr, "ReactorListener destroyed with a pending accept");
+  COROPACT_CHECK(accept_source_ == nullptr,
+                 "ReactorListener destroyed with an active AcceptSource");
   LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
   DetachChannel();
 }

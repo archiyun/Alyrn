@@ -245,6 +245,10 @@ void LUringLoop::Run(std::stop_token token) noexcept {
 
   if (State() == backend::LoopState::kStopping) {
     DrainStoppedOperations();
+    // Physical timeout requests are terminal after the drain. Logical timers
+    // that have not expired are now canceled by loop shutdown and may release
+    // their callbacks without running them.
+    timers_.DiscardAll();
   }
   state_.store(backend::LoopState::kStopped, std::memory_order_release);
 }
@@ -289,7 +293,15 @@ void LUringLoop::DrainStoppedOperations() noexcept {
 
     auto cancelled = CancelPendingOperations();
     if (!cancelled.has_value()) {
-      break;
+      // Run() has no error return channel, and publishing Stopped with a
+      // live ring request would violate its drain contract. A local cancel
+      // preparation failure therefore cannot end shutdown: reap any work
+      // that is already in flight and retry the cancellation on a later turn.
+      auto completed = PollCompletions();
+      if (!completed.has_value() || *completed == 0) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      }
+      continue;
     }
 
     if (PendingSubmitCount() == 0 && InflightCount() == 0) {

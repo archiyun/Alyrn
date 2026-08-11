@@ -58,10 +58,11 @@ coropact::coro::DetachedTask AcceptOnce(coropact::reactor::ReactorListener* list
   loop->RequestStop();
 }
 
-coropact::coro::DetachedTask AcceptSourceTwice(
-    AcceptSource* source, coropact::reactor::EventLoop* loop,
-    std::optional<AcceptSourceResult>* first,
-    std::optional<AcceptSourceResult>* second, bool* stop_succeeded) {
+coropact::coro::DetachedTask AcceptSourceTwice(AcceptSource* source,
+                                               coropact::reactor::EventLoop* loop,
+                                               std::optional<AcceptSourceResult>* first,
+                                               std::optional<AcceptSourceResult>* second,
+                                               bool* stop_succeeded) {
   first->emplace(co_await source->Next());
   second->emplace(co_await source->Next());
   auto stopped = co_await source->Stop();
@@ -69,8 +70,8 @@ coropact::coro::DetachedTask AcceptSourceTwice(
   loop->RequestStop();
 }
 
-coropact::coro::DetachedTask WaitForSourceEnd(
-    AcceptSource* source, coropact::reactor::EventLoop* loop, bool* got_end) {
+coropact::coro::DetachedTask WaitForSourceEnd(AcceptSource* source,
+                                              coropact::reactor::EventLoop* loop, bool* got_end) {
   auto result = co_await source->Next();
   *got_end = result.has_value() && !result->has_value();
   loop->RequestStop();
@@ -81,10 +82,41 @@ coropact::coro::DetachedTask StopSource(AcceptSource* source, bool* succeeded) {
   *succeeded = result.has_value();
 }
 
-coropact::coro::DetachedTask CloseListener(
-    coropact::reactor::ReactorListener* listener, bool* succeeded) {
+coropact::coro::DetachedTask CloseListener(coropact::reactor::ReactorListener* listener,
+                                           bool* succeeded) {
   auto result = co_await listener->Close();
   *succeeded = result.has_value();
+}
+
+struct CompetingAcceptObservation {
+  std::optional<AcceptResult> first;
+  std::optional<AcceptResult> second;
+  std::optional<coropact::base::Result<void>> close;
+  int first_resume_count{0};
+  int second_resume_count{0};
+  int finished{0};
+  bool timed_out{false};
+};
+
+coropact::coro::DetachedTask ObserveFirstPendingAccept(coropact::reactor::ReactorListener* listener,
+                                                       coropact::reactor::EventLoop* loop,
+                                                       CompetingAcceptObservation* observation) {
+  observation->first.emplace(co_await listener->Accept());
+  ++observation->first_resume_count;
+  if (++observation->finished == 2) {
+    loop->RequestStop();
+  }
+}
+
+coropact::coro::DetachedTask ObserveCompetingAccept(coropact::reactor::ReactorListener* listener,
+                                                    coropact::reactor::EventLoop* loop,
+                                                    CompetingAcceptObservation* observation) {
+  observation->second.emplace(co_await listener->Accept());
+  ++observation->second_resume_count;
+  observation->close.emplace(co_await listener->Close());
+  if (++observation->finished == 2) {
+    loop->RequestStop();
+  }
 }
 
 bool CheckFactories() {
@@ -164,6 +196,32 @@ bool CheckCloseCancelsPendingAccept() {
                "cancelled accept did not return ECANCELED");
 }
 
+bool CheckCompetingAcceptIsRejected() {
+  coropact::reactor::EventLoop loop;
+  coropact::reactor::ReactorListener listener(&loop, coropact::net::Endpoint(0));
+  CompetingAcceptObservation observation;
+
+  coropact::coro::SpawnDetach(loop, ObserveFirstPendingAccept(&listener, &loop, &observation));
+  coropact::coro::SpawnDetach(loop, ObserveCompetingAccept(&listener, &loop, &observation));
+  loop.RunAfter(0.5, [&] {
+    observation.timed_out = true;
+    loop.RequestStop();
+  });
+  loop.Run();
+
+  return Check(!observation.timed_out, "competing Accept test timed out") &&
+         Check(observation.second.has_value() && !observation.second->has_value() &&
+                   observation.second->error() == std::errc::device_or_resource_busy,
+               "second pending Accept did not return EBUSY") &&
+         Check(observation.first.has_value() && !observation.first->has_value() &&
+                   observation.first->error() == std::errc::operation_canceled,
+               "Close did not cancel the first pending Accept") &&
+         Check(observation.close.has_value() && observation.close->has_value(),
+               "Close failed after rejecting the competing Accept") &&
+         Check(observation.first_resume_count == 1 && observation.second_resume_count == 1,
+               "a competing Accept resumed more than once");
+}
+
 bool CheckAcceptSourceQueueAndStop() {
   coropact::reactor::EventLoop loop;
   coropact::reactor::ReactorListener listener(&loop, coropact::net::Endpoint(0));
@@ -185,8 +243,8 @@ bool CheckAcceptSourceQueueAndStop() {
   int first_client = -1;
   int second_client = -1;
 
-  coropact::coro::SpawnDetach(
-      loop, AcceptSourceTwice(&source, &loop, &first, &second, &stop_succeeded));
+  coropact::coro::SpawnDetach(loop,
+                              AcceptSourceTwice(&source, &loop, &first, &second, &stop_succeeded));
   loop.RunAfter(0.0, [&] {
     first_client = ConnectNonBlocking(*listen_addr);
     second_client = ConnectNonBlocking(*listen_addr);
@@ -200,8 +258,7 @@ bool CheckAcceptSourceQueueAndStop() {
     ::close(second_client);
   }
 
-  return Check(first_client >= 0 && second_client >= 0,
-               "AcceptSource clients failed to connect") &&
+  return Check(first_client >= 0 && second_client >= 0, "AcceptSource clients failed to connect") &&
          Check(first.has_value() && first->has_value() && first->value().has_value(),
                "AcceptSource did not deliver its first stream") &&
          Check(second.has_value() && second->has_value() && second->value().has_value(),
@@ -222,9 +279,8 @@ bool CheckAcceptSourceStopWakesPendingNext() {
   bool got_end = false;
   bool stop_succeeded = false;
   coropact::coro::SpawnDetach(loop, WaitForSourceEnd(&source, &loop, &got_end));
-  loop.RunAfter(0.0, [&] {
-    coropact::coro::SpawnDetach(loop, StopSource(&source, &stop_succeeded));
-  });
+  loop.RunAfter(0.0,
+                [&] { coropact::coro::SpawnDetach(loop, StopSource(&source, &stop_succeeded)); });
   loop.Run();
 
   return Check(got_end, "AcceptSource Stop did not wake pending Next with end-of-source") &&
@@ -244,9 +300,8 @@ bool CheckAcceptSourceListenerCloseWakesPendingNext() {
   bool got_end = false;
   bool close_succeeded = false;
   coropact::coro::SpawnDetach(loop, WaitForSourceEnd(&source, &loop, &got_end));
-  loop.RunAfter(0.0, [&] {
-    coropact::coro::SpawnDetach(loop, CloseListener(&listener, &close_succeeded));
-  });
+  loop.RunAfter(
+      0.0, [&] { coropact::coro::SpawnDetach(loop, CloseListener(&listener, &close_succeeded)); });
   loop.Run();
 
   return Check(got_end, "listener Close did not terminate pending AcceptSource::Next") &&
@@ -259,6 +314,7 @@ int main() {
   if (!CheckFactories()) return 1;
   if (!CheckPendingAccept()) return 1;
   if (!CheckCloseCancelsPendingAccept()) return 1;
+  if (!CheckCompetingAcceptIsRejected()) return 1;
   if (!CheckAcceptSourceQueueAndStop()) return 1;
   if (!CheckAcceptSourceStopWakesPendingNext()) return 1;
   if (!CheckAcceptSourceListenerCloseWakesPendingNext()) return 1;

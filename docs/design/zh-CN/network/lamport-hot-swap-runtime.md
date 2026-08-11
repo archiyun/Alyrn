@@ -981,8 +981,8 @@ Submit -> Complete -> Resume
 M(B, P, π) = (X, x0, E_obs, δ_B, Inv, Live)
 ```
 
-其中 `X = (C, R, O, Q, L)`；`O` 以 operation identity 绑定 owner、resource、family 与
-physical request，`L` 表示 buffer/frame/fd/lease 的 release authorization。`H(trace)` 是从
+其中 `X = (C, R, O, Q, L)`；`O` 以 operation identity 绑定 owner、resource、正交 lifecycle
+shape 与 physical request，`L` 表示 buffer/frame/fd/lease 的 release authorization。`H(trace)` 是从
 trace 推导的 happens-before 关系，不是一个可随意修改的状态变量。`π` 选择调度和后端策略，
 `δ_B` 解释物理事件，`Inv` 与 `Live` 分别给出安全和最终性义务。
 
