@@ -55,6 +55,10 @@ Idle
 - `F_BUF_MORE`：同一 provided buffer 还有后续 segment，当前 `LUringRecvSource` 公共
   路径尚未承诺该增量语义。
 
+CQE dispatch 必须先把结果写入 operation，再授权 awaiter 恢复。因而 awaiter 在
+`await_resume()` 中观察到缺失的 CQE 结果，表示内部生命周期协议被破坏；这不是可向业务
+伪造为 `EIO` 的普通 I/O 错误，而是运行时不变量失败。
+
 因此测试不应只断言“收到了一个 CQE”，而应断言最终业务 trace，例如：
 
 ```text

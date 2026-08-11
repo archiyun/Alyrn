@@ -75,6 +75,10 @@ owner thread
 执行 `Run()`，以及 `Scheduler::Schedule()`。跨线程唯一的 loop 控制入口是
 `RequestStop()`；它不是通用任务队列。
 
+这不是仅供 debug 的建议：`Channel -> EventLoop -> Poller` 的注册表属于 owner thread，跨线程
+修改会破坏其非并发容器和 intrusive hook。在所有构建中，Reactor 都以 `COROPACT_CHECK` 拒绝
+这类调用；需要跨线程停止时只能请求 `RequestStop()`，由 eventfd 把动作带回 owner loop。
+
 `EventLoop` 状态为：
 
 ```text
@@ -200,6 +204,9 @@ EPOLLERR / HUP
 
 Gate 是 owner-thread-confined 的 1-byte 状态；Reactor 不允许多个线程直接执行
 `Complete()`。跨线程 stop 先通过 `eventfd` 回到 owner loop，避免把 gate 变成一把热路径原子锁。
+获胜者只可向 awaiter 的 result storage 写入一次；`await_resume()` 只可取走一次并使 storage 回到
+pending。这两个状态转移同样在 Release 构建由 `COROPACT_CHECK` 约束，避免重复 completion 或错误的
+await protocol 读取未构造的 value storage。
 
 ### 4.3 timeout 是“解除等待”，不是内核取消
 
@@ -278,6 +285,15 @@ owner thread
 它**不是**“所有 C++ 对象已经析构”的承诺：`BufferLease`、用户持有的 stream、coroutine owner
 仍须由各自的生命周期规则收尾。
 
+`EventLoop` 的析构函数也不是隐式 shutdown：它在所有构建中都会拒绝从错误线程析构、仍在
+`Run()` 中析构、残留 owner work，或仍登记了 shutdown participant 的 loop。调用方必须先让
+`Run()` 完成 stop/drain，并在析构 loop 前销毁或注销所有 loop-owned resource；不能把
+event-loop 析构当作取消尚未完成 operation 的后门。
+
+普通 `RunAfter`/`RunAt`/`RunEvery` callback 不代表一个可等待的 logical operation。若它在
+stop 前尚未触发，`TimerQueue` 会在 loop 析构时丢弃它；相反，`SleepFor`、timed read 等协程操作
+会登记 shutdown participant，并在 `BeginShutdown()` 中以其协议规定的结果结算。
+
 ## 5. AcceptSource 与 RecvSource 的停止
 
 它们不是单次操作，不能简单等同于 `ECANCELED`。
@@ -296,6 +312,10 @@ EPOLLIN -> accept() drain -> queued accepted streams -> Next()
 ```text
 Result<std::optional<ReactorStream>>{std::nullopt}
 ```
+
+`Next()` 与 `Stop()` 会在触碰 source state 前检查 owner loop；从错误线程调用时返回 `EINVAL`，
+不会把 source 或 listener 的内部状态交给外线程修改。source 的 move、析构和已开始的 operation
+仍是严格的 loop-affine 生命周期契约。
 
 listener 关闭时也走 source terminal 语义；真正的 listener 错误才经 `Result` 作为 error 返回。
 

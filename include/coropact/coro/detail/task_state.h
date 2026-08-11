@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include <cassert>
 #include <coroutine>
 #include <memory>
 #include <new>
 #include <type_traits>
 #include <utility>
 
+#include "coropact/base/check.h"
 #include "coropact/coro/detail/promise_base.h"
 #include "coropact/coro/detail/task_fwd.h"
 #include "coropact/utils/macros.h"
@@ -30,13 +30,13 @@ public:
   Task<T> get_return_object() noexcept;
 
   void return_value(T value) noexcept(std::is_nothrow_move_constructible_v<T>) {
-    assert(!has_value_);
+    COROPACT_CHECK(!has_value_, "TaskPromise value was stored twice");
     ::new (static_cast<void*>(std::addressof(value_))) T(std::move(value));
     has_value_ = true;
   }
 
   T TakeValue() noexcept(std::is_nothrow_move_constructible_v<T>) {
-    assert(has_value_);
+    COROPACT_CHECK(has_value_, "TaskPromise value was taken before completion");
     return std::move(value_);
   }
 
@@ -66,7 +66,7 @@ public:
   using Handle = std::coroutine_handle<Promise>;
 
   explicit TaskAwaiter(Handle handle) noexcept : handle_(handle) {
-    assert(handle_ && "cannot co_await an empty Task.");
+    COROPACT_CHECK(handle_, "cannot co_await an empty Task");
   }
   COROPACT_DELETE_COPY(TaskAwaiter);
   TaskAwaiter(TaskAwaiter&& other) noexcept : handle_(std::exchange(other.handle_, {})) {}
@@ -80,7 +80,7 @@ public:
   bool await_ready() const noexcept { return false; }
 
   Handle await_suspend(std::coroutine_handle<> caller) noexcept {
-    assert(handle_);
+    COROPACT_CHECK(handle_, "TaskAwaiter lost its child coroutine handle");
     handle_.promise().SetContinuation(caller);
     return handle_;
   }

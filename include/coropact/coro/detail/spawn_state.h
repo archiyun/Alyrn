@@ -9,7 +9,6 @@
 #pragma once
 
 #include <atomic>
-#include <cassert>
 #include <coroutine>
 #include <cstdint>
 #include <memory>
@@ -17,6 +16,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "coropact/base/check.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/work.h"
 
@@ -37,13 +37,13 @@ public:
 
   template <class U>
   void Set(U&& value) {
-    assert(!engaged_);
+    COROPACT_CHECK(!engaged_, "SpawnState result was stored twice");
     std::construct_at(std::addressof(value_), std::forward<U>(value));
     engaged_ = true;
   }
 
   T Take() noexcept(std::is_nothrow_move_constructible_v<T>) {
-    assert(engaged_);
+    COROPACT_CHECK(engaged_, "SpawnState result was taken before completion");
     return std::move(value_);
   }
 
@@ -89,7 +89,7 @@ public:
   SpawnState() noexcept = default;
 
   void SetRootHandle(std::coroutine_handle<> handle) noexcept {
-    assert(handle);
+    COROPACT_CHECK(handle, "SpawnState requires a valid root coroutine handle");
     root_work_.SetHandle(handle);
   }
 
@@ -117,13 +117,14 @@ public:
       phase_.store(Phase::kCompletedWaiterScheduled, std::memory_order_release);
 
       Scheduler* scheduler = waiter_scheduler_;
-      assert(scheduler != nullptr);
+      COROPACT_CHECK(scheduler != nullptr, "SpawnState parked waiter has no scheduler");
       scheduler->Schedule(&waiter_resume_);
       return FinishAction::kKeepRoot;
     }
     // expected == kRunningDetached: the caller is gone and handed the root
     // frame's final destruction to the producer.
-    assert(expected == Phase::kRunningDetached);
+    COROPACT_CHECK(expected == Phase::kRunningDetached,
+                   "SpawnState finished from an invalid lifecycle phase");
     return FinishAction::kDestroyRoot;
   }
 
@@ -158,7 +159,8 @@ public:
     // JoinHandle has single-consumer semantics: Wait() and co_await cannot
     // race on the same handle. A completed async waiter has its own resume
     // path and must not also call Wait().
-    assert(phase == Phase::kFinished);
+    COROPACT_CHECK(phase == Phase::kFinished,
+                   "SpawnState::Wait raced with detach or an async joiner");
     return result_.Take();
   }
 
@@ -176,7 +178,8 @@ public:
     }
     // expected is kFinished or kCompletedWaiterScheduled: the producer is done;
     // we own and destroy the suspended root frame.
-    assert(expected == Phase::kFinished || expected == Phase::kCompletedWaiterScheduled);
+    COROPACT_CHECK(expected == Phase::kFinished || expected == Phase::kCompletedWaiterScheduled,
+                   "SpawnState handle released from an invalid lifecycle phase");
     DestroyRoot();
   }
 
@@ -186,7 +189,7 @@ private:
   void DestroyRoot() noexcept {
     auto root = root_work_.Handle();
     root_work_.ClearHandle();
-    assert(root);
+    COROPACT_CHECK(root, "SpawnState has no root coroutine to destroy");
     root.destroy();
   }
 

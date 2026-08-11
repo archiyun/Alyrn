@@ -1,7 +1,11 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 
+#include <sys/wait.h>
+#include <unistd.h>
+
 #include <cerrno>
+#include <csignal>
 #include <cstdio>
 #include <expected>
 #include <utility>
@@ -17,6 +21,35 @@ bool Expect(bool condition, const char* message) {
   }
   std::fprintf(stderr, "FAIL: %s\n", message);
   return false;
+}
+
+bool ExpectChildAbort(void (*entry)(), const char* message) {
+  const pid_t child = ::fork();
+  if (child < 0) {
+    return Expect(false, "fork failed for result-state invariant test");
+  }
+  if (child == 0) {
+    (void)::freopen("/dev/null", "w", stderr);
+    entry();
+    ::_exit(0);
+  }
+
+  int status = 0;
+  while (::waitpid(child, &status, 0) < 0 && errno == EINTR) {
+  }
+  return Expect(WIFSIGNALED(status), message) &&
+         Expect(WTERMSIG(status) == SIGABRT, "result-state invariant must terminate with SIGABRT");
+}
+
+void TakePendingIoState() {
+  coropact::reactor::detail::ReactorIoResultState state;
+  (void)state.Take();
+}
+
+void SetIoStateTwice() {
+  coropact::reactor::detail::ReactorIoResultState state;
+  state.SetSuccess(1);
+  state.SetSuccess(2);
 }
 
 bool TestIoStateTakeConsumesResult() {
@@ -52,6 +85,20 @@ struct LifetimeProbe {
   int value;
   static inline int live_count{0};
 };
+
+void TakePendingValueState() {
+  coropact::reactor::detail::ReactorValueResultState<LifetimeProbe> state;
+  (void)state.Take();
+}
+
+bool TestResultStatesRejectInvalidTransitions() {
+  return ExpectChildAbort(&TakePendingIoState,
+                          "pending I/O result Take must terminate in Release") &&
+         ExpectChildAbort(&SetIoStateTwice,
+                          "duplicate I/O result completion must terminate in Release") &&
+         ExpectChildAbort(&TakePendingValueState,
+                          "pending value result Take must terminate in Release");
+}
 
 bool TestValueStateTakeDestroysActiveMember() {
   using State = coropact::reactor::detail::ReactorValueResultState<LifetimeProbe>;
@@ -98,7 +145,7 @@ bool TestValueStateErrorCanBeReused() {
 
 int main() {
   const bool ok = TestIoStateTakeConsumesResult() && TestValueStateTakeDestroysActiveMember() &&
-                  TestValueStateErrorCanBeReused();
+                  TestValueStateErrorCanBeReused() && TestResultStatesRejectInvalidTransitions();
   if (ok) {
     std::puts("reactor result state smoke: PASS");
     return 0;

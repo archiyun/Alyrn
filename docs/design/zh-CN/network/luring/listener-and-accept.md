@@ -63,6 +63,12 @@ source 的 event capacity 和 listener 的 `accept_depth` 共同控制突发连�
 - 已产生的 stream 事件已交付或按 source 协议结束；
 - listener reservation 已释放。
 
+`Stop()` 先停止新的 event admission，再准备 cancel SQE。因此 cancel SQE 的本地 preparation
+失败会使本次 `Stop()` 返回 error，但不会把 source 回滚为 Active：旧 accept request 仍可能存在，
+source 也不能在用户已请求停止后继续交付新连接。调用方必须保留 source 并重试 `Stop()`；重试成功后
+才允许销毁 source。这个规则不同于 listener `Close()` 的可回滚 preparation，后者在 cancel SQE
+尚未进入 submission protocol 时必须保持 listener/source Open/Active。
+
 listener `Close()` 与 source 并发时，source 必须收到明确的 terminal，而不是悬挂在旧 fd
 上。调用方不应在 `Stop()` 完成前销毁仍持有 source 的对象。
 

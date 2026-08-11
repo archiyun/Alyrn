@@ -6,7 +6,6 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include <cassert>
 #include <cerrno>
 #include <coroutine>
 #include <expected>
@@ -126,7 +125,7 @@ public:
   }
 
   LUringAcceptSource::Result await_resume() noexcept {
-    assert(result_.has_value());
+    COROPACT_CHECK(result_.has_value(), "LUring accept source Next resumed without a result");
     return std::move(*result_);
   }
 
@@ -178,7 +177,7 @@ public:
   }
 
   base::Result<void> await_resume() noexcept {
-    assert(result_.has_value());
+    COROPACT_CHECK(result_.has_value(), "LUring accept source Stop resumed without a result");
     return std::move(*result_);
   }
 
@@ -325,7 +324,8 @@ base::Result<void> LUringAcceptSource::StartOperation() noexcept {
     const auto completed = state_.CompleteMultishotEvent(EventDisposition::kNone,
                                                          MultishotRequestDisposition::kTerminal);
     (void)(completed);
-    assert(completed.has_value());
+    COROPACT_CHECK(completed.has_value(),
+                   "LUring accept source failed to record terminal submit failure");
     return std::unexpected(submitted.error());
   }
 
@@ -457,7 +457,8 @@ CompletionDisposition LUringAcceptSource::OnCompletion(CompletionEvent event) no
 
   if (!request_still_active) {
     accept_submitted_ = false;
-    assert(listener_->pending_accepts_ > 0);
+    COROPACT_CHECK(listener_->pending_accepts_ > 0,
+                   "LUring accept source pending-accept count underflow");
     --listener_->pending_accepts_;
   }
 
@@ -704,7 +705,7 @@ public:
   }
 
   AcceptResult await_resume() noexcept {
-    assert(immediate_.has_value());
+    COROPACT_CHECK(immediate_.has_value(), "LUring Accept resumed without a result");
     return std::move(*immediate_);
   }
 
@@ -713,12 +714,12 @@ private:
     auto* self = OpHook::OwnerFrom(op);
     if (self->listener_ != nullptr) {
       LUringListener* listener = self->listener_;
-      assert(listener->pending_accepts_ > 0);
+      COROPACT_CHECK(listener->pending_accepts_ > 0,
+                     "LUring Accept pending-accept count underflow");
       --listener->pending_accepts_;
 
-      if (!op->result.HasValue()) {
-        self->immediate_ = std::unexpected(op->result.Error());
-      } else if (*op->result < 0) {
+      COROPACT_CHECK(op->result.HasValue(), "LUring Accept CQE is missing its result");
+      if (*op->result < 0) {
         self->immediate_ = std::unexpected(base::MakeNegErrno(*op->result));
       } else {
         self->immediate_ =
@@ -798,7 +799,7 @@ public:
   }
 
   base::Result<void> await_resume() noexcept {
-    assert(convergence_.HasResult());
+    COROPACT_CHECK(convergence_.HasResult(), "LUring listener Close resumed before convergence");
     return convergence_.TakeResult();
   }
 

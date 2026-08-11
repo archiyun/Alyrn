@@ -3,7 +3,6 @@
 
 #include <liburing.h>
 
-#include <cassert>
 #include <cerrno>
 #include <coroutine>
 #include <expected>
@@ -63,7 +62,7 @@ bool LUringRecvSource::NextAwaiter::await_suspend(std::coroutine_handle<> contin
 }
 
 LUringRecvSource::Result LUringRecvSource::NextAwaiter::await_resume() noexcept {
-  assert(result_.has_value());
+  COROPACT_CHECK(result_.has_value(), "LUring recv source Next resumed without a result");
   return std::move(*result_);
 }
 
@@ -107,7 +106,7 @@ public:
   }
 
   base::Result<void> await_resume() noexcept {
-    assert(result_.has_value());
+    COROPACT_CHECK(result_.has_value(), "LUring recv source Stop resumed without a result");
     return std::move(*result_);
   }
 
@@ -288,7 +287,8 @@ base::Result<void> LUringRecvSource::StartOperation() noexcept {
     const auto completed = state_.CompleteMultishotEvent(EventDisposition::kNone,
                                                          MultishotRequestDisposition::kTerminal);
     (void)(completed);
-    assert(completed.has_value());
+    COROPACT_CHECK(completed.has_value(),
+                   "LUring recv source failed to record terminal submit failure");
     return std::unexpected(submitted.error());
   }
 

@@ -9,6 +9,7 @@
 // module never implements a concrete scheduler or owns a queue.
 #pragma once
 
+#include "coropact/base/check.h"
 #include "coropact/coro/frame_allocator.h"
 #include "coropact/coro/work.h"
 #include "coropact/utils/macros.h"
@@ -31,7 +32,7 @@ public:
   // Work::Run() directly so coroutine frames and awaiters created during a
   // resume observe the selected resource and Scheduler::TryCurrent().
   void Run(Work* work) noexcept {
-    assert(work != nullptr);
+    COROPACT_CHECK(work != nullptr, "Scheduler::Run received null work");
     Scheduler* previous = TryCurrent();
     SetCurrent(this);
     FrameAllocatorScope frame_scope{frame_resource_};
@@ -64,7 +65,7 @@ public:
     return current_;
   }
   static Scheduler& RequireCurrent() noexcept {
-    assert(current_ && "no current scheduler set for this thread");
+    COROPACT_CHECK(current_ != nullptr, "no current scheduler set for this thread");
     return *current_;
   }
   static void SetCurrent(Scheduler* scheduler) noexcept { current_ = scheduler; }

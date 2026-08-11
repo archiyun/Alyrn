@@ -9,10 +9,15 @@
 //   e) error path: Task<Result<int>> co_return std::unexpected(...).
 // The module is IO-agnostic: the only scheduler here is a test-local container.
 
+#include <sys/wait.h>
+#include <unistd.h>
+
 #include <atomic>
 #include <cassert>
 #include <cerrno>
 #include <coroutine>
+#include <csignal>
+#include <cstdio>
 #include <expected>
 #include <future>
 #include <iostream>
@@ -46,6 +51,24 @@ bool Check(bool condition, const char* message) {
   if (condition) return true;
   std::cout << "test failed: " << message << '\n';
   return false;
+}
+
+bool ExpectChildAbort(void (*entry)(), const char* message) {
+  const pid_t child = ::fork();
+  if (child < 0) {
+    return Check(false, "fork failed for coroutine invariant test");
+  }
+  if (child == 0) {
+    (void)::freopen("/dev/null", "w", stderr);
+    entry();
+    ::_exit(0);
+  }
+
+  int status = 0;
+  while (::waitpid(child, &status, 0) < 0 && errno == EINTR) {
+  }
+  return Check(WIFSIGNALED(status), message) &&
+         Check(WTERMSIG(status) == SIGABRT, "coroutine invariant must terminate with SIGABRT");
 }
 
 struct RawAwaiter {
@@ -144,6 +167,70 @@ private:
   WorkQueue queue_;
 };
 
+void RunEmptyWork() {
+  Work work;
+  work.Run();
+}
+
+void RunEmptyResumeWork() {
+  coropact::coro::ResumeWork work;
+  work.Run();
+}
+
+void RequireSchedulerWithoutCurrent() { (void)Scheduler::RequireCurrent(); }
+
+void SpawnEmptyTask() {
+  DrainScheduler scheduler;
+  Task<int> task;
+  (void)Spawn(scheduler, std::move(task));
+}
+
+void SpawnEmptyDetachedTask() {
+  DrainScheduler scheduler;
+  DetachedTask task{DetachedTask::Handle{}};
+  SpawnDetach(scheduler, std::move(task));
+}
+
+void TakeUnsetSpawnResult() {
+  coropact::coro::detail::ResultSlot<int> result;
+  (void)result.Take();
+}
+
+void SetSpawnResultTwice() {
+  coropact::coro::detail::ResultSlot<int> result;
+  result.Set(1);
+  result.Set(2);
+}
+
+void FinishSpawnStateTwice() {
+  coropact::coro::detail::SpawnState<int> state;
+  (void)state.Finish();
+  (void)state.Finish();
+}
+
+void WaitReleasedJoinHandle() {
+  JoinHandle<int> handle{nullptr};
+  (void)handle.Wait();
+}
+
+bool TestCoroutineInvariantsAreEnforcedInRelease() {
+  return ExpectChildAbort(&RunEmptyWork, "empty Work must terminate in Release") &&
+         ExpectChildAbort(&RunEmptyResumeWork, "empty ResumeWork must terminate in Release") &&
+         ExpectChildAbort(&RequireSchedulerWithoutCurrent,
+                          "RequireCurrent without scheduler must terminate in Release") &&
+         ExpectChildAbort(&SpawnEmptyTask, "Spawn of an empty Task must terminate in Release") &&
+         ExpectChildAbort(&SpawnEmptyDetachedTask,
+                          "SpawnDetach of an empty DetachedTask must terminate in Release") &&
+         ExpectChildAbort(&TakeUnsetSpawnResult,
+                          "taking an unset spawn result must terminate in Release") &&
+         ExpectChildAbort(&SetSpawnResultTwice,
+                          "storing a spawn result twice must terminate in Release") &&
+         ExpectChildAbort(&FinishSpawnStateTwice,
+                          "finishing a spawn state twice must terminate in Release") &&
+         ExpectChildAbort(&WaitReleasedJoinHandle,
+                          "waiting on a released JoinHandle must terminate in Release");
+}
+
 // A one-shot awaitable used to prove that a DetachedTask keeps its frame alive
 // while suspended. The ResumeWork is owned by this test gate and is submitted
 // only when Open() is called.
@@ -214,6 +301,7 @@ Task<void> JoinChildFromOtherScheduler(DrainScheduler* child_sched, bool* parent
 }  // namespace
 
 int main() {
+  if (!TestCoroutineInvariantsAreEnforcedInRelease()) return 1;
   // a) Task awaiting Task, value through SyncWait.
   if (!Check(SyncWait(Sum()) == 43, "Sum should be 43")) return 1;
   if (!Check(SyncWait(Add(2, 3)) == 5, "Add should be 5")) return 1;

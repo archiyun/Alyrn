@@ -10,7 +10,6 @@
 #include <algorithm>
 #include <array>
 #include <bit>
-#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -18,6 +17,7 @@
 #include <memory_resource>
 #include <new>
 
+#include "coropact/base/check.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::coro {
@@ -51,13 +51,16 @@ inline constexpr unsigned kFrameMetadataBytesBits =
 inline constexpr std::uint64_t kFrameMetadataBytesMask =
     (std::uint64_t{1} << kFrameMetadataBytesBits) - 1;  // 15
 inline constexpr unsigned kFrameMetadataMaxAlignmentExponent =
-    (1 << kFrameMetadataAlignmentBits) - 1;  // 2^60 - 1
+    (1 << kFrameMetadataAlignmentBits) - 1;  // 15, encoding alignments up to 2^15
 
 inline std::uint64_t PackFrameMetadata(std::size_t bytes, std::size_t alignment) {
-  assert(bytes <= kFrameMetadataBytesMask);
-  assert(alignment != 0 && std::has_single_bit(alignment));
+  COROPACT_CHECK(bytes <= kFrameMetadataBytesMask,
+                 "coroutine frame metadata cannot encode this allocation size");
+  COROPACT_CHECK(alignment != 0 && std::has_single_bit(alignment),
+                 "coroutine frame metadata requires a power-of-two alignment");
   const auto exponent = static_cast<unsigned>(std::countr_zero(alignment));
-  assert(exponent <= kFrameMetadataMaxAlignmentExponent);
+  COROPACT_CHECK(exponent <= kFrameMetadataMaxAlignmentExponent,
+                 "coroutine frame metadata cannot encode this alignment");
   return static_cast<std::uint64_t>(bytes) |
          (static_cast<std::uint64_t>(exponent) << kFrameMetadataBytesBits);
 }

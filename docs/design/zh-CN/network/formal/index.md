@@ -9,10 +9,12 @@
 2. `async_stream_multiop.tla`：read/write 并行与 operation identity。
 3. `resource_close_cancel.tla`：Close、Cancel、target completion 与 storage release。
 4. `loop_stop_control.tla`：`RequestStop()` 与资源 close 的边界。
-5. `async_stream_backend_refinement.tla`：Reactor 与 luring 对抽象模型的映射。
-6. `accept_source_refinement.tla`、`recv_source_*.tla`：多事件 source 与 lease。
-7. `send_zc_split_release_refinement.tla`：zero-copy send 的业务完成与 buffer release 分离。
-8. `async_operation_lifecycle_shapes.tla`：三个正交 lifecycle 维度的组合约束。
+5. `luring_loop_stop_retry.tla`：全局 cancel SQE preparation 失败后的 stop drain 重试。
+6. `timer_preparation_failure.tla`：timer 逻辑接受、driver/update preparation 与重臂失败。
+7. `async_stream_backend_refinement.tla`：Reactor 与 luring 对抽象模型的映射。
+8. `accept_source_refinement.tla`、`recv_source_*.tla`：多事件 source 与 lease。
+9. `send_zc_split_release_refinement.tla`：zero-copy send 的业务完成与 buffer release 分离。
+10. `async_operation_lifecycle_shapes.tla`：三个正交 lifecycle 维度的组合约束。
 
 ## 模型索引
 
@@ -24,6 +26,8 @@
 | `async_stream_multiop_backend_refinement.tla` | 多 operation 的后端 refinement |
 | `resource_close_cancel.tla` | Close preparation、committed drain、cancel request terminal CQE 与 target/storage release 的边界 |
 | `loop_stop_control.tla` | dispatcher stop 不等于资源 close；Stopped 需要 pending operation 收敛 |
+| `luring_loop_stop_retry.tla` | LUringLoop 全局 cancel 的本地 preparation/flush 失败必须保持 Stopping，并在重试、target CQE 与 cancel CQE 排空后才进入 Stopped |
+| `timer_preparation_failure.tla` | timer 只有在 driver/update SQE 已准备时才被逻辑接受；首次/update 失败回滚，重臂失败使 loop 停止并显式丢弃未到期 timer |
 | `scheduler_completion_liveness.tla` | completion 后 continuation 最终获得调度服务 |
 | `linked_timeout_submission_failure.tla` | timed operation 的子请求提交失败与收敛 |
 | `accept_source_refinement.tla` | Reactor accept drain 与 luring multishot accept 的逻辑 source 语义 |

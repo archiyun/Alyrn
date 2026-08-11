@@ -6,7 +6,6 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include <cassert>
 #include <cerrno>
 #include <coroutine>
 #include <cstddef>
@@ -32,13 +31,13 @@ using namespace detail;
 namespace {
 
 base::Result<std::size_t> ToSizeResult(const LUringCqeResult& result) noexcept {
-  if (!result.HasValue()) {
-    return std::unexpected(result.Error());
+  COROPACT_CHECK(result.HasValue(),
+                 "LUring stream awaiter resumed before its CQE result was ready");
+  const int cqe_result = *result;
+  if (cqe_result < 0) {
+    return std::unexpected(base::MakeNegErrno(cqe_result));
   }
-  if (*result < 0) {
-    return std::unexpected(base::MakeNegErrno(*result));
-  }
-  return static_cast<std::size_t>(*result);
+  return static_cast<std::size_t>(cqe_result);
 }
 
 }  // namespace
@@ -279,7 +278,8 @@ base::Result<std::size_t> LUringStream::ReadSomeForAwaiter::await_resume() noexc
     return ToSizeResult(ReadOp()->result);
   }
 
-  assert(lifecycle_.MemberCompleted(operation::detail::CompositeMember::kFirst));
+  COROPACT_CHECK(lifecycle_.MemberCompleted(operation::detail::CompositeMember::kFirst),
+                 "timed read resumed before its read member settled");
   if (ReadOp()->result.HasValue() && *ReadOp()->result >= 0) {
     return static_cast<std::size_t>(*ReadOp()->result);
   }
@@ -423,7 +423,7 @@ public:
   }
 
   base::Result<void> await_resume() noexcept {
-    assert(convergence_.HasResult());
+    COROPACT_CHECK(convergence_.HasResult(), "LUring stream Close resumed before convergence");
     return convergence_.TakeResult();
   }
 
