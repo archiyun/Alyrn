@@ -20,7 +20,7 @@ namespace coropact::luring::detail {
 //
 //   bind ResumeWork -> SubmitOp -> clear ResumeWork and rollback on failure
 //
-// It is deliberately luring-specific. Completion-family interpretation stays
+// It is deliberately luring-specific. Completion-protocol interpretation stays
 // with the submitting awaiter, while operation/detail remains resource-free.
 template <typename Prep, typename OnSubmitFailure>
 [[nodiscard]]

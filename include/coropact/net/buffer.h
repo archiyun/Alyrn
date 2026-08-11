@@ -5,20 +5,24 @@
 #include <sys/uio.h>
 
 #include <algorithm>
-#include <cassert>
 #include <cstddef>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <utility>
 #include <vector>
 
+#include "coropact/base/check.h"
 #include "coropact/ds/intrusive_list.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::net {
 
+// A move-only byte chain with explicit write reservation. It owns storage but
+// has no socket, scheduler, or backend dependency; adapters use its iovec
+// views only at the POSIX scatter/gather boundary.
 class Buffer {
 public:
   static constexpr std::size_t kDefaultBlockSize = 16 * 1024;
@@ -42,9 +46,13 @@ public:
   ~Buffer() { Clear(); }
 
   [[nodiscard]]
-  std::size_t ReadableBytes() const noexcept { return readable_bytes_; }
+  std::size_t ReadableBytes() const noexcept {
+    return readable_bytes_;
+  }
   [[nodiscard]]
-  bool Empty() const noexcept { return readable_bytes_ == 0; }
+  bool Empty() const noexcept {
+    return readable_bytes_ == 0;
+  }
 
   [[nodiscard]]
   std::span<const std::byte> ContiguousView() const noexcept {
@@ -80,40 +88,122 @@ public:
 
   [[nodiscard]]
   std::vector<iovec> PrepareWrite(std::size_t hint, std::size_t max_iov = 16) {
-    assert(!write_reserved_ && "nested Buffer::PrepareWrite is not allowed");
+    COROPACT_CHECK(!write_reserved_, "nested Buffer::PrepareWrite is not allowed");
     if (max_iov == 0) return {};
 
     if (hint == 0) hint = block_size_;
-    EnsureTailWritable(hint, max_iov);
-
-    std::vector<iovec> out;
-    out.reserve(max_iov);
-
     reserved_bytes_ = 0;
-    reserved_block_count_ = 0;
     write_reserved_ = true;
 
-    for (Block& block : blocks_) {
-      if (!block.reserved_for_write) continue;
-      if (out.size() >= max_iov) break;
+    try {
+      EnsureTailWritable(hint, max_iov);
 
-      const std::size_t n = block.WritableBytes();
-      if (n == 0) continue;
+      std::vector<iovec> out;
+      out.reserve(max_iov);
+      for (Block& block : blocks_) {
+        if (!block.reserved_for_write) continue;
+        if (out.size() == max_iov) break;
 
-      out.push_back(iovec{
-          .iov_base = block.WriteData(),
-          .iov_len = n,
-      });
-      reserved_bytes_ += n;
-      ++reserved_block_count_;
+        const std::size_t bytes = block.WritableBytes();
+        if (bytes == 0) continue;
+
+        out.push_back(iovec{
+            .iov_base = block.WriteData(),
+            .iov_len = bytes,
+        });
+        reserved_bytes_ += bytes;
+      }
+
+      if (out.empty()) {
+        ClearWriteReservation();
+      }
+      return out;
+    } catch (...) {
+      ClearWriteReservation();
+      throw;
+    }
+  }
+
+  // Fills caller-owned iovec storage for a new write reservation. This avoids
+  // allocating an iovec vector when the caller needs the views only for one
+  // synchronous syscall, as the Reactor does for readv(). The caller must
+  // keep the returned view only until its storage is reused; the Buffer owns
+  // the reserved byte ranges until CommitWrite() or AbortWrite().
+  [[nodiscard]]
+  std::span<iovec> PrepareWrite(std::size_t hint, std::span<iovec> out) {
+    COROPACT_CHECK(!write_reserved_, "nested Buffer::PrepareWrite is not allowed");
+    if (out.empty()) return {};
+
+    if (hint == 0) hint = block_size_;
+    reserved_bytes_ = 0;
+    write_reserved_ = true;
+
+    try {
+      EnsureTailWritable(hint, out.size());
+      auto iovs = FillReservedWriteIov(out);
+      for (const iovec& iov : iovs) {
+        reserved_bytes_ += iov.iov_len;
+      }
+      if (iovs.empty()) {
+        ClearWriteReservation();
+      }
+      return iovs;
+    } catch (...) {
+      ClearWriteReservation();
+      throw;
+    }
+  }
+
+  // Recreates iovec views for the active reservation in caller-owned
+  // storage. This is useful after a readiness notification: the reservation
+  // remains owned by the Buffer, but a Reactor need not retain an iovec
+  // allocation while the coroutine is suspended.
+  [[nodiscard]]
+  std::span<iovec> ReservedWriteIov(std::span<iovec> out) noexcept {
+    COROPACT_CHECK(write_reserved_, "Buffer::ReservedWriteIov without PrepareWrite");
+    return FillReservedWriteIov(out);
+  }
+
+  // Creates a reservation only when one contiguous writable range can satisfy
+  // hint. A caller that must retain iovec storage across an asynchronous
+  // backend request can use this fast path and fall back to PrepareWrite()
+  // when an existing tail needs a scatter/gather reservation instead.
+  [[nodiscard]]
+  std::optional<iovec> TryPrepareWriteOne(std::size_t hint) {
+    COROPACT_CHECK(!write_reserved_, "nested Buffer::PrepareWrite is not allowed");
+
+    if (hint == 0) hint = block_size_;
+    Block* tail = blocks_.Back();
+    if (tail != nullptr && tail->WritableBytes() < hint) {
+      return std::nullopt;
     }
 
-    return out;
+    reserved_bytes_ = 0;
+    write_reserved_ = true;
+    try {
+      if (tail == nullptr) {
+        tail = NewBlock(std::max(block_size_, hint));
+        const bool linked = blocks_.PushBack(tail);
+        COROPACT_CHECK(linked, "Buffer failed to link a newly allocated block");
+      }
+
+      tail->reserved_for_write = true;
+      const std::size_t bytes = tail->WritableBytes();
+      COROPACT_CHECK(bytes >= hint, "single Buffer write reservation is too small");
+      reserved_bytes_ = bytes;
+      return iovec{
+          .iov_base = tail->WriteData(),
+          .iov_len = bytes,
+      };
+    } catch (...) {
+      ClearWriteReservation();
+      throw;
+    }
   }
 
   void CommitWrite(std::size_t n) {
-    assert(write_reserved_ && "Buffer::CommitWrite without PrepareWrite");
-    assert(n <= reserved_bytes_ && "Buffer::CommitWrite exceeds reserved bytes");
+    COROPACT_CHECK(write_reserved_, "Buffer::CommitWrite without PrepareWrite");
+    COROPACT_CHECK(n <= reserved_bytes_, "Buffer::CommitWrite exceeds reserved bytes");
 
     std::size_t remaining = n;
     for (Block& block : blocks_) {
@@ -126,7 +216,7 @@ public:
       remaining -= m;
     }
 
-    assert(remaining == 0);
+    COROPACT_CHECK(remaining == 0, "Buffer::CommitWrite reservation became inconsistent");
     ClearWriteReservation();
   }
 
@@ -177,14 +267,22 @@ private:
     bool reserved_for_write{false};
 
     [[nodiscard]]
-    std::size_t ReadableBytes() const noexcept { return write_pos - read_pos; }
+    std::size_t ReadableBytes() const noexcept {
+      return write_pos - read_pos;
+    }
     [[nodiscard]]
-    std::size_t WritableBytes() const noexcept { return capacity - write_pos; }
+    std::size_t WritableBytes() const noexcept {
+      return capacity - write_pos;
+    }
 
     [[nodiscard]]
-    const std::byte* ReadData() const noexcept { return data.get() + read_pos; }
+    const std::byte* ReadData() const noexcept {
+      return data.get() + read_pos;
+    }
     [[nodiscard]]
-    std::byte* WriteData() noexcept { return data.get() + write_pos; }
+    std::byte* WriteData() noexcept {
+      return data.get() + write_pos;
+    }
   };
 
   using BlockList = coropact::ds::IntrusiveList<Block, BlockTag>;
@@ -205,8 +303,7 @@ private:
     if (tail != nullptr && tail->WritableBytes() > 0) return;
     Block* block = NewBlock(std::max(block_size_, hint));
     const bool linked = blocks_.PushBack(block);
-    assert(linked);
-    if (!linked) delete block;
+    COROPACT_CHECK(linked, "Buffer failed to link a newly allocated block");
   }
 
   void EnsureTailWritable(std::size_t hint, std::size_t max_iov) {
@@ -223,15 +320,29 @@ private:
     while (writable < hint && reserved < max_iov) {
       Block* block = NewBlock(std::max(block_size_, hint - writable));
       const bool linked = blocks_.PushBack(block);
-      assert(linked);
-      if (!linked) {
-        delete block;
-        break;
-      }
+      COROPACT_CHECK(linked, "Buffer failed to link a newly allocated block");
       block->reserved_for_write = true;
       writable += block->WritableBytes();
       reserved += 1;
     }
+  }
+
+  [[nodiscard]]
+  std::span<iovec> FillReservedWriteIov(std::span<iovec> out) noexcept {
+    std::size_t count = 0;
+    for (Block& block : blocks_) {
+      if (!block.reserved_for_write) continue;
+      if (count == out.size()) break;
+
+      const std::size_t n = block.WritableBytes();
+      if (n == 0) continue;
+
+      out[count++] = iovec{
+          .iov_base = block.WriteData(),
+          .iov_len = n,
+      };
+    }
+    return out.first(count);
   }
 
   void ClearWriteReservation() noexcept {
@@ -243,11 +354,10 @@ private:
 
     write_reserved_ = false;
     reserved_bytes_ = 0;
-    reserved_block_count_ = 0;
   }
 
   void AssertNoWriteReservation() const noexcept {
-    assert(!write_reserved_ && "Buffer mutation during pending write reservation");
+    COROPACT_CHECK(!write_reserved_, "Buffer mutation during pending write reservation");
   }
 
   void DrainCommitted(std::size_t n) noexcept {
@@ -278,20 +388,18 @@ private:
   }
 
   void MoveFromObject(Buffer&& other) noexcept {
-    assert(!other.write_reserved_ && "moving a Buffer with pending write reservation");
+    COROPACT_CHECK(!other.write_reserved_, "moving a Buffer with pending write reservation");
 
     block_size_ = other.block_size_;
     readable_bytes_ = other.readable_bytes_;
     write_reserved_ = false;
     reserved_bytes_ = 0;
-    reserved_block_count_ = 0;
 
     blocks_.Splice(other.blocks_);
 
     other.readable_bytes_ = 0;
     other.write_reserved_ = false;
     other.reserved_bytes_ = 0;
-    other.reserved_block_count_ = 0;
   }
 
   BlockList blocks_;
@@ -300,7 +408,6 @@ private:
 
   bool write_reserved_{false};
   std::size_t reserved_bytes_{0};
-  std::size_t reserved_block_count_{0};
 };
 
 }  // namespace coropact::net

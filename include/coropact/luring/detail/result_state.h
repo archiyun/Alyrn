@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include <cassert>
 #include <cstdint>
 #include <expected>
 #include <limits>
 
+#include "coropact/base/check.h"
 #include "coropact/base/error.h"
 
 namespace coropact::luring::detail {
@@ -14,7 +14,9 @@ namespace coropact::luring::detail {
 // Stream operations can complete before reaching io_uring, but their result is
 // limited to success with zero bytes or an errno. Keep the pending/success/
 // error state in one int instead of an optional expected. CloseAwaiter reuses
-// the same encoding through the void specialization below.
+// the same encoding through the void specialization below. This is terminal,
+// awaiter-owned storage: Take() observes its one result but does not reopen it
+// for reuse. Reusable physical LUringOp slots use BeginNextRequest() instead.
 class LUringResultStorage {
 public:
   static constexpr std::int32_t kPending = std::numeric_limits<std::int32_t>::min();
@@ -24,10 +26,15 @@ public:
     return encoded_ != kPending;
   }
 
-  void SetSuccess() noexcept { encoded_ = 0; }
+  void SetSuccess() noexcept {
+    COROPACT_CHECK(!IsImmediate(), "LUringResultStorage result was set twice");
+    encoded_ = 0;
+  }
 
   void SetError(base::Error error) noexcept {
-    assert(error.value() > 0 && error.value() != kPending);
+    COROPACT_CHECK(!IsImmediate(), "LUringResultStorage result was set twice");
+    COROPACT_CHECK(error.value() > 0 && error.value() != kPending,
+                   "LUringResultStorage cannot encode this error");
     encoded_ = static_cast<std::int32_t>(error.value());
   }
 
@@ -63,7 +70,7 @@ public:
 
   [[nodiscard]]
   base::Result<void> Take() const noexcept {
-    assert(IsImmediate());
+    COROPACT_CHECK(IsImmediate(), "LUringResultState result was taken before completion");
     if (Encoded() == 0) {
       return {};
     }

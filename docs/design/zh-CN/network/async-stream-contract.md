@@ -94,8 +94,8 @@ RequestStop
 ReadSome(std::span<std::byte> buffer)
     -> 可 await，await_resume() 为 base::Result<std::size_t>
 
-WriteSome(std::span<const std::byte> buffer)
-    -> 可 await，await_resume() 为 base::Result<std::size_t>
+WriteAll(std::span<const std::byte> buffer)
+    -> 可 await，await_resume() 为 base::Result<void>
 
 Shutdown()
     -> coro::Task<base::Result<void>>
@@ -167,6 +167,11 @@ struct net::ReadIntoOutcome {
 因此提交失败、关闭和取消也不会吞掉调用者转交的 buffer。`BufferLease` 则属于
 `AsyncRecvSource`：它代表后端/池提供的存储及其归还协议，不能替代普通 `net::Buffer`。
 
+`Buffer::PrepareWrite()` 与 `CommitWrite()`/`AbortWrite()` 构成一个短暂的 reservation
+transaction。该区间内不得再次 `PrepareWrite()`、`Append()`、`Drain()` 或 move buffer；这些不是
+可恢复的网络错误，而是会破坏 storage ownership 的程序错误，因此在所有构建中被拒绝。后端 awaiter
+必须在任何终态路径结束 reservation，随后才把 buffer 交还给调用者。
+
 ### 2.3 CoreListener
 
 listener 的最小接口是：
@@ -184,12 +189,52 @@ Close()
 `Stream` 必须满足 `coropact::io::AsyncStream`。当前 `ReactorListener` 和 `LUringListener`
 都满足 `coropact::io::AsyncListener`。
 
+### Close preparation 与 committed Close
+
+`Close()` 在 owner loop 上先进入一个不可重入的 **Close preparation**，临时拒绝新的
+read/write/accept。若后端在任何 cancel SQE 成为 submission protocol 的一部分之前就发生
+本地提交失败，preparation 必须完全撤销：当前 `Close()` 返回该错误，stream/listener 仍为
+Open，已有 logical source 不得被误报 terminal，调用者可以稍后显式重试 `Close()`。
+
+当 cancel SQE 已被 owner loop 接受（或确认没有 backend-visible operation 需要取消）时，
+Close 才成为 **committed Close**。从这一刻起它是 resource-level drain barrier：新的操作失败，
+cancel acknowledgement、target terminal、buffer/lease release 全部收敛后才允许释放 fd 并恢复
+Close continuation。提交 SQE 不等于内核已经产生 CQE，但已经足以使其关联的 operation state
+不能安全回滚。
+
+`PrepareShutdown()` 与 `PrepareClose()` 的失败是可观察的 `Result`；但 adapter 在成功准备后调用
+`CommitShutdown()`，在 shutdown syscall 的本地失败后调用 `AbortShutdownPreparation()`，或在尚未
+提交物理取消前调用 `AbortClosePreparation()`，属于内部状态机的后续 transition。若这些调用不满足
+前置状态，说明后端违反生命周期协议，必须在所有构建中终止，而不能把状态悄悄改写成新的业务错误。
+
 `Connect()` 不属于 `AsyncStream` 或 `AsyncListener`。它是建立 outbound stream 的另一项
-能力，由应用层需要的 connector concept 单独约束。
+能力，由 `AsyncConnector` 单独约束：
+
+```cpp
+auto result = co_await connector.Connect(host, port);
+```
+
+公共 connector 语义如下：
+
+- connector 绑定 owner loop；创建和 `Connect()` 都必须发生在 owner loop 线程；
+- 每次 `Connect()` 拥有独立的 socket、physical request、result 和 continuation，因此同一
+  connector 可以同时存在多个 pending connect；
+- 成功返回的 stream 绑定同一个 backend/owner loop；
+- 当前 `host` 路径解析数值 IP，非法地址返回 `EINVAL`，DNS 解析不是 CoreConnector 的隐式
+  行为；
+- `Connect(host, port)` 在返回惰性 Task 前同步解析并快照地址；返回后修改或销毁原始
+  `string_view` 的底层字符不会影响该 operation；
+- transport errno（例如 `ECONNREFUSED`）原样保留；
+- loop 进入 `Stopping` 后不再创建 socket 或提交 request，新 `Connect()` 返回
+  `ECANCELED`；已经 pending 的 connect 必须经后端取消路径收敛且只恢复一次。
+
+connector 本身没有 `Close()`：它不长期拥有连接资源。Reactor 的每次调用在 awaiter 内持有
+临时 `Channel`；io_uring 的每次调用持有独立 operation。成功后 socket 所有权转移给返回的
+Stream，失败或取消时由该次 operation 回收。
 
 ### 2.4 Awaitable 的使用规则
 
-`ReadSome` 和 `WriteSome` 的返回值必须是可 await 对象，并产生约定的
+`ReadSome` 和 `WriteAll` 的返回值必须是可 await 对象，并产生约定的
 `base::Result`。后端可以返回惰性的 `coro::Task<T>`，也可以返回直接承载操作状态的
 底层 awaiter：
 
@@ -197,9 +242,9 @@ Close()
 auto result = co_await stream.ReadSome(buffer);
 ```
 
-`ReactorStream` 和 `LUringStream` 的 span 读写入口都返回直接 awaiter，因此核心读写路径
-不会为一次读写额外创建子协程帧。`io::Buffer` 等扩展重载以及 `Shutdown()`、`Close()`
-仍可返回 `Task`。
+`ReactorStream` 的 `ReadSome` 和 `WriteAll` 都返回直接 awaiter；luring 的 `ReadSome` 返回
+直接 awaiter，而 `WriteAll` 以一个后端内建 `Task` 驱动多个内部 send request，以保留普通
+send 与 send-zc 的不同 completion/release 语义。`Shutdown()`、`Close()` 也可以返回 `Task`。
 
 如果具体接口返回 `Task`，它仍然是 move-only、single-consumer 对象，只能被 await 一次，
 也可以交给 `coro::Spawn(scheduler, task)`。直接 awaitable 则在 `co_await` 时提交 I/O。
@@ -248,7 +293,9 @@ R : ResourceId -> {Open, Closing, Closed}
 
 O : OpId -> OperationRecord
     OperationRecord = {
-      family,              // SingleResult | Composite | EventSource | SplitRelease
+      result_cardinality,  // Single | Multiple
+      convergence,         // Single | Composite
+      release_coupling,    // Coupled | Split
       owner_coroutine,
       resource,
       scheduler_affinity,
@@ -314,9 +361,10 @@ io_uring 也可能在准备阶段立即拒绝操作。此时没有真实挂起�
 `Submit` 表示一次语义上的提交尝试，不要求一定产生系统调用、SQE 或 readiness 注册。
 例如资源已经关闭时，后端可以在提交点直接产生 `EBADF` 完成结果。
 
-在立即完成路径中，`Resume` 表示结果回到当前协程的逻辑事件，不要求真的经过
-`Schedule(ResumeWork)`；只有发生实际挂起时，恢复才需要经过后端的 ready queue 或等价
-调度路径。
+在立即完成路径中，结果通过 `await_suspend() == false` 直接进入当前协程的
+`await_resume()`；它不是一次 scheduler continuation resume，也不需要
+`Schedule(ResumeWork)`。只有发生实际挂起时，结果、释放授权与恢复授权才需要经过后端的
+ready queue 或等价调度路径。形式模型将两者分别记为 `InlineContinue` 与 `Resume`。
 
 ### 3.3 转移 δ_B、策略 π 与不变量
 
@@ -326,7 +374,7 @@ io_uring 也可能在准备阶段立即拒绝操作。此时没有真实挂起�
 σ_submit   : 一次提交尝试创建唯一 operation 归属。
 σ_complete : 一个 single-result operation 最多 Complete 一次。
 σ_resume   : 协程只能由自己的 operation 结果或 source 的 Next() 结果恢复。
-σ_cancel   : 取消必须产生该 operation family 定义的收敛状态，不能静默丢弃。
+σ_cancel   : 取消必须产生该 operation lifecycle 定义的收敛状态，不能静默丢弃。
 σ_close    : 资源关闭后不能产生新的成功 I/O。
 σ_lifetime : backend 仍可能访问的对象必须保持存活。
 σ_contract : 对外暴露的每个 concept 都必须有真实且可测试的语义解释。
@@ -360,21 +408,30 @@ pending single-result operation 最终 settled、已 settled 的等待协程最�
 资源最终 `Closed`。`async_stream_core.tla` 已对这个最小模型检查这些性质；多 operation 与
 source refinement 继续分别检查自己的终态条件。
 
-### 3.4 按 operation family 解释取消
+### 3.4 按 operation lifecycle 解释取消
 
-取消不是所有 family 共用的“立刻得到 ECANCELED”：
+取消不是所有 lifecycle shape 共用的“立刻得到 ECANCELED”：
 
 ```text
-SingleResult : cancel 的物理收敛产生一次 terminal logical result。
-Composite   : 子 request 可先后完成；聚合结果只确定一次。
-EventSource : Stop/error 才使 logical source terminal。高水位 pause 取消当前 multishot
-              physical request 后可以进入 Paused，并在低水位 re-arm，不产生 source terminal。
-SplitRelease: logical result、continuation resume 与 buffer/resource release 可以由不同
-              physical completion 授权。
+Single result       : cancel 的物理收敛产生一次 terminal logical result。
+Composite convergence: 子 request 可先后完成；聚合结果只确定一次。
+Multiple results    : Stop/error 才使 logical source terminal。高水位 pause 取消当前
+                      multishot physical request 后可以进入 Paused，并在低水位 re-arm，
+                      不产生 source terminal。
+Split release       : result readiness、continuation resume 与 buffer/resource release
+                      可以由不同 physical completion 授权。
 ```
 
 因此，`Cancel(op) -> Complete(op, ECANCELED)` 只适用于 single-result 的简化模型；它不能
 作为 `AcceptSource`、`RecvSource` 或 send zero-copy 的通用规则。
+
+`Close()` 与 event source 的 `Stop()` 也故意不共享“本地 cancel preparation 失败”的语义。
+resource `Close()` 在尚未向 backend 提交 cancel request 前必须能回滚到 Open；它保护的是原 fd
+和后续新 I/O 的可用性。source `Stop()` 首先撤销新的 event admission，因此 luring 的 cancel SQE
+preparation 若本地失败，`Stop()` 可以返回该 error，但 source 保持 `Stopping`，不会重新变成
+Active。调用方必须保留 source 并重试 `Stop()`，或由已 committed 的 owner resource `Close()` 收敛它；
+在 Stop 成功前销毁 source 仍违反其 physical request 生命周期。Reactor 没有对应 SQE preparation
+阶段，但实现同一“Stop 后不再接纳新事件”的可观察语义。
 
 ## 4. 核心不变量
 
@@ -428,7 +485,7 @@ Submit(op) -> Complete(op, result)
 包括：
 
 ```text
-ReadSome / WriteSome 传入的 buffer；
+ReadSome / WriteAll 传入的 buffer；
 底层 fd 和 stream 对象；
 operation awaiter；
 用于恢复协程的 coroutine handle；
@@ -448,7 +505,8 @@ operation awaiter；
 ```
 
 read 和 write 可以同时 pending；同方向的两个 operation 不能同时 pending。listener
-默认只有一个 pending accept。
+默认只有一个 pending accept。当前 CoreStream Adapter 对第二个同方向 operation 稳定返回
+`EBUSY`；空 buffer operation 也必须先经过槽位检查，不能绕过该规则。
 
 ### I7：线程和执行器归属
 
@@ -486,8 +544,16 @@ stream 的核心资源状态为：
 Open -> Closing -> Closed
 ```
 
-`Shutdown()` 只关闭本端写方向，不改变 stream 的资源状态；`Close()` 才负责本地资源
-终止和 pending operation 收敛。
+写方向是与 fd 生命周期独立的第二个状态：
+
+```text
+Writable -- Shutdown --> WriteShutdown
+```
+
+`Shutdown()` 只改变写方向，不改变 stream 的资源状态；`Close()` 才负责本地资源终止和
+pending operation 收敛。因此 `Open + WriteShutdown` 仍然允许 `ReadSome()`，但不再接受新的
+`WriteAll()`。空 span 不产生物理 write request，但仍是一次逻辑 operation，必须经过 loop、
+资源状态和写槽位验证。
 
 一个 stream 的生命周期由其拥有者管理。调用方必须保证 stream 对象至少存活到所有依赖
 它的 operation 已经 Complete；通常应在 session 协程内统一负责 Close 和销毁。
@@ -514,31 +580,38 @@ unexpected(error)
 `ReadSome` 不保证填满 buffer。`Result<0>` 的 EOF 语义只适用于非空 buffer；空 buffer
 不是通用业务算法应依赖的输入。当前实现可能直接返回 0，但这不应被用来判断对端关闭。
 
-### 5.3 WriteSome
+### 5.3 WriteAll
 
 ```cpp
-auto result = co_await stream.WriteSome(buffer);
+auto result = co_await stream.WriteAll(buffer);
 ```
 
-语义为一次短写操作：
+`WriteAll` 是 Core contract 的完整写入操作：它重复提交后端的物理 write request，直到
+输入 span 被完全接受，或任一 request 到达终态错误。它产生的业务结果只有：
 
 ```text
-Result<N>, 0 < N <= buffer.size()
-  成功写出 N 字节。
+Result<void>
+  整个 span 已写入。
 
-Result<0>
-  本次没有取得进展。通用 WriteAll 将它转换为 EPIPE，避免空转。
+unexpected(EPIPE)
+  某次成功完成却返回 0，无法继续推进，避免无限循环。
 
 unexpected(error)
-  写入失败，error 是 errno 风格的 std::error_code。
+  某个物理 write request 失败。
 ```
 
-调用方不能假设一次 `WriteSome` 写完整个 buffer。应使用 `coropact::io::WriteAll` 或等价
-循环。buffer 在该 `WriteSome` 的 awaitable 完成前不能修改、移动或释放。
+调用方必须把 span 的 storage 保持有效、地址稳定，直到 `WriteAll` 的 `await_resume()`。
+后端可以把短写循环做成直接 awaiter 或内部 coroutine；短写 request 及其 bytes-progress
+只属于 backend 私有状态，不再作为公共 API 暴露。send zero-copy 启用时，luring 的
+`WriteAll` 在每轮 send-zc 的 kernel resource-release 边界之后，才继续推进或降级为普通
+send：primary 无 `F_MORE` 时该边界就是 primary CQE，带 `F_MORE` 时则是 notification CQE。
 
-普通 `WriteSome` 的完成表示该调用使用的 buffer 已经不再被该 operation 访问。send
-zero-copy 可能在“数据发送完成”和“buffer 可以复用”之间产生不同完成事件，因此不属于
-`WriteSome`。
+空 span 立即产生 `Result<void>`，但不会绕过逻辑验证：已有 pending write 时返回 `EBUSY`，
+loop 停止时返回 `ECANCELED`，stream 已关闭时返回 `EBADF`，写方向已 Shutdown 时返回
+`EPIPE`。这保证空操作不能绕过 I6 的槽位和资源状态规则。
+
+多块 `Buffer` 的写出由业务显式迭代 `ContiguousView()`，并在每个 `WriteAll` 成功后调用
+`Drain()`；Core contract 不提供 `Buffer&` 或 scatter-write convenience overload。
 
 ### 5.4 Shutdown
 
@@ -546,12 +619,15 @@ zero-copy 可能在“数据发送完成”和“buffer 可以复用”之间产
 
 ```text
 Shutdown()
-  -> 后续本端写操作不再是正常写入
+  -> WriteState: Writable -> WriteShutdown
+  -> 后续本端 WriteAll() 在提交到后端前返回 EPIPE
   -> 读方向仍可以继续观察数据或 EOF
 ```
 
-`Shutdown()` 不会替代 `Close()`，也不负责取消 pending read/write。资源已 `Closed` 时，
-调用 `Shutdown()` 应得到 closed error，当前实现使用 `EBADF`。
+`Shutdown()` 是幂等的：已经处于 `WriteShutdown` 时成功返回。它不会替代 `Close()`，也不
+负责取消 pending read/write；若已经存在 pending write，当前 core contract 返回 `EBUSY`，而
+不是让 half-close 与写入竞争。资源 `Closing` 时返回 `ECANCELED`，资源已 `Closed` 时返回
+`EBADF`。
 
 ### 5.5 Close
 
@@ -570,7 +646,7 @@ Close 必须满足：
 2. 已经 pending 的 read/write 最终各自 Complete 一次；
 3. 后端不再持有 fd 或 buffer 后，资源才进入 Closed；
 4. Close 自己也必须产生一个可观察的 Result<void>；
-5. Closed 后的 ReadSome / WriteSome / Shutdown 返回 closed error；
+5. Closed 后的 ReadSome / WriteAll / Shutdown 返回 closed error；
 6. Closed 后重复 Close 可以成功返回。
 ```
 
@@ -590,7 +666,7 @@ Reactor 可以通过 readiness 状态直接完成取消，luring 可能需要提
 ```text
 read 先完成 -> ReadSome 得到 N、0 或传输错误；随后 Close 完成
 Close 先取消 -> ReadSome 得到 ECANCELED；随后 Close 完成
-底层连接先断开 -> ReadSome 得到 0，WriteSome 得到 EPIPE 或具体错误
+底层连接先断开 -> ReadSome 得到 0，WriteAll 得到 EPIPE 或具体错误
 ```
 
 实现不能同时为同一个 operation 报告两个结果，也不能因为 Close 已被调用就丢弃 pending
@@ -614,9 +690,10 @@ auto result = co_await listener.Accept();
 成功返回的 stream 与 listener 属于同一个 loop/executor，调用方不能把它直接移动到另一个
 ring 后继续 I/O。
 
-核心 listener 只保证一个 pending accept。重复提交同一个 listener 的 accept 不属于契约，
-实现可以返回 `EBUSY` 或在 debug 构建中断言。需要一个 submit 产生多个连接结果时，必须
-另起 `AsyncMultishotListener` concept。
+可移植的核心 listener 用法只依赖一个 pending accept。Reactor 对第二个 pending
+`Accept()` 在所有构建模式下稳定返回 `EBUSY`；io_uring 后端可以在内部或显式扩展路径中
+维持多个 one-shot accept，但业务代码不能把该能力当作公共 `AsyncListener` 契约。需要持续
+产生连接结果时，应使用 `AcceptSource`，而不是并发创建一组普通 `Accept()` awaiter。
 
 ### 6.2 Listener Close
 
@@ -642,7 +719,7 @@ Close(listener)
 ```text
 co_await stream.ReadSome(buffer)
 或
-co_await stream.WriteSome(buffer)
+co_await stream.WriteAll(buffer)
 ```
 
 对应 I/O operation 完成的整个过程：
@@ -675,14 +752,14 @@ coropact::coro::Task<void> Good(coropact::io::AsyncStream auto& stream) {
 
 ### 7.2 io::Buffer
 
-`ReactorStream` 和 `stream_algorithms.h` 还提供 `coropact::io::Buffer` 重载。这是 buffer
-管理层的扩展，不改变 CoreStream 的 span 契约。公开的 `io::Buffer` 是
-`net::Buffer` 的零成本 alias：实现留在后端之下，调用者应使用 `io` spelling：
+`coropact::io::Buffer` 是 `net::Buffer` 的零成本公开 spelling。它不是
+`ReadSome` 的第二种 borrowed overload：可增长 buffer 的异步读取必须使用
+`ReadInto(std::move(buffer))`，以便 pending operation 独占 storage 并在每条终态路径归还
+owner。实现留在 `net` 以保持后端位于 `io` facade 之下，调用者应使用 `io` spelling：
 
 ```text
-PrepareWrite / ReadableIov 返回的内存必须覆盖 pending operation；
-读成功后 CommitWrite，读失败后 AbortWrite；
-写成功后 Drain 已写出的字节。
+ReadInto 在读成功后 CommitWrite，在读失败后 AbortWrite；写成功后由调用者在
+WriteAll 后 Drain 已写出的字节。
 ```
 
 扩展 `RecvSource` 已明确提供 buffer 的所有权边界：luring 使用每 worker 共享的 provided
@@ -692,6 +769,11 @@ buffer ring，Reactor 使用固定 buffer pool；每个 `RecvEvent` 携带一个
 会随着 RecvSource 创建惰性发布；CQE 返回的
 buffer id 在这个共享 pool 内解释。`F_BUF_MORE` 增量 source 尚未接入当前 `RecvSource` 路径，
 registered fixed buffer 仍属于后续扩展。
+
+两个后端的 `RecvSource::Next()` 都是直接 awaiter：已有事件或 terminal result 时，它在调用
+协程内 inline 完成；否则 source 保存该 continuation，待逻辑事件 ready 后按所属 scheduler 恢复。
+这条 API 不创建每事件一个中间 `Task` frame；事件队列、backpressure 和 `BufferLease` 的生命周期
+仍完全由 source state machine 管理。
 
 ### 7.3 fd、stream 和 operation owner
 
@@ -752,7 +834,7 @@ A 类进入 active profile，后端必须提供可观察且可测试的统一语
 
 ```text
 kReadSome
-kWriteSome
+kWriteAll
 kShutdown
 kClose
 kCancelByClose
@@ -793,7 +875,7 @@ multishot recv：一次 Submit -> 多次 Complete -> cancel/close 终止
 ```
 
 因此 multishot 不能塞进 `ReadSome`，provided buffer 不能伪装成普通 span，send zero-copy
-不能复用普通 `WriteSome` 的 buffer 完成边界。
+不能复用普通 `WriteAll` 的 buffer 完成边界。
 
 当前 luring 还提供显式扩展：
 
@@ -845,7 +927,7 @@ await_suspend
 
 ```text
 ReadSome      -> Result<N> / Result<0> / error
-WriteSome     -> Result<N> / Result<0> / error
+WriteAll      -> Result<void> / error
 Close         -> eventual resource closure
 Accept        -> one stream or error
 Resume        -> the coroutine waiting for that operation
@@ -868,7 +950,7 @@ Close 取消 pending operation -> ECANCELED
 Close 之后新提交 -> EBADF 或等价 closed error
   不是对端 EOF。
 
-WriteSome -> EPIPE 或具体传输错误
+WriteAll -> EPIPE 或具体传输错误
   写方向无法继续。
 
 Timed operation -> ETIMEDOUT
@@ -878,8 +960,8 @@ Timed operation -> ETIMEDOUT
 底层系统调用返回的其他 errno 应保留，不应在后端层无理由改写。应用可以据此区分
 EOF、本地取消、连接失败、上游失败和超时。
 
-`WriteAll` 是上层算法，不是 stream 的单次操作。它会重复提交短写，并把成功但零进展的
-结果转换成 `EPIPE`，防止无限循环。
+`WriteAll` 不是单次物理 write；它是后端实现的完整写入 Core operation。它会重复提交短写，
+并把成功但零进展的结果转换成 `EPIPE`，防止无限循环。
 
 ## 12. 实现和测试义务
 
@@ -892,7 +974,7 @@ EOF、本地取消、连接失败、上游失败和超时。
 4. pending read 在 Close 后最终完成，且不会悬挂；
 5. pending write 在 Close 后最终完成，且不会悬挂；
 6. Close 后的新 read/write/shutdown 失败；
-7. 同方向第二个 pending operation 被拒绝或明确暴露为契约错误；
+7. 同方向第二个 pending operation 稳定返回 `EBUSY`，包括空 buffer operation；
 8. read 和 write 可以同时 pending；
 9. buffer 在 Complete 前被修改或释放时不属于合法用法；
 10. listener 的 pending accept 可被 Close 收敛；
@@ -902,6 +984,15 @@ EOF、本地取消、连接失败、上游失败和超时。
 13. EventSource 的 high-water pause 只终止当前 physical request，不把 logical source
     误报为 terminal；
 14. SplitRelease 的业务结果、恢复和 buffer/resource release 按各自授权边界发生。
+15. listener/source 的 `Stop()` 与 `Close()` 保持幂等，terminal `Next()` 保持 sticky；source Stop 的
+    local cancel preparation failure 后仍可重试并最终收敛；
+16. loop 进入 `Stopping` 后，新的 `Accept()` 与 `AcceptSource()` 返回 `ECANCELED`。
+17. connector 保留成功、`EINVAL`、`ECONNREFUSED` 与 `ECANCELED` 的区别；
+18. 同一 connector 的并发 `Connect()` 具有独立结果、恢复授权和资源回收。
+19. `Connect()` 的 continuation 只在 `Result<Stream>` 已固定、fd 已转移给 stream 或关闭后才运行；
+    恢复后可以立刻对该 stream 调用 `Close()`。
+20. `Accept()` 的 continuation 只在 `Result<Stream>` 已固定、listener 的 pending-accept
+    reservation 已释放后才运行；恢复后可以立刻关闭该 stream 或发起下一次 `Accept()`。
 ```
 
 测试应覆盖成功、EOF、ECANCELED、EBADF、EPIPE、资源关闭竞争和 loop 归属，而不是只
@@ -909,7 +1000,7 @@ EOF、本地取消、连接失败、上游失败和超时。
 
 ## 13. 当前明确不属于 CoreStream
 
-以下能力不能通过修改 `ReadSome` 或 `WriteSome` 的隐含行为加入核心层：
+以下能力不能通过修改 `ReadSome` 或 `WriteAll` 的隐含行为加入核心层：
 
 ```text
 provided buffer
@@ -966,3 +1057,7 @@ EventSource 的 pause/re-arm 与 lease 生命周期。它们是同一抽象模�
 `resource_close_cancel.tla` 则单独验证 Close 作为 resource-level drain barrier：cancel CQE
 不等于 target completion，fd release 必须等待 active physical use、cancel command 与
 backend-held storage 一并收敛。
+
+`stream_shutdown_transaction.tla` 补充验证同步写半关闭的内部 transaction：准备期间不能接受新的
+write 或开始 Close；`shutdown(2)` 成功后 write direction 终态为 Shutdown，本地失败则完整回滚为
+Writable，后续调用可以显式重试。

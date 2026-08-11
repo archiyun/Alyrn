@@ -13,7 +13,7 @@
 namespace coropact {
 
 // Compile-time io_uring binding for the backend-neutral Runtime composition
-// root. Ring and operation-family tuning stay backend implementation policy.
+// root. Ring and operation-specific tuning stay backend implementation policy.
 template <>
 class Runtime::Builder<runtime::LUring> {
 public:

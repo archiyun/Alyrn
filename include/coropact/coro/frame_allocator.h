@@ -10,7 +10,6 @@
 #include <algorithm>
 #include <array>
 #include <bit>
-#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -18,6 +17,7 @@
 #include <memory_resource>
 #include <new>
 
+#include "coropact/base/check.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::coro {
@@ -28,8 +28,13 @@ inline thread_local std::pmr::memory_resource* current_frame_resource =
 
 inline std::pmr::memory_resource* CurrentFrameResource() noexcept { return current_frame_resource; }
 
+inline std::pmr::memory_resource* NormalizeFrameResource(
+    std::pmr::memory_resource* resource) noexcept {
+  return resource != nullptr ? resource : std::pmr::new_delete_resource();
+}
+
 inline void SetCurrentFrameResource(std::pmr::memory_resource* resource) noexcept {
-  current_frame_resource = resource != nullptr ? resource : std::pmr::new_delete_resource();
+  current_frame_resource = NormalizeFrameResource(resource);
 }
 
 // The coroutine frame contains no user-visible pointer to the allocator. Keep
@@ -51,13 +56,16 @@ inline constexpr unsigned kFrameMetadataBytesBits =
 inline constexpr std::uint64_t kFrameMetadataBytesMask =
     (std::uint64_t{1} << kFrameMetadataBytesBits) - 1;  // 15
 inline constexpr unsigned kFrameMetadataMaxAlignmentExponent =
-    (1 << kFrameMetadataAlignmentBits) - 1;  // 2^60 - 1
+    (1 << kFrameMetadataAlignmentBits) - 1;  // 15, encoding alignments up to 2^15
 
 inline std::uint64_t PackFrameMetadata(std::size_t bytes, std::size_t alignment) {
-  assert(bytes <= kFrameMetadataBytesMask);
-  assert(alignment != 0 && std::has_single_bit(alignment));
+  COROPACT_CHECK(bytes <= kFrameMetadataBytesMask,
+                 "coroutine frame metadata cannot encode this allocation size");
+  COROPACT_CHECK(alignment != 0 && std::has_single_bit(alignment),
+                 "coroutine frame metadata requires a power-of-two alignment");
   const auto exponent = static_cast<unsigned>(std::countr_zero(alignment));
-  assert(exponent <= kFrameMetadataMaxAlignmentExponent);
+  COROPACT_CHECK(exponent <= kFrameMetadataMaxAlignmentExponent,
+                 "coroutine frame metadata cannot encode this alignment");
   return static_cast<std::uint64_t>(bytes) |
          (static_cast<std::uint64_t>(exponent) << kFrameMetadataBytesBits);
 }
@@ -295,21 +303,30 @@ public:
   COROPACT_DELETE_COPY(FrameAllocatorScope);
 
   explicit FrameAllocatorScope(std::pmr::memory_resource& resource) noexcept
-      : previous_(detail::CurrentFrameResource()) {
-    detail::SetCurrentFrameResource(&resource);
-  }
+      : FrameAllocatorScope(&resource) {}
 
   explicit FrameAllocatorScope(std::pmr::memory_resource* resource) noexcept
-      : previous_(detail::CurrentFrameResource()) {
-    detail::SetCurrentFrameResource(resource);
+      : previous_(detail::CurrentFrameResource()),
+        changed_(previous_ != detail::NormalizeFrameResource(resource)) {
+    if (changed_) {
+      detail::SetCurrentFrameResource(resource);
+    }
   }
 
-  ~FrameAllocatorScope() { detail::SetCurrentFrameResource(previous_); }
+  ~FrameAllocatorScope() {
+    if (changed_) {
+      detail::SetCurrentFrameResource(previous_);
+    }
+  }
 
-  static std::pmr::memory_resource* Current() noexcept { return detail::CurrentFrameResource(); }
+  [[nodiscard]]
+  static std::pmr::memory_resource* TryCurrent() noexcept {
+    return detail::CurrentFrameResource();
+  }
 
 private:
   std::pmr::memory_resource* previous_;
+  bool changed_;
 };
 
 }  // namespace coropact::coro

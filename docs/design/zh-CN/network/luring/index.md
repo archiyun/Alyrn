@@ -11,13 +11,13 @@ buffer 可以复用，以及关闭和取消如何收敛。内部类、CQE 分发
 
 | 功能 | 对外入口 | 状态 | 首要测试目标 |
 | --- | --- | --- | --- |
-| 单次 stream I/O | `ReadSome`、`ReadInto`、`WriteSome` | 稳定 | 一次结果、错误和 buffer 生命周期 |
+| stream I/O | `ReadSome`、`ReadInto`、`WriteAll` | 稳定 | 单次结果、完整写入、错误和 buffer 生命周期 |
 | 超时读 | `ReadSomeFor` | 稳定扩展 | read/timeout 两个 CQE 只恢复一次 |
 | listener / 单次 accept | `Accept` | 稳定 | 新连接所有权与关闭 |
 | 持续 accept | `AcceptSource`、`AcceptMode::kMultishot` | 已实现扩展 | 多事件、终止 CQE、背压、降级 |
 | 持续 recv | `LUringRecvSource` | 已实现扩展 | provided buffer、事件队列、`BufferLease` |
 | provided buffer ring | `LUringRecvSource` 的内部资源 | 已实现扩展 | slot 借出、归还和 source 停止 |
-| 发送 zerocopy | `SendZeroCopy` | 已实现扩展 | primary CQE 与 `F_NOTIF` 分离 |
+| 发送 zerocopy | `SendZeroCopy` | 已实现扩展 | primary CQE 与可选 `F_NOTIF` 的分离式 release |
 | timer | `SleepFor`、`RunAfter` | 已实现 | 到期恢复、错误和 loop 归属 |
 | 多 worker / CPU 绑定 | `LUringWorkerGroup` | 已实现 | 每 worker 一个 loop、启动和停止 |
 | 跨 worker 通知 | `PostMessage` / `MSG_RING` | runtime 内部能力 | 有界 mailbox、通知合并、目标 loop 投递 |
@@ -35,13 +35,28 @@ buffer 可以复用，以及关闭和取消如何收敛。内部类、CQE 分发
   -> 批量提交到 ring
   -> kernel 执行
   -> 收到一个或多个 CQE
-  -> operation family 解释 CQE
+  -> operation-specific lifecycle 解释 CQE
   -> 结果确定 / 资源释放
   -> 最多恢复一次等待中的协程
 ```
 
 single-shot 通常是一条 SQE 对一条 CQE；multishot、超时和 zerocopy 会产生多个物理
 事件，因此必须经过自己的状态机。业务接口看到的是逻辑结果，不是 CQE 数量。
+
+对于普通的 single-shot awaiter，loop 的内部顺序也被固定为：
+
+```text
+CQE
+  -> LUringOp 记录原始 CQE result
+  -> operation adapter 解释结果，并释放 pending stream slot / buffer reservation
+  -> loop 将 ResumeWork 放入 completion queue
+  -> coroutine await_resume()
+```
+
+因此 coroutine 恢复后可以立刻开始同方向的下一次 stream operation；它不应因为上一项
+operation 的 slot 尚未释放而得到 `EBUSY`。这个规则只适用于 coupled single-shot 路径。
+timed read、close、multishot source 和 zerocopy 各自根据其 composite、event-source 或
+split-release 生命周期决定何时进入最后两步。
 
 ## 生命周期上的硬规则
 

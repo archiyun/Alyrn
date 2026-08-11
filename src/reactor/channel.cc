@@ -9,8 +9,8 @@ namespace coropact::reactor::detail {
 
 Channel::Channel(EventLoop* loop, int fd)
     : loop_(loop), fd_(fd), events_(0), revents_(0), index_(-1) {
-  COROPACT_DCHECK(loop_ != nullptr, "Channel: loop must not be null");
-  COROPACT_DCHECK(fd_ >= 0, "Channel: fd must be a valid non-negative descriptor");
+  COROPACT_CHECK(loop_ != nullptr, "Channel: loop must not be null");
+  COROPACT_CHECK(fd_ >= 0, "Channel: fd must be a valid non-negative descriptor");
 }
 
 Channel::Channel(Channel&& other) noexcept
@@ -67,20 +67,20 @@ Channel& Channel::operator=(Channel&& other) noexcept {
 }
 
 void Channel::Update() {
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "Channel::Update called from wrong thread");
+  COROPACT_CHECK(loop_->IsInLoopThread(), "Channel::Update called from wrong thread");
   loop_->UpdateChannel(this);
 }
 
 void Channel::Remove() {
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "Channel::Remove called from wrong thread");
-  COROPACT_DCHECK(IsNoneEvent(), "Channel::Remove called while events are still enabled");
+  COROPACT_CHECK(loop_->IsInLoopThread(), "Channel::Remove called from wrong thread");
+  COROPACT_CHECK(IsNoneEvent(), "Channel::Remove called while events are still enabled");
   loop_->RemoveChannel(this);
 }
 
 bool Channel::IsRegistered() const { return loop_->HasChannel(const_cast<Channel*>(this)); }
 
 void Channel::HandleEvent() {
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "Channel::HandleEvent called from wrong thread");
+  COROPACT_CHECK(loop_->IsInLoopThread(), "Channel::HandleEvent called from wrong thread");
   // Channel callbacks are non-owning. Owners must detach the Channel before
   // destruction; keeping that lifetime rule explicit avoids a per-event
   // shared-owner lock on the loop-affine Reactor path.

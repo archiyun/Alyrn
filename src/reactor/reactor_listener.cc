@@ -1,7 +1,5 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "coropact/reactor/listener.h"
-
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -10,15 +8,18 @@
 #include <expected>
 #include <utility>
 
+#include "coropact/backend/detail/value_result_state.h"
 #include "coropact/base/check.h"
 #include "coropact/base/error.h"
 #include "coropact/base/try.h"
 #include "coropact/net/accept_source.h"
-#include "coropact/net/net_utils.h"
+#include "coropact/net/socket.h"
 #include "coropact/operation/detail/completion_gate.h"
 #include "coropact/operation/detail/scheduler_continuation.h"
+#include "coropact/operation/detail/single_result_lifecycle.h"
 #include "coropact/reactor/detail/loop_access.h"
 #include "coropact/reactor/detail/result_state.h"
+#include "coropact/reactor/listener.h"
 
 namespace coropact::reactor {
 
@@ -48,12 +49,13 @@ EventLoop* CheckLoop(EventLoop* loop) noexcept {
 
 base::Result<net::Socket> TryCreateListenSocket(const net::Endpoint& listen_addr,
                                                 ReactorListenerOptions options) noexcept {
-  net::Socket socket(COROPACT_TRY(net::CreateNonBlockingSocket(listen_addr.native_family())));
+  COROPACT_TRY_VALUE(fd, net::CreateNonBlockingSocket(listen_addr.native_family()));
+  net::Socket socket(fd);
 
-  COROPACT_TRY(net::set_reuse_addr(socket.fd(), options.reuse_addr));
+  COROPACT_TRY(net::SetReuseAddr(socket.fd(), options.reuse_addr));
 
   if (options.reuse_port) {
-    COROPACT_TRY(net::set_reuse_port(socket.fd(), true));
+    COROPACT_TRY(net::SetReusePort(socket.fd(), true));
   }
 
   if (::bind(socket.fd(), listen_addr.sock_addr(), listen_addr.sock_addr_len()) < 0) {
@@ -88,19 +90,19 @@ public:
     listener_->RequireOwnerLoop();
     if (listener_->loop_->State() == backend::LoopState::kStopping ||
         listener_->loop_->State() == backend::LoopState::kStopped) {
-      result_.SetError(base::MakeErrno(ECANCELED));
-      (void)(completion_gate_.TryComplete());
+      CompleteInline(std::unexpected(base::MakeErrno(ECANCELED)));
       return false;
     }
-    COROPACT_DCHECK(listener_->pending_accept_ == nullptr,
-                    "AcceptAwaiter: only one pending accept is supported per listener");
+    if (listener_->pending_accept_ != nullptr) {
+      CompleteInline(std::unexpected(base::MakeErrno(EBUSY)));
+      return false;
+    }
 
     continuation_.Bind(continuation);
 
     base::Result<ReactorStream> result = TryAccept();
     if (result.has_value() || !IsWouldBlock(result.error().value())) {
-      result_.SetResult(std::move(result));
-      (void)(completion_gate_.TryComplete());
+      CompleteInline(std::move(result));
       return false;
     }
 
@@ -111,19 +113,35 @@ public:
     return true;
   }
 
-  base::Result<ReactorStream> await_resume() noexcept {
-    COROPACT_DCHECK(result_.HasResult(), "AcceptAwaiter: result is not ready");
-    return result_.Take();
+  base::Result<ReactorStream> await_resume() noexcept { return result_.Take(); }
+
+private:
+  friend class ReactorListener;
+
+  void CompleteInline(base::Result<ReactorStream> result) noexcept {
+    result_.SetResult(std::move(result));
+    COROPACT_CHECK(lifecycle_.TryAuthorizeResult(), "Reactor accept result was authorized twice");
+    COROPACT_CHECK(lifecycle_.TryAuthorizeRelease(),
+                   "Reactor accept release was not authorized after its result");
   }
 
-  void Complete(base::Result<ReactorStream> result) noexcept {
-    if (!completion_gate_.TryComplete()) {
-      return;
+  [[nodiscard]] bool CompleteResult(base::Result<ReactorStream> result) noexcept {
+    if (!lifecycle_.TryAuthorizeResult()) {
+      return false;
     }
     result_.SetResult(std::move(result));
-    continuation_.Schedule();
+    return true;
   }
 
+  [[nodiscard]] bool TryAuthorizeRelease() noexcept { return lifecycle_.TryAuthorizeRelease(); }
+
+  [[nodiscard]] bool TryAuthorizeContinuation() noexcept {
+    return lifecycle_.TryAuthorizeContinuation();
+  }
+
+  void ScheduleContinuation() noexcept { continuation_.Schedule(); }
+
+public:
   void OnReady() noexcept {
     base::Result<ReactorStream> result = TryAccept();
     if (!result.has_value() && IsWouldBlock(result.error().value())) {
@@ -148,72 +166,91 @@ private:
 
   ReactorListener* listener_;
   operation::detail::SchedulerContinuation continuation_;
-  operation::detail::CompletionGate completion_gate_;
-  detail::ReactorValueResultState<ReactorStream> result_;
+  operation::detail::SingleResultLifecycle lifecycle_;
+  backend::detail::ValueResultState<ReactorStream> result_;
 };
 
-class ReactorAcceptSource::NextAwaiter {
-public:
-  using Result = ReactorAcceptSource::Result;
-
-  explicit NextAwaiter(ReactorAcceptSource& source) noexcept : source_(&source) {}
-
-  [[nodiscard]]
-  bool await_ready() const noexcept {
+bool ReactorAcceptSource::NextAwaiter::await_suspend(
+    std::coroutine_handle<> continuation) noexcept {
+  if (source_->listener_ == nullptr) {
+    result_.SetError(base::MakeErrno(EBADF));
+    (void)(completion_gate_.TryComplete());
+    return false;
+  }
+  if (!source_->listener_->loop_->IsInLoopThread()) {
+    result_.SetError(base::MakeErrno(EINVAL));
+    (void)(completion_gate_.TryComplete());
+    return false;
+  }
+  if (source_->pending_next_ != nullptr) {
+    result_.SetError(base::MakeErrno(EBUSY));
+    (void)(completion_gate_.TryComplete());
     return false;
   }
 
-  bool await_suspend(std::coroutine_handle<> continuation) noexcept {
-    COROPACT_DCHECK(source_->listener_ != nullptr,
-                    "ReactorAcceptSource::Next: source has no listener");
-    COROPACT_DCHECK(source_->listener_->loop_->IsInLoopThread(),
-                    "ReactorAcceptSource::Next: wrong EventLoop thread");
-    COROPACT_DCHECK(source_->pending_next_ == nullptr,
-                    "ReactorAcceptSource::Next: only one pending Next is supported");
-
-    continuation_.Bind(continuation);
-
-    Result result;
-    if (source_->TryTakeNext(result)) {
-      result_.SetResult(std::move(result));
+  if (source_->state_.State() == net::detail::AcceptSourceState::kIdle) {
+    if (source_->listener_->loop_->State() == backend::LoopState::kStopping ||
+        source_->listener_->loop_->State() == backend::LoopState::kStopped) {
+      result_.SetError(base::MakeErrno(ECANCELED));
       (void)(completion_gate_.TryComplete());
       return false;
     }
-
-    source_->pending_next_ = this;
-    source_->EnsureAdmission();
-
-    // Admission may complete synchronously in a readiness backend. Recheck
-    // after arming so a just-available event does not leave the coroutine
-    // parked until a second poll notification.
-    if (source_->TryTakeNext(result)) {
-      source_->pending_next_ = nullptr;
-      result_.SetResult(std::move(result));
+    if (source_->listener_->closed_) {
+      source_->state_.RequestStop();
+      result_.SetResult(Result(std::in_place, Event{}));
       (void)(completion_gate_.TryComplete());
       return false;
     }
-    return true;
-  }
-
-  Result await_resume() noexcept {
-    COROPACT_DCHECK(result_.HasResult(), "ReactorAcceptSource::Next: result is not ready");
-    return result_.Take();
-  }
-
-  void Complete(Result result) noexcept {
-    if (!completion_gate_.TryComplete()) {
-      return;
+    if (source_->listener_->pending_accept_ != nullptr ||
+        (source_->listener_->accept_source_ != nullptr &&
+         source_->listener_->accept_source_ != source_)) {
+      result_.SetError(base::MakeErrno(EBUSY));
+      (void)(completion_gate_.TryComplete());
+      return false;
     }
+    auto started = source_->state_.Start();
+    if (!started.has_value()) {
+      result_.SetError(started.error());
+      (void)(completion_gate_.TryComplete());
+      return false;
+    }
+    source_->listener_->accept_source_ = source_;
+  }
+
+  Result result;
+  if (source_->TryTakeNext(result)) {
     result_.SetResult(std::move(result));
-    continuation_.Schedule();
+    (void)(completion_gate_.TryComplete());
+    return false;
   }
 
-private:
-  ReactorAcceptSource* source_;
-  operation::detail::SchedulerContinuation continuation_;
-  operation::detail::CompletionGate completion_gate_;
-  detail::ReactorValueResultState<std::optional<ReactorStream>> result_;
-};
+  continuation_.Bind(continuation);
+  source_->pending_next_ = this;
+  source_->EnsureAdmission();
+
+  // Admission may complete synchronously in a readiness backend. Recheck
+  // after arming so a just-available event does not leave the coroutine
+  // parked until a second poll notification.
+  if (source_->TryTakeNext(result)) {
+    source_->pending_next_ = nullptr;
+    result_.SetResult(std::move(result));
+    (void)(completion_gate_.TryComplete());
+    return false;
+  }
+  return true;
+}
+
+ReactorAcceptSource::Result ReactorAcceptSource::NextAwaiter::await_resume() noexcept {
+  return result_.Take();
+}
+
+void ReactorAcceptSource::NextAwaiter::Complete(Result result) noexcept {
+  if (!completion_gate_.TryComplete()) {
+    return;
+  }
+  result_.SetResult(std::move(result));
+  continuation_.Schedule();
+}
 
 ReactorAcceptSource::ReactorAcceptSource(ReactorListener* listener,
                                          net::detail::AcceptSourceStateMachine state) noexcept
@@ -268,63 +305,27 @@ ReactorAcceptSource::~ReactorAcceptSource() {
   if (listener_ == nullptr) {
     return;
   }
-  COROPACT_DCHECK(listener_->loop_->IsInLoopThread(),
-                  "ReactorAcceptSource destructor called from wrong thread");
-  COROPACT_DCHECK(pending_next_ == nullptr, "ReactorAcceptSource destroyed with a pending Next");
-  COROPACT_DCHECK(state_.State() != net::detail::AcceptSourceState::kActive &&
-                      state_.State() != net::detail::AcceptSourceState::kStopping,
-                  "ReactorAcceptSource destroyed while it is running");
-  COROPACT_DCHECK(state_.ArmedRequests() == 0,
-                  "ReactorAcceptSource destroyed with an armed accept");
+  COROPACT_CHECK(listener_->loop_->IsInLoopThread(),
+                 "ReactorAcceptSource destructor called from wrong thread");
+  COROPACT_CHECK(pending_next_ == nullptr, "ReactorAcceptSource destroyed with a pending Next");
+  const auto state = state_.State();
+  COROPACT_CHECK(state == net::detail::AcceptSourceState::kIdle ||
+                     state == net::detail::AcceptSourceState::kDraining ||
+                     state == net::detail::AcceptSourceState::kTerminal,
+                 "ReactorAcceptSource destroyed before reaching a safe lifecycle state");
+  COROPACT_CHECK(state_.ArmedRequests() == 0, "ReactorAcceptSource destroyed with an armed accept");
   if (listener_->accept_source_ == this) {
     listener_->accept_source_ = nullptr;
   }
-}
-
-coro::Task<ReactorAcceptSource::Result> ReactorAcceptSource::Next() {
-  if (listener_ == nullptr) {
-    co_return std::unexpected(base::MakeErrno(EBADF));
-  }
-  if (!listener_->loop_->IsInLoopThread()) {
-    co_return std::unexpected(base::MakeErrno(EINVAL));
-  }
-  if (pending_next_ != nullptr) {
-    co_return std::unexpected(base::MakeErrno(EBUSY));
-  }
-
-  if (state_.State() == net::detail::AcceptSourceState::kIdle) {
-    if (listener_->loop_->State() == backend::LoopState::kStopping ||
-        listener_->loop_->State() == backend::LoopState::kStopped) {
-      co_return std::unexpected(base::MakeErrno(ECANCELED));
-    }
-    if (listener_->closed_) {
-      state_.RequestStop();
-      co_return Event{};
-    }
-    if (listener_->pending_accept_ != nullptr ||
-        (listener_->accept_source_ != nullptr && listener_->accept_source_ != this)) {
-      co_return std::unexpected(base::MakeErrno(EBUSY));
-    }
-    auto started = state_.Start();
-    if (!started.has_value()) {
-      co_return std::unexpected(started.error());
-    }
-    listener_->accept_source_ = this;
-  }
-
-  Result result;
-  if (TryTakeNext(result)) {
-    co_return result;
-  }
-  co_return co_await NextAwaiter(*this);
 }
 
 coro::Task<base::Result<void>> ReactorAcceptSource::Stop() {
   if (listener_ == nullptr) {
     co_return base::Result<void>{};
   }
-  COROPACT_DCHECK(listener_->loop_->IsInLoopThread(),
-                  "ReactorAcceptSource::Stop called from wrong thread");
+  if (!listener_->loop_->IsInLoopThread()) {
+    co_return std::unexpected(base::MakeErrno(EINVAL));
+  }
 
   if (state_.State() == net::detail::AcceptSourceState::kIdle) {
     state_.RequestStop();
@@ -333,6 +334,8 @@ coro::Task<base::Result<void>> ReactorAcceptSource::Stop() {
   }
 
   if (state_.State() == net::detail::AcceptSourceState::kActive ||
+      state_.State() == net::detail::AcceptSourceState::kPausing ||
+      state_.State() == net::detail::AcceptSourceState::kPaused ||
       state_.State() == net::detail::AcceptSourceState::kStopping) {
     if (listener_->channel_.IsReading()) {
       listener_->channel_.DisableReading();
@@ -390,6 +393,10 @@ void ReactorAcceptSource::OnReady() noexcept {
     auto completed = state_.CompleteRequest(true);
     COROPACT_CHECK(completed.has_value(), "ReactorAcceptSource: failed to record accepted stream");
     if (!state_.TryArm()) {
+      if (state_.QueuedEvents() >= state_.Options().event_capacity) {
+        auto paused = state_.RequestPause();
+        COROPACT_CHECK(paused.has_value(), "ReactorAcceptSource: failed to enter the paused state");
+      }
       break;
     }
   }
@@ -422,8 +429,13 @@ void ReactorAcceptSource::OnListenerClosed() noexcept {
 }
 
 void ReactorAcceptSource::EnsureAdmission() noexcept {
-  if (listener_ == nullptr || listener_->closed_ ||
-      state_.State() != net::detail::AcceptSourceState::kActive) {
+  if (listener_ == nullptr || listener_->closed_) {
+    return;
+  }
+  if (state_.State() != net::detail::AcceptSourceState::kActive) {
+    if (listener_->channel_.IsReading()) {
+      listener_->channel_.DisableReading();
+    }
     return;
   }
   if (state_.ArmedRequests() == 0 && state_.TryArm()) {
@@ -456,6 +468,9 @@ bool ReactorAcceptSource::TryTakeNext(Result& result) noexcept {
     COROPACT_CHECK(state_.ConsumeEvent(),
                    "ReactorAcceptSource: queue and state became inconsistent");
     result = Result(std::in_place, std::move(event));
+    if (state_.State() == net::detail::AcceptSourceState::kPaused) {
+      (void)(state_.TryResume());
+    }
     EnsureAdmission();
     return true;
   }
@@ -509,9 +524,9 @@ ReactorListener::ReactorListener(EventLoop* loop, const net::Endpoint& listen_ad
       socket_(CreateListenSocket(listen_addr.native_family())),
       channel_(loop_, socket_.fd()),
       stream_options_(options.stream_options) {
-  socket_.set_reuse_addr(options.reuse_addr);
+  socket_.SetReuseAddr(options.reuse_addr);
   if (options.reuse_port) {
-    socket_.set_reuse_port(true);
+    socket_.SetReusePort(true);
   }
   socket_.BindAddress(listen_addr);
   socket_.Listen();
@@ -537,8 +552,8 @@ base::Result<ReactorListener> ReactorListener::Create(EventLoop* loop,
     return std::unexpected(base::MakeErrno(EINVAL));
   }
 
-  return ReactorListener(loop, COROPACT_TRY(TryCreateListenSocket(listen_addr, options)),
-                         options.stream_options);
+  COROPACT_TRY_VALUE(socket, TryCreateListenSocket(listen_addr, options));
+  return ReactorListener(loop, std::move(socket), options.stream_options);
 }
 
 ReactorListener::ReactorListener(ReactorListener&& other) noexcept
@@ -584,9 +599,9 @@ ReactorListener::~ReactorListener() {
     return;
   }
   RequireOwnerLoop();
-  COROPACT_DCHECK(pending_accept_ == nullptr, "ReactorListener destroyed with a pending accept");
-  COROPACT_DCHECK(accept_source_ == nullptr,
-                  "ReactorListener destroyed with an active AcceptSource");
+  COROPACT_CHECK(pending_accept_ == nullptr, "ReactorListener destroyed with a pending accept");
+  COROPACT_CHECK(accept_source_ == nullptr,
+                 "ReactorListener destroyed with an active AcceptSource");
   LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
   DetachChannel();
 }
@@ -615,7 +630,7 @@ base::Result<ReactorAcceptSource> ReactorListener::AcceptSource(
   if (pending_accept_ != nullptr || accept_source_ != nullptr) {
     return std::unexpected(base::MakeErrno(EBUSY));
   }
-  auto state = COROPACT_TRY(net::detail::AcceptSourceStateMachine::Create(options));
+  COROPACT_TRY_VALUE(state, net::detail::AcceptSourceStateMachine::Create(options));
   return ReactorAcceptSource(this, std::move(state));
 }
 
@@ -647,7 +662,7 @@ base::Result<net::Endpoint> ReactorListener::LocalAddress() const {
   if (closed_) {
     return std::unexpected(base::MakeErrno(EBADF));
   }
-  return net::get_local_addr(socket_.fd());
+  return socket_.LocalEndpoint();
 }
 
 void ReactorListener::HandleRead() {
@@ -679,14 +694,24 @@ void ReactorListener::DispatchError(void* context) noexcept {
 void ReactorListener::CompleteAccept(base::Result<ReactorStream> result) {
   COROPACT_DCHECK(loop_->IsInLoopThread(),
                   "ReactorListener::CompleteAccept called from wrong thread");
-  AcceptAwaiter* awaiter = std::exchange(pending_accept_, nullptr);
+  AcceptAwaiter* awaiter = pending_accept_;
   if (awaiter == nullptr) {
     return;
   }
+  COROPACT_CHECK(awaiter->CompleteResult(std::move(result)),
+                 "ReactorListener::CompleteAccept result was already authorized");
+  COROPACT_CHECK(awaiter->TryAuthorizeRelease(),
+                 "ReactorListener::CompleteAccept release was not authorized after its result");
+
+  AcceptAwaiter* released = std::exchange(pending_accept_, nullptr);
+  COROPACT_CHECK(released == awaiter,
+                 "ReactorListener::CompleteAccept pending slot changed during completion");
   if (channel_.IsReading()) {
     channel_.DisableReading();
   }
-  awaiter->Complete(std::move(result));
+  COROPACT_CHECK(awaiter->TryAuthorizeContinuation(),
+                 "ReactorListener::CompleteAccept continuation was not authorized after release");
+  awaiter->ScheduleContinuation();
 }
 
 void ReactorListener::DetachChannel() {

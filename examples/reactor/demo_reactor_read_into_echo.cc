@@ -56,13 +56,19 @@ auto EchoSession(reactor::ReactorStream stream) -> coro::DetachedTask {
       break;
     }
 
-    // The completed read has already committed its bytes into 'buffer'.
-    // WriteAll(Buffer&) drains successfully written bytes from that same buffer.
-    auto written = co_await io::WriteAll(stream, buffer);
-    if (!written.has_value()) {
-      std::println(stderr, "write failed: {}", written.error().message());
-      break;
+    // The completed read has already committed bytes into 'buffer'. Each
+    // WriteAll call owns one contiguous borrowed view; drain it after success.
+    while (!buffer.Empty()) {
+      auto view = buffer.ContiguousView();
+      auto written = co_await stream.WriteAll(view);
+      if (!written.has_value()) {
+        std::println(stderr, "write failed: {}", written.error().message());
+        break;
+      }
+      buffer.Drain(view.size());
     }
+
+    if (!buffer.Empty()) break;
   }
 
   auto closed = co_await stream.Close();

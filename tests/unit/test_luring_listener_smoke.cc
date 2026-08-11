@@ -17,9 +17,9 @@
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/spawn.h"
 #include "coropact/coro/task.h"
+#include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/listener.h"
 #include "coropact/luring/loop.h"
-#include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/options.h"
 #include "coropact/luring/stream.h"
 #include "coropact/net/endpoint.h"
@@ -125,8 +125,18 @@ coropact::coro::DetachedTask AcceptOnce(
   if (resume_count != nullptr) {
     ++*resume_count;
   }
-  *resumed_with_scheduler = coropact::coro::Scheduler::Current() == loop;
+  *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == loop;
   out->emplace(std::move(result));
+}
+
+coropact::coro::DetachedTask AcceptThenAccept(
+    coropact::luring::LUringListener* listener, coropact::luring::LUringLoop* loop,
+    std::optional<coropact::base::Result<coropact::luring::LUringStream>>* first,
+    std::optional<coropact::base::Result<coropact::luring::LUringStream>>* second,
+    bool* resumed_with_scheduler) {
+  first->emplace(co_await listener->Accept());
+  second->emplace(co_await listener->Accept());
+  *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == loop;
 }
 
 coropact::coro::DetachedTask CloseOnce(coropact::luring::LUringListener* listener,
@@ -186,6 +196,71 @@ bool CheckAccept() {
          Check(accepted->has_value(), "Accept returned an error") &&
          Check(accepted->value().Fd() >= 0, "Accept returned an invalid stream") &&
          Check(resumed_with_scheduler, "accept resumed without current scheduler");
+}
+
+bool CheckAcceptReleasesReservationBeforeContinuation() {
+  coropact::luring::LUringLoop loop;
+  switch (InitLoop(loop)) {
+    case LoopInitStatus::kReady:
+      break;
+    case LoopInitStatus::kSkip:
+      return true;
+    case LoopInitStatus::kFail:
+      return false;
+  }
+
+  auto listener = coropact::luring::LUringListener::Create(&loop, LoopbackAddress(0));
+  if (!listener.has_value()) {
+    std::cout << "FAIL: LUringListener::Create failed: " << listener.error().message() << '\n';
+    return false;
+  }
+
+  auto local = listener->LocalAddress();
+  if (!local.has_value()) {
+    std::cout << "FAIL: LocalAddress failed: " << local.error().message() << '\n';
+    return false;
+  }
+
+  auto first_client_fd = ConnectClient(*local);
+  if (!first_client_fd.has_value()) {
+    std::cout << "FAIL: first client connect failed: " << first_client_fd.error().message() << '\n';
+    return false;
+  }
+  UniqueFd first_client(*first_client_fd);
+
+  auto second_client_fd = ConnectClient(*local);
+  if (!second_client_fd.has_value()) {
+    std::cout << "FAIL: second client connect failed: " << second_client_fd.error().message()
+              << '\n';
+    return false;
+  }
+  UniqueFd second_client(*second_client_fd);
+
+  std::optional<coropact::base::Result<coropact::luring::LUringStream>> first;
+  std::optional<coropact::base::Result<coropact::luring::LUringStream>> second;
+  bool resumed_with_scheduler = false;
+  coropact::coro::SpawnDetach(
+      loop, AcceptThenAccept(&*listener, &loop, &first, &second, &resumed_with_scheduler));
+  coropact::luring::detail::LoopAccess::RunReady(loop);
+
+  for (int i = 0; i < 8 && !second.has_value(); ++i) {
+    auto completions = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
+    if (!completions.has_value()) {
+      std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+      return false;
+    }
+    coropact::luring::detail::LoopAccess::RunReady(loop);
+  }
+
+  return Check(first.has_value(), "first accept did not finish") &&
+         Check(first->has_value(), "first accept returned an error") &&
+         Check(first->value().Fd() >= 0, "first accept returned an invalid stream") &&
+         Check(second.has_value(), "follow-up accept did not finish") &&
+         Check(second->has_value(),
+               "single-shot accept left its listener reservation active during continuation") &&
+         Check(second->value().Fd() >= 0, "follow-up accept returned an invalid stream") &&
+         Check(resumed_with_scheduler,
+               "single-shot follow-up accept resumed without current scheduler");
 }
 
 bool CheckCloseCancelsPendingAccept() {
@@ -260,9 +335,8 @@ bool CheckAcceptSubmitFailureRollsBack() {
   bool accept_with_scheduler = false;
   int accept_resume_count = 0;
   loop.FailNextSubmissionsForTesting(1, EIO);
-  coropact::coro::SpawnDetach(
-      loop, AcceptOnce(&*listener, &loop, &accept_result, &accept_with_scheduler,
-                       &accept_resume_count));
+  coropact::coro::SpawnDetach(loop, AcceptOnce(&*listener, &loop, &accept_result,
+                                               &accept_with_scheduler, &accept_resume_count));
   coropact::luring::detail::LoopAccess::RunReady(loop);
 
   if (!Check(accept_result.has_value(), "failed accept coroutine did not finish") ||
@@ -289,6 +363,7 @@ bool CheckAcceptSubmitFailureRollsBack() {
 
 int main() {
   if (!CheckAccept()) return 1;
+  if (!CheckAcceptReleasesReservationBeforeContinuation()) return 1;
   if (!CheckCloseCancelsPendingAccept()) return 1;
 #if defined(COROPACT_ENABLE_TEST_HOOKS)
   if (!CheckAcceptSubmitFailureRollsBack()) return 1;

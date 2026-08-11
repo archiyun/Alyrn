@@ -33,6 +33,29 @@ LIBUV_BIN=${LIBUV_BIN:-"$BUILD_DIR/examples/net/demo_bench_http_libuv"}
 LIBEVENT_BIN=${LIBEVENT_BIN:-"$BUILD_DIR/examples/net/demo_bench_http_libevent"}
 LIBEV_BIN=${LIBEV_BIN:-"$BUILD_DIR/examples/net/demo_bench_http_libev"}
 
+max_concurrency=0
+for concurrency in $LEVELS; do
+  if [[ ! "$concurrency" =~ ^[1-9][0-9]*$ ]]; then
+    echo "LEVELS must contain positive integer connection counts: $concurrency" >&2
+    exit 2
+  fi
+  if (( concurrency > max_concurrency )); then
+    max_concurrency=$concurrency
+  fi
+done
+
+# wrk keeps one client socket per requested connection. Leave room for its
+# epoll fd, worker-thread state, and standard descriptors so an insufficient
+# client rlimit cannot silently turn a high-concurrency run into connect
+# failures and misleading throughput figures.
+required_nofile=$((max_concurrency + THREADS + 128))
+current_nofile=$(ulimit -Sn)
+if (( current_nofile < required_nofile )); then
+  echo "wrk needs nofile >= $required_nofile for max concurrency $max_concurrency; " \
+       "current soft limit is $current_nofile. Run: ulimit -n 65535" >&2
+  exit 2
+fi
+
 mkdir -p "$OUTDIR/raw"
 printf 'target,concurrency,round,cpu_percent,rss_kb\n' >"$OUTDIR/resources.csv"
 printf 'target,concurrency,round,log\n' >"$OUTDIR/runs.csv"

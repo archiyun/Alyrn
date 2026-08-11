@@ -13,6 +13,10 @@
 
 namespace coropact::io {
 
+// Core outbound-connection seam. Each Connect call owns an independent
+// operation lifecycle and returns a Stream bound to the connector's owner
+// loop. Concrete backends preserve transport errors and reject new work once
+// that loop begins stopping.
 template <class T>
 concept AsyncConnector = requires(T& connector, std::string_view host, std::uint16_t port) {
   typename T::Stream;

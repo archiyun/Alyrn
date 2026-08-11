@@ -1,8 +1,16 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
+#include <sys/wait.h>
+#include <unistd.h>
+
+#include <cerrno>
+#include <csignal>
+#include <cstdio>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <limits>
+#include <new>
 #include <utility>
 #include <vector>
 
@@ -26,6 +34,34 @@ using coropact::memory::Pool;
 
 bool IsAligned(const void* p, std::size_t align) {
   return (reinterpret_cast<std::uintptr_t>(p) % align) == 0;
+}
+
+bool ExpectChildAbort(void (*entry)(), const char* message) {
+  const pid_t child = ::fork();
+  if (child < 0) {
+    std::cerr << "[FAIL] fork failed for " << message << '\n';
+    return false;
+  }
+  if (child == 0) {
+    (void)::freopen("/dev/null", "w", stderr);
+    entry();
+    ::_exit(0);
+  }
+
+  int status = 0;
+  while (::waitpid(child, &status, 0) < 0 && errno == EINTR) {
+  }
+  return WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT;
+}
+
+void AllocateWithZeroAlignment() {
+  auto pool = Pool::Create();
+  (void)pool->AllocateAligned(8, 0);
+}
+
+void AllocateWithNonPowerOfTwoAlignment() {
+  auto pool = Pool::Create();
+  (void)pool->AllocateAligned(8, 3);
 }
 
 void TestSingleSmallAlloc() {
@@ -68,6 +104,35 @@ void TestAlignment() {
     EXPECT(IsAligned(p1, align), "AllocateAligned returns aligned p1");
     EXPECT(IsAligned(p2, align), "AllocateAligned returns aligned p2");
   }
+}
+
+void TestLargeOverAlignedAlloc() {
+  auto pool = Pool::Create();
+  void* allocation = pool->AllocateAligned(64, 64);
+  EXPECT(IsAligned(allocation, 64), "over-aligned allocation must be correctly aligned");
+  EXPECT(pool->LargeCount() == 1, "over-aligned allocation must bypass the arena");
+  pool->Free(allocation);
+  EXPECT(pool->LargeCount() == 0, "Free must release over-aligned large allocation");
+}
+
+void TestInvalidAlignmentTerminates() {
+  EXPECT(ExpectChildAbort(&AllocateWithZeroAlignment,
+                          "zero alignment must terminate in every build"),
+         "zero alignment did not terminate");
+  EXPECT(ExpectChildAbort(&AllocateWithNonPowerOfTwoAlignment,
+                          "non-power-of-two alignment must terminate in every build"),
+         "non-power-of-two alignment did not terminate");
+}
+
+void TestCleanupSizeOverflow() {
+  auto pool = Pool::Create();
+  bool threw = false;
+  try {
+    (void)pool->RegisterCleanup(nullptr, std::numeric_limits<std::size_t>::max());
+  } catch (const std::bad_array_new_length&) {
+    threw = true;
+  }
+  EXPECT(threw, "cleanup size overflow must throw before allocation");
 }
 
 void TestLargeAllocBypass() {
@@ -217,6 +282,9 @@ int main() {
   TestSingleSmallAlloc();
   TestManyAllocsCrossChunk();
   TestAlignment();
+  TestLargeOverAlignedAlloc();
+  TestInvalidAlignmentTerminates();
+  TestCleanupSizeOverflow();
   TestLargeAllocBypass();
   TestFreeAndReuseLargeSlot();
   TestCalloc();

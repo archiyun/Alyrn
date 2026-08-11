@@ -2,6 +2,8 @@
 
 本报告记录当前 CoroPact checkout 中 Reactor、CoroPact luring、raw liburing、Asio、Monoio、Compio、libaio、libuv、libevent 和 libev 的统一压测结果。
 
+较新的精简 C++ 对照基线见[2026-08-10 网络库基线](network-libraries-20260810.md)。它使用当前 luring benchmark 源码，并记录了 `wrk` 的 `nofile` 前置条件。
+
 Reactor 与 luring 的独立 ET/LT 对照见 [CoroPact luring 与 Reactor 独立对比](luring-reactor-comparison-20260802.md)。注意：LT/ET 只属于 Reactor 的 epoll readiness 路径，luring 使用 io_uring CQE，不存在 luring LT/ET。
 
 ## 结论
@@ -129,6 +131,7 @@ CARGO_NET_OFFLINE=true cargo build --release --bins \
 正式压测和汇总：
 
 ```bash
+ulimit -n 65535
 OUTDIR=/tmp/coropact-network-libraries-$(date +%Y%m%d-%H%M%S) \
   ./docs/benchmark/run_network_libraries.sh
 ./docs/benchmark/summarize_network_libraries.sh "$OUTDIR"
@@ -149,4 +152,4 @@ REACTOR_TRIGGER_MODE=lt WARMUP=1s DURATION=2s ROUNDS=1 LEVELS="100 1000" \
   TARGETS="reactor" ./docs/benchmark/run_network_libraries.sh
 ```
 
-本轮原始结果保存在 `/tmp/coropact-network-libraries-20260731/`，其中 `raw/` 是每轮 wrk 输出，`runs.csv` 是运行索引，`resources.csv` 是资源快照，`averages.csv` 是三轮均值。临时结果不纳入仓库。
+本轮原始结果保存在 `/tmp/coropact-network-libraries-20260731/`，其中 `raw/` 是每轮 wrk 输出，`runs.csv` 是运行索引，`resources.csv` 是资源快照，`averages.csv` 包含三轮均值与波动统计。临时结果不纳入仓库。

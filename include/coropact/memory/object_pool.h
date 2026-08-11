@@ -5,8 +5,11 @@
 #include <atomic>
 #include <cstddef>
 #include <memory>
+#include <mutex>
+#include <new>
 #include <utility>
 
+#include "coropact/base/check.h"
 #include "coropact/memory/memory_pool.h"
 #include "coropact/utils/macros.h"
 
@@ -54,14 +57,20 @@ class ObjectPool {
 
   using ScopedPtr = std::unique_ptr<T, Deleter>;
 
-  ObjectPool()  = default;
-  ~ObjectPool() = default;
+  ObjectPool() = default;
+  ~ObjectPool() {
+    COROPACT_CHECK(pool_.UsedCount() == 0,
+                   "ObjectPool: destroyed with live pool-owned objects");
+    std::lock_guard<MutexPolicy> lock{overflow_mutex_};
+    COROPACT_CHECK(overflow_head_ == nullptr,
+                   "ObjectPool: destroyed with live overflow objects");
+  }
 
   COROPACT_DELETE_COPY_MOVE(ObjectPool);
 
   // Constructs an object of type T using forwarded arguments. When the pool
-  // is exhausted, falls back to heap allocation so callers never observe
-  // nullptr. The fallback path is slower than a pool hit; a sustained
+  // is exhausted, falls back to a registered heap allocation so callers never
+  // observe nullptr. The fallback path is slower than a pool hit; a sustained
   // non-zero OverflowCount() indicates Capacity is undersized for the load.
   // Throws: any exception thrown by T's constructor (slot is returned on throw).
   template <typename... Args>
@@ -74,8 +83,21 @@ class ObjectPool {
         throw;
       }
     }
-    overflow_count_.fetch_add(1, std::memory_order_relaxed);
-    return new T(std::forward<Args>(args)...);
+
+    auto* overflow = new OverflowNode;
+    try {
+      T* object = std::construct_at(overflow->Storage(), std::forward<Args>(args)...);
+      {
+        std::lock_guard<MutexPolicy> lock{overflow_mutex_};
+        overflow->next = overflow_head_;
+        overflow_head_ = overflow;
+      }
+      overflow_count_.fetch_add(1, std::memory_order_relaxed);
+      return object;
+    } catch (...) {
+      delete overflow;
+      throw;
+    }
   }
 
   // Constructs an object and wraps it in a ScopedPtr that automatically
@@ -85,22 +107,29 @@ class ObjectPool {
     return ScopedPtr(Acquire(std::forward<Args>(args)...), Deleter(this));
   }
 
-  // Destroys the object and returns its storage. Pool-owned pointers go back
-  // to the free list; heap-overflow pointers are deleted. Passing nullptr is
-  // a no-op.
+  // Destroys an object returned by this ObjectPool and returns its storage.
+  // Pool-owned pointers go back to the free list; registered heap-overflow
+  // pointers are deleted. Passing nullptr is a no-op. A pointer acquired from
+  // another ObjectPool or by another allocation mechanism is a memory-safety
+  // violation and terminates.
   void Release(T* ptr) noexcept {
     if (ptr == nullptr) {
       return;
     }
     if (pool_.Owns(ptr)) {
-      ptr->~T();
-      pool_.Deallocate(static_cast<void*>(ptr));
+      pool_.ClaimDeallocation(static_cast<void*>(ptr));
+      std::destroy_at(ptr);
+      pool_.FinishDeallocation(static_cast<void*>(ptr));
     } else {
-      delete ptr;
+      OverflowNode* overflow = TakeOverflow(ptr);
+      COROPACT_CHECK(overflow != nullptr, "ObjectPool::Release: foreign pointer");
+      std::destroy_at(overflow->Object());
+      delete overflow;
     }
   }
 
-  // Returns true if the pointer belongs to this pool.
+  // Returns true if the pointer is backed by this pool's fixed-capacity
+  // storage. Heap-overflow objects intentionally return false.
   bool Owns(const T* ptr) const noexcept {
     return pool_.Owns(ptr);
   }
@@ -116,8 +145,38 @@ class ObjectPool {
   }
 
  private:
+  struct OverflowNode {
+    OverflowNode* next{nullptr};
+    alignas(T) std::byte storage[sizeof(T)];
+
+    [[nodiscard]] T* Storage() noexcept {
+      return reinterpret_cast<T*>(storage);
+    }
+
+    [[nodiscard]] T* Object() noexcept {
+      return std::launder(Storage());
+    }
+  };
+
+  [[nodiscard]] OverflowNode* TakeOverflow(T* object) noexcept {
+    std::lock_guard<MutexPolicy> lock{overflow_mutex_};
+    OverflowNode** link = &overflow_head_;
+    while (*link != nullptr) {
+      OverflowNode* current = *link;
+      if (current->Object() == object) {
+        *link = current->next;
+        current->next = nullptr;
+        return current;
+      }
+      link = &current->next;
+    }
+    return nullptr;
+  }
+
   MemoryPool<sizeof(T), alignof(T), kCapacity, MutexPolicy> pool_;
   std::atomic<std::size_t> overflow_count_{0};
+  OverflowNode* overflow_head_{nullptr};
+  mutable MutexPolicy overflow_mutex_;
 };
 
 }  // namespace coropact::memory

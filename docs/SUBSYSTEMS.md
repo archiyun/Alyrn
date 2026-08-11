@@ -33,8 +33,11 @@ application protocol, route, peer, proxy, or gateway policy.
 | `include/coropact/base`, `ds`, `memory` | L0 | Primitive values, intrusive structures, and pools. |
 | `include/coropact/time` | L1 | Time values and timer indexes; no fd or event-loop ownership. |
 | `include/coropact/coro` | L2 | Coroutine ownership, scheduling, frame allocation, and continuation rules. |
-| `include/coropact/operation/detail` | L2 | Internal completion and lifecycle authorization shared by backend adapters: one-shot, composite, and split-release families plus scheduler-bound continuations; no transport resource ownership. |
-| `include/coropact/net`, `src/net` | L2 | Socket and address values shared by backends. |
+| `include/coropact/coro/detail` | L2 | Promise storage, root-coroutine, and frame-allocation implementation; not an application seam. |
+| `include/coropact/operation/detail` | L2 | Internal completion and lifecycle authorization shared by backend adapters: one-shot, composite, and split-release protocols plus scheduler-bound continuations; no transport resource ownership. |
+| `include/coropact/backend/detail` | L2 | Internal backend-neutral awaiter result storage; retains `base::Result<T>` but owns no authorization or transport-lifecycle protocol. |
+| `include/coropact/net` | L2 | Header-only socket, address, and buffer values shared by backends. |
+| `include/coropact/net/detail` | L2 | Internal stream/source lifecycle, admission, pause/drain, and lease-accounting state machines shared by backend adapters. |
 | `include/coropact/io`, `include/coropact/backend` | L2 | Backend-neutral I/O and dispatcher lifecycle contracts and algorithms. |
 | `include/coropact/runtime.h` | L2 | Backend-neutral application lifecycle facade. It type-erases only cold start/stop control; backend tags select a Builder specialization at compile time. |
 | `include/coropact/reactor`, `src/reactor` | L2 | epoll readiness adapter. `EventLoop`, the `Runtime::Builder<runtime::Reactor>` binding, and transport adapters are public; `reactor/detail` owns channel registration, epoll polling, timers, and worker bootstrap implementation. |
@@ -47,6 +50,9 @@ application protocol, route, peer, proxy, or gateway policy.
   application-layer library.
 - `operation/detail` may depend on backend-neutral runtime primitives, but not
   on `net`, `io`, Reactor, luring, or CoroGateway.
+- `backend/detail` may retain backend-adapter result values, but it must not
+  encode completion authorization or depend on `net`, `io`, Reactor, luring,
+  or CoroGateway.
 - `net` must not depend on `io`, Reactor, luring, or CoroGateway.
 - Reactor and luring may depend on `net` and coroutine contracts, but neither
   may include the application-level `io` facade.
@@ -55,7 +61,7 @@ application protocol, route, peer, proxy, or gateway policy.
 - CoroGateway may depend on CoroPact public interfaces. CoroPact must not
   depend on CoroGateway.
 - A backend extension belongs behind a separate contract or capability profile;
-  it must not change the meaning of `ReadSome`, `WriteSome`, or `Close`.
+  it must not change the meaning of `ReadSome`, `WriteAll`, or `Close`.
 - `ManagedLoop::RequestStop` is a thread-safe dispatcher-control request that
   begins backend cancellation/drain; it is not a resource `Close`. A backend
   must not treat `Stopped` as proof of fd, buffer, or coroutine-frame release.

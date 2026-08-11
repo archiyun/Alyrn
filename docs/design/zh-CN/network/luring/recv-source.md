@@ -71,6 +71,11 @@ terminal request
 这条边界确保 provided buffer ring 的 payload 内存不会在 consumer 仍读取时被重新分配给
 kernel。
 
+对于 luring，`RequestStop()`/`Stop()` 在撤销 admission 后准备 cancel SQE。若这一步本地失败，
+调用返回 error，但 source 保持 `Stopping` 且仍拥有旧 recv request/lease 上下文；它不会回滚为
+Active，也不能立刻析构。owner 必须保留 source 并重试 `Stop()`，直到 terminal request、queued event
+和 outstanding lease 都收敛。
+
 ## 这是不是“零拷贝”
 
 provided buffer 让 kernel 直接写入 luring 管理的接收 slot，避免了“先读到临时 buffer、再

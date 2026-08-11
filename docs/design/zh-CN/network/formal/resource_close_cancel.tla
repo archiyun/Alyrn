@@ -8,10 +8,12 @@ EXTENDS Naturals
 (* This is deliberately independent of Reactor, io_uring, fd, CQE and     *)
 (* concrete awaiter classes.  It specifies the common semantic rule:      *)
 (*                                                                         *)
-(*   Close is a drain barrier. Cancel is only a protocol used to make       *)
-(*   physical requests reach their terminal boundary.                      *)
+(*   A committed Close is a drain barrier.  Owner-local Close preparation   *)
+(*   may abort before any cancel SQE joins the submission protocol. Cancel  *)
+(*   then only serves to make physical requests reach their terminal        *)
+(*   boundary.                                                              *)
 (*                                                                         *)
-(* A cancel acknowledgement is not a target completion.  The original      *)
+(* A terminal cancel-request CQE is not a target completion. The original  *)
 (* target request must still become terminal before the resource, borrowed  *)
 (* storage, or awaiter dispatch address may be released.                   *)
 (***************************************************************************)
@@ -21,7 +23,7 @@ Operations == {"Read", "Write"}
 ResourceStates == {"Open", "Closing", "Quiescent", "Closed"}
 FdStates == {"Open", "Released"}
 OperationStates == {"Absent", "Pending", "Terminal", "Released"}
-CancelStates == {"NotRequested", "Submitting", "Submitted", "Acknowledged", "SubmitFailed"}
+CancelStates == {"NotRequested", "Submitting", "Submitted", "Terminal", "SubmitFailed"}
 LogicalStates == {"Pending", "Ready"}
 StorageStates == {"NoStorage", "Retained", "ReleaseAuthorized"}
 ContinuationStates == {"NotBound", "Waiting", "Scheduled", "Resumed"}
@@ -63,6 +65,12 @@ TargetTerminal(op) == operationState[op] \in {"Terminal", "Released"}
 TargetDrained(op) == operationState[op] \in {"Absent", "Terminal", "Released"}
 CancelCommandDrained(op) == cancelState[op] \notin {"Submitting", "Submitted"}
 StorageReleasedForBackend(op) == storageState[op] \in {"NoStorage", "ReleaseAuthorized"}
+
+(* luring Close uses one resource-level cancel_fd(...ALL) command.  The
+   per-operation map records target convergence, not independently submitted
+   cancellation commands. *)
+NoCancelCommandPending ==
+  \A op \in Operations: cancelState[op] \notin {"Submitting", "Submitted"}
 
 AllTargetsQuiescent ==
   \A op \in Operations:
@@ -111,15 +119,16 @@ Submit(op) ==
                  resumeCount,
                  cancelSubmitAttempts>>
 
-(* Close linearizes here.  From this point the resource never becomes Open
-   again, including when submitting a later cancel request fails. *)
-BeginClose ==
+(* This is an owner-local preparation phase, not a committed Close yet.  A
+   local SQE preparation failure may still restore Open because no backend
+   cancellation request exists at this point. *)
+PrepareClose ==
   /\ resourceState = "Open"
   /\ ~closeStarted
   /\ resourceState' = "Closing"
-  /\ closeStarted' = TRUE
   /\ closeContinuationState' = "Waiting"
   /\ UNCHANGED <<fdState,
+                 closeStarted,
                  operationState,
                  cancelState,
                  cancelFailuresRemaining,
@@ -132,10 +141,13 @@ BeginClose ==
                  resumeCount,
                  cancelSubmitAttempts>>
 
-(* Requesting cancellation has no completion or release effect. *)
+(* Requesting the one resource-level cancellation command has no completion
+   or release effect. *)
 RequestCancel(op) ==
   /\ op \in Operations
   /\ resourceState = "Closing"
+  /\ ~closeStarted
+  /\ NoCancelCommandPending
   /\ operationState[op] = "Pending"
   /\ cancelState[op] \in {"NotRequested", "SubmitFailed"}
   /\ cancelState' = [cancelState EXCEPT ![op] = "Submitting"]
@@ -154,24 +166,25 @@ RequestCancel(op) ==
                  targetCompletionCount,
                  resumeCount>>
 
-(* This models a local failure before a cancel request reaches the backend.
-   The one-step budget forces a later retry to take the submitted path, so TLC
-   checks both failure handling and eventual close under a finite assumption. *)
+(* This models a local failure before the cancel SQE becomes part of the owner
+   loop's submission protocol.  It aborts only provisional Close preparation:
+   the caller observes an immediate error and may issue a new Close attempt. *)
 CancelSubmitFails(op) ==
   /\ op \in Operations
   /\ cancelState[op] = "Submitting"
   /\ cancelFailuresRemaining[op] > 0
+  /\ ~closeStarted
+  /\ resourceState' = "Open"
   /\ cancelState' = [cancelState EXCEPT ![op] = "SubmitFailed"]
   /\ cancelFailuresRemaining' = [cancelFailuresRemaining EXCEPT ![op] = @ - 1]
-  /\ UNCHANGED <<resourceState,
-                 fdState,
+  /\ closeContinuationState' = "NotBound"
+  /\ UNCHANGED <<fdState,
                  closeStarted,
                  operationState,
                  logicalState,
                  result,
                  storageState,
                  continuationState,
-                 closeContinuationState,
                  submitCount,
                  targetCompletionCount,
                  resumeCount,
@@ -181,9 +194,9 @@ CancelSubmitted(op) ==
   /\ op \in Operations
   /\ cancelState[op] = "Submitting"
   /\ cancelState' = [cancelState EXCEPT ![op] = "Submitted"]
+  /\ closeStarted' = TRUE
   /\ UNCHANGED <<resourceState,
                  fdState,
-                 closeStarted,
                  operationState,
                  cancelFailuresRemaining,
                  logicalState,
@@ -196,12 +209,34 @@ CancelSubmitted(op) ==
                  resumeCount,
                  cancelSubmitAttempts>>
 
-(* The cancel CQE acknowledges only the cancel command.  It deliberately does
-   not settle or release the original read/write request. *)
-CancelAcknowledged(op) ==
+(* A Close with no backend-visible use commits directly; there is no cancel
+   SQE to prepare. *)
+CommitCloseWithoutCancel ==
+  /\ resourceState = "Closing"
+  /\ ~closeStarted
+  /\ AllTargetsQuiescent
+  /\ closeStarted' = TRUE
+  /\ UNCHANGED <<resourceState,
+                 fdState,
+                 operationState,
+                 cancelState,
+                 cancelFailuresRemaining,
+                 logicalState,
+                 result,
+                 storageState,
+                 continuationState,
+                 closeContinuationState,
+                 submitCount,
+                 targetCompletionCount,
+                 resumeCount,
+                 cancelSubmitAttempts>>
+
+(* The cancel CQE is terminal only for the cancel command. It deliberately
+   does not settle or release the original read/write request. *)
+CancelRequestTerminal(op) ==
   /\ op \in Operations
   /\ cancelState[op] = "Submitted"
-  /\ cancelState' = [cancelState EXCEPT ![op] = "Acknowledged"]
+  /\ cancelState' = [cancelState EXCEPT ![op] = "Terminal"]
   /\ UNCHANGED <<resourceState,
                  fdState,
                  closeStarted,
@@ -329,6 +364,7 @@ ReleaseOperation(op) ==
    Only then may the resource release its fd/channel/ring registration. *)
 EnterQuiescent ==
   /\ resourceState = "Closing"
+  /\ closeStarted
   /\ AllTargetsQuiescent
   /\ resourceState' = "Quiescent"
   /\ UNCHANGED <<fdState,
@@ -405,7 +441,7 @@ ResumeCloseContinuation ==
 AnyRequestCancel == \E op \in Operations: RequestCancel(op)
 AnyCancelSubmitFails == \E op \in Operations: CancelSubmitFails(op)
 AnyCancelSubmitted == \E op \in Operations: CancelSubmitted(op)
-AnyCancelAcknowledged == \E op \in Operations: CancelAcknowledged(op)
+AnyCancelRequestTerminal == \E op \in Operations: CancelRequestTerminal(op)
 AnyTargetComplete == \E op \in Operations: TargetComplete(op)
 AnyAuthorizeStorageRelease == \E op \in Operations: AuthorizeStorageRelease(op)
 AnyScheduleOperationContinuation == \E op \in Operations: ScheduleOperationContinuation(op)
@@ -414,11 +450,12 @@ AnyReleaseOperation == \E op \in Operations: ReleaseOperation(op)
 
 Next ==
   \/ \E op \in Operations: Submit(op)
-  \/ BeginClose
+  \/ PrepareClose
   \/ AnyRequestCancel
   \/ AnyCancelSubmitFails
   \/ AnyCancelSubmitted
-  \/ AnyCancelAcknowledged
+  \/ CommitCloseWithoutCancel
+  \/ AnyCancelRequestTerminal
   \/ AnyTargetComplete
   \/ AnyAuthorizeStorageRelease
   \/ AnyScheduleOperationContinuation
@@ -430,16 +467,17 @@ Next ==
   \/ ResumeCloseContinuation
 
 (***************************************************************************)
-(* Liveness is conditional: the owner loop continues to run, submitted      *)
-(* target and cancel requests eventually get a CQE, and the injected local  *)
-(* cancel-submit failure is transient.  This is not a claim about a stopped  *)
-(* worker or an unfair kernel scheduler.                                   *)
+(* Liveness is conditional: the owner loop continues to run and committed   *)
+(* target/cancel requests eventually get a CQE.  A local preparation failure *)
+(* returns an error before commitment; a later retry is a new caller action. *)
+(* This is not a claim about a stopped worker or an unfair kernel scheduler. *)
 (***************************************************************************)
 Fairness ==
   /\ WF_vars(AnyRequestCancel)
   /\ WF_vars(AnyCancelSubmitFails)
   /\ WF_vars(AnyCancelSubmitted)
-  /\ WF_vars(AnyCancelAcknowledged)
+  /\ WF_vars(CommitCloseWithoutCancel)
+  /\ WF_vars(AnyCancelRequestTerminal)
   /\ WF_vars(AnyTargetComplete)
   /\ WF_vars(AnyAuthorizeStorageRelease)
   /\ WF_vars(AnyScheduleOperationContinuation)
@@ -473,10 +511,10 @@ OneSubmissionPerOperation == \A op \in Operations: submitCount[op] <= 1
 OneTargetCompletionPerOperation == \A op \in Operations: targetCompletionCount[op] <= 1
 OneResumePerOperation == \A op \in Operations: resumeCount[op] <= 1
 
-(* Cancel acknowledgement is not evidence that the original target finished. *)
-CancelAckDoesNotSettleTarget ==
+(* A terminal cancel request is not evidence that the original target finished. *)
+CancelRequestTerminalDoesNotSettleTarget ==
   \A op \in Operations:
-    /\ cancelState[op] = "Acknowledged"
+    /\ cancelState[op] = "Terminal"
     /\ operationState[op] = "Pending"
     => /\ logicalState[op] = "Pending"
        /\ result[op] = "NoResult"
@@ -499,7 +537,8 @@ OperationReleaseRequiresResume ==
   \A op \in Operations:
     operationState[op] = "Released" => continuationState[op] = "Resumed"
 
-(* BeginClose is irreversible, including the cancel-submit failure branch. *)
+(* closeStarted means Close committed to drain.  A failed local SQE
+   preparation only aborts the preceding provisional phase. *)
 CloseNeverReopens == closeStarted => resourceState \in {"Closing", "Quiescent", "Closed"}
 
 (* fd/channel/ring release is legal only after every target and cancel command
@@ -510,7 +549,7 @@ FdReleaseRequiresQuiescence ==
 CloseContinuationRequiresFdRelease ==
   closeContinuationState \in {"Scheduled", "Resumed"} => fdState = "Released"
 
-(* Under Fairness, Close reaches a caller-visible terminal result. *)
+(* Under Fairness, a committed Close reaches a caller-visible terminal result. *)
 CloseEventuallyReturns ==
   closeStarted ~> closeContinuationState = "Resumed"
 

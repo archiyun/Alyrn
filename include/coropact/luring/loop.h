@@ -3,7 +3,6 @@
 #pragma once
 
 #include <atomic>
-#include <cassert>
 #include <cerrno>
 #include <chrono>
 #include <cstddef>
@@ -15,17 +14,18 @@
 #include <stop_token>
 #include <utility>
 
+#include "coropact/backend/loop.h"
+#include "coropact/base/check.h"
 #include "coropact/base/current_thread.h"
 #include "coropact/base/error.h"
 #include "coropact/base/try.h"
-#include "coropact/backend/loop.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/work.h"
 #include "coropact/luring/detail/mailbox.h"
 #include "coropact/luring/detail/op.h"
-#include "coropact/luring/options.h"
 #include "coropact/luring/detail/ring.h"
 #include "coropact/luring/detail/timer_queue.h"
+#include "coropact/luring/options.h"
 #include "coropact/time/timer_id.h"
 
 namespace coropact::luring {
@@ -34,7 +34,7 @@ class LUringRecvSource;
 namespace detail {
 class LoopAccess;
 class ProvidedBufferPool;
-}
+}  // namespace detail
 
 // Single-threaded io_uring event loop
 //
@@ -56,6 +56,9 @@ public:
   [[nodiscard]]
   base::Result<void> Init(const LUringOptions& options) noexcept;
 
+  // The caller must drain user operation work before destruction. The
+  // destructor never uses io_uring_queue_exit() as an implicit cancellation
+  // mechanism for awaiter-owned operation storage.
   ~LUringLoop() noexcept;
 
   [[nodiscard]]
@@ -86,7 +89,7 @@ public:
   // Test-only deterministic failure injection. It is intentionally kept out
   // of normal builds so production LUringLoop has no fault-injection state.
   void FailNextSubmissionsForTesting(std::size_t count, int error = EIO) noexcept {
-    assert(error > 0);
+    COROPACT_CHECK(error > 0, "test submission error must be a positive errno");
     test_submit_failures_ = count;
     test_successful_submissions_before_failure_ = 0;
     test_submit_error_ = error;
@@ -96,17 +99,26 @@ public:
   // submissions have succeeded. This makes linked-operation tests able to
   // target their second SQE without failing the first physical request.
   void FailSubmissionAfterForTesting(std::size_t successful_submissions, int error = EIO) noexcept {
-    assert(error > 0);
+    COROPACT_CHECK(error > 0, "test submission error must be a positive errno");
     test_submit_failures_ = 1;
     test_successful_submissions_before_failure_ = successful_submissions;
     test_submit_error_ = error;
+  }
+
+  // Fails the next flush after SQEs have already been prepared. Unlike
+  // FailNextSubmissionsForTesting(), this preserves pending_submit_ and
+  // exercises retry of io_uring_submit() from the drain path.
+  void FailNextFlushesForTesting(std::size_t count, int error = EIO) noexcept {
+    COROPACT_CHECK(error > 0, "test flush error must be a positive errno");
+    test_flush_failures_ = count;
+    test_flush_error_ = error;
   }
 #endif
 
   [[nodiscard]]
   base::Result<time::TimerId> RunAfter(std::chrono::steady_clock::duration delay,
                                        std::function<void()> callback) {
-    assert(IsInLoopThread());
+    COROPACT_CHECK(IsInLoopThread(), "LUringLoop::RunAfter called from wrong thread");
     if (!initialized_) {
       return std::unexpected(base::MakeErrno(EBADF));
     }
@@ -114,7 +126,7 @@ public:
   }
 
   base::Result<void> CancelTimer(time::TimerId id) noexcept {
-    assert(IsInLoopThread());
+    COROPACT_CHECK(IsInLoopThread(), "LUringLoop::CancelTimer called from wrong thread");
     if (!initialized_) {
       return std::unexpected(base::MakeErrno(EBADF));
     }
@@ -170,7 +182,7 @@ private:
   template <class Prep>
   [[nodiscard]]
   base::Result<void> SubmitOp(detail::LUringOp* op, Prep&& prep) noexcept {
-    assert(IsInLoopThread());
+    COROPACT_CHECK(IsInLoopThread(), "LUringLoop::SubmitOp called from wrong thread");
 
     if (!initialized_) {
       return std::unexpected(base::MakeErrno(EBADF));
@@ -214,7 +226,7 @@ private:
   [[nodiscard]]
   base::Result<void> SubmitMsgRing(detail::LUringOp* op, int target_ring_fd,
                                    std::uint32_t type) noexcept {
-    assert(IsInLoopThread());
+    COROPACT_CHECK(IsInLoopThread(), "LUringLoop::SubmitMsgRing called from wrong thread");
 
     if (target_ring_fd < 0) {
       return std::unexpected(base::MakeErrno(EBADF));
@@ -331,6 +343,8 @@ private:
   std::size_t test_submit_failures_{0};
   std::size_t test_successful_submissions_before_failure_{0};
   int test_submit_error_{EIO};
+  std::size_t test_flush_failures_{0};
+  int test_flush_error_{EIO};
 #endif
 };
 
