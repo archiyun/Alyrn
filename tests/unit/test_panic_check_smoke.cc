@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #include <sys/wait.h>
 #include <unistd.h>

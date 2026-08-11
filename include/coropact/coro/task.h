@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 //
 // Task<T> is a lazy, move-only leaf coroutine. It is consumed exactly once by

@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 //
 // Optional coroutine-frame allocation through a std::pmr::memory_resource.

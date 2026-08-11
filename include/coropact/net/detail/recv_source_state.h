@@ -1,22 +1,22 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
 #include <cerrno>
 #include <cstddef>
 
-#include "coropact/result.h"
 #include "coropact/net/detail/source_state.h"
 #include "coropact/net/recv_source.h"
+#include "coropact/result.h"
 
 namespace coropact::net::detail {
 
 using RecvSourceState = SourceState;
 
-// Backend-neutral admission and ownership accounting for a receive source.
-// The owner must keep this state machine alive until OutstandingLeases() is
-// zero, so a backend never returns a provided buffer while a BufferLease may
-// still expose it to application code.
+/*
+ * Backend-neutral receive admission and lease accounting. The owner keeps this
+ * state alive until OutstandingLeases() is zero, so an adapter never returns a
+ * provided buffer while a BufferLease can still expose it to application code.
+ */
 class RecvSourceStateMachine final {
 public:
   [[nodiscard]]
@@ -72,7 +72,7 @@ public:
 
   [[nodiscard]]
   Result<void> CompleteMultishotEvent(EventDisposition event,
-                                            MultishotRequestDisposition request) noexcept {
+                                      MultishotRequestDisposition request) noexcept {
     if (armed_requests_ == 0) {
       return std::unexpected(Errno(EINVAL));
     }

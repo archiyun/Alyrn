@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
@@ -27,11 +26,11 @@ class Poller;
 class TimerQueue;
 }  // namespace detail
 
-// EventLoop is the core event dispatcher in the Reactor model.
-//
-// Each EventLoop is bound to exactly one thread. It owns a Poller for waiting
-// on I/O events, dispatches active Channel callbacks, runs queued functors in
-// thread order, and manages timer callbacks through TimerQueue.
+/*
+ * Owner-thread epoll dispatcher. An EventLoop owns its poller, registered
+ * channels, timers, and coroutine work. Cross-thread callers may request
+ * stop, but may not submit or mutate owner-local I/O state directly.
+ */
 class EventLoop final : public coro::Scheduler {
 public:
   using Functor = std::function<void()>;

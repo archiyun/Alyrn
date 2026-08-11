@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 //
 // C3 acceptance: a detached connection coroutine (Spawn + Detach) must be driven

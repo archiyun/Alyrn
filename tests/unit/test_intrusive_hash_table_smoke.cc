@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 //
 // Oracle test for IntrusiveHashTable: drive random operations against the

@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 #include "coropact/luring/listener.h"
 
 #include <liburing.h>

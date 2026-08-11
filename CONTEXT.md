@@ -8,6 +8,16 @@ policy belong to [CoroGateway](https://github.com/archiyun/CoroGateway).
 `docs/SUBSYSTEMS.md` is the normative dependency policy. Read it before
 changing module boundaries.
 
+## Source comments
+
+Source files carry `// SPDX-License-Identifier: MIT`; the root `LICENSE` is
+the canonical copyright notice. Follow the Linux-kernel comment style: write
+plain `/* ... */` comments for non-obvious ownership, ordering, concurrency,
+or lifecycle rules, and keep them next to the code they constrain. Do not add
+Doxygen `@file`/`@brief` boilerplate, comments that restate an identifier, or
+file headers to tests, examples, and simple forwarding files. Put architecture
+and multi-module protocols in `docs/design/` instead.
+
 ## Language
 
 **Lifecycle-Refined Coroutine I/O (LRCI)**:

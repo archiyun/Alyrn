@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 //
 // SyncWait(Task<T>) drives a task from a blocking thread. It is for tests and
