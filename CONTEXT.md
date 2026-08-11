@@ -69,6 +69,9 @@ _Avoid_: wrapper, event conversion
   point. Composite families record each physical member before authorizing one
   logical result; split-release families separately authorize result, release,
   and continuation.
+- `backend/detail` holds backend-neutral awaiter result storage. It may retain
+  a `base::Result<T>` across suspension, but it must not authorize result
+  readiness, continuation resumption, release, or any transport protocol.
 - `net`: header-only `Socket`, `Endpoint`, and buffers are backend-shared
   network values. `net/detail` holds backend-neutral stream/source lifecycle
   accounting and is not an application seam.

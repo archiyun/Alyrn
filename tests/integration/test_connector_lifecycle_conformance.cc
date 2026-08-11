@@ -260,6 +260,73 @@ bool CheckConnectSuccessContract() {
                 "successful Connect lost scheduler affinity");
 }
 
+template <class Connector>
+struct ConnectCloseObservation {
+  using Result = coropact::base::Result<typename Connector::Stream>;
+
+  std::optional<Result> connect;
+  std::optional<coropact::base::Result<void>> close;
+  bool stream_valid_before_close{false};
+  bool resumed_with_scheduler{false};
+  bool timed_out{false};
+};
+
+template <class Connector, class Loop>
+auto ObserveConnectThenClose(Connector& connector, Loop& loop, std::uint16_t port,
+                             ConnectCloseObservation<Connector>& observation)
+    -> coropact::coro::DetachedTask {
+  observation.connect.emplace(co_await connector.Connect("127.0.0.1", port));
+  if (observation.connect->has_value()) {
+    auto& stream = observation.connect->value();
+    observation.stream_valid_before_close = stream.Fd() >= 0;
+    observation.close.emplace(co_await stream.Close());
+  }
+  observation.resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
+  loop.RequestStop();
+}
+
+template <class Harness>
+bool CheckConnectResultReleaseContract() {
+  auto listener = ListenLoopback();
+  if (!listener.has_value()) {
+    std::cerr << "FAIL [" << Harness::Name()
+              << "]: listener creation: " << listener.error().message() << '\n';
+    return false;
+  }
+
+  typename Harness::Loop loop;
+  if (!Initialize<Harness>(loop)) {
+    return Harness::Skip();
+  }
+  auto connector = Harness::CreateConnector(loop);
+  if (!connector.has_value()) {
+    std::cerr << "FAIL [" << Harness::Name()
+              << "]: connector creation: " << connector.error().message() << '\n';
+    return false;
+  }
+
+  ConnectCloseObservation<typename Harness::Connector> observation;
+  coropact::coro::SpawnDetach(
+      loop, ObserveConnectThenClose(*connector, loop, listener->port, observation));
+  if (!Harness::RunAfter(loop, std::chrono::milliseconds(500), [&] {
+        observation.timed_out = true;
+        loop.RequestStop();
+      })) {
+    return false;
+  }
+  Harness::Run(loop);
+
+  return Expect(!observation.timed_out, Harness::Name(), "Connect followed by Close timed out") &&
+         Expect(observation.connect.has_value() && observation.connect->has_value(),
+                Harness::Name(), "Connect did not publish a stream before continuation") &&
+         Expect(observation.stream_valid_before_close, Harness::Name(),
+                "Connect published a stream without a live descriptor") &&
+         Expect(observation.close.has_value() && observation.close->has_value(), Harness::Name(),
+                "stream Close failed immediately after Connect") &&
+         Expect(observation.resumed_with_scheduler, Harness::Name(),
+                "Connect followed by Close lost scheduler affinity");
+}
+
 template <class Harness>
 bool CheckConnectionRefusedContract() {
   auto endpoint = ListenLoopback();
@@ -430,8 +497,9 @@ bool CheckConcurrentConnectContract() {
 
 template <class Harness>
 bool RunBackendSuite() {
-  return CheckConnectSuccessContract<Harness>() && CheckConnectionRefusedContract<Harness>() &&
-         CheckInvalidHostContract<Harness>() && CheckConnectAfterStopRequestContract<Harness>() &&
+  return CheckConnectSuccessContract<Harness>() && CheckConnectResultReleaseContract<Harness>() &&
+         CheckConnectionRefusedContract<Harness>() && CheckInvalidHostContract<Harness>() &&
+         CheckConnectAfterStopRequestContract<Harness>() &&
          CheckConcurrentConnectContract<Harness>();
 }
 

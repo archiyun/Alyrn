@@ -99,16 +99,17 @@ IORING_RECV_MULTISHOT 可用
 | --- | --- | --- | --- | --- | --- |
 | `recv` / `ReadSome` | 1 个 SQE | 1 个 CQE | CQE 到达后确定 | CQE dispatch 后，await 结束时释放 awaiter frame；buffer 至少存活到 CQE | 已实现，single-shot |
 | `send` / `WriteAll` 的内部 request | 1 个 SQE | 1 个 CQE | CQE 到达后确定 | CQE 到达后 buffer 可按普通 send 语义释放 | 已实现，single-shot |
-| `accept` / `Accept` | 1 个 SQE；listener 可以同时保持多个 pending accept | 每个 SQE 1 个 CQE | CQE 返回新 fd 后确定 | accept operation 和临时地址存储在 CQE dispatch 后释放；新 stream 转移 fd 所有权 | 已实现，single-shot |
-| `connect` / `Connect` | 1 个 SQE | 1 个 CQE | CQE 到达后确定 | connect operation 完成后释放 | 已实现，single-shot |
+| `accept` / `Accept` | 1 个 SQE；listener 可以同时保持多个 pending accept | 每个 SQE 1 个 CQE | adapter 将 CQE 转换为 `Result<Stream>` 后确定 | 新 stream 转移 fd 所有权；listener pending-accept reservation 在 continuation 前释放 | 已实现，single-shot coupled |
+| `connect` / `Connect` | 1 个 SQE | 1 个 CQE | adapter 将 CQE 转换为 `Result<Stream>` 后确定 | stream 接管 fd，或 error 路径关闭 fd；两者均先于 continuation | 已实现，single-shot coupled |
 | `link_timeout` / timed read | read SQE + timeout SQE | 最多 2 个 CQE | read 和 timeout 两个物理完成都观察到后确定 | 两个 operation 都结束后 awaiter 才能安全释放；只恢复一次 | 已实现，linked composite |
 | fd cancel / `Close` | cancel SQE 加上原有 pending I/O | cancel 和原 I/O 各自产生 CQE | cancel 完成且 pending I/O 全部收敛后确定 | fd 关闭前必须等待相关 operation 收敛；不能只看到 cancel CQE 就销毁 stream | 已实现，composite close |
 | timer driver/control | timeout 或 timeout update SQE | 每次提交通常 1 个 CQE | timer queue 内部状态更新 | timer operation 自身完成后复用 | 已实现，内部 operation |
 | MSG_RING / wake | notification 或 poll SQE | 特殊 CQE | 不产生普通业务结果 | mailbox/wake 状态按专用协议清理，不走普通网络 operation dispatch | 已实现，内部 operation |
 
-当前 `LUringLoop::HandleCqe()` 对普通 single-shot operation 的行为是：每个 CQE 减少一次
-`inflight_`，调用一次 `LUringOp::Complete()`，然后最多调度一次 `ResumeWork`。这个行为适合
-上表中的 single-shot operation；它不能直接承载 multishot operation。
+当前 `LUringLoop::HandleCqe()` 对普通 single-shot operation 的行为是：每个 CQE 先通过
+`LUringOp::TryRecordCqeCompletion()` 固定物理结果，再交给 adapter 解释为逻辑结果与 release，最后
+最多调度一次 `ResumeWork` 并减少一次 `inflight_`。这个行为适合上表中的 single-shot operation；
+它不能直接承载 multishot operation。
 
 当前公共 API 不提供 `WritePart` 或 scatter-write 路径。需要保证完整发送
 时使用 `stream.WriteAll` 的连续 span；多块 `Buffer` 由业务按 `ContiguousView()` 和 `Drain()`

@@ -35,6 +35,7 @@ application protocol, route, peer, proxy, or gateway policy.
 | `include/coropact/coro` | L2 | Coroutine ownership, scheduling, frame allocation, and continuation rules. |
 | `include/coropact/coro/detail` | L2 | Promise storage, root-coroutine, and frame-allocation implementation; not an application seam. |
 | `include/coropact/operation/detail` | L2 | Internal completion and lifecycle authorization shared by backend adapters: one-shot, composite, and split-release protocols plus scheduler-bound continuations; no transport resource ownership. |
+| `include/coropact/backend/detail` | L2 | Internal backend-neutral awaiter result storage; retains `base::Result<T>` but owns no authorization or transport-lifecycle protocol. |
 | `include/coropact/net` | L2 | Header-only socket, address, and buffer values shared by backends. |
 | `include/coropact/net/detail` | L2 | Internal stream/source lifecycle, admission, pause/drain, and lease-accounting state machines shared by backend adapters. |
 | `include/coropact/io`, `include/coropact/backend` | L2 | Backend-neutral I/O and dispatcher lifecycle contracts and algorithms. |
@@ -49,6 +50,9 @@ application protocol, route, peer, proxy, or gateway policy.
   application-layer library.
 - `operation/detail` may depend on backend-neutral runtime primitives, but not
   on `net`, `io`, Reactor, luring, or CoroGateway.
+- `backend/detail` may retain backend-adapter result values, but it must not
+  encode completion authorization or depend on `net`, `io`, Reactor, luring,
+  or CoroGateway.
 - `net` must not depend on `io`, Reactor, luring, or CoroGateway.
 - Reactor and luring may depend on `net` and coroutine contracts, but neither
   may include the application-level `io` facade.

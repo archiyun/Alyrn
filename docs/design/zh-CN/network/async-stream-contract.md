@@ -983,6 +983,10 @@ EOF、本地取消、连接失败、上游失败和超时。
 16. loop 进入 `Stopping` 后，新的 `Accept()` 与 `AcceptSource()` 返回 `ECANCELED`。
 17. connector 保留成功、`EINVAL`、`ECONNREFUSED` 与 `ECANCELED` 的区别；
 18. 同一 connector 的并发 `Connect()` 具有独立结果、恢复授权和资源回收。
+19. `Connect()` 的 continuation 只在 `Result<Stream>` 已固定、fd 已转移给 stream 或关闭后才运行；
+    恢复后可以立刻对该 stream 调用 `Close()`。
+20. `Accept()` 的 continuation 只在 `Result<Stream>` 已固定、listener 的 pending-accept
+    reservation 已释放后才运行；恢复后可以立刻关闭该 stream 或发起下一次 `Accept()`。
 ```
 
 测试应覆盖成功、EOF、ECANCELED、EBADF、EPIPE、资源关闭竞争和 loop 归属，而不是只

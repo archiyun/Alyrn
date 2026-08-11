@@ -8,6 +8,7 @@
 #include <expected>
 #include <utility>
 
+#include "coropact/backend/detail/value_result_state.h"
 #include "coropact/base/check.h"
 #include "coropact/base/error.h"
 #include "coropact/base/try.h"
@@ -166,7 +167,7 @@ private:
   ReactorListener* listener_;
   operation::detail::SchedulerContinuation continuation_;
   operation::detail::SingleResultLifecycle lifecycle_;
-  detail::ReactorValueResultState<ReactorStream> result_;
+  backend::detail::ValueResultState<ReactorStream> result_;
 };
 
 class ReactorAcceptSource::NextAwaiter {
@@ -219,7 +220,7 @@ private:
   ReactorAcceptSource* source_;
   operation::detail::SchedulerContinuation continuation_;
   operation::detail::CompletionGate completion_gate_;
-  detail::ReactorValueResultState<std::optional<ReactorStream>> result_;
+  backend::detail::ValueResultState<std::optional<ReactorStream>> result_;
 };
 
 ReactorAcceptSource::ReactorAcceptSource(ReactorListener* listener,

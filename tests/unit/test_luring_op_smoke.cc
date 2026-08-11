@@ -128,6 +128,38 @@ bool TestReusableCoupledLifecycle() {
          Expect(*op.result == 7, "reset coupled request must retain its new CQE result");
 }
 
+bool TestConnectCqeRequiresAdapterRefinement() {
+  coropact::luring::detail::LUringOp op;
+  op.kind = coropact::luring::detail::LUringOpKind::kConnect;
+
+  return Expect(op.TryRecordCqeCompletion(0), "Connect CQE must settle its physical request") &&
+         Expect(op.CqeCompletionRecorded(), "Connect CQE must settle its physical slot") &&
+         Expect(!op.CoupledResultReady(),
+                "a raw Connect CQE must not bypass logical stream construction") &&
+         Expect(op.TryAuthorizeCoupledResult(),
+                "the Connect adapter must authorize its constructed logical result") &&
+         Expect(op.TryAuthorizeCoupledRelease(),
+                "Connect release must follow logical stream construction") &&
+         Expect(op.TryAuthorizeCoupledContinuation(),
+                "Connect continuation must follow resource release");
+}
+
+bool TestAcceptCqeRequiresAdapterRefinement() {
+  coropact::luring::detail::LUringOp op;
+  op.kind = coropact::luring::detail::LUringOpKind::kAcceptComplete;
+
+  return Expect(op.TryRecordCqeCompletion(42), "Accept CQE must settle its physical request") &&
+         Expect(op.CqeCompletionRecorded(), "Accept CQE must settle its physical slot") &&
+         Expect(!op.CoupledResultReady(),
+                "a raw Accept CQE must not bypass logical stream construction") &&
+         Expect(op.TryAuthorizeCoupledResult(),
+                "the Accept adapter must authorize its constructed logical result") &&
+         Expect(op.TryAuthorizeCoupledRelease(),
+                "Accept release must follow logical stream construction") &&
+         Expect(op.TryAuthorizeCoupledContinuation(),
+                "Accept continuation must follow resource release");
+}
+
 bool TestCompletionModels() {
   using coropact::luring::detail::CompletionModelFor;
   using coropact::luring::detail::LUringCompletionModel;
@@ -180,7 +212,8 @@ bool TestResultStatesRejectInvalidTransitions() {
 
 int main() {
   const bool ok = TestSingleResultCompletion() && TestReusablePhysicalSlot() &&
-                  TestReusableCoupledLifecycle() && TestCompletionModels() &&
+                  TestReusableCoupledLifecycle() && TestConnectCqeRequiresAdapterRefinement() &&
+                  TestAcceptCqeRequiresAdapterRefinement() && TestCompletionModels() &&
                   TestCancelCqeClassification() && TestResultStatesRejectInvalidTransitions();
   if (ok) {
     std::puts("luring op smoke: PASS");

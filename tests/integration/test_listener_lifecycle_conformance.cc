@@ -498,6 +498,7 @@ struct SequentialAcceptObservation {
 
   std::array<int, 4> clients{-1, -1, -1, -1};
   std::optional<AcceptResult> first;
+  std::optional<VoidResult> first_close;
   std::optional<AcceptResult> second;
   bool first_stream_valid{false};
   bool second_stream_valid{false};
@@ -512,6 +513,9 @@ auto ObserveSequentialAccept(Listener& listener, Loop& loop,
   observation.first.emplace(co_await listener.Accept());
   observation.first_stream_valid =
       observation.first->has_value() && observation.first->value().Fd() >= 0;
+  if (observation.first_stream_valid) {
+    observation.first_close.emplace(co_await observation.first->value().Close());
+  }
   observation.second.emplace(co_await listener.Accept());
   observation.second_stream_valid =
       observation.second->has_value() && observation.second->value().Fd() >= 0;
@@ -561,6 +565,8 @@ bool CheckAcceptReleaseBeforeContinuationContract() {
          Expect(observation.first.has_value() && observation.first->has_value() &&
                     observation.first_stream_valid,
                 Harness::Name(), "first Accept returned an invalid stream") &&
+         Expect(observation.first_close.has_value() && observation.first_close->has_value(),
+                Harness::Name(), "accepted stream Close failed immediately after Accept") &&
          Expect(observation.second.has_value() && observation.second->has_value() &&
                     observation.second_stream_valid,
                 Harness::Name(),

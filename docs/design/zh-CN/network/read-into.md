@@ -136,7 +136,7 @@ buffer pool 为每个 CQE 取 buffer，属于 `RecvSource`/`BufferLease` 协议�
 | Reactor pending | readiness 后重试 `readv()` 返回 | `CompleteRead()` 选择唯一 awaiter | `FinishAttempt()` commit/abort reservation | `CompletionGate` 胜出后提交 scheduler-bound continuation |
 | Reactor close/stop | owner loop 撤销 pending read | `ECANCELED` 固定 | Channel 不再持有本次 awaiter，reservation 已 abort | 与普通 pending completion 使用同一个 gate |
 | io_uring submit failure | SQE 未进入 pending/inflight | submit error 固定 | lane rollback，reservation abort | 不挂起，`await_suspend()` 返回 `false` |
-| io_uring CQE | target CQE terminal | `LUringOp::Complete()` 保存结果 | `OnComplete()` 结算 reservation 并释放 read lane | handler 返回后，loop 才调度 `ResumeWork` |
+| io_uring CQE | target CQE terminal | `LUringOp::TryRecordCqeCompletion()` 保存结果 | `OnComplete()` 结算 reservation 并释放 read lane | handler 返回后，loop 才调度 `ResumeWork` |
 | io_uring close/stop | cancel acknowledgement 与 target CQE 收敛 | target CQE 解释为 `ECANCELED` 或已发生的结果 | target CQE 后结算 reservation；cancel CQE 单独不授权归还 | close/read continuation 分别且至多调度一次 |
 
 共同的 read lane contract 是：同一 stream 同时最多一个 logical read；第二个 operation 稳定

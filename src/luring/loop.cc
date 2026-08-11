@@ -54,6 +54,9 @@ CompletionDisposition DispatchCompletion(LUringOp* op, CompletionEvent event) no
     case LUringOpKind::kAcceptComplete:
       DispatchAcceptComplete(op);
       break;
+    case LUringOpKind::kConnect:
+      DispatchConnectComplete(op);
+      break;
     case LUringOpKind::kListenerCloseComplete:
       DispatchListenerCloseComplete(op);
       break;
@@ -94,7 +97,6 @@ CompletionDisposition DispatchCompletion(LUringOp* op, CompletionEvent event) no
       DispatchRecvSourceCancelComplete(op);
       break;
     case LUringOpKind::kNone:
-    case LUringOpKind::kConnect:
     case LUringOpKind::kMsgRing:
     case LUringOpKind::kWake:
     case LUringOpKind::kCancelAll:
@@ -590,11 +592,12 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
     return;
   }
 
-  // For coupled single-shot stream awaiters, TryRecordCqeCompletion() has
-  // entered the result-ready phase before DispatchCompletion() runs. Their
-  // adapter then authorizes and crosses its backend-owned release boundary;
-  // only apply_disposition() can authorize continuation resumption. This is
-  // the luring refinement of:
+  // For coupled single-shot awaiters, TryRecordCqeCompletion() settles the
+  // physical CQE before DispatchCompletion() runs. Read/write CQEs directly
+  // authorize result readiness; stream-valued Accept and Connect first refine
+  // the CQE into Result<Stream>. Their adapter then crosses its backend-owned
+  // release boundary; only apply_disposition() can authorize continuation
+  // resumption. This is the luring refinement of:
   //
   //   result ready -> release -> continuation resume
   //
