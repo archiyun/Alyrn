@@ -126,12 +126,48 @@ constexpr LUringCompletionModel CompletionModelFor(LUringOpKind kind) noexcept {
   return LUringCompletionModel::kSingleShot;
 }
 
-// These awaiters expose the CQE result directly as their one logical result
-// and release one stream-owned reservation before their continuation runs.
-// Other kSingleShot kinds have different result construction or convergence
-// rules and deliberately retain their operation-specific lifecycle handling.
+// These awaiters have one coupled logical result and release their
+// operation-owned resource before their continuation runs. Some can publish
+// the CQE result directly, while others first refine it into a richer value
+// such as a connected stream.
 [[nodiscard]]
 constexpr bool UsesCoupledSingleResultLifecycle(LUringOpKind kind) noexcept {
+  switch (kind) {
+    case LUringOpKind::kReadComplete:
+    case LUringOpKind::kReadIntoComplete:
+    case LUringOpKind::kWriteComplete:
+    case LUringOpKind::kAcceptComplete:
+    case LUringOpKind::kConnect:
+      return true;
+    case LUringOpKind::kNone:
+    case LUringOpKind::kAcceptSourceComplete:
+    case LUringOpKind::kAcceptSourceCancelComplete:
+    case LUringOpKind::kRecvSourceComplete:
+    case LUringOpKind::kRecvSourceCancelComplete:
+    case LUringOpKind::kSendZeroCopyComplete:
+    case LUringOpKind::kListenerCloseComplete:
+    case LUringOpKind::kTimedReadComplete:
+    case LUringOpKind::kTimedReadTimeoutComplete:
+    case LUringOpKind::kStreamCloseComplete:
+    case LUringOpKind::kTimerDriverComplete:
+    case LUringOpKind::kTimerControlComplete:
+    case LUringOpKind::kMsgRing:
+    case LUringOpKind::kWake:
+    case LUringOpKind::kCancelAll:
+    case LUringOpKind::kNop:
+    case LUringOpKind::kCount:
+      return false;
+  }
+
+  return false;
+}
+
+// Returns whether the raw CQE result is already the logical result exposed by
+// await_resume(). Accept and Connect first convert a successful CQE into
+// LUringStream, so their adapters authorize result readiness after that
+// construction.
+[[nodiscard]]
+constexpr bool CqeResultDirectlyPublishesLogicalResult(LUringOpKind kind) noexcept {
   switch (kind) {
     case LUringOpKind::kReadComplete:
     case LUringOpKind::kReadIntoComplete:
@@ -210,9 +246,9 @@ public:
   LUringCqeResult result;
   LUringOpKind kind{};
 
-  // Records one physical CQE result. For coupled stream I/O this also enters
-  // the logical "result ready" phase; its adapter must then release the
-  // stream reservation before the loop authorizes continuation resumption.
+  // Records one physical CQE result. When the CQE is itself the logical
+  // result, this also enters the coupled result-ready phase. Adapters such as
+  // Connect first refine the CQE into a richer result, then authorize it.
   [[nodiscard]]
   bool TryRecordCqeCompletion(int cqe_res) noexcept {
     if (!completion_slot_.TryComplete()) {
@@ -220,7 +256,7 @@ public:
     }
 
     result = cqe_res;
-    if (UsesCoupledSingleResultLifecycle(kind)) {
+    if (CqeResultDirectlyPublishesLogicalResult(kind)) {
       COROPACT_CHECK(single_result_lifecycle_.TryAuthorizeResult(),
                      "coupled single-result operation recorded a CQE twice");
     }
@@ -255,6 +291,13 @@ public:
   // The coupled lifecycle is intentionally separate from the reusable
   // physical completion slot. It does not govern composites, sources, close,
   // or split-release operations.
+  [[nodiscard]]
+  bool TryAuthorizeCoupledResult() noexcept {
+    COROPACT_CHECK(UsesCoupledSingleResultLifecycle(kind),
+                   "result authorization requested for a non-coupled LUring operation");
+    return single_result_lifecycle_.TryAuthorizeResult();
+  }
+
   [[nodiscard]]
   bool TryAuthorizeCoupledRelease() noexcept {
     COROPACT_CHECK(UsesCoupledSingleResultLifecycle(kind),

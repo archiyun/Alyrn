@@ -12,6 +12,7 @@
 #include <optional>
 #include <utility>
 
+#include "coropact/backend/detail/value_result_state.h"
 #include "coropact/base/check.h"
 #include "coropact/base/error.h"
 #include "coropact/base/try.h"
@@ -681,14 +682,15 @@ public:
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     listener_->RequireOwnerLoop();
     if (listener_->closed_ || listener_->fd_ < 0) {
-      immediate_.emplace(std::unexpected(base::MakeErrno(EBADF)));
+      CompleteInline(std::unexpected(base::MakeErrno(EBADF)));
       return false;
     }
     if (listener_->accept_source_ != nullptr) {
-      immediate_.emplace(std::unexpected(base::MakeErrno(EBUSY)));
+      CompleteInline(std::unexpected(base::MakeErrno(EBUSY)));
       return false;
     }
     ++listener_->pending_accepts_;
+    listener_reservation_ = true;
     Op()->kind = LUringOpKind::kAcceptComplete;
     peer_len_ = static_cast<socklen_t>(sizeof(peer_addr_));
 
@@ -698,46 +700,62 @@ public:
           io_uring_prep_accept(sqe, fd, reinterpret_cast<sockaddr*>(&peer_addr_), &peer_len_,
                                SOCK_NONBLOCK | SOCK_CLOEXEC);
         },
-        [this](base::Error error) noexcept {
-          --listener_->pending_accepts_;
-          immediate_.emplace(std::unexpected(error));
-        });
+        [this](base::Error error) noexcept { CompleteInline(std::unexpected(error)); });
   }
 
-  AcceptResult await_resume() noexcept {
-    COROPACT_CHECK(immediate_.has_value(), "LUring Accept resumed without a result");
-    return std::move(*immediate_);
-  }
+  AcceptResult await_resume() noexcept { return result_.Take(); }
 
 private:
   static void OnComplete(LUringOp* op) noexcept {
     auto* self = OpHook::OwnerFrom(op);
-    if (self->listener_ != nullptr) {
-      LUringListener* listener = self->listener_;
-      COROPACT_CHECK(listener->pending_accepts_ > 0,
-                     "LUring Accept pending-accept count underflow");
-      --listener->pending_accepts_;
+    COROPACT_CHECK(self->listener_ != nullptr, "LUring Accept CQE has no listener owner");
+    COROPACT_CHECK(self->listener_reservation_,
+                   "LUring Accept CQE arrived without a listener reservation");
+    COROPACT_CHECK(op->result.HasValue(), "LUring Accept CQE is missing its result");
 
-      COROPACT_CHECK(op->result.HasValue(), "LUring Accept CQE is missing its result");
-      if (*op->result < 0) {
-        self->immediate_ = std::unexpected(base::MakeNegErrno(*op->result));
-      } else {
-        self->immediate_ =
-            MakeStream(listener->loop_, *op->result, self->peer_addr_, self->peer_len_);
-        if (self->immediate_->has_value()) {
-          self->immediate_->value().SetZeroCopyWritesEnabled(listener->zero_copy_writes_);
-        }
+    LUringListener* listener = self->listener_;
+    if (*op->result < 0) {
+      self->result_.SetError(base::MakeNegErrno(*op->result));
+    } else {
+      auto result = MakeStream(listener->loop_, *op->result, self->peer_addr_, self->peer_len_);
+      if (result.has_value()) {
+        result->SetZeroCopyWritesEnabled(listener->zero_copy_writes_);
       }
-
-      self->listener_ = nullptr;
-      listener->NotifyCloseProgress();
+      self->result_.SetResult(std::move(result));
     }
+
+    COROPACT_CHECK(op->TryAuthorizeCoupledResult(), "LUring Accept result was authorized twice");
+    COROPACT_CHECK(op->TryAuthorizeCoupledRelease(),
+                   "LUring Accept release was not authorized after its result");
+    self->ReleaseListenerReservation();
+  }
+
+  void CompleteInline(AcceptResult result) noexcept {
+    result_.SetResult(std::move(result));
+    COROPACT_CHECK(Op()->TryAuthorizeCoupledResult(), "LUring Accept result was authorized twice");
+    COROPACT_CHECK(Op()->TryAuthorizeCoupledRelease(),
+                   "LUring Accept release was not authorized after its result");
+    ReleaseListenerReservation();
+  }
+
+  void ReleaseListenerReservation() noexcept {
+    LUringListener* listener = std::exchange(listener_, nullptr);
+    if (!listener_reservation_) {
+      return;
+    }
+
+    listener_reservation_ = false;
+    COROPACT_CHECK(listener != nullptr, "LUring Accept lost its listener reservation owner");
+    COROPACT_CHECK(listener->pending_accepts_ > 0, "LUring Accept pending-accept count underflow");
+    --listener->pending_accepts_;
+    listener->NotifyCloseProgress();
   }
 
   LUringListener* listener_;
   sockaddr_storage peer_addr_{};
   socklen_t peer_len_{sizeof(peer_addr_)};
-  std::optional<AcceptResult> immediate_;
+  backend::detail::ValueResultState<LUringStream> result_;
+  bool listener_reservation_{false};
 };
 
 // --- CloseAwaiter ---

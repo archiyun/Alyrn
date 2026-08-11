@@ -5,14 +5,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <memory>
 #include <system_error>
-#include <type_traits>
 #include <utility>
 
 #include "coropact/base/check.h"
 #include "coropact/base/error.h"
-#include "coropact/utils/macros.h"
 
 namespace coropact::reactor::detail {
 
@@ -68,87 +65,5 @@ private:
 };
 
 static_assert(sizeof(ReactorIoResultState) == sizeof(std::int64_t));
-
-// Result storage for non-trivial Reactor values such as ReactorStream. The
-// expected/optional pair carries two readiness flags and an extra padding byte;
-// this state keeps one explicit tag and constructs the stream only on success.
-template <typename T>
-class ReactorValueResultState {
-public:
-  COROPACT_DELETE_COPY(ReactorValueResultState);
-
-  ReactorValueResultState() noexcept = default;
-  ~ReactorValueResultState() { Reset(); }
-
-  [[nodiscard]]
-  bool HasResult() const noexcept {
-    return state_ != State::kPending;
-  }
-
-  void SetError(base::Error error) noexcept {
-    COROPACT_CHECK(state_ == State::kPending,
-                   "ReactorValueResultState result was set twice");
-    std::construct_at(&storage_.error, std::move(error));
-    state_ = State::kError;
-  }
-
-  void SetResult(base::Result<T>&& result) noexcept(std::is_nothrow_move_constructible_v<T>) {
-    COROPACT_CHECK(state_ == State::kPending,
-                   "ReactorValueResultState result was set twice");
-    if (result.has_value()) {
-      std::construct_at(&storage_.value, std::move(*result));
-      state_ = State::kValue;
-    } else {
-      std::construct_at(&storage_.error, std::move(result.error()));
-      state_ = State::kError;
-    }
-  }
-
-  [[nodiscard]]
-  base::Result<T> Take() noexcept(std::is_nothrow_move_constructible_v<T>) {
-    COROPACT_CHECK(HasResult(), "ReactorValueResultState result was taken before completion");
-    if (state_ == State::kError) {
-      base::Error error = std::move(storage_.error);
-      std::destroy_at(&storage_.error);
-      state_ = State::kPending;
-      return std::unexpected(std::move(error));
-    }
-
-    base::Result<T> result(std::in_place, std::move(storage_.value));
-    std::destroy_at(&storage_.value);
-    state_ = State::kPending;
-    return result;
-  }
-
-private:
-  enum class State : std::uint8_t {
-    kPending,
-    kValue,
-    kError,
-  };
-
-  union Storage {
-    Storage() {}
-    ~Storage() {}
-
-    T value;
-    base::Error error;
-  } storage_;
-  State state_{State::kPending};
-
-  void Reset() noexcept {
-    switch (state_) {
-      case State::kValue:
-        std::destroy_at(&storage_.value);
-        break;
-      case State::kError:
-        std::destroy_at(&storage_.error);
-        break;
-      case State::kPending:
-        break;
-    }
-    state_ = State::kPending;
-  }
-};
 
 }  // namespace coropact::reactor::detail

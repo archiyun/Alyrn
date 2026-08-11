@@ -69,6 +69,16 @@ zero-copy send:
   1 Logical Operation
   1 Physical Request
   primary CQE [+ notification CQE when primary has F_MORE]
+
+connect:
+  1 Logical Operation
+  1 Physical Request
+  1 raw CQE -> adapter constructs Result<Stream>
+
+accept:
+  1 Logical Operation
+  1 Physical Request
+  1 raw CQE -> adapter constructs Result<Stream>
 ```
 
 Reactor 的 pending read 通常没有长期驻留内核的 read request。它是一个 Backend Execution：
@@ -175,6 +185,8 @@ Split    结果 ready 后，资源仍需等待更晚的物理终态或 lease 归
 | 操作 | Result cardinality | Physical convergence | Release coupling |
 | --- | --- | --- | --- |
 | 普通 read/write | Single | Single | Coupled |
+| connect | Single | Single | Coupled |
+| accept | Single | Single | Coupled |
 | timed read | Single | Composite | Coupled |
 | cancel + close | Single | Composite | Coupled |
 | multishot accept | Multiple | Single | Coupled |
@@ -224,6 +236,15 @@ Submit -> optional Suspend -> Result Ready -> Resume
 
 但 LRCI 不要求它们共享 Channel、SQE、队列或 completion handler。
 
+`Connect` 说明 CQE 不能按名称直接当作业务结果。成功的 connect CQE 只表示内核连接已经
+完成；adapter 仍须设置 stream 的非阻塞属性、把 fd 转移给 `Stream`（或在失败时关闭它），固定
+`Result<Stream>`，然后才能授权 release 与 continuation。这个转换是一个 backend refinement
+step，而不是 `await_resume()` 中的延迟初始化。
+
+`Accept` 也遵守同一原则。成功 CQE 只给出 accepted fd 和临时 peer address；adapter 先构造
+拥有 fd 的 `Stream`，再释放 listener 的 pending-accept reservation，最后才能恢复 coroutine。
+因此 continuation 可以立刻关闭该 stream 或发起下一次 `Accept()`，而不会观察到旧 reservation。
+
 ## 6. 代码、模型和测试如何对应
 
 ```text
@@ -239,14 +260,17 @@ cross-backend conformance tests
 ```
 
 代码中的 `SingleResultLifecycle`、`CompletionGate`、`CompositeLifecycle`、
-`SplitReleaseLifecycle` 和 source lifecycle 分别实现局部授权规则。
+`SplitReleaseLifecycle` 和 source lifecycle 分别实现局部授权规则；
+`backend/detail::ValueResultState<T>` 只保存已经固定的非平凡 `Result<T>`，不拥有任何授权规则。
 `SingleResultLifecycle` 将 coupled single-result 操作压缩为一个 1-byte 的严格阶段机；
-它们都不拥有 fd、buffer、Channel、SQE 或 CQE，具体 Adapter 仍负责物理资源和结果存储。
+这些 lifecycle 类型都不拥有 fd、buffer、Channel、SQE 或 CQE；具体 Adapter 负责物理资源，
+而 backend detail 只提供结果存储。
 
 TLA+ 检查有界 interleaving 和 observation projection。conformance tests 则对 Reactor 和
 io_uring 运行同一组应用可观察场景，例如 EOF、半关闭、pending I/O close、一次恢复和 buffer
-归还，以及完成后立刻发起同方向 follow-up read。最后一项直接验证 release 边界已在
-continuation 可运行前跨越：follow-up read 不会看到旧 operation 遗留的 `EBUSY`。两者不能互相替代。
+归还，以及完成后立刻发起同方向 follow-up read 或对刚连接的 stream 执行 `Close()`。前者直接验证
+stream slot 的 release 边界已在 continuation 可运行前跨越：follow-up read 不会看到旧 operation
+遗留的 `EBUSY`；后者验证 fd 已在 Connect continuation 前转移给逻辑结果。两者不能互相替代。
 
 ## 7. 不属于 LRCI 的主张
 

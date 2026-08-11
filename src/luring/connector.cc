@@ -13,9 +13,10 @@
 #include <string_view>
 #include <utility>
 
+#include "coropact/backend/detail/value_result_state.h"
 #include "coropact/base/check.h"
 #include "coropact/base/error.h"
-#include "coropact/base/try.h"
+#include "coropact/luring/detail/completion_dispatch.h"
 #include "coropact/luring/detail/op.h"
 #include "coropact/luring/detail/operation_submission.h"
 #include "coropact/luring/loop.h"
@@ -53,6 +54,8 @@ base::Result<void> SetNonBlocking(int fd) noexcept {
 
 // --- ConnectAwaiter ---
 class ConnectAwaiter : public detail::LUringOpHook<ConnectAwaiter> {
+  friend void detail::DispatchConnectComplete(LUringOp* op) noexcept;
+
 public:
   using OpHook = detail::LUringOpHook<ConnectAwaiter>;
 
@@ -78,13 +81,13 @@ public:
                    "LUringConnector operation called from wrong LUringLoop thread");
     if (loop_->State() == backend::LoopState::kStopping ||
         loop_->State() == backend::LoopState::kStopped) {
-      Op()->SetImmediateError(base::MakeErrno(ECANCELED));
+      CompleteInline(std::unexpected(base::MakeErrno(ECANCELED)));
       return false;
     }
 
     auto fd = CreateSocket(peer_.NativeFamily());
     if (!fd.has_value()) {
-      Op()->SetImmediateError(fd.error());
+      CompleteInline(std::unexpected(fd.error()));
       return false;
     }
     fd_ = *fd;
@@ -95,32 +98,57 @@ public:
         [this, fd = fd_](io_uring_sqe* sqe) noexcept {
           io_uring_prep_connect(sqe, fd, peer_.SockAddr(), peer_.SockAddrLen());
         },
-        [this](base::Error error) noexcept { Op()->SetImmediateError(error); });
+        [this](base::Error error) noexcept { CompleteInline(std::unexpected(error)); });
   }
 
-  base::Result<LUringStream> await_resume() noexcept {
-    if (!Op()->CqeCompletionRecorded()) {
-      COROPACT_CHECK(Op()->result.HasValue(),
-                     "LUring Connect resumed before its immediate result was ready");
-      return std::unexpected(base::MakeNegErrno(*Op()->result));
+  base::Result<LUringStream> await_resume() noexcept { return result_.Take(); }
+
+private:
+  static void OnComplete(LUringOp* op) noexcept {
+    auto* self = OpHook::OwnerFrom(op);
+    COROPACT_CHECK(op->result.HasValue(), "LUring Connect CQE is missing its result");
+
+    if (*op->result < 0) {
+      self->result_.SetError(base::MakeNegErrno(*op->result));
+    } else {
+      auto nonblocking = SetNonBlocking(self->fd_);
+      if (!nonblocking.has_value()) {
+        self->result_.SetError(nonblocking.error());
+      } else {
+        self->result_.SetResult(self->MakeStream());
+      }
     }
 
-    COROPACT_CHECK(Op()->result.HasValue(), "LUring Connect CQE is missing its result");
-    if (*Op()->result < 0) {
-      return std::unexpected(base::MakeNegErrno(*Op()->result));
-    }
+    COROPACT_CHECK(op->TryAuthorizeCoupledResult(), "LUring Connect result was authorized twice");
+    COROPACT_CHECK(op->TryAuthorizeCoupledRelease(),
+                   "LUring Connect release was not authorized after its result");
+    self->ReleasePhysicalRequest();
+  }
 
-    COROPACT_TRY(SetNonBlocking(fd_));
+  void CompleteInline(base::Result<LUringStream> result) noexcept {
+    result_.SetResult(std::move(result));
+    COROPACT_CHECK(Op()->TryAuthorizeCoupledResult(), "LUring Connect result was authorized twice");
+    COROPACT_CHECK(Op()->TryAuthorizeCoupledRelease(),
+                   "LUring Connect release was not authorized after its result");
+    ReleasePhysicalRequest();
+  }
 
+  base::Result<LUringStream> MakeStream() noexcept {
     LUringStream stream(loop_, fd_, peer_);
     fd_ = -1;
     return stream;
   }
 
-private:
+  void ReleasePhysicalRequest() noexcept {
+    if (fd_ >= 0) {
+      (void)::close(std::exchange(fd_, -1));
+    }
+  }
+
   LUringLoop* loop_;
   net::Endpoint peer_;
   int fd_{-1};
+  backend::detail::ValueResultState<LUringStream> result_;
 };
 
 coro::Task<base::Result<LUringStream>> ConnectResolved(LUringLoop* loop,
@@ -132,6 +160,12 @@ coro::Task<base::Result<LUringStream>> ConnectResolved(LUringLoop* loop,
 }
 
 }  // namespace
+
+namespace detail {
+
+void DispatchConnectComplete(LUringOp* op) noexcept { ConnectAwaiter::OnComplete(op); }
+
+}  // namespace detail
 
 LUringConnector::LUringConnector(LUringLoop* loop) noexcept : loop_(loop) {
   COROPACT_CHECK(loop_ != nullptr, "LUringConnector: loop must not be null");

@@ -10,6 +10,7 @@
 #include <expected>
 #include <utility>
 
+#include "coropact/backend/detail/value_result_state.h"
 #include "coropact/base/error.h"
 #include "coropact/reactor/detail/result_state.h"
 
@@ -87,7 +88,7 @@ struct LifetimeProbe {
 };
 
 void TakePendingValueState() {
-  coropact::reactor::detail::ReactorValueResultState<LifetimeProbe> state;
+  coropact::backend::detail::ValueResultState<LifetimeProbe> state;
   (void)state.Take();
 }
 
@@ -101,7 +102,7 @@ bool TestResultStatesRejectInvalidTransitions() {
 }
 
 bool TestValueStateTakeDestroysActiveMember() {
-  using State = coropact::reactor::detail::ReactorValueResultState<LifetimeProbe>;
+  using State = coropact::backend::detail::ValueResultState<LifetimeProbe>;
 
   LifetimeProbe::live_count = 0;
   State state;
@@ -126,7 +127,7 @@ bool TestValueStateTakeDestroysActiveMember() {
 }
 
 bool TestValueStateErrorCanBeReused() {
-  coropact::reactor::detail::ReactorValueResultState<LifetimeProbe> state;
+  coropact::backend::detail::ValueResultState<LifetimeProbe> state;
 
   state.SetError(coropact::base::MakeErrno(ECANCELED));
   auto error = state.Take();
