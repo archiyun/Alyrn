@@ -10,6 +10,11 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Ubuntu ships liburing 2.5; CMake requires 2.6 or newer for the io_uring
+  # backend, so those jobs build it from source.
+  LIBURING_VERSION: liburing-2.8
+
 jobs:
   build-and-test:
     name: ${{ matrix.compiler.name }} / ${{ matrix.build_type }}
@@ -20,6 +25,7 @@ jobs:
         build_type: [Debug, Release]
         compiler:
           - { name: gcc-14, cc: gcc-14, cxx: g++-14, pkgs: g++-14 }
+          - { name: clang-18, cc: clang-18, cxx: clang++-18, pkgs: clang-18 }
 
     env:
       CC: ${{ matrix.compiler.cc }}
@@ -45,11 +51,17 @@ jobs:
         run: ctest --test-dir build --output-on-failure
 
   strict-warnings:
-    name: gcc-14 / Strict warnings
+    name: ${{ matrix.compiler.name }} / Strict warnings
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler:
+          - { name: gcc-14, cc: gcc-14, cxx: g++-14, pkgs: g++-14 }
+          - { name: clang-18, cc: clang-18, cxx: clang++-18, pkgs: clang-18 }
     env:
-      CC: gcc-14
-      CXX: g++-14
+      CC: ${{ matrix.compiler.cc }}
+      CXX: ${{ matrix.compiler.cxx }}
     steps:
       - uses: actions/checkout@v4
 
@@ -58,19 +70,76 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build libgtest-dev \
-            libuv1-dev libevent-dev libev-dev libaio-dev g++-14
+            libuv1-dev libevent-dev libev-dev libaio-dev \
+            ${{ matrix.compiler.pkgs }}
 
+      # Benchmarks are built here because several strict warnings only appear
+      # in benchmark sources, which the default configuration skips.
       - name: Configure
         run: >
           cmake -B build -G Ninja
           -DCMAKE_BUILD_TYPE=Debug
           -DCOROPACT_STRICT_WARNINGS=ON
+          -DBUILD_BENCHMARKS=ON
 
       - name: Build
         run: cmake --build build -j"$(nproc)"
 
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+  uring:
+    name: ${{ matrix.compiler.name }} / io_uring / hooks=${{ matrix.hooks }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler:
+          - { name: gcc-14, cc: gcc-14, cxx: g++-14, pkgs: g++-14 }
+          - { name: clang-18, cc: clang-18, cxx: clang++-18, pkgs: clang-18 }
+        # Quoted so YAML keeps them as the strings CMake expects rather than
+        # folding ON/OFF into booleans.
+        hooks: ["ON", "OFF"]
+    env:
+      CC: ${{ matrix.compiler.cc }}
+      CXX: ${{ matrix.compiler.cxx }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain & deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config libgtest-dev \
+            libuv1-dev libevent-dev libev-dev libaio-dev \
+            ${{ matrix.compiler.pkgs }}
+
+      - name: Build liburing
+        run: |
+          git clone --depth 1 --branch "$LIBURING_VERSION" \
+            https://github.com/axboe/liburing.git /tmp/liburing
+          cd /tmp/liburing
+          ./configure --prefix=/usr/local
+          make -j"$(nproc)"
+          sudo make install
+          sudo ldconfig
+
+      # Debug keeps NDEBUG undefined. Several test files call assert()
+      # directly, so an optimized build would silently turn them into no-ops.
+      - name: Configure
+        run: >
+          cmake -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCOROPACT_STRICT_WARNINGS=ON
+          -DCOROPACT_ENABLE_URING=ON
+          -DCOROPACT_ENABLE_TEST_HOOKS=${{ matrix.hooks }}
+          -DBUILD_BENCHMARKS=ON
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -j"$(nproc)"
 
   sanitizers:
     name: ${{ matrix.san.name }}
@@ -79,11 +148,11 @@ jobs:
       fail-fast: false
       matrix:
         san:
-          - name: asan-ubsan
-            flags: "-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer -g"
+          - { name: asan-ubsan, sanitizer: "address,undefined" }
+          - { name: tsan, sanitizer: "thread" }
     env:
-      CC: gcc-14
-      CXX: g++-14
+      CC: clang-18
+      CXX: clang++-18
     steps:
       - uses: actions/checkout@v4
 
@@ -91,15 +160,32 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            cmake ninja-build libgtest-dev \
-            libuv1-dev libevent-dev libev-dev libaio-dev g++-14
+            cmake ninja-build pkg-config libgtest-dev \
+            libuv1-dev libevent-dev libev-dev libaio-dev clang-18
 
+      - name: Build liburing
+        run: |
+          git clone --depth 1 --branch "$LIBURING_VERSION" \
+            https://github.com/axboe/liburing.git /tmp/liburing
+          cd /tmp/liburing
+          ./configure --prefix=/usr/local
+          make -j"$(nproc)"
+          sudo make install
+          sudo ldconfig
+
+      # COROPACT_SANITIZER wires -fsanitize into every target, including the
+      # link step, which raw CMAKE_CXX_FLAGS did not do for executables.
       - name: Configure
         run: >
           cmake -B build -G Ninja
-          -DCMAKE_BUILD_TYPE=RelWithDebInfo
-          -DCMAKE_CXX_FLAGS="${{ matrix.san.flags }}"
-          -DCMAKE_EXE_LINKER_FLAGS="${{ matrix.san.flags }}"
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCOROPACT_SANITIZER=${{ matrix.san.sanitizer }}
+          -DCOROPACT_ENABLE_URING=ON
+          -DCOROPACT_ENABLE_TEST_HOOKS=ON
+          -DBUILD_EXAMPLES=OFF
 
       - name: Build
         run: cmake --build build -j"$(nproc)"
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -j"$(nproc)"
