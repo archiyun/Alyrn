@@ -245,7 +245,7 @@ bool CheckPendingReadSuccessContract() {
 
   coropact::coro::SpawnDetach(loop, ObservePendingRead(stream, loop, buffer, observation));
   if (!Harness::RunAfter(loop, std::chrono::milliseconds(5),
-                         [fd = peer.Get()] { (void)WriteExactly(fd, kPayload); })) {
+                         [fd = peer.Get(), kPayload] { (void)WriteExactly(fd, kPayload); })) {
     return false;
   }
   if (!Harness::RunAfter(loop, std::chrono::milliseconds(500), [&] {
@@ -387,7 +387,7 @@ bool CheckPendingOwnedReadSuccessContract() {
 
   coropact::coro::SpawnDetach(loop, ObserveOwnedRead(stream, loop, std::move(buffer), observation));
   if (!Harness::RunAfter(loop, std::chrono::milliseconds(5),
-                         [fd = peer.Get()] { (void)WriteExactly(fd, kPayload); })) {
+                         [fd = peer.Get(), kPayload] { (void)WriteExactly(fd, kPayload); })) {
     return false;
   }
   if (!Harness::RunAfter(loop, std::chrono::milliseconds(500), [&] {
@@ -468,7 +468,7 @@ bool CheckReadLaneExclusivityContract() {
   coropact::coro::SpawnDetach(loop, ObserveFirstRead(stream, loop, buffer, observation));
   coropact::coro::SpawnDetach(loop, ObserveCompetingEmptyRead(stream, loop, observation));
   if (!Harness::RunAfter(loop, std::chrono::milliseconds(5),
-                         [fd = peer.Get()] { (void)WriteExactly(fd, kPayload); })) {
+                         [fd = peer.Get(), kPayload] { (void)WriteExactly(fd, kPayload); })) {
     return false;
   }
   if (!Harness::RunAfter(loop, std::chrono::milliseconds(500), [&] {

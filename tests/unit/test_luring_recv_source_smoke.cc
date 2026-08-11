@@ -183,6 +183,8 @@ DetachedTask ReceiveOne(LUringRecvSource* source, Observation* observation) {
   observation->done = true;
 }
 
+/* Only the test-hook scenarios drive these two directly. */
+#if defined(COROPACT_ENABLE_TEST_HOOKS)
 DetachedTask WaitForNext(
     LUringRecvSource* source,
     Observation* observation) {
@@ -208,6 +210,7 @@ DetachedTask StopSource(
   }
   observation->done = true;
 }
+#endif
 
 DetachedTask ReceivePauseThenResume(
     LUringRecvSource* source,

@@ -137,6 +137,7 @@ BenchmarkResult RunBenchmark(FrameResource& frame_resource, SpawnMode mode, bool
       .iterations = iterations,
       .elapsed_ms = elapsed_ms,
       .frame_stats = {},
+      .spawn_stats = {},
       .completed = completed,
   };
 }
@@ -200,10 +201,6 @@ template <typename T>
 T Median(std::array<T, kRounds> values) {
   std::sort(values.begin(), values.end());
   return values[kRounds / 2];
-}
-
-std::size_t ModeIndex(SpawnMode mode) noexcept {
-  return mode == SpawnMode::kSpawnThenDetach ? 0 : 1;
 }
 
 BenchmarkResult MedianResult(const std::array<std::array<BenchmarkResult, 2>, kRounds>& results,
