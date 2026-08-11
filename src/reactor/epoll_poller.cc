@@ -50,8 +50,8 @@ static int FromEpollEvents(uint32_t epoll_events) {
 
 }  // namespace
 
-EPollPoller::EPollPoller(EventLoop* loop)
-    : Poller(loop), epollfd_(::epoll_create1(EPOLL_CLOEXEC)), events_(kInitEventListSize) {
+EPollPoller::EPollPoller()
+    : epollfd_(::epoll_create1(EPOLL_CLOEXEC)), events_(kInitEventListSize) {
   if (epollfd_ < 0) {
     COROPACT_CHECK(false, "EPollPoller: epoll_create1 failed");
   }

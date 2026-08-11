@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include <utility>
-
 #include "coropact/reactor/options.h"
 #include "coropact/utils/macros.h"
 
@@ -11,7 +9,6 @@ namespace coropact::reactor {
 class EventLoop;
 
 namespace detail {
-
 
 // Channel is the event dispatch unit for a single file descriptor.
 //
@@ -157,10 +154,10 @@ private:
   void Update();
 
   EventLoop* loop_{nullptr};
-  int fd_;
-  int events_;
-  int revents_;
-  int index_;
+  int fd_{-1};
+  int events_{kNoneEvent};
+  int revents_{kNoneEvent};
+  int index_{-1};
   TriggerMode trigger_mode_{TriggerMode::kLevelTriggered};
 
   ReadEventCallback read_callback_{nullptr};

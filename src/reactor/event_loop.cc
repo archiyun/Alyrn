@@ -26,7 +26,7 @@ thread_local EventLoop* t_loop_in_this_thread = nullptr;
 EventLoop::EventLoop(std::pmr::memory_resource* frame_resource)
     : Scheduler(frame_resource),
       thread_id_(base::CurrentThreadId()),
-      poller_(Poller::NewDefaultPoller(this)),
+      poller_(Poller::NewDefaultPoller()),
       timer_queue_(std::make_unique<TimerQueue>(this)) {
   COROPACT_CHECK(t_loop_in_this_thread == nullptr,
                  "EventLoop: only one EventLoop may exist per thread");

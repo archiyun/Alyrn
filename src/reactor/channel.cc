@@ -6,19 +6,12 @@
 
 namespace coropact::reactor::detail {
 
-Channel::Channel(EventLoop* loop, int fd)
-    : loop_(loop), fd_(fd), events_(0), revents_(0), index_(-1) {
+Channel::Channel(EventLoop* loop, int fd) : loop_(loop), fd_(fd) {
   COROPACT_CHECK(loop_ != nullptr, "Channel: loop must not be null");
   COROPACT_CHECK(fd_ >= 0, "Channel: fd must be a valid non-negative descriptor");
 }
 
-Channel::Channel(Channel&& other) noexcept
-    : loop_(nullptr),
-      fd_(-1),
-      events_(kNoneEvent),
-      revents_(kNoneEvent),
-      index_(-1),
-      trigger_mode_(TriggerMode::kLevelTriggered) {
+Channel::Channel(Channel&& other) noexcept {
   COROPACT_CHECK(other.index_ == -1,
                  "Channel move requires the source to be detached from the Poller");
 
@@ -83,8 +76,7 @@ void Channel::HandleEvent() {
   // Channel callbacks are non-owning. Owners must detach the Channel before
   // destruction; keeping that lifetime rule explicit avoids a per-event
   // shared-owner lock on the loop-affine Reactor path.
-  if (static_cast<bool>((revents_ & kHupEvent)) &&
-      !static_cast<bool>((revents_ & kReadEvent))) {
+  if (static_cast<bool>((revents_ & kHupEvent)) && !static_cast<bool>((revents_ & kReadEvent))) {
     if (close_callback_ != nullptr) {
       close_callback_(close_context_);
     }
