@@ -59,7 +59,7 @@ static void ReadTimerfd(int timerfd) {
 }
 
 TimerQueue::TimerQueue(EventLoop* loop)
-    : loop_(loop), timerfd_(CreateTimerfd()), timerfd_channel_(loop, timerfd_) {
+    : timerfd_(CreateTimerfd()), timerfd_channel_(loop, timerfd_) {
   timerfd_channel_.SetReadCallback(&TimerQueue::DispatchRead, this);
   timerfd_channel_.EnableReading();
 }

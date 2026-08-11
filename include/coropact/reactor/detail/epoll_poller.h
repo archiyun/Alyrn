@@ -15,7 +15,7 @@ namespace coropact::reactor::detail {
 // epoll_wait results back into active Channel objects for the owning EventLoop.
 class EPollPoller final : public Poller {
 public:
-  explicit EPollPoller(EventLoop* loop);
+  EPollPoller();
   ~EPollPoller() override;
 
   void Poll(int timeout_ms, ChannelList* active_channels) override;

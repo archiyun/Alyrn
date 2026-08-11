@@ -6,16 +6,11 @@
 
 namespace coropact::reactor::detail {
 
-Poller::Poller(EventLoop* loop)
-    : owner_loop_(loop) {}
-
 bool Poller::HasChannel(Channel* channel) const {
   auto it = channels_.find(channel->Fd());
   return it != channels_.end() && it->second == channel;
 }
 
-Poller* Poller::NewDefaultPoller(EventLoop* loop) {
-  return new EPollPoller(loop);
-}
+Poller* Poller::NewDefaultPoller() { return new EPollPoller(); }
 
 }  // namespace coropact::reactor::detail

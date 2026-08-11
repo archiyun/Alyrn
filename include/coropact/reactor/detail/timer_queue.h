@@ -109,7 +109,8 @@ private:
   static void DispatchRead(void* context) noexcept;
   void ResetTimerfd(TimePoint expiration);
 
-  EventLoop* loop_;
+  // The owning loop is reachable through timerfd_channel_.OwnerLoop(); it is
+  // deliberately not duplicated here.
   int timerfd_;
   Channel timerfd_channel_;
   TimerTree timers_;
