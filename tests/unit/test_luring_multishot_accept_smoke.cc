@@ -517,6 +517,8 @@ coropact::coro::DetachedTask CloseListener(
   }
 }
 
+/* Only the test-hook scenarios drive this directly. */
+#if defined(COROPACT_ENABLE_TEST_HOOKS)
 coropact::coro::DetachedTask StopSource(
     LUringAcceptSource* source,
     StopObservation* observation) {
@@ -527,6 +529,7 @@ coropact::coro::DetachedTask StopSource(
   }
   observation->done = true;
 }
+#endif
 
 coropact::coro::DetachedTask FillQueueThenStop(
     LUringAcceptSource* source,

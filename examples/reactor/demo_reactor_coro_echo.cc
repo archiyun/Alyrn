@@ -77,14 +77,14 @@ coropact::coro::DetachedTask Session(Stream stream, long long* active_sessions,
     if (n == 0) {
       if (!pending.empty()) {
         ++(*total_messages);
-        co_await stream.WriteAll(Bytes(pending));
+        (void)co_await stream.WriteAll(Bytes(pending));
       }
       break;
     }
 
     pending.append(reinterpret_cast<const char*>(buffer.data()), n);
     if (pending.size() > 64 * 1024) {
-      co_await stream.WriteAll(Bytes("ERR line too long\n"));
+      (void)co_await stream.WriteAll(Bytes("ERR line too long\n"));
       break;
     }
 
@@ -98,8 +98,8 @@ coropact::coro::DetachedTask Session(Stream stream, long long* active_sessions,
       const std::string_view command = StripLineEnding(line);
 
       if (command == "/quit") {
-        co_await stream.WriteAll(Bytes("bye\n"));
-        co_await stream.Close();
+        (void)co_await stream.WriteAll(Bytes("bye\n"));
+        (void)co_await stream.Close();
         --(*active_sessions);
         co_return;
       }
@@ -107,7 +107,7 @@ coropact::coro::DetachedTask Session(Stream stream, long long* active_sessions,
       if (command == "/stats") {
         std::string reply = "active_sessions=" + std::to_string(*active_sessions) +
                             " total_messages=" + std::to_string(*total_messages) + "\n";
-        co_await stream.WriteAll(Bytes(reply));
+        (void)co_await stream.WriteAll(Bytes(reply));
         pending.erase(0, line_end + 1);
         continue;
       }
@@ -124,7 +124,7 @@ coropact::coro::DetachedTask Session(Stream stream, long long* active_sessions,
     }
   }
 
-  co_await stream.Close();
+  (void)co_await stream.Close();
   --(*active_sessions);
 }
 

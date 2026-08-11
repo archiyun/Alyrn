@@ -38,7 +38,7 @@ coropact::coro::DetachedTask HttpSession(coropact::reactor::ReactorStream stream
     if (!written.has_value()) break;
     used = 0;
   }
-  co_await stream.Close();
+  (void)co_await stream.Close();
 }
 
 }  // namespace
