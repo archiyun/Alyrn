@@ -66,6 +66,11 @@ source 的 event capacity 和 listener 的 `accept_depth` 共同控制突发连�
 listener `Close()` 与 source 并发时，source 必须收到明确的 terminal，而不是悬挂在旧 fd
 上。调用方不应在 `Stop()` 完成前销毁仍持有 source 的对象。
 
+这里的 listener terminal 只在 **committed Close** 后发生：若 cancel SQE 尚未进入 loop 的
+submission protocol 就本地失败，`Close()` 立即返回该错误，listener 与 active source 都保持
+Open/Active，调用方可以显式重试。不能在可回滚的 Close preparation 阶段先调用
+`OnListenerClosed()`，否则一次本地提交错误会错误地把仍在运行的 source 置为 Stopping。
+
 ## 测试观察点
 
 - single-shot 和 native multishot 产生相同的业务事件序列；

@@ -16,11 +16,12 @@
 #include "coropact/base/check.h"
 #include "coropact/base/error.h"
 #include "coropact/base/try.h"
-#include "coropact/luring/detail/close_state.h"
+#include "coropact/luring/detail/cancel_result.h"
+#include "coropact/luring/detail/fd_close_convergence.h"
 #include "coropact/luring/detail/loop_access.h"
+#include "coropact/luring/detail/op.h"
 #include "coropact/luring/detail/operation_submission.h"
 #include "coropact/luring/loop.h"
-#include "coropact/luring/detail/op.h"
 #include "coropact/luring/stream.h"
 #include "coropact/net/endpoint.h"
 #include "coropact/operation/detail/completion_gate.h"
@@ -205,12 +206,16 @@ LUringAcceptSource::~LUringAcceptSource() {
     return;
   }
 
-  COROPACT_DCHECK(listener_->loop_->IsInLoopThread(),
-                  "LUringAcceptSource destroyed from wrong thread");
-  COROPACT_DCHECK(pending_next_ == nullptr, "LUringAcceptSource destroyed with pending Next");
-  COROPACT_DCHECK(pending_stop_ == nullptr, "LUringAcceptSource destroyed with pending Stop");
-  COROPACT_DCHECK(!accept_submitted_, "LUringAcceptSource destroyed with active accept");
-  COROPACT_DCHECK(!cancel_submitted_, "LUringAcceptSource destroyed with active cancel");
+  COROPACT_CHECK(listener_->loop_->IsInLoopThread(),
+                 "LUringAcceptSource destroyed from wrong thread");
+  COROPACT_CHECK(pending_next_ == nullptr, "LUringAcceptSource destroyed with pending Next");
+  COROPACT_CHECK(pending_stop_ == nullptr, "LUringAcceptSource destroyed with pending Stop");
+  COROPACT_CHECK(!accept_submitted_, "LUringAcceptSource destroyed with active accept");
+  COROPACT_CHECK(!cancel_submitted_, "LUringAcceptSource destroyed with active cancel");
+  const auto state = state_.State();
+  COROPACT_CHECK(state == AcceptSourceState::kIdle || state == AcceptSourceState::kDraining ||
+                     state == AcceptSourceState::kTerminal,
+                 "LUringAcceptSource destroyed before reaching a safe lifecycle state");
 
   if (listener_->accept_source_ == this) {
     listener_->accept_source_ = nullptr;
@@ -289,6 +294,11 @@ base::Result<void> LUringAcceptSource::StartOperation() noexcept {
     return std::unexpected(base::MakeErrno(EBADF));
   }
 
+  if (listener_->loop_->State() == backend::LoopState::kStopping ||
+      listener_->loop_->State() == backend::LoopState::kStopped) {
+    return std::unexpected(base::MakeErrno(ECANCELED));
+  }
+
   if (accept_submitted_) {
     return {};
   }
@@ -300,8 +310,8 @@ base::Result<void> LUringAcceptSource::StartOperation() noexcept {
   accept_op_.Prepare();
   ++listener_->pending_accepts_;
 
-  auto submitted = detail::LoopAccess::SubmitOp(*listener_->loop_,
-      &accept_op_,
+  auto submitted = detail::LoopAccess::SubmitOp(
+      *listener_->loop_, &accept_op_,
       [fd = listener_->fd_, multishot = multishot_enabled_](io_uring_sqe* sqe) noexcept {
         if (multishot) {
           io_uring_prep_multishot_accept(sqe, fd, nullptr, nullptr, SOCK_NONBLOCK | SOCK_CLOEXEC);
@@ -360,10 +370,10 @@ base::Result<void> LUringAcceptSource::StartCancel() noexcept {
   cancel_op_.Prepare();
   const auto target = reinterpret_cast<std::uint64_t>(&accept_op_);
 
-  auto submitted = detail::LoopAccess::SubmitOp(*listener_->loop_, &cancel_op_,
-                                                 [target](io_uring_sqe* sqe) noexcept {
-    io_uring_prep_cancel64(sqe, target, IORING_ASYNC_CANCEL_ALL);
-  });
+  auto submitted = detail::LoopAccess::SubmitOp(
+      *listener_->loop_, &cancel_op_, [target](io_uring_sqe* sqe) noexcept {
+        io_uring_prep_cancel64(sqe, target, IORING_ASYNC_CANCEL_ALL);
+      });
 
   if (!submitted.has_value()) {
     return std::unexpected(submitted.error());
@@ -529,7 +539,7 @@ CompletionDisposition LUringAcceptSource::OnCompletion(CompletionEvent event) no
 void LUringAcceptSource::OnCancelComplete(int cqe_res) noexcept {
   cancel_submitted_ = false;
 
-  if (cqe_res < 0 && cqe_res != -ENOENT && cqe_res != -ECANCELED && !terminal_error_.has_value()) {
+  if (!detail::IsExpectedCancelCqeResult(cqe_res) && !terminal_error_.has_value()) {
     terminal_error_ = base::MakeNegErrno(cqe_res);
   }
 
@@ -744,61 +754,65 @@ public:
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     listener_->RequireOwnerLoop();
     if (listener_->pending_close_ != nullptr) {
-      state_.SetError(base::MakeErrno(EBUSY));
+      convergence_.SetError(base::MakeErrno(EBUSY));
       return false;
     }
     if (listener_->closed_ || listener_->fd_ < 0) {
-      state_.SetSuccess();
+      convergence_.SetSuccess();
       return false;
     }
 
-    listener_->closed_ = true;
-    if (listener_->accept_source_ != nullptr) {
-      listener_->accept_source_->OnListenerClosed();
-    }
     if (listener_->pending_accepts_ == 0) {
-      state_.SetResult(CloseFd());
+      listener_->closed_ = true;
+      if (listener_->accept_source_ != nullptr) {
+        listener_->accept_source_->OnListenerClosed();
+      }
+      convergence_.SetResult(CloseFd());
       return false;
     }
 
     listener_->pending_close_ = this;
-    continuation_ = continuation;
+    convergence_.BeginWaiting(continuation);
     Op()->kind = LUringOpKind::kListenerCloseComplete;
 
-    auto submitted =
-        detail::LoopAccess::SubmitOp(*listener_->loop_, Op(),
-                                     [fd = listener_->fd_](io_uring_sqe* sqe) noexcept {
+    auto submitted = detail::LoopAccess::SubmitOp(
+        *listener_->loop_, Op(), [fd = listener_->fd_](io_uring_sqe* sqe) noexcept {
           io_uring_prep_cancel_fd(sqe, fd, IORING_ASYNC_CANCEL_ALL);
         });
     if (!submitted.has_value()) {
       listener_->pending_close_ = nullptr;
-      listener_->closed_ = false;
-      state_.SetError(submitted.error());
+      convergence_.SetError(submitted.error());
       return false;
+    }
+
+    // SubmitOp() cannot dispatch a CQE reentrantly on this owner thread.
+    // Commit listener close only after the cancel SQE has joined this loop's
+    // submission protocol; otherwise a local preparation failure must leave
+    // an active source unchanged.
+    listener_->closed_ = true;
+    if (listener_->accept_source_ != nullptr) {
+      listener_->accept_source_->OnListenerClosed();
     }
 
     return true;
   }
 
   base::Result<void> await_resume() noexcept {
-    assert(state_.HasResult());
-    return state_.TakeResult();
+    assert(convergence_.HasResult());
+    return convergence_.TakeResult();
   }
 
   void TryComplete(LUringOp* current = nullptr) noexcept {
-    if (state_.Completed() || listener_ == nullptr || !state_.CancelCompleted()) {
-      return;
-    }
-    if (listener_->pending_accepts_ != 0) {
+    if (listener_ == nullptr ||
+        convergence_.TryAuthorizeClose(listener_->pending_accepts_ != 0) == false) {
       return;
     }
 
-    state_.MarkCompleted();
     LUringLoop* loop = listener_->loop_;
     listener_->pending_close_ = nullptr;
-    state_.SetResult(CloseFd());
+    convergence_.SetResult(CloseFd());
     listener_ = nullptr;
-    Op()->resume_work.SetHandle(continuation_);
+    Op()->resume_work.SetHandle(convergence_.Continuation());
     if (current != Op()) {
       detail::LoopAccess::ScheduleCompletion(*loop, &Op()->resume_work);
     }
@@ -807,7 +821,7 @@ public:
 private:
   static void OnCancelComplete(LUringOp* op) noexcept {
     auto* self = OpHook::OwnerFrom(op);
-    self->state_.MarkCancelCompleted();
+    self->convergence_.MarkCancelRequestTerminal();
     self->TryComplete(op);
   }
 
@@ -823,8 +837,7 @@ private:
   }
 
   LUringListener* listener_;
-  std::coroutine_handle<> continuation_{};
-  detail::LUringCloseState state_;
+  detail::FdCloseConvergence convergence_;
 };
 
 namespace detail {
@@ -903,9 +916,10 @@ LUringListener& LUringListener::operator=(LUringListener&& other) noexcept {
 }
 
 LUringListener::~LUringListener() {
-  assert(pending_accepts_ == 0);
-  assert(pending_close_ == nullptr);
-  assert(accept_source_ == nullptr);
+  COROPACT_CHECK(pending_accepts_ == 0, "LUringListener destroyed with pending accept operations");
+  COROPACT_CHECK(pending_close_ == nullptr,
+                 "LUringListener destroyed with a pending close operation");
+  COROPACT_CHECK(accept_source_ == nullptr, "LUringListener destroyed with an active AcceptSource");
   if (fd_ >= 0) {
     ::close(fd_);
   }
@@ -927,6 +941,10 @@ base::Result<net::Endpoint> LUringListener::LocalAddress() const noexcept {
 base::Result<LUringAcceptSource> LUringListener::AcceptSource(
     net::AcceptSourceOptions options) noexcept {
   RequireOwnerLoop();
+  if (loop_->State() == backend::LoopState::kStopping ||
+      loop_->State() == backend::LoopState::kStopped) {
+    return std::unexpected(base::MakeErrno(ECANCELED));
+  }
   if (closed_ || fd_ < 0) {
     return std::unexpected(base::MakeErrno(EBADF));
   }

@@ -191,7 +191,7 @@ coropact::coro::DetachedTask AwaitPendingRead(
   result->emplace(std::move(read));
 }
 
-bool CheckLoopStopDrainsPendingRead() {
+bool RunLoopStopDrainScenario(bool inject_cancel_submit_failure) {
   int fds[2] = {-1, -1};
   if (::socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, fds) != 0) {
     std::cout << "FAIL: socketpair failed\n";
@@ -221,6 +221,24 @@ bool CheckLoopStopDrainsPendingRead() {
   coropact::coro::SpawnDetach(loop,
                               AwaitPendingRead(&stream, &buffer, &result, &resumed_with_scheduler));
 
+#if defined(COROPACT_ENABLE_TEST_HOOKS)
+  if (inject_cancel_submit_failure) {
+    // Ensure the read request itself has reached the ring before failing the
+    // next local submission. The injected failure then targets the loop-wide
+    // cancel SQE prepared during RequestStop() drain.
+    coropact::luring::detail::LoopAccess::RunReady(loop);
+    auto flushed = coropact::luring::detail::LoopAccess::FlushSubmit(loop);
+    if (!flushed.has_value()) {
+      std::cout << "FAIL: initial read submit failed: " << flushed.error().message() << '\n';
+      ::close(fds[1]);
+      return false;
+    }
+    loop.FailNextSubmissionsForTesting(1, EIO);
+  }
+#else
+  (void)(inject_cancel_submit_failure);
+#endif
+
   std::jthread stopper([&loop] {
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
     loop.RequestStop();
@@ -240,12 +258,21 @@ bool CheckLoopStopDrainsPendingRead() {
          Check(resumed_with_scheduler, "stopped loop resumed the read without scheduler affinity");
 }
 
+bool CheckLoopStopDrainsPendingRead() { return RunLoopStopDrainScenario(false); }
+
+#if defined(COROPACT_ENABLE_TEST_HOOKS)
+bool CheckLoopStopRetriesCancelSubmitFailure() { return RunLoopStopDrainScenario(true); }
+#endif
+
 }  // namespace
 
 int main() {
   if (!CheckNopResumesCoroutine()) return 1;
   if (!CheckCrossThreadRequestStopWakesRing()) return 1;
   if (!CheckLoopStopDrainsPendingRead()) return 1;
+#if defined(COROPACT_ENABLE_TEST_HOOKS)
+  if (!CheckLoopStopRetriesCancelSubmitFailure()) return 1;
+#endif
   std::cout << "luring coro smoke: PASS\n";
   return 0;
 }

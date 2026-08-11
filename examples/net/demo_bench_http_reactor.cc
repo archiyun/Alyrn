@@ -35,7 +35,7 @@ coropact::coro::DetachedTask HttpSession(coropact::reactor::ReactorStream stream
       continue;
     }
 
-    auto written = co_await coropact::io::WriteAll(stream, response);
+    auto written = co_await stream.WriteAll(response);
     if (!written.has_value()) break;
     used = 0;
   }
@@ -66,9 +66,8 @@ int main() {
 
   coropact::reactor::detail::ReactorWorkerGroup server(
       address, std::move(options), {},
-      [](coropact::reactor::detail::ReactorWorkerContext&, coropact::reactor::ReactorStream stream) {
-        return HttpSession(std::move(stream));
-      });
+      [](coropact::reactor::detail::ReactorWorkerContext&,
+         coropact::reactor::ReactorStream stream) { return HttpSession(std::move(stream)); });
   auto started = server.Start();
   if (!started.has_value()) {
     std::cerr << "ReactorWorkerGroup::Start failed: " << started.error().message() << '\n';

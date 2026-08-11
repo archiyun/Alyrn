@@ -5,7 +5,6 @@
 #include <cstdint>
 
 #include "coropact/operation/detail/completion_gate.h"
-#include "coropact/operation/detail/operation_family.h"
 
 namespace coropact::operation::detail {
 
@@ -17,7 +16,7 @@ enum class CompositeMember : std::uint8_t {
 // Lifecycle protocol for an operation whose one logical result depends on two
 // independently completing physical members, such as a linked read+timeout.
 //
-// Family handlers retain the member results and decide their business meaning.
+// Operation-specific handlers retain member results and decide their business meaning.
 // This core only records each physical member once and authorizes one logical
 // completion and one continuation resume after both are observed.
 class CompositeLifecycle {
@@ -27,11 +26,6 @@ public:
   CompositeLifecycle& operator=(const CompositeLifecycle&) = delete;
   CompositeLifecycle(CompositeLifecycle&&) = delete;
   CompositeLifecycle& operator=(CompositeLifecycle&&) = delete;
-
-  [[nodiscard]]
-  static constexpr OperationFamily Family() noexcept {
-    return OperationFamily::kComposite;
-  }
 
   [[nodiscard]]
   bool RecordMemberCompletion(CompositeMember member) noexcept {

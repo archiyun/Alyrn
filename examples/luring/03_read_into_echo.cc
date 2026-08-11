@@ -48,11 +48,17 @@ auto EchoSession(luring::LUringStream stream) -> coro::DetachedTask {
       break;
     }
 
-    auto written = co_await io::WriteAll(stream, buffer);
-    if (!written.has_value()) {
-      std::println(stderr, "write failed: {}", written.error().message());
-      break;
+    while (!buffer.Empty()) {
+      auto view = buffer.ContiguousView();
+      auto written = co_await stream.WriteAll(view);
+      if (!written.has_value()) {
+        std::println(stderr, "write failed: {}", written.error().message());
+        break;
+      }
+      buffer.Drain(view.size());
     }
+
+    if (!buffer.Empty()) break;
   }
 
   auto closed = co_await stream.Close();

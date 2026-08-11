@@ -12,6 +12,7 @@
 5. `async_stream_backend_refinement.tla`：Reactor 与 luring 对抽象模型的映射。
 6. `accept_source_refinement.tla`、`recv_source_*.tla`：多事件 source 与 lease。
 7. `send_zc_split_release_refinement.tla`：zero-copy send 的业务完成与 buffer release 分离。
+8. `async_operation_lifecycle_shapes.tla`：三个正交 lifecycle 维度的组合约束。
 
 ## 模型索引
 
@@ -19,17 +20,17 @@
 | --- | --- |
 | `async_stream_core.tla` | 单次操作的 suspend、complete、resume 与资源状态 |
 | `async_stream_multiop.tla` | operation identity，read/write 同时 pending 时的归属 |
-| `async_stream_backend_refinement.tla` | readiness 和 CQE 如何映射到同一逻辑 trace |
+| `async_stream_backend_refinement.tla` | `ObsReactor` / `ObsLUring` 如何隐藏 readiness、SQE/CQE step 并映射到同一逻辑 trace |
 | `async_stream_multiop_backend_refinement.tla` | 多 operation 的后端 refinement |
-| `resource_close_cancel.tla` | cancel acknowledgement 不等于 target request 的终态或 buffer release |
+| `resource_close_cancel.tla` | Close preparation、committed drain、cancel request terminal CQE 与 target/storage release 的边界 |
 | `loop_stop_control.tla` | dispatcher stop 不等于资源 close；Stopped 需要 pending operation 收敛 |
 | `scheduler_completion_liveness.tla` | completion 后 continuation 最终获得调度服务 |
 | `linked_timeout_submission_failure.tla` | timed operation 的子请求提交失败与收敛 |
 | `accept_source_refinement.tla` | Reactor accept drain 与 luring multishot accept 的逻辑 source 语义 |
 | `recv_source_lease.tla` | `BufferLease` 归还与 source 停止 |
 | `recv_source_incremental_lease.tla` | 多个 lease 的逐步归还与背压 |
-| `send_zc_split_release_refinement.tla` | primary completion 与 `F_NOTIF` 的分离式释放 |
-| `async_operation_families.tla` | single-result、composite、event-source、split-release family |
+| `send_zc_split_release_refinement.tla` | primary completion 与可选 `F_NOTIF` 的分离式释放 |
+| `async_operation_lifecycle_shapes.tla` | result cardinality、physical convergence 与 release coupling 的正交组合 |
 
 每个模型的 `.cfg` 约束了 TLC 的有限实例。执行方式：
 

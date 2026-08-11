@@ -88,9 +88,9 @@ await_resume() returns { result, Buffer }
 4. 无论成功、EOF、I/O error、关闭、取消还是提交失败，owner 都通过 `ReadIntoOutcome` 归还；
 5. 对单次操作，业务 continuation 只恢复一次。
 
-`reserve == 0` 目前并不代表零容量读取：`Buffer::PrepareWrite(0, ...)` 会采用 block size，
-Reactor 也把它规范化为至少 1。这一点应保留在契约中，避免把成功返回 `0` 与空 destination
-混淆；`0` 的读取结果仍按 stream 语义表示 EOF。
+`reserve == 0` 不代表零容量读取：两个 Adapter 都把它交给
+`Buffer::PrepareWrite(0, ...)`，由 Buffer 使用自身 block size。这样不会把成功返回 `0` 与空
+destination 混淆；`0` 的读取结果仍按 stream 语义表示 EOF。
 
 ## 两个后端的实现映射
 
@@ -125,6 +125,23 @@ buffer 在 await 返回前不被触碰；前者把这个要求编码进 move-onl
 buffer pool 为每个 CQE 取 buffer，属于 `RecvSource`/`BufferLease` 协议，而不是
 `ReadInto`。参见 [io_uring_prep_recv(3)](https://man7.org/linux/man-pages/man3/io_uring_prep_recv.3.html)
 与 [io_uring_prep_recv_multishot(3)](https://man7.org/linux/man-pages/man3/io_uring_prep_recv_multishot.3.html)。
+
+## LRCI 边界审计
+
+下表记录实现中的实际线性化顺序，而不是只比较两个方法是否同名：
+
+| Adapter 路径 | Physical Terminal | Result Ready | Release Authorized | Continuation Authorized |
+| --- | --- | --- | --- | --- |
+| Reactor immediate | `readv()` 返回 | `FinishAttempt()` | syscall 返回后且 reservation 已结算 | 不挂起，`await_suspend()` 返回 `false` |
+| Reactor pending | readiness 后重试 `readv()` 返回 | `CompleteRead()` 选择唯一 awaiter | `FinishAttempt()` commit/abort reservation | `CompletionGate` 胜出后提交 scheduler-bound continuation |
+| Reactor close/stop | owner loop 撤销 pending read | `ECANCELED` 固定 | Channel 不再持有本次 awaiter，reservation 已 abort | 与普通 pending completion 使用同一个 gate |
+| io_uring submit failure | SQE 未进入 pending/inflight | submit error 固定 | lane rollback，reservation abort | 不挂起，`await_suspend()` 返回 `false` |
+| io_uring CQE | target CQE terminal | `LUringOp::Complete()` 保存结果 | `OnComplete()` 结算 reservation 并释放 read lane | handler 返回后，loop 才调度 `ResumeWork` |
+| io_uring close/stop | cancel acknowledgement 与 target CQE 收敛 | target CQE 解释为 `ECANCELED` 或已发生的结果 | target CQE 后结算 reservation；cancel CQE 单独不授权归还 | close/read continuation 分别且至多调度一次 |
+
+共同的 read lane contract 是：同一 stream 同时最多一个 logical read；第二个 operation 稳定
+返回 `EBUSY`。空 `span` 也必须经过 lane 与 loop-state 检查，不能因为无需 syscall/SQE 就绕过
+生命周期协议。
 
 ## 与主流接口的关系
 

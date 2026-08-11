@@ -14,7 +14,7 @@
 
 namespace coropact::luring::detail {
 
-// Raw completion data passed from the loop to an operation-family handler.
+// Raw completion data passed from the loop to an operation-specific handler.
 // Keeping the CQE result and flags together prevents a handler from silently
 // interpreting a result without the completion flags that qualify it.
 struct CompletionEvent {
@@ -37,7 +37,7 @@ struct CompletionEvent {
   }
 };
 
-// Completion handling is selected by the operation family, not by the loop's
+// Completion handling is selected by the operation protocol, not by the loop's
 // CQE path.  An event stream may produce multiple CQEs for one physical
 // request; a split-release operation has separate kernel and logical release
 // boundaries; all other operations are one-shot.
@@ -49,7 +49,7 @@ enum class LUringCompletionModel : std::uint8_t {
 
 // A completion handler returns physical bookkeeping decisions to the loop.
 // It deliberately does not describe source state, queue draining, or buffer
-// lease ownership; those remain in the operation-family adapter.
+// lease ownership; those remain in the operation-specific adapter.
 struct CompletionDisposition {
   bool kernel_request_terminal{false};
   bool decrement_inflight{false};
@@ -60,7 +60,7 @@ enum class LUringOpKind : std::uint8_t {
   kNone = 0,
 
   kAcceptComplete,
-  // AcceptSource uses this family for both native multishot accept and its
+  // AcceptSource uses this kind for both native multishot accept and its
   // single-shot fallback. The CQE flags determine whether a request remains
   // active; the operation kind identifies the source completion handler.
   kAcceptSourceComplete,
@@ -190,9 +190,9 @@ public:
     return true;
   }
 
-  // Some operation families have more than one CQE and keep their primary
+  // Some operation protocols have more than one CQE and keep their primary
   // result outside LUringOp. They mark the operation terminal only after the
-  // final CQE has been interpreted by the family handler.
+  // final CQE has been interpreted by the operation-specific handler.
   bool CompleteWithoutResult() noexcept { return completion_slot_.TryComplete(); }
 
   void SetImmediateSuccess() noexcept { result = 0; }
@@ -213,7 +213,7 @@ public:
   }
 
   // Starts the next request in a reusable physical slot. Call only after the
-  // previous request reached its operation-family release point. This clears
+  // previous request reached its release point. This clears
   // the prior CQE result and continuation so stale state cannot leak across
   // physical requests.
   void BeginNextRequest() noexcept {

@@ -9,6 +9,8 @@
 
 CoroPact provides a unified, explicit, and high-performance C++23 coroutine model over independent Reactor and io_uring networking backends. Its default path hides event-mechanism details much like a conventional networking library, while `Runtime` offers Tokio-like server startup without preventing explicit backend-native configuration and extensions.
 
+CoroPact uses [Lifecycle-Refined Coroutine I/O (LRCI)](docs/design/zh-CN/network/lifecycle-refined-coroutine-io.md): backend events such as readiness notifications and CQEs are not treated directly as coroutine completion. They are refined into a shared logical lifecycle that separately determines result readiness, continuation resumption, and resource release.
+
 * 🔀 **A unified asynchronous I/O contract**
   epoll and io_uring retain their own threading, event-loop, and completion models, but expose the same application-observable semantics through the `io` concepts `AsyncStream`, `AsyncListener`, and `AsyncConnector`. `coro` expresses asynchronous control flow in synchronous-looking code while hiding frame, suspension, resumption, and lifetime mechanics; application code need not handle `epoll_event`, SQEs, or CQEs.
 
@@ -67,7 +69,7 @@ auto EchoSession(Stream stream) -> cp::coro::Task<cp::base::Result<void>> {
     }
 
     auto payload = std::span<const std::byte>(buffer.data(), *read);
-    auto written = co_await cp::io::WriteAll(stream, payload);
+    auto written = co_await stream.WriteAll(payload);
     if (!written.has_value()) {
       session_result = std::unexpected(written.error());
       break;

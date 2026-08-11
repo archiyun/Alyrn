@@ -29,7 +29,8 @@ struct LUringListenOptions {
   bool reuse_addr{true};
   bool reuse_port{true};
   // Exposes the luring stream's explicit zero-copy send extension to generic
-  // write algorithms. It is opt-in and does not change WriteSome() itself.
+  // WriteAll(). It is opt-in; the physical single-send operation remains
+  // internal to LUringStream.
   bool zero_copy_writes{false};
   int backlog{SOMAXCONN};
   // Number of accepts kept in flight by each worker. A value greater than one

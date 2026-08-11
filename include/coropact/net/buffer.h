@@ -42,9 +42,13 @@ public:
   ~Buffer() { Clear(); }
 
   [[nodiscard]]
-  std::size_t ReadableBytes() const noexcept { return readable_bytes_; }
+  std::size_t ReadableBytes() const noexcept {
+    return readable_bytes_;
+  }
   [[nodiscard]]
-  bool Empty() const noexcept { return readable_bytes_ == 0; }
+  bool Empty() const noexcept {
+    return readable_bytes_ == 0;
+  }
 
   [[nodiscard]]
   std::span<const std::byte> ContiguousView() const noexcept {
@@ -84,31 +88,39 @@ public:
     if (max_iov == 0) return {};
 
     if (hint == 0) hint = block_size_;
-    EnsureTailWritable(hint, max_iov);
-
-    std::vector<iovec> out;
-    out.reserve(max_iov);
-
     reserved_bytes_ = 0;
     reserved_block_count_ = 0;
     write_reserved_ = true;
 
-    for (Block& block : blocks_) {
-      if (!block.reserved_for_write) continue;
-      if (out.size() >= max_iov) break;
+    try {
+      EnsureTailWritable(hint, max_iov);
 
-      const std::size_t n = block.WritableBytes();
-      if (n == 0) continue;
+      std::vector<iovec> out;
+      out.reserve(max_iov);
 
-      out.push_back(iovec{
-          .iov_base = block.WriteData(),
-          .iov_len = n,
-      });
-      reserved_bytes_ += n;
-      ++reserved_block_count_;
+      for (Block& block : blocks_) {
+        if (!block.reserved_for_write) continue;
+        if (out.size() >= max_iov) break;
+
+        const std::size_t n = block.WritableBytes();
+        if (n == 0) continue;
+
+        out.push_back(iovec{
+            .iov_base = block.WriteData(),
+            .iov_len = n,
+        });
+        reserved_bytes_ += n;
+        ++reserved_block_count_;
+      }
+
+      if (out.empty()) {
+        ClearWriteReservation();
+      }
+      return out;
+    } catch (...) {
+      ClearWriteReservation();
+      throw;
     }
-
-    return out;
   }
 
   void CommitWrite(std::size_t n) {
@@ -177,14 +189,22 @@ private:
     bool reserved_for_write{false};
 
     [[nodiscard]]
-    std::size_t ReadableBytes() const noexcept { return write_pos - read_pos; }
+    std::size_t ReadableBytes() const noexcept {
+      return write_pos - read_pos;
+    }
     [[nodiscard]]
-    std::size_t WritableBytes() const noexcept { return capacity - write_pos; }
+    std::size_t WritableBytes() const noexcept {
+      return capacity - write_pos;
+    }
 
     [[nodiscard]]
-    const std::byte* ReadData() const noexcept { return data.get() + read_pos; }
+    const std::byte* ReadData() const noexcept {
+      return data.get() + read_pos;
+    }
     [[nodiscard]]
-    std::byte* WriteData() noexcept { return data.get() + write_pos; }
+    std::byte* WriteData() noexcept {
+      return data.get() + write_pos;
+    }
   };
 
   using BlockList = coropact::ds::IntrusiveList<Block, BlockTag>;

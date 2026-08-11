@@ -61,6 +61,8 @@ public:
       : OpHook(LUringOpKind::kConnect), loop_(loop), peer_(std::move(peer)) {}
 
   ~ConnectAwaiter() noexcept {
+    COROPACT_CHECK(!Op()->resume_work.HasHandle() || Op()->IsCompleted(),
+                   "ConnectAwaiter destroyed before its physical connect CQE settled");
     if (fd_ >= 0) {
       ::close(fd_);
     }
@@ -75,6 +77,11 @@ public:
     COROPACT_CHECK(loop_ != nullptr, "LUringConnector operation has no owner loop");
     COROPACT_CHECK(loop_->IsInLoopThread(),
                    "LUringConnector operation called from wrong LUringLoop thread");
+    if (loop_->State() == backend::LoopState::kStopping ||
+        loop_->State() == backend::LoopState::kStopped) {
+      Op()->SetImmediateError(base::MakeErrno(ECANCELED));
+      return false;
+    }
 
     auto fd = CreateSocket(peer_.NativeFamily());
     if (!fd.has_value()) {
@@ -119,9 +126,20 @@ private:
   int fd_{-1};
 };
 
+coro::Task<base::Result<LUringStream>> ConnectResolved(LUringLoop* loop,
+                                                       base::Result<net::Endpoint> peer) {
+  if (!peer.has_value()) {
+    co_return std::unexpected(peer.error());
+  }
+  co_return co_await ConnectAwaiter(loop, std::move(*peer));
+}
+
 }  // namespace
 
-LUringConnector::LUringConnector(LUringLoop* loop) noexcept : loop_(loop) {}
+LUringConnector::LUringConnector(LUringLoop* loop) noexcept : loop_(loop) {
+  COROPACT_CHECK(loop_ != nullptr, "LUringConnector: loop must not be null");
+  COROPACT_CHECK(loop_->IsInLoopThread(), "LUringConnector created from wrong LUringLoop thread");
+}
 
 base::Result<LUringConnector> LUringConnector::Create(LUringLoop* loop) noexcept {
   if (loop == nullptr) {
@@ -142,13 +160,20 @@ LUringConnector& LUringConnector::operator=(LUringConnector&& other) noexcept {
 
 coro::Task<base::Result<LUringStream>> LUringConnector::Connect(std::string_view host,
                                                                 std::uint16_t port) {
-  COROPACT_CO_TRY(peer, net::ParseIpAddress(host, port));
-  co_return co_await ConnectAwaiter(loop_, std::move(peer));
+  RequireOwnerLoop();
+  return ConnectResolved(loop_, net::ParseIpAddress(host, port));
 }
 
 coro::Task<void> LUringConnector::SleepFor(std::chrono::milliseconds delay) {
+  RequireOwnerLoop();
   auto result = co_await coropact::luring::SleepFor(*loop_, delay);
   (void)result;
+}
+
+void LUringConnector::RequireOwnerLoop() const noexcept {
+  COROPACT_CHECK(loop_ != nullptr, "LUringConnector operation has no owner LUringLoop");
+  COROPACT_CHECK(loop_->IsInLoopThread(),
+                 "LUringConnector operation called from wrong LUringLoop thread");
 }
 
 }  // namespace coropact::luring

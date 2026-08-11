@@ -1095,7 +1095,7 @@ bool CheckQueueBackpressure() {
          observation.normal_end;
 }
 
-bool CheckQueuePauseThenRearm() {
+bool RunQueuePauseThenRearmScenario(bool inject_close_submit_failure) {
   LUringLoop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
@@ -1125,6 +1125,28 @@ bool CheckQueuePauseThenRearm() {
   PauseResumeObservation observation;
   coropact::coro::SpawnDetach(loop, PauseThenResume(&source, &loop, &observation));
   coropact::luring::detail::LoopAccess::RunReady(loop);
+
+#if defined(COROPACT_ENABLE_TEST_HOOKS)
+  if (inject_close_submit_failure) {
+    // Close preparation has not committed until its cancel SQE is accepted.
+    // A local failure must leave the active source in Active, so the same
+    // high-water pause and low-water re-arm trace remains possible below.
+    loop.FailNextSubmissionsForTesting(1, EIO);
+    CloseObservation close_observation;
+    coropact::coro::SpawnDetach(
+        loop, CloseListener(&listener, &close_observation));
+    coropact::luring::detail::LoopAccess::RunReady(loop);
+
+    if (close_observation.close_succeeded ||
+        !close_observation.error.has_value() ||
+        close_observation.error->value() != EIO) {
+      std::cout << "FAIL: listener close preparation failure did not return EIO\n";
+      return false;
+    }
+  }
+#else
+  (void)(inject_close_submit_failure);
+#endif
 
   auto address = listener.LocalAddress();
   if (!address.has_value()) {
@@ -1208,6 +1230,16 @@ bool CheckQueuePauseThenRearm() {
          observation.normal_end;
 }
 
+bool CheckQueuePauseThenRearm() {
+  return RunQueuePauseThenRearmScenario(false);
+}
+
+#if defined(COROPACT_ENABLE_TEST_HOOKS)
+bool CheckListenerCloseSubmitFailurePreservesActiveSource() {
+  return RunQueuePauseThenRearmScenario(true);
+}
+#endif
+
 }  // namespace
 
 int main() {
@@ -1219,6 +1251,9 @@ int main() {
     return 1;
   }
   if (!CheckCancelSubmitFailure()) {
+    return 1;
+  }
+  if (!CheckListenerCloseSubmitFailurePreservesActiveSource()) {
     return 1;
   }
 #endif

@@ -8,9 +8,9 @@
 #include <optional>
 #include <vector>
 
+#include "coropact/backend/recv_source.h"
 #include "coropact/base/error.h"
 #include "coropact/coro/task.h"
-#include "coropact/backend/recv_source.h"
 #include "coropact/net/recv_source.h"
 #include "coropact/reactor/detail/channel.h"
 #include "coropact/reactor/detail/loop_shutdown.h"
@@ -38,10 +38,8 @@ public:
   using Result = base::Result<std::optional<Event>>;
 
   [[nodiscard]]
-  static base::Result<ReactorRecvSource> Create(
-      EventLoop* loop,
-      int fd,
-      ReactorRecvSourceOptions options = {}) noexcept;
+  static base::Result<ReactorRecvSource> Create(EventLoop* loop, int fd,
+                                                ReactorRecvSourceOptions options = {}) noexcept;
 
   ~ReactorRecvSource();
 
@@ -62,13 +60,9 @@ private:
   class NextAwaiter;
   class StopAwaiter;
 
-  ReactorRecvSource(
-      EventLoop* loop,
-      int fd,
-      net::detail::RecvSourceStateMachine state,
-      std::size_t buffer_size,
-      std::vector<std::byte> storage,
-      std::vector<std::uint32_t> available_buffers) noexcept;
+  ReactorRecvSource(EventLoop* loop, int fd, net::detail::RecvSourceStateMachine state,
+                    std::size_t buffer_size, std::vector<std::byte> storage,
+                    std::vector<std::uint32_t> available_buffers) noexcept;
 
   [[nodiscard]]
   base::Result<void> Start() noexcept;
@@ -77,6 +71,7 @@ private:
   base::Result<bool> BeginStop() noexcept;
 
   void EnsureAdmission() noexcept;
+  void RequestBackendPause() noexcept;
   void RequestBackendStop(std::optional<base::Error> error = std::nullopt) noexcept;
   void CompleteReadiness() noexcept;
   void OnReady() noexcept;

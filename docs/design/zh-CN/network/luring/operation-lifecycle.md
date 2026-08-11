@@ -23,7 +23,7 @@
 | single-shot read/write | 1 | 通常 1 | 1 | CQE dispatch 后 |
 | timed read | 2（read + timeout） | 最多 2 | 1 | 两个 member 收敛后 |
 | multishot | 1 | 多个，最后一个 terminal | 多个事件 + 1 个 terminal | terminal 和已产生事件都收敛后 |
-| send zerocopy | 1 | primary + notification | 1 | notification 到达后 |
+| send zerocopy | 1 | primary，primary `F_MORE` 时另有 notification | 1 | primary 无 `F_MORE` 后，或 notification 到达后 |
 | close/cancel | cancel + 原 pending 请求 | 多个 | 1 个 close 结果 | 所有关联请求收敛后 |
 
 ## 通用状态序列
@@ -32,7 +32,7 @@
 Idle
   -> Submitted       已准备并排队，可能尚未进入 kernel
   -> InFlight        已提交，等待 CQE
-  -> Resolving       CQE 正在被 operation family 解释
+  -> Resolving       CQE 正在被 operation-specific lifecycle 解释
   -> Completed       逻辑结果已确定
   -> Released        buffer、fd、frame 等 ownership 已交回
 ```
@@ -47,10 +47,10 @@ Idle
 
 ## CQE 不是业务结果
 
-普通 CQE 只提供 `res`、flags 和 user data。luring 根据 operation family 解释它：
+普通 CQE 只提供 `res`、flags 和 user data。luring 根据 operation-specific lifecycle 解释它：
 
-- `F_MORE`：这次 multishot operation 还会继续，不能销毁 operation；
-- 没有 `F_MORE`：该 multishot request 的物理终止边界；
+- `F_MORE`：multishot request 仍会继续；对 send-zc primary 则承诺后续 `F_NOTIF`，不能提前释放 buffer；
+- 没有 `F_MORE`：multishot request 的物理终止边界；对 send-zc primary 也表示不会再有 notification；
 - `F_NOTIF`：zerocopy 发送 buffer 的 kernel 使用边界，不是发送字节数；
 - `F_BUF_MORE`：同一 provided buffer 还有后续 segment，当前 `LUringRecvSource` 公共
   路径尚未承诺该增量语义。
@@ -58,7 +58,7 @@ Idle
 因此测试不应只断言“收到了一个 CQE”，而应断言最终业务 trace，例如：
 
 ```text
-send result -> notification -> buffer reusable -> coroutine resumed
+send result -> terminal primary/notification -> buffer reusable -> coroutine resumed
 ```
 
 ## 取消与关闭
@@ -81,24 +81,33 @@ RequestStop / Close
 request 尽快终态的协议。下列边界必须分开：
 
 ```text
-cancel intent
-  -> cancel SQE submitted
-  -> cancel CQE acknowledged
+Close preparation（临时拒绝新操作）
+  -> 本地 SQE preparation 失败：abort preparation，Close 返回 error，资源仍 Open
+  -> cancel SQE 进入 owner loop submission protocol：committed Close
+  -> cancel request terminal CQE
   -> original target CQE terminal
   -> buffer / awaiter release authorized
   -> fd/channel/ring registration released
   -> Close continuation resumed
 ```
 
-cancel CQE 只说明 cancel command 已被内核处理；它不是 original request 已终态的证据。
+cancel CQE 只说明 cancel command 已终态；它不是 original request 已终态的证据。
 因此 fd 的释放条件是**所有 active physical use**均已 drain，而不是“每个 read/write 槽位
 都有一个 terminal operation”。未使用槽位不会阻塞关闭；已提交的 target、已提交的 cancel
 command，以及 backend 仍持有的 borrowed/owned storage 都会阻塞关闭。
 
+对 source 的 `cancel64` 路径，`-ENOENT` 表示 target 已在 cancel 查找前完成，`-EALREADY`
+表示 target 已进入无法取消但很快会产生自己的 CQE 的阶段；两者都不是 source 的 terminal
+error。更高层 loop shutdown 取消 cancel request 自身时的 `-ECANCELED` 也不归因于 source。
+source 仍必须等待 target CQE，再决定 pause、re-arm 或 stop 的逻辑结果。其他 cancel CQE
+error 才会被记录为 source terminal error；无论结果如何，cancel CQE 都不能单独授权 target
+storage 或 source state 的释放。
+
 该规则由 [`resource_close_cancel.tla`](../formal/resource_close_cancel.tla) 独立建模。模型
-覆盖 read/write、target CQE 与 cancel CQE 的任意顺序、一次 transient cancel-submit failure
-后的重试、borrowed storage release、fd release 和 Close continuation。其活性结论只在
-“owner loop 继续运行、已提交请求最终得到 CQE、局部 submit failure 是暂时的”前提下成立。
+覆盖 read/write、target CQE 与 cancel CQE 的任意顺序、local cancel-SQE preparation failure
+的完整回滚、borrowed storage release、fd release 和 Close continuation。失败的 preparation
+不是已提交 Close 的内部后台重试：它同步返回 error，后续重试是调用方发起的新 `Close()`。
+模型的活性结论只在“owner loop 继续运行、committed request 最终得到 CQE”的前提下成立。
 
 ## 测试观察点
 

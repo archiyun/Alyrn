@@ -31,11 +31,11 @@ public:
   }
 
   [[nodiscard]]
-  bool CancelCompleted() const noexcept {
-    return (flags_ & kCancelCompletedBit) != 0;
+  bool CancelRequestTerminal() const noexcept {
+    return (flags_ & kCancelRequestTerminalBit) != 0;
   }
 
-  void MarkCancelCompleted() noexcept { flags_ |= kCancelCompletedBit; }
+  void MarkCancelRequestTerminal() noexcept { flags_ |= kCancelRequestTerminalBit; }
 
   [[nodiscard]]
   bool Completed() const noexcept {
@@ -45,7 +45,7 @@ public:
   void MarkCompleted() noexcept { flags_ |= kCompletedBit; }
 
 private:
-  static constexpr std::uint8_t kCancelCompletedBit = 1U << 0;
+  static constexpr std::uint8_t kCancelRequestTerminalBit = 1U << 0;
   static constexpr std::uint8_t kCompletedBit = 1U << 1;
 
   LUringResultState<void> result_;

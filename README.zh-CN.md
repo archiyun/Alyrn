@@ -9,6 +9,8 @@
 
 CoroPact 在相互独立的 Reactor 与 io_uring 网络后端之上，提供统一、直观且高性能的 C++23 协程编程模型。它让默认路径像 Go 的网络库一样不暴露底层事件机制，并通过 `Runtime` 提供类似 Tokio 的快速启动方式；需要时，应用仍可显式使用后端原生扩展与配置。
 
+CoroPact 使用[生命周期精化协程 I/O（LRCI）](docs/design/zh-CN/network/lifecycle-refined-coroutine-io.md)：readiness 与 CQE 等后端事件不会直接等同于协程完成，而是被精化到一套共享逻辑生命周期，分别确定结果何时 ready、continuation 何时恢复、资源何时释放。
+
 * 🔀 **统一的异步 I/O 契约**
   epoll 与 io_uring 保留各自的线程、事件循环与完成模型，但通过 `io` 的 `AsyncStream`、`AsyncListener` 与 `AsyncConnector` concept 提供一致的业务可观察语义。`coro` 以同步代码形式表达异步控制流，并隐藏协程帧、挂起、恢复与生命周期细节；业务代码无需接触 `epoll_event`、SQE 或 CQE。
 
@@ -67,7 +69,7 @@ auto EchoSession(Stream stream) -> cp::coro::Task<cp::base::Result<void>> {
     }
 
     auto payload = std::span<const std::byte>(buffer.data(), *read);
-    auto written = co_await cp::io::WriteAll(stream, payload);
+    auto written = co_await stream.WriteAll(payload);
     if (!written.has_value()) {
       session_result = std::unexpected(written.error());
       break;

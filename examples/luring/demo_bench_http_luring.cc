@@ -41,7 +41,7 @@ coropact::coro::DetachedTask HttpSession(coropact::luring::LUringStream stream) 
       continue;
     }
 
-    auto written = co_await coropact::io::WriteAll(stream, response);
+    auto written = co_await stream.WriteAll(response);
     if (!written.has_value()) {
       break;
     }
@@ -78,13 +78,15 @@ int main() {
       });
   auto started = server.Start();
   if (!started.has_value()) {
-    std::fprintf(stderr, "LUringWorkerGroup::Start failed: %s\n", started.error().message().c_str());
+    std::fprintf(stderr, "LUringWorkerGroup::Start failed: %s\n",
+                 started.error().message().c_str());
     return 1;
   }
 
-  std::printf("HttpLuringBench bind=127.0.0.1 port=%u workers=%zu entries=%u accept=single-shot "
-              "frame_pool=off response_body=%zu\n",
-              port, workers, entries, coropact_bench::kResponseBodySize);
+  std::printf(
+      "HttpLuringBench bind=127.0.0.1 port=%u workers=%zu entries=%u accept=single-shot "
+      "frame_pool=off response_body=%zu\n",
+      port, workers, entries, coropact_bench::kResponseBodySize);
   std::fflush(stdout);
   while (!g_stop.load(std::memory_order_relaxed)) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));

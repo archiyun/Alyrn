@@ -1,5 +1,6 @@
 # 网络库
 
+- [生命周期精化协程 I/O（LRCI）](lifecycle-refined-coroutine-io.md)
 - [AsyncStream 与 AsyncListener 协程语义契约](async-stream-contract.md)
 - [AcceptSource 语义契约](accept-source-contract.md)
 - [Reactor / epoll](reactor/index.md)

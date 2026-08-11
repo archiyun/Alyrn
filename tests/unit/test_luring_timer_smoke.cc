@@ -3,9 +3,11 @@
 
 #include <chrono>
 #include <iostream>
+#include <thread>
 
 #include "coropact/coro/spawn.h"
 #include "coropact/coro/task.h"
+#include "coropact/io/loop.h"
 #include "coropact/luring/connector.h"
 #include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/loop.h"
@@ -88,10 +90,48 @@ bool TestTimers() {
          Check(scheduler_ok, "SleepFor should resume on its loop scheduler");
 }
 
+bool TestStopDiscardsUnexpiredTimer() {
+  bool fired = false;
+  {
+    coropact::luring::LUringLoop loop;
+    coropact::luring::LUringOptions options;
+    options.entries = 8;
+    options.submit_batch = 1;
+
+    auto init = loop.Init(options);
+    if (!init.has_value()) {
+      if (IsEnvironmentSkip(init.error())) {
+        return true;
+      }
+      return Check(false, "LUringLoop initialization failed for stop test");
+    }
+
+    auto timer = loop.RunAfter(1h, [&fired] noexcept { fired = true; });
+    if (!Check(timer.has_value(), "unexpired timer should be accepted")) {
+      return false;
+    }
+
+    std::jthread stopper([&loop] {
+      std::this_thread::sleep_for(2ms);
+      loop.RequestStop();
+    });
+    loop.Run();
+    stopper.join();
+
+    if (!Check(loop.State() == coropact::io::LoopState::kStopped,
+               "loop with an unexpired timer should stop")) {
+      return false;
+    }
+  }
+
+  return Check(!fired, "loop shutdown must discard an unexpired timer without running it");
+}
+
 }  // namespace
 
 int main() {
   if (!TestTimers()) return 1;
+  if (!TestStopDiscardsUnexpiredTimer()) return 1;
   std::cout << "luring timer smoke: PASS\n";
   return 0;
 }

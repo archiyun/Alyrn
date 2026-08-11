@@ -30,6 +30,12 @@ loop.Run(stop_token);
 然后才进入 `Stopped`。这仍不等价于销毁 listener/stream 或归还 BufferLease；这些对象的最终
 close/release 仍属于 worker/runtime 的 owner-thread 协议。
 
+`Run()` 没有 shutdown error return，因此全局 cancel SQE 的一次本地 preparation 失败不能让
+loop 假装已经 `Stopped`。owner loop 会继续 reaping 已有 CQE，并在后续 turn 重试全局 cancel；
+只有 pending submit、inflight request 和 ready continuation 都已排空，才发布 `Stopped`。这与
+source/stream 的显式 `Stop()` 或 `Close()` 不同：后两者可以把 preparation error 返回给调用方，
+由调用方决定是否重试。
+
 ## loop 配置
 
 `LUringOptions` 中最影响外部行为的选项是：

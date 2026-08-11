@@ -192,9 +192,9 @@ coropact::coro::DetachedTask ReadForOnce(coropact::luring::LUringStream* stream,
 coropact::coro::DetachedTask WriteOnce(coropact::luring::LUringStream* stream,
                                        coropact::luring::LUringLoop* loop,
                                        std::span<const std::byte> buffer,
-                                       std::optional<coropact::base::Result<std::size_t>>* out,
+                                       std::optional<coropact::base::Result<void>>* out,
                                        bool* resumed_with_scheduler, int* resume_count = nullptr) {
-  auto result = co_await stream->WriteSome(buffer);
+  auto result = co_await stream->WriteAll(buffer);
   if (resume_count != nullptr) {
     ++*resume_count;
   }
@@ -206,6 +206,20 @@ coropact::coro::DetachedTask CloseOnce(coropact::luring::LUringStream* stream,
                                        std::optional<coropact::base::Result<void>>* out) {
   auto result = co_await stream->Close();
   out->emplace(std::move(result));
+}
+
+coropact::coro::DetachedTask ShutdownThenReadAndWrite(
+    coropact::luring::LUringStream* stream, coropact::luring::LUringLoop* loop,
+    std::span<const std::byte> write_buffer, std::span<std::byte> read_buffer,
+    std::optional<coropact::base::Result<void>>* first_shutdown,
+    std::optional<coropact::base::Result<void>>* second_shutdown,
+    std::optional<coropact::base::Result<void>>* write_result,
+    std::optional<coropact::base::Result<std::size_t>>* read_result, bool* resumed_with_scheduler) {
+  first_shutdown->emplace(co_await stream->Shutdown());
+  second_shutdown->emplace(co_await stream->Shutdown());
+  write_result->emplace(co_await stream->WriteAll(write_buffer));
+  read_result->emplace(co_await stream->ReadSome(read_buffer));
+  *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == loop;
 }
 
 bool CheckReadSome() {
@@ -597,7 +611,7 @@ bool CheckWriteSubmitFailureRollsBack() {
   constexpr std::string_view kPayload = "retry";
   auto bytes = std::as_bytes(std::span<const char>(kPayload.data(), kPayload.size()));
 
-  std::optional<coropact::base::Result<std::size_t>> failed_result;
+  std::optional<coropact::base::Result<void>> failed_result;
   bool failed_with_scheduler = false;
   int failed_resume_count = 0;
   loop.FailNextSubmissionsForTesting(1, EIO);
@@ -613,7 +627,7 @@ bool CheckWriteSubmitFailureRollsBack() {
     return false;
   }
 
-  std::optional<coropact::base::Result<std::size_t>> retried_result;
+  std::optional<coropact::base::Result<void>> retried_result;
   bool retried_with_scheduler = false;
   int retried_resume_count = 0;
   coropact::coro::SpawnDetach(loop, WriteOnce(&stream, &loop, bytes, &retried_result,
@@ -636,7 +650,6 @@ bool CheckWriteSubmitFailureRollsBack() {
 
   return Check(retried_result.has_value(), "retried write coroutine did not finish") &&
          Check(retried_result->has_value(), "retried write returned an error") &&
-         Check(**retried_result == kPayload.size(), "retried write returned wrong byte count") &&
          Check(retried_resume_count == 1, "retried write resumed more than once") &&
          Check(retried_with_scheduler, "retried write resumed without current scheduler") &&
          Check(std::string_view(read_buffer.data(), static_cast<std::size_t>(received)) == kPayload,
@@ -693,7 +706,7 @@ bool CheckTimedReadTimeoutSubmitFailureResumesOnce() {
 }
 #endif
 
-bool CheckWriteSome() {
+bool CheckWriteAll() {
   coropact::luring::LUringLoop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
@@ -713,7 +726,7 @@ bool CheckWriteSome() {
   constexpr std::string_view kPayload = "pong";
   auto bytes = std::as_bytes(std::span<const char>(kPayload.data(), kPayload.size()));
 
-  std::optional<coropact::base::Result<std::size_t>> result;
+  std::optional<coropact::base::Result<void>> result;
   bool resumed_with_scheduler = false;
 
   coropact::coro::SpawnDetach(loop,
@@ -740,10 +753,71 @@ bool CheckWriteSome() {
 
   return Check(*completions >= 1, "write did not produce a completion") &&
          Check(result.has_value(), "write coroutine did not resume") &&
-         Check(result->has_value(), "WriteSome returned an error") &&
-         Check(**result == kPayload.size(), "WriteSome returned wrong byte count") &&
-         Check(actual == kPayload, "WriteSome payload mismatch") &&
+         Check(result->has_value(), "WriteAll returned an error") &&
+         Check(actual == kPayload, "WriteAll payload mismatch") &&
          Check(resumed_with_scheduler, "write resumed without current scheduler");
+}
+
+bool CheckShutdownKeepsReadOpen() {
+  coropact::luring::LUringLoop loop;
+  switch (InitLoop(loop)) {
+    case LoopInitStatus::kReady:
+      break;
+    case LoopInitStatus::kSkip:
+      return true;
+    case LoopInitStatus::kFail:
+      return false;
+  }
+
+  UniqueFd local;
+  UniqueFd peer;
+  if (!CreateSocketPair(local, peer)) return false;
+
+  constexpr std::string_view kReply = "reply";
+  if (!WriteFd(peer.fd(), kReply)) return false;
+
+  coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  constexpr std::string_view kWrite = "must-not-send";
+  auto write_buffer = std::as_bytes(std::span<const char>(kWrite.data(), kWrite.size()));
+  std::array<std::byte, 16> read_buffer{};
+  std::optional<coropact::base::Result<void>> first_shutdown;
+  std::optional<coropact::base::Result<void>> second_shutdown;
+  std::optional<coropact::base::Result<void>> write_result;
+  std::optional<coropact::base::Result<std::size_t>> read_result;
+  bool resumed_with_scheduler = false;
+
+  coropact::coro::SpawnDetach(
+      loop, ShutdownThenReadAndWrite(&stream, &loop, write_buffer, read_buffer, &first_shutdown,
+                                     &second_shutdown, &write_result, &read_result,
+                                     &resumed_with_scheduler));
+  coropact::luring::detail::LoopAccess::RunReady(loop);
+
+  auto completions = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
+  if (!completions.has_value()) {
+    std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+    return false;
+  }
+  coropact::luring::detail::LoopAccess::RunReady(loop);
+
+  std::array<char, 1> peer_buffer{};
+  const ssize_t peer_read = ::read(peer.fd(), peer_buffer.data(), peer_buffer.size());
+  const std::string_view actual(reinterpret_cast<const char*>(read_buffer.data()), kReply.size());
+
+  return Check(*completions >= 1, "read after Shutdown did not complete") &&
+         Check(first_shutdown.has_value() && first_shutdown->has_value(),
+               "first Shutdown failed") &&
+         Check(second_shutdown.has_value() && second_shutdown->has_value(),
+               "second Shutdown was not idempotent") &&
+         Check(write_result.has_value() && !write_result->has_value(),
+               "WriteAll after Shutdown unexpectedly succeeded") &&
+         Check(write_result->error() == std::errc::broken_pipe,
+               "WriteAll after Shutdown did not return EPIPE") &&
+         Check(
+             read_result.has_value() && read_result->has_value() && **read_result == kReply.size(),
+             "ReadSome after Shutdown did not remain usable") &&
+         Check(actual == kReply, "ReadSome after Shutdown returned wrong payload") &&
+         Check(peer_read == 0, "peer did not observe Shutdown EOF") &&
+         Check(resumed_with_scheduler, "read after Shutdown resumed without current scheduler");
 }
 
 bool CheckCloseWithoutPending() {
@@ -825,6 +899,75 @@ bool CheckCloseCancelsPendingRead() {
          Check(read_resume_count == 1, "pending read cancellation resumed more than once") &&
          Check(read_resumed_with_scheduler, "pending read resumed without current scheduler");
 }
+
+#if defined(COROPACT_ENABLE_TEST_HOOKS)
+bool CheckCloseSubmitFailureAbortsPreparation() {
+  coropact::luring::LUringLoop loop;
+  switch (InitLoop(loop)) {
+    case LoopInitStatus::kReady:
+      break;
+    case LoopInitStatus::kSkip:
+      return true;
+    case LoopInitStatus::kFail:
+      return false;
+  }
+
+  UniqueFd local;
+  UniqueFd peer;
+  if (!CreateSocketPair(local, peer)) return false;
+
+  coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  std::array<std::byte, 8> buffer{};
+  std::optional<coropact::base::Result<std::size_t>> read_result;
+  bool read_resumed_with_scheduler = false;
+  int read_resume_count = 0;
+  coropact::coro::SpawnDetach(loop, ReadOnce(&stream, &loop, buffer, &read_result,
+                                             &read_resumed_with_scheduler, &read_resume_count));
+  coropact::luring::detail::LoopAccess::RunReady(loop);
+
+  // The read SQE already exists. Fail only Close's local cancel submission;
+  // the stream must return to Open rather than strand the pending read in a
+  // provisional Closing state.
+  loop.FailNextSubmissionsForTesting(1, EIO);
+  std::optional<coropact::base::Result<void>> failed_close;
+  coropact::coro::SpawnDetach(loop, CloseOnce(&stream, &failed_close));
+  coropact::luring::detail::LoopAccess::RunReady(loop);
+
+  if (!Check(failed_close.has_value(), "failed close coroutine did not run") ||
+      !Check(!failed_close->has_value(), "injected close submission unexpectedly succeeded") ||
+      !Check(failed_close->error().value() == EIO,
+             "injected close submission returned the wrong error")) {
+    return false;
+  }
+
+  constexpr std::string_view kPayload = "retry";
+  if (!WriteFd(peer.fd(), kPayload)) return false;
+
+  for (int i = 0; i < 4 && !read_result.has_value(); ++i) {
+    auto completions = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
+    if (!completions.has_value()) {
+      std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+      return false;
+    }
+    coropact::luring::detail::LoopAccess::RunReady(loop);
+  }
+
+  if (!Check(read_result.has_value(), "read did not survive failed close preparation") ||
+      !Check(read_result->has_value(), "read after failed close preparation returned an error") ||
+      !Check(**read_result == kPayload.size(),
+             "read after failed close returned wrong byte count") ||
+      !Check(read_resume_count == 1, "read after failed close resumed more than once") ||
+      !Check(read_resumed_with_scheduler, "read after failed close resumed without scheduler")) {
+    return false;
+  }
+
+  std::optional<coropact::base::Result<void>> retry_close;
+  coropact::coro::SpawnDetach(loop, CloseOnce(&stream, &retry_close));
+  coropact::luring::detail::LoopAccess::RunReady(loop);
+  return Check(retry_close.has_value(), "retry Close did not finish") &&
+         Check(retry_close->has_value(), "retry Close returned an error");
+}
+#endif
 
 bool CheckCloseReturnsOwnedReadBuffer() {
   coropact::luring::LUringLoop loop;
@@ -950,8 +1093,10 @@ int main() {
   if (!CheckOwnedReadSubmitFailureReturnsBuffer()) return 1;
   if (!CheckWriteSubmitFailureRollsBack()) return 1;
   if (!CheckTimedReadTimeoutSubmitFailureResumesOnce()) return 1;
+  if (!CheckCloseSubmitFailureAbortsPreparation()) return 1;
 #endif
-  if (!CheckWriteSome()) return 1;
+  if (!CheckWriteAll()) return 1;
+  if (!CheckShutdownKeepsReadOpen()) return 1;
   if (!CheckCloseWithoutPending()) return 1;
   if (!CheckCloseCancelsPendingRead()) return 1;
   if (!CheckCloseReturnsOwnedReadBuffer()) return 1;

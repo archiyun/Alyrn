@@ -79,6 +79,6 @@ The following remain deferred or require separate design work:
 - cancellation and propagation through `JoinHandle` and pending I/O;
 - scheduler affinity when a task and its waiter run on different workers;
 - runtime shutdown behavior for queued and suspended coroutine handles;
-- completion-family extensions such as multishot operations, provided buffers,
+- completion-protocol extensions such as multishot operations, provided buffers,
   and split send/notification completions. These belong to the backend adapter
   layer and must not change the ownership semantics of `Task<T>`.

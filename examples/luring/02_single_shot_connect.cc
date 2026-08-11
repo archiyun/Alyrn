@@ -41,10 +41,9 @@ coro::DetachedTask ConnectOnce(luring::LUringLoop& loop, int& exit_code) {
   auto stream = std::move(*connected);
   std::println("connected to 127.0.0.1:{}", kEchoPort);
 
-  const auto payload =
-      std::as_bytes(std::span<const char>(kMessage.data(), kMessage.size()));
+  const auto payload = std::as_bytes(std::span<const char>(kMessage.data(), kMessage.size()));
 
-  auto write_result = co_await io::WriteAll(stream, payload);
+  auto write_result = co_await stream.WriteAll(payload);
   if (!write_result.has_value()) {
     std::println(stderr, "write failed: {}", write_result.error().message());
     (void)co_await stream.Close();
