@@ -17,7 +17,7 @@
 #include <utility>
 #include <vector>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/base/try.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/spawn.h"
@@ -31,8 +31,8 @@
 
 namespace {
 
-using coropact::base::Error;
-using coropact::base::Result;
+using coropact::Error;
+using coropact::Result;
 using coropact::luring::LUringAcceptSource;
 using coropact::luring::detail::CompletionEvent;
 using coropact::luring::LUringListener;
@@ -199,7 +199,7 @@ Result<int> ConnectClient(const Endpoint& address) {
       SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC,
       IPPROTO_TCP);
   if (fd < 0) {
-    return std::unexpected(coropact::base::CurrentErrno());
+    return std::unexpected(coropact::CurrentErrno());
   }
 
   const int result = ::connect(
@@ -208,7 +208,7 @@ Result<int> ConnectClient(const Endpoint& address) {
       address.SockAddrLen());
 
   if (result < 0 && errno != EINPROGRESS) {
-    const auto error = coropact::base::CurrentErrno();
+    const auto error = coropact::CurrentErrno();
     ::close(fd);
     return std::unexpected(error);
   }
@@ -369,7 +369,7 @@ void CheckFakeRearmSubmitFailure() {
   // A terminal positive event releases the old request and triggers rearm.
   // The injected failure must become a source terminal condition while the
   // two already produced events remain drainable.
-  source.FailNextSubmission(coropact::base::MakeErrno(EIO));
+  source.FailNextSubmission(coropact::Errno(EIO));
   auto rearm = source.Complete(
       CompletionEvent{12, 0},
       EventDisposition::kProduced);
@@ -439,7 +439,7 @@ coropact::coro::DetachedTask Consume(
     }
 
     if (!result->has_value()) {
-      observation->error = coropact::base::MakeErrno(ECONNABORTED);
+      observation->error = coropact::Errno(ECONNABORTED);
       co_return;
     }
 
@@ -467,7 +467,7 @@ coropact::coro::DetachedTask ConsumeOneThenStop(
     co_return;
   }
   if (!result->has_value()) {
-    observation->error = coropact::base::MakeErrno(ECONNABORTED);
+    observation->error = coropact::Errno(ECONNABORTED);
     observation->done = true;
     co_return;
   }
@@ -544,7 +544,7 @@ coropact::coro::DetachedTask FillQueueThenStop(
     co_return;
   }
   if (!first->has_value()) {
-    observation->error = coropact::base::MakeErrno(ECONNABORTED);
+    observation->error = coropact::Errno(ECONNABORTED);
     observation->done = true;
     co_return;
   }
@@ -575,7 +575,7 @@ coropact::coro::DetachedTask FillQueueThenStop(
     co_return;
   }
   if (!queued->has_value()) {
-    observation->error = coropact::base::MakeErrno(ECONNABORTED);
+    observation->error = coropact::Errno(ECONNABORTED);
     observation->done = true;
     co_return;
   }
@@ -587,7 +587,7 @@ coropact::coro::DetachedTask FillQueueThenStop(
   } else if (!terminal->has_value()) {
     observation->normal_end = true;
   } else {
-    observation->error = coropact::base::MakeErrno(ECONNABORTED);
+    observation->error = coropact::Errno(ECONNABORTED);
   }
   observation->done = true;
 }
@@ -607,7 +607,7 @@ coropact::coro::DetachedTask PauseThenResume(
     co_return;
   }
   if (!first->has_value()) {
-    observation->error = coropact::base::MakeErrno(ECONNABORTED);
+    observation->error = coropact::Errno(ECONNABORTED);
     observation->done = true;
     co_return;
   }
@@ -627,7 +627,7 @@ coropact::coro::DetachedTask PauseThenResume(
   auto queued = co_await source->Next();
   if (!queued.has_value() || !queued->has_value()) {
     observation->error = queued.has_value()
-                             ? coropact::base::MakeErrno(ECONNABORTED)
+                             ? coropact::Errno(ECONNABORTED)
                              : queued.error();
     observation->done = true;
     co_return;
@@ -640,7 +640,7 @@ coropact::coro::DetachedTask PauseThenResume(
   auto resumed = co_await source->Next();
   if (!resumed.has_value() || !resumed->has_value()) {
     observation->error = resumed.has_value()
-                             ? coropact::base::MakeErrno(ECONNABORTED)
+                             ? coropact::Errno(ECONNABORTED)
                              : resumed.error();
     observation->done = true;
     co_return;
@@ -661,7 +661,7 @@ coropact::coro::DetachedTask PauseThenResume(
   } else if (!terminal->has_value()) {
     observation->normal_end = true;
   } else {
-    observation->error = coropact::base::MakeErrno(ECONNABORTED);
+    observation->error = coropact::Errno(ECONNABORTED);
   }
   observation->done = true;
 }

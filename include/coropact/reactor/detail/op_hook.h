@@ -5,7 +5,7 @@
 #include <cstddef>
 #include <utility>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 
 namespace coropact::reactor::detail {
 
@@ -16,7 +16,7 @@ template <typename TOwner>
 class ReactorOperationHook {
 public:
   [[nodiscard]]
-  bool CompleteResult(base::Result<std::size_t> result) noexcept {
+  bool CompleteResult(Result<std::size_t> result) noexcept {
     return static_cast<TOwner*>(this)->CompleteResultImpl(std::move(result));
   }
 

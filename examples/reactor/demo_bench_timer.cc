@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "coropact/reactor/loop.h"
+#include "coropact/time/clock.h"
 #include "coropact/time/timer_id.h"
 
 using clk = std::chrono::steady_clock;
@@ -29,8 +30,8 @@ namespace {
 void ReportNsPerOp(const char* tag, int N, long long total_ns) {
   const double ns_per_op = static_cast<double>(total_ns) / N;
   const double mops = 1000.0 / ns_per_op;
-  std::printf("%-18s N=%-6d total=%9lld ns  ns/op=%8.1f  rate=%6.2f Mop/s\n",
-              tag, N, total_ns, ns_per_op, mops);
+  std::printf("%-18s N=%-6d total=%9lld ns  ns/op=%8.1f  rate=%6.2f Mop/s\n", tag, N, total_ns,
+              ns_per_op, mops);
 }
 
 }  // namespace
@@ -49,7 +50,8 @@ int main(int argc, char** argv) {
     const auto add_start = clk::now();
     for (int i = 0; i < N; ++i) {
       // 60s 之后到期,确保不会在 bench 期间触发
-      ids.push_back(loop.RunAfter(60.0 + i * 1e-6, []() {}));
+      ids.push_back(
+          loop.RunAfter(coropact::time::Seconds(60) + coropact::time::Microseconds(i), []() {}));
     }
     const auto add_end = clk::now();
     const long long add_ns = std::chrono::duration_cast<ns_t>(add_end - add_start).count();
@@ -61,8 +63,7 @@ int main(int argc, char** argv) {
       loop.Cancel(id);
     }
     const auto cancel_end = clk::now();
-    const long long cancel_ns =
-        std::chrono::duration_cast<ns_t>(cancel_end - cancel_start).count();
+    const long long cancel_ns = std::chrono::duration_cast<ns_t>(cancel_end - cancel_start).count();
     ReportNsPerOp("Cancel", N, cancel_ns);
 
     // --- 3) Expire 处理速率:N 个 timer 几乎同时到期 ---
@@ -70,12 +71,13 @@ int main(int argc, char** argv) {
     const auto short_add_start = clk::now();
     for (int i = 0; i < N; ++i) {
       // 全部 5ms 后到期(同一窗口),小扰动避免完全相同的 key
-      loop.RunAfter(0.005 + i * 1e-9, [&fired, &loop, N]() {
-        ++fired;
-        if (fired == N) {
-          loop.RequestStop();
-        }
-      });
+      loop.RunAfter(coropact::time::Milliseconds(5) + coropact::time::Nanoseconds(i),
+                    [&fired, &loop, N]() {
+                      ++fired;
+                      if (fired == N) {
+                        loop.RequestStop();
+                      }
+                    });
     }
     const auto short_add_end = clk::now();
     const long long add_short_ns =
@@ -85,7 +87,7 @@ int main(int argc, char** argv) {
     // The loop is owner-local: start polling only after the benchmark setup
     // has completed, and stop from the final timer callback.
     const auto t_expire_start = clk::now();
-    loop.RunAfter(3.0, [&] {
+    loop.RunAfter(coropact::time::Seconds(3), [&] {
       std::printf("  ! timeout: fired=%d/%d\n", fired, N);
       loop.RequestStop();
     });
@@ -96,9 +98,8 @@ int main(int argc, char** argv) {
     // 减去 5ms 等到期的时间,粗略剩处理本身
     long long processing_ns = expire_ns - 5'000'000;
     if (processing_ns < 0) processing_ns = expire_ns;
-    std::printf("%-18s N=%-6d total=%9lld ns (processing≈%lld ns)  ns/op=%.1f\n",
-                "Expire", N, expire_ns, processing_ns,
-                static_cast<double>(processing_ns) / N);
+    std::printf("%-18s N=%-6d total=%9lld ns (processing≈%lld ns)  ns/op=%.1f\n", "Expire", N,
+                expire_ns, processing_ns, static_cast<double>(processing_ns) / N);
   });
   loop_thr.join();
   return 0;

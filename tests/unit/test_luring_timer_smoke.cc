@@ -68,7 +68,7 @@ bool TestLoopAffinityIsEnforcedInRelease() {
                           "LUringLoop destruction from a foreign thread must terminate in Release");
 }
 
-bool IsEnvironmentSkip(coropact::base::Error error) {
+bool IsEnvironmentSkip(coropact::Error error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 
@@ -144,10 +144,21 @@ bool TestTimers() {
   bool scheduler_ok = false;
   coropact::coro::SpawnDetach(loop, SleepTask(&loop, &resumed, &scheduler_ok));
   coropact::luring::detail::LoopAccess::RunReady(loop);
-  auto completed = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
-  coropact::luring::detail::LoopAccess::RunReady(loop);
 
-  const bool passed = Check(completed.has_value(), "sleep should complete") &&
+  // A successful timeout update may retire the replaced physical request with
+  // an ECANCELED CQE before the re-armed driver reaches ETIME. Keep driving
+  // physical completions until the logical SleepFor continuation is ready.
+  bool completion_received = false;
+  for (int attempt = 0; attempt != 3 && !resumed; ++attempt) {
+    auto completed = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
+    if (!completed.has_value()) {
+      break;
+    }
+    completion_received = true;
+    coropact::luring::detail::LoopAccess::RunReady(loop);
+  }
+
+  const bool passed = Check(completion_received, "sleep should complete") &&
                       Check(resumed, "SleepFor should resume the coroutine") &&
                       Check(scheduler_ok, "SleepFor should resume on its loop scheduler");
   return StopAndDrain(loop) && passed;

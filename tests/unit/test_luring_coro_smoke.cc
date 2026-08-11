@@ -17,7 +17,7 @@
 #include <utility>
 
 #include "coropact/base/check.h"
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/spawn.h"
 #include "coropact/coro/task.h"
@@ -50,13 +50,13 @@ public:
     return true;
   }
 
-  coropact::base::Result<int> await_resume() noexcept {
+  coropact::Result<int> await_resume() noexcept {
     if (result_.has_value()) {
       return std::move(*result_);
     }
     COROPACT_CHECK(op_.result.HasValue(), "NopAwaiter resumed before its CQE result was ready");
     if (*op_.result < 0) {
-      return std::unexpected(coropact::base::MakeNegErrno(*op_.result));
+      return std::unexpected(coropact::NegErrno(*op_.result));
     }
     return *op_.result;
   }
@@ -64,7 +64,7 @@ public:
 private:
   coropact::luring::LUringLoop* loop_;
   coropact::luring::detail::LUringOp op_{coropact::luring::detail::LUringOpKind::kNop};
-  std::optional<coropact::base::Result<int>> result_;
+  std::optional<coropact::Result<int>> result_;
 };
 
 bool Check(bool condition, const char* message) {
@@ -143,12 +143,12 @@ bool CheckCompletionQueuePrecedesNormalReadyWork() {
                "completion priority test must drain the loop");
 }
 
-bool IsEnvironmentSkip(coropact::base::Error error) {
+bool IsEnvironmentSkip(coropact::Error error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 
 coropact::coro::DetachedTask AwaitNop(coropact::luring::LUringLoop* loop,
-                                      std::optional<coropact::base::Result<int>>* out,
+                                      std::optional<coropact::Result<int>>* out,
                                       bool* resumed_with_scheduler) {
   auto result = co_await NopAwaiter(*loop);
   *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == loop;
@@ -179,7 +179,7 @@ bool CheckNopResumesCoroutine() {
     return false;
   }
 
-  std::optional<coropact::base::Result<int>> result;
+  std::optional<coropact::Result<int>> result;
   bool resumed_with_scheduler = false;
 
   coropact::coro::SpawnDetach(loop, AwaitNop(&loop, &result, &resumed_with_scheduler));
@@ -254,7 +254,7 @@ bool CheckCrossThreadRequestStopWakesRing() {
 
 coropact::coro::DetachedTask AwaitPendingRead(
     coropact::luring::LUringStream* stream, std::array<std::byte, 16>* buffer,
-    std::optional<coropact::base::Result<std::size_t>>* result, bool* resumed_with_scheduler) {
+    std::optional<coropact::Result<std::size_t>>* result, bool* resumed_with_scheduler) {
   auto read = co_await stream->ReadSome(*buffer);
   *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == stream->Loop();
   result->emplace(std::move(read));
@@ -291,7 +291,7 @@ bool RunLoopStopDrainScenario(StopDrainFailure injected_failure) {
 
   coropact::luring::LUringStream stream(&loop, fds[0], coropact::net::Endpoint(0));
   std::array<std::byte, 16> buffer{};
-  std::optional<coropact::base::Result<std::size_t>> result;
+  std::optional<coropact::Result<std::size_t>> result;
   bool resumed_with_scheduler = false;
   coropact::coro::SpawnDetach(loop,
                               AwaitPendingRead(&stream, &buffer, &result, &resumed_with_scheduler));

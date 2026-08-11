@@ -50,7 +50,7 @@ void TakePendingResultState() {
 void SetResultStateTwice() {
   coropact::luring::detail::LUringResultState<void> state;
   state.SetSuccess();
-  state.SetError(coropact::base::MakeErrno(EPIPE));
+  state.SetError(coropact::Errno(EPIPE));
 }
 
 void ReadEmptyCqeResult() {

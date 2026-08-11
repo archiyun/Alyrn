@@ -10,7 +10,7 @@
 
 #include "coropact/backend/detail/value_result_state.h"
 #include "coropact/base/check.h"
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/base/try.h"
 #include "coropact/net/accept_source.h"
 #include "coropact/net/socket.h"
@@ -29,16 +29,16 @@ namespace {
 
 bool IsWouldBlock(int err) noexcept { return err == EAGAIN || err == EWOULDBLOCK; }
 
-base::Error SocketError(int fd) noexcept {
+Error SocketError(int fd) noexcept {
   int err = 0;
   auto len = static_cast<socklen_t>(sizeof(err));
   if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) < 0) {
-    return base::CurrentErrno();
+    return CurrentErrno();
   }
   if (err == 0) {
     err = EIO;
   }
-  return base::MakeErrno(err);
+  return Errno(err);
 }
 
 EventLoop* CheckLoop(EventLoop* loop) noexcept {
@@ -47,7 +47,7 @@ EventLoop* CheckLoop(EventLoop* loop) noexcept {
   return loop;
 }
 
-base::Result<net::Socket> TryCreateListenSocket(const net::Endpoint& listen_addr,
+Result<net::Socket> TryCreateListenSocket(const net::Endpoint& listen_addr,
                                                 ReactorListenerOptions options) noexcept {
   COROPACT_TRY_VALUE(fd, net::CreateNonBlockingSocket(listen_addr.native_family()));
   net::Socket socket(fd);
@@ -59,11 +59,11 @@ base::Result<net::Socket> TryCreateListenSocket(const net::Endpoint& listen_addr
   }
 
   if (::bind(socket.fd(), listen_addr.sock_addr(), listen_addr.sock_addr_len()) < 0) {
-    return std::unexpected(base::CurrentErrno());
+    return std::unexpected(CurrentErrno());
   }
 
   if (::listen(socket.fd(), SOMAXCONN) < 0) {
-    return std::unexpected(base::CurrentErrno());
+    return std::unexpected(CurrentErrno());
   }
 
   return socket;
@@ -90,17 +90,17 @@ public:
     listener_->RequireOwnerLoop();
     if (listener_->loop_->State() == backend::LoopState::kStopping ||
         listener_->loop_->State() == backend::LoopState::kStopped) {
-      CompleteInline(std::unexpected(base::MakeErrno(ECANCELED)));
+      CompleteInline(std::unexpected(Errno(ECANCELED)));
       return false;
     }
     if (listener_->pending_accept_ != nullptr) {
-      CompleteInline(std::unexpected(base::MakeErrno(EBUSY)));
+      CompleteInline(std::unexpected(Errno(EBUSY)));
       return false;
     }
 
     continuation_.Bind(continuation);
 
-    base::Result<ReactorStream> result = TryAccept();
+    Result<ReactorStream> result = TryAccept();
     if (result.has_value() || !IsWouldBlock(result.error().value())) {
       CompleteInline(std::move(result));
       return false;
@@ -113,19 +113,19 @@ public:
     return true;
   }
 
-  base::Result<ReactorStream> await_resume() noexcept { return result_.Take(); }
+  Result<ReactorStream> await_resume() noexcept { return result_.Take(); }
 
 private:
   friend class ReactorListener;
 
-  void CompleteInline(base::Result<ReactorStream> result) noexcept {
+  void CompleteInline(Result<ReactorStream> result) noexcept {
     result_.SetResult(std::move(result));
     COROPACT_CHECK(lifecycle_.TryAuthorizeResult(), "Reactor accept result was authorized twice");
     COROPACT_CHECK(lifecycle_.TryAuthorizeRelease(),
                    "Reactor accept release was not authorized after its result");
   }
 
-  [[nodiscard]] bool CompleteResult(base::Result<ReactorStream> result) noexcept {
+  [[nodiscard]] bool CompleteResult(Result<ReactorStream> result) noexcept {
     if (!lifecycle_.TryAuthorizeResult()) {
       return false;
     }
@@ -143,7 +143,7 @@ private:
 
 public:
   void OnReady() noexcept {
-    base::Result<ReactorStream> result = TryAccept();
+    Result<ReactorStream> result = TryAccept();
     if (!result.has_value() && IsWouldBlock(result.error().value())) {
       return;
     }
@@ -151,7 +151,7 @@ public:
   }
 
 private:
-  base::Result<ReactorStream> TryAccept() noexcept {
+  Result<ReactorStream> TryAccept() noexcept {
     int fd = -1;
     net::Endpoint peer_addr(0);
     do {
@@ -159,7 +159,7 @@ private:
     } while (fd < 0 && errno == EINTR);
 
     if (fd < 0) {
-      return std::unexpected(base::CurrentErrno());
+      return std::unexpected(CurrentErrno());
     }
     return ReactorStream(listener_->loop_, fd, peer_addr, listener_->stream_options_);
   }
@@ -173,17 +173,17 @@ private:
 bool ReactorAcceptSource::NextAwaiter::await_suspend(
     std::coroutine_handle<> continuation) noexcept {
   if (source_->listener_ == nullptr) {
-    result_.SetError(base::MakeErrno(EBADF));
+    result_.SetError(Errno(EBADF));
     (void)(completion_gate_.TryComplete());
     return false;
   }
   if (!source_->listener_->loop_->IsInLoopThread()) {
-    result_.SetError(base::MakeErrno(EINVAL));
+    result_.SetError(Errno(EINVAL));
     (void)(completion_gate_.TryComplete());
     return false;
   }
   if (source_->pending_next_ != nullptr) {
-    result_.SetError(base::MakeErrno(EBUSY));
+    result_.SetError(Errno(EBUSY));
     (void)(completion_gate_.TryComplete());
     return false;
   }
@@ -191,20 +191,20 @@ bool ReactorAcceptSource::NextAwaiter::await_suspend(
   if (source_->state_.State() == net::detail::AcceptSourceState::kIdle) {
     if (source_->listener_->loop_->State() == backend::LoopState::kStopping ||
         source_->listener_->loop_->State() == backend::LoopState::kStopped) {
-      result_.SetError(base::MakeErrno(ECANCELED));
+      result_.SetError(Errno(ECANCELED));
       (void)(completion_gate_.TryComplete());
       return false;
     }
     if (source_->listener_->closed_) {
       source_->state_.RequestStop();
-      result_.SetResult(Result(std::in_place, Event{}));
+      result_.SetResult(NextResult(std::in_place, Event{}));
       (void)(completion_gate_.TryComplete());
       return false;
     }
     if (source_->listener_->pending_accept_ != nullptr ||
         (source_->listener_->accept_source_ != nullptr &&
          source_->listener_->accept_source_ != source_)) {
-      result_.SetError(base::MakeErrno(EBUSY));
+      result_.SetError(Errno(EBUSY));
       (void)(completion_gate_.TryComplete());
       return false;
     }
@@ -217,7 +217,7 @@ bool ReactorAcceptSource::NextAwaiter::await_suspend(
     source_->listener_->accept_source_ = source_;
   }
 
-  Result result;
+  NextResult result;
   if (source_->TryTakeNext(result)) {
     result_.SetResult(std::move(result));
     (void)(completion_gate_.TryComplete());
@@ -240,11 +240,11 @@ bool ReactorAcceptSource::NextAwaiter::await_suspend(
   return true;
 }
 
-ReactorAcceptSource::Result ReactorAcceptSource::NextAwaiter::await_resume() noexcept {
+ReactorAcceptSource::NextResult ReactorAcceptSource::NextAwaiter::await_resume() noexcept {
   return result_.Take();
 }
 
-void ReactorAcceptSource::NextAwaiter::Complete(Result result) noexcept {
+void ReactorAcceptSource::NextAwaiter::Complete(NextResult result) noexcept {
   if (!completion_gate_.TryComplete()) {
     return;
   }
@@ -319,18 +319,18 @@ ReactorAcceptSource::~ReactorAcceptSource() {
   }
 }
 
-coro::Task<base::Result<void>> ReactorAcceptSource::Stop() {
+coro::Task<Result<void>> ReactorAcceptSource::Stop() {
   if (listener_ == nullptr) {
-    co_return base::Result<void>{};
+    co_return Result<void>{};
   }
   if (!listener_->loop_->IsInLoopThread()) {
-    co_return std::unexpected(base::MakeErrno(EINVAL));
+    co_return std::unexpected(Errno(EINVAL));
   }
 
   if (state_.State() == net::detail::AcceptSourceState::kIdle) {
     state_.RequestStop();
     ReleaseListenerReservation();
-    co_return base::Result<void>{};
+    co_return Result<void>{};
   }
 
   if (state_.State() == net::detail::AcceptSourceState::kActive ||
@@ -351,7 +351,7 @@ coro::Task<base::Result<void>> ReactorAcceptSource::Stop() {
 
   DeliverNextIfReady();
   ReleaseListenerReservation();
-  co_return base::Result<void>{};
+  co_return Result<void>{};
 }
 
 void ReactorAcceptSource::OnReady() noexcept {
@@ -367,9 +367,9 @@ void ReactorAcceptSource::OnReady() noexcept {
   }
 
   while (state_.State() == net::detail::AcceptSourceState::kActive && state_.ArmedRequests() != 0) {
-    base::Result<ReactorStream> accepted = TryAccept();
+    Result<ReactorStream> accepted = TryAccept();
     if (!accepted.has_value()) {
-      base::Error error = accepted.error();
+      Error error = accepted.error();
       auto completed = state_.CompleteRequest(false);
       COROPACT_CHECK(completed.has_value(),
                      "ReactorAcceptSource: failed to record accept completion");
@@ -386,7 +386,7 @@ void ReactorAcceptSource::OnReady() noexcept {
       auto completed = state_.CompleteRequest(false);
       COROPACT_CHECK(completed.has_value(),
                      "ReactorAcceptSource: failed to record accept completion");
-      Fail(base::MakeErrno(ENOMEM));
+      Fail(Errno(ENOMEM));
       return;
     }
 
@@ -405,7 +405,7 @@ void ReactorAcceptSource::OnReady() noexcept {
   DeliverNextIfReady();
 }
 
-void ReactorAcceptSource::OnError(base::Error error) noexcept {
+void ReactorAcceptSource::OnError(Error error) noexcept {
   if (state_.State() != net::detail::AcceptSourceState::kActive) {
     return;
   }
@@ -452,7 +452,7 @@ void ReactorAcceptSource::DeliverNextIfReady() noexcept {
     return;
   }
 
-  Result result;
+  NextResult result;
   if (!TryTakeNext(result)) {
     return;
   }
@@ -461,13 +461,13 @@ void ReactorAcceptSource::DeliverNextIfReady() noexcept {
   awaiter->Complete(std::move(result));
 }
 
-bool ReactorAcceptSource::TryTakeNext(Result& result) noexcept {
+bool ReactorAcceptSource::TryTakeNext(NextResult& result) noexcept {
   if (!events_.empty()) {
     Event event(std::in_place, std::move(events_.front()));
     events_.pop_front();
     COROPACT_CHECK(state_.ConsumeEvent(),
                    "ReactorAcceptSource: queue and state became inconsistent");
-    result = Result(std::in_place, std::move(event));
+    result = NextResult(std::in_place, std::move(event));
     if (state_.State() == net::detail::AcceptSourceState::kPaused) {
       (void)(state_.TryResume());
     }
@@ -479,7 +479,7 @@ bool ReactorAcceptSource::TryTakeNext(Result& result) noexcept {
     if (terminal_error_.has_value()) {
       result = std::unexpected(*terminal_error_);
     } else {
-      result = Result(std::in_place, std::nullopt);
+      result = NextResult(std::in_place, std::nullopt);
     }
     ReleaseListenerReservation();
     return true;
@@ -494,7 +494,7 @@ void ReactorAcceptSource::ReleaseListenerReservation() noexcept {
   }
 }
 
-void ReactorAcceptSource::Fail(base::Error error) noexcept {
+void ReactorAcceptSource::Fail(Error error) noexcept {
   if (!terminal_error_.has_value()) {
     terminal_error_ = error;
   }
@@ -505,7 +505,7 @@ void ReactorAcceptSource::Fail(base::Error error) noexcept {
   DeliverNextIfReady();
 }
 
-base::Result<ReactorStream> ReactorAcceptSource::TryAccept() noexcept {
+Result<ReactorStream> ReactorAcceptSource::TryAccept() noexcept {
   int fd = -1;
   net::Endpoint peer_addr(0);
   do {
@@ -513,7 +513,7 @@ base::Result<ReactorStream> ReactorAcceptSource::TryAccept() noexcept {
   } while (fd < 0 && errno == EINTR);
 
   if (fd < 0) {
-    return std::unexpected(base::CurrentErrno());
+    return std::unexpected(CurrentErrno());
   }
   return ReactorStream(listener_->loop_, fd, peer_addr, listener_->stream_options_);
 }
@@ -545,11 +545,11 @@ ReactorListener::ReactorListener(EventLoop* loop, net::Socket socket,
   LoopAccess::RegisterShutdownParticipant(*loop_, shutdown_participant_);
 }
 
-base::Result<ReactorListener> ReactorListener::Create(EventLoop* loop,
+Result<ReactorListener> ReactorListener::Create(EventLoop* loop,
                                                       const net::Endpoint& listen_addr,
                                                       ReactorListenerOptions options) noexcept {
   if (loop == nullptr) {
-    return std::unexpected(base::MakeErrno(EINVAL));
+    return std::unexpected(Errno(EINVAL));
   }
 
   COROPACT_TRY_VALUE(socket, TryCreateListenSocket(listen_addr, options));
@@ -606,38 +606,38 @@ ReactorListener::~ReactorListener() {
   DetachChannel();
 }
 
-coro::Task<base::Result<ReactorStream>> ReactorListener::Accept() {
+coro::Task<Result<ReactorStream>> ReactorListener::Accept() {
   RequireOwnerLoop();
   if (closed_) {
-    co_return std::unexpected(base::MakeErrno(EBADF));
+    co_return std::unexpected(Errno(EBADF));
   }
   if (accept_source_ != nullptr) {
-    co_return std::unexpected(base::MakeErrno(EBUSY));
+    co_return std::unexpected(Errno(EBUSY));
   }
   co_return co_await AcceptAwaiter(*this);
 }
 
-base::Result<ReactorAcceptSource> ReactorListener::AcceptSource(
+Result<ReactorAcceptSource> ReactorListener::AcceptSource(
     net::AcceptSourceOptions options) noexcept {
   RequireOwnerLoop();
   if (loop_->State() == backend::LoopState::kStopping ||
       loop_->State() == backend::LoopState::kStopped) {
-    return std::unexpected(base::MakeErrno(ECANCELED));
+    return std::unexpected(Errno(ECANCELED));
   }
   if (closed_) {
-    return std::unexpected(base::MakeErrno(EBADF));
+    return std::unexpected(Errno(EBADF));
   }
   if (pending_accept_ != nullptr || accept_source_ != nullptr) {
-    return std::unexpected(base::MakeErrno(EBUSY));
+    return std::unexpected(Errno(EBUSY));
   }
   COROPACT_TRY_VALUE(state, net::detail::AcceptSourceStateMachine::Create(options));
   return ReactorAcceptSource(this, std::move(state));
 }
 
-coro::Task<base::Result<void>> ReactorListener::Close() {
+coro::Task<Result<void>> ReactorListener::Close() {
   RequireOwnerLoop();
   CloseNow();
-  co_return base::Result<void>{};
+  co_return Result<void>{};
 }
 
 void ReactorListener::CloseNow() noexcept {
@@ -648,7 +648,7 @@ void ReactorListener::CloseNow() noexcept {
 
   closed_ = true;
   if (pending_accept_ != nullptr) {
-    CompleteAccept(std::unexpected(base::MakeErrno(ECANCELED)));
+    CompleteAccept(std::unexpected(Errno(ECANCELED)));
   }
   if (accept_source_ != nullptr) {
     accept_source_->OnListenerClosed();
@@ -657,10 +657,10 @@ void ReactorListener::CloseNow() noexcept {
   socket_.Close();
 }
 
-base::Result<net::Endpoint> ReactorListener::LocalAddress() const {
+Result<net::Endpoint> ReactorListener::LocalAddress() const {
   RequireOwnerLoop();
   if (closed_) {
-    return std::unexpected(base::MakeErrno(EBADF));
+    return std::unexpected(Errno(EBADF));
   }
   return socket_.LocalEndpoint();
 }
@@ -691,7 +691,7 @@ void ReactorListener::DispatchError(void* context) noexcept {
   static_cast<ReactorListener*>(context)->HandleError();
 }
 
-void ReactorListener::CompleteAccept(base::Result<ReactorStream> result) {
+void ReactorListener::CompleteAccept(Result<ReactorStream> result) {
   COROPACT_DCHECK(loop_->IsInLoopThread(),
                   "ReactorListener::CompleteAccept called from wrong thread");
   AcceptAwaiter* awaiter = pending_accept_;

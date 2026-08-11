@@ -40,7 +40,7 @@ slot 负责。两者都内嵌在现有的 24B `LUringOp` 中，不引入额外�
 
 read/write 的 CQE `res` 可以直接成为逻辑结果；`Accept` 与 `Connect` 不行。Accept adapter 必须
 先把成功 CQE 转换成拥有 accepted fd 的 `LUringStream`，释放 listener reservation；Connect adapter
-必须把成功 CQE 转换成拥有连接 fd 的 `LUringStream`，或把失败转换成 `base::Error` 并关闭仍由 awaiter
+必须把成功 CQE 转换成拥有连接 fd 的 `LUringStream`，或把失败转换成 `Error` 并关闭仍由 awaiter
 持有的 fd。两者都在结果固定后才授权 result ready。这样 `await_resume()` 只消费已经固定的
 `Result<LUringStream>`，不会在 continuation 已获授权后再解释或取得物理资源。
 

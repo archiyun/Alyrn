@@ -23,9 +23,8 @@ static int CreateTimerfd() {
 
 static void SetTimerfd(int timerfd, ReactorTimer::TimePoint expiration) {
   itimerspec new_value{};
-  int64_t us = std::chrono::duration_cast<std::chrono::microseconds>(
-                   expiration - ReactorTimer::Clock::now())
-                   .count();
+  int64_t us =
+      std::chrono::duration_cast<std::chrono::microseconds>(expiration - time::SteadyNow()).count();
   if (us < 100) {
     us = 100;
   }
@@ -95,7 +94,8 @@ void TimerQueue::Cancel(coropact::time::TimerId id) {
   if (active_timer != nullptr) {
     const bool earliest_removed = active_timer == timers_.Earliest();
     COROPACT_CHECK(active_timers_.Erase(active_timer), "TimerQueue: active timer is missing");
-    COROPACT_CHECK(timers_.Erase(active_timer), "TimerQueue: active timer is missing from timer tree");
+    COROPACT_CHECK(timers_.Erase(active_timer),
+                   "TimerQueue: active timer is missing from timer tree");
     timer_pool_.Release(active_timer);
     if (earliest_removed && !timers_.Empty()) {
       ResetTimerfd(timers_.Earliest()->expiration());
@@ -115,12 +115,10 @@ void TimerQueue::DispatchRead(void* context) noexcept {
 }
 
 void TimerQueue::HandleRead() {
-  const auto now = ReactorTimer::Clock::now();
+  const auto now = time::SteadyNow();
   ReadTimerfd(timerfd_);
 
-  timers_.PopWhile([now](const detail::ReactorTimer* timer) {
-                     return timer->expiration() <= now;
-                   },
+  timers_.PopWhile([now](const detail::ReactorTimer* timer) { return timer->expiration() <= now; },
                    [this, now](ReactorTimer* timer) {
                      COROPACT_CHECK(active_timers_.Erase(timer),
                                     "TimerQueue: expired timer is missing from active set");

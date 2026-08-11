@@ -7,7 +7,7 @@
 #include <expected>
 
 #include "coropact/base/check.h"
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 
 namespace coropact::net::detail {
 
@@ -35,27 +35,27 @@ public:
   }
 
   [[nodiscard]]
-  base::Result<void> ValidateRead() const noexcept {
+  Result<void> ValidateRead() const noexcept {
     if (resource_ == ResourceState::kClosing) {
-      return std::unexpected(base::MakeErrno(ECANCELED));
+      return std::unexpected(Errno(ECANCELED));
     }
     if (resource_ == ResourceState::kClosed) {
-      return std::unexpected(base::MakeErrno(EBADF));
+      return std::unexpected(Errno(EBADF));
     }
     return {};
   }
 
   [[nodiscard]]
-  base::Result<void> ValidateWrite() const noexcept {
+  Result<void> ValidateWrite() const noexcept {
     auto readable = ValidateRead();
     if (!readable.has_value()) {
       return readable;
     }
     if (write_ == WriteState::kShutdown) {
-      return std::unexpected(base::MakeErrno(EPIPE));
+      return std::unexpected(Errno(EPIPE));
     }
     if (write_ == WriteState::kShutdownPreparing) {
-      return std::unexpected(base::MakeErrno(EBUSY));
+      return std::unexpected(Errno(EBUSY));
     }
     return {};
   }
@@ -65,7 +65,7 @@ public:
   // success or AbortShutdownPreparation() before reporting its local error.
   // false means the write side was already shut down.
   [[nodiscard]]
-  base::Result<bool> PrepareShutdown(bool write_pending) noexcept {
+  Result<bool> PrepareShutdown(bool write_pending) noexcept {
     auto readable = ValidateRead();
     if (!readable.has_value()) {
       return std::unexpected(readable.error());
@@ -74,10 +74,10 @@ public:
       return false;
     }
     if (write_ == WriteState::kShutdownPreparing) {
-      return std::unexpected(base::MakeErrno(EBUSY));
+      return std::unexpected(Errno(EBUSY));
     }
     if (write_pending) {
-      return std::unexpected(base::MakeErrno(EBUSY));
+      return std::unexpected(Errno(EBUSY));
     }
     write_ = WriteState::kShutdownPreparing;
     return true;
@@ -104,15 +104,15 @@ public:
   // or aborts before any cancel request reached the backend.  false means the
   // resource was already closed; a concurrent preparation receives EBUSY.
   [[nodiscard]]
-  base::Result<bool> PrepareClose() noexcept {
+  Result<bool> PrepareClose() noexcept {
     if (resource_ == ResourceState::kClosed) {
       return false;
     }
     if (resource_ == ResourceState::kClosing) {
-      return std::unexpected(base::MakeErrno(EBUSY));
+      return std::unexpected(Errno(EBUSY));
     }
     if (write_ == WriteState::kShutdownPreparing) {
-      return std::unexpected(base::MakeErrno(EBUSY));
+      return std::unexpected(Errno(EBUSY));
     }
     resource_ = ResourceState::kClosing;
     return true;

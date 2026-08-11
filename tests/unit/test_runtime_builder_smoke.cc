@@ -16,7 +16,7 @@
 #include <thread>
 
 #include "coropact/coro/detached_task.h"
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/net/endpoint.h"
 #include "coropact/reactor/runtime.h"
 
@@ -69,10 +69,10 @@ private:
   std::uint16_t port_{0};
 };
 
-coropact::base::Result<BoundPort> BindLoopbackPort() {
+coropact::Result<BoundPort> BindLoopbackPort() {
   const int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
   if (fd < 0) {
-    return std::unexpected(coropact::base::CurrentErrno());
+    return std::unexpected(coropact::CurrentErrno());
   }
 
   sockaddr_in address{};
@@ -80,14 +80,14 @@ coropact::base::Result<BoundPort> BindLoopbackPort() {
   address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   address.sin_port = htons(0);
   if (::bind(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0) {
-    auto error = coropact::base::CurrentErrno();
+    auto error = coropact::CurrentErrno();
     (void)::close(fd);
     return std::unexpected(error);
   }
 
   socklen_t address_length = sizeof(address);
   if (::getsockname(fd, reinterpret_cast<sockaddr*>(&address), &address_length) < 0) {
-    auto error = coropact::base::CurrentErrno();
+    auto error = coropact::CurrentErrno();
     (void)::close(fd);
     return std::unexpected(error);
   }
@@ -172,7 +172,7 @@ bool CheckReactorRunStopsFromRuntimeRequest() {
                      .Workers(1)
                      .OnConnection(HandleReactor)
                      .Build();
-  std::optional<base::Result<void>> run_result;
+  std::optional<Result<void>> run_result;
   std::jthread runner{[&] { run_result.emplace(runtime.Run({})); }};
 
   if (!WaitUntilStarted(runtime)) {
@@ -303,7 +303,7 @@ bool CheckLUringRunStopsFromRuntimeRequest() {
                      .Workers(1)
                      .OnConnection(HandleLUring)
                      .Build();
-  std::optional<base::Result<void>> run_result;
+  std::optional<Result<void>> run_result;
   std::jthread runner{[&] { run_result.emplace(runtime.Run({})); }};
 
   if (!WaitUntilStarted(runtime)) {

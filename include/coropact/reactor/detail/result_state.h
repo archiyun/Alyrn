@@ -9,7 +9,7 @@
 #include <utility>
 
 #include "coropact/base/check.h"
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 
 namespace coropact::reactor::detail {
 
@@ -33,7 +33,7 @@ public:
     encoded_ = static_cast<std::int64_t>(bytes);
   }
 
-  void SetError(base::Error error) noexcept {
+  void SetError(Error error) noexcept {
     COROPACT_CHECK(!HasResult(), "ReactorIoResultState result was set twice");
     COROPACT_CHECK(error.category() == std::system_category(),
                    "ReactorIoResultState only encodes system errors");
@@ -42,7 +42,7 @@ public:
     encoded_ = -static_cast<std::int64_t>(value);
   }
 
-  void SetResult(const base::Result<std::size_t>& result) noexcept {
+  void SetResult(const Result<std::size_t>& result) noexcept {
     if (result.has_value()) {
       SetSuccess(*result);
     } else {
@@ -51,13 +51,13 @@ public:
   }
 
   [[nodiscard]]
-  base::Result<std::size_t> Take() noexcept {
+  Result<std::size_t> Take() noexcept {
     COROPACT_CHECK(HasResult(), "ReactorIoResultState result was taken before completion");
     const std::int64_t encoded = std::exchange(encoded_, kPending);
     if (encoded >= 0) {
       return static_cast<std::size_t>(encoded);
     }
-    return std::unexpected(base::MakeErrno(static_cast<int>(-encoded)));
+    return std::unexpected(Errno(static_cast<int>(-encoded)));
   }
 
 private:

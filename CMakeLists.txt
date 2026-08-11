@@ -23,6 +23,15 @@ option(COROPACT_STRICT_WARNINGS
 
 find_package(Threads REQUIRED)
 
+set(COROPACT_HAS_EPOLL OFF)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(COROPACT_HAS_EPOLL ON)
+endif()
+
+if(COROPACT_ENABLE_URING AND NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    message(FATAL_ERROR "COROPACT_ENABLE_URING requires Linux")
+endif()
+
 if(COROPACT_ENABLE_URING)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(URING REQUIRED IMPORTED_TARGET liburing>=2.6)
@@ -73,7 +82,7 @@ target_compile_features(coropact_foundation INTERFACE cxx_std_23)
 #
 # coropact_coro —— backend-neutral 协程原语(Task<T>、Work、Scheduler、Spawn/
 # JoinHandle、SyncWait、可选 FrameAllocatorScope)。Task<T> 不定义错误策略；
-# I/O 层按需返回 Task<base::Result<T>>。
+# I/O 层按需返回 Task<Result<T>>。
 add_library(coropact_coro INTERFACE)
 target_include_directories(coropact_coro INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -91,8 +100,8 @@ target_include_directories(coropact_io_contract INTERFACE
 target_link_libraries(coropact_io_contract INTERFACE coropact_coro coropact_foundation)
 target_compile_features(coropact_io_contract INTERFACE cxx_std_23)
 
-# coropact_io —— 面向应用的 I/O facade。具体 backend 在各自 target 定义完成后
-# 通过 adapter 注入到这个 facade，backend 核心不反向依赖 facade。
+# coropact_io —— 面向应用的 I/O facade。它只依赖 backend-neutral contract；
+# 最终可执行文件显式选择一个具体 backend，避免传递引入平台实现。
 add_library(coropact_io INTERFACE)
 target_include_directories(coropact_io INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -123,42 +132,40 @@ target_compile_features(coropact_net INTERFACE cxx_std_23)
 # spellings, while remaining independent of concrete backend adapters.
 target_link_libraries(coropact_io_contract INTERFACE coropact_net)
 
-# coropact_reactor —— 基于 epoll 的 Reactor 网络后端。它依赖 coropact_net
-# 中的地址和 socket 基础类型，但与 io_uring 后端保持并列。
-add_library(coropact_reactor STATIC
-    src/reactor/channel.cc
-    src/reactor/epoll_poller.cc
-    src/reactor/event_loop.cc
-    src/reactor/poller.cc
-    src/reactor/reactor_connect.cc
-    src/reactor/reactor_listener.cc
-    src/reactor/reactor_recv_source.cc
-    src/reactor/reactor_stream.cc
-    src/reactor/reactor_worker.cc
-    src/reactor/reactor_worker_group.cc
-    src/reactor/runtime.cc
-    src/reactor/timer_queue.cc
-)
+# coropact_reactor —— Linux epoll readiness backend. kqueue remains a parallel
+# backend rather than a preprocessor branch inside this implementation.
+if(COROPACT_HAS_EPOLL)
+    add_library(coropact_reactor STATIC
+        src/reactor/channel.cc
+        src/reactor/epoll_poller.cc
+        src/reactor/event_loop.cc
+        src/reactor/poller.cc
+        src/reactor/reactor_connect.cc
+        src/reactor/reactor_listener.cc
+        src/reactor/reactor_recv_source.cc
+        src/reactor/reactor_stream.cc
+        src/reactor/reactor_worker.cc
+        src/reactor/reactor_worker_group.cc
+        src/reactor/runtime.cc
+        src/reactor/timer_queue.cc
+    )
 
-target_include_directories(coropact_reactor
-    PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-)
+    target_include_directories(coropact_reactor
+        PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
 
-target_link_libraries(coropact_reactor
-    PUBLIC
-        coropact_net
-        coropact_coro
-        coropact_foundation
-        Threads::Threads
-)
+    target_link_libraries(coropact_reactor
+        PUBLIC
+            coropact_net
+            coropact_coro
+            coropact_foundation
+            Threads::Threads
+    )
 
-target_compile_features(coropact_reactor PUBLIC cxx_std_23)
-
-# The facade depends on the concrete Reactor backend only at the composition
-# root; the Reactor target itself remains independent of io targets.
-target_link_libraries(coropact_io INTERFACE coropact_reactor)
+    target_compile_features(coropact_reactor PUBLIC cxx_std_23)
+endif()
 
 # coropact_luring —— io_uring proactor 网络模块。它与 coropact_reactor 并列，
 # 共同解释 coropact_io 的协程可观察 I/O 契约。
@@ -196,19 +203,18 @@ if(COROPACT_ENABLE_URING)
     endif()
     target_compile_features(coropact_luring PUBLIC cxx_std_23)
 
-    # The luring core remains independent of the application facade. The
-    # composition target exposes it alongside the Reactor backend.
-    target_link_libraries(coropact_io INTERFACE coropact_luring)
 endif()
 
 # coropact_coro_reactor —— 把协程绑定到 coropact_reactor 后端。
-add_library(coropact_coro_reactor INTERFACE)
-target_include_directories(coropact_coro_reactor INTERFACE
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-)
-target_link_libraries(coropact_coro_reactor INTERFACE coropact_reactor)
-target_compile_features(coropact_coro_reactor INTERFACE cxx_std_23)
+if(COROPACT_HAS_EPOLL)
+    add_library(coropact_coro_reactor INTERFACE)
+    target_include_directories(coropact_coro_reactor INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
+    target_link_libraries(coropact_coro_reactor INTERFACE coropact_reactor)
+    target_compile_features(coropact_coro_reactor INTERFACE cxx_std_23)
+endif()
 
 # coropact_coro_luring —— 把协程绑定到 io_uring proactor 后端。
 # It is available only when COROPACT_ENABLE_URING is enabled.
@@ -226,16 +232,22 @@ if(BUILD_TESTS)
     enable_testing()
 endif()
 
-if(BUILD_EXAMPLES)
+if(BUILD_EXAMPLES AND COROPACT_HAS_EPOLL)
     add_subdirectory(examples)
+elseif(BUILD_EXAMPLES)
+    message(STATUS "Examples are disabled until a native readiness backend is enabled")
 endif()
 
-if(BUILD_BENCHMARKS)
+if(BUILD_BENCHMARKS AND COROPACT_HAS_EPOLL)
     add_subdirectory(benchmarks)
+elseif(BUILD_BENCHMARKS)
+    message(STATUS "Benchmarks are disabled until a native readiness backend is enabled")
 endif()
 
-if(BUILD_TESTS)
+if(BUILD_TESTS AND COROPACT_HAS_EPOLL)
     add_subdirectory(tests)
+elseif(BUILD_TESTS)
+    message(STATUS "Backend tests are disabled until a native readiness backend is enabled")
 endif()
 
 # ── Installation and package metadata ──────────────────────────────────────
@@ -250,9 +262,13 @@ set(COROPACT_INSTALL_TARGETS
     coropact_coro
     coropact_io_contract
     coropact_io
-    coropact_net
-    coropact_reactor
-    coropact_coro_reactor)
+    coropact_net)
+
+if(COROPACT_HAS_EPOLL)
+    list(APPEND COROPACT_INSTALL_TARGETS
+        coropact_reactor
+        coropact_coro_reactor)
+endif()
 
 if(COROPACT_ENABLE_URING)
     list(APPEND COROPACT_INSTALL_TARGETS

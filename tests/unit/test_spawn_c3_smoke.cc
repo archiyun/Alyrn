@@ -25,15 +25,15 @@
 #include <thread>
 #include <utility>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/spawn.h"
 #include "coropact/coro/task.h"
 #include "coropact/coro/work.h"
 #include "coropact/reactor/loop.h"
 
-using coropact::base::MakeErrno;
-using coropact::base::Result;
+using coropact::Errno;
+using coropact::Result;
 using coropact::coro::Spawn;
 using coropact::coro::Task;
 using coropact::coro::Work;
@@ -60,7 +60,7 @@ struct FakeConn {
   void Deliver(Result<int> r, EventLoop* loop) {
     next = std::move(r);
     if (auto h = std::exchange(parked, {})) {
-      loop->RunAfter(0.0, [h] {
+      loop->RunAfter(coropact::time::Duration::zero(), [h] {
         if (!h.done()) h.resume();
       });
     }
@@ -103,9 +103,10 @@ int main() {
   // on their first Read.
   Spawn(loop, Serve(&conn_a)).Detach();
   Spawn(loop, Serve(&conn_b)).Detach();
-  g_loop->RunAfter(0.0, [&] { conn_a.Deliver(Result<int>{0}, g_loop); });  // EOF
-  g_loop->RunAfter(0.0,
-      [&] { conn_b.Deliver(std::unexpected(MakeErrno(ECONNRESET)), g_loop); });
+  g_loop->RunAfter(coropact::time::Duration::zero(),
+                   [&] { conn_a.Deliver(Result<int>{0}, g_loop); });  // EOF
+  g_loop->RunAfter(coropact::time::Duration::zero(),
+                   [&] { conn_b.Deliver(std::unexpected(Errno(ECONNRESET)), g_loop); });
   loop.Run();
 
   const int done = g_completed.load();

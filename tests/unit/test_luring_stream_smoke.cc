@@ -18,7 +18,7 @@
 #include <system_error>
 #include <utility>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/spawn.h"
 #include "coropact/coro/task.h"
@@ -83,7 +83,7 @@ bool Check(bool condition, const char* message) {
   return true;
 }
 
-bool IsEnvironmentSkip(coropact::base::Error error) {
+bool IsEnvironmentSkip(coropact::Error error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 
@@ -142,7 +142,7 @@ bool WriteFd(int fd, std::string_view bytes) {
 coropact::coro::DetachedTask ReadOnce(coropact::luring::LUringStream* stream,
                                       coropact::luring::LUringLoop* loop,
                                       std::span<std::byte> buffer,
-                                      std::optional<coropact::base::Result<std::size_t>>* out,
+                                      std::optional<coropact::Result<std::size_t>>* out,
                                       bool* resumed_with_scheduler, int* resume_count = nullptr) {
   auto result = co_await stream->ReadSome(buffer);
   if (resume_count != nullptr) {
@@ -181,7 +181,7 @@ coropact::coro::DetachedTask ReadForOnce(coropact::luring::LUringStream* stream,
                                          coropact::luring::LUringLoop* loop,
                                          std::span<std::byte> buffer,
                                          std::chrono::milliseconds timeout,
-                                         std::optional<coropact::base::Result<std::size_t>>* out,
+                                         std::optional<coropact::Result<std::size_t>>* out,
                                          bool* resumed_with_scheduler, int* resume_count) {
   auto result = co_await stream->ReadSomeFor(buffer, timeout);
   ++*resume_count;
@@ -192,8 +192,8 @@ coropact::coro::DetachedTask ReadForOnce(coropact::luring::LUringStream* stream,
 coropact::coro::DetachedTask TimedReadThenRead(
     coropact::luring::LUringStream* stream, coropact::luring::LUringLoop* loop,
     std::span<std::byte> timed_buffer, std::span<std::byte> next_buffer,
-    std::optional<coropact::base::Result<std::size_t>>* timed_result,
-    std::optional<coropact::base::Result<std::size_t>>* next_result, bool* resumed_with_scheduler) {
+    std::optional<coropact::Result<std::size_t>>* timed_result,
+    std::optional<coropact::Result<std::size_t>>* next_result, bool* resumed_with_scheduler) {
   timed_result->emplace(co_await stream->ReadSomeFor(timed_buffer, std::chrono::seconds(1)));
   next_result->emplace(co_await stream->ReadSome(next_buffer));
   *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == loop;
@@ -202,8 +202,8 @@ coropact::coro::DetachedTask TimedReadThenRead(
 coropact::coro::DetachedTask ReadThenRead(
     coropact::luring::LUringStream* stream, coropact::luring::LUringLoop* loop,
     std::span<std::byte> first_buffer, std::span<std::byte> second_buffer,
-    std::optional<coropact::base::Result<std::size_t>>* first_result,
-    std::optional<coropact::base::Result<std::size_t>>* second_result,
+    std::optional<coropact::Result<std::size_t>>* first_result,
+    std::optional<coropact::Result<std::size_t>>* second_result,
     bool* resumed_with_scheduler) {
   first_result->emplace(co_await stream->ReadSome(first_buffer));
   second_result->emplace(co_await stream->ReadSome(second_buffer));
@@ -213,7 +213,7 @@ coropact::coro::DetachedTask ReadThenRead(
 coropact::coro::DetachedTask WriteOnce(coropact::luring::LUringStream* stream,
                                        coropact::luring::LUringLoop* loop,
                                        std::span<const std::byte> buffer,
-                                       std::optional<coropact::base::Result<void>>* out,
+                                       std::optional<coropact::Result<void>>* out,
                                        bool* resumed_with_scheduler, int* resume_count = nullptr) {
   auto result = co_await stream->WriteAll(buffer);
   if (resume_count != nullptr) {
@@ -224,7 +224,7 @@ coropact::coro::DetachedTask WriteOnce(coropact::luring::LUringStream* stream,
 }
 
 coropact::coro::DetachedTask CloseOnce(coropact::luring::LUringStream* stream,
-                                       std::optional<coropact::base::Result<void>>* out) {
+                                       std::optional<coropact::Result<void>>* out) {
   auto result = co_await stream->Close();
   out->emplace(std::move(result));
 }
@@ -232,10 +232,10 @@ coropact::coro::DetachedTask CloseOnce(coropact::luring::LUringStream* stream,
 coropact::coro::DetachedTask ShutdownThenReadAndWrite(
     coropact::luring::LUringStream* stream, coropact::luring::LUringLoop* loop,
     std::span<const std::byte> write_buffer, std::span<std::byte> read_buffer,
-    std::optional<coropact::base::Result<void>>* first_shutdown,
-    std::optional<coropact::base::Result<void>>* second_shutdown,
-    std::optional<coropact::base::Result<void>>* write_result,
-    std::optional<coropact::base::Result<std::size_t>>* read_result, bool* resumed_with_scheduler) {
+    std::optional<coropact::Result<void>>* first_shutdown,
+    std::optional<coropact::Result<void>>* second_shutdown,
+    std::optional<coropact::Result<void>>* write_result,
+    std::optional<coropact::Result<std::size_t>>* read_result, bool* resumed_with_scheduler) {
   first_shutdown->emplace(co_await stream->Shutdown());
   second_shutdown->emplace(co_await stream->Shutdown());
   write_result->emplace(co_await stream->WriteAll(write_buffer));
@@ -264,7 +264,7 @@ bool CheckReadSome() {
   if (!WriteFd(peer.fd(), kPayload)) return false;
 
   std::array<std::byte, 16> buffer{};
-  std::optional<coropact::base::Result<std::size_t>> result;
+  std::optional<coropact::Result<std::size_t>> result;
   bool resumed_with_scheduler = false;
 
   coropact::coro::SpawnDetach(loop,
@@ -306,7 +306,7 @@ bool CheckEmptyReadCompletesInlineWithoutRingWork() {
   if (!CreateSocketPair(local, peer)) return false;
 
   coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
-  std::optional<coropact::base::Result<std::size_t>> result;
+  std::optional<coropact::Result<std::size_t>> result;
   bool resumed_with_scheduler = false;
 
   // ReadSome(empty) takes the await_suspend() == false path. The root work
@@ -351,8 +351,8 @@ bool CheckReadReleasesSlotBeforeContinuation() {
 
   std::array<std::byte, kFirstPayload.size()> first_buffer{};
   std::array<std::byte, kSecondPayload.size()> second_buffer{};
-  std::optional<coropact::base::Result<std::size_t>> first_result;
-  std::optional<coropact::base::Result<std::size_t>> second_result;
+  std::optional<coropact::Result<std::size_t>> first_result;
+  std::optional<coropact::Result<std::size_t>> second_result;
   bool resumed_with_scheduler = false;
 
   coropact::coro::SpawnDetach(
@@ -512,7 +512,7 @@ bool CheckTimedReadSuccessResumesOnce() {
   if (!WriteFd(peer.fd(), kPayload)) return false;
 
   std::array<std::byte, 16> buffer{};
-  std::optional<coropact::base::Result<std::size_t>> result;
+  std::optional<coropact::Result<std::size_t>> result;
   bool resumed_with_scheduler = false;
   int resume_count = 0;
   coropact::coro::SpawnDetach(loop, ReadForOnce(&stream, &loop, buffer, std::chrono::seconds(1),
@@ -554,7 +554,7 @@ bool CheckTimedReadTimeoutResumesOnce() {
 
   coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
   std::array<std::byte, 16> buffer{};
-  std::optional<coropact::base::Result<std::size_t>> result;
+  std::optional<coropact::Result<std::size_t>> result;
   bool resumed_with_scheduler = false;
   int resume_count = 0;
   coropact::coro::SpawnDetach(
@@ -602,8 +602,8 @@ bool CheckTimedReadReleasesSlotBeforeContinuation() {
 
   std::array<std::byte, kTimedPayload.size()> timed_buffer{};
   std::array<std::byte, kNextPayload.size()> next_buffer{};
-  std::optional<coropact::base::Result<std::size_t>> timed_result;
-  std::optional<coropact::base::Result<std::size_t>> next_result;
+  std::optional<coropact::Result<std::size_t>> timed_result;
+  std::optional<coropact::Result<std::size_t>> next_result;
   bool resumed_with_scheduler = false;
 
   coropact::coro::SpawnDetach(
@@ -655,7 +655,7 @@ bool CheckReadSubmitFailureRollsBack() {
 
   coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
   std::array<std::byte, 16> buffer{};
-  std::optional<coropact::base::Result<std::size_t>> failed_result;
+  std::optional<coropact::Result<std::size_t>> failed_result;
   bool failed_with_scheduler = false;
   int failed_resume_count = 0;
 
@@ -677,7 +677,7 @@ bool CheckReadSubmitFailureRollsBack() {
   constexpr std::string_view kPayload = "retry";
   if (!WriteFd(peer.fd(), kPayload)) return false;
 
-  std::optional<coropact::base::Result<std::size_t>> retried_result;
+  std::optional<coropact::Result<std::size_t>> retried_result;
   bool retried_with_scheduler = false;
   int retried_resume_count = 0;
   coropact::coro::SpawnDetach(loop, ReadOnce(&stream, &loop, buffer, &retried_result,
@@ -788,7 +788,7 @@ bool CheckWriteSubmitFailureRollsBack() {
   constexpr std::string_view kPayload = "retry";
   auto bytes = std::as_bytes(std::span<const char>(kPayload.data(), kPayload.size()));
 
-  std::optional<coropact::base::Result<void>> failed_result;
+  std::optional<coropact::Result<void>> failed_result;
   bool failed_with_scheduler = false;
   int failed_resume_count = 0;
   loop.FailNextSubmissionsForTesting(1, EIO);
@@ -804,7 +804,7 @@ bool CheckWriteSubmitFailureRollsBack() {
     return false;
   }
 
-  std::optional<coropact::base::Result<void>> retried_result;
+  std::optional<coropact::Result<void>> retried_result;
   bool retried_with_scheduler = false;
   int retried_resume_count = 0;
   coropact::coro::SpawnDetach(loop, WriteOnce(&stream, &loop, bytes, &retried_result,
@@ -853,7 +853,7 @@ bool CheckTimedReadTimeoutSubmitFailureResumesOnce() {
   if (!WriteFd(peer.fd(), kPayload)) return false;
 
   std::array<std::byte, 16> buffer{};
-  std::optional<coropact::base::Result<std::size_t>> result;
+  std::optional<coropact::Result<std::size_t>> result;
   bool resumed_with_scheduler = false;
   int resume_count = 0;
 
@@ -903,7 +903,7 @@ bool CheckWriteAll() {
   constexpr std::string_view kPayload = "pong";
   auto bytes = std::as_bytes(std::span<const char>(kPayload.data(), kPayload.size()));
 
-  std::optional<coropact::base::Result<void>> result;
+  std::optional<coropact::Result<void>> result;
   bool resumed_with_scheduler = false;
 
   coropact::coro::SpawnDetach(loop,
@@ -957,10 +957,10 @@ bool CheckShutdownKeepsReadOpen() {
   constexpr std::string_view kWrite = "must-not-send";
   auto write_buffer = std::as_bytes(std::span<const char>(kWrite.data(), kWrite.size()));
   std::array<std::byte, 16> read_buffer{};
-  std::optional<coropact::base::Result<void>> first_shutdown;
-  std::optional<coropact::base::Result<void>> second_shutdown;
-  std::optional<coropact::base::Result<void>> write_result;
-  std::optional<coropact::base::Result<std::size_t>> read_result;
+  std::optional<coropact::Result<void>> first_shutdown;
+  std::optional<coropact::Result<void>> second_shutdown;
+  std::optional<coropact::Result<void>> write_result;
+  std::optional<coropact::Result<std::size_t>> read_result;
   bool resumed_with_scheduler = false;
 
   coropact::coro::SpawnDetach(
@@ -1014,7 +1014,7 @@ bool CheckCloseWithoutPending() {
 
   coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
 
-  std::optional<coropact::base::Result<void>> result;
+  std::optional<coropact::Result<void>> result;
   coropact::coro::SpawnDetach(loop, CloseOnce(&stream, &result));
 
   coropact::luring::detail::LoopAccess::RunReady(loop);
@@ -1041,7 +1041,7 @@ bool CheckCloseCancelsPendingRead() {
   coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
 
   std::array<std::byte, 8> buffer{};
-  std::optional<coropact::base::Result<std::size_t>> read_result;
+  std::optional<coropact::Result<std::size_t>> read_result;
   bool read_resumed_with_scheduler = false;
   int read_resume_count = 0;
 
@@ -1050,7 +1050,7 @@ bool CheckCloseCancelsPendingRead() {
 
   coropact::luring::detail::LoopAccess::RunReady(loop);
 
-  std::optional<coropact::base::Result<void>> close_result;
+  std::optional<coropact::Result<void>> close_result;
   coropact::coro::SpawnDetach(loop, CloseOnce(&stream, &close_result));
 
   coropact::luring::detail::LoopAccess::RunReady(loop);
@@ -1095,7 +1095,7 @@ bool CheckCloseSubmitFailureAbortsPreparation() {
 
   coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
   std::array<std::byte, 8> buffer{};
-  std::optional<coropact::base::Result<std::size_t>> read_result;
+  std::optional<coropact::Result<std::size_t>> read_result;
   bool read_resumed_with_scheduler = false;
   int read_resume_count = 0;
   coropact::coro::SpawnDetach(loop, ReadOnce(&stream, &loop, buffer, &read_result,
@@ -1106,7 +1106,7 @@ bool CheckCloseSubmitFailureAbortsPreparation() {
   // the stream must return to Open rather than strand the pending read in a
   // provisional Closing state.
   loop.FailNextSubmissionsForTesting(1, EIO);
-  std::optional<coropact::base::Result<void>> failed_close;
+  std::optional<coropact::Result<void>> failed_close;
   coropact::coro::SpawnDetach(loop, CloseOnce(&stream, &failed_close));
   coropact::luring::detail::LoopAccess::RunReady(loop);
 
@@ -1138,7 +1138,7 @@ bool CheckCloseSubmitFailureAbortsPreparation() {
     return false;
   }
 
-  std::optional<coropact::base::Result<void>> retry_close;
+  std::optional<coropact::Result<void>> retry_close;
   coropact::coro::SpawnDetach(loop, CloseOnce(&stream, &retry_close));
   coropact::luring::detail::LoopAccess::RunReady(loop);
   return Check(retry_close.has_value(), "retry Close did not finish") &&
@@ -1170,7 +1170,7 @@ bool CheckCloseReturnsOwnedReadBuffer() {
                                            &resumed_with_scheduler, &resume_count));
   coropact::luring::detail::LoopAccess::RunReady(loop);
 
-  std::optional<coropact::base::Result<void>> close_result;
+  std::optional<coropact::Result<void>> close_result;
   coropact::coro::SpawnDetach(loop, CloseOnce(&stream, &close_result));
   coropact::luring::detail::LoopAccess::RunReady(loop);
 
@@ -1218,7 +1218,7 @@ bool CheckReadCompletionCancelRaceResumesOnce() {
 
   coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
   std::array<std::byte, 8> buffer{};
-  std::optional<coropact::base::Result<std::size_t>> read_result;
+  std::optional<coropact::Result<std::size_t>> read_result;
   bool read_resumed_with_scheduler = false;
   int read_resume_count = 0;
 
@@ -1229,7 +1229,7 @@ bool CheckReadCompletionCancelRaceResumesOnce() {
   constexpr std::string_view kPayload = "race";
   if (!WriteFd(peer.fd(), kPayload)) return false;
 
-  std::optional<coropact::base::Result<void>> close_result;
+  std::optional<coropact::Result<void>> close_result;
   coropact::coro::SpawnDetach(loop, CloseOnce(&stream, &close_result));
   coropact::luring::detail::LoopAccess::RunReady(loop);
 

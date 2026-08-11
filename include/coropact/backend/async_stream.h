@@ -2,16 +2,16 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include <chrono>
 #include <concepts>
 #include <cstddef>
 #include <span>
 #include <utility>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/coro/awaitable.h"
 #include "coropact/coro/task.h"
 #include "coropact/net/read_into.h"
+#include "coropact/time/clock.h"
 
 namespace coropact::backend {
 
@@ -23,7 +23,7 @@ template <class T>
 concept AsyncReadStream = requires(T& stream, std::span<std::byte> buffer) {
   requires coro::Awaitable<decltype(stream.ReadSome(buffer))>;
   requires std::same_as<coro::AwaitResult<decltype(stream.ReadSome(buffer))>,
-                        base::Result<std::size_t>>;
+                        Result<std::size_t>>;
 };
 
 // Optional timed-read extension. It deliberately stays outside AsyncStream:
@@ -32,11 +32,10 @@ concept AsyncReadStream = requires(T& stream, std::span<std::byte> buffer) {
 // C++ interface or its lifetime guarantee.
 template <class T>
 concept AsyncTimedReadStream =
-    AsyncReadStream<T> &&
-    requires(T& stream, std::span<std::byte> buffer, std::chrono::milliseconds timeout) {
+    AsyncReadStream<T> && requires(T& stream, std::span<std::byte> buffer, time::Duration timeout) {
       requires coro::Awaitable<decltype(stream.ReadSomeFor(buffer, timeout))>;
       requires std::same_as<coro::AwaitResult<decltype(stream.ReadSomeFor(buffer, timeout))>,
-                            base::Result<std::size_t>>;
+                            Result<std::size_t>>;
     };
 
 // Optional ReadInto extension. ReadInto() consumes a move-only Buffer and
@@ -57,13 +56,13 @@ concept AsyncReadIntoStream = requires(T& stream, net::Buffer buffer, std::size_
 template <class T>
 concept AsyncWriteStream = requires(T& stream, std::span<const std::byte> buffer) {
   requires coro::Awaitable<decltype(stream.WriteAll(buffer))>;
-  requires std::same_as<coro::AwaitResult<decltype(stream.WriteAll(buffer))>, base::Result<void>>;
+  requires std::same_as<coro::AwaitResult<decltype(stream.WriteAll(buffer))>, Result<void>>;
 };
 
 template <class T>
 concept AsyncClosableStream = requires(T& stream) {
-  { stream.Shutdown() } -> std::same_as<coro::Task<base::Result<void>>>;
-  { stream.Close() } -> std::same_as<coro::Task<base::Result<void>>>;
+  { stream.Shutdown() } -> std::same_as<coro::Task<Result<void>>>;
+  { stream.Close() } -> std::same_as<coro::Task<Result<void>>>;
 };
 
 template <class T>

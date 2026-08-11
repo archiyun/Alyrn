@@ -40,7 +40,6 @@ bool Expect(bool condition, const char* message) {
     }
     return true;
 }
-
 void NoopRead(void*) noexcept {}
 
 struct ReadAndQuitContext {
@@ -203,7 +202,7 @@ bool TestDisableAllKeepsChannelInMap() {
     ::write(fds[1], "x", 1);
 
     // Use a timer to exit instead of depending on a read event.
-    loop.RunAfter(0.02, [&] { loop.RequestStop(); });
+    loop.RunAfter(coropact::time::Milliseconds(20), [&] { loop.RequestStop(); });
     loop.Run();
 
     const bool not_fired = Expect(!read_called,
@@ -285,7 +284,7 @@ bool TestEventsVectorResizes() {
     }
 
     // Backstop in case delivery is spread across multiple poll rounds.
-    loop.RunAfter(2.0, [&] { loop.RequestStop(); });
+    loop.RunAfter(coropact::time::Seconds(2), [&] { loop.RequestStop(); });
     loop.Run();
 
     for (auto& ch : channels) { ch->DisableAll(); ch->Remove(); }

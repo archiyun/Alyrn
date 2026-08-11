@@ -9,12 +9,12 @@
 #include <utility>
 
 #include "coropact/base/check.h"
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::backend::detail {
 
-// Storage for a non-trivial base::Result<T>. Backend adapters use it to retain
+// Storage for a non-trivial Result<T>. Backend adapters use it to retain
 // a result across suspension; a separate operation lifecycle authorizes when
 // that result becomes observable and when its continuation may run.
 template <typename T>
@@ -30,13 +30,13 @@ public:
     return state_ != State::kPending;
   }
 
-  void SetError(base::Error error) noexcept {
+  void SetError(Error error) noexcept {
     COROPACT_CHECK(state_ == State::kPending, "ValueResultState result was set twice");
     std::construct_at(&storage_.error, std::move(error));
     state_ = State::kError;
   }
 
-  void SetResult(base::Result<T>&& result) noexcept(std::is_nothrow_move_constructible_v<T>) {
+  void SetResult(Result<T>&& result) noexcept(std::is_nothrow_move_constructible_v<T>) {
     COROPACT_CHECK(state_ == State::kPending, "ValueResultState result was set twice");
     if (result.has_value()) {
       std::construct_at(&storage_.value, std::move(*result));
@@ -48,16 +48,16 @@ public:
   }
 
   [[nodiscard]]
-  base::Result<T> Take() noexcept(std::is_nothrow_move_constructible_v<T>) {
+  Result<T> Take() noexcept(std::is_nothrow_move_constructible_v<T>) {
     COROPACT_CHECK(HasResult(), "ValueResultState result was taken before completion");
     if (state_ == State::kError) {
-      base::Error error = std::move(storage_.error);
+      Error error = std::move(storage_.error);
       std::destroy_at(&storage_.error);
       state_ = State::kPending;
       return std::unexpected(std::move(error));
     }
 
-    base::Result<T> result(std::in_place, std::move(storage_.value));
+    Result<T> result(std::in_place, std::move(storage_.value));
     std::destroy_at(&storage_.value);
     state_ = State::kPending;
     return result;
@@ -75,7 +75,7 @@ private:
     ~Storage() {}
 
     T value;
-    base::Error error;
+    Error error;
   } storage_;
   State state_{State::kPending};
 

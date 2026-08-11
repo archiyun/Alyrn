@@ -8,7 +8,7 @@
 #include <memory_resource>
 #include <vector>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/reactor/detail/reactor_worker.h"
 #include "coropact/utils/macros.h"
 
@@ -39,7 +39,7 @@ public:
   ~ReactorWorkerGroup() noexcept;
 
   [[nodiscard]]
-  base::Result<void> Start();
+  Result<void> Start();
 
   // Asks every worker loop to stop without joining its thread.
   void RequestStop() noexcept;

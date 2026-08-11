@@ -1,6 +1,6 @@
 ---
 name: runtime-time-maintenance
-description: Maintain coropact/time Timestamp, Timer, TimerId, and timer indexes. Use for clock semantics, timer ordering, cancellation handles, and time-layer dependency reviews.
+description: Maintain coropact/time Duration, Deadline, Timer, TimerId, and timer indexes. Use for monotonic clock semantics, timer ordering, cancellation handles, and time-layer dependency reviews.
 ---
 
 # coropact/time Maintenance
@@ -18,22 +18,22 @@ stable cancellation IDs, and intrusive timer ordering/index types.
 
 ## Owned resources
 
-- Timestamp representation and formatting semantics.
+- Monotonic `Duration` and `Deadline` value semantics.
 - Timer callback, expiration, repeat interval, and sequence.
 - TimerId identity semantics.
 - TimerTree ordering.
 
 ## Public API / entry points
 
-- `Timestamp::{Now,Invalid,Valid,ToString,ToFormattedString}`
-- `TimeDifference`, `AddTime`
+- `Clock`, `Deadline`, `Duration`, `SteadyNow()`
+- `Nanoseconds`, `Microseconds`, `Milliseconds`, `Seconds`
 - `Timer::{Run,Restart,expiration,repeat,sequence}`
 - `TimerId`
 - `TimerTree`
 
 ## Thread model
 
-- Timestamp and TimerId values are copyable/read-only values.
+- Deadline, Duration, and TimerId values are copyable/read-only values.
 - Timer mutation is single-scheduler-owned.
 - Global timer sequence generation is atomic.
 - This module starts no threads and posts no callbacks.
@@ -57,7 +57,8 @@ TimerId: invalid | issued -> stale after cancel/fire
 - Timer ordering is a strict total order, including equal expirations.
 - Sequence values are not reused during process lifetime.
 - One Timer is linked into each intended intrusive index at most once.
-- Wall-clock values and monotonic durations are not silently interchangeable.
+- Runtime timer APIs accept monotonic deadlines and durations only; wall-clock
+  values are not represented in this module.
 - Negative/zero intervals have explicit behavior.
 
 ## Common bugs
@@ -85,8 +86,8 @@ TimerId: invalid | issued -> stale after cancel/fire
 ## Patch rules
 
 - Keep time representation separate from dispatch.
-- Introduce a distinct monotonic type or explicit clock parameter rather than
-  overloading Timestamp semantics.
+- Keep runtime deadlines and durations on `time::Clock`; do not reintroduce a
+  Unix-epoch timestamp or a floating-point seconds API.
 - Do not put EventLoop pointers in Timer or TimerId.
 - Preserve stale-handle safety.
 - Test ordering and cancellation edge cases, not only normal firing.

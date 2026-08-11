@@ -35,13 +35,13 @@ application protocol, route, peer, proxy, or gateway policy.
 | `include/coropact/coro` | L2 | Coroutine ownership, scheduling, frame allocation, and continuation rules. |
 | `include/coropact/coro/detail` | L2 | Promise storage, root-coroutine, and frame-allocation implementation; not an application seam. |
 | `include/coropact/operation/detail` | L2 | Internal completion and lifecycle authorization shared by backend adapters: one-shot, composite, and split-release protocols plus scheduler-bound continuations; no transport resource ownership. |
-| `include/coropact/backend/detail` | L2 | Internal backend-neutral awaiter result storage; retains `base::Result<T>` but owns no authorization or transport-lifecycle protocol. |
-| `include/coropact/net` | L2 | Header-only socket, address, and buffer values shared by backends. |
+| `include/coropact/backend/detail` | L2 | Internal backend-neutral awaiter result storage; retains `Result<T>` but owns no authorization or transport-lifecycle protocol. |
+| `include/coropact/net` | L2 | Header-only POSIX socket, address, and buffer values shared by backends; no concrete backend or Linux-only dependency. |
 | `include/coropact/net/detail` | L2 | Internal stream/source lifecycle, admission, pause/drain, and lease-accounting state machines shared by backend adapters. |
 | `include/coropact/io`, `include/coropact/backend` | L2 | Backend-neutral I/O and dispatcher lifecycle contracts and algorithms. |
 | `include/coropact/runtime.h` | L2 | Backend-neutral application lifecycle facade. It type-erases only cold start/stop control; backend tags select a Builder specialization at compile time. |
-| `include/coropact/reactor`, `src/reactor` | L2 | epoll readiness adapter. `EventLoop`, the `Runtime::Builder<runtime::Reactor>` binding, and transport adapters are public; `reactor/detail` owns channel registration, epoll polling, timers, and worker bootstrap implementation. |
-| `include/coropact/luring`, `src/luring` | L2 | io_uring completion adapter. `LUringLoop`, the `Runtime::Builder<runtime::LUring>` binding, and transport adapters are public; `luring/detail` owns raw SQE/CQE operations, ring/mailbox transport, timer queue, and worker/server bootstrap implementation. |
+| `include/coropact/reactor`, `src/reactor` | L2 | Linux epoll readiness adapter. `EventLoop`, the `Runtime::Builder<runtime::Reactor>` binding, and transport adapters are public; `reactor/detail` owns channel registration, epoll polling, timers, and worker bootstrap implementation. |
+| `include/coropact/luring`, `src/luring` | L2 | Linux io_uring completion adapter. `LUringLoop`, the `Runtime::Builder<runtime::LUring>` binding, and transport adapters are public; `luring/detail` owns raw SQE/CQE operations, ring/mailbox transport, timer queue, and worker/server bootstrap implementation. |
 | `examples`, `benchmarks`, `tests` | L3 | Consumers and validation; never runtime dependencies. |
 
 ## Hard Dependency Rules
@@ -53,9 +53,13 @@ application protocol, route, peer, proxy, or gateway policy.
 - `backend/detail` may retain backend-adapter result values, but it must not
   encode completion authorization or depend on `net`, `io`, Reactor, luring,
   or CoroGateway.
-- `net` must not depend on `io`, Reactor, luring, or CoroGateway.
+- `net` may depend on portable POSIX socket facilities, but must not depend on
+  Linux-only facilities, `io`, Reactor, luring, or CoroGateway.
 - Reactor and luring may depend on `net` and coroutine contracts, but neither
   may include the application-level `io` facade.
+- A kqueue backend is a parallel adapter. Do not add BSD conditionals to
+  Reactor's epoll implementation; share only a genuinely backend-neutral
+  contract or value module.
 - `io_contract` remains backend-neutral. The `io` facade may assemble adapters
   only at a composition root; backend cores must not link it.
 - CoroGateway may depend on CoroPact public interfaces. CoroPact must not

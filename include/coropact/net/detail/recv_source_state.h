@@ -5,7 +5,7 @@
 #include <cerrno>
 #include <cstddef>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/net/detail/source_state.h"
 #include "coropact/net/recv_source.h"
 
@@ -20,17 +20,17 @@ using RecvSourceState = SourceState;
 class RecvSourceStateMachine final {
 public:
   [[nodiscard]]
-  static base::Result<RecvSourceStateMachine> Create(RecvSourceOptions options) noexcept {
+  static Result<RecvSourceStateMachine> Create(RecvSourceOptions options) noexcept {
     if (!options.Valid()) {
-      return std::unexpected(base::MakeErrno(EINVAL));
+      return std::unexpected(Errno(EINVAL));
     }
     return RecvSourceStateMachine(options);
   }
 
   [[nodiscard]]
-  base::Result<void> Start() noexcept {
+  Result<void> Start() noexcept {
     if (state_ != RecvSourceState::kIdle) {
-      return std::unexpected(base::MakeErrno(EALREADY));
+      return std::unexpected(Errno(EALREADY));
     }
     state_ = RecvSourceState::kActive;
     return {};
@@ -46,14 +46,14 @@ public:
   }
 
   [[nodiscard]]
-  base::Result<void> RequestPause() noexcept {
+  Result<void> RequestPause() noexcept {
     if (state_ == RecvSourceState::kTerminal || state_ == RecvSourceState::kDraining ||
         state_ == RecvSourceState::kStopping || state_ == RecvSourceState::kPausing ||
         state_ == RecvSourceState::kPaused) {
       return {};
     }
     if (state_ != RecvSourceState::kActive) {
-      return std::unexpected(base::MakeErrno(EINVAL));
+      return std::unexpected(Errno(EINVAL));
     }
 
     state_ = RecvSourceState::kPausing;
@@ -71,16 +71,16 @@ public:
   }
 
   [[nodiscard]]
-  base::Result<void> CompleteMultishotEvent(EventDisposition event,
+  Result<void> CompleteMultishotEvent(EventDisposition event,
                                             MultishotRequestDisposition request) noexcept {
     if (armed_requests_ == 0) {
-      return std::unexpected(base::MakeErrno(EINVAL));
+      return std::unexpected(Errno(EINVAL));
     }
     if (event == EventDisposition::kProduced && !CanQueueEvent()) {
-      return std::unexpected(base::MakeErrno(ENOBUFS));
+      return std::unexpected(Errno(ENOBUFS));
     }
     if (event == EventDisposition::kDelivered && !CanDeliverEvent()) {
-      return std::unexpected(base::MakeErrno(ENOBUFS));
+      return std::unexpected(Errno(ENOBUFS));
     }
 
     if (request == MultishotRequestDisposition::kTerminal) {
@@ -135,7 +135,7 @@ public:
   }
 
   [[nodiscard]]
-  base::Result<void> RequestStop() noexcept {
+  Result<void> RequestStop() noexcept {
     if (state_ == RecvSourceState::kTerminal || state_ == RecvSourceState::kDraining ||
         state_ == RecvSourceState::kStopping) {
       return {};

@@ -8,7 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/luring/options.h"
 #include "coropact/utils/macros.h"
 
@@ -36,12 +36,12 @@ public:
   LUringRing& operator=(LUringRing&& other) noexcept;
 
   [[nodiscard]]
-  static base::Result<LUringRing> Create(const LUringOptions& options) noexcept;
+  static Result<LUringRing> Create(const LUringOptions& options) noexcept;
 
   [[nodiscard]]
   io_uring_sqe* GetSqe() noexcept;
   [[nodiscard]]
-  base::Result<std::size_t> Submit() noexcept;
+  Result<std::size_t> Submit() noexcept;
 
   void PrepMsgRing(io_uring_sqe* sqe, int target_ring_fd, std::uint32_t type,
                    std::uint64_t data) noexcept;
@@ -50,14 +50,14 @@ public:
 
   template <class F>
   [[nodiscard]]
-  base::Result<std::size_t> Reap(F&& on_cqe, std::size_t max_count = 0) noexcept {
+  Result<std::size_t> Reap(F&& on_cqe, std::size_t max_count = 0) noexcept {
     io_uring_cqe* cqe = nullptr;
     int result = io_uring_peek_cqe(&ring_, &cqe);
     if (result == -EAGAIN) {
       return std::size_t{0};
     }
     if (result < 0) {
-      return std::unexpected(base::MakeNegErrno(result));
+      return std::unexpected(NegErrno(result));
     }
 
     unsigned head = 0;

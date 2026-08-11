@@ -4,13 +4,12 @@
 
 #include <sys/uio.h>
 
-#include <chrono>
 #include <coroutine>
 #include <cstddef>
 #include <cstdint>
 #include <span>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/coro/task.h"
 #include "coropact/net/buffer.h"
 #include "coropact/net/detail/stream_lifecycle.h"
@@ -25,6 +24,7 @@
 #include "coropact/reactor/detail/result_state.h"
 #include "coropact/reactor/loop.h"
 #include "coropact/reactor/options.h"
+#include "coropact/time/clock.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::reactor {
@@ -64,12 +64,11 @@ public:
   [[nodiscard]]
   ReadIntoAwaiter ReadInto(net::Buffer buffer, std::size_t reserve = 4096) noexcept;
   [[nodiscard]]
-  ReadSomeAwaiter ReadSomeFor(std::span<std::byte> buffer,
-                              std::chrono::milliseconds timeout) noexcept;
+  ReadSomeAwaiter ReadSomeFor(std::span<std::byte> buffer, time::Duration timeout) noexcept;
   [[nodiscard]]
   WriteAllAwaiter WriteAll(std::span<const std::byte> buffer) noexcept;
-  coro::Task<base::Result<void>> Shutdown();
-  coro::Task<base::Result<void>> Close();
+  coro::Task<Result<void>> Shutdown();
+  coro::Task<Result<void>> Close();
 
   // Stream operations and destruction are loop-affine. The coroutine must
   // reach await_suspend() on this stream's owning EventLoop; a foreign thread
@@ -117,8 +116,8 @@ private:
   static void DispatchClose(void* context) noexcept;
   static void DispatchError(void* context) noexcept;
 
-  void CompleteRead(base::Result<std::size_t> result);
-  void CompleteWrite(base::Result<std::size_t> result);
+  void CompleteRead(Result<std::size_t> result);
+  void CompleteWrite(Result<std::size_t> result);
   void CloseNow() noexcept;
   void DetachChannel();
   void RequireOwnerLoop() const noexcept;
@@ -163,18 +162,17 @@ protected:
   bool BeginRead(std::coroutine_handle<> continuation) noexcept;
   void SuspendForRead(void* awaiter, PendingReadKind kind) noexcept;
 
-  void ArmReadTimeout(std::chrono::milliseconds timeout, void* awaiter,
-                      time::TimerId& timer) noexcept;
+  void ArmReadTimeout(time::Duration timeout, void* awaiter, time::TimerId& timer) noexcept;
   void CancelReadTimeout(time::TimerId& timer) noexcept;
 
   [[nodiscard]]
   bool TryAuthorizeResult() noexcept;
-  void CompleteInline(base::Result<std::size_t> result) noexcept;
+  void CompleteInline(Result<std::size_t> result) noexcept;
   void CompleteStoredInline() noexcept;
-  void SetResult(base::Result<std::size_t> result) noexcept;
+  void SetResult(Result<std::size_t> result) noexcept;
 
   [[nodiscard]]
-  base::Result<std::size_t> TakeResult() noexcept;
+  Result<std::size_t> TakeResult() noexcept;
 
   ReactorStream* stream_;
   SchedulerContinuation continuation_;
@@ -188,7 +186,7 @@ public:
   COROPACT_DELETE_COPY_MOVE(ReadSomeAwaiter);
 
   ReadSomeAwaiter(ReactorStream& stream, std::span<std::byte> buffer,
-                  std::chrono::milliseconds timeout = std::chrono::milliseconds{0}) noexcept
+                  time::Duration timeout = time::Duration::zero()) noexcept
       : ReadAwaiterState(stream), buffer_(buffer), timeout_(timeout) {}
 
   [[nodiscard]]
@@ -197,16 +195,16 @@ public:
   }
   [[nodiscard]]
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
-  base::Result<std::size_t> await_resume() noexcept;
+  Result<std::size_t> await_resume() noexcept;
 
 private:
   friend OperationHook<ReadSomeAwaiter>;
 
-  bool CompleteResultImpl(base::Result<std::size_t> result) noexcept;
+  bool CompleteResultImpl(Result<std::size_t> result) noexcept;
   void OnReadyImpl() noexcept;
 
   std::span<std::byte> buffer_;
-  std::chrono::milliseconds timeout_;
+  time::Duration timeout_;
   time::TimerId timer_;
 };
 
@@ -225,14 +223,14 @@ public:
   }
   [[nodiscard]]
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
-  base::Result<void> await_resume() noexcept;
+  Result<void> await_resume() noexcept;
 
 private:
   friend class ReactorStream;
   friend OperationHook<WriteAllAwaiter>;
 
-  void CompleteInline(base::Result<std::size_t> result) noexcept;
-  [[nodiscard]] bool CompleteResultImpl(base::Result<std::size_t> result) noexcept;
+  void CompleteInline(Result<std::size_t> result) noexcept;
+  [[nodiscard]] bool CompleteResultImpl(Result<std::size_t> result) noexcept;
   [[nodiscard]] bool TryAuthorizeRelease() noexcept;
   [[nodiscard]] bool TryAuthorizeContinuation() noexcept;
   void ScheduleContinuation() noexcept;
@@ -266,10 +264,10 @@ public:
 private:
   friend OperationHook<ReadIntoAwaiter>;
 
-  bool CompleteResultImpl(base::Result<std::size_t> result) noexcept;
+  bool CompleteResultImpl(Result<std::size_t> result) noexcept;
   void OnReadyImpl() noexcept;
   bool PrepareReservation() noexcept;
-  void FinishAttempt(base::Result<std::size_t> result) noexcept;
+  void FinishAttempt(Result<std::size_t> result) noexcept;
 
   net::Buffer buffer_;
   std::size_t reserve_;

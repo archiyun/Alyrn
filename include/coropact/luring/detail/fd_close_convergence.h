@@ -4,7 +4,7 @@
 
 #include <coroutine>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/luring/detail/close_state.h"
 
 namespace coropact::luring::detail {
@@ -16,9 +16,9 @@ class FdCloseConvergence {
 public:
   void SetSuccess() noexcept { state_.SetSuccess(); }
 
-  void SetError(base::Error error) noexcept { state_.SetError(error); }
+  void SetError(Error error) noexcept { state_.SetError(error); }
 
-  void SetResult(const base::Result<void>& result) noexcept { state_.SetResult(result); }
+  void SetResult(const Result<void>& result) noexcept { state_.SetResult(result); }
 
   [[nodiscard]]
   bool HasResult() const noexcept {
@@ -26,7 +26,7 @@ public:
   }
 
   [[nodiscard]]
-  base::Result<void> TakeResult() const noexcept {
+  Result<void> TakeResult() const noexcept {
     return state_.TakeResult();
   }
 

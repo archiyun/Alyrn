@@ -14,7 +14,6 @@
 
 #include <array>
 #include <cerrno>
-#include <chrono>
 #include <cstddef>
 #include <print>
 #include <stop_token>
@@ -62,7 +61,7 @@ auto CloseAfterReadSuspends(luring::LUringLoop& loop, luring::LUringStream& stre
                             DemoState& state) -> coro::DetachedTask {
   // The read task is scheduled first. This timer gives the loop a separate
   // completion boundary before Close starts its cancel-and-drain protocol.
-  auto delayed = co_await luring::SleepFor(loop, std::chrono::milliseconds(10));
+  auto delayed = co_await luring::SleepFor(loop, time::Milliseconds(10));
   if (!delayed.has_value()) {
     std::println(stderr, "delay failed: {}", delayed.error().message());
     state.Fail();
@@ -85,7 +84,7 @@ auto CloseAfterReadSuspends(luring::LUringLoop& loop, luring::LUringStream& stre
 auto main() -> int {
   std::array<int, 2> sockets{-1, -1};
   if (::socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0, sockets.data()) < 0) {
-    std::println(stderr, "socketpair failed: {}", base::CurrentErrno().message());
+    std::println(stderr, "socketpair failed: {}", CurrentErrno().message());
     return 1;
   }
 

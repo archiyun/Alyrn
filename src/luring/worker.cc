@@ -13,7 +13,7 @@
 #include <thread>
 #include <utility>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/coro/spawn.h"
 #include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/listener.h"
@@ -75,25 +75,25 @@ coro::DetachedTask MultishotAcceptLoop(
 }
 
 coro::DetachedTask CloseListener(LUringListener* listener,
-                                 std::optional<base::Result<void>>* result) {
+                                 std::optional<Result<void>>* result) {
   result->emplace(co_await listener->Close());
 }
 
 void CloseListenerAfterLoopDrain(LUringLoop& loop, LUringListener& listener) noexcept {
-  std::optional<base::Result<void>> close_result;
+  std::optional<Result<void>> close_result;
   coro::SpawnDetach(loop, CloseListener(&listener, &close_result));
   LoopAccess::RunReady(loop);
   COROPACT_CHECK(close_result.has_value(),
                  "LUringLoop drain left listener Close coroutine pending");
 }
 
-base::Result<void> SetCurrentThreadAffinity(unsigned cpu) noexcept {
+Result<void> SetCurrentThreadAffinity(unsigned cpu) noexcept {
   cpu_set_t cpuset;
   CPU_ZERO(&cpuset);
   CPU_SET(cpu, &cpuset);
   const int result = pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
   if (result != 0) {
-    return std::unexpected(base::MakeErrno(result));
+    return std::unexpected(Errno(result));
   }
   return {};
 }
@@ -112,15 +112,15 @@ LUringWorker::LUringWorker(std::size_t index, net::Endpoint listen_addr,
 
 LUringWorker::~LUringWorker() noexcept { Stop(); }
 
-base::Result<void> LUringWorker::Start() {
+Result<void> LUringWorker::Start() {
   if (thread_.joinable()) {
-    return std::unexpected(base::MakeErrno(EALREADY));
+    return std::unexpected(Errno(EALREADY));
   }
 
   {
     std::lock_guard lock{mutex_};
     init_done_ = false;
-    start_result_ = base::Result<void>{};
+    start_result_ = Result<void>{};
   }
 
   thread_ = std::jthread([this](std::stop_token token) { WorkLoop(std::move(token)); });
@@ -129,7 +129,7 @@ base::Result<void> LUringWorker::Start() {
   cv_.wait(lock, thread_.get_stop_token(), [this] { return init_done_; });
 
   if (!init_done_) {
-    return std::unexpected(base::MakeErrno(ECANCELED));
+    return std::unexpected(Errno(ECANCELED));
   }
   return start_result_;
 }
@@ -141,7 +141,7 @@ void LUringWorker::Stop() noexcept {
 }
 
 void LUringWorker::WorkLoop(std::stop_token token) noexcept {
-  auto PublishStart = [this](base::Result<void> result) noexcept {
+  auto PublishStart = [this](Result<void> result) noexcept {
     {
       std::lock_guard lock{mutex_};
       start_result_ = std::move(result);
@@ -186,7 +186,7 @@ void LUringWorker::WorkLoop(std::stop_token token) noexcept {
     try {
       init_callback_(context);
     } catch (...) {
-      PublishStart(std::unexpected(base::MakeErrno(EFAULT)));
+      PublishStart(std::unexpected(Errno(EFAULT)));
       return;
     }
   }
@@ -203,7 +203,7 @@ void LUringWorker::WorkLoop(std::stop_token token) noexcept {
     }
   }
 
-  PublishStart(base::Result<void>{});
+  PublishStart(Result<void>{});
   loop.Run(token);
   CloseListenerAfterLoopDrain(loop, *listener);
 

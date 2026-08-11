@@ -9,14 +9,14 @@
 #include <optional>
 #include <utility>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/coro/task.h"
 #include "coropact/io/recv_source.h"
 #include "coropact/net/recv_source.h"
 
 namespace {
 
-using coropact::base::Result;
+using coropact::Result;
 using coropact::coro::Task;
 using coropact::io::AsyncRecvSource;
 using coropact::net::BufferLease;

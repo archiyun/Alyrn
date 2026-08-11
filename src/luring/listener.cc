@@ -14,7 +14,7 @@
 
 #include "coropact/backend/detail/value_result_state.h"
 #include "coropact/base/check.h"
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/base/try.h"
 #include "coropact/luring/detail/cancel_result.h"
 #include "coropact/luring/detail/fd_close_convergence.h"
@@ -34,17 +34,17 @@ using namespace net::detail;
 
 namespace {
 
-using AcceptResult = base::Result<LUringStream>;
+using AcceptResult = Result<LUringStream>;
 
-base::Result<int> CreatedListenFd(const net::Endpoint& listen_addr,
+Result<int> CreatedListenFd(const net::Endpoint& listen_addr,
                                   const LUringListenOptions& options) noexcept {
   const int fd =
       ::socket(listen_addr.NativeFamily(), SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, IPPROTO_TCP);
   if (fd < 0) {
-    return std::unexpected(base::CurrentErrno());
+    return std::unexpected(CurrentErrno());
   }
 
-  auto fail = [fd](base::Error error) -> base::Result<int> {
+  auto fail = [fd](Error error) -> Result<int> {
     ::close(fd);
     return std::unexpected(error);
   };
@@ -53,32 +53,32 @@ base::Result<int> CreatedListenFd(const net::Endpoint& listen_addr,
 
   if (options.reuse_addr) {
     if (::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) < 0) {
-      return fail(base::CurrentErrno());
+      return fail(CurrentErrno());
     }
   }
 
   if (options.reuse_port) {
     if (::setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &on, sizeof(on)) < 0) {
-      return fail(base::CurrentErrno());
+      return fail(CurrentErrno());
     }
   }
 
   if (::bind(fd, listen_addr.SockAddr(), listen_addr.SockAddrLen()) < 0) {
-    return fail(base::CurrentErrno());
+    return fail(CurrentErrno());
   }
 
   if (::listen(fd, options.backlog) < 0) {
-    return fail(base::CurrentErrno());
+    return fail(CurrentErrno());
   }
 
   return fd;
 }
 
-base::Result<net::Endpoint> GetLocalAddress(int fd) noexcept {
+Result<net::Endpoint> GetLocalAddress(int fd) noexcept {
   sockaddr_storage addr{};
   auto len = static_cast<socklen_t>(sizeof(addr));
   if (::getsockname(fd, reinterpret_cast<sockaddr*>(&addr), &len) < 0) {
-    return std::unexpected(base::CurrentErrno());
+    return std::unexpected(CurrentErrno());
   }
   return net::Endpoint(reinterpret_cast<const sockaddr*>(&addr), len);
 }
@@ -98,17 +98,17 @@ bool IsMultishotUnsupported(int cqe_result) noexcept {
 // --- NextAwaiter ---
 bool LUringAcceptSource::NextAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   if (source_->listener_ == nullptr) {
-    result_.SetError(base::MakeErrno(EBADF));
+    result_.SetError(Errno(EBADF));
     (void)(completion_gate_.TryComplete());
     return false;
   }
   if (!source_->listener_->loop_->IsInLoopThread()) {
-    result_.SetError(base::MakeErrno(EINVAL));
+    result_.SetError(Errno(EINVAL));
     (void)(completion_gate_.TryComplete());
     return false;
   }
   if (source_->pending_next_ != nullptr) {
-    result_.SetError(base::MakeErrno(EBUSY));
+    result_.SetError(Errno(EBUSY));
     (void)(completion_gate_.TryComplete());
     return false;
   }
@@ -122,7 +122,7 @@ bool LUringAcceptSource::NextAwaiter::await_suspend(std::coroutine_handle<> cont
     }
   }
 
-  Result result;
+  NextResult result;
   if (source_->TryTakeNext(result)) {
     result_.SetResult(std::move(result));
     (void)(completion_gate_.TryComplete());
@@ -134,11 +134,11 @@ bool LUringAcceptSource::NextAwaiter::await_suspend(std::coroutine_handle<> cont
   return true;
 }
 
-LUringAcceptSource::Result LUringAcceptSource::NextAwaiter::await_resume() noexcept {
+LUringAcceptSource::NextResult LUringAcceptSource::NextAwaiter::await_resume() noexcept {
   return result_.Take();
 }
 
-void LUringAcceptSource::NextAwaiter::Complete(Result result) noexcept {
+void LUringAcceptSource::NextAwaiter::Complete(NextResult result) noexcept {
   if (!completion_gate_.TryComplete()) {
     return;
   }
@@ -170,7 +170,7 @@ public:
 
     if (!*waiting) {
       source_->pending_stop_ = nullptr;
-      result_.emplace(base::Result<void>{});
+      result_.emplace(Result<void>{});
       (void)(completion_gate_.TryComplete());
       return false;
     }
@@ -178,12 +178,12 @@ public:
     return true;
   }
 
-  base::Result<void> await_resume() noexcept {
+  Result<void> await_resume() noexcept {
     COROPACT_CHECK(result_.has_value(), "LUring accept source Stop resumed without a result");
     return std::move(*result_);
   }
 
-  void Complete(base::Result<void> result) noexcept {
+  void Complete(Result<void> result) noexcept {
     if (!completion_gate_.TryComplete()) {
       return;
     }
@@ -195,7 +195,7 @@ private:
   LUringAcceptSource* source_;
   operation::detail::SchedulerContinuation continuation_;
   operation::detail::CompletionGate completion_gate_;
-  std::optional<base::Result<void>> result_;
+  std::optional<Result<void>> result_;
 };
 
 LUringAcceptSource::LUringAcceptSource(LUringListener* listener,
@@ -274,12 +274,12 @@ LUringAcceptSource& LUringAcceptSource::operator=(LUringAcceptSource&& other) no
   return *this;
 }
 
-base::Result<LUringStream> LUringAcceptSource::MakeStream(int accepted_fd) noexcept {
+Result<LUringStream> LUringAcceptSource::MakeStream(int accepted_fd) noexcept {
   sockaddr_storage peer{};
   socklen_t peer_len = sizeof(peer);
 
   if (::getpeername(accepted_fd, reinterpret_cast<sockaddr*>(&peer), &peer_len) < 0) {
-    auto error = base::CurrentErrno();
+    auto error = CurrentErrno();
     ::close(accepted_fd);
     return std::unexpected(error);
   }
@@ -290,14 +290,14 @@ base::Result<LUringStream> LUringAcceptSource::MakeStream(int accepted_fd) noexc
   return stream;
 }
 
-base::Result<void> LUringAcceptSource::StartOperation() noexcept {
+Result<void> LUringAcceptSource::StartOperation() noexcept {
   if (listener_ == nullptr || listener_->closed_ || listener_->fd_ < 0) {
-    return std::unexpected(base::MakeErrno(EBADF));
+    return std::unexpected(Errno(EBADF));
   }
 
   if (listener_->loop_->State() == backend::LoopState::kStopping ||
       listener_->loop_->State() == backend::LoopState::kStopped) {
-    return std::unexpected(base::MakeErrno(ECANCELED));
+    return std::unexpected(Errno(ECANCELED));
   }
 
   if (accept_submitted_) {
@@ -335,17 +335,17 @@ base::Result<void> LUringAcceptSource::StartOperation() noexcept {
   return {};
 }
 
-base::Result<void> LUringAcceptSource::Start() noexcept {
+Result<void> LUringAcceptSource::Start() noexcept {
   if (state_.State() != AcceptSourceState::kIdle) {
-    return std::unexpected(base::MakeErrno(EALREADY));
+    return std::unexpected(Errno(EALREADY));
   }
 
   if (listener_ == nullptr || listener_->closed_ || listener_->fd_ < 0) {
-    return std::unexpected(base::MakeErrno(EBADF));
+    return std::unexpected(Errno(EBADF));
   }
 
   if (listener_->pending_accepts_ != 0 || listener_->accept_source_ != nullptr) {
-    return std::unexpected(base::MakeErrno(EBUSY));
+    return std::unexpected(Errno(EBUSY));
   }
 
   auto started = state_.Start();
@@ -364,7 +364,7 @@ base::Result<void> LUringAcceptSource::Start() noexcept {
   return {};
 }
 
-base::Result<void> LUringAcceptSource::StartCancel() noexcept {
+Result<void> LUringAcceptSource::StartCancel() noexcept {
   if (!accept_submitted_ || cancel_submitted_) {
     return {};
   }
@@ -385,7 +385,7 @@ base::Result<void> LUringAcceptSource::StartCancel() noexcept {
   return {};
 }
 
-base::Result<bool> LUringAcceptSource::BeginStop() noexcept {
+Result<bool> LUringAcceptSource::BeginStop() noexcept {
   state_.RequestStop();
 
   if (!accept_submitted_ && !cancel_submitted_) {
@@ -402,7 +402,7 @@ base::Result<bool> LUringAcceptSource::BeginStop() noexcept {
   return true;
 }
 
-void LUringAcceptSource::RequestBackendStop(std::optional<base::Error> error) noexcept {
+void LUringAcceptSource::RequestBackendStop(std::optional<Error> error) noexcept {
   if (error.has_value() && !terminal_error_.has_value()) {
     terminal_error_ = *error;
   }
@@ -479,7 +479,7 @@ CompletionDisposition LUringAcceptSource::OnCompletion(CompletionEvent event) no
           events_.push_back(std::move(*stream));
           produced_event = true;
         } catch (...) {
-          RequestBackendStop(base::MakeErrno(ENOMEM));
+          RequestBackendStop(Errno(ENOMEM));
         }
       }
     }
@@ -497,7 +497,7 @@ CompletionDisposition LUringAcceptSource::OnCompletion(CompletionEvent event) no
       // logical source with ordinary one-shot accept.
       multishot_enabled_ = false;
     } else if (!stopping) {
-      RequestBackendStop(base::MakeNegErrno(cqe_res));
+      RequestBackendStop(NegErrno(cqe_res));
     }
   }
 
@@ -543,7 +543,7 @@ void LUringAcceptSource::OnCancelComplete(int cqe_res) noexcept {
   cancel_submitted_ = false;
 
   if (!detail::IsExpectedCancelCqeResult(cqe_res) && !terminal_error_.has_value()) {
-    terminal_error_ = base::MakeNegErrno(cqe_res);
+    terminal_error_ = NegErrno(cqe_res);
   }
 
   MaybeResume();
@@ -556,7 +556,7 @@ void LUringAcceptSource::OnListenerClosed() noexcept {
   CompleteStopIfReady();
 }
 
-bool LUringAcceptSource::TryTakeNext(Result& result) noexcept {
+bool LUringAcceptSource::TryTakeNext(NextResult& result) noexcept {
   if (!events_.empty()) {
     Event event(std::in_place, std::move(events_.front()));
     events_.pop_front();
@@ -564,7 +564,7 @@ bool LUringAcceptSource::TryTakeNext(Result& result) noexcept {
     COROPACT_CHECK(state_.ConsumeEvent(),
                    "LUringAcceptSource: queue and state became inconsistent");
 
-    result = Result(std::in_place, std::move(event));
+    result = NextResult(std::in_place, std::move(event));
     if (state_.State() == AcceptSourceState::kPaused) {
       MaybeResume();
     } else {
@@ -577,7 +577,7 @@ bool LUringAcceptSource::TryTakeNext(Result& result) noexcept {
     if (terminal_error_.has_value()) {
       result = std::unexpected(*terminal_error_);
     } else {
-      result = Result(std::in_place, std::nullopt);
+      result = NextResult(std::in_place, std::nullopt);
     }
 
     ReleaseListenerReservation();
@@ -592,7 +592,7 @@ void LUringAcceptSource::DeliverNextIfReady() noexcept {
     return;
   }
 
-  Result result;
+  NextResult result;
   if (!TryTakeNext(result)) {
     return;
   }
@@ -611,7 +611,7 @@ void LUringAcceptSource::CompleteStopIfReady() noexcept {
   }
 
   auto* awaiter = std::exchange(pending_stop_, nullptr);
-  awaiter->Complete(base::Result<void>{});
+  awaiter->Complete(Result<void>{});
 }
 
 void LUringAcceptSource::ReleaseListenerReservation() noexcept {
@@ -621,22 +621,22 @@ void LUringAcceptSource::ReleaseListenerReservation() noexcept {
   }
 }
 
-coro::Task<base::Result<void>> LUringAcceptSource::Stop() {
+coro::Task<Result<void>> LUringAcceptSource::Stop() {
   if (listener_ == nullptr) {
-    co_return base::Result<void>{};
+    co_return Result<void>{};
   }
   if (!listener_->loop_->IsInLoopThread()) {
-    co_return std::unexpected(base::MakeErrno(EINVAL));
+    co_return std::unexpected(Errno(EINVAL));
   }
   if (pending_stop_ != nullptr) {
-    co_return std::unexpected(base::MakeErrno(EBUSY));
+    co_return std::unexpected(Errno(EBUSY));
   }
 
   if (!accept_submitted_ && !cancel_submitted_) {
     state_.RequestStop();
     DeliverNextIfReady();
     ReleaseListenerReservation();
-    co_return base::Result<void>{};
+    co_return Result<void>{};
   }
 
   co_return co_await StopAwaiter(*this);
@@ -657,11 +657,11 @@ public:
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     listener_->RequireOwnerLoop();
     if (listener_->closed_ || listener_->fd_ < 0) {
-      CompleteInline(std::unexpected(base::MakeErrno(EBADF)));
+      CompleteInline(std::unexpected(Errno(EBADF)));
       return false;
     }
     if (listener_->accept_source_ != nullptr) {
-      CompleteInline(std::unexpected(base::MakeErrno(EBUSY)));
+      CompleteInline(std::unexpected(Errno(EBUSY)));
       return false;
     }
     ++listener_->pending_accepts_;
@@ -675,7 +675,7 @@ public:
           io_uring_prep_accept(sqe, fd, reinterpret_cast<sockaddr*>(&peer_addr_), &peer_len_,
                                SOCK_NONBLOCK | SOCK_CLOEXEC);
         },
-        [this](base::Error error) noexcept { CompleteInline(std::unexpected(error)); });
+        [this](Error error) noexcept { CompleteInline(std::unexpected(error)); });
   }
 
   AcceptResult await_resume() noexcept { return result_.Take(); }
@@ -690,7 +690,7 @@ private:
 
     LUringListener* listener = self->listener_;
     if (*op->result < 0) {
-      self->result_.SetError(base::MakeNegErrno(*op->result));
+      self->result_.SetError(NegErrno(*op->result));
     } else {
       auto result = MakeStream(listener->loop_, *op->result, self->peer_addr_, self->peer_len_);
       if (result.has_value()) {
@@ -748,7 +748,7 @@ public:
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     listener_->RequireOwnerLoop();
     if (listener_->pending_close_ != nullptr) {
-      convergence_.SetError(base::MakeErrno(EBUSY));
+      convergence_.SetError(Errno(EBUSY));
       return false;
     }
     if (listener_->closed_ || listener_->fd_ < 0) {
@@ -791,7 +791,7 @@ public:
     return true;
   }
 
-  base::Result<void> await_resume() noexcept {
+  Result<void> await_resume() noexcept {
     COROPACT_CHECK(convergence_.HasResult(), "LUring listener Close resumed before convergence");
     return convergence_.TakeResult();
   }
@@ -819,15 +819,15 @@ private:
     self->TryComplete(op);
   }
 
-  base::Result<void> CloseFd() noexcept {
+  Result<void> CloseFd() noexcept {
     const int fd = std::exchange(listener_->fd_, -1);
     if (fd < 0) {
-      return base::Result<void>{};
+      return Result<void>{};
     }
     if (::close(fd) < 0) {
-      return std::unexpected(base::CurrentErrno());
+      return std::unexpected(CurrentErrno());
     }
-    return base::Result<void>{};
+    return Result<void>{};
   }
 
   LUringListener* listener_;
@@ -861,7 +861,7 @@ void DispatchAcceptSourceCancelComplete(LUringOp* op) noexcept {
 
 }  // namespace detail
 
-base::Result<LUringListener> LUringListener::Create(LUringLoop* loop,
+Result<LUringListener> LUringListener::Create(LUringLoop* loop,
                                                     const net::Endpoint& listen_addr,
                                                     LUringListenOptions options) noexcept {
   COROPACT_CHECK(loop != nullptr, "LUringListener requires an owner loop");
@@ -919,31 +919,31 @@ LUringListener::~LUringListener() {
   }
 }
 
-coro::Task<base::Result<LUringStream>> LUringListener::Accept() {
+coro::Task<Result<LUringStream>> LUringListener::Accept() {
   co_return co_await AcceptAwaiter(*this);
 }
 
-coro::Task<base::Result<void>> LUringListener::Close() { co_return co_await CloseAwaiter(*this); }
+coro::Task<Result<void>> LUringListener::Close() { co_return co_await CloseAwaiter(*this); }
 
-base::Result<net::Endpoint> LUringListener::LocalAddress() const noexcept {
+Result<net::Endpoint> LUringListener::LocalAddress() const noexcept {
   if (closed_ || fd_ < 0) {
-    return std::unexpected(base::MakeErrno(EBADF));
+    return std::unexpected(Errno(EBADF));
   }
   return GetLocalAddress(fd_);
 }
 
-base::Result<LUringAcceptSource> LUringListener::AcceptSource(
+Result<LUringAcceptSource> LUringListener::AcceptSource(
     net::AcceptSourceOptions options) noexcept {
   RequireOwnerLoop();
   if (loop_->State() == backend::LoopState::kStopping ||
       loop_->State() == backend::LoopState::kStopped) {
-    return std::unexpected(base::MakeErrno(ECANCELED));
+    return std::unexpected(Errno(ECANCELED));
   }
   if (closed_ || fd_ < 0) {
-    return std::unexpected(base::MakeErrno(EBADF));
+    return std::unexpected(Errno(EBADF));
   }
   if (pending_accepts_ != 0 || pending_close_ != nullptr || accept_source_ != nullptr) {
-    return std::unexpected(base::MakeErrno(EBUSY));
+    return std::unexpected(Errno(EBUSY));
   }
 
   COROPACT_TRY_VALUE(state, AcceptSourceStateMachine::Create(options));

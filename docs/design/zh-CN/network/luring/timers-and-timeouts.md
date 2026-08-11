@@ -8,6 +8,11 @@ timer 事件暴露为普通 stream completion。底层 `SleepFor(loop, delay)` �
 `Result<void>`；connector 的便捷包装是 `Task<void>`，适合不需要向调用方传播 timer
 错误的内部健康检查循环。
 
+运行时公共时间接口是单调的 `time::Deadline` 与 `time::Duration`。调用方以
+`time::Seconds(5)`、`time::Milliseconds(250)` 等显式单位构造 delay；io_uring 绝对
+timeout 使用 `IORING_TIMEOUT_ABS` 的单调时钟，不使用 `CLOCK_REALTIME`，因此墙钟校时不会
+提前或推迟 I/O deadline。
+
 ```text
 SleepFor
   -> timer queue

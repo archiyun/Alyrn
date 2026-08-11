@@ -16,7 +16,7 @@
 #include <thread>
 #include <utility>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/luring/detail/worker_group.h"
 #include "coropact/net/endpoint.h"
 
@@ -59,7 +59,7 @@ bool Check(bool condition, const char* message) {
   return true;
 }
 
-bool IsEnvironmentSkip(coropact::base::Error error) {
+bool IsEnvironmentSkip(coropact::Error error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 
@@ -71,10 +71,10 @@ coropact::net::Endpoint LoopbackAddress(std::uint16_t port) {
   return coropact::net::Endpoint(addr);
 }
 
-coropact::base::Result<std::uint16_t> PickFreePort() {
+coropact::Result<std::uint16_t> PickFreePort() {
   int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
   if (fd < 0) {
-    return std::unexpected(coropact::base::CurrentErrno());
+    return std::unexpected(coropact::CurrentErrno());
   }
 
   sockaddr_in addr{};
@@ -83,14 +83,14 @@ coropact::base::Result<std::uint16_t> PickFreePort() {
   addr.sin_port = htons(0);
 
   if (::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
-    auto error = coropact::base::CurrentErrno();
+    auto error = coropact::CurrentErrno();
     ::close(fd);
     return std::unexpected(error);
   }
 
   socklen_t len = sizeof(addr);
   if (::getsockname(fd, reinterpret_cast<sockaddr*>(&addr), &len) < 0) {
-    auto error = coropact::base::CurrentErrno();
+    auto error = coropact::CurrentErrno();
     ::close(fd);
     return std::unexpected(error);
   }
@@ -99,15 +99,15 @@ coropact::base::Result<std::uint16_t> PickFreePort() {
   return ntohs(addr.sin_port);
 }
 
-coropact::base::Result<int> ConnectClient(const coropact::net::Endpoint& address) {
+coropact::Result<int> ConnectClient(const coropact::net::Endpoint& address) {
   int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, IPPROTO_TCP);
   if (fd < 0) {
-    return std::unexpected(coropact::base::CurrentErrno());
+    return std::unexpected(coropact::CurrentErrno());
   }
 
   int r = ::connect(fd, address.SockAddr(), address.SockAddrLen());
   if (r < 0 && errno != EINPROGRESS) {
-    auto error = coropact::base::CurrentErrno();
+    auto error = coropact::CurrentErrno();
     ::close(fd);
     return std::unexpected(error);
   }

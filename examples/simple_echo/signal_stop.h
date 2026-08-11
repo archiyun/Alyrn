@@ -8,14 +8,14 @@
 #include <cerrno>
 #include <stop_token>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 
 namespace simple_echo {
 
 // Blocks SIGINT and SIGTERM in the calling thread. Call this before Runtime
 // creates worker threads so they inherit the same signal mask.
 [[nodiscard]]
-inline coropact::base::Result<void> BlockTerminationSignals() noexcept {
+inline coropact::Result<void> BlockTerminationSignals() noexcept {
   sigset_t signals;
   (void)::sigemptyset(&signals);
   (void)::sigaddset(&signals, SIGINT);
@@ -23,7 +23,7 @@ inline coropact::base::Result<void> BlockTerminationSignals() noexcept {
 
   const int error = ::pthread_sigmask(SIG_BLOCK, &signals, nullptr);
   if (error != 0) {
-    return std::unexpected(coropact::base::MakeErrno(error));
+    return std::unexpected(coropact::Errno(error));
   }
   return {};
 }
