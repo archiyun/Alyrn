@@ -47,7 +47,8 @@ EventLoop* CheckLoop(EventLoop* loop) noexcept {
 
 base::Result<net::Socket> TryCreateListenSocket(const net::Endpoint& listen_addr,
                                                 ReactorListenerOptions options) noexcept {
-  net::Socket socket(COROPACT_TRY(net::CreateNonBlockingSocket(listen_addr.native_family())));
+  COROPACT_TRY_VALUE(fd, net::CreateNonBlockingSocket(listen_addr.native_family()));
+  net::Socket socket(fd);
 
   COROPACT_TRY(net::SetReuseAddr(socket.fd(), options.reuse_addr));
 
@@ -113,10 +114,7 @@ public:
     return true;
   }
 
-  base::Result<ReactorStream> await_resume() noexcept {
-    COROPACT_DCHECK(result_.HasResult(), "AcceptAwaiter: result is not ready");
-    return result_.Take();
-  }
+  base::Result<ReactorStream> await_resume() noexcept { return result_.Take(); }
 
   void Complete(base::Result<ReactorStream> result) noexcept {
     if (!completion_gate_.TryComplete()) {
@@ -166,13 +164,6 @@ public:
   }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
-    COROPACT_DCHECK(source_->listener_ != nullptr,
-                    "ReactorAcceptSource::Next: source has no listener");
-    COROPACT_DCHECK(source_->listener_->loop_->IsInLoopThread(),
-                    "ReactorAcceptSource::Next: wrong EventLoop thread");
-    COROPACT_DCHECK(source_->pending_next_ == nullptr,
-                    "ReactorAcceptSource::Next: only one pending Next is supported");
-
     continuation_.Bind(continuation);
 
     Result result;
@@ -197,10 +188,7 @@ public:
     return true;
   }
 
-  Result await_resume() noexcept {
-    COROPACT_DCHECK(result_.HasResult(), "ReactorAcceptSource::Next: result is not ready");
-    return result_.Take();
-  }
+  Result await_resume() noexcept { return result_.Take(); }
 
   void Complete(Result result) noexcept {
     if (!completion_gate_.TryComplete()) {
@@ -555,8 +543,8 @@ base::Result<ReactorListener> ReactorListener::Create(EventLoop* loop,
     return std::unexpected(base::MakeErrno(EINVAL));
   }
 
-  return ReactorListener(loop, COROPACT_TRY(TryCreateListenSocket(listen_addr, options)),
-                         options.stream_options);
+  COROPACT_TRY_VALUE(socket, TryCreateListenSocket(listen_addr, options));
+  return ReactorListener(loop, std::move(socket), options.stream_options);
 }
 
 ReactorListener::ReactorListener(ReactorListener&& other) noexcept
@@ -633,7 +621,7 @@ base::Result<ReactorAcceptSource> ReactorListener::AcceptSource(
   if (pending_accept_ != nullptr || accept_source_ != nullptr) {
     return std::unexpected(base::MakeErrno(EBUSY));
   }
-  auto state = COROPACT_TRY(net::detail::AcceptSourceStateMachine::Create(options));
+  COROPACT_TRY_VALUE(state, net::detail::AcceptSourceStateMachine::Create(options));
   return ReactorAcceptSource(this, std::move(state));
 }
 

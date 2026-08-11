@@ -98,10 +98,7 @@ public:
     return true;
   }
 
-  base::Result<ReactorStream> await_resume() noexcept {
-    COROPACT_DCHECK(result_.HasResult(), "ConnectAwaiter: result is not ready");
-    return result_.Take();
-  }
+  base::Result<ReactorStream> await_resume() noexcept { return result_.Take(); }
 
 private:
   static void DispatchReady(void* context) noexcept {

@@ -87,7 +87,7 @@ RawAwaiter operator co_await(AdlAwaitable&&) noexcept { return {}; }
 struct BothAwaitable {
   RawAwaiter operator co_await() && noexcept { return {}; }
 };
-RawAwaiter operator co_await(BothAwaitable&&) noexcept { return {}; }
+[[maybe_unused]] RawAwaiter operator co_await(BothAwaitable&&) noexcept { return {}; }
 
 struct PromiseMarker {};
 struct PromiseAwareAwaiter {

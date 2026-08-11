@@ -762,6 +762,17 @@ target_include_directories(clock_smoke_test
 
 add_test(NAME clock_smoke_test COMMAND clock_smoke_test)
 
+add_executable(timestamp_smoke_test
+    unit/test_timestamp_smoke.cc
+)
+
+target_include_directories(timestamp_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+add_test(NAME timestamp_smoke_test COMMAND timestamp_smoke_test)
+
 add_executable(try_smoke_test
     unit/test_try_smoke.cc
 )

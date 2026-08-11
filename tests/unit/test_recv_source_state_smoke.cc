@@ -49,6 +49,25 @@ void Reclaim(void* context, std::uint32_t buffer_id) noexcept {
   observation->last_id = buffer_id;
 }
 
+struct ReentrantReclaimObservation {
+  BufferLease* lease{nullptr};
+  int count{0};
+  std::uint32_t last_id{0};
+  bool saw_released_lease{false};
+};
+
+void ReentrantReclaim(void* context, std::uint32_t buffer_id) noexcept {
+  auto* observation = static_cast<ReentrantReclaimObservation*>(context);
+  ++observation->count;
+  observation->last_id = buffer_id;
+  observation->saw_released_lease = !observation->lease->Valid() &&
+                                    observation->lease->Bytes().empty() &&
+                                    observation->lease->BufferId() == 0;
+  if (observation->count == 1) {
+    observation->lease->Release();
+  }
+}
+
 struct StateReclaimContext {
   RecvSourceStateMachine* state{nullptr};
   int count{0};
@@ -95,6 +114,22 @@ void CheckBufferLease() {
 
   moved.Release();
   assert(observation.count == 1);
+}
+
+void CheckBufferLeaseReleasesBeforeReclaim() {
+  std::array<std::byte, 8> storage{};
+  ReentrantReclaimObservation observation;
+  BufferLease lease(storage.data(), storage.size(), 11, &observation, &ReentrantReclaim);
+  observation.lease = &lease;
+
+  lease.Release();
+
+  assert(!lease.Valid());
+  assert(lease.Bytes().empty());
+  assert(lease.BufferId() == 0);
+  assert(observation.count == 1);
+  assert(observation.last_id == 11);
+  assert(observation.saw_released_lease);
 }
 
 void CheckLeaseLifetimeAndStop() {
@@ -264,6 +299,7 @@ void CheckPauseAndResume() {
 int main() {
   CheckOptions();
   CheckBufferLease();
+  CheckBufferLeaseReleasesBeforeReclaim();
   CheckLeaseLifetimeAndStop();
   CheckBufferCapacityFailure();
   CheckDirectDeliveryAccounting();

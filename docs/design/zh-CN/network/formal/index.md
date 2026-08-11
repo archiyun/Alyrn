@@ -15,6 +15,7 @@
 8. `accept_source_refinement.tla`、`recv_source_*.tla`：多事件 source 与 lease。
 9. `send_zc_split_release_refinement.tla`：zero-copy send 的业务完成与 buffer release 分离。
 10. `async_operation_lifecycle_shapes.tla`：三个正交 lifecycle 维度的组合约束。
+11. `stream_shutdown_transaction.tla`：写半关闭的 preparation、commit 与本地失败回滚。
 
 ## 模型索引
 
@@ -25,6 +26,7 @@
 | `async_stream_backend_refinement.tla` | `ObsReactor` / `ObsLUring` 如何隐藏 readiness、SQE/CQE step 并映射到同一逻辑 trace |
 | `async_stream_multiop_backend_refinement.tla` | 多 operation 的后端 refinement |
 | `resource_close_cancel.tla` | Close preparation、committed drain、cancel request terminal CQE 与 target/storage release 的边界 |
+| `stream_shutdown_transaction.tla` | `Shutdown()` syscall 前的写方向 preparation；success commit、local-error rollback 与 Close 排斥 |
 | `loop_stop_control.tla` | dispatcher stop 不等于资源 close；Stopped 需要 pending operation 收敛 |
 | `luring_loop_stop_retry.tla` | LUringLoop 全局 cancel 的本地 preparation/flush 失败必须保持 Stopping，并在重试、target CQE 与 cancel CQE 排空后才进入 Stopped |
 | `timer_preparation_failure.tla` | timer 只有在 driver/update SQE 已准备时才被逻辑接受；首次/update 失败回滚，重臂失败使 loop 停止并显式丢弃未到期 timer |

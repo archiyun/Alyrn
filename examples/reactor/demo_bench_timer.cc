@@ -3,8 +3,8 @@
 // 微基准:测 TimerQueue 在 in-loop 调用下的 Add / Cancel / Expire 三个操作的吞吐。
 // 当前实现是 timerfd + 侵入式红黑树,理论 O(log N)。
 //
-// 重要前提:TimerQueue 内部用 ObjectPool<Timer, 512>,N>512 时 Acquire 返回 nullptr,
-//          Release 构建下 deref nullptr → SEGV。本 bench 默认上限 N=500。
+// TimerQueue 的固定池容量为 32768；超过容量时 ObjectPool 会走已登记的堆溢出
+// 路径，而不会返回 nullptr。N 不应超过该阈值，除非刻意测量 overflow slow path。
 //
 // 用法:
 //   ./build-perf/examples/demo_bench_timer [N]

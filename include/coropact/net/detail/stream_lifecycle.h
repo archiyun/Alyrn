@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include <cassert>
 #include <cerrno>
 #include <cstdint>
 #include <expected>
 
+#include "coropact/base/check.h"
 #include "coropact/base/error.h"
 
 namespace coropact::net::detail {
@@ -54,13 +54,18 @@ public:
     if (write_ == WriteState::kShutdown) {
       return std::unexpected(base::MakeErrno(EPIPE));
     }
+    if (write_ == WriteState::kShutdownPreparing) {
+      return std::unexpected(base::MakeErrno(EBUSY));
+    }
     return {};
   }
 
-  // true means the adapter must perform the physical shutdown syscall;
+  // Begins a synchronous physical shutdown transition. true means the adapter
+  // now owns a required shutdown syscall and must either CommitShutdown() on
+  // success or AbortShutdownPreparation() before reporting its local error.
   // false means the write side was already shut down.
   [[nodiscard]]
-  base::Result<bool> PrepareShutdown(bool write_pending) const noexcept {
+  base::Result<bool> PrepareShutdown(bool write_pending) noexcept {
     auto readable = ValidateRead();
     if (!readable.has_value()) {
       return std::unexpected(readable.error());
@@ -68,16 +73,30 @@ public:
     if (write_ == WriteState::kShutdown) {
       return false;
     }
+    if (write_ == WriteState::kShutdownPreparing) {
+      return std::unexpected(base::MakeErrno(EBUSY));
+    }
     if (write_pending) {
       return std::unexpected(base::MakeErrno(EBUSY));
     }
+    write_ = WriteState::kShutdownPreparing;
     return true;
   }
 
   void CommitShutdown() noexcept {
-    assert(resource_ == ResourceState::kOpen);
-    assert(write_ == WriteState::kWritable);
+    COROPACT_CHECK(resource_ == ResourceState::kOpen,
+                   "StreamLifecycle::CommitShutdown requires an open resource");
+    COROPACT_CHECK(write_ == WriteState::kShutdownPreparing,
+                   "StreamLifecycle::CommitShutdown requires shutdown preparation");
     write_ = WriteState::kShutdown;
+  }
+
+  void AbortShutdownPreparation() noexcept {
+    COROPACT_CHECK(resource_ == ResourceState::kOpen,
+                   "StreamLifecycle::AbortShutdownPreparation requires an open resource");
+    COROPACT_CHECK(write_ == WriteState::kShutdownPreparing,
+                   "StreamLifecycle::AbortShutdownPreparation requires shutdown preparation");
+    write_ = WriteState::kWritable;
   }
 
   // Starts an owner-local close preparation.  It temporarily excludes new
@@ -92,6 +111,9 @@ public:
     if (resource_ == ResourceState::kClosing) {
       return std::unexpected(base::MakeErrno(EBUSY));
     }
+    if (write_ == WriteState::kShutdownPreparing) {
+      return std::unexpected(base::MakeErrno(EBUSY));
+    }
     resource_ = ResourceState::kClosing;
     return true;
   }
@@ -100,7 +122,8 @@ public:
   // submission protocol. Once backend drain is committed, Close is
   // irreversible.
   void AbortClosePreparation() noexcept {
-    assert(resource_ == ResourceState::kClosing);
+    COROPACT_CHECK(resource_ == ResourceState::kClosing,
+                   "StreamLifecycle::AbortClosePreparation requires closing state");
     resource_ = ResourceState::kOpen;
   }
 
@@ -115,6 +138,7 @@ private:
 
   enum class WriteState : std::uint8_t {
     kWritable,
+    kShutdownPreparing,
     kShutdown,
   };
 

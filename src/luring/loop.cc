@@ -133,7 +133,8 @@ base::Result<void> LUringLoop::Init(const LUringOptions& options) noexcept {
     return std::unexpected(base::MakeErrno(EALREADY));
   }
 
-  ring_ = COROPACT_TRY(LUringRing::Create(options));
+  COROPACT_TRY_VALUE(ring, LUringRing::Create(options));
+  ring_ = std::move(ring);
   wake_fd_ = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
   if (wake_fd_ < 0) {
     return std::unexpected(base::CurrentErrno());
@@ -469,7 +470,7 @@ base::Result<void> LUringLoop::FlushSubmit() noexcept {
     }
 #endif
 
-    const std::size_t submitted = COROPACT_TRY(ring_.Submit());
+    COROPACT_TRY_VALUE(submitted, ring_.Submit());
     if (submitted == 0) {
       return std::unexpected(base::MakeErrno(EAGAIN));
     }

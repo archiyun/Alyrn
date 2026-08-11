@@ -3,10 +3,12 @@
 #pragma once
 
 #include <chrono>
+#include <cmath>
 #include <compare>
 #include <cstdint>
 #include <ctime>
 #include <iomanip>
+#include <limits>
 #include <sstream>
 #include <string>
 
@@ -54,6 +56,9 @@ class Timestamp {
     const auto now = std::chrono::system_clock::now();
     const auto micros = std::chrono::duration_cast<std::chrono::microseconds>(
         now.time_since_epoch());
+    if (micros.count() <= 0) {
+      return Timestamp::Invalid();
+    }
     return Timestamp(static_cast<std::uint64_t>(micros.count()));
   }
 
@@ -140,9 +145,12 @@ private:
 //   The difference (high - low) in seconds as a floating-point value.
 //   May be negative if `low` is actually later than `high`.
 inline double TimeDifference(const Timestamp& high, const Timestamp& low) {
-  const double delta = static_cast<double>(high.MicrosecondsSinceEpoch()) -
-                       static_cast<double>(low.MicrosecondsSinceEpoch());
-  return delta / 1'000'000.0;
+  const auto high_micros = high.MicrosecondsSinceEpoch();
+  const auto low_micros = low.MicrosecondsSinceEpoch();
+  if (high_micros >= low_micros) {
+    return static_cast<double>(high_micros - low_micros) / 1'000'000.0;
+  }
+  return -static_cast<double>(low_micros - high_micros) / 1'000'000.0;
 }
 
 // Creates a new timestamp by adding seconds to an existing timestamp.
@@ -152,14 +160,30 @@ inline double TimeDifference(const Timestamp& high, const Timestamp& low) {
 //   seconds: The number of seconds to add (can be negative).
 //
 // Returns:
-//   A new Timestamp representing the adjusted time.
+//   A new Timestamp representing the adjusted time, or Invalid() when
+//   seconds is non-finite or the result lies outside the Timestamp range.
 inline Timestamp AddTime(const Timestamp& timestamp, double seconds) {
-  const auto micros = timestamp.MicrosecondsSinceEpoch();
-  const auto delta = static_cast<std::int64_t>(seconds * 1'000'000.0);
-  if (delta < 0 && static_cast<std::uint64_t>(-delta) > micros) {
+  if (!std::isfinite(seconds)) {
     return Timestamp::Invalid();
   }
-  return Timestamp(micros + delta);
+
+  constexpr long double kMicrosPerSecond = 1'000'000.0L;
+  const long double scaled = static_cast<long double>(seconds) * kMicrosPerSecond;
+  const auto micros = timestamp.MicrosecondsSinceEpoch();
+
+  if (scaled >= 0.0L) {
+    const auto available = std::numeric_limits<std::uint64_t>::max() - micros;
+    if (scaled > static_cast<long double>(available)) {
+      return Timestamp::Invalid();
+    }
+    return Timestamp(micros + static_cast<std::uint64_t>(scaled));
+  }
+
+  const long double magnitude = -scaled;
+  if (magnitude > static_cast<long double>(micros)) {
+    return Timestamp::Invalid();
+  }
+  return Timestamp(micros - static_cast<std::uint64_t>(magnitude));
 }
 
 }  // namespace coropact::time

@@ -67,14 +67,15 @@ public:
   }
 
   void Release() noexcept {
-    if (reclaim_ != nullptr) {
-      reclaim_(context_, buffer_id_);
-    }
+    const ReclaimFn reclaim = std::exchange(reclaim_, nullptr);
+    void* const context = std::exchange(context_, nullptr);
+    const std::uint32_t buffer_id = std::exchange(buffer_id_, 0);
     data_ = nullptr;
     size_ = 0;
-    buffer_id_ = 0;
-    context_ = nullptr;
-    reclaim_ = nullptr;
+
+    if (reclaim != nullptr) {
+      reclaim(context, buffer_id);
+    }
   }
 
 private:

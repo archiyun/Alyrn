@@ -18,8 +18,8 @@ Result<int> ReadValue(bool fail) {
 }
 
 Result<int> AddValues(bool fail) {
-  const int first = COROPACT_TRY(ReadValue(false));
-  const int second = COROPACT_TRY(ReadValue(fail));
+  COROPACT_TRY_VALUE(first, ReadValue(false));
+  COROPACT_TRY_VALUE(second, ReadValue(fail));
   return first + second;
 }
 
@@ -60,11 +60,11 @@ bool TestCoTryPropagatesError() {
 
 int main() {
   if (!TestTryReturnsValue()) {
-    std::cerr << "[FAIL] COROPACT_TRY should return the expected value\n";
+    std::cerr << "[FAIL] COROPACT_TRY_VALUE should return the expected value\n";
     return 1;
   }
   if (!TestTryPropagatesError()) {
-    std::cerr << "[FAIL] COROPACT_TRY should propagate the expected error\n";
+    std::cerr << "[FAIL] COROPACT_TRY_VALUE should propagate the expected error\n";
     return 1;
   }
   if (!TestCoTryReturnsValue()) {

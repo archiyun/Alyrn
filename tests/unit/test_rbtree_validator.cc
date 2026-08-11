@@ -370,6 +370,8 @@ int main() {
     a.deadline_ms = 10;
 
     int op_idx = -1;
+    CHECK(!tree.Insert(nullptr), "insert null element should fail");
+    CHECK(!tree.Erase(nullptr), "erase null element should fail");
     CHECK(!tree.Erase(&a), "erase unlinked element should fail");
     tree.Insert(&a);
     tree.Insert(&a);
