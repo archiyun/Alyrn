@@ -290,6 +290,43 @@ bool CheckReadSome() {
          Check(resumed_with_scheduler, "read resumed without current scheduler");
 }
 
+bool CheckEmptyReadCompletesInlineWithoutRingWork() {
+  coropact::luring::LUringLoop loop;
+  switch (InitLoop(loop)) {
+    case LoopInitStatus::kReady:
+      break;
+    case LoopInitStatus::kSkip:
+      return true;
+    case LoopInitStatus::kFail:
+      return false;
+  }
+
+  UniqueFd local;
+  UniqueFd peer;
+  if (!CreateSocketPair(local, peer)) return false;
+
+  coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  std::optional<coropact::base::Result<std::size_t>> result;
+  bool resumed_with_scheduler = false;
+
+  // ReadSome(empty) takes the await_suspend() == false path. The root work
+  // may run once, but no read SQE/CQE or scheduled continuation may remain.
+  coropact::coro::SpawnDetach(
+      loop, ReadOnce(&stream, &loop, std::span<std::byte>{}, &result, &resumed_with_scheduler));
+  coropact::luring::detail::LoopAccess::RunReady(loop);
+
+  return Check(result.has_value(), "empty read did not complete inline") &&
+         Check(result->has_value(), "empty read returned an error") &&
+         Check(**result == 0, "empty read returned a non-zero byte count") &&
+         Check(resumed_with_scheduler, "empty read lost scheduler context") &&
+         Check(coropact::luring::detail::LoopAccess::PendingSubmitCount(loop) == 0,
+               "empty read prepared an unexpected ring request") &&
+         Check(coropact::luring::detail::LoopAccess::InflightCount(loop) == 0,
+               "empty read left an unexpected ring request inflight") &&
+         Check(coropact::luring::detail::LoopAccess::IsDrained(loop),
+               "empty read left unexpected completion work queued");
+}
+
 bool CheckReadReleasesSlotBeforeContinuation() {
   coropact::luring::LUringLoop loop;
   switch (InitLoop(loop)) {
@@ -343,7 +380,8 @@ bool CheckReadReleasesSlotBeforeContinuation() {
          Check(second_result.has_value(), "follow-up read did not finish") &&
          Check(second_result->has_value(),
                "single-shot read left the stream read slot reserved during continuation") &&
-         Check(**second_result == kSecondPayload.size(), "follow-up read returned wrong byte count") &&
+         Check(**second_result == kSecondPayload.size(),
+               "follow-up read returned wrong byte count") &&
          Check(second_actual == kSecondPayload, "follow-up read payload mismatch") &&
          Check(resumed_with_scheduler,
                "single-shot follow-up read resumed without current scheduler");
@@ -1223,6 +1261,7 @@ bool CheckReadCompletionCancelRaceResumesOnce() {
 
 int main() {
   if (!CheckReadSome()) return 1;
+  if (!CheckEmptyReadCompletesInlineWithoutRingWork()) return 1;
   if (!CheckReadReleasesSlotBeforeContinuation()) return 1;
   if (!CheckOwnedReadIntoReturnsBuffer()) return 1;
   if (!CheckOwnedReadIntoSpansBufferBlocks()) return 1;

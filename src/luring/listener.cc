@@ -96,54 +96,55 @@ bool IsMultishotUnsupported(int cqe_result) noexcept {
 }  // namespace
 
 // --- NextAwaiter ---
-class LUringAcceptSource::NextAwaiter {
-public:
-  explicit NextAwaiter(LUringAcceptSource& source) noexcept : source_(&source) {}
-
-  [[nodiscard]]
-  bool await_ready() const noexcept {
+bool LUringAcceptSource::NextAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
+  if (source_->listener_ == nullptr) {
+    result_.SetError(base::MakeErrno(EBADF));
+    (void)(completion_gate_.TryComplete());
+    return false;
+  }
+  if (!source_->listener_->loop_->IsInLoopThread()) {
+    result_.SetError(base::MakeErrno(EINVAL));
+    (void)(completion_gate_.TryComplete());
+    return false;
+  }
+  if (source_->pending_next_ != nullptr) {
+    result_.SetError(base::MakeErrno(EBUSY));
+    (void)(completion_gate_.TryComplete());
     return false;
   }
 
-  bool await_suspend(std::coroutine_handle<> continuation) noexcept {
-    if (source_->pending_next_ != nullptr) {
-      result_.emplace(std::unexpected(base::MakeErrno(EBUSY)));
+  if (source_->state_.State() == AcceptSourceState::kIdle) {
+    auto started = source_->Start();
+    if (!started.has_value()) {
+      result_.SetError(started.error());
       (void)(completion_gate_.TryComplete());
       return false;
     }
-
-    continuation_.Bind(continuation);
-
-    LUringAcceptSource::Result result;
-    if (source_->TryTakeNext(result)) {
-      result_.emplace(std::move(result));
-      (void)(completion_gate_.TryComplete());
-      return false;
-    }
-
-    source_->pending_next_ = this;
-    return true;
   }
 
-  LUringAcceptSource::Result await_resume() noexcept {
-    COROPACT_CHECK(result_.has_value(), "LUring accept source Next resumed without a result");
-    return std::move(*result_);
+  Result result;
+  if (source_->TryTakeNext(result)) {
+    result_.SetResult(std::move(result));
+    (void)(completion_gate_.TryComplete());
+    return false;
   }
 
-  void Complete(LUringAcceptSource::Result result) noexcept {
-    if (!completion_gate_.TryComplete()) {
-      return;
-    }
-    result_.emplace(std::move(result));
-    continuation_.Schedule();
-  }
+  continuation_.Bind(continuation);
+  source_->pending_next_ = this;
+  return true;
+}
 
-private:
-  LUringAcceptSource* source_;
-  operation::detail::SchedulerContinuation continuation_;
-  operation::detail::CompletionGate completion_gate_;
-  std::optional<LUringAcceptSource::Result> result_;
-};
+LUringAcceptSource::Result LUringAcceptSource::NextAwaiter::await_resume() noexcept {
+  return result_.Take();
+}
+
+void LUringAcceptSource::NextAwaiter::Complete(Result result) noexcept {
+  if (!completion_gate_.TryComplete()) {
+    return;
+  }
+  result_.SetResult(std::move(result));
+  detail::LoopAccess::ScheduleCompletion(*source_->listener_->loop_, continuation_);
+}
 
 // --- StopAwaiter ---
 class LUringAcceptSource::StopAwaiter {
@@ -618,32 +619,6 @@ void LUringAcceptSource::ReleaseListenerReservation() noexcept {
       listener_->accept_source_ == this) {
     listener_->accept_source_ = nullptr;
   }
-}
-
-coro::Task<LUringAcceptSource::Result> LUringAcceptSource::Next() {
-  if (listener_ == nullptr) {
-    co_return std::unexpected(base::MakeErrno(EBADF));
-  }
-  if (!listener_->loop_->IsInLoopThread()) {
-    co_return std::unexpected(base::MakeErrno(EINVAL));
-  }
-  if (pending_next_ != nullptr) {
-    co_return std::unexpected(base::MakeErrno(EBUSY));
-  }
-
-  if (state_.State() == AcceptSourceState::kIdle) {
-    auto started = Start();
-    if (!started.has_value()) {
-      co_return std::unexpected(started.error());
-    }
-  }
-
-  Result result;
-  if (TryTakeNext(result)) {
-    co_return result;
-  }
-
-  co_return co_await NextAwaiter(*this);
 }
 
 coro::Task<base::Result<void>> LUringAcceptSource::Stop() {

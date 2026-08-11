@@ -361,9 +361,10 @@ io_uring 也可能在准备阶段立即拒绝操作。此时没有真实挂起�
 `Submit` 表示一次语义上的提交尝试，不要求一定产生系统调用、SQE 或 readiness 注册。
 例如资源已经关闭时，后端可以在提交点直接产生 `EBADF` 完成结果。
 
-在立即完成路径中，`Resume` 表示结果回到当前协程的逻辑事件，不要求真的经过
-`Schedule(ResumeWork)`；只有发生实际挂起时，恢复才需要经过后端的 ready queue 或等价
-调度路径。
+在立即完成路径中，结果通过 `await_suspend() == false` 直接进入当前协程的
+`await_resume()`；它不是一次 scheduler continuation resume，也不需要
+`Schedule(ResumeWork)`。只有发生实际挂起时，结果、释放授权与恢复授权才需要经过后端的
+ready queue 或等价调度路径。形式模型将两者分别记为 `InlineContinue` 与 `Resume`。
 
 ### 3.3 转移 δ_B、策略 π 与不变量
 
@@ -751,14 +752,14 @@ coropact::coro::Task<void> Good(coropact::io::AsyncStream auto& stream) {
 
 ### 7.2 io::Buffer
 
-`ReactorStream` 和 `stream_algorithms.h` 还提供 `coropact::io::Buffer` 重载。这是 buffer
-管理层的扩展，不改变 CoreStream 的 span 契约。公开的 `io::Buffer` 是
-`net::Buffer` 的零成本 alias：实现留在后端之下，调用者应使用 `io` spelling：
+`coropact::io::Buffer` 是 `net::Buffer` 的零成本公开 spelling。它不是
+`ReadSome` 的第二种 borrowed overload：可增长 buffer 的异步读取必须使用
+`ReadInto(std::move(buffer))`，以便 pending operation 独占 storage 并在每条终态路径归还
+owner。实现留在 `net` 以保持后端位于 `io` facade 之下，调用者应使用 `io` spelling：
 
 ```text
-PrepareWrite / ReadableIov 返回的内存必须覆盖 pending operation；
-读成功后 CommitWrite，读失败后 AbortWrite；
-写成功后 Drain 已写出的字节。
+ReadInto 在读成功后 CommitWrite，在读失败后 AbortWrite；写成功后由调用者在
+WriteAll 后 Drain 已写出的字节。
 ```
 
 扩展 `RecvSource` 已明确提供 buffer 的所有权边界：luring 使用每 worker 共享的 provided
@@ -768,6 +769,11 @@ buffer ring，Reactor 使用固定 buffer pool；每个 `RecvEvent` 携带一个
 会随着 RecvSource 创建惰性发布；CQE 返回的
 buffer id 在这个共享 pool 内解释。`F_BUF_MORE` 增量 source 尚未接入当前 `RecvSource` 路径，
 registered fixed buffer 仍属于后续扩展。
+
+两个后端的 `RecvSource::Next()` 都是直接 awaiter：已有事件或 terminal result 时，它在调用
+协程内 inline 完成；否则 source 保存该 continuation，待逻辑事件 ready 后按所属 scheduler 恢复。
+这条 API 不创建每事件一个中间 `Task` frame；事件队列、backpressure 和 `BufferLease` 的生命周期
+仍完全由 source state machine 管理。
 
 ### 7.3 fd、stream 和 operation owner
 

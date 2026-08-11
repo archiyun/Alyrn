@@ -22,10 +22,10 @@ template <class Source>
 concept AsyncAcceptSource = requires(Source& source) {
   typename Source::Stream;
 
-  {
-    source.Next()
-  } -> std::same_as<
-      coro::Task<base::Result<std::optional<typename Source::Stream>>>>;
+  requires coro::Awaitable<decltype(source.Next())>;
+  requires std::same_as<
+      coro::AwaitResult<decltype(source.Next())>,
+      base::Result<std::optional<typename Source::Stream>>>;
 
   {
     source.Stop()
@@ -43,6 +43,10 @@ Result<Error>        source 发生终止性错误
 
 `Next()` 必须先交付已经进入队列的连接，再交付终止结果。这样某个 accept completion
 和后续错误交错时，已经成功接收的连接不会因为错误被静默丢弃。
+
+两个后端的 `Next()` 都是直接 awaiter，而不是每个 logical event 一个中间 `Task`：已有连接或
+terminal result 时在调用协程中 inline 完成；否则 source 保存 caller continuation，待事件 ready
+后按 source 所属 scheduler 恢复。这个实现选择不改变上述可观察结果或单 consumer 限制。
 
 终止结果是 sticky 的：
 

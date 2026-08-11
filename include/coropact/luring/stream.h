@@ -221,17 +221,24 @@ private:
 
   static void OnComplete(detail::LUringOp* op) noexcept;
 
+  enum class ReservationKind : std::uint8_t {
+    kNone,
+    kSingle,
+    kMultiple,
+  };
+
   [[nodiscard]]
-  bool PrepareReservation() noexcept;
+  ReservationKind PrepareReservation(iovec& single_iov) noexcept;
   void FinishReservation(base::Result<std::size_t> result) noexcept;
 
   LUringStream* stream_;
   net::Buffer buffer_;
   std::size_t reserve_;
-  // READV SQEs retain this array until their terminal CQE, so it must be
-  // owned by the awaiter rather than created as an await_suspend() local.
+  // READV SQEs retain their iovec array until a terminal CQE. A single-range
+  // RECV copies its base and length into the SQE, so its local iovec does not
+  // need to survive await_suspend().
   std::vector<iovec> iovs_;
-  bool reservation_active_{false};
+  ReservationKind reservation_kind_{ReservationKind::kNone};
 };
 
 // --- ReadSomeForAwaiter ---

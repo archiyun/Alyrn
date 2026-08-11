@@ -25,17 +25,17 @@ using namespace net::detail;
 
 bool LUringRecvSource::NextAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   if (source_->loop_ == nullptr || source_->fd_ < 0) {
-    result_.emplace(std::unexpected(base::MakeErrno(EBADF)));
+    result_.SetError(base::MakeErrno(EBADF));
     (void)(completion_gate_.TryComplete());
     return false;
   }
   if (!source_->loop_->IsInLoopThread()) {
-    result_.emplace(std::unexpected(base::MakeErrno(EINVAL)));
+    result_.SetError(base::MakeErrno(EINVAL));
     (void)(completion_gate_.TryComplete());
     return false;
   }
   if (source_->pending_next_ != nullptr) {
-    result_.emplace(std::unexpected(base::MakeErrno(EBUSY)));
+    result_.SetError(base::MakeErrno(EBUSY));
     (void)(completion_gate_.TryComplete());
     return false;
   }
@@ -43,7 +43,7 @@ bool LUringRecvSource::NextAwaiter::await_suspend(std::coroutine_handle<> contin
   if (source_->state_.State() == RecvSourceState::kIdle) {
     auto started = source_->Start();
     if (!started.has_value()) {
-      result_.emplace(std::unexpected(started.error()));
+      result_.SetError(started.error());
       (void)(completion_gate_.TryComplete());
       return false;
     }
@@ -51,7 +51,7 @@ bool LUringRecvSource::NextAwaiter::await_suspend(std::coroutine_handle<> contin
 
   LUringRecvSource::Result result;
   if (source_->TryTakeNext(result)) {
-    result_.emplace(std::move(result));
+    result_.SetResult(std::move(result));
     (void)(completion_gate_.TryComplete());
     return false;
   }
@@ -62,15 +62,14 @@ bool LUringRecvSource::NextAwaiter::await_suspend(std::coroutine_handle<> contin
 }
 
 LUringRecvSource::Result LUringRecvSource::NextAwaiter::await_resume() noexcept {
-  COROPACT_CHECK(result_.has_value(), "LUring recv source Next resumed without a result");
-  return std::move(*result_);
+  return result_.Take();
 }
 
 void LUringRecvSource::NextAwaiter::Complete(Result result) noexcept {
   if (!completion_gate_.TryComplete()) {
     return;
   }
-  result_.emplace(std::move(result));
+  result_.SetResult(std::move(result));
   detail::LoopAccess::ScheduleCompletion(*source_->loop_, &resume_work_);
 }
 

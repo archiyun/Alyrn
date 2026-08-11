@@ -28,7 +28,6 @@
 #include "coropact/io/async_stream.h"
 #include "coropact/io/buffer.h"
 #include "coropact/io/read_into.h"
-#include "coropact/io/stream_algorithms.h"
 #include "coropact/reactor/loop.h"
 #include "coropact/reactor/stream.h"
 
@@ -94,18 +93,6 @@ coropact::coro::DetachedTask ReadWithoutQuit(coropact::reactor::ReactorStream* s
   ++*resume_count;
   *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == scheduler;
   out->emplace(std::move(result));
-}
-
-coropact::coro::DetachedTask ReadBufferOnce(coropact::reactor::ReactorStream* stream,
-                                            coropact::reactor::EventLoop* loop,
-                                            coropact::reactor::EventLoop* scheduler,
-                                            coropact::io::Buffer* buffer,
-                                            std::optional<ReadResult>* out,
-                                            bool* resumed_with_scheduler) {
-  ReadResult result = co_await stream->ReadSome(*buffer, 32);
-  *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == scheduler;
-  out->emplace(std::move(result));
-  loop->RequestStop();
 }
 
 coropact::coro::DetachedTask ReadIntoOnce(coropact::reactor::ReactorStream* stream,
@@ -386,44 +373,6 @@ bool CheckTimedReadReleasesSlotBeforeContinuation() {
          Check(std::memcmp(next_buffer.data(), kNextPayload.data(), kNextPayload.size()) == 0,
                "next read payload mismatch") &&
          Check(resumed_with_scheduler, "next read resumed without current scheduler");
-}
-
-bool CheckReadIntoIoBuffer() {
-  int sv[2] = {-1, -1};
-  if (!MakeSocketPair(sv)) {
-    std::cout << "FAIL: socketpair failed\n";
-    return false;
-  }
-
-  const char payload[] = "buffer-read";
-  if (::write(sv[1], payload, sizeof(payload) - 1) != static_cast<ssize_t>(sizeof(payload) - 1)) {
-    std::cout << "FAIL: initial buffer write failed\n";
-    ::close(sv[0]);
-    ::close(sv[1]);
-    return false;
-  }
-
-  coropact::reactor::EventLoop loop;
-  coropact::reactor::ReactorStream stream(&loop, sv[0]);
-
-  coropact::io::Buffer buffer(4);
-  std::optional<ReadResult> result;
-  bool resumed_with_scheduler = false;
-
-  coropact::coro::SpawnDetach(
-      loop, ReadBufferOnce(&stream, &loop, &loop, &buffer, &result, &resumed_with_scheduler));
-  loop.Run();
-
-  ::close(sv[1]);
-
-  return Check(result.has_value(), "buffer read did not finish") &&
-         Check(result->has_value(), "buffer read returned error") &&
-         Check(**result == sizeof(payload) - 1, "buffer read byte count mismatch") &&
-         Check(buffer.ReadableBytes() == sizeof(payload) - 1,
-               "buffer read should commit readable bytes") &&
-         Check(Gather(buffer) == std::string(payload, sizeof(payload) - 1),
-               "buffer read payload mismatch") &&
-         Check(resumed_with_scheduler, "buffer read resumed without current scheduler");
 }
 
 bool CheckOwnedReadIntoReturnsBuffer() {
@@ -735,7 +684,6 @@ int main() {
   if (!CheckImmediateWrite()) return 1;
   if (!CheckPendingRead()) return 1;
   if (!CheckTimedReadReleasesSlotBeforeContinuation()) return 1;
-  if (!CheckReadIntoIoBuffer()) return 1;
   if (!CheckOwnedReadIntoReturnsBuffer()) return 1;
   if (!CheckOwnedReadIntoCloseReturnsBuffer()) return 1;
   if (!CheckCloseCancelsPendingRead()) return 1;

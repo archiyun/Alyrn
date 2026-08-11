@@ -3,6 +3,8 @@
 #pragma once
 
 #include <coroutine>
+#include <type_traits>
+#include <utility>
 
 #include "coropact/base/check.h"
 #include "coropact/coro/scheduler.h"
@@ -44,6 +46,22 @@ public:
     COROPACT_CHECK(resume_work_.HasHandle(),
                    "SchedulerContinuation has no resumable coroutine handle");
     scheduler_->Schedule(&resume_work_);
+  }
+
+  // Lets a concrete backend select an owner-local dispatch queue while this
+  // type continues to own scheduler affinity and the intrusive ResumeWork.
+  // The dispatcher receives the scheduler captured by Bind() and must preserve
+  // that affinity. The dispatcher must be noexcept. Like Schedule(), it may
+  // resume and destroy the awaiter that owns this continuation; callers must
+  // not touch that owner afterward.
+  template <class Dispatch>
+  void ScheduleWith(Dispatch&& dispatch) noexcept {
+    static_assert(std::is_nothrow_invocable_v<Dispatch&&, coro::Scheduler&, coro::Work*>,
+                  "SchedulerContinuation dispatcher must be noexcept");
+    COROPACT_CHECK(scheduler_ != nullptr, "SchedulerContinuation scheduled before Bind");
+    COROPACT_CHECK(resume_work_.HasHandle(),
+                   "SchedulerContinuation has no resumable coroutine handle");
+    std::forward<Dispatch>(dispatch)(*scheduler_, &resume_work_);
   }
 
 private:

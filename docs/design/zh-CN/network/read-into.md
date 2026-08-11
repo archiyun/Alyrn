@@ -96,21 +96,33 @@ destination 混淆；`0` 的读取结果仍按 stream 语义表示 EOF。
 
 ### Reactor
 
-`ReactorStream::ReadIntoAwaiter` 保存 `Buffer` 与 `std::vector<iovec>`。它先
-`PrepareWrite(reserve, 16)`，随后立即调用非阻塞 `readv()`：
+`ReactorStream::ReadIntoAwaiter` 只保存 `Buffer` 与 reservation 状态。它在
+`await_suspend()` 和每次 readiness retry 的普通调用栈上创建固定的
+`std::array<iovec, 16>`，再让 `Buffer` 填充 `iov_storage`；因此 iovec view 不进入
+协程帧，也不为 Reactor 的同步 `readv()` 额外堆分配。随后立即调用非阻塞 `readv()`：
 
 - 立即成功、EOF 或错误：结算 reservation，`await_suspend()` 返回 `false`；
 - `EAGAIN`：将 awaiter 记录为 pending read，启用 `EPOLLIN`；
 - readiness、`Close()` 或 loop stop：经同一个 completion gate 结算 reservation，并由
   scheduler-bound continuation 恢复协程。
 
-这里的 `ReadInto` 比 `ReadSome(Buffer&)` 更强：后者保留外部引用，调用者必须自行保证
-buffer 在 await 返回前不被触碰；前者把这个要求编码进 move-only ownership。
+这里不能把同一技巧直接套到 io_uring：`IORING_OP_READV` 会在 SQE 提交后继续借用 iovec
+array 直到 terminal CQE，所以 luring awaiter 必须持久拥有该 array。
+
+为避免把外部 `Buffer&` 在 pending interval 内的地址稳定性留给调用者，CoroPact 不提供
+`ReadSome(Buffer&)` overload；可增长 buffer 必须通过 move-only `ReadInto(Buffer)` 进入
+operation。
 
 ### io_uring
 
-`LUringStream::ReadIntoAwaiter` 也拥有 `Buffer`。它使用一个 writable iovec 的地址和长度
-准备 `IORING_OP_RECV`：
+`LUringStream::ReadIntoAwaiter` 也拥有 `Buffer`。它先尝试取得一个连续 writable range：
+
+- 连续 tail 足够时，`IORING_OP_RECV` 直接复制该 range 的地址和长度进入 SQE；不必保存
+  iovec 对象；
+- 既有 tail 不足时，回退到最多 16 段的 `IORING_OP_READV`，awaiter 持有
+  `std::vector<iovec>` 直到 terminal CQE，因此内核借用的 array 地址保持有效。
+
+两条路径共享同一个 Buffer reservation 和终态结算协议：
 
 - SQE 成功提交后，awaiter/frame 保持 buffer 和 writable span 存活；
 - CQE 到达时，`OnComplete()` 先 `CommitWrite()` 或 `AbortWrite()`，然后由 operation hook

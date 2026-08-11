@@ -5,6 +5,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <array>
 #include <cerrno>
 #include <chrono>
 #include <coroutine>
@@ -27,6 +28,8 @@ namespace coropact::reactor {
 using detail::LoopAccess;
 
 namespace {
+
+constexpr std::size_t kReadIntoMaxIov = 16;
 
 [[nodiscard]]
 constexpr bool IsWouldBlock(int error) noexcept {
@@ -276,82 +279,6 @@ void ReactorStream::ReadSomeAwaiter::OnReadyImpl() noexcept {
   stream_->CompleteRead(result);
 }
 
-// --- BufferReadAwaiter ---
-ReactorStream::BufferReadAwaiter::BufferReadAwaiter(ReactorStream& stream, net::Buffer& buffer,
-                                                    std::size_t reserve,
-                                                    std::chrono::milliseconds timeout) noexcept
-    : ReadAwaiterState(stream), buffer_(&buffer), reserve_(reserve), timeout_(timeout) {}
-
-bool ReactorStream::BufferReadAwaiter::await_suspend(
-    std::coroutine_handle<> continuation) noexcept {
-  if (!BeginRead(continuation)) {
-    return false;
-  }
-
-  if (!PrepareReservation()) {
-    CompleteStoredInline();
-    return false;
-  }
-
-  auto [state, result] = TryReadv(stream_->socket_.fd(), iovs_);
-  if (state != IoAttemptState::kWouldBlock) {
-    FinishAttempt(result);
-    CompleteStoredInline();
-    return false;
-  }
-
-  SuspendForRead(this, ReactorStream::PendingReadKind::kBufferRead);
-  ArmReadTimeout(timeout_, this, timer_);
-  return true;
-}
-
-base::Result<std::size_t> ReactorStream::BufferReadAwaiter::await_resume() noexcept {
-  return TakeResult();
-}
-
-bool ReactorStream::BufferReadAwaiter::CompleteResultImpl(
-    base::Result<std::size_t> result) noexcept {
-  if (!TryAuthorizeResult()) {
-    return false;
-  }
-  CancelReadTimeout(timer_);
-  FinishAttempt(result);
-  stream_ = nullptr;
-  return true;
-}
-
-void ReactorStream::BufferReadAwaiter::OnReadyImpl() noexcept {
-  auto [state, result] = TryReadv(stream_->socket_.fd(), iovs_);
-  if (state == IoAttemptState::kWouldBlock) {
-    return;
-  }
-  stream_->CompleteRead(result);
-}
-
-bool ReactorStream::BufferReadAwaiter::PrepareReservation() noexcept {
-  try {
-    iovs_ = buffer_->PrepareWrite(reserve_, 16);
-  } catch (const std::bad_alloc&) {
-    result_.SetError(base::MakeErrno(ENOMEM));
-    return false;
-  }
-
-  if (iovs_.empty()) {
-    result_.SetError(base::MakeErrno(ENOMEM));
-    return false;
-  }
-  return true;
-}
-
-void ReactorStream::BufferReadAwaiter::FinishAttempt(base::Result<std::size_t> result) noexcept {
-  if (result.has_value()) {
-    buffer_->CommitWrite(*result);
-  } else {
-    buffer_->AbortWrite();
-  }
-  result_.SetResult(result);
-}
-
 // --- ReadIntoAwaiter ---
 ReactorStream::ReadIntoAwaiter::ReadIntoAwaiter(ReactorStream& stream, net::Buffer buffer,
                                                 std::size_t reserve) noexcept
@@ -367,7 +294,8 @@ bool ReactorStream::ReadIntoAwaiter::await_suspend(std::coroutine_handle<> conti
     return false;
   }
 
-  auto [state, result] = TryReadv(stream_->socket_.fd(), iovs_);
+  std::array<iovec, kReadIntoMaxIov> iovs;
+  auto [state, result] = TryReadv(stream_->socket_.fd(), buffer_.ReservedWriteIov(iovs));
   if (state != IoAttemptState::kWouldBlock) {
     FinishAttempt(result);
     CompleteStoredInline();
@@ -395,7 +323,8 @@ bool ReactorStream::ReadIntoAwaiter::CompleteResultImpl(base::Result<std::size_t
 }
 
 void ReactorStream::ReadIntoAwaiter::OnReadyImpl() noexcept {
-  auto [state, result] = TryReadv(stream_->socket_.fd(), iovs_);
+  std::array<iovec, kReadIntoMaxIov> iovs;
+  auto [state, result] = TryReadv(stream_->socket_.fd(), buffer_.ReservedWriteIov(iovs));
   if (state == IoAttemptState::kWouldBlock) {
     return;
   }
@@ -404,14 +333,13 @@ void ReactorStream::ReadIntoAwaiter::OnReadyImpl() noexcept {
 
 bool ReactorStream::ReadIntoAwaiter::PrepareReservation() noexcept {
   try {
-    iovs_ = buffer_.PrepareWrite(reserve_, 16);
+    std::array<iovec, kReadIntoMaxIov> iovs;
+    if (buffer_.PrepareWrite(reserve_, iovs).empty()) {
+      buffer_.AbortWrite();
+      result_.SetError(base::MakeErrno(ENOMEM));
+      return false;
+    }
   } catch (const std::bad_alloc&) {
-    buffer_.AbortWrite();
-    result_.SetError(base::MakeErrno(ENOMEM));
-    return false;
-  }
-
-  if (iovs_.empty()) {
     buffer_.AbortWrite();
     result_.SetError(base::MakeErrno(ENOMEM));
     return false;
@@ -606,20 +534,9 @@ ReactorStream::ReadIntoAwaiter ReactorStream::ReadInto(net::Buffer buffer,
   return ReadIntoAwaiter{*this, std::move(buffer), reserve};
 }
 
-ReactorStream::BufferReadAwaiter ReactorStream::ReadSome(net::Buffer& buffer,
-                                                         std::size_t reserve) noexcept {
-  return BufferReadAwaiter{*this, buffer, reserve};
-}
-
 ReactorStream::ReadSomeAwaiter ReactorStream::ReadSomeFor(
     std::span<std::byte> buffer, std::chrono::milliseconds timeout) noexcept {
   return ReadSomeAwaiter{*this, buffer, timeout};
-}
-
-ReactorStream::BufferReadAwaiter ReactorStream::ReadSomeFor(net::Buffer& buffer,
-                                                            std::chrono::milliseconds timeout,
-                                                            std::size_t reserve) noexcept {
-  return BufferReadAwaiter{*this, buffer, reserve, timeout};
 }
 
 coro::Task<base::Result<void>> ReactorStream::Shutdown() {
@@ -667,9 +584,6 @@ void ReactorStream::HandleRead() {
     case PendingReadKind::kReadInto:
       static_cast<ReadIntoAwaiter*>(pending_read_)->OnReady();
       return;
-    case PendingReadKind::kBufferRead:
-      static_cast<BufferReadAwaiter*>(pending_read_)->OnReady();
-      return;
     case PendingReadKind::kNone:
       return;
   }
@@ -715,11 +629,6 @@ void ReactorStream::CompleteRead(base::Result<std::size_t> result) {
     case PendingReadKind::kReadInto:
       state = static_cast<ReadIntoAwaiter*>(awaiter);
       result_authorized = static_cast<ReadIntoAwaiter*>(awaiter)->CompleteResult(std::move(result));
-      break;
-    case PendingReadKind::kBufferRead:
-      state = static_cast<BufferReadAwaiter*>(awaiter);
-      result_authorized =
-          static_cast<BufferReadAwaiter*>(awaiter)->CompleteResult(std::move(result));
       break;
     case PendingReadKind::kNone:
       COROPACT_CHECK(false, "ReactorStream::CompleteRead missing operation kind");

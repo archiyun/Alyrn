@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string_view>
 #include <utility>
@@ -99,25 +100,101 @@ public:
 
       std::vector<iovec> out;
       out.reserve(max_iov);
-
       for (Block& block : blocks_) {
         if (!block.reserved_for_write) continue;
-        if (out.size() >= max_iov) break;
+        if (out.size() == max_iov) break;
 
-        const std::size_t n = block.WritableBytes();
-        if (n == 0) continue;
+        const std::size_t bytes = block.WritableBytes();
+        if (bytes == 0) continue;
 
         out.push_back(iovec{
             .iov_base = block.WriteData(),
-            .iov_len = n,
+            .iov_len = bytes,
         });
-        reserved_bytes_ += n;
+        reserved_bytes_ += bytes;
       }
 
       if (out.empty()) {
         ClearWriteReservation();
       }
       return out;
+    } catch (...) {
+      ClearWriteReservation();
+      throw;
+    }
+  }
+
+  // Fills caller-owned iovec storage for a new write reservation. This avoids
+  // allocating an iovec vector when the caller needs the views only for one
+  // synchronous syscall, as the Reactor does for readv(). The caller must
+  // keep the returned view only until its storage is reused; the Buffer owns
+  // the reserved byte ranges until CommitWrite() or AbortWrite().
+  [[nodiscard]]
+  std::span<iovec> PrepareWrite(std::size_t hint, std::span<iovec> out) {
+    COROPACT_CHECK(!write_reserved_, "nested Buffer::PrepareWrite is not allowed");
+    if (out.empty()) return {};
+
+    if (hint == 0) hint = block_size_;
+    reserved_bytes_ = 0;
+    write_reserved_ = true;
+
+    try {
+      EnsureTailWritable(hint, out.size());
+      auto iovs = FillReservedWriteIov(out);
+      for (const iovec& iov : iovs) {
+        reserved_bytes_ += iov.iov_len;
+      }
+      if (iovs.empty()) {
+        ClearWriteReservation();
+      }
+      return iovs;
+    } catch (...) {
+      ClearWriteReservation();
+      throw;
+    }
+  }
+
+  // Recreates iovec views for the active reservation in caller-owned
+  // storage. This is useful after a readiness notification: the reservation
+  // remains owned by the Buffer, but a Reactor need not retain an iovec
+  // allocation while the coroutine is suspended.
+  [[nodiscard]]
+  std::span<iovec> ReservedWriteIov(std::span<iovec> out) noexcept {
+    COROPACT_CHECK(write_reserved_, "Buffer::ReservedWriteIov without PrepareWrite");
+    return FillReservedWriteIov(out);
+  }
+
+  // Creates a reservation only when one contiguous writable range can satisfy
+  // hint. A caller that must retain iovec storage across an asynchronous
+  // backend request can use this fast path and fall back to PrepareWrite()
+  // when an existing tail needs a scatter/gather reservation instead.
+  [[nodiscard]]
+  std::optional<iovec> TryPrepareWriteOne(std::size_t hint) {
+    COROPACT_CHECK(!write_reserved_, "nested Buffer::PrepareWrite is not allowed");
+
+    if (hint == 0) hint = block_size_;
+    Block* tail = blocks_.Back();
+    if (tail != nullptr && tail->WritableBytes() < hint) {
+      return std::nullopt;
+    }
+
+    reserved_bytes_ = 0;
+    write_reserved_ = true;
+    try {
+      if (tail == nullptr) {
+        tail = NewBlock(std::max(block_size_, hint));
+        const bool linked = blocks_.PushBack(tail);
+        COROPACT_CHECK(linked, "Buffer failed to link a newly allocated block");
+      }
+
+      tail->reserved_for_write = true;
+      const std::size_t bytes = tail->WritableBytes();
+      COROPACT_CHECK(bytes >= hint, "single Buffer write reservation is too small");
+      reserved_bytes_ = bytes;
+      return iovec{
+          .iov_base = tail->WriteData(),
+          .iov_len = bytes,
+      };
     } catch (...) {
       ClearWriteReservation();
       throw;
@@ -248,6 +325,24 @@ private:
       writable += block->WritableBytes();
       reserved += 1;
     }
+  }
+
+  [[nodiscard]]
+  std::span<iovec> FillReservedWriteIov(std::span<iovec> out) noexcept {
+    std::size_t count = 0;
+    for (Block& block : blocks_) {
+      if (!block.reserved_for_write) continue;
+      if (count == out.size()) break;
+
+      const std::size_t n = block.WritableBytes();
+      if (n == 0) continue;
+
+      out[count++] = iovec{
+          .iov_base = block.WriteData(),
+          .iov_len = n,
+      };
+    }
+    return out.first(count);
   }
 
   void ClearWriteReservation() noexcept {

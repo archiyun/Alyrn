@@ -11,6 +11,7 @@
 #include <expected>
 #include <iostream>
 #include <optional>
+#include <string>
 #include <system_error>
 #include <thread>
 #include <utility>
@@ -26,6 +27,7 @@
 #include "coropact/luring/loop.h"
 #include "coropact/luring/options.h"
 #include "coropact/luring/stream.h"
+#include "coropact/operation/detail/scheduler_continuation.h"
 
 namespace {
 
@@ -71,6 +73,74 @@ bool Check(bool condition, const char* message) {
     return false;
   }
   return true;
+}
+
+class AppendOrderWork final : public coropact::coro::Work {
+public:
+  AppendOrderWork(std::string* order, char marker) noexcept : order_(order), marker_(marker) {
+    SetRun(&RunAppend);
+  }
+
+private:
+  static void RunAppend(coropact::coro::Work* work) noexcept {
+    auto* self = static_cast<AppendOrderWork*>(work);
+    self->order_->push_back(self->marker_);
+  }
+
+  std::string* order_;
+  char marker_;
+};
+
+class SuspendOnContinuation final {
+public:
+  explicit SuspendOnContinuation(
+      coropact::operation::detail::SchedulerContinuation* continuation) noexcept
+      : continuation_(continuation) {}
+
+  [[nodiscard]]
+  bool await_ready() const noexcept {
+    return false;
+  }
+
+  bool await_suspend(std::coroutine_handle<> handle) noexcept {
+    continuation_->Bind(handle);
+    return true;
+  }
+
+  void await_resume() const noexcept {}
+
+private:
+  coropact::operation::detail::SchedulerContinuation* continuation_;
+};
+
+coropact::coro::DetachedTask AwaitCompletionQueue(
+    coropact::operation::detail::SchedulerContinuation* continuation,
+    coropact::luring::LUringLoop* loop, std::string* order, bool* resumed_with_scheduler) {
+  co_await SuspendOnContinuation(continuation);
+  *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == loop;
+  order->push_back('C');
+}
+
+bool CheckCompletionQueuePrecedesNormalReadyWork() {
+  coropact::luring::LUringLoop loop;
+  coropact::operation::detail::SchedulerContinuation continuation;
+  std::string order;
+  bool resumed_with_scheduler = false;
+
+  coropact::coro::SpawnDetach(
+      loop, AwaitCompletionQueue(&continuation, &loop, &order, &resumed_with_scheduler));
+  coropact::luring::detail::LoopAccess::RunReady(loop);
+
+  AppendOrderWork normal_work{&order, 'N'};
+  loop.Schedule(&normal_work);
+  coropact::luring::detail::LoopAccess::ScheduleCompletion(loop, continuation);
+  coropact::luring::detail::LoopAccess::RunReady(loop);
+
+  return Check(order == "CN", "completion queue work must precede normal ready work") &&
+         Check(resumed_with_scheduler,
+               "completion queue continuation must retain its loop scheduler") &&
+         Check(coropact::luring::detail::LoopAccess::IsDrained(loop),
+               "completion priority test must drain the loop");
 }
 
 bool IsEnvironmentSkip(coropact::base::Error error) {
@@ -296,6 +366,7 @@ bool CheckLoopStopRetriesFlushSubmitFailure() {
 }  // namespace
 
 int main() {
+  if (!CheckCompletionQueuePrecedesNormalReadyWork()) return 1;
   if (!CheckNopResumesCoroutine()) return 1;
   if (!CheckCrossThreadRequestStopWakesRing()) return 1;
   if (!CheckLoopStopDrainsPendingRead()) return 1;

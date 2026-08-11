@@ -16,6 +16,9 @@ EXTENDS Naturals
 (* 投影后必须是 LogicalNext，或者是不改变 LogicalObservation 的          *)
 (* stuttering step。                                                       *)
 (*                                                                         *)
+(* 立即完成经由 await_suspend() == false 回到当前协程；它不是一次       *)
+(* Scheduler continuation resume。该路径由 InlineContinue 单独表示。   *)
+(*                                                                        *)
 (* 这是 C++ 路径的有限状态模型，不自动证明 C++ 内存安全或真实内核公平性。*)
 (***************************************************************************)
 
@@ -86,7 +89,9 @@ ReactorSubmitPending ==
                  continuationAuthorized,
                  uringState>>
 
-(* Immediate syscall result: no suspension, physical use is already terminal. *)
+(* Immediate syscall result: no suspension, physical use is already terminal.
+ * The compiler continues through await_resume() inline, without a scheduled
+ * continuation authorization. *)
 ReactorImmediateComplete ==
   /\ backend = "Reactor"
   /\ coroutineState = "Running"
@@ -98,7 +103,7 @@ ReactorImmediateComplete ==
   /\ completionCount' = completionCount + 1
   /\ submitCount' = submitCount + 1
   /\ releaseAuthorized' = TRUE
-  /\ continuationAuthorized' = TRUE
+  /\ continuationAuthorized' = FALSE
   /\ UNCHANGED <<backend,
                  coroutineState,
                  resourceState,
@@ -178,6 +183,27 @@ UringPrepareSQE ==
                  releaseAuthorized,
                  continuationAuthorized,
                  reactorState>>
+
+(* Local validation or SQE preparation may fail before the coroutine
+ * suspends. Just like a Reactor immediate syscall result, it is consumed by
+ * await_resume() inline rather than through Scheduler::Schedule(). *)
+UringImmediateComplete ==
+  /\ backend = "LUring"
+  /\ coroutineState = "Running"
+  /\ resourceState = "Open"
+  /\ operationState = "None"
+  /\ uringState = "Idle"
+  /\ operationState' = "Completed"
+  /\ result' \in {"Success", "EOF", "Error"}
+  /\ completionCount' = completionCount + 1
+  /\ submitCount' = submitCount + 1
+  /\ releaseAuthorized' = TRUE
+  /\ continuationAuthorized' = FALSE
+  /\ UNCHANGED <<backend,
+                 coroutineState,
+                 resourceState,
+                 reactorState,
+                 uringState>>
 
 (* SQE submission is hidden by ObsLUring. *)
 UringSubmit ==
@@ -300,8 +326,28 @@ FinalizeClose ==
                  reactorState,
                  uringState>>
 
+(* await_suspend() returned false. The current coroutine observes the result
+ * synchronously through await_resume(); no ResumeWork was enqueued. *)
+InlineContinue ==
+  /\ coroutineState = "Running"
+  /\ operationState = "Completed"
+  /\ result \in {"Success", "EOF", "Error"}
+  /\ releaseAuthorized
+  /\ ~continuationAuthorized
+  /\ coroutineState' = "Ready"
+  /\ UNCHANGED <<backend,
+                 resourceState,
+                 operationState,
+                 result,
+                 completionCount,
+                 submitCount,
+                 releaseAuthorized,
+                 continuationAuthorized,
+                 reactorState,
+                 uringState>>
+
 Resume ==
-  /\ coroutineState \in {"Running", "Waiting"}
+  /\ coroutineState = "Waiting"
   /\ operationState \in {"Completed", "Cancelled"}
   /\ continuationAuthorized
   /\ releaseAuthorized
@@ -338,6 +384,7 @@ Next ==
   \/ ReactorComplete
   \/ ReactorCancel
   \/ UringPrepareSQE
+  \/ UringImmediateComplete
   \/ UringSubmit
   \/ UringCQE
   \/ UringComplete
@@ -345,6 +392,7 @@ Next ==
   \/ Suspend
   \/ Close
   \/ FinalizeClose
+  \/ InlineContinue
   \/ Resume
   \/ Finish
 
@@ -405,7 +453,7 @@ LogicalImmediateResult(before, after) ==
   /\ after.operation = "Completed"
   /\ after.result \in {"Success", "EOF", "Error"}
   /\ after.resultReady
-  /\ after.continuationAuthorized
+  /\ ~after.continuationAuthorized
   /\ after.releaseAuthorized
   /\ after.coroutine = before.coroutine
   /\ after.resource = before.resource
@@ -467,8 +515,23 @@ LogicalFinalizeClose(before, after) ==
   /\ after.continuationAuthorized = before.continuationAuthorized
   /\ after.releaseAuthorized = before.releaseAuthorized
 
+LogicalInlineContinue(before, after) ==
+  /\ before.coroutine = "Running"
+  /\ before.operation = "Completed"
+  /\ before.result \in {"Success", "EOF", "Error"}
+  /\ before.resultReady
+  /\ before.releaseAuthorized
+  /\ ~before.continuationAuthorized
+  /\ after.coroutine = "Ready"
+  /\ after.resource = before.resource
+  /\ after.operation = before.operation
+  /\ after.result = before.result
+  /\ after.resultReady = before.resultReady
+  /\ after.continuationAuthorized = before.continuationAuthorized
+  /\ after.releaseAuthorized = before.releaseAuthorized
+
 LogicalResume(before, after) ==
-  /\ before.coroutine \in {"Running", "Waiting"}
+  /\ before.coroutine = "Waiting"
   /\ before.operation \in {"Completed", "Cancelled"}
   /\ before.resultReady
   /\ before.continuationAuthorized
@@ -499,6 +562,7 @@ LogicalNext(before, after) ==
   \/ LogicalCancelResult(before, after)
   \/ LogicalClose(before, after)
   \/ LogicalFinalizeClose(before, after)
+  \/ LogicalInlineContinue(before, after)
   \/ LogicalResume(before, after)
   \/ LogicalFinish(before, after)
 
@@ -552,8 +616,15 @@ ReleaseAuthorization ==
 
 ResumeSafety ==
   coroutineState \in {"Ready", "Done"}
-    => /\ continuationAuthorized
-       /\ releaseAuthorized
+    => /\ releaseAuthorized
+       /\ result # "NoResult"
+
+InlineCompletionSafety ==
+  /\ coroutineState \in {"Ready", "Done"}
+  /\ ~continuationAuthorized
+  => /\ operationState = "Completed"
+     /\ result \in {"Success", "EOF", "Error"}
+     /\ releaseAuthorized
 
 ClosedHasNoPending ==
   resourceState = "Closed" => operationState # "Pending"

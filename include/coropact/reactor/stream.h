@@ -9,7 +9,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
-#include <vector>
 
 #include "coropact/base/error.h"
 #include "coropact/coro/task.h"
@@ -43,7 +42,6 @@ private:
   class ReadIntoAwaiter;
   class ReadAwaiterState;
   class WriteAllAwaiter;
-  class BufferReadAwaiter;
 
 public:
   COROPACT_DELETE_COPY(ReactorStream);
@@ -66,13 +64,8 @@ public:
   [[nodiscard]]
   ReadIntoAwaiter ReadInto(net::Buffer buffer, std::size_t reserve = 4096) noexcept;
   [[nodiscard]]
-  BufferReadAwaiter ReadSome(net::Buffer& buffer, std::size_t reserve = 4096) noexcept;
-  [[nodiscard]]
   ReadSomeAwaiter ReadSomeFor(std::span<std::byte> buffer,
                               std::chrono::milliseconds timeout) noexcept;
-  [[nodiscard]]
-  BufferReadAwaiter ReadSomeFor(net::Buffer& buffer, std::chrono::milliseconds timeout,
-                                std::size_t reserve = 4096) noexcept;
   [[nodiscard]]
   WriteAllAwaiter WriteAll(std::span<const std::byte> buffer) noexcept;
   coro::Task<base::Result<void>> Shutdown();
@@ -142,7 +135,6 @@ private:
     kNone,
     kReadSome,
     kReadInto,
-    kBufferRead,
   };
   void* pending_read_{nullptr};
   WriteAllAwaiter* pending_write_{nullptr};
@@ -253,40 +245,9 @@ private:
   IoResultState result_;
 };
 
-class ReactorStream::BufferReadAwaiter : public ReadAwaiterState,
-                                         public OperationHook<ReactorStream::BufferReadAwaiter> {
-public:
-  COROPACT_DELETE_COPY_MOVE(BufferReadAwaiter);
-
-  BufferReadAwaiter(ReactorStream& stream, net::Buffer& buffer, std::size_t reserve,
-                    std::chrono::milliseconds timeout = std::chrono::milliseconds{0}) noexcept;
-
-  [[nodiscard]]
-  bool await_ready() const noexcept {
-    return false;
-  }
-  [[nodiscard]]
-  bool await_suspend(std::coroutine_handle<> continuation) noexcept;
-  base::Result<std::size_t> await_resume() noexcept;
-
-private:
-  friend OperationHook<BufferReadAwaiter>;
-
-  bool CompleteResultImpl(base::Result<std::size_t> result) noexcept;
-  void OnReadyImpl() noexcept;
-  bool PrepareReservation() noexcept;
-  void FinishAttempt(base::Result<std::size_t> result) noexcept;
-
-  net::Buffer* buffer_;
-  std::size_t reserve_;
-  std::chrono::milliseconds timeout_;
-  std::vector<iovec> iovs_;
-  time::TimerId timer_;
-};
-
-// Owns the destination buffer while a read is pending. Unlike ReadSome(Buffer&),
-// this awaiter returns the Buffer on every terminal path, so callers cannot
-// invalidate its storage while the backend may still access it.
+// Owns the destination buffer while a read is pending and returns it on every
+// terminal path, so callers cannot invalidate its storage while the backend
+// may still access it.
 class ReactorStream::ReadIntoAwaiter : public ReadAwaiterState,
                                        public OperationHook<ReactorStream::ReadIntoAwaiter> {
 public:
@@ -312,7 +273,6 @@ private:
 
   net::Buffer buffer_;
   std::size_t reserve_;
-  std::vector<iovec> iovs_;
   bool reservation_active_{false};
 };
 
