@@ -205,13 +205,26 @@ void ReactorStream::ReadAwaiterState::CancelReadTimeout(time::TimerId& timer) no
   timer = {};
 }
 
-bool ReactorStream::ReadAwaiterState::TryClaimCompletion() noexcept {
-  return completion_gate_.TryComplete();
+bool ReactorStream::ReadAwaiterState::TryAuthorizeResult() noexcept {
+  return lifecycle_.TryAuthorizeResult();
+}
+
+bool ReactorStream::ReadAwaiterState::TryAuthorizeRelease() noexcept {
+  return lifecycle_.TryAuthorizeRelease();
+}
+
+bool ReactorStream::ReadAwaiterState::TryAuthorizeContinuation() noexcept {
+  return lifecycle_.TryAuthorizeContinuation();
 }
 
 void ReactorStream::ReadAwaiterState::CompleteInline(base::Result<std::size_t> result) noexcept {
   result_.SetResult(result);
-  (void)TryClaimCompletion();
+  CompleteStoredInline();
+}
+
+void ReactorStream::ReadAwaiterState::CompleteStoredInline() noexcept {
+  COROPACT_CHECK(TryAuthorizeResult(), "Reactor read result was authorized twice");
+  COROPACT_CHECK(TryAuthorizeRelease(), "Reactor read release was not authorized after its result");
 }
 
 void ReactorStream::ReadAwaiterState::SetResult(base::Result<std::size_t> result) noexcept {
@@ -245,14 +258,14 @@ base::Result<std::size_t> ReactorStream::ReadSomeAwaiter::await_resume() noexcep
   return TakeResult();
 }
 
-void ReactorStream::ReadSomeAwaiter::CompleteImpl(base::Result<std::size_t> result) noexcept {
-  if (!TryClaimCompletion()) {
-    return;
+bool ReactorStream::ReadSomeAwaiter::CompleteResultImpl(base::Result<std::size_t> result) noexcept {
+  if (!TryAuthorizeResult()) {
+    return false;
   }
   CancelReadTimeout(timer_);
   stream_ = nullptr;
   SetResult(result);
-  ScheduleContinuation();
+  return true;
 }
 
 void ReactorStream::ReadSomeAwaiter::OnReadyImpl() noexcept {
@@ -276,14 +289,14 @@ bool ReactorStream::BufferReadAwaiter::await_suspend(
   }
 
   if (!PrepareReservation()) {
-    (void)completion_gate_.TryComplete();
+    CompleteStoredInline();
     return false;
   }
 
   auto [state, result] = TryReadv(stream_->socket_.fd(), iovs_);
   if (state != IoAttemptState::kWouldBlock) {
     FinishAttempt(result);
-    (void)completion_gate_.TryComplete();
+    CompleteStoredInline();
     return false;
   }
 
@@ -296,14 +309,15 @@ base::Result<std::size_t> ReactorStream::BufferReadAwaiter::await_resume() noexc
   return TakeResult();
 }
 
-void ReactorStream::BufferReadAwaiter::CompleteImpl(base::Result<std::size_t> result) noexcept {
-  if (!TryClaimCompletion()) {
-    return;
+bool ReactorStream::BufferReadAwaiter::CompleteResultImpl(
+    base::Result<std::size_t> result) noexcept {
+  if (!TryAuthorizeResult()) {
+    return false;
   }
   CancelReadTimeout(timer_);
   FinishAttempt(result);
   stream_ = nullptr;
-  ScheduleContinuation();
+  return true;
 }
 
 void ReactorStream::BufferReadAwaiter::OnReadyImpl() noexcept {
@@ -349,14 +363,14 @@ bool ReactorStream::ReadIntoAwaiter::await_suspend(std::coroutine_handle<> conti
   }
 
   if (!PrepareReservation()) {
-    (void)completion_gate_.TryComplete();
+    CompleteStoredInline();
     return false;
   }
 
   auto [state, result] = TryReadv(stream_->socket_.fd(), iovs_);
   if (state != IoAttemptState::kWouldBlock) {
     FinishAttempt(result);
-    (void)completion_gate_.TryComplete();
+    CompleteStoredInline();
     return false;
   }
 
@@ -371,13 +385,13 @@ net::ReadIntoOutcome ReactorStream::ReadIntoAwaiter::await_resume() noexcept {
   };
 }
 
-void ReactorStream::ReadIntoAwaiter::CompleteImpl(base::Result<std::size_t> result) noexcept {
-  if (!TryClaimCompletion()) {
-    return;
+bool ReactorStream::ReadIntoAwaiter::CompleteResultImpl(base::Result<std::size_t> result) noexcept {
+  if (!TryAuthorizeResult()) {
+    return false;
   }
   FinishAttempt(result);
   stream_ = nullptr;
-  ScheduleContinuation();
+  return true;
 }
 
 void ReactorStream::ReadIntoAwaiter::OnReadyImpl() noexcept {
@@ -426,25 +440,21 @@ bool ReactorStream::WriteAllAwaiter::await_suspend(std::coroutine_handle<> conti
   stream_->RequireOwnerLoop();
   if (stream_->loop_->State() == backend::LoopState::kStopping ||
       stream_->loop_->State() == backend::LoopState::kStopped) {
-    result_.SetError(base::MakeErrno(ECANCELED));
-    (void)completion_gate_.TryComplete();
+    CompleteInline(std::unexpected(base::MakeErrno(ECANCELED)));
     return false;
   }
   auto valid = stream_->lifecycle_.ValidateWrite();
   if (!valid.has_value()) {
-    result_.SetError(valid.error());
-    (void)completion_gate_.TryComplete();
+    CompleteInline(std::unexpected(valid.error()));
     return false;
   }
   if (stream_->socket_.fd() < 0) {
-    result_.SetError(base::MakeErrno(EBADF));
-    (void)completion_gate_.TryComplete();
+    CompleteInline(std::unexpected(base::MakeErrno(EBADF)));
     return false;
   }
 
   if (stream_->pending_write_ != nullptr) {
-    result_.SetError(base::MakeErrno(EBUSY));
-    (void)completion_gate_.TryComplete();
+    CompleteInline(std::unexpected(base::MakeErrno(EBUSY)));
     return false;
   }
 
@@ -459,20 +469,17 @@ bool ReactorStream::WriteAllAwaiter::await_suspend(std::coroutine_handle<> conti
       return true;
     }
     if (!result.has_value()) {
-      result_.SetResult(result);
-      (void)completion_gate_.TryComplete();
+      CompleteInline(result);
       return false;
     }
     if (*result == 0) {
-      result_.SetError(base::MakeErrno(EPIPE));
-      (void)completion_gate_.TryComplete();
+      CompleteInline(std::unexpected(base::MakeErrno(EPIPE)));
       return false;
     }
     buffer_ = buffer_.subspan(*result);
   }
 
-  result_.SetSuccess(0);
-  (void)completion_gate_.TryComplete();
+  CompleteInline(std::size_t{0});
   return false;
 }
 
@@ -484,13 +491,30 @@ base::Result<void> ReactorStream::WriteAllAwaiter::await_resume() noexcept {
   return base::Result<void>{};
 }
 
-void ReactorStream::WriteAllAwaiter::CompleteImpl(base::Result<std::size_t> result) noexcept {
-  if (!completion_gate_.TryComplete()) {
-    return;
+void ReactorStream::WriteAllAwaiter::CompleteInline(base::Result<std::size_t> result) noexcept {
+  result_.SetResult(result);
+  COROPACT_CHECK(lifecycle_.TryAuthorizeResult(), "Reactor write result was authorized twice");
+  COROPACT_CHECK(lifecycle_.TryAuthorizeRelease(),
+                 "Reactor write release was not authorized after its result");
+}
+
+bool ReactorStream::WriteAllAwaiter::CompleteResultImpl(base::Result<std::size_t> result) noexcept {
+  if (!lifecycle_.TryAuthorizeResult()) {
+    return false;
   }
   result_.SetResult(result);
-  continuation_.Schedule();
+  return true;
 }
+
+bool ReactorStream::WriteAllAwaiter::TryAuthorizeRelease() noexcept {
+  return lifecycle_.TryAuthorizeRelease();
+}
+
+bool ReactorStream::WriteAllAwaiter::TryAuthorizeContinuation() noexcept {
+  return lifecycle_.TryAuthorizeContinuation();
+}
+
+void ReactorStream::WriteAllAwaiter::ScheduleContinuation() noexcept { continuation_.Schedule(); }
 
 void ReactorStream::WriteAllAwaiter::OnReadyImpl() noexcept {
   while (!buffer_.empty()) {
@@ -674,46 +698,80 @@ void ReactorStream::HandleError() {
 
 void ReactorStream::CompleteRead(base::Result<std::size_t> result) {
   COROPACT_DCHECK(loop_->IsInLoopThread(), "ReactorStream::CompleteRead called from wrong thread");
-  void* awaiter = std::exchange(pending_read_, nullptr);
-  const PendingReadKind kind = std::exchange(pending_read_kind_, PendingReadKind::kNone);
+  void* awaiter = pending_read_;
+  const PendingReadKind kind = pending_read_kind_;
   if (awaiter == nullptr) {
     return;
   }
-  // Successful reads keep interest armed in both modes so a continuation can
-  // immediately submit the next read without an epoll_ctl pair. LT disarms
-  // lazily in HandleRead when readiness arrives without a pending operation.
-  // Terminal results remove the interest in both modes.
-  if (!result.has_value() || *result == 0) {
-    if (channel_.IsReading()) {
-      channel_.DisableReading();
-    }
-  }
+
+  const bool terminal_result = !result.has_value() || *result == 0;
+  ReadAwaiterState* state = nullptr;
+  bool result_authorized = false;
   switch (kind) {
     case PendingReadKind::kReadSome:
-      static_cast<ReadSomeAwaiter*>(awaiter)->Complete(result);
-      return;
+      state = static_cast<ReadSomeAwaiter*>(awaiter);
+      result_authorized = static_cast<ReadSomeAwaiter*>(awaiter)->CompleteResult(std::move(result));
+      break;
     case PendingReadKind::kReadInto:
-      static_cast<ReadIntoAwaiter*>(awaiter)->Complete(result);
-      return;
+      state = static_cast<ReadIntoAwaiter*>(awaiter);
+      result_authorized = static_cast<ReadIntoAwaiter*>(awaiter)->CompleteResult(std::move(result));
+      break;
     case PendingReadKind::kBufferRead:
-      static_cast<BufferReadAwaiter*>(awaiter)->Complete(result);
-      return;
+      state = static_cast<BufferReadAwaiter*>(awaiter);
+      result_authorized =
+          static_cast<BufferReadAwaiter*>(awaiter)->CompleteResult(std::move(result));
+      break;
     case PendingReadKind::kNone:
       COROPACT_CHECK(false, "ReactorStream::CompleteRead missing operation kind");
       return;
   }
+  COROPACT_CHECK(result_authorized, "ReactorStream::CompleteRead result was already authorized");
+  COROPACT_CHECK(state != nullptr, "ReactorStream::CompleteRead has no awaiter state");
+  COROPACT_CHECK(state->TryAuthorizeRelease(),
+                 "ReactorStream::CompleteRead release was not authorized after its result");
+
+  // The stream slot is an operation resource. Release it only after the
+  // result is fixed, but before continuation authorization: resumed code may
+  // immediately submit the next read.
+  void* released = std::exchange(pending_read_, nullptr);
+  const PendingReadKind released_kind = std::exchange(pending_read_kind_, PendingReadKind::kNone);
+  COROPACT_CHECK(released == awaiter && released_kind == kind,
+                 "ReactorStream::CompleteRead pending slot changed during completion");
+
+  // Successful reads keep interest armed in both modes so a continuation can
+  // immediately submit the next read without an epoll_ctl pair. LT disarms
+  // lazily in HandleRead when readiness arrives without a pending operation.
+  // Terminal results remove the interest in both modes.
+  if (terminal_result) {
+    if (channel_.IsReading()) {
+      channel_.DisableReading();
+    }
+  }
+  COROPACT_CHECK(state->TryAuthorizeContinuation(),
+                 "ReactorStream::CompleteRead continuation was not authorized after release");
+  state->ScheduleContinuation();
 }
 
 void ReactorStream::CompleteWrite(base::Result<std::size_t> result) {
   COROPACT_DCHECK(loop_->IsInLoopThread(), "ReactorStream::CompleteWrite called from wrong thread");
-  WriteAllAwaiter* awaiter = std::exchange(pending_write_, nullptr);
+  WriteAllAwaiter* awaiter = pending_write_;
   if (awaiter == nullptr) {
     return;
   }
+  COROPACT_CHECK(awaiter->CompleteResult(std::move(result)),
+                 "ReactorStream::CompleteWrite result was already authorized");
+  COROPACT_CHECK(awaiter->TryAuthorizeRelease(),
+                 "ReactorStream::CompleteWrite release was not authorized after its result");
+
+  WriteAllAwaiter* released = std::exchange(pending_write_, nullptr);
+  COROPACT_CHECK(released == awaiter,
+                 "ReactorStream::CompleteWrite pending slot changed during completion");
   if (channel_.IsWriting()) {
     channel_.DisableWriting();
   }
-  awaiter->Complete(result);
+  COROPACT_CHECK(awaiter->TryAuthorizeContinuation(),
+                 "ReactorStream::CompleteWrite continuation was not authorized after release");
+  awaiter->ScheduleContinuation();
 }
 
 void ReactorStream::CloseNow() noexcept {

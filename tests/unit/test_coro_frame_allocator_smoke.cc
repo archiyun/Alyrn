@@ -99,6 +99,49 @@ private:
   std::size_t deallocations_{0};
 };
 
+bool TestNestedFrameAllocatorScopesRestoreSelection() {
+  RecordingResource first;
+  RecordingResource second;
+  auto* const original = coropact::coro::FrameAllocatorScope::TryCurrent();
+
+  {
+    coropact::coro::FrameAllocatorScope first_scope{first};
+    if (!Check(coropact::coro::FrameAllocatorScope::TryCurrent() == &first,
+               "outer frame allocator scope should select its resource")) {
+      return false;
+    }
+
+    {
+      coropact::coro::FrameAllocatorScope same_scope{first};
+      if (!Check(coropact::coro::FrameAllocatorScope::TryCurrent() == &first,
+                 "same-resource frame allocator scope should preserve selection")) {
+        return false;
+      }
+    }
+
+    if (!Check(coropact::coro::FrameAllocatorScope::TryCurrent() == &first,
+               "same-resource frame allocator scope should restore outer selection")) {
+      return false;
+    }
+
+    {
+      coropact::coro::FrameAllocatorScope second_scope{second};
+      if (!Check(coropact::coro::FrameAllocatorScope::TryCurrent() == &second,
+                 "nested frame allocator scope should select its resource")) {
+        return false;
+      }
+    }
+
+    if (!Check(coropact::coro::FrameAllocatorScope::TryCurrent() == &first,
+               "nested frame allocator scope should restore outer resource")) {
+      return false;
+    }
+  }
+
+  return Check(coropact::coro::FrameAllocatorScope::TryCurrent() == original,
+               "outer frame allocator scope should restore original resource");
+}
+
 struct alignas(64) OverAlignedBlock {
   std::byte data[64];
 };
@@ -164,6 +207,7 @@ void TestSizeClassReuseAndFallback() {
 int main() {
   if (!TestPackedMetadataRejectsInvalidValues()) return 1;
   TestPackedFrameMetadata();
+  if (!TestNestedFrameAllocatorScopesRestoreSelection()) return 1;
   TestSizeClassReuseAndFallback();
 
   RecordingResource resource;

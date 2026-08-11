@@ -60,6 +60,15 @@ coropact::coro::DetachedTask AcceptOnce(coropact::reactor::ReactorListener* list
   loop->RequestStop();
 }
 
+coropact::coro::DetachedTask AcceptThenAccept(coropact::reactor::ReactorListener* listener,
+                                              coropact::reactor::EventLoop* loop,
+                                              std::optional<AcceptResult>* first,
+                                              std::optional<AcceptResult>* second) {
+  first->emplace(co_await listener->Accept());
+  second->emplace(co_await listener->Accept());
+  loop->RequestStop();
+}
+
 coropact::coro::DetachedTask AcceptSourceTwice(AcceptSource* source,
                                                coropact::reactor::EventLoop* loop,
                                                std::optional<AcceptSourceResult>* first,
@@ -179,6 +188,40 @@ bool CheckPendingAccept() {
 
   return Check(result.has_value(), "pending accept did not finish") &&
          Check(result->has_value(), "pending accept returned error");
+}
+
+bool CheckAcceptReleasesSlotBeforeContinuation() {
+  coropact::reactor::EventLoop loop;
+  coropact::reactor::ReactorListener listener(&loop, coropact::net::Endpoint(0));
+
+  auto listen_addr = listener.LocalAddress();
+  if (!Check(listen_addr.has_value(), "listener local address failed")) {
+    return false;
+  }
+
+  std::optional<AcceptResult> first;
+  std::optional<AcceptResult> second;
+  int first_client = -1;
+  int second_client = -1;
+
+  coropact::coro::SpawnDetach(loop, AcceptThenAccept(&listener, &loop, &first, &second));
+  loop.RunAfter(0.0, [&] {
+    first_client = ConnectNonBlocking(*listen_addr);
+    second_client = ConnectNonBlocking(*listen_addr);
+  });
+  loop.Run();
+
+  if (first_client >= 0) {
+    ::close(first_client);
+  }
+  if (second_client >= 0) {
+    ::close(second_client);
+  }
+
+  return Check(first_client >= 0 && second_client >= 0, "accept test clients failed to connect") &&
+         Check(first.has_value() && first->has_value(), "first pending accept returned error") &&
+         Check(second.has_value() && second->has_value(),
+               "second accept did not reuse the released pending slot");
 }
 
 bool CheckCloseCancelsPendingAccept() {
@@ -333,6 +376,7 @@ bool CheckAcceptSourceStopRejectsForeignLoop() {
 int main() {
   if (!CheckFactories()) return 1;
   if (!CheckPendingAccept()) return 1;
+  if (!CheckAcceptReleasesSlotBeforeContinuation()) return 1;
   if (!CheckCloseCancelsPendingAccept()) return 1;
   if (!CheckCompetingAcceptIsRejected()) return 1;
   if (!CheckAcceptSourceQueueAndStop()) return 1;

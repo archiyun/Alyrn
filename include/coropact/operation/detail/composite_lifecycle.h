@@ -16,9 +16,11 @@ enum class CompositeMember : std::uint8_t {
 // Lifecycle protocol for an operation whose one logical result depends on two
 // independently completing physical members, such as a linked read+timeout.
 //
-// Operation-specific handlers retain member results and decide their business meaning.
-// This core only records each physical member once and authorizes one logical
-// completion and one continuation resume after both are observed.
+// Operation-specific handlers retain member results and decide their business
+// meaning. This core records each physical member once, then independently
+// authorizes one logical result, one release, and one continuation resume.
+// A coupled composite still has distinct authorization points: release must be
+// explicit before the continuation can observe the awaiter's result.
 class CompositeLifecycle {
 public:
   CompositeLifecycle() noexcept = default;
@@ -51,8 +53,16 @@ public:
   }
 
   [[nodiscard]]
-  bool TryAuthorizeContinuation() noexcept {
+  bool TryAuthorizeRelease() noexcept {
     if (!logical_result_.Completed()) {
+      return false;
+    }
+    return release_authorized_.TryComplete();
+  }
+
+  [[nodiscard]]
+  bool TryAuthorizeContinuation() noexcept {
+    if (!release_authorized_.Completed()) {
       return false;
     }
     return continuation_authorized_.TryComplete();
@@ -61,6 +71,7 @@ public:
   [[nodiscard]] bool LogicalResultAuthorized() const noexcept {
     return logical_result_.Completed();
   }
+  [[nodiscard]] bool ReleaseAuthorized() const noexcept { return release_authorized_.Completed(); }
   [[nodiscard]] bool ContinuationAuthorized() const noexcept {
     return continuation_authorized_.Completed();
   }
@@ -77,9 +88,10 @@ private:
   CompletionGate first_member_;
   CompletionGate second_member_;
   CompletionGate logical_result_;
+  CompletionGate release_authorized_;
   CompletionGate continuation_authorized_;
 };
 
-static_assert(sizeof(CompositeLifecycle) == 4);
+static_assert(sizeof(CompositeLifecycle) == 5);
 
 }  // namespace coropact::operation::detail

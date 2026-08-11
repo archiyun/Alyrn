@@ -26,6 +26,17 @@
 | send zerocopy | 1 | primary，primary `F_MORE` 时另有 notification | 1 | primary 无 `F_MORE` 后，或 notification 到达后 |
 | close/cancel | cancel + 原 pending 请求 | 多个 | 1 个 close 结果 | 所有关联请求收敛后 |
 
+`timed read` 属于 coupled composite：read 与 timeout 两个 member 都已收敛后，adapter 先固定
+逻辑结果，再释放 stream 的 read slot，最后才授权 continuation。因而恢复后的协程可以立刻发起下一个
+`ReadSome()`；不能把仍指向旧 awaiter 的 slot 暴露给 continuation。
+
+普通的 coupled single-result stream operation 也遵守同一顺序：`ReadSome`、`ReadInto` 和
+关闭 zerocopy 时 `WriteAll` 内部的一次 send 都在其嵌入的 `LUringOp` 中使用
+`SingleResultLifecycle`。该阶段机
+把 `CQE result ready -> release authorized -> continuation authorized` 编码为三个不可倒退的
+transition；物理 CQE 的重复防护仍由独立的可复用 physical slot 负责。两者都内嵌在现有的
+24B `LUringOp` 中，不引入额外分配或扩大该 operation 的布局。
+
 ## 通用状态序列
 
 ```text
@@ -55,9 +66,9 @@ Idle
 - `F_BUF_MORE`：同一 provided buffer 还有后续 segment，当前 `LUringRecvSource` 公共
   路径尚未承诺该增量语义。
 
-CQE dispatch 必须先把结果写入 operation，再授权 awaiter 恢复。因而 awaiter 在
-`await_resume()` 中观察到缺失的 CQE 结果，表示内部生命周期协议被破坏；这不是可向业务
-伪造为 `EIO` 的普通 I/O 错误，而是运行时不变量失败。
+对于 coupled single-result stream operation，CQE dispatch 必须依次记录结果、跨越其 release
+边界、再授权 awaiter 恢复。因而 awaiter 在 `await_resume()` 中观察到缺失的 CQE 结果，表示
+内部生命周期协议被破坏；这不是可向业务伪造为 `EIO` 的普通 I/O 错误，而是运行时不变量失败。
 
 因此测试不应只断言“收到了一个 CQE”，而应断言最终业务 trace，例如：
 
@@ -117,6 +128,8 @@ storage 或 source state 的释放。
 
 - 成功、负 errno、提交失败三条路径都能结束；
 - 多个 physical completion 只产生一个 logical continuation；
+- single-shot read、single-shot accept 与 timed read 的 continuation 恢复前，对应 reservation
+  已释放，因此 follow-up operation 不会得到 `EBUSY`；
 - operation 完成前资源地址和 ownership 不被复用；
 - loop drain 后 `InflightCount()` 和可观察业务资源都收敛；
 - 失败注入不会把 pending operation 永久留在 ring 中。

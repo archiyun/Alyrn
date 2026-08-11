@@ -189,6 +189,27 @@ coropact::coro::DetachedTask ReadForOnce(coropact::luring::LUringStream* stream,
   out->emplace(std::move(result));
 }
 
+coropact::coro::DetachedTask TimedReadThenRead(
+    coropact::luring::LUringStream* stream, coropact::luring::LUringLoop* loop,
+    std::span<std::byte> timed_buffer, std::span<std::byte> next_buffer,
+    std::optional<coropact::base::Result<std::size_t>>* timed_result,
+    std::optional<coropact::base::Result<std::size_t>>* next_result, bool* resumed_with_scheduler) {
+  timed_result->emplace(co_await stream->ReadSomeFor(timed_buffer, std::chrono::seconds(1)));
+  next_result->emplace(co_await stream->ReadSome(next_buffer));
+  *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == loop;
+}
+
+coropact::coro::DetachedTask ReadThenRead(
+    coropact::luring::LUringStream* stream, coropact::luring::LUringLoop* loop,
+    std::span<std::byte> first_buffer, std::span<std::byte> second_buffer,
+    std::optional<coropact::base::Result<std::size_t>>* first_result,
+    std::optional<coropact::base::Result<std::size_t>>* second_result,
+    bool* resumed_with_scheduler) {
+  first_result->emplace(co_await stream->ReadSome(first_buffer));
+  second_result->emplace(co_await stream->ReadSome(second_buffer));
+  *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == loop;
+}
+
 coropact::coro::DetachedTask WriteOnce(coropact::luring::LUringStream* stream,
                                        coropact::luring::LUringLoop* loop,
                                        std::span<const std::byte> buffer,
@@ -267,6 +288,65 @@ bool CheckReadSome() {
          Check(**result == kPayload.size(), "ReadSome returned wrong byte count") &&
          Check(actual == kPayload, "ReadSome payload mismatch") &&
          Check(resumed_with_scheduler, "read resumed without current scheduler");
+}
+
+bool CheckReadReleasesSlotBeforeContinuation() {
+  coropact::luring::LUringLoop loop;
+  switch (InitLoop(loop)) {
+    case LoopInitStatus::kReady:
+      break;
+    case LoopInitStatus::kSkip:
+      return true;
+    case LoopInitStatus::kFail:
+      return false;
+  }
+
+  UniqueFd local;
+  UniqueFd peer;
+  if (!CreateSocketPair(local, peer)) return false;
+
+  coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  constexpr std::string_view kFirstPayload = "first";
+  constexpr std::string_view kSecondPayload = "second";
+  std::string payload{kFirstPayload};
+  payload.append(kSecondPayload);
+  if (!WriteFd(peer.fd(), payload)) return false;
+
+  std::array<std::byte, kFirstPayload.size()> first_buffer{};
+  std::array<std::byte, kSecondPayload.size()> second_buffer{};
+  std::optional<coropact::base::Result<std::size_t>> first_result;
+  std::optional<coropact::base::Result<std::size_t>> second_result;
+  bool resumed_with_scheduler = false;
+
+  coropact::coro::SpawnDetach(
+      loop, ReadThenRead(&stream, &loop, first_buffer, second_buffer, &first_result, &second_result,
+                         &resumed_with_scheduler));
+  coropact::luring::detail::LoopAccess::RunReady(loop);
+
+  for (int i = 0; i < 8 && !second_result.has_value(); ++i) {
+    auto completions = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
+    if (!completions.has_value()) {
+      std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+      return false;
+    }
+    coropact::luring::detail::LoopAccess::RunReady(loop);
+  }
+
+  const std::string_view first_actual(reinterpret_cast<const char*>(first_buffer.data()),
+                                      kFirstPayload.size());
+  const std::string_view second_actual(reinterpret_cast<const char*>(second_buffer.data()),
+                                       kSecondPayload.size());
+  return Check(first_result.has_value(), "first read did not finish before follow-up read") &&
+         Check(first_result->has_value(), "first read returned an error") &&
+         Check(**first_result == kFirstPayload.size(), "first read returned wrong byte count") &&
+         Check(first_actual == kFirstPayload, "first read payload mismatch") &&
+         Check(second_result.has_value(), "follow-up read did not finish") &&
+         Check(second_result->has_value(),
+               "single-shot read left the stream read slot reserved during continuation") &&
+         Check(**second_result == kSecondPayload.size(), "follow-up read returned wrong byte count") &&
+         Check(second_actual == kSecondPayload, "follow-up read payload mismatch") &&
+         Check(resumed_with_scheduler,
+               "single-shot follow-up read resumed without current scheduler");
 }
 
 bool CheckOwnedReadIntoReturnsBuffer() {
@@ -458,6 +538,65 @@ bool CheckTimedReadTimeoutResumesOnce() {
          Check(result->error().value() == ETIMEDOUT, "timed read did not return ETIMEDOUT") &&
          Check(resume_count == 1, "timed read timeout resumed more than once") &&
          Check(resumed_with_scheduler, "timed read timeout resumed without current scheduler");
+}
+
+bool CheckTimedReadReleasesSlotBeforeContinuation() {
+  coropact::luring::LUringLoop loop;
+  switch (InitLoop(loop)) {
+    case LoopInitStatus::kReady:
+      break;
+    case LoopInitStatus::kSkip:
+      return true;
+    case LoopInitStatus::kFail:
+      return false;
+  }
+
+  UniqueFd local;
+  UniqueFd peer;
+  if (!CreateSocketPair(local, peer)) return false;
+
+  coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  constexpr std::string_view kTimedPayload = "timed";
+  constexpr std::string_view kNextPayload = "next";
+  std::string payload{kTimedPayload};
+  payload.append(kNextPayload);
+  if (!WriteFd(peer.fd(), payload)) return false;
+
+  std::array<std::byte, kTimedPayload.size()> timed_buffer{};
+  std::array<std::byte, kNextPayload.size()> next_buffer{};
+  std::optional<coropact::base::Result<std::size_t>> timed_result;
+  std::optional<coropact::base::Result<std::size_t>> next_result;
+  bool resumed_with_scheduler = false;
+
+  coropact::coro::SpawnDetach(
+      loop, TimedReadThenRead(&stream, &loop, timed_buffer, next_buffer, &timed_result,
+                              &next_result, &resumed_with_scheduler));
+  coropact::luring::detail::LoopAccess::RunReady(loop);
+
+  for (int i = 0; i < 8 && !next_result.has_value(); ++i) {
+    auto completions = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
+    if (!completions.has_value()) {
+      std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+      return false;
+    }
+    coropact::luring::detail::LoopAccess::RunReady(loop);
+  }
+
+  const std::string_view timed_actual(reinterpret_cast<const char*>(timed_buffer.data()),
+                                      kTimedPayload.size());
+  const std::string_view next_actual(reinterpret_cast<const char*>(next_buffer.data()),
+                                     kNextPayload.size());
+  return Check(timed_result.has_value(), "timed read did not finish before follow-up read") &&
+         Check(timed_result->has_value(), "timed read returned an error before follow-up read") &&
+         Check(**timed_result == kTimedPayload.size(), "timed read returned wrong byte count") &&
+         Check(timed_actual == kTimedPayload, "timed read payload mismatch") &&
+         Check(next_result.has_value(), "follow-up read did not finish") &&
+         Check(next_result->has_value(),
+               "timed read left the stream read slot reserved during continuation") &&
+         Check(**next_result == kNextPayload.size(), "follow-up read returned wrong byte count") &&
+         Check(next_actual == kNextPayload, "follow-up read payload mismatch") &&
+         Check(resumed_with_scheduler,
+               "follow-up read continuation resumed without current scheduler");
 }
 
 #if defined(COROPACT_ENABLE_TEST_HOOKS)
@@ -1084,10 +1223,12 @@ bool CheckReadCompletionCancelRaceResumesOnce() {
 
 int main() {
   if (!CheckReadSome()) return 1;
+  if (!CheckReadReleasesSlotBeforeContinuation()) return 1;
   if (!CheckOwnedReadIntoReturnsBuffer()) return 1;
   if (!CheckOwnedReadIntoSpansBufferBlocks()) return 1;
   if (!CheckTimedReadSuccessResumesOnce()) return 1;
   if (!CheckTimedReadTimeoutResumesOnce()) return 1;
+  if (!CheckTimedReadReleasesSlotBeforeContinuation()) return 1;
 #if defined(COROPACT_ENABLE_TEST_HOOKS)
   if (!CheckReadSubmitFailureRollsBack()) return 1;
   if (!CheckOwnedReadSubmitFailureReturnsBuffer()) return 1;

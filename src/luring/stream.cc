@@ -134,6 +134,8 @@ base::Result<std::size_t> LUringStream::ReadSomeAwaiter::await_resume() noexcept
 
 void LUringStream::ReadSomeAwaiter::OnComplete(LUringOp* op) noexcept {
   auto* self = OpHook::OwnerFrom(op);
+  COROPACT_CHECK(op->TryAuthorizeCoupledRelease(),
+                 "LUring ReadSome released its stream slot before result readiness");
   if (self->stream_ != nullptr) {
     detail::StreamOperationSlot::Release(*self->stream_, detail::StreamOperationDirection::kRead,
                                          self);
@@ -189,6 +191,8 @@ net::ReadIntoOutcome LUringStream::ReadIntoAwaiter::await_resume() noexcept {
 
 void LUringStream::ReadIntoAwaiter::OnComplete(LUringOp* op) noexcept {
   auto* self = OpHook::OwnerFrom(op);
+  COROPACT_CHECK(op->TryAuthorizeCoupledRelease(),
+                 "LUring ReadInto released its reservation before result readiness");
   self->FinishReservation(ToSizeResult(op->result));
   if (self->stream_ != nullptr) {
     detail::StreamOperationSlot::Release(*self->stream_, detail::StreamOperationDirection::kRead,
@@ -274,7 +278,7 @@ bool LUringStream::ReadSomeForAwaiter::await_suspend(
 }
 
 base::Result<std::size_t> LUringStream::ReadSomeForAwaiter::await_resume() noexcept {
-  if (!ReadOp()->IsCompleted()) {
+  if (!ReadOp()->CqeCompletionRecorded()) {
     return ToSizeResult(ReadOp()->result);
   }
 
@@ -316,7 +320,7 @@ void LUringStream::ReadSomeForAwaiter::FinishIfReady(LUringOp* current) noexcept
     return;
   }
 
-  if (stream_ != nullptr) {
+  if (lifecycle_.TryAuthorizeRelease() && stream_ != nullptr) {
     detail::StreamOperationSlot::Release(*stream_, detail::StreamOperationDirection::kRead, this);
   }
   if (lifecycle_.TryAuthorizeContinuation()) {
@@ -362,6 +366,8 @@ base::Result<std::size_t> LUringStream::SendAwaiter::await_resume() noexcept {
 
 void LUringStream::SendAwaiter::OnComplete(LUringOp* op) noexcept {
   auto* self = OpHook::OwnerFrom(op);
+  COROPACT_CHECK(op->TryAuthorizeCoupledRelease(),
+                 "LUring send released its stream slot before result readiness");
   if (self->stream_ != nullptr) {
     detail::StreamOperationSlot::Release(*self->stream_, detail::StreamOperationDirection::kWrite,
                                          self);

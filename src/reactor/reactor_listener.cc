@@ -15,6 +15,7 @@
 #include "coropact/net/socket.h"
 #include "coropact/operation/detail/completion_gate.h"
 #include "coropact/operation/detail/scheduler_continuation.h"
+#include "coropact/operation/detail/single_result_lifecycle.h"
 #include "coropact/reactor/detail/loop_access.h"
 #include "coropact/reactor/detail/result_state.h"
 #include "coropact/reactor/listener.h"
@@ -88,13 +89,11 @@ public:
     listener_->RequireOwnerLoop();
     if (listener_->loop_->State() == backend::LoopState::kStopping ||
         listener_->loop_->State() == backend::LoopState::kStopped) {
-      result_.SetError(base::MakeErrno(ECANCELED));
-      (void)(completion_gate_.TryComplete());
+      CompleteInline(std::unexpected(base::MakeErrno(ECANCELED)));
       return false;
     }
     if (listener_->pending_accept_ != nullptr) {
-      result_.SetError(base::MakeErrno(EBUSY));
-      (void)(completion_gate_.TryComplete());
+      CompleteInline(std::unexpected(base::MakeErrno(EBUSY)));
       return false;
     }
 
@@ -102,8 +101,7 @@ public:
 
     base::Result<ReactorStream> result = TryAccept();
     if (result.has_value() || !IsWouldBlock(result.error().value())) {
-      result_.SetResult(std::move(result));
-      (void)(completion_gate_.TryComplete());
+      CompleteInline(std::move(result));
       return false;
     }
 
@@ -116,14 +114,33 @@ public:
 
   base::Result<ReactorStream> await_resume() noexcept { return result_.Take(); }
 
-  void Complete(base::Result<ReactorStream> result) noexcept {
-    if (!completion_gate_.TryComplete()) {
-      return;
-    }
+private:
+  friend class ReactorListener;
+
+  void CompleteInline(base::Result<ReactorStream> result) noexcept {
     result_.SetResult(std::move(result));
-    continuation_.Schedule();
+    COROPACT_CHECK(lifecycle_.TryAuthorizeResult(), "Reactor accept result was authorized twice");
+    COROPACT_CHECK(lifecycle_.TryAuthorizeRelease(),
+                   "Reactor accept release was not authorized after its result");
   }
 
+  [[nodiscard]] bool CompleteResult(base::Result<ReactorStream> result) noexcept {
+    if (!lifecycle_.TryAuthorizeResult()) {
+      return false;
+    }
+    result_.SetResult(std::move(result));
+    return true;
+  }
+
+  [[nodiscard]] bool TryAuthorizeRelease() noexcept { return lifecycle_.TryAuthorizeRelease(); }
+
+  [[nodiscard]] bool TryAuthorizeContinuation() noexcept {
+    return lifecycle_.TryAuthorizeContinuation();
+  }
+
+  void ScheduleContinuation() noexcept { continuation_.Schedule(); }
+
+public:
   void OnReady() noexcept {
     base::Result<ReactorStream> result = TryAccept();
     if (!result.has_value() && IsWouldBlock(result.error().value())) {
@@ -148,7 +165,7 @@ private:
 
   ReactorListener* listener_;
   operation::detail::SchedulerContinuation continuation_;
-  operation::detail::CompletionGate completion_gate_;
+  operation::detail::SingleResultLifecycle lifecycle_;
   detail::ReactorValueResultState<ReactorStream> result_;
 };
 
@@ -685,14 +702,24 @@ void ReactorListener::DispatchError(void* context) noexcept {
 void ReactorListener::CompleteAccept(base::Result<ReactorStream> result) {
   COROPACT_DCHECK(loop_->IsInLoopThread(),
                   "ReactorListener::CompleteAccept called from wrong thread");
-  AcceptAwaiter* awaiter = std::exchange(pending_accept_, nullptr);
+  AcceptAwaiter* awaiter = pending_accept_;
   if (awaiter == nullptr) {
     return;
   }
+  COROPACT_CHECK(awaiter->CompleteResult(std::move(result)),
+                 "ReactorListener::CompleteAccept result was already authorized");
+  COROPACT_CHECK(awaiter->TryAuthorizeRelease(),
+                 "ReactorListener::CompleteAccept release was not authorized after its result");
+
+  AcceptAwaiter* released = std::exchange(pending_accept_, nullptr);
+  COROPACT_CHECK(released == awaiter,
+                 "ReactorListener::CompleteAccept pending slot changed during completion");
   if (channel_.IsReading()) {
     channel_.DisableReading();
   }
-  awaiter->Complete(std::move(result));
+  COROPACT_CHECK(awaiter->TryAuthorizeContinuation(),
+                 "ReactorListener::CompleteAccept continuation was not authorized after release");
+  awaiter->ScheduleContinuation();
 }
 
 void ReactorListener::DetachChannel() {

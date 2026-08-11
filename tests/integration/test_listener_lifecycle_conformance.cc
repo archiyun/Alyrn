@@ -492,6 +492,83 @@ void CloseClients(std::array<int, 4>& clients) noexcept {
   }
 }
 
+template <class Listener>
+struct SequentialAcceptObservation {
+  using AcceptResult = coropact::base::Result<typename Listener::Stream>;
+
+  std::array<int, 4> clients{-1, -1, -1, -1};
+  std::optional<AcceptResult> first;
+  std::optional<AcceptResult> second;
+  bool first_stream_valid{false};
+  bool second_stream_valid{false};
+  bool resumed_with_scheduler{false};
+  bool timed_out{false};
+};
+
+template <class Listener, class Loop>
+auto ObserveSequentialAccept(Listener& listener, Loop& loop,
+                             SequentialAcceptObservation<Listener>& observation)
+    -> coropact::coro::DetachedTask {
+  observation.first.emplace(co_await listener.Accept());
+  observation.first_stream_valid =
+      observation.first->has_value() && observation.first->value().Fd() >= 0;
+  observation.second.emplace(co_await listener.Accept());
+  observation.second_stream_valid =
+      observation.second->has_value() && observation.second->value().Fd() >= 0;
+  observation.resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
+  // RequestStop synchronously asks owner-loop resources to close, so stream
+  // validity must be observed before entering the loop shutdown boundary.
+  loop.RequestStop();
+}
+
+template <class Harness>
+bool CheckAcceptReleaseBeforeContinuationContract() {
+  typename Harness::Loop loop;
+  coropact::base::Result<typename Harness::Listener> listener =
+      std::unexpected(coropact::base::MakeErrno(EINVAL));
+  if (!PrepareLoopAndListener<Harness>(loop, listener)) {
+    return Harness::Skip();
+  }
+
+  auto address = listener->LocalAddress();
+  if (!address.has_value()) {
+    std::cerr << "FAIL [" << Harness::Name()
+              << "]: listener address lookup: " << address.error().message() << '\n';
+    return false;
+  }
+
+  SequentialAcceptObservation<typename Harness::Listener> observation;
+  coropact::coro::SpawnDetach(loop, ObserveSequentialAccept(*listener, loop, observation));
+  if (!Harness::RunAfter(loop, std::chrono::milliseconds(5),
+                         [&] {
+                           observation.clients[0] = ConnectNonBlocking(*address);
+                           observation.clients[1] = ConnectNonBlocking(*address);
+                         }) ||
+      !Harness::RunAfter(loop, std::chrono::milliseconds(500), [&] {
+        observation.timed_out = true;
+        loop.RequestStop();
+      })) {
+    return false;
+  }
+
+  Harness::Run(loop);
+
+  const bool clients_connected = observation.clients[0] >= 0 && observation.clients[1] >= 0;
+  CloseClients(observation.clients);
+  return Expect(!observation.timed_out, Harness::Name(), "sequential Accept timed out") &&
+         Expect(clients_connected, Harness::Name(),
+                "sequential Accept clients failed to connect") &&
+         Expect(observation.first.has_value() && observation.first->has_value() &&
+                    observation.first_stream_valid,
+                Harness::Name(), "first Accept returned an invalid stream") &&
+         Expect(observation.second.has_value() && observation.second->has_value() &&
+                    observation.second_stream_valid,
+                Harness::Name(),
+                "follow-up Accept observed a stale listener reservation instead of a stream") &&
+         Expect(observation.resumed_with_scheduler, Harness::Name(),
+                "sequential Accept lost scheduler affinity");
+}
+
 template <class Source>
 bool IsStreamEvent(const std::optional<typename Source::Result>& result) {
   return result.has_value() && result->has_value() && result->value().has_value();
@@ -705,8 +782,9 @@ bool CheckAcceptSourceStopDrainsBurstContract() {
 template <class Harness>
 bool RunBackendSuite() {
   return CheckPendingAcceptCloseContract<Harness>() && CheckClosedListenerContract<Harness>() &&
-         CheckListenerAfterStopRequestContract<Harness>() && CheckSourceStopContract<Harness>() &&
-         CheckListenerCloseSourceContract<Harness>() &&
+         CheckListenerAfterStopRequestContract<Harness>() &&
+         CheckAcceptReleaseBeforeContinuationContract<Harness>() &&
+         CheckSourceStopContract<Harness>() && CheckListenerCloseSourceContract<Harness>() &&
          CheckAcceptSourceAdmissionTrace<Harness>() &&
          CheckAcceptSourceStopDrainsBurstContract<Harness>();
 }

@@ -161,6 +161,17 @@ target_include_directories(split_release_lifecycle_smoke_test
 
 add_test(NAME split_release_lifecycle_smoke_test COMMAND split_release_lifecycle_smoke_test)
 
+add_executable(single_result_lifecycle_smoke_test
+    unit/test_single_result_lifecycle_smoke.cc
+)
+
+target_include_directories(single_result_lifecycle_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+add_test(NAME single_result_lifecycle_smoke_test COMMAND single_result_lifecycle_smoke_test)
+
 add_executable(memory_pool_smoke_test
     unit/test_memory_pool_smoke.cc
 )

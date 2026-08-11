@@ -9,7 +9,7 @@
 | --- | --- | --- |
 | `ReadSome(span<byte>)` | `Result<size_t>` | 写入 buffer 的 request 完成前不能复用 buffer |
 | `ReadInto(Buffer, reserve)` | `ReadIntoOutcome` | `Buffer` 的 ownership 交给 awaiter，完成后返回给调用方 |
-| `ReadSomeFor(span<byte>, timeout)` | `Result<size_t>` | read 和 timeout 两个物理结果只产生一次业务恢复 |
+| `ReadSomeFor(span<byte>, timeout)` | `Result<size_t>` | read 和 timeout 两个物理结果先收敛并释放 read slot，再只恢复一次 |
 | `WriteAll(span<const byte>)` | `Task<Result<void>>` | 内建短写循环；每轮 send-zc 越过 kernel release boundary 后才可继续使用同一视图 |
 | `Shutdown()` | `Task<Result<void>>` | 写方向 half-close；幂等，保留读方向，拒绝新写入 |
 | `Close()` | `Task<Result<void>>` | 等待关联 pending I/O 收敛后关闭 fd |
@@ -64,6 +64,6 @@ operation 经过正常或取消完成路径，再关闭 fd。这样可以防止 
 
 - 一次 read/write 只恢复一次，即使 loop 一轮处理了多个 CQE；
 - buffer 在 CQE 前保持有效，`ReadInto` 的 ownership 在成功和错误路径都可回收；
-- `ReadSomeFor` 的 read-first、timeout-first 和 submission failure 顺序都收敛；
+- `ReadSomeFor` 的 read-first、timeout-first 和 submission failure 顺序都收敛；恢复后可立即提交下一次 read；
 - `Close()` 与 pending read/write 交错时不 double close、不泄漏 fd；
 - 内部 short send 的部分发送不会被误报成完整发送。
