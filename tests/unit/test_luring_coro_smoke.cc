@@ -121,19 +121,31 @@ coropact::coro::DetachedTask AwaitCompletionQueue(
 }
 
 bool CheckCompletionQueuePrecedesNormalReadyWork() {
-  coropact::luring::LUringLoop loop;
-  coropact::operation::detail::SchedulerContinuation continuation;
+  /* A Work* is non-owning, so anything the loop may still hold at destruction
+   * must outlive it. Declaring these before the loop makes them destroyed
+   * after it, which keeps an early return from leaving the loop's queue
+   * pointing at dead stack. */
   std::string order;
   bool resumed_with_scheduler = false;
+  coropact::operation::detail::SchedulerContinuation continuation;
+  AppendOrderWork normal_work{&order, 'N'};
+
+  coropact::luring::LUringLoop loop;
 
   coropact::coro::SpawnDetach(
       loop, AwaitCompletionQueue(&continuation, &loop, &order, &resumed_with_scheduler));
   coropact::luring::detail::LoopAccess::RunReady(loop);
 
-  AppendOrderWork normal_work{&order, 'N'};
   loop.Schedule(&normal_work);
   coropact::luring::detail::LoopAccess::ScheduleCompletion(loop, continuation);
-  coropact::luring::detail::LoopAccess::RunReady(loop);
+
+  /* RunReady() stops a turn once the wall-clock fairness budget is spent, so
+   * one turn is not guaranteed to drain both queues on a slow or instrumented
+   * build. Ordering is still asserted across turns: the completion queue is
+   * drained ahead of normal ready work within every turn. */
+  for (int turn = 0; turn < 8 && !coropact::luring::detail::LoopAccess::IsDrained(loop); ++turn) {
+    coropact::luring::detail::LoopAccess::RunReady(loop);
+  }
 
   return Check(order == "CN", "completion queue work must precede normal ready work") &&
          Check(resumed_with_scheduler,
