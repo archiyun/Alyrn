@@ -22,7 +22,7 @@
 #include <thread>
 #include <utility>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/coro/detached_task.h"
 #include "coropact/coro/spawn.h"
 #include "coropact/luring/detail/loop_access.h"
@@ -33,8 +33,8 @@
 
 namespace {
 
-using coropact::base::Error;
-using coropact::base::Result;
+using coropact::Error;
+using coropact::Result;
 using coropact::coro::DetachedTask;
 using coropact::luring::LUringLoop;
 using coropact::luring::LUringOptions;
@@ -103,7 +103,7 @@ bool InitLoop(LUringLoop& loop) {
 Result<std::pair<UniqueFd, UniqueFd>> MakeTcpPair() {
   UniqueFd listener(::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0));
   if (listener.Get() < 0) {
-    return std::unexpected(coropact::base::CurrentErrno());
+    return std::unexpected(coropact::CurrentErrno());
   }
 
   int reuse = 1;
@@ -115,28 +115,28 @@ Result<std::pair<UniqueFd, UniqueFd>> MakeTcpPair() {
   address.sin_port = 0;
   if (::bind(listener.Get(), reinterpret_cast<const sockaddr*>(&address), sizeof(address)) < 0 ||
       ::listen(listener.Get(), 1) < 0) {
-    return std::unexpected(coropact::base::CurrentErrno());
+    return std::unexpected(coropact::CurrentErrno());
   }
 
   socklen_t address_length = sizeof(address);
   if (::getsockname(listener.Get(), reinterpret_cast<sockaddr*>(&address), &address_length) < 0) {
-    return std::unexpected(coropact::base::CurrentErrno());
+    return std::unexpected(coropact::CurrentErrno());
   }
 
   UniqueFd client(::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0));
   if (client.Get() < 0 ||
       ::connect(client.Get(), reinterpret_cast<const sockaddr*>(&address), sizeof(address)) < 0) {
-    return std::unexpected(coropact::base::CurrentErrno());
+    return std::unexpected(coropact::CurrentErrno());
   }
 
   UniqueFd server(::accept4(listener.Get(), nullptr, nullptr, SOCK_NONBLOCK | SOCK_CLOEXEC));
   if (server.Get() < 0) {
-    return std::unexpected(coropact::base::CurrentErrno());
+    return std::unexpected(coropact::CurrentErrno());
   }
 
   const int flags = ::fcntl(client.Get(), F_GETFL, 0);
   if (flags < 0 || ::fcntl(client.Get(), F_SETFL, flags | O_NONBLOCK) < 0) {
-    return std::unexpected(coropact::base::CurrentErrno());
+    return std::unexpected(coropact::CurrentErrno());
   }
 
   return std::make_pair(std::move(client), std::move(server));

@@ -11,7 +11,7 @@
 #include <utility>
 
 #include "coropact/backend/detail/value_result_state.h"
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/reactor/detail/result_state.h"
 
 namespace {
@@ -62,7 +62,7 @@ bool TestIoStateTakeConsumesResult() {
             Expect(*success == 42, "packed success must preserve byte count") &&
             Expect(!state.HasResult(), "packed Take must restore pending state");
 
-  state.SetError(coropact::base::MakeErrno(EPIPE));
+  state.SetError(coropact::Errno(EPIPE));
   auto error = state.Take();
   ok &= Expect(!error.has_value(), "packed errno must decode as an error") &&
         Expect(error.error().value() == EPIPE, "packed errno must preserve its value") &&
@@ -107,7 +107,7 @@ bool TestValueStateTakeDestroysActiveMember() {
   LifetimeProbe::live_count = 0;
   State state;
   {
-    coropact::base::Result<LifetimeProbe> input(std::in_place, 7);
+    coropact::Result<LifetimeProbe> input(std::in_place, 7);
     state.SetResult(std::move(input));
   }
 
@@ -129,13 +129,13 @@ bool TestValueStateTakeDestroysActiveMember() {
 bool TestValueStateErrorCanBeReused() {
   coropact::backend::detail::ValueResultState<LifetimeProbe> state;
 
-  state.SetError(coropact::base::MakeErrno(ECANCELED));
+  state.SetError(coropact::Errno(ECANCELED));
   auto error = state.Take();
   bool ok = Expect(!error.has_value(), "value state error must decode") &&
             Expect(error.error().value() == ECANCELED, "value state error must preserve errno") &&
             Expect(!state.HasResult(), "value error Take must restore pending state");
 
-  coropact::base::Result<LifetimeProbe> next(std::in_place, 9);
+  coropact::Result<LifetimeProbe> next(std::in_place, 9);
   state.SetResult(std::move(next));
   auto value = state.Take();
   return ok && Expect(value.has_value(), "value state must be reusable after error Take") &&

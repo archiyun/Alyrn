@@ -14,17 +14,19 @@
 #include "coropact/base/check.h"
 #include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/loop.h"
-#include "coropact/time/timestamp.h"
+#include "coropact/time/clock.h"
 
 namespace coropact::luring::detail {
 
 namespace {
 
-__kernel_timespec ToKernelTimespec(time::Timestamp timestamp) noexcept {
-  const auto micros = timestamp.MicrosecondsSinceEpoch();
+__kernel_timespec ToKernelTimespec(time::Deadline deadline) noexcept {
+  const auto elapsed = deadline.time_since_epoch();
+  const auto nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count();
+  const auto clamped = std::max<std::int64_t>(0, nanoseconds);
   return __kernel_timespec{
-      .tv_sec = static_cast<__kernel_time64_t>(micros / 1'000'000),
-      .tv_nsec = static_cast<long>(micros % 1'000'000) * 1'000,
+      .tv_sec = static_cast<__kernel_time64_t>(clamped / 1'000'000'000),
+      .tv_nsec = static_cast<long>(clamped % 1'000'000'000),
   };
 }
 
@@ -36,31 +38,25 @@ LUringTimerQueue::~LUringTimerQueue() noexcept {
   COROPACT_CHECK(active_.empty(), "LUringTimerQueue retained owned timers");
 }
 
-base::Result<time::TimerId> LUringTimerQueue::AddAfter(std::chrono::steady_clock::duration delay,
+Result<time::TimerId> LUringTimerQueue::AddAfter(time::Duration delay,
                                                        TimerCallback callback) {
-  const auto now = time::Timestamp::Now();
-  const auto seconds = std::chrono::duration<double>(delay).count();
-  return AddTimer(std::move(callback), time::AddTime(now, std::max(0.0, seconds)));
+  return AddTimer(std::move(callback), time::SteadyNow() + std::max(delay, time::Duration::zero()));
 }
 
-base::Result<time::TimerId> LUringTimerQueue::AddTimer(TimerCallback callback,
-                                                       time::Timestamp when) {
+Result<time::TimerId> LUringTimerQueue::AddTimer(TimerCallback callback,
+                                                       time::Deadline deadline) {
   COROPACT_CHECK(loop_ != nullptr, "LUringTimerQueue has no owner loop");
   COROPACT_CHECK(loop_->IsInLoopThread(), "LUringTimerQueue::AddTimer called from wrong thread");
 
-  if (!when.Valid()) {
-    return std::unexpected(base::MakeErrno(EINVAL));
-  }
-
-  auto timer = std::make_unique<time::Timer>(std::move(callback), when, 0.0);
+  auto timer = std::make_unique<time::Timer>(std::move(callback), deadline, time::Duration::zero());
   const time::TimerId id{timer->sequence()};
   auto [it, inserted] = active_.emplace(id.sequence, std::move(timer));
   if (!inserted) {
-    return std::unexpected(base::MakeErrno(EEXIST));
+    return std::unexpected(Errno(EEXIST));
   }
   if (!timers_.Insert(it->second.get())) {
     active_.erase(it);
-    return std::unexpected(base::MakeErrno(EEXIST));
+    return std::unexpected(Errno(EEXIST));
   }
 
   auto reconciled = Reconcile();
@@ -73,13 +69,13 @@ base::Result<time::TimerId> LUringTimerQueue::AddTimer(TimerCallback callback,
   return id;
 }
 
-base::Result<void> LUringTimerQueue::Cancel(time::TimerId id) noexcept {
+Result<void> LUringTimerQueue::Cancel(time::TimerId id) noexcept {
   COROPACT_CHECK(loop_ != nullptr, "LUringTimerQueue has no owner loop");
   COROPACT_CHECK(loop_->IsInLoopThread(), "LUringTimerQueue::Cancel called from wrong thread");
 
   auto it = active_.find(id.sequence);
   if (it == active_.end()) {
-    return std::unexpected(base::MakeErrno(ENOENT));
+    return std::unexpected(Errno(ENOENT));
   }
 
   COROPACT_CHECK(timers_.Erase(it->second.get()),
@@ -106,8 +102,8 @@ void LUringTimerQueue::DiscardAll() noexcept {
   control_pending_ = false;
   control_is_fallback_ = false;
   fallback_armed_ = false;
-  driver_deadline_ = time::Timestamp::Invalid();
-  requested_deadline_ = time::Timestamp::Invalid();
+  driver_deadline_ = {};
+  requested_deadline_ = {};
 }
 
 void LUringTimerQueue::OnDriverComplete(LUringOp* op) noexcept {
@@ -124,20 +120,31 @@ void DispatchTimerControlComplete(LUringOp* op) noexcept {
   LUringTimerQueue::OnControlComplete(op);
 }
 
-void LUringTimerQueue::HandleDriverComplete(LUringOp*) noexcept {
+void LUringTimerQueue::HandleDriverComplete(LUringOp* op) noexcept {
+  COROPACT_CHECK(op->result.HasValue(), "timer driver CQE has no result");
+  const bool expired = *op->result == -ETIME;
   driver_armed_ = false;
-  driver_deadline_ = time::Timestamp::Invalid();
-  ProcessExpired();
+  driver_deadline_ = {};
+  // A timeout update may first terminate the prior physical request with
+  // ECANCELED. That CQE only closes the old driver request; it must not be
+  // interpreted as a logical timer expiry. Reconcile() then arms the earliest
+  // remaining Deadline as a fresh physical request.
+  if (expired) {
+    ProcessExpired();
+  }
   ReconcileOrStop();
 }
 
 void LUringTimerQueue::HandleControlComplete(LUringOp* op) noexcept {
+  COROPACT_CHECK(op->result.HasValue(), "timer control CQE has no result");
   control_pending_ = false;
 
   if (control_is_fallback_) {
     control_is_fallback_ = false;
     fallback_armed_ = false;
-    ProcessExpired();
+    if (*op->result == -ETIME) {
+      ProcessExpired();
+    }
     ReconcileOrStop();
     return;
   }
@@ -154,7 +161,7 @@ void LUringTimerQueue::HandleControlComplete(LUringOp* op) noexcept {
 }
 
 void LUringTimerQueue::ProcessExpired() noexcept {
-  const auto now = time::Timestamp::Now();
+  const auto now = time::SteadyNow();
   timers_.PopWhile([now](const time::Timer* timer) { return timer->expiration() <= now; },
                    [this](time::Timer* timer) noexcept {
                      const auto id = timer->sequence();
@@ -174,7 +181,7 @@ void LUringTimerQueue::ReconcileOrStop() noexcept {
   }
 }
 
-base::Result<void> LUringTimerQueue::Reconcile() noexcept {
+Result<void> LUringTimerQueue::Reconcile() noexcept {
   if (control_pending_) return {};
 
   auto* earliest = timers_.Earliest();
@@ -194,12 +201,12 @@ base::Result<void> LUringTimerQueue::Reconcile() noexcept {
   return {};
 }
 
-base::Result<void> LUringTimerQueue::Arm(time::Timestamp deadline) noexcept {
+Result<void> LUringTimerQueue::Arm(time::Deadline deadline) noexcept {
   driver_timespec_ = ToKernelTimespec(deadline);
   DriverOp()->BeginNextRequest();
 
   auto result = LoopAccess::SubmitOp(*loop_, DriverOp(), [this](io_uring_sqe* sqe) noexcept {
-    io_uring_prep_timeout(sqe, &driver_timespec_, 0, IORING_TIMEOUT_ABS | IORING_TIMEOUT_REALTIME);
+    io_uring_prep_timeout(sqe, &driver_timespec_, 0, IORING_TIMEOUT_ABS);
   });
   if (!result.has_value()) return std::unexpected(result.error());
 
@@ -208,14 +215,13 @@ base::Result<void> LUringTimerQueue::Arm(time::Timestamp deadline) noexcept {
   return {};
 }
 
-base::Result<void> LUringTimerQueue::ArmFallback(time::Timestamp deadline) noexcept {
+Result<void> LUringTimerQueue::ArmFallback(time::Deadline deadline) noexcept {
   fallback_timespec_ = ToKernelTimespec(deadline);
   ControlOp()->BeginNextRequest();
   control_is_fallback_ = true;
 
   auto result = LoopAccess::SubmitOp(*loop_, ControlOp(), [this](io_uring_sqe* sqe) noexcept {
-    io_uring_prep_timeout(sqe, &fallback_timespec_, 0,
-                          IORING_TIMEOUT_ABS | IORING_TIMEOUT_REALTIME);
+    io_uring_prep_timeout(sqe, &fallback_timespec_, 0, IORING_TIMEOUT_ABS);
   });
   if (result.has_value()) {
     control_pending_ = true;
@@ -227,7 +233,7 @@ base::Result<void> LUringTimerQueue::ArmFallback(time::Timestamp deadline) noexc
   return {};
 }
 
-base::Result<void> LUringTimerQueue::Update(time::Timestamp deadline) noexcept {
+Result<void> LUringTimerQueue::Update(time::Deadline deadline) noexcept {
   update_timespec_ = ToKernelTimespec(deadline);
   requested_deadline_ = deadline;
   ControlOp()->BeginNextRequest();
@@ -235,11 +241,10 @@ base::Result<void> LUringTimerQueue::Update(time::Timestamp deadline) noexcept {
 
   auto result = LoopAccess::SubmitOp(*loop_, ControlOp(), [this](io_uring_sqe* sqe) noexcept {
     io_uring_prep_timeout_update(sqe, &update_timespec_,
-                                 reinterpret_cast<std::uint64_t>(DriverOp()),
-                                 IORING_TIMEOUT_ABS | IORING_TIMEOUT_REALTIME);
+                                 reinterpret_cast<std::uint64_t>(DriverOp()), IORING_TIMEOUT_ABS);
   });
   if (!result.has_value()) {
-    requested_deadline_ = time::Timestamp::Invalid();
+    requested_deadline_ = {};
     return std::unexpected(result.error());
   }
   control_pending_ = true;

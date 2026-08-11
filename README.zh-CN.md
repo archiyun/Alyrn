@@ -54,9 +54,9 @@ CoroPact 使用[生命周期精化协程 I/O（LRCI）](docs/design/zh-CN/networ
 namespace cp = coropact;
 
 template <cp::io::AsyncStream Stream>
-auto EchoSession(Stream stream) -> cp::coro::Task<cp::base::Result<void>> {
+auto EchoSession(Stream stream) -> cp::coro::Task<cp::Result<void>> {
   std::array<std::byte, 4096> buffer{};
-  cp::base::Result<void> session_result{};
+  cp::Result<void> session_result{};
 
   for (;;) {
     auto read = co_await stream.ReadSome(buffer);
@@ -184,9 +184,12 @@ ctest --test-dir build-uring --output-on-failure
 
 ### 环境要求
 
-* Linux；CMake 3.20+；支持 C++23 coroutine 的编译器。
-* 默认 Reactor 构建不依赖额外网络库。
-* luring 构建需要 `liburing >= 2.6`，并建议使用 Linux 5.19 或更新内核。
+* CMake 3.20+；支持 C++23 coroutine 的编译器。
+* 当前可运行的后端仍限 Linux：Reactor 使用 `epoll`；luring 需要
+  `liburing >= 2.6`，并建议使用 Linux 5.19 或更新内核。
+* `net` 与后端无关契约只使用可移植的 POSIX socket 设施。BSD 原生
+  readiness backend 正作为平行 adapter 接入，不能在 epoll Reactor 内加入条件分支。
+* 默认 Linux Reactor 构建不依赖额外网络库。
 
 ## 架构
 

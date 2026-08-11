@@ -10,7 +10,7 @@
 #include <limits>
 #include <utility>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::luring::detail {
@@ -46,13 +46,13 @@ public:
   }
 
   [[nodiscard]]
-  static base::Result<ProvidedBufferStorage> Create(
+  static Result<ProvidedBufferStorage> Create(
       std::size_t capacity, std::size_t buffer_size) noexcept {
     if (capacity == 0 || buffer_size == 0) {
-      return std::unexpected(base::MakeErrno(EINVAL));
+      return std::unexpected(Errno(EINVAL));
     }
     if (capacity > (std::numeric_limits<std::size_t>::max() / buffer_size)) {
-      return std::unexpected(base::MakeErrno(EOVERFLOW));
+      return std::unexpected(Errno(EOVERFLOW));
     }
     ProvidedBufferStorage storage;
     storage.capacity_ = capacity;
@@ -62,7 +62,7 @@ public:
     void* mapped = ::mmap(nullptr, storage.size_bytes_, PROT_READ | PROT_WRITE,
                           MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (mapped == MAP_FAILED) [[unlikely]] {
-      return std::unexpected(base::CurrentErrno());
+      return std::unexpected(CurrentErrno());
     }
     storage.mapped_ = static_cast<std::byte*>(mapped);
     return storage;

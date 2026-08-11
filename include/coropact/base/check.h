@@ -8,7 +8,7 @@
 
 // Checks a non-recoverable program invariant in every build configuration.
 // Recoverable failures from input, resource exhaustion, or system calls should
-// be returned through coropact::base::Result instead.
+// be returned through coropact::Result instead.
 #define COROPACT_CHECK(condition, message)                                               \
   do {                                                                               \
     if (!(condition)) [[unlikely]] {                                                 \

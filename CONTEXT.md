@@ -1,9 +1,9 @@
 # CoroPact Context
 
 CoroPact is a C++23 coroutine networking runtime. It owns coroutine
-execution, backend-neutral transport contracts, an epoll Reactor backend, and
-an io_uring backend. HTTP parsing, routing, proxying, and gateway policy belong
-to [CoroGateway](https://github.com/archiyun/CoroGateway).
+execution, backend-neutral transport contracts, a Linux epoll Reactor backend,
+and a Linux io_uring backend. HTTP parsing, routing, proxying, and gateway
+policy belong to [CoroGateway](https://github.com/archiyun/CoroGateway).
 
 `docs/SUBSYSTEMS.md` is the normative dependency policy. Read it before
 changing module boundaries.
@@ -70,11 +70,13 @@ _Avoid_: wrapper, event conversion
   logical result; split-release families separately authorize result, release,
   and continuation.
 - `backend/detail` holds backend-neutral awaiter result storage. It may retain
-  a `base::Result<T>` across suspension, but it must not authorize result
+  a `Result<T>` across suspension, but it must not authorize result
   readiness, continuation resumption, release, or any transport protocol.
-- `net`: header-only `Socket`, `Endpoint`, and buffers are backend-shared
-  network values. `net/detail` holds backend-neutral stream/source lifecycle
-  accounting and is not an application seam.
+- `net`: header-only POSIX `Socket`, `Endpoint`, and buffers are
+  backend-shared network values. It may use portable POSIX socket and `fcntl`
+  operations, but must not depend on Linux-only facilities or a concrete
+  readiness/completion backend. `net/detail` holds backend-neutral
+  stream/source lifecycle accounting and is not an application seam.
 - `Runtime`: the backend-neutral application composition root. Applications
   select a backend with `Runtime::Builder<runtime::Reactor>` or
   `Runtime::Builder<runtime::LUring>`; `Runtime::Create<Backend>` is the
@@ -88,14 +90,16 @@ _Avoid_: wrapper, event conversion
   backend-neutral stream, listener, buffer, receive-source, and algorithm
   contracts; connector and concrete backend headers are included explicitly by
   composition roots.
-- `reactor` and `luring` are parallel backend adapters. Do not make either
-  backend depend on the `io` facade or on CoroGateway.
+- `reactor` and `luring` are parallel Linux backend adapters. Do not make
+  either backend depend on the `io` facade or on CoroGateway. A BSD kqueue
+  backend is a third parallel adapter: it must refine the same contracts, not
+  become a preprocessor branch inside `reactor`.
 
 The Reactor public interface is `EventLoop` plus stream, listener, connector,
 receive-source, and option adapters. Its `Runtime::Builder<runtime::Reactor>`
 binding configures the common composition root; `reactor/detail` contains the
-epoll poller, channel registration, timer queue, and multi-worker bootstrap
-machinery; applications must not depend on those types.
+Linux epoll poller, channel registration, timer queue, and multi-worker
+bootstrap machinery; applications must not depend on those types.
 
 The luring public interface is `LUringLoop` plus stream, listener, connector,
 receive-source, timer, and option adapters. Its

@@ -7,7 +7,7 @@
 #include <limits>
 #include <utility>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/luring/detail/provided_buffer_storage.h"
 
 namespace {

@@ -13,7 +13,7 @@
 #include "coropact/backend/accept_source.h"
 #include "coropact/backend/async_listener.h"
 #include "coropact/backend/detail/value_result_state.h"
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/coro/task.h"
 #include "coropact/luring/detail/completion_dispatch.h"
 #include "coropact/luring/detail/op.h"
@@ -55,7 +55,7 @@ public:
 
   using Stream = LUringStream;
   using Event = std::optional<Stream>;
-  using Result = base::Result<Event>;
+  using NextResult = coropact::Result<Event>;
 
   // Direct awaiter for the single-consumer accept loop. It preserves the
   // source's multishot/one-shot physical implementation while avoiding a
@@ -71,9 +71,9 @@ public:
 
     bool await_suspend(std::coroutine_handle<> continuation) noexcept;
 
-    Result await_resume() noexcept;
+    NextResult await_resume() noexcept;
 
-    void Complete(Result result) noexcept;
+    void Complete(NextResult result) noexcept;
 
   private:
     LUringAcceptSource* source_;
@@ -91,7 +91,7 @@ public:
   NextAwaiter Next() noexcept {
     return NextAwaiter(*this);
   }
-  coro::Task<base::Result<void>> Stop();
+  coro::Task<Result<void>> Stop();
 
 private:
   class StopAwaiter;
@@ -140,21 +140,21 @@ private:
                      net::detail::AcceptSourceStateMachine state) noexcept;
 
   [[nodiscard]]
-  base::Result<void> Start() noexcept;
+  Result<void> Start() noexcept;
 
   [[nodiscard]]
-  base::Result<void> StartOperation() noexcept;
+  Result<void> StartOperation() noexcept;
 
   [[nodiscard]]
-  base::Result<void> StartCancel() noexcept;
+  Result<void> StartCancel() noexcept;
 
   [[nodiscard]]
-  base::Result<bool> BeginStop() noexcept;
+  Result<bool> BeginStop() noexcept;
 
   void EnsureSubmission() noexcept;
   void MaybeResume() noexcept;
   void RequestBackendPause() noexcept;
-  void RequestBackendStop(std::optional<base::Error> error = std::nullopt) noexcept;
+  void RequestBackendStop(std::optional<Error> error = std::nullopt) noexcept;
 
   detail::CompletionDisposition OnCompletion(detail::CompletionEvent event) noexcept;
   void OnCancelComplete(int cqe_res) noexcept;
@@ -162,16 +162,16 @@ private:
 
   void DeliverNextIfReady() noexcept;
   void CompleteStopIfReady() noexcept;
-  bool TryTakeNext(Result& result) noexcept;
+  bool TryTakeNext(NextResult& result) noexcept;
   void ReleaseListenerReservation() noexcept;
 
   [[nodiscard]]
-  base::Result<LUringStream> MakeStream(int accepted_fd) noexcept;
+  Result<LUringStream> MakeStream(int accepted_fd) noexcept;
 
   LUringListener* listener_{nullptr};
   net::detail::AcceptSourceStateMachine state_;
   std::deque<LUringStream> events_;
-  std::optional<base::Error> terminal_error_;
+  std::optional<Error> terminal_error_;
 
   NextAwaiter* pending_next_{nullptr};
   StopAwaiter* pending_stop_{nullptr};
@@ -200,7 +200,7 @@ public:
 
   using Stream = LUringStream;
 
-  static base::Result<LUringListener> Create(LUringLoop* loop, const net::Endpoint& listen_addr,
+  static Result<LUringListener> Create(LUringLoop* loop, const net::Endpoint& listen_addr,
                                              LUringListenOptions options = {}) noexcept;
 
   ~LUringListener();
@@ -211,15 +211,15 @@ public:
   // Accept, Close, and AcceptSource are loop-affine. Their coroutine or
   // factory call must execute on this listener's owner LUringLoop; a foreign
   // thread is a runtime-contract violation checked in every build.
-  coro::Task<base::Result<LUringStream>> Accept();
+  coro::Task<Result<LUringStream>> Accept();
 
   [[nodiscard]]
-  base::Result<LUringAcceptSource> AcceptSource(net::AcceptSourceOptions options = {}) noexcept;
+  Result<LUringAcceptSource> AcceptSource(net::AcceptSourceOptions options = {}) noexcept;
 
-  coro::Task<base::Result<void>> Close();
+  coro::Task<Result<void>> Close();
 
   [[nodiscard]]
-  base::Result<net::Endpoint> LocalAddress() const noexcept;
+  Result<net::Endpoint> LocalAddress() const noexcept;
 
   [[nodiscard]]
   int Fd() const noexcept {

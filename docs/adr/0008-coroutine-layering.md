@@ -29,8 +29,8 @@ scheduler or I/O backend.
   It is move-only, can only be awaited as an rvalue, and transfers ownership of
   its frame to the awaiter.
 - `Task<T>` transports exactly `T`; it does not automatically wrap values in
-  `base::Result`.
-- Fallible operations explicitly return `Task<base::Result<T>>`. The runtime
+  `Result`.
+- Fallible operations explicitly return `Task<Result<T>>`. The runtime
   uses the value-based error model rather than exceptions for ordinary business
   and I/O failures.
 - `coro::Spawn` accepts a scheduler and a `Task<T>`, returning a

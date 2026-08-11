@@ -18,7 +18,10 @@ struct TimerId {
 
   int64_t sequence{kInvalid};
 
-  bool Valid() const { return sequence != kInvalid; }
+  [[nodiscard]]
+  bool Valid() const {
+    return sequence != kInvalid;
+  }
 };
 
 }  // namespace coropact::time

@@ -2,15 +2,15 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include <chrono>
 #include <coroutine>
 
 #include "coropact/base/check.h"
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/coro/work.h"
 #include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/detail/result_state.h"
 #include "coropact/luring/loop.h"
+#include "coropact/time/clock.h"
 
 namespace coropact::luring {
 
@@ -19,18 +19,17 @@ namespace coropact::luring {
 // suspended, the awaiter must remain alive just like other CoroPact awaiters.
 class SleepAwaiter final {
 public:
-  SleepAwaiter(LUringLoop& loop, std::chrono::steady_clock::duration delay) noexcept
-      : loop_(&loop), delay_(delay) {}
+  SleepAwaiter(LUringLoop& loop, time::Duration delay) noexcept : loop_(&loop), delay_(delay) {}
 
   [[nodiscard]]
   bool await_ready() const noexcept {
-    return delay_ <= std::chrono::steady_clock::duration::zero();
+    return delay_ <= time::Duration::zero();
   }
 
   [[nodiscard]]
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
 
-  base::Result<void> await_resume() noexcept {
+  Result<void> await_resume() noexcept {
     if (!result_.IsImmediate()) {
       return {};
     }
@@ -39,7 +38,7 @@ public:
 
 private:
   LUringLoop* loop_;
-  std::chrono::steady_clock::duration delay_;
+  time::Duration delay_;
   detail::LUringResultState<void> result_;
   coro::ResumeWork resume_work_{};
 };
@@ -49,9 +48,8 @@ inline bool SleepAwaiter::await_suspend(std::coroutine_handle<> continuation) no
   COROPACT_CHECK(loop_->IsInLoopThread(),
                  "LUring sleep operation called from wrong LUringLoop thread");
   resume_work_.SetHandle(continuation);
-  auto timer = loop_->RunAfter(delay_, [this]() noexcept {
-    detail::LoopAccess::ScheduleCompletion(*loop_, &resume_work_);
-  });
+  auto timer = loop_->RunAfter(
+      delay_, [this]() noexcept { detail::LoopAccess::ScheduleCompletion(*loop_, &resume_work_); });
   if (!timer.has_value()) {
     result_.SetError(timer.error());
     return false;
@@ -59,7 +57,7 @@ inline bool SleepAwaiter::await_suspend(std::coroutine_handle<> continuation) no
   return true;
 }
 
-inline SleepAwaiter SleepFor(LUringLoop& loop, std::chrono::steady_clock::duration delay) noexcept {
+inline SleepAwaiter SleepFor(LUringLoop& loop, time::Duration delay) noexcept {
   return SleepAwaiter{loop, delay};
 }
 

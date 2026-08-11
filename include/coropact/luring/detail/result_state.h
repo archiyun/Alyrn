@@ -7,7 +7,7 @@
 #include <limits>
 
 #include "coropact/base/check.h"
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 
 namespace coropact::luring::detail {
 
@@ -31,7 +31,7 @@ public:
     encoded_ = 0;
   }
 
-  void SetError(base::Error error) noexcept {
+  void SetError(Error error) noexcept {
     COROPACT_CHECK(!IsImmediate(), "LUringResultStorage result was set twice");
     COROPACT_CHECK(error.value() > 0 && error.value() != kPending,
                    "LUringResultStorage cannot encode this error");
@@ -39,7 +39,7 @@ public:
   }
 
   template <typename T>
-  void SetResult(const base::Result<T>& result) noexcept {
+  void SetResult(const Result<T>& result) noexcept {
     if (result.has_value()) {
       SetSuccess();
     } else {
@@ -69,12 +69,12 @@ public:
   using LUringResultStorage::SetSuccess;
 
   [[nodiscard]]
-  base::Result<void> Take() const noexcept {
+  Result<void> Take() const noexcept {
     COROPACT_CHECK(IsImmediate(), "LUringResultState result was taken before completion");
     if (Encoded() == 0) {
       return {};
     }
-    return std::unexpected(base::MakeErrno(Encoded()));
+    return std::unexpected(Errno(Encoded()));
   }
 };
 

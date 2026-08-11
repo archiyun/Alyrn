@@ -1,20 +1,21 @@
 #include <cerrno>
+#include <cstdint>
 #include <iostream>
 #include <memory>
 #include <system_error>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/base/try.h"
 #include "coropact/coro/sync_wait.h"
 #include "coropact/coro/task.h"
 
 namespace {
 
-using coropact::base::Error;
-using coropact::base::Result;
+using coropact::Error;
+using coropact::Result;
 
 Result<int> ReadValue(bool fail) {
-  if (fail) return std::unexpected(coropact::base::MakeErrno(EINVAL));
+  if (fail) return std::unexpected(coropact::Errno(EINVAL));
   return 41;
 }
 
@@ -25,7 +26,7 @@ Result<int> AddValues(bool fail) {
 }
 
 Result<std::unique_ptr<int>> ReadMoveOnlyValue(bool fail) {
-  if (fail) return std::unexpected(coropact::base::MakeErrno(EINVAL));
+  if (fail) return std::unexpected(coropact::Errno(EINVAL));
   return std::make_unique<int>(99);
 }
 
@@ -35,7 +36,7 @@ Result<int> TakeMoveOnlyValue(bool fail) {
 }
 
 Result<void> Validate(bool fail) {
-  if (fail) return std::unexpected(coropact::base::MakeErrno(EINVAL));
+  if (fail) return std::unexpected(coropact::Errno(EINVAL));
   return {};
 }
 
@@ -44,9 +45,23 @@ Result<void> PropagateVoid(bool fail) {
   return {};
 }
 
+enum class ParseError : std::uint8_t {
+  kInvalidInput,
+};
+
+Result<int, ParseError> ParseNumber(bool fail) {
+  if (fail) return std::unexpected(ParseError::kInvalidInput);
+  return 41;
+}
+
+Result<int, ParseError> IncrementParsedNumber(bool fail) {
+  COROPACT_TRY_VALUE(value, ParseNumber(fail));
+  return value + 1;
+}
+
 coropact::coro::Task<Result<int>> ReadValueAsync(bool fail) {
   if (fail) {
-    co_return std::unexpected(coropact::base::MakeErrno(EINVAL));
+    co_return std::unexpected(coropact::Errno(EINVAL));
   }
   co_return 1;
 }
@@ -77,6 +92,13 @@ bool TestTryPropagatesVoidError() {
   return !result.has_value() && result.error() == Error(EINVAL, std::system_category());
 }
 
+bool TestCustomErrorType() {
+  const auto success = IncrementParsedNumber(false);
+  const auto failure = IncrementParsedNumber(true);
+  return success.has_value() && *success == 42 && !failure.has_value() &&
+         failure.error() == ParseError::kInvalidInput;
+}
+
 bool TestCoTryReturnsValue() {
   const auto result = coropact::coro::SyncWait(AddValuesAsync(false));
   return result.has_value() && *result == 2;
@@ -104,6 +126,10 @@ int main() {
   }
   if (!TestTryPropagatesVoidError()) {
     std::cerr << "[FAIL] COROPACT_TRY should propagate a void expected error\n";
+    return 1;
+  }
+  if (!TestCustomErrorType()) {
+    std::cerr << "[FAIL] Result should preserve a custom error type\n";
     return 1;
   }
   if (!TestCoTryReturnsValue()) {

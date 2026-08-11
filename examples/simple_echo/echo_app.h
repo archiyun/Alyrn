@@ -13,6 +13,7 @@
 
 namespace simple_echo {
 
+using coropact::Result;
 using namespace coropact::base;
 using namespace coropact::io;
 using namespace coropact::coro;

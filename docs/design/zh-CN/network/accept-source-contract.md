@@ -7,7 +7,7 @@
 现有的：
 
 ```cpp
-coro::Task<base::Result<Stream>> Accept();
+coro::Task<Result<Stream>> Accept();
 ```
 
 仍然保留，表示一次 single-shot accept。`AcceptSource` 是独立的扩展接口，不改变
@@ -25,11 +25,11 @@ concept AsyncAcceptSource = requires(Source& source) {
   requires coro::Awaitable<decltype(source.Next())>;
   requires std::same_as<
       coro::AwaitResult<decltype(source.Next())>,
-      base::Result<std::optional<typename Source::Stream>>>;
+      Result<std::optional<typename Source::Stream>>>;
 
   {
     source.Stop()
-  } -> std::same_as<coro::Task<base::Result<void>>>;
+  } -> std::same_as<coro::Task<Result<void>>>;
 };
 ```
 

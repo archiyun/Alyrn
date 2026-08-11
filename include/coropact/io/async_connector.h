@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <string_view>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/coro/task.h"
 #include "coropact/io/async_stream.h"
 
@@ -21,7 +21,7 @@ template <class T>
 concept AsyncConnector = requires(T& connector, std::string_view host, std::uint16_t port) {
   typename T::Stream;
   requires AsyncStream<typename T::Stream>;
-  { connector.Connect(host, port) } -> std::same_as<coro::Task<base::Result<typename T::Stream>>>;
+  { connector.Connect(host, port) } -> std::same_as<coro::Task<Result<typename T::Stream>>>;
 };
 
 }  // namespace coropact::io

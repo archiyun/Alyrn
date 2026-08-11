@@ -17,7 +17,6 @@
 #include "coropact/backend/loop.h"
 #include "coropact/base/check.h"
 #include "coropact/base/current_thread.h"
-#include "coropact/base/error.h"
 #include "coropact/base/try.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/work.h"
@@ -26,6 +25,7 @@
 #include "coropact/luring/detail/ring.h"
 #include "coropact/luring/detail/timer_queue.h"
 #include "coropact/luring/options.h"
+#include "coropact/result.h"
 #include "coropact/time/timer_id.h"
 
 namespace coropact::luring {
@@ -54,7 +54,7 @@ public:
   // Initializes the underlying io_uring instance.
   // Must be called from the loop thread before Run().
   [[nodiscard]]
-  base::Result<void> Init(const LUringOptions& options) noexcept;
+  Result<void> Init(const LUringOptions& options) noexcept;
 
   // The caller must drain user operation work before destruction. The
   // destructor never uses io_uring_queue_exit() as an implicit cancellation
@@ -83,7 +83,7 @@ public:
 
   [[nodiscard]]
   bool IsInLoopThread() const noexcept {
-    return thread_id_ == base::tid();
+    return thread_id_ == base::CurrentThreadId();
   }
 #if defined(COROPACT_ENABLE_TEST_HOOKS)
   // Test-only deterministic failure injection. It is intentionally kept out
@@ -116,19 +116,18 @@ public:
 #endif
 
   [[nodiscard]]
-  base::Result<time::TimerId> RunAfter(std::chrono::steady_clock::duration delay,
-                                       std::function<void()> callback) {
+  Result<time::TimerId> RunAfter(time::Duration delay, std::function<void()> callback) {
     COROPACT_CHECK(IsInLoopThread(), "LUringLoop::RunAfter called from wrong thread");
     if (!initialized_) {
-      return std::unexpected(base::MakeErrno(EBADF));
+      return std::unexpected(Errno(EBADF));
     }
     return timers_.AddAfter(delay, std::move(callback));
   }
 
-  base::Result<void> CancelTimer(time::TimerId id) noexcept {
+  Result<void> CancelTimer(time::TimerId id) noexcept {
     COROPACT_CHECK(IsInLoopThread(), "LUringLoop::CancelTimer called from wrong thread");
     if (!initialized_) {
-      return std::unexpected(base::MakeErrno(EBADF));
+      return std::unexpected(Errno(EBADF));
     }
     return timers_.Cancel(id);
   }
@@ -169,7 +168,7 @@ private:
   // notification later.
   [[nodiscard]]
   detail::LUringMailboxPushResult PostMessage(detail::LUringMessage message) {
-    return mailbox_.Push(std::move(message));
+    return mailbox_.Push(message);
   }
 
   [[nodiscard]]
@@ -181,19 +180,19 @@ private:
   // after FlushSubmit() or another submission path.
   template <class Prep>
   [[nodiscard]]
-  base::Result<void> SubmitOp(detail::LUringOp* op, Prep&& prep) noexcept {
+  Result<void> SubmitOp(detail::LUringOp* op, Prep&& prep) noexcept {
     COROPACT_CHECK(IsInLoopThread(), "LUringLoop::SubmitOp called from wrong thread");
 
     if (!initialized_) {
-      return std::unexpected(base::MakeErrno(EBADF));
+      return std::unexpected(Errno(EBADF));
     }
     if (op == nullptr) {
-      return std::unexpected(base::MakeErrno(EINVAL));
+      return std::unexpected(Errno(EINVAL));
     }
     const backend::LoopState state = State();
     if ((state == backend::LoopState::kStopping || state == backend::LoopState::kStopped) &&
         op != &cancel_all_op_ && op != &wake_op_) {
-      return std::unexpected(base::MakeErrno(ECANCELED));
+      return std::unexpected(Errno(ECANCELED));
     }
 
 #if defined(COROPACT_ENABLE_TEST_HOOKS)
@@ -202,7 +201,7 @@ private:
         --test_successful_submissions_before_failure_;
       } else {
         --test_submit_failures_;
-        return std::unexpected(base::MakeErrno(test_submit_error_));
+        return std::unexpected(Errno(test_submit_error_));
       }
     }
 #endif
@@ -213,7 +212,7 @@ private:
 
       sqe = ring_.GetSqe();
       if (sqe == nullptr) {
-        return std::unexpected(base::MakeErrno(ENOSPC));
+        return std::unexpected(Errno(ENOSPC));
       }
     }
 
@@ -224,12 +223,12 @@ private:
   }
 
   [[nodiscard]]
-  base::Result<void> SubmitMsgRing(detail::LUringOp* op, int target_ring_fd,
-                                   std::uint32_t type) noexcept {
+  Result<void> SubmitMsgRing(detail::LUringOp* op, int target_ring_fd,
+                             std::uint32_t type) noexcept {
     COROPACT_CHECK(IsInLoopThread(), "LUringLoop::SubmitMsgRing called from wrong thread");
 
     if (target_ring_fd < 0) {
-      return std::unexpected(base::MakeErrno(EBADF));
+      return std::unexpected(Errno(EBADF));
     }
 
     return SubmitOp(op, [this, target_ring_fd, type](io_uring_sqe* sqe) noexcept {
@@ -238,39 +237,39 @@ private:
   }
 
   [[nodiscard]]
-  base::Result<void> FlushSubmit() noexcept;
+  Result<void> FlushSubmit() noexcept;
   // Cancels all user operations currently pending in this ring. The resulting
   // CQEs are still delivered through the normal completion path so awaiters
   // can release their stream ownership before the ring is destroyed.
   [[nodiscard]]
-  base::Result<void> CancelPendingOperations() noexcept;
+  Result<void> CancelPendingOperations() noexcept;
   [[nodiscard]]
-  base::Result<std::size_t> PollCompletions() noexcept;
+  Result<std::size_t> PollCompletions() noexcept;
   [[nodiscard]]
-  base::Result<std::size_t> WaitCompletions() noexcept;
+  Result<std::size_t> WaitCompletions() noexcept;
 
   void RunReady() noexcept;
 
   [[nodiscard]]
-  base::Result<detail::ProvidedBufferPool*> GetSharedProvidedBufferPool(
+  Result<detail::ProvidedBufferPool*> GetSharedProvidedBufferPool(
       std::size_t buffer_size, std::size_t source_capacity) noexcept;
 
   [[nodiscard]]
-  base::Result<std::uint16_t> AllocateBufferGroupId() noexcept {
+  Result<std::uint16_t> AllocateBufferGroupId() noexcept {
     if (next_buffer_group_id_ > std::numeric_limits<std::uint16_t>::max()) {
-      return std::unexpected(base::MakeErrno(EOVERFLOW));
+      return std::unexpected(Errno(EOVERFLOW));
     }
     return static_cast<std::uint16_t>(next_buffer_group_id_++);
   }
 
   [[nodiscard]]
-  base::Result<std::size_t> WaitCompletionsFor(std::chrono::nanoseconds timeout) noexcept;
+  Result<std::size_t> WaitCompletionsFor(std::chrono::nanoseconds timeout) noexcept;
 
   void DrainStoppedOperations() noexcept;
   void HandleCqe(io_uring_cqe* cqe) noexcept;
   void HandleMailbox() noexcept;
 
-  const int thread_id_;
+  const base::ThreadId thread_id_;
   detail::LUringRing ring_;
   coro::WorkQueue ready_;
   coro::WorkQueue completion_ready_;
@@ -319,7 +318,7 @@ private:
   }
 
   [[nodiscard]]
-  base::Result<void> ArmWakePoll() noexcept;
+  Result<void> ArmWakePoll() noexcept;
   void DrainWakeFd() noexcept;
   void Wake() noexcept;
 

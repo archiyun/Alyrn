@@ -20,7 +20,7 @@
 #include <system_error>
 #include <utility>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/spawn.h"
 #include "coropact/io/async_stream.h"
@@ -39,8 +39,8 @@
 
 namespace {
 
-using ReadResult = coropact::base::Result<std::size_t>;
-using VoidResult = coropact::base::Result<void>;
+using ReadResult = coropact::Result<std::size_t>;
+using VoidResult = coropact::Result<void>;
 using OwnedReadOutcome = coropact::io::ReadIntoOutcome;
 
 class UniqueFd {
@@ -76,7 +76,7 @@ private:
 bool MakeSocketPair(UniqueFd& local, UniqueFd& peer) noexcept {
   std::array<int, 2> fds{-1, -1};
   if (::socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0, fds.data()) < 0) {
-    std::cerr << "FAIL: socketpair: " << coropact::base::CurrentErrno().message() << '\n';
+    std::cerr << "FAIL: socketpair: " << coropact::CurrentErrno().message() << '\n';
     return false;
   }
   local.Reset(fds[0]);
@@ -145,7 +145,7 @@ struct ReactorHarness {
 
   static bool RunAfter(Loop& loop, std::chrono::milliseconds delay,
                        std::function<void()> callback) {
-    loop.RunAfter(std::chrono::duration<double>(delay).count(), std::move(callback));
+    loop.RunAfter(std::chrono::duration_cast<coropact::time::Duration>(delay), std::move(callback));
     return true;
   }
 
@@ -202,7 +202,7 @@ struct LUringHarness {
 
   static void Run(Loop& loop) noexcept { loop.Run(); }
 
-  static inline coropact::base::Error init_error{};
+  static inline coropact::Error init_error{};
 };
 #endif
 

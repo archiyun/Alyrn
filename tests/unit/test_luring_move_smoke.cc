@@ -10,7 +10,7 @@
 #include <type_traits>
 #include <utility>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/luring/listener.h"
 #include "coropact/luring/loop.h"
 #include "coropact/luring/detail/loop_access.h"
@@ -34,7 +34,7 @@ bool Check(bool condition, const char* message) {
   return true;
 }
 
-bool IsEnvironmentSkip(coropact::base::Error error) {
+bool IsEnvironmentSkip(coropact::Error error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 

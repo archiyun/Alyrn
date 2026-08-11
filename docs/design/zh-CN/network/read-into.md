@@ -26,7 +26,7 @@ auto awaiter = stream.ReadInto(io::Buffer buffer,
                                std::size_t reserve = 4096);
 
 struct io::ReadIntoOutcome {
-  base::Result<std::size_t> result;
+  Result<std::size_t> result;
   io::Buffer buffer;
 };
 ```

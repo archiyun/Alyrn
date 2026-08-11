@@ -20,7 +20,6 @@
 
 #include "coropact/base/check.h"
 #include "coropact/base/current_thread.h"
-#include "coropact/base/error.h"
 #include "coropact/base/try.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/luring/detail/completion_dispatch.h"
@@ -28,6 +27,7 @@
 #include "coropact/luring/detail/provided_buffer_pool.h"
 #include "coropact/luring/detail/ring.h"
 #include "coropact/luring/options.h"
+#include "coropact/result.h"
 #include "coropact/time/clock.h"
 
 namespace coropact::luring {
@@ -116,7 +116,7 @@ CompletionDisposition DispatchCompletion(LUringOp* op, CompletionEvent event) no
 }  // namespace detail
 
 LUringLoop::LUringLoop(std::pmr::memory_resource* frame_resource)
-    : Scheduler(frame_resource), thread_id_(base::tid()), timers_(this) {}
+    : Scheduler(frame_resource), thread_id_(base::CurrentThreadId()), timers_(this) {}
 
 LUringLoop::~LUringLoop() noexcept {
   COROPACT_CHECK(IsInLoopThread(), "LUringLoop destroyed from wrong thread");
@@ -128,18 +128,18 @@ LUringLoop::~LUringLoop() noexcept {
   }
 }
 
-base::Result<void> LUringLoop::Init(const LUringOptions& options) noexcept {
+Result<void> LUringLoop::Init(const LUringOptions& options) noexcept {
   COROPACT_CHECK(IsInLoopThread(), "LUringLoop::Init called from wrong thread");
 
   if (initialized_) {
-    return std::unexpected(base::MakeErrno(EALREADY));
+    return std::unexpected(Errno(EALREADY));
   }
 
   COROPACT_TRY_VALUE(ring, LUringRing::Create(options));
   ring_ = std::move(ring);
   wake_fd_ = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
   if (wake_fd_ < 0) {
-    return std::unexpected(base::CurrentErrno());
+    return std::unexpected(CurrentErrno());
   }
   submit_batch_ = options.submit_batch == 0 ? 1 : options.submit_batch;
   max_ready_work_per_turn_ = options.max_ready_work_per_turn;
@@ -178,18 +178,18 @@ base::Result<void> LUringLoop::Init(const LUringOptions& options) noexcept {
   return {};
 }
 
-base::Result<detail::ProvidedBufferPool*> LUringLoop::GetSharedProvidedBufferPool(
+Result<detail::ProvidedBufferPool*> LUringLoop::GetSharedProvidedBufferPool(
     std::size_t buffer_size, std::size_t source_capacity) noexcept {
   COROPACT_CHECK(IsInLoopThread(),
                  "LUringLoop::GetSharedProvidedBufferPool called from wrong thread");
   if (shared_buffer_capacity_ == 0) {
-    return std::unexpected(base::MakeErrno(ENOENT));
+    return std::unexpected(Errno(ENOENT));
   }
   if (source_capacity == 0 || source_capacity > shared_buffer_capacity_) {
-    return std::unexpected(base::MakeErrno(EINVAL));
+    return std::unexpected(Errno(EINVAL));
   }
   if (buffer_size != shared_buffer_size_) {
-    return std::unexpected(base::MakeErrno(EINVAL));
+    return std::unexpected(Errno(EINVAL));
   }
   if (shared_buffer_pool_ != nullptr) {
     shared_buffer_pool_->EnsurePublished(source_capacity);
@@ -207,7 +207,7 @@ base::Result<detail::ProvidedBufferPool*> LUringLoop::GetSharedProvidedBufferPoo
   try {
     shared_buffer_pool_ = std::make_unique<detail::ProvidedBufferPool>(std::move(*pool));
   } catch (...) {
-    return std::unexpected(base::MakeErrno(ENOMEM));
+    return std::unexpected(Errno(ENOMEM));
   }
   return shared_buffer_pool_.get();
 }
@@ -272,7 +272,7 @@ void LUringLoop::RequestStop() noexcept {
   }
 }
 
-base::Result<void> LUringLoop::CancelPendingOperations() noexcept {
+Result<void> LUringLoop::CancelPendingOperations() noexcept {
   COROPACT_CHECK(IsInLoopThread(), "LUringLoop::CancelPendingOperations called from wrong thread");
 
   if (cancel_all_pending_ || (PendingSubmitCount() == 0 && InflightCount() == 0)) {
@@ -456,20 +456,20 @@ void LUringLoop::RunReady() noexcept {
   }
 }
 
-base::Result<void> LUringLoop::FlushSubmit() noexcept {
+Result<void> LUringLoop::FlushSubmit() noexcept {
   COROPACT_CHECK(IsInLoopThread(), "LUringLoop::FlushSubmit called from wrong thread");
 
   while (pending_submit_ > 0) {
 #if defined(COROPACT_ENABLE_TEST_HOOKS)
     if (test_flush_failures_ != 0) {
       --test_flush_failures_;
-      return std::unexpected(base::MakeErrno(test_flush_error_));
+      return std::unexpected(Errno(test_flush_error_));
     }
 #endif
 
     COROPACT_TRY_VALUE(submitted, ring_.Submit());
     if (submitted == 0) {
-      return std::unexpected(base::MakeErrno(EAGAIN));
+      return std::unexpected(Errno(EAGAIN));
     }
 
     const std::size_t count = std::min(submitted, pending_submit_);
@@ -484,7 +484,7 @@ base::Result<void> LUringLoop::FlushSubmit() noexcept {
   return {};
 }
 
-base::Result<std::size_t> LUringLoop::PollCompletions() noexcept {
+Result<std::size_t> LUringLoop::PollCompletions() noexcept {
   COROPACT_CHECK(IsInLoopThread(), "LUringLoop::PollCompletions called from wrong thread");
 
   COROPACT_TRY(FlushSubmit());
@@ -492,12 +492,11 @@ base::Result<std::size_t> LUringLoop::PollCompletions() noexcept {
   return ring_.Reap([this](io_uring_cqe* cqe) { HandleCqe(cqe); }, max_cqe_per_turn_);
 }
 
-base::Result<std::size_t> LUringLoop::WaitCompletions() noexcept {
+Result<std::size_t> LUringLoop::WaitCompletions() noexcept {
   return WaitCompletionsFor(std::chrono::nanoseconds::max());
 }
 
-base::Result<std::size_t> LUringLoop::WaitCompletionsFor(
-    std::chrono::nanoseconds timeout) noexcept {
+Result<std::size_t> LUringLoop::WaitCompletionsFor(std::chrono::nanoseconds timeout) noexcept {
   COROPACT_CHECK(IsInLoopThread(), "LUringLoop::WaitCompletionsFor called from wrong thread");
 
   COROPACT_TRY(FlushSubmit());
@@ -515,7 +514,7 @@ base::Result<std::size_t> LUringLoop::WaitCompletionsFor(
     r = io_uring_wait_cqe_timeout(ring_.Native(), &cqe, &timeout_spec);
   }
   if (r < 0) {
-    return std::unexpected(base::MakeNegErrno(r));
+    return std::unexpected(NegErrno(r));
   }
 
   return ring_.Reap([this](io_uring_cqe* completed_cqe) { HandleCqe(completed_cqe); },
@@ -606,10 +605,10 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
   apply_disposition(detail::DispatchCompletion(op, event));
 }
 
-base::Result<void> LUringLoop::ArmWakePoll() noexcept {
+Result<void> LUringLoop::ArmWakePoll() noexcept {
   COROPACT_CHECK(IsInLoopThread(), "LUringLoop::ArmWakePoll called from wrong thread");
   if (wake_fd_ < 0) {
-    return std::unexpected(base::MakeErrno(EBADF));
+    return std::unexpected(Errno(EBADF));
   }
 
   wake_op_.kind = LUringOpKind::kWake;

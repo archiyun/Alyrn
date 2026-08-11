@@ -4,7 +4,7 @@
 
 #include <concepts>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/backend/async_stream.h"
 #include "coropact/coro/task.h"
 
@@ -15,8 +15,8 @@ concept AsyncListener = requires(T& listener) {
   typename T::Stream;
   requires AsyncStream<typename T::Stream>;
   { listener.Accept() } -> std::same_as<
-      coro::Task<base::Result<typename T::Stream>>>;
-  { listener.Close() } -> std::same_as<coro::Task<base::Result<void>>>;
+      coro::Task<Result<typename T::Stream>>>;
+  { listener.Close() } -> std::same_as<coro::Task<Result<void>>>;
 };
 
 }  // namespace coropact::backend

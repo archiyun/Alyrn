@@ -16,7 +16,7 @@
 #include <system_error>
 #include <utility>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/coro/detached_task.h"
 #include "coropact/coro/spawn.h"
 #include "coropact/luring/loop.h"
@@ -27,8 +27,8 @@
 
 namespace {
 
-using coropact::base::Error;
-using coropact::base::Result;
+using coropact::Error;
+using coropact::Result;
 using coropact::coro::DetachedTask;
 using coropact::luring::LUringLoop;
 using coropact::luring::LUringOptions;
@@ -151,7 +151,7 @@ bool PumpUntil(LUringLoop& loop, Predicate&& predicate, int max_iterations = 64)
 Result<std::pair<UniqueFd, UniqueFd>> MakeSocketPair() {
   int fds[2] = {-1, -1};
   if (::socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0, fds) < 0) {
-    return std::unexpected(coropact::base::CurrentErrno());
+    return std::unexpected(coropact::CurrentErrno());
   }
   return std::make_pair(UniqueFd(fds[0]), UniqueFd(fds[1]));
 }
@@ -214,14 +214,14 @@ DetachedTask ReceivePauseThenResume(
     LUringRecvSource* source,
     LUringLoop* loop,
     PauseResumeObservation* observation) {
-  const auto take = [observation](LUringRecvSource::Result received,
+  const auto take = [observation](LUringRecvSource::NextResult received,
                                   std::string* target) -> bool {
     if (!received.has_value()) {
       observation->error = received.error();
       return false;
     }
     if (!received->has_value()) {
-      observation->error = coropact::base::MakeErrno(ECONNRESET);
+      observation->error = coropact::Errno(ECONNRESET);
       return false;
     }
     const auto bytes = (*received)->buffer.Bytes();
@@ -319,7 +319,7 @@ bool CheckRecvAndLease() {
   constexpr std::string_view kPayload = "provided-buffer-recv";
   const auto sent = ::send(sender.Get(), kPayload.data(), kPayload.size(), MSG_NOSIGNAL);
   if (sent != static_cast<ssize_t>(kPayload.size())) {
-    std::cout << "FAIL: send failed: " << coropact::base::CurrentErrno().message() << '\n';
+    std::cout << "FAIL: send failed: " << coropact::CurrentErrno().message() << '\n';
     return false;
   }
 
@@ -397,7 +397,7 @@ bool CheckSharedBufferPool() {
       ::send(second_sender.Get(), kSecondPayload.data(), kSecondPayload.size(),
              MSG_NOSIGNAL) != static_cast<ssize_t>(kSecondPayload.size())) {
     std::cout << "FAIL: shared-pool send failed: "
-              << coropact::base::CurrentErrno().message() << '\n';
+              << coropact::CurrentErrno().message() << '\n';
     return false;
   }
 
@@ -519,7 +519,7 @@ bool CheckQueuePauseThenRearm() {
       return true;
     }
     std::cout << "FAIL: send failed: "
-              << coropact::base::CurrentErrno().message() << '\n';
+              << coropact::CurrentErrno().message() << '\n';
     return false;
   };
 
