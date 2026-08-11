@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 // Reference:
 //   - Cormen, Leiserson, Rivest, Stein, "Introduction to Algorithms",

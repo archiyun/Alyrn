@@ -1,21 +1,23 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
 #include <cerrno>
 #include <cstddef>
 
-#include "coropact/result.h"
 #include "coropact/net/accept_source.h"
 #include "coropact/net/detail/source_state.h"
+#include "coropact/result.h"
 
 namespace coropact::net::detail {
 
 using AcceptSourceState = SourceState;
 
-// Backend-neutral lifecycle and admission state. It owns no Stream values and
-// performs no scheduling; a backend stores one instance in its AcceptSource
-// and calls CompleteRequest() from its completion path.
+/*
+ * Backend-neutral accept admission state. It owns no Stream values and does
+ * no scheduling; an adapter accounts for physical requests in its completion
+ * path. Pause first blocks admission, then waits for already armed requests
+ * to drain before it becomes observable as paused.
+ */
 class AcceptSourceStateMachine final {
 public:
   [[nodiscard]]
@@ -89,7 +91,7 @@ public:
 
   [[nodiscard]]
   Result<void> CompleteMultishotEvent(EventDisposition event,
-                                            MultishotRequestDisposition request) noexcept {
+                                      MultishotRequestDisposition request) noexcept {
     if (armed_requests_ == 0) {
       return std::unexpected(Errno(EINVAL));
     }

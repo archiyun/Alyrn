@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 //
 // Lifecycle benchmark for SpawnRoot ownership and join scheduling. It keeps

@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
@@ -8,16 +7,17 @@
 
 namespace coropact::operation::detail {
 
-// Lifecycle protocol for one single-result operation with coupled resource
-// release. The adapter owns the result and physical resources; this type only
-// enforces their logical ordering:
-//
-//   result ready -> release authorized -> continuation authorized
-//
-// The object is thread-confined and intentionally has no I/O dependency. A
-// backend must call TryAuthorizeResult() only after its physical execution has
-// produced the result, release its slot/buffer after TryAuthorizeRelease(),
-// and schedule the coroutine only after TryAuthorizeContinuation().
+/*
+ * Lifecycle protocol for one single-result operation with coupled resource
+ * release. The adapter owns the result and physical resources; this type only
+ * enforces their logical ordering:
+ *
+ *   result ready -> release authorized -> continuation authorized
+ *
+ * The object is thread-confined and intentionally has no I/O dependency. A
+ * backend records the result, releases its slot or buffer, then schedules the
+ * coroutine in that order.
+ */
 class SingleResultLifecycle {
 public:
   COROPACT_DELETE_COPY_MOVE(SingleResultLifecycle);

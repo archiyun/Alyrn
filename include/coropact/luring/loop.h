@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
@@ -36,14 +35,12 @@ class LoopAccess;
 class ProvidedBufferPool;
 }  // namespace detail
 
-// Single-threaded io_uring event loop
-//
-// Each LUringLoop owns one LUringRing and is bound to the thread that creates
-// it. IO operations are submitted to the ring, and completed operations resume
-// their coroutine work through the Scheduler interface.
-//
-// Cross-loop mailbox and SQE/CQE dispatch remain implementation details. The
-// public loop only owns initialization, execution, timers, and scheduling.
+/*
+ * Owner-thread io_uring dispatcher. Each loop owns one ring and submits,
+ * receives CQEs, advances timers, and resumes coroutine work on that thread.
+ * Cross-loop mailbox transport and SQE/CQE decoding remain implementation
+ * details; callers only own initialization, execution, timers, and scheduling.
+ */
 class LUringLoop final : public coro::Scheduler {
 public:
   COROPACT_DELETE_COPY_MOVE(LUringLoop);

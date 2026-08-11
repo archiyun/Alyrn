@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
@@ -11,9 +10,12 @@
 
 namespace coropact::net::detail {
 
-// Backend-neutral logical state for a connected stream. It owns no fd and
-// performs no syscall; Reactor and io_uring adapters map their physical
-// operations onto these transitions.
+/*
+ * Backend-neutral state for a connected stream. It owns no fd and performs no
+ * syscall; backend adapters map physical operations onto these transitions.
+ * In particular, shutdown preparation excludes new writes until the adapter
+ * either commits its physical shutdown or aborts the local submission.
+ */
 class StreamLifecycle final {
 public:
   StreamLifecycle() noexcept = default;

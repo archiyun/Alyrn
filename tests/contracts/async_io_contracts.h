@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 // Compile-time contract checks shared by backend-specific tests.
 #pragma once

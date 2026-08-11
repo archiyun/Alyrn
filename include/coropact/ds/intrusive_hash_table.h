@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 // Reference:
 //   - Linux kernel hlist implementation by Linus Torvalds,

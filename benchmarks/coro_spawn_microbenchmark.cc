@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 //
 // Pure coroutine microbenchmark for the joinable-then-detach path versus the

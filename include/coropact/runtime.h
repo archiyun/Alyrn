@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
@@ -6,8 +5,8 @@
 #include <stop_token>
 #include <utility>
 
-#include "coropact/result.h"
 #include "coropact/net/endpoint.h"
+#include "coropact/result.h"
 
 namespace coropact::runtime {
 
@@ -37,8 +36,11 @@ public:
 
 namespace coropact {
 
-// Backend-neutral application composition root. Select a backend through its
-// Builder tag; Runtime itself exposes only process lifecycle control.
+/*
+ * Backend-neutral application lifecycle control. Backend selection remains a
+ * compile-time Builder choice; this type erases only cold start/stop control,
+ * never streams, operations, awaiters, or worker-local resources.
+ */
 class Runtime final {
 public:
   template <class Backend>
@@ -55,9 +57,7 @@ public:
 
   [[nodiscard]] Result<void> Start() { return control_->Start(); }
 
-  [[nodiscard]] Result<void> Run(std::stop_token stop_token) {
-    return control_->Run(stop_token);
-  }
+  [[nodiscard]] Result<void> Run(std::stop_token stop_token) { return control_->Run(stop_token); }
 
   void RequestStop() noexcept { control_->RequestStop(); }
   void Stop() noexcept { control_->Stop(); }

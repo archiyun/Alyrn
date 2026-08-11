@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 #include "coropact/luring/recv_source.h"
 
 #include <liburing.h>

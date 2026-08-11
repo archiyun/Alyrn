@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 // Runs the same application-observable lifecycle scenarios against every
 // enabled stream backend. Backend harnesses own only setup and timer syntax.
