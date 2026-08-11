@@ -874,8 +874,8 @@ base::Result<LUringListener> LUringListener::Create(LUringLoop* loop,
   COROPACT_CHECK(loop != nullptr, "LUringListener requires an owner loop");
   COROPACT_CHECK(loop->IsInLoopThread(), "LUringListener created from wrong LUringLoop thread");
 
-  return LUringListener(loop, COROPACT_TRY(CreatedListenFd(listen_addr, options)),
-                        options.zero_copy_writes);
+  COROPACT_TRY_VALUE(fd, CreatedListenFd(listen_addr, options));
+  return LUringListener(loop, fd, options.zero_copy_writes);
 }
 
 LUringListener::LUringListener(LUringLoop* loop, int fd, bool zero_copy_writes) noexcept
@@ -953,7 +953,7 @@ base::Result<LUringAcceptSource> LUringListener::AcceptSource(
     return std::unexpected(base::MakeErrno(EBUSY));
   }
 
-  auto state = COROPACT_TRY(AcceptSourceStateMachine::Create(options));
+  COROPACT_TRY_VALUE(state, AcceptSourceStateMachine::Create(options));
   return LUringAcceptSource(this, std::move(state));
 }
 

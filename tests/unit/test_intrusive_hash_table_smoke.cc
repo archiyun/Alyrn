@@ -13,7 +13,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
+#include <limits>
 #include <random>
+#include <stdexcept>
 #include <type_traits>
 #include <unordered_map>
 #include <vector>
@@ -49,6 +51,17 @@ struct Mod8Hash {
   std::size_t operator()(int k) const noexcept { return static_cast<std::size_t>(k) % 8; }
 };
 
+struct ThrowingHash {
+  inline static bool throw_on_hash = false;
+
+  std::size_t operator()(int key) const {
+    if (throw_on_hash) {
+      throw std::runtime_error("injected hash failure");
+    }
+    return std::hash<int>{}(key);
+  }
+};
+
 void EmptyReserveConstAndReuseTest() {
   Item item;
   item.key = 11;
@@ -62,6 +75,8 @@ void EmptyReserveConstAndReuseTest() {
   CHECK(table.BucketCount() == 0);
   CHECK(table.Find(11) == nullptr);
   CHECK(!table.Contains(11));
+  CHECK(!table.Insert(nullptr));
+  CHECK(!table.Erase(nullptr));
   CHECK(!table.Erase(&item));
   CHECK(table.CheckInvariants());
 
@@ -129,6 +144,59 @@ void DestructorUnlinksTest() {
   CHECK(replacement.Insert(&b));
   CHECK(replacement.CheckInvariants());
   replacement.Clear();
+}
+
+void ReserveRejectsUnrepresentableBucketCountTest() {
+  ItemTable table;
+  bool threw = false;
+  try {
+    table.Reserve(std::numeric_limits<std::size_t>::max());
+  } catch (const std::length_error&) {
+    threw = true;
+  }
+
+  CHECK(threw);
+  CHECK(table.Empty());
+  CHECK(table.BucketCount() == 0);
+  CHECK(table.CheckInvariants());
+}
+
+void RehashFailurePreservesHooksTest() {
+  std::vector<Item> items(17);
+  IntrusiveHashTable<Item, kKeyOf, ThrowingHash> table;
+  for (int index = 0; index < 17; ++index) {
+    items[index].key = index;
+  }
+
+  ThrowingHash::throw_on_hash = false;
+  for (int index = 0; index < 16; ++index) {
+    CHECK(table.Insert(&items[index]));
+  }
+  CHECK(table.Size() == 16);
+  CHECK(table.BucketCount() == 16);
+
+  ThrowingHash::throw_on_hash = true;
+  bool threw = false;
+  try {
+    (void)table.Insert(&items[16]);
+  } catch (const std::runtime_error&) {
+    threw = true;
+  }
+  ThrowingHash::throw_on_hash = false;
+
+  CHECK(threw);
+  CHECK(table.Size() == 16);
+  CHECK(table.BucketCount() == 16);
+  CHECK(!items[16].InTable());
+  CHECK(table.CheckInvariants());
+  for (int index = 0; index < 16; ++index) {
+    CHECK(table.Find(index) == &items[index]);
+  }
+
+  CHECK(table.Insert(&items[16]));
+  CHECK(table.Size() == 17);
+  CHECK(table.BucketCount() == 32);
+  CHECK(table.CheckInvariants());
 }
 
 template <class Hash>
@@ -294,6 +362,8 @@ int main() {
   EmptyReserveConstAndReuseTest();
   GrowthBoundaryTest();
   DestructorUnlinksTest();
+  ReserveRejectsUnrepresentableBucketCountTest();
+  RehashFailurePreservesHooksTest();
   ChainSurgeryTest();
   DuplicateKeyTest();
   MultiTagTest();

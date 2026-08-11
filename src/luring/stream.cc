@@ -719,6 +719,7 @@ coro::Task<base::Result<void>> LUringStream::Shutdown() {
     co_return base::Result<void>{};
   }
   if (::shutdown(fd_, SHUT_WR) < 0) {
+    lifecycle_.AbortShutdownPreparation();
     co_return std::unexpected(base::CurrentErrno());
   }
   lifecycle_.CommitShutdown();

@@ -2,8 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 #include <sys/uio.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include <algorithm>
+#include <cerrno>
+#include <csignal>
+#include <cstdio>
 #include <cstring>
 #include <exception>
 #include <iostream>
@@ -27,6 +32,24 @@ bool Expect(bool condition, std::string_view message) {
     return false;
   }
   return true;
+}
+
+bool ExpectChildAbort(void (*entry)(), std::string_view message) {
+  const pid_t child = ::fork();
+  if (child < 0) {
+    return Expect(false, "fork failed for buffer invariant test");
+  }
+  if (child == 0) {
+    (void)::freopen("/dev/null", "w", stderr);
+    entry();
+    ::_exit(0);
+  }
+
+  int status = 0;
+  while (::waitpid(child, &status, 0) < 0 && errno == EINTR) {
+  }
+  return Expect(WIFSIGNALED(status), message) &&
+         Expect(WTERMSIG(status) == SIGABRT, "buffer invariant must terminate with SIGABRT");
 }
 
 std::string Gather(coropact::io::Buffer& buffer) {
@@ -164,6 +187,40 @@ bool FailedPreparationReleasesReservation() {
   return reusable;
 }
 
+void BufferCommitWithoutReservation() {
+  coropact::io::Buffer buffer(4);
+  buffer.CommitWrite(1);
+}
+
+void BufferNestedPreparation() {
+  coropact::io::Buffer buffer(4);
+  (void)buffer.PrepareWrite(4, 1);
+  (void)buffer.PrepareWrite(4, 1);
+}
+
+void BufferCommitBeyondReservation() {
+  coropact::io::Buffer buffer(4);
+  auto iovs = buffer.PrepareWrite(4, 1);
+  buffer.CommitWrite(iovs.front().iov_len + 1);
+}
+
+void BufferMutationDuringReservation() {
+  coropact::io::Buffer buffer(4);
+  (void)buffer.PrepareWrite(4, 1);
+  buffer.Append("x");
+}
+
+bool ReservationInvariantsFailClosed() {
+  return ExpectChildAbort(&BufferCommitWithoutReservation,
+                          "Buffer CommitWrite without PrepareWrite must terminate in Release") &&
+         ExpectChildAbort(&BufferNestedPreparation,
+                          "nested Buffer PrepareWrite must terminate in Release") &&
+         ExpectChildAbort(&BufferCommitBeyondReservation,
+                          "Buffer CommitWrite beyond reservation must terminate in Release") &&
+         ExpectChildAbort(&BufferMutationDuringReservation,
+                          "Buffer mutation during reservation must terminate in Release");
+}
+
 }  // namespace
 
 int main() {
@@ -175,6 +232,7 @@ int main() {
   ok &= EmptyReservationDoesNotHideLaterData();
   ok &= ZeroHintUsesBlockSize();
   ok &= FailedPreparationReleasesReservation();
+  ok &= ReservationInvariantsFailClosed();
 
   if (!ok) return 1;
 

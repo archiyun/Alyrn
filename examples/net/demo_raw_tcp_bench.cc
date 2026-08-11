@@ -79,7 +79,7 @@ void CloseConnection(int epoll_fd, Connection& connection) {
   connection.state = State::kFailed;
 }
 
-bool StartWrite(int epoll_fd, Connection& connection, const std::vector<char>& payload) {
+bool StartWrite(int epoll_fd, Connection& connection) {
   connection.state = State::kWriting;
   connection.sent = 0;
   connection.received = 0;
@@ -114,7 +114,7 @@ bool CompleteRequest(int epoll_fd, Connection& connection, const std::vector<cha
     ++stats.completed;
     stats.latency_ns.push_back(completed_at - connection.request_started_ns);
   }
-  return StartWrite(epoll_fd, connection, payload) && FlushWrite(epoll_fd, connection, payload);
+  return StartWrite(epoll_fd, connection) && FlushWrite(epoll_fd, connection, payload);
 }
 
 bool HandleConnecting(int epoll_fd, Connection& connection, const std::vector<char>& payload) {
@@ -123,7 +123,7 @@ bool HandleConnecting(int epoll_fd, Connection& connection, const std::vector<ch
   if (::getsockopt(connection.fd, SOL_SOCKET, SO_ERROR, &error, &error_size) < 0 || error != 0) {
     return false;
   }
-  return StartWrite(epoll_fd, connection, payload) && FlushWrite(epoll_fd, connection, payload);
+  return StartWrite(epoll_fd, connection) && FlushWrite(epoll_fd, connection, payload);
 }
 
 bool HandleReading(int epoll_fd, Connection& connection, const std::vector<char>& payload,

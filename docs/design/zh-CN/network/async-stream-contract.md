@@ -167,6 +167,11 @@ struct net::ReadIntoOutcome {
 因此提交失败、关闭和取消也不会吞掉调用者转交的 buffer。`BufferLease` 则属于
 `AsyncRecvSource`：它代表后端/池提供的存储及其归还协议，不能替代普通 `net::Buffer`。
 
+`Buffer::PrepareWrite()` 与 `CommitWrite()`/`AbortWrite()` 构成一个短暂的 reservation
+transaction。该区间内不得再次 `PrepareWrite()`、`Append()`、`Drain()` 或 move buffer；这些不是
+可恢复的网络错误，而是会破坏 storage ownership 的程序错误，因此在所有构建中被拒绝。后端 awaiter
+必须在任何终态路径结束 reservation，随后才把 buffer 交还给调用者。
+
 ### 2.3 CoreListener
 
 listener 的最小接口是：
@@ -196,6 +201,11 @@ Close 才成为 **committed Close**。从这一刻起它是 resource-level drain
 cancel acknowledgement、target terminal、buffer/lease release 全部收敛后才允许释放 fd 并恢复
 Close continuation。提交 SQE 不等于内核已经产生 CQE，但已经足以使其关联的 operation state
 不能安全回滚。
+
+`PrepareShutdown()` 与 `PrepareClose()` 的失败是可观察的 `Result`；但 adapter 在成功准备后调用
+`CommitShutdown()`，在 shutdown syscall 的本地失败后调用 `AbortShutdownPreparation()`，或在尚未
+提交物理取消前调用 `AbortClosePreparation()`，属于内部状态机的后续 transition。若这些调用不满足
+前置状态，说明后端违反生命周期协议，必须在所有构建中终止，而不能把状态悄悄改写成新的业务错误。
 
 `Connect()` 不属于 `AsyncStream` 或 `AsyncListener`。它是建立 outbound stream 的另一项
 能力，由 `AsyncConnector` 单独约束：
@@ -1037,3 +1047,7 @@ EventSource 的 pause/re-arm 与 lease 生命周期。它们是同一抽象模�
 `resource_close_cancel.tla` 则单独验证 Close 作为 resource-level drain barrier：cancel CQE
 不等于 target completion，fd release 必须等待 active physical use、cancel command 与
 backend-held storage 一并收敛。
+
+`stream_shutdown_transaction.tla` 补充验证同步写半关闭的内部 transaction：准备期间不能接受新的
+write 或开始 Close；`shutdown(2)` 成功后 write direction 终态为 Shutdown，本地失败则完整回滚为
+Writable，后续调用可以显式重试。

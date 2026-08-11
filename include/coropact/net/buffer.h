@@ -5,7 +5,6 @@
 #include <sys/uio.h>
 
 #include <algorithm>
-#include <cassert>
 #include <cstddef>
 #include <cstring>
 #include <memory>
@@ -14,11 +13,15 @@
 #include <utility>
 #include <vector>
 
+#include "coropact/base/check.h"
 #include "coropact/ds/intrusive_list.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::net {
 
+// A move-only byte chain with explicit write reservation. It owns storage but
+// has no socket, scheduler, or backend dependency; adapters use its iovec
+// views only at the POSIX scatter/gather boundary.
 class Buffer {
 public:
   static constexpr std::size_t kDefaultBlockSize = 16 * 1024;
@@ -84,12 +87,11 @@ public:
 
   [[nodiscard]]
   std::vector<iovec> PrepareWrite(std::size_t hint, std::size_t max_iov = 16) {
-    assert(!write_reserved_ && "nested Buffer::PrepareWrite is not allowed");
+    COROPACT_CHECK(!write_reserved_, "nested Buffer::PrepareWrite is not allowed");
     if (max_iov == 0) return {};
 
     if (hint == 0) hint = block_size_;
     reserved_bytes_ = 0;
-    reserved_block_count_ = 0;
     write_reserved_ = true;
 
     try {
@@ -110,7 +112,6 @@ public:
             .iov_len = n,
         });
         reserved_bytes_ += n;
-        ++reserved_block_count_;
       }
 
       if (out.empty()) {
@@ -124,8 +125,8 @@ public:
   }
 
   void CommitWrite(std::size_t n) {
-    assert(write_reserved_ && "Buffer::CommitWrite without PrepareWrite");
-    assert(n <= reserved_bytes_ && "Buffer::CommitWrite exceeds reserved bytes");
+    COROPACT_CHECK(write_reserved_, "Buffer::CommitWrite without PrepareWrite");
+    COROPACT_CHECK(n <= reserved_bytes_, "Buffer::CommitWrite exceeds reserved bytes");
 
     std::size_t remaining = n;
     for (Block& block : blocks_) {
@@ -138,7 +139,7 @@ public:
       remaining -= m;
     }
 
-    assert(remaining == 0);
+    COROPACT_CHECK(remaining == 0, "Buffer::CommitWrite reservation became inconsistent");
     ClearWriteReservation();
   }
 
@@ -225,8 +226,7 @@ private:
     if (tail != nullptr && tail->WritableBytes() > 0) return;
     Block* block = NewBlock(std::max(block_size_, hint));
     const bool linked = blocks_.PushBack(block);
-    assert(linked);
-    if (!linked) delete block;
+    COROPACT_CHECK(linked, "Buffer failed to link a newly allocated block");
   }
 
   void EnsureTailWritable(std::size_t hint, std::size_t max_iov) {
@@ -243,11 +243,7 @@ private:
     while (writable < hint && reserved < max_iov) {
       Block* block = NewBlock(std::max(block_size_, hint - writable));
       const bool linked = blocks_.PushBack(block);
-      assert(linked);
-      if (!linked) {
-        delete block;
-        break;
-      }
+      COROPACT_CHECK(linked, "Buffer failed to link a newly allocated block");
       block->reserved_for_write = true;
       writable += block->WritableBytes();
       reserved += 1;
@@ -263,11 +259,10 @@ private:
 
     write_reserved_ = false;
     reserved_bytes_ = 0;
-    reserved_block_count_ = 0;
   }
 
   void AssertNoWriteReservation() const noexcept {
-    assert(!write_reserved_ && "Buffer mutation during pending write reservation");
+    COROPACT_CHECK(!write_reserved_, "Buffer mutation during pending write reservation");
   }
 
   void DrainCommitted(std::size_t n) noexcept {
@@ -298,20 +293,18 @@ private:
   }
 
   void MoveFromObject(Buffer&& other) noexcept {
-    assert(!other.write_reserved_ && "moving a Buffer with pending write reservation");
+    COROPACT_CHECK(!other.write_reserved_, "moving a Buffer with pending write reservation");
 
     block_size_ = other.block_size_;
     readable_bytes_ = other.readable_bytes_;
     write_reserved_ = false;
     reserved_bytes_ = 0;
-    reserved_block_count_ = 0;
 
     blocks_.Splice(other.blocks_);
 
     other.readable_bytes_ = 0;
     other.write_reserved_ = false;
     other.reserved_bytes_ = 0;
-    other.reserved_block_count_ = 0;
   }
 
   BlockList blocks_;
@@ -320,7 +313,6 @@ private:
 
   bool write_reserved_{false};
   std::size_t reserved_bytes_{0};
-  std::size_t reserved_block_count_{0};
 };
 
 }  // namespace coropact::net

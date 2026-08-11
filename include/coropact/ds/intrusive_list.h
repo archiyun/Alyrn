@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include <cassert>
 #include <concepts>
 #include <cstddef>
 #include <utility>
@@ -96,8 +95,10 @@ public:
   private:
     friend class IntrusiveList;
     friend class const_iterator;
-    explicit iterator(Node* node) noexcept : node_(node) {}
+    explicit iterator(Node* node, const IntrusiveList* owner) noexcept
+        : node_(node), owner_(owner) {}
     Node* node_{nullptr};
+    const IntrusiveList* owner_{nullptr};
   };
 
   class const_iterator {
@@ -107,7 +108,7 @@ public:
     using pointer = const T*;
 
     const_iterator() noexcept = default;
-    const_iterator(const iterator& it) noexcept : node_(it.node_) {}
+    const_iterator(const iterator& it) noexcept : node_(it.node_), owner_(it.owner_) {}
 
     const T& operator*() const noexcept { return *ElemOf(node_); }
     const T* operator->() const noexcept { return ElemOf(node_); }
@@ -124,16 +125,23 @@ public:
 
   private:
     friend class IntrusiveList;
-    explicit const_iterator(const Node* node) noexcept : node_(node) {}
+    explicit const_iterator(const Node* node, const IntrusiveList* owner) noexcept
+        : node_(node), owner_(owner) {}
     const Node* node_{nullptr};
+    const IntrusiveList* owner_{nullptr};
   };
 
-  iterator Begin() noexcept { return iterator(Next(&head_)); }
-  iterator End() noexcept { return iterator(&head_); }
-  const_iterator Begin() const noexcept { return const_iterator(Next(&head_)); }
-  const_iterator End() const noexcept { return const_iterator(&head_); }
+  iterator Begin() noexcept { return iterator(Next(&head_), this); }
+  iterator End() noexcept { return iterator(&head_, this); }
+  const_iterator Begin() const noexcept { return const_iterator(Next(&head_), this); }
+  const_iterator End() const noexcept { return const_iterator(&head_, this); }
   const_iterator CBegin() const noexcept { return Begin(); }
   const_iterator CEnd() const noexcept { return End(); }
+
+  // Iterators remember the list that created them so Erase can reject an
+  // end iterator or one from another list without corrupting either ring.
+  // Moving, splicing, or swapping a list invalidates iterators to transferred
+  // nodes for the destination list.
 
   static Node* Next(Node* node) noexcept { return node->next_; }
   static const Node* Next(const Node* node) noexcept { return node->next_; }
@@ -159,8 +167,9 @@ public:
   bool PushFront(T*) noexcept;
   [[nodiscard]]
   bool PushBack(T*) noexcept;
-  // Link elem adjacent to pos. Precondition: pos is linked in *this*; elem is
-  // not linked. Returns false for nullptr or when elem is already linked.
+  // Link elem adjacent to pos. Precondition: a linked pos belongs to *this*;
+  // elem is not linked. Returns false for nullptr, an unlinked pos, or an
+  // already-linked elem.
   [[nodiscard]]
   bool InsertBefore(T* pos, T* elem) noexcept;
   [[nodiscard]]
@@ -177,7 +186,8 @@ public:
   bool Erase(T* elem) noexcept;
 
   // Erase by iterator. O(1). Returns the iterator following the erased element,
-  // which stays valid for continued traversal. Precondition: it != End().
+  // which stays valid for continued traversal. An end or foreign iterator is a
+  // no-op and returns End().
   iterator Erase(iterator it) noexcept;
   iterator Erase(const_iterator it) noexcept;
 
@@ -190,11 +200,13 @@ public:
   std::size_t RemoveIf(Pred pred);
 
   // Reposition an already-linked element to the back of *this* in O(1). Size unchanged.
-  // Precondition: elem is linked in *this*.
+  // nullptr or an unlinked elem is a no-op. Precondition: a linked elem belongs to *this*.
   void MoveToBack(T*) noexcept;
+  // Same as MoveToBack(), but moves the element to the front.
   void MoveToFront(T*) noexcept;
 
   // Move all of other's elements to the back of *this* in O(1). other ends empty.
+  // Self-splice is a no-op.
   void Splice(IntrusiveList& other) noexcept;
 
   // Exchanges the two list rings without moving any element.
@@ -313,7 +325,6 @@ bool ILIST_TYPE::InsertBefore(T* pos, T* elem) noexcept {
   if (pos == nullptr || elem == nullptr) return false;
   Node* anchor = NodeOf(pos);
   Node* node = NodeOf(elem);
-  assert(anchor->InList());
   if (!anchor->InList() || node->InList()) return false;
   LinkBetween(node, anchor->prev_, anchor);
   ++size_;
@@ -325,7 +336,6 @@ bool ILIST_TYPE::InsertAfter(T* pos, T* elem) noexcept {
   if (pos == nullptr || elem == nullptr) return false;
   Node* anchor = NodeOf(pos);
   Node* node = NodeOf(elem);
-  assert(anchor->InList());
   if (!anchor->InList() || node->InList()) return false;
   LinkBetween(node, anchor, anchor->next_);
   ++size_;
@@ -359,20 +369,26 @@ bool ILIST_TYPE::Erase(T* elem) noexcept {
 
 ILIST_TMPL
 auto ILIST_TYPE::Erase(iterator it) noexcept -> iterator {
+  if (it.owner_ != this || it.node_ == nullptr || it.node_ == &head_ ||
+      !it.node_->InList()) {
+    return End();
+  }
   Node* node = it.node_;
-  assert(node != &head_);
   Node* next = node->next_;
   Unlink(node);
-  return iterator(next);
+  return iterator(next, this);
 }
 
 ILIST_TMPL
 auto ILIST_TYPE::Erase(const_iterator it) noexcept -> iterator {
+  if (it.owner_ != this || it.node_ == nullptr || it.node_ == &head_ ||
+      !it.node_->InList()) {
+    return End();
+  }
   Node* node = const_cast<Node*>(it.node_);
-  assert(node != &head_);
   Node* next = node->next_;
   Unlink(node);
-  return iterator(next);
+  return iterator(next, this);
 }
 
 ILIST_TMPL
@@ -404,23 +420,25 @@ std::size_t ILIST_TYPE::RemoveIf(Pred pred) {
 
 ILIST_TMPL
 void ILIST_TYPE::MoveToBack(T* elem) noexcept {
+  if (elem == nullptr) return;
   Node* node = NodeOf(elem);
-  assert(node->InList());
+  if (!node->InList()) return;
   SpliceOut(node);
   LinkBetween(node, head_.prev_, &head_);
 }
 
 ILIST_TMPL
 void ILIST_TYPE::MoveToFront(T* elem) noexcept {
+  if (elem == nullptr) return;
   Node* node = NodeOf(elem);
-  assert(node->InList());
+  if (!node->InList()) return;
   SpliceOut(node);
   LinkBetween(node, &head_, head_.next_);
 }
 
 ILIST_TMPL
 void ILIST_TYPE::Splice(IntrusiveList& other) noexcept {
-  assert(&other != this);
+  if (&other == this) return;
   if (other.Empty()) return;
   Node* first = other.head_.next_;
   Node* last = other.head_.prev_;

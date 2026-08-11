@@ -130,22 +130,6 @@ IoAttempt TryReadv(int fd, std::span<const iovec> buffers) noexcept {
   });
 }
 
-[[nodiscard]]
-IoAttempt TryWritev(int fd, std::span<const iovec> buffers) noexcept {
-  if (buffers.empty()) {
-    return IoAttempt::Completed(0);
-  }
-
-  auto count = CheckedIovCount(buffers.size());
-  if (!count.has_value()) {
-    return IoAttempt::Failed(count.error());
-  }
-
-  return RetryNonBlockingIo([fd, buffers, iov_count = *count]() noexcept {
-    return ::writev(fd, buffers.data(), iov_count);
-  });
-}
-
 // Called only after a reactor error event. SO_ERROR == 0 is inconsistent with
 // that event, so use EIO as a stable error result rather than reporting errno 0.
 [[nodiscard]]
@@ -237,7 +221,6 @@ void ReactorStream::ReadAwaiterState::SetResult(base::Result<std::size_t> result
 void ReactorStream::ReadAwaiterState::ScheduleContinuation() noexcept { continuation_.Schedule(); }
 
 base::Result<std::size_t> ReactorStream::ReadAwaiterState::TakeResult() noexcept {
-  COROPACT_DCHECK(result_.HasResult(), "read awaiter result is not ready");
   return result_.Take();
 }
 
@@ -494,7 +477,6 @@ bool ReactorStream::WriteAllAwaiter::await_suspend(std::coroutine_handle<> conti
 }
 
 base::Result<void> ReactorStream::WriteAllAwaiter::await_resume() noexcept {
-  COROPACT_DCHECK(result_.HasResult(), "WriteAllAwaiter: result is not ready");
   auto result = result_.Take();
   if (!result.has_value()) {
     return std::unexpected(result.error());
@@ -536,7 +518,7 @@ ReactorStream::ReactorStream(EventLoop* loop, int fd, net::Endpoint peer,
   COROPACT_CHECK(loop_ != nullptr, "ReactorStream: loop must not be null");
   COROPACT_CHECK(loop_->IsInLoopThread(), "ReactorStream created from wrong EventLoop thread");
   [[maybe_unused]] auto nonblocking = net::SetNonBlocking(fd, true);
-  COROPACT_DCHECK(nonblocking.has_value(), "ReactorStream: failed to set non-blocking mode");
+  COROPACT_CHECK(nonblocking.has_value(), "ReactorStream: failed to set non-blocking mode");
 
   // A stream keeps read interest across successful reads. Edge-triggered
   // delivery avoids the level-triggered disable/re-enable epoll_ctl pair on
@@ -630,6 +612,7 @@ coro::Task<base::Result<void>> ReactorStream::Shutdown() {
   }
   auto shutdown = socket_.ShutdownWrite();
   if (!shutdown.has_value()) {
+    lifecycle_.AbortShutdownPreparation();
     co_return std::unexpected(shutdown.error());
   }
   lifecycle_.CommitShutdown();

@@ -12,6 +12,8 @@
 #include <concepts>
 #include <cstddef>
 #include <functional>
+#include <limits>
+#include <stdexcept>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -45,6 +47,9 @@ namespace coropact::ds {
 //     Callers needing uniqueness must Find first.
 //   - The table never owns elements; a node must outlive its membership.
 //   - Bucket count is always a power of two; growth doubles at load factor 1.
+//   - Rehash first computes every destination bucket before it relinks any
+//     hook, so allocation, hash, or key-projection exceptions leave the table
+//     unchanged.
 template <typename T, auto kKeyOf,
           class Hash =
               std::hash<std::remove_cvref_t<decltype(kKeyOf(static_cast<const T*>(nullptr)))>>,
@@ -115,10 +120,11 @@ public:
     return buckets_.size();
   }
 
+  // Returns false for nullptr or when elem is already linked.
   [[nodiscard]]
   bool Insert(T* elem);
 
-  // Returns false if elem is not linked.
+  // Returns false for nullptr or if elem is not linked.
   //
   // Precondition: if elem is linked, it must be linked in this exact table.
   // InTable() only reports whether the hook is linked somewhere.
@@ -147,6 +153,8 @@ public:
 
 private:
   static constexpr std::size_t kMinBuckets = 16;  // 2^4
+  static constexpr std::size_t kMaxBucketCount =
+      std::size_t{1} << (std::numeric_limits<std::size_t>::digits - 1);
 
   // Node pprev_ pointers alias the slots of this vector: any reallocation
   // outside Rehash() (which relinks every node) would leave them dangling.
@@ -183,11 +191,15 @@ void IHT_TYPE::InsertHead(Node** head, Node* node) {
 
 IHT_TMPL
 bool IHT_TYPE::Insert(T* elem) {
-  assert(elem != nullptr);
+  if (elem == nullptr) return false;
   Node* node = node_of(elem);
   if (node->InTable()) return false;
   if (size_ >= buckets_.size()) {
-    Rehash(buckets_.empty() ? kMinBuckets : buckets_.size() * 2);
+    if (buckets_.empty()) {
+      Rehash(kMinBuckets);
+    } else {
+      Reserve(buckets_.size() + 1);
+    }
   }
   InsertHead(&buckets_[BucketIdx(Hash{}(kKeyOf(elem)))], node);
   ++size_;
@@ -196,7 +208,7 @@ bool IHT_TYPE::Insert(T* elem) {
 
 IHT_TMPL
 bool IHT_TYPE::Erase(T* elem) {
-  assert(elem != nullptr);
+  if (elem == nullptr) return false;
   Node* node = node_of(elem);
   if (!node->InTable()) return false;
   *(node->pprev_) = node->next_;
@@ -239,7 +251,11 @@ void IHT_TYPE::Clear() {
 
 IHT_TMPL
 void IHT_TYPE::Reserve(std::size_t n) {
-  std::size_t want = std::bit_ceil(n < kMinBuckets ? kMinBuckets : n);
+  const std::size_t requested = n < kMinBuckets ? kMinBuckets : n;
+  if (requested > kMaxBucketCount) {
+    throw std::length_error("IntrusiveHashTable bucket count is not representable");
+  }
+  const std::size_t want = std::bit_ceil(requested);
   if (want > buckets_.size()) {
     Rehash(want);
   }
@@ -251,15 +267,28 @@ void IHT_TYPE::Rehash(std::size_t new_bucket_count) {
   assert(new_bucket_count >= kMinBuckets);
 
   std::vector<Node*> fresh(new_bucket_count, nullptr);
+  std::vector<std::size_t> destinations;
+  destinations.reserve(size_);
   const std::size_t mask = new_bucket_count - 1;
+
+  // Hashing and key projection may throw. Do not modify any hook until every
+  // destination is known and all fallible allocations have succeeded.
   for (Node* head : buckets_) {
-    for (Node* n = head; n != nullptr;) {
-      Node* next = n->next_;
-      // No cached hash: every node pays one full Hash call per rehash.
-      InsertHead(&fresh[Hash{}(kKeyOf(elem_of(n))) & mask], n);
-      n = next;
+    for (Node* node = head; node != nullptr; node = node->next_) {
+      destinations.push_back(Hash{}(kKeyOf(elem_of(node))) & mask);
     }
   }
+
+  std::size_t destination = 0;
+  for (Node* head : buckets_) {
+    for (Node* node = head; node != nullptr;) {
+      Node* next = node->next_;
+      InsertHead(&fresh[destinations[destination]], node);
+      ++destination;
+      node = next;
+    }
+  }
+  assert(destination == size_);
   buckets_ = std::move(fresh);
 }
 

@@ -4,9 +4,11 @@
 #pragma once
 
 #include <algorithm>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <new>
 
@@ -53,8 +55,9 @@ public:
   // disallowed.
   static Ptr Create(std::size_t chunk_size = kDefaultChunkSize);
 
-  // Allocations up to the pool's small-allocation limit use the bump arena
-  // fast path. Larger allocations bypass the arena.
+  // Allocations up to the pool's small-allocation limit and default alignment
+  // use the bump arena fast path. Larger or over-aligned allocations bypass
+  // the arena so their storage and deallocation alignment stay exact.
   void* Allocate(std::size_t size);
   // The alignment must be a nonzero power of two.
   void* AllocateAligned(std::size_t size, std::size_t alignment);
@@ -90,6 +93,7 @@ private:
 
   struct LargeNode {
     void* allocation;
+    std::size_t alignment;
     LargeNode* next;
   };
 
@@ -104,7 +108,7 @@ private:
 
   void DestroyArena() noexcept;
   void* AllocateSmall(std::size_t size, std::size_t alignment);
-  void* AllocateLarge(std::size_t size);
+  void* AllocateLarge(std::size_t size, std::size_t alignment);
   ChunkHeader* AllocateChunk();
 
   // The Pool object is embedded at the beginning of the first chunk.
@@ -134,9 +138,10 @@ inline std::byte* AlignPointer(std::byte* pointer, std::size_t alignment) noexce
 }  // namespace pool_detail
 
 // Ensure the minimum chunk size can hold the Pool header
-// plus at least two LargeNode-sized allocations.
+// plus at least two LargeNode-sized allocations. A LargeNode stores an
+// allocation pointer, its alignment, and the next pointer.
 // Based on Nginx.
-static_assert(Pool::kMinChunkSize >= sizeof(Pool) + 2 * sizeof(void*) * 2,
+static_assert(Pool::kMinChunkSize >= sizeof(Pool) + 2 * 3 * sizeof(void*),
               "kMinChunkSize must fit Pool + 2 LargeNode slots");
 
 inline Pool::Ptr Pool::Create(std::size_t chunk_size) {
@@ -186,7 +191,11 @@ inline void Pool::DestroyArena() noexcept {
 
   for (auto* large = large_head_; large != nullptr; large = large->next) {
     if (large->allocation != nullptr) {
-      ::operator delete(large->allocation);
+      if (large->alignment > pool_detail::kDefaultAlignment) {
+        ::operator delete(large->allocation, std::align_val_t{large->alignment});
+      } else {
+        ::operator delete(large->allocation);
+      }
     }
   }
 
@@ -206,7 +215,12 @@ inline void* Pool::Allocate(std::size_t size) {
 inline void* Pool::AllocateUnaligned(std::size_t size) { return AllocateAligned(size, 1); }
 
 inline void* Pool::AllocateAligned(std::size_t size, std::size_t alignment) {
-  return size <= max_small_alloc_ ? AllocateSmall(size, alignment) : AllocateLarge(size);
+  COROPACT_CHECK(alignment != 0 && std::has_single_bit(alignment),
+                 "Pool::AllocateAligned: alignment must be a nonzero power of two");
+  if (size <= max_small_alloc_ && alignment <= pool_detail::kDefaultAlignment) {
+    return AllocateSmall(size, alignment);
+  }
+  return AllocateLarge(size, alignment);
 }
 
 inline void* Pool::Callocate(std::size_t size) {
@@ -220,8 +234,13 @@ inline void* Pool::Callocate(std::size_t size) {
 inline void Pool::Free(void* pointer) noexcept {
   for (LargeNode* node = large_head_; node != nullptr; node = node->next) {
     if (node->allocation == pointer) {
-      ::operator delete(node->allocation);
+      if (node->alignment > pool_detail::kDefaultAlignment) {
+        ::operator delete(node->allocation, std::align_val_t{node->alignment});
+      } else {
+        ::operator delete(node->allocation);
+      }
       node->allocation = nullptr;
+      node->alignment = 0;
       return;
     }
   }
@@ -230,7 +249,11 @@ inline void Pool::Free(void* pointer) noexcept {
 inline void Pool::Reset() noexcept {
   for (LargeNode* node = large_head_; node != nullptr; node = node->next) {
     if (node->allocation != nullptr) {
-      ::operator delete(node->allocation);
+      if (node->alignment > pool_detail::kDefaultAlignment) {
+        ::operator delete(node->allocation, std::align_val_t{node->alignment});
+      } else {
+        ::operator delete(node->allocation);
+      }
       node->allocation = nullptr;
     }
   }
@@ -250,6 +273,9 @@ inline void Pool::Reset() noexcept {
 }
 
 inline void* Pool::RegisterCleanup(void (*cleanup_handler)(void*), std::size_t data_size) {
+  if (data_size > std::numeric_limits<std::size_t>::max() - sizeof(CleanupNode)) {
+    throw std::bad_array_new_length();
+  }
   const std::size_t allocation_size = sizeof(CleanupNode) + data_size;
   auto* memory =
       static_cast<std::byte*>(AllocateAligned(allocation_size, pool_detail::kDefaultAlignment));
@@ -331,25 +357,38 @@ inline void* Pool::AllocateSmall(std::size_t size, std::size_t alignment) {
   return result;
 }
 
-inline void* Pool::AllocateLarge(std::size_t size) {
-  void* allocation = ::operator new(size);
+inline void* Pool::AllocateLarge(std::size_t size, std::size_t alignment) {
+  void* allocation = alignment > pool_detail::kDefaultAlignment
+                         ? ::operator new(size, std::align_val_t{alignment})
+                         : ::operator new(size);
 
-  std::size_t slots_checked = 0;
-  for (LargeNode* node = large_head_; node != nullptr; node = node->next) {
-    if (node->allocation == nullptr) {
-      node->allocation = allocation;
-      return allocation;
+  try {
+    std::size_t slots_checked = 0;
+    for (LargeNode* node = large_head_; node != nullptr; node = node->next) {
+      if (node->allocation == nullptr) {
+        node->allocation = allocation;
+        node->alignment = alignment;
+        return allocation;
+      }
+      if (++slots_checked >= pool_detail::kLargeAllocationSearchLimit) {
+        break;
+      }
     }
-    if (++slots_checked >= pool_detail::kLargeAllocationSearchLimit) {
-      break;
+
+    auto* node = static_cast<LargeNode*>(AllocateSmall(sizeof(LargeNode), alignof(LargeNode)));
+    node->allocation = allocation;
+    node->alignment = alignment;
+    node->next = large_head_;
+    large_head_ = node;
+    return allocation;
+  } catch (...) {
+    if (alignment > pool_detail::kDefaultAlignment) {
+      ::operator delete(allocation, std::align_val_t{alignment});
+    } else {
+      ::operator delete(allocation);
     }
+    throw;
   }
-
-  auto* node = static_cast<LargeNode*>(AllocateSmall(sizeof(LargeNode), alignof(LargeNode)));
-  node->allocation = allocation;
-  node->next = large_head_;
-  large_head_ = node;
-  return allocation;
 }
 
 inline Pool::ChunkHeader* Pool::AllocateChunk() {

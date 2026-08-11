@@ -1,11 +1,8 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "coropact/reactor/recv_source.h"
-
 #include <sys/socket.h>
 
 #include <algorithm>
-#include <cassert>
 #include <cerrno>
 #include <coroutine>
 #include <expected>
@@ -17,6 +14,7 @@
 #include "coropact/operation/detail/completion_gate.h"
 #include "coropact/operation/detail/scheduler_continuation.h"
 #include "coropact/reactor/detail/loop_access.h"
+#include "coropact/reactor/recv_source.h"
 
 namespace coropact::reactor {
 
@@ -82,7 +80,7 @@ public:
   }
 
   ReactorRecvSource::Result await_resume() noexcept {
-    assert(result_.has_value());
+    COROPACT_CHECK(result_.has_value(), "Reactor recv source Next resumed without a result");
     return std::move(*result_);
   }
 
@@ -137,7 +135,7 @@ public:
   }
 
   base::Result<void> await_resume() noexcept {
-    assert(result_.has_value());
+    COROPACT_CHECK(result_.has_value(), "Reactor recv source Stop resumed without a result");
     return std::move(*result_);
   }
 

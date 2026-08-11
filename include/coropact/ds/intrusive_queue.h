@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include <cassert>
 #include <concepts>
 #include <cstddef>
 
@@ -77,7 +76,9 @@ public:
   T* Front() const { return Empty() ? nullptr : ElemOf(head_.next_); }
   T* Back() const { return Empty() ? nullptr : ElemOf(tail_); }
 
+  // Returns false for nullptr or when elem is already queued.
   [[maybe_unused]] bool PushBack(T* elem) {
+    if (elem == nullptr) return false;
     Node* node = NodeOf(elem);
     if (node->InQueue()) return false;
 
@@ -88,7 +89,9 @@ public:
     return true;
   }
 
+  // Returns false for nullptr or when elem is already queued.
   [[maybe_unused]] bool PushFront(T* elem) {
+    if (elem == nullptr) return false;
     Node* node = NodeOf(elem);
     if (node->InQueue()) return false;
 
@@ -123,8 +126,9 @@ public:
     reset();
   }
 
+  // Moves all nodes from other to this queue. Self-splice is a no-op.
   void Splice(IntrusiveQueue& other) {
-    assert(&other != this);
+    if (&other == this) return;
     if (other.Empty()) return;
     Node* first = other.head_.next_;
     Node* last = other.tail_;

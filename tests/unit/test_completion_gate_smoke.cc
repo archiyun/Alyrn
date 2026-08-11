@@ -76,11 +76,13 @@ void ScheduleUnboundContinuation() {
 
 void BindContinuationTwice() {
   RecordingScheduler scheduler;
+  auto* const previous = coropact::coro::Scheduler::TryCurrent();
   coropact::coro::Scheduler::SetCurrent(&scheduler);
 
   coropact::operation::detail::SchedulerContinuation continuation;
   continuation.Bind(std::noop_coroutine());
   continuation.Bind(std::noop_coroutine());
+  coropact::coro::Scheduler::SetCurrent(previous);
 }
 
 void BindContinuationWithoutScheduler() {

@@ -41,7 +41,8 @@ pools, alignment, cleanup registration, reset, and PMR adaptation.
 
 - Arena pointers never outlive Pool reset/destruction.
 - PMR containers using PoolResource are destroyed before the Pool.
-- ObjectPool users release each acquired object exactly once to the same pool.
+- ObjectPool users release each acquired object exactly once to the same pool;
+  destroying an ObjectPool with a live fixed or overflow object terminates.
 - The pool outlives every ScopedPtr/deleter that references it.
 - Cleanup data allocated in the arena remains valid until cleanup execution.
 

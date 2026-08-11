@@ -1,5 +1,11 @@
+#include <sys/wait.h>
+#include <unistd.h>
+
 #include <atomic>
+#include <cerrno>
+#include <csignal>
 #include <exception>
+#include <cstdio>
 #include <iostream>
 #include <string>
 
@@ -33,6 +39,25 @@ bool Expect(bool condition, const char* message) {
     return true;
 }
 
+bool ExpectChildAbort(void (*entry)(), const char* message) {
+    const pid_t child = ::fork();
+    if (child < 0) {
+        return Expect(false, "fork failed for ObjectPool invariant test");
+    }
+    if (child == 0) {
+        (void)::freopen("/dev/null", "w", stderr);
+        entry();
+        ::_exit(0);
+    }
+
+    int status = 0;
+    while (::waitpid(child, &status, 0) < 0 && errno == EINTR) {
+    }
+    return Expect(WIFSIGNALED(status), message) &&
+           Expect(WTERMSIG(status) == SIGABRT,
+                  "ObjectPool invariant must terminate with SIGABRT");
+}
+
 bool TestAcquireAndRelease() {
     TrackedObject::live_count = 0;
     TrackedObject::dtor_count = 0;
@@ -49,8 +74,8 @@ bool TestAcquireAndRelease() {
     pool.Release(first);
     pool.Release(second);
 
-        if (!Expect(pool.UsedCount() == 0, "UsedCount should return to zero after release")) return false;
-        if (!Expect(pool.FreeCount() == pool.Capacity(), "all slots should be returned after release")) return false;
+    if (!Expect(pool.UsedCount() == 0, "UsedCount should return to zero after release")) return false;
+    if (!Expect(pool.FreeCount() == pool.Capacity(), "all slots should be returned after release")) return false;
     if (!Expect(TrackedObject::live_count.load() == 0, "all tracked objects should be destroyed")) return false;
     if (!Expect(TrackedObject::dtor_count.load() == 2, "destructor should be called for each released object")) return false;
     return true;
@@ -105,6 +130,56 @@ bool TestOwns() {
     return true;
 }
 
+void ReleaseForeignHeapObject() {
+    coropact::memory::ObjectPool<TrackedObject, 1> pool;
+    auto* foreign = new TrackedObject(7, "foreign");
+    pool.Release(foreign);
+}
+
+void ReleaseOverflowFromAnotherPool() {
+    coropact::memory::ObjectPool<TrackedObject, 1> source;
+    coropact::memory::ObjectPool<TrackedObject, 1> destination;
+    (void)source.Acquire(8, "pooled");
+    auto* overflow = source.Acquire(9, "overflow");
+    destination.Release(overflow);
+}
+
+void ReleasePoolObjectTwice() {
+    coropact::memory::ObjectPool<TrackedObject, 1> pool;
+    auto* object = pool.Acquire(10, "pooled");
+    pool.Release(object);
+    pool.Release(object);
+}
+
+void DestroyWithLivePoolObject() {
+    coropact::memory::ObjectPool<TrackedObject, 1> pool;
+    (void)pool.Acquire(11, "pooled");
+}
+
+void DestroyWithLiveOverflowObject() {
+    coropact::memory::ObjectPool<TrackedObject, 1> pool;
+    (void)pool.Acquire(12, "pooled");
+    (void)pool.Acquire(13, "overflow");
+}
+
+bool TestInvalidReleaseTerminates() {
+    return Expect(ExpectChildAbort(&ReleaseForeignHeapObject,
+                                   "foreign heap object Release must terminate in every build"),
+                  "foreign heap object Release was accepted") &&
+           Expect(ExpectChildAbort(&ReleaseOverflowFromAnotherPool,
+                                   "cross-pool overflow Release must terminate in every build"),
+                  "cross-pool overflow Release was accepted") &&
+           Expect(ExpectChildAbort(&ReleasePoolObjectTwice,
+                                   "duplicate pool Release must terminate before another destructor"),
+                  "duplicate pool Release was accepted") &&
+           Expect(ExpectChildAbort(&DestroyWithLivePoolObject,
+                                   "destroying a pool with live pool objects must terminate"),
+                  "live pool object survived ObjectPool destruction") &&
+           Expect(ExpectChildAbort(&DestroyWithLiveOverflowObject,
+                                   "destroying a pool with live overflow objects must terminate"),
+                  "live overflow object survived ObjectPool destruction");
+}
+
 }  // namespace
 
 int main() {
@@ -113,6 +188,7 @@ int main() {
         if (!TestAcquireScoped()) return 1;
         if (!TestExhaustion()) return 1;
         if (!TestOwns()) return 1;
+        if (!TestInvalidReleaseTerminates()) return 1;
     } catch (const std::exception& ex) {
         std::cerr << "[FAIL] unexpected exception: " << ex.what() << '\n';
         return 1;
