@@ -159,6 +159,31 @@ bool TestSchedulerContinuationPreservesAffinity() {
                 "completion must schedule through the captured scheduler");
 }
 
+bool TestSchedulerContinuationUsesCustomDispatch() {
+  RecordingScheduler scheduler;
+  coropact::operation::detail::SchedulerContinuation continuation;
+  BindContinuationWork work{&continuation, false};
+  scheduler.Run(&work);
+
+  bool dispatched = false;
+  coropact::coro::Scheduler* observed_scheduler = nullptr;
+  coropact::coro::Work* observed_work = nullptr;
+  continuation.ScheduleWith(
+      [&](coropact::coro::Scheduler& owner, coropact::coro::Work* resume_work) noexcept {
+        dispatched = true;
+        observed_scheduler = &owner;
+        observed_work = resume_work;
+      });
+
+  return Expect(dispatched, "custom continuation dispatch must run") &&
+         Expect(observed_scheduler == &scheduler,
+                "custom continuation dispatch must receive the captured scheduler") &&
+         Expect(observed_work != nullptr,
+                "custom continuation dispatch must receive the resume work") &&
+         Expect(scheduler.scheduled_ == nullptr,
+                "custom continuation dispatch must not also use default Schedule");
+}
+
 bool TestSchedulerRunRestoresNestedAffinity() {
   RecordingScheduler outer_scheduler;
   RecordingScheduler inner_scheduler;
@@ -193,6 +218,7 @@ bool TestSchedulerContinuationRejectsInvalidTransitions() {
 
 int main() {
   const bool ok = TestOneShotTransition() && TestSchedulerContinuationPreservesAffinity() &&
+                  TestSchedulerContinuationUsesCustomDispatch() &&
                   TestSchedulerRunRestoresNestedAffinity() &&
                   TestSchedulerContinuationRejectsInvalidTransitions();
   if (ok) {

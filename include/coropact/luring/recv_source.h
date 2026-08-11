@@ -5,17 +5,17 @@
 #include <liburing/io_uring.h>
 
 #include <coroutine>
-
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <optional>
 #include <vector>
 
+#include "coropact/backend/detail/value_result_state.h"
+#include "coropact/backend/recv_source.h"
 #include "coropact/base/error.h"
 #include "coropact/coro/task.h"
 #include "coropact/coro/work.h"
-#include "coropact/backend/recv_source.h"
 #include "coropact/luring/detail/completion_dispatch.h"
 #include "coropact/luring/detail/op.h"
 #include "coropact/luring/options.h"
@@ -38,8 +38,8 @@ struct LUringRecvSourceOptions {
   bool Valid() const noexcept {
     const std::size_t capacity = source.buffer_capacity;
     return source.Valid() && source.pending_depth == 1 && buffer_size > 0 &&
-           buffer_size <= std::numeric_limits<std::uint32_t>::max() &&
-           capacity <= 32 * 1024 && (capacity & (capacity - 1)) == 0;
+           buffer_size <= std::numeric_limits<std::uint32_t>::max() && capacity <= 32 * 1024 &&
+           (capacity & (capacity - 1)) == 0;
   }
 };
 
@@ -49,8 +49,7 @@ struct LUringRecvSourceOptions {
 // released; Stop() waits for that lease boundary before completing.
 class LUringRecvSource final {
   friend detail::CompletionDisposition detail::DispatchRecvSourceComplete(
-      detail::LUringOp* op,
-      detail::CompletionEvent event) noexcept;
+      detail::LUringOp* op, detail::CompletionEvent event) noexcept;
   friend void detail::DispatchRecvSourceCancelComplete(detail::LUringOp* op) noexcept;
 
 public:
@@ -67,7 +66,9 @@ public:
     explicit NextAwaiter(LUringRecvSource& source) noexcept : source_(&source) {}
 
     [[nodiscard]]
-    bool await_ready() const noexcept { return false; }
+    bool await_ready() const noexcept {
+      return false;
+    }
 
     bool await_suspend(std::coroutine_handle<> continuation) noexcept;
 
@@ -79,14 +80,12 @@ public:
     LUringRecvSource* source_;
     coro::ResumeWork resume_work_;
     operation::detail::CompletionGate completion_gate_;
-    std::optional<Result> result_;
+    backend::detail::ValueResultState<std::optional<Event>> result_;
   };
 
   [[nodiscard]]
-  static base::Result<LUringRecvSource> Create(
-      LUringLoop* loop,
-      int fd,
-      LUringRecvSourceOptions options = {}) noexcept;
+  static base::Result<LUringRecvSource> Create(LUringLoop* loop, int fd,
+                                               LUringRecvSourceOptions options = {}) noexcept;
 
   ~LUringRecvSource();
 
@@ -94,7 +93,9 @@ public:
   LUringRecvSource& operator=(LUringRecvSource&& other) noexcept;
 
   [[nodiscard]]
-  NextAwaiter Next() noexcept { return NextAwaiter(*this); }
+  NextAwaiter Next() noexcept {
+    return NextAwaiter(*this);
+  }
 
   // Begins cancellation without waiting for queued events or outstanding
   // BufferLease instances. This lets an owning adapter stop admission, drain
@@ -110,8 +111,7 @@ private:
 
   class RecvOperation final : public detail::LUringOp {
   public:
-    explicit RecvOperation(LUringRecvSource* source) noexcept
-        : source_(source) {
+    explicit RecvOperation(LUringRecvSource* source) noexcept : source_(source) {
       kind = detail::LUringOpKind::kRecvSourceComplete;
     }
 
@@ -131,8 +131,7 @@ private:
 
   class CancelOperation final : public detail::LUringOp {
   public:
-    explicit CancelOperation(LUringRecvSource* source) noexcept
-        : source_(source) {
+    explicit CancelOperation(LUringRecvSource* source) noexcept : source_(source) {
       kind = detail::LUringOpKind::kRecvSourceCancelComplete;
     }
 
@@ -155,13 +154,9 @@ private:
     std::size_t size{0};
   };
 
-  LUringRecvSource(
-      LUringLoop* loop,
-      int fd,
-      net::detail::RecvSourceStateMachine state,
-      std::size_t buffer_size,
-      detail::ProvidedBufferPool* shared_buffer_pool,
-      std::vector<PendingEvent> event_storage) noexcept;
+  LUringRecvSource(LUringLoop* loop, int fd, net::detail::RecvSourceStateMachine state,
+                   std::size_t buffer_size, detail::ProvidedBufferPool* shared_buffer_pool,
+                   std::vector<PendingEvent> event_storage) noexcept;
 
   [[nodiscard]]
   base::Result<void> Start() noexcept;
@@ -178,8 +173,7 @@ private:
   void EnsureSubmission() noexcept;
   void MaybeResume() noexcept;
   void RequestBackendPause() noexcept;
-  void RequestBackendStop(
-      std::optional<base::Error> error = std::nullopt) noexcept;
+  void RequestBackendStop(std::optional<base::Error> error = std::nullopt) noexcept;
 
   detail::CompletionDisposition OnCompletion(detail::CompletionEvent event) noexcept;
   void OnCancelComplete(int cqe_result) noexcept;

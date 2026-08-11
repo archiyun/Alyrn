@@ -30,6 +30,8 @@ using namespace detail;
 
 namespace {
 
+constexpr std::size_t kReadIntoMaxIov = 16;
+
 base::Result<std::size_t> ToSizeResult(const LUringCqeResult& result) noexcept {
   COROPACT_CHECK(result.HasValue(),
                  "LUring stream awaiter resumed before its CQE result was ready");
@@ -150,7 +152,9 @@ bool LUringStream::ReadIntoAwaiter::await_suspend(std::coroutine_handle<> contin
     Op()->SetImmediateError(reserved.error());
     return false;
   }
-  if (!PrepareReservation()) {
+  iovec single_iov{};
+  const ReservationKind reservation = PrepareReservation(single_iov);
+  if (reservation == ReservationKind::kNone) {
     detail::StreamOperationSlot::Release(*stream_, detail::StreamOperationDirection::kRead, this);
     Op()->SetImmediateError(base::MakeErrno(ENOMEM));
     return false;
@@ -164,12 +168,11 @@ bool LUringStream::ReadIntoAwaiter::await_suspend(std::coroutine_handle<> contin
     Op()->SetImmediateError(error);
   };
 
-  if (iovs_.size() == 1) {
-    const iovec writable = iovs_.front();
+  if (reservation == ReservationKind::kSingle) {
     return detail::SubmitAwaitingOperation(
         *stream_->loop_, *Op(), continuation,
-        [fd = stream_->fd_, writable](io_uring_sqe* sqe) noexcept {
-          io_uring_prep_recv(sqe, fd, writable.iov_base, writable.iov_len, 0);
+        [fd = stream_->fd_, single_iov](io_uring_sqe* sqe) noexcept {
+          io_uring_prep_recv(sqe, fd, single_iov.iov_base, single_iov.iov_len, 0);
         },
         std::move(on_submit_failure));
   }
@@ -200,30 +203,38 @@ void LUringStream::ReadIntoAwaiter::OnComplete(LUringOp* op) noexcept {
   }
 }
 
-bool LUringStream::ReadIntoAwaiter::PrepareReservation() noexcept {
+LUringStream::ReadIntoAwaiter::ReservationKind LUringStream::ReadIntoAwaiter::PrepareReservation(
+    iovec& single_iov) noexcept {
   try {
-    iovs_ = buffer_.PrepareWrite(reserve_, 16);
-    if (iovs_.empty()) {
-      buffer_.AbortWrite();
-      return false;
+    if (auto iov = buffer_.TryPrepareWriteOne(reserve_); iov.has_value()) {
+      single_iov = *iov;
+      reservation_kind_ = ReservationKind::kSingle;
+    } else {
+      auto iovs = buffer_.PrepareWrite(reserve_, kReadIntoMaxIov);
+      if (iovs.empty()) {
+        buffer_.AbortWrite();
+        return ReservationKind::kNone;
+      }
+      iovs_ = std::move(iovs);
+      reservation_kind_ = ReservationKind::kMultiple;
     }
   } catch (const std::bad_alloc&) {
     buffer_.AbortWrite();
-    return false;
+    return ReservationKind::kNone;
   }
-  reservation_active_ = true;
-  return true;
+  return reservation_kind_;
 }
 
 void LUringStream::ReadIntoAwaiter::FinishReservation(base::Result<std::size_t> result) noexcept {
-  COROPACT_CHECK(reservation_active_, "ReadIntoAwaiter completion without a buffer reservation");
+  COROPACT_CHECK(reservation_kind_ != ReservationKind::kNone,
+                 "ReadIntoAwaiter completion without a buffer reservation");
   if (result.has_value()) {
     buffer_.CommitWrite(*result);
   } else {
     buffer_.AbortWrite();
   }
   iovs_.clear();
-  reservation_active_ = false;
+  reservation_kind_ = ReservationKind::kNone;
 }
 
 // --- ReadSomeForAwaiter ---

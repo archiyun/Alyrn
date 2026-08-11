@@ -2,16 +2,20 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <coroutine>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
 #include <optional>
 #include <vector>
 
+#include "coropact/backend/detail/value_result_state.h"
 #include "coropact/backend/recv_source.h"
 #include "coropact/base/error.h"
 #include "coropact/coro/task.h"
 #include "coropact/net/recv_source.h"
+#include "coropact/operation/detail/completion_gate.h"
+#include "coropact/operation/detail/scheduler_continuation.h"
 #include "coropact/reactor/detail/channel.h"
 #include "coropact/reactor/detail/loop_shutdown.h"
 #include "coropact/reactor/loop.h"
@@ -37,6 +41,31 @@ public:
   using Event = net::RecvEvent;
   using Result = base::Result<std::optional<Event>>;
 
+  // Direct awaiter for the single-consumer receive loop. It keeps Next() on
+  // the caller's coroutine frame, matching the luring source path and
+  // avoiding a child Task frame for every event.
+  class NextAwaiter {
+  public:
+    explicit NextAwaiter(ReactorRecvSource& source) noexcept : source_(&source) {}
+
+    [[nodiscard]]
+    bool await_ready() const noexcept {
+      return false;
+    }
+
+    bool await_suspend(std::coroutine_handle<> continuation) noexcept;
+
+    Result await_resume() noexcept;
+
+    void Complete(Result result) noexcept;
+
+  private:
+    ReactorRecvSource* source_;
+    operation::detail::SchedulerContinuation continuation_;
+    operation::detail::CompletionGate completion_gate_;
+    backend::detail::ValueResultState<std::optional<Event>> result_;
+  };
+
   [[nodiscard]]
   static base::Result<ReactorRecvSource> Create(EventLoop* loop, int fd,
                                                 ReactorRecvSourceOptions options = {}) noexcept;
@@ -46,7 +75,10 @@ public:
   ReactorRecvSource(ReactorRecvSource&& other) noexcept;
   ReactorRecvSource& operator=(ReactorRecvSource&& other) noexcept;
 
-  coro::Task<Result> Next();
+  [[nodiscard]]
+  NextAwaiter Next() noexcept {
+    return NextAwaiter(*this);
+  }
 
   // Stops new readiness admission without waiting for queued events or
   // BufferLease instances. An owning consumer drains those events and then
@@ -57,7 +89,6 @@ public:
   coro::Task<base::Result<void>> Stop();
 
 private:
-  class NextAwaiter;
   class StopAwaiter;
 
   ReactorRecvSource(EventLoop* loop, int fd, net::detail::RecvSourceStateMachine state,

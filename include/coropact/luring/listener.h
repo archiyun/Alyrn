@@ -4,6 +4,7 @@
 
 #include <sys/socket.h>
 
+#include <coroutine>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -11,6 +12,7 @@
 
 #include "coropact/backend/accept_source.h"
 #include "coropact/backend/async_listener.h"
+#include "coropact/backend/detail/value_result_state.h"
 #include "coropact/base/error.h"
 #include "coropact/coro/task.h"
 #include "coropact/luring/detail/completion_dispatch.h"
@@ -18,6 +20,8 @@
 #include "coropact/luring/stream.h"
 #include "coropact/net/accept_source.h"
 #include "coropact/net/endpoint.h"
+#include "coropact/operation/detail/completion_gate.h"
+#include "coropact/operation/detail/scheduler_continuation.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::luring {
@@ -42,8 +46,7 @@ class LUringAcceptSource {
   friend class LUringListener;
 
   friend detail::CompletionDisposition detail::DispatchAcceptSourceComplete(
-      detail::LUringOp* op,
-      detail::CompletionEvent event) noexcept;
+      detail::LUringOp* op, detail::CompletionEvent event) noexcept;
 
   friend void detail::DispatchAcceptSourceCancelComplete(detail::LUringOp* op) noexcept;
 
@@ -54,16 +57,43 @@ public:
   using Event = std::optional<Stream>;
   using Result = base::Result<Event>;
 
+  // Direct awaiter for the single-consumer accept loop. It preserves the
+  // source's multishot/one-shot physical implementation while avoiding a
+  // child Task frame for each logical accept event.
+  class NextAwaiter {
+  public:
+    explicit NextAwaiter(LUringAcceptSource& source) noexcept : source_(&source) {}
+
+    [[nodiscard]]
+    bool await_ready() const noexcept {
+      return false;
+    }
+
+    bool await_suspend(std::coroutine_handle<> continuation) noexcept;
+
+    Result await_resume() noexcept;
+
+    void Complete(Result result) noexcept;
+
+  private:
+    LUringAcceptSource* source_;
+    operation::detail::SchedulerContinuation continuation_;
+    operation::detail::CompletionGate completion_gate_;
+    backend::detail::ValueResultState<Event> result_;
+  };
+
   ~LUringAcceptSource();
 
   LUringAcceptSource(LUringAcceptSource&& other) noexcept;
   LUringAcceptSource& operator=(LUringAcceptSource&& other) noexcept;
 
-  coro::Task<Result> Next();
+  [[nodiscard]]
+  NextAwaiter Next() noexcept {
+    return NextAwaiter(*this);
+  }
   coro::Task<base::Result<void>> Stop();
 
 private:
-  class NextAwaiter;
   class StopAwaiter;
 
   class AcceptOperation final : public detail::LUringOp {

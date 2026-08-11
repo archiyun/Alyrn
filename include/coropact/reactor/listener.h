@@ -2,14 +2,19 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <coroutine>
 #include <deque>
 #include <optional>
 
+#include "coropact/backend/accept_source.h"
+#include "coropact/backend/detail/value_result_state.h"
 #include "coropact/base/error.h"
 #include "coropact/coro/task.h"
 #include "coropact/net/accept_source.h"
 #include "coropact/net/endpoint.h"
 #include "coropact/net/socket.h"
+#include "coropact/operation/detail/completion_gate.h"
+#include "coropact/operation/detail/scheduler_continuation.h"
 #include "coropact/reactor/detail/channel.h"
 #include "coropact/reactor/detail/loop_shutdown.h"
 #include "coropact/reactor/loop.h"
@@ -28,18 +33,44 @@ public:
   using Event = std::optional<Stream>;
   using Result = base::Result<Event>;
 
+  // Direct awaiter for the single-consumer accept loop. It keeps Next() on
+  // the caller's coroutine frame and avoids a child Task frame per accepted
+  // connection, while the source retains admission and terminal state.
+  class NextAwaiter {
+  public:
+    explicit NextAwaiter(ReactorAcceptSource& source) noexcept : source_(&source) {}
+
+    [[nodiscard]]
+    bool await_ready() const noexcept {
+      return false;
+    }
+
+    bool await_suspend(std::coroutine_handle<> continuation) noexcept;
+
+    Result await_resume() noexcept;
+
+    void Complete(Result result) noexcept;
+
+  private:
+    ReactorAcceptSource* source_;
+    operation::detail::SchedulerContinuation continuation_;
+    operation::detail::CompletionGate completion_gate_;
+    backend::detail::ValueResultState<Event> result_;
+  };
+
   ~ReactorAcceptSource();
 
   ReactorAcceptSource(ReactorAcceptSource&& other) noexcept;
   ReactorAcceptSource& operator=(ReactorAcceptSource&& other) noexcept;
 
-  coro::Task<Result> Next();
+  [[nodiscard]]
+  NextAwaiter Next() noexcept {
+    return NextAwaiter(*this);
+  }
   coro::Task<base::Result<void>> Stop();
 
 private:
   friend class ReactorListener;
-
-  class NextAwaiter;
 
   ReactorAcceptSource(ReactorListener* listener,
                       net::detail::AcceptSourceStateMachine state) noexcept;
@@ -60,6 +91,8 @@ private:
   std::optional<base::Error> terminal_error_;
   NextAwaiter* pending_next_{nullptr};
 };
+
+static_assert(backend::AsyncAcceptSource<ReactorAcceptSource>);
 
 struct ReactorListenerOptions {
   bool reuse_addr{true};

@@ -9,6 +9,7 @@
 #include <limits>
 #include <utility>
 
+#include "coropact/backend/detail/value_result_state.h"
 #include "coropact/base/check.h"
 #include "coropact/base/error.h"
 #include "coropact/operation/detail/completion_gate.h"
@@ -40,64 +41,71 @@ bool ReactorRecvSourceOptions::Valid() const noexcept {
          source.buffer_capacity <= std::numeric_limits<std::uint32_t>::max();
 }
 
-class ReactorRecvSource::NextAwaiter {
-public:
-  explicit NextAwaiter(ReactorRecvSource& source) noexcept : source_(&source) {}
-
-  [[nodiscard]]
-  bool await_ready() const noexcept {
+bool ReactorRecvSource::NextAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
+  if (source_->loop_ == nullptr || source_->fd_ < 0) {
+    result_.SetError(base::MakeErrno(EBADF));
+    (void)(completion_gate_.TryComplete());
+    return false;
+  }
+  if (!source_->loop_->IsInLoopThread()) {
+    result_.SetError(base::MakeErrno(EINVAL));
+    (void)(completion_gate_.TryComplete());
+    return false;
+  }
+  if (source_->pending_next_ != nullptr) {
+    result_.SetError(base::MakeErrno(EBUSY));
+    (void)(completion_gate_.TryComplete());
     return false;
   }
 
-  bool await_suspend(std::coroutine_handle<> continuation) noexcept {
-    if (source_->pending_next_ != nullptr) {
-      result_.emplace(std::unexpected(base::MakeErrno(EBUSY)));
+  if (source_->state_.State() == net::detail::RecvSourceState::kIdle) {
+    if (source_->loop_->State() == backend::LoopState::kStopping ||
+        source_->loop_->State() == backend::LoopState::kStopped) {
+      result_.SetError(base::MakeErrno(ECANCELED));
       (void)(completion_gate_.TryComplete());
       return false;
     }
-
-    continuation_.Bind(continuation);
-
-    ReactorRecvSource::Result result;
-    if (source_->TryTakeNext(result)) {
-      result_.emplace(std::move(result));
+    auto started = source_->Start();
+    if (!started.has_value()) {
+      result_.SetError(started.error());
       (void)(completion_gate_.TryComplete());
       return false;
     }
-
-    source_->pending_next_ = this;
-    source_->EnsureAdmission();
-
-    // A level-triggered readiness source can already have data available when
-    // admission is enabled. Recheck before parking the coroutine.
-    if (source_->TryTakeNext(result)) {
-      source_->pending_next_ = nullptr;
-      result_.emplace(std::move(result));
-      (void)(completion_gate_.TryComplete());
-      return false;
-    }
-    return true;
   }
 
-  ReactorRecvSource::Result await_resume() noexcept {
-    COROPACT_CHECK(result_.has_value(), "Reactor recv source Next resumed without a result");
-    return std::move(*result_);
+  ReactorRecvSource::Result result;
+  if (source_->TryTakeNext(result)) {
+    result_.SetResult(std::move(result));
+    (void)(completion_gate_.TryComplete());
+    return false;
   }
 
-  void Complete(ReactorRecvSource::Result result) noexcept {
-    if (!completion_gate_.TryComplete()) {
-      return;
-    }
-    result_.emplace(std::move(result));
-    continuation_.Schedule();
-  }
+  continuation_.Bind(continuation);
+  source_->pending_next_ = this;
+  source_->EnsureAdmission();
 
-private:
-  ReactorRecvSource* source_;
-  operation::detail::SchedulerContinuation continuation_;
-  operation::detail::CompletionGate completion_gate_;
-  std::optional<ReactorRecvSource::Result> result_;
-};
+  // A level-triggered readiness source can already have data available when
+  // admission is enabled. Recheck before parking the coroutine.
+  if (source_->TryTakeNext(result)) {
+    source_->pending_next_ = nullptr;
+    result_.SetResult(std::move(result));
+    (void)(completion_gate_.TryComplete());
+    return false;
+  }
+  return true;
+}
+
+ReactorRecvSource::Result ReactorRecvSource::NextAwaiter::await_resume() noexcept {
+  return result_.Take();
+}
+
+void ReactorRecvSource::NextAwaiter::Complete(Result result) noexcept {
+  if (!completion_gate_.TryComplete()) {
+    return;
+  }
+  result_.SetResult(std::move(result));
+  continuation_.Schedule();
+}
 
 class ReactorRecvSource::StopAwaiter {
 public:
@@ -513,35 +521,6 @@ void ReactorRecvSource::BindChannelCallbacks() noexcept {
 
 void ReactorRecvSource::DispatchLoopStop(void* context) noexcept {
   static_cast<ReactorRecvSource*>(context)->RequestBackendStop();
-}
-
-coro::Task<ReactorRecvSource::Result> ReactorRecvSource::Next() {
-  if (loop_ == nullptr || fd_ < 0) {
-    co_return std::unexpected(base::MakeErrno(EBADF));
-  }
-  if (!loop_->IsInLoopThread()) {
-    co_return std::unexpected(base::MakeErrno(EINVAL));
-  }
-  if (pending_next_ != nullptr) {
-    co_return std::unexpected(base::MakeErrno(EBUSY));
-  }
-
-  if (state_.State() == net::detail::RecvSourceState::kIdle) {
-    if (loop_->State() == backend::LoopState::kStopping ||
-        loop_->State() == backend::LoopState::kStopped) {
-      co_return std::unexpected(base::MakeErrno(ECANCELED));
-    }
-    auto started = Start();
-    if (!started.has_value()) {
-      co_return std::unexpected(started.error());
-    }
-  }
-
-  Result result;
-  if (TryTakeNext(result)) {
-    co_return result;
-  }
-  co_return co_await NextAwaiter(*this);
 }
 
 base::Result<void> ReactorRecvSource::RequestStop() noexcept {

@@ -12,8 +12,11 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 
+#include "coropact/backend/recv_source.h"
 #include "coropact/base/error.h"
+#include "coropact/coro/awaitable.h"
 #include "coropact/coro/detached_task.h"
 #include "coropact/coro/spawn.h"
 #include "coropact/io/recv_source.h"
@@ -29,6 +32,7 @@ using coropact::reactor::ReactorRecvSource;
 using coropact::reactor::ReactorRecvSourceOptions;
 
 static_assert(coropact::io::AsyncRecvSource<ReactorRecvSource>);
+static_assert(coropact::coro::Awaiter<decltype(std::declval<ReactorRecvSource&>().Next())>);
 
 bool Check(bool condition, const char* message) {
   if (!condition) {
@@ -92,6 +96,15 @@ DetachedTask WaitForEnd(ReactorRecvSource* source, EventLoop* loop,
 DetachedTask StopOnly(ReactorRecvSource* source, bool* stop_succeeded) {
   auto stopped = co_await source->Stop();
   *stop_succeeded = stopped.has_value();
+}
+
+DetachedTask StopThenObserveTerminalAfterLoopStop(
+    ReactorRecvSource* source, EventLoop* loop, std::optional<coropact::base::Result<void>>* stop,
+    std::optional<ReactorRecvSource::Result>* terminal, bool* with_scheduler) {
+  stop->emplace(co_await source->Stop());
+  loop->RequestStop();
+  terminal->emplace(co_await source->Next());
+  *with_scheduler = coropact::coro::Scheduler::TryCurrent() == loop;
 }
 
 DetachedTask ReceiveTwo(ReactorRecvSource* source, EventLoop* loop, int sender,
@@ -429,6 +442,36 @@ bool CheckStopWakesPendingNext() {
          Check(stop_succeeded, "pending Next Stop failed");
 }
 
+bool CheckTerminalNextAfterLoopStop() {
+  int fds[2] = {-1, -1};
+  if (!Check(MakeSocketPair(fds), "socketpair failed")) {
+    return false;
+  }
+
+  EventLoop loop;
+  auto source_result = ReactorRecvSource::Create(&loop, fds[0]);
+  if (!Check(source_result.has_value(), "terminal source creation failed")) {
+    ::close(fds[0]);
+    ::close(fds[1]);
+    return false;
+  }
+  auto source = std::move(*source_result);
+
+  std::optional<coropact::base::Result<void>> stop;
+  std::optional<ReactorRecvSource::Result> terminal;
+  bool with_scheduler = false;
+  coropact::coro::SpawnDetach(loop, StopThenObserveTerminalAfterLoopStop(
+                                        &source, &loop, &stop, &terminal, &with_scheduler));
+  loop.Run();
+
+  ::close(fds[1]);
+  ::close(fds[0]);
+  return Check(stop.has_value() && stop->has_value(), "terminal source Stop failed") &&
+         Check(terminal.has_value() && terminal->has_value() && !terminal->value().has_value(),
+               "terminal recv Next changed after loop stop was requested") &&
+         Check(with_scheduler, "terminal recv Next lost scheduler affinity");
+}
+
 bool CheckQueuePauseThenRearm() {
   int fds[2] = {-1, -1};
   if (!Check(MakeDatagramSocketPair(fds), "datagram socketpair failed")) {
@@ -492,7 +535,8 @@ bool CheckQueuePauseThenRearm() {
 
 int main() {
   if (!CheckImmediateReceive() || !CheckPendingReceive() || !CheckEof() || !CheckQueuedEvents() ||
-      !CheckStopWaitsForLease() || !CheckStopWakesPendingNext() || !CheckQueuePauseThenRearm()) {
+      !CheckStopWaitsForLease() || !CheckStopWakesPendingNext() ||
+      !CheckTerminalNextAfterLoopStop() || !CheckQueuePauseThenRearm()) {
     return 1;
   }
   std::cout << "reactor recv source smoke: PASS\n";

@@ -170,58 +170,87 @@ private:
   backend::detail::ValueResultState<ReactorStream> result_;
 };
 
-class ReactorAcceptSource::NextAwaiter {
-public:
-  using Result = ReactorAcceptSource::Result;
-
-  explicit NextAwaiter(ReactorAcceptSource& source) noexcept : source_(&source) {}
-
-  [[nodiscard]]
-  bool await_ready() const noexcept {
+bool ReactorAcceptSource::NextAwaiter::await_suspend(
+    std::coroutine_handle<> continuation) noexcept {
+  if (source_->listener_ == nullptr) {
+    result_.SetError(base::MakeErrno(EBADF));
+    (void)(completion_gate_.TryComplete());
+    return false;
+  }
+  if (!source_->listener_->loop_->IsInLoopThread()) {
+    result_.SetError(base::MakeErrno(EINVAL));
+    (void)(completion_gate_.TryComplete());
+    return false;
+  }
+  if (source_->pending_next_ != nullptr) {
+    result_.SetError(base::MakeErrno(EBUSY));
+    (void)(completion_gate_.TryComplete());
     return false;
   }
 
-  bool await_suspend(std::coroutine_handle<> continuation) noexcept {
-    continuation_.Bind(continuation);
-
-    Result result;
-    if (source_->TryTakeNext(result)) {
-      result_.SetResult(std::move(result));
+  if (source_->state_.State() == net::detail::AcceptSourceState::kIdle) {
+    if (source_->listener_->loop_->State() == backend::LoopState::kStopping ||
+        source_->listener_->loop_->State() == backend::LoopState::kStopped) {
+      result_.SetError(base::MakeErrno(ECANCELED));
       (void)(completion_gate_.TryComplete());
       return false;
     }
-
-    source_->pending_next_ = this;
-    source_->EnsureAdmission();
-
-    // Admission may complete synchronously in a readiness backend. Recheck
-    // after arming so a just-available event does not leave the coroutine
-    // parked until a second poll notification.
-    if (source_->TryTakeNext(result)) {
-      source_->pending_next_ = nullptr;
-      result_.SetResult(std::move(result));
+    if (source_->listener_->closed_) {
+      source_->state_.RequestStop();
+      result_.SetResult(Result(std::in_place, Event{}));
       (void)(completion_gate_.TryComplete());
       return false;
     }
-    return true;
+    if (source_->listener_->pending_accept_ != nullptr ||
+        (source_->listener_->accept_source_ != nullptr &&
+         source_->listener_->accept_source_ != source_)) {
+      result_.SetError(base::MakeErrno(EBUSY));
+      (void)(completion_gate_.TryComplete());
+      return false;
+    }
+    auto started = source_->state_.Start();
+    if (!started.has_value()) {
+      result_.SetError(started.error());
+      (void)(completion_gate_.TryComplete());
+      return false;
+    }
+    source_->listener_->accept_source_ = source_;
   }
 
-  Result await_resume() noexcept { return result_.Take(); }
-
-  void Complete(Result result) noexcept {
-    if (!completion_gate_.TryComplete()) {
-      return;
-    }
+  Result result;
+  if (source_->TryTakeNext(result)) {
     result_.SetResult(std::move(result));
-    continuation_.Schedule();
+    (void)(completion_gate_.TryComplete());
+    return false;
   }
 
-private:
-  ReactorAcceptSource* source_;
-  operation::detail::SchedulerContinuation continuation_;
-  operation::detail::CompletionGate completion_gate_;
-  backend::detail::ValueResultState<std::optional<ReactorStream>> result_;
-};
+  continuation_.Bind(continuation);
+  source_->pending_next_ = this;
+  source_->EnsureAdmission();
+
+  // Admission may complete synchronously in a readiness backend. Recheck
+  // after arming so a just-available event does not leave the coroutine
+  // parked until a second poll notification.
+  if (source_->TryTakeNext(result)) {
+    source_->pending_next_ = nullptr;
+    result_.SetResult(std::move(result));
+    (void)(completion_gate_.TryComplete());
+    return false;
+  }
+  return true;
+}
+
+ReactorAcceptSource::Result ReactorAcceptSource::NextAwaiter::await_resume() noexcept {
+  return result_.Take();
+}
+
+void ReactorAcceptSource::NextAwaiter::Complete(Result result) noexcept {
+  if (!completion_gate_.TryComplete()) {
+    return;
+  }
+  result_.SetResult(std::move(result));
+  continuation_.Schedule();
+}
 
 ReactorAcceptSource::ReactorAcceptSource(ReactorListener* listener,
                                          net::detail::AcceptSourceStateMachine state) noexcept
@@ -288,44 +317,6 @@ ReactorAcceptSource::~ReactorAcceptSource() {
   if (listener_->accept_source_ == this) {
     listener_->accept_source_ = nullptr;
   }
-}
-
-coro::Task<ReactorAcceptSource::Result> ReactorAcceptSource::Next() {
-  if (listener_ == nullptr) {
-    co_return std::unexpected(base::MakeErrno(EBADF));
-  }
-  if (!listener_->loop_->IsInLoopThread()) {
-    co_return std::unexpected(base::MakeErrno(EINVAL));
-  }
-  if (pending_next_ != nullptr) {
-    co_return std::unexpected(base::MakeErrno(EBUSY));
-  }
-
-  if (state_.State() == net::detail::AcceptSourceState::kIdle) {
-    if (listener_->loop_->State() == backend::LoopState::kStopping ||
-        listener_->loop_->State() == backend::LoopState::kStopped) {
-      co_return std::unexpected(base::MakeErrno(ECANCELED));
-    }
-    if (listener_->closed_) {
-      state_.RequestStop();
-      co_return Event{};
-    }
-    if (listener_->pending_accept_ != nullptr ||
-        (listener_->accept_source_ != nullptr && listener_->accept_source_ != this)) {
-      co_return std::unexpected(base::MakeErrno(EBUSY));
-    }
-    auto started = state_.Start();
-    if (!started.has_value()) {
-      co_return std::unexpected(started.error());
-    }
-    listener_->accept_source_ = this;
-  }
-
-  Result result;
-  if (TryTakeNext(result)) {
-    co_return result;
-  }
-  co_return co_await NextAwaiter(*this);
 }
 
 coro::Task<base::Result<void>> ReactorAcceptSource::Stop() {

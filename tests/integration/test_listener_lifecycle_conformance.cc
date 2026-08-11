@@ -17,7 +17,9 @@
 #include <system_error>
 #include <utility>
 
+#include "coropact/backend/accept_source.h"
 #include "coropact/base/error.h"
+#include "coropact/coro/awaitable.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/spawn.h"
 #include "coropact/net/endpoint.h"
@@ -33,6 +35,16 @@
 namespace {
 
 using VoidResult = coropact::base::Result<void>;
+
+static_assert(coropact::backend::AsyncAcceptSource<coropact::reactor::ReactorAcceptSource>);
+static_assert(coropact::coro::Awaiter<
+              decltype(std::declval<coropact::reactor::ReactorAcceptSource&>().Next())>);
+
+#if defined(COROPACT_ENABLE_URING)
+static_assert(coropact::backend::AsyncAcceptSource<coropact::luring::LUringAcceptSource>);
+static_assert(coropact::coro::Awaiter<
+              decltype(std::declval<coropact::luring::LUringAcceptSource&>().Next())>);
+#endif
 
 bool Expect(bool condition, std::string_view backend, std::string_view message) {
   if (condition) {
@@ -381,6 +393,58 @@ bool CheckSourceStopContract() {
   ok &= Expect(observation.next_with_scheduler && observation.stop_with_scheduler, Harness::Name(),
                "AcceptSource Stop lost scheduler affinity");
   return ok;
+}
+
+template <class Source>
+struct TerminalAfterLoopStopObservation {
+  std::optional<VoidResult> stop;
+  std::optional<typename Source::Result> terminal;
+  bool terminal_with_scheduler{false};
+};
+
+template <class Source, class Loop>
+auto StopSourceThenObserveTerminalAfterLoopStop(
+    Source& source, Loop& loop, TerminalAfterLoopStopObservation<Source>& observation)
+    -> coropact::coro::DetachedTask {
+  observation.stop.emplace(co_await source.Stop());
+  loop.RequestStop();
+  observation.terminal.emplace(co_await source.Next());
+  observation.terminal_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
+}
+
+// Stopping a loop prevents a source in Idle from opening new backend work,
+// but it must not hide an already-terminal logical result. This is especially
+// important for direct Next awaiters, which can complete inline after the
+// loop has entered Stopping.
+template <class Harness>
+bool CheckTerminalNextAfterLoopStopContract() {
+  typename Harness::Loop loop;
+  coropact::base::Result<typename Harness::Listener> listener =
+      std::unexpected(coropact::base::MakeErrno(EINVAL));
+  if (!PrepareLoopAndListener<Harness>(loop, listener)) {
+    return Harness::Skip();
+  }
+
+  auto source_result = listener->AcceptSource();
+  if (!source_result.has_value()) {
+    std::cerr << "FAIL [" << Harness::Name()
+              << "]: AcceptSource creation: " << source_result.error().message() << '\n';
+    return false;
+  }
+  typename Harness::Source source = std::move(*source_result);
+  TerminalAfterLoopStopObservation<typename Harness::Source> observation;
+
+  coropact::coro::SpawnDetach(
+      loop, StopSourceThenObserveTerminalAfterLoopStop(source, loop, observation));
+  Harness::Run(loop);
+
+  return Expect(observation.stop.has_value() && observation.stop->has_value(), Harness::Name(),
+                "AcceptSource Stop failed before loop shutdown") &&
+         Expect(observation.terminal.has_value() && observation.terminal->has_value() &&
+                    !observation.terminal->value().has_value(),
+                Harness::Name(), "terminal Next changed after loop stop was requested") &&
+         Expect(observation.terminal_with_scheduler, Harness::Name(),
+                "terminal Next after loop stop lost scheduler affinity");
 }
 
 template <class Source>
@@ -790,7 +854,8 @@ bool RunBackendSuite() {
   return CheckPendingAcceptCloseContract<Harness>() && CheckClosedListenerContract<Harness>() &&
          CheckListenerAfterStopRequestContract<Harness>() &&
          CheckAcceptReleaseBeforeContinuationContract<Harness>() &&
-         CheckSourceStopContract<Harness>() && CheckListenerCloseSourceContract<Harness>() &&
+         CheckSourceStopContract<Harness>() && CheckTerminalNextAfterLoopStopContract<Harness>() &&
+         CheckListenerCloseSourceContract<Harness>() &&
          CheckAcceptSourceAdmissionTrace<Harness>() &&
          CheckAcceptSourceStopDrainsBurstContract<Harness>();
 }
