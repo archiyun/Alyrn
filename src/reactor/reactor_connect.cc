@@ -1,7 +1,5 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "coropact/reactor/connector.h"
-
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -12,13 +10,15 @@
 #include <optional>
 #include <utility>
 
+#include "coropact/backend/detail/value_result_state.h"
 #include "coropact/base/check.h"
 #include "coropact/base/error.h"
-#include "coropact/base/try.h"
 #include "coropact/net/endpoint.h"
-#include "coropact/net/net_utils.h"
+#include "coropact/net/socket.h"
 #include "coropact/operation/detail/completion_gate.h"
 #include "coropact/operation/detail/scheduler_continuation.h"
+#include "coropact/operation/detail/single_result_lifecycle.h"
+#include "coropact/reactor/connector.h"
 #include "coropact/reactor/detail/channel.h"
 #include "coropact/reactor/detail/loop_access.h"
 
@@ -38,11 +38,12 @@ base::Result<int> ConnectError(int fd) noexcept {
 
 class ConnectAwaiter {
 public:
-  ConnectAwaiter(EventLoop* loop, net::Endpoint peer,
-                 ReactorStreamOptions stream_options) noexcept
+  ConnectAwaiter(EventLoop* loop, net::Endpoint peer, ReactorStreamOptions stream_options) noexcept
       : loop_(loop), peer_(peer), stream_options_(stream_options) {}
 
   ~ConnectAwaiter() {
+    COROPACT_CHECK(!channel_.has_value() || !channel_->IsRegistered(),
+                   "ConnectAwaiter destroyed before its physical connect settled");
     if (shutdown_participant_.InList()) {
       LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
     }
@@ -61,8 +62,7 @@ public:
     COROPACT_CHECK(loop_->IsInLoopThread(), "ConnectAwaiter called from wrong EventLoop thread");
     if (loop_->State() == backend::LoopState::kStopping ||
         loop_->State() == backend::LoopState::kStopped) {
-      result_.SetError(base::MakeErrno(ECANCELED));
-      (void)(completion_gate_.TryComplete());
+      CompleteInline(std::unexpected(base::MakeErrno(ECANCELED)));
       return false;
     }
     continuation_.Bind(continuation);
@@ -70,8 +70,7 @@ public:
 
     auto fd = net::CreateNonBlockingSocket(peer_.native_family());
     if (!fd.has_value()) {
-      result_.SetError(fd.error());
-      (void)(completion_gate_.TryComplete());
+      CompleteInline(std::unexpected(fd.error()));
       return false;
     }
     fd_ = *fd;
@@ -82,13 +81,11 @@ public:
     } while (rc < 0 && errno == EINTR);
 
     if (rc == 0) {
-      result_.SetResult(MakeStream());
-      (void)(completion_gate_.TryComplete());
+      CompleteInline(MakeStream());
       return false;
     }
     if (errno != EINPROGRESS) {
-      result_.SetError(base::CurrentErrno());
-      (void)(completion_gate_.TryComplete());
+      CompleteInline(std::unexpected(base::CurrentErrno()));
       return false;
     }
 
@@ -99,10 +96,7 @@ public:
     return true;
   }
 
-  base::Result<ReactorStream> await_resume() noexcept {
-    COROPACT_DCHECK(result_.HasResult(), "ConnectAwaiter: result is not ready");
-    return result_.Take();
-  }
+  base::Result<ReactorStream> await_resume() noexcept { return result_.Take(); }
 
 private:
   static void DispatchReady(void* context) noexcept {
@@ -111,36 +105,58 @@ private:
 
   static void DispatchLoopStop(void* context) noexcept {
     auto* self = static_cast<ConnectAwaiter*>(context);
-    if (!self->completion_gate_.TryComplete()) {
-      return;
-    }
-    self->DetachChannel();
-    self->result_.SetError(base::MakeErrno(ECANCELED));
-    self->continuation_.Schedule();
+    self->CompletePending(std::unexpected(base::MakeErrno(ECANCELED)));
   }
 
   base::Result<ReactorStream> MakeStream() noexcept {
-    DetachChannel();
     ReactorStream stream(loop_, fd_, peer_, stream_options_);
     fd_ = -1;
     return stream;
   }
 
   void OnReady() noexcept {
-    if (!completion_gate_.TryComplete()) {
+    if (lifecycle_.ResultReady()) {
       return;
     }
     auto error = ConnectError(fd_);
     if (!error.has_value()) {
-      DetachChannel();
-      result_.SetError(error.error());
+      CompletePending(std::unexpected(error.error()));
     } else if (*error == 0) {
-      result_.SetResult(MakeStream());
+      CompletePending(MakeStream());
     } else {
-      DetachChannel();
-      result_.SetError(base::MakeErrno(*error));
+      CompletePending(std::unexpected(base::MakeErrno(*error)));
     }
+  }
+
+  void CompleteInline(base::Result<ReactorStream> result) noexcept {
+    result_.SetResult(std::move(result));
+    COROPACT_CHECK(lifecycle_.TryAuthorizeResult(), "Reactor Connect result was authorized twice");
+    COROPACT_CHECK(lifecycle_.TryAuthorizeRelease(),
+                   "Reactor Connect release was not authorized after its result");
+    ReleasePhysicalRequest();
+  }
+
+  void CompletePending(base::Result<ReactorStream> result) noexcept {
+    if (!lifecycle_.TryAuthorizeResult()) {
+      return;
+    }
+    result_.SetResult(std::move(result));
+    COROPACT_CHECK(lifecycle_.TryAuthorizeRelease(),
+                   "Reactor Connect release was not authorized after its result");
+    ReleasePhysicalRequest();
+    COROPACT_CHECK(lifecycle_.TryAuthorizeContinuation(),
+                   "Reactor Connect continuation was not authorized after release");
     continuation_.Schedule();
+  }
+
+  void ReleasePhysicalRequest() noexcept {
+    DetachChannel();
+    if (shutdown_participant_.InList()) {
+      LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
+    }
+    if (fd_ >= 0) {
+      (void)::close(std::exchange(fd_, -1));
+    }
   }
 
   void DetachChannel() noexcept {
@@ -160,10 +176,19 @@ private:
   int fd_{-1};
   std::optional<Channel> channel_;
   operation::detail::SchedulerContinuation continuation_;
-  operation::detail::CompletionGate completion_gate_;
-  ReactorValueResultState<ReactorStream> result_;
+  operation::detail::SingleResultLifecycle lifecycle_;
+  backend::detail::ValueResultState<ReactorStream> result_;
   LoopShutdownParticipant shutdown_participant_{this, &DispatchLoopStop};
 };
+
+coro::Task<base::Result<ReactorStream>> ConnectResolved(EventLoop* loop,
+                                                        ReactorStreamOptions stream_options,
+                                                        base::Result<net::Endpoint> peer) {
+  if (!peer.has_value()) {
+    co_return std::unexpected(peer.error());
+  }
+  co_return co_await ConnectAwaiter(loop, std::move(*peer), stream_options);
+}
 
 class SleepAwaiter {
 public:
@@ -251,15 +276,16 @@ ReactorConnector& ReactorConnector::operator=(ReactorConnector&& other) noexcept
   return *this;
 }
 
-coro::Task<base::Result<ReactorStream>> ReactorConnector::Connect(const net::Endpoint& peer) {
+coro::Task<base::Result<ReactorStream>> ReactorConnector::Connect(net::Endpoint peer) {
   RequireOwnerLoop();
-  co_return co_await ConnectAwaiter(loop_, peer, options_.stream_options);
+  return ConnectResolved(loop_, options_.stream_options,
+                         base::Result<net::Endpoint>(std::in_place, std::move(peer)));
 }
 
 coro::Task<base::Result<ReactorStream>> ReactorConnector::Connect(std::string_view host,
                                                                   std::uint16_t port) {
-  COROPACT_CO_TRY(peer, net::ParseIpAddress(host, port));
-  co_return co_await Connect(peer);
+  RequireOwnerLoop();
+  return ConnectResolved(loop_, options_.stream_options, net::ParseIpAddress(host, port));
 }
 
 coro::Task<void> ReactorConnector::SleepFor(std::chrono::milliseconds delay) {

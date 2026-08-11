@@ -20,6 +20,12 @@ SleepFor
 非正 delay 可以立即 ready。loop 尚未初始化、timer 提交失败等情况应通过底层 `Result`
 返回，不应静默挂起。
 
+`RunAfter()` 只有在新 timer 已进入逻辑树、且其首次 driver/update SQE 已成功准备后才返回
+`TimerId`。若 preparation 失败，它会回滚该新 timer 并保留原先已 armed 的 deadline；不能把
+“callback 已存入用户态树”误报成“timer 已接受”。已经处理过 CQE 后的重臂没有同步调用者可返回，
+因此此时若 re-arm preparation 失败，owner loop 会进入 `Stopping` 并通过正常 cancel/drain 收敛，
+而不是静默丢失仍在树中的 timer。
+
 ## ReadSomeFor
 
 带超时的读是一个 composite operation：

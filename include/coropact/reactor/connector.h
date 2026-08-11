@@ -27,15 +27,17 @@ public:
   using Stream = ReactorStream;
 
   [[nodiscard]]
-  static base::Result<ReactorConnector> Create(
-      EventLoop* loop, ReactorConnectorOptions options = {}) noexcept;
+  static base::Result<ReactorConnector> Create(EventLoop* loop,
+                                               ReactorConnectorOptions options = {}) noexcept;
 
   explicit ReactorConnector(EventLoop* loop, ReactorConnectorOptions options = {}) noexcept;
 
   ReactorConnector(ReactorConnector&& other) noexcept;
   ReactorConnector& operator=(ReactorConnector&& other) noexcept;
 
-  coro::Task<base::Result<ReactorStream>> Connect(const net::Endpoint& peer);
+  // Connect is loop-affine. Independent calls may be pending concurrently;
+  // each call owns its socket, Channel, result, and continuation.
+  coro::Task<base::Result<ReactorStream>> Connect(net::Endpoint peer);
   coro::Task<base::Result<ReactorStream>> Connect(std::string_view host, std::uint16_t port);
   coro::Task<void> SleepFor(std::chrono::milliseconds delay);
 

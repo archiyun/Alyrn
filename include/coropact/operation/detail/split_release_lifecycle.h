@@ -3,14 +3,13 @@
 #pragma once
 
 #include "coropact/operation/detail/completion_gate.h"
-#include "coropact/operation/detail/operation_family.h"
 
 namespace coropact::operation::detail {
 
 // Lifecycle protocol for an operation whose logical result and resource
 // release occur at different physical completion boundaries.
 //
-// The family handler supplies the interpretation of backend events. It calls:
+// The backend handler supplies the interpretation of backend events. It calls:
 //   1. RecordLogicalResult() when the caller-visible result is known;
 //   2. MarkPhysicalTerminal() when the backend can no longer access resources;
 //   3. TryAuthorizeRelease() to release those resources exactly once; and
@@ -27,11 +26,6 @@ public:
   SplitReleaseLifecycle& operator=(const SplitReleaseLifecycle&) = delete;
   SplitReleaseLifecycle(SplitReleaseLifecycle&&) = delete;
   SplitReleaseLifecycle& operator=(SplitReleaseLifecycle&&) = delete;
-
-  [[nodiscard]]
-  static constexpr OperationFamily Family() noexcept {
-    return OperationFamily::kSplitRelease;
-  }
 
   [[nodiscard]]
   bool RecordLogicalResult() noexcept {

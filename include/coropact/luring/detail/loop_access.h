@@ -8,6 +8,7 @@
 
 #include "coropact/luring/detail/op.h"
 #include "coropact/luring/loop.h"
+#include "coropact/operation/detail/scheduler_continuation.h"
 
 namespace coropact::luring::detail {
 
@@ -30,6 +31,17 @@ public:
 
   static void ScheduleCompletion(LUringLoop& loop, coro::Work* work) noexcept {
     loop.ScheduleCompletion(work);
+  }
+
+  // Preserves a continuation's captured scheduler affinity while using the
+  // loop's bounded-priority completion queue for work produced by a CQE.
+  static void ScheduleCompletion(LUringLoop& loop,
+                                 operation::detail::SchedulerContinuation& continuation) noexcept {
+    continuation.ScheduleWith([&loop](coro::Scheduler& scheduler, coro::Work* work) noexcept {
+      COROPACT_CHECK(&scheduler == static_cast<coro::Scheduler*>(&loop),
+                     "luring continuation is bound to a different scheduler");
+      loop.ScheduleCompletion(work);
+    });
   }
 
   [[nodiscard]]

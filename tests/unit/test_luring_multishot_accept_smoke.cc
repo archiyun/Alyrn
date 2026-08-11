@@ -749,28 +749,34 @@ bool CheckCancelSubmitFailure() {
   auto source = std::move(*source_result);
 
   CloseObservation end_observation;
-  StopObservation stop_observation;
+  StopObservation first_stop;
   coropact::coro::SpawnDetach(
       loop, WaitForSourceEnd(&source, &end_observation));
   coropact::luring::detail::LoopAccess::RunReady(loop);
 
-  // The accept request is active now. Fail only the cancellation submit;
-  // Listener::Close must still be able to cancel the physical accept and
-  // wake the pending Next() afterwards.
+  // Stop revokes source admission before it attempts the cancel SQE. A local
+  // preparation failure returns EIO but deliberately leaves the source in
+  // Stopping, so the caller must retain it and retry Stop().
   loop.FailNextSubmissionsForTesting(1, EIO);
   coropact::coro::SpawnDetach(
-      loop, StopSource(&source, &stop_observation));
+      loop, StopSource(&source, &first_stop));
   coropact::luring::detail::LoopAccess::RunReady(loop);
 
+  if (!first_stop.done || first_stop.succeeded || !first_stop.error.has_value() ||
+      first_stop.error->value() != EIO) {
+    std::cout << "FAIL: accept cancel submit failure was not propagated\n";
+    return false;
+  }
+
+  StopObservation retry_stop;
   coropact::coro::SpawnDetach(
-      loop, CloseListener(&listener, &end_observation));
+      loop, StopSource(&source, &retry_stop));
   coropact::luring::detail::LoopAccess::RunReady(loop);
 
   if (!PumpUntil(loop, [&] {
         return end_observation.unsupported ||
                end_observation.error.has_value() ||
-               (stop_observation.done && end_observation.done &&
-                end_observation.close_succeeded);
+               (retry_stop.done && end_observation.done);
       })) {
     return false;
   }
@@ -784,11 +790,7 @@ bool CheckCancelSubmitFailure() {
     return false;
   }
 
-  return stop_observation.done && !stop_observation.succeeded &&
-         stop_observation.error.has_value() &&
-         stop_observation.error->value() == EIO &&
-         end_observation.source_end &&
-         end_observation.close_succeeded;
+  return retry_stop.succeeded && end_observation.source_end;
 }
 
 #endif
@@ -1095,7 +1097,7 @@ bool CheckQueueBackpressure() {
          observation.normal_end;
 }
 
-bool CheckQueuePauseThenRearm() {
+bool RunQueuePauseThenRearmScenario(bool inject_close_submit_failure) {
   LUringLoop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
@@ -1125,6 +1127,28 @@ bool CheckQueuePauseThenRearm() {
   PauseResumeObservation observation;
   coropact::coro::SpawnDetach(loop, PauseThenResume(&source, &loop, &observation));
   coropact::luring::detail::LoopAccess::RunReady(loop);
+
+#if defined(COROPACT_ENABLE_TEST_HOOKS)
+  if (inject_close_submit_failure) {
+    // Close preparation has not committed until its cancel SQE is accepted.
+    // A local failure must leave the active source in Active, so the same
+    // high-water pause and low-water re-arm trace remains possible below.
+    loop.FailNextSubmissionsForTesting(1, EIO);
+    CloseObservation close_observation;
+    coropact::coro::SpawnDetach(
+        loop, CloseListener(&listener, &close_observation));
+    coropact::luring::detail::LoopAccess::RunReady(loop);
+
+    if (close_observation.close_succeeded ||
+        !close_observation.error.has_value() ||
+        close_observation.error->value() != EIO) {
+      std::cout << "FAIL: listener close preparation failure did not return EIO\n";
+      return false;
+    }
+  }
+#else
+  (void)(inject_close_submit_failure);
+#endif
 
   auto address = listener.LocalAddress();
   if (!address.has_value()) {
@@ -1208,6 +1232,16 @@ bool CheckQueuePauseThenRearm() {
          observation.normal_end;
 }
 
+bool CheckQueuePauseThenRearm() {
+  return RunQueuePauseThenRearmScenario(false);
+}
+
+#if defined(COROPACT_ENABLE_TEST_HOOKS)
+bool CheckListenerCloseSubmitFailurePreservesActiveSource() {
+  return RunQueuePauseThenRearmScenario(true);
+}
+#endif
+
 }  // namespace
 
 int main() {
@@ -1219,6 +1253,9 @@ int main() {
     return 1;
   }
   if (!CheckCancelSubmitFailure()) {
+    return 1;
+  }
+  if (!CheckListenerCloseSubmitFailurePreservesActiveSource()) {
     return 1;
   }
 #endif

@@ -180,10 +180,10 @@ public:
   // O(1)
   [[nodiscard]]
   std::size_t Size() const noexcept { return size_; }
-  // O(log n) worst-case; return false if elem is already in the tree.
+  // O(log n) worst-case; returns false for nullptr or if elem is already in the tree.
   bool Insert(T* elem);
 
-  // O(log n) worst-case; returns false if elem was not linked in any tree.
+  // O(log n) worst-case; returns false for nullptr or if elem was not linked in any tree.
   //
   // Precondition: if elem is linked, it must be linked in this exact tree.
   // Debug builds assert this with a per-node owner marker. In release builds,
@@ -438,7 +438,7 @@ auto IRBT_TYPE::InsertFixup(Node* node) -> void {
 
 IRBT_TMPL
 bool IRBT_TYPE::Insert(T* elem) {
-  assert(elem != nullptr);
+  if (elem == nullptr) return false;
 
   auto* node = node_of(elem);
 
@@ -609,7 +609,7 @@ auto IRBT_TYPE::DeleteFixup(Node* node, Node* parent) -> void {
 
 IRBT_TMPL
 bool IRBT_TYPE::Erase(T* elem) {
-  assert(elem != nullptr);
+  if (elem == nullptr) return false;
 
   auto* target = node_of(elem);
 

@@ -15,13 +15,12 @@ namespace coropact::reactor::detail {
 template <typename TOwner>
 class ReactorOperationHook {
 public:
-  void Complete(base::Result<std::size_t> result) noexcept {
-    static_cast<TOwner*>(this)->CompleteImpl(std::move(result));
+  [[nodiscard]]
+  bool CompleteResult(base::Result<std::size_t> result) noexcept {
+    return static_cast<TOwner*>(this)->CompleteResultImpl(std::move(result));
   }
 
-  void OnReady() noexcept {
-    static_cast<TOwner*>(this)->OnReadyImpl();
-  }
+  void OnReady() noexcept { static_cast<TOwner*>(this)->OnReadyImpl(); }
 };
 
 static_assert(sizeof(ReactorOperationHook<void>) == 1);

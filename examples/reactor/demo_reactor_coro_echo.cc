@@ -33,7 +33,6 @@
 #include "coropact/coro/task.h"
 #include "coropact/io/async_listener.h"
 #include "coropact/io/async_stream.h"
-#include "coropact/io/stream_algorithms.h"
 #include "coropact/net/endpoint.h"
 #include "coropact/reactor/listener.h"
 #include "coropact/reactor/loop.h"
@@ -79,14 +78,14 @@ coropact::coro::DetachedTask Session(Stream stream, long long* active_sessions,
     if (n == 0) {
       if (!pending.empty()) {
         ++(*total_messages);
-        co_await coropact::io::WriteAll(stream, Bytes(pending));
+        co_await stream.WriteAll(Bytes(pending));
       }
       break;
     }
 
     pending.append(reinterpret_cast<const char*>(buffer.data()), n);
     if (pending.size() > 64 * 1024) {
-      co_await coropact::io::WriteAll(stream, Bytes("ERR line too long\n"));
+      co_await stream.WriteAll(Bytes("ERR line too long\n"));
       break;
     }
 
@@ -100,7 +99,7 @@ coropact::coro::DetachedTask Session(Stream stream, long long* active_sessions,
       const std::string_view command = StripLineEnding(line);
 
       if (command == "/quit") {
-        co_await coropact::io::WriteAll(stream, Bytes("bye\n"));
+        co_await stream.WriteAll(Bytes("bye\n"));
         co_await stream.Close();
         --(*active_sessions);
         co_return;
@@ -109,14 +108,14 @@ coropact::coro::DetachedTask Session(Stream stream, long long* active_sessions,
       if (command == "/stats") {
         std::string reply = "active_sessions=" + std::to_string(*active_sessions) +
                             " total_messages=" + std::to_string(*total_messages) + "\n";
-        co_await coropact::io::WriteAll(stream, Bytes(reply));
+        co_await stream.WriteAll(Bytes(reply));
         pending.erase(0, line_end + 1);
         continue;
       }
 
       ++(*total_messages);
 
-      auto write_result = co_await coropact::io::WriteAll(stream, Bytes(line));
+      auto write_result = co_await stream.WriteAll(Bytes(line));
       if (!write_result.has_value()) {
         std::cerr << "write failed: " << write_result.error().message() << '\n';
         break;
@@ -131,8 +130,7 @@ coropact::coro::DetachedTask Session(Stream stream, long long* active_sessions,
 }
 
 template <coropact::io::AsyncListener Listener>
-coropact::coro::DetachedTask AcceptLoop(Listener* listener,
-                                        coropact::reactor::EventLoop* scheduler,
+coropact::coro::DetachedTask AcceptLoop(Listener* listener, coropact::reactor::EventLoop* scheduler,
                                         long long* active_sessions, long long* total_messages) {
   using Stream = typename Listener::Stream;
 
@@ -145,7 +143,6 @@ coropact::coro::DetachedTask AcceptLoop(Listener* listener,
 
     coropact::coro::SpawnDetach(
         *scheduler, Session<Stream>(std::move(*accepted), active_sessions, total_messages));
-
   }
 }
 
@@ -168,8 +165,8 @@ int main() {
   long long active_sessions = 0;
   long long total_messages = 0;
 
-  coropact::coro::SpawnDetach(
-      loop, AcceptLoop(&listener, &loop, &active_sessions, &total_messages));
+  coropact::coro::SpawnDetach(loop,
+                              AcceptLoop(&listener, &loop, &active_sessions, &total_messages));
 
   std::cout << "reactor coro echo listening on 127.0.0.1:" << port << '\n';
   std::cout << "try: nc 127.0.0.1 " << port << '\n';

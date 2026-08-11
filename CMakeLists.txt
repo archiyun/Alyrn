@@ -18,6 +18,8 @@ option(BUILD_BENCHMARKS "Build standalone microbenchmarks" OFF)
 option(COROPACT_ENABLE_URING "Enable io_uring proactor backend (requires liburing, Linux 5.19+)" OFF)
 option(COROPACT_ENABLE_TEST_HOOKS
        "Enable deterministic fault-injection hooks for runtime tests" OFF)
+option(COROPACT_STRICT_WARNINGS
+       "Treat common GCC/Clang warnings as errors for CoroPact sources" OFF)
 
 find_package(Threads REQUIRED)
 
@@ -39,6 +41,17 @@ if(COROPACT_SANITIZER)
     message(STATUS "Building with sanitizer: -fsanitize=${COROPACT_SANITIZER}")
     add_compile_options(-fsanitize=${COROPACT_SANITIZER} -fno-omit-frame-pointer -g)
     add_link_options(-fsanitize=${COROPACT_SANITIZER})
+endif()
+
+# Keep strict diagnostics opt-in for local development and CI experiments.
+# Project consumers do not inherit these flags through exported targets.
+if(COROPACT_STRICT_WARNINGS)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        add_compile_options(-Wall -Wextra -Wpedantic -Werror)
+    else()
+        message(WARNING
+            "COROPACT_STRICT_WARNINGS is supported only for GCC and Clang")
+    endif()
 endif()
 
 add_library(coropact_foundation INTERFACE)
@@ -88,24 +101,23 @@ target_include_directories(coropact_io INTERFACE
 target_link_libraries(coropact_io INTERFACE coropact_io_contract)
 target_compile_features(coropact_io INTERFACE cxx_std_23)
 
-add_library(coropact_net STATIC
-    src/net/net_utils.cc
-    src/net/socket.cc
-)
+# coropact_net —— backend-shared socket/address/buffer value layer.  Its
+# implementation is entirely inline so consumers do not pay for a separate
+# transport utility library.
+add_library(coropact_net INTERFACE)
 
 target_include_directories(coropact_net
-    PUBLIC
+    INTERFACE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
 target_link_libraries(coropact_net
-    PUBLIC
+    INTERFACE
         coropact_foundation
-        Threads::Threads
 )
 
-target_compile_features(coropact_net PUBLIC cxx_std_23)
+target_compile_features(coropact_net INTERFACE cxx_std_23)
 
 # I/O contracts expose lower net primitives through lightweight public
 # spellings, while remaining independent of concrete backend adapters.

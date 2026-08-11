@@ -5,13 +5,13 @@
 #include <liburing.h>
 #include <liburing/io_uring.h>
 
-#include <cassert>
 #include <cerrno>
 #include <cstdlib>
 #include <cstring>
 #include <expected>
 #include <utility>
 
+#include "coropact/base/check.h"
 #include "coropact/base/error.h"
 #include "coropact/luring/options.h"
 
@@ -54,7 +54,7 @@ io_uring_params MakeParams(const LUringOptions& options) noexcept {
 
 }  // namespace
 
-LUringRing::~LUringRing() noexcept{
+LUringRing::~LUringRing() noexcept {
   if (initialized_) {
     io_uring_queue_exit(&ring_);
   }
@@ -106,7 +106,7 @@ base::Result<std::size_t> LUringRing::Submit() noexcept {
 // data -> target CQE.user_data
 void LUringRing::PrepMsgRing(io_uring_sqe* sqe, int target_ring_fd, std::uint32_t type,
                              std::uint64_t data) noexcept {
-  assert(sqe != nullptr);
+  COROPACT_CHECK(sqe != nullptr, "LUringRing::PrepMsgRing received null SQE");
 
   io_uring_prep_msg_ring(sqe, target_ring_fd, type, data, IORING_MSG_DATA);
 }

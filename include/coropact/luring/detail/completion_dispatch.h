@@ -9,17 +9,12 @@
 namespace coropact::luring::detail {
 
 void DispatchAcceptComplete(LUringOp* op) noexcept;
-CompletionDisposition DispatchAcceptSourceComplete(
-    LUringOp* op,
-    CompletionEvent event) noexcept;
+void DispatchConnectComplete(LUringOp* op) noexcept;
+CompletionDisposition DispatchAcceptSourceComplete(LUringOp* op, CompletionEvent event) noexcept;
 void DispatchAcceptSourceCancelComplete(LUringOp* op) noexcept;
-CompletionDisposition DispatchRecvSourceComplete(
-    LUringOp* op,
-    CompletionEvent event) noexcept;
+CompletionDisposition DispatchRecvSourceComplete(LUringOp* op, CompletionEvent event) noexcept;
 void DispatchRecvSourceCancelComplete(LUringOp* op) noexcept;
-CompletionDisposition DispatchSendZeroCopyComplete(
-    LUringOp* op,
-    CompletionEvent event) noexcept;
+CompletionDisposition DispatchSendZeroCopyComplete(LUringOp* op, CompletionEvent event) noexcept;
 void DispatchListenerCloseComplete(LUringOp* op) noexcept;
 void DispatchStreamReadComplete(LUringOp* op) noexcept;
 void DispatchStreamReadIntoComplete(LUringOp* op) noexcept;

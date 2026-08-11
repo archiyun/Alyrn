@@ -22,10 +22,10 @@ template <class Source>
 concept AsyncAcceptSource = requires(Source& source) {
   typename Source::Stream;
 
-  {
-    source.Next()
-  } -> std::same_as<
-      coro::Task<base::Result<std::optional<typename Source::Stream>>>>;
+  requires coro::Awaitable<decltype(source.Next())>;
+  requires std::same_as<
+      coro::AwaitResult<decltype(source.Next())>,
+      base::Result<std::optional<typename Source::Stream>>>;
 
   {
     source.Stop()
@@ -43,6 +43,10 @@ Result<Error>        source 发生终止性错误
 
 `Next()` 必须先交付已经进入队列的连接，再交付终止结果。这样某个 accept completion
 和后续错误交错时，已经成功接收的连接不会因为错误被静默丢弃。
+
+两个后端的 `Next()` 都是直接 awaiter，而不是每个 logical event 一个中间 `Task`：已有连接或
+terminal result 时在调用协程中 inline 完成；否则 source 保存 caller continuation，待事件 ready
+后按 source 所属 scheduler 恢复。这个实现选择不改变上述可观察结果或单 consumer 限制。
 
 终止结果是 sticky 的：
 
@@ -73,12 +77,19 @@ AcceptSource owns pending accept state and queued Stream values
 约束如下：
 
 - source 不能超过 listener 的生命周期；
-- listener 进入 `Close()` 前必须停止 source；listener 的 `Close()` 也必须隐式终止 source；
+- listener 进入 committed `Close()` 前必须停止 source；listener 的 committed `Close()` 也必须
+  隐式终止 source。仅在本地 cancel SQE preparation 失败的 `Close()` 不改变 source 的 logical
+  state；
 - 同一个 listener 同时只能处于一种 accept 模式；`Accept()` 与 `AcceptSource` 互斥；
 - `Next()` 暂时只允许一个并发等待者，重复等待返回 `EBUSY`；
 - source 的创建、`Next()`、`Stop()` 和移动都发生在 owner loop 线程；
 - source 停止后，queued stream 仍由 source 持有，直到被 `Next()` 转移或 source 被明确销毁；
-- source 析构时必须已经停止且没有 pending physical request。
+- source 析构时必须处于 `Idle`、`Draining` 或 `Terminal`，且没有 pending `Next()`、
+  `Stop()` 或 physical request。该约束在 Release 构建中同样检查，违反它属于所有权错误。
+
+listener 已关闭时，`AcceptSource()` 返回 `EBADF`；owner loop 已进入 `Stopping` 或
+`Stopped` 时返回 `ECANCELED`。因此创建 source 成功意味着当前仍允许建立新的 logical
+accept lifecycle，而不只是 listener fd 数值上仍然有效。
 
 这里的“borrow”只针对 listener 的 accept fd。已经成功接收并由 `Next()` 返回的 stream 不再
 依赖 listener，可以独立转移到业务协程。
@@ -228,7 +239,7 @@ Reactor 的 readiness 本身不是业务事件；业务事件只由成功的 `ac
 
 ## 7. io_uring 实现映射
 
-第一版使用 one-shot accept re-arm：
+io_uring 可以使用 one-shot accept re-arm：
 
 ```text
 source Active
@@ -239,7 +250,8 @@ source Active
   -> Stop/Close 时提交 cancel，并等待所有 accept CQE 收敛
 ```
 
-native multishot accept 作为第二种内部 path：
+当前实现优先选择 native multishot accept，并在内核拒绝 multishot flag 时自动退回
+one-shot re-arm：
 
 ```text
 一个 multishot request
@@ -250,7 +262,7 @@ native multishot accept 作为第二种内部 path：
   -> Stop/Close 才进入 Stopping/Draining/Terminal
 ```
 
-两种 path 对业务都只暴露 `Next()`；区别保留在 luring 内部的 operation family 和
+两种 path 对业务都只暴露 `Next()`；区别保留在 luring 内部的 operation-specific lifecycle 和
 capability/path selector 中。
 
 ## 8. 第一版不做的事情
@@ -271,11 +283,13 @@ capability/path selector 中。
 - [x] 覆盖 source `Stop()`、listener `Close()`、队列消费和 listener 生命周期回归。
 - [x] 覆盖 io_uring native multishot 的 high-water pause、terminal CQE 收敛和 low-water
   re-arm；测试中只有第三个、在低水位后新建的连接能够证明重挂成功。
+- [x] 以同一套 Reactor/io_uring conformance 场景覆盖 pending `Accept()` + `Close()`、
+  pending `Next()` + `Stop()`、listener `Close()` + source，以及 loop stop 后拒绝新操作。
+- [x] 以同一条公开可观察序列覆盖两个 backend 的 bounded admission：三条 burst 连接填满
+  queue、consumer 到达 low-water、随后新建的第四条连接必须被重新 admission；该测试不窥探
+  backend 的 readiness/CQE 状态，只验证 `AcceptSource::Next()`、`Stop()` 和 terminal result。
 
 后续顺序：
 
-1. 在 io_uring 实现 one-shot accept re-arm，复用现有 `accept_depth` 作为初始
-   `pending_depth`；
-2. 增加 Reactor/io_uring source 与 listener close/cancel 的交错测试；
-3. 为 Reactor 增加同一 high-water/low-water 可观察序列的 integration test，保持两个
-   backend 的 logical source trace 一致。
+1. 扩展 io_uring one-shot fallback 的多 request admission，复用现有 `accept_depth` 作为
+   初始 `pending_depth`；

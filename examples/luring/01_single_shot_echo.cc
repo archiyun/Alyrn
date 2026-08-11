@@ -37,7 +37,7 @@ auto EchoSession(luring::LUringStream stream) -> coro::DetachedTask {
 
     auto payload = std::span<const std::byte>(buffer.data(), *read);
 
-    auto written = co_await io::WriteAll(stream, payload);
+    auto written = co_await stream.WriteAll(payload);
     if (!written.has_value()) {
       std::println(stderr, "write failed: {}", written.error().message());
       break;

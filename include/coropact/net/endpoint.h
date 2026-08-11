@@ -8,9 +8,13 @@
 
 #include <cstdint>
 #include <cstring>
+#include <expected>
 #include <string>
+#include <string_view>
+#include <system_error>
 
 #include "coropact/base/check.h"
+#include "coropact/base/error.h"
 
 namespace coropact::net {
 
@@ -209,5 +213,31 @@ private:
   sockaddr_storage addr_{};
   socklen_t addr_len_{0};
 };
+
+// Parses a numeric IPv4 or IPv6 address. Hostnames are deliberately not
+// resolved by this value-layer helper.
+[[nodiscard]]
+inline base::Result<Endpoint> ParseIpAddress(std::string_view ip, std::uint16_t port) {
+  if (ip.find('\0') != std::string_view::npos) {
+    return std::unexpected(base::Error(std::make_error_code(std::errc::invalid_argument)));
+  }
+
+  const std::string text(ip);
+  sockaddr_in ipv4{};
+  ipv4.sin_family = AF_INET;
+  ipv4.sin_port = htons(port);
+  if (::inet_pton(AF_INET, text.c_str(), &ipv4.sin_addr) == 1) {
+    return Endpoint(ipv4);
+  }
+
+  sockaddr_in6 ipv6{};
+  ipv6.sin6_family = AF_INET6;
+  ipv6.sin6_port = htons(port);
+  if (::inet_pton(AF_INET6, text.c_str(), &ipv6.sin6_addr) == 1) {
+    return Endpoint(ipv6);
+  }
+
+  return std::unexpected(base::Error(std::make_error_code(std::errc::invalid_argument)));
+}
 
 }  // namespace coropact::net

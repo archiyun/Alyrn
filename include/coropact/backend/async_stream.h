@@ -26,19 +26,17 @@ concept AsyncReadStream = requires(T& stream, std::span<std::byte> buffer) {
                         base::Result<std::size_t>>;
 };
 
-// Optional timed-read extension.  It deliberately stays outside AsyncStream:
-// a timeout changes the operation family from a single physical request to a
-// composite read-and-timeout operation.  A profile bit alone never adds this
+// Optional timed-read extension. It deliberately stays outside AsyncStream:
+// a timeout changes physical convergence from one execution path to a
+// composite read-and-timeout protocol. A profile bit alone never adds this
 // C++ interface or its lifetime guarantee.
 template <class T>
 concept AsyncTimedReadStream =
     AsyncReadStream<T> &&
-    requires(T& stream, std::span<std::byte> buffer,
-             std::chrono::milliseconds timeout) {
+    requires(T& stream, std::span<std::byte> buffer, std::chrono::milliseconds timeout) {
       requires coro::Awaitable<decltype(stream.ReadSomeFor(buffer, timeout))>;
-      requires std::same_as<
-          coro::AwaitResult<decltype(stream.ReadSomeFor(buffer, timeout))>,
-          base::Result<std::size_t>>;
+      requires std::same_as<coro::AwaitResult<decltype(stream.ReadSomeFor(buffer, timeout))>,
+                            base::Result<std::size_t>>;
     };
 
 // Optional ReadInto extension. ReadInto() consumes a move-only Buffer and
@@ -52,14 +50,15 @@ concept AsyncReadIntoStream = requires(T& stream, net::Buffer buffer, std::size_
                         net::ReadIntoOutcome>;
 };
 
+// WriteAll() keeps the input storage borrowed until every byte has either
+// been accepted by the backend or the operation reaches a terminal error.
+// It is the core write contract; each backend keeps short-write progress and
+// resource-lifetime handling private to its implementation.
 template <class T>
-concept AsyncWriteStream =
-    requires(T& stream, std::span<const std::byte> buffer) {
-      requires coro::Awaitable<decltype(stream.WriteSome(buffer))>;
-      requires std::same_as<
-          coro::AwaitResult<decltype(stream.WriteSome(buffer))>,
-          base::Result<std::size_t>>;
-    };
+concept AsyncWriteStream = requires(T& stream, std::span<const std::byte> buffer) {
+  requires coro::Awaitable<decltype(stream.WriteAll(buffer))>;
+  requires std::same_as<coro::AwaitResult<decltype(stream.WriteAll(buffer))>, base::Result<void>>;
+};
 
 template <class T>
 concept AsyncClosableStream = requires(T& stream) {
@@ -68,8 +67,7 @@ concept AsyncClosableStream = requires(T& stream) {
 };
 
 template <class T>
-concept AsyncStream =
-    AsyncReadStream<T> && AsyncWriteStream<T> && AsyncClosableStream<T>;
+concept AsyncStream = AsyncReadStream<T> && AsyncWriteStream<T> && AsyncClosableStream<T>;
 
 // A complete stream with the optional timed-read semantic extension.
 template <class T>

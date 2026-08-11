@@ -5,6 +5,7 @@
 #include <iostream>
 
 #include "async_io_contracts.h"
+#include "coropact/io/buffer.h"
 #include "coropact/io/loop.h"
 #include "coropact/reactor/connector.h"
 #include "coropact/reactor/listener.h"
@@ -24,6 +25,10 @@ using coropact::test::contracts::AssertCoreConnector;
 using coropact::test::contracts::AssertCoreListener;
 using coropact::test::contracts::AssertCoreStream;
 
+template <class T>
+concept HasBorrowedBufferRead =
+    requires(T& stream, coropact::io::Buffer& buffer) { stream.ReadSome(buffer, 4096); };
+
 consteval bool CheckReactorContracts() {
   AssertCoreStream<coropact::reactor::ReactorStream>();
   AssertCoreListener<coropact::reactor::ReactorListener>();
@@ -33,6 +38,7 @@ consteval bool CheckReactorContracts() {
 
 static_assert(CheckReactorContracts());
 static_assert(coropact::io::ManagedLoop<coropact::reactor::EventLoop>);
+static_assert(!HasBorrowedBufferRead<coropact::reactor::ReactorStream>);
 
 #if defined(COROPACT_ENABLE_URING)
 consteval bool CheckLuringContracts() {
@@ -44,6 +50,7 @@ consteval bool CheckLuringContracts() {
 
 static_assert(CheckLuringContracts());
 static_assert(coropact::io::ManagedLoop<coropact::luring::LUringLoop>);
+static_assert(!HasBorrowedBufferRead<coropact::luring::LUringStream>);
 #endif
 
 }  // namespace

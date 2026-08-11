@@ -13,6 +13,7 @@
 
 #include <array>
 #include <atomic>
+#include <bit>
 #include <chrono>
 #include <csignal>
 #include <cstddef>
@@ -188,7 +189,11 @@ void HandleEvent(Worker* worker, const io_event& event) {
   }
   auto* connection = operation->connection;
   if (connection == nullptr || worker->connections.find(connection) == worker->connections.end()) return;
-  if (event.res < 0 || (event.res & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
+  // libaio exposes io_event::res as unsigned long even though the kernel ABI
+  // defines it as a signed completion result. Reinterpret its ABI bit pattern
+  // before distinguishing a negative operation error from poll flags.
+  const long result = std::bit_cast<long>(event.res);
+  if (result < 0 || (result & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
     CloseConnection(worker, connection);
     return;
   }

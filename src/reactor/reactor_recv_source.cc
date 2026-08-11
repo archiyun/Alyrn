@@ -1,22 +1,21 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
-#include "coropact/reactor/recv_source.h"
-
 #include <sys/socket.h>
 
 #include <algorithm>
-#include <cassert>
 #include <cerrno>
 #include <coroutine>
 #include <expected>
 #include <limits>
 #include <utility>
 
+#include "coropact/backend/detail/value_result_state.h"
 #include "coropact/base/check.h"
 #include "coropact/base/error.h"
 #include "coropact/operation/detail/completion_gate.h"
 #include "coropact/operation/detail/scheduler_continuation.h"
 #include "coropact/reactor/detail/loop_access.h"
+#include "coropact/reactor/recv_source.h"
 
 namespace coropact::reactor {
 
@@ -24,9 +23,7 @@ using detail::LoopAccess;
 
 namespace {
 
-bool IsWouldBlock(int error) noexcept {
-  return error == EAGAIN || error == EWOULDBLOCK;
-}
+bool IsWouldBlock(int error) noexcept { return error == EAGAIN || error == EWOULDBLOCK; }
 
 base::Error SocketError(int fd) noexcept {
   int error = 0;
@@ -44,69 +41,80 @@ bool ReactorRecvSourceOptions::Valid() const noexcept {
          source.buffer_capacity <= std::numeric_limits<std::uint32_t>::max();
 }
 
-class ReactorRecvSource::NextAwaiter {
-public:
-  explicit NextAwaiter(ReactorRecvSource& source) noexcept : source_(&source) {}
+bool ReactorRecvSource::NextAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
+  if (source_->loop_ == nullptr || source_->fd_ < 0) {
+    result_.SetError(base::MakeErrno(EBADF));
+    (void)(completion_gate_.TryComplete());
+    return false;
+  }
+  if (!source_->loop_->IsInLoopThread()) {
+    result_.SetError(base::MakeErrno(EINVAL));
+    (void)(completion_gate_.TryComplete());
+    return false;
+  }
+  if (source_->pending_next_ != nullptr) {
+    result_.SetError(base::MakeErrno(EBUSY));
+    (void)(completion_gate_.TryComplete());
+    return false;
+  }
 
-  [[nodiscard]]
-  bool await_ready() const noexcept { return false; }
-
-  bool await_suspend(std::coroutine_handle<> continuation) noexcept {
-    if (source_->pending_next_ != nullptr) {
-      result_.emplace(std::unexpected(base::MakeErrno(EBUSY)));
+  if (source_->state_.State() == net::detail::RecvSourceState::kIdle) {
+    if (source_->loop_->State() == backend::LoopState::kStopping ||
+        source_->loop_->State() == backend::LoopState::kStopped) {
+      result_.SetError(base::MakeErrno(ECANCELED));
       (void)(completion_gate_.TryComplete());
       return false;
     }
-
-    continuation_.Bind(continuation);
-
-    ReactorRecvSource::Result result;
-    if (source_->TryTakeNext(result)) {
-      result_.emplace(std::move(result));
+    auto started = source_->Start();
+    if (!started.has_value()) {
+      result_.SetError(started.error());
       (void)(completion_gate_.TryComplete());
       return false;
     }
-
-    source_->pending_next_ = this;
-    source_->EnsureAdmission();
-
-    // A level-triggered readiness source can already have data available when
-    // admission is enabled. Recheck before parking the coroutine.
-    if (source_->TryTakeNext(result)) {
-      source_->pending_next_ = nullptr;
-      result_.emplace(std::move(result));
-      (void)(completion_gate_.TryComplete());
-      return false;
-    }
-    return true;
   }
 
-  ReactorRecvSource::Result await_resume() noexcept {
-    assert(result_.has_value());
-    return std::move(*result_);
+  ReactorRecvSource::Result result;
+  if (source_->TryTakeNext(result)) {
+    result_.SetResult(std::move(result));
+    (void)(completion_gate_.TryComplete());
+    return false;
   }
 
-  void Complete(ReactorRecvSource::Result result) noexcept {
-    if (!completion_gate_.TryComplete()) {
-      return;
-    }
-    result_.emplace(std::move(result));
-    continuation_.Schedule();
-  }
+  continuation_.Bind(continuation);
+  source_->pending_next_ = this;
+  source_->EnsureAdmission();
 
-private:
-  ReactorRecvSource* source_;
-  operation::detail::SchedulerContinuation continuation_;
-  operation::detail::CompletionGate completion_gate_;
-  std::optional<ReactorRecvSource::Result> result_;
-};
+  // A level-triggered readiness source can already have data available when
+  // admission is enabled. Recheck before parking the coroutine.
+  if (source_->TryTakeNext(result)) {
+    source_->pending_next_ = nullptr;
+    result_.SetResult(std::move(result));
+    (void)(completion_gate_.TryComplete());
+    return false;
+  }
+  return true;
+}
+
+ReactorRecvSource::Result ReactorRecvSource::NextAwaiter::await_resume() noexcept {
+  return result_.Take();
+}
+
+void ReactorRecvSource::NextAwaiter::Complete(Result result) noexcept {
+  if (!completion_gate_.TryComplete()) {
+    return;
+  }
+  result_.SetResult(std::move(result));
+  continuation_.Schedule();
+}
 
 class ReactorRecvSource::StopAwaiter {
 public:
   explicit StopAwaiter(ReactorRecvSource& source) noexcept : source_(&source) {}
 
   [[nodiscard]]
-  bool await_ready() const noexcept { return false; }
+  bool await_ready() const noexcept {
+    return false;
+  }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     if (source_->pending_stop_ != nullptr) {
@@ -135,7 +143,7 @@ public:
   }
 
   base::Result<void> await_resume() noexcept {
-    assert(result_.has_value());
+    COROPACT_CHECK(result_.has_value(), "Reactor recv source Stop resumed without a result");
     return std::move(*result_);
   }
 
@@ -155,9 +163,7 @@ private:
 };
 
 base::Result<ReactorRecvSource> ReactorRecvSource::Create(
-    EventLoop* loop,
-    int fd,
-    ReactorRecvSourceOptions options) noexcept {
+    EventLoop* loop, int fd, ReactorRecvSourceOptions options) noexcept {
   if (loop == nullptr || fd < 0 || !loop->IsInLoopThread()) {
     return std::unexpected(base::MakeErrno(EINVAL));
   }
@@ -186,22 +192,14 @@ base::Result<ReactorRecvSource> ReactorRecvSource::Create(
     return std::unexpected(base::MakeErrno(ENOMEM));
   }
 
-  return ReactorRecvSource(
-      loop,
-      fd,
-      std::move(*state),
-      options.buffer_size,
-      std::move(storage),
-      std::move(available_buffers));
+  return ReactorRecvSource(loop, fd, std::move(*state), options.buffer_size, std::move(storage),
+                           std::move(available_buffers));
 }
 
-ReactorRecvSource::ReactorRecvSource(
-    EventLoop* loop,
-    int fd,
-    net::detail::RecvSourceStateMachine state,
-    std::size_t buffer_size,
-    std::vector<std::byte> storage,
-    std::vector<std::uint32_t> available_buffers) noexcept
+ReactorRecvSource::ReactorRecvSource(EventLoop* loop, int fd,
+                                     net::detail::RecvSourceStateMachine state,
+                                     std::size_t buffer_size, std::vector<std::byte> storage,
+                                     std::vector<std::uint32_t> available_buffers) noexcept
     : loop_(loop),
       fd_(fd),
       state_(std::move(state)),
@@ -218,20 +216,16 @@ ReactorRecvSource::~ReactorRecvSource() {
     return;
   }
 
-  COROPACT_DCHECK(loop_->IsInLoopThread(),
-                 "ReactorRecvSource destroyed from wrong thread");
-  COROPACT_DCHECK(pending_next_ == nullptr,
-                 "ReactorRecvSource destroyed with pending Next");
-  COROPACT_DCHECK(pending_stop_ == nullptr,
-                 "ReactorRecvSource destroyed with pending Stop");
-  COROPACT_DCHECK(state_.State() == net::detail::RecvSourceState::kIdle ||
+  COROPACT_CHECK(loop_->IsInLoopThread(), "ReactorRecvSource destroyed from wrong thread");
+  COROPACT_CHECK(pending_next_ == nullptr, "ReactorRecvSource destroyed with pending Next");
+  COROPACT_CHECK(pending_stop_ == nullptr, "ReactorRecvSource destroyed with pending Stop");
+  COROPACT_CHECK(state_.State() == net::detail::RecvSourceState::kIdle ||
                      state_.State() == net::detail::RecvSourceState::kTerminal,
                  "ReactorRecvSource destroyed before Stop completed");
-  COROPACT_DCHECK(events_.empty(),
-                 "ReactorRecvSource destroyed with queued events");
-  COROPACT_DCHECK(state_.OutstandingLeases() == 0,
+  COROPACT_CHECK(events_.empty(), "ReactorRecvSource destroyed with queued events");
+  COROPACT_CHECK(state_.OutstandingLeases() == 0,
                  "ReactorRecvSource destroyed with outstanding leases");
-  COROPACT_DCHECK(available_buffers_.size() == state_.Options().buffer_capacity,
+  COROPACT_CHECK(available_buffers_.size() == state_.Options().buffer_capacity,
                  "ReactorRecvSource destroyed with a missing buffer");
 
   LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
@@ -248,15 +242,12 @@ ReactorRecvSource::ReactorRecvSource(ReactorRecvSource&& other) noexcept
       buffer_size_(std::exchange(other.buffer_size_, 0)),
       storage_(std::move(other.storage_)),
       available_buffers_(std::move(other.available_buffers_)) {
-  COROPACT_CHECK(other.pending_next_ == nullptr,
-                 "ReactorRecvSource cannot move with pending Next");
-  COROPACT_CHECK(other.pending_stop_ == nullptr,
-                 "ReactorRecvSource cannot move with pending Stop");
+  COROPACT_CHECK(other.pending_next_ == nullptr, "ReactorRecvSource cannot move with pending Next");
+  COROPACT_CHECK(other.pending_stop_ == nullptr, "ReactorRecvSource cannot move with pending Stop");
   COROPACT_CHECK(other.state_.State() == net::detail::RecvSourceState::kIdle ||
                      other.state_.State() == net::detail::RecvSourceState::kTerminal,
                  "ReactorRecvSource cannot move while active");
-  COROPACT_CHECK(other.events_.empty(),
-                 "ReactorRecvSource cannot move with queued events");
+  COROPACT_CHECK(other.events_.empty(), "ReactorRecvSource cannot move with queued events");
   COROPACT_CHECK(other.state_.OutstandingLeases() == 0,
                  "ReactorRecvSource cannot move with outstanding leases");
   LoopAccess::UnregisterShutdownParticipant(*other.loop_, other.shutdown_participant_);
@@ -270,27 +261,21 @@ ReactorRecvSource& ReactorRecvSource::operator=(ReactorRecvSource&& other) noexc
     return *this;
   }
 
-  COROPACT_CHECK(pending_next_ == nullptr,
-                 "ReactorRecvSource destination has pending Next");
-  COROPACT_CHECK(pending_stop_ == nullptr,
-                 "ReactorRecvSource destination has pending Stop");
+  COROPACT_CHECK(pending_next_ == nullptr, "ReactorRecvSource destination has pending Next");
+  COROPACT_CHECK(pending_stop_ == nullptr, "ReactorRecvSource destination has pending Stop");
   COROPACT_CHECK(state_.State() == net::detail::RecvSourceState::kIdle ||
                      state_.State() == net::detail::RecvSourceState::kTerminal,
                  "ReactorRecvSource destination is active");
-  COROPACT_CHECK(events_.empty(),
-                 "ReactorRecvSource destination has queued events");
+  COROPACT_CHECK(events_.empty(), "ReactorRecvSource destination has queued events");
   COROPACT_CHECK(state_.OutstandingLeases() == 0,
                  "ReactorRecvSource destination has outstanding leases");
 
-  COROPACT_CHECK(other.pending_next_ == nullptr,
-                 "ReactorRecvSource source has pending Next");
-  COROPACT_CHECK(other.pending_stop_ == nullptr,
-                 "ReactorRecvSource source has pending Stop");
+  COROPACT_CHECK(other.pending_next_ == nullptr, "ReactorRecvSource source has pending Next");
+  COROPACT_CHECK(other.pending_stop_ == nullptr, "ReactorRecvSource source has pending Stop");
   COROPACT_CHECK(other.state_.State() == net::detail::RecvSourceState::kIdle ||
                      other.state_.State() == net::detail::RecvSourceState::kTerminal,
                  "ReactorRecvSource source is active");
-  COROPACT_CHECK(other.events_.empty(),
-                 "ReactorRecvSource source has queued events");
+  COROPACT_CHECK(other.events_.empty(), "ReactorRecvSource source has queued events");
   COROPACT_CHECK(other.state_.OutstandingLeases() == 0,
                  "ReactorRecvSource source has outstanding leases");
 
@@ -342,13 +327,18 @@ base::Result<bool> ReactorRecvSource::BeginStop() noexcept {
 
 void ReactorRecvSource::EnsureAdmission() noexcept {
   if (loop_ == nullptr || !loop_->IsInLoopThread() ||
-      state_.State() != net::detail::RecvSourceState::kActive ||
-      state_.ArmedRequests() != 0) {
+      state_.State() != net::detail::RecvSourceState::kActive || state_.ArmedRequests() != 0) {
     return;
   }
   if (state_.TryArm()) {
     channel_.EnableReading();
   }
+}
+
+void ReactorRecvSource::RequestBackendPause() noexcept {
+  auto paused = state_.RequestPause();
+  COROPACT_CHECK(paused.has_value(), "ReactorRecvSource failed to enter the paused state");
+  CompleteReadiness();
 }
 
 void ReactorRecvSource::CompleteReadiness() noexcept {
@@ -357,10 +347,8 @@ void ReactorRecvSource::CompleteReadiness() noexcept {
   }
   if (state_.ArmedRequests() != 0) {
     auto completed = state_.CompleteMultishotEvent(
-        net::detail::EventDisposition::kNone,
-        net::detail::MultishotRequestDisposition::kTerminal);
-    COROPACT_CHECK(completed.has_value(),
-                   "ReactorRecvSource failed to complete readiness request");
+        net::detail::EventDisposition::kNone, net::detail::MultishotRequestDisposition::kTerminal);
+    COROPACT_CHECK(completed.has_value(), "ReactorRecvSource failed to complete readiness request");
   }
 }
 
@@ -370,22 +358,20 @@ void ReactorRecvSource::RequestBackendStop(std::optional<base::Error> error) noe
   }
 
   auto stopped = state_.RequestStop();
-  COROPACT_CHECK(stopped.has_value(),
-                 "ReactorRecvSource failed to enter stopping state");
+  COROPACT_CHECK(stopped.has_value(), "ReactorRecvSource failed to enter stopping state");
   CompleteReadiness();
   DeliverNextIfReady();
   CompleteStopIfReady();
 }
 
 void ReactorRecvSource::OnReady() noexcept {
-  if (state_.State() != net::detail::RecvSourceState::kActive ||
-      state_.ArmedRequests() == 0) {
+  if (state_.State() != net::detail::RecvSourceState::kActive || state_.ArmedRequests() == 0) {
     return;
   }
 
   while (state_.State() == net::detail::RecvSourceState::kActive) {
     if (!state_.CanQueueEvent() || available_buffers_.empty()) {
-      RequestBackendStop(base::MakeErrno(ENOBUFS));
+      RequestBackendPause();
       return;
     }
 
@@ -414,21 +400,16 @@ void ReactorRecvSource::OnReady() noexcept {
       return;
     }
 
-    auto recorded = state_.CompleteMultishotEvent(
-        net::detail::EventDisposition::kProduced,
-        net::detail::MultishotRequestDisposition::kMore);
+    auto recorded = state_.CompleteMultishotEvent(net::detail::EventDisposition::kProduced,
+                                                  net::detail::MultishotRequestDisposition::kMore);
     if (!recorded.has_value()) {
       available_buffers_.push_back(buffer_id);
       RequestBackendStop(recorded.error());
       return;
     }
 
-    net::BufferLease lease(
-        data,
-        static_cast<std::size_t>(received),
-        buffer_id,
-        this,
-        &ReclaimBuffer);
+    net::BufferLease lease(data, static_cast<std::size_t>(received), buffer_id, this,
+                           &ReclaimBuffer);
     try {
       events_.push_back(Event{.buffer = std::move(lease)});
     } catch (...) {
@@ -447,13 +428,9 @@ void ReactorRecvSource::OnReady() noexcept {
   }
 }
 
-void ReactorRecvSource::OnClose() noexcept {
-  RequestBackendStop();
-}
+void ReactorRecvSource::OnClose() noexcept { RequestBackendStop(); }
 
-void ReactorRecvSource::OnError() noexcept {
-  RequestBackendStop(SocketError(fd_));
-}
+void ReactorRecvSource::OnError() noexcept { RequestBackendStop(SocketError(fd_)); }
 
 void ReactorRecvSource::DeliverNextIfReady() noexcept {
   if (pending_next_ == nullptr) {
@@ -470,8 +447,7 @@ void ReactorRecvSource::DeliverNextIfReady() noexcept {
 }
 
 void ReactorRecvSource::CompleteStopIfReady() noexcept {
-  if (pending_stop_ == nullptr ||
-      state_.State() != net::detail::RecvSourceState::kTerminal ||
+  if (pending_stop_ == nullptr || state_.State() != net::detail::RecvSourceState::kTerminal ||
       state_.ArmedRequests() != 0) {
     return;
   }
@@ -484,9 +460,11 @@ bool ReactorRecvSource::TryTakeNext(Result& result) noexcept {
   if (!events_.empty()) {
     Event event = std::move(events_.front());
     events_.pop_front();
-    COROPACT_CHECK(state_.AcquireEvent(),
-                   "ReactorRecvSource queue and state became inconsistent");
+    COROPACT_CHECK(state_.AcquireEvent(), "ReactorRecvSource queue and state became inconsistent");
     result = Result(std::in_place, std::move(event));
+    if (state_.State() == net::detail::RecvSourceState::kPaused) {
+      (void)(state_.TryResume());
+    }
     EnsureAdmission();
     return true;
   }
@@ -510,16 +488,13 @@ void ReactorRecvSource::ReturnBuffer(std::uint32_t buffer_id) noexcept {
   COROPACT_CHECK(available_buffers_.size() < state_.Options().buffer_capacity,
                  "ReactorRecvSource buffer returned twice");
   available_buffers_.push_back(buffer_id);
-  COROPACT_CHECK(state_.ReleaseLease(),
-                 "ReactorRecvSource lease released twice");
+  COROPACT_CHECK(state_.ReleaseLease(), "ReactorRecvSource lease released twice");
   EnsureAdmission();
   DeliverNextIfReady();
   CompleteStopIfReady();
 }
 
-void ReactorRecvSource::ReclaimBuffer(
-    void* context,
-    std::uint32_t buffer_id) noexcept {
+void ReactorRecvSource::ReclaimBuffer(void* context, std::uint32_t buffer_id) noexcept {
   static_cast<ReactorRecvSource*>(context)->ReturnBuffer(buffer_id);
 }
 
@@ -537,53 +512,15 @@ void ReactorRecvSource::DetachChannel() noexcept {
 
 void ReactorRecvSource::BindChannelCallbacks() noexcept {
   channel_.SetReadCallback(
-      [](void* context) noexcept {
-        static_cast<ReactorRecvSource*>(context)->OnReady();
-      },
-      this);
+      [](void* context) noexcept { static_cast<ReactorRecvSource*>(context)->OnReady(); }, this);
   channel_.SetCloseCallback(
-      [](void* context) noexcept {
-        static_cast<ReactorRecvSource*>(context)->OnClose();
-      },
-      this);
+      [](void* context) noexcept { static_cast<ReactorRecvSource*>(context)->OnClose(); }, this);
   channel_.SetErrorCallback(
-      [](void* context) noexcept {
-        static_cast<ReactorRecvSource*>(context)->OnError();
-      },
-      this);
+      [](void* context) noexcept { static_cast<ReactorRecvSource*>(context)->OnError(); }, this);
 }
 
 void ReactorRecvSource::DispatchLoopStop(void* context) noexcept {
   static_cast<ReactorRecvSource*>(context)->RequestBackendStop();
-}
-
-coro::Task<ReactorRecvSource::Result> ReactorRecvSource::Next() {
-  if (loop_ == nullptr || fd_ < 0) {
-    co_return std::unexpected(base::MakeErrno(EBADF));
-  }
-  if (!loop_->IsInLoopThread()) {
-    co_return std::unexpected(base::MakeErrno(EINVAL));
-  }
-  if (pending_next_ != nullptr) {
-    co_return std::unexpected(base::MakeErrno(EBUSY));
-  }
-
-  if (state_.State() == net::detail::RecvSourceState::kIdle) {
-    if (loop_->State() == backend::LoopState::kStopping ||
-        loop_->State() == backend::LoopState::kStopped) {
-      co_return std::unexpected(base::MakeErrno(ECANCELED));
-    }
-    auto started = Start();
-    if (!started.has_value()) {
-      co_return std::unexpected(started.error());
-    }
-  }
-
-  Result result;
-  if (TryTakeNext(result)) {
-    co_return result;
-  }
-  co_return co_await NextAwaiter(*this);
 }
 
 base::Result<void> ReactorRecvSource::RequestStop() noexcept {

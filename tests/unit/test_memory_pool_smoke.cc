@@ -1,6 +1,13 @@
+#include <sys/wait.h>
+#include <unistd.h>
+
+#include <cerrno>
+#include <csignal>
+#include <cstdio>
 #include <cstdint>
 #include <exception>
 #include <iostream>
+#include <new>
 #include <thread>
 #include <vector>
 
@@ -14,6 +21,39 @@ bool Expect(bool condition, const char* message) {
         return false;
     }
     return true;
+}
+
+bool ExpectChildAbort(void (*entry)(), const char* message) {
+    const pid_t child = ::fork();
+    if (child < 0) {
+        return Expect(false, "fork failed for MemoryPool invariant test");
+    }
+    if (child == 0) {
+        (void)::freopen("/dev/null", "w", stderr);
+        entry();
+        ::_exit(0);
+    }
+
+    int status = 0;
+    while (::waitpid(child, &status, 0) < 0 && errno == EINTR) {
+    }
+    return Expect(WIFSIGNALED(status), message) &&
+           Expect(WTERMSIG(status) == SIGABRT,
+                  "MemoryPool invariant must terminate with SIGABRT");
+}
+
+void DeallocateForeignPointer() {
+    coropact::memory::MemoryPool<sizeof(int), alignof(int), 2> pool;
+    void* foreign = ::operator new(sizeof(void*));
+    pool.Deallocate(foreign);
+    ::operator delete(foreign);
+}
+
+void DeallocateSameSlotTwice() {
+    coropact::memory::MemoryPool<sizeof(int), alignof(int), 2> pool;
+    void* slot = pool.Allocate();
+    pool.Deallocate(slot);
+    pool.Deallocate(slot);
 }
 
 bool TestAllocateAndReuse() {
@@ -104,6 +144,15 @@ bool TestConcurrentAllocateAndFree() {
     return true;
 }
 
+bool TestInvalidDeallocateTerminates() {
+    return Expect(ExpectChildAbort(&DeallocateForeignPointer,
+                                   "foreign Deallocate must terminate in every build"),
+                  "foreign Deallocate was accepted") &&
+           Expect(ExpectChildAbort(&DeallocateSameSlotTwice,
+                                   "double Deallocate must terminate in every build"),
+                  "double Deallocate was accepted");
+}
+
 }  // namespace
 
 int main() {
@@ -112,6 +161,7 @@ int main() {
         if (!TestExhaustion()) return 1;
         if (!TestOwns()) return 1;
         if (!TestConcurrentAllocateAndFree()) return 1;
+        if (!TestInvalidDeallocateTerminates()) return 1;
     } catch (const std::exception& ex) {
         std::cerr << "[FAIL] unexpected exception: " << ex.what() << '\n';
         return 1;

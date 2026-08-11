@@ -44,6 +44,34 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure
 
+  strict-warnings:
+    name: gcc-14 / Strict warnings
+    runs-on: ubuntu-latest
+    env:
+      CC: gcc-14
+      CXX: g++-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain & deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build libgtest-dev \
+            libuv1-dev libevent-dev libev-dev libaio-dev g++-14
+
+      - name: Configure
+        run: >
+          cmake -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Debug
+          -DCOROPACT_STRICT_WARNINGS=ON
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
   sanitizers:
     name: ${{ matrix.san.name }}
     runs-on: ubuntu-latest

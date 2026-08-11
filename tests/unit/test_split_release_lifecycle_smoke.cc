@@ -4,7 +4,6 @@
 #include <cstdio>
 
 #include "coropact/operation/detail/composite_lifecycle.h"
-#include "coropact/operation/detail/operation_family.h"
 #include "coropact/operation/detail/split_release_lifecycle.h"
 
 namespace {
@@ -21,8 +20,6 @@ bool TestPrimaryThenRelease() {
   coropact::operation::detail::SplitReleaseLifecycle lifecycle;
 
   bool ok = true;
-  ok &= Expect(lifecycle.Family() == coropact::operation::detail::OperationFamily::kSplitRelease,
-               "lifecycle must identify its operation family");
   ok &= Expect(lifecycle.RecordLogicalResult(), "the first logical result must win");
   ok &= Expect(!lifecycle.TryAuthorizeRelease(),
                "logical result alone must not authorize resource release");
@@ -50,15 +47,12 @@ bool TestPhysicalTerminalBeforeLogicalResult() {
                 "late logical result must authorize the pending continuation");
 }
 
-bool TestCompositeMembersAuthorizeOneContinuation() {
+bool TestCompositeMembersAuthorizeReleaseThenContinuation() {
   using coropact::operation::detail::CompositeLifecycle;
   using coropact::operation::detail::CompositeMember;
-  using coropact::operation::detail::OperationFamily;
 
   CompositeLifecycle lifecycle;
   bool ok = true;
-  ok &= Expect(lifecycle.Family() == OperationFamily::kComposite,
-               "composite lifecycle must identify its operation family");
   ok &= Expect(lifecycle.RecordMemberCompletion(CompositeMember::kFirst),
                "the first member must complete once");
   ok &= Expect(!lifecycle.RecordMemberCompletion(CompositeMember::kFirst),
@@ -71,8 +65,14 @@ bool TestCompositeMembersAuthorizeOneContinuation() {
                "both composite members must authorize one logical result");
   ok &= Expect(!lifecycle.TryAuthorizeLogicalResult(),
                "composite logical authorization must be one-shot");
+  ok &= Expect(!lifecycle.TryAuthorizeContinuation(),
+               "composite continuation must wait for release authorization");
+  ok &= Expect(lifecycle.TryAuthorizeRelease(),
+               "composite logical result must authorize one release");
+  ok &=
+      Expect(!lifecycle.TryAuthorizeRelease(), "composite release authorization must be one-shot");
   ok &= Expect(lifecycle.TryAuthorizeContinuation(),
-               "logical result must authorize one continuation");
+               "composite release authorization must permit one continuation");
   ok &= Expect(!lifecycle.TryAuthorizeContinuation(),
                "composite continuation authorization must be one-shot");
   return ok;
@@ -82,7 +82,7 @@ bool TestCompositeMembersAuthorizeOneContinuation() {
 
 int main() {
   const bool ok = TestPrimaryThenRelease() && TestPhysicalTerminalBeforeLogicalResult() &&
-                  TestCompositeMembersAuthorizeOneContinuation();
+                  TestCompositeMembersAuthorizeReleaseThenContinuation();
   if (ok) {
     std::puts("split release lifecycle smoke: PASS");
     return 0;

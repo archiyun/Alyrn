@@ -9,6 +9,7 @@
 #include <chrono>
 #include <coroutine>
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <vector>
 
@@ -19,6 +20,7 @@
 #include "coropact/luring/detail/op.h"
 #include "coropact/luring/detail/op_hook.h"
 #include "coropact/net/buffer.h"
+#include "coropact/net/detail/stream_lifecycle.h"
 #include "coropact/net/endpoint.h"
 #include "coropact/net/read_into.h"
 #include "coropact/operation/detail/composite_lifecycle.h"
@@ -29,11 +31,20 @@ namespace coropact::luring {
 
 class LUringLoop;
 
+enum class ZeroCopySendUsage : std::uint8_t {
+  // The primary CQE was terminal, so the kernel emitted no usage report.
+  // Do not infer a copy or zero-copy outcome from this value.
+  kUnknown,
+  kZeroCopy,
+  kCopied,
+};
+
 struct ZeroCopySendResult {
   std::size_t bytes{0};
-  bool copied{false};
-  // Non-empty REPORT_USAGE sends wait for their F_NOTIF CQE, so this is true
-  // whenever a kernel send reached its resource-release boundary.
+  ZeroCopySendUsage usage{ZeroCopySendUsage::kUnknown};
+  // True only when the primary CQE advertised a later F_NOTIF CQE and that
+  // notification was observed. A primary CQE without F_MORE is itself the
+  // resource-release boundary.
   bool notification_received{false};
 };
 
@@ -41,18 +52,24 @@ namespace detail {
 
 struct ReadSomeForReadTag;
 struct ReadSomeForTimeoutTag;
+class StreamOperationSlot;
 
 }  // namespace detail
 
 class LUringStream {
-public:
-  COROPACT_DELETE_COPY(LUringStream);
-
+private:
   class ReadSomeAwaiter;
   class ReadIntoAwaiter;
   class ReadSomeForAwaiter;
-  class WriteSomeAwaiter;
+  class SendAwaiter;
   class SendZeroCopyAwaiter;
+
+public:
+  COROPACT_DELETE_COPY(LUringStream);
+
+  // Read/write methods intentionally return private awaiter types. Call them
+  // directly with co_await (or keep the result in auto); SQE/CQE ownership is
+  // implementation detail, not a stream interface.
 
   LUringStream(LUringLoop* loop, int fd, net::Endpoint peer) noexcept;
   ~LUringStream() noexcept;
@@ -78,11 +95,10 @@ public:
   ReadSomeForAwaiter ReadSomeFor(std::span<std::byte> buffer,
                                  std::chrono::milliseconds timeout) noexcept;
   [[nodiscard]]
-  WriteSomeAwaiter WriteSome(std::span<const std::byte> buffer) noexcept;
+  coro::Task<base::Result<void>> WriteAll(std::span<const std::byte> buffer);
 
-  // Optional extension consumed by io::WriteAll. The default remains the
-  // ordinary WriteSome() path; enabled streams use SendZeroCopy() and keep
-  // the caller's buffer alive until its notification CQE is observed.
+  // WriteAll() chooses this optional extension when enabled. SendZeroCopy()
+  // keeps the caller's buffer alive until its notification CQE is observed.
   [[nodiscard]]
   bool ZeroCopyWritesEnabled() const noexcept {
     return zero_copy_writes_enabled_;
@@ -90,9 +106,10 @@ public:
 
   void SetZeroCopyWritesEnabled(bool enabled) noexcept { zero_copy_writes_enabled_ = enabled; }
 
-  // Explicit extension API. The await completes only after the send result
-  // and, when required, the zero-copy notification have both arrived. This
-  // keeps the caller's buffer alive through the kernel's resource lifetime.
+  // Explicit extension API. The await completes after the send result and
+  // after the kernel's resource-release boundary: either the primary CQE
+  // itself, or the F_NOTIF CQE promised by primary F_MORE. This keeps the
+  // caller's buffer alive through the kernel's resource lifetime.
   [[nodiscard]]
   SendZeroCopyAwaiter SendZeroCopy(std::span<const std::byte> buffer) noexcept;
 
@@ -117,9 +134,20 @@ public:
   }
 
 private:
+  friend void detail::DispatchStreamReadComplete(detail::LUringOp* op) noexcept;
+  friend void detail::DispatchStreamReadIntoComplete(detail::LUringOp* op) noexcept;
+  friend void detail::DispatchTimedReadComplete(detail::LUringOp* op) noexcept;
+  friend void detail::DispatchTimedReadTimeoutComplete(detail::LUringOp* op) noexcept;
+  friend void detail::DispatchStreamWriteComplete(detail::LUringOp* op) noexcept;
+  friend detail::CompletionDisposition detail::DispatchSendZeroCopyComplete(
+      detail::LUringOp* op, detail::CompletionEvent event) noexcept;
   friend void detail::DispatchStreamCloseComplete(detail::LUringOp* op) noexcept;
+  friend class detail::StreamOperationSlot;
 
   class CloseAwaiter;
+
+  [[nodiscard]]
+  SendAwaiter Send(std::span<const std::byte> buffer) noexcept;
 
   void RequireOwnerLoop() const noexcept;
   void NotifyCloseProgress() noexcept;
@@ -133,7 +161,7 @@ private:
   void* pending_write_{nullptr};
   CloseAwaiter* pending_close_{nullptr};
   bool zero_copy_writes_enabled_{false};
-  bool closed_{false};
+  net::detail::StreamLifecycle lifecycle_;
 };
 
 // --- ReadSomeAwaiter ---
@@ -193,17 +221,24 @@ private:
 
   static void OnComplete(detail::LUringOp* op) noexcept;
 
+  enum class ReservationKind : std::uint8_t {
+    kNone,
+    kSingle,
+    kMultiple,
+  };
+
   [[nodiscard]]
-  bool PrepareReservation() noexcept;
+  ReservationKind PrepareReservation(iovec& single_iov) noexcept;
   void FinishReservation(base::Result<std::size_t> result) noexcept;
 
   LUringStream* stream_;
   net::Buffer buffer_;
   std::size_t reserve_;
-  // READV SQEs retain this array until their terminal CQE, so it must be
-  // owned by the awaiter rather than created as an await_suspend() local.
+  // READV SQEs retain their iovec array until a terminal CQE. A single-range
+  // RECV copies its base and length into the SQE, so its local iovec does not
+  // need to survive await_suspend().
   std::vector<iovec> iovs_;
-  bool reservation_active_{false};
+  ReservationKind reservation_kind_{ReservationKind::kNone};
 };
 
 // --- ReadSomeForAwaiter ---
@@ -250,13 +285,13 @@ private:
   operation::detail::CompositeLifecycle lifecycle_;
 };
 
-class LUringStream::WriteSomeAwaiter : public detail::LUringOpHook<LUringStream::WriteSomeAwaiter> {
+class LUringStream::SendAwaiter : public detail::LUringOpHook<LUringStream::SendAwaiter> {
 public:
-  using OpHook = detail::LUringOpHook<WriteSomeAwaiter>;
+  using OpHook = detail::LUringOpHook<SendAwaiter>;
 
-  COROPACT_DELETE_COPY_MOVE(WriteSomeAwaiter);
+  COROPACT_DELETE_COPY_MOVE(SendAwaiter);
 
-  WriteSomeAwaiter(LUringStream& stream, std::span<const std::byte> buffer) noexcept
+  SendAwaiter(LUringStream& stream, std::span<const std::byte> buffer) noexcept
       : OpHook(detail::LUringOpKind::kWriteComplete), stream_(&stream), buffer_(buffer) {}
 
   [[nodiscard]]
@@ -309,7 +344,7 @@ private:
   LUringStream* stream_;
   std::span<const std::byte> buffer_;
   operation::detail::SplitReleaseLifecycle lifecycle_;
-  bool copied_{false};
+  ZeroCopySendUsage usage_{ZeroCopySendUsage::kUnknown};
   bool notification_received_{false};
 };
 

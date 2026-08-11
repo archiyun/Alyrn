@@ -26,6 +26,13 @@ struct Item : ListNode<Item> {
 };
 
 int main() {
+  const auto require = [](bool condition, const char* message) {
+    if (!condition) {
+      std::fprintf(stderr, "FAIL: %s\n", message);
+    }
+    return condition;
+  };
+
   {
     Item first{};
     Item second{};
@@ -44,6 +51,8 @@ int main() {
     assert(inserted);
     inserted = list.PushBack(&first);
     assert(!inserted);
+    inserted = list.InsertBefore(&second, &third);
+    if (!require(!inserted, "InsertBefore must reject an unlinked anchor")) return 1;
     inserted = list.InsertBefore(&first, &second);
     assert(inserted);
     inserted = list.InsertAfter(&first, &third);
@@ -64,6 +73,36 @@ int main() {
     assert(!first.InList());
     assert(list.Size() == 2);
 
+    auto after_stale = list.Erase(it);
+    if (!require(after_stale == list.End(), "stale Erase must return End()") ||
+        !require(list.Size() == 2, "stale Erase must not mutate the list")) {
+      return 1;
+    }
+
+    list.MoveToFront(nullptr);
+    list.MoveToBack(&first);
+    if (!require(list.Size() == 2, "invalid MoveTo must not mutate the list") ||
+        !require(list.Front() == &second && list.Back() == &third,
+                 "invalid MoveTo must preserve list order")) {
+      return 1;
+    }
+
+    const auto size_before_invalid_erase = list.Size();
+    auto after_end = list.Erase(list.End());
+    if (!require(after_end == list.End(), "Erase(End()) must return End()") ||
+        !require(list.Size() == size_before_invalid_erase,
+               "Erase(End()) must not mutate the list")) {
+      return 1;
+    }
+
+    auto foreign = other.End();
+    auto after_foreign = list.Erase(foreign);
+    if (!require(after_foreign == list.End(), "foreign Erase must return End()") ||
+        !require(list.Size() == size_before_invalid_erase,
+               "foreign Erase must not mutate the list")) {
+      return 1;
+    }
+
     std::size_t removed = list.RemoveIf([](Item& item) { return item.id == 2; });
     assert(removed == 1);
     assert(!second.InList());
@@ -71,6 +110,8 @@ int main() {
 
     inserted = other.PushBack(&fourth);
     assert(inserted);
+    list.Splice(list);
+    if (!require(list.Size() == 1, "self splice must preserve list size")) return 1;
     list.Swap(other);
     assert(list.Front() == &fourth);
     assert(other.Front() == &third);
@@ -112,7 +153,10 @@ int main() {
     assert(!one.InList());
     assert(!two.InList());
 
-    moved = std::move(moved);
+    // Keep the self-move contract test while avoiding a compiler diagnostic
+    // intended for accidental production self-assignment.
+    IntrusiveList<Item>* volatile self = &moved;
+    moved = std::move(*self);
     assert(moved.Size() == 1);
     assert(moved.Front() == &replacement);
 

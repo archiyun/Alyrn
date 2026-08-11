@@ -17,7 +17,7 @@ provided buffer 和 zero-copy 的不同生命周期。
 
 冻结以下 Core contract：
 
-- `AsyncStream`：`ReadSome`、`WriteSome`、`Shutdown`、`Close`；
+- `AsyncStream`：`ReadSome`、`WriteAll`、`Shutdown`、`Close`；
 - `AsyncListener`：`Accept`、`Close`；
 - `AsyncConnector`：建立满足 `AsyncStream` 的 outbound stream；
 - `Task`/`DetachedTask` 的 await、ownership 和 scheduler-bound resume 语义。
@@ -39,6 +39,11 @@ provided buffer 和 zero-copy 的不同生命周期。
 
 extension 可以增加能力，但不能改变 Core contract 的含义，也不能把可选能力变成
 `AsyncStream` 的隐含要求。
+
+`WriteAll` 虽然可能在一个后端内提交多个物理 write request，但它仍属于 Core contract：
+它只把“完整写入或终态失败”这一业务语义暴露给调用方。短写推进、send zero-copy 的
+notification 边界以及 coroutine frame 布局是后端 implementation，不是业务侧需要拼接的
+通用 fallback。
 
 ## 结果
 

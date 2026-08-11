@@ -2,10 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 #include <sys/uio.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include <algorithm>
+#include <array>
+#include <cerrno>
+#include <csignal>
+#include <cstdio>
 #include <cstring>
+#include <exception>
 #include <iostream>
+#include <limits>
 #include <span>
 #include <string>
 #include <string_view>
@@ -27,6 +35,24 @@ bool Expect(bool condition, std::string_view message) {
   return true;
 }
 
+bool ExpectChildAbort(void (*entry)(), std::string_view message) {
+  const pid_t child = ::fork();
+  if (child < 0) {
+    return Expect(false, "fork failed for buffer invariant test");
+  }
+  if (child == 0) {
+    (void)::freopen("/dev/null", "w", stderr);
+    entry();
+    ::_exit(0);
+  }
+
+  int status = 0;
+  while (::waitpid(child, &status, 0) < 0 && errno == EINTR) {
+  }
+  return Expect(WIFSIGNALED(status), message) &&
+         Expect(WTERMSIG(status) == SIGABRT, "buffer invariant must terminate with SIGABRT");
+}
+
 std::string Gather(coropact::io::Buffer& buffer) {
   std::string out;
   for (const iovec& iov : buffer.ReadableIov(32)) {
@@ -35,7 +61,7 @@ std::string Gather(coropact::io::Buffer& buffer) {
   return out;
 }
 
-void CopyIntoIov(const std::vector<iovec>& iovs, std::string_view text) {
+void CopyIntoIov(std::span<const iovec> iovs, std::string_view text) {
   std::size_t copied = 0;
   for (const iovec& iov : iovs) {
     if (copied == text.size()) break;
@@ -98,6 +124,65 @@ bool AbortWriteDiscardsReservation() {
   return ok;
 }
 
+bool StackBackedWriteReservationCanBeRecreated() {
+  coropact::io::Buffer buffer(4);
+  buffer.Append("abc");
+
+  std::array<iovec, 2> first{};
+  const auto prepared = buffer.PrepareWrite(8, first);
+  if (!Expect(prepared.size() == 2,
+              "stack-backed prepare should retain the existing tail and add one block")) {
+    return false;
+  }
+
+  std::array<iovec, 2> retry{};
+  const auto recreated = buffer.ReservedWriteIov(retry);
+  if (!Expect(recreated.size() == prepared.size(),
+              "recreated reservation should expose the original iovec count")) {
+    buffer.AbortWrite();
+    return false;
+  }
+  for (std::size_t i = 0; i < prepared.size(); ++i) {
+    if (!Expect(recreated[i].iov_base == prepared[i].iov_base &&
+                    recreated[i].iov_len == prepared[i].iov_len,
+                "recreated reservation should preserve each writable range")) {
+      buffer.AbortWrite();
+      return false;
+    }
+  }
+
+  CopyIntoIov(recreated, "12345678");
+  buffer.CommitWrite(8);
+  return Expect(Gather(buffer) == "abc12345678",
+                "stack-backed reservation should commit in logical byte order");
+}
+
+bool SingleWriteReservationUsesContiguousTailOnly() {
+  coropact::io::Buffer buffer(4);
+
+  const auto fresh = buffer.TryPrepareWriteOne(8);
+  if (!Expect(fresh.has_value() && fresh->iov_len == 8,
+              "empty buffer should create one contiguous write reservation")) {
+    return false;
+  }
+  CopyIntoIov(std::span<const iovec>(&*fresh, 1), "12345678");
+  buffer.CommitWrite(8);
+
+  coropact::io::Buffer fragmented(4);
+  fragmented.Append("abc");
+  const auto unavailable = fragmented.TryPrepareWriteOne(8);
+  if (!Expect(!unavailable.has_value(),
+              "short tail should fall back instead of creating a fragmented single reservation")) {
+    return false;
+  }
+
+  auto fallback = fragmented.PrepareWrite(8, 2);
+  const bool fallback_ready = Expect(
+      fallback.size() == 2, "failed single reservation must leave Buffer ready for iovec fallback");
+  fragmented.AbortWrite();
+  return fallback_ready;
+}
+
 bool MoveLeavesSourceEmpty() {
   coropact::io::Buffer source(4);
   source.Append("hello");
@@ -132,6 +217,70 @@ bool EmptyReservationDoesNotHideLaterData() {
                 "empty reserved block should not hide later readable data");
 }
 
+bool ZeroHintUsesBlockSize() {
+  coropact::io::Buffer buffer(4);
+
+  auto iovs = buffer.PrepareWrite(0, 1);
+  const bool ok = Expect(iovs.size() == 1 && iovs.front().iov_len == 4,
+                         "zero write hint should reserve one default-sized block");
+  buffer.AbortWrite();
+  return ok;
+}
+
+bool FailedPreparationReleasesReservation() {
+  coropact::io::Buffer buffer(4);
+  bool threw = false;
+  try {
+    (void)buffer.PrepareWrite(1, std::numeric_limits<std::size_t>::max());
+  } catch (const std::exception&) {
+    threw = true;
+  }
+
+  if (!Expect(threw, "oversized iovec preparation should fail")) {
+    return false;
+  }
+
+  auto retry = buffer.PrepareWrite(4, 1);
+  const bool reusable =
+      Expect(retry.size() == 1, "failed preparation must not retain a write reservation");
+  buffer.AbortWrite();
+  return reusable;
+}
+
+void BufferCommitWithoutReservation() {
+  coropact::io::Buffer buffer(4);
+  buffer.CommitWrite(1);
+}
+
+void BufferNestedPreparation() {
+  coropact::io::Buffer buffer(4);
+  (void)buffer.PrepareWrite(4, 1);
+  (void)buffer.PrepareWrite(4, 1);
+}
+
+void BufferCommitBeyondReservation() {
+  coropact::io::Buffer buffer(4);
+  auto iovs = buffer.PrepareWrite(4, 1);
+  buffer.CommitWrite(iovs.front().iov_len + 1);
+}
+
+void BufferMutationDuringReservation() {
+  coropact::io::Buffer buffer(4);
+  (void)buffer.PrepareWrite(4, 1);
+  buffer.Append("x");
+}
+
+bool ReservationInvariantsFailClosed() {
+  return ExpectChildAbort(&BufferCommitWithoutReservation,
+                          "Buffer CommitWrite without PrepareWrite must terminate in Release") &&
+         ExpectChildAbort(&BufferNestedPreparation,
+                          "nested Buffer PrepareWrite must terminate in Release") &&
+         ExpectChildAbort(&BufferCommitBeyondReservation,
+                          "Buffer CommitWrite beyond reservation must terminate in Release") &&
+         ExpectChildAbort(&BufferMutationDuringReservation,
+                          "Buffer mutation during reservation must terminate in Release");
+}
+
 }  // namespace
 
 int main() {
@@ -139,8 +288,13 @@ int main() {
   ok &= AppendAndDrainPreserveOrder();
   ok &= PreparedWriteAppendsAtTailOnly();
   ok &= AbortWriteDiscardsReservation();
+  ok &= StackBackedWriteReservationCanBeRecreated();
+  ok &= SingleWriteReservationUsesContiguousTailOnly();
   ok &= MoveLeavesSourceEmpty();
   ok &= EmptyReservationDoesNotHideLaterData();
+  ok &= ZeroHintUsesBlockSize();
+  ok &= FailedPreparationReleasesReservation();
+  ok &= ReservationInvariantsFailClosed();
 
   if (!ok) return 1;
 

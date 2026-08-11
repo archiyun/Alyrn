@@ -7,7 +7,7 @@
 #include <cerrno>
 
 #include "coropact/net/endpoint.h"
-#include "coropact/net/net_utils.h"
+#include "coropact/net/socket.h"
 
 namespace coropact::net {
 namespace {
@@ -78,7 +78,7 @@ TEST(EndpointTest, RejectsInvalidIpWithoutLoopbackFallback) {
   EXPECT_EQ(hostname.error(), std::make_error_code(std::errc::invalid_argument));
 }
 
-TEST(NetUtilsTest, CreatesSocketWithAtomicFlagsAndSupportsClearingThem) {
+TEST(SocketTest, CreatesSocketWithAtomicFlagsAndSupportsClearingThem) {
   auto socket = CreateNonBlockingSocket();
   ASSERT_TRUE(socket);
   ScopedFd fd(*socket);
@@ -97,7 +97,7 @@ TEST(NetUtilsTest, CreatesSocketWithAtomicFlagsAndSupportsClearingThem) {
   EXPECT_NE(::fcntl(fd.get(), F_GETFD, 0) & FD_CLOEXEC, 0);
 }
 
-TEST(NetUtilsTest, ReportsSocketOptionErrorsAndSupportsOnOff) {
+TEST(SocketTest, ReportsSocketOptionErrorsAndSupportsOnOff) {
   auto socket = CreateNonBlockingSocket();
   ASSERT_TRUE(socket);
   ScopedFd fd(*socket);
@@ -112,9 +112,9 @@ TEST(NetUtilsTest, ReportsSocketOptionErrorsAndSupportsOnOff) {
   EXPECT_TRUE(SetReusePort(fd.get(), false));
   EXPECT_EQ(get_socket_option(fd.get(), SOL_SOCKET, SO_REUSEPORT), 0);
 
-  EXPECT_TRUE(SetTcpNonDelay(fd.get(), true));
+  EXPECT_TRUE(SetTcpNoDelay(fd.get(), true));
   EXPECT_EQ(get_socket_option(fd.get(), IPPROTO_TCP, TCP_NODELAY), 1);
-  EXPECT_TRUE(SetTcpNonDelay(fd.get(), false));
+  EXPECT_TRUE(SetTcpNoDelay(fd.get(), false));
   EXPECT_EQ(get_socket_option(fd.get(), IPPROTO_TCP, TCP_NODELAY), 0);
 
   EXPECT_TRUE(SetKeepAlive(fd.get(), true));
@@ -127,21 +127,21 @@ TEST(NetUtilsTest, ReportsSocketOptionErrorsAndSupportsOnOff) {
   EXPECT_EQ(SetReuseAddr(-1).error().value(), EBADF);
 }
 
-TEST(NetUtilsTest, AddressQueriesPreserveErrors) {
-  auto local = GetLocalAddr(-1);
+TEST(SocketTest, AddressQueriesPreserveErrors) {
+  auto local = GetLocalEndpoint(-1);
   EXPECT_FALSE(local);
   EXPECT_EQ(local.error().value(), EBADF);
 
-  auto peer = GetPeerAddr(-1);
+  auto peer = GetPeerEndpoint(-1);
   EXPECT_FALSE(peer);
   EXPECT_EQ(peer.error().value(), EBADF);
 
-  auto self_connect = IsSelfConnect(-1);
+  auto self_connect = IsSelfConnected(-1);
   EXPECT_FALSE(self_connect);
   EXPECT_EQ(self_connect.error().value(), EBADF);
 }
 
-TEST(NetUtilsTest, QueriesConnectedIPv4Endpoints) {
+TEST(SocketTest, QueriesConnectedIPv4Endpoints) {
   ScopedFd listener(::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP));
   ASSERT_GE(listener.get(), 0);
 
@@ -149,31 +149,30 @@ TEST(NetUtilsTest, QueriesConnectedIPv4Endpoints) {
   ASSERT_EQ(::bind(listener.get(), bind_address.SockAddr(), bind_address.SockAddrLen()), 0);
   ASSERT_EQ(::listen(listener.get(), 1), 0);
 
-  auto listening_address = GetLocalAddr(listener.get());
+  auto listening_address = GetLocalEndpoint(listener.get());
   ASSERT_TRUE(listening_address);
 
   ScopedFd client(::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP));
   ASSERT_GE(client.get(), 0);
-  ASSERT_EQ(::connect(client.get(), listening_address->SockAddr(),
-                      listening_address->SockAddrLen()),
-            0);
+  ASSERT_EQ(
+      ::connect(client.get(), listening_address->SockAddr(), listening_address->SockAddrLen()), 0);
 
   ScopedFd accepted(::accept4(listener.get(), nullptr, nullptr, SOCK_CLOEXEC));
   ASSERT_GE(accepted.get(), 0);
 
-  auto client_local = GetLocalAddr(client.get());
+  auto client_local = GetLocalEndpoint(client.get());
   ASSERT_TRUE(client_local);
-  auto client_peer = GetPeerAddr(client.get());
+  auto client_peer = GetPeerEndpoint(client.get());
   ASSERT_TRUE(client_peer);
-  auto server_local = GetLocalAddr(accepted.get());
+  auto server_local = GetLocalEndpoint(accepted.get());
   ASSERT_TRUE(server_local);
-  auto server_peer = GetPeerAddr(accepted.get());
+  auto server_peer = GetPeerEndpoint(accepted.get());
   ASSERT_TRUE(server_peer);
 
   EXPECT_EQ(*client_local, *server_peer);
   EXPECT_EQ(*client_peer, *server_local);
 
-  auto self_connect = IsSelfConnect(client.get());
+  auto self_connect = IsSelfConnected(client.get());
   ASSERT_TRUE(self_connect);
   EXPECT_FALSE(*self_connect);
 }

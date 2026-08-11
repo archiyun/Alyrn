@@ -1,5 +1,6 @@
 #include <cerrno>
 #include <iostream>
+#include <memory>
 #include <system_error>
 
 #include "coropact/base/error.h"
@@ -18,9 +19,29 @@ Result<int> ReadValue(bool fail) {
 }
 
 Result<int> AddValues(bool fail) {
-  const int first = COROPACT_TRY(ReadValue(false));
-  const int second = COROPACT_TRY(ReadValue(fail));
+  COROPACT_TRY_VALUE(first, ReadValue(false));
+  COROPACT_TRY_VALUE(second, ReadValue(fail));
   return first + second;
+}
+
+Result<std::unique_ptr<int>> ReadMoveOnlyValue(bool fail) {
+  if (fail) return std::unexpected(coropact::base::MakeErrno(EINVAL));
+  return std::make_unique<int>(99);
+}
+
+Result<int> TakeMoveOnlyValue(bool fail) {
+  COROPACT_TRY_VALUE(value, ReadMoveOnlyValue(fail));
+  return *value;
+}
+
+Result<void> Validate(bool fail) {
+  if (fail) return std::unexpected(coropact::base::MakeErrno(EINVAL));
+  return {};
+}
+
+Result<void> PropagateVoid(bool fail) {
+  COROPACT_TRY(Validate(fail));
+  return {};
 }
 
 coropact::coro::Task<Result<int>> ReadValueAsync(bool fail) {
@@ -46,6 +67,16 @@ bool TestTryPropagatesError() {
   return !result.has_value() && result.error() == Error(EINVAL, std::system_category());
 }
 
+bool TestTryMovesValue() {
+  const auto result = TakeMoveOnlyValue(false);
+  return result.has_value() && *result == 99;
+}
+
+bool TestTryPropagatesVoidError() {
+  const auto result = PropagateVoid(true);
+  return !result.has_value() && result.error() == Error(EINVAL, std::system_category());
+}
+
 bool TestCoTryReturnsValue() {
   const auto result = coropact::coro::SyncWait(AddValuesAsync(false));
   return result.has_value() && *result == 2;
@@ -60,11 +91,19 @@ bool TestCoTryPropagatesError() {
 
 int main() {
   if (!TestTryReturnsValue()) {
-    std::cerr << "[FAIL] COROPACT_TRY should return the expected value\n";
+    std::cerr << "[FAIL] COROPACT_TRY_VALUE should return the expected value\n";
     return 1;
   }
   if (!TestTryPropagatesError()) {
-    std::cerr << "[FAIL] COROPACT_TRY should propagate the expected error\n";
+    std::cerr << "[FAIL] COROPACT_TRY_VALUE should propagate the expected error\n";
+    return 1;
+  }
+  if (!TestTryMovesValue()) {
+    std::cerr << "[FAIL] COROPACT_TRY_VALUE should move a successful value\n";
+    return 1;
+  }
+  if (!TestTryPropagatesVoidError()) {
+    std::cerr << "[FAIL] COROPACT_TRY should propagate a void expected error\n";
     return 1;
   }
   if (!TestCoTryReturnsValue()) {

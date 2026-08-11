@@ -5,10 +5,10 @@ EXTENDS Naturals, Sequences, FiniteSets
 (***************************************************************************)
 (* LUringStream::SendZeroCopy 的具体 split-release refinement。           *)
 (*                                                                         *)
-(* primary CQE 决定业务结果；F_NOTIF 是内核不再访问 send buffer 的边界。   *)
-(* 两者的到达顺序在模型中故意不固定。只有两个边界都已观察后，             *)
-(* SplitReleaseLifecycle 才授权释放 buffer，并将 ResumeWork 交给           *)
-(* LUringLoop::ScheduleCompletion。                                        *)
+(* primary CQE 决定业务结果。带 F_MORE 的 primary 承诺后续 F_NOTIF；      *)
+(* 无 F_MORE 的 primary 本身就是 kernel 不再访问 send buffer 的边界。     *)
+(* 只有逻辑结果与相应的物理终态都已观察后，SplitReleaseLifecycle 才授权    *)
+(* 释放 buffer，并将 ResumeWork 交给 LUringLoop::ScheduleCompletion。      *)
 (*                                                                         *)
 (* trace 记录的是该协议的可观察生命周期，不把 SQE 提交与普通业务写入      *)
 (* 混为一个 single-shot Complete。                                         *)
@@ -18,6 +18,7 @@ RequestStates == {"Idle", "SQEQueued", "Submitted", "Terminal", "Released"}
 ResultStates == {"NoResult", "Success", "Cancelled"}
 BufferStates == {"CallerOwned", "KernelMayAccess", "Reusable"}
 ContinuationStates == {"Running", "Waiting", "Queued", "Resumed"}
+PrimaryModes == {"Unknown", "Terminal", "Notification"}
 
 VARIABLES requestState,
           resultState,
@@ -25,6 +26,7 @@ VARIABLES requestState,
           continuationState,
           cancelRequested,
           primaryCount,
+          primaryMode,
           notificationCount,
           releaseCount,
           resumeCount,
@@ -36,12 +38,14 @@ vars == <<requestState,
           continuationState,
           cancelRequested,
           primaryCount,
+          primaryMode,
           notificationCount,
           releaseCount,
           resumeCount,
           trace>>
 
-TraceEvents == {"Submit", "Primary", "Notification", "Release", "Schedule", "Resume"}
+TraceEvents == {"Submit", "PrimaryTerminal", "PrimaryWithNotification", "Notification",
+                "Release", "Schedule", "Resume"}
 Occurrences(event) == Cardinality({i \in 1..Len(trace): trace[i] = event})
 
 Init ==
@@ -51,6 +55,7 @@ Init ==
   /\ continuationState = "Running"
   /\ cancelRequested = FALSE
   /\ primaryCount = 0
+  /\ primaryMode = "Unknown"
   /\ notificationCount = 0
   /\ releaseCount = 0
   /\ resumeCount = 0
@@ -67,6 +72,7 @@ PrepareSend ==
   /\ UNCHANGED <<resultState,
                  cancelRequested,
                  primaryCount,
+                 primaryMode,
                  notificationCount,
                  releaseCount,
                  resumeCount>>
@@ -80,12 +86,13 @@ SubmitToKernel ==
                  continuationState,
                  cancelRequested,
                  primaryCount,
+                 primaryMode,
                  notificationCount,
                  releaseCount,
                  resumeCount,
                  trace>>
 
-(* An async cancel request does not replace either target CQE. *)
+(* An async cancel request does not replace the target CQE. *)
 RequestCancel ==
   /\ requestState \in {"SQEQueued", "Submitted", "Terminal"}
   /\ cancelRequested = FALSE
@@ -95,22 +102,40 @@ RequestCancel ==
                  bufferState,
                  continuationState,
                  primaryCount,
+                 primaryMode,
                  notificationCount,
                  releaseCount,
                  resumeCount,
                  trace>>
 
+(* A primary CQE without F_MORE is the request's physical terminal event. *)
+PrimaryTerminalCQE ==
+  /\ requestState = "Submitted"
+  /\ primaryCount = 0
+  /\ requestState' = "Terminal"
+  /\ resultState' = IF cancelRequested THEN "Cancelled" ELSE "Success"
+  /\ primaryCount' = 1
+  /\ primaryMode' = "Terminal"
+  /\ trace' = Append(trace, "PrimaryTerminal")
+  /\ UNCHANGED <<bufferState,
+                 continuationState,
+                 cancelRequested,
+                 notificationCount,
+                 releaseCount,
+                 resumeCount>>
+
 (*
- * The first non-notification CQE records the caller-visible result. The
- * model permits it after F_NOTIF to verify that release remains gated by both
- * facts rather than by a presumed CQE ordering.
+ * A primary CQE with F_MORE records the result but leaves the request active.
+ * The model also permits it after F_NOTIF, so the two CQE orders exercise the
+ * same release gate without assuming a dispatch order.
  *)
-PrimaryCQE ==
+PrimaryWithNotificationCQE ==
   /\ requestState \in {"Submitted", "Terminal"}
   /\ primaryCount = 0
-  /\ primaryCount' = 1
   /\ resultState' = IF cancelRequested THEN "Cancelled" ELSE "Success"
-  /\ trace' = Append(trace, "Primary")
+  /\ primaryCount' = 1
+  /\ primaryMode' = "Notification"
+  /\ trace' = Append(trace, "PrimaryWithNotification")
   /\ UNCHANGED <<requestState,
                  bufferState,
                  continuationState,
@@ -119,7 +144,7 @@ PrimaryCQE ==
                  releaseCount,
                  resumeCount>>
 
-(* F_NOTIF is the target request's physical terminal CQE. *)
+(* F_NOTIF is the physical terminal CQE promised by primary F_MORE. *)
 NotificationCQE ==
   /\ requestState = "Submitted"
   /\ notificationCount = 0
@@ -131,6 +156,7 @@ NotificationCQE ==
                  continuationState,
                  cancelRequested,
                  primaryCount,
+                 primaryMode,
                  releaseCount,
                  resumeCount>>
 
@@ -138,7 +164,7 @@ NotificationCQE ==
 AuthorizeRelease ==
   /\ requestState = "Terminal"
   /\ primaryCount = 1
-  /\ notificationCount = 1
+  /\ (primaryMode = "Terminal" \/ notificationCount = 1)
   /\ releaseCount = 0
   /\ requestState' = "Released"
   /\ bufferState' = "Reusable"
@@ -148,6 +174,7 @@ AuthorizeRelease ==
                  continuationState,
                  cancelRequested,
                  primaryCount,
+                 primaryMode,
                  notificationCount,
                  resumeCount>>
 
@@ -163,6 +190,7 @@ ScheduleContinuation ==
                  bufferState,
                  cancelRequested,
                  primaryCount,
+                 primaryMode,
                  notificationCount,
                  releaseCount,
                  resumeCount>>
@@ -179,6 +207,7 @@ Resume ==
                  bufferState,
                  cancelRequested,
                  primaryCount,
+                 primaryMode,
                  notificationCount,
                  releaseCount>>
 
@@ -186,7 +215,8 @@ Next ==
   \/ PrepareSend
   \/ SubmitToKernel
   \/ RequestCancel
-  \/ PrimaryCQE
+  \/ PrimaryTerminalCQE
+  \/ PrimaryWithNotificationCQE
   \/ NotificationCQE
   \/ AuthorizeRelease
   \/ ScheduleContinuation
@@ -201,6 +231,7 @@ TypeOK ==
   /\ continuationState \in ContinuationStates
   /\ cancelRequested \in BOOLEAN
   /\ primaryCount \in Nat
+  /\ primaryMode \in PrimaryModes
   /\ notificationCount \in Nat
   /\ releaseCount \in Nat
   /\ resumeCount \in Nat
@@ -215,12 +246,21 @@ ExactlyOnceBoundaries ==
 ReleaseAuthorization ==
   releaseCount = 1
     => /\ primaryCount = 1
-       /\ notificationCount = 1
        /\ requestState = "Released"
        /\ bufferState = "Reusable"
+       /\ (primaryMode = "Terminal" \/ notificationCount = 1)
 
 BufferSafety ==
-  bufferState = "Reusable" => notificationCount = 1
+  bufferState = "Reusable"
+    => /\ primaryCount = 1
+       /\ requestState = "Released"
+       /\ (primaryMode = "Terminal" \/ notificationCount = 1)
+
+NotificationRequiresFMore ==
+  (notificationCount = 1 /\ primaryCount = 1) => primaryMode = "Notification"
+
+TerminalPrimaryHasNoNotification ==
+  primaryMode = "Terminal" => notificationCount = 0
 
 ResumeAuthorization ==
   continuationState = "Resumed"
@@ -228,16 +268,21 @@ ResumeAuthorization ==
        /\ bufferState = "Reusable"
 
 TraceCountMatchesState ==
-  /\ Occurrences("Primary") = primaryCount
+  /\ Occurrences("PrimaryTerminal") + Occurrences("PrimaryWithNotification") = primaryCount
   /\ Occurrences("Notification") = notificationCount
   /\ Occurrences("Release") = releaseCount
   /\ Occurrences("Resume") = resumeCount
 
-TraceReleaseAfterBothCqes ==
+TraceReleaseAfterPrimary ==
   \A i \in 1..Len(trace):
     trace[i] = "Release"
-      => /\ \E primary \in 1..(i - 1): trace[primary] = "Primary"
-         /\ \E notification \in 1..(i - 1): trace[notification] = "Notification"
+      => \E primary \in 1..(i - 1):
+           trace[primary] \in {"PrimaryTerminal", "PrimaryWithNotification"}
+
+TraceReleaseAfterNotificationWhenRequired ==
+  \A i \in 1..Len(trace):
+    trace[i] = "Release" /\ primaryMode = "Notification"
+      => \E notification \in 1..(i - 1): trace[notification] = "Notification"
 
 TraceResumeAfterRelease ==
   \A i \in 1..Len(trace):

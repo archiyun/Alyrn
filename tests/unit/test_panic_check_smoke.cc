@@ -92,12 +92,8 @@ bool TestDebugCheckEvaluation() {
   int condition_calls = 0;
   int message_calls = 0;
 
-  auto message = [&]() -> std::string_view {
-    ++message_calls;
-    return "must not be evaluated";
-  };
-
-  COROPACT_DCHECK(++condition_calls == 1, message());
+  COROPACT_DCHECK(++condition_calls == 1,
+                  (++message_calls, std::string_view{"must not be evaluated"}));
 
 #ifndef NDEBUG
   return Expect(condition_calls == 1, "COROPACT_DCHECK must evaluate condition in debug builds") &&

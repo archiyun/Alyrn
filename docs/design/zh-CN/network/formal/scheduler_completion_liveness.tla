@@ -29,7 +29,7 @@ Init ==
   /\ normalReady = FALSE
   /\ completionDispatchCount = 0
 
-(* A backend family has authorized exactly one logical continuation. *)
+(* A backend lifecycle has authorized exactly one logical continuation. *)
 AuthorizeCompletion ==
   /\ completionState = "NotAuthorized"
   /\ completionState' = "Queued"
