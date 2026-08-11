@@ -4,10 +4,10 @@
 
 #include <liburing/io_uring.h>
 
-#include <cassert>
 #include <cstdint>
 #include <limits>
 
+#include "coropact/base/check.h"
 #include "coropact/base/error.h"
 #include "coropact/coro/work.h"
 #include "coropact/luring/detail/reusable_completion_slot.h"
@@ -136,7 +136,8 @@ public:
   constexpr LUringCqeResult() noexcept = default;
 
   LUringCqeResult& operator=(int value) noexcept {
-    assert(value != kEmpty && "INT_MIN is reserved for an empty CQE result");
+    COROPACT_CHECK(value != kEmpty, "INT_MIN is reserved for an empty CQE result");
+    COROPACT_CHECK(!HasValue(), "LUringCqeResult was assigned twice");
     encoded_ = static_cast<std::int32_t>(value);
     return *this;
   }
@@ -148,20 +149,11 @@ public:
 
   [[nodiscard]]
   int operator*() const noexcept {
-    assert(HasValue());
+    COROPACT_CHECK(HasValue(), "LUringCqeResult was read before completion");
     return static_cast<int>(encoded_);
   }
 
   void Clear() noexcept { encoded_ = kEmpty; }
-
-  // There is no stored error object: CQE failures are the negative integer
-  // itself and are converted by the awaiter. Calling Error() for an empty
-  // result is only a defensive fallback for the invalid pre-completion path.
-  [[nodiscard]]
-  base::Error Error() const noexcept {
-    assert(!HasValue());
-    return base::MakeErrno(EIO);
-  }
 
 private:
   static constexpr std::int32_t kEmpty = std::numeric_limits<std::int32_t>::min();
@@ -198,7 +190,7 @@ public:
   void SetImmediateSuccess() noexcept { result = 0; }
 
   void SetImmediateError(base::Error error) noexcept {
-    assert(error.value() > 0);
+    COROPACT_CHECK(error.value() > 0, "LUringOp immediate error must have a positive errno");
     result = -error.value();
   }
 

@@ -9,9 +9,11 @@
 #include <expected>
 #include <iostream>
 #include <optional>
+#include <thread>
 
 #include "coropact/base/error.h"
 #include "coropact/coro/spawn.h"
+#include "coropact/coro/sync_wait.h"
 #include "coropact/coro/task.h"
 #include "coropact/io/async_listener.h"
 #include "coropact/net/endpoint.h"
@@ -308,6 +310,24 @@ bool CheckAcceptSourceListenerCloseWakesPendingNext() {
          Check(close_succeeded, "listener Close returned an error");
 }
 
+bool CheckAcceptSourceStopRejectsForeignLoop() {
+  coropact::reactor::EventLoop loop;
+  coropact::reactor::ReactorListener listener(&loop, coropact::net::Endpoint(0));
+  auto source_result = listener.AcceptSource();
+  if (!Check(source_result.has_value(), "failed to create foreign Stop test source")) {
+    return false;
+  }
+  AcceptSource source = std::move(*source_result);
+
+  std::optional<coropact::base::Result<void>> stop_result;
+  std::thread foreign([&] { stop_result.emplace(coropact::coro::SyncWait(source.Stop())); });
+  foreign.join();
+
+  return Check(stop_result.has_value(), "foreign AcceptSource::Stop did not return") &&
+         Check(!stop_result->has_value() && stop_result->error() == std::errc::invalid_argument,
+               "foreign AcceptSource::Stop must return EINVAL");
+}
+
 }  // namespace
 
 int main() {
@@ -318,6 +338,7 @@ int main() {
   if (!CheckAcceptSourceQueueAndStop()) return 1;
   if (!CheckAcceptSourceStopWakesPendingNext()) return 1;
   if (!CheckAcceptSourceListenerCloseWakesPendingNext()) return 1;
+  if (!CheckAcceptSourceStopRejectsForeignLoop()) return 1;
 
   std::cout << "reactor listener smoke: PASS\n";
   return 0;

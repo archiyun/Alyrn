@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include <cassert>
 #include <coroutine>
 
+#include "coropact/base/check.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/work.h"
 #include "coropact/utils/macros.h"
@@ -26,8 +26,11 @@ public:
   SchedulerContinuation() noexcept = default;
 
   void Bind(std::coroutine_handle<> handle) noexcept {
-    assert(!Bound());
-    scheduler_ = &coro::Scheduler::RequireCurrent();
+    COROPACT_CHECK(!Bound(), "SchedulerContinuation was bound twice");
+    COROPACT_CHECK(handle, "SchedulerContinuation requires a valid coroutine handle");
+    scheduler_ = coro::Scheduler::TryCurrent();
+    COROPACT_CHECK(scheduler_ != nullptr,
+                   "SchedulerContinuation requires a current owner scheduler");
     resume_work_.SetHandle(handle);
   }
 
@@ -37,7 +40,9 @@ public:
   }
 
   void Schedule() noexcept {
-    assert(scheduler_ != nullptr);
+    COROPACT_CHECK(scheduler_ != nullptr, "SchedulerContinuation scheduled before Bind");
+    COROPACT_CHECK(resume_work_.HasHandle(),
+                   "SchedulerContinuation has no resumable coroutine handle");
     scheduler_->Schedule(&resume_work_);
   }
 

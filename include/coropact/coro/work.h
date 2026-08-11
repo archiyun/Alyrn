@@ -8,10 +8,10 @@
 #pragma once
 
 #include <bit>
-#include <cassert>
 #include <coroutine>
 #include <cstdint>
 
+#include "coropact/base/check.h"
 #include "coropact/ds/intrusive_queue.h"
 #include "coropact/utils/macros.h"
 
@@ -28,9 +28,10 @@ struct Work : public ds::QueueNode<Work> {
   // discriminator byte (and its padding). Linux user-space function and frame
   // addresses leave this bit clear on the supported 64-bit targets.
   void SetRun(RunFn run_fn) noexcept {
-    assert(run_fn != nullptr);
+    COROPACT_CHECK(run_fn != nullptr, "Work::SetRun requires a callback");
     const auto encoded = std::bit_cast<std::uintptr_t>(run_fn);
-    assert((encoded & kResumeTag) == 0 && "Work callback address must be aligned");
+    COROPACT_CHECK((encoded & kResumeTag) == 0,
+                   "Work callback address collides with the resume tag");
     action_ = encoded;
   }
 
@@ -39,27 +40,29 @@ struct Work : public ds::QueueNode<Work> {
     if ((action & kResumeTag) != 0) {
       auto* address = reinterpret_cast<void*>(action & ~kResumeTag);
       auto handle = std::coroutine_handle<>::from_address(address);
-      assert(handle && "ResumeWork requires a valid coroutine handle.");
-      assert(!handle.done() && "cannot resume a completed coroutine.");
+      COROPACT_CHECK(handle, "ResumeWork requires a valid coroutine handle");
+      COROPACT_CHECK(!handle.done(), "cannot resume a completed coroutine");
       handle.resume();
       return;
     }
 
     const auto run_fn = std::bit_cast<RunFn>(action);
-    assert(run_fn && "Work::Run is not set");
+    COROPACT_CHECK(run_fn != nullptr, "Work::Run has no configured action");
     run_fn(this);
   }
 
   void SetHandle(std::coroutine_handle<> handle) noexcept {
+    COROPACT_CHECK(handle, "ResumeWork requires a valid coroutine handle");
     auto* address = handle.address();
     const auto encoded = reinterpret_cast<std::uintptr_t>(address);
-    assert((encoded & kResumeTag) == 0 && "coroutine frame address must be aligned");
+    COROPACT_CHECK((encoded & kResumeTag) == 0,
+                   "coroutine frame address collides with the resume tag");
     action_ = encoded | kResumeTag;
   }
 
   [[nodiscard]]
   std::coroutine_handle<> Handle() const noexcept {
-    assert(IsResume());
+    COROPACT_CHECK(HasHandle(), "ResumeWork has no coroutine handle");
     return std::coroutine_handle<>::from_address(reinterpret_cast<void*>(action_ & ~kResumeTag));
   }
 

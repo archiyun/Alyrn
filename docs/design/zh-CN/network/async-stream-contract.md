@@ -414,6 +414,14 @@ Split release       : result readiness、continuation resume 与 buffer/resource
 因此，`Cancel(op) -> Complete(op, ECANCELED)` 只适用于 single-result 的简化模型；它不能
 作为 `AcceptSource`、`RecvSource` 或 send zero-copy 的通用规则。
 
+`Close()` 与 event source 的 `Stop()` 也故意不共享“本地 cancel preparation 失败”的语义。
+resource `Close()` 在尚未向 backend 提交 cancel request 前必须能回滚到 Open；它保护的是原 fd
+和后续新 I/O 的可用性。source `Stop()` 首先撤销新的 event admission，因此 luring 的 cancel SQE
+preparation 若本地失败，`Stop()` 可以返回该 error，但 source 保持 `Stopping`，不会重新变成
+Active。调用方必须保留 source 并重试 `Stop()`，或由已 committed 的 owner resource `Close()` 收敛它；
+在 Stop 成功前销毁 source 仍违反其 physical request 生命周期。Reactor 没有对应 SQE preparation
+阶段，但实现同一“Stop 后不再接纳新事件”的可观察语义。
+
 ## 4. 核心不变量
 
 ### I1：唯一完成
@@ -960,7 +968,8 @@ EOF、本地取消、连接失败、上游失败和超时。
 13. EventSource 的 high-water pause 只终止当前 physical request，不把 logical source
     误报为 terminal；
 14. SplitRelease 的业务结果、恢复和 buffer/resource release 按各自授权边界发生。
-15. listener/source 的 `Stop()` 与 `Close()` 保持幂等，terminal `Next()` 保持 sticky；
+15. listener/source 的 `Stop()` 与 `Close()` 保持幂等，terminal `Next()` 保持 sticky；source Stop 的
+    local cancel preparation failure 后仍可重试并最终收敛；
 16. loop 进入 `Stopping` 后，新的 `Accept()` 与 `AcceptSource()` 返回 `ECANCELED`。
 17. connector 保留成功、`EINVAL`、`ECONNREFUSED` 与 `ECANCELED` 的区别；
 18. 同一 connector 的并发 `Connect()` 具有独立结果、恢复授权和资源回收。

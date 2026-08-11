@@ -1,12 +1,17 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 
+#include <sys/wait.h>
+#include <unistd.h>
+
 #include <cerrno>
 #include <coroutine>
+#include <csignal>
 #include <cstdio>
 
 #include "coropact/luring/detail/cancel_result.h"
 #include "coropact/luring/detail/op.h"
+#include "coropact/luring/detail/result_state.h"
 #include "coropact/utils/macros.h"
 
 namespace {
@@ -17,6 +22,46 @@ bool Expect(bool condition, const char* message) {
   }
   std::fprintf(stderr, "FAIL: %s\n", message);
   return false;
+}
+
+bool ExpectChildAbort(void (*entry)(), const char* message) {
+  const pid_t child = ::fork();
+  if (child < 0) {
+    return Expect(false, "fork failed for luring result invariant test");
+  }
+  if (child == 0) {
+    (void)::freopen("/dev/null", "w", stderr);
+    entry();
+    ::_exit(0);
+  }
+
+  int status = 0;
+  while (::waitpid(child, &status, 0) < 0 && errno == EINTR) {
+  }
+  return Expect(WIFSIGNALED(status), message) &&
+         Expect(WTERMSIG(status) == SIGABRT, "luring result invariant must terminate with SIGABRT");
+}
+
+void TakePendingResultState() {
+  coropact::luring::detail::LUringResultState<void> state;
+  (void)state.Take();
+}
+
+void SetResultStateTwice() {
+  coropact::luring::detail::LUringResultState<void> state;
+  state.SetSuccess();
+  state.SetError(coropact::base::MakeErrno(EPIPE));
+}
+
+void ReadEmptyCqeResult() {
+  coropact::luring::detail::LUringCqeResult result;
+  (void)*result;
+}
+
+void SetCqeResultTwice() {
+  coropact::luring::detail::LUringCqeResult result;
+  result = 1;
+  result = 2;
 }
 
 bool TestSingleResultCompletion() {
@@ -86,11 +131,23 @@ bool TestCancelCqeClassification() {
   return ok;
 }
 
+bool TestResultStatesRejectInvalidTransitions() {
+  return ExpectChildAbort(&TakePendingResultState,
+                          "pending luring result Take must terminate in Release") &&
+         ExpectChildAbort(&SetResultStateTwice,
+                          "duplicate luring result completion must terminate in Release") &&
+         ExpectChildAbort(&ReadEmptyCqeResult,
+                          "empty CQE result access must terminate in Release") &&
+         ExpectChildAbort(&SetCqeResultTwice,
+                          "duplicate CQE result assignment must terminate in Release");
+}
+
 }  // namespace
 
 int main() {
   const bool ok = TestSingleResultCompletion() && TestReusablePhysicalSlot() &&
-                  TestCompletionModels() && TestCancelCqeClassification();
+                  TestCompletionModels() && TestCancelCqeClassification() &&
+                  TestResultStatesRejectInvalidTransitions();
   if (ok) {
     std::puts("luring op smoke: PASS");
     return 0;

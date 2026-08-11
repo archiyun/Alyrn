@@ -69,10 +69,11 @@ private:
   void HandleDriverComplete(LUringOp* op) noexcept;
   void HandleControlComplete(LUringOp* op) noexcept;
   void ProcessExpired() noexcept;
-  void Reconcile() noexcept;
-  void Arm(time::Timestamp deadline) noexcept;
-  void ArmFallback(time::Timestamp deadline) noexcept;
-  void Update(time::Timestamp deadline) noexcept;
+  void ReconcileOrStop() noexcept;
+  [[nodiscard]] base::Result<void> Reconcile() noexcept;
+  [[nodiscard]] base::Result<void> Arm(time::Timestamp deadline) noexcept;
+  [[nodiscard]] base::Result<void> ArmFallback(time::Timestamp deadline) noexcept;
+  [[nodiscard]] base::Result<void> Update(time::Timestamp deadline) noexcept;
 
   LUringOp* DriverOp() noexcept { return DriverOpHook::Op(); }
   LUringOp* ControlOp() noexcept { return ControlOpHook::Op(); }

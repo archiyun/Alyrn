@@ -1,8 +1,14 @@
 // Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 
+#include <sys/wait.h>
+#include <unistd.h>
+
 #include <cassert>
+#include <cerrno>
+#include <csignal>
 #include <cstddef>
+#include <cstdio>
 #include <iostream>
 #include <memory_resource>
 
@@ -19,6 +25,45 @@ bool Check(bool condition, const char* message) {
   if (condition) return true;
   std::cerr << "FAIL: " << message << '\n';
   return false;
+}
+
+bool ExpectChildAbort(void (*entry)(), const char* message) {
+  const pid_t child = ::fork();
+  if (child < 0) {
+    return Check(false, "fork failed for frame metadata invariant test");
+  }
+  if (child == 0) {
+    (void)::freopen("/dev/null", "w", stderr);
+    entry();
+    ::_exit(0);
+  }
+
+  int status = 0;
+  while (::waitpid(child, &status, 0) < 0 && errno == EINTR) {
+  }
+  return Check(WIFSIGNALED(status), message) &&
+         Check(WTERMSIG(status) == SIGABRT, "frame metadata invariant must terminate with SIGABRT");
+}
+
+void PackOversizedFrameMetadata() {
+  (void)coropact::coro::detail::PackFrameMetadata(
+      static_cast<std::size_t>(coropact::coro::detail::kFrameMetadataBytesMask) + 1, 16);
+}
+
+void PackMisalignedFrameMetadata() { (void)coropact::coro::detail::PackFrameMetadata(128, 3); }
+
+void PackUnencodableFrameAlignment() {
+  (void)coropact::coro::detail::PackFrameMetadata(
+      128, std::size_t{1} << (coropact::coro::detail::kFrameMetadataMaxAlignmentExponent + 1));
+}
+
+bool TestPackedMetadataRejectsInvalidValues() {
+  return ExpectChildAbort(&PackOversizedFrameMetadata,
+                          "oversized frame metadata must terminate in Release") &&
+         ExpectChildAbort(&PackMisalignedFrameMetadata,
+                          "non-power-of-two frame alignment must terminate in Release") &&
+         ExpectChildAbort(&PackUnencodableFrameAlignment,
+                          "unencodable frame alignment must terminate in Release");
 }
 
 void TestPackedFrameMetadata() {
@@ -117,6 +162,7 @@ void TestSizeClassReuseAndFallback() {
 }  // namespace
 
 int main() {
+  if (!TestPackedMetadataRejectsInvalidValues()) return 1;
   TestPackedFrameMetadata();
   TestSizeClassReuseAndFallback();
 

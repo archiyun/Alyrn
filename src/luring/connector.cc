@@ -7,7 +7,6 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include <cassert>
 #include <cerrno>
 #include <coroutine>
 #include <expected>
@@ -101,14 +100,12 @@ public:
 
   base::Result<LUringStream> await_resume() noexcept {
     if (!Op()->IsCompleted()) {
-      assert(Op()->result.HasValue());
+      COROPACT_CHECK(Op()->result.HasValue(),
+                     "LUring Connect resumed before its immediate result was ready");
       return std::unexpected(base::MakeNegErrno(*Op()->result));
     }
 
-    assert(Op()->IsCompleted());
-    if (!Op()->result.HasValue()) {
-      return std::unexpected(Op()->result.Error());
-    }
+    COROPACT_CHECK(Op()->result.HasValue(), "LUring Connect CQE is missing its result");
     if (*Op()->result < 0) {
       return std::unexpected(base::MakeNegErrno(*Op()->result));
     }

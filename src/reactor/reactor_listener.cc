@@ -326,8 +326,9 @@ coro::Task<base::Result<void>> ReactorAcceptSource::Stop() {
   if (listener_ == nullptr) {
     co_return base::Result<void>{};
   }
-  COROPACT_DCHECK(listener_->loop_->IsInLoopThread(),
-                  "ReactorAcceptSource::Stop called from wrong thread");
+  if (!listener_->loop_->IsInLoopThread()) {
+    co_return std::unexpected(base::MakeErrno(EINVAL));
+  }
 
   if (state_.State() == net::detail::AcceptSourceState::kIdle) {
     state_.RequestStop();

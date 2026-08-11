@@ -10,7 +10,6 @@
 #include <unistd.h>
 
 #include <algorithm>
-#include <cassert>
 #include <cerrno>
 #include <chrono>
 #include <cstdint>
@@ -19,6 +18,7 @@
 #include <thread>
 #include <utility>
 
+#include "coropact/base/check.h"
 #include "coropact/base/current_thread.h"
 #include "coropact/base/error.h"
 #include "coropact/base/try.h"
@@ -48,7 +48,7 @@ LUringOp* DecodeOp(io_uring_cqe* cqe) noexcept {
 namespace detail {
 
 CompletionDisposition DispatchCompletion(LUringOp* op, CompletionEvent event) noexcept {
-  assert(op != nullptr);
+  COROPACT_CHECK(op != nullptr, "cannot dispatch a null LUringOp");
 
   switch (op->DispatchKind()) {
     case LUringOpKind::kAcceptComplete:
@@ -117,13 +117,17 @@ LUringLoop::LUringLoop(std::pmr::memory_resource* frame_resource)
     : Scheduler(frame_resource), thread_id_(base::tid()), timers_(this) {}
 
 LUringLoop::~LUringLoop() noexcept {
+  COROPACT_CHECK(IsInLoopThread(), "LUringLoop destroyed from wrong thread");
+  if (initialized_) {
+    COROPACT_CHECK(IsDrained(), "LUringLoop destroyed with pending user operation work");
+  }
   if (wake_fd_ >= 0) {
     ::close(wake_fd_);
   }
 }
 
 base::Result<void> LUringLoop::Init(const LUringOptions& options) noexcept {
-  assert(IsInLoopThread());
+  COROPACT_CHECK(IsInLoopThread(), "LUringLoop::Init called from wrong thread");
 
   if (initialized_) {
     return std::unexpected(base::MakeErrno(EALREADY));
@@ -173,7 +177,8 @@ base::Result<void> LUringLoop::Init(const LUringOptions& options) noexcept {
 
 base::Result<detail::ProvidedBufferPool*> LUringLoop::GetSharedProvidedBufferPool(
     std::size_t buffer_size, std::size_t source_capacity) noexcept {
-  assert(IsInLoopThread());
+  COROPACT_CHECK(IsInLoopThread(),
+                 "LUringLoop::GetSharedProvidedBufferPool called from wrong thread");
   if (shared_buffer_capacity_ == 0) {
     return std::unexpected(base::MakeErrno(ENOENT));
   }
@@ -205,7 +210,7 @@ base::Result<detail::ProvidedBufferPool*> LUringLoop::GetSharedProvidedBufferPoo
 }
 
 void LUringLoop::Run(std::stop_token token) noexcept {
-  assert(IsInLoopThread());
+  COROPACT_CHECK(IsInLoopThread(), "LUringLoop::Run called from wrong thread");
 
   if (!initialized_) {
     return;
@@ -265,7 +270,7 @@ void LUringLoop::RequestStop() noexcept {
 }
 
 base::Result<void> LUringLoop::CancelPendingOperations() noexcept {
-  assert(IsInLoopThread());
+  COROPACT_CHECK(IsInLoopThread(), "LUringLoop::CancelPendingOperations called from wrong thread");
 
   if (cancel_all_pending_ || (PendingSubmitCount() == 0 && InflightCount() == 0)) {
     return {};
@@ -283,7 +288,7 @@ base::Result<void> LUringLoop::CancelPendingOperations() noexcept {
 }
 
 void LUringLoop::DrainStoppedOperations() noexcept {
-  assert(IsInLoopThread());
+  COROPACT_CHECK(IsInLoopThread(), "LUringLoop::DrainStoppedOperations called from wrong thread");
 
   while (!IsDrained()) {
     RunReady();
@@ -310,7 +315,11 @@ void LUringLoop::DrainStoppedOperations() noexcept {
 
     auto completed = PollCompletions();
     if (!completed.has_value()) {
-      break;
+      // FlushSubmit() or CQ reaping can fail after a cancel SQE has already
+      // been prepared. Keep the pending SQEs and retry rather than publishing
+      // Stopped with requests that the ring may still observe.
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      continue;
     }
     if (*completed == 0) {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
@@ -321,7 +330,7 @@ void LUringLoop::DrainStoppedOperations() noexcept {
 }
 
 void LUringLoop::Schedule(coro::Work* work) noexcept {
-  assert(IsInLoopThread());
+  COROPACT_CHECK(IsInLoopThread(), "LUringLoop::Schedule called from wrong thread");
   if (ready_depth_ == 0) {
     ready_nonempty_since_ns_ = time::SteadyNowNs();
   }
@@ -330,7 +339,7 @@ void LUringLoop::Schedule(coro::Work* work) noexcept {
 }
 
 void LUringLoop::ScheduleCompletion(coro::Work* work) noexcept {
-  assert(IsInLoopThread());
+  COROPACT_CHECK(IsInLoopThread(), "LUringLoop::ScheduleCompletion called from wrong thread");
   if (completion_ready_depth_ == 0) {
     completion_ready_nonempty_since_ns_ = time::SteadyNowNs();
   }
@@ -339,7 +348,7 @@ void LUringLoop::ScheduleCompletion(coro::Work* work) noexcept {
 }
 
 void LUringLoop::RunReady() noexcept {
-  assert(IsInLoopThread());
+  COROPACT_CHECK(IsInLoopThread(), "LUringLoop::RunReady called from wrong thread");
 
   coro::Scheduler* previous = coro::Scheduler::TryCurrent();
   coro::Scheduler::SetCurrent(this);
@@ -362,7 +371,7 @@ void LUringLoop::RunReady() noexcept {
                                          completion_resumed < max_completion_work_per_turn_);
       if (run_completion) {
         work = completion_ready_.PopFront();
-        assert(completion_ready_depth_ > 0);
+        COROPACT_CHECK(completion_ready_depth_ > 0, "LUringLoop completion queue depth underflow");
         --completion_ready_depth_;
         if (completion_ready_depth_ == 0) {
           completion_ready_nonempty_since_ns_ = 0;
@@ -370,7 +379,7 @@ void LUringLoop::RunReady() noexcept {
         ++completion_resumed;
       } else {
         work = ready_.PopFront();
-        assert(ready_depth_ > 0);
+        COROPACT_CHECK(ready_depth_ > 0, "LUringLoop ready queue depth underflow");
         --ready_depth_;
         if (ready_depth_ == 0) {
           ready_nonempty_since_ns_ = 0;
@@ -424,7 +433,7 @@ void LUringLoop::RunReady() noexcept {
                             (completion_budget == 0 || completion_resumed < completion_budget)));
     if (run_completion) {
       work = completion_ready_.PopFront();
-      assert(completion_ready_depth_ > 0);
+      COROPACT_CHECK(completion_ready_depth_ > 0, "LUringLoop completion queue depth underflow");
       --completion_ready_depth_;
       if (completion_ready_depth_ == 0) {
         completion_ready_nonempty_since_ns_ = 0;
@@ -432,7 +441,7 @@ void LUringLoop::RunReady() noexcept {
       ++completion_resumed;
     } else {
       work = ready_.PopFront();
-      assert(ready_depth_ > 0);
+      COROPACT_CHECK(ready_depth_ > 0, "LUringLoop ready queue depth underflow");
       --ready_depth_;
       if (ready_depth_ == 0) {
         ready_nonempty_since_ns_ = 0;
@@ -450,9 +459,16 @@ void LUringLoop::RunReady() noexcept {
 }
 
 base::Result<void> LUringLoop::FlushSubmit() noexcept {
-  assert(IsInLoopThread());
+  COROPACT_CHECK(IsInLoopThread(), "LUringLoop::FlushSubmit called from wrong thread");
 
   while (pending_submit_ > 0) {
+#if defined(COROPACT_ENABLE_TEST_HOOKS)
+    if (test_flush_failures_ != 0) {
+      --test_flush_failures_;
+      return std::unexpected(base::MakeErrno(test_flush_error_));
+    }
+#endif
+
     const std::size_t submitted = COROPACT_TRY(ring_.Submit());
     if (submitted == 0) {
       return std::unexpected(base::MakeErrno(EAGAIN));
@@ -471,7 +487,7 @@ base::Result<void> LUringLoop::FlushSubmit() noexcept {
 }
 
 base::Result<std::size_t> LUringLoop::PollCompletions() noexcept {
-  assert(IsInLoopThread());
+  COROPACT_CHECK(IsInLoopThread(), "LUringLoop::PollCompletions called from wrong thread");
 
   COROPACT_TRY(FlushSubmit());
 
@@ -484,7 +500,7 @@ base::Result<std::size_t> LUringLoop::WaitCompletions() noexcept {
 
 base::Result<std::size_t> LUringLoop::WaitCompletionsFor(
     std::chrono::nanoseconds timeout) noexcept {
-  assert(IsInLoopThread());
+  COROPACT_CHECK(IsInLoopThread(), "LUringLoop::WaitCompletionsFor called from wrong thread");
 
   COROPACT_TRY(FlushSubmit());
 
@@ -509,7 +525,7 @@ base::Result<std::size_t> LUringLoop::WaitCompletionsFor(
 }
 
 void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
-  assert(IsInLoopThread());
+  COROPACT_CHECK(IsInLoopThread(), "LUringLoop::HandleCqe called from wrong thread");
 
   if (cqe->user_data == kMsgRingNotificationUserData) {
     HandleMailbox();
@@ -528,13 +544,12 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
 
   const auto apply_disposition = [this, op](CompletionDisposition disposition) noexcept {
     if (disposition.kernel_request_terminal) {
-      assert(disposition.decrement_inflight);
+      COROPACT_CHECK(disposition.decrement_inflight,
+                     "terminal LUring completion must decrement inflight work");
     }
     if (disposition.decrement_inflight) {
-      assert(inflight_ > 0);
-      if (inflight_ > 0) {
-        --inflight_;
-      }
+      COROPACT_CHECK(inflight_ > 0, "LUringLoop inflight count underflow");
+      --inflight_;
     }
     if (disposition.resume_continuation) {
       const bool logical_completion_ready = op->IsCompleted() || op->CompleteWithoutResult();
@@ -578,7 +593,7 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
 }
 
 base::Result<void> LUringLoop::ArmWakePoll() noexcept {
-  assert(IsInLoopThread());
+  COROPACT_CHECK(IsInLoopThread(), "LUringLoop::ArmWakePoll called from wrong thread");
   if (wake_fd_ < 0) {
     return std::unexpected(base::MakeErrno(EBADF));
   }
@@ -617,14 +632,11 @@ void LUringLoop::Wake() noexcept {
 }
 
 void LUringLoop::HandleMailbox() noexcept {
-  assert(IsInLoopThread());
+  COROPACT_CHECK(IsInLoopThread(), "LUringLoop::HandleMailbox called from wrong thread");
 
   mailbox_.Drain([this](const LUringMessage& message) noexcept {
     auto* work = reinterpret_cast<coro::Work*>(static_cast<std::uintptr_t>(message.data));
-    if (work == nullptr) {
-      assert(false && "mailbox message contains a null work pointer");
-      return;
-    }
+    COROPACT_CHECK(work != nullptr, "mailbox message contains a null work pointer");
     ScheduleCompletion(work);
   });
 }

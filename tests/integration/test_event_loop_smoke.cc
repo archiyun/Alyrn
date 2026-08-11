@@ -1,5 +1,12 @@
+#include <sys/eventfd.h>
+#include <sys/wait.h>
+#include <unistd.h>
+
 #include <atomic>
+#include <cerrno>
+#include <csignal>
 #include <chrono>
+#include <cstdio>
 #include <exception>
 #include <iostream>
 #include <memory_resource>
@@ -12,6 +19,7 @@
 #include "coropact/coro/work.h"
 #include "coropact/io/loop.h"
 #include "coropact/reactor/connector.h"
+#include "coropact/reactor/detail/channel.h"
 #include "coropact/reactor/loop.h"
 
 namespace {
@@ -22,6 +30,74 @@ bool Expect(bool condition, const char* message) {
     return false;
   }
   return true;
+}
+
+class NoopWork final : public coropact::coro::Work {
+public:
+  NoopWork() noexcept { SetRun(&RunNoop); }
+
+private:
+  static void RunNoop(coropact::coro::Work*) noexcept {}
+};
+
+void DestroyLoopWithQueuedWork() {
+  NoopWork work;
+  coropact::reactor::EventLoop loop;
+  loop.Schedule(&work);
+}
+
+bool TestEventLoopRejectsQueuedWorkAtDestruction() {
+  const pid_t child = ::fork();
+  if (child < 0) {
+    return Expect(false, "fork failed for EventLoop destructor invariant test");
+  }
+  if (child == 0) {
+    (void)::freopen("/dev/null", "w", stderr);
+    DestroyLoopWithQueuedWork();
+    ::_exit(0);
+  }
+
+  int status = 0;
+  while (::waitpid(child, &status, 0) < 0 && errno == EINTR) {
+  }
+  return Expect(WIFSIGNALED(status),
+                "EventLoop destruction with queued work must terminate in Release") &&
+         Expect(WTERMSIG(status) == SIGABRT,
+                "EventLoop queued-work invariant must terminate with SIGABRT");
+}
+
+void MutateChannelFromForeignThread() {
+  coropact::reactor::EventLoop loop;
+  const int fd = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+  COROPACT_CHECK(fd >= 0, "eventfd creation failed for Channel ownership test");
+  coropact::reactor::detail::Channel channel(&loop, fd);
+
+  std::thread foreign([&] { channel.EnableReading(); });
+  foreign.join();
+
+  channel.DisableAll();
+  channel.Remove();
+  (void)::close(fd);
+}
+
+bool TestEventLoopRejectsForeignChannelMutation() {
+  const pid_t child = ::fork();
+  if (child < 0) {
+    return Expect(false, "fork failed for Channel ownership test");
+  }
+  if (child == 0) {
+    (void)::freopen("/dev/null", "w", stderr);
+    MutateChannelFromForeignThread();
+    ::_exit(0);
+  }
+
+  int status = 0;
+  while (::waitpid(child, &status, 0) < 0 && errno == EINTR) {
+  }
+  return Expect(WIFSIGNALED(status),
+                "foreign Channel mutation must terminate in Release") &&
+         Expect(WTERMSIG(status) == SIGABRT,
+                "foreign Channel mutation must terminate with SIGABRT");
 }
 
 bool TestRunOnOwnerExecutesImmediately() {
@@ -220,6 +296,19 @@ bool TestStaleTimerIdCannotCancelReplacement() {
          Expect(replacement_fired, "stale TimerId should not cancel a replacement timer");
 }
 
+bool TestLoopStopDiscardsUnexpiredTimer() {
+  coropact::reactor::EventLoop loop;
+  bool fired = false;
+
+  loop.RunAfter(60.0, [&] { fired = true; });
+  loop.RequestStop();
+  loop.Run();
+
+  return Expect(loop.State() == coropact::io::LoopState::kStopped,
+                "loop with an unexpired timer should stop") &&
+         Expect(!fired, "loop shutdown must discard an unexpired timer without running it");
+}
+
 bool TestCrossThreadRequestStopWakesPoll() {
   coropact::reactor::EventLoop loop;
   std::atomic_bool stop_sent{false};
@@ -272,6 +361,8 @@ bool TestLoopStopCancelsConnectorTimer() {
 int main() {
   try {
     if (!TestRunOnOwnerExecutesImmediately()) return 1;
+    if (!TestEventLoopRejectsQueuedWorkAtDestruction()) return 1;
+    if (!TestEventLoopRejectsForeignChannelMutation()) return 1;
     if (!TestSchedulerWorkIsDeferredAndBound()) return 1;
     if (!TestEventLoopOwnsFrameResource()) return 1;
     if (!TestSchedulerWorkScheduledDuringResumeIsDeferred()) return 1;
@@ -279,6 +370,7 @@ int main() {
     if (!TestSameDeadlineTimersKeepSequenceOrder()) return 1;
     if (!TestCancelEarliestKeepsNextTimerScheduled()) return 1;
     if (!TestStaleTimerIdCannotCancelReplacement()) return 1;
+    if (!TestLoopStopDiscardsUnexpiredTimer()) return 1;
     if (!TestCrossThreadRequestStopWakesPoll()) return 1;
     if (!TestLoopStopCancelsConnectorTimer()) return 1;
   } catch (const std::exception& ex) {

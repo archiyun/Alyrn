@@ -6,10 +6,10 @@
 // intentionally kept in coro/detail/spawn_root.h.
 #pragma once
 
-#include <cassert>
 #include <coroutine>
 #include <utility>
 
+#include "coropact/base/check.h"
 #include "coropact/coro/detached_task.h"
 #include "coropact/coro/detail/spawn_state.h"
 #include "coropact/coro/scheduler.h"
@@ -39,7 +39,10 @@ public:
 
   // Synchronous join: blocks the calling thread until completion. Never call
   // this on an IO loop thread -- it would block the loop.
-  decltype(auto) Wait() noexcept { return state_->Wait(); }
+  decltype(auto) Wait() noexcept {
+    COROPACT_CHECK(state_ != nullptr, "JoinHandle::Wait called after ownership was released");
+    return state_->Wait();
+  }
 
   // Detach: give up the result; the coroutine still runs to completion and
   // cleans itself up.
@@ -47,6 +50,8 @@ public:
 
   // Async join from inside another coroutine.
   auto operator co_await() && noexcept {
+    COROPACT_CHECK(state_ != nullptr,
+                   "JoinHandle::operator co_await called after ownership was released");
     struct Awaiter {
       State* state;
 
@@ -86,7 +91,7 @@ JoinHandle<T> Spawn(Scheduler& scheduler, Task<T> task) {
   auto child = std::move(task).operator co_await();
   auto root = detail::RunSpawn<T>(std::move(child));
   auto handle = root.Release();
-  assert(handle);
+  COROPACT_CHECK(handle, "Spawn failed to create a root coroutine");
 
   auto& promise = handle.promise();
   auto& state = static_cast<detail::SpawnState<T>&>(promise);
@@ -100,7 +105,7 @@ JoinHandle<T> Spawn(Scheduler& scheduler, Task<T> task) {
 // cannot be joined or cancelled through this API.
 inline void SpawnDetach(Scheduler& scheduler, DetachedTask task) noexcept {
   auto handle = task.Release();
-  assert(handle && "SpawnDetach requires a non-empty DetachedTask");
+  COROPACT_CHECK(handle, "SpawnDetach requires a non-empty DetachedTask");
   auto& work = static_cast<ResumeWork&>(handle.promise());
   work.SetHandle(handle);
   scheduler.Schedule(&work);
