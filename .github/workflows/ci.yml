@@ -24,8 +24,17 @@ jobs:
       matrix:
         build_type: [Debug, Release]
         compiler:
-          - { name: gcc-14, cc: gcc-14, cxx: g++-14, pkgs: g++-14 }
-          - { name: clang-18, cc: clang-18, cxx: clang++-18, pkgs: clang-18 }
+          - { name: gcc-14, cc: gcc-14, cxx: g++-14, pkgs: g++-14, stdlib: "" }
+          # Clang 18 + libstdc++ hides std::expected because Clang advertises
+          # __cpp_concepts < 202002 while libstdc++ gates <expected> on that
+          # value. Pair Clang with libc++ instead.
+          - {
+              name: clang-18,
+              cc: clang-18,
+              cxx: clang++-18,
+              pkgs: "clang-18 libc++-18-dev libc++abi-18-dev",
+              stdlib: "-stdlib=libc++",
+            }
 
     env:
       CC: ${{ matrix.compiler.cc }}
@@ -42,7 +51,12 @@ jobs:
             ${{ matrix.compiler.pkgs }}
 
       - name: Configure
-        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+        run: >
+          cmake -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DCMAKE_CXX_FLAGS=${{ matrix.compiler.stdlib }}
+          -DCMAKE_EXE_LINKER_FLAGS=${{ matrix.compiler.stdlib }}
+          -DCMAKE_SHARED_LINKER_FLAGS=${{ matrix.compiler.stdlib }}
 
       - name: Build
         run: cmake --build build -j"$(nproc)"
@@ -57,8 +71,14 @@ jobs:
       fail-fast: false
       matrix:
         compiler:
-          - { name: gcc-14, cc: gcc-14, cxx: g++-14, pkgs: g++-14 }
-          - { name: clang-18, cc: clang-18, cxx: clang++-18, pkgs: clang-18 }
+          - { name: gcc-14, cc: gcc-14, cxx: g++-14, pkgs: g++-14, stdlib: "" }
+          - {
+              name: clang-18,
+              cc: clang-18,
+              cxx: clang++-18,
+              pkgs: "clang-18 libc++-18-dev libc++abi-18-dev",
+              stdlib: "-stdlib=libc++",
+            }
     env:
       CC: ${{ matrix.compiler.cc }}
       CXX: ${{ matrix.compiler.cxx }}
@@ -81,6 +101,9 @@ jobs:
           -DCMAKE_BUILD_TYPE=Debug
           -DCOROPACT_STRICT_WARNINGS=ON
           -DBUILD_BENCHMARKS=ON
+          -DCMAKE_CXX_FLAGS=${{ matrix.compiler.stdlib }}
+          -DCMAKE_EXE_LINKER_FLAGS=${{ matrix.compiler.stdlib }}
+          -DCMAKE_SHARED_LINKER_FLAGS=${{ matrix.compiler.stdlib }}
 
       - name: Build
         run: cmake --build build -j"$(nproc)"
@@ -95,8 +118,14 @@ jobs:
       fail-fast: false
       matrix:
         compiler:
-          - { name: gcc-14, cc: gcc-14, cxx: g++-14, pkgs: g++-14 }
-          - { name: clang-18, cc: clang-18, cxx: clang++-18, pkgs: clang-18 }
+          - { name: gcc-14, cc: gcc-14, cxx: g++-14, pkgs: g++-14, stdlib: "" }
+          - {
+              name: clang-18,
+              cc: clang-18,
+              cxx: clang++-18,
+              pkgs: "clang-18 libc++-18-dev libc++abi-18-dev",
+              stdlib: "-stdlib=libc++",
+            }
         # Quoted so YAML keeps them as the strings CMake expects rather than
         # folding ON/OFF into booleans.
         hooks: ["ON", "OFF"]
@@ -134,6 +163,9 @@ jobs:
           -DCOROPACT_ENABLE_URING=ON
           -DCOROPACT_ENABLE_TEST_HOOKS=${{ matrix.hooks }}
           -DBUILD_BENCHMARKS=ON
+          -DCMAKE_CXX_FLAGS=${{ matrix.compiler.stdlib }}
+          -DCMAKE_EXE_LINKER_FLAGS=${{ matrix.compiler.stdlib }}
+          -DCMAKE_SHARED_LINKER_FLAGS=${{ matrix.compiler.stdlib }}
 
       - name: Build
         run: cmake --build build -j"$(nproc)"
@@ -161,7 +193,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             cmake ninja-build pkg-config libgtest-dev \
-            libuv1-dev libevent-dev libev-dev libaio-dev clang-18
+            libuv1-dev libevent-dev libev-dev libaio-dev \
+            clang-18 libc++-18-dev libc++abi-18-dev
 
       - name: Build liburing
         run: |
@@ -183,6 +216,9 @@ jobs:
           -DCOROPACT_ENABLE_URING=ON
           -DCOROPACT_ENABLE_TEST_HOOKS=ON
           -DBUILD_EXAMPLES=OFF
+          -DCMAKE_CXX_FLAGS=-stdlib=libc++
+          -DCMAKE_EXE_LINKER_FLAGS=-stdlib=libc++
+          -DCMAKE_SHARED_LINKER_FLAGS=-stdlib=libc++
 
       - name: Build
         run: cmake --build build -j"$(nproc)"
