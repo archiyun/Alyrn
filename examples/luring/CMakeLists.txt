@@ -27,6 +27,15 @@ target_link_libraries(demo_luring_close_pending_read
         coropact_luring
 )
 
+add_executable(demo_luring_zero_copy_send
+    06_zero_copy_send.cc
+)
+
+target_link_libraries(demo_luring_zero_copy_send
+    PRIVATE
+        coropact_luring
+)
+
 add_executable(demo_bench_http_luring
     demo_bench_http_luring.cc
 )

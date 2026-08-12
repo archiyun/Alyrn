@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Compare the regular LUringStream receive path with the multishot provided
-# buffer path. Results are intentionally written outside the repository.
+# Compare the regular LUringStream receive path with multishot accept +
+# provided-buffer recv + zero-copy WriteAll. Both modes use one binary with
+# env toggles. Results are intentionally written outside the repository.
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 BUILD_DIR=${BUILD_DIR:-"$ROOT_DIR/build-uring"}
@@ -17,10 +18,9 @@ TIMEOUT=${TIMEOUT:-5s}
 WORKERS=${URING_WORKERS:-4}
 ENTRIES=${URING_ENTRIES:-1024}
 BASE_PORT=${BASE_PORT:-19190}
-SHARED_BUFFER_CAPACITY=${SHARED_BUFFER_CAPACITY:-256}
+SHARED_BUFFER_CAPACITY=${SHARED_BUFFER_CAPACITY:-4096}
 
-BASELINE_BIN=${BASELINE_BIN:-"$BUILD_DIR/examples/luring/demo_bench_http_luring"}
-MULTISHOT_BIN=${MULTISHOT_BIN:-"$BUILD_DIR/examples/luring/demo_bench_http_luring_multishot"}
+LURING_BIN=${LURING_BIN:-"$BUILD_DIR/examples/luring/demo_bench_http_luring"}
 
 mkdir -p "$OUTDIR/raw"
 printf 'target,concurrency,round,cpu_percent,rss_kb\n' >"$OUTDIR/resources.csv"
@@ -59,15 +59,20 @@ wait_ready() {
 
 run_target() {
   local target=$1
-  local binary=$2
-  local port=$3
+  local port=$2
+  local accept_mode=$3
+  local use_recv_source=$4
+  local zero_copy_writes=$5
   local server_log="$OUTDIR/${target}.log"
 
   echo "starting $target on port $port"
   BIND_HOST=127.0.0.1 PORT="$port" URING_WORKERS="$WORKERS" \
     URING_ENTRIES="$ENTRIES" \
     SHARED_BUFFER_CAPACITY="$SHARED_BUFFER_CAPACITY" \
-    "$binary" >"$server_log" 2>&1 &
+    ACCEPT_MODE="$accept_mode" \
+    USE_RECV_SOURCE="$use_recv_source" \
+    ZERO_COPY_WRITES="$zero_copy_writes" \
+    "$LURING_BIN" >"$server_log" 2>&1 &
   server_pid=$!
 
   if ! wait_ready "$port"; then
@@ -97,7 +102,7 @@ run_target() {
   cleanup
 }
 
-run_target regular "$BASELINE_BIN" "$BASE_PORT"
-run_target multishot-mmap "$MULTISHOT_BIN" "$((BASE_PORT + 1))"
+run_target regular "$BASE_PORT" single 0 0
+run_target multishot-buffer-zc "$((BASE_PORT + 1))" multishot 1 1
 
 echo "results: $OUTDIR"
