@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 // Runs the same application-observable connector scenarios against every
 // enabled network backend.
@@ -20,7 +19,7 @@
 #include <system_error>
 #include <utility>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/spawn.h"
 #include "coropact/coro/task.h"
@@ -67,20 +66,20 @@ struct ListenEndpoint {
   std::uint16_t port{0};
 };
 
-coropact::base::Result<ListenEndpoint> ListenLoopback() noexcept {
+coropact::Result<ListenEndpoint> ListenLoopback() noexcept {
   const int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
   if (fd < 0) {
-    return std::unexpected(coropact::base::CurrentErrno());
+    return std::unexpected(coropact::CurrentErrno());
   }
 
-  auto fail = [fd](coropact::base::Error error) -> coropact::base::Result<ListenEndpoint> {
+  auto fail = [fd](coropact::Error error) -> coropact::Result<ListenEndpoint> {
     (void)::close(fd);
     return std::unexpected(error);
   };
 
   int enabled = 1;
   if (::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &enabled, sizeof(enabled)) < 0) {
-    return fail(coropact::base::CurrentErrno());
+    return fail(coropact::CurrentErrno());
   }
 
   sockaddr_in address{};
@@ -88,15 +87,15 @@ coropact::base::Result<ListenEndpoint> ListenLoopback() noexcept {
   address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   address.sin_port = htons(0);
   if (::bind(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0) {
-    return fail(coropact::base::CurrentErrno());
+    return fail(coropact::CurrentErrno());
   }
   if (::listen(fd, SOMAXCONN) < 0) {
-    return fail(coropact::base::CurrentErrno());
+    return fail(coropact::CurrentErrno());
   }
 
   socklen_t length = sizeof(address);
   if (::getsockname(fd, reinterpret_cast<sockaddr*>(&address), &length) < 0) {
-    return fail(coropact::base::CurrentErrno());
+    return fail(coropact::CurrentErrno());
   }
   return ListenEndpoint{.fd = UniqueFd(fd), .port = ntohs(address.sin_port)};
 }
@@ -117,13 +116,13 @@ struct ReactorHarness {
   static bool Init(Loop&) noexcept { return true; }
   static bool Skip() noexcept { return false; }
 
-  static coropact::base::Result<Connector> CreateConnector(Loop& loop) noexcept {
+  static coropact::Result<Connector> CreateConnector(Loop& loop) noexcept {
     return Connector::Create(&loop);
   }
 
   static bool RunAfter(Loop& loop, std::chrono::milliseconds delay,
                        std::function<void()> callback) {
-    loop.RunAfter(std::chrono::duration<double>(delay).count(), std::move(callback));
+    loop.RunAfter(std::chrono::duration_cast<coropact::time::Duration>(delay), std::move(callback));
     return true;
   }
 
@@ -155,7 +154,7 @@ struct LUringHarness {
            init_error == std::errc::operation_not_permitted;
   }
 
-  static coropact::base::Result<Connector> CreateConnector(Loop& loop) noexcept {
+  static coropact::Result<Connector> CreateConnector(Loop& loop) noexcept {
     return Connector::Create(&loop);
   }
 
@@ -171,15 +170,15 @@ struct LUringHarness {
 
   static void Run(Loop& loop) noexcept { loop.Run(); }
 
-  static inline coropact::base::Error init_error{};
+  static inline coropact::Error init_error{};
 };
 #endif
 
 template <class Connector>
 struct ConnectObservation {
-  using Result = coropact::base::Result<typename Connector::Stream>;
+  using ConnectResult = coropact::Result<typename Connector::Stream>;
 
-  std::optional<Result> result;
+  std::optional<ConnectResult> result;
   int resume_count{0};
   bool resumed_with_scheduler{false};
   bool timed_out{false};
@@ -196,7 +195,7 @@ auto ObserveConnect(Connector& connector, Loop& loop, std::string_view host, std
 
 template <class Connector, class Loop>
 auto ObservePreparedConnect(
-    coropact::coro::Task<coropact::base::Result<typename Connector::Stream>> task, Loop& loop,
+    coropact::coro::Task<coropact::Result<typename Connector::Stream>> task, Loop& loop,
     ConnectObservation<Connector>& observation) -> coropact::coro::DetachedTask {
   observation.result.emplace(co_await std::move(task));
   ++observation.resume_count;
@@ -262,10 +261,10 @@ bool CheckConnectSuccessContract() {
 
 template <class Connector>
 struct ConnectCloseObservation {
-  using Result = coropact::base::Result<typename Connector::Stream>;
+  using ConnectResult = coropact::Result<typename Connector::Stream>;
 
-  std::optional<Result> connect;
-  std::optional<coropact::base::Result<void>> close;
+  std::optional<ConnectResult> connect;
+  std::optional<coropact::Result<void>> close;
   bool stream_valid_before_close{false};
   bool resumed_with_scheduler{false};
   bool timed_out{false};
@@ -428,10 +427,10 @@ bool CheckConnectAfterStopRequestContract() {
 
 template <class Connector>
 struct ConcurrentConnectObservation {
-  using Result = coropact::base::Result<typename Connector::Stream>;
+  using ConnectResult = coropact::Result<typename Connector::Stream>;
 
-  std::optional<Result> first;
-  std::optional<Result> second;
+  std::optional<ConnectResult> first;
+  std::optional<ConnectResult> second;
   int first_resume_count{0};
   int second_resume_count{0};
   int finished{0};
@@ -442,7 +441,7 @@ struct ConcurrentConnectObservation {
 template <class Connector, class Loop>
 auto ObserveConcurrentConnect(
     Connector& connector, Loop& loop, std::uint16_t port,
-    std::optional<typename ConcurrentConnectObservation<Connector>::Result>& result,
+    std::optional<typename ConcurrentConnectObservation<Connector>::ConnectResult>& result,
     int& resume_count, ConcurrentConnectObservation<Connector>& observation)
     -> coropact::coro::DetachedTask {
   result.emplace(co_await connector.Connect("127.0.0.1", port));

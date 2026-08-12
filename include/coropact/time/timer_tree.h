@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
@@ -17,6 +16,6 @@ inline bool TimerLess(const Timer* a, const Timer* b) {
   return a->sequence() < b->sequence();
 }
 
-using TimerTree = coropact::ds::IntrusiveRBTree<Timer, TimerLess>;
+using TimerTree = ds::IntrusiveRBTree<Timer, TimerLess>;
 
 }  // namespace coropact::time

@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 //
 // Single responsibility: Work, a vtable-free schedulable unit (a tagged action

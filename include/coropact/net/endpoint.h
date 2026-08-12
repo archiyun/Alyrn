@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
@@ -14,7 +13,7 @@
 #include <system_error>
 
 #include "coropact/base/check.h"
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 
 namespace coropact::net {
 
@@ -54,7 +53,7 @@ public:
     return endpoint;
   }
 
-  // Builds an endpoint from an address returned by accept4/getsockname or
+  // Builds an endpoint from an address returned by accept/getsockname or
   // getpeername. The input may be larger than the family-specific structure.
   explicit Endpoint(const sockaddr* address, socklen_t length) noexcept {
     COROPACT_CHECK(address != nullptr, "Endpoint: address must not be null");
@@ -217,9 +216,9 @@ private:
 // Parses a numeric IPv4 or IPv6 address. Hostnames are deliberately not
 // resolved by this value-layer helper.
 [[nodiscard]]
-inline base::Result<Endpoint> ParseIpAddress(std::string_view ip, std::uint16_t port) {
+inline Result<Endpoint> ParseIpAddress(std::string_view ip, std::uint16_t port) {
   if (ip.find('\0') != std::string_view::npos) {
-    return std::unexpected(base::Error(std::make_error_code(std::errc::invalid_argument)));
+    return std::unexpected(Error(std::make_error_code(std::errc::invalid_argument)));
   }
 
   const std::string text(ip);
@@ -237,7 +236,7 @@ inline base::Result<Endpoint> ParseIpAddress(std::string_view ip, std::uint16_t 
     return Endpoint(ipv6);
   }
 
-  return std::unexpected(base::Error(std::make_error_code(std::errc::invalid_argument)));
+  return std::unexpected(Error(std::make_error_code(std::errc::invalid_argument)));
 }
 
 }  // namespace coropact::net

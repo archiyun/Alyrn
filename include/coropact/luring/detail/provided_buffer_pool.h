@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
@@ -12,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/luring/detail/provided_buffer_storage.h"
 #include "coropact/utils/macros.h"
 
@@ -60,7 +59,7 @@ public:
   }
 
   [[nodiscard]]
-  static base::Result<ProvidedBufferPool> Create(
+  static Result<ProvidedBufferPool> Create(
       io_uring* ring,
       std::uint16_t buffer_group,
       std::size_t capacity,
@@ -70,7 +69,7 @@ public:
         (capacity & (capacity - 1)) != 0 || buffer_size == 0 ||
         buffer_size > std::numeric_limits<std::uint32_t>::max() ||
         initial_capacity == 0 || initial_capacity > capacity) {
-      return std::unexpected(base::MakeErrno(EINVAL));
+      return std::unexpected(Errno(EINVAL));
     }
 
     auto storage = ProvidedBufferStorage::Create(capacity, buffer_size);
@@ -84,9 +83,9 @@ public:
         static_cast<int>(buffer_group), 0, &setup_error);
     if (buffer_ring == nullptr) {
       if (setup_error < 0) {
-        return std::unexpected(base::MakeNegErrno(setup_error));
+        return std::unexpected(NegErrno(setup_error));
       }
-      return std::unexpected(base::MakeErrno(
+      return std::unexpected(Errno(
           setup_error == 0 ? EIO : setup_error));
     }
 
@@ -103,7 +102,7 @@ public:
     try {
       pool.in_use_.assign(capacity, false);
     } catch (...) {
-      return std::unexpected(base::MakeErrno(ENOMEM));
+      return std::unexpected(Errno(ENOMEM));
     }
 
     io_uring_buf_ring_init(pool.buffer_ring_);

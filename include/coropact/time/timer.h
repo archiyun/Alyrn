@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
@@ -9,7 +8,7 @@
 
 #include "coropact/ds/intrusive_hash_table.h"
 #include "coropact/ds/intrusive_rbtree.h"
-#include "coropact/time/timestamp.h"
+#include "coropact/time/clock.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::time {
@@ -23,34 +22,46 @@ namespace coropact::time {
 // The tree linkage is inherited (base-hook): TimerTree recovers the Timer from
 // the hook with static_cast, so no per-node owner pointer is stored. See
 // coropact/ds/intrusive_rbtree.h.
-class Timer : public coropact::ds::RBTNode<Timer>,
-              public coropact::ds::HashNode<Timer> {
+class Timer : public ds::RBTNode<Timer>, public ds::HashNode<Timer> {
 public:
   using TimerCallback = std::function<void()>;
 
-  Timer(TimerCallback cb, Timestamp when, double interval_sec)
-      : timer_callback_(std::move(cb)),
+  Timer(TimerCallback callback, Deadline when, Duration interval)
+      : timer_callback_(std::move(callback)),
         expiration_(when),
-        interval_sec_(interval_sec),
-        repeat_(interval_sec > 0.0),
+        interval_(interval),
+        repeat_(interval > Duration::zero()),
         sequence_(next_sequence_.fetch_add(1, std::memory_order_relaxed)) {}
 
   COROPACT_DELETE_COPY_MOVE(Timer);
 
   void Run() const {
-    if (timer_callback_) timer_callback_();
+    if (timer_callback_) {
+      timer_callback_();
+    }
   }
 
-  Timestamp expiration() const { return expiration_; }
-  bool repeat() const { return repeat_; }
-  int64_t sequence() const { return sequence_; }
+  [[nodiscard]]
+  Deadline expiration() const {
+    return expiration_;
+  }
 
-  void Restart(Timestamp now) { expiration_ = AddTime(now, interval_sec_); }
+  [[nodiscard]]
+  bool repeat() const {
+    return repeat_;
+  }
+
+  [[nodiscard]]
+  int64_t sequence() const {
+    return sequence_;
+  }
+
+  void Restart(Deadline now) { expiration_ = now + interval_; }
 
 private:
   TimerCallback timer_callback_;
-  Timestamp expiration_;
-  double interval_sec_;
+  Deadline expiration_;
+  Duration interval_;
   bool repeat_;
   int64_t sequence_;
 

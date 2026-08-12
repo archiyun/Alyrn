@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #include "coropact/luring/detail/worker_group.h"
 
@@ -24,13 +23,13 @@ LUringWorkerGroup::LUringWorkerGroup(net::Endpoint listen_addr, LUringWorkerGrou
 
 LUringWorkerGroup::~LUringWorkerGroup() noexcept { Stop(); }
 
-base::Result<void> LUringWorkerGroup::Start() {
+Result<void> LUringWorkerGroup::Start() {
   if (started_) {
-    return std::unexpected(base::MakeErrno(EALREADY));
+    return std::unexpected(Errno(EALREADY));
   }
 
   if (options_.worker_num == 0) {
-    return std::unexpected(base::MakeErrno(EINVAL));
+    return std::unexpected(Errno(EINVAL));
   }
 
   workers_.reserve(options_.worker_num);

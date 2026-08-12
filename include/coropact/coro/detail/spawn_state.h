@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 //
 // Single responsibility: the atomic lifecycle state shared by a spawned root

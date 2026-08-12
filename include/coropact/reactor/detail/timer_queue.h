@@ -1,9 +1,7 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
 #include <atomic>
-#include <chrono>
 #include <functional>
 #include <utility>
 
@@ -11,6 +9,7 @@
 #include "coropact/ds/intrusive_rbtree.h"
 #include "coropact/memory/object_pool.h"
 #include "coropact/reactor/detail/channel.h"
+#include "coropact/time/clock.h"
 #include "coropact/time/timer_id.h"
 #include "coropact/utils/macros.h"
 
@@ -20,12 +19,11 @@ class EventLoop;
 
 namespace detail {
 
-
 class ReactorTimer final : public ds::RBTNode<ReactorTimer>, public ds::HashNode<ReactorTimer> {
 public:
-  using Clock = std::chrono::steady_clock;
-  using TimePoint = Clock::time_point;
-  using Duration = Clock::duration;
+  using Clock = time::Clock;
+  using TimePoint = time::Deadline;
+  using Duration = time::Duration;
   using TimerCallback = std::function<void()>;
 
   ReactorTimer(TimerCallback callback, TimePoint expiration, Duration interval)
@@ -111,7 +109,8 @@ private:
   static void DispatchRead(void* context) noexcept;
   void ResetTimerfd(TimePoint expiration);
 
-  EventLoop* loop_;
+  // The owning loop is reachable through timerfd_channel_.OwnerLoop(); it is
+  // deliberately not duplicated here.
   int timerfd_;
   Channel timerfd_channel_;
   TimerTree timers_;

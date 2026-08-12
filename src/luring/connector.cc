@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #include "coropact/luring/connector.h"
 
@@ -15,7 +14,7 @@
 
 #include "coropact/backend/detail/value_result_state.h"
 #include "coropact/base/check.h"
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/luring/detail/completion_dispatch.h"
 #include "coropact/luring/detail/op.h"
 #include "coropact/luring/detail/operation_submission.h"
@@ -30,24 +29,24 @@ using namespace detail;
 
 namespace {
 
-base::Result<int> CreateSocket(sa_family_t family) noexcept {
+Result<int> CreateSocket(sa_family_t family) noexcept {
   const int fd = ::socket(family, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
   if (fd < 0) {
-    return std::unexpected(base::CurrentErrno());
+    return std::unexpected(CurrentErrno());
   }
   return fd;
 }
 
-base::Result<void> SetNonBlocking(int fd) noexcept {
+Result<void> SetNonBlocking(int fd) noexcept {
   const int flags = ::fcntl(fd, F_GETFL, 0);
   if (flags < 0) {
-    return std::unexpected(base::CurrentErrno());
+    return std::unexpected(CurrentErrno());
   }
   if ((flags & O_NONBLOCK) != 0) {
     return {};
   }
   if (::fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) {
-    return std::unexpected(base::CurrentErrno());
+    return std::unexpected(CurrentErrno());
   }
   return {};
 }
@@ -81,7 +80,7 @@ public:
                    "LUringConnector operation called from wrong LUringLoop thread");
     if (loop_->State() == backend::LoopState::kStopping ||
         loop_->State() == backend::LoopState::kStopped) {
-      CompleteInline(std::unexpected(base::MakeErrno(ECANCELED)));
+      CompleteInline(std::unexpected(Errno(ECANCELED)));
       return false;
     }
 
@@ -98,10 +97,10 @@ public:
         [this, fd = fd_](io_uring_sqe* sqe) noexcept {
           io_uring_prep_connect(sqe, fd, peer_.SockAddr(), peer_.SockAddrLen());
         },
-        [this](base::Error error) noexcept { CompleteInline(std::unexpected(error)); });
+        [this](Error error) noexcept { CompleteInline(std::unexpected(error)); });
   }
 
-  base::Result<LUringStream> await_resume() noexcept { return result_.Take(); }
+  Result<LUringStream> await_resume() noexcept { return result_.Take(); }
 
 private:
   static void OnComplete(LUringOp* op) noexcept {
@@ -109,7 +108,7 @@ private:
     COROPACT_CHECK(op->result.HasValue(), "LUring Connect CQE is missing its result");
 
     if (*op->result < 0) {
-      self->result_.SetError(base::MakeNegErrno(*op->result));
+      self->result_.SetError(NegErrno(*op->result));
     } else {
       auto nonblocking = SetNonBlocking(self->fd_);
       if (!nonblocking.has_value()) {
@@ -125,7 +124,7 @@ private:
     self->ReleasePhysicalRequest();
   }
 
-  void CompleteInline(base::Result<LUringStream> result) noexcept {
+  void CompleteInline(Result<LUringStream> result) noexcept {
     result_.SetResult(std::move(result));
     COROPACT_CHECK(Op()->TryAuthorizeCoupledResult(), "LUring Connect result was authorized twice");
     COROPACT_CHECK(Op()->TryAuthorizeCoupledRelease(),
@@ -133,7 +132,7 @@ private:
     ReleasePhysicalRequest();
   }
 
-  base::Result<LUringStream> MakeStream() noexcept {
+  Result<LUringStream> MakeStream() noexcept {
     LUringStream stream(loop_, fd_, peer_);
     fd_ = -1;
     return stream;
@@ -151,8 +150,8 @@ private:
   backend::detail::ValueResultState<LUringStream> result_;
 };
 
-coro::Task<base::Result<LUringStream>> ConnectResolved(LUringLoop* loop,
-                                                       base::Result<net::Endpoint> peer) {
+coro::Task<Result<LUringStream>> ConnectResolved(LUringLoop* loop,
+                                                       Result<net::Endpoint> peer) {
   if (!peer.has_value()) {
     co_return std::unexpected(peer.error());
   }
@@ -172,9 +171,9 @@ LUringConnector::LUringConnector(LUringLoop* loop) noexcept : loop_(loop) {
   COROPACT_CHECK(loop_->IsInLoopThread(), "LUringConnector created from wrong LUringLoop thread");
 }
 
-base::Result<LUringConnector> LUringConnector::Create(LUringLoop* loop) noexcept {
+Result<LUringConnector> LUringConnector::Create(LUringLoop* loop) noexcept {
   if (loop == nullptr) {
-    return std::unexpected(base::MakeErrno(EINVAL));
+    return std::unexpected(Errno(EINVAL));
   }
   return LUringConnector{loop};
 }
@@ -189,13 +188,13 @@ LUringConnector& LUringConnector::operator=(LUringConnector&& other) noexcept {
   return *this;
 }
 
-coro::Task<base::Result<LUringStream>> LUringConnector::Connect(std::string_view host,
+coro::Task<Result<LUringStream>> LUringConnector::Connect(std::string_view host,
                                                                 std::uint16_t port) {
   RequireOwnerLoop();
   return ConnectResolved(loop_, net::ParseIpAddress(host, port));
 }
 
-coro::Task<void> LUringConnector::SleepFor(std::chrono::milliseconds delay) {
+coro::Task<void> LUringConnector::SleepFor(time::Duration delay) {
   RequireOwnerLoop();
   auto result = co_await coropact::luring::SleepFor(*loop_, delay);
   (void)result;

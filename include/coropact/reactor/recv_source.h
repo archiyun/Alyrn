@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
@@ -11,7 +10,7 @@
 
 #include "coropact/backend/detail/value_result_state.h"
 #include "coropact/backend/recv_source.h"
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/coro/task.h"
 #include "coropact/net/recv_source.h"
 #include "coropact/operation/detail/completion_gate.h"
@@ -39,7 +38,7 @@ public:
   COROPACT_DELETE_COPY(ReactorRecvSource);
 
   using Event = net::RecvEvent;
-  using Result = base::Result<std::optional<Event>>;
+  using NextResult = coropact::Result<std::optional<Event>>;
 
   // Direct awaiter for the single-consumer receive loop. It keeps Next() on
   // the caller's coroutine frame, matching the luring source path and
@@ -55,9 +54,9 @@ public:
 
     bool await_suspend(std::coroutine_handle<> continuation) noexcept;
 
-    Result await_resume() noexcept;
+    NextResult await_resume() noexcept;
 
-    void Complete(Result result) noexcept;
+    void Complete(NextResult result) noexcept;
 
   private:
     ReactorRecvSource* source_;
@@ -67,7 +66,7 @@ public:
   };
 
   [[nodiscard]]
-  static base::Result<ReactorRecvSource> Create(EventLoop* loop, int fd,
+  static Result<ReactorRecvSource> Create(EventLoop* loop, int fd,
                                                 ReactorRecvSourceOptions options = {}) noexcept;
 
   ~ReactorRecvSource();
@@ -84,9 +83,9 @@ public:
   // BufferLease instances. An owning consumer drains those events and then
   // awaits Stop() for the final ownership boundary.
   [[nodiscard]]
-  base::Result<void> RequestStop() noexcept;
+  Result<void> RequestStop() noexcept;
 
-  coro::Task<base::Result<void>> Stop();
+  coro::Task<Result<void>> Stop();
 
 private:
   class StopAwaiter;
@@ -96,14 +95,14 @@ private:
                     std::vector<std::uint32_t> available_buffers) noexcept;
 
   [[nodiscard]]
-  base::Result<void> Start() noexcept;
+  Result<void> Start() noexcept;
 
   [[nodiscard]]
-  base::Result<bool> BeginStop() noexcept;
+  Result<bool> BeginStop() noexcept;
 
   void EnsureAdmission() noexcept;
   void RequestBackendPause() noexcept;
-  void RequestBackendStop(std::optional<base::Error> error = std::nullopt) noexcept;
+  void RequestBackendStop(std::optional<Error> error = std::nullopt) noexcept;
   void CompleteReadiness() noexcept;
   void OnReady() noexcept;
   void OnClose() noexcept;
@@ -111,7 +110,7 @@ private:
 
   void DeliverNextIfReady() noexcept;
   void CompleteStopIfReady() noexcept;
-  bool TryTakeNext(Result& result) noexcept;
+  bool TryTakeNext(NextResult& result) noexcept;
 
   void ReturnBuffer(std::uint32_t buffer_id) noexcept;
   static void ReclaimBuffer(void* context, std::uint32_t buffer_id) noexcept;
@@ -125,7 +124,7 @@ private:
   net::detail::RecvSourceStateMachine state_;
   detail::Channel channel_;
   std::deque<Event> events_;
-  std::optional<base::Error> terminal_error_;
+  std::optional<Error> terminal_error_;
 
   NextAwaiter* pending_next_{nullptr};
   StopAwaiter* pending_stop_{nullptr};

@@ -4,8 +4,8 @@
 
 #include <atomic>
 #include <cerrno>
-#include <csignal>
 #include <chrono>
+#include <csignal>
 #include <cstdio>
 #include <exception>
 #include <iostream>
@@ -94,8 +94,7 @@ bool TestEventLoopRejectsForeignChannelMutation() {
   int status = 0;
   while (::waitpid(child, &status, 0) < 0 && errno == EINTR) {
   }
-  return Expect(WIFSIGNALED(status),
-                "foreign Channel mutation must terminate in Release") &&
+  return Expect(WIFSIGNALED(status), "foreign Channel mutation must terminate in Release") &&
          Expect(WTERMSIG(status) == SIGABRT,
                 "foreign Channel mutation must terminate with SIGABRT");
 }
@@ -216,11 +215,11 @@ bool TestRepeatingTimerCanCancelItself() {
   int fire_count = 0;
   coropact::time::TimerId timer_id;
 
-  timer_id = loop.RunEvery(0.01, [&] {
+  timer_id = loop.RunEvery(coropact::time::Milliseconds(10), [&] {
     ++fire_count;
     if (fire_count == 1) {
       loop.Cancel(timer_id);
-      loop.RunAfter(0.05, [&loop] { loop.RequestStop(); });
+      loop.RunAfter(coropact::time::Milliseconds(50), [&loop] { loop.RequestStop(); });
     }
   });
   loop.Run();
@@ -251,12 +250,13 @@ bool TestCancelEarliestKeepsNextTimerScheduled() {
   bool next_timer_fired = false;
   bool timed_out = false;
 
-  auto cancelled = loop.RunAfter(0.01, [&] { cancelled_timer_fired = true; });
-  loop.RunAfter(0.03, [&] {
+  auto cancelled =
+      loop.RunAfter(coropact::time::Milliseconds(10), [&] { cancelled_timer_fired = true; });
+  loop.RunAfter(coropact::time::Milliseconds(30), [&] {
     next_timer_fired = true;
     loop.RequestStop();
   });
-  loop.RunAfter(0.5, [&] {
+  loop.RunAfter(coropact::time::Milliseconds(500), [&] {
     timed_out = true;
     loop.RequestStop();
   });
@@ -273,14 +273,14 @@ bool TestStaleTimerIdCannotCancelReplacement() {
   bool replacement_fired = false;
   bool timed_out = false;
 
-  auto stale = loop.RunAfter(60.0, [] {});
+  auto stale = loop.RunAfter(coropact::time::Seconds(60), [] {});
   loop.Cancel(stale);
 
-  auto replacement = loop.RunAfter(0.01, [&] {
+  auto replacement = loop.RunAfter(coropact::time::Milliseconds(10), [&] {
     replacement_fired = true;
     loop.RequestStop();
   });
-  loop.RunAfter(0.5, [&] {
+  loop.RunAfter(coropact::time::Milliseconds(500), [&] {
     timed_out = true;
     loop.RequestStop();
   });
@@ -300,7 +300,7 @@ bool TestLoopStopDiscardsUnexpiredTimer() {
   coropact::reactor::EventLoop loop;
   bool fired = false;
 
-  loop.RunAfter(60.0, [&] { fired = true; });
+  loop.RunAfter(coropact::time::Seconds(60), [&] { fired = true; });
   loop.RequestStop();
   loop.Run();
 

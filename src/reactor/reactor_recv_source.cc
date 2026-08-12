@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #include <sys/socket.h>
 
@@ -11,7 +10,7 @@
 
 #include "coropact/backend/detail/value_result_state.h"
 #include "coropact/base/check.h"
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/operation/detail/completion_gate.h"
 #include "coropact/operation/detail/scheduler_continuation.h"
 #include "coropact/reactor/detail/loop_access.h"
@@ -25,13 +24,13 @@ namespace {
 
 bool IsWouldBlock(int error) noexcept { return error == EAGAIN || error == EWOULDBLOCK; }
 
-base::Error SocketError(int fd) noexcept {
+Error SocketError(int fd) noexcept {
   int error = 0;
   auto length = static_cast<socklen_t>(sizeof(error));
   if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &length) < 0) {
-    return base::CurrentErrno();
+    return CurrentErrno();
   }
-  return base::MakeErrno(error == 0 ? EIO : error);
+  return Errno(error == 0 ? EIO : error);
 }
 
 }  // namespace
@@ -43,17 +42,17 @@ bool ReactorRecvSourceOptions::Valid() const noexcept {
 
 bool ReactorRecvSource::NextAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   if (source_->loop_ == nullptr || source_->fd_ < 0) {
-    result_.SetError(base::MakeErrno(EBADF));
+    result_.SetError(Errno(EBADF));
     (void)(completion_gate_.TryComplete());
     return false;
   }
   if (!source_->loop_->IsInLoopThread()) {
-    result_.SetError(base::MakeErrno(EINVAL));
+    result_.SetError(Errno(EINVAL));
     (void)(completion_gate_.TryComplete());
     return false;
   }
   if (source_->pending_next_ != nullptr) {
-    result_.SetError(base::MakeErrno(EBUSY));
+    result_.SetError(Errno(EBUSY));
     (void)(completion_gate_.TryComplete());
     return false;
   }
@@ -61,7 +60,7 @@ bool ReactorRecvSource::NextAwaiter::await_suspend(std::coroutine_handle<> conti
   if (source_->state_.State() == net::detail::RecvSourceState::kIdle) {
     if (source_->loop_->State() == backend::LoopState::kStopping ||
         source_->loop_->State() == backend::LoopState::kStopped) {
-      result_.SetError(base::MakeErrno(ECANCELED));
+      result_.SetError(Errno(ECANCELED));
       (void)(completion_gate_.TryComplete());
       return false;
     }
@@ -73,7 +72,7 @@ bool ReactorRecvSource::NextAwaiter::await_suspend(std::coroutine_handle<> conti
     }
   }
 
-  ReactorRecvSource::Result result;
+  ReactorRecvSource::NextResult result;
   if (source_->TryTakeNext(result)) {
     result_.SetResult(std::move(result));
     (void)(completion_gate_.TryComplete());
@@ -95,11 +94,11 @@ bool ReactorRecvSource::NextAwaiter::await_suspend(std::coroutine_handle<> conti
   return true;
 }
 
-ReactorRecvSource::Result ReactorRecvSource::NextAwaiter::await_resume() noexcept {
+ReactorRecvSource::NextResult ReactorRecvSource::NextAwaiter::await_resume() noexcept {
   return result_.Take();
 }
 
-void ReactorRecvSource::NextAwaiter::Complete(Result result) noexcept {
+void ReactorRecvSource::NextAwaiter::Complete(NextResult result) noexcept {
   if (!completion_gate_.TryComplete()) {
     return;
   }
@@ -118,7 +117,7 @@ public:
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     if (source_->pending_stop_ != nullptr) {
-      result_.emplace(std::unexpected(base::MakeErrno(EBUSY)));
+      result_.emplace(std::unexpected(Errno(EBUSY)));
       (void)(completion_gate_.TryComplete());
       return false;
     }
@@ -135,19 +134,19 @@ public:
     }
     if (!*waiting) {
       source_->pending_stop_ = nullptr;
-      result_.emplace(base::Result<void>{});
+      result_.emplace(Result<void>{});
       (void)(completion_gate_.TryComplete());
       return false;
     }
     return true;
   }
 
-  base::Result<void> await_resume() noexcept {
+  Result<void> await_resume() noexcept {
     COROPACT_CHECK(result_.has_value(), "Reactor recv source Stop resumed without a result");
     return std::move(*result_);
   }
 
-  void Complete(base::Result<void> result) noexcept {
+  void Complete(Result<void> result) noexcept {
     if (!completion_gate_.TryComplete()) {
       return;
     }
@@ -159,20 +158,20 @@ private:
   ReactorRecvSource* source_;
   operation::detail::SchedulerContinuation continuation_;
   operation::detail::CompletionGate completion_gate_;
-  std::optional<base::Result<void>> result_;
+  std::optional<Result<void>> result_;
 };
 
-base::Result<ReactorRecvSource> ReactorRecvSource::Create(
+Result<ReactorRecvSource> ReactorRecvSource::Create(
     EventLoop* loop, int fd, ReactorRecvSourceOptions options) noexcept {
   if (loop == nullptr || fd < 0 || !loop->IsInLoopThread()) {
-    return std::unexpected(base::MakeErrno(EINVAL));
+    return std::unexpected(Errno(EINVAL));
   }
   if (!options.Valid()) {
-    return std::unexpected(base::MakeErrno(EINVAL));
+    return std::unexpected(Errno(EINVAL));
   }
   if (options.source.buffer_capacity >
       std::numeric_limits<std::size_t>::max() / options.buffer_size) {
-    return std::unexpected(base::MakeErrno(EOVERFLOW));
+    return std::unexpected(Errno(EOVERFLOW));
   }
 
   auto state = net::detail::RecvSourceStateMachine::Create(options.source);
@@ -189,7 +188,7 @@ base::Result<ReactorRecvSource> ReactorRecvSource::Create(
       available_buffers.push_back(static_cast<std::uint32_t>(i));
     }
   } catch (...) {
-    return std::unexpected(base::MakeErrno(ENOMEM));
+    return std::unexpected(Errno(ENOMEM));
   }
 
   return ReactorRecvSource(loop, fd, std::move(*state), options.buffer_size, std::move(storage),
@@ -297,9 +296,9 @@ ReactorRecvSource& ReactorRecvSource::operator=(ReactorRecvSource&& other) noexc
   return *this;
 }
 
-base::Result<void> ReactorRecvSource::Start() noexcept {
+Result<void> ReactorRecvSource::Start() noexcept {
   if (state_.State() != net::detail::RecvSourceState::kIdle) {
-    return std::unexpected(base::MakeErrno(EALREADY));
+    return std::unexpected(Errno(EALREADY));
   }
 
   auto started = state_.Start();
@@ -308,12 +307,12 @@ base::Result<void> ReactorRecvSource::Start() noexcept {
   }
   EnsureAdmission();
   if (state_.ArmedRequests() == 0) {
-    return std::unexpected(base::MakeErrno(ENOBUFS));
+    return std::unexpected(Errno(ENOBUFS));
   }
   return {};
 }
 
-base::Result<bool> ReactorRecvSource::BeginStop() noexcept {
+Result<bool> ReactorRecvSource::BeginStop() noexcept {
   auto stopped = state_.RequestStop();
   if (!stopped.has_value()) {
     return std::unexpected(stopped.error());
@@ -352,7 +351,7 @@ void ReactorRecvSource::CompleteReadiness() noexcept {
   }
 }
 
-void ReactorRecvSource::RequestBackendStop(std::optional<base::Error> error) noexcept {
+void ReactorRecvSource::RequestBackendStop(std::optional<Error> error) noexcept {
   if (error.has_value() && !terminal_error_.has_value()) {
     terminal_error_ = *error;
   }
@@ -390,7 +389,7 @@ void ReactorRecvSource::OnReady() noexcept {
       if (IsWouldBlock(error)) {
         return;
       }
-      RequestBackendStop(base::MakeErrno(error));
+      RequestBackendStop(Errno(error));
       return;
     }
 
@@ -417,7 +416,7 @@ void ReactorRecvSource::OnReady() noexcept {
       // lease count before the queue reservation is rolled back.
       COROPACT_CHECK(state_.DiscardQueuedEvent(),
                      "ReactorRecvSource failed to roll back queue reservation");
-      RequestBackendStop(base::MakeErrno(ENOMEM));
+      RequestBackendStop(Errno(ENOMEM));
       return;
     }
 
@@ -437,7 +436,7 @@ void ReactorRecvSource::DeliverNextIfReady() noexcept {
     return;
   }
 
-  Result result;
+  NextResult result;
   if (!TryTakeNext(result)) {
     return;
   }
@@ -453,15 +452,15 @@ void ReactorRecvSource::CompleteStopIfReady() noexcept {
   }
 
   auto* awaiter = std::exchange(pending_stop_, nullptr);
-  awaiter->Complete(base::Result<void>{});
+  awaiter->Complete(Result<void>{});
 }
 
-bool ReactorRecvSource::TryTakeNext(Result& result) noexcept {
+bool ReactorRecvSource::TryTakeNext(NextResult& result) noexcept {
   if (!events_.empty()) {
     Event event = std::move(events_.front());
     events_.pop_front();
     COROPACT_CHECK(state_.AcquireEvent(), "ReactorRecvSource queue and state became inconsistent");
-    result = Result(std::in_place, std::move(event));
+    result = NextResult(std::in_place, std::move(event));
     if (state_.State() == net::detail::RecvSourceState::kPaused) {
       (void)(state_.TryResume());
     }
@@ -473,7 +472,7 @@ bool ReactorRecvSource::TryTakeNext(Result& result) noexcept {
     if (terminal_error_.has_value()) {
       result = std::unexpected(*terminal_error_);
     } else {
-      result = Result(std::in_place, std::nullopt);
+      result = NextResult(std::in_place, std::nullopt);
     }
     return true;
   }
@@ -523,12 +522,12 @@ void ReactorRecvSource::DispatchLoopStop(void* context) noexcept {
   static_cast<ReactorRecvSource*>(context)->RequestBackendStop();
 }
 
-base::Result<void> ReactorRecvSource::RequestStop() noexcept {
+Result<void> ReactorRecvSource::RequestStop() noexcept {
   if (loop_ == nullptr) {
     return {};
   }
   if (!loop_->IsInLoopThread()) {
-    return std::unexpected(base::MakeErrno(EINVAL));
+    return std::unexpected(Errno(EINVAL));
   }
   auto waiting = BeginStop();
   if (!waiting.has_value()) {
@@ -537,15 +536,15 @@ base::Result<void> ReactorRecvSource::RequestStop() noexcept {
   return {};
 }
 
-coro::Task<base::Result<void>> ReactorRecvSource::Stop() {
+coro::Task<Result<void>> ReactorRecvSource::Stop() {
   if (loop_ == nullptr) {
-    co_return base::Result<void>{};
+    co_return Result<void>{};
   }
   if (!loop_->IsInLoopThread()) {
-    co_return std::unexpected(base::MakeErrno(EINVAL));
+    co_return std::unexpected(Errno(EINVAL));
   }
   if (pending_stop_ != nullptr) {
-    co_return std::unexpected(base::MakeErrno(EBUSY));
+    co_return std::unexpected(Errno(EBUSY));
   }
   co_return co_await StopAwaiter(*this);
 }

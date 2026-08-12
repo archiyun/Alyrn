@@ -1,6 +1,9 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
+
+#if !defined(__linux__)
+#error "coropact::reactor requires Linux version support epoll"
+#endif
 
 // Public umbrella header for the epoll-based Reactor backend. It exports the
 // EventLoop, Runtime::Builder<runtime::Reactor>, and transport adapters, not

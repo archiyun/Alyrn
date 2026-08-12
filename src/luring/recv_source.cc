@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 #include "coropact/luring/recv_source.h"
 
 #include <liburing.h>
@@ -10,7 +9,7 @@
 #include <utility>
 
 #include "coropact/base/check.h"
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/luring/detail/cancel_result.h"
 #include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/detail/provided_buffer_pool.h"
@@ -25,17 +24,17 @@ using namespace net::detail;
 
 bool LUringRecvSource::NextAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   if (source_->loop_ == nullptr || source_->fd_ < 0) {
-    result_.SetError(base::MakeErrno(EBADF));
+    result_.SetError(Errno(EBADF));
     (void)(completion_gate_.TryComplete());
     return false;
   }
   if (!source_->loop_->IsInLoopThread()) {
-    result_.SetError(base::MakeErrno(EINVAL));
+    result_.SetError(Errno(EINVAL));
     (void)(completion_gate_.TryComplete());
     return false;
   }
   if (source_->pending_next_ != nullptr) {
-    result_.SetError(base::MakeErrno(EBUSY));
+    result_.SetError(Errno(EBUSY));
     (void)(completion_gate_.TryComplete());
     return false;
   }
@@ -49,7 +48,7 @@ bool LUringRecvSource::NextAwaiter::await_suspend(std::coroutine_handle<> contin
     }
   }
 
-  LUringRecvSource::Result result;
+  LUringRecvSource::NextResult result;
   if (source_->TryTakeNext(result)) {
     result_.SetResult(std::move(result));
     (void)(completion_gate_.TryComplete());
@@ -61,11 +60,11 @@ bool LUringRecvSource::NextAwaiter::await_suspend(std::coroutine_handle<> contin
   return true;
 }
 
-LUringRecvSource::Result LUringRecvSource::NextAwaiter::await_resume() noexcept {
+LUringRecvSource::NextResult LUringRecvSource::NextAwaiter::await_resume() noexcept {
   return result_.Take();
 }
 
-void LUringRecvSource::NextAwaiter::Complete(Result result) noexcept {
+void LUringRecvSource::NextAwaiter::Complete(NextResult result) noexcept {
   if (!completion_gate_.TryComplete()) {
     return;
   }
@@ -96,7 +95,7 @@ public:
 
     if (!*waiting) {
       source_->pending_stop_ = nullptr;
-      result_.emplace(base::Result<void>{});
+      result_.emplace(Result<void>{});
       (void)(completion_gate_.TryComplete());
       return false;
     }
@@ -104,12 +103,12 @@ public:
     return true;
   }
 
-  base::Result<void> await_resume() noexcept {
+  Result<void> await_resume() noexcept {
     COROPACT_CHECK(result_.has_value(), "LUring recv source Stop resumed without a result");
     return std::move(*result_);
   }
 
-  void Complete(base::Result<void> result) noexcept {
+  void Complete(Result<void> result) noexcept {
     if (!completion_gate_.TryComplete()) {
       return;
     }
@@ -121,23 +120,23 @@ private:
   LUringRecvSource* source_;
   operation::detail::SchedulerContinuation continuation_;
   operation::detail::CompletionGate completion_gate_;
-  std::optional<base::Result<void>> result_;
+  std::optional<Result<void>> result_;
 };
 
-base::Result<LUringRecvSource> LUringRecvSource::Create(LUringLoop* loop, int fd,
+Result<LUringRecvSource> LUringRecvSource::Create(LUringLoop* loop, int fd,
                                                         LUringRecvSourceOptions options) noexcept {
   if (loop == nullptr || !loop->Initialized()) {
-    return std::unexpected(base::MakeErrno(EBADF));
+    return std::unexpected(Errno(EBADF));
   }
   if (!loop->IsInLoopThread() || fd < 0) {
-    return std::unexpected(base::MakeErrno(EINVAL));
+    return std::unexpected(Errno(EINVAL));
   }
   if (!options.Valid()) {
-    return std::unexpected(base::MakeErrno(EINVAL));
+    return std::unexpected(Errno(EINVAL));
   }
   const std::size_t capacity = options.source.buffer_capacity;
   if (capacity > std::numeric_limits<std::size_t>::max() / options.buffer_size) {
-    return std::unexpected(base::MakeErrno(EOVERFLOW));
+    return std::unexpected(Errno(EOVERFLOW));
   }
 
   auto state_result = RecvSourceStateMachine::Create(options.source);
@@ -149,19 +148,19 @@ base::Result<LUringRecvSource> LUringRecvSource::Create(LUringLoop* loop, int fd
       *loop, options.buffer_size, options.source.buffer_capacity);
   if (!shared_pool.has_value()) {
     if (shared_pool.error().value() == ENOENT) {
-      return std::unexpected(base::MakeErrno(ENOTSUP));
+      return std::unexpected(Errno(ENOTSUP));
     }
     return std::unexpected(shared_pool.error());
   }
   if (capacity > (*shared_pool)->capacity()) {
-    return std::unexpected(base::MakeErrno(EINVAL));
+    return std::unexpected(Errno(EINVAL));
   }
 
   std::vector<LUringRecvSource::PendingEvent> event_storage;
   try {
     event_storage.resize(options.source.event_capacity);
   } catch (...) {
-    return std::unexpected(base::MakeErrno(ENOMEM));
+    return std::unexpected(Errno(ENOMEM));
   }
 
   return LUringRecvSource(loop, fd, std::move(*state_result), options.buffer_size, *shared_pool,
@@ -261,9 +260,9 @@ LUringRecvSource& LUringRecvSource::operator=(LUringRecvSource&& other) noexcept
   return *this;
 }
 
-base::Result<void> LUringRecvSource::StartOperation() noexcept {
+Result<void> LUringRecvSource::StartOperation() noexcept {
   if (loop_ == nullptr || !loop_->Initialized() || fd_ < 0 || shared_buffer_pool_ == nullptr) {
-    return std::unexpected(base::MakeErrno(EBADF));
+    return std::unexpected(Errno(EBADF));
   }
   if (recv_submitted_) {
     return {};
@@ -295,12 +294,12 @@ base::Result<void> LUringRecvSource::StartOperation() noexcept {
   return {};
 }
 
-base::Result<void> LUringRecvSource::Start() noexcept {
+Result<void> LUringRecvSource::Start() noexcept {
   if (state_.State() != RecvSourceState::kIdle) {
-    return std::unexpected(base::MakeErrno(EALREADY));
+    return std::unexpected(Errno(EALREADY));
   }
   if (loop_ == nullptr || !loop_->Initialized() || fd_ < 0) {
-    return std::unexpected(base::MakeErrno(EBADF));
+    return std::unexpected(Errno(EBADF));
   }
 
   auto started = state_.Start();
@@ -316,7 +315,7 @@ base::Result<void> LUringRecvSource::Start() noexcept {
   return {};
 }
 
-base::Result<void> LUringRecvSource::StartCancel() noexcept {
+Result<void> LUringRecvSource::StartCancel() noexcept {
   if (!recv_submitted_ || cancel_submitted_) {
     return {};
   }
@@ -335,7 +334,7 @@ base::Result<void> LUringRecvSource::StartCancel() noexcept {
   return {};
 }
 
-base::Result<bool> LUringRecvSource::BeginStop() noexcept {
+Result<bool> LUringRecvSource::BeginStop() noexcept {
   auto stopped = state_.RequestStop();
   if (!stopped.has_value()) {
     return std::unexpected(stopped.error());
@@ -386,7 +385,7 @@ void LUringRecvSource::MaybeResume() noexcept {
   }
 }
 
-void LUringRecvSource::RequestBackendStop(std::optional<base::Error> error) noexcept {
+void LUringRecvSource::RequestBackendStop(std::optional<Error> error) noexcept {
   if (error.has_value() && !terminal_error_.has_value()) {
     terminal_error_ = *error;
   }
@@ -417,22 +416,22 @@ CompletionDisposition LUringRecvSource::OnCompletion(CompletionEvent event) noex
   bool state_recorded = false;
   bool direct_handoff = false;
   bool buffer_prepared = false;
-  std::optional<base::Error> completion_error;
+  std::optional<Error> completion_error;
 
   if (event.BufferMore()) {
-    completion_error = base::MakeErrno(EPROTO);
+    completion_error = Errno(EPROTO);
   }
 
   if (cqe_result > 0 && completion_error.has_value() == false) {
     if (!valid_buffer) {
-      completion_error = base::MakeErrno(EPROTO);
+      completion_error = Errno(EPROTO);
     } else {
       if (!shared_buffer_pool_->Acquire(buffer_id)) {
-        completion_error = base::MakeErrno(EPROTO);
+        completion_error = Errno(EPROTO);
       } else {
         buffer_prepared = true;
         if (static_cast<std::size_t>(cqe_result) > buffer_size_) {
-          completion_error = base::MakeErrno(EOVERFLOW);
+          completion_error = Errno(EOVERFLOW);
         }
       }
     }
@@ -477,7 +476,7 @@ CompletionDisposition LUringRecvSource::OnCompletion(CompletionEvent event) noex
                                    static_cast<std::size_t>(cqe_result), buffer_id, this,
                                    &ReclaimBuffer);
             auto* awaiter = std::exchange(pending_next_, nullptr);
-            awaiter->Complete(Result(std::in_place, Event{.buffer = std::move(lease)}));
+            awaiter->Complete(NextResult(std::in_place, Event{.buffer = std::move(lease)}));
             direct_handoff = true;
           } else {
             QueueEvent(buffer_id, static_cast<std::size_t>(cqe_result));
@@ -504,7 +503,7 @@ CompletionDisposition LUringRecvSource::OnCompletion(CompletionEvent event) noex
                           state == RecvSourceState::kDraining ||
                           state == RecvSourceState::kTerminal;
     if (!stopping) {
-      RequestBackendStop(base::MakeNegErrno(cqe_result));
+      RequestBackendStop(NegErrno(cqe_result));
     }
   }
 
@@ -558,7 +557,7 @@ CompletionDisposition LUringRecvSource::OnCompletion(CompletionEvent event) noex
 void LUringRecvSource::OnCancelComplete(int cqe_result) noexcept {
   cancel_submitted_ = false;
   if (!detail::IsExpectedCancelCqeResult(cqe_result) && !terminal_error_.has_value()) {
-    terminal_error_ = base::MakeNegErrno(cqe_result);
+    terminal_error_ = NegErrno(cqe_result);
   }
   MaybeResume();
   CompleteStopIfReady();
@@ -569,7 +568,7 @@ void LUringRecvSource::DeliverNextIfReady() noexcept {
     return;
   }
 
-  Result result;
+  NextResult result;
   if (!TryTakeNext(result)) {
     return;
   }
@@ -585,10 +584,10 @@ void LUringRecvSource::CompleteStopIfReady() noexcept {
   }
 
   auto* awaiter = std::exchange(pending_stop_, nullptr);
-  awaiter->Complete(base::Result<void>{});
+  awaiter->Complete(Result<void>{});
 }
 
-bool LUringRecvSource::TryTakeNext(Result& result) noexcept {
+bool LUringRecvSource::TryTakeNext(NextResult& result) noexcept {
   PendingEvent pending;
   if (TryTakeQueuedEvent(pending)) {
     COROPACT_CHECK(state_.AcquireEvent(), "LUringRecvSource: queue and state became inconsistent");
@@ -597,7 +596,7 @@ bool LUringRecvSource::TryTakeNext(Result& result) noexcept {
     COROPACT_CHECK(data != nullptr, "LUringRecvSource queued an invalid buffer");
     Event event{.buffer =
                     net::BufferLease(data, pending.size, pending.buffer_id, this, &ReclaimBuffer)};
-    result = Result(std::in_place, std::move(event));
+    result = NextResult(std::in_place, std::move(event));
     if (state_.State() == RecvSourceState::kPaused) {
       MaybeResume();
     }
@@ -608,7 +607,7 @@ bool LUringRecvSource::TryTakeNext(Result& result) noexcept {
     if (terminal_error_.has_value()) {
       result = std::unexpected(*terminal_error_);
     } else {
-      result = Result(std::in_place, std::nullopt);
+      result = NextResult(std::in_place, std::nullopt);
     }
     return true;
   }
@@ -655,12 +654,12 @@ void LUringRecvSource::ReclaimBuffer(void* context, std::uint32_t buffer_id) noe
   static_cast<LUringRecvSource*>(context)->ReturnBuffer(buffer_id);
 }
 
-base::Result<void> LUringRecvSource::RequestStop() noexcept {
+Result<void> LUringRecvSource::RequestStop() noexcept {
   if (loop_ == nullptr || fd_ < 0) {
-    return std::unexpected(base::MakeErrno(EBADF));
+    return std::unexpected(Errno(EBADF));
   }
   if (!loop_->IsInLoopThread()) {
-    return std::unexpected(base::MakeErrno(EINVAL));
+    return std::unexpected(Errno(EINVAL));
   }
 
   auto waiting = BeginStop();
@@ -670,19 +669,19 @@ base::Result<void> LUringRecvSource::RequestStop() noexcept {
   return {};
 }
 
-coro::Task<base::Result<void>> LUringRecvSource::Stop() {
+coro::Task<Result<void>> LUringRecvSource::Stop() {
   if (loop_ == nullptr) {
-    co_return base::Result<void>{};
+    co_return Result<void>{};
   }
   if (!loop_->IsInLoopThread()) {
-    co_return std::unexpected(base::MakeErrno(EINVAL));
+    co_return std::unexpected(Errno(EINVAL));
   }
   if (pending_stop_ != nullptr) {
-    co_return std::unexpected(base::MakeErrno(EBUSY));
+    co_return std::unexpected(Errno(EBUSY));
   }
 
   if (state_.State() == RecvSourceState::kTerminal && !recv_submitted_ && !cancel_submitted_) {
-    co_return base::Result<void>{};
+    co_return Result<void>{};
   }
 
   co_return co_await StopAwaiter(*this);

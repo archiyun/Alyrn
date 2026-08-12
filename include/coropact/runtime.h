@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
@@ -6,8 +5,8 @@
 #include <stop_token>
 #include <utility>
 
-#include "coropact/base/error.h"
 #include "coropact/net/endpoint.h"
+#include "coropact/result.h"
 
 namespace coropact::runtime {
 
@@ -24,8 +23,8 @@ class RuntimeControl {
 public:
   virtual ~RuntimeControl() = default;
 
-  virtual base::Result<void> Start() = 0;
-  virtual base::Result<void> Run(std::stop_token stop_token) = 0;
+  virtual Result<void> Start() = 0;
+  virtual Result<void> Run(std::stop_token stop_token) = 0;
   virtual void RequestStop() noexcept = 0;
   virtual void Stop() noexcept = 0;
   [[nodiscard]] virtual bool Started() const noexcept = 0;
@@ -37,8 +36,11 @@ public:
 
 namespace coropact {
 
-// Backend-neutral application composition root. Select a backend through its
-// Builder tag; Runtime itself exposes only process lifecycle control.
+/*
+ * Backend-neutral application lifecycle control. Backend selection remains a
+ * compile-time Builder choice; this type erases only cold start/stop control,
+ * never streams, operations, awaiters, or worker-local resources.
+ */
 class Runtime final {
 public:
   template <class Backend>
@@ -53,11 +55,9 @@ public:
   Runtime& operator=(Runtime&&) noexcept = default;
   ~Runtime() noexcept = default;
 
-  [[nodiscard]] base::Result<void> Start() { return control_->Start(); }
+  [[nodiscard]] Result<void> Start() { return control_->Start(); }
 
-  [[nodiscard]] base::Result<void> Run(std::stop_token stop_token) {
-    return control_->Run(stop_token);
-  }
+  [[nodiscard]] Result<void> Run(std::stop_token stop_token) { return control_->Run(stop_token); }
 
   void RequestStop() noexcept { control_->RequestStop(); }
   void Stop() noexcept { control_->Stop(); }

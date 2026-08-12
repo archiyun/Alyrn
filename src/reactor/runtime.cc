@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #include "coropact/reactor/runtime.h"
 
@@ -12,7 +11,7 @@
 #include <thread>
 #include <utility>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/reactor/detail/reactor_worker_group.h"
 
 namespace coropact::reactor {
@@ -39,14 +38,14 @@ public:
 
   ~ReactorRuntimeControl() noexcept override { Stop(); }
 
-  base::Result<void> Start() override {
+  Result<void> Start() override {
     {
       std::lock_guard lock{lifecycle_mutex_};
       if (state_ != LifecycleState::kCreated) {
-        return std::unexpected(base::MakeErrno(EALREADY));
+        return std::unexpected(Errno(EALREADY));
       }
       if (worker_count_ == 0 || !connection_handler_) {
-        return std::unexpected(base::MakeErrno(EINVAL));
+        return std::unexpected(Errno(EINVAL));
       }
       stop_requested_.store(false, std::memory_order_release);
       state_ = LifecycleState::kStarting;
@@ -82,7 +81,7 @@ public:
     return {};
   }
 
-  base::Result<void> Run(std::stop_token stop_token) override {
+  Result<void> Run(std::stop_token stop_token) override {
     auto started = Start();
     if (!started.has_value()) {
       return std::unexpected(started.error());

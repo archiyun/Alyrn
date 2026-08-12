@@ -1,11 +1,10 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
 #include <functional>
 #include <memory>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/coro/detached_task.h"
 #include "coropact/luring/stream.h"
 #include "coropact/luring/detail/worker_group.h"
@@ -52,7 +51,7 @@ public:
   }
 
   [[nodiscard]]
-  base::Result<void> Start();
+  Result<void> Start();
 
   void Stop() noexcept;
 

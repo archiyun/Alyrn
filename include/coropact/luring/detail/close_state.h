@@ -1,10 +1,9 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
 #include <cstdint>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/luring/detail/result_state.h"
 
 namespace coropact::luring::detail {
@@ -16,9 +15,9 @@ class LUringCloseState {
 public:
   void SetSuccess() noexcept { result_.SetSuccess(); }
 
-  void SetError(base::Error error) noexcept { result_.SetError(error); }
+  void SetError(Error error) noexcept { result_.SetError(error); }
 
-  void SetResult(const base::Result<void>& result) noexcept { result_.SetResult(result); }
+  void SetResult(const Result<void>& result) noexcept { result_.SetResult(result); }
 
   [[nodiscard]]
   bool HasResult() const noexcept {
@@ -26,7 +25,7 @@ public:
   }
 
   [[nodiscard]]
-  base::Result<void> TakeResult() const noexcept {
+  Result<void> TakeResult() const noexcept {
     return result_.Take();
   }
 

@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #include <sys/socket.h>
 #include <sys/uio.h>
@@ -7,7 +6,6 @@
 #include <algorithm>
 #include <array>
 #include <cerrno>
-#include <chrono>
 #include <coroutine>
 #include <cstddef>
 #include <cstdint>
@@ -18,7 +16,7 @@
 #include <utility>
 
 #include "coropact/base/check.h"
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/net/socket.h"
 #include "coropact/reactor/detail/loop_access.h"
 #include "coropact/reactor/stream.h"
@@ -43,7 +41,7 @@ enum class IoAttemptState : std::uint8_t {
 
 struct IoAttempt {
   IoAttemptState state{IoAttemptState::kCompleted};
-  base::Result<std::size_t> result{0};
+  Result<std::size_t> result{0};
 
   [[nodiscard]]
   static IoAttempt Completed(std::size_t bytes) noexcept {
@@ -62,7 +60,7 @@ struct IoAttempt {
   }
 
   [[nodiscard]]
-  static IoAttempt Failed(base::Error error) noexcept {
+  static IoAttempt Failed(Error error) noexcept {
     return {
         .state = IoAttemptState::kCompleted,
         .result = std::unexpected(error),
@@ -86,7 +84,7 @@ IoAttempt RetryNonBlockingIo(Operation&& operation) noexcept {
     if (IsWouldBlock(error)) {
       return IoAttempt::WouldBlock();
     }
-    return IoAttempt::Failed(base::MakeErrno(error));
+    return IoAttempt::Failed(Errno(error));
   }
 }
 
@@ -103,14 +101,14 @@ IoAttempt TryWrite(int fd, std::span<const std::byte> buffer) noexcept {
 }
 
 [[nodiscard]]
-base::Result<int> CheckedIovCount(std::size_t count) noexcept {
+Result<int> CheckedIovCount(std::size_t count) noexcept {
   if (count > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
-    return std::unexpected(base::MakeErrno(EINVAL));
+    return std::unexpected(Errno(EINVAL));
   }
 
 #if defined(IOV_MAX)
   if (count > static_cast<std::size_t>(IOV_MAX)) {
-    return std::unexpected(base::MakeErrno(EINVAL));
+    return std::unexpected(Errno(EINVAL));
   }
 #endif
 
@@ -136,16 +134,16 @@ IoAttempt TryReadv(int fd, std::span<const iovec> buffers) noexcept {
 // Called only after a reactor error event. SO_ERROR == 0 is inconsistent with
 // that event, so use EIO as a stable error result rather than reporting errno 0.
 [[nodiscard]]
-base::Error ErrorFromSocketErrorEvent(int fd) noexcept {
+Error ErrorFromSocketErrorEvent(int fd) noexcept {
   int err = 0;
   auto len = static_cast<socklen_t>(sizeof(err));
   if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) < 0) {
-    return base::CurrentErrno();
+    return CurrentErrno();
   }
   if (err == 0) {
     err = EIO;
   }
-  return base::MakeErrno(err);
+  return Errno(err);
 }
 
 }  // namespace
@@ -155,7 +153,7 @@ bool ReactorStream::ReadAwaiterState::BeginRead(std::coroutine_handle<> continua
   stream_->RequireOwnerLoop();
   if (stream_->loop_->State() == backend::LoopState::kStopping ||
       stream_->loop_->State() == backend::LoopState::kStopped) {
-    CompleteInline(std::unexpected(base::MakeErrno(ECANCELED)));
+    CompleteInline(std::unexpected(Errno(ECANCELED)));
     return false;
   }
   auto valid = stream_->lifecycle_.ValidateRead();
@@ -164,12 +162,12 @@ bool ReactorStream::ReadAwaiterState::BeginRead(std::coroutine_handle<> continua
     return false;
   }
   if (stream_->socket_.fd() < 0) {
-    CompleteInline(std::unexpected(base::MakeErrno(EBADF)));
+    CompleteInline(std::unexpected(Errno(EBADF)));
     return false;
   }
 
   if (stream_->pending_read_ != nullptr) {
-    CompleteInline(std::unexpected(base::MakeErrno(EBUSY)));
+    CompleteInline(std::unexpected(Errno(EBUSY)));
     return false;
   }
 
@@ -185,17 +183,15 @@ void ReactorStream::ReadAwaiterState::SuspendForRead(void* awaiter, PendingReadK
   }
 }
 
-void ReactorStream::ReadAwaiterState::ArmReadTimeout(std::chrono::milliseconds timeout,
-                                                     void* awaiter, time::TimerId& timer) noexcept {
-  if (timeout.count() <= 0) {
+void ReactorStream::ReadAwaiterState::ArmReadTimeout(time::Duration timeout, void* awaiter,
+                                                     time::TimerId& timer) noexcept {
+  if (timeout <= time::Duration::zero()) {
     return;
   }
 
-  const auto seconds =
-      std::chrono::duration<double>(std::max(timeout, std::chrono::milliseconds{1})).count();
-  timer = stream_->loop_->RunAfter(seconds, [this, awaiter] {
+  timer = stream_->loop_->RunAfter(std::max(timeout, time::Microseconds(100)), [this, awaiter] {
     if (stream_ != nullptr && stream_->pending_read_ == awaiter) {
-      stream_->CompleteRead(std::unexpected(base::MakeErrno(ETIMEDOUT)));
+      stream_->CompleteRead(std::unexpected(Errno(ETIMEDOUT)));
     }
   });
 }
@@ -220,7 +216,7 @@ bool ReactorStream::ReadAwaiterState::TryAuthorizeContinuation() noexcept {
   return lifecycle_.TryAuthorizeContinuation();
 }
 
-void ReactorStream::ReadAwaiterState::CompleteInline(base::Result<std::size_t> result) noexcept {
+void ReactorStream::ReadAwaiterState::CompleteInline(Result<std::size_t> result) noexcept {
   result_.SetResult(result);
   CompleteStoredInline();
 }
@@ -230,13 +226,13 @@ void ReactorStream::ReadAwaiterState::CompleteStoredInline() noexcept {
   COROPACT_CHECK(TryAuthorizeRelease(), "Reactor read release was not authorized after its result");
 }
 
-void ReactorStream::ReadAwaiterState::SetResult(base::Result<std::size_t> result) noexcept {
+void ReactorStream::ReadAwaiterState::SetResult(Result<std::size_t> result) noexcept {
   result_.SetResult(result);
 }
 
 void ReactorStream::ReadAwaiterState::ScheduleContinuation() noexcept { continuation_.Schedule(); }
 
-base::Result<std::size_t> ReactorStream::ReadAwaiterState::TakeResult() noexcept {
+Result<std::size_t> ReactorStream::ReadAwaiterState::TakeResult() noexcept {
   return result_.Take();
 }
 
@@ -257,11 +253,11 @@ bool ReactorStream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> conti
   return true;
 }
 
-base::Result<std::size_t> ReactorStream::ReadSomeAwaiter::await_resume() noexcept {
+Result<std::size_t> ReactorStream::ReadSomeAwaiter::await_resume() noexcept {
   return TakeResult();
 }
 
-bool ReactorStream::ReadSomeAwaiter::CompleteResultImpl(base::Result<std::size_t> result) noexcept {
+bool ReactorStream::ReadSomeAwaiter::CompleteResultImpl(Result<std::size_t> result) noexcept {
   if (!TryAuthorizeResult()) {
     return false;
   }
@@ -313,7 +309,7 @@ net::ReadIntoOutcome ReactorStream::ReadIntoAwaiter::await_resume() noexcept {
   };
 }
 
-bool ReactorStream::ReadIntoAwaiter::CompleteResultImpl(base::Result<std::size_t> result) noexcept {
+bool ReactorStream::ReadIntoAwaiter::CompleteResultImpl(Result<std::size_t> result) noexcept {
   if (!TryAuthorizeResult()) {
     return false;
   }
@@ -336,19 +332,19 @@ bool ReactorStream::ReadIntoAwaiter::PrepareReservation() noexcept {
     std::array<iovec, kReadIntoMaxIov> iovs;
     if (buffer_.PrepareWrite(reserve_, iovs).empty()) {
       buffer_.AbortWrite();
-      result_.SetError(base::MakeErrno(ENOMEM));
+      result_.SetError(Errno(ENOMEM));
       return false;
     }
   } catch (const std::bad_alloc&) {
     buffer_.AbortWrite();
-    result_.SetError(base::MakeErrno(ENOMEM));
+    result_.SetError(Errno(ENOMEM));
     return false;
   }
   reservation_active_ = true;
   return true;
 }
 
-void ReactorStream::ReadIntoAwaiter::FinishAttempt(base::Result<std::size_t> result) noexcept {
+void ReactorStream::ReadIntoAwaiter::FinishAttempt(Result<std::size_t> result) noexcept {
   COROPACT_CHECK(reservation_active_, "ReadIntoAwaiter completion without a buffer reservation");
   if (result.has_value()) {
     buffer_.CommitWrite(*result);
@@ -368,7 +364,7 @@ bool ReactorStream::WriteAllAwaiter::await_suspend(std::coroutine_handle<> conti
   stream_->RequireOwnerLoop();
   if (stream_->loop_->State() == backend::LoopState::kStopping ||
       stream_->loop_->State() == backend::LoopState::kStopped) {
-    CompleteInline(std::unexpected(base::MakeErrno(ECANCELED)));
+    CompleteInline(std::unexpected(Errno(ECANCELED)));
     return false;
   }
   auto valid = stream_->lifecycle_.ValidateWrite();
@@ -377,12 +373,12 @@ bool ReactorStream::WriteAllAwaiter::await_suspend(std::coroutine_handle<> conti
     return false;
   }
   if (stream_->socket_.fd() < 0) {
-    CompleteInline(std::unexpected(base::MakeErrno(EBADF)));
+    CompleteInline(std::unexpected(Errno(EBADF)));
     return false;
   }
 
   if (stream_->pending_write_ != nullptr) {
-    CompleteInline(std::unexpected(base::MakeErrno(EBUSY)));
+    CompleteInline(std::unexpected(Errno(EBUSY)));
     return false;
   }
 
@@ -401,7 +397,7 @@ bool ReactorStream::WriteAllAwaiter::await_suspend(std::coroutine_handle<> conti
       return false;
     }
     if (*result == 0) {
-      CompleteInline(std::unexpected(base::MakeErrno(EPIPE)));
+      CompleteInline(std::unexpected(Errno(EPIPE)));
       return false;
     }
     buffer_ = buffer_.subspan(*result);
@@ -411,22 +407,22 @@ bool ReactorStream::WriteAllAwaiter::await_suspend(std::coroutine_handle<> conti
   return false;
 }
 
-base::Result<void> ReactorStream::WriteAllAwaiter::await_resume() noexcept {
+Result<void> ReactorStream::WriteAllAwaiter::await_resume() noexcept {
   auto result = result_.Take();
   if (!result.has_value()) {
     return std::unexpected(result.error());
   }
-  return base::Result<void>{};
+  return Result<void>{};
 }
 
-void ReactorStream::WriteAllAwaiter::CompleteInline(base::Result<std::size_t> result) noexcept {
+void ReactorStream::WriteAllAwaiter::CompleteInline(Result<std::size_t> result) noexcept {
   result_.SetResult(result);
   COROPACT_CHECK(lifecycle_.TryAuthorizeResult(), "Reactor write result was authorized twice");
   COROPACT_CHECK(lifecycle_.TryAuthorizeRelease(),
                  "Reactor write release was not authorized after its result");
 }
 
-bool ReactorStream::WriteAllAwaiter::CompleteResultImpl(base::Result<std::size_t> result) noexcept {
+bool ReactorStream::WriteAllAwaiter::CompleteResultImpl(Result<std::size_t> result) noexcept {
   if (!lifecycle_.TryAuthorizeResult()) {
     return false;
   }
@@ -455,13 +451,13 @@ void ReactorStream::WriteAllAwaiter::OnReadyImpl() noexcept {
       return;
     }
     if (*result == 0) {
-      stream_->CompleteWrite(std::unexpected(base::MakeErrno(EPIPE)));
+      stream_->CompleteWrite(std::unexpected(Errno(EPIPE)));
       return;
     }
     buffer_ = buffer_.subspan(*result);
   }
 
-  stream_->CompleteWrite(base::Result<std::size_t>{0});
+  stream_->CompleteWrite(Result<std::size_t>{0});
 }
 
 ReactorStream::ReactorStream(EventLoop* loop, int fd, net::Endpoint peer,
@@ -534,22 +530,22 @@ ReactorStream::ReadIntoAwaiter ReactorStream::ReadInto(net::Buffer buffer,
   return ReadIntoAwaiter{*this, std::move(buffer), reserve};
 }
 
-ReactorStream::ReadSomeAwaiter ReactorStream::ReadSomeFor(
-    std::span<std::byte> buffer, std::chrono::milliseconds timeout) noexcept {
+ReactorStream::ReadSomeAwaiter ReactorStream::ReadSomeFor(std::span<std::byte> buffer,
+                                                          time::Duration timeout) noexcept {
   return ReadSomeAwaiter{*this, buffer, timeout};
 }
 
-coro::Task<base::Result<void>> ReactorStream::Shutdown() {
+coro::Task<Result<void>> ReactorStream::Shutdown() {
   RequireOwnerLoop();
   if (socket_.fd() < 0) {
-    co_return std::unexpected(base::MakeErrno(EBADF));
+    co_return std::unexpected(Errno(EBADF));
   }
   auto prepare = lifecycle_.PrepareShutdown(pending_write_ != nullptr);
   if (!prepare.has_value()) {
     co_return std::unexpected(prepare.error());
   }
   if (!*prepare) {
-    co_return base::Result<void>{};
+    co_return Result<void>{};
   }
   auto shutdown = socket_.ShutdownWrite();
   if (!shutdown.has_value()) {
@@ -557,13 +553,13 @@ coro::Task<base::Result<void>> ReactorStream::Shutdown() {
     co_return std::unexpected(shutdown.error());
   }
   lifecycle_.CommitShutdown();
-  co_return base::Result<void>{};
+  co_return Result<void>{};
 }
 
-coro::Task<base::Result<void>> ReactorStream::Close() {
+coro::Task<Result<void>> ReactorStream::Close() {
   RequireOwnerLoop();
   CloseNow();
-  co_return base::Result<void>{};
+  co_return Result<void>{};
 }
 
 void ReactorStream::HandleRead() {
@@ -599,18 +595,18 @@ void ReactorStream::HandleWrite() {
 
 void ReactorStream::HandleClose() {
   COROPACT_DCHECK(loop_->IsInLoopThread(), "ReactorStream::HandleClose called from wrong thread");
-  CompleteRead(base::Result<std::size_t>{0});
-  CompleteWrite(std::unexpected(base::MakeErrno(EPIPE)));
+  CompleteRead(Result<std::size_t>{0});
+  CompleteWrite(std::unexpected(Errno(EPIPE)));
 }
 
 void ReactorStream::HandleError() {
   COROPACT_DCHECK(loop_->IsInLoopThread(), "ReactorStream::HandleError called from wrong thread");
-  base::Error error = ErrorFromSocketErrorEvent(socket_.fd());
+  Error error = ErrorFromSocketErrorEvent(socket_.fd());
   CompleteRead(std::unexpected(error));
   CompleteWrite(std::unexpected(error));
 }
 
-void ReactorStream::CompleteRead(base::Result<std::size_t> result) {
+void ReactorStream::CompleteRead(Result<std::size_t> result) {
   COROPACT_DCHECK(loop_->IsInLoopThread(), "ReactorStream::CompleteRead called from wrong thread");
   void* awaiter = pending_read_;
   const PendingReadKind kind = pending_read_kind_;
@@ -661,7 +657,7 @@ void ReactorStream::CompleteRead(base::Result<std::size_t> result) {
   state->ScheduleContinuation();
 }
 
-void ReactorStream::CompleteWrite(base::Result<std::size_t> result) {
+void ReactorStream::CompleteWrite(Result<std::size_t> result) {
   COROPACT_DCHECK(loop_->IsInLoopThread(), "ReactorStream::CompleteWrite called from wrong thread");
   WriteAllAwaiter* awaiter = pending_write_;
   if (awaiter == nullptr) {
@@ -691,10 +687,10 @@ void ReactorStream::CloseNow() noexcept {
   }
 
   if (pending_read_ != nullptr) {
-    CompleteRead(std::unexpected(base::MakeErrno(ECANCELED)));
+    CompleteRead(std::unexpected(Errno(ECANCELED)));
   }
   if (pending_write_ != nullptr) {
-    CompleteWrite(std::unexpected(base::MakeErrno(ECANCELED)));
+    CompleteWrite(std::unexpected(Errno(ECANCELED)));
   }
   DetachChannel();
   socket_.Close();

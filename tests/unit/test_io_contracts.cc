@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 // The shared compile-time seam for backend-neutral network contracts.
 

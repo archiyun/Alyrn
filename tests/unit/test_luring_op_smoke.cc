@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 
 #include <sys/wait.h>
@@ -50,7 +49,7 @@ void TakePendingResultState() {
 void SetResultStateTwice() {
   coropact::luring::detail::LUringResultState<void> state;
   state.SetSuccess();
-  state.SetError(coropact::base::MakeErrno(EPIPE));
+  state.SetError(coropact::Errno(EPIPE));
 }
 
 void ReadEmptyCqeResult() {

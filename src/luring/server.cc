@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #include "coropact/luring/detail/server.h"
 
@@ -7,7 +6,7 @@
 #include <memory>
 #include <utility>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/luring/stream.h"
 
 namespace coropact::luring::detail {
@@ -17,9 +16,9 @@ LUringServer::LUringServer(net::Endpoint listen_addr, LUringServerOptions option
 
 LUringServer::~LUringServer() noexcept { Stop(); }
 
-base::Result<void> LUringServer::Start() {
+Result<void> LUringServer::Start() {
   if (started_) {
-    return std::unexpected(base::MakeErrno(EALREADY));
+    return std::unexpected(Errno(EALREADY));
   }
 
   LUringWorkerGroup::ConnectionCallback connection_callback;

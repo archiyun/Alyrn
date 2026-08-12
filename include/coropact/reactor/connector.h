@@ -1,16 +1,15 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include <chrono>
 #include <cstdint>
 #include <string_view>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/coro/task.h"
 #include "coropact/net/endpoint.h"
 #include "coropact/reactor/loop.h"
 #include "coropact/reactor/stream.h"
+#include "coropact/time/clock.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::reactor {
@@ -27,7 +26,7 @@ public:
   using Stream = ReactorStream;
 
   [[nodiscard]]
-  static base::Result<ReactorConnector> Create(EventLoop* loop,
+  static Result<ReactorConnector> Create(EventLoop* loop,
                                                ReactorConnectorOptions options = {}) noexcept;
 
   explicit ReactorConnector(EventLoop* loop, ReactorConnectorOptions options = {}) noexcept;
@@ -37,9 +36,9 @@ public:
 
   // Connect is loop-affine. Independent calls may be pending concurrently;
   // each call owns its socket, Channel, result, and continuation.
-  coro::Task<base::Result<ReactorStream>> Connect(net::Endpoint peer);
-  coro::Task<base::Result<ReactorStream>> Connect(std::string_view host, std::uint16_t port);
-  coro::Task<void> SleepFor(std::chrono::milliseconds delay);
+  coro::Task<Result<ReactorStream>> Connect(net::Endpoint peer);
+  coro::Task<Result<ReactorStream>> Connect(std::string_view host, std::uint16_t port);
+  coro::Task<void> SleepFor(time::Duration delay);
 
 private:
   void RequireOwnerLoop() const noexcept;

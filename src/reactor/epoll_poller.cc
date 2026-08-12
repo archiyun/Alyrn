@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #include "coropact/reactor/detail/epoll_poller.h"
 
@@ -51,8 +50,8 @@ static int FromEpollEvents(uint32_t epoll_events) {
 
 }  // namespace
 
-EPollPoller::EPollPoller(EventLoop* loop)
-    : Poller(loop), epollfd_(::epoll_create1(EPOLL_CLOEXEC)), events_(kInitEventListSize) {
+EPollPoller::EPollPoller()
+    : epollfd_(::epoll_create1(EPOLL_CLOEXEC)), events_(kInitEventListSize) {
   if (epollfd_ < 0) {
     COROPACT_CHECK(false, "EPollPoller: epoll_create1 failed");
   }

@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 //
 // Spawn(Scheduler&, Task<T>) produces a joinable root; SpawnDetach schedules a

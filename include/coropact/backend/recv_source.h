@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
@@ -21,9 +20,9 @@ concept AsyncRecvSource = requires(T& source) {
   requires std::same_as<typename T::Event, RecvEvent>;
   requires coro::Awaitable<decltype(source.Next())>;
   requires std::same_as<coro::AwaitResult<decltype(source.Next())>,
-                        base::Result<std::optional<typename T::Event>>>;
-  { source.RequestStop() } -> std::same_as<base::Result<void>>;
-  { source.Stop() } -> std::same_as<coro::Task<base::Result<void>>>;
+                        Result<std::optional<typename T::Event>>>;
+  { source.RequestStop() } -> std::same_as<Result<void>>;
+  { source.Stop() } -> std::same_as<coro::Task<Result<void>>>;
 };
 
 }  // namespace coropact::backend

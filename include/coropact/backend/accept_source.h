@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
@@ -20,8 +19,8 @@ concept AsyncAcceptSource = requires(T& source) {
   requires AsyncStream<typename T::Stream>;
   requires coro::Awaitable<decltype(source.Next())>;
   requires std::same_as<coro::AwaitResult<decltype(source.Next())>,
-                        base::Result<std::optional<typename T::Stream>>>;
-  { source.Stop() } -> std::same_as<coro::Task<base::Result<void>>>;
+                        Result<std::optional<typename T::Stream>>>;
+  { source.Stop() } -> std::same_as<coro::Task<Result<void>>>;
 };
 
 }  // namespace coropact::backend

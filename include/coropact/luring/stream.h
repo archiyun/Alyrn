@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
@@ -6,7 +5,6 @@
 #include <sys/socket.h>
 #include <sys/uio.h>
 
-#include <chrono>
 #include <coroutine>
 #include <cstddef>
 #include <cstdint>
@@ -14,7 +12,7 @@
 #include <vector>
 
 #include "coropact/backend/async_stream.h"
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/coro/task.h"
 #include "coropact/luring/detail/completion_dispatch.h"
 #include "coropact/luring/detail/op.h"
@@ -25,6 +23,7 @@
 #include "coropact/net/read_into.h"
 #include "coropact/operation/detail/composite_lifecycle.h"
 #include "coropact/operation/detail/split_release_lifecycle.h"
+#include "coropact/time/clock.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::luring {
@@ -92,10 +91,9 @@ public:
   ReadIntoAwaiter ReadInto(net::Buffer buffer, std::size_t reserve = 4096) noexcept;
 
   [[nodiscard]]
-  ReadSomeForAwaiter ReadSomeFor(std::span<std::byte> buffer,
-                                 std::chrono::milliseconds timeout) noexcept;
+  ReadSomeForAwaiter ReadSomeFor(std::span<std::byte> buffer, time::Duration timeout) noexcept;
   [[nodiscard]]
-  coro::Task<base::Result<void>> WriteAll(std::span<const std::byte> buffer);
+  coro::Task<Result<void>> WriteAll(std::span<const std::byte> buffer);
 
   // WriteAll() chooses this optional extension when enabled. SendZeroCopy()
   // keeps the caller's buffer alive until its notification CQE is observed.
@@ -113,8 +111,8 @@ public:
   [[nodiscard]]
   SendZeroCopyAwaiter SendZeroCopy(std::span<const std::byte> buffer) noexcept;
 
-  coro::Task<base::Result<void>> Shutdown();
-  coro::Task<base::Result<void>> Close();
+  coro::Task<Result<void>> Shutdown();
+  coro::Task<Result<void>> Close();
 
   [[nodiscard]]
   const net::Endpoint& PeerAddress() const noexcept {
@@ -182,7 +180,7 @@ public:
   [[nodiscard]]
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
 
-  base::Result<std::size_t> await_resume() noexcept;
+  Result<std::size_t> await_resume() noexcept;
 
 private:
   friend void detail::DispatchStreamReadComplete(detail::LUringOp* op) noexcept;
@@ -229,7 +227,7 @@ private:
 
   [[nodiscard]]
   ReservationKind PrepareReservation(iovec& single_iov) noexcept;
-  void FinishReservation(base::Result<std::size_t> result) noexcept;
+  void FinishReservation(Result<std::size_t> result) noexcept;
 
   LUringStream* stream_;
   net::Buffer buffer_;
@@ -252,7 +250,7 @@ public:
   COROPACT_DELETE_COPY_MOVE(ReadSomeForAwaiter);
 
   ReadSomeForAwaiter(LUringStream& stream, std::span<std::byte> buffer,
-                     std::chrono::milliseconds timeout) noexcept;
+                     time::Duration timeout) noexcept;
 
   [[nodiscard]]
   bool await_ready() const noexcept {
@@ -262,7 +260,7 @@ public:
   [[nodiscard]]
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
 
-  base::Result<std::size_t> await_resume() noexcept;
+  Result<std::size_t> await_resume() noexcept;
 
 private:
   friend void detail::DispatchTimedReadComplete(detail::LUringOp* op) noexcept;
@@ -302,7 +300,7 @@ public:
   [[nodiscard]]
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
 
-  base::Result<std::size_t> await_resume() noexcept;
+  Result<std::size_t> await_resume() noexcept;
 
 private:
   friend void detail::DispatchStreamWriteComplete(detail::LUringOp* op) noexcept;
@@ -331,7 +329,7 @@ public:
   [[nodiscard]]
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
 
-  base::Result<ZeroCopySendResult> await_resume() noexcept;
+  Result<ZeroCopySendResult> await_resume() noexcept;
 
 private:
   friend detail::CompletionDisposition detail::DispatchSendZeroCopyComplete(

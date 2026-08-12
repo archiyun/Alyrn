@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #include "coropact/reactor/detail/reactor_worker.h"
 
@@ -7,7 +6,7 @@
 #include <stop_token>
 #include <utility>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/coro/frame_allocator.h"
 #include "coropact/coro/spawn.h"
 
@@ -48,15 +47,15 @@ ReactorWorker::ReactorWorker(std::size_t index, net::Endpoint listen_addr,
 
 ReactorWorker::~ReactorWorker() noexcept { Stop(); }
 
-base::Result<void> ReactorWorker::Start() {
+Result<void> ReactorWorker::Start() {
   if (thread_.joinable()) {
-    return std::unexpected(base::MakeErrno(EALREADY));
+    return std::unexpected(Errno(EALREADY));
   }
 
   {
     std::lock_guard lock{mutex_};
     init_done_ = false;
-    start_result_ = base::Result<void>{};
+    start_result_ = Result<void>{};
   }
 
   thread_ = std::jthread([this](std::stop_token token) { WorkLoop(std::move(token)); });
@@ -65,7 +64,7 @@ base::Result<void> ReactorWorker::Start() {
   cv_.wait(lock, thread_.get_stop_token(), [this] { return init_done_; });
 
   if (!init_done_) {
-    return std::unexpected(base::MakeErrno(ECANCELED));
+    return std::unexpected(Errno(ECANCELED));
   }
   return start_result_;
 }
@@ -79,7 +78,7 @@ void ReactorWorker::Stop() noexcept {
 void ReactorWorker::WorkLoop(std::stop_token token) noexcept {
   coro::FrameAllocatorScope frame_scope{options_.frame_resource};
 
-  auto publish_start = [this](base::Result<void> result) noexcept {
+  auto publish_start = [this](Result<void> result) noexcept {
     {
       std::lock_guard lock{mutex_};
       start_result_ = result;
@@ -108,7 +107,7 @@ void ReactorWorker::WorkLoop(std::stop_token token) noexcept {
     try {
       init_callback_(context);
     } catch (...) {
-      publish_start(std::unexpected(base::MakeErrno(EFAULT)));
+      publish_start(std::unexpected(Errno(EFAULT)));
       return;
     }
   }
@@ -117,7 +116,7 @@ void ReactorWorker::WorkLoop(std::stop_token token) noexcept {
     coro::SpawnDetach(loop, AcceptLoop(context, &connection_callback_));
   }
 
-  publish_start(base::Result<void>{});
+  publish_start(Result<void>{});
   loop.Run(token);
 
   if (exit_callback_) {

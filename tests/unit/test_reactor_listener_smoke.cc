@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 
 #include <arpa/inet.h>
@@ -11,7 +10,7 @@
 #include <optional>
 #include <thread>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/coro/spawn.h"
 #include "coropact/coro/sync_wait.h"
 #include "coropact/coro/task.h"
@@ -24,9 +23,9 @@
 
 namespace {
 
-using AcceptResult = coropact::base::Result<typename coropact::reactor::ReactorListener::Stream>;
+using AcceptResult = coropact::Result<typename coropact::reactor::ReactorListener::Stream>;
 using AcceptSource = coropact::reactor::ReactorAcceptSource;
-using AcceptSourceResult = AcceptSource::Result;
+using AcceptSourceResult = AcceptSource::NextResult;
 
 static_assert(coropact::io::AsyncListener<coropact::reactor::ReactorListener>);
 
@@ -102,7 +101,7 @@ coropact::coro::DetachedTask CloseListener(coropact::reactor::ReactorListener* l
 struct CompetingAcceptObservation {
   std::optional<AcceptResult> first;
   std::optional<AcceptResult> second;
-  std::optional<coropact::base::Result<void>> close;
+  std::optional<coropact::Result<void>> close;
   int first_resume_count{0};
   int second_resume_count{0};
   int finished{0};
@@ -178,7 +177,8 @@ bool CheckPendingAccept() {
   int client_fd = -1;
 
   coropact::coro::SpawnDetach(loop, AcceptOnce(&listener, &loop, &result));
-  loop.RunAfter(0.0, [&] { client_fd = ConnectNonBlocking(*listen_addr); });
+  loop.RunAfter(coropact::time::Duration::zero(),
+                [&] { client_fd = ConnectNonBlocking(*listen_addr); });
 
   loop.Run();
 
@@ -205,7 +205,7 @@ bool CheckAcceptReleasesSlotBeforeContinuation() {
   int second_client = -1;
 
   coropact::coro::SpawnDetach(loop, AcceptThenAccept(&listener, &loop, &first, &second));
-  loop.RunAfter(0.0, [&] {
+  loop.RunAfter(coropact::time::Duration::zero(), [&] {
     first_client = ConnectNonBlocking(*listen_addr);
     second_client = ConnectNonBlocking(*listen_addr);
   });
@@ -231,7 +231,8 @@ bool CheckCloseCancelsPendingAccept() {
   std::optional<AcceptResult> result;
 
   coropact::coro::SpawnDetach(loop, AcceptOnce(&listener, &loop, &result));
-  loop.RunAfter(0.0, [&] { coropact::coro::Spawn(loop, listener.Close()).Detach(); });
+  loop.RunAfter(coropact::time::Duration::zero(),
+                [&] { coropact::coro::Spawn(loop, listener.Close()).Detach(); });
 
   loop.Run();
 
@@ -248,7 +249,7 @@ bool CheckCompetingAcceptIsRejected() {
 
   coropact::coro::SpawnDetach(loop, ObserveFirstPendingAccept(&listener, &loop, &observation));
   coropact::coro::SpawnDetach(loop, ObserveCompetingAccept(&listener, &loop, &observation));
-  loop.RunAfter(0.5, [&] {
+  loop.RunAfter(coropact::time::Milliseconds(500), [&] {
     observation.timed_out = true;
     loop.RequestStop();
   });
@@ -290,7 +291,7 @@ bool CheckAcceptSourceQueueAndStop() {
 
   coropact::coro::SpawnDetach(loop,
                               AcceptSourceTwice(&source, &loop, &first, &second, &stop_succeeded));
-  loop.RunAfter(0.0, [&] {
+  loop.RunAfter(coropact::time::Duration::zero(), [&] {
     first_client = ConnectNonBlocking(*listen_addr);
     second_client = ConnectNonBlocking(*listen_addr);
   });
@@ -324,7 +325,7 @@ bool CheckAcceptSourceStopWakesPendingNext() {
   bool got_end = false;
   bool stop_succeeded = false;
   coropact::coro::SpawnDetach(loop, WaitForSourceEnd(&source, &loop, &got_end));
-  loop.RunAfter(0.0,
+  loop.RunAfter(coropact::time::Duration::zero(),
                 [&] { coropact::coro::SpawnDetach(loop, StopSource(&source, &stop_succeeded)); });
   loop.Run();
 
@@ -345,8 +346,9 @@ bool CheckAcceptSourceListenerCloseWakesPendingNext() {
   bool got_end = false;
   bool close_succeeded = false;
   coropact::coro::SpawnDetach(loop, WaitForSourceEnd(&source, &loop, &got_end));
-  loop.RunAfter(
-      0.0, [&] { coropact::coro::SpawnDetach(loop, CloseListener(&listener, &close_succeeded)); });
+  loop.RunAfter(coropact::time::Duration::zero(), [&] {
+    coropact::coro::SpawnDetach(loop, CloseListener(&listener, &close_succeeded));
+  });
   loop.Run();
 
   return Check(got_end, "listener Close did not terminate pending AcceptSource::Next") &&
@@ -362,7 +364,7 @@ bool CheckAcceptSourceStopRejectsForeignLoop() {
   }
   AcceptSource source = std::move(*source_result);
 
-  std::optional<coropact::base::Result<void>> stop_result;
+  std::optional<coropact::Result<void>> stop_result;
   std::thread foreign([&] { stop_result.emplace(coropact::coro::SyncWait(source.Stop())); });
   foreign.join();
 

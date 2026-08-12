@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 //
 // Native liburing fixed HTTP keep-alive benchmark server. It mirrors the

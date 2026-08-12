@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
@@ -6,19 +5,15 @@
 
 namespace coropact::operation::detail {
 
-// Lifecycle protocol for an operation whose logical result and resource
-// release occur at different physical completion boundaries.
-//
-// The backend handler supplies the interpretation of backend events. It calls:
-//   1. RecordLogicalResult() when the caller-visible result is known;
-//   2. MarkPhysicalTerminal() when the backend can no longer access resources;
-//   3. TryAuthorizeRelease() to release those resources exactly once; and
-//   4. TryAuthorizeContinuation() to resume the awaiting coroutine exactly
-//      once, after release has been authorized.
-//
-// The object is thread-confined and owns no result, buffer, fd, CQE, or
-// continuation. It is therefore shared by backend adapters without imposing
-// an I/O abstraction on them.
+/*
+ * Lifecycle protocol for operations whose logical result and resource release
+ * occur at different physical completion boundaries.
+ *
+ * A backend records the caller-visible result, marks the physical request
+ * terminal once it cannot access resources, and then authorizes release and
+ * continuation in order. The object is thread-confined and owns no result,
+ * buffer, fd, CQE, or continuation.
+ */
 class SplitReleaseLifecycle {
 public:
   SplitReleaseLifecycle() noexcept = default;

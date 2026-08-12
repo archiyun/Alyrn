@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #include "coropact/luring/detail/ring.h"
 
@@ -12,7 +11,7 @@
 #include <utility>
 
 #include "coropact/base/check.h"
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/luring/options.h"
 
 namespace coropact::luring::detail {
@@ -80,13 +79,13 @@ LUringRing& LUringRing::operator=(LUringRing&& other) noexcept {
   return *this;
 }
 
-base::Result<LUringRing> LUringRing::Create(const LUringOptions& options) noexcept {
+Result<LUringRing> LUringRing::Create(const LUringOptions& options) noexcept {
   io_uring ring{};
   io_uring_params params = MakeParams(options);
 
   const int result = io_uring_queue_init_params(options.entries, &ring, &params);
   if (result < 0) {
-    return std::unexpected(coropact::base::MakeNegErrno(result));
+    return std::unexpected(coropact::NegErrno(result));
   }
 
   return LUringRing(ring);
@@ -94,10 +93,10 @@ base::Result<LUringRing> LUringRing::Create(const LUringOptions& options) noexce
 
 io_uring_sqe* LUringRing::GetSqe() noexcept { return io_uring_get_sqe(&ring_); }
 
-base::Result<std::size_t> LUringRing::Submit() noexcept {
+Result<std::size_t> LUringRing::Submit() noexcept {
   const int result = io_uring_submit(&ring_);
   if (result < 0) {
-    return std::unexpected(base::MakeNegErrno(result));
+    return std::unexpected(NegErrno(result));
   }
   return static_cast<std::size_t>(result);
 }

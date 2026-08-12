@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
@@ -13,7 +12,7 @@
 
 #include "coropact/backend/detail/value_result_state.h"
 #include "coropact/backend/recv_source.h"
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/coro/task.h"
 #include "coropact/coro/work.h"
 #include "coropact/luring/detail/completion_dispatch.h"
@@ -56,7 +55,7 @@ public:
   COROPACT_DELETE_COPY(LUringRecvSource);
 
   using Event = net::RecvEvent;
-  using Result = base::Result<std::optional<Event>>;
+  using NextResult = coropact::Result<std::optional<Event>>;
 
   // Direct awaiter for the single-consumer receive loop. It keeps the same
   // result and ownership semantics without creating a child Task frame for
@@ -72,9 +71,9 @@ public:
 
     bool await_suspend(std::coroutine_handle<> continuation) noexcept;
 
-    Result await_resume() noexcept;
+    NextResult await_resume() noexcept;
 
-    void Complete(Result result) noexcept;
+    void Complete(NextResult result) noexcept;
 
   private:
     LUringRecvSource* source_;
@@ -84,7 +83,7 @@ public:
   };
 
   [[nodiscard]]
-  static base::Result<LUringRecvSource> Create(LUringLoop* loop, int fd,
+  static Result<LUringRecvSource> Create(LUringLoop* loop, int fd,
                                                LUringRecvSourceOptions options = {}) noexcept;
 
   ~LUringRecvSource();
@@ -102,9 +101,9 @@ public:
   // its already-produced events, and then await Stop() for the final lease
   // boundary.
   [[nodiscard]]
-  base::Result<void> RequestStop() noexcept;
+  Result<void> RequestStop() noexcept;
 
-  coro::Task<base::Result<void>> Stop();
+  coro::Task<Result<void>> Stop();
 
 private:
   class StopAwaiter;
@@ -159,28 +158,28 @@ private:
                    std::vector<PendingEvent> event_storage) noexcept;
 
   [[nodiscard]]
-  base::Result<void> Start() noexcept;
+  Result<void> Start() noexcept;
 
   [[nodiscard]]
-  base::Result<void> StartOperation() noexcept;
+  Result<void> StartOperation() noexcept;
 
   [[nodiscard]]
-  base::Result<void> StartCancel() noexcept;
+  Result<void> StartCancel() noexcept;
 
   [[nodiscard]]
-  base::Result<bool> BeginStop() noexcept;
+  Result<bool> BeginStop() noexcept;
 
   void EnsureSubmission() noexcept;
   void MaybeResume() noexcept;
   void RequestBackendPause() noexcept;
-  void RequestBackendStop(std::optional<base::Error> error = std::nullopt) noexcept;
+  void RequestBackendStop(std::optional<Error> error = std::nullopt) noexcept;
 
   detail::CompletionDisposition OnCompletion(detail::CompletionEvent event) noexcept;
   void OnCancelComplete(int cqe_result) noexcept;
 
   void DeliverNextIfReady() noexcept;
   void CompleteStopIfReady() noexcept;
-  bool TryTakeNext(Result& result) noexcept;
+  bool TryTakeNext(NextResult& result) noexcept;
   void QueueEvent(std::uint32_t buffer_id, std::size_t size) noexcept;
   bool TryTakeQueuedEvent(PendingEvent& event) noexcept;
   void ReturnBuffer(std::uint32_t buffer_id) noexcept;
@@ -193,7 +192,7 @@ private:
   std::vector<PendingEvent> events_;
   std::size_t event_head_{0};
   std::size_t event_count_{0};
-  std::optional<base::Error> terminal_error_;
+  std::optional<Error> terminal_error_;
 
   NextAwaiter* pending_next_{nullptr};
   StopAwaiter* pending_stop_{nullptr};

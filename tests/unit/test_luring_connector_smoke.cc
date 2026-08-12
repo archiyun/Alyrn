@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 
 #include <arpa/inet.h>
@@ -15,7 +14,7 @@
 #include <system_error>
 #include <utility>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/spawn.h"
 #include "coropact/coro/task.h"
@@ -78,7 +77,7 @@ bool Check(bool condition, const char* message) {
   return true;
 }
 
-bool IsEnvironmentSkip(coropact::base::Error error) {
+bool IsEnvironmentSkip(coropact::Error error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 
@@ -100,20 +99,20 @@ LoopInitStatus InitLoop(coropact::luring::LUringLoop& loop) {
   return LoopInitStatus::kFail;
 }
 
-coropact::base::Result<ListenEndpoint> ListenLoopback() {
+coropact::Result<ListenEndpoint> ListenLoopback() {
   int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
   if (fd < 0) {
-    return std::unexpected(coropact::base::CurrentErrno());
+    return std::unexpected(coropact::CurrentErrno());
   }
 
-  auto fail = [fd](coropact::base::Error error) -> coropact::base::Result<ListenEndpoint> {
+  auto fail = [fd](coropact::Error error) -> coropact::Result<ListenEndpoint> {
     ::close(fd);
     return std::unexpected(error);
   };
 
   int on = 1;
   if (::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) < 0) {
-    return fail(coropact::base::CurrentErrno());
+    return fail(coropact::CurrentErrno());
   }
 
   sockaddr_in addr{};
@@ -122,16 +121,16 @@ coropact::base::Result<ListenEndpoint> ListenLoopback() {
   addr.sin_port = htons(0);
 
   if (::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
-    return fail(coropact::base::CurrentErrno());
+    return fail(coropact::CurrentErrno());
   }
 
   if (::listen(fd, SOMAXCONN) < 0) {
-    return fail(coropact::base::CurrentErrno());
+    return fail(coropact::CurrentErrno());
   }
 
   socklen_t len = sizeof(addr);
   if (::getsockname(fd, reinterpret_cast<sockaddr*>(&addr), &len) < 0) {
-    return fail(coropact::base::CurrentErrno());
+    return fail(coropact::CurrentErrno());
   }
 
   return ListenEndpoint{.fd = UniqueFd(fd), .port = ntohs(addr.sin_port)};
@@ -140,7 +139,7 @@ coropact::base::Result<ListenEndpoint> ListenLoopback() {
 coropact::coro::DetachedTask ConnectOnce(
     coropact::luring::LUringConnector* connector, coropact::luring::LUringLoop* loop,
     std::string_view host, std::uint16_t port,
-    std::optional<coropact::base::Result<coropact::luring::LUringStream>>* out,
+    std::optional<coropact::Result<coropact::luring::LUringStream>>* out,
     bool* resumed_with_scheduler) {
   auto connected = co_await connector->Connect(host, port);
   *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == loop;
@@ -169,7 +168,7 @@ bool CheckConnectSuccess() {
   }
 
   coropact::luring::LUringConnector connector(&loop);
-  std::optional<coropact::base::Result<coropact::luring::LUringStream>> connected;
+  std::optional<coropact::Result<coropact::luring::LUringStream>> connected;
   bool resumed_with_scheduler = false;
 
   coropact::coro::SpawnDetach(loop, ConnectOnce(&connector, &loop, "127.0.0.1", listener->port,
@@ -196,7 +195,7 @@ bool CheckConnectRejectsInvalidHost() {
   coropact::luring::LUringLoop loop;
   coropact::luring::LUringConnector connector(&loop);
 
-  std::optional<coropact::base::Result<coropact::luring::LUringStream>> connected;
+  std::optional<coropact::Result<coropact::luring::LUringStream>> connected;
   bool resumed_with_scheduler = false;
 
   coropact::coro::SpawnDetach(

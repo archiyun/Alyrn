@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 
 #include <sys/socket.h>
@@ -15,7 +14,7 @@
 #include <utility>
 
 #include "coropact/backend/recv_source.h"
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/coro/awaitable.h"
 #include "coropact/coro/detached_task.h"
 #include "coropact/coro/spawn.h"
@@ -25,7 +24,7 @@
 
 namespace {
 
-using coropact::base::Error;
+using coropact::Error;
 using coropact::coro::DetachedTask;
 using coropact::reactor::EventLoop;
 using coropact::reactor::ReactorRecvSource;
@@ -56,7 +55,7 @@ std::string BytesToString(const coropact::net::RecvEvent& event) {
 }
 
 DetachedTask ReceiveOne(ReactorRecvSource* source, EventLoop* loop,
-                        std::optional<ReactorRecvSource::Result>* result, std::string* payload,
+                        std::optional<ReactorRecvSource::NextResult>* result, std::string* payload,
                         bool* received_event, bool* stop_succeeded) {
   auto received = co_await source->Next();
   if (received.has_value() && received->has_value()) {
@@ -74,7 +73,7 @@ DetachedTask ReceiveOne(ReactorRecvSource* source, EventLoop* loop,
 }
 
 DetachedTask ReceivePending(ReactorRecvSource* source, EventLoop* loop,
-                            std::optional<ReactorRecvSource::Result>* result, bool* received_event,
+                            std::optional<ReactorRecvSource::NextResult>* result, bool* received_event,
                             bool* stop_succeeded) {
   auto received = co_await source->Next();
   if (received.has_value() && received->has_value()) {
@@ -88,7 +87,7 @@ DetachedTask ReceivePending(ReactorRecvSource* source, EventLoop* loop,
 }
 
 DetachedTask WaitForEnd(ReactorRecvSource* source, EventLoop* loop,
-                        std::optional<ReactorRecvSource::Result>* result) {
+                        std::optional<ReactorRecvSource::NextResult>* result) {
   result->emplace(co_await source->Next());
   loop->RequestStop();
 }
@@ -99,8 +98,8 @@ DetachedTask StopOnly(ReactorRecvSource* source, bool* stop_succeeded) {
 }
 
 DetachedTask StopThenObserveTerminalAfterLoopStop(
-    ReactorRecvSource* source, EventLoop* loop, std::optional<coropact::base::Result<void>>* stop,
-    std::optional<ReactorRecvSource::Result>* terminal, bool* with_scheduler) {
+    ReactorRecvSource* source, EventLoop* loop, std::optional<coropact::Result<void>>* stop,
+    std::optional<ReactorRecvSource::NextResult>* terminal, bool* with_scheduler) {
   stop->emplace(co_await source->Stop());
   loop->RequestStop();
   terminal->emplace(co_await source->Next());
@@ -119,7 +118,7 @@ DetachedTask ReceiveTwo(ReactorRecvSource* source, EventLoop* loop, int sender,
 
   // Write the second record after the first lease has been returned. This
   // keeps the two logical events distinct even on a stream socket.
-  loop->RunAfter(0.0, [sender] {
+  loop->RunAfter(coropact::time::Duration::zero(), [sender] {
     constexpr std::string_view kSecond = "second";
     (void)::send(sender, kSecond.data(), kSecond.size(), MSG_NOSIGNAL);
   });
@@ -167,14 +166,14 @@ struct PauseResumeObservation {
   std::optional<Error> error;
 };
 
-bool TakeRecvEvent(ReactorRecvSource::Result received, PauseResumeObservation* observation,
+bool TakeRecvEvent(ReactorRecvSource::NextResult received, PauseResumeObservation* observation,
                    std::string* payload) {
   if (!received.has_value()) {
     observation->error = received.error();
     return false;
   }
   if (!received->has_value()) {
-    observation->error = coropact::base::MakeErrno(ECONNRESET);
+    observation->error = coropact::Errno(ECONNRESET);
     return false;
   }
 
@@ -250,7 +249,7 @@ bool CheckImmediateReceive() {
   }
   auto source = std::move(*source_result);
 
-  std::optional<ReactorRecvSource::Result> result;
+  std::optional<ReactorRecvSource::NextResult> result;
   std::string payload;
   bool received_event = false;
   bool stop_succeeded = false;
@@ -282,12 +281,12 @@ bool CheckPendingReceive() {
   }
   auto source = std::move(*source_result);
 
-  std::optional<ReactorRecvSource::Result> result;
+  std::optional<ReactorRecvSource::NextResult> result;
   bool received_event = false;
   bool stop_succeeded = false;
   coropact::coro::SpawnDetach(
       loop, ReceivePending(&source, &loop, &result, &received_event, &stop_succeeded));
-  loop.RunAfter(0.0, [sender = fds[1]] {
+  loop.RunAfter(coropact::time::Duration::zero(), [sender = fds[1]] {
     constexpr std::string_view kPayload = "reactor-pending";
     (void)::send(sender, kPayload.data(), kPayload.size(), MSG_NOSIGNAL);
   });
@@ -319,7 +318,7 @@ bool CheckEof() {
   ::close(fds[1]);
   fds[1] = -1;
 
-  std::optional<ReactorRecvSource::Result> result;
+  std::optional<ReactorRecvSource::NextResult> result;
   std::string payload;
   bool received_event = false;
   bool stop_succeeded = false;
@@ -402,7 +401,7 @@ bool CheckStopWaitsForLease() {
   bool stop_succeeded = false;
   coropact::coro::SpawnDetach(
       loop, HoldLeaseThenStop(&source, &loop, &held, &stop_started, &stop_succeeded));
-  loop.RunAfter(0.001, [&held] { held.reset(); });
+  loop.RunAfter(coropact::time::Milliseconds(1), [&held] { held.reset(); });
   loop.Run();
 
   ::close(fds[1]);
@@ -427,10 +426,10 @@ bool CheckStopWakesPendingNext() {
   }
   auto source = std::move(*source_result);
 
-  std::optional<ReactorRecvSource::Result> result;
+  std::optional<ReactorRecvSource::NextResult> result;
   bool stop_succeeded = false;
   coropact::coro::SpawnDetach(loop, WaitForEnd(&source, &loop, &result));
-  loop.RunAfter(0.0,
+  loop.RunAfter(coropact::time::Duration::zero(),
                 [&] { coropact::coro::SpawnDetach(loop, StopOnly(&source, &stop_succeeded)); });
   loop.Run();
 
@@ -457,8 +456,8 @@ bool CheckTerminalNextAfterLoopStop() {
   }
   auto source = std::move(*source_result);
 
-  std::optional<coropact::base::Result<void>> stop;
-  std::optional<ReactorRecvSource::Result> terminal;
+  std::optional<coropact::Result<void>> stop;
+  std::optional<ReactorRecvSource::NextResult> terminal;
   bool with_scheduler = false;
   coropact::coro::SpawnDetach(loop, StopThenObserveTerminalAfterLoopStop(
                                         &source, &loop, &stop, &terminal, &with_scheduler));
@@ -497,18 +496,18 @@ bool CheckQueuePauseThenRearm() {
     if (::send(sender, payload.data(), payload.size(), MSG_NOSIGNAL) !=
         static_cast<ssize_t>(payload.size())) {
       observation.send_failed = true;
-      observation.error = coropact::base::CurrentErrno();
+      observation.error = coropact::CurrentErrno();
     }
   };
 
   coropact::coro::SpawnDetach(loop, ReceiveFirstForPause(&source, &loop, &observation));
-  loop.RunAfter(0.0, [send_payload] { send_payload("first"); });
-  loop.RunAfter(0.02, [send_payload] { send_payload("queued"); });
-  loop.RunAfter(0.05, [&] {
+  loop.RunAfter(coropact::time::Duration::zero(), [send_payload] { send_payload("first"); });
+  loop.RunAfter(coropact::time::Milliseconds(20), [send_payload] { send_payload("queued"); });
+  loop.RunAfter(coropact::time::Milliseconds(50), [&] {
     coropact::coro::SpawnDetach(loop, DrainPausedSource(&source, &loop, &observation));
   });
-  loop.RunAfter(0.07, [send_payload] { send_payload("resumed"); });
-  loop.RunAfter(0.5, [&] {
+  loop.RunAfter(coropact::time::Milliseconds(70), [send_payload] { send_payload("resumed"); });
+  loop.RunAfter(coropact::time::Milliseconds(500), [&] {
     if (!observation.done) {
       observation.timed_out = true;
       coropact::coro::SpawnDetach(loop, StopSourceOnTimeout(&source, &loop));

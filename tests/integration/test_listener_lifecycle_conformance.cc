@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 // Runs the same application-observable listener and AcceptSource lifecycle
 // scenarios against every enabled network backend.
@@ -18,7 +17,7 @@
 #include <utility>
 
 #include "coropact/backend/accept_source.h"
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/coro/awaitable.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/spawn.h"
@@ -34,7 +33,7 @@
 
 namespace {
 
-using VoidResult = coropact::base::Result<void>;
+using VoidResult = coropact::Result<void>;
 
 static_assert(coropact::backend::AsyncAcceptSource<coropact::reactor::ReactorAcceptSource>);
 static_assert(coropact::coro::Awaiter<
@@ -63,13 +62,13 @@ struct ReactorHarness {
   static bool Init(Loop&) noexcept { return true; }
   static bool Skip() noexcept { return false; }
 
-  static coropact::base::Result<Listener> CreateListener(Loop& loop) noexcept {
+  static coropact::Result<Listener> CreateListener(Loop& loop) noexcept {
     return Listener::Create(&loop, coropact::net::Endpoint::Loopback(0));
   }
 
   static bool RunAfter(Loop& loop, std::chrono::milliseconds delay,
                        std::function<void()> callback) {
-    loop.RunAfter(std::chrono::duration<double>(delay).count(), std::move(callback));
+    loop.RunAfter(std::chrono::duration_cast<coropact::time::Duration>(delay), std::move(callback));
     return true;
   }
 
@@ -102,7 +101,7 @@ struct LUringHarness {
            init_error == std::errc::operation_not_permitted;
   }
 
-  static coropact::base::Result<Listener> CreateListener(Loop& loop) noexcept {
+  static coropact::Result<Listener> CreateListener(Loop& loop) noexcept {
     return Listener::Create(&loop, coropact::net::Endpoint::Loopback(0));
   }
 
@@ -118,13 +117,13 @@ struct LUringHarness {
 
   static void Run(Loop& loop) noexcept { loop.Run(); }
 
-  static inline coropact::base::Error init_error{};
+  static inline coropact::Error init_error{};
 };
 #endif
 
 template <class Harness>
 bool PrepareLoopAndListener(typename Harness::Loop& loop,
-                            coropact::base::Result<typename Harness::Listener>& listener) {
+                            coropact::Result<typename Harness::Listener>& listener) {
   if (!Harness::Init(loop)) {
     if (Harness::Skip()) {
       std::cout << "SKIP [" << Harness::Name() << "]: backend unavailable\n";
@@ -145,7 +144,7 @@ bool PrepareLoopAndListener(typename Harness::Loop& loop,
 
 template <class Listener>
 struct PendingAcceptCloseObservation {
-  using AcceptResult = coropact::base::Result<typename Listener::Stream>;
+  using AcceptResult = coropact::Result<typename Listener::Stream>;
 
   std::optional<AcceptResult> accept;
   std::optional<VoidResult> close;
@@ -182,8 +181,8 @@ auto ClosePendingAccept(Listener& listener, Loop& loop,
 template <class Harness>
 bool CheckPendingAcceptCloseContract() {
   typename Harness::Loop loop;
-  coropact::base::Result<typename Harness::Listener> listener =
-      std::unexpected(coropact::base::MakeErrno(EINVAL));
+  coropact::Result<typename Harness::Listener> listener =
+      std::unexpected(coropact::Errno(EINVAL));
   if (!PrepareLoopAndListener<Harness>(loop, listener)) {
     return Harness::Skip();
   }
@@ -247,8 +246,8 @@ auto ObserveClosedListener(Listener& listener, Loop& loop, ClosedListenerObserva
 template <class Harness>
 bool CheckClosedListenerContract() {
   typename Harness::Loop loop;
-  coropact::base::Result<typename Harness::Listener> listener =
-      std::unexpected(coropact::base::MakeErrno(EINVAL));
+  coropact::Result<typename Harness::Listener> listener =
+      std::unexpected(coropact::Errno(EINVAL));
   if (!PrepareLoopAndListener<Harness>(loop, listener)) {
     return Harness::Skip();
   }
@@ -295,8 +294,8 @@ auto ObserveListenerAfterStopRequest(Listener& listener, Loop& loop,
 template <class Harness>
 bool CheckListenerAfterStopRequestContract() {
   typename Harness::Loop loop;
-  coropact::base::Result<typename Harness::Listener> listener =
-      std::unexpected(coropact::base::MakeErrno(EINVAL));
+  coropact::Result<typename Harness::Listener> listener =
+      std::unexpected(coropact::Errno(EINVAL));
   if (!PrepareLoopAndListener<Harness>(loop, listener)) {
     return Harness::Skip();
   }
@@ -315,8 +314,8 @@ bool CheckListenerAfterStopRequestContract() {
 
 template <class Source>
 struct SourceStopObservation {
-  std::optional<typename Source::Result> pending_next;
-  std::optional<typename Source::Result> sticky_next;
+  std::optional<typename Source::NextResult> pending_next;
+  std::optional<typename Source::NextResult> sticky_next;
   std::optional<VoidResult> first_stop;
   std::optional<VoidResult> second_stop;
   int next_resume_count{0};
@@ -352,8 +351,8 @@ auto StopSource(Source& source, Loop& loop, SourceStopObservation<Source>& obser
 template <class Harness>
 bool CheckSourceStopContract() {
   typename Harness::Loop loop;
-  coropact::base::Result<typename Harness::Listener> listener =
-      std::unexpected(coropact::base::MakeErrno(EINVAL));
+  coropact::Result<typename Harness::Listener> listener =
+      std::unexpected(coropact::Errno(EINVAL));
   if (!PrepareLoopAndListener<Harness>(loop, listener)) {
     return Harness::Skip();
   }
@@ -398,7 +397,7 @@ bool CheckSourceStopContract() {
 template <class Source>
 struct TerminalAfterLoopStopObservation {
   std::optional<VoidResult> stop;
-  std::optional<typename Source::Result> terminal;
+  std::optional<typename Source::NextResult> terminal;
   bool terminal_with_scheduler{false};
 };
 
@@ -419,8 +418,8 @@ auto StopSourceThenObserveTerminalAfterLoopStop(
 template <class Harness>
 bool CheckTerminalNextAfterLoopStopContract() {
   typename Harness::Loop loop;
-  coropact::base::Result<typename Harness::Listener> listener =
-      std::unexpected(coropact::base::MakeErrno(EINVAL));
+  coropact::Result<typename Harness::Listener> listener =
+      std::unexpected(coropact::Errno(EINVAL));
   if (!PrepareLoopAndListener<Harness>(loop, listener)) {
     return Harness::Skip();
   }
@@ -449,8 +448,8 @@ bool CheckTerminalNextAfterLoopStopContract() {
 
 template <class Source>
 struct ListenerCloseSourceObservation {
-  std::optional<typename Source::Result> pending_next;
-  std::optional<typename Source::Result> sticky_next;
+  std::optional<typename Source::NextResult> pending_next;
+  std::optional<typename Source::NextResult> sticky_next;
   std::optional<VoidResult> close;
   std::optional<VoidResult> stop;
   int next_resume_count{0};
@@ -488,8 +487,8 @@ auto CloseListenerWithSource(Listener& listener, Source& source, Loop& loop,
 template <class Harness>
 bool CheckListenerCloseSourceContract() {
   typename Harness::Loop loop;
-  coropact::base::Result<typename Harness::Listener> listener =
-      std::unexpected(coropact::base::MakeErrno(EINVAL));
+  coropact::Result<typename Harness::Listener> listener =
+      std::unexpected(coropact::Errno(EINVAL));
   if (!PrepareLoopAndListener<Harness>(loop, listener)) {
     return Harness::Skip();
   }
@@ -558,7 +557,7 @@ void CloseClients(std::array<int, 4>& clients) noexcept {
 
 template <class Listener>
 struct SequentialAcceptObservation {
-  using AcceptResult = coropact::base::Result<typename Listener::Stream>;
+  using AcceptResult = coropact::Result<typename Listener::Stream>;
 
   std::array<int, 4> clients{-1, -1, -1, -1};
   std::optional<AcceptResult> first;
@@ -592,8 +591,8 @@ auto ObserveSequentialAccept(Listener& listener, Loop& loop,
 template <class Harness>
 bool CheckAcceptReleaseBeforeContinuationContract() {
   typename Harness::Loop loop;
-  coropact::base::Result<typename Harness::Listener> listener =
-      std::unexpected(coropact::base::MakeErrno(EINVAL));
+  coropact::Result<typename Harness::Listener> listener =
+      std::unexpected(coropact::Errno(EINVAL));
   if (!PrepareLoopAndListener<Harness>(loop, listener)) {
     return Harness::Skip();
   }
@@ -640,18 +639,18 @@ bool CheckAcceptReleaseBeforeContinuationContract() {
 }
 
 template <class Source>
-bool IsStreamEvent(const std::optional<typename Source::Result>& result) {
+bool IsStreamEvent(const std::optional<typename Source::NextResult>& result) {
   return result.has_value() && result->has_value() && result->value().has_value();
 }
 
 template <class Source>
 struct AcceptSourceAdmissionObservation {
   std::array<int, 4> clients{-1, -1, -1, -1};
-  std::optional<typename Source::Result> first;
-  std::optional<typename Source::Result> second;
-  std::optional<typename Source::Result> third;
-  std::optional<typename Source::Result> fourth;
-  std::optional<typename Source::Result> terminal;
+  std::optional<typename Source::NextResult> first;
+  std::optional<typename Source::NextResult> second;
+  std::optional<typename Source::NextResult> third;
+  std::optional<typename Source::NextResult> fourth;
+  std::optional<typename Source::NextResult> terminal;
   std::optional<VoidResult> stop;
   bool first_with_scheduler{false};
   bool drain_with_scheduler{false};
@@ -701,8 +700,8 @@ auto StopAcceptSourceThenDrain(Source& source, Loop& loop,
 template <class Harness>
 bool CheckAcceptSourceAdmissionTrace() {
   typename Harness::Loop loop;
-  coropact::base::Result<typename Harness::Listener> listener =
-      std::unexpected(coropact::base::MakeErrno(EINVAL));
+  coropact::Result<typename Harness::Listener> listener =
+      std::unexpected(coropact::Errno(EINVAL));
   if (!PrepareLoopAndListener<Harness>(loop, listener)) {
     return Harness::Skip();
   }
@@ -778,8 +777,8 @@ bool CheckAcceptSourceAdmissionTrace() {
 template <class Harness>
 bool CheckAcceptSourceStopDrainsBurstContract() {
   typename Harness::Loop loop;
-  coropact::base::Result<typename Harness::Listener> listener =
-      std::unexpected(coropact::base::MakeErrno(EINVAL));
+  coropact::Result<typename Harness::Listener> listener =
+      std::unexpected(coropact::Errno(EINVAL));
   if (!PrepareLoopAndListener<Harness>(loop, listener)) {
     return Harness::Skip();
   }

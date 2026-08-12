@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
@@ -7,27 +6,26 @@
 
 #include "coropact/utils/macros.h"
 
-namespace coropact::reactor {
-
-class EventLoop;
-
-namespace detail {
+namespace coropact::reactor::detail {
 
 class Channel;
 
 // Poller is the user-space abstraction over the underlying I/O multiplexing
 // mechanism, such as epoll.
 //
-// Each EventLoop owns exactly one Poller. The Poller tracks the Channels
-// currently registered with the loop, waits for active events from the kernel,
-// and updates or removes Channel registrations as their interest sets change.
+// Each EventLoop owns exactly one Poller and follows the one-loop-per-thread
+// model, so every method here is owner-thread-only. The Poller holds no back
+// pointer to its loop: the loop already rejects foreign-thread calls before
+// delegating. The Poller tracks the Channels currently registered with the
+// loop, waits for active events from the kernel, and updates or removes
+// Channel registrations as their interest sets change.
 class Poller {
 public:
   COROPACT_DELETE_COPY_MOVE(Poller);
 
   using ChannelList = std::vector<Channel*>;
 
-  explicit Poller(EventLoop* loop);
+  Poller() = default;
   virtual ~Poller() = default;
 
   // Waits for I/O events and fills active_channels with the Channels that
@@ -45,16 +43,11 @@ public:
   bool HasChannel(Channel* channel) const;
 
   // Creates the epoll-backed Poller implementation.
-  static Poller* NewDefaultPoller(EventLoop* loop);
+  static Poller* NewDefaultPoller();
 
 protected:
   using ChannelMap = std::unordered_map<int, Channel*>;
   ChannelMap channels_;
-
-private:
-  // The owning EventLoop. Poller follows the one-loop-per-thread model.
-  EventLoop* owner_loop_;
 };
 
-}  // namespace detail
-}  // namespace coropact::reactor
+}  // namespace coropact::reactor::detail

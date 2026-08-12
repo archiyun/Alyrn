@@ -55,7 +55,7 @@ inflight 是否应该减少
 | 运行期 | 当前 operation 的对象、资源和状态是否允许走该路径？ | buffer ring 有可用 buffer、send zerocopy 满足 buffer 条件 |
 
 构建期条件决定具体 backend 是否参与编译；其余条件由 `LUringLoop::Init()`、source 创建
-或 operation 提交返回 `base::Result`。luring 不再维护独立的 native capability/profile 层：
+或 operation 提交返回 `Result`。luring 不再维护独立的 native capability/profile 层：
 
 ```cpp
 enum class OperationPath {

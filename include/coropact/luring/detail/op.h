@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
@@ -9,7 +8,7 @@
 #include <memory>
 
 #include "coropact/base/check.h"
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/coro/work.h"
 #include "coropact/luring/detail/reusable_completion_slot.h"
 #include "coropact/operation/detail/single_result_lifecycle.h"
@@ -199,7 +198,7 @@ constexpr bool CqeResultDirectlyPublishesLogicalResult(LUringOpKind kind) noexce
 }
 
 // A CQE result is always an integer. Kernel errors are represented by a
-// negative cqe_res and converted to base::Error by the awaiter, so storing a
+// negative cqe_res and converted to Error by the awaiter, so storing a
 // full std::expected<int, Error> here needlessly adds the error union and its
 // alignment padding to every operation. This compact representation relies on
 // the Linux io_uring contract that cqe_res contains a non-INT_MIN result (a
@@ -273,7 +272,7 @@ public:
 
   void SetImmediateSuccess() noexcept { result = 0; }
 
-  void SetImmediateError(base::Error error) noexcept {
+  void SetImmediateError(Error error) noexcept {
     COROPACT_CHECK(error.value() > 0, "LUringOp immediate error must have a positive errno");
     result = -error.value();
   }

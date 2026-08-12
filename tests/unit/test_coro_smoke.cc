@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 //
 // Smoke test for the coropact::coro module (M0):
@@ -25,7 +24,7 @@
 #include <system_error>
 #include <thread>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/coro/awaitable.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/spawn.h"
@@ -33,8 +32,8 @@
 #include "coropact/coro/task.h"
 #include "coropact/coro/work.h"
 
-using coropact::base::MakeErrno;
-using coropact::base::Result;
+using coropact::Errno;
+using coropact::Result;
 using coropact::coro::DetachedTask;
 using coropact::coro::JoinHandle;
 using coropact::coro::Scheduler;
@@ -130,7 +129,7 @@ Task<int> Sum() {
 
 Task<std::unique_ptr<int>> MoveOnly() { co_return std::make_unique<int>(99); }
 
-Task<Result<int>> Fail() { co_return std::unexpected(MakeErrno(EINVAL)); }
+Task<Result<int>> Fail() { co_return std::unexpected(Errno(EINVAL)); }
 
 int g_void_marker = 0;
 Task<void> SetMarker() {

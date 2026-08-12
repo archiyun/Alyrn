@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 
 #include <fcntl.h>
@@ -13,7 +12,7 @@
 #include <type_traits>
 #include <utility>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/coro/spawn.h"
 #include "coropact/coro/task.h"
 #include "coropact/net/endpoint.h"
@@ -88,7 +87,7 @@ bool TestChannelMove() {
 
   target.EnableReading();
   ::write(first[1], "x", 1);
-  loop.RunAfter(0.1, [&] { loop.RequestStop(); });
+  loop.RunAfter(coropact::time::Milliseconds(100), [&] { loop.RequestStop(); });
   loop.Run();
 
   target.DisableAll();
@@ -130,8 +129,8 @@ bool TestSocketMove() {
                "Socket move operations should transfer ownership and close the old target fd");
 }
 
-using ReadResult = coropact::base::Result<std::size_t>;
-using AcceptResult = coropact::base::Result<coropact::reactor::ReactorListener::Stream>;
+using ReadResult = coropact::Result<std::size_t>;
+using AcceptResult = coropact::Result<coropact::reactor::ReactorListener::Stream>;
 
 static_assert(std::is_move_constructible_v<coropact::reactor::ReactorStream>);
 static_assert(std::is_move_assignable_v<coropact::reactor::ReactorStream>);
@@ -176,8 +175,9 @@ bool TestReactorStreamMove() {
 
     coropact::coro::SpawnDetach(loop,
                                 ReadOnce(&moved, &loop, &constructed_buffer, &constructed_result));
-    loop.RunAfter(0.0, [peer_fd = source_pair[1]] { ::write(peer_fd, "c", 1); });
-    loop.RunAfter(0.2, [&] { loop.RequestStop(); });
+    loop.RunAfter(coropact::time::Duration::zero(),
+                  [peer_fd = source_pair[1]] { ::write(peer_fd, "c", 1); });
+    loop.RunAfter(coropact::time::Milliseconds(200), [&] { loop.RequestStop(); });
     loop.Run();
   }
 
@@ -198,10 +198,10 @@ bool TestReactorStreamMove() {
     coropact::reactor::ReactorStream target(&loop, source_pair[1]);
     target = std::move(source);
 
-    coropact::coro::SpawnDetach(loop,
-                                ReadOnce(&target, &loop, &assigned_buffer, &assigned_result));
-    loop.RunAfter(0.0, [peer_fd = target_pair[1]] { ::write(peer_fd, "a", 1); });
-    loop.RunAfter(0.2, [&] { loop.RequestStop(); });
+    coropact::coro::SpawnDetach(loop, ReadOnce(&target, &loop, &assigned_buffer, &assigned_result));
+    loop.RunAfter(coropact::time::Duration::zero(),
+                  [peer_fd = target_pair[1]] { ::write(peer_fd, "a", 1); });
+    loop.RunAfter(coropact::time::Milliseconds(200), [&] { loop.RequestStop(); });
     loop.Run();
   }
   ::close(target_pair[1]);
@@ -245,8 +245,9 @@ bool TestReactorListenerMove() {
     }
 
     coropact::coro::SpawnDetach(loop, AcceptOnce(&moved, &loop, &accepted));
-    loop.RunAfter(0.0, [&] { client_fd = ConnectNonBlocking(*moved_address); });
-    loop.RunAfter(0.2, [&] { loop.RequestStop(); });
+    loop.RunAfter(coropact::time::Duration::zero(),
+                  [&] { client_fd = ConnectNonBlocking(*moved_address); });
+    loop.RunAfter(coropact::time::Milliseconds(200), [&] { loop.RequestStop(); });
     loop.Run();
   }
 

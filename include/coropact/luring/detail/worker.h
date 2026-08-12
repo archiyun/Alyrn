@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
@@ -11,7 +10,7 @@
 #include <optional>
 #include <thread>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/coro/detached_task.h"
 #include "coropact/luring/connector.h"
 #include "coropact/luring/listener.h"
@@ -75,7 +74,7 @@ public:
   ~LUringWorker() noexcept;
 
   [[nodiscard]]
-  base::Result<void> Start();
+  Result<void> Start();
   void Stop() noexcept;
 
   [[nodiscard]]
@@ -93,7 +92,7 @@ private:
 
   std::mutex mutex_;
   std::condition_variable_any cv_;
-  base::Result<void> start_result_;
+  Result<void> start_result_;
   bool init_done_{false};
 
   std::jthread thread_;

@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
@@ -18,7 +17,10 @@ struct TimerId {
 
   int64_t sequence{kInvalid};
 
-  bool Valid() const { return sequence != kInvalid; }
+  [[nodiscard]]
+  bool Valid() const {
+    return sequence != kInvalid;
+  }
 };
 
 }  // namespace coropact::time

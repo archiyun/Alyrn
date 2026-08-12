@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
@@ -19,12 +18,12 @@ class LoopAccess final {
 public:
   template <class Prep>
   [[nodiscard]]
-  static base::Result<void> SubmitOp(LUringLoop& loop, LUringOp* op, Prep&& prep) noexcept {
+  static Result<void> SubmitOp(LUringLoop& loop, LUringOp* op, Prep&& prep) noexcept {
     return loop.SubmitOp(op, std::forward<Prep>(prep));
   }
 
   [[nodiscard]]
-  static base::Result<void> SubmitMsgRing(LUringLoop& loop, LUringOp* op, int target_ring_fd,
+  static Result<void> SubmitMsgRing(LUringLoop& loop, LUringOp* op, int target_ring_fd,
                                           std::uint32_t type) noexcept {
     return loop.SubmitMsgRing(op, target_ring_fd, type);
   }
@@ -55,22 +54,22 @@ public:
   }
 
   [[nodiscard]]
-  static base::Result<void> FlushSubmit(LUringLoop& loop) noexcept {
+  static Result<void> FlushSubmit(LUringLoop& loop) noexcept {
     return loop.FlushSubmit();
   }
 
   [[nodiscard]]
-  static base::Result<void> CancelPendingOperations(LUringLoop& loop) noexcept {
+  static Result<void> CancelPendingOperations(LUringLoop& loop) noexcept {
     return loop.CancelPendingOperations();
   }
 
   [[nodiscard]]
-  static base::Result<std::size_t> PollCompletions(LUringLoop& loop) noexcept {
+  static Result<std::size_t> PollCompletions(LUringLoop& loop) noexcept {
     return loop.PollCompletions();
   }
 
   [[nodiscard]]
-  static base::Result<std::size_t> WaitCompletions(LUringLoop& loop) noexcept {
+  static Result<std::size_t> WaitCompletions(LUringLoop& loop) noexcept {
     return loop.WaitCompletions();
   }
 
@@ -97,7 +96,7 @@ public:
   }
 
   [[nodiscard]]
-  static base::Result<ProvidedBufferPool*> GetSharedProvidedBufferPool(
+  static Result<ProvidedBufferPool*> GetSharedProvidedBufferPool(
       LUringLoop& loop, std::size_t buffer_size, std::size_t source_capacity) noexcept {
     return loop.GetSharedProvidedBufferPool(buffer_size, source_capacity);
   }

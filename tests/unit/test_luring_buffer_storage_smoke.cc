@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 
 #include <cassert>
@@ -7,7 +6,7 @@
 #include <limits>
 #include <utility>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/luring/detail/provided_buffer_storage.h"
 
 namespace {

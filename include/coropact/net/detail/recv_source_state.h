@@ -1,36 +1,36 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
 #include <cerrno>
 #include <cstddef>
 
-#include "coropact/base/error.h"
 #include "coropact/net/detail/source_state.h"
 #include "coropact/net/recv_source.h"
+#include "coropact/result.h"
 
 namespace coropact::net::detail {
 
 using RecvSourceState = SourceState;
 
-// Backend-neutral admission and ownership accounting for a receive source.
-// The owner must keep this state machine alive until OutstandingLeases() is
-// zero, so a backend never returns a provided buffer while a BufferLease may
-// still expose it to application code.
+/*
+ * Backend-neutral receive admission and lease accounting. The owner keeps this
+ * state alive until OutstandingLeases() is zero, so an adapter never returns a
+ * provided buffer while a BufferLease can still expose it to application code.
+ */
 class RecvSourceStateMachine final {
 public:
   [[nodiscard]]
-  static base::Result<RecvSourceStateMachine> Create(RecvSourceOptions options) noexcept {
+  static Result<RecvSourceStateMachine> Create(RecvSourceOptions options) noexcept {
     if (!options.Valid()) {
-      return std::unexpected(base::MakeErrno(EINVAL));
+      return std::unexpected(Errno(EINVAL));
     }
     return RecvSourceStateMachine(options);
   }
 
   [[nodiscard]]
-  base::Result<void> Start() noexcept {
+  Result<void> Start() noexcept {
     if (state_ != RecvSourceState::kIdle) {
-      return std::unexpected(base::MakeErrno(EALREADY));
+      return std::unexpected(Errno(EALREADY));
     }
     state_ = RecvSourceState::kActive;
     return {};
@@ -46,14 +46,14 @@ public:
   }
 
   [[nodiscard]]
-  base::Result<void> RequestPause() noexcept {
+  Result<void> RequestPause() noexcept {
     if (state_ == RecvSourceState::kTerminal || state_ == RecvSourceState::kDraining ||
         state_ == RecvSourceState::kStopping || state_ == RecvSourceState::kPausing ||
         state_ == RecvSourceState::kPaused) {
       return {};
     }
     if (state_ != RecvSourceState::kActive) {
-      return std::unexpected(base::MakeErrno(EINVAL));
+      return std::unexpected(Errno(EINVAL));
     }
 
     state_ = RecvSourceState::kPausing;
@@ -71,16 +71,16 @@ public:
   }
 
   [[nodiscard]]
-  base::Result<void> CompleteMultishotEvent(EventDisposition event,
-                                            MultishotRequestDisposition request) noexcept {
+  Result<void> CompleteMultishotEvent(EventDisposition event,
+                                      MultishotRequestDisposition request) noexcept {
     if (armed_requests_ == 0) {
-      return std::unexpected(base::MakeErrno(EINVAL));
+      return std::unexpected(Errno(EINVAL));
     }
     if (event == EventDisposition::kProduced && !CanQueueEvent()) {
-      return std::unexpected(base::MakeErrno(ENOBUFS));
+      return std::unexpected(Errno(ENOBUFS));
     }
     if (event == EventDisposition::kDelivered && !CanDeliverEvent()) {
-      return std::unexpected(base::MakeErrno(ENOBUFS));
+      return std::unexpected(Errno(ENOBUFS));
     }
 
     if (request == MultishotRequestDisposition::kTerminal) {
@@ -135,7 +135,7 @@ public:
   }
 
   [[nodiscard]]
-  base::Result<void> RequestStop() noexcept {
+  Result<void> RequestStop() noexcept {
     if (state_ == RecvSourceState::kTerminal || state_ == RecvSourceState::kDraining ||
         state_ == RecvSourceState::kStopping) {
       return {};

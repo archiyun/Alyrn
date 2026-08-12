@@ -92,16 +92,16 @@ RequestStop
 
 ```cpp
 ReadSome(std::span<std::byte> buffer)
-    -> 可 await，await_resume() 为 base::Result<std::size_t>
+    -> 可 await，await_resume() 为 Result<std::size_t>
 
 WriteAll(std::span<const std::byte> buffer)
-    -> 可 await，await_resume() 为 base::Result<void>
+    -> 可 await，await_resume() 为 Result<void>
 
 Shutdown()
-    -> coro::Task<base::Result<void>>
+    -> coro::Task<Result<void>>
 
 Close()
-    -> coro::Task<base::Result<void>>
+    -> coro::Task<Result<void>>
 ```
 
 对应的公共概念是：
@@ -122,8 +122,8 @@ timeout 不是 `AsyncStream` 的隐含开关。它把一次 read 解释为 read 
 composite operation，因此使用独立 concept：
 
 ```cpp
-ReadSomeFor(std::span<std::byte> buffer, std::chrono::milliseconds timeout)
-    -> 可 await，await_resume() 为 base::Result<std::size_t>
+ReadSomeFor(std::span<std::byte> buffer, time::Duration timeout)
+    -> 可 await，await_resume() 为 Result<std::size_t>
 
 coropact::io::AsyncTimedReadStream
 coropact::io::AsyncTimedStream
@@ -159,7 +159,7 @@ ReadInto(net::Buffer buffer, std::size_t reserve)
 
 ```cpp
 struct net::ReadIntoOutcome {
-  base::Result<std::size_t> result;
+  Result<std::size_t> result;
   net::Buffer buffer;
 };
 ```
@@ -180,10 +180,10 @@ listener 的最小接口是：
 using Stream = ...;
 
 Accept()
-    -> coro::Task<base::Result<Stream>>
+    -> coro::Task<Result<Stream>>
 
 Close()
-    -> coro::Task<base::Result<void>>
+    -> coro::Task<Result<void>>
 ```
 
 `Stream` 必须满足 `coropact::io::AsyncStream`。当前 `ReactorListener` 和 `LUringListener`
@@ -235,7 +235,7 @@ Stream，失败或取消时由该次 operation 回收。
 ### 2.4 Awaitable 的使用规则
 
 `ReadSome` 和 `WriteAll` 的返回值必须是可 await 对象，并产生约定的
-`base::Result`。后端可以返回惰性的 `coro::Task<T>`，也可以返回直接承载操作状态的
+`Result`。后端可以返回惰性的 `coro::Task<T>`，也可以返回直接承载操作状态的
 底层 awaiter：
 
 ```cpp
@@ -255,7 +255,7 @@ send 与 send-zc 的不同 completion/release 语义。`Shutdown()`、`Close()` 
 stream.ReadSome(buffer);  // 错误：没有等待该 I/O operation
 ```
 
-I/O 方法本身不抛出业务异常。结果通过 `coropact::base::Result<T>` 返回，它是
+I/O 方法本身不抛出业务异常。结果通过 `coropact::Result<T>` 返回，它是
 `std::expected<T, std::error_code>` 的别名。协程未处理异常会终止进程，不属于网络错误
 传播机制。
 
@@ -786,8 +786,8 @@ registered fixed buffer 仍属于后续扩展。
 timeout 的目标业务语义是：
 
 ```cpp
-ReadSomeFor(std::span<std::byte> buffer, std::chrono::milliseconds timeout)
-    -> 可 await，await_resume() 为 base::Result<std::size_t>
+ReadSomeFor(std::span<std::byte> buffer, time::Duration timeout)
+    -> 可 await，await_resume() 为 Result<std::size_t>
 ```
 
 结果应为：

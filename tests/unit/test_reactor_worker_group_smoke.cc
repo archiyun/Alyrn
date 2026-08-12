@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 
 #include <arpa/inet.h>
@@ -18,7 +17,7 @@
 #include <utility>
 #include <vector>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/task.h"
 #include "coropact/net/endpoint.h"
@@ -70,10 +69,10 @@ bool Check(bool condition, const char* message) {
   return true;
 }
 
-coropact::base::Result<std::uint16_t> PickFreePort() {
+coropact::Result<std::uint16_t> PickFreePort() {
   UniqueFd socket(::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP));
   if (socket.get() < 0) {
-    return std::unexpected(coropact::base::CurrentErrno());
+    return std::unexpected(coropact::CurrentErrno());
   }
 
   sockaddr_in address{};
@@ -81,24 +80,24 @@ coropact::base::Result<std::uint16_t> PickFreePort() {
   address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   address.sin_port = htons(0);
   if (::bind(socket.get(), reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0) {
-    return std::unexpected(coropact::base::CurrentErrno());
+    return std::unexpected(coropact::CurrentErrno());
   }
 
   socklen_t length = sizeof(address);
   if (::getsockname(socket.get(), reinterpret_cast<sockaddr*>(&address), &length) < 0) {
-    return std::unexpected(coropact::base::CurrentErrno());
+    return std::unexpected(coropact::CurrentErrno());
   }
   return ntohs(address.sin_port);
 }
 
-coropact::base::Result<int> ConnectClient(const coropact::net::Endpoint& address) {
+coropact::Result<int> ConnectClient(const coropact::net::Endpoint& address) {
   const int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, IPPROTO_TCP);
   if (fd < 0) {
-    return std::unexpected(coropact::base::CurrentErrno());
+    return std::unexpected(coropact::CurrentErrno());
   }
 
   if (::connect(fd, address.sock_addr(), address.sock_addr_len()) < 0 && errno != EINPROGRESS) {
-    const auto error = coropact::base::CurrentErrno();
+    const auto error = coropact::CurrentErrno();
     ::close(fd);
     return std::unexpected(error);
   }

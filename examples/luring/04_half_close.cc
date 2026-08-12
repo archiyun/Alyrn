@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 //
 // LUring write-half shutdown demo
@@ -164,7 +163,7 @@ auto HalfCloseSession(luring::LUringLoop& loop, luring::LUringStream stream, int
 auto main() -> int {
   std::array<int, 2> sockets{-1, -1};
   if (::socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0, sockets.data()) < 0) {
-    std::println(stderr, "socketpair failed: {}", base::CurrentErrno().message());
+    std::println(stderr, "socketpair failed: {}", CurrentErrno().message());
     return 1;
   }
 

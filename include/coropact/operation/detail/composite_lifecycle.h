@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
@@ -13,14 +12,15 @@ enum class CompositeMember : std::uint8_t {
   kSecond,
 };
 
-// Lifecycle protocol for an operation whose one logical result depends on two
-// independently completing physical members, such as a linked read+timeout.
-//
-// Operation-specific handlers retain member results and decide their business
-// meaning. This core records each physical member once, then independently
-// authorizes one logical result, one release, and one continuation resume.
-// A coupled composite still has distinct authorization points: release must be
-// explicit before the continuation can observe the awaiter's result.
+/*
+ * Lifecycle protocol for one logical result derived from two independently
+ * completing physical members, such as a linked read and timeout.
+ *
+ * Operation-specific handlers retain member results and decide their meaning.
+ * This core records each member once, then separately authorizes the logical
+ * result, release, and one continuation resumption. Release remains explicit
+ * even for a coupled composite.
+ */
 class CompositeLifecycle {
 public:
   CompositeLifecycle() noexcept = default;

@@ -54,9 +54,9 @@ This echo session depends only on `AsyncStream`, so it works with both ReactorSt
 namespace cp = coropact;
 
 template <cp::io::AsyncStream Stream>
-auto EchoSession(Stream stream) -> cp::coro::Task<cp::base::Result<void>> {
+auto EchoSession(Stream stream) -> cp::coro::Task<cp::Result<void>> {
   std::array<std::byte, 4096> buffer{};
-  cp::base::Result<void> session_result{};
+  cp::Result<void> session_result{};
 
   for (;;) {
     auto read = co_await stream.ReadSome(buffer);
@@ -184,9 +184,13 @@ ctest --test-dir build-uring --output-on-failure
 
 ### Requirements
 
-* Linux, CMake 3.20+, and a compiler with C++23 coroutine support.
-* The default Reactor build has no extra networking-library dependency.
-* luring requires `liburing >= 2.6`; Linux 5.19 or newer is recommended.
+* CMake 3.20+ and a compiler with C++23 coroutine support.
+* The currently runnable backends are Linux-only: Reactor uses `epoll`, and
+  luring requires `liburing >= 2.6` (Linux 5.19 or newer is recommended).
+* `net` and the backend-neutral contracts use portable POSIX socket facilities.
+  A BSD native readiness backend is a parallel adapter under development; it
+  must not be implemented as conditional code inside the epoll Reactor.
+* The default Linux Reactor build has no extra networking-library dependency.
 
 Installable Debian/tarball artifacts and Docker release builds are described
 in [Packaging and installation](docs/packaging.md).

@@ -1,18 +1,19 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
 #include <atomic>
-#include <chrono>
 #include <functional>
 #include <memory>
 #include <memory_resource>
 #include <stop_token>
+#include <thread>
 #include <vector>
 
 #include "coropact/backend/loop.h"
+#include "coropact/base/current_thread.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/reactor/detail/loop_shutdown.h"
+#include "coropact/time/clock.h"
 #include "coropact/time/timer_id.h"
 #include "coropact/utils/macros.h"
 
@@ -25,11 +26,11 @@ class Poller;
 class TimerQueue;
 }  // namespace detail
 
-// EventLoop is the core event dispatcher in the Reactor model.
-//
-// Each EventLoop is bound to exactly one thread. It owns a Poller for waiting
-// on I/O events, dispatches active Channel callbacks, runs queued functors in
-// thread order, and manages timer callbacks through TimerQueue.
+/*
+ * Owner-thread epoll dispatcher. An EventLoop owns its poller, registered
+ * channels, timers, and coroutine work. Cross-thread callers may request
+ * stop, but may not submit or mutate owner-local I/O state directly.
+ */
 class EventLoop final : public coro::Scheduler {
 public:
   using Functor = std::function<void()>;
@@ -71,13 +72,13 @@ public:
   bool IsInLoopThread() const noexcept;
 
   // Schedules callback to run once at the specified time point.
-  time::TimerId RunAt(std::chrono::steady_clock::time_point time, Functor callback);
+  time::TimerId RunAt(time::Deadline deadline, Functor callback);
 
-  // Schedules callback to run once after delay_sec seconds.
-  time::TimerId RunAfter(double delay_sec, Functor callback);
+  // Schedules callback to run once after delay.
+  time::TimerId RunAfter(time::Duration delay, Functor callback);
 
-  // Schedules callback to run repeatedly every interval_sec seconds.
-  time::TimerId RunEvery(double interval_sec, Functor callback);
+  // Schedules callback to run repeatedly every interval.
+  time::TimerId RunEvery(time::Duration interval, Functor callback);
 
   // Cancels a previously scheduled timer.
   void Cancel(time::TimerId id);
@@ -114,7 +115,7 @@ private:
   bool looping_{false};
   std::atomic<backend::LoopState> state_{backend::LoopState::kCreated};
 
-  const int thread_id_;
+  const base::ThreadId thread_id_;
   std::unique_ptr<detail::Poller> poller_;
   std::vector<detail::Channel*> active_channels_;
 

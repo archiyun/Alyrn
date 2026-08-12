@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
@@ -8,7 +7,7 @@
 
 #include "coropact/backend/accept_source.h"
 #include "coropact/backend/detail/value_result_state.h"
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/coro/task.h"
 #include "coropact/net/accept_source.h"
 #include "coropact/net/endpoint.h"
@@ -31,7 +30,7 @@ public:
 
   using Stream = ReactorStream;
   using Event = std::optional<Stream>;
-  using Result = base::Result<Event>;
+  using NextResult = coropact::Result<Event>;
 
   // Direct awaiter for the single-consumer accept loop. It keeps Next() on
   // the caller's coroutine frame and avoids a child Task frame per accepted
@@ -47,9 +46,9 @@ public:
 
     bool await_suspend(std::coroutine_handle<> continuation) noexcept;
 
-    Result await_resume() noexcept;
+    NextResult await_resume() noexcept;
 
-    void Complete(Result result) noexcept;
+    void Complete(NextResult result) noexcept;
 
   private:
     ReactorAcceptSource* source_;
@@ -67,7 +66,7 @@ public:
   NextAwaiter Next() noexcept {
     return NextAwaiter(*this);
   }
-  coro::Task<base::Result<void>> Stop();
+  coro::Task<Result<void>> Stop();
 
 private:
   friend class ReactorListener;
@@ -76,19 +75,19 @@ private:
                       net::detail::AcceptSourceStateMachine state) noexcept;
 
   void OnReady() noexcept;
-  void OnError(base::Error error) noexcept;
+  void OnError(Error error) noexcept;
   void OnListenerClosed() noexcept;
   void EnsureAdmission() noexcept;
   void DeliverNextIfReady() noexcept;
-  bool TryTakeNext(Result& result) noexcept;
+  bool TryTakeNext(NextResult& result) noexcept;
   void ReleaseListenerReservation() noexcept;
-  void Fail(base::Error error) noexcept;
-  base::Result<ReactorStream> TryAccept() noexcept;
+  void Fail(Error error) noexcept;
+  Result<ReactorStream> TryAccept() noexcept;
 
   ReactorListener* listener_{nullptr};
   net::detail::AcceptSourceStateMachine state_;
   std::deque<ReactorStream> events_;
-  std::optional<base::Error> terminal_error_;
+  std::optional<Error> terminal_error_;
   NextAwaiter* pending_next_{nullptr};
 };
 
@@ -108,7 +107,7 @@ public:
   using Stream = ReactorStream;
 
   [[nodiscard]]
-  static base::Result<ReactorListener> Create(EventLoop* loop, const net::Endpoint& listen_addr,
+  static Result<ReactorListener> Create(EventLoop* loop, const net::Endpoint& listen_addr,
                                               ReactorListenerOptions options = {}) noexcept;
 
   ReactorListener(EventLoop* loop, const net::Endpoint& listen_addr,
@@ -120,17 +119,17 @@ public:
   ReactorListener(ReactorListener&& other) noexcept;
   ReactorListener& operator=(ReactorListener&& other) noexcept;
 
-  coro::Task<base::Result<ReactorStream>> Accept();
+  coro::Task<Result<ReactorStream>> Accept();
   [[nodiscard]]
-  base::Result<ReactorAcceptSource> AcceptSource(net::AcceptSourceOptions options = {}) noexcept;
-  coro::Task<base::Result<void>> Close();
+  Result<ReactorAcceptSource> AcceptSource(net::AcceptSourceOptions options = {}) noexcept;
+  coro::Task<Result<void>> Close();
 
   // Accept, Close, AcceptSource, and destruction are loop-affine. The caller
   // must use this listener from its owning EventLoop thread; a foreign thread
   // is a runtime-contract violation checked in every build configuration.
 
   [[nodiscard]]
-  base::Result<net::Endpoint> LocalAddress() const;
+  Result<net::Endpoint> LocalAddress() const;
 
 private:
   friend class ReactorAcceptSource;
@@ -144,7 +143,7 @@ private:
   void HandleError();
   static void DispatchRead(void* context) noexcept;
   static void DispatchError(void* context) noexcept;
-  void CompleteAccept(base::Result<ReactorStream> result);
+  void CompleteAccept(Result<ReactorStream> result);
   void CloseNow() noexcept;
   void DetachChannel();
   void RequireOwnerLoop() const noexcept;

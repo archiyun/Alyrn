@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #include <sys/eventfd.h>
 #include <unistd.h>
@@ -26,8 +25,8 @@ thread_local EventLoop* t_loop_in_this_thread = nullptr;
 
 EventLoop::EventLoop(std::pmr::memory_resource* frame_resource)
     : Scheduler(frame_resource),
-      thread_id_(base::tid()),
-      poller_(Poller::NewDefaultPoller(this)),
+      thread_id_(base::CurrentThreadId()),
+      poller_(Poller::NewDefaultPoller()),
       timer_queue_(std::make_unique<TimerQueue>(this)) {
   COROPACT_CHECK(t_loop_in_this_thread == nullptr,
                  "EventLoop: only one EventLoop may exist per thread");
@@ -150,7 +149,7 @@ void EventLoop::UnregisterShutdownParticipant(LoopShutdownParticipant& participa
                  "EventLoop shutdown participant was not registered");
 }
 
-bool EventLoop::IsInLoopThread() const noexcept { return thread_id_ == base::tid(); }
+bool EventLoop::IsInLoopThread() const noexcept { return thread_id_ == base::CurrentThreadId(); }
 
 void EventLoop::DoPendingWork() {
   if (pending_work_.Empty()) {
@@ -225,26 +224,20 @@ bool EventLoop::HasImmediateWork() const {
   return !pending_work_.Empty();
 }
 
-time::TimerId EventLoop::RunAt(std::chrono::steady_clock::time_point time, Functor callback) {
+time::TimerId EventLoop::RunAt(time::Deadline deadline, Functor callback) {
   COROPACT_CHECK(IsInLoopThread(), "EventLoop::RunAt called from wrong thread");
-  return timer_queue_->AddTimer(std::move(callback), time,
-                                std::chrono::steady_clock::duration::zero());
+  return timer_queue_->AddTimer(std::move(callback), deadline, time::Duration::zero());
 }
 
-time::TimerId EventLoop::RunAfter(double delay, Functor callback) {
+time::TimerId EventLoop::RunAfter(time::Duration delay, Functor callback) {
   COROPACT_CHECK(IsInLoopThread(), "EventLoop::RunAfter called from wrong thread");
-  const auto duration = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-      std::chrono::duration<double>(delay));
-  return timer_queue_->AddTimer(std::move(callback), std::chrono::steady_clock::now() + duration,
-                                std::chrono::steady_clock::duration::zero());
+  return timer_queue_->AddTimer(std::move(callback), time::SteadyNow() + delay,
+                                time::Duration::zero());
 }
 
-time::TimerId EventLoop::RunEvery(double interval, Functor callback) {
+time::TimerId EventLoop::RunEvery(time::Duration interval, Functor callback) {
   COROPACT_CHECK(IsInLoopThread(), "EventLoop::RunEvery called from wrong thread");
-  const auto duration = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-      std::chrono::duration<double>(interval));
-  return timer_queue_->AddTimer(std::move(callback), std::chrono::steady_clock::now() + duration,
-                                duration);
+  return timer_queue_->AddTimer(std::move(callback), time::SteadyNow() + interval, interval);
 }
 
 void EventLoop::Cancel(time::TimerId id) {

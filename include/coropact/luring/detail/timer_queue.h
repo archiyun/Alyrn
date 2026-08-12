@@ -1,16 +1,14 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
 #include <liburing.h>
 
-#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <unordered_map>
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 #include "coropact/luring/detail/completion_dispatch.h"
 #include "coropact/luring/detail/op.h"
 #include "coropact/luring/detail/op_hook.h"
@@ -50,11 +48,10 @@ public:
   LUringTimerQueue& operator=(const LUringTimerQueue&) = delete;
 
   [[nodiscard]]
-  base::Result<time::TimerId> AddAfter(std::chrono::steady_clock::duration delay,
-                                       TimerCallback callback);
+  Result<time::TimerId> AddAfter(time::Duration delay, TimerCallback callback);
   [[nodiscard]]
-  base::Result<time::TimerId> AddTimer(TimerCallback callback, time::Timestamp when);
-  base::Result<void> Cancel(time::TimerId id) noexcept;
+  Result<time::TimerId> AddTimer(TimerCallback callback, time::Deadline deadline);
+  Result<void> Cancel(time::TimerId id) noexcept;
 
   // Drops every logical timer without invoking user callbacks. The loop calls
   // this only after all submitted timer requests have reached a physical
@@ -70,10 +67,10 @@ private:
   void HandleControlComplete(LUringOp* op) noexcept;
   void ProcessExpired() noexcept;
   void ReconcileOrStop() noexcept;
-  [[nodiscard]] base::Result<void> Reconcile() noexcept;
-  [[nodiscard]] base::Result<void> Arm(time::Timestamp deadline) noexcept;
-  [[nodiscard]] base::Result<void> ArmFallback(time::Timestamp deadline) noexcept;
-  [[nodiscard]] base::Result<void> Update(time::Timestamp deadline) noexcept;
+  [[nodiscard]] Result<void> Reconcile() noexcept;
+  [[nodiscard]] Result<void> Arm(time::Deadline deadline) noexcept;
+  [[nodiscard]] Result<void> ArmFallback(time::Deadline deadline) noexcept;
+  [[nodiscard]] Result<void> Update(time::Deadline deadline) noexcept;
 
   LUringOp* DriverOp() noexcept { return DriverOpHook::Op(); }
   LUringOp* ControlOp() noexcept { return ControlOpHook::Op(); }
@@ -87,8 +84,8 @@ private:
   bool control_is_fallback_{false};
   bool fallback_armed_{false};
   bool timeout_update_supported_{true};
-  time::Timestamp driver_deadline_;
-  time::Timestamp requested_deadline_;
+  time::Deadline driver_deadline_{};
+  time::Deadline requested_deadline_{};
 
   // io_uring_prep_timeout stores a user pointer in the SQE. These objects
   // must therefore outlive SubmitOp() and remain valid until the SQE reaches

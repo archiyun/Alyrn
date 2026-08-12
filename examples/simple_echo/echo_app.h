@@ -1,4 +1,3 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
@@ -13,6 +12,7 @@
 
 namespace simple_echo {
 
+using coropact::Result;
 using namespace coropact::base;
 using namespace coropact::io;
 using namespace coropact::coro;

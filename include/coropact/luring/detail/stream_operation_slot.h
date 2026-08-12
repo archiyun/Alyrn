@@ -1,8 +1,7 @@
-// Copyright (c) 2026 Arsenova
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include "coropact/base/error.h"
+#include "coropact/result.h"
 
 namespace coropact::luring {
 
@@ -22,15 +21,15 @@ enum class StreamOperationDirection : unsigned char {
 class StreamOperationSlot {
 public:
   [[nodiscard]]
-  static base::Result<void> Validate(LUringStream& stream,
+  static Result<void> Validate(LUringStream& stream,
                                      StreamOperationDirection direction) noexcept;
 
   [[nodiscard]]
-  static base::Result<void> ValidateAvailable(LUringStream& stream,
+  static Result<void> ValidateAvailable(LUringStream& stream,
                                               StreamOperationDirection direction) noexcept;
 
   [[nodiscard]]
-  static base::Result<void> Reserve(LUringStream& stream, StreamOperationDirection direction,
+  static Result<void> Reserve(LUringStream& stream, StreamOperationDirection direction,
                                     void* operation) noexcept;
 
   static void Release(LUringStream& stream, StreamOperationDirection direction,
