@@ -98,7 +98,10 @@ start_target() {
         REACTOR_TRIGGER_MODE="$REACTOR_TRIGGER_MODE" \
         "$binary" >"$log" 2>&1 & ;;
     luring)
+      # Default demo_bench_http_luring enables multishot accept, provided-buffer
+      # recv, and zero-copy WriteAll. SHARED_BUFFER_CAPACITY stays overridable.
       BIND_HOST=127.0.0.1 PORT="$port" URING_WORKERS="$WORKERS" URING_ENTRIES="$ENTRIES" \
+        SHARED_BUFFER_CAPACITY="${SHARED_BUFFER_CAPACITY:-4096}" \
         "$binary" >"$log" 2>&1 & ;;
     raw-liburing)
       PORT="$port" URING_WORKERS="$WORKERS" URING_ENTRIES="$ENTRIES" \
