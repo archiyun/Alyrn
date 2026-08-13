@@ -16,6 +16,110 @@ target_link_libraries(panic_check_smoke_test
 
 add_test(NAME panic_check_smoke_test COMMAND panic_check_smoke_test)
 
+# Native kqueue oneshot smoke: real kevent on BSD/Darwin hosts. Built only when
+# coropact_kqueue exists; does not use the Linux-only fake_kqueue shim.
+if(COROPACT_ENABLE_KQUEUE)
+    add_executable(kqueue_native_oneshot_smoke_test
+        unit/test_kqueue_native_oneshot_smoke.cc
+    )
+
+    target_include_directories(kqueue_native_oneshot_smoke_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    )
+
+    target_link_libraries(kqueue_native_oneshot_smoke_test
+        PRIVATE
+            coropact_kqueue
+    )
+
+    target_compile_features(kqueue_native_oneshot_smoke_test PUBLIC cxx_std_23)
+
+    add_test(NAME kqueue_native_oneshot_smoke_test COMMAND kqueue_native_oneshot_smoke_test)
+
+    add_executable(kqueue_loop_smoke_test
+        integration/test_kqueue_loop_smoke.cc
+    )
+
+    target_include_directories(kqueue_loop_smoke_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    )
+
+    target_link_libraries(kqueue_loop_smoke_test
+        PRIVATE
+            coropact_kqueue
+    )
+
+    target_compile_features(kqueue_loop_smoke_test PUBLIC cxx_std_23)
+
+    add_test(NAME kqueue_loop_smoke_test COMMAND kqueue_loop_smoke_test)
+
+    add_executable(kqueue_stream_smoke_test
+        unit/test_kqueue_stream_smoke.cc
+    )
+
+    target_include_directories(kqueue_stream_smoke_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    )
+
+    target_link_libraries(kqueue_stream_smoke_test
+        PRIVATE
+            coropact_kqueue
+    )
+
+    target_compile_features(kqueue_stream_smoke_test PUBLIC cxx_std_23)
+
+    add_test(NAME kqueue_stream_smoke_test COMMAND kqueue_stream_smoke_test)
+
+    add_executable(kqueue_listener_smoke_test
+        unit/test_kqueue_listener_smoke.cc
+    )
+    target_include_directories(kqueue_listener_smoke_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
+    target_link_libraries(kqueue_listener_smoke_test PRIVATE coropact_kqueue)
+    target_compile_features(kqueue_listener_smoke_test PUBLIC cxx_std_23)
+    add_test(NAME kqueue_listener_smoke_test COMMAND kqueue_listener_smoke_test)
+
+    add_executable(kqueue_connector_smoke_test
+        unit/test_kqueue_connector_smoke.cc
+    )
+    target_include_directories(kqueue_connector_smoke_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
+    target_link_libraries(kqueue_connector_smoke_test PRIVATE coropact_kqueue)
+    target_compile_features(kqueue_connector_smoke_test PUBLIC cxx_std_23)
+    add_test(NAME kqueue_connector_smoke_test COMMAND kqueue_connector_smoke_test)
+
+    add_executable(kqueue_recv_source_smoke_test
+        unit/test_kqueue_recv_source_smoke.cc
+    )
+    target_include_directories(kqueue_recv_source_smoke_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
+    target_link_libraries(kqueue_recv_source_smoke_test PRIVATE coropact_kqueue)
+    target_compile_features(kqueue_recv_source_smoke_test PUBLIC cxx_std_23)
+    add_test(NAME kqueue_recv_source_smoke_test COMMAND kqueue_recv_source_smoke_test)
+
+    add_executable(kqueue_worker_group_smoke_test
+        unit/test_kqueue_worker_group_smoke.cc
+    )
+    target_include_directories(kqueue_worker_group_smoke_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
+    target_link_libraries(kqueue_worker_group_smoke_test PRIVATE coropact_kqueue)
+    target_compile_features(kqueue_worker_group_smoke_test PUBLIC cxx_std_23)
+    add_test(NAME kqueue_worker_group_smoke_test COMMAND kqueue_worker_group_smoke_test)
+
+    add_executable(kqueue_runtime_builder_smoke_test
+        unit/test_kqueue_runtime_builder_smoke.cc
+    )
+    target_include_directories(kqueue_runtime_builder_smoke_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
+    target_link_libraries(kqueue_runtime_builder_smoke_test PRIVATE coropact_kqueue)
+    target_compile_features(kqueue_runtime_builder_smoke_test PUBLIC cxx_std_23)
+    add_test(NAME kqueue_runtime_builder_smoke_test COMMAND kqueue_runtime_builder_smoke_test)
+endif()
+
+# Remaining targets below assume the Linux epoll Reactor. On Darwin/BSD with
+# only COROPACT_ENABLE_KQUEUE, stop after the foundation + native kqueue tests.
+if(NOT COROPACT_HAS_EPOLL)
+    return()
+endif()
+
 # Central compile-time seam: every enabled network backend must satisfy the
 # same CoreStream/CoreListener/CoreConnector concepts. Runtime lifecycle
 # behavior remains covered by the backend-specific smoke tests below.
@@ -880,6 +984,7 @@ if(COROPACT_ENABLE_KQUEUE_SHIM_TESTS)
         ../src/kqueue/channel.cc
         ../src/kqueue/kqueue_poller.cc
         ../src/kqueue/loop.cc
+        ../src/kqueue/timer_queue.cc
     )
 
     # BEFORE keeps the shim's <sys/event.h> ahead of any system header of the

@@ -37,6 +37,7 @@ struct kevent {
 
 #define EVFILT_READ (-1)
 #define EVFILT_WRITE (-2)
+#define EVFILT_TIMER (-7)
 
 #define EV_ADD 0x0001
 #define EV_DELETE 0x0002
@@ -46,6 +47,8 @@ struct kevent {
 #define EV_CLEAR 0x0020
 #define EV_EOF 0x8000
 #define EV_ERROR 0x4000
+
+#define NOTE_NSECONDS 0x00000004
 
 #ifdef __cplusplus
 extern "C" {

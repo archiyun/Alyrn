@@ -130,6 +130,4 @@ private:
   std::pmr::memory_resource* frame_resource_{nullptr};
 };
 
-inline thread_local Scheduler* Scheduler::current_ = nullptr;
-
 }  // namespace coropact::coro

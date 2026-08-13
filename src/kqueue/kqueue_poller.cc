@@ -7,6 +7,7 @@
 #include <unistd.h>
 
 #include <cerrno>
+#include <limits>
 
 #include "coropact/base/check.h"
 #include "coropact/kqueue/detail/channel.h"
@@ -79,6 +80,8 @@ KqueuePoller::~KqueuePoller() {
 }
 
 void KqueuePoller::Poll(int timeout_ms, ChannelList* active_channels) {
+  timer_expired_this_poll_ = false;
+
   struct timespec timeout{};
   timeout.tv_sec = timeout_ms / 1000;
   timeout.tv_nsec = static_cast<long>(timeout_ms % 1000) * 1000000L;
@@ -111,6 +114,15 @@ void KqueuePoller::FillActiveChannels(int num_events, ChannelList* active_channe
      * mean the kernel rejected a change this poller never sent. */
     COROPACT_CHECK(!static_cast<bool>(event.flags & EV_ERROR),
                    "KqueuePoller: kevent reported EV_ERROR during wait");
+
+    /* EVFILT_TIMER is keyed by a dedicated ident, not a Channel fd. The
+     * oneshot is already gone from the kernel; remember that so DisarmTimer
+     * does not issue EV_DELETE, and so HandleEvent can still run first. */
+    if (event.filter == EVFILT_TIMER) {
+      timer_armed_ = false;
+      timer_expired_this_poll_ = true;
+      continue;
+    }
 
     auto* channel = static_cast<Channel*>(event.udata);
     const int revents = FromKevent(event);
@@ -229,6 +241,71 @@ void KqueuePoller::ApplyChange(Channel* channel, std::int16_t filter, std::uint1
    * mistaken for a descriptor condition later. */
   if (::kevent(kqfd_, &change, 1, nullptr, 0, nullptr) < 0) {
     COROPACT_CHECK(false, "KqueuePoller: kevent change failed");
+  }
+}
+
+void KqueuePoller::SetTimerExpireHandler(TimerExpireHandler handler, void* context) noexcept {
+  timer_expire_handler_ = handler;
+  timer_expire_context_ = context;
+}
+
+void KqueuePoller::ArmOneShotTimer(std::int64_t nsec) {
+  if (nsec < kMinTimerNsec) {
+    nsec = kMinTimerNsec;
+  }
+  const auto max_nsec = static_cast<std::int64_t>(std::numeric_limits<intptr_t>::max());
+  if (nsec > max_nsec) {
+    nsec = max_nsec;
+  }
+
+  std::uint32_t fflags = 0;
+  intptr_t data = static_cast<intptr_t>(nsec);
+#if defined(NOTE_NSECONDS)
+  fflags = NOTE_NSECONDS;
+#elif defined(NOTE_USECONDS)
+  fflags = NOTE_USECONDS;
+  data = static_cast<intptr_t>(nsec / 1000);
+  if (data < 1) {
+    data = 1;
+  }
+#else
+  data = static_cast<intptr_t>(nsec / 1000000);
+  if (data < 1) {
+    data = 1;
+  }
+#endif
+
+  ApplyTimerChange(static_cast<std::uint16_t>(EV_ADD | EV_ENABLE | EV_ONESHOT), fflags, data);
+  timer_armed_ = true;
+}
+
+void KqueuePoller::DisarmTimer() {
+  if (!timer_armed_) {
+    return;
+  }
+  ApplyTimerChange(EV_DELETE, 0, 0);
+  timer_armed_ = false;
+}
+
+void KqueuePoller::DispatchTimerExpire() {
+  if (!timer_expired_this_poll_) {
+    return;
+  }
+  timer_expired_this_poll_ = false;
+  if (timer_expire_handler_ != nullptr) {
+    timer_expire_handler_(timer_expire_context_);
+  }
+}
+
+void KqueuePoller::ApplyTimerChange(std::uint16_t flags, std::uint32_t fflags, intptr_t data) {
+  struct kevent change{};
+  EV_SET(&change, kTimerIdent, EVFILT_TIMER, flags, fflags, data, nullptr);
+
+  if (::kevent(kqfd_, &change, 1, nullptr, 0, nullptr) < 0) {
+    if (static_cast<bool>(flags & EV_DELETE) && errno == ENOENT) {
+      return;
+    }
+    COROPACT_CHECK(false, "KqueuePoller: EVFILT_TIMER change failed");
   }
 }
 

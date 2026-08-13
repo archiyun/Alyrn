@@ -96,12 +96,16 @@ target_compile_features(coropact_foundation INTERFACE cxx_std_23)
 # coropact_coro —— backend-neutral 协程原语(Task<T>、Work、Scheduler、Spawn/
 # JoinHandle、SyncWait、可选 FrameAllocatorScope)。Task<T> 不定义错误策略；
 # I/O 层按需返回 Task<Result<T>>。
-add_library(coropact_coro INTERFACE)
-target_include_directories(coropact_coro INTERFACE
+# Scheduler TLS lives in one translation unit so macOS static links do not see
+# duplicate inline thread_local symbols across backend object files.
+add_library(coropact_coro STATIC
+    src/coro/scheduler.cc
+)
+target_include_directories(coropact_coro PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
-target_compile_features(coropact_coro INTERFACE cxx_std_23)
+target_compile_features(coropact_coro PUBLIC cxx_std_23)
 
 # coropact_io_contract —— 后端实现使用的 I/O concepts、Result 算法和语义 profile
 # profile。它不包含具体 backend，也不依赖具体 backend。
@@ -188,8 +192,16 @@ endif()
 if(COROPACT_ENABLE_KQUEUE)
     add_library(coropact_kqueue STATIC
         src/kqueue/channel.cc
+        src/kqueue/kqueue_connect.cc
+        src/kqueue/kqueue_listener.cc
         src/kqueue/kqueue_poller.cc
+        src/kqueue/kqueue_recv_source.cc
+        src/kqueue/kqueue_stream.cc
+        src/kqueue/kqueue_worker.cc
+        src/kqueue/kqueue_worker_group.cc
         src/kqueue/loop.cc
+        src/kqueue/runtime.cc
+        src/kqueue/timer_queue.cc
     )
 
     target_include_directories(coropact_kqueue
@@ -207,6 +219,14 @@ if(COROPACT_ENABLE_KQUEUE)
     )
 
     target_compile_features(coropact_kqueue PUBLIC cxx_std_23)
+
+    add_library(coropact_coro_kqueue INTERFACE)
+    target_include_directories(coropact_coro_kqueue INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
+    target_link_libraries(coropact_coro_kqueue INTERFACE coropact_kqueue)
+    target_compile_features(coropact_coro_kqueue INTERFACE cxx_std_23)
 endif()
 
 # coropact_luring —— io_uring proactor 网络模块。它与 coropact_reactor 并列，
@@ -286,7 +306,7 @@ elseif(BUILD_BENCHMARKS)
     message(STATUS "Benchmarks are disabled until a native readiness backend is enabled")
 endif()
 
-if(BUILD_TESTS AND COROPACT_HAS_EPOLL)
+if(BUILD_TESTS AND (COROPACT_HAS_EPOLL OR COROPACT_ENABLE_KQUEUE))
     add_subdirectory(tests)
 elseif(BUILD_TESTS)
     message(STATUS "Backend tests are disabled until a native readiness backend is enabled")
@@ -310,6 +330,12 @@ if(COROPACT_HAS_EPOLL)
     list(APPEND COROPACT_INSTALL_TARGETS
         coropact_reactor
         coropact_coro_reactor)
+endif()
+
+if(COROPACT_ENABLE_KQUEUE)
+    list(APPEND COROPACT_INSTALL_TARGETS
+        coropact_kqueue
+        coropact_coro_kqueue)
 endif()
 
 if(COROPACT_ENABLE_URING)
