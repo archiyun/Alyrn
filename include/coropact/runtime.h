@@ -14,6 +14,7 @@ namespace coropact::runtime {
 // carry no runtime state and never enter an I/O hot path.
 struct Reactor final {};
 struct LUring final {};
+struct Kqueue final {};
 
 namespace detail {
 

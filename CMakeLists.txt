@@ -16,6 +16,10 @@ option(BUILD_EXPERIMENTAL_TESTS "Build experimental data-structure tests" OFF)
 option(BUILD_EXAMPLES "Build example programs" ON)
 option(BUILD_BENCHMARKS "Build standalone microbenchmarks" OFF)
 option(COROPACT_ENABLE_URING "Enable io_uring proactor backend (requires liburing, Linux 5.19+)" OFF)
+option(COROPACT_ENABLE_KQUEUE "Enable kqueue readiness backend (requires a BSD kqueue host)" OFF)
+option(COROPACT_ENABLE_KQUEUE_SHIM_TESTS
+       "Build kqueue backend tests against an in-memory kqueue shim (developer aid, no BSD host)"
+       OFF)
 option(COROPACT_ENABLE_TEST_HOOKS
        "Enable deterministic fault-injection hooks for runtime tests" OFF)
 option(COROPACT_STRICT_WARNINGS
@@ -28,8 +32,17 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(COROPACT_HAS_EPOLL ON)
 endif()
 
+set(COROPACT_HAS_KQUEUE OFF)
+if(CMAKE_SYSTEM_NAME MATCHES "^(FreeBSD|NetBSD|OpenBSD|Darwin)$")
+    set(COROPACT_HAS_KQUEUE ON)
+endif()
+
 if(COROPACT_ENABLE_URING AND NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
     message(FATAL_ERROR "COROPACT_ENABLE_URING requires Linux")
+endif()
+
+if(COROPACT_ENABLE_KQUEUE AND NOT COROPACT_HAS_KQUEUE)
+    message(FATAL_ERROR "COROPACT_ENABLE_KQUEUE requires a BSD or Darwin kqueue host")
 endif()
 
 if(COROPACT_ENABLE_URING)
@@ -165,6 +178,35 @@ if(COROPACT_HAS_EPOLL)
     )
 
     target_compile_features(coropact_reactor PUBLIC cxx_std_23)
+endif()
+
+# coropact_kqueue —— BSD/Darwin kqueue readiness backend. It is parallel to
+# the Linux epoll Reactor rather than a conditional implementation of Reactor.
+# The initial source files intentionally remain separate while their kqueue
+# event semantics are validated; only proven backend-neutral contracts may be
+# extracted later.
+if(COROPACT_ENABLE_KQUEUE)
+    add_library(coropact_kqueue STATIC
+        src/kqueue/channel.cc
+        src/kqueue/kqueue_poller.cc
+        src/kqueue/loop.cc
+    )
+
+    target_include_directories(coropact_kqueue
+        PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    )
+
+    target_link_libraries(coropact_kqueue
+        PUBLIC
+            coropact_net
+            coropact_coro
+            coropact_foundation
+            Threads::Threads
+    )
+
+    target_compile_features(coropact_kqueue PUBLIC cxx_std_23)
 endif()
 
 # coropact_luring —— io_uring proactor 网络模块。它与 coropact_reactor 并列，
