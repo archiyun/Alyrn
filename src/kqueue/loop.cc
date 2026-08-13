@@ -59,15 +59,16 @@ KqueueLoop::~KqueueLoop() {
   COROPACT_CHECK(!looping_, "KqueueLoop destroyed while looping");
 
   COROPACT_CHECK(pending_work_.Empty(), "KqueueLoop destroyed with pending owner work");
-  {
-    std::lock_guard lock{posted_mutex_};
-    COROPACT_CHECK(posted_.empty(), "KqueueLoop destroyed with pending posted callbacks");
-  }
   COROPACT_CHECK(shutdown_registry_.Empty(),
                  "KqueueLoop destroyed with registered shutdown resources");
   DetachWakeupChannel();
-  if (wakeup_write_fd_ >= 0) {
-    ::close(wakeup_write_fd_);
+  {
+    std::lock_guard lock{posted_mutex_};
+    COROPACT_CHECK(posted_.empty(), "KqueueLoop destroyed with pending posted callbacks");
+    if (wakeup_write_fd_ >= 0) {
+      ::close(wakeup_write_fd_);
+      wakeup_write_fd_ = -1;
+    }
   }
   if (wakeup_read_fd_ >= 0) {
     ::close(wakeup_read_fd_);
@@ -135,10 +136,10 @@ void KqueueLoop::RunOnOwner(Functor callback) {
 }
 
 void KqueueLoop::Post(Functor callback) {
-  {
-    std::lock_guard lock{posted_mutex_};
-    posted_.push_back(std::move(callback));
-  }
+  /* Wakeup stays under the lock. Otherwise a 0-timeout poll can drain this
+   * callback, RequestStop, and close the pipe before the write returns. */
+  std::lock_guard lock{posted_mutex_};
+  posted_.push_back(std::move(callback));
   Wakeup();
 }
 
