@@ -89,10 +89,11 @@ _Avoid_: wrapper, event conversion
   readiness/completion backend. `net/detail` holds backend-neutral
   stream/source lifecycle accounting and is not an application seam.
 - `Runtime`: the backend-neutral application composition root. Applications
-  select a backend with `Runtime::Builder<runtime::Reactor>` or
-  `Runtime::Builder<runtime::LUring>`; `Runtime::Create<Backend>` is the
-  default-path shorthand. Runtime type-erases only cold start/stop control.
-  It must not erase streams, awaiters, operations, or worker-local resources.
+  select a backend with `Runtime::Builder<runtime::Reactor>`,
+  `Runtime::Builder<runtime::LUring>`, or `Runtime::Builder<runtime::Kqueue>`;
+  `Runtime::Create<Backend>` is the default-path shorthand. Runtime type-erases
+  only cold start/stop control; it must not erase streams, awaiters,
+  operations, or worker-local resources.
 - `io` and `backend`: `AsyncStream`, `AsyncListener`, `AsyncConnector`, and
   `ManagedLoop` define application-visible transport and dispatcher-control
   contracts. `RequestStop` begins backend-specific cancellation and drain; it
@@ -101,10 +102,9 @@ _Avoid_: wrapper, event conversion
   backend-neutral stream, listener, buffer, receive-source, and algorithm
   contracts; connector and concrete backend headers are included explicitly by
   composition roots.
-- `reactor` and `luring` are parallel Linux backend adapters. Do not make
-  either backend depend on the `io` facade or on CoroGateway. A BSD kqueue
-  backend is a third parallel adapter: it must refine the same contracts, not
-  become a preprocessor branch inside `reactor`.
+- `reactor`, `luring`, and `kqueue` are parallel backend adapters. Do not make
+  a backend depend on the `io` facade or on CoroGateway. kqueue must refine the
+  same contracts, not become a preprocessor branch inside `reactor`.
 
 The Reactor public interface is `EventLoop` plus stream, listener, connector,
 receive-source, and option adapters. Its `Runtime::Builder<runtime::Reactor>`
@@ -119,6 +119,17 @@ root; `luring/detail` owns raw SQE/CQE operations, ring and mailbox transport,
 timer queue, and multi-worker server bootstrap machinery; applications must
 not depend on those types.
 
+The kqueue public interface is `KqueueLoop` plus stream, listener, connector,
+receive-source, and option adapters. Its `Runtime::Builder<runtime::Kqueue>`
+binding configures the common composition root; `kqueue/detail` owns kevent
+polling, channel registration, the user-space timer tree, and master-slave
+worker bootstrap; applications must not depend on those types. `Workers(n>1)`
+binds one listener on worker 0. The acceptor `Release()`s the descriptor and
+`Post()`s it onto a round-robin I/O loop, which reconstructs `KqueueStream` on
+the owner thread. That is not `SO_REUSEPORT`. `KqueueStream` cannot move across
+loops. Cross-thread work is `KqueueLoop::Post`, not `Schedule()` of coroutine
+`Work`.
+
 ## Ownership and thread affinity
 
 - An `EventLoop` and all of its Channels, fds, timers, and stream state belong
@@ -127,6 +138,10 @@ not depend on those types.
 - An `LUringLoop` owns one ring and is bound to its creating worker thread.
   Ring submission, CQE dispatch, connection state, and timer mutation occur on
   that thread.
+- A `KqueueLoop` and all of its Channels, fds, timers, and stream state belong
+  to one thread. `Post` is the thread-safe callback queue and wakes the owner
+  loop; `Schedule`, Channel mutation, and stream construction remain
+  owner-thread-only.
 - A `Work*` is non-owning. Its owner must keep it alive until the work runs or
   the owner-side cancellation protocol makes it inert. Do not queue the same
   work twice.
@@ -168,5 +183,8 @@ meaning of the core stream operations.
 
 Run the default Reactor build for every change. Changes that touch shared
 contracts, coroutine scheduling, or `luring` also require an io_uring-enabled
-build and focused lifecycle tests. Network tests may require an environment
-that permits socket creation and binding.
+build and focused lifecycle tests. Changes that touch kqueue require either a
+BSD/Darwin host (`COROPACT_ENABLE_KQUEUE`) or the Linux in-memory shim
+(`COROPACT_ENABLE_KQUEUE_SHIM_TESTS`); the shim covers loop/poller/`Post`
+state, not native worker-group handoff. Network tests may require an
+environment that permits socket creation and binding.

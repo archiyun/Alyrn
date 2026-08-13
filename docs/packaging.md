@@ -11,7 +11,8 @@ CoroPact supports two installation layers:
 
 The Reactor backend does not require liburing. The io_uring backend requires
 liburing >= 2.6 and a kernel with the capabilities used by the selected
-runtime path.
+runtime path. The kqueue backend is not part of the Linux install artifacts
+below; build it from source on a BSD or Darwin host as in section 8.
 
 ## 1. Install build dependencies
 
@@ -154,6 +155,9 @@ find_package(CoroPact CONFIG REQUIRED)
 target_link_libraries(my_app PRIVATE CoroPact::coropact_luring)
 ```
 
+On BSD or Darwin, the kqueue target is `CoroPact::coropact_kqueue` when the
+package was configured with `COROPACT_ENABLE_KQUEUE=ON`. See section 8.
+
 The installed package recreates external dependencies through CMake; it does
 not embed absolute paths from the developer's source tree.
 
@@ -251,3 +255,30 @@ git push origin v0.1.0
 
 The tag workflow builds the Debian/tarball artifacts and uploads them to the
 GitHub Release. The Arch `PKGBUILD` consumes the same tag and source archive.
+
+## 8. BSD and Darwin: kqueue backend
+
+Linux `.deb` and tarball artifacts do not contain `libcoropact_kqueue`. On
+FreeBSD, NetBSD, OpenBSD, or macOS, enable the backend at configure time:
+
+```bash
+cmake -S . -B build-kqueue -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_TESTS=ON \
+  -DCOROPACT_ENABLE_KQUEUE=ON \
+  -DCMAKE_INSTALL_PREFIX=/usr/local
+cmake --build build-kqueue
+ctest --test-dir build-kqueue --output-on-failure
+sudo cmake --install build-kqueue
+```
+
+A consuming CMake project then links the exported target:
+
+```cmake
+find_package(CoroPact CONFIG REQUIRED)
+target_link_libraries(my_app PRIVATE CoroPact::coropact_kqueue)
+```
+
+`COROPACT_ENABLE_KQUEUE` fails at configure time on Linux. The
+`COROPACT_ENABLE_KQUEUE_SHIM_TESTS` option only builds in-memory `kevent`
+registration tests; it does not install a kqueue library.

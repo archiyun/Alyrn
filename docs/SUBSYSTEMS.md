@@ -56,8 +56,8 @@ application protocol, route, peer, proxy, or gateway policy.
   or CoroGateway.
 - `net` may depend on portable POSIX socket facilities, but must not depend on
   Linux-only facilities, `io`, Reactor, luring, or CoroGateway.
-- Reactor and luring may depend on `net` and coroutine contracts, but neither
-  may include the application-level `io` facade.
+- Reactor, luring, and kqueue may depend on `net` and coroutine contracts, but
+  none of them may include the application-level `io` facade.
 - A kqueue backend is a parallel adapter. Do not add BSD conditionals to
   Reactor's epoll implementation; share only a genuinely backend-neutral
   contract or value module.

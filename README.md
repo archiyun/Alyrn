@@ -1,26 +1,39 @@
 # CoroPact⚡
 
 ![C++](https://img.shields.io/badge/C++-23-blue)
-![Platform](https://img.shields.io/badge/platform-Linux-lightgrey)
+![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20FreeBSD%20%7C%20macOS-lightgrey)
 ![License](https://img.shields.io/github/license/archiyun/CoroPact)
 ![Stars](https://img.shields.io/github/stars/archiyun/CoroPact?style=social)
 
-***A C++23 asynchronous networking runtime for Linux, powered by coroutines, epoll, and io_uring.***
+***A C++23 coroutine networking runtime with parallel epoll, io_uring, and kqueue backends.***
 
-CoroPact provides a unified, explicit, and high-performance C++23 coroutine model over independent Reactor and io_uring networking backends. Its default path hides event-mechanism details much like a conventional networking library, while `Runtime` offers Tokio-like server startup without preventing explicit backend-native configuration and extensions.
+CoroPact provides a unified, explicit, and high-performance C++23 coroutine
+model over independent networking backends. Its default path hides
+event-mechanism details much like a conventional networking library, while
+`Runtime` offers Tokio-like server startup without preventing explicit
+backend-native configuration and extensions.
+
+The backends are **parallel adapters**, not one implementation with
+preprocessor branches:
+
+| Backend | Host | Dispatcher | Multi-worker topology |
+|---|---|---|---|
+| `reactor` | Linux | `epoll` readiness | Independent listeners with `SO_REUSEPORT` |
+| `luring` | Linux | `io_uring` completion | Thread-per-ring Proactor |
+| `kqueue` | FreeBSD, NetBSD, OpenBSD, Darwin | `kqueue` readiness | Master-slave: one acceptor, user-space fd handoff |
 
 CoroPact uses [Lifecycle-Refined Coroutine I/O (LRCI)](docs/design/zh-CN/network/lifecycle-refined-coroutine-io.md): backend events such as readiness notifications and CQEs are not treated directly as coroutine completion. They are refined into a shared logical lifecycle that separately determines result readiness, continuation resumption, and resource release.
 
 * 🔀 **A unified asynchronous I/O contract**
-  epoll and io_uring retain their own threading, event-loop, and completion models, but expose the same application-observable semantics through the `io` concepts `AsyncStream`, `AsyncListener`, and `AsyncConnector`. `coro` expresses asynchronous control flow in synchronous-looking code while hiding frame, suspension, resumption, and lifetime mechanics; application code need not handle `epoll_event`, SQEs, or CQEs.
+  Each backend keeps its own threading, event-loop, and completion model, but exposes the same application-observable semantics through the `io` concepts `AsyncStream`, `AsyncListener`, and `AsyncConnector`. `coro` expresses asynchronous control flow in synchronous-looking code while hiding frame, suspension, resumption, and lifetime mechanics; application code need not handle `epoll_event`, SQEs, CQEs, or `kevent`.
 
 * 🧩 **Explicit ownership and completion semantics**
-  Each Worker owns its thread, event loop, connections, and I/O operations. Operations complete in their owning execution context and coroutine continuations resume in that same context, with explicit rules for buffer lifetimes, cancellation, and asynchronous close.
+  Each Worker owns its thread, event loop, connections, and I/O operations. Operations complete in their owning execution context and coroutine continuations resume in that same context, with explicit rules for buffer lifetimes, cancellation, and asynchronous close. Coroutine frames are not moved across loops.
 
 * 🚀 **Core operations and native extensions**
-  CoroPact provides asynchronous accept, connect, read, write, close, and timers. Reactor can select LT or ET; luring additionally exposes extensions such as multishot receive and zero-copy send. HTTP and gateway policy live in [CoroGateway](https://github.com/archiyun/CoroGateway).
+  CoroPact provides asynchronous accept, connect, read, write, close, and timers. Reactor can select LT or ET; kqueue currently ships one-shot readiness as the stream mode; luring additionally exposes extensions such as multishot receive and zero-copy send. HTTP and gateway policy live in [CoroGateway](https://github.com/archiyun/CoroGateway).
 
-Linux is the currently implemented and validated platform. The contracts leave an extension point for future kqueue or IOCP backends, but those backends are not implemented or supported today.
+Linux is the CI-validated host for Reactor and the optional io_uring backend. kqueue is implemented as a third adapter on BSD and Darwin; Linux can compile its loop/poller tests against an in-memory shim, which does not replace a native `kevent` host. IOCP is not implemented.
 
 ## Quick Start
 
@@ -32,15 +45,24 @@ Applications normally include the backend-neutral modules and one concrete backe
 #include "coropact/coro.h"
 #include "coropact/io.h"
 #include "coropact/net.h"
-#include "coropact/reactor.h"  // Default Reactor backend
+#include "coropact/reactor.h"  // Default Linux Reactor backend
 ```
 
-Include only the modules your application uses. In an io_uring-enabled build,
-include `coropact/luring.h` instead of `coropact/reactor.h`.
+Include only the modules your application uses.
+
+| Backend | Umbrella header | Runtime tag | CMake option |
+|---|---|---|---|
+| Reactor / epoll | `coropact/reactor.h` | `runtime::Reactor` | default on Linux |
+| luring / io_uring | `coropact/luring.h` | `runtime::LUring` | `-DCOROPACT_ENABLE_URING=ON` |
+| kqueue | `coropact/kqueue.h` | `runtime::Kqueue` | `-DCOROPACT_ENABLE_KQUEUE=ON` |
+
+The kqueue umbrella header is rejected at compile time on non-BSD hosts.
 
 ### 2. Write backend-neutral connection code
 
-This echo session depends only on `AsyncStream`, so it works with both ReactorStream and LUringStream. See [`examples/simple_echo`](examples/simple_echo) for the runnable version.
+This echo session depends only on `AsyncStream`, so it works with
+`ReactorStream`, `LUringStream`, and `KqueueStream`. See
+[`examples/simple_echo`](examples/simple_echo) for the runnable Linux version.
 
 ```cpp
 #include <array>
@@ -116,11 +138,11 @@ int main() {
 }
 ```
 
-For io_uring, build with `COROPACT_ENABLE_URING=ON`, include `coropact/luring.h`, and change the tag to `cp::runtime::LUring`. The handler's stream remains statically typed as the selected backend type; no virtual call enters the connection data path.
+For io_uring, build with `COROPACT_ENABLE_URING=ON`, include `coropact/luring.h`, and change the tag to `cp::runtime::LUring`. On a kqueue host, include `coropact/kqueue.h` and use `cp::runtime::Kqueue`. The handler's stream remains statically typed as the selected backend type; no virtual call enters the connection data path.
 
 ### 4. Configure the default server explicitly
 
-`Create` uses conservative defaults. Use the same Runtime's backend-specific Builder when worker count needs explicit control:
+`Create` uses conservative defaults (one worker). Use the same Runtime's backend-specific Builder when worker count needs explicit control:
 
 ```cpp
 auto runtime = cp::Runtime::Builder<cp::runtime::Reactor>{
@@ -133,6 +155,8 @@ auto runtime = cp::Runtime::Builder<cp::runtime::Reactor>{
 ```
 
 The backend tag still selects the implementation at compile time. Options that alter backend resources or lifecycle semantics—ring depth, provided buffers, and zero-copy, for example—are not disguised as cross-backend Runtime settings.
+
+`Workers(n)` always means *n threads*. The topology behind that number is backend-specific: Reactor shares the listen port with `SO_REUSEPORT` when `n > 1`; kqueue binds a single listener on worker 0 and posts accepted descriptors onto the other loops; luring keeps one ring per worker.
 
 ### 5. Use luring-native capabilities
 
@@ -152,7 +176,7 @@ This native path makes ownership of each ring, buffer lease, and operation lifec
 
 ## Build
 
-Build the Reactor backend:
+Build the default Linux Reactor backend:
 
 ```bash
 cmake -B build \
@@ -170,7 +194,7 @@ For an opt-in strict diagnostic build on GCC or Clang, add
 Build with the io_uring backend enabled:
 
 ```bash
-# Make sure liburing is installed first.
+# Make sure liburing >= 2.6 is installed first.
 
 cmake -B build-uring \
   -DCMAKE_BUILD_TYPE=Release \
@@ -182,15 +206,49 @@ cmake --build build-uring -j"$(nproc)"
 ctest --test-dir build-uring --output-on-failure
 ```
 
+Build the kqueue backend on FreeBSD, NetBSD, OpenBSD, or macOS:
+
+```bash
+cmake -B build-kqueue \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_TESTS=ON \
+  -DCOROPACT_ENABLE_KQUEUE=ON
+
+cmake --build build-kqueue -j"$(sysctl -n hw.ncpu)"
+ctest --test-dir build-kqueue --output-on-failure
+```
+
+On Linux, the kqueue *library* cannot be enabled. The in-memory kevent shim is a developer aid for loop and one-shot registration tests:
+
+```bash
+cmake -B build-kqueue-shim \
+  -DCOROPACT_ENABLE_KQUEUE_SHIM_TESTS=ON \
+  -DBUILD_TESTS=ON
+```
+
+That shim does not watch real sockets and does not run the native worker-group smoke test.
+
+### CMake options
+
+| Option | Default | Effect |
+|---|---|---|
+| `COROPACT_ENABLE_URING` | `OFF` | Linux io_uring backend (`liburing >= 2.6`) |
+| `COROPACT_ENABLE_KQUEUE` | `OFF` | BSD/Darwin kqueue backend; CMake fails on other hosts |
+| `COROPACT_ENABLE_KQUEUE_SHIM_TESTS` | `OFF` | Compile kqueue loop/poller tests against a fake `kevent` |
+| `COROPACT_STRICT_WARNINGS` | `OFF` | `-Wall -Wextra -Wpedantic -Werror` on GCC/Clang |
+| `COROPACT_SANITIZER` | empty | e.g. `address,undefined` or `thread` |
+| `BUILD_TESTS` | `ON` | Unit and smoke tests |
+| `BUILD_EXAMPLES` | `ON` | Linux examples; disabled until a native readiness backend exists |
+| `BUILD_BENCHMARKS` | `OFF` | Standalone microbenchmarks |
+| `BUILD_EXPERIMENTAL_TESTS` | `OFF` | SplayTree / QuadHeap validators |
+
 ### Requirements
 
 * CMake 3.20+ and a compiler with C++23 coroutine support.
-* The currently runnable backends are Linux-only: Reactor uses `epoll`, and
-  luring requires `liburing >= 2.6` (Linux 5.19 or newer is recommended).
-* `net` and the backend-neutral contracts use portable POSIX socket facilities.
-  A BSD native readiness backend is a parallel adapter under development; it
-  must not be implemented as conditional code inside the epoll Reactor.
-* The default Linux Reactor build has no extra networking-library dependency.
+* Reactor uses `epoll` and is the default Linux backend. It has no extra networking-library dependency.
+* luring requires Linux, `liburing >= 2.6` (Linux 5.19 or newer is recommended).
+* kqueue requires a BSD or Darwin host with a native `kqueue(2)`.
+* `net` and the backend-neutral contracts use portable POSIX socket facilities. Do not implement BSD readiness as conditional code inside the epoll Reactor.
 
 Installable Debian/tarball artifacts and Docker release builds are described
 in [Packaging and installation](docs/packaging.md).
@@ -206,14 +264,24 @@ Custom Session / Application
        Submit -> Suspend
        Complete -> Resume
                |
-        +------+------+
-        |             |
-        v             v
-Reactor / epoll   luring / io_uring
-  coropact::reactor     coropact::luring
+        +------+------+------+
+        |             |      |
+        v             v      v
+   Reactor/epoll   luring   kqueue
+   coropact::reactor  ::luring  ::kqueue
 ```
 
-The two backends do not share an event loop, and their internal state machines do not need to be identical. They only need to satisfy the same business-observable asynchronous I/O contract.
+The backends do not share an event loop, and their internal state machines do not need to be identical. They only need to satisfy the same business-observable asynchronous I/O contract. [`docs/SUBSYSTEMS.md`](docs/SUBSYSTEMS.md) is the normative dependency policy.
+
+Reactor multi-worker (`Workers(n>1)`) uses independent listeners on the same port:
+
+```text
+ReactorWorkerGroup
+  |
+  +-- Worker 0 -> Thread 0 -> EventLoop 0 -> listen :port (SO_REUSEPORT)
+  +-- Worker 1 -> Thread 1 -> EventLoop 1 -> listen :port (SO_REUSEPORT)
+  `-- Worker N -> Thread N -> EventLoop N -> listen :port (SO_REUSEPORT)
+```
 
 The io_uring server uses a thread-per-ring topology:
 
@@ -225,7 +293,20 @@ LUringServer
   `-- Worker N -> Thread N -> LUringLoop N -> Ring N
 ```
 
-Connections, I/O operations, and coroutine continuations remain owned by the Worker and Ring that created them; they do not migrate between Rings during execution.
+kqueue multi-worker is master-slave. Only worker 0 binds the listener. I/O workers start first so their loops exist; the acceptor then `Release()`s the descriptor and `Post()`s it onto a round-robin owner loop, which reconstructs `KqueueStream` on that thread:
+
+```text
+KqueueWorkerGroup
+  |
+  +-- Worker 0 (acceptor) -> KqueueLoop 0 -> listen :port
+  |         |
+  |         +-- accept -> Release(fd) -> Post --> reconstruct stream
+  |
+  +-- Worker 1 (I/O) -> KqueueLoop 1
+  `-- Worker N (I/O) -> KqueueLoop N
+```
+
+Connections, I/O operations, and coroutine continuations remain owned by the Worker and loop that run them. `KqueueStream` cannot be moved across loops; the handoff is a raw fd, not a live stream or a `Work*`.
 
 ## Performance Benchmarks
 
@@ -244,14 +325,16 @@ Results depend strongly on the workload and must not be interpreted as a univers
 
 ## Documentation
 
-Most documentation is still being written and may lag behind the current implementation. Treat it as design and development reference material.
+The documentation map is [`docs/index.md`](docs/index.md). Design notes are currently written in Chinese; they are the source of truth for contracts and ownership. [`CONTEXT.md`](CONTEXT.md) is the domain glossary.
 
 * **[Networking architecture](docs/design/zh-CN/network/index.md)**: runtime layering, backend boundaries, and ownership models.
+* **[kqueue backend](docs/design/zh-CN/network/kqueue/index.md)**: one-shot readiness, `Post`, and master-slave handoff.
+* **[Runtime Builder](docs/design/zh-CN/network/runtime-builder.md)**: compile-time backend tags and start/stop lifecycle.
 * **[Coroutine state-machine models](docs/design/zh-CN/network/lamport-hot-swap-runtime.md)**: abstract stream invariants and backend refinement notes.
 * **[AsyncStream semantics](docs/design/zh-CN/network/async-stream-contract.md)**: read, write, close, cancellation, and buffer-lifetime semantics.
 * **[Data structures](docs/design/zh-CN/datastructure/index.md)**: modern C++ intrusive data structures, intrusive red-black trees, intrusive lists, MPSC queues, and their use in the project. SplayTree and QuadHeap are experimental explicit-header APIs; build their validators with `-DBUILD_EXPERIMENTAL_TESTS=ON`.
 * **[Performance benchmarks](docs/benchmark/network-libraries-20260810.md)**: the latest current-source C++ baseline; the broader unified network-library report and supporting material are in [`docs/benchmark`](docs/benchmark/).
-* **[Examples](examples/)**: Reactor and io_uring examples.
+* **[Examples](examples/)**: Reactor and io_uring examples on Linux.
 * **[Tests](tests/)**: coroutine, networking, lifecycle, and backend validation.
 
 ## Current Status
@@ -260,6 +343,7 @@ CoroPact is still an experimental networking runtime and is not yet a production
 
 Current work includes:
 
+* Hardening the kqueue adapter on real BSD/Darwin hosts (native worker-group and Runtime smoke already exist there).
 * Formal state-machine proofs, invariant tests, and concurrency validation for additional backends.
 * Modern liburing networking options and io_uring optimizations.
 * More realistic workload benchmarks and bottleneck analysis.

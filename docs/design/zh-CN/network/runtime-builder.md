@@ -6,8 +6,8 @@
 其默认 interface 已由 [ADR-0010](../../../adr/0010-runtime-composition-root.md) 冻结：本页仅记录
 稳定用法。backend 选择不是运行时 enum；ring/epoll tuning 与 main 宏也不进入公共默认路径。
 
-它不是新的统一 I/O backend，也不取代 `EventLoop` 或 `LUringLoop`。需要手动控制 loop、
-定时器、跨 worker mailbox 或特殊资源生命周期时，仍应使用对应后端的原生公开类型。
+它不是新的统一 I/O backend，也不取代 `EventLoop`、`LUringLoop` 或 `KqueueLoop`。需要手动控制 loop、
+定时器、跨 worker mailbox/`Post` 或特殊资源生命周期时，仍应使用对应后端的原生公开类型。
 
 ## Reactor
 
@@ -33,7 +33,8 @@ runtime.Stop();  // request stop、drain、join workers
 ```
 
 默认只有一个 worker。`AutoWorkers()` 明确选择 `hardware_concurrency()`（至少为 1），避免
-库在未声明的情况下占满机器。
+库在未声明的情况下占满机器。`Workers(n>1)` 时每个 worker 绑定自己的 listener，并打开
+`SO_REUSEPORT`。
 
 ## luring
 
@@ -54,6 +55,26 @@ source 保持既有 capability fallback。业务不需要为这些物理执行�
 
 `RecvSource`、`BufferLease`、`SendZeroCopy` 和固定资源仍是 stream/source 的显式扩展入口。
 它们会改变所有权或生命周期，因此不能伪装成一个 server-wide 的 Runtime 开关。
+
+## kqueue
+
+```cpp
+coropact::coro::DetachedTask Handle(coropact::kqueue::KqueueStream stream) {
+  co_return;
+}
+
+auto runtime = coropact::Runtime::Builder<coropact::runtime::Kqueue>{
+                   coropact::net::Endpoint::Any(8080)}
+                   .AutoWorkers()
+                   .OnConnection(Handle)
+                   .Build();
+```
+
+需要在 BSD/Darwin 上以 `-DCOROPACT_ENABLE_KQUEUE=ON` 构建，并包含 `coropact/kqueue.h`。
+`Workers(n)` 仍表示 n 条线程，但拓扑与 Reactor 不同：`n == 1` 时该 worker 自己监听；
+`n > 1` 时只有 worker 0 接受连接，已接受的描述符经 `KqueueLoop::Post` 交给其它 loop。
+不要把 `reuse_port` 当成 kqueue 的多 worker 开关。详见
+[kqueue](kqueue/index.md) 与 [主从移交](kqueue/loop-and-handoff.md)。
 
 ## 生命周期
 
@@ -131,8 +152,9 @@ auto runtime = coropact::Runtime::Create<coropact::runtime::Reactor>(
 ```
 
 `Create` 等价于对应 `Builder` 的默认配置加 `OnConnection`；它仍返回同一个
-`coropact::Runtime`。选择 `runtime::LUring` 时，handler 中的 `stream` 静态类型相应为
-`LUringStream`，没有虚调用或类型擦除进入连接数据路径。
+`coropact::Runtime`。选择 `runtime::LUring` 或 `runtime::Kqueue` 时，handler 中的
+`stream` 静态类型相应为 `LUringStream` 或 `KqueueStream`，没有虚调用或类型擦除进入
+连接数据路径。
 
 ## 为什么不做 C++ 宏
 
