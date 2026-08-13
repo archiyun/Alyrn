@@ -20,7 +20,7 @@
 namespace coropact::kqueue::detail {
 
 struct KqueueWorkerContext {
-  KqueueWorkerContext(std::size_t index, KqueueLoop& loop, KqueueListener& listener,
+  KqueueWorkerContext(std::size_t index, KqueueLoop& loop, KqueueListener* listener,
                        KqueueConnector& connector) noexcept
       : index(index), loop(loop), listener(listener), connector(connector) {}
 
@@ -28,12 +28,18 @@ struct KqueueWorkerContext {
 
   const std::size_t index;
   KqueueLoop& loop;
-  KqueueListener& listener;
+  // Null on I/O workers in the master-slave topology. Only the acceptor
+  // worker owns a listener.
+  KqueueListener* listener;
   KqueueConnector& connector;
 };
 
 struct KqueueWorkerOptions {
-  KqueueListenerOptions listener_options{.reuse_addr = true, .reuse_port = true};
+  KqueueListenerOptions listener_options{.reuse_addr = true, .reuse_port = false};
+
+  // When true, this worker binds the listen socket and runs Accept(). The
+  // worker group sets this on exactly one worker.
+  bool accept{true};
 
   // Must outlive the worker. It should be private to one worker when it is
   // unsynchronized.
@@ -68,6 +74,12 @@ public:
   [[nodiscard]]
   std::size_t Index() const noexcept { return index_; }
 
+  [[nodiscard]]
+  KqueueLoop* Loop() const noexcept { return loop_; }
+
+  [[nodiscard]]
+  KqueueWorkerContext* Context() const noexcept { return context_; }
+
 private:
   void WorkLoop(std::stop_token token) noexcept;
 
@@ -84,6 +96,8 @@ private:
   bool init_done_{false};
 
   std::jthread thread_;
+  KqueueLoop* loop_{nullptr};
+  KqueueWorkerContext* context_{nullptr};
 };
 
 }  // namespace coropact::kqueue::detail

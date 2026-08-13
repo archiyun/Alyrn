@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <functional>
 #include <memory>
@@ -58,7 +59,13 @@ public:
     return index < workers_.size() ? workers_[index].get() : nullptr;
   }
 
+  [[nodiscard]]
+  std::size_t NextWorker() noexcept;
+
 private:
+  [[nodiscard]]
+  Result<void> StartOne(std::size_t index, bool accept, ConnectionCallback connection_callback);
+
   net::Endpoint listen_addr_;
   KqueueWorkerGroupOptions options_;
   ThreadInitCallback init_callback_;
@@ -66,6 +73,7 @@ private:
   ThreadExitCallback exit_callback_;
 
   bool started_{false};
+  std::atomic<std::size_t> next_worker_{0};
   std::vector<std::unique_ptr<KqueueWorker>> workers_;
 };
 

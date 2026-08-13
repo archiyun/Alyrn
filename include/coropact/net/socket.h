@@ -191,6 +191,13 @@ public:
     return sockfd_;
   }
 
+  // Relinquishes ownership without closing. The caller becomes responsible
+  // for the descriptor.
+  [[nodiscard]]
+  int Release() noexcept {
+    return std::exchange(sockfd_, -1);
+  }
+
   // Binds the socket to a local address.
   void BindAddress(const Endpoint& localaddr) const noexcept {
     const int ret = ::bind(sockfd_, localaddr.SockAddr(), localaddr.SockAddrLen());

@@ -81,6 +81,12 @@ public:
     return loop_;
   }
 
+  // Detaches this stream from its loop and returns the descriptor. The
+  // caller must reconstruct a KqueueStream on the destination loop; this is
+  // the master-slave handoff seam and is owner-thread-only.
+  [[nodiscard]]
+  int Release() noexcept;
+
 private:
   using Channel = detail::Channel;
   using LoopShutdownParticipant = detail::LoopShutdownParticipant;

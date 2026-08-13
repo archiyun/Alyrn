@@ -5,6 +5,7 @@
 #include <functional>
 #include <memory>
 #include <memory_resource>
+#include <mutex>
 #include <stop_token>
 #include <vector>
 
@@ -63,6 +64,11 @@ public:
   // Runs callback immediately on the owning loop thread.
   void RunOnOwner(Functor callback);
 
+  // Thread-safe enqueue. The callback runs on the owner thread on a later
+  // turn. This is the handoff path for accepted descriptors; it is not a
+  // way to Schedule() coroutine Work from another thread.
+  void Post(Functor callback);
+
   // Schedules a coroutine work item for a later loop turn. The KqueueLoop is
   // itself the Scheduler; submission must happen on its owner thread.
   void Schedule(coro::Work* work) noexcept override;
@@ -108,8 +114,9 @@ private:
   void RegisterShutdownParticipant(LoopShutdownParticipant& participant) noexcept;
   void UnregisterShutdownParticipant(LoopShutdownParticipant& participant) noexcept;
 
-  // Runs all work submitted through Schedule().
+  // Runs all work submitted through Schedule() and Post().
   void DoPendingWork();
+  void DrainPostedWork();
   void BeginShutdown() noexcept;
 
   static void DispatchWakeup(void* context) noexcept;
@@ -135,6 +142,8 @@ private:
   std::unique_ptr<detail::Channel> wakeup_channel_;
 
   coro::WorkQueue pending_work_;
+  mutable std::mutex posted_mutex_;
+  std::vector<Functor> posted_;
   detail::LoopShutdownRegistry shutdown_registry_;
   bool shutdown_started_{false};
 };

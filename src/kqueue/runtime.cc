@@ -53,8 +53,7 @@ public:
 
     detail::KqueueWorkerGroupOptions options;
     options.worker_num = worker_count_;
-    // A single listener does not need SO_REUSEPORT; independent workers do.
-    options.worker_options.listener_options.reuse_port = worker_count_ > 1;
+    options.worker_options.listener_options.reuse_port = false;
 
     auto callback = [this](detail::KqueueWorkerContext&, KqueueStream stream) {
       return connection_handler_(std::move(stream));

@@ -12,7 +12,7 @@ L3  applications and validation
                          |
                          v
 L2  coroutine execution and network transport
-    coro / net / io / reactor / luring
+    coro / net / io / reactor / luring / kqueue
                          |
                          v
 L1  process services and value utilities
@@ -42,6 +42,7 @@ application protocol, route, peer, proxy, or gateway policy.
 | `include/coropact/runtime.h` | L2 | Backend-neutral application lifecycle facade. It type-erases only cold start/stop control; backend tags select a Builder specialization at compile time. |
 | `include/coropact/reactor`, `src/reactor` | L2 | Linux epoll readiness adapter. `EventLoop`, the `Runtime::Builder<runtime::Reactor>` binding, and transport adapters are public; `reactor/detail` owns channel registration, epoll polling, timers, and worker bootstrap implementation. |
 | `include/coropact/luring`, `src/luring` | L2 | Linux io_uring completion adapter. `LUringLoop`, the `Runtime::Builder<runtime::LUring>` binding, and transport adapters are public; `luring/detail` owns raw SQE/CQE operations, ring/mailbox transport, timer queue, and worker/server bootstrap implementation. |
+| `include/coropact/kqueue`, `src/kqueue` | L2 | BSD/Darwin kqueue readiness adapter. `KqueueLoop`, the `Runtime::Builder<runtime::Kqueue>` binding, and transport adapters are public; `kqueue/detail` owns channel registration, kevent polling, timers, and master-slave worker bootstrap. |
 | `examples`, `benchmarks`, `tests` | L3 | Consumers and validation; never runtime dependencies. |
 
 ## Hard Dependency Rules
@@ -60,6 +61,9 @@ application protocol, route, peer, proxy, or gateway policy.
 - A kqueue backend is a parallel adapter. Do not add BSD conditionals to
   Reactor's epoll implementation; share only a genuinely backend-neutral
   contract or value module.
+- `kqueue/detail` is not a supported application interface. Callers outside the
+  kqueue implementation and validation code must use `KqueueLoop` and the
+  public transport adapters instead.
 - `io_contract` remains backend-neutral. The `io` facade may assemble adapters
   only at a composition root; backend cores must not link it.
 - CoroGateway may depend on CoroPact public interfaces. CoroPact must not
