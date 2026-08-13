@@ -13,6 +13,8 @@
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/work.h"
 #include "coropact/kqueue/detail/loop_shutdown.h"
+#include "coropact/time/clock.h"
+#include "coropact/time/timer_id.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::kqueue {
@@ -21,6 +23,7 @@ namespace detail {
 class Channel;
 class KqueuePoller;
 class LoopAccess;
+class TimerQueue;
 }  // namespace detail
 
 /*
@@ -72,6 +75,18 @@ public:
   [[nodiscard]]
   bool IsInLoopThread() const noexcept;
 
+  // Schedules callback to run once at the specified time point. Owner-thread only.
+  time::TimerId RunAt(time::Deadline deadline, Functor callback);
+
+  // Schedules callback to run once after delay. Owner-thread only.
+  time::TimerId RunAfter(time::Duration delay, Functor callback);
+
+  // Schedules callback to run repeatedly every interval. Owner-thread only.
+  time::TimerId RunEvery(time::Duration interval, Functor callback);
+
+  // Cancels a previously scheduled timer. Owner-thread only.
+  void Cancel(time::TimerId id);
+
 private:
   friend class detail::Channel;
   friend class detail::LoopAccess;
@@ -79,6 +94,7 @@ private:
   using Channel = detail::Channel;
   using KqueuePoller = detail::KqueuePoller;
   using LoopShutdownParticipant = detail::LoopShutdownParticipant;
+  using TimerQueue = detail::TimerQueue;
 
   // Channel registration belongs to the implementation of KqueueLoop. A
   // registration is keyed by (fd, filter), so one call here may translate into
@@ -109,6 +125,7 @@ private:
 
   const base::ThreadId thread_id_;
   std::unique_ptr<detail::KqueuePoller> poller_;
+  std::unique_ptr<detail::TimerQueue> timer_queue_;
   std::vector<detail::Channel*> active_channels_;
 
   /* A self-pipe rather than an eventfd or EVFILT_USER: it is portable across

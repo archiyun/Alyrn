@@ -1,0 +1,62 @@
+// SPDX-License-Identifier: MIT
+#pragma once
+
+#include <cstdint>
+#include <functional>
+
+#include "coropact/ds/intrusive_hash_table.h"
+#include "coropact/memory/object_pool.h"
+#include "coropact/time/clock.h"
+#include "coropact/time/timer.h"
+#include "coropact/time/timer_id.h"
+#include "coropact/time/timer_tree.h"
+#include "coropact/utils/macros.h"
+
+namespace coropact::kqueue::detail {
+
+class KqueuePoller;
+
+inline constexpr auto kTimerSequenceOf = [](const time::Timer* timer) -> std::int64_t {
+  return timer->sequence();
+};
+
+using ActiveTimerTable = ds::IntrusiveHashTable<time::Timer, kTimerSequenceOf>;
+
+/*
+ * User-space timer heap for one KqueueLoop, woken by a single EVFILT_TIMER.
+ *
+ * SleepFor and ReadSomeFor are logical timers in this tree. The kernel holds
+ * one one-shot alarm for the earliest deadline; firing it drains every timer
+ * that is due, then re-arms for whatever remains. Per-operation kernel timers
+ * are intentionally not used.
+ */
+class TimerQueue {
+public:
+  COROPACT_DELETE_COPY_MOVE(TimerQueue);
+
+  using TimerCallback = std::function<void()>;
+  using TimePoint = time::Deadline;
+  using Duration = time::Duration;
+
+  explicit TimerQueue(KqueuePoller& poller);
+  ~TimerQueue();
+
+  time::TimerId AddTimer(TimerCallback callback, TimePoint when, Duration interval);
+  void Cancel(time::TimerId id);
+  void HandleExpire();
+
+private:
+  static constexpr std::size_t kTimerQueueMax = 1 << 15;
+
+  static void DispatchExpire(void* context) noexcept;
+  void ArmKernel(TimePoint expiration);
+
+  KqueuePoller* poller_;
+  time::TimerTree timers_;
+  memory::ObjectPool<time::Timer, kTimerQueueMax> timer_pool_;
+  ActiveTimerTable active_timers_;
+  time::Timer* processing_timer_{nullptr};
+  bool processing_timer_cancelled_{false};
+};
+
+}  // namespace coropact::kqueue::detail

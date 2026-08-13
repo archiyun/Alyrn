@@ -1,0 +1,395 @@
+// SPDX-License-Identifier: MIT
+
+/*
+ * Owner-thread KqueueLoop behaviour, including the user-space timer tree
+ * driven by a single EVFILT_TIMER.
+ */
+
+#include <sys/wait.h>
+#include <unistd.h>
+
+#include <atomic>
+#include <chrono>
+#include <csignal>
+#include <cstdio>
+#include <exception>
+#include <iostream>
+#include <memory_resource>
+#include <thread>
+#include <vector>
+
+#include "coropact/base/check.h"
+#include "coropact/backend/loop.h"
+#include "coropact/coro/scheduler.h"
+#include "coropact/coro/spawn.h"
+#include "coropact/coro/task.h"
+#include "coropact/coro/work.h"
+#include "coropact/kqueue/connector.h"
+#include "coropact/kqueue/detail/channel.h"
+#include "coropact/kqueue/loop.h"
+#include "coropact/net/socket.h"
+#include "coropact/time/clock.h"
+#include "coropact/time/timer_id.h"
+
+namespace {
+
+bool Expect(bool condition, const char* message) {
+  if (!condition) {
+    std::cerr << "[FAIL] " << message << '\n';
+    return false;
+  }
+  return true;
+}
+
+class NoopWork final : public coropact::coro::Work {
+public:
+  NoopWork() noexcept { SetRun(&RunNoop); }
+
+private:
+  static void RunNoop(coropact::coro::Work*) noexcept {}
+};
+
+void DestroyLoopWithQueuedWork() {
+  NoopWork work;
+  coropact::kqueue::KqueueLoop loop;
+  loop.Schedule(&work);
+}
+
+bool TestLoopRejectsQueuedWorkAtDestruction() {
+  const pid_t child = ::fork();
+  if (child < 0) {
+    return Expect(false, "fork failed for KqueueLoop destructor invariant test");
+  }
+  if (child == 0) {
+    (void)::freopen("/dev/null", "w", stderr);
+    DestroyLoopWithQueuedWork();
+    ::_exit(0);
+  }
+
+  int status = 0;
+  while (::waitpid(child, &status, 0) < 0 && errno == EINTR) {
+  }
+  return Expect(WIFSIGNALED(status),
+                "KqueueLoop destruction with queued work must terminate in Release") &&
+         Expect(WTERMSIG(status) == SIGABRT,
+                "KqueueLoop queued-work invariant must terminate with SIGABRT");
+}
+
+void MutateChannelFromForeignThread() {
+  coropact::kqueue::KqueueLoop loop;
+  int fds[2] = {-1, -1};
+  COROPACT_CHECK(::pipe(fds) == 0, "pipe creation failed for Channel ownership test");
+  COROPACT_CHECK(coropact::net::SetNonBlocking(fds[0]).has_value(), "SetNonBlocking failed");
+  coropact::kqueue::detail::Channel channel(&loop, fds[0]);
+
+  std::thread foreign([&] { channel.EnableReading(); });
+  foreign.join();
+
+  channel.DisableAll();
+  channel.Remove();
+  (void)::close(fds[0]);
+  (void)::close(fds[1]);
+}
+
+bool TestLoopRejectsForeignChannelMutation() {
+  const pid_t child = ::fork();
+  if (child < 0) {
+    return Expect(false, "fork failed for Channel ownership test");
+  }
+  if (child == 0) {
+    (void)::freopen("/dev/null", "w", stderr);
+    MutateChannelFromForeignThread();
+    ::_exit(0);
+  }
+
+  int status = 0;
+  while (::waitpid(child, &status, 0) < 0 && errno == EINTR) {
+  }
+  return Expect(WIFSIGNALED(status), "foreign Channel mutation must terminate in Release") &&
+         Expect(WTERMSIG(status) == SIGABRT,
+                "foreign Channel mutation must terminate with SIGABRT");
+}
+
+bool TestRunOnOwnerExecutesImmediately() {
+  coropact::kqueue::KqueueLoop loop;
+  bool called = false;
+  std::thread::id callback_thread;
+
+  loop.RunOnOwner([&] {
+    called = true;
+    callback_thread = std::this_thread::get_id();
+  });
+
+  return Expect(called, "RunOnOwner should execute immediately on owner thread") &&
+         Expect(callback_thread == std::this_thread::get_id(),
+                "RunOnOwner callback should execute on owner thread");
+}
+
+class SchedulerProbeWork final : public coropact::coro::Work {
+public:
+  SchedulerProbeWork(coropact::coro::Scheduler* expected_scheduler, bool* ran,
+                     bool* scheduler_matched, coropact::kqueue::KqueueLoop* loop) noexcept
+      : expected_scheduler_(expected_scheduler),
+        ran_(ran),
+        scheduler_matched_(scheduler_matched),
+        loop_(loop) {
+    SetRun(&RunProbe);
+  }
+
+private:
+  static void RunProbe(coropact::coro::Work* work) noexcept {
+    auto* self = static_cast<SchedulerProbeWork*>(work);
+    *self->scheduler_matched_ =
+        &coropact::coro::Scheduler::RequireCurrent() == self->expected_scheduler_;
+    *self->ran_ = true;
+    self->loop_->RequestStop();
+  }
+
+  coropact::coro::Scheduler* expected_scheduler_;
+  bool* ran_;
+  bool* scheduler_matched_;
+  coropact::kqueue::KqueueLoop* loop_;
+};
+
+bool TestSchedulerWorkIsDeferredAndBound() {
+  coropact::kqueue::KqueueLoop loop;
+
+  bool ran = false;
+  bool scheduler_matched = false;
+  SchedulerProbeWork work(&loop, &ran, &scheduler_matched, &loop);
+
+  loop.Schedule(&work);
+
+  bool ok = true;
+  ok &= Expect(!ran, "scheduler work must not run inline");
+
+  loop.Run();
+
+  ok &= Expect(ran, "scheduler work should run through KqueueLoop");
+  ok &= Expect(scheduler_matched, "scheduler work should run with its Scheduler::Current affinity");
+  ok &= Expect(coropact::coro::Scheduler::TryCurrent() == nullptr,
+               "scheduler work should restore the previous Scheduler::Current value");
+  return ok;
+}
+
+bool TestLoopOwnsFrameResource() {
+  std::pmr::monotonic_buffer_resource first_resource;
+  coropact::kqueue::KqueueLoop loop(&first_resource);
+  return Expect(loop.FrameResource() == &first_resource,
+                "KqueueLoop should retain its configured frame resource");
+}
+
+class ScheduleNextWork final : public coropact::coro::Work {
+public:
+  ScheduleNextWork(coropact::kqueue::KqueueLoop* scheduler, coropact::coro::Work* next,
+                   bool* next_ran, bool* next_was_deferred) noexcept
+      : scheduler_(scheduler),
+        next_(next),
+        next_ran_(next_ran),
+        next_was_deferred_(next_was_deferred) {
+    SetRun(&RunScheduleNext);
+  }
+
+private:
+  static void RunScheduleNext(coropact::coro::Work* work) noexcept {
+    auto* self = static_cast<ScheduleNextWork*>(work);
+    self->scheduler_->Schedule(self->next_);
+    *self->next_was_deferred_ = !*self->next_ran_;
+  }
+
+  coropact::kqueue::KqueueLoop* scheduler_;
+  coropact::coro::Work* next_;
+  bool* next_ran_;
+  bool* next_was_deferred_;
+};
+
+bool TestSchedulerWorkScheduledDuringResumeIsDeferred() {
+  coropact::kqueue::KqueueLoop loop;
+
+  bool second_ran = false;
+  bool scheduler_matched = false;
+  bool second_was_deferred = false;
+  SchedulerProbeWork second(&loop, &second_ran, &scheduler_matched, &loop);
+  ScheduleNextWork first(&loop, &second, &second_ran, &second_was_deferred);
+
+  loop.Schedule(&first);
+  loop.Run();
+
+  return Expect(second_was_deferred,
+                "work scheduled during a resumed work item must not run inline") &&
+         Expect(second_ran, "deferred work should run on a later KqueueLoop turn") &&
+         Expect(scheduler_matched, "deferred work should retain scheduler affinity");
+}
+
+bool TestCrossThreadRequestStopWakesPoll() {
+  coropact::kqueue::KqueueLoop loop;
+  std::atomic_bool stop_sent{false};
+
+  std::jthread stopper([&] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    loop.RequestStop();
+    stop_sent.store(true, std::memory_order_release);
+  });
+
+  const auto start = std::chrono::steady_clock::now();
+  loop.Run();
+  stopper.join();
+  const auto elapsed = std::chrono::steady_clock::now() - start;
+
+  return Expect(stop_sent.load(std::memory_order_acquire),
+                "cross-thread stop request should be delivered") &&
+         Expect(loop.State() == coropact::backend::LoopState::kStopped,
+                "KqueueLoop should reach stopped after RequestStop") &&
+         Expect(elapsed < std::chrono::seconds(1),
+                "RequestStop should wake kevent instead of waiting for its poll timeout");
+}
+
+bool TestRepeatingTimerCanCancelItself() {
+  coropact::kqueue::KqueueLoop loop;
+  int fire_count = 0;
+  coropact::time::TimerId timer_id;
+
+  timer_id = loop.RunEvery(coropact::time::Milliseconds(10), [&] {
+    ++fire_count;
+    if (fire_count == 1) {
+      loop.Cancel(timer_id);
+      loop.RunAfter(coropact::time::Milliseconds(50), [&loop] { loop.RequestStop(); });
+    }
+  });
+  loop.Run();
+
+  return Expect(fire_count == 1, "self-cancelling repeating timer should fire exactly once");
+}
+
+bool TestSameDeadlineTimersKeepSequenceOrder() {
+  coropact::kqueue::KqueueLoop loop;
+  std::vector<int> fired;
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(10);
+
+  loop.RunAt(deadline, [&] { fired.push_back(1); });
+  loop.RunAt(deadline, [&] { fired.push_back(2); });
+  loop.RunAt(deadline, [&] {
+    fired.push_back(3);
+    loop.RequestStop();
+  });
+  loop.Run();
+
+  return Expect(fired == std::vector<int>({1, 2, 3}),
+                "same-deadline timers should follow sequence order");
+}
+
+bool TestCancelEarliestKeepsNextTimerScheduled() {
+  coropact::kqueue::KqueueLoop loop;
+  bool cancelled_timer_fired = false;
+  bool next_timer_fired = false;
+  bool timed_out = false;
+
+  auto cancelled =
+      loop.RunAfter(coropact::time::Milliseconds(10), [&] { cancelled_timer_fired = true; });
+  loop.RunAfter(coropact::time::Milliseconds(30), [&] {
+    next_timer_fired = true;
+    loop.RequestStop();
+  });
+  loop.RunAfter(coropact::time::Milliseconds(500), [&] {
+    timed_out = true;
+    loop.RequestStop();
+  });
+  loop.Cancel(cancelled);
+  loop.Run();
+
+  return Expect(!timed_out, "next timer should fire before watchdog") &&
+         Expect(!cancelled_timer_fired, "cancelled earliest timer should not fire") &&
+         Expect(next_timer_fired, "next timer should remain scheduled after cancellation");
+}
+
+bool TestStaleTimerIdCannotCancelReplacement() {
+  coropact::kqueue::KqueueLoop loop;
+  bool replacement_fired = false;
+  bool timed_out = false;
+
+  auto stale = loop.RunAfter(coropact::time::Seconds(60), [] {});
+  loop.Cancel(stale);
+
+  auto replacement = loop.RunAfter(coropact::time::Milliseconds(10), [&] {
+    replacement_fired = true;
+    loop.RequestStop();
+  });
+  loop.RunAfter(coropact::time::Milliseconds(500), [&] {
+    timed_out = true;
+    loop.RequestStop();
+  });
+
+  loop.Cancel(stale);
+  loop.Run();
+
+  return Expect(stale.sequence != replacement.sequence,
+                "replacement timer should have a new sequence") &&
+         Expect(!timed_out, "replacement timer should fire before watchdog") &&
+         Expect(replacement_fired, "stale TimerId should not cancel a replacement timer");
+}
+
+bool TestLoopStopDiscardsUnexpiredTimer() {
+  coropact::kqueue::KqueueLoop loop;
+  bool fired = false;
+
+  loop.RunAfter(coropact::time::Seconds(60), [&] { fired = true; });
+  loop.RequestStop();
+  loop.Run();
+
+  return Expect(loop.State() == coropact::backend::LoopState::kStopped,
+                "loop with an unexpired timer should stop") &&
+         Expect(!fired, "loop shutdown must discard an unexpired timer without running it");
+}
+
+coropact::coro::DetachedTask SleepUntilLoopStops(coropact::kqueue::KqueueConnector* connector,
+                                                 bool* resumed) {
+  co_await connector->SleepFor(std::chrono::hours(1));
+  *resumed = true;
+}
+
+bool TestLoopStopCancelsConnectorTimer() {
+  coropact::kqueue::KqueueLoop loop;
+  coropact::kqueue::KqueueConnector connector(&loop);
+  bool resumed = false;
+
+  coropact::coro::SpawnDetach(loop, SleepUntilLoopStops(&connector, &resumed));
+  std::jthread stopper([&] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    loop.RequestStop();
+  });
+  loop.Run();
+  stopper.join();
+
+  return Expect(resumed, "loop stop should settle KqueueConnector::SleepFor") &&
+         Expect(loop.State() == coropact::backend::LoopState::kStopped,
+                "timer cancellation should leave KqueueLoop stopped");
+}
+
+}  // namespace
+
+int main() {
+  try {
+    if (!TestRunOnOwnerExecutesImmediately()) return 1;
+    if (!TestLoopRejectsQueuedWorkAtDestruction()) return 1;
+    if (!TestLoopRejectsForeignChannelMutation()) return 1;
+    if (!TestSchedulerWorkIsDeferredAndBound()) return 1;
+    if (!TestLoopOwnsFrameResource()) return 1;
+    if (!TestSchedulerWorkScheduledDuringResumeIsDeferred()) return 1;
+    if (!TestRepeatingTimerCanCancelItself()) return 1;
+    if (!TestSameDeadlineTimersKeepSequenceOrder()) return 1;
+    if (!TestCancelEarliestKeepsNextTimerScheduled()) return 1;
+    if (!TestStaleTimerIdCannotCancelReplacement()) return 1;
+    if (!TestLoopStopDiscardsUnexpiredTimer()) return 1;
+    if (!TestCrossThreadRequestStopWakesPoll()) return 1;
+    if (!TestLoopStopCancelsConnectorTimer()) return 1;
+  } catch (const std::exception& ex) {
+    std::cerr << "[FAIL] unexpected exception: " << ex.what() << '\n';
+    return 1;
+  } catch (...) {
+    std::cerr << "[FAIL] unexpected unknown exception\n";
+    return 1;
+  }
+
+  std::cout << "[PASS] kqueue_loop_smoke_test\n";
+  return 0;
+}

@@ -9,7 +9,9 @@
 #include "coropact/base/current_thread.h"
 #include "coropact/kqueue/detail/channel.h"
 #include "coropact/kqueue/detail/kqueue_poller.h"
+#include "coropact/kqueue/detail/timer_queue.h"
 #include "coropact/net/socket.h"
+#include "coropact/time/timer_id.h"
 
 namespace coropact::kqueue {
 
@@ -23,7 +25,8 @@ thread_local KqueueLoop* t_loop_in_this_thread = nullptr;
 KqueueLoop::KqueueLoop(std::pmr::memory_resource* frame_resource)
     : Scheduler(frame_resource),
       thread_id_(base::CurrentThreadId()),
-      poller_(std::make_unique<detail::KqueuePoller>()) {
+      poller_(std::make_unique<detail::KqueuePoller>()),
+      timer_queue_(std::make_unique<detail::TimerQueue>(*poller_)) {
   COROPACT_CHECK(t_loop_in_this_thread == nullptr,
                  "KqueueLoop: only one KqueueLoop may exist per thread");
   t_loop_in_this_thread = this;
@@ -99,6 +102,7 @@ void KqueueLoop::Run(std::stop_token token) {
     for (Channel* channel : active_channels_) {
       channel->HandleEvent();
     }
+    poller_->DispatchTimerExpire();
   }
 
   BeginShutdown();
@@ -246,6 +250,27 @@ void KqueueLoop::DetachWakeupChannel() noexcept {
 bool KqueueLoop::HasImmediateWork() const {
   COROPACT_CHECK(IsInLoopThread(), "KqueueLoop::HasImmediateWork called from wrong thread");
   return !pending_work_.Empty();
+}
+
+time::TimerId KqueueLoop::RunAt(time::Deadline deadline, Functor callback) {
+  COROPACT_CHECK(IsInLoopThread(), "KqueueLoop::RunAt called from wrong thread");
+  return timer_queue_->AddTimer(std::move(callback), deadline, time::Duration::zero());
+}
+
+time::TimerId KqueueLoop::RunAfter(time::Duration delay, Functor callback) {
+  COROPACT_CHECK(IsInLoopThread(), "KqueueLoop::RunAfter called from wrong thread");
+  return timer_queue_->AddTimer(std::move(callback), time::SteadyNow() + delay,
+                                time::Duration::zero());
+}
+
+time::TimerId KqueueLoop::RunEvery(time::Duration interval, Functor callback) {
+  COROPACT_CHECK(IsInLoopThread(), "KqueueLoop::RunEvery called from wrong thread");
+  return timer_queue_->AddTimer(std::move(callback), time::SteadyNow() + interval, interval);
+}
+
+void KqueueLoop::Cancel(time::TimerId id) {
+  COROPACT_CHECK(IsInLoopThread(), "KqueueLoop::Cancel called from wrong thread");
+  timer_queue_->Cancel(id);
 }
 
 }  // namespace coropact::kqueue

@@ -51,6 +51,25 @@ public:
   [[nodiscard]]
   bool HasChannel(Channel* channel) const;
 
+  using TimerExpireHandler = void (*)(void* context) noexcept;
+
+  // EVFILT_TIMER is not an fd Channel. The loop installs one expire handler
+  // for the user-space timer queue; the ident is a dedicated non-fd key.
+  void SetTimerExpireHandler(TimerExpireHandler handler, void* context) noexcept;
+
+  // Arms a one-shot kernel alarm for the earliest user-space deadline.
+  // EV_ADD on the same ident replaces an already-armed alarm.
+  void ArmOneShotTimer(std::int64_t nsec);
+
+  // Withdraws the kernel alarm if it is still pending. A no-op after oneshot
+  // delivery, so EV_DELETE is never issued against a retired registration.
+  void DisarmTimer();
+
+  // Runs the expire handler after Channel::HandleEvent() for this poll, so a
+  // descriptor that became ready in the same kevent batch is delivered before
+  // a colliding ReadSomeFor timeout.
+  void DispatchTimerExpire();
+
 private:
   /*
    * What the kernel currently holds for one descriptor, not what the Channel
@@ -80,6 +99,11 @@ private:
 
   static constexpr int kInitEventListSize = 16;
 
+  static constexpr std::uintptr_t kTimerIdent = 1;
+  static constexpr std::int64_t kMinTimerNsec = 100000;  // 100 µs, matching timerfd
+
+  void ApplyTimerChange(std::uint16_t flags, std::uint32_t fflags, intptr_t data);
+
   int kqfd_;
   std::vector<struct kevent> events_;
   std::unordered_map<int, Registration> registrations_;
@@ -87,6 +111,11 @@ private:
   // Distinguishes the first kevent for a Channel within one Poll() from later
   // ones for the same Channel.
   std::uint64_t poll_epoch_{0};
+
+  TimerExpireHandler timer_expire_handler_{nullptr};
+  void* timer_expire_context_{nullptr};
+  bool timer_armed_{false};
+  bool timer_expired_this_poll_{false};
 };
 
 }  // namespace coropact::kqueue::detail
