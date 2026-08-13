@@ -868,6 +868,46 @@ target_include_directories(intrusive_hash_table_smoke_test
 
 add_test(NAME intrusive_hash_table_smoke_test COMMAND intrusive_hash_table_smoke_test)
 
+# Exercises the kqueue backend's registration state machine on a non-kqueue
+# host. The kqueue sources are compiled directly into the test rather than
+# linked from coropact_kqueue, because that library only exists on a BSD or
+# Darwin host. support/kqueue_shim supplies the BSD declarations and
+# fake_kqueue.cc supplies kqueue()/kevent(), so nothing here reaches a kernel.
+if(COROPACT_ENABLE_KQUEUE_SHIM_TESTS)
+    add_executable(kqueue_oneshot_smoke_test
+        unit/test_kqueue_oneshot_smoke.cc
+        support/fake_kqueue.cc
+        ../src/kqueue/channel.cc
+        ../src/kqueue/kqueue_poller.cc
+        ../src/kqueue/loop.cc
+    )
+
+    # BEFORE keeps the shim's <sys/event.h> ahead of any system header of the
+    # same name, so the target cannot silently pick up a real kqueue ABI.
+    target_include_directories(kqueue_oneshot_smoke_test BEFORE
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/support/kqueue_shim
+    )
+
+    target_include_directories(kqueue_oneshot_smoke_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../include
+            ${CMAKE_CURRENT_SOURCE_DIR}/support
+    )
+
+    target_link_libraries(kqueue_oneshot_smoke_test
+        PRIVATE
+            coropact_net
+            coropact_coro
+            coropact_foundation
+            Threads::Threads
+    )
+
+    target_compile_features(kqueue_oneshot_smoke_test PUBLIC cxx_std_23)
+
+    add_test(NAME kqueue_oneshot_smoke_test COMMAND kqueue_oneshot_smoke_test)
+endif()
+
 find_package(GTest CONFIG QUIET)
 if(GTest_FOUND)
     include(GoogleTest)
