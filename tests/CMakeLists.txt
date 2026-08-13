@@ -241,6 +241,11 @@ target_include_directories(completion_gate_smoke_test
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
 
+target_link_libraries(completion_gate_smoke_test
+    PRIVATE
+        coropact_coro
+)
+
 add_test(NAME completion_gate_smoke_test COMMAND completion_gate_smoke_test)
 
 add_executable(reactor_result_state_smoke_test
