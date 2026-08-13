@@ -28,7 +28,8 @@ public:
   virtual Result<void> Run(std::stop_token stop_token) = 0;
   virtual void RequestStop() noexcept = 0;
   virtual void Stop() noexcept = 0;
-  [[nodiscard]] virtual bool Started() const noexcept = 0;
+  [[nodiscard]]
+  virtual bool Started() const noexcept = 0;
 };
 
 }  // namespace detail
@@ -56,19 +57,29 @@ public:
   Runtime& operator=(Runtime&&) noexcept = default;
   ~Runtime() noexcept = default;
 
-  [[nodiscard]] Result<void> Start() { return control_->Start(); }
+  [[nodiscard]]
+  Result<void> Start() {
+    return control_->Start();
+  }
 
-  [[nodiscard]] Result<void> Run(std::stop_token stop_token) { return control_->Run(stop_token); }
+  [[nodiscard]]
+  Result<void> Run(std::stop_token stop_token) {
+    return control_->Run(stop_token);
+  }
 
   void RequestStop() noexcept { control_->RequestStop(); }
   void Stop() noexcept { control_->Stop(); }
 
-  [[nodiscard]] bool Started() const noexcept { return control_->Started(); }
+  [[nodiscard]]
+  bool Started() const noexcept {
+    return control_->Started();
+  }
 
   // Default startup path. It deliberately leaves backend selection explicit,
   // while avoiding a Builder for applications that accept default settings.
   template <class Backend, class Handler>
-  [[nodiscard]] static Runtime Create(net::Endpoint listen_addr, Handler&& handler) {
+  [[nodiscard]]
+  static Runtime Create(net::Endpoint listen_addr, Handler&& handler) {
     return Builder<Backend>{listen_addr}.OnConnection(std::forward<Handler>(handler)).Build();
   }
 

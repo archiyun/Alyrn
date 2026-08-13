@@ -51,7 +51,10 @@ public:
   ScopedFd(const ScopedFd&) = delete;
   ScopedFd& operator=(const ScopedFd&) = delete;
 
-  [[nodiscard]] int Get() const { return fd_; }
+  [[nodiscard]]
+  int Get() const {
+    return fd_;
+  }
 
 private:
   int fd_;
