@@ -2,8 +2,9 @@
 
 CoroPact is a C++23 coroutine networking runtime. It owns coroutine
 execution, backend-neutral transport contracts, a Linux epoll Reactor backend,
-and a Linux io_uring backend. HTTP parsing, routing, proxying, and gateway
-policy belong to [CoroGateway](https://github.com/archiyun/CoroGateway).
+a Linux io_uring backend, and a BSD/Darwin kqueue backend. HTTP parsing,
+routing, proxying, and gateway policy belong to
+[CoroGateway](https://github.com/archiyun/CoroGateway).
 
 `docs/SUBSYSTEMS.md` is the normative dependency policy. Read it before
 changing module boundaries.

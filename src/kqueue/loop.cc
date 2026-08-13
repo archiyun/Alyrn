@@ -4,6 +4,9 @@
 #include <unistd.h>
 
 #include <cerrno>
+#include <mutex>
+#include <utility>
+#include <vector>
 
 #include "coropact/base/check.h"
 #include "coropact/base/current_thread.h"
@@ -59,8 +62,13 @@ KqueueLoop::~KqueueLoop() {
   COROPACT_CHECK(shutdown_registry_.Empty(),
                  "KqueueLoop destroyed with registered shutdown resources");
   DetachWakeupChannel();
-  if (wakeup_write_fd_ >= 0) {
-    ::close(wakeup_write_fd_);
+  {
+    std::lock_guard lock{posted_mutex_};
+    COROPACT_CHECK(posted_.empty(), "KqueueLoop destroyed with pending posted callbacks");
+    if (wakeup_write_fd_ >= 0) {
+      ::close(wakeup_write_fd_);
+      wakeup_write_fd_ = -1;
+    }
   }
   if (wakeup_read_fd_ >= 0) {
     ::close(wakeup_read_fd_);
@@ -127,6 +135,14 @@ void KqueueLoop::RunOnOwner(Functor callback) {
   callback();
 }
 
+void KqueueLoop::Post(Functor callback) {
+  /* Wakeup stays under the lock. Otherwise a 0-timeout poll can drain this
+   * callback, RequestStop, and close the pipe before the write returns. */
+  std::lock_guard lock{posted_mutex_};
+  posted_.push_back(std::move(callback));
+  Wakeup();
+}
+
 void KqueueLoop::Schedule(coro::Work* work) noexcept {
   COROPACT_CHECK(IsInLoopThread(), "KqueueLoop::Schedule called from wrong thread");
   COROPACT_CHECK(work != nullptr, "KqueueLoop::Schedule received null work");
@@ -173,6 +189,7 @@ void KqueueLoop::UnregisterShutdownParticipant(LoopShutdownParticipant& particip
 bool KqueueLoop::IsInLoopThread() const noexcept { return thread_id_ == base::CurrentThreadId(); }
 
 void KqueueLoop::DoPendingWork() {
+  DrainPostedWork();
   if (pending_work_.Empty()) {
     return;
   }
@@ -182,6 +199,17 @@ void KqueueLoop::DoPendingWork() {
   coro::WorkQueue work;
   work.Splice(pending_work_);
   RunBatch(work);
+}
+
+void KqueueLoop::DrainPostedWork() {
+  std::vector<Functor> posted;
+  {
+    std::lock_guard lock{posted_mutex_};
+    posted.swap(posted_);
+  }
+  for (Functor& callback : posted) {
+    callback();
+  }
 }
 
 void KqueueLoop::BeginShutdown() noexcept {
@@ -249,7 +277,11 @@ void KqueueLoop::DetachWakeupChannel() noexcept {
 
 bool KqueueLoop::HasImmediateWork() const {
   COROPACT_CHECK(IsInLoopThread(), "KqueueLoop::HasImmediateWork called from wrong thread");
-  return !pending_work_.Empty();
+  if (!pending_work_.Empty()) {
+    return true;
+  }
+  std::lock_guard lock{posted_mutex_};
+  return !posted_.empty();
 }
 
 time::TimerId KqueueLoop::RunAt(time::Deadline deadline, Functor callback) {

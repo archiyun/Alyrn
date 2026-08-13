@@ -3,9 +3,11 @@
 
 #include <cerrno>
 #include <expected>
+#include <optional>
 #include <stop_token>
 #include <utility>
 
+#include "coropact/base/check.h"
 #include "coropact/result.h"
 #include "coropact/coro/frame_allocator.h"
 #include "coropact/coro/spawn.h"
@@ -16,8 +18,9 @@ namespace {
 
 coro::DetachedTask AcceptLoop(KqueueWorkerContext& context,
                               KqueueWorker::ConnectionCallback* callback) {
+  COROPACT_CHECK(context.listener != nullptr, "AcceptLoop requires an acceptor listener");
   while (true) {
-    auto accepted = co_await context.listener.Accept();
+    auto accepted = co_await context.listener->Accept();
     if (!accepted.has_value()) {
       const int error = accepted.error().value();
       if (error == ECANCELED || error == EBADF) {
@@ -88,31 +91,41 @@ void KqueueWorker::WorkLoop(std::stop_token token) noexcept {
   };
 
   KqueueLoop loop{options_.frame_resource};
+  loop_ = &loop;
 
-  auto listener = KqueueListener::Create(&loop, listen_addr_, options_.listener_options);
-  if (!listener.has_value()) {
-    publish_start(std::unexpected(listener.error()));
-    return;
+  std::optional<KqueueListener> listener;
+  if (options_.accept) {
+    auto created = KqueueListener::Create(&loop, listen_addr_, options_.listener_options);
+    if (!created.has_value()) {
+      loop_ = nullptr;
+      publish_start(std::unexpected(created.error()));
+      return;
+    }
+    listener = std::move(*created);
   }
 
   auto connector = KqueueConnector::Create(&loop, options_.connector_options);
   if (!connector.has_value()) {
+    loop_ = nullptr;
     publish_start(std::unexpected(connector.error()));
     return;
   }
 
-  KqueueWorkerContext context{index_, loop, *listener, *connector};
+  KqueueWorkerContext context{index_, loop, listener ? &*listener : nullptr, *connector};
+  context_ = &context;
 
   if (init_callback_) {
     try {
       init_callback_(context);
     } catch (...) {
+      context_ = nullptr;
+      loop_ = nullptr;
       publish_start(std::unexpected(Errno(EFAULT)));
       return;
     }
   }
 
-  if (connection_callback_) {
+  if (options_.accept && connection_callback_) {
     coro::SpawnDetach(loop, AcceptLoop(context, &connection_callback_));
   }
 
@@ -126,6 +139,9 @@ void KqueueWorker::WorkLoop(std::stop_token token) noexcept {
       // Worker exit cleanup must not escape WorkLoop's noexcept boundary.
     }
   }
+
+  context_ = nullptr;
+  loop_ = nullptr;
 }
 
 }  // namespace coropact::kqueue::detail

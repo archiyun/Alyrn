@@ -542,6 +542,16 @@ KqueueStream::~KqueueStream() {
   DetachChannel();
 }
 
+int KqueueStream::Release() noexcept {
+  RequireOwnerLoop();
+  COROPACT_CHECK(pending_read_ == nullptr, "KqueueStream cannot release with a pending read");
+  COROPACT_CHECK(pending_write_ == nullptr, "KqueueStream cannot release with a pending write");
+  LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
+  DetachChannel();
+  loop_ = nullptr;
+  return socket_.Release();
+}
+
 KqueueStream::ReadSomeAwaiter KqueueStream::ReadSome(std::span<std::byte> buffer) noexcept {
   return ReadSomeAwaiter{*this, buffer};
 }

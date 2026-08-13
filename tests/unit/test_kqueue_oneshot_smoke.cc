@@ -13,7 +13,9 @@
 #include <sys/eventfd.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <iostream>
+#include <thread>
 
 #include "coropact/kqueue/detail/channel.h"
 #include "coropact/kqueue/loop.h"
@@ -342,6 +344,35 @@ bool CheckModeSwitchReArmsInPlace() {
          Check(read_filters == 1, "a mode switch must not leave a duplicate registration");
 }
 
+bool CheckCrossThreadPost() {
+  FakeKqueueReset();
+  std::atomic<KqueueLoop*> loop_ptr{nullptr};
+  std::atomic<bool> ran{false};
+  std::atomic<bool> on_owner{false};
+
+  std::thread worker([&] {
+    KqueueLoop loop;
+    loop_ptr.store(&loop, std::memory_order_release);
+    loop.Run();
+  });
+
+  KqueueLoop* loop = nullptr;
+  while ((loop = loop_ptr.load(std::memory_order_acquire)) == nullptr) {
+    std::this_thread::yield();
+  }
+
+  loop->Post([loop, &ran, &on_owner] {
+    ran.store(true, std::memory_order_release);
+    on_owner.store(loop->IsInLoopThread(), std::memory_order_release);
+    loop->RequestStop();
+  });
+  worker.join();
+
+  return Check(ran.load(std::memory_order_acquire), "Post must run the callback") &&
+         Check(on_owner.load(std::memory_order_acquire),
+               "Post must run the callback on the owner thread");
+}
+
 }  // namespace
 
 int main() {
@@ -352,6 +383,7 @@ int main() {
   if (!CheckLevelTriggeredSurvivesDelivery()) return 1;
   if (!CheckBothFiltersRetireInOneTurn()) return 1;
   if (!CheckModeSwitchReArmsInPlace()) return 1;
+  if (!CheckCrossThreadPost()) return 1;
   std::cout << "kqueue one-shot smoke: PASS\n";
   return 0;
 }

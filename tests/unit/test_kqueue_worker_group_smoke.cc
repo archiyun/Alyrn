@@ -124,7 +124,7 @@ bool CheckWorkerAcceptAndStop() {
   coropact::kqueue::detail::KqueueWorker worker(
       0, coropact::net::Endpoint(0), {},
       [&state](coropact::kqueue::detail::KqueueWorkerContext& context) {
-        auto address = context.listener.LocalAddress();
+        auto address = context.listener->LocalAddress();
         std::lock_guard lock{state.mutex};
         if (!address.has_value()) {
           state.init_failed = true;
@@ -184,15 +184,16 @@ bool CheckWorkerGroupStartAndStop() {
   GroupState state;
   coropact::kqueue::detail::KqueueWorkerGroupOptions options;
   options.worker_num = 2;
-  options.worker_options.listener_options.reuse_port = true;
 
   coropact::kqueue::detail::KqueueWorkerGroup group(
       coropact::net::Endpoint(*port), options,
       [&state](coropact::kqueue::detail::KqueueWorkerContext& context) {
-        auto address = context.listener.LocalAddress();
         std::lock_guard lock{state.mutex};
-        if (address.has_value()) {
-          state.listen_addresses.push_back(*address);
+        if (context.listener != nullptr) {
+          auto address = context.listener->LocalAddress();
+          if (address.has_value()) {
+            state.listen_addresses.push_back(*address);
+          }
         }
         state.init_threads.push_back(std::this_thread::get_id());
         state.cv.notify_all();
@@ -208,21 +209,20 @@ bool CheckWorkerGroupStartAndStop() {
   {
     std::unique_lock lock{state.mutex};
     all_initialized = state.cv.wait_for(lock, std::chrono::seconds(2), [&state] {
-      return state.listen_addresses.size() == 2 && state.init_threads.size() == 2;
+      return state.listen_addresses.size() == 1 && state.init_threads.size() == 2;
     });
   }
 
   const auto main_thread = std::this_thread::get_id();
   bool worker_threads_are_distinct = false;
-  bool ports_are_shared = false;
+  bool single_listener = false;
   {
     std::lock_guard lock{state.mutex};
-    if (state.init_threads.size() == 2 && state.listen_addresses.size() == 2) {
+    if (state.init_threads.size() == 2 && state.listen_addresses.size() == 1) {
       worker_threads_are_distinct = state.init_threads[0] != main_thread &&
                                     state.init_threads[1] != main_thread &&
                                     state.init_threads[0] != state.init_threads[1];
-      ports_are_shared = state.listen_addresses[0].ToPort() == *port &&
-                         state.listen_addresses[1].ToPort() == *port;
+      single_listener = state.listen_addresses[0].ToPort() == *port;
     }
   }
 
@@ -230,7 +230,7 @@ bool CheckWorkerGroupStartAndStop() {
                   Check(group.Size() == 2, "group should own two workers") &&
                   Check(all_initialized, "init callback should run for each worker") &&
                   Check(worker_threads_are_distinct, "workers should use distinct loop threads") &&
-                  Check(ports_are_shared, "reuse_port workers should share the listen port") &&
+                  Check(single_listener, "master-slave group should bind one listen port") &&
                   Check(group.Worker(0) != nullptr && group.Worker(1) != nullptr,
                         "group worker accessors should return both workers");
 
