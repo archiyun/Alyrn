@@ -4,6 +4,10 @@
 #include <iostream>
 
 #include "async_io_contracts.h"
+#include "coropact/coro.h"
+#include "coropact/io.h"
+#include "coropact/net.h"
+#include "coropact/reactor.h"
 #include "coropact/io/buffer.h"
 #include "coropact/io/loop.h"
 #include "coropact/reactor/connector.h"

@@ -84,7 +84,6 @@ bool IsEnvironmentSkip(coropact::Error error) {
 LoopInitStatus InitLoop(coropact::luring::LUringLoop& loop) {
   coropact::luring::LUringOptions options;
   options.entries = 16;
-  options.submit_batch = 1;
 
   auto init = loop.Init(options);
   if (init.has_value()) {

@@ -794,17 +794,6 @@ target_link_libraries(pmr_pool_resource_smoke_test
 
 add_test(NAME pmr_pool_resource_smoke_test COMMAND pmr_pool_resource_smoke_test)
 
-add_executable(facade_smoke_test
-    unit/test_facade_smoke.cc
-)
-
-target_include_directories(facade_smoke_test
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
-
-add_test(NAME facade_smoke_test COMMAND facade_smoke_test)
-
 
 
 add_executable(epoll_poller_smoke_test

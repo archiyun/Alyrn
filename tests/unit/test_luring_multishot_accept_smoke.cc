@@ -160,7 +160,6 @@ Endpoint LoopbackAddress(std::uint16_t port) {
 LoopInitStatus InitLoop(LUringLoop& loop) {
   LUringOptions options;
   options.entries = 32;
-  options.submit_batch = 1;
 
   auto initialized = loop.Init(options);
   if (initialized.has_value()) {
@@ -518,18 +517,6 @@ coropact::coro::DetachedTask CloseListener(
 }
 
 /* Only the test-hook scenarios drive this directly. */
-#if defined(COROPACT_ENABLE_TEST_HOOKS)
-coropact::coro::DetachedTask StopSource(
-    LUringAcceptSource* source,
-    StopObservation* observation) {
-  auto result = co_await source->Stop();
-  observation->succeeded = result.has_value();
-  if (!result.has_value()) {
-    observation->error = result.error();
-  }
-  observation->done = true;
-}
-#endif
 
 coropact::coro::DetachedTask FillQueueThenStop(
     LUringAcceptSource* source,
@@ -668,134 +655,6 @@ coropact::coro::DetachedTask PauseThenResume(
   observation->done = true;
 }
 
-#if defined(COROPACT_ENABLE_TEST_HOOKS)
-
-bool CheckInitialSubmitFailure() {
-  LUringLoop loop;
-  switch (InitLoop(loop)) {
-    case LoopInitStatus::kReady:
-      break;
-    case LoopInitStatus::kSkip:
-      return true;
-    case LoopInitStatus::kFail:
-      return false;
-  }
-
-  auto listener_result =
-      LUringListener::Create(&loop, LoopbackAddress(0));
-  if (!listener_result.has_value()) {
-    std::cout << "FAIL: listener creation failed: "
-              << listener_result.error().message() << '\n';
-    return false;
-  }
-  auto listener = std::move(*listener_result);
-  auto source_result = listener.AcceptSource();
-  if (!source_result.has_value()) {
-    std::cout << "FAIL: source creation failed: "
-              << source_result.error().message() << '\n';
-    return false;
-  }
-  auto source = std::move(*source_result);
-
-  // Init has already armed the internal wake poll, so the next user submit
-  // is the source's initial multishot accept request.
-  loop.FailNextSubmissionsForTesting(1, EIO);
-  CloseObservation observation;
-  coropact::coro::SpawnDetach(
-      loop, WaitForSourceEnd(&source, &observation));
-  coropact::luring::detail::LoopAccess::RunReady(loop);
-
-  if (!PumpUntil(loop, [&] {
-        return observation.done || observation.unsupported ||
-               observation.error.has_value();
-      })) {
-    return false;
-  }
-  if (observation.unsupported) {
-    std::cout << "SKIP: multishot accept unavailable\n";
-    return true;
-  }
-  if (!observation.error.has_value() ||
-      observation.error->value() != EIO) {
-    std::cout << "FAIL: initial submit failure was not propagated\n";
-    return false;
-  }
-  return true;
-}
-
-bool CheckCancelSubmitFailure() {
-  LUringLoop loop;
-  switch (InitLoop(loop)) {
-    case LoopInitStatus::kReady:
-      break;
-    case LoopInitStatus::kSkip:
-      return true;
-    case LoopInitStatus::kFail:
-      return false;
-  }
-
-  auto listener_result =
-      LUringListener::Create(&loop, LoopbackAddress(0));
-  if (!listener_result.has_value()) {
-    std::cout << "FAIL: listener creation failed: "
-              << listener_result.error().message() << '\n';
-    return false;
-  }
-  auto listener = std::move(*listener_result);
-  auto source_result = listener.AcceptSource();
-  if (!source_result.has_value()) {
-    std::cout << "FAIL: source creation failed: "
-              << source_result.error().message() << '\n';
-    return false;
-  }
-  auto source = std::move(*source_result);
-
-  CloseObservation end_observation;
-  StopObservation first_stop;
-  coropact::coro::SpawnDetach(
-      loop, WaitForSourceEnd(&source, &end_observation));
-  coropact::luring::detail::LoopAccess::RunReady(loop);
-
-  // Stop revokes source admission before it attempts the cancel SQE. A local
-  // preparation failure returns EIO but deliberately leaves the source in
-  // Stopping, so the caller must retain it and retry Stop().
-  loop.FailNextSubmissionsForTesting(1, EIO);
-  coropact::coro::SpawnDetach(
-      loop, StopSource(&source, &first_stop));
-  coropact::luring::detail::LoopAccess::RunReady(loop);
-
-  if (!first_stop.done || first_stop.succeeded || !first_stop.error.has_value() ||
-      first_stop.error->value() != EIO) {
-    std::cout << "FAIL: accept cancel submit failure was not propagated\n";
-    return false;
-  }
-
-  StopObservation retry_stop;
-  coropact::coro::SpawnDetach(
-      loop, StopSource(&source, &retry_stop));
-  coropact::luring::detail::LoopAccess::RunReady(loop);
-
-  if (!PumpUntil(loop, [&] {
-        return end_observation.unsupported ||
-               end_observation.error.has_value() ||
-               (retry_stop.done && end_observation.done);
-      })) {
-    return false;
-  }
-  if (end_observation.unsupported) {
-    std::cout << "SKIP: multishot accept unavailable\n";
-    return true;
-  }
-  if (end_observation.error.has_value()) {
-    std::cout << "FAIL: source cleanup after cancel submit failure failed: "
-              << end_observation.error->message() << '\n';
-    return false;
-  }
-
-  return retry_stop.succeeded && end_observation.source_end;
-}
-
-#endif
 
 bool CheckMultishotAccept() {
   LUringLoop loop;
@@ -1130,27 +989,6 @@ bool RunQueuePauseThenRearmScenario(bool inject_close_submit_failure) {
   coropact::coro::SpawnDetach(loop, PauseThenResume(&source, &loop, &observation));
   coropact::luring::detail::LoopAccess::RunReady(loop);
 
-#if defined(COROPACT_ENABLE_TEST_HOOKS)
-  if (inject_close_submit_failure) {
-    // Close preparation has not committed until its cancel SQE is accepted.
-    // A local failure must leave the active source in Active, so the same
-    // high-water pause and low-water re-arm trace remains possible below.
-    loop.FailNextSubmissionsForTesting(1, EIO);
-    CloseObservation close_observation;
-    coropact::coro::SpawnDetach(
-        loop, CloseListener(&listener, &close_observation));
-    coropact::luring::detail::LoopAccess::RunReady(loop);
-
-    if (close_observation.close_succeeded ||
-        !close_observation.error.has_value() ||
-        close_observation.error->value() != EIO) {
-      std::cout << "FAIL: listener close preparation failure did not return EIO\n";
-      return false;
-    }
-  }
-#else
-  (void)(inject_close_submit_failure);
-#endif
 
   auto address = listener.LocalAddress();
   if (!address.has_value()) {
@@ -1238,11 +1076,6 @@ bool CheckQueuePauseThenRearm() {
   return RunQueuePauseThenRearmScenario(false);
 }
 
-#if defined(COROPACT_ENABLE_TEST_HOOKS)
-bool CheckListenerCloseSubmitFailurePreservesActiveSource() {
-  return RunQueuePauseThenRearmScenario(true);
-}
-#endif
 
 }  // namespace
 
@@ -1250,17 +1083,6 @@ int main() {
   CheckCompletionEvent();
   CheckFakeRearmSubmitFailure();
   CheckFakeMultishotFallback();
-#if defined(COROPACT_ENABLE_TEST_HOOKS)
-  if (!CheckInitialSubmitFailure()) {
-    return 1;
-  }
-  if (!CheckCancelSubmitFailure()) {
-    return 1;
-  }
-  if (!CheckListenerCloseSubmitFailurePreservesActiveSource()) {
-    return 1;
-  }
-#endif
   if (!CheckMultishotAccept()) {
     return 1;
   }

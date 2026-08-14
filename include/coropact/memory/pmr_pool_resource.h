@@ -54,7 +54,9 @@ public:
   COROPACT_DELETE_COPY_MOVE(CountingMemoryResource);
 
   [[nodiscard]]
-  const MemoryResourceStats& stats() const noexcept { return *stats_; }
+  const MemoryResourceStats& stats() const noexcept {
+    return *stats_;
+  }
 
 private:
   void* do_allocate(std::size_t bytes, std::size_t alignment) override {

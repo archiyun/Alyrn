@@ -119,7 +119,6 @@ int main() {
 
   luring::LUringOptions options;
   options.entries = 64;
-  options.submit_batch = 1;
 
   auto initialized = loop.Init(options);
   if (!initialized.has_value()) {

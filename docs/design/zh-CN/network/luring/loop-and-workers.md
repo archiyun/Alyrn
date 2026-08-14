@@ -53,13 +53,13 @@ flush 失败后，`Stopped` 只能在后续 retry 成功并完全 drain 后出�
 
 | 选项 | 作用 | 说明 |
 | --- | --- | --- |
-| `entries` / `cq_entries` | SQ/CQ 容量 | 影响突发期间可排队的物理请求 |
-| `submit_batch` | 达到多少准备好的 SQE 后倾向批量提交 | 影响 syscall 次数与提交延迟 |
+| `entries` | SQ 容量 | 影响突发期间可排队的物理请求 |
 | `setup_sqpoll` | 启用 kernel submission thread | opt-in，可能需要权限并长期占用资源 |
-| `setup_defer_taskrun` | 延迟 kernel task work 到 enter 转换 | 依赖 single issuer，环境不支持时初始化失败 |
-| `max_cqe_per_turn` | 一轮最多处理的 CQE | 防止 completion burst 独占 loop |
-| `max_ready_work_per_turn` | 一轮最多恢复的 ready work | 防止普通协程独占 loop |
 | `shared_buffer_capacity/size` | worker 共享的 provided-buffer ring 上限 | 为零时不能创建 `RecvSource` |
+
+CQ 深度、submission flag 和每轮 CQE/continuation 公平性预算是 `LUringLoop` 的内部策略，
+不属于调用方配置。这样每个 loop 都使用相同的提交和调度模型；需要改变资源成本时，调用方
+只选择 SQ 深度、SQPOLL 与 provided-buffer 容量。
 
 `setup_sqpoll` 不是“永远更快”的开关。它以一个专用 kernel 线程和 CPU/权限成本换取
 更低的提交 syscall 频率，只有在持续高压且经过基准验证时才应启用。

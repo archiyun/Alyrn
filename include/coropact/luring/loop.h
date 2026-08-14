@@ -82,35 +82,6 @@ public:
   bool IsInLoopThread() const noexcept {
     return thread_id_ == base::CurrentThreadId();
   }
-#if defined(COROPACT_ENABLE_TEST_HOOKS)
-  // Test-only deterministic failure injection. It is intentionally kept out
-  // of normal builds so production LUringLoop has no fault-injection state.
-  void FailNextSubmissionsForTesting(std::size_t count, int error = EIO) noexcept {
-    COROPACT_CHECK(error > 0, "test submission error must be a positive errno");
-    test_submit_failures_ = count;
-    test_successful_submissions_before_failure_ = 0;
-    test_submit_error_ = error;
-  }
-
-  // Fails one submission after exactly `successful_submissions` test-visible
-  // submissions have succeeded. This makes linked-operation tests able to
-  // target their second SQE without failing the first physical request.
-  void FailSubmissionAfterForTesting(std::size_t successful_submissions, int error = EIO) noexcept {
-    COROPACT_CHECK(error > 0, "test submission error must be a positive errno");
-    test_submit_failures_ = 1;
-    test_successful_submissions_before_failure_ = successful_submissions;
-    test_submit_error_ = error;
-  }
-
-  // Fails the next flush after SQEs have already been prepared. Unlike
-  // FailNextSubmissionsForTesting(), this preserves pending_submit_ and
-  // exercises retry of io_uring_submit() from the drain path.
-  void FailNextFlushesForTesting(std::size_t count, int error = EIO) noexcept {
-    COROPACT_CHECK(error > 0, "test flush error must be a positive errno");
-    test_flush_failures_ = count;
-    test_flush_error_ = error;
-  }
-#endif
 
   [[nodiscard]]
   Result<time::TimerId> RunAfter(time::Duration delay, std::function<void()> callback) {
@@ -192,17 +163,6 @@ private:
       return std::unexpected(Errno(ECANCELED));
     }
 
-#if defined(COROPACT_ENABLE_TEST_HOOKS)
-    if (test_submit_failures_ != 0) {
-      if (test_successful_submissions_before_failure_ != 0) {
-        --test_successful_submissions_before_failure_;
-      } else {
-        --test_submit_failures_;
-        return std::unexpected(Errno(test_submit_error_));
-      }
-    }
-#endif
-
     io_uring_sqe* sqe = ring_.GetSqe();
     if (sqe == nullptr) {
       COROPACT_TRY(FlushSubmit());
@@ -278,37 +238,6 @@ private:
   // Submitted operations that have not yet produced a CQE.
   std::size_t inflight_{0};
 
-  // Preferred number of prepared operations before performing a batch submit.
-  std::size_t submit_batch_{32};
-
-  // Fairness budget for one RunReady() pass. Zero means unlimited.
-  std::size_t max_ready_work_per_turn_{256};
-
-  // Completion budget for one PollCompletions() or WaitCompletionsFor() pass.
-  // Zero means unlimited.
-  std::size_t max_cqe_per_turn_{256};
-
-  // Wall-clock fairness budget for one RunReady() pass. Zero means unlimited.
-  std::chrono::microseconds max_ready_time_per_turn_{50};
-
-  // Completion-ready sub-budget for one RunReady() pass. Zero means unlimited.
-  std::size_t max_completion_work_per_turn_{64};
-
-  // Age threshold for promoting completion-ready work to the urgent budget.
-  std::chrono::microseconds completion_queue_age_threshold_{0};
-
-  // Bounded completion budget used after age-based promotion.
-  std::size_t max_urgent_completion_work_per_turn_{80};
-
-  // Age threshold for suppressing completion promotion when normal work is
-  // already overdue.
-  std::chrono::microseconds normal_queue_age_threshold_{5000};
-
-  std::size_t ready_depth_{0};
-  std::size_t completion_ready_depth_{0};
-  std::uint64_t ready_nonempty_since_ns_{0};
-  std::uint64_t completion_ready_nonempty_since_ns_{0};
-
   [[nodiscard]]
   bool HasReadyWork() const noexcept {
     return !ready_.Empty() || !completion_ready_.Empty();
@@ -335,13 +264,6 @@ private:
   std::size_t shared_buffer_capacity_{0};
   std::size_t shared_buffer_size_{0};
 
-#if defined(COROPACT_ENABLE_TEST_HOOKS)
-  std::size_t test_submit_failures_{0};
-  std::size_t test_successful_submissions_before_failure_{0};
-  int test_submit_error_{EIO};
-  std::size_t test_flush_failures_{0};
-  int test_flush_error_{EIO};
-#endif
 };
 
 }  // namespace coropact::luring

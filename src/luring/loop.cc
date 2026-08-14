@@ -35,6 +35,10 @@ using namespace detail;
 
 namespace {
 
+constexpr std::size_t kMaxCqesPerTurn = 256;
+constexpr std::size_t kMaxReadyWorkPerTurn = 256;
+constexpr std::size_t kMaxCompletionWorkPerTurn = 64;
+
 constexpr std::chrono::milliseconds kStopPollInterval{100};
 
 [[nodiscard]]
@@ -140,24 +144,6 @@ Result<void> LUringLoop::Init(const LUringOptions& options) noexcept {
   if (wake_fd_ < 0) {
     return std::unexpected(CurrentErrno());
   }
-  submit_batch_ = options.submit_batch == 0 ? 1 : options.submit_batch;
-  max_ready_work_per_turn_ = options.max_ready_work_per_turn;
-  max_cqe_per_turn_ = options.max_cqe_per_turn;
-  max_ready_time_per_turn_ = options.max_ready_time_per_turn;
-  max_completion_work_per_turn_ = options.max_completion_work_per_turn;
-  completion_queue_age_threshold_ =
-      options.completion_queue_age_threshold > std::chrono::microseconds::zero()
-          ? options.completion_queue_age_threshold
-          : std::chrono::microseconds::zero();
-  max_urgent_completion_work_per_turn_ = options.max_urgent_completion_work_per_turn;
-  normal_queue_age_threshold_ =
-      options.normal_queue_age_threshold > std::chrono::microseconds::zero()
-          ? options.normal_queue_age_threshold
-          : std::chrono::microseconds::zero();
-  ready_depth_ = 0;
-  completion_ready_depth_ = 0;
-  ready_nonempty_since_ns_ = 0;
-  completion_ready_nonempty_since_ns_ = 0;
   pending_submit_ = 0;
   inflight_ = 0;
   wake_pending_ = false;
@@ -333,19 +319,11 @@ void LUringLoop::DrainStoppedOperations() noexcept {
 
 void LUringLoop::Schedule(coro::Work* work) noexcept {
   COROPACT_CHECK(IsInLoopThread(), "LUringLoop::Schedule called from wrong thread");
-  if (ready_depth_ == 0) {
-    ready_nonempty_since_ns_ = time::SteadyNowNs();
-  }
-  ++ready_depth_;
   ready_.PushBack(work);
 }
 
 void LUringLoop::ScheduleCompletion(coro::Work* work) noexcept {
   COROPACT_CHECK(IsInLoopThread(), "LUringLoop::ScheduleCompletion called from wrong thread");
-  if (completion_ready_depth_ == 0) {
-    completion_ready_nonempty_since_ns_ = time::SteadyNowNs();
-  }
-  ++completion_ready_depth_;
   completion_ready_.PushBack(work);
 }
 
@@ -353,105 +331,21 @@ void LUringLoop::RunReady() noexcept {
   COROPACT_CHECK(IsInLoopThread(), "LUringLoop::RunReady called from wrong thread");
   ExecutionScope execution_scope{*this};
 
-  // The common throughput configuration does not need wall-clock fairness.
-  // Avoid reading the clock for every resumed work item in that mode; the
-  // budgeted path below keeps the fairness policy when timing control is on.
-  const bool timing_required =
-      max_ready_time_per_turn_ > std::chrono::microseconds::zero() ||
-      completion_queue_age_threshold_ > std::chrono::microseconds::zero() ||
-      normal_queue_age_threshold_ > std::chrono::microseconds::zero();
-  if (!timing_required) {
-    std::size_t resumed = 0;
-    std::size_t completion_resumed = 0;
-    while (HasReadyWork() &&
-           (max_ready_work_per_turn_ == 0 || resumed < max_ready_work_per_turn_)) {
-      coro::Work* work = nullptr;
-      const bool run_completion =
-          !completion_ready_.Empty() && (ready_.Empty() || max_completion_work_per_turn_ == 0 ||
-                                         completion_resumed < max_completion_work_per_turn_);
-      if (run_completion) {
-        work = completion_ready_.PopFront();
-        COROPACT_CHECK(completion_ready_depth_ > 0, "LUringLoop completion queue depth underflow");
-        --completion_ready_depth_;
-        if (completion_ready_depth_ == 0) {
-          completion_ready_nonempty_since_ns_ = 0;
-        }
-        ++completion_resumed;
-      } else {
-        work = ready_.PopFront();
-        COROPACT_CHECK(ready_depth_ > 0, "LUringLoop ready queue depth underflow");
-        --ready_depth_;
-        if (ready_depth_ == 0) {
-          ready_nonempty_since_ns_ = 0;
-        }
-      }
-      RunInExecutionScope(work);
-      ++resumed;
-    }
-    return;
-  }
-
-  const std::uint64_t turn_start_ns = time::SteadyNowNs();
-  const auto configured_time_budget = max_ready_time_per_turn_ > std::chrono::microseconds::zero()
-                                          ? max_ready_time_per_turn_
-                                          : std::chrono::microseconds::zero();
-  const std::uint64_t time_budget_ns = static_cast<std::uint64_t>(
-      std::chrono::duration_cast<std::chrono::nanoseconds>(configured_time_budget).count());
-  const auto configured_age_threshold =
-      completion_queue_age_threshold_ > std::chrono::microseconds::zero()
-          ? completion_queue_age_threshold_
-          : std::chrono::microseconds::zero();
-  const std::uint64_t completion_age_threshold_ns = static_cast<std::uint64_t>(
-      std::chrono::duration_cast<std::chrono::nanoseconds>(configured_age_threshold).count());
-  const auto configured_normal_age_threshold =
-      normal_queue_age_threshold_ > std::chrono::microseconds::zero()
-          ? normal_queue_age_threshold_
-          : std::chrono::microseconds::zero();
-  const std::uint64_t normal_age_threshold_ns = static_cast<std::uint64_t>(
-      std::chrono::duration_cast<std::chrono::nanoseconds>(configured_normal_age_threshold)
-          .count());
-  const bool completion_is_urgent =
-      completion_ready_depth_ > 0 && completion_age_threshold_ns != 0 &&
-      turn_start_ns - completion_ready_nonempty_since_ns_ >= completion_age_threshold_ns;
-  const bool normal_is_overdue =
-      ready_depth_ > 0 && normal_age_threshold_ns != 0 &&
-      turn_start_ns - ready_nonempty_since_ns_ >= normal_age_threshold_ns;
-  const bool use_urgent_completion_budget = completion_is_urgent && !normal_is_overdue;
-  const std::size_t completion_budget =
-      use_urgent_completion_budget && max_urgent_completion_work_per_turn_ != 0
-          ? max_urgent_completion_work_per_turn_
-          : max_completion_work_per_turn_;
-
   std::size_t resumed = 0;
   std::size_t completion_resumed = 0;
-  while (HasReadyWork() && (max_ready_work_per_turn_ == 0 || resumed < max_ready_work_per_turn_)) {
+  while (HasReadyWork() && resumed < kMaxReadyWorkPerTurn) {
     coro::Work* work = nullptr;
     const bool run_completion =
         !completion_ready_.Empty() &&
-        (ready_.Empty() || (!normal_is_overdue &&
-                            (completion_budget == 0 || completion_resumed < completion_budget)));
+        (ready_.Empty() || completion_resumed < kMaxCompletionWorkPerTurn);
     if (run_completion) {
       work = completion_ready_.PopFront();
-      COROPACT_CHECK(completion_ready_depth_ > 0, "LUringLoop completion queue depth underflow");
-      --completion_ready_depth_;
-      if (completion_ready_depth_ == 0) {
-        completion_ready_nonempty_since_ns_ = 0;
-      }
       ++completion_resumed;
     } else {
       work = ready_.PopFront();
-      COROPACT_CHECK(ready_depth_ > 0, "LUringLoop ready queue depth underflow");
-      --ready_depth_;
-      if (ready_depth_ == 0) {
-        ready_nonempty_since_ns_ = 0;
-      }
     }
     RunInExecutionScope(work);
     ++resumed;
-
-    if (time_budget_ns != 0 && time::SteadyNowNs() - turn_start_ns >= time_budget_ns) {
-      break;
-    }
   }
 }
 
@@ -459,13 +353,6 @@ Result<void> LUringLoop::FlushSubmit() noexcept {
   COROPACT_CHECK(IsInLoopThread(), "LUringLoop::FlushSubmit called from wrong thread");
 
   while (pending_submit_ > 0) {
-#if defined(COROPACT_ENABLE_TEST_HOOKS)
-    if (test_flush_failures_ != 0) {
-      --test_flush_failures_;
-      return std::unexpected(Errno(test_flush_error_));
-    }
-#endif
-
     COROPACT_TRY_VALUE(submitted, ring_.Submit());
     if (submitted == 0) {
       return std::unexpected(Errno(EAGAIN));
@@ -488,7 +375,7 @@ Result<std::size_t> LUringLoop::PollCompletions() noexcept {
 
   COROPACT_TRY(FlushSubmit());
 
-  return ring_.Reap([this](io_uring_cqe* cqe) { HandleCqe(cqe); }, max_cqe_per_turn_);
+  return ring_.Reap([this](io_uring_cqe* cqe) { HandleCqe(cqe); }, kMaxCqesPerTurn);
 }
 
 Result<std::size_t> LUringLoop::WaitCompletions() noexcept {
@@ -517,7 +404,7 @@ Result<std::size_t> LUringLoop::WaitCompletionsFor(std::chrono::nanoseconds time
   }
 
   return ring_.Reap([this](io_uring_cqe* completed_cqe) { HandleCqe(completed_cqe); },
-                    max_cqe_per_turn_);
+                    kMaxCqesPerTurn);
 }
 
 void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
