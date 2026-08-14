@@ -16,7 +16,7 @@ buffer 可以复用，以及关闭和取消如何收敛。内部类、CQE 分发
 | listener / 单次 accept | `Accept` | 稳定 | 新连接所有权与关闭 |
 | 持续 accept | `AcceptSource`、`AcceptMode::kMultishot` | 已实现扩展 | 多事件、终止 CQE、背压、降级 |
 | 持续 recv | `LUringRecvSource` | 已实现扩展 | provided buffer、事件队列、`BufferLease` |
-| provided buffer ring | `LUringRecvSource` 的内部资源 | 已实现扩展 | slot 借出、归还和 source 停止 |
+| provided buffer ring | `LUringRecvSource` 的内部资源 | 已实现扩展 | slot 借出、归还、incremental segment 与 source 停止 |
 | 发送 zerocopy | `SendZeroCopy` | 已实现扩展 | primary CQE 与可选 `F_NOTIF` 的分离式 release |
 | timer | `SleepFor`、`RunAfter` | 已实现 | 到期恢复、错误和 loop 归属 |
 | 多 worker / CPU 绑定 | `LUringWorkerGroup` | 已实现 | 每 worker 一个 loop、启动和停止 |
@@ -75,6 +75,7 @@ split-release 生命周期决定何时进入最后两步。
 - [stream 操作](stream.md)
 - [listener 与 AcceptSource](listener-and-accept.md)
 - [multishot recv 与 provided buffer](recv-source.md)
+- [增量 provided-buffer 的 LRCI 精化](incremental-provided-buffer.md)
 - [SendZeroCopy](zero-copy-send.md)
 - [timer、超时与停止](timers-and-timeouts.md)
 - [注册资源的边界](registered-resources.md)

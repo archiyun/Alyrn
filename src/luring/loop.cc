@@ -187,14 +187,46 @@ Result<detail::ProvidedBufferPool*> LUringLoop::GetSharedProvidedBufferPool(
   auto pool = detail::ProvidedBufferPool::Create(ring_.Native(), *group, shared_buffer_capacity_,
                                                  shared_buffer_size_, source_capacity);
   if (!pool.has_value()) {
+    ReleaseBufferGroupId(*group);
     return std::unexpected(pool.error());
   }
   try {
     shared_buffer_pool_ = std::make_unique<detail::ProvidedBufferPool>(std::move(*pool));
   } catch (...) {
+    ReleaseBufferGroupId(*group);
     return std::unexpected(Errno(ENOMEM));
   }
   return shared_buffer_pool_.get();
+}
+
+Result<std::unique_ptr<detail::ProvidedBufferPool>> LUringLoop::CreateIncrementalProvidedBufferPool(
+    std::size_t buffer_size, std::size_t source_capacity) noexcept {
+  COROPACT_CHECK(IsInLoopThread(),
+                 "LUringLoop::CreateIncrementalProvidedBufferPool called from wrong thread");
+  if (shared_buffer_capacity_ == 0) {
+    return std::unexpected(Errno(ENOENT));
+  }
+  if (source_capacity == 0 || source_capacity > shared_buffer_capacity_ ||
+      buffer_size != shared_buffer_size_) {
+    return std::unexpected(Errno(EINVAL));
+  }
+
+  auto group = AllocateBufferGroupId();
+  if (!group.has_value()) {
+    return std::unexpected(group.error());
+  }
+  auto pool = detail::ProvidedBufferPool::Create(ring_.Native(), *group, source_capacity,
+                                                 buffer_size, source_capacity, true);
+  if (!pool.has_value()) {
+    ReleaseBufferGroupId(*group);
+    return std::unexpected(pool.error());
+  }
+  try {
+    return std::make_unique<detail::ProvidedBufferPool>(std::move(*pool));
+  } catch (...) {
+    ReleaseBufferGroupId(*group);
+    return std::unexpected(Errno(ENOMEM));
+  }
 }
 
 void LUringLoop::Run(std::stop_token token) noexcept {
@@ -335,9 +367,8 @@ void LUringLoop::RunReady() noexcept {
   std::size_t completion_resumed = 0;
   while (HasReadyWork() && resumed < kMaxReadyWorkPerTurn) {
     coro::Work* work = nullptr;
-    const bool run_completion =
-        !completion_ready_.Empty() &&
-        (ready_.Empty() || completion_resumed < kMaxCompletionWorkPerTurn);
+    const bool run_completion = !completion_ready_.Empty() &&
+                                (ready_.Empty() || completion_resumed < kMaxCompletionWorkPerTurn);
     if (run_completion) {
       work = completion_ready_.PopFront();
       ++completion_resumed;
