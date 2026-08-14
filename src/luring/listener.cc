@@ -1,6 +1,5 @@
 #include "coropact/luring/listener.h"
 
-#include <liburing.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -20,6 +19,7 @@
 #include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/detail/op.h"
 #include "coropact/luring/detail/operation_submission.h"
+#include "coropact/luring/detail/sqe_prep.h"
 #include "coropact/luring/loop.h"
 #include "coropact/luring/stream.h"
 #include "coropact/net/endpoint.h"
@@ -312,13 +312,7 @@ Result<void> LUringAcceptSource::StartOperation() noexcept {
 
   auto submitted = detail::LoopAccess::SubmitOp(
       *listener_->loop_, &accept_op_,
-      [fd = listener_->fd_, multishot = multishot_enabled_](io_uring_sqe* sqe) noexcept {
-        if (multishot) {
-          io_uring_prep_multishot_accept(sqe, fd, nullptr, nullptr, SOCK_NONBLOCK | SOCK_CLOEXEC);
-        } else {
-          io_uring_prep_accept(sqe, fd, nullptr, nullptr, SOCK_NONBLOCK | SOCK_CLOEXEC);
-        }
-      });
+      detail::PrepareAcceptSource(listener_->fd_, multishot_enabled_, SOCK_NONBLOCK | SOCK_CLOEXEC));
 
   if (!submitted.has_value()) {
     --listener_->pending_accepts_;
@@ -372,9 +366,8 @@ Result<void> LUringAcceptSource::StartCancel() noexcept {
   const auto target = reinterpret_cast<std::uint64_t>(&accept_op_);
 
   auto submitted = detail::LoopAccess::SubmitOp(
-      *listener_->loop_, &cancel_op_, [target](io_uring_sqe* sqe) noexcept {
-        io_uring_prep_cancel64(sqe, target, IORING_ASYNC_CANCEL_ALL);
-      });
+      *listener_->loop_, &cancel_op_,
+      detail::PrepareCancelAllByUserData(target));
 
   if (!submitted.has_value()) {
     return std::unexpected(submitted.error());
@@ -670,10 +663,8 @@ public:
 
     return detail::SubmitAwaitingOperation(
         *listener_->loop_, *Op(), continuation,
-        [this, fd = listener_->fd_](io_uring_sqe* sqe) noexcept {
-          io_uring_prep_accept(sqe, fd, reinterpret_cast<sockaddr*>(&peer_addr_), &peer_len_,
-                               SOCK_NONBLOCK | SOCK_CLOEXEC);
-        },
+        detail::PrepareAccept(listener_->fd_, reinterpret_cast<sockaddr*>(&peer_addr_), &peer_len_,
+                              SOCK_NONBLOCK | SOCK_CLOEXEC),
         [this](Error error) noexcept { CompleteInline(std::unexpected(error)); });
   }
 
@@ -769,9 +760,8 @@ public:
     Op()->kind = LUringOpKind::kListenerCloseComplete;
 
     auto submitted = detail::LoopAccess::SubmitOp(
-        *listener_->loop_, Op(), [fd = listener_->fd_](io_uring_sqe* sqe) noexcept {
-          io_uring_prep_cancel_fd(sqe, fd, IORING_ASYNC_CANCEL_ALL);
-        });
+        *listener_->loop_, Op(),
+        detail::PrepareCancelAllByFd(listener_->fd_));
     if (!submitted.has_value()) {
       listener_->pending_close_ = nullptr;
       convergence_.SetError(submitted.error());

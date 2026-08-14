@@ -12,6 +12,7 @@
 #include "coropact/luring/detail/cancel_result.h"
 #include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/detail/provided_buffer_pool.h"
+#include "coropact/luring/detail/sqe_prep.h"
 #include "coropact/luring/loop.h"
 #include "coropact/operation/detail/completion_gate.h"
 #include "coropact/operation/detail/scheduler_continuation.h"
@@ -320,12 +321,7 @@ Result<void> LUringRecvSource::StartOperation() noexcept {
   recv_op_.Prepare();
   const auto buffer_group = buffer_pool_->BufferGroup();
   auto submitted = detail::LoopAccess::SubmitOp(
-      *loop_, &recv_op_,
-      [fd = fd_, buffer_size = buffer_size_, buffer_group](io_uring_sqe* sqe) noexcept {
-        io_uring_prep_recv_multishot(sqe, fd, nullptr, buffer_size, 0);
-        sqe->flags |= IOSQE_BUFFER_SELECT;
-        sqe->buf_group = buffer_group;
-      });
+      *loop_, &recv_op_, detail::PrepareProvidedRecvMultishot(fd_, buffer_size_, buffer_group));
 
   if (!submitted.has_value()) {
     const auto completed = state_.CompleteMultishotEvent(EventDisposition::kNone,
@@ -368,10 +364,8 @@ Result<void> LUringRecvSource::StartCancel() noexcept {
 
   cancel_op_.Prepare();
   const auto target = reinterpret_cast<std::uint64_t>(&recv_op_);
-  auto submitted =
-      detail::LoopAccess::SubmitOp(*loop_, &cancel_op_, [target](io_uring_sqe* sqe) noexcept {
-        io_uring_prep_cancel64(sqe, target, IORING_ASYNC_CANCEL_ALL);
-      });
+  auto submitted = detail::LoopAccess::SubmitOp(
+      *loop_, &cancel_op_, detail::PrepareCancelAllByUserData(target));
   if (!submitted.has_value()) {
     return std::unexpected(submitted.error());
   }

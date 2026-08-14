@@ -24,6 +24,7 @@
 #include "coropact/luring/detail/completion_dispatch.h"
 #include "coropact/luring/detail/op.h"
 #include "coropact/luring/detail/provided_buffer_pool.h"
+#include "coropact/luring/detail/sqe_prep.h"
 #include "coropact/luring/detail/ring.h"
 #include "coropact/luring/options.h"
 #include "coropact/result.h"
@@ -298,9 +299,7 @@ Result<void> LUringLoop::CancelPendingOperations() noexcept {
 
   cancel_all_op_.BeginNextRequest();
 
-  auto submitted = SubmitOp(&cancel_all_op_, [](io_uring_sqe* sqe) noexcept {
-    io_uring_prep_cancel(sqe, nullptr, IORING_ASYNC_CANCEL_ANY | IORING_ASYNC_CANCEL_ALL);
-  });
+  auto submitted = SubmitOp(&cancel_all_op_, detail::PrepareCancelAll());
   if (submitted.has_value()) {
     cancel_all_pending_ = true;
   }
@@ -530,9 +529,7 @@ Result<void> LUringLoop::ArmWakePoll() noexcept {
 
   wake_op_.kind = LUringOpKind::kWake;
   wake_op_.resume_work.ClearHandle();
-  auto submitted = SubmitOp(&wake_op_, [fd = wake_fd_](io_uring_sqe* sqe) noexcept {
-    io_uring_prep_poll_add(sqe, fd, POLLIN);
-  });
+  auto submitted = SubmitOp(&wake_op_, detail::PreparePollAdd(wake_fd_, POLLIN));
   if (submitted.has_value()) {
     wake_pending_ = true;
   }

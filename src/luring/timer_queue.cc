@@ -2,8 +2,6 @@
 
 #include "coropact/luring/detail/timer_queue.h"
 
-#include <liburing.h>
-
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
@@ -12,6 +10,7 @@
 
 #include "coropact/base/check.h"
 #include "coropact/luring/detail/loop_access.h"
+#include "coropact/luring/detail/sqe_prep.h"
 #include "coropact/luring/loop.h"
 #include "coropact/time/clock.h"
 
@@ -204,9 +203,8 @@ Result<void> LUringTimerQueue::Arm(time::Deadline deadline) noexcept {
   driver_timespec_ = ToKernelTimespec(deadline);
   DriverOp()->BeginNextRequest();
 
-  auto result = LoopAccess::SubmitOp(*loop_, DriverOp(), [this](io_uring_sqe* sqe) noexcept {
-    io_uring_prep_timeout(sqe, &driver_timespec_, 0, IORING_TIMEOUT_ABS);
-  });
+  auto result = LoopAccess::SubmitOp(
+      *loop_, DriverOp(), detail::PrepareAbsoluteTimeout(&driver_timespec_));
   if (!result.has_value()) return std::unexpected(result.error());
 
   driver_armed_ = true;
@@ -219,9 +217,8 @@ Result<void> LUringTimerQueue::ArmFallback(time::Deadline deadline) noexcept {
   ControlOp()->BeginNextRequest();
   control_is_fallback_ = true;
 
-  auto result = LoopAccess::SubmitOp(*loop_, ControlOp(), [this](io_uring_sqe* sqe) noexcept {
-    io_uring_prep_timeout(sqe, &fallback_timespec_, 0, IORING_TIMEOUT_ABS);
-  });
+  auto result = LoopAccess::SubmitOp(
+      *loop_, ControlOp(), detail::PrepareAbsoluteTimeout(&fallback_timespec_));
   if (result.has_value()) {
     control_pending_ = true;
     fallback_armed_ = true;
@@ -238,10 +235,9 @@ Result<void> LUringTimerQueue::Update(time::Deadline deadline) noexcept {
   ControlOp()->BeginNextRequest();
   control_is_fallback_ = false;
 
-  auto result = LoopAccess::SubmitOp(*loop_, ControlOp(), [this](io_uring_sqe* sqe) noexcept {
-    io_uring_prep_timeout_update(sqe, &update_timespec_,
-                                 reinterpret_cast<std::uint64_t>(DriverOp()), IORING_TIMEOUT_ABS);
-  });
+  auto result = LoopAccess::SubmitOp(
+      *loop_, ControlOp(), detail::PrepareAbsoluteTimeoutUpdate(
+                               &update_timespec_, reinterpret_cast<std::uint64_t>(DriverOp())));
   if (!result.has_value()) {
     requested_deadline_ = {};
     return std::unexpected(result.error());

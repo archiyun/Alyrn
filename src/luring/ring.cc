@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #include "coropact/luring/detail/ring.h"
 
+#include "coropact/luring/detail/sqe_prep.h"
+
 #include <liburing.h>
 #include <liburing/io_uring.h>
 
@@ -94,7 +96,7 @@ void LUringRing::PrepMsgRing(io_uring_sqe* sqe, int target_ring_fd, std::uint32_
                              std::uint64_t data) noexcept {
   COROPACT_CHECK(sqe != nullptr, "LUringRing::PrepMsgRing received null SQE");
 
-  io_uring_prep_msg_ring(sqe, target_ring_fd, type, data, IORING_MSG_DATA);
+  PrepareMsgRing(target_ring_fd, type, data)(sqe);
 }
 
 }  // namespace coropact::luring::detail

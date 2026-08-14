@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 
-#include <liburing.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -23,6 +22,7 @@
 #include "coropact/io/loop.h"
 #include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/detail/op.h"
+#include "coropact/luring/detail/sqe_prep.h"
 #include "coropact/luring/loop.h"
 #include "coropact/luring/options.h"
 #include "coropact/luring/stream.h"
@@ -40,7 +40,7 @@ public:
     op_.resume_work.SetHandle(continuation);
 
     auto submitted = coropact::luring::detail::LoopAccess::SubmitOp(
-        *loop_, &op_, [](io_uring_sqe* sqe) noexcept { io_uring_prep_nop(sqe); });
+        *loop_, &op_, coropact::luring::detail::PrepareNop());
     if (!submitted.has_value()) {
       result_.emplace(std::unexpected(submitted.error()));
       return false;

@@ -2,7 +2,6 @@
 #include "coropact/luring/connector.h"
 
 #include <fcntl.h>
-#include <liburing.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -18,6 +17,7 @@
 #include "coropact/luring/detail/completion_dispatch.h"
 #include "coropact/luring/detail/op.h"
 #include "coropact/luring/detail/operation_submission.h"
+#include "coropact/luring/detail/sqe_prep.h"
 #include "coropact/luring/loop.h"
 #include "coropact/luring/stream.h"
 #include "coropact/luring/timer.h"
@@ -94,9 +94,7 @@ public:
     Op()->kind = LUringOpKind::kConnect;
     return detail::SubmitAwaitingOperation(
         *loop_, *Op(), continuation,
-        [this, fd = fd_](io_uring_sqe* sqe) noexcept {
-          io_uring_prep_connect(sqe, fd, peer_.SockAddr(), peer_.SockAddrLen());
-        },
+        detail::PrepareConnect(fd_, peer_.SockAddr(), peer_.SockAddrLen()),
         [this](Error error) noexcept { CompleteInline(std::unexpected(error)); });
   }
 
