@@ -958,7 +958,7 @@ bool CheckQueueBackpressure() {
          observation.normal_end;
 }
 
-bool RunQueuePauseThenRearmScenario(bool inject_close_submit_failure) {
+bool RunQueuePauseThenRearmScenario() {
   LUringLoop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
@@ -1073,7 +1073,7 @@ bool RunQueuePauseThenRearmScenario(bool inject_close_submit_failure) {
 }
 
 bool CheckQueuePauseThenRearm() {
-  return RunQueuePauseThenRearmScenario(false);
+  return RunQueuePauseThenRearmScenario();
 }
 
 

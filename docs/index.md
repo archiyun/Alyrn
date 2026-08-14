@@ -1,12 +1,14 @@
 # CoroPact 文档
 
-设计说明目前以中文为主。根目录 [README](../README.md) / [README.zh-CN.md](../README.zh-CN.md)
-是使用入口；[`CONTEXT.md`](../CONTEXT.md) 是领域词汇；[`SUBSYSTEMS.md`](SUBSYSTEMS.md)
+设计说明目前以中文为主。根目录 [README](https://github.com/archiyun/CoroPact/blob/main/README.md) /
+[README.zh-CN.md](https://github.com/archiyun/CoroPact/blob/main/README.zh-CN.md) 是使用入口；
+[`CONTEXT.md`](https://github.com/archiyun/CoroPact/blob/main/CONTEXT.md) 是领域词汇；
+[`SUBSYSTEMS.md`](SUBSYSTEMS.md)
 是模块依赖的规范。
 
 ## 先读
 
-- [CONTEXT.md](../CONTEXT.md) — 术语、公开 seam、线程亲和、协程帧
+- [CONTEXT.md](https://github.com/archiyun/CoroPact/blob/main/CONTEXT.md) — 术语、公开 seam、线程亲和、协程帧
 - [Runtime 子系统边界](SUBSYSTEMS.md) — 分层与硬依赖规则
 - [ADR](adr/) — 已接受的架构决策
 
