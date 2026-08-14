@@ -148,10 +148,10 @@ AND outstanding segment leases == 0
 
 ## 能力与降级
 
-初始化时探测 host/kernel 是否同时支持 provided-buffer ring、incremental consumption 与 private
-buffer-group 的 recv trace。能力未满足时，`LUringRecvSource` 保持现有 shared
-one-CQE/one-slot 路径；它不是错误，也不改变公开返回值。能力选择属于 `luring/detail` 的固定
-backend policy，不能泄漏为 Runtime Builder 开关。
+初始化时以 private buffer-group 的 `IOU_PBUF_RING_INC` allocation 作为 capability probe。
+该 allocation 被内核拒绝时，`LUringRecvSource` 保持现有 shared one-CQE/one-slot 路径；它不是
+错误，也不改变公开返回值。能力选择属于 `luring/detail` 的固定 backend policy，不能泄漏为
+Runtime Builder 开关。
 
 ## 实施顺序与验证
 

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 
-#include <liburing.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
 #include <array>
 #include <chrono>
+#include <cstddef>
 #include <coroutine>
 #include <expected>
 #include <iostream>
@@ -19,13 +19,16 @@
 #include "coropact/result.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/spawn.h"
-#include "coropact/coro/task.h"
+#include "coropact/coro/detached_task.h"
+#include "coropact/coro/work.h"
 #include "coropact/io/loop.h"
 #include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/detail/op.h"
+#include "coropact/luring/detail/sqe_prep.h"
 #include "coropact/luring/loop.h"
 #include "coropact/luring/options.h"
 #include "coropact/luring/stream.h"
+#include "coropact/net/endpoint.h"
 #include "coropact/operation/detail/scheduler_continuation.h"
 
 namespace {
@@ -40,7 +43,7 @@ public:
     op_.resume_work.SetHandle(continuation);
 
     auto submitted = coropact::luring::detail::LoopAccess::SubmitOp(
-        *loop_, &op_, [](io_uring_sqe* sqe) noexcept { io_uring_prep_nop(sqe); });
+        *loop_, &op_, coropact::luring::detail::PrepareNop());
     if (!submitted.has_value()) {
       result_.emplace(std::unexpected(submitted.error()));
       return false;

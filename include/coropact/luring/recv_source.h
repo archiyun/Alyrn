@@ -203,6 +203,7 @@ private:
   void ReleasePrivateBufferPool() noexcept;
   void ReturnBuffer(std::uint32_t buffer_id) noexcept;
 
+  static void ValidateMovable(const LUringRecvSource& source) noexcept;
   static void ReclaimBuffer(void* context, std::uint32_t buffer_id) noexcept;
 
   LUringLoop* loop_{nullptr};
