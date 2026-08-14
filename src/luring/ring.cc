@@ -24,24 +24,11 @@ io_uring_params MakeParams(const LUringOptions& options) noexcept {
   io_uring_params params{};
   params.flags |= IORING_SETUP_CLAMP;
 
-  if (options.setup_submit_all) {
-    params.flags |= IORING_SETUP_SUBMIT_ALL;
-  }
-
-  if (options.setup_single_issuer) {
-    params.flags |= IORING_SETUP_SINGLE_ISSUER;
-  }
-
-  if (options.setup_defer_taskrun) {
-    params.flags |= IORING_SETUP_COOP_TASKRUN;
-    params.flags |= IORING_SETUP_TASKRUN_FLAG;
-    params.flags |= IORING_SETUP_DEFER_TASKRUN;
-  }
-
-  if (options.cq_entries != 0) {
-    params.flags |= IORING_SETUP_CQSIZE;
-    params.cq_entries = options.cq_entries;
-  }
+  // One loop owns one ring, so these flags are implementation policy rather
+  // than caller configuration. Keeping them fixed makes the submission model
+  // uniform across every LUringLoop.
+  params.flags |= IORING_SETUP_SUBMIT_ALL;
+  params.flags |= IORING_SETUP_SINGLE_ISSUER;
 
   if (options.setup_sqpoll) {
     params.flags |= IORING_SETUP_SQPOLL;

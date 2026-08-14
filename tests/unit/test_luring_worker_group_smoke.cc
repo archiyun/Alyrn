@@ -128,7 +128,6 @@ bool CheckWorkerGroupStartStop() {
   coropact::luring::detail::LUringWorkerGroupOptions options;
   options.worker_num = 2;
   options.worker_options.loop_options.entries = 16;
-  options.worker_options.loop_options.submit_batch = 1;
   options.worker_options.listen_options.reuse_port = true;
 
   std::atomic_size_t init_count{0};
@@ -191,7 +190,6 @@ bool CheckWorkerGroupAcceptCallback() {
   coropact::luring::detail::LUringWorkerGroupOptions options;
   options.worker_num = 1;
   options.worker_options.loop_options.entries = 16;
-  options.worker_options.loop_options.submit_batch = 1;
   options.worker_options.listen_options.reuse_port = true;
   options.worker_options.accept_mode = coropact::luring::detail::AcceptMode::kMultishot;
 

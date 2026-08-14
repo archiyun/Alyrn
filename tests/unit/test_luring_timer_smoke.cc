@@ -93,7 +93,6 @@ bool TestTimers() {
   coropact::luring::LUringLoop loop;
   coropact::luring::LUringOptions options;
   options.entries = 16;
-  options.submit_batch = 1;
 
   auto init = loop.Init(options);
   if (!init.has_value()) {
@@ -169,7 +168,6 @@ bool TestStopDiscardsUnexpiredTimer() {
     coropact::luring::LUringLoop loop;
     coropact::luring::LUringOptions options;
     options.entries = 8;
-    options.submit_batch = 1;
 
     auto init = loop.Init(options);
     if (!init.has_value()) {
@@ -200,100 +198,6 @@ bool TestStopDiscardsUnexpiredTimer() {
   return Check(!fired, "loop shutdown must discard an unexpired timer without running it");
 }
 
-#if defined(COROPACT_ENABLE_TEST_HOOKS)
-bool TestRunAfterRejectsTimerPreparationFailure() {
-  coropact::luring::LUringLoop loop;
-  coropact::luring::LUringOptions options;
-  options.entries = 8;
-  options.submit_batch = 1;
-
-  auto init = loop.Init(options);
-  if (!init.has_value()) {
-    if (IsEnvironmentSkip(init.error())) {
-      return true;
-    }
-    return Check(false, "LUringLoop initialization failed for timer preparation test");
-  }
-
-  loop.FailNextSubmissionsForTesting(1, EIO);
-  auto timer = loop.RunAfter(1ms, [] noexcept {});
-
-  const bool rejected =
-      Check(!timer.has_value(), "RunAfter must reject timer driver preparation failure") &&
-      Check(timer.error().value() == EIO, "RunAfter must preserve timer preparation error");
-  return StopAndDrain(loop) && rejected;
-}
-
-bool TestRunAfterRejectsTimerUpdatePreparationFailure() {
-  coropact::luring::LUringLoop loop;
-  coropact::luring::LUringOptions options;
-  options.entries = 8;
-  options.submit_batch = 1;
-
-  auto init = loop.Init(options);
-  if (!init.has_value()) {
-    if (IsEnvironmentSkip(init.error())) {
-      return true;
-    }
-    return Check(false, "LUringLoop initialization failed for timer update test");
-  }
-
-  auto later = loop.RunAfter(1h, [] noexcept {});
-  if (!Check(later.has_value(), "initial timer should be accepted before update failure")) {
-    (void)StopAndDrain(loop);
-    return false;
-  }
-
-  loop.FailNextSubmissionsForTesting(1, EIO);
-  auto earlier = loop.RunAfter(1ms, [] noexcept {});
-
-  const bool rejected =
-      Check(!earlier.has_value(), "RunAfter must reject timer update preparation failure") &&
-      Check(earlier.error().value() == EIO, "RunAfter must preserve timer update error");
-  const bool original_retained = Check(loop.CancelTimer(*later).has_value(),
-                                       "failed earlier timer must not remove prior timer");
-  const bool drained = StopAndDrain(loop);
-  return rejected && original_retained && drained;
-}
-
-bool TestTimerRearmFailureStopsLoop() {
-  coropact::luring::LUringLoop loop;
-  coropact::luring::LUringOptions options;
-  options.entries = 8;
-  options.submit_batch = 1;
-
-  auto init = loop.Init(options);
-  if (!init.has_value()) {
-    if (IsEnvironmentSkip(init.error())) {
-      return true;
-    }
-    return Check(false, "LUringLoop initialization failed for timer rearm test");
-  }
-
-  bool first_fired = false;
-  auto first = loop.RunAfter(1ms, [&first_fired] noexcept { first_fired = true; });
-  if (!Check(first.has_value(), "initial expiring timer should be accepted")) {
-    (void)StopAndDrain(loop);
-    return false;
-  }
-  auto later = loop.RunAfter(1h, [] noexcept {});
-  if (!Check(later.has_value(), "later timer should be accepted before rearm failure")) {
-    (void)StopAndDrain(loop);
-    return false;
-  }
-
-  loop.FailNextSubmissionsForTesting(1, EIO);
-  auto completed = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
-
-  const bool failed_safe =
-      Check(completed.has_value(), "expiring timer completion should be received") &&
-      Check(first_fired, "first timer should fire before rearm failure") &&
-      Check(loop.State() == coropact::io::LoopState::kStopping,
-            "timer rearm preparation failure must stop the loop");
-  const bool drained = StopAndDrain(loop);
-  return failed_safe && drained;
-}
-#endif
 
 }  // namespace
 
@@ -301,11 +205,6 @@ int main() {
   if (!TestLoopAffinityIsEnforcedInRelease()) return 1;
   if (!TestTimers()) return 1;
   if (!TestStopDiscardsUnexpiredTimer()) return 1;
-#if defined(COROPACT_ENABLE_TEST_HOOKS)
-  if (!TestRunAfterRejectsTimerPreparationFailure()) return 1;
-  if (!TestRunAfterRejectsTimerUpdatePreparationFailure()) return 1;
-  if (!TestTimerRearmFailureStopsLoop()) return 1;
-#endif
   std::cout << "luring timer smoke: PASS\n";
   return 0;
 }

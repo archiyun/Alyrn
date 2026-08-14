@@ -86,7 +86,6 @@ bool CheckMailboxNotificationState() {
 bool CheckMsgRingMailboxSchedule() {
   coropact::luring::LUringOptions options;
   options.entries = 16;
-  options.submit_batch = 1;
 
   std::atomic_bool failed{false};
   std::atomic_bool skipped{false};

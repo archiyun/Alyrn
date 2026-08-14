@@ -6,9 +6,9 @@ Accepted for the initial coroutine implementation.
 
 ## Context
 
-CoroPact must allow the same business coroutine to run on the epoll/Reactor backend
-and the io_uring backend. The coroutine layer therefore cannot own network
-descriptors, submit I/O, or depend on either concrete runtime.
+CoroPact must allow the same business coroutine to run on the epoll/Reactor backend,
+the io_uring backend, and the kqueue backend. The coroutine layer therefore cannot own network
+descriptors, submit I/O, or depend on a concrete runtime.
 
 The public coroutine API has three distinct roles:
 

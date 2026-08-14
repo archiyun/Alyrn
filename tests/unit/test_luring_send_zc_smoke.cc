@@ -86,7 +86,6 @@ bool IsEnvironmentSkip(Error error) {
 bool InitLoop(LUringLoop& loop) {
   LUringOptions options;
   options.entries = 32;
-  options.submit_batch = 1;
   auto initialized = loop.Init(options);
   if (initialized.has_value()) {
     return true;

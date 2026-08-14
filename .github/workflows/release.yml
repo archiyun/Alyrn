@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   package:
@@ -40,6 +41,16 @@ jobs:
             exit 1
           fi
           printf 'Release artifacts:\n%s\n' "${artifacts[@]}"
+
+      - name: Publish runnable Docker image
+        run: |
+          image="ghcr.io/archiyun/coropact"
+          docker buildx build \
+            --target runtime \
+            --push \
+            --tag "${image}:${RELEASE_TAG}" \
+            --tag "${image}:latest" \
+            .
 
       - name: Publish GitHub release
         env:

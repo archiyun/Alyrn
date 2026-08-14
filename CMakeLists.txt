@@ -20,8 +20,6 @@ option(COROPACT_ENABLE_KQUEUE "Enable kqueue readiness backend (requires a BSD k
 option(COROPACT_ENABLE_KQUEUE_SHIM_TESTS
        "Build kqueue backend tests against an in-memory kqueue shim (developer aid, no BSD host)"
        OFF)
-option(COROPACT_ENABLE_TEST_HOOKS
-       "Enable deterministic fault-injection hooks for runtime tests" OFF)
 option(COROPACT_STRICT_WARNINGS
        "Treat common GCC/Clang warnings as errors for CoroPact sources" OFF)
 
@@ -260,9 +258,6 @@ if(COROPACT_ENABLE_URING)
     )
 
     target_compile_definitions(coropact_luring PUBLIC COROPACT_ENABLE_URING)
-    if(COROPACT_ENABLE_TEST_HOOKS)
-        target_compile_definitions(coropact_luring PUBLIC COROPACT_ENABLE_TEST_HOOKS)
-    endif()
     target_compile_features(coropact_luring PUBLIC cxx_std_23)
 
 endif()

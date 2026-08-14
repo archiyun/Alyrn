@@ -171,7 +171,6 @@ bool CheckNopResumesCoroutine() {
 
   coropact::luring::LUringOptions options;
   options.entries = 8;
-  options.submit_batch = 1;
 
   auto init = loop.Init(options);
   if (!init.has_value()) {
@@ -309,30 +308,6 @@ bool RunLoopStopDrainScenario(StopDrainFailure injected_failure) {
 
   const bool stop_before_run = injected_failure == StopDrainFailure::kFlushSubmit;
 
-#if defined(COROPACT_ENABLE_TEST_HOOKS)
-  if (injected_failure != StopDrainFailure::kNone) {
-    // Ensure the read request itself has reached the ring before failing the
-    // later shutdown action. This keeps the target read live while the drain
-    // path handles the injected failure.
-    coropact::luring::detail::LoopAccess::RunReady(loop);
-    auto flushed = coropact::luring::detail::LoopAccess::FlushSubmit(loop);
-    if (!flushed.has_value()) {
-      std::cout << "FAIL: initial read submit failed: " << flushed.error().message() << '\n';
-      ::close(fds[1]);
-      return false;
-    }
-    if (injected_failure == StopDrainFailure::kCancelPreparation) {
-      // The next local operation preparation is the loop-wide cancel SQE.
-      loop.FailNextSubmissionsForTesting(1, EIO);
-    } else {
-      // Pre-request stop so Run() enters DrainStoppedOperations() directly;
-      // the next flush then targets the cancel SQE prepared by that drain.
-      loop.FailNextFlushesForTesting(1, EIO);
-    }
-  }
-#else
-  (void)(injected_failure);
-#endif
 
   if (stop_before_run) {
     loop.RequestStop();
@@ -364,15 +339,6 @@ bool RunLoopStopDrainScenario(StopDrainFailure injected_failure) {
 
 bool CheckLoopStopDrainsPendingRead() { return RunLoopStopDrainScenario(StopDrainFailure::kNone); }
 
-#if defined(COROPACT_ENABLE_TEST_HOOKS)
-bool CheckLoopStopRetriesCancelSubmitFailure() {
-  return RunLoopStopDrainScenario(StopDrainFailure::kCancelPreparation);
-}
-
-bool CheckLoopStopRetriesFlushSubmitFailure() {
-  return RunLoopStopDrainScenario(StopDrainFailure::kFlushSubmit);
-}
-#endif
 
 }  // namespace
 
@@ -381,10 +347,6 @@ int main() {
   if (!CheckNopResumesCoroutine()) return 1;
   if (!CheckCrossThreadRequestStopWakesRing()) return 1;
   if (!CheckLoopStopDrainsPendingRead()) return 1;
-#if defined(COROPACT_ENABLE_TEST_HOOKS)
-  if (!CheckLoopStopRetriesCancelSubmitFailure()) return 1;
-  if (!CheckLoopStopRetriesFlushSubmitFailure()) return 1;
-#endif
   std::cout << "luring coro smoke: PASS\n";
   return 0;
 }

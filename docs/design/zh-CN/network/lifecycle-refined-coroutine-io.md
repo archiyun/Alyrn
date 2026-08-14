@@ -276,11 +276,13 @@ stream slot 的 release 边界已在 continuation 可运行前跨越：follow-up
 
 LRCI 不表示：
 
-- Reactor 与 io_uring 使用相同物理执行机制；
+- Reactor、io_uring 与 kqueue 使用相同物理执行机制；
 - 所有后端能力都能通过同一个返回类型表达；
-- CoroPact 已经验证 kqueue 或 IOCP；
+- CoroPact 已经验证 IOCP；
 - 收到一个事件就必须恢复协程；
 - Result Ready 后资源一定可以立即复用；
 - 每个 C++ implementation transition 都有一个可见 logical transition。
 
 它只承诺：后端保留原生机制，同时把应用可观察行为精化到共同的生命周期 specification。
+kqueue 是第三条平行 adapter，不是 LRCI 的反例；其 native 验证目前限于 BSD/Darwin，
+Linux 上的 in-memory shim 不能替代真实 `kevent`。IOCP 仍未实现。

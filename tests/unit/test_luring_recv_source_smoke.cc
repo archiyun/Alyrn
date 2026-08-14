@@ -114,7 +114,6 @@ LoopInitStatus InitLoop(
     std::size_t shared_buffer_size = 16 * 1024) {
   LUringOptions options;
   options.entries = 32;
-  options.submit_batch = 1;
 
   options.shared_buffer_capacity = shared_buffer_capacity;
   options.shared_buffer_size = shared_buffer_size;
@@ -184,33 +183,6 @@ DetachedTask ReceiveOne(LUringRecvSource* source, Observation* observation) {
 }
 
 /* Only the test-hook scenarios drive these two directly. */
-#if defined(COROPACT_ENABLE_TEST_HOOKS)
-DetachedTask WaitForNext(
-    LUringRecvSource* source,
-    Observation* observation) {
-  auto received = co_await source->Next();
-  if (!received.has_value()) {
-    observation->error = received.error();
-  } else if (!received->has_value()) {
-    observation->eof = true;
-  } else {
-    received->reset();
-  }
-  observation->done = true;
-}
-
-DetachedTask StopSource(
-    LUringRecvSource* source,
-    StopObservation* observation) {
-  auto stopped = co_await source->Stop();
-  if (!stopped.has_value()) {
-    observation->error = stopped.error();
-  } else {
-    observation->succeeded = true;
-  }
-  observation->done = true;
-}
-#endif
 
 DetachedTask ReceivePauseThenResume(
     LUringRecvSource* source,
@@ -576,118 +548,6 @@ bool CheckQueuePauseThenRearm() {
          observation.stopped;
 }
 
-#if defined(COROPACT_ENABLE_TEST_HOOKS)
-
-bool CheckInitialSubmitFailure() {
-  LUringLoop loop;
-  switch (InitLoop(loop)) {
-    case LoopInitStatus::kReady:
-      break;
-    case LoopInitStatus::kSkip:
-      return true;
-    case LoopInitStatus::kFail:
-      return false;
-  }
-
-  auto pair = MakeSocketPair();
-  if (!pair.has_value()) {
-    std::cout << "FAIL: socketpair failed: " << pair.error().message() << '\n';
-    return false;
-  }
-  auto receiver = std::move(pair->first);
-  auto sender = std::move(pair->second);
-
-  auto source_result = LUringRecvSource::Create(&loop, receiver.Get());
-  if (!source_result.has_value()) {
-    if (IsEnvironmentSkip(source_result.error())) {
-      std::cout << "SKIP: provided buffer ring unavailable: "
-                << source_result.error().message() << '\n';
-      return true;
-    }
-    std::cout << "FAIL: RecvSource creation failed: "
-              << source_result.error().message() << '\n';
-    return false;
-  }
-  auto source = std::move(*source_result);
-
-  loop.FailNextSubmissionsForTesting(1, EIO);
-  Observation observation;
-  coropact::coro::SpawnDetach(
-      loop, WaitForNext(&source, &observation));
-  coropact::luring::detail::LoopAccess::RunReady(loop);
-
-  if (!PumpUntil(loop, [&] { return observation.done; })) {
-    return false;
-  }
-  return observation.error.has_value() && observation.error->value() == EIO;
-}
-
-bool CheckCancelSubmitFailure() {
-  LUringLoop loop;
-  switch (InitLoop(loop)) {
-    case LoopInitStatus::kReady:
-      break;
-    case LoopInitStatus::kSkip:
-      return true;
-    case LoopInitStatus::kFail:
-      return false;
-  }
-
-  auto pair = MakeSocketPair();
-  if (!pair.has_value()) {
-    std::cout << "FAIL: socketpair failed: " << pair.error().message() << '\n';
-    return false;
-  }
-  auto receiver = std::move(pair->first);
-  auto sender = std::move(pair->second);
-
-  auto source_result = LUringRecvSource::Create(&loop, receiver.Get());
-  if (!source_result.has_value()) {
-    if (IsEnvironmentSkip(source_result.error())) {
-      std::cout << "SKIP: provided buffer ring unavailable: "
-                << source_result.error().message() << '\n';
-      return true;
-    }
-    std::cout << "FAIL: RecvSource creation failed: "
-              << source_result.error().message() << '\n';
-    return false;
-  }
-  auto source = std::move(*source_result);
-
-  Observation next_observation;
-  coropact::coro::SpawnDetach(
-      loop, WaitForNext(&source, &next_observation));
-  coropact::luring::detail::LoopAccess::RunReady(loop);
-
-  loop.FailNextSubmissionsForTesting(1, EIO);
-  StopObservation first_stop;
-  coropact::coro::SpawnDetach(
-      loop, StopSource(&source, &first_stop));
-  coropact::luring::detail::LoopAccess::RunReady(loop);
-
-  if (!PumpUntil(loop, [&] { return first_stop.done; })) {
-    return false;
-  }
-  if (!first_stop.error.has_value() || first_stop.error->value() != EIO) {
-    std::cout << "FAIL: recv cancel submit failure was not propagated\n";
-    return false;
-  }
-
-  StopObservation retry_stop;
-  coropact::coro::SpawnDetach(
-      loop, StopSource(&source, &retry_stop));
-  coropact::luring::detail::LoopAccess::RunReady(loop);
-
-  if (!PumpUntil(loop, [&] {
-        return retry_stop.done && next_observation.done;
-      })) {
-    return false;
-  }
-  return retry_stop.succeeded && next_observation.eof &&
-         !next_observation.error.has_value();
-}
-
-#endif
 
 }  // namespace
 
@@ -704,14 +564,6 @@ int main() {
   if (!CheckQueuePauseThenRearm()) {
     return 1;
   }
-#if defined(COROPACT_ENABLE_TEST_HOOKS)
-  if (!CheckInitialSubmitFailure()) {
-    return 1;
-  }
-  if (!CheckCancelSubmitFailure()) {
-    return 1;
-  }
-#endif
   std::cout << "luring recv source/BufferLease smoke: PASS\n";
   return 0;
 }

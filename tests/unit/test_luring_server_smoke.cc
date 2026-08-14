@@ -122,7 +122,6 @@ coropact::luring::detail::LUringServerOptions MakeOptions(std::size_t worker_num
   coropact::luring::detail::LUringServerOptions options;
   options.worker_group_options.worker_num = worker_num;
   options.worker_group_options.worker_options.loop_options.entries = 16;
-  options.worker_group_options.worker_options.loop_options.submit_batch = 1;
   options.worker_group_options.worker_options.listen_options.reuse_port = true;
   return options;
 }

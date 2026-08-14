@@ -139,7 +139,6 @@ struct LUringHarness {
   static bool Init(Loop& loop) noexcept {
     coropact::luring::LUringOptions options;
     options.entries = 32;
-    options.submit_batch = 1;
     auto initialized = loop.Init(options);
     if (initialized.has_value()) {
       init_error = {};

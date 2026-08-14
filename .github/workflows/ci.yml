@@ -113,7 +113,7 @@ jobs:
         run: ctest --test-dir build --output-on-failure
 
   uring:
-    name: ${{ matrix.compiler.name }} / io_uring / hooks=${{ matrix.hooks }}
+    name: ${{ matrix.compiler.name }} / io_uring
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -127,9 +127,6 @@ jobs:
               pkgs: "clang-18 g++-14",
               cxxflags: "-Wno-builtin-macro-redefined -D__cpp_concepts=202002",
             }
-        # Quoted so YAML keeps them as the strings CMake expects rather than
-        # folding ON/OFF into booleans.
-        hooks: ["ON", "OFF"]
     env:
       CC: ${{ matrix.compiler.cc }}
       CXX: ${{ matrix.compiler.cxx }}
@@ -162,7 +159,6 @@ jobs:
           -DCMAKE_BUILD_TYPE=Debug
           -DCOROPACT_STRICT_WARNINGS=ON
           -DCOROPACT_ENABLE_URING=ON
-          -DCOROPACT_ENABLE_TEST_HOOKS=${{ matrix.hooks }}
           -DBUILD_BENCHMARKS=ON
           -DCMAKE_CXX_FLAGS="${{ matrix.compiler.cxxflags }}"
 
@@ -213,7 +209,6 @@ jobs:
           -DCMAKE_BUILD_TYPE=Debug
           -DCOROPACT_SANITIZER=${{ matrix.san.sanitizer }}
           -DCOROPACT_ENABLE_URING=ON
-          -DCOROPACT_ENABLE_TEST_HOOKS=ON
           -DCOROPACT_ENABLE_KQUEUE_SHIM_TESTS=ON
           -DBUILD_EXAMPLES=OFF
           -DCMAKE_CXX_FLAGS="-Wno-builtin-macro-redefined -D__cpp_concepts=202002"

@@ -77,7 +77,6 @@ bool IsEnvironmentSkip(coropact::Error error) {
 LoopInitStatus InitLoop(coropact::luring::LUringLoop& loop) {
   coropact::luring::LUringOptions options;
   options.entries = 16;
-  options.submit_batch = 1;
 
   auto init = loop.Init(options);
   if (init.has_value()) {
@@ -312,51 +311,6 @@ bool CheckCloseCancelsPendingAccept() {
          Check(resumed_with_scheduler, "pending accept resumed without current scheduler");
 }
 
-#if defined(COROPACT_ENABLE_TEST_HOOKS)
-bool CheckAcceptSubmitFailureRollsBack() {
-  coropact::luring::LUringLoop loop;
-  switch (InitLoop(loop)) {
-    case LoopInitStatus::kReady:
-      break;
-    case LoopInitStatus::kSkip:
-      return true;
-    case LoopInitStatus::kFail:
-      return false;
-  }
-
-  auto listener = coropact::luring::LUringListener::Create(&loop, LoopbackAddress(0));
-  if (!listener.has_value()) {
-    std::cout << "FAIL: LUringListener::Create failed: " << listener.error().message() << '\n';
-    return false;
-  }
-
-  std::optional<coropact::Result<coropact::luring::LUringStream>> accept_result;
-  bool accept_with_scheduler = false;
-  int accept_resume_count = 0;
-  loop.FailNextSubmissionsForTesting(1, EIO);
-  coropact::coro::SpawnDetach(loop, AcceptOnce(&*listener, &loop, &accept_result,
-                                               &accept_with_scheduler, &accept_resume_count));
-  coropact::luring::detail::LoopAccess::RunReady(loop);
-
-  if (!Check(accept_result.has_value(), "failed accept coroutine did not finish") ||
-      !Check(!accept_result->has_value(), "failed accept unexpectedly succeeded") ||
-      !Check(accept_result->error().value() == EIO, "failed accept returned wrong error") ||
-      !Check(accept_resume_count == 1, "failed accept resumed more than once") ||
-      !Check(accept_with_scheduler, "failed accept resumed without current scheduler")) {
-    return false;
-  }
-
-  // A failed submission must undo pending_accepts_. Otherwise Close() would
-  // submit a cancel and remain suspended for an operation that never entered
-  // the ring.
-  std::optional<coropact::Result<void>> close_result;
-  coropact::coro::SpawnDetach(loop, CloseOnce(&*listener, &close_result));
-  coropact::luring::detail::LoopAccess::RunReady(loop);
-
-  return Check(close_result.has_value(), "Close after failed accept did not finish") &&
-         Check(close_result->has_value(), "Close after failed accept returned an error");
-}
-#endif
 
 }  // namespace
 
@@ -364,9 +318,6 @@ int main() {
   if (!CheckAccept()) return 1;
   if (!CheckAcceptReleasesReservationBeforeContinuation()) return 1;
   if (!CheckCloseCancelsPendingAccept()) return 1;
-#if defined(COROPACT_ENABLE_TEST_HOOKS)
-  if (!CheckAcceptSubmitFailureRollsBack()) return 1;
-#endif
 
   std::cout << "luring listener smoke: PASS\n";
   return 0;

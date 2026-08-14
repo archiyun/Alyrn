@@ -1,13 +1,5 @@
 # Reactor examples —— 基于 epoll/EventLoop 的示例
 
-add_executable(demo_bench_timer
-    demo_bench_timer.cc
-)
-target_link_libraries(demo_bench_timer
-    PRIVATE
-        coropact_reactor
-)
-
 add_executable(demo_reactor_coro_echo
     demo_reactor_coro_echo.cc
 )
