@@ -160,7 +160,7 @@ The backend tag still selects the implementation at compile time. Options that a
 
 ### 5. Use luring-native capabilities
 
-`Runtime` owns the default TCP server's worker lifecycle; it is not a general io_uring configuration API. It may select safe defaults, such as multishot accept with fallback, but applications that need explicit control of ring depth, SQPOLL, submission batching, provided-buffer rings, multishot receive, or zero-copy send should compose `luring::LUringLoop`, `LUringOptions`, and the relevant listener, stream, or source directly:
+`Runtime` owns the default TCP server's worker lifecycle; it is not a general io_uring configuration API. It may select safe defaults, such as multishot accept with fallback, but applications that need explicit control of ring depth, SQPOLL, provided-buffer rings, multishot receive, or zero-copy send should compose `luring::LUringLoop`, `LUringOptions`, and the relevant listener, stream, or source directly:
 
 ```cpp
 coropact::luring::LUringLoop loop;
@@ -175,6 +175,25 @@ auto initialized = loop.Init(options);
 This native path makes ownership of each ring, buffer lease, and operation lifecycle explicit. See [`examples/luring`](examples/luring) and the luring public headers. Do not add these capabilities as cross-backend Runtime switches.
 
 ## Build
+
+## Run the container demo
+
+The published container runs a TCP echo server based on CoroPact's Reactor
+backend. Its port is available to the host when published with Docker:
+
+```bash
+docker run --rm -p 9090:9090 ghcr.io/archiyun/coropact:latest
+```
+
+In another terminal:
+
+```bash
+printf 'hello\n' | nc 127.0.0.1 9090
+```
+
+To build the same image from a checkout, run `docker build -t coropact:local .`.
+The image is a runnable demonstration, not a replacement for an application
+image that links CoroPact.
 
 Build the default Linux Reactor backend:
 

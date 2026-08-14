@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
-# This image is an artifact builder, not a runtime image: CoroPact is a
-# library, so the useful Docker output is the installable package.
+# The default final stage is a runnable Reactor echo-server demonstration.
+# The separate `artifacts` target remains available for release packages.
 FROM ubuntu:24.04 AS liburing-build
 
 ARG LIBURING_VERSION=2.9
@@ -53,7 +53,7 @@ COPY . .
 RUN cmake -S . -B build -G Ninja \
         -DCMAKE_BUILD_TYPE=Release \
         -DBUILD_TESTS=ON \
-        -DBUILD_EXAMPLES=OFF \
+        -DBUILD_EXAMPLES=ON \
         -DBUILD_BENCHMARKS=OFF \
         -DCOROPACT_ENABLE_URING=${COROPACT_ENABLE_URING} \
         -DCMAKE_INSTALL_PREFIX=/usr \
@@ -61,9 +61,21 @@ RUN cmake -S . -B build -G Ninja \
     && ctest --test-dir build --output-on-failure \
     && cpack --config build/CPackConfig.cmake -B build
 
+FROM ubuntu:24.04 AS runtime
+
+COPY --from=build /src/build/examples/simple_echo_container /usr/local/bin/coropact-echo
+
+EXPOSE 9090
+
+ENTRYPOINT ["/usr/local/bin/coropact-echo"]
+
 # `docker buildx build --target artifacts --output=type=local,dest=dist .`
 # copies these files to the host without creating a runtime container image.
 FROM scratch AS artifacts
 
 COPY --from=build /src/build/*.deb /
 COPY --from=build /src/build/*.tar.gz /
+
+# Keep the runnable image as Docker's default target while retaining the
+# explicit `artifacts` target above for package release builds.
+FROM runtime AS final

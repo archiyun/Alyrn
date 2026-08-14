@@ -14,6 +14,16 @@ target_link_libraries(simple_echo
         coropact_reactor
 )
 
+# The container image starts this variant. It binds every IPv4 interface so
+# Docker's published port is reachable from the host.
+add_executable(simple_echo_container
+    simple_echo/container_main.cpp
+)
+target_link_libraries(simple_echo_container
+    PRIVATE
+        coropact_reactor
+)
+
 if(COROPACT_ENABLE_URING)
     add_executable(simple_echo_luring
         simple_echo/luring_main.cpp

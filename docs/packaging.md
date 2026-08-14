@@ -216,7 +216,29 @@ This does not register files with `pacman`, `rpm`, or another package manager.
 Use the source-install path or a native package when package-manager tracking
 and clean removal matter.
 
-## 6. Docker release artifacts
+## 6. Runnable Docker image
+
+The default final Docker stage is a runnable Linux Reactor echo-server
+demonstration. It listens on every IPv4 interface in the container so its port
+can be published to the host:
+
+```bash
+docker build -t coropact:local .
+docker run --rm -p 9090:9090 coropact:local
+```
+
+In a second terminal, verify it by sending a TCP payload:
+
+```bash
+printf 'hello\n' | nc 127.0.0.1 9090
+```
+
+Release tags publish this image as `ghcr.io/archiyun/coropact:<tag>` and
+`ghcr.io/archiyun/coropact:latest`. The container demonstrates CoroPact's
+Reactor backend; CoroPact remains a library and application images should use
+their own executable as the final image entrypoint.
+
+## 7. Docker release artifacts
 
 The root `Dockerfile` is a multi-stage artifact builder. It runs the test suite
 and emits `.deb` and `.tar.gz` files; it is not a runtime image because
@@ -244,7 +266,7 @@ from upstream instead of relying on Ubuntu 24.04's older system package. That
 choice does not restrict the host distribution: Arch and other systems should
 use the source install or their native package path.
 
-## 7. Creating a release
+## 8. Creating a release
 
 Keep the project version and Git tag aligned:
 

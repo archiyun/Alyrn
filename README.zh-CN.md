@@ -153,7 +153,7 @@ Backend tag 仍在编译期选择实现；ring 深度、provided buffer、zero-c
 
 ### 5. 使用 luring 原生能力
 
-`Runtime` 只负责默认 TCP server 的 worker 生命周期，不是通用的 io_uring 配置接口。它可以选择安全的默认策略（例如带 fallback 的 multishot accept），但应用若要**显式**控制 ring 深度、SQPOLL、提交批次、provided-buffer ring、multishot receive 或 zero-copy send，应直接组合 `luring::LUringLoop`、`LUringOptions` 与对应的 listener、stream 或 source：
+`Runtime` 只负责默认 TCP server 的 worker 生命周期，不是通用的 io_uring 配置接口。它可以选择安全的默认策略（例如带 fallback 的 multishot accept），但应用若要**显式**控制 ring 深度、SQPOLL、provided-buffer ring、multishot receive 或 zero-copy send，应直接组合 `luring::LUringLoop`、`LUringOptions` 与对应的 listener、stream 或 source：
 
 ```cpp
 coropact::luring::LUringLoop loop;
@@ -166,6 +166,25 @@ auto initialized = loop.Init(options);
 ```
 
 这条原生路径让应用明确承担每个 ring、buffer lease 与操作生命周期；参考 [`examples/luring`](examples/luring) 及 luring 的公开头文件。不要把这些能力增加为 `Runtime` 的跨后端开关。
+
+## 运行容器示例
+
+发布的容器运行一个基于 CoroPact Reactor 后端的 TCP echo server。通过 Docker
+映射端口后可直接从宿主访问：
+
+```bash
+docker run --rm -p 9090:9090 ghcr.io/archiyun/coropact:latest
+```
+
+在另一个终端验证：
+
+```bash
+printf 'hello\n' | nc 127.0.0.1 9090
+```
+
+在本地 checkout 中构建同一个镜像：`docker build -t coropact:local .`。
+该镜像是可运行的演示程序；实际应用仍应以自己的、链接 CoroPact 的可执行文件
+作为最终镜像入口。
 
 ## 构建
 
