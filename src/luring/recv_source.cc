@@ -9,13 +9,13 @@
 #include <utility>
 
 #include "coropact/base/check.h"
-#include "coropact/result.h"
 #include "coropact/luring/detail/cancel_result.h"
 #include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/detail/provided_buffer_pool.h"
 #include "coropact/luring/loop.h"
 #include "coropact/operation/detail/completion_gate.h"
 #include "coropact/operation/detail/scheduler_continuation.h"
+#include "coropact/result.h"
 
 namespace coropact::luring {
 
@@ -124,7 +124,7 @@ private:
 };
 
 Result<LUringRecvSource> LUringRecvSource::Create(LUringLoop* loop, int fd,
-                                                        LUringRecvSourceOptions options) noexcept {
+                                                  LUringRecvSourceOptions options) noexcept {
   if (loop == nullptr || !loop->Initialized()) {
     return std::unexpected(Errno(EBADF));
   }
@@ -144,41 +144,69 @@ Result<LUringRecvSource> LUringRecvSource::Create(LUringLoop* loop, int fd,
     return std::unexpected(state_result.error());
   }
 
-  auto shared_pool = detail::LoopAccess::GetSharedProvidedBufferPool(
+  std::unique_ptr<detail::ProvidedBufferPool> private_pool;
+  detail::ProvidedBufferPool* buffer_pool = nullptr;
+  auto incremental_pool = detail::LoopAccess::CreateIncrementalProvidedBufferPool(
       *loop, options.buffer_size, options.source.buffer_capacity);
-  if (!shared_pool.has_value()) {
-    if (shared_pool.error().value() == ENOENT) {
-      return std::unexpected(Errno(ENOTSUP));
+  if (incremental_pool.has_value()) {
+    private_pool = std::move(*incremental_pool);
+    buffer_pool = private_pool.get();
+  } else {
+    const int error = incremental_pool.error().value();
+    if (error != EINVAL && error != EOPNOTSUPP && error != ENOSYS) {
+      if (error == ENOENT) {
+        return std::unexpected(Errno(ENOTSUP));
+      }
+      return std::unexpected(incremental_pool.error());
     }
-    return std::unexpected(shared_pool.error());
+
+    auto shared_pool = detail::LoopAccess::GetSharedProvidedBufferPool(
+        *loop, options.buffer_size, options.source.buffer_capacity);
+    if (!shared_pool.has_value()) {
+      if (shared_pool.error().value() == ENOENT) {
+        return std::unexpected(Errno(ENOTSUP));
+      }
+      return std::unexpected(shared_pool.error());
+    }
+    buffer_pool = *shared_pool;
   }
-  if (capacity > (*shared_pool)->capacity()) {
-    return std::unexpected(Errno(EINVAL));
-  }
+  COROPACT_CHECK(buffer_pool != nullptr, "LUringRecvSource failed to select a buffer pool");
+  if (capacity > buffer_pool->capacity()) return std::unexpected(Errno(EINVAL));
 
   std::vector<LUringRecvSource::PendingEvent> event_storage;
+  std::vector<LUringRecvSource::SlotState> slot_storage;
   try {
     event_storage.resize(options.source.event_capacity);
+    slot_storage.resize(buffer_pool->capacity());
   } catch (...) {
+    if (private_pool != nullptr) {
+      const std::uint16_t group = private_pool->BufferGroup();
+      private_pool.reset();
+      detail::LoopAccess::ReleaseBufferGroupId(*loop, group);
+    }
     return std::unexpected(Errno(ENOMEM));
   }
 
-  return LUringRecvSource(loop, fd, std::move(*state_result), options.buffer_size, *shared_pool,
-                          std::move(event_storage));
+  return LUringRecvSource(loop, fd, std::move(*state_result), options.buffer_size, buffer_pool,
+                          std::move(event_storage), std::move(slot_storage),
+                          std::move(private_pool));
 }
 
-LUringRecvSource::LUringRecvSource(LUringLoop* loop, int fd, RecvSourceStateMachine state,
-                                   std::size_t buffer_size,
-                                   detail::ProvidedBufferPool* shared_buffer_pool,
-                                   std::vector<PendingEvent> event_storage) noexcept
+LUringRecvSource::LUringRecvSource(
+    LUringLoop* loop, int fd, RecvSourceStateMachine state, std::size_t buffer_size,
+    detail::ProvidedBufferPool* buffer_pool, std::vector<PendingEvent> event_storage,
+    std::vector<SlotState> slot_storage,
+    std::unique_ptr<detail::ProvidedBufferPool> private_buffer_pool) noexcept
     : loop_(loop),
       fd_(fd),
       state_(std::move(state)),
       events_(std::move(event_storage)),
+      slots_(std::move(slot_storage)),
       recv_op_(this),
       cancel_op_(this),
       buffer_size_(buffer_size),
-      shared_buffer_pool_(shared_buffer_pool) {}
+      buffer_pool_(buffer_pool),
+      private_buffer_pool_(std::move(private_buffer_pool)) {}
 
 LUringRecvSource::~LUringRecvSource() {
   if (loop_ == nullptr) {
@@ -196,6 +224,10 @@ LUringRecvSource::~LUringRecvSource() {
   COROPACT_CHECK(event_count_ == 0, "LUringRecvSource destroyed with queued events");
   COROPACT_CHECK(state_.OutstandingLeases() == 0,
                  "LUringRecvSource destroyed with outstanding leases");
+  for (const SlotState& slot : slots_) {
+    COROPACT_CHECK(!slot.active, "LUringRecvSource destroyed with borrowed provided buffer");
+  }
+  ReleasePrivateBufferPool();
 }
 
 LUringRecvSource::LUringRecvSource(LUringRecvSource&& other) noexcept
@@ -203,13 +235,15 @@ LUringRecvSource::LUringRecvSource(LUringRecvSource&& other) noexcept
       fd_(std::exchange(other.fd_, -1)),
       state_(std::move(other.state_)),
       events_(std::move(other.events_)),
+      slots_(std::move(other.slots_)),
       event_head_(std::exchange(other.event_head_, 0)),
       event_count_(std::exchange(other.event_count_, 0)),
       terminal_error_(std::move(other.terminal_error_)),
       recv_op_(this),
       cancel_op_(this),
       buffer_size_(std::exchange(other.buffer_size_, 0)),
-      shared_buffer_pool_(std::exchange(other.shared_buffer_pool_, nullptr)),
+      buffer_pool_(std::exchange(other.buffer_pool_, nullptr)),
+      private_buffer_pool_(std::move(other.private_buffer_pool_)),
       recv_submitted_(false),
       cancel_submitted_(false) {
   COROPACT_CHECK(other.pending_next_ == nullptr, "LUringRecvSource cannot move with pending Next");
@@ -222,6 +256,9 @@ LUringRecvSource::LUringRecvSource(LUringRecvSource&& other) noexcept
                      other.state_.State() == RecvSourceState::kTerminal,
                  "LUringRecvSource cannot move before Stop completed");
   COROPACT_CHECK(other.event_count_ == 0, "LUringRecvSource cannot move with queued events");
+  for (const SlotState& slot : slots_) {
+    COROPACT_CHECK(!slot.active, "LUringRecvSource cannot move with borrowed provided buffer");
+  }
 }
 
 LUringRecvSource& LUringRecvSource::operator=(LUringRecvSource&& other) noexcept {
@@ -236,6 +273,9 @@ LUringRecvSource& LUringRecvSource::operator=(LUringRecvSource&& other) noexcept
   COROPACT_CHECK(state_.OutstandingLeases() == 0,
                  "LUringRecvSource destination has outstanding leases");
   COROPACT_CHECK(event_count_ == 0, "LUringRecvSource destination has queued events");
+  for (const SlotState& slot : slots_) {
+    COROPACT_CHECK(!slot.active, "LUringRecvSource destination has borrowed provided buffer");
+  }
 
   COROPACT_CHECK(other.pending_next_ == nullptr, "LUringRecvSource source has pending Next");
   COROPACT_CHECK(other.pending_stop_ == nullptr, "LUringRecvSource source has pending Stop");
@@ -247,21 +287,27 @@ LUringRecvSource& LUringRecvSource::operator=(LUringRecvSource&& other) noexcept
                      other.state_.State() == RecvSourceState::kTerminal,
                  "LUringRecvSource source has not completed Stop");
   COROPACT_CHECK(other.event_count_ == 0, "LUringRecvSource source has queued events");
+  for (const SlotState& slot : other.slots_) {
+    COROPACT_CHECK(!slot.active, "LUringRecvSource source has borrowed provided buffer");
+  }
 
+  ReleasePrivateBufferPool();
   loop_ = std::exchange(other.loop_, nullptr);
   fd_ = std::exchange(other.fd_, -1);
   state_ = std::move(other.state_);
   events_ = std::move(other.events_);
+  slots_ = std::move(other.slots_);
   event_head_ = std::exchange(other.event_head_, 0);
   event_count_ = std::exchange(other.event_count_, 0);
   terminal_error_ = std::move(other.terminal_error_);
   buffer_size_ = std::exchange(other.buffer_size_, 0);
-  shared_buffer_pool_ = std::exchange(other.shared_buffer_pool_, nullptr);
+  buffer_pool_ = std::exchange(other.buffer_pool_, nullptr);
+  private_buffer_pool_ = std::move(other.private_buffer_pool_);
   return *this;
 }
 
 Result<void> LUringRecvSource::StartOperation() noexcept {
-  if (loop_ == nullptr || !loop_->Initialized() || fd_ < 0 || shared_buffer_pool_ == nullptr) {
+  if (loop_ == nullptr || !loop_->Initialized() || fd_ < 0 || buffer_pool_ == nullptr) {
     return std::unexpected(Errno(EBADF));
   }
   if (recv_submitted_) {
@@ -272,7 +318,7 @@ Result<void> LUringRecvSource::StartOperation() noexcept {
   }
 
   recv_op_.Prepare();
-  const auto buffer_group = shared_buffer_pool_->BufferGroup();
+  const auto buffer_group = buffer_pool_->BufferGroup();
   auto submitted = detail::LoopAccess::SubmitOp(
       *loop_, &recv_op_,
       [fd = fd_, buffer_size = buffer_size_, buffer_group](io_uring_sqe* sqe) noexcept {
@@ -411,91 +457,70 @@ CompletionDisposition LUringRecvSource::OnCompletion(CompletionEvent event) noex
   const bool has_buffer = (event.flags & IORING_CQE_F_BUFFER) != 0;
   const auto buffer_id = static_cast<std::uint32_t>(event.flags >> IORING_CQE_BUFFER_SHIFT);
   const bool valid_buffer =
-      has_buffer && shared_buffer_pool_ != nullptr && buffer_id < shared_buffer_pool_->capacity();
+      has_buffer && buffer_pool_ != nullptr && buffer_id < buffer_pool_->capacity();
 
   bool state_recorded = false;
-  bool direct_handoff = false;
-  bool buffer_prepared = false;
   std::optional<Error> completion_error;
 
-  if (event.BufferMore()) {
-    completion_error = Errno(EPROTO);
-  }
-
-  if (cqe_result > 0 && completion_error.has_value() == false) {
+  if (cqe_result > 0) {
     if (!valid_buffer) {
       completion_error = Errno(EPROTO);
     } else {
-      if (!shared_buffer_pool_->Acquire(buffer_id)) {
-        completion_error = Errno(EPROTO);
+      auto offset = AcquireSegment(buffer_id, static_cast<std::size_t>(cqe_result));
+      if (!offset.has_value()) {
+        completion_error = offset.error();
       } else {
-        buffer_prepared = true;
-        if (static_cast<std::size_t>(cqe_result) > buffer_size_) {
-          completion_error = Errno(EOVERFLOW);
+        if (!event.BufferMore()) {
+          MarkKernelDone(buffer_id);
         }
-      }
-    }
-  }
 
-  if (cqe_result > 0) {
-    if (completion_error.has_value()) {
-      if (buffer_prepared) {
-        COROPACT_CHECK(shared_buffer_pool_->Return(buffer_id),
-                       "LUringRecvSource failed to return shared buffer");
-      }
-      RequestBackendStop(*completion_error);
-    } else {
-      // The common request/response path already has a consumer suspended in
-      // Next(). Keep the CQE on the hot path and avoid queueing a lease only to
-      // pop it again immediately. The queued path remains the bounded
-      // backpressure path for producers that outrun their consumer.
-      const bool direct_delivery = pending_next_ != nullptr && event_count_ == 0 &&
-                                   state_.State() == RecvSourceState::kActive;
-      if (!direct_delivery && !state_.CanQueueEvent()) {
-        if (buffer_prepared) {
-          COROPACT_CHECK(shared_buffer_pool_->Return(buffer_id),
-                         "LUringRecvSource failed to return shared buffer");
-        }
-        RequestBackendPause();
-      } else {
-        auto recorded = state_.CompleteMultishotEvent(
-            direct_delivery ? EventDisposition::kDelivered : EventDisposition::kProduced,
-            request_still_active ? MultishotRequestDisposition::kMore
-                                 : MultishotRequestDisposition::kTerminal);
-        if (!recorded.has_value()) {
-          // The failed accounting attempt did not consume the state-machine
-          // event; the fallback below will record the terminal/non-terminal
-          // request completion.
-          COROPACT_CHECK(shared_buffer_pool_->Return(buffer_id),
-                         "LUringRecvSource failed to return shared buffer");
-          RequestBackendStop(recorded.error());
+        const bool direct_delivery = pending_next_ != nullptr && event_count_ == 0 &&
+                                     state_.State() == RecvSourceState::kActive;
+        if (!direct_delivery && !state_.CanQueueEvent()) {
+          ReleaseSlotLease(buffer_id);
+          RequestBackendPause();
         } else {
-          state_recorded = true;
-          if (direct_delivery) {
-            net::BufferLease lease(shared_buffer_pool_->slot(buffer_id),
-                                   static_cast<std::size_t>(cqe_result), buffer_id, this,
-                                   &ReclaimBuffer);
-            auto* awaiter = std::exchange(pending_next_, nullptr);
-            awaiter->Complete(NextResult(std::in_place, Event{.buffer = std::move(lease)}));
-            direct_handoff = true;
+          auto recorded = state_.CompleteMultishotEvent(
+              direct_delivery ? EventDisposition::kDelivered : EventDisposition::kProduced,
+              request_still_active ? MultishotRequestDisposition::kMore
+                                   : MultishotRequestDisposition::kTerminal);
+          if (!recorded.has_value()) {
+            ReleaseSlotLease(buffer_id);
+            RequestBackendStop(recorded.error());
           } else {
-            QueueEvent(buffer_id, static_cast<std::size_t>(cqe_result));
+            state_recorded = true;
+            if (direct_delivery) {
+              net::BufferLease lease =
+                  MakeLease(buffer_id, *offset, static_cast<std::size_t>(cqe_result));
+              auto* awaiter = std::exchange(pending_next_, nullptr);
+              awaiter->Complete(NextResult(std::in_place, Event{.buffer = std::move(lease)}));
+            } else {
+              QueueEvent(buffer_id, *offset, static_cast<std::size_t>(cqe_result));
+            }
           }
         }
       }
     }
   } else if (cqe_result == 0) {
-    if (valid_buffer && !event.BufferMore() && shared_buffer_pool_->Acquire(buffer_id)) {
-      COROPACT_CHECK(shared_buffer_pool_->Return(buffer_id),
-                     "LUringRecvSource failed to return shared buffer");
+    if (event.BufferMore()) {
+      completion_error = Errno(EPROTO);
+    } else if (valid_buffer && slots_[buffer_id].active) {
+      MarkKernelDone(buffer_id);
+    } else if (valid_buffer && buffer_pool_->Acquire(buffer_id)) {
+      COROPACT_CHECK(buffer_pool_->Return(buffer_id),
+                     "LUringRecvSource failed to return empty provided buffer");
     }
     if (!request_still_active) {
       RequestBackendStop();
     }
   } else {
-    if (valid_buffer && !event.BufferMore() && shared_buffer_pool_->Acquire(buffer_id)) {
-      COROPACT_CHECK(shared_buffer_pool_->Return(buffer_id),
-                     "LUringRecvSource failed to return shared buffer");
+    if (event.BufferMore()) {
+      completion_error = Errno(EPROTO);
+    } else if (valid_buffer && slots_[buffer_id].active) {
+      MarkKernelDone(buffer_id);
+    } else if (valid_buffer && buffer_pool_->Acquire(buffer_id)) {
+      COROPACT_CHECK(buffer_pool_->Return(buffer_id),
+                     "LUringRecvSource failed to return error provided buffer");
     }
     const auto state = state_.State();
     const bool stopping = state == RecvSourceState::kStopping ||
@@ -507,16 +532,8 @@ CompletionDisposition LUringRecvSource::OnCompletion(CompletionEvent event) noex
     }
   }
 
-  // A successful F_MORE direct handoff leaves the request armed, the source
-  // active, and the queue empty. The continuation has already been scheduled
-  // by NextAwaiter::Complete, so all remaining reconciliation probes are cold
-  // paths for this common request/response case.
-  if (direct_handoff && request_still_active) {
-    return CompletionDisposition{
-        .kernel_request_terminal = false,
-        .decrement_inflight = false,
-        .resume_continuation = false,
-    };
+  if (completion_error.has_value()) {
+    RequestBackendStop(*completion_error);
   }
 
   if (!state_recorded) {
@@ -530,6 +547,7 @@ CompletionDisposition LUringRecvSource::OnCompletion(CompletionEvent event) noex
   }
 
   if (!request_still_active) {
+    MarkActiveSlotsKernelDone();
     recv_op_.BeginNextRequest();
   }
 
@@ -591,11 +609,7 @@ bool LUringRecvSource::TryTakeNext(NextResult& result) noexcept {
   PendingEvent pending;
   if (TryTakeQueuedEvent(pending)) {
     COROPACT_CHECK(state_.AcquireEvent(), "LUringRecvSource: queue and state became inconsistent");
-    COROPACT_CHECK(shared_buffer_pool_ != nullptr, "LUringRecvSource missing shared buffer pool");
-    auto* data = shared_buffer_pool_->slot(pending.buffer_id);
-    COROPACT_CHECK(data != nullptr, "LUringRecvSource queued an invalid buffer");
-    Event event{.buffer =
-                    net::BufferLease(data, pending.size, pending.buffer_id, this, &ReclaimBuffer)};
+    Event event{.buffer = MakeLease(pending.buffer_id, pending.offset, pending.size)};
     result = NextResult(std::in_place, std::move(event));
     if (state_.State() == RecvSourceState::kPaused) {
       MaybeResume();
@@ -614,11 +628,12 @@ bool LUringRecvSource::TryTakeNext(NextResult& result) noexcept {
   return false;
 }
 
-void LUringRecvSource::QueueEvent(std::uint32_t buffer_id, std::size_t size) noexcept {
+void LUringRecvSource::QueueEvent(std::uint32_t buffer_id, std::size_t offset,
+                                  std::size_t size) noexcept {
   COROPACT_CHECK(!events_.empty() && event_count_ < events_.size(),
                  "LUringRecvSource event queue overflow");
   const std::size_t index = (event_head_ + event_count_) % events_.size();
-  events_[index] = PendingEvent{.buffer_id = buffer_id, .size = size};
+  events_[index] = PendingEvent{.buffer_id = buffer_id, .offset = offset, .size = size};
   ++event_count_;
 }
 
@@ -633,10 +648,100 @@ bool LUringRecvSource::TryTakeQueuedEvent(PendingEvent& event) noexcept {
   return true;
 }
 
+Result<std::size_t> LUringRecvSource::AcquireSegment(std::uint32_t buffer_id,
+                                                     std::size_t size) noexcept {
+  if (buffer_pool_ == nullptr || buffer_id >= slots_.size()) {
+    return std::unexpected(Errno(EPROTO));
+  }
+
+  SlotState& slot = slots_[buffer_id];
+  if (!slot.active) {
+    if (!buffer_pool_->Acquire(buffer_id)) {
+      return std::unexpected(Errno(EPROTO));
+    }
+    slot.active = true;
+    slot.kernel_done = false;
+    slot.next_offset = 0;
+    slot.lease_count = 0;
+  } else if (!buffer_pool_->Incremental()) {
+    return std::unexpected(Errno(EPROTO));
+  }
+
+  if (slot.kernel_done || size > buffer_size_ - slot.next_offset) {
+    return std::unexpected(Errno(EOVERFLOW));
+  }
+
+  const std::size_t offset = slot.next_offset;
+  slot.next_offset += size;
+  ++slot.lease_count;
+  return offset;
+}
+
+void LUringRecvSource::MarkKernelDone(std::uint32_t buffer_id) noexcept {
+  COROPACT_CHECK(buffer_id < slots_.size() && slots_[buffer_id].active,
+                 "LUringRecvSource completed an unknown provided buffer");
+  SlotState& slot = slots_[buffer_id];
+  COROPACT_CHECK(!slot.kernel_done, "LUringRecvSource completed a provided buffer twice");
+  slot.kernel_done = true;
+  ReturnIfReclaimable(buffer_id);
+}
+
+void LUringRecvSource::MarkActiveSlotsKernelDone() noexcept {
+  for (std::uint32_t buffer_id = 0; buffer_id < slots_.size(); ++buffer_id) {
+    if (slots_[buffer_id].active && !slots_[buffer_id].kernel_done) {
+      MarkKernelDone(buffer_id);
+    }
+  }
+}
+
+void LUringRecvSource::ReturnIfReclaimable(std::uint32_t buffer_id) noexcept {
+  SlotState& slot = slots_[buffer_id];
+  if (!slot.active || !slot.kernel_done || slot.lease_count != 0) {
+    return;
+  }
+  COROPACT_CHECK(buffer_pool_ != nullptr, "LUringRecvSource missing provided buffer pool");
+  COROPACT_CHECK(buffer_pool_->Return(buffer_id),
+                 "LUringRecvSource failed to return provided buffer");
+  slot = SlotState{};
+}
+
+void LUringRecvSource::ReleaseSlotLease(std::uint32_t buffer_id) noexcept {
+  COROPACT_CHECK(
+      buffer_id < slots_.size() && slots_[buffer_id].active && slots_[buffer_id].lease_count != 0,
+      "LUringRecvSource provided buffer lease released twice");
+  --slots_[buffer_id].lease_count;
+  ReturnIfReclaimable(buffer_id);
+}
+
+void LUringRecvSource::ReleasePrivateBufferPool() noexcept {
+  if (private_buffer_pool_ == nullptr) {
+    return;
+  }
+
+  COROPACT_CHECK(loop_ != nullptr && loop_->IsInLoopThread(),
+                 "LUringRecvSource released a private buffer pool from the wrong thread");
+  const std::uint16_t group = private_buffer_pool_->BufferGroup();
+  COROPACT_CHECK(buffer_pool_ == private_buffer_pool_.get(),
+                 "LUringRecvSource private buffer pool lost ownership");
+  private_buffer_pool_.reset();
+  buffer_pool_ = nullptr;
+  detail::LoopAccess::ReleaseBufferGroupId(*loop_, group);
+}
+
+net::BufferLease LUringRecvSource::MakeLease(std::uint32_t buffer_id, std::size_t offset,
+                                             std::size_t size) noexcept {
+  COROPACT_CHECK(buffer_pool_ != nullptr, "LUringRecvSource missing provided buffer pool");
+  COROPACT_CHECK(buffer_id < slots_.size() && slots_[buffer_id].active,
+                 "LUringRecvSource lease refers to an inactive provided buffer");
+  auto* data = buffer_pool_->slot(buffer_id);
+  COROPACT_CHECK(data != nullptr && offset <= buffer_size_ && size <= buffer_size_ - offset,
+                 "LUringRecvSource lease exceeds provided buffer");
+  return net::BufferLease(data + offset, size, buffer_id, this, &ReclaimBuffer);
+}
+
 void LUringRecvSource::ReturnBuffer(std::uint32_t buffer_id) noexcept {
-  COROPACT_CHECK(shared_buffer_pool_ != nullptr, "LUringRecvSource missing shared buffer pool");
-  COROPACT_CHECK(shared_buffer_pool_->Return(buffer_id),
-                 "LUringRecvSource shared buffer lease released twice");
+  COROPACT_CHECK(buffer_pool_ != nullptr, "LUringRecvSource missing provided buffer pool");
+  ReleaseSlotLease(buffer_id);
   COROPACT_CHECK(state_.ReleaseLease(), "LUringRecvSource buffer lease released twice");
 
   // A live multishot request already has admission. In the common direct

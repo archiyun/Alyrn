@@ -3,9 +3,11 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <utility>
 
 #include "coropact/luring/detail/op.h"
+#include "coropact/luring/detail/provided_buffer_pool.h"
 #include "coropact/luring/loop.h"
 #include "coropact/operation/detail/scheduler_continuation.h"
 
@@ -24,7 +26,7 @@ public:
 
   [[nodiscard]]
   static Result<void> SubmitMsgRing(LUringLoop& loop, LUringOp* op, int target_ring_fd,
-                                          std::uint32_t type) noexcept {
+                                    std::uint32_t type) noexcept {
     return loop.SubmitMsgRing(op, target_ring_fd, type);
   }
 
@@ -99,6 +101,16 @@ public:
   static Result<ProvidedBufferPool*> GetSharedProvidedBufferPool(
       LUringLoop& loop, std::size_t buffer_size, std::size_t source_capacity) noexcept {
     return loop.GetSharedProvidedBufferPool(buffer_size, source_capacity);
+  }
+
+  [[nodiscard]]
+  static Result<std::unique_ptr<ProvidedBufferPool>> CreateIncrementalProvidedBufferPool(
+      LUringLoop& loop, std::size_t buffer_size, std::size_t source_capacity) noexcept {
+    return loop.CreateIncrementalProvidedBufferPool(buffer_size, source_capacity);
+  }
+
+  static void ReleaseBufferGroupId(LUringLoop& loop, std::uint16_t group) noexcept {
+    loop.ReleaseBufferGroupId(group);
   }
 };
 

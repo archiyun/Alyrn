@@ -15,14 +15,14 @@
 #include <system_error>
 #include <utility>
 
-#include "coropact/result.h"
 #include "coropact/coro/detached_task.h"
 #include "coropact/coro/spawn.h"
-#include "coropact/luring/loop.h"
 #include "coropact/luring/detail/loop_access.h"
+#include "coropact/luring/loop.h"
 #include "coropact/luring/options.h"
 #include "coropact/luring/recv_source.h"
 #include "coropact/luring/timer.h"
+#include "coropact/result.h"
 
 namespace {
 
@@ -41,8 +41,7 @@ public:
   UniqueFd(const UniqueFd&) = delete;
   UniqueFd& operator=(const UniqueFd&) = delete;
 
-  UniqueFd(UniqueFd&& other) noexcept
-      : fd_(std::exchange(other.fd_, -1)) {}
+  UniqueFd(UniqueFd&& other) noexcept : fd_(std::exchange(other.fd_, -1)) {}
 
   UniqueFd& operator=(UniqueFd&& other) noexcept {
     if (this != &other) {
@@ -55,7 +54,9 @@ public:
   ~UniqueFd() { Reset(); }
 
   [[nodiscard]]
-  int Get() const noexcept { return fd_; }
+  int Get() const noexcept {
+    return fd_;
+  }
 
   void Reset() noexcept {
     if (fd_ >= 0) {
@@ -100,18 +101,23 @@ struct PauseResumeObservation {
   std::optional<Error> error;
 };
 
+struct HeldLeaseObservation {
+  bool first_received{false};
+  bool done{false};
+  bool stopped{false};
+  std::string first;
+  std::string second;
+  std::optional<Error> error;
+};
+
 bool IsEnvironmentSkip(Error error) {
   return error == std::errc::operation_not_supported ||
-         error == std::errc::operation_not_permitted ||
-         error == std::errc::permission_denied ||
-         error == std::errc::function_not_supported ||
-         error.value() == EINVAL;
+         error == std::errc::operation_not_permitted || error == std::errc::permission_denied ||
+         error == std::errc::function_not_supported || error.value() == EINVAL;
 }
 
-LoopInitStatus InitLoop(
-    LUringLoop& loop,
-    std::size_t shared_buffer_capacity = 64,
-    std::size_t shared_buffer_size = 16 * 1024) {
+LoopInitStatus InitLoop(LUringLoop& loop, std::size_t shared_buffer_capacity = 64,
+                        std::size_t shared_buffer_size = 16 * 1024) {
   LUringOptions options;
   options.entries = 32;
 
@@ -122,13 +128,11 @@ LoopInitStatus InitLoop(
     return LoopInitStatus::kReady;
   }
   if (IsEnvironmentSkip(initialized.error())) {
-    std::cout << "SKIP: io_uring unavailable: "
-              << initialized.error().message() << '\n';
+    std::cout << "SKIP: io_uring unavailable: " << initialized.error().message() << '\n';
     return LoopInitStatus::kSkip;
   }
 
-  std::cout << "FAIL: loop init failed: "
-            << initialized.error().message() << '\n';
+  std::cout << "FAIL: loop init failed: " << initialized.error().message() << '\n';
   return LoopInitStatus::kFail;
 }
 
@@ -137,8 +141,7 @@ bool PumpUntil(LUringLoop& loop, Predicate&& predicate, int max_iterations = 64)
   for (int i = 0; i < max_iterations && !predicate(); ++i) {
     auto completed = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
     if (!completed.has_value()) {
-      std::cout << "FAIL: waiting for CQE failed: "
-                << completed.error().message() << '\n';
+      std::cout << "FAIL: waiting for CQE failed: " << completed.error().message() << '\n';
       return false;
     }
     coropact::luring::detail::LoopAccess::RunReady(loop);
@@ -166,8 +169,7 @@ DetachedTask ReceiveOne(LUringRecvSource* source, Observation* observation) {
     observation->eof = true;
   } else {
     const auto bytes = (*received)->buffer.Bytes();
-    observation->payload.assign(
-        reinterpret_cast<const char*>(bytes.data()), bytes.size());
+    observation->payload.assign(reinterpret_cast<const char*>(bytes.data()), bytes.size());
     // Stop must not complete while this lease is still alive. Release it
     // before awaiting Stop so the shared pool can reuse the slot.
     received->reset();
@@ -184,10 +186,8 @@ DetachedTask ReceiveOne(LUringRecvSource* source, Observation* observation) {
 
 /* Only the test-hook scenarios drive these two directly. */
 
-DetachedTask ReceivePauseThenResume(
-    LUringRecvSource* source,
-    LUringLoop* loop,
-    PauseResumeObservation* observation) {
+DetachedTask ReceivePauseThenResume(LUringRecvSource* source, LUringLoop* loop,
+                                    PauseResumeObservation* observation) {
   const auto take = [observation](LUringRecvSource::NextResult received,
                                   std::string* target) -> bool {
     if (!received.has_value()) {
@@ -214,8 +214,7 @@ DetachedTask ReceivePauseThenResume(
   // The second datagram is sent while this coroutine sleeps. With a one
   // element event queue it reaches the high-water mark and pauses the native
   // multishot request before this coroutine consumes it.
-  auto delay = co_await coropact::luring::SleepFor(
-      *loop, std::chrono::milliseconds(50));
+  auto delay = co_await coropact::luring::SleepFor(*loop, std::chrono::milliseconds(50));
   if (!delay.has_value()) {
     observation->error = delay.error();
     observation->done = true;
@@ -238,6 +237,40 @@ DetachedTask ReceivePauseThenResume(
     co_return;
   }
   observation->resumed_received = true;
+
+  auto stopped = co_await source->Stop();
+  if (!stopped.has_value()) {
+    observation->error = stopped.error();
+  } else {
+    observation->stopped = true;
+  }
+  observation->done = true;
+}
+
+DetachedTask ReceiveWithFirstLeaseHeld(LUringRecvSource* source,
+                                       HeldLeaseObservation* observation) {
+  auto first = co_await source->Next();
+  if (!first.has_value() || !first->has_value()) {
+    observation->error = first.has_value() ? coropact::Errno(ECONNRESET) : first.error();
+    observation->done = true;
+    co_return;
+  }
+  observation->first_received = true;
+
+  auto second = co_await source->Next();
+  if (!second.has_value() || !second->has_value()) {
+    observation->error = second.has_value() ? coropact::Errno(ECONNRESET) : second.error();
+    observation->done = true;
+    co_return;
+  }
+
+  const auto first_bytes = (*first)->buffer.Bytes();
+  const auto second_bytes = (*second)->buffer.Bytes();
+  observation->first.assign(reinterpret_cast<const char*>(first_bytes.data()), first_bytes.size());
+  observation->second.assign(reinterpret_cast<const char*>(second_bytes.data()),
+                             second_bytes.size());
+  first->reset();
+  second->reset();
 
   auto stopped = co_await source->Stop();
   if (!stopped.has_value()) {
@@ -276,12 +309,11 @@ bool CheckRecvAndLease() {
   auto source_result = LUringRecvSource::Create(&loop, receiver.Get(), options);
   if (!source_result.has_value()) {
     if (IsEnvironmentSkip(source_result.error())) {
-      std::cout << "SKIP: provided buffer ring unavailable: "
-                << source_result.error().message() << '\n';
+      std::cout << "SKIP: provided buffer ring unavailable: " << source_result.error().message()
+                << '\n';
       return true;
     }
-    std::cout << "FAIL: RecvSource creation failed: "
-              << source_result.error().message() << '\n';
+    std::cout << "FAIL: RecvSource creation failed: " << source_result.error().message() << '\n';
     return false;
   }
   auto source = std::move(*source_result);
@@ -301,12 +333,84 @@ bool CheckRecvAndLease() {
     return false;
   }
   if (observation.error.has_value()) {
-    std::cout << "FAIL: recv source failed: "
-              << observation.error->message() << '\n';
+    std::cout << "FAIL: recv source failed: " << observation.error->message() << '\n';
     return false;
   }
 
   return observation.payload == kPayload && observation.stopped && !observation.eof;
+}
+
+bool CheckHeldLeases() {
+  LUringLoop loop;
+  switch (InitLoop(loop, 4, 256)) {
+    case LoopInitStatus::kReady:
+      break;
+    case LoopInitStatus::kSkip:
+      return true;
+    case LoopInitStatus::kFail:
+      return false;
+  }
+
+  auto pair = MakeSocketPair();
+  if (!pair.has_value()) {
+    std::cout << "FAIL: held-lease socketpair failed: " << pair.error().message() << '\n';
+    return false;
+  }
+  auto receiver = std::move(pair->first);
+  auto sender = std::move(pair->second);
+
+  LUringRecvSourceOptions options;
+  options.source.event_capacity = 2;
+  options.source.buffer_capacity = 2;
+  options.buffer_size = 256;
+  auto source_result = LUringRecvSource::Create(&loop, receiver.Get(), options);
+  if (!source_result.has_value()) {
+    if (IsEnvironmentSkip(source_result.error())) {
+      std::cout << "SKIP: held-lease provided buffer ring unavailable: "
+                << source_result.error().message() << '\n';
+      return true;
+    }
+    std::cout << "FAIL: held-lease source creation failed: " << source_result.error().message()
+              << '\n';
+    return false;
+  }
+  auto source = std::move(*source_result);
+
+  HeldLeaseObservation observation;
+  coropact::coro::SpawnDetach(loop, ReceiveWithFirstLeaseHeld(&source, &observation));
+  coropact::luring::detail::LoopAccess::RunReady(loop);
+
+  constexpr std::string_view kFirst = "first-segment";
+  constexpr std::string_view kSecond = "second-segment";
+  if (::send(sender.Get(), kFirst.data(), kFirst.size(), MSG_NOSIGNAL) !=
+      static_cast<ssize_t>(kFirst.size())) {
+    std::cout << "FAIL: held-lease first send failed: " << coropact::CurrentErrno().message()
+              << '\n';
+    return false;
+  }
+  if (!PumpUntil(loop,
+                 [&] { return observation.error.has_value() || observation.first_received; })) {
+    return false;
+  }
+  if (observation.error.has_value()) {
+    std::cout << "FAIL: held-lease first recv failed: " << observation.error->message() << '\n';
+    return false;
+  }
+
+  if (::send(sender.Get(), kSecond.data(), kSecond.size(), MSG_NOSIGNAL) !=
+      static_cast<ssize_t>(kSecond.size())) {
+    std::cout << "FAIL: held-lease second send failed: " << coropact::CurrentErrno().message()
+              << '\n';
+    return false;
+  }
+  if (!PumpUntil(loop, [&] { return observation.error.has_value() || observation.done; })) {
+    return false;
+  }
+  if (observation.error.has_value()) {
+    std::cout << "FAIL: held-lease recv failed: " << observation.error->message() << '\n';
+    return false;
+  }
+  return observation.first == kFirst && observation.second == kSecond && observation.stopped;
 }
 
 bool CheckSharedBufferPool() {
@@ -336,21 +440,16 @@ bool CheckSharedBufferPool() {
   options.source.buffer_capacity = 2;
   options.buffer_size = 256;
 
-  auto first_source_result = LUringRecvSource::Create(
-      &loop, first_receiver.Get(), options);
-  auto second_source_result = LUringRecvSource::Create(
-      &loop, second_receiver.Get(), options);
+  auto first_source_result = LUringRecvSource::Create(&loop, first_receiver.Get(), options);
+  auto second_source_result = LUringRecvSource::Create(&loop, second_receiver.Get(), options);
   if (!first_source_result.has_value() || !second_source_result.has_value()) {
-    const auto& error = !first_source_result.has_value()
-                            ? first_source_result.error()
-                            : second_source_result.error();
+    const auto& error = !first_source_result.has_value() ? first_source_result.error()
+                                                         : second_source_result.error();
     if (IsEnvironmentSkip(error)) {
-      std::cout << "SKIP: shared provided buffer ring unavailable: "
-                << error.message() << '\n';
+      std::cout << "SKIP: shared provided buffer ring unavailable: " << error.message() << '\n';
       return true;
     }
-    std::cout << "FAIL: shared RecvSource creation failed: "
-              << error.message() << '\n';
+    std::cout << "FAIL: shared RecvSource creation failed: " << error.message() << '\n';
     return false;
   }
   auto first_source = std::move(*first_source_result);
@@ -358,20 +457,17 @@ bool CheckSharedBufferPool() {
 
   Observation first_observation;
   Observation second_observation;
-  coropact::coro::SpawnDetach(
-      loop, ReceiveOne(&first_source, &first_observation));
-  coropact::coro::SpawnDetach(
-      loop, ReceiveOne(&second_source, &second_observation));
+  coropact::coro::SpawnDetach(loop, ReceiveOne(&first_source, &first_observation));
+  coropact::coro::SpawnDetach(loop, ReceiveOne(&second_source, &second_observation));
   coropact::luring::detail::LoopAccess::RunReady(loop);
 
   constexpr std::string_view kFirstPayload = "shared-first";
   constexpr std::string_view kSecondPayload = "shared-second";
-  if (::send(first_sender.Get(), kFirstPayload.data(), kFirstPayload.size(),
-             MSG_NOSIGNAL) != static_cast<ssize_t>(kFirstPayload.size()) ||
-      ::send(second_sender.Get(), kSecondPayload.data(), kSecondPayload.size(),
-             MSG_NOSIGNAL) != static_cast<ssize_t>(kSecondPayload.size())) {
-    std::cout << "FAIL: shared-pool send failed: "
-              << coropact::CurrentErrno().message() << '\n';
+  if (::send(first_sender.Get(), kFirstPayload.data(), kFirstPayload.size(), MSG_NOSIGNAL) !=
+          static_cast<ssize_t>(kFirstPayload.size()) ||
+      ::send(second_sender.Get(), kSecondPayload.data(), kSecondPayload.size(), MSG_NOSIGNAL) !=
+          static_cast<ssize_t>(kSecondPayload.size())) {
+    std::cout << "FAIL: shared-pool send failed: " << coropact::CurrentErrno().message() << '\n';
     return false;
   }
 
@@ -381,18 +477,16 @@ bool CheckSharedBufferPool() {
       })) {
     return false;
   }
-  if (first_observation.error.has_value() ||
-      second_observation.error.has_value()) {
+  if (first_observation.error.has_value() || second_observation.error.has_value()) {
     std::cout << "FAIL: shared-pool recv failed: "
-              << (first_observation.error.has_value()
-                      ? first_observation.error->message()
-                      : second_observation.error->message())
+              << (first_observation.error.has_value() ? first_observation.error->message()
+                                                      : second_observation.error->message())
               << '\n';
     return false;
   }
   return first_observation.payload == kFirstPayload &&
-         second_observation.payload == kSecondPayload &&
-         first_observation.stopped && second_observation.stopped;
+         second_observation.payload == kSecondPayload && first_observation.stopped &&
+         second_observation.stopped;
 }
 
 bool CheckEof() {
@@ -417,12 +511,11 @@ bool CheckEof() {
   auto source_result = LUringRecvSource::Create(&loop, receiver.Get());
   if (!source_result.has_value()) {
     if (IsEnvironmentSkip(source_result.error())) {
-      std::cout << "SKIP: provided buffer ring unavailable: "
-                << source_result.error().message() << '\n';
+      std::cout << "SKIP: provided buffer ring unavailable: " << source_result.error().message()
+                << '\n';
       return true;
     }
-    std::cout << "FAIL: RecvSource creation failed: "
-              << source_result.error().message() << '\n';
+    std::cout << "FAIL: RecvSource creation failed: " << source_result.error().message() << '\n';
     return false;
   }
   auto source = std::move(*source_result);
@@ -436,8 +529,7 @@ bool CheckEof() {
     return false;
   }
   if (observation.error.has_value()) {
-    std::cout << "FAIL: EOF recv source failed: "
-              << observation.error->message() << '\n';
+    std::cout << "FAIL: EOF recv source failed: " << observation.error->message() << '\n';
     return false;
   }
   return observation.eof && observation.stopped;
@@ -471,29 +563,25 @@ bool CheckQueuePauseThenRearm() {
   auto source_result = LUringRecvSource::Create(&loop, receiver.Get(), options);
   if (!source_result.has_value()) {
     if (IsEnvironmentSkip(source_result.error())) {
-      std::cout << "SKIP: provided buffer ring unavailable: "
-                << source_result.error().message() << '\n';
+      std::cout << "SKIP: provided buffer ring unavailable: " << source_result.error().message()
+                << '\n';
       return true;
     }
-    std::cout << "FAIL: RecvSource creation failed: "
-              << source_result.error().message() << '\n';
+    std::cout << "FAIL: RecvSource creation failed: " << source_result.error().message() << '\n';
     return false;
   }
   auto source = std::move(*source_result);
 
   PauseResumeObservation observation;
-  coropact::coro::SpawnDetach(
-      loop, ReceivePauseThenResume(&source, &loop, &observation));
+  coropact::coro::SpawnDetach(loop, ReceivePauseThenResume(&source, &loop, &observation));
   coropact::luring::detail::LoopAccess::RunReady(loop);
 
   const auto send_payload = [&sender](std::string_view payload) -> bool {
-    const auto sent = ::send(
-        sender.Get(), payload.data(), payload.size(), MSG_NOSIGNAL);
+    const auto sent = ::send(sender.Get(), payload.data(), payload.size(), MSG_NOSIGNAL);
     if (sent == static_cast<ssize_t>(payload.size())) {
       return true;
     }
-    std::cout << "FAIL: send failed: "
-              << coropact::CurrentErrno().message() << '\n';
+    std::cout << "FAIL: send failed: " << coropact::CurrentErrno().message() << '\n';
     return false;
   };
 
@@ -503,37 +591,33 @@ bool CheckQueuePauseThenRearm() {
   if (!send_payload(kFirst)) {
     return false;
   }
-  if (!PumpUntil(loop, [&] {
-        return observation.error.has_value() || observation.first_received;
-      })) {
+  if (!PumpUntil(loop,
+                 [&] { return observation.error.has_value() || observation.first_received; })) {
     return false;
   }
   if (observation.error.has_value()) {
-    std::cout << "FAIL: first recv failed: "
-              << observation.error->message() << '\n';
+    std::cout << "FAIL: first recv failed: " << observation.error->message() << '\n';
     return false;
   }
 
   if (!send_payload(kQueued)) {
     return false;
   }
-  if (!PumpUntil(loop, [&] {
-        return observation.error.has_value() || observation.low_water_consumed;
-      }, 128)) {
+  if (!PumpUntil(
+          loop, [&] { return observation.error.has_value() || observation.low_water_consumed; },
+          128)) {
     return false;
   }
   if (observation.error.has_value()) {
-    std::cout << "FAIL: recv source did not drain to low-water: "
-              << observation.error->message() << '\n';
+    std::cout << "FAIL: recv source did not drain to low-water: " << observation.error->message()
+              << '\n';
     return false;
   }
 
   if (!send_payload(kResumed)) {
     return false;
   }
-  if (!PumpUntil(loop, [&] {
-        return observation.error.has_value() || observation.done;
-      }, 128)) {
+  if (!PumpUntil(loop, [&] { return observation.error.has_value() || observation.done; }, 128)) {
     return false;
   }
   if (observation.error.has_value()) {
@@ -544,15 +628,16 @@ bool CheckQueuePauseThenRearm() {
 
   return observation.first == kFirst && observation.queued == kQueued &&
          observation.resumed == kResumed && observation.first_received &&
-         observation.low_water_consumed && observation.resumed_received &&
-         observation.stopped;
+         observation.low_water_consumed && observation.resumed_received && observation.stopped;
 }
-
 
 }  // namespace
 
 int main() {
   if (!CheckRecvAndLease()) {
+    return 1;
+  }
+  if (!CheckHeldLeases()) {
     return 1;
   }
   if (!CheckSharedBufferPool()) {

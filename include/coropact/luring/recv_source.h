@@ -7,12 +7,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <vector>
 
 #include "coropact/backend/detail/value_result_state.h"
 #include "coropact/backend/recv_source.h"
-#include "coropact/result.h"
 #include "coropact/coro/task.h"
 #include "coropact/coro/work.h"
 #include "coropact/luring/detail/completion_dispatch.h"
@@ -20,6 +20,7 @@
 #include "coropact/luring/options.h"
 #include "coropact/net/recv_source.h"
 #include "coropact/operation/detail/completion_gate.h"
+#include "coropact/result.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::luring {
@@ -84,7 +85,7 @@ public:
 
   [[nodiscard]]
   static Result<LUringRecvSource> Create(LUringLoop* loop, int fd,
-                                               LUringRecvSourceOptions options = {}) noexcept;
+                                         LUringRecvSourceOptions options = {}) noexcept;
 
   ~LUringRecvSource();
 
@@ -150,12 +151,21 @@ private:
 
   struct PendingEvent {
     std::uint32_t buffer_id{0};
+    std::size_t offset{0};
     std::size_t size{0};
   };
 
+  struct SlotState {
+    std::size_t next_offset{0};
+    std::size_t lease_count{0};
+    bool active{false};
+    bool kernel_done{false};
+  };
+
   LUringRecvSource(LUringLoop* loop, int fd, net::detail::RecvSourceStateMachine state,
-                   std::size_t buffer_size, detail::ProvidedBufferPool* shared_buffer_pool,
-                   std::vector<PendingEvent> event_storage) noexcept;
+                   std::size_t buffer_size, detail::ProvidedBufferPool* buffer_pool,
+                   std::vector<PendingEvent> event_storage, std::vector<SlotState> slot_storage,
+                   std::unique_ptr<detail::ProvidedBufferPool> private_buffer_pool) noexcept;
 
   [[nodiscard]]
   Result<void> Start() noexcept;
@@ -180,8 +190,17 @@ private:
   void DeliverNextIfReady() noexcept;
   void CompleteStopIfReady() noexcept;
   bool TryTakeNext(NextResult& result) noexcept;
-  void QueueEvent(std::uint32_t buffer_id, std::size_t size) noexcept;
+  void QueueEvent(std::uint32_t buffer_id, std::size_t offset, std::size_t size) noexcept;
   bool TryTakeQueuedEvent(PendingEvent& event) noexcept;
+  [[nodiscard]] Result<std::size_t> AcquireSegment(std::uint32_t buffer_id,
+                                                   std::size_t size) noexcept;
+  void MarkKernelDone(std::uint32_t buffer_id) noexcept;
+  void MarkActiveSlotsKernelDone() noexcept;
+  void ReturnIfReclaimable(std::uint32_t buffer_id) noexcept;
+  void ReleaseSlotLease(std::uint32_t buffer_id) noexcept;
+  [[nodiscard]] net::BufferLease MakeLease(std::uint32_t buffer_id, std::size_t offset,
+                                           std::size_t size) noexcept;
+  void ReleasePrivateBufferPool() noexcept;
   void ReturnBuffer(std::uint32_t buffer_id) noexcept;
 
   static void ReclaimBuffer(void* context, std::uint32_t buffer_id) noexcept;
@@ -190,6 +209,7 @@ private:
   int fd_{-1};
   net::detail::RecvSourceStateMachine state_;
   std::vector<PendingEvent> events_;
+  std::vector<SlotState> slots_;
   std::size_t event_head_{0};
   std::size_t event_count_{0};
   std::optional<Error> terminal_error_;
@@ -201,7 +221,9 @@ private:
   CancelOperation cancel_op_;
 
   std::size_t buffer_size_{0};
-  detail::ProvidedBufferPool* shared_buffer_pool_{nullptr};
+  // Points either at the loop-shared fallback pool or at private_buffer_pool_.
+  detail::ProvidedBufferPool* buffer_pool_{nullptr};
+  std::unique_ptr<detail::ProvidedBufferPool> private_buffer_pool_;
 
   bool recv_submitted_{false};
   bool cancel_submitted_{false};
