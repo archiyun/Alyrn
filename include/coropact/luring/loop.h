@@ -22,6 +22,7 @@
 #include "coropact/luring/detail/mailbox.h"
 #include "coropact/luring/detail/op.h"
 #include "coropact/luring/detail/ring.h"
+#include "coropact/luring/detail/sqe_prep.h"
 #include "coropact/luring/detail/timer_queue.h"
 #include "coropact/luring/options.h"
 #include "coropact/result.h"
@@ -188,9 +189,8 @@ private:
       return std::unexpected(Errno(EBADF));
     }
 
-    return SubmitOp(op, [this, target_ring_fd, type](io_uring_sqe* sqe) noexcept {
-      ring_.PrepMsgRing(sqe, target_ring_fd, type, detail::kMsgRingNotificationUserData);
-    });
+    return SubmitOp(op, detail::PrepareMsgRing(target_ring_fd, type,
+                                                detail::kMsgRingNotificationUserData));
   }
 
   [[nodiscard]]

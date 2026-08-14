@@ -1,18 +1,14 @@
 // SPDX-License-Identifier: MIT
 #include "coropact/luring/detail/ring.h"
 
-#include "coropact/luring/detail/sqe_prep.h"
-
 #include <liburing.h>
 #include <liburing/io_uring.h>
 
-#include <cerrno>
 #include <cstdlib>
 #include <cstring>
 #include <expected>
 #include <utility>
 
-#include "coropact/base/check.h"
 #include "coropact/result.h"
 #include "coropact/luring/options.h"
 
@@ -88,15 +84,6 @@ Result<std::size_t> LUringRing::Submit() noexcept {
     return std::unexpected(NegErrno(result));
   }
   return static_cast<std::size_t>(result);
-}
-
-// type -> target CQE.res
-// data -> target CQE.user_data
-void LUringRing::PrepMsgRing(io_uring_sqe* sqe, int target_ring_fd, std::uint32_t type,
-                             std::uint64_t data) noexcept {
-  COROPACT_CHECK(sqe != nullptr, "LUringRing::PrepMsgRing received null SQE");
-
-  PrepareMsgRing(target_ring_fd, type, data)(sqe);
 }
 
 }  // namespace coropact::luring::detail

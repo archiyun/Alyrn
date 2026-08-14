@@ -36,6 +36,21 @@ struct CompletionEvent {
   bool BufferMore() const noexcept {
     return (flags & IORING_CQE_F_BUF_MORE) != 0;
   }
+
+  [[nodiscard]]
+  bool HasSelectedBuffer() const noexcept {
+    return (flags & IORING_CQE_F_BUFFER) != 0;
+  }
+
+  [[nodiscard]]
+  std::uint32_t SelectedBufferId() const noexcept {
+    return flags >> IORING_CQE_BUFFER_SHIFT;
+  }
+
+  [[nodiscard]]
+  bool ZeroCopyWasCopied() const noexcept {
+    return (static_cast<std::uint32_t>(result) & IORING_NOTIF_USAGE_ZC_COPIED) != 0;
+  }
 };
 
 // Completion handling is selected by the operation protocol, not by the loop's

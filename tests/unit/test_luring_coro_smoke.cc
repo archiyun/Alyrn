@@ -5,6 +5,7 @@
 
 #include <array>
 #include <chrono>
+#include <cstddef>
 #include <coroutine>
 #include <expected>
 #include <iostream>
@@ -18,7 +19,8 @@
 #include "coropact/result.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/spawn.h"
-#include "coropact/coro/task.h"
+#include "coropact/coro/detached_task.h"
+#include "coropact/coro/work.h"
 #include "coropact/io/loop.h"
 #include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/detail/op.h"
@@ -26,6 +28,7 @@
 #include "coropact/luring/loop.h"
 #include "coropact/luring/options.h"
 #include "coropact/luring/stream.h"
+#include "coropact/net/endpoint.h"
 #include "coropact/operation/detail/scheduler_continuation.h"
 
 namespace {

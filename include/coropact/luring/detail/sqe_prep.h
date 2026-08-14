@@ -30,18 +30,18 @@ inline auto PrepareNop() {
 }
 
 [[nodiscard]]
-inline auto PrepareRecv(int fd, void* buffer, std::size_t size, int flags = 0) {
-  return MakeSqePrep(io_uring_prep_recv, fd, buffer, size, flags);
-}
-
-[[nodiscard]]
 inline auto PrepareReadv(int fd, const iovec* iovs, unsigned count, off_t offset) {
   return MakeSqePrep(io_uring_prep_readv, fd, iovs, count, offset);
 }
 
 [[nodiscard]]
-inline auto PrepareLinkedRecv(int fd, void* buffer, std::size_t size, int flags = 0) {
-  return [prep = PrepareRecv(fd, buffer, size, flags)](io_uring_sqe* sqe) mutable noexcept {
+inline auto PrepareRecv(int fd, void* buffer, std::size_t size) {
+  return MakeSqePrep(io_uring_prep_recv, fd, buffer, size, 0);
+}
+
+[[nodiscard]]
+inline auto PrepareLinkedRecv(int fd, void* buffer, std::size_t size) {
+  return [prep = PrepareRecv(fd, buffer, size)](io_uring_sqe* sqe) mutable noexcept {
     prep(sqe);
     sqe->flags |= IOSQE_IO_LINK;
   };
@@ -53,15 +53,10 @@ inline auto PrepareSend(int fd, const void* buffer, std::size_t size, int flags)
 }
 
 [[nodiscard]]
-inline auto PrepareSendZeroCopy(int fd, const void* buffer, std::size_t size, int flags,
-                                unsigned zero_copy_flags) {
-  return MakeSqePrep(io_uring_prep_send_zc, fd, buffer, size, flags, zero_copy_flags);
-}
-
-[[nodiscard]]
 inline auto PrepareSendZeroCopyReportUsage(int fd, const void* buffer, std::size_t size,
                                            int flags) {
-  return PrepareSendZeroCopy(fd, buffer, size, flags, IORING_SEND_ZC_REPORT_USAGE);
+  return MakeSqePrep(io_uring_prep_send_zc, fd, buffer, size, flags,
+                     IORING_SEND_ZC_REPORT_USAGE);
 }
 
 [[nodiscard]]
@@ -86,23 +81,13 @@ inline auto PrepareConnect(int fd, const sockaddr* address, socklen_t address_le
 }
 
 [[nodiscard]]
-inline auto PrepareCancelByUserData(std::uint64_t target, unsigned flags) {
-  return MakeSqePrep(io_uring_prep_cancel64, target, flags);
-}
-
-[[nodiscard]]
-inline auto PrepareCancelByFd(int fd, unsigned flags) {
-  return MakeSqePrep(io_uring_prep_cancel_fd, fd, flags);
-}
-
-[[nodiscard]]
 inline auto PrepareCancelAllByUserData(std::uint64_t target) {
-  return PrepareCancelByUserData(target, IORING_ASYNC_CANCEL_ALL);
+  return MakeSqePrep(io_uring_prep_cancel64, target, IORING_ASYNC_CANCEL_ALL);
 }
 
 [[nodiscard]]
 inline auto PrepareCancelAllByFd(int fd) {
-  return PrepareCancelByFd(fd, IORING_ASYNC_CANCEL_ALL);
+  return MakeSqePrep(io_uring_prep_cancel_fd, fd, IORING_ASYNC_CANCEL_ALL);
 }
 
 [[nodiscard]]
@@ -112,29 +97,18 @@ inline auto PrepareCancelAll() {
 }
 
 [[nodiscard]]
-inline auto PrepareLinkTimeout(__kernel_timespec* timeout, unsigned flags) {
-  return MakeSqePrep(io_uring_prep_link_timeout, timeout, flags);
-}
-
-[[nodiscard]]
-inline auto PrepareTimeout(__kernel_timespec* timeout, unsigned count, unsigned flags) {
-  return MakeSqePrep(io_uring_prep_timeout, timeout, count, flags);
+inline auto PrepareLinkTimeout(__kernel_timespec* timeout) {
+  return MakeSqePrep(io_uring_prep_link_timeout, timeout, 0);
 }
 
 [[nodiscard]]
 inline auto PrepareAbsoluteTimeout(__kernel_timespec* timeout) {
-  return PrepareTimeout(timeout, 0, IORING_TIMEOUT_ABS);
-}
-
-[[nodiscard]]
-inline auto PrepareTimeoutUpdate(__kernel_timespec* timeout, std::uint64_t user_data,
-                                 unsigned flags) {
-  return MakeSqePrep(io_uring_prep_timeout_update, timeout, user_data, flags);
+  return MakeSqePrep(io_uring_prep_timeout, timeout, 0, IORING_TIMEOUT_ABS);
 }
 
 [[nodiscard]]
 inline auto PrepareAbsoluteTimeoutUpdate(__kernel_timespec* timeout, std::uint64_t user_data) {
-  return PrepareTimeoutUpdate(timeout, user_data, IORING_TIMEOUT_ABS);
+  return MakeSqePrep(io_uring_prep_timeout_update, timeout, user_data, IORING_TIMEOUT_ABS);
 }
 
 [[nodiscard]]

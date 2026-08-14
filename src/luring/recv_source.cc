@@ -1,19 +1,27 @@
 #include "coropact/luring/recv_source.h"
 
-#include <liburing.h>
-
 #include <cerrno>
+#include <cstddef>
 #include <coroutine>
+#include <cstdint>
 #include <expected>
 #include <limits>
+#include <memory>
+#include <optional>
 #include <utility>
+#include <vector>
 
 #include "coropact/base/check.h"
 #include "coropact/luring/detail/cancel_result.h"
+#include "coropact/luring/detail/completion_dispatch.h"
 #include "coropact/luring/detail/loop_access.h"
+#include "coropact/luring/detail/op.h"
 #include "coropact/luring/detail/provided_buffer_pool.h"
 #include "coropact/luring/detail/sqe_prep.h"
 #include "coropact/luring/loop.h"
+#include "coropact/net/detail/recv_source_state.h"
+#include "coropact/net/detail/source_state.h"
+#include "coropact/net/recv_source.h"
 #include "coropact/operation/detail/completion_gate.h"
 #include "coropact/operation/detail/scheduler_continuation.h"
 #include "coropact/result.h"
@@ -231,8 +239,29 @@ LUringRecvSource::~LUringRecvSource() {
   ReleasePrivateBufferPool();
 }
 
+void LUringRecvSource::ValidateMovable(const LUringRecvSource& source) noexcept {
+  if (source.loop_ == nullptr) {
+    return;
+  }
+
+  COROPACT_CHECK(source.loop_->IsInLoopThread(), "LUringRecvSource moved from wrong thread");
+  COROPACT_CHECK(source.pending_next_ == nullptr, "LUringRecvSource cannot move with pending Next");
+  COROPACT_CHECK(source.pending_stop_ == nullptr, "LUringRecvSource cannot move with pending Stop");
+  COROPACT_CHECK(!source.recv_submitted_, "LUringRecvSource cannot move while active");
+  COROPACT_CHECK(!source.cancel_submitted_, "LUringRecvSource cannot move while cancelling");
+  COROPACT_CHECK(source.state_.OutstandingLeases() == 0,
+                 "LUringRecvSource cannot move with outstanding leases");
+  COROPACT_CHECK(source.state_.State() == RecvSourceState::kIdle ||
+                     source.state_.State() == RecvSourceState::kTerminal,
+                 "LUringRecvSource cannot move before Stop completed");
+  COROPACT_CHECK(source.event_count_ == 0, "LUringRecvSource cannot move with queued events");
+  for (const SlotState& slot : source.slots_) {
+    COROPACT_CHECK(!slot.active, "LUringRecvSource cannot move with borrowed provided buffer");
+  }
+}
+
 LUringRecvSource::LUringRecvSource(LUringRecvSource&& other) noexcept
-    : loop_(std::exchange(other.loop_, nullptr)),
+    : loop_((ValidateMovable(other), std::exchange(other.loop_, nullptr))),
       fd_(std::exchange(other.fd_, -1)),
       state_(std::move(other.state_)),
       events_(std::move(other.events_)),
@@ -246,51 +275,17 @@ LUringRecvSource::LUringRecvSource(LUringRecvSource&& other) noexcept
       buffer_pool_(std::exchange(other.buffer_pool_, nullptr)),
       private_buffer_pool_(std::move(other.private_buffer_pool_)),
       recv_submitted_(false),
-      cancel_submitted_(false) {
-  COROPACT_CHECK(other.pending_next_ == nullptr, "LUringRecvSource cannot move with pending Next");
-  COROPACT_CHECK(other.pending_stop_ == nullptr, "LUringRecvSource cannot move with pending Stop");
-  COROPACT_CHECK(!other.recv_submitted_, "LUringRecvSource cannot move while active");
-  COROPACT_CHECK(!other.cancel_submitted_, "LUringRecvSource cannot move while cancelling");
-  COROPACT_CHECK(other.state_.OutstandingLeases() == 0,
-                 "LUringRecvSource cannot move with outstanding leases");
-  COROPACT_CHECK(other.state_.State() == RecvSourceState::kIdle ||
-                     other.state_.State() == RecvSourceState::kTerminal,
-                 "LUringRecvSource cannot move before Stop completed");
-  COROPACT_CHECK(other.event_count_ == 0, "LUringRecvSource cannot move with queued events");
-  for (const SlotState& slot : slots_) {
-    COROPACT_CHECK(!slot.active, "LUringRecvSource cannot move with borrowed provided buffer");
-  }
-}
+      cancel_submitted_(false) {}
 
 LUringRecvSource& LUringRecvSource::operator=(LUringRecvSource&& other) noexcept {
   if (this == &other) {
     return *this;
   }
 
-  COROPACT_CHECK(pending_next_ == nullptr, "LUringRecvSource destination has pending Next");
-  COROPACT_CHECK(pending_stop_ == nullptr, "LUringRecvSource destination has pending Stop");
-  COROPACT_CHECK(!recv_submitted_, "LUringRecvSource destination is active");
-  COROPACT_CHECK(!cancel_submitted_, "LUringRecvSource destination is cancelling");
-  COROPACT_CHECK(state_.OutstandingLeases() == 0,
-                 "LUringRecvSource destination has outstanding leases");
-  COROPACT_CHECK(event_count_ == 0, "LUringRecvSource destination has queued events");
-  for (const SlotState& slot : slots_) {
-    COROPACT_CHECK(!slot.active, "LUringRecvSource destination has borrowed provided buffer");
-  }
-
-  COROPACT_CHECK(other.pending_next_ == nullptr, "LUringRecvSource source has pending Next");
-  COROPACT_CHECK(other.pending_stop_ == nullptr, "LUringRecvSource source has pending Stop");
-  COROPACT_CHECK(!other.recv_submitted_, "LUringRecvSource source is active");
-  COROPACT_CHECK(!other.cancel_submitted_, "LUringRecvSource source is cancelling");
-  COROPACT_CHECK(other.state_.OutstandingLeases() == 0,
-                 "LUringRecvSource source has outstanding leases");
-  COROPACT_CHECK(other.state_.State() == RecvSourceState::kIdle ||
-                     other.state_.State() == RecvSourceState::kTerminal,
-                 "LUringRecvSource source has not completed Stop");
-  COROPACT_CHECK(other.event_count_ == 0, "LUringRecvSource source has queued events");
-  for (const SlotState& slot : other.slots_) {
-    COROPACT_CHECK(!slot.active, "LUringRecvSource source has borrowed provided buffer");
-  }
+  ValidateMovable(*this);
+  ValidateMovable(other);
+  COROPACT_CHECK(loop_ == nullptr || other.loop_ == nullptr || loop_ == other.loop_,
+                 "LUringRecvSource cannot move across loops");
 
   ReleasePrivateBufferPool();
   loop_ = std::exchange(other.loop_, nullptr);
@@ -448,8 +443,8 @@ CompletionDisposition LUringRecvSource::OnCompletion(CompletionEvent event) noex
     recv_submitted_ = false;
   }
 
-  const bool has_buffer = (event.flags & IORING_CQE_F_BUFFER) != 0;
-  const auto buffer_id = static_cast<std::uint32_t>(event.flags >> IORING_CQE_BUFFER_SHIFT);
+  const bool has_buffer = event.HasSelectedBuffer();
+  const auto buffer_id = event.SelectedBufferId();
   const bool valid_buffer =
       has_buffer && buffer_pool_ != nullptr && buffer_id < buffer_pool_->capacity();
 

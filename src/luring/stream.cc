@@ -1,28 +1,36 @@
 // SPDX-License-Identifier: MIT
 #include "coropact/luring/stream.h"
 
-#include <liburing.h>
+#include <linux/time_types.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cerrno>
+#include <chrono>
 #include <coroutine>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <new>
+#include <span>
 #include <utility>
 
 #include "coropact/base/check.h"
+#include "coropact/backend/loop.h"
 #include "coropact/result.h"
 #include "coropact/luring/detail/fd_close_convergence.h"
 #include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/detail/op.h"
 #include "coropact/luring/detail/operation_submission.h"
+#include "coropact/luring/detail/op_hook.h"
 #include "coropact/luring/detail/sqe_prep.h"
 #include "coropact/luring/detail/stream_operation_slot.h"
 #include "coropact/luring/loop.h"
 #include "coropact/net/endpoint.h"
+#include "coropact/net/read_into.h"
+#include "coropact/operation/detail/composite_lifecycle.h"
+#include "coropact/time/clock.h"
 
 namespace coropact::luring {
 
@@ -271,7 +279,7 @@ bool LUringStream::ReadSomeForAwaiter::await_suspend(
   }
 
   submitted = detail::LoopAccess::SubmitOp(
-      *stream_->loop_, TimeoutOp(), detail::PrepareLinkTimeout(&timeout_ts_, 0));
+      *stream_->loop_, TimeoutOp(), detail::PrepareLinkTimeout(&timeout_ts_));
   if (!submitted.has_value()) {
     // The receive is already queued. It will complete normally without the
     // optional timeout, and the awaiter remains alive until that CQE.
@@ -535,12 +543,10 @@ CompletionDisposition LUringStream::SendZeroCopyAwaiter::OnComplete(
     }
 
     self->notification_received_ = true;
-    // A send-zc notification stores usage bits in cqe_res.  In particular,
-    // IORING_NOTIF_USAGE_ZC_COPIED occupies the high bit, so cqe_res may look
-    // negative when viewed as int; it is not a -errno error value.
-    const auto usage = static_cast<std::uint32_t>(event.result);
-    self->usage_ = (usage & IORING_NOTIF_USAGE_ZC_COPIED) != 0 ? ZeroCopySendUsage::kCopied
-                                                               : ZeroCopySendUsage::kZeroCopy;
+    // A send-zc notification stores usage bits in cqe_res, so it is not an
+    // errno result even when its high bit is set.
+    self->usage_ = event.ZeroCopyWasCopied() ? ZeroCopySendUsage::kCopied
+                                              : ZeroCopySendUsage::kZeroCopy;
     disposition.kernel_request_terminal = true;
     disposition.decrement_inflight = true;
   } else if (self->lifecycle_.RecordLogicalResult()) {

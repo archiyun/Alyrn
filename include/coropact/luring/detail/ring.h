@@ -42,8 +42,6 @@ public:
   [[nodiscard]]
   Result<std::size_t> Submit() noexcept;
 
-  void PrepMsgRing(io_uring_sqe* sqe, int target_ring_fd, std::uint32_t type,
-                   std::uint64_t data) noexcept;
   [[nodiscard]]
   int Fd() const noexcept { return initialized_ ? ring_.ring_fd : -1; }
 
