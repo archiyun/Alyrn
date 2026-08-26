@@ -177,16 +177,18 @@ Task<void> AsyncJoinChild(JoinHandle<void> child, Probe* probe) {
 class FrameResourceContext {
 public:
   explicit FrameResourceContext(bool pooled) {
+    counted_ = std::make_unique<CountingMemoryResource>(*std::pmr::new_delete_resource(), stats_);
     if (pooled) {
-      pool_.emplace();
+      pool_.emplace(*counted_);
     }
-    std::pmr::memory_resource* base =
-        pooled ? static_cast<std::pmr::memory_resource*>(std::addressof(*pool_))
-               : std::pmr::new_delete_resource();
-    counted_ = std::make_unique<CountingMemoryResource>(*base, stats_);
   }
 
-  std::pmr::memory_resource* resource() noexcept { return counted_.get(); }
+  std::pmr::memory_resource* resource() noexcept {
+    if (pool_.has_value()) {
+      return std::addressof(*pool_);
+    }
+    return counted_.get();
+  }
 
   const MemoryResourceStats& stats() const noexcept { return stats_; }
 

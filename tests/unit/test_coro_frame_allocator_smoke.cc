@@ -7,9 +7,13 @@
 #include <cerrno>
 #include <csignal>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <iostream>
 #include <memory_resource>
+#include <set>
+#include <thread>
+#include <vector>
 
 #include "coropact/coro/frame_allocator.h"
 #include "coropact/coro/scheduler.h"
@@ -201,6 +205,242 @@ void TestSizeClassReuseAndFallback() {
         "size-class chunks and fallback allocations should be released");
 }
 
+bool TestRemoteFreeReusesAfterOwnerDrain() {
+  RecordingResource upstream;
+  coropact::coro::CoroFramePoolResource pool{upstream};
+  void* first = pool.allocate(128, alignof(std::max_align_t));
+  const std::size_t chunk_allocations = upstream.allocations();
+
+  std::thread{[&] { pool.deallocate(first, 128, alignof(std::max_align_t)); }}.join();
+  pool.DrainRemote();
+
+  void* second = pool.allocate(128, alignof(std::max_align_t));
+  if (!Check(second == first, "owner drain should reuse a remotely freed slot")) {
+    return false;
+  }
+  if (!Check(upstream.allocations() == chunk_allocations, "remote free should not grow the pool")) {
+    return false;
+  }
+  pool.deallocate(second, 128, alignof(std::max_align_t));
+  return true;
+}
+
+bool TestDrainCurrentReusesRemote() {
+  RecordingResource upstream;
+  coropact::coro::CoroFramePoolResource pool{upstream};
+  void* first = pool.allocate(128, alignof(std::max_align_t));
+  const std::size_t chunk_allocations = upstream.allocations();
+
+  std::thread{[&] { pool.deallocate(first, 128, alignof(std::max_align_t)); }}.join();
+  coropact::coro::CoroFramePoolResource::DrainCurrent();
+
+  void* second = pool.allocate(128, alignof(std::max_align_t));
+  if (!Check(second == first, "DrainCurrent should reuse a remotely freed slot")) {
+    return false;
+  }
+  if (!Check(upstream.allocations() == chunk_allocations,
+             "DrainCurrent should not grow the pool")) {
+    return false;
+  }
+  pool.deallocate(second, 128, alignof(std::max_align_t));
+  return true;
+}
+
+bool TestRemoteFreeReusesWhenLocalEmpty() {
+  RecordingResource upstream;
+  coropact::coro::CoroFramePoolResource pool{upstream};
+  const std::size_t slot_count = coropact::coro::CoroFramePoolResource::SlotsPerChunk(128);
+
+  std::vector<void*> live(slot_count);
+  for (void*& slot : live) {
+    slot = pool.allocate(128, alignof(std::max_align_t));
+  }
+  const std::size_t chunk_allocations = upstream.allocations();
+
+  std::thread{[&] { pool.deallocate(live[0], 128, alignof(std::max_align_t)); }}.join();
+
+  void* reused = pool.allocate(128, alignof(std::max_align_t));
+  if (!Check(reused == live[0], "allocate should drain remote when the local list is empty")) {
+    return false;
+  }
+  if (!Check(upstream.allocations() == chunk_allocations,
+             "drain-on-empty should not allocate another chunk")) {
+    return false;
+  }
+
+  pool.deallocate(reused, 128, alignof(std::max_align_t));
+  for (std::size_t i = 1; i < live.size(); ++i) {
+    pool.deallocate(live[i], 128, alignof(std::max_align_t));
+  }
+  return true;
+}
+
+bool TestRemoteFreeFromManyThreadsReusesAfterDrain() {
+  RecordingResource upstream;
+  coropact::coro::CoroFramePoolResource pool{upstream};
+  constexpr std::size_t kSlots = 32;
+  std::vector<void*> slots(kSlots);
+  for (void*& slot : slots) {
+    slot = pool.allocate(128, alignof(std::max_align_t));
+  }
+  const std::size_t chunk_allocations = upstream.allocations();
+  const std::set<void*> original{slots.begin(), slots.end()};
+
+  std::vector<std::thread> threads;
+  threads.reserve(kSlots);
+  for (void* slot : slots) {
+    threads.emplace_back([&pool, slot] { pool.deallocate(slot, 128, alignof(std::max_align_t)); });
+  }
+  for (std::thread& thread : threads) {
+    thread.join();
+  }
+  pool.DrainRemote();
+
+  std::set<void*> reused;
+  for (std::size_t i = 0; i < kSlots; ++i) {
+    reused.insert(pool.allocate(128, alignof(std::max_align_t)));
+  }
+  if (!Check(reused == original, "draining remote should recover every concurrently freed slot")) {
+    return false;
+  }
+  if (!Check(upstream.allocations() == chunk_allocations,
+             "concurrent remote free should not grow the pool")) {
+    return false;
+  }
+  for (void* slot : reused) {
+    pool.deallocate(slot, 128, alignof(std::max_align_t));
+  }
+  return true;
+}
+
+bool TestDestructorDrainsRemote() {
+  RecordingResource upstream;
+  {
+    coropact::coro::CoroFramePoolResource pool{upstream};
+    void* first = pool.allocate(128, alignof(std::max_align_t));
+    std::thread{[&] { pool.deallocate(first, 128, alignof(std::max_align_t)); }}.join();
+  }
+  return Check(upstream.allocations() == upstream.deallocations(),
+               "pool destruction should drain remote frees before releasing chunks");
+}
+
+bool TestPooledSlotsShareAlignedSlab() {
+  RecordingResource upstream;
+  coropact::coro::CoroFramePoolResource pool{upstream};
+  void* first = pool.allocate(128, alignof(std::max_align_t));
+  void* second = pool.allocate(128, alignof(std::max_align_t));
+  const auto chunk = coropact::coro::CoroFramePoolResource::kChunkBytes;
+  const auto header = coropact::coro::CoroFramePoolResource::kSlabHeaderBytes;
+  const auto a = reinterpret_cast<std::uintptr_t>(first);
+  const auto b = reinterpret_cast<std::uintptr_t>(second);
+  if (!Check((a & (chunk - 1)) >= header, "pooled slot should sit after the slab header")) {
+    return false;
+  }
+  if (!Check((a & ~(chunk - 1)) == (b & ~(chunk - 1)),
+             "same-class slots should share a chunk-aligned slab")) {
+    return false;
+  }
+  if (!Check(((a & (chunk - 1)) - header) % 128 == 0,
+             "a pooled slot should be a size-class stride from the slab header")) {
+    return false;
+  }
+  pool.deallocate(first, 128, alignof(std::max_align_t));
+  pool.deallocate(second, 128, alignof(std::max_align_t));
+  return true;
+}
+
+bool TestPooledCoroutineFrameHasNoPrefix() {
+  RecordingResource upstream;
+  coropact::coro::CoroFramePoolResource pool{upstream};
+  coropact::coro::FrameAllocatorScope scope{pool};
+  void* first = coropact::coro::detail::AllocateFrame(64, alignof(std::max_align_t));
+  const std::size_t chunks = upstream.allocations();
+  if (!Check(chunks == 1, "a pooled coroutine frame should come from one slab")) {
+    return false;
+  }
+
+  const auto chunk = coropact::coro::CoroFramePoolResource::kChunkBytes;
+  const auto header = coropact::coro::CoroFramePoolResource::kSlabHeaderBytes;
+  const auto offset = reinterpret_cast<std::uintptr_t>(first) % chunk;
+  if (!Check(offset >= header && (offset - header) % 64 == 0,
+             "a pooled coroutine frame should be returned at a slot start")) {
+    return false;
+  }
+
+  coropact::coro::detail::DeallocateFrame(first);
+  void* second = coropact::coro::detail::AllocateFrame(64, alignof(std::max_align_t));
+  if (!Check(second == first, "slab lookup should reuse a pooled frame without a prefix header")) {
+    return false;
+  }
+  if (!Check(upstream.allocations() == chunks, "slot reuse should not allocate another slab")) {
+    return false;
+  }
+  coropact::coro::detail::DeallocateFrame(second);
+  return true;
+}
+
+bool TestPooledCoroutineFrameRemoteFree() {
+  RecordingResource upstream;
+  coropact::coro::CoroFramePoolResource pool{upstream};
+  coropact::coro::FrameAllocatorScope scope{pool};
+  void* first = coropact::coro::detail::AllocateFrame(64, alignof(std::max_align_t));
+  const std::size_t chunks = upstream.allocations();
+  std::thread{[&] { coropact::coro::detail::DeallocateFrame(first); }}.join();
+  pool.DrainRemote();
+  void* second = coropact::coro::detail::AllocateFrame(64, alignof(std::max_align_t));
+  if (!Check(second == first, "cross-thread destroy should return the slot to its slab owner")) {
+    return false;
+  }
+  if (!Check(upstream.allocations() == chunks, "remote frame free should not grow the pool")) {
+    return false;
+  }
+  coropact::coro::detail::DeallocateFrame(second);
+  return true;
+}
+
+bool TestTightSizeClassesStayOnOneSlab() {
+  RecordingResource upstream;
+  coropact::coro::CoroFramePoolResource pool{upstream};
+  const std::size_t overflow_128 = coropact::coro::CoroFramePoolResource::SlotsPerChunk(128) + 1;
+
+  std::vector<void*> tiny(overflow_128);
+  for (void*& slot : tiny) {
+    slot = pool.allocate(64, alignof(std::max_align_t));
+  }
+  if (!Check(upstream.allocations() == 1, "64-byte frames should use a tighter class than 128")) {
+    return false;
+  }
+  for (void* slot : tiny) {
+    pool.deallocate(slot, 64, alignof(std::max_align_t));
+  }
+
+  std::vector<void*> medium(overflow_128);
+  for (void*& slot : medium) {
+    slot = pool.allocate(96, alignof(std::max_align_t));
+  }
+  if (!Check(upstream.allocations() == 2,
+             "96-byte frames should not spill into the 128-byte class")) {
+    return false;
+  }
+  for (void* slot : medium) {
+    pool.deallocate(slot, 96, alignof(std::max_align_t));
+  }
+
+  const std::size_t overflow_256 = coropact::coro::CoroFramePoolResource::SlotsPerChunk(256) + 1;
+  std::vector<void*> wide(overflow_256);
+  for (void*& slot : wide) {
+    slot = pool.allocate(129, alignof(std::max_align_t));
+  }
+  if (!Check(upstream.allocations() == 3,
+             "129-byte frames should use 192-byte slots instead of 256")) {
+    return false;
+  }
+  for (void* slot : wide) {
+    pool.deallocate(slot, 129, alignof(std::max_align_t));
+  }
+  return true;
+}
+
 }  // namespace
 
 int main() {
@@ -208,6 +448,15 @@ int main() {
   TestPackedFrameMetadata();
   if (!TestNestedFrameAllocatorScopesRestoreSelection()) return 1;
   TestSizeClassReuseAndFallback();
+  if (!TestRemoteFreeReusesAfterOwnerDrain()) return 1;
+  if (!TestDrainCurrentReusesRemote()) return 1;
+  if (!TestRemoteFreeReusesWhenLocalEmpty()) return 1;
+  if (!TestRemoteFreeFromManyThreadsReusesAfterDrain()) return 1;
+  if (!TestDestructorDrainsRemote()) return 1;
+  if (!TestPooledSlotsShareAlignedSlab()) return 1;
+  if (!TestPooledCoroutineFrameHasNoPrefix()) return 1;
+  if (!TestPooledCoroutineFrameRemoteFree()) return 1;
+  if (!TestTightSizeClassesStayOnOneSlab()) return 1;
 
   RecordingResource resource;
 

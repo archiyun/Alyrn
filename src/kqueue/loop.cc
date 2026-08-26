@@ -10,6 +10,7 @@
 
 #include "coropact/base/check.h"
 #include "coropact/base/current_thread.h"
+#include "coropact/coro/frame_allocator.h"
 #include "coropact/kqueue/detail/channel.h"
 #include "coropact/kqueue/detail/poller.h"
 #include "coropact/kqueue/detail/timer_queue.h"
@@ -111,10 +112,12 @@ void Loop::Run(std::stop_token token) {
       channel->HandleEvent();
     }
     poller_->DispatchTimerExpire();
+    coro::CoroFramePoolResource::DrainCurrent();
   }
 
   BeginShutdown();
   RunPending();
+  coro::CoroFramePoolResource::DrainCurrent();
   looping_ = false;
   state_.store(backend::LoopState::kStopped, std::memory_order_release);
 }

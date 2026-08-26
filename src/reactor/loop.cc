@@ -7,6 +7,7 @@
 
 #include "coropact/base/check.h"
 #include "coropact/base/current_thread.h"
+#include "coropact/coro/frame_allocator.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/reactor/detail/channel.h"
 #include "coropact/reactor/detail/poller.h"
@@ -82,10 +83,12 @@ void Loop::Run(std::stop_token token) {
     for (Channel* channel : active_channels_) {
       channel->HandleEvent();
     }
+    coro::CoroFramePoolResource::DrainCurrent();
   }
 
   BeginShutdown();
   RunPending();
+  coro::CoroFramePoolResource::DrainCurrent();
   looping_ = false;
   state_.store(backend::LoopState::kStopped, std::memory_order_release);
 }
