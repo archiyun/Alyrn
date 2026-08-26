@@ -3,6 +3,9 @@ CLAUDE.md
 AGENTS.md
 /tmp/
 
+# Local-only third-party benchmark comparisons; never part of the library.
+/benchmarks/third_party/
+
 # Editor and tool state
 .codex/
 .claude/
