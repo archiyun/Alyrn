@@ -5,6 +5,7 @@
 #include <chrono>
 #include <csignal>
 #include <cstddef>
+#include <cstdint>
 #include <iostream>
 #include <span>
 #include <thread>
@@ -17,9 +18,14 @@
 namespace {
 
 std::atomic_bool g_stop{false};
+std::atomic<std::uint64_t> g_sessions{0};
+std::atomic<std::uint64_t> g_read_awaits{0};
+std::atomic<std::uint64_t> g_reads_completed{0};
+std::atomic<std::uint64_t> g_responses{0};
 void OnSignal(int) noexcept { g_stop.store(true, std::memory_order_relaxed); }
 
 coropact::coro::DetachedTask HttpSession(coropact::reactor::Stream stream) {
+  g_sessions.fetch_add(1, std::memory_order_relaxed);
   std::array<std::byte, coropact_bench::kRequestBufferSize> request{};
   const auto response = std::as_bytes(
       std::span(coropact_bench::Response().data(), coropact_bench::Response().size()));
@@ -27,8 +33,10 @@ coropact::coro::DetachedTask HttpSession(coropact::reactor::Stream stream) {
 
   for (;;) {
     const std::size_t previous_used = used;
+    g_read_awaits.fetch_add(1, std::memory_order_relaxed);
     auto read = co_await stream.ReadSome(std::span(request).subspan(used));
     if (!read.has_value() || *read == 0) break;
+    g_reads_completed.fetch_add(1, std::memory_order_relaxed);
     used += *read;
     const std::size_t scan_from = previous_used >= 3 ? previous_used - 3 : 0;
     if (!coropact_bench::HasHeaderTerminator(reinterpret_cast<const char*>(request.data()), used,
@@ -39,6 +47,7 @@ coropact::coro::DetachedTask HttpSession(coropact::reactor::Stream stream) {
 
     auto written = co_await stream.WriteAll(response);
     if (!written.has_value()) break;
+    g_responses.fetch_add(1, std::memory_order_relaxed);
     used = 0;
   }
   (void)co_await stream.Close();
@@ -83,5 +92,18 @@ int main() {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
   server.Stop();
+  const auto sessions = g_sessions.load(std::memory_order_relaxed);
+  const auto read_awaits = g_read_awaits.load(std::memory_order_relaxed);
+  const auto reads_completed = g_reads_completed.load(std::memory_order_relaxed);
+  const auto responses = g_responses.load(std::memory_order_relaxed);
+  std::cout << "instrumentation sessions=" << sessions << " read_awaits=" << read_awaits
+            << " reads_completed=" << reads_completed << " responses=" << responses;
+  if (responses != 0) {
+    std::cout << " read_awaits_per_response="
+              << static_cast<double>(read_awaits) / static_cast<double>(responses)
+              << " reads_per_response="
+              << static_cast<double>(reads_completed) / static_cast<double>(responses);
+  }
+  std::cout << '\n';
   return 0;
 }
