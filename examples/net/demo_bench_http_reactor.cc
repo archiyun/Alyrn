@@ -49,7 +49,7 @@ int main() {
   std::signal(SIGTERM, OnSignal);
 
   const auto port = static_cast<std::uint16_t>(coropact_bench::EnvInt("PORT", 19090));
-  const std::size_t workers = coropact_bench::EnvSize("REACTOR_WORKERS", 4);
+  const std::size_t workers = coropact_bench::EnvSize("REACTOR_WORKERS", 8);
   const bool level_triggered = coropact_bench::EnvString("REACTOR_TRIGGER_MODE") == "lt";
   const auto trigger_mode = level_triggered ? coropact::reactor::TriggerMode::kLevelTriggered
                                             : coropact::reactor::TriggerMode::kEdgeTriggered;
