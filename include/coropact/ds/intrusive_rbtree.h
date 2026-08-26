@@ -297,7 +297,6 @@ private:
 
   // O(log n) — walks left spine of subtree.
   Node* Minimum(Node* node);
-  Node* Maximum(Node* node);
 
   // Worst-case O(log n) — either descends once via Minimum, or walks parent
   // links (at most tree height).  Called once per Erase that removes min_.
@@ -325,16 +324,6 @@ auto IRBT_TYPE::Minimum(Node* node) -> Node* {
 
   while (node->left() != sentinel()) {
     node = node->left();
-  }
-  return node;
-}
-
-IRBT_TMPL
-auto IRBT_TYPE::Maximum(Node* node) -> Node* {
-  assert(node != sentinel());
-
-  while (node->right() != sentinel()) {
-    node = node->right();
   }
   return node;
 }
@@ -794,25 +783,7 @@ std::size_t IRBT_TYPE::PopWhile(Pred pred, OnPop on_pop) {
 IRBT_TMPL
 template <typename Pred, typename OnPop>
 std::size_t IRBT_TYPE::ExtractPrefixImpl(Pred pred, OnPop on_pop) {
-  // A predicate that accepts both ends of a non-empty ordered tree accepts
-  // the complete prefix.  Detach the whole tree in one pass instead of
-  // paying a delete-fixup for every element.  Prefix predicates are required
-  // to be stable, so probing the cached minimum and the maximum is safe.
-  if (!Empty() && pred(Earliest()) && pred(elem_of(Maximum(root())))) {
-    std::vector<T*> all;
-    all.reserve(size_);
-    for (auto* node = min(); node != sentinel(); node = Next(node)) {
-      all.push_back(elem_of(node));
-    }
-    Clear();
-    for (T* elem : all) {
-      on_pop(elem);
-    }
-    return all.size();
-  }
-
   std::size_t popped = 0;
-  const std::size_t initial_size = size_;
   while (!Empty()) {
     T* elem = Earliest();
     if (!pred(elem)) {
@@ -822,42 +793,6 @@ std::size_t IRBT_TYPE::ExtractPrefixImpl(Pred pred, OnPop on_pop) {
     assert(erased);
     on_pop(elem);
     ++popped;
-
-    // Once the prefix dominates the tree, rebuilding the small suffix is
-    // cheaper than continuing to pay a full RB delete-fixup per element. The
-    // already extracted nodes are detached; partition the remaining ordered
-    // nodes, clear their current topology once, and insert only the suffix.
-    if (popped > initial_size / 2 && !Empty()) {
-      std::vector<T*> remainder;
-      remainder.reserve(size_);
-      for (auto* node = min(); node != sentinel(); node = Next(node)) {
-        remainder.push_back(elem_of(node));
-      }
-
-      std::vector<T*> suffix;
-      suffix.reserve(remainder.size());
-      std::size_t extra = 0;
-      bool still_prefix = true;
-      for (T* candidate : remainder) {
-        if (still_prefix && pred(candidate)) {
-          ++extra;
-        } else {
-          still_prefix = false;
-          suffix.push_back(candidate);
-        }
-      }
-
-      Clear();
-      for (T* candidate : suffix) {
-        const bool inserted = Insert(candidate);
-        assert(inserted);
-        (void)inserted;
-      }
-      for (std::size_t i = 0; i < extra; ++i) {
-        on_pop(remainder[i]);
-      }
-      return popped + extra;
-    }
   }
   return popped;
 }
