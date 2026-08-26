@@ -5,6 +5,7 @@
 // Work, awaitable introspection, and frame-resource tuning remain available
 // through their individual headers for runtime implementers.
 
+#include "coropact/coro/channel.h"       // IWYU pragma: export
 #include "coropact/coro/detached_task.h"  // IWYU pragma: export
 #include "coropact/coro/spawn.h"          // IWYU pragma: export
 #include "coropact/coro/sync_wait.h"      // IWYU pragma: export
