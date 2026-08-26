@@ -26,10 +26,13 @@ coropact::coro::DetachedTask HttpSession(coropact::reactor::Stream stream) {
   std::size_t used = 0;
 
   for (;;) {
+    const std::size_t previous_used = used;
     auto read = co_await stream.ReadSome(std::span(request).subspan(used));
     if (!read.has_value() || *read == 0) break;
     used += *read;
-    if (!coropact_bench::HasHeaderTerminator(reinterpret_cast<const char*>(request.data()), used)) {
+    const std::size_t scan_from = previous_used >= 3 ? previous_used - 3 : 0;
+    if (!coropact_bench::HasHeaderTerminator(reinterpret_cast<const char*>(request.data()), used,
+                                             scan_from)) {
       if (used == request.size()) break;
       continue;
     }
