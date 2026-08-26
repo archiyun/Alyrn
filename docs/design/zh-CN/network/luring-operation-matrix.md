@@ -247,7 +247,8 @@ operation destruction
   native multishot 三条 AcceptSource 路径的有界业务语义 refinement；
 - `formal/recv_source_lease.tla`：provided-buffer multishot recv 的 queue、BufferLease、
   cancel 和 Stop 收敛不变量。
-- `formal/recv_source_incremental_lease.tla`：未来 `F_BUF_MORE` source 路径的设计模型；它描述
+- `formal/recv_source_incremental_lease.tla`：未来 `F_BUF_MORE` source 路径的设计模型；当前
+  runtime 未启用该路径。它描述
   同一 provided buffer 的连续 segment、offset 不重叠、最后 segment 与全部 lease 释放后才归还
   buffer ring。
 
