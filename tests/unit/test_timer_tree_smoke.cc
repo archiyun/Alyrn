@@ -129,6 +129,20 @@ bool TestExtractPrefixBoundaries() {
     return false;
   }
 
+  coropact::time::Timer boundary([] {}, base + coropact::time::Seconds(3),
+                                 coropact::time::Duration::zero());
+  const auto before = timers.ExtractBefore(&boundary);
+  if (!Expect(before.size() == 2, "cutoff extraction count mismatch") ||
+      !Expect(timers.Empty() && timers.CheckInvariants(),
+              "cutoff extraction should leave a valid empty tree")) {
+    return false;
+  }
+
+  if (!Expect(timers.Insert(&first), "reinsert first after cutoff") ||
+      !Expect(timers.Insert(&second), "reinsert second after cutoff")) {
+    return false;
+  }
+
   const auto all = timers.ExtractPrefix([](const auto*) { return true; });
   return Expect(all.size() == 2, "all-prefix extraction count mismatch") &&
          Expect(!first.InTree() && !second.InTree(), "all-prefix hooks should be clear") &&
