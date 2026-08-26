@@ -213,7 +213,9 @@ public:
   // Extracts the earliest elements satisfying pred in key order.
   // Stops at the first element that fails the predicate. Returned pointers
   // are already unlinked. The predicate must describe a prefix of the sorted
-  // sequence (the same contract as PopWhile).
+  // sequence (the same contract as PopWhile). Full-prefix extraction is O(k);
+  // small prefixes are O(k log n), while large prefixes use one suffix
+  // rebuild to avoid repeated delete fixups.
   template <typename Pred>
   std::vector<T*> ExtractPrefix(Pred pred);
 
