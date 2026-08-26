@@ -260,7 +260,6 @@ That shim does not watch real sockets and does not run the native worker-group s
 | `BUILD_EXAMPLES` | `ON` | Linux examples; disabled until a native readiness backend exists |
 | `BUILD_BENCHMARKS` | `OFF` | Standalone microbenchmarks |
 | `BUILD_FUZZERS` | `OFF` | Clang/libFuzzer state-machine fuzz targets; selects ASan/UBSan |
-| `BUILD_EXPERIMENTAL_TESTS` | `OFF` | SplayTree / QuadHeap validators |
 
 ### Fuzzing and microbenchmarks
 
@@ -376,7 +375,7 @@ The documentation map is [`docs/index.md`](docs/index.md). Design notes are curr
 * **[Runtime Builder](docs/design/zh-CN/network/runtime-builder.md)**: compile-time backend tags and start/stop lifecycle.
 * **[Coroutine state-machine models](docs/design/zh-CN/network/lamport-hot-swap-runtime.md)**: abstract stream invariants and backend refinement notes.
 * **[AsyncStream semantics](docs/design/zh-CN/network/async-stream-contract.md)**: read, write, close, cancellation, and buffer-lifetime semantics.
-* **[Data structures](docs/design/zh-CN/datastructure/index.md)**: modern C++ intrusive data structures, intrusive red-black trees, intrusive lists, MPSC queues, and their use in the project. SplayTree and QuadHeap are experimental explicit-header APIs; build their validators with `-DBUILD_EXPERIMENTAL_TESTS=ON`.
+* **[Data structures](docs/design/zh-CN/datastructure/index.md)**: modern C++ intrusive data structures, intrusive red-black trees, intrusive lists, MPSC queues, and their use in the project. QuadHeap is a first-class timer-index adapter injected through `time::TimerIndex`.
 * **[Performance benchmarks](docs/benchmark/network-libraries-20260810.md)**: the latest current-source C++ baseline; the broader unified network-library report and supporting material are in [`docs/benchmark`](docs/benchmark/).
 * **[Examples](examples/)**: Reactor and io_uring examples on Linux.
 * **[Tests](tests/)**: coroutine, networking, lifecycle, and backend validation.

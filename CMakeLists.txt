@@ -12,7 +12,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(BUILD_TESTS "Build tests" ON)
-option(BUILD_EXPERIMENTAL_TESTS "Build experimental data-structure tests" OFF)
 option(BUILD_EXAMPLES "Build example programs" ON)
 option(BUILD_BENCHMARKS "Build standalone microbenchmarks" OFF)
 option(BUILD_FUZZERS "Build libFuzzer targets (requires Clang)" OFF)

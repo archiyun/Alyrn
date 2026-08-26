@@ -13,6 +13,7 @@
 #include "coropact/reactor/detail/timer_queue.h"
 #include "coropact/reactor/loop.h"
 #include "coropact/time/timer_id.h"
+#include "coropact/time/timer_index.h"
 
 namespace coropact::reactor {
 
@@ -24,10 +25,13 @@ thread_local Loop* t_loop_in_this_thread = nullptr;
 }  // namespace
 
 Loop::Loop(std::pmr::memory_resource* frame_resource)
+    : Loop(time::TimerIndexKind::kRbTree, frame_resource) {}
+
+Loop::Loop(time::TimerIndexKind timers, std::pmr::memory_resource* frame_resource)
     : Scheduler(frame_resource),
       thread_id_(base::CurrentThreadId()),
       poller_(Poller::NewDefaultPoller()),
-      timer_queue_(std::make_unique<TimerQueue>(this)) {
+      timer_queue_(std::make_unique<TimerQueue>(this, timers)) {
   COROPACT_CHECK(t_loop_in_this_thread == nullptr,
                  "Loop: only one Loop may exist per thread");
   t_loop_in_this_thread = this;

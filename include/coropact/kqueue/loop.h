@@ -16,6 +16,7 @@
 #include "coropact/kqueue/detail/loop_shutdown.h"
 #include "coropact/time/clock.h"
 #include "coropact/time/timer_id.h"
+#include "coropact/time/timer_index.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::kqueue {
@@ -41,6 +42,8 @@ public:
   using Functor = std::function<void()>;
 
   explicit Loop(std::pmr::memory_resource* frame_resource = nullptr);
+  explicit Loop(time::TimerIndexKind timers,
+                std::pmr::memory_resource* frame_resource = nullptr);
   ~Loop() override;
 
   COROPACT_DELETE_COPY_MOVE(Loop);

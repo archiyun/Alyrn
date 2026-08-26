@@ -26,6 +26,7 @@
 #include "coropact/luring/options.h"
 #include "coropact/result.h"
 #include "coropact/time/timer_id.h"
+#include "coropact/time/timer_index.h"
 
 namespace coropact::luring {
 
@@ -47,6 +48,8 @@ public:
 
   // frame_resource is used for coroutine frames Scheduled by this loop.
   explicit Loop(std::pmr::memory_resource* frame_resource = nullptr);
+  explicit Loop(time::TimerIndexKind timers,
+                std::pmr::memory_resource* frame_resource = nullptr);
 
   // Initializes the underlying io_uring instance.
   // Must be called from the loop thread before Run().

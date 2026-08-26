@@ -20,7 +20,7 @@ static int CreateTimerfd() {
   return fd;
 }
 
-static void SetTimerfd(int timerfd, Timer::TimePoint expiration) {
+static void SetTimerfd(int timerfd, time::Deadline expiration) {
   itimerspec new_value{};
   int64_t us =
       std::chrono::duration_cast<std::chrono::microseconds>(expiration - time::SteadyNow()).count();
@@ -58,8 +58,8 @@ static void ReadTimerfd(int timerfd) {
   }
 }
 
-TimerQueue::TimerQueue(Loop* loop)
-    : timerfd_(CreateTimerfd()), timerfd_channel_(loop, timerfd_) {
+TimerQueue::TimerQueue(Loop* loop, time::TimerIndexKind index)
+    : timerfd_(CreateTimerfd()), timerfd_channel_(loop, timerfd_), timers_(index) {
   timerfd_channel_.SetReadCallback(&TimerQueue::DispatchRead, this);
   timerfd_channel_.EnableReading();
 }
@@ -69,7 +69,7 @@ TimerQueue::~TimerQueue() {
   timerfd_channel_.Remove();
   ::close(timerfd_);
   while (!timers_.Empty()) {
-    Timer* timer = timers_.Earliest();
+    time::Timer* timer = timers_.Earliest();
     COROPACT_CHECK(active_timers_.Erase(timer),
                    "TimerQueue: destroyed timer is missing from active set");
     COROPACT_CHECK(timers_.Erase(timer), "TimerQueue: destroyed timer is missing from timer tree");
@@ -78,7 +78,7 @@ TimerQueue::~TimerQueue() {
 }
 
 time::TimerId TimerQueue::AddTimer(TimerCallback cb, TimePoint when, Duration interval) {
-  Timer* t = timer_pool_.Acquire(std::move(cb), when, interval);
+  time::Timer* t = timer_pool_.Acquire(std::move(cb), when, interval);
   bool earliest_changed = timers_.Empty() || t->expiration() < timers_.Earliest()->expiration();
   COROPACT_CHECK(timers_.Insert(t), "TimerQueue: duplicate timer-tree entry");
   COROPACT_CHECK(active_timers_.Insert(t), "TimerQueue: duplicate active timer sequence");
@@ -89,7 +89,7 @@ time::TimerId TimerQueue::AddTimer(TimerCallback cb, TimePoint when, Duration in
 }
 
 void TimerQueue::Cancel(coropact::time::TimerId id) {
-  Timer* active_timer = active_timers_.Find(id.sequence);
+  time::Timer* active_timer = active_timers_.Find(id.sequence);
   if (active_timer != nullptr) {
     const bool earliest_removed = active_timer == timers_.Earliest();
     COROPACT_CHECK(active_timers_.Erase(active_timer), "TimerQueue: active timer is missing");
@@ -117,8 +117,8 @@ void TimerQueue::HandleRead() {
   const auto now = time::SteadyNow();
   ReadTimerfd(timerfd_);
 
-  timers_.PopWhile([now](const detail::Timer* timer) { return timer->expiration() <= now; },
-                   [this, now](Timer* timer) {
+  timers_.PopWhile([now](const time::Timer* timer) { return timer->expiration() <= now; },
+                   [this, now](time::Timer* timer) {
                      COROPACT_CHECK(active_timers_.Erase(timer),
                                     "TimerQueue: expired timer is missing from active set");
                      processing_timer_ = timer;
@@ -145,6 +145,6 @@ void TimerQueue::HandleRead() {
   }
 }
 
-void TimerQueue::ResetTimerfd(TimePoint expiration) { SetTimerfd(timerfd_, expiration); }
+void TimerQueue::ResetTimerfd(time::Deadline expiration) { SetTimerfd(timerfd_, expiration); }
 
 }  // namespace coropact::reactor::detail
