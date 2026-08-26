@@ -21,7 +21,7 @@ stable cancellation IDs, and intrusive timer ordering/index types.
 - Monotonic `Duration` and `Deadline` value semantics.
 - Timer callback, expiration, repeat interval, and sequence.
 - TimerId identity semantics.
-- TimerTree ordering.
+- TimerIndex ordering over red-black tree and quadheap adapters.
 
 ## Public API / entry points
 
@@ -29,7 +29,8 @@ stable cancellation IDs, and intrusive timer ordering/index types.
 - `Nanoseconds`, `Microseconds`, `Milliseconds`, `Seconds`
 - `Timer::{Run,Restart,expiration,repeat,sequence}`
 - `TimerId`
-- `TimerTree`
+- `TimerIndex`, `TimerIndexKind`
+- `TimerTree`, `TimerHeap`
 
 ## Thread model
 
@@ -41,7 +42,7 @@ stable cancellation IDs, and intrusive timer ordering/index types.
 ## Lifetime rules
 
 - Timer owns its callback but not the objects captured by that callback.
-- TimerTree never owns Timer storage.
+- TimerIndex never owns Timer storage.
 - TimerId owns nothing and remains safe when stale.
 - Intrusive hooks must be unlinked before Timer destruction.
 
@@ -72,8 +73,10 @@ TimerId: invalid | issued -> stale after cancel/fire
 ## Required tests
 
 - `timer_tree_smoke_test`
+- `timer_index_smoke_test`
 - `reactor_loop_smoke_test` for scheduling semantic changes
 - `rbtree_validator` for TimerTree hook/order changes
+- `quad_heap_test` for TimerHeap hook/order changes
 - New tests for clock jumps, equal expiration ordering, stale TimerId, cancel
   during callback, and repeating timer drift
 

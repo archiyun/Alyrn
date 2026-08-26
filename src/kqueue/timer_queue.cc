@@ -8,7 +8,8 @@
 
 namespace coropact::kqueue::detail {
 
-TimerQueue::TimerQueue(Poller& poller) : poller_(&poller) {
+TimerQueue::TimerQueue(Poller& poller, time::TimerIndexKind index)
+    : poller_(&poller), timers_(index) {
   poller_->SetTimerExpireHandler(&TimerQueue::DispatchExpire, this);
 }
 
