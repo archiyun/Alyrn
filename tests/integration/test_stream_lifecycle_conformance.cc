@@ -128,9 +128,9 @@ std::string Gather(const coropact::io::Buffer& buffer) {
   return bytes;
 }
 
-struct ReactorHarness {
-  using Loop = coropact::reactor::EventLoop;
-  using Stream = coropact::reactor::ReactorStream;
+struct EpollHarness {
+  using Loop = coropact::reactor::Loop;
+  using Stream = coropact::reactor::Stream;
 
   static constexpr std::string_view Name() noexcept { return "Reactor"; }
   static bool Init(Loop&) noexcept { return true; }
@@ -152,14 +152,14 @@ struct ReactorHarness {
 };
 
 #if defined(COROPACT_ENABLE_URING)
-struct LUringHarness {
-  using Loop = coropact::luring::LUringLoop;
-  using Stream = coropact::luring::LUringStream;
+struct UringHarness {
+  using Loop = coropact::luring::Loop;
+  using Stream = coropact::luring::Stream;
 
   static constexpr std::string_view Name() noexcept { return "io_uring"; }
 
   static bool Init(Loop& loop) noexcept {
-    coropact::luring::LUringOptions options;
+    coropact::luring::Options options;
     options.entries = 32;
     auto initialized = loop.Init(options);
     if (initialized.has_value()) {
@@ -935,9 +935,9 @@ bool CheckBackend() {
 }  // namespace
 
 int main() {
-  bool ok = CheckBackend<ReactorHarness>();
+  bool ok = CheckBackend<EpollHarness>();
 #if defined(COROPACT_ENABLE_URING)
-  ok &= CheckBackend<LUringHarness>();
+  ok &= CheckBackend<UringHarness>();
 #endif
   return ok ? 0 : 1;
 }

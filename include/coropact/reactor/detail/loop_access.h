@@ -6,18 +6,18 @@
 
 namespace coropact::reactor::detail {
 
-// Keeps EventLoop's resource-shutdown registry out of its public API while
+// Keeps Loop's resource-shutdown registry out of its public API while
 // allowing loop-affine Reactor resources to join it.
 class LoopAccess final {
 public:
   static void RegisterShutdownParticipant(
-      EventLoop& loop,
+      Loop& loop,
       LoopShutdownParticipant& participant) noexcept {
     loop.RegisterShutdownParticipant(participant);
   }
 
   static void UnregisterShutdownParticipant(
-      EventLoop& loop,
+      Loop& loop,
       LoopShutdownParticipant& participant) noexcept {
     loop.UnregisterShutdownParticipant(participant);
   }

@@ -19,33 +19,33 @@ namespace coropact::reactor {
 namespace {
 
 constexpr int kPollTimeMs = 10000;
-thread_local EventLoop* t_loop_in_this_thread = nullptr;
+thread_local Loop* t_loop_in_this_thread = nullptr;
 
 }  // namespace
 
-EventLoop::EventLoop(std::pmr::memory_resource* frame_resource)
+Loop::Loop(std::pmr::memory_resource* frame_resource)
     : Scheduler(frame_resource),
       thread_id_(base::CurrentThreadId()),
       poller_(Poller::NewDefaultPoller()),
       timer_queue_(std::make_unique<TimerQueue>(this)) {
   COROPACT_CHECK(t_loop_in_this_thread == nullptr,
-                 "EventLoop: only one EventLoop may exist per thread");
+                 "Loop: only one Loop may exist per thread");
   t_loop_in_this_thread = this;
 
   wakeup_fd_ = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
-  COROPACT_CHECK(wakeup_fd_ >= 0, "EventLoop: eventfd creation failed");
+  COROPACT_CHECK(wakeup_fd_ >= 0, "Loop: eventfd creation failed");
   wakeup_channel_ = std::make_unique<Channel>(this, wakeup_fd_);
-  wakeup_channel_->SetReadCallback(&EventLoop::DispatchWakeup, this);
+  wakeup_channel_->SetReadCallback(&Loop::DispatchWakeup, this);
   wakeup_channel_->EnableReading();
 }
 
-EventLoop::~EventLoop() {
-  COROPACT_CHECK(IsInLoopThread(), "EventLoop destructor called from wrong thread");
-  COROPACT_CHECK(!looping_, "EventLoop destroyed while looping");
+Loop::~Loop() {
+  COROPACT_CHECK(IsInLoopThread(), "Loop destructor called from wrong thread");
+  COROPACT_CHECK(!looping_, "Loop destroyed while looping");
 
-  COROPACT_CHECK(pending_work_.Empty(), "EventLoop destroyed with pending owner work");
+  COROPACT_CHECK(pending_work_.Empty(), "Loop destroyed with pending owner work");
   COROPACT_CHECK(shutdown_registry_.Empty(),
-                 "EventLoop destroyed with registered shutdown resources");
+                 "Loop destroyed with registered shutdown resources");
   DetachWakeupChannel();
   if (wakeup_fd_ >= 0) {
     ::close(wakeup_fd_);
@@ -53,15 +53,15 @@ EventLoop::~EventLoop() {
   t_loop_in_this_thread = nullptr;
 }
 
-void EventLoop::Run(std::stop_token token) {
-  COROPACT_CHECK(IsInLoopThread(), "EventLoop::Run called from wrong thread");
-  COROPACT_CHECK(!looping_, "EventLoop::Run called while already running");
+void Loop::Run(std::stop_token token) {
+  COROPACT_CHECK(IsInLoopThread(), "Loop::Run called from wrong thread");
+  COROPACT_CHECK(!looping_, "Loop::Run called while already running");
 
   backend::LoopState expected = backend::LoopState::kCreated;
   if (!state_.compare_exchange_strong(expected, backend::LoopState::kRunning,
                                       std::memory_order_acq_rel, std::memory_order_acquire)) {
     COROPACT_CHECK(expected == backend::LoopState::kStopping,
-                   "EventLoop::Run may only run a created or stopping loop");
+                   "Loop::Run may only run a created or stopping loop");
   }
 
   looping_ = true;
@@ -90,7 +90,7 @@ void EventLoop::Run(std::stop_token token) {
   state_.store(backend::LoopState::kStopped, std::memory_order_release);
 }
 
-void EventLoop::RequestStop() noexcept {
+void Loop::RequestStop() noexcept {
   backend::LoopState observed = state_.load(std::memory_order_acquire);
   while (observed == backend::LoopState::kCreated || observed == backend::LoopState::kRunning) {
     if (state_.compare_exchange_weak(observed, backend::LoopState::kStopping,
@@ -101,57 +101,57 @@ void EventLoop::RequestStop() noexcept {
   }
 }
 
-void EventLoop::RunOnOwner(Functor callback) {
-  COROPACT_CHECK(IsInLoopThread(), "EventLoop::RunOnOwner called from wrong thread");
+void Loop::RunOnOwner(Functor callback) {
+  COROPACT_CHECK(IsInLoopThread(), "Loop::RunOnOwner called from wrong thread");
   callback();
 }
 
-void EventLoop::Schedule(coro::Work* work) noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "EventLoop::Schedule called from wrong thread");
-  COROPACT_CHECK(work != nullptr, "EventLoop::Schedule received null work");
+void Loop::Schedule(coro::Work* work) noexcept {
+  COROPACT_CHECK(IsInLoopThread(), "Loop::Schedule called from wrong thread");
+  COROPACT_CHECK(work != nullptr, "Loop::Schedule received null work");
   COROPACT_CHECK(pending_work_.PushBack(work),
-                 "EventLoop::Schedule received work already in a queue");
+                 "Loop::Schedule received work already in a queue");
 }
 
-void EventLoop::RunPending() {
-  COROPACT_CHECK(IsInLoopThread(), "EventLoop::RunPending called from wrong thread");
+void Loop::RunPending() {
+  COROPACT_CHECK(IsInLoopThread(), "Loop::RunPending called from wrong thread");
   while (HasImmediateWork()) {
     DoPendingWork();
   }
 }
 
-void EventLoop::UpdateChannel(Channel* channel) {
-  COROPACT_CHECK(IsInLoopThread(), "EventLoop::UpdateChannel called from wrong thread");
+void Loop::UpdateChannel(Channel* channel) {
+  COROPACT_CHECK(IsInLoopThread(), "Loop::UpdateChannel called from wrong thread");
   poller_->UpdateChannel(channel);
 }
 
-void EventLoop::RemoveChannel(Channel* channel) {
-  COROPACT_CHECK(IsInLoopThread(), "EventLoop::RemoveChannel called from wrong thread");
+void Loop::RemoveChannel(Channel* channel) {
+  COROPACT_CHECK(IsInLoopThread(), "Loop::RemoveChannel called from wrong thread");
   poller_->RemoveChannel(channel);
 }
 
-bool EventLoop::HasChannel(Channel* channel) const {
-  COROPACT_CHECK(IsInLoopThread(), "EventLoop::HasChannel called from wrong thread");
+bool Loop::HasChannel(Channel* channel) const {
+  COROPACT_CHECK(IsInLoopThread(), "Loop::HasChannel called from wrong thread");
   return poller_->HasChannel(channel);
 }
 
-void EventLoop::RegisterShutdownParticipant(LoopShutdownParticipant& participant) noexcept {
+void Loop::RegisterShutdownParticipant(LoopShutdownParticipant& participant) noexcept {
   COROPACT_CHECK(IsInLoopThread(),
-                 "EventLoop::RegisterShutdownParticipant called from wrong thread");
+                 "Loop::RegisterShutdownParticipant called from wrong thread");
   COROPACT_CHECK(shutdown_registry_.Register(&participant),
-                 "EventLoop shutdown participant registered twice");
+                 "Loop shutdown participant registered twice");
 }
 
-void EventLoop::UnregisterShutdownParticipant(LoopShutdownParticipant& participant) noexcept {
+void Loop::UnregisterShutdownParticipant(LoopShutdownParticipant& participant) noexcept {
   COROPACT_CHECK(IsInLoopThread(),
-                 "EventLoop::UnregisterShutdownParticipant called from wrong thread");
+                 "Loop::UnregisterShutdownParticipant called from wrong thread");
   COROPACT_CHECK(shutdown_registry_.Unregister(&participant),
-                 "EventLoop shutdown participant was not registered");
+                 "Loop shutdown participant was not registered");
 }
 
-bool EventLoop::IsInLoopThread() const noexcept { return thread_id_ == base::CurrentThreadId(); }
+bool Loop::IsInLoopThread() const noexcept { return thread_id_ == base::CurrentThreadId(); }
 
-void EventLoop::DoPendingWork() {
+void Loop::DoPendingWork() {
   if (pending_work_.Empty()) {
     return;
   }
@@ -160,8 +160,8 @@ void EventLoop::DoPendingWork() {
   RunBatch(work);
 }
 
-void EventLoop::BeginShutdown() noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "EventLoop::BeginShutdown called from wrong thread");
+void Loop::BeginShutdown() noexcept {
+  COROPACT_CHECK(IsInLoopThread(), "Loop::BeginShutdown called from wrong thread");
   if (shutdown_started_) {
     return;
   }
@@ -169,12 +169,12 @@ void EventLoop::BeginShutdown() noexcept {
   shutdown_registry_.RequestStop();
 }
 
-void EventLoop::DispatchWakeup(void* context) noexcept {
-  static_cast<EventLoop*>(context)->DrainWakeup();
+void Loop::DispatchWakeup(void* context) noexcept {
+  static_cast<Loop*>(context)->DrainWakeup();
 }
 
-void EventLoop::DrainWakeup() noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "EventLoop::DrainWakeup called from wrong thread");
+void Loop::DrainWakeup() noexcept {
+  COROPACT_CHECK(IsInLoopThread(), "Loop::DrainWakeup called from wrong thread");
   std::uint64_t value = 0;
   for (;;) {
     const ssize_t read = ::read(wakeup_fd_, &value, sizeof(value));
@@ -185,12 +185,12 @@ void EventLoop::DrainWakeup() noexcept {
       continue;
     }
     COROPACT_CHECK(read < 0 && (errno == EAGAIN || errno == EWOULDBLOCK),
-                   "EventLoop wakeup fd read failed");
+                   "Loop wakeup fd read failed");
     return;
   }
 }
 
-void EventLoop::Wakeup() noexcept {
+void Loop::Wakeup() noexcept {
   const std::uint64_t one = 1;
   for (;;) {
     const ssize_t written = ::write(wakeup_fd_, &one, sizeof(one));
@@ -201,12 +201,12 @@ void EventLoop::Wakeup() noexcept {
       continue;
     }
     COROPACT_CHECK(written < 0 && (errno == EAGAIN || errno == EWOULDBLOCK),
-                   "EventLoop wakeup fd write failed");
+                   "Loop wakeup fd write failed");
     return;
   }
 }
 
-void EventLoop::DetachWakeupChannel() noexcept {
+void Loop::DetachWakeupChannel() noexcept {
   if (wakeup_channel_ == nullptr) {
     return;
   }
@@ -219,29 +219,29 @@ void EventLoop::DetachWakeupChannel() noexcept {
   wakeup_channel_.reset();
 }
 
-bool EventLoop::HasImmediateWork() const {
-  COROPACT_CHECK(IsInLoopThread(), "EventLoop::HasImmediateWork called from wrong thread");
+bool Loop::HasImmediateWork() const {
+  COROPACT_CHECK(IsInLoopThread(), "Loop::HasImmediateWork called from wrong thread");
   return !pending_work_.Empty();
 }
 
-time::TimerId EventLoop::RunAt(time::Deadline deadline, Functor callback) {
-  COROPACT_CHECK(IsInLoopThread(), "EventLoop::RunAt called from wrong thread");
+time::TimerId Loop::RunAt(time::Deadline deadline, Functor callback) {
+  COROPACT_CHECK(IsInLoopThread(), "Loop::RunAt called from wrong thread");
   return timer_queue_->AddTimer(std::move(callback), deadline, time::Duration::zero());
 }
 
-time::TimerId EventLoop::RunAfter(time::Duration delay, Functor callback) {
-  COROPACT_CHECK(IsInLoopThread(), "EventLoop::RunAfter called from wrong thread");
+time::TimerId Loop::RunAfter(time::Duration delay, Functor callback) {
+  COROPACT_CHECK(IsInLoopThread(), "Loop::RunAfter called from wrong thread");
   return timer_queue_->AddTimer(std::move(callback), time::SteadyNow() + delay,
                                 time::Duration::zero());
 }
 
-time::TimerId EventLoop::RunEvery(time::Duration interval, Functor callback) {
-  COROPACT_CHECK(IsInLoopThread(), "EventLoop::RunEvery called from wrong thread");
+time::TimerId Loop::RunEvery(time::Duration interval, Functor callback) {
+  COROPACT_CHECK(IsInLoopThread(), "Loop::RunEvery called from wrong thread");
   return timer_queue_->AddTimer(std::move(callback), time::SteadyNow() + interval, interval);
 }
 
-void EventLoop::Cancel(time::TimerId id) {
-  COROPACT_CHECK(IsInLoopThread(), "EventLoop::Cancel called from wrong thread");
+void Loop::Cancel(time::TimerId id) {
+  COROPACT_CHECK(IsInLoopThread(), "Loop::Cancel called from wrong thread");
   timer_queue_->Cancel(id);
 }
 

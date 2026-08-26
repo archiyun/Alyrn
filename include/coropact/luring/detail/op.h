@@ -57,7 +57,7 @@ struct CompletionEvent {
 // CQE path.  An event stream may produce multiple CQEs for one physical
 // request; a split-release operation has separate kernel and logical release
 // boundaries; all other operations are one-shot.
-enum class LUringCompletionModel : std::uint8_t {
+enum class CompletionModel : std::uint8_t {
   kSingleShot,
   kEventStream,
   kSplitRelease,
@@ -72,7 +72,7 @@ struct CompletionDisposition {
   bool resume_continuation{false};
 };
 
-enum class LUringOpKind : std::uint8_t {
+enum class OpKind : std::uint8_t {
   kNone = 0,
 
   kAcceptComplete,
@@ -108,36 +108,36 @@ enum class LUringOpKind : std::uint8_t {
 };
 
 [[nodiscard]]
-constexpr LUringCompletionModel CompletionModelFor(LUringOpKind kind) noexcept {
+constexpr CompletionModel CompletionModelFor(OpKind kind) noexcept {
   switch (kind) {
-    case LUringOpKind::kAcceptSourceComplete:
-    case LUringOpKind::kRecvSourceComplete:
-      return LUringCompletionModel::kEventStream;
-    case LUringOpKind::kSendZeroCopyComplete:
-      return LUringCompletionModel::kSplitRelease;
-    case LUringOpKind::kNone:
-    case LUringOpKind::kAcceptComplete:
-    case LUringOpKind::kAcceptSourceCancelComplete:
-    case LUringOpKind::kRecvSourceCancelComplete:
-    case LUringOpKind::kListenerCloseComplete:
-    case LUringOpKind::kReadComplete:
-    case LUringOpKind::kReadIntoComplete:
-    case LUringOpKind::kTimedReadComplete:
-    case LUringOpKind::kTimedReadTimeoutComplete:
-    case LUringOpKind::kWriteComplete:
-    case LUringOpKind::kStreamCloseComplete:
-    case LUringOpKind::kTimerDriverComplete:
-    case LUringOpKind::kTimerControlComplete:
-    case LUringOpKind::kConnect:
-    case LUringOpKind::kMsgRing:
-    case LUringOpKind::kWake:
-    case LUringOpKind::kCancelAll:
-    case LUringOpKind::kNop:
-    case LUringOpKind::kCount:
-      return LUringCompletionModel::kSingleShot;
+    case OpKind::kAcceptSourceComplete:
+    case OpKind::kRecvSourceComplete:
+      return CompletionModel::kEventStream;
+    case OpKind::kSendZeroCopyComplete:
+      return CompletionModel::kSplitRelease;
+    case OpKind::kNone:
+    case OpKind::kAcceptComplete:
+    case OpKind::kAcceptSourceCancelComplete:
+    case OpKind::kRecvSourceCancelComplete:
+    case OpKind::kListenerCloseComplete:
+    case OpKind::kReadComplete:
+    case OpKind::kReadIntoComplete:
+    case OpKind::kTimedReadComplete:
+    case OpKind::kTimedReadTimeoutComplete:
+    case OpKind::kWriteComplete:
+    case OpKind::kStreamCloseComplete:
+    case OpKind::kTimerDriverComplete:
+    case OpKind::kTimerControlComplete:
+    case OpKind::kConnect:
+    case OpKind::kMsgRing:
+    case OpKind::kWake:
+    case OpKind::kCancelAll:
+    case OpKind::kNop:
+    case OpKind::kCount:
+      return CompletionModel::kSingleShot;
   }
 
-  return LUringCompletionModel::kSingleShot;
+  return CompletionModel::kSingleShot;
 }
 
 // These awaiters have one coupled logical result and release their
@@ -145,31 +145,31 @@ constexpr LUringCompletionModel CompletionModelFor(LUringOpKind kind) noexcept {
 // the CQE result directly, while others first refine it into a richer value
 // such as a connected stream.
 [[nodiscard]]
-constexpr bool UsesCoupledSingleResultLifecycle(LUringOpKind kind) noexcept {
+constexpr bool UsesCoupledSingleResultLifecycle(OpKind kind) noexcept {
   switch (kind) {
-    case LUringOpKind::kReadComplete:
-    case LUringOpKind::kReadIntoComplete:
-    case LUringOpKind::kWriteComplete:
-    case LUringOpKind::kAcceptComplete:
-    case LUringOpKind::kConnect:
+    case OpKind::kReadComplete:
+    case OpKind::kReadIntoComplete:
+    case OpKind::kWriteComplete:
+    case OpKind::kAcceptComplete:
+    case OpKind::kConnect:
       return true;
-    case LUringOpKind::kNone:
-    case LUringOpKind::kAcceptSourceComplete:
-    case LUringOpKind::kAcceptSourceCancelComplete:
-    case LUringOpKind::kRecvSourceComplete:
-    case LUringOpKind::kRecvSourceCancelComplete:
-    case LUringOpKind::kSendZeroCopyComplete:
-    case LUringOpKind::kListenerCloseComplete:
-    case LUringOpKind::kTimedReadComplete:
-    case LUringOpKind::kTimedReadTimeoutComplete:
-    case LUringOpKind::kStreamCloseComplete:
-    case LUringOpKind::kTimerDriverComplete:
-    case LUringOpKind::kTimerControlComplete:
-    case LUringOpKind::kMsgRing:
-    case LUringOpKind::kWake:
-    case LUringOpKind::kCancelAll:
-    case LUringOpKind::kNop:
-    case LUringOpKind::kCount:
+    case OpKind::kNone:
+    case OpKind::kAcceptSourceComplete:
+    case OpKind::kAcceptSourceCancelComplete:
+    case OpKind::kRecvSourceComplete:
+    case OpKind::kRecvSourceCancelComplete:
+    case OpKind::kSendZeroCopyComplete:
+    case OpKind::kListenerCloseComplete:
+    case OpKind::kTimedReadComplete:
+    case OpKind::kTimedReadTimeoutComplete:
+    case OpKind::kStreamCloseComplete:
+    case OpKind::kTimerDriverComplete:
+    case OpKind::kTimerControlComplete:
+    case OpKind::kMsgRing:
+    case OpKind::kWake:
+    case OpKind::kCancelAll:
+    case OpKind::kNop:
+    case OpKind::kCount:
       return false;
   }
 
@@ -178,34 +178,34 @@ constexpr bool UsesCoupledSingleResultLifecycle(LUringOpKind kind) noexcept {
 
 // Returns whether the raw CQE result is already the logical result exposed by
 // await_resume(). Accept and Connect first convert a successful CQE into
-// LUringStream, so their adapters authorize result readiness after that
+// Stream, so their adapters authorize result readiness after that
 // construction.
 [[nodiscard]]
-constexpr bool CqeResultDirectlyPublishesLogicalResult(LUringOpKind kind) noexcept {
+constexpr bool CqeResultDirectlyPublishesLogicalResult(OpKind kind) noexcept {
   switch (kind) {
-    case LUringOpKind::kReadComplete:
-    case LUringOpKind::kReadIntoComplete:
-    case LUringOpKind::kWriteComplete:
+    case OpKind::kReadComplete:
+    case OpKind::kReadIntoComplete:
+    case OpKind::kWriteComplete:
       return true;
-    case LUringOpKind::kNone:
-    case LUringOpKind::kAcceptComplete:
-    case LUringOpKind::kAcceptSourceComplete:
-    case LUringOpKind::kAcceptSourceCancelComplete:
-    case LUringOpKind::kRecvSourceComplete:
-    case LUringOpKind::kRecvSourceCancelComplete:
-    case LUringOpKind::kSendZeroCopyComplete:
-    case LUringOpKind::kListenerCloseComplete:
-    case LUringOpKind::kTimedReadComplete:
-    case LUringOpKind::kTimedReadTimeoutComplete:
-    case LUringOpKind::kStreamCloseComplete:
-    case LUringOpKind::kTimerDriverComplete:
-    case LUringOpKind::kTimerControlComplete:
-    case LUringOpKind::kConnect:
-    case LUringOpKind::kMsgRing:
-    case LUringOpKind::kWake:
-    case LUringOpKind::kCancelAll:
-    case LUringOpKind::kNop:
-    case LUringOpKind::kCount:
+    case OpKind::kNone:
+    case OpKind::kAcceptComplete:
+    case OpKind::kAcceptSourceComplete:
+    case OpKind::kAcceptSourceCancelComplete:
+    case OpKind::kRecvSourceComplete:
+    case OpKind::kRecvSourceCancelComplete:
+    case OpKind::kSendZeroCopyComplete:
+    case OpKind::kListenerCloseComplete:
+    case OpKind::kTimedReadComplete:
+    case OpKind::kTimedReadTimeoutComplete:
+    case OpKind::kStreamCloseComplete:
+    case OpKind::kTimerDriverComplete:
+    case OpKind::kTimerControlComplete:
+    case OpKind::kConnect:
+    case OpKind::kMsgRing:
+    case OpKind::kWake:
+    case OpKind::kCancelAll:
+    case OpKind::kNop:
+    case OpKind::kCount:
       return false;
   }
 
@@ -219,13 +219,13 @@ constexpr bool CqeResultDirectlyPublishesLogicalResult(LUringOpKind kind) noexce
 // the Linux io_uring contract that cqe_res contains a non-INT_MIN result (a
 // non-negative return value or a negative -errno). If a backend can return an
 // arbitrary int, replace the sentinel encoding with a wider/tagged form.
-class LUringCqeResult {
+class CqeResult {
 public:
-  constexpr LUringCqeResult() noexcept = default;
+  constexpr CqeResult() noexcept = default;
 
-  LUringCqeResult& operator=(int value) noexcept {
+  CqeResult& operator=(int value) noexcept {
     COROPACT_CHECK(value != kEmpty, "INT_MIN is reserved for an empty CQE result");
-    COROPACT_CHECK(!HasValue(), "LUringCqeResult was assigned twice");
+    COROPACT_CHECK(!HasValue(), "CqeResult was assigned twice");
     encoded_ = static_cast<std::int32_t>(value);
     return *this;
   }
@@ -237,7 +237,7 @@ public:
 
   [[nodiscard]]
   int operator*() const noexcept {
-    COROPACT_CHECK(HasValue(), "LUringCqeResult was read before completion");
+    COROPACT_CHECK(HasValue(), "CqeResult was read before completion");
     return static_cast<int>(encoded_);
   }
 
@@ -249,16 +249,16 @@ private:
 };
 
 static_assert(sizeof(int) == sizeof(std::int32_t));
-static_assert(sizeof(LUringCqeResult) == 4);
+static_assert(sizeof(CqeResult) == 4);
 
-class LUringOp {
+class Op {
 public:
-  LUringOp() noexcept = default;
-  explicit LUringOp(LUringOpKind operation_kind) noexcept : kind(operation_kind) {}
+  Op() noexcept = default;
+  explicit Op(OpKind operation_kind) noexcept : kind(operation_kind) {}
 
   coro::ResumeWork resume_work;
-  LUringCqeResult result;
-  LUringOpKind kind{};
+  CqeResult result;
+  OpKind kind{};
 
   // Records one physical CQE result. When the CQE is itself the logical
   // result, this also enters the coupled result-ready phase. Adapters such as
@@ -278,7 +278,7 @@ public:
   }
 
   // Some operation protocols have more than one CQE and keep their primary
-  // result outside LUringOp. They mark the operation terminal only after the
+  // result outside Op. They mark the operation terminal only after the
   // final CQE has been interpreted by the operation-specific handler.
   [[nodiscard]]
   bool TryMarkCompletionWithoutCqeResult() noexcept {
@@ -288,12 +288,12 @@ public:
   void SetImmediateSuccess() noexcept { result = 0; }
 
   void SetImmediateError(Error error) noexcept {
-    COROPACT_CHECK(error.value() > 0, "LUringOp immediate error must have a positive errno");
+    COROPACT_CHECK(error.value() > 0, "Op immediate error must have a positive errno");
     result = -error.value();
   }
 
   [[nodiscard]]
-  LUringOpKind DispatchKind() const noexcept {
+  OpKind DispatchKind() const noexcept {
     return kind;
   }
 
@@ -358,6 +358,6 @@ private:
   operation::detail::SingleResultLifecycle single_result_lifecycle_;
 };
 
-static_assert(sizeof(LUringOp) == 24);
+static_assert(sizeof(Op) == 24);
 
 }  // namespace coropact::luring::detail

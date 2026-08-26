@@ -54,7 +54,7 @@ inflight 是否应该减少
 | 语义期 | 当前适配器是否实现了结果、取消和资源生命周期？ | multishot 的重复事件与终止 CQE |
 | 运行期 | 当前 operation 的对象、资源和状态是否允许走该路径？ | buffer ring 有可用 buffer、send zerocopy 满足 buffer 条件 |
 
-构建期条件决定具体 backend 是否参与编译；其余条件由 `LUringLoop::Init()`、source 创建
+构建期条件决定具体 backend 是否参与编译；其余条件由 `Loop::Init()`、source 创建
 或 operation 提交返回 `Result`。luring 不再维护独立的 native capability/profile 层：
 
 ```cpp
@@ -106,8 +106,8 @@ IORING_RECV_MULTISHOT 可用
 | timer driver/control | timeout 或 timeout update SQE | 每次提交通常 1 个 CQE | timer queue 内部状态更新 | timer operation 自身完成后复用 | 已实现，内部 operation |
 | MSG_RING / wake | notification 或 poll SQE | 特殊 CQE | 不产生普通业务结果 | mailbox/wake 状态按专用协议清理，不走普通网络 operation dispatch | 已实现，内部 operation |
 
-当前 `LUringLoop::HandleCqe()` 对普通 single-shot operation 的行为是：每个 CQE 先通过
-`LUringOp::TryRecordCqeCompletion()` 固定物理结果，再交给 adapter 解释为逻辑结果与 release，最后
+当前 `Loop::HandleCqe()` 对普通 single-shot operation 的行为是：每个 CQE 先通过
+`Op::TryRecordCqeCompletion()` 固定物理结果，再交给 adapter 解释为逻辑结果与 release，最后
 最多调度一次 `ResumeWork` 并减少一次 `inflight_`。这个行为适合上表中的 single-shot operation；
 它不能直接承载 multishot operation。
 
@@ -120,10 +120,10 @@ IORING_RECV_MULTISHOT 可用
 | 扩展 | 提交与完成 | 业务结果 | buffer / operation 生命周期 | Reactor 解释 | 当前状态 |
 | --- | --- | --- | --- | --- | --- |
 | multishot accept | 1 个 SQE，多个 CQE；`F_MORE` 表示 operation 继续 | 每个 CQE 产生一个新 stream；无 `F_MORE` 的 CQE 结束 source | source 在终止 CQE、错误或取消收敛后释放；不能每个 CQE 都销毁 operation | readiness 后反复 `accept()`，每次成功 emit 一个 stream | luring 原生实现；不支持时降级 single-shot |
-| multishot recv | 1 个 SQE，多个 CQE；每个 CQE 可能产生数据事件 | 每个 CQE 是一个 `RecvEvent`，最终 CQE/错误结束 source | source 持续存活；每个数据 buffer 必须有独立 `BufferLease` | readiness + 非阻塞 `recv()` 循环 emit 事件 | `LUringRecvSource` 使用 provided buffer ring；`ReactorRecvSource` 使用 readiness drain + 固定 buffer pool；两者共享 `AsyncRecvSource` |
+| multishot recv | 1 个 SQE，多个 CQE；每个 CQE 可能产生数据事件 | 每个 CQE 是一个 `RecvEvent`，最终 CQE/错误结束 source | source 持续存活；每个数据 buffer 必须有独立 `BufferLease` | readiness + 非阻塞 `recv()` 循环 emit 事件 | `RecvSource` 使用 provided buffer ring；`RecvSource` 使用 readiness drain + 固定 buffer pool；两者共享 `AsyncRecvSource` |
 | legacy provided buffers | 当前 backend 不提交 legacy `provide_buffers` | 不属于当前公共结果契约 | 无 legacy buffer group 所有权规则 | 无对应的 Reactor 语义 | 未实现；当前路径不支持 |
-| provided buffer ring | 注册 buffer ring，CQE flags 返回 buffer id；可带 `F_BUF_MORE` | 结果包含字节数、buffer id 和继续消费信息；增量 CQE 使用同一 id 的连续 offset | `BufferLease` 归还 ring 后才能复用；`F_BUF_MORE` 结束前以及所有 segment lease 释放前都不能归还 | 应用层 buffer pool；没有内核选择 id 的等价语义 | `LUringRecvSource` 的非增量路径共享每 worker 一个 ring；逐 source ring 已删除；`F_BUF_MORE` source 路径待后续单独实现 |
-| send zerocopy | 一个 send CQE；primary 带 `F_MORE` 时另有 `F_NOTIF` | send CQE 确定发送结果；primary 无 `F_MORE` 或 notification 确定 memory 可复用 | send result 与 buffer release 可分离；`F_MORE` 后不能在 notification 前释放 buffer | 普通 write 完成后释放发送 buffer；没有同等的两阶段 zc 协议 | `LUringStream::SendZeroCopy` 已实现；按 primary `F_MORE` 选择 terminal 边界 |
+| provided buffer ring | 注册 buffer ring，CQE flags 返回 buffer id；可带 `F_BUF_MORE` | 结果包含字节数、buffer id 和继续消费信息；增量 CQE 使用同一 id 的连续 offset | `BufferLease` 归还 ring 后才能复用；`F_BUF_MORE` 结束前以及所有 segment lease 释放前都不能归还 | 应用层 buffer pool；没有内核选择 id 的等价语义 | `RecvSource` 的非增量路径共享每 worker 一个 ring；逐 source ring 已删除；`F_BUF_MORE` source 路径待后续单独实现 |
+| send zerocopy | 一个 send CQE；primary 带 `F_MORE` 时另有 `F_NOTIF` | send CQE 确定发送结果；primary 无 `F_MORE` 或 notification 确定 memory 可复用 | send result 与 buffer release 可分离；`F_MORE` 后不能在 notification 前释放 buffer | 普通 write 完成后释放发送 buffer；没有同等的两阶段 zc 协议 | `Stream::SendZeroCopy` 已实现；按 primary `F_MORE` 选择 terminal 边界 |
 | registered fixed buffer | 当前 backend 未提交 registered buffer SQE | 结果仍可为 single-shot 或其它 lifecycle shape | registration 的 owner 必须覆盖所有 in-flight operation | 普通用户 buffer；没有固定 buffer 的相同语义 | 未实现；当前没有公共接口 |
 | fixed file | 当前 backend 未提交 fixed-file SQE | 结果语义由具体 operation 决定 | file table slot 释放前不能有引用 | 普通 fd 所有权 | 未实现；当前没有公共接口 |
 | linked operations | 多个 SQE 组成一个逻辑操作 | 可能有多个物理 CQE，但业务结果通常只确定一次 | 所有影响结果或资源的 link member 都必须收敛 | Reactor 通过组合 awaiter/状态机模拟 | timed read 已内部使用；通用公共 API 未实现 |
@@ -149,7 +149,7 @@ CQE(无 F_MORE)
 业务接口应类似：
 
 ```cpp
-auto source = listener.AcceptSource();
+auto source = listener.CreateAcceptSource();
 while (auto event = co_await source.Next()) {
   // consume one accepted stream
 }
@@ -327,7 +327,7 @@ Incremental RecvSource (`F_BUF_MORE`):
 5. 实现带 `BufferLease` 的 multishot recv。（luring 使用每 worker 共享的 provided-buffer ring，
    Reactor 使用 readiness source；当前两条路径都完成了 lease safety，`F_BUF_MORE` 增量消费仍是
    后续独立设计。）
-6. 实现 send zerocopy 的结果与条件式 release 生命周期。（`LUringStream::SendZeroCopy`
+6. 实现 send zerocopy 的结果与条件式 release 生命周期。（`Stream::SendZeroCopy`
    已完成；primary `F_MORE` 时等待 notification，否则 primary 本身终态；Reactor 保持普通 send
    语义，不伪造 zerocopy notification。）
 

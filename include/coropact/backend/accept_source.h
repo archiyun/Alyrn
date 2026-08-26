@@ -15,11 +15,11 @@ using AcceptSourceOptions = ::coropact::net::AcceptSourceOptions;
 
 template <class T>
 concept AsyncAcceptSource = requires(T& source) {
-  typename T::Stream;
-  requires AsyncStream<typename T::Stream>;
+  typename T::StreamType;
+  requires AsyncStream<typename T::StreamType>;
   requires coro::Awaitable<decltype(source.Next())>;
   requires std::same_as<coro::AwaitResult<decltype(source.Next())>,
-                        Result<std::optional<typename T::Stream>>>;
+                        Result<std::optional<typename T::StreamType>>>;
   { source.Stop() } -> std::same_as<coro::Task<Result<void>>>;
 };
 

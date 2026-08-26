@@ -174,7 +174,7 @@ void RearmWriting(detail::Channel& channel) noexcept {
 
 }  // namespace
 
-bool KqueueStream::ReadAwaiterState::BeginRead(std::coroutine_handle<> continuation) noexcept {
+bool Stream::ReadAwaiterState::BeginRead(std::coroutine_handle<> continuation) noexcept {
   stream_->RequireOwnerLoop();
   if (stream_->loop_->State() == backend::LoopState::kStopping ||
       stream_->loop_->State() == backend::LoopState::kStopped) {
@@ -200,13 +200,13 @@ bool KqueueStream::ReadAwaiterState::BeginRead(std::coroutine_handle<> continuat
   return true;
 }
 
-void KqueueStream::ReadAwaiterState::SuspendForRead(void* awaiter, PendingReadKind kind) noexcept {
+void Stream::ReadAwaiterState::SuspendForRead(void* awaiter, PendingReadKind kind) noexcept {
   stream_->pending_read_ = awaiter;
   stream_->pending_read_kind_ = kind;
   RearmReading(stream_->channel_);
 }
 
-void KqueueStream::ReadAwaiterState::ArmReadTimeout(time::Duration timeout, void* awaiter,
+void Stream::ReadAwaiterState::ArmReadTimeout(time::Duration timeout, void* awaiter,
                                                     time::TimerId& timer) noexcept {
   if (timeout <= time::Duration::zero()) {
     return;
@@ -219,7 +219,7 @@ void KqueueStream::ReadAwaiterState::ArmReadTimeout(time::Duration timeout, void
   });
 }
 
-void KqueueStream::ReadAwaiterState::CancelReadTimeout(time::TimerId& timer) noexcept {
+void Stream::ReadAwaiterState::CancelReadTimeout(time::TimerId& timer) noexcept {
   if (!timer.Valid()) {
     return;
   }
@@ -227,39 +227,39 @@ void KqueueStream::ReadAwaiterState::CancelReadTimeout(time::TimerId& timer) noe
   timer = {};
 }
 
-bool KqueueStream::ReadAwaiterState::TryAuthorizeResult() noexcept {
+bool Stream::ReadAwaiterState::TryAuthorizeResult() noexcept {
   return lifecycle_.TryAuthorizeResult();
 }
 
-bool KqueueStream::ReadAwaiterState::TryAuthorizeRelease() noexcept {
+bool Stream::ReadAwaiterState::TryAuthorizeRelease() noexcept {
   return lifecycle_.TryAuthorizeRelease();
 }
 
-bool KqueueStream::ReadAwaiterState::TryAuthorizeContinuation() noexcept {
+bool Stream::ReadAwaiterState::TryAuthorizeContinuation() noexcept {
   return lifecycle_.TryAuthorizeContinuation();
 }
 
-void KqueueStream::ReadAwaiterState::CompleteInline(Result<std::size_t> result) noexcept {
+void Stream::ReadAwaiterState::CompleteInline(Result<std::size_t> result) noexcept {
   result_.SetResult(result);
   CompleteStoredInline();
 }
 
-void KqueueStream::ReadAwaiterState::CompleteStoredInline() noexcept {
+void Stream::ReadAwaiterState::CompleteStoredInline() noexcept {
   COROPACT_CHECK(TryAuthorizeResult(), "Kqueue read result was authorized twice");
   COROPACT_CHECK(TryAuthorizeRelease(), "Kqueue read release was not authorized after its result");
 }
 
-void KqueueStream::ReadAwaiterState::SetResult(Result<std::size_t> result) noexcept {
+void Stream::ReadAwaiterState::SetResult(Result<std::size_t> result) noexcept {
   result_.SetResult(result);
 }
 
-void KqueueStream::ReadAwaiterState::ScheduleContinuation() noexcept { continuation_.Schedule(); }
+void Stream::ReadAwaiterState::ScheduleContinuation() noexcept { continuation_.Schedule(); }
 
-Result<std::size_t> KqueueStream::ReadAwaiterState::TakeResult() noexcept {
+Result<std::size_t> Stream::ReadAwaiterState::TakeResult() noexcept {
   return result_.Take();
 }
 
-bool KqueueStream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
+bool Stream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   if (!BeginRead(continuation)) {
     return false;
   }
@@ -270,16 +270,16 @@ bool KqueueStream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> contin
     return false;
   }
 
-  SuspendForRead(this, KqueueStream::PendingReadKind::kReadSome);
+  SuspendForRead(this, Stream::PendingReadKind::kReadSome);
   ArmReadTimeout(timeout_, this, timer_);
   return true;
 }
 
-Result<std::size_t> KqueueStream::ReadSomeAwaiter::await_resume() noexcept {
+Result<std::size_t> Stream::ReadSomeAwaiter::await_resume() noexcept {
   return TakeResult();
 }
 
-bool KqueueStream::ReadSomeAwaiter::CompleteResultImpl(Result<std::size_t> result) noexcept {
+bool Stream::ReadSomeAwaiter::CompleteResultImpl(Result<std::size_t> result) noexcept {
   if (!TryAuthorizeResult()) {
     return false;
   }
@@ -289,7 +289,7 @@ bool KqueueStream::ReadSomeAwaiter::CompleteResultImpl(Result<std::size_t> resul
   return true;
 }
 
-void KqueueStream::ReadSomeAwaiter::OnReadyImpl() noexcept {
+void Stream::ReadSomeAwaiter::OnReadyImpl() noexcept {
   auto [state, result] = TryRead(stream_->socket_.fd(), buffer_);
   if (state == IoAttemptState::kWouldBlock) {
     RearmReading(stream_->channel_);
@@ -298,11 +298,11 @@ void KqueueStream::ReadSomeAwaiter::OnReadyImpl() noexcept {
   stream_->CompleteRead(result);
 }
 
-KqueueStream::ReadIntoAwaiter::ReadIntoAwaiter(KqueueStream& stream, net::Buffer buffer,
+Stream::ReadIntoAwaiter::ReadIntoAwaiter(Stream& stream, net::Buffer buffer,
                                                std::size_t reserve) noexcept
     : ReadAwaiterState(stream), buffer_(std::move(buffer)), reserve_(reserve) {}
 
-bool KqueueStream::ReadIntoAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
+bool Stream::ReadIntoAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   if (!BeginRead(continuation)) {
     return false;
   }
@@ -324,14 +324,14 @@ bool KqueueStream::ReadIntoAwaiter::await_suspend(std::coroutine_handle<> contin
   return true;
 }
 
-net::ReadIntoOutcome KqueueStream::ReadIntoAwaiter::await_resume() noexcept {
+net::ReadIntoOutcome Stream::ReadIntoAwaiter::await_resume() noexcept {
   return {
       .result = TakeResult(),
       .buffer = std::move(buffer_),
   };
 }
 
-bool KqueueStream::ReadIntoAwaiter::CompleteResultImpl(Result<std::size_t> result) noexcept {
+bool Stream::ReadIntoAwaiter::CompleteResultImpl(Result<std::size_t> result) noexcept {
   if (!TryAuthorizeResult()) {
     return false;
   }
@@ -340,7 +340,7 @@ bool KqueueStream::ReadIntoAwaiter::CompleteResultImpl(Result<std::size_t> resul
   return true;
 }
 
-void KqueueStream::ReadIntoAwaiter::OnReadyImpl() noexcept {
+void Stream::ReadIntoAwaiter::OnReadyImpl() noexcept {
   std::array<iovec, kReadIntoMaxIov> iovs;
   auto [state, result] = TryReadv(stream_->socket_.fd(), buffer_.ReservedWriteIov(iovs));
   if (state == IoAttemptState::kWouldBlock) {
@@ -350,7 +350,7 @@ void KqueueStream::ReadIntoAwaiter::OnReadyImpl() noexcept {
   stream_->CompleteRead(result);
 }
 
-bool KqueueStream::ReadIntoAwaiter::PrepareReservation() noexcept {
+bool Stream::ReadIntoAwaiter::PrepareReservation() noexcept {
   try {
     std::array<iovec, kReadIntoMaxIov> iovs;
     if (buffer_.PrepareWrite(reserve_, iovs).empty()) {
@@ -367,7 +367,7 @@ bool KqueueStream::ReadIntoAwaiter::PrepareReservation() noexcept {
   return true;
 }
 
-void KqueueStream::ReadIntoAwaiter::FinishAttempt(Result<std::size_t> result) noexcept {
+void Stream::ReadIntoAwaiter::FinishAttempt(Result<std::size_t> result) noexcept {
   COROPACT_CHECK(reservation_active_, "ReadIntoAwaiter completion without a buffer reservation");
   if (result.has_value()) {
     buffer_.CommitWrite(*result);
@@ -378,11 +378,11 @@ void KqueueStream::ReadIntoAwaiter::FinishAttempt(Result<std::size_t> result) no
   result_.SetResult(result);
 }
 
-KqueueStream::WriteAllAwaiter KqueueStream::WriteAll(std::span<const std::byte> buffer) noexcept {
+Stream::WriteAllAwaiter Stream::WriteAll(std::span<const std::byte> buffer) noexcept {
   return WriteAllAwaiter{*this, buffer};
 }
 
-bool KqueueStream::WriteAllAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
+bool Stream::WriteAllAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   stream_->RequireOwnerLoop();
   if (stream_->loop_->State() == backend::LoopState::kStopping ||
       stream_->loop_->State() == backend::LoopState::kStopped) {
@@ -427,7 +427,7 @@ bool KqueueStream::WriteAllAwaiter::await_suspend(std::coroutine_handle<> contin
   return false;
 }
 
-Result<void> KqueueStream::WriteAllAwaiter::await_resume() noexcept {
+Result<void> Stream::WriteAllAwaiter::await_resume() noexcept {
   auto result = result_.Take();
   if (!result.has_value()) {
     return std::unexpected(result.error());
@@ -435,14 +435,14 @@ Result<void> KqueueStream::WriteAllAwaiter::await_resume() noexcept {
   return Result<void>{};
 }
 
-void KqueueStream::WriteAllAwaiter::CompleteInline(Result<std::size_t> result) noexcept {
+void Stream::WriteAllAwaiter::CompleteInline(Result<std::size_t> result) noexcept {
   result_.SetResult(result);
   COROPACT_CHECK(lifecycle_.TryAuthorizeResult(), "Kqueue write result was authorized twice");
   COROPACT_CHECK(lifecycle_.TryAuthorizeRelease(),
                  "Kqueue write release was not authorized after its result");
 }
 
-bool KqueueStream::WriteAllAwaiter::CompleteResultImpl(Result<std::size_t> result) noexcept {
+bool Stream::WriteAllAwaiter::CompleteResultImpl(Result<std::size_t> result) noexcept {
   if (!lifecycle_.TryAuthorizeResult()) {
     return false;
   }
@@ -450,17 +450,17 @@ bool KqueueStream::WriteAllAwaiter::CompleteResultImpl(Result<std::size_t> resul
   return true;
 }
 
-bool KqueueStream::WriteAllAwaiter::TryAuthorizeRelease() noexcept {
+bool Stream::WriteAllAwaiter::TryAuthorizeRelease() noexcept {
   return lifecycle_.TryAuthorizeRelease();
 }
 
-bool KqueueStream::WriteAllAwaiter::TryAuthorizeContinuation() noexcept {
+bool Stream::WriteAllAwaiter::TryAuthorizeContinuation() noexcept {
   return lifecycle_.TryAuthorizeContinuation();
 }
 
-void KqueueStream::WriteAllAwaiter::ScheduleContinuation() noexcept { continuation_.Schedule(); }
+void Stream::WriteAllAwaiter::ScheduleContinuation() noexcept { continuation_.Schedule(); }
 
-void KqueueStream::WriteAllAwaiter::OnReadyImpl() noexcept {
+void Stream::WriteAllAwaiter::OnReadyImpl() noexcept {
   while (!buffer_.empty()) {
     auto [state, result] = TryWrite(stream_->socket_.fd(), buffer_);
     if (state == IoAttemptState::kWouldBlock) {
@@ -481,15 +481,15 @@ void KqueueStream::WriteAllAwaiter::OnReadyImpl() noexcept {
   stream_->CompleteWrite(Result<std::size_t>{0});
 }
 
-KqueueStream::KqueueStream(KqueueLoop* loop, int fd, net::Endpoint peer,
-                           KqueueStreamOptions options)
+Stream::Stream(Loop* loop, int fd, net::Endpoint peer,
+                           StreamOptions options)
     : loop_(loop), socket_(fd), channel_(loop, fd), peer_(peer) {
-  COROPACT_CHECK(loop_ != nullptr, "KqueueStream: loop must not be null");
-  COROPACT_CHECK(loop_->IsInLoopThread(), "KqueueStream created from wrong KqueueLoop thread");
+  COROPACT_CHECK(loop_ != nullptr, "Stream: loop must not be null");
+  COROPACT_CHECK(loop_->IsInLoopThread(), "Stream created from wrong Loop thread");
   COROPACT_CHECK(options.trigger_mode == TriggerMode::kOneShot,
-                 "KqueueStream currently supports only TriggerMode::kOneShot");
+                 "Stream currently supports only TriggerMode::kOneShot");
   [[maybe_unused]] auto nonblocking = net::SetNonBlocking(fd, true);
-  COROPACT_CHECK(nonblocking.has_value(), "KqueueStream: failed to set non-blocking mode");
+  COROPACT_CHECK(nonblocking.has_value(), "Stream: failed to set non-blocking mode");
   SuppressSigpipe(fd);
 
   channel_.SetTriggerMode(TriggerMode::kOneShot);
@@ -497,7 +497,7 @@ KqueueStream::KqueueStream(KqueueLoop* loop, int fd, net::Endpoint peer,
   LoopAccess::RegisterShutdownParticipant(*loop_, shutdown_participant_);
 }
 
-KqueueStream::KqueueStream(KqueueStream&& other) noexcept
+Stream::Stream(Stream&& other) noexcept
     : loop_(PrepareMove(other)),
       socket_(std::move(other.socket_)),
       channel_(std::move(other.channel_)),
@@ -507,14 +507,14 @@ KqueueStream::KqueueStream(KqueueStream&& other) noexcept
   LoopAccess::RegisterShutdownParticipant(*loop_, shutdown_participant_);
 }
 
-KqueueStream& KqueueStream::operator=(KqueueStream&& other) noexcept {
+Stream& Stream::operator=(Stream&& other) noexcept {
   if (this == &other) {
     return *this;
   }
 
-  KqueueLoop* other_loop = PrepareMove(other);
+  Loop* other_loop = PrepareMove(other);
   COROPACT_CHECK(loop_ == nullptr || loop_ == other_loop,
-                 "KqueueStream move requires both objects to use the same KqueueLoop");
+                 "Stream move requires both objects to use the same Loop");
   if (loop_ != nullptr) {
     ResetForMove();
   }
@@ -531,42 +531,42 @@ KqueueStream& KqueueStream::operator=(KqueueStream&& other) noexcept {
   return *this;
 }
 
-KqueueStream::~KqueueStream() {
+Stream::~Stream() {
   if (loop_ == nullptr) {
     return;
   }
   RequireOwnerLoop();
-  COROPACT_CHECK(pending_read_ == nullptr, "KqueueStream destroyed with a pending read");
-  COROPACT_CHECK(pending_write_ == nullptr, "KqueueStream destroyed with a pending write");
+  COROPACT_CHECK(pending_read_ == nullptr, "Stream destroyed with a pending read");
+  COROPACT_CHECK(pending_write_ == nullptr, "Stream destroyed with a pending write");
   LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
   DetachChannel();
 }
 
-int KqueueStream::Release() noexcept {
+int Stream::Release() noexcept {
   RequireOwnerLoop();
-  COROPACT_CHECK(pending_read_ == nullptr, "KqueueStream cannot release with a pending read");
-  COROPACT_CHECK(pending_write_ == nullptr, "KqueueStream cannot release with a pending write");
+  COROPACT_CHECK(pending_read_ == nullptr, "Stream cannot release with a pending read");
+  COROPACT_CHECK(pending_write_ == nullptr, "Stream cannot release with a pending write");
   LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
   DetachChannel();
   loop_ = nullptr;
   return socket_.Release();
 }
 
-KqueueStream::ReadSomeAwaiter KqueueStream::ReadSome(std::span<std::byte> buffer) noexcept {
+Stream::ReadSomeAwaiter Stream::ReadSome(std::span<std::byte> buffer) noexcept {
   return ReadSomeAwaiter{*this, buffer};
 }
 
-KqueueStream::ReadSomeAwaiter KqueueStream::ReadSomeFor(std::span<std::byte> buffer,
+Stream::ReadSomeAwaiter Stream::ReadSomeFor(std::span<std::byte> buffer,
                                                        time::Duration timeout) noexcept {
   return ReadSomeAwaiter{*this, buffer, timeout};
 }
 
-KqueueStream::ReadIntoAwaiter KqueueStream::ReadInto(net::Buffer buffer,
+Stream::ReadIntoAwaiter Stream::ReadInto(net::Buffer buffer,
                                                      std::size_t reserve) noexcept {
   return ReadIntoAwaiter{*this, std::move(buffer), reserve};
 }
 
-coro::Task<Result<void>> KqueueStream::Shutdown() {
+coro::Task<Result<void>> Stream::Shutdown() {
   RequireOwnerLoop();
   if (socket_.fd() < 0) {
     co_return std::unexpected(Errno(EBADF));
@@ -587,14 +587,14 @@ coro::Task<Result<void>> KqueueStream::Shutdown() {
   co_return Result<void>{};
 }
 
-coro::Task<Result<void>> KqueueStream::Close() {
+coro::Task<Result<void>> Stream::Close() {
   RequireOwnerLoop();
   CloseNow();
   co_return Result<void>{};
 }
 
-void KqueueStream::HandleRead() {
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "KqueueStream::HandleRead called from wrong thread");
+void Stream::HandleRead() {
+  COROPACT_DCHECK(loop_->IsInLoopThread(), "Stream::HandleRead called from wrong thread");
   if (pending_read_ == nullptr) {
     // One-shot delivery already retired the filter; nothing to disarm.
     return;
@@ -611,29 +611,29 @@ void KqueueStream::HandleRead() {
   }
 }
 
-void KqueueStream::HandleWrite() {
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "KqueueStream::HandleWrite called from wrong thread");
+void Stream::HandleWrite() {
+  COROPACT_DCHECK(loop_->IsInLoopThread(), "Stream::HandleWrite called from wrong thread");
   if (pending_write_ == nullptr) {
     return;
   }
   pending_write_->OnReady();
 }
 
-void KqueueStream::HandleClose() {
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "KqueueStream::HandleClose called from wrong thread");
+void Stream::HandleClose() {
+  COROPACT_DCHECK(loop_->IsInLoopThread(), "Stream::HandleClose called from wrong thread");
   CompleteRead(Result<std::size_t>{0});
   CompleteWrite(std::unexpected(Errno(EPIPE)));
 }
 
-void KqueueStream::HandleError() {
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "KqueueStream::HandleError called from wrong thread");
+void Stream::HandleError() {
+  COROPACT_DCHECK(loop_->IsInLoopThread(), "Stream::HandleError called from wrong thread");
   Error error = ErrorFromSocketErrorEvent(socket_.fd());
   CompleteRead(std::unexpected(error));
   CompleteWrite(std::unexpected(error));
 }
 
-void KqueueStream::CompleteRead(Result<std::size_t> result) {
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "KqueueStream::CompleteRead called from wrong thread");
+void Stream::CompleteRead(Result<std::size_t> result) {
+  COROPACT_DCHECK(loop_->IsInLoopThread(), "Stream::CompleteRead called from wrong thread");
   void* awaiter = pending_read_;
   const PendingReadKind kind = pending_read_kind_;
   if (awaiter == nullptr) {
@@ -652,18 +652,18 @@ void KqueueStream::CompleteRead(Result<std::size_t> result) {
       result_authorized = static_cast<ReadIntoAwaiter*>(awaiter)->CompleteResult(std::move(result));
       break;
     case PendingReadKind::kNone:
-      COROPACT_CHECK(false, "KqueueStream::CompleteRead missing operation kind");
+      COROPACT_CHECK(false, "Stream::CompleteRead missing operation kind");
       return;
   }
-  COROPACT_CHECK(result_authorized, "KqueueStream::CompleteRead result was already authorized");
-  COROPACT_CHECK(state != nullptr, "KqueueStream::CompleteRead has no awaiter state");
+  COROPACT_CHECK(result_authorized, "Stream::CompleteRead result was already authorized");
+  COROPACT_CHECK(state != nullptr, "Stream::CompleteRead has no awaiter state");
   COROPACT_CHECK(state->TryAuthorizeRelease(),
-                 "KqueueStream::CompleteRead release was not authorized after its result");
+                 "Stream::CompleteRead release was not authorized after its result");
 
   void* released = std::exchange(pending_read_, nullptr);
   const PendingReadKind released_kind = std::exchange(pending_read_kind_, PendingReadKind::kNone);
   COROPACT_CHECK(released == awaiter && released_kind == kind,
-                 "KqueueStream::CompleteRead pending slot changed during completion");
+                 "Stream::CompleteRead pending slot changed during completion");
 
   // One-shot interest is already gone after delivery. A terminal path may
   // still see a re-armed filter from a WouldBlock retry; drop it so Close
@@ -672,34 +672,34 @@ void KqueueStream::CompleteRead(Result<std::size_t> result) {
     channel_.DisableReading();
   }
   COROPACT_CHECK(state->TryAuthorizeContinuation(),
-                 "KqueueStream::CompleteRead continuation was not authorized after release");
+                 "Stream::CompleteRead continuation was not authorized after release");
   state->ScheduleContinuation();
 }
 
-void KqueueStream::CompleteWrite(Result<std::size_t> result) {
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "KqueueStream::CompleteWrite called from wrong thread");
+void Stream::CompleteWrite(Result<std::size_t> result) {
+  COROPACT_DCHECK(loop_->IsInLoopThread(), "Stream::CompleteWrite called from wrong thread");
   WriteAllAwaiter* awaiter = pending_write_;
   if (awaiter == nullptr) {
     return;
   }
   COROPACT_CHECK(awaiter->CompleteResult(std::move(result)),
-                 "KqueueStream::CompleteWrite result was already authorized");
+                 "Stream::CompleteWrite result was already authorized");
   COROPACT_CHECK(awaiter->TryAuthorizeRelease(),
-                 "KqueueStream::CompleteWrite release was not authorized after its result");
+                 "Stream::CompleteWrite release was not authorized after its result");
 
   WriteAllAwaiter* released = std::exchange(pending_write_, nullptr);
   COROPACT_CHECK(released == awaiter,
-                 "KqueueStream::CompleteWrite pending slot changed during completion");
+                 "Stream::CompleteWrite pending slot changed during completion");
   if (channel_.IsWriting()) {
     channel_.DisableWriting();
   }
   COROPACT_CHECK(awaiter->TryAuthorizeContinuation(),
-                 "KqueueStream::CompleteWrite continuation was not authorized after release");
+                 "Stream::CompleteWrite continuation was not authorized after release");
   awaiter->ScheduleContinuation();
 }
 
-void KqueueStream::CloseNow() noexcept {
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "KqueueStream::CloseNow called from wrong thread");
+void Stream::CloseNow() noexcept {
+  COROPACT_DCHECK(loop_->IsInLoopThread(), "Stream::CloseNow called from wrong thread");
   auto close_prepared = lifecycle_.PrepareClose();
   if (!close_prepared.has_value() || !*close_prepared) {
     return;
@@ -716,8 +716,8 @@ void KqueueStream::CloseNow() noexcept {
   lifecycle_.MarkClosed();
 }
 
-void KqueueStream::DetachChannel() {
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "KqueueStream::DetachChannel called from wrong thread");
+void Stream::DetachChannel() {
+  COROPACT_DCHECK(loop_->IsInLoopThread(), "Stream::DetachChannel called from wrong thread");
   if (!channel_.IsNoneEvent()) {
     channel_.DisableAll();
   }
@@ -726,66 +726,66 @@ void KqueueStream::DetachChannel() {
   }
 }
 
-void KqueueStream::RequireOwnerLoop() const noexcept {
-  COROPACT_CHECK(loop_ != nullptr, "KqueueStream operation has no owner KqueueLoop");
+void Stream::RequireOwnerLoop() const noexcept {
+  COROPACT_CHECK(loop_ != nullptr, "Stream operation has no owner Loop");
   COROPACT_CHECK(loop_->IsInLoopThread(),
-                 "KqueueStream operation called from wrong KqueueLoop thread");
+                 "Stream operation called from wrong Loop thread");
 }
 
-void KqueueStream::DispatchRead(void* context) noexcept {
-  static_cast<KqueueStream*>(context)->HandleRead();
+void Stream::DispatchRead(void* context) noexcept {
+  static_cast<Stream*>(context)->HandleRead();
 }
 
-void KqueueStream::DispatchWrite(void* context) noexcept {
-  static_cast<KqueueStream*>(context)->HandleWrite();
+void Stream::DispatchWrite(void* context) noexcept {
+  static_cast<Stream*>(context)->HandleWrite();
 }
 
-void KqueueStream::DispatchClose(void* context) noexcept {
-  static_cast<KqueueStream*>(context)->HandleClose();
+void Stream::DispatchClose(void* context) noexcept {
+  static_cast<Stream*>(context)->HandleClose();
 }
 
-void KqueueStream::DispatchError(void* context) noexcept {
-  static_cast<KqueueStream*>(context)->HandleError();
+void Stream::DispatchError(void* context) noexcept {
+  static_cast<Stream*>(context)->HandleError();
 }
 
-void KqueueStream::BindChannelCallbacks() noexcept {
+void Stream::BindChannelCallbacks() noexcept {
   try {
-    channel_.SetReadCallback(&KqueueStream::DispatchRead, this);
-    channel_.SetWriteCallback(&KqueueStream::DispatchWrite, this);
-    channel_.SetCloseCallback(&KqueueStream::DispatchClose, this);
-    channel_.SetErrorCallback(&KqueueStream::DispatchError, this);
+    channel_.SetReadCallback(&Stream::DispatchRead, this);
+    channel_.SetWriteCallback(&Stream::DispatchWrite, this);
+    channel_.SetCloseCallback(&Stream::DispatchClose, this);
+    channel_.SetErrorCallback(&Stream::DispatchError, this);
   } catch (...) {
-    COROPACT_CHECK(false, "KqueueStream: failed to bind channel callbacks");
+    COROPACT_CHECK(false, "Stream: failed to bind channel callbacks");
   }
 }
 
-void KqueueStream::ResetForMove() noexcept {
-  COROPACT_CHECK(loop_ != nullptr, "KqueueStream move destination is not initialized");
-  COROPACT_CHECK(loop_->IsInLoopThread(), "KqueueStream move called from wrong KqueueLoop thread");
-  COROPACT_CHECK(pending_read_ == nullptr, "KqueueStream move destination has a pending read");
-  COROPACT_CHECK(pending_write_ == nullptr, "KqueueStream move destination has a pending write");
+void Stream::ResetForMove() noexcept {
+  COROPACT_CHECK(loop_ != nullptr, "Stream move destination is not initialized");
+  COROPACT_CHECK(loop_->IsInLoopThread(), "Stream move called from wrong Loop thread");
+  COROPACT_CHECK(pending_read_ == nullptr, "Stream move destination has a pending read");
+  COROPACT_CHECK(pending_write_ == nullptr, "Stream move destination has a pending write");
   LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
   DetachChannel();
   socket_.Close();
 }
 
-KqueueLoop* KqueueStream::PrepareMove(KqueueStream& other) noexcept {
-  COROPACT_CHECK(other.loop_ != nullptr, "KqueueStream move source is not initialized");
+Loop* Stream::PrepareMove(Stream& other) noexcept {
+  COROPACT_CHECK(other.loop_ != nullptr, "Stream move source is not initialized");
   COROPACT_CHECK(other.loop_->IsInLoopThread(),
-                 "KqueueStream move called from wrong KqueueLoop thread");
+                 "Stream move called from wrong Loop thread");
   COROPACT_CHECK(other.pending_read_ == nullptr,
-                 "KqueueStream cannot move with a pending read operation");
+                 "Stream cannot move with a pending read operation");
   COROPACT_CHECK(other.pending_write_ == nullptr,
-                 "KqueueStream cannot move with a pending write operation");
+                 "Stream cannot move with a pending write operation");
 
   other.DetachChannel();
   LoopAccess::UnregisterShutdownParticipant(*other.loop_, other.shutdown_participant_);
-  KqueueLoop* loop = std::exchange(other.loop_, nullptr);
+  Loop* loop = std::exchange(other.loop_, nullptr);
   return loop;
 }
 
-void KqueueStream::DispatchLoopStop(void* context) noexcept {
-  static_cast<KqueueStream*>(context)->CloseNow();
+void Stream::DispatchLoopStop(void* context) noexcept {
+  static_cast<Stream*>(context)->CloseNow();
 }
 
 }  // namespace coropact::kqueue

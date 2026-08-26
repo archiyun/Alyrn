@@ -118,8 +118,8 @@ coropact::Result<int> ConnectClient(const coropact::net::Endpoint& address) {
   return fd;
 }
 
-coropact::luring::detail::LUringServerOptions MakeOptions(std::size_t worker_num = 1) {
-  coropact::luring::detail::LUringServerOptions options;
+coropact::luring::detail::ServerOptions MakeOptions(std::size_t worker_num = 1) {
+  coropact::luring::detail::ServerOptions options;
   options.worker_group_options.worker_num = worker_num;
   options.worker_group_options.worker_options.loop_options.entries = 16;
   options.worker_group_options.worker_options.listen_options.reuse_port = true;
@@ -137,7 +137,7 @@ bool CheckServerStartStop() {
     return false;
   }
 
-  coropact::luring::detail::LUringServer server(LoopbackAddress(*port), MakeOptions());
+  coropact::luring::detail::Server server(LoopbackAddress(*port), MakeOptions());
 
   auto started = server.Start();
   if (!started.has_value()) {
@@ -145,7 +145,7 @@ bool CheckServerStartStop() {
       std::cout << "SKIP: io_uring unavailable: " << started.error().message() << '\n';
       return true;
     }
-    std::cout << "FAIL: LUringServer::Start failed: " << started.error().message() << '\n';
+    std::cout << "FAIL: Server::Start failed: " << started.error().message() << '\n';
     return false;
   }
 
@@ -171,13 +171,13 @@ bool CheckServerSessionHandler() {
   }
 
   const auto listen_addr = LoopbackAddress(*port);
-  coropact::luring::detail::LUringServer server(listen_addr, MakeOptions());
+  coropact::luring::detail::Server server(listen_addr, MakeOptions());
 
   std::atomic_size_t session_count{0};
   std::atomic_bool invalid_stream{false};
   std::atomic_bool wrong_loop{false};
-  server.SetSessionHandler([&](coropact::luring::detail::LUringWorkerContext& context,
-                                 coropact::luring::LUringStream stream) -> coropact::coro::DetachedTask {
+  server.SetSessionHandler([&](coropact::luring::detail::WorkerContext& context,
+                                 coropact::luring::Stream stream) -> coropact::coro::DetachedTask {
     if (!context.loop.IsInLoopThread()) {
       wrong_loop.store(true, std::memory_order_relaxed);
     }
@@ -194,7 +194,7 @@ bool CheckServerSessionHandler() {
       std::cout << "SKIP: io_uring unavailable: " << started.error().message() << '\n';
       return true;
     }
-    std::cout << "FAIL: LUringServer::Start failed: " << started.error().message() << '\n';
+    std::cout << "FAIL: Server::Start failed: " << started.error().message() << '\n';
     return false;
   }
 
@@ -238,12 +238,12 @@ bool CheckServerStopsActiveSession() {
   }
 
   const auto listen_addr = LoopbackAddress(*port);
-  coropact::luring::detail::LUringServer server(listen_addr, MakeOptions());
+  coropact::luring::detail::Server server(listen_addr, MakeOptions());
   std::atomic_bool session_started{false};
   std::atomic_bool session_cancelled{false};
 
   server.SetSessionHandler(
-      [&](coropact::luring::detail::LUringWorkerContext&, coropact::luring::LUringStream stream)
+      [&](coropact::luring::detail::WorkerContext&, coropact::luring::Stream stream)
           -> coropact::coro::DetachedTask {
         session_started.store(true, std::memory_order_release);
         std::array<std::byte, 1> buffer{};
@@ -259,7 +259,7 @@ bool CheckServerStopsActiveSession() {
       std::cout << "SKIP: io_uring unavailable: " << started.error().message() << '\n';
       return true;
     }
-    std::cout << "FAIL: LUringServer::Start failed: " << started.error().message() << '\n';
+    std::cout << "FAIL: Server::Start failed: " << started.error().message() << '\n';
     return false;
   }
 

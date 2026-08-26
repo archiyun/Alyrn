@@ -42,30 +42,30 @@ bool ExpectChildAbort(void (*entry)(), const char* message) {
 }
 
 void TakePendingResultState() {
-  coropact::luring::detail::LUringResultState<void> state;
+  coropact::luring::detail::ResultState<void> state;
   (void)state.Take();
 }
 
 void SetResultStateTwice() {
-  coropact::luring::detail::LUringResultState<void> state;
+  coropact::luring::detail::ResultState<void> state;
   state.SetSuccess();
   state.SetError(coropact::Errno(EPIPE));
 }
 
 void ReadEmptyCqeResult() {
-  coropact::luring::detail::LUringCqeResult result;
+  coropact::luring::detail::CqeResult result;
   (void)*result;
 }
 
 void SetCqeResultTwice() {
-  coropact::luring::detail::LUringCqeResult result;
+  coropact::luring::detail::CqeResult result;
   result = 1;
   result = 2;
 }
 
 bool TestSingleResultCompletion() {
-  coropact::luring::detail::LUringOp op;
-  op.kind = coropact::luring::detail::LUringOpKind::kReadComplete;
+  coropact::luring::detail::Op op;
+  op.kind = coropact::luring::detail::OpKind::kReadComplete;
 
   bool ok = true;
   ok &= Expect(op.TryRecordCqeCompletion(17), "the first CQE must complete the operation");
@@ -84,14 +84,14 @@ bool TestSingleResultCompletion() {
                "coupled continuation authorization must be observable");
   ok &= Expect(!op.TryRecordCqeCompletion(-5), "a duplicate CQE must not overwrite the result");
   ok &= Expect(*op.result == 17, "a duplicate CQE must preserve the original result");
-  ok &= Expect(op.DispatchKind() == coropact::luring::detail::LUringOpKind::kReadComplete,
+  ok &= Expect(op.DispatchKind() == coropact::luring::detail::OpKind::kReadComplete,
                "completion state must not alter dispatch kind");
   return ok;
 }
 
 bool TestReusablePhysicalSlot() {
-  coropact::luring::detail::LUringOp op;
-  op.kind = coropact::luring::detail::LUringOpKind::kWake;
+  coropact::luring::detail::Op op;
+  op.kind = coropact::luring::detail::OpKind::kWake;
   (void)(op.TryRecordCqeCompletion(0));
   op.resume_work.SetHandle(std::noop_coroutine());
   op.BeginNextRequest();
@@ -100,13 +100,13 @@ bool TestReusablePhysicalSlot() {
          Expect(!op.result.HasValue(), "next request must not retain a prior CQE result") &&
          Expect(!op.resume_work.HasHandle(), "next request must not retain a prior continuation") &&
          Expect(op.TryRecordCqeCompletion(0), "a reopened operation slot must accept a CQE") &&
-         Expect(op.DispatchKind() == coropact::luring::detail::LUringOpKind::kWake,
+         Expect(op.DispatchKind() == coropact::luring::detail::OpKind::kWake,
                 "reset must preserve dispatch kind");
 }
 
 bool TestReusableCoupledLifecycle() {
-  coropact::luring::detail::LUringOp op;
-  op.kind = coropact::luring::detail::LUringOpKind::kReadComplete;
+  coropact::luring::detail::Op op;
+  op.kind = coropact::luring::detail::OpKind::kReadComplete;
   if (!Expect(op.TryRecordCqeCompletion(3), "initial coupled request must accept its CQE") ||
       !Expect(op.TryAuthorizeCoupledRelease(), "initial coupled request must authorize release") ||
       !Expect(op.TryAuthorizeCoupledContinuation(),
@@ -128,8 +128,8 @@ bool TestReusableCoupledLifecycle() {
 }
 
 bool TestConnectCqeRequiresAdapterRefinement() {
-  coropact::luring::detail::LUringOp op;
-  op.kind = coropact::luring::detail::LUringOpKind::kConnect;
+  coropact::luring::detail::Op op;
+  op.kind = coropact::luring::detail::OpKind::kConnect;
 
   return Expect(op.TryRecordCqeCompletion(0), "Connect CQE must settle its physical request") &&
          Expect(op.CqeCompletionRecorded(), "Connect CQE must settle its physical slot") &&
@@ -144,8 +144,8 @@ bool TestConnectCqeRequiresAdapterRefinement() {
 }
 
 bool TestAcceptCqeRequiresAdapterRefinement() {
-  coropact::luring::detail::LUringOp op;
-  op.kind = coropact::luring::detail::LUringOpKind::kAcceptComplete;
+  coropact::luring::detail::Op op;
+  op.kind = coropact::luring::detail::OpKind::kAcceptComplete;
 
   return Expect(op.TryRecordCqeCompletion(42), "Accept CQE must settle its physical request") &&
          Expect(op.CqeCompletionRecorded(), "Accept CQE must settle its physical slot") &&
@@ -161,21 +161,21 @@ bool TestAcceptCqeRequiresAdapterRefinement() {
 
 bool TestCompletionModels() {
   using coropact::luring::detail::CompletionModelFor;
-  using coropact::luring::detail::LUringCompletionModel;
-  using coropact::luring::detail::LUringOpKind;
+  using coropact::luring::detail::CompletionModel;
+  using coropact::luring::detail::OpKind;
 
   bool ok = true;
   ok &=
-      Expect(CompletionModelFor(LUringOpKind::kReadComplete) == LUringCompletionModel::kSingleShot,
+      Expect(CompletionModelFor(OpKind::kReadComplete) == CompletionModel::kSingleShot,
              "ordinary I/O must use the single-shot completion model");
-  ok &= Expect(CompletionModelFor(LUringOpKind::kAcceptSourceComplete) ==
-                   LUringCompletionModel::kEventStream,
+  ok &= Expect(CompletionModelFor(OpKind::kAcceptSourceComplete) ==
+                   CompletionModel::kEventStream,
                "accept sources must use the event-stream completion model");
   ok &= Expect(
-      CompletionModelFor(LUringOpKind::kRecvSourceComplete) == LUringCompletionModel::kEventStream,
+      CompletionModelFor(OpKind::kRecvSourceComplete) == CompletionModel::kEventStream,
       "recv sources must use the event-stream completion model");
-  ok &= Expect(CompletionModelFor(LUringOpKind::kSendZeroCopyComplete) ==
-                   LUringCompletionModel::kSplitRelease,
+  ok &= Expect(CompletionModelFor(OpKind::kSendZeroCopyComplete) ==
+                   CompletionModel::kSplitRelease,
                "zero-copy send must use the split-release completion model");
   return ok;
 }

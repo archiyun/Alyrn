@@ -29,10 +29,10 @@ namespace {
 using coropact::Error;
 using coropact::Result;
 using coropact::coro::DetachedTask;
-using coropact::luring::LUringLoop;
-using coropact::luring::LUringOptions;
-using coropact::luring::LUringRecvSource;
-using coropact::luring::LUringRecvSourceOptions;
+using coropact::luring::Loop;
+using coropact::luring::Options;
+using coropact::luring::RecvSource;
+using coropact::luring::RecvSourceOptions;
 
 class UniqueFd final {
 public:
@@ -116,9 +116,9 @@ bool IsEnvironmentSkip(Error error) {
          error == std::errc::function_not_supported || error.value() == EINVAL;
 }
 
-LoopInitStatus InitLoop(LUringLoop& loop, std::size_t shared_buffer_capacity = 64,
+LoopInitStatus InitLoop(Loop& loop, std::size_t shared_buffer_capacity = 64,
                         std::size_t shared_buffer_size = 16 * 1024) {
-  LUringOptions options;
+  Options options;
   options.entries = 32;
 
   options.shared_buffer_capacity = shared_buffer_capacity;
@@ -137,7 +137,7 @@ LoopInitStatus InitLoop(LUringLoop& loop, std::size_t shared_buffer_capacity = 6
 }
 
 template <typename Predicate>
-bool PumpUntil(LUringLoop& loop, Predicate&& predicate, int max_iterations = 64) {
+bool PumpUntil(Loop& loop, Predicate&& predicate, int max_iterations = 64) {
   for (int i = 0; i < max_iterations && !predicate(); ++i) {
     auto completed = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
     if (!completed.has_value()) {
@@ -157,7 +157,7 @@ Result<std::pair<UniqueFd, UniqueFd>> MakeSocketPair() {
   return std::make_pair(UniqueFd(fds[0]), UniqueFd(fds[1]));
 }
 
-DetachedTask ReceiveOne(LUringRecvSource* source, Observation* observation) {
+DetachedTask ReceiveOne(RecvSource* source, Observation* observation) {
   auto received = co_await source->Next();
   if (!received.has_value()) {
     observation->error = received.error();
@@ -186,9 +186,9 @@ DetachedTask ReceiveOne(LUringRecvSource* source, Observation* observation) {
 
 /* Only the test-hook scenarios drive these two directly. */
 
-DetachedTask ReceivePauseThenResume(LUringRecvSource* source, LUringLoop* loop,
+DetachedTask ReceivePauseThenResume(RecvSource* source, Loop* loop,
                                     PauseResumeObservation* observation) {
-  const auto take = [observation](LUringRecvSource::NextResult received,
+  const auto take = [observation](RecvSource::NextResult received,
                                   std::string* target) -> bool {
     if (!received.has_value()) {
       observation->error = received.error();
@@ -247,7 +247,7 @@ DetachedTask ReceivePauseThenResume(LUringRecvSource* source, LUringLoop* loop,
   observation->done = true;
 }
 
-DetachedTask ReceiveWithFirstLeaseHeld(LUringRecvSource* source,
+DetachedTask ReceiveWithFirstLeaseHeld(RecvSource* source,
                                        HeldLeaseObservation* observation) {
   auto first = co_await source->Next();
   if (!first.has_value() || !first->has_value()) {
@@ -282,7 +282,7 @@ DetachedTask ReceiveWithFirstLeaseHeld(LUringRecvSource* source,
 }
 
 bool CheckRecvAndLease() {
-  LUringLoop loop;
+  Loop loop;
   switch (InitLoop(loop, 64, 256)) {
     case LoopInitStatus::kReady:
       break;
@@ -300,13 +300,13 @@ bool CheckRecvAndLease() {
   auto receiver = std::move(pair->first);
   auto sender = std::move(pair->second);
 
-  LUringRecvSourceOptions options;
+  RecvSourceOptions options;
   options.source.pending_depth = 1;
   options.source.event_capacity = 4;
   options.source.buffer_capacity = 4;
   options.buffer_size = 256;
 
-  auto source_result = LUringRecvSource::Create(&loop, receiver.Get(), options);
+  auto source_result = RecvSource::Create(&loop, receiver.Get(), options);
   if (!source_result.has_value()) {
     if (IsEnvironmentSkip(source_result.error())) {
       std::cout << "SKIP: provided buffer ring unavailable: " << source_result.error().message()
@@ -341,7 +341,7 @@ bool CheckRecvAndLease() {
 }
 
 bool CheckHeldLeases() {
-  LUringLoop loop;
+  Loop loop;
   switch (InitLoop(loop, 4, 256)) {
     case LoopInitStatus::kReady:
       break;
@@ -359,11 +359,11 @@ bool CheckHeldLeases() {
   auto receiver = std::move(pair->first);
   auto sender = std::move(pair->second);
 
-  LUringRecvSourceOptions options;
+  RecvSourceOptions options;
   options.source.event_capacity = 2;
   options.source.buffer_capacity = 2;
   options.buffer_size = 256;
-  auto source_result = LUringRecvSource::Create(&loop, receiver.Get(), options);
+  auto source_result = RecvSource::Create(&loop, receiver.Get(), options);
   if (!source_result.has_value()) {
     if (IsEnvironmentSkip(source_result.error())) {
       std::cout << "SKIP: held-lease provided buffer ring unavailable: "
@@ -414,7 +414,7 @@ bool CheckHeldLeases() {
 }
 
 bool CheckSharedBufferPool() {
-  LUringLoop loop;
+  Loop loop;
   switch (InitLoop(loop, 4, 256)) {
     case LoopInitStatus::kReady:
       break;
@@ -435,13 +435,13 @@ bool CheckSharedBufferPool() {
   auto second_receiver = std::move(second_pair->first);
   auto second_sender = std::move(second_pair->second);
 
-  LUringRecvSourceOptions options;
+  RecvSourceOptions options;
   options.source.event_capacity = 2;
   options.source.buffer_capacity = 2;
   options.buffer_size = 256;
 
-  auto first_source_result = LUringRecvSource::Create(&loop, first_receiver.Get(), options);
-  auto second_source_result = LUringRecvSource::Create(&loop, second_receiver.Get(), options);
+  auto first_source_result = RecvSource::Create(&loop, first_receiver.Get(), options);
+  auto second_source_result = RecvSource::Create(&loop, second_receiver.Get(), options);
   if (!first_source_result.has_value() || !second_source_result.has_value()) {
     const auto& error = !first_source_result.has_value() ? first_source_result.error()
                                                          : second_source_result.error();
@@ -490,7 +490,7 @@ bool CheckSharedBufferPool() {
 }
 
 bool CheckEof() {
-  LUringLoop loop;
+  Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -508,7 +508,7 @@ bool CheckEof() {
   auto receiver = std::move(pair->first);
   auto sender = std::move(pair->second);
 
-  auto source_result = LUringRecvSource::Create(&loop, receiver.Get());
+  auto source_result = RecvSource::Create(&loop, receiver.Get());
   if (!source_result.has_value()) {
     if (IsEnvironmentSkip(source_result.error())) {
       std::cout << "SKIP: provided buffer ring unavailable: " << source_result.error().message()
@@ -536,7 +536,7 @@ bool CheckEof() {
 }
 
 bool CheckQueuePauseThenRearm() {
-  LUringLoop loop;
+  Loop loop;
   switch (InitLoop(loop, 64, 256)) {
     case LoopInitStatus::kReady:
       break;
@@ -554,13 +554,13 @@ bool CheckQueuePauseThenRearm() {
   auto receiver = std::move(pair->first);
   auto sender = std::move(pair->second);
 
-  LUringRecvSourceOptions options;
+  RecvSourceOptions options;
   options.source.pending_depth = 1;
   options.source.event_capacity = 1;
   options.source.buffer_capacity = 2;
   options.buffer_size = 256;
 
-  auto source_result = LUringRecvSource::Create(&loop, receiver.Get(), options);
+  auto source_result = RecvSource::Create(&loop, receiver.Get(), options);
   if (!source_result.has_value()) {
     if (IsEnvironmentSkip(source_result.error())) {
       std::cout << "SKIP: provided buffer ring unavailable: " << source_result.error().message()

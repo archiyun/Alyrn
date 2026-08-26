@@ -37,8 +37,8 @@ bool IsEnvironmentSkip(coropact::Error error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 
-LoopInitStatus InitLoop(coropact::luring::LUringLoop& loop) {
-  coropact::luring::LUringOptions options;
+LoopInitStatus InitLoop(coropact::luring::Loop& loop) {
+  coropact::luring::Options options;
   options.entries = 16;
 
   auto init = loop.Init(options);
@@ -50,25 +50,25 @@ LoopInitStatus InitLoop(coropact::luring::LUringLoop& loop) {
     return LoopInitStatus::kSkip;
   }
 
-  std::cout << "FAIL: LUringLoop init failed: " << init.error().message() << '\n';
+  std::cout << "FAIL: Loop init failed: " << init.error().message() << '\n';
   return LoopInitStatus::kFail;
 }
 
-bool TestStreamMove(coropact::luring::LUringLoop& loop) {
+bool TestStreamMove(coropact::luring::Loop& loop) {
   int fds[2]{-1, -1};
   if (!Check(::socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, fds) == 0,
-             "LUringStream socketpair creation failed")) {
+             "Stream socketpair creation failed")) {
     return false;
   }
 
   {
-    coropact::luring::LUringStream source(&loop, fds[0], coropact::net::Endpoint(0));
-    coropact::luring::LUringStream moved(std::move(source));
-    coropact::luring::LUringStream target(&loop, fds[1], coropact::net::Endpoint(0));
+    coropact::luring::Stream source(&loop, fds[0], coropact::net::Endpoint(0));
+    coropact::luring::Stream moved(std::move(source));
+    coropact::luring::Stream target(&loop, fds[1], coropact::net::Endpoint(0));
     target = std::move(moved);
 
     if (!Check(source.Fd() == -1 && moved.Fd() == -1 && target.Fd() == fds[0],
-               "LUringStream move did not transfer fd ownership")) {
+               "Stream move did not transfer fd ownership")) {
       return false;
     }
   }
@@ -76,25 +76,25 @@ bool TestStreamMove(coropact::luring::LUringLoop& loop) {
   return true;
 }
 
-bool TestListenerMove(coropact::luring::LUringLoop& loop) {
-  auto source = coropact::luring::LUringListener::Create(&loop, coropact::net::Endpoint(0));
-  if (!Check(source.has_value(), "LUringListener creation failed")) {
+bool TestListenerMove(coropact::luring::Loop& loop) {
+  auto source = coropact::luring::Listener::Create(&loop, coropact::net::Endpoint(0));
+  if (!Check(source.has_value(), "Listener creation failed")) {
     return false;
   }
   auto source_address = source->LocalAddress();
-  if (!Check(source_address.has_value(), "LUringListener local address lookup failed")) {
+  if (!Check(source_address.has_value(), "Listener local address lookup failed")) {
     return false;
   }
 
-  coropact::luring::LUringListener moved(std::move(*source));
+  coropact::luring::Listener moved(std::move(*source));
   auto moved_address = moved.LocalAddress();
   if (!Check(moved_address.has_value() && moved_address->ToPort() == source_address->ToPort(),
-             "LUringListener move construction did not transfer the socket")) {
+             "Listener move construction did not transfer the socket")) {
     return false;
   }
 
-  auto target = coropact::luring::LUringListener::Create(&loop, coropact::net::Endpoint(0));
-  if (!Check(target.has_value(), "LUringListener move target creation failed")) {
+  auto target = coropact::luring::Listener::Create(&loop, coropact::net::Endpoint(0));
+  if (!Check(target.has_value(), "Listener move target creation failed")) {
     return false;
   }
   *target = std::move(moved);
@@ -102,18 +102,18 @@ bool TestListenerMove(coropact::luring::LUringLoop& loop) {
   auto target_address = target->LocalAddress();
   return Check(source->Fd() == -1 && moved.Fd() == -1 && target_address.has_value() &&
                    target_address->ToPort() == source_address->ToPort(),
-               "LUringListener move assignment did not transfer the socket");
+               "Listener move assignment did not transfer the socket");
 }
 
 }  // namespace
 
 int main() {
-  static_assert(std::is_move_constructible_v<coropact::luring::LUringStream>);
-  static_assert(std::is_move_assignable_v<coropact::luring::LUringStream>);
-  static_assert(std::is_move_constructible_v<coropact::luring::LUringListener>);
-  static_assert(std::is_move_assignable_v<coropact::luring::LUringListener>);
+  static_assert(std::is_move_constructible_v<coropact::luring::Stream>);
+  static_assert(std::is_move_assignable_v<coropact::luring::Stream>);
+  static_assert(std::is_move_constructible_v<coropact::luring::Listener>);
+  static_assert(std::is_move_assignable_v<coropact::luring::Listener>);
 
-  coropact::luring::LUringLoop loop;
+  coropact::luring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;

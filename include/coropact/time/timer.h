@@ -16,7 +16,7 @@ namespace coropact::time {
 // Timer represents one scheduled callback.
 //
 // It stores the callback, next expiration time, repeat interval, and an
-// intrusive red-black tree hook used by TimerTree. It has no EventLoop or fd
+// intrusive red-black tree hook used by TimerTree. It has no Loop or fd
 // dependency; the net layer decides how expirations are delivered.
 //
 // The tree linkage is inherited (base-hook): TimerTree recovers the Timer from

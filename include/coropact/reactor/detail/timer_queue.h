@@ -15,25 +15,25 @@
 
 namespace coropact::reactor {
 
-class EventLoop;
+class Loop;
 
 namespace detail {
 
-class ReactorTimer final : public ds::RBTNode<ReactorTimer>, public ds::HashNode<ReactorTimer> {
+class Timer final : public ds::RBTNode<Timer>, public ds::HashNode<Timer> {
 public:
   using Clock = time::Clock;
   using TimePoint = time::Deadline;
   using Duration = time::Duration;
   using TimerCallback = std::function<void()>;
 
-  ReactorTimer(TimerCallback callback, TimePoint expiration, Duration interval)
+  Timer(TimerCallback callback, TimePoint expiration, Duration interval)
       : timer_callback_(std::move(callback)),
         expiration_(expiration),
         interval_(interval),
         repeat_(interval > Duration::zero()),
         sequence_(next_sequence_.fetch_add(1, std::memory_order_relaxed)) {}
 
-  COROPACT_DELETE_COPY_MOVE(ReactorTimer);
+  COROPACT_DELETE_COPY_MOVE(Timer);
 
   void Run() const {
     if (timer_callback_) {
@@ -66,7 +66,7 @@ private:
   inline static std::atomic<int64_t> next_sequence_;
 };
 
-inline bool ReactorTimerLess(const ReactorTimer* lhs, const ReactorTimer* rhs) {
+inline bool TimerLess(const Timer* lhs, const Timer* rhs) {
   if (lhs->expiration() < rhs->expiration()) {
     return true;
   }
@@ -76,15 +76,15 @@ inline bool ReactorTimerLess(const ReactorTimer* lhs, const ReactorTimer* rhs) {
   return lhs->sequence() < rhs->sequence();
 }
 
-inline constexpr auto kTimerSequenceOf = [](const ReactorTimer* timer) -> int64_t {
+inline constexpr auto kTimerSequenceOf = [](const Timer* timer) -> int64_t {
   return timer->sequence();
 };
-using ActiveTimerTable = ds::IntrusiveHashTable<ReactorTimer, kTimerSequenceOf>;
-using TimerTree = ds::IntrusiveRBTree<ReactorTimer, ReactorTimerLess>;
+using ActiveTimerTable = ds::IntrusiveHashTable<Timer, kTimerSequenceOf>;
+using TimerTree = ds::IntrusiveRBTree<Timer, TimerLess>;
 
-// TimerQueue manages timerfd-driven timer scheduling for one EventLoop.
+// TimerQueue manages timerfd-driven timer scheduling for one Loop.
 //
-// TimerQueue owns ReactorTimer objects. TimerTree only indexes them by
+// TimerQueue owns Timer objects. TimerTree only indexes them by
 // expiration time using intrusive red-black tree nodes embedded inside each
 // timer.
 class TimerQueue {
@@ -93,11 +93,11 @@ public:
 
   using TimerCallback = std::function<void()>;
 
-  explicit TimerQueue(EventLoop* loop);
+  explicit TimerQueue(Loop* loop);
   ~TimerQueue();
 
-  using TimePoint = ReactorTimer::TimePoint;
-  using Duration = ReactorTimer::Duration;
+  using TimePoint = Timer::TimePoint;
+  using Duration = Timer::Duration;
 
   time::TimerId AddTimer(TimerCallback callback, TimePoint when, Duration interval);
   void Cancel(time::TimerId id);
@@ -114,9 +114,9 @@ private:
   int timerfd_;
   Channel timerfd_channel_;
   TimerTree timers_;
-  memory::ObjectPool<ReactorTimer, kTimerQueueMax> timer_pool_;
+  memory::ObjectPool<Timer, kTimerQueueMax> timer_pool_;
   ActiveTimerTable active_timers_;
-  ReactorTimer* processing_timer_{nullptr};
+  Timer* processing_timer_{nullptr};
   bool processing_timer_cancelled_{false};
 };
 

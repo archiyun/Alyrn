@@ -66,7 +66,7 @@ bool SendExactly(int fd, std::string_view bytes) noexcept {
   return true;
 }
 
-auto HalfCloseSession(luring::LUringLoop& loop, luring::LUringStream stream, int peer_fd,
+auto HalfCloseSession(luring::Loop& loop, luring::Stream stream, int peer_fd,
                       int& exit_code) -> coro::DetachedTask {
   const auto request = std::as_bytes(std::span<const char>(kRequest.data(), kRequest.size()));
   auto written = co_await stream.WriteAll(request);
@@ -177,8 +177,8 @@ auto main() -> int {
     return 1;
   }
 
-  luring::LUringLoop loop;
-  luring::LUringOptions options;
+  luring::Loop loop;
+  luring::Options options;
   options.entries = 64;
 
   auto initialized = loop.Init(options);
@@ -190,7 +190,7 @@ auto main() -> int {
   }
 
   int exit_code = 1;
-  luring::LUringStream stream(&loop, sockets[0], net::Endpoint::Loopback(0));
+  luring::Stream stream(&loop, sockets[0], net::Endpoint::Loopback(0));
   coro::SpawnDetach(loop, HalfCloseSession(loop, std::move(stream), sockets[1], exit_code));
   loop.Run(std::stop_token{});
 

@@ -19,50 +19,50 @@
 
 namespace coropact::reactor::detail {
 
-struct ReactorWorkerContext {
-  ReactorWorkerContext(std::size_t index, EventLoop& loop, ReactorListener& listener,
-                       ReactorConnector& connector) noexcept
+struct WorkerContext {
+  WorkerContext(std::size_t index, Loop& loop, Listener& listener,
+                       Connector& connector) noexcept
       : index(index), loop(loop), listener(listener), connector(connector) {}
 
-  COROPACT_DELETE_COPY_MOVE(ReactorWorkerContext);
+  COROPACT_DELETE_COPY_MOVE(WorkerContext);
 
   const std::size_t index;
-  EventLoop& loop;
-  ReactorListener& listener;
-  ReactorConnector& connector;
+  Loop& loop;
+  Listener& listener;
+  Connector& connector;
 };
 
-struct ReactorWorkerOptions {
-  ReactorListenerOptions listener_options{.reuse_addr = true, .reuse_port = true};
+struct WorkerOptions {
+  ListenerOptions listener_options{.reuse_addr = true, .reuse_port = true};
 
   // Must outlive the worker. It should be private to one worker when it is
   // unsynchronized.
   std::pmr::memory_resource* frame_resource{nullptr};
 
-  ReactorConnectorOptions connector_options{};
+  ConnectorOptions connector_options{};
 };
 
-class ReactorWorker {
+class Worker {
 public:
-  COROPACT_DELETE_COPY_MOVE(ReactorWorker);
+  COROPACT_DELETE_COPY_MOVE(Worker);
 
-  using ThreadInitCallback = std::function<void(ReactorWorkerContext&)>;
+  using ThreadInitCallback = std::function<void(WorkerContext&)>;
   // Runs on the worker thread after the loop stops and before loop-bound
   // listener/connector resources are destroyed.
-  using ThreadExitCallback = std::function<void(ReactorWorkerContext&)>;
+  using ThreadExitCallback = std::function<void(WorkerContext&)>;
   using ConnectionCallback =
-      std::function<coro::DetachedTask(ReactorWorkerContext&, ReactorStream)>;
+      std::function<coro::DetachedTask(WorkerContext&, Stream)>;
 
-  ReactorWorker(std::size_t index, net::Endpoint listen_addr, ReactorWorkerOptions options = {},
+  Worker(std::size_t index, net::Endpoint listen_addr, WorkerOptions options = {},
                 ThreadInitCallback init_callback = {}, ConnectionCallback connection_callback = {},
                 ThreadExitCallback exit_callback = {});
-  ~ReactorWorker() noexcept;
+  ~Worker() noexcept;
 
   [[nodiscard]]
   Result<void> Start();
 
   // Requests shutdown. The worker thread is joined by the destructor or by
-  // the owning ReactorWorkerGroup.
+  // the owning WorkerGroup.
   void Stop() noexcept;
 
   [[nodiscard]]
@@ -73,7 +73,7 @@ private:
 
   std::size_t index_;
   net::Endpoint listen_addr_;
-  ReactorWorkerOptions options_;
+  WorkerOptions options_;
   ThreadInitCallback init_callback_;
   ConnectionCallback connection_callback_;
   ThreadExitCallback exit_callback_;

@@ -8,7 +8,7 @@
 
 namespace coropact::kqueue {
 
-class KqueueLoop;
+class Loop;
 
 namespace detail {
 
@@ -28,7 +28,7 @@ public:
   using EventCallback = void (*)(void*) noexcept;
   using ReadEventCallback = void (*)(void*) noexcept;
 
-  explicit Channel(KqueueLoop* loop, int fd) noexcept;
+  explicit Channel(Loop* loop, int fd) noexcept;
   ~Channel() noexcept = default;
 
   // Moving transfers the non-owning fd association and callbacks. Both the
@@ -148,15 +148,15 @@ public:
 
   // Returns whether the owning poller currently tracks this Channel. The
   // authoritative registration state lives in the poller's per-filter table,
-  // not here; KqueueLoop deliberately keeps that table private from kqueue
+  // not here; Loop deliberately keeps that table private from kqueue
   // callers.
   [[nodiscard]]
   bool IsRegistered() const;
 
-  // Returns the KqueueLoop that owns this Channel.
-  KqueueLoop* OwnerLoop() { return loop_; }
+  // Returns the Loop that owns this Channel.
+  Loop* OwnerLoop() { return loop_; }
 
-  // Removes the Channel from its owning KqueueLoop.
+  // Removes the Channel from its owning Loop.
   void Remove();
 
   // A Channel starts with no interested events.
@@ -171,7 +171,7 @@ public:
 private:
   // The active epoch is Poller-private bookkeeping and must stay hidden from
   // general consumers. The concrete Poller is the only legitimate user.
-  friend class KqueuePoller;
+  friend class Poller;
 
   // Read and write readiness arrive as two separate kevents, so one Poll() can
   // report the same Channel twice. The poller stamps the current poll epoch on
@@ -194,7 +194,7 @@ private:
   // Pushes the current interest set to the Poller.
   void Update();
 
-  KqueueLoop* loop_{nullptr};
+  Loop* loop_{nullptr};
   int fd_{-1};
   int events_{kNoneEvent};
   int revents_{kNoneEvent};

@@ -841,21 +841,21 @@ target_link_libraries(net_move_smoke_test
 
 add_test(NAME net_move_smoke_test COMMAND net_move_smoke_test)
 
-add_executable(event_loop_smoke_test
-    integration/test_event_loop_smoke.cc
+add_executable(reactor_loop_smoke_test
+    integration/test_reactor_loop_smoke.cc
 )
 
-target_include_directories(event_loop_smoke_test
+target_include_directories(reactor_loop_smoke_test
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
 
-target_link_libraries(event_loop_smoke_test
+target_link_libraries(reactor_loop_smoke_test
     PRIVATE
         coropact_reactor
 )
 
-add_test(NAME event_loop_smoke_test COMMAND event_loop_smoke_test)
+add_test(NAME reactor_loop_smoke_test COMMAND reactor_loop_smoke_test)
 
 add_executable(timer_tree_smoke_test
     unit/test_timer_tree_smoke.cc
@@ -883,22 +883,6 @@ target_include_directories(clock_smoke_test
 )
 
 add_test(NAME clock_smoke_test COMMAND clock_smoke_test)
-
-add_executable(try_smoke_test
-    unit/test_try_smoke.cc
-)
-
-target_include_directories(try_smoke_test
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
-
-target_link_libraries(try_smoke_test
-    PRIVATE
-        coropact_coro
-)
-
-add_test(NAME try_smoke_test COMMAND try_smoke_test)
 
 add_executable(intrusive_rbtree_clear_smoke_test
     unit/test_intrusive_rbtree_clear_smoke.cc
@@ -989,7 +973,7 @@ if(COROPACT_ENABLE_KQUEUE_SHIM_TESTS)
         unit/test_kqueue_oneshot_smoke.cc
         support/fake_kqueue.cc
         ../src/kqueue/channel.cc
-        ../src/kqueue/kqueue_poller.cc
+        ../src/kqueue/poller.cc
         ../src/kqueue/loop.cc
         ../src/kqueue/timer_queue.cc
     )

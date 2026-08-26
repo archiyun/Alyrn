@@ -87,7 +87,7 @@ AcceptSource owns pending accept state and queued Stream values
 - source 析构时必须处于 `Idle`、`Draining` 或 `Terminal`，且没有 pending `Next()`、
   `Stop()` 或 physical request。该约束在 Release 构建中同样检查，违反它属于所有权错误。
 
-listener 已关闭时，`AcceptSource()` 返回 `EBADF`；owner loop 已进入 `Stopping` 或
+listener 已关闭时，`CreateAcceptSource()` 返回 `EBADF`；owner loop 已进入 `Stopping` 或
 `Stopped` 时返回 `ECANCELED`。因此创建 source 成功意味着当前仍允许建立新的 logical
 accept lifecycle，而不只是 listener fd 数值上仍然有效。
 

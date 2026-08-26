@@ -14,7 +14,7 @@
 
 namespace coropact::kqueue::detail {
 
-class KqueuePoller;
+class Poller;
 
 inline constexpr auto kTimerSequenceOf = [](const time::Timer* timer) -> std::int64_t {
   return timer->sequence();
@@ -23,7 +23,7 @@ inline constexpr auto kTimerSequenceOf = [](const time::Timer* timer) -> std::in
 using ActiveTimerTable = ds::IntrusiveHashTable<time::Timer, kTimerSequenceOf>;
 
 /*
- * User-space timer heap for one KqueueLoop, woken by a single EVFILT_TIMER.
+ * User-space timer heap for one Loop, woken by a single EVFILT_TIMER.
  *
  * SleepFor and ReadSomeFor are logical timers in this tree. The kernel holds
  * one one-shot alarm for the earliest deadline; firing it drains every timer
@@ -38,7 +38,7 @@ public:
   using TimePoint = time::Deadline;
   using Duration = time::Duration;
 
-  explicit TimerQueue(KqueuePoller& poller);
+  explicit TimerQueue(Poller& poller);
   ~TimerQueue();
 
   time::TimerId AddTimer(TimerCallback callback, TimePoint when, Duration interval);
@@ -51,7 +51,7 @@ private:
   static void DispatchExpire(void* context) noexcept;
   void ArmKernel(TimePoint expiration);
 
-  KqueuePoller* poller_;
+  Poller* poller_;
   time::TimerTree timers_;
   memory::ObjectPool<time::Timer, kTimerQueueMax> timer_pool_;
   ActiveTimerTable active_timers_;

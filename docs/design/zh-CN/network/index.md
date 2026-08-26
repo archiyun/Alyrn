@@ -11,5 +11,5 @@ BSD/Darwin kqueue。它们 refine 同一套 `io` 契约，不共享 event loop �
 - [luring 功能说明](luring/index.md)
 - [io_uring Operation Matrix](luring-operation-matrix.md)
 - [kqueue](kqueue/index.md)
-- [KqueueLoop、Post 与主从移交](kqueue/loop-and-handoff.md)
+- [Loop、Post 与主从移交](kqueue/loop-and-handoff.md)
 - [用 Lamport 视角讨论协程网络运行时的语义统一与热插拔](lamport-hot-swap-runtime.md)

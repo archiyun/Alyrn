@@ -74,8 +74,8 @@ bool IsEnvironmentSkip(coropact::Error error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 
-LoopInitStatus InitLoop(coropact::luring::LUringLoop& loop) {
-  coropact::luring::LUringOptions options;
+LoopInitStatus InitLoop(coropact::luring::Loop& loop) {
+  coropact::luring::Options options;
   options.entries = 16;
 
   auto init = loop.Init(options);
@@ -87,7 +87,7 @@ LoopInitStatus InitLoop(coropact::luring::LUringLoop& loop) {
     return LoopInitStatus::kSkip;
   }
 
-  std::cout << "FAIL: LUringLoop init failed: " << init.error().message() << '\n';
+  std::cout << "FAIL: Loop init failed: " << init.error().message() << '\n';
   return LoopInitStatus::kFail;
 }
 
@@ -116,8 +116,8 @@ coropact::net::Endpoint LoopbackAddress(std::uint16_t port) {
 }
 
 coropact::coro::DetachedTask AcceptOnce(
-    coropact::luring::LUringListener* listener, coropact::luring::LUringLoop* loop,
-    std::optional<coropact::Result<coropact::luring::LUringStream>>* out,
+    coropact::luring::Listener* listener, coropact::luring::Loop* loop,
+    std::optional<coropact::Result<coropact::luring::Stream>>* out,
     bool* resumed_with_scheduler, int* resume_count = nullptr) {
   auto result = co_await listener->Accept();
   if (resume_count != nullptr) {
@@ -128,23 +128,23 @@ coropact::coro::DetachedTask AcceptOnce(
 }
 
 coropact::coro::DetachedTask AcceptThenAccept(
-    coropact::luring::LUringListener* listener, coropact::luring::LUringLoop* loop,
-    std::optional<coropact::Result<coropact::luring::LUringStream>>* first,
-    std::optional<coropact::Result<coropact::luring::LUringStream>>* second,
+    coropact::luring::Listener* listener, coropact::luring::Loop* loop,
+    std::optional<coropact::Result<coropact::luring::Stream>>* first,
+    std::optional<coropact::Result<coropact::luring::Stream>>* second,
     bool* resumed_with_scheduler) {
   first->emplace(co_await listener->Accept());
   second->emplace(co_await listener->Accept());
   *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == loop;
 }
 
-coropact::coro::DetachedTask CloseOnce(coropact::luring::LUringListener* listener,
+coropact::coro::DetachedTask CloseOnce(coropact::luring::Listener* listener,
                                        std::optional<coropact::Result<void>>* out) {
   auto result = co_await listener->Close();
   out->emplace(std::move(result));
 }
 
 bool CheckAccept() {
-  coropact::luring::LUringLoop loop;
+  coropact::luring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -154,9 +154,9 @@ bool CheckAccept() {
       return false;
   }
 
-  auto listener = coropact::luring::LUringListener::Create(&loop, LoopbackAddress(0));
+  auto listener = coropact::luring::Listener::Create(&loop, LoopbackAddress(0));
   if (!listener.has_value()) {
-    std::cout << "FAIL: LUringListener::Create failed: " << listener.error().message() << '\n';
+    std::cout << "FAIL: Listener::Create failed: " << listener.error().message() << '\n';
     return false;
   }
 
@@ -173,7 +173,7 @@ bool CheckAccept() {
   }
   UniqueFd client(*client_fd);
 
-  std::optional<coropact::Result<coropact::luring::LUringStream>> accepted;
+  std::optional<coropact::Result<coropact::luring::Stream>> accepted;
   bool resumed_with_scheduler = false;
 
   coropact::coro::SpawnDetach(loop,
@@ -197,7 +197,7 @@ bool CheckAccept() {
 }
 
 bool CheckAcceptReleasesReservationBeforeContinuation() {
-  coropact::luring::LUringLoop loop;
+  coropact::luring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -207,9 +207,9 @@ bool CheckAcceptReleasesReservationBeforeContinuation() {
       return false;
   }
 
-  auto listener = coropact::luring::LUringListener::Create(&loop, LoopbackAddress(0));
+  auto listener = coropact::luring::Listener::Create(&loop, LoopbackAddress(0));
   if (!listener.has_value()) {
-    std::cout << "FAIL: LUringListener::Create failed: " << listener.error().message() << '\n';
+    std::cout << "FAIL: Listener::Create failed: " << listener.error().message() << '\n';
     return false;
   }
 
@@ -234,8 +234,8 @@ bool CheckAcceptReleasesReservationBeforeContinuation() {
   }
   UniqueFd second_client(*second_client_fd);
 
-  std::optional<coropact::Result<coropact::luring::LUringStream>> first;
-  std::optional<coropact::Result<coropact::luring::LUringStream>> second;
+  std::optional<coropact::Result<coropact::luring::Stream>> first;
+  std::optional<coropact::Result<coropact::luring::Stream>> second;
   bool resumed_with_scheduler = false;
   coropact::coro::SpawnDetach(
       loop, AcceptThenAccept(&*listener, &loop, &first, &second, &resumed_with_scheduler));
@@ -262,7 +262,7 @@ bool CheckAcceptReleasesReservationBeforeContinuation() {
 }
 
 bool CheckCloseCancelsPendingAccept() {
-  coropact::luring::LUringLoop loop;
+  coropact::luring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -272,13 +272,13 @@ bool CheckCloseCancelsPendingAccept() {
       return false;
   }
 
-  auto listener = coropact::luring::LUringListener::Create(&loop, LoopbackAddress(0));
+  auto listener = coropact::luring::Listener::Create(&loop, LoopbackAddress(0));
   if (!listener.has_value()) {
-    std::cout << "FAIL: LUringListener::Create failed: " << listener.error().message() << '\n';
+    std::cout << "FAIL: Listener::Create failed: " << listener.error().message() << '\n';
     return false;
   }
 
-  std::optional<coropact::Result<coropact::luring::LUringStream>> accepted;
+  std::optional<coropact::Result<coropact::luring::Stream>> accepted;
   bool resumed_with_scheduler = false;
   coropact::coro::SpawnDetach(loop,
                               AcceptOnce(&*listener, &loop, &accepted, &resumed_with_scheduler));

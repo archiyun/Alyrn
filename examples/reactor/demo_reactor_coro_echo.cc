@@ -129,9 +129,9 @@ coropact::coro::DetachedTask Session(Stream stream, long long* active_sessions,
 }
 
 template <coropact::io::AsyncListener Listener>
-coropact::coro::DetachedTask AcceptLoop(Listener* listener, coropact::reactor::EventLoop* scheduler,
+coropact::coro::DetachedTask AcceptLoop(Listener* listener, coropact::reactor::Loop* scheduler,
                                         long long* active_sessions, long long* total_messages) {
-  using Stream = typename Listener::Stream;
+  using Stream = typename Listener::StreamType;
 
   for (;;) {
     auto accepted = co_await listener->Accept();
@@ -152,9 +152,9 @@ int main() {
 
   const auto port = static_cast<std::uint16_t>(EnvInt("PORT", 9090));
 
-  coropact::reactor::EventLoop loop;
+  coropact::reactor::Loop loop;
   auto listener_result =
-      coropact::reactor::ReactorListener::Create(&loop, coropact::net::Endpoint(port));
+      coropact::reactor::Listener::Create(&loop, coropact::net::Endpoint(port));
   if (!listener_result.has_value()) {
     std::cerr << "failed to create listener: " << listener_result.error().message() << '\n';
     return 1;

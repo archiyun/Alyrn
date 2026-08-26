@@ -61,7 +61,7 @@ The kqueue umbrella header is rejected at compile time on non-BSD hosts.
 ### 2. Write backend-neutral connection code
 
 This echo session depends only on `AsyncStream`, so it works with
-`ReactorStream`, `LUringStream`, and `KqueueStream`. See
+`reactor::Stream`, `luring::Stream`, and `kqueue::Stream`. See
 [`examples/simple_echo`](examples/simple_echo) for the runnable Linux version.
 
 ```cpp
@@ -160,11 +160,11 @@ The backend tag still selects the implementation at compile time. Options that a
 
 ### 5. Use luring-native capabilities
 
-`Runtime` owns the default TCP server's worker lifecycle; it is not a general io_uring configuration API. It may select safe defaults, such as multishot accept with fallback, but applications that need explicit control of ring depth, SQPOLL, provided-buffer rings, multishot receive, or zero-copy send should compose `luring::LUringLoop`, `LUringOptions`, and the relevant listener, stream, or source directly:
+`Runtime` owns the default TCP server's worker lifecycle; it is not a general io_uring configuration API. It may select safe defaults, such as multishot accept with fallback, but applications that need explicit control of ring depth, SQPOLL, provided-buffer rings, multishot receive, or zero-copy send should compose `luring::Loop`, `Options`, and the relevant listener, stream, or source directly:
 
 ```cpp
-coropact::luring::LUringLoop loop;
-coropact::luring::LUringOptions options;
+coropact::luring::Loop loop;
+coropact::luring::Options options;
 options.entries = 8192;
 options.shared_buffer_capacity = 256;  // Provided buffers for RecvSource.
 
@@ -320,37 +320,37 @@ The backends do not share an event loop, and their internal state machines do no
 Reactor multi-worker (`Workers(n>1)`) uses independent listeners on the same port:
 
 ```text
-ReactorWorkerGroup
+WorkerGroup
   |
-  +-- Worker 0 -> Thread 0 -> EventLoop 0 -> listen :port (SO_REUSEPORT)
-  +-- Worker 1 -> Thread 1 -> EventLoop 1 -> listen :port (SO_REUSEPORT)
-  `-- Worker N -> Thread N -> EventLoop N -> listen :port (SO_REUSEPORT)
+  +-- Worker 0 -> Thread 0 -> Loop 0 -> listen :port (SO_REUSEPORT)
+  +-- Worker 1 -> Thread 1 -> Loop 1 -> listen :port (SO_REUSEPORT)
+  `-- Worker N -> Thread N -> Loop N -> listen :port (SO_REUSEPORT)
 ```
 
 The io_uring server uses a thread-per-ring topology:
 
 ```text
-LUringServer
+Server
   |
-  +-- Worker 0 -> Thread 0 -> LUringLoop 0 -> Ring 0
-  +-- Worker 1 -> Thread 1 -> LUringLoop 1 -> Ring 1
-  `-- Worker N -> Thread N -> LUringLoop N -> Ring N
+  +-- Worker 0 -> Thread 0 -> Loop 0 -> Ring 0
+  +-- Worker 1 -> Thread 1 -> Loop 1 -> Ring 1
+  `-- Worker N -> Thread N -> Loop N -> Ring N
 ```
 
-kqueue multi-worker is master-slave. Only worker 0 binds the listener. I/O workers start first so their loops exist; the acceptor then `Release()`s the descriptor and `Post()`s it onto a round-robin owner loop, which reconstructs `KqueueStream` on that thread:
+kqueue multi-worker is master-slave. Only worker 0 binds the listener. I/O workers start first so their loops exist; the acceptor then `Release()`s the descriptor and `Post()`s it onto a round-robin owner loop, which reconstructs `Stream` on that thread:
 
 ```text
-KqueueWorkerGroup
+WorkerGroup
   |
-  +-- Worker 0 (acceptor) -> KqueueLoop 0 -> listen :port
+  +-- Worker 0 (acceptor) -> Loop 0 -> listen :port
   |         |
   |         +-- accept -> Release(fd) -> Post --> reconstruct stream
   |
-  +-- Worker 1 (I/O) -> KqueueLoop 1
-  `-- Worker N (I/O) -> KqueueLoop N
+  +-- Worker 1 (I/O) -> Loop 1
+  `-- Worker N (I/O) -> Loop N
 ```
 
-Connections, I/O operations, and coroutine continuations remain owned by the Worker and loop that run them. `KqueueStream` cannot be moved across loops; the handoff is a raw fd, not a live stream or a `Work*`.
+Connections, I/O operations, and coroutine continuations remain owned by the Worker and loop that run them. `Stream` cannot be moved across loops; the handoff is a raw fd, not a live stream or a `Work*`.
 
 ## Performance Benchmarks
 

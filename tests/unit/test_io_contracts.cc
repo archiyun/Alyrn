@@ -33,27 +33,27 @@ concept HasBorrowedBufferRead =
     requires(T& stream, coropact::io::Buffer& buffer) { stream.ReadSome(buffer, 4096); };
 
 consteval bool CheckReactorContracts() {
-  AssertCoreStream<coropact::reactor::ReactorStream>();
-  AssertCoreListener<coropact::reactor::ReactorListener>();
-  AssertCoreConnector<coropact::reactor::ReactorConnector>();
+  AssertCoreStream<coropact::reactor::Stream>();
+  AssertCoreListener<coropact::reactor::Listener>();
+  AssertCoreConnector<coropact::reactor::Connector>();
   return true;
 }
 
 static_assert(CheckReactorContracts());
-static_assert(coropact::io::ManagedLoop<coropact::reactor::EventLoop>);
-static_assert(!HasBorrowedBufferRead<coropact::reactor::ReactorStream>);
+static_assert(coropact::io::ManagedLoop<coropact::reactor::Loop>);
+static_assert(!HasBorrowedBufferRead<coropact::reactor::Stream>);
 
 #if defined(COROPACT_ENABLE_URING)
 consteval bool CheckLuringContracts() {
-  AssertCoreStream<coropact::luring::LUringStream>();
-  AssertCoreListener<coropact::luring::LUringListener>();
-  AssertCoreConnector<coropact::luring::LUringConnector>();
+  AssertCoreStream<coropact::luring::Stream>();
+  AssertCoreListener<coropact::luring::Listener>();
+  AssertCoreConnector<coropact::luring::Connector>();
   return true;
 }
 
 static_assert(CheckLuringContracts());
-static_assert(coropact::io::ManagedLoop<coropact::luring::LUringLoop>);
-static_assert(!HasBorrowedBufferRead<coropact::luring::LUringStream>);
+static_assert(coropact::io::ManagedLoop<coropact::luring::Loop>);
+static_assert(!HasBorrowedBufferRead<coropact::luring::Stream>);
 #endif
 
 }  // namespace

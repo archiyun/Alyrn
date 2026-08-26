@@ -22,7 +22,7 @@
 
 namespace coropact::reactor {
 
-struct ReactorRecvSourceOptions {
+struct RecvSourceOptions {
   net::RecvSourceOptions source{};
   std::size_t buffer_size{16 * 1024};
 
@@ -33,9 +33,9 @@ struct ReactorRecvSourceOptions {
 // A loop-affine receive event source implemented with non-blocking recv and
 // readiness-driven drain. The fd is borrowed and must outlive the source. A
 // source must also outlive every BufferLease returned by Next().
-class ReactorRecvSource final {
+class RecvSource final {
 public:
-  COROPACT_DELETE_COPY(ReactorRecvSource);
+  COROPACT_DELETE_COPY(RecvSource);
 
   using Event = net::RecvEvent;
   using NextResult = coropact::Result<std::optional<Event>>;
@@ -45,7 +45,7 @@ public:
   // avoiding a child Task frame for every event.
   class NextAwaiter {
   public:
-    explicit NextAwaiter(ReactorRecvSource& source) noexcept : source_(&source) {}
+    explicit NextAwaiter(RecvSource& source) noexcept : source_(&source) {}
 
     [[nodiscard]]
     bool await_ready() const noexcept {
@@ -59,20 +59,20 @@ public:
     void Complete(NextResult result) noexcept;
 
   private:
-    ReactorRecvSource* source_;
+    RecvSource* source_;
     operation::detail::SchedulerContinuation continuation_;
     operation::detail::CompletionGate completion_gate_;
     backend::detail::ValueResultState<std::optional<Event>> result_;
   };
 
   [[nodiscard]]
-  static Result<ReactorRecvSource> Create(EventLoop* loop, int fd,
-                                                ReactorRecvSourceOptions options = {}) noexcept;
+  static Result<RecvSource> Create(Loop* loop, int fd,
+                                                RecvSourceOptions options = {}) noexcept;
 
-  ~ReactorRecvSource();
+  ~RecvSource();
 
-  ReactorRecvSource(ReactorRecvSource&& other) noexcept;
-  ReactorRecvSource& operator=(ReactorRecvSource&& other) noexcept;
+  RecvSource(RecvSource&& other) noexcept;
+  RecvSource& operator=(RecvSource&& other) noexcept;
 
   [[nodiscard]]
   NextAwaiter Next() noexcept {
@@ -90,7 +90,7 @@ public:
 private:
   class StopAwaiter;
 
-  ReactorRecvSource(EventLoop* loop, int fd, net::detail::RecvSourceStateMachine state,
+  RecvSource(Loop* loop, int fd, net::detail::RecvSourceStateMachine state,
                     std::size_t buffer_size, std::vector<std::byte> storage,
                     std::vector<std::uint32_t> available_buffers) noexcept;
 
@@ -119,7 +119,7 @@ private:
   void BindChannelCallbacks() noexcept;
   static void DispatchLoopStop(void* context) noexcept;
 
-  EventLoop* loop_{nullptr};
+  Loop* loop_{nullptr};
   int fd_{-1};
   net::detail::RecvSourceStateMachine state_;
   detail::Channel channel_;
@@ -135,6 +135,6 @@ private:
   detail::LoopShutdownParticipant shutdown_participant_{this, &DispatchLoopStop};
 };
 
-static_assert(backend::AsyncRecvSource<ReactorRecvSource>);
+static_assert(backend::AsyncRecvSource<RecvSource>);
 
 }  // namespace coropact::reactor

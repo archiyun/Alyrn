@@ -35,13 +35,13 @@ coropact::luring    io_uring / SQE / CQE
 ```text
 业务层
   -> coropact::io::AsyncStream / AsyncListener
-  -> ReactorStream / LUringStream
+  -> Stream / Stream
   -> Reactor 或 io_uring
 ```
 
 公共 facade 位于 `coropact::io`；其 canonical concept 定义位于不依赖具体后端的
 `coropact::backend`。`coropact::net` 提供共享的地址、socket 和网络工具，
-`coropact::reactor` 承载 epoll/EventLoop 实现。
+`coropact::reactor` 承载 epoll/Loop 实现。
 
 本文的核心边界是：
 
@@ -114,7 +114,7 @@ coropact::io::AsyncStream
 ```
 
 `AsyncStream` 是四个方法的语义组合，不是某个具体类的基类，也不要求虚函数。当前
-`ReactorStream` 和 `LUringStream` 都满足它。
+`reactor::Stream` 和 `luring::Stream` 都满足它。
 
 ### 2.2 TimedStream extension
 
@@ -129,8 +129,8 @@ coropact::io::AsyncTimedReadStream
 coropact::io::AsyncTimedStream
 ```
 
-`AsyncTimedStream` 表示完整的 `AsyncStream` 加上 timed read。当前 `ReactorStream` 与
-`LUringStream` 都满足它；只满足 `AsyncStream` 的 adapter 不承诺 `ReadSomeFor`。调用方应
+`AsyncTimedStream` 表示完整的 `AsyncStream` 加上 timed read。当前 `Stream` 与
+`Stream` 都满足它；只满足 `AsyncStream` 的 adapter 不承诺 `ReadSomeFor`。调用方应
 使用这些 concept 做编译期约束；具体内核或资源限制由 backend 的运行期 `Result` 报告。
 
 ### 2.3 Buffer ownership extension
@@ -177,16 +177,16 @@ transaction。该区间内不得再次 `PrepareWrite()`、`Append()`、`Drain()`
 listener 的最小接口是：
 
 ```cpp
-using Stream = ...;
+using StreamType = ...;
 
 Accept()
-    -> coro::Task<Result<Stream>>
+    -> coro::Task<Result<StreamType>>
 
 Close()
     -> coro::Task<Result<void>>
 ```
 
-`Stream` 必须满足 `coropact::io::AsyncStream`。当前 `ReactorListener` 和 `LUringListener`
+`StreamType` 必须满足 `coropact::io::AsyncStream`。当前 `reactor::Listener` 和 `luring::Listener`
 都满足 `coropact::io::AsyncListener`。
 
 ### Close preparation 与 committed Close
@@ -242,7 +242,7 @@ Stream，失败或取消时由该次 operation 回收。
 auto result = co_await stream.ReadSome(buffer);
 ```
 
-`ReactorStream` 的 `ReadSome` 和 `WriteAll` 都返回直接 awaiter；luring 的 `ReadSome` 返回
+`Stream` 的 `ReadSome` 和 `WriteAll` 都返回直接 awaiter；luring 的 `ReadSome` 返回
 直接 awaiter，而 `WriteAll` 以一个后端内建 `Task` 驱动多个内部 send request，以保留普通
 send 与 send-zc 的不同 completion/release 语义。`Shutdown()`、`Close()` 也可以返回 `Task`。
 
@@ -510,15 +510,15 @@ read 和 write 可以同时 pending；同方向的两个 operation 不能同时 
 
 ### I7：线程和执行器归属
 
-当前 ReactorStream、LUringStream、ReactorListener 和 LUringListener 都是 loop-bound：
+当前 Stream、Stream、Listener 和 Listener 都是 loop-bound：
 
 ```text
 对象创建、operation 提交、Close、析构和后端状态修改
 必须发生在对象所属的 loop 线程。
 ```
 
-`EventLoop::RunOnOwner` 和 `Schedule` 都要求调用者位于所属 loop
-线程；它们不提供跨线程投递能力。当前 `LUringLoop::Schedule` 也要求调用者位于 loop
+`Loop::RunOnOwner` 和 `Schedule` 都要求调用者位于所属 loop
+线程；它们不提供跨线程投递能力。当前 `Loop::Schedule` 也要求调用者位于 loop
 线程。跨 loop 投递需要单独的 mailbox/message 机制；`eventfd` 和 `msg_ring` 都不属于
 当前 CoreStream 契约。
 
@@ -765,7 +765,7 @@ WriteAll 后 Drain 已写出的字节。
 扩展 `RecvSource` 已明确提供 buffer 的所有权边界：luring 使用每 worker 共享的 provided
 buffer ring，Reactor 使用固定 buffer pool；每个 `RecvEvent` 携带一个 `BufferLease`，consumer
 必须在 source 销毁前释放它。buffer id、归还时机和 RAII 所有权不能隐藏在普通 `std::span`
-的成功结果里。`LUringOptions::shared_buffer_capacity` 配置该 worker 的聚合上限，buffer slot
+的成功结果里。`Options::shared_buffer_capacity` 配置该 worker 的聚合上限，buffer slot
 会随着 RecvSource 创建惰性发布；CQE 返回的
 buffer id 在这个共享 pool 内解释。`F_BUF_MORE` 增量 source 尚未接入当前 `RecvSource` 路径，
 registered fixed buffer 仍属于后续扩展。
@@ -805,8 +805,8 @@ ReadSomeFor(std::span<std::byte> buffer, time::Duration timeout)
 它由 `AsyncTimedReadStream` / `AsyncTimedStream` 明确表达。当前代码状态为：
 
 ```text
-ReactorStream 已提供 ReadSomeFor；
-LUringStream 也已提供 ReadSomeFor；
+Stream 已提供 ReadSomeFor；
+Stream 也已提供 ReadSomeFor；
 两者满足 io::AsyncTimedStream；
 kTimeout 只描述语义文档中的 timed extension，
 不扩张 AsyncStream 的最小 interface。
@@ -986,7 +986,7 @@ EOF、本地取消、连接失败、上游失败和超时。
 14. SplitRelease 的业务结果、恢复和 buffer/resource release 按各自授权边界发生。
 15. listener/source 的 `Stop()` 与 `Close()` 保持幂等，terminal `Next()` 保持 sticky；source Stop 的
     local cancel preparation failure 后仍可重试并最终收敛；
-16. loop 进入 `Stopping` 后，新的 `Accept()` 与 `AcceptSource()` 返回 `ECANCELED`。
+16. loop 进入 `Stopping` 后，新的 `Accept()` 与 `CreateAcceptSource()` 返回 `ECANCELED`。
 17. connector 保留成功、`EINVAL`、`ECONNREFUSED` 与 `ECANCELED` 的区别；
 18. 同一 connector 的并发 `Connect()` 具有独立结果、恢复授权和资源回收。
 19. `Connect()` 的 continuation 只在 `Result<Stream>` 已固定、fd 已转移给 stream 或关闭后才运行；

@@ -23,8 +23,8 @@ namespace coropact::luring::detail {
 
 namespace {
 
-coro::DetachedTask AcceptLoop(LUringWorkerContext& context,
-                               LUringWorker::ConnectionCallback* callback) {
+coro::DetachedTask AcceptLoop(WorkerContext& context,
+                               Worker::ConnectionCallback* callback) {
   while (true) {
     auto accepted = co_await context.listener.Accept();
     if (!accepted.has_value()) {
@@ -41,9 +41,9 @@ coro::DetachedTask AcceptLoop(LUringWorkerContext& context,
 }
 
 coro::DetachedTask MultishotAcceptLoop(
-    LUringWorkerContext& context,
-    LUringWorker::ConnectionCallback* callback) {
-  auto source_result = context.listener.AcceptSource({
+    WorkerContext& context,
+    Worker::ConnectionCallback* callback) {
+  auto source_result = context.listener.CreateAcceptSource({
       .pending_depth = 1,
       .event_capacity = 1024,
   });
@@ -73,17 +73,17 @@ coro::DetachedTask MultishotAcceptLoop(
   (void)stopped;
 }
 
-coro::DetachedTask CloseListener(LUringListener* listener,
+coro::DetachedTask CloseListener(Listener* listener,
                                  std::optional<Result<void>>* result) {
   result->emplace(co_await listener->Close());
 }
 
-void CloseListenerAfterLoopDrain(LUringLoop& loop, LUringListener& listener) noexcept {
+void CloseListenerAfterLoopDrain(Loop& loop, Listener& listener) noexcept {
   std::optional<Result<void>> close_result;
   coro::SpawnDetach(loop, CloseListener(&listener, &close_result));
   LoopAccess::RunReady(loop);
   COROPACT_CHECK(close_result.has_value(),
-                 "LUringLoop drain left listener Close coroutine pending");
+                 "Loop drain left listener Close coroutine pending");
 }
 
 Result<void> SetCurrentThreadAffinity(unsigned cpu) noexcept {
@@ -99,8 +99,8 @@ Result<void> SetCurrentThreadAffinity(unsigned cpu) noexcept {
 
 }  // namespace
 
-LUringWorker::LUringWorker(std::size_t index, net::Endpoint listen_addr,
-                           LUringWorkerOptions options, ThreadInitCallback init_callback,
+Worker::Worker(std::size_t index, net::Endpoint listen_addr,
+                           WorkerOptions options, ThreadInitCallback init_callback,
                            ConnectionCallback connection_callback, ThreadExitCallback exit_callback)
     : index_(index),
       listen_addr_(listen_addr),
@@ -109,9 +109,9 @@ LUringWorker::LUringWorker(std::size_t index, net::Endpoint listen_addr,
       connection_callback_(std::move(connection_callback)),
       exit_callback_(std::move(exit_callback)) {}
 
-LUringWorker::~LUringWorker() noexcept { Stop(); }
+Worker::~Worker() noexcept { Stop(); }
 
-Result<void> LUringWorker::Start() {
+Result<void> Worker::Start() {
   if (thread_.joinable()) {
     return std::unexpected(Errno(EALREADY));
   }
@@ -133,13 +133,13 @@ Result<void> LUringWorker::Start() {
   return start_result_;
 }
 
-void LUringWorker::Stop() noexcept {
+void Worker::Stop() noexcept {
   if (thread_.joinable()) {
     thread_.request_stop();
   }
 }
 
-void LUringWorker::WorkLoop(std::stop_token token) noexcept {
+void Worker::WorkLoop(std::stop_token token) noexcept {
   auto PublishStart = [this](Result<void> result) noexcept {
     {
       std::lock_guard lock{mutex_};
@@ -158,7 +158,7 @@ void LUringWorker::WorkLoop(std::stop_token token) noexcept {
   }
 
   coro::FrameAllocatorScope frame_scope{options_.frame_resource};
-  LUringLoop loop(options_.frame_resource);
+  Loop loop(options_.frame_resource);
 
   auto loop_init = loop.Init(options_.loop_options);
   if (!loop_init.has_value()) {
@@ -166,20 +166,20 @@ void LUringWorker::WorkLoop(std::stop_token token) noexcept {
     return;
   }
 
-  auto listener = LUringListener::Create(&loop, listen_addr_, options_.listen_options);
+  auto listener = Listener::Create(&loop, listen_addr_, options_.listen_options);
 
   if (!listener.has_value()) {
     PublishStart(std::unexpected(listener.error()));
     return;
   }
 
-  auto connector = LUringConnector::Create(&loop);
+  auto connector = Connector::Create(&loop);
   if (!connector.has_value()) {
     PublishStart(std::unexpected(connector.error()));
     return;
   }
 
-  LUringWorkerContext context{index_, loop, *listener, *connector};
+  WorkerContext context{index_, loop, *listener, *connector};
 
   if (init_callback_) {
     try {

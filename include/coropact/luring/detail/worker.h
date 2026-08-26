@@ -26,22 +26,22 @@ enum class AcceptMode : std::uint8_t {
   kMultishot,
 };
 
-struct LUringWorkerContext {
-  LUringWorkerContext(std::size_t index, LUringLoop& loop, LUringListener& listener,
-                      LUringConnector& connector) noexcept
+struct WorkerContext {
+  WorkerContext(std::size_t index, Loop& loop, Listener& listener,
+                      Connector& connector) noexcept
       : index(index), loop(loop), listener(listener), connector(connector) {}
 
-  COROPACT_DELETE_COPY_MOVE(LUringWorkerContext);
+  COROPACT_DELETE_COPY_MOVE(WorkerContext);
 
   const std::size_t index;
-  LUringLoop& loop;
-  LUringListener& listener;
-  LUringConnector& connector;
+  Loop& loop;
+  Listener& listener;
+  Connector& connector;
 };
 
-struct LUringWorkerOptions {
-  LUringOptions loop_options{};
-  LUringListenOptions listen_options{};
+struct WorkerOptions {
+  Options loop_options{};
+  ListenOptions listen_options{};
 
   // Selects the logical accept implementation used by the worker. The
   // multishot source preserves the same ConnectionCallback contract while
@@ -57,21 +57,21 @@ struct LUringWorkerOptions {
   std::optional<unsigned> cpu_affinity;
 };
 
-class LUringWorker {
+class Worker {
 public:
-  COROPACT_DELETE_COPY_MOVE(LUringWorker);
+  COROPACT_DELETE_COPY_MOVE(Worker);
 
-  using ThreadInitCallback = std::function<void(LUringWorkerContext&)>;
+  using ThreadInitCallback = std::function<void(WorkerContext&)>;
   // Runs on the worker thread after the loop has drained and before loop-bound
   // listener/connector resources are destroyed.
-  using ThreadExitCallback = std::function<void(LUringWorkerContext&)>;
+  using ThreadExitCallback = std::function<void(WorkerContext&)>;
   using ConnectionCallback =
-      std::function<coro::DetachedTask(LUringWorkerContext&, LUringStream)>;
+      std::function<coro::DetachedTask(WorkerContext&, Stream)>;
 
-  LUringWorker(std::size_t index, net::Endpoint listen_addr, LUringWorkerOptions options = {},
+  Worker(std::size_t index, net::Endpoint listen_addr, WorkerOptions options = {},
                ThreadInitCallback init_callback = {}, ConnectionCallback connection_callback = {},
                ThreadExitCallback exit_callback = {});
-  ~LUringWorker() noexcept;
+  ~Worker() noexcept;
 
   [[nodiscard]]
   Result<void> Start();
@@ -85,7 +85,7 @@ private:
 
   std::size_t index_;
   net::Endpoint listen_addr_;
-  LUringWorkerOptions options_;
+  WorkerOptions options_;
   ThreadInitCallback init_callback_;
   ConnectionCallback connection_callback_;
   ThreadExitCallback exit_callback_;

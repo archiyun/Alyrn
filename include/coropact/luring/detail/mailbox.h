@@ -11,34 +11,34 @@ namespace coropact::luring::detail {
 
 inline constexpr std::uint64_t kMsgRingNotificationUserData = 1;
 
-struct LUringMessage {
+struct Message {
   std::uint64_t data{0};
 };
 
-enum class LUringMailboxPushResult : std::uint8_t {
+enum class MailboxPushResult : std::uint8_t {
   kQueuedNeedsNotification,
   kQueued,
   kFull,
 };
 
-class LUringMailbox {
+class Mailbox {
 public:
   static constexpr std::size_t kCapacity = 1024;
-  using Queue = ds::MpscBoundedQueue<LUringMessage, kCapacity>;
+  using Queue = ds::MpscBoundedQueue<Message, kCapacity>;
 
   [[nodiscard]]
-  LUringMailboxPushResult Push(LUringMessage message) noexcept {
+  MailboxPushResult Push(Message message) noexcept {
     const auto result = queue_.TryPush(message);
 
     if (result == ds::MpscQueuePushResult::kFull) {
-      return LUringMailboxPushResult::kFull;
+      return MailboxPushResult::kFull;
     }
 
     if (notification_pending_.exchange(true, std::memory_order_acq_rel)) {
-      return LUringMailboxPushResult::kQueued;
+      return MailboxPushResult::kQueued;
     }
 
-    return LUringMailboxPushResult::kQueuedNeedsNotification;
+    return MailboxPushResult::kQueuedNeedsNotification;
   }
 
   [[nodiscard]]
@@ -57,7 +57,7 @@ public:
     std::size_t count = 0;
 
     for (;;) {
-      const std::size_t drained = queue_.Drain([&](LUringMessage message) {
+      const std::size_t drained = queue_.Drain([&](Message message) {
         handler(message);
         ++count;
       });

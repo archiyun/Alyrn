@@ -12,13 +12,13 @@
 #include <utility>
 
 #include "coropact/result.h"
-#include "coropact/kqueue/detail/kqueue_worker_group.h"
+#include "coropact/kqueue/detail/worker_group.h"
 
 namespace coropact::kqueue {
 
 namespace {
 
-using KqueueBuilder = Runtime::Builder<runtime::Kqueue>;
+using Builder = Runtime::Builder<runtime::Kqueue>;
 
 void WaitForStop(std::atomic_bool& stop_requested) noexcept {
   while (!stop_requested.load(std::memory_order_acquire)) {
@@ -27,16 +27,16 @@ void WaitForStop(std::atomic_bool& stop_requested) noexcept {
 }
 
 // Owns the kqueue worker group behind Runtime's cold lifecycle seam. The
-// accepted stream remains KqueueStream all the way to ConnectionHandler.
-class KqueueRuntimeControl final : public runtime::detail::RuntimeControl {
+// accepted stream remains Stream all the way to ConnectionHandler.
+class RuntimeControl final : public runtime::detail::RuntimeControl {
 public:
-  KqueueRuntimeControl(net::Endpoint listen_addr, std::size_t worker_count,
-                        KqueueBuilder::ConnectionHandler connection_handler) noexcept
+  RuntimeControl(net::Endpoint listen_addr, std::size_t worker_count,
+                        Builder::ConnectionHandler connection_handler) noexcept
       : listen_addr_(listen_addr),
         worker_count_(worker_count),
         connection_handler_(std::move(connection_handler)) {}
 
-  ~KqueueRuntimeControl() noexcept override { Stop(); }
+  ~RuntimeControl() noexcept override { Stop(); }
 
   Result<void> Start() override {
     {
@@ -51,15 +51,15 @@ public:
       state_ = LifecycleState::kStarting;
     }
 
-    detail::KqueueWorkerGroupOptions options;
+    detail::WorkerGroupOptions options;
     options.worker_num = worker_count_;
     options.worker_options.listener_options.reuse_port = false;
 
-    auto callback = [this](detail::KqueueWorkerContext&, KqueueStream stream) {
+    auto callback = [this](detail::WorkerContext&, Stream stream) {
       return connection_handler_(std::move(stream));
     };
-    auto workers = std::make_unique<detail::KqueueWorkerGroup>(
-        listen_addr_, std::move(options), detail::KqueueWorkerGroup::ThreadInitCallback{},
+    auto workers = std::make_unique<detail::WorkerGroup>(
+        listen_addr_, std::move(options), detail::WorkerGroup::ThreadInitCallback{},
         std::move(callback));
     auto started = workers->Start();
     if (!started.has_value()) {
@@ -105,7 +105,7 @@ public:
   }
 
   void Stop() noexcept override {
-    std::unique_ptr<detail::KqueueWorkerGroup> workers;
+    std::unique_ptr<detail::WorkerGroup> workers;
     {
       std::lock_guard lock{lifecycle_mutex_};
       if (state_ == LifecycleState::kCreated || state_ == LifecycleState::kStopped ||
@@ -142,9 +142,9 @@ private:
 
   net::Endpoint listen_addr_;
   std::size_t worker_count_;
-  KqueueBuilder::ConnectionHandler connection_handler_;
+  Builder::ConnectionHandler connection_handler_;
   mutable std::mutex lifecycle_mutex_;
-  std::unique_ptr<detail::KqueueWorkerGroup> workers_;
+  std::unique_ptr<detail::WorkerGroup> workers_;
   LifecycleState state_{LifecycleState::kCreated};
   std::atomic_bool stop_requested_{false};
 };
@@ -154,7 +154,7 @@ private:
 std::unique_ptr<runtime::detail::RuntimeControl> MakeRuntimeControl(
     net::Endpoint listen_addr, std::size_t worker_count,
     Runtime::Builder<runtime::Kqueue>::ConnectionHandler connection_handler) {
-  return std::make_unique<KqueueRuntimeControl>(listen_addr, worker_count,
+  return std::make_unique<RuntimeControl>(listen_addr, worker_count,
                                                  std::move(connection_handler));
 }
 

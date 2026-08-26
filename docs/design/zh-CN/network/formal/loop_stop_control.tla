@@ -5,7 +5,7 @@ EXTENDS Naturals
 (***************************************************************************
 (* Dispatcher stop control, deliberately separate from resource shutdown.  *)
 (*                                                                         *)
-(* This model captures the contract shared by EventLoop and LUringLoop:    *)
+(* This model captures the contract shared by Loop and Loop:    *)
 (*                                                                         *)
 (*   RequestStop is idempotent and changes dispatcher admission only.      *)
 (*   It may stop dispatch before application resources have been closed.   *)

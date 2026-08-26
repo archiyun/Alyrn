@@ -42,18 +42,18 @@ bool ExpectChildAbort(void (*entry)(), const char* message) {
 }
 
 void TakePendingIoState() {
-  coropact::reactor::detail::ReactorIoResultState state;
+  coropact::reactor::detail::IoResultState state;
   (void)state.Take();
 }
 
 void SetIoStateTwice() {
-  coropact::reactor::detail::ReactorIoResultState state;
+  coropact::reactor::detail::IoResultState state;
   state.SetSuccess(1);
   state.SetSuccess(2);
 }
 
 bool TestIoStateTakeConsumesResult() {
-  coropact::reactor::detail::ReactorIoResultState state;
+  coropact::reactor::detail::IoResultState state;
 
   state.SetSuccess(42);
   auto success = state.Take();

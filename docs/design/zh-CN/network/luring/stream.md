@@ -1,6 +1,6 @@
 # stream 操作
 
-`LUringStream` 是 loop-affine 的 TCP stream。它保持 backend-neutral 的
+`Stream` 是 loop-affine 的 TCP stream。它保持 backend-neutral 的
 `AsyncStream` 语义，但内部使用 io_uring 的 single-shot request；应用不需要处理 CQE。
 
 ## 可用操作
@@ -14,7 +14,7 @@
 | `Shutdown()` | `Task<Result<void>>` | 写方向 half-close；幂等，保留读方向，拒绝新写入 |
 | `Close()` | `Task<Result<void>>` | 等待关联 pending I/O 收敛后关闭 fd |
 
-所有 operation 都要求在 stream 所属 `LUringLoop` 线程上进入 `await_suspend()`。把 stream
+所有 operation 都要求在 stream 所属 `Loop` 线程上进入 `await_suspend()`。把 stream
 跨线程传给另一个 loop，或在 foreign thread 上调用操作，是 runtime contract violation。
 
 ## 单次读写

@@ -43,7 +43,7 @@ Runtime 是一次性生命周期对象：成功 `Start()` 后，`Stop()` 或 `Ru
 
 应用的默认路径不需要了解 worker bootstrap 或物理 I/O 策略，同时 backend seam 保持诚实：backend
 tag 在编译期选择实现，而不是用运行时 enum 抹平配置。需要手动控制 loop、timer、mailbox、`Post`、资源注册
-或能力选择的用户继续直接组合 `EventLoop`、`LUringLoop` 或 `KqueueLoop` 及其公开 adapter。
+或能力选择的用户继续直接组合 `reactor::Loop`、`luring::Loop` 或 `kqueue::Loop` 及其公开 adapter。
 
 不新增运行时 `Backend(...)` 配置、类型擦除的通用 stream handler、额外 Builder tuning 方法或 C++
 main 宏。未来只有在各后端长期拥有相同、已验证且无需削弱原生能力的应用级语义时，才重新评估
@@ -62,6 +62,6 @@ kqueue 的 Runtime smoke 在 `COROPACT_ENABLE_KQUEUE` 的 BSD/Darwin 构建中�
 
 第三个编译期 tag `runtime::Kqueue` 加入同一套 lifecycle interface，不改变本 ADR 的决策：
 backend 选择仍是编译期 tag，Runtime 仍只 type-erase cold start/stop。kqueue 的
-`Workers(n>1)` 拓扑是 master-slave（单 listener + `KqueueLoop::Post` 移交 fd），不是
+`Workers(n>1)` 拓扑是 master-slave（单 listener + `Loop::Post` 移交 fd），不是
 Reactor 的 `SO_REUSEPORT`，也不是 luring 的 thread-per-ring。这属于后端 bootstrap
 细节，不进入跨后端 Builder 开关。

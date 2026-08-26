@@ -5,7 +5,7 @@
 
 namespace coropact::luring {
 
-class LUringStream;
+class Stream;
 
 namespace detail {
 
@@ -21,18 +21,18 @@ enum class StreamOperationDirection : unsigned char {
 class StreamOperationSlot {
 public:
   [[nodiscard]]
-  static Result<void> Validate(LUringStream& stream,
+  static Result<void> Validate(Stream& stream,
                                      StreamOperationDirection direction) noexcept;
 
   [[nodiscard]]
-  static Result<void> ValidateAvailable(LUringStream& stream,
+  static Result<void> ValidateAvailable(Stream& stream,
                                               StreamOperationDirection direction) noexcept;
 
   [[nodiscard]]
-  static Result<void> Reserve(LUringStream& stream, StreamOperationDirection direction,
+  static Result<void> Reserve(Stream& stream, StreamOperationDirection direction,
                                     void* operation) noexcept;
 
-  static void Release(LUringStream& stream, StreamOperationDirection direction,
+  static void Release(Stream& stream, StreamOperationDirection direction,
                       void* operation) noexcept;
 };
 

@@ -25,15 +25,15 @@
 
 namespace coropact::luring {
 
-class LUringLoop;
-class LUringListener;
+class Loop;
+class Listener;
 
-struct LUringListenOptions {
+struct ListenOptions {
   bool reuse_addr{true};
   bool reuse_port{true};
   // Exposes the luring stream's explicit zero-copy send extension to generic
   // WriteAll(). It is opt-in; the physical single-send operation remains
-  // internal to LUringStream.
+  // internal to Stream.
   bool zero_copy_writes{false};
   int backlog{SOMAXCONN};
   // Number of accepts kept in flight by each worker. A value greater than one
@@ -41,18 +41,18 @@ struct LUringListenOptions {
   std::size_t accept_depth{4};
 };
 
-class LUringAcceptSource {
-  friend class LUringListener;
+class AcceptSource {
+  friend class Listener;
 
   friend detail::CompletionDisposition detail::DispatchAcceptSourceComplete(
-      detail::LUringOp* op, detail::CompletionEvent event) noexcept;
+      detail::Op* op, detail::CompletionEvent event) noexcept;
 
-  friend void detail::DispatchAcceptSourceCancelComplete(detail::LUringOp* op) noexcept;
+  friend void detail::DispatchAcceptSourceCancelComplete(detail::Op* op) noexcept;
 
 public:
-  COROPACT_DELETE_COPY(LUringAcceptSource);
+  COROPACT_DELETE_COPY(AcceptSource);
 
-  using Stream = LUringStream;
+  using StreamType = Stream;
   using Event = std::optional<Stream>;
   using NextResult = coropact::Result<Event>;
 
@@ -61,7 +61,7 @@ public:
   // child Task frame for each logical accept event.
   class NextAwaiter {
   public:
-    explicit NextAwaiter(LUringAcceptSource& source) noexcept : source_(&source) {}
+    explicit NextAwaiter(AcceptSource& source) noexcept : source_(&source) {}
 
     [[nodiscard]]
     bool await_ready() const noexcept {
@@ -75,16 +75,16 @@ public:
     void Complete(NextResult result) noexcept;
 
   private:
-    LUringAcceptSource* source_;
+    AcceptSource* source_;
     operation::detail::SchedulerContinuation continuation_;
     operation::detail::CompletionGate completion_gate_;
     backend::detail::ValueResultState<Event> result_;
   };
 
-  ~LUringAcceptSource();
+  ~AcceptSource();
 
-  LUringAcceptSource(LUringAcceptSource&& other) noexcept;
-  LUringAcceptSource& operator=(LUringAcceptSource&& other) noexcept;
+  AcceptSource(AcceptSource&& other) noexcept;
+  AcceptSource& operator=(AcceptSource&& other) noexcept;
 
   [[nodiscard]]
   NextAwaiter Next() noexcept {
@@ -95,47 +95,47 @@ public:
 private:
   class StopAwaiter;
 
-  class AcceptOperation final : public detail::LUringOp {
+  class AcceptOperation final : public detail::Op {
   public:
-    explicit AcceptOperation(LUringAcceptSource* source) noexcept : source_(source) {
-      kind = detail::LUringOpKind::kAcceptSourceComplete;
+    explicit AcceptOperation(AcceptSource* source) noexcept : source_(source) {
+      kind = detail::OpKind::kAcceptSourceComplete;
     }
 
     [[nodiscard]]
-    LUringAcceptSource* Source() const noexcept {
+    AcceptSource* Source() const noexcept {
       return source_;
     }
 
     void Prepare() noexcept {
-      kind = detail::LUringOpKind::kAcceptSourceComplete;
+      kind = detail::OpKind::kAcceptSourceComplete;
       BeginNextRequest();
     }
 
   private:
-    LUringAcceptSource* source_;
+    AcceptSource* source_;
   };
 
-  class CancelOperation final : public detail::LUringOp {
+  class CancelOperation final : public detail::Op {
   public:
-    explicit CancelOperation(LUringAcceptSource* source) noexcept : source_(source) {
-      kind = detail::LUringOpKind::kAcceptSourceCancelComplete;
+    explicit CancelOperation(AcceptSource* source) noexcept : source_(source) {
+      kind = detail::OpKind::kAcceptSourceCancelComplete;
     }
 
     [[nodiscard]]
-    LUringAcceptSource* Source() const noexcept {
+    AcceptSource* Source() const noexcept {
       return source_;
     }
 
     void Prepare() noexcept {
-      kind = detail::LUringOpKind::kAcceptSourceCancelComplete;
+      kind = detail::OpKind::kAcceptSourceCancelComplete;
       BeginNextRequest();
     }
 
   private:
-    LUringAcceptSource* source_;
+    AcceptSource* source_;
   };
 
-  LUringAcceptSource(LUringListener* listener,
+  AcceptSource(Listener* listener,
                      net::detail::AcceptSourceStateMachine state) noexcept;
 
   [[nodiscard]]
@@ -165,11 +165,11 @@ private:
   void ReleaseListenerReservation() noexcept;
 
   [[nodiscard]]
-  Result<LUringStream> MakeStream(int accepted_fd) noexcept;
+  Result<Stream> MakeStream(int accepted_fd) noexcept;
 
-  LUringListener* listener_{nullptr};
+  Listener* listener_{nullptr};
   net::detail::AcceptSourceStateMachine state_;
-  std::deque<LUringStream> events_;
+  std::deque<Stream> events_;
   std::optional<Error> terminal_error_;
 
   NextAwaiter* pending_next_{nullptr};
@@ -187,33 +187,33 @@ private:
   bool multishot_enabled_{true};
 };
 
-static_assert(backend::AsyncAcceptSource<LUringAcceptSource>);
+static_assert(backend::AsyncAcceptSource<AcceptSource>);
 
-class LUringListener {
-  friend class LUringAcceptSource;
-  friend void detail::DispatchAcceptComplete(detail::LUringOp* op) noexcept;
-  friend void detail::DispatchListenerCloseComplete(detail::LUringOp* op) noexcept;
+class Listener {
+  friend class AcceptSource;
+  friend void detail::DispatchAcceptComplete(detail::Op* op) noexcept;
+  friend void detail::DispatchListenerCloseComplete(detail::Op* op) noexcept;
 
 public:
-  COROPACT_DELETE_COPY(LUringListener);
+  COROPACT_DELETE_COPY(Listener);
 
-  using Stream = LUringStream;
+  using StreamType = Stream;
 
-  static Result<LUringListener> Create(LUringLoop* loop, const net::Endpoint& listen_addr,
-                                             LUringListenOptions options = {}) noexcept;
+  static Result<Listener> Create(Loop* loop, const net::Endpoint& listen_addr,
+                                             ListenOptions options = {}) noexcept;
 
-  ~LUringListener();
+  ~Listener();
 
-  LUringListener(LUringListener&& other) noexcept;
-  LUringListener& operator=(LUringListener&& other) noexcept;
+  Listener(Listener&& other) noexcept;
+  Listener& operator=(Listener&& other) noexcept;
 
-  // Accept, Close, and AcceptSource are loop-affine. Their coroutine or
-  // factory call must execute on this listener's owner LUringLoop; a foreign
+  // Accept, Close, and CreateAcceptSource are loop-affine. Their coroutine or
+  // factory call must execute on this listener's owner Loop; a foreign
   // thread is a runtime-contract violation checked in every build.
-  coro::Task<Result<LUringStream>> Accept();
+  coro::Task<Result<Stream>> Accept();
 
   [[nodiscard]]
-  Result<LUringAcceptSource> AcceptSource(net::AcceptSourceOptions options = {}) noexcept;
+  Result<AcceptSource> CreateAcceptSource(net::AcceptSourceOptions options = {}) noexcept;
 
   coro::Task<Result<void>> Close();
 
@@ -230,22 +230,22 @@ private:
   class CloseAwaiter;
 
   [[nodiscard]]
-  LUringListener(LUringLoop* loop, int fd, bool zero_copy_writes) noexcept;
+  Listener(Loop* loop, int fd, bool zero_copy_writes) noexcept;
 
   void RequireOwnerLoop() const noexcept;
   void NotifyCloseProgress() noexcept;
   void ResetForMove() noexcept;
-  static LUringLoop* PrepareMove(LUringListener& other) noexcept;
+  static Loop* PrepareMove(Listener& other) noexcept;
 
-  LUringLoop* loop_;
+  Loop* loop_;
   int fd_{-1};
   std::size_t pending_accepts_{0};
   CloseAwaiter* pending_close_{nullptr};
-  LUringAcceptSource* accept_source_{nullptr};
+  AcceptSource* accept_source_{nullptr};
   bool zero_copy_writes_{false};
   bool closed_{false};
 };
 
-static_assert(backend::AsyncListener<LUringListener>);
+static_assert(backend::AsyncListener<Listener>);
 
 }  // namespace coropact::luring

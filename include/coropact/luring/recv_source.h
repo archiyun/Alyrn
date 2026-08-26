@@ -24,12 +24,12 @@
 
 namespace coropact::luring {
 
-class LUringLoop;
+class Loop;
 namespace detail {
 class ProvidedBufferPool;
 }
 
-struct LUringRecvSourceOptions {
+struct RecvSourceOptions {
   net::RecvSourceOptions source{};
   std::size_t buffer_size{16 * 1024};
 
@@ -46,13 +46,13 @@ struct LUringRecvSourceOptions {
 // ring. The socket fd is borrowed and must outlive this source. The source
 // must remain alive until every BufferLease returned by Next() has been
 // released; Stop() waits for that lease boundary before completing.
-class LUringRecvSource final {
+class RecvSource final {
   friend detail::CompletionDisposition detail::DispatchRecvSourceComplete(
-      detail::LUringOp* op, detail::CompletionEvent event) noexcept;
-  friend void detail::DispatchRecvSourceCancelComplete(detail::LUringOp* op) noexcept;
+      detail::Op* op, detail::CompletionEvent event) noexcept;
+  friend void detail::DispatchRecvSourceCancelComplete(detail::Op* op) noexcept;
 
 public:
-  COROPACT_DELETE_COPY(LUringRecvSource);
+  COROPACT_DELETE_COPY(RecvSource);
 
   using Event = net::RecvEvent;
   using NextResult = coropact::Result<std::optional<Event>>;
@@ -62,7 +62,7 @@ public:
   // every received buffer.
   class NextAwaiter {
   public:
-    explicit NextAwaiter(LUringRecvSource& source) noexcept : source_(&source) {}
+    explicit NextAwaiter(RecvSource& source) noexcept : source_(&source) {}
 
     [[nodiscard]]
     bool await_ready() const noexcept {
@@ -76,20 +76,20 @@ public:
     void Complete(NextResult result) noexcept;
 
   private:
-    LUringRecvSource* source_;
+    RecvSource* source_;
     coro::ResumeWork resume_work_;
     operation::detail::CompletionGate completion_gate_;
     backend::detail::ValueResultState<std::optional<Event>> result_;
   };
 
   [[nodiscard]]
-  static Result<LUringRecvSource> Create(LUringLoop* loop, int fd,
-                                         LUringRecvSourceOptions options = {}) noexcept;
+  static Result<RecvSource> Create(Loop* loop, int fd,
+                                         RecvSourceOptions options = {}) noexcept;
 
-  ~LUringRecvSource();
+  ~RecvSource();
 
-  LUringRecvSource(LUringRecvSource&& other) noexcept;
-  LUringRecvSource& operator=(LUringRecvSource&& other) noexcept;
+  RecvSource(RecvSource&& other) noexcept;
+  RecvSource& operator=(RecvSource&& other) noexcept;
 
   [[nodiscard]]
   NextAwaiter Next() noexcept {
@@ -108,44 +108,44 @@ public:
 private:
   class StopAwaiter;
 
-  class RecvOperation final : public detail::LUringOp {
+  class RecvOperation final : public detail::Op {
   public:
-    explicit RecvOperation(LUringRecvSource* source) noexcept : source_(source) {
-      kind = detail::LUringOpKind::kRecvSourceComplete;
+    explicit RecvOperation(RecvSource* source) noexcept : source_(source) {
+      kind = detail::OpKind::kRecvSourceComplete;
     }
 
     [[nodiscard]]
-    LUringRecvSource* Source() const noexcept {
+    RecvSource* Source() const noexcept {
       return source_;
     }
 
     void Prepare() noexcept {
-      kind = detail::LUringOpKind::kRecvSourceComplete;
+      kind = detail::OpKind::kRecvSourceComplete;
       BeginNextRequest();
     }
 
   private:
-    LUringRecvSource* source_;
+    RecvSource* source_;
   };
 
-  class CancelOperation final : public detail::LUringOp {
+  class CancelOperation final : public detail::Op {
   public:
-    explicit CancelOperation(LUringRecvSource* source) noexcept : source_(source) {
-      kind = detail::LUringOpKind::kRecvSourceCancelComplete;
+    explicit CancelOperation(RecvSource* source) noexcept : source_(source) {
+      kind = detail::OpKind::kRecvSourceCancelComplete;
     }
 
     [[nodiscard]]
-    LUringRecvSource* Source() const noexcept {
+    RecvSource* Source() const noexcept {
       return source_;
     }
 
     void Prepare() noexcept {
-      kind = detail::LUringOpKind::kRecvSourceCancelComplete;
+      kind = detail::OpKind::kRecvSourceCancelComplete;
       BeginNextRequest();
     }
 
   private:
-    LUringRecvSource* source_;
+    RecvSource* source_;
   };
 
   struct PendingEvent {
@@ -159,7 +159,7 @@ private:
     bool kernel_done{false};
   };
 
-  LUringRecvSource(LUringLoop* loop, int fd, net::detail::RecvSourceStateMachine state,
+  RecvSource(Loop* loop, int fd, net::detail::RecvSourceStateMachine state,
                    std::size_t buffer_size, detail::ProvidedBufferPool* buffer_pool,
                    std::vector<PendingEvent> event_storage,
                    std::vector<SlotState> slot_storage) noexcept;
@@ -197,10 +197,10 @@ private:
   [[nodiscard]] net::BufferLease MakeLease(std::uint32_t buffer_id, std::size_t size) noexcept;
   void ReturnBuffer(std::uint32_t buffer_id) noexcept;
 
-  static void ValidateMovable(const LUringRecvSource& source) noexcept;
+  static void ValidateMovable(const RecvSource& source) noexcept;
   static void ReclaimBuffer(void* context, std::uint32_t buffer_id) noexcept;
 
-  LUringLoop* loop_{nullptr};
+  Loop* loop_{nullptr};
   int fd_{-1};
   net::detail::RecvSourceStateMachine state_;
   std::vector<PendingEvent> events_;
@@ -223,6 +223,6 @@ private:
   bool cancel_submitted_{false};
 };
 
-static_assert(backend::AsyncRecvSource<LUringRecvSource>);
+static_assert(backend::AsyncRecvSource<RecvSource>);
 
 }  // namespace coropact::luring

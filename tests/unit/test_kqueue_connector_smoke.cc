@@ -27,17 +27,17 @@ bool Check(bool condition, const char* message) {
   return true;
 }
 
-coropact::coro::DetachedTask ConnectOnce(coropact::kqueue::KqueueConnector* connector,
+coropact::coro::DetachedTask ConnectOnce(coropact::kqueue::Connector* connector,
                                          coropact::net::Endpoint peer,
-                                         coropact::kqueue::KqueueLoop* loop,
-                                         std::optional<coropact::Result<coropact::kqueue::KqueueStream>>* out) {
+                                         coropact::kqueue::Loop* loop,
+                                         std::optional<coropact::Result<coropact::kqueue::Stream>>* out) {
   out->emplace(co_await connector->Connect(peer));
   loop->RequestStop();
 }
 
 bool CheckConnectSuccess() {
-  coropact::kqueue::KqueueLoop loop;
-  auto listener = coropact::kqueue::KqueueListener::Create(&loop, coropact::net::Endpoint(0));
+  coropact::kqueue::Loop loop;
+  auto listener = coropact::kqueue::Listener::Create(&loop, coropact::net::Endpoint(0));
   if (!Check(listener.has_value(), "listener create failed")) {
     return false;
   }
@@ -46,8 +46,8 @@ bool CheckConnectSuccess() {
     return false;
   }
 
-  coropact::kqueue::KqueueConnector connector(&loop);
-  std::optional<coropact::Result<coropact::kqueue::KqueueStream>> result;
+  coropact::kqueue::Connector connector(&loop);
+  std::optional<coropact::Result<coropact::kqueue::Stream>> result;
   coropact::coro::SpawnDetach(loop, ConnectOnce(&connector, *address, &loop, &result));
   loop.Run();
 
@@ -55,9 +55,9 @@ bool CheckConnectSuccess() {
 }
 
 bool CheckConnectRejectsInvalidHost() {
-  coropact::kqueue::KqueueLoop loop;
-  coropact::kqueue::KqueueConnector connector(&loop);
-  std::optional<coropact::Result<coropact::kqueue::KqueueStream>> result;
+  coropact::kqueue::Loop loop;
+  coropact::kqueue::Connector connector(&loop);
+  std::optional<coropact::Result<coropact::kqueue::Stream>> result;
 
   coropact::coro::SpawnDetach(loop, ConnectOnce(&connector, coropact::net::Endpoint(1), &loop, &result));
   loop.Run();
@@ -67,13 +67,13 @@ bool CheckConnectRejectsInvalidHost() {
 }
 
 bool CheckConnectNullFactory() {
-  auto connector = coropact::kqueue::KqueueConnector::Create(nullptr);
+  auto connector = coropact::kqueue::Connector::Create(nullptr);
   return Check(!connector.has_value() && connector.error() == std::errc::invalid_argument,
                "connector factory accepted a null loop");
 }
 
-coropact::coro::DetachedTask SleepThenStop(coropact::kqueue::KqueueConnector* connector,
-                                           coropact::kqueue::KqueueLoop* loop, bool* resumed,
+coropact::coro::DetachedTask SleepThenStop(coropact::kqueue::Connector* connector,
+                                           coropact::kqueue::Loop* loop, bool* resumed,
                                            bool* scheduler_ok) {
   co_await connector->SleepFor(coropact::time::Milliseconds(10));
   *scheduler_ok = coropact::coro::Scheduler::TryCurrent() == loop;
@@ -82,8 +82,8 @@ coropact::coro::DetachedTask SleepThenStop(coropact::kqueue::KqueueConnector* co
 }
 
 bool CheckSleepForResumes() {
-  coropact::kqueue::KqueueLoop loop;
-  coropact::kqueue::KqueueConnector connector(&loop);
+  coropact::kqueue::Loop loop;
+  coropact::kqueue::Connector connector(&loop);
   bool resumed = false;
   bool scheduler_ok = false;
   bool timed_out = false;

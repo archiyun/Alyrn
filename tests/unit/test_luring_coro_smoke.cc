@@ -35,7 +35,7 @@ namespace {
 
 class NopAwaiter {
 public:
-  explicit NopAwaiter(coropact::luring::LUringLoop& loop) noexcept : loop_(&loop) {}
+  explicit NopAwaiter(coropact::luring::Loop& loop) noexcept : loop_(&loop) {}
 
   bool await_ready() const noexcept { return false; }
 
@@ -64,8 +64,8 @@ public:
   }
 
 private:
-  coropact::luring::LUringLoop* loop_;
-  coropact::luring::detail::LUringOp op_{coropact::luring::detail::LUringOpKind::kNop};
+  coropact::luring::Loop* loop_;
+  coropact::luring::detail::Op op_{coropact::luring::detail::OpKind::kNop};
   std::optional<coropact::Result<int>> result_;
 };
 
@@ -117,7 +117,7 @@ private:
 
 coropact::coro::DetachedTask AwaitCompletionQueue(
     coropact::operation::detail::SchedulerContinuation* continuation,
-    coropact::luring::LUringLoop* loop, std::string* order, bool* resumed_with_scheduler) {
+    coropact::luring::Loop* loop, std::string* order, bool* resumed_with_scheduler) {
   co_await SuspendOnContinuation(continuation);
   *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == loop;
   order->push_back('C');
@@ -133,7 +133,7 @@ bool CheckCompletionQueuePrecedesNormalReadyWork() {
   coropact::operation::detail::SchedulerContinuation continuation;
   AppendOrderWork normal_work{&order, 'N'};
 
-  coropact::luring::LUringLoop loop;
+  coropact::luring::Loop loop;
 
   coropact::coro::SpawnDetach(
       loop, AwaitCompletionQueue(&continuation, &loop, &order, &resumed_with_scheduler));
@@ -161,7 +161,7 @@ bool IsEnvironmentSkip(coropact::Error error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 
-coropact::coro::DetachedTask AwaitNop(coropact::luring::LUringLoop* loop,
+coropact::coro::DetachedTask AwaitNop(coropact::luring::Loop* loop,
                                       std::optional<coropact::Result<int>>* out,
                                       bool* resumed_with_scheduler) {
   auto result = co_await NopAwaiter(*loop);
@@ -170,9 +170,9 @@ coropact::coro::DetachedTask AwaitNop(coropact::luring::LUringLoop* loop,
 }
 
 bool CheckNopResumesCoroutine() {
-  coropact::luring::LUringLoop loop;
+  coropact::luring::Loop loop;
 
-  coropact::luring::LUringOptions options;
+  coropact::luring::Options options;
   options.entries = 8;
 
   auto init = loop.Init(options);
@@ -181,7 +181,7 @@ bool CheckNopResumesCoroutine() {
       std::cout << "SKIP: io_uring unavailable: " << init.error().message() << '\n';
       return true;
     }
-    std::cout << "FAIL: LUringLoop init failed: " << init.error().message() << '\n';
+    std::cout << "FAIL: Loop init failed: " << init.error().message() << '\n';
     return false;
   }
   if (!Check(loop.IsInLoopThread(), "loop should be bound to the creating thread")) {
@@ -235,8 +235,8 @@ bool CheckNopResumesCoroutine() {
 }
 
 bool CheckCrossThreadRequestStopWakesRing() {
-  coropact::luring::LUringLoop loop;
-  coropact::luring::LUringOptions options;
+  coropact::luring::Loop loop;
+  coropact::luring::Options options;
   options.entries = 8;
 
   auto init = loop.Init(options);
@@ -245,7 +245,7 @@ bool CheckCrossThreadRequestStopWakesRing() {
       std::cout << "SKIP: io_uring unavailable: " << init.error().message() << '\n';
       return true;
     }
-    std::cout << "FAIL: LUringLoop init failed: " << init.error().message() << '\n';
+    std::cout << "FAIL: Loop init failed: " << init.error().message() << '\n';
     return false;
   }
 
@@ -260,16 +260,16 @@ bool CheckCrossThreadRequestStopWakesRing() {
   const auto elapsed = std::chrono::steady_clock::now() - start;
 
   return Check(loop.State() == coropact::io::LoopState::kStopped,
-               "LUringLoop should reach stopped after RequestStop") &&
+               "Loop should reach stopped after RequestStop") &&
          Check(elapsed < std::chrono::seconds(1),
                "RequestStop should wake the io_uring wait promptly");
 }
 
 coropact::coro::DetachedTask AwaitPendingRead(
-    coropact::luring::LUringStream* stream, std::array<std::byte, 16>* buffer,
+    coropact::luring::Stream* stream, std::array<std::byte, 16>* buffer,
     std::optional<coropact::Result<std::size_t>>* result, bool* resumed_with_scheduler) {
   auto read = co_await stream->ReadSome(*buffer);
-  *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == stream->Loop();
+  *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == stream->OwnerLoop();
   result->emplace(std::move(read));
 }
 
@@ -286,8 +286,8 @@ bool RunLoopStopDrainScenario(StopDrainFailure injected_failure) {
     return false;
   }
 
-  coropact::luring::LUringLoop loop;
-  coropact::luring::LUringOptions options;
+  coropact::luring::Loop loop;
+  coropact::luring::Options options;
   options.entries = 8;
 
   auto init = loop.Init(options);
@@ -298,11 +298,11 @@ bool RunLoopStopDrainScenario(StopDrainFailure injected_failure) {
       std::cout << "SKIP: io_uring unavailable: " << init.error().message() << '\n';
       return true;
     }
-    std::cout << "FAIL: LUringLoop init failed: " << init.error().message() << '\n';
+    std::cout << "FAIL: Loop init failed: " << init.error().message() << '\n';
     return false;
   }
 
-  coropact::luring::LUringStream stream(&loop, fds[0], coropact::net::Endpoint(0));
+  coropact::luring::Stream stream(&loop, fds[0], coropact::net::Endpoint(0));
   std::array<std::byte, 16> buffer{};
   std::optional<coropact::Result<std::size_t>> result;
   bool resumed_with_scheduler = false;

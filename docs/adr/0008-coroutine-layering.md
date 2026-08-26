@@ -41,7 +41,7 @@ scheduler or I/O backend.
   embeds its `ResumeWork` and has no join state.
 - Promise and awaiter implementation details live under `coro/detail/`.
 - Reactor awaiters remain in the network adapter layer and may depend on
-  `EventLoop` and Reactor-specific operation state.
+  `Loop` and Reactor-specific operation state.
 - io_uring awaiters remain in the luring adapter layer and may depend on the
   ring runtime.
 - The dependency direction is one-way from lower primitives to concrete

@@ -18,11 +18,11 @@ class Runtime::Builder<runtime::Kqueue> {
 public:
   // Runtime transfers each accepted stream to the handler by value. The
   // detached handler coroutine owns that stream until it finishes.
-  using ConnectionHandler = std::function<coro::DetachedTask(kqueue::KqueueStream)>;
+  using ConnectionHandler = std::function<coro::DetachedTask(kqueue::Stream)>;
 
   explicit Builder(net::Endpoint listen_addr) noexcept;
 
-  // Selects independent KqueueLoop workers. One is the conservative default;
+  // Selects independent Loop workers. One is the conservative default;
   // AutoWorkers() is opt-in.
   Builder& Workers(std::size_t count) noexcept;
   Builder& AutoWorkers() noexcept;

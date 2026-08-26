@@ -15,7 +15,7 @@ namespace coropact::kqueue::detail {
 class Channel;
 
 /*
- * Readiness multiplexing for one KqueueLoop.
+ * Readiness multiplexing for one Loop.
  *
  * A kqueue registration is keyed by (ident, filter), so read and write
  * interest are two independent kevents for the same descriptor. This poller
@@ -28,14 +28,14 @@ class Channel;
  * loop because the loop already rejects foreign-thread calls before
  * delegating here.
  */
-class KqueuePoller final {
+class Poller final {
 public:
-  COROPACT_DELETE_COPY_MOVE(KqueuePoller);
+  COROPACT_DELETE_COPY_MOVE(Poller);
 
   using ChannelList = std::vector<Channel*>;
 
-  KqueuePoller();
-  ~KqueuePoller();
+  Poller();
+  ~Poller();
 
   // Waits for readiness and fills active_channels with the Channels that
   // became active. A Channel appears at most once even when both of its

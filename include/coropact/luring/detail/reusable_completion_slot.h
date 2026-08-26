@@ -11,7 +11,7 @@ namespace coropact::luring::detail {
 //
 // It rejects a duplicate terminal CQE and is reset only when the backend has
 // released the prior physical request. Coupled stream awaiters keep their
-// richer result/release/resume ordering in LUringOp's separate
+// richer result/release/resume ordering in Op's separate
 // SingleResultLifecycle; composite, source, and split-release operations own
 // their respective lifecycle state machines.
 class ReusableCompletionSlot {

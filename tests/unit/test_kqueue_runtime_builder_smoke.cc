@@ -105,7 +105,7 @@ bool WaitUntilStarted(Runtime& runtime) {
   return runtime.Started();
 }
 
-coro::DetachedTask HandleKqueue(kqueue::KqueueStream) { co_return; }
+coro::DetachedTask HandleKqueue(kqueue::Stream) { co_return; }
 
 static_assert(std::same_as<decltype(Runtime::Create<runtime::Kqueue>(
                               net::Endpoint::Loopback(0), HandleKqueue)),

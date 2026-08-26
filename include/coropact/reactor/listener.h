@@ -22,13 +22,13 @@
 
 namespace coropact::reactor {
 
-class ReactorListener;
+class Listener;
 
-class ReactorAcceptSource {
+class AcceptSource {
 public:
-  COROPACT_DELETE_COPY(ReactorAcceptSource);
+  COROPACT_DELETE_COPY(AcceptSource);
 
-  using Stream = ReactorStream;
+  using StreamType = Stream;
   using Event = std::optional<Stream>;
   using NextResult = coropact::Result<Event>;
 
@@ -37,7 +37,7 @@ public:
   // connection, while the source retains admission and terminal state.
   class NextAwaiter {
   public:
-    explicit NextAwaiter(ReactorAcceptSource& source) noexcept : source_(&source) {}
+    explicit NextAwaiter(AcceptSource& source) noexcept : source_(&source) {}
 
     [[nodiscard]]
     bool await_ready() const noexcept {
@@ -51,16 +51,16 @@ public:
     void Complete(NextResult result) noexcept;
 
   private:
-    ReactorAcceptSource* source_;
+    AcceptSource* source_;
     operation::detail::SchedulerContinuation continuation_;
     operation::detail::CompletionGate completion_gate_;
     backend::detail::ValueResultState<Event> result_;
   };
 
-  ~ReactorAcceptSource();
+  ~AcceptSource();
 
-  ReactorAcceptSource(ReactorAcceptSource&& other) noexcept;
-  ReactorAcceptSource& operator=(ReactorAcceptSource&& other) noexcept;
+  AcceptSource(AcceptSource&& other) noexcept;
+  AcceptSource& operator=(AcceptSource&& other) noexcept;
 
   [[nodiscard]]
   NextAwaiter Next() noexcept {
@@ -69,9 +69,9 @@ public:
   coro::Task<Result<void>> Stop();
 
 private:
-  friend class ReactorListener;
+  friend class Listener;
 
-  ReactorAcceptSource(ReactorListener* listener,
+  AcceptSource(Listener* listener,
                       net::detail::AcceptSourceStateMachine state) noexcept;
 
   void OnReady() noexcept;
@@ -82,82 +82,82 @@ private:
   bool TryTakeNext(NextResult& result) noexcept;
   void ReleaseListenerReservation() noexcept;
   void Fail(Error error) noexcept;
-  Result<ReactorStream> TryAccept() noexcept;
+  Result<Stream> TryAccept() noexcept;
 
-  ReactorListener* listener_{nullptr};
+  Listener* listener_{nullptr};
   net::detail::AcceptSourceStateMachine state_;
-  std::deque<ReactorStream> events_;
+  std::deque<Stream> events_;
   std::optional<Error> terminal_error_;
   NextAwaiter* pending_next_{nullptr};
 };
 
-static_assert(backend::AsyncAcceptSource<ReactorAcceptSource>);
+static_assert(backend::AsyncAcceptSource<AcceptSource>);
 
-struct ReactorListenerOptions {
+struct ListenerOptions {
   bool reuse_addr{true};
   bool reuse_port{false};
-  // Applies to every ReactorStream returned by Accept and AcceptSource.
-  ReactorStreamOptions stream_options{};
+  // Applies to every Stream returned by Accept and AcceptSource.
+  StreamOptions stream_options{};
 };
 
-class ReactorListener {
+class Listener {
 public:
-  COROPACT_DELETE_COPY(ReactorListener);
+  COROPACT_DELETE_COPY(Listener);
 
-  using Stream = ReactorStream;
+  using StreamType = Stream;
 
   [[nodiscard]]
-  static Result<ReactorListener> Create(EventLoop* loop, const net::Endpoint& listen_addr,
-                                              ReactorListenerOptions options = {}) noexcept;
+  static Result<Listener> Create(Loop* loop, const net::Endpoint& listen_addr,
+                                              ListenerOptions options = {}) noexcept;
 
-  ReactorListener(EventLoop* loop, const net::Endpoint& listen_addr,
-                  ReactorListenerOptions options = {});
-  ~ReactorListener();
+  Listener(Loop* loop, const net::Endpoint& listen_addr,
+                  ListenerOptions options = {});
+  ~Listener();
 
   // Moves are loop-affine: the source must be used from its owning loop
   // thread and must not have a pending accept operation.
-  ReactorListener(ReactorListener&& other) noexcept;
-  ReactorListener& operator=(ReactorListener&& other) noexcept;
+  Listener(Listener&& other) noexcept;
+  Listener& operator=(Listener&& other) noexcept;
 
-  coro::Task<Result<ReactorStream>> Accept();
+  coro::Task<Result<Stream>> Accept();
   [[nodiscard]]
-  Result<ReactorAcceptSource> AcceptSource(net::AcceptSourceOptions options = {}) noexcept;
+  Result<AcceptSource> CreateAcceptSource(net::AcceptSourceOptions options = {}) noexcept;
   coro::Task<Result<void>> Close();
 
-  // Accept, Close, AcceptSource, and destruction are loop-affine. The caller
-  // must use this listener from its owning EventLoop thread; a foreign thread
+  // Accept, Close, CreateAcceptSource, and destruction are loop-affine. The caller
+  // must use this listener from its owning Loop thread; a foreign thread
   // is a runtime-contract violation checked in every build configuration.
 
   [[nodiscard]]
   Result<net::Endpoint> LocalAddress() const;
 
 private:
-  friend class ReactorAcceptSource;
+  friend class AcceptSource;
 
   class AcceptAwaiter;
 
-  ReactorListener(EventLoop* loop, net::Socket socket,
-                  ReactorStreamOptions stream_options) noexcept;
+  Listener(Loop* loop, net::Socket socket,
+                  StreamOptions stream_options) noexcept;
 
   void HandleRead();
   void HandleError();
   static void DispatchRead(void* context) noexcept;
   static void DispatchError(void* context) noexcept;
-  void CompleteAccept(Result<ReactorStream> result);
+  void CompleteAccept(Result<Stream> result);
   void CloseNow() noexcept;
   void DetachChannel();
   void RequireOwnerLoop() const noexcept;
   void BindChannelCallbacks() noexcept;
   void ResetForMove() noexcept;
-  static EventLoop* PrepareMove(ReactorListener& other) noexcept;
+  static Loop* PrepareMove(Listener& other) noexcept;
   static void DispatchLoopStop(void* context) noexcept;
 
-  EventLoop* loop_;
+  Loop* loop_;
   net::Socket socket_;
   detail::Channel channel_;
-  ReactorStreamOptions stream_options_;
+  StreamOptions stream_options_;
   AcceptAwaiter* pending_accept_{nullptr};
-  ReactorAcceptSource* accept_source_{nullptr};
+  AcceptSource* accept_source_{nullptr};
   bool closed_{false};
   detail::LoopShutdownParticipant shutdown_participant_{this, &DispatchLoopStop};
 };

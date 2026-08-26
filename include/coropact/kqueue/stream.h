@@ -34,11 +34,11 @@ namespace coropact::kqueue {
  * a filter, delivery retires it, and the next await must re-arm. Timed reads
  * share the loop's user-space timer tree rather than a per-op kernel timer.
  */
-struct KqueueStreamOptions {
+struct StreamOptions {
   TriggerMode trigger_mode{TriggerMode::kOneShot};
 };
 
-class KqueueStream {
+class Stream {
 private:
   class ReadSomeAwaiter;
   class ReadIntoAwaiter;
@@ -46,14 +46,14 @@ private:
   class WriteAllAwaiter;
 
 public:
-  COROPACT_DELETE_COPY(KqueueStream);
+  COROPACT_DELETE_COPY(Stream);
 
-  KqueueStream(KqueueLoop* loop, int fd, net::Endpoint peer = net::Endpoint(0),
-               KqueueStreamOptions options = {});
-  ~KqueueStream();
+  Stream(Loop* loop, int fd, net::Endpoint peer = net::Endpoint(0),
+               StreamOptions options = {});
+  ~Stream();
 
-  KqueueStream(KqueueStream&& other) noexcept;
-  KqueueStream& operator=(KqueueStream&& other) noexcept;
+  Stream(Stream&& other) noexcept;
+  Stream& operator=(Stream&& other) noexcept;
 
   [[nodiscard]]
   ReadSomeAwaiter ReadSome(std::span<std::byte> buffer) noexcept;
@@ -77,12 +77,12 @@ public:
   }
 
   [[nodiscard]]
-  KqueueLoop* Loop() const noexcept {
+  Loop* OwnerLoop() const noexcept {
     return loop_;
   }
 
   // Detaches this stream from its loop and returns the descriptor. The
-  // caller must reconstruct a KqueueStream on the destination loop; this is
+  // caller must reconstruct a Stream on the destination loop; this is
   // the master-slave handoff seam and is owner-thread-only.
   [[nodiscard]]
   int Release() noexcept;
@@ -92,10 +92,10 @@ private:
   using LoopShutdownParticipant = detail::LoopShutdownParticipant;
   using SchedulerContinuation = operation::detail::SchedulerContinuation;
   using SingleResultLifecycle = operation::detail::SingleResultLifecycle;
-  using IoResultState = detail::KqueueIoResultState;
+  using IoResultState = detail::IoResultState;
 
   template <class Awaiter>
-  using OperationHook = detail::KqueueOperationHook<Awaiter>;
+  using OperationHook = detail::OperationHook<Awaiter>;
 
   void HandleRead();
   void HandleWrite();
@@ -114,10 +114,10 @@ private:
   void RequireOwnerLoop() const noexcept;
   void BindChannelCallbacks() noexcept;
   void ResetForMove() noexcept;
-  static KqueueLoop* PrepareMove(KqueueStream& other) noexcept;
+  static Loop* PrepareMove(Stream& other) noexcept;
   static void DispatchLoopStop(void* context) noexcept;
 
-  KqueueLoop* loop_;
+  Loop* loop_;
   net::Socket socket_;
   Channel channel_;
   net::Endpoint peer_;
@@ -133,7 +133,7 @@ private:
   LoopShutdownParticipant shutdown_participant_{this, &DispatchLoopStop};
 };
 
-class KqueueStream::ReadAwaiterState {
+class Stream::ReadAwaiterState {
 public:
   [[nodiscard]]
   bool TryAuthorizeRelease() noexcept;
@@ -142,7 +142,7 @@ public:
   void ScheduleContinuation() noexcept;
 
 protected:
-  explicit ReadAwaiterState(KqueueStream& stream) noexcept : stream_(&stream) {}
+  explicit ReadAwaiterState(Stream& stream) noexcept : stream_(&stream) {}
 
   [[nodiscard]]
   bool BeginRead(std::coroutine_handle<> continuation) noexcept;
@@ -160,18 +160,18 @@ protected:
   [[nodiscard]]
   Result<std::size_t> TakeResult() noexcept;
 
-  KqueueStream* stream_;
+  Stream* stream_;
   SchedulerContinuation continuation_;
   SingleResultLifecycle lifecycle_;
   IoResultState result_;
 };
 
-class KqueueStream::ReadSomeAwaiter final : public ReadAwaiterState,
-                                            public OperationHook<KqueueStream::ReadSomeAwaiter> {
+class Stream::ReadSomeAwaiter final : public ReadAwaiterState,
+                                            public OperationHook<Stream::ReadSomeAwaiter> {
 public:
   COROPACT_DELETE_COPY_MOVE(ReadSomeAwaiter);
 
-  ReadSomeAwaiter(KqueueStream& stream, std::span<std::byte> buffer,
+  ReadSomeAwaiter(Stream& stream, std::span<std::byte> buffer,
                   time::Duration timeout = time::Duration::zero()) noexcept
       : ReadAwaiterState(stream), buffer_(buffer), timeout_(timeout) {}
 
@@ -194,11 +194,11 @@ private:
   time::TimerId timer_{};
 };
 
-class KqueueStream::WriteAllAwaiter final : public OperationHook<KqueueStream::WriteAllAwaiter> {
+class Stream::WriteAllAwaiter final : public OperationHook<Stream::WriteAllAwaiter> {
 public:
   COROPACT_DELETE_COPY_MOVE(WriteAllAwaiter);
 
-  WriteAllAwaiter(KqueueStream& stream, std::span<const std::byte> buffer) noexcept
+  WriteAllAwaiter(Stream& stream, std::span<const std::byte> buffer) noexcept
       : stream_(&stream), buffer_(buffer) {}
 
   [[nodiscard]]
@@ -210,7 +210,7 @@ public:
   Result<void> await_resume() noexcept;
 
 private:
-  friend class KqueueStream;
+  friend class Stream;
   friend OperationHook<WriteAllAwaiter>;
 
   void CompleteInline(Result<std::size_t> result) noexcept;
@@ -220,19 +220,19 @@ private:
   void ScheduleContinuation() noexcept;
   void OnReadyImpl() noexcept;
 
-  KqueueStream* stream_;
+  Stream* stream_;
   std::span<const std::byte> buffer_;
   SchedulerContinuation continuation_;
   SingleResultLifecycle lifecycle_;
   IoResultState result_;
 };
 
-class KqueueStream::ReadIntoAwaiter : public ReadAwaiterState,
-                                      public OperationHook<KqueueStream::ReadIntoAwaiter> {
+class Stream::ReadIntoAwaiter : public ReadAwaiterState,
+                                      public OperationHook<Stream::ReadIntoAwaiter> {
 public:
   COROPACT_DELETE_COPY_MOVE(ReadIntoAwaiter);
 
-  ReadIntoAwaiter(KqueueStream& stream, net::Buffer buffer, std::size_t reserve) noexcept;
+  ReadIntoAwaiter(Stream& stream, net::Buffer buffer, std::size_t reserve) noexcept;
 
   [[nodiscard]]
   bool await_ready() const noexcept {

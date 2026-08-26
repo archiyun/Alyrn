@@ -154,14 +154,14 @@ if(COROPACT_HAS_EPOLL)
     add_library(coropact_reactor STATIC
         src/reactor/channel.cc
         src/reactor/epoll_poller.cc
-        src/reactor/event_loop.cc
+        src/reactor/loop.cc
         src/reactor/poller.cc
-        src/reactor/reactor_connect.cc
-        src/reactor/reactor_listener.cc
-        src/reactor/reactor_recv_source.cc
-        src/reactor/reactor_stream.cc
-        src/reactor/reactor_worker.cc
-        src/reactor/reactor_worker_group.cc
+        src/reactor/connector.cc
+        src/reactor/listener.cc
+        src/reactor/recv_source.cc
+        src/reactor/stream.cc
+        src/reactor/worker.cc
+        src/reactor/worker_group.cc
         src/reactor/runtime.cc
         src/reactor/timer_queue.cc
     )
@@ -191,13 +191,13 @@ endif()
 if(COROPACT_ENABLE_KQUEUE)
     add_library(coropact_kqueue STATIC
         src/kqueue/channel.cc
-        src/kqueue/kqueue_connect.cc
-        src/kqueue/kqueue_listener.cc
-        src/kqueue/kqueue_poller.cc
-        src/kqueue/kqueue_recv_source.cc
-        src/kqueue/kqueue_stream.cc
-        src/kqueue/kqueue_worker.cc
-        src/kqueue/kqueue_worker_group.cc
+        src/kqueue/connector.cc
+        src/kqueue/listener.cc
+        src/kqueue/poller.cc
+        src/kqueue/recv_source.cc
+        src/kqueue/stream.cc
+        src/kqueue/worker.cc
+        src/kqueue/worker_group.cc
         src/kqueue/loop.cc
         src/kqueue/runtime.cc
         src/kqueue/timer_queue.cc

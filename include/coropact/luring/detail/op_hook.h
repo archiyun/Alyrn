@@ -5,25 +5,25 @@
 
 namespace coropact::luring::detail {
 
-// A typed view over the LUringOp base subobject embedded in an owner.
+// A typed view over the Op base subobject embedded in an owner.
 //
-// The io_uring user_data still carries the non-template LUringOp pointer.
+// The io_uring user_data still carries the non-template Op pointer.
 // Completion handlers downcast it to the exact tagged hook that was submitted,
 // then use the real base relationship to recover the owner. This is the same
 // invariant used by the intrusive data structures: the pointer must name the
 // matching base subobject, and inheritance must be public and non-virtual.
 template <typename TOwner, typename Tag = void>
-class LUringOpHook : public LUringOp {
+class OpHook : public Op {
 public:
-  explicit LUringOpHook(LUringOpKind kind) noexcept { this->kind = kind; }
+  explicit OpHook(OpKind kind) noexcept { this->kind = kind; }
 
   [[nodiscard]]
-  LUringOp* Op() noexcept {
+  Op* Operation() noexcept {
     return this;
   }
 
   [[nodiscard]]
-  const LUringOp* Op() const noexcept {
+  const Op* Operation() const noexcept {
     return this;
   }
 
@@ -38,16 +38,16 @@ public:
   }
 
   [[nodiscard]]
-  static TOwner* OwnerFrom(LUringOp* op) noexcept {
-    return static_cast<LUringOpHook*>(op)->Owner();
+  static TOwner* OwnerFrom(Op* op) noexcept {
+    return static_cast<OpHook*>(op)->Owner();
   }
 
   [[nodiscard]]
-  static const TOwner* OwnerFrom(const LUringOp* op) noexcept {
-    return static_cast<const LUringOpHook*>(op)->Owner();
+  static const TOwner* OwnerFrom(const Op* op) noexcept {
+    return static_cast<const OpHook*>(op)->Owner();
   }
 };
 
-static_assert(sizeof(LUringOpHook<LUringOp>) == sizeof(LUringOp));
+static_assert(sizeof(OpHook<Op>) == sizeof(Op));
 
 }  // namespace coropact::luring::detail

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "coropact/kqueue/detail/kqueue_poller.h"
+#include "coropact/kqueue/detail/poller.h"
 
 #include <fcntl.h>
 #include <sys/time.h>
@@ -65,21 +65,21 @@ std::uint16_t ArmFlagsFor(TriggerMode mode) {
 
 }  // namespace
 
-KqueuePoller::KqueuePoller() : kqfd_(::kqueue()), events_(kInitEventListSize) {
-  COROPACT_CHECK(kqfd_ >= 0, "KqueuePoller: kqueue creation failed");
+Poller::Poller() : kqfd_(::kqueue()), events_(kInitEventListSize) {
+  COROPACT_CHECK(kqfd_ >= 0, "Poller: kqueue creation failed");
   /* kqueue descriptors are not inherited across fork, but exec still needs
    * an explicit close-on-exec because kqueue() takes no flags argument. */
   COROPACT_CHECK(::fcntl(kqfd_, F_SETFD, FD_CLOEXEC) == 0,
-                 "KqueuePoller: failed to set FD_CLOEXEC");
+                 "Poller: failed to set FD_CLOEXEC");
 }
 
-KqueuePoller::~KqueuePoller() {
+Poller::~Poller() {
   if (kqfd_ >= 0) {
     ::close(kqfd_);
   }
 }
 
-void KqueuePoller::Poll(int timeout_ms, ChannelList* active_channels) {
+void Poller::Poll(int timeout_ms, ChannelList* active_channels) {
   timer_expired_this_poll_ = false;
 
   struct timespec timeout{};
@@ -99,11 +99,11 @@ void KqueuePoller::Poll(int timeout_ms, ChannelList* active_channels) {
       events_.resize(events_.size() * 2);
     }
   } else if (num_events < 0 && saved_errno != EINTR) {
-    COROPACT_CHECK(false, "KqueuePoller: kevent wait failed");
+    COROPACT_CHECK(false, "Poller: kevent wait failed");
   }
 }
 
-void KqueuePoller::FillActiveChannels(int num_events, ChannelList* active_channels) {
+void Poller::FillActiveChannels(int num_events, ChannelList* active_channels) {
   ++poll_epoch_;
   active_channels->reserve(active_channels->size() + static_cast<std::size_t>(num_events));
 
@@ -113,7 +113,7 @@ void KqueuePoller::FillActiveChannels(int num_events, ChannelList* active_channe
     /* No changelist is submitted with the wait above, so EV_ERROR here would
      * mean the kernel rejected a change this poller never sent. */
     COROPACT_CHECK(!static_cast<bool>(event.flags & EV_ERROR),
-                   "KqueuePoller: kevent reported EV_ERROR during wait");
+                   "Poller: kevent reported EV_ERROR during wait");
 
     /* EVFILT_TIMER is keyed by a dedicated ident, not a Channel fd. The
      * oneshot is already gone from the kernel; remember that so DisarmTimer
@@ -160,7 +160,7 @@ void KqueuePoller::FillActiveChannels(int num_events, ChannelList* active_channe
  * is exactly the right starting point for the diff below: nothing is
  * registered yet, so every wanted filter needs an EV_ADD.
  */
-void KqueuePoller::UpdateChannel(Channel* channel) {
+void Poller::UpdateChannel(Channel* channel) {
   Registration& registration = registrations_[channel->Fd()];
   registration.channel = channel;
 
@@ -196,7 +196,7 @@ void KqueuePoller::UpdateChannel(Channel* channel) {
   registration.mode = want_mode;
 }
 
-void KqueuePoller::RetireOneShot(Registration& registration, Channel* channel,
+void Poller::RetireOneShot(Registration& registration, Channel* channel,
                                  std::int16_t filter) {
   if (filter == EVFILT_READ) {
     registration.read_enabled = false;
@@ -207,7 +207,7 @@ void KqueuePoller::RetireOneShot(Registration& registration, Channel* channel,
   }
 }
 
-void KqueuePoller::RemoveChannel(Channel* channel) {
+void Poller::RemoveChannel(Channel* channel) {
   const auto entry = registrations_.find(channel->Fd());
   if (entry == registrations_.end()) {
     return;
@@ -227,12 +227,12 @@ void KqueuePoller::RemoveChannel(Channel* channel) {
   registrations_.erase(entry);
 }
 
-bool KqueuePoller::HasChannel(Channel* channel) const {
+bool Poller::HasChannel(Channel* channel) const {
   const auto entry = registrations_.find(channel->Fd());
   return entry != registrations_.end() && entry->second.channel == channel;
 }
 
-void KqueuePoller::ApplyChange(Channel* channel, std::int16_t filter, std::uint16_t flags) {
+void Poller::ApplyChange(Channel* channel, std::int16_t filter, std::uint16_t flags) {
   struct kevent change{};
   EV_SET(&change, static_cast<std::uintptr_t>(channel->Fd()), filter, flags, 0, 0, channel);
 
@@ -240,16 +240,16 @@ void KqueuePoller::ApplyChange(Channel* channel, std::int16_t filter, std::uint1
    * value instead of an EV_ERROR record, so a rejected change cannot be
    * mistaken for a descriptor condition later. */
   if (::kevent(kqfd_, &change, 1, nullptr, 0, nullptr) < 0) {
-    COROPACT_CHECK(false, "KqueuePoller: kevent change failed");
+    COROPACT_CHECK(false, "Poller: kevent change failed");
   }
 }
 
-void KqueuePoller::SetTimerExpireHandler(TimerExpireHandler handler, void* context) noexcept {
+void Poller::SetTimerExpireHandler(TimerExpireHandler handler, void* context) noexcept {
   timer_expire_handler_ = handler;
   timer_expire_context_ = context;
 }
 
-void KqueuePoller::ArmOneShotTimer(std::int64_t nsec) {
+void Poller::ArmOneShotTimer(std::int64_t nsec) {
   if (nsec < kMinTimerNsec) {
     nsec = kMinTimerNsec;
   }
@@ -279,7 +279,7 @@ void KqueuePoller::ArmOneShotTimer(std::int64_t nsec) {
   timer_armed_ = true;
 }
 
-void KqueuePoller::DisarmTimer() {
+void Poller::DisarmTimer() {
   if (!timer_armed_) {
     return;
   }
@@ -287,7 +287,7 @@ void KqueuePoller::DisarmTimer() {
   timer_armed_ = false;
 }
 
-void KqueuePoller::DispatchTimerExpire() {
+void Poller::DispatchTimerExpire() {
   if (!timer_expired_this_poll_) {
     return;
   }
@@ -297,7 +297,7 @@ void KqueuePoller::DispatchTimerExpire() {
   }
 }
 
-void KqueuePoller::ApplyTimerChange(std::uint16_t flags, std::uint32_t fflags, intptr_t data) {
+void Poller::ApplyTimerChange(std::uint16_t flags, std::uint32_t fflags, intptr_t data) {
   struct kevent change{};
   EV_SET(&change, kTimerIdent, EVFILT_TIMER, flags, fflags, data, nullptr);
 
@@ -305,7 +305,7 @@ void KqueuePoller::ApplyTimerChange(std::uint16_t flags, std::uint32_t fflags, i
     if (static_cast<bool>(flags & EV_DELETE) && errno == ENOENT) {
       return;
     }
-    COROPACT_CHECK(false, "KqueuePoller: EVFILT_TIMER change failed");
+    COROPACT_CHECK(false, "Poller: EVFILT_TIMER change failed");
   }
 }
 

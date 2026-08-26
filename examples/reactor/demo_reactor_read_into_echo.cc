@@ -34,7 +34,7 @@ namespace {
 constexpr std::uint16_t kPort = 19091;
 constexpr std::size_t kReadReserve = 4096;
 
-auto EchoSession(reactor::ReactorStream stream) -> coro::DetachedTask {
+auto EchoSession(reactor::Stream stream) -> coro::DetachedTask {
   io::Buffer buffer{kReadReserve};
 
   for (;;) {
@@ -76,7 +76,7 @@ auto EchoSession(reactor::ReactorStream stream) -> coro::DetachedTask {
   }
 }
 
-auto AcceptLoop(reactor::EventLoop& loop, reactor::ReactorListener& listener)
+auto AcceptLoop(reactor::Loop& loop, reactor::Listener& listener)
     -> coro::DetachedTask {
   for (;;) {
     auto accepted = co_await listener.Accept();
@@ -94,9 +94,9 @@ auto AcceptLoop(reactor::EventLoop& loop, reactor::ReactorListener& listener)
 auto main() -> int {
   std::signal(SIGPIPE, SIG_IGN);
 
-  reactor::EventLoop loop;
+  reactor::Loop loop;
 
-  auto listener_result = reactor::ReactorListener::Create(&loop, net::Endpoint::Loopback(kPort));
+  auto listener_result = reactor::Listener::Create(&loop, net::Endpoint::Loopback(kPort));
   if (!listener_result.has_value()) {
     std::println(stderr, "listener create failed: {}", listener_result.error().message());
     return 1;

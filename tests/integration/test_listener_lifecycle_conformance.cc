@@ -35,14 +35,14 @@ namespace {
 
 using VoidResult = coropact::Result<void>;
 
-static_assert(coropact::backend::AsyncAcceptSource<coropact::reactor::ReactorAcceptSource>);
+static_assert(coropact::backend::AsyncAcceptSource<coropact::reactor::AcceptSource>);
 static_assert(coropact::coro::Awaiter<
-              decltype(std::declval<coropact::reactor::ReactorAcceptSource&>().Next())>);
+              decltype(std::declval<coropact::reactor::AcceptSource&>().Next())>);
 
 #if defined(COROPACT_ENABLE_URING)
-static_assert(coropact::backend::AsyncAcceptSource<coropact::luring::LUringAcceptSource>);
+static_assert(coropact::backend::AsyncAcceptSource<coropact::luring::AcceptSource>);
 static_assert(coropact::coro::Awaiter<
-              decltype(std::declval<coropact::luring::LUringAcceptSource&>().Next())>);
+              decltype(std::declval<coropact::luring::AcceptSource&>().Next())>);
 #endif
 
 bool Expect(bool condition, std::string_view backend, std::string_view message) {
@@ -53,10 +53,10 @@ bool Expect(bool condition, std::string_view backend, std::string_view message) 
   return false;
 }
 
-struct ReactorHarness {
-  using Loop = coropact::reactor::EventLoop;
-  using Listener = coropact::reactor::ReactorListener;
-  using Source = coropact::reactor::ReactorAcceptSource;
+struct EpollHarness {
+  using Loop = coropact::reactor::Loop;
+  using Listener = coropact::reactor::Listener;
+  using Source = coropact::reactor::AcceptSource;
 
   static constexpr std::string_view Name() noexcept { return "Reactor"; }
   static bool Init(Loop&) noexcept { return true; }
@@ -76,15 +76,15 @@ struct ReactorHarness {
 };
 
 #if defined(COROPACT_ENABLE_URING)
-struct LUringHarness {
-  using Loop = coropact::luring::LUringLoop;
-  using Listener = coropact::luring::LUringListener;
-  using Source = coropact::luring::LUringAcceptSource;
+struct UringHarness {
+  using Loop = coropact::luring::Loop;
+  using Listener = coropact::luring::Listener;
+  using Source = coropact::luring::AcceptSource;
 
   static constexpr std::string_view Name() noexcept { return "io_uring"; }
 
   static bool Init(Loop& loop) noexcept {
-    coropact::luring::LUringOptions options;
+    coropact::luring::Options options;
     options.entries = 32;
     auto initialized = loop.Init(options);
     if (initialized.has_value()) {
@@ -143,7 +143,7 @@ bool PrepareLoopAndListener(typename Harness::Loop& loop,
 
 template <class Listener>
 struct PendingAcceptCloseObservation {
-  using AcceptResult = coropact::Result<typename Listener::Stream>;
+  using AcceptResult = coropact::Result<typename Listener::StreamType>;
 
   std::optional<AcceptResult> accept;
   std::optional<VoidResult> close;
@@ -231,7 +231,7 @@ auto ObserveClosedListener(Listener& listener, Loop& loop, ClosedListenerObserva
   observation.accept_rejected =
       !accepted.has_value() && accepted.error() == std::errc::bad_file_descriptor;
 
-  auto source = listener.AcceptSource();
+  auto source = listener.CreateAcceptSource();
   observation.source_rejected =
       !source.has_value() && source.error() == std::errc::bad_file_descriptor;
 
@@ -284,7 +284,7 @@ auto ObserveListenerAfterStopRequest(Listener& listener, Loop& loop,
   observation.accept_rejected =
       !accepted.has_value() && accepted.error() == std::errc::operation_canceled;
 
-  auto source = listener.AcceptSource();
+  auto source = listener.CreateAcceptSource();
   observation.source_rejected =
       !source.has_value() && source.error() == std::errc::operation_canceled;
   observation.resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
@@ -356,7 +356,7 @@ bool CheckSourceStopContract() {
     return Harness::Skip();
   }
 
-  auto source_result = listener->AcceptSource();
+  auto source_result = listener->CreateAcceptSource();
   if (!source_result.has_value()) {
     std::cerr << "FAIL [" << Harness::Name()
               << "]: AcceptSource creation: " << source_result.error().message() << '\n';
@@ -423,7 +423,7 @@ bool CheckTerminalNextAfterLoopStopContract() {
     return Harness::Skip();
   }
 
-  auto source_result = listener->AcceptSource();
+  auto source_result = listener->CreateAcceptSource();
   if (!source_result.has_value()) {
     std::cerr << "FAIL [" << Harness::Name()
               << "]: AcceptSource creation: " << source_result.error().message() << '\n';
@@ -492,7 +492,7 @@ bool CheckListenerCloseSourceContract() {
     return Harness::Skip();
   }
 
-  auto source_result = listener->AcceptSource();
+  auto source_result = listener->CreateAcceptSource();
   if (!source_result.has_value()) {
     std::cerr << "FAIL [" << Harness::Name()
               << "]: AcceptSource creation: " << source_result.error().message() << '\n';
@@ -556,7 +556,7 @@ void CloseClients(std::array<int, 4>& clients) noexcept {
 
 template <class Listener>
 struct SequentialAcceptObservation {
-  using AcceptResult = coropact::Result<typename Listener::Stream>;
+  using AcceptResult = coropact::Result<typename Listener::StreamType>;
 
   std::array<int, 4> clients{-1, -1, -1, -1};
   std::optional<AcceptResult> first;
@@ -705,7 +705,7 @@ bool CheckAcceptSourceAdmissionTrace() {
     return Harness::Skip();
   }
 
-  auto source_result = listener->AcceptSource({
+  auto source_result = listener->CreateAcceptSource({
       .pending_depth = 1,
       .event_capacity = 2,
       .resume_threshold = 1,
@@ -782,7 +782,7 @@ bool CheckAcceptSourceStopDrainsBurstContract() {
     return Harness::Skip();
   }
 
-  auto source_result = listener->AcceptSource({
+  auto source_result = listener->CreateAcceptSource({
       .pending_depth = 1,
       .event_capacity = 2,
       .resume_threshold = 1,
@@ -861,11 +861,11 @@ bool RunBackendSuite() {
 }  // namespace
 
 int main() {
-  if (!RunBackendSuite<ReactorHarness>()) {
+  if (!RunBackendSuite<EpollHarness>()) {
     return 1;
   }
 #if defined(COROPACT_ENABLE_URING)
-  if (!RunBackendSuite<LUringHarness>()) {
+  if (!RunBackendSuite<UringHarness>()) {
     return 1;
   }
 #endif

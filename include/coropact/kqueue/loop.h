@@ -22,13 +22,13 @@ namespace coropact::kqueue {
 
 namespace detail {
 class Channel;
-class KqueuePoller;
+class Poller;
 class LoopAccess;
 class TimerQueue;
 }  // namespace detail
 
 /*
- * Owner-thread kqueue dispatcher. A KqueueLoop owns its poller, registered
+ * Owner-thread kqueue dispatcher. A Loop owns its poller, registered
  * channels, and coroutine work. Cross-thread callers may request stop, but may
  * not submit or mutate owner-local I/O state directly.
  *
@@ -36,14 +36,14 @@ class TimerQueue;
  * variant of it. It refines the same logical lifecycle contracts without
  * sharing an implementation.
  */
-class KqueueLoop final : public coro::Scheduler {
+class Loop final : public coro::Scheduler {
 public:
   using Functor = std::function<void()>;
 
-  explicit KqueueLoop(std::pmr::memory_resource* frame_resource = nullptr);
-  ~KqueueLoop() override;
+  explicit Loop(std::pmr::memory_resource* frame_resource = nullptr);
+  ~Loop() override;
 
-  COROPACT_DELETE_COPY_MOVE(KqueueLoop);
+  COROPACT_DELETE_COPY_MOVE(Loop);
 
   // Runs the dispatcher until RequestStop() or token cancellation. Run() is
   // owner-thread-only. It returns only after the currently queued owner work
@@ -69,7 +69,7 @@ public:
   // way to Schedule() coroutine Work from another thread.
   void Post(Functor callback);
 
-  // Schedules a coroutine work item for a later loop turn. The KqueueLoop is
+  // Schedules a coroutine work item for a later loop turn. The Loop is
   // itself the Scheduler; submission must happen on its owner thread.
   void Schedule(coro::Work* work) noexcept override;
 
@@ -98,11 +98,11 @@ private:
   friend class detail::LoopAccess;
 
   using Channel = detail::Channel;
-  using KqueuePoller = detail::KqueuePoller;
+  using Poller = detail::Poller;
   using LoopShutdownParticipant = detail::LoopShutdownParticipant;
   using TimerQueue = detail::TimerQueue;
 
-  // Channel registration belongs to the implementation of KqueueLoop. A
+  // Channel registration belongs to the implementation of Loop. A
   // registration is keyed by (fd, filter), so one call here may translate into
   // several kevent changes. These methods are intentionally unavailable to
   // kqueue callers.
@@ -131,7 +131,7 @@ private:
   std::atomic<backend::LoopState> state_{backend::LoopState::kCreated};
 
   const base::ThreadId thread_id_;
-  std::unique_ptr<detail::KqueuePoller> poller_;
+  std::unique_ptr<detail::Poller> poller_;
   std::unique_ptr<detail::TimerQueue> timer_queue_;
   std::vector<detail::Channel*> active_channels_;
 
@@ -148,6 +148,6 @@ private:
   bool shutdown_started_{false};
 };
 
-static_assert(backend::ManagedLoop<KqueueLoop>);
+static_assert(backend::ManagedLoop<Loop>);
 
 }  // namespace coropact::kqueue

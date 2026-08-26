@@ -55,7 +55,7 @@ kqueue 伞头文件在非 BSD 宿主上会直接 `#error`。
 
 ### 2. 后端无关的连接处理协程
 
-以 echo server 为例。该协程只依赖 `AsyncStream`，可同时服务 `ReactorStream`、`LUringStream` 与 `KqueueStream`；Linux 可运行版本见 [`examples/simple_echo`](examples/simple_echo)。
+以 echo server 为例。该协程只依赖 `AsyncStream`，可同时服务 `reactor::Stream`、`luring::Stream` 与 `kqueue::Stream`；Linux 可运行版本见 [`examples/simple_echo`](examples/simple_echo)。
 
 ```cpp
 #include <array>
@@ -153,11 +153,11 @@ Backend tag 仍在编译期选择实现；ring 深度、provided buffer、zero-c
 
 ### 5. 使用 luring 原生能力
 
-`Runtime` 只负责默认 TCP server 的 worker 生命周期，不是通用的 io_uring 配置接口。它可以选择安全的默认策略（例如带 fallback 的 multishot accept），但应用若要**显式**控制 ring 深度、SQPOLL、provided-buffer ring、multishot receive 或 zero-copy send，应直接组合 `luring::LUringLoop`、`LUringOptions` 与对应的 listener、stream 或 source：
+`Runtime` 只负责默认 TCP server 的 worker 生命周期，不是通用的 io_uring 配置接口。它可以选择安全的默认策略（例如带 fallback 的 multishot accept），但应用若要**显式**控制 ring 深度、SQPOLL、provided-buffer ring、multishot receive 或 zero-copy send，应直接组合 `luring::Loop`、`Options` 与对应的 listener、stream 或 source：
 
 ```cpp
-coropact::luring::LUringLoop loop;
-coropact::luring::LUringOptions options;
+coropact::luring::Loop loop;
+coropact::luring::Options options;
 options.entries = 8192;
 options.shared_buffer_capacity = 256;  // RecvSource 的 provided buffers
 
@@ -311,37 +311,37 @@ ITERATIONS=1000000 build-bench/benchmarks/coro_channel_microbenchmark
 Reactor 多 worker（`Workers(n>1)`）在同一端口上使用独立 listener：
 
 ```text
-ReactorWorkerGroup
+WorkerGroup
   |
-  +-- Worker 0 -> Thread 0 -> EventLoop 0 -> listen :port (SO_REUSEPORT)
-  +-- Worker 1 -> Thread 1 -> EventLoop 1 -> listen :port (SO_REUSEPORT)
-  `-- Worker N -> Thread N -> EventLoop N -> listen :port (SO_REUSEPORT)
+  +-- Worker 0 -> Thread 0 -> Loop 0 -> listen :port (SO_REUSEPORT)
+  +-- Worker 1 -> Thread 1 -> Loop 1 -> listen :port (SO_REUSEPORT)
+  `-- Worker N -> Thread N -> Loop N -> listen :port (SO_REUSEPORT)
 ```
 
 io_uring Server 采用 thread-per-ring 模型：
 
 ```text
-LUringServer
+Server
   |
-  +-- Worker 0 -> Thread 0 -> LUringLoop 0 -> Ring 0
-  +-- Worker 1 -> Thread 1 -> LUringLoop 1 -> Ring 1
-  `-- Worker N -> Thread N -> LUringLoop N -> Ring N
+  +-- Worker 0 -> Thread 0 -> Loop 0 -> Ring 0
+  +-- Worker 1 -> Thread 1 -> Loop 1 -> Ring 1
+  `-- Worker N -> Thread N -> Loop N -> Ring N
 ```
 
-kqueue 多 worker 是主从模型。只有 worker 0 绑定 listener。I/O worker 先启动，保证 loop 已存在；acceptor 随后 `Release()` 描述符，经 `Post()` 轮询交给属主 loop，在该线程上重建 `KqueueStream`：
+kqueue 多 worker 是主从模型。只有 worker 0 绑定 listener。I/O worker 先启动，保证 loop 已存在；acceptor 随后 `Release()` 描述符，经 `Post()` 轮询交给属主 loop，在该线程上重建 `Stream`：
 
 ```text
-KqueueWorkerGroup
+WorkerGroup
   |
-  +-- Worker 0 (acceptor) -> KqueueLoop 0 -> listen :port
+  +-- Worker 0 (acceptor) -> Loop 0 -> listen :port
   |         |
   |         +-- accept -> Release(fd) -> Post --> 重建 stream
   |
-  +-- Worker 1 (I/O) -> KqueueLoop 1
-  `-- Worker N (I/O) -> KqueueLoop N
+  +-- Worker 1 (I/O) -> Loop 1
+  `-- Worker N (I/O) -> Loop N
 ```
 
-连接、I/O 操作与协程 continuation 始终归属于运行它们的 Worker 和 loop。`KqueueStream` 不能跨 loop 移动；移交的是原始 fd，不是活的 stream，也不是 `Work*`。
+连接、I/O 操作与协程 continuation 始终归属于运行它们的 Worker 和 loop。`Stream` 不能跨 loop 移动；移交的是原始 fd，不是活的 stream，也不是 `Work*`。
 
 ## 性能测试
 

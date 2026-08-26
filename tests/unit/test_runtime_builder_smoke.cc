@@ -107,7 +107,7 @@ bool WaitUntilStarted(Runtime& runtime) {
   return runtime.Started();
 }
 
-coro::DetachedTask HandleReactor(reactor::ReactorStream) { co_return; }
+coro::DetachedTask HandleReactor(reactor::Stream) { co_return; }
 
 static_assert(std::same_as<decltype(Runtime::Create<runtime::Reactor>(
                               net::Endpoint::Loopback(0), HandleReactor)),
@@ -233,7 +233,7 @@ bool CheckReactorStartFailureCanRetry() {
 
 #ifdef COROPACT_ENABLE_URING
 
-coro::DetachedTask HandleLUring(luring::LUringStream) { co_return; }
+coro::DetachedTask HandleLUring(luring::Stream) { co_return; }
 
 static_assert(std::same_as<decltype(Runtime::Create<runtime::LUring>(
                               net::Endpoint::Loopback(0), HandleLUring)),

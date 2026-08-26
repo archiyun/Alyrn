@@ -14,37 +14,37 @@
 
 namespace coropact::kqueue {
 
-struct KqueueConnectorOptions {
-  // Applies to every KqueueStream returned by Connect.
-  KqueueStreamOptions stream_options{};
+struct ConnectorOptions {
+  // Applies to every Stream returned by Connect.
+  StreamOptions stream_options{};
 };
 
-class KqueueConnector {
+class Connector {
 public:
-  COROPACT_DELETE_COPY(KqueueConnector);
+  COROPACT_DELETE_COPY(Connector);
 
-  using Stream = KqueueStream;
+  using StreamType = Stream;
 
   [[nodiscard]]
-  static Result<KqueueConnector> Create(KqueueLoop* loop,
-                                               KqueueConnectorOptions options = {}) noexcept;
+  static Result<Connector> Create(Loop* loop,
+                                               ConnectorOptions options = {}) noexcept;
 
-  explicit KqueueConnector(KqueueLoop* loop, KqueueConnectorOptions options = {}) noexcept;
+  explicit Connector(Loop* loop, ConnectorOptions options = {}) noexcept;
 
-  KqueueConnector(KqueueConnector&& other) noexcept;
-  KqueueConnector& operator=(KqueueConnector&& other) noexcept;
+  Connector(Connector&& other) noexcept;
+  Connector& operator=(Connector&& other) noexcept;
 
   // Connect is loop-affine. Independent calls may be pending concurrently;
   // each call owns its socket, Channel, result, and continuation.
-  coro::Task<Result<KqueueStream>> Connect(net::Endpoint peer);
-  coro::Task<Result<KqueueStream>> Connect(std::string_view host, std::uint16_t port);
+  coro::Task<Result<Stream>> Connect(net::Endpoint peer);
+  coro::Task<Result<Stream>> Connect(std::string_view host, std::uint16_t port);
   coro::Task<void> SleepFor(time::Duration delay);
 
 private:
   void RequireOwnerLoop() const noexcept;
 
-  KqueueLoop* loop_;
-  KqueueConnectorOptions options_;
+  Loop* loop_;
+  ConnectorOptions options_;
 };
 
 }  // namespace coropact::kqueue

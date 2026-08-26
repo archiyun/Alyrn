@@ -11,7 +11,7 @@
 
 namespace coropact::luring::detail {
 
-LUringWorkerGroup::LUringWorkerGroup(net::Endpoint listen_addr, LUringWorkerGroupOptions options,
+WorkerGroup::WorkerGroup(net::Endpoint listen_addr, WorkerGroupOptions options,
                                      ThreadInitCallback init_callback,
                                      ConnectionCallback connection_callback,
                                      ThreadExitCallback exit_callback)
@@ -21,9 +21,9 @@ LUringWorkerGroup::LUringWorkerGroup(net::Endpoint listen_addr, LUringWorkerGrou
       connection_callback_(std::move(connection_callback)),
       exit_callback_(std::move(exit_callback)) {}
 
-LUringWorkerGroup::~LUringWorkerGroup() noexcept { Stop(); }
+WorkerGroup::~WorkerGroup() noexcept { Stop(); }
 
-Result<void> LUringWorkerGroup::Start() {
+Result<void> WorkerGroup::Start() {
   if (started_) {
     return std::unexpected(Errno(EALREADY));
   }
@@ -35,7 +35,7 @@ Result<void> LUringWorkerGroup::Start() {
   workers_.reserve(options_.worker_num);
 
   for (std::size_t i = 0; i < options_.worker_num; ++i) {
-    LUringWorkerOptions worker_options = options_.worker_options;
+    WorkerOptions worker_options = options_.worker_options;
     if (options_.frame_resource_factory) {
       worker_options.frame_resource = options_.frame_resource_factory(i);
     }
@@ -43,7 +43,7 @@ Result<void> LUringWorkerGroup::Start() {
       worker_options.cpu_affinity = options_.cpu_affinity_factory(i);
     }
 
-    auto worker = std::make_unique<LUringWorker>(i, listen_addr_, std::move(worker_options),
+    auto worker = std::make_unique<Worker>(i, listen_addr_, std::move(worker_options),
                                                  init_callback_, connection_callback_, exit_callback_);
     auto started = worker->Start();
     if (!started.has_value()) {
@@ -58,14 +58,14 @@ Result<void> LUringWorkerGroup::Start() {
   return {};
 }
 
-void LUringWorkerGroup::Stop() noexcept {
+void WorkerGroup::Stop() noexcept {
   RequestStop();
 
   workers_.clear();
   started_ = false;
 }
 
-void LUringWorkerGroup::RequestStop() noexcept {
+void WorkerGroup::RequestStop() noexcept {
   for (auto& worker : workers_) {
     worker->Stop();
   }

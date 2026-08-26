@@ -11,7 +11,7 @@
 // defers the resume. Two exit paths are covered:
 //   conn A: Deliver(0)            -> EOF, graceful co_return
 //   conn B: Deliver(unexpected)   -> teardown via resume-with-error
-// EventLoop implements the coro Scheduler directly: the initial root submission
+// Loop implements the coro Scheduler directly: the initial root submission
 // and subsequent IO resumes run through its owner-local Work queue. Run under
 // ASan (leak check proves self-destruct) and TSan.
 
@@ -36,7 +36,7 @@ using coropact::Result;
 using coropact::coro::Spawn;
 using coropact::coro::Task;
 using coropact::coro::Work;
-using coropact::reactor::EventLoop;
+using coropact::reactor::Loop;
 
 namespace {
 
@@ -55,8 +55,8 @@ struct FakeConn {
   ReadAwaiter Read() noexcept { return ReadAwaiter{this}; }
 
   // Owner-thread side: deliver `r`, then schedule the parked coroutine's
-  // resume on the next EventLoop turn.
-  void Deliver(Result<int> r, EventLoop* loop) {
+  // resume on the next Loop turn.
+  void Deliver(Result<int> r, Loop* loop) {
     next = std::move(r);
     if (auto h = std::exchange(parked, {})) {
       loop->RunAfter(coropact::time::Duration::zero(), [h] {
@@ -69,7 +69,7 @@ struct FakeConn {
 constexpr int kConns = 2;
 std::atomic<int> g_completed{0};
 std::atomic<int> g_on_loop{0};
-EventLoop* g_loop = nullptr;
+Loop* g_loop = nullptr;
 std::thread::id g_loop_tid;
 
 // Top-level connection coroutine: read until EOF or read error, then exit.
@@ -89,7 +89,7 @@ Task<void> Serve(FakeConn* c) {
 }  // namespace
 
 int main() {
-  EventLoop loop;
+  Loop loop;
   g_loop = &loop;
   g_loop_tid = std::this_thread::get_id();
 

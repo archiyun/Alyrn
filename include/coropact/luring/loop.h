@@ -16,7 +16,6 @@
 #include "coropact/backend/loop.h"
 #include "coropact/base/check.h"
 #include "coropact/base/current_thread.h"
-#include "coropact/base/try.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/work.h"
 #include "coropact/luring/detail/mailbox.h"
@@ -30,7 +29,7 @@
 
 namespace coropact::luring {
 
-class LUringRecvSource;
+class RecvSource;
 namespace detail {
 class LoopAccess;
 class ProvidedBufferPool;
@@ -42,22 +41,22 @@ class ProvidedBufferPool;
  * Cross-loop mailbox transport and SQE/CQE decoding remain implementation
  * details; callers only own initialization, execution, timers, and scheduling.
  */
-class LUringLoop final : public coro::Scheduler {
+class Loop final : public coro::Scheduler {
 public:
-  COROPACT_DELETE_COPY_MOVE(LUringLoop);
+  COROPACT_DELETE_COPY_MOVE(Loop);
 
   // frame_resource is used for coroutine frames Scheduled by this loop.
-  explicit LUringLoop(std::pmr::memory_resource* frame_resource = nullptr);
+  explicit Loop(std::pmr::memory_resource* frame_resource = nullptr);
 
   // Initializes the underlying io_uring instance.
   // Must be called from the loop thread before Run().
   [[nodiscard]]
-  Result<void> Init(const LUringOptions& options) noexcept;
+  Result<void> Init(const Options& options) noexcept;
 
   // The caller must drain user operation work before destruction. The
   // destructor never uses io_uring_queue_exit() as an implicit cancellation
   // mechanism for awaiter-owned operation storage.
-  ~LUringLoop() noexcept;
+  ~Loop() noexcept;
 
   [[nodiscard]]
   bool Initialized() const noexcept {
@@ -86,7 +85,7 @@ public:
 
   [[nodiscard]]
   Result<time::TimerId> RunAfter(time::Duration delay, std::function<void()> callback) {
-    COROPACT_CHECK(IsInLoopThread(), "LUringLoop::RunAfter called from wrong thread");
+    COROPACT_CHECK(IsInLoopThread(), "Loop::RunAfter called from wrong thread");
     if (!initialized_) {
       return std::unexpected(Errno(EBADF));
     }
@@ -94,7 +93,7 @@ public:
   }
 
   Result<void> CancelTimer(time::TimerId id) noexcept {
-    COROPACT_CHECK(IsInLoopThread(), "LUringLoop::CancelTimer called from wrong thread");
+    COROPACT_CHECK(IsInLoopThread(), "Loop::CancelTimer called from wrong thread");
     if (!initialized_) {
       return std::unexpected(Errno(EBADF));
     }
@@ -106,7 +105,7 @@ public:
 
 private:
   friend class detail::LoopAccess;
-  friend class LUringRecvSource;
+  friend class RecvSource;
 
   [[nodiscard]]
   int RingFd() const noexcept {
@@ -136,7 +135,7 @@ private:
   // Thread-safe enqueue. The event loop is not woken yet; msg_ring provides
   // notification later.
   [[nodiscard]]
-  detail::LUringMailboxPushResult PostMessage(detail::LUringMessage message) {
+  detail::MailboxPushResult PostMessage(detail::Message message) {
     return mailbox_.Push(message);
   }
 
@@ -149,8 +148,8 @@ private:
   // after FlushSubmit() or another submission path.
   template <class Prep>
   [[nodiscard]]
-  Result<void> SubmitOp(detail::LUringOp* op, Prep&& prep) noexcept {
-    COROPACT_CHECK(IsInLoopThread(), "LUringLoop::SubmitOp called from wrong thread");
+  Result<void> SubmitOp(detail::Op* op, Prep&& prep) noexcept {
+    COROPACT_CHECK(IsInLoopThread(), "Loop::SubmitOp called from wrong thread");
 
     if (!initialized_) {
       return std::unexpected(Errno(EBADF));
@@ -166,7 +165,10 @@ private:
 
     io_uring_sqe* sqe = ring_.GetSqe();
     if (sqe == nullptr) {
-      COROPACT_TRY(FlushSubmit());
+      auto flushed = FlushSubmit();
+      if (!flushed.has_value()) {
+        return flushed;
+      }
 
       sqe = ring_.GetSqe();
       if (sqe == nullptr) {
@@ -181,9 +183,9 @@ private:
   }
 
   [[nodiscard]]
-  Result<void> SubmitMsgRing(detail::LUringOp* op, int target_ring_fd,
+  Result<void> SubmitMsgRing(detail::Op* op, int target_ring_fd,
                              std::uint32_t type) noexcept {
-    COROPACT_CHECK(IsInLoopThread(), "LUringLoop::SubmitMsgRing called from wrong thread");
+    COROPACT_CHECK(IsInLoopThread(), "Loop::SubmitMsgRing called from wrong thread");
 
     if (target_ring_fd < 0) {
       return std::unexpected(Errno(EBADF));
@@ -227,7 +229,7 @@ private:
   void HandleMailbox() noexcept;
 
   const base::ThreadId thread_id_;
-  detail::LUringRing ring_;
+  detail::Ring ring_;
   coro::WorkQueue ready_;
   coro::WorkQueue completion_ready_;
   bool initialized_{false};
@@ -251,14 +253,14 @@ private:
   // Cross-thread lifecycle state observed by the event loop.
   std::atomic<backend::LoopState> state_{backend::LoopState::kCreated};
 
-  detail::LUringMailbox mailbox_;
-  detail::LUringTimerQueue timers_;
+  detail::Mailbox mailbox_;
+  detail::TimerQueue timers_;
   int wake_fd_{-1};
   bool wake_pending_{false};
   bool wake_inflight_{false};
-  detail::LUringOp wake_op_{detail::LUringOpKind::kWake};
+  detail::Op wake_op_{detail::OpKind::kWake};
   bool cancel_all_pending_{false};
-  detail::LUringOp cancel_all_op_{detail::LUringOpKind::kCancelAll};
+  detail::Op cancel_all_op_{detail::OpKind::kCancelAll};
   std::uint32_t next_buffer_group_id_{1};
   std::unique_ptr<detail::ProvidedBufferPool> shared_buffer_pool_;
   std::size_t shared_buffer_capacity_{0};

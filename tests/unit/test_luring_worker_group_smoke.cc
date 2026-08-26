@@ -125,7 +125,7 @@ bool CheckWorkerGroupStartStop() {
     return false;
   }
 
-  coropact::luring::detail::LUringWorkerGroupOptions options;
+  coropact::luring::detail::WorkerGroupOptions options;
   options.worker_num = 2;
   options.worker_options.loop_options.entries = 16;
   options.worker_options.listen_options.reuse_port = true;
@@ -135,8 +135,8 @@ bool CheckWorkerGroupStartStop() {
   std::atomic_bool invalid_index{false};
   std::atomic_bool invalid_listener{false};
 
-  coropact::luring::detail::LUringWorkerGroup group(LoopbackAddress(*port), options,
-                                        [&](coropact::luring::detail::LUringWorkerContext& context) {
+  coropact::luring::detail::WorkerGroup group(LoopbackAddress(*port), options,
+                                        [&](coropact::luring::detail::WorkerContext& context) {
                                           if (!context.loop.IsInLoopThread()) {
                                             bad_thread.store(true, std::memory_order_relaxed);
                                           }
@@ -155,7 +155,7 @@ bool CheckWorkerGroupStartStop() {
       std::cout << "SKIP: io_uring unavailable: " << started.error().message() << '\n';
       return true;
     }
-    std::cout << "FAIL: LUringWorkerGroup::Start failed: " << started.error().message() << '\n';
+    std::cout << "FAIL: WorkerGroup::Start failed: " << started.error().message() << '\n';
     return false;
   }
 
@@ -187,7 +187,7 @@ bool CheckWorkerGroupAcceptCallback() {
     return false;
   }
 
-  coropact::luring::detail::LUringWorkerGroupOptions options;
+  coropact::luring::detail::WorkerGroupOptions options;
   options.worker_num = 1;
   options.worker_options.loop_options.entries = 16;
   options.worker_options.listen_options.reuse_port = true;
@@ -198,10 +198,10 @@ bool CheckWorkerGroupAcceptCallback() {
   std::atomic_bool bad_thread{false};
 
   const auto listen_addr = LoopbackAddress(*port);
-  coropact::luring::detail::LUringWorkerGroup group(
+  coropact::luring::detail::WorkerGroup group(
       listen_addr, options, {},
-      [&](coropact::luring::detail::LUringWorkerContext& context,
-          coropact::luring::LUringStream stream) -> coropact::coro::DetachedTask {
+      [&](coropact::luring::detail::WorkerContext& context,
+          coropact::luring::Stream stream) -> coropact::coro::DetachedTask {
         if (!context.loop.IsInLoopThread()) {
           bad_thread.store(true, std::memory_order_relaxed);
         }
@@ -218,7 +218,7 @@ bool CheckWorkerGroupAcceptCallback() {
       std::cout << "SKIP: io_uring unavailable: " << started.error().message() << '\n';
       return true;
     }
-    std::cout << "FAIL: LUringWorkerGroup::Start failed: " << started.error().message() << '\n';
+    std::cout << "FAIL: WorkerGroup::Start failed: " << started.error().message() << '\n';
     return false;
   }
 

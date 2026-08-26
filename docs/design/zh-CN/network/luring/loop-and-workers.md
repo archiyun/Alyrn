@@ -1,13 +1,13 @@
 # loop、ring 与 worker
 
-## LUringLoop
+## Loop
 
-`LUringLoop` 是一个单线程、一个 `io_uring` ring 的调度单元：
+`Loop` 是一个单线程、一个 `io_uring` ring 的调度单元：
 
 ```text
 一个 worker thread
-  └── 一个 LUringLoop
-        ├── 一个 LUringRing
+  └── 一个 Loop
+        ├── 一个 Ring
         ├── completion dispatch
         ├── coroutine ready queues
         ├── timers
@@ -17,7 +17,7 @@
 基本使用顺序是：
 
 ```cpp
-coropact::luring::LUringLoop loop;
+coropact::luring::Loop loop;
 auto initialized = loop.Init(options);
 if (!initialized.has_value()) {
   // 根据 error 判断环境不支持或配置错误
@@ -31,7 +31,7 @@ loop.Run(stop_token);
 取消、消费目标 CQE、drain ready work，然后才进入 `Stopped`。这仍不等价于销毁 listener/stream
 或归还 BufferLease；这些对象的最终 close/release 仍属于 worker/runtime 的 owner-thread 协议。
 
-`LUringLoop` 析构不是隐式 shutdown，且始终必须在创建它的 owner thread 执行。若已初始化的 loop
+`Loop` 析构不是隐式 shutdown，且始终必须在创建它的 owner thread 执行。若已初始化的 loop
 仍持有 user operation、pending SQE、inflight CQE 或 ready continuation，析构会触发不变量失败，
 而不会把 `io_uring_queue_exit()` 当作取消 awaiter-owned storage 的替代品。正常 owner 路径应先让
 `Run()` 完成 stop drain；手动驱动的测试也必须先把 loop 排空。
@@ -49,7 +49,7 @@ flush 失败后，`Stopped` 只能在后续 retry 成功并完全 drain 后出�
 
 ## loop 配置
 
-`LUringOptions` 中最影响外部行为的选项是：
+`Options` 中最影响外部行为的选项是：
 
 | 选项 | 作用 | 说明 |
 | --- | --- | --- |
@@ -57,17 +57,17 @@ flush 失败后，`Stopped` 只能在后续 retry 成功并完全 drain 后出�
 | `setup_sqpoll` | 启用 kernel submission thread | opt-in，可能需要权限并长期占用资源 |
 | `shared_buffer_capacity/size` | worker 共享的 provided-buffer ring 上限 | 为零时不能创建 `RecvSource` |
 
-CQ 深度、submission flag 和每轮 CQE/continuation 公平性预算是 `LUringLoop` 的内部策略，
+CQ 深度、submission flag 和每轮 CQE/continuation 公平性预算是 `Loop` 的内部策略，
 不属于调用方配置。这样每个 loop 都使用相同的提交和调度模型；需要改变资源成本时，调用方
 只选择 SQ 深度、SQPOLL 与 provided-buffer 容量。
 
 `setup_sqpoll` 不是“永远更快”的开关。它以一个专用 kernel 线程和 CPU/权限成本换取
 更低的提交 syscall 频率，只有在持续高压且经过基准验证时才应启用。
 
-## LUringWorker 与 WorkerGroup
+## Worker 与 WorkerGroup
 
-`LUringWorkerGroup` 为每个 worker 创建独立的 loop、ring、listener 和 connector。连接回调
-在对应 worker 上执行，并通过 `LUringWorkerContext` 取得当前 loop 绑定的对象。
+`WorkerGroup` 为每个 worker 创建独立的 loop、ring、listener 和 connector。连接回调
+在对应 worker 上执行，并通过 `WorkerContext` 取得当前 loop 绑定的对象。
 
 `cpu_affinity` 或 `cpu_affinity_factory` 是可选的线程亲和性设置：
 

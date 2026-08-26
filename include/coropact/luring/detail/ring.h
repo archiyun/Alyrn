@@ -16,26 +16,26 @@ namespace coropact::luring::detail {
 // Thin RAII wrapper around a single io_uring instance.
 //
 // This class only manages the low-level ring lifecycle and exposs the minimal
-// operations requires by LUringLoop:
+// operations requires by Loop:
 //   - initialize and destroy the ring
 //   - acquire SQEs
 //   - submit prepared SQEs
 //   - reap completed CQEs
 //
 // Scheduling coroutine resumption and operation lifetime are handled by
-// LUringLoop rather than this class.
-class LUringRing {
+// Loop rather than this class.
+class Ring {
 public:
-  COROPACT_DELETE_COPY(LUringRing);
+  COROPACT_DELETE_COPY(Ring);
 
-  LUringRing() = default;
-  ~LUringRing() noexcept;
+  Ring() = default;
+  ~Ring() noexcept;
 
-  LUringRing(LUringRing&& other) noexcept;
-  LUringRing& operator=(LUringRing&& other) noexcept;
+  Ring(Ring&& other) noexcept;
+  Ring& operator=(Ring&& other) noexcept;
 
   [[nodiscard]]
-  static Result<LUringRing> Create(const LUringOptions& options) noexcept;
+  static Result<Ring> Create(const Options& options) noexcept;
 
   [[nodiscard]]
   io_uring_sqe* GetSqe() noexcept;
@@ -73,7 +73,7 @@ public:
   io_uring* Native() noexcept { return &ring_; }
 
 private:
-  explicit LUringRing(io_uring ring) noexcept : ring_(ring), initialized_(true) {}
+  explicit Ring(io_uring ring) noexcept : ring_(ring), initialized_(true) {}
 
   io_uring ring_;
   bool initialized_{false};

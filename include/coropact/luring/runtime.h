@@ -18,7 +18,7 @@ class Runtime::Builder<runtime::LUring> {
 public:
   // Runtime transfers each accepted stream to the handler by value. The
   // detached handler coroutine owns that stream until it finishes.
-  using ConnectionHandler = std::function<coro::DetachedTask(luring::LUringStream)>;
+  using ConnectionHandler = std::function<coro::DetachedTask(luring::Stream)>;
 
   explicit Builder(net::Endpoint listen_addr) noexcept;
 

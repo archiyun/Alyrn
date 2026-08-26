@@ -106,39 +106,39 @@ _Avoid_: wrapper, event conversion
   a backend depend on the `io` facade or on CoroGateway. kqueue must refine the
   same contracts, not become a preprocessor branch inside `reactor`.
 
-The Reactor public interface is `EventLoop` plus stream, listener, connector,
+The Reactor public interface is `reactor::Loop` plus stream, listener, connector,
 receive-source, and option adapters. Its `Runtime::Builder<runtime::Reactor>`
 binding configures the common composition root; `reactor/detail` contains the
 Linux epoll poller, channel registration, timer queue, and multi-worker
 bootstrap machinery; applications must not depend on those types.
 
-The luring public interface is `LUringLoop` plus stream, listener, connector,
+The luring public interface is `luring::Loop` plus stream, listener, connector,
 receive-source, timer, and option adapters. Its
 `Runtime::Builder<runtime::LUring>` binding configures the common composition
 root; `luring/detail` owns raw SQE/CQE operations, ring and mailbox transport,
 timer queue, and multi-worker server bootstrap machinery; applications must
 not depend on those types.
 
-The kqueue public interface is `KqueueLoop` plus stream, listener, connector,
+The kqueue public interface is `kqueue::Loop` plus stream, listener, connector,
 receive-source, and option adapters. Its `Runtime::Builder<runtime::Kqueue>`
 binding configures the common composition root; `kqueue/detail` owns kevent
 polling, channel registration, the user-space timer tree, and master-slave
 worker bootstrap; applications must not depend on those types. `Workers(n>1)`
 binds one listener on worker 0. The acceptor `Release()`s the descriptor and
-`Post()`s it onto a round-robin I/O loop, which reconstructs `KqueueStream` on
-the owner thread. That is not `SO_REUSEPORT`. `KqueueStream` cannot move across
-loops. Cross-thread work is `KqueueLoop::Post`, not `Schedule()` of coroutine
+`Post()`s it onto a round-robin I/O loop, which reconstructs `kqueue::Stream` on
+the owner thread. That is not `SO_REUSEPORT`. `kqueue::Stream` cannot move across
+loops. Cross-thread work is `kqueue::Loop::Post`, not `Schedule()` of coroutine
 `Work`.
 
 ## Ownership and thread affinity
 
-- An `EventLoop` and all of its Channels, fds, timers, and stream state belong
+- A `reactor::Loop` and all of its Channels, fds, timers, and stream state belong
   to one thread. Reactor callback, timer, and coroutine scheduling APIs are
   owner-thread-only; cross-thread delivery is a separate mailbox concern.
-- An `LUringLoop` owns one ring and is bound to its creating worker thread.
+- A `luring::Loop` owns one ring and is bound to its creating worker thread.
   Ring submission, CQE dispatch, connection state, and timer mutation occur on
   that thread.
-- A `KqueueLoop` and all of its Channels, fds, timers, and stream state belong
+- A `kqueue::Loop` and all of its Channels, fds, timers, and stream state belong
   to one thread. `Post` is the thread-safe callback queue and wakes the owner
   loop; `Schedule`, Channel mutation, and stream construction remain
   owner-thread-only.

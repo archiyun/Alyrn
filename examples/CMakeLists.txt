@@ -2,7 +2,7 @@
 #
 #   foundation/  → coropact_foundation （base 等基础设施）
 #   net/         → coropact_net        （地址 / socket 基础能力）
-#   reactor/     → coropact_reactor    （epoll / EventLoop / Reactor stream）
+#   reactor/     → coropact_reactor    （epoll / Loop / Reactor stream）
 #
 # 各子目录自带 CMakeLists.txt，只声明本层的 demo 目标。
 

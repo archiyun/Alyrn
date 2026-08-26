@@ -26,7 +26,7 @@ using namespace coropact;
 namespace {
 
 struct DemoState {
-  luring::LUringLoop* loop;
+  luring::Loop* loop;
   int completed{0};
   int exit_code{0};
 
@@ -40,7 +40,7 @@ struct DemoState {
   }
 };
 
-auto WaitForCancellation(luring::LUringStream& stream, DemoState& state) -> coro::DetachedTask {
+auto WaitForCancellation(luring::Stream& stream, DemoState& state) -> coro::DetachedTask {
   std::array<std::byte, 64> buffer{};
 
   std::println("submitting ReadSome; the peer intentionally sends no data");
@@ -56,7 +56,7 @@ auto WaitForCancellation(luring::LUringStream& stream, DemoState& state) -> coro
   state.FinishOne();
 }
 
-auto CloseAfterReadSuspends(luring::LUringLoop& loop, luring::LUringStream& stream,
+auto CloseAfterReadSuspends(luring::Loop& loop, luring::Stream& stream,
                             DemoState& state) -> coro::DetachedTask {
   // The read task is scheduled first. This timer gives the loop a separate
   // completion boundary before Close starts its cancel-and-drain protocol.
@@ -87,8 +87,8 @@ auto main() -> int {
     return 1;
   }
 
-  luring::LUringLoop loop;
-  luring::LUringOptions options;
+  luring::Loop loop;
+  luring::Options options;
   options.entries = 64;
 
   auto initialized = loop.Init(options);
@@ -99,7 +99,7 @@ auto main() -> int {
     return 1;
   }
 
-  luring::LUringStream stream(&loop, sockets[0], net::Endpoint::Loopback(0));
+  luring::Stream stream(&loop, sockets[0], net::Endpoint::Loopback(0));
   DemoState state{.loop = &loop};
 
   coro::SpawnDetach(loop, WaitForCancellation(stream, state));

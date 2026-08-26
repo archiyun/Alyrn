@@ -51,7 +51,7 @@ public:
   }
 
 private:
-  LUringCloseState state_;
+  CloseState state_;
   std::coroutine_handle<> continuation_{};
 };
 

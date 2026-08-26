@@ -24,7 +24,7 @@
 
 namespace {
 
-using coropact::kqueue::KqueueLoop;
+using coropact::kqueue::Loop;
 using coropact::kqueue::TriggerMode;
 using coropact::kqueue::detail::Channel;
 using namespace coropact::testing;
@@ -73,11 +73,11 @@ struct Observation {
  * and injects the matching readiness before calling this, so the first poll
  * has something to deliver.
  */
-void RunUntilStopped(KqueueLoop& loop) { loop.Run(); }
+void RunUntilStopped(Loop& loop) { loop.Run(); }
 
 bool CheckOneShotArmsWithOneShotFlag() {
   FakeKqueueReset();
-  KqueueLoop loop;
+  Loop loop;
   ScopedFd fd;
   Channel channel{&loop, fd.Get()};
 
@@ -100,13 +100,13 @@ bool CheckDeliveryRetiresRegistrationAndInterest() {
   FakeKqueueReset();
   Observation observation;
 
-  KqueueLoop loop;
+  Loop loop;
   ScopedFd fd;
   Channel channel{&loop, fd.Get()};
 
   struct Context {
     Observation* observation;
-    KqueueLoop* loop;
+    Loop* loop;
   } context{&observation, &loop};
 
   channel.SetTriggerMode(TriggerMode::kOneShot);
@@ -144,13 +144,13 @@ bool CheckReArmSubmitsFreshRegistration() {
   FakeKqueueReset();
   Observation observation;
 
-  KqueueLoop loop;
+  Loop loop;
   ScopedFd fd;
   Channel channel{&loop, fd.Get()};
 
   struct Context {
     Observation* observation;
-    KqueueLoop* loop;
+    Loop* loop;
     Channel* channel;
     int fd;
   } context{&observation, &loop, &channel, fd.Get()};
@@ -192,13 +192,13 @@ bool CheckRetiredFilterIsNotDeleted() {
   FakeKqueueReset();
   Observation observation;
 
-  KqueueLoop loop;
+  Loop loop;
   ScopedFd fd;
   Channel channel{&loop, fd.Get()};
 
   struct Context {
     Observation* observation;
-    KqueueLoop* loop;
+    Loop* loop;
   } context{&observation, &loop};
 
   channel.SetTriggerMode(TriggerMode::kOneShot);
@@ -231,13 +231,13 @@ bool CheckLevelTriggeredSurvivesDelivery() {
   FakeKqueueReset();
   Observation observation;
 
-  KqueueLoop loop;
+  Loop loop;
   ScopedFd fd;
   Channel channel{&loop, fd.Get()};
 
   struct Context {
     Observation* observation;
-    KqueueLoop* loop;
+    Loop* loop;
   } context{&observation, &loop};
 
   channel.SetReadCallback(
@@ -273,13 +273,13 @@ bool CheckBothFiltersRetireInOneTurn() {
   FakeKqueueReset();
   Observation observation;
 
-  KqueueLoop loop;
+  Loop loop;
   ScopedFd fd;
   Channel channel{&loop, fd.Get()};
 
   struct Context {
     Observation* observation;
-    KqueueLoop* loop;
+    Loop* loop;
   } context{&observation, &loop};
 
   channel.SetTriggerMode(TriggerMode::kOneShot);
@@ -319,7 +319,7 @@ bool CheckBothFiltersRetireInOneTurn() {
  */
 bool CheckModeSwitchReArmsInPlace() {
   FakeKqueueReset();
-  KqueueLoop loop;
+  Loop loop;
   ScopedFd fd;
   Channel channel{&loop, fd.Get()};
 
@@ -346,17 +346,17 @@ bool CheckModeSwitchReArmsInPlace() {
 
 bool CheckCrossThreadPost() {
   FakeKqueueReset();
-  std::atomic<KqueueLoop*> loop_ptr{nullptr};
+  std::atomic<Loop*> loop_ptr{nullptr};
   std::atomic<bool> ran{false};
   std::atomic<bool> on_owner{false};
 
   std::thread worker([&] {
-    KqueueLoop loop;
+    Loop loop;
     loop_ptr.store(&loop, std::memory_order_release);
     loop.Run();
   });
 
-  KqueueLoop* loop = nullptr;
+  Loop* loop = nullptr;
   while ((loop = loop_ptr.load(std::memory_order_acquire)) == nullptr) {
     std::this_thread::yield();
   }

@@ -16,14 +16,11 @@
 #include "coropact/operation/detail/completion_gate.h"
 #include "coropact/operation/detail/scheduler_continuation.h"
 #include "coropact/operation/detail/single_result_lifecycle.h"
-#include "coropact/kqueue/connector.h"
-#include "coropact/kqueue/detail/channel.h"
-#include "coropact/kqueue/detail/loop_access.h"
-#include "coropact/kqueue/options.h"
-#include "coropact/time/clock.h"
-#include "coropact/time/timer_id.h"
+#include "coropact/reactor/connector.h"
+#include "coropact/reactor/detail/channel.h"
+#include "coropact/reactor/detail/loop_access.h"
 
-namespace coropact::kqueue {
+namespace coropact::reactor {
 namespace {
 
 using namespace detail;
@@ -39,7 +36,7 @@ Result<int> ConnectError(int fd) noexcept {
 
 class ConnectAwaiter {
 public:
-  ConnectAwaiter(KqueueLoop* loop, net::Endpoint peer, KqueueStreamOptions stream_options) noexcept
+  ConnectAwaiter(Loop* loop, net::Endpoint peer, StreamOptions stream_options) noexcept
       : loop_(loop), peer_(peer), stream_options_(stream_options) {}
 
   ~ConnectAwaiter() {
@@ -59,8 +56,8 @@ public:
   }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
-    COROPACT_CHECK(loop_ != nullptr, "ConnectAwaiter has no owner KqueueLoop");
-    COROPACT_CHECK(loop_->IsInLoopThread(), "ConnectAwaiter called from wrong KqueueLoop thread");
+    COROPACT_CHECK(loop_ != nullptr, "ConnectAwaiter has no owner Loop");
+    COROPACT_CHECK(loop_->IsInLoopThread(), "ConnectAwaiter called from wrong Loop thread");
     if (loop_->State() == backend::LoopState::kStopping ||
         loop_->State() == backend::LoopState::kStopped) {
       CompleteInline(std::unexpected(Errno(ECANCELED)));
@@ -91,14 +88,13 @@ public:
     }
 
     channel_.emplace(loop_, fd_);
-    channel_->SetTriggerMode(TriggerMode::kOneShot);
     channel_->SetWriteCallback(&ConnectAwaiter::DispatchReady, this);
     channel_->SetErrorCallback(&ConnectAwaiter::DispatchReady, this);
     channel_->EnableWriting();
     return true;
   }
 
-  Result<KqueueStream> await_resume() noexcept { return result_.Take(); }
+  Result<Stream> await_resume() noexcept { return result_.Take(); }
 
 private:
   static void DispatchReady(void* context) noexcept {
@@ -110,8 +106,8 @@ private:
     self->CompletePending(std::unexpected(Errno(ECANCELED)));
   }
 
-  Result<KqueueStream> MakeStream() noexcept {
-    KqueueStream stream(loop_, fd_, peer_, stream_options_);
+  Result<Stream> MakeStream() noexcept {
+    Stream stream(loop_, fd_, peer_, stream_options_);
     fd_ = -1;
     return stream;
   }
@@ -130,7 +126,7 @@ private:
     }
   }
 
-  void CompleteInline(Result<KqueueStream> result) noexcept {
+  void CompleteInline(Result<Stream> result) noexcept {
     result_.SetResult(std::move(result));
     COROPACT_CHECK(lifecycle_.TryAuthorizeResult(), "Reactor Connect result was authorized twice");
     COROPACT_CHECK(lifecycle_.TryAuthorizeRelease(),
@@ -138,7 +134,7 @@ private:
     ReleasePhysicalRequest();
   }
 
-  void CompletePending(Result<KqueueStream> result) noexcept {
+  void CompletePending(Result<Stream> result) noexcept {
     if (!lifecycle_.TryAuthorizeResult()) {
       return;
     }
@@ -172,19 +168,19 @@ private:
     channel_.reset();
   }
 
-  KqueueLoop* loop_;
+  Loop* loop_;
   net::Endpoint peer_;
-  KqueueStreamOptions stream_options_;
+  StreamOptions stream_options_;
   int fd_{-1};
   std::optional<Channel> channel_;
   operation::detail::SchedulerContinuation continuation_;
   operation::detail::SingleResultLifecycle lifecycle_;
-  backend::detail::ValueResultState<KqueueStream> result_;
+  backend::detail::ValueResultState<Stream> result_;
   LoopShutdownParticipant shutdown_participant_{this, &DispatchLoopStop};
 };
 
-coro::Task<Result<KqueueStream>> ConnectResolved(KqueueLoop* loop,
-                                                        KqueueStreamOptions stream_options,
+coro::Task<Result<Stream>> ConnectResolved(Loop* loop,
+                                                        StreamOptions stream_options,
                                                         Result<net::Endpoint> peer) {
   if (!peer.has_value()) {
     co_return std::unexpected(peer.error());
@@ -194,7 +190,7 @@ coro::Task<Result<KqueueStream>> ConnectResolved(KqueueLoop* loop,
 
 class SleepAwaiter {
 public:
-  SleepAwaiter(KqueueLoop* loop, time::Duration delay) noexcept : loop_(loop), delay_(delay) {}
+  SleepAwaiter(Loop* loop, time::Duration delay) noexcept : loop_(loop), delay_(delay) {}
 
   [[nodiscard]]
   bool await_ready() const noexcept {
@@ -202,8 +198,8 @@ public:
   }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
-    COROPACT_CHECK(loop_ != nullptr, "SleepAwaiter has no owner KqueueLoop");
-    COROPACT_CHECK(loop_->IsInLoopThread(), "SleepAwaiter called from wrong KqueueLoop thread");
+    COROPACT_CHECK(loop_ != nullptr, "SleepAwaiter has no owner Loop");
+    COROPACT_CHECK(loop_->IsInLoopThread(), "SleepAwaiter called from wrong Loop thread");
     if (loop_->State() == backend::LoopState::kStopping ||
         loop_->State() == backend::LoopState::kStopped) {
       (void)(completion_gate_.TryComplete());
@@ -240,7 +236,7 @@ private:
     self->continuation_.Schedule();
   }
 
-  KqueueLoop* loop_;
+  Loop* loop_;
   time::Duration delay_;
   operation::detail::SchedulerContinuation continuation_;
   operation::detail::CompletionGate completion_gate_;
@@ -250,25 +246,25 @@ private:
 
 }  // namespace
 
-KqueueConnector::KqueueConnector(KqueueLoop* loop, KqueueConnectorOptions options) noexcept
+Connector::Connector(Loop* loop, ConnectorOptions options) noexcept
     : loop_(loop), options_(options) {
-  COROPACT_CHECK(loop_ != nullptr, "KqueueConnector: loop must not be null");
-  COROPACT_CHECK(loop_->IsInLoopThread(), "KqueueConnector created from wrong KqueueLoop thread");
+  COROPACT_CHECK(loop_ != nullptr, "Connector: loop must not be null");
+  COROPACT_CHECK(loop_->IsInLoopThread(), "Connector created from wrong Loop thread");
 }
 
 [[nodiscard]]
-Result<KqueueConnector> KqueueConnector::Create(KqueueLoop* loop,
-                                                        KqueueConnectorOptions options) noexcept {
+Result<Connector> Connector::Create(Loop* loop,
+                                                        ConnectorOptions options) noexcept {
   if (loop == nullptr) {
     return std::unexpected(Errno(EINVAL));
   }
-  return KqueueConnector(loop, options);
+  return Connector(loop, options);
 }
 
-KqueueConnector::KqueueConnector(KqueueConnector&& other) noexcept
+Connector::Connector(Connector&& other) noexcept
     : loop_(std::exchange(other.loop_, nullptr)), options_(other.options_) {}
 
-KqueueConnector& KqueueConnector::operator=(KqueueConnector&& other) noexcept {
+Connector& Connector::operator=(Connector&& other) noexcept {
   if (this != &other) {
     loop_ = std::exchange(other.loop_, nullptr);
     options_ = other.options_;
@@ -276,27 +272,27 @@ KqueueConnector& KqueueConnector::operator=(KqueueConnector&& other) noexcept {
   return *this;
 }
 
-coro::Task<Result<KqueueStream>> KqueueConnector::Connect(net::Endpoint peer) {
+coro::Task<Result<Stream>> Connector::Connect(net::Endpoint peer) {
   RequireOwnerLoop();
   return ConnectResolved(loop_, options_.stream_options,
                          Result<net::Endpoint>(std::in_place, std::move(peer)));
 }
 
-coro::Task<Result<KqueueStream>> KqueueConnector::Connect(std::string_view host,
+coro::Task<Result<Stream>> Connector::Connect(std::string_view host,
                                                                   std::uint16_t port) {
   RequireOwnerLoop();
   return ConnectResolved(loop_, options_.stream_options, net::ParseIpAddress(host, port));
 }
 
-coro::Task<void> KqueueConnector::SleepFor(time::Duration delay) {
+coro::Task<void> Connector::SleepFor(time::Duration delay) {
   RequireOwnerLoop();
   co_await SleepAwaiter(loop_, delay);
 }
 
-void KqueueConnector::RequireOwnerLoop() const noexcept {
-  COROPACT_CHECK(loop_ != nullptr, "KqueueConnector operation has no owner KqueueLoop");
+void Connector::RequireOwnerLoop() const noexcept {
+  COROPACT_CHECK(loop_ != nullptr, "Connector operation has no owner Loop");
   COROPACT_CHECK(loop_->IsInLoopThread(),
-                 "KqueueConnector operation called from wrong KqueueLoop thread");
+                 "Connector operation called from wrong Loop thread");
 }
 
-}  // namespace coropact::kqueue
+}  // namespace coropact::reactor

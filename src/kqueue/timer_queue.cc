@@ -4,11 +4,11 @@
 #include <chrono>
 
 #include "coropact/base/check.h"
-#include "coropact/kqueue/detail/kqueue_poller.h"
+#include "coropact/kqueue/detail/poller.h"
 
 namespace coropact::kqueue::detail {
 
-TimerQueue::TimerQueue(KqueuePoller& poller) : poller_(&poller) {
+TimerQueue::TimerQueue(Poller& poller) : poller_(&poller) {
   poller_->SetTimerExpireHandler(&TimerQueue::DispatchExpire, this);
 }
 

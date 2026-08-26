@@ -11,25 +11,25 @@
 
 namespace coropact::luring::detail {
 
-LUringServer::LUringServer(net::Endpoint listen_addr, LUringServerOptions options)
+Server::Server(net::Endpoint listen_addr, ServerOptions options)
     : listen_addr_(listen_addr), options_(std::move(options)) {}
 
-LUringServer::~LUringServer() noexcept { Stop(); }
+Server::~Server() noexcept { Stop(); }
 
-Result<void> LUringServer::Start() {
+Result<void> Server::Start() {
   if (started_) {
     return std::unexpected(Errno(EALREADY));
   }
 
-  LUringWorkerGroup::ConnectionCallback connection_callback;
+  WorkerGroup::ConnectionCallback connection_callback;
   if (session_handler_) {
-    connection_callback = [this](LUringWorkerContext& context, LUringStream stream) {
+    connection_callback = [this](WorkerContext& context, Stream stream) {
       return session_handler_(context, std::move(stream));
     };
   }
 
   workers_ =
-      std::make_unique<LUringWorkerGroup>(listen_addr_, options_.worker_group_options,
+      std::make_unique<WorkerGroup>(listen_addr_, options_.worker_group_options,
                                           thread_init_callback_, std::move(connection_callback),
                                           thread_exit_callback_);
   auto started = workers_->Start();
@@ -41,7 +41,7 @@ Result<void> LUringServer::Start() {
   return {};
 }
 
-void LUringServer::Stop() noexcept {
+void Server::Stop() noexcept {
   if (workers_) {
     workers_->Stop();
     workers_.reset();

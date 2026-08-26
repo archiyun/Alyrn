@@ -18,7 +18,7 @@ namespace coropact::luring {
 
 namespace {
 
-using LUringBuilder = Runtime::Builder<runtime::LUring>;
+using Builder = Runtime::Builder<runtime::LUring>;
 
 void WaitForStop(std::atomic_bool& stop_requested) noexcept {
   while (!stop_requested.load(std::memory_order_acquire)) {
@@ -27,16 +27,16 @@ void WaitForStop(std::atomic_bool& stop_requested) noexcept {
 }
 
 // Owns the ring worker group behind Runtime's cold lifecycle seam. The
-// accepted stream remains LUringStream all the way to ConnectionHandler.
-class LUringRuntimeControl final : public runtime::detail::RuntimeControl {
+// accepted stream remains Stream all the way to ConnectionHandler.
+class RuntimeControl final : public runtime::detail::RuntimeControl {
 public:
-  LUringRuntimeControl(net::Endpoint listen_addr, std::size_t worker_count,
-                       LUringBuilder::ConnectionHandler connection_handler) noexcept
+  RuntimeControl(net::Endpoint listen_addr, std::size_t worker_count,
+                       Builder::ConnectionHandler connection_handler) noexcept
       : listen_addr_(listen_addr),
         worker_count_(worker_count),
         connection_handler_(std::move(connection_handler)) {}
 
-  ~LUringRuntimeControl() noexcept override { Stop(); }
+  ~RuntimeControl() noexcept override { Stop(); }
 
   Result<void> Start() override {
     {
@@ -51,18 +51,18 @@ public:
       state_ = LifecycleState::kStarting;
     }
 
-    detail::LUringWorkerGroupOptions options;
+    detail::WorkerGroupOptions options;
     options.worker_num = worker_count_;
     // Runtime tries native multishot accept; the source retains its capability
     // fallback when the active ring cannot use it.
     options.worker_options.accept_mode = detail::AcceptMode::kMultishot;
     options.worker_options.listen_options.reuse_port = worker_count_ > 1;
 
-    auto callback = [this](detail::LUringWorkerContext&, LUringStream stream) {
+    auto callback = [this](detail::WorkerContext&, Stream stream) {
       return connection_handler_(std::move(stream));
     };
-    auto workers = std::make_unique<detail::LUringWorkerGroup>(
-        listen_addr_, std::move(options), detail::LUringWorkerGroup::ThreadInitCallback{},
+    auto workers = std::make_unique<detail::WorkerGroup>(
+        listen_addr_, std::move(options), detail::WorkerGroup::ThreadInitCallback{},
         std::move(callback));
     auto started = workers->Start();
     if (!started.has_value()) {
@@ -108,7 +108,7 @@ public:
   }
 
   void Stop() noexcept override {
-    std::unique_ptr<detail::LUringWorkerGroup> workers;
+    std::unique_ptr<detail::WorkerGroup> workers;
     {
       std::lock_guard lock{lifecycle_mutex_};
       if (state_ == LifecycleState::kCreated || state_ == LifecycleState::kStopped ||
@@ -145,9 +145,9 @@ private:
 
   net::Endpoint listen_addr_;
   std::size_t worker_count_;
-  LUringBuilder::ConnectionHandler connection_handler_;
+  Builder::ConnectionHandler connection_handler_;
   mutable std::mutex lifecycle_mutex_;
-  std::unique_ptr<detail::LUringWorkerGroup> workers_;
+  std::unique_ptr<detail::WorkerGroup> workers_;
   LifecycleState state_{LifecycleState::kCreated};
   std::atomic_bool stop_requested_{false};
 };
@@ -157,7 +157,7 @@ private:
 std::unique_ptr<runtime::detail::RuntimeControl> MakeRuntimeControl(
     net::Endpoint listen_addr, std::size_t worker_count,
     Runtime::Builder<runtime::LUring>::ConnectionHandler connection_handler) {
-  return std::make_unique<LUringRuntimeControl>(listen_addr, worker_count,
+  return std::make_unique<RuntimeControl>(listen_addr, worker_count,
                                                 std::move(connection_handler));
 }
 

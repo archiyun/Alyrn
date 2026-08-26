@@ -27,18 +27,18 @@ class TimerQueue;
 }  // namespace detail
 
 /*
- * Owner-thread epoll dispatcher. An EventLoop owns its poller, registered
+ * Owner-thread epoll dispatcher. A Loop owns its poller, registered
  * channels, timers, and coroutine work. Cross-thread callers may request
  * stop, but may not submit or mutate owner-local I/O state directly.
  */
-class EventLoop final : public coro::Scheduler {
+class Loop final : public coro::Scheduler {
 public:
   using Functor = std::function<void()>;
 
-  explicit EventLoop(std::pmr::memory_resource* frame_resource = nullptr);
-  ~EventLoop() override;
+  explicit Loop(std::pmr::memory_resource* frame_resource = nullptr);
+  ~Loop() override;
 
-  COROPACT_DELETE_COPY_MOVE(EventLoop);
+  COROPACT_DELETE_COPY_MOVE(Loop);
 
   // Runs the dispatcher until RequestStop() or token cancellation. Run() is
   // owner-thread-only. It returns only after the currently queued owner work
@@ -59,7 +59,7 @@ public:
   // Runs callback immediately on the owning loop thread.
   void RunOnOwner(Functor callback);
 
-  // Schedules a coroutine work item for a later loop turn. The EventLoop is
+  // Schedules a coroutine work item for a later loop turn. The Loop is
   // itself the Scheduler; submission must happen on its owner thread.
   void Schedule(coro::Work* work) noexcept override;
 
@@ -92,7 +92,7 @@ private:
   using Poller = detail::Poller;
   using TimerQueue = detail::TimerQueue;
 
-  // Channel registration belongs to the implementation of EventLoop. These
+  // Channel registration belongs to the implementation of Loop. These
   // methods are intentionally unavailable to Reactor callers.
   void UpdateChannel(Channel* channel);
   void RemoveChannel(Channel* channel);

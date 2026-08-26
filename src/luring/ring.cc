@@ -16,15 +16,15 @@ namespace coropact::luring::detail {
 
 namespace {
 
-// Convert the high-level LUringOptions into native liburing parameters.
+// Convert the high-level Options into native liburing parameters.
 [[nodiscard]]
-io_uring_params MakeParams(const LUringOptions& options) noexcept {
+io_uring_params MakeParams(const Options& options) noexcept {
   io_uring_params params{};
   params.flags |= IORING_SETUP_CLAMP;
 
   // One loop owns one ring, so these flags are implementation policy rather
   // than caller configuration. Keeping them fixed makes the submission model
-  // uniform across every LUringLoop.
+  // uniform across every Loop.
   params.flags |= IORING_SETUP_SUBMIT_ALL;
   params.flags |= IORING_SETUP_SINGLE_ISSUER;
 
@@ -38,18 +38,18 @@ io_uring_params MakeParams(const LUringOptions& options) noexcept {
 
 }  // namespace
 
-LUringRing::~LUringRing() noexcept {
+Ring::~Ring() noexcept {
   if (initialized_) {
     io_uring_queue_exit(&ring_);
   }
 }
 
-LUringRing::LUringRing(LUringRing&& other) noexcept
+Ring::Ring(Ring&& other) noexcept
     : ring_(other.ring_), initialized_(std::exchange(other.initialized_, false)) {
   std::memset(&other.ring_, 0, sizeof(other.ring_));
 }
 
-LUringRing& LUringRing::operator=(LUringRing&& other) noexcept {
+Ring& Ring::operator=(Ring&& other) noexcept {
   if (this == &other) {
     return *this;
   }
@@ -64,7 +64,7 @@ LUringRing& LUringRing::operator=(LUringRing&& other) noexcept {
   return *this;
 }
 
-Result<LUringRing> LUringRing::Create(const LUringOptions& options) noexcept {
+Result<Ring> Ring::Create(const Options& options) noexcept {
   io_uring ring{};
   io_uring_params params = MakeParams(options);
 
@@ -73,12 +73,12 @@ Result<LUringRing> LUringRing::Create(const LUringOptions& options) noexcept {
     return std::unexpected(coropact::NegErrno(result));
   }
 
-  return LUringRing(ring);
+  return Ring(ring);
 }
 
-io_uring_sqe* LUringRing::GetSqe() noexcept { return io_uring_get_sqe(&ring_); }
+io_uring_sqe* Ring::GetSqe() noexcept { return io_uring_get_sqe(&ring_); }
 
-Result<std::size_t> LUringRing::Submit() noexcept {
+Result<std::size_t> Ring::Submit() noexcept {
   const int result = io_uring_submit(&ring_);
   if (result < 0) {
     return std::unexpected(NegErrno(result));

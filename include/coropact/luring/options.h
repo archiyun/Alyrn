@@ -6,10 +6,10 @@
 
 namespace coropact::luring {
 
-// LUringOptions configures resources whose size or kernel execution model is
+// Options configures resources whose size or kernel execution model is
 // observable to the application. Submission and scheduling policy are fixed
-// implementation details of LUringLoop.
-struct LUringOptions {
+// implementation details of Loop.
+struct Options {
   std::uint32_t entries{4096};
 
   // SQPOLL creates a kernel submission thread per ring and is opt-in.

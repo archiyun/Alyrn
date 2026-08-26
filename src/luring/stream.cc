@@ -40,7 +40,7 @@ namespace {
 
 constexpr std::size_t kReadIntoMaxIov = 16;
 
-Result<std::size_t> ToSizeResult(const LUringCqeResult& result) noexcept {
+Result<std::size_t> ToSizeResult(const CqeResult& result) noexcept {
   COROPACT_CHECK(result.HasValue(),
                  "LUring stream awaiter resumed before its CQE result was ready");
   const int cqe_result = *result;
@@ -53,7 +53,7 @@ Result<std::size_t> ToSizeResult(const LUringCqeResult& result) noexcept {
 }  // namespace
 
 Result<void> detail::StreamOperationSlot::Validate(
-    LUringStream& stream, StreamOperationDirection direction) noexcept {
+    Stream& stream, StreamOperationDirection direction) noexcept {
   stream.RequireOwnerLoop();
 
   const backend::LoopState loop_state = stream.loop_->State();
@@ -72,7 +72,7 @@ Result<void> detail::StreamOperationSlot::Validate(
   return {};
 }
 
-Result<void> detail::StreamOperationSlot::Reserve(LUringStream& stream,
+Result<void> detail::StreamOperationSlot::Reserve(Stream& stream,
                                                         StreamOperationDirection direction,
                                                         void* operation) noexcept {
   auto available = ValidateAvailable(stream, direction);
@@ -87,7 +87,7 @@ Result<void> detail::StreamOperationSlot::Reserve(LUringStream& stream,
 }
 
 Result<void> detail::StreamOperationSlot::ValidateAvailable(
-    LUringStream& stream, StreamOperationDirection direction) noexcept {
+    Stream& stream, StreamOperationDirection direction) noexcept {
   auto valid = Validate(stream, direction);
   if (!valid.has_value()) {
     return valid;
@@ -101,7 +101,7 @@ Result<void> detail::StreamOperationSlot::ValidateAvailable(
   return {};
 }
 
-void detail::StreamOperationSlot::Release(LUringStream& stream, StreamOperationDirection direction,
+void detail::StreamOperationSlot::Release(Stream& stream, StreamOperationDirection direction,
                                           void* operation) noexcept {
   void*& pending =
       direction == StreamOperationDirection::kRead ? stream.pending_read_ : stream.pending_write_;
@@ -112,35 +112,35 @@ void detail::StreamOperationSlot::Release(LUringStream& stream, StreamOperationD
 }
 
 // ---- ReadSomeAwaiter ---
-bool LUringStream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
+bool Stream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   auto reserved =
       detail::StreamOperationSlot::Reserve(*stream_, detail::StreamOperationDirection::kRead, this);
   if (!reserved.has_value()) {
-    Op()->SetImmediateError(reserved.error());
+    Operation()->SetImmediateError(reserved.error());
     return false;
   }
   if (buffer_.empty()) {
     detail::StreamOperationSlot::Release(*stream_, detail::StreamOperationDirection::kRead, this);
-    Op()->SetImmediateSuccess();
+    Operation()->SetImmediateSuccess();
     return false;
   }
 
-  Op()->kind = LUringOpKind::kReadComplete;
+  Operation()->kind = OpKind::kReadComplete;
   return detail::SubmitAwaitingOperation(
-      *stream_->loop_, *Op(), continuation,
+      *stream_->loop_, *Operation(), continuation,
       detail::PrepareRecv(stream_->fd_, buffer_.data(), buffer_.size()),
       [this](Error error) noexcept {
         detail::StreamOperationSlot::Release(*stream_, detail::StreamOperationDirection::kRead,
                                              this);
-        Op()->SetImmediateError(error);
+        Operation()->SetImmediateError(error);
       });
 }
 
-Result<std::size_t> LUringStream::ReadSomeAwaiter::await_resume() noexcept {
-  return ToSizeResult(Op()->result);
+Result<std::size_t> Stream::ReadSomeAwaiter::await_resume() noexcept {
+  return ToSizeResult(Operation()->result);
 }
 
-void LUringStream::ReadSomeAwaiter::OnComplete(LUringOp* op) noexcept {
+void Stream::ReadSomeAwaiter::OnComplete(::coropact::luring::detail::Op* op) noexcept {
   auto* self = OpHook::OwnerFrom(op);
   COROPACT_CHECK(op->TryAuthorizeCoupledRelease(),
                  "LUring ReadSome released its stream slot before result readiness");
@@ -151,50 +151,50 @@ void LUringStream::ReadSomeAwaiter::OnComplete(LUringOp* op) noexcept {
 }
 
 // ---- ReadIntoAwaiter ---
-bool LUringStream::ReadIntoAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
+bool Stream::ReadIntoAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   auto reserved =
       detail::StreamOperationSlot::Reserve(*stream_, detail::StreamOperationDirection::kRead, this);
   if (!reserved.has_value()) {
-    Op()->SetImmediateError(reserved.error());
+    Operation()->SetImmediateError(reserved.error());
     return false;
   }
   iovec single_iov{};
   const ReservationKind reservation = PrepareReservation(single_iov);
   if (reservation == ReservationKind::kNone) {
     detail::StreamOperationSlot::Release(*stream_, detail::StreamOperationDirection::kRead, this);
-    Op()->SetImmediateError(Errno(ENOMEM));
+    Operation()->SetImmediateError(Errno(ENOMEM));
     return false;
   }
 
-  Op()->kind = LUringOpKind::kReadIntoComplete;
+  Operation()->kind = OpKind::kReadIntoComplete;
 
   auto on_submit_failure = [this](Error error) noexcept {
     detail::StreamOperationSlot::Release(*stream_, detail::StreamOperationDirection::kRead, this);
     FinishReservation(std::unexpected(error));
-    Op()->SetImmediateError(error);
+    Operation()->SetImmediateError(error);
   };
 
   if (reservation == ReservationKind::kSingle) {
     return detail::SubmitAwaitingOperation(
-        *stream_->loop_, *Op(), continuation,
+        *stream_->loop_, *Operation(), continuation,
         detail::PrepareRecv(stream_->fd_, single_iov.iov_base, single_iov.iov_len),
         std::move(on_submit_failure));
   }
 
   return detail::SubmitAwaitingOperation(
-      *stream_->loop_, *Op(), continuation,
+      *stream_->loop_, *Operation(), continuation,
       detail::PrepareReadv(stream_->fd_, iovs_.data(), static_cast<unsigned>(iovs_.size()), -1),
       std::move(on_submit_failure));
 }
 
-net::ReadIntoOutcome LUringStream::ReadIntoAwaiter::await_resume() noexcept {
+net::ReadIntoOutcome Stream::ReadIntoAwaiter::await_resume() noexcept {
   return {
-      .result = ToSizeResult(Op()->result),
+      .result = ToSizeResult(Operation()->result),
       .buffer = std::move(buffer_),
   };
 }
 
-void LUringStream::ReadIntoAwaiter::OnComplete(LUringOp* op) noexcept {
+void Stream::ReadIntoAwaiter::OnComplete(::coropact::luring::detail::Op* op) noexcept {
   auto* self = OpHook::OwnerFrom(op);
   COROPACT_CHECK(op->TryAuthorizeCoupledRelease(),
                  "LUring ReadInto released its reservation before result readiness");
@@ -205,7 +205,7 @@ void LUringStream::ReadIntoAwaiter::OnComplete(LUringOp* op) noexcept {
   }
 }
 
-LUringStream::ReadIntoAwaiter::ReservationKind LUringStream::ReadIntoAwaiter::PrepareReservation(
+Stream::ReadIntoAwaiter::ReservationKind Stream::ReadIntoAwaiter::PrepareReservation(
     iovec& single_iov) noexcept {
   try {
     if (auto iov = buffer_.TryPrepareWriteOne(reserve_); iov.has_value()) {
@@ -227,7 +227,7 @@ LUringStream::ReadIntoAwaiter::ReservationKind LUringStream::ReadIntoAwaiter::Pr
   return reservation_kind_;
 }
 
-void LUringStream::ReadIntoAwaiter::FinishReservation(Result<std::size_t> result) noexcept {
+void Stream::ReadIntoAwaiter::FinishReservation(Result<std::size_t> result) noexcept {
   COROPACT_CHECK(reservation_kind_ != ReservationKind::kNone,
                  "ReadIntoAwaiter completion without a buffer reservation");
   if (result.has_value()) {
@@ -240,11 +240,11 @@ void LUringStream::ReadIntoAwaiter::FinishReservation(Result<std::size_t> result
 }
 
 // --- ReadSomeForAwaiter ---
-LUringStream::ReadSomeForAwaiter::ReadSomeForAwaiter(LUringStream& stream,
+Stream::ReadSomeForAwaiter::ReadSomeForAwaiter(Stream& stream,
                                                      std::span<std::byte> buffer,
                                                      time::Duration timeout) noexcept
-    : ReadOpHook(LUringOpKind::kTimedReadComplete),
-      TimeoutOpHook(LUringOpKind::kTimedReadTimeoutComplete),
+    : ReadOpHook(OpKind::kTimedReadComplete),
+      TimeoutOpHook(OpKind::kTimedReadTimeoutComplete),
       stream_(&stream),
       buffer_(buffer) {
   const auto milliseconds = std::max(
@@ -253,7 +253,7 @@ LUringStream::ReadSomeForAwaiter::ReadSomeForAwaiter(LUringStream& stream,
   timeout_ts_.tv_nsec = static_cast<long>(milliseconds % 1000) * 1'000'000;
 }
 
-bool LUringStream::ReadSomeForAwaiter::await_suspend(
+bool Stream::ReadSomeForAwaiter::await_suspend(
     std::coroutine_handle<> continuation) noexcept {
   auto reserved =
       detail::StreamOperationSlot::Reserve(*stream_, detail::StreamOperationDirection::kRead, this);
@@ -288,7 +288,7 @@ bool LUringStream::ReadSomeForAwaiter::await_suspend(
   return true;
 }
 
-Result<std::size_t> LUringStream::ReadSomeForAwaiter::await_resume() noexcept {
+Result<std::size_t> Stream::ReadSomeForAwaiter::await_resume() noexcept {
   if (!ReadOp()->CqeCompletionRecorded()) {
     return ToSizeResult(ReadOp()->result);
   }
@@ -304,29 +304,29 @@ Result<std::size_t> LUringStream::ReadSomeForAwaiter::await_resume() noexcept {
   return ToSizeResult(ReadOp()->result);
 }
 
-void LUringStream::ReadSomeForAwaiter::OnReadComplete(LUringOp* op) noexcept {
+void Stream::ReadSomeForAwaiter::OnReadComplete(::coropact::luring::detail::Op* op) noexcept {
   ReadOpHook::OwnerFrom(op)->CompleteRead(op);
 }
 
-void LUringStream::ReadSomeForAwaiter::OnTimeoutComplete(LUringOp* op) noexcept {
+void Stream::ReadSomeForAwaiter::OnTimeoutComplete(::coropact::luring::detail::Op* op) noexcept {
   TimeoutOpHook::OwnerFrom(op)->CompleteTimeout(op);
 }
 
-void LUringStream::ReadSomeForAwaiter::CompleteRead(LUringOp* current) noexcept {
+void Stream::ReadSomeForAwaiter::CompleteRead(::coropact::luring::detail::Op* current) noexcept {
   if (!lifecycle_.RecordMemberCompletion(operation::detail::CompositeMember::kFirst)) {
     return;
   }
   FinishIfReady(current);
 }
 
-void LUringStream::ReadSomeForAwaiter::CompleteTimeout(LUringOp* current) noexcept {
+void Stream::ReadSomeForAwaiter::CompleteTimeout(::coropact::luring::detail::Op* current) noexcept {
   if (!lifecycle_.RecordMemberCompletion(operation::detail::CompositeMember::kSecond)) {
     return;
   }
   FinishIfReady(current);
 }
 
-void LUringStream::ReadSomeForAwaiter::FinishIfReady(LUringOp* current) noexcept {
+void Stream::ReadSomeForAwaiter::FinishIfReady(::coropact::luring::detail::Op* current) noexcept {
   if (!lifecycle_.TryAuthorizeLogicalResult()) {
     return;
   }
@@ -340,40 +340,40 @@ void LUringStream::ReadSomeForAwaiter::FinishIfReady(LUringOp* current) noexcept
 }
 
 // --- SendAwaiter ---
-bool LUringStream::SendAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
+bool Stream::SendAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   if (buffer_.empty()) {
     auto available = detail::StreamOperationSlot::ValidateAvailable(
         *stream_, detail::StreamOperationDirection::kWrite);
     if (!available.has_value()) {
-      Op()->SetImmediateError(available.error());
+      Operation()->SetImmediateError(available.error());
       return false;
     }
-    Op()->SetImmediateSuccess();
+    Operation()->SetImmediateSuccess();
     return false;
   }
   auto reserved = detail::StreamOperationSlot::Reserve(
       *stream_, detail::StreamOperationDirection::kWrite, this);
   if (!reserved.has_value()) {
-    Op()->SetImmediateError(reserved.error());
+    Operation()->SetImmediateError(reserved.error());
     return false;
   }
 
-  Op()->kind = LUringOpKind::kWriteComplete;
+  Operation()->kind = OpKind::kWriteComplete;
   return detail::SubmitAwaitingOperation(
-      *stream_->loop_, *Op(), continuation,
+      *stream_->loop_, *Operation(), continuation,
       detail::PrepareSend(stream_->fd_, buffer_.data(), buffer_.size(), MSG_NOSIGNAL),
       [this](Error error) noexcept {
         detail::StreamOperationSlot::Release(*stream_, detail::StreamOperationDirection::kWrite,
                                              this);
-        Op()->SetImmediateError(error);
+        Operation()->SetImmediateError(error);
       });
 }
 
-Result<std::size_t> LUringStream::SendAwaiter::await_resume() noexcept {
-  return ToSizeResult(Op()->result);
+Result<std::size_t> Stream::SendAwaiter::await_resume() noexcept {
+  return ToSizeResult(Operation()->result);
 }
 
-void LUringStream::SendAwaiter::OnComplete(LUringOp* op) noexcept {
+void Stream::SendAwaiter::OnComplete(::coropact::luring::detail::Op* op) noexcept {
   auto* self = OpHook::OwnerFrom(op);
   COROPACT_CHECK(op->TryAuthorizeCoupledRelease(),
                  "LUring send released its stream slot before result readiness");
@@ -384,14 +384,14 @@ void LUringStream::SendAwaiter::OnComplete(LUringOp* op) noexcept {
 }
 
 // ----- CloseAwaiter ------
-class LUringStream::CloseAwaiter : public detail::LUringOpHook<LUringStream::CloseAwaiter> {
-  friend void detail::DispatchStreamCloseComplete(LUringOp* op) noexcept;
+class Stream::CloseAwaiter : public detail::OpHook<Stream::CloseAwaiter> {
+  friend void detail::DispatchStreamCloseComplete(::coropact::luring::detail::Op* op) noexcept;
 
 public:
-  using OpHook = detail::LUringOpHook<CloseAwaiter>;
+  using OpHook = detail::OpHook<CloseAwaiter>;
 
-  explicit CloseAwaiter(LUringStream& stream) noexcept
-      : OpHook(LUringOpKind::kStreamCloseComplete), stream_(&stream) {}
+  explicit CloseAwaiter(Stream& stream) noexcept
+      : OpHook(OpKind::kStreamCloseComplete), stream_(&stream) {}
 
   bool await_ready() const noexcept { return false; }
 
@@ -421,10 +421,10 @@ public:
     // The cancel CQE may arrive before the pending stream operations drain.
     // Keep the work handle empty until TryComplete() observes both conditions.
     convergence_.BeginWaiting(continuation);
-    Op()->kind = LUringOpKind::kStreamCloseComplete;
+    Operation()->kind = OpKind::kStreamCloseComplete;
 
     auto submitted = detail::LoopAccess::SubmitOp(
-        *stream_->loop_, Op(),
+        *stream_->loop_, Operation(),
         detail::PrepareCancelAllByFd(stream_->fd_));
     if (!submitted.has_value()) {
       stream_->pending_close_ = nullptr;
@@ -441,26 +441,26 @@ public:
     return convergence_.TakeResult();
   }
 
-  void TryComplete(LUringOp* current = nullptr) noexcept {
+  void TryComplete(::coropact::luring::detail::Op* current = nullptr) noexcept {
     if (stream_ == nullptr || !convergence_.TryAuthorizeClose(stream_->pending_read_ != nullptr ||
                                                               stream_->pending_write_ != nullptr)) {
       return;
     }
 
-    LUringLoop* loop = stream_->loop_;
+    Loop* loop = stream_->loop_;
     stream_->pending_close_ = nullptr;
     convergence_.SetResult(CloseFd());
     stream_ = nullptr;
     // The cancel operation is no longer waiting for a CQE, so its embedded
     // work slot can carry the final coroutine resumption.
-    Op()->resume_work.SetHandle(convergence_.Continuation());
-    if (current != Op()) {
-      detail::LoopAccess::ScheduleCompletion(*loop, &Op()->resume_work);
+    Operation()->resume_work.SetHandle(convergence_.Continuation());
+    if (current != Operation()) {
+      detail::LoopAccess::ScheduleCompletion(*loop, &Operation()->resume_work);
     }
   }
 
 private:
-  static void OnCancelComplete(LUringOp* op) noexcept {
+  static void OnCancelComplete(::coropact::luring::detail::Op* op) noexcept {
     auto* self = OpHook::OwnerFrom(op);
     self->convergence_.MarkCancelRequestTerminal();
     self->TryComplete(op);
@@ -478,49 +478,49 @@ private:
     return Result<void>{};
   }
 
-  LUringStream* stream_;
+  Stream* stream_;
   detail::FdCloseConvergence convergence_;
 };
 
 // --- SendZeroCopyAwaiter ---
-bool LUringStream::SendZeroCopyAwaiter::await_suspend(
+bool Stream::SendZeroCopyAwaiter::await_suspend(
     std::coroutine_handle<> continuation) noexcept {
   if (buffer_.empty()) {
     auto available = detail::StreamOperationSlot::ValidateAvailable(
         *stream_, detail::StreamOperationDirection::kWrite);
     if (!available.has_value()) {
-      Op()->SetImmediateError(available.error());
+      Operation()->SetImmediateError(available.error());
       return false;
     }
-    Op()->SetImmediateSuccess();
+    Operation()->SetImmediateSuccess();
     return false;
   }
   auto reserved = detail::StreamOperationSlot::Reserve(
       *stream_, detail::StreamOperationDirection::kWrite, this);
   if (!reserved.has_value()) {
-    Op()->SetImmediateError(reserved.error());
+    Operation()->SetImmediateError(reserved.error());
     return false;
   }
 
-  Op()->kind = LUringOpKind::kSendZeroCopyComplete;
-  Op()->resume_work.SetHandle(continuation);
+  Operation()->kind = OpKind::kSendZeroCopyComplete;
+  Operation()->resume_work.SetHandle(continuation);
 
   auto submitted = detail::LoopAccess::SubmitOp(
-      *stream_->loop_, Op(), detail::PrepareSendZeroCopyReportUsage(
+      *stream_->loop_, Operation(), detail::PrepareSendZeroCopyReportUsage(
                                stream_->fd_, buffer_.data(), buffer_.size(), MSG_NOSIGNAL));
   if (!submitted.has_value()) {
     detail::StreamOperationSlot::Release(*stream_, detail::StreamOperationDirection::kWrite, this);
-    Op()->SetImmediateError(submitted.error());
+    Operation()->SetImmediateError(submitted.error());
     return false;
   }
   return true;
 }
 
-Result<ZeroCopySendResult> LUringStream::SendZeroCopyAwaiter::await_resume() noexcept {
-  if (!Op()->result.HasValue()) {
+Result<ZeroCopySendResult> Stream::SendZeroCopyAwaiter::await_resume() noexcept {
+  if (!Operation()->result.HasValue()) {
     return std::unexpected(Errno(EIO));
   }
-  const int result = *Op()->result;
+  const int result = *Operation()->result;
   if (result < 0) {
     return std::unexpected(NegErrno(result));
   }
@@ -531,8 +531,8 @@ Result<ZeroCopySendResult> LUringStream::SendZeroCopyAwaiter::await_resume() noe
   };
 }
 
-CompletionDisposition LUringStream::SendZeroCopyAwaiter::OnComplete(
-    LUringOp* op, CompletionEvent event) noexcept {
+CompletionDisposition Stream::SendZeroCopyAwaiter::OnComplete(
+    ::coropact::luring::detail::Op* op, CompletionEvent event) noexcept {
   auto* self = OpHook::OwnerFrom(op);
   CompletionDisposition disposition;
 
@@ -574,58 +574,58 @@ CompletionDisposition LUringStream::SendZeroCopyAwaiter::OnComplete(
 
 namespace detail {
 
-void DispatchStreamReadComplete(LUringOp* op) noexcept {
-  LUringStream::ReadSomeAwaiter::OnComplete(op);
+void DispatchStreamReadComplete(::coropact::luring::detail::Op* op) noexcept {
+  Stream::ReadSomeAwaiter::OnComplete(op);
 }
 
-void DispatchStreamReadIntoComplete(LUringOp* op) noexcept {
-  LUringStream::ReadIntoAwaiter::OnComplete(op);
+void DispatchStreamReadIntoComplete(::coropact::luring::detail::Op* op) noexcept {
+  Stream::ReadIntoAwaiter::OnComplete(op);
 }
 
-void DispatchTimedReadComplete(LUringOp* op) noexcept {
-  LUringStream::ReadSomeForAwaiter::OnReadComplete(op);
+void DispatchTimedReadComplete(::coropact::luring::detail::Op* op) noexcept {
+  Stream::ReadSomeForAwaiter::OnReadComplete(op);
 }
 
-void DispatchTimedReadTimeoutComplete(LUringOp* op) noexcept {
-  LUringStream::ReadSomeForAwaiter::OnTimeoutComplete(op);
+void DispatchTimedReadTimeoutComplete(::coropact::luring::detail::Op* op) noexcept {
+  Stream::ReadSomeForAwaiter::OnTimeoutComplete(op);
 }
 
-void DispatchStreamWriteComplete(LUringOp* op) noexcept {
-  LUringStream::SendAwaiter::OnComplete(op);
+void DispatchStreamWriteComplete(::coropact::luring::detail::Op* op) noexcept {
+  Stream::SendAwaiter::OnComplete(op);
 }
 
-CompletionDisposition DispatchSendZeroCopyComplete(LUringOp* op, CompletionEvent event) noexcept {
-  return LUringStream::SendZeroCopyAwaiter::OnComplete(op, event);
+CompletionDisposition DispatchSendZeroCopyComplete(::coropact::luring::detail::Op* op, CompletionEvent event) noexcept {
+  return Stream::SendZeroCopyAwaiter::OnComplete(op, event);
 }
 
-void DispatchStreamCloseComplete(LUringOp* op) noexcept {
-  LUringStream::CloseAwaiter::OnCancelComplete(op);
+void DispatchStreamCloseComplete(::coropact::luring::detail::Op* op) noexcept {
+  Stream::CloseAwaiter::OnCancelComplete(op);
 }
 
 }  // namespace detail
 
-LUringStream::LUringStream(LUringLoop* loop, int fd, net::Endpoint peer) noexcept
+Stream::Stream(Loop* loop, int fd, net::Endpoint peer) noexcept
     : loop_(loop), fd_(fd), peer_(std::move(peer)) {
-  COROPACT_CHECK(loop_ != nullptr, "LUringStream requires an owner loop");
-  COROPACT_CHECK(loop_->IsInLoopThread(), "LUringStream created from wrong LUringLoop thread");
-  COROPACT_CHECK(fd_ >= 0, "LUringStream requires a valid file descriptor");
+  COROPACT_CHECK(loop_ != nullptr, "Stream requires an owner loop");
+  COROPACT_CHECK(loop_->IsInLoopThread(), "Stream created from wrong Loop thread");
+  COROPACT_CHECK(fd_ >= 0, "Stream requires a valid file descriptor");
 }
 
-LUringStream::LUringStream(LUringStream&& other) noexcept
+Stream::Stream(Stream&& other) noexcept
     : loop_(PrepareMove(other)),
       fd_(std::exchange(other.fd_, -1)),
       peer_(std::move(other.peer_)),
       zero_copy_writes_enabled_(other.zero_copy_writes_enabled_),
       lifecycle_(std::move(other.lifecycle_)) {}
 
-LUringStream& LUringStream::operator=(LUringStream&& other) noexcept {
+Stream& Stream::operator=(Stream&& other) noexcept {
   if (this == &other) {
     return *this;
   }
 
-  LUringLoop* other_loop = PrepareMove(other);
+  Loop* other_loop = PrepareMove(other);
   COROPACT_CHECK(loop_ == nullptr || loop_ == other_loop,
-                 "LUringStream move requires both objects to use the same LUringLoop");
+                 "Stream move requires both objects to use the same Loop");
   if (loop_ != nullptr) {
     ResetForMove();
   }
@@ -641,40 +641,40 @@ LUringStream& LUringStream::operator=(LUringStream&& other) noexcept {
   return *this;
 }
 
-LUringStream::~LUringStream() noexcept {
-  COROPACT_CHECK(pending_read_ == nullptr, "LUringStream destroyed with a pending read");
-  COROPACT_CHECK(pending_write_ == nullptr, "LUringStream destroyed with a pending write");
-  COROPACT_CHECK(pending_close_ == nullptr, "LUringStream destroyed with a pending close");
+Stream::~Stream() noexcept {
+  COROPACT_CHECK(pending_read_ == nullptr, "Stream destroyed with a pending read");
+  COROPACT_CHECK(pending_write_ == nullptr, "Stream destroyed with a pending write");
+  COROPACT_CHECK(pending_close_ == nullptr, "Stream destroyed with a pending close");
   if (fd_ >= 0) {
     ::close(fd_);
   }
 }
 
-void LUringStream::RequireOwnerLoop() const noexcept {
-  COROPACT_CHECK(loop_ != nullptr, "LUringStream operation has no owner loop");
+void Stream::RequireOwnerLoop() const noexcept {
+  COROPACT_CHECK(loop_ != nullptr, "Stream operation has no owner loop");
   COROPACT_CHECK(loop_->IsInLoopThread(),
-                 "LUringStream operation called from wrong LUringLoop thread");
+                 "Stream operation called from wrong Loop thread");
 }
 
-LUringStream::ReadSomeAwaiter LUringStream::ReadSome(std::span<std::byte> buffer) noexcept {
+Stream::ReadSomeAwaiter Stream::ReadSome(std::span<std::byte> buffer) noexcept {
   return ReadSomeAwaiter{*this, buffer};
 }
 
-LUringStream::ReadIntoAwaiter LUringStream::ReadInto(net::Buffer buffer,
+Stream::ReadIntoAwaiter Stream::ReadInto(net::Buffer buffer,
                                                      std::size_t reserve) noexcept {
   return ReadIntoAwaiter{*this, std::move(buffer), reserve};
 }
 
-LUringStream::ReadSomeForAwaiter LUringStream::ReadSomeFor(std::span<std::byte> buffer,
+Stream::ReadSomeForAwaiter Stream::ReadSomeFor(std::span<std::byte> buffer,
                                                            time::Duration timeout) noexcept {
   return ReadSomeForAwaiter{*this, buffer, timeout};
 }
 
-LUringStream::SendAwaiter LUringStream::Send(std::span<const std::byte> buffer) noexcept {
+Stream::SendAwaiter Stream::Send(std::span<const std::byte> buffer) noexcept {
   return SendAwaiter{*this, buffer};
 }
 
-coro::Task<Result<void>> LUringStream::WriteAll(std::span<const std::byte> buffer) {
+coro::Task<Result<void>> Stream::WriteAll(std::span<const std::byte> buffer) {
   if (buffer.empty()) {
     auto available = detail::StreamOperationSlot::ValidateAvailable(
         *this, detail::StreamOperationDirection::kWrite);
@@ -716,7 +716,7 @@ coro::Task<Result<void>> LUringStream::WriteAll(std::span<const std::byte> buffe
   co_return Result<void>{};
 }
 
-coro::Task<Result<void>> LUringStream::Shutdown() {
+coro::Task<Result<void>> Stream::Shutdown() {
   RequireOwnerLoop();
   if (fd_ < 0) {
     co_return std::unexpected(Errno(EBADF));
@@ -737,25 +737,25 @@ coro::Task<Result<void>> LUringStream::Shutdown() {
   co_return Result<void>{};
 }
 
-coro::Task<Result<void>> LUringStream::Close() { co_return co_await CloseAwaiter(*this); }
+coro::Task<Result<void>> Stream::Close() { co_return co_await CloseAwaiter(*this); }
 
-LUringStream::SendZeroCopyAwaiter LUringStream::SendZeroCopy(
+Stream::SendZeroCopyAwaiter Stream::SendZeroCopy(
     std::span<const std::byte> buffer) noexcept {
   return SendZeroCopyAwaiter{*this, buffer};
 }
 
-void LUringStream::NotifyCloseProgress() noexcept {
+void Stream::NotifyCloseProgress() noexcept {
   if (pending_close_ != nullptr) {
     pending_close_->TryComplete();
   }
 }
 
-void LUringStream::ResetForMove() noexcept {
-  COROPACT_CHECK(loop_ != nullptr, "LUringStream move destination is not initialized");
-  COROPACT_CHECK(loop_->IsInLoopThread(), "LUringStream move called from wrong LUringLoop thread");
-  COROPACT_CHECK(pending_read_ == nullptr, "LUringStream move destination has a pending read");
-  COROPACT_CHECK(pending_write_ == nullptr, "LUringStream move destination has a pending write");
-  COROPACT_CHECK(pending_close_ == nullptr, "LUringStream move destination has a pending close");
+void Stream::ResetForMove() noexcept {
+  COROPACT_CHECK(loop_ != nullptr, "Stream move destination is not initialized");
+  COROPACT_CHECK(loop_->IsInLoopThread(), "Stream move called from wrong Loop thread");
+  COROPACT_CHECK(pending_read_ == nullptr, "Stream move destination has a pending read");
+  COROPACT_CHECK(pending_write_ == nullptr, "Stream move destination has a pending write");
+  COROPACT_CHECK(pending_close_ == nullptr, "Stream move destination has a pending close");
 
   const int fd = std::exchange(fd_, -1);
   if (fd >= 0) {
@@ -763,18 +763,18 @@ void LUringStream::ResetForMove() noexcept {
   }
 }
 
-LUringLoop* LUringStream::PrepareMove(LUringStream& other) noexcept {
-  COROPACT_CHECK(other.loop_ != nullptr, "LUringStream move source is not initialized");
+Loop* Stream::PrepareMove(Stream& other) noexcept {
+  COROPACT_CHECK(other.loop_ != nullptr, "Stream move source is not initialized");
   COROPACT_CHECK(other.loop_->IsInLoopThread(),
-                 "LUringStream move called from wrong LUringLoop thread");
+                 "Stream move called from wrong Loop thread");
   COROPACT_CHECK(other.pending_read_ == nullptr,
-                 "LUringStream cannot move with a pending read operation");
+                 "Stream cannot move with a pending read operation");
   COROPACT_CHECK(other.pending_write_ == nullptr,
-                 "LUringStream cannot move with a pending write operation");
+                 "Stream cannot move with a pending write operation");
   COROPACT_CHECK(other.pending_close_ == nullptr,
-                 "LUringStream cannot move with a pending close operation");
+                 "Stream cannot move with a pending close operation");
 
-  LUringLoop* loop = std::exchange(other.loop_, nullptr);
+  Loop* loop = std::exchange(other.loop_, nullptr);
   return loop;
 }
 

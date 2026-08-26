@@ -27,9 +27,9 @@ constexpr std::string_view kMessage = "hello from connector";
 // reads the complete echo, and then closes the stream.
 //
 // exit_code is a reference to main's state. The coroutine always runs on the
-// same LUringLoop thread, so it is safe to update it before RequestStop().
-coro::DetachedTask ConnectOnce(luring::LUringLoop& loop, int& exit_code) {
-  luring::LUringConnector connector(&loop);
+// same Loop thread, so it is safe to update it before RequestStop().
+coro::DetachedTask ConnectOnce(luring::Loop& loop, int& exit_code) {
+  luring::Connector connector(&loop);
 
   auto connected = co_await connector.Connect("127.0.0.1", kEchoPort);
   if (!connected.has_value()) {
@@ -115,9 +115,9 @@ coro::DetachedTask ConnectOnce(luring::LUringLoop& loop, int& exit_code) {
 int main() {
   std::signal(SIGPIPE, SIG_IGN);
 
-  luring::LUringLoop loop;
+  luring::Loop loop;
 
-  luring::LUringOptions options;
+  luring::Options options;
   options.entries = 64;
 
   auto initialized = loop.Init(options);

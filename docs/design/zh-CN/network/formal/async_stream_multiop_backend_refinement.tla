@@ -21,7 +21,7 @@ Owner(op) == IF op = "Read" THEN "Reader" ELSE "Writer"
 ResourceStates == {"Open", "Closing", "Closed"}
 OperationStates == {"None", "Pending", "Completed", "Cancelled"}
 CoroutineStates == {"Running", "Waiting", "Ready"}
-ReactorStates == {"Idle", "ChannelWaiting", "Ready"}
+States == {"Idle", "ChannelWaiting", "Ready"}
 UringStates == {"Idle", "SQEQueued", "Submitted", "CQEReady"}
 
 VARIABLES backend,
@@ -70,7 +70,7 @@ Init ==
 (* Reactor physical interpretation.                                        *)
 (***************************************************************************)
 
-ReactorSubmitPending(op) ==
+SubmitPending(op) ==
   /\ backend = "Reactor"
   /\ op \in Operations
   /\ resourceState = "Open"
@@ -84,7 +84,7 @@ ReactorSubmitPending(op) ==
   /\ trace' = Append(trace, <<op, "Submit">>)
   /\ UNCHANGED <<backend, resourceState, completionCount, resumeCount, uringState>>
 
-ReactorImmediateComplete(op) ==
+ImmediateComplete(op) ==
   /\ backend = "Reactor"
   /\ op \in Operations
   /\ resourceState = "Open"
@@ -97,7 +97,7 @@ ReactorImmediateComplete(op) ==
   /\ trace' = Append(Append(trace, <<op, "Submit">>), <<op, "Complete">>)
   /\ UNCHANGED <<backend, resourceState, coroutineState, resumeCount, reactorState, uringState>>
 
-ReactorReady(op) ==
+Ready(op) ==
   /\ backend = "Reactor"
   /\ op \in Operations
   /\ reactorState[op] = "ChannelWaiting"
@@ -112,7 +112,7 @@ ReactorReady(op) ==
                  uringState,
                  trace>>
 
-ReactorComplete(op) ==
+Complete(op) ==
   /\ backend = "Reactor"
   /\ op \in Operations
   /\ resourceState \in {"Open", "Closing"}
@@ -125,7 +125,7 @@ ReactorComplete(op) ==
   /\ trace' = Append(trace, <<op, "Complete">>)
   /\ UNCHANGED <<backend, resourceState, coroutineState, submitCount, resumeCount, uringState>>
 
-ReactorCancel(op) ==
+Cancel(op) ==
   /\ backend = "Reactor"
   /\ op \in Operations
   /\ resourceState = "Closing"
@@ -273,11 +273,11 @@ FinalizeClose ==
                  trace>>
 
 Next ==
-  \/ \E op \in Operations: ReactorSubmitPending(op)
-  \/ \E op \in Operations: ReactorImmediateComplete(op)
-  \/ \E op \in Operations: ReactorReady(op)
-  \/ \E op \in Operations: ReactorComplete(op)
-  \/ \E op \in Operations: ReactorCancel(op)
+  \/ \E op \in Operations: SubmitPending(op)
+  \/ \E op \in Operations: ImmediateComplete(op)
+  \/ \E op \in Operations: Ready(op)
+  \/ \E op \in Operations: Complete(op)
+  \/ \E op \in Operations: Cancel(op)
   \/ \E op \in Operations: UringPrepareSQE(op)
   \/ \E op \in Operations: UringImmediateComplete(op)
   \/ \E op \in Operations: UringSubmit(op)
@@ -298,7 +298,7 @@ TypeOK ==
   /\ submitCount \in [Operations -> Nat]
   /\ completionCount \in [Operations -> Nat]
   /\ resumeCount \in [Operations -> Nat]
-  /\ reactorState \in [Operations -> ReactorStates]
+  /\ reactorState \in [Operations -> States]
   /\ uringState \in [Operations -> UringStates]
   /\ trace \in Seq(TraceEvents)
 

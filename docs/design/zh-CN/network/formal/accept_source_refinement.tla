@@ -23,7 +23,7 @@ CONSTANT MaxEvents, MaxRequests
 Backends      == {"Reactor", "UringSingle", "UringMulti"}
 SourceStates  == {"Idle", "Active", "Pausing", "Paused", "Stopping", "Draining", "Terminal"}
 RequestStates == {"Idle", "Armed"}
-ReactorStates == {"Idle", "Armed", "Ready"}
+States == {"Idle", "Armed", "Ready"}
 UringStates   == {"Idle", "Submitted"}
 CancelStates  == {"Idle", "Submitted"}
 EventIds      == 1..MaxEvents
@@ -146,7 +146,7 @@ Arm ==
                  stopRequested,
                  resumeCount>>
 
-ReactorReady ==
+Ready ==
   /\ backend = "Reactor"
   /\ sourceState \in {"Active", "Stopping"}
   /\ requestState = "Armed"
@@ -168,7 +168,7 @@ ReactorReady ==
                  stopRequested,
                  resumeCount>>
 
-ReactorAccept ==
+Accept ==
   /\ backend = "Reactor"
   /\ sourceState \in {"Active", "Stopping"}
   /\ requestState = "Armed"
@@ -194,7 +194,7 @@ ReactorAccept ==
 
 (* Readiness can fire without producing a connection. The source remains
  * active and may arm again; after Stop it drains the already queued events. *)
-ReactorNoConnection ==
+NoConnection ==
   /\ backend = "Reactor"
   /\ sourceState \in {"Active", "Stopping"}
   /\ requestState = "Armed"
@@ -389,7 +389,7 @@ RequestPause ==
 
 (* Reactor has no target CQE. Removing readable interest releases the one
  * modeled readiness request and reaches the same abstract Paused state. *)
-ReactorPauseRelease ==
+PauseRelease ==
   /\ backend = "Reactor"
   /\ sourceState = "Pausing"
   /\ requestState = "Armed"
@@ -531,9 +531,9 @@ ObserveTerminal ==
 Next ==
   \/ Start
   \/ Arm
-  \/ ReactorReady
-  \/ ReactorAccept
-  \/ ReactorNoConnection
+  \/ Ready
+  \/ Accept
+  \/ NoConnection
   \/ UringSingleComplete
   \/ UringSingleCompleteEvent
   \/ UringMultiMore
@@ -541,7 +541,7 @@ Next ==
   \/ UringMultiTerminateEvent
   \/ BackendFailure
   \/ RequestPause
-  \/ ReactorPauseRelease
+  \/ PauseRelease
   \/ ResumeAdmission
   \/ RequestStop
   \/ CancelComplete
@@ -554,7 +554,7 @@ TypeOK ==
   /\ backend \in Backends
   /\ sourceState \in SourceStates
   /\ requestState \in RequestStates
-  /\ reactorState \in ReactorStates
+  /\ reactorState \in States
   /\ uringState \in UringStates
   /\ cancelState \in CancelStates
   /\ queue \in Seq(EventIds)

@@ -1,26 +1,23 @@
 // SPDX-License-Identifier: MIT
-#include "coropact/kqueue/detail/kqueue_worker.h"
+#include "coropact/reactor/detail/worker.h"
 
 #include <cerrno>
 #include <expected>
-#include <optional>
 #include <stop_token>
 #include <utility>
 
-#include "coropact/base/check.h"
 #include "coropact/result.h"
 #include "coropact/coro/frame_allocator.h"
 #include "coropact/coro/spawn.h"
 
-namespace coropact::kqueue::detail {
+namespace coropact::reactor::detail {
 
 namespace {
 
-coro::DetachedTask AcceptLoop(KqueueWorkerContext& context,
-                              KqueueWorker::ConnectionCallback* callback) {
-  COROPACT_CHECK(context.listener != nullptr, "AcceptLoop requires an acceptor listener");
+coro::DetachedTask AcceptLoop(WorkerContext& context,
+                              Worker::ConnectionCallback* callback) {
   while (true) {
-    auto accepted = co_await context.listener->Accept();
+    auto accepted = co_await context.listener.Accept();
     if (!accepted.has_value()) {
       const int error = accepted.error().value();
       if (error == ECANCELED || error == EBADF) {
@@ -37,8 +34,8 @@ coro::DetachedTask AcceptLoop(KqueueWorkerContext& context,
 
 }  // namespace
 
-KqueueWorker::KqueueWorker(std::size_t index, net::Endpoint listen_addr,
-                             KqueueWorkerOptions options, ThreadInitCallback init_callback,
+Worker::Worker(std::size_t index, net::Endpoint listen_addr,
+                             WorkerOptions options, ThreadInitCallback init_callback,
                              ConnectionCallback connection_callback,
                              ThreadExitCallback exit_callback)
     : index_(index),
@@ -48,9 +45,9 @@ KqueueWorker::KqueueWorker(std::size_t index, net::Endpoint listen_addr,
       connection_callback_(std::move(connection_callback)),
       exit_callback_(std::move(exit_callback)) {}
 
-KqueueWorker::~KqueueWorker() noexcept { Stop(); }
+Worker::~Worker() noexcept { Stop(); }
 
-Result<void> KqueueWorker::Start() {
+Result<void> Worker::Start() {
   if (thread_.joinable()) {
     return std::unexpected(Errno(EALREADY));
   }
@@ -72,13 +69,13 @@ Result<void> KqueueWorker::Start() {
   return start_result_;
 }
 
-void KqueueWorker::Stop() noexcept {
+void Worker::Stop() noexcept {
   if (thread_.joinable()) {
     thread_.request_stop();
   }
 }
 
-void KqueueWorker::WorkLoop(std::stop_token token) noexcept {
+void Worker::WorkLoop(std::stop_token token) noexcept {
   coro::FrameAllocatorScope frame_scope{options_.frame_resource};
 
   auto publish_start = [this](Result<void> result) noexcept {
@@ -90,42 +87,32 @@ void KqueueWorker::WorkLoop(std::stop_token token) noexcept {
     cv_.notify_one();
   };
 
-  KqueueLoop loop{options_.frame_resource};
-  loop_ = &loop;
+  Loop loop{options_.frame_resource};
 
-  std::optional<KqueueListener> listener;
-  if (options_.accept) {
-    auto created = KqueueListener::Create(&loop, listen_addr_, options_.listener_options);
-    if (!created.has_value()) {
-      loop_ = nullptr;
-      publish_start(std::unexpected(created.error()));
-      return;
-    }
-    listener = std::move(*created);
+  auto listener = Listener::Create(&loop, listen_addr_, options_.listener_options);
+  if (!listener.has_value()) {
+    publish_start(std::unexpected(listener.error()));
+    return;
   }
 
-  auto connector = KqueueConnector::Create(&loop, options_.connector_options);
+  auto connector = Connector::Create(&loop, options_.connector_options);
   if (!connector.has_value()) {
-    loop_ = nullptr;
     publish_start(std::unexpected(connector.error()));
     return;
   }
 
-  KqueueWorkerContext context{index_, loop, listener ? &*listener : nullptr, *connector};
-  context_ = &context;
+  WorkerContext context{index_, loop, *listener, *connector};
 
   if (init_callback_) {
     try {
       init_callback_(context);
     } catch (...) {
-      context_ = nullptr;
-      loop_ = nullptr;
       publish_start(std::unexpected(Errno(EFAULT)));
       return;
     }
   }
 
-  if (options_.accept && connection_callback_) {
+  if (connection_callback_) {
     coro::SpawnDetach(loop, AcceptLoop(context, &connection_callback_));
   }
 
@@ -139,9 +126,6 @@ void KqueueWorker::WorkLoop(std::stop_token token) noexcept {
       // Worker exit cleanup must not escape WorkLoop's noexcept boundary.
     }
   }
-
-  context_ = nullptr;
-  loop_ = nullptr;
 }
 
-}  // namespace coropact::kqueue::detail
+}  // namespace coropact::reactor::detail

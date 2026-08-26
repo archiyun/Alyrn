@@ -5,7 +5,7 @@ EXTENDS Naturals
 (***************************************************************************)
 (* io_uring loop stop / global-cancel retry model.                         *)
 (*                                                                         *)
-(* LUringLoop::Run() has no error return.  Therefore a local failure while *)
+(* Loop::Run() has no error return.  Therefore a local failure while *)
 (* preparing or flushing the loop-wide cancel SQE cannot publish Stopped   *)
 (* while target requests are still live.  The owner loop remains Stopping, *)
 (* reaps CQEs, and retries the failed drain step.                          *)
