@@ -13,20 +13,14 @@
 namespace coropact::luring::detail {
 
 // Internal access point for luring adapters. It keeps SQE/CQE bookkeeping,
-// mailbox transport, and manual completion driving out of Loop's public
-// interface while allowing the backend implementation to retain one owner.
+// manual completion driving out of Loop's public interface while allowing the
+// backend implementation to retain one owner.
 class LoopAccess final {
 public:
   template <class Prep>
   [[nodiscard]]
   static Result<void> SubmitOp(Loop& loop, Op* op, Prep&& prep) noexcept {
     return loop.SubmitOp(op, std::forward<Prep>(prep));
-  }
-
-  [[nodiscard]]
-  static Result<void> SubmitMsgRing(Loop& loop, Op* op, int target_ring_fd,
-                                    std::uint32_t type) noexcept {
-    return loop.SubmitMsgRing(op, target_ring_fd, type);
   }
 
   static void ScheduleCompletion(Loop& loop, coro::Work* work) noexcept {
@@ -42,16 +36,6 @@ public:
                      "luring continuation is bound to a different scheduler");
       loop.ScheduleCompletion(work);
     });
-  }
-
-  [[nodiscard]]
-  static MailboxPushResult PostMessage(Loop& loop, Message message) {
-    return loop.PostMessage(message);
-  }
-
-  [[nodiscard]]
-  static bool RetryMessageNotification(Loop& loop) noexcept {
-    return loop.RetryMessageNotification();
   }
 
   [[nodiscard]]

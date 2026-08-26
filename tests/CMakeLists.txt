@@ -574,25 +574,6 @@ if(COROPACT_ENABLE_URING)
 
     add_test(NAME luring_timer_smoke_test COMMAND luring_timer_smoke_test)
 
-    add_executable(luring_msg_ring_smoke_test
-        unit/test_luring_msg_ring_smoke.cc
-    )
-
-    target_include_directories(luring_msg_ring_smoke_test
-        PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/../include
-            ${URING_INCLUDE_DIRS}
-    )
-
-    target_link_libraries(luring_msg_ring_smoke_test
-        PRIVATE
-            coropact_luring
-    )
-
-    target_compile_definitions(luring_msg_ring_smoke_test PRIVATE COROPACT_ENABLE_URING)
-
-    add_test(NAME luring_msg_ring_smoke_test COMMAND luring_msg_ring_smoke_test)
-
     add_executable(luring_connector_smoke_test
         unit/test_luring_connector_smoke.cc
     )

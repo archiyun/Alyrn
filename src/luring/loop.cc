@@ -29,7 +29,6 @@
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/work.h"
 #include "coropact/luring/detail/completion_dispatch.h"
-#include "coropact/luring/detail/mailbox.h"
 #include "coropact/luring/detail/op.h"
 #include "coropact/luring/detail/provided_buffer_pool.h"
 #include "coropact/luring/detail/sqe_prep.h"
@@ -109,7 +108,6 @@ CompletionDisposition DispatchCompletion(::coropact::luring::detail::Op* op, Com
       DispatchRecvSourceCancelComplete(op);
       break;
     case OpKind::kNone:
-    case OpKind::kMsgRing:
     case OpKind::kWake:
     case OpKind::kCancelAll:
     case OpKind::kNop:
@@ -452,11 +450,6 @@ Result<std::size_t> Loop::WaitCompletionsFor(std::chrono::nanoseconds timeout) n
 void Loop::HandleCqe(io_uring_cqe* cqe) noexcept {
   COROPACT_CHECK(IsInLoopThread(), "Loop::HandleCqe called from wrong thread");
 
-  if (cqe->user_data == kMsgRingNotificationUserData) {
-    HandleMailbox();
-    return;
-  }
-
   ::coropact::luring::detail::Op* op = DecodeOp(cqe);
   if (op == nullptr) {
     if (inflight_ > 0) {
@@ -568,16 +561,6 @@ void Loop::Wake() noexcept {
   if (written < 0 && errno != EAGAIN && errno != EINTR) {
     RequestStop();
   }
-}
-
-void Loop::HandleMailbox() noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "Loop::HandleMailbox called from wrong thread");
-
-  mailbox_.Drain([this](const Message& message) noexcept {
-    auto* work = reinterpret_cast<coro::Work*>(static_cast<std::uintptr_t>(message.data));
-    COROPACT_CHECK(work != nullptr, "mailbox message contains a null work pointer");
-    ScheduleCompletion(work);
-  });
 }
 
 }  // namespace coropact::luring

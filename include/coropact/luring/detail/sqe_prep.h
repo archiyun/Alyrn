@@ -117,10 +117,6 @@ inline auto PreparePollAdd(int fd, unsigned poll_mask) {
 }
 
 [[nodiscard]]
-inline auto PrepareMsgRing(int target_ring_fd, std::uint32_t type, std::uint64_t data) {
-  return MakeSqePrep(io_uring_prep_msg_ring, target_ring_fd, type, data, IORING_MSG_DATA);
-}
-
 [[nodiscard]]
 inline auto PrepareProvidedRecvMultishot(int fd, std::size_t buffer_size,
                                          std::uint16_t buffer_group) {
