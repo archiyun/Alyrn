@@ -368,7 +368,7 @@ Results depend strongly on the workload and must not be interpreted as a univers
 
 ## Documentation
 
-The documentation map is [`docs/index.md`](docs/index.md). Design notes are currently written in Chinese; they are the source of truth for contracts and ownership. [`CONTEXT.md`](CONTEXT.md) is the domain glossary.
+The documentation map is [`docs/index.md`](docs/index.md). Design notes are currently written in Chinese; they are the source of truth for contracts and ownership. `CONTEXT.md` is a local developer glossary and is intentionally not distributed.
 
 * **[Networking architecture](docs/design/zh-CN/network/index.md)**: runtime layering, backend boundaries, and ownership models.
 * **[kqueue backend](docs/design/zh-CN/network/kqueue/index.md)**: one-shot readiness, `Post`, and master-slave handoff.

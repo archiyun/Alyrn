@@ -361,7 +361,7 @@ CoroPact 提供了可复现的 `wrk` 性能测试，用于比较：
 
 ## 文档
 
-文档目录见 [`docs/index.md`](docs/index.md)。设计说明目前以中文编写，是契约与所有权的依据。[`CONTEXT.md`](CONTEXT.md) 是领域词汇表。
+文档目录见 [`docs/index.md`](docs/index.md)。设计说明目前以中文编写，是契约与所有权的依据。`CONTEXT.md` 是仅供本地开发使用的领域词汇表，不随仓库发布。
 
 * **[网络架构](docs/design/zh-CN/network/index.md)：** 运行时分层、后端边界与所有权模型。
 * **[kqueue 后端](docs/design/zh-CN/network/kqueue/index.md)：** one-shot readiness、`Post` 与主从移交。

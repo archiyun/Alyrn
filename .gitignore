@@ -1,6 +1,7 @@
 # Documentation / local notes
 CLAUDE.md
 AGENTS.md
+CONTEXT.md
 /tmp/
 
 # Local-only third-party benchmark comparisons; never part of the library.
