@@ -6,7 +6,7 @@
 
 namespace coropact::reactor::detail {
 
-Channel::Channel(Loop* loop, int fd) : loop_(loop), fd_(fd) {
+Channel::Channel(Loop* loop, int fd) noexcept : loop_(loop), fd_(fd) {
   COROPACT_CHECK(loop_ != nullptr, "Channel: loop must not be null");
   COROPACT_CHECK(fd_ >= 0, "Channel: fd must be a valid non-negative descriptor");
 }
@@ -58,21 +58,25 @@ Channel& Channel::operator=(Channel&& other) noexcept {
   return *this;
 }
 
-void Channel::Update() {
+void Channel::Update() noexcept {
   COROPACT_CHECK(loop_->IsInLoopThread(), "Channel::Update called from wrong thread");
   loop_->UpdateChannel(this);
 }
 
-void Channel::Remove() {
+void Channel::Remove() noexcept {
   COROPACT_CHECK(loop_->IsInLoopThread(), "Channel::Remove called from wrong thread");
   COROPACT_CHECK(IsNoneEvent(), "Channel::Remove called while events are still enabled");
   loop_->RemoveChannel(this);
 }
 
-bool Channel::IsRegistered() const { return loop_->HasChannel(const_cast<Channel*>(this)); }
+bool Channel::IsRegistered() const noexcept { return loop_->HasChannel(const_cast<Channel*>(this)); }
 
-void Channel::HandleEvent() {
+void Channel::HandleEvent() noexcept {
   COROPACT_CHECK(loop_->IsInLoopThread(), "Channel::HandleEvent called from wrong thread");
+  HandleEventUnchecked();
+}
+
+void Channel::HandleEventUnchecked() noexcept {
   // Channel callbacks are non-owning. Owners must detach the Channel before
   // destruction; keeping that lifetime rule explicit avoids a per-event
   // shared-owner lock on the loop-affine Reactor path.

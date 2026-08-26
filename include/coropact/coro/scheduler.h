@@ -49,8 +49,12 @@ public:
   // scope transition for every item in a ready queue drain.
   void RunBatch(WorkQueue& batch) noexcept {
     ExecutionScope execution_scope{*this};
+    CheckExecutionScope();
     while (Work* work = batch.PopFront()) {
-      RunInExecutionScope(work);
+      // ExecutionScope is active for the whole batch, so repeating its TLS
+      // validation for every work item only adds hot-path loads. RunBatch is
+      // the execution wrapper here; Work::Run() must not escape this scope.
+      RunInExecutionScopeUnchecked(work);
     }
   }
 
@@ -66,8 +70,9 @@ public:
 protected:
   // Keeps the coroutine execution context active while a concrete scheduler
   // drains a non-WorkQueue source. It is protected so only scheduler
-  // implementations can amortize TLS/resource selection across a batch; work
-  // execution itself must still go through Run() or RunBatch().
+  // implementations can amortize TLS/resource selection across a batch; a
+  // concrete scheduler may then call CheckExecutionScope() once and use the
+  // unchecked Scheduler wrapper while this scope remains alive.
   class ExecutionScope {
   public:
     explicit ExecutionScope(Scheduler& scheduler) noexcept
@@ -102,18 +107,33 @@ protected:
     FrameAllocatorScope frame_scope_;
   };
 
-  // Runs a work item under an already-active ExecutionScope for this
-  // scheduler. This exists for schedulers such as Loop that select work
-  // from multiple owner-local queues and therefore cannot use RunBatch().
-  // Callers must create an ExecutionScope that outlives this call.
+  // Runs one work item under an already-active ExecutionScope for this
+  // scheduler. This is the checked single-item wrapper; batch schedulers can
+  // amortize the same validation with CheckExecutionScope() and the unchecked
+  // Scheduler wrapper.
   void RunInExecutionScope(Work* work) noexcept {
     COROPACT_CHECK(work != nullptr, "Scheduler::RunInExecutionScope received null work");
-    COROPACT_DCHECK(TryCurrent() == this,
-                    "Scheduler::RunInExecutionScope requires this scheduler context");
-    COROPACT_DCHECK(
-        FrameAllocatorScope::TryCurrent() == detail::NormalizeFrameResource(frame_resource_),
-        "Scheduler::RunInExecutionScope requires this frame resource");
+    CheckExecutionScope();
+    RunInExecutionScopeUnchecked(work);
+  }
+
+  // The caller must have validated the active ExecutionScope and the Work
+  // pointer must come from an owner-local non-empty queue. Keeping the raw
+  // resume behind this Scheduler wrapper preserves the frame-resource and
+  // scheduler-affinity boundary without repeating the checks per item.
+  void RunInExecutionScopeUnchecked(Work* work) noexcept {
     work->Run();
+  }
+
+  // Validates the owner-local execution context once before a scheduler drains
+  // a batch. Keeping this as a separate boundary check lets concrete
+  // schedulers execute each Work without repeating the same TLS loads.
+  void CheckExecutionScope() const noexcept {
+    COROPACT_CHECK(TryCurrent() == this,
+                   "Scheduler execution requires this scheduler context");
+    COROPACT_CHECK(
+        FrameAllocatorScope::TryCurrent() == detail::NormalizeFrameResource(frame_resource_),
+        "Scheduler execution requires this frame resource");
   }
 
   explicit Scheduler(std::pmr::memory_resource* frame_resource = nullptr) noexcept

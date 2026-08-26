@@ -68,13 +68,13 @@ public:
   ~IntrusiveQueue() { Clear(); }
 
   [[nodiscard]]
-  bool Empty() const {
+  bool Empty() const noexcept {
     return head_.next_ == &head_;
   }
-  T* Front() const { return Empty() ? nullptr : ElemOf(head_.next_); }
+  T* Front() const noexcept { return Empty() ? nullptr : ElemOf(head_.next_); }
 
   // Returns false for nullptr or when elem is already queued.
-  [[maybe_unused]] bool PushBack(T* elem) {
+  [[maybe_unused]] bool PushBack(T* elem) noexcept {
     if (elem == nullptr) return false;
     Node* node = NodeOf(elem);
     if (node->InQueue()) return false;
@@ -85,18 +85,20 @@ public:
     return true;
   }
 
-  T* PopFront() {
-    if (Empty()) return nullptr;
+  T* PopFront() noexcept {
     Node* node = head_.next_;
-    head_.next_ = node->next_;
+    if (node == &head_) return nullptr;
+
+    Node* next = node->next_;
+    head_.next_ = next;
     node->clear_hook();
-    if (Empty()) {
+    if (next == &head_) {
       tail_ = &head_;
     }
     return ElemOf(node);
   }
 
-  void Clear() {
+  void Clear() noexcept {
     for (Node* cur = head_.next_; cur != &head_;) {
       Node* next = cur->next_;
       cur->clear_hook();
@@ -106,7 +108,7 @@ public:
   }
 
   // Moves all nodes from other to this queue. Self-splice is a no-op.
-  void Splice(IntrusiveQueue& other) {
+  void Splice(IntrusiveQueue& other) noexcept {
     if (&other == this) return;
     if (other.Empty()) return;
     Node* first = other.head_.next_;
@@ -138,7 +140,6 @@ public:
 
 private:
   using Node = QueueNode<T, Tag>;
-  static Node* Next(Node* node) { return node->next_; }
   static T* ElemOf(Node* node) { return static_cast<T*>(node); }
   static Node* NodeOf(T* elem) { return static_cast<Node*>(elem); }
 

@@ -362,20 +362,27 @@ void Loop::ScheduleCompletion(coro::Work* work) noexcept {
 void Loop::RunReady() noexcept {
   COROPACT_CHECK(IsInLoopThread(), "Loop::RunReady called from wrong thread");
   ExecutionScope execution_scope{*this};
+  CheckExecutionScope();
 
   std::size_t resumed = 0;
   std::size_t completion_resumed = 0;
-  while (HasReadyWork() && resumed < kMaxReadyWorkPerTurn) {
+  while (resumed < kMaxReadyWorkPerTurn) {
+    const bool completion_available = !completion_ready_.Empty();
+    const bool ready_available = !ready_.Empty();
+    if (!completion_available && !ready_available) {
+      break;
+    }
+
+    const bool run_completion =
+        completion_available && (!ready_available || completion_resumed < kMaxCompletionWorkPerTurn);
     coro::Work* work = nullptr;
-    const bool run_completion = !completion_ready_.Empty() &&
-                                (ready_.Empty() || completion_resumed < kMaxCompletionWorkPerTurn);
     if (run_completion) {
       work = completion_ready_.PopFront();
       ++completion_resumed;
     } else {
       work = ready_.PopFront();
     }
-    RunInExecutionScope(work);
+    RunInExecutionScopeUnchecked(work);
     ++resumed;
   }
 }

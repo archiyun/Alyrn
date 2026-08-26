@@ -142,7 +142,13 @@ private:
   // Index/set_index track Poller-private registration state and must remain
   // hidden from general consumers. Concrete Poller implementations are the
   // only legitimate users.
+  friend class ::coropact::reactor::Loop;
   friend class EPollPoller;
+
+  // Loop::Run() validates owner-thread affinity once before dispatching a
+  // poll batch. The checked public entry point remains available for direct
+  // detail-layer callers; the loop uses this owner-only fast path.
+  void HandleEventUnchecked() noexcept;
 
   [[nodiscard]]
   int index() const {

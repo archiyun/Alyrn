@@ -563,7 +563,6 @@ coro::Task<Result<void>> Stream::Close() {
 }
 
 void Stream::HandleRead() {
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "Stream::HandleRead called from wrong thread");
   if (pending_read_ == nullptr) {
     // Keep LT cheap for back-to-back reads, but disarm stale readiness when a
     // consumer did not submit the next read before the event loop polled
@@ -586,7 +585,6 @@ void Stream::HandleRead() {
 }
 
 void Stream::HandleWrite() {
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "Stream::HandleWrite called from wrong thread");
   if (pending_write_ == nullptr) {
     return;
   }
@@ -594,20 +592,17 @@ void Stream::HandleWrite() {
 }
 
 void Stream::HandleClose() {
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "Stream::HandleClose called from wrong thread");
   CompleteRead(Result<std::size_t>{0});
   CompleteWrite(std::unexpected(Errno(EPIPE)));
 }
 
 void Stream::HandleError() {
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "Stream::HandleError called from wrong thread");
   Error error = ErrorFromSocketErrorEvent(socket_.fd());
   CompleteRead(std::unexpected(error));
   CompleteWrite(std::unexpected(error));
 }
 
 void Stream::CompleteRead(Result<std::size_t> result) {
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "Stream::CompleteRead called from wrong thread");
   void* awaiter = pending_read_;
   const PendingReadKind kind = pending_read_kind_;
   if (awaiter == nullptr) {
@@ -658,7 +653,6 @@ void Stream::CompleteRead(Result<std::size_t> result) {
 }
 
 void Stream::CompleteWrite(Result<std::size_t> result) {
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "Stream::CompleteWrite called from wrong thread");
   WriteAllAwaiter* awaiter = pending_write_;
   if (awaiter == nullptr) {
     return;
