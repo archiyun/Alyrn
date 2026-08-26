@@ -7,7 +7,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <memory>
 #include <optional>
 #include <vector>
 
@@ -151,12 +150,10 @@ private:
 
   struct PendingEvent {
     std::uint32_t buffer_id{0};
-    std::size_t offset{0};
     std::size_t size{0};
   };
 
   struct SlotState {
-    std::size_t next_offset{0};
     std::size_t lease_count{0};
     bool active{false};
     bool kernel_done{false};
@@ -164,8 +161,8 @@ private:
 
   LUringRecvSource(LUringLoop* loop, int fd, net::detail::RecvSourceStateMachine state,
                    std::size_t buffer_size, detail::ProvidedBufferPool* buffer_pool,
-                   std::vector<PendingEvent> event_storage, std::vector<SlotState> slot_storage,
-                   std::unique_ptr<detail::ProvidedBufferPool> private_buffer_pool) noexcept;
+                   std::vector<PendingEvent> event_storage,
+                   std::vector<SlotState> slot_storage) noexcept;
 
   [[nodiscard]]
   Result<void> Start() noexcept;
@@ -190,17 +187,14 @@ private:
   void DeliverNextIfReady() noexcept;
   void CompleteStopIfReady() noexcept;
   bool TryTakeNext(NextResult& result) noexcept;
-  void QueueEvent(std::uint32_t buffer_id, std::size_t offset, std::size_t size) noexcept;
+  void QueueEvent(std::uint32_t buffer_id, std::size_t size) noexcept;
   bool TryTakeQueuedEvent(PendingEvent& event) noexcept;
-  [[nodiscard]] Result<std::size_t> AcquireSegment(std::uint32_t buffer_id,
-                                                   std::size_t size) noexcept;
+  [[nodiscard]] Result<void> AcquireBuffer(std::uint32_t buffer_id, std::size_t size) noexcept;
   void MarkKernelDone(std::uint32_t buffer_id) noexcept;
   void MarkActiveSlotsKernelDone() noexcept;
   void ReturnIfReclaimable(std::uint32_t buffer_id) noexcept;
   void ReleaseSlotLease(std::uint32_t buffer_id) noexcept;
-  [[nodiscard]] net::BufferLease MakeLease(std::uint32_t buffer_id, std::size_t offset,
-                                           std::size_t size) noexcept;
-  void ReleasePrivateBufferPool() noexcept;
+  [[nodiscard]] net::BufferLease MakeLease(std::uint32_t buffer_id, std::size_t size) noexcept;
   void ReturnBuffer(std::uint32_t buffer_id) noexcept;
 
   static void ValidateMovable(const LUringRecvSource& source) noexcept;
@@ -222,9 +216,8 @@ private:
   CancelOperation cancel_op_;
 
   std::size_t buffer_size_{0};
-  // Points either at the loop-shared fallback pool or at private_buffer_pool_.
+  // Borrowed loop-shared provided-buffer pool. The loop outlives its sources.
   detail::ProvidedBufferPool* buffer_pool_{nullptr};
-  std::unique_ptr<detail::ProvidedBufferPool> private_buffer_pool_;
 
   bool recv_submitted_{false};
   bool cancel_submitted_{false};

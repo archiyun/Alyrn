@@ -212,29 +212,11 @@ private:
       std::size_t buffer_size, std::size_t source_capacity) noexcept;
 
   [[nodiscard]]
-  Result<std::unique_ptr<detail::ProvidedBufferPool>> CreateIncrementalProvidedBufferPool(
-      std::size_t buffer_size, std::size_t source_capacity) noexcept;
-
-  [[nodiscard]]
   Result<std::uint16_t> AllocateBufferGroupId() noexcept {
-    if (!recycled_buffer_group_ids_.empty()) {
-      const std::uint16_t group = recycled_buffer_group_ids_.back();
-      recycled_buffer_group_ids_.pop_back();
-      return group;
-    }
     if (next_buffer_group_id_ > std::numeric_limits<std::uint16_t>::max()) {
       return std::unexpected(Errno(EOVERFLOW));
     }
     return static_cast<std::uint16_t>(next_buffer_group_id_++);
-  }
-
-  void ReleaseBufferGroupId(std::uint16_t group) noexcept {
-    COROPACT_CHECK(group != 0, "LUringLoop cannot release the reserved buffer group");
-    try {
-      recycled_buffer_group_ids_.push_back(group);
-    } catch (...) {
-      COROPACT_CHECK(false, "LUringLoop could not recycle a buffer group id");
-    }
   }
 
   [[nodiscard]]
@@ -278,7 +260,6 @@ private:
   bool cancel_all_pending_{false};
   detail::LUringOp cancel_all_op_{detail::LUringOpKind::kCancelAll};
   std::uint32_t next_buffer_group_id_{1};
-  std::vector<std::uint16_t> recycled_buffer_group_ids_;
   std::unique_ptr<detail::ProvidedBufferPool> shared_buffer_pool_;
   std::size_t shared_buffer_capacity_{0};
   std::size_t shared_buffer_size_{0};

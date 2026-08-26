@@ -259,7 +259,32 @@ That shim does not watch real sockets and does not run the native worker-group s
 | `BUILD_TESTS` | `ON` | Unit and smoke tests |
 | `BUILD_EXAMPLES` | `ON` | Linux examples; disabled until a native readiness backend exists |
 | `BUILD_BENCHMARKS` | `OFF` | Standalone microbenchmarks |
+| `BUILD_FUZZERS` | `OFF` | Clang/libFuzzer state-machine fuzz targets; selects ASan/UBSan |
 | `BUILD_EXPERIMENTAL_TESTS` | `OFF` | SplayTree / QuadHeap validators |
+
+### Fuzzing and microbenchmarks
+
+Build the receive-source lifecycle fuzzer with Clang. The target includes
+AddressSanitizer and UndefinedBehaviorSanitizer; do not also set
+`COROPACT_SANITIZER`:
+
+```bash
+CC=clang CXX=clang++ cmake -S . -B build-fuzz -G Ninja \
+  -DBUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_FUZZERS=ON
+cmake --build build-fuzz --target recv_source_state_fuzzer -j"$(nproc)"
+ASAN_OPTIONS=detect_leaks=0 build-fuzz/fuzz/recv_source_state_fuzzer -runs=100000
+```
+
+`detect_leaks=0` is useful only in restricted or ptrace-based environments
+where LeakSanitizer cannot inspect processes; leave it enabled in normal CI.
+
+For the owner-thread channel buffer probe:
+
+```bash
+cmake -S . -B build-bench -DCMAKE_BUILD_TYPE=Release -DBUILD_BENCHMARKS=ON
+cmake --build build-bench --target coro_channel_microbenchmark -j"$(nproc)"
+ITERATIONS=1000000 build-bench/benchmarks/coro_channel_microbenchmark
+```
 
 ### Requirements
 

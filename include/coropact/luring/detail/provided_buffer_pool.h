@@ -17,8 +17,7 @@
 
 namespace coropact::luring::detail {
 
-// One loop-affine provided-buffer ring. It can be shared by normal sources or
-// owned by one incremental source; the owner chooses that topology at creation.
+// One loop-affine provided-buffer ring shared by receive sources on that loop.
 class ProvidedBufferPool final {
 public:
   COROPACT_DELETE_COPY(ProvidedBufferPool);
@@ -34,7 +33,6 @@ public:
         published_capacity_(std::exchange(other.published_capacity_, 0)),
         buffer_size_(std::exchange(other.buffer_size_, 0)),
         mask_(std::exchange(other.mask_, 0)),
-        incremental_(std::exchange(other.incremental_, false)),
         storage_(std::move(other.storage_)),
         in_use_(std::move(other.in_use_)) {}
 
@@ -50,7 +48,6 @@ public:
     published_capacity_ = std::exchange(other.published_capacity_, 0);
     buffer_size_ = std::exchange(other.buffer_size_, 0);
     mask_ = std::exchange(other.mask_, 0);
-    incremental_ = std::exchange(other.incremental_, false);
     storage_ = std::move(other.storage_);
     in_use_ = std::move(other.in_use_);
     return *this;
@@ -59,8 +56,7 @@ public:
   [[nodiscard]]
   static Result<ProvidedBufferPool> Create(io_uring* ring, std::uint16_t buffer_group,
                                            std::size_t capacity, std::size_t buffer_size,
-                                           std::size_t initial_capacity,
-                                           bool incremental = false) noexcept {
+                                           std::size_t initial_capacity) noexcept {
     if (ring == nullptr || capacity == 0 || capacity > 32 * 1024 ||
         (capacity & (capacity - 1)) != 0 || buffer_size == 0 ||
         buffer_size > std::numeric_limits<std::uint32_t>::max() || initial_capacity == 0 ||
@@ -74,9 +70,8 @@ public:
     }
 
     int setup_error = 0;
-    const unsigned flags = incremental ? IOU_PBUF_RING_INC : 0;
     io_uring_buf_ring* buffer_ring = io_uring_setup_buf_ring(
-        ring, static_cast<unsigned>(capacity), static_cast<int>(buffer_group), flags, &setup_error);
+        ring, static_cast<unsigned>(capacity), static_cast<int>(buffer_group), 0, &setup_error);
     if (buffer_ring == nullptr) {
       if (setup_error < 0) {
         return std::unexpected(NegErrno(setup_error));
@@ -92,7 +87,6 @@ public:
     pool.published_capacity_ = initial_capacity;
     pool.buffer_size_ = buffer_size;
     pool.mask_ = io_uring_buf_ring_mask(static_cast<unsigned>(capacity));
-    pool.incremental_ = incremental;
     pool.storage_ = std::move(*storage);
 
     try {
@@ -147,17 +141,11 @@ public:
   }
 
   [[nodiscard]]
-  bool Incremental() const noexcept {
-    return incremental_;
-  }
-
-  [[nodiscard]]
   std::byte* slot(std::uint32_t buffer_id) noexcept {
     return buffer_id < capacity_ ? storage_.slot(buffer_id) : nullptr;
   }
 
-  // Called when a source first borrows a slot. Later incremental CQEs for the
-  // same slot are accounted for by the source-local segment state.
+  // Called when a source borrows a slot.
   [[nodiscard]]
   bool Acquire(std::uint32_t buffer_id) noexcept {
     if (buffer_id >= in_use_.size() || in_use_[buffer_id]) {
@@ -195,7 +183,6 @@ private:
     published_capacity_ = 0;
     buffer_size_ = 0;
     mask_ = 0;
-    incremental_ = false;
     in_use_.clear();
   }
 
@@ -206,7 +193,6 @@ private:
   std::size_t published_capacity_{0};
   std::size_t buffer_size_{0};
   int mask_{0};
-  bool incremental_{false};
   ProvidedBufferStorage storage_;
   std::vector<std::uint8_t> in_use_;
 };

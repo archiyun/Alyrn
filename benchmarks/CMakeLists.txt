@@ -42,3 +42,15 @@ target_compile_definitions(coro_spawn_join_microbenchmark
 )
 
 target_compile_features(coro_spawn_join_microbenchmark PRIVATE cxx_std_23)
+
+add_executable(coro_channel_microbenchmark
+    coro_channel_microbenchmark.cc
+)
+
+target_link_libraries(coro_channel_microbenchmark
+    PRIVATE
+        coropact_coro
+        coropact_foundation
+)
+
+target_compile_features(coro_channel_microbenchmark PRIVATE cxx_std_23)

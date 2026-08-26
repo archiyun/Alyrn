@@ -13,9 +13,8 @@ source 不负责关闭它。
 - `pending_depth` 必须为 1；
 - `buffer_capacity` 至少覆盖 `event_capacity`，且当前实现要求为不超过 32K 的 2 的幂；
 - `buffer_size` 必须大于 0，并且和 loop 的 shared buffer ring 配置一致；
-- `shared_buffer_capacity` 限制单个 source 可以请求的 slot 数。支持 incremental ring 的 host
-  为 source 分配私有 pool；不支持时 source 共享 loop pool。因此它不是 source 数量的 admission
-  quota，私有路径的总内存会随并发 source 数增长。
+- `shared_buffer_capacity` 限制单个 source 可以请求的 slot 数。所有 source 共享所属 loop 的
+  provided-buffer pool；它不是 source 数量的 admission quota。
 
 这些是当前实现约束，不是 io_uring 原始 API 的全部能力。
 
@@ -50,14 +49,9 @@ source 既有 event queue，也有 lease ownership 计数：
 高水位暂停是可恢复状态，不是 source terminal。已交给业务的 lease 仍然算作 outstanding，
 所以 source 的资源上下文必须活到所有 lease 释放。
 
-## `F_MORE` 与 `F_BUF_MORE`
+## `F_MORE`
 
 - `F_MORE` 表示 multishot recv request 仍然 active；没有它的 CQE 是 request terminal。
-- `F_BUF_MORE` 表示一个 provided buffer 还有增量 segment。支持该能力时，每个 segment 都生成
-  一个 `RecvEvent`；同一 slot 必须等最后 segment 到达、且全部 segment lease 都释放后才能归还。
-
-`F_BUF_MORE` 不等于 `F_MORE`：前者是 slot 的物理借用状态，后者是 multishot recv request
-是否仍存活。二者必须分别收敛。
 
 ## Stop
 
@@ -91,4 +85,3 @@ provided buffer 让 kernel 直接写入 luring 管理的接收 slot，避免了�
 - event queue 满时暂停，消费到低水位后恢复；
 - terminal 不丢弃已经产生的事件；
 - `Stop()` 在最后一个 outstanding lease 释放前不会完成；
-- 同一 slot 的多个 incremental segment 在所有 lease 释放前都保持可读，且不能提前归还。

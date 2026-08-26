@@ -36,7 +36,7 @@ scheduler 恢复分开建模。
 | `linked_timeout_submission_failure.tla` | timed operation 的子请求提交失败与收敛 |
 | `accept_source_refinement.tla` | Reactor accept drain 与 luring multishot accept 的逻辑 source 语义 |
 | `recv_source_lease.tla` | `BufferLease` 归还与 source 停止 |
-| `recv_source_incremental_lease.tla` | 多个 lease 的逐步归还与背压 |
+| `recv_source_incremental_lease.tla` | 未来 incremental source 的逐步 lease 归还与背压模型 |
 | `send_zc_split_release_refinement.tla` | primary completion 与可选 `F_NOTIF` 的分离式释放 |
 | `async_operation_lifecycle_shapes.tla` | result cardinality、physical convergence 与 release coupling 的正交组合 |
 

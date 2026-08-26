@@ -3,7 +3,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <utility>
 
 #include "coropact/luring/detail/op.h"
@@ -103,15 +102,6 @@ public:
     return loop.GetSharedProvidedBufferPool(buffer_size, source_capacity);
   }
 
-  [[nodiscard]]
-  static Result<std::unique_ptr<ProvidedBufferPool>> CreateIncrementalProvidedBufferPool(
-      LUringLoop& loop, std::size_t buffer_size, std::size_t source_capacity) noexcept {
-    return loop.CreateIncrementalProvidedBufferPool(buffer_size, source_capacity);
-  }
-
-  static void ReleaseBufferGroupId(LUringLoop& loop, std::uint16_t group) noexcept {
-    loop.ReleaseBufferGroupId(group);
-  }
 };
 
 }  // namespace coropact::luring::detail

@@ -328,6 +328,19 @@ target_link_libraries(coro_smoke_test PRIVATE coropact_coro coropact_foundation)
 
 add_test(NAME coro_smoke_test COMMAND coro_smoke_test)
 
+add_executable(coro_channel_smoke_test
+    unit/test_coro_channel_smoke.cc
+)
+
+target_include_directories(coro_channel_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(coro_channel_smoke_test PRIVATE coropact_coro coropact_foundation)
+
+add_test(NAME coro_channel_smoke_test COMMAND coro_channel_smoke_test)
+
 add_executable(coro_frame_allocator_smoke_test
     unit/test_coro_frame_allocator_smoke.cc
 )
