@@ -111,12 +111,38 @@ bool TestTimerCanBeReinsertedAfterRestart() {
          Expect(timers.CheckInvariants(), "tree invariants should hold after reinsertion");
 }
 
+bool TestExtractPrefixBoundaries() {
+  coropact::time::TimerTree empty;
+  if (!Expect(empty.ExtractPrefix([](const auto*) { return true; }).empty(),
+              "empty tree extraction should be empty")) {
+    return false;
+  }
+
+  const auto base = coropact::time::Deadline{};
+  coropact::time::Timer first([] {}, base + coropact::time::Seconds(1),
+                              coropact::time::Duration::zero());
+  coropact::time::Timer second([] {}, base + coropact::time::Seconds(2),
+                               coropact::time::Duration::zero());
+  coropact::time::TimerTree timers;
+  if (!Expect(timers.Insert(&first), "insert first boundary timer") ||
+      !Expect(timers.Insert(&second), "insert second boundary timer")) {
+    return false;
+  }
+
+  const auto all = timers.ExtractPrefix([](const auto*) { return true; });
+  return Expect(all.size() == 2, "all-prefix extraction count mismatch") &&
+         Expect(!first.InTree() && !second.InTree(), "all-prefix hooks should be clear") &&
+         Expect(timers.Empty() && timers.CheckInvariants(),
+                "tree should be valid after all-prefix extraction");
+}
+
 }  // namespace
 
 int main() {
   if (!TestOrdersByExpirationThenSequence()) return 1;
   if (!TestExtractPrefixUnlinksAndPreservesOrder()) return 1;
   if (!TestTimerCanBeReinsertedAfterRestart()) return 1;
+  if (!TestExtractPrefixBoundaries()) return 1;
 
   std::cout << "[PASS] timer_tree_smoke_test\n";
   return 0;
