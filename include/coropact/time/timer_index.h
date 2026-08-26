@@ -23,7 +23,8 @@ concept TimerStore = requires(Index& index, const Index& cindex, Timer* timer) {
   { cindex.Size() } -> std::convertible_to<std::size_t>;
   { index.Insert(timer) } -> std::convertible_to<bool>;
   { index.Erase(timer) } -> std::convertible_to<bool>;
-  { cindex.Earliest() } -> std::same_as<Timer*>;
+  { index.Earliest() } -> std::same_as<Timer*>;
+  { cindex.Earliest() } -> std::same_as<const Timer*>;
   index.Clear();
 };
 
@@ -64,7 +65,12 @@ public:
   }
 
   [[nodiscard]]
-  Timer* Earliest() const {
+  Timer* Earliest() {
+    return std::visit([](auto& store) { return store.Earliest(); }, store_);
+  }
+
+  [[nodiscard]]
+  const Timer* Earliest() const {
     return std::visit([](const auto& store) { return store.Earliest(); }, store_);
   }
 

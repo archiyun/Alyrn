@@ -108,7 +108,12 @@ public:
   bool Erase(T* elem);
 
   // O(1)
-  T* Earliest() const { return Empty() ? nullptr : ElemOf(heap_.front()); }
+  [[nodiscard]]
+  T* Earliest() noexcept { return Empty() ? nullptr : ElemOf(heap_.front()); }
+  [[nodiscard]]
+  const T* Earliest() const noexcept {
+    return Empty() ? nullptr : ElemOf(heap_.front());
+  }
 
   void Clear() noexcept;
 
@@ -131,6 +136,7 @@ private:
 
   static Node* NodeOf(T* elem) { return static_cast<Node*>(elem); }
   static T* ElemOf(Node* node) { return static_cast<T*>(node); }
+  static const T* ElemOf(const Node* node) { return static_cast<const T*>(node); }
 
   void SwapNodes(std::size_t i, std::size_t j);
   void SiftUp(std::size_t child);
