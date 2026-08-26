@@ -252,7 +252,31 @@ cmake -B build-kqueue-shim \
 | `BUILD_TESTS` | `ON` | 单元与 smoke 测试 |
 | `BUILD_EXAMPLES` | `ON` | Linux 示例；没有原生 readiness 后端时关闭 |
 | `BUILD_BENCHMARKS` | `OFF` | 独立微基准 |
+| `BUILD_FUZZERS` | `OFF` | 需要 Clang/libFuzzer 的状态机 fuzz target；自带 ASan/UBSan |
 | `BUILD_EXPERIMENTAL_TESTS` | `OFF` | SplayTree / QuadHeap 验证器 |
+
+### Fuzz 与微基准
+
+用 Clang 构建 receive-source 生命周期 fuzzer。该 target 已启用 AddressSanitizer
+与 UndefinedBehaviorSanitizer，因此不要同时设置 `COROPACT_SANITIZER`：
+
+```bash
+CC=clang CXX=clang++ cmake -S . -B build-fuzz -G Ninja \
+  -DBUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_FUZZERS=ON
+cmake --build build-fuzz --target recv_source_state_fuzzer -j"$(nproc)"
+ASAN_OPTIONS=detect_leaks=0 build-fuzz/fuzz/recv_source_state_fuzzer -runs=100000
+```
+
+`detect_leaks=0` 只适合 ptrace/受限环境中 LeakSanitizer 无法正常工作时使用；普通
+CI 中应保留 leak 检测。
+
+Channel 的 owner-thread buffer 微基准：
+
+```bash
+cmake -S . -B build-bench -DCMAKE_BUILD_TYPE=Release -DBUILD_BENCHMARKS=ON
+cmake --build build-bench --target coro_channel_microbenchmark -j"$(nproc)"
+ITERATIONS=1000000 build-bench/benchmarks/coro_channel_microbenchmark
+```
 
 ### 环境要求
 
