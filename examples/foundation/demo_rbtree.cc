@@ -66,7 +66,7 @@ int main() {
 
   // 插入任务到树中
   for (auto& j : jobs) {
-    tree.Insert(&j);
+    (void)tree.Insert(&j);
   }
   std::printf("backup_db in tree: %s\n", jobs[1].InTree() ? "yes" : "no");
 
@@ -77,7 +77,7 @@ int main() {
   // → backup_db (deadline=100)
 
   // 删除树中间的任务
-  tree.Erase(&jobs[2]);  // 删除 health_check
+  (void)tree.Erase(&jobs[2]);  // 删除 health_check
   std::printf("Erased health_check\n");
 
   // 弹出所有截止时间 <= 200 的任务

@@ -6,8 +6,6 @@
 #include <cstddef>
 #include <utility>
 
-#include "coropact/utils/macros.h"
-
 namespace coropact::ds {
 
 template <typename T, class Tag>
@@ -23,7 +21,10 @@ public:
   bool InList() const noexcept { return next_ != nullptr; }
 
 protected:
-  COROPACT_DELETE_COPY_MOVE(ListNode);
+  ListNode(const ListNode&) = delete;
+  ListNode& operator=(const ListNode&) = delete;
+  ListNode(ListNode&&) = delete;
+  ListNode& operator=(ListNode&&) = delete;
 
   ListNode() noexcept = default;
   ListNode(ListNode* prev, ListNode* next) noexcept : prev_(prev), next_(next) {}
@@ -50,7 +51,8 @@ concept ListNodeBaseHook =
 template <class T, class Tag = void>
 class IntrusiveList {
 public:
-  COROPACT_DELETE_COPY(IntrusiveList);
+  IntrusiveList(const IntrusiveList&) = delete;
+  IntrusiveList& operator=(const IntrusiveList&) = delete;
 
   using Node = ListNode<T, Tag>;
   static_assert(ListNodeBaseHook<T, Tag>,

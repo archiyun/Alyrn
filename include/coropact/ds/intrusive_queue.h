@@ -4,8 +4,6 @@
 #include <concepts>
 #include <cstddef>
 
-#include "coropact/utils/macros.h"
-
 namespace coropact::ds {
 
 template <typename T, class Tag>
@@ -22,7 +20,10 @@ public:
 
 protected:
   QueueNode() = default;
-  COROPACT_DELETE_COPY(QueueNode);
+  QueueNode(const QueueNode&) = delete;
+  QueueNode& operator=(const QueueNode&) = delete;
+  QueueNode(QueueNode&&) = delete;
+  QueueNode& operator=(QueueNode&&) = delete;
 
 private:
   using Node = QueueNode<T, Tag>;
@@ -40,7 +41,8 @@ concept QueueNodeBaseHook =
 template <class T, class Tag = void>
 class IntrusiveQueue {
 public:
-  COROPACT_DELETE_COPY(IntrusiveQueue);
+  IntrusiveQueue(const IntrusiveQueue&) = delete;
+  IntrusiveQueue& operator=(const IntrusiveQueue&) = delete;
 
   using Node = QueueNode<T, Tag>;
   static_assert(QueueNodeBaseHook<T, Tag>,

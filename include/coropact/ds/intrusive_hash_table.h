@@ -17,8 +17,6 @@
 #include <utility>
 #include <vector>
 
-#include "coropact/utils/macros.h"
-
 namespace coropact::ds {
 
 // Intrusive chained hash table. Node storage lives in T through a base hook:
@@ -68,7 +66,11 @@ public:
   }
 
 protected:
-  COROPACT_DELETE_COPY(HashNode);
+  HashNode(const HashNode&) = delete;
+  HashNode& operator=(const HashNode&) = delete;
+  HashNode(HashNode&&) = delete;
+  HashNode& operator=(HashNode&&) = delete;
+
   HashNode() = default;
   ~HashNode() = default;
 
@@ -94,7 +96,10 @@ concept HashNodeBaseHook =
 template <class T, auto kKeyOf, class Hash, class Eq, class Tag>
 class IntrusiveHashTable {
 public:
-  COROPACT_DELETE_COPY_MOVE(IntrusiveHashTable);
+  IntrusiveHashTable(const IntrusiveHashTable&) = delete;
+  IntrusiveHashTable& operator=(const IntrusiveHashTable&) = delete;
+  IntrusiveHashTable(IntrusiveHashTable&&) = delete;
+  IntrusiveHashTable& operator=(IntrusiveHashTable&&) = delete;
 
   using Node = HashNode<T, Tag>;
   using Key = std::remove_cvref_t<decltype(kKeyOf(static_cast<const T*>(nullptr)))>;

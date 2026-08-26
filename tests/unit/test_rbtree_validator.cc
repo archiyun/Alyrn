@@ -10,8 +10,8 @@
 //   6. 有序插删、反向删除、密集重复 key + PopWhile churn 均与 oracle 一致
 //   7. PopWhile(pred, on_pop) 在回调前已删除节点，且不需要结果 vector
 //
-// 注意：Debug 构建下 IntrusiveRBTree 用 per-node tree owner 捕获跨树 Erase；
-// release 构建仍把跨树 Erase 视为调用方违反前置条件，不在本测试里触发。
+// 注意：Debug 构建下 IntrusiveRBTree 沿 parent 走到 right==self 的哨兵来捕获跨树
+// Erase；release 构建仍把跨树 Erase 视为调用方违反前置条件，不在本测试里触发。
 //
 // 编译
 // cmake -B build-tests
@@ -119,12 +119,12 @@ static bool pattern_test() {
       std::set<Job*, JobCmp> oracle;
 
       for (int i = 0; i < size; ++i) {
-        tree.Insert(&pool[i]);
+        if (!CheckAt(tree.Insert(&pool[i]), "asc-ins", "insert should succeed")) return false;
         oracle.insert(&pool[i]);
         if (!full_check(tree, oracle, "asc-ins")) return false;
       }
       for (int i = 0; i < size; ++i) {
-        tree.Erase(&pool[i]);
+        if (!CheckAt(tree.Erase(&pool[i]), "asc-del", "erase should succeed")) return false;
         oracle.erase(&pool[i]);
         if (!full_check(tree, oracle, "asc-del")) return false;
       }
@@ -136,11 +136,15 @@ static bool pattern_test() {
       std::set<Job*, JobCmp> oracle;
 
       for (int i = 0; i < size; ++i) {
-        tree.Insert(&pool[i]);
+        if (!CheckAt(tree.Insert(&pool[i]), "asc-ins/desc-del", "insert should succeed")) {
+          return false;
+        }
         oracle.insert(&pool[i]);
       }
       for (int i = size - 1; i >= 0; --i) {
-        tree.Erase(&pool[i]);
+        if (!CheckAt(tree.Erase(&pool[i]), "asc-ins/desc-del", "erase should succeed")) {
+          return false;
+        }
         oracle.erase(&pool[i]);
         if (!full_check(tree, oracle, "asc-ins/desc-del")) return false;
       }
@@ -152,11 +156,15 @@ static bool pattern_test() {
       std::set<Job*, JobCmp> oracle;
 
       for (int i = size - 1; i >= 0; --i) {
-        tree.Insert(&pool[i]);
+        if (!CheckAt(tree.Insert(&pool[i]), "desc-ins/asc-del", "insert should succeed")) {
+          return false;
+        }
         oracle.insert(&pool[i]);
       }
       for (int i = 0; i < size; ++i) {
-        tree.Erase(&pool[i]);
+        if (!CheckAt(tree.Erase(&pool[i]), "desc-ins/asc-del", "erase should succeed")) {
+          return false;
+        }
         oracle.erase(&pool[i]);
         if (!full_check(tree, oracle, "desc-ins/asc-del")) return false;
       }
@@ -168,7 +176,7 @@ static bool pattern_test() {
       std::set<Job*, JobCmp> oracle;
 
       for (int i = 0; i < size; ++i) {
-        tree.Insert(&pool[i]);
+        if (!CheckAt(tree.Insert(&pool[i]), "outer-in-del", "insert should succeed")) return false;
         oracle.insert(&pool[i]);
       }
 
@@ -178,7 +186,9 @@ static bool pattern_test() {
       while (lo <= hi) {
         const int index = from_lo ? lo++ : hi--;
         from_lo = !from_lo;
-        tree.Erase(&pool[index]);
+        if (!CheckAt(tree.Erase(&pool[index]), "outer-in-del", "erase should succeed")) {
+          return false;
+        }
         oracle.erase(&pool[index]);
         if (!full_check(tree, oracle, "outer-in-del")) return false;
       }
@@ -194,7 +204,7 @@ static bool callback_pop_test() {
   std::set<Job*, JobCmp> oracle;
 
   for (Job& job : pool) {
-    tree.Insert(&job);
+    if (!CheckAt(tree.Insert(&job), "callback-pop", "insert should succeed")) return false;
     oracle.insert(&job);
   }
 
@@ -252,10 +262,10 @@ static bool churn_test(uint64_t seed, int pool_size, int ops, int keyspace) {
     if (r < 55) {
       Job* job = &pool[pick(rng)];
       if (!job->InTree()) {
-        tree.Insert(job);
+        if (!CheckAt(tree.Insert(job), "churn-ie", "insert should succeed")) return false;
         oracle.insert(job);
       } else {
-        tree.Erase(job);
+        if (!CheckAt(tree.Erase(job), "churn-ie", "erase should succeed")) return false;
         oracle.erase(job);
       }
       if (!full_check(tree, oracle, "churn-ie")) return false;
@@ -373,8 +383,8 @@ int main() {
     CHECK(!tree.Insert(nullptr), "insert null element should fail");
     CHECK(!tree.Erase(nullptr), "erase null element should fail");
     CHECK(!tree.Erase(&a), "erase unlinked element should fail");
-    tree.Insert(&a);
-    tree.Insert(&a);
+    CHECK(tree.Insert(&a), "first insert should succeed");
+    CHECK(!tree.Insert(&a), "duplicate insert should return false");
     CHECK(tree.Size() == 1, "duplicate insert should be ignored");
     CHECK(tree.Earliest() == &a, "single inserted element should be earliest");
     CHECK(tree.CheckRBInvariants(), "single-node tree invariants");
@@ -396,7 +406,7 @@ int main() {
       // ---- Insert ----
       Job* j = &pool[rng() % kPoolSize];
       if (!j->InTree()) {
-        tree.Insert(j);
+        CHECK(tree.Insert(j), "insert should succeed");
         oracle.insert(j);
         active.push_back(j);
       }
@@ -404,7 +414,7 @@ int main() {
     } else if (r < 85) {
       // ---- Erase ----
       Job* j = active[rng() % active.size()];
-      tree.Erase(j);
+      CHECK(tree.Erase(j), "erase should succeed");
       oracle.erase(j);
       remove_from_active(j);
 
@@ -439,7 +449,7 @@ int main() {
   std::vector<Job*> drain_tree, drain_oracle(oracle.begin(), oracle.end());
   while (!tree.Empty()) {
     drain_tree.push_back(tree.Earliest());
-    tree.Erase(tree.Earliest());
+    if (!CheckAt(tree.Erase(tree.Earliest()), "drain", "erase should succeed")) return 1;
   }
   int drain_ok = 1;
   if (drain_tree.size() == drain_oracle.size()) {

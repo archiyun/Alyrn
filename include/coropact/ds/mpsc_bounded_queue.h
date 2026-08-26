@@ -13,8 +13,6 @@
 #include <type_traits>
 #include <utility>
 
-#include "coropact/utils/macros.h"
-
 namespace coropact::ds {
 
 enum class MpscQueuePushResult : std::uint8_t {
@@ -31,7 +29,10 @@ enum class MpscQueuePushResult : std::uint8_t {
 template <class T, std::size_t Capacity>
 class MpscBoundedQueue {
 public:
-  COROPACT_DELETE_COPY_MOVE(MpscBoundedQueue);
+  MpscBoundedQueue(const MpscBoundedQueue&) = delete;
+  MpscBoundedQueue& operator=(const MpscBoundedQueue&) = delete;
+  MpscBoundedQueue(MpscBoundedQueue&&) = delete;
+  MpscBoundedQueue& operator=(MpscBoundedQueue&&) = delete;
 
   static_assert(Capacity > 0);
   static_assert((Capacity & (Capacity - 1)) == 0,

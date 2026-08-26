@@ -6,8 +6,6 @@
 #include <cstddef>
 #include <vector>
 
-#include "coropact/utils/macros.h"
-
 namespace coropact::ds {
 
 inline constexpr std::size_t kNotInHeap = static_cast<std::size_t>(-1);
@@ -41,7 +39,11 @@ public:
   }
 
 protected:
-  COROPACT_DELETE_COPY(HeapNode);
+  HeapNode(const HeapNode&) = delete;
+  HeapNode& operator=(const HeapNode&) = delete;
+  HeapNode(HeapNode&&) = delete;
+  HeapNode& operator=(HeapNode&&) = delete;
+
   HeapNode() = default;
   ~HeapNode() = default;
 
@@ -73,7 +75,10 @@ concept HeapNodeBaseHook =
 template <class T, auto kLess, class Tag>
 class IntrusiveQuadHeap {
 public:
-  COROPACT_DELETE_COPY_MOVE(IntrusiveQuadHeap);
+  IntrusiveQuadHeap(const IntrusiveQuadHeap&) = delete;
+  IntrusiveQuadHeap& operator=(const IntrusiveQuadHeap&) = delete;
+  IntrusiveQuadHeap(IntrusiveQuadHeap&&) = delete;
+  IntrusiveQuadHeap& operator=(IntrusiveQuadHeap&&) = delete;
 
   using Node = HeapNode<T, Tag>;
   static_assert(HeapNodeBaseHook<T, Tag>,

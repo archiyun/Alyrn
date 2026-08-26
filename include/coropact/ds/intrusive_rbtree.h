@@ -18,19 +18,23 @@
 //     helper policies. Node metadata is compressed with pointer tagging: the
 //     parent pointer shares one uintptr_t-sized field with low-bit flags such as
 //     color and linked state. The tree also uses a sentinel header node, inspired
-//     by STL _Rb_tree implementations, where the header caches the root, minimum
-//     and maximum nodes. This improves boundary handling and makes begin(),
-//     min(), max() and empty checks straightforward.
+//     by STL _Rb_tree implementations, where the header caches the root and
+//     minimum nodes. This improves boundary handling and makes begin(), min()
+//     and empty checks straightforward.
 //      --- 2026-06-08  Copyright (c) Arsenova
 //   v5:
 //     Timer-queue oriented refinement. Clear() now unlinks every node with an
 //     iterative post-order traversal, so all intrusive hooks are reset without
-//     recursion. Cached maximum maintenance is disabled by default because the
-//     timer workload only needs the earliest element; the maximum-related code
-//     is kept behind a compile-time switch for future use. Debug builds also
-//     stamp each linked node with its owning tree address, which catches
-//     cross-tree Erase misuse and validates ownership during invariant checks.
+//     recursion.
 //      --- 2026-07-06 Copyright (c) Arsenova
+//   v6:
+//     Drop cached-maximum maintenance. The sentinel's right child always
+//     points at the sentinel itself; only root and minimum are cached.
+//     That self-pointer is also the header identity: no real BST node is its
+//     own right child, and unlinked hooks have a null right. Cross-tree Erase
+//     walks parent links to this header instead of stamping a debug-only owner
+//     pointer on every node.
+//      --- 2026-08-26 Copyright (c) Arsenova
 //
 #pragma once
 
@@ -39,33 +43,29 @@
 #include <cstdint>
 #include <vector>
 
-#include "coropact/utils/macros.h"
-
 namespace coropact::ds {
 
 // Intrusive red-black tree. Node storage lives in T through a base hook:
 // T must publicly inherit RBTNode<T, Tag>, so the tree can recover T* from a
 // node with static_cast.
 //
-// Each tree owns one sentinel node. The sentinel is used as the null leaf, and
-// its three pointer slots also cache tree-level state:
+// Each tree owns one sentinel. It is the NIL leaf, and its slots cache:
 //   parent = root
 //   left   = minimum
-//   right  = maximum (maintenance disabled by default; timer queues only need min)
-// This means sentinel.parent() is not a NIL-parent link. DeleteFixup receives
-// the explicit parent whenever the fixup node is the sentinel.
+//   right  = the sentinel itself (header identity)
+// sentinel.parent() is therefore not a NIL-parent link; DeleteFixup takes an
+// explicit parent whenever the fixup node is the sentinel.
 //
 // Template parameters:
-//   T        - element type; must publicly inherit RBTNode<T>
-//   kLess    - total order on T; must be irreflexive and transitive
+//   T        - element type; must publicly and non-virtually inherit
+//              RBTNode<T, Tag>
+//   kLess    - strict weak order on T; must be irreflexive, transitive, and
+//              stable while the element is linked
 //   Tag      - optional hook tag for objects that inherit multiple RBTNode hooks
 //
-// This tree is used as an ordered work queue (TimerQueue, deadline scheduling).
-// In that pattern PopWhile (extract-all-matching in key order) dominates, so
-// minimum is eagerly cached. Rotations during insert/erase never change which
-// node is the minimum, so keeping the cache correct costs only a single lookup
-// in the Erase path. Maximum-cache maintenance is intentionally compiled out
-// for this timer-oriented workload, while the code remains available below.
+// Ordered work queue (TimerQueue, deadline scheduling). Earliest() is O(1)
+// because the minimum is cached. The tree is not movable: the sentinel address
+// is stored in node parent/child links.
 //
 template <class T, auto kLess, class Tag = void>
 class IntrusiveRBTree;
@@ -76,28 +76,31 @@ class RBTNode {
   friend class IntrusiveRBTree;
 
 public:
-  COROPACT_DELETE_COPY(RBTNode);
+  // Only says "linked into some tree", not which one.
   [[nodiscard]]
   bool InTree() const noexcept { return linked(); }
 
 protected:
-  RBTNode() = default;
+  RBTNode(const RBTNode&) = delete;
+  RBTNode& operator=(const RBTNode&) = delete;
+  RBTNode(RBTNode&&) = delete;
+  RBTNode& operator=(RBTNode&&) = delete;
+
+  RBTNode() noexcept = default;
+  ~RBTNode() noexcept = default;
 
 private:
   using Node = RBTNode<T, Tag>;
 
   // Unlike Linux rbtree, this implementation uses bit0 = 1 for red.
-  static constexpr std::uintptr_t kRed = 1u;                               // bit 0
-  static constexpr std::uintptr_t kLinked = 1u << 1;                       // bit 1
-  static constexpr std::uintptr_t kReserved = 1u << 2;                     // bit 2, reserved
+  static constexpr std::uintptr_t kRed = 1;                                // bit 0
+  static constexpr std::uintptr_t kLinked = 1 << 1;                        // bit 1
+  static constexpr std::uintptr_t kReserved = 1 << 2;                      // bit 2, reserved
   static constexpr std::uintptr_t kFlagMask = kRed | kLinked | kReserved;  // ...111
 
-  std::uintptr_t parent_and_flags_{0u};  // parent address plus low-bit flags
+  std::uintptr_t parent_and_flags_{0};  // parent address plus low-bit flags
   Node* left_{nullptr};
   Node* right_{nullptr};
-#ifndef NDEBUG
-  const void* owner_{nullptr};
-#endif
 
   Node* parent() const noexcept { return reinterpret_cast<Node*>(parent_and_flags_ & ~kFlagMask); }
 
@@ -114,7 +117,9 @@ private:
   void set_right(Node* right) noexcept { right_ = right; }
 
   [[nodiscard]]
-  bool red() const noexcept { return (parent_and_flags_ & kRed) != 0; }
+  bool red() const noexcept {
+    return (parent_and_flags_ & kRed) != 0;
+  }
 
   void set_red(bool red) noexcept {
     if (red) {
@@ -125,7 +130,9 @@ private:
   }
 
   [[nodiscard]]
-  bool linked() const noexcept { return (parent_and_flags_ & kLinked) != 0; }
+  bool linked() const noexcept {
+    return (parent_and_flags_ & kLinked) != 0;
+  }
 
   void set_linked(const bool linked) noexcept {
     if (linked) {
@@ -135,18 +142,10 @@ private:
     }
   }
 
-#ifndef NDEBUG
-  const void* owner() const noexcept { return owner_; }
-  void set_owner(const void* owner) noexcept { owner_ = owner; }
-#endif
-
   void clear_hook() noexcept {
     left_ = nullptr;
     right_ = nullptr;
     parent_and_flags_ = 0;
-#ifndef NDEBUG
-    owner_ = nullptr;
-#endif
   }
 };
 
@@ -160,6 +159,11 @@ concept RBTNodeBaseHook =
 template <class T, auto kLess, class Tag>
 class IntrusiveRBTree {
 public:
+  IntrusiveRBTree(const IntrusiveRBTree&) = delete;
+  IntrusiveRBTree& operator=(const IntrusiveRBTree&) = delete;
+  IntrusiveRBTree(IntrusiveRBTree&&) = delete;
+  IntrusiveRBTree& operator=(IntrusiveRBTree&&) = delete;
+
   using Node = RBTNode<T, Tag>;
   static_assert(alignof(Node) >= 8, "RBTNode must be at least 8-byte aligned for pointer tagging");
   static_assert(RBTNodeBaseHook<T, Tag>,
@@ -171,32 +175,39 @@ public:
     sentinel_.set_parent(&sentinel_);
     sentinel_.set_red(false);
   }
+
+  // Resets every linked node's hook so a stale Erase after destruction is safe.
   ~IntrusiveRBTree() noexcept { Clear(); }
 
-  // O(1)
   [[nodiscard]]
-  bool Empty() const { return size_ == 0; }
-  // O(1)
+  bool Empty() const noexcept { return size_ == 0; }
   [[nodiscard]]
   std::size_t Size() const noexcept { return size_; }
-  // O(log n) worst-case; returns false for nullptr or if elem is already in the tree.
-  bool Insert(T* elem);
 
-  // O(log n) worst-case; returns false for nullptr or if elem was not linked in any tree.
-  //
-  // Precondition: if elem is linked, it must be linked in this exact tree.
-  // Debug builds assert this with a per-node owner marker. In release builds,
-  // passing an element linked in another IntrusiveRBTree instance is undefined
-  // behavior. InTree() only says whether the element is linked somewhere.
-  bool Erase(T* elem);
+  // O(log n). Returns false for nullptr or when elem is already linked (in this
+  // or any tree).
+  [[nodiscard]]
+  bool Insert(T* elem) noexcept;
 
-  // O(1) — cached pointer, updated on Insert and Erase.
-  T* Earliest() const { return min() == sentinel() ? nullptr : elem_of(min()); }
+  // O(log n). Returns false for nullptr or if elem was not linked.
+  // Precondition: if linked, elem is linked in *this* (cross-tree erase is UB,
+  // same caveat as IntrusiveList::Erase). InTree() only says "linked somewhere".
+  [[nodiscard]]
+  bool Erase(T* elem) noexcept;
 
-  void Clear();
+  // O(1). Cached minimum; nullptr when empty.
+  T* Earliest() noexcept { return min() == sentinel() ? nullptr : elem_of(min()); }
+  const T* Earliest() const noexcept {
+    return min() == sentinel() ? nullptr : elem_of(min());
+  }
+
+  // Unlink every element (resetting its hook) and reset the sentinel. O(n).
+  void Clear() noexcept;
+
   // O(k log n) where k is the number of extracted elements.
-  // Extracts (and erases) the earliest elements satisfying pred in key order.
-  // Stops at the first element that fails the predicate.
+  // Extracts the earliest elements satisfying pred in key order.
+  // Stops at the first element that fails the predicate. Returned pointers
+  // are already unlinked.
   template <typename Pred>
   std::vector<T*> PopWhile(Pred pred);
 
@@ -205,21 +216,17 @@ public:
   template <typename Pred, typename OnPop>
   std::size_t PopWhile(Pred pred, OnPop on_pop);
 
-  // O(n) - debug only. Verifies RB invariants, BST order, parent/child links,
-  // linked state, subtree size and cached root/min state. If kMaintainMax is
-  // enabled, this also verifies cached max state.
+  // O(n). Verifies RB invariants, BST order, parent/child links, linked state,
+  // subtree size, cached root/min, and header identity (right == self).
   [[nodiscard]]
   bool CheckRBInvariants() const;
 
 private:
-  static constexpr bool kMaintainMax = false;
-
   struct CheckResult {
     bool ok{true};
     int black_height{0};
     std::size_t count{0};
     const Node* min{nullptr};
-    const Node* max{nullptr};
   };
 
   Node sentinel_{};
@@ -234,13 +241,38 @@ private:
     node->set_parent(sentinel());  // root.parent = sentinel
   }
 
-  static Node* node_of(T* elem) { return static_cast<Node*>(elem); }
-  static T* elem_of(Node* node) { return static_cast<T*>(node); }
+  static Node* node_of(T* elem) noexcept { return static_cast<Node*>(elem); }
+  static T* elem_of(Node* node) noexcept { return static_cast<T*>(node); }
+  static const T* elem_of(const Node* node) noexcept { return static_cast<const T*>(node); }
 
   Node* min() const noexcept { return sentinel_.left(); }
   void set_min(Node* node) noexcept { sentinel_.set_left(node); }
-  [[maybe_unused]] Node* max() const noexcept { return sentinel_.right(); }
-  [[maybe_unused]] void set_max(Node* node) noexcept { sentinel_.set_right(node); }
+
+  // Only the sentinel satisfies this: unlinked hooks have a null right, and a
+  // real BST node's right child is either a descendant or the sentinel.
+  static bool IsHeader(const Node* node) noexcept {
+    return node != nullptr && node->right() == node;
+  }
+
+  // Precondition for a useful result: node is linked. Walks parent links until
+  // IsHeader. Stopping there avoids following sentinel.parent (the root cache).
+  // Returns nullptr if the chain is broken, cyclic, or node is not linked, so
+  // CheckRBInvariants can fail instead of asserting.
+  const Node* HeaderOf(const Node* node) const noexcept {
+    if (node == nullptr || !node->InTree()) {
+      return nullptr;
+    }
+    for (std::size_t steps = 0; steps <= size_; ++steps) {
+      if (IsHeader(node)) {
+        return node;
+      }
+      node = node->parent();
+      if (node == nullptr) {
+        return nullptr;
+      }
+    }
+    return nullptr;
+  }
 
   inline static void Red(Node* node) { node->set_red(true); }
   inline static void Black(Node* node) { node->set_red(false); }
@@ -250,13 +282,10 @@ private:
 
   // O(log n) — walks left spine of subtree.
   Node* Minimum(Node* node);
-  // O(log n) - walks right spine of subtree.
-  Node* Maximum(Node* node);
 
   // Worst-case O(log n) — either descends once via Minimum, or walks parent
   // links (at most tree height).  Called once per Erase that removes min_.
   Node* Next(Node* node);
-  Node* Prev(Node* node);
 
   CheckResult CheckSubtree(const Node* node, const Node* parent, const Node* lower,
                            const Node* upper) const;
@@ -291,29 +320,6 @@ auto IRBT_TYPE::Next(Node* node) -> Node* {
     auto* parent = node->parent();
     if (parent == sentinel()) return sentinel();
     if (node == parent->left()) return parent;
-    node = parent;
-  }
-}
-
-IRBT_TMPL
-auto IRBT_TYPE::Maximum(Node* node) -> Node* {
-  assert(node != sentinel());
-  while (node->right() != sentinel()) {
-    node = node->right();
-  }
-  return node;
-}
-
-IRBT_TMPL
-auto IRBT_TYPE::Prev(Node* node) -> Node* {
-  assert(node != sentinel());
-
-  if (node->left() != sentinel()) return Maximum(node->left());
-  if (node == root()) return sentinel();
-  while (true) {
-    auto* parent = node->parent();
-    if (parent == sentinel()) return sentinel();
-    if (node == parent->right()) return parent;
     node = parent;
   }
 }
@@ -436,7 +442,7 @@ auto IRBT_TYPE::InsertFixup(Node* node) -> void {
 }
 
 IRBT_TMPL
-bool IRBT_TYPE::Insert(T* elem) {
+bool IRBT_TYPE::Insert(T* elem) noexcept {
   if (elem == nullptr) return false;
 
   auto* node = node_of(elem);
@@ -450,14 +456,8 @@ bool IRBT_TYPE::Insert(T* elem) {
   assert(node->right() == nullptr);
   assert(node->parent() == nullptr);
   assert(IsBlack(node));
-#ifndef NDEBUG
-  assert(node->owner() == nullptr);
-#endif
 
   node->set_linked(true);
-#ifndef NDEBUG
-  node->set_owner(this);
-#endif
   node->set_left(sentinel());
   node->set_right(sentinel());
   node->set_parent(sentinel());
@@ -489,11 +489,6 @@ bool IRBT_TYPE::Insert(T* elem) {
   if (min() == sentinel() || kLess(elem, elem_of(min()))) {
     set_min(node);
   }
-  if constexpr (kMaintainMax) {
-    if (max() == sentinel() || kLess(elem_of(max()), elem)) {
-      set_max(node);
-    }
-  }
   InsertFixup(node);
   ++size_;
 
@@ -501,9 +496,7 @@ bool IRBT_TYPE::Insert(T* elem) {
   assert(root()->parent() == sentinel());
   assert(IsBlack(root()));
   assert(min() != sentinel());
-  if constexpr (kMaintainMax) {
-    assert(max() != sentinel());
-  }
+  assert(IsHeader(sentinel()));
   assert(node->InTree());
 
   return true;
@@ -607,7 +600,7 @@ auto IRBT_TYPE::DeleteFixup(Node* node, Node* parent) -> void {
 }
 
 IRBT_TMPL
-bool IRBT_TYPE::Erase(T* elem) {
+bool IRBT_TYPE::Erase(T* elem) noexcept {
   if (elem == nullptr) return false;
 
   auto* target = node_of(elem);
@@ -616,14 +609,11 @@ bool IRBT_TYPE::Erase(T* elem) {
   assert(target != sentinel());
 
   if (!target->InTree()) {
-#ifndef NDEBUG
-    assert(target->owner() == nullptr);
-#endif
     return false;
   }
 
 #ifndef NDEBUG
-  assert(target->owner() == this);
+  assert(HeaderOf(target) == sentinel());
 #endif
 
   assert(root() != sentinel());
@@ -635,11 +625,6 @@ bool IRBT_TYPE::Erase(T* elem) {
 
   if (target == min()) {
     set_min(Next(min()));
-  }
-  if constexpr (kMaintainMax) {
-    if (target == max()) {
-      set_max(Prev(max()));
-    }
   }
 
   auto* detach = target;
@@ -728,17 +713,12 @@ bool IRBT_TYPE::Erase(T* elem) {
   if (size_ == 0) {
     assert(root() == sentinel());
     assert(min() == sentinel());
-    if constexpr (kMaintainMax) {
-      assert(max() == sentinel());
-    }
   } else {
     assert(root() != sentinel());
     assert(root()->parent() == sentinel());
     assert(min() != sentinel());
-    if constexpr (kMaintainMax) {
-      assert(max() != sentinel());
-    }
   }
+  assert(IsHeader(sentinel()));
 
   return true;
 }
@@ -751,7 +731,8 @@ std::vector<T*> IRBT_TYPE::PopWhile(Pred pred) {
     T* elem = Earliest();
     if (!pred(elem)) break;
     result.push_back(elem);
-    Erase(elem);
+    [[maybe_unused]] const bool erased = Erase(elem);
+    assert(erased);
   }
   return result;
 }
@@ -763,7 +744,8 @@ std::size_t IRBT_TYPE::PopWhile(Pred pred, OnPop on_pop) {
   while (!Empty()) {
     T* elem = Earliest();
     if (!pred(elem)) break;
-    Erase(elem);
+    [[maybe_unused]] const bool erased = Erase(elem);
+    assert(erased);
     on_pop(elem);
     ++popped;
   }
@@ -771,7 +753,7 @@ std::size_t IRBT_TYPE::PopWhile(Pred pred, OnPop on_pop) {
 }
 
 IRBT_TMPL
-void IRBT_TYPE::Clear() {
+void IRBT_TYPE::Clear() noexcept {
   if (Empty()) {
     return;
   }
@@ -822,10 +804,7 @@ auto IRBT_TYPE::CheckSubtree(const Node* node, const Node* parent, const Node* l
   result.ok = false;
 
   if (node == nullptr || parent == nullptr) return result;
-  if (!node->InTree()) return result;
-#ifndef NDEBUG
-  if (node->owner() != this) return result;
-#endif
+  if (!node->InTree() || IsHeader(node)) return result;
   if (node->parent() != parent) return result;
   if (node->left() == nullptr || node->right() == nullptr) return result;
 
@@ -854,45 +833,30 @@ auto IRBT_TYPE::CheckSubtree(const Node* node, const Node* parent, const Node* l
   result.black_height = left.black_height + (IsBlack(node) ? 1 : 0);
   result.count = left.count + right.count + 1;
   result.min = left.count == 0 ? node : left.min;
-  result.max = right.count == 0 ? node : right.max;
   return result;
 }
 
 IRBT_TMPL
 auto IRBT_TYPE::CheckRBInvariants() const -> bool {
-  if (!IsBlack(sentinel()) || sentinel()->InTree()) {
+  if (!IsBlack(sentinel()) || sentinel()->InTree() || !IsHeader(sentinel())) {
     return false;
   }
 
   if (root() == nullptr || min() == nullptr) {
     return false;
   }
-  if constexpr (kMaintainMax) {
-    if (max() == nullptr) {
-      return false;
-    }
-  } else if (max() != sentinel()) {
-    return false;
-  }
 
   if (root() == sentinel()) {
-    return size_ == 0 && min() == sentinel() && max() == sentinel();
+    return size_ == 0 && min() == sentinel();
   }
   if (size_ == 0 || min() == sentinel() || root()->parent() != sentinel() || IsRed(root())) {
     return false;
   }
-  if constexpr (kMaintainMax) {
-    if (max() == sentinel()) {
-      return false;
-    }
-  } else if (max() != sentinel()) {
+  if (HeaderOf(root()) != sentinel() || HeaderOf(min()) != sentinel()) {
     return false;
   }
 
   auto result = CheckSubtree(root(), sentinel(), nullptr, nullptr);
-  if constexpr (kMaintainMax) {
-    return result.ok && result.count == size_ && result.min == min() && result.max == max();
-  }
   return result.ok && result.count == size_ && result.min == min();
 }
 

@@ -32,9 +32,11 @@ bool TestOrdersByExpirationThenSequence() {
   coropact::time::Timer early([] {}, early_deadline, coropact::time::Duration::zero());
   coropact::time::TimerTree timers;
 
-  timers.Insert(&second);
-  timers.Insert(&first);
-  timers.Insert(&early);
+  if (!Expect(timers.Insert(&second), "insert second") ||
+      !Expect(timers.Insert(&first), "insert first") ||
+      !Expect(timers.Insert(&early), "insert early")) {
+    return false;
+  }
 
   if (!Expect(timers.Size() == 3, "tree should contain all timers") ||
       !Expect(timers.Earliest() == &early, "earliest expiration should sort first") ||
@@ -60,9 +62,11 @@ bool TestPopWhileUnlinksAndPreservesOrder() {
                               coropact::time::Duration::zero());
   coropact::time::TimerTree timers;
 
-  timers.Insert(&later);
-  timers.Insert(&second);
-  timers.Insert(&first);
+  if (!Expect(timers.Insert(&later), "insert later") ||
+      !Expect(timers.Insert(&second), "insert second") ||
+      !Expect(timers.Insert(&first), "insert first")) {
+    return false;
+  }
 
   std::vector<std::int64_t> popped_sequences;
   const std::size_t popped = timers.PopWhile(
@@ -92,13 +96,17 @@ bool TestTimerCanBeReinsertedAfterRestart() {
                                   coropact::time::Milliseconds(10));
   coropact::time::TimerTree timers;
 
-  timers.Insert(&repeating);
+  if (!Expect(timers.Insert(&repeating), "insert repeating")) {
+    return false;
+  }
   if (!Expect(timers.Erase(&repeating), "repeating timer should be erasable")) {
     return false;
   }
 
   repeating.Restart(base + coropact::time::Seconds(6));
-  timers.Insert(&repeating);
+  if (!Expect(timers.Insert(&repeating), "reinsert repeating")) {
+    return false;
+  }
 
   return Expect(repeating.InTree(), "restarted timer should be linked") &&
          Expect(timers.Earliest() == &repeating,
