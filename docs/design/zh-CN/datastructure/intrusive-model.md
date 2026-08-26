@@ -8,7 +8,7 @@
 
  - `IntrusiveList`
  - `IntrusiveQueue`
- - `IntrusiveRBTree`
+ - `IntrusiveTree`
 
 很好区分，前缀带有 `Intrusive`；它们由 `coropact/ds.h` 导出。
 
@@ -127,7 +127,7 @@ object -> hook
   ────────────────────  ───────────────────
    IntrusiveQueue        QueueNode<T, Tag>
   ────────────────────  ───────────────────
-   IntrusiveRBTree       RBTNode<T, Tag>
+   IntrusiveTree       RBTreeNode<T, Tag>
   ────────────────────  ───────────────────
 
 如前面的例子, 同一个对象可以通过不同的 Tag 同时加入多个同类型的容器
@@ -181,7 +181,7 @@ if (item.InList()) {
 | --- | --- |
 | `IntrusiveList` | 是 |
 | `IntrusiveQueue` | 是 |
-| `IntrusiveRBTree` | 是 |
+| `IntrusiveTree` | 是 |
 
 当容器与元素生命周期存在交叉时, 仍建议显式写出
 `xxx.Clear()`
@@ -216,7 +216,7 @@ if (item.InList()) {
   ────────────────────  ─────────────────────────────────
    IntrusiveQueue        协程 WorkQueue
   ────────────────────  ─────────────────────────────────
-   IntrusiveRBTree       默认 TimerIndex、deadline 调度
+   IntrusiveTree       默认 TimerIndex、deadline 调度
   ────────────────────  ─────────────────────────────────
   ────────────────────  ─────────────────────────────────
 

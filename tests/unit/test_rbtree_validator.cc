@@ -1,16 +1,16 @@
-// 对数器：用 std::set 作为标准答案，逐操作与 IntrusiveRBTree 对比，
+// 对数器：用 std::set 作为标准答案，逐操作与 IntrusiveTree 对比，
 // 同时每步验证红黑树结构不变量。
 //
 // 验证项：
 //   1. tree.Size()     == oracle.size()
 //   2. tree.Earliest() == *oracle.begin()  (按 JobLess 排序最小值)
 //   3. PopWhile 弹出结果与 oracle 一致（顺序、内容）
-//   4. 每步 CheckRBInvariants() 均为 true
+//   4. 每步 CheckInvariants() 均为 true
 //   5. 未入树 Erase 返回 false，重复 Insert 不改变树
 //   6. 有序插删、反向删除、密集重复 key + PopWhile churn 均与 oracle 一致
 //   7. PopWhile(pred, on_pop) 在回调前已删除节点，且不需要结果 vector
 //
-// 注意：Debug 构建下 IntrusiveRBTree 沿 parent 走到 right==self 的哨兵来捕获跨树
+// 注意：Debug 构建下 IntrusiveTree 沿 parent 走到 right==self 的哨兵来捕获跨树
 // Erase；release 构建仍把跨树 Erase 视为调用方违反前置条件，不在本测试里触发。
 //
 // 编译
@@ -33,7 +33,7 @@
 // Element type
 // ----------------------------------------------------------------
 
-struct Job : coropact::ds::RBTNode<Job> {
+struct Job : coropact::ds::RBTreeNode<Job> {
   Job() = default;
 
   int         id;
@@ -45,7 +45,7 @@ bool JobLess(const Job* a, const Job* b) {
   return a->id < b->id;
 }
 
-using JobTree = coropact::ds::IntrusiveRBTree<Job, JobLess>;
+using JobTree = coropact::ds::IntrusiveTree<Job, JobLess>;
 
 struct JobCmp {
   bool operator()(const Job* a, const Job* b) const { return JobLess(a, b); }
@@ -67,7 +67,7 @@ static void verify(const JobTree& tree,
                    const std::set<Job*, JobCmp>& oracle,
                    int op_idx) {
   CHECK(tree.Size() == oracle.size(), "size mismatch");
-  CHECK(tree.CheckRBInvariants(), "RB invariants violated");
+  CHECK(tree.CheckInvariants(), "RB invariants violated");
   if (!oracle.empty()) {
     CHECK(tree.Earliest() == *oracle.begin(), "Earliest() mismatch");
   } else {
@@ -90,7 +90,7 @@ static bool full_check(const JobTree& tree,
                        const char* where) {
   bool ok = true;
   ok &= CheckAt(tree.Size() == oracle.size(), where, "size mismatch");
-  ok &= CheckAt(tree.CheckRBInvariants(), where, "RB invariants violated");
+  ok &= CheckAt(tree.CheckInvariants(), where, "RB invariants violated");
   if (oracle.empty()) {
     ok &= CheckAt(tree.Earliest() == nullptr, where, "Earliest should be null");
   } else {
@@ -387,7 +387,7 @@ int main() {
     CHECK(!tree.Insert(&a), "duplicate insert should return false");
     CHECK(tree.Size() == 1, "duplicate insert should be ignored");
     CHECK(tree.Earliest() == &a, "single inserted element should be earliest");
-    CHECK(tree.CheckRBInvariants(), "single-node tree invariants");
+    CHECK(tree.CheckInvariants(), "single-node tree invariants");
     CHECK(tree.Erase(&a), "erase linked element should succeed");
     CHECK(tree.Empty(), "tree should be empty after erasing only element");
   }

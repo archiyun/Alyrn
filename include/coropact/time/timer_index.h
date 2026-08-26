@@ -52,13 +52,23 @@ public:
   }
 
   template <typename Pred>
+  std::vector<Timer*> ExtractPrefix(Pred pred) {
+    return store_.ExtractPrefix(pred);
+  }
+
+  template <typename Pred, typename OnPop>
+  std::size_t ExtractPrefix(Pred pred, OnPop on_pop) {
+    return store_.ExtractPrefix(pred, on_pop);
+  }
+
+  template <typename Pred>
   std::vector<Timer*> PopWhile(Pred pred) {
-    return store_.PopWhile(pred);
+    return ExtractPrefix(std::move(pred));
   }
 
   template <typename Pred, typename OnPop>
   std::size_t PopWhile(Pred pred, OnPop on_pop) {
-    return store_.PopWhile(pred, on_pop);
+    return ExtractPrefix(std::move(pred), std::move(on_pop));
   }
 
 private:

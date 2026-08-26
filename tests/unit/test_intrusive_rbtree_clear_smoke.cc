@@ -7,7 +7,7 @@
 
 namespace {
 
-struct Item : coropact::ds::RBTNode<Item> {
+struct Item : coropact::ds::RBTreeNode<Item> {
   int key{0};
   int id{0};
 };
@@ -17,7 +17,7 @@ bool ItemLess(const Item* a, const Item* b) {
   return a->id < b->id;
 }
 
-using ItemTree = coropact::ds::IntrusiveRBTree<Item, ItemLess>;
+using ItemTree = coropact::ds::IntrusiveTree<Item, ItemLess>;
 
 bool Expect(bool condition, const char* message) {
   if (!condition) {
@@ -30,7 +30,7 @@ bool Expect(bool condition, const char* message) {
 bool ExpectEmpty(const ItemTree& tree, const char* context) {
   return Expect(tree.Empty(), context) && Expect(tree.Size() == 0, "size should be zero") &&
          Expect(tree.Earliest() == nullptr, "Earliest should be null") &&
-         Expect(tree.CheckRBInvariants(), "empty tree invariants should hold");
+         Expect(tree.CheckInvariants(), "empty tree invariants should hold");
 }
 
 bool TestClearEmptyTree() {
@@ -71,7 +71,7 @@ bool TestClearManyNodes() {
   }
 
   if (!Expect(tree.Size() == items.size(), "all items should be inserted") ||
-      !Expect(tree.CheckRBInvariants(), "tree invariants should hold before Clear")) {
+      !Expect(tree.CheckInvariants(), "tree invariants should hold before Clear")) {
     return false;
   }
 
@@ -87,7 +87,7 @@ bool TestClearManyNodes() {
   }
 
   if (!Expect(tree.Size() == items.size(), "all cleared items should reinsert") ||
-      !Expect(tree.CheckRBInvariants(), "tree invariants should hold after reinsertion")) {
+      !Expect(tree.CheckInvariants(), "tree invariants should hold after reinsertion")) {
     return false;
   }
 
@@ -110,8 +110,8 @@ bool TestIndependentTreesKeepSeparateHeaders() {
   ItemTree b;
   if (!Expect(a.Insert(&a_item), "insert into tree a") ||
       !Expect(b.Insert(&b_item), "insert into tree b") ||
-      !Expect(a.CheckRBInvariants(), "tree a header walk should stay on a") ||
-      !Expect(b.CheckRBInvariants(), "tree b header walk should stay on b") ||
+      !Expect(a.CheckInvariants(), "tree a header walk should stay on a") ||
+      !Expect(b.CheckInvariants(), "tree b header walk should stay on b") ||
       !Expect(a.Earliest() == &a_item, "tree a min") ||
       !Expect(b.Earliest() == &b_item, "tree b min")) {
     return false;
@@ -119,7 +119,7 @@ bool TestIndependentTreesKeepSeparateHeaders() {
 
   if (!Expect(a.Erase(&a_item), "erase from owning tree a") ||
       !Expect(!a_item.InTree(), "a_item should unlink") ||
-      !Expect(b.CheckRBInvariants(), "tree b should be unchanged") ||
+      !Expect(b.CheckInvariants(), "tree b should be unchanged") ||
       !Expect(b.Erase(&b_item), "erase from owning tree b")) {
     return false;
   }

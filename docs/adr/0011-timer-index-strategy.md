@@ -4,7 +4,7 @@
 
 ## 背景 / 约束
 
-TimerQueue 原先把 `IntrusiveRBTree` 写死为唯一索引。四叉堆已经作为对等的有序索引存在，
+TimerQueue 原先把 `IntrusiveTree` 写死为唯一索引。四叉堆已经作为对等的有序索引存在，
 但不能在不改 TimerQueue 的情况下替换。Splay tree 没有运行时调用方。
 
 Runtime 的 composition root 不能增加调优开关（ADR-0010）。索引选择属于手动组合

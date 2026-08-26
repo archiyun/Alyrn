@@ -1,6 +1,6 @@
-// Demo: IntrusiveRBTree 使用示例
+// Demo: IntrusiveTree 使用示例
 //
-// 侵入式红黑树：元素通过公开继承 RBTNode<T> 提供节点存储，
+// 侵入式红黑树：元素通过公开继承 RBTreeNode<T> 提供节点存储，
 // 树本身不为元素分配内存。
 // 场景：一个按截止时间调度的任务调度器。
 // 任务按照 deadline_ms 排序，树顶总是最早的任务。
@@ -23,7 +23,7 @@ using namespace coropact::ds;
 // 1. 定义任务元素类型，并公开继承红黑树节点
 // ------------------------------------------------------------
 
-struct Job : RBTNode<Job> {
+struct Job : RBTreeNode<Job> {
   Job(const char* job_name, int64_t deadline, int job_priority)
       : name(job_name), deadline_ms(deadline), priority(job_priority) {}
 
@@ -46,7 +46,7 @@ bool JobLess(const Job* a, const Job* b) {
 // 3. 定义树类型别名
 // ------------------------------------------------------------
 
-using JobTree = IntrusiveRBTree<Job, JobLess>;
+using JobTree = IntrusiveTree<Job, JobLess>;
 
 // ------------------------------------------------------------
 // 4. 演示

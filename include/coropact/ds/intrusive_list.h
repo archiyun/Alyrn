@@ -2,7 +2,6 @@
 #pragma once
 
 #include <concepts>
-#include <cstddef>
 #include <utility>
 
 namespace coropact::ds {
@@ -58,7 +57,7 @@ public:
   static_assert(ListNodeBaseHook<T, Tag>,
                 "T must publicly and non-virtually inherit ListNode<T, Tag>");
 
-  IntrusiveList() noexcept { reset(); }
+  IntrusiveList() noexcept { Reset(); }
 
   IntrusiveList(IntrusiveList&& other) noexcept : IntrusiveList() { TakeFrom(other); }
 
@@ -128,11 +127,6 @@ public:
   bool Empty() const noexcept {
     return head_.next_ == &head_;
   }
-  [[nodiscard]]
-  std::size_t Size() const noexcept {
-    return size_;
-  }
-
   T* Front() noexcept;
   const T* Front() const noexcept;
   T* Back() noexcept;
@@ -149,7 +143,7 @@ public:
 
   // Erase by element. O(1). Returns false if elem was not linked.
   // Precondition: if linked, elem is linked in *this* (cross-list erase is UB,
-  // same caveat as IntrusiveRBTree::Erase). InList() only says "linked somewhere".
+  // same caveat as IntrusiveTree::Erase). InList() only says "linked somewhere".
   [[nodiscard]]
   bool Erase(T* elem) noexcept;
 
@@ -166,7 +160,7 @@ public:
 private:
   // Unlinks every element satisfying pred; used by the safe traversal helper.
   template <typename Pred>
-  std::size_t RemoveIf(Pred pred);
+  void RemoveIf(Pred pred);
 
   static Node* Next(Node* node) noexcept { return node->next_; }
   static const Node* Next(const Node* node) noexcept { return node->next_; }
@@ -174,10 +168,9 @@ private:
   static const T* ElemOf(const Node* node) noexcept { return static_cast<const T*>(node); }
   static Node* NodeOf(T* elem) noexcept { return static_cast<Node*>(elem); }
 
-  void reset() noexcept {
+  void Reset() noexcept {
     head_.next_ = &head_;
     head_.prev_ = &head_;
-    size_ = 0;
   }
 
   void TakeFrom(IntrusiveList& other) noexcept {
@@ -185,11 +178,10 @@ private:
 
     head_.next_ = other.head_.next_;
     head_.prev_ = other.head_.prev_;
-    size_ = other.size_;
 
     head_.next_->prev_ = &head_;
     head_.prev_->next_ = &head_;
-    other.reset();
+    other.Reset();
   }
   // -- Link primitives --
   static void SpliceOut(Node* node) {
@@ -208,11 +200,9 @@ private:
   void Unlink(Node* node) {
     SpliceOut(node);
     node->clear_hook();
-    --size_;
   }
 
   Node head_{};  // sentinel; head_.next_ = first, head_.prev_ = last
-  std::size_t size_{0};
 };
 
 // Range-for customization points. The container API itself uses Begin/End;
@@ -258,7 +248,6 @@ bool ILIST_TYPE::PushFront(T* elem) noexcept {
   Node* node = NodeOf(elem);
   if (node->InList()) return false;
   LinkBetween(node, &head_, head_.next_);
-  ++size_;
   return true;
 }
 
@@ -268,7 +257,6 @@ bool ILIST_TYPE::PushBack(T* elem) noexcept {
   Node* node = NodeOf(elem);
   if (node->InList()) return false;
   LinkBetween(node, head_.prev_, &head_);
-  ++size_;
   return true;
 }
 
@@ -298,22 +286,18 @@ void ILIST_TYPE::Clear() noexcept {
   }
   head_.next_ = &head_;
   head_.prev_ = &head_;
-  size_ = 0;
 }
 
 ILIST_TMPL
 template <typename Pred>
-std::size_t ILIST_TYPE::RemoveIf(Pred pred) {
-  std::size_t removed = 0;
+void ILIST_TYPE::RemoveIf(Pred pred) {
   for (Node* cur = head_.next_; cur != &head_;) {
     Node* next = cur->next_;
     if (pred(*ElemOf(cur))) {
       Unlink(cur);
-      ++removed;
     }
     cur = next;
   }
-  return removed;
 }
 
 ILIST_TMPL
@@ -328,9 +312,8 @@ void ILIST_TYPE::Splice(IntrusiveList& other) noexcept {
   first->prev_ = tail;
   last->next_ = &head_;
   head_.prev_ = last;
-  size_ += other.size_;
 
-  other.reset();
+  other.Reset();
 }
 
 ILIST_TMPL

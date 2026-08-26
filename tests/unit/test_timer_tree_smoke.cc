@@ -10,7 +10,7 @@
 namespace {
 
 static_assert(
-    std::derived_from<coropact::time::Timer, coropact::ds::RBTNode<coropact::time::Timer>>);
+    std::derived_from<coropact::time::Timer, coropact::ds::RBTreeNode<coropact::time::Timer>>);
 
 bool Expect(bool condition, const char* message) {
   if (!condition) {
@@ -37,7 +37,7 @@ bool TestOrdersByExpirationThenSequence() {
 
   if (!Expect(timers.Size() == 3, "tree should contain all timers") ||
       !Expect(timers.Earliest() == &early, "earliest expiration should sort first") ||
-      !Expect(timers.CheckRBInvariants(), "tree invariants should hold after insertion")) {
+      !Expect(timers.CheckInvariants(), "tree invariants should hold after insertion")) {
     return false;
   }
 
@@ -47,10 +47,10 @@ bool TestOrdersByExpirationThenSequence() {
     return false;
   }
 
-  return Expect(timers.CheckRBInvariants(), "tree invariants should hold after erase");
+  return Expect(timers.CheckInvariants(), "tree invariants should hold after erase");
 }
 
-bool TestPopWhileUnlinksAndPreservesOrder() {
+bool TestExtractPrefixUnlinksAndPreservesOrder() {
   const auto base = coropact::time::Deadline{};
   const auto deadline = base + coropact::time::Seconds(3);
   coropact::time::Timer first([] {}, deadline, coropact::time::Duration::zero());
@@ -66,7 +66,7 @@ bool TestPopWhileUnlinksAndPreservesOrder() {
   }
 
   std::vector<std::int64_t> popped_sequences;
-  const std::size_t popped = timers.PopWhile(
+  const std::size_t popped = timers.ExtractPrefix(
       [deadline](const coropact::time::Timer* timer) { return timer->expiration() <= deadline; },
       [&](coropact::time::Timer* timer) {
         if (!timer->InTree()) {
@@ -74,7 +74,7 @@ bool TestPopWhileUnlinksAndPreservesOrder() {
         }
       });
 
-  if (!Expect(popped == 2, "PopWhile should remove matching timers") ||
+  if (!Expect(popped == 2, "ExtractPrefix should remove matching timers") ||
       !Expect(popped_sequences.size() == 2, "callback should observe unlinked timers") ||
       !Expect(popped_sequences[0] == first.sequence(),
               "first equal-deadline timer order mismatch") ||
@@ -84,7 +84,7 @@ bool TestPopWhileUnlinksAndPreservesOrder() {
     return false;
   }
 
-  return Expect(timers.CheckRBInvariants(), "tree invariants should hold after PopWhile");
+  return Expect(timers.CheckInvariants(), "tree invariants should hold after ExtractPrefix");
 }
 
 bool TestTimerCanBeReinsertedAfterRestart() {
@@ -108,14 +108,14 @@ bool TestTimerCanBeReinsertedAfterRestart() {
   return Expect(repeating.InTree(), "restarted timer should be linked") &&
          Expect(timers.Earliest() == &repeating,
                 "restarted timer should be available as earliest") &&
-         Expect(timers.CheckRBInvariants(), "tree invariants should hold after reinsertion");
+         Expect(timers.CheckInvariants(), "tree invariants should hold after reinsertion");
 }
 
 }  // namespace
 
 int main() {
   if (!TestOrdersByExpirationThenSequence()) return 1;
-  if (!TestPopWhileUnlinksAndPreservesOrder()) return 1;
+  if (!TestExtractPrefixUnlinksAndPreservesOrder()) return 1;
   if (!TestTimerCanBeReinsertedAfterRestart()) return 1;
 
   std::cout << "[PASS] timer_tree_smoke_test\n";

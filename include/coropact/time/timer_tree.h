@@ -19,6 +19,6 @@ inline bool TimerLess(const Timer* a, const Timer* b) {
   return a->sequence() < b->sequence();
 }
 
-using TimerTree = ds::IntrusiveRBTree<Timer, TimerLess>;
+using TimerTree = ds::IntrusiveTree<Timer, TimerLess>;
 
 }  // namespace coropact::time

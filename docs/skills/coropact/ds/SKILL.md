@@ -25,7 +25,7 @@ intrusive hooks, predictable complexity, and debug invariant validation.
 ## Core public API / entry points
 
 - `IntrusiveList`
-- `IntrusiveRBTree`
+- `IntrusiveTree`
 
 ## Thread model
 

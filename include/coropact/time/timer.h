@@ -22,7 +22,7 @@ namespace coropact::time {
 // Both index hooks are base-hooks: TimerIndex recovers the Timer with
 // static_cast, so no per-node owner pointer is stored. A Timer is linked into
 // at most one timer index at a time. See coropact/time/timer_index.h.
-class Timer : public ds::RBTNode<Timer> {
+class Timer : public ds::RBTreeNode<Timer> {
 public:
   using TimerCallback = std::function<void()>;
 

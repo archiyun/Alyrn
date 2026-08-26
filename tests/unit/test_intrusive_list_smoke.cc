@@ -87,7 +87,6 @@ int main() {
 
     IntrusiveList<Item> moved(std::move(source));
     assert(source.Empty());
-    assert(moved.Size() == 2);
     assert(moved.Front() == &one);
     assert(moved.Back() == &two);
 
@@ -95,7 +94,6 @@ int main() {
     assert(inserted);
     moved = std::move(source);
     assert(source.Empty());
-    assert(moved.Size() == 1);
     assert(moved.Front() == &replacement);
     assert(moved.Back() == &replacement);
     assert(!one.InList());
@@ -105,7 +103,6 @@ int main() {
     // intended for accidental production self-assignment.
     IntrusiveList<Item>* volatile self = &moved;
     moved = std::move(*self);
-    assert(moved.Size() == 1);
     assert(moved.Front() == &replacement);
 
     IntrusiveList<Item> empty;
@@ -127,7 +124,6 @@ int main() {
 
   // Full equivalence check: same size, same forward order, same endpoints.
   auto check = [&] {
-    assert(il.Size() == oracle.size());
     auto oit = oracle.begin();
     for (auto& x : il) {
       assert(x.id == *oit);

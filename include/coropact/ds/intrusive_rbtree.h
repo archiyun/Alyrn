@@ -41,12 +41,13 @@
 #include <cassert>
 #include <concepts>
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 namespace coropact::ds {
 
 // Intrusive red-black tree. Node storage lives in T through a base hook:
-// T must publicly inherit RBTNode<T, Tag>, so the tree can recover T* from a
+// T must publicly inherit RBTreeNode<T, Tag>, so the tree can recover T* from a
 // node with static_cast.
 //
 // Each tree owns one sentinel. It is the NIL leaf, and its slots cache:
@@ -58,39 +59,41 @@ namespace coropact::ds {
 //
 // Template parameters:
 //   T        - element type; must publicly and non-virtually inherit
-//              RBTNode<T, Tag>
+//              RBTreeNode<T, Tag>
 //   kLess    - strict weak order on T; must be irreflexive, transitive, and
 //              stable while the element is linked
-//   Tag      - optional hook tag for objects that inherit multiple RBTNode hooks
+//   Tag      - optional hook tag for objects that inherit multiple RBTreeNode hooks
 //
 // Ordered work queue (TimerQueue, deadline scheduling). Earliest() is O(1)
 // because the minimum is cached. The tree is not movable: the sentinel address
 // is stored in node parent/child links.
 //
 template <class T, auto kLess, class Tag = void>
-class IntrusiveRBTree;
+class IntrusiveTree;
 
 template <typename T, class Tag = void>
-class RBTNode {
+class RBTreeNode {
   template <class, auto, class>
-  friend class IntrusiveRBTree;
+  friend class IntrusiveTree;
 
 public:
-  RBTNode(const RBTNode&) = delete;
-  RBTNode& operator=(const RBTNode&) = delete;
-  RBTNode(RBTNode&&) = delete;
-  RBTNode& operator=(RBTNode&&) = delete;
+  RBTreeNode(const RBTreeNode&) = delete;
+  RBTreeNode& operator=(const RBTreeNode&) = delete;
+  RBTreeNode(RBTreeNode&&) = delete;
+  RBTreeNode& operator=(RBTreeNode&&) = delete;
 
   // Only says "linked into some tree", not which one.
   [[nodiscard]]
-  bool InTree() const noexcept { return linked(); }
+  bool InTree() const noexcept {
+    return linked();
+  }
 
 protected:
-  RBTNode() noexcept = default;
-  ~RBTNode() noexcept = default;
+  RBTreeNode() noexcept = default;
+  ~RBTreeNode() noexcept = default;
 
 private:
-  using Node = RBTNode<T, Tag>;
+  using Node = RBTreeNode<T, Tag>;
 
   // Unlike Linux rbtree, this implementation uses bit0 = 1 for red.
   static constexpr std::uintptr_t kRed = 1;                                // bit 0
@@ -150,26 +153,27 @@ private:
 };
 
 template <class T, class Tag = void>
-concept RBTNodeBaseHook =
-    std::derived_from<T, RBTNode<T, Tag>> && requires(T* elem, RBTNode<T, Tag>* node) {
-      { static_cast<RBTNode<T, Tag>*>(elem) } -> std::same_as<RBTNode<T, Tag>*>;
+concept RBTreeNodeBaseHook =
+    std::derived_from<T, RBTreeNode<T, Tag>> && requires(T* elem, RBTreeNode<T, Tag>* node) {
+      { static_cast<RBTreeNode<T, Tag>*>(elem) } -> std::same_as<RBTreeNode<T, Tag>*>;
       { static_cast<T*>(node) } -> std::same_as<T*>;
     };
 
 template <class T, auto kLess, class Tag>
-class IntrusiveRBTree {
+class IntrusiveTree {
 public:
-  IntrusiveRBTree(const IntrusiveRBTree&) = delete;
-  IntrusiveRBTree& operator=(const IntrusiveRBTree&) = delete;
-  IntrusiveRBTree(IntrusiveRBTree&&) = delete;
-  IntrusiveRBTree& operator=(IntrusiveRBTree&&) = delete;
+  IntrusiveTree(const IntrusiveTree&) = delete;
+  IntrusiveTree& operator=(const IntrusiveTree&) = delete;
+  IntrusiveTree(IntrusiveTree&&) = delete;
+  IntrusiveTree& operator=(IntrusiveTree&&) = delete;
 
-  using Node = RBTNode<T, Tag>;
-  static_assert(alignof(Node) >= 8, "RBTNode must be at least 8-byte aligned for pointer tagging");
-  static_assert(RBTNodeBaseHook<T, Tag>,
-                "T must publicly and non-virtually inherit RBTNode<T, Tag>");
+  using Node = RBTreeNode<T, Tag>;
+  static_assert(alignof(Node) >= 8,
+                "RBTreeNode must be at least 8-byte aligned for pointer tagging");
+  static_assert(RBTreeNodeBaseHook<T, Tag>,
+                "T must publicly and non-virtually inherit RBTreeNode<T, Tag>");
 
-  IntrusiveRBTree() noexcept {
+  IntrusiveTree() noexcept {
     sentinel_.set_left(&sentinel_);
     sentinel_.set_right(&sentinel_);
     sentinel_.set_parent(&sentinel_);
@@ -177,12 +181,16 @@ public:
   }
 
   // Resets every linked node's hook so a stale Erase after destruction is safe.
-  ~IntrusiveRBTree() noexcept { Clear(); }
+  ~IntrusiveTree() noexcept { Clear(); }
 
   [[nodiscard]]
-  bool Empty() const noexcept { return size_ == 0; }
+  bool Empty() const noexcept {
+    return size_ == 0;
+  }
   [[nodiscard]]
-  std::size_t Size() const noexcept { return size_; }
+  std::size_t Size() const noexcept {
+    return size_;
+  }
 
   // O(log n). Returns false for nullptr or when elem is already linked (in this
   // or any tree).
@@ -197,29 +205,36 @@ public:
 
   // O(1). Cached minimum; nullptr when empty.
   T* Earliest() noexcept { return min() == sentinel() ? nullptr : elem_of(min()); }
-  const T* Earliest() const noexcept {
-    return min() == sentinel() ? nullptr : elem_of(min());
-  }
+  const T* Earliest() const noexcept { return min() == sentinel() ? nullptr : elem_of(min()); }
 
   // Unlink every element (resetting its hook) and reset the sentinel. O(n).
   void Clear() noexcept;
 
-  // O(k log n) where k is the number of extracted elements.
   // Extracts the earliest elements satisfying pred in key order.
   // Stops at the first element that fails the predicate. Returned pointers
-  // are already unlinked.
+  // are already unlinked. The predicate must describe a prefix of the sorted
+  // sequence (the same contract as PopWhile).
+  template <typename Pred>
+  std::vector<T*> ExtractPrefix(Pred pred);
+
+  // Callback form of ExtractPrefix. Each element is unlinked before on_pop.
+  template <typename Pred, typename OnPop>
+  std::size_t ExtractPrefix(Pred pred, OnPop on_pop);
+
+  // Compatibility spelling for callers that do not need the prefix-oriented
+  // name. Both overloads delegate to ExtractPrefix.
   template <typename Pred>
   std::vector<T*> PopWhile(Pred pred);
 
-  // O(k log n). Same traversal as PopWhile(pred), but avoids building a
-  // result vector. Each element is erased before on_pop(elem) runs.
+  // Same traversal as ExtractPrefix(pred), but avoids building a result
+  // vector. Each element is erased before on_pop(elem) runs.
   template <typename Pred, typename OnPop>
   std::size_t PopWhile(Pred pred, OnPop on_pop);
 
   // O(n). Verifies RB invariants, BST order, parent/child links, linked state,
   // subtree size, cached root/min, and header identity (right == self).
   [[nodiscard]]
-  bool CheckRBInvariants() const;
+  bool CheckInvariants() const;
 
 private:
   struct CheckResult {
@@ -257,7 +272,7 @@ private:
   // Precondition for a useful result: node is linked. Walks parent links until
   // IsHeader. Stopping there avoids following sentinel.parent (the root cache).
   // Returns nullptr if the chain is broken, cyclic, or node is not linked, so
-  // CheckRBInvariants can fail instead of asserting.
+  // CheckInvariants can fail instead of asserting.
   const Node* HeaderOf(const Node* node) const noexcept {
     if (node == nullptr || !node->InTree()) {
       return nullptr;
@@ -274,11 +289,11 @@ private:
     return nullptr;
   }
 
-  inline static void Red(Node* node) { node->set_red(true); }
-  inline static void Black(Node* node) { node->set_red(false); }
-  inline static bool IsRed(const Node* node) { return node->red(); }
-  inline static bool IsBlack(const Node* node) { return !IsRed(node); }
-  inline static void CopyColor(Node* dst, const Node* src) { dst->set_red(src->red()); }
+  static void Red(Node* node) { node->set_red(true); }
+  static void Black(Node* node) { node->set_red(false); }
+  static bool IsRed(const Node* node) { return node->red(); }
+  static bool IsBlack(const Node* node) { return !IsRed(node); }
+  static void CopyColor(Node* dst, const Node* src) { dst->set_red(src->red()); }
 
   // O(log n) — walks left spine of subtree.
   Node* Minimum(Node* node);
@@ -295,10 +310,13 @@ private:
   void RightRotate(Node* pivot);
   void InsertFixup(Node* node);
   void DeleteFixup(Node* node, Node* parent);
+
+  template <typename Pred, typename OnPop>
+  std::size_t ExtractPrefixImpl(Pred pred, OnPop on_pop);
 };
 
 #define IRBT_TMPL template <typename T, auto kLess, class Tag>
-#define IRBT_TYPE IntrusiveRBTree<T, kLess, Tag>
+#define IRBT_TYPE IntrusiveTree<T, kLess, Tag>
 
 IRBT_TMPL
 auto IRBT_TYPE::Minimum(Node* node) -> Node* {
@@ -314,12 +332,20 @@ IRBT_TMPL
 auto IRBT_TYPE::Next(Node* node) -> Node* {
   assert(node != sentinel());
 
-  if (node->right() != sentinel()) return Minimum(node->right());
-  if (node == root()) return sentinel();
+  if (node->right() != sentinel()) {
+    return Minimum(node->right());
+  }
+  if (node == root()) {
+    return sentinel();
+  }
   while (true) {
     auto* parent = node->parent();
-    if (parent == sentinel()) return sentinel();
-    if (node == parent->left()) return parent;
+    if (parent == sentinel()) {
+      return sentinel();
+    }
+    if (node == parent->left()) {
+      return parent;
+    }
     node = parent;
   }
 }
@@ -330,12 +356,13 @@ auto IRBT_TYPE::Transplant(Node* src, Node* dst) -> void {
   assert(src != sentinel());
 
   auto* parent = src->parent();
-  if (parent == sentinel())
+  if (parent == sentinel()) {
     set_root(dst);
-  else if (src == parent->left())
+  } else if (src == parent->left()) {
     parent->set_left(dst);
-  else  // src == parent->right()
+  } else {  // src == parent->right()
     parent->set_right(dst);
+  }
   if (dst != sentinel()) {
     dst->set_parent(parent);
   }
@@ -348,7 +375,9 @@ auto IRBT_TYPE::LeftRotate(Node* pivot) -> void {
 
   auto* new_top = pivot->right();
   pivot->set_right(new_top->left());
-  if (new_top->left() != sentinel()) new_top->left()->set_parent(pivot);
+  if (new_top->left() != sentinel()) {
+    new_top->left()->set_parent(pivot);
+  }
   Transplant(pivot, new_top);
   new_top->set_left(pivot);
   pivot->set_parent(new_top);
@@ -360,7 +389,9 @@ auto IRBT_TYPE::RightRotate(Node* pivot) -> void {
 
   auto* new_top = pivot->left();
   pivot->set_left(new_top->right());
-  if (new_top->right() != sentinel()) new_top->right()->set_parent(pivot);
+  if (new_top->right() != sentinel()) {
+    new_top->right()->set_parent(pivot);
+  }
   Transplant(pivot, new_top);
   new_top->set_right(pivot);
   pivot->set_parent(new_top);
@@ -725,25 +756,39 @@ bool IRBT_TYPE::Erase(T* elem) noexcept {
 
 IRBT_TMPL
 template <typename Pred>
-std::vector<T*> IRBT_TYPE::PopWhile(Pred pred) {
+std::vector<T*> IRBT_TYPE::ExtractPrefix(Pred pred) {
   std::vector<T*> result;
-  while (!Empty()) {
-    T* elem = Earliest();
-    if (!pred(elem)) break;
-    result.push_back(elem);
-    [[maybe_unused]] const bool erased = Erase(elem);
-    assert(erased);
-  }
+  (void)ExtractPrefixImpl(pred, [&](T* elem) { result.push_back(elem); });
   return result;
 }
 
 IRBT_TMPL
 template <typename Pred, typename OnPop>
+std::size_t IRBT_TYPE::ExtractPrefix(Pred pred, OnPop on_pop) {
+  return ExtractPrefixImpl(std::move(pred), std::move(on_pop));
+}
+
+IRBT_TMPL
+template <typename Pred>
+std::vector<T*> IRBT_TYPE::PopWhile(Pred pred) {
+  return ExtractPrefix(std::move(pred));
+}
+
+IRBT_TMPL
+template <typename Pred, typename OnPop>
 std::size_t IRBT_TYPE::PopWhile(Pred pred, OnPop on_pop) {
+  return ExtractPrefix(std::move(pred), std::move(on_pop));
+}
+
+IRBT_TMPL
+template <typename Pred, typename OnPop>
+std::size_t IRBT_TYPE::ExtractPrefixImpl(Pred pred, OnPop on_pop) {
   std::size_t popped = 0;
   while (!Empty()) {
     T* elem = Earliest();
-    if (!pred(elem)) break;
+    if (!pred(elem)) {
+      break;
+    }
     [[maybe_unused]] const bool erased = Erase(elem);
     assert(erased);
     on_pop(elem);
@@ -798,18 +843,30 @@ void IRBT_TYPE::Clear() noexcept {
 IRBT_TMPL
 auto IRBT_TYPE::CheckSubtree(const Node* node, const Node* parent, const Node* lower,
                              const Node* upper) const -> typename IRBT_TYPE::CheckResult {
-  if (node == sentinel()) return {};
+  if (node == sentinel()) {
+    return {};
+  }
 
   CheckResult result{};
   result.ok = false;
 
-  if (node == nullptr || parent == nullptr) return result;
-  if (!node->InTree() || IsHeader(node)) return result;
-  if (node->parent() != parent) return result;
-  if (node->left() == nullptr || node->right() == nullptr) return result;
+  if (node == nullptr || parent == nullptr) {
+    return result;
+  }
+  if (!node->InTree() || IsHeader(node)) {
+    return result;
+  }
+  if (node->parent() != parent) {
+    return result;
+  }
+  if (node->left() == nullptr || node->right() == nullptr) {
+    return result;
+  }
 
   auto* elem = elem_of(const_cast<Node*>(node));
-  if (kLess(elem, elem)) return result;
+  if (kLess(elem, elem)) {
+    return result;
+  }
   if (lower != nullptr && !kLess(elem_of(const_cast<Node*>(lower)), elem)) {
     return result;
   }
@@ -822,12 +879,18 @@ auto IRBT_TYPE::CheckSubtree(const Node* node, const Node* parent, const Node* l
   }
 
   auto left = CheckSubtree(node->left(), node, lower, node);
-  if (!left.ok) return result;
+  if (!left.ok) {
+    return result;
+  }
 
   auto right = CheckSubtree(node->right(), node, node, upper);
-  if (!right.ok) return result;
+  if (!right.ok) {
+    return result;
+  }
 
-  if (left.black_height != right.black_height) return result;
+  if (left.black_height != right.black_height) {
+    return result;
+  }
 
   result.ok = true;
   result.black_height = left.black_height + (IsBlack(node) ? 1 : 0);
@@ -837,7 +900,7 @@ auto IRBT_TYPE::CheckSubtree(const Node* node, const Node* parent, const Node* l
 }
 
 IRBT_TMPL
-auto IRBT_TYPE::CheckRBInvariants() const -> bool {
+auto IRBT_TYPE::CheckInvariants() const -> bool {
   if (!IsBlack(sentinel()) || sentinel()->InTree() || !IsHeader(sentinel())) {
     return false;
   }
