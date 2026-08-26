@@ -2,10 +2,11 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
 #include <functional>
+#include <unordered_map>
 #include <utility>
 
-#include "coropact/ds/intrusive_hash_table.h"
 #include "coropact/memory/object_pool.h"
 #include "coropact/reactor/detail/channel.h"
 #include "coropact/time/clock.h"
@@ -20,10 +21,7 @@ class Loop;
 
 namespace detail {
 
-inline constexpr auto kTimerSequenceOf = [](const time::Timer* timer) -> int64_t {
-  return timer->sequence();
-};
-using ActiveTimerTable = ds::IntrusiveHashTable<time::Timer, kTimerSequenceOf>;
+using ActiveTimerTable = std::unordered_map<std::int64_t, time::Timer*>;
 
 // TimerQueue manages timerfd-driven timer scheduling for one Loop.
 //

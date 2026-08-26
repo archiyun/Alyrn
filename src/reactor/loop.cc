@@ -14,7 +14,6 @@
 #include "coropact/reactor/detail/timer_queue.h"
 #include "coropact/reactor/loop.h"
 #include "coropact/time/timer_id.h"
-#include "coropact/time/timer_index.h"
 
 namespace coropact::reactor {
 

@@ -3,8 +3,8 @@
 
 #include <cstdint>
 #include <functional>
+#include <unordered_map>
 
-#include "coropact/ds/intrusive_hash_table.h"
 #include "coropact/memory/object_pool.h"
 #include "coropact/time/clock.h"
 #include "coropact/time/timer.h"
@@ -16,11 +16,7 @@ namespace coropact::kqueue::detail {
 
 class Poller;
 
-inline constexpr auto kTimerSequenceOf = [](const time::Timer* timer) -> std::int64_t {
-  return timer->sequence();
-};
-
-using ActiveTimerTable = ds::IntrusiveHashTable<time::Timer, kTimerSequenceOf>;
+using ActiveTimerTable = std::unordered_map<std::int64_t, time::Timer*>;
 
 /*
  * User-space timer heap for one Loop, woken by a single EVFILT_TIMER.

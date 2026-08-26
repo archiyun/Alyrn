@@ -15,15 +15,16 @@ class QueueNode {
   friend class IntrusiveQueue;
 
 public:
+  QueueNode(const QueueNode&) = delete;
+  QueueNode& operator=(const QueueNode&) = delete;
+  QueueNode(QueueNode&&) = delete;
+  QueueNode& operator=(QueueNode&&) = delete;
+
   [[nodiscard]]
   bool InQueue() const noexcept { return next_ != nullptr; }
 
 protected:
   QueueNode() = default;
-  QueueNode(const QueueNode&) = delete;
-  QueueNode& operator=(const QueueNode&) = delete;
-  QueueNode(QueueNode&&) = delete;
-  QueueNode& operator=(QueueNode&&) = delete;
 
 private:
   using Node = QueueNode<T, Tag>;

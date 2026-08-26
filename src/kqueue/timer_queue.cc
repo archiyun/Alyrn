@@ -17,7 +17,7 @@ TimerQueue::~TimerQueue() {
   poller_->SetTimerExpireHandler(nullptr, nullptr);
   while (!timers_.Empty()) {
     time::Timer* timer = timers_.Earliest();
-    COROPACT_CHECK(active_timers_.Erase(timer),
+    COROPACT_CHECK(active_timers_.erase(timer->sequence()) == 1,
                    "TimerQueue: destroyed timer is missing from active set");
     COROPACT_CHECK(timers_.Erase(timer), "TimerQueue: destroyed timer is missing from timer tree");
     timer_pool_.Release(timer);
@@ -30,7 +30,8 @@ time::TimerId TimerQueue::AddTimer(TimerCallback cb, TimePoint when, Duration in
   const bool earliest_changed =
       timers_.Empty() || timer->expiration() < timers_.Earliest()->expiration();
   COROPACT_CHECK(timers_.Insert(timer), "TimerQueue: duplicate timer-tree entry");
-  COROPACT_CHECK(active_timers_.Insert(timer), "TimerQueue: duplicate active timer sequence");
+  COROPACT_CHECK(active_timers_.emplace(timer->sequence(), timer).second,
+                 "TimerQueue: duplicate active timer sequence");
   if (earliest_changed) {
     ArmKernel(timer->expiration());
   }
@@ -38,10 +39,11 @@ time::TimerId TimerQueue::AddTimer(TimerCallback cb, TimePoint when, Duration in
 }
 
 void TimerQueue::Cancel(time::TimerId id) {
-  time::Timer* active_timer = active_timers_.Find(id.sequence);
-  if (active_timer != nullptr) {
+  auto active_it = active_timers_.find(id.sequence);
+  if (active_it != active_timers_.end()) {
+    time::Timer* active_timer = active_it->second;
     const bool earliest_removed = active_timer == timers_.Earliest();
-    COROPACT_CHECK(active_timers_.Erase(active_timer), "TimerQueue: active timer is missing");
+    active_timers_.erase(active_it);
     COROPACT_CHECK(timers_.Erase(active_timer),
                    "TimerQueue: active timer is missing from timer tree");
     timer_pool_.Release(active_timer);
@@ -69,7 +71,7 @@ void TimerQueue::HandleExpire() {
 
   timers_.PopWhile([now](const time::Timer* timer) { return timer->expiration() <= now; },
                    [this, now](time::Timer* timer) {
-                     COROPACT_CHECK(active_timers_.Erase(timer),
+                     COROPACT_CHECK(active_timers_.erase(timer->sequence()) == 1,
                                     "TimerQueue: expired timer is missing from active set");
                      processing_timer_ = timer;
                      processing_timer_cancelled_ = false;
@@ -83,7 +85,7 @@ void TimerQueue::HandleExpire() {
                        timer->Restart(now);
                        COROPACT_CHECK(timers_.Insert(timer),
                                       "TimerQueue: repeating timer is already in timer tree");
-                       COROPACT_CHECK(active_timers_.Insert(timer),
+                       COROPACT_CHECK(active_timers_.emplace(timer->sequence(), timer).second,
                                       "TimerQueue: repeating timer sequence was reused");
                      } else {
                        timer_pool_.Release(timer);

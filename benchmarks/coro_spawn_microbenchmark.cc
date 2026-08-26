@@ -45,7 +45,7 @@
 #include "coropact/coro/spawn.h"
 #include "coropact/coro/task.h"
 #include "coropact/coro/work.h"
-#include "coropact/memory/pmr_pool_resource.h"
+#include "counting_memory_resource.h"
 
 namespace {
 
@@ -60,8 +60,6 @@ using coropact::coro::Work;
 using coropact::coro::WorkQueue;
 using coropact::coro::detail::SpawnAllocationScope;
 using coropact::coro::detail::SpawnAllocationStats;
-using coropact::memory::CountingMemoryResource;
-using coropact::memory::MemoryResourceStats;
 
 enum class SpawnMode { kSpawnThenDetach, kSpawnDetach };
 

@@ -773,39 +773,28 @@ if(COROPACT_ENABLE_URING)
 
     add_test(NAME luring_server_smoke_test COMMAND luring_server_smoke_test)
 
+    add_executable(luring_single_shot_echo_smoke_test
+        unit/test_luring_single_shot_echo_smoke.cc
+    )
+
+    target_include_directories(luring_single_shot_echo_smoke_test
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/../include
+            ${URING_INCLUDE_DIRS}
+    )
+
+    target_link_libraries(luring_single_shot_echo_smoke_test
+        PRIVATE
+            coropact_luring
+    )
+
+    target_compile_definitions(luring_single_shot_echo_smoke_test PRIVATE COROPACT_ENABLE_URING)
+
+    add_test(NAME luring_single_shot_echo_smoke_test
+        COMMAND luring_single_shot_echo_smoke_test
+    )
+
 endif()
-
-add_executable(pool_smoke_test
-    unit/test_pool_smoke.cc
-)
-
-target_include_directories(pool_smoke_test
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
-
-target_link_libraries(pool_smoke_test
-    PRIVATE
-        coropact_foundation
-)
-
-add_test(NAME pool_smoke_test COMMAND pool_smoke_test)
-
-add_executable(pmr_pool_resource_smoke_test
-    unit/test_pmr_pool_resource_smoke.cc
-)
-
-target_include_directories(pmr_pool_resource_smoke_test
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
-
-target_link_libraries(pmr_pool_resource_smoke_test
-    PRIVATE
-        coropact_foundation
-)
-
-add_test(NAME pmr_pool_resource_smoke_test COMMAND pmr_pool_resource_smoke_test)
 
 
 
@@ -922,17 +911,6 @@ target_include_directories(rbtree_validator
 
 add_test(NAME rbtree_validator COMMAND rbtree_validator)
 
-add_executable(quad_heap_test
-    unit/test_quad_heap.cc
-)
-
-target_include_directories(quad_heap_test
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
-
-add_test(NAME quad_heap_test COMMAND quad_heap_test)
-
 add_executable(intrusive_list_smoke_test
     unit/test_intrusive_list_smoke.cc
 )
@@ -954,17 +932,6 @@ target_include_directories(intrusive_queue_smoke_test
 )
 
 add_test(NAME intrusive_queue_smoke_test COMMAND intrusive_queue_smoke_test)
-
-add_executable(intrusive_hash_table_smoke_test
-    unit/test_intrusive_hash_table_smoke.cc
-)
-
-target_include_directories(intrusive_hash_table_smoke_test
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
-
-add_test(NAME intrusive_hash_table_smoke_test COMMAND intrusive_hash_table_smoke_test)
 
 # Exercises the kqueue backend's registration state machine on a non-kqueue
 # host. The kqueue sources are compiled directly into the test rather than

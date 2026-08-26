@@ -76,16 +76,16 @@ class RBTNode {
   friend class IntrusiveRBTree;
 
 public:
-  // Only says "linked into some tree", not which one.
-  [[nodiscard]]
-  bool InTree() const noexcept { return linked(); }
-
-protected:
   RBTNode(const RBTNode&) = delete;
   RBTNode& operator=(const RBTNode&) = delete;
   RBTNode(RBTNode&&) = delete;
   RBTNode& operator=(RBTNode&&) = delete;
 
+  // Only says "linked into some tree", not which one.
+  [[nodiscard]]
+  bool InTree() const noexcept { return linked(); }
+
+protected:
   RBTNode() noexcept = default;
   ~RBTNode() noexcept = default;
 

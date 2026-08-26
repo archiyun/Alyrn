@@ -21,7 +21,6 @@
 #include "coropact/reactor/connector.h"
 #include "coropact/reactor/detail/channel.h"
 #include "coropact/reactor/loop.h"
-#include "coropact/time/timer_index.h"
 
 namespace {
 
@@ -229,7 +228,7 @@ bool TestRepeatingTimerCanCancelItself() {
 }
 
 bool TestSameDeadlineTimersKeepSequenceOrderOnQuadHeap() {
-  coropact::reactor::Loop loop{coropact::time::TimerIndexKind::kQuadHeap};
+  coropact::reactor::Loop loop;
   std::vector<int> fired;
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(10);
 

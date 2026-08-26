@@ -13,7 +13,6 @@ Runtime 的 composition root 不能增加调优开关（ADR-0010）。索引选�
 ## 决定
 
 - 删除未使用的 `IntrusiveSplayTree`。
-- 把 `IntrusiveQuadHeap` 从 experimental 提升为 `coropact::ds` 核心容器。
 - `time::Timer` 同时携带 rbtree 与 quadheap hook；同一时刻只链接其中一个。
 - `time::TimerIndex` 以构造期 `TimerIndexKind` 在红黑树（默认）和四叉堆之间选择。
 - 三个 backend 的 `TimerQueue` 与 `Loop` 接收该策略；默认仍是红黑树。

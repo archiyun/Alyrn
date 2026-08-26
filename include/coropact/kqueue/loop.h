@@ -16,7 +16,7 @@
 #include "coropact/kqueue/detail/loop_shutdown.h"
 #include "coropact/time/clock.h"
 #include "coropact/time/timer_id.h"
-#include "coropact/time/timer_index.h"
+#include "coropact/time/timer_index_kind.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::kqueue {

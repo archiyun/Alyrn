@@ -16,7 +16,6 @@
 #include "coropact/kqueue/detail/timer_queue.h"
 #include "coropact/net/socket.h"
 #include "coropact/time/timer_id.h"
-#include "coropact/time/timer_index.h"
 
 namespace coropact::kqueue {
 

@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <functional>
 #include <memory>
 #include <memory_resource>
 #include <stop_token>
@@ -33,9 +34,9 @@
 #include "coropact/luring/detail/provided_buffer_pool.h"
 #include "coropact/luring/detail/sqe_prep.h"
 #include "coropact/luring/detail/ring.h"
+#include "coropact/luring/detail/timer_queue.h"
 #include "coropact/luring/options.h"
 #include "coropact/result.h"
-#include "coropact/time/timer_index.h"
 
 namespace coropact::luring {
 
@@ -130,7 +131,26 @@ Loop::Loop(std::pmr::memory_resource* frame_resource)
     : Loop(time::TimerIndexKind::kRbTree, frame_resource) {}
 
 Loop::Loop(time::TimerIndexKind timers, std::pmr::memory_resource* frame_resource)
-    : Scheduler(frame_resource), thread_id_(base::CurrentThreadId()), timers_(this, timers) {}
+    : Scheduler(frame_resource),
+      thread_id_(base::CurrentThreadId()),
+      timers_(std::make_unique<TimerQueue>(this, timers)) {}
+
+Result<time::TimerId> Loop::RunAfter(time::Duration delay,
+                                     std::function<void()> callback) {
+  COROPACT_CHECK(IsInLoopThread(), "Loop::RunAfter called from wrong thread");
+  if (!initialized_) {
+    return std::unexpected(Errno(EBADF));
+  }
+  return timers_->AddAfter(delay, std::move(callback));
+}
+
+Result<void> Loop::CancelTimer(time::TimerId id) noexcept {
+  COROPACT_CHECK(IsInLoopThread(), "Loop::CancelTimer called from wrong thread");
+  if (!initialized_) {
+    return std::unexpected(Errno(EBADF));
+  }
+  return timers_->Cancel(id);
+}
 
 Loop::~Loop() noexcept {
   COROPACT_CHECK(IsInLoopThread(), "Loop destroyed from wrong thread");
@@ -256,7 +276,7 @@ void Loop::Run(std::stop_token token) noexcept {
     // Physical timeout requests are terminal after the drain. Logical timers
     // that have not expired are now canceled by loop shutdown and may release
     // their callbacks without running them.
-    timers_.DiscardAll();
+    timers_->DiscardAll();
   }
   state_.store(backend::LoopState::kStopped, std::memory_order_release);
 }

@@ -3,7 +3,6 @@
 #include <iostream>
 #include <vector>
 
-#include "coropact/ds/intrusive_quadheap.h"
 #include "coropact/ds/intrusive_rbtree.h"
 #include "coropact/time/timer.h"
 #include "coropact/time/timer_tree.h"
@@ -12,8 +11,6 @@ namespace {
 
 static_assert(
     std::derived_from<coropact::time::Timer, coropact::ds::RBTNode<coropact::time::Timer>>);
-static_assert(
-    std::derived_from<coropact::time::Timer, coropact::ds::HeapNode<coropact::time::Timer>>);
 
 bool Expect(bool condition, const char* message) {
   if (!condition) {

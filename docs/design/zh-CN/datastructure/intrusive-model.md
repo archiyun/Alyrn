@@ -8,9 +8,7 @@
 
  - `IntrusiveList`
  - `IntrusiveQueue`
- - `IntrusiveHashTable`
  - `IntrusiveRBTree`
- - `IntrusiveQuadHeap`
 
 很好区分，前缀带有 `Intrusive`；它们由 `coropact/ds.h` 导出。
 
@@ -129,11 +127,8 @@ object -> hook
   ────────────────────  ───────────────────
    IntrusiveQueue        QueueNode<T, Tag>
   ────────────────────  ───────────────────
-   IntrusiveHashTable    HashNode<T, Tag>
-  ────────────────────  ───────────────────
    IntrusiveRBTree       RBTNode<T, Tag>
   ────────────────────  ───────────────────
-   IntrusiveQuadHeap     HeapNode<T, Tag>
 
 如前面的例子, 同一个对象可以通过不同的 Tag 同时加入多个同类型的容器
 
@@ -186,9 +181,7 @@ if (item.InList()) {
 | --- | --- |
 | `IntrusiveList` | 是 |
 | `IntrusiveQueue` | 是 |
-| `IntrusiveHashTable` | 是 |
 | `IntrusiveRBTree` | 是 |
-| `IntrusiveQuadHeap` | 是 |
 
 当容器与元素生命周期存在交叉时, 仍建议显式写出
 `xxx.Clear()`
@@ -197,12 +190,6 @@ if (item.InList()) {
 ## 7. 排序,键与比较器
 
 有序容器要求比较器满足严格弱序，且比较结果在元素加入容器期间保持稳定。
-
-  哈希表要求：
-
-  - key projection 对同一个元素保持稳定；
-  - hash 与 equality 语义一致；
-  - 是否允许重复 key 由具体容器说明。
 
 容器不能在元素已经加入后修改会影响排序或 bucket 位置的字段，除非先移除元素再重新插入。
 
@@ -229,11 +216,8 @@ if (item.InList()) {
   ────────────────────  ─────────────────────────────────
    IntrusiveQueue        协程 WorkQueue
   ────────────────────  ─────────────────────────────────
-   IntrusiveHashTable    Reactor 活跃定时器表
-  ────────────────────  ─────────────────────────────────
    IntrusiveRBTree       默认 TimerIndex、deadline 调度
   ────────────────────  ─────────────────────────────────
-   IntrusiveQuadHeap     可注入的 TimerIndex 适配器
   ────────────────────  ─────────────────────────────────
 
 `time::TimerIndex` 在构造时选择红黑树或四叉堆；backend `TimerQueue` 注入该索引，
@@ -249,7 +233,6 @@ if (item.InList()) {
 
   - tests/unit/test_intrusive_list_smoke.cc
   - tests/unit/test_intrusive_queue_smoke.cc
-  - tests/unit/test_intrusive_hash_table_smoke.cc
   - tests/unit/test_rbtree_validator.cc
   - tests/unit/test_quad_heap.cc
   - tests/unit/test_timer_tree_smoke.cc

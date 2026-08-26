@@ -22,11 +22,11 @@
 #include "coropact/luring/detail/op.h"
 #include "coropact/luring/detail/ring.h"
 #include "coropact/luring/detail/sqe_prep.h"
-#include "coropact/luring/detail/timer_queue.h"
 #include "coropact/luring/options.h"
 #include "coropact/result.h"
+#include "coropact/time/clock.h"
 #include "coropact/time/timer_id.h"
-#include "coropact/time/timer_index.h"
+#include "coropact/time/timer_index_kind.h"
 
 namespace coropact::luring {
 
@@ -34,6 +34,7 @@ class RecvSource;
 namespace detail {
 class LoopAccess;
 class ProvidedBufferPool;
+class TimerQueue;
 }  // namespace detail
 
 /*
@@ -87,21 +88,8 @@ public:
   }
 
   [[nodiscard]]
-  Result<time::TimerId> RunAfter(time::Duration delay, std::function<void()> callback) {
-    COROPACT_CHECK(IsInLoopThread(), "Loop::RunAfter called from wrong thread");
-    if (!initialized_) {
-      return std::unexpected(Errno(EBADF));
-    }
-    return timers_.AddAfter(delay, std::move(callback));
-  }
-
-  Result<void> CancelTimer(time::TimerId id) noexcept {
-    COROPACT_CHECK(IsInLoopThread(), "Loop::CancelTimer called from wrong thread");
-    if (!initialized_) {
-      return std::unexpected(Errno(EBADF));
-    }
-    return timers_.Cancel(id);
-  }
+  Result<time::TimerId> RunAfter(time::Duration delay, std::function<void()> callback);
+  Result<void> CancelTimer(time::TimerId id) noexcept;
 
   // Enqueues coroutine work to be resumed by RunReady().
   void Schedule(coro::Work* work) noexcept override;
@@ -257,7 +245,7 @@ private:
   std::atomic<backend::LoopState> state_{backend::LoopState::kCreated};
 
   detail::Mailbox mailbox_;
-  detail::TimerQueue timers_;
+  std::unique_ptr<detail::TimerQueue> timers_;
   int wake_fd_{-1};
   bool wake_pending_{false};
   bool wake_inflight_{false};
