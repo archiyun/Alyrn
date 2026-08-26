@@ -221,24 +221,6 @@ public:
   template <typename Pred, typename OnPop>
   std::size_t ExtractPrefix(Pred pred, OnPop on_pop);
 
-  // Convenience form for ordered cutoffs. Extracts every element strictly
-  // before boundary according to the tree comparator.
-  std::vector<T*> ExtractBefore(const T* boundary) {
-    if (boundary == nullptr) {
-      return {};
-    }
-    return ExtractPrefix([boundary](const T* elem) { return kLess(elem, boundary); });
-  }
-
-  template <typename OnPop>
-  std::size_t ExtractBefore(const T* boundary, OnPop on_pop) {
-    if (boundary == nullptr) {
-      return 0;
-    }
-    return ExtractPrefix([boundary](const T* elem) { return kLess(elem, boundary); },
-                         std::move(on_pop));
-  }
-
   // Compatibility spelling for callers that do not need the prefix-oriented
   // name. Both overloads delegate to ExtractPrefix.
   template <typename Pred>
