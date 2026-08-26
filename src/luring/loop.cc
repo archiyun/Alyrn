@@ -34,6 +34,7 @@
 #include "coropact/luring/detail/ring.h"
 #include "coropact/luring/options.h"
 #include "coropact/result.h"
+#include "coropact/time/timer_index.h"
 
 namespace coropact::luring {
 
@@ -125,7 +126,10 @@ CompletionDisposition DispatchCompletion(::coropact::luring::detail::Op* op, Com
 }  // namespace detail
 
 Loop::Loop(std::pmr::memory_resource* frame_resource)
-    : Scheduler(frame_resource), thread_id_(base::CurrentThreadId()), timers_(this) {}
+    : Loop(time::TimerIndexKind::kRbTree, frame_resource) {}
+
+Loop::Loop(time::TimerIndexKind timers, std::pmr::memory_resource* frame_resource)
+    : Scheduler(frame_resource), thread_id_(base::CurrentThreadId()), timers_(this, timers) {}
 
 Loop::~Loop() noexcept {
   COROPACT_CHECK(IsInLoopThread(), "Loop destroyed from wrong thread");

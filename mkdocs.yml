@@ -91,6 +91,7 @@ nav:
           - ADR:
                 - intrusive rbtree timer: adr/0001-intrusive-rbtree-timer.md
                 - intrusive quad heap: adr/0003-intrusive-quad-heap.md
+                - timer index strategy: adr/0011-timer-index-strategy.md
     - 验证与发布:
           - 基准:
                 - 2026-08-10 C++ 网络库基线: benchmark/network-libraries-20260810.md

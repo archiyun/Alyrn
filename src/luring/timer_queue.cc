@@ -90,8 +90,8 @@ void TimerQueue::DiscardAll() noexcept {
   COROPACT_CHECK(loop_ != nullptr, "TimerQueue has no owner loop");
   COROPACT_CHECK(loop_->IsInLoopThread(), "TimerQueue::DiscardAll called from wrong thread");
 
-  // TimerTree is intrusive: unlink every hook before destroying the owning
-  // unique_ptrs. Clearing active_ first would leave TimerTree with dangling
+  // TimerIndex is intrusive: unlink every hook before destroying the owning
+  // unique_ptrs. Clearing active_ first would leave TimerIndex with dangling
   // nodes and make its destructor traverse freed storage.
   timers_.Clear();
   active_.clear();

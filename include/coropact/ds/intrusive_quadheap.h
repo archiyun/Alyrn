@@ -8,10 +8,24 @@
 
 #include "coropact/utils/macros.h"
 
-namespace coropact::experimental::ds {
+namespace coropact::ds {
 
 inline constexpr std::size_t kNotInHeap = static_cast<std::size_t>(-1);
 
+// Intrusive 4-ary min-heap. Node storage lives in T through a base hook:
+// T must publicly inherit HeapNode<T, Tag>, so the heap can recover T* from a
+// node with static_cast.
+//
+// Each linked element stores its slot in HeapNode::heap_index_, so Erase is
+// O(log n) without a side table. The heap vector holds node pointers only;
+// element storage stays with the caller.
+//
+// Template parameters:
+//   T     - element type; must publicly inherit HeapNode<T>
+//   kLess - total order on T; must be irreflexive and transitive
+//   Tag   - optional hook tag for objects that inherit multiple HeapNode hooks
+//
+// This heap is one of the two timer-index adapters behind time::TimerIndex.
 template <class T, auto kLess, class Tag = void>
 class IntrusiveQuadHeap;
 
@@ -22,7 +36,9 @@ class HeapNode {
 
 public:
   [[nodiscard]]
-  bool InHeap() const noexcept { return linked(); }
+  bool InHeap() const noexcept {
+    return linked();
+  }
 
 protected:
   COROPACT_DELETE_COPY(HeapNode);
@@ -33,11 +49,15 @@ private:
   using Node = HeapNode<T, Tag>;
 
   [[nodiscard]]
-  std::size_t heap_index() const noexcept { return heap_index_; }
+  std::size_t heap_index() const noexcept {
+    return heap_index_;
+  }
   void set_heap_index(std::size_t index) noexcept { heap_index_ = index; }
 
   [[nodiscard]]
-  bool linked() const noexcept { return heap_index_ != kNotInHeap; }
+  bool linked() const noexcept {
+    return heap_index_ != kNotInHeap;
+  }
   void clear_hook() noexcept { heap_index_ = kNotInHeap; }
 
   std::size_t heap_index_{kNotInHeap};  // slot in heap_, or kNotInHeap
@@ -64,9 +84,13 @@ public:
 
   // O(1)
   [[nodiscard]]
-  bool Empty() const noexcept { return heap_.empty(); }
+  bool Empty() const noexcept {
+    return heap_.empty();
+  }
   [[nodiscard]]
-  std::size_t Size() const noexcept { return heap_.size(); }
+  std::size_t Size() const noexcept {
+    return heap_.size();
+  }
 
   // O(log n); returns false if elem is already linked in this heap.
   bool Insert(T* elem);
@@ -141,11 +165,11 @@ bool IQH_TYPE::Insert(T* elem) {
 
 IQH_TMPL
 void IQH_TYPE::SiftDown(std::size_t parent) {
-  std::size_t sz = heap_.size();
+  std::size_t size = heap_.size();
   while (true) {
     std::size_t first_child = FirstChild(parent);
-    if (first_child >= sz) break;
-    std::size_t end = std::min(first_child + kArity, sz);
+    if (first_child >= size) break;
+    std::size_t end = std::min(first_child + kArity, size);
     std::size_t smallest = first_child;
     for (std::size_t next_child = first_child + 1; next_child < end; ++next_child) {
       if (kLess(ElemOf(heap_[next_child]), ElemOf(heap_[smallest]))) {
@@ -217,4 +241,4 @@ std::size_t IQH_TYPE::PopWhile(Pred pred, OnPop on_pop) {
 #undef IQH_TYPE
 #undef IQH_TMPL
 
-}  // namespace coropact::experimental::ds
+}  // namespace coropact::ds

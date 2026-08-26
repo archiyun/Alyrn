@@ -14,7 +14,7 @@
 #include "coropact/luring/detail/op_hook.h"
 #include "coropact/time/timer.h"
 #include "coropact/time/timer_id.h"
-#include "coropact/time/timer_tree.h"
+#include "coropact/time/timer_index.h"
 
 namespace coropact::luring {
 
@@ -38,10 +38,12 @@ public:
   using ControlOpHook = OpHook<TimerQueue, TimerControlTag>;
   using TimerCallback = std::function<void()>;
 
-  explicit TimerQueue(Loop* loop) noexcept
+  explicit TimerQueue(Loop* loop,
+                      time::TimerIndexKind index = time::TimerIndexKind::kRbTree) noexcept
       : DriverOpHook(OpKind::kTimerDriverComplete),
         ControlOpHook(OpKind::kTimerControlComplete),
-        loop_(loop) {}
+        loop_(loop),
+        timers_(index) {}
   ~TimerQueue() noexcept;
 
   TimerQueue(const TimerQueue&) = delete;
@@ -56,7 +58,7 @@ public:
   // Drops every logical timer without invoking user callbacks. The loop calls
   // this only after all submitted timer requests have reached a physical
   // terminal CQE. The destructor repeats the operation defensively so the
-  // intrusive tree never outlives the Timer objects owned by active_.
+  // intrusive index never outlives the Timer objects owned by active_.
   void DiscardAll() noexcept;
 
 private:
@@ -76,7 +78,7 @@ private:
   Op* ControlOp() noexcept { return ControlOpHook::Operation(); }
 
   Loop* loop_;
-  time::TimerTree timers_;
+  time::TimerIndex timers_;
   std::unordered_map<std::int64_t, std::unique_ptr<time::Timer>> active_;
 
   bool driver_armed_{false};

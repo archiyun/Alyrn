@@ -27,10 +27,7 @@ intrusive hooks, predictable complexity, and debug invariant validation.
 - `IntrusiveList`
 - `IntrusiveHashTable`
 - `IntrusiveRBTree`
-
-`IntrusiveSplayTree` and `IntrusiveQuadHeap` are experimental and are not
-exported by `coropact/ds.h`. Include them explicitly from
-`coropact/experimental/ds/` when working on their validators or experiments.
+- `IntrusiveQuadHeap`
 
 ## Thread model
 
@@ -76,13 +73,10 @@ container: empty <-> populated -> Clear/destruction unlinks all hooks
 - `intrusive_list_smoke_test`
 - `intrusive_hash_table_smoke_test`
 - `rbtree_validator`
-- `splaytree_validator` (experimental)
-- `quad_heap_test` (experimental)
+- `quad_heap_test`
 - `timer_tree_smoke_test` when tree behavior changes
+- `timer_index_smoke_test` when timer-index strategy behavior changes
 - Add randomized differential and invariant checks for structural changes
-
-The SplayTree and QuadHeap validators are excluded from the default test build;
-enable them with `-DBUILD_EXPERIMENTAL_TESTS=ON`.
 
 ## Forbidden dependencies
 

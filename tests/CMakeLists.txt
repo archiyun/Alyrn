@@ -873,6 +873,22 @@ target_link_libraries(timer_tree_smoke_test
 
 add_test(NAME timer_tree_smoke_test COMMAND timer_tree_smoke_test)
 
+add_executable(timer_index_smoke_test
+    unit/test_timer_index_smoke.cc
+)
+
+target_include_directories(timer_index_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(timer_index_smoke_test
+    PRIVATE
+        coropact_foundation
+)
+
+add_test(NAME timer_index_smoke_test COMMAND timer_index_smoke_test)
+
 add_executable(clock_smoke_test
     unit/test_clock_smoke.cc
 )
@@ -906,29 +922,16 @@ target_include_directories(rbtree_validator
 
 add_test(NAME rbtree_validator COMMAND rbtree_validator)
 
-if(BUILD_EXPERIMENTAL_TESTS)
-    add_executable(splaytree_validator
-        unit/test_splaytree_validator.cc
-    )
+add_executable(quad_heap_test
+    unit/test_quad_heap.cc
+)
 
-    target_include_directories(splaytree_validator
-        PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    )
+target_include_directories(quad_heap_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
 
-    add_test(NAME splaytree_validator COMMAND splaytree_validator)
-
-    add_executable(quad_heap_test
-        unit/test_quad_heap.cc
-    )
-
-    target_include_directories(quad_heap_test
-        PRIVATE
-            ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    )
-
-    add_test(NAME quad_heap_test COMMAND quad_heap_test)
-endif()
+add_test(NAME quad_heap_test COMMAND quad_heap_test)
 
 add_executable(intrusive_list_smoke_test
     unit/test_intrusive_list_smoke.cc

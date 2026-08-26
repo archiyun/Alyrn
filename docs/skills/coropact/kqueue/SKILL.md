@@ -27,7 +27,7 @@ Reactor, not a preprocessor branch inside `reactor`.
 - Poller registrations and Channel event masks.
 - Listening and connected socket fds; `Socket::Release` / `Stream::Release`.
 - `Listener`, `Connector`, and `Stream` state.
-- TimerQueue: one `EVFILT_TIMER` plus a user-space timer tree.
+- TimerQueue: one `EVFILT_TIMER` plus a user-space timer index.
 - Master-slave `WorkerGroup`: acceptor on worker 0, I/O workers `1..n-1`.
 
 ## Public API / entry points
