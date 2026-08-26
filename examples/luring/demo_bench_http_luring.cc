@@ -7,12 +7,15 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <span>
 #include <string_view>
 #include <thread>
 #include <utility>
+#include <vector>
 
 #include "bench_http_common.h"
+#include "coropact/coro/frame_allocator.h"
 #include "coropact/io.h"
 #include "coropact/luring/detail/worker_group.h"
 #include "coropact/luring/recv_source.h"
@@ -269,6 +272,18 @@ int main() {
       accept_multishot ? coropact::luring::detail::AcceptMode::kMultishot
                        : coropact::luring::detail::AcceptMode::kSingleShot;
 
+  const bool use_frame_pool = EnvEnabled("FRAME_POOL", false);
+  std::vector<std::unique_ptr<coropact::coro::CoroFramePoolResource>> frame_pools;
+  if (use_frame_pool) {
+    frame_pools.reserve(workers);
+    for (std::size_t i = 0; i < workers; ++i) {
+      frame_pools.push_back(std::make_unique<coropact::coro::CoroFramePoolResource>());
+    }
+    options.frame_resource_factory = [&frame_pools](std::size_t index) {
+      return static_cast<std::pmr::memory_resource*>(frame_pools[index].get());
+    };
+  }
+
   coropact::luring::detail::WorkerGroup server(
       coropact::net::Endpoint::Loopback(port), std::move(options), {},
       [use_recv_source](coropact::luring::detail::WorkerContext&,
@@ -288,10 +303,11 @@ int main() {
   std::printf(
       "HttpLuringBench bind=127.0.0.1 port=%u workers=%zu entries=%u accept=%s "
       "recv=%s zero_copy_writes=%s shared_buffer_capacity=%zu shared_buffer_size=%zu "
-      "frame_pool=off response_body=%zu\n",
+      "frame_pool=%s response_body=%zu\n",
       port, workers, entries, accept_multishot ? "multishot" : "single-shot",
       use_recv_source ? "provided-buffer" : "read-some", zero_copy_writes ? "on" : "off",
-      use_recv_source ? shared_buffer_capacity : 0, shared_buffer_size, response_body);
+      use_recv_source ? shared_buffer_capacity : 0, shared_buffer_size,
+      use_frame_pool ? "on" : "off", response_body);
   std::fflush(stdout);
   while (!g_stop.load(std::memory_order_relaxed)) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));

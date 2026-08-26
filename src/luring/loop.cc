@@ -24,6 +24,7 @@
 #include "coropact/base/check.h"
 #include "coropact/base/current_thread.h"
 #include "coropact/backend/loop.h"
+#include "coropact/coro/frame_allocator.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/work.h"
 #include "coropact/luring/detail/completion_dispatch.h"
@@ -235,6 +236,7 @@ void Loop::Run(std::stop_token token) noexcept {
     }
 
     RunReady();
+    coro::CoroFramePoolResource::DrainCurrent();
 
     if (*completed == 0 && !HasReadyWork() && inflight_ > 0) {
       completed = WaitCompletionsFor(kStopPollInterval);
@@ -322,6 +324,7 @@ void Loop::DrainStoppedOperations() noexcept {
   }
 
   RunReady();
+  coro::CoroFramePoolResource::DrainCurrent();
 }
 
 void Loop::Schedule(coro::Work* work) noexcept {

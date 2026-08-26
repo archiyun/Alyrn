@@ -50,6 +50,15 @@ target_link_libraries(demo_bench_http_luring
         coropact_luring
 )
 
+add_executable(demo_bench_frame_churn
+    demo_bench_frame_churn.cc
+)
+
+target_link_libraries(demo_bench_frame_churn
+    PRIVATE
+        coropact_luring
+)
+
 add_executable(demo_bench_http_liburing
     demo_bench_http_liburing.cc
 )

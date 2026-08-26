@@ -19,8 +19,10 @@
 // rounds. Odd/even rounds alternate which Spawn path runs first. Tasks are
 // submitted in batches and drained before the next batch so one million
 // operations do not create an unrelated one-million-frame live set.
-// frame_allocated_bytes is the byte count passed to the selected frame
-// resource, including the frame allocator's header/alignment overhead.
+// Heap mode counts each coroutine-frame allocate/deallocate, including the
+// prefix header. Pool mode selects CoroFramePoolResource directly so frames
+// take the zero-header slot path; the counters then record slab chunks pulled
+// from upstream, not per-frame mallocs.
 // spawn_state_allocated_bytes is retained as a regression counter for a
 // standalone SpawnState allocation; the embedded SpawnRoot path reports zero.
 
@@ -146,9 +148,8 @@ template <typename FrameResource>
 BenchmarkResult RunCountedBenchmark(FrameResource& frame_resource, SpawnMode mode, bool frame_pool,
                                     std::uint64_t iterations, MemoryResourceStats& frame_stats,
                                     SpawnAllocationStats& spawn_stats) {
-  CountingMemoryResource counted_resource{frame_resource, frame_stats};
   SpawnAllocationScope spawn_scope{spawn_stats};
-  BenchmarkResult result = RunBenchmark(counted_resource, mode, frame_pool, iterations);
+  BenchmarkResult result = RunBenchmark(frame_resource, mode, frame_pool, iterations);
   result.frame_stats = frame_stats;
   result.spawn_stats = spawn_stats;
   return result;
@@ -158,11 +159,12 @@ BenchmarkResult RunOne(SpawnMode mode, bool frame_pool, std::uint64_t iterations
   MemoryResourceStats frame_stats;
   SpawnAllocationStats spawn_stats;
   if (frame_pool) {
-    CoroFramePoolResource pool;
+    CountingMemoryResource upstream{*std::pmr::new_delete_resource(), frame_stats};
+    CoroFramePoolResource pool{upstream};
     return RunCountedBenchmark(pool, mode, true, iterations, frame_stats, spawn_stats);
   }
 
-  std::pmr::memory_resource& heap = *std::pmr::new_delete_resource();
+  CountingMemoryResource heap{*std::pmr::new_delete_resource(), frame_stats};
   return RunCountedBenchmark(heap, mode, false, iterations, frame_stats, spawn_stats);
 }
 
