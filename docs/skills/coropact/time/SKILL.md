@@ -12,7 +12,7 @@ stable cancellation IDs, and intrusive timer ordering/index types.
 
 ## Non-goals
 
-- Owning timerfd, EventLoop, threads, sockets, or callback dispatch.
+- Owning timerfd, Loop, threads, sockets, or callback dispatch.
 - Gateway deadlines, health intervals, retry policy, or cache policy.
 - Logging policy.
 
@@ -72,7 +72,7 @@ TimerId: invalid | issued -> stale after cancel/fire
 ## Required tests
 
 - `timer_tree_smoke_test`
-- `event_loop_smoke_test` for scheduling semantic changes
+- `reactor_loop_smoke_test` for scheduling semantic changes
 - `rbtree_validator` for TimerTree hook/order changes
 - New tests for clock jumps, equal expiration ordering, stale TimerId, cancel
   during callback, and repeating timer drift
@@ -88,6 +88,6 @@ TimerId: invalid | issued -> stale after cancel/fire
 - Keep time representation separate from dispatch.
 - Keep runtime deadlines and durations on `time::Clock`; do not reintroduce a
   Unix-epoch timestamp or a floating-point seconds API.
-- Do not put EventLoop pointers in Timer or TimerId.
+- Do not put Loop pointers in Timer or TimerId.
 - Preserve stale-handle safety.
 - Test ordering and cancellation edge cases, not only normal firing.

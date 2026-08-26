@@ -71,7 +71,7 @@ nav:
     - 后端:
           - Reactor / epoll:
                 - 概览: design/zh-CN/network/reactor/index.md
-                - EventLoop、readiness 与取消/关闭: design/zh-CN/network/reactor/loop-and-cancellation.md
+                - Loop、readiness 与取消/关闭: design/zh-CN/network/reactor/loop-and-cancellation.md
           - luring / io_uring:
                 - 概览: design/zh-CN/network/luring/index.md
                 - operation 生命周期: design/zh-CN/network/luring/operation-lifecycle.md

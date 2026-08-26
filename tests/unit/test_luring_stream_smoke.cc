@@ -33,8 +33,8 @@ namespace {
 
 using OwnedReadOutcome = coropact::io::ReadIntoOutcome;
 
-static_assert(coropact::io::AsyncReadIntoStream<coropact::luring::LUringStream>);
-static_assert(coropact::io::AsyncTimedStream<coropact::luring::LUringStream>);
+static_assert(coropact::io::AsyncReadIntoStream<coropact::luring::Stream>);
+static_assert(coropact::io::AsyncTimedStream<coropact::luring::Stream>);
 
 class UniqueFd {
 public:
@@ -86,8 +86,8 @@ bool IsEnvironmentSkip(coropact::Error error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 
-LoopInitStatus InitLoop(coropact::luring::LUringLoop& loop) {
-  coropact::luring::LUringOptions options;
+LoopInitStatus InitLoop(coropact::luring::Loop& loop) {
+  coropact::luring::Options options;
   options.entries = 16;
 
   auto init = loop.Init(options);
@@ -99,7 +99,7 @@ LoopInitStatus InitLoop(coropact::luring::LUringLoop& loop) {
     return LoopInitStatus::kSkip;
   }
 
-  std::cout << "FAIL: LUringLoop init failed: " << init.error().message() << '\n';
+  std::cout << "FAIL: Loop init failed: " << init.error().message() << '\n';
   return LoopInitStatus::kFail;
 }
 
@@ -137,8 +137,8 @@ bool WriteFd(int fd, std::string_view bytes) {
   return true;
 }
 
-coropact::coro::DetachedTask ReadOnce(coropact::luring::LUringStream* stream,
-                                      coropact::luring::LUringLoop* loop,
+coropact::coro::DetachedTask ReadOnce(coropact::luring::Stream* stream,
+                                      coropact::luring::Loop* loop,
                                       std::span<std::byte> buffer,
                                       std::optional<coropact::Result<std::size_t>>* out,
                                       bool* resumed_with_scheduler, int* resume_count = nullptr) {
@@ -150,8 +150,8 @@ coropact::coro::DetachedTask ReadOnce(coropact::luring::LUringStream* stream,
   out->emplace(std::move(result));
 }
 
-coropact::coro::DetachedTask ReadIntoOnce(coropact::luring::LUringStream* stream,
-                                          coropact::luring::LUringLoop* loop,
+coropact::coro::DetachedTask ReadIntoOnce(coropact::luring::Stream* stream,
+                                          coropact::luring::Loop* loop,
                                           coropact::net::Buffer buffer,
                                           std::optional<OwnedReadOutcome>* out,
                                           bool* resumed_with_scheduler,
@@ -164,8 +164,8 @@ coropact::coro::DetachedTask ReadIntoOnce(coropact::luring::LUringStream* stream
   out->emplace(std::move(outcome));
 }
 
-coropact::coro::DetachedTask ReadIntoWithReserveOnce(coropact::luring::LUringStream* stream,
-                                                     coropact::luring::LUringLoop* loop,
+coropact::coro::DetachedTask ReadIntoWithReserveOnce(coropact::luring::Stream* stream,
+                                                     coropact::luring::Loop* loop,
                                                      coropact::net::Buffer buffer,
                                                      std::size_t reserve,
                                                      std::optional<OwnedReadOutcome>* out,
@@ -175,8 +175,8 @@ coropact::coro::DetachedTask ReadIntoWithReserveOnce(coropact::luring::LUringStr
   out->emplace(std::move(outcome));
 }
 
-coropact::coro::DetachedTask ReadForOnce(coropact::luring::LUringStream* stream,
-                                         coropact::luring::LUringLoop* loop,
+coropact::coro::DetachedTask ReadForOnce(coropact::luring::Stream* stream,
+                                         coropact::luring::Loop* loop,
                                          std::span<std::byte> buffer,
                                          std::chrono::milliseconds timeout,
                                          std::optional<coropact::Result<std::size_t>>* out,
@@ -188,7 +188,7 @@ coropact::coro::DetachedTask ReadForOnce(coropact::luring::LUringStream* stream,
 }
 
 coropact::coro::DetachedTask TimedReadThenRead(
-    coropact::luring::LUringStream* stream, coropact::luring::LUringLoop* loop,
+    coropact::luring::Stream* stream, coropact::luring::Loop* loop,
     std::span<std::byte> timed_buffer, std::span<std::byte> next_buffer,
     std::optional<coropact::Result<std::size_t>>* timed_result,
     std::optional<coropact::Result<std::size_t>>* next_result, bool* resumed_with_scheduler) {
@@ -198,7 +198,7 @@ coropact::coro::DetachedTask TimedReadThenRead(
 }
 
 coropact::coro::DetachedTask ReadThenRead(
-    coropact::luring::LUringStream* stream, coropact::luring::LUringLoop* loop,
+    coropact::luring::Stream* stream, coropact::luring::Loop* loop,
     std::span<std::byte> first_buffer, std::span<std::byte> second_buffer,
     std::optional<coropact::Result<std::size_t>>* first_result,
     std::optional<coropact::Result<std::size_t>>* second_result,
@@ -208,8 +208,8 @@ coropact::coro::DetachedTask ReadThenRead(
   *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == loop;
 }
 
-coropact::coro::DetachedTask WriteOnce(coropact::luring::LUringStream* stream,
-                                       coropact::luring::LUringLoop* loop,
+coropact::coro::DetachedTask WriteOnce(coropact::luring::Stream* stream,
+                                       coropact::luring::Loop* loop,
                                        std::span<const std::byte> buffer,
                                        std::optional<coropact::Result<void>>* out,
                                        bool* resumed_with_scheduler, int* resume_count = nullptr) {
@@ -221,14 +221,14 @@ coropact::coro::DetachedTask WriteOnce(coropact::luring::LUringStream* stream,
   out->emplace(std::move(result));
 }
 
-coropact::coro::DetachedTask CloseOnce(coropact::luring::LUringStream* stream,
+coropact::coro::DetachedTask CloseOnce(coropact::luring::Stream* stream,
                                        std::optional<coropact::Result<void>>* out) {
   auto result = co_await stream->Close();
   out->emplace(std::move(result));
 }
 
 coropact::coro::DetachedTask ShutdownThenReadAndWrite(
-    coropact::luring::LUringStream* stream, coropact::luring::LUringLoop* loop,
+    coropact::luring::Stream* stream, coropact::luring::Loop* loop,
     std::span<const std::byte> write_buffer, std::span<std::byte> read_buffer,
     std::optional<coropact::Result<void>>* first_shutdown,
     std::optional<coropact::Result<void>>* second_shutdown,
@@ -242,7 +242,7 @@ coropact::coro::DetachedTask ShutdownThenReadAndWrite(
 }
 
 bool CheckReadSome() {
-  coropact::luring::LUringLoop loop;
+  coropact::luring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -256,7 +256,7 @@ bool CheckReadSome() {
   UniqueFd peer;
   if (!CreateSocketPair(local, peer)) return false;
 
-  coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  coropact::luring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
 
   constexpr std::string_view kPayload = "hello";
   if (!WriteFd(peer.fd(), kPayload)) return false;
@@ -289,7 +289,7 @@ bool CheckReadSome() {
 }
 
 bool CheckEmptyReadCompletesInlineWithoutRingWork() {
-  coropact::luring::LUringLoop loop;
+  coropact::luring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -303,7 +303,7 @@ bool CheckEmptyReadCompletesInlineWithoutRingWork() {
   UniqueFd peer;
   if (!CreateSocketPair(local, peer)) return false;
 
-  coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  coropact::luring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
   std::optional<coropact::Result<std::size_t>> result;
   bool resumed_with_scheduler = false;
 
@@ -326,7 +326,7 @@ bool CheckEmptyReadCompletesInlineWithoutRingWork() {
 }
 
 bool CheckReadReleasesSlotBeforeContinuation() {
-  coropact::luring::LUringLoop loop;
+  coropact::luring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -340,7 +340,7 @@ bool CheckReadReleasesSlotBeforeContinuation() {
   UniqueFd peer;
   if (!CreateSocketPair(local, peer)) return false;
 
-  coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  coropact::luring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
   constexpr std::string_view kFirstPayload = "first";
   constexpr std::string_view kSecondPayload = "second";
   std::string payload{kFirstPayload};
@@ -386,7 +386,7 @@ bool CheckReadReleasesSlotBeforeContinuation() {
 }
 
 bool CheckOwnedReadIntoReturnsBuffer() {
-  coropact::luring::LUringLoop loop;
+  coropact::luring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -400,7 +400,7 @@ bool CheckOwnedReadIntoReturnsBuffer() {
   UniqueFd peer;
   if (!CreateSocketPair(local, peer)) return false;
 
-  coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  coropact::luring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
   constexpr std::string_view kPayload = "owned-read";
   if (!WriteFd(peer.fd(), kPayload)) return false;
 
@@ -437,7 +437,7 @@ bool CheckOwnedReadIntoReturnsBuffer() {
 }
 
 bool CheckOwnedReadIntoSpansBufferBlocks() {
-  coropact::luring::LUringLoop loop;
+  coropact::luring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -451,7 +451,7 @@ bool CheckOwnedReadIntoSpansBufferBlocks() {
   UniqueFd peer;
   if (!CreateSocketPair(local, peer)) return false;
 
-  coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  coropact::luring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
   constexpr std::string_view kPrefix = "abc";
   constexpr std::string_view kPayload = "12345678";
 
@@ -491,7 +491,7 @@ bool CheckOwnedReadIntoSpansBufferBlocks() {
 }
 
 bool CheckTimedReadSuccessResumesOnce() {
-  coropact::luring::LUringLoop loop;
+  coropact::luring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -505,7 +505,7 @@ bool CheckTimedReadSuccessResumesOnce() {
   UniqueFd peer;
   if (!CreateSocketPair(local, peer)) return false;
 
-  coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  coropact::luring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
   constexpr std::string_view kPayload = "timed";
   if (!WriteFd(peer.fd(), kPayload)) return false;
 
@@ -536,7 +536,7 @@ bool CheckTimedReadSuccessResumesOnce() {
 }
 
 bool CheckTimedReadTimeoutResumesOnce() {
-  coropact::luring::LUringLoop loop;
+  coropact::luring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -550,7 +550,7 @@ bool CheckTimedReadTimeoutResumesOnce() {
   UniqueFd peer;
   if (!CreateSocketPair(local, peer)) return false;
 
-  coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  coropact::luring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
   std::array<std::byte, 16> buffer{};
   std::optional<coropact::Result<std::size_t>> result;
   bool resumed_with_scheduler = false;
@@ -577,7 +577,7 @@ bool CheckTimedReadTimeoutResumesOnce() {
 }
 
 bool CheckTimedReadReleasesSlotBeforeContinuation() {
-  coropact::luring::LUringLoop loop;
+  coropact::luring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -591,7 +591,7 @@ bool CheckTimedReadReleasesSlotBeforeContinuation() {
   UniqueFd peer;
   if (!CreateSocketPair(local, peer)) return false;
 
-  coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  coropact::luring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
   constexpr std::string_view kTimedPayload = "timed";
   constexpr std::string_view kNextPayload = "next";
   std::string payload{kTimedPayload};
@@ -637,7 +637,7 @@ bool CheckTimedReadReleasesSlotBeforeContinuation() {
 
 
 bool CheckWriteAll() {
-  coropact::luring::LUringLoop loop;
+  coropact::luring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -651,7 +651,7 @@ bool CheckWriteAll() {
   UniqueFd peer;
   if (!CreateSocketPair(local, peer)) return false;
 
-  coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  coropact::luring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
 
   constexpr std::string_view kPayload = "pong";
   auto bytes = std::as_bytes(std::span<const char>(kPayload.data(), kPayload.size()));
@@ -689,7 +689,7 @@ bool CheckWriteAll() {
 }
 
 bool CheckShutdownKeepsReadOpen() {
-  coropact::luring::LUringLoop loop;
+  coropact::luring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -706,7 +706,7 @@ bool CheckShutdownKeepsReadOpen() {
   constexpr std::string_view kReply = "reply";
   if (!WriteFd(peer.fd(), kReply)) return false;
 
-  coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  coropact::luring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
   constexpr std::string_view kWrite = "must-not-send";
   auto write_buffer = std::as_bytes(std::span<const char>(kWrite.data(), kWrite.size()));
   std::array<std::byte, 16> read_buffer{};
@@ -751,7 +751,7 @@ bool CheckShutdownKeepsReadOpen() {
 }
 
 bool CheckCloseWithoutPending() {
-  coropact::luring::LUringLoop loop;
+  coropact::luring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -765,7 +765,7 @@ bool CheckCloseWithoutPending() {
   UniqueFd peer;
   if (!CreateSocketPair(local, peer)) return false;
 
-  coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  coropact::luring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
 
   std::optional<coropact::Result<void>> result;
   coropact::coro::SpawnDetach(loop, CloseOnce(&stream, &result));
@@ -777,7 +777,7 @@ bool CheckCloseWithoutPending() {
 }
 
 bool CheckCloseCancelsPendingRead() {
-  coropact::luring::LUringLoop loop;
+  coropact::luring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -791,7 +791,7 @@ bool CheckCloseCancelsPendingRead() {
   UniqueFd peer;
   if (!CreateSocketPair(local, peer)) return false;
 
-  coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  coropact::luring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
 
   std::array<std::byte, 8> buffer{};
   std::optional<coropact::Result<std::size_t>> read_result;
@@ -832,7 +832,7 @@ bool CheckCloseCancelsPendingRead() {
 
 
 bool CheckCloseReturnsOwnedReadBuffer() {
-  coropact::luring::LUringLoop loop;
+  coropact::luring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -846,7 +846,7 @@ bool CheckCloseReturnsOwnedReadBuffer() {
   UniqueFd peer;
   if (!CreateSocketPair(local, peer)) return false;
 
-  coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  coropact::luring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
   std::optional<OwnedReadOutcome> read_outcome;
   bool resumed_with_scheduler = false;
   int resume_count = 0;
@@ -887,7 +887,7 @@ bool CheckCloseReturnsOwnedReadBuffer() {
 }
 
 bool CheckReadCompletionCancelRaceResumesOnce() {
-  coropact::luring::LUringLoop loop;
+  coropact::luring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -901,7 +901,7 @@ bool CheckReadCompletionCancelRaceResumesOnce() {
   UniqueFd peer;
   if (!CreateSocketPair(local, peer)) return false;
 
-  coropact::luring::LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  coropact::luring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
   std::array<std::byte, 8> buffer{};
   std::optional<coropact::Result<std::size_t>> read_result;
   bool read_resumed_with_scheduler = false;

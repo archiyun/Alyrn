@@ -1,6 +1,6 @@
 # SendZeroCopy
 
-`LUringStream::SendZeroCopy()` 是显式的 luring 扩展。它使用 `send_zc` 请求，并把“发送
+`Stream::SendZeroCopy()` 是显式的 luring 扩展。它使用 `send_zc` 请求，并把“发送
 结果已经知道”和“kernel 不再使用调用方 buffer”建模成两个不同的完成边界。
 
 ## 使用方式
@@ -71,7 +71,7 @@ SendZeroCopy
   -> buffer 才可以复用
 ```
 
-listener 的 `zero_copy_writes` 会让 `LUringStream::WriteAll()` 在每个完整写入轮次优先选择
+listener 的 `zero_copy_writes` 会让 `Stream::WriteAll()` 在每个完整写入轮次优先选择
 这条路径；它不会改变内部普通 send 的语义，也不会让所有写操作自动变成 zerocopy。
 
 ## 测试观察点

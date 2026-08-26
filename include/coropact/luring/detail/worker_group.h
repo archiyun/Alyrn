@@ -15,9 +15,9 @@
 
 namespace coropact::luring::detail {
 
-struct LUringWorkerGroupOptions {
+struct WorkerGroupOptions {
   std::size_t worker_num{1};
-  LUringWorkerOptions worker_options{};
+  WorkerOptions worker_options{};
 
   // Optional per-worker frame resource selector. The returned resource must
   // outlive the worker group and must be private to the selected worker when
@@ -29,19 +29,19 @@ struct LUringWorkerGroupOptions {
   std::function<std::optional<unsigned>(std::size_t)> cpu_affinity_factory;
 };
 
-class LUringWorkerGroup {
+class WorkerGroup {
 public:
-  COROPACT_DELETE_COPY_MOVE(LUringWorkerGroup);
+  COROPACT_DELETE_COPY_MOVE(WorkerGroup);
 
-  using ThreadInitCallback = LUringWorker::ThreadInitCallback;
-  using ThreadExitCallback = LUringWorker::ThreadExitCallback;
-  using ConnectionCallback = LUringWorker::ConnectionCallback;
+  using ThreadInitCallback = Worker::ThreadInitCallback;
+  using ThreadExitCallback = Worker::ThreadExitCallback;
+  using ConnectionCallback = Worker::ConnectionCallback;
 
-  LUringWorkerGroup(net::Endpoint listen_addr, LUringWorkerGroupOptions options = {},
+  WorkerGroup(net::Endpoint listen_addr, WorkerGroupOptions options = {},
                     ThreadInitCallback init_callback = {},
                     ConnectionCallback connection_callback = {},
                     ThreadExitCallback exit_callback = {});
-  ~LUringWorkerGroup() noexcept;
+  ~WorkerGroup() noexcept;
 
   [[nodiscard]]
   Result<void> Start();
@@ -62,13 +62,13 @@ public:
 
 private:
   net::Endpoint listen_addr_;
-  LUringWorkerGroupOptions options_;
+  WorkerGroupOptions options_;
   ThreadInitCallback init_callback_;
   ConnectionCallback connection_callback_;
   ThreadExitCallback exit_callback_;
 
   bool started_{false};
-  std::vector<std::unique_ptr<LUringWorker>> workers_;
+  std::vector<std::unique_ptr<Worker>> workers_;
 };
 
 }  // namespace coropact::luring::detail

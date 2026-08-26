@@ -27,7 +27,7 @@ private:
 };
 
 // Intrusive, owner-thread-only registry for resources associated with one
-// Reactor EventLoop. It deliberately only requests logical resource shutdown:
+// Reactor Loop. It deliberately only requests logical resource shutdown:
 // the loop still owns draining scheduled continuations and backend events.
 class LoopShutdownRegistry final {
 public:

@@ -30,7 +30,7 @@ namespace {
 constexpr std::uint16_t kPort = 19092;
 constexpr std::size_t kReadReserve = 4096;
 
-auto EchoSession(luring::LUringStream stream) -> coro::DetachedTask {
+auto EchoSession(luring::Stream stream) -> coro::DetachedTask {
   io::Buffer buffer{kReadReserve};
 
   for (;;) {
@@ -66,7 +66,7 @@ auto EchoSession(luring::LUringStream stream) -> coro::DetachedTask {
   }
 }
 
-auto AcceptLoop(luring::LUringLoop& loop, luring::LUringListener& listener) -> coro::DetachedTask {
+auto AcceptLoop(luring::Loop& loop, luring::Listener& listener) -> coro::DetachedTask {
   for (;;) {
     auto accepted = co_await listener.Accept();
     if (!accepted.has_value()) {
@@ -83,9 +83,9 @@ auto AcceptLoop(luring::LUringLoop& loop, luring::LUringListener& listener) -> c
 auto main() -> int {
   std::signal(SIGPIPE, SIG_IGN);
 
-  luring::LUringLoop loop;
+  luring::Loop loop;
 
-  luring::LUringOptions options;
+  luring::Options options;
   options.entries = 256;
 
   auto initialized = loop.Init(options);
@@ -94,7 +94,7 @@ auto main() -> int {
     return 1;
   }
 
-  auto listener_result = luring::LUringListener::Create(&loop, net::Endpoint::Loopback(kPort));
+  auto listener_result = luring::Listener::Create(&loop, net::Endpoint::Loopback(kPort));
   if (!listener_result.has_value()) {
     std::println(stderr, "listener create failed: {}", listener_result.error().message());
     return 1;

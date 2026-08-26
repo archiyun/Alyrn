@@ -1,6 +1,6 @@
 ---
 name: runtime-kqueue-maintenance
-description: Maintain the coropact/kqueue BSD/Darwin readiness backend, KqueueLoop, Post, Channel, poller, timers, and master-slave worker handoff. Use for kqueue-layer patches, reviews, lifetime fixes, and threading changes.
+description: Maintain the coropact/kqueue BSD/Darwin readiness backend, Loop, Post, Channel, poller, timers, and master-slave worker handoff. Use for kqueue-layer patches, reviews, lifetime fixes, and threading changes.
 ---
 
 # coropact/kqueue Maintenance
@@ -9,7 +9,7 @@ Read `docs/SUBSYSTEMS.md` and `docs/design/zh-CN/network/kqueue/` before editing
 
 ## Purpose
 
-Own BSD/Darwin kqueue mechanics: KqueueLoop dispatch, kevent registration,
+Own BSD/Darwin kqueue mechanics: Loop dispatch, kevent registration,
 Channel event delivery, one-shot stream adapters, user-space timers, and
 master-slave worker bootstrap. This is a parallel adapter to the Linux epoll
 Reactor, not a preprocessor branch inside `reactor`.
@@ -23,17 +23,17 @@ Reactor, not a preprocessor branch inside `reactor`.
 
 ## Owned resources
 
-- `KqueueLoop` thread affinity, wakeup pipe, `posted_` queue, and owner-local work.
+- `Loop` thread affinity, wakeup pipe, `posted_` queue, and owner-local work.
 - Poller registrations and Channel event masks.
-- Listening and connected socket fds; `Socket::Release` / `KqueueStream::Release`.
-- `KqueueListener`, `KqueueConnector`, and `KqueueStream` state.
+- Listening and connected socket fds; `Socket::Release` / `Stream::Release`.
+- `Listener`, `Connector`, and `Stream` state.
 - TimerQueue: one `EVFILT_TIMER` plus a user-space timer tree.
-- Master-slave `KqueueWorkerGroup`: acceptor on worker 0, I/O workers `1..n-1`.
+- Master-slave `WorkerGroup`: acceptor on worker 0, I/O workers `1..n-1`.
 
 ## Public API / entry points
 
-- `KqueueLoop::{Run,RequestStop,RunOnOwner,Post,Schedule,RunAt,RunAfter,RunEvery,Cancel}`
-- `KqueueStream`, `KqueueListener`, `KqueueConnector`, `KqueueRecvSource`
+- `Loop::{Run,RequestStop,RunOnOwner,Post,Schedule,RunAt,RunAfter,RunEvery,Cancel}`
+- `Stream`, `Listener`, `Connector`, `RecvSource`
 - `Runtime::Builder<runtime::Kqueue>`
 - `kqueue/detail` is not an application seam
 
@@ -44,7 +44,7 @@ and `Run`. `RequestStop` and `Post` are the cross-thread loop APIs. `Post`
 holds `posted_mutex_` across `Wakeup()` so a 0-timeout poll cannot drain the
 callback and destroy the wakeup pipe before the write returns.
 
-`KqueueStream` cannot move across loops. Handoff is: `PeerAddress()`,
+`Stream` cannot move across loops. Handoff is: `PeerAddress()`,
 `Release()` the fd, `Post` a callback that reconstructs the stream on the
 owner thread, then `SpawnDetach` the connection handler there.
 

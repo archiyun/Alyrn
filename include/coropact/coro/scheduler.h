@@ -103,7 +103,7 @@ protected:
   };
 
   // Runs a work item under an already-active ExecutionScope for this
-  // scheduler. This exists for schedulers such as LUringLoop that select work
+  // scheduler. This exists for schedulers such as Loop that select work
   // from multiple owner-local queues and therefore cannot use RunBatch().
   // Callers must create an ExecutionScope that outlives this call.
   void RunInExecutionScope(Work* work) noexcept {

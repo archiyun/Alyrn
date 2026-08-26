@@ -23,7 +23,6 @@
 
 #include "coropact/base/check.h"
 #include "coropact/base/current_thread.h"
-#include "coropact/base/try.h"
 #include "coropact/backend/loop.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/work.h"
@@ -49,70 +48,70 @@ constexpr std::size_t kMaxCompletionWorkPerTurn = 64;
 constexpr std::chrono::milliseconds kStopPollInterval{100};
 
 [[nodiscard]]
-LUringOp* DecodeOp(io_uring_cqe* cqe) noexcept {
-  return reinterpret_cast<LUringOp*>(io_uring_cqe_get_data(cqe));
+::coropact::luring::detail::Op* DecodeOp(io_uring_cqe* cqe) noexcept {
+  return reinterpret_cast<::coropact::luring::detail::Op*>(io_uring_cqe_get_data(cqe));
 }
 
 }  // namespace
 
 namespace detail {
 
-CompletionDisposition DispatchCompletion(LUringOp* op, CompletionEvent event) noexcept {
-  COROPACT_CHECK(op != nullptr, "cannot dispatch a null LUringOp");
+CompletionDisposition DispatchCompletion(::coropact::luring::detail::Op* op, CompletionEvent event) noexcept {
+  COROPACT_CHECK(op != nullptr, "cannot dispatch a null Op");
 
   switch (op->DispatchKind()) {
-    case LUringOpKind::kAcceptComplete:
+    case OpKind::kAcceptComplete:
       DispatchAcceptComplete(op);
       break;
-    case LUringOpKind::kConnect:
+    case OpKind::kConnect:
       DispatchConnectComplete(op);
       break;
-    case LUringOpKind::kListenerCloseComplete:
+    case OpKind::kListenerCloseComplete:
       DispatchListenerCloseComplete(op);
       break;
-    case LUringOpKind::kReadComplete:
+    case OpKind::kReadComplete:
       DispatchStreamReadComplete(op);
       break;
-    case LUringOpKind::kReadIntoComplete:
+    case OpKind::kReadIntoComplete:
       DispatchStreamReadIntoComplete(op);
       break;
-    case LUringOpKind::kTimedReadComplete:
+    case OpKind::kTimedReadComplete:
       DispatchTimedReadComplete(op);
       break;
-    case LUringOpKind::kTimedReadTimeoutComplete:
+    case OpKind::kTimedReadTimeoutComplete:
       DispatchTimedReadTimeoutComplete(op);
       break;
-    case LUringOpKind::kWriteComplete:
+    case OpKind::kWriteComplete:
       DispatchStreamWriteComplete(op);
       break;
-    case LUringOpKind::kStreamCloseComplete:
+    case OpKind::kStreamCloseComplete:
       DispatchStreamCloseComplete(op);
       break;
-    case LUringOpKind::kTimerDriverComplete:
+    case OpKind::kTimerDriverComplete:
       DispatchTimerDriverComplete(op);
       break;
-    case LUringOpKind::kTimerControlComplete:
+    case OpKind::kTimerControlComplete:
       DispatchTimerControlComplete(op);
       break;
-    case LUringOpKind::kAcceptSourceComplete:
+    case OpKind::kAcceptSourceComplete:
       return DispatchAcceptSourceComplete(op, event);
-    case LUringOpKind::kAcceptSourceCancelComplete:
+    case OpKind::kAcceptSourceCancelComplete:
       DispatchAcceptSourceCancelComplete(op);
       break;
-    case LUringOpKind::kRecvSourceComplete:
+    case OpKind::kRecvSourceComplete:
       return DispatchRecvSourceComplete(op, event);
-    case LUringOpKind::kSendZeroCopyComplete:
+    case OpKind::kSendZeroCopyComplete:
       return DispatchSendZeroCopyComplete(op, event);
-    case LUringOpKind::kRecvSourceCancelComplete:
+    case OpKind::kRecvSourceCancelComplete:
       DispatchRecvSourceCancelComplete(op);
       break;
-    case LUringOpKind::kNone:
-    case LUringOpKind::kMsgRing:
-    case LUringOpKind::kWake:
-    case LUringOpKind::kCancelAll:
-    case LUringOpKind::kNop:
+    case OpKind::kNone:
+    case OpKind::kMsgRing:
+    case OpKind::kWake:
+    case OpKind::kCancelAll:
+    case OpKind::kNop:
       break;
-    case LUringOpKind::kCount:
+    case OpKind::kCount:
       break;
   }
 
@@ -125,28 +124,31 @@ CompletionDisposition DispatchCompletion(LUringOp* op, CompletionEvent event) no
 
 }  // namespace detail
 
-LUringLoop::LUringLoop(std::pmr::memory_resource* frame_resource)
+Loop::Loop(std::pmr::memory_resource* frame_resource)
     : Scheduler(frame_resource), thread_id_(base::CurrentThreadId()), timers_(this) {}
 
-LUringLoop::~LUringLoop() noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "LUringLoop destroyed from wrong thread");
+Loop::~Loop() noexcept {
+  COROPACT_CHECK(IsInLoopThread(), "Loop destroyed from wrong thread");
   if (initialized_) {
-    COROPACT_CHECK(IsDrained(), "LUringLoop destroyed with pending user operation work");
+    COROPACT_CHECK(IsDrained(), "Loop destroyed with pending user operation work");
   }
   if (wake_fd_ >= 0) {
     ::close(wake_fd_);
   }
 }
 
-Result<void> LUringLoop::Init(const LUringOptions& options) noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "LUringLoop::Init called from wrong thread");
+Result<void> Loop::Init(const Options& options) noexcept {
+  COROPACT_CHECK(IsInLoopThread(), "Loop::Init called from wrong thread");
 
   if (initialized_) {
     return std::unexpected(Errno(EALREADY));
   }
 
-  COROPACT_TRY_VALUE(ring, LUringRing::Create(options));
-  ring_ = std::move(ring);
+  auto ring = Ring::Create(options);
+  if (!ring.has_value()) {
+    return std::unexpected(ring.error());
+  }
+  ring_ = std::move(*ring);
   wake_fd_ = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
   if (wake_fd_ < 0) {
     return std::unexpected(CurrentErrno());
@@ -170,10 +172,10 @@ Result<void> LUringLoop::Init(const LUringOptions& options) noexcept {
   return {};
 }
 
-Result<detail::ProvidedBufferPool*> LUringLoop::GetSharedProvidedBufferPool(
+Result<detail::ProvidedBufferPool*> Loop::GetSharedProvidedBufferPool(
     std::size_t buffer_size, std::size_t source_capacity) noexcept {
   COROPACT_CHECK(IsInLoopThread(),
-                 "LUringLoop::GetSharedProvidedBufferPool called from wrong thread");
+                 "Loop::GetSharedProvidedBufferPool called from wrong thread");
   if (shared_buffer_capacity_ == 0) {
     return std::unexpected(Errno(ENOENT));
   }
@@ -204,8 +206,8 @@ Result<detail::ProvidedBufferPool*> LUringLoop::GetSharedProvidedBufferPool(
   return shared_buffer_pool_.get();
 }
 
-void LUringLoop::Run(std::stop_token token) noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "LUringLoop::Run called from wrong thread");
+void Loop::Run(std::stop_token token) noexcept {
+  COROPACT_CHECK(IsInLoopThread(), "Loop::Run called from wrong thread");
 
   if (!initialized_) {
     return;
@@ -253,7 +255,7 @@ void LUringLoop::Run(std::stop_token token) noexcept {
   state_.store(backend::LoopState::kStopped, std::memory_order_release);
 }
 
-void LUringLoop::RequestStop() noexcept {
+void Loop::RequestStop() noexcept {
   backend::LoopState observed = state_.load(std::memory_order_acquire);
   while (observed == backend::LoopState::kCreated || observed == backend::LoopState::kRunning) {
     if (state_.compare_exchange_weak(observed, backend::LoopState::kStopping,
@@ -264,8 +266,8 @@ void LUringLoop::RequestStop() noexcept {
   }
 }
 
-Result<void> LUringLoop::CancelPendingOperations() noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "LUringLoop::CancelPendingOperations called from wrong thread");
+Result<void> Loop::CancelPendingOperations() noexcept {
+  COROPACT_CHECK(IsInLoopThread(), "Loop::CancelPendingOperations called from wrong thread");
 
   if (cancel_all_pending_ || (PendingSubmitCount() == 0 && InflightCount() == 0)) {
     return {};
@@ -280,8 +282,8 @@ Result<void> LUringLoop::CancelPendingOperations() noexcept {
   return submitted;
 }
 
-void LUringLoop::DrainStoppedOperations() noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "LUringLoop::DrainStoppedOperations called from wrong thread");
+void Loop::DrainStoppedOperations() noexcept {
+  COROPACT_CHECK(IsInLoopThread(), "Loop::DrainStoppedOperations called from wrong thread");
 
   while (!IsDrained()) {
     RunReady();
@@ -322,18 +324,18 @@ void LUringLoop::DrainStoppedOperations() noexcept {
   RunReady();
 }
 
-void LUringLoop::Schedule(coro::Work* work) noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "LUringLoop::Schedule called from wrong thread");
+void Loop::Schedule(coro::Work* work) noexcept {
+  COROPACT_CHECK(IsInLoopThread(), "Loop::Schedule called from wrong thread");
   ready_.PushBack(work);
 }
 
-void LUringLoop::ScheduleCompletion(coro::Work* work) noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "LUringLoop::ScheduleCompletion called from wrong thread");
+void Loop::ScheduleCompletion(coro::Work* work) noexcept {
+  COROPACT_CHECK(IsInLoopThread(), "Loop::ScheduleCompletion called from wrong thread");
   completion_ready_.PushBack(work);
 }
 
-void LUringLoop::RunReady() noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "LUringLoop::RunReady called from wrong thread");
+void Loop::RunReady() noexcept {
+  COROPACT_CHECK(IsInLoopThread(), "Loop::RunReady called from wrong thread");
   ExecutionScope execution_scope{*this};
 
   std::size_t resumed = 0;
@@ -353,16 +355,19 @@ void LUringLoop::RunReady() noexcept {
   }
 }
 
-Result<void> LUringLoop::FlushSubmit() noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "LUringLoop::FlushSubmit called from wrong thread");
+Result<void> Loop::FlushSubmit() noexcept {
+  COROPACT_CHECK(IsInLoopThread(), "Loop::FlushSubmit called from wrong thread");
 
   while (pending_submit_ > 0) {
-    COROPACT_TRY_VALUE(submitted, ring_.Submit());
-    if (submitted == 0) {
+    auto submitted = ring_.Submit();
+    if (!submitted.has_value()) {
+      return std::unexpected(submitted.error());
+    }
+    if (*submitted == 0) {
       return std::unexpected(Errno(EAGAIN));
     }
 
-    const std::size_t count = std::min(submitted, pending_submit_);
+    const std::size_t count = std::min(*submitted, pending_submit_);
     pending_submit_ -= count;
     inflight_ += count;
     if (wake_pending_ && count > 0) {
@@ -374,22 +379,28 @@ Result<void> LUringLoop::FlushSubmit() noexcept {
   return {};
 }
 
-Result<std::size_t> LUringLoop::PollCompletions() noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "LUringLoop::PollCompletions called from wrong thread");
+Result<std::size_t> Loop::PollCompletions() noexcept {
+  COROPACT_CHECK(IsInLoopThread(), "Loop::PollCompletions called from wrong thread");
 
-  COROPACT_TRY(FlushSubmit());
+  auto flushed = FlushSubmit();
+  if (!flushed.has_value()) {
+    return std::unexpected(flushed.error());
+  }
 
   return ring_.Reap([this](io_uring_cqe* cqe) { HandleCqe(cqe); }, kMaxCqesPerTurn);
 }
 
-Result<std::size_t> LUringLoop::WaitCompletions() noexcept {
+Result<std::size_t> Loop::WaitCompletions() noexcept {
   return WaitCompletionsFor(std::chrono::nanoseconds::max());
 }
 
-Result<std::size_t> LUringLoop::WaitCompletionsFor(std::chrono::nanoseconds timeout) noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "LUringLoop::WaitCompletionsFor called from wrong thread");
+Result<std::size_t> Loop::WaitCompletionsFor(std::chrono::nanoseconds timeout) noexcept {
+  COROPACT_CHECK(IsInLoopThread(), "Loop::WaitCompletionsFor called from wrong thread");
 
-  COROPACT_TRY(FlushSubmit());
+  auto flushed = FlushSubmit();
+  if (!flushed.has_value()) {
+    return std::unexpected(flushed.error());
+  }
 
   io_uring_cqe* cqe = nullptr;
   int r = 0;
@@ -411,15 +422,15 @@ Result<std::size_t> LUringLoop::WaitCompletionsFor(std::chrono::nanoseconds time
                     kMaxCqesPerTurn);
 }
 
-void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "LUringLoop::HandleCqe called from wrong thread");
+void Loop::HandleCqe(io_uring_cqe* cqe) noexcept {
+  COROPACT_CHECK(IsInLoopThread(), "Loop::HandleCqe called from wrong thread");
 
   if (cqe->user_data == kMsgRingNotificationUserData) {
     HandleMailbox();
     return;
   }
 
-  LUringOp* op = DecodeOp(cqe);
+  ::coropact::luring::detail::Op* op = DecodeOp(cqe);
   if (op == nullptr) {
     if (inflight_ > 0) {
       --inflight_;
@@ -435,7 +446,7 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
                      "terminal LUring completion must decrement inflight work");
     }
     if (disposition.decrement_inflight) {
-      COROPACT_CHECK(inflight_ > 0, "LUringLoop inflight count underflow");
+      COROPACT_CHECK(inflight_ > 0, "Loop inflight count underflow");
       --inflight_;
     }
     if (disposition.resume_continuation) {
@@ -476,7 +487,7 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
     return;
   }
 
-  if (CompletionModelFor(op->DispatchKind()) == LUringCompletionModel::kSingleShot &&
+  if (CompletionModelFor(op->DispatchKind()) == CompletionModel::kSingleShot &&
       !op->TryRecordCqeCompletion(cqe->res)) {
     return;
   }
@@ -495,13 +506,13 @@ void LUringLoop::HandleCqe(io_uring_cqe* cqe) noexcept {
   apply_disposition(detail::DispatchCompletion(op, event));
 }
 
-Result<void> LUringLoop::ArmWakePoll() noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "LUringLoop::ArmWakePoll called from wrong thread");
+Result<void> Loop::ArmWakePoll() noexcept {
+  COROPACT_CHECK(IsInLoopThread(), "Loop::ArmWakePoll called from wrong thread");
   if (wake_fd_ < 0) {
     return std::unexpected(Errno(EBADF));
   }
 
-  wake_op_.kind = LUringOpKind::kWake;
+  wake_op_.kind = OpKind::kWake;
   wake_op_.resume_work.ClearHandle();
   auto submitted = SubmitOp(&wake_op_, detail::PreparePollAdd(wake_fd_, POLLIN));
   if (submitted.has_value()) {
@@ -510,7 +521,7 @@ Result<void> LUringLoop::ArmWakePoll() noexcept {
   return submitted;
 }
 
-void LUringLoop::DrainWakeFd() noexcept {
+void Loop::DrainWakeFd() noexcept {
   if (wake_fd_ < 0) {
     return;
   }
@@ -520,7 +531,7 @@ void LUringLoop::DrainWakeFd() noexcept {
   }
 }
 
-void LUringLoop::Wake() noexcept {
+void Loop::Wake() noexcept {
   if (wake_fd_ < 0) {
     return;
   }
@@ -532,10 +543,10 @@ void LUringLoop::Wake() noexcept {
   }
 }
 
-void LUringLoop::HandleMailbox() noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "LUringLoop::HandleMailbox called from wrong thread");
+void Loop::HandleMailbox() noexcept {
+  COROPACT_CHECK(IsInLoopThread(), "Loop::HandleMailbox called from wrong thread");
 
-  mailbox_.Drain([this](const LUringMessage& message) noexcept {
+  mailbox_.Drain([this](const Message& message) noexcept {
     auto* work = reinterpret_cast<coro::Work*>(static_cast<std::uintptr_t>(message.data));
     COROPACT_CHECK(work != nullptr, "mailbox message contains a null work pointer");
     ScheduleCompletion(work);

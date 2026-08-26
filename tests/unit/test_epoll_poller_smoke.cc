@@ -1,10 +1,10 @@
 /**
  * EPollPoller smoke tests
  *
- * detail::EPollPoller is the concrete epoll backend owned by EventLoop.
+ * detail::EPollPoller is the concrete epoll backend owned by Loop.
  * detail::Channel::EnableReading / DisableAll / Remove each delegate to the
  * loop's private poller-registration path.
- * Every test creates a fresh EventLoop (which owns its own EPollPoller),
+ * Every test creates a fresh Loop (which owns its own EPollPoller),
  * exercises a specific code path, then tears down cleanly.
  *
  * Tests:
@@ -45,7 +45,7 @@ void NoopRead(void*) noexcept {}
 struct ReadAndQuitContext {
     int fd;
     bool* called;
-    coropact::reactor::EventLoop* loop;
+    coropact::reactor::Loop* loop;
 };
 
 void DrainReadAndQuit(void* raw) noexcept {
@@ -64,7 +64,7 @@ struct ReadManyContext {
     int fd;
     int* count;
     int total;
-    coropact::reactor::EventLoop* loop;
+    coropact::reactor::Loop* loop;
 };
 
 void DrainReadMany(void* raw) noexcept {
@@ -78,12 +78,12 @@ void DrainReadMany(void* raw) noexcept {
 }
 
 // ──────────────────────────────────────────────
-// Test 1: EventLoop construction succeeds (epoll_create1).
+// Test 1: Loop construction succeeds (epoll_create1).
 // ──────────────────────────────────────────────
 bool TestConstruction() {
-    // EventLoop creates the default poller, which is detail::EPollPoller on Linux.
+    // Loop creates the default poller, which is detail::EPollPoller on Linux.
     // Reaching this point means epoll_create1 succeeded.
-    coropact::reactor::EventLoop loop;
+    coropact::reactor::Loop loop;
     return true;
 }
 
@@ -91,7 +91,7 @@ bool TestConstruction() {
 // Test 2: Channel registration issues epoll_ctl ADD.
 // ──────────────────────────────────────────────
 bool TestChannelRegistration() {
-    coropact::reactor::EventLoop loop;
+    coropact::reactor::Loop loop;
 
     std::array<int, 2> fds{};
     if (!Expect(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds.data()) == 0,
@@ -117,7 +117,7 @@ bool TestChannelRegistration() {
 // Test 3: Channel removal erases the poller map entry.
 // ──────────────────────────────────────────────
 bool TestChannelRemoval() {
-    coropact::reactor::EventLoop loop;
+    coropact::reactor::Loop loop;
 
     std::array<int, 2> fds{};
     if (!Expect(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds.data()) == 0,
@@ -144,7 +144,7 @@ bool TestChannelRemoval() {
 // Test 4: epoll_wait detects a readable event.
 // ──────────────────────────────────────────────
 bool TestPollDetectsReadEvent() {
-    coropact::reactor::EventLoop loop;
+    coropact::reactor::Loop loop;
 
     std::array<int, 2> fds{};
     if (!Expect(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds.data()) == 0,
@@ -179,7 +179,7 @@ bool TestPollDetectsReadEvent() {
 // Test 5: DisableAll keeps the map entry but suppresses delivery.
 // ──────────────────────────────────────────────
 bool TestDisableAllKeepsChannelInMap() {
-    coropact::reactor::EventLoop loop;
+    coropact::reactor::Loop loop;
 
     std::array<int, 2> fds{};
     if (!Expect(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds.data()) == 0,
@@ -218,7 +218,7 @@ bool TestDisableAllKeepsChannelInMap() {
 // Test 6: Re-enabling after DisableAll registers the channel again.
 // ──────────────────────────────────────────────
 bool TestReenableAfterDisable() {
-    coropact::reactor::EventLoop loop;
+    coropact::reactor::Loop loop;
 
     std::array<int, 2> fds{};
     if (!Expect(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds.data()) == 0,
@@ -250,7 +250,7 @@ bool TestReenableAfterDisable() {
 // Test 7: The events_ vector grows when many channels fire together.
 // ──────────────────────────────────────────────
 bool TestEventsVectorResizes() {
-    coropact::reactor::EventLoop loop;
+    coropact::reactor::Loop loop;
 
     // Register 20 channels so the initial event list must grow.
     constexpr int N = 20;

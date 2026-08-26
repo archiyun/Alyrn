@@ -10,7 +10,7 @@
 
 namespace coropact::luring::detail {
 
-// Submits one single-result awaiter operation without adding state to LUringOp.
+// Submits one single-result awaiter operation without adding state to Op.
 //
 // The caller owns all resource-specific state: validation, pending-slot
 // reservation, SQE preparation, and rollback after a submission failure. This
@@ -23,7 +23,7 @@ namespace coropact::luring::detail {
 // with the submitting awaiter, while operation/detail remains resource-free.
 template <typename Prep, typename OnSubmitFailure>
 [[nodiscard]]
-bool SubmitAwaitingOperation(LUringLoop& loop, LUringOp& op, std::coroutine_handle<> continuation,
+bool SubmitAwaitingOperation(Loop& loop, Op& op, std::coroutine_handle<> continuation,
                              Prep&& prep, OnSubmitFailure&& on_submit_failure) noexcept {
   COROPACT_CHECK(loop.IsInLoopThread(), "LUring operation submitted from a non-owner loop thread");
 

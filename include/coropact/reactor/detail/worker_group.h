@@ -8,34 +8,34 @@
 #include <vector>
 
 #include "coropact/result.h"
-#include "coropact/reactor/detail/reactor_worker.h"
+#include "coropact/reactor/detail/worker.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::reactor::detail {
 
-struct ReactorWorkerGroupOptions {
+struct WorkerGroupOptions {
   std::size_t worker_num{1};
-  ReactorWorkerOptions worker_options{};
+  WorkerOptions worker_options{};
 
   // The returned resource must outlive the worker group and must be private to
   // the selected worker when using an unsynchronized PMR resource.
   std::function<std::pmr::memory_resource*(std::size_t)> frame_resource_factory;
 };
 
-class ReactorWorkerGroup {
+class WorkerGroup {
 public:
-  COROPACT_DELETE_COPY_MOVE(ReactorWorkerGroup);
+  COROPACT_DELETE_COPY_MOVE(WorkerGroup);
 
-  using ThreadInitCallback = ReactorWorker::ThreadInitCallback;
-  using ThreadExitCallback = ReactorWorker::ThreadExitCallback;
-  using ConnectionCallback = ReactorWorker::ConnectionCallback;
+  using ThreadInitCallback = Worker::ThreadInitCallback;
+  using ThreadExitCallback = Worker::ThreadExitCallback;
+  using ConnectionCallback = Worker::ConnectionCallback;
 
-  ReactorWorkerGroup(net::Endpoint listen_addr, ReactorWorkerGroupOptions options = {},
+  WorkerGroup(net::Endpoint listen_addr, WorkerGroupOptions options = {},
                      ThreadInitCallback init_callback = {},
                      ConnectionCallback connection_callback = {},
                      ThreadExitCallback exit_callback = {});
 
-  ~ReactorWorkerGroup() noexcept;
+  ~WorkerGroup() noexcept;
 
   [[nodiscard]]
   Result<void> Start();
@@ -50,23 +50,23 @@ public:
   std::size_t Size() const noexcept { return workers_.size(); }
 
   [[nodiscard]]
-  ReactorWorker* Worker(std::size_t index) noexcept {
+  Worker* At(std::size_t index) noexcept {
     return index < workers_.size() ? workers_[index].get() : nullptr;
   }
   [[nodiscard]]
-  const ReactorWorker* Worker(std::size_t index) const noexcept {
+  const Worker* At(std::size_t index) const noexcept {
     return index < workers_.size() ? workers_[index].get() : nullptr;
   }
 
 private:
   net::Endpoint listen_addr_;
-  ReactorWorkerGroupOptions options_;
+  WorkerGroupOptions options_;
   ThreadInitCallback init_callback_;
   ConnectionCallback connection_callback_;
   ThreadExitCallback exit_callback_;
 
   bool started_{false};
-  std::vector<std::unique_ptr<ReactorWorker>> workers_;
+  std::vector<std::unique_ptr<Worker>> workers_;
 };
 
 }  // namespace coropact::reactor::detail

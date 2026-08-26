@@ -1,4 +1,4 @@
-# EventLoop、readiness 与取消/关闭
+# Loop、readiness 与取消/关闭
 
 这篇文档按一次 `ReadSome()` 的实际路径介绍 Reactor，并重点说明取消。
 
@@ -12,11 +12,11 @@
 ## 1. 模块与职责
 
 ```text
-reactor::EventLoop                  公开的单线程 dispatcher / Scheduler
-reactor::ReactorStream              socket 的 read/write/close 适配器
-reactor::ReactorListener            accept 与 AcceptSource 适配器
-reactor::ReactorConnector           connect / SleepFor 适配器
-reactor::ReactorRecvSource          readiness 驱动的多事件 receive source
+reactor::Loop                  公开的单线程 dispatcher / Scheduler
+reactor::Stream              socket 的 read/write/close 适配器
+reactor::Listener            accept 与 AcceptSource 适配器
+reactor::Connector           connect / SleepFor 适配器
+reactor::RecvSource          readiness 驱动的多事件 receive source
 
 reactor::detail::Channel            一个 fd 的 interest、事件与回调
 reactor::detail::Poller             poller seam；默认实现是 EPollPoller
@@ -25,24 +25,24 @@ reactor::detail::LoopShutdownRegistry
                                   loop stop 时通知 loop-owned 资源
 ```
 
-公开 seam 很小：业务代码只持有 `EventLoop`、stream、listener 或 connector。
+公开 seam 很小：业务代码只持有 `Loop`、stream、listener 或 connector。
 `Channel`、`epoll_ctl`、pending awaiter 指针和关闭注册表都留在 Reactor 的实现中。
 
 ```text
 业务协程
   │ co_await stream.ReadSome(buffer)
   ▼
-ReactorStream awaiter
+Stream awaiter
   │ 尝试 nonblocking read()
   ├─ 成功 / EOF / errno ───────────────► await_resume()
   │
   └─ EAGAIN
        │ 记录 pending_read_，开启 EPOLLIN
        ▼
-EventLoop ──► EPollPoller::Poll() ──► Channel::HandleEvent()
+Loop ──► EPollPoller::Poll() ──► Channel::HandleEvent()
                                             │
                                             ▼
-                                  ReactorStream::HandleRead()
+                                  Stream::HandleRead()
                                             │ 再尝试 read()
                                             ▼
                                CompleteRead() → Schedule continuation
@@ -51,19 +51,19 @@ EventLoop ──► EPollPoller::Poll() ──► Channel::HandleEvent()
 源码入口：
 
 - `include/coropact/reactor/loop.h`
-- `src/reactor/event_loop.cc`
+- `src/reactor/loop.cc`
 - `include/coropact/reactor/stream.h`
-- `src/reactor/reactor_stream.cc`
+- `src/reactor/stream.cc`
 - `include/coropact/reactor/detail/channel.h`
 - `src/reactor/epoll_poller.cc`
 
-## 2. EventLoop：一个线程，一个调度器
+## 2. Loop：一个线程，一个调度器
 
-每个 `EventLoop` 创建时绑定当前线程，并且自身继承 `coro::Scheduler`：
+每个 `Loop` 创建时绑定当前线程，并且自身继承 `coro::Scheduler`：
 
 ```text
 owner thread
-  └── EventLoop
+  └── Loop
         ├── EPollPoller
         ├── TimerQueue
         ├── owner-local coroutine WorkQueue
@@ -75,11 +75,11 @@ owner thread
 执行 `Run()`，以及 `Scheduler::Schedule()`。跨线程唯一的 loop 控制入口是
 `RequestStop()`；它不是通用任务队列。
 
-这不是仅供 debug 的建议：`Channel -> EventLoop -> Poller` 的注册表属于 owner thread，跨线程
+这不是仅供 debug 的建议：`Channel -> Loop -> Poller` 的注册表属于 owner thread，跨线程
 修改会破坏其非并发容器和 intrusive hook。在所有构建中，Reactor 都以 `COROPACT_CHECK` 拒绝
 这类调用；需要跨线程停止时只能请求 `RequestStop()`，由 eventfd 把动作带回 owner loop。
 
-`EventLoop` 状态为：
+`Loop` 状态为：
 
 ```text
 Created ──Run──► Running ──RequestStop──► Stopping ──drain──► Stopped
@@ -131,13 +131,13 @@ EAGAIN            建立逻辑等待
 ```text
 EPOLLIN
   -> Channel::HandleEvent()
-  -> ReactorStream::HandleRead()
+  -> Stream::HandleRead()
   -> awaiter::OnReady()
   -> 再次 nonblocking read()
 ```
 
 第二次 `read()` 仍可能得到 `EAGAIN`，此时 awaiter 保持 pending；否则
-`ReactorStream::CompleteRead()` 会：
+`Stream::CompleteRead()` 会：
 
 ```text
 1. awaiter 固定 result；
@@ -214,7 +214,7 @@ result storage 写入一次；`await_resume()` 只可取走一次并使 storage 
 转移同样在 Release 构建由 `COROPACT_CHECK` 约束，避免重复 completion 或错误的 await protocol
 读取未构造的 value storage。
 
-`ReactorListener::Accept()` 也遵循相同的 coupled single-result 顺序。其 pending accept
+`Listener::Accept()` 也遵循相同的 coupled single-result 顺序。其 pending accept
 槽位在结果固定后、恢复 continuation 前才释放；`reactor_listener_smoke_test` 的
 `CheckAcceptReleasesSlotBeforeContinuation()` 让同一协程连续执行两次 `Accept()`，验证第二次
 提交可以立即复用第一轮释放的槽位。
@@ -247,7 +247,7 @@ timer 已取消或已消费
 `"next"`：这验证 `CompleteRead()` 在安排 continuation 前已经清除了旧的
 `pending_read_` 槽位；否则第二次提交会得到 `EBUSY`。
 
-### 4.4 `ReactorStream::Close()`：资源级取消
+### 4.4 `Stream::Close()`：资源级取消
 
 `Close()` 必须在 owner loop 调用。它进入 `CloseNow()`，顺序为：
 
@@ -269,19 +269,19 @@ ResourceState: Open -> Closing
 也不释放 fd。它要求没有 pending write（否则返回 `EBUSY`），之后保持 read 可用，而新的
 `WriteAll()` 在进入 `send(MSG_NOSIGNAL)` 前返回 `EPIPE`；空 span 也不会绕过逻辑状态验证。
 
-### 4.5 `EventLoop::RequestStop()`：dispatcher 级取消
+### 4.5 `Loop::RequestStop()`：dispatcher 级取消
 
 `RequestStop()` 不直接从调用线程关 fd，也不直接恢复协程：
 
 ```text
 foreign thread / stop_token
-  -> EventLoop::RequestStop()
+  -> Loop::RequestStop()
   -> state: Running -> Stopping
   -> eventfd write
   -> epoll_wait returns
 
 owner thread
-  -> EventLoop::BeginShutdown()
+  -> Loop::BeginShutdown()
   -> LoopShutdownRegistry::RequestStop()
   -> each resource's loop-stop callback
   -> RunPending()
@@ -292,17 +292,17 @@ owner thread
 
 | 参与者 | stop 时做什么 |
 | --- | --- |
-| `ReactorStream` | `CloseNow()`；pending read/write 为 `ECANCELED`，fd 关闭 |
-| `ReactorListener` | `CloseNow()`；pending `Accept()` 为 `ECANCELED`，listener fd 关闭 |
-| `ReactorRecvSource` | `RequestBackendStop()`；停止 readiness admission，结算 pending `Next/Stop` |
+| `Stream` | `CloseNow()`；pending read/write 为 `ECANCELED`，fd 关闭 |
+| `Listener` | `CloseNow()`；pending `Accept()` 为 `ECANCELED`，listener fd 关闭 |
+| `RecvSource` | `RequestBackendStop()`；停止 readiness admission，结算 pending `Next/Stop` |
 | pending `ConnectAwaiter` | detach 临时 Channel，返回 `ECANCELED` |
 | pending `SleepAwaiter` | cancel timer，恢复等待协程 |
 
-`Stopped` 只表示 EventLoop 已经退出 poll 并 drain 了它的 owner-local coroutine work。
+`Stopped` 只表示 Loop 已经退出 poll 并 drain 了它的 owner-local coroutine work。
 它**不是**“所有 C++ 对象已经析构”的承诺：`BufferLease`、用户持有的 stream、coroutine owner
 仍须由各自的生命周期规则收尾。
 
-`EventLoop` 的析构函数也不是隐式 shutdown：它在所有构建中都会拒绝从错误线程析构、仍在
+`Loop` 的析构函数也不是隐式 shutdown：它在所有构建中都会拒绝从错误线程析构、仍在
 `Run()` 中析构、残留 owner work，或仍登记了 shutdown participant 的 loop。调用方必须先让
 `Run()` 完成 stop/drain，并在析构 loop 前销毁或注销所有 loop-owned resource；不能把
 event-loop 析构当作取消尚未完成 operation 的后门。
@@ -327,7 +327,7 @@ EPOLLIN -> accept() drain -> queued accepted streams -> Next()
 进入 terminal；已排队的 accepted stream 仍先交付。队列耗尽后，`Next()` 返回：
 
 ```text
-Result<std::optional<ReactorStream>>{std::nullopt}
+Result<std::optional<Stream>>{std::nullopt}
 ```
 
 `Next()` 与 `Stop()` 会在触碰 source state 前检查 owner loop；从错误线程调用时返回 `EINVAL`，
@@ -338,7 +338,7 @@ listener 关闭时也走 source terminal 语义；真正的 listener 错误才�
 
 ### RecvSource 与 BufferLease
 
-`ReactorRecvSource` 自己拥有一组 buffer slots。readiness 到来后它循环执行 `recv(MSG_DONTWAIT)`，
+`RecvSource` 自己拥有一组 buffer slots。readiness 到来后它循环执行 `recv(MSG_DONTWAIT)`，
 将每次成功 read 转成带 `BufferLease` 的事件。
 
 事件队列或 buffer slot 到达 high-water 不是 `ENOBUFS` 终止错误。Reactor 会将当前
@@ -359,7 +359,7 @@ disable EPOLLIN
 ```
 
 因此 source 的最终销毁前必须满足：没有 pending `Next/Stop`、事件队列为空、没有 outstanding
-lease。这是资源归还协议，不应被 `EventLoop::Stopped` 偷偷绕过；这些前提在 Release 构建中也
+lease。这是资源归还协议，不应被 `Loop::Stopped` 偷偷绕过；这些前提在 Release 构建中也
 通过 `COROPACT_CHECK` 强制检查，因为延后释放的 `BufferLease` 仍保存 source 的 reclaim context。
 
 ## 6. 必须保持的安全不变量
@@ -391,11 +391,11 @@ lease。这是资源归还协议，不应被 `EventLoop::Stopped` 偷偷绕过�
 第一次阅读建议只走单次 read：
 
 1. `include/coropact/reactor/loop.h`
-2. `src/reactor/event_loop.cc`
+2. `src/reactor/loop.cc`
 3. `include/coropact/reactor/detail/channel.h`
 4. `src/reactor/channel.cc`
 5. `src/reactor/epoll_poller.cc`
-6. `src/reactor/reactor_stream.cc` 中 `ReadSomeAwaiter`、`HandleRead`、`CompleteRead`、`CloseNow`
+6. `src/reactor/stream.cc` 中 `ReadSomeAwaiter`、`HandleRead`、`CompleteRead`、`CloseNow`
 
 再看两条更复杂的取消路径：
 
@@ -404,5 +404,5 @@ timeout: ReadSomeAwaiter timer -> CompleteRead(ETIMEDOUT)
 loop stop: RequestStop -> BeginShutdown -> LoopShutdownRegistry -> CloseNow
 ```
 
-最后再读 event source：`src/reactor/reactor_listener.cc` 的 `ReactorAcceptSource` 与
-`src/reactor/reactor_recv_source.cc`。这样不会一开始就被 multishot/lease 状态机淹没。
+最后再读 event source：`src/reactor/listener.cc` 的 `AcceptSource` 与
+`src/reactor/recv_source.cc`。这样不会一开始就被 multishot/lease 状态机淹没。

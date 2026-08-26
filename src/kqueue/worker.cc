@@ -1,23 +1,26 @@
 // SPDX-License-Identifier: MIT
-#include "coropact/reactor/detail/reactor_worker.h"
+#include "coropact/kqueue/detail/worker.h"
 
 #include <cerrno>
 #include <expected>
+#include <optional>
 #include <stop_token>
 #include <utility>
 
+#include "coropact/base/check.h"
 #include "coropact/result.h"
 #include "coropact/coro/frame_allocator.h"
 #include "coropact/coro/spawn.h"
 
-namespace coropact::reactor::detail {
+namespace coropact::kqueue::detail {
 
 namespace {
 
-coro::DetachedTask AcceptLoop(ReactorWorkerContext& context,
-                              ReactorWorker::ConnectionCallback* callback) {
+coro::DetachedTask AcceptLoop(WorkerContext& context,
+                              Worker::ConnectionCallback* callback) {
+  COROPACT_CHECK(context.listener != nullptr, "AcceptLoop requires an acceptor listener");
   while (true) {
-    auto accepted = co_await context.listener.Accept();
+    auto accepted = co_await context.listener->Accept();
     if (!accepted.has_value()) {
       const int error = accepted.error().value();
       if (error == ECANCELED || error == EBADF) {
@@ -34,8 +37,8 @@ coro::DetachedTask AcceptLoop(ReactorWorkerContext& context,
 
 }  // namespace
 
-ReactorWorker::ReactorWorker(std::size_t index, net::Endpoint listen_addr,
-                             ReactorWorkerOptions options, ThreadInitCallback init_callback,
+Worker::Worker(std::size_t index, net::Endpoint listen_addr,
+                             WorkerOptions options, ThreadInitCallback init_callback,
                              ConnectionCallback connection_callback,
                              ThreadExitCallback exit_callback)
     : index_(index),
@@ -45,9 +48,9 @@ ReactorWorker::ReactorWorker(std::size_t index, net::Endpoint listen_addr,
       connection_callback_(std::move(connection_callback)),
       exit_callback_(std::move(exit_callback)) {}
 
-ReactorWorker::~ReactorWorker() noexcept { Stop(); }
+Worker::~Worker() noexcept { Stop(); }
 
-Result<void> ReactorWorker::Start() {
+Result<void> Worker::Start() {
   if (thread_.joinable()) {
     return std::unexpected(Errno(EALREADY));
   }
@@ -69,13 +72,13 @@ Result<void> ReactorWorker::Start() {
   return start_result_;
 }
 
-void ReactorWorker::Stop() noexcept {
+void Worker::Stop() noexcept {
   if (thread_.joinable()) {
     thread_.request_stop();
   }
 }
 
-void ReactorWorker::WorkLoop(std::stop_token token) noexcept {
+void Worker::WorkLoop(std::stop_token token) noexcept {
   coro::FrameAllocatorScope frame_scope{options_.frame_resource};
 
   auto publish_start = [this](Result<void> result) noexcept {
@@ -87,32 +90,42 @@ void ReactorWorker::WorkLoop(std::stop_token token) noexcept {
     cv_.notify_one();
   };
 
-  EventLoop loop{options_.frame_resource};
+  Loop loop{options_.frame_resource};
+  loop_ = &loop;
 
-  auto listener = ReactorListener::Create(&loop, listen_addr_, options_.listener_options);
-  if (!listener.has_value()) {
-    publish_start(std::unexpected(listener.error()));
-    return;
+  std::optional<Listener> listener;
+  if (options_.accept) {
+    auto created = Listener::Create(&loop, listen_addr_, options_.listener_options);
+    if (!created.has_value()) {
+      loop_ = nullptr;
+      publish_start(std::unexpected(created.error()));
+      return;
+    }
+    listener = std::move(*created);
   }
 
-  auto connector = ReactorConnector::Create(&loop, options_.connector_options);
+  auto connector = Connector::Create(&loop, options_.connector_options);
   if (!connector.has_value()) {
+    loop_ = nullptr;
     publish_start(std::unexpected(connector.error()));
     return;
   }
 
-  ReactorWorkerContext context{index_, loop, *listener, *connector};
+  WorkerContext context{index_, loop, listener ? &*listener : nullptr, *connector};
+  context_ = &context;
 
   if (init_callback_) {
     try {
       init_callback_(context);
     } catch (...) {
+      context_ = nullptr;
+      loop_ = nullptr;
       publish_start(std::unexpected(Errno(EFAULT)));
       return;
     }
   }
 
-  if (connection_callback_) {
+  if (options_.accept && connection_callback_) {
     coro::SpawnDetach(loop, AcceptLoop(context, &connection_callback_));
   }
 
@@ -126,6 +139,9 @@ void ReactorWorker::WorkLoop(std::stop_token token) noexcept {
       // Worker exit cleanup must not escape WorkLoop's noexcept boundary.
     }
   }
+
+  context_ = nullptr;
+  loop_ = nullptr;
 }
 
-}  // namespace coropact::reactor::detail
+}  // namespace coropact::kqueue::detail

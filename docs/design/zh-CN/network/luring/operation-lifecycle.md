@@ -21,8 +21,8 @@
 | 形态 | 物理请求 | CQE | 逻辑结果 | 释放边界 |
 | --- | ---: | ---: | ---: | --- |
 | single-shot read/write | 1 | 通常 1 | 1 | CQE dispatch 后 |
-| accept | 1 | 1 | 1 个 `Result<LUringStream>` | adapter 构造 stream 并释放 listener reservation 后 |
-| connect | 1 | 1 | 1 个 `Result<LUringStream>` | adapter 构造/转移 stream 或关闭失败 fd 后 |
+| accept | 1 | 1 | 1 个 `Result<Stream>` | adapter 构造 stream 并释放 listener reservation 后 |
+| connect | 1 | 1 | 1 个 `Result<Stream>` | adapter 构造/转移 stream 或关闭失败 fd 后 |
 | timed read | 2（read + timeout） | 最多 2 | 1 | 两个 member 收敛后 |
 | multishot | 1 | 多个，最后一个 terminal | 多个事件 + 1 个 terminal | terminal 和已产生事件都收敛后 |
 | send zerocopy | 1 | primary，primary `F_MORE` 时另有 notification | 1 | primary 无 `F_MORE` 后，或 notification 到达后 |
@@ -33,16 +33,16 @@
 `ReadSome()`；不能把仍指向旧 awaiter 的 slot 暴露给 continuation。
 
 普通的 coupled single-result operation 也遵守同一顺序：`ReadSome`、`ReadInto`、关闭
-zerocopy 时 `WriteAll` 内部的一次 send，以及 `Connect` 都在其嵌入的 `LUringOp` 中使用
+zerocopy 时 `WriteAll` 内部的一次 send，以及 `Connect` 都在其嵌入的 `Op` 中使用
 `SingleResultLifecycle`。该阶段机把 `result ready -> release authorized -> continuation
 authorized` 编码为三个不可倒退的 transition；物理 CQE 的重复防护仍由独立的可复用 physical
-slot 负责。两者都内嵌在现有的 24B `LUringOp` 中，不引入额外分配或扩大该 operation 的布局。
+slot 负责。两者都内嵌在现有的 24B `Op` 中，不引入额外分配或扩大该 operation 的布局。
 
 read/write 的 CQE `res` 可以直接成为逻辑结果；`Accept` 与 `Connect` 不行。Accept adapter 必须
-先把成功 CQE 转换成拥有 accepted fd 的 `LUringStream`，释放 listener reservation；Connect adapter
-必须把成功 CQE 转换成拥有连接 fd 的 `LUringStream`，或把失败转换成 `Error` 并关闭仍由 awaiter
+先把成功 CQE 转换成拥有 accepted fd 的 `Stream`，释放 listener reservation；Connect adapter
+必须把成功 CQE 转换成拥有连接 fd 的 `Stream`，或把失败转换成 `Error` 并关闭仍由 awaiter
 持有的 fd。两者都在结果固定后才授权 result ready。这样 `await_resume()` 只消费已经固定的
-`Result<LUringStream>`，不会在 continuation 已获授权后再解释或取得物理资源。
+`Result<Stream>`，不会在 continuation 已获授权后再解释或取得物理资源。
 
 ## 通用状态序列
 
@@ -70,7 +70,7 @@ Idle
 - `F_MORE`：multishot request 仍会继续；对 send-zc primary 则承诺后续 `F_NOTIF`，不能提前释放 buffer；
 - 没有 `F_MORE`：multishot request 的物理终止边界；对 send-zc primary 也表示不会再有 notification；
 - `F_NOTIF`：zerocopy 发送 buffer 的 kernel 使用边界，不是发送字节数；
-- `F_BUF_MORE`：同一 provided buffer 还有后续 segment，当前 `LUringRecvSource` 公共
+- `F_BUF_MORE`：同一 provided buffer 还有后续 segment，当前 `RecvSource` 公共
   路径尚未承诺该增量语义。
 
 对于 coupled single-result operation，CQE dispatch 必须先将原始 CQE 解释为逻辑结果、跨越其

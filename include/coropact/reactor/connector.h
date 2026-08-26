@@ -14,37 +14,37 @@
 
 namespace coropact::reactor {
 
-struct ReactorConnectorOptions {
-  // Applies to every ReactorStream returned by Connect.
-  ReactorStreamOptions stream_options{};
+struct ConnectorOptions {
+  // Applies to every Stream returned by Connect.
+  StreamOptions stream_options{};
 };
 
-class ReactorConnector {
+class Connector {
 public:
-  COROPACT_DELETE_COPY(ReactorConnector);
+  COROPACT_DELETE_COPY(Connector);
 
-  using Stream = ReactorStream;
+  using StreamType = Stream;
 
   [[nodiscard]]
-  static Result<ReactorConnector> Create(EventLoop* loop,
-                                               ReactorConnectorOptions options = {}) noexcept;
+  static Result<Connector> Create(Loop* loop,
+                                               ConnectorOptions options = {}) noexcept;
 
-  explicit ReactorConnector(EventLoop* loop, ReactorConnectorOptions options = {}) noexcept;
+  explicit Connector(Loop* loop, ConnectorOptions options = {}) noexcept;
 
-  ReactorConnector(ReactorConnector&& other) noexcept;
-  ReactorConnector& operator=(ReactorConnector&& other) noexcept;
+  Connector(Connector&& other) noexcept;
+  Connector& operator=(Connector&& other) noexcept;
 
   // Connect is loop-affine. Independent calls may be pending concurrently;
   // each call owns its socket, Channel, result, and continuation.
-  coro::Task<Result<ReactorStream>> Connect(net::Endpoint peer);
-  coro::Task<Result<ReactorStream>> Connect(std::string_view host, std::uint16_t port);
+  coro::Task<Result<Stream>> Connect(net::Endpoint peer);
+  coro::Task<Result<Stream>> Connect(std::string_view host, std::uint16_t port);
   coro::Task<void> SleepFor(time::Duration delay);
 
 private:
   void RequireOwnerLoop() const noexcept;
 
-  EventLoop* loop_;
-  ReactorConnectorOptions options_;
+  Loop* loop_;
+  ConnectorOptions options_;
 };
 
 }  // namespace coropact::reactor

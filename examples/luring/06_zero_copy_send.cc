@@ -119,7 +119,7 @@ bool ReceiveExactly(int fd, std::span<char> destination) noexcept {
   return true;
 }
 
-auto ZeroCopySession(luring::LUringLoop& loop, luring::LUringStream stream, int peer_fd,
+auto ZeroCopySession(luring::Loop& loop, luring::Stream stream, int peer_fd,
                      int& exit_code) -> coro::DetachedTask {
   // Own the send memory until co_await returns. After release authorization,
   // overwriting it is safe even if the peer has not yet read every byte.
@@ -175,8 +175,8 @@ auto main() -> int {
   }
   auto [server_fd, client_fd] = *sockets;
 
-  luring::LUringLoop loop;
-  luring::LUringOptions options;
+  luring::Loop loop;
+  luring::Options options;
   options.entries = 64;
 
   auto initialized = loop.Init(options);
@@ -188,7 +188,7 @@ auto main() -> int {
   }
 
   int exit_code = 1;
-  luring::LUringStream stream(&loop, server_fd, net::Endpoint::Loopback(0));
+  luring::Stream stream(&loop, server_fd, net::Endpoint::Loopback(0));
   coro::SpawnDetach(loop, ZeroCopySession(loop, std::move(stream), client_fd, exit_code));
   loop.Run(std::stop_token{});
 

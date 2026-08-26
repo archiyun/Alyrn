@@ -1,6 +1,6 @@
 # 增量 provided-buffer 的设计占位
 
-`LUringRecvSource` 当前只使用所属 `LUringLoop` 的 shared provided-buffer pool：一条正
+`RecvSource` 当前只使用所属 `Loop` 的 shared provided-buffer pool：一条正
 `recv` CQE 对应一个 `BufferLease`，该 lease 释放且内核不再持有该 slot 后，slot 才会归还 ring。
 
 此前的 source-private `IOU_PBUF_RING_INC` 路径已移除。它会在高并发 source 创建时为每个

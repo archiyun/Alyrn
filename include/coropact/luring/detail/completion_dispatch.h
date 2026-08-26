@@ -7,23 +7,23 @@
 
 namespace coropact::luring::detail {
 
-void DispatchAcceptComplete(LUringOp* op) noexcept;
-void DispatchConnectComplete(LUringOp* op) noexcept;
-CompletionDisposition DispatchAcceptSourceComplete(LUringOp* op, CompletionEvent event) noexcept;
-void DispatchAcceptSourceCancelComplete(LUringOp* op) noexcept;
-CompletionDisposition DispatchRecvSourceComplete(LUringOp* op, CompletionEvent event) noexcept;
-void DispatchRecvSourceCancelComplete(LUringOp* op) noexcept;
-CompletionDisposition DispatchSendZeroCopyComplete(LUringOp* op, CompletionEvent event) noexcept;
-void DispatchListenerCloseComplete(LUringOp* op) noexcept;
-void DispatchStreamReadComplete(LUringOp* op) noexcept;
-void DispatchStreamReadIntoComplete(LUringOp* op) noexcept;
-void DispatchTimedReadComplete(LUringOp* op) noexcept;
-void DispatchTimedReadTimeoutComplete(LUringOp* op) noexcept;
-void DispatchStreamWriteComplete(LUringOp* op) noexcept;
-void DispatchStreamCloseComplete(LUringOp* op) noexcept;
-void DispatchTimerDriverComplete(LUringOp* op) noexcept;
-void DispatchTimerControlComplete(LUringOp* op) noexcept;
+void DispatchAcceptComplete(Op* op) noexcept;
+void DispatchConnectComplete(Op* op) noexcept;
+CompletionDisposition DispatchAcceptSourceComplete(Op* op, CompletionEvent event) noexcept;
+void DispatchAcceptSourceCancelComplete(Op* op) noexcept;
+CompletionDisposition DispatchRecvSourceComplete(Op* op, CompletionEvent event) noexcept;
+void DispatchRecvSourceCancelComplete(Op* op) noexcept;
+CompletionDisposition DispatchSendZeroCopyComplete(Op* op, CompletionEvent event) noexcept;
+void DispatchListenerCloseComplete(Op* op) noexcept;
+void DispatchStreamReadComplete(Op* op) noexcept;
+void DispatchStreamReadIntoComplete(Op* op) noexcept;
+void DispatchTimedReadComplete(Op* op) noexcept;
+void DispatchTimedReadTimeoutComplete(Op* op) noexcept;
+void DispatchStreamWriteComplete(Op* op) noexcept;
+void DispatchStreamCloseComplete(Op* op) noexcept;
+void DispatchTimerDriverComplete(Op* op) noexcept;
+void DispatchTimerControlComplete(Op* op) noexcept;
 
-CompletionDisposition DispatchCompletion(LUringOp* op, CompletionEvent event) noexcept;
+CompletionDisposition DispatchCompletion(Op* op, CompletionEvent event) noexcept;
 
 }  // namespace coropact::luring::detail

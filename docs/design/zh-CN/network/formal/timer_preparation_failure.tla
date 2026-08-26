@@ -3,7 +3,7 @@
 EXTENDS Naturals
 
 (***************************************************************************)
-(* LUringTimerQueue 的逻辑 timer 接受与 physical preparation 模型。     *)
+(* TimerQueue 的逻辑 timer 接受与 physical preparation 模型。     *)
 (*                                                                         *)
 (* RunAfter() 不能因为 callback 已插入用户态 tree 就报告成功。初次       *)
 (* driver 或更早 deadline 的 update 在本地 SQE preparation 失败时，      *)
@@ -350,7 +350,7 @@ RearmPreparationSucceeds ==
                  updatePreparationCount,
                  timerAcceptanceCount>>
 
-(* This branch models LUringLoop::Run() after the failed re-arm has put it in
+(* This branch models Loop::Run() after the failed re-arm has put it in
    Stopping.  There is no live driver SQE to cancel on this local-failure path;
    logical timers are explicitly discarded by loop shutdown. *)
 DiscardTimersAfterRearmFailure ==

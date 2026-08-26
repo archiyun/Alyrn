@@ -6,7 +6,7 @@
 #endif
 
 // Public umbrella header for the kqueue readiness backend. It exports
-// KqueueLoop, Runtime::Builder<runtime::Kqueue>, and transport adapters.
+// Loop, Runtime::Builder<runtime::Kqueue>, and transport adapters.
 
 #include "coropact/kqueue/connector.h"    // IWYU pragma: export
 #include "coropact/kqueue/listener.h"     // IWYU pragma: export

@@ -15,8 +15,8 @@ namespace coropact::luring::detail {
 // error state in one int instead of an optional expected. CloseAwaiter reuses
 // the same encoding through the void specialization below. This is terminal,
 // awaiter-owned storage: Take() observes its one result but does not reopen it
-// for reuse. Reusable physical LUringOp slots use BeginNextRequest() instead.
-class LUringResultStorage {
+// for reuse. Reusable physical Op slots use BeginNextRequest() instead.
+class ResultStorage {
 public:
   static constexpr std::int32_t kPending = std::numeric_limits<std::int32_t>::min();
 
@@ -26,14 +26,14 @@ public:
   }
 
   void SetSuccess() noexcept {
-    COROPACT_CHECK(!IsImmediate(), "LUringResultStorage result was set twice");
+    COROPACT_CHECK(!IsImmediate(), "ResultStorage result was set twice");
     encoded_ = 0;
   }
 
   void SetError(Error error) noexcept {
-    COROPACT_CHECK(!IsImmediate(), "LUringResultStorage result was set twice");
+    COROPACT_CHECK(!IsImmediate(), "ResultStorage result was set twice");
     COROPACT_CHECK(error.value() > 0 && error.value() != kPending,
-                   "LUringResultStorage cannot encode this error");
+                   "ResultStorage cannot encode this error");
     encoded_ = static_cast<std::int32_t>(error.value());
   }
 
@@ -57,19 +57,19 @@ private:
 };
 
 template <typename T>
-class LUringResultState;
+class ResultState;
 
 template <>
-class LUringResultState<void> : private LUringResultStorage {
+class ResultState<void> : private ResultStorage {
 public:
-  using LUringResultStorage::IsImmediate;
-  using LUringResultStorage::SetError;
-  using LUringResultStorage::SetResult;
-  using LUringResultStorage::SetSuccess;
+  using ResultStorage::IsImmediate;
+  using ResultStorage::SetError;
+  using ResultStorage::SetResult;
+  using ResultStorage::SetSuccess;
 
   [[nodiscard]]
   Result<void> Take() const noexcept {
-    COROPACT_CHECK(IsImmediate(), "LUringResultState result was taken before completion");
+    COROPACT_CHECK(IsImmediate(), "ResultState result was taken before completion");
     if (Encoded() == 0) {
       return {};
     }
@@ -77,6 +77,6 @@ public:
   }
 };
 
-static_assert(sizeof(LUringResultState<void>) == 4);
+static_assert(sizeof(ResultState<void>) == 4);
 
 }  // namespace coropact::luring::detail

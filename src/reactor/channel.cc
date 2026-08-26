@@ -6,7 +6,7 @@
 
 namespace coropact::reactor::detail {
 
-Channel::Channel(EventLoop* loop, int fd) : loop_(loop), fd_(fd) {
+Channel::Channel(Loop* loop, int fd) : loop_(loop), fd_(fd) {
   COROPACT_CHECK(loop_ != nullptr, "Channel: loop must not be null");
   COROPACT_CHECK(fd_ >= 0, "Channel: fd must be a valid non-negative descriptor");
 }

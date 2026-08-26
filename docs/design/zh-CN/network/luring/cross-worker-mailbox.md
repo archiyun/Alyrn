@@ -1,7 +1,7 @@
 # 跨 worker mailbox
 
-跨 worker 通知是 luring runtime 的内部能力，用于把工作投递到目标 `LUringLoop`，不用于
-跨线程直接操作 `LUringStream` 或转移其 fd 所有权。
+跨 worker 通知是 luring runtime 的内部能力，用于把工作投递到目标 `Loop`，不用于
+跨线程直接操作 `Stream` 或转移其 fd 所有权。
 
 ## 路径
 

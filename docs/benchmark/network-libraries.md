@@ -29,7 +29,7 @@ Reactor 与 luring 的独立 ET/LT 对照见 [CoroPact luring 与 Reactor 独立
 
 ## 对比目标
 
-- **Reactor**：CoroPact 的 epoll `ReactorWorkerGroup` 后端。
+- **Reactor**：CoroPact 的 epoll `WorkerGroup` 后端。
 - **CoroPact luring**：CoroPact 的协程 io_uring 后端。
 - **raw liburing**：原生 liburing 状态机，不使用 CoroPact 协程封装。
 - **Asio**：standalone Asio 1.38.2。

@@ -18,34 +18,34 @@
 
 namespace coropact::luring {
 
-class LUringLoop;
+class Loop;
 
 namespace detail {
 
 struct TimerDriverTag;
 struct TimerControlTag;
 
-// One timer queue belongs to one LUringLoop and is only accessed by that
+// One timer queue belongs to one Loop and is only accessed by that
 // loop's thread. The timer tree stays in user space; one io_uring timeout is
 // used to wake the loop for the earliest timer.
-class LUringTimerQueue final : public LUringOpHook<LUringTimerQueue, TimerDriverTag>,
-                               public LUringOpHook<LUringTimerQueue, TimerControlTag> {
-  friend void DispatchTimerDriverComplete(LUringOp* op) noexcept;
-  friend void DispatchTimerControlComplete(LUringOp* op) noexcept;
+class TimerQueue final : public OpHook<TimerQueue, TimerDriverTag>,
+                               public OpHook<TimerQueue, TimerControlTag> {
+  friend void DispatchTimerDriverComplete(Op* op) noexcept;
+  friend void DispatchTimerControlComplete(Op* op) noexcept;
 
 public:
-  using DriverOpHook = LUringOpHook<LUringTimerQueue, TimerDriverTag>;
-  using ControlOpHook = LUringOpHook<LUringTimerQueue, TimerControlTag>;
+  using DriverOpHook = OpHook<TimerQueue, TimerDriverTag>;
+  using ControlOpHook = OpHook<TimerQueue, TimerControlTag>;
   using TimerCallback = std::function<void()>;
 
-  explicit LUringTimerQueue(LUringLoop* loop) noexcept
-      : DriverOpHook(LUringOpKind::kTimerDriverComplete),
-        ControlOpHook(LUringOpKind::kTimerControlComplete),
+  explicit TimerQueue(Loop* loop) noexcept
+      : DriverOpHook(OpKind::kTimerDriverComplete),
+        ControlOpHook(OpKind::kTimerControlComplete),
         loop_(loop) {}
-  ~LUringTimerQueue() noexcept;
+  ~TimerQueue() noexcept;
 
-  LUringTimerQueue(const LUringTimerQueue&) = delete;
-  LUringTimerQueue& operator=(const LUringTimerQueue&) = delete;
+  TimerQueue(const TimerQueue&) = delete;
+  TimerQueue& operator=(const TimerQueue&) = delete;
 
   [[nodiscard]]
   Result<time::TimerId> AddAfter(time::Duration delay, TimerCallback callback);
@@ -60,11 +60,11 @@ public:
   void DiscardAll() noexcept;
 
 private:
-  static void OnDriverComplete(LUringOp* op) noexcept;
-  static void OnControlComplete(LUringOp* op) noexcept;
+  static void OnDriverComplete(Op* op) noexcept;
+  static void OnControlComplete(Op* op) noexcept;
 
-  void HandleDriverComplete(LUringOp* op) noexcept;
-  void HandleControlComplete(LUringOp* op) noexcept;
+  void HandleDriverComplete(Op* op) noexcept;
+  void HandleControlComplete(Op* op) noexcept;
   void ProcessExpired() noexcept;
   void ReconcileOrStop() noexcept;
   [[nodiscard]] Result<void> Reconcile() noexcept;
@@ -72,10 +72,10 @@ private:
   [[nodiscard]] Result<void> ArmFallback(time::Deadline deadline) noexcept;
   [[nodiscard]] Result<void> Update(time::Deadline deadline) noexcept;
 
-  LUringOp* DriverOp() noexcept { return DriverOpHook::Op(); }
-  LUringOp* ControlOp() noexcept { return ControlOpHook::Op(); }
+  Op* DriverOp() noexcept { return DriverOpHook::Operation(); }
+  Op* ControlOp() noexcept { return ControlOpHook::Operation(); }
 
-  LUringLoop* loop_;
+  Loop* loop_;
   time::TimerTree timers_;
   std::unordered_map<std::int64_t, std::unique_ptr<time::Timer>> active_;
 

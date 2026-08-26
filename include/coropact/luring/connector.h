@@ -13,22 +13,22 @@
 
 namespace coropact::luring {
 
-class LUringConnector {
+class Connector {
 public:
-  COROPACT_DELETE_COPY(LUringConnector);
+  COROPACT_DELETE_COPY(Connector);
 
-  using Stream = LUringStream;
+  using StreamType = Stream;
 
-  LUringConnector(LUringConnector&&) noexcept;
-  LUringConnector& operator=(LUringConnector&&) noexcept;
+  Connector(Connector&&) noexcept;
+  Connector& operator=(Connector&&) noexcept;
 
   [[nodiscard]]
-  static Result<LUringConnector> Create(LUringLoop* loop) noexcept;
-  explicit LUringConnector(LUringLoop* loop) noexcept;
+  static Result<Connector> Create(Loop* loop) noexcept;
+  explicit Connector(Loop* loop) noexcept;
 
   // Connect is loop-affine. Independent calls may be pending concurrently;
   // each call owns its socket, physical request, result, and continuation.
-  coro::Task<Result<LUringStream>> Connect(std::string_view host, std::uint16_t port);
+  coro::Task<Result<Stream>> Connect(std::string_view host, std::uint16_t port);
 
   // Backend-selected timer for application-level health-check loops.
   coro::Task<void> SleepFor(time::Duration delay);
@@ -36,7 +36,7 @@ public:
 private:
   void RequireOwnerLoop() const noexcept;
 
-  LUringLoop* loop_;
+  Loop* loop_;
 };
 
 }  // namespace coropact::luring

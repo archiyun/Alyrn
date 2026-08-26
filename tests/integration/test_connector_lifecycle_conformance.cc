@@ -108,9 +108,9 @@ bool Expect(bool condition, std::string_view backend, std::string_view message) 
   return false;
 }
 
-struct ReactorHarness {
-  using Loop = coropact::reactor::EventLoop;
-  using Connector = coropact::reactor::ReactorConnector;
+struct EpollHarness {
+  using Loop = coropact::reactor::Loop;
+  using Connector = coropact::reactor::Connector;
 
   static constexpr std::string_view Name() noexcept { return "Reactor"; }
   static bool Init(Loop&) noexcept { return true; }
@@ -130,14 +130,14 @@ struct ReactorHarness {
 };
 
 #if defined(COROPACT_ENABLE_URING)
-struct LUringHarness {
-  using Loop = coropact::luring::LUringLoop;
-  using Connector = coropact::luring::LUringConnector;
+struct UringHarness {
+  using Loop = coropact::luring::Loop;
+  using Connector = coropact::luring::Connector;
 
   static constexpr std::string_view Name() noexcept { return "io_uring"; }
 
   static bool Init(Loop& loop) noexcept {
-    coropact::luring::LUringOptions options;
+    coropact::luring::Options options;
     options.entries = 32;
     auto initialized = loop.Init(options);
     if (initialized.has_value()) {
@@ -175,7 +175,7 @@ struct LUringHarness {
 
 template <class Connector>
 struct ConnectObservation {
-  using ConnectResult = coropact::Result<typename Connector::Stream>;
+  using ConnectResult = coropact::Result<typename Connector::StreamType>;
 
   std::optional<ConnectResult> result;
   int resume_count{0};
@@ -194,7 +194,7 @@ auto ObserveConnect(Connector& connector, Loop& loop, std::string_view host, std
 
 template <class Connector, class Loop>
 auto ObservePreparedConnect(
-    coropact::coro::Task<coropact::Result<typename Connector::Stream>> task, Loop& loop,
+    coropact::coro::Task<coropact::Result<typename Connector::StreamType>> task, Loop& loop,
     ConnectObservation<Connector>& observation) -> coropact::coro::DetachedTask {
   observation.result.emplace(co_await std::move(task));
   ++observation.resume_count;
@@ -260,7 +260,7 @@ bool CheckConnectSuccessContract() {
 
 template <class Connector>
 struct ConnectCloseObservation {
-  using ConnectResult = coropact::Result<typename Connector::Stream>;
+  using ConnectResult = coropact::Result<typename Connector::StreamType>;
 
   std::optional<ConnectResult> connect;
   std::optional<coropact::Result<void>> close;
@@ -426,7 +426,7 @@ bool CheckConnectAfterStopRequestContract() {
 
 template <class Connector>
 struct ConcurrentConnectObservation {
-  using ConnectResult = coropact::Result<typename Connector::Stream>;
+  using ConnectResult = coropact::Result<typename Connector::StreamType>;
 
   std::optional<ConnectResult> first;
   std::optional<ConnectResult> second;
@@ -504,11 +504,11 @@ bool RunBackendSuite() {
 }  // namespace
 
 int main() {
-  if (!RunBackendSuite<ReactorHarness>()) {
+  if (!RunBackendSuite<EpollHarness>()) {
     return 1;
   }
 #if defined(COROPACT_ENABLE_URING)
-  if (!RunBackendSuite<LUringHarness>()) {
+  if (!RunBackendSuite<UringHarness>()) {
     return 1;
   }
 #endif

@@ -16,7 +16,7 @@ namespace coropact::kqueue::detail {
 // errno while the coroutine is suspended. Store both in one signed word:
 // non-negative values are byte counts, negative values are -errno, and
 // INT64_MIN marks the not-yet-completed state.
-class KqueueIoResultState {
+class IoResultState {
 public:
   static constexpr std::int64_t kPending = std::numeric_limits<std::int64_t>::min();
 
@@ -26,18 +26,18 @@ public:
   }
 
   void SetSuccess(std::size_t bytes) noexcept {
-    COROPACT_CHECK(!HasResult(), "KqueueIoResultState result was set twice");
+    COROPACT_CHECK(!HasResult(), "IoResultState result was set twice");
     COROPACT_CHECK(bytes <= static_cast<std::size_t>(std::numeric_limits<std::int64_t>::max()),
-                   "KqueueIoResultState byte count cannot be encoded");
+                   "IoResultState byte count cannot be encoded");
     encoded_ = static_cast<std::int64_t>(bytes);
   }
 
   void SetError(Error error) noexcept {
-    COROPACT_CHECK(!HasResult(), "KqueueIoResultState result was set twice");
+    COROPACT_CHECK(!HasResult(), "IoResultState result was set twice");
     COROPACT_CHECK(error.category() == std::system_category(),
-                   "KqueueIoResultState only encodes system errors");
+                   "IoResultState only encodes system errors");
     const int value = error.value();
-    COROPACT_CHECK(value > 0, "KqueueIoResultState cannot encode errno zero");
+    COROPACT_CHECK(value > 0, "IoResultState cannot encode errno zero");
     encoded_ = -static_cast<std::int64_t>(value);
   }
 
@@ -51,7 +51,7 @@ public:
 
   [[nodiscard]]
   Result<std::size_t> Take() noexcept {
-    COROPACT_CHECK(HasResult(), "KqueueIoResultState result was taken before completion");
+    COROPACT_CHECK(HasResult(), "IoResultState result was taken before completion");
     const std::int64_t encoded = std::exchange(encoded_, kPending);
     if (encoded >= 0) {
       return static_cast<std::size_t>(encoded);
@@ -63,6 +63,6 @@ private:
   std::int64_t encoded_{kPending};
 };
 
-static_assert(sizeof(KqueueIoResultState) == sizeof(std::int64_t));
+static_assert(sizeof(IoResultState) == sizeof(std::int64_t));
 
 }  // namespace coropact::kqueue::detail

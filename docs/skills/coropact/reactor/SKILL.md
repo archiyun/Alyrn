@@ -1,6 +1,6 @@
 ---
 name: runtime-reactor-maintenance
-description: Maintain the coropact/reactor epoll Reactor, EventLoop, Channel, poller, and timers. Use for Reactor-layer patches, reviews, lifetime fixes, and threading changes.
+description: Maintain the coropact/reactor epoll Reactor, Loop, Channel, poller, and timers. Use for Reactor-layer patches, reviews, lifetime fixes, and threading changes.
 ---
 
 # coropact/reactor Maintenance
@@ -9,7 +9,7 @@ Read `docs/SUBSYSTEMS.md` before editing.
 
 ## Purpose
 
-Own Linux Reactor mechanics: EventLoop dispatch, Poller registration, Channel
+Own Linux Reactor mechanics: Loop dispatch, Poller registration, Channel
 event delivery, Reactor socket ownership, callback scheduling, and timerfd
 integration. Shared address and socket primitives remain in `coropact/net`.
 The coroutine-facing stream operations are thin adapters over this transport;
@@ -24,21 +24,21 @@ layer.
 
 ## Owned resources
 
-- EventLoop thread affinity and owner-local work queues.
+- Loop thread affinity and owner-local work queues.
 - Poller registrations and Channel event masks.
 - Listening and connected socket fds.
-- `ReactorListener`, `ReactorConnector`, and `ReactorStream` state.
+- `Listener`, `Connector`, and `Stream` state.
 - TimerQueue timerfd and loop-bound timer indexes.
 
 ## Public API / entry points
 
-- `EventLoop::{Loop,Quit,RunOnOwner,Schedule,RunAt,RunAfter,RunEvery,Cancel}`
+- `Loop::{Loop,Quit,RunOnOwner,Schedule,RunAt,RunAfter,RunEvery,Cancel}`
 - `Channel`, `Poller`, and `EPollPoller`
-- `ReactorListener`, `ReactorConnector`, and `ReactorStream`
+- `Listener`, `Connector`, and `Stream`
 
 ## Thread model
 
-- One EventLoop is constructed, run, and destroyed on one owning thread.
+- One Loop is constructed, run, and destroyed on one owning thread.
 - Channel, Poller, fd, stream state, and timer mutation belong to that loop.
 - `RunOnOwner`, `Schedule`, timers, and `Quit` are owner-thread
   APIs; they are not cross-thread safe.
@@ -47,7 +47,7 @@ layer.
 
 ## Lifetime rules
 
-- EventLoop outlives every registered Channel and owner-local queued callback/work target.
+- Loop outlives every registered Channel and owner-local queued callback/work target.
 - Channel does not own its fd or callback owner; remove it before either is destroyed.
 - A Reactor stream owns its transport state and is destroyed on its owning loop.
 - Awaiting or owner-local deferred operations must complete or become inert before their owner dies.
@@ -56,7 +56,7 @@ layer.
 ## State machine
 
 ```text
-EventLoop: created -> looping -> quit-requested -> stopped -> destroyed
+Loop: created -> looping -> quit-requested -> stopped -> destroyed
 Channel: unregistered -> registered -> disabled -> removed
 Listener: open -> accepting -> closed
 Connector: idle -> connecting -> connected | failed
@@ -66,7 +66,7 @@ Timer: pending-insert -> active -> executing -> active(repeat) | released
 
 ## Invariants
 
-- One EventLoop per thread.
+- One Loop per thread.
 - A Channel is registered in at most one Poller and removed before fd reuse.
 - Socket and Channel always refer to the same live fd.
 - Transport callbacks execute on the owning loop.
@@ -87,7 +87,7 @@ Timer: pending-insert -> active -> executing -> active(repeat) | released
 ## Required tests
 
 - `epoll_poller_smoke_test`
-- `event_loop_smoke_test`
+- `reactor_loop_smoke_test`
 - `reactor_stream_smoke_test`
 - `reactor_listener_smoke_test`
 - `net_move_smoke_test` for detached Channel and Socket ownership transfer

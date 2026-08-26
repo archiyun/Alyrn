@@ -1,15 +1,15 @@
 # listener 与 AcceptSource
 
-## LUringListener
+## Listener
 
-`LUringListener::Create()` 创建 loop-affine listener。它提供两种接受连接的方式：
+`Listener::Create()` 创建 loop-affine listener。它提供两种接受连接的方式：
 
 ```text
-Accept()       一次等待一个连接
-AcceptSource() 持续产生连接事件
+Accept()             一次等待一个连接
+CreateAcceptSource() 持续产生连接事件
 ```
 
-`Accept()` 是 backend-neutral 的单次操作：一个 accepted fd 被包装成 `LUringStream` 后，
+`Accept()` 是 backend-neutral 的单次操作：一个 accepted fd 被包装成 `Stream` 后，
 fd 所有权转移给该 stream。listener 关闭后不能再接受连接。
 
 ## AcceptSource
@@ -17,14 +17,14 @@ fd 所有权转移给该 stream。listener 关闭后不能再接受连接。
 `AcceptSource` 将“持续接受连接”建模成一个有界异步事件源：
 
 ```cpp
-auto source_result = listener.AcceptSource();
+auto source_result = listener.CreateAcceptSource();
 if (!source_result.has_value()) co_return;
 auto source = std::move(*source_result);
 for (;;) {
   auto result = co_await source.Next();
   if (!result.has_value()) break;       // source error
   if (!result->has_value()) break;      // source terminal
-  LUringStream stream = std::move(**result);
+  Stream stream = std::move(**result);
   // consume one connection
 }
 co_await source.Stop();

@@ -15,11 +15,11 @@ buffer 可以复用，以及关闭和取消如何收敛。内部类、CQE 分发
 | 超时读 | `ReadSomeFor` | 稳定扩展 | read/timeout 两个 CQE 只恢复一次 |
 | listener / 单次 accept | `Accept` | 稳定 | 新连接所有权与关闭 |
 | 持续 accept | `AcceptSource`、`AcceptMode::kMultishot` | 已实现扩展 | 多事件、终止 CQE、背压、降级 |
-| 持续 recv | `LUringRecvSource` | 已实现扩展 | provided buffer、事件队列、`BufferLease` |
-| provided buffer ring | `LUringRecvSource` 的内部资源 | 已实现扩展 | loop-shared slot 借出、归还与 source 停止 |
+| 持续 recv | `RecvSource` | 已实现扩展 | provided buffer、事件队列、`BufferLease` |
+| provided buffer ring | `RecvSource` 的内部资源 | 已实现扩展 | loop-shared slot 借出、归还与 source 停止 |
 | 发送 zerocopy | `SendZeroCopy` | 已实现扩展 | primary CQE 与可选 `F_NOTIF` 的分离式 release |
 | timer | `SleepFor`、`RunAfter` | 已实现 | 到期恢复、错误和 loop 归属 |
-| 多 worker / CPU 绑定 | `LUringWorkerGroup` | 已实现 | 每 worker 一个 loop、启动和停止 |
+| 多 worker / CPU 绑定 | `WorkerGroup` | 已实现 | 每 worker 一个 loop、启动和停止 |
 | 跨 worker 通知 | `PostMessage` / `MSG_RING` | runtime 内部能力 | 有界 mailbox、通知合并、目标 loop 投递 |
 | fixed registered buffer | 暂无公共入口 | 设计占位 | 不应误标为已支持 |
 | fixed file / 通用 linked API | 暂无公共入口 | 设计占位 | 不应从内部实现泄露为 API |
@@ -47,7 +47,7 @@ single-shot 通常是一条 SQE 对一条 CQE；multishot、超时和 zerocopy �
 
 ```text
 CQE
-  -> LUringOp 记录原始 CQE result
+  -> Op 记录原始 CQE result
   -> operation adapter 解释结果，并释放 pending stream slot / buffer reservation
   -> loop 将 ResumeWork 放入 completion queue
   -> coroutine await_resume()
@@ -63,7 +63,7 @@ split-release 生命周期决定何时进入最后两步。
 - `submit` 返回不等于 kernel 已经停止访问用户 buffer。
 - 同一个等待者最多恢复一次；同一个逻辑 operation 也只能释放一次。
 - `Cancel` 或 `Close` 只是开始收敛，不能单独作为资源释放依据。
-- `LUringStream`、`LUringListener` 和 source 都是 loop-affine，只能在所属 loop 线程上
+- `Stream`、`Listener` 和 source 都是 loop-affine，只能在所属 loop 线程上
   操作。
 - `BufferLease`、zerocopy 发送 buffer 和 operation frame 的存活边界彼此独立，不能用
   “某一个 CQE 已经回来”替代全部边界。
@@ -84,7 +84,7 @@ split-release 生命周期决定何时进入最后两步。
 
 ## 测试框架的切片方式
 
-测试应优先从这些 public seam 开始，而不是直接构造内部 `LUringOp`：
+测试应优先从这些 public seam 开始，而不是直接构造内部 `Op`：
 
 1. loop 初始化成功、环境不支持时可识别地 skip、错误时不泄漏。
 2. single-shot operation 的结果、错误、关闭和一次性恢复。

@@ -40,7 +40,7 @@ bool AcceptMultishotEnabled() noexcept {
 
 // Consume one HTTP request (headers + Content-Length body), then WriteAll the
 // fixed response. Leftover pipelined bytes stay in `request`/`used`.
-coropact::coro::DetachedTask HttpSessionReadSome(coropact::luring::LUringStream stream) {
+coropact::coro::DetachedTask HttpSessionReadSome(coropact::luring::Stream stream) {
   std::array<std::byte, coropact_bench::kRequestBufferSize> request{};
   const auto response = std::as_bytes(
       std::span(coropact_bench::Response().data(), coropact_bench::Response().size()));
@@ -111,11 +111,11 @@ coropact::coro::DetachedTask HttpSessionReadSome(coropact::luring::LUringStream 
   (void)co_await stream.Close();
 }
 
-coropact::coro::DetachedTask HttpSessionRecvSource(coropact::luring::LUringStream stream) {
+coropact::coro::DetachedTask HttpSessionRecvSource(coropact::luring::Stream stream) {
   const auto response = std::as_bytes(
       std::span(coropact_bench::Response().data(), coropact_bench::Response().size()));
 
-  coropact::luring::LUringRecvSourceOptions recv_options;
+  coropact::luring::RecvSourceOptions recv_options;
   recv_options.source.pending_depth = 1;
   recv_options.source.event_capacity = 16;
   recv_options.source.buffer_capacity = 16;
@@ -123,7 +123,7 @@ coropact::coro::DetachedTask HttpSessionRecvSource(coropact::luring::LUringStrea
       "SHARED_BUFFER_SIZE", coropact_bench::kRequestBufferSize);
 
   auto source_result =
-      coropact::luring::LUringRecvSource::Create(stream.Loop(), stream.Fd(), recv_options);
+      coropact::luring::RecvSource::Create(stream.OwnerLoop(), stream.Fd(), recv_options);
   if (!source_result.has_value()) {
     (void)co_await stream.Close();
     co_return;
@@ -256,7 +256,7 @@ int main() {
     return 2;
   }
 
-  coropact::luring::detail::LUringWorkerGroupOptions options;
+  coropact::luring::detail::WorkerGroupOptions options;
   options.worker_num = workers;
   options.worker_options.loop_options.entries = entries;
   options.worker_options.loop_options.shared_buffer_capacity =
@@ -269,10 +269,10 @@ int main() {
       accept_multishot ? coropact::luring::detail::AcceptMode::kMultishot
                        : coropact::luring::detail::AcceptMode::kSingleShot;
 
-  coropact::luring::detail::LUringWorkerGroup server(
+  coropact::luring::detail::WorkerGroup server(
       coropact::net::Endpoint::Loopback(port), std::move(options), {},
-      [use_recv_source](coropact::luring::detail::LUringWorkerContext&,
-                        coropact::luring::LUringStream stream) {
+      [use_recv_source](coropact::luring::detail::WorkerContext&,
+                        coropact::luring::Stream stream) {
         if (use_recv_source) {
           return HttpSessionRecvSource(std::move(stream));
         }
@@ -280,7 +280,7 @@ int main() {
       });
   auto started = server.Start();
   if (!started.has_value()) {
-    std::fprintf(stderr, "LUringWorkerGroup::Start failed: %s\n",
+    std::fprintf(stderr, "WorkerGroup::Start failed: %s\n",
                  started.error().message().c_str());
     return 1;
   }

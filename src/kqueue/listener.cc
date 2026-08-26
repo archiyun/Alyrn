@@ -10,7 +10,6 @@
 #include "coropact/backend/detail/value_result_state.h"
 #include "coropact/base/check.h"
 #include "coropact/result.h"
-#include "coropact/base/try.h"
 #include "coropact/net/accept_source.h"
 #include "coropact/net/socket.h"
 #include "coropact/operation/detail/completion_gate.h"
@@ -41,21 +40,30 @@ Error SocketError(int fd) noexcept {
   return Errno(err);
 }
 
-KqueueLoop* CheckLoop(KqueueLoop* loop) noexcept {
-  COROPACT_CHECK(loop != nullptr, "KqueueListener: loop must not be null");
-  COROPACT_CHECK(loop->IsInLoopThread(), "KqueueListener created from wrong KqueueLoop thread");
+Loop* CheckLoop(Loop* loop) noexcept {
+  COROPACT_CHECK(loop != nullptr, "Listener: loop must not be null");
+  COROPACT_CHECK(loop->IsInLoopThread(), "Listener created from wrong Loop thread");
   return loop;
 }
 
 Result<net::Socket> TryCreateListenSocket(const net::Endpoint& listen_addr,
-                                                KqueueListenerOptions options) noexcept {
-  COROPACT_TRY_VALUE(fd, net::CreateNonBlockingSocket(listen_addr.native_family()));
-  net::Socket socket(fd);
+                                                ListenerOptions options) noexcept {
+  auto fd = net::CreateNonBlockingSocket(listen_addr.native_family());
+  if (!fd.has_value()) {
+    return std::unexpected(fd.error());
+  }
+  net::Socket socket(*fd);
 
-  COROPACT_TRY(net::SetReuseAddr(socket.fd(), options.reuse_addr));
+  auto reuse_addr = net::SetReuseAddr(socket.fd(), options.reuse_addr);
+  if (!reuse_addr.has_value()) {
+    return std::unexpected(reuse_addr.error());
+  }
 
   if (options.reuse_port) {
-    COROPACT_TRY(net::SetReusePort(socket.fd(), true));
+    auto reuse_port = net::SetReusePort(socket.fd(), true);
+    if (!reuse_port.has_value()) {
+      return std::unexpected(reuse_port.error());
+    }
   }
 
   if (::bind(socket.fd(), listen_addr.sock_addr(), listen_addr.sock_addr_len()) < 0) {
@@ -71,15 +79,15 @@ Result<net::Socket> TryCreateListenSocket(const net::Endpoint& listen_addr,
 
 int CreateListenSocket(sa_family_t family) {
   auto fd = net::CreateNonBlockingSocket(family);
-  COROPACT_CHECK(fd.has_value(), "KqueueListener: failed to create listening socket");
+  COROPACT_CHECK(fd.has_value(), "Listener: failed to create listening socket");
   return *fd;
 }
 
 }  // namespace
 
-class KqueueListener::AcceptAwaiter {
+class Listener::AcceptAwaiter {
 public:
-  explicit AcceptAwaiter(KqueueListener& listener) noexcept : listener_(&listener) {}
+  explicit AcceptAwaiter(Listener& listener) noexcept : listener_(&listener) {}
 
   [[nodiscard]]
   bool await_ready() const noexcept {
@@ -100,7 +108,7 @@ public:
 
     continuation_.Bind(continuation);
 
-    Result<KqueueStream> result = TryAccept();
+    Result<Stream> result = TryAccept();
     if (result.has_value() || !IsWouldBlock(result.error().value())) {
       CompleteInline(std::move(result));
       return false;
@@ -113,19 +121,19 @@ public:
     return true;
   }
 
-  Result<KqueueStream> await_resume() noexcept { return result_.Take(); }
+  Result<Stream> await_resume() noexcept { return result_.Take(); }
 
 private:
-  friend class KqueueListener;
+  friend class Listener;
 
-  void CompleteInline(Result<KqueueStream> result) noexcept {
+  void CompleteInline(Result<Stream> result) noexcept {
     result_.SetResult(std::move(result));
     COROPACT_CHECK(lifecycle_.TryAuthorizeResult(), "Reactor accept result was authorized twice");
     COROPACT_CHECK(lifecycle_.TryAuthorizeRelease(),
                    "Reactor accept release was not authorized after its result");
   }
 
-  [[nodiscard]] bool CompleteResult(Result<KqueueStream> result) noexcept {
+  [[nodiscard]] bool CompleteResult(Result<Stream> result) noexcept {
     if (!lifecycle_.TryAuthorizeResult()) {
       return false;
     }
@@ -143,7 +151,7 @@ private:
 
 public:
   void OnReady() noexcept {
-    Result<KqueueStream> result = TryAccept();
+    Result<Stream> result = TryAccept();
     if (!result.has_value() && IsWouldBlock(result.error().value())) {
       if (!listener_->channel_.IsReading()) {
         listener_->channel_.EnableReading();
@@ -154,7 +162,7 @@ public:
   }
 
 private:
-  Result<KqueueStream> TryAccept() noexcept {
+  Result<Stream> TryAccept() noexcept {
     int fd = -1;
     net::Endpoint peer_addr(0);
     do {
@@ -164,16 +172,16 @@ private:
     if (fd < 0) {
       return std::unexpected(CurrentErrno());
     }
-    return KqueueStream(listener_->loop_, fd, peer_addr, listener_->stream_options_);
+    return Stream(listener_->loop_, fd, peer_addr, listener_->stream_options_);
   }
 
-  KqueueListener* listener_;
+  Listener* listener_;
   operation::detail::SchedulerContinuation continuation_;
   operation::detail::SingleResultLifecycle lifecycle_;
-  backend::detail::ValueResultState<KqueueStream> result_;
+  backend::detail::ValueResultState<Stream> result_;
 };
 
-bool KqueueAcceptSource::NextAwaiter::await_suspend(
+bool AcceptSource::NextAwaiter::await_suspend(
     std::coroutine_handle<> continuation) noexcept {
   if (source_->listener_ == nullptr) {
     result_.SetError(Errno(EBADF));
@@ -243,11 +251,11 @@ bool KqueueAcceptSource::NextAwaiter::await_suspend(
   return true;
 }
 
-KqueueAcceptSource::NextResult KqueueAcceptSource::NextAwaiter::await_resume() noexcept {
+AcceptSource::NextResult AcceptSource::NextAwaiter::await_resume() noexcept {
   return result_.Take();
 }
 
-void KqueueAcceptSource::NextAwaiter::Complete(NextResult result) noexcept {
+void AcceptSource::NextAwaiter::Complete(NextResult result) noexcept {
   if (!completion_gate_.TryComplete()) {
     return;
   }
@@ -255,40 +263,40 @@ void KqueueAcceptSource::NextAwaiter::Complete(NextResult result) noexcept {
   continuation_.Schedule();
 }
 
-KqueueAcceptSource::KqueueAcceptSource(KqueueListener* listener,
+AcceptSource::AcceptSource(Listener* listener,
                                          net::detail::AcceptSourceStateMachine state) noexcept
     : listener_(listener), state_(std::move(state)) {}
 
-KqueueAcceptSource::KqueueAcceptSource(KqueueAcceptSource&& other) noexcept
+AcceptSource::AcceptSource(AcceptSource&& other) noexcept
     : listener_(std::exchange(other.listener_, nullptr)),
       state_(std::move(other.state_)),
       events_(std::move(other.events_)),
       terminal_error_(std::move(other.terminal_error_)),
       pending_next_(nullptr) {
   COROPACT_CHECK(other.pending_next_ == nullptr,
-                 "KqueueAcceptSource cannot move with a pending Next");
+                 "AcceptSource cannot move with a pending Next");
   COROPACT_CHECK(state_.State() != net::detail::AcceptSourceState::kActive &&
                      state_.State() != net::detail::AcceptSourceState::kStopping,
-                 "KqueueAcceptSource cannot move while it is running");
+                 "AcceptSource cannot move while it is running");
   if (listener_ != nullptr && listener_->accept_source_ == &other) {
     listener_->accept_source_ = this;
   }
 }
 
-KqueueAcceptSource& KqueueAcceptSource::operator=(KqueueAcceptSource&& other) noexcept {
+AcceptSource& AcceptSource::operator=(AcceptSource&& other) noexcept {
   if (this == &other) {
     return *this;
   }
 
-  COROPACT_CHECK(pending_next_ == nullptr, "KqueueAcceptSource destination has a pending Next");
+  COROPACT_CHECK(pending_next_ == nullptr, "AcceptSource destination has a pending Next");
   COROPACT_CHECK(state_.State() != net::detail::AcceptSourceState::kActive &&
                      state_.State() != net::detail::AcceptSourceState::kStopping,
-                 "KqueueAcceptSource destination is running");
+                 "AcceptSource destination is running");
   COROPACT_CHECK(other.pending_next_ == nullptr,
-                 "KqueueAcceptSource cannot move with a pending Next");
+                 "AcceptSource cannot move with a pending Next");
   COROPACT_CHECK(other.state_.State() != net::detail::AcceptSourceState::kActive &&
                      other.state_.State() != net::detail::AcceptSourceState::kStopping,
-                 "KqueueAcceptSource cannot move while it is running");
+                 "AcceptSource cannot move while it is running");
 
   if (listener_ != nullptr && listener_->accept_source_ == this) {
     listener_->accept_source_ = nullptr;
@@ -304,25 +312,25 @@ KqueueAcceptSource& KqueueAcceptSource::operator=(KqueueAcceptSource&& other) no
   return *this;
 }
 
-KqueueAcceptSource::~KqueueAcceptSource() {
+AcceptSource::~AcceptSource() {
   if (listener_ == nullptr) {
     return;
   }
   COROPACT_CHECK(listener_->loop_->IsInLoopThread(),
-                 "KqueueAcceptSource destructor called from wrong thread");
-  COROPACT_CHECK(pending_next_ == nullptr, "KqueueAcceptSource destroyed with a pending Next");
+                 "AcceptSource destructor called from wrong thread");
+  COROPACT_CHECK(pending_next_ == nullptr, "AcceptSource destroyed with a pending Next");
   const auto state = state_.State();
   COROPACT_CHECK(state == net::detail::AcceptSourceState::kIdle ||
                      state == net::detail::AcceptSourceState::kDraining ||
                      state == net::detail::AcceptSourceState::kTerminal,
-                 "KqueueAcceptSource destroyed before reaching a safe lifecycle state");
-  COROPACT_CHECK(state_.ArmedRequests() == 0, "KqueueAcceptSource destroyed with an armed accept");
+                 "AcceptSource destroyed before reaching a safe lifecycle state");
+  COROPACT_CHECK(state_.ArmedRequests() == 0, "AcceptSource destroyed with an armed accept");
   if (listener_->accept_source_ == this) {
     listener_->accept_source_ = nullptr;
   }
 }
 
-coro::Task<Result<void>> KqueueAcceptSource::Stop() {
+coro::Task<Result<void>> AcceptSource::Stop() {
   if (listener_ == nullptr) {
     co_return Result<void>{};
   }
@@ -357,7 +365,7 @@ coro::Task<Result<void>> KqueueAcceptSource::Stop() {
   co_return Result<void>{};
 }
 
-void KqueueAcceptSource::OnReady() noexcept {
+void AcceptSource::OnReady() noexcept {
   if (state_.State() != net::detail::AcceptSourceState::kActive) {
     return;
   }
@@ -370,12 +378,12 @@ void KqueueAcceptSource::OnReady() noexcept {
   }
 
   while (state_.State() == net::detail::AcceptSourceState::kActive && state_.ArmedRequests() != 0) {
-    Result<KqueueStream> accepted = TryAccept();
+    Result<Stream> accepted = TryAccept();
     if (!accepted.has_value()) {
       Error error = accepted.error();
       auto completed = state_.CompleteRequest(false);
       COROPACT_CHECK(completed.has_value(),
-                     "KqueueAcceptSource: failed to record accept completion");
+                     "AcceptSource: failed to record accept completion");
       if (IsWouldBlock(error.value())) {
         break;
       }
@@ -388,17 +396,17 @@ void KqueueAcceptSource::OnReady() noexcept {
     } catch (...) {
       auto completed = state_.CompleteRequest(false);
       COROPACT_CHECK(completed.has_value(),
-                     "KqueueAcceptSource: failed to record accept completion");
+                     "AcceptSource: failed to record accept completion");
       Fail(Errno(ENOMEM));
       return;
     }
 
     auto completed = state_.CompleteRequest(true);
-    COROPACT_CHECK(completed.has_value(), "KqueueAcceptSource: failed to record accepted stream");
+    COROPACT_CHECK(completed.has_value(), "AcceptSource: failed to record accepted stream");
     if (!state_.TryArm()) {
       if (state_.QueuedEvents() >= state_.Options().event_capacity) {
         auto paused = state_.RequestPause();
-        COROPACT_CHECK(paused.has_value(), "KqueueAcceptSource: failed to enter the paused state");
+        COROPACT_CHECK(paused.has_value(), "AcceptSource: failed to enter the paused state");
       }
       break;
     }
@@ -408,30 +416,30 @@ void KqueueAcceptSource::OnReady() noexcept {
   DeliverNextIfReady();
 }
 
-void KqueueAcceptSource::OnError(Error error) noexcept {
+void AcceptSource::OnError(Error error) noexcept {
   if (state_.State() != net::detail::AcceptSourceState::kActive) {
     return;
   }
   if (state_.ArmedRequests() != 0) {
     auto completed = state_.CompleteRequest(false);
-    COROPACT_CHECK(completed.has_value(), "KqueueAcceptSource: failed to record error completion");
+    COROPACT_CHECK(completed.has_value(), "AcceptSource: failed to record error completion");
   }
   Fail(error);
 }
 
-void KqueueAcceptSource::OnListenerClosed() noexcept {
+void AcceptSource::OnListenerClosed() noexcept {
   if (listener_->channel_.IsReading()) {
     listener_->channel_.DisableReading();
   }
   if (state_.ArmedRequests() != 0) {
     auto completed = state_.CompleteRequest(false);
-    COROPACT_CHECK(completed.has_value(), "KqueueAcceptSource: failed to drain close completion");
+    COROPACT_CHECK(completed.has_value(), "AcceptSource: failed to drain close completion");
   }
   state_.RequestStop();
   DeliverNextIfReady();
 }
 
-void KqueueAcceptSource::EnsureAdmission() noexcept {
+void AcceptSource::EnsureAdmission() noexcept {
   if (listener_ == nullptr || listener_->closed_) {
     return;
   }
@@ -449,7 +457,7 @@ void KqueueAcceptSource::EnsureAdmission() noexcept {
   }
 }
 
-void KqueueAcceptSource::DeliverNextIfReady() noexcept {
+void AcceptSource::DeliverNextIfReady() noexcept {
   if (pending_next_ == nullptr) {
     ReleaseListenerReservation();
     return;
@@ -464,12 +472,12 @@ void KqueueAcceptSource::DeliverNextIfReady() noexcept {
   awaiter->Complete(std::move(result));
 }
 
-bool KqueueAcceptSource::TryTakeNext(NextResult& result) noexcept {
+bool AcceptSource::TryTakeNext(NextResult& result) noexcept {
   if (!events_.empty()) {
     Event event(std::in_place, std::move(events_.front()));
     events_.pop_front();
     COROPACT_CHECK(state_.ConsumeEvent(),
-                   "KqueueAcceptSource: queue and state became inconsistent");
+                   "AcceptSource: queue and state became inconsistent");
     result = NextResult(std::in_place, std::move(event));
     if (state_.State() == net::detail::AcceptSourceState::kPaused) {
       (void)(state_.TryResume());
@@ -490,14 +498,14 @@ bool KqueueAcceptSource::TryTakeNext(NextResult& result) noexcept {
   return false;
 }
 
-void KqueueAcceptSource::ReleaseListenerReservation() noexcept {
+void AcceptSource::ReleaseListenerReservation() noexcept {
   if (listener_ != nullptr && state_.State() == net::detail::AcceptSourceState::kTerminal &&
       listener_->accept_source_ == this) {
     listener_->accept_source_ = nullptr;
   }
 }
 
-void KqueueAcceptSource::Fail(Error error) noexcept {
+void AcceptSource::Fail(Error error) noexcept {
   if (!terminal_error_.has_value()) {
     terminal_error_ = error;
   }
@@ -508,7 +516,7 @@ void KqueueAcceptSource::Fail(Error error) noexcept {
   DeliverNextIfReady();
 }
 
-Result<KqueueStream> KqueueAcceptSource::TryAccept() noexcept {
+Result<Stream> AcceptSource::TryAccept() noexcept {
   int fd = -1;
   net::Endpoint peer_addr(0);
   do {
@@ -518,11 +526,11 @@ Result<KqueueStream> KqueueAcceptSource::TryAccept() noexcept {
   if (fd < 0) {
     return std::unexpected(CurrentErrno());
   }
-  return KqueueStream(listener_->loop_, fd, peer_addr, listener_->stream_options_);
+  return Stream(listener_->loop_, fd, peer_addr, listener_->stream_options_);
 }
 
-KqueueListener::KqueueListener(KqueueLoop* loop, const net::Endpoint& listen_addr,
-                                 KqueueListenerOptions options)
+Listener::Listener(Loop* loop, const net::Endpoint& listen_addr,
+                                 ListenerOptions options)
     : loop_(CheckLoop(loop)),
       socket_(CreateListenSocket(listen_addr.native_family())),
       channel_(loop_, socket_.fd()),
@@ -538,8 +546,8 @@ KqueueListener::KqueueListener(KqueueLoop* loop, const net::Endpoint& listen_add
   LoopAccess::RegisterShutdownParticipant(*loop_, shutdown_participant_);
 }
 
-KqueueListener::KqueueListener(KqueueLoop* loop, net::Socket socket,
-                                 KqueueStreamOptions stream_options) noexcept
+Listener::Listener(Loop* loop, net::Socket socket,
+                                 StreamOptions stream_options) noexcept
     : loop_(CheckLoop(loop)),
       socket_(std::move(socket)),
       channel_(loop_, socket_.fd()),
@@ -548,18 +556,21 @@ KqueueListener::KqueueListener(KqueueLoop* loop, net::Socket socket,
   LoopAccess::RegisterShutdownParticipant(*loop_, shutdown_participant_);
 }
 
-Result<KqueueListener> KqueueListener::Create(KqueueLoop* loop,
+Result<Listener> Listener::Create(Loop* loop,
                                                       const net::Endpoint& listen_addr,
-                                                      KqueueListenerOptions options) noexcept {
+                                                      ListenerOptions options) noexcept {
   if (loop == nullptr) {
     return std::unexpected(Errno(EINVAL));
   }
 
-  COROPACT_TRY_VALUE(socket, TryCreateListenSocket(listen_addr, options));
-  return KqueueListener(loop, std::move(socket), options.stream_options);
+  auto socket = TryCreateListenSocket(listen_addr, options);
+  if (!socket.has_value()) {
+    return std::unexpected(socket.error());
+  }
+  return Listener(loop, std::move(*socket), options.stream_options);
 }
 
-KqueueListener::KqueueListener(KqueueListener&& other) noexcept
+Listener::Listener(Listener&& other) noexcept
     : loop_(PrepareMove(other)),
       socket_(std::move(other.socket_)),
       channel_(std::move(other.channel_)),
@@ -572,14 +583,14 @@ KqueueListener::KqueueListener(KqueueListener&& other) noexcept
   other.closed_ = true;
 }
 
-KqueueListener& KqueueListener::operator=(KqueueListener&& other) noexcept {
+Listener& Listener::operator=(Listener&& other) noexcept {
   if (this == &other) {
     return *this;
   }
 
-  KqueueLoop* other_loop = PrepareMove(other);
+  Loop* other_loop = PrepareMove(other);
   COROPACT_CHECK(loop_ == nullptr || loop_ == other_loop,
-                 "KqueueListener move requires both objects to use the same KqueueLoop");
+                 "Listener move requires both objects to use the same Loop");
   if (loop_ != nullptr) {
     ResetForMove();
   }
@@ -597,19 +608,19 @@ KqueueListener& KqueueListener::operator=(KqueueListener&& other) noexcept {
   return *this;
 }
 
-KqueueListener::~KqueueListener() {
+Listener::~Listener() {
   if (loop_ == nullptr) {
     return;
   }
   RequireOwnerLoop();
-  COROPACT_CHECK(pending_accept_ == nullptr, "KqueueListener destroyed with a pending accept");
+  COROPACT_CHECK(pending_accept_ == nullptr, "Listener destroyed with a pending accept");
   COROPACT_CHECK(accept_source_ == nullptr,
-                 "KqueueListener destroyed with an active AcceptSource");
+                 "Listener destroyed with an active AcceptSource");
   LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
   DetachChannel();
 }
 
-coro::Task<Result<KqueueStream>> KqueueListener::Accept() {
+coro::Task<Result<Stream>> Listener::Accept() {
   RequireOwnerLoop();
   if (closed_) {
     co_return std::unexpected(Errno(EBADF));
@@ -620,7 +631,7 @@ coro::Task<Result<KqueueStream>> KqueueListener::Accept() {
   co_return co_await AcceptAwaiter(*this);
 }
 
-Result<KqueueAcceptSource> KqueueListener::AcceptSource(
+Result<AcceptSource> Listener::CreateAcceptSource(
     net::AcceptSourceOptions options) noexcept {
   RequireOwnerLoop();
   if (loop_->State() == backend::LoopState::kStopping ||
@@ -633,18 +644,21 @@ Result<KqueueAcceptSource> KqueueListener::AcceptSource(
   if (pending_accept_ != nullptr || accept_source_ != nullptr) {
     return std::unexpected(Errno(EBUSY));
   }
-  COROPACT_TRY_VALUE(state, net::detail::AcceptSourceStateMachine::Create(options));
-  return KqueueAcceptSource(this, std::move(state));
+  auto state = net::detail::AcceptSourceStateMachine::Create(options);
+  if (!state.has_value()) {
+    return std::unexpected(state.error());
+  }
+  return AcceptSource(this, std::move(*state));
 }
 
-coro::Task<Result<void>> KqueueListener::Close() {
+coro::Task<Result<void>> Listener::Close() {
   RequireOwnerLoop();
   CloseNow();
   co_return Result<void>{};
 }
 
-void KqueueListener::CloseNow() noexcept {
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "KqueueListener::CloseNow called from wrong thread");
+void Listener::CloseNow() noexcept {
+  COROPACT_DCHECK(loop_->IsInLoopThread(), "Listener::CloseNow called from wrong thread");
   if (closed_) {
     return;
   }
@@ -660,7 +674,7 @@ void KqueueListener::CloseNow() noexcept {
   socket_.Close();
 }
 
-Result<net::Endpoint> KqueueListener::LocalAddress() const {
+Result<net::Endpoint> Listener::LocalAddress() const {
   RequireOwnerLoop();
   if (closed_) {
     return std::unexpected(Errno(EBADF));
@@ -668,8 +682,8 @@ Result<net::Endpoint> KqueueListener::LocalAddress() const {
   return socket_.LocalEndpoint();
 }
 
-void KqueueListener::HandleRead() {
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "KqueueListener::HandleRead called from wrong thread");
+void Listener::HandleRead() {
+  COROPACT_DCHECK(loop_->IsInLoopThread(), "Listener::HandleRead called from wrong thread");
   if (pending_accept_ != nullptr) {
     pending_accept_->OnReady();
   } else if (accept_source_ != nullptr) {
@@ -677,8 +691,8 @@ void KqueueListener::HandleRead() {
   }
 }
 
-void KqueueListener::HandleError() {
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "KqueueListener::HandleError called from wrong thread");
+void Listener::HandleError() {
+  COROPACT_DCHECK(loop_->IsInLoopThread(), "Listener::HandleError called from wrong thread");
   if (pending_accept_ != nullptr) {
     CompleteAccept(std::unexpected(SocketError(socket_.fd())));
   } else if (accept_source_ != nullptr) {
@@ -686,40 +700,40 @@ void KqueueListener::HandleError() {
   }
 }
 
-void KqueueListener::DispatchRead(void* context) noexcept {
-  static_cast<KqueueListener*>(context)->HandleRead();
+void Listener::DispatchRead(void* context) noexcept {
+  static_cast<Listener*>(context)->HandleRead();
 }
 
-void KqueueListener::DispatchError(void* context) noexcept {
-  static_cast<KqueueListener*>(context)->HandleError();
+void Listener::DispatchError(void* context) noexcept {
+  static_cast<Listener*>(context)->HandleError();
 }
 
-void KqueueListener::CompleteAccept(Result<KqueueStream> result) {
+void Listener::CompleteAccept(Result<Stream> result) {
   COROPACT_DCHECK(loop_->IsInLoopThread(),
-                  "KqueueListener::CompleteAccept called from wrong thread");
+                  "Listener::CompleteAccept called from wrong thread");
   AcceptAwaiter* awaiter = pending_accept_;
   if (awaiter == nullptr) {
     return;
   }
   COROPACT_CHECK(awaiter->CompleteResult(std::move(result)),
-                 "KqueueListener::CompleteAccept result was already authorized");
+                 "Listener::CompleteAccept result was already authorized");
   COROPACT_CHECK(awaiter->TryAuthorizeRelease(),
-                 "KqueueListener::CompleteAccept release was not authorized after its result");
+                 "Listener::CompleteAccept release was not authorized after its result");
 
   AcceptAwaiter* released = std::exchange(pending_accept_, nullptr);
   COROPACT_CHECK(released == awaiter,
-                 "KqueueListener::CompleteAccept pending slot changed during completion");
+                 "Listener::CompleteAccept pending slot changed during completion");
   if (channel_.IsReading()) {
     channel_.DisableReading();
   }
   COROPACT_CHECK(awaiter->TryAuthorizeContinuation(),
-                 "KqueueListener::CompleteAccept continuation was not authorized after release");
+                 "Listener::CompleteAccept continuation was not authorized after release");
   awaiter->ScheduleContinuation();
 }
 
-void KqueueListener::DetachChannel() {
+void Listener::DetachChannel() {
   COROPACT_DCHECK(loop_->IsInLoopThread(),
-                  "KqueueListener::DetachChannel called from wrong thread");
+                  "Listener::DetachChannel called from wrong thread");
   if (!channel_.IsNoneEvent()) {
     channel_.DisableAll();
   }
@@ -728,53 +742,53 @@ void KqueueListener::DetachChannel() {
   }
 }
 
-void KqueueListener::RequireOwnerLoop() const noexcept {
-  COROPACT_CHECK(loop_ != nullptr, "KqueueListener operation has no owner KqueueLoop");
+void Listener::RequireOwnerLoop() const noexcept {
+  COROPACT_CHECK(loop_ != nullptr, "Listener operation has no owner Loop");
   COROPACT_CHECK(loop_->IsInLoopThread(),
-                 "KqueueListener operation called from wrong KqueueLoop thread");
+                 "Listener operation called from wrong Loop thread");
 }
 
-void KqueueListener::BindChannelCallbacks() noexcept {
+void Listener::BindChannelCallbacks() noexcept {
   try {
     channel_.SetTriggerMode(TriggerMode::kOneShot);
-    channel_.SetReadCallback(&KqueueListener::DispatchRead, this);
-    channel_.SetErrorCallback(&KqueueListener::DispatchError, this);
+    channel_.SetReadCallback(&Listener::DispatchRead, this);
+    channel_.SetErrorCallback(&Listener::DispatchError, this);
   } catch (...) {
-    COROPACT_CHECK(false, "KqueueListener: failed to bind channel callbacks");
+    COROPACT_CHECK(false, "Listener: failed to bind channel callbacks");
   }
 }
 
-void KqueueListener::ResetForMove() noexcept {
-  COROPACT_CHECK(loop_ != nullptr, "KqueueListener move destination is not initialized");
+void Listener::ResetForMove() noexcept {
+  COROPACT_CHECK(loop_ != nullptr, "Listener move destination is not initialized");
   COROPACT_CHECK(loop_->IsInLoopThread(),
-                 "KqueueListener move called from wrong KqueueLoop thread");
+                 "Listener move called from wrong Loop thread");
   COROPACT_CHECK(pending_accept_ == nullptr,
-                 "KqueueListener move destination has a pending accept");
+                 "Listener move destination has a pending accept");
   COROPACT_CHECK(accept_source_ == nullptr,
-                 "KqueueListener move destination has an active AcceptSource");
+                 "Listener move destination has an active AcceptSource");
   LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
   DetachChannel();
   socket_.Close();
 }
 
-KqueueLoop* KqueueListener::PrepareMove(KqueueListener& other) noexcept {
-  COROPACT_CHECK(other.loop_ != nullptr, "KqueueListener move source is not initialized");
+Loop* Listener::PrepareMove(Listener& other) noexcept {
+  COROPACT_CHECK(other.loop_ != nullptr, "Listener move source is not initialized");
   COROPACT_CHECK(other.loop_->IsInLoopThread(),
-                 "KqueueListener move called from wrong KqueueLoop thread");
+                 "Listener move called from wrong Loop thread");
   COROPACT_CHECK(other.pending_accept_ == nullptr,
-                 "KqueueListener cannot move with a pending accept operation");
+                 "Listener cannot move with a pending accept operation");
   COROPACT_CHECK(other.accept_source_ == nullptr,
-                 "KqueueListener cannot move with an active AcceptSource");
+                 "Listener cannot move with an active AcceptSource");
 
   other.DetachChannel();
   LoopAccess::UnregisterShutdownParticipant(*other.loop_, other.shutdown_participant_);
-  KqueueLoop* loop = other.loop_;
+  Loop* loop = other.loop_;
   other.loop_ = nullptr;
   return loop;
 }
 
-void KqueueListener::DispatchLoopStop(void* context) noexcept {
-  static_cast<KqueueListener*>(context)->CloseNow();
+void Listener::DispatchLoopStop(void* context) noexcept {
+  static_cast<Listener*>(context)->CloseNow();
 }
 
 }  // namespace coropact::kqueue

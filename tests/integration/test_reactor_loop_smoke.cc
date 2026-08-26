@@ -42,14 +42,14 @@ private:
 
 void DestroyLoopWithQueuedWork() {
   NoopWork work;
-  coropact::reactor::EventLoop loop;
+  coropact::reactor::Loop loop;
   loop.Schedule(&work);
 }
 
-bool TestEventLoopRejectsQueuedWorkAtDestruction() {
+bool TestReactorLoopRejectsQueuedWorkAtDestruction() {
   const pid_t child = ::fork();
   if (child < 0) {
-    return Expect(false, "fork failed for EventLoop destructor invariant test");
+    return Expect(false, "fork failed for Loop destructor invariant test");
   }
   if (child == 0) {
     (void)::freopen("/dev/null", "w", stderr);
@@ -61,13 +61,13 @@ bool TestEventLoopRejectsQueuedWorkAtDestruction() {
   while (::waitpid(child, &status, 0) < 0 && errno == EINTR) {
   }
   return Expect(WIFSIGNALED(status),
-                "EventLoop destruction with queued work must terminate in Release") &&
+                "Loop destruction with queued work must terminate in Release") &&
          Expect(WTERMSIG(status) == SIGABRT,
-                "EventLoop queued-work invariant must terminate with SIGABRT");
+                "Loop queued-work invariant must terminate with SIGABRT");
 }
 
 void MutateChannelFromForeignThread() {
-  coropact::reactor::EventLoop loop;
+  coropact::reactor::Loop loop;
   const int fd = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
   COROPACT_CHECK(fd >= 0, "eventfd creation failed for Channel ownership test");
   coropact::reactor::detail::Channel channel(&loop, fd);
@@ -80,7 +80,7 @@ void MutateChannelFromForeignThread() {
   (void)::close(fd);
 }
 
-bool TestEventLoopRejectsForeignChannelMutation() {
+bool TestReactorLoopRejectsForeignChannelMutation() {
   const pid_t child = ::fork();
   if (child < 0) {
     return Expect(false, "fork failed for Channel ownership test");
@@ -100,7 +100,7 @@ bool TestEventLoopRejectsForeignChannelMutation() {
 }
 
 bool TestRunOnOwnerExecutesImmediately() {
-  coropact::reactor::EventLoop loop;
+  coropact::reactor::Loop loop;
   bool called = false;
   std::thread::id callback_thread;
 
@@ -117,7 +117,7 @@ bool TestRunOnOwnerExecutesImmediately() {
 class SchedulerProbeWork final : public coropact::coro::Work {
 public:
   SchedulerProbeWork(coropact::coro::Scheduler* expected_scheduler, bool* ran,
-                     bool* scheduler_matched, coropact::reactor::EventLoop* loop) noexcept
+                     bool* scheduler_matched, coropact::reactor::Loop* loop) noexcept
       : expected_scheduler_(expected_scheduler),
         ran_(ran),
         scheduler_matched_(scheduler_matched),
@@ -137,11 +137,11 @@ private:
   coropact::coro::Scheduler* expected_scheduler_;
   bool* ran_;
   bool* scheduler_matched_;
-  coropact::reactor::EventLoop* loop_;
+  coropact::reactor::Loop* loop_;
 };
 
 bool TestSchedulerWorkIsDeferredAndBound() {
-  coropact::reactor::EventLoop loop;
+  coropact::reactor::Loop loop;
 
   bool ran = false;
   bool scheduler_matched = false;
@@ -154,23 +154,23 @@ bool TestSchedulerWorkIsDeferredAndBound() {
 
   loop.Run();
 
-  ok &= Expect(ran, "scheduler work should run through EventLoop");
+  ok &= Expect(ran, "scheduler work should run through Loop");
   ok &= Expect(scheduler_matched, "scheduler work should run with its Scheduler::Current affinity");
   ok &= Expect(coropact::coro::Scheduler::TryCurrent() == nullptr,
                "scheduler work should restore the previous Scheduler::Current value");
   return ok;
 }
 
-bool TestEventLoopOwnsFrameResource() {
+bool TestReactorLoopOwnsFrameResource() {
   std::pmr::monotonic_buffer_resource first_resource;
-  coropact::reactor::EventLoop loop(&first_resource);
+  coropact::reactor::Loop loop(&first_resource);
   return Expect(loop.FrameResource() == &first_resource,
-                "EventLoop should retain its configured frame resource");
+                "Loop should retain its configured frame resource");
 }
 
 class ScheduleNextWork final : public coropact::coro::Work {
 public:
-  ScheduleNextWork(coropact::reactor::EventLoop* scheduler, coropact::coro::Work* next,
+  ScheduleNextWork(coropact::reactor::Loop* scheduler, coropact::coro::Work* next,
                    bool* next_ran, bool* next_was_deferred) noexcept
       : scheduler_(scheduler),
         next_(next),
@@ -186,14 +186,14 @@ private:
     *self->next_was_deferred_ = !*self->next_ran_;
   }
 
-  coropact::reactor::EventLoop* scheduler_;
+  coropact::reactor::Loop* scheduler_;
   coropact::coro::Work* next_;
   bool* next_ran_;
   bool* next_was_deferred_;
 };
 
 bool TestSchedulerWorkScheduledDuringResumeIsDeferred() {
-  coropact::reactor::EventLoop loop;
+  coropact::reactor::Loop loop;
 
   bool second_ran = false;
   bool scheduler_matched = false;
@@ -206,12 +206,12 @@ bool TestSchedulerWorkScheduledDuringResumeIsDeferred() {
 
   return Expect(second_was_deferred,
                 "work scheduled during a resumed work item must not run inline") &&
-         Expect(second_ran, "deferred work should run on a later EventLoop turn") &&
+         Expect(second_ran, "deferred work should run on a later Loop turn") &&
          Expect(scheduler_matched, "deferred work should retain scheduler affinity");
 }
 
 bool TestRepeatingTimerCanCancelItself() {
-  coropact::reactor::EventLoop loop;
+  coropact::reactor::Loop loop;
   int fire_count = 0;
   coropact::time::TimerId timer_id;
 
@@ -228,7 +228,7 @@ bool TestRepeatingTimerCanCancelItself() {
 }
 
 bool TestSameDeadlineTimersKeepSequenceOrder() {
-  coropact::reactor::EventLoop loop;
+  coropact::reactor::Loop loop;
   std::vector<int> fired;
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(10);
 
@@ -245,7 +245,7 @@ bool TestSameDeadlineTimersKeepSequenceOrder() {
 }
 
 bool TestCancelEarliestKeepsNextTimerScheduled() {
-  coropact::reactor::EventLoop loop;
+  coropact::reactor::Loop loop;
   bool cancelled_timer_fired = false;
   bool next_timer_fired = false;
   bool timed_out = false;
@@ -269,7 +269,7 @@ bool TestCancelEarliestKeepsNextTimerScheduled() {
 }
 
 bool TestStaleTimerIdCannotCancelReplacement() {
-  coropact::reactor::EventLoop loop;
+  coropact::reactor::Loop loop;
   bool replacement_fired = false;
   bool timed_out = false;
 
@@ -297,7 +297,7 @@ bool TestStaleTimerIdCannotCancelReplacement() {
 }
 
 bool TestLoopStopDiscardsUnexpiredTimer() {
-  coropact::reactor::EventLoop loop;
+  coropact::reactor::Loop loop;
   bool fired = false;
 
   loop.RunAfter(coropact::time::Seconds(60), [&] { fired = true; });
@@ -310,7 +310,7 @@ bool TestLoopStopDiscardsUnexpiredTimer() {
 }
 
 bool TestCrossThreadRequestStopWakesPoll() {
-  coropact::reactor::EventLoop loop;
+  coropact::reactor::Loop loop;
   std::atomic_bool stop_sent{false};
 
   std::jthread stopper([&] {
@@ -327,20 +327,20 @@ bool TestCrossThreadRequestStopWakesPoll() {
   return Expect(stop_sent.load(std::memory_order_acquire),
                 "cross-thread stop request should be delivered") &&
          Expect(loop.State() == coropact::io::LoopState::kStopped,
-                "EventLoop should reach stopped after RequestStop") &&
+                "Loop should reach stopped after RequestStop") &&
          Expect(elapsed < std::chrono::seconds(1),
                 "RequestStop should wake epoll_wait instead of waiting for its poll timeout");
 }
 
-coropact::coro::DetachedTask SleepUntilLoopStops(coropact::reactor::ReactorConnector* connector,
+coropact::coro::DetachedTask SleepUntilLoopStops(coropact::reactor::Connector* connector,
                                                  bool* resumed) {
   co_await connector->SleepFor(std::chrono::hours(1));
   *resumed = true;
 }
 
 bool TestLoopStopCancelsConnectorTimer() {
-  coropact::reactor::EventLoop loop;
-  coropact::reactor::ReactorConnector connector(&loop);
+  coropact::reactor::Loop loop;
+  coropact::reactor::Connector connector(&loop);
   bool resumed = false;
 
   coropact::coro::SpawnDetach(loop, SleepUntilLoopStops(&connector, &resumed));
@@ -351,9 +351,9 @@ bool TestLoopStopCancelsConnectorTimer() {
   loop.Run();
   stopper.join();
 
-  return Expect(resumed, "loop stop should settle ReactorConnector::SleepFor") &&
+  return Expect(resumed, "loop stop should settle Connector::SleepFor") &&
          Expect(loop.State() == coropact::io::LoopState::kStopped,
-                "timer cancellation should leave EventLoop stopped");
+                "timer cancellation should leave Loop stopped");
 }
 
 }  // namespace
@@ -361,10 +361,10 @@ bool TestLoopStopCancelsConnectorTimer() {
 int main() {
   try {
     if (!TestRunOnOwnerExecutesImmediately()) return 1;
-    if (!TestEventLoopRejectsQueuedWorkAtDestruction()) return 1;
-    if (!TestEventLoopRejectsForeignChannelMutation()) return 1;
+    if (!TestReactorLoopRejectsQueuedWorkAtDestruction()) return 1;
+    if (!TestReactorLoopRejectsForeignChannelMutation()) return 1;
     if (!TestSchedulerWorkIsDeferredAndBound()) return 1;
-    if (!TestEventLoopOwnsFrameResource()) return 1;
+    if (!TestReactorLoopOwnsFrameResource()) return 1;
     if (!TestSchedulerWorkScheduledDuringResumeIsDeferred()) return 1;
     if (!TestRepeatingTimerCanCancelItself()) return 1;
     if (!TestSameDeadlineTimersKeepSequenceOrder()) return 1;
@@ -381,6 +381,6 @@ int main() {
     return 1;
   }
 
-  std::cout << "[PASS] event_loop_smoke_test\n";
+  std::cout << "[PASS] reactor_loop_smoke_test\n";
   return 0;
 }

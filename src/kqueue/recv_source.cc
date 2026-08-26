@@ -36,12 +36,12 @@ Error SocketError(int fd) noexcept {
 
 }  // namespace
 
-bool KqueueRecvSourceOptions::Valid() const noexcept {
+bool RecvSourceOptions::Valid() const noexcept {
   return source.Valid() && source.pending_depth == 1 && buffer_size > 0 &&
          source.buffer_capacity <= std::numeric_limits<std::uint32_t>::max();
 }
 
-bool KqueueRecvSource::NextAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
+bool RecvSource::NextAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   if (source_->loop_ == nullptr || source_->fd_ < 0) {
     result_.SetError(Errno(EBADF));
     (void)(completion_gate_.TryComplete());
@@ -73,7 +73,7 @@ bool KqueueRecvSource::NextAwaiter::await_suspend(std::coroutine_handle<> contin
     }
   }
 
-  KqueueRecvSource::NextResult result;
+  RecvSource::NextResult result;
   if (source_->TryTakeNext(result)) {
     result_.SetResult(std::move(result));
     (void)(completion_gate_.TryComplete());
@@ -95,11 +95,11 @@ bool KqueueRecvSource::NextAwaiter::await_suspend(std::coroutine_handle<> contin
   return true;
 }
 
-KqueueRecvSource::NextResult KqueueRecvSource::NextAwaiter::await_resume() noexcept {
+RecvSource::NextResult RecvSource::NextAwaiter::await_resume() noexcept {
   return result_.Take();
 }
 
-void KqueueRecvSource::NextAwaiter::Complete(NextResult result) noexcept {
+void RecvSource::NextAwaiter::Complete(NextResult result) noexcept {
   if (!completion_gate_.TryComplete()) {
     return;
   }
@@ -107,9 +107,9 @@ void KqueueRecvSource::NextAwaiter::Complete(NextResult result) noexcept {
   continuation_.Schedule();
 }
 
-class KqueueRecvSource::StopAwaiter {
+class RecvSource::StopAwaiter {
 public:
-  explicit StopAwaiter(KqueueRecvSource& source) noexcept : source_(&source) {}
+  explicit StopAwaiter(RecvSource& source) noexcept : source_(&source) {}
 
   [[nodiscard]]
   bool await_ready() const noexcept {
@@ -156,14 +156,14 @@ public:
   }
 
 private:
-  KqueueRecvSource* source_;
+  RecvSource* source_;
   operation::detail::SchedulerContinuation continuation_;
   operation::detail::CompletionGate completion_gate_;
   std::optional<Result<void>> result_;
 };
 
-Result<KqueueRecvSource> KqueueRecvSource::Create(
-    KqueueLoop* loop, int fd, KqueueRecvSourceOptions options) noexcept {
+Result<RecvSource> RecvSource::Create(
+    Loop* loop, int fd, RecvSourceOptions options) noexcept {
   if (loop == nullptr || fd < 0 || !loop->IsInLoopThread()) {
     return std::unexpected(Errno(EINVAL));
   }
@@ -192,11 +192,11 @@ Result<KqueueRecvSource> KqueueRecvSource::Create(
     return std::unexpected(Errno(ENOMEM));
   }
 
-  return KqueueRecvSource(loop, fd, std::move(*state), options.buffer_size, std::move(storage),
+  return RecvSource(loop, fd, std::move(*state), options.buffer_size, std::move(storage),
                            std::move(available_buffers));
 }
 
-KqueueRecvSource::KqueueRecvSource(KqueueLoop* loop, int fd,
+RecvSource::RecvSource(Loop* loop, int fd,
                                      net::detail::RecvSourceStateMachine state,
                                      std::size_t buffer_size, std::vector<std::byte> storage,
                                      std::vector<std::uint32_t> available_buffers) noexcept
@@ -211,28 +211,28 @@ KqueueRecvSource::KqueueRecvSource(KqueueLoop* loop, int fd,
   LoopAccess::RegisterShutdownParticipant(*loop_, shutdown_participant_);
 }
 
-KqueueRecvSource::~KqueueRecvSource() {
+RecvSource::~RecvSource() {
   if (loop_ == nullptr) {
     return;
   }
 
-  COROPACT_CHECK(loop_->IsInLoopThread(), "KqueueRecvSource destroyed from wrong thread");
-  COROPACT_CHECK(pending_next_ == nullptr, "KqueueRecvSource destroyed with pending Next");
-  COROPACT_CHECK(pending_stop_ == nullptr, "KqueueRecvSource destroyed with pending Stop");
+  COROPACT_CHECK(loop_->IsInLoopThread(), "RecvSource destroyed from wrong thread");
+  COROPACT_CHECK(pending_next_ == nullptr, "RecvSource destroyed with pending Next");
+  COROPACT_CHECK(pending_stop_ == nullptr, "RecvSource destroyed with pending Stop");
   COROPACT_CHECK(state_.State() == net::detail::RecvSourceState::kIdle ||
                      state_.State() == net::detail::RecvSourceState::kTerminal,
-                 "KqueueRecvSource destroyed before Stop completed");
-  COROPACT_CHECK(events_.empty(), "KqueueRecvSource destroyed with queued events");
+                 "RecvSource destroyed before Stop completed");
+  COROPACT_CHECK(events_.empty(), "RecvSource destroyed with queued events");
   COROPACT_CHECK(state_.OutstandingLeases() == 0,
-                 "KqueueRecvSource destroyed with outstanding leases");
+                 "RecvSource destroyed with outstanding leases");
   COROPACT_CHECK(available_buffers_.size() == state_.Options().buffer_capacity,
-                 "KqueueRecvSource destroyed with a missing buffer");
+                 "RecvSource destroyed with a missing buffer");
 
   LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
   DetachChannel();
 }
 
-KqueueRecvSource::KqueueRecvSource(KqueueRecvSource&& other) noexcept
+RecvSource::RecvSource(RecvSource&& other) noexcept
     : loop_(other.loop_),
       fd_(std::exchange(other.fd_, -1)),
       state_(std::move(other.state_)),
@@ -242,42 +242,42 @@ KqueueRecvSource::KqueueRecvSource(KqueueRecvSource&& other) noexcept
       buffer_size_(std::exchange(other.buffer_size_, 0)),
       storage_(std::move(other.storage_)),
       available_buffers_(std::move(other.available_buffers_)) {
-  COROPACT_CHECK(other.pending_next_ == nullptr, "KqueueRecvSource cannot move with pending Next");
-  COROPACT_CHECK(other.pending_stop_ == nullptr, "KqueueRecvSource cannot move with pending Stop");
+  COROPACT_CHECK(other.pending_next_ == nullptr, "RecvSource cannot move with pending Next");
+  COROPACT_CHECK(other.pending_stop_ == nullptr, "RecvSource cannot move with pending Stop");
   COROPACT_CHECK(other.state_.State() == net::detail::RecvSourceState::kIdle ||
                      other.state_.State() == net::detail::RecvSourceState::kTerminal,
-                 "KqueueRecvSource cannot move while active");
-  COROPACT_CHECK(other.events_.empty(), "KqueueRecvSource cannot move with queued events");
+                 "RecvSource cannot move while active");
+  COROPACT_CHECK(other.events_.empty(), "RecvSource cannot move with queued events");
   COROPACT_CHECK(other.state_.OutstandingLeases() == 0,
-                 "KqueueRecvSource cannot move with outstanding leases");
+                 "RecvSource cannot move with outstanding leases");
   LoopAccess::UnregisterShutdownParticipant(*other.loop_, other.shutdown_participant_);
   other.loop_ = nullptr;
   BindChannelCallbacks();
   LoopAccess::RegisterShutdownParticipant(*loop_, shutdown_participant_);
 }
 
-KqueueRecvSource& KqueueRecvSource::operator=(KqueueRecvSource&& other) noexcept {
+RecvSource& RecvSource::operator=(RecvSource&& other) noexcept {
   if (this == &other) {
     return *this;
   }
 
-  COROPACT_CHECK(pending_next_ == nullptr, "KqueueRecvSource destination has pending Next");
-  COROPACT_CHECK(pending_stop_ == nullptr, "KqueueRecvSource destination has pending Stop");
+  COROPACT_CHECK(pending_next_ == nullptr, "RecvSource destination has pending Next");
+  COROPACT_CHECK(pending_stop_ == nullptr, "RecvSource destination has pending Stop");
   COROPACT_CHECK(state_.State() == net::detail::RecvSourceState::kIdle ||
                      state_.State() == net::detail::RecvSourceState::kTerminal,
-                 "KqueueRecvSource destination is active");
-  COROPACT_CHECK(events_.empty(), "KqueueRecvSource destination has queued events");
+                 "RecvSource destination is active");
+  COROPACT_CHECK(events_.empty(), "RecvSource destination has queued events");
   COROPACT_CHECK(state_.OutstandingLeases() == 0,
-                 "KqueueRecvSource destination has outstanding leases");
+                 "RecvSource destination has outstanding leases");
 
-  COROPACT_CHECK(other.pending_next_ == nullptr, "KqueueRecvSource source has pending Next");
-  COROPACT_CHECK(other.pending_stop_ == nullptr, "KqueueRecvSource source has pending Stop");
+  COROPACT_CHECK(other.pending_next_ == nullptr, "RecvSource source has pending Next");
+  COROPACT_CHECK(other.pending_stop_ == nullptr, "RecvSource source has pending Stop");
   COROPACT_CHECK(other.state_.State() == net::detail::RecvSourceState::kIdle ||
                      other.state_.State() == net::detail::RecvSourceState::kTerminal,
-                 "KqueueRecvSource source is active");
-  COROPACT_CHECK(other.events_.empty(), "KqueueRecvSource source has queued events");
+                 "RecvSource source is active");
+  COROPACT_CHECK(other.events_.empty(), "RecvSource source has queued events");
   COROPACT_CHECK(other.state_.OutstandingLeases() == 0,
-                 "KqueueRecvSource source has outstanding leases");
+                 "RecvSource source has outstanding leases");
 
   if (loop_ != nullptr) {
     LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
@@ -297,7 +297,7 @@ KqueueRecvSource& KqueueRecvSource::operator=(KqueueRecvSource&& other) noexcept
   return *this;
 }
 
-Result<void> KqueueRecvSource::Start() noexcept {
+Result<void> RecvSource::Start() noexcept {
   if (state_.State() != net::detail::RecvSourceState::kIdle) {
     return std::unexpected(Errno(EALREADY));
   }
@@ -313,7 +313,7 @@ Result<void> KqueueRecvSource::Start() noexcept {
   return {};
 }
 
-Result<bool> KqueueRecvSource::BeginStop() noexcept {
+Result<bool> RecvSource::BeginStop() noexcept {
   auto stopped = state_.RequestStop();
   if (!stopped.has_value()) {
     return std::unexpected(stopped.error());
@@ -325,7 +325,7 @@ Result<bool> KqueueRecvSource::BeginStop() noexcept {
   return state_.State() != net::detail::RecvSourceState::kTerminal;
 }
 
-void KqueueRecvSource::EnsureAdmission() noexcept {
+void RecvSource::EnsureAdmission() noexcept {
   if (loop_ == nullptr || !loop_->IsInLoopThread() ||
       state_.State() != net::detail::RecvSourceState::kActive || state_.ArmedRequests() != 0) {
     return;
@@ -335,36 +335,36 @@ void KqueueRecvSource::EnsureAdmission() noexcept {
   }
 }
 
-void KqueueRecvSource::RequestBackendPause() noexcept {
+void RecvSource::RequestBackendPause() noexcept {
   auto paused = state_.RequestPause();
-  COROPACT_CHECK(paused.has_value(), "KqueueRecvSource failed to enter the paused state");
+  COROPACT_CHECK(paused.has_value(), "RecvSource failed to enter the paused state");
   CompleteReadiness();
 }
 
-void KqueueRecvSource::CompleteReadiness() noexcept {
+void RecvSource::CompleteReadiness() noexcept {
   if (channel_.IsReading()) {
     channel_.DisableReading();
   }
   if (state_.ArmedRequests() != 0) {
     auto completed = state_.CompleteMultishotEvent(
         net::detail::EventDisposition::kNone, net::detail::MultishotRequestDisposition::kTerminal);
-    COROPACT_CHECK(completed.has_value(), "KqueueRecvSource failed to complete readiness request");
+    COROPACT_CHECK(completed.has_value(), "RecvSource failed to complete readiness request");
   }
 }
 
-void KqueueRecvSource::RequestBackendStop(std::optional<Error> error) noexcept {
+void RecvSource::RequestBackendStop(std::optional<Error> error) noexcept {
   if (error.has_value() && !terminal_error_.has_value()) {
     terminal_error_ = *error;
   }
 
   auto stopped = state_.RequestStop();
-  COROPACT_CHECK(stopped.has_value(), "KqueueRecvSource failed to enter stopping state");
+  COROPACT_CHECK(stopped.has_value(), "RecvSource failed to enter stopping state");
   CompleteReadiness();
   DeliverNextIfReady();
   CompleteStopIfReady();
 }
 
-void KqueueRecvSource::OnReady() noexcept {
+void RecvSource::OnReady() noexcept {
   if (state_.State() != net::detail::RecvSourceState::kActive || state_.ArmedRequests() == 0) {
     return;
   }
@@ -420,7 +420,7 @@ void KqueueRecvSource::OnReady() noexcept {
       // The temporary lease returns the buffer and decrements the outstanding
       // lease count before the queue reservation is rolled back.
       COROPACT_CHECK(state_.DiscardQueuedEvent(),
-                     "KqueueRecvSource failed to roll back queue reservation");
+                     "RecvSource failed to roll back queue reservation");
       RequestBackendStop(Errno(ENOMEM));
       return;
     }
@@ -432,11 +432,11 @@ void KqueueRecvSource::OnReady() noexcept {
   }
 }
 
-void KqueueRecvSource::OnClose() noexcept { RequestBackendStop(); }
+void RecvSource::OnClose() noexcept { RequestBackendStop(); }
 
-void KqueueRecvSource::OnError() noexcept { RequestBackendStop(SocketError(fd_)); }
+void RecvSource::OnError() noexcept { RequestBackendStop(SocketError(fd_)); }
 
-void KqueueRecvSource::DeliverNextIfReady() noexcept {
+void RecvSource::DeliverNextIfReady() noexcept {
   if (pending_next_ == nullptr) {
     return;
   }
@@ -450,7 +450,7 @@ void KqueueRecvSource::DeliverNextIfReady() noexcept {
   awaiter->Complete(std::move(result));
 }
 
-void KqueueRecvSource::CompleteStopIfReady() noexcept {
+void RecvSource::CompleteStopIfReady() noexcept {
   if (pending_stop_ == nullptr || state_.State() != net::detail::RecvSourceState::kTerminal ||
       state_.ArmedRequests() != 0) {
     return;
@@ -460,11 +460,11 @@ void KqueueRecvSource::CompleteStopIfReady() noexcept {
   awaiter->Complete(Result<void>{});
 }
 
-bool KqueueRecvSource::TryTakeNext(NextResult& result) noexcept {
+bool RecvSource::TryTakeNext(NextResult& result) noexcept {
   if (!events_.empty()) {
     Event event = std::move(events_.front());
     events_.pop_front();
-    COROPACT_CHECK(state_.AcquireEvent(), "KqueueRecvSource queue and state became inconsistent");
+    COROPACT_CHECK(state_.AcquireEvent(), "RecvSource queue and state became inconsistent");
     result = NextResult(std::in_place, std::move(event));
     if (state_.State() == net::detail::RecvSourceState::kPaused) {
       (void)(state_.TryResume());
@@ -484,25 +484,25 @@ bool KqueueRecvSource::TryTakeNext(NextResult& result) noexcept {
   return false;
 }
 
-void KqueueRecvSource::ReturnBuffer(std::uint32_t buffer_id) noexcept {
+void RecvSource::ReturnBuffer(std::uint32_t buffer_id) noexcept {
   COROPACT_CHECK(loop_ != nullptr && loop_->IsInLoopThread(),
-                 "KqueueRecvSource buffer returned from wrong thread");
+                 "RecvSource buffer returned from wrong thread");
   COROPACT_CHECK(buffer_id < state_.Options().buffer_capacity,
-                 "KqueueRecvSource invalid buffer id");
+                 "RecvSource invalid buffer id");
   COROPACT_CHECK(available_buffers_.size() < state_.Options().buffer_capacity,
-                 "KqueueRecvSource buffer returned twice");
+                 "RecvSource buffer returned twice");
   available_buffers_.push_back(buffer_id);
-  COROPACT_CHECK(state_.ReleaseLease(), "KqueueRecvSource lease released twice");
+  COROPACT_CHECK(state_.ReleaseLease(), "RecvSource lease released twice");
   EnsureAdmission();
   DeliverNextIfReady();
   CompleteStopIfReady();
 }
 
-void KqueueRecvSource::ReclaimBuffer(void* context, std::uint32_t buffer_id) noexcept {
-  static_cast<KqueueRecvSource*>(context)->ReturnBuffer(buffer_id);
+void RecvSource::ReclaimBuffer(void* context, std::uint32_t buffer_id) noexcept {
+  static_cast<RecvSource*>(context)->ReturnBuffer(buffer_id);
 }
 
-void KqueueRecvSource::DetachChannel() noexcept {
+void RecvSource::DetachChannel() noexcept {
   if (loop_ == nullptr || !loop_->IsInLoopThread()) {
     return;
   }
@@ -514,21 +514,21 @@ void KqueueRecvSource::DetachChannel() noexcept {
   }
 }
 
-void KqueueRecvSource::BindChannelCallbacks() noexcept {
+void RecvSource::BindChannelCallbacks() noexcept {
   channel_.SetTriggerMode(TriggerMode::kOneShot);
   channel_.SetReadCallback(
-      [](void* context) noexcept { static_cast<KqueueRecvSource*>(context)->OnReady(); }, this);
+      [](void* context) noexcept { static_cast<RecvSource*>(context)->OnReady(); }, this);
   channel_.SetCloseCallback(
-      [](void* context) noexcept { static_cast<KqueueRecvSource*>(context)->OnClose(); }, this);
+      [](void* context) noexcept { static_cast<RecvSource*>(context)->OnClose(); }, this);
   channel_.SetErrorCallback(
-      [](void* context) noexcept { static_cast<KqueueRecvSource*>(context)->OnError(); }, this);
+      [](void* context) noexcept { static_cast<RecvSource*>(context)->OnError(); }, this);
 }
 
-void KqueueRecvSource::DispatchLoopStop(void* context) noexcept {
-  static_cast<KqueueRecvSource*>(context)->RequestBackendStop();
+void RecvSource::DispatchLoopStop(void* context) noexcept {
+  static_cast<RecvSource*>(context)->RequestBackendStop();
 }
 
-Result<void> KqueueRecvSource::RequestStop() noexcept {
+Result<void> RecvSource::RequestStop() noexcept {
   if (loop_ == nullptr) {
     return {};
   }
@@ -542,7 +542,7 @@ Result<void> KqueueRecvSource::RequestStop() noexcept {
   return {};
 }
 
-coro::Task<Result<void>> KqueueRecvSource::Stop() {
+coro::Task<Result<void>> RecvSource::Stop() {
   if (loop_ == nullptr) {
     co_return Result<void>{};
   }

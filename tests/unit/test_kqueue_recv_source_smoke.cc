@@ -20,11 +20,11 @@
 
 namespace {
 
-using coropact::kqueue::KqueueLoop;
-using coropact::kqueue::KqueueRecvSource;
-using coropact::kqueue::KqueueRecvSourceOptions;
+using coropact::kqueue::Loop;
+using coropact::kqueue::RecvSource;
+using coropact::kqueue::RecvSourceOptions;
 
-static_assert(coropact::io::AsyncRecvSource<KqueueRecvSource>);
+static_assert(coropact::io::AsyncRecvSource<RecvSource>);
 
 bool Check(bool condition, const char* message) {
   if (!condition) {
@@ -49,8 +49,8 @@ std::string BytesToString(const coropact::net::RecvEvent& event) {
   return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
 }
 
-coropact::coro::DetachedTask ReceiveOne(KqueueRecvSource* source, KqueueLoop* loop,
-                                        std::optional<KqueueRecvSource::NextResult>* result,
+coropact::coro::DetachedTask ReceiveOne(RecvSource* source, Loop* loop,
+                                        std::optional<RecvSource::NextResult>* result,
                                         std::string* payload, bool* received_event,
                                         bool* stop_succeeded) {
   auto received = co_await source->Next();
@@ -79,15 +79,15 @@ bool CheckImmediateReceive() {
     return Check(false, "peer write failed");
   }
 
-  KqueueLoop loop;
-  auto source = KqueueRecvSource::Create(&loop, fds[0]);
+  Loop loop;
+  auto source = RecvSource::Create(&loop, fds[0]);
   if (!Check(source.has_value(), "RecvSource create failed")) {
     ::close(fds[0]);
     ::close(fds[1]);
     return false;
   }
 
-  std::optional<KqueueRecvSource::NextResult> result;
+  std::optional<RecvSource::NextResult> result;
   std::string payload;
   bool received_event = false;
   bool stop_succeeded = false;
@@ -109,8 +109,8 @@ bool CheckPendingReceive() {
     return false;
   }
 
-  KqueueLoop loop;
-  auto source = KqueueRecvSource::Create(&loop, fds[0]);
+  Loop loop;
+  auto source = RecvSource::Create(&loop, fds[0]);
   if (!Check(source.has_value(), "RecvSource create failed")) {
     ::close(fds[0]);
     ::close(fds[1]);
@@ -135,7 +135,7 @@ bool CheckPendingReceive() {
 
   constexpr std::string_view kPayload = "later";
   WriteWork write{fds[1], kPayload};
-  std::optional<KqueueRecvSource::NextResult> result;
+  std::optional<RecvSource::NextResult> result;
   std::string payload;
   bool received_event = false;
   bool stop_succeeded = false;
@@ -152,8 +152,8 @@ bool CheckPendingReceive() {
 }
 
 bool CheckInvalidCreate() {
-  KqueueLoop loop;
-  auto source = KqueueRecvSource::Create(nullptr, 0);
+  Loop loop;
+  auto source = RecvSource::Create(nullptr, 0);
   return Check(!source.has_value() && source.error() == std::errc::invalid_argument,
                "RecvSource must reject a null loop");
 }

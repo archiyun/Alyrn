@@ -1,4 +1,4 @@
-# Reactor examples —— 基于 epoll/EventLoop 的示例
+# Reactor examples —— 基于 epoll/Loop 的示例
 
 add_executable(demo_reactor_coro_echo
     demo_reactor_coro_echo.cc

@@ -13,12 +13,12 @@
 
 namespace coropact::luring {
 
-// Suspends the current coroutine and resumes it on the owning LUringLoop.
+// Suspends the current coroutine and resumes it on the owning Loop.
 // Cancellation of the enclosing coroutine is an owner-side protocol; while
 // suspended, the awaiter must remain alive just like other CoroPact awaiters.
 class SleepAwaiter final {
 public:
-  SleepAwaiter(LUringLoop& loop, time::Duration delay) noexcept : loop_(&loop), delay_(delay) {}
+  SleepAwaiter(Loop& loop, time::Duration delay) noexcept : loop_(&loop), delay_(delay) {}
 
   [[nodiscard]]
   bool await_ready() const noexcept {
@@ -36,16 +36,16 @@ public:
   }
 
 private:
-  LUringLoop* loop_;
+  Loop* loop_;
   time::Duration delay_;
-  detail::LUringResultState<void> result_;
+  detail::ResultState<void> result_;
   coro::ResumeWork resume_work_{};
 };
 
 inline bool SleepAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   COROPACT_CHECK(loop_ != nullptr, "LUring sleep operation has no owner loop");
   COROPACT_CHECK(loop_->IsInLoopThread(),
-                 "LUring sleep operation called from wrong LUringLoop thread");
+                 "LUring sleep operation called from wrong Loop thread");
   resume_work_.SetHandle(continuation);
   auto timer = loop_->RunAfter(
       delay_, [this]() noexcept { detail::LoopAccess::ScheduleCompletion(*loop_, &resume_work_); });
@@ -56,7 +56,7 @@ inline bool SleepAwaiter::await_suspend(std::coroutine_handle<> continuation) no
   return true;
 }
 
-inline SleepAwaiter SleepFor(LUringLoop& loop, time::Duration delay) noexcept {
+inline SleepAwaiter SleepFor(Loop& loop, time::Duration delay) noexcept {
   return SleepAwaiter{loop, delay};
 }
 

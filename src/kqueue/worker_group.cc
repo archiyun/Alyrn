@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "coropact/kqueue/detail/kqueue_worker_group.h"
+#include "coropact/kqueue/detail/worker_group.h"
 
 #include <unistd.h>
 
@@ -14,9 +14,9 @@
 namespace coropact::kqueue::detail {
 namespace {
 
-coro::DetachedTask HandoffAccepted(KqueueWorkerGroup* group,
-                                   KqueueWorker::ConnectionCallback handler,
-                                   KqueueStream stream) {
+coro::DetachedTask HandoffAccepted(WorkerGroup* group,
+                                   Worker::ConnectionCallback handler,
+                                   Stream stream) {
   const net::Endpoint peer = stream.PeerAddress();
   const int fd = stream.Release();
   const std::size_t count = group->Size();
@@ -26,21 +26,21 @@ coro::DetachedTask HandoffAccepted(KqueueWorkerGroup* group,
   }
 
   const std::size_t index = group->NextWorker() % count;
-  KqueueWorker* target = group->Worker(index);
-  KqueueLoop* loop = target != nullptr ? target->Loop() : nullptr;
+  Worker* target = group->At(index);
+  Loop* loop = target != nullptr ? target->OwnerLoop() : nullptr;
   if (loop == nullptr) {
     ::close(fd);
     co_return;
   }
 
   loop->Post([target, fd, peer, handler = std::move(handler)]() mutable {
-    KqueueLoop* owner = target->Loop();
-    KqueueWorkerContext* context = target->Context();
+    Loop* owner = target->OwnerLoop();
+    WorkerContext* context = target->Context();
     if (owner == nullptr || context == nullptr) {
       ::close(fd);
       return;
     }
-    KqueueStream adopted(owner, fd, peer);
+    Stream adopted(owner, fd, peer);
     if (handler) {
       coro::SpawnDetach(*owner, handler(*context, std::move(adopted)));
     }
@@ -50,7 +50,7 @@ coro::DetachedTask HandoffAccepted(KqueueWorkerGroup* group,
 
 }  // namespace
 
-KqueueWorkerGroup::KqueueWorkerGroup(net::Endpoint listen_addr, KqueueWorkerGroupOptions options,
+WorkerGroup::WorkerGroup(net::Endpoint listen_addr, WorkerGroupOptions options,
                                        ThreadInitCallback init_callback,
                                        ConnectionCallback connection_callback,
                                        ThreadExitCallback exit_callback)
@@ -60,22 +60,22 @@ KqueueWorkerGroup::KqueueWorkerGroup(net::Endpoint listen_addr, KqueueWorkerGrou
       connection_callback_(std::move(connection_callback)),
       exit_callback_(std::move(exit_callback)) {}
 
-KqueueWorkerGroup::~KqueueWorkerGroup() noexcept { Stop(); }
+WorkerGroup::~WorkerGroup() noexcept { Stop(); }
 
-std::size_t KqueueWorkerGroup::NextWorker() noexcept {
+std::size_t WorkerGroup::NextWorker() noexcept {
   return next_worker_.fetch_add(1, std::memory_order_relaxed);
 }
 
-Result<void> KqueueWorkerGroup::StartOne(std::size_t index, bool accept,
+Result<void> WorkerGroup::StartOne(std::size_t index, bool accept,
                                          ConnectionCallback connection_callback) {
-  KqueueWorkerOptions worker_options = options_.worker_options;
+  WorkerOptions worker_options = options_.worker_options;
   worker_options.accept = accept;
   worker_options.listener_options.reuse_port = false;
   if (options_.frame_resource_factory) {
     worker_options.frame_resource = options_.frame_resource_factory(index);
   }
 
-  auto worker = std::make_unique<KqueueWorker>(index, listen_addr_, worker_options, init_callback_,
+  auto worker = std::make_unique<Worker>(index, listen_addr_, worker_options, init_callback_,
                                                 std::move(connection_callback), exit_callback_);
   workers_[index] = std::move(worker);
   auto result = workers_[index]->Start();
@@ -86,7 +86,7 @@ Result<void> KqueueWorkerGroup::StartOne(std::size_t index, bool accept,
   return {};
 }
 
-Result<void> KqueueWorkerGroup::Start() {
+Result<void> WorkerGroup::Start() {
   if (started_) {
     return std::unexpected(Errno(EALREADY));
   }
@@ -110,7 +110,7 @@ Result<void> KqueueWorkerGroup::Start() {
 
   ConnectionCallback acceptor_callback = connection_callback_;
   if (options_.worker_num > 1 && connection_callback_) {
-    acceptor_callback = [this](KqueueWorkerContext&, KqueueStream stream) {
+    acceptor_callback = [this](WorkerContext&, Stream stream) {
       return HandoffAccepted(this, connection_callback_, std::move(stream));
     };
   }
@@ -124,16 +124,16 @@ Result<void> KqueueWorkerGroup::Start() {
   return {};
 }
 
-void KqueueWorkerGroup::Stop() noexcept {
+void WorkerGroup::Stop() noexcept {
   RequestStop();
 
-  // KqueueWorker owns a jthread. Clearing the vector joins each worker after
+  // Worker owns a jthread. Clearing the vector joins each worker after
   // its stop request has been delivered.
   workers_.clear();
   started_ = false;
 }
 
-void KqueueWorkerGroup::RequestStop() noexcept {
+void WorkerGroup::RequestStop() noexcept {
   for (auto& worker : workers_) {
     if (worker != nullptr) {
       worker->Stop();

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Compare the regular LUringStream receive path with multishot accept +
+# Compare the regular Stream receive path with multishot accept +
 # provided-buffer recv + zero-copy WriteAll. Both modes use one binary with
 # env toggles. Results are intentionally written outside the repository.
 

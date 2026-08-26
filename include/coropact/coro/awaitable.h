@@ -7,7 +7,7 @@
 //   2. Conversion from an awaitable expression to an awaiter.
 //   3. Promise-dependent await_transform support.
 //
-// It does not depend on schedulers, EventLoop, or any I/O backend.
+// It does not depend on schedulers, Loop, or any I/O backend.
 #pragma once
 
 #include <concepts>

@@ -27,7 +27,7 @@ CoroutineStates  == {"Running", "Waiting", "Ready", "Done"}
 ResourceStates   == {"Open", "Closing", "Closed"}
 OperationStates  == {"None", "Pending", "Completed", "Cancelled"}
 ResultStates     == {"NoResult", "Success", "EOF", "Error", "Cancelled"}
-ReactorStates    == {"Idle", "ChannelWaiting", "Ready"}
+States    == {"Idle", "ChannelWaiting", "Ready"}
 UringStates      == {"Idle", "SQEQueued", "Submitted", "CQEReady"}
 
 VARIABLES backend,
@@ -71,7 +71,7 @@ Init ==
 (* Reactor concrete actions                                                *)
 (***************************************************************************)
 
-ReactorSubmitPending ==
+SubmitPending ==
   /\ backend = "Reactor"
   /\ coroutineState = "Running"
   /\ resourceState = "Open"
@@ -92,7 +92,7 @@ ReactorSubmitPending ==
 (* Immediate syscall result: no suspension, physical use is already terminal.
  * The compiler continues through await_resume() inline, without a scheduled
  * continuation authorization. *)
-ReactorImmediateComplete ==
+ImmediateComplete ==
   /\ backend = "Reactor"
   /\ coroutineState = "Running"
   /\ resourceState = "Open"
@@ -111,7 +111,7 @@ ReactorImmediateComplete ==
                  uringState>>
 
 (* Readiness only changes physical state and therefore projects to stutter. *)
-ReactorReady ==
+Ready ==
   /\ backend = "Reactor"
   /\ reactorState = "ChannelWaiting"
   /\ reactorState' = "Ready"
@@ -126,7 +126,7 @@ ReactorReady ==
                  continuationAuthorized,
                  uringState>>
 
-ReactorComplete ==
+Complete ==
   /\ backend = "Reactor"
   /\ coroutineState = "Waiting"
   /\ resourceState \in {"Open", "Closing"}
@@ -144,7 +144,7 @@ ReactorComplete ==
                  submitCount,
                  uringState>>
 
-ReactorCancel ==
+Cancel ==
   /\ backend = "Reactor"
   /\ coroutineState = "Waiting"
   /\ resourceState = "Closing"
@@ -378,11 +378,11 @@ Finish ==
                  uringState>>
 
 Next ==
-  \/ ReactorSubmitPending
-  \/ ReactorImmediateComplete
-  \/ ReactorReady
-  \/ ReactorComplete
-  \/ ReactorCancel
+  \/ SubmitPending
+  \/ ImmediateComplete
+  \/ Ready
+  \/ Complete
+  \/ Cancel
   \/ UringPrepareSQE
   \/ UringImmediateComplete
   \/ UringSubmit
@@ -584,7 +584,7 @@ TypeOK ==
   /\ submitCount \in Nat
   /\ releaseAuthorized \in BOOLEAN
   /\ continuationAuthorized \in BOOLEAN
-  /\ reactorState \in ReactorStates
+  /\ reactorState \in States
   /\ uringState \in UringStates
 
 BackendStateShape ==

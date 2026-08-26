@@ -18,8 +18,8 @@
 #include "coropact/result.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/task.h"
-#include "coropact/kqueue/detail/kqueue_worker.h"
-#include "coropact/kqueue/detail/kqueue_worker_group.h"
+#include "coropact/kqueue/detail/worker.h"
+#include "coropact/kqueue/detail/worker_group.h"
 #include "coropact/net/endpoint.h"
 #include "coropact/net/socket.h"
 
@@ -102,8 +102,8 @@ coropact::Result<int> ConnectClient(const coropact::net::Endpoint& address) {
 }
 
 coropact::coro::DetachedTask HandleConnection(
-    coropact::kqueue::detail::KqueueWorkerContext& context,
-    coropact::kqueue::KqueueStream stream, WorkerState* state) {
+    coropact::kqueue::detail::WorkerContext& context,
+    coropact::kqueue::Stream stream, WorkerState* state) {
   {
     std::lock_guard lock{state->mutex};
     state->scheduler_is_current = coropact::coro::Scheduler::TryCurrent() == &context.loop;
@@ -121,9 +121,9 @@ coropact::coro::DetachedTask HandleConnection(
 
 bool CheckWorkerAcceptAndStop() {
   WorkerState state;
-  coropact::kqueue::detail::KqueueWorker worker(
+  coropact::kqueue::detail::Worker worker(
       0, coropact::net::Endpoint(0), {},
-      [&state](coropact::kqueue::detail::KqueueWorkerContext& context) {
+      [&state](coropact::kqueue::detail::WorkerContext& context) {
         auto address = context.listener->LocalAddress();
         std::lock_guard lock{state.mutex};
         if (!address.has_value()) {
@@ -133,14 +133,14 @@ bool CheckWorkerAcceptAndStop() {
         }
         state.init_thread_is_worker = !context.loop.IsInLoopThread();
       },
-      [&state](coropact::kqueue::detail::KqueueWorkerContext& context,
-               coropact::kqueue::KqueueStream stream) {
+      [&state](coropact::kqueue::detail::WorkerContext& context,
+               coropact::kqueue::Stream stream) {
         return HandleConnection(context, std::move(stream), &state);
       });
 
   auto started = worker.Start();
   if (!started.has_value()) {
-    std::cout << "FAIL: KqueueWorker::Start failed: " << started.error().message() << '\n';
+    std::cout << "FAIL: Worker::Start failed: " << started.error().message() << '\n';
     return false;
   }
 
@@ -182,12 +182,12 @@ bool CheckWorkerGroupStartAndStop() {
   }
 
   GroupState state;
-  coropact::kqueue::detail::KqueueWorkerGroupOptions options;
+  coropact::kqueue::detail::WorkerGroupOptions options;
   options.worker_num = 2;
 
-  coropact::kqueue::detail::KqueueWorkerGroup group(
+  coropact::kqueue::detail::WorkerGroup group(
       coropact::net::Endpoint(*port), options,
-      [&state](coropact::kqueue::detail::KqueueWorkerContext& context) {
+      [&state](coropact::kqueue::detail::WorkerContext& context) {
         std::lock_guard lock{state.mutex};
         if (context.listener != nullptr) {
           auto address = context.listener->LocalAddress();
@@ -201,7 +201,7 @@ bool CheckWorkerGroupStartAndStop() {
 
   auto started = group.Start();
   if (!started.has_value()) {
-    std::cout << "FAIL: KqueueWorkerGroup::Start failed: " << started.error().message() << '\n';
+    std::cout << "FAIL: WorkerGroup::Start failed: " << started.error().message() << '\n';
     return false;
   }
 
@@ -231,7 +231,7 @@ bool CheckWorkerGroupStartAndStop() {
                   Check(all_initialized, "init callback should run for each worker") &&
                   Check(worker_threads_are_distinct, "workers should use distinct loop threads") &&
                   Check(single_listener, "master-slave group should bind one listen port") &&
-                  Check(group.Worker(0) != nullptr && group.Worker(1) != nullptr,
+                  Check(group.At(0) != nullptr && group.At(1) != nullptr,
                         "group worker accessors should return both workers");
 
   group.Stop();
@@ -240,9 +240,9 @@ bool CheckWorkerGroupStartAndStop() {
 }
 
 bool CheckZeroWorkersRejected() {
-  coropact::kqueue::detail::KqueueWorkerGroupOptions options;
+  coropact::kqueue::detail::WorkerGroupOptions options;
   options.worker_num = 0;
-  coropact::kqueue::detail::KqueueWorkerGroup group(coropact::net::Endpoint(0), options);
+  coropact::kqueue::detail::WorkerGroup group(coropact::net::Endpoint(0), options);
   auto result = group.Start();
   return Check(!result.has_value(), "zero-worker group should be rejected") &&
          Check(result.error() == std::errc::invalid_argument,

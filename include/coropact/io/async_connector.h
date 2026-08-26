@@ -18,9 +18,9 @@ namespace coropact::io {
 // that loop begins stopping.
 template <class T>
 concept AsyncConnector = requires(T& connector, std::string_view host, std::uint16_t port) {
-  typename T::Stream;
-  requires AsyncStream<typename T::Stream>;
-  { connector.Connect(host, port) } -> std::same_as<coro::Task<Result<typename T::Stream>>>;
+  typename T::StreamType;
+  requires AsyncStream<typename T::StreamType>;
+  { connector.Connect(host, port) } -> std::same_as<coro::Task<Result<typename T::StreamType>>>;
 };
 
 }  // namespace coropact::io

@@ -779,7 +779,7 @@ Reactor 的典型映射是：
 
 ```text
 co_await
-  -> ReactorStream::ReadSomeAwaiter::await_suspend
+  -> Stream::ReadSomeAwaiter::await_suspend
   -> nonblocking recv/send
   -> 立即得到结果，或遇到 EAGAIN
   -> EAGAIN 时注册 Channel 并保持 Waiting
@@ -794,11 +794,11 @@ io_uring 的典型映射是：
 
 ```text
 co_await
-  -> LUringStream::ReadSomeAwaiter::await_suspend
-  -> LUringLoop::SubmitOp
+  -> Stream::ReadSomeAwaiter::await_suspend
+  -> Loop::SubmitOp
   -> 准备并提交 SQE
   -> CQE 被回收
-  -> LUringOp::Complete
+  -> Op::Complete
   -> ScheduleCompletion(ResumeWork)
   -> Resume
 ```
@@ -819,7 +819,7 @@ Refine_LUring  : ConcreteLUringState  -> S_abs
 ```
 
 这也解释了项目中的固定边界：`coropact::io::AsyncStream` 是抽象语义入口，
-`ReactorStream` 和 `LUringStream` 是两个具体解释器，epoll、SQE、CQE 和 mailbox
+`reactor::Stream` 和 `luring::Stream` 是两个具体解释器，epoll、SQE、CQE 和 mailbox
 属于具体后端的状态与事件。
 
 ### 不变量与活性条件
@@ -889,7 +889,7 @@ Freeze(b1)
 
 ```text
 协程层公共接口：       基本成立
-两个后端解释同一接口： 已有 ReactorStream 和 LUringStream
+两个后端解释同一接口： 已有 Stream 和 Stream
 核心不变量：           主要由线程归属、pending 槽位和 Close 路径维护
 观察函数 Obs：          尚未实现
 Refine_Reactor：        已有有限路径映射模型
@@ -932,7 +932,7 @@ No error has been found
 
 这一步验证的是“抽象后的具体路径模型满足当前安全不变量”。它还不是对 C++ 源码的
 逐行形式化证明；buffer 生命周期和真实内核行为仍是独立的证明义务。当前源码中的
-`LUringOp::Complete` 已保持首次结果并拒绝重复 completion hook，`HandleCqe` 也只为
+`Op::Complete` 已保持首次结果并拒绝重复 completion hook，`HandleCqe` 也只为
 首次 completion 调度恢复工作；这实现了 single-shot 的运行时保护，但不替代对所有
 operation owner 和 buffer 生命周期的证明。动态 `SwitchBackend` 不属于当前证明范围。
 
@@ -959,7 +959,7 @@ source 创建和 operation 提交处返回实际运行期错误。Reactor 仍可
 迁移。因此现阶段最多只能把 quiescent switch 作为未来设计目标，不能把它描述成已有能力。
 
 timeout 现在由独立的 `AsyncTimedReadStream` / `AsyncTimedStream` interface 表达：
-`ReactorStream` 和 `LUringStream` 都满足该 extension，而 `AsyncStream` 仍刻意保持最小。
+`reactor::Stream` 和 `luring::Stream` 都满足该 extension，而 `AsyncStream` 仍刻意保持最小。
 `io::AsyncTimedStream` 负责编译期 interface 约束，不能替代公共语义验证；实际 timeout
 失败仍由 backend 的 `Result` 返回。
 

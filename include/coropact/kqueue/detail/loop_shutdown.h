@@ -27,7 +27,7 @@ private:
 };
 
 // Intrusive, owner-thread-only registry for resources associated with one
-// KqueueLoop. It deliberately only requests logical resource shutdown: the loop
+// Loop. It deliberately only requests logical resource shutdown: the loop
 // still owns draining scheduled continuations and backend events.
 //
 // This duplicates the Reactor registry on purpose. kqueue is a parallel

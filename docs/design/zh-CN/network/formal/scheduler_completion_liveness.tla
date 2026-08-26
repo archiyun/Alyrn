@@ -3,7 +3,7 @@
 EXTENDS Naturals
 
 (***************************************************************************)
-(* LUringLoop completion-ready 队列的条件 liveness 模型。                  *)
+(* Loop completion-ready 队列的条件 liveness 模型。                  *)
 (*                                                                         *)
 (* ScheduleCompletion() 将已经获得逻辑完成授权的 continuation 放入         *)
 (* completion-ready 队列。每个 RunReady() turn 都优先选择该队列中的一个    *)
@@ -43,7 +43,7 @@ EnqueueNormal ==
 
 (*
  * This abstracts one RunReady() turn. A queued completion is selected before
- * normal ready work, exactly as LUringLoop::RunReady() resets its per-turn
+ * normal ready work, exactly as Loop::RunReady() resets its per-turn
  * completion budget and picks completion_ready_ first.
  *)
 LoopTurn ==

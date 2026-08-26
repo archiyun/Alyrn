@@ -6,7 +6,7 @@
 
 namespace coropact::reactor {
 
-class EventLoop;
+class Loop;
 
 namespace detail {
 
@@ -26,7 +26,7 @@ public:
   using EventCallback = void (*)(void*) noexcept;
   using ReadEventCallback = void (*)(void*) noexcept;
 
-  explicit Channel(EventLoop* loop, int fd);
+  explicit Channel(Loop* loop, int fd);
   ~Channel() = default;
 
   // Moving transfers the non-owning fd association and callbacks. Both the
@@ -118,15 +118,15 @@ public:
   }
 
   // Returns whether the owning poller currently tracks this Channel. This is
-  // an implementation-only lifecycle query; EventLoop deliberately keeps its
+  // an implementation-only lifecycle query; Loop deliberately keeps its
   // poller membership private from Reactor callers.
   [[nodiscard]]
   bool IsRegistered() const;
 
-  // Returns the EventLoop that owns this Channel.
-  EventLoop* OwnerLoop() { return loop_; }
+  // Returns the Loop that owns this Channel.
+  Loop* OwnerLoop() { return loop_; }
 
-  // Removes the Channel from its owning EventLoop.
+  // Removes the Channel from its owning Loop.
   void Remove();
 
   // A Channel starts with no interested events.
@@ -153,7 +153,7 @@ private:
   // Pushes the current interest set to the Poller.
   void Update();
 
-  EventLoop* loop_{nullptr};
+  Loop* loop_{nullptr};
   int fd_{-1};
   int events_{kNoneEvent};
   int revents_{kNoneEvent};

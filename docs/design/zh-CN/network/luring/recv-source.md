@@ -1,11 +1,11 @@
 # multishot recv 与 provided buffer
 
-`LUringRecvSource` 是 luring 的持续接收扩展。它用一个 io_uring multishot recv request
+`RecvSource` 是 luring 的持续接收扩展。它用一个 io_uring multishot recv request
 和 provided-buffer ring 产生多个 `RecvEvent`，将“持续收包”与“消费一个 buffer”分开。
 
 ## 创建与配置
 
-source 通过 `LUringRecvSource::Create(loop, fd, options)` 创建，socket fd 由调用方借用，
+source 通过 `RecvSource::Create(loop, fd, options)` 创建，socket fd 由调用方借用，
 source 不负责关闭它。
 
 当前公共路径的关键约束是：

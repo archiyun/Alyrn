@@ -41,9 +41,9 @@ inline void WritePanicText(std::string_view text) noexcept {
 
 }  // namespace detail
 
-[[noreturn]] inline void Panic(
-    std::string_view condition, std::string_view message,
-    std::source_location location = std::source_location::current()) noexcept {
+[[noreturn]]
+inline void Panic(std::string_view condition, std::string_view message,
+                  std::source_location location = std::source_location::current()) noexcept {
   std::array<char, 2048> buffer{};
 
   const int length =

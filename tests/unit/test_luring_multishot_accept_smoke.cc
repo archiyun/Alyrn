@@ -17,7 +17,6 @@
 #include <vector>
 
 #include "coropact/result.h"
-#include "coropact/base/try.h"
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/spawn.h"
 #include "coropact/luring/listener.h"
@@ -32,11 +31,11 @@ namespace {
 
 using coropact::Error;
 using coropact::Result;
-using coropact::luring::LUringAcceptSource;
+using coropact::luring::AcceptSource;
 using coropact::luring::detail::CompletionEvent;
-using coropact::luring::LUringListener;
-using coropact::luring::LUringLoop;
-using coropact::luring::LUringOptions;
+using coropact::luring::Listener;
+using coropact::luring::Loop;
+using coropact::luring::Options;
 using coropact::net::Endpoint;
 using coropact::net::detail::AcceptSourceState;
 using coropact::net::detail::AcceptSourceStateMachine;
@@ -157,8 +156,8 @@ Endpoint LoopbackAddress(std::uint16_t port) {
   return Endpoint(address);
 }
 
-LoopInitStatus InitLoop(LUringLoop& loop) {
-  LUringOptions options;
+LoopInitStatus InitLoop(Loop& loop) {
+  Options options;
   options.entries = 32;
 
   auto initialized = loop.Init(options);
@@ -178,7 +177,7 @@ LoopInitStatus InitLoop(LUringLoop& loop) {
 }
 
 template <typename Predicate>
-bool PumpUntil(LUringLoop& loop, Predicate&& predicate, int max_iterations = 64) {
+bool PumpUntil(Loop& loop, Predicate&& predicate, int max_iterations = 64) {
   for (int i = 0; i < max_iterations && !predicate(); ++i) {
     auto completed = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
     if (!completed.has_value()) {
@@ -417,7 +416,7 @@ void CheckFakeMultishotFallback() {
 }
 
 coropact::coro::DetachedTask Consume(
-    LUringAcceptSource* source,
+    AcceptSource* source,
     Observation* observation) {
   for (int i = 0; i < kClientCount; ++i) {
     auto result = co_await source->Next();
@@ -452,7 +451,7 @@ coropact::coro::DetachedTask Consume(
 }
 
 coropact::coro::DetachedTask ConsumeOneThenStop(
-    LUringAcceptSource* source,
+    AcceptSource* source,
     CancelObservation* observation) {
   auto result = co_await source->Next();
   if (!result.has_value()) {
@@ -491,7 +490,7 @@ coropact::coro::DetachedTask ConsumeOneThenStop(
 }
 
 coropact::coro::DetachedTask WaitForSourceEnd(
-    LUringAcceptSource* source,
+    AcceptSource* source,
     CloseObservation* observation) {
   auto result = co_await source->Next();
   if (!result.has_value()) {
@@ -507,7 +506,7 @@ coropact::coro::DetachedTask WaitForSourceEnd(
 }
 
 coropact::coro::DetachedTask CloseListener(
-    LUringListener* listener,
+    Listener* listener,
     CloseObservation* observation) {
   auto result = co_await listener->Close();
   observation->close_succeeded = result.has_value();
@@ -519,8 +518,8 @@ coropact::coro::DetachedTask CloseListener(
 /* Only the test-hook scenarios drive this directly. */
 
 coropact::coro::DetachedTask FillQueueThenStop(
-    LUringAcceptSource* source,
-    LUringLoop* loop,
+    AcceptSource* source,
+    Loop* loop,
     BackpressureObservation* observation) {
   auto first = co_await source->Next();
   if (!first.has_value()) {
@@ -582,8 +581,8 @@ coropact::coro::DetachedTask FillQueueThenStop(
 }
 
 coropact::coro::DetachedTask PauseThenResume(
-    LUringAcceptSource* source,
-    LUringLoop* loop,
+    AcceptSource* source,
+    Loop* loop,
     PauseResumeObservation* observation) {
   auto first = co_await source->Next();
   if (!first.has_value()) {
@@ -657,7 +656,7 @@ coropact::coro::DetachedTask PauseThenResume(
 
 
 bool CheckMultishotAccept() {
-  LUringLoop loop;
+  Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -668,7 +667,7 @@ bool CheckMultishotAccept() {
   }
 
   auto listener_result =
-      LUringListener::Create(&loop, LoopbackAddress(0));
+      Listener::Create(&loop, LoopbackAddress(0));
   if (!listener_result.has_value()) {
     std::cout << "FAIL: listener creation failed: "
               << listener_result.error().message() << '\n';
@@ -676,7 +675,7 @@ bool CheckMultishotAccept() {
   }
 
   auto listener = std::move(*listener_result);
-  auto source_result = listener.AcceptSource({
+  auto source_result = listener.CreateAcceptSource({
       .pending_depth = 1,
       .event_capacity = 16,
   });
@@ -738,7 +737,7 @@ bool CheckMultishotAccept() {
 }
 
 bool CheckStopCancelsActiveSource() {
-  LUringLoop loop;
+  Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -749,14 +748,14 @@ bool CheckStopCancelsActiveSource() {
   }
 
   auto listener_result =
-      LUringListener::Create(&loop, LoopbackAddress(0));
+      Listener::Create(&loop, LoopbackAddress(0));
   if (!listener_result.has_value()) {
     std::cout << "FAIL: listener creation failed: "
               << listener_result.error().message() << '\n';
     return false;
   }
   auto listener = std::move(*listener_result);
-  auto source_result = listener.AcceptSource({.pending_depth = 1,
+  auto source_result = listener.CreateAcceptSource({.pending_depth = 1,
                                               .event_capacity = 4});
   if (!source_result.has_value()) {
     std::cout << "FAIL: source creation failed: "
@@ -804,7 +803,7 @@ bool CheckStopCancelsActiveSource() {
 }
 
 bool CheckListenerCloseCancelsActiveSource() {
-  LUringLoop loop;
+  Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -815,14 +814,14 @@ bool CheckListenerCloseCancelsActiveSource() {
   }
 
   auto listener_result =
-      LUringListener::Create(&loop, LoopbackAddress(0));
+      Listener::Create(&loop, LoopbackAddress(0));
   if (!listener_result.has_value()) {
     std::cout << "FAIL: listener creation failed: "
               << listener_result.error().message() << '\n';
     return false;
   }
   auto listener = std::move(*listener_result);
-  auto source_result = listener.AcceptSource();
+  auto source_result = listener.CreateAcceptSource();
   if (!source_result.has_value()) {
     std::cout << "FAIL: source creation failed: "
               << source_result.error().message() << '\n';
@@ -859,7 +858,7 @@ bool CheckListenerCloseCancelsActiveSource() {
 }
 
 bool CheckQueueBackpressure() {
-  LUringLoop loop;
+  Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -870,14 +869,14 @@ bool CheckQueueBackpressure() {
   }
 
   auto listener_result =
-      LUringListener::Create(&loop, LoopbackAddress(0));
+      Listener::Create(&loop, LoopbackAddress(0));
   if (!listener_result.has_value()) {
     std::cout << "FAIL: listener creation failed: "
               << listener_result.error().message() << '\n';
     return false;
   }
   auto listener = std::move(*listener_result);
-  auto source_result = listener.AcceptSource({.pending_depth = 1,
+  auto source_result = listener.CreateAcceptSource({.pending_depth = 1,
                                               .event_capacity = 1});
   if (!source_result.has_value()) {
     std::cout << "FAIL: source creation failed: "
@@ -959,7 +958,7 @@ bool CheckQueueBackpressure() {
 }
 
 bool RunQueuePauseThenRearmScenario() {
-  LUringLoop loop;
+  Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -969,14 +968,14 @@ bool RunQueuePauseThenRearmScenario() {
       return false;
   }
 
-  auto listener_result = LUringListener::Create(&loop, LoopbackAddress(0));
+  auto listener_result = Listener::Create(&loop, LoopbackAddress(0));
   if (!listener_result.has_value()) {
     std::cout << "FAIL: listener creation failed: "
               << listener_result.error().message() << '\n';
     return false;
   }
   auto listener = std::move(*listener_result);
-  auto source_result = listener.AcceptSource({.pending_depth = 1,
+  auto source_result = listener.CreateAcceptSource({.pending_depth = 1,
                                               .event_capacity = 1});
   if (!source_result.has_value()) {
     std::cout << "FAIL: source creation failed: "

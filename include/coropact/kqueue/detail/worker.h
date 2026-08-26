@@ -19,23 +19,23 @@
 
 namespace coropact::kqueue::detail {
 
-struct KqueueWorkerContext {
-  KqueueWorkerContext(std::size_t index, KqueueLoop& loop, KqueueListener* listener,
-                       KqueueConnector& connector) noexcept
+struct WorkerContext {
+  WorkerContext(std::size_t index, Loop& loop, Listener* listener,
+                       Connector& connector) noexcept
       : index(index), loop(loop), listener(listener), connector(connector) {}
 
-  COROPACT_DELETE_COPY_MOVE(KqueueWorkerContext);
+  COROPACT_DELETE_COPY_MOVE(WorkerContext);
 
   const std::size_t index;
-  KqueueLoop& loop;
+  Loop& loop;
   // Null on I/O workers in the master-slave topology. Only the acceptor
   // worker owns a listener.
-  KqueueListener* listener;
-  KqueueConnector& connector;
+  Listener* listener;
+  Connector& connector;
 };
 
-struct KqueueWorkerOptions {
-  KqueueListenerOptions listener_options{.reuse_addr = true, .reuse_port = false};
+struct WorkerOptions {
+  ListenerOptions listener_options{.reuse_addr = true, .reuse_port = false};
 
   // When true, this worker binds the listen socket and runs Accept(). The
   // worker group sets this on exactly one worker.
@@ -45,47 +45,47 @@ struct KqueueWorkerOptions {
   // unsynchronized.
   std::pmr::memory_resource* frame_resource{nullptr};
 
-  KqueueConnectorOptions connector_options{};
+  ConnectorOptions connector_options{};
 };
 
-class KqueueWorker {
+class Worker {
 public:
-  COROPACT_DELETE_COPY_MOVE(KqueueWorker);
+  COROPACT_DELETE_COPY_MOVE(Worker);
 
-  using ThreadInitCallback = std::function<void(KqueueWorkerContext&)>;
+  using ThreadInitCallback = std::function<void(WorkerContext&)>;
   // Runs on the worker thread after the loop stops and before loop-bound
   // listener/connector resources are destroyed.
-  using ThreadExitCallback = std::function<void(KqueueWorkerContext&)>;
+  using ThreadExitCallback = std::function<void(WorkerContext&)>;
   using ConnectionCallback =
-      std::function<coro::DetachedTask(KqueueWorkerContext&, KqueueStream)>;
+      std::function<coro::DetachedTask(WorkerContext&, Stream)>;
 
-  KqueueWorker(std::size_t index, net::Endpoint listen_addr, KqueueWorkerOptions options = {},
+  Worker(std::size_t index, net::Endpoint listen_addr, WorkerOptions options = {},
                 ThreadInitCallback init_callback = {}, ConnectionCallback connection_callback = {},
                 ThreadExitCallback exit_callback = {});
-  ~KqueueWorker() noexcept;
+  ~Worker() noexcept;
 
   [[nodiscard]]
   Result<void> Start();
 
   // Requests shutdown. The worker thread is joined by the destructor or by
-  // the owning KqueueWorkerGroup.
+  // the owning WorkerGroup.
   void Stop() noexcept;
 
   [[nodiscard]]
   std::size_t Index() const noexcept { return index_; }
 
   [[nodiscard]]
-  KqueueLoop* Loop() const noexcept { return loop_; }
+  Loop* OwnerLoop() const noexcept { return loop_; }
 
   [[nodiscard]]
-  KqueueWorkerContext* Context() const noexcept { return context_; }
+  WorkerContext* Context() const noexcept { return context_; }
 
 private:
   void WorkLoop(std::stop_token token) noexcept;
 
   std::size_t index_;
   net::Endpoint listen_addr_;
-  KqueueWorkerOptions options_;
+  WorkerOptions options_;
   ThreadInitCallback init_callback_;
   ConnectionCallback connection_callback_;
   ThreadExitCallback exit_callback_;
@@ -96,8 +96,8 @@ private:
   bool init_done_{false};
 
   std::jthread thread_;
-  KqueueLoop* loop_{nullptr};
-  KqueueWorkerContext* context_{nullptr};
+  Loop* loop_{nullptr};
+  WorkerContext* context_{nullptr};
 };
 
 }  // namespace coropact::kqueue::detail

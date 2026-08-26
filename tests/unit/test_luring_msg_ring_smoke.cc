@@ -50,21 +50,21 @@ private:
 };
 
 bool CheckMailboxNotificationState() {
-  coropact::luring::detail::LUringMailbox mailbox;
+  coropact::luring::detail::Mailbox mailbox;
 
-  const coropact::luring::detail::LUringMessage message{
+  const coropact::luring::detail::Message message{
       .data = 1,
   };
 
   if (!Check(
           mailbox.Push(message) ==
-              coropact::luring::detail::LUringMailboxPushResult::kQueuedNeedsNotification,
+              coropact::luring::detail::MailboxPushResult::kQueuedNeedsNotification,
           "first mailbox message should arm notification")) {
     return false;
   }
   if (!Check(
           mailbox.Push(message) ==
-              coropact::luring::detail::LUringMailboxPushResult::kQueued,
+              coropact::luring::detail::MailboxPushResult::kQueued,
           "second mailbox message should coalesce notification")) {
     return false;
   }
@@ -74,7 +74,7 @@ bool CheckMailboxNotificationState() {
   }
 
   const std::size_t drained =
-      mailbox.Drain([](const coropact::luring::detail::LUringMessage&) noexcept {});
+      mailbox.Drain([](const coropact::luring::detail::Message&) noexcept {});
   if (!Check(drained == 2, "mailbox drain should consume both messages")) {
     return false;
   }
@@ -84,18 +84,18 @@ bool CheckMailboxNotificationState() {
 }
 
 bool CheckMsgRingMailboxSchedule() {
-  coropact::luring::LUringOptions options;
+  coropact::luring::Options options;
   options.entries = 16;
 
   std::atomic_bool failed{false};
   std::atomic_bool skipped{false};
   std::atomic_bool work_completed{false};
-  std::atomic<coropact::luring::LUringLoop*> target_ptr{nullptr};
+  std::atomic<coropact::luring::Loop*> target_ptr{nullptr};
   std::barrier sync_point(3);
   SignalWork work(&work_completed);
 
   std::jthread target_thread([&] {
-    coropact::luring::LUringLoop target;
+    coropact::luring::Loop target;
     auto init = target.Init(options);
     if (!init.has_value()) {
       failed.store(true, std::memory_order_release);
@@ -132,7 +132,7 @@ bool CheckMsgRingMailboxSchedule() {
   });
 
   std::jthread source_thread([&] {
-    coropact::luring::LUringLoop source;
+    coropact::luring::Loop source;
     auto init = source.Init(options);
     if (!init.has_value()) {
       failed.store(true, std::memory_order_release);
@@ -155,18 +155,18 @@ bool CheckMsgRingMailboxSchedule() {
             reinterpret_cast<std::uintptr_t>(&work)),
     });
 
-    if (push_result == coropact::luring::detail::LUringMailboxPushResult::kFull) {
+    if (push_result == coropact::luring::detail::MailboxPushResult::kFull) {
       failed.store(true, std::memory_order_release);
       return;
     }
 
     if (push_result !=
-        coropact::luring::detail::LUringMailboxPushResult::kQueuedNeedsNotification) {
+        coropact::luring::detail::MailboxPushResult::kQueuedNeedsNotification) {
       failed.store(true, std::memory_order_release);
       return;
     }
 
-    coropact::luring::detail::LUringOp notify_op{coropact::luring::detail::LUringOpKind::kMsgRing};
+    coropact::luring::detail::Op notify_op{coropact::luring::detail::OpKind::kMsgRing};
 
     auto submitted = coropact::luring::detail::LoopAccess::SubmitMsgRing(
         source,

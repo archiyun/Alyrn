@@ -5,7 +5,7 @@ io_uring 的“注册资源”不是一个单一功能。luring 当前已经使�
 
 ## 当前已实现：provided buffer ring
 
-`LUringRecvSource` 使用 loop 级共享 provided-buffer ring：
+`RecvSource` 使用 loop 级共享 provided-buffer ring：
 
 ```text
 loop init / source create
@@ -36,7 +36,7 @@ loop init / source create
 ## 尚未公开：fixed file
 
 fixed file 缓存的是 kernel file reference，不改变业务层 fd ownership。它同样没有当前公共
-入口。不要因为内部 `LUringRing` 能准备 SQE，就把 fixed file 当成 CoroPact 的功能。
+入口。不要因为内部 `Ring` 能准备 SQE，就把 fixed file 当成 CoroPact 的功能。
 
 ## 与零拷贝的关系
 

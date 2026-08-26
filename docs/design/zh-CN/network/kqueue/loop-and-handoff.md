@@ -1,21 +1,21 @@
-# KqueueLoop、Post 与主从移交
+# Loop、Post 与主从移交
 
 这篇文档说明 kqueue 多 worker 为什么不能照搬 Linux `SO_REUSEPORT`，以及 fd 如何
 在 loop 之间移动而不带走协程帧。
 
 先记住两句话：
 
-> `KqueueStream` 绑定一个 `KqueueLoop`。它不能跨 loop 移动。
+> `Stream` 绑定一个 `Loop`。它不能跨 loop 移动。
 > 跨线程只能 `Post` 回调；不能 `Schedule` 别人的 `Work*`。
 
-## 1. KqueueLoop
+## 1. Loop
 
-每个 `KqueueLoop` 创建时绑定当前线程，并且自身继承 `coro::Scheduler`：
+每个 `Loop` 创建时绑定当前线程，并且自身继承 `coro::Scheduler`：
 
 ```text
 owner thread
-  └── KqueueLoop
-        ├── KqueuePoller          (kevent 变更与等待)
+  └── Loop
+        ├── Poller          (kevent 变更与等待)
         ├── TimerQueue            (用户态 timer 树 + 一个 EVFILT_TIMER)
         ├── owner-local WorkQueue
         ├── posted_               (跨线程回调，mutex 保护)
@@ -56,18 +56,18 @@ worker group 先停 acceptor，再 join I/O worker。
 
 ## 3. 移交的是 fd，不是 stream
 
-`KqueueStream` 的构造与移动都要求当前线程就是其 loop 的 owner。Channel 注册表、
+`Stream` 的构造与移动都要求当前线程就是其 loop 的 owner。Channel 注册表、
 pending read/write 与 shutdown participant 都是 owner-local 的。
 
-因此 acceptor 不能把一个活的 `KqueueStream` 搬到另一个 worker。正确顺序是：
+因此 acceptor 不能把一个活的 `Stream` 搬到另一个 worker。正确顺序是：
 
 ```text
 acceptor (worker 0)
-  Accept() -> KqueueStream on loop 0
+  Accept() -> Stream on loop 0
   PeerAddress()                 // Release 之前读出
   fd = stream.Release()         // 解注册 Channel，交出 fd，stream 不再拥有 socket
-  target->Loop()->Post({
-      reconstruct KqueueStream(owner, fd, peer)
+  target->OwnerLoop()->Post({
+      reconstruct Stream(owner, fd, peer)
       SpawnDetach(*owner, handler(*context, stream))
   })
 ```
@@ -80,7 +80,7 @@ worker context 已经消失，`Post` 回调里 `close(fd)`，而不是把 fd 泄
 
 ## 4. WorkerGroup 启动顺序
 
-`KqueueWorkerGroup::Start()`：
+`WorkerGroup::Start()`：
 
 ```text
 workers_.resize(n)

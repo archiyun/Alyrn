@@ -3,12 +3,12 @@
 EXTENDS Naturals, Sequences, FiniteSets
 
 (***************************************************************************)
-(* LUringStream::SendZeroCopy 的具体 split-release refinement。           *)
+(* Stream::SendZeroCopy 的具体 split-release refinement。           *)
 (*                                                                         *)
 (* primary CQE 决定业务结果。带 F_MORE 的 primary 承诺后续 F_NOTIF；      *)
 (* 无 F_MORE 的 primary 本身就是 kernel 不再访问 send buffer 的边界。     *)
 (* 只有逻辑结果与相应的物理终态都已观察后，SplitReleaseLifecycle 才授权    *)
-(* 释放 buffer，并将 ResumeWork 交给 LUringLoop::ScheduleCompletion。      *)
+(* 释放 buffer，并将 ResumeWork 交给 Loop::ScheduleCompletion。      *)
 (*                                                                         *)
 (* trace 记录的是该协议的可观察生命周期，不把 SQE 提交与普通业务写入      *)
 (* 混为一个 single-shot Complete。                                         *)
@@ -178,7 +178,7 @@ AuthorizeRelease ==
                  notificationCount,
                  resumeCount>>
 
-(* LUringLoop accepts the authorized ResumeWork into completion_ready_. *)
+(* Loop accepts the authorized ResumeWork into completion_ready_. *)
 ScheduleContinuation ==
   /\ requestState = "Released"
   /\ continuationState = "Waiting"

@@ -13,32 +13,32 @@
 
 namespace coropact::luring::detail {
 
-struct LUringServerOptions {
-  LUringWorkerGroupOptions worker_group_options{};
+struct ServerOptions {
+  WorkerGroupOptions worker_group_options{};
 };
 
 // High-level TCP server facade backed by a group of coroutine-driven
-// io_uring workers. Start() creates one LUringLoop, io_uring ring, listener,
+// io_uring workers. Start() creates one Loop, io_uring ring, listener,
 // and connector per worker; SO_REUSEPORT lets the kernel distribute incoming
-// connections across those independent listeners. Each accepted LUringStream
+// connections across those independent listeners. Each accepted Stream
 // is passed to SessionHandler on the owning worker's loop thread, and the
 // returned coroutine is detached for the lifetime of that session.
 //
 // The server owns the worker group after a successful Start(). Stop() requests
 // all workers to stop, drains their loop-bound operations, and joins their
 // threads before returning.
-class LUringServer {
+class Server {
 public:
-  COROPACT_DELETE_COPY_MOVE(LUringServer);
+  COROPACT_DELETE_COPY_MOVE(Server);
 
-  using Stream = LUringStream;
-  using ThreadInitCallback = LUringWorkerGroup::ThreadInitCallback;
-  using ThreadExitCallback = LUringWorkerGroup::ThreadExitCallback;
+  using StreamType = Stream;
+  using ThreadInitCallback = WorkerGroup::ThreadInitCallback;
+  using ThreadExitCallback = WorkerGroup::ThreadExitCallback;
   using SessionHandler =
-      std::function<coro::DetachedTask(LUringWorkerContext&, Stream)>;
+      std::function<coro::DetachedTask(WorkerContext&, Stream)>;
 
-  explicit LUringServer(net::Endpoint listen_addr, LUringServerOptions options = {});
-  ~LUringServer() noexcept;
+  explicit Server(net::Endpoint listen_addr, ServerOptions options = {});
+  ~Server() noexcept;
 
   void SetThreadInitCallback(ThreadInitCallback callback) noexcept {
     thread_init_callback_ = std::move(callback);
@@ -62,13 +62,13 @@ public:
 
 private:
   net::Endpoint listen_addr_;
-  LUringServerOptions options_{};
+  ServerOptions options_{};
 
   ThreadInitCallback thread_init_callback_;
   ThreadExitCallback thread_exit_callback_;
   SessionHandler session_handler_;
 
-  std::unique_ptr<LUringWorkerGroup> workers_;
+  std::unique_ptr<WorkerGroup> workers_;
   bool started_{false};
 };
 

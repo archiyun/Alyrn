@@ -13,7 +13,7 @@ class Channel;
 // Poller is the user-space abstraction over the underlying I/O multiplexing
 // mechanism, such as epoll.
 //
-// Each EventLoop owns exactly one Poller and follows the one-loop-per-thread
+// Each Loop owns exactly one Poller and follows the one-loop-per-thread
 // model, so every method here is owner-thread-only. The Poller holds no back
 // pointer to its loop: the loop already rejects foreign-thread calls before
 // delegating. The Poller tracks the Channels currently registered with the

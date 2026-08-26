@@ -12,13 +12,13 @@
 #include <utility>
 
 #include "coropact/result.h"
-#include "coropact/reactor/detail/reactor_worker_group.h"
+#include "coropact/reactor/detail/worker_group.h"
 
 namespace coropact::reactor {
 
 namespace {
 
-using ReactorBuilder = Runtime::Builder<runtime::Reactor>;
+using Builder = Runtime::Builder<runtime::Reactor>;
 
 void WaitForStop(std::atomic_bool& stop_requested) noexcept {
   while (!stop_requested.load(std::memory_order_acquire)) {
@@ -27,16 +27,16 @@ void WaitForStop(std::atomic_bool& stop_requested) noexcept {
 }
 
 // Owns the epoll worker group behind Runtime's cold lifecycle seam. The
-// accepted stream remains ReactorStream all the way to ConnectionHandler.
-class ReactorRuntimeControl final : public runtime::detail::RuntimeControl {
+// accepted stream remains Stream all the way to ConnectionHandler.
+class RuntimeControl final : public runtime::detail::RuntimeControl {
 public:
-  ReactorRuntimeControl(net::Endpoint listen_addr, std::size_t worker_count,
-                        ReactorBuilder::ConnectionHandler connection_handler) noexcept
+  RuntimeControl(net::Endpoint listen_addr, std::size_t worker_count,
+                        Builder::ConnectionHandler connection_handler) noexcept
       : listen_addr_(listen_addr),
         worker_count_(worker_count),
         connection_handler_(std::move(connection_handler)) {}
 
-  ~ReactorRuntimeControl() noexcept override { Stop(); }
+  ~RuntimeControl() noexcept override { Stop(); }
 
   Result<void> Start() override {
     {
@@ -51,16 +51,16 @@ public:
       state_ = LifecycleState::kStarting;
     }
 
-    detail::ReactorWorkerGroupOptions options;
+    detail::WorkerGroupOptions options;
     options.worker_num = worker_count_;
     // A single listener does not need SO_REUSEPORT; independent workers do.
     options.worker_options.listener_options.reuse_port = worker_count_ > 1;
 
-    auto callback = [this](detail::ReactorWorkerContext&, ReactorStream stream) {
+    auto callback = [this](detail::WorkerContext&, Stream stream) {
       return connection_handler_(std::move(stream));
     };
-    auto workers = std::make_unique<detail::ReactorWorkerGroup>(
-        listen_addr_, std::move(options), detail::ReactorWorkerGroup::ThreadInitCallback{},
+    auto workers = std::make_unique<detail::WorkerGroup>(
+        listen_addr_, std::move(options), detail::WorkerGroup::ThreadInitCallback{},
         std::move(callback));
     auto started = workers->Start();
     if (!started.has_value()) {
@@ -106,7 +106,7 @@ public:
   }
 
   void Stop() noexcept override {
-    std::unique_ptr<detail::ReactorWorkerGroup> workers;
+    std::unique_ptr<detail::WorkerGroup> workers;
     {
       std::lock_guard lock{lifecycle_mutex_};
       if (state_ == LifecycleState::kCreated || state_ == LifecycleState::kStopped ||
@@ -143,9 +143,9 @@ private:
 
   net::Endpoint listen_addr_;
   std::size_t worker_count_;
-  ReactorBuilder::ConnectionHandler connection_handler_;
+  Builder::ConnectionHandler connection_handler_;
   mutable std::mutex lifecycle_mutex_;
-  std::unique_ptr<detail::ReactorWorkerGroup> workers_;
+  std::unique_ptr<detail::WorkerGroup> workers_;
   LifecycleState state_{LifecycleState::kCreated};
   std::atomic_bool stop_requested_{false};
 };
@@ -155,7 +155,7 @@ private:
 std::unique_ptr<runtime::detail::RuntimeControl> MakeRuntimeControl(
     net::Endpoint listen_addr, std::size_t worker_count,
     Runtime::Builder<runtime::Reactor>::ConnectionHandler connection_handler) {
-  return std::make_unique<ReactorRuntimeControl>(listen_addr, worker_count,
+  return std::make_unique<RuntimeControl>(listen_addr, worker_count,
                                                  std::move(connection_handler));
 }
 

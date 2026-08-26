@@ -22,7 +22,7 @@
 - [Reactor / epoll](design/zh-CN/network/reactor/index.md)
 - [luring / io_uring](design/zh-CN/network/luring/index.md)
 - [kqueue](design/zh-CN/network/kqueue/index.md)
-- [KqueueLoop、Post 与主从移交](design/zh-CN/network/kqueue/loop-and-handoff.md)
+- [Loop、Post 与主从移交](design/zh-CN/network/kqueue/loop-and-handoff.md)
 
 ## 数据结构
 

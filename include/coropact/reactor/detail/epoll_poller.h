@@ -12,7 +12,7 @@ namespace coropact::reactor::detail {
 // EPollPoller is the Linux epoll-based implementation of Poller.
 //
 // It translates Channel registrations into epoll_ctl operations and converts
-// epoll_wait results back into active Channel objects for the owning EventLoop.
+// epoll_wait results back into active Channel objects for the owning Loop.
 class EPollPoller final : public Poller {
 public:
   EPollPoller();

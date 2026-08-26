@@ -148,8 +148,8 @@ logical I/O specification.
 `refinement` 在这里采用形式化含义。需要为每个后端定义 observation function：
 
 ```text
-ObsReactor : ReactorState -> LogicalState
-ObsLUring  : LUringState  -> LogicalState
+ObsReactor : State -> LogicalState
+ObsLUring  : State  -> LogicalState
 ```
 
 具体执行 trace 经相应 observation function 投影后，必须满足相同 LogicalSpec。仅仅在 C++ 中把

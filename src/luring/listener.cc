@@ -14,7 +14,6 @@
 #include "coropact/backend/loop.h"
 #include "coropact/base/check.h"
 #include "coropact/result.h"
-#include "coropact/base/try.h"
 #include "coropact/luring/detail/cancel_result.h"
 #include "coropact/luring/detail/fd_close_convergence.h"
 #include "coropact/luring/detail/loop_access.h"
@@ -38,10 +37,10 @@ using namespace net::detail;
 
 namespace {
 
-using AcceptResult = Result<LUringStream>;
+using AcceptResult = Result<Stream>;
 
 Result<int> CreatedListenFd(const net::Endpoint& listen_addr,
-                                  const LUringListenOptions& options) noexcept {
+                                  const ListenOptions& options) noexcept {
   const int fd =
       ::socket(listen_addr.NativeFamily(), SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, IPPROTO_TCP);
   if (fd < 0) {
@@ -87,9 +86,9 @@ Result<net::Endpoint> GetLocalAddress(int fd) noexcept {
   return net::Endpoint(reinterpret_cast<const sockaddr*>(&addr), len);
 }
 
-AcceptResult MakeStream(LUringLoop* loop, int fd, const sockaddr_storage& peer_addr,
+AcceptResult MakeStream(Loop* loop, int fd, const sockaddr_storage& peer_addr,
                         socklen_t peer_len) noexcept {
-  return LUringStream(loop, fd,
+  return Stream(loop, fd,
                       net::Endpoint(reinterpret_cast<const sockaddr*>(&peer_addr), peer_len));
 }
 
@@ -100,7 +99,7 @@ bool IsMultishotUnsupported(int cqe_result) noexcept {
 }  // namespace
 
 // --- NextAwaiter ---
-bool LUringAcceptSource::NextAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
+bool AcceptSource::NextAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   if (source_->listener_ == nullptr) {
     result_.SetError(Errno(EBADF));
     (void)(completion_gate_.TryComplete());
@@ -138,11 +137,11 @@ bool LUringAcceptSource::NextAwaiter::await_suspend(std::coroutine_handle<> cont
   return true;
 }
 
-LUringAcceptSource::NextResult LUringAcceptSource::NextAwaiter::await_resume() noexcept {
+AcceptSource::NextResult AcceptSource::NextAwaiter::await_resume() noexcept {
   return result_.Take();
 }
 
-void LUringAcceptSource::NextAwaiter::Complete(NextResult result) noexcept {
+void AcceptSource::NextAwaiter::Complete(NextResult result) noexcept {
   if (!completion_gate_.TryComplete()) {
     return;
   }
@@ -151,9 +150,9 @@ void LUringAcceptSource::NextAwaiter::Complete(NextResult result) noexcept {
 }
 
 // --- StopAwaiter ---
-class LUringAcceptSource::StopAwaiter {
+class AcceptSource::StopAwaiter {
 public:
-  explicit StopAwaiter(LUringAcceptSource& source) noexcept : source_(&source) {}
+  explicit StopAwaiter(AcceptSource& source) noexcept : source_(&source) {}
 
   [[nodiscard]]
   bool await_ready() const noexcept {
@@ -196,38 +195,38 @@ public:
   }
 
 private:
-  LUringAcceptSource* source_;
+  AcceptSource* source_;
   operation::detail::SchedulerContinuation continuation_;
   operation::detail::CompletionGate completion_gate_;
   std::optional<Result<void>> result_;
 };
 
-LUringAcceptSource::LUringAcceptSource(LUringListener* listener,
+AcceptSource::AcceptSource(Listener* listener,
                                        AcceptSourceStateMachine state) noexcept
     : listener_(listener), state_(std::move(state)), accept_op_(this), cancel_op_(this) {}
 
-LUringAcceptSource::~LUringAcceptSource() {
+AcceptSource::~AcceptSource() {
   if (listener_ == nullptr) {
     return;
   }
 
   COROPACT_CHECK(listener_->loop_->IsInLoopThread(),
-                 "LUringAcceptSource destroyed from wrong thread");
-  COROPACT_CHECK(pending_next_ == nullptr, "LUringAcceptSource destroyed with pending Next");
-  COROPACT_CHECK(pending_stop_ == nullptr, "LUringAcceptSource destroyed with pending Stop");
-  COROPACT_CHECK(!accept_submitted_, "LUringAcceptSource destroyed with active accept");
-  COROPACT_CHECK(!cancel_submitted_, "LUringAcceptSource destroyed with active cancel");
+                 "AcceptSource destroyed from wrong thread");
+  COROPACT_CHECK(pending_next_ == nullptr, "AcceptSource destroyed with pending Next");
+  COROPACT_CHECK(pending_stop_ == nullptr, "AcceptSource destroyed with pending Stop");
+  COROPACT_CHECK(!accept_submitted_, "AcceptSource destroyed with active accept");
+  COROPACT_CHECK(!cancel_submitted_, "AcceptSource destroyed with active cancel");
   const auto state = state_.State();
   COROPACT_CHECK(state == AcceptSourceState::kIdle || state == AcceptSourceState::kDraining ||
                      state == AcceptSourceState::kTerminal,
-                 "LUringAcceptSource destroyed before reaching a safe lifecycle state");
+                 "AcceptSource destroyed before reaching a safe lifecycle state");
 
   if (listener_->accept_source_ == this) {
     listener_->accept_source_ = nullptr;
   }
 }
 
-LUringAcceptSource::LUringAcceptSource(LUringAcceptSource&& other) noexcept
+AcceptSource::AcceptSource(AcceptSource&& other) noexcept
     : listener_(std::exchange(other.listener_, nullptr)),
       state_(std::move(other.state_)),
       events_(std::move(other.events_)),
@@ -236,30 +235,30 @@ LUringAcceptSource::LUringAcceptSource(LUringAcceptSource&& other) noexcept
       cancel_op_(this),
       multishot_enabled_(other.multishot_enabled_) {
   COROPACT_CHECK(other.pending_next_ == nullptr,
-                 "LUringAcceptSource cannot move with pending Next");
+                 "AcceptSource cannot move with pending Next");
   COROPACT_CHECK(other.pending_stop_ == nullptr,
-                 "LUringAcceptSource cannot move with pending Stop");
-  COROPACT_CHECK(!other.accept_submitted_, "LUringAcceptSource cannot move while active");
-  COROPACT_CHECK(!other.cancel_submitted_, "LUringAcceptSource cannot move while cancelling");
+                 "AcceptSource cannot move with pending Stop");
+  COROPACT_CHECK(!other.accept_submitted_, "AcceptSource cannot move while active");
+  COROPACT_CHECK(!other.cancel_submitted_, "AcceptSource cannot move while cancelling");
 
   if (listener_ != nullptr && listener_->accept_source_ == &other) {
     listener_->accept_source_ = this;
   }
 }
 
-LUringAcceptSource& LUringAcceptSource::operator=(LUringAcceptSource&& other) noexcept {
+AcceptSource& AcceptSource::operator=(AcceptSource&& other) noexcept {
   if (this == &other) {
     return *this;
   }
 
-  COROPACT_CHECK(pending_next_ == nullptr, "LUringAcceptSource destination has pending Next");
-  COROPACT_CHECK(pending_stop_ == nullptr, "LUringAcceptSource destination has pending Stop");
-  COROPACT_CHECK(!accept_submitted_, "LUringAcceptSource destination is active");
-  COROPACT_CHECK(!cancel_submitted_, "LUringAcceptSource destination is cancelling");
-  COROPACT_CHECK(other.pending_next_ == nullptr, "LUringAcceptSource source has pending Next");
-  COROPACT_CHECK(other.pending_stop_ == nullptr, "LUringAcceptSource source has pending Stop");
-  COROPACT_CHECK(!other.accept_submitted_, "LUringAcceptSource source is active");
-  COROPACT_CHECK(!other.cancel_submitted_, "LUringAcceptSource source is cancelling");
+  COROPACT_CHECK(pending_next_ == nullptr, "AcceptSource destination has pending Next");
+  COROPACT_CHECK(pending_stop_ == nullptr, "AcceptSource destination has pending Stop");
+  COROPACT_CHECK(!accept_submitted_, "AcceptSource destination is active");
+  COROPACT_CHECK(!cancel_submitted_, "AcceptSource destination is cancelling");
+  COROPACT_CHECK(other.pending_next_ == nullptr, "AcceptSource source has pending Next");
+  COROPACT_CHECK(other.pending_stop_ == nullptr, "AcceptSource source has pending Stop");
+  COROPACT_CHECK(!other.accept_submitted_, "AcceptSource source is active");
+  COROPACT_CHECK(!other.cancel_submitted_, "AcceptSource source is cancelling");
 
   if (listener_ != nullptr && listener_->accept_source_ == this) {
     listener_->accept_source_ = nullptr;
@@ -278,7 +277,7 @@ LUringAcceptSource& LUringAcceptSource::operator=(LUringAcceptSource&& other) no
   return *this;
 }
 
-Result<LUringStream> LUringAcceptSource::MakeStream(int accepted_fd) noexcept {
+Result<Stream> AcceptSource::MakeStream(int accepted_fd) noexcept {
   sockaddr_storage peer{};
   socklen_t peer_len = sizeof(peer);
 
@@ -288,13 +287,13 @@ Result<LUringStream> LUringAcceptSource::MakeStream(int accepted_fd) noexcept {
     return std::unexpected(error);
   }
 
-  LUringStream stream(listener_->loop_, accepted_fd,
+  Stream stream(listener_->loop_, accepted_fd,
                       net::Endpoint(reinterpret_cast<const sockaddr*>(&peer), peer_len));
   stream.SetZeroCopyWritesEnabled(listener_->zero_copy_writes_);
   return stream;
 }
 
-Result<void> LUringAcceptSource::StartOperation() noexcept {
+Result<void> AcceptSource::StartOperation() noexcept {
   if (listener_ == nullptr || listener_->closed_ || listener_->fd_ < 0) {
     return std::unexpected(Errno(EBADF));
   }
@@ -333,7 +332,7 @@ Result<void> LUringAcceptSource::StartOperation() noexcept {
   return {};
 }
 
-Result<void> LUringAcceptSource::Start() noexcept {
+Result<void> AcceptSource::Start() noexcept {
   if (state_.State() != AcceptSourceState::kIdle) {
     return std::unexpected(Errno(EALREADY));
   }
@@ -362,7 +361,7 @@ Result<void> LUringAcceptSource::Start() noexcept {
   return {};
 }
 
-Result<void> LUringAcceptSource::StartCancel() noexcept {
+Result<void> AcceptSource::StartCancel() noexcept {
   if (!accept_submitted_ || cancel_submitted_) {
     return {};
   }
@@ -382,7 +381,7 @@ Result<void> LUringAcceptSource::StartCancel() noexcept {
   return {};
 }
 
-Result<bool> LUringAcceptSource::BeginStop() noexcept {
+Result<bool> AcceptSource::BeginStop() noexcept {
   state_.RequestStop();
 
   if (!accept_submitted_ && !cancel_submitted_) {
@@ -399,7 +398,7 @@ Result<bool> LUringAcceptSource::BeginStop() noexcept {
   return true;
 }
 
-void LUringAcceptSource::RequestBackendStop(std::optional<Error> error) noexcept {
+void AcceptSource::RequestBackendStop(std::optional<Error> error) noexcept {
   if (error.has_value() && !terminal_error_.has_value()) {
     terminal_error_ = *error;
   }
@@ -414,7 +413,7 @@ void LUringAcceptSource::RequestBackendStop(std::optional<Error> error) noexcept
   }
 }
 
-void LUringAcceptSource::RequestBackendPause() noexcept {
+void AcceptSource::RequestBackendPause() noexcept {
   (void)(state_.RequestPause());
 
   if (accept_submitted_ && !cancel_submitted_) {
@@ -425,7 +424,7 @@ void LUringAcceptSource::RequestBackendPause() noexcept {
   }
 }
 
-void LUringAcceptSource::EnsureSubmission() noexcept {
+void AcceptSource::EnsureSubmission() noexcept {
   if (listener_ == nullptr || listener_->closed_ || state_.State() != AcceptSourceState::kActive ||
       accept_submitted_ || cancel_submitted_) {
     return;
@@ -438,7 +437,7 @@ void LUringAcceptSource::EnsureSubmission() noexcept {
   }
 }
 
-void LUringAcceptSource::MaybeResume() noexcept {
+void AcceptSource::MaybeResume() noexcept {
   if (terminal_error_.has_value() || listener_ == nullptr || listener_->closed_ ||
       cancel_submitted_) {
     return;
@@ -450,7 +449,7 @@ void LUringAcceptSource::MaybeResume() noexcept {
 }
 
 // Translates an io_uring CQE into a logical source transition.
-CompletionDisposition LUringAcceptSource::OnCompletion(CompletionEvent event) noexcept {
+CompletionDisposition AcceptSource::OnCompletion(CompletionEvent event) noexcept {
   const bool request_still_active = event.More();
   const int cqe_res = event.result;
 
@@ -536,7 +535,7 @@ CompletionDisposition LUringAcceptSource::OnCompletion(CompletionEvent event) no
   };
 }
 
-void LUringAcceptSource::OnCancelComplete(int cqe_res) noexcept {
+void AcceptSource::OnCancelComplete(int cqe_res) noexcept {
   cancel_submitted_ = false;
 
   if (!detail::IsExpectedCancelCqeResult(cqe_res) && !terminal_error_.has_value()) {
@@ -547,19 +546,19 @@ void LUringAcceptSource::OnCancelComplete(int cqe_res) noexcept {
   CompleteStopIfReady();
 }
 
-void LUringAcceptSource::OnListenerClosed() noexcept {
+void AcceptSource::OnListenerClosed() noexcept {
   state_.RequestStop();
   DeliverNextIfReady();
   CompleteStopIfReady();
 }
 
-bool LUringAcceptSource::TryTakeNext(NextResult& result) noexcept {
+bool AcceptSource::TryTakeNext(NextResult& result) noexcept {
   if (!events_.empty()) {
     Event event(std::in_place, std::move(events_.front()));
     events_.pop_front();
 
     COROPACT_CHECK(state_.ConsumeEvent(),
-                   "LUringAcceptSource: queue and state became inconsistent");
+                   "AcceptSource: queue and state became inconsistent");
 
     result = NextResult(std::in_place, std::move(event));
     if (state_.State() == AcceptSourceState::kPaused) {
@@ -584,7 +583,7 @@ bool LUringAcceptSource::TryTakeNext(NextResult& result) noexcept {
   return false;
 }
 
-void LUringAcceptSource::DeliverNextIfReady() noexcept {
+void AcceptSource::DeliverNextIfReady() noexcept {
   if (pending_next_ == nullptr) {
     return;
   }
@@ -598,7 +597,7 @@ void LUringAcceptSource::DeliverNextIfReady() noexcept {
   awaiter->Complete(std::move(result));
 }
 
-void LUringAcceptSource::CompleteStopIfReady() noexcept {
+void AcceptSource::CompleteStopIfReady() noexcept {
   // The cancel request has its own operation object and CQE.  The target
   // accept may reach its terminal CQE before the cancel CQE, so Stop() must
   // not resume (and let the source be destroyed) until both operations have
@@ -611,14 +610,14 @@ void LUringAcceptSource::CompleteStopIfReady() noexcept {
   awaiter->Complete(Result<void>{});
 }
 
-void LUringAcceptSource::ReleaseListenerReservation() noexcept {
+void AcceptSource::ReleaseListenerReservation() noexcept {
   if (listener_ != nullptr && state_.State() == AcceptSourceState::kTerminal &&
       listener_->accept_source_ == this) {
     listener_->accept_source_ = nullptr;
   }
 }
 
-coro::Task<Result<void>> LUringAcceptSource::Stop() {
+coro::Task<Result<void>> AcceptSource::Stop() {
   if (listener_ == nullptr) {
     co_return Result<void>{};
   }
@@ -640,14 +639,14 @@ coro::Task<Result<void>> LUringAcceptSource::Stop() {
 }
 
 // --- AcceptAwaiter ---
-class LUringListener::AcceptAwaiter : public detail::LUringOpHook<LUringListener::AcceptAwaiter> {
-  friend void detail::DispatchAcceptComplete(LUringOp* op) noexcept;
+class Listener::AcceptAwaiter : public detail::OpHook<Listener::AcceptAwaiter> {
+  friend void detail::DispatchAcceptComplete(::coropact::luring::detail::Op* op) noexcept;
 
 public:
-  using OpHook = detail::LUringOpHook<AcceptAwaiter>;
+  using OpHook = detail::OpHook<AcceptAwaiter>;
 
-  explicit AcceptAwaiter(LUringListener& listener) noexcept
-      : OpHook(LUringOpKind::kAcceptComplete), listener_(&listener) {}
+  explicit AcceptAwaiter(Listener& listener) noexcept
+      : OpHook(OpKind::kAcceptComplete), listener_(&listener) {}
 
   bool await_ready() const noexcept { return false; }
 
@@ -663,11 +662,11 @@ public:
     }
     ++listener_->pending_accepts_;
     listener_reservation_ = true;
-    Op()->kind = LUringOpKind::kAcceptComplete;
+    Operation()->kind = OpKind::kAcceptComplete;
     peer_len_ = static_cast<socklen_t>(sizeof(peer_addr_));
 
     return detail::SubmitAwaitingOperation(
-        *listener_->loop_, *Op(), continuation,
+        *listener_->loop_, *Operation(), continuation,
         detail::PrepareAccept(listener_->fd_, reinterpret_cast<sockaddr*>(&peer_addr_), &peer_len_,
                               SOCK_NONBLOCK | SOCK_CLOEXEC),
         [this](Error error) noexcept { CompleteInline(std::unexpected(error)); });
@@ -676,14 +675,14 @@ public:
   AcceptResult await_resume() noexcept { return result_.Take(); }
 
 private:
-  static void OnComplete(LUringOp* op) noexcept {
+  static void OnComplete(::coropact::luring::detail::Op* op) noexcept {
     auto* self = OpHook::OwnerFrom(op);
     COROPACT_CHECK(self->listener_ != nullptr, "LUring Accept CQE has no listener owner");
     COROPACT_CHECK(self->listener_reservation_,
                    "LUring Accept CQE arrived without a listener reservation");
     COROPACT_CHECK(op->result.HasValue(), "LUring Accept CQE is missing its result");
 
-    LUringListener* listener = self->listener_;
+    Listener* listener = self->listener_;
     if (*op->result < 0) {
       self->result_.SetError(NegErrno(*op->result));
     } else {
@@ -702,14 +701,14 @@ private:
 
   void CompleteInline(AcceptResult result) noexcept {
     result_.SetResult(std::move(result));
-    COROPACT_CHECK(Op()->TryAuthorizeCoupledResult(), "LUring Accept result was authorized twice");
-    COROPACT_CHECK(Op()->TryAuthorizeCoupledRelease(),
+    COROPACT_CHECK(Operation()->TryAuthorizeCoupledResult(), "LUring Accept result was authorized twice");
+    COROPACT_CHECK(Operation()->TryAuthorizeCoupledRelease(),
                    "LUring Accept release was not authorized after its result");
     ReleaseListenerReservation();
   }
 
   void ReleaseListenerReservation() noexcept {
-    LUringListener* listener = std::exchange(listener_, nullptr);
+    Listener* listener = std::exchange(listener_, nullptr);
     if (!listener_reservation_) {
       return;
     }
@@ -721,22 +720,22 @@ private:
     listener->NotifyCloseProgress();
   }
 
-  LUringListener* listener_;
+  Listener* listener_;
   sockaddr_storage peer_addr_{};
   socklen_t peer_len_{sizeof(peer_addr_)};
-  backend::detail::ValueResultState<LUringStream> result_;
+  backend::detail::ValueResultState<Stream> result_;
   bool listener_reservation_{false};
 };
 
 // --- CloseAwaiter ---
-class LUringListener::CloseAwaiter : public detail::LUringOpHook<LUringListener::CloseAwaiter> {
-  friend void detail::DispatchListenerCloseComplete(LUringOp* op) noexcept;
+class Listener::CloseAwaiter : public detail::OpHook<Listener::CloseAwaiter> {
+  friend void detail::DispatchListenerCloseComplete(::coropact::luring::detail::Op* op) noexcept;
 
 public:
-  using OpHook = detail::LUringOpHook<CloseAwaiter>;
+  using OpHook = detail::OpHook<CloseAwaiter>;
 
-  explicit CloseAwaiter(LUringListener& listener) noexcept
-      : OpHook(LUringOpKind::kListenerCloseComplete), listener_(&listener) {}
+  explicit CloseAwaiter(Listener& listener) noexcept
+      : OpHook(OpKind::kListenerCloseComplete), listener_(&listener) {}
 
   bool await_ready() const noexcept { return false; }
 
@@ -762,10 +761,10 @@ public:
 
     listener_->pending_close_ = this;
     convergence_.BeginWaiting(continuation);
-    Op()->kind = LUringOpKind::kListenerCloseComplete;
+    Operation()->kind = OpKind::kListenerCloseComplete;
 
     auto submitted = detail::LoopAccess::SubmitOp(
-        *listener_->loop_, Op(),
+        *listener_->loop_, Operation(),
         detail::PrepareCancelAllByFd(listener_->fd_));
     if (!submitted.has_value()) {
       listener_->pending_close_ = nullptr;
@@ -790,24 +789,24 @@ public:
     return convergence_.TakeResult();
   }
 
-  void TryComplete(LUringOp* current = nullptr) noexcept {
+  void TryComplete(::coropact::luring::detail::Op* current = nullptr) noexcept {
     if (listener_ == nullptr ||
         convergence_.TryAuthorizeClose(listener_->pending_accepts_ != 0) == false) {
       return;
     }
 
-    LUringLoop* loop = listener_->loop_;
+    Loop* loop = listener_->loop_;
     listener_->pending_close_ = nullptr;
     convergence_.SetResult(CloseFd());
     listener_ = nullptr;
-    Op()->resume_work.SetHandle(convergence_.Continuation());
-    if (current != Op()) {
-      detail::LoopAccess::ScheduleCompletion(*loop, &Op()->resume_work);
+    Operation()->resume_work.SetHandle(convergence_.Continuation());
+    if (current != Operation()) {
+      detail::LoopAccess::ScheduleCompletion(*loop, &Operation()->resume_work);
     }
   }
 
 private:
-  static void OnCancelComplete(LUringOp* op) noexcept {
+  static void OnCancelComplete(::coropact::luring::detail::Op* op) noexcept {
     auto* self = OpHook::OwnerFrom(op);
     self->convergence_.MarkCancelRequestTerminal();
     self->TryComplete(op);
@@ -824,27 +823,27 @@ private:
     return Result<void>{};
   }
 
-  LUringListener* listener_;
+  Listener* listener_;
   detail::FdCloseConvergence convergence_;
 };
 
 namespace detail {
 
-void DispatchAcceptComplete(LUringOp* op) noexcept {
-  LUringListener::AcceptAwaiter::OnComplete(op);
+void DispatchAcceptComplete(::coropact::luring::detail::Op* op) noexcept {
+  Listener::AcceptAwaiter::OnComplete(op);
 }
 
-void DispatchListenerCloseComplete(LUringOp* op) noexcept {
-  LUringListener::CloseAwaiter::OnCancelComplete(op);
+void DispatchListenerCloseComplete(::coropact::luring::detail::Op* op) noexcept {
+  Listener::CloseAwaiter::OnCancelComplete(op);
 }
 
-CompletionDisposition DispatchAcceptSourceComplete(LUringOp* op, CompletionEvent event) noexcept {
-  auto* operation = static_cast<LUringAcceptSource::AcceptOperation*>(op);
+CompletionDisposition DispatchAcceptSourceComplete(::coropact::luring::detail::Op* op, CompletionEvent event) noexcept {
+  auto* operation = static_cast<AcceptSource::AcceptOperation*>(op);
   return operation->Source()->OnCompletion(event);
 }
 
-void DispatchAcceptSourceCancelComplete(LUringOp* op) noexcept {
-  auto* operation = static_cast<LUringAcceptSource::CancelOperation*>(op);
+void DispatchAcceptSourceCancelComplete(::coropact::luring::detail::Op* op) noexcept {
+  auto* operation = static_cast<AcceptSource::CancelOperation*>(op);
 
   int result = -EIO;
   if (op->result.HasValue()) {
@@ -855,24 +854,27 @@ void DispatchAcceptSourceCancelComplete(LUringOp* op) noexcept {
 
 }  // namespace detail
 
-Result<LUringListener> LUringListener::Create(LUringLoop* loop,
+Result<Listener> Listener::Create(Loop* loop,
                                                     const net::Endpoint& listen_addr,
-                                                    LUringListenOptions options) noexcept {
-  COROPACT_CHECK(loop != nullptr, "LUringListener requires an owner loop");
-  COROPACT_CHECK(loop->IsInLoopThread(), "LUringListener created from wrong LUringLoop thread");
+                                                    ListenOptions options) noexcept {
+  COROPACT_CHECK(loop != nullptr, "Listener requires an owner loop");
+  COROPACT_CHECK(loop->IsInLoopThread(), "Listener created from wrong Loop thread");
 
-  COROPACT_TRY_VALUE(fd, CreatedListenFd(listen_addr, options));
-  return LUringListener(loop, fd, options.zero_copy_writes);
+  auto fd = CreatedListenFd(listen_addr, options);
+  if (!fd.has_value()) {
+    return std::unexpected(fd.error());
+  }
+  return Listener(loop, *fd, options.zero_copy_writes);
 }
 
-LUringListener::LUringListener(LUringLoop* loop, int fd, bool zero_copy_writes) noexcept
+Listener::Listener(Loop* loop, int fd, bool zero_copy_writes) noexcept
     : loop_(loop), fd_(fd), zero_copy_writes_(zero_copy_writes) {
-  COROPACT_CHECK(loop_ != nullptr, "LUringListener requires an owner loop");
-  COROPACT_CHECK(loop_->IsInLoopThread(), "LUringListener created from wrong LUringLoop thread");
-  COROPACT_CHECK(fd_ >= 0, "LUringListener requires a valid file descriptor");
+  COROPACT_CHECK(loop_ != nullptr, "Listener requires an owner loop");
+  COROPACT_CHECK(loop_->IsInLoopThread(), "Listener created from wrong Loop thread");
+  COROPACT_CHECK(fd_ >= 0, "Listener requires a valid file descriptor");
 }
 
-LUringListener::LUringListener(LUringListener&& other) noexcept
+Listener::Listener(Listener&& other) noexcept
     : loop_(PrepareMove(other)),
       fd_(std::exchange(other.fd_, -1)),
       zero_copy_writes_(other.zero_copy_writes_),
@@ -880,14 +882,14 @@ LUringListener::LUringListener(LUringListener&& other) noexcept
   other.closed_ = true;
 }
 
-LUringListener& LUringListener::operator=(LUringListener&& other) noexcept {
+Listener& Listener::operator=(Listener&& other) noexcept {
   if (this == &other) {
     return *this;
   }
 
-  LUringLoop* other_loop = PrepareMove(other);
+  Loop* other_loop = PrepareMove(other);
   COROPACT_CHECK(loop_ == nullptr || loop_ == other_loop,
-                 "LUringListener move requires both objects to use the same LUringLoop");
+                 "Listener move requires both objects to use the same Loop");
   if (loop_ != nullptr) {
     ResetForMove();
   }
@@ -903,30 +905,30 @@ LUringListener& LUringListener::operator=(LUringListener&& other) noexcept {
   return *this;
 }
 
-LUringListener::~LUringListener() {
-  COROPACT_CHECK(pending_accepts_ == 0, "LUringListener destroyed with pending accept operations");
+Listener::~Listener() {
+  COROPACT_CHECK(pending_accepts_ == 0, "Listener destroyed with pending accept operations");
   COROPACT_CHECK(pending_close_ == nullptr,
-                 "LUringListener destroyed with a pending close operation");
-  COROPACT_CHECK(accept_source_ == nullptr, "LUringListener destroyed with an active AcceptSource");
+                 "Listener destroyed with a pending close operation");
+  COROPACT_CHECK(accept_source_ == nullptr, "Listener destroyed with an active AcceptSource");
   if (fd_ >= 0) {
     ::close(fd_);
   }
 }
 
-coro::Task<Result<LUringStream>> LUringListener::Accept() {
+coro::Task<Result<Stream>> Listener::Accept() {
   co_return co_await AcceptAwaiter(*this);
 }
 
-coro::Task<Result<void>> LUringListener::Close() { co_return co_await CloseAwaiter(*this); }
+coro::Task<Result<void>> Listener::Close() { co_return co_await CloseAwaiter(*this); }
 
-Result<net::Endpoint> LUringListener::LocalAddress() const noexcept {
+Result<net::Endpoint> Listener::LocalAddress() const noexcept {
   if (closed_ || fd_ < 0) {
     return std::unexpected(Errno(EBADF));
   }
   return GetLocalAddress(fd_);
 }
 
-Result<LUringAcceptSource> LUringListener::AcceptSource(
+Result<AcceptSource> Listener::CreateAcceptSource(
     net::AcceptSourceOptions options) noexcept {
   RequireOwnerLoop();
   if (loop_->State() == backend::LoopState::kStopping ||
@@ -940,32 +942,35 @@ Result<LUringAcceptSource> LUringListener::AcceptSource(
     return std::unexpected(Errno(EBUSY));
   }
 
-  COROPACT_TRY_VALUE(state, AcceptSourceStateMachine::Create(options));
-  return LUringAcceptSource(this, std::move(state));
+  auto state = AcceptSourceStateMachine::Create(options);
+  if (!state.has_value()) {
+    return std::unexpected(state.error());
+  }
+  return AcceptSource(this, std::move(*state));
 }
 
-void LUringListener::RequireOwnerLoop() const noexcept {
-  COROPACT_CHECK(loop_ != nullptr, "LUringListener operation has no owner loop");
+void Listener::RequireOwnerLoop() const noexcept {
+  COROPACT_CHECK(loop_ != nullptr, "Listener operation has no owner loop");
   COROPACT_CHECK(loop_->IsInLoopThread(),
-                 "LUringListener operation called from wrong LUringLoop thread");
+                 "Listener operation called from wrong Loop thread");
 }
 
-void LUringListener::NotifyCloseProgress() noexcept {
+void Listener::NotifyCloseProgress() noexcept {
   if (pending_close_ != nullptr) {
     pending_close_->TryComplete();
   }
 }
 
-void LUringListener::ResetForMove() noexcept {
-  COROPACT_CHECK(loop_ != nullptr, "LUringListener move destination is not initialized");
+void Listener::ResetForMove() noexcept {
+  COROPACT_CHECK(loop_ != nullptr, "Listener move destination is not initialized");
   COROPACT_CHECK(loop_->IsInLoopThread(),
-                 "LUringListener move called from wrong LUringLoop thread");
+                 "Listener move called from wrong Loop thread");
   COROPACT_CHECK(pending_accepts_ == 0,
-                 "LUringListener move destination has pending accept operations");
+                 "Listener move destination has pending accept operations");
   COROPACT_CHECK(pending_close_ == nullptr,
-                 "LUringListener move destination has a pending close operation");
+                 "Listener move destination has a pending close operation");
   COROPACT_CHECK(accept_source_ == nullptr,
-                 "LUringListener move destination has an active AcceptSource");
+                 "Listener move destination has an active AcceptSource");
 
   const int fd = std::exchange(fd_, -1);
   if (fd >= 0) {
@@ -973,18 +978,18 @@ void LUringListener::ResetForMove() noexcept {
   }
 }
 
-LUringLoop* LUringListener::PrepareMove(LUringListener& other) noexcept {
-  COROPACT_CHECK(other.loop_ != nullptr, "LUringListener move source is not initialized");
+Loop* Listener::PrepareMove(Listener& other) noexcept {
+  COROPACT_CHECK(other.loop_ != nullptr, "Listener move source is not initialized");
   COROPACT_CHECK(other.loop_->IsInLoopThread(),
-                 "LUringListener move called from wrong LUringLoop thread");
+                 "Listener move called from wrong Loop thread");
   COROPACT_CHECK(other.pending_accepts_ == 0,
-                 "LUringListener cannot move with pending accept operations");
+                 "Listener cannot move with pending accept operations");
   COROPACT_CHECK(other.pending_close_ == nullptr,
-                 "LUringListener cannot move with a pending close operation");
+                 "Listener cannot move with a pending close operation");
   COROPACT_CHECK(other.accept_source_ == nullptr,
-                 "LUringListener cannot move with an active AcceptSource");
+                 "Listener cannot move with an active AcceptSource");
 
-  LUringLoop* loop = other.loop_;
+  Loop* loop = other.loop_;
   other.loop_ = nullptr;
   return loop;
 }

@@ -35,9 +35,9 @@ namespace {
 using coropact::Error;
 using coropact::Result;
 using coropact::coro::DetachedTask;
-using coropact::luring::LUringLoop;
-using coropact::luring::LUringOptions;
-using coropact::luring::LUringStream;
+using coropact::luring::Loop;
+using coropact::luring::Options;
+using coropact::luring::Stream;
 using coropact::luring::ZeroCopySendResult;
 using coropact::luring::ZeroCopySendUsage;
 
@@ -83,8 +83,8 @@ bool IsEnvironmentSkip(Error error) {
          error.value() == EOPNOTSUPP;
 }
 
-bool InitLoop(LUringLoop& loop) {
-  LUringOptions options;
+bool InitLoop(Loop& loop) {
+  Options options;
   options.entries = 32;
   auto initialized = loop.Init(options);
   if (initialized.has_value()) {
@@ -146,18 +146,18 @@ coropact::net::Endpoint EmptyPeerAddress() {
   return coropact::net::Endpoint(address);
 }
 
-DetachedTask SendOnce(LUringStream* stream, std::span<const std::byte> payload,
+DetachedTask SendOnce(Stream* stream, std::span<const std::byte> payload,
                       std::optional<Result<ZeroCopySendResult>>* result) {
   result->emplace(co_await stream->SendZeroCopy(payload));
 }
 
-DetachedTask WriteAllOnce(LUringStream* stream, std::span<const std::byte> payload,
+DetachedTask WriteAllOnce(Stream* stream, std::span<const std::byte> payload,
                           std::optional<Result<void>>* result) {
   result->emplace(co_await stream->WriteAll(payload));
 }
 
 template <typename T>
-bool DriveUntilResult(LUringLoop& loop, std::optional<Result<T>>& result, const char* operation) {
+bool DriveUntilResult(Loop& loop, std::optional<Result<T>>& result, const char* operation) {
   for (int i = 0; i < 4 && !result.has_value(); ++i) {
     coropact::luring::detail::LoopAccess::RunReady(loop);
   }
@@ -174,7 +174,7 @@ bool DriveUntilResult(LUringLoop& loop, std::optional<Result<T>>& result, const 
 }
 
 template <typename T>
-bool DriveUntilResultWithPolling(LUringLoop& loop, std::optional<Result<T>>& result,
+bool DriveUntilResultWithPolling(Loop& loop, std::optional<Result<T>>& result,
                                  const char* operation, std::chrono::milliseconds timeout) {
   const auto deadline = std::chrono::steady_clock::now() + timeout;
   while (!result.has_value() && std::chrono::steady_clock::now() < deadline) {
@@ -224,7 +224,7 @@ bool ReadExact(int fd, std::span<const char> expected) {
 }
 
 bool CheckSendZeroCopy() {
-  LUringLoop loop;
+  Loop loop;
   if (!InitLoop(loop)) {
     return true;
   }
@@ -237,7 +237,7 @@ bool CheckSendZeroCopy() {
   auto local = std::move(pair->first);
   auto peer = std::move(pair->second);
 
-  LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  Stream stream(&loop, local.Release(), EmptyPeerAddress());
   constexpr std::string_view text = "io_uring-send-zero-copy";
   const auto payload = std::as_bytes(std::span<const char>(text.data(), text.size()));
 
@@ -284,7 +284,7 @@ bool CheckSendZeroCopy() {
 }
 
 bool CheckPrimaryErrorWithoutNotificationCompletes() {
-  LUringLoop loop;
+  Loop loop;
   if (!InitLoop(loop)) {
     return true;
   }
@@ -294,7 +294,7 @@ bool CheckPrimaryErrorWithoutNotificationCompletes() {
     return false;
   }
 
-  LUringStream stream(&loop, socket.Release(), EmptyPeerAddress());
+  Stream stream(&loop, socket.Release(), EmptyPeerAddress());
   const std::array<std::byte, 1> payload{};
   std::optional<Result<ZeroCopySendResult>> result;
   coropact::coro::SpawnDetach(loop, SendOnce(&stream, payload, &result));
@@ -310,7 +310,7 @@ bool CheckPrimaryErrorWithoutNotificationCompletes() {
 }
 
 bool CheckZeroCopyWriteAllIntegrity() {
-  LUringLoop loop;
+  Loop loop;
   if (!InitLoop(loop)) {
     return true;
   }
@@ -323,7 +323,7 @@ bool CheckZeroCopyWriteAllIntegrity() {
   auto local = std::move(pair->first);
   auto peer = std::move(pair->second);
 
-  LUringStream stream(&loop, local.Release(), EmptyPeerAddress());
+  Stream stream(&loop, local.Release(), EmptyPeerAddress());
   stream.SetZeroCopyWritesEnabled(true);
 
   constexpr std::size_t kRounds = 64;

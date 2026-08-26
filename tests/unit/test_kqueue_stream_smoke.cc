@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 /*
- * Native KqueueStream smoke against TriggerMode::kOneShot, including
+ * Native Stream smoke against TriggerMode::kOneShot, including
  * ReadSomeFor driven by the loop timer tree.
  */
 
@@ -45,9 +45,9 @@ using ReadResult = coropact::Result<std::size_t>;
 using WriteResult = coropact::Result<void>;
 using OwnedReadOutcome = coropact::io::ReadIntoOutcome;
 
-static_assert(coropact::io::AsyncStream<coropact::kqueue::KqueueStream>);
-static_assert(coropact::io::AsyncTimedStream<coropact::kqueue::KqueueStream>);
-static_assert(coropact::io::AsyncReadIntoStream<coropact::kqueue::KqueueStream>);
+static_assert(coropact::io::AsyncStream<coropact::kqueue::Stream>);
+static_assert(coropact::io::AsyncTimedStream<coropact::kqueue::Stream>);
+static_assert(coropact::io::AsyncReadIntoStream<coropact::kqueue::Stream>);
 
 bool Check(bool condition, const char* message) {
   if (!condition) {
@@ -75,9 +75,9 @@ std::string Gather(coropact::io::Buffer& buffer) {
   return out;
 }
 
-coropact::coro::DetachedTask ReadOnce(coropact::kqueue::KqueueStream* stream,
-                                      coropact::kqueue::KqueueLoop* loop,
-                                      coropact::kqueue::KqueueLoop* scheduler,
+coropact::coro::DetachedTask ReadOnce(coropact::kqueue::Stream* stream,
+                                      coropact::kqueue::Loop* loop,
+                                      coropact::kqueue::Loop* scheduler,
                                       std::array<std::byte, 16>* buffer,
                                       std::optional<ReadResult>* out,
                                       bool* resumed_with_scheduler) {
@@ -88,8 +88,8 @@ coropact::coro::DetachedTask ReadOnce(coropact::kqueue::KqueueStream* stream,
 }
 
 coropact::coro::DetachedTask TimedReadThenRead(
-    coropact::kqueue::KqueueStream* stream, coropact::kqueue::KqueueLoop* loop,
-    coropact::kqueue::KqueueLoop* scheduler, std::span<std::byte> timed_buffer,
+    coropact::kqueue::Stream* stream, coropact::kqueue::Loop* loop,
+    coropact::kqueue::Loop* scheduler, std::span<std::byte> timed_buffer,
     std::span<std::byte> next_buffer, std::optional<ReadResult>* timed_result,
     std::optional<ReadResult>* next_result, bool* resumed_with_scheduler) {
   timed_result->emplace(co_await stream->ReadSomeFor(timed_buffer, std::chrono::seconds{1}));
@@ -98,9 +98,9 @@ coropact::coro::DetachedTask TimedReadThenRead(
   loop->RequestStop();
 }
 
-coropact::coro::DetachedTask TimedReadOnce(coropact::kqueue::KqueueStream* stream,
-                                           coropact::kqueue::KqueueLoop* loop,
-                                           coropact::kqueue::KqueueLoop* scheduler,
+coropact::coro::DetachedTask TimedReadOnce(coropact::kqueue::Stream* stream,
+                                           coropact::kqueue::Loop* loop,
+                                           coropact::kqueue::Loop* scheduler,
                                            std::span<std::byte> buffer, coropact::time::Duration timeout,
                                            std::optional<ReadResult>* out,
                                            bool* resumed_with_scheduler, int* resume_count) {
@@ -111,8 +111,8 @@ coropact::coro::DetachedTask TimedReadOnce(coropact::kqueue::KqueueStream* strea
   loop->RequestStop();
 }
 
-coropact::coro::DetachedTask ReadWithoutQuit(coropact::kqueue::KqueueStream* stream,
-                                             coropact::kqueue::KqueueLoop* scheduler,
+coropact::coro::DetachedTask ReadWithoutQuit(coropact::kqueue::Stream* stream,
+                                             coropact::kqueue::Loop* scheduler,
                                              std::array<std::byte, 16>* buffer,
                                              std::optional<ReadResult>* out, int* resume_count,
                                              bool* resumed_with_scheduler) {
@@ -122,9 +122,9 @@ coropact::coro::DetachedTask ReadWithoutQuit(coropact::kqueue::KqueueStream* str
   out->emplace(std::move(result));
 }
 
-coropact::coro::DetachedTask ReadIntoOnce(coropact::kqueue::KqueueStream* stream,
-                                          coropact::kqueue::KqueueLoop* loop,
-                                          coropact::kqueue::KqueueLoop* scheduler,
+coropact::coro::DetachedTask ReadIntoOnce(coropact::kqueue::Stream* stream,
+                                          coropact::kqueue::Loop* loop,
+                                          coropact::kqueue::Loop* scheduler,
                                           coropact::net::Buffer buffer,
                                           std::optional<OwnedReadOutcome>* out,
                                           bool* resumed_with_scheduler) {
@@ -134,9 +134,9 @@ coropact::coro::DetachedTask ReadIntoOnce(coropact::kqueue::KqueueStream* stream
   loop->RequestStop();
 }
 
-coropact::coro::DetachedTask WriteOnce(coropact::kqueue::KqueueStream* stream,
-                                       coropact::kqueue::KqueueLoop* loop,
-                                       coropact::kqueue::KqueueLoop* scheduler,
+coropact::coro::DetachedTask WriteOnce(coropact::kqueue::Stream* stream,
+                                       coropact::kqueue::Loop* loop,
+                                       coropact::kqueue::Loop* scheduler,
                                        std::span<const std::byte> payload,
                                        std::optional<WriteResult>* out,
                                        bool* resumed_with_scheduler) {
@@ -146,10 +146,10 @@ coropact::coro::DetachedTask WriteOnce(coropact::kqueue::KqueueStream* stream,
   loop->RequestStop();
 }
 
-coropact::coro::DetachedTask EchoServer(coropact::kqueue::KqueueStream* stream,
+coropact::coro::DetachedTask EchoServer(coropact::kqueue::Stream* stream,
                                         std::array<std::byte, 64>* scratch,
                                         std::optional<coropact::Result<void>>* out,
-                                        int* done_count, coropact::kqueue::KqueueLoop* loop) {
+                                        int* done_count, coropact::kqueue::Loop* loop) {
   ReadResult read_result = co_await stream->ReadSome(*scratch);
   if (!read_result.has_value()) {
     out->emplace(std::unexpected(read_result.error()));
@@ -164,12 +164,12 @@ coropact::coro::DetachedTask EchoServer(coropact::kqueue::KqueueStream* stream,
   }
 }
 
-coropact::coro::DetachedTask EchoClient(coropact::kqueue::KqueueStream* stream,
+coropact::coro::DetachedTask EchoClient(coropact::kqueue::Stream* stream,
                                         std::span<const std::byte> payload,
                                         std::array<std::byte, 64>* received,
                                         std::optional<coropact::Result<void>>* out,
                                         std::size_t* received_size, int* done_count,
-                                        coropact::kqueue::KqueueLoop* loop) {
+                                        coropact::kqueue::Loop* loop) {
   coropact::Result<void> write_result = co_await stream->WriteAll(payload);
   if (!write_result.has_value()) {
     out->emplace(std::unexpected(write_result.error()));
@@ -188,8 +188,8 @@ coropact::coro::DetachedTask EchoClient(coropact::kqueue::KqueueStream* stream,
   }
 }
 
-coropact::coro::DetachedTask CloseThenSubmit(coropact::kqueue::KqueueStream* stream,
-                                             coropact::kqueue::KqueueLoop* loop,
+coropact::coro::DetachedTask CloseThenSubmit(coropact::kqueue::Stream* stream,
+                                             coropact::kqueue::Loop* loop,
                                              std::array<std::byte, 16>* read_buffer,
                                              std::span<const std::byte> write_buffer,
                                              std::optional<ReadResult>* read_result,
@@ -206,7 +206,7 @@ coropact::coro::DetachedTask CloseThenSubmit(coropact::kqueue::KqueueStream* str
 }
 
 coropact::coro::DetachedTask ShutdownThenReadAndWrite(
-    coropact::kqueue::KqueueStream* stream, coropact::kqueue::KqueueLoop* loop,
+    coropact::kqueue::Stream* stream, coropact::kqueue::Loop* loop,
     std::array<std::byte, 16>* read_buffer, std::span<const std::byte> write_buffer,
     std::optional<WriteResult>* first_shutdown, std::optional<WriteResult>* second_shutdown,
     std::optional<WriteResult>* write_result, std::optional<ReadResult>* read_result) {
@@ -217,7 +217,7 @@ coropact::coro::DetachedTask ShutdownThenReadAndWrite(
   loop->RequestStop();
 }
 
-coropact::coro::Task<ReadResult> ReadFromForeignLoopThread(coropact::kqueue::KqueueStream* stream,
+coropact::coro::Task<ReadResult> ReadFromForeignLoopThread(coropact::kqueue::Stream* stream,
                                                            std::array<std::byte, 16>* buffer) {
   co_return co_await stream->ReadSome(*buffer);
 }
@@ -240,7 +240,7 @@ private:
 
 class CloseStreamWork final : public coropact::coro::Work {
 public:
-  CloseStreamWork(coropact::kqueue::KqueueLoop* loop, coropact::kqueue::KqueueStream* stream) noexcept
+  CloseStreamWork(coropact::kqueue::Loop* loop, coropact::kqueue::Stream* stream) noexcept
       : loop_(loop), stream_(stream) {
     SetRun(&RunClose);
   }
@@ -251,8 +251,8 @@ private:
     coropact::coro::Spawn(*self->loop_, self->stream_->Close()).Detach();
   }
 
-  coropact::kqueue::KqueueLoop* loop_;
-  coropact::kqueue::KqueueStream* stream_;
+  coropact::kqueue::Loop* loop_;
+  coropact::kqueue::Stream* stream_;
 };
 
 bool CheckForeignLoopReadTerminates() {
@@ -262,8 +262,8 @@ bool CheckForeignLoopReadTerminates() {
     return false;
   }
 
-  coropact::kqueue::KqueueLoop loop;
-  coropact::kqueue::KqueueStream stream(&loop, sv[0]);
+  coropact::kqueue::Loop loop;
+  coropact::kqueue::Stream stream(&loop, sv[0]);
   const pid_t child = ::fork();
   if (child < 0) {
     ::close(sv[1]);
@@ -304,8 +304,8 @@ bool CheckImmediateRead() {
     return false;
   }
 
-  coropact::kqueue::KqueueLoop loop;
-  coropact::kqueue::KqueueStream stream(&loop, sv[0]);
+  coropact::kqueue::Loop loop;
+  coropact::kqueue::Stream stream(&loop, sv[0]);
 
   std::array<std::byte, 16> buffer{};
   std::optional<ReadResult> result;
@@ -332,8 +332,8 @@ bool CheckImmediateWrite() {
     return false;
   }
 
-  coropact::kqueue::KqueueLoop loop;
-  coropact::kqueue::KqueueStream stream(&loop, sv[0]);
+  coropact::kqueue::Loop loop;
+  coropact::kqueue::Stream stream(&loop, sv[0]);
 
   const char payload[] = "write";
   auto bytes = std::as_bytes(std::span(payload, sizeof(payload) - 1));
@@ -363,8 +363,8 @@ bool CheckPendingRead() {
     return false;
   }
 
-  coropact::kqueue::KqueueLoop loop;
-  coropact::kqueue::KqueueStream stream(&loop, sv[0]);
+  coropact::kqueue::Loop loop;
+  coropact::kqueue::Stream stream(&loop, sv[0]);
 
   std::array<std::byte, 16> buffer{};
   std::optional<ReadResult> result;
@@ -394,8 +394,8 @@ bool CheckTimedReadReleasesSlotBeforeContinuation() {
     return false;
   }
 
-  coropact::kqueue::KqueueLoop loop;
-  coropact::kqueue::KqueueStream stream(&loop, sv[0]);
+  coropact::kqueue::Loop loop;
+  coropact::kqueue::Stream stream(&loop, sv[0]);
   constexpr std::string_view kTimedPayload = "timed";
   constexpr std::string_view kNextPayload = "next";
   std::array<std::byte, kTimedPayload.size()> timed_buffer{};
@@ -434,8 +434,8 @@ bool CheckTimedReadTimeoutResumesOnce() {
     return false;
   }
 
-  coropact::kqueue::KqueueLoop loop;
-  coropact::kqueue::KqueueStream stream(&loop, sv[0]);
+  coropact::kqueue::Loop loop;
+  coropact::kqueue::Stream stream(&loop, sv[0]);
   std::array<std::byte, 16> buffer{};
   std::optional<ReadResult> result;
   bool resumed_with_scheduler = false;
@@ -475,8 +475,8 @@ bool CheckOwnedReadIntoReturnsBuffer() {
     return false;
   }
 
-  coropact::kqueue::KqueueLoop loop;
-  coropact::kqueue::KqueueStream stream(&loop, sv[0]);
+  coropact::kqueue::Loop loop;
+  coropact::kqueue::Stream stream(&loop, sv[0]);
   std::optional<OwnedReadOutcome> outcome;
   bool resumed_with_scheduler = false;
 
@@ -506,8 +506,8 @@ bool CheckCloseCancelsPendingRead() {
     return false;
   }
 
-  coropact::kqueue::KqueueLoop loop;
-  coropact::kqueue::KqueueStream stream(&loop, sv[0]);
+  coropact::kqueue::Loop loop;
+  coropact::kqueue::Stream stream(&loop, sv[0]);
 
   std::array<std::byte, 16> buffer{};
   std::optional<ReadResult> result;
@@ -535,8 +535,8 @@ bool CheckLoopStopCancelsPendingRead() {
     return false;
   }
 
-  coropact::kqueue::KqueueLoop loop;
-  coropact::kqueue::KqueueStream stream(&loop, sv[0]);
+  coropact::kqueue::Loop loop;
+  coropact::kqueue::Stream stream(&loop, sv[0]);
 
   std::array<std::byte, 16> buffer{};
   std::optional<ReadResult> result;
@@ -569,9 +569,9 @@ bool CheckEchoAlgorithmUsesAsyncStream() {
     return false;
   }
 
-  coropact::kqueue::KqueueLoop loop;
-  coropact::kqueue::KqueueStream server(&loop, sv[0]);
-  coropact::kqueue::KqueueStream client(&loop, sv[1]);
+  coropact::kqueue::Loop loop;
+  coropact::kqueue::Stream server(&loop, sv[0]);
+  coropact::kqueue::Stream client(&loop, sv[1]);
 
   const char payload[] = "echo-through-async-stream";
   auto bytes = std::as_bytes(std::span(payload, sizeof(payload) - 1));
@@ -606,8 +606,8 @@ bool CheckCloseRejectsLaterSubmit() {
     return false;
   }
 
-  coropact::kqueue::KqueueLoop loop;
-  coropact::kqueue::KqueueStream stream(&loop, sv[0]);
+  coropact::kqueue::Loop loop;
+  coropact::kqueue::Stream stream(&loop, sv[0]);
 
   std::array<std::byte, 16> read_buffer{};
   const char payload[] = "after-close";
@@ -650,8 +650,8 @@ bool CheckShutdownKeepsReadOpen() {
     return false;
   }
 
-  coropact::kqueue::KqueueLoop loop;
-  coropact::kqueue::KqueueStream stream(&loop, sv[0]);
+  coropact::kqueue::Loop loop;
+  coropact::kqueue::Stream stream(&loop, sv[0]);
 
   std::array<std::byte, 16> read_buffer{};
   const char after_shutdown[] = "blocked";

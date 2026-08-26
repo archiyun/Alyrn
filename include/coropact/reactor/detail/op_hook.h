@@ -8,11 +8,11 @@
 
 namespace coropact::reactor::detail {
 
-// A vtable-free operation hook. ReactorStream stores the erased awaiter
+// A vtable-free operation hook. Stream stores the erased awaiter
 // address plus a kind, while this CRTP hook restores the concrete awaiter type
 // at the dispatch site.
 template <typename TOwner>
-class ReactorOperationHook {
+class OperationHook {
 public:
   [[nodiscard]]
   bool CompleteResult(Result<std::size_t> result) noexcept {
@@ -22,6 +22,6 @@ public:
   void OnReady() noexcept { static_cast<TOwner*>(this)->OnReadyImpl(); }
 };
 
-static_assert(sizeof(ReactorOperationHook<void>) == 1);
+static_assert(sizeof(OperationHook<void>) == 1);
 
 }  // namespace coropact::reactor::detail

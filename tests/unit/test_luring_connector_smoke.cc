@@ -81,8 +81,8 @@ bool IsEnvironmentSkip(coropact::Error error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 
-LoopInitStatus InitLoop(coropact::luring::LUringLoop& loop) {
-  coropact::luring::LUringOptions options;
+LoopInitStatus InitLoop(coropact::luring::Loop& loop) {
+  coropact::luring::Options options;
   options.entries = 16;
 
   auto init = loop.Init(options);
@@ -94,7 +94,7 @@ LoopInitStatus InitLoop(coropact::luring::LUringLoop& loop) {
     return LoopInitStatus::kSkip;
   }
 
-  std::cout << "FAIL: LUringLoop init failed: " << init.error().message() << '\n';
+  std::cout << "FAIL: Loop init failed: " << init.error().message() << '\n';
   return LoopInitStatus::kFail;
 }
 
@@ -136,9 +136,9 @@ coropact::Result<ListenEndpoint> ListenLoopback() {
 }
 
 coropact::coro::DetachedTask ConnectOnce(
-    coropact::luring::LUringConnector* connector, coropact::luring::LUringLoop* loop,
+    coropact::luring::Connector* connector, coropact::luring::Loop* loop,
     std::string_view host, std::uint16_t port,
-    std::optional<coropact::Result<coropact::luring::LUringStream>>* out,
+    std::optional<coropact::Result<coropact::luring::Stream>>* out,
     bool* resumed_with_scheduler) {
   auto connected = co_await connector->Connect(host, port);
   *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == loop;
@@ -156,7 +156,7 @@ bool CheckConnectSuccess() {
     return false;
   }
 
-  coropact::luring::LUringLoop loop;
+  coropact::luring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -166,8 +166,8 @@ bool CheckConnectSuccess() {
       return false;
   }
 
-  coropact::luring::LUringConnector connector(&loop);
-  std::optional<coropact::Result<coropact::luring::LUringStream>> connected;
+  coropact::luring::Connector connector(&loop);
+  std::optional<coropact::Result<coropact::luring::Stream>> connected;
   bool resumed_with_scheduler = false;
 
   coropact::coro::SpawnDetach(loop, ConnectOnce(&connector, &loop, "127.0.0.1", listener->port,
@@ -191,10 +191,10 @@ bool CheckConnectSuccess() {
 }
 
 bool CheckConnectRejectsInvalidHost() {
-  coropact::luring::LUringLoop loop;
-  coropact::luring::LUringConnector connector(&loop);
+  coropact::luring::Loop loop;
+  coropact::luring::Connector connector(&loop);
 
-  std::optional<coropact::Result<coropact::luring::LUringStream>> connected;
+  std::optional<coropact::Result<coropact::luring::Stream>> connected;
   bool resumed_with_scheduler = false;
 
   coropact::coro::SpawnDetach(

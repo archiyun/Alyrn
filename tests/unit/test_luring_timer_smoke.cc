@@ -23,7 +23,7 @@ namespace {
 
 using namespace std::chrono_literals;
 
-static_assert(requires(coropact::luring::LUringConnector& connector) { connector.SleepFor(1ms); });
+static_assert(requires(coropact::luring::Connector& connector) { connector.SleepFor(1ms); });
 
 bool Check(bool condition, const char* message) {
   if (!condition) std::cout << "FAIL: " << message << '\n';
@@ -49,13 +49,13 @@ bool ExpectChildAbort(void (*entry)(), const char* message) {
 }
 
 void RunAfterFromForeignThread() {
-  coropact::luring::LUringLoop loop;
+  coropact::luring::Loop loop;
   std::thread foreign([&loop] { (void)loop.RunAfter(0ms, [] noexcept {}); });
   foreign.join();
 }
 
 void DestroyLoopFromForeignThread() {
-  auto* loop = new coropact::luring::LUringLoop;
+  auto* loop = new coropact::luring::Loop;
   std::thread foreign([loop] { delete loop; });
   foreign.join();
 }
@@ -64,14 +64,14 @@ bool TestLoopAffinityIsEnforcedInRelease() {
   return ExpectChildAbort(&RunAfterFromForeignThread,
                           "RunAfter from a foreign thread must terminate in Release") &&
          ExpectChildAbort(&DestroyLoopFromForeignThread,
-                          "LUringLoop destruction from a foreign thread must terminate in Release");
+                          "Loop destruction from a foreign thread must terminate in Release");
 }
 
 bool IsEnvironmentSkip(coropact::Error error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 
-bool StopAndDrain(coropact::luring::LUringLoop& loop) {
+bool StopAndDrain(coropact::luring::Loop& loop) {
   loop.RequestStop();
   loop.Run();
 
@@ -81,7 +81,7 @@ bool StopAndDrain(coropact::luring::LUringLoop& loop) {
                "manual timer loop cleanup should drain user operation work");
 }
 
-coropact::coro::DetachedTask SleepTask(coropact::luring::LUringLoop* loop, bool* resumed,
+coropact::coro::DetachedTask SleepTask(coropact::luring::Loop* loop, bool* resumed,
                                        bool* scheduler_ok) {
   auto result = co_await coropact::luring::SleepFor(*loop, 1ms);
   *resumed = true;
@@ -90,8 +90,8 @@ coropact::coro::DetachedTask SleepTask(coropact::luring::LUringLoop* loop, bool*
 }
 
 bool TestTimers() {
-  coropact::luring::LUringLoop loop;
-  coropact::luring::LUringOptions options;
+  coropact::luring::Loop loop;
+  coropact::luring::Options options;
   options.entries = 16;
 
   auto init = loop.Init(options);
@@ -100,7 +100,7 @@ bool TestTimers() {
       std::cout << "SKIP: io_uring unavailable: " << init.error().message() << '\n';
       return true;
     }
-    return Check(false, "LUringLoop initialization failed");
+    return Check(false, "Loop initialization failed");
   }
 
   bool early_fired = false;
@@ -165,8 +165,8 @@ bool TestTimers() {
 bool TestStopDiscardsUnexpiredTimer() {
   bool fired = false;
   {
-    coropact::luring::LUringLoop loop;
-    coropact::luring::LUringOptions options;
+    coropact::luring::Loop loop;
+    coropact::luring::Options options;
     options.entries = 8;
 
     auto init = loop.Init(options);
@@ -174,7 +174,7 @@ bool TestStopDiscardsUnexpiredTimer() {
       if (IsEnvironmentSkip(init.error())) {
         return true;
       }
-      return Check(false, "LUringLoop initialization failed for stop test");
+      return Check(false, "Loop initialization failed for stop test");
     }
 
     auto timer = loop.RunAfter(1h, [&fired] noexcept { fired = true; });

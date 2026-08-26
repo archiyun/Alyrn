@@ -27,7 +27,7 @@
 
 namespace {
 
-using coropact::kqueue::KqueueLoop;
+using coropact::kqueue::Loop;
 using coropact::kqueue::TriggerMode;
 using coropact::kqueue::detail::Channel;
 
@@ -146,7 +146,7 @@ void Drain(int fd) {
  * what forces the next poll turn so that absence can be observed.
  */
 bool CheckOneShotDoesNotRefireWithoutRearm() {
-  KqueueLoop loop;
+  Loop loop;
   ScopedPipe data;
   ScopedPipe sentinel_pipe;
 
@@ -160,7 +160,7 @@ bool CheckOneShotDoesNotRefireWithoutRearm() {
 
   struct Context {
     Observation* observation;
-    KqueueLoop* loop;
+    Loop* loop;
     Channel* sentinel;
     int data_write_fd;
     int data_read_fd;
@@ -209,7 +209,7 @@ bool CheckOneShotDoesNotRefireWithoutRearm() {
 }
 
 bool CheckReArmDeliversAgain() {
-  KqueueLoop loop;
+  Loop loop;
   ScopedPipe pipe;
 
   struct Observation {
@@ -220,7 +220,7 @@ bool CheckReArmDeliversAgain() {
 
   struct Context {
     Observation* observation;
-    KqueueLoop* loop;
+    Loop* loop;
     Channel* channel;
     int write_fd;
     int read_fd;
@@ -252,7 +252,7 @@ bool CheckReArmDeliversAgain() {
 }
 
 bool CheckRetiredFilterRemoveIsSafe() {
-  KqueueLoop loop;
+  Loop loop;
   ScopedPipe pipe;
 
   struct Observation {
@@ -263,7 +263,7 @@ bool CheckRetiredFilterRemoveIsSafe() {
 
   struct Context {
     Observation* observation;
-    KqueueLoop* loop;
+    Loop* loop;
   } context{&observation, &loop};
 
   channel.SetTriggerMode(TriggerMode::kOneShot);
@@ -292,7 +292,7 @@ bool CheckRetiredFilterRemoveIsSafe() {
  * poll turn delivers again without EnableReading().
  */
 bool CheckLevelTriggeredRefiresWhileReadable() {
-  KqueueLoop loop;
+  Loop loop;
   ScopedPipe pipe;
 
   struct Observation {
@@ -303,7 +303,7 @@ bool CheckLevelTriggeredRefiresWhileReadable() {
 
   struct Context {
     Observation* observation;
-    KqueueLoop* loop;
+    Loop* loop;
     int read_fd;
   } context{&observation, &loop, pipe.ReadFd()};
 
@@ -331,7 +331,7 @@ bool CheckLevelTriggeredRefiresWhileReadable() {
 }
 
 bool CheckBothFiltersRetireInOneTurn() {
-  KqueueLoop loop;
+  Loop loop;
   ScopedSocketPair pair;
 
   struct Observation {
@@ -343,7 +343,7 @@ bool CheckBothFiltersRetireInOneTurn() {
 
   struct Context {
     Observation* observation;
-    KqueueLoop* loop;
+    Loop* loop;
   } context{&observation, &loop};
 
   channel.SetTriggerMode(TriggerMode::kOneShot);
@@ -374,7 +374,7 @@ bool CheckBothFiltersRetireInOneTurn() {
 }
 
 bool CheckRequestStopWakesBlockedLoop() {
-  KqueueLoop loop;
+  Loop loop;
   std::atomic<bool> started{false};
 
   std::thread stopper([&] {
@@ -391,7 +391,7 @@ bool CheckRequestStopWakesBlockedLoop() {
   stopper.join();
 
   return Check(loop.State() == coropact::backend::LoopState::kStopped,
-               "RequestStop must wake a blocked KqueueLoop");
+               "RequestStop must wake a blocked Loop");
 }
 
 }  // namespace
