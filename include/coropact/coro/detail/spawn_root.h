@@ -53,10 +53,7 @@ private:
 
 template <Returnable T>
 struct SpawnFinalAwaiter {
-  [[nodiscard]]
-  bool await_ready() const noexcept {
-    return false;
-  }
+  bool await_ready() const noexcept { return false; }
 
   template <class Promise>
   [[nodiscard]]

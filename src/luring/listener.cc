@@ -13,22 +13,23 @@
 #include "coropact/backend/detail/value_result_state.h"
 #include "coropact/backend/loop.h"
 #include "coropact/base/check.h"
-#include "coropact/result.h"
+#include "coropact/coro/task.h"
 #include "coropact/luring/detail/cancel_result.h"
 #include "coropact/luring/detail/fd_close_convergence.h"
 #include "coropact/luring/detail/loop_access.h"
 #include "coropact/luring/detail/op.h"
-#include "coropact/luring/detail/operation_submission.h"
 #include "coropact/luring/detail/op_hook.h"
+#include "coropact/luring/detail/operation_submission.h"
 #include "coropact/luring/detail/sqe_prep.h"
 #include "coropact/luring/loop.h"
 #include "coropact/luring/stream.h"
-#include "coropact/coro/task.h"
 #include "coropact/net/detail/accept_source_state.h"
 #include "coropact/net/detail/source_state.h"
 #include "coropact/net/endpoint.h"
+#include "coropact/net/socket.h"
 #include "coropact/operation/detail/completion_gate.h"
 #include "coropact/operation/detail/scheduler_continuation.h"
+#include "coropact/result.h"
 
 namespace coropact::luring {
 
@@ -40,7 +41,7 @@ namespace {
 using AcceptResult = Result<Stream>;
 
 Result<int> CreatedListenFd(const net::Endpoint& listen_addr,
-                                  const ListenOptions& options) noexcept {
+                            const ListenOptions& options) noexcept {
   const int fd =
       ::socket(listen_addr.NativeFamily(), SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, IPPROTO_TCP);
   if (fd < 0) {
@@ -87,9 +88,13 @@ Result<net::Endpoint> GetLocalAddress(int fd) noexcept {
 }
 
 AcceptResult MakeStream(Loop* loop, int fd, const sockaddr_storage& peer_addr,
-                        socklen_t peer_len) noexcept {
-  return Stream(loop, fd,
-                      net::Endpoint(reinterpret_cast<const sockaddr*>(&peer_addr), peer_len));
+                        socklen_t peer_len, const net::TcpOptions& tcp_options) noexcept {
+  auto configured = net::ApplyTcpOptions(fd, tcp_options);
+  if (!configured.has_value()) {
+    (void)::close(fd);
+    return std::unexpected(configured.error());
+  }
+  return Stream(loop, fd, net::Endpoint(reinterpret_cast<const sockaddr*>(&peer_addr), peer_len));
 }
 
 bool IsMultishotUnsupported(int cqe_result) noexcept {
@@ -154,10 +159,7 @@ class AcceptSource::StopAwaiter {
 public:
   explicit StopAwaiter(AcceptSource& source) noexcept : source_(&source) {}
 
-  [[nodiscard]]
-  bool await_ready() const noexcept {
-    return false;
-  }
+  bool await_ready() const noexcept { return false; }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     continuation_.Bind(continuation);
@@ -183,14 +185,14 @@ public:
 
   Result<void> await_resume() noexcept {
     COROPACT_CHECK(result_.has_value(), "LUring accept source Stop resumed without a result");
-    return std::move(*result_);
+    return *result_;
   }
 
   void Complete(Result<void> result) noexcept {
     if (!completion_gate_.TryComplete()) {
       return;
     }
-    result_.emplace(std::move(result));
+    result_.emplace(result);
     continuation_.Schedule();
   }
 
@@ -201,17 +203,15 @@ private:
   std::optional<Result<void>> result_;
 };
 
-AcceptSource::AcceptSource(Listener* listener,
-                                       AcceptSourceStateMachine state) noexcept
-    : listener_(listener), state_(std::move(state)), accept_op_(this), cancel_op_(this) {}
+AcceptSource::AcceptSource(Listener* listener, AcceptSourceStateMachine state) noexcept
+    : listener_(listener), state_(state), accept_op_(this), cancel_op_(this) {}
 
 AcceptSource::~AcceptSource() {
   if (listener_ == nullptr) {
     return;
   }
 
-  COROPACT_CHECK(listener_->loop_->IsInLoopThread(),
-                 "AcceptSource destroyed from wrong thread");
+  COROPACT_CHECK(listener_->loop_->IsInLoopThread(), "AcceptSource destroyed from wrong thread");
   COROPACT_CHECK(pending_next_ == nullptr, "AcceptSource destroyed with pending Next");
   COROPACT_CHECK(pending_stop_ == nullptr, "AcceptSource destroyed with pending Stop");
   COROPACT_CHECK(!accept_submitted_, "AcceptSource destroyed with active accept");
@@ -228,16 +228,14 @@ AcceptSource::~AcceptSource() {
 
 AcceptSource::AcceptSource(AcceptSource&& other) noexcept
     : listener_(std::exchange(other.listener_, nullptr)),
-      state_(std::move(other.state_)),
+      state_(other.state_),
       events_(std::move(other.events_)),
-      terminal_error_(std::move(other.terminal_error_)),
+      terminal_error_(other.terminal_error_),
       accept_op_(this),
       cancel_op_(this),
       multishot_enabled_(other.multishot_enabled_) {
-  COROPACT_CHECK(other.pending_next_ == nullptr,
-                 "AcceptSource cannot move with pending Next");
-  COROPACT_CHECK(other.pending_stop_ == nullptr,
-                 "AcceptSource cannot move with pending Stop");
+  COROPACT_CHECK(other.pending_next_ == nullptr, "AcceptSource cannot move with pending Next");
+  COROPACT_CHECK(other.pending_stop_ == nullptr, "AcceptSource cannot move with pending Stop");
   COROPACT_CHECK(!other.accept_submitted_, "AcceptSource cannot move while active");
   COROPACT_CHECK(!other.cancel_submitted_, "AcceptSource cannot move while cancelling");
 
@@ -265,9 +263,9 @@ AcceptSource& AcceptSource::operator=(AcceptSource&& other) noexcept {
   }
 
   listener_ = std::exchange(other.listener_, nullptr);
-  state_ = std::move(other.state_);
+  state_ = other.state_;
   events_ = std::move(other.events_);
-  terminal_error_ = std::move(other.terminal_error_);
+  terminal_error_ = other.terminal_error_;
   multishot_enabled_ = other.multishot_enabled_;
 
   if (listener_ != nullptr && listener_->accept_source_ == &other) {
@@ -278,6 +276,12 @@ AcceptSource& AcceptSource::operator=(AcceptSource&& other) noexcept {
 }
 
 Result<Stream> AcceptSource::MakeStream(int accepted_fd) noexcept {
+  auto configured = net::ApplyTcpOptions(accepted_fd, listener_->tcp_options_);
+  if (!configured.has_value()) {
+    (void)::close(accepted_fd);
+    return std::unexpected(configured.error());
+  }
+
   sockaddr_storage peer{};
   socklen_t peer_len = sizeof(peer);
 
@@ -288,7 +292,7 @@ Result<Stream> AcceptSource::MakeStream(int accepted_fd) noexcept {
   }
 
   Stream stream(listener_->loop_, accepted_fd,
-                      net::Endpoint(reinterpret_cast<const sockaddr*>(&peer), peer_len));
+                net::Endpoint(reinterpret_cast<const sockaddr*>(&peer), peer_len));
   stream.SetZeroCopyWritesEnabled(listener_->zero_copy_writes_);
   return stream;
 }
@@ -314,9 +318,10 @@ Result<void> AcceptSource::StartOperation() noexcept {
   accept_op_.Prepare();
   ++listener_->pending_accepts_;
 
-  auto submitted = detail::LoopAccess::SubmitOp(
-      *listener_->loop_, &accept_op_,
-      detail::PrepareAcceptSource(listener_->fd_, multishot_enabled_, SOCK_NONBLOCK | SOCK_CLOEXEC));
+  auto submitted =
+      detail::LoopAccess::SubmitOp(*listener_->loop_, &accept_op_,
+                                   detail::PrepareAcceptSource(listener_->fd_, multishot_enabled_,
+                                                               SOCK_NONBLOCK | SOCK_CLOEXEC));
 
   if (!submitted.has_value()) {
     --listener_->pending_accepts_;
@@ -369,9 +374,8 @@ Result<void> AcceptSource::StartCancel() noexcept {
   cancel_op_.Prepare();
   const auto target = reinterpret_cast<std::uint64_t>(&accept_op_);
 
-  auto submitted = detail::LoopAccess::SubmitOp(
-      *listener_->loop_, &cancel_op_,
-      detail::PrepareCancelAllByUserData(target));
+  auto submitted = detail::LoopAccess::SubmitOp(*listener_->loop_, &cancel_op_,
+                                                detail::PrepareCancelAllByUserData(target));
 
   if (!submitted.has_value()) {
     return std::unexpected(submitted.error());
@@ -557,8 +561,7 @@ bool AcceptSource::TryTakeNext(NextResult& result) noexcept {
     Event event(std::in_place, std::move(events_.front()));
     events_.pop_front();
 
-    COROPACT_CHECK(state_.ConsumeEvent(),
-                   "AcceptSource: queue and state became inconsistent");
+    COROPACT_CHECK(state_.ConsumeEvent(), "AcceptSource: queue and state became inconsistent");
 
     result = NextResult(std::in_place, std::move(event));
     if (state_.State() == AcceptSourceState::kPaused) {
@@ -686,7 +689,8 @@ private:
     if (*op->result < 0) {
       self->result_.SetError(NegErrno(*op->result));
     } else {
-      auto result = MakeStream(listener->loop_, *op->result, self->peer_addr_, self->peer_len_);
+      auto result = MakeStream(listener->loop_, *op->result, self->peer_addr_, self->peer_len_,
+                               listener->tcp_options_);
       if (result.has_value()) {
         result->SetZeroCopyWritesEnabled(listener->zero_copy_writes_);
       }
@@ -701,7 +705,8 @@ private:
 
   void CompleteInline(AcceptResult result) noexcept {
     result_.SetResult(std::move(result));
-    COROPACT_CHECK(Operation()->TryAuthorizeCoupledResult(), "LUring Accept result was authorized twice");
+    COROPACT_CHECK(Operation()->TryAuthorizeCoupledResult(),
+                   "LUring Accept result was authorized twice");
     COROPACT_CHECK(Operation()->TryAuthorizeCoupledRelease(),
                    "LUring Accept release was not authorized after its result");
     ReleaseListenerReservation();
@@ -763,9 +768,8 @@ public:
     convergence_.BeginWaiting(continuation);
     Operation()->kind = OpKind::kListenerCloseComplete;
 
-    auto submitted = detail::LoopAccess::SubmitOp(
-        *listener_->loop_, Operation(),
-        detail::PrepareCancelAllByFd(listener_->fd_));
+    auto submitted = detail::LoopAccess::SubmitOp(*listener_->loop_, Operation(),
+                                                  detail::PrepareCancelAllByFd(listener_->fd_));
     if (!submitted.has_value()) {
       listener_->pending_close_ = nullptr;
       convergence_.SetError(submitted.error());
@@ -837,7 +841,8 @@ void DispatchListenerCloseComplete(::coropact::luring::detail::Op* op) noexcept 
   Listener::CloseAwaiter::OnCancelComplete(op);
 }
 
-CompletionDisposition DispatchAcceptSourceComplete(::coropact::luring::detail::Op* op, CompletionEvent event) noexcept {
+CompletionDisposition DispatchAcceptSourceComplete(::coropact::luring::detail::Op* op,
+                                                   CompletionEvent event) noexcept {
   auto* operation = static_cast<AcceptSource::AcceptOperation*>(op);
   return operation->Source()->OnCompletion(event);
 }
@@ -854,9 +859,8 @@ void DispatchAcceptSourceCancelComplete(::coropact::luring::detail::Op* op) noex
 
 }  // namespace detail
 
-Result<Listener> Listener::Create(Loop* loop,
-                                                    const net::Endpoint& listen_addr,
-                                                    ListenOptions options) noexcept {
+Result<Listener> Listener::Create(Loop* loop, const net::Endpoint& listen_addr,
+                                  ListenOptions options) noexcept {
   COROPACT_CHECK(loop != nullptr, "Listener requires an owner loop");
   COROPACT_CHECK(loop->IsInLoopThread(), "Listener created from wrong Loop thread");
 
@@ -864,11 +868,15 @@ Result<Listener> Listener::Create(Loop* loop,
   if (!fd.has_value()) {
     return std::unexpected(fd.error());
   }
-  return Listener(loop, *fd, options.zero_copy_writes);
+  return Listener(loop, *fd, options.zero_copy_writes, options.tcp_options);
 }
 
-Listener::Listener(Loop* loop, int fd, bool zero_copy_writes) noexcept
-    : loop_(loop), fd_(fd), zero_copy_writes_(zero_copy_writes) {
+Listener::Listener(Loop* loop, int fd, bool zero_copy_writes,
+                   net::TcpOptions tcp_options) noexcept
+    : loop_(loop),
+      fd_(fd),
+      zero_copy_writes_(zero_copy_writes),
+      tcp_options_(tcp_options) {
   COROPACT_CHECK(loop_ != nullptr, "Listener requires an owner loop");
   COROPACT_CHECK(loop_->IsInLoopThread(), "Listener created from wrong Loop thread");
   COROPACT_CHECK(fd_ >= 0, "Listener requires a valid file descriptor");
@@ -878,6 +886,7 @@ Listener::Listener(Listener&& other) noexcept
     : loop_(PrepareMove(other)),
       fd_(std::exchange(other.fd_, -1)),
       zero_copy_writes_(other.zero_copy_writes_),
+      tcp_options_(other.tcp_options_),
       closed_(other.closed_) {
   other.closed_ = true;
 }
@@ -900,6 +909,7 @@ Listener& Listener::operator=(Listener&& other) noexcept {
   pending_close_ = nullptr;
   accept_source_ = nullptr;
   zero_copy_writes_ = other.zero_copy_writes_;
+  tcp_options_ = other.tcp_options_;
   closed_ = other.closed_;
   other.closed_ = true;
   return *this;
@@ -907,17 +917,14 @@ Listener& Listener::operator=(Listener&& other) noexcept {
 
 Listener::~Listener() {
   COROPACT_CHECK(pending_accepts_ == 0, "Listener destroyed with pending accept operations");
-  COROPACT_CHECK(pending_close_ == nullptr,
-                 "Listener destroyed with a pending close operation");
+  COROPACT_CHECK(pending_close_ == nullptr, "Listener destroyed with a pending close operation");
   COROPACT_CHECK(accept_source_ == nullptr, "Listener destroyed with an active AcceptSource");
   if (fd_ >= 0) {
     ::close(fd_);
   }
 }
 
-coro::Task<Result<Stream>> Listener::Accept() {
-  co_return co_await AcceptAwaiter(*this);
-}
+coro::Task<Result<Stream>> Listener::Accept() { co_return co_await AcceptAwaiter(*this); }
 
 coro::Task<Result<void>> Listener::Close() { co_return co_await CloseAwaiter(*this); }
 
@@ -928,8 +935,7 @@ Result<net::Endpoint> Listener::LocalAddress() const noexcept {
   return GetLocalAddress(fd_);
 }
 
-Result<AcceptSource> Listener::CreateAcceptSource(
-    net::AcceptSourceOptions options) noexcept {
+Result<AcceptSource> Listener::CreateAcceptSource(net::AcceptSourceOptions options) noexcept {
   RequireOwnerLoop();
   if (loop_->State() == backend::LoopState::kStopping ||
       loop_->State() == backend::LoopState::kStopped) {
@@ -951,8 +957,7 @@ Result<AcceptSource> Listener::CreateAcceptSource(
 
 void Listener::RequireOwnerLoop() const noexcept {
   COROPACT_CHECK(loop_ != nullptr, "Listener operation has no owner loop");
-  COROPACT_CHECK(loop_->IsInLoopThread(),
-                 "Listener operation called from wrong Loop thread");
+  COROPACT_CHECK(loop_->IsInLoopThread(), "Listener operation called from wrong Loop thread");
 }
 
 void Listener::NotifyCloseProgress() noexcept {
@@ -963,14 +968,11 @@ void Listener::NotifyCloseProgress() noexcept {
 
 void Listener::ResetForMove() noexcept {
   COROPACT_CHECK(loop_ != nullptr, "Listener move destination is not initialized");
-  COROPACT_CHECK(loop_->IsInLoopThread(),
-                 "Listener move called from wrong Loop thread");
-  COROPACT_CHECK(pending_accepts_ == 0,
-                 "Listener move destination has pending accept operations");
+  COROPACT_CHECK(loop_->IsInLoopThread(), "Listener move called from wrong Loop thread");
+  COROPACT_CHECK(pending_accepts_ == 0, "Listener move destination has pending accept operations");
   COROPACT_CHECK(pending_close_ == nullptr,
                  "Listener move destination has a pending close operation");
-  COROPACT_CHECK(accept_source_ == nullptr,
-                 "Listener move destination has an active AcceptSource");
+  COROPACT_CHECK(accept_source_ == nullptr, "Listener move destination has an active AcceptSource");
 
   const int fd = std::exchange(fd_, -1);
   if (fd >= 0) {
@@ -980,8 +982,7 @@ void Listener::ResetForMove() noexcept {
 
 Loop* Listener::PrepareMove(Listener& other) noexcept {
   COROPACT_CHECK(other.loop_ != nullptr, "Listener move source is not initialized");
-  COROPACT_CHECK(other.loop_->IsInLoopThread(),
-                 "Listener move called from wrong Loop thread");
+  COROPACT_CHECK(other.loop_->IsInLoopThread(), "Listener move called from wrong Loop thread");
   COROPACT_CHECK(other.pending_accepts_ == 0,
                  "Listener cannot move with pending accept operations");
   COROPACT_CHECK(other.pending_close_ == nullptr,

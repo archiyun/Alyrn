@@ -86,8 +86,6 @@ public:
     return addr_.ss_family;
   }
 
-  sa_family_t native_family() const noexcept { return NativeFamily(); }
-
   [[nodiscard]]
   std::string ToIp() const {
     char buffer[INET6_ADDRSTRLEN] = {0};
@@ -140,9 +138,6 @@ public:
   socklen_t SockAddrLen() const noexcept {
     return addr_len_;
   }
-
-  const sockaddr* sock_addr() const noexcept { return SockAddr(); }
-  socklen_t sock_addr_len() const noexcept { return SockAddrLen(); }
 
   friend bool operator==(const Endpoint& lhs, const Endpoint& rhs) noexcept {
     if (lhs.family() != rhs.family() || lhs.ToPort() != rhs.ToPort()) {
@@ -217,7 +212,7 @@ private:
 // resolved by this value-layer helper.
 [[nodiscard]]
 inline Result<Endpoint> ParseIpAddress(std::string_view ip, std::uint16_t port) {
-  if (ip.find('\0') != std::string_view::npos) {
+  if (ip.contains('\0')) {
     return std::unexpected(Error(std::make_error_code(std::errc::invalid_argument)));
   }
 

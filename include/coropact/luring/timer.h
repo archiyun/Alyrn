@@ -20,10 +20,7 @@ class SleepAwaiter final {
 public:
   SleepAwaiter(Loop& loop, time::Duration delay) noexcept : loop_(&loop), delay_(delay) {}
 
-  [[nodiscard]]
-  bool await_ready() const noexcept {
-    return delay_ <= time::Duration::zero();
-  }
+  bool await_ready() const noexcept { return delay_ <= time::Duration::zero(); }
 
   [[nodiscard]]
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;

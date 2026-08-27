@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 #include <arpa/inet.h>
+#include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -43,7 +44,7 @@ int ConnectNonBlocking(const coropact::net::Endpoint& address) {
     return -1;
   }
 
-  int rc = ::connect(fd, address.sock_addr(), address.sock_addr_len());
+  int rc = ::connect(fd, address.SockAddr(), address.SockAddrLen());
   if (rc == 0 || errno == EINPROGRESS) {
     return fd;
   }
@@ -52,10 +53,33 @@ int ConnectNonBlocking(const coropact::net::Endpoint& address) {
   return -1;
 }
 
+int GetSocketOption(int fd, int level, int option) {
+  int value = 0;
+  auto length = static_cast<socklen_t>(sizeof(value));
+  if (::getsockopt(fd, level, option, &value, &length) < 0) {
+    return -1;
+  }
+  return value;
+}
+
 coropact::coro::DetachedTask AcceptOnce(coropact::reactor::Listener* listener,
                                         coropact::reactor::Loop* loop,
                                         std::optional<AcceptResult>* out) {
   out->emplace(co_await listener->Accept());
+  loop->RequestStop();
+}
+
+coropact::coro::DetachedTask AcceptAndCheckTcpOptions(
+    coropact::reactor::Listener* listener, coropact::reactor::Loop* loop,
+    bool* accepted, bool* options_applied) {
+  auto result = co_await listener->Accept();
+  *accepted = result.has_value();
+  if (*accepted) {
+    const int fd = result->Fd();
+    *options_applied =
+        GetSocketOption(fd, IPPROTO_TCP, TCP_NODELAY) == 1 &&
+        GetSocketOption(fd, SOL_SOCKET, SO_KEEPALIVE) == 1;
+  }
   loop->RequestStop();
 }
 
@@ -188,6 +212,38 @@ bool CheckPendingAccept() {
 
   return Check(result.has_value(), "pending accept did not finish") &&
          Check(result->has_value(), "pending accept returned error");
+}
+
+bool CheckAcceptedTcpOptions() {
+  coropact::reactor::Loop loop;
+  coropact::reactor::ListenerOptions options;
+  options.tcp_options.no_delay = true;
+  options.tcp_options.keep_alive = true;
+  coropact::reactor::Listener listener(&loop, coropact::net::Endpoint(0), options);
+
+  auto listen_addr = listener.LocalAddress();
+  if (!Check(listen_addr.has_value(), "listener local address failed")) {
+    return false;
+  }
+
+  int client_fd = -1;
+  bool accepted = false;
+  bool options_applied = false;
+  coropact::coro::SpawnDetach(
+      loop, AcceptAndCheckTcpOptions(&listener, &loop, &accepted, &options_applied));
+  loop.RunAfter(coropact::time::Duration::zero(),
+                [&] { client_fd = ConnectNonBlocking(*listen_addr); });
+  loop.Run();
+
+  bool ok = Check(client_fd >= 0, "accept options test client failed to connect") &&
+            Check(accepted, "accept options test did not return a stream") &&
+            Check(options_applied,
+                  "Listener did not apply TCP options before stream shutdown");
+
+  if (client_fd >= 0) {
+    ::close(client_fd);
+  }
+  return ok;
 }
 
 bool CheckAcceptReleasesSlotBeforeContinuation() {
@@ -378,6 +434,7 @@ bool CheckAcceptSourceStopRejectsForeignLoop() {
 int main() {
   if (!CheckFactories()) return 1;
   if (!CheckPendingAccept()) return 1;
+  if (!CheckAcceptedTcpOptions()) return 1;
   if (!CheckAcceptReleasesSlotBeforeContinuation()) return 1;
   if (!CheckCloseCancelsPendingAccept()) return 1;
   if (!CheckCompetingAcceptIsRejected()) return 1;

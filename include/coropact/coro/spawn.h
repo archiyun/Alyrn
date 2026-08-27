@@ -54,10 +54,7 @@ public:
     struct Awaiter {
       State* state;
 
-      [[nodiscard]]
-      bool await_ready() const noexcept {
-        return state->IsFinished();
-      }
+      bool await_ready() const noexcept { return state->IsFinished(); }
       [[nodiscard]]
       bool await_suspend(std::coroutine_handle<> joiner) noexcept {
         return state->TryParkWaiter(Scheduler::RequireCurrent(), joiner);

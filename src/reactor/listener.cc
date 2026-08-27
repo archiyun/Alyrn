@@ -47,7 +47,7 @@ Loop* CheckLoop(Loop* loop) noexcept {
 
 Result<net::Socket> TryCreateListenSocket(const net::Endpoint& listen_addr,
                                                 ListenerOptions options) noexcept {
-  auto fd = net::CreateNonBlockingSocket(listen_addr.native_family());
+  auto fd = net::CreateNonBlockingSocket(listen_addr.NativeFamily());
   if (!fd.has_value()) {
     return std::unexpected(fd.error());
   }
@@ -65,7 +65,7 @@ Result<net::Socket> TryCreateListenSocket(const net::Endpoint& listen_addr,
     }
   }
 
-  if (::bind(socket.fd(), listen_addr.sock_addr(), listen_addr.sock_addr_len()) < 0) {
+  if (::bind(socket.fd(), listen_addr.SockAddr(), listen_addr.SockAddrLen()) < 0) {
     return std::unexpected(CurrentErrno());
   }
 
@@ -88,10 +88,7 @@ class Listener::AcceptAwaiter {
 public:
   explicit AcceptAwaiter(Listener& listener) noexcept : listener_(&listener) {}
 
-  [[nodiscard]]
-  bool await_ready() const noexcept {
-    return false;
-  }
+  bool await_ready() const noexcept { return false; }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     listener_->RequireOwnerLoop();
@@ -167,6 +164,12 @@ private:
 
     if (fd < 0) {
       return std::unexpected(CurrentErrno());
+    }
+
+    auto configured = net::ApplyTcpOptions(fd, listener_->tcp_options_);
+    if (!configured.has_value()) {
+      (void)::close(fd);
+      return std::unexpected(configured.error());
     }
     return Stream(listener_->loop_, fd, peer_addr, listener_->stream_options_);
   }
@@ -522,15 +525,22 @@ Result<Stream> AcceptSource::TryAccept() noexcept {
   if (fd < 0) {
     return std::unexpected(CurrentErrno());
   }
+
+  auto configured = net::ApplyTcpOptions(fd, listener_->tcp_options_);
+  if (!configured.has_value()) {
+    (void)::close(fd);
+    return std::unexpected(configured.error());
+  }
   return Stream(listener_->loop_, fd, peer_addr, listener_->stream_options_);
 }
 
 Listener::Listener(Loop* loop, const net::Endpoint& listen_addr,
                                  ListenerOptions options)
     : loop_(CheckLoop(loop)),
-      socket_(CreateListenSocket(listen_addr.native_family())),
+      socket_(CreateListenSocket(listen_addr.NativeFamily())),
       channel_(loop_, socket_.fd()),
-      stream_options_(options.stream_options) {
+      stream_options_(options.stream_options),
+      tcp_options_(options.tcp_options) {
   socket_.SetReuseAddr(options.reuse_addr);
   if (options.reuse_port) {
     socket_.SetReusePort(true);
@@ -542,12 +552,13 @@ Listener::Listener(Loop* loop, const net::Endpoint& listen_addr,
   LoopAccess::RegisterShutdownParticipant(*loop_, shutdown_participant_);
 }
 
-Listener::Listener(Loop* loop, net::Socket socket,
-                                 StreamOptions stream_options) noexcept
+Listener::Listener(Loop* loop, net::Socket socket, StreamOptions stream_options,
+                   net::TcpOptions tcp_options) noexcept
     : loop_(CheckLoop(loop)),
       socket_(std::move(socket)),
       channel_(loop_, socket_.fd()),
-      stream_options_(stream_options) {
+      stream_options_(stream_options),
+      tcp_options_(tcp_options) {
   BindChannelCallbacks();
   LoopAccess::RegisterShutdownParticipant(*loop_, shutdown_participant_);
 }
@@ -563,7 +574,7 @@ Result<Listener> Listener::Create(Loop* loop,
   if (!socket.has_value()) {
     return std::unexpected(socket.error());
   }
-  return Listener(loop, std::move(*socket), options.stream_options);
+  return Listener(loop, std::move(*socket), options.stream_options, options.tcp_options);
 }
 
 Listener::Listener(Listener&& other) noexcept
@@ -571,6 +582,7 @@ Listener::Listener(Listener&& other) noexcept
       socket_(std::move(other.socket_)),
       channel_(std::move(other.channel_)),
       stream_options_(other.stream_options_),
+      tcp_options_(other.tcp_options_),
       pending_accept_(nullptr),
       accept_source_(nullptr),
       closed_(other.closed_) {
@@ -595,6 +607,7 @@ Listener& Listener::operator=(Listener&& other) noexcept {
   socket_ = std::move(other.socket_);
   channel_ = std::move(other.channel_);
   stream_options_ = other.stream_options_;
+  tcp_options_ = other.tcp_options_;
   pending_accept_ = nullptr;
   accept_source_ = nullptr;
   closed_ = other.closed_;

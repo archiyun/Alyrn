@@ -630,6 +630,31 @@ Result<net::Endpoint> Stream::LocalAddr() const noexcept {
   return socket_.LocalEndpoint();
 }
 
+Result<void> Stream::SetNoDelay(bool enabled) const noexcept {
+  RequireOwnerLoop();
+  return net::SetNoDelay(socket_.fd(), enabled);
+}
+
+Result<void> Stream::SetKeepAlive(bool enabled) const noexcept {
+  RequireOwnerLoop();
+  return net::SetKeepAlive(socket_.fd(), enabled);
+}
+
+Result<void> Stream::SetKeepAlivePeriod(time::Duration period) const noexcept {
+  RequireOwnerLoop();
+  return net::SetKeepAlivePeriod(socket_.fd(), period);
+}
+
+Result<void> Stream::SetReadBuffer(std::size_t bytes) const noexcept {
+  RequireOwnerLoop();
+  return net::SetReadBuffer(socket_.fd(), bytes);
+}
+
+Result<void> Stream::SetWriteBuffer(std::size_t bytes) const noexcept {
+  RequireOwnerLoop();
+  return net::SetWriteBuffer(socket_.fd(), bytes);
+}
+
 void Stream::HandleRead() {
   COROPACT_DCHECK(loop_->IsInLoopThread(), "Stream::HandleRead called from wrong thread");
   if (pending_read_ == nullptr) {

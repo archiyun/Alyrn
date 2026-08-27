@@ -47,10 +47,7 @@ public:
   public:
     explicit NextAwaiter(RecvSource& source) noexcept : source_(&source) {}
 
-    [[nodiscard]]
-    bool await_ready() const noexcept {
-      return false;
-    }
+    bool await_ready() const noexcept { return false; }
 
     bool await_suspend(std::coroutine_handle<> continuation) noexcept;
 

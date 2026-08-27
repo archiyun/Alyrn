@@ -7,12 +7,15 @@
 #include <unistd.h>
 
 #include <cerrno>
+#include <cstddef>
 #include <expected>
+#include <limits>
 #include <system_error>
 #include <utility>
 
 #include "coropact/base/check.h"
 #include "coropact/net/endpoint.h"
+#include "coropact/net/tcp_options.h"
 #include "coropact/result.h"
 #include "coropact/utils/macros.h"
 
@@ -35,13 +38,30 @@ inline Result<void> SetDescriptorFlag(int fd, int get_command, int set_command, 
   return {};
 }
 
+template <class T>
 [[nodiscard]]
-inline Result<void> SetSocketOption(int fd, int level, int option, bool enabled) noexcept {
-  const int value = enabled ? 1 : 0;
+inline Result<void> SetSocketOptionValue(int fd, int level, int option, const T& value) noexcept {
+  if (fd < 0) {
+    return std::unexpected(Errno(EBADF));
+  }
   if (::setsockopt(fd, level, option, &value, static_cast<socklen_t>(sizeof(value))) < 0) {
     return std::unexpected(CurrentErrno());
   }
   return {};
+}
+
+[[nodiscard]]
+inline Result<void> SetSocketOption(int fd, int level, int option, bool enabled) noexcept {
+  const int value = enabled ? 1 : 0;
+  return SetSocketOptionValue(fd, level, option, value);
+}
+
+[[nodiscard]]
+inline Result<int> CheckedSocketOptionSize(std::size_t bytes) noexcept {
+  if (bytes > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
+    return std::unexpected(Errno(EINVAL));
+  }
+  return static_cast<int>(bytes);
 }
 
 [[nodiscard]]
@@ -126,13 +146,96 @@ inline Result<void> SetReusePort(int fd, bool enabled = true) noexcept {
 }
 
 [[nodiscard]]
-inline Result<void> SetTcpNoDelay(int fd, bool enabled = true) noexcept {
+inline Result<void> SetNoDelay(int fd, bool enabled = true) noexcept {
   return detail::SetSocketOption(fd, IPPROTO_TCP, TCP_NODELAY, enabled);
+}
+
+// Compatibility spelling retained for existing callers.
+[[nodiscard]]
+inline Result<void> SetTcpNoDelay(int fd, bool enabled = true) noexcept {
+  return SetNoDelay(fd, enabled);
 }
 
 [[nodiscard]]
 inline Result<void> SetKeepAlive(int fd, bool enabled = true) noexcept {
   return detail::SetSocketOption(fd, SOL_SOCKET, SO_KEEPALIVE, enabled);
+}
+
+[[nodiscard]]
+inline Result<void> SetKeepAlivePeriod(int fd, time::Duration period) noexcept {
+  const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(period).count();
+  if (seconds <= 0 || seconds > std::numeric_limits<int>::max()) {
+    return std::unexpected(Errno(EINVAL));
+  }
+
+  const int value = static_cast<int>(seconds);
+#if defined(TCP_KEEPIDLE)
+  return detail::SetSocketOptionValue(fd, IPPROTO_TCP, TCP_KEEPIDLE, value);
+#elif defined(TCP_KEEPALIVE)
+  return detail::SetSocketOptionValue(fd, IPPROTO_TCP, TCP_KEEPALIVE, value);
+#else
+  (void)fd;
+  (void)value;
+  return std::unexpected(Errno(ENOTSUP));
+#endif
+}
+
+[[nodiscard]]
+inline Result<void> SetReadBuffer(int fd, std::size_t bytes) noexcept {
+  auto value = detail::CheckedSocketOptionSize(bytes);
+  if (!value.has_value()) {
+    return std::unexpected(value.error());
+  }
+  return detail::SetSocketOptionValue(fd, SOL_SOCKET, SO_RCVBUF, *value);
+}
+
+[[nodiscard]]
+inline Result<void> SetWriteBuffer(int fd, std::size_t bytes) noexcept {
+  auto value = detail::CheckedSocketOptionSize(bytes);
+  if (!value.has_value()) {
+    return std::unexpected(value.error());
+  }
+  return detail::SetSocketOptionValue(fd, SOL_SOCKET, SO_SNDBUF, *value);
+}
+
+[[nodiscard]]
+inline Result<void> ApplyTcpOptions(int fd, const TcpOptions& options) noexcept {
+  if (options.no_delay.has_value()) {
+    auto result = SetNoDelay(fd, *options.no_delay);
+    if (!result.has_value()) {
+      return std::unexpected(result.error());
+    }
+  }
+
+  if (options.keep_alive.has_value()) {
+    auto result = SetKeepAlive(fd, *options.keep_alive);
+    if (!result.has_value()) {
+      return std::unexpected(result.error());
+    }
+  }
+
+  if (options.keep_alive_period.has_value()) {
+    auto result = SetKeepAlivePeriod(fd, *options.keep_alive_period);
+    if (!result.has_value()) {
+      return std::unexpected(result.error());
+    }
+  }
+
+  if (options.read_buffer.has_value()) {
+    auto result = SetReadBuffer(fd, *options.read_buffer);
+    if (!result.has_value()) {
+      return std::unexpected(result.error());
+    }
+  }
+
+  if (options.write_buffer.has_value()) {
+    auto result = SetWriteBuffer(fd, *options.write_buffer);
+    if (!result.has_value()) {
+      return std::unexpected(result.error());
+    }
+  }
+
+  return {};
 }
 
 [[nodiscard]]
@@ -242,8 +345,7 @@ public:
 
   // Shuts down the write side of the socket. This does not close the
   // descriptor and therefore leaves reads available to the caller.
-  [[nodiscard]]
-  Result<void> ShutdownWrite() const noexcept {
+  [[nodiscard]] Result<void> ShutdownWrite() const noexcept {
     if (sockfd_ < 0) {
       return std::unexpected(Errno(EBADF));
     }
@@ -255,8 +357,7 @@ public:
 
   // Shuts down the read side of the socket. This does not close the
   // descriptor and therefore leaves writes available to the caller.
-  [[nodiscard]]
-  Result<void> ShutdownRead() const noexcept {
+  [[nodiscard]] Result<void> ShutdownRead() const noexcept {
     if (sockfd_ < 0) {
       return std::unexpected(Errno(EBADF));
     }
@@ -277,9 +378,15 @@ public:
   }
 
   // Enables or disables TCP_NODELAY.
-  void SetTcpNoDelay(bool on) noexcept {
-    const auto result = ::coropact::net::SetTcpNoDelay(sockfd_, on);
-    COROPACT_CHECK(result.has_value(), "Socket::SetTcpNoDelay: setsockopt failed");
+  [[nodiscard]]
+  Result<void> SetNoDelay(bool on) const noexcept {
+    return ::coropact::net::SetNoDelay(sockfd_, on);
+  }
+
+  // Compatibility spelling retained for existing callers.
+  [[nodiscard]]
+  Result<void> SetTcpNoDelay(bool on) const noexcept {
+    return SetNoDelay(on);
   }
 
   // Enables or disables SO_REUSEADDR.
@@ -295,9 +402,24 @@ public:
   }
 
   // Enables or disables SO_KEEPALIVE.
-  void SetKeepAlive(bool on) noexcept {
-    const auto result = ::coropact::net::SetKeepAlive(sockfd_, on);
-    COROPACT_CHECK(result.has_value(), "Socket::SetKeepAlive: setsockopt failed");
+  [[nodiscard]]
+  Result<void> SetKeepAlive(bool on) const noexcept {
+    return ::coropact::net::SetKeepAlive(sockfd_, on);
+  }
+
+  [[nodiscard]]
+  Result<void> SetKeepAlivePeriod(time::Duration period) const noexcept {
+    return ::coropact::net::SetKeepAlivePeriod(sockfd_, period);
+  }
+
+  [[nodiscard]]
+  Result<void> SetReadBuffer(std::size_t bytes) const noexcept {
+    return ::coropact::net::SetReadBuffer(sockfd_, bytes);
+  }
+
+  [[nodiscard]]
+  Result<void> SetWriteBuffer(std::size_t bytes) const noexcept {
+    return ::coropact::net::SetWriteBuffer(sockfd_, bytes);
   }
 
   [[nodiscard]]

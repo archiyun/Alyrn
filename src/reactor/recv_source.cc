@@ -110,10 +110,7 @@ class RecvSource::StopAwaiter {
 public:
   explicit StopAwaiter(RecvSource& source) noexcept : source_(&source) {}
 
-  [[nodiscard]]
-  bool await_ready() const noexcept {
-    return false;
-  }
+  bool await_ready() const noexcept { return false; }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     if (source_->pending_stop_ != nullptr) {

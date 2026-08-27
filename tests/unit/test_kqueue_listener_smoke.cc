@@ -38,12 +38,12 @@ bool Check(bool condition, const char* message) {
 }
 
 int ConnectNonBlocking(const coropact::net::Endpoint& address) {
-  auto fd = coropact::net::CreateNonBlockingSocket(address.native_family());
+  auto fd = coropact::net::CreateNonBlockingSocket(address.NativeFamily());
   if (!fd.has_value()) {
     return -1;
   }
 
-  int rc = ::connect(*fd, address.sock_addr(), address.sock_addr_len());
+  int rc = ::connect(*fd, address.SockAddr(), address.SockAddrLen());
   if (rc == 0 || errno == EINPROGRESS) {
     return *fd;
   }

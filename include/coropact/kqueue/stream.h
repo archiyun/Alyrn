@@ -78,6 +78,21 @@ public:
   }
 
   [[nodiscard]]
+  Result<void> SetNoDelay(bool enabled) const noexcept;
+
+  [[nodiscard]]
+  Result<void> SetKeepAlive(bool enabled) const noexcept;
+
+  [[nodiscard]]
+  Result<void> SetKeepAlivePeriod(time::Duration period) const noexcept;
+
+  [[nodiscard]]
+  Result<void> SetReadBuffer(std::size_t bytes) const noexcept;
+
+  [[nodiscard]]
+  Result<void> SetWriteBuffer(std::size_t bytes) const noexcept;
+
+  [[nodiscard]]
   // Shuts down local reception while keeping the descriptor and write side.
   coro::Task<Result<void>> CloseRead() noexcept;
 
@@ -189,10 +204,7 @@ public:
                   time::Duration timeout = time::Duration::zero()) noexcept
       : ReadAwaiterState(stream), buffer_(buffer), timeout_(timeout) {}
 
-  [[nodiscard]]
-  bool await_ready() const noexcept {
-    return false;
-  }
+  bool await_ready() const noexcept { return false; }
   [[nodiscard]]
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
   Result<std::size_t> await_resume() noexcept;
@@ -215,10 +227,7 @@ public:
   WriteAllAwaiter(Stream& stream, std::span<const std::byte> buffer) noexcept
       : stream_(&stream), buffer_(buffer) {}
 
-  [[nodiscard]]
-  bool await_ready() const noexcept {
-    return false;
-  }
+  bool await_ready() const noexcept { return false; }
   [[nodiscard]]
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
   Result<void> await_resume() noexcept;
@@ -248,10 +257,7 @@ public:
 
   ReadIntoAwaiter(Stream& stream, net::Buffer buffer, std::size_t reserve) noexcept;
 
-  [[nodiscard]]
-  bool await_ready() const noexcept {
-    return false;
-  }
+  bool await_ready() const noexcept { return false; }
   [[nodiscard]]
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
   net::ReadIntoOutcome await_resume() noexcept;

@@ -4,14 +4,19 @@
 #include <cstdint>
 #include <string_view>
 
-#include "coropact/result.h"
 #include "coropact/coro/task.h"
 #include "coropact/luring/loop.h"
 #include "coropact/luring/stream.h"
+#include "coropact/net/tcp_options.h"
+#include "coropact/result.h"
 #include "coropact/time/clock.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::luring {
+
+struct ConnectorOptions {
+  net::TcpOptions tcp_options;
+};
 
 class Connector {
 public:
@@ -23,8 +28,8 @@ public:
   Connector& operator=(Connector&&) noexcept;
 
   [[nodiscard]]
-  static Result<Connector> Create(Loop* loop) noexcept;
-  explicit Connector(Loop* loop) noexcept;
+  static Result<Connector> Create(Loop* loop, ConnectorOptions options = {}) noexcept;
+  explicit Connector(Loop* loop, ConnectorOptions options = {}) noexcept;
 
   // Connect is loop-affine. Independent calls may be pending concurrently;
   // each call owns its socket, physical request, result, and continuation.
@@ -37,6 +42,7 @@ private:
   void RequireOwnerLoop() const noexcept;
 
   Loop* loop_;
+  ConnectorOptions options_;
 };
 
 }  // namespace coropact::luring

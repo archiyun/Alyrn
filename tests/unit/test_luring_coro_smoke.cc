@@ -99,10 +99,7 @@ public:
       coropact::operation::detail::SchedulerContinuation* continuation) noexcept
       : continuation_(continuation) {}
 
-  [[nodiscard]]
-  bool await_ready() const noexcept {
-    return false;
-  }
+  bool await_ready() const noexcept { return false; }
 
   bool await_suspend(std::coroutine_handle<> handle) noexcept {
     continuation_->Bind(handle);

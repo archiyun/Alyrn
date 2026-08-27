@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT
+#include "coropact/reactor/connector.h"
+
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -10,15 +12,15 @@
 
 #include "coropact/backend/detail/value_result_state.h"
 #include "coropact/base/check.h"
-#include "coropact/result.h"
 #include "coropact/net/endpoint.h"
 #include "coropact/net/socket.h"
+#include "coropact/net/tcp_options.h"
 #include "coropact/operation/detail/completion_gate.h"
 #include "coropact/operation/detail/scheduler_continuation.h"
 #include "coropact/operation/detail/single_result_lifecycle.h"
-#include "coropact/reactor/connector.h"
 #include "coropact/reactor/detail/channel.h"
 #include "coropact/reactor/detail/loop_access.h"
+#include "coropact/result.h"
 
 namespace coropact::reactor {
 namespace {
@@ -36,11 +38,12 @@ Result<int> ConnectError(int fd) noexcept {
 
 class ConnectAwaiter {
 public:
-  ConnectAwaiter(Loop* loop, net::Endpoint peer, StreamOptions stream_options) noexcept
-      : loop_(loop), peer_(peer), stream_options_(stream_options) {}
+  ConnectAwaiter(Loop* loop, net::Endpoint peer, StreamOptions stream_options,
+                 net::TcpOptions tcp_options) noexcept
+      : loop_(loop), peer_(peer), stream_options_(stream_options), tcp_options_(tcp_options) {}
 
   ~ConnectAwaiter() {
-    COROPACT_CHECK(!channel_.has_value() || !channel_->IsRegistered(),
+    COROPACT_CHECK(!(channel_.has_value() && channel_->IsRegistered()),
                    "ConnectAwaiter destroyed before its physical connect settled");
     if (shutdown_participant_.InList()) {
       LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
@@ -50,10 +53,7 @@ public:
     }
   }
 
-  [[nodiscard]]
-  bool await_ready() const noexcept {
-    return false;
-  }
+  bool await_ready() const noexcept { return false; }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     COROPACT_CHECK(loop_ != nullptr, "ConnectAwaiter has no owner Loop");
@@ -66,7 +66,7 @@ public:
     continuation_.Bind(continuation);
     LoopAccess::RegisterShutdownParticipant(*loop_, shutdown_participant_);
 
-    auto fd = net::CreateNonBlockingSocket(peer_.native_family());
+    auto fd = net::CreateNonBlockingSocket(peer_.NativeFamily());
     if (!fd.has_value()) {
       CompleteInline(std::unexpected(fd.error()));
       return false;
@@ -75,7 +75,7 @@ public:
 
     int rc = 0;
     do {
-      rc = ::connect(fd_, peer_.sock_addr(), peer_.sock_addr_len());
+      rc = ::connect(fd_, peer_.SockAddr(), peer_.SockAddrLen());
     } while (rc < 0 && errno == EINTR);
 
     if (rc == 0) {
@@ -107,6 +107,10 @@ private:
   }
 
   Result<Stream> MakeStream() noexcept {
+    auto configured = net::ApplyTcpOptions(fd_, tcp_options_);
+    if (!configured.has_value()) {
+      return std::unexpected(configured.error());
+    }
     Stream stream(loop_, fd_, peer_, stream_options_);
     fd_ = -1;
     return stream;
@@ -171,6 +175,7 @@ private:
   Loop* loop_;
   net::Endpoint peer_;
   StreamOptions stream_options_;
+  net::TcpOptions tcp_options_;
   int fd_{-1};
   std::optional<Channel> channel_;
   operation::detail::SchedulerContinuation continuation_;
@@ -179,23 +184,20 @@ private:
   LoopShutdownParticipant shutdown_participant_{this, &DispatchLoopStop};
 };
 
-coro::Task<Result<Stream>> ConnectResolved(Loop* loop,
-                                                        StreamOptions stream_options,
-                                                        Result<net::Endpoint> peer) {
+coro::Task<Result<Stream>> ConnectResolved(Loop* loop, StreamOptions stream_options,
+                                           net::TcpOptions tcp_options,
+                                           Result<net::Endpoint> peer) {
   if (!peer.has_value()) {
     co_return std::unexpected(peer.error());
   }
-  co_return co_await ConnectAwaiter(loop, std::move(*peer), stream_options);
+  co_return co_await ConnectAwaiter(loop, *peer, stream_options, tcp_options);
 }
 
 class SleepAwaiter {
 public:
   SleepAwaiter(Loop* loop, time::Duration delay) noexcept : loop_(loop), delay_(delay) {}
 
-  [[nodiscard]]
-  bool await_ready() const noexcept {
-    return delay_ <= time::Duration::zero();
-  }
+  bool await_ready() const noexcept { return delay_ <= time::Duration::zero(); }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     COROPACT_CHECK(loop_ != nullptr, "SleepAwaiter has no owner Loop");
@@ -253,8 +255,7 @@ Connector::Connector(Loop* loop, ConnectorOptions options) noexcept
 }
 
 [[nodiscard]]
-Result<Connector> Connector::Create(Loop* loop,
-                                                        ConnectorOptions options) noexcept {
+Result<Connector> Connector::Create(Loop* loop, ConnectorOptions options) noexcept {
   if (loop == nullptr) {
     return std::unexpected(Errno(EINVAL));
   }
@@ -274,14 +275,14 @@ Connector& Connector::operator=(Connector&& other) noexcept {
 
 coro::Task<Result<Stream>> Connector::Connect(net::Endpoint peer) {
   RequireOwnerLoop();
-  return ConnectResolved(loop_, options_.stream_options,
-                         Result<net::Endpoint>(std::in_place, std::move(peer)));
+  return ConnectResolved(loop_, options_.stream_options, options_.tcp_options,
+                         Result<net::Endpoint>(std::in_place, peer));
 }
 
-coro::Task<Result<Stream>> Connector::Connect(std::string_view host,
-                                                                  std::uint16_t port) {
+coro::Task<Result<Stream>> Connector::Connect(std::string_view host, std::uint16_t port) {
   RequireOwnerLoop();
-  return ConnectResolved(loop_, options_.stream_options, net::ParseIpAddress(host, port));
+  return ConnectResolved(loop_, options_.stream_options, options_.tcp_options,
+                         net::ParseIpAddress(host, port));
 }
 
 coro::Task<void> Connector::SleepFor(time::Duration delay) {
@@ -291,8 +292,7 @@ coro::Task<void> Connector::SleepFor(time::Duration delay) {
 
 void Connector::RequireOwnerLoop() const noexcept {
   COROPACT_CHECK(loop_ != nullptr, "Connector operation has no owner Loop");
-  COROPACT_CHECK(loop_->IsInLoopThread(),
-                 "Connector operation called from wrong Loop thread");
+  COROPACT_CHECK(loop_->IsInLoopThread(), "Connector operation called from wrong Loop thread");
 }
 
 }  // namespace coropact::reactor

@@ -2,6 +2,7 @@
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -75,6 +76,11 @@ bool Check(bool condition, const char* message) {
     return false;
   }
   return true;
+}
+
+bool ReadSocketOption(int fd, int level, int option, int* value) {
+  socklen_t length = sizeof(*value);
+  return ::getsockopt(fd, level, option, value, &length) == 0;
 }
 
 bool IsEnvironmentSkip(coropact::Error error) {
@@ -166,7 +172,12 @@ bool CheckConnectSuccess() {
       return false;
   }
 
-  coropact::luring::Connector connector(&loop);
+  coropact::luring::ConnectorOptions connector_options;
+  connector_options.tcp_options.no_delay = true;
+  connector_options.tcp_options.keep_alive = true;
+  connector_options.tcp_options.read_buffer = 64 * 1024;
+  connector_options.tcp_options.write_buffer = 64 * 1024;
+  coropact::luring::Connector connector(&loop, connector_options);
   std::optional<coropact::Result<coropact::luring::Stream>> connected;
   bool resumed_with_scheduler = false;
 
@@ -183,11 +194,31 @@ bool CheckConnectSuccess() {
 
   coropact::luring::detail::LoopAccess::RunReady(loop);
 
-  return Check(*completions >= 1, "connect did not produce a completion") &&
-         Check(connected.has_value(), "connect coroutine did not resume") &&
-         Check(connected->has_value(), "Connect returned an error") &&
-         Check(connected->value().Fd() >= 0, "Connect returned an invalid stream") &&
-         Check(resumed_with_scheduler, "connect resumed without current scheduler");
+  if (!Check(*completions >= 1, "connect did not produce a completion") ||
+      !Check(connected.has_value(), "connect coroutine did not resume") ||
+      !Check(connected->has_value(), "Connect returned an error") ||
+      !Check(connected->value().Fd() >= 0, "Connect returned an invalid stream") ||
+      !Check(resumed_with_scheduler, "connect resumed without current scheduler")) {
+    return false;
+  }
+
+  const int fd = connected->value().Fd();
+  int no_delay = 0;
+  int keep_alive = 0;
+  int read_buffer = 0;
+  int write_buffer = 0;
+  return Check(ReadSocketOption(fd, IPPROTO_TCP, TCP_NODELAY, &no_delay),
+               "could not read TCP_NODELAY") &&
+         Check(no_delay == 1, "Connector did not apply TCP_NODELAY") &&
+         Check(ReadSocketOption(fd, SOL_SOCKET, SO_KEEPALIVE, &keep_alive),
+               "could not read SO_KEEPALIVE") &&
+         Check(keep_alive == 1, "Connector did not apply SO_KEEPALIVE") &&
+         Check(ReadSocketOption(fd, SOL_SOCKET, SO_RCVBUF, &read_buffer),
+               "could not read SO_RCVBUF") &&
+         Check(read_buffer > 0, "Connector produced an invalid receive buffer") &&
+         Check(ReadSocketOption(fd, SOL_SOCKET, SO_SNDBUF, &write_buffer),
+               "could not read SO_SNDBUF") &&
+         Check(write_buffer > 0, "Connector produced an invalid send buffer");
 }
 
 bool CheckConnectRejectsInvalidHost() {

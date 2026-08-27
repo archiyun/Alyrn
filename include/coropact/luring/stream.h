@@ -126,6 +126,21 @@ public:
   }
 
   [[nodiscard]]
+  Result<void> SetNoDelay(bool enabled) const noexcept;
+
+  [[nodiscard]]
+  Result<void> SetKeepAlive(bool enabled) const noexcept;
+
+  [[nodiscard]]
+  Result<void> SetKeepAlivePeriod(time::Duration period) const noexcept;
+
+  [[nodiscard]]
+  Result<void> SetReadBuffer(std::size_t bytes) const noexcept;
+
+  [[nodiscard]]
+  Result<void> SetWriteBuffer(std::size_t bytes) const noexcept;
+
+  [[nodiscard]]
   // Shuts down local reception while keeping the descriptor and write side.
   coro::Task<Result<void>> CloseRead() noexcept;
 
@@ -186,10 +201,7 @@ public:
   ReadSomeAwaiter(Stream& stream, std::span<std::byte> buffer) noexcept
       : OpHook(detail::OpKind::kReadComplete), stream_(&stream), buffer_(buffer) {}
 
-  [[nodiscard]]
-  bool await_ready() const noexcept {
-    return false;
-  }
+  bool await_ready() const noexcept { return false; }
 
   [[nodiscard]]
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
@@ -218,10 +230,7 @@ public:
         buffer_(std::move(buffer)),
         reserve_(reserve) {}
 
-  [[nodiscard]]
-  bool await_ready() const noexcept {
-    return false;
-  }
+  bool await_ready() const noexcept { return false; }
 
   [[nodiscard]]
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
@@ -265,10 +274,7 @@ public:
 
   ReadSomeForAwaiter(Stream& stream, std::span<std::byte> buffer, time::Duration timeout) noexcept;
 
-  [[nodiscard]]
-  bool await_ready() const noexcept {
-    return false;
-  }
+  bool await_ready() const noexcept { return false; }
 
   [[nodiscard]]
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
@@ -305,10 +311,7 @@ public:
   SendAwaiter(Stream& stream, std::span<const std::byte> buffer) noexcept
       : OpHook(detail::OpKind::kWriteComplete), stream_(&stream), buffer_(buffer) {}
 
-  [[nodiscard]]
-  bool await_ready() const noexcept {
-    return false;
-  }
+  bool await_ready() const noexcept { return false; }
 
   [[nodiscard]]
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
@@ -333,10 +336,7 @@ public:
   SendZeroCopyAwaiter(Stream& stream, std::span<const std::byte> buffer) noexcept
       : OpHook(detail::OpKind::kSendZeroCopyComplete), stream_(&stream), buffer_(buffer) {}
 
-  [[nodiscard]]
-  bool await_ready() const noexcept {
-    return false;
-  }
+  bool await_ready() const noexcept { return false; }
 
   [[nodiscard]]
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;

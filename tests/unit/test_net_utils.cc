@@ -112,9 +112,9 @@ TEST(SocketTest, ReportsSocketOptionErrorsAndSupportsOnOff) {
   EXPECT_TRUE(SetReusePort(fd.get(), false));
   EXPECT_EQ(get_socket_option(fd.get(), SOL_SOCKET, SO_REUSEPORT), 0);
 
-  EXPECT_TRUE(SetTcpNoDelay(fd.get(), true));
+  EXPECT_TRUE(SetNoDelay(fd.get(), true));
   EXPECT_EQ(get_socket_option(fd.get(), IPPROTO_TCP, TCP_NODELAY), 1);
-  EXPECT_TRUE(SetTcpNoDelay(fd.get(), false));
+  EXPECT_TRUE(SetNoDelay(fd.get(), false));
   EXPECT_EQ(get_socket_option(fd.get(), IPPROTO_TCP, TCP_NODELAY), 0);
 
   EXPECT_TRUE(SetKeepAlive(fd.get(), true));
@@ -125,6 +125,32 @@ TEST(SocketTest, ReportsSocketOptionErrorsAndSupportsOnOff) {
   EXPECT_EQ(SetNonBlocking(-1).error().value(), EBADF);
   EXPECT_EQ(SetCloseOnExec(-1).error().value(), EBADF);
   EXPECT_EQ(SetReuseAddr(-1).error().value(), EBADF);
+  EXPECT_EQ(SetNoDelay(-1).error().value(), EBADF);
+  EXPECT_EQ(SetReadBuffer(-1, 4096).error().value(), EBADF);
+  EXPECT_EQ(SetWriteBuffer(-1, 4096).error().value(), EBADF);
+}
+
+TEST(SocketTest, SupportsTcpBufferAndKeepAliveOptions) {
+  auto socket = CreateNonBlockingSocket();
+  ASSERT_TRUE(socket);
+  ScopedFd fd(*socket);
+
+  TcpOptions options;
+  options.no_delay = true;
+  options.keep_alive = true;
+  options.read_buffer = 64 * 1024;
+  options.write_buffer = 64 * 1024;
+
+  EXPECT_TRUE(ApplyTcpOptions(fd.get(), options));
+  EXPECT_EQ(get_socket_option(fd.get(), IPPROTO_TCP, TCP_NODELAY), 1);
+  EXPECT_EQ(get_socket_option(fd.get(), SOL_SOCKET, SO_KEEPALIVE), 1);
+  EXPECT_GT(get_socket_option(fd.get(), SOL_SOCKET, SO_RCVBUF), 0);
+  EXPECT_GT(get_socket_option(fd.get(), SOL_SOCKET, SO_SNDBUF), 0);
+
+#if defined(TCP_KEEPIDLE) || defined(TCP_KEEPALIVE)
+  EXPECT_TRUE(SetKeepAlivePeriod(fd.get(), time::Seconds(30)));
+#endif
+  EXPECT_EQ(SetKeepAlivePeriod(fd.get(), time::Duration::zero()).error().value(), EINVAL);
 }
 
 TEST(SocketTest, AddressQueriesPreserveErrors) {

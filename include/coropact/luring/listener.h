@@ -12,15 +12,16 @@
 #include "coropact/backend/accept_source.h"
 #include "coropact/backend/async_listener.h"
 #include "coropact/backend/detail/value_result_state.h"
-#include "coropact/result.h"
 #include "coropact/coro/task.h"
 #include "coropact/luring/detail/completion_dispatch.h"
 #include "coropact/luring/detail/op.h"
 #include "coropact/luring/stream.h"
 #include "coropact/net/accept_source.h"
 #include "coropact/net/endpoint.h"
+#include "coropact/net/tcp_options.h"
 #include "coropact/operation/detail/completion_gate.h"
 #include "coropact/operation/detail/scheduler_continuation.h"
+#include "coropact/result.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::luring {
@@ -39,6 +40,7 @@ struct ListenOptions {
   // Number of accepts kept in flight by each worker. A value greater than one
   // prevents a connection burst from being serialized behind one accept CQE.
   std::size_t accept_depth{4};
+  net::TcpOptions tcp_options{};
 };
 
 class AcceptSource {
@@ -63,10 +65,7 @@ public:
   public:
     explicit NextAwaiter(AcceptSource& source) noexcept : source_(&source) {}
 
-    [[nodiscard]]
-    bool await_ready() const noexcept {
-      return false;
-    }
+    bool await_ready() const noexcept { return false; }
 
     bool await_suspend(std::coroutine_handle<> continuation) noexcept;
 
@@ -135,8 +134,7 @@ private:
     AcceptSource* source_;
   };
 
-  AcceptSource(Listener* listener,
-                     net::detail::AcceptSourceStateMachine state) noexcept;
+  AcceptSource(Listener* listener, net::detail::AcceptSourceStateMachine state) noexcept;
 
   [[nodiscard]]
   Result<void> Start() noexcept;
@@ -200,7 +198,7 @@ public:
   using StreamType = Stream;
 
   static Result<Listener> Create(Loop* loop, const net::Endpoint& listen_addr,
-                                             ListenOptions options = {}) noexcept;
+                                 ListenOptions options = {}) noexcept;
 
   ~Listener();
 
@@ -230,7 +228,10 @@ private:
   class CloseAwaiter;
 
   [[nodiscard]]
-  Listener(Loop* loop, int fd, bool zero_copy_writes) noexcept;
+  Listener(Loop* loop,
+           int fd,
+           bool zero_copy_writes,
+           net::TcpOptions tcp_options) noexcept;
 
   void RequireOwnerLoop() const noexcept;
   void NotifyCloseProgress() noexcept;
@@ -243,6 +244,7 @@ private:
   CloseAwaiter* pending_close_{nullptr};
   AcceptSource* accept_source_{nullptr};
   bool zero_copy_writes_{false};
+  net::TcpOptions tcp_options_{};
   bool closed_{false};
 };
 

@@ -130,7 +130,6 @@ public:
       if (waiting_) channel_->CancelSend(*this);
     }
 
-    [[nodiscard]]
     bool await_ready() const noexcept { return false; }
 
     bool await_suspend(std::coroutine_handle<> continuation) noexcept {
@@ -196,7 +195,6 @@ public:
       if (waiting_) channel_->CancelReceive(*this);
     }
 
-    [[nodiscard]]
     bool await_ready() const noexcept { return false; }
 
     bool await_suspend(std::coroutine_handle<> continuation) noexcept {

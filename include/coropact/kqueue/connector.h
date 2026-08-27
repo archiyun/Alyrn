@@ -4,11 +4,12 @@
 #include <cstdint>
 #include <string_view>
 
-#include "coropact/result.h"
 #include "coropact/coro/task.h"
-#include "coropact/net/endpoint.h"
 #include "coropact/kqueue/loop.h"
 #include "coropact/kqueue/stream.h"
+#include "coropact/net/endpoint.h"
+#include "coropact/net/tcp_options.h"
+#include "coropact/result.h"
 #include "coropact/time/clock.h"
 #include "coropact/utils/macros.h"
 
@@ -17,6 +18,7 @@ namespace coropact::kqueue {
 struct ConnectorOptions {
   // Applies to every Stream returned by Connect.
   StreamOptions stream_options{};
+  net::TcpOptions tcp_options{};
 };
 
 class Connector {
@@ -26,8 +28,7 @@ public:
   using StreamType = Stream;
 
   [[nodiscard]]
-  static Result<Connector> Create(Loop* loop,
-                                               ConnectorOptions options = {}) noexcept;
+  static Result<Connector> Create(Loop* loop, ConnectorOptions options = {}) noexcept;
 
   explicit Connector(Loop* loop, ConnectorOptions options = {}) noexcept;
 

@@ -536,7 +536,7 @@ int ConnectNonBlocking(const coropact::net::Endpoint& address) noexcept {
     return -1;
   }
 
-  const int connected = ::connect(fd, address.sock_addr(), address.sock_addr_len());
+  const int connected = ::connect(fd, address.SockAddr(), address.SockAddrLen());
   if (connected == 0 || errno == EINPROGRESS) {
     return fd;
   }

@@ -2,6 +2,7 @@
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -115,6 +116,15 @@ coropact::net::Endpoint LoopbackAddress(std::uint16_t port) {
   return coropact::net::Endpoint(addr);
 }
 
+int GetSocketOption(int fd, int level, int option) {
+  int value = 0;
+  auto length = static_cast<socklen_t>(sizeof(value));
+  if (::getsockopt(fd, level, option, &value, &length) < 0) {
+    return -1;
+  }
+  return value;
+}
+
 coropact::coro::DetachedTask AcceptOnce(
     coropact::luring::Listener* listener, coropact::luring::Loop* loop,
     std::optional<coropact::Result<coropact::luring::Stream>>* out,
@@ -154,7 +164,10 @@ bool CheckAccept() {
       return false;
   }
 
-  auto listener = coropact::luring::Listener::Create(&loop, LoopbackAddress(0));
+  coropact::luring::ListenOptions options;
+  options.tcp_options.no_delay = true;
+  options.tcp_options.keep_alive = true;
+  auto listener = coropact::luring::Listener::Create(&loop, LoopbackAddress(0), options);
   if (!listener.has_value()) {
     std::cout << "FAIL: Listener::Create failed: " << listener.error().message() << '\n';
     return false;
@@ -189,11 +202,19 @@ bool CheckAccept() {
 
   coropact::luring::detail::LoopAccess::RunReady(loop);
 
-  return Check(*completions >= 1, "accept did not produce a completion") &&
-         Check(accepted.has_value(), "accept coroutine did not resume") &&
-         Check(accepted->has_value(), "Accept returned an error") &&
-         Check(accepted->value().Fd() >= 0, "Accept returned an invalid stream") &&
-         Check(resumed_with_scheduler, "accept resumed without current scheduler");
+  bool ok = Check(*completions >= 1, "accept did not produce a completion") &&
+            Check(accepted.has_value(), "accept coroutine did not resume") &&
+            Check(accepted->has_value(), "Accept returned an error") &&
+            Check(accepted->value().Fd() >= 0, "Accept returned an invalid stream") &&
+            Check(resumed_with_scheduler, "accept resumed without current scheduler");
+  if (ok) {
+    const int accepted_fd = accepted->value().Fd();
+    ok = Check(GetSocketOption(accepted_fd, IPPROTO_TCP, TCP_NODELAY) == 1,
+               "Listener did not apply TCP_NODELAY to accepted socket") &&
+         Check(GetSocketOption(accepted_fd, SOL_SOCKET, SO_KEEPALIVE) == 1,
+               "Listener did not apply SO_KEEPALIVE to accepted socket");
+  }
+  return ok;
 }
 
 bool CheckAcceptReleasesReservationBeforeContinuation() {

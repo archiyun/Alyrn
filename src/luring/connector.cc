@@ -13,7 +13,6 @@
 
 #include "coropact/backend/detail/value_result_state.h"
 #include "coropact/base/check.h"
-#include "coropact/result.h"
 #include "coropact/luring/detail/completion_dispatch.h"
 #include "coropact/luring/detail/op.h"
 #include "coropact/luring/detail/operation_submission.h"
@@ -22,6 +21,8 @@
 #include "coropact/luring/stream.h"
 #include "coropact/luring/timer.h"
 #include "coropact/net/endpoint.h"
+#include "coropact/net/socket.h"
+#include "coropact/result.h"
 
 namespace coropact::luring {
 
@@ -58,8 +59,8 @@ class ConnectAwaiter : public detail::OpHook<ConnectAwaiter> {
 public:
   using OpHook = detail::OpHook<ConnectAwaiter>;
 
-  ConnectAwaiter(Loop* loop, net::Endpoint peer) noexcept
-      : OpHook(OpKind::kConnect), loop_(loop), peer_(std::move(peer)) {}
+  ConnectAwaiter(Loop* loop, net::Endpoint peer, net::TcpOptions tcp_options) noexcept
+      : OpHook(OpKind::kConnect), loop_(loop), peer_(peer), tcp_options_(tcp_options) {}
 
   ~ConnectAwaiter() noexcept {
     COROPACT_CHECK(!Operation()->resume_work.HasHandle() || Operation()->CqeCompletionRecorded(),
@@ -69,15 +70,11 @@ public:
     }
   }
 
-  [[nodiscard]]
-  bool await_ready() const noexcept {
-    return false;
-  }
+  bool await_ready() const noexcept { return false; }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     COROPACT_CHECK(loop_ != nullptr, "Connector operation has no owner loop");
-    COROPACT_CHECK(loop_->IsInLoopThread(),
-                   "Connector operation called from wrong Loop thread");
+    COROPACT_CHECK(loop_->IsInLoopThread(), "Connector operation called from wrong Loop thread");
     if (loop_->State() == backend::LoopState::kStopping ||
         loop_->State() == backend::LoopState::kStopped) {
       CompleteInline(std::unexpected(Errno(ECANCELED)));
@@ -124,13 +121,18 @@ private:
 
   void CompleteInline(Result<Stream> result) noexcept {
     result_.SetResult(std::move(result));
-    COROPACT_CHECK(Operation()->TryAuthorizeCoupledResult(), "LUring Connect result was authorized twice");
+    COROPACT_CHECK(Operation()->TryAuthorizeCoupledResult(),
+                   "LUring Connect result was authorized twice");
     COROPACT_CHECK(Operation()->TryAuthorizeCoupledRelease(),
                    "LUring Connect release was not authorized after its result");
     ReleasePhysicalRequest();
   }
 
   Result<Stream> MakeStream() noexcept {
+    auto configured = net::ApplyTcpOptions(fd_, tcp_options_);
+    if (!configured.has_value()) {
+      return std::unexpected(configured.error());
+    }
     Stream stream(loop_, fd_, peer_);
     fd_ = -1;
     return stream;
@@ -144,52 +146,56 @@ private:
 
   Loop* loop_;
   net::Endpoint peer_;
+  net::TcpOptions tcp_options_;
   int fd_{-1};
   backend::detail::ValueResultState<Stream> result_;
 };
 
-coro::Task<Result<Stream>> ConnectResolved(Loop* loop,
-                                                       Result<net::Endpoint> peer) {
+coro::Task<Result<Stream>> ConnectResolved(Loop* loop, net::TcpOptions tcp_options,
+                                           Result<net::Endpoint> peer) {
   if (!peer.has_value()) {
     co_return std::unexpected(peer.error());
   }
-  co_return co_await ConnectAwaiter(loop, std::move(*peer));
+  co_return co_await ConnectAwaiter(loop, *peer, tcp_options);
 }
 
 }  // namespace
 
 namespace detail {
 
-void DispatchConnectComplete(::coropact::luring::detail::Op* op) noexcept { ConnectAwaiter::OnComplete(op); }
+void DispatchConnectComplete(::coropact::luring::detail::Op* op) noexcept {
+  ConnectAwaiter::OnComplete(op);
+}
 
 }  // namespace detail
 
-Connector::Connector(Loop* loop) noexcept : loop_(loop) {
+Connector::Connector(Loop* loop, ConnectorOptions options) noexcept
+    : loop_(loop), options_(options) {
   COROPACT_CHECK(loop_ != nullptr, "Connector: loop must not be null");
   COROPACT_CHECK(loop_->IsInLoopThread(), "Connector created from wrong Loop thread");
 }
 
-Result<Connector> Connector::Create(Loop* loop) noexcept {
+Result<Connector> Connector::Create(Loop* loop, ConnectorOptions options) noexcept {
   if (loop == nullptr) {
     return std::unexpected(Errno(EINVAL));
   }
-  return Connector{loop};
+  return Connector{loop, options};
 }
 
 Connector::Connector(Connector&& other) noexcept
-    : loop_(std::exchange(other.loop_, nullptr)) {}
+    : loop_(std::exchange(other.loop_, nullptr)), options_(std::exchange(other.options_, {})) {}
 
 Connector& Connector::operator=(Connector&& other) noexcept {
   if (this != &other) {
     loop_ = std::exchange(other.loop_, nullptr);
+    options_ = std::exchange(other.options_, {});
   }
   return *this;
 }
 
-coro::Task<Result<Stream>> Connector::Connect(std::string_view host,
-                                                                std::uint16_t port) {
+coro::Task<Result<Stream>> Connector::Connect(std::string_view host, std::uint16_t port) {
   RequireOwnerLoop();
-  return ConnectResolved(loop_, net::ParseIpAddress(host, port));
+  return ConnectResolved(loop_, options_.tcp_options, net::ParseIpAddress(host, port));
 }
 
 coro::Task<void> Connector::SleepFor(time::Duration delay) {
@@ -200,8 +206,7 @@ coro::Task<void> Connector::SleepFor(time::Duration delay) {
 
 void Connector::RequireOwnerLoop() const noexcept {
   COROPACT_CHECK(loop_ != nullptr, "Connector operation has no owner Loop");
-  COROPACT_CHECK(loop_->IsInLoopThread(),
-                 "Connector operation called from wrong Loop thread");
+  COROPACT_CHECK(loop_->IsInLoopThread(), "Connector operation called from wrong Loop thread");
 }
 
 }  // namespace coropact::luring

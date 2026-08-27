@@ -96,7 +96,7 @@ coropact::Result<int> ConnectClient(const coropact::net::Endpoint& address) {
     return std::unexpected(coropact::CurrentErrno());
   }
 
-  if (::connect(fd, address.sock_addr(), address.sock_addr_len()) < 0 && errno != EINPROGRESS) {
+  if (::connect(fd, address.SockAddr(), address.SockAddrLen()) < 0 && errno != EINPROGRESS) {
     const auto error = coropact::CurrentErrno();
     ::close(fd);
     return std::unexpected(error);

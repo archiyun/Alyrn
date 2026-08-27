@@ -798,6 +798,31 @@ Result<net::Endpoint> Stream::LocalAddr() const noexcept {
   return net::GetLocalEndpoint(fd_);
 }
 
+Result<void> Stream::SetNoDelay(bool enabled) const noexcept {
+  RequireOwnerLoop();
+  return net::SetNoDelay(fd_, enabled);
+}
+
+Result<void> Stream::SetKeepAlive(bool enabled) const noexcept {
+  RequireOwnerLoop();
+  return net::SetKeepAlive(fd_, enabled);
+}
+
+Result<void> Stream::SetKeepAlivePeriod(time::Duration period) const noexcept {
+  RequireOwnerLoop();
+  return net::SetKeepAlivePeriod(fd_, period);
+}
+
+Result<void> Stream::SetReadBuffer(std::size_t bytes) const noexcept {
+  RequireOwnerLoop();
+  return net::SetReadBuffer(fd_, bytes);
+}
+
+Result<void> Stream::SetWriteBuffer(std::size_t bytes) const noexcept {
+  RequireOwnerLoop();
+  return net::SetWriteBuffer(fd_, bytes);
+}
+
 Stream::SendZeroCopyAwaiter Stream::SendZeroCopy(std::span<const std::byte> buffer) noexcept {
   return SendZeroCopyAwaiter{*this, buffer};
 }

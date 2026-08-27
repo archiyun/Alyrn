@@ -7,17 +7,18 @@
 
 #include "coropact/backend/accept_source.h"
 #include "coropact/backend/detail/value_result_state.h"
-#include "coropact/result.h"
 #include "coropact/coro/task.h"
-#include "coropact/net/accept_source.h"
-#include "coropact/net/endpoint.h"
-#include "coropact/net/socket.h"
-#include "coropact/operation/detail/completion_gate.h"
-#include "coropact/operation/detail/scheduler_continuation.h"
 #include "coropact/kqueue/detail/channel.h"
 #include "coropact/kqueue/detail/loop_shutdown.h"
 #include "coropact/kqueue/loop.h"
 #include "coropact/kqueue/stream.h"
+#include "coropact/net/accept_source.h"
+#include "coropact/net/endpoint.h"
+#include "coropact/net/socket.h"
+#include "coropact/net/tcp_options.h"
+#include "coropact/operation/detail/completion_gate.h"
+#include "coropact/operation/detail/scheduler_continuation.h"
+#include "coropact/result.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::kqueue {
@@ -39,10 +40,7 @@ public:
   public:
     explicit NextAwaiter(AcceptSource& source) noexcept : source_(&source) {}
 
-    [[nodiscard]]
-    bool await_ready() const noexcept {
-      return false;
-    }
+    bool await_ready() const noexcept { return false; }
 
     bool await_suspend(std::coroutine_handle<> continuation) noexcept;
 
@@ -71,8 +69,7 @@ public:
 private:
   friend class Listener;
 
-  AcceptSource(Listener* listener,
-                      net::detail::AcceptSourceStateMachine state) noexcept;
+  AcceptSource(Listener* listener, net::detail::AcceptSourceStateMachine state) noexcept;
 
   void OnReady() noexcept;
   void OnError(Error error) noexcept;
@@ -98,6 +95,7 @@ struct ListenerOptions {
   bool reuse_port{false};
   // Applies to every Stream returned by Accept and AcceptSource.
   StreamOptions stream_options{};
+  net::TcpOptions tcp_options{};
 };
 
 class Listener {
@@ -108,10 +106,9 @@ public:
 
   [[nodiscard]]
   static Result<Listener> Create(Loop* loop, const net::Endpoint& listen_addr,
-                                              ListenerOptions options = {}) noexcept;
+                                 ListenerOptions options = {}) noexcept;
 
-  Listener(Loop* loop, const net::Endpoint& listen_addr,
-                  ListenerOptions options = {});
+  Listener(Loop* loop, const net::Endpoint& listen_addr, ListenerOptions options = {});
   ~Listener();
 
   // Moves are loop-affine: the source must be used from its owning loop
@@ -136,8 +133,8 @@ private:
 
   class AcceptAwaiter;
 
-  Listener(Loop* loop, net::Socket socket,
-                  StreamOptions stream_options) noexcept;
+  Listener(Loop* loop, net::Socket socket, StreamOptions stream_options,
+           net::TcpOptions tcp_options) noexcept;
 
   void HandleRead();
   void HandleError();
@@ -156,6 +153,7 @@ private:
   net::Socket socket_;
   detail::Channel channel_;
   StreamOptions stream_options_;
+  net::TcpOptions tcp_options_;
   AcceptAwaiter* pending_accept_{nullptr};
   AcceptSource* accept_source_{nullptr};
   bool closed_{false};

@@ -2,6 +2,7 @@
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -84,6 +85,7 @@ private:
 struct Observation {
   int accepted{0};
   bool stopped{false};
+  bool options_applied{false};
   bool unsupported{false};
   std::optional<Error> error;
 };
@@ -440,6 +442,20 @@ coropact::coro::DetachedTask Consume(
       co_return;
     }
 
+    if (observation->accepted == 0) {
+      const int accepted_fd = result->value().Fd();
+      int no_delay = 0;
+      auto no_delay_length = static_cast<socklen_t>(sizeof(no_delay));
+      int keep_alive = 0;
+      auto keep_alive_length = static_cast<socklen_t>(sizeof(keep_alive));
+      observation->options_applied =
+          ::getsockopt(accepted_fd, IPPROTO_TCP, TCP_NODELAY, &no_delay, &no_delay_length) == 0 &&
+          no_delay == 1 &&
+          ::getsockopt(accepted_fd, SOL_SOCKET, SO_KEEPALIVE, &keep_alive,
+                       &keep_alive_length) == 0 &&
+          keep_alive == 1;
+    }
+
     ++observation->accepted;
   }
 
@@ -666,8 +682,10 @@ bool CheckMultishotAccept() {
       return false;
   }
 
-  auto listener_result =
-      Listener::Create(&loop, LoopbackAddress(0));
+  coropact::luring::ListenOptions options;
+  options.tcp_options.no_delay = true;
+  options.tcp_options.keep_alive = true;
+  auto listener_result = Listener::Create(&loop, LoopbackAddress(0), options);
   if (!listener_result.has_value()) {
     std::cout << "FAIL: listener creation failed: "
               << listener_result.error().message() << '\n';
@@ -733,7 +751,8 @@ bool CheckMultishotAccept() {
     return false;
   }
 
-  return observation.accepted == kClientCount && observation.stopped;
+  return observation.accepted == kClientCount && observation.stopped &&
+         observation.options_applied;
 }
 
 bool CheckStopCancelsActiveSource() {

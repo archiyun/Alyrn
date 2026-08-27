@@ -25,10 +25,7 @@ public:
   struct FinalAwaiter {
     std::coroutine_handle<> continuation;
 
-    [[nodiscard]]
-    bool await_ready() const noexcept {
-      return false;
-    }
+    bool await_ready() const noexcept { return false; }
 
     [[nodiscard]]
     std::coroutine_handle<> await_suspend(std::coroutine_handle<>) const noexcept {

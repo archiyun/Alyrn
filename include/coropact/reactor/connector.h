@@ -7,6 +7,7 @@
 #include "coropact/result.h"
 #include "coropact/coro/task.h"
 #include "coropact/net/endpoint.h"
+#include "coropact/net/tcp_options.h"
 #include "coropact/reactor/loop.h"
 #include "coropact/reactor/stream.h"
 #include "coropact/time/clock.h"
@@ -17,6 +18,7 @@ namespace coropact::reactor {
 struct ConnectorOptions {
   // Applies to every Stream returned by Connect.
   StreamOptions stream_options{};
+  net::TcpOptions tcp_options{};
 };
 
 class Connector {
