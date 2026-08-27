@@ -234,7 +234,7 @@ coropact::coro::DetachedTask ShutdownThenReadAndWrite(
     std::optional<coropact::Result<void>>* second_shutdown,
     std::optional<coropact::Result<void>>* write_result,
     std::optional<coropact::Result<std::size_t>>* read_result, bool* resumed_with_scheduler) {
-  first_shutdown->emplace(co_await stream->Shutdown());
+  first_shutdown->emplace(co_await stream->CloseWrite());
   second_shutdown->emplace(co_await stream->Shutdown());
   write_result->emplace(co_await stream->WriteAll(write_buffer));
   read_result->emplace(co_await stream->ReadSome(read_buffer));

@@ -253,6 +253,19 @@ public:
     return {};
   }
 
+  // Shuts down the read side of the socket. This does not close the
+  // descriptor and therefore leaves writes available to the caller.
+  [[nodiscard]]
+  Result<void> ShutdownRead() const noexcept {
+    if (sockfd_ < 0) {
+      return std::unexpected(Errno(EBADF));
+    }
+    if (::shutdown(sockfd_, SHUT_RD) < 0) {
+      return std::unexpected(CurrentErrno());
+    }
+    return {};
+  }
+
   // Closes the descriptor before destruction. Idempotent.
   void Close() noexcept {
     if (sockfd_ < 0) {

@@ -8,7 +8,6 @@
 #include <cstdint>
 #include <span>
 
-#include "coropact/result.h"
 #include "coropact/coro/task.h"
 #include "coropact/net/buffer.h"
 #include "coropact/net/detail/stream_lifecycle.h"
@@ -23,6 +22,7 @@
 #include "coropact/reactor/detail/result_state.h"
 #include "coropact/reactor/loop.h"
 #include "coropact/reactor/options.h"
+#include "coropact/result.h"
 #include "coropact/time/clock.h"
 #include "coropact/utils/macros.h"
 
@@ -49,8 +49,7 @@ public:
   // directly with co_await (or keep the result in auto); their registration,
   // result storage, and cancellation protocol are not a stream interface.
 
-  Stream(Loop* loop, int fd, net::Endpoint peer = net::Endpoint(0),
-                StreamOptions options = {});
+  Stream(Loop* loop, int fd, net::Endpoint peer = net::Endpoint(0), StreamOptions options = {});
   ~Stream();
 
   // Moves are loop-affine: the source must be used from its owning loop
@@ -66,8 +65,11 @@ public:
   ReadSomeAwaiter ReadSomeFor(std::span<std::byte> buffer, time::Duration timeout) noexcept;
   [[nodiscard]]
   WriteAllAwaiter WriteAll(std::span<const std::byte> buffer) noexcept;
-  coro::Task<Result<void>> Shutdown();
-  coro::Task<Result<void>> Close();
+  [[nodiscard]]
+  // Legacy alias for CloseWrite().
+  coro::Task<Result<void>> Shutdown() noexcept;
+  [[nodiscard]]
+  coro::Task<Result<void>> Close() noexcept;
 
   // Stream operations and destruction are loop-affine. The coroutine must
   // reach await_suspend() on this stream's owning Loop; a foreign thread
@@ -75,9 +77,20 @@ public:
   // every build configuration.
 
   [[nodiscard]]
-  const net::Endpoint& PeerAddress() const noexcept {
+  Result<net::Endpoint> LocalAddr() const noexcept;
+
+  [[nodiscard]]
+  const net::Endpoint& RemoteAddr() const noexcept {
     return peer_;
   }
+
+  [[nodiscard]]
+  // Shuts down local reception while keeping the descriptor and write side.
+  coro::Task<Result<void>> CloseRead() noexcept;
+
+  [[nodiscard]]
+  // Shuts down local transmission while keeping the descriptor and read side.
+  coro::Task<Result<void>> CloseWrite() noexcept;
 
   // Native extensions such as RecvSource may borrow this descriptor
   // while this stream retains ownership. They must run on the owning loop and
@@ -180,7 +193,7 @@ protected:
 };
 
 class Stream::ReadSomeAwaiter final : public ReadAwaiterState,
-                                             public OperationHook<Stream::ReadSomeAwaiter> {
+                                      public OperationHook<Stream::ReadSomeAwaiter> {
 public:
   COROPACT_DELETE_COPY_MOVE(ReadSomeAwaiter);
 
@@ -246,7 +259,7 @@ private:
 // terminal path, so callers cannot invalidate its storage while the backend
 // may still access it.
 class Stream::ReadIntoAwaiter : public ReadAwaiterState,
-                                       public OperationHook<Stream::ReadIntoAwaiter> {
+                                public OperationHook<Stream::ReadIntoAwaiter> {
 public:
   COROPACT_DELETE_COPY_MOVE(ReadIntoAwaiter);
 

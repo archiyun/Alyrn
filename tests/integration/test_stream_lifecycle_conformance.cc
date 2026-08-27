@@ -674,6 +674,169 @@ bool CheckShutdownContract() {
   return ok;
 }
 
+struct CloseReadObservation {
+  std::optional<VoidResult> first_close_read;
+  std::optional<VoidResult> second_close_read;
+  std::optional<ReadResult> read;
+  std::optional<VoidResult> write;
+  bool resumed_with_scheduler{false};
+};
+
+template <coropact::io::AsyncStream Stream, class Loop>
+auto ObserveCloseReadContract(Stream& stream, Loop& loop, std::span<std::byte> read_buffer,
+                              std::span<const std::byte> write_buffer,
+                              CloseReadObservation& observation) -> coropact::coro::DetachedTask {
+  observation.first_close_read.emplace(co_await stream.CloseRead());
+  observation.second_close_read.emplace(co_await stream.CloseRead());
+  observation.read.emplace(co_await stream.ReadSome(read_buffer));
+  observation.write.emplace(co_await stream.WriteAll(write_buffer));
+  observation.resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
+  loop.RequestStop();
+}
+
+template <class Harness>
+bool CheckCloseReadContract() {
+  typename Harness::Loop loop;
+  if (!Harness::Init(loop)) {
+    if (Harness::Skip(loop)) {
+      std::cout << "SKIP [" << Harness::Name() << "]: backend unavailable\n";
+      return true;
+    }
+    std::cerr << "FAIL [" << Harness::Name() << "]: loop initialization\n";
+    return false;
+  }
+
+  UniqueFd local;
+  UniqueFd peer;
+  if (!MakeSocketPair(local, peer)) {
+    return false;
+  }
+
+  constexpr std::string_view kDiscarded = "discarded";
+  if (!WriteExactly(peer.Get(), kDiscarded)) {
+    std::cerr << "FAIL [" << Harness::Name() << "]: peer write\n";
+    return false;
+  }
+
+  auto stream = Harness::MakeStream(loop, local.Release());
+  std::array<std::byte, 16> read_buffer{};
+  constexpr std::string_view kOutgoing = "still-writable";
+  const auto write_buffer =
+      std::as_bytes(std::span<const char>(kOutgoing.data(), kOutgoing.size()));
+  CloseReadObservation observation;
+
+  coropact::coro::SpawnDetach(
+      loop, ObserveCloseReadContract(stream, loop, read_buffer, write_buffer, observation));
+  Harness::Run(loop);
+
+  std::array<char, 32> peer_buffer{};
+  const ssize_t peer_read = ::read(peer.Get(), peer_buffer.data(), peer_buffer.size());
+  bool ok = true;
+  ok &= Expect(observation.first_close_read.has_value() &&
+                   observation.first_close_read->has_value(),
+               Harness::Name(), "first CloseRead failed");
+  ok &= Expect(observation.second_close_read.has_value() &&
+                   observation.second_close_read->has_value(),
+               Harness::Name(), "CloseRead was not idempotent");
+  ok &= Expect(observation.read.has_value() && observation.read->has_value() &&
+                   **observation.read == 0,
+               Harness::Name(), "read after CloseRead did not return EOF");
+  ok &= Expect(observation.write.has_value() && observation.write->has_value(), Harness::Name(),
+               "write after CloseRead failed");
+  ok &= Expect(peer_read == static_cast<ssize_t>(kOutgoing.size()) &&
+                   std::string_view(peer_buffer.data(), static_cast<std::size_t>(peer_read)) ==
+                       kOutgoing,
+               Harness::Name(), "CloseRead disabled the write direction");
+  ok &= Expect(observation.resumed_with_scheduler, Harness::Name(),
+               "CloseRead continuation lost scheduler affinity");
+  return ok;
+}
+
+struct PendingReadCloseReadObservation {
+  std::optional<ReadResult> read;
+  std::optional<VoidResult> rejected_close_read;
+  std::optional<VoidResult> close_read;
+  int finished{0};
+  bool timed_out{false};
+};
+
+template <coropact::io::AsyncStream Stream, class Loop>
+auto ObservePendingReadForCloseRead(Stream& stream, Loop& loop, std::span<std::byte> buffer,
+                                    PendingReadCloseReadObservation& observation)
+    -> coropact::coro::DetachedTask {
+  observation.read.emplace(co_await stream.ReadSome(buffer));
+  observation.close_read.emplace(co_await stream.CloseRead());
+  if (++observation.finished == 2) {
+    loop.RequestStop();
+  }
+}
+
+template <coropact::io::AsyncStream Stream, class Loop>
+auto RejectCloseReadWhileReadPending(Stream& stream, Loop& loop,
+                                     PendingReadCloseReadObservation& observation)
+    -> coropact::coro::DetachedTask {
+  observation.rejected_close_read.emplace(co_await stream.CloseRead());
+  if (++observation.finished == 2) {
+    loop.RequestStop();
+  }
+}
+
+template <class Harness>
+bool CheckPendingReadCloseReadContract() {
+  typename Harness::Loop loop;
+  if (!Harness::Init(loop)) {
+    if (Harness::Skip(loop)) {
+      return true;
+    }
+    std::cerr << "FAIL [" << Harness::Name() << "]: loop initialization\n";
+    return false;
+  }
+
+  UniqueFd local;
+  UniqueFd peer;
+  if (!MakeSocketPair(local, peer)) {
+    return false;
+  }
+
+  auto stream = Harness::MakeStream(loop, local.Release());
+  std::array<std::byte, 16> read_buffer{};
+  PendingReadCloseReadObservation observation;
+  coropact::coro::SpawnDetach(
+      loop, ObservePendingReadForCloseRead(stream, loop, read_buffer, observation));
+  if (!Harness::RunAfter(loop, std::chrono::milliseconds(1), [&] {
+        coropact::coro::SpawnDetach(loop, RejectCloseReadWhileReadPending(stream, loop, observation));
+      })) {
+    return false;
+  }
+  if (!Harness::RunAfter(loop, std::chrono::milliseconds(2), [&] {
+        constexpr std::string_view kPayload = "ready";
+        (void)WriteExactly(peer.Get(), kPayload);
+      })) {
+    return false;
+  }
+  if (!Harness::RunAfter(loop, std::chrono::milliseconds(500), [&] {
+        observation.timed_out = true;
+        loop.RequestStop();
+      })) {
+    return false;
+  }
+
+  Harness::Run(loop);
+
+  bool ok = true;
+  ok &= Expect(!observation.timed_out, Harness::Name(), "pending-read CloseRead timed out");
+  ok &= Expect(observation.rejected_close_read.has_value() &&
+                   !observation.rejected_close_read->has_value() &&
+                   observation.rejected_close_read->error() == std::errc::device_or_resource_busy,
+               Harness::Name(), "CloseRead did not return EBUSY for a pending read");
+  ok &= Expect(observation.read.has_value() && observation.read->has_value() &&
+                   **observation.read > 0,
+               Harness::Name(), "pending read did not complete before CloseRead");
+  ok &= Expect(observation.close_read.has_value() && observation.close_read->has_value(),
+               Harness::Name(), "CloseRead failed after the pending read drained");
+  return ok;
+}
+
 struct PendingWriteObservation {
   std::optional<VoidResult> write;
   std::optional<VoidResult> competing_write;
@@ -921,15 +1084,19 @@ bool CheckBackend() {
   const bool loop_stop = CheckOwnedReadLoopStopContract<Harness>();
   const bool stop_rejection = CheckIoAfterStopRequestContract<Harness>();
   const bool shutdown = CheckShutdownContract<Harness>();
+  const bool close_read = CheckCloseReadContract<Harness>();
+  const bool pending_close_read = CheckPendingReadCloseReadContract<Harness>();
   const bool pending_write_close = CheckPendingWriteCloseContract<Harness>();
   const bool closed_stream = CheckClosedStreamContract<Harness>();
   const bool pending_read_close = CheckPendingReadCloseContract<Harness>();
   if (pending_read && sequential_read && owned_read && read_lane && loop_stop && stop_rejection &&
-      shutdown && pending_write_close && closed_stream && pending_read_close) {
+      shutdown && close_read && pending_close_read && pending_write_close && closed_stream &&
+      pending_read_close) {
     std::cout << "lifecycle conformance [" << Harness::Name() << "]: PASS\n";
   }
   return pending_read && sequential_read && owned_read && read_lane && loop_stop &&
-         stop_rejection && shutdown && pending_write_close && closed_stream && pending_read_close;
+         stop_rejection && shutdown && close_read && pending_close_read && pending_write_close &&
+         closed_stream && pending_read_close;
 }
 
 }  // namespace

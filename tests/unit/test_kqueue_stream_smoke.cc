@@ -210,10 +210,22 @@ coropact::coro::DetachedTask ShutdownThenReadAndWrite(
     std::array<std::byte, 16>* read_buffer, std::span<const std::byte> write_buffer,
     std::optional<WriteResult>* first_shutdown, std::optional<WriteResult>* second_shutdown,
     std::optional<WriteResult>* write_result, std::optional<ReadResult>* read_result) {
-  first_shutdown->emplace(co_await stream->Shutdown());
+  first_shutdown->emplace(co_await stream->CloseWrite());
   second_shutdown->emplace(co_await stream->Shutdown());
   write_result->emplace(co_await stream->WriteAll(write_buffer));
   read_result->emplace(co_await stream->ReadSome(*read_buffer));
+  loop->RequestStop();
+}
+
+coropact::coro::DetachedTask CloseReadThenReadAndWrite(
+    coropact::kqueue::Stream* stream, coropact::kqueue::Loop* loop,
+    std::array<std::byte, 16>* read_buffer, std::span<const std::byte> write_buffer,
+    std::optional<WriteResult>* first_close_read, std::optional<WriteResult>* second_close_read,
+    std::optional<WriteResult>* write_result, std::optional<ReadResult>* read_result) {
+  first_close_read->emplace(co_await stream->CloseRead());
+  second_close_read->emplace(co_await stream->CloseRead());
+  read_result->emplace(co_await stream->ReadSome(*read_buffer));
+  write_result->emplace(co_await stream->WriteAll(write_buffer));
   loop->RequestStop();
 }
 
@@ -679,6 +691,57 @@ bool CheckShutdownKeepsReadOpen() {
          Check(**read_result == kPayload.size(), "read after shutdown byte count mismatch");
 }
 
+bool CheckCloseReadKeepsWriteOpen() {
+  int sv[2] = {-1, -1};
+  if (!MakeSocketPair(sv)) {
+    std::cout << "FAIL: socketpair failed\n";
+    return false;
+  }
+
+  constexpr std::string_view kDiscarded = "discarded";
+  if (::write(sv[1], kDiscarded.data(), kDiscarded.size()) !=
+      static_cast<ssize_t>(kDiscarded.size())) {
+    std::cout << "FAIL: peer write failed\n";
+    ::close(sv[0]);
+    ::close(sv[1]);
+    return false;
+  }
+
+  coropact::kqueue::Loop loop;
+  coropact::kqueue::Stream stream(&loop, sv[0]);
+  std::array<std::byte, 16> read_buffer{};
+  constexpr std::string_view kOutgoing = "still-writable";
+  const auto write_buffer =
+      std::as_bytes(std::span<const char>(kOutgoing.data(), kOutgoing.size()));
+  std::optional<WriteResult> first_close_read;
+  std::optional<WriteResult> second_close_read;
+  std::optional<WriteResult> write_result;
+  std::optional<ReadResult> read_result;
+
+  coropact::coro::SpawnDetach(
+      loop, CloseReadThenReadAndWrite(&stream, &loop, &read_buffer, write_buffer,
+                                      &first_close_read, &second_close_read, &write_result,
+                                      &read_result));
+  loop.Run();
+
+  std::array<char, 32> peer_buffer{};
+  const ssize_t peer_read = ::read(sv[1], peer_buffer.data(), peer_buffer.size());
+  ::close(sv[1]);
+
+  return Check(first_close_read.has_value() && first_close_read->has_value(),
+               "first CloseRead failed") &&
+         Check(second_close_read.has_value() && second_close_read->has_value(),
+               "second CloseRead was not idempotent") &&
+         Check(read_result.has_value() && read_result->has_value() && **read_result == 0,
+               "ReadSome after CloseRead did not return EOF") &&
+         Check(write_result.has_value() && write_result->has_value(),
+               "WriteAll after CloseRead failed") &&
+         Check(peer_read == static_cast<ssize_t>(kOutgoing.size()) &&
+                   std::string_view(peer_buffer.data(), static_cast<std::size_t>(peer_read)) ==
+                       kOutgoing,
+               "CloseRead disabled the write direction");
+}
+
 }  // namespace
 
 int main() {
@@ -694,6 +757,7 @@ int main() {
   if (!CheckEchoAlgorithmUsesAsyncStream()) return 1;
   if (!CheckCloseRejectsLaterSubmit()) return 1;
   if (!CheckShutdownKeepsReadOpen()) return 1;
+  if (!CheckCloseReadKeepsWriteOpen()) return 1;
   std::cout << "kqueue stream smoke: PASS\n";
   return 0;
 }

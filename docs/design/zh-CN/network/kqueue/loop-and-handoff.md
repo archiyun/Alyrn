@@ -64,7 +64,7 @@ pending read/write 与 shutdown participant 都是 owner-local 的。
 ```text
 acceptor (worker 0)
   Accept() -> Stream on loop 0
-  PeerAddress()                 // Release 之前读出
+  RemoteAddr()                  // Release 之前读出
   fd = stream.Release()         // 解注册 Channel，交出 fd，stream 不再拥有 socket
   target->OwnerLoop()->Post({
       reconstruct Stream(owner, fd, peer)

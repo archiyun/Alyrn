@@ -17,7 +17,8 @@ provided buffer 和 zero-copy 的不同生命周期。
 
 冻结以下 Core contract：
 
-- `AsyncStream`：`ReadSome`、`WriteAll`、`Shutdown`、`Close`；
+- `AsyncStream`：`ReadSome`、`WriteAll`、`Shutdown`、`CloseRead`、`CloseWrite`、`Close`、
+  `LocalAddr`、`RemoteAddr`；
 - `AsyncListener`：`Accept`、`Close`；
 - `AsyncConnector`：建立满足 `AsyncStream` 的 outbound stream；
 - `Task`/`DetachedTask` 的 await、ownership 和 scheduler-bound resume 语义。
@@ -26,6 +27,7 @@ provided buffer 和 zero-copy 的不同生命周期。
 
 - awaitable 的结果类型和一次逻辑完成/一次 continuation resume；
 - borrowed buffer 在 `await_resume` 前必须保持有效和地址稳定；
+- address query、read half-close 和 write half-close 的可观察语义；
 - pending I/O 在 Close、取消和错误路径上的收敛；
 - Close 后的新提交如何失败；
 - stream、loop、fd 和 coroutine work 的 owner-thread 规则。

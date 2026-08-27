@@ -54,6 +54,17 @@ void CommitShutdownWhileClosing() {
   lifecycle.CommitShutdown();
 }
 
+void CommitCloseReadWithoutPreparation() {
+  StreamLifecycle lifecycle;
+  lifecycle.CommitCloseRead();
+}
+
+void CommitCloseReadWhileClosing() {
+  StreamLifecycle lifecycle;
+  (void)lifecycle.PrepareClose();
+  lifecycle.CommitCloseRead();
+}
+
 void AbortShutdownWithoutPreparation() {
   StreamLifecycle lifecycle;
   lifecycle.AbortShutdownPreparation();
@@ -110,6 +121,53 @@ bool CheckShutdownPreparationRollback() {
   return restored;
 }
 
+bool CheckCloseReadLifecycle() {
+  StreamLifecycle lifecycle;
+
+  auto pending = lifecycle.PrepareCloseRead(true);
+  if (!Check(!pending.has_value() && pending.error() == std::errc::device_or_resource_busy,
+             "pending read did not block CloseRead")) {
+    return false;
+  }
+
+  auto prepared = lifecycle.PrepareCloseRead(false);
+  if (!Check(prepared.has_value() && *prepared,
+             "first CloseRead did not require a syscall")) {
+    return false;
+  }
+  lifecycle.CommitCloseRead();
+
+  auto repeated = lifecycle.PrepareCloseRead(false);
+  return Check(lifecycle.IsReadShutdown(), "CloseRead did not mark the read side shut down") &&
+         Check(lifecycle.ValidateRead().has_value(), "CloseRead closed the resource") &&
+         Check(lifecycle.ValidateWrite().has_value(), "CloseRead disabled the write side") &&
+         Check(repeated.has_value() && !*repeated, "repeated CloseRead was not idempotent");
+}
+
+bool CheckCloseReadPreparationRollback() {
+  StreamLifecycle lifecycle;
+
+  auto prepared = lifecycle.PrepareCloseRead(false);
+  if (!Check(prepared.has_value() && *prepared, "CloseRead preparation did not start")) {
+    return false;
+  }
+  auto duplicate = lifecycle.PrepareCloseRead(false);
+  if (!Check(!duplicate.has_value() &&
+                 duplicate.error() == std::errc::device_or_resource_busy,
+             "CloseRead preparation did not exclude a duplicate CloseRead")) {
+    return false;
+  }
+
+  lifecycle.AbortCloseReadPreparation();
+  prepared = lifecycle.PrepareCloseRead(false);
+  const bool restored = Check(prepared.has_value() && *prepared,
+                              "aborted CloseRead preparation did not restore readable state");
+  if (restored) {
+    lifecycle.AbortCloseReadPreparation();
+  }
+  return restored;
+}
+
 bool CheckCloseRejectsShutdownPreparation() {
   StreamLifecycle lifecycle;
   auto prepared = lifecycle.PrepareShutdown(false);
@@ -121,6 +179,19 @@ bool CheckCloseRejectsShutdownPreparation() {
   lifecycle.AbortShutdownPreparation();
   return Check(!close.has_value() && close.error() == std::errc::device_or_resource_busy,
                "Close did not reject an in-progress Shutdown preparation");
+}
+
+bool CheckCloseRejectsCloseReadPreparation() {
+  StreamLifecycle lifecycle;
+  auto prepared = lifecycle.PrepareCloseRead(false);
+  if (!Check(prepared.has_value() && *prepared, "CloseRead preparation did not start")) {
+    return false;
+  }
+
+  auto close = lifecycle.PrepareClose();
+  lifecycle.AbortCloseReadPreparation();
+  return Check(!close.has_value() && close.error() == std::errc::device_or_resource_busy,
+               "Close did not reject an in-progress CloseRead preparation");
 }
 
 bool CheckCloseLifecycle() {
@@ -172,6 +243,14 @@ bool CheckInvalidTransitionsFailClosed() {
              ExpectChildAbort(&CommitShutdownWhileClosing,
                               "CommitShutdown during Close preparation must terminate in Release"),
              "CommitShutdown during Close preparation was accepted") &&
+         Check(ExpectChildAbort(
+                   &CommitCloseReadWithoutPreparation,
+                   "CommitCloseRead without preparation must terminate in Release"),
+               "missing CommitCloseRead preparation was accepted") &&
+         Check(ExpectChildAbort(
+                   &CommitCloseReadWhileClosing,
+                   "CommitCloseRead during Close preparation must terminate in Release"),
+               "CommitCloseRead during Close preparation was accepted") &&
          Check(ExpectChildAbort(&AbortCloseWithoutPreparation,
                                 "AbortClosePreparation outside Closing must terminate in Release"),
                "AbortClosePreparation outside Closing was accepted") &&
@@ -186,7 +265,10 @@ bool CheckInvalidTransitionsFailClosed() {
 int main() {
   if (!CheckShutdownLifecycle()) return 1;
   if (!CheckShutdownPreparationRollback()) return 1;
+  if (!CheckCloseReadLifecycle()) return 1;
+  if (!CheckCloseReadPreparationRollback()) return 1;
   if (!CheckCloseRejectsShutdownPreparation()) return 1;
+  if (!CheckCloseRejectsCloseReadPreparation()) return 1;
   if (!CheckCloseLifecycle()) return 1;
   if (!CheckMoveTransfersLifecycle()) return 1;
   if (!CheckInvalidTransitionsFailClosed()) return 1;

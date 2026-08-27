@@ -100,8 +100,20 @@ WriteAll(std::span<const std::byte> buffer)
 Shutdown()
     -> coro::Task<Result<void>>
 
+CloseRead()
+    -> coro::Task<Result<void>>
+
+CloseWrite()
+    -> coro::Task<Result<void>>
+
 Close()
     -> coro::Task<Result<void>>
+
+LocalAddr()
+    -> Result<net::Endpoint>
+
+RemoteAddr()
+    -> const net::Endpoint&
 ```
 
 对应的公共概念是：
@@ -113,8 +125,13 @@ coropact::io::AsyncClosableStream
 coropact::io::AsyncStream
 ```
 
-`AsyncStream` 是四个方法的语义组合，不是某个具体类的基类，也不要求虚函数。当前
-`reactor::Stream` 和 `luring::Stream` 都满足它。
+`AsyncStream` 是上述八个方法的语义组合，不是某个具体类的基类，也不要求虚函数。
+`CloseWrite()` 是 `Shutdown()` 的明确别名；地址查询属于 stream 的连接语义：UDP 不满足
+这个字节流 contract，Unix datagram 也不属于此 contract。
+
+`LocalAddr()` 必须在 owner loop 上执行，并通过 `Result` 报告 `getsockname` 失败；
+`RemoteAddr()` 返回连接建立时保存的 peer endpoint，不重复发起 `getpeername`。
+当前 `reactor::Stream`、`kqueue::Stream` 和 `luring::Stream` 都满足它。
 
 ### 2.2 TimedStream extension
 
@@ -202,10 +219,11 @@ cancel acknowledgement、target terminal、buffer/lease release 全部收敛后�
 Close continuation。提交 SQE 不等于内核已经产生 CQE，但已经足以使其关联的 operation state
 不能安全回滚。
 
-`PrepareShutdown()` 与 `PrepareClose()` 的失败是可观察的 `Result`；但 adapter 在成功准备后调用
-`CommitShutdown()`，在 shutdown syscall 的本地失败后调用 `AbortShutdownPreparation()`，或在尚未
-提交物理取消前调用 `AbortClosePreparation()`，属于内部状态机的后续 transition。若这些调用不满足
-前置状态，说明后端违反生命周期协议，必须在所有构建中终止，而不能把状态悄悄改写成新的业务错误。
+`PrepareShutdown()`、`PrepareCloseRead()` 与 `PrepareClose()` 的失败是可观察的 `Result`；但 adapter
+在成功准备后调用 `CommitShutdown()` 或 `CommitCloseRead()`，在 shutdown syscall 的本地失败后调用
+对应的 `Abort*Preparation()`，或在尚未提交物理取消前调用 `AbortClosePreparation()`，属于内部状态机
+的后续 transition。若这些调用不满足前置状态，说明后端违反生命周期协议，必须在所有构建中终止，
+而不能把状态悄悄改写成新的业务错误。
 
 `Connect()` 不属于 `AsyncStream` 或 `AsyncListener`。它是建立 outbound stream 的另一项
 能力，由 `AsyncConnector` 单独约束：
@@ -544,9 +562,10 @@ stream 的核心资源状态为：
 Open -> Closing -> Closed
 ```
 
-写方向是与 fd 生命周期独立的第二个状态：
+读写方向是与 fd 生命周期独立的两个状态：
 
 ```text
+Readable -- CloseRead --> ReadShutdown
 Writable -- Shutdown --> WriteShutdown
 ```
 
@@ -554,6 +573,11 @@ Writable -- Shutdown --> WriteShutdown
 pending operation 收敛。因此 `Open + WriteShutdown` 仍然允许 `ReadSome()`，但不再接受新的
 `WriteAll()`。空 span 不产生物理 write request，但仍是一次逻辑 operation，必须经过 loop、
 资源状态和写槽位验证。
+
+`CloseRead()` 只改变读方向，不关闭 fd，也不影响 `WriteAll()`。它要求没有 pending read；否则
+返回 `EBUSY`。成功后新的 `ReadSome()`、`ReadInto()` 和 `ReadSomeFor()` 立即得到项目约定的
+`Result<0>` EOF，不再提交新的 receive operation。读侧关闭和写侧关闭可以独立发生，二者都不
+等价于 `Close()`。
 
 一个 stream 的生命周期由其拥有者管理。调用方必须保证 stream 对象至少存活到所有依赖
 它的 operation 已经 Complete；通常应在 session 协程内统一负责 Close 和销毁。
@@ -629,7 +653,25 @@ Shutdown()
 不是让 half-close 与写入竞争。资源 `Closing` 时返回 `ECANCELED`，资源已 `Closed` 时返回
 `EBADF`。
 
-### 5.5 Close
+`CloseWrite()` 是写方向 half-close 的 canonical spelling；`Shutdown()` 保留为兼容旧调用方的
+明确别名，二者都只执行 `SHUT_WR`，不表示双向 shutdown。
+
+### 5.5 CloseRead
+
+`CloseRead()` 表示本端不再接收数据，当前 TCP 实现映射到读方向 half-close：
+
+```text
+CloseRead()
+  -> ReadState: Readable -> ReadShutdown
+  -> 后续本端 ReadSome() / ReadInto() / ReadSomeFor() 直接返回 Result<0>
+  -> 写方向仍可继续使用
+```
+
+`CloseRead()` 是幂等的；如果存在 pending read，返回 `EBUSY`，不会取消或强行结算该 read。
+资源 `Closing` 时返回 `ECANCELED`，资源已 `Closed` 时返回 `EBADF`。它不会向对端表达应用层
+“读取完成”，也不替代 `Close()`。
+
+### 5.6 Close
 
 `Close()` 是一个异步控制操作，允许立即完成，也允许真实挂起：
 
@@ -646,7 +688,7 @@ Close 必须满足：
 2. 已经 pending 的 read/write 最终各自 Complete 一次；
 3. 后端不再持有 fd 或 buffer 后，资源才进入 Closed；
 4. Close 自己也必须产生一个可观察的 Result<void>；
-5. Closed 后的 ReadSome / WriteAll / Shutdown 返回 closed error；
+5. Closed 后的 ReadSome / WriteAll / Shutdown / CloseRead / CloseWrite 返回 closed error；
 6. Closed 后重复 Close 可以成功返回。
 ```
 
@@ -659,7 +701,7 @@ Reactor 可以通过 readiness 状态直接完成取消，luring 可能需要提
 并发调用 `Close()` 与同一个 stream 的其他操作不属于跨线程语义；同一 loop 内也不应
 同时发起多个 Close。实现可以返回 `EBUSY` 或在调试构建中暴露调用错误。
 
-### 5.6 关闭和完成的竞争
+### 5.7 关闭和完成的竞争
 
 以下结果都可能是合法的，取决于事件在线程归属序列中的线性化顺序：
 
@@ -950,6 +992,9 @@ Close 取消 pending operation -> ECANCELED
 Close 之后新提交 -> EBADF 或等价 closed error
   不是对端 EOF。
 
+CloseRead 之后新读 -> Result<0>
+  本地读方向已关闭，但 stream 资源和写方向仍然存在。
+
 WriteAll -> EPIPE 或具体传输错误
   写方向无法继续。
 
@@ -973,25 +1018,27 @@ EOF、本地取消、连接失败、上游失败和超时。
 3. 对端关闭产生 ReadSome -> Result<0>；
 4. pending read 在 Close 后最终完成，且不会悬挂；
 5. pending write 在 Close 后最终完成，且不会悬挂；
-6. Close 后的新 read/write/shutdown 失败；
-7. 同方向第二个 pending operation 稳定返回 `EBUSY`，包括空 buffer operation；
-8. read 和 write 可以同时 pending；
-9. buffer 在 Complete 前被修改或释放时不属于合法用法；
-10. listener 的 pending accept 可被 Close 收敛；
-11. Reactor 和 luring 对同一测试场景的核心结果投影一致；
-12. timeout 在 AsyncTimedStream concept 与后端实现同时存在时，验证 read/timeout
+6. CloseRead 后的新 read 立即得到 EOF，且 write 仍然可用；
+7. Close 后的新 read/write/shutdown/CloseRead/CloseWrite 失败；
+8. pending read 上调用 CloseRead 返回 `EBUSY`，读完成后可重试成功；
+9. 同方向第二个 pending operation 稳定返回 `EBUSY`，包括空 buffer operation；
+10. read 和 write 可以同时 pending；
+11. buffer 在 Complete 前被修改或释放时不属于合法用法；
+12. listener 的 pending accept 可被 Close 收敛；
+13. Reactor 和 luring 对同一测试场景的核心结果投影一致；
+14. timeout 在 AsyncTimedStream concept 与后端实现同时存在时，验证 read/timeout
     竞争只产生一个逻辑结果和一次恢复；
-13. EventSource 的 high-water pause 只终止当前 physical request，不把 logical source
+15. EventSource 的 high-water pause 只终止当前 physical request，不把 logical source
     误报为 terminal；
-14. SplitRelease 的业务结果、恢复和 buffer/resource release 按各自授权边界发生。
-15. listener/source 的 `Stop()` 与 `Close()` 保持幂等，terminal `Next()` 保持 sticky；source Stop 的
+16. SplitRelease 的业务结果、恢复和 buffer/resource release 按各自授权边界发生。
+17. listener/source 的 `Stop()` 与 `Close()` 保持幂等，terminal `Next()` 保持 sticky；source Stop 的
     local cancel preparation failure 后仍可重试并最终收敛；
-16. loop 进入 `Stopping` 后，新的 `Accept()` 与 `CreateAcceptSource()` 返回 `ECANCELED`。
-17. connector 保留成功、`EINVAL`、`ECONNREFUSED` 与 `ECANCELED` 的区别；
-18. 同一 connector 的并发 `Connect()` 具有独立结果、恢复授权和资源回收。
-19. `Connect()` 的 continuation 只在 `Result<Stream>` 已固定、fd 已转移给 stream 或关闭后才运行；
+18. loop 进入 `Stopping` 后，新的 `Accept()` 与 `CreateAcceptSource()` 返回 `ECANCELED`。
+19. connector 保留成功、`EINVAL`、`ECONNREFUSED` 与 `ECANCELED` 的区别；
+20. 同一 connector 的并发 `Connect()` 具有独立结果、恢复授权和资源回收。
+21. `Connect()` 的 continuation 只在 `Result<Stream>` 已固定、fd 已转移给 stream 或关闭后才运行；
     恢复后可以立刻对该 stream 调用 `Close()`。
-20. `Accept()` 的 continuation 只在 `Result<Stream>` 已固定、listener 的 pending-accept
+22. `Accept()` 的 continuation 只在 `Result<Stream>` 已固定、listener 的 pending-accept
     reservation 已释放后才运行；恢复后可以立刻关闭该 stream 或发起下一次 `Accept()`。
 ```
 

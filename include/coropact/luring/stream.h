@@ -12,7 +12,6 @@
 #include <vector>
 
 #include "coropact/backend/async_stream.h"
-#include "coropact/result.h"
 #include "coropact/coro/task.h"
 #include "coropact/luring/detail/completion_dispatch.h"
 #include "coropact/luring/detail/op.h"
@@ -23,6 +22,7 @@
 #include "coropact/net/read_into.h"
 #include "coropact/operation/detail/composite_lifecycle.h"
 #include "coropact/operation/detail/split_release_lifecycle.h"
+#include "coropact/result.h"
 #include "coropact/time/clock.h"
 #include "coropact/utils/macros.h"
 
@@ -111,13 +111,27 @@ public:
   [[nodiscard]]
   SendZeroCopyAwaiter SendZeroCopy(std::span<const std::byte> buffer) noexcept;
 
-  coro::Task<Result<void>> Shutdown();
-  coro::Task<Result<void>> Close();
+  [[nodiscard]]
+  // Legacy alias for CloseWrite().
+  coro::Task<Result<void>> Shutdown() noexcept;
+  [[nodiscard]]
+  coro::Task<Result<void>> Close() noexcept;
 
   [[nodiscard]]
-  const net::Endpoint& PeerAddress() const noexcept {
+  Result<net::Endpoint> LocalAddr() const noexcept;
+
+  [[nodiscard]]
+  const net::Endpoint& RemoteAddr() const noexcept {
     return peer_;
   }
+
+  [[nodiscard]]
+  // Shuts down local reception while keeping the descriptor and write side.
+  coro::Task<Result<void>> CloseRead() noexcept;
+
+  [[nodiscard]]
+  // Shuts down local transmission while keeping the descriptor and read side.
+  coro::Task<Result<void>> CloseWrite() noexcept;
 
   [[nodiscard]]
   int Fd() const noexcept {
@@ -249,8 +263,7 @@ public:
 
   COROPACT_DELETE_COPY_MOVE(ReadSomeForAwaiter);
 
-  ReadSomeForAwaiter(Stream& stream, std::span<std::byte> buffer,
-                     time::Duration timeout) noexcept;
+  ReadSomeForAwaiter(Stream& stream, std::span<std::byte> buffer, time::Duration timeout) noexcept;
 
   [[nodiscard]]
   bool await_ready() const noexcept {
@@ -311,8 +324,7 @@ private:
   std::span<const std::byte> buffer_;
 };
 
-class Stream::SendZeroCopyAwaiter
-    : public detail::OpHook<Stream::SendZeroCopyAwaiter> {
+class Stream::SendZeroCopyAwaiter : public detail::OpHook<Stream::SendZeroCopyAwaiter> {
 public:
   using OpHook = detail::OpHook<SendZeroCopyAwaiter>;
 

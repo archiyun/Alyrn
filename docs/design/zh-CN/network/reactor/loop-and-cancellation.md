@@ -268,6 +268,8 @@ ResourceState: Open -> Closing
 `Shutdown()` 不等于 `Close()`：前者仅执行 socket 写方向 shutdown，不会取消 pending read、
 也不释放 fd。它要求没有 pending write（否则返回 `EBUSY`），之后保持 read 可用，而新的
 `WriteAll()` 在进入 `send(MSG_NOSIGNAL)` 前返回 `EPIPE`；空 span 也不会绕过逻辑状态验证。
+`CloseWrite()` 是 `Shutdown()` 的兼容别名；`CloseRead()` 对称地执行读方向 shutdown，要求没有
+pending read，成功后新的 read 立即返回 EOF，但不会关闭 fd 或影响新的 write。
 
 ### 4.5 `Loop::RequestStop()`：dispatcher 级取消
 
