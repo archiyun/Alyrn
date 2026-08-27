@@ -1,6 +1,6 @@
 ---
 name: runtime-ds-maintenance
-description: Maintain coropact/ds intrusive containers, heaps, trees, and hash tables. Use for data-structure invariants and zero-ownership container patches.
+description: Maintain coropact/ds intrusive containers, heaps, and trees. Use for data-structure invariants and zero-ownership container patches.
 ---
 
 # coropact/ds Maintenance
@@ -25,12 +25,7 @@ intrusive hooks, predictable complexity, and debug invariant validation.
 ## Core public API / entry points
 
 - `IntrusiveList`
-- `IntrusiveHashTable`
-- `IntrusiveRBTree`
-
-`IntrusiveSplayTree` and `IntrusiveQuadHeap` are experimental and are not
-exported by `coropact/ds.h`. Include them explicitly from
-`coropact/experimental/ds/` when working on their validators or experiments.
+- `IntrusiveTree`
 
 ## Thread model
 
@@ -56,9 +51,8 @@ container: empty <-> populated -> Clear/destruction unlinks all hooks
 ## Invariants
 
 - Size equals reachable linked elements.
-- Parent/child, prev/next, pprev, and heap index links are reciprocal.
+- Parent/child, prev/next, and heap index links are reciprocal.
 - Tree comparator is irreflexive, transitive, and stable while linked.
-- Hash key does not change while linked unless erased/reinserted.
 - Container destruction leaves hooks reusable.
 - No gateway or net type appears in a generic template contract.
 
@@ -69,20 +63,15 @@ container: empty <-> populated -> Clear/destruction unlinks all hooks
 - Mutating key/order fields while linked.
 - Vector reallocation invalidating intrusive back-pointers.
 - Pointer-tagging alignment assumptions.
-- Header/file mismatch for hash implementations.
 
 ## Required tests
 
 - `intrusive_list_smoke_test`
-- `intrusive_hash_table_smoke_test`
 - `rbtree_validator`
-- `splaytree_validator` (experimental)
-- `quad_heap_test` (experimental)
+- `quad_heap_test`
 - `timer_tree_smoke_test` when tree behavior changes
+- `timer_index_smoke_test` when timer-index strategy behavior changes
 - Add randomized differential and invariant checks for structural changes
-
-The SplayTree and QuadHeap validators are excluded from the default test build;
-enable them with `-DBUILD_EXPERIMENTAL_TESTS=ON`.
 
 ## Forbidden dependencies
 
@@ -96,6 +85,6 @@ enable them with `-DBUILD_EXPERIMENTAL_TESTS=ON`.
 - State hook ownership and cross-container preconditions.
 - Keep ownership external and allocation optional.
 - Add or update `CheckInvariants` for new metadata.
-- Use randomized operation sequences for tree/hash changes.
+- Use randomized operation sequences for tree changes.
 - Do not weaken assertions that detect structural corruption.
 - Avoid API abstraction that obscures O(1)/O(log n) ownership mechanics.

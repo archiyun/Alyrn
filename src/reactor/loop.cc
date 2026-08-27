@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT
+#include "coropact/reactor/loop.h"
+
 #include <sys/eventfd.h>
 #include <unistd.h>
 
@@ -12,7 +14,6 @@
 #include "coropact/reactor/detail/channel.h"
 #include "coropact/reactor/detail/poller.h"
 #include "coropact/reactor/detail/timer_queue.h"
-#include "coropact/reactor/loop.h"
 #include "coropact/time/timer_id.h"
 
 namespace coropact::reactor {
@@ -24,13 +25,15 @@ thread_local Loop* t_loop_in_this_thread = nullptr;
 
 }  // namespace
 
-Loop::Loop(std::pmr::memory_resource* frame_resource)
+Loop::Loop(std::pmr::memory_resource* frame_resource) noexcept
+    : Loop(time::TimerIndexKind::kRbTree, frame_resource) {}
+
+Loop::Loop(time::TimerIndexKind timers, std::pmr::memory_resource* frame_resource) noexcept
     : Scheduler(frame_resource),
       thread_id_(base::CurrentThreadId()),
       poller_(Poller::NewDefaultPoller()),
-      timer_queue_(std::make_unique<TimerQueue>(this)) {
-  COROPACT_CHECK(t_loop_in_this_thread == nullptr,
-                 "Loop: only one Loop may exist per thread");
+      timer_queue_(std::make_unique<TimerQueue>(this, timers)) {
+  COROPACT_CHECK(t_loop_in_this_thread == nullptr, "Loop: only one Loop may exist per thread");
   t_loop_in_this_thread = this;
 
   wakeup_fd_ = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
@@ -40,13 +43,12 @@ Loop::Loop(std::pmr::memory_resource* frame_resource)
   wakeup_channel_->EnableReading();
 }
 
-Loop::~Loop() {
+Loop::~Loop() noexcept {
   COROPACT_CHECK(IsInLoopThread(), "Loop destructor called from wrong thread");
   COROPACT_CHECK(!looping_, "Loop destroyed while looping");
 
   COROPACT_CHECK(pending_work_.Empty(), "Loop destroyed with pending owner work");
-  COROPACT_CHECK(shutdown_registry_.Empty(),
-                 "Loop destroyed with registered shutdown resources");
+  COROPACT_CHECK(shutdown_registry_.Empty(), "Loop destroyed with registered shutdown resources");
   DetachWakeupChannel();
   if (wakeup_fd_ >= 0) {
     ::close(wakeup_fd_);
@@ -54,7 +56,7 @@ Loop::~Loop() {
   t_loop_in_this_thread = nullptr;
 }
 
-void Loop::Run(std::stop_token token) {
+void Loop::Run(std::stop_token token) noexcept {
   COROPACT_CHECK(IsInLoopThread(), "Loop::Run called from wrong thread");
   COROPACT_CHECK(!looping_, "Loop::Run called while already running");
 
@@ -81,7 +83,7 @@ void Loop::Run(std::stop_token token) {
     poller_->Poll(timeout_ms, &active_channels_);
 
     for (Channel* channel : active_channels_) {
-      channel->HandleEvent();
+      channel->HandleEventUnchecked();
     }
     coro::CoroFramePoolResource::DrainCurrent();
   }
@@ -104,7 +106,7 @@ void Loop::RequestStop() noexcept {
   }
 }
 
-void Loop::RunOnOwner(Functor callback) {
+void Loop::RunOnOwner(Functor callback) noexcept {
   COROPACT_CHECK(IsInLoopThread(), "Loop::RunOnOwner called from wrong thread");
   callback();
 }
@@ -112,8 +114,7 @@ void Loop::RunOnOwner(Functor callback) {
 void Loop::Schedule(coro::Work* work) noexcept {
   COROPACT_CHECK(IsInLoopThread(), "Loop::Schedule called from wrong thread");
   COROPACT_CHECK(work != nullptr, "Loop::Schedule received null work");
-  COROPACT_CHECK(pending_work_.PushBack(work),
-                 "Loop::Schedule received work already in a queue");
+  COROPACT_CHECK(pending_work_.PushBack(work), "Loop::Schedule received work already in a queue");
 }
 
 void Loop::RunPending() {
@@ -139,20 +140,23 @@ bool Loop::HasChannel(Channel* channel) const {
 }
 
 void Loop::RegisterShutdownParticipant(LoopShutdownParticipant& participant) noexcept {
-  COROPACT_CHECK(IsInLoopThread(),
-                 "Loop::RegisterShutdownParticipant called from wrong thread");
+  COROPACT_CHECK(IsInLoopThread(), "Loop::RegisterShutdownParticipant called from wrong thread");
   COROPACT_CHECK(shutdown_registry_.Register(&participant),
                  "Loop shutdown participant registered twice");
 }
 
 void Loop::UnregisterShutdownParticipant(LoopShutdownParticipant& participant) noexcept {
-  COROPACT_CHECK(IsInLoopThread(),
-                 "Loop::UnregisterShutdownParticipant called from wrong thread");
+  COROPACT_CHECK(IsInLoopThread(), "Loop::UnregisterShutdownParticipant called from wrong thread");
   COROPACT_CHECK(shutdown_registry_.Unregister(&participant),
                  "Loop shutdown participant was not registered");
 }
 
-bool Loop::IsInLoopThread() const noexcept { return thread_id_ == base::CurrentThreadId(); }
+bool Loop::IsInLoopThread() const noexcept {
+  // The constructor enforces one Reactor Loop per thread, so the TLS owner
+  // pointer is an exact owner-thread test and avoids pthread/self-id work on
+  // the hot path. Keep the identity comparison for foreign callers.
+  return t_loop_in_this_thread == this || thread_id_ == base::CurrentThreadId();
+}
 
 void Loop::DoPendingWork() {
   if (pending_work_.Empty()) {
@@ -172,9 +176,7 @@ void Loop::BeginShutdown() noexcept {
   shutdown_registry_.RequestStop();
 }
 
-void Loop::DispatchWakeup(void* context) noexcept {
-  static_cast<Loop*>(context)->DrainWakeup();
-}
+void Loop::DispatchWakeup(void* context) noexcept { static_cast<Loop*>(context)->DrainWakeup(); }
 
 void Loop::DrainWakeup() noexcept {
   COROPACT_CHECK(IsInLoopThread(), "Loop::DrainWakeup called from wrong thread");

@@ -5,36 +5,8 @@
 #include <cstdint>
 #include <memory_resource>
 
-#include "coropact/memory/pool.h"
+namespace {
 
-namespace coropact::memory {
-
-class PoolResource final : public std::pmr::memory_resource {
-public:
-  explicit PoolResource(Pool& pool) noexcept : pool_(&pool) {}
-
-  Pool& pool() noexcept { return *pool_; }
-
-private:
-  void* do_allocate(std::size_t bytes, std::size_t align) override {
-    return pool_->AllocateAligned(bytes, align);
-  }
-
-  // Intentionally empty: nginx-style arena cannot release a single
-  // allocation; storage is reclaimed in bulk via Pool::Reset / ~Pool.
-  void do_deallocate(void*, std::size_t, std::size_t) override {}
-
-  bool do_is_equal(const std::pmr::memory_resource& other) const noexcept override {
-    auto* p = dynamic_cast<const PoolResource*>(&other);
-    return p != nullptr && p->pool_ == pool_;
-  }
-  Pool* pool_;
-};
-
-// Low-overhead counters for a memory_resource. The resource and its counters
-// are intended to share one owner thread unless the wrapped resource itself is
-// synchronized. It is useful for distinguishing allocation requests made by a
-// caller from chunks obtained by a pooling resource from its upstream resource.
 struct MemoryResourceStats {
   std::uint64_t allocate_calls{0};
   std::uint64_t deallocate_calls{0};
@@ -51,12 +23,10 @@ public:
   CountingMemoryResource(std::pmr::memory_resource& upstream, MemoryResourceStats& stats) noexcept
       : upstream_(&upstream), stats_(&stats) {}
 
-  COROPACT_DELETE_COPY_MOVE(CountingMemoryResource);
-
-  [[nodiscard]]
-  const MemoryResourceStats& stats() const noexcept {
-    return *stats_;
-  }
+  CountingMemoryResource(const CountingMemoryResource&) = delete;
+  CountingMemoryResource& operator=(const CountingMemoryResource&) = delete;
+  CountingMemoryResource(CountingMemoryResource&&) = delete;
+  CountingMemoryResource& operator=(CountingMemoryResource&&) = delete;
 
 private:
   void* do_allocate(std::size_t bytes, std::size_t alignment) override {
@@ -94,4 +64,4 @@ private:
   MemoryResourceStats* stats_;
 };
 
-}  // namespace coropact::memory
+}  // namespace

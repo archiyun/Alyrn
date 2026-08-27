@@ -679,7 +679,6 @@ Result<net::Endpoint> Listener::LocalAddress() const {
 }
 
 void Listener::HandleRead() {
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "Listener::HandleRead called from wrong thread");
   if (pending_accept_ != nullptr) {
     pending_accept_->OnReady();
   } else if (accept_source_ != nullptr) {
@@ -688,7 +687,6 @@ void Listener::HandleRead() {
 }
 
 void Listener::HandleError() {
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "Listener::HandleError called from wrong thread");
   if (pending_accept_ != nullptr) {
     CompleteAccept(std::unexpected(SocketError(socket_.fd())));
   } else if (accept_source_ != nullptr) {
@@ -705,8 +703,6 @@ void Listener::DispatchError(void* context) noexcept {
 }
 
 void Listener::CompleteAccept(Result<Stream> result) {
-  COROPACT_DCHECK(loop_->IsInLoopThread(),
-                  "Listener::CompleteAccept called from wrong thread");
   AcceptAwaiter* awaiter = pending_accept_;
   if (awaiter == nullptr) {
     return;

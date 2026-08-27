@@ -227,6 +227,23 @@ bool TestRepeatingTimerCanCancelItself() {
   return Expect(fire_count == 1, "self-cancelling repeating timer should fire exactly once");
 }
 
+bool TestSameDeadlineTimersKeepSequenceOrderOnQuadHeap() {
+  coropact::reactor::Loop loop;
+  std::vector<int> fired;
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(10);
+
+  loop.RunAt(deadline, [&] { fired.push_back(1); });
+  loop.RunAt(deadline, [&] { fired.push_back(2); });
+  loop.RunAt(deadline, [&] {
+    fired.push_back(3);
+    loop.RequestStop();
+  });
+  loop.Run();
+
+  return Expect(fired == std::vector<int>({1, 2, 3}),
+                "quadheap same-deadline timers should follow sequence order");
+}
+
 bool TestSameDeadlineTimersKeepSequenceOrder() {
   coropact::reactor::Loop loop;
   std::vector<int> fired;
@@ -368,6 +385,7 @@ int main() {
     if (!TestSchedulerWorkScheduledDuringResumeIsDeferred()) return 1;
     if (!TestRepeatingTimerCanCancelItself()) return 1;
     if (!TestSameDeadlineTimersKeepSequenceOrder()) return 1;
+    if (!TestSameDeadlineTimersKeepSequenceOrderOnQuadHeap()) return 1;
     if (!TestCancelEarliestKeepsNextTimerScheduled()) return 1;
     if (!TestStaleTimerIdCannotCancelReplacement()) return 1;
     if (!TestLoopStopDiscardsUnexpiredTimer()) return 1;

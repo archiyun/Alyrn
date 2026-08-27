@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <functional>
 #include <memory>
 #include <memory_resource>
 #include <stop_token>
@@ -28,11 +29,11 @@
 #include "coropact/coro/scheduler.h"
 #include "coropact/coro/work.h"
 #include "coropact/luring/detail/completion_dispatch.h"
-#include "coropact/luring/detail/mailbox.h"
 #include "coropact/luring/detail/op.h"
 #include "coropact/luring/detail/provided_buffer_pool.h"
 #include "coropact/luring/detail/sqe_prep.h"
 #include "coropact/luring/detail/ring.h"
+#include "coropact/luring/detail/timer_queue.h"
 #include "coropact/luring/options.h"
 #include "coropact/result.h"
 
@@ -107,7 +108,6 @@ CompletionDisposition DispatchCompletion(::coropact::luring::detail::Op* op, Com
       DispatchRecvSourceCancelComplete(op);
       break;
     case OpKind::kNone:
-    case OpKind::kMsgRing:
     case OpKind::kWake:
     case OpKind::kCancelAll:
     case OpKind::kNop:
@@ -126,7 +126,29 @@ CompletionDisposition DispatchCompletion(::coropact::luring::detail::Op* op, Com
 }  // namespace detail
 
 Loop::Loop(std::pmr::memory_resource* frame_resource)
-    : Scheduler(frame_resource), thread_id_(base::CurrentThreadId()), timers_(this) {}
+    : Loop(time::TimerIndexKind::kRbTree, frame_resource) {}
+
+Loop::Loop(time::TimerIndexKind timers, std::pmr::memory_resource* frame_resource)
+    : Scheduler(frame_resource),
+      thread_id_(base::CurrentThreadId()),
+      timers_(std::make_unique<TimerQueue>(this, timers)) {}
+
+Result<time::TimerId> Loop::RunAfter(time::Duration delay,
+                                     std::function<void()> callback) {
+  COROPACT_CHECK(IsInLoopThread(), "Loop::RunAfter called from wrong thread");
+  if (!initialized_) {
+    return std::unexpected(Errno(EBADF));
+  }
+  return timers_->AddAfter(delay, std::move(callback));
+}
+
+Result<void> Loop::CancelTimer(time::TimerId id) noexcept {
+  COROPACT_CHECK(IsInLoopThread(), "Loop::CancelTimer called from wrong thread");
+  if (!initialized_) {
+    return std::unexpected(Errno(EBADF));
+  }
+  return timers_->Cancel(id);
+}
 
 Loop::~Loop() noexcept {
   COROPACT_CHECK(IsInLoopThread(), "Loop destroyed from wrong thread");
@@ -252,7 +274,7 @@ void Loop::Run(std::stop_token token) noexcept {
     // Physical timeout requests are terminal after the drain. Logical timers
     // that have not expired are now canceled by loop shutdown and may release
     // their callbacks without running them.
-    timers_.DiscardAll();
+    timers_->DiscardAll();
   }
   state_.store(backend::LoopState::kStopped, std::memory_order_release);
 }
@@ -340,20 +362,27 @@ void Loop::ScheduleCompletion(coro::Work* work) noexcept {
 void Loop::RunReady() noexcept {
   COROPACT_CHECK(IsInLoopThread(), "Loop::RunReady called from wrong thread");
   ExecutionScope execution_scope{*this};
+  CheckExecutionScope();
 
   std::size_t resumed = 0;
   std::size_t completion_resumed = 0;
-  while (HasReadyWork() && resumed < kMaxReadyWorkPerTurn) {
+  while (resumed < kMaxReadyWorkPerTurn) {
+    const bool completion_available = !completion_ready_.Empty();
+    const bool ready_available = !ready_.Empty();
+    if (!completion_available && !ready_available) {
+      break;
+    }
+
+    const bool run_completion =
+        completion_available && (!ready_available || completion_resumed < kMaxCompletionWorkPerTurn);
     coro::Work* work = nullptr;
-    const bool run_completion = !completion_ready_.Empty() &&
-                                (ready_.Empty() || completion_resumed < kMaxCompletionWorkPerTurn);
     if (run_completion) {
       work = completion_ready_.PopFront();
       ++completion_resumed;
     } else {
       work = ready_.PopFront();
     }
-    RunInExecutionScope(work);
+    RunInExecutionScopeUnchecked(work);
     ++resumed;
   }
 }
@@ -427,11 +456,6 @@ Result<std::size_t> Loop::WaitCompletionsFor(std::chrono::nanoseconds timeout) n
 
 void Loop::HandleCqe(io_uring_cqe* cqe) noexcept {
   COROPACT_CHECK(IsInLoopThread(), "Loop::HandleCqe called from wrong thread");
-
-  if (cqe->user_data == kMsgRingNotificationUserData) {
-    HandleMailbox();
-    return;
-  }
 
   ::coropact::luring::detail::Op* op = DecodeOp(cqe);
   if (op == nullptr) {
@@ -544,16 +568,6 @@ void Loop::Wake() noexcept {
   if (written < 0 && errno != EAGAIN && errno != EINTR) {
     RequestStop();
   }
-}
-
-void Loop::HandleMailbox() noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "Loop::HandleMailbox called from wrong thread");
-
-  mailbox_.Drain([this](const Message& message) noexcept {
-    auto* work = reinterpret_cast<coro::Work*>(static_cast<std::uintptr_t>(message.data));
-    COROPACT_CHECK(work != nullptr, "mailbox message contains a null work pointer");
-    ScheduleCompletion(work);
-  });
 }
 
 }  // namespace coropact::luring

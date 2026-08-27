@@ -4,20 +4,13 @@
 
 ## 1. 适用范围
 
-本文涵盖核心容器和实验性容器：
+本文涵盖核心容器：
 
  - `IntrusiveList`
  - `IntrusiveQueue`
- - `IntrusiveHashTable`
- - `IntrusiveRBTree`
+ - `IntrusiveTree`
 
-实验性实现位于 `include/coropact/experimental/ds/`，不由
-`coropact/ds.h` 导出：
-
- - `IntrusiveSplayTree`
- - `IntrusiveQuadHeap`
-
-很好区分，前缀带有 `Intrusive`；实验性容器不属于核心 `ds` umbrella。
+很好区分，前缀带有 `Intrusive`；它们由 `coropact/ds.h` 导出。
 
 ## 2. Intrusive 模型
 
@@ -99,7 +92,7 @@ struct Connection : public coropact::ds::ListNode<Connection, PeerTag>,
 以下有几点注意事项:
 - 按照“创建对象 -> 加入容器 -> 从容器移除 -> 销毁对象”的顺序管理生命周期。
 如果对象已经销毁但是还在容器里面, 由于  hook 与对象同生命周期, 容器会有悬空地址, 这是引起BUG的地方, 不同侵入式容器可能表现的行为不同.
-- 不要重复加入同一个 hook。实现通常会通过 `InList()`、`InTree()` 等接口检查元素是否已经加入；重复加入可能返回失败或触发断言。
+- 不要重复加入同一个 hook。实现通常会通过 `InList()`、`InTree()`、`InHeap()` 等接口检查元素是否已经加入；重复加入可能返回失败或触发断言。
 - 不要将对象加入到同一类型容器, 这是未定义行为且绝对不要这么干! 详见 第五个标题.
 
 ### 3.2 对象不能被拷贝与移动
@@ -134,13 +127,8 @@ object -> hook
   ────────────────────  ───────────────────
    IntrusiveQueue        QueueNode<T, Tag>
   ────────────────────  ───────────────────
-   IntrusiveHashTable    HashNode<T, Tag>
+   IntrusiveTree       RBTreeNode<T, Tag>
   ────────────────────  ───────────────────
-   IntrusiveRBTree       RBTNode<T, Tag>
-  ────────────────────  ───────────────────
-   coropact::experimental::ds::IntrusiveSplayTree    SplayNode<T, Tag>
-  ────────────────────  ───────────────────
-   coropact::experimental::ds::IntrusiveQuadHeap     HeapNode<T, Tag>
 
 如前面的例子, 同一个对象可以通过不同的 Tag 同时加入多个同类型的容器
 
@@ -172,7 +160,7 @@ list_b.PushBack(&item); // 不能再次加入
 
 跨容器归属检查并非所有结构都提供；部分结构仅在 Debug 模式下记录 owner，这是出于内存开销的考量。
 
-需要注意, 侵入式实现里面的`InList()`,`InTree()`等均表示:
+需要注意, 侵入式实现里面的`InList()`,`InTree()`,`InHeap()`等均表示:
 `该 hook 当前处于某个容器中`.
 hook 的链接字段只能描述一份成员关系，所以同一 hook 同时加入多个容器属于未定义行为。
 
@@ -193,10 +181,7 @@ if (item.InList()) {
 | --- | --- |
 | `IntrusiveList` | 是 |
 | `IntrusiveQueue` | 是 |
-| `IntrusiveHashTable` | 是 |
-| `IntrusiveSplayTree`（实验性） | 是 |
-| `IntrusiveRBTree` | 是 |
-| `IntrusiveQuadHeap`（实验性） | 是 |
+| `IntrusiveTree` | 是 |
 
 当容器与元素生命周期存在交叉时, 仍建议显式写出
 `xxx.Clear()`
@@ -205,12 +190,6 @@ if (item.InList()) {
 ## 7. 排序,键与比较器
 
 有序容器要求比较器满足严格弱序，且比较结果在元素加入容器期间保持稳定。
-
-  哈希表要求：
-
-  - key projection 对同一个元素保持稳定；
-  - hash 与 equality 语义一致；
-  - 是否允许重复 key 由具体容器说明。
 
 容器不能在元素已经加入后修改会影响排序或 bucket 位置的字段，除非先移除元素再重新插入。
 
@@ -237,31 +216,27 @@ if (item.InList()) {
   ────────────────────  ─────────────────────────────────
    IntrusiveQueue        协程 WorkQueue
   ────────────────────  ─────────────────────────────────
-   IntrusiveHashTable    Reactor 活跃定时器表
+   IntrusiveTree       默认 TimerIndex、deadline 调度
   ────────────────────  ─────────────────────────────────
-   IntrusiveRBTree       TimerTree、deadline 调度
   ────────────────────  ─────────────────────────────────
-   coropact::experimental::ds::IntrusiveQuadHeap     定时器的实验性替代，目前未接入运行时
-  ────────────────────  ─────────────────────────────────
-   coropact::experimental::ds::IntrusiveSplayTree    实验性容器，仅由验证器覆盖
-  ────────────────────  ─────────────────────────────────
+
+`time::TimerIndex` 在构造时选择红黑树或四叉堆；backend `TimerQueue` 注入该索引，
+默认仍是红黑树。`time::Timer` 同时携带两种 hook，但同一时刻只链接其中一个。
 
 ## 11. 相关实现与测试
 
 实现位于 :
   - include/coropact/ds/
-  - include/coropact/experimental/ds/
   - include/coropact/time/
 
   验证测试位于：
 
   - tests/unit/test_intrusive_list_smoke.cc
   - tests/unit/test_intrusive_queue_smoke.cc
-  - tests/unit/test_intrusive_hash_table_smoke.cc
   - tests/unit/test_rbtree_validator.cc
+  - tests/unit/test_quad_heap.cc
+  - tests/unit/test_timer_tree_smoke.cc
+  - tests/unit/test_timer_index_smoke.cc
   - tests/unit/test_mpsc_bounded_queue_smoke.cc
-
-实验性容器验证器位于 `tests/unit/test_splaytree_validator.cc` 和
-`tests/unit/test_quad_heap.cc`，需要使用 `-DBUILD_EXPERIMENTAL_TESTS=ON` 构建。
 
 完.

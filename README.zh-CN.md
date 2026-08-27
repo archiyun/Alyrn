@@ -253,7 +253,6 @@ cmake -B build-kqueue-shim \
 | `BUILD_EXAMPLES` | `ON` | Linux 示例；没有原生 readiness 后端时关闭 |
 | `BUILD_BENCHMARKS` | `OFF` | 独立微基准 |
 | `BUILD_FUZZERS` | `OFF` | 需要 Clang/libFuzzer 的状态机 fuzz target；自带 ASan/UBSan |
-| `BUILD_EXPERIMENTAL_TESTS` | `OFF` | SplayTree / QuadHeap 验证器 |
 
 ### Fuzz 与微基准
 
@@ -362,14 +361,14 @@ CoroPact 提供了可复现的 `wrk` 性能测试，用于比较：
 
 ## 文档
 
-文档目录见 [`docs/index.md`](docs/index.md)。设计说明目前以中文编写，是契约与所有权的依据。[`CONTEXT.md`](CONTEXT.md) 是领域词汇表。
+文档目录见 [`docs/index.md`](docs/index.md)。设计说明目前以中文编写，是契约与所有权的依据。`CONTEXT.md` 是仅供本地开发使用的领域词汇表，不随仓库发布。
 
 * **[网络架构](docs/design/zh-CN/network/index.md)：** 运行时分层、后端边界与所有权模型。
 * **[kqueue 后端](docs/design/zh-CN/network/kqueue/index.md)：** one-shot readiness、`Post` 与主从移交。
 * **[Runtime Builder](docs/design/zh-CN/network/runtime-builder.md)：** 编译期 backend tag 与启停生命周期。
 * **[协程状态机模型](docs/design/zh-CN/network/lamport-hot-swap-runtime.md)：** 抽象 stream 不变量与后端 refinement 说明。
 * **[AsyncStream 语义契约](docs/design/zh-CN/network/async-stream-contract.md)：** read、write、close、取消与 buffer 生命周期语义。
-* **[数据结构](docs/design/zh-CN/datastructure/index.md)：** C++ 现代风格的侵入式数据结构，侵入式红黑树，侵入式链表，MPSC 队列的设计与实现，以及它们在项目各处的应用。SplayTree 与 QuadHeap 属于显式 include 的实验性 API；构建其验证器时使用 `-DBUILD_EXPERIMENTAL_TESTS=ON`。
+* **[数据结构](docs/design/zh-CN/datastructure/index.md)：** C++ 现代风格的侵入式数据结构，侵入式红黑树，侵入式链表，MPSC 队列的设计与实现，以及它们在项目各处的应用。四叉堆是通过 `time::TimerIndex` 注入的一等 timer-index 适配器。
 * **[性能测试](docs/benchmark/network-libraries-20260810.md)：** 最新的当前源码 C++ 对照基线；完整统一网络库报告、测试方法、原始结果与优化记录见 [`docs/benchmark`](docs/benchmark/)。
 * **[示例](examples/)：** Linux 上的 Reactor 与 io_uring 使用示例。
 * **[测试](tests/)：** 协程、网络、生命周期与后端行为验证。

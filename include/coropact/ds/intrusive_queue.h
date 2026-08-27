@@ -2,9 +2,6 @@
 #pragma once
 
 #include <concepts>
-#include <cstddef>
-
-#include "coropact/utils/macros.h"
 
 namespace coropact::ds {
 
@@ -17,12 +14,19 @@ class QueueNode {
   friend class IntrusiveQueue;
 
 public:
+  QueueNode(const QueueNode&) = delete;
+  QueueNode& operator=(const QueueNode&) = delete;
+  QueueNode(QueueNode&&) = delete;
+  QueueNode& operator=(QueueNode&&) = delete;
+
   [[nodiscard]]
-  bool InQueue() const noexcept { return next_ != nullptr; }
+  bool InQueue() const noexcept {
+    return next_ != nullptr;
+  }
 
 protected:
   QueueNode() = default;
-  COROPACT_DELETE_COPY(QueueNode);
+  ~QueueNode() = default;
 
 private:
   using Node = QueueNode<T, Tag>;
@@ -40,16 +44,16 @@ concept QueueNodeBaseHook =
 template <class T, class Tag = void>
 class IntrusiveQueue {
 public:
-  COROPACT_DELETE_COPY(IntrusiveQueue);
+  IntrusiveQueue(const IntrusiveQueue&) = delete;
+  IntrusiveQueue& operator=(const IntrusiveQueue&) = delete;
 
-  using Node = QueueNode<T, Tag>;
   static_assert(QueueNodeBaseHook<T, Tag>,
                 "T must publicly and non-virtually inherit QueueNode<T, Tag>");
 
-  IntrusiveQueue() noexcept { reset(); }
+  IntrusiveQueue() noexcept { Reset(); }
 
   IntrusiveQueue(IntrusiveQueue&& other) noexcept {
-    reset();
+    Reset();
     TakeFrom(other);
   }
 
@@ -63,20 +67,14 @@ public:
 
   ~IntrusiveQueue() { Clear(); }
 
-  static Node* Next(Node* node) { return node->next_; }
-  static T* ElemOf(Node* node) { return static_cast<T*>(node); }
-  static Node* NodeOf(T* elem) { return static_cast<Node*>(elem); }
-
   [[nodiscard]]
-  bool Empty() const { return head_.next_ == &head_; }
-  [[nodiscard]]
-  std::size_t Size() const { return size_; }
-
-  T* Front() const { return Empty() ? nullptr : ElemOf(head_.next_); }
-  T* Back() const { return Empty() ? nullptr : ElemOf(tail_); }
+  bool Empty() const noexcept {
+    return head_.next_ == &head_;
+  }
+  T* Front() const noexcept { return Empty() ? nullptr : ElemOf(head_.next_); }
 
   // Returns false for nullptr or when elem is already queued.
-  [[maybe_unused]] bool PushBack(T* elem) {
+  [[maybe_unused]] bool PushBack(T* elem) noexcept {
     if (elem == nullptr) return false;
     Node* node = NodeOf(elem);
     if (node->InQueue()) return false;
@@ -84,49 +82,33 @@ public:
     tail_->next_ = node;
     node->next_ = &head_;
     tail_ = node;
-    size_++;
     return true;
   }
 
-  // Returns false for nullptr or when elem is already queued.
-  [[maybe_unused]] bool PushFront(T* elem) {
-    if (elem == nullptr) return false;
-    Node* node = NodeOf(elem);
-    if (node->InQueue()) return false;
-
-    const bool was_empty = Empty();
-    node->next_ = head_.next_;
-    head_.next_ = node;
-    if (was_empty) {
-      tail_ = node;
-    }
-    ++size_;
-    return true;
-  }
-
-  T* PopFront() {
-    if (Empty()) return nullptr;
+  T* PopFront() noexcept {
     Node* node = head_.next_;
-    head_.next_ = node->next_;
+    if (node == &head_) return nullptr;
+
+    Node* next = node->next_;
+    head_.next_ = next;
     node->clear_hook();
-    --size_;
-    if (Empty()) {
+    if (next == &head_) {
       tail_ = &head_;
     }
     return ElemOf(node);
   }
 
-  void Clear() {
+  void Clear() noexcept {
     for (Node* cur = head_.next_; cur != &head_;) {
       Node* next = cur->next_;
       cur->clear_hook();
       cur = next;
     }
-    reset();
+    Reset();
   }
 
   // Moves all nodes from other to this queue. Self-splice is a no-op.
-  void Splice(IntrusiveQueue& other) {
+  void Splice(IntrusiveQueue& other) noexcept {
     if (&other == this) return;
     if (other.Empty()) return;
     Node* first = other.head_.next_;
@@ -134,9 +116,8 @@ public:
     tail_->next_ = first;
     last->next_ = &head_;
     tail_ = last;
-    size_ += other.size_;
 
-    other.reset();
+    other.Reset();
   }
 
   template <typename Fn>
@@ -150,7 +131,6 @@ public:
           tail_ = prev;
         }
         cur->clear_hook();
-        --size_;
       } else {
         prev = cur;
       }
@@ -159,10 +139,13 @@ public:
   }
 
 private:
-  void reset() noexcept {
+  using Node = QueueNode<T, Tag>;
+  static T* ElemOf(Node* node) { return static_cast<T*>(node); }
+  static Node* NodeOf(T* elem) { return static_cast<Node*>(elem); }
+
+  void Reset() noexcept {
     head_.next_ = &head_;
     tail_ = &head_;
-    size_ = 0;
   }
 
   void TakeFrom(IntrusiveQueue& other) noexcept {
@@ -170,14 +153,12 @@ private:
 
     head_.next_ = other.head_.next_;
     tail_ = other.tail_;
-    size_ = other.size_;
     tail_->next_ = &head_;
-    other.reset();
+    other.Reset();
   }
 
   Node head_{};
   Node* tail_{&head_};
-  std::size_t size_{0};
 };
 
 }  // namespace coropact::ds

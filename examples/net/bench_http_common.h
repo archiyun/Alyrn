@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cstddef>
 #include <cstdlib>
+#include <algorithm>
 #include <string>
 #include <string_view>
 
@@ -53,8 +54,10 @@ inline const std::string& Response() {
   return response;
 }
 
-inline bool HasHeaderTerminator(const char* bytes, std::size_t size) {
-  for (std::size_t i = 3; i < size; ++i) {
+inline bool HasHeaderTerminator(const char* bytes, std::size_t size,
+                                std::size_t scan_from = 0) {
+  const std::size_t first = std::max<std::size_t>(3, scan_from);
+  for (std::size_t i = first; i < size; ++i) {
     if (bytes[i - 3] == '\r' && bytes[i - 2] == '\n' && bytes[i - 1] == '\r' &&
         bytes[i] == '\n') {
       return true;

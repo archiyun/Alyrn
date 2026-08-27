@@ -6,23 +6,23 @@
 #include <functional>
 #include <utility>
 
-#include "coropact/ds/intrusive_hash_table.h"
 #include "coropact/ds/intrusive_rbtree.h"
 #include "coropact/time/clock.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::time {
 
-// Timer represents one scheduled callback.
+// Timer is a TimerQueue node, not an application type. Applications schedule
+// work with Loop::RunAfter / CancelTimer and cancel with TimerId.
 //
-// It stores the callback, next expiration time, repeat interval, and an
-// intrusive red-black tree hook used by TimerTree. It has no Loop or fd
-// dependency; the net layer decides how expirations are delivered.
+// It stores the callback, next expiration time, repeat interval, and the
+// intrusive hooks used by TimerIndex. It has no Loop or fd dependency; the
+// net layer decides how expirations are delivered.
 //
-// The tree linkage is inherited (base-hook): TimerTree recovers the Timer from
-// the hook with static_cast, so no per-node owner pointer is stored. See
-// coropact/ds/intrusive_rbtree.h.
-class Timer : public ds::RBTNode<Timer>, public ds::HashNode<Timer> {
+// Both index hooks are base-hooks: TimerIndex recovers the Timer with
+// static_cast, so no per-node owner pointer is stored. A Timer is linked into
+// at most one timer index at a time. See coropact/time/timer_index.h.
+class Timer : public ds::RBTreeNode<Timer> {
 public:
   using TimerCallback = std::function<void()>;
 

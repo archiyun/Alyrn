@@ -5,6 +5,7 @@
 #include <chrono>
 #include <csignal>
 #include <cstddef>
+#include <cstdint>
 #include <iostream>
 #include <span>
 #include <thread>
@@ -17,25 +18,47 @@
 namespace {
 
 std::atomic_bool g_stop{false};
+// Set REACTOR_INSTRUMENT=1 to collect operation counters. Keep it disabled
+// for throughput runs because the global counters add cross-worker traffic.
+bool g_instrument = false;
+std::atomic<std::uint64_t> g_sessions{0};
+std::atomic<std::uint64_t> g_read_awaits{0};
+std::atomic<std::uint64_t> g_reads_completed{0};
+std::atomic<std::uint64_t> g_write_awaits{0};
+std::atomic<std::uint64_t> g_responses{0};
 void OnSignal(int) noexcept { g_stop.store(true, std::memory_order_relaxed); }
 
+inline void Count(std::atomic<std::uint64_t>& counter) noexcept {
+  if (g_instrument) {
+    counter.fetch_add(1, std::memory_order_relaxed);
+  }
+}
+
 coropact::coro::DetachedTask HttpSession(coropact::reactor::Stream stream) {
+  Count(g_sessions);
   std::array<std::byte, coropact_bench::kRequestBufferSize> request{};
   const auto response = std::as_bytes(
       std::span(coropact_bench::Response().data(), coropact_bench::Response().size()));
   std::size_t used = 0;
 
   for (;;) {
+    const std::size_t previous_used = used;
+    Count(g_read_awaits);
     auto read = co_await stream.ReadSome(std::span(request).subspan(used));
     if (!read.has_value() || *read == 0) break;
+    Count(g_reads_completed);
     used += *read;
-    if (!coropact_bench::HasHeaderTerminator(reinterpret_cast<const char*>(request.data()), used)) {
+    const std::size_t scan_from = previous_used >= 3 ? previous_used - 3 : 0;
+    if (!coropact_bench::HasHeaderTerminator(reinterpret_cast<const char*>(request.data()), used,
+                                             scan_from)) {
       if (used == request.size()) break;
       continue;
     }
 
+    Count(g_write_awaits);
     auto written = co_await stream.WriteAll(response);
     if (!written.has_value()) break;
+    Count(g_responses);
     used = 0;
   }
   (void)co_await stream.Close();
@@ -49,10 +72,11 @@ int main() {
   std::signal(SIGTERM, OnSignal);
 
   const auto port = static_cast<std::uint16_t>(coropact_bench::EnvInt("PORT", 19090));
-  const std::size_t workers = coropact_bench::EnvSize("REACTOR_WORKERS", 4);
+  const std::size_t workers = coropact_bench::EnvSize("REACTOR_WORKERS", 8);
   const bool level_triggered = coropact_bench::EnvString("REACTOR_TRIGGER_MODE") == "lt";
   const auto trigger_mode = level_triggered ? coropact::reactor::TriggerMode::kLevelTriggered
                                             : coropact::reactor::TriggerMode::kEdgeTriggered;
+  g_instrument = coropact_bench::EnvInt("REACTOR_INSTRUMENT", 0) != 0;
   if (port == 0 || workers == 0) return 2;
 
   auto address = coropact::net::Endpoint::Loopback(port);
@@ -80,5 +104,24 @@ int main() {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }
   server.Stop();
+  if (g_instrument) {
+    const auto sessions = g_sessions.load(std::memory_order_relaxed);
+    const auto read_awaits = g_read_awaits.load(std::memory_order_relaxed);
+    const auto reads_completed = g_reads_completed.load(std::memory_order_relaxed);
+    const auto write_awaits = g_write_awaits.load(std::memory_order_relaxed);
+    const auto responses = g_responses.load(std::memory_order_relaxed);
+    std::cout << "instrumentation sessions=" << sessions << " read_awaits=" << read_awaits
+              << " reads_completed=" << reads_completed << " write_awaits=" << write_awaits
+              << " responses=" << responses;
+    if (responses != 0) {
+      std::cout << " read_awaits_per_response="
+                << static_cast<double>(read_awaits) / static_cast<double>(responses)
+                << " reads_per_response="
+                << static_cast<double>(reads_completed) / static_cast<double>(responses);
+      std::cout << " write_awaits_per_response="
+                << static_cast<double>(write_awaits) / static_cast<double>(responses);
+    }
+    std::cout << '\n';
+  }
   return 0;
 }

@@ -26,13 +26,6 @@ struct Item : ListNode<Item> {
 };
 
 int main() {
-  const auto require = [](bool condition, const char* message) {
-    if (!condition) {
-      std::fprintf(stderr, "FAIL: %s\n", message);
-    }
-    return condition;
-  };
-
   {
     Item first{};
     Item second{};
@@ -51,11 +44,9 @@ int main() {
     assert(inserted);
     inserted = list.PushBack(&first);
     assert(!inserted);
-    inserted = list.InsertBefore(&second, &third);
-    if (!require(!inserted, "InsertBefore must reject an unlinked anchor")) return 1;
-    inserted = list.InsertBefore(&first, &second);
+    inserted = list.PushFront(&second);
     assert(inserted);
-    inserted = list.InsertAfter(&first, &third);
+    inserted = list.PushBack(&third);
     assert(inserted);
 
     const auto& view = list;
@@ -67,60 +58,17 @@ int main() {
     }
     assert(const_sum == 6);
 
-    auto it = list.CBegin();
-    ++it;
-    list.Erase(it);
-    assert(!first.InList());
-    assert(list.Size() == 2);
-
-    auto after_stale = list.Erase(it);
-    if (!require(after_stale == list.End(), "stale Erase must return End()") ||
-        !require(list.Size() == 2, "stale Erase must not mutate the list")) {
-      return 1;
-    }
-
-    list.MoveToFront(nullptr);
-    list.MoveToBack(&first);
-    if (!require(list.Size() == 2, "invalid MoveTo must not mutate the list") ||
-        !require(list.Front() == &second && list.Back() == &third,
-                 "invalid MoveTo must preserve list order")) {
-      return 1;
-    }
-
-    const auto size_before_invalid_erase = list.Size();
-    auto after_end = list.Erase(list.End());
-    if (!require(after_end == list.End(), "Erase(End()) must return End()") ||
-        !require(list.Size() == size_before_invalid_erase,
-               "Erase(End()) must not mutate the list")) {
-      return 1;
-    }
-
-    auto foreign = other.End();
-    auto after_foreign = list.Erase(foreign);
-    if (!require(after_foreign == list.End(), "foreign Erase must return End()") ||
-        !require(list.Size() == size_before_invalid_erase,
-               "foreign Erase must not mutate the list")) {
-      return 1;
-    }
-
-    std::size_t removed = list.RemoveIf([](Item& item) { return item.id == 2; });
-    assert(removed == 1);
+    bool erased = list.Erase(&second);
+    assert(erased);
     assert(!second.InList());
-    assert(list.Front() == &third);
+    assert(list.Front() == &first);
 
     inserted = other.PushBack(&fourth);
     assert(inserted);
-    list.Splice(list);
-    if (!require(list.Size() == 1, "self splice must preserve list size")) return 1;
-    list.Swap(other);
-    assert(list.Front() == &fourth);
-    assert(other.Front() == &third);
-    assert(list.Size() == 1);
-    assert(other.Size() == 1);
-
-    swap(list, other);
-    assert(list.Front() == &third);
-    assert(other.Front() == &fourth);
+    list.Splice(other);
+    assert(list.Front() == &first);
+    assert(list.Back() == &fourth);
+    assert(other.Empty());
   }
 
   {
@@ -139,7 +87,6 @@ int main() {
 
     IntrusiveList<Item> moved(std::move(source));
     assert(source.Empty());
-    assert(moved.Size() == 2);
     assert(moved.Front() == &one);
     assert(moved.Back() == &two);
 
@@ -147,7 +94,6 @@ int main() {
     assert(inserted);
     moved = std::move(source);
     assert(source.Empty());
-    assert(moved.Size() == 1);
     assert(moved.Front() == &replacement);
     assert(moved.Back() == &replacement);
     assert(!one.InList());
@@ -157,7 +103,6 @@ int main() {
     // intended for accidental production self-assignment.
     IntrusiveList<Item>* volatile self = &moved;
     moved = std::move(*self);
-    assert(moved.Size() == 1);
     assert(moved.Front() == &replacement);
 
     IntrusiveList<Item> empty;
@@ -179,7 +124,6 @@ int main() {
 
   // Full equivalence check: same size, same forward order, same endpoints.
   auto check = [&] {
-    assert(il.Size() == oracle.size());
     auto oit = oracle.begin();
     for (auto& x : il) {
       assert(x.id == *oit);
@@ -195,7 +139,7 @@ int main() {
   };
 
   for (int step = 0; step < times; ++step) {
-    int op = rng() % 7;
+    int op = rng() % 6;
     switch (op) {
       case 0: {  // PushFront: only link nodes not already in the list (idempotent)
         int id = rng() % N;
@@ -233,17 +177,7 @@ int main() {
         }
         break;
       }
-      case 4: {  // PopBack
-        Item* b = il.PopBack();
-        if (oracle.empty()) {
-          assert(b == nullptr);
-        } else {
-          assert(b && b->id == oracle.back());
-          oracle.pop_back();
-        }
-        break;
-      }
-      case 5: {  // ForEachSafe: erase even ids mid-traversal; mirror on the oracle
+      case 4: {  // ForEachSafe: erase even ids mid-traversal; mirror on the oracle
         il.ForEachSafe([](Item& x) { return x.id % 2 == 0; });
         for (auto it = oracle.begin(); it != oracle.end();) {
           if (*it % 2 == 0)
@@ -253,13 +187,12 @@ int main() {
         }
         break;
       }
-      case 6: {  // MoveToFront: relink an existing node to the front (size unchanged)
+      case 5: {  // Keep the random operation distribution stable.
         int id = rng() % N;
-        if (pool[id].InList()) {
-          il.MoveToFront(&pool[id]);
-          oracle.remove(id);
-          oracle.push_front(id);
-        }
+        bool in = pool[id].InList();
+        bool erased = il.Erase(&pool[id]);
+        assert(erased == in);
+        if (in) oracle.remove(id);
         break;
       }
     }

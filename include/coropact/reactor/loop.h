@@ -15,6 +15,7 @@
 #include "coropact/reactor/detail/loop_shutdown.h"
 #include "coropact/time/clock.h"
 #include "coropact/time/timer_id.h"
+#include "coropact/time/timer_index_kind.h"
 #include "coropact/utils/macros.h"
 
 namespace coropact::reactor {
@@ -35,8 +36,10 @@ class Loop final : public coro::Scheduler {
 public:
   using Functor = std::function<void()>;
 
-  explicit Loop(std::pmr::memory_resource* frame_resource = nullptr);
-  ~Loop() override;
+  explicit Loop(std::pmr::memory_resource* frame_resource = nullptr) noexcept;
+  explicit Loop(time::TimerIndexKind timers,
+                std::pmr::memory_resource* frame_resource = nullptr) noexcept;
+  ~Loop() noexcept override;
 
   COROPACT_DELETE_COPY_MOVE(Loop);
 
@@ -44,7 +47,7 @@ public:
   // owner-thread-only. It returns only after the currently queued owner work
   // has drained. When stopping begins, registered Reactor resources are
   // synchronously asked to cancel their pending operations before that drain.
-  void Run(std::stop_token token = {});
+  void Run(std::stop_token token = {}) noexcept;
 
   // Requests dispatcher shutdown. This is thread-safe, idempotent, and wakes
   // an epoll_wait immediately. It is intentionally not a cross-thread work
@@ -57,7 +60,7 @@ public:
   }
 
   // Runs callback immediately on the owning loop thread.
-  void RunOnOwner(Functor callback);
+  void RunOnOwner(Functor callback) noexcept;
 
   // Schedules a coroutine work item for a later loop turn. The Loop is
   // itself the Scheduler; submission must happen on its owner thread.

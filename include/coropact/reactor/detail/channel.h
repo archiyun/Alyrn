@@ -26,7 +26,7 @@ public:
   using EventCallback = void (*)(void*) noexcept;
   using ReadEventCallback = void (*)(void*) noexcept;
 
-  explicit Channel(Loop* loop, int fd);
+  explicit Channel(Loop* loop, int fd) noexcept;
   ~Channel() = default;
 
   // Moving transfers the non-owning fd association and callbacks. Both the
@@ -38,7 +38,7 @@ public:
 
   // Dispatches the active events stored in revents_ to the corresponding
   // callbacks.
-  void HandleEvent();
+  void HandleEvent() noexcept;
 
   void SetReadCallback(ReadEventCallback callback, void* context) noexcept {
     read_callback_ = callback;
@@ -58,62 +58,62 @@ public:
   }
 
   [[nodiscard]]
-  int Fd() const {
+  int Fd() const noexcept{
     return fd_;
   }
   [[nodiscard]]
-  int Events() const {
+  int Events() const noexcept{
     return events_;
   }
   [[nodiscard]]
-  int Revents() const {
+  int Revents() const noexcept{
     return revents_;
   }
-  void SetRevents(int revt) { revents_ = revt; }
+  void SetRevents(int revt) noexcept { revents_ = revt; }
 
   // Updates the local interest set and immediately synchronizes it with the
   // underlying Poller.
-  void EnableReading() {
+  void EnableReading() noexcept {
     events_ |= kReadEvent;
     Update();
   }
-  void DisableReading() {
+  void DisableReading() noexcept {
     events_ &= ~kReadEvent;
     Update();
   }
-  void EnableWriting() {
+  void EnableWriting() noexcept {
     events_ |= kWriteEvent;
     Update();
   }
-  void DisableWriting() {
+  void DisableWriting() noexcept {
     events_ &= ~kWriteEvent;
     Update();
   }
-  void DisableAll() {
+  void DisableAll() noexcept {
     events_ = kNoneEvent;
     Update();
   }
 
   [[nodiscard]]
-  bool IsNoneEvent() const {
+  bool IsNoneEvent() const noexcept {
     return events_ == kNoneEvent;
   }
   [[nodiscard]]
-  bool IsWriting() const {
+  bool IsWriting() const noexcept {
     return static_cast<bool>(events_ & kWriteEvent);
   }
   [[nodiscard]]
-  bool IsReading() const {
+  bool IsReading() const noexcept {
     return static_cast<bool>(events_ & kReadEvent);
   }
 
   // Switches the Channel between level-triggered and edge-triggered mode.
-  void SetEdgeTriggered(bool et_mode) {
+  void SetEdgeTriggered(bool et_mode) noexcept {
     trigger_mode_ = et_mode ? TriggerMode::kEdgeTriggered : TriggerMode::kLevelTriggered;
   }
 
   [[nodiscard]]
-  bool IsEdgeTriggered() const {
+  bool IsEdgeTriggered() const noexcept {
     return trigger_mode_ == TriggerMode::kEdgeTriggered;
   }
 
@@ -121,13 +121,13 @@ public:
   // an implementation-only lifecycle query; Loop deliberately keeps its
   // poller membership private from Reactor callers.
   [[nodiscard]]
-  bool IsRegistered() const;
+  bool IsRegistered() const noexcept;
 
   // Returns the Loop that owns this Channel.
-  Loop* OwnerLoop() { return loop_; }
+  Loop* OwnerLoop() const noexcept { return loop_; }
 
   // Removes the Channel from its owning Loop.
-  void Remove();
+  void Remove() noexcept;
 
   // A Channel starts with no interested events.
   // Read events include normal readable data and priority data.
@@ -142,7 +142,13 @@ private:
   // Index/set_index track Poller-private registration state and must remain
   // hidden from general consumers. Concrete Poller implementations are the
   // only legitimate users.
+  friend class ::coropact::reactor::Loop;
   friend class EPollPoller;
+
+  // Loop::Run() validates owner-thread affinity once before dispatching a
+  // poll batch. The checked public entry point remains available for direct
+  // detail-layer callers; the loop uses this owner-only fast path.
+  void HandleEventUnchecked() noexcept;
 
   [[nodiscard]]
   int index() const {
@@ -151,7 +157,7 @@ private:
   void set_index(int idx) { index_ = idx; }
 
   // Pushes the current interest set to the Poller.
-  void Update();
+  void Update() noexcept;
 
   Loop* loop_{nullptr};
   int fd_{-1};
