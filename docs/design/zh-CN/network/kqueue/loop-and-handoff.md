@@ -103,14 +103,14 @@ worker 0。
 停止时 `RequestStop()` 通知所有 worker；`Stop()` / 析构 `workers_.clear()` 会
 join 每个 `jthread`。应先让 acceptor 不再 `Accept`/`Post`，再销毁 I/O loop。
 
-## 5. 与 Reactor / luring 的对照
+## 5. 与 Epoll / luring 的对照
 
-| | Reactor | luring | kqueue |
+| | Epoll | luring | kqueue |
 |---|---|---|---|
 | 多 worker listen | 每 worker 一个 listener，`SO_REUSEPORT` | 每 worker 一个 listener / ring | **一个** listener |
 | 连接如何到达 I/O 线程 | 内核把 accept 分到各 listener | 内核 / 该 ring 的 accept | 用户态 `Post(fd)` |
 | 跨线程入口 | `RequestStop`（mailbox 是另一条 luring 路径） | mailbox + `MSG_RING` | `RequestStop` + `Post` |
 | stream 跨 loop | 不移动 | 不移动 | 不移动；只移交 fd |
 
-把 kqueue 做成 Reactor 的 `SO_REUSEPORT` 副本，会在 BSD 上得到一条该内核并不
+把 kqueue 做成 Epoll 的 `SO_REUSEPORT` 副本，会在 BSD 上得到一条该内核并不
 作为默认多 listener 模型的路径，并绕过“stream 必须在属主线程构造”这条不变量。

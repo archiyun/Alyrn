@@ -17,11 +17,11 @@
 
 #include "alyrn/coro/detached_task.h"
 #include "alyrn/coro/spawn.h"
-#include "alyrn/luring/detail/loop_access.h"
-#include "alyrn/luring/loop.h"
-#include "alyrn/luring/options.h"
-#include "alyrn/luring/recv_source.h"
-#include "alyrn/luring/timer.h"
+#include "alyrn/detail/uring/loop_access.h"
+#include "alyrn/uring/loop.h"
+#include "alyrn/uring/options.h"
+#include "alyrn/uring/recv_source.h"
+#include "alyrn/uring/timer.h"
 #include "alyrn/result.h"
 
 namespace {
@@ -29,10 +29,10 @@ namespace {
 using alyrn::Error;
 using alyrn::Result;
 using alyrn::coro::DetachedTask;
-using alyrn::luring::Loop;
-using alyrn::luring::Options;
-using alyrn::luring::RecvSource;
-using alyrn::luring::RecvSourceOptions;
+using alyrn::uring::Loop;
+using alyrn::uring::Options;
+using alyrn::uring::RecvSource;
+using alyrn::uring::RecvSourceOptions;
 
 class UniqueFd final {
 public:
@@ -139,12 +139,12 @@ LoopInitStatus InitLoop(Loop& loop, std::size_t shared_buffer_capacity = 64,
 template <typename Predicate>
 bool PumpUntil(Loop& loop, Predicate&& predicate, int max_iterations = 64) {
   for (int i = 0; i < max_iterations && !predicate(); ++i) {
-    auto completed = alyrn::luring::detail::LoopAccess::WaitCompletions(loop);
+    auto completed = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
     if (!completed.has_value()) {
       std::cout << "FAIL: waiting for CQE failed: " << completed.error().message() << '\n';
       return false;
     }
-    alyrn::luring::detail::LoopAccess::RunReady(loop);
+    alyrn::uring::detail::LoopAccess::RunReady(loop);
   }
   return predicate();
 }
@@ -214,7 +214,7 @@ DetachedTask ReceivePauseThenResume(RecvSource* source, Loop* loop,
   // The second datagram is sent while this coroutine sleeps. With a one
   // element event queue it reaches the high-water mark and pauses the native
   // multishot request before this coroutine consumes it.
-  auto delay = co_await alyrn::luring::SleepFor(*loop, std::chrono::milliseconds(50));
+  auto delay = co_await alyrn::uring::SleepFor(*loop, std::chrono::milliseconds(50));
   if (!delay.has_value()) {
     observation->error = delay.error();
     observation->done = true;
@@ -320,7 +320,7 @@ bool CheckRecvAndLease() {
 
   Observation observation;
   alyrn::coro::SpawnDetach(loop, ReceiveOne(&source, &observation));
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   constexpr std::string_view kPayload = "provided-buffer-recv";
   const auto sent = ::send(sender.Get(), kPayload.data(), kPayload.size(), MSG_NOSIGNAL);
@@ -378,7 +378,7 @@ bool CheckHeldLeases() {
 
   HeldLeaseObservation observation;
   alyrn::coro::SpawnDetach(loop, ReceiveWithFirstLeaseHeld(&source, &observation));
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   constexpr std::string_view kFirst = "first-segment";
   constexpr std::string_view kSecond = "second-segment";
@@ -459,7 +459,7 @@ bool CheckSharedBufferPool() {
   Observation second_observation;
   alyrn::coro::SpawnDetach(loop, ReceiveOne(&first_source, &first_observation));
   alyrn::coro::SpawnDetach(loop, ReceiveOne(&second_source, &second_observation));
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   constexpr std::string_view kFirstPayload = "shared-first";
   constexpr std::string_view kSecondPayload = "shared-second";
@@ -522,7 +522,7 @@ bool CheckEof() {
 
   Observation observation;
   alyrn::coro::SpawnDetach(loop, ReceiveOne(&source, &observation));
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
   sender.Reset();
 
   if (!PumpUntil(loop, [&] { return observation.done || observation.error.has_value(); })) {
@@ -574,7 +574,7 @@ bool CheckQueuePauseThenRearm() {
 
   PauseResumeObservation observation;
   alyrn::coro::SpawnDetach(loop, ReceivePauseThenResume(&source, &loop, &observation));
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   const auto send_payload = [&sender](std::string_view payload) -> bool {
     const auto sent = ::send(sender.Get(), payload.data(), payload.size(), MSG_NOSIGNAL);

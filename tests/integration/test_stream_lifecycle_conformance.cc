@@ -26,14 +26,14 @@
 #include "alyrn/io/buffer.h"
 #include "alyrn/io/read_into.h"
 #include "alyrn/net/endpoint.h"
-#include "alyrn/net/socket.h"
-#include "alyrn/reactor/loop.h"
-#include "alyrn/reactor/stream.h"
+#include "alyrn/detail/net/socket.h"
+#include "alyrn/epoll/loop.h"
+#include "alyrn/epoll/stream.h"
 
 #if defined(ALYRN_ENABLE_URING)
-#include "alyrn/luring/loop.h"
-#include "alyrn/luring/options.h"
-#include "alyrn/luring/stream.h"
+#include "alyrn/uring/loop.h"
+#include "alyrn/uring/options.h"
+#include "alyrn/uring/stream.h"
 #endif
 
 namespace {
@@ -129,10 +129,10 @@ std::string Gather(const alyrn::io::Buffer& buffer) {
 }
 
 struct EpollHarness {
-  using Loop = alyrn::reactor::Loop;
-  using Stream = alyrn::reactor::Stream;
+  using Loop = alyrn::epoll::Loop;
+  using Stream = alyrn::epoll::Stream;
 
-  static constexpr std::string_view Name() noexcept { return "Reactor"; }
+  static constexpr std::string_view Name() noexcept { return "Epoll"; }
   static bool Init(Loop&) noexcept { return true; }
   static bool Skip(const Loop&) noexcept { return false; }
 
@@ -153,13 +153,13 @@ struct EpollHarness {
 
 #if defined(ALYRN_ENABLE_URING)
 struct UringHarness {
-  using Loop = alyrn::luring::Loop;
-  using Stream = alyrn::luring::Stream;
+  using Loop = alyrn::uring::Loop;
+  using Stream = alyrn::uring::Stream;
 
   static constexpr std::string_view Name() noexcept { return "io_uring"; }
 
   static bool Init(Loop& loop) noexcept {
-    alyrn::luring::Options options;
+    alyrn::uring::Options options;
     options.entries = 32;
     auto initialized = loop.Init(options);
     if (initialized.has_value()) {

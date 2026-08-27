@@ -2,7 +2,7 @@
 #pragma once
 
 // Public spelling for the backend-neutral byte store. The implementation
-// remains in net because Reactor and luring use it below the io facade; this
+// remains in net because Epoll and uring use it below the io facade; this
 // alias deliberately adds neither allocation nor a backend dependency.
 #include "alyrn/net/buffer.h"
 

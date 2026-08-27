@@ -1,6 +1,6 @@
 # 生命周期精化协程 I/O
 
-Lifecycle-Refined Coroutine I/O（LRCI）是 Alyrn 用来统一 Reactor 与 io_uring
+Lifecycle-Refined Coroutine I/O（LRCI）是 Alyrn 用来统一 Epoll 与 io_uring
 业务语义的设计模型。它不要求两个后端共享物理控制流，而是要求它们的可观察 trace
 精化同一套逻辑 I/O specification。
 
@@ -47,7 +47,7 @@ stuttering step。一个 readiness 或 CQE 到达本身不自动改变三个逻�
 
 ### Backend Execution
 
-具体 Adapter 为实现一个 Logical Operation 所维护的执行过程。Reactor execution 可以包含多次
+具体 Adapter 为实现一个 Logical Operation 所维护的执行过程。Epoll execution 可以包含多次
 syscall 与 readiness re-arm；io_uring execution 可以包含一个或多个 Physical Request。
 
 ### Physical Request
@@ -81,7 +81,7 @@ accept:
   1 raw CQE -> adapter constructs Result<Stream>
 ```
 
-Reactor 的 pending read 通常没有长期驻留内核的 read request。它是一个 Backend Execution：
+Epoll 的 pending read 通常没有长期驻留内核的 read request。它是一个 Backend Execution：
 立即 syscall 返回 `EAGAIN` 后登记 readiness，事件到达后再重试 syscall。因此不要把 epoll
 interest 强行描述成 io_uring 风格的 Physical Request。
 
@@ -148,8 +148,8 @@ logical I/O specification.
 `refinement` 在这里采用形式化含义。需要为每个后端定义 observation function：
 
 ```text
-ObsReactor : State -> LogicalState
-ObsLUring  : State  -> LogicalState
+ObsEpoll : State -> LogicalState
+ObsUring  : State  -> LogicalState
 ```
 
 具体执行 trace 经相应 observation function 投影后，必须满足相同 LogicalSpec。仅仅在 C++ 中把
@@ -197,7 +197,7 @@ composite operation 也可以包含 split-release member；未来扩展不需要
 
 ## 5. 两个后端如何精化同一逻辑 read
 
-### Reactor
+### Epoll
 
 ```text
 Logical ReadSome
@@ -266,7 +266,7 @@ cross-backend conformance tests
 这些 lifecycle 类型都不拥有 fd、buffer、Channel、SQE 或 CQE；具体 Adapter 负责物理资源，
 而 backend detail 只提供结果存储。
 
-TLA+ 检查有界 interleaving 和 observation projection。conformance tests 则对 Reactor 和
+TLA+ 检查有界 interleaving 和 observation projection。conformance tests 则对 Epoll 和
 io_uring 运行同一组应用可观察场景，例如 EOF、半关闭、pending I/O close、一次恢复和 buffer
 归还，以及完成后立刻发起同方向 follow-up read 或对刚连接的 stream 执行 `Close()`。前者直接验证
 stream slot 的 release 边界已在 continuation 可运行前跨越：follow-up read 不会看到旧 operation
@@ -276,7 +276,7 @@ stream slot 的 release 边界已在 continuation 可运行前跨越：follow-up
 
 LRCI 不表示：
 
-- Reactor、io_uring 与 kqueue 使用相同物理执行机制；
+- Epoll、io_uring 与 kqueue 使用相同物理执行机制；
 - 所有后端能力都能通过同一个返回类型表达；
 - Alyrn 已经验证 IOCP；
 - 收到一个事件就必须恢复协程；

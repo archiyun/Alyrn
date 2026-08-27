@@ -1,6 +1,6 @@
 # AsyncStream 与 AsyncListener 协程语义契约
 
-> 状态：已冻结的 Core contract。本文定义业务协程可以依赖的 I/O 语义，以及 Reactor 和
+> 状态：已冻结的 Core contract。本文定义业务协程可以依赖的 I/O 语义，以及 Epoll 和
 > luring 实现必须共同满足的不变量。本文不描述 io_uring 的具体 SQE/CQE API，也不
 > 把尚未落地的扩展能力写成核心能力。
 
@@ -25,8 +25,8 @@ extension，不得通过扩大 Core contract 的隐含行为加入。
 当前项目有两种网络机制：
 
 ```text
-alyrn::reactor   Reactor / epoll / nonblocking syscall
-alyrn::luring    io_uring / SQE / CQE
+alyrn::epoll   Linux epoll / nonblocking syscall
+alyrn::uring    io_uring / SQE / CQE
 ```
 
 它们是两个独立的机制模块，不是同一个网络库的两个公开模式。两者通过公共协程 I/O
@@ -36,12 +36,12 @@ alyrn::luring    io_uring / SQE / CQE
 业务层
   -> alyrn::io::AsyncStream / AsyncListener
   -> Stream / Stream
-  -> Reactor 或 io_uring
+  -> Epoll 或 io_uring
 ```
 
 公共 facade 位于 `alyrn::io`；其 canonical concept 定义位于不依赖具体后端的
 `alyrn::backend`。`alyrn::net` 提供共享的地址、socket 和网络工具，
-`alyrn::reactor` 承载 epoll/Loop 实现。
+`alyrn::epoll` 承载 epoll/Loop 实现。
 
 本文的核心边界是：
 
@@ -98,16 +98,16 @@ WriteAll(std::span<const std::byte> buffer)
     -> 可 await，await_resume() 为 Result<void>
 
 Shutdown()
-    -> coro::Task<Result<void>>
+    -> alyrn::Task<Result<void>>
 
 CloseRead()
-    -> coro::Task<Result<void>>
+    -> alyrn::Task<Result<void>>
 
 CloseWrite()
-    -> coro::Task<Result<void>>
+    -> alyrn::Task<Result<void>>
 
 Close()
-    -> coro::Task<Result<void>>
+    -> alyrn::Task<Result<void>>
 
 LocalAddr()
     -> Result<net::Endpoint>
@@ -131,7 +131,7 @@ alyrn::io::AsyncStream
 
 `LocalAddr()` 必须在 owner loop 上执行，并通过 `Result` 报告 `getsockname` 失败；
 `RemoteAddr()` 返回连接建立时保存的 peer endpoint，不重复发起 `getpeername`。
-当前 `reactor::Stream`、`kqueue::Stream` 和 `luring::Stream` 都满足它。
+当前 `epoll::Stream`、`kqueue::Stream` 和 `uring::Stream` 都满足它。
 
 ### 2.2 TimedStream extension
 
@@ -197,13 +197,13 @@ listener 的最小接口是：
 using StreamType = ...;
 
 Accept()
-    -> coro::Task<Result<StreamType>>
+    -> alyrn::Task<Result<StreamType>>
 
 Close()
-    -> coro::Task<Result<void>>
+    -> alyrn::Task<Result<void>>
 ```
 
-`StreamType` 必须满足 `alyrn::io::AsyncStream`。当前 `reactor::Listener` 和 `luring::Listener`
+`StreamType` 必须满足 `alyrn::io::AsyncStream`。当前 `epoll::Listener` 和 `uring::Listener`
 都满足 `alyrn::io::AsyncListener`。
 
 ### Close preparation 与 committed Close
@@ -246,14 +246,14 @@ auto result = co_await connector.Connect(host, port);
 - loop 进入 `Stopping` 后不再创建 socket 或提交 request，新 `Connect()` 返回
   `ECANCELED`；已经 pending 的 connect 必须经后端取消路径收敛且只恢复一次。
 
-connector 本身没有 `Close()`：它不长期拥有连接资源。Reactor 的每次调用在 awaiter 内持有
+connector 本身没有 `Close()`：它不长期拥有连接资源。Epoll 的每次调用在 awaiter 内持有
 临时 `Channel`；io_uring 的每次调用持有独立 operation。成功后 socket 所有权转移给返回的
 Stream，失败或取消时由该次 operation 回收。
 
 ### 2.4 Awaitable 的使用规则
 
 `ReadSome` 和 `WriteAll` 的返回值必须是可 await 对象，并产生约定的
-`Result`。后端可以返回惰性的 `coro::Task<T>`，也可以返回直接承载操作状态的
+`Result`。后端可以返回惰性的 `alyrn::Task<T>`，也可以返回直接承载操作状态的
 底层 awaiter：
 
 ```cpp
@@ -265,7 +265,7 @@ auto result = co_await stream.ReadSome(buffer);
 send 与 send-zc 的不同 completion/release 语义。`Shutdown()`、`Close()` 也可以返回 `Task`。
 
 如果具体接口返回 `Task`，它仍然是 move-only、single-consumer 对象，只能被 await 一次，
-也可以交给 `coro::Spawn(scheduler, task)`。直接 awaitable 则在 `co_await` 时提交 I/O。
+也可以交给 `alyrn::Spawn(scheduler, task)`。直接 awaitable 则在 `co_await` 时提交 I/O。
 
 无论返回哪种 awaitable，丢弃未等待的操作都属于错误：
 
@@ -287,7 +287,7 @@ M(B, P, π) = (X, x0, E_obs, δ_B, Inv, Live)
 ```
 
 ```text
-B : 解释器（Reactor 或 luring），在实例生命周期内固定。
+B : 解释器（Epoll 或 luring），在实例生命周期内固定。
 P : 可选的语义策略集合；具体方法和 extension 由 `io::*` concept 在编译期约束。
 π : 调度/批处理策略，在实例生命周期内固定或只按显式策略转换。
 ```
@@ -323,7 +323,7 @@ O : OpId -> OperationRecord
     }
 
 Q : 后端 refinement 的队列投影。
-    抽象层只关心“已投递但未 Resume”的逻辑 continuation；Reactor 的 ready list、
+    抽象层只关心“已投递但未 Resume”的逻辑 continuation；Epoll 的 ready list、
     epoll ready set 与 luring 的 SQ/CQ 不要求具有相同数据结构。
 
 L : OpId -> LifetimeRecord。
@@ -372,7 +372,7 @@ Submit(c, op)
   -> Resume(c, result)
 ```
 
-方括号表示 `Suspend` 是可选的。Reactor 可能在 nonblocking syscall 立即得到结果，
+方括号表示 `Suspend` 是可选的。Epoll 可能在 nonblocking syscall 立即得到结果，
 io_uring 也可能在准备阶段立即拒绝操作。此时没有真实挂起，但仍然必须有唯一的逻辑
 提交和完成结果。
 
@@ -448,7 +448,7 @@ resource `Close()` 在尚未向 backend 提交 cancel request 前必须能回滚
 和后续新 I/O 的可用性。source `Stop()` 首先撤销新的 event admission，因此 luring 的 cancel SQE
 preparation 若本地失败，`Stop()` 可以返回该 error，但 source 保持 `Stopping`，不会重新变成
 Active。调用方必须保留 source 并重试 `Stop()`，或由已 committed 的 owner resource `Close()` 收敛它；
-在 Stop 成功前销毁 source 仍违反其 physical request 生命周期。Reactor 没有对应 SQE preparation
+在 Stop 成功前销毁 source 仍违反其 physical request 生命周期。Epoll 没有对应 SQE preparation
 阶段，但实现同一“Stop 后不再接纳新事件”的可观察语义。
 
 ## 4. 核心不变量
@@ -695,7 +695,7 @@ Close 必须满足：
 `Close()` 完成不等价于其他等待中的协程已经恢复。它只保证相关 operation 已经离开后端
 访问窗口；每个 pending operation 的调用方仍然必须等待自己的 Task 观察结果。
 
-Reactor 可以通过 readiness 状态直接完成取消，luring 可能需要提交 cancel request、
+Epoll 可以通过 readiness 状态直接完成取消，luring 可能需要提交 cancel request、
 等待 cancel CQE 和原 operation CQE。它们的内部路径不同，但不能改变上述状态转移。
 
 并发调用 `Close()` 与同一个 stream 的其他操作不属于跨线程语义；同一 loop 内也不应
@@ -732,7 +732,7 @@ auto result = co_await listener.Accept();
 成功返回的 stream 与 listener 属于同一个 loop/executor，调用方不能把它直接移动到另一个
 ring 后继续 I/O。
 
-可移植的核心 listener 用法只依赖一个 pending accept。Reactor 对第二个 pending
+可移植的核心 listener 用法只依赖一个 pending accept。Epoll 对第二个 pending
 `Accept()` 在所有构建模式下稳定返回 `EBUSY`；io_uring 后端可以在内部或显式扩展路径中
 维持多个 one-shot accept，但业务代码不能把该能力当作公共 `AsyncListener` 契约。需要持续
 产生连接结果时，应使用 `AcceptSource`，而不是并发创建一组普通 `Accept()` awaiter。
@@ -773,7 +773,7 @@ co_await stream.WriteAll(buffer)
 错误示例：
 
 ```cpp
-alyrn::coro::Task<void> Bad(alyrn::io::AsyncStream auto& stream) {
+alyrn::Task<void> Bad(alyrn::io::AsyncStream auto& stream) {
   std::vector<std::byte> local(4096);
   auto task = stream.ReadSome(local);
   local = {};                    // 错误：底层 operation 仍可能使用这块内存
@@ -785,7 +785,7 @@ alyrn::coro::Task<void> Bad(alyrn::io::AsyncStream auto& stream) {
 正确写法是让 buffer 由协程 frame、调用方对象或更长生命周期的 pool 持有：
 
 ```cpp
-alyrn::coro::Task<void> Good(alyrn::io::AsyncStream auto& stream) {
+alyrn::Task<void> Good(alyrn::io::AsyncStream auto& stream) {
   std::array<std::byte, 4096> buffer{};
   auto result = co_await stream.ReadSome(buffer);
   (void)result;
@@ -805,7 +805,7 @@ WriteAll 后 Drain 已写出的字节。
 ```
 
 扩展 `RecvSource` 已明确提供 buffer 的所有权边界：luring 使用每 worker 共享的 provided
-buffer ring，Reactor 使用固定 buffer pool；每个 `RecvEvent` 携带一个 `BufferLease`，consumer
+buffer ring，Epoll 使用固定 buffer pool；每个 `RecvEvent` 携带一个 `BufferLease`，consumer
 必须在 source 销毁前释放它。buffer id、归还时机和 RAII 所有权不能隐藏在普通 `std::span`
 的成功结果里。`Options::shared_buffer_capacity` 配置该 worker 的聚合上限，buffer slot
 会随着 RecvSource 创建惰性发布；CQE 返回的
@@ -841,7 +841,7 @@ ReadSomeFor(std::span<std::byte> buffer, time::Duration timeout)
 其他失败   -> unexpected(errno)
 ```
 
-实现可以使用 Reactor 的 TimerQueue，或 io_uring 的 linked timeout/cancel，但业务不应
+实现可以使用 Epoll 的 TimerQueue，或 io_uring 的 linked timeout/cancel，但业务不应
 观察这些内部机制。
 
 它由 `AsyncTimedReadStream` / `AsyncTimedStream` 明确表达。当前代码状态为：
@@ -863,7 +863,7 @@ static_assert     验证具体 backend 已实现 timed extension；
 runtime Result    报告内核或资源层面的实际失败。
 ```
 
-超时由后端作为 composite operation 实现：Reactor 使用 TimerQueue，luring 使用 linked
+超时由后端作为 composite operation 实现：Epoll 使用 TimerQueue，luring 使用 linked
 timeout/cancel；业务不观察这些内部机制。`AsyncStream` 不应被静默扩展成 timed contract。
 
 ## 9. Capability 分层
@@ -927,13 +927,13 @@ auto result = co_await stream.SendZeroCopy(buffer);
 
 该 awaiter 将 send CQE 与可选的 `F_NOTIF` notification 作为同一个 split-release operation
 处理；只有 terminal CQE 到达后才恢复调用方，因此 `buffer` 在 `co_await` 返回前必须保持有效。
-Reactor 没有对应的两阶段内核通知，不为普通 send 伪造该扩展语义。
+Epoll 没有对应的两阶段内核通知，不为普通 send 伪造该扩展语义。
 
 ## 10. 两个后端如何解释同一契约
 
-### Reactor
+### Epoll
 
-Reactor 的典型内部路径是：
+Epoll 的典型内部路径是：
 
 ```text
 TryRead/TryWrite
@@ -945,7 +945,7 @@ TryRead/TryWrite
   -> Resume
 ```
 
-TimerQueue、Channel 和 owner-local ready/work queue 都是 Reactor 内部机制。它们不能泄漏
+TimerQueue、Channel 和 owner-local ready/work queue 都是 Epoll 内部机制。它们不能泄漏
 到 CoreStream 的业务接口。
 
 ### luring
@@ -1025,7 +1025,7 @@ EOF、本地取消、连接失败、上游失败和超时。
 10. read 和 write 可以同时 pending；
 11. buffer 在 Complete 前被修改或释放时不属于合法用法；
 12. listener 的 pending accept 可被 Close 收敛；
-13. Reactor 和 luring 对同一测试场景的核心结果投影一致；
+13. Epoll 和 luring 对同一测试场景的核心结果投影一致；
 14. timeout 在 AsyncTimedStream concept 与后端实现同时存在时，验证 read/timeout
     竞争只产生一个逻辑结果和一次恢复；
 15. EventSource 的 high-water pause 只终止当前 physical request，不把 logical source
@@ -1085,11 +1085,11 @@ read/write/accept 的槽位归属唯一；
 后端内部事件不进入业务接口。
 ```
 
-因此，Reactor 和 luring 可以在同一语义地板上分别实现：
+因此，Epoll 和 luring 可以在同一语义地板上分别实现：
 
 ```text
 业务只依赖 AsyncStream / AsyncListener；
-Reactor 和 luring 是不同解释器；
+Epoll 和 luring 是不同解释器；
 公共层约束可观察语义；
 扩展层保留 io_uring 的能力；
 不支持的能力在 bind 阶段拒绝，而不是运行时静默妥协。

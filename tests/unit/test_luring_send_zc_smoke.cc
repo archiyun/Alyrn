@@ -24,10 +24,10 @@
 #include "alyrn/result.h"
 #include "alyrn/coro/detached_task.h"
 #include "alyrn/coro/spawn.h"
-#include "alyrn/luring/detail/loop_access.h"
-#include "alyrn/luring/loop.h"
-#include "alyrn/luring/options.h"
-#include "alyrn/luring/stream.h"
+#include "alyrn/detail/uring/loop_access.h"
+#include "alyrn/uring/loop.h"
+#include "alyrn/uring/options.h"
+#include "alyrn/uring/stream.h"
 #include "alyrn/net/endpoint.h"
 
 namespace {
@@ -35,11 +35,11 @@ namespace {
 using alyrn::Error;
 using alyrn::Result;
 using alyrn::coro::DetachedTask;
-using alyrn::luring::Loop;
-using alyrn::luring::Options;
-using alyrn::luring::Stream;
-using alyrn::luring::ZeroCopySendResult;
-using alyrn::luring::ZeroCopySendUsage;
+using alyrn::uring::Loop;
+using alyrn::uring::Options;
+using alyrn::uring::Stream;
+using alyrn::uring::ZeroCopySendResult;
+using alyrn::uring::ZeroCopySendUsage;
 
 class UniqueFd final {
 public:
@@ -159,16 +159,16 @@ DetachedTask WriteAllOnce(Stream* stream, std::span<const std::byte> payload,
 template <typename T>
 bool DriveUntilResult(Loop& loop, std::optional<Result<T>>& result, const char* operation) {
   for (int i = 0; i < 4 && !result.has_value(); ++i) {
-    alyrn::luring::detail::LoopAccess::RunReady(loop);
+    alyrn::uring::detail::LoopAccess::RunReady(loop);
   }
   for (int i = 0; i < 16 && !result.has_value(); ++i) {
-    auto completions = alyrn::luring::detail::LoopAccess::WaitCompletions(loop);
+    auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
     if (!completions.has_value()) {
       std::cout << "FAIL: waiting for " << operation
                 << " CQE failed: " << completions.error().message() << '\n';
       return false;
     }
-    alyrn::luring::detail::LoopAccess::RunReady(loop);
+    alyrn::uring::detail::LoopAccess::RunReady(loop);
   }
   return Check(result.has_value(), "operation did not reach terminal CQE");
 }
@@ -178,14 +178,14 @@ bool DriveUntilResultWithPolling(Loop& loop, std::optional<Result<T>>& result,
                                  const char* operation, std::chrono::milliseconds timeout) {
   const auto deadline = std::chrono::steady_clock::now() + timeout;
   while (!result.has_value() && std::chrono::steady_clock::now() < deadline) {
-    alyrn::luring::detail::LoopAccess::RunReady(loop);
-    auto completions = alyrn::luring::detail::LoopAccess::PollCompletions(loop);
+    alyrn::uring::detail::LoopAccess::RunReady(loop);
+    auto completions = alyrn::uring::detail::LoopAccess::PollCompletions(loop);
     if (!completions.has_value()) {
       std::cout << "FAIL: polling " << operation << " CQE failed: " << completions.error().message()
                 << '\n';
       return false;
     }
-    alyrn::luring::detail::LoopAccess::RunReady(loop);
+    alyrn::uring::detail::LoopAccess::RunReady(loop);
     if (!result.has_value()) {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
@@ -244,17 +244,17 @@ bool CheckSendZeroCopy() {
   std::optional<Result<ZeroCopySendResult>> result;
   alyrn::coro::SpawnDetach(loop, SendOnce(&stream, payload, &result));
   for (int i = 0; i < 4 && !result.has_value(); ++i) {
-    alyrn::luring::detail::LoopAccess::RunReady(loop);
+    alyrn::uring::detail::LoopAccess::RunReady(loop);
   }
 
   for (int i = 0; i < 8 && !result.has_value(); ++i) {
-    auto completions = alyrn::luring::detail::LoopAccess::WaitCompletions(loop);
+    auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
     if (!completions.has_value()) {
       std::cout << "FAIL: waiting for send zerocopy CQE failed: " << completions.error().message()
                 << '\n';
       return false;
     }
-    alyrn::luring::detail::LoopAccess::RunReady(loop);
+    alyrn::uring::detail::LoopAccess::RunReady(loop);
   }
 
   if (!result.has_value()) {
@@ -305,7 +305,7 @@ bool CheckPrimaryErrorWithoutNotificationCompletes() {
   }
 
   return Check(!result->has_value(), "unconnected send zerocopy unexpectedly succeeded") &&
-         Check(alyrn::luring::detail::LoopAccess::InflightCount(loop) == 0,
+         Check(alyrn::uring::detail::LoopAccess::InflightCount(loop) == 0,
                "unconnected send zerocopy retained an inflight request");
 }
 

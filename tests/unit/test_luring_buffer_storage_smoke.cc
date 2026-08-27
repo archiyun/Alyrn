@@ -7,11 +7,11 @@
 #include <utility>
 
 #include "alyrn/result.h"
-#include "alyrn/luring/detail/provided_buffer_storage.h"
+#include "alyrn/detail/uring/provided_buffer_storage.h"
 
 namespace {
 
-using alyrn::luring::detail::ProvidedBufferStorage;
+using alyrn::uring::detail::ProvidedBufferStorage;
 
 void CheckStorage() {
   constexpr std::size_t kCapacity = 4;

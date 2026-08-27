@@ -9,15 +9,15 @@
 #include <stop_token>
 #include <vector>
 
-#include "alyrn/backend/loop.h"
-#include "alyrn/base/current_thread.h"
+#include "alyrn/detail/backend/loop.h"
+#include "alyrn/detail/base/current_thread.h"
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/work.h"
-#include "alyrn/kqueue/detail/loop_shutdown.h"
+#include "alyrn/io/loop.h"
+#include "alyrn/detail/kqueue/loop_shutdown.h"
 #include "alyrn/time/clock.h"
 #include "alyrn/time/timer_id.h"
-#include "alyrn/time/timer_index_kind.h"
-#include "alyrn/utils/macros.h"
+#include "alyrn/detail/utils/macros.h"
 
 namespace alyrn::kqueue {
 
@@ -33,7 +33,7 @@ class TimerQueue;
  * channels, and coroutine work. Cross-thread callers may request stop, but may
  * not submit or mutate owner-local I/O state directly.
  *
- * This is a parallel backend to the Linux epoll Reactor, not a portable
+ * This is a parallel backend to the Linux epoll Epoll, not a portable
  * variant of it. It refines the same logical lifecycle contracts without
  * sharing an implementation.
  */
@@ -42,8 +42,6 @@ public:
   using Functor = std::function<void()>;
 
   explicit Loop(std::pmr::memory_resource* frame_resource = nullptr);
-  explicit Loop(time::TimerIndexKind timers,
-                std::pmr::memory_resource* frame_resource = nullptr);
   ~Loop() override;
 
   ALYRN_DELETE_COPY_MOVE(Loop);
@@ -60,7 +58,7 @@ public:
   void RequestStop() noexcept;
 
   [[nodiscard]]
-  backend::LoopState State() const noexcept {
+  ::alyrn::io::LoopState State() const noexcept {
     return state_.load(std::memory_order_acquire);
   }
 
@@ -131,9 +129,9 @@ private:
   bool HasImmediateWork() const;
 
   bool looping_{false};
-  std::atomic<backend::LoopState> state_{backend::LoopState::kCreated};
+  std::atomic<::alyrn::io::LoopState> state_{::alyrn::io::LoopState::kCreated};
 
-  const base::ThreadId thread_id_;
+  const ::alyrn::detail::ThreadId thread_id_;
   std::unique_ptr<detail::Poller> poller_;
   std::unique_ptr<detail::TimerQueue> timer_queue_;
   std::vector<detail::Channel*> active_channels_;
@@ -151,6 +149,6 @@ private:
   bool shutdown_started_{false};
 };
 
-static_assert(backend::ManagedLoop<Loop>);
+static_assert(::alyrn::io::ManagedLoop<Loop>);
 
 }  // namespace alyrn::kqueue

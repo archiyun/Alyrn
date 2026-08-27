@@ -16,6 +16,19 @@ target_link_libraries(panic_check_smoke_test
 
 add_test(NAME panic_check_smoke_test COMMAND panic_check_smoke_test)
 
+add_executable(public_api_surface_smoke_test
+    unit/test_public_api_surface.cc
+)
+
+target_link_libraries(public_api_surface_smoke_test
+    PRIVATE
+        alyrn_io
+)
+
+target_compile_features(public_api_surface_smoke_test PUBLIC cxx_std_23)
+
+add_test(NAME public_api_surface_smoke_test COMMAND public_api_surface_smoke_test)
+
 # Native kqueue oneshot smoke: real kevent on BSD/Darwin hosts. Built only when
 # alyrn_kqueue exists; does not use the Linux-only fake_kqueue shim.
 if(ALYRN_ENABLE_KQUEUE)
@@ -114,7 +127,7 @@ if(ALYRN_ENABLE_KQUEUE)
     add_test(NAME kqueue_runtime_builder_smoke_test COMMAND kqueue_runtime_builder_smoke_test)
 endif()
 
-# Remaining targets below assume the Linux epoll Reactor. On Darwin/BSD with
+# Remaining targets below assume the Linux epoll backend. On Darwin/BSD with
 # only ALYRN_ENABLE_KQUEUE, stop after the foundation + native kqueue tests.
 if(NOT ALYRN_HAS_EPOLL)
     return()
@@ -135,7 +148,7 @@ target_include_directories(io_contract_smoke_test
 
 target_link_libraries(io_contract_smoke_test
     PRIVATE
-        alyrn_reactor
+        alyrn_epoll
 )
 
 if(ALYRN_ENABLE_URING)
@@ -159,7 +172,7 @@ target_include_directories(stream_lifecycle_conformance_test
 
 target_link_libraries(stream_lifecycle_conformance_test
     PRIVATE
-        alyrn_reactor
+        alyrn_epoll
 )
 
 if(ALYRN_ENABLE_URING)
@@ -183,7 +196,7 @@ target_include_directories(listener_lifecycle_conformance_test
 
 target_link_libraries(listener_lifecycle_conformance_test
     PRIVATE
-        alyrn_reactor
+        alyrn_epoll
 )
 
 if(ALYRN_ENABLE_URING)
@@ -206,7 +219,7 @@ target_include_directories(connector_lifecycle_conformance_test
 
 target_link_libraries(connector_lifecycle_conformance_test
     PRIVATE
-        alyrn_reactor
+        alyrn_epoll
 )
 
 if(ALYRN_ENABLE_URING)
@@ -222,7 +235,7 @@ add_executable(runtime_builder_smoke_test
 
 target_link_libraries(runtime_builder_smoke_test
     PRIVATE
-        alyrn_reactor
+        alyrn_epoll
 )
 
 if(ALYRN_ENABLE_URING)
@@ -248,16 +261,16 @@ target_link_libraries(completion_gate_smoke_test
 
 add_test(NAME completion_gate_smoke_test COMMAND completion_gate_smoke_test)
 
-add_executable(reactor_result_state_smoke_test
-    unit/test_reactor_result_state_smoke.cc
+add_executable(epoll_result_state_smoke_test
+    unit/test_epoll_result_state_smoke.cc
 )
 
-target_include_directories(reactor_result_state_smoke_test
+target_include_directories(epoll_result_state_smoke_test
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
 
-add_test(NAME reactor_result_state_smoke_test COMMAND reactor_result_state_smoke_test)
+add_test(NAME epoll_result_state_smoke_test COMMAND epoll_result_state_smoke_test)
 
 add_executable(split_release_lifecycle_smoke_test
     unit/test_split_release_lifecycle_smoke.cc
@@ -435,7 +448,7 @@ target_link_libraries(luring_buffer_storage_smoke_test
 
 add_test(NAME luring_buffer_storage_smoke_test COMMAND luring_buffer_storage_smoke_test)
 
-# C3:detached 连接协程(Spawn)park→resume→自毁,无泄漏/无 UAF。链 alyrn_reactor。
+# C3:detached 连接协程(Spawn)park→resume→自毁,无泄漏/无 UAF。链 alyrn_epoll。
 add_executable(spawn_c3_smoke_test
     unit/test_spawn_c3_smoke.cc
 )
@@ -447,74 +460,74 @@ target_include_directories(spawn_c3_smoke_test
 
 target_link_libraries(spawn_c3_smoke_test
     PRIVATE
-        alyrn_reactor
+        alyrn_epoll
 )
 
 add_test(NAME spawn_c3_smoke_test COMMAND spawn_c3_smoke_test)
 
-add_executable(reactor_stream_smoke_test
-    unit/test_reactor_stream_smoke.cc
+add_executable(epoll_stream_smoke_test
+    unit/test_epoll_stream_smoke.cc
 )
 
-target_include_directories(reactor_stream_smoke_test
+target_include_directories(epoll_stream_smoke_test
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
 
-target_link_libraries(reactor_stream_smoke_test
+target_link_libraries(epoll_stream_smoke_test
     PRIVATE
-        alyrn_reactor
+        alyrn_epoll
 )
 
-add_test(NAME reactor_stream_smoke_test COMMAND reactor_stream_smoke_test)
+add_test(NAME epoll_stream_smoke_test COMMAND epoll_stream_smoke_test)
 
-add_executable(reactor_listener_smoke_test
-    unit/test_reactor_listener_smoke.cc
+add_executable(epoll_listener_smoke_test
+    unit/test_epoll_listener_smoke.cc
 )
 
-target_include_directories(reactor_listener_smoke_test
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
-
-target_link_libraries(reactor_listener_smoke_test
-    PRIVATE
-        alyrn_reactor
-)
-
-add_test(NAME reactor_listener_smoke_test COMMAND reactor_listener_smoke_test)
-
-add_executable(reactor_recv_source_smoke_test
-    unit/test_reactor_recv_source_smoke.cc
-)
-
-target_include_directories(reactor_recv_source_smoke_test
+target_include_directories(epoll_listener_smoke_test
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
 
-target_link_libraries(reactor_recv_source_smoke_test
+target_link_libraries(epoll_listener_smoke_test
     PRIVATE
-        alyrn_reactor
+        alyrn_epoll
 )
 
-add_test(NAME reactor_recv_source_smoke_test COMMAND reactor_recv_source_smoke_test)
+add_test(NAME epoll_listener_smoke_test COMMAND epoll_listener_smoke_test)
 
-add_executable(reactor_worker_group_smoke_test
-    unit/test_reactor_worker_group_smoke.cc
+add_executable(epoll_recv_source_smoke_test
+    unit/test_epoll_recv_source_smoke.cc
 )
 
-target_include_directories(reactor_worker_group_smoke_test
+target_include_directories(epoll_recv_source_smoke_test
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
 
-target_link_libraries(reactor_worker_group_smoke_test
+target_link_libraries(epoll_recv_source_smoke_test
     PRIVATE
-        alyrn_reactor
+        alyrn_epoll
 )
 
-add_test(NAME reactor_worker_group_smoke_test COMMAND reactor_worker_group_smoke_test)
+add_test(NAME epoll_recv_source_smoke_test COMMAND epoll_recv_source_smoke_test)
+
+add_executable(epoll_worker_group_smoke_test
+    unit/test_epoll_worker_group_smoke.cc
+)
+
+target_include_directories(epoll_worker_group_smoke_test
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+
+target_link_libraries(epoll_worker_group_smoke_test
+    PRIVATE
+        alyrn_epoll
+)
+
+add_test(NAME epoll_worker_group_smoke_test COMMAND epoll_worker_group_smoke_test)
 
 if(ALYRN_ENABLE_URING)
     add_executable(luring_op_smoke_test
@@ -790,7 +803,7 @@ target_include_directories(epoll_poller_smoke_test
 
 target_link_libraries(epoll_poller_smoke_test
     PRIVATE
-        alyrn_reactor
+        alyrn_epoll
 )
 
 add_test(NAME epoll_poller_smoke_test COMMAND epoll_poller_smoke_test)
@@ -806,26 +819,26 @@ target_include_directories(net_move_smoke_test
 
 target_link_libraries(net_move_smoke_test
     PRIVATE
-        alyrn_reactor
+        alyrn_epoll
 )
 
 add_test(NAME net_move_smoke_test COMMAND net_move_smoke_test)
 
-add_executable(reactor_loop_smoke_test
-    integration/test_reactor_loop_smoke.cc
+add_executable(epoll_loop_smoke_test
+    integration/test_epoll_loop_smoke.cc
 )
 
-target_include_directories(reactor_loop_smoke_test
+target_include_directories(epoll_loop_smoke_test
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
 
-target_link_libraries(reactor_loop_smoke_test
+target_link_libraries(epoll_loop_smoke_test
     PRIVATE
-        alyrn_reactor
+        alyrn_epoll
 )
 
-add_test(NAME reactor_loop_smoke_test COMMAND reactor_loop_smoke_test)
+add_test(NAME epoll_loop_smoke_test COMMAND epoll_loop_smoke_test)
 
 add_executable(timer_tree_smoke_test
     unit/test_timer_tree_smoke.cc

@@ -10,17 +10,17 @@
 #include <optional>
 #include <utility>
 
-#include "alyrn/backend/detail/value_result_state.h"
-#include "alyrn/base/check.h"
-#include "alyrn/kqueue/detail/channel.h"
-#include "alyrn/kqueue/detail/loop_access.h"
+#include "alyrn/detail/backend/value_result_state.h"
+#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/kqueue/channel.h"
+#include "alyrn/detail/kqueue/loop_access.h"
 #include "alyrn/kqueue/options.h"
 #include "alyrn/net/endpoint.h"
-#include "alyrn/net/socket.h"
+#include "alyrn/detail/net/socket.h"
 #include "alyrn/net/tcp_options.h"
-#include "alyrn/operation/detail/completion_gate.h"
-#include "alyrn/operation/detail/scheduler_continuation.h"
-#include "alyrn/operation/detail/single_result_lifecycle.h"
+#include "alyrn/detail/operation/completion_gate.h"
+#include "alyrn/detail/operation/scheduler_continuation.h"
+#include "alyrn/detail/operation/single_result_lifecycle.h"
 #include "alyrn/result.h"
 #include "alyrn/time/clock.h"
 #include "alyrn/time/timer_id.h"
@@ -61,8 +61,8 @@ public:
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     ALYRN_CHECK(loop_ != nullptr, "ConnectAwaiter has no owner Loop");
     ALYRN_CHECK(loop_->IsInLoopThread(), "ConnectAwaiter called from wrong Loop thread");
-    if (loop_->State() == backend::LoopState::kStopping ||
-        loop_->State() == backend::LoopState::kStopped) {
+    if (loop_->State() == ::alyrn::detail::backend::LoopState::kStopping ||
+        loop_->State() == ::alyrn::detail::backend::LoopState::kStopped) {
       CompleteInline(std::unexpected(Errno(ECANCELED)));
       return false;
     }
@@ -136,9 +136,9 @@ private:
 
   void CompleteInline(Result<Stream> result) noexcept {
     result_.SetResult(std::move(result));
-    ALYRN_CHECK(lifecycle_.TryAuthorizeResult(), "Reactor Connect result was authorized twice");
+    ALYRN_CHECK(lifecycle_.TryAuthorizeResult(), "Epoll Connect result was authorized twice");
     ALYRN_CHECK(lifecycle_.TryAuthorizeRelease(),
-                   "Reactor Connect release was not authorized after its result");
+                   "Epoll Connect release was not authorized after its result");
     ReleasePhysicalRequest();
   }
 
@@ -148,10 +148,10 @@ private:
     }
     result_.SetResult(std::move(result));
     ALYRN_CHECK(lifecycle_.TryAuthorizeRelease(),
-                   "Reactor Connect release was not authorized after its result");
+                   "Epoll Connect release was not authorized after its result");
     ReleasePhysicalRequest();
     ALYRN_CHECK(lifecycle_.TryAuthorizeContinuation(),
-                   "Reactor Connect continuation was not authorized after release");
+                   "Epoll Connect continuation was not authorized after release");
     continuation_.Schedule();
   }
 
@@ -182,9 +182,9 @@ private:
   net::TcpOptions tcp_options_;
   int fd_{-1};
   std::optional<Channel> channel_;
-  operation::detail::SchedulerContinuation continuation_;
-  operation::detail::SingleResultLifecycle lifecycle_;
-  backend::detail::ValueResultState<Stream> result_;
+  ::alyrn::detail::operation::SchedulerContinuation continuation_;
+  ::alyrn::detail::operation::SingleResultLifecycle lifecycle_;
+  ::alyrn::detail::backend::ValueResultState<Stream> result_;
   LoopShutdownParticipant shutdown_participant_{this, &DispatchLoopStop};
 };
 
@@ -206,8 +206,8 @@ public:
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     ALYRN_CHECK(loop_ != nullptr, "SleepAwaiter has no owner Loop");
     ALYRN_CHECK(loop_->IsInLoopThread(), "SleepAwaiter called from wrong Loop thread");
-    if (loop_->State() == backend::LoopState::kStopping ||
-        loop_->State() == backend::LoopState::kStopped) {
+    if (loop_->State() == ::alyrn::detail::backend::LoopState::kStopping ||
+        loop_->State() == ::alyrn::detail::backend::LoopState::kStopped) {
       (void)(completion_gate_.TryComplete());
       return false;
     }
@@ -244,8 +244,8 @@ private:
 
   Loop* loop_;
   time::Duration delay_;
-  operation::detail::SchedulerContinuation continuation_;
-  operation::detail::CompletionGate completion_gate_;
+  ::alyrn::detail::operation::SchedulerContinuation continuation_;
+  ::alyrn::detail::operation::CompletionGate completion_gate_;
   time::TimerId timer_;
   LoopShutdownParticipant shutdown_participant_{this, &DispatchLoopStop};
 };

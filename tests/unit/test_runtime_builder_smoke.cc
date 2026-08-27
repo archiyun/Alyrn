@@ -17,10 +17,10 @@
 #include "alyrn/coro/detached_task.h"
 #include "alyrn/result.h"
 #include "alyrn/net/endpoint.h"
-#include "alyrn/reactor/runtime.h"
+#include "alyrn/epoll/runtime.h"
 
 #ifdef ALYRN_ENABLE_URING
-#include "alyrn/luring/runtime.h"
+#include "alyrn/uring/runtime.h"
 #endif
 
 using namespace alyrn;
@@ -107,69 +107,69 @@ bool WaitUntilStarted(Runtime& runtime) {
   return runtime.Started();
 }
 
-coro::DetachedTask HandleReactor(reactor::Stream) { co_return; }
+coro::DetachedTask HandleEpoll(epoll::Stream) { co_return; }
 
-static_assert(std::same_as<decltype(Runtime::Create<runtime::Reactor>(
-                              net::Endpoint::Loopback(0), HandleReactor)),
+static_assert(std::same_as<decltype(Runtime::Create<runtime::Epoll>(
+                              net::Endpoint::Loopback(0), HandleEpoll)),
                            Runtime>);
 
-bool CheckReactorRuntime() {
-  auto missing_handler = Runtime::Builder<runtime::Reactor>{net::Endpoint::Loopback(0)}
+bool CheckEpollRuntime() {
+  auto missing_handler = Runtime::Builder<runtime::Epoll>{net::Endpoint::Loopback(0)}
                              .Workers(1)
                              .Build();
   auto missing_started = missing_handler.Start();
   if (!Check(!missing_started.has_value() && missing_started.error() == std::errc::invalid_argument,
-             "Reactor Runtime must reject a missing connection handler")) {
+             "Epoll Runtime must reject a missing connection handler")) {
     return false;
   }
 
-  auto zero_workers = Runtime::Builder<runtime::Reactor>{net::Endpoint::Loopback(0)}
+  auto zero_workers = Runtime::Builder<runtime::Epoll>{net::Endpoint::Loopback(0)}
                           .Workers(0)
-                          .OnConnection(HandleReactor)
+                          .OnConnection(HandleEpoll)
                           .Build();
   auto zero_workers_started = zero_workers.Start();
   if (!Check(!zero_workers_started.has_value() && zero_workers_started.error().value() == EINVAL,
-             "Reactor Runtime must reject zero workers")) {
+             "Epoll Runtime must reject zero workers")) {
     return false;
   }
 
-  auto runtime = Runtime::Create<runtime::Reactor>(net::Endpoint::Loopback(0), HandleReactor);
+  auto runtime = Runtime::Create<runtime::Epoll>(net::Endpoint::Loopback(0), HandleEpoll);
   auto started = runtime.Start();
-  if (!Check(started.has_value(), "Reactor Runtime failed to start")) {
+  if (!Check(started.has_value(), "Epoll Runtime failed to start")) {
     return false;
   }
   const bool was_started = runtime.Started();
   runtime.Stop();
   runtime.Stop();
   auto restarted = runtime.Start();
-  return Check(was_started, "Reactor Runtime did not report started") &&
-         Check(!runtime.Started(), "Reactor Runtime did not stop") &&
+  return Check(was_started, "Epoll Runtime did not report started") &&
+         Check(!runtime.Started(), "Epoll Runtime did not stop") &&
          Check(!restarted.has_value() && restarted.error().value() == EALREADY,
-               "Reactor Runtime must reject restart after Stop");
+               "Epoll Runtime must reject restart after Stop");
 }
 
-bool CheckReactorRuntimeRunWithPreCancelledToken() {
+bool CheckEpollRuntimeRunWithPreCancelledToken() {
   std::stop_source stop_source;
   stop_source.request_stop();
 
-  auto runtime = Runtime::Builder<runtime::Reactor>{net::Endpoint::Loopback(0)}
+  auto runtime = Runtime::Builder<runtime::Epoll>{net::Endpoint::Loopback(0)}
                      .Workers(1)
-                     .OnConnection(HandleReactor)
+                     .OnConnection(HandleEpoll)
                      .Build();
   auto ran = runtime.Run(stop_source.get_token());
-  if (!Check(ran.has_value(), "Reactor Runtime::Run failed")) {
+  if (!Check(ran.has_value(), "Epoll Runtime::Run failed")) {
     return false;
   }
   auto restarted = runtime.Start();
-  return Check(!runtime.Started(), "Reactor Runtime::Run returned before stopping workers") &&
+  return Check(!runtime.Started(), "Epoll Runtime::Run returned before stopping workers") &&
          Check(!restarted.has_value() && restarted.error().value() == EALREADY,
-               "Reactor Runtime::Run must leave Runtime stopped");
+               "Epoll Runtime::Run must leave Runtime stopped");
 }
 
-bool CheckReactorRunStopsFromRuntimeRequest() {
-  auto runtime = Runtime::Builder<runtime::Reactor>{net::Endpoint::Loopback(0)}
+bool CheckEpollRunStopsFromRuntimeRequest() {
+  auto runtime = Runtime::Builder<runtime::Epoll>{net::Endpoint::Loopback(0)}
                      .Workers(1)
-                     .OnConnection(HandleReactor)
+                     .OnConnection(HandleEpoll)
                      .Build();
   std::optional<Result<void>> run_result;
   std::jthread runner{[&] { run_result.emplace(runtime.Run({})); }};
@@ -177,23 +177,23 @@ bool CheckReactorRunStopsFromRuntimeRequest() {
   if (!WaitUntilStarted(runtime)) {
     runtime.RequestStop();
     runner.join();
-    return Check(false, "Reactor Runtime::Run did not start");
+    return Check(false, "Epoll Runtime::Run did not start");
   }
 
   runtime.RequestStop();
   runner.join();
   return Check(run_result.has_value() && run_result->has_value(),
-               "Reactor Runtime::Run failed after RequestStop") &&
-         Check(!runtime.Started(), "Reactor Runtime::Run did not join after RequestStop");
+               "Epoll Runtime::Run failed after RequestStop") &&
+         Check(!runtime.Started(), "Epoll Runtime::Run did not join after RequestStop");
 }
 
-bool CheckReactorRequestStopFromForeignThread() {
-  auto runtime = Runtime::Builder<runtime::Reactor>{net::Endpoint::Loopback(0)}
+bool CheckEpollRequestStopFromForeignThread() {
+  auto runtime = Runtime::Builder<runtime::Epoll>{net::Endpoint::Loopback(0)}
                      .Workers(1)
-                     .OnConnection(HandleReactor)
+                     .OnConnection(HandleEpoll)
                      .Build();
   auto started = runtime.Start();
-  if (!Check(started.has_value(), "Reactor Runtime failed to start for RequestStop")) {
+  if (!Check(started.has_value(), "Epoll Runtime failed to start for RequestStop")) {
     return false;
   }
 
@@ -202,51 +202,51 @@ bool CheckReactorRequestStopFromForeignThread() {
 
   const bool draining = runtime.Started();
   runtime.Stop();
-  return Check(draining, "Reactor RequestStop must not join workers") &&
-         Check(!runtime.Started(), "Reactor Stop must join requested workers");
+  return Check(draining, "Epoll RequestStop must not join workers") &&
+         Check(!runtime.Started(), "Epoll Stop must join requested workers");
 }
 
-bool CheckReactorStartFailureCanRetry() {
+bool CheckEpollStartFailureCanRetry() {
   auto reserved = BindLoopbackPort();
-  if (!Check(reserved.has_value(), "failed to reserve Reactor retry test port")) {
+  if (!Check(reserved.has_value(), "failed to reserve Epoll retry test port")) {
     return false;
   }
 
-  auto runtime = Runtime::Builder<runtime::Reactor>{net::Endpoint::Loopback(reserved->port())}
+  auto runtime = Runtime::Builder<runtime::Epoll>{net::Endpoint::Loopback(reserved->port())}
                      .Workers(1)
-                     .OnConnection(HandleReactor)
+                     .OnConnection(HandleEpoll)
                      .Build();
   auto rejected = runtime.Start();
   if (!Check(!rejected.has_value() && rejected.error().value() == EADDRINUSE,
-             "Reactor Runtime must report an occupied port")) {
+             "Epoll Runtime must report an occupied port")) {
     return false;
   }
 
   reserved->Close();
   auto started = runtime.Start();
-  if (!Check(started.has_value(), "Reactor Runtime could not retry after bind failure")) {
+  if (!Check(started.has_value(), "Epoll Runtime could not retry after bind failure")) {
     return false;
   }
   runtime.Stop();
-  return Check(!runtime.Started(), "Reactor retry Runtime did not stop");
+  return Check(!runtime.Started(), "Epoll retry Runtime did not stop");
 }
 
 #ifdef ALYRN_ENABLE_URING
 
-coro::DetachedTask HandleLUring(luring::Stream) { co_return; }
+coro::DetachedTask HandleUring(uring::Stream) { co_return; }
 
-static_assert(std::same_as<decltype(Runtime::Create<runtime::LUring>(
-                              net::Endpoint::Loopback(0), HandleLUring)),
+static_assert(std::same_as<decltype(Runtime::Create<runtime::Uring>(
+                              net::Endpoint::Loopback(0), HandleUring)),
                            Runtime>);
 
 bool IsEnvironmentSkip(std::error_code error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 
-bool CheckLUringRuntime() {
-  auto zero_workers = Runtime::Builder<runtime::LUring>{net::Endpoint::Loopback(0)}
+bool CheckUringRuntime() {
+  auto zero_workers = Runtime::Builder<runtime::Uring>{net::Endpoint::Loopback(0)}
                           .Workers(0)
-                          .OnConnection(HandleLUring)
+                          .OnConnection(HandleUring)
                           .Build();
   auto zero_workers_started = zero_workers.Start();
   if (!Check(!zero_workers_started.has_value() && zero_workers_started.error().value() == EINVAL,
@@ -254,7 +254,7 @@ bool CheckLUringRuntime() {
     return false;
   }
 
-  auto runtime = Runtime::Create<runtime::LUring>(net::Endpoint::Loopback(0), HandleLUring);
+  auto runtime = Runtime::Create<runtime::Uring>(net::Endpoint::Loopback(0), HandleUring);
   auto started = runtime.Start();
   if (!started.has_value()) {
     if (IsEnvironmentSkip(started.error())) {
@@ -274,13 +274,13 @@ bool CheckLUringRuntime() {
                "luring Runtime must reject restart after Stop");
 }
 
-bool CheckLUringRuntimeRunWithPreCancelledToken() {
+bool CheckUringRuntimeRunWithPreCancelledToken() {
   std::stop_source stop_source;
   stop_source.request_stop();
 
-  auto runtime = Runtime::Builder<runtime::LUring>{net::Endpoint::Loopback(0)}
+  auto runtime = Runtime::Builder<runtime::Uring>{net::Endpoint::Loopback(0)}
                      .Workers(1)
-                     .OnConnection(HandleLUring)
+                     .OnConnection(HandleUring)
                      .Build();
   auto ran = runtime.Run(stop_source.get_token());
   if (!ran.has_value()) {
@@ -297,10 +297,10 @@ bool CheckLUringRuntimeRunWithPreCancelledToken() {
                "luring Runtime::Run must leave Runtime stopped");
 }
 
-bool CheckLUringRunStopsFromRuntimeRequest() {
-  auto runtime = Runtime::Builder<runtime::LUring>{net::Endpoint::Loopback(0)}
+bool CheckUringRunStopsFromRuntimeRequest() {
+  auto runtime = Runtime::Builder<runtime::Uring>{net::Endpoint::Loopback(0)}
                      .Workers(1)
-                     .OnConnection(HandleLUring)
+                     .OnConnection(HandleUring)
                      .Build();
   std::optional<Result<void>> run_result;
   std::jthread runner{[&] { run_result.emplace(runtime.Run({})); }};
@@ -333,10 +333,10 @@ bool CheckLUringRunStopsFromRuntimeRequest() {
   return Check(!runtime.Started(), "luring Runtime::Run did not join after RequestStop");
 }
 
-bool CheckLUringRequestStopFromForeignThread() {
-  auto runtime = Runtime::Builder<runtime::LUring>{net::Endpoint::Loopback(0)}
+bool CheckUringRequestStopFromForeignThread() {
+  auto runtime = Runtime::Builder<runtime::Uring>{net::Endpoint::Loopback(0)}
                      .Workers(1)
-                     .OnConnection(HandleLUring)
+                     .OnConnection(HandleUring)
                      .Build();
   auto started = runtime.Start();
   if (!started.has_value()) {
@@ -358,15 +358,15 @@ bool CheckLUringRequestStopFromForeignThread() {
          Check(!runtime.Started(), "luring Stop must join requested workers");
 }
 
-bool CheckLUringStartFailureCanRetry() {
+bool CheckUringStartFailureCanRetry() {
   auto reserved = BindLoopbackPort();
   if (!Check(reserved.has_value(), "failed to reserve luring retry test port")) {
     return false;
   }
 
-  auto runtime = Runtime::Builder<runtime::LUring>{net::Endpoint::Loopback(reserved->port())}
+  auto runtime = Runtime::Builder<runtime::Uring>{net::Endpoint::Loopback(reserved->port())}
                      .Workers(1)
-                     .OnConnection(HandleLUring)
+                     .OnConnection(HandleUring)
                      .Build();
   auto rejected = runtime.Start();
   if (!rejected.has_value() && IsEnvironmentSkip(rejected.error())) {
@@ -394,17 +394,17 @@ bool CheckLUringStartFailureCanRetry() {
 }  // namespace
 
 int main() {
-  bool ok = CheckReactorRuntime();
-  ok = CheckReactorRuntimeRunWithPreCancelledToken() && ok;
-  ok = CheckReactorRunStopsFromRuntimeRequest() && ok;
-  ok = CheckReactorRequestStopFromForeignThread() && ok;
-  ok = CheckReactorStartFailureCanRetry() && ok;
+  bool ok = CheckEpollRuntime();
+  ok = CheckEpollRuntimeRunWithPreCancelledToken() && ok;
+  ok = CheckEpollRunStopsFromRuntimeRequest() && ok;
+  ok = CheckEpollRequestStopFromForeignThread() && ok;
+  ok = CheckEpollStartFailureCanRetry() && ok;
 #ifdef ALYRN_ENABLE_URING
-  ok = CheckLUringRuntime() && ok;
-  ok = CheckLUringRuntimeRunWithPreCancelledToken() && ok;
-  ok = CheckLUringRunStopsFromRuntimeRequest() && ok;
-  ok = CheckLUringRequestStopFromForeignThread() && ok;
-  ok = CheckLUringStartFailureCanRetry() && ok;
+  ok = CheckUringRuntime() && ok;
+  ok = CheckUringRuntimeRunWithPreCancelledToken() && ok;
+  ok = CheckUringRunStopsFromRuntimeRequest() && ok;
+  ok = CheckUringRequestStopFromForeignThread() && ok;
+  ok = CheckUringStartFailureCanRetry() && ok;
 #endif
   return ok ? 0 : 1;
 }

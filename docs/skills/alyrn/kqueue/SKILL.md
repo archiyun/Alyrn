@@ -12,12 +12,12 @@ Read `docs/SUBSYSTEMS.md` and `docs/design/zh-CN/network/kqueue/` before editing
 Own BSD/Darwin kqueue mechanics: Loop dispatch, kevent registration,
 Channel event delivery, one-shot stream adapters, user-space timers, and
 master-slave worker bootstrap. This is a parallel adapter to the Linux epoll
-Reactor, not a preprocessor branch inside `reactor`.
+Epoll, not a preprocessor branch inside `epoll`.
 
 ## Non-goals
 
 - HTTP parsing, routing, retries, or gateway policy.
-- Implementing kqueue as `#ifdef` inside Reactor or sharing poller/Channel code.
+- Implementing kqueue as `#ifdef` inside Epoll or sharing poller/Channel code.
 - Using `SO_REUSEPORT` as the kqueue multi-worker path.
 - Scheduling coroutine `Work*` from a foreign thread.
 

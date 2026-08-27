@@ -2,7 +2,7 @@
 
 #include <cstdio>
 
-#include "alyrn/operation/detail/single_result_lifecycle.h"
+#include "alyrn/detail/operation/single_result_lifecycle.h"
 
 namespace {
 
@@ -15,7 +15,7 @@ bool Expect(bool condition, const char* message) {
 }
 
 bool TestRequiresResultThenReleaseThenContinuation() {
-  alyrn::operation::detail::SingleResultLifecycle lifecycle;
+  alyrn::detail::operation::SingleResultLifecycle lifecycle;
 
   bool ok = true;
   ok &= Expect(!lifecycle.TryAuthorizeRelease(),

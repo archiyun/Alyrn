@@ -8,7 +8,7 @@
 
 #include "alyrn/coro/frame_allocator.h"
 #include "alyrn/coro/work.h"
-#include "alyrn/utils/macros.h"
+#include "alyrn/detail/utils/macros.h"
 
 namespace alyrn::coro {
 

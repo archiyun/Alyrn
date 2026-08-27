@@ -5,21 +5,21 @@
 #include <deque>
 #include <optional>
 
-#include "alyrn/backend/accept_source.h"
-#include "alyrn/backend/detail/value_result_state.h"
-#include "alyrn/coro/task.h"
-#include "alyrn/kqueue/detail/channel.h"
-#include "alyrn/kqueue/detail/loop_shutdown.h"
+#include "alyrn/io/accept_source.h"
+#include "alyrn/detail/backend/value_result_state.h"
+#include "alyrn/task.h"
+#include "alyrn/detail/kqueue/channel.h"
+#include "alyrn/detail/kqueue/loop_shutdown.h"
 #include "alyrn/kqueue/loop.h"
 #include "alyrn/kqueue/stream.h"
 #include "alyrn/net/accept_source.h"
 #include "alyrn/net/endpoint.h"
-#include "alyrn/net/socket.h"
+#include "alyrn/detail/net/socket.h"
 #include "alyrn/net/tcp_options.h"
-#include "alyrn/operation/detail/completion_gate.h"
-#include "alyrn/operation/detail/scheduler_continuation.h"
+#include "alyrn/detail/operation/completion_gate.h"
+#include "alyrn/detail/operation/scheduler_continuation.h"
 #include "alyrn/result.h"
-#include "alyrn/utils/macros.h"
+#include "alyrn/detail/utils/macros.h"
 
 namespace alyrn::kqueue {
 
@@ -50,9 +50,9 @@ public:
 
   private:
     AcceptSource* source_;
-    operation::detail::SchedulerContinuation continuation_;
-    operation::detail::CompletionGate completion_gate_;
-    backend::detail::ValueResultState<Event> result_;
+    ::alyrn::detail::operation::SchedulerContinuation continuation_;
+    ::alyrn::detail::operation::CompletionGate completion_gate_;
+    ::alyrn::detail::backend::ValueResultState<Event> result_;
   };
 
   ~AcceptSource();
@@ -64,7 +64,7 @@ public:
   NextAwaiter Next() noexcept {
     return NextAwaiter(*this);
   }
-  coro::Task<Result<void>> Stop();
+  ::alyrn::Task<Result<void>> Stop();
 
 private:
   friend class Listener;
@@ -88,7 +88,7 @@ private:
   NextAwaiter* pending_next_{nullptr};
 };
 
-static_assert(backend::AsyncAcceptSource<AcceptSource>);
+static_assert(::alyrn::io::AsyncAcceptSource<AcceptSource>);
 
 struct ListenerOptions {
   bool reuse_addr{true};
@@ -116,10 +116,10 @@ public:
   Listener(Listener&& other) noexcept;
   Listener& operator=(Listener&& other) noexcept;
 
-  coro::Task<Result<Stream>> Accept();
+  ::alyrn::Task<Result<Stream>> Accept();
   [[nodiscard]]
   Result<AcceptSource> CreateAcceptSource(net::AcceptSourceOptions options = {}) noexcept;
-  coro::Task<Result<void>> Close();
+  ::alyrn::Task<Result<void>> Close();
 
   // Accept, Close, CreateAcceptSource, and destruction are loop-affine. The caller
   // must use this listener from its owning Loop thread; a foreign thread

@@ -23,13 +23,13 @@
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/spawn.h"
 #include "alyrn/coro/task.h"
-#include "alyrn/reactor/connector.h"
-#include "alyrn/reactor/loop.h"
+#include "alyrn/epoll/connector.h"
+#include "alyrn/epoll/loop.h"
 
 #if defined(ALYRN_ENABLE_URING)
-#include "alyrn/luring/connector.h"
-#include "alyrn/luring/loop.h"
-#include "alyrn/luring/options.h"
+#include "alyrn/uring/connector.h"
+#include "alyrn/uring/loop.h"
+#include "alyrn/uring/options.h"
 #endif
 
 namespace {
@@ -109,10 +109,10 @@ bool Expect(bool condition, std::string_view backend, std::string_view message) 
 }
 
 struct EpollHarness {
-  using Loop = alyrn::reactor::Loop;
-  using Connector = alyrn::reactor::Connector;
+  using Loop = alyrn::epoll::Loop;
+  using Connector = alyrn::epoll::Connector;
 
-  static constexpr std::string_view Name() noexcept { return "Reactor"; }
+  static constexpr std::string_view Name() noexcept { return "Epoll"; }
   static bool Init(Loop&) noexcept { return true; }
   static bool Skip() noexcept { return false; }
 
@@ -131,13 +131,13 @@ struct EpollHarness {
 
 #if defined(ALYRN_ENABLE_URING)
 struct UringHarness {
-  using Loop = alyrn::luring::Loop;
-  using Connector = alyrn::luring::Connector;
+  using Loop = alyrn::uring::Loop;
+  using Connector = alyrn::uring::Connector;
 
   static constexpr std::string_view Name() noexcept { return "io_uring"; }
 
   static bool Init(Loop& loop) noexcept {
-    alyrn::luring::Options options;
+    alyrn::uring::Options options;
     options.entries = 32;
     auto initialized = loop.Init(options);
     if (initialized.has_value()) {

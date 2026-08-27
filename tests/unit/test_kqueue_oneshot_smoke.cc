@@ -17,7 +17,7 @@
 #include <iostream>
 #include <thread>
 
-#include "alyrn/kqueue/detail/channel.h"
+#include "alyrn/detail/kqueue/channel.h"
 #include "alyrn/kqueue/loop.h"
 #include "alyrn/kqueue/options.h"
 #include "fake_kqueue.h"

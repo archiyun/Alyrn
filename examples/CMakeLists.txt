@@ -2,16 +2,16 @@
 #
 #   foundation/  → alyrn_foundation （base 等基础设施）
 #   net/         → alyrn_net        （地址 / socket 基础能力）
-#   reactor/     → alyrn_reactor    （epoll / Loop / Reactor stream）
+#   epoll/     → alyrn_epoll    （epoll / Loop / stream）
 #
 # 各子目录自带 CMakeLists.txt，只声明本层的 demo 目标。
 
 add_executable(simple_echo
-    simple_echo/reactor_main.cpp
+    simple_echo/epoll_main.cpp
 )
 target_link_libraries(simple_echo
     PRIVATE
-        alyrn_reactor
+        alyrn_epoll
 )
 
 # The container image starts this variant. It binds every IPv4 interface so
@@ -21,7 +21,7 @@ add_executable(simple_echo_container
 )
 target_link_libraries(simple_echo_container
     PRIVATE
-        alyrn_reactor
+        alyrn_epoll
 )
 
 if(ALYRN_ENABLE_URING)
@@ -36,8 +36,8 @@ endif()
 
 add_subdirectory(foundation)
 add_subdirectory(net)
-add_subdirectory(reactor)
+add_subdirectory(epoll)
 
 if(ALYRN_ENABLE_URING)
-    add_subdirectory(luring)
+    add_subdirectory(uring)
 endif()

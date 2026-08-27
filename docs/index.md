@@ -18,7 +18,7 @@
 - [AsyncStream 语义契约](design/zh-CN/network/async-stream-contract.md)
 - [AcceptSource 语义契约](design/zh-CN/network/accept-source-contract.md)
 - [Runtime Builder](design/zh-CN/network/runtime-builder.md)
-- [Reactor / epoll](design/zh-CN/network/reactor/index.md)
+- [Epoll](design/zh-CN/network/epoll/index.md)
 - [luring / io_uring](design/zh-CN/network/luring/index.md)
 - [kqueue](design/zh-CN/network/kqueue/index.md)
 - [Loop、Post 与主从移交](design/zh-CN/network/kqueue/loop-and-handoff.md)
@@ -40,4 +40,4 @@ kqueue 后端不进入 Linux 发行包。BSD/Darwin 上用
 
 - [2026-08-10 C++ 网络库基线](benchmark/network-libraries-20260810.md)
 - [网络库统一 HTTP 压测](benchmark/network-libraries.md)
-- [Alyrn luring 与 Reactor 独立对比](benchmark/luring-reactor-comparison-20260802.md)
+- [Alyrn luring 与 Epoll 独立对比](benchmark/luring-epoll-comparison-20260802.md)

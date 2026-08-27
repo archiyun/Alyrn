@@ -5,7 +5,7 @@ EXTENDS Naturals
 (***************************************************************************)
 (* Resource-level Close / Cancel / Release model.                         *)
 (*                                                                         *)
-(* This is deliberately independent of Reactor, io_uring, fd, CQE and     *)
+(* This is deliberately independent of Epoll, io_uring, fd, CQE and     *)
 (* concrete awaiter classes.  It specifies the common semantic rule:      *)
 (*                                                                         *)
 (*   A committed Close is a drain barrier.  Owner-local Close preparation   *)

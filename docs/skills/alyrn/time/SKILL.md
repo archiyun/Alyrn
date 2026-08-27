@@ -75,7 +75,7 @@ TimerId: invalid | issued -> stale after cancel/fire
 
 - `timer_tree_smoke_test`
 - `timer_index_smoke_test`
-- `reactor_loop_smoke_test` for scheduling semantic changes
+- `epoll_loop_smoke_test` for scheduling semantic changes
 - `rbtree_validator` for TimerTree hook/order changes
 - New tests for clock jumps, equal expiration ordering, stale TimerId, cancel
   during callback, and repeating timer drift

@@ -8,13 +8,13 @@
 #include <utility>
 #include <vector>
 
-#include "alyrn/base/check.h"
-#include "alyrn/base/current_thread.h"
+#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/base/current_thread.h"
 #include "alyrn/coro/frame_allocator.h"
-#include "alyrn/kqueue/detail/channel.h"
-#include "alyrn/kqueue/detail/poller.h"
-#include "alyrn/kqueue/detail/timer_queue.h"
-#include "alyrn/net/socket.h"
+#include "alyrn/detail/kqueue/channel.h"
+#include "alyrn/detail/kqueue/poller.h"
+#include "alyrn/detail/kqueue/timer_queue.h"
+#include "alyrn/detail/net/socket.h"
 #include "alyrn/time/timer_id.h"
 
 namespace alyrn::kqueue {
@@ -27,13 +27,10 @@ thread_local Loop* t_loop_in_this_thread = nullptr;
 }  // namespace
 
 Loop::Loop(std::pmr::memory_resource* frame_resource)
-    : Loop(time::TimerIndexKind::kRbTree, frame_resource) {}
-
-Loop::Loop(time::TimerIndexKind timers, std::pmr::memory_resource* frame_resource)
     : Scheduler(frame_resource),
-      thread_id_(base::CurrentThreadId()),
+      thread_id_(::alyrn::detail::CurrentThreadId()),
       poller_(std::make_unique<detail::Poller>()),
-      timer_queue_(std::make_unique<detail::TimerQueue>(*poller_, timers)) {
+      timer_queue_(std::make_unique<detail::TimerQueue>(*poller_)) {
   ALYRN_CHECK(t_loop_in_this_thread == nullptr,
                  "Loop: only one Loop may exist per thread");
   t_loop_in_this_thread = this;
@@ -84,22 +81,22 @@ void Loop::Run(std::stop_token token) {
   ALYRN_CHECK(IsInLoopThread(), "Loop::Run called from wrong thread");
   ALYRN_CHECK(!looping_, "Loop::Run called while already running");
 
-  backend::LoopState expected = backend::LoopState::kCreated;
-  if (!state_.compare_exchange_strong(expected, backend::LoopState::kRunning,
+  ::alyrn::detail::backend::LoopState expected = ::alyrn::detail::backend::LoopState::kCreated;
+  if (!state_.compare_exchange_strong(expected, ::alyrn::detail::backend::LoopState::kRunning,
                                       std::memory_order_acq_rel, std::memory_order_acquire)) {
-    ALYRN_CHECK(expected == backend::LoopState::kStopping,
+    ALYRN_CHECK(expected == ::alyrn::detail::backend::LoopState::kStopping,
                    "Loop::Run may only run a created or stopping loop");
   }
 
   looping_ = true;
   std::stop_callback on_stop{token, [this] { RequestStop(); }};
 
-  while (State() == backend::LoopState::kRunning) {
+  while (State() == ::alyrn::detail::backend::LoopState::kRunning) {
     DoPendingWork();
 
     /* Work run above may have requested stop. Re-checking here keeps a final
      * queued continuation from being stranded behind another blocking wait. */
-    if (State() != backend::LoopState::kRunning) {
+    if (State() != ::alyrn::detail::backend::LoopState::kRunning) {
       break;
     }
 
@@ -122,13 +119,13 @@ void Loop::Run(std::stop_token token) {
   RunPending();
   coro::CoroFramePoolResource::DrainCurrent();
   looping_ = false;
-  state_.store(backend::LoopState::kStopped, std::memory_order_release);
+  state_.store(::alyrn::detail::backend::LoopState::kStopped, std::memory_order_release);
 }
 
 void Loop::RequestStop() noexcept {
-  backend::LoopState observed = state_.load(std::memory_order_acquire);
-  while (observed == backend::LoopState::kCreated || observed == backend::LoopState::kRunning) {
-    if (state_.compare_exchange_weak(observed, backend::LoopState::kStopping,
+  ::alyrn::detail::backend::LoopState observed = state_.load(std::memory_order_acquire);
+  while (observed == ::alyrn::detail::backend::LoopState::kCreated || observed == ::alyrn::detail::backend::LoopState::kRunning) {
+    if (state_.compare_exchange_weak(observed, ::alyrn::detail::backend::LoopState::kStopping,
                                      std::memory_order_acq_rel, std::memory_order_acquire)) {
       Wakeup();
       return;
@@ -192,7 +189,7 @@ void Loop::UnregisterShutdownParticipant(LoopShutdownParticipant& participant) n
                  "Loop shutdown participant was not registered");
 }
 
-bool Loop::IsInLoopThread() const noexcept { return thread_id_ == base::CurrentThreadId(); }
+bool Loop::IsInLoopThread() const noexcept { return thread_id_ == ::alyrn::detail::CurrentThreadId(); }
 
 void Loop::DoPendingWork() {
   DrainPostedWork();

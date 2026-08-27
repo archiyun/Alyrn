@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-# The default final stage is a runnable Reactor echo-server demonstration.
+# The default final stage is a runnable epoll echo-server demonstration.
 # The separate `artifacts` target remains available for release packages.
 FROM ubuntu:24.04 AS liburing-build
 

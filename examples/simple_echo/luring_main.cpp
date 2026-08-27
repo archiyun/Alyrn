@@ -17,7 +17,7 @@
 #include <thread>
 #include <utility>
 
-#include "alyrn/luring.h"
+#include "alyrn/uring.h"
 #include "alyrn/net.h"
 #include "echo_app.h"
 #include "signal_stop.h"
@@ -42,7 +42,7 @@ int main() {
   }
   std::jthread signal_forwarder{simple_echo::ForwardTerminationSignals, &stop_source};
 
-  auto runtime = Runtime::Create<runtime::LUring>(
+  auto runtime = Runtime::Create<runtime::Uring>(
       net::Endpoint::Loopback(kPort),
       [](auto stream) { return simple_echo::HandleConnection(std::move(stream)); });
 
@@ -50,7 +50,7 @@ int main() {
   auto ran = runtime.Run(stop_source.get_token());
   (void)stop_source.request_stop();
   if (!ran.has_value()) {
-    std::println(stderr, "failed to run Luring runtime: {}", ran.error().message());
+    std::println(stderr, "failed to run Uring runtime: {}", ran.error().message());
     return 1;
   }
   return 0;

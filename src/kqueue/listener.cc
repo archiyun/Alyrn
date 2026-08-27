@@ -9,17 +9,17 @@
 #include <expected>
 #include <utility>
 
-#include "alyrn/backend/detail/value_result_state.h"
-#include "alyrn/base/check.h"
-#include "alyrn/kqueue/detail/loop_access.h"
-#include "alyrn/kqueue/detail/result_state.h"
+#include "alyrn/detail/backend/value_result_state.h"
+#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/kqueue/loop_access.h"
+#include "alyrn/detail/kqueue/result_state.h"
 #include "alyrn/kqueue/options.h"
 #include "alyrn/net/accept_source.h"
-#include "alyrn/net/socket.h"
+#include "alyrn/detail/net/socket.h"
 #include "alyrn/net/tcp_options.h"
-#include "alyrn/operation/detail/completion_gate.h"
-#include "alyrn/operation/detail/scheduler_continuation.h"
-#include "alyrn/operation/detail/single_result_lifecycle.h"
+#include "alyrn/detail/operation/completion_gate.h"
+#include "alyrn/detail/operation/scheduler_continuation.h"
+#include "alyrn/detail/operation/single_result_lifecycle.h"
 #include "alyrn/result.h"
 
 namespace alyrn::kqueue {
@@ -95,8 +95,8 @@ public:
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     listener_->RequireOwnerLoop();
-    if (listener_->loop_->State() == backend::LoopState::kStopping ||
-        listener_->loop_->State() == backend::LoopState::kStopped) {
+    if (listener_->loop_->State() == ::alyrn::detail::backend::LoopState::kStopping ||
+        listener_->loop_->State() == ::alyrn::detail::backend::LoopState::kStopped) {
       CompleteInline(std::unexpected(Errno(ECANCELED)));
       return false;
     }
@@ -127,9 +127,9 @@ private:
 
   void CompleteInline(Result<Stream> result) noexcept {
     result_.SetResult(std::move(result));
-    ALYRN_CHECK(lifecycle_.TryAuthorizeResult(), "Reactor accept result was authorized twice");
+    ALYRN_CHECK(lifecycle_.TryAuthorizeResult(), "Epoll accept result was authorized twice");
     ALYRN_CHECK(lifecycle_.TryAuthorizeRelease(),
-                   "Reactor accept release was not authorized after its result");
+                   "Epoll accept release was not authorized after its result");
   }
 
   [[nodiscard]] bool CompleteResult(Result<Stream> result) noexcept {
@@ -181,9 +181,9 @@ private:
   }
 
   Listener* listener_;
-  operation::detail::SchedulerContinuation continuation_;
-  operation::detail::SingleResultLifecycle lifecycle_;
-  backend::detail::ValueResultState<Stream> result_;
+  ::alyrn::detail::operation::SchedulerContinuation continuation_;
+  ::alyrn::detail::operation::SingleResultLifecycle lifecycle_;
+  ::alyrn::detail::backend::ValueResultState<Stream> result_;
 };
 
 bool AcceptSource::NextAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
@@ -204,8 +204,8 @@ bool AcceptSource::NextAwaiter::await_suspend(std::coroutine_handle<> continuati
   }
 
   if (source_->state_.State() == net::detail::AcceptSourceState::kIdle) {
-    if (source_->listener_->loop_->State() == backend::LoopState::kStopping ||
-        source_->listener_->loop_->State() == backend::LoopState::kStopped) {
+    if (source_->listener_->loop_->State() == ::alyrn::detail::backend::LoopState::kStopping ||
+        source_->listener_->loop_->State() == ::alyrn::detail::backend::LoopState::kStopped) {
       result_.SetError(Errno(ECANCELED));
       (void)(completion_gate_.TryComplete());
       return false;
@@ -637,8 +637,8 @@ coro::Task<Result<Stream>> Listener::Accept() {
 
 Result<AcceptSource> Listener::CreateAcceptSource(net::AcceptSourceOptions options) noexcept {
   RequireOwnerLoop();
-  if (loop_->State() == backend::LoopState::kStopping ||
-      loop_->State() == backend::LoopState::kStopped) {
+  if (loop_->State() == ::alyrn::detail::backend::LoopState::kStopping ||
+      loop_->State() == ::alyrn::detail::backend::LoopState::kStopped) {
     return std::unexpected(Errno(ECANCELED));
   }
   if (closed_) {

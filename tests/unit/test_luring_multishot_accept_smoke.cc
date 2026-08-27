@@ -20,11 +20,11 @@
 #include "alyrn/result.h"
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/spawn.h"
-#include "alyrn/luring/listener.h"
-#include "alyrn/luring/loop.h"
-#include "alyrn/luring/detail/loop_access.h"
-#include "alyrn/luring/options.h"
-#include "alyrn/luring/timer.h"
+#include "alyrn/uring/listener.h"
+#include "alyrn/uring/loop.h"
+#include "alyrn/detail/uring/loop_access.h"
+#include "alyrn/uring/options.h"
+#include "alyrn/uring/timer.h"
 #include "alyrn/net/accept_source.h"
 #include "alyrn/net/endpoint.h"
 
@@ -32,11 +32,11 @@ namespace {
 
 using alyrn::Error;
 using alyrn::Result;
-using alyrn::luring::AcceptSource;
-using alyrn::luring::detail::CompletionEvent;
-using alyrn::luring::Listener;
-using alyrn::luring::Loop;
-using alyrn::luring::Options;
+using alyrn::uring::AcceptSource;
+using alyrn::uring::detail::CompletionEvent;
+using alyrn::uring::Listener;
+using alyrn::uring::Loop;
+using alyrn::uring::Options;
 using alyrn::net::Endpoint;
 using alyrn::net::detail::AcceptSourceState;
 using alyrn::net::detail::AcceptSourceStateMachine;
@@ -181,13 +181,13 @@ LoopInitStatus InitLoop(Loop& loop) {
 template <typename Predicate>
 bool PumpUntil(Loop& loop, Predicate&& predicate, int max_iterations = 64) {
   for (int i = 0; i < max_iterations && !predicate(); ++i) {
-    auto completed = alyrn::luring::detail::LoopAccess::WaitCompletions(loop);
+    auto completed = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
     if (!completed.has_value()) {
       std::cout << "FAIL: waiting for CQE failed: "
                 << completed.error().message() << '\n';
       return false;
     }
-    alyrn::luring::detail::LoopAccess::RunReady(loop);
+    alyrn::uring::detail::LoopAccess::RunReady(loop);
   }
   return predicate();
 }
@@ -556,7 +556,7 @@ alyrn::coro::DetachedTask FillQueueThenStop(
 
   // Leave time for a burst to place one event in the bounded queue and a
   // later F_MORE CQE to hit the full-queue path.
-  auto delay = co_await alyrn::luring::SleepFor(
+  auto delay = co_await alyrn::uring::SleepFor(
       *loop, std::chrono::milliseconds(50));
   if (!delay.has_value()) {
     observation->error = delay.error();
@@ -620,7 +620,7 @@ alyrn::coro::DetachedTask PauseThenResume(
   // The test sends the second connection while this coroutine is asleep.
   // With event_capacity == 1 that event fills the source queue and starts
   // the native cancel/terminal-CQE convergence path.
-  auto delay = co_await alyrn::luring::SleepFor(
+  auto delay = co_await alyrn::uring::SleepFor(
       *loop, std::chrono::milliseconds(50));
   if (!delay.has_value()) {
     observation->error = delay.error();
@@ -682,7 +682,7 @@ bool CheckMultishotAccept() {
       return false;
   }
 
-  alyrn::luring::ListenOptions options;
+  alyrn::uring::ListenOptions options;
   options.tcp_options.no_delay = true;
   options.tcp_options.keep_alive = true;
   auto listener_result = Listener::Create(&loop, LoopbackAddress(0), options);
@@ -711,7 +711,7 @@ bool CheckMultishotAccept() {
       Consume(&source, &observation));
 
   // Start the consumer and submit the multishot request.
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   auto address = listener.LocalAddress();
   if (!address.has_value()) {
@@ -786,7 +786,7 @@ bool CheckStopCancelsActiveSource() {
   CancelObservation observation;
   alyrn::coro::SpawnDetach(
       loop, ConsumeOneThenStop(&source, &observation));
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   auto address = listener.LocalAddress();
   if (!address.has_value()) {
@@ -851,11 +851,11 @@ bool CheckListenerCloseCancelsActiveSource() {
   CloseObservation observation;
   alyrn::coro::SpawnDetach(
       loop, WaitForSourceEnd(&source, &observation));
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   alyrn::coro::SpawnDetach(
       loop, CloseListener(&listener, &observation));
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   if (!PumpUntil(loop, [&] {
         return observation.unsupported || observation.error.has_value() ||
@@ -907,7 +907,7 @@ bool CheckQueueBackpressure() {
   BackpressureObservation observation;
   alyrn::coro::SpawnDetach(
       loop, FillQueueThenStop(&source, &loop, &observation));
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   auto address = listener.LocalAddress();
   if (!address.has_value()) {
@@ -1005,7 +1005,7 @@ bool RunQueuePauseThenRearmScenario() {
 
   PauseResumeObservation observation;
   alyrn::coro::SpawnDetach(loop, PauseThenResume(&source, &loop, &observation));
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
 
   auto address = listener.LocalAddress();

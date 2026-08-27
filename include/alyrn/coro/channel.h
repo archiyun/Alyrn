@@ -10,12 +10,12 @@
 #include <utility>
 #include <vector>
 
-#include "alyrn/base/check.h"
+#include "alyrn/detail/base/check.h"
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/work.h"
-#include "alyrn/ds/intrusive_queue.h"
+#include "alyrn/detail/ds/intrusive_queue.h"
 #include "alyrn/result.h"
-#include "alyrn/utils/macros.h"
+#include "alyrn/detail/utils/macros.h"
 
 namespace alyrn::coro {
 
@@ -119,7 +119,7 @@ public:
   [[nodiscard]]
   bool Closed() const noexcept { return closed_; }
 
-  class SendAwaiter : public ds::QueueNode<SendAwaiter, SendTag> {
+  class SendAwaiter : public ::alyrn::detail::ds::QueueNode<SendAwaiter, SendTag> {
   public:
     ALYRN_DELETE_COPY_MOVE(SendAwaiter);
 
@@ -185,7 +185,7 @@ public:
     bool waiting_{false};
   };
 
-  class ReceiveAwaiter : public ds::QueueNode<ReceiveAwaiter, ReceiveTag> {
+  class ReceiveAwaiter : public ::alyrn::detail::ds::QueueNode<ReceiveAwaiter, ReceiveTag> {
   public:
     ALYRN_DELETE_COPY_MOVE(ReceiveAwaiter);
 
@@ -295,8 +295,8 @@ private:
   }
 
   Scheduler* scheduler_;
-  ds::IntrusiveQueue<SendAwaiter, SendTag> senders_;
-  ds::IntrusiveQueue<ReceiveAwaiter, ReceiveTag> receivers_;
+  ::alyrn::detail::ds::IntrusiveQueue<SendAwaiter, SendTag> senders_;
+  ::alyrn::detail::ds::IntrusiveQueue<ReceiveAwaiter, ReceiveTag> receivers_;
   std::vector<std::optional<T>> buffer_;
   std::size_t capacity_;
   std::size_t head_{0};

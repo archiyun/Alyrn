@@ -147,31 +147,31 @@ target_compile_features(alyrn_net INTERFACE cxx_std_23)
 # spellings, while remaining independent of concrete backend adapters.
 target_link_libraries(alyrn_io_contract INTERFACE alyrn_net)
 
-# alyrn_reactor —— Linux epoll readiness backend. kqueue remains a parallel
+# alyrn_epoll —— Linux epoll readiness backend. kqueue remains a parallel
 # backend rather than a preprocessor branch inside this implementation.
 if(ALYRN_HAS_EPOLL)
-    add_library(alyrn_reactor STATIC
-        src/reactor/channel.cc
-        src/reactor/epoll_poller.cc
-        src/reactor/loop.cc
-        src/reactor/poller.cc
-        src/reactor/connector.cc
-        src/reactor/listener.cc
-        src/reactor/recv_source.cc
-        src/reactor/stream.cc
-        src/reactor/worker.cc
-        src/reactor/worker_group.cc
-        src/reactor/runtime.cc
-        src/reactor/timer_queue.cc
+    add_library(alyrn_epoll STATIC
+        src/epoll/channel.cc
+        src/epoll/epoll_poller.cc
+        src/epoll/loop.cc
+        src/epoll/poller.cc
+        src/epoll/connector.cc
+        src/epoll/listener.cc
+        src/epoll/recv_source.cc
+        src/epoll/stream.cc
+        src/epoll/worker.cc
+        src/epoll/worker_group.cc
+        src/epoll/runtime.cc
+        src/epoll/timer_queue.cc
     )
 
-    target_include_directories(alyrn_reactor
+    target_include_directories(alyrn_epoll
         PUBLIC
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
             $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
 
-    target_link_libraries(alyrn_reactor
+    target_link_libraries(alyrn_epoll
         PUBLIC
             alyrn_net
             alyrn_coro
@@ -179,11 +179,12 @@ if(ALYRN_HAS_EPOLL)
             Threads::Threads
     )
 
-    target_compile_features(alyrn_reactor PUBLIC cxx_std_23)
+    target_compile_features(alyrn_epoll PUBLIC cxx_std_23)
 endif()
 
 # alyrn_kqueue —— BSD/Darwin kqueue readiness backend. It is parallel to
-# the Linux epoll Reactor rather than a conditional implementation of Reactor.
+# the Linux epoll backend rather than a conditional implementation shared with
+# the other readiness backends.
 # The initial source files intentionally remain separate while their kqueue
 # event semantics are validated; only proven backend-neutral contracts may be
 # extracted later.
@@ -227,21 +228,21 @@ if(ALYRN_ENABLE_KQUEUE)
     target_compile_features(alyrn_coro_kqueue INTERFACE cxx_std_23)
 endif()
 
-# alyrn_luring —— io_uring proactor 网络模块。它与 alyrn_reactor 并列，
+# alyrn_luring —— io_uring proactor 网络模块。它与 alyrn_epoll 并列，
 # 共同解释 alyrn_io 的协程可观察 I/O 契约。
 if(ALYRN_ENABLE_URING)
     add_library(alyrn_luring STATIC
-        src/luring/connector.cc
-        src/luring/listener.cc
-        src/luring/recv_source.cc
-        src/luring/loop.cc
-        src/luring/ring.cc
-        src/luring/runtime.cc
-        src/luring/server.cc
-        src/luring/timer_queue.cc
-        src/luring/stream.cc
-        src/luring/worker.cc
-        src/luring/worker_group.cc
+        src/uring/connector.cc
+        src/uring/listener.cc
+        src/uring/recv_source.cc
+        src/uring/loop.cc
+        src/uring/ring.cc
+        src/uring/runtime.cc
+        src/uring/server.cc
+        src/uring/timer_queue.cc
+        src/uring/stream.cc
+        src/uring/worker.cc
+        src/uring/worker_group.cc
     )
 
     target_include_directories(alyrn_luring
@@ -262,15 +263,15 @@ if(ALYRN_ENABLE_URING)
 
 endif()
 
-# alyrn_coro_reactor —— 把协程绑定到 alyrn_reactor 后端。
+# alyrn_coro_epoll —— 把协程绑定到 alyrn_epoll 后端。
 if(ALYRN_HAS_EPOLL)
-    add_library(alyrn_coro_reactor INTERFACE)
-    target_include_directories(alyrn_coro_reactor INTERFACE
+    add_library(alyrn_coro_epoll INTERFACE)
+    target_include_directories(alyrn_coro_epoll INTERFACE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
-    target_link_libraries(alyrn_coro_reactor INTERFACE alyrn_reactor)
-    target_compile_features(alyrn_coro_reactor INTERFACE cxx_std_23)
+    target_link_libraries(alyrn_coro_epoll INTERFACE alyrn_epoll)
+    target_compile_features(alyrn_coro_epoll INTERFACE cxx_std_23)
 endif()
 
 # alyrn_coro_luring —— 把协程绑定到 io_uring proactor 后端。
@@ -333,8 +334,8 @@ set(ALYRN_INSTALL_TARGETS
 
 if(ALYRN_HAS_EPOLL)
     list(APPEND ALYRN_INSTALL_TARGETS
-        alyrn_reactor
-        alyrn_coro_reactor)
+        alyrn_epoll
+        alyrn_coro_epoll)
 endif()
 
 if(ALYRN_ENABLE_KQUEUE)
@@ -356,8 +357,76 @@ install(TARGETS ${ALYRN_INSTALL_TARGETS}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
-install(DIRECTORY include/
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+# The source tree contains implementation support headers under
+# include/alyrn/detail.  They are installed only as dependencies of inline
+# public adapters; callers should include the stable manifest below instead
+# of depending on implementation module names such as base, ds, memory, or
+# backend.  Keeping this list explicit prevents a new internal header from
+# silently becoming part of the package interface.
+set(ALYRN_PUBLIC_HEADERS
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/alyrn.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/coro.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/io.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/net.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/result.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/runtime.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/spawn.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/task.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/time.h)
+
+if(ALYRN_HAS_EPOLL)
+    list(APPEND ALYRN_PUBLIC_HEADERS
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/epoll.h)
+endif()
+
+if(ALYRN_ENABLE_KQUEUE)
+    list(APPEND ALYRN_PUBLIC_HEADERS
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/kqueue.h)
+endif()
+
+if(ALYRN_ENABLE_URING)
+    list(APPEND ALYRN_PUBLIC_HEADERS
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/uring.h)
+endif()
+
+install(FILES ${ALYRN_PUBLIC_HEADERS}
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/alyrn)
+
+set(ALYRN_PUBLIC_DIRS coro io net time)
+if(ALYRN_HAS_EPOLL)
+    list(APPEND ALYRN_PUBLIC_DIRS epoll)
+endif()
+if(ALYRN_ENABLE_KQUEUE)
+    list(APPEND ALYRN_PUBLIC_DIRS kqueue)
+endif()
+if(ALYRN_ENABLE_URING)
+    list(APPEND ALYRN_PUBLIC_DIRS uring)
+endif()
+
+foreach(ALYRN_PUBLIC_DIR IN LISTS ALYRN_PUBLIC_DIRS)
+    install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/${ALYRN_PUBLIC_DIR}/
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/alyrn/${ALYRN_PUBLIC_DIR}
+        FILES_MATCHING PATTERN "*.h")
+endforeach()
+
+# These headers are implementation dependencies of the header-defined
+# adapters.  They intentionally have no stable namespace contract.
+set(ALYRN_DETAIL_DIRS backend base coro ds memory net operation time utils)
+if(ALYRN_HAS_EPOLL)
+    list(APPEND ALYRN_DETAIL_DIRS epoll)
+endif()
+if(ALYRN_ENABLE_KQUEUE)
+    list(APPEND ALYRN_DETAIL_DIRS kqueue)
+endif()
+if(ALYRN_ENABLE_URING)
+    list(APPEND ALYRN_DETAIL_DIRS uring)
+endif()
+
+foreach(ALYRN_DETAIL_DIR IN LISTS ALYRN_DETAIL_DIRS)
+    install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/detail/${ALYRN_DETAIL_DIR}/
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/alyrn/detail/${ALYRN_DETAIL_DIR}
+        FILES_MATCHING PATTERN "*.h")
+endforeach()
 
 install(EXPORT AlyrnTargets
     FILE AlyrnTargets.cmake
@@ -384,7 +453,7 @@ set(CPACK_PACKAGE_NAME "alyrn")
 set(CPACK_PACKAGE_VENDOR "Alyrn contributors")
 set(CPACK_PACKAGE_CONTACT "archiyun/Alyrn maintainers")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
-    "C++23 coroutine networking runtime with Reactor and io_uring backends")
+    "C++23 coroutine networking runtime with Epoll and io_uring backends")
 set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
 set(CPACK_RESOURCE_FILE_LICENSE ${CMAKE_CURRENT_SOURCE_DIR}/LICENSE)
 set(CPACK_GENERATOR "TGZ;DEB")

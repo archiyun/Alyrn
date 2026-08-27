@@ -16,33 +16,33 @@
 #include <system_error>
 #include <utility>
 
-#include "alyrn/backend/accept_source.h"
+#include "alyrn/detail/backend/accept_source.h"
 #include "alyrn/result.h"
 #include "alyrn/coro/awaitable.h"
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/spawn.h"
 #include "alyrn/net/endpoint.h"
-#include "alyrn/reactor/listener.h"
-#include "alyrn/reactor/loop.h"
+#include "alyrn/epoll/listener.h"
+#include "alyrn/epoll/loop.h"
 
 #if defined(ALYRN_ENABLE_URING)
-#include "alyrn/luring/listener.h"
-#include "alyrn/luring/loop.h"
-#include "alyrn/luring/options.h"
+#include "alyrn/uring/listener.h"
+#include "alyrn/uring/loop.h"
+#include "alyrn/uring/options.h"
 #endif
 
 namespace {
 
 using VoidResult = alyrn::Result<void>;
 
-static_assert(alyrn::backend::AsyncAcceptSource<alyrn::reactor::AcceptSource>);
+static_assert(::alyrn::detail::backend::AsyncAcceptSource<alyrn::epoll::AcceptSource>);
 static_assert(alyrn::coro::Awaiter<
-              decltype(std::declval<alyrn::reactor::AcceptSource&>().Next())>);
+              decltype(std::declval<alyrn::epoll::AcceptSource&>().Next())>);
 
 #if defined(ALYRN_ENABLE_URING)
-static_assert(alyrn::backend::AsyncAcceptSource<alyrn::luring::AcceptSource>);
+static_assert(::alyrn::detail::backend::AsyncAcceptSource<alyrn::uring::AcceptSource>);
 static_assert(alyrn::coro::Awaiter<
-              decltype(std::declval<alyrn::luring::AcceptSource&>().Next())>);
+              decltype(std::declval<alyrn::uring::AcceptSource&>().Next())>);
 #endif
 
 bool Expect(bool condition, std::string_view backend, std::string_view message) {
@@ -54,11 +54,11 @@ bool Expect(bool condition, std::string_view backend, std::string_view message) 
 }
 
 struct EpollHarness {
-  using Loop = alyrn::reactor::Loop;
-  using Listener = alyrn::reactor::Listener;
-  using Source = alyrn::reactor::AcceptSource;
+  using Loop = alyrn::epoll::Loop;
+  using Listener = alyrn::epoll::Listener;
+  using Source = alyrn::epoll::AcceptSource;
 
-  static constexpr std::string_view Name() noexcept { return "Reactor"; }
+  static constexpr std::string_view Name() noexcept { return "Epoll"; }
   static bool Init(Loop&) noexcept { return true; }
   static bool Skip() noexcept { return false; }
 
@@ -77,14 +77,14 @@ struct EpollHarness {
 
 #if defined(ALYRN_ENABLE_URING)
 struct UringHarness {
-  using Loop = alyrn::luring::Loop;
-  using Listener = alyrn::luring::Listener;
-  using Source = alyrn::luring::AcceptSource;
+  using Loop = alyrn::uring::Loop;
+  using Listener = alyrn::uring::Listener;
+  using Source = alyrn::uring::AcceptSource;
 
   static constexpr std::string_view Name() noexcept { return "io_uring"; }
 
   static bool Init(Loop& loop) noexcept {
-    alyrn::luring::Options options;
+    alyrn::uring::Options options;
     options.entries = 32;
     auto initialized = loop.Init(options);
     if (initialized.has_value()) {

@@ -13,8 +13,8 @@ Alyrn 在相互独立的网络后端之上，提供统一、直观且高性能�
 
 | 后端 | 宿主 | 分发模型 | 多 worker 拓扑 |
 |---|---|---|---|
-| `reactor` | Linux | `epoll` readiness | 独立 listener + `SO_REUSEPORT` |
-| `luring` | Linux | `io_uring` completion | thread-per-ring Proactor |
+| `epoll` | Linux | `epoll` readiness | 独立 listener + `SO_REUSEPORT` |
+| `uring` | Linux | `io_uring` completion | thread-per-ring Proactor |
 | `kqueue` | FreeBSD / NetBSD / OpenBSD / Darwin | `kqueue` readiness | 主从：单 acceptor，用户态移交 fd |
 
 Alyrn 使用[生命周期精化协程 I/O（LRCI）](docs/design/zh-CN/network/lifecycle-refined-coroutine-io.md)：readiness 与 CQE 等后端事件不会直接等同于协程完成，而是被精化到一套共享逻辑生命周期，分别确定结果何时 ready、continuation 何时恢复、资源何时释放。
@@ -26,9 +26,9 @@ Alyrn 使用[生命周期精化协程 I/O（LRCI）](docs/design/zh-CN/network/l
   每个 Worker 独占自己的线程、事件循环、连接与 I/O 操作。操作在所属执行上下文中完成，协程 continuation 也在相同上下文中恢复，同时明确约束 buffer 生命周期、取消行为与异步关闭流程。协程帧不跨 loop 迁移。
 
 * 🚀 **基础功能与高级扩展**
-  Alyrn 提供异步 accept、connect、read、write、close 与 timer。Reactor 可选择 LT/ET；kqueue 当前以 one-shot readiness 作为 stream 模式；luring 还提供 multishot receive、zero-copy send 等扩展。HTTP 与网关策略已迁移至 [CoroGateway](https://github.com/archiyun/CoroGateway)。
+  Alyrn 提供异步 accept、connect、read、write、close 与 timer。Epoll 可选择 LT/ET；kqueue 当前以 one-shot readiness 作为 stream 模式；uring 还提供 multishot receive、zero-copy send 等扩展。HTTP 与网关策略已迁移至 [CoroGateway](https://github.com/archiyun/CoroGateway)。
 
-Linux 是 Reactor 与可选 io_uring 后端的 CI 验证宿主。kqueue 已作为第三个 adapter 在 BSD 与 Darwin 上实现；Linux 可用内存中的 kevent shim 编译 loop/poller 测试，这不能替代原生 `kevent` 宿主。IOCP 尚未实现。
+Linux 是 Epoll 与可选 io_uring 后端的 CI 验证宿主。kqueue 已作为第三个 adapter 在 BSD 与 Darwin 上实现；Linux 可用内存中的 kevent shim 编译 loop/poller 测试，这不能替代原生 `kevent` 宿主。IOCP 尚未实现。
 
 ## 快速开始
 
@@ -40,22 +40,22 @@ Linux 是 Reactor 与可选 io_uring 后端的 CI 验证宿主。kqueue 已作�
 #include "alyrn/coro.h"
 #include "alyrn/io.h"
 #include "alyrn/net.h"
-#include "alyrn/reactor.h"  // 默认 Linux Reactor backend
+#include "alyrn/epoll.h"  // 默认 Linux Epoll backend
 ```
 
 请按实际使用的模块包含头文件。
 
 | 后端 | 伞头文件 | Runtime tag | CMake 选项 |
 |---|---|---|---|
-| Reactor / epoll | `alyrn/reactor.h` | `runtime::Reactor` | Linux 默认 |
-| luring / io_uring | `alyrn/luring.h` | `runtime::LUring` | `-DALYRN_ENABLE_URING=ON` |
+| Epoll | `alyrn/epoll.h` | `runtime::Epoll` | Linux 默认 |
+| uring / io_uring | `alyrn/uring.h` | `runtime::Uring` | `-DALYRN_ENABLE_URING=ON` |
 | kqueue | `alyrn/kqueue.h` | `runtime::Kqueue` | `-DALYRN_ENABLE_KQUEUE=ON` |
 
 kqueue 伞头文件在非 BSD 宿主上会直接 `#error`。
 
 ### 2. 后端无关的连接处理协程
 
-以 echo server 为例。该协程只依赖 `AsyncStream`，可同时服务 `reactor::Stream`、`luring::Stream` 与 `kqueue::Stream`；Linux 可运行版本见 [`examples/simple_echo`](examples/simple_echo)。
+以 echo server 为例。该协程只依赖 `AsyncStream`，可同时服务 `epoll::Stream`、`uring::Stream` 与 `kqueue::Stream`；Linux 可运行版本见 [`examples/simple_echo`](examples/simple_echo)。
 
 ```cpp
 #include <array>
@@ -69,7 +69,7 @@ kqueue 伞头文件在非 BSD 宿主上会直接 `#error`。
 namespace cp = alyrn;
 
 template <cp::io::AsyncStream Stream>
-auto EchoSession(Stream stream) -> cp::coro::Task<cp::Result<void>> {
+auto EchoSession(Stream stream) -> cp::Task<cp::Result<void>> {
   std::array<std::byte, 4096> buffer{};
   cp::Result<void> session_result{};
 
@@ -103,7 +103,7 @@ auto EchoSession(Stream stream) -> cp::coro::Task<cp::Result<void>> {
 }
 
 template <cp::io::AsyncStream Stream>
-auto HandleConnection(Stream stream) -> cp::coro::DetachedTask {
+auto HandleConnection(Stream stream) -> cp::DetachedTask {
   auto result = co_await EchoSession(std::move(stream));
   if (!result.has_value()) {
     std::println(stderr, "session failed: {}", result.error().message());
@@ -121,7 +121,7 @@ int main() {
   constexpr int kPort = 19090;
   std::stop_source stop_source;
 
-  auto runtime = cp::Runtime::Create<cp::runtime::Reactor>(
+  auto runtime = cp::Runtime::Create<cp::runtime::Epoll>(
       cp::net::Endpoint::Loopback(kPort),
       [](auto stream) { return HandleConnection(std::move(stream)); });
 
@@ -131,14 +131,14 @@ int main() {
 }
 ```
 
-要使用 io_uring，只需在启用 `ALYRN_ENABLE_URING=ON` 的构建中包含 `alyrn/luring.h`，并将 tag 改为 `cp::runtime::LUring`。在 kqueue 宿主上包含 `alyrn/kqueue.h`，使用 `cp::runtime::Kqueue`。handler 中的 `stream` 仍保持对应后端的静态类型，不会引入虚调用。
+要使用 io_uring，只需在启用 `ALYRN_ENABLE_URING=ON` 的构建中包含 `alyrn/uring.h`，并将 tag 改为 `cp::runtime::Uring`。在 kqueue 宿主上包含 `alyrn/kqueue.h`，使用 `cp::runtime::Kqueue`。handler 中的 `stream` 仍保持对应后端的静态类型，不会引入虚调用。
 
 ### 4. 需要时显式配置
 
 `Create` 使用保守默认值（一个 worker）。需要控制 worker 数量时，使用同一个 Runtime 的 backend-specific Builder：
 
 ```cpp
-auto runtime = cp::Runtime::Builder<cp::runtime::Reactor>{
+auto runtime = cp::Runtime::Builder<cp::runtime::Epoll>{
                    cp::net::Endpoint::Loopback(19090)}
                    .AutoWorkers()
                    .OnConnection([](auto stream) {
@@ -149,15 +149,15 @@ auto runtime = cp::Runtime::Builder<cp::runtime::Reactor>{
 
 Backend tag 仍在编译期选择实现；ring 深度、provided buffer、zero-copy 等改变后端资源或生命周期语义的选项不伪装成通用 Runtime 配置。
 
-`Workers(n)` 始终表示 *n 条线程*。其背后的拓扑由后端决定：Reactor 在 `n > 1` 时用 `SO_REUSEPORT` 共享监听端口；kqueue 只在 worker 0 上绑定 listener，再把已接受的描述符 Post 到其他 loop；luring 保持每个 worker 一个 ring。
+`Workers(n)` 始终表示 *n 条线程*。其背后的拓扑由后端决定：Epoll 在 `n > 1` 时用 `SO_REUSEPORT` 共享监听端口；kqueue 只在 worker 0 上绑定 listener，再把已接受的描述符 Post 到其他 loop；uring 保持每个 worker 一个 ring。
 
-### 5. 使用 luring 原生能力
+### 5. 使用 uring 原生能力
 
-`Runtime` 只负责默认 TCP server 的 worker 生命周期，不是通用的 io_uring 配置接口。它可以选择安全的默认策略（例如带 fallback 的 multishot accept），但应用若要**显式**控制 ring 深度、SQPOLL、provided-buffer ring、multishot receive 或 zero-copy send，应直接组合 `luring::Loop`、`Options` 与对应的 listener、stream 或 source：
+`Runtime` 只负责默认 TCP server 的 worker 生命周期，不是通用的 io_uring 配置接口。它可以选择安全的默认策略（例如带 fallback 的 multishot accept），但应用若要**显式**控制 ring 深度、SQPOLL、provided-buffer ring、multishot receive 或 zero-copy send，应直接组合 `uring::Loop`、`Options` 与对应的 listener、stream 或 source：
 
 ```cpp
-alyrn::luring::Loop loop;
-alyrn::luring::Options options;
+alyrn::uring::Loop loop;
+alyrn::uring::Options options;
 options.entries = 8192;
 options.shared_buffer_capacity = 256;  // RecvSource 的 provided buffers
 
@@ -165,11 +165,11 @@ auto initialized = loop.Init(options);
 // 在 loop 所属线程上创建 listener/source，SpawnDetach(...) 后调用 loop.Run(...)
 ```
 
-这条原生路径让应用明确承担每个 ring、buffer lease 与操作生命周期；参考 [`examples/luring`](examples/luring) 及 luring 的公开头文件。不要把这些能力增加为 `Runtime` 的跨后端开关。
+这条原生路径让应用明确承担每个 ring、buffer lease 与操作生命周期；参考 [`examples/uring`](examples/uring) 及 uring 的公开头文件。不要把这些能力增加为 `Runtime` 的跨后端开关。
 
 ## 运行容器示例
 
-发布的容器运行一个基于 Alyrn Reactor 后端的 TCP echo server。通过 Docker
+发布的容器运行一个基于 Alyrn Epoll 后端的 TCP echo server。通过 Docker
 映射端口后可直接从宿主访问：
 
 ```bash
@@ -188,7 +188,7 @@ printf 'hello\n' | nc 127.0.0.1 9090
 
 ## 构建
 
-构建默认的 Linux Reactor 后端：
+构建默认的 Linux Epoll 后端：
 
 ```bash
 cmake -B build \
@@ -280,10 +280,10 @@ ITERATIONS=1000000 build-bench/benchmarks/coro_channel_microbenchmark
 ### 环境要求
 
 * CMake 3.20+；支持 C++23 coroutine 的编译器。
-* Reactor 使用 `epoll`，是 Linux 默认后端，不依赖额外网络库。
-* luring 需要 Linux 与 `liburing >= 2.6`，并建议使用 Linux 5.19 或更新内核。
+* Epoll 使用 `epoll`，是 Linux 默认后端，不依赖额外网络库。
+* uring 需要 Linux 与 `liburing >= 2.6`，并建议使用 Linux 5.19 或更新内核。
 * kqueue 需要带原生 `kqueue(2)` 的 BSD 或 Darwin 宿主。
-* `net` 与后端无关契约只使用可移植的 POSIX socket 设施。不要把 BSD readiness 做成 epoll Reactor 内的条件分支。
+* `net` 与后端无关契约只使用可移植的 POSIX socket 设施。不要把 BSD readiness 做成 epoll backend 内的条件分支。
 
 可安装的 Debian/tarball 产物与 Docker 发布构建见[打包与安装](docs/packaging.md)。
 
@@ -301,13 +301,13 @@ ITERATIONS=1000000 build-bench/benchmarks/coro_channel_microbenchmark
         +------+------+------+
         |             |      |
         v             v      v
-   Reactor/epoll   luring   kqueue
-   alyrn::reactor  ::luring  ::kqueue
+   Epoll/epoll   uring   kqueue
+   alyrn::epoll  ::uring  ::kqueue
 ```
 
 三个后端不共享事件循环，内部状态机也不需要完全一致。它们只需要遵守相同的业务可观察异步 I/O 契约。依赖边界以 [`docs/SUBSYSTEMS.md`](docs/SUBSYSTEMS.md) 为准。
 
-Reactor 多 worker（`Workers(n>1)`）在同一端口上使用独立 listener：
+Epoll 多 worker（`Workers(n>1)`）在同一端口上使用独立 listener：
 
 ```text
 WorkerGroup
@@ -346,7 +346,7 @@ WorkerGroup
 
 Alyrn 提供了可复现的 `wrk` 性能测试，用于比较：
 
-* Reactor 与 io_uring 后端
+* Epoll 与 io_uring 后端
 * raw liburing
 * standalone Asio
 * Monoio
@@ -370,7 +370,7 @@ Alyrn 提供了可复现的 `wrk` 性能测试，用于比较：
 * **[AsyncStream 语义契约](docs/design/zh-CN/network/async-stream-contract.md)：** read、write、close、取消与 buffer 生命周期语义。
 * **[数据结构](docs/design/zh-CN/datastructure/index.md)：** C++ 现代风格的侵入式数据结构，侵入式红黑树，侵入式链表，MPSC 队列的设计与实现，以及它们在项目各处的应用。四叉堆是通过 `time::TimerIndex` 注入的一等 timer-index 适配器。
 * **[性能测试](docs/benchmark/network-libraries-20260810.md)：** 最新的当前源码 C++ 对照基线；完整统一网络库报告、测试方法、原始结果与优化记录见 [`docs/benchmark`](docs/benchmark/)。
-* **[示例](examples/)：** Linux 上的 Reactor 与 io_uring 使用示例。
+* **[示例](examples/)：** Linux 上的 Epoll 与 io_uring 使用示例。
 * **[测试](tests/)：** 协程、网络、生命周期与后端行为验证。
 
 ## 当前状态

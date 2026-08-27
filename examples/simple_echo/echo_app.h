@@ -7,18 +7,15 @@
 #include <span>
 #include <utility>
 
-#include "alyrn/coro.h"
+#include "alyrn/alyrn.h"
 #include "alyrn/io.h"
 
 namespace simple_echo {
 
 using alyrn::Result;
-using namespace alyrn::base;
-using namespace alyrn::io;
-using namespace alyrn::coro;
 
-template <AsyncStream Stream>
-auto EchoSession(Stream stream) -> Task<Result<void>> {
+template <alyrn::io::AsyncStream Stream>
+auto EchoSession(Stream stream) -> alyrn::Task<Result<void>> {
   std::array<std::byte, 4096> buffer{};
   Result<void> session_result{};
 
@@ -51,8 +48,8 @@ auto EchoSession(Stream stream) -> Task<Result<void>> {
   co_return session_result;
 }
 
-template <AsyncStream Stream>
-auto HandleConnection(Stream stream) -> DetachedTask {
+template <alyrn::io::AsyncStream Stream>
+auto HandleConnection(Stream stream) -> alyrn::DetachedTask {
   auto result = co_await EchoSession(std::move(stream));
   if (!result.has_value()) {
     std::println(stderr, "session failed: {}", result.error().message());

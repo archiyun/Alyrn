@@ -69,9 +69,9 @@ nav:
           - 形式模型:
                 - 阅读指南: design/zh-CN/network/formal/index.md
     - 后端:
-          - Reactor / epoll:
-                - 概览: design/zh-CN/network/reactor/index.md
-                - Loop、readiness 与取消/关闭: design/zh-CN/network/reactor/loop-and-cancellation.md
+          - Epoll:
+                - 概览: design/zh-CN/network/epoll/index.md
+                - Loop、readiness 与取消/关闭: design/zh-CN/network/epoll/loop-and-cancellation.md
           - luring / io_uring:
                 - 概览: design/zh-CN/network/luring/index.md
                 - operation 生命周期: design/zh-CN/network/luring/operation-lifecycle.md
@@ -96,6 +96,6 @@ nav:
           - 基准:
                 - 2026-08-10 C++ 网络库基线: benchmark/network-libraries-20260810.md
                 - 网络库统一 HTTP 压测: benchmark/network-libraries.md
-                - luring 与 Reactor 对比: benchmark/luring-reactor-comparison-20260802.md
+                - luring 与 Epoll 对比: benchmark/luring-epoll-comparison-20260802.md
           - 发布记录:
                 - v0.1.0: releases/v0.1.0.md

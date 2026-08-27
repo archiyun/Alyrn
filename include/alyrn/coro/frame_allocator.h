@@ -18,8 +18,8 @@
 #include <new>
 #include <thread>
 
-#include "alyrn/base/check.h"
-#include "alyrn/utils/macros.h"
+#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/utils/macros.h"
 
 namespace alyrn::coro {
 namespace detail {

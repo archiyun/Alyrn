@@ -28,8 +28,8 @@
 #include <memory>
 #include <vector>
 
-#include "alyrn/reactor/detail/channel.h"
-#include "alyrn/reactor/loop.h"
+#include "alyrn/detail/epoll/channel.h"
+#include "alyrn/epoll/loop.h"
 
 namespace {
 
@@ -45,7 +45,7 @@ void NoopRead(void*) noexcept {}
 struct ReadAndQuitContext {
     int fd;
     bool* called;
-    alyrn::reactor::Loop* loop;
+    alyrn::epoll::Loop* loop;
 };
 
 void DrainReadAndQuit(void* raw) noexcept {
@@ -64,7 +64,7 @@ struct ReadManyContext {
     int fd;
     int* count;
     int total;
-    alyrn::reactor::Loop* loop;
+    alyrn::epoll::Loop* loop;
 };
 
 void DrainReadMany(void* raw) noexcept {
@@ -83,7 +83,7 @@ void DrainReadMany(void* raw) noexcept {
 bool TestConstruction() {
     // Loop creates the default poller, which is detail::EPollPoller on Linux.
     // Reaching this point means epoll_create1 succeeded.
-    alyrn::reactor::Loop loop;
+    alyrn::epoll::Loop loop;
     return true;
 }
 
@@ -91,7 +91,7 @@ bool TestConstruction() {
 // Test 2: Channel registration issues epoll_ctl ADD.
 // ──────────────────────────────────────────────
 bool TestChannelRegistration() {
-    alyrn::reactor::Loop loop;
+    alyrn::epoll::Loop loop;
 
     std::array<int, 2> fds{};
     if (!Expect(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds.data()) == 0,
@@ -99,7 +99,7 @@ bool TestChannelRegistration() {
         return false;
     }
 
-    alyrn::reactor::detail::Channel ch(&loop, fds[0]);
+    alyrn::epoll::detail::Channel ch(&loop, fds[0]);
     ch.SetReadCallback(NoopRead, nullptr);
     ch.EnableReading();
 
@@ -117,7 +117,7 @@ bool TestChannelRegistration() {
 // Test 3: Channel removal erases the poller map entry.
 // ──────────────────────────────────────────────
 bool TestChannelRemoval() {
-    alyrn::reactor::Loop loop;
+    alyrn::epoll::Loop loop;
 
     std::array<int, 2> fds{};
     if (!Expect(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds.data()) == 0,
@@ -125,7 +125,7 @@ bool TestChannelRemoval() {
         return false;
     }
 
-    alyrn::reactor::detail::Channel ch(&loop, fds[0]);
+    alyrn::epoll::detail::Channel ch(&loop, fds[0]);
     ch.SetReadCallback(NoopRead, nullptr);
     ch.EnableReading();
 
@@ -144,7 +144,7 @@ bool TestChannelRemoval() {
 // Test 4: epoll_wait detects a readable event.
 // ──────────────────────────────────────────────
 bool TestPollDetectsReadEvent() {
-    alyrn::reactor::Loop loop;
+    alyrn::epoll::Loop loop;
 
     std::array<int, 2> fds{};
     if (!Expect(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds.data()) == 0,
@@ -153,7 +153,7 @@ bool TestPollDetectsReadEvent() {
     }
 
     bool read_called = false;
-    alyrn::reactor::detail::Channel ch(&loop, fds[0]);
+    alyrn::epoll::detail::Channel ch(&loop, fds[0]);
     ReadAndQuitContext context{fds[0], &read_called, &loop};
     ch.SetReadCallback(DrainReadAndQuit, &context);
     ch.EnableReading();
@@ -179,7 +179,7 @@ bool TestPollDetectsReadEvent() {
 // Test 5: DisableAll keeps the map entry but suppresses delivery.
 // ──────────────────────────────────────────────
 bool TestDisableAllKeepsChannelInMap() {
-    alyrn::reactor::Loop loop;
+    alyrn::epoll::Loop loop;
 
     std::array<int, 2> fds{};
     if (!Expect(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds.data()) == 0,
@@ -187,7 +187,7 @@ bool TestDisableAllKeepsChannelInMap() {
         return false;
     }
 
-    alyrn::reactor::detail::Channel ch(&loop, fds[0]);
+    alyrn::epoll::detail::Channel ch(&loop, fds[0]);
     ch.SetReadCallback(NoopRead, nullptr);
     ch.EnableReading();
 
@@ -218,7 +218,7 @@ bool TestDisableAllKeepsChannelInMap() {
 // Test 6: Re-enabling after DisableAll registers the channel again.
 // ──────────────────────────────────────────────
 bool TestReenableAfterDisable() {
-    alyrn::reactor::Loop loop;
+    alyrn::epoll::Loop loop;
 
     std::array<int, 2> fds{};
     if (!Expect(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds.data()) == 0,
@@ -227,7 +227,7 @@ bool TestReenableAfterDisable() {
     }
 
     bool read_called = false;
-    alyrn::reactor::detail::Channel ch(&loop, fds[0]);
+    alyrn::epoll::detail::Channel ch(&loop, fds[0]);
     ReadAndQuitContext context{fds[0], &read_called, &loop};
     ch.SetReadCallback(DrainReadAndQuit, &context);
 
@@ -250,7 +250,7 @@ bool TestReenableAfterDisable() {
 // Test 7: The events_ vector grows when many channels fire together.
 // ──────────────────────────────────────────────
 bool TestEventsVectorResizes() {
-    alyrn::reactor::Loop loop;
+    alyrn::epoll::Loop loop;
 
     // Register 20 channels so the initial event list must grow.
     constexpr int N = 20;
@@ -265,12 +265,12 @@ bool TestEventsVectorResizes() {
     }
 
     int trigger_count = 0;
-    std::vector<std::unique_ptr<alyrn::reactor::detail::Channel>> channels;
+    std::vector<std::unique_ptr<alyrn::epoll::detail::Channel>> channels;
     channels.reserve(N);
     std::array<ReadManyContext, N> contexts{};
 
     for (int i = 0; i < N; ++i) {
-        auto ch = std::make_unique<alyrn::reactor::detail::Channel>(&loop, pairs[i][0]);
+        auto ch = std::make_unique<alyrn::epoll::detail::Channel>(&loop, pairs[i][0]);
         // Consume the byte to avoid repeated delivery in level-triggered mode.
         contexts[i] = ReadManyContext{pairs[i][0], &trigger_count, N, &loop};
         ch->SetReadCallback(DrainReadMany, &contexts[i]);

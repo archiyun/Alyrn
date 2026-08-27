@@ -3,7 +3,7 @@
 kqueue 是 Alyrn 的 BSD/Darwin readiness 后端。它以非阻塞 socket syscall 与
 `kqueue(2)` / `kevent(2)` 为基础，不提交长期存在的 kernel I/O request。
 
-它是第三条**平行 adapter**，不是 `reactor` 里的 `#ifdef`。Linux epoll Reactor 与
+它是第三条**平行 adapter**，不是 `epoll` 里的 `#ifdef`。Linux epoll 与
 kqueue 可以共享真正后端无关的契约（`io`、`net`、`coro`），但不能共享 poller、
 Channel 或 worker bootstrap 实现。
 
@@ -18,7 +18,7 @@ Channel 或 worker bootstrap 实现。
 | listener / accept | `Listener` | 已实现 | 多 worker 时只有 acceptor 持有 listener |
 | connector | `Connector` | 已实现 | |
 | 持续 recv | `RecvSource` | 已实现 | readiness 驱动的多事件 source |
-| Runtime 组合根 | `Runtime::Builder<runtime::Kqueue>` | 已实现 | 与 Reactor/luring 同一套启停 interface |
+| Runtime 组合根 | `Runtime::Builder<runtime::Kqueue>` | 已实现 | 与 Epoll/luring 同一套启停 interface |
 | 多 worker | `WorkerGroup`（`kqueue/detail`） | 已实现 | 主从：单 listener + fd 移交 |
 | LT / ET stream | `TriggerMode` | 枚举已公开 | stream 当前只支持 `kOneShot` |
 
@@ -55,7 +55,7 @@ Runtime::Builder<runtime::Kqueue>
   `Loop` 已存在；acceptor 再 `Release()` 描述符，经 `Post` 轮询交给目标
   loop，在**属主线程**上重建 `Stream`。
 
-这与 Reactor（独立 listener + `SO_REUSEPORT`）和 luring（每个 worker 一个 ring）
+这与 Epoll（独立 listener + `SO_REUSEPORT`）和 luring（每个 worker 一个 ring）
 都不同。kqueue 默认强制 `reuse_port = false`。细节见
 [Loop、Post 与主从移交](loop-and-handoff.md)。
 

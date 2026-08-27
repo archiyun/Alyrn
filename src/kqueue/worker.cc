@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "alyrn/kqueue/detail/worker.h"
+#include "alyrn/detail/kqueue/worker.h"
 
 #include <cerrno>
 #include <expected>
@@ -7,7 +7,7 @@
 #include <stop_token>
 #include <utility>
 
-#include "alyrn/base/check.h"
+#include "alyrn/detail/base/check.h"
 #include "alyrn/result.h"
 #include "alyrn/coro/frame_allocator.h"
 #include "alyrn/coro/spawn.h"

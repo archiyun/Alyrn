@@ -2,7 +2,7 @@
 
 ## SleepFor
 
-`luring::SleepFor(loop, delay)` 或 connector 的 `SleepFor(delay)` 会把当前协程挂到
+`uring::SleepFor(loop, delay)` 或 connector 的 `SleepFor(delay)` 会把当前协程挂到
 owner loop 的 timer queue，时间到期后在同一 loop 上恢复。它不是一个网络 fd，也不会把
 timer 事件暴露为普通 stream completion。底层 `SleepFor(loop, delay)` 会返回
 `Result<void>`；connector 的便捷包装是 `Task<void>`，适合不需要向调用方传播 timer

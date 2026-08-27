@@ -3,11 +3,11 @@
 #include <iostream>
 #include <vector>
 
-#include "alyrn/ds/intrusive_rbtree.h"
+#include "alyrn/detail/ds/intrusive_rbtree.h"
 
 namespace {
 
-struct Item : alyrn::ds::RBTreeNode<Item> {
+struct Item : alyrn::detail::ds::RBTreeNode<Item> {
   int key{0};
   int id{0};
 };
@@ -17,7 +17,7 @@ bool ItemLess(const Item* a, const Item* b) {
   return a->id < b->id;
 }
 
-using ItemTree = alyrn::ds::IntrusiveTree<Item, ItemLess>;
+using ItemTree = alyrn::detail::ds::IntrusiveTree<Item, ItemLess>;
 
 bool Expect(bool condition, const char* message) {
   if (!condition) {

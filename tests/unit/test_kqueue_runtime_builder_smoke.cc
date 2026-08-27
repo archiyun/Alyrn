@@ -18,7 +18,7 @@
 #include "alyrn/result.h"
 #include "alyrn/kqueue/runtime.h"
 #include "alyrn/net/endpoint.h"
-#include "alyrn/net/socket.h"
+#include "alyrn/detail/net/socket.h"
 
 using namespace alyrn;
 

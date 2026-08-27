@@ -59,7 +59,7 @@ Suspend ==
                  completionCount,
                  submitCount>>
 
-(* Reactor 的 nonblocking fast path：提交和完成在同一个抽象步内发生。 *)
+(* Epoll 的 nonblocking fast path：提交和完成在同一个抽象步内发生。 *)
 ImmediateComplete ==
   /\ coroutineState = "Running"
   /\ resourceState = "Open"

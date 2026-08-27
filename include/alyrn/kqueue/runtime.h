@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <functional>
 
-#include "alyrn/coro/detached_task.h"
+#include "alyrn/spawn.h"
 #include "alyrn/net/endpoint.h"
 #include "alyrn/kqueue/stream.h"
 #include "alyrn/runtime.h"
@@ -18,7 +18,7 @@ class Runtime::Builder<runtime::Kqueue> {
 public:
   // Runtime transfers each accepted stream to the handler by value. The
   // detached handler coroutine owns that stream until it finishes.
-  using ConnectionHandler = std::function<coro::DetachedTask(kqueue::Stream)>;
+  using ConnectionHandler = std::function<::alyrn::DetachedTask(kqueue::Stream)>;
 
   explicit Builder(net::Endpoint listen_addr) noexcept;
 

@@ -18,11 +18,11 @@ ROUNDS=${ROUNDS:-3}
 TIMEOUT=${TIMEOUT:-5s}
 WORKERS=${WORKERS:-4}
 ENTRIES=${ENTRIES:-8192}
-REACTOR_TRIGGER_MODE=${REACTOR_TRIGGER_MODE:-et}
+EPOLL_TRIGGER_MODE=${EPOLL_TRIGGER_MODE:-et}
 PORT_BASE=${PORT_BASE:-19090}
-TARGETS=${TARGETS:-"reactor luring raw-liburing asio monoio compio libaio libuv libevent libev"}
+TARGETS=${TARGETS:-"epoll luring raw-liburing asio monoio compio libaio libuv libevent libev"}
 
-REACTOR_BIN=${REACTOR_BIN:-"$BUILD_DIR/examples/net/demo_bench_http_reactor"}
+EPOLL_BIN=${EPOLL_BIN:-"$BUILD_DIR/examples/net/demo_bench_http_epoll"}
 LURING_BIN=${LURING_BIN:-"$BUILD_DIR/examples/luring/demo_bench_http_luring"}
 RAW_LIBURING_BIN=${RAW_LIBURING_BIN:-"$BUILD_DIR/examples/luring/demo_bench_http_liburing"}
 ASIO_BIN=${ASIO_BIN:-"$BUILD_DIR/examples/net/demo_bench_http_asio"}
@@ -71,7 +71,7 @@ trap cleanup EXIT INT TERM
 
 binary_for() {
   case "$1" in
-    reactor) printf '%s\n' "$REACTOR_BIN" ;;
+    epoll) printf '%s\n' "$EPOLL_BIN" ;;
     luring) printf '%s\n' "$LURING_BIN" ;;
     raw-liburing) printf '%s\n' "$RAW_LIBURING_BIN" ;;
     asio) printf '%s\n' "$ASIO_BIN" ;;
@@ -93,9 +93,9 @@ start_target() {
   local log="$OUTDIR/${target}.log"
 
   case "$target" in
-    reactor)
-      PORT="$port" REACTOR_WORKERS="$WORKERS" \
-        REACTOR_TRIGGER_MODE="$REACTOR_TRIGGER_MODE" \
+    epoll)
+      PORT="$port" EPOLL_WORKERS="$WORKERS" \
+        EPOLL_TRIGGER_MODE="$EPOLL_TRIGGER_MODE" \
         "$binary" >"$log" 2>&1 & ;;
     luring)
       # Default demo_bench_http_luring enables multishot accept, provided-buffer

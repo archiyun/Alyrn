@@ -9,7 +9,7 @@ Alyrn supports two installation layers:
    Debian `.deb` and Arch `PKGBUILD` packages. These are not interchangeable:
    a `.deb` is for Debian-family systems, not Arch or Fedora.
 
-The Reactor backend does not require liburing. The io_uring backend requires
+The Epoll backend does not require liburing. The io_uring backend requires
 liburing >= 2.6 and a kernel with the capabilities used by the selected
 runtime path. The kqueue backend is not part of the Linux install artifacts
 below; build it from source on a BSD or Darwin host as in section 8.
@@ -55,12 +55,12 @@ sudo zypper install gcc-c++ cmake ninja pkg-config liburing-devel
 sudo apk add build-base cmake ninja pkgconf liburing-dev
 ```
 
-For a Reactor-only build, omit the liburing package and pass
+For an epoll-only build, omit the liburing package and pass
 `-DALYRN_ENABLE_URING=OFF` in the configure command below.
 
 Some stable distributions ship an older liburing development package. If
 `pkg-config --modversion liburing` reports a version below 2.6, either build
-liburing 2.9 or newer from the upstream project, or use the Reactor-only
+liburing 2.9 or newer from the upstream project, or use the epoll-only
 backend. The CMake configure step checks this requirement explicitly.
 
 To build the required liburing version into `/usr/local`:
@@ -106,7 +106,7 @@ cmake --build "build-alyrn-${VERSION}"
 sudo cmake --install "build-alyrn-${VERSION}"
 ```
 
-For a Reactor-only install, use the same command with
+For an epoll-only install, use the same command with
 `-DALYRN_ENABLE_URING=OFF` and without the liburing dependency.
 
 To install without root privileges, use a user prefix:
@@ -135,7 +135,7 @@ The install tree contains files similar to:
 ```text
 /usr/local/include/alyrn/...
 /usr/local/lib/libalyrn_net.a
-/usr/local/lib/libalyrn_reactor.a
+/usr/local/lib/libalyrn_epoll.a
 /usr/local/lib/cmake/Alyrn/AlyrnConfig.cmake
 ```
 
@@ -145,7 +145,7 @@ A consuming application's `CMakeLists.txt` can use the exported targets:
 find_package(Alyrn CONFIG REQUIRED)
 
 add_executable(my_app main.cc)
-target_link_libraries(my_app PRIVATE Alyrn::alyrn_reactor)
+target_link_libraries(my_app PRIVATE Alyrn::alyrn_epoll)
 ```
 
 For io_uring:
@@ -218,7 +218,7 @@ and clean removal matter.
 
 ## 6. Runnable Docker image
 
-The default final Docker stage is a runnable Linux Reactor echo-server
+The default final Docker stage is a runnable Linux Epoll echo-server
 demonstration. It listens on every IPv4 interface in the container so its port
 can be published to the host:
 
@@ -235,7 +235,7 @@ printf 'hello\n' | nc 127.0.0.1 9090
 
 Release tags publish this image as `ghcr.io/archiyun/alyrn:<tag>` and
 `ghcr.io/archiyun/alyrn:latest`. The container demonstrates Alyrn's
-Reactor backend; Alyrn remains a library and application images should use
+Epoll backend; Alyrn remains a library and application images should use
 their own executable as the final image entrypoint.
 
 ## 7. Docker release artifacts
@@ -251,13 +251,13 @@ docker buildx build \
   .
 ```
 
-To build a Reactor-only artifact:
+To build an epoll-only artifact:
 
 ```bash
 docker buildx build \
   --build-arg ALYRN_ENABLE_URING=OFF \
   --target artifacts \
-  --output=type=local,dest=dist-reactor \
+  --output=type=local,dest=dist-epoll \
   .
 ```
 

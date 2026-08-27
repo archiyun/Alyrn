@@ -3,7 +3,7 @@
 EXTENDS Naturals, Sequences, FiniteSets
 
 (***************************************************************************)
-(* Reactor / io_uring 到并发 AsyncStream operation 的有界 trace refinement。 *)
+(* Epoll / io_uring 到并发 AsyncStream operation 的有界 trace refinement。 *)
 (*                                                                         *)
 (* 一个 backend 在 Init 时固定。它可以执行 readiness 或 SQE/CQE 等内部    *)
 (* stuttering 步；只有 Submit、Complete/Cancel、Resume 和 Close 写入       *)
@@ -13,7 +13,7 @@ EXTENDS Naturals, Sequences, FiniteSets
 (* operation owner、Close 和可观察 trace 协议，并不要求物理状态相同。      *)
 (***************************************************************************)
 
-Backends == {"Reactor", "LUring"}
+Backends == {"Epoll", "LUring"}
 Operations == {"Read", "Write"}
 Coroutines == {"Reader", "Writer"}
 Owner(op) == IF op = "Read" THEN "Reader" ELSE "Writer"
@@ -31,7 +31,7 @@ VARIABLES backend,
           submitCount,
           completionCount,
           resumeCount,
-          reactorState,
+          epollState,
           uringState,
           trace
 
@@ -42,7 +42,7 @@ vars == <<backend,
           submitCount,
           completionCount,
           resumeCount,
-          reactorState,
+          epollState,
           uringState,
           trace>>
 
@@ -62,46 +62,46 @@ Init ==
   /\ submitCount = [op \in Operations |-> 0]
   /\ completionCount = [op \in Operations |-> 0]
   /\ resumeCount = [op \in Operations |-> 0]
-  /\ reactorState = [op \in Operations |-> "Idle"]
+  /\ epollState = [op \in Operations |-> "Idle"]
   /\ uringState = [op \in Operations |-> "Idle"]
   /\ trace = <<>>
 
 (***************************************************************************)
-(* Reactor physical interpretation.                                        *)
+(* Epoll physical interpretation.                                        *)
 (***************************************************************************)
 
 SubmitPending(op) ==
-  /\ backend = "Reactor"
+  /\ backend = "Epoll"
   /\ op \in Operations
   /\ resourceState = "Open"
   /\ operationState[op] = "None"
   /\ coroutineState[Owner(op)] = "Running"
-  /\ reactorState[op] = "Idle"
+  /\ epollState[op] = "Idle"
   /\ operationState' = [operationState EXCEPT ![op] = "Pending"]
   /\ coroutineState' = [coroutineState EXCEPT ![Owner(op)] = "Waiting"]
   /\ submitCount' = [submitCount EXCEPT ![op] = @ + 1]
-  /\ reactorState' = [reactorState EXCEPT ![op] = "ChannelWaiting"]
+  /\ epollState' = [epollState EXCEPT ![op] = "ChannelWaiting"]
   /\ trace' = Append(trace, <<op, "Submit">>)
   /\ UNCHANGED <<backend, resourceState, completionCount, resumeCount, uringState>>
 
 ImmediateComplete(op) ==
-  /\ backend = "Reactor"
+  /\ backend = "Epoll"
   /\ op \in Operations
   /\ resourceState = "Open"
   /\ operationState[op] = "None"
   /\ coroutineState[Owner(op)] = "Running"
-  /\ reactorState[op] = "Idle"
+  /\ epollState[op] = "Idle"
   /\ operationState' = [operationState EXCEPT ![op] = "Completed"]
   /\ submitCount' = [submitCount EXCEPT ![op] = @ + 1]
   /\ completionCount' = [completionCount EXCEPT ![op] = @ + 1]
   /\ trace' = Append(Append(trace, <<op, "Submit">>), <<op, "Complete">>)
-  /\ UNCHANGED <<backend, resourceState, coroutineState, resumeCount, reactorState, uringState>>
+  /\ UNCHANGED <<backend, resourceState, coroutineState, resumeCount, epollState, uringState>>
 
 Ready(op) ==
-  /\ backend = "Reactor"
+  /\ backend = "Epoll"
   /\ op \in Operations
-  /\ reactorState[op] = "ChannelWaiting"
-  /\ reactorState' = [reactorState EXCEPT ![op] = "Ready"]
+  /\ epollState[op] = "ChannelWaiting"
+  /\ epollState' = [epollState EXCEPT ![op] = "Ready"]
   /\ UNCHANGED <<backend,
                  resourceState,
                  operationState,
@@ -113,28 +113,28 @@ Ready(op) ==
                  trace>>
 
 Complete(op) ==
-  /\ backend = "Reactor"
+  /\ backend = "Epoll"
   /\ op \in Operations
   /\ resourceState \in {"Open", "Closing"}
   /\ operationState[op] = "Pending"
   /\ coroutineState[Owner(op)] = "Waiting"
-  /\ reactorState[op] = "Ready"
+  /\ epollState[op] = "Ready"
   /\ operationState' = [operationState EXCEPT ![op] = "Completed"]
   /\ completionCount' = [completionCount EXCEPT ![op] = @ + 1]
-  /\ reactorState' = [reactorState EXCEPT ![op] = "Idle"]
+  /\ epollState' = [epollState EXCEPT ![op] = "Idle"]
   /\ trace' = Append(trace, <<op, "Complete">>)
   /\ UNCHANGED <<backend, resourceState, coroutineState, submitCount, resumeCount, uringState>>
 
 Cancel(op) ==
-  /\ backend = "Reactor"
+  /\ backend = "Epoll"
   /\ op \in Operations
   /\ resourceState = "Closing"
   /\ operationState[op] = "Pending"
   /\ coroutineState[Owner(op)] = "Waiting"
-  /\ reactorState[op] \in {"ChannelWaiting", "Ready"}
+  /\ epollState[op] \in {"ChannelWaiting", "Ready"}
   /\ operationState' = [operationState EXCEPT ![op] = "Cancelled"]
   /\ completionCount' = [completionCount EXCEPT ![op] = @ + 1]
-  /\ reactorState' = [reactorState EXCEPT ![op] = "Idle"]
+  /\ epollState' = [epollState EXCEPT ![op] = "Idle"]
   /\ trace' = Append(trace, <<op, "Cancel">>)
   /\ UNCHANGED <<backend, resourceState, coroutineState, submitCount, resumeCount, uringState>>
 
@@ -154,7 +154,7 @@ UringPrepareSQE(op) ==
   /\ submitCount' = [submitCount EXCEPT ![op] = @ + 1]
   /\ uringState' = [uringState EXCEPT ![op] = "SQEQueued"]
   /\ trace' = Append(trace, <<op, "Submit">>)
-  /\ UNCHANGED <<backend, resourceState, completionCount, resumeCount, reactorState>>
+  /\ UNCHANGED <<backend, resourceState, completionCount, resumeCount, epollState>>
 
 UringImmediateComplete(op) ==
   /\ backend = "LUring"
@@ -167,7 +167,7 @@ UringImmediateComplete(op) ==
   /\ submitCount' = [submitCount EXCEPT ![op] = @ + 1]
   /\ completionCount' = [completionCount EXCEPT ![op] = @ + 1]
   /\ trace' = Append(Append(trace, <<op, "Submit">>), <<op, "Complete">>)
-  /\ UNCHANGED <<backend, resourceState, coroutineState, resumeCount, reactorState, uringState>>
+  /\ UNCHANGED <<backend, resourceState, coroutineState, resumeCount, epollState, uringState>>
 
 UringSubmit(op) ==
   /\ backend = "LUring"
@@ -181,7 +181,7 @@ UringSubmit(op) ==
                  submitCount,
                  completionCount,
                  resumeCount,
-                 reactorState,
+                 epollState,
                  trace>>
 
 UringCQE(op) ==
@@ -196,7 +196,7 @@ UringCQE(op) ==
                  submitCount,
                  completionCount,
                  resumeCount,
-                 reactorState,
+                 epollState,
                  trace>>
 
 UringComplete(op) ==
@@ -210,7 +210,7 @@ UringComplete(op) ==
   /\ completionCount' = [completionCount EXCEPT ![op] = @ + 1]
   /\ uringState' = [uringState EXCEPT ![op] = "Idle"]
   /\ trace' = Append(trace, <<op, "Complete">>)
-  /\ UNCHANGED <<backend, resourceState, coroutineState, submitCount, resumeCount, reactorState>>
+  /\ UNCHANGED <<backend, resourceState, coroutineState, submitCount, resumeCount, epollState>>
 
 UringCancel(op) ==
   /\ backend = "LUring"
@@ -223,7 +223,7 @@ UringCancel(op) ==
   /\ completionCount' = [completionCount EXCEPT ![op] = @ + 1]
   /\ uringState' = [uringState EXCEPT ![op] = "Idle"]
   /\ trace' = Append(trace, <<op, "Cancel">>)
-  /\ UNCHANGED <<backend, resourceState, coroutineState, submitCount, resumeCount, reactorState>>
+  /\ UNCHANGED <<backend, resourceState, coroutineState, submitCount, resumeCount, epollState>>
 
 (***************************************************************************)
 (* Shared logical transitions.                                             *)
@@ -242,7 +242,7 @@ Resume(op) ==
                  operationState,
                  submitCount,
                  completionCount,
-                 reactorState,
+                 epollState,
                  uringState>>
 
 Close ==
@@ -255,7 +255,7 @@ Close ==
                  submitCount,
                  completionCount,
                  resumeCount,
-                 reactorState,
+                 epollState,
                  uringState>>
 
 FinalizeClose ==
@@ -268,7 +268,7 @@ FinalizeClose ==
                  submitCount,
                  completionCount,
                  resumeCount,
-                 reactorState,
+                 epollState,
                  uringState,
                  trace>>
 
@@ -298,19 +298,19 @@ TypeOK ==
   /\ submitCount \in [Operations -> Nat]
   /\ completionCount \in [Operations -> Nat]
   /\ resumeCount \in [Operations -> Nat]
-  /\ reactorState \in [Operations -> States]
+  /\ epollState \in [Operations -> States]
   /\ uringState \in [Operations -> UringStates]
   /\ trace \in Seq(TraceEvents)
 
 BackendStateShape ==
-  /\ backend = "Reactor" => \A op \in Operations: uringState[op] = "Idle"
-  /\ backend = "LUring" => \A op \in Operations: reactorState[op] = "Idle"
+  /\ backend = "Epoll" => \A op \in Operations: uringState[op] = "Idle"
+  /\ backend = "LUring" => \A op \in Operations: epollState[op] = "Idle"
 
 RefinementInvariant ==
-  /\ backend = "Reactor"
+  /\ backend = "Epoll"
        => \A op \in Operations:
             operationState[op] = "Pending"
-              <=> reactorState[op] \in {"ChannelWaiting", "Ready"}
+              <=> epollState[op] \in {"ChannelWaiting", "Ready"}
   /\ backend = "LUring"
        => \A op \in Operations:
             operationState[op] = "Pending"

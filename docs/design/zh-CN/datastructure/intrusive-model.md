@@ -47,11 +47,11 @@
 ```cpp
 struct PeerTag {};
 
-struct Connection : public alyrn::ds::ListNode<Connection, PeerTag> {
+struct Connection : public alyrn::detail::ds::ListNode<Connection, PeerTag> {
     int fd{-1};
 };
 
-alyrn::ds::IntrusiveList<Connection, PeerTag> connections;
+alyrn::detail::ds::IntrusiveList<Connection, PeerTag> connections;
 Connection connection;
 
 connections.PushBack(&connection);
@@ -66,8 +66,8 @@ struct PeerTag {};
 struct RequestTag {};
 
 // 多继承区分.
-struct Connection : public alyrn::ds::ListNode<Connection, PeerTag>,
-                    public alyrn::ds::ListNode<Connection, RequestTag> {};
+struct Connection : public alyrn::detail::ds::ListNode<Connection, PeerTag>,
+                    public alyrn::detail::ds::ListNode<Connection, RequestTag> {};
 ```
 
 注意对象本身存储业务字段和容器链接字段(继承风格需要基础 base hook), 容器只负责描述如何组织数据.
@@ -137,11 +137,11 @@ struct GlobalTag {};
 struct PeerTag {};
 
 struct Item
-    : public alyrn::ds::ListNode<Item, GlobalTag>,
-     public alyrn::ds::ListNode<Item, PeerTag> {};
+    : public alyrn::detail::ds::ListNode<Item, GlobalTag>,
+     public alyrn::detail::ds::ListNode<Item, PeerTag> {};
 
-alyrn::ds::IntrusiveList<Item, GlobalTag> global_list;
-alyrn::ds::IntrusiveList<Item, PeerTag> peer_list;
+alyrn::detail::ds::IntrusiveList<Item, GlobalTag> global_list;
+alyrn::detail::ds::IntrusiveList<Item, PeerTag> peer_list;
 ```
 
 **Tag 只用于区分不同的 hook**
@@ -150,7 +150,7 @@ alyrn::ds::IntrusiveList<Item, PeerTag> peer_list;
 一个hook 在同一时刻最多属于一个容器.
 
 比如一个没有用Tag区分
-list_a ,list_b 的类型都是 `alyrn::ds::IntrusiveList<Item>;`.
+list_a ,list_b 的类型都是 `alyrn::detail::ds::IntrusiveList<Item>;`.
 ```cpp
 Item item;
 list_a.PushBack(&item);
@@ -226,7 +226,7 @@ if (item.InList()) {
 ## 11. 相关实现与测试
 
 实现位于 :
-  - include/alyrn/ds/
+  - include/alyrn/detail/ds/
   - include/alyrn/time/
 
   验证测试位于：

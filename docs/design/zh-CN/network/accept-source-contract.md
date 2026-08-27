@@ -1,13 +1,13 @@
 # AcceptSource 语义契约
 
 本文档定义持续接受连接的逻辑事件源。它不是对 io_uring multishot accept 的直接封装，
-而是一个可以由 Reactor、io_uring one-shot re-arm、io_uring native multishot 共同实现的
+而是一个可以由 Epoll、io_uring one-shot re-arm、io_uring native multishot 共同实现的
 后端中立语义。
 
 现有的：
 
 ```cpp
-coro::Task<Result<Stream>> Accept();
+alyrn::Task<Result<Stream>> Accept();
 ```
 
 仍然保留，表示一次 single-shot accept。`AcceptSource` 是独立的扩展接口，不改变
@@ -29,7 +29,7 @@ concept AsyncAcceptSource = requires(Source& source) {
 
   {
     source.Stop()
-  } -> std::same_as<coro::Task<Result<void>>>;
+  } -> std::same_as<alyrn::Task<Result<void>>>;
 };
 ```
 
@@ -140,7 +140,7 @@ queued_events + armed_accept_requests <= event_capacity
 
 达到 high-water mark
   -> source 进入 Pausing（不是终止）
-  -> Reactor 暂停 accept readiness
+  -> Epoll 暂停 accept readiness
   -> io_uring one-shot 不再 re-arm；已有 request 自然收敛
   -> native multishot 提交 cancel，并等待目标 request 的 terminal CQE
   -> 目标 request 的 terminal CQE 到达后，source 进入 Paused
@@ -206,7 +206,7 @@ source 进入 `Pausing` 或 `Stopping` 不等于所有 physical request 已经�
 | 后端结果 | source 行为 |
 | --- | --- |
 | accept 成功 | 构造 Stream，入队，继续 admission |
-| Reactor `EAGAIN` | 本轮没有事件，重新等待 readiness |
+| Epoll `EAGAIN` | 本轮没有事件，重新等待 readiness |
 | `ECONNABORTED` | 丢弃该连接尝试，继续 re-arm；不终止 source |
 | `EMFILE` / `ENFILE` | source 进入终止错误；避免 busy retry |
 | source queue 达到容量 | pause admission；不是 `ENOBUFS` 终止错误 |
@@ -218,9 +218,9 @@ source 进入 `Pausing` 或 `Stopping` 不等于所有 physical request 已经�
 未来可以加入带 timer/backoff 的 resource-exhaustion retry，但不放入第一版契约；否则
 `Next()` 的终止语义会与 retry policy 耦合。
 
-## 6. Reactor 实现映射
+## 6. Epoll 实现映射
 
-Reactor 没有 native multishot accept。它通过 readiness 和 accept-drain 实现相同的 source
+Epoll 没有 native multishot accept。它通过 readiness 和 accept-drain 实现相同的 source
 语义：
 
 ```text
@@ -232,10 +232,10 @@ source Active
   -> Next() 使 queue 降到 low-water 后重新注册 readiness
 ```
 
-Reactor 的 readiness 本身不是业务事件；业务事件只由成功的 `accept()` 产生。
-由于同一个监听 fd 的 readiness 不需要并行投递多个请求，当前 Reactor path 实际最多保留
+Epoll 的 readiness 本身不是业务事件；业务事件只由成功的 `accept()` 产生。
+由于同一个监听 fd 的 readiness 不需要并行投递多个请求，当前 Epoll path 实际最多保留
 一个 armed accept；`pending_depth` 在该后端仍作为共享 admission 上限保留，但不会制造多份
-并行 poll request。`event_capacity` 才是 Reactor path 中真正限制已接收连接积压的参数。
+并行 poll request。`event_capacity` 才是 Epoll path 中真正限制已接收连接积压的参数。
 
 ## 7. io_uring 实现映射
 
@@ -279,11 +279,11 @@ capability/path selector 中。
 当前进度：
 
 - [x] 增加 `AcceptSourceOptions`、`AsyncAcceptSource` 和 source 状态机的单元测试；
-- [x] 在 Reactor 实现 bounded accept-drain 与 readiness pause/resume；
+- [x] 在 Epoll 实现 bounded accept-drain 与 readiness pause/resume；
 - [x] 覆盖 source `Stop()`、listener `Close()`、队列消费和 listener 生命周期回归。
 - [x] 覆盖 io_uring native multishot 的 high-water pause、terminal CQE 收敛和 low-water
   re-arm；测试中只有第三个、在低水位后新建的连接能够证明重挂成功。
-- [x] 以同一套 Reactor/io_uring conformance 场景覆盖 pending `Accept()` + `Close()`、
+- [x] 以同一套 Epoll/io_uring conformance 场景覆盖 pending `Accept()` + `Close()`、
   pending `Next()` + `Stop()`、listener `Close()` + source，以及 loop stop 后拒绝新操作。
 - [x] 以同一条公开可观察序列覆盖两个 backend 的 bounded admission：三条 burst 连接填满
   queue、consumer 到达 low-water、随后新建的第四条连接必须被重新 admission；该测试不窥探

@@ -8,12 +8,12 @@
 #include <limits>
 #include <utility>
 
-#include "alyrn/backend/detail/value_result_state.h"
-#include "alyrn/base/check.h"
+#include "alyrn/detail/backend/value_result_state.h"
+#include "alyrn/detail/base/check.h"
 #include "alyrn/result.h"
-#include "alyrn/operation/detail/completion_gate.h"
-#include "alyrn/operation/detail/scheduler_continuation.h"
-#include "alyrn/kqueue/detail/loop_access.h"
+#include "alyrn/detail/operation/completion_gate.h"
+#include "alyrn/detail/operation/scheduler_continuation.h"
+#include "alyrn/detail/kqueue/loop_access.h"
 #include "alyrn/kqueue/options.h"
 #include "alyrn/kqueue/recv_source.h"
 
@@ -59,8 +59,8 @@ bool RecvSource::NextAwaiter::await_suspend(std::coroutine_handle<> continuation
   }
 
   if (source_->state_.State() == net::detail::RecvSourceState::kIdle) {
-    if (source_->loop_->State() == backend::LoopState::kStopping ||
-        source_->loop_->State() == backend::LoopState::kStopped) {
+    if (source_->loop_->State() == ::alyrn::detail::backend::LoopState::kStopping ||
+        source_->loop_->State() == ::alyrn::detail::backend::LoopState::kStopped) {
       result_.SetError(Errno(ECANCELED));
       (void)(completion_gate_.TryComplete());
       return false;
@@ -140,7 +140,7 @@ public:
   }
 
   Result<void> await_resume() noexcept {
-    ALYRN_CHECK(result_.has_value(), "Reactor recv source Stop resumed without a result");
+    ALYRN_CHECK(result_.has_value(), "Epoll recv source Stop resumed without a result");
     return std::move(*result_);
   }
 
@@ -154,8 +154,8 @@ public:
 
 private:
   RecvSource* source_;
-  operation::detail::SchedulerContinuation continuation_;
-  operation::detail::CompletionGate completion_gate_;
+  ::alyrn::detail::operation::SchedulerContinuation continuation_;
+  ::alyrn::detail::operation::CompletionGate completion_gate_;
   std::optional<Result<void>> result_;
 };
 

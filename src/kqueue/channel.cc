@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-#include "alyrn/kqueue/detail/channel.h"
+#include "alyrn/detail/kqueue/channel.h"
 
 #include <utility>
 
-#include "alyrn/base/check.h"
+#include "alyrn/detail/base/check.h"
 #include "alyrn/kqueue/loop.h"
 
 namespace alyrn::kqueue::detail {

@@ -29,14 +29,14 @@
 #include "alyrn/coro/spawn.h"
 #include "alyrn/coro/task.h"
 #include "alyrn/coro/work.h"
-#include "alyrn/reactor/loop.h"
+#include "alyrn/epoll/loop.h"
 
 using alyrn::Errno;
 using alyrn::Result;
 using alyrn::coro::Spawn;
 using alyrn::coro::Task;
 using alyrn::coro::Work;
-using alyrn::reactor::Loop;
+using alyrn::epoll::Loop;
 
 namespace {
 

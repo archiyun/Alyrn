@@ -5,7 +5,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include "alyrn/base/check.h"
+#include "alyrn/detail/base/check.h"
 #include "alyrn/coro/channel.h"
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/spawn.h"

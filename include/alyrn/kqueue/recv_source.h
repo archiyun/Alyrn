@@ -8,17 +8,17 @@
 #include <optional>
 #include <vector>
 
-#include "alyrn/backend/detail/value_result_state.h"
-#include "alyrn/backend/recv_source.h"
+#include "alyrn/detail/backend/value_result_state.h"
+#include "alyrn/io/recv_source.h"
 #include "alyrn/result.h"
-#include "alyrn/coro/task.h"
+#include "alyrn/task.h"
 #include "alyrn/net/recv_source.h"
-#include "alyrn/operation/detail/completion_gate.h"
-#include "alyrn/operation/detail/scheduler_continuation.h"
-#include "alyrn/kqueue/detail/channel.h"
-#include "alyrn/kqueue/detail/loop_shutdown.h"
+#include "alyrn/detail/operation/completion_gate.h"
+#include "alyrn/detail/operation/scheduler_continuation.h"
+#include "alyrn/detail/kqueue/channel.h"
+#include "alyrn/detail/kqueue/loop_shutdown.h"
 #include "alyrn/kqueue/loop.h"
-#include "alyrn/utils/macros.h"
+#include "alyrn/detail/utils/macros.h"
 
 namespace alyrn::kqueue {
 
@@ -41,7 +41,7 @@ public:
   using NextResult = alyrn::Result<std::optional<Event>>;
 
   // Direct awaiter for the single-consumer receive loop. It keeps Next() on
-  // the caller's coroutine frame, matching the luring source path and
+  // the caller's coroutine frame, matching the uring source path and
   // avoiding a child Task frame for every event.
   class NextAwaiter {
   public:
@@ -57,9 +57,9 @@ public:
 
   private:
     RecvSource* source_;
-    operation::detail::SchedulerContinuation continuation_;
-    operation::detail::CompletionGate completion_gate_;
-    backend::detail::ValueResultState<std::optional<Event>> result_;
+    ::alyrn::detail::operation::SchedulerContinuation continuation_;
+    ::alyrn::detail::operation::CompletionGate completion_gate_;
+    ::alyrn::detail::backend::ValueResultState<std::optional<Event>> result_;
   };
 
   [[nodiscard]]
@@ -82,7 +82,7 @@ public:
   [[nodiscard]]
   Result<void> RequestStop() noexcept;
 
-  coro::Task<Result<void>> Stop();
+  ::alyrn::Task<Result<void>> Stop();
 
 private:
   class StopAwaiter;
@@ -132,6 +132,6 @@ private:
   detail::LoopShutdownParticipant shutdown_participant_{this, &DispatchLoopStop};
 };
 
-static_assert(backend::AsyncRecvSource<RecvSource>);
+static_assert(::alyrn::io::AsyncRecvSource<RecvSource>);
 
 }  // namespace alyrn::kqueue

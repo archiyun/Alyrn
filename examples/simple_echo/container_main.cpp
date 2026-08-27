@@ -8,7 +8,7 @@
 #include <utility>
 
 #include "alyrn/net.h"
-#include "alyrn/reactor.h"
+#include "alyrn/epoll.h"
 #include "echo_app.h"
 #include "signal_stop.h"
 
@@ -32,7 +32,7 @@ int main() {
   }
   std::jthread signal_forwarder{simple_echo::ForwardTerminationSignals, &stop_source};
 
-  auto runtime = Runtime::Create<runtime::Reactor>(
+  auto runtime = Runtime::Create<runtime::Epoll>(
       net::Endpoint::Any(kPort, net::Endpoint::Family::kIPv4),
       [](auto stream) { return simple_echo::HandleConnection(std::move(stream)); });
 
@@ -40,7 +40,7 @@ int main() {
   auto ran = runtime.Run(stop_source.get_token());
   (void)stop_source.request_stop();
   if (!ran.has_value()) {
-    std::println(stderr, "failed to run Reactor runtime: {}", ran.error().message());
+    std::println(stderr, "failed to run Epoll runtime: {}", ran.error().message());
     return 1;
   }
   return 0;

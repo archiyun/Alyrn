@@ -13,17 +13,17 @@
 #include "alyrn/coro/spawn.h"
 #include "alyrn/coro/task.h"
 #include "alyrn/io/loop.h"
-#include "alyrn/luring/connector.h"
-#include "alyrn/luring/detail/loop_access.h"
-#include "alyrn/luring/loop.h"
-#include "alyrn/luring/options.h"
-#include "alyrn/luring/timer.h"
+#include "alyrn/uring/connector.h"
+#include "alyrn/detail/uring/loop_access.h"
+#include "alyrn/uring/loop.h"
+#include "alyrn/uring/options.h"
+#include "alyrn/uring/timer.h"
 
 namespace {
 
 using namespace std::chrono_literals;
 
-static_assert(requires(alyrn::luring::Connector& connector) { connector.SleepFor(1ms); });
+static_assert(requires(alyrn::uring::Connector& connector) { connector.SleepFor(1ms); });
 
 bool Check(bool condition, const char* message) {
   if (!condition) std::cout << "FAIL: " << message << '\n';
@@ -49,13 +49,13 @@ bool ExpectChildAbort(void (*entry)(), const char* message) {
 }
 
 void RunAfterFromForeignThread() {
-  alyrn::luring::Loop loop;
+  alyrn::uring::Loop loop;
   std::thread foreign([&loop] { (void)loop.RunAfter(0ms, [] noexcept {}); });
   foreign.join();
 }
 
 void DestroyLoopFromForeignThread() {
-  auto* loop = new alyrn::luring::Loop;
+  auto* loop = new alyrn::uring::Loop;
   std::thread foreign([loop] { delete loop; });
   foreign.join();
 }
@@ -71,27 +71,27 @@ bool IsEnvironmentSkip(alyrn::Error error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 
-bool StopAndDrain(alyrn::luring::Loop& loop) {
+bool StopAndDrain(alyrn::uring::Loop& loop) {
   loop.RequestStop();
   loop.Run();
 
   return Check(loop.State() == alyrn::io::LoopState::kStopped,
                "manual timer loop cleanup should stop the loop") &&
-         Check(alyrn::luring::detail::LoopAccess::IsDrained(loop),
+         Check(alyrn::uring::detail::LoopAccess::IsDrained(loop),
                "manual timer loop cleanup should drain user operation work");
 }
 
-alyrn::coro::DetachedTask SleepTask(alyrn::luring::Loop* loop, bool* resumed,
+alyrn::coro::DetachedTask SleepTask(alyrn::uring::Loop* loop, bool* resumed,
                                        bool* scheduler_ok) {
-  auto result = co_await alyrn::luring::SleepFor(*loop, 1ms);
+  auto result = co_await alyrn::uring::SleepFor(*loop, 1ms);
   *resumed = true;
   *scheduler_ok = alyrn::coro::Scheduler::TryCurrent() == loop;
   if (!result.has_value()) co_return;
 }
 
 bool TestTimers() {
-  alyrn::luring::Loop loop;
-  alyrn::luring::Options options;
+  alyrn::uring::Loop loop;
+  alyrn::uring::Options options;
   options.entries = 16;
 
   auto init = loop.Init(options);
@@ -120,7 +120,7 @@ bool TestTimers() {
   // Updating an already armed timeout may produce one or more control CQEs
   // before the updated timer itself expires.
   while (!early_fired && !late_fired) {
-    auto completed = alyrn::luring::detail::LoopAccess::WaitCompletions(loop);
+    auto completed = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
     if (!Check(completed.has_value(), "timer completion should be received")) {
       (void)StopAndDrain(loop);
       return false;
@@ -141,19 +141,19 @@ bool TestTimers() {
   bool resumed = false;
   bool scheduler_ok = false;
   alyrn::coro::SpawnDetach(loop, SleepTask(&loop, &resumed, &scheduler_ok));
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   // A successful timeout update may retire the replaced physical request with
   // an ECANCELED CQE before the re-armed driver reaches ETIME. Keep driving
   // physical completions until the logical SleepFor continuation is ready.
   bool completion_received = false;
   for (int attempt = 0; attempt != 3 && !resumed; ++attempt) {
-    auto completed = alyrn::luring::detail::LoopAccess::WaitCompletions(loop);
+    auto completed = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
     if (!completed.has_value()) {
       break;
     }
     completion_received = true;
-    alyrn::luring::detail::LoopAccess::RunReady(loop);
+    alyrn::uring::detail::LoopAccess::RunReady(loop);
   }
 
   const bool passed = Check(completion_received, "sleep should complete") &&
@@ -165,8 +165,8 @@ bool TestTimers() {
 bool TestStopDiscardsUnexpiredTimer() {
   bool fired = false;
   {
-    alyrn::luring::Loop loop;
-    alyrn::luring::Options options;
+    alyrn::uring::Loop loop;
+    alyrn::uring::Options options;
     options.entries = 8;
 
     auto init = loop.Init(options);

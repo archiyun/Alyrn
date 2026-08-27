@@ -6,7 +6,7 @@ Accepted
 
 ## 背景
 
-Alyrn 同时提供 Reactor、io_uring 与 kqueue 三个平行网络后端。业务协程应该依赖共同的异步
+Alyrn 同时提供 Epoll、io_uring 与 kqueue 三个平行网络后端。业务协程应该依赖共同的异步
 语义，而不是依赖 epoll、SQE/CQE、`kevent` 或某个具体 loop 的实现细节。
 
 当前项目已经有 `alyrn::io` facade 和对应的 concepts，但如果没有明确的稳定范围，
@@ -50,7 +50,7 @@ notification 边界以及 coroutine frame 布局是后端 implementation，不�
 ## 结果
 
 业务模块可以使用 concepts 和模板依赖 Core contract，不需要包含具体 backend 头文件。
-Reactor 和 io_uring 继续保留独立实现，并通过集中式 compile-time contract 检查和各自
+Epoll 和 io_uring 继续保留独立实现，并通过集中式 compile-time contract 检查和各自
 的生命周期测试证明符合 Core contract。
 
 内部可以继续优化 SQE/CQE 批处理、ready queue、completion dispatch、frame allocator
@@ -60,5 +60,5 @@ Reactor 和 io_uring 继续保留独立实现，并通过集中式 compile-time 
 ## 验证
 
 契约测试至少覆盖成功、pending、EOF、短写、Close 竞争、重复完成、buffer 生命周期和
-owner-thread 规则。现有 Reactor/io_uring stream、listener、recv-source 与 completion
+owner-thread 规则。现有 Epoll/io_uring stream、listener、recv-source 与 completion
 生命周期测试继续负责行为验证；集中式测试负责确保所有公开 adapter 满足相同的 concepts。

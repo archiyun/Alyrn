@@ -1,16 +1,16 @@
 # 网络库统一 HTTP 压测
 
-本报告记录当前 Alyrn checkout 中 Reactor、Alyrn luring、raw liburing、Asio、Monoio、Compio、libaio、libuv、libevent 和 libev 的统一压测结果。
+本报告记录当前 Alyrn checkout 中 Epoll、Alyrn luring、raw liburing、Asio、Monoio、Compio、libaio、libuv、libevent 和 libev 的统一压测结果。
 
 较新的精简 C++ 对照基线见[2026-08-10 网络库基线](network-libraries-20260810.md)。它使用当前 luring benchmark 源码，并记录了 `wrk` 的 `nofile` 前置条件。
 
-Reactor 与 luring 的独立 ET/LT 对照见 [Alyrn luring 与 Reactor 独立对比](luring-reactor-comparison-20260802.md)。注意：LT/ET 只属于 Reactor 的 epoll readiness 路径，luring 使用 io_uring CQE，不存在 luring LT/ET。
+Epoll 与 luring 的独立 ET/LT 对照见 [Alyrn luring 与 Epoll 独立对比](luring-epoll-comparison-20260802.md)。注意：LT/ET 只属于 Epoll 的 epoll readiness 路径，luring 使用 io_uring CQE，不存在 luring LT/ET。
 
 ## 结论
 
 - Alyrn luring 与 raw liburing 位于吞吐第一梯队。两者在 10000 并发的吞吐几乎相同：luring `475.1k RPS`，raw liburing `474.3k RPS`；luring P99 为 `30.82 ms`，raw liburing 受少量长尾样本影响为 `494.08 ms`，但本轮没有 wrk timeout。
 - luring 在 200/500/1000 并发领先 raw liburing，raw liburing 在 100/2000/5000 略高；这组差异属于同一量级，不能当作稳定的绝对排名。
-- Reactor 没有错误或 timeout，10000 并发为 `350.1k RPS / 37.16 ms P99`，但 CPU 快照最高之一（约 `293%`）。
+- Epoll 没有错误或 timeout，10000 并发为 `350.1k RPS / 37.16 ms P99`，但 CPU 快照最高之一（约 `293%`）。
 - Asio、Compio、libaio、libev 在本轮均无正式错误；10000 并发分别为 `458.1k / 124.81 ms`、`388.2k / 43.45 ms`、`407.5k / 37.61 ms`、`344.4k / 44.75 ms`。
 - Monoio 在 10000 并发出现 `566` 个 timeout，平均 P99 `699.35 ms`；libuv 出现 `1839` 个 timeout，平均 P99 `2913.33 ms`。两者的高并发结果应视为本轮稳定性异常，不是正常稳态尾延迟。
 - libevent 没有 timeout，但 10000 并发吞吐为 `219.8k RPS`，明显低于其他适配器。
@@ -29,7 +29,7 @@ Reactor 与 luring 的独立 ET/LT 对照见 [Alyrn luring 与 Reactor 独立对
 
 ## 对比目标
 
-- **Reactor**：Alyrn 的 epoll `WorkerGroup` 后端。
+- **Epoll**：Alyrn 的 epoll `WorkerGroup` 后端。
 - **Alyrn luring**：Alyrn 的协程 io_uring 后端。
 - **raw liburing**：原生 liburing 状态机，不使用 Alyrn 协程封装。
 - **Asio**：standalone Asio 1.38.2。
@@ -56,7 +56,7 @@ Reactor 与 luring 的独立 ET/LT 对照见 [Alyrn luring 与 Reactor 独立对
 
 单元为 `RPS / P99(ms)`；timeout 另见错误表。
 
-| 并发 | Reactor | luring | raw liburing | Asio | Monoio | Compio | libaio | libuv | libevent | libev |
+| 并发 | Epoll | luring | raw liburing | Asio | Monoio | Compio | libaio | libuv | libevent | libev |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | 100 | 618,509 / 1.03 | 711,153 / 2.28 | 736,643 / 2.53 | 667,868 / 2.28 | 683,299 / 2.46 | 609,839 / 2.73 | 571,251 / 1.75 | 612,731 / 2.18 | 380,352 / 1.16 | 630,789 / 2.45 |
 | 200 | 549,768 / 0.91 | 777,894 / 2.80 | 759,918 / 2.99 | 679,233 / 2.54 | 655,562 / 3.33 | 646,335 / 3.07 | 591,260 / 2.30 | 615,357 / 2.89 | 388,402 / 1.51 | 626,218 / 2.77 |
@@ -72,7 +72,7 @@ Reactor 与 luring 的独立 ET/LT 对照见 [Alyrn luring 与 Reactor 独立对
 
 | 目标 | CPU | RSS |
 | --- | ---: | ---: |
-| Reactor | 293.0% | 181.8 |
+| Epoll | 293.0% | 181.8 |
 | luring | 253.7% | 146.3 |
 | raw liburing | 241.0% | 163.6 |
 | Asio | 261.0% | 166.6 |
@@ -89,7 +89,7 @@ RSS 是每轮结束时的一次进程快照；各库的连接对象、缓冲区�
 
 | 目标 | 正常 HTTP 响应错误 | socket error | timeout 总数 |
 | --- | ---: | ---: | ---: |
-| Reactor | 0 | 0 | 0 |
+| Epoll | 0 | 0 | 0 |
 | luring | 0 | 0 | 0 |
 | raw liburing | 0 | 0 | 0 |
 | Asio | 0 | 0 | 0 |
@@ -137,7 +137,7 @@ OUTDIR=/tmp/alyrn-network-libraries-$(date +%Y%m%d-%H%M%S) \
 ./docs/benchmark/summarize_network_libraries.sh "$OUTDIR"
 ```
 
-可用环境变量覆盖 `LEVELS`、`WARMUP`、`DURATION`、`ROUNDS`、`THREADS`、`WORKERS`、`REACTOR_TRIGGER_MODE` 和 `TARGETS`。`REACTOR_TRIGGER_MODE` 支持 `et`（默认）和 `lt`，用于对比流 socket 的 edge-triggered 与 level-triggered 路径。例如短试跑：
+可用环境变量覆盖 `LEVELS`、`WARMUP`、`DURATION`、`ROUNDS`、`THREADS`、`WORKERS`、`EPOLL_TRIGGER_MODE` 和 `TARGETS`。`EPOLL_TRIGGER_MODE` 支持 `et`（默认）和 `lt`，用于对比流 socket 的 edge-triggered 与 level-triggered 路径。例如短试跑：
 
 ```bash
 WARMUP=1s DURATION=2s ROUNDS=1 LEVELS="100 1000" \
@@ -145,11 +145,11 @@ WARMUP=1s DURATION=2s ROUNDS=1 LEVELS="100 1000" \
   ./docs/benchmark/run_network_libraries.sh
 ```
 
-只压测 Reactor 的 LT 路径：
+只压测 Epoll 的 LT 路径：
 
 ```bash
-REACTOR_TRIGGER_MODE=lt WARMUP=1s DURATION=2s ROUNDS=1 LEVELS="100 1000" \
-  TARGETS="reactor" ./docs/benchmark/run_network_libraries.sh
+EPOLL_TRIGGER_MODE=lt WARMUP=1s DURATION=2s ROUNDS=1 LEVELS="100 1000" \
+  TARGETS="epoll" ./docs/benchmark/run_network_libraries.sh
 ```
 
 本轮原始结果保存在 `/tmp/alyrn-network-libraries-20260731/`，其中 `raw/` 是每轮 wrk 输出，`runs.csv` 是运行索引，`resources.csv` 是资源快照，`averages.csv` 包含三轮均值与波动统计。临时结果不纳入仓库。

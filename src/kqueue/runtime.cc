@@ -12,7 +12,7 @@
 #include <utility>
 
 #include "alyrn/result.h"
-#include "alyrn/kqueue/detail/worker_group.h"
+#include "alyrn/detail/kqueue/worker_group.h"
 
 namespace alyrn::kqueue {
 
@@ -28,7 +28,7 @@ void WaitForStop(std::atomic_bool& stop_requested) noexcept {
 
 // Owns the kqueue worker group behind Runtime's cold lifecycle seam. The
 // accepted stream remains Stream all the way to ConnectionHandler.
-class RuntimeControl final : public runtime::detail::RuntimeControl {
+class RuntimeControl final : public ::alyrn::detail::runtime::RuntimeControl {
 public:
   RuntimeControl(net::Endpoint listen_addr, std::size_t worker_count,
                         Builder::ConnectionHandler connection_handler) noexcept
@@ -151,7 +151,7 @@ private:
 
 }  // namespace
 
-std::unique_ptr<runtime::detail::RuntimeControl> MakeRuntimeControl(
+std::unique_ptr<::alyrn::detail::runtime::RuntimeControl> MakeRuntimeControl(
     net::Endpoint listen_addr, std::size_t worker_count,
     Runtime::Builder<runtime::Kqueue>::ConnectionHandler connection_handler) {
   return std::make_unique<RuntimeControl>(listen_addr, worker_count,

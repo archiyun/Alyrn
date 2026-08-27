@@ -7,8 +7,8 @@
 #include <string_view>
 
 #include "alyrn/result.h"
-#include "alyrn/coro/task.h"
 #include "alyrn/io/async_stream.h"
+#include "alyrn/task.h"
 
 namespace alyrn::io {
 
@@ -20,7 +20,7 @@ template <class T>
 concept AsyncConnector = requires(T& connector, std::string_view host, std::uint16_t port) {
   typename T::StreamType;
   requires AsyncStream<typename T::StreamType>;
-  { connector.Connect(host, port) } -> std::same_as<coro::Task<Result<typename T::StreamType>>>;
+  { connector.Connect(host, port) } -> std::same_as<Task<Result<typename T::StreamType>>>;
 };
 
 }  // namespace alyrn::io

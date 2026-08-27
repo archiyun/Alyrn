@@ -17,10 +17,10 @@
 #include <span>
 #include <utility>
 
-#include "alyrn/base/check.h"
-#include "alyrn/kqueue/detail/loop_access.h"
+#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/kqueue/loop_access.h"
 #include "alyrn/net/endpoint.h"
-#include "alyrn/net/socket.h"
+#include "alyrn/detail/net/socket.h"
 #include "alyrn/result.h"
 
 namespace alyrn::kqueue {
@@ -178,8 +178,8 @@ void RearmWriting(detail::Channel& channel) noexcept {
 
 bool Stream::ReadAwaiterState::BeginRead(std::coroutine_handle<> continuation) noexcept {
   stream_->RequireOwnerLoop();
-  if (stream_->loop_->State() == backend::LoopState::kStopping ||
-      stream_->loop_->State() == backend::LoopState::kStopped) {
+  if (stream_->loop_->State() == ::alyrn::detail::backend::LoopState::kStopping ||
+      stream_->loop_->State() == ::alyrn::detail::backend::LoopState::kStopped) {
     CompleteInline(std::unexpected(Errno(ECANCELED)));
     return false;
   }
@@ -387,8 +387,8 @@ Stream::WriteAllAwaiter Stream::WriteAll(std::span<const std::byte> buffer) noex
 
 bool Stream::WriteAllAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   stream_->RequireOwnerLoop();
-  if (stream_->loop_->State() == backend::LoopState::kStopping ||
-      stream_->loop_->State() == backend::LoopState::kStopped) {
+  if (stream_->loop_->State() == ::alyrn::detail::backend::LoopState::kStopping ||
+      stream_->loop_->State() == ::alyrn::detail::backend::LoopState::kStopped) {
     CompleteInline(std::unexpected(Errno(ECANCELED)));
     return false;
   }

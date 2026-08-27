@@ -13,9 +13,9 @@
 #include <utility>
 #include <vector>
 
-#include "alyrn/base/check.h"
-#include "alyrn/ds/intrusive_list.h"
-#include "alyrn/utils/macros.h"
+#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/ds/intrusive_list.h"
+#include "alyrn/detail/utils/macros.h"
 
 namespace alyrn::net {
 
@@ -125,7 +125,7 @@ public:
 
   // Fills caller-owned iovec storage for a new write reservation. This avoids
   // allocating an iovec vector when the caller needs the views only for one
-  // synchronous syscall, as the Reactor does for readv(). The caller must
+  // synchronous syscall, as the Epoll does for readv(). The caller must
   // keep the returned view only until its storage is reused; the Buffer owns
   // the reserved byte ranges until CommitWrite() or AbortWrite().
   [[nodiscard]]
@@ -155,7 +155,7 @@ public:
 
   // Recreates iovec views for the active reservation in caller-owned
   // storage. This is useful after a readiness notification: the reservation
-  // remains owned by the Buffer, but a Reactor need not retain an iovec
+  // remains owned by the Buffer, but a Epoll need not retain an iovec
   // allocation while the coroutine is suspended.
   [[nodiscard]]
   std::span<iovec> ReservedWriteIov(std::span<iovec> out) noexcept {
@@ -254,7 +254,7 @@ public:
 private:
   struct BlockTag {};
 
-  struct Block : alyrn::ds::ListNode<Block, BlockTag> {
+  struct Block : alyrn::detail::ds::ListNode<Block, BlockTag> {
     explicit Block(std::size_t cap) : data(new std::byte[cap]), capacity(cap) {}
 
     ALYRN_DELETE_COPY(Block);
@@ -284,7 +284,7 @@ private:
     }
   };
 
-  using BlockList = alyrn::ds::IntrusiveList<Block, BlockTag>;
+  using BlockList = alyrn::detail::ds::IntrusiveList<Block, BlockTag>;
 
   static Block* NewBlock(std::size_t capacity) { return new Block(capacity); }
 

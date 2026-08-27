@@ -10,7 +10,7 @@ EXTENDS Naturals, Sequences, FiniteSets
 (*                  \-> Stopping -> Draining -> Terminal                 *)
 (*                                                                         *)
 (* Concrete backend 保留各自的物理路径：                                   *)
-(*   Reactor       readiness -> accept drain                              *)
+(*   Epoll       readiness -> accept drain                              *)
 (*   UringSingle   one SQE -> one terminal CQE -> re-arm                  *)
 (*   UringMulti    one request -> F_MORE CQE* -> terminal CQE             *)
 (*                                                                         *)
@@ -20,7 +20,7 @@ EXTENDS Naturals, Sequences, FiniteSets
 
 CONSTANT MaxEvents, MaxRequests
 
-Backends      == {"Reactor", "UringSingle", "UringMulti"}
+Backends      == {"Epoll", "UringSingle", "UringMulti"}
 SourceStates  == {"Idle", "Active", "Pausing", "Paused", "Stopping", "Draining", "Terminal"}
 RequestStates == {"Idle", "Armed"}
 States == {"Idle", "Armed", "Ready"}
@@ -31,7 +31,7 @@ EventIds      == 1..MaxEvents
 VARIABLES backend,
           sourceState,
           requestState,
-          reactorState,
+          epollState,
           uringState,
           cancelState,
           queue,
@@ -48,7 +48,7 @@ VARIABLES backend,
 vars == <<backend,
           sourceState,
           requestState,
-          reactorState,
+          epollState,
           uringState,
           cancelState,
           queue,
@@ -87,7 +87,7 @@ Init ==
   /\ backend \in Backends
   /\ sourceState = "Idle"
   /\ requestState = "Idle"
-  /\ reactorState = "Idle"
+  /\ epollState = "Idle"
   /\ uringState = "Idle"
   /\ cancelState = "Idle"
   /\ queue = <<>>
@@ -106,7 +106,7 @@ Start ==
   /\ sourceState' = "Active"
   /\ UNCHANGED <<backend,
                  requestState,
-                 reactorState,
+                 epollState,
                  uringState,
                  cancelState,
                  queue,
@@ -121,7 +121,7 @@ Start ==
                  resumeCount>>
 
 (* All three backends admit one physical request at a time in this model.
- * This is enough to compare source semantics; Reactor's readiness callback
+ * This is enough to compare source semantics; Epoll's readiness callback
  * and io_uring's SQE/CQE path are represented by different concrete actions. *)
 Arm ==
   /\ sourceState = "Active"
@@ -131,8 +131,8 @@ Arm ==
   /\ submitCount < MaxRequests
   /\ requestState' = "Armed"
   /\ submitCount' = submitCount + 1
-  /\ reactorState' = IF backend = "Reactor" THEN "Armed" ELSE reactorState
-  /\ uringState' = IF backend = "Reactor" THEN uringState ELSE "Submitted"
+  /\ epollState' = IF backend = "Epoll" THEN "Armed" ELSE epollState
+  /\ uringState' = IF backend = "Epoll" THEN uringState ELSE "Submitted"
   /\ UNCHANGED <<backend,
                  sourceState,
                  cancelState,
@@ -147,11 +147,11 @@ Arm ==
                  resumeCount>>
 
 Ready ==
-  /\ backend = "Reactor"
+  /\ backend = "Epoll"
   /\ sourceState \in {"Active", "Stopping"}
   /\ requestState = "Armed"
-  /\ reactorState = "Armed"
-  /\ reactorState' = "Ready"
+  /\ epollState = "Armed"
+  /\ epollState' = "Ready"
   /\ UNCHANGED <<backend,
                  sourceState,
                  requestState,
@@ -169,14 +169,14 @@ Ready ==
                  resumeCount>>
 
 Accept ==
-  /\ backend = "Reactor"
+  /\ backend = "Epoll"
   /\ sourceState \in {"Active", "Stopping"}
   /\ requestState = "Armed"
-  /\ reactorState = "Ready"
+  /\ epollState = "Ready"
   /\ Len(queue) < MaxEvents
   /\ nextEventId <= MaxEvents
   /\ requestState' = "Idle"
-  /\ reactorState' = "Idle"
+  /\ epollState' = "Idle"
   /\ sourceState' = StateAfterRequestTerminal(AppendedQueue)
   /\ queue' = AppendedQueue
   /\ producedEvents' = producedEvents \cup {nextEventId}
@@ -195,12 +195,12 @@ Accept ==
 (* Readiness can fire without producing a connection. The source remains
  * active and may arm again; after Stop it drains the already queued events. *)
 NoConnection ==
-  /\ backend = "Reactor"
+  /\ backend = "Epoll"
   /\ sourceState \in {"Active", "Stopping"}
   /\ requestState = "Armed"
-  /\ reactorState = "Ready"
+  /\ epollState = "Ready"
   /\ requestState' = "Idle"
-  /\ reactorState' = "Idle"
+  /\ epollState' = "Idle"
   /\ sourceState' = StateAfterRequestTerminal(queue)
   /\ terminalRequestCount' = terminalRequestCount + 1
   /\ UNCHANGED <<backend,
@@ -226,7 +226,7 @@ UringSingleComplete ==
   /\ sourceState' = StateAfterRequestTerminal(queue)
   /\ terminalRequestCount' = terminalRequestCount + 1
   /\ UNCHANGED <<backend,
-                 reactorState,
+                 epollState,
                  cancelState,
                  queue,
                  producedEvents,
@@ -253,7 +253,7 @@ UringSingleCompleteEvent ==
   /\ nextEventId' = nextEventId + 1
   /\ terminalRequestCount' = terminalRequestCount + 1
   /\ UNCHANGED <<backend,
-                 reactorState,
+                 epollState,
                  cancelState,
                  deliveredEvents,
                  submitCount,
@@ -277,7 +277,7 @@ UringMultiMore ==
   /\ UNCHANGED <<backend,
                  sourceState,
                  requestState,
-                 reactorState,
+                 epollState,
                  uringState,
                  cancelState,
                  deliveredEvents,
@@ -298,7 +298,7 @@ UringMultiTerminate ==
   /\ sourceState' = StateAfterRequestTerminal(queue)
   /\ terminalRequestCount' = terminalRequestCount + 1
   /\ UNCHANGED <<backend,
-                 reactorState,
+                 epollState,
                  cancelState,
                  queue,
                  producedEvents,
@@ -326,7 +326,7 @@ UringMultiTerminateEvent ==
   /\ nextEventId' = nextEventId + 1
   /\ terminalRequestCount' = terminalRequestCount + 1
   /\ UNCHANGED <<backend,
-                 reactorState,
+                 epollState,
                  cancelState,
                  deliveredEvents,
                  submitCount,
@@ -342,7 +342,7 @@ BackendFailure ==
   /\ sourceState \in {"Active", "Stopping"}
   /\ requestState = "Armed"
   /\ requestState' = "Idle"
-  /\ reactorState' = "Idle"
+  /\ epollState' = "Idle"
   /\ uringState' = "Idle"
   /\ sourceState' = StateAfterBackendFailure
   /\ stopRequested' = TRUE
@@ -360,7 +360,7 @@ BackendFailure ==
 
 (* High-water is an admission boundary, not a logical terminal.  Native
  * io_uring paths cancel the current request and wait for its terminal CQE;
- * Reactor removes readiness interest and releases the modeled request
+ * Epoll removes readiness interest and releases the modeled request
  * immediately. *)
 RequestPause ==
   /\ sourceState = "Active"
@@ -369,12 +369,12 @@ RequestPause ==
   /\ sourceState' =
        IF requestState = "Armed" THEN "Pausing" ELSE "Paused"
   /\ cancelState' =
-       IF backend # "Reactor" /\ requestState = "Armed"
+       IF backend # "Epoll" /\ requestState = "Armed"
        THEN "Submitted"
        ELSE cancelState
   /\ UNCHANGED <<backend,
                  requestState,
-                 reactorState,
+                 epollState,
                  uringState,
                  queue,
                  producedEvents,
@@ -387,14 +387,14 @@ RequestPause ==
                  stopRequested,
                  resumeCount>>
 
-(* Reactor has no target CQE. Removing readable interest releases the one
+(* Epoll has no target CQE. Removing readable interest releases the one
  * modeled readiness request and reaches the same abstract Paused state. *)
 PauseRelease ==
-  /\ backend = "Reactor"
+  /\ backend = "Epoll"
   /\ sourceState = "Pausing"
   /\ requestState = "Armed"
   /\ requestState' = "Idle"
-  /\ reactorState' = "Idle"
+  /\ epollState' = "Idle"
   /\ sourceState' = "Paused"
   /\ terminalRequestCount' = terminalRequestCount + 1
   /\ UNCHANGED <<backend,
@@ -420,7 +420,7 @@ ResumeAdmission ==
   /\ sourceState' = "Active"
   /\ UNCHANGED <<backend,
                  requestState,
-                 reactorState,
+                 epollState,
                  uringState,
                  cancelState,
                  queue,
@@ -445,12 +445,12 @@ RequestStop ==
        THEN "Stopping"
        ELSE IF Len(queue) = 0 THEN "Terminal" ELSE "Draining"
   /\ cancelState' =
-       IF backend # "Reactor" /\ requestState = "Armed" /\ cancelState = "Idle"
+       IF backend # "Epoll" /\ requestState = "Armed" /\ cancelState = "Idle"
        THEN "Submitted"
        ELSE cancelState
   /\ UNCHANGED <<backend,
                  requestState,
-                 reactorState,
+                 epollState,
                  uringState,
                  queue,
                  producedEvents,
@@ -463,13 +463,13 @@ RequestStop ==
                  resumeCount>>
 
 CancelComplete ==
-  /\ backend # "Reactor"
+  /\ backend # "Epoll"
   /\ cancelState = "Submitted"
   /\ cancelState' = "Idle"
   /\ UNCHANGED <<backend,
                  sourceState,
                  requestState,
-                 reactorState,
+                 epollState,
                  uringState,
                  queue,
                  producedEvents,
@@ -495,7 +495,7 @@ DeliverEvent ==
        ELSE sourceState
   /\ UNCHANGED <<backend,
                  requestState,
-                 reactorState,
+                 epollState,
                  uringState,
                  cancelState,
                  producedEvents,
@@ -517,7 +517,7 @@ ObserveTerminal ==
   /\ UNCHANGED <<backend,
                  sourceState,
                  requestState,
-                 reactorState,
+                 epollState,
                  uringState,
                  cancelState,
                  queue,
@@ -554,7 +554,7 @@ TypeOK ==
   /\ backend \in Backends
   /\ sourceState \in SourceStates
   /\ requestState \in RequestStates
-  /\ reactorState \in States
+  /\ epollState \in States
   /\ uringState \in UringStates
   /\ cancelState \in CancelStates
   /\ queue \in Seq(EventIds)
@@ -611,12 +611,12 @@ PauseSafety ==
 
 (* Concrete backend state is not visible in the abstract source protocol. *)
 BackendShape ==
-  /\ backend = "Reactor"
+  /\ backend = "Epoll"
        => /\ uringState = "Idle"
           /\ cancelState = "Idle"
-          /\ (requestState = "Idle" => reactorState = "Idle")
-  /\ backend # "Reactor"
-       => /\ reactorState = "Idle"
+          /\ (requestState = "Idle" => epollState = "Idle")
+  /\ backend # "Epoll"
+       => /\ epollState = "Idle"
           /\ (requestState = "Idle" => uringState = "Idle")
   /\ requestState = "Armed"
        => sourceState \in {"Active", "Pausing", "Stopping"}

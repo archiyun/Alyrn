@@ -17,7 +17,7 @@
 基本使用顺序是：
 
 ```cpp
-alyrn::luring::Loop loop;
+alyrn::uring::Loop loop;
 auto initialized = loop.Init(options);
 if (!initialized.has_value()) {
   // 根据 error 判断环境不支持或配置错误

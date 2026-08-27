@@ -6,18 +6,18 @@
 其默认 interface 已由 [ADR-0010](../../../adr/0010-runtime-composition-root.md) 冻结：本页仅记录
 稳定用法。backend 选择不是运行时 enum；ring/epoll tuning 与 main 宏也不进入公共默认路径。
 
-它不是新的统一 I/O backend，也不取代 `reactor::Loop`、`luring::Loop` 或 `kqueue::Loop`。需要手动控制 loop、
+它不是新的统一 I/O backend，也不取代 `epoll::Loop`、`uring::Loop` 或 `kqueue::Loop`。需要手动控制 loop、
 定时器、跨 worker mailbox/`Post` 或特殊资源生命周期时，仍应使用对应后端的原生公开类型。
 
-## Reactor
+## Epoll
 
 ```cpp
-alyrn::coro::DetachedTask Handle(alyrn::reactor::Stream stream) {
+alyrn::DetachedTask Handle(alyrn::epoll::Stream stream) {
   // co_await stream.ReadSome(...)
   co_return;
 }
 
-auto runtime = alyrn::Runtime::Builder<alyrn::runtime::Reactor>{
+auto runtime = alyrn::Runtime::Builder<alyrn::runtime::Epoll>{
                    alyrn::net::Endpoint::Any(8080)}
                    .AutoWorkers()
                    .OnConnection(Handle)
@@ -39,11 +39,11 @@ runtime.Stop();  // request stop、drain、join workers
 ## luring
 
 ```cpp
-alyrn::coro::DetachedTask Handle(alyrn::luring::Stream stream) {
+alyrn::DetachedTask Handle(alyrn::uring::Stream stream) {
   co_return;
 }
 
-auto runtime = alyrn::Runtime::Builder<alyrn::runtime::LUring>{
+auto runtime = alyrn::Runtime::Builder<alyrn::runtime::Uring>{
                    alyrn::net::Endpoint::Any(8080)}
                    .AutoWorkers()
                    .OnConnection(Handle)
@@ -59,7 +59,7 @@ source 保持既有 capability fallback。业务不需要为这些物理执行�
 ## kqueue
 
 ```cpp
-alyrn::coro::DetachedTask Handle(alyrn::kqueue::Stream stream) {
+alyrn::DetachedTask Handle(alyrn::kqueue::Stream stream) {
   co_return;
 }
 
@@ -71,7 +71,7 @@ auto runtime = alyrn::Runtime::Builder<alyrn::runtime::Kqueue>{
 ```
 
 需要在 BSD/Darwin 上以 `-DALYRN_ENABLE_KQUEUE=ON` 构建，并包含 `alyrn/kqueue.h`。
-`Workers(n)` 仍表示 n 条线程，但拓扑与 Reactor 不同：`n == 1` 时该 worker 自己监听；
+`Workers(n)` 仍表示 n 条线程，但拓扑与 Epoll 不同：`n == 1` 时该 worker 自己监听；
 `n > 1` 时只有 worker 0 接受连接，已接受的描述符经 `Loop::Post` 交给其它 loop。
 不要把 `reuse_port` 当成 kqueue 的多 worker 开关。详见
 [kqueue](kqueue/index.md) 与 [主从移交](kqueue/loop-and-handoff.md)。
@@ -143,17 +143,17 @@ Start() -> wait stop_token or RequestStop() -> Stop() -> drain and join -> retur
 不需要显式 worker 配置的服务可以直接选择 backend：
 
 ```cpp
-auto runtime = alyrn::Runtime::Create<alyrn::runtime::Reactor>(
+auto runtime = alyrn::Runtime::Create<alyrn::runtime::Epoll>(
     alyrn::net::Endpoint::Any(8080),
-    [](auto stream) -> alyrn::coro::DetachedTask {
-      // stream 的静态类型仍是 reactor::Stream。
+    [](auto stream) -> alyrn::DetachedTask {
+      // stream 的静态类型仍是 epoll::Stream。
       co_return;
     });
 ```
 
 `Create` 等价于对应 `Builder` 的默认配置加 `OnConnection`；它仍返回同一个
-`alyrn::Runtime`。选择 `runtime::LUring` 或 `runtime::Kqueue` 时，handler 中的
-`stream` 静态类型相应为 `luring::Stream` 或 `kqueue::Stream`，没有虚调用或类型擦除进入
+`alyrn::Runtime`。选择 `runtime::Uring` 或 `runtime::Kqueue` 时，handler 中的
+`stream` 静态类型相应为 `uring::Stream` 或 `kqueue::Stream`，没有虚调用或类型擦除进入
 连接数据路径。
 
 ## 为什么不做 C++ 宏

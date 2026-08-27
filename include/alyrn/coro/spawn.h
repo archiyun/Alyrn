@@ -8,13 +8,13 @@
 #include <coroutine>
 #include <utility>
 
-#include "alyrn/base/check.h"
+#include "alyrn/detail/base/check.h"
 #include "alyrn/coro/detached_task.h"
-#include "alyrn/coro/detail/spawn_state.h"
+#include "alyrn/detail/coro/spawn_state.h"
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/task.h"
 #include "alyrn/coro/work.h"
-#include "alyrn/utils/macros.h"
+#include "alyrn/detail/utils/macros.h"
 
 namespace alyrn::coro {
 
@@ -77,7 +77,7 @@ private:
 
 }  // namespace alyrn::coro
 
-#include "alyrn/coro/detail/spawn_root.h"
+#include "alyrn/detail/coro/spawn_root.h"
 
 namespace alyrn::coro {
 

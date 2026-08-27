@@ -6,7 +6,7 @@ Accepted for the initial coroutine implementation.
 
 ## Context
 
-Alyrn must allow the same business coroutine to run on the epoll/Reactor backend,
+Alyrn must allow the same business coroutine to run on the epoll backend,
 the io_uring backend, and the kqueue backend. The coroutine layer therefore cannot own network
 descriptors, submit I/O, or depend on a concrete runtime.
 
@@ -25,7 +25,7 @@ scheduler or I/O backend.
 
 ## Decision
 
-- `coro::Task<T>` is the lazy, backend-neutral coroutine function return type.
+- `alyrn::Task<T>` is the lazy, backend-neutral coroutine function return type.
   It is move-only, can only be awaited as an rvalue, and transfers ownership of
   its frame to the awaiter.
 - `Task<T>` transports exactly `T`; it does not automatically wrap values in
@@ -33,19 +33,19 @@ scheduler or I/O backend.
 - Fallible operations explicitly return `Task<Result<T>>`. The runtime
   uses the value-based error model rather than exceptions for ordinary business
   and I/O failures.
-- `coro::Spawn` accepts a scheduler and a `Task<T>`, returning a
+- `alyrn::Spawn` accepts a scheduler and a `Task<T>`, returning a
   `JoinHandle<T>`. `JoinHandle` supports synchronous `Wait`, asynchronous
   `co_await`, and `Detach`.
-- `coro::DetachedTask` is the resultless fire-and-forget coroutine type.
-  `coro::SpawnDetach` schedules it directly; the detached coroutine frame
+- `alyrn::DetachedTask` is the resultless fire-and-forget coroutine type.
+  `alyrn::SpawnDetach` schedules it directly; the detached coroutine frame
   embeds its `ResumeWork` and has no join state.
 - Promise and awaiter implementation details live under `coro/detail/`.
-- Reactor awaiters remain in the network adapter layer and may depend on
-  `Loop` and Reactor-specific operation state.
+- Epoll awaiters remain in the network adapter layer and may depend on
+  `Loop` and epoll-specific operation state.
 - io_uring awaiters remain in the luring adapter layer and may depend on the
   ring runtime.
 - The dependency direction is one-way from lower primitives to concrete
-  backends: `coro/foundation -> net -> Reactor/luring`. The `io` module is a
+  backends: `coro/foundation -> net -> Epoll/luring`. The `io` module is a
   higher-level contract/facade layer and may depend on `net` or a selected
   backend, but concrete backends must not include `io` headers or link the
   `alyrn_io` target.

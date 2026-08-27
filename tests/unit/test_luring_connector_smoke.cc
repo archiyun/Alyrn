@@ -19,11 +19,11 @@
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/spawn.h"
 #include "alyrn/coro/task.h"
-#include "alyrn/luring/connector.h"
-#include "alyrn/luring/detail/loop_access.h"
-#include "alyrn/luring/loop.h"
-#include "alyrn/luring/options.h"
-#include "alyrn/luring/stream.h"
+#include "alyrn/uring/connector.h"
+#include "alyrn/detail/uring/loop_access.h"
+#include "alyrn/uring/loop.h"
+#include "alyrn/uring/options.h"
+#include "alyrn/uring/stream.h"
 #include "alyrn/net/endpoint.h"
 
 namespace {
@@ -87,8 +87,8 @@ bool IsEnvironmentSkip(alyrn::Error error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 
-LoopInitStatus InitLoop(alyrn::luring::Loop& loop) {
-  alyrn::luring::Options options;
+LoopInitStatus InitLoop(alyrn::uring::Loop& loop) {
+  alyrn::uring::Options options;
   options.entries = 16;
 
   auto init = loop.Init(options);
@@ -142,9 +142,9 @@ alyrn::Result<ListenEndpoint> ListenLoopback() {
 }
 
 alyrn::coro::DetachedTask ConnectOnce(
-    alyrn::luring::Connector* connector, alyrn::luring::Loop* loop,
+    alyrn::uring::Connector* connector, alyrn::uring::Loop* loop,
     std::string_view host, std::uint16_t port,
-    std::optional<alyrn::Result<alyrn::luring::Stream>>* out,
+    std::optional<alyrn::Result<alyrn::uring::Stream>>* out,
     bool* resumed_with_scheduler) {
   auto connected = co_await connector->Connect(host, port);
   *resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == loop;
@@ -162,7 +162,7 @@ bool CheckConnectSuccess() {
     return false;
   }
 
-  alyrn::luring::Loop loop;
+  alyrn::uring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -172,27 +172,27 @@ bool CheckConnectSuccess() {
       return false;
   }
 
-  alyrn::luring::ConnectorOptions connector_options;
+  alyrn::uring::ConnectorOptions connector_options;
   connector_options.tcp_options.no_delay = true;
   connector_options.tcp_options.keep_alive = true;
   connector_options.tcp_options.read_buffer = 64 * 1024;
   connector_options.tcp_options.write_buffer = 64 * 1024;
-  alyrn::luring::Connector connector(&loop, connector_options);
-  std::optional<alyrn::Result<alyrn::luring::Stream>> connected;
+  alyrn::uring::Connector connector(&loop, connector_options);
+  std::optional<alyrn::Result<alyrn::uring::Stream>> connected;
   bool resumed_with_scheduler = false;
 
   alyrn::coro::SpawnDetach(loop, ConnectOnce(&connector, &loop, "127.0.0.1", listener->port,
                                                 &connected, &resumed_with_scheduler));
 
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
-  auto completions = alyrn::luring::detail::LoopAccess::WaitCompletions(loop);
+  auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
   if (!completions.has_value()) {
     std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
     return false;
   }
 
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   if (!Check(*completions >= 1, "connect did not produce a completion") ||
       !Check(connected.has_value(), "connect coroutine did not resume") ||
@@ -222,16 +222,16 @@ bool CheckConnectSuccess() {
 }
 
 bool CheckConnectRejectsInvalidHost() {
-  alyrn::luring::Loop loop;
-  alyrn::luring::Connector connector(&loop);
+  alyrn::uring::Loop loop;
+  alyrn::uring::Connector connector(&loop);
 
-  std::optional<alyrn::Result<alyrn::luring::Stream>> connected;
+  std::optional<alyrn::Result<alyrn::uring::Stream>> connected;
   bool resumed_with_scheduler = false;
 
   alyrn::coro::SpawnDetach(
       loop, ConnectOnce(&connector, &loop, "not-an-ip", 80, &connected, &resumed_with_scheduler));
 
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   return Check(connected.has_value(), "invalid host connect did not finish immediately") &&
          Check(!connected->has_value(), "invalid host connect unexpectedly succeeded") &&

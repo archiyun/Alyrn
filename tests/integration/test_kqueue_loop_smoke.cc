@@ -18,16 +18,16 @@
 #include <thread>
 #include <vector>
 
-#include "alyrn/base/check.h"
-#include "alyrn/backend/loop.h"
+#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/backend/loop.h"
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/spawn.h"
 #include "alyrn/coro/task.h"
 #include "alyrn/coro/work.h"
 #include "alyrn/kqueue/connector.h"
-#include "alyrn/kqueue/detail/channel.h"
+#include "alyrn/detail/kqueue/channel.h"
 #include "alyrn/kqueue/loop.h"
-#include "alyrn/net/socket.h"
+#include "alyrn/detail/net/socket.h"
 #include "alyrn/time/clock.h"
 #include "alyrn/time/timer_id.h"
 
@@ -238,7 +238,7 @@ bool TestCrossThreadRequestStopWakesPoll() {
 
   return Expect(stop_sent.load(std::memory_order_acquire),
                 "cross-thread stop request should be delivered") &&
-         Expect(loop.State() == alyrn::backend::LoopState::kStopped,
+         Expect(loop.State() == ::alyrn::detail::backend::LoopState::kStopped,
                 "Loop should reach stopped after RequestStop") &&
          Expect(elapsed < std::chrono::seconds(1),
                 "RequestStop should wake kevent instead of waiting for its poll timeout");
@@ -336,7 +336,7 @@ bool TestLoopStopDiscardsUnexpiredTimer() {
   loop.RequestStop();
   loop.Run();
 
-  return Expect(loop.State() == alyrn::backend::LoopState::kStopped,
+  return Expect(loop.State() == ::alyrn::detail::backend::LoopState::kStopped,
                 "loop with an unexpired timer should stop") &&
          Expect(!fired, "loop shutdown must discard an unexpired timer without running it");
 }
@@ -361,7 +361,7 @@ bool TestLoopStopCancelsConnectorTimer() {
   stopper.join();
 
   return Expect(resumed, "loop stop should settle Connector::SleepFor") &&
-         Expect(loop.State() == alyrn::backend::LoopState::kStopped,
+         Expect(loop.State() == ::alyrn::detail::backend::LoopState::kStopped,
                 "timer cancellation should leave Loop stopped");
 }
 

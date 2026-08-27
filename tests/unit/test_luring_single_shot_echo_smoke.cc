@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Bounded cover of examples/luring/01_single_shot_echo.cc and
+// Bounded cover of examples/uring/01_single_shot_echo.cc and
 // 02_single_shot_connect.cc: one accept, one echo round-trip, then stop.
 
 #include <array>
@@ -15,11 +15,11 @@
 #include "alyrn/result.h"
 #include "alyrn/coro/spawn.h"
 #include "alyrn/io/loop.h"
-#include "alyrn/luring/connector.h"
-#include "alyrn/luring/listener.h"
-#include "alyrn/luring/loop.h"
-#include "alyrn/luring/options.h"
-#include "alyrn/luring/stream.h"
+#include "alyrn/uring/connector.h"
+#include "alyrn/uring/listener.h"
+#include "alyrn/uring/loop.h"
+#include "alyrn/uring/options.h"
+#include "alyrn/uring/stream.h"
 #include "alyrn/net/endpoint.h"
 
 namespace {
@@ -38,7 +38,7 @@ bool IsEnvironmentSkip(alyrn::Error error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 
-alyrn::coro::DetachedTask EchoOnce(alyrn::luring::Stream stream) {
+alyrn::coro::DetachedTask EchoOnce(alyrn::uring::Stream stream) {
   std::array<std::byte, 4096> buffer{};
 
   for (;;) {
@@ -57,8 +57,8 @@ alyrn::coro::DetachedTask EchoOnce(alyrn::luring::Stream stream) {
   (void)co_await stream.Close();
 }
 
-alyrn::coro::DetachedTask AcceptOnce(alyrn::luring::Loop& loop,
-                                        alyrn::luring::Listener& listener) {
+alyrn::coro::DetachedTask AcceptOnce(alyrn::uring::Loop& loop,
+                                        alyrn::uring::Listener& listener) {
   auto accepted = co_await listener.Accept();
   if (!accepted.has_value()) {
     loop.RequestStop();
@@ -68,9 +68,9 @@ alyrn::coro::DetachedTask AcceptOnce(alyrn::luring::Loop& loop,
   alyrn::coro::SpawnDetach(loop, EchoOnce(std::move(*accepted)));
 }
 
-alyrn::coro::DetachedTask ConnectOnce(alyrn::luring::Loop& loop, std::uint16_t port,
+alyrn::coro::DetachedTask ConnectOnce(alyrn::uring::Loop& loop, std::uint16_t port,
                                          bool* echo_ok) {
-  auto connector = alyrn::luring::Connector::Create(&loop);
+  auto connector = alyrn::uring::Connector::Create(&loop);
   if (!connector.has_value()) {
     loop.RequestStop();
     co_return;
@@ -118,8 +118,8 @@ alyrn::coro::DetachedTask ConnectOnce(alyrn::luring::Loop& loop, std::uint16_t p
 }
 
 bool CheckEchoRoundTrip() {
-  alyrn::luring::Loop loop;
-  alyrn::luring::Options options;
+  alyrn::uring::Loop loop;
+  alyrn::uring::Options options;
   options.entries = 64;
 
   auto init = loop.Init(options);
@@ -132,7 +132,7 @@ bool CheckEchoRoundTrip() {
     return false;
   }
 
-  auto listener = alyrn::luring::Listener::Create(&loop, alyrn::net::Endpoint::Loopback(0));
+  auto listener = alyrn::uring::Listener::Create(&loop, alyrn::net::Endpoint::Loopback(0));
   if (!listener.has_value()) {
     std::cout << "FAIL: Listener::Create failed: " << listener.error().message() << '\n';
     return false;

@@ -27,13 +27,13 @@
 #include <set>
 #include <vector>
 
-#include "alyrn/ds/intrusive_rbtree.h"
+#include "alyrn/detail/ds/intrusive_rbtree.h"
 
 // ----------------------------------------------------------------
 // Element type
 // ----------------------------------------------------------------
 
-struct Job : alyrn::ds::RBTreeNode<Job> {
+struct Job : alyrn::detail::ds::RBTreeNode<Job> {
   Job() = default;
 
   int         id;
@@ -45,7 +45,7 @@ bool JobLess(const Job* a, const Job* b) {
   return a->id < b->id;
 }
 
-using JobTree = alyrn::ds::IntrusiveTree<Job, JobLess>;
+using JobTree = alyrn::detail::ds::IntrusiveTree<Job, JobLess>;
 
 struct JobCmp {
   bool operator()(const Job* a, const Job* b) const { return JobLess(a, b); }

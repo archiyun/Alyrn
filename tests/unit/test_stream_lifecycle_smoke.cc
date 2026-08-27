@@ -10,7 +10,7 @@
 #include <system_error>
 #include <utility>
 
-#include "alyrn/net/detail/stream_lifecycle.h"
+#include "alyrn/detail/net/stream_lifecycle.h"
 
 namespace {
 

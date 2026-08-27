@@ -4,14 +4,14 @@
 #include <cstdint>
 #include <string_view>
 
-#include "alyrn/coro/task.h"
+#include "alyrn/task.h"
 #include "alyrn/kqueue/loop.h"
 #include "alyrn/kqueue/stream.h"
 #include "alyrn/net/endpoint.h"
 #include "alyrn/net/tcp_options.h"
 #include "alyrn/result.h"
 #include "alyrn/time/clock.h"
-#include "alyrn/utils/macros.h"
+#include "alyrn/detail/utils/macros.h"
 
 namespace alyrn::kqueue {
 
@@ -37,9 +37,9 @@ public:
 
   // Connect is loop-affine. Independent calls may be pending concurrently;
   // each call owns its socket, Channel, result, and continuation.
-  coro::Task<Result<Stream>> Connect(net::Endpoint peer);
-  coro::Task<Result<Stream>> Connect(std::string_view host, std::uint16_t port);
-  coro::Task<void> SleepFor(time::Duration delay);
+  ::alyrn::Task<Result<Stream>> Connect(net::Endpoint peer);
+  ::alyrn::Task<Result<Stream>> Connect(std::string_view host, std::uint16_t port);
+  ::alyrn::Task<void> SleepFor(time::Duration delay);
 
 private:
   void RequireOwnerLoop() const noexcept;

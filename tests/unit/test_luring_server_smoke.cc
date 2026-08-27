@@ -19,8 +19,8 @@
 
 #include "alyrn/result.h"
 #include "alyrn/coro/task.h"
-#include "alyrn/luring/detail/server.h"
-#include "alyrn/luring/stream.h"
+#include "alyrn/detail/uring/server.h"
+#include "alyrn/uring/stream.h"
 #include "alyrn/net/endpoint.h"
 
 namespace {
@@ -118,8 +118,8 @@ alyrn::Result<int> ConnectClient(const alyrn::net::Endpoint& address) {
   return fd;
 }
 
-alyrn::luring::detail::ServerOptions MakeOptions(std::size_t worker_num = 1) {
-  alyrn::luring::detail::ServerOptions options;
+alyrn::uring::detail::ServerOptions MakeOptions(std::size_t worker_num = 1) {
+  alyrn::uring::detail::ServerOptions options;
   options.worker_group_options.worker_num = worker_num;
   options.worker_group_options.worker_options.loop_options.entries = 16;
   options.worker_group_options.worker_options.listen_options.reuse_port = true;
@@ -137,7 +137,7 @@ bool CheckServerStartStop() {
     return false;
   }
 
-  alyrn::luring::detail::Server server(LoopbackAddress(*port), MakeOptions());
+  alyrn::uring::detail::Server server(LoopbackAddress(*port), MakeOptions());
 
   auto started = server.Start();
   if (!started.has_value()) {
@@ -171,13 +171,13 @@ bool CheckServerSessionHandler() {
   }
 
   const auto listen_addr = LoopbackAddress(*port);
-  alyrn::luring::detail::Server server(listen_addr, MakeOptions());
+  alyrn::uring::detail::Server server(listen_addr, MakeOptions());
 
   std::atomic_size_t session_count{0};
   std::atomic_bool invalid_stream{false};
   std::atomic_bool wrong_loop{false};
-  server.SetSessionHandler([&](alyrn::luring::detail::WorkerContext& context,
-                                 alyrn::luring::Stream stream) -> alyrn::coro::DetachedTask {
+  server.SetSessionHandler([&](alyrn::uring::detail::WorkerContext& context,
+                                 alyrn::uring::Stream stream) -> alyrn::coro::DetachedTask {
     if (!context.loop.IsInLoopThread()) {
       wrong_loop.store(true, std::memory_order_relaxed);
     }
@@ -238,12 +238,12 @@ bool CheckServerStopsActiveSession() {
   }
 
   const auto listen_addr = LoopbackAddress(*port);
-  alyrn::luring::detail::Server server(listen_addr, MakeOptions());
+  alyrn::uring::detail::Server server(listen_addr, MakeOptions());
   std::atomic_bool session_started{false};
   std::atomic_bool session_cancelled{false};
 
   server.SetSessionHandler(
-      [&](alyrn::luring::detail::WorkerContext&, alyrn::luring::Stream stream)
+      [&](alyrn::uring::detail::WorkerContext&, alyrn::uring::Stream stream)
           -> alyrn::coro::DetachedTask {
         session_started.store(true, std::memory_order_release);
         std::array<std::byte, 1> buffer{};

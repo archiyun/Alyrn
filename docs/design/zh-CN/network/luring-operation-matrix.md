@@ -117,16 +117,16 @@ IORING_RECV_MULTISHOT 可用
 
 ## 4. 扩展 operation
 
-| 扩展 | 提交与完成 | 业务结果 | buffer / operation 生命周期 | Reactor 解释 | 当前状态 |
+| 扩展 | 提交与完成 | 业务结果 | buffer / operation 生命周期 | Epoll 解释 | 当前状态 |
 | --- | --- | --- | --- | --- | --- |
 | multishot accept | 1 个 SQE，多个 CQE；`F_MORE` 表示 operation 继续 | 每个 CQE 产生一个新 stream；无 `F_MORE` 的 CQE 结束 source | source 在终止 CQE、错误或取消收敛后释放；不能每个 CQE 都销毁 operation | readiness 后反复 `accept()`，每次成功 emit 一个 stream | luring 原生实现；不支持时降级 single-shot |
 | multishot recv | 1 个 SQE，多个 CQE；每个 CQE 可能产生数据事件 | 每个 CQE 是一个 `RecvEvent`，最终 CQE/错误结束 source | source 持续存活；每个数据 buffer 必须有独立 `BufferLease` | readiness + 非阻塞 `recv()` 循环 emit 事件 | `RecvSource` 使用 provided buffer ring；`RecvSource` 使用 readiness drain + 固定 buffer pool；两者共享 `AsyncRecvSource` |
-| legacy provided buffers | 当前 backend 不提交 legacy `provide_buffers` | 不属于当前公共结果契约 | 无 legacy buffer group 所有权规则 | 无对应的 Reactor 语义 | 未实现；当前路径不支持 |
+| legacy provided buffers | 当前 backend 不提交 legacy `provide_buffers` | 不属于当前公共结果契约 | 无 legacy buffer group 所有权规则 | 无对应的 Epoll 语义 | 未实现；当前路径不支持 |
 | provided buffer ring | 注册 buffer ring，CQE flags 返回 buffer id；可带 `F_BUF_MORE` | 结果包含字节数、buffer id 和继续消费信息；增量 CQE 使用同一 id 的连续 offset | `BufferLease` 归还 ring 后才能复用；`F_BUF_MORE` 结束前以及所有 segment lease 释放前都不能归还 | 应用层 buffer pool；没有内核选择 id 的等价语义 | `RecvSource` 的非增量路径共享每 worker 一个 ring；逐 source ring 已删除；`F_BUF_MORE` source 路径待后续单独实现 |
 | send zerocopy | 一个 send CQE；primary 带 `F_MORE` 时另有 `F_NOTIF` | send CQE 确定发送结果；primary 无 `F_MORE` 或 notification 确定 memory 可复用 | send result 与 buffer release 可分离；`F_MORE` 后不能在 notification 前释放 buffer | 普通 write 完成后释放发送 buffer；没有同等的两阶段 zc 协议 | `Stream::SendZeroCopy` 已实现；按 primary `F_MORE` 选择 terminal 边界 |
 | registered fixed buffer | 当前 backend 未提交 registered buffer SQE | 结果仍可为 single-shot 或其它 lifecycle shape | registration 的 owner 必须覆盖所有 in-flight operation | 普通用户 buffer；没有固定 buffer 的相同语义 | 未实现；当前没有公共接口 |
 | fixed file | 当前 backend 未提交 fixed-file SQE | 结果语义由具体 operation 决定 | file table slot 释放前不能有引用 | 普通 fd 所有权 | 未实现；当前没有公共接口 |
-| linked operations | 多个 SQE 组成一个逻辑操作 | 可能有多个物理 CQE，但业务结果通常只确定一次 | 所有影响结果或资源的 link member 都必须收敛 | Reactor 通过组合 awaiter/状态机模拟 | timed read 已内部使用；通用公共 API 未实现 |
+| linked operations | 多个 SQE 组成一个逻辑操作 | 可能有多个物理 CQE，但业务结果通常只确定一次 | 所有影响结果或资源的 link member 都必须收敛 | Epoll 通过组合 awaiter/状态机模拟 | timed read 已内部使用；通用公共 API 未实现 |
 
 ### 4.1 multishot 的恢复规则
 
@@ -236,14 +236,14 @@ operation destruction
   synthetic timeout completion 与 read CQE 的一次性收敛；
 - `formal/scheduler_completion_liveness.tla`：在 worker 持续执行 turn 的公平性假设下，
   completion-ready continuation 最终被调度，且 normal ready backlog 不会令其饥饿；
-- `formal/async_stream_multiop_backend_refinement.tla`：Reactor readiness 与 io_uring
+- `formal/async_stream_multiop_backend_refinement.tla`：Epoll readiness 与 io_uring
   SQE/CQE 的内部 stuttering 映射到同一条并发 read/write 可观察 trace；
 - `formal/send_zc_split_release_refinement.tla`：`SendZeroCopy` 的 primary CQE、`F_NOTIF`、
   buffer release 与 completion-ready resume 的具体 io_uring refinement；
-- `formal/async_stream_backend_refinement.tla`：Reactor 与 io_uring 的 single-shot refinement；
+- `formal/async_stream_backend_refinement.tla`：Epoll 与 io_uring 的 single-shot refinement；
 - `formal/async_operation_lifecycle_shapes.tla`：result cardinality、physical convergence
   与 release coupling 的正交组合和 release/resume 授权。
-- `formal/accept_source_refinement.tla`：Reactor readiness、io_uring one-shot re-arm 和
+- `formal/accept_source_refinement.tla`：Epoll readiness、io_uring one-shot re-arm 和
   native multishot 三条 AcceptSource 路径的有界业务语义 refinement；
 - `formal/recv_source_lease.tla`：provided-buffer multishot recv 的 queue、BufferLease、
   cancel 和 Stop 收敛不变量。
@@ -299,7 +299,7 @@ tlc docs/design/zh-CN/network/formal/recv_source_incremental_lease.tla \
 ```text
 AcceptSource:
   event 至多交付一次；terminal 至多观察一次；Stop 后不再 admission；
-  Reactor / UringSingle / UringMulti 都只能通过 Terminal/Draining 收敛。
+  Epoll / UringSingle / UringMulti 都只能通过 Terminal/Draining 收敛。
 
 RecvSource:
   available、queued、leased buffer 两两不重叠且覆盖 buffer pool；
@@ -325,10 +325,10 @@ Incremental RecvSource (`F_BUF_MORE`):
    native capability/profile 层。（已完成。）
 4. 单独实现 `AcceptSource`，保留现有一次性 `Accept()`。（已完成。）
 5. 实现带 `BufferLease` 的 multishot recv。（luring 使用每 worker 共享的 provided-buffer ring，
-   Reactor 使用 readiness source；当前两条路径都完成了 lease safety，`F_BUF_MORE` 增量消费仍是
+   Epoll 使用 readiness source；当前两条路径都完成了 lease safety，`F_BUF_MORE` 增量消费仍是
    后续独立设计。）
 6. 实现 send zerocopy 的结果与条件式 release 生命周期。（`Stream::SendZeroCopy`
-   已完成；primary `F_MORE` 时等待 notification，否则 primary 本身终态；Reactor 保持普通 send
+   已完成；primary `F_MORE` 时等待 notification，否则 primary 本身终态；Epoll 保持普通 send
    语义，不伪造 zerocopy notification。）
 
 ## 参考

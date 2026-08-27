@@ -8,24 +8,24 @@
 #include <cstdint>
 #include <span>
 
-#include "alyrn/coro/task.h"
-#include "alyrn/kqueue/detail/channel.h"
-#include "alyrn/kqueue/detail/loop_shutdown.h"
-#include "alyrn/kqueue/detail/op_hook.h"
-#include "alyrn/kqueue/detail/result_state.h"
+#include "alyrn/task.h"
+#include "alyrn/detail/kqueue/channel.h"
+#include "alyrn/detail/kqueue/loop_shutdown.h"
+#include "alyrn/detail/kqueue/op_hook.h"
+#include "alyrn/detail/kqueue/result_state.h"
 #include "alyrn/kqueue/loop.h"
 #include "alyrn/kqueue/options.h"
 #include "alyrn/net/buffer.h"
-#include "alyrn/net/detail/stream_lifecycle.h"
+#include "alyrn/detail/net/stream_lifecycle.h"
 #include "alyrn/net/endpoint.h"
 #include "alyrn/net/read_into.h"
-#include "alyrn/net/socket.h"
-#include "alyrn/operation/detail/scheduler_continuation.h"
-#include "alyrn/operation/detail/single_result_lifecycle.h"
+#include "alyrn/detail/net/socket.h"
+#include "alyrn/detail/operation/scheduler_continuation.h"
+#include "alyrn/detail/operation/single_result_lifecycle.h"
 #include "alyrn/result.h"
 #include "alyrn/time/clock.h"
 #include "alyrn/time/timer_id.h"
-#include "alyrn/utils/macros.h"
+#include "alyrn/detail/utils/macros.h"
 
 namespace alyrn::kqueue {
 
@@ -65,9 +65,9 @@ public:
 
   [[nodiscard]]
   // Legacy alias for CloseWrite().
-  coro::Task<Result<void>> Shutdown() noexcept;
+  ::alyrn::Task<Result<void>> Shutdown() noexcept;
   [[nodiscard]]
-  coro::Task<Result<void>> Close() noexcept;
+  ::alyrn::Task<Result<void>> Close() noexcept;
 
   [[nodiscard]]
   Result<net::Endpoint> LocalAddr() const noexcept;
@@ -94,11 +94,11 @@ public:
 
   [[nodiscard]]
   // Shuts down local reception while keeping the descriptor and write side.
-  coro::Task<Result<void>> CloseRead() noexcept;
+  ::alyrn::Task<Result<void>> CloseRead() noexcept;
 
   [[nodiscard]]
   // Shuts down local transmission while keeping the descriptor and read side.
-  coro::Task<Result<void>> CloseWrite() noexcept;
+  ::alyrn::Task<Result<void>> CloseWrite() noexcept;
 
   [[nodiscard]]
   int Fd() const noexcept {
@@ -119,8 +119,8 @@ public:
 private:
   using Channel = detail::Channel;
   using LoopShutdownParticipant = detail::LoopShutdownParticipant;
-  using SchedulerContinuation = operation::detail::SchedulerContinuation;
-  using SingleResultLifecycle = operation::detail::SingleResultLifecycle;
+  using SchedulerContinuation = ::alyrn::detail::operation::SchedulerContinuation;
+  using SingleResultLifecycle = ::alyrn::detail::operation::SingleResultLifecycle;
   using IoResultState = detail::IoResultState;
 
   template <class Awaiter>

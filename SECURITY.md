@@ -20,7 +20,7 @@ unbounded resource consumption, parser flaw, etc.):
 ## Scope
 
 In scope:
-- `alyrn_foundation`, `alyrn_task`, `alyrn_net`, `alyrn_reactor`,
+- `alyrn_foundation`, `alyrn_task`, `alyrn_net`, `alyrn_epoll`,
   `alyrn_luring` library code
 
 Out of scope:

@@ -15,9 +15,9 @@
 #include <cstdio>
 #include <string>
 
-#include "alyrn/ds/intrusive_rbtree.h"
+#include "alyrn/detail/ds/intrusive_rbtree.h"
 
-using namespace alyrn::ds;
+using namespace alyrn::detail::ds;
 
 // ------------------------------------------------------------
 // 1. 定义任务元素类型，并公开继承红黑树节点

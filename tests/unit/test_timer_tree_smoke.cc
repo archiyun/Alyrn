@@ -3,14 +3,15 @@
 #include <iostream>
 #include <vector>
 
-#include "alyrn/ds/intrusive_rbtree.h"
-#include "alyrn/time/timer.h"
-#include "alyrn/time/timer_tree.h"
+#include "alyrn/detail/ds/intrusive_rbtree.h"
+#include "alyrn/detail/time/timer.h"
+#include "alyrn/detail/time/timer_tree.h"
 
 namespace {
 
 static_assert(
-    std::derived_from<alyrn::time::Timer, alyrn::ds::RBTreeNode<alyrn::time::Timer>>);
+    std::derived_from<alyrn::detail::time::Timer,
+                      alyrn::detail::ds::RBTreeNode<alyrn::detail::time::Timer>>);
 
 bool Expect(bool condition, const char* message) {
   if (!condition) {
@@ -24,10 +25,10 @@ bool TestOrdersByExpirationThenSequence() {
   const auto base = alyrn::time::Deadline{};
   const auto early_deadline = base + alyrn::time::Seconds(1);
   const auto late_deadline = base + alyrn::time::Seconds(2);
-  alyrn::time::Timer first([] {}, late_deadline, alyrn::time::Duration::zero());
-  alyrn::time::Timer second([] {}, late_deadline, alyrn::time::Duration::zero());
-  alyrn::time::Timer early([] {}, early_deadline, alyrn::time::Duration::zero());
-  alyrn::time::TimerTree timers;
+  alyrn::detail::time::Timer first([] {}, late_deadline, alyrn::time::Duration::zero());
+  alyrn::detail::time::Timer second([] {}, late_deadline, alyrn::time::Duration::zero());
+  alyrn::detail::time::Timer early([] {}, early_deadline, alyrn::time::Duration::zero());
+  alyrn::detail::time::TimerTree timers;
 
   if (!Expect(timers.Insert(&second), "insert second") ||
       !Expect(timers.Insert(&first), "insert first") ||
@@ -53,11 +54,11 @@ bool TestOrdersByExpirationThenSequence() {
 bool TestExtractPrefixUnlinksAndPreservesOrder() {
   const auto base = alyrn::time::Deadline{};
   const auto deadline = base + alyrn::time::Seconds(3);
-  alyrn::time::Timer first([] {}, deadline, alyrn::time::Duration::zero());
-  alyrn::time::Timer second([] {}, deadline, alyrn::time::Duration::zero());
-  alyrn::time::Timer later([] {}, base + alyrn::time::Seconds(4),
-                              alyrn::time::Duration::zero());
-  alyrn::time::TimerTree timers;
+  alyrn::detail::time::Timer first([] {}, deadline, alyrn::time::Duration::zero());
+  alyrn::detail::time::Timer second([] {}, deadline, alyrn::time::Duration::zero());
+  alyrn::detail::time::Timer later([] {}, base + alyrn::time::Seconds(4),
+                                   alyrn::time::Duration::zero());
+  alyrn::detail::time::TimerTree timers;
 
   if (!Expect(timers.Insert(&later), "insert later") ||
       !Expect(timers.Insert(&second), "insert second") ||
@@ -67,8 +68,10 @@ bool TestExtractPrefixUnlinksAndPreservesOrder() {
 
   std::vector<std::int64_t> popped_sequences;
   const std::size_t popped = timers.ExtractPrefix(
-      [deadline](const alyrn::time::Timer* timer) { return timer->expiration() <= deadline; },
-      [&](alyrn::time::Timer* timer) {
+      [deadline](const alyrn::detail::time::Timer* timer) {
+        return timer->expiration() <= deadline;
+      },
+      [&](alyrn::detail::time::Timer* timer) {
         if (!timer->InTree()) {
           popped_sequences.push_back(timer->sequence());
         }
@@ -89,9 +92,9 @@ bool TestExtractPrefixUnlinksAndPreservesOrder() {
 
 bool TestTimerCanBeReinsertedAfterRestart() {
   const auto base = alyrn::time::Deadline{};
-  alyrn::time::Timer repeating([] {}, base + alyrn::time::Seconds(5),
-                                  alyrn::time::Milliseconds(10));
-  alyrn::time::TimerTree timers;
+  alyrn::detail::time::Timer repeating([] {}, base + alyrn::time::Seconds(5),
+                                       alyrn::time::Milliseconds(10));
+  alyrn::detail::time::TimerTree timers;
 
   if (!Expect(timers.Insert(&repeating), "insert repeating")) {
     return false;

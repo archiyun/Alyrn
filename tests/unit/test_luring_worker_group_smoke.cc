@@ -16,7 +16,7 @@
 #include <utility>
 
 #include "alyrn/result.h"
-#include "alyrn/luring/detail/worker_group.h"
+#include "alyrn/detail/uring/worker_group.h"
 #include "alyrn/net/endpoint.h"
 
 namespace {
@@ -125,7 +125,7 @@ bool CheckWorkerGroupStartStop() {
     return false;
   }
 
-  alyrn::luring::detail::WorkerGroupOptions options;
+  alyrn::uring::detail::WorkerGroupOptions options;
   options.worker_num = 2;
   options.worker_options.loop_options.entries = 16;
   options.worker_options.listen_options.reuse_port = true;
@@ -135,8 +135,8 @@ bool CheckWorkerGroupStartStop() {
   std::atomic_bool invalid_index{false};
   std::atomic_bool invalid_listener{false};
 
-  alyrn::luring::detail::WorkerGroup group(LoopbackAddress(*port), options,
-                                        [&](alyrn::luring::detail::WorkerContext& context) {
+  alyrn::uring::detail::WorkerGroup group(LoopbackAddress(*port), options,
+                                        [&](alyrn::uring::detail::WorkerContext& context) {
                                           if (!context.loop.IsInLoopThread()) {
                                             bad_thread.store(true, std::memory_order_relaxed);
                                           }
@@ -187,21 +187,21 @@ bool CheckWorkerGroupAcceptCallback() {
     return false;
   }
 
-  alyrn::luring::detail::WorkerGroupOptions options;
+  alyrn::uring::detail::WorkerGroupOptions options;
   options.worker_num = 1;
   options.worker_options.loop_options.entries = 16;
   options.worker_options.listen_options.reuse_port = true;
-  options.worker_options.accept_mode = alyrn::luring::detail::AcceptMode::kMultishot;
+  options.worker_options.accept_mode = alyrn::uring::detail::AcceptMode::kMultishot;
 
   std::atomic_size_t connection_count{0};
   std::atomic_bool invalid_stream{false};
   std::atomic_bool bad_thread{false};
 
   const auto listen_addr = LoopbackAddress(*port);
-  alyrn::luring::detail::WorkerGroup group(
+  alyrn::uring::detail::WorkerGroup group(
       listen_addr, options, {},
-      [&](alyrn::luring::detail::WorkerContext& context,
-          alyrn::luring::Stream stream) -> alyrn::coro::DetachedTask {
+      [&](alyrn::uring::detail::WorkerContext& context,
+          alyrn::uring::Stream stream) -> alyrn::coro::DetachedTask {
         if (!context.loop.IsInLoopThread()) {
           bad_thread.store(true, std::memory_order_relaxed);
         }

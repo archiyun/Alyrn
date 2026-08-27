@@ -619,15 +619,15 @@ S_abs = (C, R, O)
 上：
 
 ```text
-S_Reactor = (S_abs, Q_Reactor, Reactor, P, H)
-S_LUring  = (S_abs, Q_LUring,  LUring,  P, H)
+S_Epoll = (S_abs, Q_Epoll, Epoll, P, H)
+S_Uring  = (S_abs, Q_Uring,  Uring,  P, H)
 ```
 
 其中：
 
 ```text
-Q_Reactor = ready queue、Channel、Poller、TimerQueue
-Q_LUring  = ready queue、completion queue、SQ、CQ、Mailbox、TimerQueue
+Q_Epoll = ready queue、Channel、Poller、TimerQueue
+Q_Uring  = ready queue、completion queue、SQ、CQ、Mailbox、TimerQueue
 B          = 当前后端解释器
  P          = 编译期选定的 io 语义 contract
 H          = 用于证明的 happens-before 关系
@@ -655,10 +655,10 @@ E_obs = {
 `E_obs` 是协程语义契约使用的事件。业务协程可以通过 await 的结果和恢复顺序间接
 观察它们，但不应该依赖事件的具体实现。
 
-Reactor 的内部事件可以写成：
+Epoll 的内部事件可以写成：
 
 ```text
-E_int^Reactor = {
+E_int^Epoll = {
   TryRead,
   TryWrite,
   EAGAIN,
@@ -672,7 +672,7 @@ E_int^Reactor = {
 io_uring 的内部事件可以写成：
 
 ```text
-E_int^LUring = {
+E_int^Uring = {
   SQEPrepared,
   SQESubmitted,
   CQEReaped,
@@ -704,12 +704,12 @@ Obs_B : Trace_B -> CoroutineTrace
 它会删除后端内部事件，并保留或生成协程可观察事件：
 
 ```text
-Obs_Reactor(
+Obs_Epoll(
   TryRead, EAGAIN, EpollReadable, recv(128), ResumeWork
 )
   = [Complete(read, 128), Resume(read, 128)]
 
-Obs_LUring(
+Obs_Uring(
   SQEPrepared, SQESubmitted, CQEReaped, CompleteHook, ResumeWork
 )
   = [Complete(read, 128), Resume(read, 128)]
@@ -775,7 +775,7 @@ Submit
 
 ### `δ`：两个后端如何解释同一转移
 
-Reactor 的典型映射是：
+Epoll 的典型映射是：
 
 ```text
 co_await
@@ -806,20 +806,20 @@ co_await
 因此可以定义两个后端到抽象机的 refinement 映射：
 
 ```text
-Refine_Reactor : ConcreteReactorState -> S_abs
-Refine_LUring  : ConcreteLUringState  -> S_abs
+Refine_Epoll : ConcreteEpollState -> S_abs
+Refine_Uring  : ConcreteUringState  -> S_abs
 ```
 
 证明义务不是让两个具体状态相同，而是要求：
 
 ```text
-每个合法的 Reactor 转移都能映射成一个合法的 S_abs 转移；
+每个合法的 Epoll 转移都能映射成一个合法的 S_abs 转移；
 每个合法的 io_uring 转移也能映射成一个合法的 S_abs 转移；
 映射后的观察轨迹都满足 Σ_core 和 Inv。
 ```
 
 这也解释了项目中的固定边界：`alyrn::io::AsyncStream` 是抽象语义入口，
-`reactor::Stream` 和 `luring::Stream` 是两个具体解释器，epoll、SQE、CQE 和 mailbox
+`epoll::Stream` 和 `uring::Stream` 是两个具体解释器，epoll、SQE、CQE 和 mailbox
 属于具体后端的状态与事件。
 
 ### 不变量与活性条件
@@ -863,10 +863,10 @@ ready queue 最终获得调度机会。若调度策略允许永久饿死某个 o
 ```
 
 先检查单个 read/write、立即完成、真正挂起、Close 与 Complete 竞争等情况。模型不
-需要复制真实的 fd、SQE、CQE 或 gateway；这些属于 `Refine_Reactor` 和
-`Refine_LUring` 的实现证明对象。
+需要复制真实的 fd、SQE、CQE 或 gateway；这些属于 `Refine_Epoll` 和
+`Refine_Uring` 的实现证明对象。
 
-对应的 C++ 测试则应该让 Reactor 和 io_uring 运行同一组契约场景：正常完成、EOF、
+对应的 C++ 测试则应该让 Epoll 和 io_uring 运行同一组契约场景：正常完成、EOF、
 Close 取消、Close 后提交、重复完成、read/write 并行 pending 以及 buffer 生命周期。
 
 只有当两个后端都能映射到同一个 `S_abs`，热插拔才可以定义为：
@@ -892,9 +892,9 @@ Freeze(b1)
 两个后端解释同一接口： 已有 Stream 和 Stream
 核心不变量：           主要由线程归属、pending 槽位和 Close 路径维护
 观察函数 Obs：          尚未实现
-Refine_Reactor：        已有有限路径映射模型
-Refine_LUring：         已有有限路径映射模型
-有限 backend refinement：已有 Reactor/io_uring 路径模型
+Refine_Epoll：        已有有限路径映射模型
+Refine_Uring：          已有有限路径映射模型
+有限 backend refinement：已有 Epoll/io_uring 路径模型
 TLA+ 状态模型：          core 与 backend refinement 模型均已存在
 运行时 SwitchBackend：  尚不存在
 ```
@@ -909,7 +909,7 @@ No error has been found
 ```
 
 这说明有限状态模型中的当前安全不变量成立；更新后的 core 模型还在显式公平假设下检查
-pending settlement、settled waiter resume 和 Closing 收敛。它仍不等于已经证明 Reactor 和
+pending settlement、settled waiter resume 和 Closing 收敛。它仍不等于已经证明 Epoll 和
 io_uring 的完整 refinement、真实内核调度公平性或热插拔安全。模型暂时关闭了 TLC 的
 deadlock 检查，因为一次性 operation 的 `Closed` 和 `Done` 状态被设计为合法终点。
 
@@ -917,7 +917,7 @@ deadlock 检查，因为一次性 operation 的 `Closed` 和 `Done` 状态被设
 进一步将两条具体路径放入同一个有限模型：
 
 ```text
-Reactor： EAGAIN -> Channel readiness -> Complete
+Epoll： EAGAIN -> Channel readiness -> Complete
 io_uring：SQE -> submit -> CQE -> Complete
 ```
 
@@ -939,7 +939,7 @@ operation owner 和 buffer 生命周期的证明。动态 `SwitchBackend` 不属
 因此，当前项目可以表述为：
 
 ```text
-Reactor 和 io_uring 已经有共同的协程语义接口，
+Epoll 和 io_uring 已经有共同的协程语义接口，
 并且存在映射到同一个抽象状态机的现实基础。
 ```
 
@@ -954,12 +954,12 @@ Reactor 和 io_uring 已经有共同的协程语义接口，
 Complete 前有效”等动态性质。这些性质目前依赖具体实现、调试断言和 smoke test。
 
 此外，当前 luring 不再通过独立的 native capability profile 做启动期绑定；它在 ring 初始化、
-source 创建和 operation 提交处返回实际运行期错误。Reactor 仍可使用 `io::BindReactor` 做
-语义 profile 校验。Reactor 和 luring 的 stream 都是 loop-bound，pending operation 不能直接
+source 创建和 operation 提交处返回实际运行期错误。Epoll 仍可使用 `io::BindEpoll` 做
+语义 profile 校验。Epoll 和 luring 的 stream 都是 loop-bound，pending operation 不能直接
 迁移。因此现阶段最多只能把 quiescent switch 作为未来设计目标，不能把它描述成已有能力。
 
 timeout 现在由独立的 `AsyncTimedReadStream` / `AsyncTimedStream` interface 表达：
-`reactor::Stream` 和 `luring::Stream` 都满足该 extension，而 `AsyncStream` 仍刻意保持最小。
+`epoll::Stream` 和 `uring::Stream` 都满足该 extension，而 `AsyncStream` 仍刻意保持最小。
 `io::AsyncTimedStream` 负责编译期 interface 约束，不能替代公共语义验证；实际 timeout
 失败仍由 backend 的 `Result` 返回。
 

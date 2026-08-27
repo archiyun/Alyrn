@@ -19,11 +19,11 @@
 #include <iostream>
 #include <thread>
 
-#include "alyrn/base/check.h"
-#include "alyrn/kqueue/detail/channel.h"
+#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/kqueue/channel.h"
 #include "alyrn/kqueue/loop.h"
 #include "alyrn/kqueue/options.h"
-#include "alyrn/net/socket.h"
+#include "alyrn/detail/net/socket.h"
 
 namespace {
 
@@ -390,7 +390,7 @@ bool CheckRequestStopWakesBlockedLoop() {
   loop.Run();
   stopper.join();
 
-  return Check(loop.State() == alyrn::backend::LoopState::kStopped,
+  return Check(loop.State() == ::alyrn::detail::backend::LoopState::kStopped,
                "RequestStop must wake a blocked Loop");
 }
 

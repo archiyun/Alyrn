@@ -17,11 +17,11 @@
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/spawn.h"
 #include "alyrn/coro/task.h"
-#include "alyrn/luring/detail/loop_access.h"
-#include "alyrn/luring/listener.h"
-#include "alyrn/luring/loop.h"
-#include "alyrn/luring/options.h"
-#include "alyrn/luring/stream.h"
+#include "alyrn/detail/uring/loop_access.h"
+#include "alyrn/uring/listener.h"
+#include "alyrn/uring/loop.h"
+#include "alyrn/uring/options.h"
+#include "alyrn/uring/stream.h"
 #include "alyrn/net/endpoint.h"
 
 namespace {
@@ -75,8 +75,8 @@ bool IsEnvironmentSkip(alyrn::Error error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 
-LoopInitStatus InitLoop(alyrn::luring::Loop& loop) {
-  alyrn::luring::Options options;
+LoopInitStatus InitLoop(alyrn::uring::Loop& loop) {
+  alyrn::uring::Options options;
   options.entries = 16;
 
   auto init = loop.Init(options);
@@ -126,8 +126,8 @@ int GetSocketOption(int fd, int level, int option) {
 }
 
 alyrn::coro::DetachedTask AcceptOnce(
-    alyrn::luring::Listener* listener, alyrn::luring::Loop* loop,
-    std::optional<alyrn::Result<alyrn::luring::Stream>>* out,
+    alyrn::uring::Listener* listener, alyrn::uring::Loop* loop,
+    std::optional<alyrn::Result<alyrn::uring::Stream>>* out,
     bool* resumed_with_scheduler, int* resume_count = nullptr) {
   auto result = co_await listener->Accept();
   if (resume_count != nullptr) {
@@ -138,23 +138,23 @@ alyrn::coro::DetachedTask AcceptOnce(
 }
 
 alyrn::coro::DetachedTask AcceptThenAccept(
-    alyrn::luring::Listener* listener, alyrn::luring::Loop* loop,
-    std::optional<alyrn::Result<alyrn::luring::Stream>>* first,
-    std::optional<alyrn::Result<alyrn::luring::Stream>>* second,
+    alyrn::uring::Listener* listener, alyrn::uring::Loop* loop,
+    std::optional<alyrn::Result<alyrn::uring::Stream>>* first,
+    std::optional<alyrn::Result<alyrn::uring::Stream>>* second,
     bool* resumed_with_scheduler) {
   first->emplace(co_await listener->Accept());
   second->emplace(co_await listener->Accept());
   *resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == loop;
 }
 
-alyrn::coro::DetachedTask CloseOnce(alyrn::luring::Listener* listener,
+alyrn::coro::DetachedTask CloseOnce(alyrn::uring::Listener* listener,
                                        std::optional<alyrn::Result<void>>* out) {
   auto result = co_await listener->Close();
   out->emplace(std::move(result));
 }
 
 bool CheckAccept() {
-  alyrn::luring::Loop loop;
+  alyrn::uring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -164,10 +164,10 @@ bool CheckAccept() {
       return false;
   }
 
-  alyrn::luring::ListenOptions options;
+  alyrn::uring::ListenOptions options;
   options.tcp_options.no_delay = true;
   options.tcp_options.keep_alive = true;
-  auto listener = alyrn::luring::Listener::Create(&loop, LoopbackAddress(0), options);
+  auto listener = alyrn::uring::Listener::Create(&loop, LoopbackAddress(0), options);
   if (!listener.has_value()) {
     std::cout << "FAIL: Listener::Create failed: " << listener.error().message() << '\n';
     return false;
@@ -186,21 +186,21 @@ bool CheckAccept() {
   }
   UniqueFd client(*client_fd);
 
-  std::optional<alyrn::Result<alyrn::luring::Stream>> accepted;
+  std::optional<alyrn::Result<alyrn::uring::Stream>> accepted;
   bool resumed_with_scheduler = false;
 
   alyrn::coro::SpawnDetach(loop,
                               AcceptOnce(&*listener, &loop, &accepted, &resumed_with_scheduler));
 
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
-  auto completions = alyrn::luring::detail::LoopAccess::WaitCompletions(loop);
+  auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
   if (!completions.has_value()) {
     std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
     return false;
   }
 
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   bool ok = Check(*completions >= 1, "accept did not produce a completion") &&
             Check(accepted.has_value(), "accept coroutine did not resume") &&
@@ -218,7 +218,7 @@ bool CheckAccept() {
 }
 
 bool CheckAcceptReleasesReservationBeforeContinuation() {
-  alyrn::luring::Loop loop;
+  alyrn::uring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -228,7 +228,7 @@ bool CheckAcceptReleasesReservationBeforeContinuation() {
       return false;
   }
 
-  auto listener = alyrn::luring::Listener::Create(&loop, LoopbackAddress(0));
+  auto listener = alyrn::uring::Listener::Create(&loop, LoopbackAddress(0));
   if (!listener.has_value()) {
     std::cout << "FAIL: Listener::Create failed: " << listener.error().message() << '\n';
     return false;
@@ -255,20 +255,20 @@ bool CheckAcceptReleasesReservationBeforeContinuation() {
   }
   UniqueFd second_client(*second_client_fd);
 
-  std::optional<alyrn::Result<alyrn::luring::Stream>> first;
-  std::optional<alyrn::Result<alyrn::luring::Stream>> second;
+  std::optional<alyrn::Result<alyrn::uring::Stream>> first;
+  std::optional<alyrn::Result<alyrn::uring::Stream>> second;
   bool resumed_with_scheduler = false;
   alyrn::coro::SpawnDetach(
       loop, AcceptThenAccept(&*listener, &loop, &first, &second, &resumed_with_scheduler));
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   for (int i = 0; i < 8 && !second.has_value(); ++i) {
-    auto completions = alyrn::luring::detail::LoopAccess::WaitCompletions(loop);
+    auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
     if (!completions.has_value()) {
       std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
       return false;
     }
-    alyrn::luring::detail::LoopAccess::RunReady(loop);
+    alyrn::uring::detail::LoopAccess::RunReady(loop);
   }
 
   return Check(first.has_value(), "first accept did not finish") &&
@@ -283,7 +283,7 @@ bool CheckAcceptReleasesReservationBeforeContinuation() {
 }
 
 bool CheckCloseCancelsPendingAccept() {
-  alyrn::luring::Loop loop;
+  alyrn::uring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -293,35 +293,35 @@ bool CheckCloseCancelsPendingAccept() {
       return false;
   }
 
-  auto listener = alyrn::luring::Listener::Create(&loop, LoopbackAddress(0));
+  auto listener = alyrn::uring::Listener::Create(&loop, LoopbackAddress(0));
   if (!listener.has_value()) {
     std::cout << "FAIL: Listener::Create failed: " << listener.error().message() << '\n';
     return false;
   }
 
-  std::optional<alyrn::Result<alyrn::luring::Stream>> accepted;
+  std::optional<alyrn::Result<alyrn::uring::Stream>> accepted;
   bool resumed_with_scheduler = false;
   alyrn::coro::SpawnDetach(loop,
                               AcceptOnce(&*listener, &loop, &accepted, &resumed_with_scheduler));
 
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   std::optional<alyrn::Result<void>> close_result;
   alyrn::coro::SpawnDetach(loop, CloseOnce(&*listener, &close_result));
 
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   if (!Check(!close_result.has_value(), "Close with pending accept should suspend")) {
     return false;
   }
 
   for (int i = 0; i < 4 && (!close_result.has_value() || !accepted.has_value()); ++i) {
-    auto completions = alyrn::luring::detail::LoopAccess::WaitCompletions(loop);
+    auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
     if (!completions.has_value()) {
       std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
       return false;
     }
-    alyrn::luring::detail::LoopAccess::RunReady(loop);
+    alyrn::uring::detail::LoopAccess::RunReady(loop);
   }
 
   return Check(close_result.has_value(), "close coroutine did not resume") &&

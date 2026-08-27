@@ -16,11 +16,11 @@
 #include "alyrn/coro/spawn.h"
 #include "alyrn/coro/task.h"
 #include "alyrn/net/endpoint.h"
-#include "alyrn/net/socket.h"
-#include "alyrn/reactor/detail/channel.h"
-#include "alyrn/reactor/listener.h"
-#include "alyrn/reactor/loop.h"
-#include "alyrn/reactor/stream.h"
+#include "alyrn/detail/net/socket.h"
+#include "alyrn/detail/epoll/channel.h"
+#include "alyrn/epoll/listener.h"
+#include "alyrn/epoll/loop.h"
+#include "alyrn/epoll/stream.h"
 
 namespace {
 
@@ -35,7 +35,7 @@ bool Check(bool condition, const char* message) {
 struct ChannelReadContext {
   int fd;
   bool* called;
-  alyrn::reactor::Loop* loop;
+  alyrn::epoll::Loop* loop;
 };
 
 void DrainChannelRead(void* raw) noexcept {
@@ -51,7 +51,7 @@ bool MakeSocketPair(int fds[2]) {
 }
 
 bool TestChannelMove() {
-  alyrn::reactor::Loop loop;
+  alyrn::epoll::Loop loop;
   int first[2]{-1, -1};
   int second[2]{-1, -1};
   if (!Check(MakeSocketPair(first) && MakeSocketPair(second), "socketpair creation failed")) {
@@ -65,12 +65,12 @@ bool TestChannelMove() {
   }
 
   bool read_called = false;
-  alyrn::reactor::detail::Channel source(&loop, first[0]);
+  alyrn::epoll::detail::Channel source(&loop, first[0]);
   source.SetEdgeTriggered(true);
   ChannelReadContext context{first[0], &read_called, &loop};
   source.SetReadCallback(DrainChannelRead, &context);
 
-  alyrn::reactor::detail::Channel moved(std::move(source));
+  alyrn::epoll::detail::Channel moved(std::move(source));
   if (!Check(source.Fd() == -1 && moved.Fd() == first[0],
              "Channel move construction should transfer the fd association") ||
       !Check(moved.IsEdgeTriggered(), "Channel move construction should transfer mode")) {
@@ -81,7 +81,7 @@ bool TestChannelMove() {
     return false;
   }
 
-  alyrn::reactor::detail::Channel target(&loop, second[0]);
+  alyrn::epoll::detail::Channel target(&loop, second[0]);
   target = std::move(moved);
   ::close(second[0]);
 
@@ -130,29 +130,29 @@ bool TestSocketMove() {
 }
 
 using ReadResult = alyrn::Result<std::size_t>;
-using AcceptResult = alyrn::Result<alyrn::reactor::Listener::StreamType>;
+using AcceptResult = alyrn::Result<alyrn::epoll::Listener::StreamType>;
 
-static_assert(std::is_move_constructible_v<alyrn::reactor::Stream>);
-static_assert(std::is_move_assignable_v<alyrn::reactor::Stream>);
-static_assert(std::is_move_constructible_v<alyrn::reactor::Listener>);
-static_assert(std::is_move_assignable_v<alyrn::reactor::Listener>);
+static_assert(std::is_move_constructible_v<alyrn::epoll::Stream>);
+static_assert(std::is_move_assignable_v<alyrn::epoll::Stream>);
+static_assert(std::is_move_constructible_v<alyrn::epoll::Listener>);
+static_assert(std::is_move_assignable_v<alyrn::epoll::Listener>);
 
-alyrn::coro::DetachedTask ReadOnce(alyrn::reactor::Stream* stream,
-                                      alyrn::reactor::Loop* loop,
+alyrn::coro::DetachedTask ReadOnce(alyrn::epoll::Stream* stream,
+                                      alyrn::epoll::Loop* loop,
                                       std::array<std::byte, 16>* buffer,
                                       std::optional<ReadResult>* result) {
   result->emplace(co_await stream->ReadSome(*buffer));
   loop->RequestStop();
 }
 
-alyrn::coro::DetachedTask AcceptOnce(alyrn::reactor::Listener* listener,
-                                        alyrn::reactor::Loop* loop,
+alyrn::coro::DetachedTask AcceptOnce(alyrn::epoll::Listener* listener,
+                                        alyrn::epoll::Loop* loop,
                                         std::optional<AcceptResult>* result) {
   result->emplace(co_await listener->Accept());
   loop->RequestStop();
 }
 
-bool TestReactorStreamMove() {
+bool TestEpollStreamMove() {
   int source_pair[2]{-1, -1};
   int target_pair[2]{-1, -1};
   if (!Check(MakeSocketPair(source_pair) && MakeSocketPair(target_pair),
@@ -169,9 +169,9 @@ bool TestReactorStreamMove() {
   std::optional<ReadResult> constructed_result;
   std::array<std::byte, 16> constructed_buffer{};
   {
-    alyrn::reactor::Loop loop;
-    alyrn::reactor::Stream source(&loop, source_pair[0]);
-    alyrn::reactor::Stream moved(std::move(source));
+    alyrn::epoll::Loop loop;
+    alyrn::epoll::Stream source(&loop, source_pair[0]);
+    alyrn::epoll::Stream moved(std::move(source));
 
     alyrn::coro::SpawnDetach(loop,
                                 ReadOnce(&moved, &loop, &constructed_buffer, &constructed_result));
@@ -193,9 +193,9 @@ bool TestReactorStreamMove() {
   std::optional<ReadResult> assigned_result;
   std::array<std::byte, 16> assigned_buffer{};
   {
-    alyrn::reactor::Loop loop;
-    alyrn::reactor::Stream source(&loop, target_pair[0]);
-    alyrn::reactor::Stream target(&loop, source_pair[1]);
+    alyrn::epoll::Loop loop;
+    alyrn::epoll::Stream source(&loop, target_pair[0]);
+    alyrn::epoll::Stream target(&loop, source_pair[1]);
     target = std::move(source);
 
     alyrn::coro::SpawnDetach(loop, ReadOnce(&target, &loop, &assigned_buffer, &assigned_result));
@@ -226,9 +226,9 @@ int ConnectNonBlocking(const alyrn::net::Endpoint& address) {
   return -1;
 }
 
-bool TestReactorListenerMove() {
-  alyrn::reactor::Loop loop;
-  alyrn::reactor::Listener source(&loop, alyrn::net::Endpoint(0));
+bool TestEpollListenerMove() {
+  alyrn::epoll::Loop loop;
+  alyrn::epoll::Listener source(&loop, alyrn::net::Endpoint(0));
   auto source_address = source.LocalAddress();
   if (!Check(source_address.has_value(), "Listener local address lookup failed")) {
     return false;
@@ -237,7 +237,7 @@ bool TestReactorListenerMove() {
   std::optional<AcceptResult> accepted;
   int client_fd = -1;
   {
-    alyrn::reactor::Listener moved(std::move(source));
+    alyrn::epoll::Listener moved(std::move(source));
     auto moved_address = moved.LocalAddress();
     if (!Check(moved_address.has_value() && moved_address->ToPort() == source_address->ToPort(),
                "Listener move construction did not transfer the socket")) {
@@ -260,9 +260,9 @@ bool TestReactorListenerMove() {
     return false;
   }
 
-  alyrn::reactor::Listener assigned_source(&loop, alyrn::net::Endpoint(0));
+  alyrn::epoll::Listener assigned_source(&loop, alyrn::net::Endpoint(0));
   auto assigned_source_address = assigned_source.LocalAddress();
-  alyrn::reactor::Listener assigned_target(&loop, alyrn::net::Endpoint(0));
+  alyrn::epoll::Listener assigned_target(&loop, alyrn::net::Endpoint(0));
   assigned_target = std::move(assigned_source);
   auto assigned_target_address = assigned_target.LocalAddress();
   return Check(assigned_source_address.has_value() && assigned_target_address.has_value() &&
@@ -275,8 +275,8 @@ bool TestReactorListenerMove() {
 int main() {
   const bool channel_ok = TestChannelMove();
   const bool socket_ok = TestSocketMove();
-  const bool stream_ok = TestReactorStreamMove();
-  const bool listener_ok = TestReactorListenerMove();
+  const bool stream_ok = TestEpollStreamMove();
+  const bool listener_ok = TestEpollListenerMove();
   if (channel_ok && socket_ok && stream_ok && listener_ok) {
     std::cout << "[PASS] net_move_smoke_test\n";
     return 0;

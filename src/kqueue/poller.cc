@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "alyrn/kqueue/detail/poller.h"
+#include "alyrn/detail/kqueue/poller.h"
 
 #include <fcntl.h>
 #include <sys/time.h>
@@ -9,8 +9,8 @@
 #include <cerrno>
 #include <limits>
 
-#include "alyrn/base/check.h"
-#include "alyrn/kqueue/detail/channel.h"
+#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/kqueue/channel.h"
 
 namespace alyrn::kqueue::detail {
 namespace {

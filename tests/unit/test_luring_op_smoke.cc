@@ -8,10 +8,10 @@
 #include <csignal>
 #include <cstdio>
 
-#include "alyrn/luring/detail/cancel_result.h"
-#include "alyrn/luring/detail/op.h"
-#include "alyrn/luring/detail/result_state.h"
-#include "alyrn/utils/macros.h"
+#include "alyrn/detail/uring/cancel_result.h"
+#include "alyrn/detail/uring/op.h"
+#include "alyrn/detail/uring/result_state.h"
+#include "alyrn/detail/utils/macros.h"
 
 namespace {
 
@@ -42,30 +42,30 @@ bool ExpectChildAbort(void (*entry)(), const char* message) {
 }
 
 void TakePendingResultState() {
-  alyrn::luring::detail::ResultState<void> state;
+  alyrn::uring::detail::ResultState<void> state;
   (void)state.Take();
 }
 
 void SetResultStateTwice() {
-  alyrn::luring::detail::ResultState<void> state;
+  alyrn::uring::detail::ResultState<void> state;
   state.SetSuccess();
   state.SetError(alyrn::Errno(EPIPE));
 }
 
 void ReadEmptyCqeResult() {
-  alyrn::luring::detail::CqeResult result;
+  alyrn::uring::detail::CqeResult result;
   (void)*result;
 }
 
 void SetCqeResultTwice() {
-  alyrn::luring::detail::CqeResult result;
+  alyrn::uring::detail::CqeResult result;
   result = 1;
   result = 2;
 }
 
 bool TestSingleResultCompletion() {
-  alyrn::luring::detail::Op op;
-  op.kind = alyrn::luring::detail::OpKind::kReadComplete;
+  alyrn::uring::detail::Op op;
+  op.kind = alyrn::uring::detail::OpKind::kReadComplete;
 
   bool ok = true;
   ok &= Expect(op.TryRecordCqeCompletion(17), "the first CQE must complete the operation");
@@ -84,14 +84,14 @@ bool TestSingleResultCompletion() {
                "coupled continuation authorization must be observable");
   ok &= Expect(!op.TryRecordCqeCompletion(-5), "a duplicate CQE must not overwrite the result");
   ok &= Expect(*op.result == 17, "a duplicate CQE must preserve the original result");
-  ok &= Expect(op.DispatchKind() == alyrn::luring::detail::OpKind::kReadComplete,
+  ok &= Expect(op.DispatchKind() == alyrn::uring::detail::OpKind::kReadComplete,
                "completion state must not alter dispatch kind");
   return ok;
 }
 
 bool TestReusablePhysicalSlot() {
-  alyrn::luring::detail::Op op;
-  op.kind = alyrn::luring::detail::OpKind::kWake;
+  alyrn::uring::detail::Op op;
+  op.kind = alyrn::uring::detail::OpKind::kWake;
   (void)(op.TryRecordCqeCompletion(0));
   op.resume_work.SetHandle(std::noop_coroutine());
   op.BeginNextRequest();
@@ -100,13 +100,13 @@ bool TestReusablePhysicalSlot() {
          Expect(!op.result.HasValue(), "next request must not retain a prior CQE result") &&
          Expect(!op.resume_work.HasHandle(), "next request must not retain a prior continuation") &&
          Expect(op.TryRecordCqeCompletion(0), "a reopened operation slot must accept a CQE") &&
-         Expect(op.DispatchKind() == alyrn::luring::detail::OpKind::kWake,
+         Expect(op.DispatchKind() == alyrn::uring::detail::OpKind::kWake,
                 "reset must preserve dispatch kind");
 }
 
 bool TestReusableCoupledLifecycle() {
-  alyrn::luring::detail::Op op;
-  op.kind = alyrn::luring::detail::OpKind::kReadComplete;
+  alyrn::uring::detail::Op op;
+  op.kind = alyrn::uring::detail::OpKind::kReadComplete;
   if (!Expect(op.TryRecordCqeCompletion(3), "initial coupled request must accept its CQE") ||
       !Expect(op.TryAuthorizeCoupledRelease(), "initial coupled request must authorize release") ||
       !Expect(op.TryAuthorizeCoupledContinuation(),
@@ -128,8 +128,8 @@ bool TestReusableCoupledLifecycle() {
 }
 
 bool TestConnectCqeRequiresAdapterRefinement() {
-  alyrn::luring::detail::Op op;
-  op.kind = alyrn::luring::detail::OpKind::kConnect;
+  alyrn::uring::detail::Op op;
+  op.kind = alyrn::uring::detail::OpKind::kConnect;
 
   return Expect(op.TryRecordCqeCompletion(0), "Connect CQE must settle its physical request") &&
          Expect(op.CqeCompletionRecorded(), "Connect CQE must settle its physical slot") &&
@@ -144,8 +144,8 @@ bool TestConnectCqeRequiresAdapterRefinement() {
 }
 
 bool TestAcceptCqeRequiresAdapterRefinement() {
-  alyrn::luring::detail::Op op;
-  op.kind = alyrn::luring::detail::OpKind::kAcceptComplete;
+  alyrn::uring::detail::Op op;
+  op.kind = alyrn::uring::detail::OpKind::kAcceptComplete;
 
   return Expect(op.TryRecordCqeCompletion(42), "Accept CQE must settle its physical request") &&
          Expect(op.CqeCompletionRecorded(), "Accept CQE must settle its physical slot") &&
@@ -160,9 +160,9 @@ bool TestAcceptCqeRequiresAdapterRefinement() {
 }
 
 bool TestCompletionModels() {
-  using alyrn::luring::detail::CompletionModelFor;
-  using alyrn::luring::detail::CompletionModel;
-  using alyrn::luring::detail::OpKind;
+  using alyrn::uring::detail::CompletionModelFor;
+  using alyrn::uring::detail::CompletionModel;
+  using alyrn::uring::detail::OpKind;
 
   bool ok = true;
   ok &=
@@ -181,7 +181,7 @@ bool TestCompletionModels() {
 }
 
 bool TestCancelCqeClassification() {
-  using alyrn::luring::detail::IsExpectedCancelCqeResult;
+  using alyrn::uring::detail::IsExpectedCancelCqeResult;
 
   bool ok = true;
   ok &= Expect(IsExpectedCancelCqeResult(0), "successful cancellation must be expected");

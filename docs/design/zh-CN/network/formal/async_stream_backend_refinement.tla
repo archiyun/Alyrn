@@ -3,7 +3,7 @@
 EXTENDS Naturals
 
 (***************************************************************************)
-(* Reactor / io_uring 到 single-result AsyncStream specification 的有界  *)
+(* Epoll / io_uring 到 single-result AsyncStream specification 的有界  *)
 (* trace refinement。                                                     *)
 (*                                                                         *)
 (* 证明范围：                                                             *)
@@ -12,7 +12,7 @@ EXTENDS Naturals
 (*   - 正常、立即完成和 Close 取消；                                       *)
 (*   - backend 在 Init 时固定，不允许动态切换。                           *)
 (*                                                                         *)
-(* ObsReactor / ObsLUring 是显式 observation function。具体 transition    *)
+(* ObsEpoll / ObsLUring 是显式 observation function。具体 transition    *)
 (* 投影后必须是 LogicalNext，或者是不改变 LogicalObservation 的          *)
 (* stuttering step。                                                       *)
 (*                                                                         *)
@@ -22,7 +22,7 @@ EXTENDS Naturals
 (* 这是 C++ 路径的有限状态模型，不自动证明 C++ 内存安全或真实内核公平性。*)
 (***************************************************************************)
 
-Backends         == {"Reactor", "LUring"}
+Backends         == {"Epoll", "LUring"}
 CoroutineStates  == {"Running", "Waiting", "Ready", "Done"}
 ResourceStates   == {"Open", "Closing", "Closed"}
 OperationStates  == {"None", "Pending", "Completed", "Cancelled"}
@@ -39,7 +39,7 @@ VARIABLES backend,
           submitCount,
           releaseAuthorized,
           continuationAuthorized,
-          reactorState,
+          epollState,
           uringState
 
 vars == <<backend,
@@ -51,7 +51,7 @@ vars == <<backend,
           submitCount,
           releaseAuthorized,
           continuationAuthorized,
-          reactorState,
+          epollState,
           uringState>>
 
 Init ==
@@ -64,22 +64,22 @@ Init ==
   /\ submitCount = 0
   /\ releaseAuthorized = FALSE
   /\ continuationAuthorized = FALSE
-  /\ reactorState = "Idle"
+  /\ epollState = "Idle"
   /\ uringState = "Idle"
 
 (***************************************************************************)
-(* Reactor concrete actions                                                *)
+(* Epoll concrete actions                                                *)
 (***************************************************************************)
 
 SubmitPending ==
-  /\ backend = "Reactor"
+  /\ backend = "Epoll"
   /\ coroutineState = "Running"
   /\ resourceState = "Open"
   /\ operationState = "None"
-  /\ reactorState = "Idle"
+  /\ epollState = "Idle"
   /\ operationState' = "Pending"
   /\ submitCount' = submitCount + 1
-  /\ reactorState' = "ChannelWaiting"
+  /\ epollState' = "ChannelWaiting"
   /\ UNCHANGED <<backend,
                  coroutineState,
                  resourceState,
@@ -93,11 +93,11 @@ SubmitPending ==
  * The compiler continues through await_resume() inline, without a scheduled
  * continuation authorization. *)
 ImmediateComplete ==
-  /\ backend = "Reactor"
+  /\ backend = "Epoll"
   /\ coroutineState = "Running"
   /\ resourceState = "Open"
   /\ operationState = "None"
-  /\ reactorState = "Idle"
+  /\ epollState = "Idle"
   /\ operationState' = "Completed"
   /\ result' \in {"Success", "EOF", "Error"}
   /\ completionCount' = completionCount + 1
@@ -107,14 +107,14 @@ ImmediateComplete ==
   /\ UNCHANGED <<backend,
                  coroutineState,
                  resourceState,
-                 reactorState,
+                 epollState,
                  uringState>>
 
 (* Readiness only changes physical state and therefore projects to stutter. *)
 Ready ==
-  /\ backend = "Reactor"
-  /\ reactorState = "ChannelWaiting"
-  /\ reactorState' = "Ready"
+  /\ backend = "Epoll"
+  /\ epollState = "ChannelWaiting"
+  /\ epollState' = "Ready"
   /\ UNCHANGED <<backend,
                  coroutineState,
                  resourceState,
@@ -127,17 +127,17 @@ Ready ==
                  uringState>>
 
 Complete ==
-  /\ backend = "Reactor"
+  /\ backend = "Epoll"
   /\ coroutineState = "Waiting"
   /\ resourceState \in {"Open", "Closing"}
   /\ operationState = "Pending"
-  /\ reactorState = "Ready"
+  /\ epollState = "Ready"
   /\ operationState' = "Completed"
   /\ result' \in {"Success", "EOF", "Error"}
   /\ completionCount' = completionCount + 1
   /\ releaseAuthorized' = TRUE
   /\ continuationAuthorized' = TRUE
-  /\ reactorState' = "Idle"
+  /\ epollState' = "Idle"
   /\ UNCHANGED <<backend,
                  coroutineState,
                  resourceState,
@@ -145,17 +145,17 @@ Complete ==
                  uringState>>
 
 Cancel ==
-  /\ backend = "Reactor"
+  /\ backend = "Epoll"
   /\ coroutineState = "Waiting"
   /\ resourceState = "Closing"
   /\ operationState = "Pending"
-  /\ reactorState \in {"ChannelWaiting", "Ready"}
+  /\ epollState \in {"ChannelWaiting", "Ready"}
   /\ operationState' = "Cancelled"
   /\ result' = "Cancelled"
   /\ completionCount' = completionCount + 1
   /\ releaseAuthorized' = TRUE
   /\ continuationAuthorized' = TRUE
-  /\ reactorState' = "Idle"
+  /\ epollState' = "Idle"
   /\ UNCHANGED <<backend,
                  coroutineState,
                  resourceState,
@@ -182,10 +182,10 @@ UringPrepareSQE ==
                  completionCount,
                  releaseAuthorized,
                  continuationAuthorized,
-                 reactorState>>
+                 epollState>>
 
 (* Local validation or SQE preparation may fail before the coroutine
- * suspends. Just like a Reactor immediate syscall result, it is consumed by
+ * suspends. Just like an epoll immediate syscall result, it is consumed by
  * await_resume() inline rather than through Scheduler::Schedule(). *)
 UringImmediateComplete ==
   /\ backend = "LUring"
@@ -202,7 +202,7 @@ UringImmediateComplete ==
   /\ UNCHANGED <<backend,
                  coroutineState,
                  resourceState,
-                 reactorState,
+                 epollState,
                  uringState>>
 
 (* SQE submission is hidden by ObsLUring. *)
@@ -219,7 +219,7 @@ UringSubmit ==
                  submitCount,
                  releaseAuthorized,
                  continuationAuthorized,
-                 reactorState>>
+                 epollState>>
 
 (* CQE availability is hidden until the adapter interprets it. *)
 UringCQE ==
@@ -235,7 +235,7 @@ UringCQE ==
                  submitCount,
                  releaseAuthorized,
                  continuationAuthorized,
-                 reactorState>>
+                 epollState>>
 
 UringComplete ==
   /\ backend = "LUring"
@@ -253,7 +253,7 @@ UringComplete ==
                  coroutineState,
                  resourceState,
                  submitCount,
-                 reactorState>>
+                 epollState>>
 
 (* The detailed target/cancel CQE convergence is modeled separately in     *)
 (* resource_close_cancel.tla. This action is its single-result projection.  *)
@@ -273,7 +273,7 @@ UringCancel ==
                  coroutineState,
                  resourceState,
                  submitCount,
-                 reactorState>>
+                 epollState>>
 
 (***************************************************************************)
 (* Shared concrete actions                                                 *)
@@ -291,7 +291,7 @@ Suspend ==
                  submitCount,
                  releaseAuthorized,
                  continuationAuthorized,
-                 reactorState,
+                 epollState,
                  uringState>>
 
 Close ==
@@ -306,13 +306,13 @@ Close ==
                  submitCount,
                  releaseAuthorized,
                  continuationAuthorized,
-                 reactorState,
+                 epollState,
                  uringState>>
 
 FinalizeClose ==
   /\ resourceState = "Closing"
   /\ operationState # "Pending"
-  /\ reactorState = "Idle"
+  /\ epollState = "Idle"
   /\ uringState = "Idle"
   /\ resourceState' = "Closed"
   /\ UNCHANGED <<backend,
@@ -323,7 +323,7 @@ FinalizeClose ==
                  submitCount,
                  releaseAuthorized,
                  continuationAuthorized,
-                 reactorState,
+                 epollState,
                  uringState>>
 
 (* await_suspend() returned false. The current coroutine observes the result
@@ -343,7 +343,7 @@ InlineContinue ==
                  submitCount,
                  releaseAuthorized,
                  continuationAuthorized,
-                 reactorState,
+                 epollState,
                  uringState>>
 
 Resume ==
@@ -360,7 +360,7 @@ Resume ==
                  submitCount,
                  releaseAuthorized,
                  continuationAuthorized,
-                 reactorState,
+                 epollState,
                  uringState>>
 
 Finish ==
@@ -374,7 +374,7 @@ Finish ==
                  submitCount,
                  releaseAuthorized,
                  continuationAuthorized,
-                 reactorState,
+                 epollState,
                  uringState>>
 
 Next ==
@@ -404,7 +404,7 @@ Spec == Init /\ [][Next]_vars
 
 (* The two functions intentionally project the same adapter-owned logical  *)
 (* fields while hiding different backend execution states.                 *)
-ObsReactor ==
+ObsEpoll ==
   [coroutine |-> coroutineState,
    resource |-> resourceState,
    operation |-> operationState,
@@ -423,7 +423,7 @@ ObsLUring ==
    releaseAuthorized |-> releaseAuthorized]
 
 LogicalObservation ==
-  IF backend = "Reactor" THEN ObsReactor ELSE ObsLUring
+  IF backend = "Epoll" THEN ObsEpoll ELSE ObsLUring
 
 LogicalInit(state) ==
   /\ state.coroutine = "Running"
@@ -584,17 +584,17 @@ TypeOK ==
   /\ submitCount \in Nat
   /\ releaseAuthorized \in BOOLEAN
   /\ continuationAuthorized \in BOOLEAN
-  /\ reactorState \in States
+  /\ epollState \in States
   /\ uringState \in UringStates
 
 BackendStateShape ==
-  /\ backend = "Reactor" => uringState = "Idle"
-  /\ backend = "LUring" => reactorState = "Idle"
+  /\ backend = "Epoll" => uringState = "Idle"
+  /\ backend = "LUring" => epollState = "Idle"
 
 RefinementInvariant ==
-  /\ backend = "Reactor"
+  /\ backend = "Epoll"
        => (operationState = "Pending"
-             <=> reactorState \in {"ChannelWaiting", "Ready"})
+             <=> epollState \in {"ChannelWaiting", "Ready"})
   /\ backend = "LUring"
        => (operationState = "Pending"
              <=> uringState \in {"SQEQueued", "Submitted", "CQEReady"})

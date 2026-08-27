@@ -23,18 +23,18 @@
 #include "alyrn/coro/task.h"
 #include "alyrn/io/async_stream.h"
 #include "alyrn/io/read_into.h"
-#include "alyrn/luring/detail/loop_access.h"
-#include "alyrn/luring/loop.h"
-#include "alyrn/luring/options.h"
-#include "alyrn/luring/stream.h"
+#include "alyrn/detail/uring/loop_access.h"
+#include "alyrn/uring/loop.h"
+#include "alyrn/uring/options.h"
+#include "alyrn/uring/stream.h"
 #include "alyrn/net/endpoint.h"
 
 namespace {
 
 using OwnedReadOutcome = alyrn::io::ReadIntoOutcome;
 
-static_assert(alyrn::io::AsyncReadIntoStream<alyrn::luring::Stream>);
-static_assert(alyrn::io::AsyncTimedStream<alyrn::luring::Stream>);
+static_assert(alyrn::io::AsyncReadIntoStream<alyrn::uring::Stream>);
+static_assert(alyrn::io::AsyncTimedStream<alyrn::uring::Stream>);
 
 class UniqueFd {
 public:
@@ -86,8 +86,8 @@ bool IsEnvironmentSkip(alyrn::Error error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 
-LoopInitStatus InitLoop(alyrn::luring::Loop& loop) {
-  alyrn::luring::Options options;
+LoopInitStatus InitLoop(alyrn::uring::Loop& loop) {
+  alyrn::uring::Options options;
   options.entries = 16;
 
   auto init = loop.Init(options);
@@ -137,8 +137,8 @@ bool WriteFd(int fd, std::string_view bytes) {
   return true;
 }
 
-alyrn::coro::DetachedTask ReadOnce(alyrn::luring::Stream* stream,
-                                      alyrn::luring::Loop* loop,
+alyrn::coro::DetachedTask ReadOnce(alyrn::uring::Stream* stream,
+                                      alyrn::uring::Loop* loop,
                                       std::span<std::byte> buffer,
                                       std::optional<alyrn::Result<std::size_t>>* out,
                                       bool* resumed_with_scheduler, int* resume_count = nullptr) {
@@ -150,8 +150,8 @@ alyrn::coro::DetachedTask ReadOnce(alyrn::luring::Stream* stream,
   out->emplace(std::move(result));
 }
 
-alyrn::coro::DetachedTask ReadIntoOnce(alyrn::luring::Stream* stream,
-                                          alyrn::luring::Loop* loop,
+alyrn::coro::DetachedTask ReadIntoOnce(alyrn::uring::Stream* stream,
+                                          alyrn::uring::Loop* loop,
                                           alyrn::net::Buffer buffer,
                                           std::optional<OwnedReadOutcome>* out,
                                           bool* resumed_with_scheduler,
@@ -164,8 +164,8 @@ alyrn::coro::DetachedTask ReadIntoOnce(alyrn::luring::Stream* stream,
   out->emplace(std::move(outcome));
 }
 
-alyrn::coro::DetachedTask ReadIntoWithReserveOnce(alyrn::luring::Stream* stream,
-                                                     alyrn::luring::Loop* loop,
+alyrn::coro::DetachedTask ReadIntoWithReserveOnce(alyrn::uring::Stream* stream,
+                                                     alyrn::uring::Loop* loop,
                                                      alyrn::net::Buffer buffer,
                                                      std::size_t reserve,
                                                      std::optional<OwnedReadOutcome>* out,
@@ -175,8 +175,8 @@ alyrn::coro::DetachedTask ReadIntoWithReserveOnce(alyrn::luring::Stream* stream,
   out->emplace(std::move(outcome));
 }
 
-alyrn::coro::DetachedTask ReadForOnce(alyrn::luring::Stream* stream,
-                                         alyrn::luring::Loop* loop,
+alyrn::coro::DetachedTask ReadForOnce(alyrn::uring::Stream* stream,
+                                         alyrn::uring::Loop* loop,
                                          std::span<std::byte> buffer,
                                          std::chrono::milliseconds timeout,
                                          std::optional<alyrn::Result<std::size_t>>* out,
@@ -188,7 +188,7 @@ alyrn::coro::DetachedTask ReadForOnce(alyrn::luring::Stream* stream,
 }
 
 alyrn::coro::DetachedTask TimedReadThenRead(
-    alyrn::luring::Stream* stream, alyrn::luring::Loop* loop,
+    alyrn::uring::Stream* stream, alyrn::uring::Loop* loop,
     std::span<std::byte> timed_buffer, std::span<std::byte> next_buffer,
     std::optional<alyrn::Result<std::size_t>>* timed_result,
     std::optional<alyrn::Result<std::size_t>>* next_result, bool* resumed_with_scheduler) {
@@ -198,7 +198,7 @@ alyrn::coro::DetachedTask TimedReadThenRead(
 }
 
 alyrn::coro::DetachedTask ReadThenRead(
-    alyrn::luring::Stream* stream, alyrn::luring::Loop* loop,
+    alyrn::uring::Stream* stream, alyrn::uring::Loop* loop,
     std::span<std::byte> first_buffer, std::span<std::byte> second_buffer,
     std::optional<alyrn::Result<std::size_t>>* first_result,
     std::optional<alyrn::Result<std::size_t>>* second_result,
@@ -208,8 +208,8 @@ alyrn::coro::DetachedTask ReadThenRead(
   *resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == loop;
 }
 
-alyrn::coro::DetachedTask WriteOnce(alyrn::luring::Stream* stream,
-                                       alyrn::luring::Loop* loop,
+alyrn::coro::DetachedTask WriteOnce(alyrn::uring::Stream* stream,
+                                       alyrn::uring::Loop* loop,
                                        std::span<const std::byte> buffer,
                                        std::optional<alyrn::Result<void>>* out,
                                        bool* resumed_with_scheduler, int* resume_count = nullptr) {
@@ -221,14 +221,14 @@ alyrn::coro::DetachedTask WriteOnce(alyrn::luring::Stream* stream,
   out->emplace(std::move(result));
 }
 
-alyrn::coro::DetachedTask CloseOnce(alyrn::luring::Stream* stream,
+alyrn::coro::DetachedTask CloseOnce(alyrn::uring::Stream* stream,
                                        std::optional<alyrn::Result<void>>* out) {
   auto result = co_await stream->Close();
   out->emplace(std::move(result));
 }
 
 alyrn::coro::DetachedTask ShutdownThenReadAndWrite(
-    alyrn::luring::Stream* stream, alyrn::luring::Loop* loop,
+    alyrn::uring::Stream* stream, alyrn::uring::Loop* loop,
     std::span<const std::byte> write_buffer, std::span<std::byte> read_buffer,
     std::optional<alyrn::Result<void>>* first_shutdown,
     std::optional<alyrn::Result<void>>* second_shutdown,
@@ -242,7 +242,7 @@ alyrn::coro::DetachedTask ShutdownThenReadAndWrite(
 }
 
 bool CheckReadSome() {
-  alyrn::luring::Loop loop;
+  alyrn::uring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -256,7 +256,7 @@ bool CheckReadSome() {
   UniqueFd peer;
   if (!CreateSocketPair(local, peer)) return false;
 
-  alyrn::luring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
+  alyrn::uring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
 
   constexpr std::string_view kPayload = "hello";
   if (!WriteFd(peer.fd(), kPayload)) return false;
@@ -268,15 +268,15 @@ bool CheckReadSome() {
   alyrn::coro::SpawnDetach(loop,
                               ReadOnce(&stream, &loop, buffer, &result, &resumed_with_scheduler));
 
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
-  auto completions = alyrn::luring::detail::LoopAccess::WaitCompletions(loop);
+  auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
   if (!completions.has_value()) {
     std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
     return false;
   }
 
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   std::string_view actual(reinterpret_cast<const char*>(buffer.data()), kPayload.size());
 
@@ -289,7 +289,7 @@ bool CheckReadSome() {
 }
 
 bool CheckEmptyReadCompletesInlineWithoutRingWork() {
-  alyrn::luring::Loop loop;
+  alyrn::uring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -303,7 +303,7 @@ bool CheckEmptyReadCompletesInlineWithoutRingWork() {
   UniqueFd peer;
   if (!CreateSocketPair(local, peer)) return false;
 
-  alyrn::luring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
+  alyrn::uring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
   std::optional<alyrn::Result<std::size_t>> result;
   bool resumed_with_scheduler = false;
 
@@ -311,22 +311,22 @@ bool CheckEmptyReadCompletesInlineWithoutRingWork() {
   // may run once, but no read SQE/CQE or scheduled continuation may remain.
   alyrn::coro::SpawnDetach(
       loop, ReadOnce(&stream, &loop, std::span<std::byte>{}, &result, &resumed_with_scheduler));
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   return Check(result.has_value(), "empty read did not complete inline") &&
          Check(result->has_value(), "empty read returned an error") &&
          Check(**result == 0, "empty read returned a non-zero byte count") &&
          Check(resumed_with_scheduler, "empty read lost scheduler context") &&
-         Check(alyrn::luring::detail::LoopAccess::PendingSubmitCount(loop) == 0,
+         Check(alyrn::uring::detail::LoopAccess::PendingSubmitCount(loop) == 0,
                "empty read prepared an unexpected ring request") &&
-         Check(alyrn::luring::detail::LoopAccess::InflightCount(loop) == 0,
+         Check(alyrn::uring::detail::LoopAccess::InflightCount(loop) == 0,
                "empty read left an unexpected ring request inflight") &&
-         Check(alyrn::luring::detail::LoopAccess::IsDrained(loop),
+         Check(alyrn::uring::detail::LoopAccess::IsDrained(loop),
                "empty read left unexpected completion work queued");
 }
 
 bool CheckReadReleasesSlotBeforeContinuation() {
-  alyrn::luring::Loop loop;
+  alyrn::uring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -340,7 +340,7 @@ bool CheckReadReleasesSlotBeforeContinuation() {
   UniqueFd peer;
   if (!CreateSocketPair(local, peer)) return false;
 
-  alyrn::luring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
+  alyrn::uring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
   constexpr std::string_view kFirstPayload = "first";
   constexpr std::string_view kSecondPayload = "second";
   std::string payload{kFirstPayload};
@@ -356,15 +356,15 @@ bool CheckReadReleasesSlotBeforeContinuation() {
   alyrn::coro::SpawnDetach(
       loop, ReadThenRead(&stream, &loop, first_buffer, second_buffer, &first_result, &second_result,
                          &resumed_with_scheduler));
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   for (int i = 0; i < 8 && !second_result.has_value(); ++i) {
-    auto completions = alyrn::luring::detail::LoopAccess::WaitCompletions(loop);
+    auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
     if (!completions.has_value()) {
       std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
       return false;
     }
-    alyrn::luring::detail::LoopAccess::RunReady(loop);
+    alyrn::uring::detail::LoopAccess::RunReady(loop);
   }
 
   const std::string_view first_actual(reinterpret_cast<const char*>(first_buffer.data()),
@@ -386,7 +386,7 @@ bool CheckReadReleasesSlotBeforeContinuation() {
 }
 
 bool CheckOwnedReadIntoReturnsBuffer() {
-  alyrn::luring::Loop loop;
+  alyrn::uring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -400,7 +400,7 @@ bool CheckOwnedReadIntoReturnsBuffer() {
   UniqueFd peer;
   if (!CreateSocketPair(local, peer)) return false;
 
-  alyrn::luring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
+  alyrn::uring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
   constexpr std::string_view kPayload = "owned-read";
   if (!WriteFd(peer.fd(), kPayload)) return false;
 
@@ -408,14 +408,14 @@ bool CheckOwnedReadIntoReturnsBuffer() {
   bool resumed_with_scheduler = false;
   alyrn::coro::SpawnDetach(loop, ReadIntoOnce(&stream, &loop, alyrn::net::Buffer(4), &outcome,
                                                  &resumed_with_scheduler));
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
-  auto completions = alyrn::luring::detail::LoopAccess::WaitCompletions(loop);
+  auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
   if (!completions.has_value()) {
     std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
     return false;
   }
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   if (!Check(*completions >= 1, "owned read did not produce a completion") ||
       !Check(outcome.has_value(), "owned read coroutine did not resume") ||
@@ -437,7 +437,7 @@ bool CheckOwnedReadIntoReturnsBuffer() {
 }
 
 bool CheckOwnedReadIntoSpansBufferBlocks() {
-  alyrn::luring::Loop loop;
+  alyrn::uring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -451,7 +451,7 @@ bool CheckOwnedReadIntoSpansBufferBlocks() {
   UniqueFd peer;
   if (!CreateSocketPair(local, peer)) return false;
 
-  alyrn::luring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
+  alyrn::uring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
   constexpr std::string_view kPrefix = "abc";
   constexpr std::string_view kPayload = "12345678";
 
@@ -464,14 +464,14 @@ bool CheckOwnedReadIntoSpansBufferBlocks() {
   alyrn::coro::SpawnDetach(
       loop, ReadIntoWithReserveOnce(&stream, &loop, std::move(buffer), kPayload.size(), &outcome,
                                     &resumed_with_scheduler));
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
-  auto completions = alyrn::luring::detail::LoopAccess::WaitCompletions(loop);
+  auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
   if (!completions.has_value()) {
     std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
     return false;
   }
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   if (!Check(*completions >= 1, "vectored owned read did not produce a completion") ||
       !Check(outcome.has_value(), "vectored owned read coroutine did not resume") ||
@@ -491,7 +491,7 @@ bool CheckOwnedReadIntoSpansBufferBlocks() {
 }
 
 bool CheckTimedReadSuccessResumesOnce() {
-  alyrn::luring::Loop loop;
+  alyrn::uring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -505,7 +505,7 @@ bool CheckTimedReadSuccessResumesOnce() {
   UniqueFd peer;
   if (!CreateSocketPair(local, peer)) return false;
 
-  alyrn::luring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
+  alyrn::uring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
   constexpr std::string_view kPayload = "timed";
   if (!WriteFd(peer.fd(), kPayload)) return false;
 
@@ -515,15 +515,15 @@ bool CheckTimedReadSuccessResumesOnce() {
   int resume_count = 0;
   alyrn::coro::SpawnDetach(loop, ReadForOnce(&stream, &loop, buffer, std::chrono::seconds(1),
                                                 &result, &resumed_with_scheduler, &resume_count));
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   for (int i = 0; i < 4 && !result.has_value(); ++i) {
-    auto completions = alyrn::luring::detail::LoopAccess::WaitCompletions(loop);
+    auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
     if (!completions.has_value()) {
       std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
       return false;
     }
-    alyrn::luring::detail::LoopAccess::RunReady(loop);
+    alyrn::uring::detail::LoopAccess::RunReady(loop);
   }
 
   std::string_view actual(reinterpret_cast<const char*>(buffer.data()), kPayload.size());
@@ -536,7 +536,7 @@ bool CheckTimedReadSuccessResumesOnce() {
 }
 
 bool CheckTimedReadTimeoutResumesOnce() {
-  alyrn::luring::Loop loop;
+  alyrn::uring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -550,7 +550,7 @@ bool CheckTimedReadTimeoutResumesOnce() {
   UniqueFd peer;
   if (!CreateSocketPair(local, peer)) return false;
 
-  alyrn::luring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
+  alyrn::uring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
   std::array<std::byte, 16> buffer{};
   std::optional<alyrn::Result<std::size_t>> result;
   bool resumed_with_scheduler = false;
@@ -558,15 +558,15 @@ bool CheckTimedReadTimeoutResumesOnce() {
   alyrn::coro::SpawnDetach(
       loop, ReadForOnce(&stream, &loop, buffer, std::chrono::milliseconds(1), &result,
                         &resumed_with_scheduler, &resume_count));
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   for (int i = 0; i < 4 && !result.has_value(); ++i) {
-    auto completions = alyrn::luring::detail::LoopAccess::WaitCompletions(loop);
+    auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
     if (!completions.has_value()) {
       std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
       return false;
     }
-    alyrn::luring::detail::LoopAccess::RunReady(loop);
+    alyrn::uring::detail::LoopAccess::RunReady(loop);
   }
 
   return Check(result.has_value(), "timed read timeout coroutine did not resume") &&
@@ -577,7 +577,7 @@ bool CheckTimedReadTimeoutResumesOnce() {
 }
 
 bool CheckTimedReadReleasesSlotBeforeContinuation() {
-  alyrn::luring::Loop loop;
+  alyrn::uring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -591,7 +591,7 @@ bool CheckTimedReadReleasesSlotBeforeContinuation() {
   UniqueFd peer;
   if (!CreateSocketPair(local, peer)) return false;
 
-  alyrn::luring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
+  alyrn::uring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
   constexpr std::string_view kTimedPayload = "timed";
   constexpr std::string_view kNextPayload = "next";
   std::string payload{kTimedPayload};
@@ -607,15 +607,15 @@ bool CheckTimedReadReleasesSlotBeforeContinuation() {
   alyrn::coro::SpawnDetach(
       loop, TimedReadThenRead(&stream, &loop, timed_buffer, next_buffer, &timed_result,
                               &next_result, &resumed_with_scheduler));
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   for (int i = 0; i < 8 && !next_result.has_value(); ++i) {
-    auto completions = alyrn::luring::detail::LoopAccess::WaitCompletions(loop);
+    auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
     if (!completions.has_value()) {
       std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
       return false;
     }
-    alyrn::luring::detail::LoopAccess::RunReady(loop);
+    alyrn::uring::detail::LoopAccess::RunReady(loop);
   }
 
   const std::string_view timed_actual(reinterpret_cast<const char*>(timed_buffer.data()),
@@ -637,7 +637,7 @@ bool CheckTimedReadReleasesSlotBeforeContinuation() {
 
 
 bool CheckWriteAll() {
-  alyrn::luring::Loop loop;
+  alyrn::uring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -651,7 +651,7 @@ bool CheckWriteAll() {
   UniqueFd peer;
   if (!CreateSocketPair(local, peer)) return false;
 
-  alyrn::luring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
+  alyrn::uring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
 
   constexpr std::string_view kPayload = "pong";
   auto bytes = std::as_bytes(std::span<const char>(kPayload.data(), kPayload.size()));
@@ -662,15 +662,15 @@ bool CheckWriteAll() {
   alyrn::coro::SpawnDetach(loop,
                               WriteOnce(&stream, &loop, bytes, &result, &resumed_with_scheduler));
 
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
-  auto completions = alyrn::luring::detail::LoopAccess::WaitCompletions(loop);
+  auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
   if (!completions.has_value()) {
     std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
     return false;
   }
 
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   std::array<char, 16> read_buffer{};
   ssize_t n = ::read(peer.fd(), read_buffer.data(), read_buffer.size());
@@ -689,7 +689,7 @@ bool CheckWriteAll() {
 }
 
 bool CheckShutdownKeepsReadOpen() {
-  alyrn::luring::Loop loop;
+  alyrn::uring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -706,7 +706,7 @@ bool CheckShutdownKeepsReadOpen() {
   constexpr std::string_view kReply = "reply";
   if (!WriteFd(peer.fd(), kReply)) return false;
 
-  alyrn::luring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
+  alyrn::uring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
   constexpr std::string_view kWrite = "must-not-send";
   auto write_buffer = std::as_bytes(std::span<const char>(kWrite.data(), kWrite.size()));
   std::array<std::byte, 16> read_buffer{};
@@ -720,14 +720,14 @@ bool CheckShutdownKeepsReadOpen() {
       loop, ShutdownThenReadAndWrite(&stream, &loop, write_buffer, read_buffer, &first_shutdown,
                                      &second_shutdown, &write_result, &read_result,
                                      &resumed_with_scheduler));
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
-  auto completions = alyrn::luring::detail::LoopAccess::WaitCompletions(loop);
+  auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
   if (!completions.has_value()) {
     std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
     return false;
   }
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   std::array<char, 1> peer_buffer{};
   const ssize_t peer_read = ::read(peer.fd(), peer_buffer.data(), peer_buffer.size());
@@ -751,7 +751,7 @@ bool CheckShutdownKeepsReadOpen() {
 }
 
 bool CheckCloseWithoutPending() {
-  alyrn::luring::Loop loop;
+  alyrn::uring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -765,19 +765,19 @@ bool CheckCloseWithoutPending() {
   UniqueFd peer;
   if (!CreateSocketPair(local, peer)) return false;
 
-  alyrn::luring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
+  alyrn::uring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
 
   std::optional<alyrn::Result<void>> result;
   alyrn::coro::SpawnDetach(loop, CloseOnce(&stream, &result));
 
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   return Check(result.has_value(), "close coroutine did not run") &&
          Check(result->has_value(), "Close without pending op returned an error");
 }
 
 bool CheckCloseCancelsPendingRead() {
-  alyrn::luring::Loop loop;
+  alyrn::uring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -791,7 +791,7 @@ bool CheckCloseCancelsPendingRead() {
   UniqueFd peer;
   if (!CreateSocketPair(local, peer)) return false;
 
-  alyrn::luring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
+  alyrn::uring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
 
   std::array<std::byte, 8> buffer{};
   std::optional<alyrn::Result<std::size_t>> read_result;
@@ -801,24 +801,24 @@ bool CheckCloseCancelsPendingRead() {
   alyrn::coro::SpawnDetach(loop, ReadOnce(&stream, &loop, buffer, &read_result,
                                              &read_resumed_with_scheduler, &read_resume_count));
 
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   std::optional<alyrn::Result<void>> close_result;
   alyrn::coro::SpawnDetach(loop, CloseOnce(&stream, &close_result));
 
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   if (!Check(!close_result.has_value(), "Close with pending read should suspend")) {
     return false;
   }
 
   for (int i = 0; i < 4 && (!close_result.has_value() || !read_result.has_value()); ++i) {
-    auto completions = alyrn::luring::detail::LoopAccess::WaitCompletions(loop);
+    auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
     if (!completions.has_value()) {
       std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
       return false;
     }
-    alyrn::luring::detail::LoopAccess::RunReady(loop);
+    alyrn::uring::detail::LoopAccess::RunReady(loop);
   }
 
   return Check(close_result.has_value(), "busy close coroutine did not run") &&
@@ -832,7 +832,7 @@ bool CheckCloseCancelsPendingRead() {
 
 
 bool CheckCloseReturnsOwnedReadBuffer() {
-  alyrn::luring::Loop loop;
+  alyrn::uring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -846,26 +846,26 @@ bool CheckCloseReturnsOwnedReadBuffer() {
   UniqueFd peer;
   if (!CreateSocketPair(local, peer)) return false;
 
-  alyrn::luring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
+  alyrn::uring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
   std::optional<OwnedReadOutcome> read_outcome;
   bool resumed_with_scheduler = false;
   int resume_count = 0;
   alyrn::coro::SpawnDetach(loop,
                               ReadIntoOnce(&stream, &loop, alyrn::net::Buffer(8), &read_outcome,
                                            &resumed_with_scheduler, &resume_count));
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   std::optional<alyrn::Result<void>> close_result;
   alyrn::coro::SpawnDetach(loop, CloseOnce(&stream, &close_result));
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   for (int i = 0; i < 4 && (!close_result.has_value() || !read_outcome.has_value()); ++i) {
-    auto completions = alyrn::luring::detail::LoopAccess::WaitCompletions(loop);
+    auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
     if (!completions.has_value()) {
       std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
       return false;
     }
-    alyrn::luring::detail::LoopAccess::RunReady(loop);
+    alyrn::uring::detail::LoopAccess::RunReady(loop);
   }
 
   if (!Check(close_result.has_value(), "owned read close coroutine did not finish") ||
@@ -887,7 +887,7 @@ bool CheckCloseReturnsOwnedReadBuffer() {
 }
 
 bool CheckReadCompletionCancelRaceResumesOnce() {
-  alyrn::luring::Loop loop;
+  alyrn::uring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;
@@ -901,7 +901,7 @@ bool CheckReadCompletionCancelRaceResumesOnce() {
   UniqueFd peer;
   if (!CreateSocketPair(local, peer)) return false;
 
-  alyrn::luring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
+  alyrn::uring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
   std::array<std::byte, 8> buffer{};
   std::optional<alyrn::Result<std::size_t>> read_result;
   bool read_resumed_with_scheduler = false;
@@ -909,22 +909,22 @@ bool CheckReadCompletionCancelRaceResumesOnce() {
 
   alyrn::coro::SpawnDetach(loop, ReadOnce(&stream, &loop, buffer, &read_result,
                                              &read_resumed_with_scheduler, &read_resume_count));
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   constexpr std::string_view kPayload = "race";
   if (!WriteFd(peer.fd(), kPayload)) return false;
 
   std::optional<alyrn::Result<void>> close_result;
   alyrn::coro::SpawnDetach(loop, CloseOnce(&stream, &close_result));
-  alyrn::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   for (int i = 0; i < 6 && (!close_result.has_value() || !read_result.has_value()); ++i) {
-    auto completions = alyrn::luring::detail::LoopAccess::WaitCompletions(loop);
+    auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
     if (!completions.has_value()) {
       std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
       return false;
     }
-    alyrn::luring::detail::LoopAccess::RunReady(loop);
+    alyrn::uring::detail::LoopAccess::RunReady(loop);
   }
 
   if (!Check(close_result.has_value(), "race close coroutine did not finish") ||

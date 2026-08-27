@@ -36,7 +36,7 @@
 #include "alyrn/io/read_into.h"
 #include "alyrn/kqueue/loop.h"
 #include "alyrn/kqueue/stream.h"
-#include "alyrn/net/socket.h"
+#include "alyrn/detail/net/socket.h"
 #include "alyrn/time/clock.h"
 
 namespace {

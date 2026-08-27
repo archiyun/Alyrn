@@ -18,8 +18,8 @@ preprocessor branches:
 
 | Backend | Host | Dispatcher | Multi-worker topology |
 |---|---|---|---|
-| `reactor` | Linux | `epoll` readiness | Independent listeners with `SO_REUSEPORT` |
-| `luring` | Linux | `io_uring` completion | Thread-per-ring Proactor |
+| `epoll` | Linux | `epoll` readiness | Independent listeners with `SO_REUSEPORT` |
+| `uring` | Linux | `io_uring` completion | Thread-per-ring Proactor |
 | `kqueue` | FreeBSD, NetBSD, OpenBSD, Darwin | `kqueue` readiness | Master-slave: one acceptor, user-space fd handoff |
 
 Alyrn uses [Lifecycle-Refined Coroutine I/O (LRCI)](docs/design/zh-CN/network/lifecycle-refined-coroutine-io.md): backend events such as readiness notifications and CQEs are not treated directly as coroutine completion. They are refined into a shared logical lifecycle that separately determines result readiness, continuation resumption, and resource release.
@@ -31,9 +31,9 @@ Alyrn uses [Lifecycle-Refined Coroutine I/O (LRCI)](docs/design/zh-CN/network/li
   Each Worker owns its thread, event loop, connections, and I/O operations. Operations complete in their owning execution context and coroutine continuations resume in that same context, with explicit rules for buffer lifetimes, cancellation, and asynchronous close. Coroutine frames are not moved across loops.
 
 * 🚀 **Core operations and native extensions**
-  Alyrn provides asynchronous accept, connect, read, write, close, and timers. Reactor can select LT or ET; kqueue currently ships one-shot readiness as the stream mode; luring additionally exposes extensions such as multishot receive and zero-copy send. HTTP and gateway policy live in [CoroGateway](https://github.com/archiyun/CoroGateway).
+  Alyrn provides asynchronous accept, connect, read, write, close, and timers. Epoll can select LT or ET; kqueue currently ships one-shot readiness as the stream mode; uring additionally exposes extensions such as multishot receive and zero-copy send. HTTP and gateway policy live in [CoroGateway](https://github.com/archiyun/CoroGateway).
 
-Linux is the CI-validated host for Reactor and the optional io_uring backend. kqueue is implemented as a third adapter on BSD and Darwin; Linux can compile its loop/poller tests against an in-memory shim, which does not replace a native `kevent` host. IOCP is not implemented.
+Linux is the CI-validated host for Epoll and the optional io_uring backend. kqueue is implemented as a third adapter on BSD and Darwin; Linux can compile its loop/poller tests against an in-memory shim, which does not replace a native `kevent` host. IOCP is not implemented.
 
 ## Quick Start
 
@@ -45,15 +45,15 @@ Applications normally include the backend-neutral modules and one concrete backe
 #include "alyrn/coro.h"
 #include "alyrn/io.h"
 #include "alyrn/net.h"
-#include "alyrn/reactor.h"  // Default Linux Reactor backend
+#include "alyrn/epoll.h"  // Default Linux Epoll backend
 ```
 
 Include only the modules your application uses.
 
 | Backend | Umbrella header | Runtime tag | CMake option |
 |---|---|---|---|
-| Reactor / epoll | `alyrn/reactor.h` | `runtime::Reactor` | default on Linux |
-| luring / io_uring | `alyrn/luring.h` | `runtime::LUring` | `-DALYRN_ENABLE_URING=ON` |
+| Epoll | `alyrn/epoll.h` | `runtime::Epoll` | default on Linux |
+| uring / io_uring | `alyrn/uring.h` | `runtime::Uring` | `-DALYRN_ENABLE_URING=ON` |
 | kqueue | `alyrn/kqueue.h` | `runtime::Kqueue` | `-DALYRN_ENABLE_KQUEUE=ON` |
 
 The kqueue umbrella header is rejected at compile time on non-BSD hosts.
@@ -61,7 +61,7 @@ The kqueue umbrella header is rejected at compile time on non-BSD hosts.
 ### 2. Write backend-neutral connection code
 
 This echo session depends only on `AsyncStream`, so it works with
-`reactor::Stream`, `luring::Stream`, and `kqueue::Stream`. See
+`epoll::Stream`, `uring::Stream`, and `kqueue::Stream`. See
 [`examples/simple_echo`](examples/simple_echo) for the runnable Linux version.
 
 ```cpp
@@ -76,7 +76,7 @@ This echo session depends only on `AsyncStream`, so it works with
 namespace cp = alyrn;
 
 template <cp::io::AsyncStream Stream>
-auto EchoSession(Stream stream) -> cp::coro::Task<cp::Result<void>> {
+auto EchoSession(Stream stream) -> cp::Task<cp::Result<void>> {
   std::array<std::byte, 4096> buffer{};
   cp::Result<void> session_result{};
 
@@ -110,7 +110,7 @@ auto EchoSession(Stream stream) -> cp::coro::Task<cp::Result<void>> {
 }
 
 template <cp::io::AsyncStream Stream>
-auto HandleConnection(Stream stream) -> cp::coro::DetachedTask {
+auto HandleConnection(Stream stream) -> cp::DetachedTask {
   auto result = co_await EchoSession(std::move(stream));
   if (!result.has_value()) {
     std::println(stderr, "session failed: {}", result.error().message());
@@ -128,7 +128,7 @@ int main() {
   constexpr int kPort = 19090;
   std::stop_source stop_source;
 
-  auto runtime = cp::Runtime::Create<cp::runtime::Reactor>(
+  auto runtime = cp::Runtime::Create<cp::runtime::Epoll>(
       cp::net::Endpoint::Loopback(kPort),
       [](auto stream) { return HandleConnection(std::move(stream)); });
 
@@ -138,14 +138,14 @@ int main() {
 }
 ```
 
-For io_uring, build with `ALYRN_ENABLE_URING=ON`, include `alyrn/luring.h`, and change the tag to `cp::runtime::LUring`. On a kqueue host, include `alyrn/kqueue.h` and use `cp::runtime::Kqueue`. The handler's stream remains statically typed as the selected backend type; no virtual call enters the connection data path.
+For io_uring, build with `ALYRN_ENABLE_URING=ON`, include `alyrn/uring.h`, and change the tag to `cp::runtime::Uring`. On a kqueue host, include `alyrn/kqueue.h` and use `cp::runtime::Kqueue`. The handler's stream remains statically typed as the selected backend type; no virtual call enters the connection data path.
 
 ### 4. Configure the default server explicitly
 
 `Create` uses conservative defaults (one worker). Use the same Runtime's backend-specific Builder when worker count needs explicit control:
 
 ```cpp
-auto runtime = cp::Runtime::Builder<cp::runtime::Reactor>{
+auto runtime = cp::Runtime::Builder<cp::runtime::Epoll>{
                    cp::net::Endpoint::Loopback(19090)}
                    .AutoWorkers()
                    .OnConnection([](auto stream) {
@@ -156,15 +156,15 @@ auto runtime = cp::Runtime::Builder<cp::runtime::Reactor>{
 
 The backend tag still selects the implementation at compile time. Options that alter backend resources or lifecycle semantics—ring depth, provided buffers, and zero-copy, for example—are not disguised as cross-backend Runtime settings.
 
-`Workers(n)` always means *n threads*. The topology behind that number is backend-specific: Reactor shares the listen port with `SO_REUSEPORT` when `n > 1`; kqueue binds a single listener on worker 0 and posts accepted descriptors onto the other loops; luring keeps one ring per worker.
+`Workers(n)` always means *n threads*. The topology behind that number is backend-specific: Epoll shares the listen port with `SO_REUSEPORT` when `n > 1`; kqueue binds a single listener on worker 0 and posts accepted descriptors onto the other loops; uring keeps one ring per worker.
 
-### 5. Use luring-native capabilities
+### 5. Use uring-native capabilities
 
-`Runtime` owns the default TCP server's worker lifecycle; it is not a general io_uring configuration API. It may select safe defaults, such as multishot accept with fallback, but applications that need explicit control of ring depth, SQPOLL, provided-buffer rings, multishot receive, or zero-copy send should compose `luring::Loop`, `Options`, and the relevant listener, stream, or source directly:
+`Runtime` owns the default TCP server's worker lifecycle; it is not a general io_uring configuration API. It may select safe defaults, such as multishot accept with fallback, but applications that need explicit control of ring depth, SQPOLL, provided-buffer rings, multishot receive, or zero-copy send should compose `uring::Loop`, `Options`, and the relevant listener, stream, or source directly:
 
 ```cpp
-alyrn::luring::Loop loop;
-alyrn::luring::Options options;
+alyrn::uring::Loop loop;
+alyrn::uring::Options options;
 options.entries = 8192;
 options.shared_buffer_capacity = 256;  // Provided buffers for RecvSource.
 
@@ -172,13 +172,13 @@ auto initialized = loop.Init(options);
 // On the loop's owner thread: create listener/source, SpawnDetach(...), then loop.Run(...).
 ```
 
-This native path makes ownership of each ring, buffer lease, and operation lifecycle explicit. See [`examples/luring`](examples/luring) and the luring public headers. Do not add these capabilities as cross-backend Runtime switches.
+This native path makes ownership of each ring, buffer lease, and operation lifecycle explicit. See [`examples/uring`](examples/uring) and the uring public headers. Do not add these capabilities as cross-backend Runtime switches.
 
 ## Build
 
 ## Run the container demo
 
-The published container runs a TCP echo server based on Alyrn's Reactor
+The published container runs a TCP echo server based on Alyrn's epoll
 backend. Its port is available to the host when published with Docker:
 
 ```bash
@@ -195,7 +195,7 @@ To build the same image from a checkout, run `docker build -t alyrn:local .`.
 The image is a runnable demonstration, not a replacement for an application
 image that links Alyrn.
 
-Build the default Linux Reactor backend:
+Build the default Linux Epoll backend:
 
 ```bash
 cmake -B build \
@@ -288,10 +288,10 @@ ITERATIONS=1000000 build-bench/benchmarks/coro_channel_microbenchmark
 ### Requirements
 
 * CMake 3.20+ and a compiler with C++23 coroutine support.
-* Reactor uses `epoll` and is the default Linux backend. It has no extra networking-library dependency.
-* luring requires Linux, `liburing >= 2.6` (Linux 5.19 or newer is recommended).
+* Epoll uses `epoll` and is the default Linux backend. It has no extra networking-library dependency.
+* uring requires Linux, `liburing >= 2.6` (Linux 5.19 or newer is recommended).
 * kqueue requires a BSD or Darwin host with a native `kqueue(2)`.
-* `net` and the backend-neutral contracts use portable POSIX socket facilities. Do not implement BSD readiness as conditional code inside the epoll Reactor.
+* `net` and the backend-neutral contracts use portable POSIX socket facilities. Do not implement BSD readiness as conditional code inside the epoll backend.
 
 Installable Debian/tarball artifacts and Docker release builds are described
 in [Packaging and installation](docs/packaging.md).
@@ -310,13 +310,13 @@ Custom Session / Application
         +------+------+------+
         |             |      |
         v             v      v
-   Reactor/epoll   luring   kqueue
-   alyrn::reactor  ::luring  ::kqueue
+   Epoll/epoll   uring    kqueue
+   alyrn::epoll  alyrn::uring  alyrn::kqueue
 ```
 
 The backends do not share an event loop, and their internal state machines do not need to be identical. They only need to satisfy the same business-observable asynchronous I/O contract. [`docs/SUBSYSTEMS.md`](docs/SUBSYSTEMS.md) is the normative dependency policy.
 
-Reactor multi-worker (`Workers(n>1)`) uses independent listeners on the same port:
+Epoll multi-worker (`Workers(n>1)`) uses independent listeners on the same port:
 
 ```text
 WorkerGroup
@@ -355,7 +355,7 @@ Connections, I/O operations, and coroutine continuations remain owned by the Wor
 
 Alyrn includes reproducible `wrk` benchmarks covering:
 
-* Reactor and io_uring backends
+* Epoll and io_uring backends
 * raw liburing
 * standalone Asio
 * Monoio
@@ -377,7 +377,7 @@ The documentation map is [`docs/index.md`](docs/index.md). Design notes are curr
 * **[AsyncStream semantics](docs/design/zh-CN/network/async-stream-contract.md)**: read, write, close, cancellation, and buffer-lifetime semantics.
 * **[Data structures](docs/design/zh-CN/datastructure/index.md)**: modern C++ intrusive data structures, intrusive red-black trees, intrusive lists, MPSC queues, and their use in the project. QuadHeap is a first-class timer-index adapter injected through `time::TimerIndex`.
 * **[Performance benchmarks](docs/benchmark/network-libraries-20260810.md)**: the latest current-source C++ baseline; the broader unified network-library report and supporting material are in [`docs/benchmark`](docs/benchmark/).
-* **[Examples](examples/)**: Reactor and io_uring examples on Linux.
+* **[Examples](examples/)**: Epoll and io_uring examples on Linux.
 * **[Tests](tests/)**: coroutine, networking, lifecycle, and backend validation.
 
 ## Current Status

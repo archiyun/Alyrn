@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "alyrn/kqueue/detail/worker_group.h"
+#include "alyrn/detail/kqueue/worker_group.h"
 
 #include <unistd.h>
 

@@ -1,7 +1,7 @@
 pkgname=alyrn
 pkgver=0.1.0
 pkgrel=1
-pkgdesc='C++23 coroutine networking runtime with Reactor and io_uring backends'
+pkgdesc='C++23 coroutine networking runtime with epoll and io_uring backends'
 arch=('x86_64')
 url='https://github.com/archiyun/Alyrn'
 license=('MIT')

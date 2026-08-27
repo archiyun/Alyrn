@@ -12,11 +12,13 @@ namespace alyrn::runtime {
 
 // Backend tags select a Runtime::Builder specialization at compile time. They
 // carry no runtime state and never enter an I/O hot path.
-struct Reactor final {};
-struct LUring final {};
+struct Epoll final {};
+struct Uring final {};
 struct Kqueue final {};
 
-namespace detail {
+}  // namespace alyrn::runtime
+
+namespace alyrn::detail::runtime {
 
 // Cold lifecycle seam only. Concrete controls remain owned by their backend;
 // streams, awaiters, operations, and worker-local state are never erased.
@@ -32,9 +34,7 @@ public:
   virtual bool Started() const noexcept = 0;
 };
 
-}  // namespace detail
-
-}  // namespace alyrn::runtime
+}  // namespace alyrn::detail::runtime
 
 namespace alyrn {
 
@@ -87,10 +87,10 @@ private:
   template <class>
   friend class Builder;
 
-  explicit Runtime(std::unique_ptr<runtime::detail::RuntimeControl> control) noexcept
+  explicit Runtime(std::unique_ptr<detail::runtime::RuntimeControl> control) noexcept
       : control_(std::move(control)) {}
 
-  std::unique_ptr<runtime::detail::RuntimeControl> control_;
+  std::unique_ptr<detail::runtime::RuntimeControl> control_;
 };
 
 }  // namespace alyrn
