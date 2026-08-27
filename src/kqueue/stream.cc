@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT
+#include "coropact/kqueue/stream.h"
+
 #include <sys/socket.h>
 #include <sys/uio.h>
 #include <unistd.h>
@@ -16,10 +18,10 @@
 #include <utility>
 
 #include "coropact/base/check.h"
-#include "coropact/result.h"
 #include "coropact/kqueue/detail/loop_access.h"
-#include "coropact/kqueue/stream.h"
+#include "coropact/net/endpoint.h"
 #include "coropact/net/socket.h"
+#include "coropact/result.h"
 
 namespace coropact::kqueue {
 
@@ -191,6 +193,11 @@ bool Stream::ReadAwaiterState::BeginRead(std::coroutine_handle<> continuation) n
     return false;
   }
 
+  if (stream_->lifecycle_.IsReadShutdown()) {
+    CompleteInline(Result<std::size_t>{0});
+    return false;
+  }
+
   if (stream_->pending_read_ != nullptr) {
     CompleteInline(std::unexpected(Errno(EBUSY)));
     return false;
@@ -207,7 +214,7 @@ void Stream::ReadAwaiterState::SuspendForRead(void* awaiter, PendingReadKind kin
 }
 
 void Stream::ReadAwaiterState::ArmReadTimeout(time::Duration timeout, void* awaiter,
-                                                    time::TimerId& timer) noexcept {
+                                              time::TimerId& timer) noexcept {
   if (timeout <= time::Duration::zero()) {
     return;
   }
@@ -255,9 +262,7 @@ void Stream::ReadAwaiterState::SetResult(Result<std::size_t> result) noexcept {
 
 void Stream::ReadAwaiterState::ScheduleContinuation() noexcept { continuation_.Schedule(); }
 
-Result<std::size_t> Stream::ReadAwaiterState::TakeResult() noexcept {
-  return result_.Take();
-}
+Result<std::size_t> Stream::ReadAwaiterState::TakeResult() noexcept { return result_.Take(); }
 
 bool Stream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   if (!BeginRead(continuation)) {
@@ -275,9 +280,7 @@ bool Stream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> continuation
   return true;
 }
 
-Result<std::size_t> Stream::ReadSomeAwaiter::await_resume() noexcept {
-  return TakeResult();
-}
+Result<std::size_t> Stream::ReadSomeAwaiter::await_resume() noexcept { return TakeResult(); }
 
 bool Stream::ReadSomeAwaiter::CompleteResultImpl(Result<std::size_t> result) noexcept {
   if (!TryAuthorizeResult()) {
@@ -299,7 +302,7 @@ void Stream::ReadSomeAwaiter::OnReadyImpl() noexcept {
 }
 
 Stream::ReadIntoAwaiter::ReadIntoAwaiter(Stream& stream, net::Buffer buffer,
-                                               std::size_t reserve) noexcept
+                                         std::size_t reserve) noexcept
     : ReadAwaiterState(stream), buffer_(std::move(buffer)), reserve_(reserve) {}
 
 bool Stream::ReadIntoAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
@@ -481,8 +484,7 @@ void Stream::WriteAllAwaiter::OnReadyImpl() noexcept {
   stream_->CompleteWrite(Result<std::size_t>{0});
 }
 
-Stream::Stream(Loop* loop, int fd, net::Endpoint peer,
-                           StreamOptions options)
+Stream::Stream(Loop* loop, int fd, net::Endpoint peer, StreamOptions options)
     : loop_(loop), socket_(fd), channel_(loop, fd), peer_(peer) {
   COROPACT_CHECK(loop_ != nullptr, "Stream: loop must not be null");
   COROPACT_CHECK(loop_->IsInLoopThread(), "Stream created from wrong Loop thread");
@@ -557,16 +559,17 @@ Stream::ReadSomeAwaiter Stream::ReadSome(std::span<std::byte> buffer) noexcept {
 }
 
 Stream::ReadSomeAwaiter Stream::ReadSomeFor(std::span<std::byte> buffer,
-                                                       time::Duration timeout) noexcept {
+                                            time::Duration timeout) noexcept {
   return ReadSomeAwaiter{*this, buffer, timeout};
 }
 
-Stream::ReadIntoAwaiter Stream::ReadInto(net::Buffer buffer,
-                                                     std::size_t reserve) noexcept {
+Stream::ReadIntoAwaiter Stream::ReadInto(net::Buffer buffer, std::size_t reserve) noexcept {
   return ReadIntoAwaiter{*this, std::move(buffer), reserve};
 }
 
-coro::Task<Result<void>> Stream::Shutdown() {
+coro::Task<Result<void>> Stream::Shutdown() noexcept { return CloseWrite(); }
+
+coro::Task<Result<void>> Stream::CloseWrite() noexcept {
   RequireOwnerLoop();
   if (socket_.fd() < 0) {
     co_return std::unexpected(Errno(EBADF));
@@ -587,10 +590,44 @@ coro::Task<Result<void>> Stream::Shutdown() {
   co_return Result<void>{};
 }
 
-coro::Task<Result<void>> Stream::Close() {
+coro::Task<Result<void>> Stream::CloseRead() noexcept {
+  RequireOwnerLoop();
+  if (socket_.fd() < 0) {
+    co_return std::unexpected(Errno(EBADF));
+  }
+  auto prepare = lifecycle_.PrepareCloseRead(pending_read_ != nullptr);
+  if (!prepare.has_value()) {
+    co_return std::unexpected(prepare.error());
+  }
+  if (!*prepare) {
+    co_return Result<void>{};
+  }
+  auto close_read = socket_.ShutdownRead();
+  if (!close_read.has_value()) {
+    lifecycle_.AbortCloseReadPreparation();
+    co_return std::unexpected(close_read.error());
+  }
+  lifecycle_.CommitCloseRead();
+  if (channel_.IsReading()) {
+    channel_.DisableReading();
+  }
+  co_return Result<void>{};
+}
+
+coro::Task<Result<void>> Stream::Close() noexcept {
   RequireOwnerLoop();
   CloseNow();
   co_return Result<void>{};
+}
+
+Result<net::Endpoint> Stream::LocalAddr() const noexcept {
+  RequireOwnerLoop();
+
+  if (socket_.fd() < 0) {
+    return std::unexpected(Errno(EBADF));
+  }
+
+  return socket_.LocalEndpoint();
 }
 
 void Stream::HandleRead() {
@@ -728,25 +765,16 @@ void Stream::DetachChannel() {
 
 void Stream::RequireOwnerLoop() const noexcept {
   COROPACT_CHECK(loop_ != nullptr, "Stream operation has no owner Loop");
-  COROPACT_CHECK(loop_->IsInLoopThread(),
-                 "Stream operation called from wrong Loop thread");
+  COROPACT_CHECK(loop_->IsInLoopThread(), "Stream operation called from wrong Loop thread");
 }
 
-void Stream::DispatchRead(void* context) noexcept {
-  static_cast<Stream*>(context)->HandleRead();
-}
+void Stream::DispatchRead(void* context) noexcept { static_cast<Stream*>(context)->HandleRead(); }
 
-void Stream::DispatchWrite(void* context) noexcept {
-  static_cast<Stream*>(context)->HandleWrite();
-}
+void Stream::DispatchWrite(void* context) noexcept { static_cast<Stream*>(context)->HandleWrite(); }
 
-void Stream::DispatchClose(void* context) noexcept {
-  static_cast<Stream*>(context)->HandleClose();
-}
+void Stream::DispatchClose(void* context) noexcept { static_cast<Stream*>(context)->HandleClose(); }
 
-void Stream::DispatchError(void* context) noexcept {
-  static_cast<Stream*>(context)->HandleError();
-}
+void Stream::DispatchError(void* context) noexcept { static_cast<Stream*>(context)->HandleError(); }
 
 void Stream::BindChannelCallbacks() noexcept {
   try {
@@ -771,8 +799,7 @@ void Stream::ResetForMove() noexcept {
 
 Loop* Stream::PrepareMove(Stream& other) noexcept {
   COROPACT_CHECK(other.loop_ != nullptr, "Stream move source is not initialized");
-  COROPACT_CHECK(other.loop_->IsInLoopThread(),
-                 "Stream move called from wrong Loop thread");
+  COROPACT_CHECK(other.loop_->IsInLoopThread(), "Stream move called from wrong Loop thread");
   COROPACT_CHECK(other.pending_read_ == nullptr,
                  "Stream cannot move with a pending read operation");
   COROPACT_CHECK(other.pending_write_ == nullptr,
@@ -784,8 +811,6 @@ Loop* Stream::PrepareMove(Stream& other) noexcept {
   return loop;
 }
 
-void Stream::DispatchLoopStop(void* context) noexcept {
-  static_cast<Stream*>(context)->CloseNow();
-}
+void Stream::DispatchLoopStop(void* context) noexcept { static_cast<Stream*>(context)->CloseNow(); }
 
 }  // namespace coropact::kqueue

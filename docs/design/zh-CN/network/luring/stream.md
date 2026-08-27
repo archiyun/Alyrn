@@ -12,7 +12,11 @@
 | `ReadSomeFor(span<byte>, timeout)` | `Result<size_t>` | read 和 timeout 两个物理结果先收敛并释放 read slot，再只恢复一次 |
 | `WriteAll(span<const byte>)` | `Task<Result<void>>` | 内建短写循环；每轮 send-zc 越过 kernel release boundary 后才可继续使用同一视图 |
 | `Shutdown()` | `Task<Result<void>>` | 写方向 half-close；幂等，保留读方向，拒绝新写入 |
+| `CloseRead()` | `Task<Result<void>>` | 读方向 half-close；幂等，后续读立即返回 EOF，保留写方向 |
+| `CloseWrite()` | `Task<Result<void>>` | 写方向 half-close 的 canonical spelling |
 | `Close()` | `Task<Result<void>>` | 等待关联 pending I/O 收敛后关闭 fd |
+| `LocalAddr()` | `Result<Endpoint>` | 在 owner loop 上查询本地 IPv4/IPv6 endpoint |
+| `RemoteAddr()` | `const Endpoint&` | 返回 accept/connect 时保存的 peer endpoint |
 
 所有 operation 都要求在 stream 所属 `Loop` 线程上进入 `await_suspend()`。把 stream
 跨线程传给另一个 loop，或在 foreign thread 上调用操作，是 runtime contract violation。
@@ -59,6 +63,10 @@ operation 经过正常或取消完成路径，再关闭 fd。这样可以防止 
 `EPIPE`。空 span 不提交 SQE，但仍检查 loop、stream 生命周期和写槽位。若已有 write request
 仍在 pending，`Shutdown()` 返回 `EBUSY`，避免把 half-close 与内核仍可能访问的发送 operation
 交错。
+
+`CloseWrite()` 是 `Shutdown()` 的兼容别名。`CloseRead()` 从 `Readable` 转到
+`ReadShutdown`；它要求没有 pending read，成功后新的 `ReadSome()`、`ReadInto()` 和
+`ReadSomeFor()` 不再提交 recv SQE，而是立即返回 `Result<0>`，写侧仍可继续使用。
 
 ## 测试观察点
 

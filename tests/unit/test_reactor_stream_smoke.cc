@@ -182,7 +182,7 @@ coropact::coro::DetachedTask ShutdownThenReadAndWrite(
     std::array<std::byte, 16>* read_buffer, std::span<const std::byte> write_buffer,
     std::optional<WriteResult>* first_shutdown, std::optional<WriteResult>* second_shutdown,
     std::optional<WriteResult>* write_result, std::optional<ReadResult>* read_result) {
-  first_shutdown->emplace(co_await stream->Shutdown());
+  first_shutdown->emplace(co_await stream->CloseWrite());
   second_shutdown->emplace(co_await stream->Shutdown());
   write_result->emplace(co_await stream->WriteAll(write_buffer));
   read_result->emplace(co_await stream->ReadSome(*read_buffer));

@@ -44,7 +44,7 @@ and `Run`. `RequestStop` and `Post` are the cross-thread loop APIs. `Post`
 holds `posted_mutex_` across `Wakeup()` so a 0-timeout poll cannot drain the
 callback and destroy the wakeup pipe before the write returns.
 
-`Stream` cannot move across loops. Handoff is: `PeerAddress()`,
+`Stream` cannot move across loops. Handoff is: `RemoteAddr()`,
 `Release()` the fd, `Post` a callback that reconstructs the stream on the
 owner thread, then `SpawnDetach` the connection handler there.
 

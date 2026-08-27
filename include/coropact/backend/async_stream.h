@@ -6,10 +6,11 @@
 #include <span>
 #include <utility>
 
-#include "coropact/result.h"
 #include "coropact/coro/awaitable.h"
 #include "coropact/coro/task.h"
+#include "coropact/net/endpoint.h"
 #include "coropact/net/read_into.h"
+#include "coropact/result.h"
 #include "coropact/time/clock.h"
 
 namespace coropact::backend {
@@ -21,8 +22,7 @@ namespace coropact::backend {
 template <class T>
 concept AsyncReadStream = requires(T& stream, std::span<std::byte> buffer) {
   requires coro::Awaitable<decltype(stream.ReadSome(buffer))>;
-  requires std::same_as<coro::AwaitResult<decltype(stream.ReadSome(buffer))>,
-                        Result<std::size_t>>;
+  requires std::same_as<coro::AwaitResult<decltype(stream.ReadSome(buffer))>, Result<std::size_t>>;
 };
 
 // Optional timed-read extension. It deliberately stays outside AsyncStream:
@@ -60,12 +60,19 @@ concept AsyncWriteStream = requires(T& stream, std::span<const std::byte> buffer
 
 template <class T>
 concept AsyncClosableStream = requires(T& stream) {
+  // Legacy write-half-close spelling retained for existing callers.
   { stream.Shutdown() } -> std::same_as<coro::Task<Result<void>>>;
   { stream.Close() } -> std::same_as<coro::Task<Result<void>>>;
 };
 
 template <class T>
-concept AsyncStream = AsyncReadStream<T> && AsyncWriteStream<T> && AsyncClosableStream<T>;
+concept AsyncStream =
+    AsyncReadStream<T> && AsyncWriteStream<T> && AsyncClosableStream<T> && requires(T& stream) {
+      { stream.LocalAddr() } -> std::same_as<Result<net::Endpoint>>;
+      { stream.RemoteAddr() } -> std::same_as<const net::Endpoint&>;
+      { stream.CloseRead() } -> std::same_as<coro::Task<Result<void>>>;
+      { stream.CloseWrite() } -> std::same_as<coro::Task<Result<void>>>;
+    };
 
 // A complete stream with the optional timed-read semantic extension.
 template <class T>

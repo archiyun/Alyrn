@@ -8,7 +8,6 @@
 #include <cstdint>
 #include <span>
 
-#include "coropact/result.h"
 #include "coropact/coro/task.h"
 #include "coropact/kqueue/detail/channel.h"
 #include "coropact/kqueue/detail/loop_shutdown.h"
@@ -23,6 +22,7 @@
 #include "coropact/net/socket.h"
 #include "coropact/operation/detail/scheduler_continuation.h"
 #include "coropact/operation/detail/single_result_lifecycle.h"
+#include "coropact/result.h"
 #include "coropact/time/clock.h"
 #include "coropact/time/timer_id.h"
 #include "coropact/utils/macros.h"
@@ -48,8 +48,7 @@ private:
 public:
   COROPACT_DELETE_COPY(Stream);
 
-  Stream(Loop* loop, int fd, net::Endpoint peer = net::Endpoint(0),
-               StreamOptions options = {});
+  Stream(Loop* loop, int fd, net::Endpoint peer = net::Endpoint(0), StreamOptions options = {});
   ~Stream();
 
   Stream(Stream&& other) noexcept;
@@ -63,13 +62,28 @@ public:
   ReadIntoAwaiter ReadInto(net::Buffer buffer, std::size_t reserve = 4096) noexcept;
   [[nodiscard]]
   WriteAllAwaiter WriteAll(std::span<const std::byte> buffer) noexcept;
-  coro::Task<Result<void>> Shutdown();
-  coro::Task<Result<void>> Close();
 
   [[nodiscard]]
-  const net::Endpoint& PeerAddress() const noexcept {
+  // Legacy alias for CloseWrite().
+  coro::Task<Result<void>> Shutdown() noexcept;
+  [[nodiscard]]
+  coro::Task<Result<void>> Close() noexcept;
+
+  [[nodiscard]]
+  Result<net::Endpoint> LocalAddr() const noexcept;
+
+  [[nodiscard]]
+  const net::Endpoint& RemoteAddr() const noexcept {
     return peer_;
   }
+
+  [[nodiscard]]
+  // Shuts down local reception while keeping the descriptor and write side.
+  coro::Task<Result<void>> CloseRead() noexcept;
+
+  [[nodiscard]]
+  // Shuts down local transmission while keeping the descriptor and read side.
+  coro::Task<Result<void>> CloseWrite() noexcept;
 
   [[nodiscard]]
   int Fd() const noexcept {
@@ -167,7 +181,7 @@ protected:
 };
 
 class Stream::ReadSomeAwaiter final : public ReadAwaiterState,
-                                            public OperationHook<Stream::ReadSomeAwaiter> {
+                                      public OperationHook<Stream::ReadSomeAwaiter> {
 public:
   COROPACT_DELETE_COPY_MOVE(ReadSomeAwaiter);
 
@@ -228,7 +242,7 @@ private:
 };
 
 class Stream::ReadIntoAwaiter : public ReadAwaiterState,
-                                      public OperationHook<Stream::ReadIntoAwaiter> {
+                                public OperationHook<Stream::ReadIntoAwaiter> {
 public:
   COROPACT_DELETE_COPY_MOVE(ReadIntoAwaiter);
 

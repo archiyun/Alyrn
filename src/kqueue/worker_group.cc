@@ -17,7 +17,7 @@ namespace {
 coro::DetachedTask HandoffAccepted(WorkerGroup* group,
                                    Worker::ConnectionCallback handler,
                                    Stream stream) {
-  const net::Endpoint peer = stream.PeerAddress();
+  const net::Endpoint peer = stream.RemoteAddr();
   const int fd = stream.Release();
   const std::size_t count = group->Size();
   if (count == 0) {
