@@ -17,11 +17,11 @@
 #include <thread>
 #include <utility>
 
-#include "coropact/result.h"
-#include "coropact/coro/task.h"
-#include "coropact/luring/detail/server.h"
-#include "coropact/luring/stream.h"
-#include "coropact/net/endpoint.h"
+#include "alyrn/result.h"
+#include "alyrn/coro/task.h"
+#include "alyrn/luring/detail/server.h"
+#include "alyrn/luring/stream.h"
+#include "alyrn/net/endpoint.h"
 
 namespace {
 
@@ -62,22 +62,22 @@ bool Check(bool condition, const char* message) {
   return true;
 }
 
-bool IsEnvironmentSkip(coropact::Error error) {
+bool IsEnvironmentSkip(alyrn::Error error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 
-coropact::net::Endpoint LoopbackAddress(std::uint16_t port) {
+alyrn::net::Endpoint LoopbackAddress(std::uint16_t port) {
   sockaddr_in addr{};
   addr.sin_family = AF_INET;
   addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   addr.sin_port = htons(port);
-  return coropact::net::Endpoint(addr);
+  return alyrn::net::Endpoint(addr);
 }
 
-coropact::Result<std::uint16_t> PickFreePort() {
+alyrn::Result<std::uint16_t> PickFreePort() {
   int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
   if (fd < 0) {
-    return std::unexpected(coropact::CurrentErrno());
+    return std::unexpected(alyrn::CurrentErrno());
   }
 
   sockaddr_in addr{};
@@ -86,14 +86,14 @@ coropact::Result<std::uint16_t> PickFreePort() {
   addr.sin_port = htons(0);
 
   if (::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
-    auto error = coropact::CurrentErrno();
+    auto error = alyrn::CurrentErrno();
     ::close(fd);
     return std::unexpected(error);
   }
 
   socklen_t len = sizeof(addr);
   if (::getsockname(fd, reinterpret_cast<sockaddr*>(&addr), &len) < 0) {
-    auto error = coropact::CurrentErrno();
+    auto error = alyrn::CurrentErrno();
     ::close(fd);
     return std::unexpected(error);
   }
@@ -102,15 +102,15 @@ coropact::Result<std::uint16_t> PickFreePort() {
   return ntohs(addr.sin_port);
 }
 
-coropact::Result<int> ConnectClient(const coropact::net::Endpoint& address) {
+alyrn::Result<int> ConnectClient(const alyrn::net::Endpoint& address) {
   int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, IPPROTO_TCP);
   if (fd < 0) {
-    return std::unexpected(coropact::CurrentErrno());
+    return std::unexpected(alyrn::CurrentErrno());
   }
 
   int r = ::connect(fd, address.SockAddr(), address.SockAddrLen());
   if (r < 0 && errno != EINPROGRESS) {
-    auto error = coropact::CurrentErrno();
+    auto error = alyrn::CurrentErrno();
     ::close(fd);
     return std::unexpected(error);
   }
@@ -118,8 +118,8 @@ coropact::Result<int> ConnectClient(const coropact::net::Endpoint& address) {
   return fd;
 }
 
-coropact::luring::detail::ServerOptions MakeOptions(std::size_t worker_num = 1) {
-  coropact::luring::detail::ServerOptions options;
+alyrn::luring::detail::ServerOptions MakeOptions(std::size_t worker_num = 1) {
+  alyrn::luring::detail::ServerOptions options;
   options.worker_group_options.worker_num = worker_num;
   options.worker_group_options.worker_options.loop_options.entries = 16;
   options.worker_group_options.worker_options.listen_options.reuse_port = true;
@@ -137,7 +137,7 @@ bool CheckServerStartStop() {
     return false;
   }
 
-  coropact::luring::detail::Server server(LoopbackAddress(*port), MakeOptions());
+  alyrn::luring::detail::Server server(LoopbackAddress(*port), MakeOptions());
 
   auto started = server.Start();
   if (!started.has_value()) {
@@ -171,13 +171,13 @@ bool CheckServerSessionHandler() {
   }
 
   const auto listen_addr = LoopbackAddress(*port);
-  coropact::luring::detail::Server server(listen_addr, MakeOptions());
+  alyrn::luring::detail::Server server(listen_addr, MakeOptions());
 
   std::atomic_size_t session_count{0};
   std::atomic_bool invalid_stream{false};
   std::atomic_bool wrong_loop{false};
-  server.SetSessionHandler([&](coropact::luring::detail::WorkerContext& context,
-                                 coropact::luring::Stream stream) -> coropact::coro::DetachedTask {
+  server.SetSessionHandler([&](alyrn::luring::detail::WorkerContext& context,
+                                 alyrn::luring::Stream stream) -> alyrn::coro::DetachedTask {
     if (!context.loop.IsInLoopThread()) {
       wrong_loop.store(true, std::memory_order_relaxed);
     }
@@ -238,13 +238,13 @@ bool CheckServerStopsActiveSession() {
   }
 
   const auto listen_addr = LoopbackAddress(*port);
-  coropact::luring::detail::Server server(listen_addr, MakeOptions());
+  alyrn::luring::detail::Server server(listen_addr, MakeOptions());
   std::atomic_bool session_started{false};
   std::atomic_bool session_cancelled{false};
 
   server.SetSessionHandler(
-      [&](coropact::luring::detail::WorkerContext&, coropact::luring::Stream stream)
-          -> coropact::coro::DetachedTask {
+      [&](alyrn::luring::detail::WorkerContext&, alyrn::luring::Stream stream)
+          -> alyrn::coro::DetachedTask {
         session_started.store(true, std::memory_order_release);
         std::array<std::byte, 1> buffer{};
         auto result = co_await stream.ReadSome(buffer);

@@ -39,27 +39,27 @@
 #include <string_view>
 #include <utility>
 
-#include "coropact/coro/detail/spawn_stats.h"
-#include "coropact/coro/frame_allocator.h"
-#include "coropact/coro/scheduler.h"
-#include "coropact/coro/spawn.h"
-#include "coropact/coro/task.h"
-#include "coropact/coro/work.h"
+#include "alyrn/coro/detail/spawn_stats.h"
+#include "alyrn/coro/frame_allocator.h"
+#include "alyrn/coro/scheduler.h"
+#include "alyrn/coro/spawn.h"
+#include "alyrn/coro/task.h"
+#include "alyrn/coro/work.h"
 #include "counting_memory_resource.h"
 
 namespace {
 
-using coropact::coro::CoroFramePoolResource;
-using coropact::coro::DetachedTask;
-using coropact::coro::FrameAllocatorScope;
-using coropact::coro::Scheduler;
-using coropact::coro::Spawn;
-using coropact::coro::SpawnDetach;
-using coropact::coro::Task;
-using coropact::coro::Work;
-using coropact::coro::WorkQueue;
-using coropact::coro::detail::SpawnAllocationScope;
-using coropact::coro::detail::SpawnAllocationStats;
+using alyrn::coro::CoroFramePoolResource;
+using alyrn::coro::DetachedTask;
+using alyrn::coro::FrameAllocatorScope;
+using alyrn::coro::Scheduler;
+using alyrn::coro::Spawn;
+using alyrn::coro::SpawnDetach;
+using alyrn::coro::Task;
+using alyrn::coro::Work;
+using alyrn::coro::WorkQueue;
+using alyrn::coro::detail::SpawnAllocationScope;
+using alyrn::coro::detail::SpawnAllocationStats;
 
 enum class SpawnMode { kSpawnThenDetach, kSpawnDetach };
 

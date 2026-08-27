@@ -8,23 +8,23 @@
 #include <optional>
 #include <utility>
 
-#include "coropact/result.h"
-#include "coropact/coro/task.h"
-#include "coropact/io/recv_source.h"
-#include "coropact/net/recv_source.h"
+#include "alyrn/result.h"
+#include "alyrn/coro/task.h"
+#include "alyrn/io/recv_source.h"
+#include "alyrn/net/recv_source.h"
 
 namespace {
 
-using coropact::Result;
-using coropact::coro::Task;
-using coropact::io::AsyncRecvSource;
-using coropact::net::BufferLease;
-using coropact::net::RecvEvent;
-using coropact::net::RecvSourceOptions;
-using coropact::net::detail::EventDisposition;
-using coropact::net::detail::MultishotRequestDisposition;
-using coropact::net::detail::RecvSourceState;
-using coropact::net::detail::RecvSourceStateMachine;
+using alyrn::Result;
+using alyrn::coro::Task;
+using alyrn::io::AsyncRecvSource;
+using alyrn::net::BufferLease;
+using alyrn::net::RecvEvent;
+using alyrn::net::RecvSourceOptions;
+using alyrn::net::detail::EventDisposition;
+using alyrn::net::detail::MultishotRequestDisposition;
+using alyrn::net::detail::RecvSourceState;
+using alyrn::net::detail::RecvSourceStateMachine;
 
 class ContractOnlyRecvSource final {
 public:

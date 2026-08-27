@@ -19,17 +19,17 @@
 #include <iostream>
 #include <thread>
 
-#include "coropact/base/check.h"
-#include "coropact/kqueue/detail/channel.h"
-#include "coropact/kqueue/loop.h"
-#include "coropact/kqueue/options.h"
-#include "coropact/net/socket.h"
+#include "alyrn/base/check.h"
+#include "alyrn/kqueue/detail/channel.h"
+#include "alyrn/kqueue/loop.h"
+#include "alyrn/kqueue/options.h"
+#include "alyrn/net/socket.h"
 
 namespace {
 
-using coropact::kqueue::Loop;
-using coropact::kqueue::TriggerMode;
-using coropact::kqueue::detail::Channel;
+using alyrn::kqueue::Loop;
+using alyrn::kqueue::TriggerMode;
+using alyrn::kqueue::detail::Channel;
 
 bool Check(bool condition, const char* message) {
   if (!condition) {
@@ -40,14 +40,14 @@ bool Check(bool condition, const char* message) {
 }
 
 void ConfigureFd(int fd) {
-  COROPACT_CHECK(coropact::net::SetNonBlocking(fd).has_value(), "SetNonBlocking failed");
-  COROPACT_CHECK(coropact::net::SetCloseOnExec(fd).has_value(), "SetCloseOnExec failed");
+  ALYRN_CHECK(alyrn::net::SetNonBlocking(fd).has_value(), "SetNonBlocking failed");
+  ALYRN_CHECK(alyrn::net::SetCloseOnExec(fd).has_value(), "SetCloseOnExec failed");
 }
 
 class ScopedPipe {
 public:
   ScopedPipe() {
-    COROPACT_CHECK(::pipe(fds_) == 0, "pipe creation failed");
+    ALYRN_CHECK(::pipe(fds_) == 0, "pipe creation failed");
     ConfigureFd(fds_[0]);
     ConfigureFd(fds_[1]);
   }
@@ -80,7 +80,7 @@ private:
 class ScopedSocketPair {
 public:
   ScopedSocketPair() {
-    COROPACT_CHECK(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds_) == 0, "socketpair failed");
+    ALYRN_CHECK(::socketpair(AF_UNIX, SOCK_STREAM, 0, fds_) == 0, "socketpair failed");
     ConfigureFd(fds_[0]);
     ConfigureFd(fds_[1]);
   }
@@ -121,7 +121,7 @@ void WriteAll(int fd, const char* bytes, std::size_t length) {
     if (written < 0 && errno == EINTR) {
       continue;
     }
-    COROPACT_CHECK(false, "write failed");
+    ALYRN_CHECK(false, "write failed");
   }
 }
 
@@ -135,7 +135,7 @@ void Drain(int fd) {
     if (bytes < 0 && errno == EINTR) {
       continue;
     }
-    COROPACT_CHECK(bytes < 0 && (errno == EAGAIN || errno == EWOULDBLOCK), "drain read failed");
+    ALYRN_CHECK(bytes < 0 && (errno == EAGAIN || errno == EWOULDBLOCK), "drain read failed");
     return;
   }
 }
@@ -390,7 +390,7 @@ bool CheckRequestStopWakesBlockedLoop() {
   loop.Run();
   stopper.join();
 
-  return Check(loop.State() == coropact::backend::LoopState::kStopped,
+  return Check(loop.State() == alyrn::backend::LoopState::kStopped,
                "RequestStop must wake a blocked Loop");
 }
 

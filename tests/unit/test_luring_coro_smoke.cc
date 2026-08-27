@@ -15,35 +15,35 @@
 #include <thread>
 #include <utility>
 
-#include "coropact/base/check.h"
-#include "coropact/result.h"
-#include "coropact/coro/scheduler.h"
-#include "coropact/coro/spawn.h"
-#include "coropact/coro/detached_task.h"
-#include "coropact/coro/work.h"
-#include "coropact/io/loop.h"
-#include "coropact/luring/detail/loop_access.h"
-#include "coropact/luring/detail/op.h"
-#include "coropact/luring/detail/sqe_prep.h"
-#include "coropact/luring/loop.h"
-#include "coropact/luring/options.h"
-#include "coropact/luring/stream.h"
-#include "coropact/net/endpoint.h"
-#include "coropact/operation/detail/scheduler_continuation.h"
+#include "alyrn/base/check.h"
+#include "alyrn/result.h"
+#include "alyrn/coro/scheduler.h"
+#include "alyrn/coro/spawn.h"
+#include "alyrn/coro/detached_task.h"
+#include "alyrn/coro/work.h"
+#include "alyrn/io/loop.h"
+#include "alyrn/luring/detail/loop_access.h"
+#include "alyrn/luring/detail/op.h"
+#include "alyrn/luring/detail/sqe_prep.h"
+#include "alyrn/luring/loop.h"
+#include "alyrn/luring/options.h"
+#include "alyrn/luring/stream.h"
+#include "alyrn/net/endpoint.h"
+#include "alyrn/operation/detail/scheduler_continuation.h"
 
 namespace {
 
 class NopAwaiter {
 public:
-  explicit NopAwaiter(coropact::luring::Loop& loop) noexcept : loop_(&loop) {}
+  explicit NopAwaiter(alyrn::luring::Loop& loop) noexcept : loop_(&loop) {}
 
   bool await_ready() const noexcept { return false; }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     op_.resume_work.SetHandle(continuation);
 
-    auto submitted = coropact::luring::detail::LoopAccess::SubmitOp(
-        *loop_, &op_, coropact::luring::detail::PrepareNop());
+    auto submitted = alyrn::luring::detail::LoopAccess::SubmitOp(
+        *loop_, &op_, alyrn::luring::detail::PrepareNop());
     if (!submitted.has_value()) {
       result_.emplace(std::unexpected(submitted.error()));
       return false;
@@ -52,21 +52,21 @@ public:
     return true;
   }
 
-  coropact::Result<int> await_resume() noexcept {
+  alyrn::Result<int> await_resume() noexcept {
     if (result_.has_value()) {
       return std::move(*result_);
     }
-    COROPACT_CHECK(op_.result.HasValue(), "NopAwaiter resumed before its CQE result was ready");
+    ALYRN_CHECK(op_.result.HasValue(), "NopAwaiter resumed before its CQE result was ready");
     if (*op_.result < 0) {
-      return std::unexpected(coropact::NegErrno(*op_.result));
+      return std::unexpected(alyrn::NegErrno(*op_.result));
     }
     return *op_.result;
   }
 
 private:
-  coropact::luring::Loop* loop_;
-  coropact::luring::detail::Op op_{coropact::luring::detail::OpKind::kNop};
-  std::optional<coropact::Result<int>> result_;
+  alyrn::luring::Loop* loop_;
+  alyrn::luring::detail::Op op_{alyrn::luring::detail::OpKind::kNop};
+  std::optional<alyrn::Result<int>> result_;
 };
 
 bool Check(bool condition, const char* message) {
@@ -77,14 +77,14 @@ bool Check(bool condition, const char* message) {
   return true;
 }
 
-class AppendOrderWork final : public coropact::coro::Work {
+class AppendOrderWork final : public alyrn::coro::Work {
 public:
   AppendOrderWork(std::string* order, char marker) noexcept : order_(order), marker_(marker) {
     SetRun(&RunAppend);
   }
 
 private:
-  static void RunAppend(coropact::coro::Work* work) noexcept {
+  static void RunAppend(alyrn::coro::Work* work) noexcept {
     auto* self = static_cast<AppendOrderWork*>(work);
     self->order_->push_back(self->marker_);
   }
@@ -96,7 +96,7 @@ private:
 class SuspendOnContinuation final {
 public:
   explicit SuspendOnContinuation(
-      coropact::operation::detail::SchedulerContinuation* continuation) noexcept
+      alyrn::operation::detail::SchedulerContinuation* continuation) noexcept
       : continuation_(continuation) {}
 
   bool await_ready() const noexcept { return false; }
@@ -109,14 +109,14 @@ public:
   void await_resume() const noexcept {}
 
 private:
-  coropact::operation::detail::SchedulerContinuation* continuation_;
+  alyrn::operation::detail::SchedulerContinuation* continuation_;
 };
 
-coropact::coro::DetachedTask AwaitCompletionQueue(
-    coropact::operation::detail::SchedulerContinuation* continuation,
-    coropact::luring::Loop* loop, std::string* order, bool* resumed_with_scheduler) {
+alyrn::coro::DetachedTask AwaitCompletionQueue(
+    alyrn::operation::detail::SchedulerContinuation* continuation,
+    alyrn::luring::Loop* loop, std::string* order, bool* resumed_with_scheduler) {
   co_await SuspendOnContinuation(continuation);
-  *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == loop;
+  *resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == loop;
   order->push_back('C');
 }
 
@@ -127,49 +127,49 @@ bool CheckCompletionQueuePrecedesNormalReadyWork() {
    * pointing at dead stack. */
   std::string order;
   bool resumed_with_scheduler = false;
-  coropact::operation::detail::SchedulerContinuation continuation;
+  alyrn::operation::detail::SchedulerContinuation continuation;
   AppendOrderWork normal_work{&order, 'N'};
 
-  coropact::luring::Loop loop;
+  alyrn::luring::Loop loop;
 
-  coropact::coro::SpawnDetach(
+  alyrn::coro::SpawnDetach(
       loop, AwaitCompletionQueue(&continuation, &loop, &order, &resumed_with_scheduler));
-  coropact::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::luring::detail::LoopAccess::RunReady(loop);
 
   loop.Schedule(&normal_work);
-  coropact::luring::detail::LoopAccess::ScheduleCompletion(loop, continuation);
+  alyrn::luring::detail::LoopAccess::ScheduleCompletion(loop, continuation);
 
   /* RunReady() stops a turn once the wall-clock fairness budget is spent, so
    * one turn is not guaranteed to drain both queues on a slow or instrumented
    * build. Ordering is still asserted across turns: the completion queue is
    * drained ahead of normal ready work within every turn. */
-  for (int turn = 0; turn < 8 && !coropact::luring::detail::LoopAccess::IsDrained(loop); ++turn) {
-    coropact::luring::detail::LoopAccess::RunReady(loop);
+  for (int turn = 0; turn < 8 && !alyrn::luring::detail::LoopAccess::IsDrained(loop); ++turn) {
+    alyrn::luring::detail::LoopAccess::RunReady(loop);
   }
 
   return Check(order == "CN", "completion queue work must precede normal ready work") &&
          Check(resumed_with_scheduler,
                "completion queue continuation must retain its loop scheduler") &&
-         Check(coropact::luring::detail::LoopAccess::IsDrained(loop),
+         Check(alyrn::luring::detail::LoopAccess::IsDrained(loop),
                "completion priority test must drain the loop");
 }
 
-bool IsEnvironmentSkip(coropact::Error error) {
+bool IsEnvironmentSkip(alyrn::Error error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 
-coropact::coro::DetachedTask AwaitNop(coropact::luring::Loop* loop,
-                                      std::optional<coropact::Result<int>>* out,
+alyrn::coro::DetachedTask AwaitNop(alyrn::luring::Loop* loop,
+                                      std::optional<alyrn::Result<int>>* out,
                                       bool* resumed_with_scheduler) {
   auto result = co_await NopAwaiter(*loop);
-  *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == loop;
+  *resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == loop;
   out->emplace(std::move(result));
 }
 
 bool CheckNopResumesCoroutine() {
-  coropact::luring::Loop loop;
+  alyrn::luring::Loop loop;
 
-  coropact::luring::Options options;
+  alyrn::luring::Options options;
   options.entries = 8;
 
   auto init = loop.Init(options);
@@ -184,45 +184,45 @@ bool CheckNopResumesCoroutine() {
   if (!Check(loop.IsInLoopThread(), "loop should be bound to the creating thread")) {
     return false;
   }
-  if (!Check(coropact::luring::detail::LoopAccess::IsDrained(loop),
+  if (!Check(alyrn::luring::detail::LoopAccess::IsDrained(loop),
              "fresh loop should be drained")) {
     return false;
   }
 
-  std::optional<coropact::Result<int>> result;
+  std::optional<alyrn::Result<int>> result;
   bool resumed_with_scheduler = false;
 
-  coropact::coro::SpawnDetach(loop, AwaitNop(&loop, &result, &resumed_with_scheduler));
+  alyrn::coro::SpawnDetach(loop, AwaitNop(&loop, &result, &resumed_with_scheduler));
 
-  coropact::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::luring::detail::LoopAccess::RunReady(loop);
 
-  if (!Check(coropact::luring::detail::LoopAccess::PendingSubmitCount(loop) == 1,
+  if (!Check(alyrn::luring::detail::LoopAccess::PendingSubmitCount(loop) == 1,
              "NOP should be pending submit after suspension") ||
-      !Check(coropact::luring::detail::LoopAccess::InflightCount(loop) == 0,
+      !Check(alyrn::luring::detail::LoopAccess::InflightCount(loop) == 0,
              "NOP should not be inflight before submit") ||
-      !Check(!coropact::luring::detail::LoopAccess::IsDrained(loop),
+      !Check(!alyrn::luring::detail::LoopAccess::IsDrained(loop),
              "loop should not be drained before NOP completion")) {
     return false;
   }
 
-  auto completions = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
+  auto completions = alyrn::luring::detail::LoopAccess::WaitCompletions(loop);
   if (!completions.has_value()) {
     std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
     return false;
   }
 
-  if (!Check(coropact::luring::detail::LoopAccess::PendingSubmitCount(loop) == 0,
+  if (!Check(alyrn::luring::detail::LoopAccess::PendingSubmitCount(loop) == 0,
              "pending submit should be empty after wait") ||
-      !Check(coropact::luring::detail::LoopAccess::InflightCount(loop) == 0,
+      !Check(alyrn::luring::detail::LoopAccess::InflightCount(loop) == 0,
              "inflight should be empty after NOP CQE") ||
-      !Check(!coropact::luring::detail::LoopAccess::IsDrained(loop),
+      !Check(!alyrn::luring::detail::LoopAccess::IsDrained(loop),
              "completion should queue coroutine resume work")) {
     return false;
   }
 
-  coropact::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::luring::detail::LoopAccess::RunReady(loop);
 
-  return Check(coropact::luring::detail::LoopAccess::IsDrained(loop),
+  return Check(alyrn::luring::detail::LoopAccess::IsDrained(loop),
                "loop should be drained after coroutine resume") &&
          Check(*completions >= 1, "NOP did not produce a completion") &&
          Check(result.has_value(), "coroutine did not resume") &&
@@ -232,8 +232,8 @@ bool CheckNopResumesCoroutine() {
 }
 
 bool CheckCrossThreadRequestStopWakesRing() {
-  coropact::luring::Loop loop;
-  coropact::luring::Options options;
+  alyrn::luring::Loop loop;
+  alyrn::luring::Options options;
   options.entries = 8;
 
   auto init = loop.Init(options);
@@ -256,17 +256,17 @@ bool CheckCrossThreadRequestStopWakesRing() {
   stopper.join();
   const auto elapsed = std::chrono::steady_clock::now() - start;
 
-  return Check(loop.State() == coropact::io::LoopState::kStopped,
+  return Check(loop.State() == alyrn::io::LoopState::kStopped,
                "Loop should reach stopped after RequestStop") &&
          Check(elapsed < std::chrono::seconds(1),
                "RequestStop should wake the io_uring wait promptly");
 }
 
-coropact::coro::DetachedTask AwaitPendingRead(
-    coropact::luring::Stream* stream, std::array<std::byte, 16>* buffer,
-    std::optional<coropact::Result<std::size_t>>* result, bool* resumed_with_scheduler) {
+alyrn::coro::DetachedTask AwaitPendingRead(
+    alyrn::luring::Stream* stream, std::array<std::byte, 16>* buffer,
+    std::optional<alyrn::Result<std::size_t>>* result, bool* resumed_with_scheduler) {
   auto read = co_await stream->ReadSome(*buffer);
-  *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == stream->OwnerLoop();
+  *resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == stream->OwnerLoop();
   result->emplace(std::move(read));
 }
 
@@ -283,8 +283,8 @@ bool RunLoopStopDrainScenario(StopDrainFailure injected_failure) {
     return false;
   }
 
-  coropact::luring::Loop loop;
-  coropact::luring::Options options;
+  alyrn::luring::Loop loop;
+  alyrn::luring::Options options;
   options.entries = 8;
 
   auto init = loop.Init(options);
@@ -299,11 +299,11 @@ bool RunLoopStopDrainScenario(StopDrainFailure injected_failure) {
     return false;
   }
 
-  coropact::luring::Stream stream(&loop, fds[0], coropact::net::Endpoint(0));
+  alyrn::luring::Stream stream(&loop, fds[0], alyrn::net::Endpoint(0));
   std::array<std::byte, 16> buffer{};
-  std::optional<coropact::Result<std::size_t>> result;
+  std::optional<alyrn::Result<std::size_t>> result;
   bool resumed_with_scheduler = false;
-  coropact::coro::SpawnDetach(loop,
+  alyrn::coro::SpawnDetach(loop,
                               AwaitPendingRead(&stream, &buffer, &result, &resumed_with_scheduler));
 
   const bool stop_before_run = injected_failure == StopDrainFailure::kFlushSubmit;
@@ -326,9 +326,9 @@ bool RunLoopStopDrainScenario(StopDrainFailure injected_failure) {
   }
   ::close(fds[1]);
 
-  return Check(loop.State() == coropact::io::LoopState::kStopped,
+  return Check(loop.State() == alyrn::io::LoopState::kStopped,
                "stopped loop did not report kStopped") &&
-         Check(coropact::luring::detail::LoopAccess::IsDrained(loop),
+         Check(alyrn::luring::detail::LoopAccess::IsDrained(loop),
                "stopped loop retained pending ring work") &&
          Check(result.has_value(), "stopped loop did not resume the pending read") &&
          Check(!result->has_value(), "stopped loop unexpectedly completed the read") &&

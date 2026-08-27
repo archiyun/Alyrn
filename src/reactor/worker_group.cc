@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
-#include "coropact/reactor/detail/worker_group.h"
+#include "alyrn/reactor/detail/worker_group.h"
 
 #include <cerrno>
 #include <expected>
 #include <memory>
 #include <utility>
 
-#include "coropact/result.h"
+#include "alyrn/result.h"
 
-namespace coropact::reactor::detail {
+namespace alyrn::reactor::detail {
 
 WorkerGroup::WorkerGroup(net::Endpoint listen_addr, WorkerGroupOptions options,
                                        ThreadInitCallback init_callback,
@@ -69,4 +69,4 @@ void WorkerGroup::RequestStop() noexcept {
   }
 }
 
-}  // namespace coropact::reactor::detail
+}  // namespace alyrn::reactor::detail

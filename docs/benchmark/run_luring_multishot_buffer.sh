@@ -7,7 +7,7 @@ set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 BUILD_DIR=${BUILD_DIR:-"$ROOT_DIR/build-uring"}
-OUTDIR=${OUTDIR:-/tmp/coropact-luring-multishot-buffer-$(date +%Y%m%d-%H%M%S)}
+OUTDIR=${OUTDIR:-/tmp/alyrn-luring-multishot-buffer-$(date +%Y%m%d-%H%M%S)}
 WRK=${WRK:-wrk}
 THREADS=${THREADS:-8}
 LEVELS=${LEVELS:-"100 200 500 1000 2000 5000 10000"}

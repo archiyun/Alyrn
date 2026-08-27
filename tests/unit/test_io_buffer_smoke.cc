@@ -19,12 +19,12 @@
 #include <type_traits>
 #include <vector>
 
-#include "coropact/io/buffer.h"
-#include "coropact/io/read_into.h"
+#include "alyrn/io/buffer.h"
+#include "alyrn/io/read_into.h"
 
 namespace {
 
-static_assert(std::same_as<coropact::io::ReadIntoOutcome, coropact::net::ReadIntoOutcome>);
+static_assert(std::same_as<alyrn::io::ReadIntoOutcome, alyrn::net::ReadIntoOutcome>);
 
 bool Expect(bool condition, std::string_view message) {
   if (!condition) {
@@ -52,7 +52,7 @@ bool ExpectChildAbort(void (*entry)(), std::string_view message) {
          Expect(WTERMSIG(status) == SIGABRT, "buffer invariant must terminate with SIGABRT");
 }
 
-std::string Gather(coropact::io::Buffer& buffer) {
+std::string Gather(alyrn::io::Buffer& buffer) {
   std::string out;
   for (const iovec& iov : buffer.ReadableIov(32)) {
     out.append(static_cast<const char*>(iov.iov_base), iov.iov_len);
@@ -71,7 +71,7 @@ void CopyIntoIov(std::span<const iovec> iovs, std::string_view text) {
 }
 
 bool AppendAndDrainPreserveOrder() {
-  coropact::io::Buffer buffer(4);
+  alyrn::io::Buffer buffer(4);
 
   buffer.Append("ab");
   buffer.Append("cdefg");
@@ -89,7 +89,7 @@ bool AppendAndDrainPreserveOrder() {
 }
 
 bool PreparedWriteAppendsAtTailOnly() {
-  coropact::io::Buffer buffer(4);
+  alyrn::io::Buffer buffer(4);
 
   buffer.Append("abcd");
   buffer.Append("ef");
@@ -107,7 +107,7 @@ bool PreparedWriteAppendsAtTailOnly() {
 }
 
 bool AbortWriteDiscardsReservation() {
-  coropact::io::Buffer buffer(4);
+  alyrn::io::Buffer buffer(4);
 
   auto iovs = buffer.PrepareWrite(4, 1);
   if (!Expect(iovs.size() == 1, "prepare write should reserve a writable block")) {
@@ -124,7 +124,7 @@ bool AbortWriteDiscardsReservation() {
 }
 
 bool StackBackedWriteReservationCanBeRecreated() {
-  coropact::io::Buffer buffer(4);
+  alyrn::io::Buffer buffer(4);
   buffer.Append("abc");
 
   std::array<iovec, 2> first{};
@@ -157,7 +157,7 @@ bool StackBackedWriteReservationCanBeRecreated() {
 }
 
 bool SingleWriteReservationUsesContiguousTailOnly() {
-  coropact::io::Buffer buffer(4);
+  alyrn::io::Buffer buffer(4);
 
   const auto fresh = buffer.TryPrepareWriteOne(8);
   if (!Expect(fresh.has_value() && fresh->iov_len == 8,
@@ -167,7 +167,7 @@ bool SingleWriteReservationUsesContiguousTailOnly() {
   CopyIntoIov(std::span<const iovec>(&*fresh, 1), "12345678");
   buffer.CommitWrite(8);
 
-  coropact::io::Buffer fragmented(4);
+  alyrn::io::Buffer fragmented(4);
   fragmented.Append("abc");
   const auto unavailable = fragmented.TryPrepareWriteOne(8);
   if (!Expect(!unavailable.has_value(),
@@ -183,16 +183,16 @@ bool SingleWriteReservationUsesContiguousTailOnly() {
 }
 
 bool MoveLeavesSourceEmpty() {
-  coropact::io::Buffer source(4);
+  alyrn::io::Buffer source(4);
   source.Append("hello");
 
-  coropact::io::Buffer moved(std::move(source));
+  alyrn::io::Buffer moved(std::move(source));
 
   bool ok = Expect(source.Empty(), "move construction should leave source empty");
   ok &= Expect(source.ReadableBytes() == 0, "moved-from source should report zero readable bytes");
   ok &= Expect(Gather(moved) == "hello", "moved buffer should keep original data");
 
-  coropact::io::Buffer assigned(4);
+  alyrn::io::Buffer assigned(4);
   assigned.Append("old");
   assigned = std::move(moved);
 
@@ -202,7 +202,7 @@ bool MoveLeavesSourceEmpty() {
 }
 
 bool EmptyReservationDoesNotHideLaterData() {
-  coropact::io::Buffer buffer(4);
+  alyrn::io::Buffer buffer(4);
 
   auto iovs = buffer.PrepareWrite(4, 1);
   if (!Expect(iovs.size() == 1, "prepare write should expose a writable block")) {
@@ -217,7 +217,7 @@ bool EmptyReservationDoesNotHideLaterData() {
 }
 
 bool ZeroHintUsesBlockSize() {
-  coropact::io::Buffer buffer(4);
+  alyrn::io::Buffer buffer(4);
 
   auto iovs = buffer.PrepareWrite(0, 1);
   const bool ok = Expect(iovs.size() == 1 && iovs.front().iov_len == 4,
@@ -227,7 +227,7 @@ bool ZeroHintUsesBlockSize() {
 }
 
 bool FailedPreparationReleasesReservation() {
-  coropact::io::Buffer buffer(4);
+  alyrn::io::Buffer buffer(4);
   bool threw = false;
   try {
     (void)buffer.PrepareWrite(1, std::numeric_limits<std::size_t>::max());
@@ -247,24 +247,24 @@ bool FailedPreparationReleasesReservation() {
 }
 
 void BufferCommitWithoutReservation() {
-  coropact::io::Buffer buffer(4);
+  alyrn::io::Buffer buffer(4);
   buffer.CommitWrite(1);
 }
 
 void BufferNestedPreparation() {
-  coropact::io::Buffer buffer(4);
+  alyrn::io::Buffer buffer(4);
   (void)buffer.PrepareWrite(4, 1);
   (void)buffer.PrepareWrite(4, 1);
 }
 
 void BufferCommitBeyondReservation() {
-  coropact::io::Buffer buffer(4);
+  alyrn::io::Buffer buffer(4);
   auto iovs = buffer.PrepareWrite(4, 1);
   buffer.CommitWrite(iovs.front().iov_len + 1);
 }
 
 void BufferMutationDuringReservation() {
-  coropact::io::Buffer buffer(4);
+  alyrn::io::Buffer buffer(4);
   (void)buffer.PrepareWrite(4, 1);
   buffer.Append("x");
 }

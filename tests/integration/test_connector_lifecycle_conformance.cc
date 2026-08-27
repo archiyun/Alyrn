@@ -19,17 +19,17 @@
 #include <system_error>
 #include <utility>
 
-#include "coropact/result.h"
-#include "coropact/coro/scheduler.h"
-#include "coropact/coro/spawn.h"
-#include "coropact/coro/task.h"
-#include "coropact/reactor/connector.h"
-#include "coropact/reactor/loop.h"
+#include "alyrn/result.h"
+#include "alyrn/coro/scheduler.h"
+#include "alyrn/coro/spawn.h"
+#include "alyrn/coro/task.h"
+#include "alyrn/reactor/connector.h"
+#include "alyrn/reactor/loop.h"
 
-#if defined(COROPACT_ENABLE_URING)
-#include "coropact/luring/connector.h"
-#include "coropact/luring/loop.h"
-#include "coropact/luring/options.h"
+#if defined(ALYRN_ENABLE_URING)
+#include "alyrn/luring/connector.h"
+#include "alyrn/luring/loop.h"
+#include "alyrn/luring/options.h"
 #endif
 
 namespace {
@@ -66,20 +66,20 @@ struct ListenEndpoint {
   std::uint16_t port{0};
 };
 
-coropact::Result<ListenEndpoint> ListenLoopback() noexcept {
+alyrn::Result<ListenEndpoint> ListenLoopback() noexcept {
   const int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
   if (fd < 0) {
-    return std::unexpected(coropact::CurrentErrno());
+    return std::unexpected(alyrn::CurrentErrno());
   }
 
-  auto fail = [fd](coropact::Error error) -> coropact::Result<ListenEndpoint> {
+  auto fail = [fd](alyrn::Error error) -> alyrn::Result<ListenEndpoint> {
     (void)::close(fd);
     return std::unexpected(error);
   };
 
   int enabled = 1;
   if (::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &enabled, sizeof(enabled)) < 0) {
-    return fail(coropact::CurrentErrno());
+    return fail(alyrn::CurrentErrno());
   }
 
   sockaddr_in address{};
@@ -87,15 +87,15 @@ coropact::Result<ListenEndpoint> ListenLoopback() noexcept {
   address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   address.sin_port = htons(0);
   if (::bind(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0) {
-    return fail(coropact::CurrentErrno());
+    return fail(alyrn::CurrentErrno());
   }
   if (::listen(fd, SOMAXCONN) < 0) {
-    return fail(coropact::CurrentErrno());
+    return fail(alyrn::CurrentErrno());
   }
 
   socklen_t length = sizeof(address);
   if (::getsockname(fd, reinterpret_cast<sockaddr*>(&address), &length) < 0) {
-    return fail(coropact::CurrentErrno());
+    return fail(alyrn::CurrentErrno());
   }
   return ListenEndpoint{.fd = UniqueFd(fd), .port = ntohs(address.sin_port)};
 }
@@ -109,35 +109,35 @@ bool Expect(bool condition, std::string_view backend, std::string_view message) 
 }
 
 struct EpollHarness {
-  using Loop = coropact::reactor::Loop;
-  using Connector = coropact::reactor::Connector;
+  using Loop = alyrn::reactor::Loop;
+  using Connector = alyrn::reactor::Connector;
 
   static constexpr std::string_view Name() noexcept { return "Reactor"; }
   static bool Init(Loop&) noexcept { return true; }
   static bool Skip() noexcept { return false; }
 
-  static coropact::Result<Connector> CreateConnector(Loop& loop) noexcept {
+  static alyrn::Result<Connector> CreateConnector(Loop& loop) noexcept {
     return Connector::Create(&loop);
   }
 
   static bool RunAfter(Loop& loop, std::chrono::milliseconds delay,
                        std::function<void()> callback) {
-    loop.RunAfter(std::chrono::duration_cast<coropact::time::Duration>(delay), std::move(callback));
+    loop.RunAfter(std::chrono::duration_cast<alyrn::time::Duration>(delay), std::move(callback));
     return true;
   }
 
   static void Run(Loop& loop) { loop.Run(); }
 };
 
-#if defined(COROPACT_ENABLE_URING)
+#if defined(ALYRN_ENABLE_URING)
 struct UringHarness {
-  using Loop = coropact::luring::Loop;
-  using Connector = coropact::luring::Connector;
+  using Loop = alyrn::luring::Loop;
+  using Connector = alyrn::luring::Connector;
 
   static constexpr std::string_view Name() noexcept { return "io_uring"; }
 
   static bool Init(Loop& loop) noexcept {
-    coropact::luring::Options options;
+    alyrn::luring::Options options;
     options.entries = 32;
     auto initialized = loop.Init(options);
     if (initialized.has_value()) {
@@ -153,7 +153,7 @@ struct UringHarness {
            init_error == std::errc::operation_not_permitted;
   }
 
-  static coropact::Result<Connector> CreateConnector(Loop& loop) noexcept {
+  static alyrn::Result<Connector> CreateConnector(Loop& loop) noexcept {
     return Connector::Create(&loop);
   }
 
@@ -169,13 +169,13 @@ struct UringHarness {
 
   static void Run(Loop& loop) noexcept { loop.Run(); }
 
-  static inline coropact::Error init_error{};
+  static inline alyrn::Error init_error{};
 };
 #endif
 
 template <class Connector>
 struct ConnectObservation {
-  using ConnectResult = coropact::Result<typename Connector::StreamType>;
+  using ConnectResult = alyrn::Result<typename Connector::StreamType>;
 
   std::optional<ConnectResult> result;
   int resume_count{0};
@@ -185,20 +185,20 @@ struct ConnectObservation {
 
 template <class Connector, class Loop>
 auto ObserveConnect(Connector& connector, Loop& loop, std::string_view host, std::uint16_t port,
-                    ConnectObservation<Connector>& observation) -> coropact::coro::DetachedTask {
+                    ConnectObservation<Connector>& observation) -> alyrn::coro::DetachedTask {
   observation.result.emplace(co_await connector.Connect(host, port));
   ++observation.resume_count;
-  observation.resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
+  observation.resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   loop.RequestStop();
 }
 
 template <class Connector, class Loop>
 auto ObservePreparedConnect(
-    coropact::coro::Task<coropact::Result<typename Connector::StreamType>> task, Loop& loop,
-    ConnectObservation<Connector>& observation) -> coropact::coro::DetachedTask {
+    alyrn::coro::Task<alyrn::Result<typename Connector::StreamType>> task, Loop& loop,
+    ConnectObservation<Connector>& observation) -> alyrn::coro::DetachedTask {
   observation.result.emplace(co_await std::move(task));
   ++observation.resume_count;
-  observation.resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
+  observation.resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   loop.RequestStop();
 }
 
@@ -239,7 +239,7 @@ bool CheckConnectSuccessContract() {
   std::string host = "127.0.0.1";
   auto connect_task = connector->Connect(host, listener->port);
   host.assign("not-an-ip");
-  coropact::coro::SpawnDetach(loop, ObservePreparedConnect<typename Harness::Connector>(
+  alyrn::coro::SpawnDetach(loop, ObservePreparedConnect<typename Harness::Connector>(
                                         std::move(connect_task), loop, observation));
   if (!Harness::RunAfter(loop, std::chrono::milliseconds(500), [&] {
         observation.timed_out = true;
@@ -260,10 +260,10 @@ bool CheckConnectSuccessContract() {
 
 template <class Connector>
 struct ConnectCloseObservation {
-  using ConnectResult = coropact::Result<typename Connector::StreamType>;
+  using ConnectResult = alyrn::Result<typename Connector::StreamType>;
 
   std::optional<ConnectResult> connect;
-  std::optional<coropact::Result<void>> close;
+  std::optional<alyrn::Result<void>> close;
   bool stream_valid_before_close{false};
   bool resumed_with_scheduler{false};
   bool timed_out{false};
@@ -272,14 +272,14 @@ struct ConnectCloseObservation {
 template <class Connector, class Loop>
 auto ObserveConnectThenClose(Connector& connector, Loop& loop, std::uint16_t port,
                              ConnectCloseObservation<Connector>& observation)
-    -> coropact::coro::DetachedTask {
+    -> alyrn::coro::DetachedTask {
   observation.connect.emplace(co_await connector.Connect("127.0.0.1", port));
   if (observation.connect->has_value()) {
     auto& stream = observation.connect->value();
     observation.stream_valid_before_close = stream.Fd() >= 0;
     observation.close.emplace(co_await stream.Close());
   }
-  observation.resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
+  observation.resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   loop.RequestStop();
 }
 
@@ -304,7 +304,7 @@ bool CheckConnectResultReleaseContract() {
   }
 
   ConnectCloseObservation<typename Harness::Connector> observation;
-  coropact::coro::SpawnDetach(
+  alyrn::coro::SpawnDetach(
       loop, ObserveConnectThenClose(*connector, loop, listener->port, observation));
   if (!Harness::RunAfter(loop, std::chrono::milliseconds(500), [&] {
         observation.timed_out = true;
@@ -346,7 +346,7 @@ bool CheckConnectionRefusedContract() {
   }
 
   ConnectObservation<typename Harness::Connector> observation;
-  coropact::coro::SpawnDetach(loop,
+  alyrn::coro::SpawnDetach(loop,
                               ObserveConnect(*connector, loop, "127.0.0.1", port, observation));
   if (!Harness::RunAfter(loop, std::chrono::milliseconds(500), [&] {
         observation.timed_out = true;
@@ -378,7 +378,7 @@ bool CheckInvalidHostContract() {
   }
 
   ConnectObservation<typename Harness::Connector> observation;
-  coropact::coro::SpawnDetach(loop, ObserveConnect(*connector, loop, "not-an-ip", 80, observation));
+  alyrn::coro::SpawnDetach(loop, ObserveConnect(*connector, loop, "not-an-ip", 80, observation));
   Harness::Run(loop);
 
   return Expect(observation.result.has_value() && !observation.result->has_value() &&
@@ -393,11 +393,11 @@ bool CheckInvalidHostContract() {
 template <class Connector, class Loop>
 auto ObserveConnectAfterStopRequest(Connector& connector, Loop& loop,
                                     ConnectObservation<Connector>& observation)
-    -> coropact::coro::DetachedTask {
+    -> alyrn::coro::DetachedTask {
   loop.RequestStop();
   observation.result.emplace(co_await connector.Connect("127.0.0.1", 9));
   ++observation.resume_count;
-  observation.resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
+  observation.resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
 }
 
 template <class Harness>
@@ -412,7 +412,7 @@ bool CheckConnectAfterStopRequestContract() {
   }
 
   ConnectObservation<typename Harness::Connector> observation;
-  coropact::coro::SpawnDetach(loop, ObserveConnectAfterStopRequest(*connector, loop, observation));
+  alyrn::coro::SpawnDetach(loop, ObserveConnectAfterStopRequest(*connector, loop, observation));
   Harness::Run(loop);
 
   return Expect(observation.result.has_value() && !observation.result->has_value() &&
@@ -426,7 +426,7 @@ bool CheckConnectAfterStopRequestContract() {
 
 template <class Connector>
 struct ConcurrentConnectObservation {
-  using ConnectResult = coropact::Result<typename Connector::StreamType>;
+  using ConnectResult = alyrn::Result<typename Connector::StreamType>;
 
   std::optional<ConnectResult> first;
   std::optional<ConnectResult> second;
@@ -442,10 +442,10 @@ auto ObserveConcurrentConnect(
     Connector& connector, Loop& loop, std::uint16_t port,
     std::optional<typename ConcurrentConnectObservation<Connector>::ConnectResult>& result,
     int& resume_count, ConcurrentConnectObservation<Connector>& observation)
-    -> coropact::coro::DetachedTask {
+    -> alyrn::coro::DetachedTask {
   result.emplace(co_await connector.Connect("127.0.0.1", port));
   ++resume_count;
-  observation.resumed_with_scheduler &= coropact::coro::Scheduler::TryCurrent() == &loop;
+  observation.resumed_with_scheduler &= alyrn::coro::Scheduler::TryCurrent() == &loop;
   if (++observation.finished == 2) {
     loop.RequestStop();
   }
@@ -468,10 +468,10 @@ bool CheckConcurrentConnectContract() {
   }
 
   ConcurrentConnectObservation<typename Harness::Connector> observation;
-  coropact::coro::SpawnDetach(
+  alyrn::coro::SpawnDetach(
       loop, ObserveConcurrentConnect(*connector, loop, listener->port, observation.first,
                                      observation.first_resume_count, observation));
-  coropact::coro::SpawnDetach(
+  alyrn::coro::SpawnDetach(
       loop, ObserveConcurrentConnect(*connector, loop, listener->port, observation.second,
                                      observation.second_resume_count, observation));
   if (!Harness::RunAfter(loop, std::chrono::milliseconds(500), [&] {
@@ -507,7 +507,7 @@ int main() {
   if (!RunBackendSuite<EpollHarness>()) {
     return 1;
   }
-#if defined(COROPACT_ENABLE_URING)
+#if defined(ALYRN_ENABLE_URING)
   if (!RunBackendSuite<UringHarness>()) {
     return 1;
   }

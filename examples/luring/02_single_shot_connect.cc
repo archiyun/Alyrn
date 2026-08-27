@@ -9,14 +9,14 @@
 #include <string_view>
 #include <utility>
 
-#include "coropact/coro/detached_task.h"
-#include "coropact/coro/spawn.h"
-#include "coropact/io.h"
-#include "coropact/luring/connector.h"
-#include "coropact/luring/loop.h"
-#include "coropact/luring/stream.h"
+#include "alyrn/coro/detached_task.h"
+#include "alyrn/coro/spawn.h"
+#include "alyrn/io.h"
+#include "alyrn/luring/connector.h"
+#include "alyrn/luring/loop.h"
+#include "alyrn/luring/stream.h"
 
-using namespace coropact;
+using namespace alyrn;
 
 namespace {
 

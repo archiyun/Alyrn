@@ -14,16 +14,16 @@
 #include <system_error>
 #include <thread>
 
-#include "coropact/coro/detached_task.h"
-#include "coropact/result.h"
-#include "coropact/net/endpoint.h"
-#include "coropact/reactor/runtime.h"
+#include "alyrn/coro/detached_task.h"
+#include "alyrn/result.h"
+#include "alyrn/net/endpoint.h"
+#include "alyrn/reactor/runtime.h"
 
-#ifdef COROPACT_ENABLE_URING
-#include "coropact/luring/runtime.h"
+#ifdef ALYRN_ENABLE_URING
+#include "alyrn/luring/runtime.h"
 #endif
 
-using namespace coropact;
+using namespace alyrn;
 
 namespace {
 
@@ -68,10 +68,10 @@ private:
   std::uint16_t port_{0};
 };
 
-coropact::Result<BoundPort> BindLoopbackPort() {
+alyrn::Result<BoundPort> BindLoopbackPort() {
   const int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
   if (fd < 0) {
-    return std::unexpected(coropact::CurrentErrno());
+    return std::unexpected(alyrn::CurrentErrno());
   }
 
   sockaddr_in address{};
@@ -79,14 +79,14 @@ coropact::Result<BoundPort> BindLoopbackPort() {
   address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   address.sin_port = htons(0);
   if (::bind(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0) {
-    auto error = coropact::CurrentErrno();
+    auto error = alyrn::CurrentErrno();
     (void)::close(fd);
     return std::unexpected(error);
   }
 
   socklen_t address_length = sizeof(address);
   if (::getsockname(fd, reinterpret_cast<sockaddr*>(&address), &address_length) < 0) {
-    auto error = coropact::CurrentErrno();
+    auto error = alyrn::CurrentErrno();
     (void)::close(fd);
     return std::unexpected(error);
   }
@@ -231,7 +231,7 @@ bool CheckReactorStartFailureCanRetry() {
   return Check(!runtime.Started(), "Reactor retry Runtime did not stop");
 }
 
-#ifdef COROPACT_ENABLE_URING
+#ifdef ALYRN_ENABLE_URING
 
 coro::DetachedTask HandleLUring(luring::Stream) { co_return; }
 
@@ -399,7 +399,7 @@ int main() {
   ok = CheckReactorRunStopsFromRuntimeRequest() && ok;
   ok = CheckReactorRequestStopFromForeignThread() && ok;
   ok = CheckReactorStartFailureCanRetry() && ok;
-#ifdef COROPACT_ENABLE_URING
+#ifdef ALYRN_ENABLE_URING
   ok = CheckLUringRuntime() && ok;
   ok = CheckLUringRuntimeRunWithPreCancelledToken() && ok;
   ok = CheckLUringRunStopsFromRuntimeRequest() && ok;

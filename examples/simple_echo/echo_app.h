@@ -7,15 +7,15 @@
 #include <span>
 #include <utility>
 
-#include "coropact/coro.h"
-#include "coropact/io.h"
+#include "alyrn/coro.h"
+#include "alyrn/io.h"
 
 namespace simple_echo {
 
-using coropact::Result;
-using namespace coropact::base;
-using namespace coropact::io;
-using namespace coropact::coro;
+using alyrn::Result;
+using namespace alyrn::base;
+using namespace alyrn::io;
+using namespace alyrn::coro;
 
 template <AsyncStream Stream>
 auto EchoSession(Stream stream) -> Task<Result<void>> {

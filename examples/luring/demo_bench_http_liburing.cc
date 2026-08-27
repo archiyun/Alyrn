@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 //
 // Native liburing fixed HTTP keep-alive benchmark server. It mirrors the
-// luring benchmark's thread-per-ring topology without using CoroPact runtime
+// luring benchmark's thread-per-ring topology without using Alyrn runtime
 // objects, and is kept as an abstraction-cost reference.
 
 #include <arpa/inet.h>

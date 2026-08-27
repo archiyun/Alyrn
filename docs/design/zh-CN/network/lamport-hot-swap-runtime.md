@@ -578,9 +578,9 @@ runtime.CurrentLogicalClock();
 
 否则所谓热插拔只是一个危险的状态突变。
 
-## 面向 CoroPact 的最小可证明模型
+## 面向 Alyrn 的最小可证明模型
 
-前面的六元组给出了运行时的总体结构，但要让它能够指导 CoroPact 的实现和证明，
+前面的六元组给出了运行时的总体结构，但要让它能够指导 Alyrn 的实现和证明，
 还需要把“协程能观察到什么”与“后端内部如何实现”明确分开。
 
 第一版模型不描述整个 gateway，也不描述所有 io_uring 扩展。先限制在以下范围：
@@ -818,7 +818,7 @@ Refine_LUring  : ConcreteLUringState  -> S_abs
 映射后的观察轨迹都满足 Σ_core 和 Inv。
 ```
 
-这也解释了项目中的固定边界：`coropact::io::AsyncStream` 是抽象语义入口，
+这也解释了项目中的固定边界：`alyrn::io::AsyncStream` 是抽象语义入口，
 `reactor::Stream` 和 `luring::Stream` 是两个具体解释器，epoll、SQE、CQE 和 mailbox
 属于具体后端的状态与事件。
 
@@ -879,12 +879,12 @@ Freeze(b1)
   -> 继续产生满足同一 Obs 和 Inv 的事件
 ```
 
-在此之前，CoroPact 只能说已经有两个满足 `AsyncStream` 契约的后端，不能声称已经
+在此之前，Alyrn 只能说已经有两个满足 `AsyncStream` 契约的后端，不能声称已经
 实现了任意时刻的 backend hot swap。
 
 ### 当前项目的符合度
 
-截至当前实现，CoroPact 已经具备这套模型的工程基础，但尚未完成形式化证明，也尚未
+截至当前实现，Alyrn 已经具备这套模型的工程基础，但尚未完成形式化证明，也尚未
 实现运行时后端热插拔。应当把当前状态区分为以下几层：
 
 ```text
@@ -949,7 +949,7 @@ Reactor 和 io_uring 已经有共同的协程语义接口，
 两个后端已经被形式化证明语义等价，或已经支持任意时刻热插拔。
 ```
 
-当前实现中的 [`AsyncStream`](https://github.com/archiyun/CoroPact/blob/main/include/coropact/io/async_stream.h) 主要检查
+当前实现中的 [`AsyncStream`](https://github.com/archiyun/Alyrn/blob/main/include/alyrn/io/async_stream.h) 主要检查
 接口形状，不能在编译期检查“最多完成一次”“Close 后不能成功提交”或“buffer 在
 Complete 前有效”等动态性质。这些性质目前依赖具体实现、调试断言和 smoke test。
 

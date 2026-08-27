@@ -6,7 +6,7 @@ set -euo pipefail
 # and generated wrk output stay outside the repository by default.
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-OUTDIR=${OUTDIR:-/tmp/coropact-network-libraries-$(date +%Y%m%d-%H%M%S)}
+OUTDIR=${OUTDIR:-/tmp/alyrn-network-libraries-$(date +%Y%m%d-%H%M%S)}
 BUILD_DIR=${BUILD_DIR:-"$ROOT_DIR/build-uring"}
 RUST_TARGET_DIR=${RUST_TARGET_DIR:-"$ROOT_DIR/benchmarks/network-libraries-rust/target/release"}
 WRK=${WRK:-wrk}

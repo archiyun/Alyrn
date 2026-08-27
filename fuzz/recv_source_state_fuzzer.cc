@@ -3,27 +3,27 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "coropact/base/check.h"
-#include "coropact/net/detail/recv_source_state.h"
+#include "alyrn/base/check.h"
+#include "alyrn/net/detail/recv_source_state.h"
 
 namespace {
 
-using coropact::net::RecvSourceOptions;
-using coropact::net::detail::EventDisposition;
-using coropact::net::detail::MultishotRequestDisposition;
-using coropact::net::detail::RecvSourceState;
-using coropact::net::detail::RecvSourceStateMachine;
+using alyrn::net::RecvSourceOptions;
+using alyrn::net::detail::EventDisposition;
+using alyrn::net::detail::MultishotRequestDisposition;
+using alyrn::net::detail::RecvSourceState;
+using alyrn::net::detail::RecvSourceStateMachine;
 
 void CheckInvariants(const RecvSourceStateMachine& state) {
   const auto& options = state.Options();
-  COROPACT_CHECK(state.QueuedEvents() <= options.event_capacity,
+  ALYRN_CHECK(state.QueuedEvents() <= options.event_capacity,
                  "receive source queue exceeded its configured capacity");
-  COROPACT_CHECK(state.OutstandingLeases() <= options.buffer_capacity,
+  ALYRN_CHECK(state.OutstandingLeases() <= options.buffer_capacity,
                  "receive source leases exceeded its configured capacity");
-  COROPACT_CHECK(state.ArmedRequests() <= options.pending_depth,
+  ALYRN_CHECK(state.ArmedRequests() <= options.pending_depth,
                  "receive source armed too many physical requests");
   if (state.State() == RecvSourceState::kTerminal) {
-    COROPACT_CHECK(state.ArmedRequests() == 0 && state.QueuedEvents() == 0 &&
+    ALYRN_CHECK(state.ArmedRequests() == 0 && state.QueuedEvents() == 0 &&
                        state.OutstandingLeases() == 0,
                    "terminal receive source retained observable work");
   }

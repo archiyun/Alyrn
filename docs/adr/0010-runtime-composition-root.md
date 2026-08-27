@@ -13,7 +13,7 @@ shutdown 的后端细节。反过来，若引入一个运行时 `Backend(...)` e
 
 ## 决策
 
-冻结一个 backend-neutral application composition root：`coropact::Runtime`。后端通过编译期
+冻结一个 backend-neutral application composition root：`alyrn::Runtime`。后端通过编译期
 tag 选择对应 Builder specialization：
 
 - `Runtime::Builder<runtime::Reactor>`；
@@ -56,7 +56,7 @@ handler。
 Runtime smoke test 覆盖配置错误、pre-cancelled token、`Run()` 被跨线程 `RequestStop()` 唤醒、
 `RequestStop()` 与同步 join 的分离、启动失败重试及停止后的 restart 拒绝。两个 simple echo 示例
 验证默认 Runtime 组合；其中 POSIX 示例通过 `sigwait` 将终止信号转为 `stop_source`。
-kqueue 的 Runtime smoke 在 `COROPACT_ENABLE_KQUEUE` 的 BSD/Darwin 构建中运行。
+kqueue 的 Runtime smoke 在 `ALYRN_ENABLE_KQUEUE` 的 BSD/Darwin 构建中运行。
 
 ## 修订（2026-08）
 

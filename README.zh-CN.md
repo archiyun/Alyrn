@@ -1,13 +1,13 @@
-# CoroPact⚡
+# Alyrn⚡
 
 ![C++](https://img.shields.io/badge/C++-23-blue)
 ![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20FreeBSD%20%7C%20macOS-lightgrey)
-![License](https://img.shields.io/github/license/archiyun/CoroPact)
-![Stars](https://img.shields.io/github/stars/archiyun/CoroPact?style=social)
+![License](https://img.shields.io/github/license/archiyun/Alyrn)
+![Stars](https://img.shields.io/github/stars/archiyun/Alyrn?style=social)
 
 ***C++23 协程网络运行时：epoll、io_uring 与 kqueue 作为平行后端。***
 
-CoroPact 在相互独立的网络后端之上，提供统一、直观且高性能的 C++23 协程编程模型。它让默认路径像常规网络库一样不暴露底层事件机制，并通过 `Runtime` 提供类似 Tokio 的快速启动方式；需要时，应用仍可显式使用后端原生扩展与配置。
+Alyrn 在相互独立的网络后端之上，提供统一、直观且高性能的 C++23 协程编程模型。它让默认路径像常规网络库一样不暴露底层事件机制，并通过 `Runtime` 提供类似 Tokio 的快速启动方式；需要时，应用仍可显式使用后端原生扩展与配置。
 
 这些后端是**平行 adapter**，不是带预处理器分支的同一套实现：
 
@@ -17,7 +17,7 @@ CoroPact 在相互独立的网络后端之上，提供统一、直观且高性�
 | `luring` | Linux | `io_uring` completion | thread-per-ring Proactor |
 | `kqueue` | FreeBSD / NetBSD / OpenBSD / Darwin | `kqueue` readiness | 主从：单 acceptor，用户态移交 fd |
 
-CoroPact 使用[生命周期精化协程 I/O（LRCI）](docs/design/zh-CN/network/lifecycle-refined-coroutine-io.md)：readiness 与 CQE 等后端事件不会直接等同于协程完成，而是被精化到一套共享逻辑生命周期，分别确定结果何时 ready、continuation 何时恢复、资源何时释放。
+Alyrn 使用[生命周期精化协程 I/O（LRCI）](docs/design/zh-CN/network/lifecycle-refined-coroutine-io.md)：readiness 与 CQE 等后端事件不会直接等同于协程完成，而是被精化到一套共享逻辑生命周期，分别确定结果何时 ready、continuation 何时恢复、资源何时释放。
 
 * 🔀 **统一的异步 I/O 契约**
   各后端保留各自的线程、事件循环与完成模型，但通过 `io` 的 `AsyncStream`、`AsyncListener` 与 `AsyncConnector` concept 提供一致的业务可观察语义。`coro` 以同步代码形式表达异步控制流，并隐藏协程帧、挂起、恢复与生命周期细节；业务代码无需接触 `epoll_event`、SQE、CQE 或 `kevent`。
@@ -26,7 +26,7 @@ CoroPact 使用[生命周期精化协程 I/O（LRCI）](docs/design/zh-CN/networ
   每个 Worker 独占自己的线程、事件循环、连接与 I/O 操作。操作在所属执行上下文中完成，协程 continuation 也在相同上下文中恢复，同时明确约束 buffer 生命周期、取消行为与异步关闭流程。协程帧不跨 loop 迁移。
 
 * 🚀 **基础功能与高级扩展**
-  CoroPact 提供异步 accept、connect、read、write、close 与 timer。Reactor 可选择 LT/ET；kqueue 当前以 one-shot readiness 作为 stream 模式；luring 还提供 multishot receive、zero-copy send 等扩展。HTTP 与网关策略已迁移至 [CoroGateway](https://github.com/archiyun/CoroGateway)。
+  Alyrn 提供异步 accept、connect、read、write、close 与 timer。Reactor 可选择 LT/ET；kqueue 当前以 one-shot readiness 作为 stream 模式；luring 还提供 multishot receive、zero-copy send 等扩展。HTTP 与网关策略已迁移至 [CoroGateway](https://github.com/archiyun/CoroGateway)。
 
 Linux 是 Reactor 与可选 io_uring 后端的 CI 验证宿主。kqueue 已作为第三个 adapter 在 BSD 与 Darwin 上实现；Linux 可用内存中的 kevent shim 编译 loop/poller 测试，这不能替代原生 `kevent` 宿主。IOCP 尚未实现。
 
@@ -37,19 +37,19 @@ Linux 是 Reactor 与可选 io_uring 后端的 CI 验证宿主。kqueue 已作�
 应用通常按需包含后端无关模块与一个具体 backend：
 
 ```cpp
-#include "coropact/coro.h"
-#include "coropact/io.h"
-#include "coropact/net.h"
-#include "coropact/reactor.h"  // 默认 Linux Reactor backend
+#include "alyrn/coro.h"
+#include "alyrn/io.h"
+#include "alyrn/net.h"
+#include "alyrn/reactor.h"  // 默认 Linux Reactor backend
 ```
 
 请按实际使用的模块包含头文件。
 
 | 后端 | 伞头文件 | Runtime tag | CMake 选项 |
 |---|---|---|---|
-| Reactor / epoll | `coropact/reactor.h` | `runtime::Reactor` | Linux 默认 |
-| luring / io_uring | `coropact/luring.h` | `runtime::LUring` | `-DCOROPACT_ENABLE_URING=ON` |
-| kqueue | `coropact/kqueue.h` | `runtime::Kqueue` | `-DCOROPACT_ENABLE_KQUEUE=ON` |
+| Reactor / epoll | `alyrn/reactor.h` | `runtime::Reactor` | Linux 默认 |
+| luring / io_uring | `alyrn/luring.h` | `runtime::LUring` | `-DALYRN_ENABLE_URING=ON` |
+| kqueue | `alyrn/kqueue.h` | `runtime::Kqueue` | `-DALYRN_ENABLE_KQUEUE=ON` |
 
 kqueue 伞头文件在非 BSD 宿主上会直接 `#error`。
 
@@ -66,7 +66,7 @@ kqueue 伞头文件在非 BSD 宿主上会直接 `#error`。
 #include <span>
 #include <utility>
 
-namespace cp = coropact;
+namespace cp = alyrn;
 
 template <cp::io::AsyncStream Stream>
 auto EchoSession(Stream stream) -> cp::coro::Task<cp::Result<void>> {
@@ -131,7 +131,7 @@ int main() {
 }
 ```
 
-要使用 io_uring，只需在启用 `COROPACT_ENABLE_URING=ON` 的构建中包含 `coropact/luring.h`，并将 tag 改为 `cp::runtime::LUring`。在 kqueue 宿主上包含 `coropact/kqueue.h`，使用 `cp::runtime::Kqueue`。handler 中的 `stream` 仍保持对应后端的静态类型，不会引入虚调用。
+要使用 io_uring，只需在启用 `ALYRN_ENABLE_URING=ON` 的构建中包含 `alyrn/luring.h`，并将 tag 改为 `cp::runtime::LUring`。在 kqueue 宿主上包含 `alyrn/kqueue.h`，使用 `cp::runtime::Kqueue`。handler 中的 `stream` 仍保持对应后端的静态类型，不会引入虚调用。
 
 ### 4. 需要时显式配置
 
@@ -156,8 +156,8 @@ Backend tag 仍在编译期选择实现；ring 深度、provided buffer、zero-c
 `Runtime` 只负责默认 TCP server 的 worker 生命周期，不是通用的 io_uring 配置接口。它可以选择安全的默认策略（例如带 fallback 的 multishot accept），但应用若要**显式**控制 ring 深度、SQPOLL、provided-buffer ring、multishot receive 或 zero-copy send，应直接组合 `luring::Loop`、`Options` 与对应的 listener、stream 或 source：
 
 ```cpp
-coropact::luring::Loop loop;
-coropact::luring::Options options;
+alyrn::luring::Loop loop;
+alyrn::luring::Options options;
 options.entries = 8192;
 options.shared_buffer_capacity = 256;  // RecvSource 的 provided buffers
 
@@ -169,11 +169,11 @@ auto initialized = loop.Init(options);
 
 ## 运行容器示例
 
-发布的容器运行一个基于 CoroPact Reactor 后端的 TCP echo server。通过 Docker
+发布的容器运行一个基于 Alyrn Reactor 后端的 TCP echo server。通过 Docker
 映射端口后可直接从宿主访问：
 
 ```bash
-docker run --rm -p 9090:9090 ghcr.io/archiyun/coropact:latest
+docker run --rm -p 9090:9090 ghcr.io/archiyun/alyrn:latest
 ```
 
 在另一个终端验证：
@@ -182,8 +182,8 @@ docker run --rm -p 9090:9090 ghcr.io/archiyun/coropact:latest
 printf 'hello\n' | nc 127.0.0.1 9090
 ```
 
-在本地 checkout 中构建同一个镜像：`docker build -t coropact:local .`。
-该镜像是可运行的演示程序；实际应用仍应以自己的、链接 CoroPact 的可执行文件
+在本地 checkout 中构建同一个镜像：`docker build -t alyrn:local .`。
+该镜像是可运行的演示程序；实际应用仍应以自己的、链接 Alyrn 的可执行文件
 作为最终镜像入口。
 
 ## 构建
@@ -201,7 +201,7 @@ ctest --test-dir build --output-on-failure
 ```
 
 若使用 GCC 或 Clang 进行严格诊断构建，可额外加入
-`-DCOROPACT_STRICT_WARNINGS=ON`。
+`-DALYRN_STRICT_WARNINGS=ON`。
 
 构建并启用 io_uring 后端：
 
@@ -212,7 +212,7 @@ cmake -B build-uring \
   -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_TESTS=ON \
   -DBUILD_EXAMPLES=ON \
-  -DCOROPACT_ENABLE_URING=ON
+  -DALYRN_ENABLE_URING=ON
 
 cmake --build build-uring -j"$(nproc)"
 ctest --test-dir build-uring --output-on-failure
@@ -224,7 +224,7 @@ ctest --test-dir build-uring --output-on-failure
 cmake -B build-kqueue \
   -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_TESTS=ON \
-  -DCOROPACT_ENABLE_KQUEUE=ON
+  -DALYRN_ENABLE_KQUEUE=ON
 
 cmake --build build-kqueue -j"$(sysctl -n hw.ncpu)"
 ctest --test-dir build-kqueue --output-on-failure
@@ -234,7 +234,7 @@ Linux 上不能启用 kqueue *库*。内存中的 kevent shim 只是开发辅助
 
 ```bash
 cmake -B build-kqueue-shim \
-  -DCOROPACT_ENABLE_KQUEUE_SHIM_TESTS=ON \
+  -DALYRN_ENABLE_KQUEUE_SHIM_TESTS=ON \
   -DBUILD_TESTS=ON
 ```
 
@@ -244,11 +244,11 @@ cmake -B build-kqueue-shim \
 
 | 选项 | 默认 | 作用 |
 |---|---|---|
-| `COROPACT_ENABLE_URING` | `OFF` | Linux io_uring 后端（`liburing >= 2.6`） |
-| `COROPACT_ENABLE_KQUEUE` | `OFF` | BSD/Darwin kqueue 后端；其它宿主上 CMake 会失败 |
-| `COROPACT_ENABLE_KQUEUE_SHIM_TESTS` | `OFF` | 用假 `kevent` 编译 kqueue loop/poller 测试 |
-| `COROPACT_STRICT_WARNINGS` | `OFF` | GCC/Clang 下 `-Wall -Wextra -Wpedantic -Werror` |
-| `COROPACT_SANITIZER` | 空 | 例如 `address,undefined` 或 `thread` |
+| `ALYRN_ENABLE_URING` | `OFF` | Linux io_uring 后端（`liburing >= 2.6`） |
+| `ALYRN_ENABLE_KQUEUE` | `OFF` | BSD/Darwin kqueue 后端；其它宿主上 CMake 会失败 |
+| `ALYRN_ENABLE_KQUEUE_SHIM_TESTS` | `OFF` | 用假 `kevent` 编译 kqueue loop/poller 测试 |
+| `ALYRN_STRICT_WARNINGS` | `OFF` | GCC/Clang 下 `-Wall -Wextra -Wpedantic -Werror` |
+| `ALYRN_SANITIZER` | 空 | 例如 `address,undefined` 或 `thread` |
 | `BUILD_TESTS` | `ON` | 单元与 smoke 测试 |
 | `BUILD_EXAMPLES` | `ON` | Linux 示例；没有原生 readiness 后端时关闭 |
 | `BUILD_BENCHMARKS` | `OFF` | 独立微基准 |
@@ -257,7 +257,7 @@ cmake -B build-kqueue-shim \
 ### Fuzz 与微基准
 
 用 Clang 构建 receive-source 生命周期 fuzzer。该 target 已启用 AddressSanitizer
-与 UndefinedBehaviorSanitizer，因此不要同时设置 `COROPACT_SANITIZER`：
+与 UndefinedBehaviorSanitizer，因此不要同时设置 `ALYRN_SANITIZER`：
 
 ```bash
 CC=clang CXX=clang++ cmake -S . -B build-fuzz -G Ninja \
@@ -302,7 +302,7 @@ ITERATIONS=1000000 build-bench/benchmarks/coro_channel_microbenchmark
         |             |      |
         v             v      v
    Reactor/epoll   luring   kqueue
-   coropact::reactor  ::luring  ::kqueue
+   alyrn::reactor  ::luring  ::kqueue
 ```
 
 三个后端不共享事件循环，内部状态机也不需要完全一致。它们只需要遵守相同的业务可观察异步 I/O 契约。依赖边界以 [`docs/SUBSYSTEMS.md`](docs/SUBSYSTEMS.md) 为准。
@@ -344,7 +344,7 @@ WorkerGroup
 
 ## 性能测试
 
-CoroPact 提供了可复现的 `wrk` 性能测试，用于比较：
+Alyrn 提供了可复现的 `wrk` 性能测试，用于比较：
 
 * Reactor 与 io_uring 后端
 * raw liburing
@@ -375,7 +375,7 @@ CoroPact 提供了可复现的 `wrk` 性能测试，用于比较：
 
 ## 当前状态
 
-CoroPact 目前仍是一个实验性网络运行时，尚不适合作为成熟网络框架的生产级替代方案。
+Alyrn 目前仍是一个实验性网络运行时，尚不适合作为成熟网络框架的生产级替代方案。
 
 当前正在推进的方向包括：
 
@@ -386,6 +386,6 @@ CoroPact 目前仍是一个实验性网络运行时，尚不适合作为成熟�
 
 ## 参与项目
 
-* 遇到问题、发现 Bug 或希望提出新功能，请创建 [Issue](https://github.com/archiyun/CoroPact/issues)。
-* 欢迎提交 [Pull Request](https://github.com/archiyun/CoroPact/pulls)。
+* 遇到问题、发现 Bug 或希望提出新功能，请创建 [Issue](https://github.com/archiyun/Alyrn/issues)。
+* 欢迎提交 [Pull Request](https://github.com/archiyun/Alyrn/pulls)。
 * 本项目使用 [MIT License](LICENSE)。

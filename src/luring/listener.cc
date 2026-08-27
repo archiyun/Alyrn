@@ -1,4 +1,4 @@
-#include "coropact/luring/listener.h"
+#include "alyrn/luring/listener.h"
 
 #include <sys/socket.h>
 #include <unistd.h>
@@ -10,28 +10,28 @@
 #include <optional>
 #include <utility>
 
-#include "coropact/backend/detail/value_result_state.h"
-#include "coropact/backend/loop.h"
-#include "coropact/base/check.h"
-#include "coropact/coro/task.h"
-#include "coropact/luring/detail/cancel_result.h"
-#include "coropact/luring/detail/fd_close_convergence.h"
-#include "coropact/luring/detail/loop_access.h"
-#include "coropact/luring/detail/op.h"
-#include "coropact/luring/detail/op_hook.h"
-#include "coropact/luring/detail/operation_submission.h"
-#include "coropact/luring/detail/sqe_prep.h"
-#include "coropact/luring/loop.h"
-#include "coropact/luring/stream.h"
-#include "coropact/net/detail/accept_source_state.h"
-#include "coropact/net/detail/source_state.h"
-#include "coropact/net/endpoint.h"
-#include "coropact/net/socket.h"
-#include "coropact/operation/detail/completion_gate.h"
-#include "coropact/operation/detail/scheduler_continuation.h"
-#include "coropact/result.h"
+#include "alyrn/backend/detail/value_result_state.h"
+#include "alyrn/backend/loop.h"
+#include "alyrn/base/check.h"
+#include "alyrn/coro/task.h"
+#include "alyrn/luring/detail/cancel_result.h"
+#include "alyrn/luring/detail/fd_close_convergence.h"
+#include "alyrn/luring/detail/loop_access.h"
+#include "alyrn/luring/detail/op.h"
+#include "alyrn/luring/detail/op_hook.h"
+#include "alyrn/luring/detail/operation_submission.h"
+#include "alyrn/luring/detail/sqe_prep.h"
+#include "alyrn/luring/loop.h"
+#include "alyrn/luring/stream.h"
+#include "alyrn/net/detail/accept_source_state.h"
+#include "alyrn/net/detail/source_state.h"
+#include "alyrn/net/endpoint.h"
+#include "alyrn/net/socket.h"
+#include "alyrn/operation/detail/completion_gate.h"
+#include "alyrn/operation/detail/scheduler_continuation.h"
+#include "alyrn/result.h"
 
-namespace coropact::luring {
+namespace alyrn::luring {
 
 using namespace detail;
 using namespace net::detail;
@@ -184,7 +184,7 @@ public:
   }
 
   Result<void> await_resume() noexcept {
-    COROPACT_CHECK(result_.has_value(), "LUring accept source Stop resumed without a result");
+    ALYRN_CHECK(result_.has_value(), "LUring accept source Stop resumed without a result");
     return *result_;
   }
 
@@ -211,13 +211,13 @@ AcceptSource::~AcceptSource() {
     return;
   }
 
-  COROPACT_CHECK(listener_->loop_->IsInLoopThread(), "AcceptSource destroyed from wrong thread");
-  COROPACT_CHECK(pending_next_ == nullptr, "AcceptSource destroyed with pending Next");
-  COROPACT_CHECK(pending_stop_ == nullptr, "AcceptSource destroyed with pending Stop");
-  COROPACT_CHECK(!accept_submitted_, "AcceptSource destroyed with active accept");
-  COROPACT_CHECK(!cancel_submitted_, "AcceptSource destroyed with active cancel");
+  ALYRN_CHECK(listener_->loop_->IsInLoopThread(), "AcceptSource destroyed from wrong thread");
+  ALYRN_CHECK(pending_next_ == nullptr, "AcceptSource destroyed with pending Next");
+  ALYRN_CHECK(pending_stop_ == nullptr, "AcceptSource destroyed with pending Stop");
+  ALYRN_CHECK(!accept_submitted_, "AcceptSource destroyed with active accept");
+  ALYRN_CHECK(!cancel_submitted_, "AcceptSource destroyed with active cancel");
   const auto state = state_.State();
-  COROPACT_CHECK(state == AcceptSourceState::kIdle || state == AcceptSourceState::kDraining ||
+  ALYRN_CHECK(state == AcceptSourceState::kIdle || state == AcceptSourceState::kDraining ||
                      state == AcceptSourceState::kTerminal,
                  "AcceptSource destroyed before reaching a safe lifecycle state");
 
@@ -234,10 +234,10 @@ AcceptSource::AcceptSource(AcceptSource&& other) noexcept
       accept_op_(this),
       cancel_op_(this),
       multishot_enabled_(other.multishot_enabled_) {
-  COROPACT_CHECK(other.pending_next_ == nullptr, "AcceptSource cannot move with pending Next");
-  COROPACT_CHECK(other.pending_stop_ == nullptr, "AcceptSource cannot move with pending Stop");
-  COROPACT_CHECK(!other.accept_submitted_, "AcceptSource cannot move while active");
-  COROPACT_CHECK(!other.cancel_submitted_, "AcceptSource cannot move while cancelling");
+  ALYRN_CHECK(other.pending_next_ == nullptr, "AcceptSource cannot move with pending Next");
+  ALYRN_CHECK(other.pending_stop_ == nullptr, "AcceptSource cannot move with pending Stop");
+  ALYRN_CHECK(!other.accept_submitted_, "AcceptSource cannot move while active");
+  ALYRN_CHECK(!other.cancel_submitted_, "AcceptSource cannot move while cancelling");
 
   if (listener_ != nullptr && listener_->accept_source_ == &other) {
     listener_->accept_source_ = this;
@@ -249,14 +249,14 @@ AcceptSource& AcceptSource::operator=(AcceptSource&& other) noexcept {
     return *this;
   }
 
-  COROPACT_CHECK(pending_next_ == nullptr, "AcceptSource destination has pending Next");
-  COROPACT_CHECK(pending_stop_ == nullptr, "AcceptSource destination has pending Stop");
-  COROPACT_CHECK(!accept_submitted_, "AcceptSource destination is active");
-  COROPACT_CHECK(!cancel_submitted_, "AcceptSource destination is cancelling");
-  COROPACT_CHECK(other.pending_next_ == nullptr, "AcceptSource source has pending Next");
-  COROPACT_CHECK(other.pending_stop_ == nullptr, "AcceptSource source has pending Stop");
-  COROPACT_CHECK(!other.accept_submitted_, "AcceptSource source is active");
-  COROPACT_CHECK(!other.cancel_submitted_, "AcceptSource source is cancelling");
+  ALYRN_CHECK(pending_next_ == nullptr, "AcceptSource destination has pending Next");
+  ALYRN_CHECK(pending_stop_ == nullptr, "AcceptSource destination has pending Stop");
+  ALYRN_CHECK(!accept_submitted_, "AcceptSource destination is active");
+  ALYRN_CHECK(!cancel_submitted_, "AcceptSource destination is cancelling");
+  ALYRN_CHECK(other.pending_next_ == nullptr, "AcceptSource source has pending Next");
+  ALYRN_CHECK(other.pending_stop_ == nullptr, "AcceptSource source has pending Stop");
+  ALYRN_CHECK(!other.accept_submitted_, "AcceptSource source is active");
+  ALYRN_CHECK(!other.cancel_submitted_, "AcceptSource source is cancelling");
 
   if (listener_ != nullptr && listener_->accept_source_ == this) {
     listener_->accept_source_ = nullptr;
@@ -328,7 +328,7 @@ Result<void> AcceptSource::StartOperation() noexcept {
     const auto completed = state_.CompleteMultishotEvent(EventDisposition::kNone,
                                                          MultishotRequestDisposition::kTerminal);
     (void)(completed);
-    COROPACT_CHECK(completed.has_value(),
+    ALYRN_CHECK(completed.has_value(),
                    "LUring accept source failed to record terminal submit failure");
     return std::unexpected(submitted.error());
   }
@@ -459,7 +459,7 @@ CompletionDisposition AcceptSource::OnCompletion(CompletionEvent event) noexcept
 
   if (!request_still_active) {
     accept_submitted_ = false;
-    COROPACT_CHECK(listener_->pending_accepts_ > 0,
+    ALYRN_CHECK(listener_->pending_accepts_ > 0,
                    "LUring accept source pending-accept count underflow");
     --listener_->pending_accepts_;
   }
@@ -561,7 +561,7 @@ bool AcceptSource::TryTakeNext(NextResult& result) noexcept {
     Event event(std::in_place, std::move(events_.front()));
     events_.pop_front();
 
-    COROPACT_CHECK(state_.ConsumeEvent(), "AcceptSource: queue and state became inconsistent");
+    ALYRN_CHECK(state_.ConsumeEvent(), "AcceptSource: queue and state became inconsistent");
 
     result = NextResult(std::in_place, std::move(event));
     if (state_.State() == AcceptSourceState::kPaused) {
@@ -643,7 +643,7 @@ coro::Task<Result<void>> AcceptSource::Stop() {
 
 // --- AcceptAwaiter ---
 class Listener::AcceptAwaiter : public detail::OpHook<Listener::AcceptAwaiter> {
-  friend void detail::DispatchAcceptComplete(::coropact::luring::detail::Op* op) noexcept;
+  friend void detail::DispatchAcceptComplete(::alyrn::luring::detail::Op* op) noexcept;
 
 public:
   using OpHook = detail::OpHook<AcceptAwaiter>;
@@ -678,12 +678,12 @@ public:
   AcceptResult await_resume() noexcept { return result_.Take(); }
 
 private:
-  static void OnComplete(::coropact::luring::detail::Op* op) noexcept {
+  static void OnComplete(::alyrn::luring::detail::Op* op) noexcept {
     auto* self = OpHook::OwnerFrom(op);
-    COROPACT_CHECK(self->listener_ != nullptr, "LUring Accept CQE has no listener owner");
-    COROPACT_CHECK(self->listener_reservation_,
+    ALYRN_CHECK(self->listener_ != nullptr, "LUring Accept CQE has no listener owner");
+    ALYRN_CHECK(self->listener_reservation_,
                    "LUring Accept CQE arrived without a listener reservation");
-    COROPACT_CHECK(op->result.HasValue(), "LUring Accept CQE is missing its result");
+    ALYRN_CHECK(op->result.HasValue(), "LUring Accept CQE is missing its result");
 
     Listener* listener = self->listener_;
     if (*op->result < 0) {
@@ -697,17 +697,17 @@ private:
       self->result_.SetResult(std::move(result));
     }
 
-    COROPACT_CHECK(op->TryAuthorizeCoupledResult(), "LUring Accept result was authorized twice");
-    COROPACT_CHECK(op->TryAuthorizeCoupledRelease(),
+    ALYRN_CHECK(op->TryAuthorizeCoupledResult(), "LUring Accept result was authorized twice");
+    ALYRN_CHECK(op->TryAuthorizeCoupledRelease(),
                    "LUring Accept release was not authorized after its result");
     self->ReleaseListenerReservation();
   }
 
   void CompleteInline(AcceptResult result) noexcept {
     result_.SetResult(std::move(result));
-    COROPACT_CHECK(Operation()->TryAuthorizeCoupledResult(),
+    ALYRN_CHECK(Operation()->TryAuthorizeCoupledResult(),
                    "LUring Accept result was authorized twice");
-    COROPACT_CHECK(Operation()->TryAuthorizeCoupledRelease(),
+    ALYRN_CHECK(Operation()->TryAuthorizeCoupledRelease(),
                    "LUring Accept release was not authorized after its result");
     ReleaseListenerReservation();
   }
@@ -719,8 +719,8 @@ private:
     }
 
     listener_reservation_ = false;
-    COROPACT_CHECK(listener != nullptr, "LUring Accept lost its listener reservation owner");
-    COROPACT_CHECK(listener->pending_accepts_ > 0, "LUring Accept pending-accept count underflow");
+    ALYRN_CHECK(listener != nullptr, "LUring Accept lost its listener reservation owner");
+    ALYRN_CHECK(listener->pending_accepts_ > 0, "LUring Accept pending-accept count underflow");
     --listener->pending_accepts_;
     listener->NotifyCloseProgress();
   }
@@ -734,7 +734,7 @@ private:
 
 // --- CloseAwaiter ---
 class Listener::CloseAwaiter : public detail::OpHook<Listener::CloseAwaiter> {
-  friend void detail::DispatchListenerCloseComplete(::coropact::luring::detail::Op* op) noexcept;
+  friend void detail::DispatchListenerCloseComplete(::alyrn::luring::detail::Op* op) noexcept;
 
 public:
   using OpHook = detail::OpHook<CloseAwaiter>;
@@ -789,11 +789,11 @@ public:
   }
 
   Result<void> await_resume() noexcept {
-    COROPACT_CHECK(convergence_.HasResult(), "LUring listener Close resumed before convergence");
+    ALYRN_CHECK(convergence_.HasResult(), "LUring listener Close resumed before convergence");
     return convergence_.TakeResult();
   }
 
-  void TryComplete(::coropact::luring::detail::Op* current = nullptr) noexcept {
+  void TryComplete(::alyrn::luring::detail::Op* current = nullptr) noexcept {
     if (listener_ == nullptr ||
         convergence_.TryAuthorizeClose(listener_->pending_accepts_ != 0) == false) {
       return;
@@ -810,7 +810,7 @@ public:
   }
 
 private:
-  static void OnCancelComplete(::coropact::luring::detail::Op* op) noexcept {
+  static void OnCancelComplete(::alyrn::luring::detail::Op* op) noexcept {
     auto* self = OpHook::OwnerFrom(op);
     self->convergence_.MarkCancelRequestTerminal();
     self->TryComplete(op);
@@ -833,21 +833,21 @@ private:
 
 namespace detail {
 
-void DispatchAcceptComplete(::coropact::luring::detail::Op* op) noexcept {
+void DispatchAcceptComplete(::alyrn::luring::detail::Op* op) noexcept {
   Listener::AcceptAwaiter::OnComplete(op);
 }
 
-void DispatchListenerCloseComplete(::coropact::luring::detail::Op* op) noexcept {
+void DispatchListenerCloseComplete(::alyrn::luring::detail::Op* op) noexcept {
   Listener::CloseAwaiter::OnCancelComplete(op);
 }
 
-CompletionDisposition DispatchAcceptSourceComplete(::coropact::luring::detail::Op* op,
+CompletionDisposition DispatchAcceptSourceComplete(::alyrn::luring::detail::Op* op,
                                                    CompletionEvent event) noexcept {
   auto* operation = static_cast<AcceptSource::AcceptOperation*>(op);
   return operation->Source()->OnCompletion(event);
 }
 
-void DispatchAcceptSourceCancelComplete(::coropact::luring::detail::Op* op) noexcept {
+void DispatchAcceptSourceCancelComplete(::alyrn::luring::detail::Op* op) noexcept {
   auto* operation = static_cast<AcceptSource::CancelOperation*>(op);
 
   int result = -EIO;
@@ -861,8 +861,8 @@ void DispatchAcceptSourceCancelComplete(::coropact::luring::detail::Op* op) noex
 
 Result<Listener> Listener::Create(Loop* loop, const net::Endpoint& listen_addr,
                                   ListenOptions options) noexcept {
-  COROPACT_CHECK(loop != nullptr, "Listener requires an owner loop");
-  COROPACT_CHECK(loop->IsInLoopThread(), "Listener created from wrong Loop thread");
+  ALYRN_CHECK(loop != nullptr, "Listener requires an owner loop");
+  ALYRN_CHECK(loop->IsInLoopThread(), "Listener created from wrong Loop thread");
 
   auto fd = CreatedListenFd(listen_addr, options);
   if (!fd.has_value()) {
@@ -877,9 +877,9 @@ Listener::Listener(Loop* loop, int fd, bool zero_copy_writes,
       fd_(fd),
       zero_copy_writes_(zero_copy_writes),
       tcp_options_(tcp_options) {
-  COROPACT_CHECK(loop_ != nullptr, "Listener requires an owner loop");
-  COROPACT_CHECK(loop_->IsInLoopThread(), "Listener created from wrong Loop thread");
-  COROPACT_CHECK(fd_ >= 0, "Listener requires a valid file descriptor");
+  ALYRN_CHECK(loop_ != nullptr, "Listener requires an owner loop");
+  ALYRN_CHECK(loop_->IsInLoopThread(), "Listener created from wrong Loop thread");
+  ALYRN_CHECK(fd_ >= 0, "Listener requires a valid file descriptor");
 }
 
 Listener::Listener(Listener&& other) noexcept
@@ -897,7 +897,7 @@ Listener& Listener::operator=(Listener&& other) noexcept {
   }
 
   Loop* other_loop = PrepareMove(other);
-  COROPACT_CHECK(loop_ == nullptr || loop_ == other_loop,
+  ALYRN_CHECK(loop_ == nullptr || loop_ == other_loop,
                  "Listener move requires both objects to use the same Loop");
   if (loop_ != nullptr) {
     ResetForMove();
@@ -916,9 +916,9 @@ Listener& Listener::operator=(Listener&& other) noexcept {
 }
 
 Listener::~Listener() {
-  COROPACT_CHECK(pending_accepts_ == 0, "Listener destroyed with pending accept operations");
-  COROPACT_CHECK(pending_close_ == nullptr, "Listener destroyed with a pending close operation");
-  COROPACT_CHECK(accept_source_ == nullptr, "Listener destroyed with an active AcceptSource");
+  ALYRN_CHECK(pending_accepts_ == 0, "Listener destroyed with pending accept operations");
+  ALYRN_CHECK(pending_close_ == nullptr, "Listener destroyed with a pending close operation");
+  ALYRN_CHECK(accept_source_ == nullptr, "Listener destroyed with an active AcceptSource");
   if (fd_ >= 0) {
     ::close(fd_);
   }
@@ -956,8 +956,8 @@ Result<AcceptSource> Listener::CreateAcceptSource(net::AcceptSourceOptions optio
 }
 
 void Listener::RequireOwnerLoop() const noexcept {
-  COROPACT_CHECK(loop_ != nullptr, "Listener operation has no owner loop");
-  COROPACT_CHECK(loop_->IsInLoopThread(), "Listener operation called from wrong Loop thread");
+  ALYRN_CHECK(loop_ != nullptr, "Listener operation has no owner loop");
+  ALYRN_CHECK(loop_->IsInLoopThread(), "Listener operation called from wrong Loop thread");
 }
 
 void Listener::NotifyCloseProgress() noexcept {
@@ -967,12 +967,12 @@ void Listener::NotifyCloseProgress() noexcept {
 }
 
 void Listener::ResetForMove() noexcept {
-  COROPACT_CHECK(loop_ != nullptr, "Listener move destination is not initialized");
-  COROPACT_CHECK(loop_->IsInLoopThread(), "Listener move called from wrong Loop thread");
-  COROPACT_CHECK(pending_accepts_ == 0, "Listener move destination has pending accept operations");
-  COROPACT_CHECK(pending_close_ == nullptr,
+  ALYRN_CHECK(loop_ != nullptr, "Listener move destination is not initialized");
+  ALYRN_CHECK(loop_->IsInLoopThread(), "Listener move called from wrong Loop thread");
+  ALYRN_CHECK(pending_accepts_ == 0, "Listener move destination has pending accept operations");
+  ALYRN_CHECK(pending_close_ == nullptr,
                  "Listener move destination has a pending close operation");
-  COROPACT_CHECK(accept_source_ == nullptr, "Listener move destination has an active AcceptSource");
+  ALYRN_CHECK(accept_source_ == nullptr, "Listener move destination has an active AcceptSource");
 
   const int fd = std::exchange(fd_, -1);
   if (fd >= 0) {
@@ -981,13 +981,13 @@ void Listener::ResetForMove() noexcept {
 }
 
 Loop* Listener::PrepareMove(Listener& other) noexcept {
-  COROPACT_CHECK(other.loop_ != nullptr, "Listener move source is not initialized");
-  COROPACT_CHECK(other.loop_->IsInLoopThread(), "Listener move called from wrong Loop thread");
-  COROPACT_CHECK(other.pending_accepts_ == 0,
+  ALYRN_CHECK(other.loop_ != nullptr, "Listener move source is not initialized");
+  ALYRN_CHECK(other.loop_->IsInLoopThread(), "Listener move called from wrong Loop thread");
+  ALYRN_CHECK(other.pending_accepts_ == 0,
                  "Listener cannot move with pending accept operations");
-  COROPACT_CHECK(other.pending_close_ == nullptr,
+  ALYRN_CHECK(other.pending_close_ == nullptr,
                  "Listener cannot move with a pending close operation");
-  COROPACT_CHECK(other.accept_source_ == nullptr,
+  ALYRN_CHECK(other.accept_source_ == nullptr,
                  "Listener cannot move with an active AcceptSource");
 
   Loop* loop = other.loop_;
@@ -995,4 +995,4 @@ Loop* Listener::PrepareMove(Listener& other) noexcept {
   return loop;
 }
 
-}  // namespace coropact::luring
+}  // namespace alyrn::luring

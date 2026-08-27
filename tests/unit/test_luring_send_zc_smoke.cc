@@ -21,25 +21,25 @@
 #include <thread>
 #include <utility>
 
-#include "coropact/result.h"
-#include "coropact/coro/detached_task.h"
-#include "coropact/coro/spawn.h"
-#include "coropact/luring/detail/loop_access.h"
-#include "coropact/luring/loop.h"
-#include "coropact/luring/options.h"
-#include "coropact/luring/stream.h"
-#include "coropact/net/endpoint.h"
+#include "alyrn/result.h"
+#include "alyrn/coro/detached_task.h"
+#include "alyrn/coro/spawn.h"
+#include "alyrn/luring/detail/loop_access.h"
+#include "alyrn/luring/loop.h"
+#include "alyrn/luring/options.h"
+#include "alyrn/luring/stream.h"
+#include "alyrn/net/endpoint.h"
 
 namespace {
 
-using coropact::Error;
-using coropact::Result;
-using coropact::coro::DetachedTask;
-using coropact::luring::Loop;
-using coropact::luring::Options;
-using coropact::luring::Stream;
-using coropact::luring::ZeroCopySendResult;
-using coropact::luring::ZeroCopySendUsage;
+using alyrn::Error;
+using alyrn::Result;
+using alyrn::coro::DetachedTask;
+using alyrn::luring::Loop;
+using alyrn::luring::Options;
+using alyrn::luring::Stream;
+using alyrn::luring::ZeroCopySendResult;
+using alyrn::luring::ZeroCopySendUsage;
 
 class UniqueFd final {
 public:
@@ -101,7 +101,7 @@ bool InitLoop(Loop& loop) {
 Result<std::pair<UniqueFd, UniqueFd>> MakeTcpPair() {
   UniqueFd listener(::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0));
   if (listener.Get() < 0) {
-    return std::unexpected(coropact::CurrentErrno());
+    return std::unexpected(alyrn::CurrentErrno());
   }
 
   int reuse = 1;
@@ -113,37 +113,37 @@ Result<std::pair<UniqueFd, UniqueFd>> MakeTcpPair() {
   address.sin_port = 0;
   if (::bind(listener.Get(), reinterpret_cast<const sockaddr*>(&address), sizeof(address)) < 0 ||
       ::listen(listener.Get(), 1) < 0) {
-    return std::unexpected(coropact::CurrentErrno());
+    return std::unexpected(alyrn::CurrentErrno());
   }
 
   socklen_t address_length = sizeof(address);
   if (::getsockname(listener.Get(), reinterpret_cast<sockaddr*>(&address), &address_length) < 0) {
-    return std::unexpected(coropact::CurrentErrno());
+    return std::unexpected(alyrn::CurrentErrno());
   }
 
   UniqueFd client(::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0));
   if (client.Get() < 0 ||
       ::connect(client.Get(), reinterpret_cast<const sockaddr*>(&address), sizeof(address)) < 0) {
-    return std::unexpected(coropact::CurrentErrno());
+    return std::unexpected(alyrn::CurrentErrno());
   }
 
   UniqueFd server(::accept4(listener.Get(), nullptr, nullptr, SOCK_NONBLOCK | SOCK_CLOEXEC));
   if (server.Get() < 0) {
-    return std::unexpected(coropact::CurrentErrno());
+    return std::unexpected(alyrn::CurrentErrno());
   }
 
   const int flags = ::fcntl(client.Get(), F_GETFL, 0);
   if (flags < 0 || ::fcntl(client.Get(), F_SETFL, flags | O_NONBLOCK) < 0) {
-    return std::unexpected(coropact::CurrentErrno());
+    return std::unexpected(alyrn::CurrentErrno());
   }
 
   return std::make_pair(std::move(client), std::move(server));
 }
 
-coropact::net::Endpoint EmptyPeerAddress() {
+alyrn::net::Endpoint EmptyPeerAddress() {
   sockaddr_in address{};
   address.sin_family = AF_INET;
-  return coropact::net::Endpoint(address);
+  return alyrn::net::Endpoint(address);
 }
 
 DetachedTask SendOnce(Stream* stream, std::span<const std::byte> payload,
@@ -159,16 +159,16 @@ DetachedTask WriteAllOnce(Stream* stream, std::span<const std::byte> payload,
 template <typename T>
 bool DriveUntilResult(Loop& loop, std::optional<Result<T>>& result, const char* operation) {
   for (int i = 0; i < 4 && !result.has_value(); ++i) {
-    coropact::luring::detail::LoopAccess::RunReady(loop);
+    alyrn::luring::detail::LoopAccess::RunReady(loop);
   }
   for (int i = 0; i < 16 && !result.has_value(); ++i) {
-    auto completions = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
+    auto completions = alyrn::luring::detail::LoopAccess::WaitCompletions(loop);
     if (!completions.has_value()) {
       std::cout << "FAIL: waiting for " << operation
                 << " CQE failed: " << completions.error().message() << '\n';
       return false;
     }
-    coropact::luring::detail::LoopAccess::RunReady(loop);
+    alyrn::luring::detail::LoopAccess::RunReady(loop);
   }
   return Check(result.has_value(), "operation did not reach terminal CQE");
 }
@@ -178,14 +178,14 @@ bool DriveUntilResultWithPolling(Loop& loop, std::optional<Result<T>>& result,
                                  const char* operation, std::chrono::milliseconds timeout) {
   const auto deadline = std::chrono::steady_clock::now() + timeout;
   while (!result.has_value() && std::chrono::steady_clock::now() < deadline) {
-    coropact::luring::detail::LoopAccess::RunReady(loop);
-    auto completions = coropact::luring::detail::LoopAccess::PollCompletions(loop);
+    alyrn::luring::detail::LoopAccess::RunReady(loop);
+    auto completions = alyrn::luring::detail::LoopAccess::PollCompletions(loop);
     if (!completions.has_value()) {
       std::cout << "FAIL: polling " << operation << " CQE failed: " << completions.error().message()
                 << '\n';
       return false;
     }
-    coropact::luring::detail::LoopAccess::RunReady(loop);
+    alyrn::luring::detail::LoopAccess::RunReady(loop);
     if (!result.has_value()) {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
@@ -242,19 +242,19 @@ bool CheckSendZeroCopy() {
   const auto payload = std::as_bytes(std::span<const char>(text.data(), text.size()));
 
   std::optional<Result<ZeroCopySendResult>> result;
-  coropact::coro::SpawnDetach(loop, SendOnce(&stream, payload, &result));
+  alyrn::coro::SpawnDetach(loop, SendOnce(&stream, payload, &result));
   for (int i = 0; i < 4 && !result.has_value(); ++i) {
-    coropact::luring::detail::LoopAccess::RunReady(loop);
+    alyrn::luring::detail::LoopAccess::RunReady(loop);
   }
 
   for (int i = 0; i < 8 && !result.has_value(); ++i) {
-    auto completions = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
+    auto completions = alyrn::luring::detail::LoopAccess::WaitCompletions(loop);
     if (!completions.has_value()) {
       std::cout << "FAIL: waiting for send zerocopy CQE failed: " << completions.error().message()
                 << '\n';
       return false;
     }
-    coropact::luring::detail::LoopAccess::RunReady(loop);
+    alyrn::luring::detail::LoopAccess::RunReady(loop);
   }
 
   if (!result.has_value()) {
@@ -297,7 +297,7 @@ bool CheckPrimaryErrorWithoutNotificationCompletes() {
   Stream stream(&loop, socket.Release(), EmptyPeerAddress());
   const std::array<std::byte, 1> payload{};
   std::optional<Result<ZeroCopySendResult>> result;
-  coropact::coro::SpawnDetach(loop, SendOnce(&stream, payload, &result));
+  alyrn::coro::SpawnDetach(loop, SendOnce(&stream, payload, &result));
 
   if (!DriveUntilResultWithPolling(loop, result, "unconnected send zerocopy",
                                    std::chrono::milliseconds(250))) {
@@ -305,7 +305,7 @@ bool CheckPrimaryErrorWithoutNotificationCompletes() {
   }
 
   return Check(!result->has_value(), "unconnected send zerocopy unexpectedly succeeded") &&
-         Check(coropact::luring::detail::LoopAccess::InflightCount(loop) == 0,
+         Check(alyrn::luring::detail::LoopAccess::InflightCount(loop) == 0,
                "unconnected send zerocopy retained an inflight request");
 }
 
@@ -341,7 +341,7 @@ bool CheckZeroCopyWriteAllIntegrity() {
 
     const auto bytes = std::as_bytes(std::span<const char>(payload));
     std::optional<Result<void>> result;
-    coropact::coro::SpawnDetach(loop, WriteAllOnce(&stream, bytes, &result));
+    alyrn::coro::SpawnDetach(loop, WriteAllOnce(&stream, bytes, &result));
     if (!DriveUntilResult(loop, result, "zero-copy WriteAll")) {
       return false;
     }

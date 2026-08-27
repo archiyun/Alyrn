@@ -13,10 +13,10 @@
 #include <utility>
 #include <vector>
 
-#include "coropact/ds/intrusive_list.h"
+#include "alyrn/ds/intrusive_list.h"
 
-using coropact::ds::IntrusiveList;
-using coropact::ds::ListNode;
+using alyrn::ds::IntrusiveList;
+using alyrn::ds::ListNode;
 
 // Element with a stable identity (id) used to match nodes against oracle values.
 struct Item : ListNode<Item> {

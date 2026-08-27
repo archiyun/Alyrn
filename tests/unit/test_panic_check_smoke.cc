@@ -8,7 +8,7 @@
 #include <string>
 #include <string_view>
 
-#include "coropact/base/check.h"
+#include "alyrn/base/check.h"
 
 namespace {
 
@@ -20,7 +20,7 @@ bool Expect(bool condition, std::string_view message) {
   return false;
 }
 
-void TriggerCheckFailure() { COROPACT_CHECK(false, "intentional check failure"); }
+void TriggerCheckFailure() { ALYRN_CHECK(false, "intentional check failure"); }
 
 struct ChildResult {
   int status{-1};
@@ -81,26 +81,26 @@ bool TestSuccessfulCheckEvaluation() {
     return "must not be evaluated";
   };
 
-  COROPACT_CHECK(++condition_calls == 1, message());
+  ALYRN_CHECK(++condition_calls == 1, message());
 
-  return Expect(condition_calls == 1, "COROPACT_CHECK must evaluate condition exactly once") &&
-         Expect(message_calls == 0, "COROPACT_CHECK must not evaluate message on success");
+  return Expect(condition_calls == 1, "ALYRN_CHECK must evaluate condition exactly once") &&
+         Expect(message_calls == 0, "ALYRN_CHECK must not evaluate message on success");
 }
 
 bool TestDebugCheckEvaluation() {
   int condition_calls = 0;
   int message_calls = 0;
 
-  COROPACT_DCHECK(++condition_calls == 1,
+  ALYRN_DCHECK(++condition_calls == 1,
                   (++message_calls, std::string_view{"must not be evaluated"}));
 
 #ifndef NDEBUG
-  return Expect(condition_calls == 1, "COROPACT_DCHECK must evaluate condition in debug builds") &&
-         Expect(message_calls == 0, "COROPACT_DCHECK must not evaluate message on success");
+  return Expect(condition_calls == 1, "ALYRN_DCHECK must evaluate condition in debug builds") &&
+         Expect(message_calls == 0, "ALYRN_DCHECK must not evaluate message on success");
 #else
   return Expect(condition_calls == 0,
-                "COROPACT_DCHECK must not evaluate condition in release builds") &&
-         Expect(message_calls == 0, "COROPACT_DCHECK must not evaluate message in release builds");
+                "ALYRN_DCHECK must not evaluate condition in release builds") &&
+         Expect(message_calls == 0, "ALYRN_DCHECK must not evaluate message in release builds");
 #endif
 }
 
@@ -108,12 +108,12 @@ bool TestFailedCheckDiagnostics() {
   const ChildResult child = RunChild(&TriggerCheckFailure);
 
   bool ok = true;
-  ok &= Expect(WIFSIGNALED(child.status), "failed COROPACT_CHECK must terminate by signal");
+  ok &= Expect(WIFSIGNALED(child.status), "failed ALYRN_CHECK must terminate by signal");
   if (WIFSIGNALED(child.status)) {
     ok &=
-        Expect(WTERMSIG(child.status) == SIGABRT, "failed COROPACT_CHECK must terminate with SIGABRT");
+        Expect(WTERMSIG(child.status) == SIGABRT, "failed ALYRN_CHECK must terminate with SIGABRT");
   }
-  ok &= Expect(child.stderr_output.contains("[COROPACT PANIC] intentional check failure"),
+  ok &= Expect(child.stderr_output.contains("[ALYRN PANIC] intentional check failure"),
                "panic output must contain the failure message");
   ok &= Expect(child.stderr_output.contains("condition: false"),
                "panic output must contain the failed condition");

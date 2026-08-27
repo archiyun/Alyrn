@@ -1,28 +1,28 @@
-pkgname=coropact
+pkgname=alyrn
 pkgver=0.1.0
 pkgrel=1
 pkgdesc='C++23 coroutine networking runtime with Reactor and io_uring backends'
 arch=('x86_64')
-url='https://github.com/archiyun/CoroPact'
+url='https://github.com/archiyun/Alyrn'
 license=('MIT')
 depends=('liburing')
 makedepends=('cmake' 'ninja' 'pkgconf')
-source=("https://github.com/archiyun/CoroPact/archive/refs/tags/v${pkgver}.tar.gz")
+source=("https://github.com/archiyun/Alyrn/archive/refs/tags/v${pkgver}.tar.gz")
 sha256sums=('SKIP')
 
 build() {
-  cmake -S "${srcdir}/CoroPact-${pkgver}" -B build -G Ninja \
+  cmake -S "${srcdir}/Alyrn-${pkgver}" -B build -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DBUILD_TESTS=OFF \
     -DBUILD_EXAMPLES=OFF \
     -DBUILD_BENCHMARKS=OFF \
-    -DCOROPACT_ENABLE_URING=ON \
+    -DALYRN_ENABLE_URING=ON \
     -DCMAKE_INSTALL_PREFIX=/usr
   cmake --build build
 }
 
 package() {
   DESTDIR="${pkgdir}" cmake --install build
-  install -Dm644 "${srcdir}/CoroPact-${pkgver}/LICENSE" \
+  install -Dm644 "${srcdir}/Alyrn-${pkgver}/LICENSE" \
     "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
 }

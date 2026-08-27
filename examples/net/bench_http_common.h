@@ -8,7 +8,7 @@
 #include <string>
 #include <string_view>
 
-namespace coropact_bench {
+namespace alyrn_bench {
 
 inline constexpr std::size_t kResponseBodySize = 512;
 inline constexpr std::size_t kRequestBufferSize = 16 * 1024;
@@ -116,4 +116,4 @@ inline std::size_t ParseContentLength(const char* bytes, std::size_t size) {
   return 0;
 }
 
-}  // namespace coropact_bench
+}  // namespace alyrn_bench

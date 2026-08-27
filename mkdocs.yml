@@ -1,8 +1,8 @@
-site_name: CoroPact
+site_name: Alyrn
 site_description: C++23 coroutine networking runtime documentation
-site_url: https://archiyun.github.io/CoroPact/
-repo_url: https://github.com/archiyun/CoroPact
-repo_name: archiyun/CoroPact
+site_url: https://archiyun.github.io/Alyrn/
+repo_url: https://github.com/archiyun/Alyrn
+repo_name: archiyun/Alyrn
 
 theme:
     name: material

@@ -14,13 +14,13 @@
 #include <system_error>
 #include <thread>
 
-#include "coropact/coro/detached_task.h"
-#include "coropact/result.h"
-#include "coropact/kqueue/runtime.h"
-#include "coropact/net/endpoint.h"
-#include "coropact/net/socket.h"
+#include "alyrn/coro/detached_task.h"
+#include "alyrn/result.h"
+#include "alyrn/kqueue/runtime.h"
+#include "alyrn/net/endpoint.h"
+#include "alyrn/net/socket.h"
 
-using namespace coropact;
+using namespace alyrn;
 
 namespace {
 
@@ -65,8 +65,8 @@ private:
   std::uint16_t port_{0};
 };
 
-coropact::Result<BoundPort> BindLoopbackPort() {
-  auto created = coropact::net::CreateNonBlockingSocket(AF_INET);
+alyrn::Result<BoundPort> BindLoopbackPort() {
+  auto created = alyrn::net::CreateNonBlockingSocket(AF_INET);
   if (!created.has_value()) {
     return std::unexpected(created.error());
   }
@@ -77,14 +77,14 @@ coropact::Result<BoundPort> BindLoopbackPort() {
   address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   address.sin_port = htons(0);
   if (::bind(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0) {
-    auto error = coropact::CurrentErrno();
+    auto error = alyrn::CurrentErrno();
     (void)::close(fd);
     return std::unexpected(error);
   }
 
   socklen_t address_length = sizeof(address);
   if (::getsockname(fd, reinterpret_cast<sockaddr*>(&address), &address_length) < 0) {
-    auto error = coropact::CurrentErrno();
+    auto error = alyrn::CurrentErrno();
     (void)::close(fd);
     return std::unexpected(error);
   }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "coropact/kqueue/detail/poller.h"
+#include "alyrn/kqueue/detail/poller.h"
 
 #include <fcntl.h>
 #include <sys/time.h>
@@ -9,10 +9,10 @@
 #include <cerrno>
 #include <limits>
 
-#include "coropact/base/check.h"
-#include "coropact/kqueue/detail/channel.h"
+#include "alyrn/base/check.h"
+#include "alyrn/kqueue/detail/channel.h"
 
-namespace coropact::kqueue::detail {
+namespace alyrn::kqueue::detail {
 namespace {
 
 /*
@@ -66,10 +66,10 @@ std::uint16_t ArmFlagsFor(TriggerMode mode) {
 }  // namespace
 
 Poller::Poller() : kqfd_(::kqueue()), events_(kInitEventListSize) {
-  COROPACT_CHECK(kqfd_ >= 0, "Poller: kqueue creation failed");
+  ALYRN_CHECK(kqfd_ >= 0, "Poller: kqueue creation failed");
   /* kqueue descriptors are not inherited across fork, but exec still needs
    * an explicit close-on-exec because kqueue() takes no flags argument. */
-  COROPACT_CHECK(::fcntl(kqfd_, F_SETFD, FD_CLOEXEC) == 0,
+  ALYRN_CHECK(::fcntl(kqfd_, F_SETFD, FD_CLOEXEC) == 0,
                  "Poller: failed to set FD_CLOEXEC");
 }
 
@@ -99,7 +99,7 @@ void Poller::Poll(int timeout_ms, ChannelList* active_channels) {
       events_.resize(events_.size() * 2);
     }
   } else if (num_events < 0 && saved_errno != EINTR) {
-    COROPACT_CHECK(false, "Poller: kevent wait failed");
+    ALYRN_CHECK(false, "Poller: kevent wait failed");
   }
 }
 
@@ -112,7 +112,7 @@ void Poller::FillActiveChannels(int num_events, ChannelList* active_channels) {
 
     /* No changelist is submitted with the wait above, so EV_ERROR here would
      * mean the kernel rejected a change this poller never sent. */
-    COROPACT_CHECK(!static_cast<bool>(event.flags & EV_ERROR),
+    ALYRN_CHECK(!static_cast<bool>(event.flags & EV_ERROR),
                    "Poller: kevent reported EV_ERROR during wait");
 
     /* EVFILT_TIMER is keyed by a dedicated ident, not a Channel fd. The
@@ -240,7 +240,7 @@ void Poller::ApplyChange(Channel* channel, std::int16_t filter, std::uint16_t fl
    * value instead of an EV_ERROR record, so a rejected change cannot be
    * mistaken for a descriptor condition later. */
   if (::kevent(kqfd_, &change, 1, nullptr, 0, nullptr) < 0) {
-    COROPACT_CHECK(false, "Poller: kevent change failed");
+    ALYRN_CHECK(false, "Poller: kevent change failed");
   }
 }
 
@@ -305,8 +305,8 @@ void Poller::ApplyTimerChange(std::uint16_t flags, std::uint32_t fflags, intptr_
     if (static_cast<bool>(flags & EV_DELETE) && errno == ENOENT) {
       return;
     }
-    COROPACT_CHECK(false, "Poller: EVFILT_TIMER change failed");
+    ALYRN_CHECK(false, "Poller: EVFILT_TIMER change failed");
   }
 }
 
-}  // namespace coropact::kqueue::detail
+}  // namespace alyrn::kqueue::detail

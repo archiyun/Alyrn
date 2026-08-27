@@ -15,11 +15,11 @@
 #include <vector>
 
 #include "bench_http_common.h"
-#include "coropact/coro/frame_allocator.h"
-#include "coropact/io.h"
-#include "coropact/luring/detail/worker_group.h"
-#include "coropact/luring/recv_source.h"
-#include "coropact/net/endpoint.h"
+#include "alyrn/coro/frame_allocator.h"
+#include "alyrn/io.h"
+#include "alyrn/luring/detail/worker_group.h"
+#include "alyrn/luring/recv_source.h"
+#include "alyrn/net/endpoint.h"
 
 namespace {
 
@@ -29,12 +29,12 @@ void OnSignal(int) noexcept { g_stop.store(true, std::memory_order_relaxed); }
 
 [[nodiscard]]
 bool EnvEnabled(const char* key, bool fallback) noexcept {
-  return coropact_bench::EnvInt(key, fallback ? 1 : 0) != 0;
+  return alyrn_bench::EnvInt(key, fallback ? 1 : 0) != 0;
 }
 
 [[nodiscard]]
 bool AcceptMultishotEnabled() noexcept {
-  const auto mode = coropact_bench::EnvString("ACCEPT_MODE");
+  const auto mode = alyrn_bench::EnvString("ACCEPT_MODE");
   if (mode.empty()) {
     return true;
   }
@@ -43,10 +43,10 @@ bool AcceptMultishotEnabled() noexcept {
 
 // Consume one HTTP request (headers + Content-Length body), then WriteAll the
 // fixed response. Leftover pipelined bytes stay in `request`/`used`.
-coropact::coro::DetachedTask HttpSessionReadSome(coropact::luring::Stream stream) {
-  std::array<std::byte, coropact_bench::kRequestBufferSize> request{};
+alyrn::coro::DetachedTask HttpSessionReadSome(alyrn::luring::Stream stream) {
+  std::array<std::byte, alyrn_bench::kRequestBufferSize> request{};
   const auto response = std::as_bytes(
-      std::span(coropact_bench::Response().data(), coropact_bench::Response().size()));
+      std::span(alyrn_bench::Response().data(), alyrn_bench::Response().size()));
   std::size_t used = 0;
   std::size_t body_remain = 0;
   bool reading_body = false;
@@ -59,7 +59,7 @@ coropact::coro::DetachedTask HttpSessionReadSome(coropact::luring::Stream stream
       }
       used += *read;
 
-      const auto header_end = coropact_bench::HeaderTerminatorEnd(
+      const auto header_end = alyrn_bench::HeaderTerminatorEnd(
           reinterpret_cast<const char*>(request.data()), used);
       if (header_end == static_cast<std::size_t>(-1)) {
         if (used == request.size()) {
@@ -68,7 +68,7 @@ coropact::coro::DetachedTask HttpSessionReadSome(coropact::luring::Stream stream
         continue;
       }
 
-      const std::size_t content_length = coropact_bench::ParseContentLength(
+      const std::size_t content_length = alyrn_bench::ParseContentLength(
           reinterpret_cast<const char*>(request.data()), header_end);
       const std::size_t available = used - header_end;
       if (available >= content_length) {
@@ -114,26 +114,26 @@ coropact::coro::DetachedTask HttpSessionReadSome(coropact::luring::Stream stream
   (void)co_await stream.Close();
 }
 
-coropact::coro::DetachedTask HttpSessionRecvSource(coropact::luring::Stream stream) {
+alyrn::coro::DetachedTask HttpSessionRecvSource(alyrn::luring::Stream stream) {
   const auto response = std::as_bytes(
-      std::span(coropact_bench::Response().data(), coropact_bench::Response().size()));
+      std::span(alyrn_bench::Response().data(), alyrn_bench::Response().size()));
 
-  coropact::luring::RecvSourceOptions recv_options;
+  alyrn::luring::RecvSourceOptions recv_options;
   recv_options.source.pending_depth = 1;
   recv_options.source.event_capacity = 16;
   recv_options.source.buffer_capacity = 16;
-  recv_options.buffer_size = coropact_bench::EnvSize(
-      "SHARED_BUFFER_SIZE", coropact_bench::kRequestBufferSize);
+  recv_options.buffer_size = alyrn_bench::EnvSize(
+      "SHARED_BUFFER_SIZE", alyrn_bench::kRequestBufferSize);
 
   auto source_result =
-      coropact::luring::RecvSource::Create(stream.OwnerLoop(), stream.Fd(), recv_options);
+      alyrn::luring::RecvSource::Create(stream.OwnerLoop(), stream.Fd(), recv_options);
   if (!source_result.has_value()) {
     (void)co_await stream.Close();
     co_return;
   }
   auto source = std::move(*source_result);
 
-  std::array<std::byte, coropact_bench::kRequestBufferSize> staging{};
+  std::array<std::byte, alyrn_bench::kRequestBufferSize> staging{};
   std::size_t used = 0;
   std::size_t body_remain = 0;
   bool reading_body = false;
@@ -162,7 +162,7 @@ coropact::coro::DetachedTask HttpSessionRecvSource(coropact::luring::Stream stre
       (*received)->buffer.Release();
       received->reset();
 
-      const auto header_end = coropact_bench::HeaderTerminatorEnd(
+      const auto header_end = alyrn_bench::HeaderTerminatorEnd(
           reinterpret_cast<const char*>(staging.data()), used);
       if (header_end == static_cast<std::size_t>(-1)) {
         if (used == staging.size()) {
@@ -172,7 +172,7 @@ coropact::coro::DetachedTask HttpSessionRecvSource(coropact::luring::Stream stre
         continue;
       }
 
-      const std::size_t content_length = coropact_bench::ParseContentLength(
+      const std::size_t content_length = alyrn_bench::ParseContentLength(
           reinterpret_cast<const char*>(staging.data()), header_end);
       const std::size_t available = used - header_end;
       if (available >= content_length) {
@@ -236,17 +236,17 @@ int main() {
   std::signal(SIGINT, OnSignal);
   std::signal(SIGTERM, OnSignal);
 
-  const auto port = static_cast<std::uint16_t>(coropact_bench::EnvInt("PORT", 19090));
-  const std::size_t workers = coropact_bench::EnvSize("URING_WORKERS", 4);
-  const auto entries = static_cast<std::uint32_t>(coropact_bench::EnvSize("URING_ENTRIES", 1024));
+  const auto port = static_cast<std::uint16_t>(alyrn_bench::EnvInt("PORT", 19090));
+  const std::size_t workers = alyrn_bench::EnvSize("URING_WORKERS", 4);
+  const auto entries = static_cast<std::uint32_t>(alyrn_bench::EnvSize("URING_ENTRIES", 1024));
   const bool accept_multishot = AcceptMultishotEnabled();
   const bool zero_copy_writes = EnvEnabled("ZERO_COPY_WRITES", true);
   const bool use_recv_source = EnvEnabled("USE_RECV_SOURCE", true);
   const std::size_t shared_buffer_capacity =
-      coropact_bench::EnvSize("SHARED_BUFFER_CAPACITY", 4096);
+      alyrn_bench::EnvSize("SHARED_BUFFER_CAPACITY", 4096);
   const std::size_t shared_buffer_size =
-      coropact_bench::EnvSize("SHARED_BUFFER_SIZE", coropact_bench::kRequestBufferSize);
-  const std::size_t response_body = coropact_bench::ResponseBodySize();
+      alyrn_bench::EnvSize("SHARED_BUFFER_SIZE", alyrn_bench::kRequestBufferSize);
+  const std::size_t response_body = alyrn_bench::ResponseBodySize();
   if (port == 0 || workers == 0) {
     return 2;
   }
@@ -259,7 +259,7 @@ int main() {
     return 2;
   }
 
-  coropact::luring::detail::WorkerGroupOptions options;
+  alyrn::luring::detail::WorkerGroupOptions options;
   options.worker_num = workers;
   options.worker_options.loop_options.entries = entries;
   options.worker_options.loop_options.shared_buffer_capacity =
@@ -269,25 +269,25 @@ int main() {
   options.worker_options.listen_options.reuse_port = true;
   options.worker_options.listen_options.zero_copy_writes = zero_copy_writes;
   options.worker_options.accept_mode =
-      accept_multishot ? coropact::luring::detail::AcceptMode::kMultishot
-                       : coropact::luring::detail::AcceptMode::kSingleShot;
+      accept_multishot ? alyrn::luring::detail::AcceptMode::kMultishot
+                       : alyrn::luring::detail::AcceptMode::kSingleShot;
 
   const bool use_frame_pool = EnvEnabled("FRAME_POOL", false);
-  std::vector<std::unique_ptr<coropact::coro::CoroFramePoolResource>> frame_pools;
+  std::vector<std::unique_ptr<alyrn::coro::CoroFramePoolResource>> frame_pools;
   if (use_frame_pool) {
     frame_pools.reserve(workers);
     for (std::size_t i = 0; i < workers; ++i) {
-      frame_pools.push_back(std::make_unique<coropact::coro::CoroFramePoolResource>());
+      frame_pools.push_back(std::make_unique<alyrn::coro::CoroFramePoolResource>());
     }
     options.frame_resource_factory = [&frame_pools](std::size_t index) {
       return static_cast<std::pmr::memory_resource*>(frame_pools[index].get());
     };
   }
 
-  coropact::luring::detail::WorkerGroup server(
-      coropact::net::Endpoint::Loopback(port), std::move(options), {},
-      [use_recv_source](coropact::luring::detail::WorkerContext&,
-                        coropact::luring::Stream stream) {
+  alyrn::luring::detail::WorkerGroup server(
+      alyrn::net::Endpoint::Loopback(port), std::move(options), {},
+      [use_recv_source](alyrn::luring::detail::WorkerContext&,
+                        alyrn::luring::Stream stream) {
         if (use_recv_source) {
           return HttpSessionRecvSource(std::move(stream));
         }

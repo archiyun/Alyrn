@@ -4,15 +4,15 @@
 #include <cerrno>
 #include <utility>
 
-#include "coropact/net/accept_source.h"
+#include "alyrn/net/accept_source.h"
 
 namespace {
 
-using coropact::net::AcceptSourceOptions;
-using coropact::net::detail::AcceptSourceState;
-using coropact::net::detail::AcceptSourceStateMachine;
-using coropact::net::detail::EventDisposition;
-using coropact::net::detail::MultishotRequestDisposition;
+using alyrn::net::AcceptSourceOptions;
+using alyrn::net::detail::AcceptSourceState;
+using alyrn::net::detail::AcceptSourceStateMachine;
+using alyrn::net::detail::EventDisposition;
+using alyrn::net::detail::MultishotRequestDisposition;
 
 void CheckOptions() {
   assert((!AcceptSourceOptions{0, 1}.Valid()));

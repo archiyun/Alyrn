@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MIT
-#include "coropact/luring/detail/server.h"
+#include "alyrn/luring/detail/server.h"
 
 #include <cerrno>
 #include <expected>
 #include <memory>
 #include <utility>
 
-#include "coropact/result.h"
-#include "coropact/luring/stream.h"
+#include "alyrn/result.h"
+#include "alyrn/luring/stream.h"
 
-namespace coropact::luring::detail {
+namespace alyrn::luring::detail {
 
 Server::Server(net::Endpoint listen_addr, ServerOptions options)
     : listen_addr_(listen_addr), options_(std::move(options)) {}
@@ -49,4 +49,4 @@ void Server::Stop() noexcept {
   started_ = false;
 }
 
-}  // namespace coropact::luring::detail
+}  // namespace alyrn::luring::detail

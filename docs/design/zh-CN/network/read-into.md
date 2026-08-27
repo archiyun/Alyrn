@@ -2,7 +2,7 @@
 
 ## 结论
 
-`ReadInto` 已经是 CoroPact 的 **ownership-transfer read** 扩展：调用者把一个 move-only
+`ReadInto` 已经是 Alyrn 的 **ownership-transfer read** 扩展：调用者把一个 move-only
 `net::Buffer` 转移给 awaiter；awaiter 在整个 pending interval 内独占这块存储；每条
 终态路径都把 buffer 和读取结果一起归还。
 
@@ -109,7 +109,7 @@ destination 混淆；`0` 的读取结果仍按 stream 语义表示 EOF。
 这里不能把同一技巧直接套到 io_uring：`IORING_OP_READV` 会在 SQE 提交后继续借用 iovec
 array 直到 terminal CQE，所以 luring awaiter 必须持久拥有该 array。
 
-为避免把外部 `Buffer&` 在 pending interval 内的地址稳定性留给调用者，CoroPact 不提供
+为避免把外部 `Buffer&` 在 pending interval 内的地址稳定性留给调用者，Alyrn 不提供
 `ReadSome(Buffer&)` overload；可增长 buffer 必须通过 move-only `ReadInto(Buffer)` 进入
 operation。
 

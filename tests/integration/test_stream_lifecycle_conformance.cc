@@ -19,28 +19,28 @@
 #include <system_error>
 #include <utility>
 
-#include "coropact/result.h"
-#include "coropact/coro/scheduler.h"
-#include "coropact/coro/spawn.h"
-#include "coropact/io/async_stream.h"
-#include "coropact/io/buffer.h"
-#include "coropact/io/read_into.h"
-#include "coropact/net/endpoint.h"
-#include "coropact/net/socket.h"
-#include "coropact/reactor/loop.h"
-#include "coropact/reactor/stream.h"
+#include "alyrn/result.h"
+#include "alyrn/coro/scheduler.h"
+#include "alyrn/coro/spawn.h"
+#include "alyrn/io/async_stream.h"
+#include "alyrn/io/buffer.h"
+#include "alyrn/io/read_into.h"
+#include "alyrn/net/endpoint.h"
+#include "alyrn/net/socket.h"
+#include "alyrn/reactor/loop.h"
+#include "alyrn/reactor/stream.h"
 
-#if defined(COROPACT_ENABLE_URING)
-#include "coropact/luring/loop.h"
-#include "coropact/luring/options.h"
-#include "coropact/luring/stream.h"
+#if defined(ALYRN_ENABLE_URING)
+#include "alyrn/luring/loop.h"
+#include "alyrn/luring/options.h"
+#include "alyrn/luring/stream.h"
 #endif
 
 namespace {
 
-using ReadResult = coropact::Result<std::size_t>;
-using VoidResult = coropact::Result<void>;
-using OwnedReadOutcome = coropact::io::ReadIntoOutcome;
+using ReadResult = alyrn::Result<std::size_t>;
+using VoidResult = alyrn::Result<void>;
+using OwnedReadOutcome = alyrn::io::ReadIntoOutcome;
 
 class UniqueFd {
 public:
@@ -75,7 +75,7 @@ private:
 bool MakeSocketPair(UniqueFd& local, UniqueFd& peer) noexcept {
   std::array<int, 2> fds{-1, -1};
   if (::socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0, fds.data()) < 0) {
-    std::cerr << "FAIL: socketpair: " << coropact::CurrentErrno().message() << '\n';
+    std::cerr << "FAIL: socketpair: " << alyrn::CurrentErrno().message() << '\n';
     return false;
   }
   local.Reset(fds[0]);
@@ -120,7 +120,7 @@ bool Expect(bool condition, std::string_view backend, std::string_view message) 
   return false;
 }
 
-std::string Gather(const coropact::io::Buffer& buffer) {
+std::string Gather(const alyrn::io::Buffer& buffer) {
   std::string bytes;
   for (const iovec& part : buffer.ReadableIov(32)) {
     bytes.append(static_cast<const char*>(part.iov_base), part.iov_len);
@@ -129,37 +129,37 @@ std::string Gather(const coropact::io::Buffer& buffer) {
 }
 
 struct EpollHarness {
-  using Loop = coropact::reactor::Loop;
-  using Stream = coropact::reactor::Stream;
+  using Loop = alyrn::reactor::Loop;
+  using Stream = alyrn::reactor::Stream;
 
   static constexpr std::string_view Name() noexcept { return "Reactor"; }
   static bool Init(Loop&) noexcept { return true; }
   static bool Skip(const Loop&) noexcept { return false; }
 
   static Stream MakeStream(Loop& loop, int fd) {
-    return Stream(&loop, fd, coropact::net::Endpoint::Loopback(0));
+    return Stream(&loop, fd, alyrn::net::Endpoint::Loopback(0));
   }
 
   static bool PreparePendingWriteFd(int) noexcept { return true; }
 
   static bool RunAfter(Loop& loop, std::chrono::milliseconds delay,
                        std::function<void()> callback) {
-    loop.RunAfter(std::chrono::duration_cast<coropact::time::Duration>(delay), std::move(callback));
+    loop.RunAfter(std::chrono::duration_cast<alyrn::time::Duration>(delay), std::move(callback));
     return true;
   }
 
   static void Run(Loop& loop) noexcept { loop.Run(); }
 };
 
-#if defined(COROPACT_ENABLE_URING)
+#if defined(ALYRN_ENABLE_URING)
 struct UringHarness {
-  using Loop = coropact::luring::Loop;
-  using Stream = coropact::luring::Stream;
+  using Loop = alyrn::luring::Loop;
+  using Stream = alyrn::luring::Stream;
 
   static constexpr std::string_view Name() noexcept { return "io_uring"; }
 
   static bool Init(Loop& loop) noexcept {
-    coropact::luring::Options options;
+    alyrn::luring::Options options;
     options.entries = 32;
     auto initialized = loop.Init(options);
     if (initialized.has_value()) {
@@ -175,11 +175,11 @@ struct UringHarness {
   }
 
   static Stream MakeStream(Loop& loop, int fd) {
-    return Stream(&loop, fd, coropact::net::Endpoint::Loopback(0));
+    return Stream(&loop, fd, alyrn::net::Endpoint::Loopback(0));
   }
 
   static bool PreparePendingWriteFd(int fd) noexcept {
-    auto blocking = coropact::net::SetNonBlocking(fd, false);
+    auto blocking = alyrn::net::SetNonBlocking(fd, false);
     if (blocking.has_value()) {
       return true;
     }
@@ -200,7 +200,7 @@ struct UringHarness {
 
   static void Run(Loop& loop) noexcept { loop.Run(); }
 
-  static inline coropact::Error init_error{};
+  static inline alyrn::Error init_error{};
 };
 #endif
 
@@ -211,12 +211,12 @@ struct PendingReadObservation {
   bool timed_out{false};
 };
 
-template <coropact::io::AsyncReadStream Stream, class Loop>
+template <alyrn::io::AsyncReadStream Stream, class Loop>
 auto ObservePendingRead(Stream& stream, Loop& loop, std::span<std::byte> buffer,
-                        PendingReadObservation& observation) -> coropact::coro::DetachedTask {
+                        PendingReadObservation& observation) -> alyrn::coro::DetachedTask {
   observation.result.emplace(co_await stream.ReadSome(buffer));
   ++observation.resume_count;
-  observation.resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
+  observation.resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   loop.RequestStop();
 }
 
@@ -242,7 +242,7 @@ bool CheckPendingReadSuccessContract() {
   PendingReadObservation observation;
   constexpr std::string_view kPayload = "pending-read";
 
-  coropact::coro::SpawnDetach(loop, ObservePendingRead(stream, loop, buffer, observation));
+  alyrn::coro::SpawnDetach(loop, ObservePendingRead(stream, loop, buffer, observation));
   if (!Harness::RunAfter(loop, std::chrono::milliseconds(5),
                          [fd = peer.Get(), kPayload] { (void)WriteExactly(fd, kPayload); })) {
     return false;
@@ -276,13 +276,13 @@ struct SequentialReadObservation {
   bool timed_out{false};
 };
 
-template <coropact::io::AsyncReadStream Stream, class Loop>
+template <alyrn::io::AsyncReadStream Stream, class Loop>
 auto ObserveSequentialRead(Stream& stream, Loop& loop, std::span<std::byte> first_buffer,
                            std::span<std::byte> second_buffer,
-                           SequentialReadObservation& observation) -> coropact::coro::DetachedTask {
+                           SequentialReadObservation& observation) -> alyrn::coro::DetachedTask {
   observation.first.emplace(co_await stream.ReadSome(first_buffer));
   observation.second.emplace(co_await stream.ReadSome(second_buffer));
-  observation.resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
+  observation.resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   loop.RequestStop();
 }
 
@@ -312,7 +312,7 @@ bool CheckReadReleaseBeforeContinuationContract() {
   std::string payload{kFirstPayload};
   payload.append(kSecondPayload);
 
-  coropact::coro::SpawnDetach(
+  alyrn::coro::SpawnDetach(
       loop, ObserveSequentialRead(stream, loop, first_buffer, second_buffer, observation));
   if (!Harness::RunAfter(loop, std::chrono::milliseconds(5),
                          [fd = peer.Get(), payload] { (void)WriteExactly(fd, payload); })) {
@@ -352,12 +352,12 @@ struct OwnedReadObservation {
   bool timed_out{false};
 };
 
-template <coropact::io::AsyncReadIntoStream Stream, class Loop>
-auto ObserveOwnedRead(Stream& stream, Loop& loop, coropact::io::Buffer buffer,
-                      OwnedReadObservation& observation) -> coropact::coro::DetachedTask {
+template <alyrn::io::AsyncReadIntoStream Stream, class Loop>
+auto ObserveOwnedRead(Stream& stream, Loop& loop, alyrn::io::Buffer buffer,
+                      OwnedReadObservation& observation) -> alyrn::coro::DetachedTask {
   observation.outcome.emplace(co_await stream.ReadInto(std::move(buffer), 32));
   ++observation.resume_count;
-  observation.resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
+  observation.resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   loop.RequestStop();
 }
 
@@ -379,12 +379,12 @@ bool CheckPendingOwnedReadSuccessContract() {
   }
 
   auto stream = Harness::MakeStream(loop, local.Release());
-  coropact::io::Buffer buffer;
+  alyrn::io::Buffer buffer;
   buffer.Append("prefix:");
   OwnedReadObservation observation;
   constexpr std::string_view kPayload = "owned-read";
 
-  coropact::coro::SpawnDetach(loop, ObserveOwnedRead(stream, loop, std::move(buffer), observation));
+  alyrn::coro::SpawnDetach(loop, ObserveOwnedRead(stream, loop, std::move(buffer), observation));
   if (!Harness::RunAfter(loop, std::chrono::milliseconds(5),
                          [fd = peer.Get(), kPayload] { (void)WriteExactly(fd, kPayload); })) {
     return false;
@@ -422,9 +422,9 @@ struct ConcurrentReadObservation {
   bool timed_out{false};
 };
 
-template <coropact::io::AsyncReadStream Stream, class Loop>
+template <alyrn::io::AsyncReadStream Stream, class Loop>
 auto ObserveFirstRead(Stream& stream, Loop& loop, std::span<std::byte> buffer,
-                      ConcurrentReadObservation& observation) -> coropact::coro::DetachedTask {
+                      ConcurrentReadObservation& observation) -> alyrn::coro::DetachedTask {
   observation.first.emplace(co_await stream.ReadSome(buffer));
   ++observation.first_resume_count;
   if (++observation.finished == 2) {
@@ -432,9 +432,9 @@ auto ObserveFirstRead(Stream& stream, Loop& loop, std::span<std::byte> buffer,
   }
 }
 
-template <coropact::io::AsyncReadStream Stream, class Loop>
+template <alyrn::io::AsyncReadStream Stream, class Loop>
 auto ObserveCompetingEmptyRead(Stream& stream, Loop& loop, ConcurrentReadObservation& observation)
-    -> coropact::coro::DetachedTask {
+    -> alyrn::coro::DetachedTask {
   observation.second.emplace(co_await stream.ReadSome(std::span<std::byte>{}));
   ++observation.second_resume_count;
   if (++observation.finished == 2) {
@@ -464,8 +464,8 @@ bool CheckReadLaneExclusivityContract() {
   ConcurrentReadObservation observation;
   constexpr std::string_view kPayload = "first-read";
 
-  coropact::coro::SpawnDetach(loop, ObserveFirstRead(stream, loop, buffer, observation));
-  coropact::coro::SpawnDetach(loop, ObserveCompetingEmptyRead(stream, loop, observation));
+  alyrn::coro::SpawnDetach(loop, ObserveFirstRead(stream, loop, buffer, observation));
+  alyrn::coro::SpawnDetach(loop, ObserveCompetingEmptyRead(stream, loop, observation));
   if (!Harness::RunAfter(loop, std::chrono::milliseconds(5),
                          [fd = peer.Get(), kPayload] { (void)WriteExactly(fd, kPayload); })) {
     return false;
@@ -492,13 +492,13 @@ bool CheckReadLaneExclusivityContract() {
   return ok;
 }
 
-template <coropact::io::AsyncReadIntoStream Stream, class Loop>
-auto ObserveOwnedReadDuringLoopStop(Stream& stream, Loop& loop, coropact::io::Buffer buffer,
+template <alyrn::io::AsyncReadIntoStream Stream, class Loop>
+auto ObserveOwnedReadDuringLoopStop(Stream& stream, Loop& loop, alyrn::io::Buffer buffer,
                                     OwnedReadObservation& observation)
-    -> coropact::coro::DetachedTask {
+    -> alyrn::coro::DetachedTask {
   observation.outcome.emplace(co_await stream.ReadInto(std::move(buffer), 32));
   ++observation.resume_count;
-  observation.resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
+  observation.resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
 }
 
 template <class Harness>
@@ -519,11 +519,11 @@ bool CheckOwnedReadLoopStopContract() {
   }
 
   auto stream = Harness::MakeStream(loop, local.Release());
-  coropact::io::Buffer buffer;
+  alyrn::io::Buffer buffer;
   buffer.Append("preserved");
   OwnedReadObservation observation;
 
-  coropact::coro::SpawnDetach(
+  alyrn::coro::SpawnDetach(
       loop, ObserveOwnedReadDuringLoopStop(stream, loop, std::move(buffer), observation));
   if (!Harness::RunAfter(loop, std::chrono::milliseconds(5), [&loop] { loop.RequestStop(); })) {
     return false;
@@ -556,13 +556,13 @@ struct StopRequestObservation {
   bool resumed_with_scheduler{false};
 };
 
-template <coropact::io::AsyncStream Stream, class Loop>
+template <alyrn::io::AsyncStream Stream, class Loop>
 auto ObserveIoAfterStopRequest(Stream& stream, Loop& loop, StopRequestObservation& observation)
-    -> coropact::coro::DetachedTask {
+    -> alyrn::coro::DetachedTask {
   loop.RequestStop();
   observation.read.emplace(co_await stream.ReadSome(std::span<std::byte>{}));
   observation.write.emplace(co_await stream.WriteAll(std::span<const std::byte>{}));
-  observation.resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
+  observation.resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
 }
 
 template <class Harness>
@@ -584,7 +584,7 @@ bool CheckIoAfterStopRequestContract() {
 
   auto stream = Harness::MakeStream(loop, local.Release());
   StopRequestObservation observation;
-  coropact::coro::SpawnDetach(loop, ObserveIoAfterStopRequest(stream, loop, observation));
+  alyrn::coro::SpawnDetach(loop, ObserveIoAfterStopRequest(stream, loop, observation));
 
   Harness::Run(loop);
 
@@ -606,15 +606,15 @@ struct ShutdownObservation {
   bool resumed_with_scheduler{false};
 };
 
-template <coropact::io::AsyncStream Stream, class Loop>
+template <alyrn::io::AsyncStream Stream, class Loop>
 auto ObserveShutdownContract(Stream& stream, Loop& loop, std::span<std::byte> read_buffer,
                              std::span<const std::byte> write_buffer,
-                             ShutdownObservation& observation) -> coropact::coro::DetachedTask {
+                             ShutdownObservation& observation) -> alyrn::coro::DetachedTask {
   observation.first_shutdown.emplace(co_await stream.Shutdown());
   observation.second_shutdown.emplace(co_await stream.Shutdown());
   observation.rejected_write.emplace(co_await stream.WriteAll(write_buffer));
   observation.read.emplace(co_await stream.ReadSome(read_buffer));
-  observation.resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
+  observation.resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   loop.RequestStop();
 }
 
@@ -649,7 +649,7 @@ bool CheckShutdownContract() {
       std::as_bytes(std::span<const char>(kRejected.data(), kRejected.size()));
   ShutdownObservation observation;
 
-  coropact::coro::SpawnDetach(
+  alyrn::coro::SpawnDetach(
       loop, ObserveShutdownContract(stream, loop, read_buffer, write_buffer, observation));
   Harness::Run(loop);
 
@@ -682,15 +682,15 @@ struct CloseReadObservation {
   bool resumed_with_scheduler{false};
 };
 
-template <coropact::io::AsyncStream Stream, class Loop>
+template <alyrn::io::AsyncStream Stream, class Loop>
 auto ObserveCloseReadContract(Stream& stream, Loop& loop, std::span<std::byte> read_buffer,
                               std::span<const std::byte> write_buffer,
-                              CloseReadObservation& observation) -> coropact::coro::DetachedTask {
+                              CloseReadObservation& observation) -> alyrn::coro::DetachedTask {
   observation.first_close_read.emplace(co_await stream.CloseRead());
   observation.second_close_read.emplace(co_await stream.CloseRead());
   observation.read.emplace(co_await stream.ReadSome(read_buffer));
   observation.write.emplace(co_await stream.WriteAll(write_buffer));
-  observation.resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
+  observation.resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   loop.RequestStop();
 }
 
@@ -725,7 +725,7 @@ bool CheckCloseReadContract() {
       std::as_bytes(std::span<const char>(kOutgoing.data(), kOutgoing.size()));
   CloseReadObservation observation;
 
-  coropact::coro::SpawnDetach(
+  alyrn::coro::SpawnDetach(
       loop, ObserveCloseReadContract(stream, loop, read_buffer, write_buffer, observation));
   Harness::Run(loop);
 
@@ -760,10 +760,10 @@ struct PendingReadCloseReadObservation {
   bool timed_out{false};
 };
 
-template <coropact::io::AsyncStream Stream, class Loop>
+template <alyrn::io::AsyncStream Stream, class Loop>
 auto ObservePendingReadForCloseRead(Stream& stream, Loop& loop, std::span<std::byte> buffer,
                                     PendingReadCloseReadObservation& observation)
-    -> coropact::coro::DetachedTask {
+    -> alyrn::coro::DetachedTask {
   observation.read.emplace(co_await stream.ReadSome(buffer));
   observation.close_read.emplace(co_await stream.CloseRead());
   if (++observation.finished == 2) {
@@ -771,10 +771,10 @@ auto ObservePendingReadForCloseRead(Stream& stream, Loop& loop, std::span<std::b
   }
 }
 
-template <coropact::io::AsyncStream Stream, class Loop>
+template <alyrn::io::AsyncStream Stream, class Loop>
 auto RejectCloseReadWhileReadPending(Stream& stream, Loop& loop,
                                      PendingReadCloseReadObservation& observation)
-    -> coropact::coro::DetachedTask {
+    -> alyrn::coro::DetachedTask {
   observation.rejected_close_read.emplace(co_await stream.CloseRead());
   if (++observation.finished == 2) {
     loop.RequestStop();
@@ -801,10 +801,10 @@ bool CheckPendingReadCloseReadContract() {
   auto stream = Harness::MakeStream(loop, local.Release());
   std::array<std::byte, 16> read_buffer{};
   PendingReadCloseReadObservation observation;
-  coropact::coro::SpawnDetach(
+  alyrn::coro::SpawnDetach(
       loop, ObservePendingReadForCloseRead(stream, loop, read_buffer, observation));
   if (!Harness::RunAfter(loop, std::chrono::milliseconds(1), [&] {
-        coropact::coro::SpawnDetach(loop, RejectCloseReadWhileReadPending(stream, loop, observation));
+        alyrn::coro::SpawnDetach(loop, RejectCloseReadWhileReadPending(stream, loop, observation));
       })) {
     return false;
   }
@@ -849,24 +849,24 @@ struct PendingWriteObservation {
   bool timed_out{false};
 };
 
-template <coropact::io::AsyncWriteStream Stream, class Loop>
+template <alyrn::io::AsyncWriteStream Stream, class Loop>
 auto ObservePendingWrite(Stream& stream, Loop& loop, std::span<const std::byte> buffer,
-                         PendingWriteObservation& observation) -> coropact::coro::DetachedTask {
+                         PendingWriteObservation& observation) -> alyrn::coro::DetachedTask {
   observation.write.emplace(co_await stream.WriteAll(buffer));
   ++observation.write_resume_count;
-  observation.write_resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
+  observation.write_resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   if (++observation.finished == 2) {
     loop.RequestStop();
   }
 }
 
-template <coropact::io::AsyncStream Stream, class Loop>
+template <alyrn::io::AsyncStream Stream, class Loop>
 auto ControlPendingWrite(Stream& stream, Loop& loop, PendingWriteObservation& observation)
-    -> coropact::coro::DetachedTask {
+    -> alyrn::coro::DetachedTask {
   observation.competing_write.emplace(co_await stream.WriteAll(std::span<const std::byte>{}));
   observation.shutdown.emplace(co_await stream.Shutdown());
   observation.close.emplace(co_await stream.Close());
-  observation.control_resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
+  observation.control_resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   if (++observation.finished == 2) {
     loop.RequestStop();
   }
@@ -900,8 +900,8 @@ bool CheckPendingWriteCloseContract() {
   const std::array<std::byte, 1> payload{std::byte{'x'}};
   PendingWriteObservation observation;
 
-  coropact::coro::SpawnDetach(loop, ObservePendingWrite(stream, loop, payload, observation));
-  coropact::coro::SpawnDetach(loop, ControlPendingWrite(stream, loop, observation));
+  alyrn::coro::SpawnDetach(loop, ObservePendingWrite(stream, loop, payload, observation));
+  alyrn::coro::SpawnDetach(loop, ControlPendingWrite(stream, loop, observation));
   if (!Harness::RunAfter(loop, std::chrono::milliseconds(500), [&] {
         observation.timed_out = true;
         loop.RequestStop();
@@ -942,15 +942,15 @@ struct ClosedStreamObservation {
   bool resumed_with_scheduler{false};
 };
 
-template <coropact::io::AsyncStream Stream, class Loop>
+template <alyrn::io::AsyncStream Stream, class Loop>
 auto ObserveClosedStream(Stream& stream, Loop& loop, ClosedStreamObservation& observation)
-    -> coropact::coro::DetachedTask {
+    -> alyrn::coro::DetachedTask {
   observation.first_close.emplace(co_await stream.Close());
   observation.second_close.emplace(co_await stream.Close());
   observation.read.emplace(co_await stream.ReadSome(std::span<std::byte>{}));
   observation.write.emplace(co_await stream.WriteAll(std::span<const std::byte>{}));
   observation.shutdown.emplace(co_await stream.Shutdown());
-  observation.resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
+  observation.resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   loop.RequestStop();
 }
 
@@ -973,7 +973,7 @@ bool CheckClosedStreamContract() {
 
   auto stream = Harness::MakeStream(loop, local.Release());
   ClosedStreamObservation observation;
-  coropact::coro::SpawnDetach(loop, ObserveClosedStream(stream, loop, observation));
+  alyrn::coro::SpawnDetach(loop, ObserveClosedStream(stream, loop, observation));
 
   Harness::Run(loop);
 
@@ -1005,20 +1005,20 @@ struct CloseObservation {
   bool timed_out{false};
 };
 
-template <coropact::io::AsyncStream Stream, class Loop>
+template <alyrn::io::AsyncStream Stream, class Loop>
 auto ObserveCancelledRead(Stream& stream, Loop& loop, std::span<std::byte> buffer,
-                          CloseObservation& observation) -> coropact::coro::DetachedTask {
+                          CloseObservation& observation) -> alyrn::coro::DetachedTask {
   observation.read.emplace(co_await stream.ReadSome(buffer));
   ++observation.read_resume_count;
-  observation.resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
+  observation.resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   if (++observation.finished == 2) {
     loop.RequestStop();
   }
 }
 
-template <coropact::io::AsyncStream Stream, class Loop>
+template <alyrn::io::AsyncStream Stream, class Loop>
 auto ObserveClose(Stream& stream, Loop& loop, CloseObservation& observation)
-    -> coropact::coro::DetachedTask {
+    -> alyrn::coro::DetachedTask {
   observation.close.emplace(co_await stream.Close());
   if (++observation.finished == 2) {
     loop.RequestStop();
@@ -1046,9 +1046,9 @@ bool CheckPendingReadCloseContract() {
   std::array<std::byte, 16> read_buffer{};
   CloseObservation observation;
 
-  coropact::coro::SpawnDetach(loop, ObserveCancelledRead(stream, loop, read_buffer, observation));
+  alyrn::coro::SpawnDetach(loop, ObserveCancelledRead(stream, loop, read_buffer, observation));
   if (!Harness::RunAfter(loop, std::chrono::milliseconds(1), [&] {
-        coropact::coro::SpawnDetach(loop, ObserveClose(stream, loop, observation));
+        alyrn::coro::SpawnDetach(loop, ObserveClose(stream, loop, observation));
       })) {
     return false;
   }
@@ -1103,7 +1103,7 @@ bool CheckBackend() {
 
 int main() {
   bool ok = CheckBackend<EpollHarness>();
-#if defined(COROPACT_ENABLE_URING)
+#if defined(ALYRN_ENABLE_URING)
   ok &= CheckBackend<UringHarness>();
 #endif
   return ok ? 0 : 1;

@@ -3,14 +3,14 @@
 #include <iostream>
 #include <vector>
 
-#include "coropact/ds/intrusive_rbtree.h"
-#include "coropact/time/timer.h"
-#include "coropact/time/timer_tree.h"
+#include "alyrn/ds/intrusive_rbtree.h"
+#include "alyrn/time/timer.h"
+#include "alyrn/time/timer_tree.h"
 
 namespace {
 
 static_assert(
-    std::derived_from<coropact::time::Timer, coropact::ds::RBTreeNode<coropact::time::Timer>>);
+    std::derived_from<alyrn::time::Timer, alyrn::ds::RBTreeNode<alyrn::time::Timer>>);
 
 bool Expect(bool condition, const char* message) {
   if (!condition) {
@@ -21,13 +21,13 @@ bool Expect(bool condition, const char* message) {
 }
 
 bool TestOrdersByExpirationThenSequence() {
-  const auto base = coropact::time::Deadline{};
-  const auto early_deadline = base + coropact::time::Seconds(1);
-  const auto late_deadline = base + coropact::time::Seconds(2);
-  coropact::time::Timer first([] {}, late_deadline, coropact::time::Duration::zero());
-  coropact::time::Timer second([] {}, late_deadline, coropact::time::Duration::zero());
-  coropact::time::Timer early([] {}, early_deadline, coropact::time::Duration::zero());
-  coropact::time::TimerTree timers;
+  const auto base = alyrn::time::Deadline{};
+  const auto early_deadline = base + alyrn::time::Seconds(1);
+  const auto late_deadline = base + alyrn::time::Seconds(2);
+  alyrn::time::Timer first([] {}, late_deadline, alyrn::time::Duration::zero());
+  alyrn::time::Timer second([] {}, late_deadline, alyrn::time::Duration::zero());
+  alyrn::time::Timer early([] {}, early_deadline, alyrn::time::Duration::zero());
+  alyrn::time::TimerTree timers;
 
   if (!Expect(timers.Insert(&second), "insert second") ||
       !Expect(timers.Insert(&first), "insert first") ||
@@ -51,13 +51,13 @@ bool TestOrdersByExpirationThenSequence() {
 }
 
 bool TestExtractPrefixUnlinksAndPreservesOrder() {
-  const auto base = coropact::time::Deadline{};
-  const auto deadline = base + coropact::time::Seconds(3);
-  coropact::time::Timer first([] {}, deadline, coropact::time::Duration::zero());
-  coropact::time::Timer second([] {}, deadline, coropact::time::Duration::zero());
-  coropact::time::Timer later([] {}, base + coropact::time::Seconds(4),
-                              coropact::time::Duration::zero());
-  coropact::time::TimerTree timers;
+  const auto base = alyrn::time::Deadline{};
+  const auto deadline = base + alyrn::time::Seconds(3);
+  alyrn::time::Timer first([] {}, deadline, alyrn::time::Duration::zero());
+  alyrn::time::Timer second([] {}, deadline, alyrn::time::Duration::zero());
+  alyrn::time::Timer later([] {}, base + alyrn::time::Seconds(4),
+                              alyrn::time::Duration::zero());
+  alyrn::time::TimerTree timers;
 
   if (!Expect(timers.Insert(&later), "insert later") ||
       !Expect(timers.Insert(&second), "insert second") ||
@@ -67,8 +67,8 @@ bool TestExtractPrefixUnlinksAndPreservesOrder() {
 
   std::vector<std::int64_t> popped_sequences;
   const std::size_t popped = timers.ExtractPrefix(
-      [deadline](const coropact::time::Timer* timer) { return timer->expiration() <= deadline; },
-      [&](coropact::time::Timer* timer) {
+      [deadline](const alyrn::time::Timer* timer) { return timer->expiration() <= deadline; },
+      [&](alyrn::time::Timer* timer) {
         if (!timer->InTree()) {
           popped_sequences.push_back(timer->sequence());
         }
@@ -88,10 +88,10 @@ bool TestExtractPrefixUnlinksAndPreservesOrder() {
 }
 
 bool TestTimerCanBeReinsertedAfterRestart() {
-  const auto base = coropact::time::Deadline{};
-  coropact::time::Timer repeating([] {}, base + coropact::time::Seconds(5),
-                                  coropact::time::Milliseconds(10));
-  coropact::time::TimerTree timers;
+  const auto base = alyrn::time::Deadline{};
+  alyrn::time::Timer repeating([] {}, base + alyrn::time::Seconds(5),
+                                  alyrn::time::Milliseconds(10));
+  alyrn::time::TimerTree timers;
 
   if (!Expect(timers.Insert(&repeating), "insert repeating")) {
     return false;
@@ -100,7 +100,7 @@ bool TestTimerCanBeReinsertedAfterRestart() {
     return false;
   }
 
-  repeating.Restart(base + coropact::time::Seconds(6));
+  repeating.Restart(base + alyrn::time::Seconds(6));
   if (!Expect(timers.Insert(&repeating), "reinsert repeating")) {
     return false;
   }

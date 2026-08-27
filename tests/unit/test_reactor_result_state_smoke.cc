@@ -9,9 +9,9 @@
 #include <expected>
 #include <utility>
 
-#include "coropact/backend/detail/value_result_state.h"
-#include "coropact/result.h"
-#include "coropact/reactor/detail/result_state.h"
+#include "alyrn/backend/detail/value_result_state.h"
+#include "alyrn/result.h"
+#include "alyrn/reactor/detail/result_state.h"
 
 namespace {
 
@@ -42,18 +42,18 @@ bool ExpectChildAbort(void (*entry)(), const char* message) {
 }
 
 void TakePendingIoState() {
-  coropact::reactor::detail::IoResultState state;
+  alyrn::reactor::detail::IoResultState state;
   (void)state.Take();
 }
 
 void SetIoStateTwice() {
-  coropact::reactor::detail::IoResultState state;
+  alyrn::reactor::detail::IoResultState state;
   state.SetSuccess(1);
   state.SetSuccess(2);
 }
 
 bool TestIoStateTakeConsumesResult() {
-  coropact::reactor::detail::IoResultState state;
+  alyrn::reactor::detail::IoResultState state;
 
   state.SetSuccess(42);
   auto success = state.Take();
@@ -61,7 +61,7 @@ bool TestIoStateTakeConsumesResult() {
             Expect(*success == 42, "packed success must preserve byte count") &&
             Expect(!state.HasResult(), "packed Take must restore pending state");
 
-  state.SetError(coropact::Errno(EPIPE));
+  state.SetError(alyrn::Errno(EPIPE));
   auto error = state.Take();
   ok &= Expect(!error.has_value(), "packed errno must decode as an error") &&
         Expect(error.error().value() == EPIPE, "packed errno must preserve its value") &&
@@ -87,7 +87,7 @@ struct LifetimeProbe {
 };
 
 void TakePendingValueState() {
-  coropact::backend::detail::ValueResultState<LifetimeProbe> state;
+  alyrn::backend::detail::ValueResultState<LifetimeProbe> state;
   (void)state.Take();
 }
 
@@ -101,12 +101,12 @@ bool TestResultStatesRejectInvalidTransitions() {
 }
 
 bool TestValueStateTakeDestroysActiveMember() {
-  using State = coropact::backend::detail::ValueResultState<LifetimeProbe>;
+  using State = alyrn::backend::detail::ValueResultState<LifetimeProbe>;
 
   LifetimeProbe::live_count = 0;
   State state;
   {
-    coropact::Result<LifetimeProbe> input(std::in_place, 7);
+    alyrn::Result<LifetimeProbe> input(std::in_place, 7);
     state.SetResult(std::move(input));
   }
 
@@ -126,15 +126,15 @@ bool TestValueStateTakeDestroysActiveMember() {
 }
 
 bool TestValueStateErrorCanBeReused() {
-  coropact::backend::detail::ValueResultState<LifetimeProbe> state;
+  alyrn::backend::detail::ValueResultState<LifetimeProbe> state;
 
-  state.SetError(coropact::Errno(ECANCELED));
+  state.SetError(alyrn::Errno(ECANCELED));
   auto error = state.Take();
   bool ok = Expect(!error.has_value(), "value state error must decode") &&
             Expect(error.error().value() == ECANCELED, "value state error must preserve errno") &&
             Expect(!state.HasResult(), "value error Take must restore pending state");
 
-  coropact::Result<LifetimeProbe> next(std::in_place, 9);
+  alyrn::Result<LifetimeProbe> next(std::in_place, 9);
   state.SetResult(std::move(next));
   auto value = state.Take();
   return ok && Expect(value.has_value(), "value state must be reusable after error Take") &&

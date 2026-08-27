@@ -101,8 +101,8 @@ jobs:
         run: >
           cmake -B build -G Ninja
           -DCMAKE_BUILD_TYPE=Debug
-          -DCOROPACT_STRICT_WARNINGS=ON
-          -DCOROPACT_ENABLE_KQUEUE_SHIM_TESTS=ON
+          -DALYRN_STRICT_WARNINGS=ON
+          -DALYRN_ENABLE_KQUEUE_SHIM_TESTS=ON
           -DBUILD_BENCHMARKS=ON
           -DCMAKE_CXX_FLAGS="${{ matrix.compiler.cxxflags }}"
 
@@ -157,8 +157,8 @@ jobs:
         run: >
           cmake -B build -G Ninja
           -DCMAKE_BUILD_TYPE=Debug
-          -DCOROPACT_STRICT_WARNINGS=ON
-          -DCOROPACT_ENABLE_URING=ON
+          -DALYRN_STRICT_WARNINGS=ON
+          -DALYRN_ENABLE_URING=ON
           -DBUILD_BENCHMARKS=ON
           -DCMAKE_CXX_FLAGS="${{ matrix.compiler.cxxflags }}"
 
@@ -201,15 +201,15 @@ jobs:
           sudo make install
           sudo ldconfig
 
-      # COROPACT_SANITIZER wires -fsanitize into every target, including the
+      # ALYRN_SANITIZER wires -fsanitize into every target, including the
       # link step, which raw CMAKE_CXX_FLAGS did not do for executables.
       - name: Configure
         run: >
           cmake -B build -G Ninja
           -DCMAKE_BUILD_TYPE=Debug
-          -DCOROPACT_SANITIZER=${{ matrix.san.sanitizer }}
-          -DCOROPACT_ENABLE_URING=ON
-          -DCOROPACT_ENABLE_KQUEUE_SHIM_TESTS=ON
+          -DALYRN_SANITIZER=${{ matrix.san.sanitizer }}
+          -DALYRN_ENABLE_URING=ON
+          -DALYRN_ENABLE_KQUEUE_SHIM_TESTS=ON
           -DBUILD_EXAMPLES=OFF
           -DCMAKE_CXX_FLAGS="-Wno-builtin-macro-redefined -D__cpp_concepts=202002"
 

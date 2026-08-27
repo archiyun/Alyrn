@@ -26,16 +26,16 @@
 #include <string_view>
 #include <utility>
 
-#include "coropact/result.h"
-#include "coropact/coro/scheduler.h"
-#include "coropact/coro/spawn.h"
-#include "coropact/coro/task.h"
-#include "coropact/io/async_listener.h"
-#include "coropact/io/async_stream.h"
-#include "coropact/net/endpoint.h"
-#include "coropact/reactor/listener.h"
-#include "coropact/reactor/loop.h"
-#include "coropact/reactor/stream.h"
+#include "alyrn/result.h"
+#include "alyrn/coro/scheduler.h"
+#include "alyrn/coro/spawn.h"
+#include "alyrn/coro/task.h"
+#include "alyrn/io/async_listener.h"
+#include "alyrn/io/async_stream.h"
+#include "alyrn/net/endpoint.h"
+#include "alyrn/reactor/listener.h"
+#include "alyrn/reactor/loop.h"
+#include "alyrn/reactor/stream.h"
 
 namespace {
 
@@ -58,8 +58,8 @@ std::string_view StripLineEnding(std::string_view line) {
   return line;
 }
 
-template <coropact::io::AsyncStream Stream>
-coropact::coro::DetachedTask Session(Stream stream, long long* active_sessions,
+template <alyrn::io::AsyncStream Stream>
+alyrn::coro::DetachedTask Session(Stream stream, long long* active_sessions,
                                      long long* total_messages) {
   ++(*active_sessions);
 
@@ -128,8 +128,8 @@ coropact::coro::DetachedTask Session(Stream stream, long long* active_sessions,
   --(*active_sessions);
 }
 
-template <coropact::io::AsyncListener Listener>
-coropact::coro::DetachedTask AcceptLoop(Listener* listener, coropact::reactor::Loop* scheduler,
+template <alyrn::io::AsyncListener Listener>
+alyrn::coro::DetachedTask AcceptLoop(Listener* listener, alyrn::reactor::Loop* scheduler,
                                         long long* active_sessions, long long* total_messages) {
   using Stream = typename Listener::StreamType;
 
@@ -140,7 +140,7 @@ coropact::coro::DetachedTask AcceptLoop(Listener* listener, coropact::reactor::L
       co_return;
     }
 
-    coropact::coro::SpawnDetach(
+    alyrn::coro::SpawnDetach(
         *scheduler, Session<Stream>(std::move(*accepted), active_sessions, total_messages));
   }
 }
@@ -152,9 +152,9 @@ int main() {
 
   const auto port = static_cast<std::uint16_t>(EnvInt("PORT", 9090));
 
-  coropact::reactor::Loop loop;
+  alyrn::reactor::Loop loop;
   auto listener_result =
-      coropact::reactor::Listener::Create(&loop, coropact::net::Endpoint(port));
+      alyrn::reactor::Listener::Create(&loop, alyrn::net::Endpoint(port));
   if (!listener_result.has_value()) {
     std::cerr << "failed to create listener: " << listener_result.error().message() << '\n';
     return 1;
@@ -164,7 +164,7 @@ int main() {
   long long active_sessions = 0;
   long long total_messages = 0;
 
-  coropact::coro::SpawnDetach(loop,
+  alyrn::coro::SpawnDetach(loop,
                               AcceptLoop(&listener, &loop, &active_sessions, &total_messages));
 
   std::cout << "reactor coro echo listening on 127.0.0.1:" << port << '\n';

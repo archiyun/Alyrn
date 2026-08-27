@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 //
-// Smoke test for the coropact::coro module (M0):
+// Smoke test for the alyrn::coro module (M0):
 //   a) Task<int> awaited by another Task<int>, result via SyncWait;
 //   b) Task<void> path;
 //   c) Spawn + JoinHandle on a drain-queue Scheduler: Wait, Detach, async join;
@@ -24,25 +24,25 @@
 #include <system_error>
 #include <thread>
 
-#include "coropact/result.h"
-#include "coropact/coro/awaitable.h"
-#include "coropact/coro/scheduler.h"
-#include "coropact/coro/spawn.h"
-#include "coropact/coro/sync_wait.h"
-#include "coropact/coro/task.h"
-#include "coropact/coro/work.h"
+#include "alyrn/result.h"
+#include "alyrn/coro/awaitable.h"
+#include "alyrn/coro/scheduler.h"
+#include "alyrn/coro/spawn.h"
+#include "alyrn/coro/sync_wait.h"
+#include "alyrn/coro/task.h"
+#include "alyrn/coro/work.h"
 
-using coropact::Errno;
-using coropact::Result;
-using coropact::coro::DetachedTask;
-using coropact::coro::JoinHandle;
-using coropact::coro::Scheduler;
-using coropact::coro::Spawn;
-using coropact::coro::SpawnDetach;
-using coropact::coro::SyncWait;
-using coropact::coro::Task;
-using coropact::coro::Work;
-using coropact::coro::WorkQueue;
+using alyrn::Errno;
+using alyrn::Result;
+using alyrn::coro::DetachedTask;
+using alyrn::coro::JoinHandle;
+using alyrn::coro::Scheduler;
+using alyrn::coro::Spawn;
+using alyrn::coro::SpawnDetach;
+using alyrn::coro::SyncWait;
+using alyrn::coro::Task;
+using alyrn::coro::Work;
+using alyrn::coro::WorkQueue;
 
 namespace {
 
@@ -107,17 +107,17 @@ struct BadAwaiter {
 
 // The leaf Task and its composition. Task<int> is the awaitable that satisfies
 // the Awaitable concept used to constrain Spawn/SyncWait inputs.
-static_assert(coropact::coro::Awaitable<Task<int>>);
-static_assert(coropact::coro::Awaitable<Task<void>>);
-static_assert(coropact::coro::Awaitable<RawAwaiter>);
-static_assert(coropact::coro::Awaitable<MemberAwaitable>);
-static_assert(coropact::coro::Awaitable<AdlAwaitable>);
-static_assert(coropact::coro::Awaitable<BothAwaitable>);
-static_assert(std::same_as<coropact::coro::AwaitResult<AdlAwaitable>, int>);
-static_assert(coropact::coro::AwaiterFor<PromiseAwareAwaiter, PromiseMarker>);
-static_assert(coropact::coro::PromiseTransformedAwaitable<TransformPromise, int>);
-static_assert(!coropact::coro::Awaiter<PromiseAwareAwaiter>);
-static_assert(!coropact::coro::Awaiter<BadAwaiter>);
+static_assert(alyrn::coro::Awaitable<Task<int>>);
+static_assert(alyrn::coro::Awaitable<Task<void>>);
+static_assert(alyrn::coro::Awaitable<RawAwaiter>);
+static_assert(alyrn::coro::Awaitable<MemberAwaitable>);
+static_assert(alyrn::coro::Awaitable<AdlAwaitable>);
+static_assert(alyrn::coro::Awaitable<BothAwaitable>);
+static_assert(std::same_as<alyrn::coro::AwaitResult<AdlAwaitable>, int>);
+static_assert(alyrn::coro::AwaiterFor<PromiseAwareAwaiter, PromiseMarker>);
+static_assert(alyrn::coro::PromiseTransformedAwaitable<TransformPromise, int>);
+static_assert(!alyrn::coro::Awaiter<PromiseAwareAwaiter>);
+static_assert(!alyrn::coro::Awaiter<BadAwaiter>);
 
 Task<int> Add(int a, int b) { co_return a + b; }
 
@@ -172,7 +172,7 @@ void RunEmptyWork() {
 }
 
 void RunEmptyResumeWork() {
-  coropact::coro::ResumeWork work;
+  alyrn::coro::ResumeWork work;
   work.Run();
 }
 
@@ -191,18 +191,18 @@ void SpawnEmptyDetachedTask() {
 }
 
 void TakeUnsetSpawnResult() {
-  coropact::coro::detail::ResultSlot<int> result;
+  alyrn::coro::detail::ResultSlot<int> result;
   (void)result.Take();
 }
 
 void SetSpawnResultTwice() {
-  coropact::coro::detail::ResultSlot<int> result;
+  alyrn::coro::detail::ResultSlot<int> result;
   result.Set(1);
   result.Set(2);
 }
 
 void FinishSpawnStateTwice() {
-  coropact::coro::detail::SpawnState<int> state;
+  alyrn::coro::detail::SpawnState<int> state;
   (void)state.Finish();
   (void)state.Finish();
 }
@@ -254,7 +254,7 @@ struct ManualGate {
     scheduler.Schedule(&resume_work);
   }
 
-  coropact::coro::ResumeWork resume_work;
+  alyrn::coro::ResumeWork resume_work;
 };
 
 // The DetachedTask promise inherits ResumeWork, so the business coroutine and

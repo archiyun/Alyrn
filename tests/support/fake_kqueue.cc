@@ -11,7 +11,7 @@
 #include <map>
 #include <utility>
 
-namespace coropact::testing {
+namespace alyrn::testing {
 namespace {
 
 // A registration is keyed by (ident, filter), which is what makes read and
@@ -129,7 +129,7 @@ std::size_t FakeKqueueCountChanges(int fd, std::int16_t filter, std::uint16_t fl
       }));
 }
 
-}  // namespace coropact::testing
+}  // namespace alyrn::testing
 
 extern "C" {
 
@@ -145,7 +145,7 @@ int kevent(int kq, const struct kevent* changelist, int nchanges, struct kevent*
   (void)timeout;
 
   for (int i = 0; i < nchanges; ++i) {
-    if (coropact::testing::ApplyChange(changelist[i]) != 0) {
+    if (alyrn::testing::ApplyChange(changelist[i]) != 0) {
       return -1;
     }
   }
@@ -154,12 +154,12 @@ int kevent(int kq, const struct kevent* changelist, int nchanges, struct kevent*
     return 0;
   }
 
-  auto& state = coropact::testing::State();
+  auto& state = alyrn::testing::State();
   int produced = 0;
 
   auto pending = state.pending.begin();
   while (pending != state.pending.end() && produced < nevents) {
-    const coropact::testing::FilterKey key{pending->fd, pending->filter};
+    const alyrn::testing::FilterKey key{pending->fd, pending->filter};
     const auto entry = state.registrations.find(key);
     if (entry == state.registrations.end()) {
       // The kernel never reports a filter nobody registered.
@@ -187,7 +187,7 @@ int kevent(int kq, const struct kevent* changelist, int nchanges, struct kevent*
   }
 
   if (produced == 0) {
-    if (++state.empty_waits > coropact::testing::kMaxEmptyWaits) {
+    if (++state.empty_waits > alyrn::testing::kMaxEmptyWaits) {
       std::fputs("fake kqueue: loop kept waiting with no readiness and no stop\n", stderr);
       std::abort();
     }

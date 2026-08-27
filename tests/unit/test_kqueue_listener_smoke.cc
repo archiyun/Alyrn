@@ -8,26 +8,26 @@
 #include <optional>
 #include <thread>
 
-#include "coropact/result.h"
-#include "coropact/coro/spawn.h"
-#include "coropact/coro/sync_wait.h"
-#include "coropact/coro/task.h"
-#include "coropact/coro/work.h"
-#include "coropact/io/async_listener.h"
-#include "coropact/kqueue/connector.h"
-#include "coropact/kqueue/listener.h"
-#include "coropact/kqueue/loop.h"
-#include "coropact/kqueue/stream.h"
-#include "coropact/net/endpoint.h"
-#include "coropact/net/socket.h"
+#include "alyrn/result.h"
+#include "alyrn/coro/spawn.h"
+#include "alyrn/coro/sync_wait.h"
+#include "alyrn/coro/task.h"
+#include "alyrn/coro/work.h"
+#include "alyrn/io/async_listener.h"
+#include "alyrn/kqueue/connector.h"
+#include "alyrn/kqueue/listener.h"
+#include "alyrn/kqueue/loop.h"
+#include "alyrn/kqueue/stream.h"
+#include "alyrn/net/endpoint.h"
+#include "alyrn/net/socket.h"
 
 namespace {
 
-using AcceptResult = coropact::Result<typename coropact::kqueue::Listener::StreamType>;
-using AcceptSource = coropact::kqueue::AcceptSource;
+using AcceptResult = alyrn::Result<typename alyrn::kqueue::Listener::StreamType>;
+using AcceptSource = alyrn::kqueue::AcceptSource;
 using AcceptSourceResult = AcceptSource::NextResult;
 
-static_assert(coropact::io::AsyncListener<coropact::kqueue::Listener>);
+static_assert(alyrn::io::AsyncListener<alyrn::kqueue::Listener>);
 
 bool Check(bool condition, const char* message) {
   if (!condition) {
@@ -37,8 +37,8 @@ bool Check(bool condition, const char* message) {
   return true;
 }
 
-int ConnectNonBlocking(const coropact::net::Endpoint& address) {
-  auto fd = coropact::net::CreateNonBlockingSocket(address.NativeFamily());
+int ConnectNonBlocking(const alyrn::net::Endpoint& address) {
+  auto fd = alyrn::net::CreateNonBlockingSocket(address.NativeFamily());
   if (!fd.has_value()) {
     return -1;
   }
@@ -52,49 +52,49 @@ int ConnectNonBlocking(const coropact::net::Endpoint& address) {
   return -1;
 }
 
-class ConnectWork final : public coropact::coro::Work {
+class ConnectWork final : public alyrn::coro::Work {
 public:
-  ConnectWork(coropact::net::Endpoint address, int* fd) noexcept : address_(address), fd_(fd) {
+  ConnectWork(alyrn::net::Endpoint address, int* fd) noexcept : address_(address), fd_(fd) {
     SetRun(&RunConnect);
   }
 
 private:
-  static void RunConnect(coropact::coro::Work* work) noexcept {
+  static void RunConnect(alyrn::coro::Work* work) noexcept {
     auto* self = static_cast<ConnectWork*>(work);
     *self->fd_ = ConnectNonBlocking(self->address_);
   }
 
-  coropact::net::Endpoint address_;
+  alyrn::net::Endpoint address_;
   int* fd_;
 };
 
-class CloseListenerWork final : public coropact::coro::Work {
+class CloseListenerWork final : public alyrn::coro::Work {
 public:
-  CloseListenerWork(coropact::kqueue::Loop* loop,
-                    coropact::kqueue::Listener* listener) noexcept
+  CloseListenerWork(alyrn::kqueue::Loop* loop,
+                    alyrn::kqueue::Listener* listener) noexcept
       : loop_(loop), listener_(listener) {
     SetRun(&RunClose);
   }
 
 private:
-  static void RunClose(coropact::coro::Work* work) noexcept {
+  static void RunClose(alyrn::coro::Work* work) noexcept {
     auto* self = static_cast<CloseListenerWork*>(work);
-    coropact::coro::Spawn(*self->loop_, self->listener_->Close()).Detach();
+    alyrn::coro::Spawn(*self->loop_, self->listener_->Close()).Detach();
   }
 
-  coropact::kqueue::Loop* loop_;
-  coropact::kqueue::Listener* listener_;
+  alyrn::kqueue::Loop* loop_;
+  alyrn::kqueue::Listener* listener_;
 };
 
-coropact::coro::DetachedTask AcceptOnce(coropact::kqueue::Listener* listener,
-                                        coropact::kqueue::Loop* loop,
+alyrn::coro::DetachedTask AcceptOnce(alyrn::kqueue::Listener* listener,
+                                        alyrn::kqueue::Loop* loop,
                                         std::optional<AcceptResult>* out) {
   out->emplace(co_await listener->Accept());
   loop->RequestStop();
 }
 
-coropact::coro::DetachedTask AcceptThenAccept(coropact::kqueue::Listener* listener,
-                                              coropact::kqueue::Loop* loop,
+alyrn::coro::DetachedTask AcceptThenAccept(alyrn::kqueue::Listener* listener,
+                                              alyrn::kqueue::Loop* loop,
                                               std::optional<AcceptResult>* first,
                                               std::optional<AcceptResult>* second) {
   first->emplace(co_await listener->Accept());
@@ -102,8 +102,8 @@ coropact::coro::DetachedTask AcceptThenAccept(coropact::kqueue::Listener* listen
   loop->RequestStop();
 }
 
-coropact::coro::DetachedTask AcceptSourceTwice(AcceptSource* source,
-                                               coropact::kqueue::Loop* loop,
+alyrn::coro::DetachedTask AcceptSourceTwice(AcceptSource* source,
+                                               alyrn::kqueue::Loop* loop,
                                                std::optional<AcceptSourceResult>* first,
                                                std::optional<AcceptSourceResult>* second,
                                                bool* stop_succeeded) {
@@ -114,14 +114,14 @@ coropact::coro::DetachedTask AcceptSourceTwice(AcceptSource* source,
   loop->RequestStop();
 }
 
-coropact::coro::DetachedTask WaitForSourceEnd(AcceptSource* source,
-                                              coropact::kqueue::Loop* loop, bool* got_end) {
+alyrn::coro::DetachedTask WaitForSourceEnd(AcceptSource* source,
+                                              alyrn::kqueue::Loop* loop, bool* got_end) {
   auto result = co_await source->Next();
   *got_end = result.has_value() && !result->has_value();
   loop->RequestStop();
 }
 
-coropact::coro::DetachedTask StopSource(AcceptSource* source, bool* succeeded) {
+alyrn::coro::DetachedTask StopSource(AcceptSource* source, bool* succeeded) {
   auto result = co_await source->Stop();
   *succeeded = result.has_value();
 }
@@ -129,19 +129,19 @@ coropact::coro::DetachedTask StopSource(AcceptSource* source, bool* succeeded) {
 struct CompetingAcceptObservation {
   std::optional<AcceptResult> first;
   std::optional<AcceptResult> second;
-  std::optional<coropact::Result<void>> close;
+  std::optional<alyrn::Result<void>> close;
   int first_resume_count{0};
   int second_resume_count{0};
 };
 
-coropact::coro::DetachedTask ObserveFirstPendingAccept(coropact::kqueue::Listener* listener,
+alyrn::coro::DetachedTask ObserveFirstPendingAccept(alyrn::kqueue::Listener* listener,
                                                        CompetingAcceptObservation* observation) {
   observation->first.emplace(co_await listener->Accept());
   ++observation->first_resume_count;
 }
 
-coropact::coro::DetachedTask ObserveCompetingAccept(coropact::kqueue::Listener* listener,
-                                                    coropact::kqueue::Loop* loop,
+alyrn::coro::DetachedTask ObserveCompetingAccept(alyrn::kqueue::Listener* listener,
+                                                    alyrn::kqueue::Loop* loop,
                                                     CompetingAcceptObservation* observation) {
   observation->second.emplace(co_await listener->Accept());
   ++observation->second_resume_count;
@@ -151,20 +151,20 @@ coropact::coro::DetachedTask ObserveCompetingAccept(coropact::kqueue::Listener* 
 
 bool CheckFactories() {
   auto null_listener =
-      coropact::kqueue::Listener::Create(nullptr, coropact::net::Endpoint(0));
+      alyrn::kqueue::Listener::Create(nullptr, alyrn::net::Endpoint(0));
   if (!Check(!null_listener.has_value() && null_listener.error() == std::errc::invalid_argument,
              "listener factory accepted a null Loop")) {
     return false;
   }
 
-  auto null_connector = coropact::kqueue::Connector::Create(nullptr);
+  auto null_connector = alyrn::kqueue::Connector::Create(nullptr);
   if (!Check(!null_connector.has_value() && null_connector.error() == std::errc::invalid_argument,
              "connector factory accepted a null Loop")) {
     return false;
   }
 
-  coropact::kqueue::Loop loop;
-  auto listener = coropact::kqueue::Listener::Create(&loop, coropact::net::Endpoint(0));
+  alyrn::kqueue::Loop loop;
+  auto listener = alyrn::kqueue::Listener::Create(&loop, alyrn::net::Endpoint(0));
   if (!Check(listener.has_value(), "listener factory failed for a valid socket")) {
     if (!listener.has_value()) {
       std::cout << "factory error: " << listener.error().message() << '\n';
@@ -177,15 +177,15 @@ bool CheckFactories() {
     return false;
   }
 
-  auto conflicting_listener = coropact::kqueue::Listener::Create(&loop, *address);
+  auto conflicting_listener = alyrn::kqueue::Listener::Create(&loop, *address);
   return Check(!conflicting_listener.has_value() &&
                    conflicting_listener.error() == std::errc::address_in_use,
                "listener factory did not return bind errors");
 }
 
 bool CheckPendingAccept() {
-  coropact::kqueue::Loop loop;
-  coropact::kqueue::Listener listener(&loop, coropact::net::Endpoint(0));
+  alyrn::kqueue::Loop loop;
+  alyrn::kqueue::Listener listener(&loop, alyrn::net::Endpoint(0));
 
   auto listen_addr = listener.LocalAddress();
   if (!listen_addr.has_value()) {
@@ -197,7 +197,7 @@ bool CheckPendingAccept() {
   int client_fd = -1;
   ConnectWork connect{*listen_addr, &client_fd};
 
-  coropact::coro::SpawnDetach(loop, AcceptOnce(&listener, &loop, &result));
+  alyrn::coro::SpawnDetach(loop, AcceptOnce(&listener, &loop, &result));
   loop.Schedule(&connect);
   loop.Run();
 
@@ -210,8 +210,8 @@ bool CheckPendingAccept() {
 }
 
 bool CheckAcceptReleasesSlotBeforeContinuation() {
-  coropact::kqueue::Loop loop;
-  coropact::kqueue::Listener listener(&loop, coropact::net::Endpoint(0));
+  alyrn::kqueue::Loop loop;
+  alyrn::kqueue::Listener listener(&loop, alyrn::net::Endpoint(0));
 
   auto listen_addr = listener.LocalAddress();
   if (!Check(listen_addr.has_value(), "listener local address failed")) {
@@ -223,26 +223,26 @@ bool CheckAcceptReleasesSlotBeforeContinuation() {
   int first_client = -1;
   int second_client = -1;
 
-  class DualConnectWork final : public coropact::coro::Work {
+  class DualConnectWork final : public alyrn::coro::Work {
   public:
-    DualConnectWork(coropact::net::Endpoint address, int* first_fd, int* second_fd) noexcept
+    DualConnectWork(alyrn::net::Endpoint address, int* first_fd, int* second_fd) noexcept
         : address_(address), first_fd_(first_fd), second_fd_(second_fd) {
       SetRun(&RunConnect);
     }
 
   private:
-    static void RunConnect(coropact::coro::Work* work) noexcept {
+    static void RunConnect(alyrn::coro::Work* work) noexcept {
       auto* self = static_cast<DualConnectWork*>(work);
       *self->first_fd_ = ConnectNonBlocking(self->address_);
       *self->second_fd_ = ConnectNonBlocking(self->address_);
     }
 
-    coropact::net::Endpoint address_;
+    alyrn::net::Endpoint address_;
     int* first_fd_;
     int* second_fd_;
   } connect{*listen_addr, &first_client, &second_client};
 
-  coropact::coro::SpawnDetach(loop, AcceptThenAccept(&listener, &loop, &first, &second));
+  alyrn::coro::SpawnDetach(loop, AcceptThenAccept(&listener, &loop, &first, &second));
   loop.Schedule(&connect);
   loop.Run();
 
@@ -260,13 +260,13 @@ bool CheckAcceptReleasesSlotBeforeContinuation() {
 }
 
 bool CheckCloseCancelsPendingAccept() {
-  coropact::kqueue::Loop loop;
-  coropact::kqueue::Listener listener(&loop, coropact::net::Endpoint(0));
+  alyrn::kqueue::Loop loop;
+  alyrn::kqueue::Listener listener(&loop, alyrn::net::Endpoint(0));
 
   std::optional<AcceptResult> result;
   CloseListenerWork close{&loop, &listener};
 
-  coropact::coro::SpawnDetach(loop, AcceptOnce(&listener, &loop, &result));
+  alyrn::coro::SpawnDetach(loop, AcceptOnce(&listener, &loop, &result));
   loop.Schedule(&close);
   loop.Run();
 
@@ -277,12 +277,12 @@ bool CheckCloseCancelsPendingAccept() {
 }
 
 bool CheckCompetingAcceptIsRejected() {
-  coropact::kqueue::Loop loop;
-  coropact::kqueue::Listener listener(&loop, coropact::net::Endpoint(0));
+  alyrn::kqueue::Loop loop;
+  alyrn::kqueue::Listener listener(&loop, alyrn::net::Endpoint(0));
   CompetingAcceptObservation observation;
 
-  coropact::coro::SpawnDetach(loop, ObserveFirstPendingAccept(&listener, &observation));
-  coropact::coro::SpawnDetach(loop, ObserveCompetingAccept(&listener, &loop, &observation));
+  alyrn::coro::SpawnDetach(loop, ObserveFirstPendingAccept(&listener, &observation));
+  alyrn::coro::SpawnDetach(loop, ObserveCompetingAccept(&listener, &loop, &observation));
   loop.Run();
 
   return Check(observation.second.has_value() && !observation.second->has_value() &&
@@ -298,8 +298,8 @@ bool CheckCompetingAcceptIsRejected() {
 }
 
 bool CheckAcceptSourceQueueAndStop() {
-  coropact::kqueue::Loop loop;
-  coropact::kqueue::Listener listener(&loop, coropact::net::Endpoint(0));
+  alyrn::kqueue::Loop loop;
+  alyrn::kqueue::Listener listener(&loop, alyrn::net::Endpoint(0));
 
   auto source_result = listener.CreateAcceptSource({.pending_depth = 1, .event_capacity = 1});
   if (!Check(source_result.has_value(), "failed to create kqueue AcceptSource")) {
@@ -318,26 +318,26 @@ bool CheckAcceptSourceQueueAndStop() {
   int first_client = -1;
   int second_client = -1;
 
-  class DualConnectWork final : public coropact::coro::Work {
+  class DualConnectWork final : public alyrn::coro::Work {
   public:
-    DualConnectWork(coropact::net::Endpoint address, int* first_fd, int* second_fd) noexcept
+    DualConnectWork(alyrn::net::Endpoint address, int* first_fd, int* second_fd) noexcept
         : address_(address), first_fd_(first_fd), second_fd_(second_fd) {
       SetRun(&RunConnect);
     }
 
   private:
-    static void RunConnect(coropact::coro::Work* work) noexcept {
+    static void RunConnect(alyrn::coro::Work* work) noexcept {
       auto* self = static_cast<DualConnectWork*>(work);
       *self->first_fd_ = ConnectNonBlocking(self->address_);
       *self->second_fd_ = ConnectNonBlocking(self->address_);
     }
 
-    coropact::net::Endpoint address_;
+    alyrn::net::Endpoint address_;
     int* first_fd_;
     int* second_fd_;
   } connect{*listen_addr, &first_client, &second_client};
 
-  coropact::coro::SpawnDetach(loop,
+  alyrn::coro::SpawnDetach(loop,
                               AcceptSourceTwice(&source, &loop, &first, &second, &stop_succeeded));
   loop.Schedule(&connect);
   loop.Run();
@@ -358,8 +358,8 @@ bool CheckAcceptSourceQueueAndStop() {
 }
 
 bool CheckAcceptSourceStopWakesPendingNext() {
-  coropact::kqueue::Loop loop;
-  coropact::kqueue::Listener listener(&loop, coropact::net::Endpoint(0));
+  alyrn::kqueue::Loop loop;
+  alyrn::kqueue::Listener listener(&loop, alyrn::net::Endpoint(0));
 
   auto source_result = listener.CreateAcceptSource();
   if (!Check(source_result.has_value(), "failed to create pending kqueue AcceptSource")) {
@@ -367,20 +367,20 @@ bool CheckAcceptSourceStopWakesPendingNext() {
   }
   AcceptSource source = std::move(*source_result);
 
-  class StopWork final : public coropact::coro::Work {
+  class StopWork final : public alyrn::coro::Work {
   public:
-    StopWork(coropact::kqueue::Loop* loop, AcceptSource* source, bool* succeeded) noexcept
+    StopWork(alyrn::kqueue::Loop* loop, AcceptSource* source, bool* succeeded) noexcept
         : loop_(loop), source_(source), succeeded_(succeeded) {
       SetRun(&RunStop);
     }
 
   private:
-    static void RunStop(coropact::coro::Work* work) noexcept {
+    static void RunStop(alyrn::coro::Work* work) noexcept {
       auto* self = static_cast<StopWork*>(work);
-      coropact::coro::SpawnDetach(*self->loop_, StopSource(self->source_, self->succeeded_));
+      alyrn::coro::SpawnDetach(*self->loop_, StopSource(self->source_, self->succeeded_));
     }
 
-    coropact::kqueue::Loop* loop_;
+    alyrn::kqueue::Loop* loop_;
     AcceptSource* source_;
     bool* succeeded_;
   };
@@ -388,7 +388,7 @@ bool CheckAcceptSourceStopWakesPendingNext() {
   bool got_end = false;
   bool stop_succeeded = false;
   StopWork stop{&loop, &source, &stop_succeeded};
-  coropact::coro::SpawnDetach(loop, WaitForSourceEnd(&source, &loop, &got_end));
+  alyrn::coro::SpawnDetach(loop, WaitForSourceEnd(&source, &loop, &got_end));
   loop.Schedule(&stop);
   loop.Run();
 
@@ -397,8 +397,8 @@ bool CheckAcceptSourceStopWakesPendingNext() {
 }
 
 bool CheckAcceptSourceListenerCloseWakesPendingNext() {
-  coropact::kqueue::Loop loop;
-  coropact::kqueue::Listener listener(&loop, coropact::net::Endpoint(0));
+  alyrn::kqueue::Loop loop;
+  alyrn::kqueue::Listener listener(&loop, alyrn::net::Endpoint(0));
 
   auto source_result = listener.CreateAcceptSource();
   if (!Check(source_result.has_value(), "failed to create close-test AcceptSource")) {
@@ -408,7 +408,7 @@ bool CheckAcceptSourceListenerCloseWakesPendingNext() {
 
   bool got_end = false;
   CloseListenerWork close{&loop, &listener};
-  coropact::coro::SpawnDetach(loop, WaitForSourceEnd(&source, &loop, &got_end));
+  alyrn::coro::SpawnDetach(loop, WaitForSourceEnd(&source, &loop, &got_end));
   loop.Schedule(&close);
   loop.Run();
 
@@ -416,16 +416,16 @@ bool CheckAcceptSourceListenerCloseWakesPendingNext() {
 }
 
 bool CheckAcceptSourceStopRejectsForeignLoop() {
-  coropact::kqueue::Loop loop;
-  coropact::kqueue::Listener listener(&loop, coropact::net::Endpoint(0));
+  alyrn::kqueue::Loop loop;
+  alyrn::kqueue::Listener listener(&loop, alyrn::net::Endpoint(0));
   auto source_result = listener.CreateAcceptSource();
   if (!Check(source_result.has_value(), "failed to create foreign Stop test source")) {
     return false;
   }
   AcceptSource source = std::move(*source_result);
 
-  std::optional<coropact::Result<void>> stop_result;
-  std::thread foreign([&] { stop_result.emplace(coropact::coro::SyncWait(source.Stop())); });
+  std::optional<alyrn::Result<void>> stop_result;
+  std::thread foreign([&] { stop_result.emplace(alyrn::coro::SyncWait(source.Stop())); });
   foreign.join();
 
   return Check(stop_result.has_value(), "foreign AcceptSource::Stop did not return") &&

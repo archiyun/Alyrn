@@ -6,10 +6,10 @@
 
 #include <cerrno>
 
-#include "coropact/net/endpoint.h"
-#include "coropact/net/socket.h"
+#include "alyrn/net/endpoint.h"
+#include "alyrn/net/socket.h"
 
-namespace coropact::net {
+namespace alyrn::net {
 namespace {
 
 class ScopedFd {
@@ -204,4 +204,4 @@ TEST(SocketTest, QueriesConnectedIPv4Endpoints) {
 }
 
 }  // namespace
-}  // namespace coropact::net
+}  // namespace alyrn::net

@@ -11,7 +11,7 @@
 #include <thread>
 #include <vector>
 
-#include "coropact/memory/memory_pool.h"
+#include "alyrn/memory/memory_pool.h"
 
 namespace {
 
@@ -43,21 +43,21 @@ bool ExpectChildAbort(void (*entry)(), const char* message) {
 }
 
 void DeallocateForeignPointer() {
-    coropact::memory::MemoryPool<sizeof(int), alignof(int), 2> pool;
+    alyrn::memory::MemoryPool<sizeof(int), alignof(int), 2> pool;
     void* foreign = ::operator new(sizeof(void*));
     pool.Deallocate(foreign);
     ::operator delete(foreign);
 }
 
 void DeallocateSameSlotTwice() {
-    coropact::memory::MemoryPool<sizeof(int), alignof(int), 2> pool;
+    alyrn::memory::MemoryPool<sizeof(int), alignof(int), 2> pool;
     void* slot = pool.Allocate();
     pool.Deallocate(slot);
     pool.Deallocate(slot);
 }
 
 bool TestAllocateAndReuse() {
-    coropact::memory::MemoryPool<sizeof(int), alignof(int), 4> pool;
+    alyrn::memory::MemoryPool<sizeof(int), alignof(int), 4> pool;
 
     void* a = pool.Allocate();
     void* b = pool.Allocate();
@@ -74,7 +74,7 @@ bool TestAllocateAndReuse() {
 }
 
 bool TestExhaustion() {
-    coropact::memory::MemoryPool<sizeof(int), alignof(int), 2> pool;
+    alyrn::memory::MemoryPool<sizeof(int), alignof(int), 2> pool;
     void* a = pool.Allocate();
     void* b = pool.Allocate();
     void* c = pool.Allocate();
@@ -86,7 +86,7 @@ bool TestExhaustion() {
 }
 
 bool TestOwns() {
-    coropact::memory::MemoryPool<sizeof(std::uint64_t), alignof(std::uint64_t), 4> pool;
+    alyrn::memory::MemoryPool<sizeof(std::uint64_t), alignof(std::uint64_t), 4> pool;
     void* p = pool.Allocate();
     int stack_value = 0;
 
@@ -99,7 +99,7 @@ bool TestOwns() {
 }
 
 bool TestConcurrentAllocateAndFree() {
-    coropact::memory::MemoryPool<sizeof(int), alignof(int), 256> pool;
+    alyrn::memory::MemoryPool<sizeof(int), alignof(int), 256> pool;
     constexpr int kThreads = 8;
     constexpr int kIterations = 2000;
 

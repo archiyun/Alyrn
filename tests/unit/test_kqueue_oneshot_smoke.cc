@@ -17,17 +17,17 @@
 #include <iostream>
 #include <thread>
 
-#include "coropact/kqueue/detail/channel.h"
-#include "coropact/kqueue/loop.h"
-#include "coropact/kqueue/options.h"
+#include "alyrn/kqueue/detail/channel.h"
+#include "alyrn/kqueue/loop.h"
+#include "alyrn/kqueue/options.h"
 #include "fake_kqueue.h"
 
 namespace {
 
-using coropact::kqueue::Loop;
-using coropact::kqueue::TriggerMode;
-using coropact::kqueue::detail::Channel;
-using namespace coropact::testing;
+using alyrn::kqueue::Loop;
+using alyrn::kqueue::TriggerMode;
+using alyrn::kqueue::detail::Channel;
+using namespace alyrn::testing;
 
 constexpr std::uint16_t kOneShotArm = EV_ADD | EV_ENABLE | EV_ONESHOT;
 constexpr std::uint16_t kLevelArm = EV_ADD | EV_ENABLE;

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "coropact/kqueue/stream.h"
+#include "alyrn/kqueue/stream.h"
 
 #include <sys/socket.h>
 #include <sys/uio.h>
@@ -17,13 +17,13 @@
 #include <span>
 #include <utility>
 
-#include "coropact/base/check.h"
-#include "coropact/kqueue/detail/loop_access.h"
-#include "coropact/net/endpoint.h"
-#include "coropact/net/socket.h"
-#include "coropact/result.h"
+#include "alyrn/base/check.h"
+#include "alyrn/kqueue/detail/loop_access.h"
+#include "alyrn/net/endpoint.h"
+#include "alyrn/net/socket.h"
+#include "alyrn/result.h"
 
-namespace coropact::kqueue {
+namespace alyrn::kqueue {
 
 using detail::LoopAccess;
 
@@ -252,8 +252,8 @@ void Stream::ReadAwaiterState::CompleteInline(Result<std::size_t> result) noexce
 }
 
 void Stream::ReadAwaiterState::CompleteStoredInline() noexcept {
-  COROPACT_CHECK(TryAuthorizeResult(), "Kqueue read result was authorized twice");
-  COROPACT_CHECK(TryAuthorizeRelease(), "Kqueue read release was not authorized after its result");
+  ALYRN_CHECK(TryAuthorizeResult(), "Kqueue read result was authorized twice");
+  ALYRN_CHECK(TryAuthorizeRelease(), "Kqueue read release was not authorized after its result");
 }
 
 void Stream::ReadAwaiterState::SetResult(Result<std::size_t> result) noexcept {
@@ -371,7 +371,7 @@ bool Stream::ReadIntoAwaiter::PrepareReservation() noexcept {
 }
 
 void Stream::ReadIntoAwaiter::FinishAttempt(Result<std::size_t> result) noexcept {
-  COROPACT_CHECK(reservation_active_, "ReadIntoAwaiter completion without a buffer reservation");
+  ALYRN_CHECK(reservation_active_, "ReadIntoAwaiter completion without a buffer reservation");
   if (result.has_value()) {
     buffer_.CommitWrite(*result);
   } else {
@@ -440,8 +440,8 @@ Result<void> Stream::WriteAllAwaiter::await_resume() noexcept {
 
 void Stream::WriteAllAwaiter::CompleteInline(Result<std::size_t> result) noexcept {
   result_.SetResult(result);
-  COROPACT_CHECK(lifecycle_.TryAuthorizeResult(), "Kqueue write result was authorized twice");
-  COROPACT_CHECK(lifecycle_.TryAuthorizeRelease(),
+  ALYRN_CHECK(lifecycle_.TryAuthorizeResult(), "Kqueue write result was authorized twice");
+  ALYRN_CHECK(lifecycle_.TryAuthorizeRelease(),
                  "Kqueue write release was not authorized after its result");
 }
 
@@ -486,12 +486,12 @@ void Stream::WriteAllAwaiter::OnReadyImpl() noexcept {
 
 Stream::Stream(Loop* loop, int fd, net::Endpoint peer, StreamOptions options)
     : loop_(loop), socket_(fd), channel_(loop, fd), peer_(peer) {
-  COROPACT_CHECK(loop_ != nullptr, "Stream: loop must not be null");
-  COROPACT_CHECK(loop_->IsInLoopThread(), "Stream created from wrong Loop thread");
-  COROPACT_CHECK(options.trigger_mode == TriggerMode::kOneShot,
+  ALYRN_CHECK(loop_ != nullptr, "Stream: loop must not be null");
+  ALYRN_CHECK(loop_->IsInLoopThread(), "Stream created from wrong Loop thread");
+  ALYRN_CHECK(options.trigger_mode == TriggerMode::kOneShot,
                  "Stream currently supports only TriggerMode::kOneShot");
   [[maybe_unused]] auto nonblocking = net::SetNonBlocking(fd, true);
-  COROPACT_CHECK(nonblocking.has_value(), "Stream: failed to set non-blocking mode");
+  ALYRN_CHECK(nonblocking.has_value(), "Stream: failed to set non-blocking mode");
   SuppressSigpipe(fd);
 
   channel_.SetTriggerMode(TriggerMode::kOneShot);
@@ -515,7 +515,7 @@ Stream& Stream::operator=(Stream&& other) noexcept {
   }
 
   Loop* other_loop = PrepareMove(other);
-  COROPACT_CHECK(loop_ == nullptr || loop_ == other_loop,
+  ALYRN_CHECK(loop_ == nullptr || loop_ == other_loop,
                  "Stream move requires both objects to use the same Loop");
   if (loop_ != nullptr) {
     ResetForMove();
@@ -538,16 +538,16 @@ Stream::~Stream() {
     return;
   }
   RequireOwnerLoop();
-  COROPACT_CHECK(pending_read_ == nullptr, "Stream destroyed with a pending read");
-  COROPACT_CHECK(pending_write_ == nullptr, "Stream destroyed with a pending write");
+  ALYRN_CHECK(pending_read_ == nullptr, "Stream destroyed with a pending read");
+  ALYRN_CHECK(pending_write_ == nullptr, "Stream destroyed with a pending write");
   LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
   DetachChannel();
 }
 
 int Stream::Release() noexcept {
   RequireOwnerLoop();
-  COROPACT_CHECK(pending_read_ == nullptr, "Stream cannot release with a pending read");
-  COROPACT_CHECK(pending_write_ == nullptr, "Stream cannot release with a pending write");
+  ALYRN_CHECK(pending_read_ == nullptr, "Stream cannot release with a pending read");
+  ALYRN_CHECK(pending_write_ == nullptr, "Stream cannot release with a pending write");
   LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
   DetachChannel();
   loop_ = nullptr;
@@ -656,7 +656,7 @@ Result<void> Stream::SetWriteBuffer(std::size_t bytes) const noexcept {
 }
 
 void Stream::HandleRead() {
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "Stream::HandleRead called from wrong thread");
+  ALYRN_DCHECK(loop_->IsInLoopThread(), "Stream::HandleRead called from wrong thread");
   if (pending_read_ == nullptr) {
     // One-shot delivery already retired the filter; nothing to disarm.
     return;
@@ -674,7 +674,7 @@ void Stream::HandleRead() {
 }
 
 void Stream::HandleWrite() {
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "Stream::HandleWrite called from wrong thread");
+  ALYRN_DCHECK(loop_->IsInLoopThread(), "Stream::HandleWrite called from wrong thread");
   if (pending_write_ == nullptr) {
     return;
   }
@@ -682,20 +682,20 @@ void Stream::HandleWrite() {
 }
 
 void Stream::HandleClose() {
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "Stream::HandleClose called from wrong thread");
+  ALYRN_DCHECK(loop_->IsInLoopThread(), "Stream::HandleClose called from wrong thread");
   CompleteRead(Result<std::size_t>{0});
   CompleteWrite(std::unexpected(Errno(EPIPE)));
 }
 
 void Stream::HandleError() {
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "Stream::HandleError called from wrong thread");
+  ALYRN_DCHECK(loop_->IsInLoopThread(), "Stream::HandleError called from wrong thread");
   Error error = ErrorFromSocketErrorEvent(socket_.fd());
   CompleteRead(std::unexpected(error));
   CompleteWrite(std::unexpected(error));
 }
 
 void Stream::CompleteRead(Result<std::size_t> result) {
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "Stream::CompleteRead called from wrong thread");
+  ALYRN_DCHECK(loop_->IsInLoopThread(), "Stream::CompleteRead called from wrong thread");
   void* awaiter = pending_read_;
   const PendingReadKind kind = pending_read_kind_;
   if (awaiter == nullptr) {
@@ -714,17 +714,17 @@ void Stream::CompleteRead(Result<std::size_t> result) {
       result_authorized = static_cast<ReadIntoAwaiter*>(awaiter)->CompleteResult(std::move(result));
       break;
     case PendingReadKind::kNone:
-      COROPACT_CHECK(false, "Stream::CompleteRead missing operation kind");
+      ALYRN_CHECK(false, "Stream::CompleteRead missing operation kind");
       return;
   }
-  COROPACT_CHECK(result_authorized, "Stream::CompleteRead result was already authorized");
-  COROPACT_CHECK(state != nullptr, "Stream::CompleteRead has no awaiter state");
-  COROPACT_CHECK(state->TryAuthorizeRelease(),
+  ALYRN_CHECK(result_authorized, "Stream::CompleteRead result was already authorized");
+  ALYRN_CHECK(state != nullptr, "Stream::CompleteRead has no awaiter state");
+  ALYRN_CHECK(state->TryAuthorizeRelease(),
                  "Stream::CompleteRead release was not authorized after its result");
 
   void* released = std::exchange(pending_read_, nullptr);
   const PendingReadKind released_kind = std::exchange(pending_read_kind_, PendingReadKind::kNone);
-  COROPACT_CHECK(released == awaiter && released_kind == kind,
+  ALYRN_CHECK(released == awaiter && released_kind == kind,
                  "Stream::CompleteRead pending slot changed during completion");
 
   // One-shot interest is already gone after delivery. A terminal path may
@@ -733,35 +733,35 @@ void Stream::CompleteRead(Result<std::size_t> result) {
   if (channel_.IsReading()) {
     channel_.DisableReading();
   }
-  COROPACT_CHECK(state->TryAuthorizeContinuation(),
+  ALYRN_CHECK(state->TryAuthorizeContinuation(),
                  "Stream::CompleteRead continuation was not authorized after release");
   state->ScheduleContinuation();
 }
 
 void Stream::CompleteWrite(Result<std::size_t> result) {
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "Stream::CompleteWrite called from wrong thread");
+  ALYRN_DCHECK(loop_->IsInLoopThread(), "Stream::CompleteWrite called from wrong thread");
   WriteAllAwaiter* awaiter = pending_write_;
   if (awaiter == nullptr) {
     return;
   }
-  COROPACT_CHECK(awaiter->CompleteResult(std::move(result)),
+  ALYRN_CHECK(awaiter->CompleteResult(std::move(result)),
                  "Stream::CompleteWrite result was already authorized");
-  COROPACT_CHECK(awaiter->TryAuthorizeRelease(),
+  ALYRN_CHECK(awaiter->TryAuthorizeRelease(),
                  "Stream::CompleteWrite release was not authorized after its result");
 
   WriteAllAwaiter* released = std::exchange(pending_write_, nullptr);
-  COROPACT_CHECK(released == awaiter,
+  ALYRN_CHECK(released == awaiter,
                  "Stream::CompleteWrite pending slot changed during completion");
   if (channel_.IsWriting()) {
     channel_.DisableWriting();
   }
-  COROPACT_CHECK(awaiter->TryAuthorizeContinuation(),
+  ALYRN_CHECK(awaiter->TryAuthorizeContinuation(),
                  "Stream::CompleteWrite continuation was not authorized after release");
   awaiter->ScheduleContinuation();
 }
 
 void Stream::CloseNow() noexcept {
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "Stream::CloseNow called from wrong thread");
+  ALYRN_DCHECK(loop_->IsInLoopThread(), "Stream::CloseNow called from wrong thread");
   auto close_prepared = lifecycle_.PrepareClose();
   if (!close_prepared.has_value() || !*close_prepared) {
     return;
@@ -779,7 +779,7 @@ void Stream::CloseNow() noexcept {
 }
 
 void Stream::DetachChannel() {
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "Stream::DetachChannel called from wrong thread");
+  ALYRN_DCHECK(loop_->IsInLoopThread(), "Stream::DetachChannel called from wrong thread");
   if (!channel_.IsNoneEvent()) {
     channel_.DisableAll();
   }
@@ -789,8 +789,8 @@ void Stream::DetachChannel() {
 }
 
 void Stream::RequireOwnerLoop() const noexcept {
-  COROPACT_CHECK(loop_ != nullptr, "Stream operation has no owner Loop");
-  COROPACT_CHECK(loop_->IsInLoopThread(), "Stream operation called from wrong Loop thread");
+  ALYRN_CHECK(loop_ != nullptr, "Stream operation has no owner Loop");
+  ALYRN_CHECK(loop_->IsInLoopThread(), "Stream operation called from wrong Loop thread");
 }
 
 void Stream::DispatchRead(void* context) noexcept { static_cast<Stream*>(context)->HandleRead(); }
@@ -808,26 +808,26 @@ void Stream::BindChannelCallbacks() noexcept {
     channel_.SetCloseCallback(&Stream::DispatchClose, this);
     channel_.SetErrorCallback(&Stream::DispatchError, this);
   } catch (...) {
-    COROPACT_CHECK(false, "Stream: failed to bind channel callbacks");
+    ALYRN_CHECK(false, "Stream: failed to bind channel callbacks");
   }
 }
 
 void Stream::ResetForMove() noexcept {
-  COROPACT_CHECK(loop_ != nullptr, "Stream move destination is not initialized");
-  COROPACT_CHECK(loop_->IsInLoopThread(), "Stream move called from wrong Loop thread");
-  COROPACT_CHECK(pending_read_ == nullptr, "Stream move destination has a pending read");
-  COROPACT_CHECK(pending_write_ == nullptr, "Stream move destination has a pending write");
+  ALYRN_CHECK(loop_ != nullptr, "Stream move destination is not initialized");
+  ALYRN_CHECK(loop_->IsInLoopThread(), "Stream move called from wrong Loop thread");
+  ALYRN_CHECK(pending_read_ == nullptr, "Stream move destination has a pending read");
+  ALYRN_CHECK(pending_write_ == nullptr, "Stream move destination has a pending write");
   LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
   DetachChannel();
   socket_.Close();
 }
 
 Loop* Stream::PrepareMove(Stream& other) noexcept {
-  COROPACT_CHECK(other.loop_ != nullptr, "Stream move source is not initialized");
-  COROPACT_CHECK(other.loop_->IsInLoopThread(), "Stream move called from wrong Loop thread");
-  COROPACT_CHECK(other.pending_read_ == nullptr,
+  ALYRN_CHECK(other.loop_ != nullptr, "Stream move source is not initialized");
+  ALYRN_CHECK(other.loop_->IsInLoopThread(), "Stream move called from wrong Loop thread");
+  ALYRN_CHECK(other.pending_read_ == nullptr,
                  "Stream cannot move with a pending read operation");
-  COROPACT_CHECK(other.pending_write_ == nullptr,
+  ALYRN_CHECK(other.pending_write_ == nullptr,
                  "Stream cannot move with a pending write operation");
 
   other.DetachChannel();
@@ -838,4 +838,4 @@ Loop* Stream::PrepareMove(Stream& other) noexcept {
 
 void Stream::DispatchLoopStop(void* context) noexcept { static_cast<Stream*>(context)->CloseNow(); }
 
-}  // namespace coropact::kqueue
+}  // namespace alyrn::kqueue

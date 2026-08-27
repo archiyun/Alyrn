@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "coropact/reactor/loop.h"
+#include "alyrn/reactor/loop.h"
 
 #include <sys/eventfd.h>
 #include <unistd.h>
@@ -7,16 +7,16 @@
 #include <cerrno>
 #include <cstdint>
 
-#include "coropact/base/check.h"
-#include "coropact/base/current_thread.h"
-#include "coropact/coro/frame_allocator.h"
-#include "coropact/coro/scheduler.h"
-#include "coropact/reactor/detail/channel.h"
-#include "coropact/reactor/detail/poller.h"
-#include "coropact/reactor/detail/timer_queue.h"
-#include "coropact/time/timer_id.h"
+#include "alyrn/base/check.h"
+#include "alyrn/base/current_thread.h"
+#include "alyrn/coro/frame_allocator.h"
+#include "alyrn/coro/scheduler.h"
+#include "alyrn/reactor/detail/channel.h"
+#include "alyrn/reactor/detail/poller.h"
+#include "alyrn/reactor/detail/timer_queue.h"
+#include "alyrn/time/timer_id.h"
 
-namespace coropact::reactor {
+namespace alyrn::reactor {
 
 namespace {
 
@@ -33,22 +33,22 @@ Loop::Loop(time::TimerIndexKind timers, std::pmr::memory_resource* frame_resourc
       thread_id_(base::CurrentThreadId()),
       poller_(Poller::NewDefaultPoller()),
       timer_queue_(std::make_unique<TimerQueue>(this, timers)) {
-  COROPACT_CHECK(t_loop_in_this_thread == nullptr, "Loop: only one Loop may exist per thread");
+  ALYRN_CHECK(t_loop_in_this_thread == nullptr, "Loop: only one Loop may exist per thread");
   t_loop_in_this_thread = this;
 
   wakeup_fd_ = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
-  COROPACT_CHECK(wakeup_fd_ >= 0, "Loop: eventfd creation failed");
+  ALYRN_CHECK(wakeup_fd_ >= 0, "Loop: eventfd creation failed");
   wakeup_channel_ = std::make_unique<Channel>(this, wakeup_fd_);
   wakeup_channel_->SetReadCallback(&Loop::DispatchWakeup, this);
   wakeup_channel_->EnableReading();
 }
 
 Loop::~Loop() noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "Loop destructor called from wrong thread");
-  COROPACT_CHECK(!looping_, "Loop destroyed while looping");
+  ALYRN_CHECK(IsInLoopThread(), "Loop destructor called from wrong thread");
+  ALYRN_CHECK(!looping_, "Loop destroyed while looping");
 
-  COROPACT_CHECK(pending_work_.Empty(), "Loop destroyed with pending owner work");
-  COROPACT_CHECK(shutdown_registry_.Empty(), "Loop destroyed with registered shutdown resources");
+  ALYRN_CHECK(pending_work_.Empty(), "Loop destroyed with pending owner work");
+  ALYRN_CHECK(shutdown_registry_.Empty(), "Loop destroyed with registered shutdown resources");
   DetachWakeupChannel();
   if (wakeup_fd_ >= 0) {
     ::close(wakeup_fd_);
@@ -57,13 +57,13 @@ Loop::~Loop() noexcept {
 }
 
 void Loop::Run(std::stop_token token) noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "Loop::Run called from wrong thread");
-  COROPACT_CHECK(!looping_, "Loop::Run called while already running");
+  ALYRN_CHECK(IsInLoopThread(), "Loop::Run called from wrong thread");
+  ALYRN_CHECK(!looping_, "Loop::Run called while already running");
 
   backend::LoopState expected = backend::LoopState::kCreated;
   if (!state_.compare_exchange_strong(expected, backend::LoopState::kRunning,
                                       std::memory_order_acq_rel, std::memory_order_acquire)) {
-    COROPACT_CHECK(expected == backend::LoopState::kStopping,
+    ALYRN_CHECK(expected == backend::LoopState::kStopping,
                    "Loop::Run may only run a created or stopping loop");
   }
 
@@ -107,47 +107,47 @@ void Loop::RequestStop() noexcept {
 }
 
 void Loop::RunOnOwner(Functor callback) noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "Loop::RunOnOwner called from wrong thread");
+  ALYRN_CHECK(IsInLoopThread(), "Loop::RunOnOwner called from wrong thread");
   callback();
 }
 
 void Loop::Schedule(coro::Work* work) noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "Loop::Schedule called from wrong thread");
-  COROPACT_CHECK(work != nullptr, "Loop::Schedule received null work");
-  COROPACT_CHECK(pending_work_.PushBack(work), "Loop::Schedule received work already in a queue");
+  ALYRN_CHECK(IsInLoopThread(), "Loop::Schedule called from wrong thread");
+  ALYRN_CHECK(work != nullptr, "Loop::Schedule received null work");
+  ALYRN_CHECK(pending_work_.PushBack(work), "Loop::Schedule received work already in a queue");
 }
 
 void Loop::RunPending() {
-  COROPACT_CHECK(IsInLoopThread(), "Loop::RunPending called from wrong thread");
+  ALYRN_CHECK(IsInLoopThread(), "Loop::RunPending called from wrong thread");
   while (HasImmediateWork()) {
     DoPendingWork();
   }
 }
 
 void Loop::UpdateChannel(Channel* channel) {
-  COROPACT_CHECK(IsInLoopThread(), "Loop::UpdateChannel called from wrong thread");
+  ALYRN_CHECK(IsInLoopThread(), "Loop::UpdateChannel called from wrong thread");
   poller_->UpdateChannel(channel);
 }
 
 void Loop::RemoveChannel(Channel* channel) {
-  COROPACT_CHECK(IsInLoopThread(), "Loop::RemoveChannel called from wrong thread");
+  ALYRN_CHECK(IsInLoopThread(), "Loop::RemoveChannel called from wrong thread");
   poller_->RemoveChannel(channel);
 }
 
 bool Loop::HasChannel(Channel* channel) const {
-  COROPACT_CHECK(IsInLoopThread(), "Loop::HasChannel called from wrong thread");
+  ALYRN_CHECK(IsInLoopThread(), "Loop::HasChannel called from wrong thread");
   return poller_->HasChannel(channel);
 }
 
 void Loop::RegisterShutdownParticipant(LoopShutdownParticipant& participant) noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "Loop::RegisterShutdownParticipant called from wrong thread");
-  COROPACT_CHECK(shutdown_registry_.Register(&participant),
+  ALYRN_CHECK(IsInLoopThread(), "Loop::RegisterShutdownParticipant called from wrong thread");
+  ALYRN_CHECK(shutdown_registry_.Register(&participant),
                  "Loop shutdown participant registered twice");
 }
 
 void Loop::UnregisterShutdownParticipant(LoopShutdownParticipant& participant) noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "Loop::UnregisterShutdownParticipant called from wrong thread");
-  COROPACT_CHECK(shutdown_registry_.Unregister(&participant),
+  ALYRN_CHECK(IsInLoopThread(), "Loop::UnregisterShutdownParticipant called from wrong thread");
+  ALYRN_CHECK(shutdown_registry_.Unregister(&participant),
                  "Loop shutdown participant was not registered");
 }
 
@@ -168,7 +168,7 @@ void Loop::DoPendingWork() {
 }
 
 void Loop::BeginShutdown() noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "Loop::BeginShutdown called from wrong thread");
+  ALYRN_CHECK(IsInLoopThread(), "Loop::BeginShutdown called from wrong thread");
   if (shutdown_started_) {
     return;
   }
@@ -179,7 +179,7 @@ void Loop::BeginShutdown() noexcept {
 void Loop::DispatchWakeup(void* context) noexcept { static_cast<Loop*>(context)->DrainWakeup(); }
 
 void Loop::DrainWakeup() noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "Loop::DrainWakeup called from wrong thread");
+  ALYRN_CHECK(IsInLoopThread(), "Loop::DrainWakeup called from wrong thread");
   std::uint64_t value = 0;
   for (;;) {
     const ssize_t read = ::read(wakeup_fd_, &value, sizeof(value));
@@ -189,7 +189,7 @@ void Loop::DrainWakeup() noexcept {
     if (read < 0 && errno == EINTR) {
       continue;
     }
-    COROPACT_CHECK(read < 0 && (errno == EAGAIN || errno == EWOULDBLOCK),
+    ALYRN_CHECK(read < 0 && (errno == EAGAIN || errno == EWOULDBLOCK),
                    "Loop wakeup fd read failed");
     return;
   }
@@ -205,7 +205,7 @@ void Loop::Wakeup() noexcept {
     if (written < 0 && errno == EINTR) {
       continue;
     }
-    COROPACT_CHECK(written < 0 && (errno == EAGAIN || errno == EWOULDBLOCK),
+    ALYRN_CHECK(written < 0 && (errno == EAGAIN || errno == EWOULDBLOCK),
                    "Loop wakeup fd write failed");
     return;
   }
@@ -225,29 +225,29 @@ void Loop::DetachWakeupChannel() noexcept {
 }
 
 bool Loop::HasImmediateWork() const {
-  COROPACT_CHECK(IsInLoopThread(), "Loop::HasImmediateWork called from wrong thread");
+  ALYRN_CHECK(IsInLoopThread(), "Loop::HasImmediateWork called from wrong thread");
   return !pending_work_.Empty();
 }
 
 time::TimerId Loop::RunAt(time::Deadline deadline, Functor callback) {
-  COROPACT_CHECK(IsInLoopThread(), "Loop::RunAt called from wrong thread");
+  ALYRN_CHECK(IsInLoopThread(), "Loop::RunAt called from wrong thread");
   return timer_queue_->AddTimer(std::move(callback), deadline, time::Duration::zero());
 }
 
 time::TimerId Loop::RunAfter(time::Duration delay, Functor callback) {
-  COROPACT_CHECK(IsInLoopThread(), "Loop::RunAfter called from wrong thread");
+  ALYRN_CHECK(IsInLoopThread(), "Loop::RunAfter called from wrong thread");
   return timer_queue_->AddTimer(std::move(callback), time::SteadyNow() + delay,
                                 time::Duration::zero());
 }
 
 time::TimerId Loop::RunEvery(time::Duration interval, Functor callback) {
-  COROPACT_CHECK(IsInLoopThread(), "Loop::RunEvery called from wrong thread");
+  ALYRN_CHECK(IsInLoopThread(), "Loop::RunEvery called from wrong thread");
   return timer_queue_->AddTimer(std::move(callback), time::SteadyNow() + interval, interval);
 }
 
 void Loop::Cancel(time::TimerId id) {
-  COROPACT_CHECK(IsInLoopThread(), "Loop::Cancel called from wrong thread");
+  ALYRN_CHECK(IsInLoopThread(), "Loop::Cancel called from wrong thread");
   timer_queue_->Cancel(id);
 }
 
-}  // namespace coropact::reactor
+}  // namespace alyrn::reactor

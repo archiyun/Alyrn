@@ -5,11 +5,11 @@
 #include <concepts>
 #include <type_traits>
 
-#include "coropact/io/async_connector.h"
-#include "coropact/io/async_listener.h"
-#include "coropact/io/async_stream.h"
+#include "alyrn/io/async_connector.h"
+#include "alyrn/io/async_listener.h"
+#include "alyrn/io/async_stream.h"
 
-namespace coropact::test::contracts {
+namespace alyrn::test::contracts {
 
 template <class Stream>
 concept CoreStream = io::AsyncStream<Stream> && std::move_constructible<Stream>;
@@ -37,4 +37,4 @@ consteval void AssertCoreConnector() {
                 "backend connector does not satisfy AsyncConnector Core contract");
 }
 
-}  // namespace coropact::test::contracts
+}  // namespace alyrn::test::contracts

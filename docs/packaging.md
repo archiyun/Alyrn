@@ -1,10 +1,10 @@
 # Packaging and installation on Linux
 
-CoroPact supports two installation layers:
+Alyrn supports two installation layers:
 
 1. **Portable CMake installation** — the recommended path for every Linux
    distribution. It installs headers, static libraries, and relocatable
-   `CoroPactConfig.cmake` metadata into any prefix.
+   `AlyrnConfig.cmake` metadata into any prefix.
 2. **Native distribution packages** — optional convenience packages such as
    Debian `.deb` and Arch `PKGBUILD` packages. These are not interchangeable:
    a `.deb` is for Debian-family systems, not Arch or Fedora.
@@ -56,7 +56,7 @@ sudo apk add build-base cmake ninja pkgconf liburing-dev
 ```
 
 For a Reactor-only build, omit the liburing package and pass
-`-DCOROPACT_ENABLE_URING=OFF` in the configure command below.
+`-DALYRN_ENABLE_URING=OFF` in the configure command below.
 
 Some stable distributions ship an older liburing development package. If
 `pkg-config --modversion liburing` reports a version below 2.6, either build
@@ -86,39 +86,39 @@ Download the source archive for the release:
 ```bash
 VERSION=0.1.0
 curl -fL \
-  "https://github.com/archiyun/CoroPact/archive/refs/tags/v${VERSION}.tar.gz" \
-  -o "CoroPact-${VERSION}.tar.gz"
-tar -xzf "CoroPact-${VERSION}.tar.gz"
+  "https://github.com/archiyun/Alyrn/archive/refs/tags/v${VERSION}.tar.gz" \
+  -o "Alyrn-${VERSION}.tar.gz"
+tar -xzf "Alyrn-${VERSION}.tar.gz"
 ```
 
 Build and install the io_uring-enabled package into `/usr/local`:
 
 ```bash
-cmake -S "CoroPact-${VERSION}" -B "build-coropact-${VERSION}" -G Ninja \
+cmake -S "Alyrn-${VERSION}" -B "build-alyrn-${VERSION}" -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_TESTS=OFF \
   -DBUILD_EXAMPLES=OFF \
   -DBUILD_BENCHMARKS=OFF \
-  -DCOROPACT_ENABLE_URING=ON \
+  -DALYRN_ENABLE_URING=ON \
   -DCMAKE_INSTALL_PREFIX=/usr/local
 
-cmake --build "build-coropact-${VERSION}"
-sudo cmake --install "build-coropact-${VERSION}"
+cmake --build "build-alyrn-${VERSION}"
+sudo cmake --install "build-alyrn-${VERSION}"
 ```
 
 For a Reactor-only install, use the same command with
-`-DCOROPACT_ENABLE_URING=OFF` and without the liburing dependency.
+`-DALYRN_ENABLE_URING=OFF` and without the liburing dependency.
 
 To install without root privileges, use a user prefix:
 
 ```bash
-cmake -S "CoroPact-${VERSION}" -B build-coropact-user -G Ninja \
+cmake -S "Alyrn-${VERSION}" -B build-alyrn-user -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_TESTS=OFF \
   -DBUILD_EXAMPLES=OFF \
   -DCMAKE_INSTALL_PREFIX=/home/your-user/.local
-cmake --build build-coropact-user
-cmake --install build-coropact-user
+cmake --build build-alyrn-user
+cmake --install build-alyrn-user
 ```
 
 When consuming a user-prefix installation, provide the prefix to CMake:
@@ -133,30 +133,30 @@ cmake -S my-app -B build-my-app \
 The install tree contains files similar to:
 
 ```text
-/usr/local/include/coropact/...
-/usr/local/lib/libcoropact_net.a
-/usr/local/lib/libcoropact_reactor.a
-/usr/local/lib/cmake/CoroPact/CoroPactConfig.cmake
+/usr/local/include/alyrn/...
+/usr/local/lib/libalyrn_net.a
+/usr/local/lib/libalyrn_reactor.a
+/usr/local/lib/cmake/Alyrn/AlyrnConfig.cmake
 ```
 
 A consuming application's `CMakeLists.txt` can use the exported targets:
 
 ```cmake
-find_package(CoroPact CONFIG REQUIRED)
+find_package(Alyrn CONFIG REQUIRED)
 
 add_executable(my_app main.cc)
-target_link_libraries(my_app PRIVATE CoroPact::coropact_reactor)
+target_link_libraries(my_app PRIVATE Alyrn::alyrn_reactor)
 ```
 
 For io_uring:
 
 ```cmake
-find_package(CoroPact CONFIG REQUIRED)
-target_link_libraries(my_app PRIVATE CoroPact::coropact_luring)
+find_package(Alyrn CONFIG REQUIRED)
+target_link_libraries(my_app PRIVATE Alyrn::alyrn_luring)
 ```
 
-On BSD or Darwin, the kqueue target is `CoroPact::coropact_kqueue` when the
-package was configured with `COROPACT_ENABLE_KQUEUE=ON`. See section 8.
+On BSD or Darwin, the kqueue target is `Alyrn::alyrn_kqueue` when the
+package was configured with `ALYRN_ENABLE_KQUEUE=ON`. See section 8.
 
 The installed package recreates external dependencies through CMake; it does
 not embed absolute paths from the developer's source tree.
@@ -169,7 +169,7 @@ Download the Debian asset from the GitHub release and install it with `apt`:
 
 ```bash
 gh release download v0.1.0 \
-  --repo archiyun/CoroPact \
+  --repo archiyun/Alyrn \
   --pattern '*.deb'
 sudo apt install ./*.deb
 ```
@@ -183,8 +183,8 @@ Arch users can build a native package with `makepkg`:
 
 ```bash
 git clone --depth=1 --branch v0.1.0 \
-  https://github.com/archiyun/CoroPact.git
-cd CoroPact/packaging/arch
+  https://github.com/archiyun/Alyrn.git
+cd Alyrn/packaging/arch
 makepkg -si
 ```
 
@@ -207,9 +207,9 @@ filesystem root on a compatible Linux host:
 
 ```bash
 gh release download v0.1.0 \
-  --repo archiyun/CoroPact \
+  --repo archiyun/Alyrn \
   --pattern '*.tar.gz'
-sudo tar -xzf coropact-*.tar.gz -C /
+sudo tar -xzf alyrn-*.tar.gz -C /
 ```
 
 This does not register files with `pacman`, `rpm`, or another package manager.
@@ -223,8 +223,8 @@ demonstration. It listens on every IPv4 interface in the container so its port
 can be published to the host:
 
 ```bash
-docker build -t coropact:local .
-docker run --rm -p 9090:9090 coropact:local
+docker build -t alyrn:local .
+docker run --rm -p 9090:9090 alyrn:local
 ```
 
 In a second terminal, verify it by sending a TCP payload:
@@ -233,16 +233,16 @@ In a second terminal, verify it by sending a TCP payload:
 printf 'hello\n' | nc 127.0.0.1 9090
 ```
 
-Release tags publish this image as `ghcr.io/archiyun/coropact:<tag>` and
-`ghcr.io/archiyun/coropact:latest`. The container demonstrates CoroPact's
-Reactor backend; CoroPact remains a library and application images should use
+Release tags publish this image as `ghcr.io/archiyun/alyrn:<tag>` and
+`ghcr.io/archiyun/alyrn:latest`. The container demonstrates Alyrn's
+Reactor backend; Alyrn remains a library and application images should use
 their own executable as the final image entrypoint.
 
 ## 7. Docker release artifacts
 
 The root `Dockerfile` is a multi-stage artifact builder. It runs the test suite
 and emits `.deb` and `.tar.gz` files; it is not a runtime image because
-CoroPact is a library rather than a daemon:
+Alyrn is a library rather than a daemon:
 
 ```bash
 docker buildx build \
@@ -255,7 +255,7 @@ To build a Reactor-only artifact:
 
 ```bash
 docker buildx build \
-  --build-arg COROPACT_ENABLE_URING=OFF \
+  --build-arg ALYRN_ENABLE_URING=OFF \
   --target artifacts \
   --output=type=local,dest=dist-reactor \
   .
@@ -280,14 +280,14 @@ GitHub Release. The Arch `PKGBUILD` consumes the same tag and source archive.
 
 ## 8. BSD and Darwin: kqueue backend
 
-Linux `.deb` and tarball artifacts do not contain `libcoropact_kqueue`. On
+Linux `.deb` and tarball artifacts do not contain `libalyrn_kqueue`. On
 FreeBSD, NetBSD, OpenBSD, or macOS, enable the backend at configure time:
 
 ```bash
 cmake -S . -B build-kqueue -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_TESTS=ON \
-  -DCOROPACT_ENABLE_KQUEUE=ON \
+  -DALYRN_ENABLE_KQUEUE=ON \
   -DCMAKE_INSTALL_PREFIX=/usr/local
 cmake --build build-kqueue
 ctest --test-dir build-kqueue --output-on-failure
@@ -297,10 +297,10 @@ sudo cmake --install build-kqueue
 A consuming CMake project then links the exported target:
 
 ```cmake
-find_package(CoroPact CONFIG REQUIRED)
-target_link_libraries(my_app PRIVATE CoroPact::coropact_kqueue)
+find_package(Alyrn CONFIG REQUIRED)
+target_link_libraries(my_app PRIVATE Alyrn::alyrn_kqueue)
 ```
 
-`COROPACT_ENABLE_KQUEUE` fails at configure time on Linux. The
-`COROPACT_ENABLE_KQUEUE_SHIM_TESTS` option only builds in-memory `kevent`
+`ALYRN_ENABLE_KQUEUE` fails at configure time on Linux. The
+`ALYRN_ENABLE_KQUEUE_SHIM_TESTS` option only builds in-memory `kevent`
 registration tests; it does not install a kqueue library.

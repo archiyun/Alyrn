@@ -6,12 +6,12 @@
 #include <limits>
 #include <utility>
 
-#include "coropact/result.h"
-#include "coropact/luring/detail/provided_buffer_storage.h"
+#include "alyrn/result.h"
+#include "alyrn/luring/detail/provided_buffer_storage.h"
 
 namespace {
 
-using coropact::luring::detail::ProvidedBufferStorage;
+using alyrn::luring::detail::ProvidedBufferStorage;
 
 void CheckStorage() {
   constexpr std::size_t kCapacity = 4;

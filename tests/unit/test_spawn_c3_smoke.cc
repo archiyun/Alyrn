@@ -24,19 +24,19 @@
 #include <thread>
 #include <utility>
 
-#include "coropact/result.h"
-#include "coropact/coro/scheduler.h"
-#include "coropact/coro/spawn.h"
-#include "coropact/coro/task.h"
-#include "coropact/coro/work.h"
-#include "coropact/reactor/loop.h"
+#include "alyrn/result.h"
+#include "alyrn/coro/scheduler.h"
+#include "alyrn/coro/spawn.h"
+#include "alyrn/coro/task.h"
+#include "alyrn/coro/work.h"
+#include "alyrn/reactor/loop.h"
 
-using coropact::Errno;
-using coropact::Result;
-using coropact::coro::Spawn;
-using coropact::coro::Task;
-using coropact::coro::Work;
-using coropact::reactor::Loop;
+using alyrn::Errno;
+using alyrn::Result;
+using alyrn::coro::Spawn;
+using alyrn::coro::Task;
+using alyrn::coro::Work;
+using alyrn::reactor::Loop;
 
 namespace {
 
@@ -59,7 +59,7 @@ struct FakeConn {
   void Deliver(Result<int> r, Loop* loop) {
     next = std::move(r);
     if (auto h = std::exchange(parked, {})) {
-      loop->RunAfter(coropact::time::Duration::zero(), [h] {
+      loop->RunAfter(alyrn::time::Duration::zero(), [h] {
         if (!h.done()) h.resume();
       });
     }
@@ -102,9 +102,9 @@ int main() {
   // on their first Read.
   Spawn(loop, Serve(&conn_a)).Detach();
   Spawn(loop, Serve(&conn_b)).Detach();
-  g_loop->RunAfter(coropact::time::Duration::zero(),
+  g_loop->RunAfter(alyrn::time::Duration::zero(),
                    [&] { conn_a.Deliver(Result<int>{0}, g_loop); });  // EOF
-  g_loop->RunAfter(coropact::time::Duration::zero(),
+  g_loop->RunAfter(alyrn::time::Duration::zero(),
                    [&] { conn_b.Deliver(std::unexpected(Errno(ECONNRESET)), g_loop); });
   loop.Run();
 

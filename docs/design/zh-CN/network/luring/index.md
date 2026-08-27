@@ -1,6 +1,6 @@
 # luring 功能说明
 
-`luring` 是 CoroPact 基于 Linux `io_uring` 的网络 backend。它向上提供协程友好的
+`luring` 是 Alyrn 基于 Linux `io_uring` 的网络 backend。它向上提供协程友好的
 网络对象，业务代码不需要直接操作 SQE、CQE 或 `io_uring_enter()`。
 
 本文档组描述的是外部可观察的行为：什么时候协程恢复、什么时候结果确定、什么时候
@@ -92,4 +92,4 @@ split-release 生命周期决定何时进入最后两步。
 4. zerocopy 的发送结果与 buffer release 分离。
 5. worker group 的启动、停止、loop 线程归属和可选 CPU affinity。
 
-每个集成测试都应区分“内核/容器不支持导致的 skip”和“CoroPact 语义失败”。
+每个集成测试都应区分“内核/容器不支持导致的 skip”和“Alyrn 语义失败”。

@@ -11,9 +11,9 @@
 #include <thread>
 
 #include "bench_http_common.h"
-#include "coropact/io.h"
-#include "coropact/net/endpoint.h"
-#include "coropact/reactor/detail/worker_group.h"
+#include "alyrn/io.h"
+#include "alyrn/net/endpoint.h"
+#include "alyrn/reactor/detail/worker_group.h"
 
 namespace {
 
@@ -34,11 +34,11 @@ inline void Count(std::atomic<std::uint64_t>& counter) noexcept {
   }
 }
 
-coropact::coro::DetachedTask HttpSession(coropact::reactor::Stream stream) {
+alyrn::coro::DetachedTask HttpSession(alyrn::reactor::Stream stream) {
   Count(g_sessions);
-  std::array<std::byte, coropact_bench::kRequestBufferSize> request{};
+  std::array<std::byte, alyrn_bench::kRequestBufferSize> request{};
   const auto response = std::as_bytes(
-      std::span(coropact_bench::Response().data(), coropact_bench::Response().size()));
+      std::span(alyrn_bench::Response().data(), alyrn_bench::Response().size()));
   std::size_t used = 0;
 
   for (;;) {
@@ -49,7 +49,7 @@ coropact::coro::DetachedTask HttpSession(coropact::reactor::Stream stream) {
     Count(g_reads_completed);
     used += *read;
     const std::size_t scan_from = previous_used >= 3 ? previous_used - 3 : 0;
-    if (!coropact_bench::HasHeaderTerminator(reinterpret_cast<const char*>(request.data()), used,
+    if (!alyrn_bench::HasHeaderTerminator(reinterpret_cast<const char*>(request.data()), used,
                                              scan_from)) {
       if (used == request.size()) break;
       continue;
@@ -71,26 +71,26 @@ int main() {
   std::signal(SIGINT, OnSignal);
   std::signal(SIGTERM, OnSignal);
 
-  const auto port = static_cast<std::uint16_t>(coropact_bench::EnvInt("PORT", 19090));
-  const std::size_t workers = coropact_bench::EnvSize("REACTOR_WORKERS", 8);
-  const bool level_triggered = coropact_bench::EnvString("REACTOR_TRIGGER_MODE") == "lt";
-  const auto trigger_mode = level_triggered ? coropact::reactor::TriggerMode::kLevelTriggered
-                                            : coropact::reactor::TriggerMode::kEdgeTriggered;
-  g_instrument = coropact_bench::EnvInt("REACTOR_INSTRUMENT", 0) != 0;
+  const auto port = static_cast<std::uint16_t>(alyrn_bench::EnvInt("PORT", 19090));
+  const std::size_t workers = alyrn_bench::EnvSize("REACTOR_WORKERS", 8);
+  const bool level_triggered = alyrn_bench::EnvString("REACTOR_TRIGGER_MODE") == "lt";
+  const auto trigger_mode = level_triggered ? alyrn::reactor::TriggerMode::kLevelTriggered
+                                            : alyrn::reactor::TriggerMode::kEdgeTriggered;
+  g_instrument = alyrn_bench::EnvInt("REACTOR_INSTRUMENT", 0) != 0;
   if (port == 0 || workers == 0) return 2;
 
-  auto address = coropact::net::Endpoint::Loopback(port);
-  coropact::reactor::detail::WorkerGroupOptions options;
+  auto address = alyrn::net::Endpoint::Loopback(port);
+  alyrn::reactor::detail::WorkerGroupOptions options;
   options.worker_num = workers;
   options.worker_options.listener_options.reuse_addr = true;
   options.worker_options.listener_options.reuse_port = true;
   options.worker_options.listener_options.stream_options.trigger_mode = trigger_mode;
   options.worker_options.connector_options.stream_options.trigger_mode = trigger_mode;
 
-  coropact::reactor::detail::WorkerGroup server(
+  alyrn::reactor::detail::WorkerGroup server(
       address, std::move(options), {},
-      [](coropact::reactor::detail::WorkerContext&,
-         coropact::reactor::Stream stream) { return HttpSession(std::move(stream)); });
+      [](alyrn::reactor::detail::WorkerContext&,
+         alyrn::reactor::Stream stream) { return HttpSession(std::move(stream)); });
   auto started = server.Start();
   if (!started.has_value()) {
     std::cerr << "WorkerGroup::Start failed: " << started.error().message() << '\n';
@@ -99,7 +99,7 @@ int main() {
 
   std::cout << "HttpReactorBench bind=127.0.0.1 port=" << port << " workers=" << workers
             << " trigger_mode=" << (level_triggered ? "lt" : "et")
-            << " response_body=" << coropact_bench::kResponseBodySize << '\n';
+            << " response_body=" << alyrn_bench::kResponseBodySize << '\n';
   while (!g_stop.load(std::memory_order_relaxed)) {
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
   }

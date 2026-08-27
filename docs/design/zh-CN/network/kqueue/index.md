@@ -1,6 +1,6 @@
 # kqueue
 
-kqueue 是 CoroPact 的 BSD/Darwin readiness 后端。它以非阻塞 socket syscall 与
+kqueue 是 Alyrn 的 BSD/Darwin readiness 后端。它以非阻塞 socket syscall 与
 `kqueue(2)` / `kevent(2)` 为基础，不提交长期存在的 kernel I/O request。
 
 它是第三条**平行 adapter**，不是 `reactor` 里的 `#ifdef`。Linux epoll Reactor 与
@@ -40,10 +40,10 @@ Runtime::Builder<runtime::Kqueue>
 
 源码入口：
 
-- `include/coropact/kqueue.h`（BSD/Darwin 伞头文件）
-- `include/coropact/kqueue/loop.h`
-- `include/coropact/kqueue/stream.h`
-- `include/coropact/kqueue/runtime.h`
+- `include/alyrn/kqueue.h`（BSD/Darwin 伞头文件）
+- `include/alyrn/kqueue/loop.h`
+- `include/alyrn/kqueue/stream.h`
+- `include/alyrn/kqueue/runtime.h`
 - `src/kqueue/`
 
 ## 多 worker 拓扑
@@ -63,10 +63,10 @@ Runtime::Builder<runtime::Kqueue>
 
 | 构建 | CMake | 覆盖范围 |
 | --- | --- | --- |
-| 原生 kqueue | `-DCOROPACT_ENABLE_KQUEUE=ON` | 仅 FreeBSD / NetBSD / OpenBSD / Darwin；含 worker-group 与 Runtime smoke |
-| Linux shim | `-DCOROPACT_ENABLE_KQUEUE_SHIM_TESTS=ON` | 假 `kevent`：oneshot 注册状态机、`Post`；不监视真实 fd |
+| 原生 kqueue | `-DALYRN_ENABLE_KQUEUE=ON` | 仅 FreeBSD / NetBSD / OpenBSD / Darwin；含 worker-group 与 Runtime smoke |
+| Linux shim | `-DALYRN_ENABLE_KQUEUE_SHIM_TESTS=ON` | 假 `kevent`：oneshot 注册状态机、`Post`；不监视真实 fd |
 
-`coropact/kqueue.h` 在非 BSD 宿主上 `#error`。个别实现头文件可以在 Linux 上借助
+`alyrn/kqueue.h` 在非 BSD 宿主上 `#error`。个别实现头文件可以在 Linux 上借助
 `tests/support/kqueue_shim` 编译，那不是对外安装路径。
 
-安装目标是 `CoroPact::coropact_kqueue`（仅当 `COROPACT_ENABLE_KQUEUE` 打开时导出）。
+安装目标是 `Alyrn::alyrn_kqueue`（仅当 `ALYRN_ENABLE_KQUEUE` 打开时导出）。

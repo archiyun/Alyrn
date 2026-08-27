@@ -6,7 +6,7 @@ Accepted for the initial coroutine implementation.
 
 ## Context
 
-CoroPact must allow the same business coroutine to run on the epoll/Reactor backend,
+Alyrn must allow the same business coroutine to run on the epoll/Reactor backend,
 the io_uring backend, and the kqueue backend. The coroutine layer therefore cannot own network
 descriptors, submit I/O, or depend on a concrete runtime.
 
@@ -48,7 +48,7 @@ scheduler or I/O backend.
   backends: `coro/foundation -> net -> Reactor/luring`. The `io` module is a
   higher-level contract/facade layer and may depend on `net` or a selected
   backend, but concrete backends must not include `io` headers or link the
-  `coropact_io` target.
+  `alyrn_io` target.
 - `net::Buffer` owns backend-neutral segmented byte storage and accept-source
   admission state remains a network primitive. `io::Buffer` is the public
   zero-cost spelling for `net::Buffer`. The `io` facade may compose these lower

@@ -7,12 +7,12 @@
 #include <thread>
 #include <utility>
 
-#include "coropact/net.h"
-#include "coropact/reactor.h"
+#include "alyrn/net.h"
+#include "alyrn/reactor.h"
 #include "echo_app.h"
 #include "signal_stop.h"
 
-using namespace coropact;
+using namespace alyrn;
 
 namespace {
 
@@ -36,7 +36,7 @@ int main() {
       net::Endpoint::Any(kPort, net::Endpoint::Family::kIPv4),
       [](auto stream) { return simple_echo::HandleConnection(std::move(stream)); });
 
-  std::println("CoroPact container echo server listening on 0.0.0.0:{}", kPort);
+  std::println("Alyrn container echo server listening on 0.0.0.0:{}", kPort);
   auto ran = runtime.Run(stop_source.get_token());
   (void)stop_source.request_stop();
   if (!ran.has_value()) {

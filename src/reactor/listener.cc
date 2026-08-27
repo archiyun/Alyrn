@@ -7,19 +7,19 @@
 #include <expected>
 #include <utility>
 
-#include "coropact/backend/detail/value_result_state.h"
-#include "coropact/base/check.h"
-#include "coropact/result.h"
-#include "coropact/net/accept_source.h"
-#include "coropact/net/socket.h"
-#include "coropact/operation/detail/completion_gate.h"
-#include "coropact/operation/detail/scheduler_continuation.h"
-#include "coropact/operation/detail/single_result_lifecycle.h"
-#include "coropact/reactor/detail/loop_access.h"
-#include "coropact/reactor/detail/result_state.h"
-#include "coropact/reactor/listener.h"
+#include "alyrn/backend/detail/value_result_state.h"
+#include "alyrn/base/check.h"
+#include "alyrn/result.h"
+#include "alyrn/net/accept_source.h"
+#include "alyrn/net/socket.h"
+#include "alyrn/operation/detail/completion_gate.h"
+#include "alyrn/operation/detail/scheduler_continuation.h"
+#include "alyrn/operation/detail/single_result_lifecycle.h"
+#include "alyrn/reactor/detail/loop_access.h"
+#include "alyrn/reactor/detail/result_state.h"
+#include "alyrn/reactor/listener.h"
 
-namespace coropact::reactor {
+namespace alyrn::reactor {
 
 using detail::LoopAccess;
 
@@ -40,8 +40,8 @@ Error SocketError(int fd) noexcept {
 }
 
 Loop* CheckLoop(Loop* loop) noexcept {
-  COROPACT_CHECK(loop != nullptr, "Listener: loop must not be null");
-  COROPACT_CHECK(loop->IsInLoopThread(), "Listener created from wrong Loop thread");
+  ALYRN_CHECK(loop != nullptr, "Listener: loop must not be null");
+  ALYRN_CHECK(loop->IsInLoopThread(), "Listener created from wrong Loop thread");
   return loop;
 }
 
@@ -78,7 +78,7 @@ Result<net::Socket> TryCreateListenSocket(const net::Endpoint& listen_addr,
 
 int CreateListenSocket(sa_family_t family) {
   auto fd = net::CreateNonBlockingSocket(family);
-  COROPACT_CHECK(fd.has_value(), "Listener: failed to create listening socket");
+  ALYRN_CHECK(fd.has_value(), "Listener: failed to create listening socket");
   return *fd;
 }
 
@@ -124,8 +124,8 @@ private:
 
   void CompleteInline(Result<Stream> result) noexcept {
     result_.SetResult(std::move(result));
-    COROPACT_CHECK(lifecycle_.TryAuthorizeResult(), "Reactor accept result was authorized twice");
-    COROPACT_CHECK(lifecycle_.TryAuthorizeRelease(),
+    ALYRN_CHECK(lifecycle_.TryAuthorizeResult(), "Reactor accept result was authorized twice");
+    ALYRN_CHECK(lifecycle_.TryAuthorizeRelease(),
                    "Reactor accept release was not authorized after its result");
   }
 
@@ -272,9 +272,9 @@ AcceptSource::AcceptSource(AcceptSource&& other) noexcept
       events_(std::move(other.events_)),
       terminal_error_(std::move(other.terminal_error_)),
       pending_next_(nullptr) {
-  COROPACT_CHECK(other.pending_next_ == nullptr,
+  ALYRN_CHECK(other.pending_next_ == nullptr,
                  "AcceptSource cannot move with a pending Next");
-  COROPACT_CHECK(state_.State() != net::detail::AcceptSourceState::kActive &&
+  ALYRN_CHECK(state_.State() != net::detail::AcceptSourceState::kActive &&
                      state_.State() != net::detail::AcceptSourceState::kStopping,
                  "AcceptSource cannot move while it is running");
   if (listener_ != nullptr && listener_->accept_source_ == &other) {
@@ -287,13 +287,13 @@ AcceptSource& AcceptSource::operator=(AcceptSource&& other) noexcept {
     return *this;
   }
 
-  COROPACT_CHECK(pending_next_ == nullptr, "AcceptSource destination has a pending Next");
-  COROPACT_CHECK(state_.State() != net::detail::AcceptSourceState::kActive &&
+  ALYRN_CHECK(pending_next_ == nullptr, "AcceptSource destination has a pending Next");
+  ALYRN_CHECK(state_.State() != net::detail::AcceptSourceState::kActive &&
                      state_.State() != net::detail::AcceptSourceState::kStopping,
                  "AcceptSource destination is running");
-  COROPACT_CHECK(other.pending_next_ == nullptr,
+  ALYRN_CHECK(other.pending_next_ == nullptr,
                  "AcceptSource cannot move with a pending Next");
-  COROPACT_CHECK(other.state_.State() != net::detail::AcceptSourceState::kActive &&
+  ALYRN_CHECK(other.state_.State() != net::detail::AcceptSourceState::kActive &&
                      other.state_.State() != net::detail::AcceptSourceState::kStopping,
                  "AcceptSource cannot move while it is running");
 
@@ -315,15 +315,15 @@ AcceptSource::~AcceptSource() {
   if (listener_ == nullptr) {
     return;
   }
-  COROPACT_CHECK(listener_->loop_->IsInLoopThread(),
+  ALYRN_CHECK(listener_->loop_->IsInLoopThread(),
                  "AcceptSource destructor called from wrong thread");
-  COROPACT_CHECK(pending_next_ == nullptr, "AcceptSource destroyed with a pending Next");
+  ALYRN_CHECK(pending_next_ == nullptr, "AcceptSource destroyed with a pending Next");
   const auto state = state_.State();
-  COROPACT_CHECK(state == net::detail::AcceptSourceState::kIdle ||
+  ALYRN_CHECK(state == net::detail::AcceptSourceState::kIdle ||
                      state == net::detail::AcceptSourceState::kDraining ||
                      state == net::detail::AcceptSourceState::kTerminal,
                  "AcceptSource destroyed before reaching a safe lifecycle state");
-  COROPACT_CHECK(state_.ArmedRequests() == 0, "AcceptSource destroyed with an armed accept");
+  ALYRN_CHECK(state_.ArmedRequests() == 0, "AcceptSource destroyed with an armed accept");
   if (listener_->accept_source_ == this) {
     listener_->accept_source_ = nullptr;
   }
@@ -381,7 +381,7 @@ void AcceptSource::OnReady() noexcept {
     if (!accepted.has_value()) {
       Error error = accepted.error();
       auto completed = state_.CompleteRequest(false);
-      COROPACT_CHECK(completed.has_value(),
+      ALYRN_CHECK(completed.has_value(),
                      "AcceptSource: failed to record accept completion");
       if (IsWouldBlock(error.value())) {
         break;
@@ -394,18 +394,18 @@ void AcceptSource::OnReady() noexcept {
       events_.push_back(std::move(*accepted));
     } catch (...) {
       auto completed = state_.CompleteRequest(false);
-      COROPACT_CHECK(completed.has_value(),
+      ALYRN_CHECK(completed.has_value(),
                      "AcceptSource: failed to record accept completion");
       Fail(Errno(ENOMEM));
       return;
     }
 
     auto completed = state_.CompleteRequest(true);
-    COROPACT_CHECK(completed.has_value(), "AcceptSource: failed to record accepted stream");
+    ALYRN_CHECK(completed.has_value(), "AcceptSource: failed to record accepted stream");
     if (!state_.TryArm()) {
       if (state_.QueuedEvents() >= state_.Options().event_capacity) {
         auto paused = state_.RequestPause();
-        COROPACT_CHECK(paused.has_value(), "AcceptSource: failed to enter the paused state");
+        ALYRN_CHECK(paused.has_value(), "AcceptSource: failed to enter the paused state");
       }
       break;
     }
@@ -421,7 +421,7 @@ void AcceptSource::OnError(Error error) noexcept {
   }
   if (state_.ArmedRequests() != 0) {
     auto completed = state_.CompleteRequest(false);
-    COROPACT_CHECK(completed.has_value(), "AcceptSource: failed to record error completion");
+    ALYRN_CHECK(completed.has_value(), "AcceptSource: failed to record error completion");
   }
   Fail(error);
 }
@@ -432,7 +432,7 @@ void AcceptSource::OnListenerClosed() noexcept {
   }
   if (state_.ArmedRequests() != 0) {
     auto completed = state_.CompleteRequest(false);
-    COROPACT_CHECK(completed.has_value(), "AcceptSource: failed to drain close completion");
+    ALYRN_CHECK(completed.has_value(), "AcceptSource: failed to drain close completion");
   }
   state_.RequestStop();
   DeliverNextIfReady();
@@ -475,7 +475,7 @@ bool AcceptSource::TryTakeNext(NextResult& result) noexcept {
   if (!events_.empty()) {
     Event event(std::in_place, std::move(events_.front()));
     events_.pop_front();
-    COROPACT_CHECK(state_.ConsumeEvent(),
+    ALYRN_CHECK(state_.ConsumeEvent(),
                    "AcceptSource: queue and state became inconsistent");
     result = NextResult(std::in_place, std::move(event));
     if (state_.State() == net::detail::AcceptSourceState::kPaused) {
@@ -597,7 +597,7 @@ Listener& Listener::operator=(Listener&& other) noexcept {
   }
 
   Loop* other_loop = PrepareMove(other);
-  COROPACT_CHECK(loop_ == nullptr || loop_ == other_loop,
+  ALYRN_CHECK(loop_ == nullptr || loop_ == other_loop,
                  "Listener move requires both objects to use the same Loop");
   if (loop_ != nullptr) {
     ResetForMove();
@@ -622,8 +622,8 @@ Listener::~Listener() {
     return;
   }
   RequireOwnerLoop();
-  COROPACT_CHECK(pending_accept_ == nullptr, "Listener destroyed with a pending accept");
-  COROPACT_CHECK(accept_source_ == nullptr,
+  ALYRN_CHECK(pending_accept_ == nullptr, "Listener destroyed with a pending accept");
+  ALYRN_CHECK(accept_source_ == nullptr,
                  "Listener destroyed with an active AcceptSource");
   LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
   DetachChannel();
@@ -667,7 +667,7 @@ coro::Task<Result<void>> Listener::Close() {
 }
 
 void Listener::CloseNow() noexcept {
-  COROPACT_DCHECK(loop_->IsInLoopThread(), "Listener::CloseNow called from wrong thread");
+  ALYRN_DCHECK(loop_->IsInLoopThread(), "Listener::CloseNow called from wrong thread");
   if (closed_) {
     return;
   }
@@ -720,24 +720,24 @@ void Listener::CompleteAccept(Result<Stream> result) {
   if (awaiter == nullptr) {
     return;
   }
-  COROPACT_CHECK(awaiter->CompleteResult(std::move(result)),
+  ALYRN_CHECK(awaiter->CompleteResult(std::move(result)),
                  "Listener::CompleteAccept result was already authorized");
-  COROPACT_CHECK(awaiter->TryAuthorizeRelease(),
+  ALYRN_CHECK(awaiter->TryAuthorizeRelease(),
                  "Listener::CompleteAccept release was not authorized after its result");
 
   AcceptAwaiter* released = std::exchange(pending_accept_, nullptr);
-  COROPACT_CHECK(released == awaiter,
+  ALYRN_CHECK(released == awaiter,
                  "Listener::CompleteAccept pending slot changed during completion");
   if (channel_.IsReading()) {
     channel_.DisableReading();
   }
-  COROPACT_CHECK(awaiter->TryAuthorizeContinuation(),
+  ALYRN_CHECK(awaiter->TryAuthorizeContinuation(),
                  "Listener::CompleteAccept continuation was not authorized after release");
   awaiter->ScheduleContinuation();
 }
 
 void Listener::DetachChannel() {
-  COROPACT_DCHECK(loop_->IsInLoopThread(),
+  ALYRN_DCHECK(loop_->IsInLoopThread(),
                   "Listener::DetachChannel called from wrong thread");
   if (!channel_.IsNoneEvent()) {
     channel_.DisableAll();
@@ -748,8 +748,8 @@ void Listener::DetachChannel() {
 }
 
 void Listener::RequireOwnerLoop() const noexcept {
-  COROPACT_CHECK(loop_ != nullptr, "Listener operation has no owner Loop");
-  COROPACT_CHECK(loop_->IsInLoopThread(),
+  ALYRN_CHECK(loop_ != nullptr, "Listener operation has no owner Loop");
+  ALYRN_CHECK(loop_->IsInLoopThread(),
                  "Listener operation called from wrong Loop thread");
 }
 
@@ -758,17 +758,17 @@ void Listener::BindChannelCallbacks() noexcept {
     channel_.SetReadCallback(&Listener::DispatchRead, this);
     channel_.SetErrorCallback(&Listener::DispatchError, this);
   } catch (...) {
-    COROPACT_CHECK(false, "Listener: failed to bind channel callbacks");
+    ALYRN_CHECK(false, "Listener: failed to bind channel callbacks");
   }
 }
 
 void Listener::ResetForMove() noexcept {
-  COROPACT_CHECK(loop_ != nullptr, "Listener move destination is not initialized");
-  COROPACT_CHECK(loop_->IsInLoopThread(),
+  ALYRN_CHECK(loop_ != nullptr, "Listener move destination is not initialized");
+  ALYRN_CHECK(loop_->IsInLoopThread(),
                  "Listener move called from wrong Loop thread");
-  COROPACT_CHECK(pending_accept_ == nullptr,
+  ALYRN_CHECK(pending_accept_ == nullptr,
                  "Listener move destination has a pending accept");
-  COROPACT_CHECK(accept_source_ == nullptr,
+  ALYRN_CHECK(accept_source_ == nullptr,
                  "Listener move destination has an active AcceptSource");
   LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
   DetachChannel();
@@ -776,12 +776,12 @@ void Listener::ResetForMove() noexcept {
 }
 
 Loop* Listener::PrepareMove(Listener& other) noexcept {
-  COROPACT_CHECK(other.loop_ != nullptr, "Listener move source is not initialized");
-  COROPACT_CHECK(other.loop_->IsInLoopThread(),
+  ALYRN_CHECK(other.loop_ != nullptr, "Listener move source is not initialized");
+  ALYRN_CHECK(other.loop_->IsInLoopThread(),
                  "Listener move called from wrong Loop thread");
-  COROPACT_CHECK(other.pending_accept_ == nullptr,
+  ALYRN_CHECK(other.pending_accept_ == nullptr,
                  "Listener cannot move with a pending accept operation");
-  COROPACT_CHECK(other.accept_source_ == nullptr,
+  ALYRN_CHECK(other.accept_source_ == nullptr,
                  "Listener cannot move with an active AcceptSource");
 
   other.DetachChannel();
@@ -795,4 +795,4 @@ void Listener::DispatchLoopStop(void* context) noexcept {
   static_cast<Listener*>(context)->CloseNow();
 }
 
-}  // namespace coropact::reactor
+}  // namespace alyrn::reactor

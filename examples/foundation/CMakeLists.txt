@@ -1,4 +1,4 @@
-# foundation 层 examples —— 依赖 coropact_foundation
+# foundation 层 examples —— 依赖 alyrn_foundation
 #   demo_rbtree  : base/rbtree.h 红黑树
 
 add_executable(demo_rbtree
@@ -6,5 +6,5 @@ add_executable(demo_rbtree
 )
 target_link_libraries(demo_rbtree
     PRIVATE
-        coropact_foundation
+        alyrn_foundation
 )

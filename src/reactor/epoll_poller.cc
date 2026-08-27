@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
-#include "coropact/reactor/detail/epoll_poller.h"
+#include "alyrn/reactor/detail/epoll_poller.h"
 
 #include <unistd.h>
 
 #include <cerrno>
 
-#include "coropact/base/check.h"
-#include "coropact/reactor/detail/channel.h"
+#include "alyrn/base/check.h"
+#include "alyrn/reactor/detail/channel.h"
 
-namespace coropact::reactor::detail {
+namespace alyrn::reactor::detail {
 namespace {
 
 // Channel registration state within EPollPoller.
@@ -53,7 +53,7 @@ static int FromEpollEvents(uint32_t epoll_events) {
 EPollPoller::EPollPoller()
     : epollfd_(::epoll_create1(EPOLL_CLOEXEC)), events_(kInitEventListSize) {
   if (epollfd_ < 0) {
-    COROPACT_CHECK(false, "EPollPoller: epoll_create1 failed");
+    ALYRN_CHECK(false, "EPollPoller: epoll_create1 failed");
   }
 }
 
@@ -77,7 +77,7 @@ void EPollPoller::Poll(int timeout_ms, ChannelList* active_channels) {
       events_.resize(events_.size() * 2);
     }
   } else if (num_events < 0 && saved_errno != EINTR) {
-    COROPACT_CHECK(false, "EPollPoller: epoll_wait failed");
+    ALYRN_CHECK(false, "EPollPoller: epoll_wait failed");
   }
 
 }
@@ -137,8 +137,8 @@ void EPollPoller::Update(int operation, Channel* channel) {
   event.data.ptr = channel;
 
   if (::epoll_ctl(epollfd_, operation, channel->Fd(), &event) < 0) {
-    COROPACT_CHECK(false, "EPollPoller: epoll_ctl failed");
+    ALYRN_CHECK(false, "EPollPoller: epoll_ctl failed");
   }
 }
 
-}  // namespace coropact::reactor::detail
+}  // namespace alyrn::reactor::detail

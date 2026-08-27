@@ -9,8 +9,8 @@ target_include_directories(recv_source_state_fuzzer
 
 target_link_libraries(recv_source_state_fuzzer
     PRIVATE
-        coropact_io_contract
-        coropact_foundation
+        alyrn_io_contract
+        alyrn_foundation
 )
 
 target_compile_features(recv_source_state_fuzzer PRIVATE cxx_std_23)

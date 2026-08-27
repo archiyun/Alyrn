@@ -21,7 +21,7 @@
  * observed from real descriptors, so the shim proves what the backend asks the
  * kernel for and how it reacts to what it is handed back.
  */
-namespace coropact::testing {
+namespace alyrn::testing {
 
 // One entry of what the shim currently holds, mirroring a kernel registration.
 struct FakeKqueueFilter {
@@ -67,4 +67,4 @@ void FakeKqueueClearChangeLog();
 [[nodiscard]]
 std::size_t FakeKqueueCountChanges(int fd, std::int16_t filter, std::uint16_t flags);
 
-}  // namespace coropact::testing
+}  // namespace alyrn::testing

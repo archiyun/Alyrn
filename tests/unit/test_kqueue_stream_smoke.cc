@@ -25,29 +25,29 @@
 #include <thread>
 #include <vector>
 
-#include "coropact/result.h"
-#include "coropact/coro/scheduler.h"
-#include "coropact/coro/spawn.h"
-#include "coropact/coro/sync_wait.h"
-#include "coropact/coro/task.h"
-#include "coropact/coro/work.h"
-#include "coropact/io/async_stream.h"
-#include "coropact/io/buffer.h"
-#include "coropact/io/read_into.h"
-#include "coropact/kqueue/loop.h"
-#include "coropact/kqueue/stream.h"
-#include "coropact/net/socket.h"
-#include "coropact/time/clock.h"
+#include "alyrn/result.h"
+#include "alyrn/coro/scheduler.h"
+#include "alyrn/coro/spawn.h"
+#include "alyrn/coro/sync_wait.h"
+#include "alyrn/coro/task.h"
+#include "alyrn/coro/work.h"
+#include "alyrn/io/async_stream.h"
+#include "alyrn/io/buffer.h"
+#include "alyrn/io/read_into.h"
+#include "alyrn/kqueue/loop.h"
+#include "alyrn/kqueue/stream.h"
+#include "alyrn/net/socket.h"
+#include "alyrn/time/clock.h"
 
 namespace {
 
-using ReadResult = coropact::Result<std::size_t>;
-using WriteResult = coropact::Result<void>;
-using OwnedReadOutcome = coropact::io::ReadIntoOutcome;
+using ReadResult = alyrn::Result<std::size_t>;
+using WriteResult = alyrn::Result<void>;
+using OwnedReadOutcome = alyrn::io::ReadIntoOutcome;
 
-static_assert(coropact::io::AsyncStream<coropact::kqueue::Stream>);
-static_assert(coropact::io::AsyncTimedStream<coropact::kqueue::Stream>);
-static_assert(coropact::io::AsyncReadIntoStream<coropact::kqueue::Stream>);
+static_assert(alyrn::io::AsyncStream<alyrn::kqueue::Stream>);
+static_assert(alyrn::io::AsyncTimedStream<alyrn::kqueue::Stream>);
+static_assert(alyrn::io::AsyncReadIntoStream<alyrn::kqueue::Stream>);
 
 bool Check(bool condition, const char* message) {
   if (!condition) {
@@ -61,13 +61,13 @@ bool MakeSocketPair(int sv[2]) {
   if (::socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) {
     return false;
   }
-  return coropact::net::SetNonBlocking(sv[0]).has_value() &&
-         coropact::net::SetNonBlocking(sv[1]).has_value() &&
-         coropact::net::SetCloseOnExec(sv[0]).has_value() &&
-         coropact::net::SetCloseOnExec(sv[1]).has_value();
+  return alyrn::net::SetNonBlocking(sv[0]).has_value() &&
+         alyrn::net::SetNonBlocking(sv[1]).has_value() &&
+         alyrn::net::SetCloseOnExec(sv[0]).has_value() &&
+         alyrn::net::SetCloseOnExec(sv[1]).has_value();
 }
 
-std::string Gather(coropact::io::Buffer& buffer) {
+std::string Gather(alyrn::io::Buffer& buffer) {
   std::string out;
   for (const iovec& iov : buffer.ReadableIov(32)) {
     out.append(static_cast<const char*>(iov.iov_base), iov.iov_len);
@@ -75,86 +75,86 @@ std::string Gather(coropact::io::Buffer& buffer) {
   return out;
 }
 
-coropact::coro::DetachedTask ReadOnce(coropact::kqueue::Stream* stream,
-                                      coropact::kqueue::Loop* loop,
-                                      coropact::kqueue::Loop* scheduler,
+alyrn::coro::DetachedTask ReadOnce(alyrn::kqueue::Stream* stream,
+                                      alyrn::kqueue::Loop* loop,
+                                      alyrn::kqueue::Loop* scheduler,
                                       std::array<std::byte, 16>* buffer,
                                       std::optional<ReadResult>* out,
                                       bool* resumed_with_scheduler) {
   ReadResult result = co_await stream->ReadSome(*buffer);
-  *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == scheduler;
+  *resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == scheduler;
   out->emplace(std::move(result));
   loop->RequestStop();
 }
 
-coropact::coro::DetachedTask TimedReadThenRead(
-    coropact::kqueue::Stream* stream, coropact::kqueue::Loop* loop,
-    coropact::kqueue::Loop* scheduler, std::span<std::byte> timed_buffer,
+alyrn::coro::DetachedTask TimedReadThenRead(
+    alyrn::kqueue::Stream* stream, alyrn::kqueue::Loop* loop,
+    alyrn::kqueue::Loop* scheduler, std::span<std::byte> timed_buffer,
     std::span<std::byte> next_buffer, std::optional<ReadResult>* timed_result,
     std::optional<ReadResult>* next_result, bool* resumed_with_scheduler) {
   timed_result->emplace(co_await stream->ReadSomeFor(timed_buffer, std::chrono::seconds{1}));
   next_result->emplace(co_await stream->ReadSome(next_buffer));
-  *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == scheduler;
+  *resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == scheduler;
   loop->RequestStop();
 }
 
-coropact::coro::DetachedTask TimedReadOnce(coropact::kqueue::Stream* stream,
-                                           coropact::kqueue::Loop* loop,
-                                           coropact::kqueue::Loop* scheduler,
-                                           std::span<std::byte> buffer, coropact::time::Duration timeout,
+alyrn::coro::DetachedTask TimedReadOnce(alyrn::kqueue::Stream* stream,
+                                           alyrn::kqueue::Loop* loop,
+                                           alyrn::kqueue::Loop* scheduler,
+                                           std::span<std::byte> buffer, alyrn::time::Duration timeout,
                                            std::optional<ReadResult>* out,
                                            bool* resumed_with_scheduler, int* resume_count) {
   ReadResult result = co_await stream->ReadSomeFor(buffer, timeout);
   ++*resume_count;
-  *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == scheduler;
+  *resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == scheduler;
   out->emplace(std::move(result));
   loop->RequestStop();
 }
 
-coropact::coro::DetachedTask ReadWithoutQuit(coropact::kqueue::Stream* stream,
-                                             coropact::kqueue::Loop* scheduler,
+alyrn::coro::DetachedTask ReadWithoutQuit(alyrn::kqueue::Stream* stream,
+                                             alyrn::kqueue::Loop* scheduler,
                                              std::array<std::byte, 16>* buffer,
                                              std::optional<ReadResult>* out, int* resume_count,
                                              bool* resumed_with_scheduler) {
   ReadResult result = co_await stream->ReadSome(*buffer);
   ++*resume_count;
-  *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == scheduler;
+  *resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == scheduler;
   out->emplace(std::move(result));
 }
 
-coropact::coro::DetachedTask ReadIntoOnce(coropact::kqueue::Stream* stream,
-                                          coropact::kqueue::Loop* loop,
-                                          coropact::kqueue::Loop* scheduler,
-                                          coropact::net::Buffer buffer,
+alyrn::coro::DetachedTask ReadIntoOnce(alyrn::kqueue::Stream* stream,
+                                          alyrn::kqueue::Loop* loop,
+                                          alyrn::kqueue::Loop* scheduler,
+                                          alyrn::net::Buffer buffer,
                                           std::optional<OwnedReadOutcome>* out,
                                           bool* resumed_with_scheduler) {
   OwnedReadOutcome outcome = co_await stream->ReadInto(std::move(buffer), 32);
-  *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == scheduler;
+  *resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == scheduler;
   out->emplace(std::move(outcome));
   loop->RequestStop();
 }
 
-coropact::coro::DetachedTask WriteOnce(coropact::kqueue::Stream* stream,
-                                       coropact::kqueue::Loop* loop,
-                                       coropact::kqueue::Loop* scheduler,
+alyrn::coro::DetachedTask WriteOnce(alyrn::kqueue::Stream* stream,
+                                       alyrn::kqueue::Loop* loop,
+                                       alyrn::kqueue::Loop* scheduler,
                                        std::span<const std::byte> payload,
                                        std::optional<WriteResult>* out,
                                        bool* resumed_with_scheduler) {
   WriteResult result = co_await stream->WriteAll(payload);
-  *resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == scheduler;
+  *resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == scheduler;
   out->emplace(std::move(result));
   loop->RequestStop();
 }
 
-coropact::coro::DetachedTask EchoServer(coropact::kqueue::Stream* stream,
+alyrn::coro::DetachedTask EchoServer(alyrn::kqueue::Stream* stream,
                                         std::array<std::byte, 64>* scratch,
-                                        std::optional<coropact::Result<void>>* out,
-                                        int* done_count, coropact::kqueue::Loop* loop) {
+                                        std::optional<alyrn::Result<void>>* out,
+                                        int* done_count, alyrn::kqueue::Loop* loop) {
   ReadResult read_result = co_await stream->ReadSome(*scratch);
   if (!read_result.has_value()) {
     out->emplace(std::unexpected(read_result.error()));
   } else if (*read_result == 0) {
-    out->emplace(coropact::Result<void>{});
+    out->emplace(alyrn::Result<void>{});
   } else {
     out->emplace(
         co_await stream->WriteAll(std::span<const std::byte>(scratch->data(), *read_result)));
@@ -164,13 +164,13 @@ coropact::coro::DetachedTask EchoServer(coropact::kqueue::Stream* stream,
   }
 }
 
-coropact::coro::DetachedTask EchoClient(coropact::kqueue::Stream* stream,
+alyrn::coro::DetachedTask EchoClient(alyrn::kqueue::Stream* stream,
                                         std::span<const std::byte> payload,
                                         std::array<std::byte, 64>* received,
-                                        std::optional<coropact::Result<void>>* out,
+                                        std::optional<alyrn::Result<void>>* out,
                                         std::size_t* received_size, int* done_count,
-                                        coropact::kqueue::Loop* loop) {
-  coropact::Result<void> write_result = co_await stream->WriteAll(payload);
+                                        alyrn::kqueue::Loop* loop) {
+  alyrn::Result<void> write_result = co_await stream->WriteAll(payload);
   if (!write_result.has_value()) {
     out->emplace(std::unexpected(write_result.error()));
   } else {
@@ -188,13 +188,13 @@ coropact::coro::DetachedTask EchoClient(coropact::kqueue::Stream* stream,
   }
 }
 
-coropact::coro::DetachedTask CloseThenSubmit(coropact::kqueue::Stream* stream,
-                                             coropact::kqueue::Loop* loop,
+alyrn::coro::DetachedTask CloseThenSubmit(alyrn::kqueue::Stream* stream,
+                                             alyrn::kqueue::Loop* loop,
                                              std::array<std::byte, 16>* read_buffer,
                                              std::span<const std::byte> write_buffer,
                                              std::optional<ReadResult>* read_result,
                                              std::optional<WriteResult>* write_result) {
-  coropact::Result<void> close_result = co_await stream->Close();
+  alyrn::Result<void> close_result = co_await stream->Close();
   if (!close_result.has_value()) {
     read_result->emplace(std::unexpected(close_result.error()));
     write_result->emplace(std::unexpected(close_result.error()));
@@ -205,8 +205,8 @@ coropact::coro::DetachedTask CloseThenSubmit(coropact::kqueue::Stream* stream,
   loop->RequestStop();
 }
 
-coropact::coro::DetachedTask ShutdownThenReadAndWrite(
-    coropact::kqueue::Stream* stream, coropact::kqueue::Loop* loop,
+alyrn::coro::DetachedTask ShutdownThenReadAndWrite(
+    alyrn::kqueue::Stream* stream, alyrn::kqueue::Loop* loop,
     std::array<std::byte, 16>* read_buffer, std::span<const std::byte> write_buffer,
     std::optional<WriteResult>* first_shutdown, std::optional<WriteResult>* second_shutdown,
     std::optional<WriteResult>* write_result, std::optional<ReadResult>* read_result) {
@@ -217,8 +217,8 @@ coropact::coro::DetachedTask ShutdownThenReadAndWrite(
   loop->RequestStop();
 }
 
-coropact::coro::DetachedTask CloseReadThenReadAndWrite(
-    coropact::kqueue::Stream* stream, coropact::kqueue::Loop* loop,
+alyrn::coro::DetachedTask CloseReadThenReadAndWrite(
+    alyrn::kqueue::Stream* stream, alyrn::kqueue::Loop* loop,
     std::array<std::byte, 16>* read_buffer, std::span<const std::byte> write_buffer,
     std::optional<WriteResult>* first_close_read, std::optional<WriteResult>* second_close_read,
     std::optional<WriteResult>* write_result, std::optional<ReadResult>* read_result) {
@@ -229,19 +229,19 @@ coropact::coro::DetachedTask CloseReadThenReadAndWrite(
   loop->RequestStop();
 }
 
-coropact::coro::Task<ReadResult> ReadFromForeignLoopThread(coropact::kqueue::Stream* stream,
+alyrn::coro::Task<ReadResult> ReadFromForeignLoopThread(alyrn::kqueue::Stream* stream,
                                                            std::array<std::byte, 16>* buffer) {
   co_return co_await stream->ReadSome(*buffer);
 }
 
-class PeerWriteWork final : public coropact::coro::Work {
+class PeerWriteWork final : public alyrn::coro::Work {
 public:
   PeerWriteWork(int fd, std::string_view payload) noexcept : fd_(fd), payload_(payload) {
     SetRun(&RunWrite);
   }
 
 private:
-  static void RunWrite(coropact::coro::Work* work) noexcept {
+  static void RunWrite(alyrn::coro::Work* work) noexcept {
     auto* self = static_cast<PeerWriteWork*>(work);
     (void)::write(self->fd_, self->payload_.data(), self->payload_.size());
   }
@@ -250,21 +250,21 @@ private:
   std::string_view payload_;
 };
 
-class CloseStreamWork final : public coropact::coro::Work {
+class CloseStreamWork final : public alyrn::coro::Work {
 public:
-  CloseStreamWork(coropact::kqueue::Loop* loop, coropact::kqueue::Stream* stream) noexcept
+  CloseStreamWork(alyrn::kqueue::Loop* loop, alyrn::kqueue::Stream* stream) noexcept
       : loop_(loop), stream_(stream) {
     SetRun(&RunClose);
   }
 
 private:
-  static void RunClose(coropact::coro::Work* work) noexcept {
+  static void RunClose(alyrn::coro::Work* work) noexcept {
     auto* self = static_cast<CloseStreamWork*>(work);
-    coropact::coro::Spawn(*self->loop_, self->stream_->Close()).Detach();
+    alyrn::coro::Spawn(*self->loop_, self->stream_->Close()).Detach();
   }
 
-  coropact::kqueue::Loop* loop_;
-  coropact::kqueue::Stream* stream_;
+  alyrn::kqueue::Loop* loop_;
+  alyrn::kqueue::Stream* stream_;
 };
 
 bool CheckForeignLoopReadTerminates() {
@@ -274,8 +274,8 @@ bool CheckForeignLoopReadTerminates() {
     return false;
   }
 
-  coropact::kqueue::Loop loop;
-  coropact::kqueue::Stream stream(&loop, sv[0]);
+  alyrn::kqueue::Loop loop;
+  alyrn::kqueue::Stream stream(&loop, sv[0]);
   const pid_t child = ::fork();
   if (child < 0) {
     ::close(sv[1]);
@@ -286,7 +286,7 @@ bool CheckForeignLoopReadTerminates() {
     ::alarm(3);
     std::thread foreign_thread([&stream] {
       std::array<std::byte, 16> buffer{};
-      static_cast<void>(coropact::coro::SyncWait(ReadFromForeignLoopThread(&stream, &buffer)));
+      static_cast<void>(alyrn::coro::SyncWait(ReadFromForeignLoopThread(&stream, &buffer)));
     });
     foreign_thread.join();
     ::_exit(0);
@@ -298,7 +298,7 @@ bool CheckForeignLoopReadTerminates() {
   }
   return Check(WIFSIGNALED(status), "foreign-loop stream operation did not terminate") &&
          Check(WTERMSIG(status) == SIGABRT,
-               "foreign-loop stream operation must terminate through COROPACT_CHECK");
+               "foreign-loop stream operation must terminate through ALYRN_CHECK");
 }
 
 bool CheckImmediateRead() {
@@ -316,14 +316,14 @@ bool CheckImmediateRead() {
     return false;
   }
 
-  coropact::kqueue::Loop loop;
-  coropact::kqueue::Stream stream(&loop, sv[0]);
+  alyrn::kqueue::Loop loop;
+  alyrn::kqueue::Stream stream(&loop, sv[0]);
 
   std::array<std::byte, 16> buffer{};
   std::optional<ReadResult> result;
   bool resumed_with_scheduler = false;
 
-  coropact::coro::SpawnDetach(
+  alyrn::coro::SpawnDetach(
       loop, ReadOnce(&stream, &loop, &loop, &buffer, &result, &resumed_with_scheduler));
   loop.Run();
 
@@ -344,15 +344,15 @@ bool CheckImmediateWrite() {
     return false;
   }
 
-  coropact::kqueue::Loop loop;
-  coropact::kqueue::Stream stream(&loop, sv[0]);
+  alyrn::kqueue::Loop loop;
+  alyrn::kqueue::Stream stream(&loop, sv[0]);
 
   const char payload[] = "write";
   auto bytes = std::as_bytes(std::span(payload, sizeof(payload) - 1));
   std::optional<WriteResult> result;
   bool resumed_with_scheduler = false;
 
-  coropact::coro::SpawnDetach(
+  alyrn::coro::SpawnDetach(
       loop, WriteOnce(&stream, &loop, &loop, bytes, &result, &resumed_with_scheduler));
   loop.Run();
 
@@ -375,8 +375,8 @@ bool CheckPendingRead() {
     return false;
   }
 
-  coropact::kqueue::Loop loop;
-  coropact::kqueue::Stream stream(&loop, sv[0]);
+  alyrn::kqueue::Loop loop;
+  alyrn::kqueue::Stream stream(&loop, sv[0]);
 
   std::array<std::byte, 16> buffer{};
   std::optional<ReadResult> result;
@@ -384,7 +384,7 @@ bool CheckPendingRead() {
   constexpr std::string_view kPayload = "pending";
   PeerWriteWork write_work{sv[1], kPayload};
 
-  coropact::coro::SpawnDetach(
+  alyrn::coro::SpawnDetach(
       loop, ReadOnce(&stream, &loop, &loop, &buffer, &result, &resumed_with_scheduler));
   loop.Schedule(&write_work);
   loop.Run();
@@ -406,8 +406,8 @@ bool CheckTimedReadReleasesSlotBeforeContinuation() {
     return false;
   }
 
-  coropact::kqueue::Loop loop;
-  coropact::kqueue::Stream stream(&loop, sv[0]);
+  alyrn::kqueue::Loop loop;
+  alyrn::kqueue::Stream stream(&loop, sv[0]);
   constexpr std::string_view kTimedPayload = "timed";
   constexpr std::string_view kNextPayload = "next";
   std::array<std::byte, kTimedPayload.size()> timed_buffer{};
@@ -416,10 +416,10 @@ bool CheckTimedReadReleasesSlotBeforeContinuation() {
   std::optional<ReadResult> next_result;
   bool resumed_with_scheduler = false;
 
-  coropact::coro::SpawnDetach(
+  alyrn::coro::SpawnDetach(
       loop, TimedReadThenRead(&stream, &loop, &loop, timed_buffer, next_buffer, &timed_result,
                               &next_result, &resumed_with_scheduler));
-  loop.RunAfter(coropact::time::Duration::zero(), [fd = sv[1]] {
+  loop.RunAfter(alyrn::time::Duration::zero(), [fd = sv[1]] {
     constexpr char kPayload[] = "timednext";
     (void)::write(fd, kPayload, sizeof(kPayload) - 1);
   });
@@ -446,18 +446,18 @@ bool CheckTimedReadTimeoutResumesOnce() {
     return false;
   }
 
-  coropact::kqueue::Loop loop;
-  coropact::kqueue::Stream stream(&loop, sv[0]);
+  alyrn::kqueue::Loop loop;
+  alyrn::kqueue::Stream stream(&loop, sv[0]);
   std::array<std::byte, 16> buffer{};
   std::optional<ReadResult> result;
   bool resumed_with_scheduler = false;
   int resume_count = 0;
   bool timed_out = false;
 
-  coropact::coro::SpawnDetach(
-      loop, TimedReadOnce(&stream, &loop, &loop, buffer, coropact::time::Milliseconds(20), &result,
+  alyrn::coro::SpawnDetach(
+      loop, TimedReadOnce(&stream, &loop, &loop, buffer, alyrn::time::Milliseconds(20), &result,
                           &resumed_with_scheduler, &resume_count));
-  loop.RunAfter(coropact::time::Milliseconds(500), [&] {
+  loop.RunAfter(alyrn::time::Milliseconds(500), [&] {
     timed_out = true;
     loop.RequestStop();
   });
@@ -487,12 +487,12 @@ bool CheckOwnedReadIntoReturnsBuffer() {
     return false;
   }
 
-  coropact::kqueue::Loop loop;
-  coropact::kqueue::Stream stream(&loop, sv[0]);
+  alyrn::kqueue::Loop loop;
+  alyrn::kqueue::Stream stream(&loop, sv[0]);
   std::optional<OwnedReadOutcome> outcome;
   bool resumed_with_scheduler = false;
 
-  coropact::coro::SpawnDetach(loop, ReadIntoOnce(&stream, &loop, &loop, coropact::net::Buffer(4),
+  alyrn::coro::SpawnDetach(loop, ReadIntoOnce(&stream, &loop, &loop, alyrn::net::Buffer(4),
                                                  &outcome, &resumed_with_scheduler));
   loop.Run();
 
@@ -518,15 +518,15 @@ bool CheckCloseCancelsPendingRead() {
     return false;
   }
 
-  coropact::kqueue::Loop loop;
-  coropact::kqueue::Stream stream(&loop, sv[0]);
+  alyrn::kqueue::Loop loop;
+  alyrn::kqueue::Stream stream(&loop, sv[0]);
 
   std::array<std::byte, 16> buffer{};
   std::optional<ReadResult> result;
   bool resumed_with_scheduler = false;
   CloseStreamWork close_work{&loop, &stream};
 
-  coropact::coro::SpawnDetach(
+  alyrn::coro::SpawnDetach(
       loop, ReadOnce(&stream, &loop, &loop, &buffer, &result, &resumed_with_scheduler));
   loop.Schedule(&close_work);
   loop.Run();
@@ -547,15 +547,15 @@ bool CheckLoopStopCancelsPendingRead() {
     return false;
   }
 
-  coropact::kqueue::Loop loop;
-  coropact::kqueue::Stream stream(&loop, sv[0]);
+  alyrn::kqueue::Loop loop;
+  alyrn::kqueue::Stream stream(&loop, sv[0]);
 
   std::array<std::byte, 16> buffer{};
   std::optional<ReadResult> result;
   int resume_count = 0;
   bool resumed_with_scheduler = false;
 
-  coropact::coro::SpawnDetach(loop, ReadWithoutQuit(&stream, &loop, &buffer, &result, &resume_count,
+  alyrn::coro::SpawnDetach(loop, ReadWithoutQuit(&stream, &loop, &buffer, &result, &resume_count,
                                                     &resumed_with_scheduler));
   std::thread stopper([&] {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -581,23 +581,23 @@ bool CheckEchoAlgorithmUsesAsyncStream() {
     return false;
   }
 
-  coropact::kqueue::Loop loop;
-  coropact::kqueue::Stream server(&loop, sv[0]);
-  coropact::kqueue::Stream client(&loop, sv[1]);
+  alyrn::kqueue::Loop loop;
+  alyrn::kqueue::Stream server(&loop, sv[0]);
+  alyrn::kqueue::Stream client(&loop, sv[1]);
 
   const char payload[] = "echo-through-async-stream";
   auto bytes = std::as_bytes(std::span(payload, sizeof(payload) - 1));
 
   std::array<std::byte, 64> server_buffer{};
   std::array<std::byte, 64> client_buffer{};
-  std::optional<coropact::Result<void>> server_result;
-  std::optional<coropact::Result<void>> client_result;
+  std::optional<alyrn::Result<void>> server_result;
+  std::optional<alyrn::Result<void>> client_result;
   std::size_t received_size = 0;
   int done_count = 0;
 
-  coropact::coro::SpawnDetach(
+  alyrn::coro::SpawnDetach(
       loop, EchoServer(&server, &server_buffer, &server_result, &done_count, &loop));
-  coropact::coro::SpawnDetach(loop, EchoClient(&client, bytes, &client_buffer, &client_result,
+  alyrn::coro::SpawnDetach(loop, EchoClient(&client, bytes, &client_buffer, &client_result,
                                                &received_size, &done_count, &loop));
 
   loop.Run();
@@ -618,8 +618,8 @@ bool CheckCloseRejectsLaterSubmit() {
     return false;
   }
 
-  coropact::kqueue::Loop loop;
-  coropact::kqueue::Stream stream(&loop, sv[0]);
+  alyrn::kqueue::Loop loop;
+  alyrn::kqueue::Stream stream(&loop, sv[0]);
 
   std::array<std::byte, 16> read_buffer{};
   const char payload[] = "after-close";
@@ -627,7 +627,7 @@ bool CheckCloseRejectsLaterSubmit() {
   std::optional<ReadResult> read_result;
   std::optional<WriteResult> write_result;
 
-  coropact::coro::SpawnDetach(
+  alyrn::coro::SpawnDetach(
       loop, CloseThenSubmit(&stream, &loop, &read_buffer, bytes, &read_result, &write_result));
 
   loop.Run();
@@ -662,8 +662,8 @@ bool CheckShutdownKeepsReadOpen() {
     return false;
   }
 
-  coropact::kqueue::Loop loop;
-  coropact::kqueue::Stream stream(&loop, sv[0]);
+  alyrn::kqueue::Loop loop;
+  alyrn::kqueue::Stream stream(&loop, sv[0]);
 
   std::array<std::byte, 16> read_buffer{};
   const char after_shutdown[] = "blocked";
@@ -673,7 +673,7 @@ bool CheckShutdownKeepsReadOpen() {
   std::optional<WriteResult> write_result;
   std::optional<ReadResult> read_result;
 
-  coropact::coro::SpawnDetach(loop, ShutdownThenReadAndWrite(&stream, &loop, &read_buffer, bytes,
+  alyrn::coro::SpawnDetach(loop, ShutdownThenReadAndWrite(&stream, &loop, &read_buffer, bytes,
                                                              &first_shutdown, &second_shutdown,
                                                              &write_result, &read_result));
   loop.Run();
@@ -707,8 +707,8 @@ bool CheckCloseReadKeepsWriteOpen() {
     return false;
   }
 
-  coropact::kqueue::Loop loop;
-  coropact::kqueue::Stream stream(&loop, sv[0]);
+  alyrn::kqueue::Loop loop;
+  alyrn::kqueue::Stream stream(&loop, sv[0]);
   std::array<std::byte, 16> read_buffer{};
   constexpr std::string_view kOutgoing = "still-writable";
   const auto write_buffer =
@@ -718,7 +718,7 @@ bool CheckCloseReadKeepsWriteOpen() {
   std::optional<WriteResult> write_result;
   std::optional<ReadResult> read_result;
 
-  coropact::coro::SpawnDetach(
+  alyrn::coro::SpawnDetach(
       loop, CloseReadThenReadAndWrite(&stream, &loop, &read_buffer, write_buffer,
                                       &first_close_read, &second_close_read, &write_result,
                                       &read_result));

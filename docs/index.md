@@ -1,7 +1,7 @@
-# CoroPact 文档
+# Alyrn 文档
 
-设计说明目前以中文为主。根目录 [README](https://github.com/archiyun/CoroPact/blob/main/README.md) /
-[README.zh-CN.md](https://github.com/archiyun/CoroPact/blob/main/README.zh-CN.md) 是使用入口；
+设计说明目前以中文为主。根目录 [README](https://github.com/archiyun/Alyrn/blob/main/README.md) /
+[README.zh-CN.md](https://github.com/archiyun/Alyrn/blob/main/README.zh-CN.md) 是使用入口；
 `CONTEXT.md` 是仅供本地开发使用的领域词汇，不属于仓库发布内容；
 [`SUBSYSTEMS.md`](SUBSYSTEMS.md)
 是模块依赖的规范。
@@ -31,13 +31,13 @@
 ## 构建、打包与发布
 
 - [打包与安装](packaging.md) — Linux 源码安装、`.deb`、Arch `PKGBUILD`、Docker
-- [Release notes: CoroPact 0.1.0](releases/v0.1.0.md)
+- [Release notes: Alyrn 0.1.0](releases/v0.1.0.md)
 
 kqueue 后端不进入 Linux 发行包。BSD/Darwin 上用
-`-DCOROPACT_ENABLE_KQUEUE=ON` 从源码构建，并链接 `CoroPact::coropact_kqueue`。
+`-DALYRN_ENABLE_KQUEUE=ON` 从源码构建，并链接 `Alyrn::alyrn_kqueue`。
 
 ## 基准报告
 
 - [2026-08-10 C++ 网络库基线](benchmark/network-libraries-20260810.md)
 - [网络库统一 HTTP 压测](benchmark/network-libraries.md)
-- [CoroPact luring 与 Reactor 独立对比](benchmark/luring-reactor-comparison-20260802.md)
+- [Alyrn luring 与 Reactor 独立对比](benchmark/luring-reactor-comparison-20260802.md)

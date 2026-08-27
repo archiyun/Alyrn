@@ -5,7 +5,7 @@ add_executable(demo_reactor_coro_echo
 )
 target_link_libraries(demo_reactor_coro_echo
     PRIVATE
-        coropact_reactor
+        alyrn_reactor
 )
 
 add_executable(demo_reactor_read_into_echo
@@ -14,5 +14,5 @@ add_executable(demo_reactor_read_into_echo
 
 target_link_libraries(demo_reactor_read_into_echo
     PRIVATE
-        coropact_reactor
+        alyrn_reactor
 )

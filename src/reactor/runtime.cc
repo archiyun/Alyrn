@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "coropact/reactor/runtime.h"
+#include "alyrn/reactor/runtime.h"
 
 #include <algorithm>
 #include <atomic>
@@ -11,10 +11,10 @@
 #include <thread>
 #include <utility>
 
-#include "coropact/result.h"
-#include "coropact/reactor/detail/worker_group.h"
+#include "alyrn/result.h"
+#include "alyrn/reactor/detail/worker_group.h"
 
-namespace coropact::reactor {
+namespace alyrn::reactor {
 
 namespace {
 
@@ -159,9 +159,9 @@ std::unique_ptr<runtime::detail::RuntimeControl> MakeRuntimeControl(
                                                  std::move(connection_handler));
 }
 
-}  // namespace coropact::reactor
+}  // namespace alyrn::reactor
 
-namespace coropact {
+namespace alyrn {
 
 Runtime::Builder<runtime::Reactor>::Builder(net::Endpoint listen_addr) noexcept
     : listen_addr_(listen_addr) {}
@@ -188,4 +188,4 @@ Runtime Runtime::Builder<runtime::Reactor>::Build() {
                                              std::move(connection_handler_))};
 }
 
-}  // namespace coropact
+}  // namespace alyrn

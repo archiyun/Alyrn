@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: MIT
-#include "coropact/luring/detail/worker_group.h"
+#include "alyrn/luring/detail/worker_group.h"
 
 #include <cerrno>
 #include <expected>
 #include <memory>
 #include <utility>
 
-#include "coropact/luring/detail/worker.h"
-#include "coropact/net/endpoint.h"
+#include "alyrn/luring/detail/worker.h"
+#include "alyrn/net/endpoint.h"
 
-namespace coropact::luring::detail {
+namespace alyrn::luring::detail {
 
 WorkerGroup::WorkerGroup(net::Endpoint listen_addr, WorkerGroupOptions options,
                                      ThreadInitCallback init_callback,
@@ -71,4 +71,4 @@ void WorkerGroup::RequestStop() noexcept {
   }
 }
 
-}  // namespace coropact::luring::detail
+}  // namespace alyrn::luring::detail

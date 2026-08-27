@@ -8,23 +8,23 @@
 #include <string>
 #include <string_view>
 
-#include "coropact/backend/recv_source.h"
-#include "coropact/result.h"
-#include "coropact/coro/detached_task.h"
-#include "coropact/coro/spawn.h"
-#include "coropact/coro/work.h"
-#include "coropact/io/recv_source.h"
-#include "coropact/kqueue/loop.h"
-#include "coropact/kqueue/recv_source.h"
-#include "coropact/net/socket.h"
+#include "alyrn/backend/recv_source.h"
+#include "alyrn/result.h"
+#include "alyrn/coro/detached_task.h"
+#include "alyrn/coro/spawn.h"
+#include "alyrn/coro/work.h"
+#include "alyrn/io/recv_source.h"
+#include "alyrn/kqueue/loop.h"
+#include "alyrn/kqueue/recv_source.h"
+#include "alyrn/net/socket.h"
 
 namespace {
 
-using coropact::kqueue::Loop;
-using coropact::kqueue::RecvSource;
-using coropact::kqueue::RecvSourceOptions;
+using alyrn::kqueue::Loop;
+using alyrn::kqueue::RecvSource;
+using alyrn::kqueue::RecvSourceOptions;
 
-static_assert(coropact::io::AsyncRecvSource<RecvSource>);
+static_assert(alyrn::io::AsyncRecvSource<RecvSource>);
 
 bool Check(bool condition, const char* message) {
   if (!condition) {
@@ -38,18 +38,18 @@ bool MakeSocketPair(int fds[2]) {
   if (::socketpair(AF_UNIX, SOCK_STREAM, 0, fds) != 0) {
     return false;
   }
-  return coropact::net::SetNonBlocking(fds[0]).has_value() &&
-         coropact::net::SetNonBlocking(fds[1]).has_value() &&
-         coropact::net::SetCloseOnExec(fds[0]).has_value() &&
-         coropact::net::SetCloseOnExec(fds[1]).has_value();
+  return alyrn::net::SetNonBlocking(fds[0]).has_value() &&
+         alyrn::net::SetNonBlocking(fds[1]).has_value() &&
+         alyrn::net::SetCloseOnExec(fds[0]).has_value() &&
+         alyrn::net::SetCloseOnExec(fds[1]).has_value();
 }
 
-std::string BytesToString(const coropact::net::RecvEvent& event) {
+std::string BytesToString(const alyrn::net::RecvEvent& event) {
   const auto bytes = event.buffer.Bytes();
   return {reinterpret_cast<const char*>(bytes.data()), bytes.size()};
 }
 
-coropact::coro::DetachedTask ReceiveOne(RecvSource* source, Loop* loop,
+alyrn::coro::DetachedTask ReceiveOne(RecvSource* source, Loop* loop,
                                         std::optional<RecvSource::NextResult>* result,
                                         std::string* payload, bool* received_event,
                                         bool* stop_succeeded) {
@@ -91,7 +91,7 @@ bool CheckImmediateReceive() {
   std::string payload;
   bool received_event = false;
   bool stop_succeeded = false;
-  coropact::coro::SpawnDetach(loop, ReceiveOne(&*source, &loop, &result, &payload, &received_event,
+  alyrn::coro::SpawnDetach(loop, ReceiveOne(&*source, &loop, &result, &payload, &received_event,
                                                &stop_succeeded));
   loop.Run();
 
@@ -117,14 +117,14 @@ bool CheckPendingReceive() {
     return false;
   }
 
-  class WriteWork final : public coropact::coro::Work {
+  class WriteWork final : public alyrn::coro::Work {
   public:
     WriteWork(int fd, std::string_view payload) noexcept : fd_(fd), payload_(payload) {
       SetRun(&RunWrite);
     }
 
   private:
-    static void RunWrite(coropact::coro::Work* work) noexcept {
+    static void RunWrite(alyrn::coro::Work* work) noexcept {
       auto* self = static_cast<WriteWork*>(work);
       (void)::write(self->fd_, self->payload_.data(), self->payload_.size());
     }
@@ -139,7 +139,7 @@ bool CheckPendingReceive() {
   std::string payload;
   bool received_event = false;
   bool stop_succeeded = false;
-  coropact::coro::SpawnDetach(loop, ReceiveOne(&*source, &loop, &result, &payload, &received_event,
+  alyrn::coro::SpawnDetach(loop, ReceiveOne(&*source, &loop, &result, &payload, &received_event,
                                                &stop_succeeded));
   loop.Schedule(&write);
   loop.Run();

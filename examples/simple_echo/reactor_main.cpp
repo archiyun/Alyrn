@@ -16,12 +16,12 @@
 #include <thread>
 #include <utility>
 
-#include "coropact/net.h"
-#include "coropact/reactor.h"
+#include "alyrn/net.h"
+#include "alyrn/reactor.h"
 #include "echo_app.h"
 #include "signal_stop.h"
 
-using namespace coropact;
+using namespace alyrn;
 
 namespace {
 

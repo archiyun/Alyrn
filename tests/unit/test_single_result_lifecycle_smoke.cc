@@ -2,7 +2,7 @@
 
 #include <cstdio>
 
-#include "coropact/operation/detail/single_result_lifecycle.h"
+#include "alyrn/operation/detail/single_result_lifecycle.h"
 
 namespace {
 
@@ -15,7 +15,7 @@ bool Expect(bool condition, const char* message) {
 }
 
 bool TestRequiresResultThenReleaseThenContinuation() {
-  coropact::operation::detail::SingleResultLifecycle lifecycle;
+  alyrn::operation::detail::SingleResultLifecycle lifecycle;
 
   bool ok = true;
   ok &= Expect(!lifecycle.TryAuthorizeRelease(),

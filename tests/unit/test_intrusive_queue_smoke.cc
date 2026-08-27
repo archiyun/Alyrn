@@ -3,11 +3,11 @@
 #include <cstdio>
 #include <utility>
 
-#include "coropact/ds/intrusive_queue.h"
+#include "alyrn/ds/intrusive_queue.h"
 
 namespace {
 
-struct Item : coropact::ds::QueueNode<Item> {
+struct Item : alyrn::ds::QueueNode<Item> {
   explicit Item(int value) : value(value) {}
 
   int value;
@@ -27,7 +27,7 @@ int main() {
   Item three(3);
   Item four(4);
 
-  coropact::ds::IntrusiveQueue<Item> queue;
+  alyrn::ds::IntrusiveQueue<Item> queue;
   if (!require(queue.Empty(), "new queue must be empty")) return 1;
   if (!require(!queue.PushBack(nullptr), "PushBack(nullptr) must fail without mutation")) return 1;
   if (!require(queue.PushBack(&two), "PushBack must link an unlinked node") ||
@@ -43,13 +43,13 @@ int main() {
     return 1;
   }
 
-  coropact::ds::IntrusiveQueue<Item> moved(std::move(queue));
+  alyrn::ds::IntrusiveQueue<Item> moved(std::move(queue));
   if (!require(queue.Empty(), "move construction must empty source queue") ||
       !require(moved.Front() == &three, "move construction must preserve front")) {
     return 1;
   }
 
-  coropact::ds::IntrusiveQueue<Item> suffix;
+  alyrn::ds::IntrusiveQueue<Item> suffix;
   if (!require(suffix.PushBack(&four), "suffix queue must accept unlinked node")) return 1;
   moved.Splice(suffix);
   if (!require(suffix.Empty(), "Splice must empty source queue") ||
@@ -61,7 +61,7 @@ int main() {
     return 1;
   }
 
-  coropact::ds::IntrusiveQueue<Item> assigned;
+  alyrn::ds::IntrusiveQueue<Item> assigned;
   assigned = std::move(moved);
   if (!require(moved.Empty(), "move assignment must empty source queue") ||
       !require(assigned.PopFront() == &three, "PopFront must return first node") ||

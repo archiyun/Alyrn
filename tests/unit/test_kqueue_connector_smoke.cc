@@ -6,16 +6,16 @@
 #include <iostream>
 #include <optional>
 
-#include "coropact/result.h"
-#include "coropact/coro/scheduler.h"
-#include "coropact/coro/spawn.h"
-#include "coropact/coro/task.h"
-#include "coropact/kqueue/connector.h"
-#include "coropact/kqueue/listener.h"
-#include "coropact/kqueue/loop.h"
-#include "coropact/kqueue/stream.h"
-#include "coropact/net/endpoint.h"
-#include "coropact/time/clock.h"
+#include "alyrn/result.h"
+#include "alyrn/coro/scheduler.h"
+#include "alyrn/coro/spawn.h"
+#include "alyrn/coro/task.h"
+#include "alyrn/kqueue/connector.h"
+#include "alyrn/kqueue/listener.h"
+#include "alyrn/kqueue/loop.h"
+#include "alyrn/kqueue/stream.h"
+#include "alyrn/net/endpoint.h"
+#include "alyrn/time/clock.h"
 
 namespace {
 
@@ -27,17 +27,17 @@ bool Check(bool condition, const char* message) {
   return true;
 }
 
-coropact::coro::DetachedTask ConnectOnce(coropact::kqueue::Connector* connector,
-                                         coropact::net::Endpoint peer,
-                                         coropact::kqueue::Loop* loop,
-                                         std::optional<coropact::Result<coropact::kqueue::Stream>>* out) {
+alyrn::coro::DetachedTask ConnectOnce(alyrn::kqueue::Connector* connector,
+                                         alyrn::net::Endpoint peer,
+                                         alyrn::kqueue::Loop* loop,
+                                         std::optional<alyrn::Result<alyrn::kqueue::Stream>>* out) {
   out->emplace(co_await connector->Connect(peer));
   loop->RequestStop();
 }
 
 bool CheckConnectSuccess() {
-  coropact::kqueue::Loop loop;
-  auto listener = coropact::kqueue::Listener::Create(&loop, coropact::net::Endpoint(0));
+  alyrn::kqueue::Loop loop;
+  auto listener = alyrn::kqueue::Listener::Create(&loop, alyrn::net::Endpoint(0));
   if (!Check(listener.has_value(), "listener create failed")) {
     return false;
   }
@@ -46,20 +46,20 @@ bool CheckConnectSuccess() {
     return false;
   }
 
-  coropact::kqueue::Connector connector(&loop);
-  std::optional<coropact::Result<coropact::kqueue::Stream>> result;
-  coropact::coro::SpawnDetach(loop, ConnectOnce(&connector, *address, &loop, &result));
+  alyrn::kqueue::Connector connector(&loop);
+  std::optional<alyrn::Result<alyrn::kqueue::Stream>> result;
+  alyrn::coro::SpawnDetach(loop, ConnectOnce(&connector, *address, &loop, &result));
   loop.Run();
 
   return Check(result.has_value() && result->has_value(), "Connect did not succeed");
 }
 
 bool CheckConnectRejectsInvalidHost() {
-  coropact::kqueue::Loop loop;
-  coropact::kqueue::Connector connector(&loop);
-  std::optional<coropact::Result<coropact::kqueue::Stream>> result;
+  alyrn::kqueue::Loop loop;
+  alyrn::kqueue::Connector connector(&loop);
+  std::optional<alyrn::Result<alyrn::kqueue::Stream>> result;
 
-  coropact::coro::SpawnDetach(loop, ConnectOnce(&connector, coropact::net::Endpoint(1), &loop, &result));
+  alyrn::coro::SpawnDetach(loop, ConnectOnce(&connector, alyrn::net::Endpoint(1), &loop, &result));
   loop.Run();
 
   return Check(result.has_value() && !result->has_value(),
@@ -67,29 +67,29 @@ bool CheckConnectRejectsInvalidHost() {
 }
 
 bool CheckConnectNullFactory() {
-  auto connector = coropact::kqueue::Connector::Create(nullptr);
+  auto connector = alyrn::kqueue::Connector::Create(nullptr);
   return Check(!connector.has_value() && connector.error() == std::errc::invalid_argument,
                "connector factory accepted a null loop");
 }
 
-coropact::coro::DetachedTask SleepThenStop(coropact::kqueue::Connector* connector,
-                                           coropact::kqueue::Loop* loop, bool* resumed,
+alyrn::coro::DetachedTask SleepThenStop(alyrn::kqueue::Connector* connector,
+                                           alyrn::kqueue::Loop* loop, bool* resumed,
                                            bool* scheduler_ok) {
-  co_await connector->SleepFor(coropact::time::Milliseconds(10));
-  *scheduler_ok = coropact::coro::Scheduler::TryCurrent() == loop;
+  co_await connector->SleepFor(alyrn::time::Milliseconds(10));
+  *scheduler_ok = alyrn::coro::Scheduler::TryCurrent() == loop;
   *resumed = true;
   loop->RequestStop();
 }
 
 bool CheckSleepForResumes() {
-  coropact::kqueue::Loop loop;
-  coropact::kqueue::Connector connector(&loop);
+  alyrn::kqueue::Loop loop;
+  alyrn::kqueue::Connector connector(&loop);
   bool resumed = false;
   bool scheduler_ok = false;
   bool timed_out = false;
 
-  coropact::coro::SpawnDetach(loop, SleepThenStop(&connector, &loop, &resumed, &scheduler_ok));
-  loop.RunAfter(coropact::time::Milliseconds(500), [&] {
+  alyrn::coro::SpawnDetach(loop, SleepThenStop(&connector, &loop, &resumed, &scheduler_ok));
+  loop.RunAfter(alyrn::time::Milliseconds(500), [&] {
     timed_out = true;
     loop.RequestStop();
   });

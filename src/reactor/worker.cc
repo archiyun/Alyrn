@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MIT
-#include "coropact/reactor/detail/worker.h"
+#include "alyrn/reactor/detail/worker.h"
 
 #include <cerrno>
 #include <expected>
 #include <stop_token>
 #include <utility>
 
-#include "coropact/result.h"
-#include "coropact/coro/frame_allocator.h"
-#include "coropact/coro/spawn.h"
+#include "alyrn/result.h"
+#include "alyrn/coro/frame_allocator.h"
+#include "alyrn/coro/spawn.h"
 
-namespace coropact::reactor::detail {
+namespace alyrn::reactor::detail {
 
 namespace {
 
@@ -128,4 +128,4 @@ void Worker::WorkLoop(std::stop_token token) noexcept {
   }
 }
 
-}  // namespace coropact::reactor::detail
+}  // namespace alyrn::reactor::detail

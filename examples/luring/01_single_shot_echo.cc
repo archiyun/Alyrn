@@ -6,15 +6,15 @@
 #include <stop_token>
 #include <utility>
 
-#include "coropact/coro/detached_task.h"
-#include "coropact/coro/spawn.h"
-#include "coropact/io.h"
-#include "coropact/luring.h"
-#include "coropact/luring/listener.h"
-#include "coropact/luring/stream.h"
-#include "coropact/net/endpoint.h"
+#include "alyrn/coro/detached_task.h"
+#include "alyrn/coro/spawn.h"
+#include "alyrn/io.h"
+#include "alyrn/luring.h"
+#include "alyrn/luring/listener.h"
+#include "alyrn/luring/stream.h"
+#include "alyrn/net/endpoint.h"
 
-using namespace coropact;
+using namespace alyrn;
 
 namespace {
 

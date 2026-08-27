@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "coropact/luring/runtime.h"
+#include "alyrn/luring/runtime.h"
 
 #include <algorithm>
 #include <atomic>
@@ -11,10 +11,10 @@
 #include <thread>
 #include <utility>
 
-#include "coropact/result.h"
-#include "coropact/luring/detail/worker_group.h"
+#include "alyrn/result.h"
+#include "alyrn/luring/detail/worker_group.h"
 
-namespace coropact::luring {
+namespace alyrn::luring {
 
 namespace {
 
@@ -161,9 +161,9 @@ std::unique_ptr<runtime::detail::RuntimeControl> MakeRuntimeControl(
                                                 std::move(connection_handler));
 }
 
-}  // namespace coropact::luring
+}  // namespace alyrn::luring
 
-namespace coropact {
+namespace alyrn {
 
 Runtime::Builder<runtime::LUring>::Builder(net::Endpoint listen_addr) noexcept
     : listen_addr_(listen_addr) {}
@@ -190,4 +190,4 @@ Runtime Runtime::Builder<runtime::LUring>::Build() {
                                             std::move(connection_handler_))};
 }
 
-}  // namespace coropact
+}  // namespace alyrn

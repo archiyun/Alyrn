@@ -15,13 +15,13 @@
 #include <thread>
 #include <vector>
 
-#include "coropact/result.h"
-#include "coropact/coro/scheduler.h"
-#include "coropact/coro/task.h"
-#include "coropact/kqueue/detail/worker.h"
-#include "coropact/kqueue/detail/worker_group.h"
-#include "coropact/net/endpoint.h"
-#include "coropact/net/socket.h"
+#include "alyrn/result.h"
+#include "alyrn/coro/scheduler.h"
+#include "alyrn/coro/task.h"
+#include "alyrn/kqueue/detail/worker.h"
+#include "alyrn/kqueue/detail/worker_group.h"
+#include "alyrn/net/endpoint.h"
+#include "alyrn/net/socket.h"
 
 namespace {
 
@@ -44,7 +44,7 @@ private:
 struct WorkerState {
   std::condition_variable cv;
   std::mutex mutex;
-  std::optional<coropact::net::Endpoint> listen_address;
+  std::optional<alyrn::net::Endpoint> listen_address;
   bool init_failed{false};
   bool connection_finished{false};
   bool scheduler_is_current{false};
@@ -54,7 +54,7 @@ struct WorkerState {
 struct GroupState {
   std::condition_variable cv;
   std::mutex mutex;
-  std::vector<coropact::net::Endpoint> listen_addresses;
+  std::vector<alyrn::net::Endpoint> listen_addresses;
   std::vector<std::thread::id> init_threads;
 };
 
@@ -66,8 +66,8 @@ bool Check(bool condition, const char* message) {
   return true;
 }
 
-coropact::Result<std::uint16_t> PickFreePort() {
-  auto fd = coropact::net::CreateNonBlockingSocket(AF_INET);
+alyrn::Result<std::uint16_t> PickFreePort() {
+  auto fd = alyrn::net::CreateNonBlockingSocket(AF_INET);
   if (!fd.has_value()) {
     return std::unexpected(fd.error());
   }
@@ -78,35 +78,35 @@ coropact::Result<std::uint16_t> PickFreePort() {
   address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
   address.sin_port = htons(0);
   if (::bind(socket.get(), reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0) {
-    return std::unexpected(coropact::CurrentErrno());
+    return std::unexpected(alyrn::CurrentErrno());
   }
 
   socklen_t length = sizeof(address);
   if (::getsockname(socket.get(), reinterpret_cast<sockaddr*>(&address), &length) < 0) {
-    return std::unexpected(coropact::CurrentErrno());
+    return std::unexpected(alyrn::CurrentErrno());
   }
   return ntohs(address.sin_port);
 }
 
-coropact::Result<int> ConnectClient(const coropact::net::Endpoint& address) {
-  auto fd = coropact::net::CreateNonBlockingSocket(address.NativeFamily());
+alyrn::Result<int> ConnectClient(const alyrn::net::Endpoint& address) {
+  auto fd = alyrn::net::CreateNonBlockingSocket(address.NativeFamily());
   if (!fd.has_value()) {
     return std::unexpected(fd.error());
   }
   if (::connect(*fd, address.SockAddr(), address.SockAddrLen()) < 0 && errno != EINPROGRESS) {
-    const auto error = coropact::CurrentErrno();
+    const auto error = alyrn::CurrentErrno();
     ::close(*fd);
     return std::unexpected(error);
   }
   return *fd;
 }
 
-coropact::coro::DetachedTask HandleConnection(
-    coropact::kqueue::detail::WorkerContext& context,
-    coropact::kqueue::Stream stream, WorkerState* state) {
+alyrn::coro::DetachedTask HandleConnection(
+    alyrn::kqueue::detail::WorkerContext& context,
+    alyrn::kqueue::Stream stream, WorkerState* state) {
   {
     std::lock_guard lock{state->mutex};
-    state->scheduler_is_current = coropact::coro::Scheduler::TryCurrent() == &context.loop;
+    state->scheduler_is_current = alyrn::coro::Scheduler::TryCurrent() == &context.loop;
   }
   state->cv.notify_all();
 
@@ -121,9 +121,9 @@ coropact::coro::DetachedTask HandleConnection(
 
 bool CheckWorkerAcceptAndStop() {
   WorkerState state;
-  coropact::kqueue::detail::Worker worker(
-      0, coropact::net::Endpoint(0), {},
-      [&state](coropact::kqueue::detail::WorkerContext& context) {
+  alyrn::kqueue::detail::Worker worker(
+      0, alyrn::net::Endpoint(0), {},
+      [&state](alyrn::kqueue::detail::WorkerContext& context) {
         auto address = context.listener->LocalAddress();
         std::lock_guard lock{state.mutex};
         if (!address.has_value()) {
@@ -133,8 +133,8 @@ bool CheckWorkerAcceptAndStop() {
         }
         state.init_thread_is_worker = !context.loop.IsInLoopThread();
       },
-      [&state](coropact::kqueue::detail::WorkerContext& context,
-               coropact::kqueue::Stream stream) {
+      [&state](alyrn::kqueue::detail::WorkerContext& context,
+               alyrn::kqueue::Stream stream) {
         return HandleConnection(context, std::move(stream), &state);
       });
 
@@ -182,12 +182,12 @@ bool CheckWorkerGroupStartAndStop() {
   }
 
   GroupState state;
-  coropact::kqueue::detail::WorkerGroupOptions options;
+  alyrn::kqueue::detail::WorkerGroupOptions options;
   options.worker_num = 2;
 
-  coropact::kqueue::detail::WorkerGroup group(
-      coropact::net::Endpoint(*port), options,
-      [&state](coropact::kqueue::detail::WorkerContext& context) {
+  alyrn::kqueue::detail::WorkerGroup group(
+      alyrn::net::Endpoint(*port), options,
+      [&state](alyrn::kqueue::detail::WorkerContext& context) {
         std::lock_guard lock{state.mutex};
         if (context.listener != nullptr) {
           auto address = context.listener->LocalAddress();
@@ -240,9 +240,9 @@ bool CheckWorkerGroupStartAndStop() {
 }
 
 bool CheckZeroWorkersRejected() {
-  coropact::kqueue::detail::WorkerGroupOptions options;
+  alyrn::kqueue::detail::WorkerGroupOptions options;
   options.worker_num = 0;
-  coropact::kqueue::detail::WorkerGroup group(coropact::net::Endpoint(0), options);
+  alyrn::kqueue::detail::WorkerGroup group(alyrn::net::Endpoint(0), options);
   auto result = group.Start();
   return Check(!result.has_value(), "zero-worker group should be rejected") &&
          Check(result.error() == std::errc::invalid_argument,

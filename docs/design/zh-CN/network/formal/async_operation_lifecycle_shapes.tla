@@ -5,7 +5,7 @@ EXTENDS Naturals
 CONSTANT MaxEvents
 
 (***************************************************************************)
-(* CoroPact Logical Operation 的正交 lifecycle shape 模型。                *)
+(* Alyrn Logical Operation 的正交 lifecycle shape 模型。                *)
 (*                                                                         *)
 (* 本模块不把 single-result、composite、event-source 和 split-release     *)
 (* 建模成互斥 family。每个 operation 由三个独立维度描述：                 *)

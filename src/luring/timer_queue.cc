@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-#include "coropact/luring/detail/timer_queue.h"
+#include "alyrn/luring/detail/timer_queue.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -8,13 +8,13 @@
 #include <cstdint>
 #include <utility>
 
-#include "coropact/base/check.h"
-#include "coropact/luring/detail/loop_access.h"
-#include "coropact/luring/detail/sqe_prep.h"
-#include "coropact/luring/loop.h"
-#include "coropact/time/clock.h"
+#include "alyrn/base/check.h"
+#include "alyrn/luring/detail/loop_access.h"
+#include "alyrn/luring/detail/sqe_prep.h"
+#include "alyrn/luring/loop.h"
+#include "alyrn/time/clock.h"
 
-namespace coropact::luring::detail {
+namespace alyrn::luring::detail {
 
 namespace {
 
@@ -32,8 +32,8 @@ __kernel_timespec ToKernelTimespec(time::Deadline deadline) noexcept {
 
 TimerQueue::~TimerQueue() noexcept {
   DiscardAll();
-  COROPACT_CHECK(timers_.Empty(), "TimerQueue retained intrusive timer nodes");
-  COROPACT_CHECK(active_.empty(), "TimerQueue retained owned timers");
+  ALYRN_CHECK(timers_.Empty(), "TimerQueue retained intrusive timer nodes");
+  ALYRN_CHECK(active_.empty(), "TimerQueue retained owned timers");
 }
 
 Result<time::TimerId> TimerQueue::AddAfter(time::Duration delay,
@@ -43,8 +43,8 @@ Result<time::TimerId> TimerQueue::AddAfter(time::Duration delay,
 
 Result<time::TimerId> TimerQueue::AddTimer(TimerCallback callback,
                                                        time::Deadline deadline) {
-  COROPACT_CHECK(loop_ != nullptr, "TimerQueue has no owner loop");
-  COROPACT_CHECK(loop_->IsInLoopThread(), "TimerQueue::AddTimer called from wrong thread");
+  ALYRN_CHECK(loop_ != nullptr, "TimerQueue has no owner loop");
+  ALYRN_CHECK(loop_->IsInLoopThread(), "TimerQueue::AddTimer called from wrong thread");
 
   auto timer = std::make_unique<time::Timer>(std::move(callback), deadline, time::Duration::zero());
   const time::TimerId id{timer->sequence()};
@@ -59,7 +59,7 @@ Result<time::TimerId> TimerQueue::AddTimer(TimerCallback callback,
 
   auto reconciled = Reconcile();
   if (!reconciled.has_value()) {
-    COROPACT_CHECK(timers_.Erase(it->second.get()),
+    ALYRN_CHECK(timers_.Erase(it->second.get()),
                    "TimerQueue inserted timer is missing from timer tree");
     active_.erase(it);
     return std::unexpected(reconciled.error());
@@ -68,15 +68,15 @@ Result<time::TimerId> TimerQueue::AddTimer(TimerCallback callback,
 }
 
 Result<void> TimerQueue::Cancel(time::TimerId id) noexcept {
-  COROPACT_CHECK(loop_ != nullptr, "TimerQueue has no owner loop");
-  COROPACT_CHECK(loop_->IsInLoopThread(), "TimerQueue::Cancel called from wrong thread");
+  ALYRN_CHECK(loop_ != nullptr, "TimerQueue has no owner loop");
+  ALYRN_CHECK(loop_->IsInLoopThread(), "TimerQueue::Cancel called from wrong thread");
 
   auto it = active_.find(id.sequence);
   if (it == active_.end()) {
     return std::unexpected(Errno(ENOENT));
   }
 
-  COROPACT_CHECK(timers_.Erase(it->second.get()),
+  ALYRN_CHECK(timers_.Erase(it->second.get()),
                  "TimerQueue active timer is missing from timer tree");
   active_.erase(it);
   // If the canceled timer was the driver deadline, leaving the old kernel
@@ -87,8 +87,8 @@ Result<void> TimerQueue::Cancel(time::TimerId id) noexcept {
 }
 
 void TimerQueue::DiscardAll() noexcept {
-  COROPACT_CHECK(loop_ != nullptr, "TimerQueue has no owner loop");
-  COROPACT_CHECK(loop_->IsInLoopThread(), "TimerQueue::DiscardAll called from wrong thread");
+  ALYRN_CHECK(loop_ != nullptr, "TimerQueue has no owner loop");
+  ALYRN_CHECK(loop_->IsInLoopThread(), "TimerQueue::DiscardAll called from wrong thread");
 
   // TimerIndex is intrusive: unlink every hook before destroying the owning
   // unique_ptrs. Clearing active_ first would leave TimerIndex with dangling
@@ -104,22 +104,22 @@ void TimerQueue::DiscardAll() noexcept {
   requested_deadline_ = {};
 }
 
-void TimerQueue::OnDriverComplete(::coropact::luring::detail::Op* op) noexcept {
+void TimerQueue::OnDriverComplete(::alyrn::luring::detail::Op* op) noexcept {
   DriverOpHook::OwnerFrom(op)->HandleDriverComplete(op);
 }
 
-void TimerQueue::OnControlComplete(::coropact::luring::detail::Op* op) noexcept {
+void TimerQueue::OnControlComplete(::alyrn::luring::detail::Op* op) noexcept {
   ControlOpHook::OwnerFrom(op)->HandleControlComplete(op);
 }
 
-void DispatchTimerDriverComplete(::coropact::luring::detail::Op* op) noexcept { TimerQueue::OnDriverComplete(op); }
+void DispatchTimerDriverComplete(::alyrn::luring::detail::Op* op) noexcept { TimerQueue::OnDriverComplete(op); }
 
-void DispatchTimerControlComplete(::coropact::luring::detail::Op* op) noexcept {
+void DispatchTimerControlComplete(::alyrn::luring::detail::Op* op) noexcept {
   TimerQueue::OnControlComplete(op);
 }
 
-void TimerQueue::HandleDriverComplete(::coropact::luring::detail::Op* op) noexcept {
-  COROPACT_CHECK(op->result.HasValue(), "timer driver CQE has no result");
+void TimerQueue::HandleDriverComplete(::alyrn::luring::detail::Op* op) noexcept {
+  ALYRN_CHECK(op->result.HasValue(), "timer driver CQE has no result");
   const bool expired = *op->result == -ETIME;
   driver_armed_ = false;
   driver_deadline_ = {};
@@ -133,8 +133,8 @@ void TimerQueue::HandleDriverComplete(::coropact::luring::detail::Op* op) noexce
   ReconcileOrStop();
 }
 
-void TimerQueue::HandleControlComplete(::coropact::luring::detail::Op* op) noexcept {
-  COROPACT_CHECK(op->result.HasValue(), "timer control CQE has no result");
+void TimerQueue::HandleControlComplete(::alyrn::luring::detail::Op* op) noexcept {
+  ALYRN_CHECK(op->result.HasValue(), "timer control CQE has no result");
   control_pending_ = false;
 
   if (control_is_fallback_) {
@@ -164,7 +164,7 @@ void TimerQueue::ProcessExpired() noexcept {
                    [this](time::Timer* timer) noexcept {
                      const auto id = timer->sequence();
                      auto it = active_.find(id);
-                     COROPACT_CHECK(it != active_.end(),
+                     ALYRN_CHECK(it != active_.end(),
                                     "TimerQueue expired timer is missing from active set");
                      std::unique_ptr<time::Timer> owned = std::move(it->second);
                      active_.erase(it);
@@ -246,4 +246,4 @@ Result<void> TimerQueue::Update(time::Deadline deadline) noexcept {
   return {};
 }
 
-}  // namespace coropact::luring::detail
+}  // namespace alyrn::luring::detail

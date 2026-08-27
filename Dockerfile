@@ -28,7 +28,7 @@ RUN ./configure --prefix=/opt/liburing \
 
 FROM ubuntu:24.04 AS build
 
-ARG COROPACT_ENABLE_URING=ON
+ARG ALYRN_ENABLE_URING=ON
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PKG_CONFIG_PATH=/opt/liburing/lib/pkgconfig
@@ -55,7 +55,7 @@ RUN cmake -S . -B build -G Ninja \
         -DBUILD_TESTS=ON \
         -DBUILD_EXAMPLES=ON \
         -DBUILD_BENCHMARKS=OFF \
-        -DCOROPACT_ENABLE_URING=${COROPACT_ENABLE_URING} \
+        -DALYRN_ENABLE_URING=${ALYRN_ENABLE_URING} \
         -DCMAKE_INSTALL_PREFIX=/usr \
     && cmake --build build -j"$(nproc)" \
     && ctest --test-dir build --output-on-failure \
@@ -63,11 +63,11 @@ RUN cmake -S . -B build -G Ninja \
 
 FROM ubuntu:24.04 AS runtime
 
-COPY --from=build /src/build/examples/simple_echo_container /usr/local/bin/coropact-echo
+COPY --from=build /src/build/examples/simple_echo_container /usr/local/bin/alyrn-echo
 
 EXPOSE 9090
 
-ENTRYPOINT ["/usr/local/bin/coropact-echo"]
+ENTRYPOINT ["/usr/local/bin/alyrn-echo"]
 
 # `docker buildx build --target artifacts --output=type=local,dest=dist .`
 # copies these files to the host without creating a runtime container image.

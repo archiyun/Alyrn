@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 //
 // Build:
-//   cmake -S . -B build-uring -DBUILD_EXAMPLES=ON -DCOROPACT_ENABLE_URING=ON
+//   cmake -S . -B build-uring -DBUILD_EXAMPLES=ON -DALYRN_ENABLE_URING=ON
 //   cmake --build build-uring --target simple_echo_luring -j
 //
 // Run:
@@ -17,12 +17,12 @@
 #include <thread>
 #include <utility>
 
-#include "coropact/luring.h"
-#include "coropact/net.h"
+#include "alyrn/luring.h"
+#include "alyrn/net.h"
 #include "echo_app.h"
 #include "signal_stop.h"
 
-using namespace coropact;
+using namespace alyrn;
 
 namespace {
 

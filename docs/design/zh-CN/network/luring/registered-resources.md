@@ -22,7 +22,7 @@ loop init / source create
 ## 尚未公开：fixed registered buffer
 
 `io_uring_register_buffers()` + `IORING_OP_READ_FIXED` 的模型是：应用预先注册一组 buffer，
-之后 SQE 通过固定索引引用它们。当前 CoroPact 没有对应的公共 luring API，也没有稳定的
+之后 SQE 通过固定索引引用它们。当前 Alyrn 没有对应的公共 luring API，也没有稳定的
 “注册表 owner、slot 借用、关闭时等待”契约，因此文档和测试都不能把它标为已支持。
 
 未来若开放，至少需要明确：
@@ -36,7 +36,7 @@ loop init / source create
 ## 尚未公开：fixed file
 
 fixed file 缓存的是 kernel file reference，不改变业务层 fd ownership。它同样没有当前公共
-入口。不要因为内部 `Ring` 能准备 SQE，就把 fixed file 当成 CoroPact 的功能。
+入口。不要因为内部 `Ring` 能准备 SQE，就把 fixed file 当成 Alyrn 的功能。
 
 ## 与零拷贝的关系
 

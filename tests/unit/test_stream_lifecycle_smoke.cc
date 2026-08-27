@@ -10,11 +10,11 @@
 #include <system_error>
 #include <utility>
 
-#include "coropact/net/detail/stream_lifecycle.h"
+#include "alyrn/net/detail/stream_lifecycle.h"
 
 namespace {
 
-using coropact::net::detail::StreamLifecycle;
+using alyrn::net::detail::StreamLifecycle;
 
 bool Check(bool condition, const char* message) {
   if (!condition) {

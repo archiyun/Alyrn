@@ -15,24 +15,24 @@
 #include <system_error>
 #include <utility>
 
-#include "coropact/coro/detached_task.h"
-#include "coropact/coro/spawn.h"
-#include "coropact/luring/detail/loop_access.h"
-#include "coropact/luring/loop.h"
-#include "coropact/luring/options.h"
-#include "coropact/luring/recv_source.h"
-#include "coropact/luring/timer.h"
-#include "coropact/result.h"
+#include "alyrn/coro/detached_task.h"
+#include "alyrn/coro/spawn.h"
+#include "alyrn/luring/detail/loop_access.h"
+#include "alyrn/luring/loop.h"
+#include "alyrn/luring/options.h"
+#include "alyrn/luring/recv_source.h"
+#include "alyrn/luring/timer.h"
+#include "alyrn/result.h"
 
 namespace {
 
-using coropact::Error;
-using coropact::Result;
-using coropact::coro::DetachedTask;
-using coropact::luring::Loop;
-using coropact::luring::Options;
-using coropact::luring::RecvSource;
-using coropact::luring::RecvSourceOptions;
+using alyrn::Error;
+using alyrn::Result;
+using alyrn::coro::DetachedTask;
+using alyrn::luring::Loop;
+using alyrn::luring::Options;
+using alyrn::luring::RecvSource;
+using alyrn::luring::RecvSourceOptions;
 
 class UniqueFd final {
 public:
@@ -139,12 +139,12 @@ LoopInitStatus InitLoop(Loop& loop, std::size_t shared_buffer_capacity = 64,
 template <typename Predicate>
 bool PumpUntil(Loop& loop, Predicate&& predicate, int max_iterations = 64) {
   for (int i = 0; i < max_iterations && !predicate(); ++i) {
-    auto completed = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
+    auto completed = alyrn::luring::detail::LoopAccess::WaitCompletions(loop);
     if (!completed.has_value()) {
       std::cout << "FAIL: waiting for CQE failed: " << completed.error().message() << '\n';
       return false;
     }
-    coropact::luring::detail::LoopAccess::RunReady(loop);
+    alyrn::luring::detail::LoopAccess::RunReady(loop);
   }
   return predicate();
 }
@@ -152,7 +152,7 @@ bool PumpUntil(Loop& loop, Predicate&& predicate, int max_iterations = 64) {
 Result<std::pair<UniqueFd, UniqueFd>> MakeSocketPair() {
   int fds[2] = {-1, -1};
   if (::socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0, fds) < 0) {
-    return std::unexpected(coropact::CurrentErrno());
+    return std::unexpected(alyrn::CurrentErrno());
   }
   return std::make_pair(UniqueFd(fds[0]), UniqueFd(fds[1]));
 }
@@ -195,7 +195,7 @@ DetachedTask ReceivePauseThenResume(RecvSource* source, Loop* loop,
       return false;
     }
     if (!received->has_value()) {
-      observation->error = coropact::Errno(ECONNRESET);
+      observation->error = alyrn::Errno(ECONNRESET);
       return false;
     }
     const auto bytes = (*received)->buffer.Bytes();
@@ -214,7 +214,7 @@ DetachedTask ReceivePauseThenResume(RecvSource* source, Loop* loop,
   // The second datagram is sent while this coroutine sleeps. With a one
   // element event queue it reaches the high-water mark and pauses the native
   // multishot request before this coroutine consumes it.
-  auto delay = co_await coropact::luring::SleepFor(*loop, std::chrono::milliseconds(50));
+  auto delay = co_await alyrn::luring::SleepFor(*loop, std::chrono::milliseconds(50));
   if (!delay.has_value()) {
     observation->error = delay.error();
     observation->done = true;
@@ -251,7 +251,7 @@ DetachedTask ReceiveWithFirstLeaseHeld(RecvSource* source,
                                        HeldLeaseObservation* observation) {
   auto first = co_await source->Next();
   if (!first.has_value() || !first->has_value()) {
-    observation->error = first.has_value() ? coropact::Errno(ECONNRESET) : first.error();
+    observation->error = first.has_value() ? alyrn::Errno(ECONNRESET) : first.error();
     observation->done = true;
     co_return;
   }
@@ -259,7 +259,7 @@ DetachedTask ReceiveWithFirstLeaseHeld(RecvSource* source,
 
   auto second = co_await source->Next();
   if (!second.has_value() || !second->has_value()) {
-    observation->error = second.has_value() ? coropact::Errno(ECONNRESET) : second.error();
+    observation->error = second.has_value() ? alyrn::Errno(ECONNRESET) : second.error();
     observation->done = true;
     co_return;
   }
@@ -319,13 +319,13 @@ bool CheckRecvAndLease() {
   auto source = std::move(*source_result);
 
   Observation observation;
-  coropact::coro::SpawnDetach(loop, ReceiveOne(&source, &observation));
-  coropact::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::coro::SpawnDetach(loop, ReceiveOne(&source, &observation));
+  alyrn::luring::detail::LoopAccess::RunReady(loop);
 
   constexpr std::string_view kPayload = "provided-buffer-recv";
   const auto sent = ::send(sender.Get(), kPayload.data(), kPayload.size(), MSG_NOSIGNAL);
   if (sent != static_cast<ssize_t>(kPayload.size())) {
-    std::cout << "FAIL: send failed: " << coropact::CurrentErrno().message() << '\n';
+    std::cout << "FAIL: send failed: " << alyrn::CurrentErrno().message() << '\n';
     return false;
   }
 
@@ -377,14 +377,14 @@ bool CheckHeldLeases() {
   auto source = std::move(*source_result);
 
   HeldLeaseObservation observation;
-  coropact::coro::SpawnDetach(loop, ReceiveWithFirstLeaseHeld(&source, &observation));
-  coropact::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::coro::SpawnDetach(loop, ReceiveWithFirstLeaseHeld(&source, &observation));
+  alyrn::luring::detail::LoopAccess::RunReady(loop);
 
   constexpr std::string_view kFirst = "first-segment";
   constexpr std::string_view kSecond = "second-segment";
   if (::send(sender.Get(), kFirst.data(), kFirst.size(), MSG_NOSIGNAL) !=
       static_cast<ssize_t>(kFirst.size())) {
-    std::cout << "FAIL: held-lease first send failed: " << coropact::CurrentErrno().message()
+    std::cout << "FAIL: held-lease first send failed: " << alyrn::CurrentErrno().message()
               << '\n';
     return false;
   }
@@ -399,7 +399,7 @@ bool CheckHeldLeases() {
 
   if (::send(sender.Get(), kSecond.data(), kSecond.size(), MSG_NOSIGNAL) !=
       static_cast<ssize_t>(kSecond.size())) {
-    std::cout << "FAIL: held-lease second send failed: " << coropact::CurrentErrno().message()
+    std::cout << "FAIL: held-lease second send failed: " << alyrn::CurrentErrno().message()
               << '\n';
     return false;
   }
@@ -457,9 +457,9 @@ bool CheckSharedBufferPool() {
 
   Observation first_observation;
   Observation second_observation;
-  coropact::coro::SpawnDetach(loop, ReceiveOne(&first_source, &first_observation));
-  coropact::coro::SpawnDetach(loop, ReceiveOne(&second_source, &second_observation));
-  coropact::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::coro::SpawnDetach(loop, ReceiveOne(&first_source, &first_observation));
+  alyrn::coro::SpawnDetach(loop, ReceiveOne(&second_source, &second_observation));
+  alyrn::luring::detail::LoopAccess::RunReady(loop);
 
   constexpr std::string_view kFirstPayload = "shared-first";
   constexpr std::string_view kSecondPayload = "shared-second";
@@ -467,7 +467,7 @@ bool CheckSharedBufferPool() {
           static_cast<ssize_t>(kFirstPayload.size()) ||
       ::send(second_sender.Get(), kSecondPayload.data(), kSecondPayload.size(), MSG_NOSIGNAL) !=
           static_cast<ssize_t>(kSecondPayload.size())) {
-    std::cout << "FAIL: shared-pool send failed: " << coropact::CurrentErrno().message() << '\n';
+    std::cout << "FAIL: shared-pool send failed: " << alyrn::CurrentErrno().message() << '\n';
     return false;
   }
 
@@ -521,8 +521,8 @@ bool CheckEof() {
   auto source = std::move(*source_result);
 
   Observation observation;
-  coropact::coro::SpawnDetach(loop, ReceiveOne(&source, &observation));
-  coropact::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::coro::SpawnDetach(loop, ReceiveOne(&source, &observation));
+  alyrn::luring::detail::LoopAccess::RunReady(loop);
   sender.Reset();
 
   if (!PumpUntil(loop, [&] { return observation.done || observation.error.has_value(); })) {
@@ -573,15 +573,15 @@ bool CheckQueuePauseThenRearm() {
   auto source = std::move(*source_result);
 
   PauseResumeObservation observation;
-  coropact::coro::SpawnDetach(loop, ReceivePauseThenResume(&source, &loop, &observation));
-  coropact::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::coro::SpawnDetach(loop, ReceivePauseThenResume(&source, &loop, &observation));
+  alyrn::luring::detail::LoopAccess::RunReady(loop);
 
   const auto send_payload = [&sender](std::string_view payload) -> bool {
     const auto sent = ::send(sender.Get(), payload.data(), payload.size(), MSG_NOSIGNAL);
     if (sent == static_cast<ssize_t>(payload.size())) {
       return true;
     }
-    std::cout << "FAIL: send failed: " << coropact::CurrentErrno().message() << '\n';
+    std::cout << "FAIL: send failed: " << alyrn::CurrentErrno().message() << '\n';
     return false;
   };
 

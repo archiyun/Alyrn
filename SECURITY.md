@@ -20,8 +20,8 @@ unbounded resource consumption, parser flaw, etc.):
 ## Scope
 
 In scope:
-- `coropact_foundation`, `coropact_task`, `coropact_net`, `coropact_reactor`,
-  `coropact_luring` library code
+- `alyrn_foundation`, `alyrn_task`, `alyrn_net`, `alyrn_reactor`,
+  `alyrn_luring` library code
 
 Out of scope:
 - Example programs under `examples/`

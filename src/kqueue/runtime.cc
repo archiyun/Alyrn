@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "coropact/kqueue/runtime.h"
+#include "alyrn/kqueue/runtime.h"
 
 #include <algorithm>
 #include <atomic>
@@ -11,10 +11,10 @@
 #include <thread>
 #include <utility>
 
-#include "coropact/result.h"
-#include "coropact/kqueue/detail/worker_group.h"
+#include "alyrn/result.h"
+#include "alyrn/kqueue/detail/worker_group.h"
 
-namespace coropact::kqueue {
+namespace alyrn::kqueue {
 
 namespace {
 
@@ -158,9 +158,9 @@ std::unique_ptr<runtime::detail::RuntimeControl> MakeRuntimeControl(
                                                  std::move(connection_handler));
 }
 
-}  // namespace coropact::kqueue
+}  // namespace alyrn::kqueue
 
-namespace coropact {
+namespace alyrn {
 
 Runtime::Builder<runtime::Kqueue>::Builder(net::Endpoint listen_addr) noexcept
     : listen_addr_(listen_addr) {}
@@ -187,4 +187,4 @@ Runtime Runtime::Builder<runtime::Kqueue>::Build() {
                                              std::move(connection_handler_))};
 }
 
-}  // namespace coropact
+}  // namespace alyrn

@@ -18,12 +18,12 @@
 #include <stop_token>
 #include <utility>
 
-#include "coropact/coro.h"
-#include "coropact/io.h"
-#include "coropact/luring.h"
-#include "coropact/net.h"
+#include "alyrn/coro.h"
+#include "alyrn/io.h"
+#include "alyrn/luring.h"
+#include "alyrn/net.h"
 
-using namespace coropact;
+using namespace alyrn;
 
 namespace {
 

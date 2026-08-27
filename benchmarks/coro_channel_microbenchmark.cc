@@ -15,21 +15,21 @@
 #include <cstdlib>
 #include <iostream>
 
-#include "coropact/base/check.h"
-#include "coropact/coro/channel.h"
-#include "coropact/coro/scheduler.h"
-#include "coropact/coro/work.h"
+#include "alyrn/base/check.h"
+#include "alyrn/coro/channel.h"
+#include "alyrn/coro/scheduler.h"
+#include "alyrn/coro/work.h"
 
 namespace {
 
-using coropact::coro::Channel;
-using coropact::coro::Scheduler;
-using coropact::coro::Work;
+using alyrn::coro::Channel;
+using alyrn::coro::Scheduler;
+using alyrn::coro::Work;
 
 class InlineScheduler final : public Scheduler {
 public:
   void Schedule(Work*) noexcept override {
-    COROPACT_CHECK(false, "channel microbenchmark must not schedule coroutine work");
+    ALYRN_CHECK(false, "channel microbenchmark must not schedule coroutine work");
   }
 };
 
@@ -47,10 +47,10 @@ public:
 private:
   void RunPairs() noexcept {
     for (std::uint64_t value = 0; value < iterations_; ++value) {
-      COROPACT_CHECK(channel_->TrySend(std::move(value)).has_value(),
+      ALYRN_CHECK(channel_->TrySend(std::move(value)).has_value(),
                      "channel microbenchmark send failed");
       auto received = channel_->TryReceive();
-      COROPACT_CHECK(received.has_value() && received->has_value(),
+      ALYRN_CHECK(received.has_value() && received->has_value(),
                      "channel microbenchmark receive failed");
       checksum_ += **received;
     }
@@ -83,7 +83,7 @@ int main() {
   const auto elapsed = std::chrono::steady_clock::now() - started;
   const auto nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count();
   const auto expected = (iterations - 1) * iterations / 2;
-  COROPACT_CHECK(work.checksum() == expected, "channel microbenchmark checksum mismatch");
+  ALYRN_CHECK(work.checksum() == expected, "channel microbenchmark checksum mismatch");
 
   std::cout << "record,iterations,elapsed_ns,ns_per_pair,checksum\n"
             << "channel_try_send_receive," << iterations << ',' << nanos << ','

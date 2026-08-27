@@ -17,31 +17,31 @@
 #include <utility>
 #include <vector>
 
-#include "coropact/result.h"
-#include "coropact/coro/scheduler.h"
-#include "coropact/coro/spawn.h"
-#include "coropact/luring/listener.h"
-#include "coropact/luring/loop.h"
-#include "coropact/luring/detail/loop_access.h"
-#include "coropact/luring/options.h"
-#include "coropact/luring/timer.h"
-#include "coropact/net/accept_source.h"
-#include "coropact/net/endpoint.h"
+#include "alyrn/result.h"
+#include "alyrn/coro/scheduler.h"
+#include "alyrn/coro/spawn.h"
+#include "alyrn/luring/listener.h"
+#include "alyrn/luring/loop.h"
+#include "alyrn/luring/detail/loop_access.h"
+#include "alyrn/luring/options.h"
+#include "alyrn/luring/timer.h"
+#include "alyrn/net/accept_source.h"
+#include "alyrn/net/endpoint.h"
 
 namespace {
 
-using coropact::Error;
-using coropact::Result;
-using coropact::luring::AcceptSource;
-using coropact::luring::detail::CompletionEvent;
-using coropact::luring::Listener;
-using coropact::luring::Loop;
-using coropact::luring::Options;
-using coropact::net::Endpoint;
-using coropact::net::detail::AcceptSourceState;
-using coropact::net::detail::AcceptSourceStateMachine;
-using coropact::net::detail::EventDisposition;
-using coropact::net::detail::MultishotRequestDisposition;
+using alyrn::Error;
+using alyrn::Result;
+using alyrn::luring::AcceptSource;
+using alyrn::luring::detail::CompletionEvent;
+using alyrn::luring::Listener;
+using alyrn::luring::Loop;
+using alyrn::luring::Options;
+using alyrn::net::Endpoint;
+using alyrn::net::detail::AcceptSourceState;
+using alyrn::net::detail::AcceptSourceStateMachine;
+using alyrn::net::detail::EventDisposition;
+using alyrn::net::detail::MultishotRequestDisposition;
 
 constexpr int kClientCount = 4;
 
@@ -181,13 +181,13 @@ LoopInitStatus InitLoop(Loop& loop) {
 template <typename Predicate>
 bool PumpUntil(Loop& loop, Predicate&& predicate, int max_iterations = 64) {
   for (int i = 0; i < max_iterations && !predicate(); ++i) {
-    auto completed = coropact::luring::detail::LoopAccess::WaitCompletions(loop);
+    auto completed = alyrn::luring::detail::LoopAccess::WaitCompletions(loop);
     if (!completed.has_value()) {
       std::cout << "FAIL: waiting for CQE failed: "
                 << completed.error().message() << '\n';
       return false;
     }
-    coropact::luring::detail::LoopAccess::RunReady(loop);
+    alyrn::luring::detail::LoopAccess::RunReady(loop);
   }
   return predicate();
 }
@@ -198,7 +198,7 @@ Result<int> ConnectClient(const Endpoint& address) {
       SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC,
       IPPROTO_TCP);
   if (fd < 0) {
-    return std::unexpected(coropact::CurrentErrno());
+    return std::unexpected(alyrn::CurrentErrno());
   }
 
   const int result = ::connect(
@@ -207,7 +207,7 @@ Result<int> ConnectClient(const Endpoint& address) {
       address.SockAddrLen());
 
   if (result < 0 && errno != EINPROGRESS) {
-    const auto error = coropact::CurrentErrno();
+    const auto error = alyrn::CurrentErrno();
     ::close(fd);
     return std::unexpected(error);
   }
@@ -368,7 +368,7 @@ void CheckFakeRearmSubmitFailure() {
   // A terminal positive event releases the old request and triggers rearm.
   // The injected failure must become a source terminal condition while the
   // two already produced events remain drainable.
-  source.FailNextSubmission(coropact::Errno(EIO));
+  source.FailNextSubmission(alyrn::Errno(EIO));
   auto rearm = source.Complete(
       CompletionEvent{12, 0},
       EventDisposition::kProduced);
@@ -417,7 +417,7 @@ void CheckFakeMultishotFallback() {
   assert(source.ConsumeEvent());
 }
 
-coropact::coro::DetachedTask Consume(
+alyrn::coro::DetachedTask Consume(
     AcceptSource* source,
     Observation* observation) {
   for (int i = 0; i < kClientCount; ++i) {
@@ -438,7 +438,7 @@ coropact::coro::DetachedTask Consume(
     }
 
     if (!result->has_value()) {
-      observation->error = coropact::Errno(ECONNABORTED);
+      observation->error = alyrn::Errno(ECONNABORTED);
       co_return;
     }
 
@@ -466,7 +466,7 @@ coropact::coro::DetachedTask Consume(
   }
 }
 
-coropact::coro::DetachedTask ConsumeOneThenStop(
+alyrn::coro::DetachedTask ConsumeOneThenStop(
     AcceptSource* source,
     CancelObservation* observation) {
   auto result = co_await source->Next();
@@ -480,7 +480,7 @@ coropact::coro::DetachedTask ConsumeOneThenStop(
     co_return;
   }
   if (!result->has_value()) {
-    observation->error = coropact::Errno(ECONNABORTED);
+    observation->error = alyrn::Errno(ECONNABORTED);
     observation->done = true;
     co_return;
   }
@@ -505,7 +505,7 @@ coropact::coro::DetachedTask ConsumeOneThenStop(
   observation->done = true;
 }
 
-coropact::coro::DetachedTask WaitForSourceEnd(
+alyrn::coro::DetachedTask WaitForSourceEnd(
     AcceptSource* source,
     CloseObservation* observation) {
   auto result = co_await source->Next();
@@ -521,7 +521,7 @@ coropact::coro::DetachedTask WaitForSourceEnd(
   observation->done = true;
 }
 
-coropact::coro::DetachedTask CloseListener(
+alyrn::coro::DetachedTask CloseListener(
     Listener* listener,
     CloseObservation* observation) {
   auto result = co_await listener->Close();
@@ -533,7 +533,7 @@ coropact::coro::DetachedTask CloseListener(
 
 /* Only the test-hook scenarios drive this directly. */
 
-coropact::coro::DetachedTask FillQueueThenStop(
+alyrn::coro::DetachedTask FillQueueThenStop(
     AcceptSource* source,
     Loop* loop,
     BackpressureObservation* observation) {
@@ -548,7 +548,7 @@ coropact::coro::DetachedTask FillQueueThenStop(
     co_return;
   }
   if (!first->has_value()) {
-    observation->error = coropact::Errno(ECONNABORTED);
+    observation->error = alyrn::Errno(ECONNABORTED);
     observation->done = true;
     co_return;
   }
@@ -556,7 +556,7 @@ coropact::coro::DetachedTask FillQueueThenStop(
 
   // Leave time for a burst to place one event in the bounded queue and a
   // later F_MORE CQE to hit the full-queue path.
-  auto delay = co_await coropact::luring::SleepFor(
+  auto delay = co_await alyrn::luring::SleepFor(
       *loop, std::chrono::milliseconds(50));
   if (!delay.has_value()) {
     observation->error = delay.error();
@@ -579,7 +579,7 @@ coropact::coro::DetachedTask FillQueueThenStop(
     co_return;
   }
   if (!queued->has_value()) {
-    observation->error = coropact::Errno(ECONNABORTED);
+    observation->error = alyrn::Errno(ECONNABORTED);
     observation->done = true;
     co_return;
   }
@@ -591,12 +591,12 @@ coropact::coro::DetachedTask FillQueueThenStop(
   } else if (!terminal->has_value()) {
     observation->normal_end = true;
   } else {
-    observation->error = coropact::Errno(ECONNABORTED);
+    observation->error = alyrn::Errno(ECONNABORTED);
   }
   observation->done = true;
 }
 
-coropact::coro::DetachedTask PauseThenResume(
+alyrn::coro::DetachedTask PauseThenResume(
     AcceptSource* source,
     Loop* loop,
     PauseResumeObservation* observation) {
@@ -611,7 +611,7 @@ coropact::coro::DetachedTask PauseThenResume(
     co_return;
   }
   if (!first->has_value()) {
-    observation->error = coropact::Errno(ECONNABORTED);
+    observation->error = alyrn::Errno(ECONNABORTED);
     observation->done = true;
     co_return;
   }
@@ -620,7 +620,7 @@ coropact::coro::DetachedTask PauseThenResume(
   // The test sends the second connection while this coroutine is asleep.
   // With event_capacity == 1 that event fills the source queue and starts
   // the native cancel/terminal-CQE convergence path.
-  auto delay = co_await coropact::luring::SleepFor(
+  auto delay = co_await alyrn::luring::SleepFor(
       *loop, std::chrono::milliseconds(50));
   if (!delay.has_value()) {
     observation->error = delay.error();
@@ -631,7 +631,7 @@ coropact::coro::DetachedTask PauseThenResume(
   auto queued = co_await source->Next();
   if (!queued.has_value() || !queued->has_value()) {
     observation->error = queued.has_value()
-                             ? coropact::Errno(ECONNABORTED)
+                             ? alyrn::Errno(ECONNABORTED)
                              : queued.error();
     observation->done = true;
     co_return;
@@ -644,7 +644,7 @@ coropact::coro::DetachedTask PauseThenResume(
   auto resumed = co_await source->Next();
   if (!resumed.has_value() || !resumed->has_value()) {
     observation->error = resumed.has_value()
-                             ? coropact::Errno(ECONNABORTED)
+                             ? alyrn::Errno(ECONNABORTED)
                              : resumed.error();
     observation->done = true;
     co_return;
@@ -665,7 +665,7 @@ coropact::coro::DetachedTask PauseThenResume(
   } else if (!terminal->has_value()) {
     observation->normal_end = true;
   } else {
-    observation->error = coropact::Errno(ECONNABORTED);
+    observation->error = alyrn::Errno(ECONNABORTED);
   }
   observation->done = true;
 }
@@ -682,7 +682,7 @@ bool CheckMultishotAccept() {
       return false;
   }
 
-  coropact::luring::ListenOptions options;
+  alyrn::luring::ListenOptions options;
   options.tcp_options.no_delay = true;
   options.tcp_options.keep_alive = true;
   auto listener_result = Listener::Create(&loop, LoopbackAddress(0), options);
@@ -706,12 +706,12 @@ bool CheckMultishotAccept() {
   auto source = std::move(*source_result);
   Observation observation;
 
-  coropact::coro::SpawnDetach(
+  alyrn::coro::SpawnDetach(
       loop,
       Consume(&source, &observation));
 
   // Start the consumer and submit the multishot request.
-  coropact::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::luring::detail::LoopAccess::RunReady(loop);
 
   auto address = listener.LocalAddress();
   if (!address.has_value()) {
@@ -784,9 +784,9 @@ bool CheckStopCancelsActiveSource() {
   auto source = std::move(*source_result);
 
   CancelObservation observation;
-  coropact::coro::SpawnDetach(
+  alyrn::coro::SpawnDetach(
       loop, ConsumeOneThenStop(&source, &observation));
-  coropact::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::luring::detail::LoopAccess::RunReady(loop);
 
   auto address = listener.LocalAddress();
   if (!address.has_value()) {
@@ -849,13 +849,13 @@ bool CheckListenerCloseCancelsActiveSource() {
   auto source = std::move(*source_result);
 
   CloseObservation observation;
-  coropact::coro::SpawnDetach(
+  alyrn::coro::SpawnDetach(
       loop, WaitForSourceEnd(&source, &observation));
-  coropact::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::luring::detail::LoopAccess::RunReady(loop);
 
-  coropact::coro::SpawnDetach(
+  alyrn::coro::SpawnDetach(
       loop, CloseListener(&listener, &observation));
-  coropact::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::luring::detail::LoopAccess::RunReady(loop);
 
   if (!PumpUntil(loop, [&] {
         return observation.unsupported || observation.error.has_value() ||
@@ -905,9 +905,9 @@ bool CheckQueueBackpressure() {
   auto source = std::move(*source_result);
 
   BackpressureObservation observation;
-  coropact::coro::SpawnDetach(
+  alyrn::coro::SpawnDetach(
       loop, FillQueueThenStop(&source, &loop, &observation));
-  coropact::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::luring::detail::LoopAccess::RunReady(loop);
 
   auto address = listener.LocalAddress();
   if (!address.has_value()) {
@@ -1004,8 +1004,8 @@ bool RunQueuePauseThenRearmScenario() {
   auto source = std::move(*source_result);
 
   PauseResumeObservation observation;
-  coropact::coro::SpawnDetach(loop, PauseThenResume(&source, &loop, &observation));
-  coropact::luring::detail::LoopAccess::RunReady(loop);
+  alyrn::coro::SpawnDetach(loop, PauseThenResume(&source, &loop, &observation));
+  alyrn::luring::detail::LoopAccess::RunReady(loop);
 
 
   auto address = listener.LocalAddress();

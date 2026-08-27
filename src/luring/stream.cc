@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "coropact/luring/stream.h"
+#include "alyrn/luring/stream.h"
 
 #include <linux/time_types.h>
 #include <sys/socket.h>
@@ -16,24 +16,24 @@
 #include <span>
 #include <utility>
 
-#include "coropact/backend/loop.h"
-#include "coropact/base/check.h"
-#include "coropact/luring/detail/fd_close_convergence.h"
-#include "coropact/luring/detail/loop_access.h"
-#include "coropact/luring/detail/op.h"
-#include "coropact/luring/detail/op_hook.h"
-#include "coropact/luring/detail/operation_submission.h"
-#include "coropact/luring/detail/sqe_prep.h"
-#include "coropact/luring/detail/stream_operation_slot.h"
-#include "coropact/luring/loop.h"
-#include "coropact/net/endpoint.h"
-#include "coropact/net/read_into.h"
-#include "coropact/net/socket.h"
-#include "coropact/operation/detail/composite_lifecycle.h"
-#include "coropact/result.h"
-#include "coropact/time/clock.h"
+#include "alyrn/backend/loop.h"
+#include "alyrn/base/check.h"
+#include "alyrn/luring/detail/fd_close_convergence.h"
+#include "alyrn/luring/detail/loop_access.h"
+#include "alyrn/luring/detail/op.h"
+#include "alyrn/luring/detail/op_hook.h"
+#include "alyrn/luring/detail/operation_submission.h"
+#include "alyrn/luring/detail/sqe_prep.h"
+#include "alyrn/luring/detail/stream_operation_slot.h"
+#include "alyrn/luring/loop.h"
+#include "alyrn/net/endpoint.h"
+#include "alyrn/net/read_into.h"
+#include "alyrn/net/socket.h"
+#include "alyrn/operation/detail/composite_lifecycle.h"
+#include "alyrn/result.h"
+#include "alyrn/time/clock.h"
 
-namespace coropact::luring {
+namespace alyrn::luring {
 
 using namespace detail;
 
@@ -42,7 +42,7 @@ namespace {
 constexpr std::size_t kReadIntoMaxIov = 16;
 
 Result<std::size_t> ToSizeResult(const CqeResult& result) noexcept {
-  COROPACT_CHECK(result.HasValue(),
+  ALYRN_CHECK(result.HasValue(),
                  "LUring stream awaiter resumed before its CQE result was ready");
   const int cqe_result = *result;
   if (cqe_result < 0) {
@@ -151,9 +151,9 @@ Result<std::size_t> Stream::ReadSomeAwaiter::await_resume() noexcept {
   return ToSizeResult(Operation()->result);
 }
 
-void Stream::ReadSomeAwaiter::OnComplete(::coropact::luring::detail::Op* op) noexcept {
+void Stream::ReadSomeAwaiter::OnComplete(::alyrn::luring::detail::Op* op) noexcept {
   auto* self = OpHook::OwnerFrom(op);
-  COROPACT_CHECK(op->TryAuthorizeCoupledRelease(),
+  ALYRN_CHECK(op->TryAuthorizeCoupledRelease(),
                  "LUring ReadSome released its stream slot before result readiness");
   if (self->stream_ != nullptr) {
     detail::StreamOperationSlot::Release(*self->stream_, detail::StreamOperationDirection::kRead,
@@ -215,9 +215,9 @@ net::ReadIntoOutcome Stream::ReadIntoAwaiter::await_resume() noexcept {
   };
 }
 
-void Stream::ReadIntoAwaiter::OnComplete(::coropact::luring::detail::Op* op) noexcept {
+void Stream::ReadIntoAwaiter::OnComplete(::alyrn::luring::detail::Op* op) noexcept {
   auto* self = OpHook::OwnerFrom(op);
-  COROPACT_CHECK(op->TryAuthorizeCoupledRelease(),
+  ALYRN_CHECK(op->TryAuthorizeCoupledRelease(),
                  "LUring ReadInto released its reservation before result readiness");
   self->FinishReservation(ToSizeResult(op->result));
   if (self->stream_ != nullptr) {
@@ -249,7 +249,7 @@ Stream::ReadIntoAwaiter::ReservationKind Stream::ReadIntoAwaiter::PrepareReserva
 }
 
 void Stream::ReadIntoAwaiter::FinishReservation(Result<std::size_t> result) noexcept {
-  COROPACT_CHECK(reservation_kind_ != ReservationKind::kNone,
+  ALYRN_CHECK(reservation_kind_ != ReservationKind::kNone,
                  "ReadIntoAwaiter completion without a buffer reservation");
   if (result.has_value()) {
     buffer_.CommitWrite(*result);
@@ -322,7 +322,7 @@ Result<std::size_t> Stream::ReadSomeForAwaiter::await_resume() noexcept {
     return ToSizeResult(ReadOp()->result);
   }
 
-  COROPACT_CHECK(lifecycle_.MemberCompleted(operation::detail::CompositeMember::kFirst),
+  ALYRN_CHECK(lifecycle_.MemberCompleted(operation::detail::CompositeMember::kFirst),
                  "timed read resumed before its read member settled");
   if (ReadOp()->result.HasValue() && *ReadOp()->result >= 0) {
     return static_cast<std::size_t>(*ReadOp()->result);
@@ -333,29 +333,29 @@ Result<std::size_t> Stream::ReadSomeForAwaiter::await_resume() noexcept {
   return ToSizeResult(ReadOp()->result);
 }
 
-void Stream::ReadSomeForAwaiter::OnReadComplete(::coropact::luring::detail::Op* op) noexcept {
+void Stream::ReadSomeForAwaiter::OnReadComplete(::alyrn::luring::detail::Op* op) noexcept {
   ReadOpHook::OwnerFrom(op)->CompleteRead(op);
 }
 
-void Stream::ReadSomeForAwaiter::OnTimeoutComplete(::coropact::luring::detail::Op* op) noexcept {
+void Stream::ReadSomeForAwaiter::OnTimeoutComplete(::alyrn::luring::detail::Op* op) noexcept {
   TimeoutOpHook::OwnerFrom(op)->CompleteTimeout(op);
 }
 
-void Stream::ReadSomeForAwaiter::CompleteRead(::coropact::luring::detail::Op* current) noexcept {
+void Stream::ReadSomeForAwaiter::CompleteRead(::alyrn::luring::detail::Op* current) noexcept {
   if (!lifecycle_.RecordMemberCompletion(operation::detail::CompositeMember::kFirst)) {
     return;
   }
   FinishIfReady(current);
 }
 
-void Stream::ReadSomeForAwaiter::CompleteTimeout(::coropact::luring::detail::Op* current) noexcept {
+void Stream::ReadSomeForAwaiter::CompleteTimeout(::alyrn::luring::detail::Op* current) noexcept {
   if (!lifecycle_.RecordMemberCompletion(operation::detail::CompositeMember::kSecond)) {
     return;
   }
   FinishIfReady(current);
 }
 
-void Stream::ReadSomeForAwaiter::FinishIfReady(::coropact::luring::detail::Op* current) noexcept {
+void Stream::ReadSomeForAwaiter::FinishIfReady(::alyrn::luring::detail::Op* current) noexcept {
   if (!lifecycle_.TryAuthorizeLogicalResult()) {
     return;
   }
@@ -402,9 +402,9 @@ Result<std::size_t> Stream::SendAwaiter::await_resume() noexcept {
   return ToSizeResult(Operation()->result);
 }
 
-void Stream::SendAwaiter::OnComplete(::coropact::luring::detail::Op* op) noexcept {
+void Stream::SendAwaiter::OnComplete(::alyrn::luring::detail::Op* op) noexcept {
   auto* self = OpHook::OwnerFrom(op);
-  COROPACT_CHECK(op->TryAuthorizeCoupledRelease(),
+  ALYRN_CHECK(op->TryAuthorizeCoupledRelease(),
                  "LUring send released its stream slot before result readiness");
   if (self->stream_ != nullptr) {
     detail::StreamOperationSlot::Release(*self->stream_, detail::StreamOperationDirection::kWrite,
@@ -414,7 +414,7 @@ void Stream::SendAwaiter::OnComplete(::coropact::luring::detail::Op* op) noexcep
 
 // ----- CloseAwaiter ------
 class Stream::CloseAwaiter : public detail::OpHook<Stream::CloseAwaiter> {
-  friend void detail::DispatchStreamCloseComplete(::coropact::luring::detail::Op* op) noexcept;
+  friend void detail::DispatchStreamCloseComplete(::alyrn::luring::detail::Op* op) noexcept;
 
 public:
   using OpHook = detail::OpHook<CloseAwaiter>;
@@ -465,11 +465,11 @@ public:
   }
 
   Result<void> await_resume() noexcept {
-    COROPACT_CHECK(convergence_.HasResult(), "LUring stream Close resumed before convergence");
+    ALYRN_CHECK(convergence_.HasResult(), "LUring stream Close resumed before convergence");
     return convergence_.TakeResult();
   }
 
-  void TryComplete(::coropact::luring::detail::Op* current = nullptr) noexcept {
+  void TryComplete(::alyrn::luring::detail::Op* current = nullptr) noexcept {
     if (stream_ == nullptr || !convergence_.TryAuthorizeClose(stream_->pending_read_ != nullptr ||
                                                               stream_->pending_write_ != nullptr)) {
       return;
@@ -488,7 +488,7 @@ public:
   }
 
 private:
-  static void OnCancelComplete(::coropact::luring::detail::Op* op) noexcept {
+  static void OnCancelComplete(::alyrn::luring::detail::Op* op) noexcept {
     auto* self = OpHook::OwnerFrom(op);
     self->convergence_.MarkCancelRequestTerminal();
     self->TryComplete(op);
@@ -559,7 +559,7 @@ Result<ZeroCopySendResult> Stream::SendZeroCopyAwaiter::await_resume() noexcept 
   };
 }
 
-CompletionDisposition Stream::SendZeroCopyAwaiter::OnComplete(::coropact::luring::detail::Op* op,
+CompletionDisposition Stream::SendZeroCopyAwaiter::OnComplete(::alyrn::luring::detail::Op* op,
                                                               CompletionEvent event) noexcept {
   auto* self = OpHook::OwnerFrom(op);
   CompletionDisposition disposition;
@@ -602,32 +602,32 @@ CompletionDisposition Stream::SendZeroCopyAwaiter::OnComplete(::coropact::luring
 
 namespace detail {
 
-void DispatchStreamReadComplete(::coropact::luring::detail::Op* op) noexcept {
+void DispatchStreamReadComplete(::alyrn::luring::detail::Op* op) noexcept {
   Stream::ReadSomeAwaiter::OnComplete(op);
 }
 
-void DispatchStreamReadIntoComplete(::coropact::luring::detail::Op* op) noexcept {
+void DispatchStreamReadIntoComplete(::alyrn::luring::detail::Op* op) noexcept {
   Stream::ReadIntoAwaiter::OnComplete(op);
 }
 
-void DispatchTimedReadComplete(::coropact::luring::detail::Op* op) noexcept {
+void DispatchTimedReadComplete(::alyrn::luring::detail::Op* op) noexcept {
   Stream::ReadSomeForAwaiter::OnReadComplete(op);
 }
 
-void DispatchTimedReadTimeoutComplete(::coropact::luring::detail::Op* op) noexcept {
+void DispatchTimedReadTimeoutComplete(::alyrn::luring::detail::Op* op) noexcept {
   Stream::ReadSomeForAwaiter::OnTimeoutComplete(op);
 }
 
-void DispatchStreamWriteComplete(::coropact::luring::detail::Op* op) noexcept {
+void DispatchStreamWriteComplete(::alyrn::luring::detail::Op* op) noexcept {
   Stream::SendAwaiter::OnComplete(op);
 }
 
-CompletionDisposition DispatchSendZeroCopyComplete(::coropact::luring::detail::Op* op,
+CompletionDisposition DispatchSendZeroCopyComplete(::alyrn::luring::detail::Op* op,
                                                    CompletionEvent event) noexcept {
   return Stream::SendZeroCopyAwaiter::OnComplete(op, event);
 }
 
-void DispatchStreamCloseComplete(::coropact::luring::detail::Op* op) noexcept {
+void DispatchStreamCloseComplete(::alyrn::luring::detail::Op* op) noexcept {
   Stream::CloseAwaiter::OnCancelComplete(op);
 }
 
@@ -635,9 +635,9 @@ void DispatchStreamCloseComplete(::coropact::luring::detail::Op* op) noexcept {
 
 Stream::Stream(Loop* loop, int fd, net::Endpoint peer) noexcept
     : loop_(loop), fd_(fd), peer_(peer) {
-  COROPACT_CHECK(loop_ != nullptr, "Stream requires an owner loop");
-  COROPACT_CHECK(loop_->IsInLoopThread(), "Stream created from wrong Loop thread");
-  COROPACT_CHECK(fd_ >= 0, "Stream requires a valid file descriptor");
+  ALYRN_CHECK(loop_ != nullptr, "Stream requires an owner loop");
+  ALYRN_CHECK(loop_->IsInLoopThread(), "Stream created from wrong Loop thread");
+  ALYRN_CHECK(fd_ >= 0, "Stream requires a valid file descriptor");
 }
 
 Stream::Stream(Stream&& other) noexcept
@@ -653,7 +653,7 @@ Stream& Stream::operator=(Stream&& other) noexcept {
   }
 
   Loop* other_loop = PrepareMove(other);
-  COROPACT_CHECK(loop_ == nullptr || loop_ == other_loop,
+  ALYRN_CHECK(loop_ == nullptr || loop_ == other_loop,
                  "Stream move requires both objects to use the same Loop");
   if (loop_ != nullptr) {
     ResetForMove();
@@ -671,17 +671,17 @@ Stream& Stream::operator=(Stream&& other) noexcept {
 }
 
 Stream::~Stream() noexcept {
-  COROPACT_CHECK(pending_read_ == nullptr, "Stream destroyed with a pending read");
-  COROPACT_CHECK(pending_write_ == nullptr, "Stream destroyed with a pending write");
-  COROPACT_CHECK(pending_close_ == nullptr, "Stream destroyed with a pending close");
+  ALYRN_CHECK(pending_read_ == nullptr, "Stream destroyed with a pending read");
+  ALYRN_CHECK(pending_write_ == nullptr, "Stream destroyed with a pending write");
+  ALYRN_CHECK(pending_close_ == nullptr, "Stream destroyed with a pending close");
   if (fd_ >= 0) {
     ::close(fd_);
   }
 }
 
 void Stream::RequireOwnerLoop() const noexcept {
-  COROPACT_CHECK(loop_ != nullptr, "Stream operation has no owner loop");
-  COROPACT_CHECK(loop_->IsInLoopThread(), "Stream operation called from wrong Loop thread");
+  ALYRN_CHECK(loop_ != nullptr, "Stream operation has no owner loop");
+  ALYRN_CHECK(loop_->IsInLoopThread(), "Stream operation called from wrong Loop thread");
 }
 
 Stream::ReadSomeAwaiter Stream::ReadSome(std::span<std::byte> buffer) noexcept {
@@ -834,11 +834,11 @@ void Stream::NotifyCloseProgress() noexcept {
 }
 
 void Stream::ResetForMove() noexcept {
-  COROPACT_CHECK(loop_ != nullptr, "Stream move destination is not initialized");
-  COROPACT_CHECK(loop_->IsInLoopThread(), "Stream move called from wrong Loop thread");
-  COROPACT_CHECK(pending_read_ == nullptr, "Stream move destination has a pending read");
-  COROPACT_CHECK(pending_write_ == nullptr, "Stream move destination has a pending write");
-  COROPACT_CHECK(pending_close_ == nullptr, "Stream move destination has a pending close");
+  ALYRN_CHECK(loop_ != nullptr, "Stream move destination is not initialized");
+  ALYRN_CHECK(loop_->IsInLoopThread(), "Stream move called from wrong Loop thread");
+  ALYRN_CHECK(pending_read_ == nullptr, "Stream move destination has a pending read");
+  ALYRN_CHECK(pending_write_ == nullptr, "Stream move destination has a pending write");
+  ALYRN_CHECK(pending_close_ == nullptr, "Stream move destination has a pending close");
 
   const int fd = std::exchange(fd_, -1);
   if (fd >= 0) {
@@ -847,17 +847,17 @@ void Stream::ResetForMove() noexcept {
 }
 
 Loop* Stream::PrepareMove(Stream& other) noexcept {
-  COROPACT_CHECK(other.loop_ != nullptr, "Stream move source is not initialized");
-  COROPACT_CHECK(other.loop_->IsInLoopThread(), "Stream move called from wrong Loop thread");
-  COROPACT_CHECK(other.pending_read_ == nullptr,
+  ALYRN_CHECK(other.loop_ != nullptr, "Stream move source is not initialized");
+  ALYRN_CHECK(other.loop_->IsInLoopThread(), "Stream move called from wrong Loop thread");
+  ALYRN_CHECK(other.pending_read_ == nullptr,
                  "Stream cannot move with a pending read operation");
-  COROPACT_CHECK(other.pending_write_ == nullptr,
+  ALYRN_CHECK(other.pending_write_ == nullptr,
                  "Stream cannot move with a pending write operation");
-  COROPACT_CHECK(other.pending_close_ == nullptr,
+  ALYRN_CHECK(other.pending_close_ == nullptr,
                  "Stream cannot move with a pending close operation");
 
   Loop* loop = std::exchange(other.loop_, nullptr);
   return loop;
 }
 
-}  // namespace coropact::luring
+}  // namespace alyrn::luring

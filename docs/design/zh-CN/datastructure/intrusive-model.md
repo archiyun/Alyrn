@@ -10,7 +10,7 @@
  - `IntrusiveQueue`
  - `IntrusiveTree`
 
-很好区分，前缀带有 `Intrusive`；它们由 `coropact/ds.h` 导出。
+很好区分，前缀带有 `Intrusive`；它们由 `alyrn/ds.h` 导出。
 
 ## 2. Intrusive 模型
 
@@ -47,11 +47,11 @@
 ```cpp
 struct PeerTag {};
 
-struct Connection : public coropact::ds::ListNode<Connection, PeerTag> {
+struct Connection : public alyrn::ds::ListNode<Connection, PeerTag> {
     int fd{-1};
 };
 
-coropact::ds::IntrusiveList<Connection, PeerTag> connections;
+alyrn::ds::IntrusiveList<Connection, PeerTag> connections;
 Connection connection;
 
 connections.PushBack(&connection);
@@ -66,8 +66,8 @@ struct PeerTag {};
 struct RequestTag {};
 
 // 多继承区分.
-struct Connection : public coropact::ds::ListNode<Connection, PeerTag>,
-                    public coropact::ds::ListNode<Connection, RequestTag> {};
+struct Connection : public alyrn::ds::ListNode<Connection, PeerTag>,
+                    public alyrn::ds::ListNode<Connection, RequestTag> {};
 ```
 
 注意对象本身存储业务字段和容器链接字段(继承风格需要基础 base hook), 容器只负责描述如何组织数据.
@@ -137,11 +137,11 @@ struct GlobalTag {};
 struct PeerTag {};
 
 struct Item
-    : public coropact::ds::ListNode<Item, GlobalTag>,
-     public coropact::ds::ListNode<Item, PeerTag> {};
+    : public alyrn::ds::ListNode<Item, GlobalTag>,
+     public alyrn::ds::ListNode<Item, PeerTag> {};
 
-coropact::ds::IntrusiveList<Item, GlobalTag> global_list;
-coropact::ds::IntrusiveList<Item, PeerTag> peer_list;
+alyrn::ds::IntrusiveList<Item, GlobalTag> global_list;
+alyrn::ds::IntrusiveList<Item, PeerTag> peer_list;
 ```
 
 **Tag 只用于区分不同的 hook**
@@ -150,7 +150,7 @@ coropact::ds::IntrusiveList<Item, PeerTag> peer_list;
 一个hook 在同一时刻最多属于一个容器.
 
 比如一个没有用Tag区分
-list_a ,list_b 的类型都是 `coropact::ds::IntrusiveList<Item>;`.
+list_a ,list_b 的类型都是 `alyrn::ds::IntrusiveList<Item>;`.
 ```cpp
 Item item;
 list_a.PushBack(&item);
@@ -226,8 +226,8 @@ if (item.InList()) {
 ## 11. 相关实现与测试
 
 实现位于 :
-  - include/coropact/ds/
-  - include/coropact/time/
+  - include/alyrn/ds/
+  - include/alyrn/time/
 
   验证测试位于：
 

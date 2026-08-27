@@ -16,33 +16,33 @@
 #include <system_error>
 #include <utility>
 
-#include "coropact/backend/accept_source.h"
-#include "coropact/result.h"
-#include "coropact/coro/awaitable.h"
-#include "coropact/coro/scheduler.h"
-#include "coropact/coro/spawn.h"
-#include "coropact/net/endpoint.h"
-#include "coropact/reactor/listener.h"
-#include "coropact/reactor/loop.h"
+#include "alyrn/backend/accept_source.h"
+#include "alyrn/result.h"
+#include "alyrn/coro/awaitable.h"
+#include "alyrn/coro/scheduler.h"
+#include "alyrn/coro/spawn.h"
+#include "alyrn/net/endpoint.h"
+#include "alyrn/reactor/listener.h"
+#include "alyrn/reactor/loop.h"
 
-#if defined(COROPACT_ENABLE_URING)
-#include "coropact/luring/listener.h"
-#include "coropact/luring/loop.h"
-#include "coropact/luring/options.h"
+#if defined(ALYRN_ENABLE_URING)
+#include "alyrn/luring/listener.h"
+#include "alyrn/luring/loop.h"
+#include "alyrn/luring/options.h"
 #endif
 
 namespace {
 
-using VoidResult = coropact::Result<void>;
+using VoidResult = alyrn::Result<void>;
 
-static_assert(coropact::backend::AsyncAcceptSource<coropact::reactor::AcceptSource>);
-static_assert(coropact::coro::Awaiter<
-              decltype(std::declval<coropact::reactor::AcceptSource&>().Next())>);
+static_assert(alyrn::backend::AsyncAcceptSource<alyrn::reactor::AcceptSource>);
+static_assert(alyrn::coro::Awaiter<
+              decltype(std::declval<alyrn::reactor::AcceptSource&>().Next())>);
 
-#if defined(COROPACT_ENABLE_URING)
-static_assert(coropact::backend::AsyncAcceptSource<coropact::luring::AcceptSource>);
-static_assert(coropact::coro::Awaiter<
-              decltype(std::declval<coropact::luring::AcceptSource&>().Next())>);
+#if defined(ALYRN_ENABLE_URING)
+static_assert(alyrn::backend::AsyncAcceptSource<alyrn::luring::AcceptSource>);
+static_assert(alyrn::coro::Awaiter<
+              decltype(std::declval<alyrn::luring::AcceptSource&>().Next())>);
 #endif
 
 bool Expect(bool condition, std::string_view backend, std::string_view message) {
@@ -54,37 +54,37 @@ bool Expect(bool condition, std::string_view backend, std::string_view message) 
 }
 
 struct EpollHarness {
-  using Loop = coropact::reactor::Loop;
-  using Listener = coropact::reactor::Listener;
-  using Source = coropact::reactor::AcceptSource;
+  using Loop = alyrn::reactor::Loop;
+  using Listener = alyrn::reactor::Listener;
+  using Source = alyrn::reactor::AcceptSource;
 
   static constexpr std::string_view Name() noexcept { return "Reactor"; }
   static bool Init(Loop&) noexcept { return true; }
   static bool Skip() noexcept { return false; }
 
-  static coropact::Result<Listener> CreateListener(Loop& loop) noexcept {
-    return Listener::Create(&loop, coropact::net::Endpoint::Loopback(0));
+  static alyrn::Result<Listener> CreateListener(Loop& loop) noexcept {
+    return Listener::Create(&loop, alyrn::net::Endpoint::Loopback(0));
   }
 
   static bool RunAfter(Loop& loop, std::chrono::milliseconds delay,
                        std::function<void()> callback) {
-    loop.RunAfter(std::chrono::duration_cast<coropact::time::Duration>(delay), std::move(callback));
+    loop.RunAfter(std::chrono::duration_cast<alyrn::time::Duration>(delay), std::move(callback));
     return true;
   }
 
   static void Run(Loop& loop) { loop.Run(); }
 };
 
-#if defined(COROPACT_ENABLE_URING)
+#if defined(ALYRN_ENABLE_URING)
 struct UringHarness {
-  using Loop = coropact::luring::Loop;
-  using Listener = coropact::luring::Listener;
-  using Source = coropact::luring::AcceptSource;
+  using Loop = alyrn::luring::Loop;
+  using Listener = alyrn::luring::Listener;
+  using Source = alyrn::luring::AcceptSource;
 
   static constexpr std::string_view Name() noexcept { return "io_uring"; }
 
   static bool Init(Loop& loop) noexcept {
-    coropact::luring::Options options;
+    alyrn::luring::Options options;
     options.entries = 32;
     auto initialized = loop.Init(options);
     if (initialized.has_value()) {
@@ -100,8 +100,8 @@ struct UringHarness {
            init_error == std::errc::operation_not_permitted;
   }
 
-  static coropact::Result<Listener> CreateListener(Loop& loop) noexcept {
-    return Listener::Create(&loop, coropact::net::Endpoint::Loopback(0));
+  static alyrn::Result<Listener> CreateListener(Loop& loop) noexcept {
+    return Listener::Create(&loop, alyrn::net::Endpoint::Loopback(0));
   }
 
   static bool RunAfter(Loop& loop, std::chrono::milliseconds delay,
@@ -116,13 +116,13 @@ struct UringHarness {
 
   static void Run(Loop& loop) noexcept { loop.Run(); }
 
-  static inline coropact::Error init_error{};
+  static inline alyrn::Error init_error{};
 };
 #endif
 
 template <class Harness>
 bool PrepareLoopAndListener(typename Harness::Loop& loop,
-                            coropact::Result<typename Harness::Listener>& listener) {
+                            alyrn::Result<typename Harness::Listener>& listener) {
   if (!Harness::Init(loop)) {
     if (Harness::Skip()) {
       std::cout << "SKIP [" << Harness::Name() << "]: backend unavailable\n";
@@ -143,7 +143,7 @@ bool PrepareLoopAndListener(typename Harness::Loop& loop,
 
 template <class Listener>
 struct PendingAcceptCloseObservation {
-  using AcceptResult = coropact::Result<typename Listener::StreamType>;
+  using AcceptResult = alyrn::Result<typename Listener::StreamType>;
 
   std::optional<AcceptResult> accept;
   std::optional<VoidResult> close;
@@ -157,10 +157,10 @@ struct PendingAcceptCloseObservation {
 template <class Listener, class Loop>
 auto ObservePendingAccept(Listener& listener, Loop& loop,
                           PendingAcceptCloseObservation<Listener>& observation)
-    -> coropact::coro::DetachedTask {
+    -> alyrn::coro::DetachedTask {
   observation.accept.emplace(co_await listener.Accept());
   ++observation.accept_resume_count;
-  observation.accept_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
+  observation.accept_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   if (++observation.finished == 2) {
     loop.RequestStop();
   }
@@ -169,9 +169,9 @@ auto ObservePendingAccept(Listener& listener, Loop& loop,
 template <class Listener, class Loop>
 auto ClosePendingAccept(Listener& listener, Loop& loop,
                         PendingAcceptCloseObservation<Listener>& observation)
-    -> coropact::coro::DetachedTask {
+    -> alyrn::coro::DetachedTask {
   observation.close.emplace(co_await listener.Close());
-  observation.close_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
+  observation.close_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   if (++observation.finished == 2) {
     loop.RequestStop();
   }
@@ -180,15 +180,15 @@ auto ClosePendingAccept(Listener& listener, Loop& loop,
 template <class Harness>
 bool CheckPendingAcceptCloseContract() {
   typename Harness::Loop loop;
-  coropact::Result<typename Harness::Listener> listener =
-      std::unexpected(coropact::Errno(EINVAL));
+  alyrn::Result<typename Harness::Listener> listener =
+      std::unexpected(alyrn::Errno(EINVAL));
   if (!PrepareLoopAndListener<Harness>(loop, listener)) {
     return Harness::Skip();
   }
 
   PendingAcceptCloseObservation<typename Harness::Listener> observation;
-  coropact::coro::SpawnDetach(loop, ObservePendingAccept(*listener, loop, observation));
-  coropact::coro::SpawnDetach(loop, ClosePendingAccept(*listener, loop, observation));
+  alyrn::coro::SpawnDetach(loop, ObservePendingAccept(*listener, loop, observation));
+  alyrn::coro::SpawnDetach(loop, ClosePendingAccept(*listener, loop, observation));
   if (!Harness::RunAfter(loop, std::chrono::milliseconds(500), [&] {
         observation.timed_out = true;
         loop.RequestStop();
@@ -223,7 +223,7 @@ struct ClosedListenerObservation {
 
 template <class Listener, class Loop>
 auto ObserveClosedListener(Listener& listener, Loop& loop, ClosedListenerObservation& observation)
-    -> coropact::coro::DetachedTask {
+    -> alyrn::coro::DetachedTask {
   observation.first_close.emplace(co_await listener.Close());
   observation.second_close.emplace(co_await listener.Close());
 
@@ -238,21 +238,21 @@ auto ObserveClosedListener(Listener& listener, Loop& loop, ClosedListenerObserva
   auto address = listener.LocalAddress();
   observation.address_rejected =
       !address.has_value() && address.error() == std::errc::bad_file_descriptor;
-  observation.resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
+  observation.resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   loop.RequestStop();
 }
 
 template <class Harness>
 bool CheckClosedListenerContract() {
   typename Harness::Loop loop;
-  coropact::Result<typename Harness::Listener> listener =
-      std::unexpected(coropact::Errno(EINVAL));
+  alyrn::Result<typename Harness::Listener> listener =
+      std::unexpected(alyrn::Errno(EINVAL));
   if (!PrepareLoopAndListener<Harness>(loop, listener)) {
     return Harness::Skip();
   }
 
   ClosedListenerObservation observation;
-  coropact::coro::SpawnDetach(loop, ObserveClosedListener(*listener, loop, observation));
+  alyrn::coro::SpawnDetach(loop, ObserveClosedListener(*listener, loop, observation));
   Harness::Run(loop);
 
   return Expect(observation.first_close.has_value() && observation.first_close->has_value(),
@@ -278,7 +278,7 @@ struct StoppingListenerObservation {
 template <class Listener, class Loop>
 auto ObserveListenerAfterStopRequest(Listener& listener, Loop& loop,
                                      StoppingListenerObservation& observation)
-    -> coropact::coro::DetachedTask {
+    -> alyrn::coro::DetachedTask {
   loop.RequestStop();
   auto accepted = co_await listener.Accept();
   observation.accept_rejected =
@@ -287,20 +287,20 @@ auto ObserveListenerAfterStopRequest(Listener& listener, Loop& loop,
   auto source = listener.CreateAcceptSource();
   observation.source_rejected =
       !source.has_value() && source.error() == std::errc::operation_canceled;
-  observation.resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
+  observation.resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
 }
 
 template <class Harness>
 bool CheckListenerAfterStopRequestContract() {
   typename Harness::Loop loop;
-  coropact::Result<typename Harness::Listener> listener =
-      std::unexpected(coropact::Errno(EINVAL));
+  alyrn::Result<typename Harness::Listener> listener =
+      std::unexpected(alyrn::Errno(EINVAL));
   if (!PrepareLoopAndListener<Harness>(loop, listener)) {
     return Harness::Skip();
   }
 
   StoppingListenerObservation observation;
-  coropact::coro::SpawnDetach(loop, ObserveListenerAfterStopRequest(*listener, loop, observation));
+  alyrn::coro::SpawnDetach(loop, ObserveListenerAfterStopRequest(*listener, loop, observation));
   Harness::Run(loop);
 
   return Expect(observation.accept_rejected, Harness::Name(),
@@ -326,10 +326,10 @@ struct SourceStopObservation {
 
 template <class Source, class Loop>
 auto ObservePendingNext(Source& source, Loop& loop, SourceStopObservation<Source>& observation)
-    -> coropact::coro::DetachedTask {
+    -> alyrn::coro::DetachedTask {
   observation.pending_next.emplace(co_await source.Next());
   ++observation.next_resume_count;
-  observation.next_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
+  observation.next_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   if (++observation.finished == 2) {
     loop.RequestStop();
   }
@@ -337,11 +337,11 @@ auto ObservePendingNext(Source& source, Loop& loop, SourceStopObservation<Source
 
 template <class Source, class Loop>
 auto StopSource(Source& source, Loop& loop, SourceStopObservation<Source>& observation)
-    -> coropact::coro::DetachedTask {
+    -> alyrn::coro::DetachedTask {
   observation.first_stop.emplace(co_await source.Stop());
   observation.second_stop.emplace(co_await source.Stop());
   observation.sticky_next.emplace(co_await source.Next());
-  observation.stop_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
+  observation.stop_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   if (++observation.finished == 2) {
     loop.RequestStop();
   }
@@ -350,8 +350,8 @@ auto StopSource(Source& source, Loop& loop, SourceStopObservation<Source>& obser
 template <class Harness>
 bool CheckSourceStopContract() {
   typename Harness::Loop loop;
-  coropact::Result<typename Harness::Listener> listener =
-      std::unexpected(coropact::Errno(EINVAL));
+  alyrn::Result<typename Harness::Listener> listener =
+      std::unexpected(alyrn::Errno(EINVAL));
   if (!PrepareLoopAndListener<Harness>(loop, listener)) {
     return Harness::Skip();
   }
@@ -365,8 +365,8 @@ bool CheckSourceStopContract() {
   typename Harness::Source source = std::move(*source_result);
   SourceStopObservation<typename Harness::Source> observation;
 
-  coropact::coro::SpawnDetach(loop, ObservePendingNext(source, loop, observation));
-  coropact::coro::SpawnDetach(loop, StopSource(source, loop, observation));
+  alyrn::coro::SpawnDetach(loop, ObservePendingNext(source, loop, observation));
+  alyrn::coro::SpawnDetach(loop, StopSource(source, loop, observation));
   if (!Harness::RunAfter(loop, std::chrono::milliseconds(500), [&] {
         observation.timed_out = true;
         loop.RequestStop();
@@ -403,11 +403,11 @@ struct TerminalAfterLoopStopObservation {
 template <class Source, class Loop>
 auto StopSourceThenObserveTerminalAfterLoopStop(
     Source& source, Loop& loop, TerminalAfterLoopStopObservation<Source>& observation)
-    -> coropact::coro::DetachedTask {
+    -> alyrn::coro::DetachedTask {
   observation.stop.emplace(co_await source.Stop());
   loop.RequestStop();
   observation.terminal.emplace(co_await source.Next());
-  observation.terminal_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
+  observation.terminal_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
 }
 
 // Stopping a loop prevents a source in Idle from opening new backend work,
@@ -417,8 +417,8 @@ auto StopSourceThenObserveTerminalAfterLoopStop(
 template <class Harness>
 bool CheckTerminalNextAfterLoopStopContract() {
   typename Harness::Loop loop;
-  coropact::Result<typename Harness::Listener> listener =
-      std::unexpected(coropact::Errno(EINVAL));
+  alyrn::Result<typename Harness::Listener> listener =
+      std::unexpected(alyrn::Errno(EINVAL));
   if (!PrepareLoopAndListener<Harness>(loop, listener)) {
     return Harness::Skip();
   }
@@ -432,7 +432,7 @@ bool CheckTerminalNextAfterLoopStopContract() {
   typename Harness::Source source = std::move(*source_result);
   TerminalAfterLoopStopObservation<typename Harness::Source> observation;
 
-  coropact::coro::SpawnDetach(
+  alyrn::coro::SpawnDetach(
       loop, StopSourceThenObserveTerminalAfterLoopStop(source, loop, observation));
   Harness::Run(loop);
 
@@ -461,10 +461,10 @@ struct ListenerCloseSourceObservation {
 template <class Source, class Loop>
 auto ObserveNextDuringListenerClose(Source& source, Loop& loop,
                                     ListenerCloseSourceObservation<Source>& observation)
-    -> coropact::coro::DetachedTask {
+    -> alyrn::coro::DetachedTask {
   observation.pending_next.emplace(co_await source.Next());
   ++observation.next_resume_count;
-  observation.next_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
+  observation.next_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   if (++observation.finished == 2) {
     loop.RequestStop();
   }
@@ -473,11 +473,11 @@ auto ObserveNextDuringListenerClose(Source& source, Loop& loop,
 template <class Listener, class Source, class Loop>
 auto CloseListenerWithSource(Listener& listener, Source& source, Loop& loop,
                              ListenerCloseSourceObservation<Source>& observation)
-    -> coropact::coro::DetachedTask {
+    -> alyrn::coro::DetachedTask {
   observation.close.emplace(co_await listener.Close());
   observation.sticky_next.emplace(co_await source.Next());
   observation.stop.emplace(co_await source.Stop());
-  observation.close_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
+  observation.close_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   if (++observation.finished == 2) {
     loop.RequestStop();
   }
@@ -486,8 +486,8 @@ auto CloseListenerWithSource(Listener& listener, Source& source, Loop& loop,
 template <class Harness>
 bool CheckListenerCloseSourceContract() {
   typename Harness::Loop loop;
-  coropact::Result<typename Harness::Listener> listener =
-      std::unexpected(coropact::Errno(EINVAL));
+  alyrn::Result<typename Harness::Listener> listener =
+      std::unexpected(alyrn::Errno(EINVAL));
   if (!PrepareLoopAndListener<Harness>(loop, listener)) {
     return Harness::Skip();
   }
@@ -501,8 +501,8 @@ bool CheckListenerCloseSourceContract() {
   typename Harness::Source source = std::move(*source_result);
   ListenerCloseSourceObservation<typename Harness::Source> observation;
 
-  coropact::coro::SpawnDetach(loop, ObserveNextDuringListenerClose(source, loop, observation));
-  coropact::coro::SpawnDetach(loop, CloseListenerWithSource(*listener, source, loop, observation));
+  alyrn::coro::SpawnDetach(loop, ObserveNextDuringListenerClose(source, loop, observation));
+  alyrn::coro::SpawnDetach(loop, CloseListenerWithSource(*listener, source, loop, observation));
   if (!Harness::RunAfter(loop, std::chrono::milliseconds(500), [&] {
         observation.timed_out = true;
         loop.RequestStop();
@@ -530,7 +530,7 @@ bool CheckListenerCloseSourceContract() {
   return ok;
 }
 
-int ConnectNonBlocking(const coropact::net::Endpoint& address) noexcept {
+int ConnectNonBlocking(const alyrn::net::Endpoint& address) noexcept {
   const int fd = ::socket(address.NativeFamily(), SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
   if (fd < 0) {
     return -1;
@@ -556,7 +556,7 @@ void CloseClients(std::array<int, 4>& clients) noexcept {
 
 template <class Listener>
 struct SequentialAcceptObservation {
-  using AcceptResult = coropact::Result<typename Listener::StreamType>;
+  using AcceptResult = alyrn::Result<typename Listener::StreamType>;
 
   std::array<int, 4> clients{-1, -1, -1, -1};
   std::optional<AcceptResult> first;
@@ -571,7 +571,7 @@ struct SequentialAcceptObservation {
 template <class Listener, class Loop>
 auto ObserveSequentialAccept(Listener& listener, Loop& loop,
                              SequentialAcceptObservation<Listener>& observation)
-    -> coropact::coro::DetachedTask {
+    -> alyrn::coro::DetachedTask {
   observation.first.emplace(co_await listener.Accept());
   observation.first_stream_valid =
       observation.first->has_value() && observation.first->value().Fd() >= 0;
@@ -581,7 +581,7 @@ auto ObserveSequentialAccept(Listener& listener, Loop& loop,
   observation.second.emplace(co_await listener.Accept());
   observation.second_stream_valid =
       observation.second->has_value() && observation.second->value().Fd() >= 0;
-  observation.resumed_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
+  observation.resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   // RequestStop synchronously asks owner-loop resources to close, so stream
   // validity must be observed before entering the loop shutdown boundary.
   loop.RequestStop();
@@ -590,8 +590,8 @@ auto ObserveSequentialAccept(Listener& listener, Loop& loop,
 template <class Harness>
 bool CheckAcceptReleaseBeforeContinuationContract() {
   typename Harness::Loop loop;
-  coropact::Result<typename Harness::Listener> listener =
-      std::unexpected(coropact::Errno(EINVAL));
+  alyrn::Result<typename Harness::Listener> listener =
+      std::unexpected(alyrn::Errno(EINVAL));
   if (!PrepareLoopAndListener<Harness>(loop, listener)) {
     return Harness::Skip();
   }
@@ -604,7 +604,7 @@ bool CheckAcceptReleaseBeforeContinuationContract() {
   }
 
   SequentialAcceptObservation<typename Harness::Listener> observation;
-  coropact::coro::SpawnDetach(loop, ObserveSequentialAccept(*listener, loop, observation));
+  alyrn::coro::SpawnDetach(loop, ObserveSequentialAccept(*listener, loop, observation));
   if (!Harness::RunAfter(loop, std::chrono::milliseconds(5),
                          [&] {
                            observation.clients[0] = ConnectNonBlocking(*address);
@@ -659,27 +659,27 @@ struct AcceptSourceAdmissionObservation {
 template <class Source, class Loop>
 auto ObserveFirstAcceptSourceEvent(Source& source, Loop& loop,
                                    AcceptSourceAdmissionObservation<Source>& observation)
-    -> coropact::coro::DetachedTask {
+    -> alyrn::coro::DetachedTask {
   observation.first.emplace(co_await source.Next());
-  observation.first_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
+  observation.first_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
 }
 
 template <class Source, class Loop>
-auto DrainAcceptSourceAtLowWater(Source& source, Loop& loop, coropact::net::Endpoint address,
+auto DrainAcceptSourceAtLowWater(Source& source, Loop& loop, alyrn::net::Endpoint address,
                                  AcceptSourceAdmissionObservation<Source>& observation)
-    -> coropact::coro::DetachedTask {
+    -> alyrn::coro::DetachedTask {
   observation.second.emplace(co_await source.Next());
   observation.third.emplace(co_await source.Next());
   observation.clients[3] = ConnectNonBlocking(address);
   observation.fourth.emplace(co_await source.Next());
   observation.stop.emplace(co_await source.Stop());
   observation.terminal.emplace(co_await source.Next());
-  observation.drain_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
+  observation.drain_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   loop.RequestStop();
 }
 
 template <class Source, class Loop>
-auto StopAcceptSourceOnTimeout(Source& source, Loop& loop) -> coropact::coro::DetachedTask {
+auto StopAcceptSourceOnTimeout(Source& source, Loop& loop) -> alyrn::coro::DetachedTask {
   (void)(co_await source.Stop());
   loop.RequestStop();
 }
@@ -687,20 +687,20 @@ auto StopAcceptSourceOnTimeout(Source& source, Loop& loop) -> coropact::coro::De
 template <class Source, class Loop>
 auto StopAcceptSourceThenDrain(Source& source, Loop& loop,
                                AcceptSourceAdmissionObservation<Source>& observation)
-    -> coropact::coro::DetachedTask {
+    -> alyrn::coro::DetachedTask {
   observation.stop.emplace(co_await source.Stop());
   observation.second.emplace(co_await source.Next());
   observation.third.emplace(co_await source.Next());
   observation.terminal.emplace(co_await source.Next());
-  observation.drain_with_scheduler = coropact::coro::Scheduler::TryCurrent() == &loop;
+  observation.drain_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   loop.RequestStop();
 }
 
 template <class Harness>
 bool CheckAcceptSourceAdmissionTrace() {
   typename Harness::Loop loop;
-  coropact::Result<typename Harness::Listener> listener =
-      std::unexpected(coropact::Errno(EINVAL));
+  alyrn::Result<typename Harness::Listener> listener =
+      std::unexpected(alyrn::Errno(EINVAL));
   if (!PrepareLoopAndListener<Harness>(loop, listener)) {
     return Harness::Skip();
   }
@@ -733,18 +733,18 @@ bool CheckAcceptSourceAdmissionTrace() {
                          }) ||
       !Harness::RunAfter(loop, std::chrono::milliseconds(30),
                          [&] {
-                           coropact::coro::SpawnDetach(
+                           alyrn::coro::SpawnDetach(
                                loop,
                                DrainAcceptSourceAtLowWater(source, loop, *address, observation));
                          }) ||
       !Harness::RunAfter(loop, std::chrono::milliseconds(750), [&] {
         observation.timed_out = true;
-        coropact::coro::SpawnDetach(loop, StopAcceptSourceOnTimeout(source, loop));
+        alyrn::coro::SpawnDetach(loop, StopAcceptSourceOnTimeout(source, loop));
       })) {
     return false;
   }
 
-  coropact::coro::SpawnDetach(loop, ObserveFirstAcceptSourceEvent(source, loop, observation));
+  alyrn::coro::SpawnDetach(loop, ObserveFirstAcceptSourceEvent(source, loop, observation));
   Harness::Run(loop);
   bool clients_connected = true;
   for (int fd : observation.clients) {
@@ -776,8 +776,8 @@ bool CheckAcceptSourceAdmissionTrace() {
 template <class Harness>
 bool CheckAcceptSourceStopDrainsBurstContract() {
   typename Harness::Loop loop;
-  coropact::Result<typename Harness::Listener> listener =
-      std::unexpected(coropact::Errno(EINVAL));
+  alyrn::Result<typename Harness::Listener> listener =
+      std::unexpected(alyrn::Errno(EINVAL));
   if (!PrepareLoopAndListener<Harness>(loop, listener)) {
     return Harness::Skip();
   }
@@ -810,17 +810,17 @@ bool CheckAcceptSourceStopDrainsBurstContract() {
                          }) ||
       !Harness::RunAfter(loop, std::chrono::milliseconds(30),
                          [&] {
-                           coropact::coro::SpawnDetach(
+                           alyrn::coro::SpawnDetach(
                                loop, StopAcceptSourceThenDrain(source, loop, observation));
                          }) ||
       !Harness::RunAfter(loop, std::chrono::milliseconds(750), [&] {
         observation.timed_out = true;
-        coropact::coro::SpawnDetach(loop, StopAcceptSourceOnTimeout(source, loop));
+        alyrn::coro::SpawnDetach(loop, StopAcceptSourceOnTimeout(source, loop));
       })) {
     return false;
   }
 
-  coropact::coro::SpawnDetach(loop, ObserveFirstAcceptSourceEvent(source, loop, observation));
+  alyrn::coro::SpawnDetach(loop, ObserveFirstAcceptSourceEvent(source, loop, observation));
   Harness::Run(loop);
   bool clients_connected = true;
   for (std::size_t index = 0; index < 3; ++index) {
@@ -864,7 +864,7 @@ int main() {
   if (!RunBackendSuite<EpollHarness>()) {
     return 1;
   }
-#if defined(COROPACT_ENABLE_URING)
+#if defined(ALYRN_ENABLE_URING)
   if (!RunBackendSuite<UringHarness>()) {
     return 1;
   }

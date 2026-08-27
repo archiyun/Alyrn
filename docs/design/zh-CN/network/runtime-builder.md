@@ -1,6 +1,6 @@
 # Runtime Builder：简洁配置，不抹平后端
 
-`coropact::Runtime` 是应用的组合根：它管理启动与停止；编译期 backend tag 选择由哪个后端
+`alyrn::Runtime` 是应用的组合根：它管理启动与停止；编译期 backend tag 选择由哪个后端
 创建 worker group，并将每个已接受的 stream 交给连接处理协程。
 
 其默认 interface 已由 [ADR-0010](../../../adr/0010-runtime-composition-root.md) 冻结：本页仅记录
@@ -12,13 +12,13 @@
 ## Reactor
 
 ```cpp
-coropact::coro::DetachedTask Handle(coropact::reactor::Stream stream) {
+alyrn::coro::DetachedTask Handle(alyrn::reactor::Stream stream) {
   // co_await stream.ReadSome(...)
   co_return;
 }
 
-auto runtime = coropact::Runtime::Builder<coropact::runtime::Reactor>{
-                   coropact::net::Endpoint::Any(8080)}
+auto runtime = alyrn::Runtime::Builder<alyrn::runtime::Reactor>{
+                   alyrn::net::Endpoint::Any(8080)}
                    .AutoWorkers()
                    .OnConnection(Handle)
                    .Build();
@@ -39,12 +39,12 @@ runtime.Stop();  // request stop、drain、join workers
 ## luring
 
 ```cpp
-coropact::coro::DetachedTask Handle(coropact::luring::Stream stream) {
+alyrn::coro::DetachedTask Handle(alyrn::luring::Stream stream) {
   co_return;
 }
 
-auto runtime = coropact::Runtime::Builder<coropact::runtime::LUring>{
-                   coropact::net::Endpoint::Any(8080)}
+auto runtime = alyrn::Runtime::Builder<alyrn::runtime::LUring>{
+                   alyrn::net::Endpoint::Any(8080)}
                    .AutoWorkers()
                    .OnConnection(Handle)
                    .Build();
@@ -59,18 +59,18 @@ source 保持既有 capability fallback。业务不需要为这些物理执行�
 ## kqueue
 
 ```cpp
-coropact::coro::DetachedTask Handle(coropact::kqueue::Stream stream) {
+alyrn::coro::DetachedTask Handle(alyrn::kqueue::Stream stream) {
   co_return;
 }
 
-auto runtime = coropact::Runtime::Builder<coropact::runtime::Kqueue>{
-                   coropact::net::Endpoint::Any(8080)}
+auto runtime = alyrn::Runtime::Builder<alyrn::runtime::Kqueue>{
+                   alyrn::net::Endpoint::Any(8080)}
                    .AutoWorkers()
                    .OnConnection(Handle)
                    .Build();
 ```
 
-需要在 BSD/Darwin 上以 `-DCOROPACT_ENABLE_KQUEUE=ON` 构建，并包含 `coropact/kqueue.h`。
+需要在 BSD/Darwin 上以 `-DALYRN_ENABLE_KQUEUE=ON` 构建，并包含 `alyrn/kqueue.h`。
 `Workers(n)` 仍表示 n 条线程，但拓扑与 Reactor 不同：`n == 1` 时该 worker 自己监听；
 `n > 1` 时只有 worker 0 接受连接，已接受的描述符经 `Loop::Post` 交给其它 loop。
 不要把 `reuse_port` 当成 kqueue 的多 worker 开关。详见
@@ -143,16 +143,16 @@ Start() -> wait stop_token or RequestStop() -> Stop() -> drain and join -> retur
 不需要显式 worker 配置的服务可以直接选择 backend：
 
 ```cpp
-auto runtime = coropact::Runtime::Create<coropact::runtime::Reactor>(
-    coropact::net::Endpoint::Any(8080),
-    [](auto stream) -> coropact::coro::DetachedTask {
+auto runtime = alyrn::Runtime::Create<alyrn::runtime::Reactor>(
+    alyrn::net::Endpoint::Any(8080),
+    [](auto stream) -> alyrn::coro::DetachedTask {
       // stream 的静态类型仍是 reactor::Stream。
       co_return;
     });
 ```
 
 `Create` 等价于对应 `Builder` 的默认配置加 `OnConnection`；它仍返回同一个
-`coropact::Runtime`。选择 `runtime::LUring` 或 `runtime::Kqueue` 时，handler 中的
+`alyrn::Runtime`。选择 `runtime::LUring` 或 `runtime::Kqueue` 时，handler 中的
 `stream` 静态类型相应为 `luring::Stream` 或 `kqueue::Stream`，没有虚调用或类型擦除进入
 连接数据路径。
 
@@ -160,4 +160,4 @@ auto runtime = coropact::Runtime::Create<coropact::runtime::Reactor>(
 
 Tokio 的 `#[tokio::main]` 本质上是编译期生成 `Runtime::Builder` 调用。C++ 预处理宏无法提供
 Rust attribute macro 的类型检查和诊断质量。先稳定 builder 的小 interface；未来若确实需要，
-`COROPACT_MAIN(...)` 只能作为生成 `main()` 与 builder 调用的薄语法糖，不能承载后端语义。
+`ALYRN_MAIN(...)` 只能作为生成 `main()` 与 builder 调用的薄语法糖，不能承载后端语义。

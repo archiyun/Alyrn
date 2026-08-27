@@ -25,8 +25,8 @@ extension，不得通过扩大 Core contract 的隐含行为加入。
 当前项目有两种网络机制：
 
 ```text
-coropact::reactor   Reactor / epoll / nonblocking syscall
-coropact::luring    io_uring / SQE / CQE
+alyrn::reactor   Reactor / epoll / nonblocking syscall
+alyrn::luring    io_uring / SQE / CQE
 ```
 
 它们是两个独立的机制模块，不是同一个网络库的两个公开模式。两者通过公共协程 I/O
@@ -34,14 +34,14 @@ coropact::luring    io_uring / SQE / CQE
 
 ```text
 业务层
-  -> coropact::io::AsyncStream / AsyncListener
+  -> alyrn::io::AsyncStream / AsyncListener
   -> Stream / Stream
   -> Reactor 或 io_uring
 ```
 
-公共 facade 位于 `coropact::io`；其 canonical concept 定义位于不依赖具体后端的
-`coropact::backend`。`coropact::net` 提供共享的地址、socket 和网络工具，
-`coropact::reactor` 承载 epoll/Loop 实现。
+公共 facade 位于 `alyrn::io`；其 canonical concept 定义位于不依赖具体后端的
+`alyrn::backend`。`alyrn::net` 提供共享的地址、socket 和网络工具，
+`alyrn::reactor` 承载 epoll/Loop 实现。
 
 本文的核心边界是：
 
@@ -59,8 +59,8 @@ coropact::luring    io_uring / SQE / CQE
 loop 的停止控制与 `AsyncStream::Close()` 是不同的语义层。公共 contract 使用：
 
 ```cpp
-coropact::io::LoopState
-coropact::io::ManagedLoop
+alyrn::io::LoopState
+alyrn::io::ManagedLoop
 
 Run(stop_token)
 RequestStop()
@@ -119,10 +119,10 @@ RemoteAddr()
 对应的公共概念是：
 
 ```cpp
-coropact::io::AsyncReadStream
-coropact::io::AsyncWriteStream
-coropact::io::AsyncClosableStream
-coropact::io::AsyncStream
+alyrn::io::AsyncReadStream
+alyrn::io::AsyncWriteStream
+alyrn::io::AsyncClosableStream
+alyrn::io::AsyncStream
 ```
 
 `AsyncStream` 是上述八个方法的语义组合，不是某个具体类的基类，也不要求虚函数。
@@ -142,8 +142,8 @@ composite operation，因此使用独立 concept：
 ReadSomeFor(std::span<std::byte> buffer, time::Duration timeout)
     -> 可 await，await_resume() 为 Result<std::size_t>
 
-coropact::io::AsyncTimedReadStream
-coropact::io::AsyncTimedStream
+alyrn::io::AsyncTimedReadStream
+alyrn::io::AsyncTimedStream
 ```
 
 `AsyncTimedStream` 表示完整的 `AsyncStream` 加上 timed read。当前 `Stream` 与
@@ -203,8 +203,8 @@ Close()
     -> coro::Task<Result<void>>
 ```
 
-`StreamType` 必须满足 `coropact::io::AsyncStream`。当前 `reactor::Listener` 和 `luring::Listener`
-都满足 `coropact::io::AsyncListener`。
+`StreamType` 必须满足 `alyrn::io::AsyncStream`。当前 `reactor::Listener` 和 `luring::Listener`
+都满足 `alyrn::io::AsyncListener`。
 
 ### Close preparation 与 committed Close
 
@@ -273,7 +273,7 @@ send 与 send-zc 的不同 completion/release 语义。`Shutdown()`、`Close()` 
 stream.ReadSome(buffer);  // 错误：没有等待该 I/O operation
 ```
 
-I/O 方法本身不抛出业务异常。结果通过 `coropact::Result<T>` 返回，它是
+I/O 方法本身不抛出业务异常。结果通过 `alyrn::Result<T>` 返回，它是
 `std::expected<T, std::error_code>` 的别名。协程未处理异常会终止进程，不属于网络错误
 传播机制。
 
@@ -773,7 +773,7 @@ co_await stream.WriteAll(buffer)
 错误示例：
 
 ```cpp
-coropact::coro::Task<void> Bad(coropact::io::AsyncStream auto& stream) {
+alyrn::coro::Task<void> Bad(alyrn::io::AsyncStream auto& stream) {
   std::vector<std::byte> local(4096);
   auto task = stream.ReadSome(local);
   local = {};                    // 错误：底层 operation 仍可能使用这块内存
@@ -785,7 +785,7 @@ coropact::coro::Task<void> Bad(coropact::io::AsyncStream auto& stream) {
 正确写法是让 buffer 由协程 frame、调用方对象或更长生命周期的 pool 持有：
 
 ```cpp
-coropact::coro::Task<void> Good(coropact::io::AsyncStream auto& stream) {
+alyrn::coro::Task<void> Good(alyrn::io::AsyncStream auto& stream) {
   std::array<std::byte, 4096> buffer{};
   auto result = co_await stream.ReadSome(buffer);
   (void)result;
@@ -794,7 +794,7 @@ coropact::coro::Task<void> Good(coropact::io::AsyncStream auto& stream) {
 
 ### 7.2 io::Buffer
 
-`coropact::io::Buffer` 是 `net::Buffer` 的零成本公开 spelling。它不是
+`alyrn::io::Buffer` 是 `net::Buffer` 的零成本公开 spelling。它不是
 `ReadSome` 的第二种 borrowed overload：可增长 buffer 的异步读取必须使用
 `ReadInto(std::move(buffer))`，以便 pending operation 独占 storage 并在每条终态路径归还
 owner。实现留在 `net` 以保持后端位于 `io` facade 之下，调用者应使用 `io` spelling：

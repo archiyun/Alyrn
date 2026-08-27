@@ -44,7 +44,7 @@ jobs:
 
       - name: Publish runnable Docker image
         run: |
-          image="ghcr.io/archiyun/coropact"
+          image="ghcr.io/archiyun/alyrn"
           docker buildx build \
             --target runtime \
             --push \

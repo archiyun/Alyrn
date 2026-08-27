@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "coropact/reactor/detail/timer_queue.h"
+#include "alyrn/reactor/detail/timer_queue.h"
 
 #include <sys/timerfd.h>
 #include <unistd.h>
@@ -8,15 +8,15 @@
 #include <chrono>
 #include <cstdint>
 
-#include "coropact/base/check.h"
-#include "coropact/reactor/loop.h"
-#include "coropact/time/timer_id.h"
+#include "alyrn/base/check.h"
+#include "alyrn/reactor/loop.h"
+#include "alyrn/time/timer_id.h"
 
-namespace coropact::reactor::detail {
+namespace alyrn::reactor::detail {
 
 static int CreateTimerfd() {
   int fd = ::timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK | TFD_CLOEXEC);
-  COROPACT_CHECK(fd >= 0, "TimerQueue: timerfd_create failed");
+  ALYRN_CHECK(fd >= 0, "TimerQueue: timerfd_create failed");
   return fd;
 }
 
@@ -37,7 +37,7 @@ static void SetTimerfd(int timerfd, time::Deadline expiration) {
     if (errno == EINTR) {
       continue;
     }
-    COROPACT_CHECK(false, "TimerQueue: timerfd_settime failed");
+    ALYRN_CHECK(false, "TimerQueue: timerfd_settime failed");
   }
 }
 
@@ -54,7 +54,7 @@ static void ReadTimerfd(int timerfd) {
     if (read < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
       return;
     }
-    COROPACT_CHECK(false, "TimerQueue: timerfd read failed");
+    ALYRN_CHECK(false, "TimerQueue: timerfd read failed");
   }
 }
 
@@ -70,9 +70,9 @@ TimerQueue::~TimerQueue() {
   ::close(timerfd_);
   while (!timers_.Empty()) {
     time::Timer* timer = timers_.Earliest();
-    COROPACT_CHECK(active_timers_.erase(timer->sequence()) == 1,
+    ALYRN_CHECK(active_timers_.erase(timer->sequence()) == 1,
                    "TimerQueue: destroyed timer is missing from active set");
-    COROPACT_CHECK(timers_.Erase(timer), "TimerQueue: destroyed timer is missing from timer tree");
+    ALYRN_CHECK(timers_.Erase(timer), "TimerQueue: destroyed timer is missing from timer tree");
     timer_pool_.Release(timer);
   }
 }
@@ -80,8 +80,8 @@ TimerQueue::~TimerQueue() {
 time::TimerId TimerQueue::AddTimer(TimerCallback cb, TimePoint when, Duration interval) {
   time::Timer* t = timer_pool_.Acquire(std::move(cb), when, interval);
   bool earliest_changed = timers_.Empty() || t->expiration() < timers_.Earliest()->expiration();
-  COROPACT_CHECK(timers_.Insert(t), "TimerQueue: duplicate timer-tree entry");
-  COROPACT_CHECK(active_timers_.emplace(t->sequence(), t).second,
+  ALYRN_CHECK(timers_.Insert(t), "TimerQueue: duplicate timer-tree entry");
+  ALYRN_CHECK(active_timers_.emplace(t->sequence(), t).second,
                  "TimerQueue: duplicate active timer sequence");
   if (earliest_changed) {
     ResetTimerfd(t->expiration());
@@ -89,13 +89,13 @@ time::TimerId TimerQueue::AddTimer(TimerCallback cb, TimePoint when, Duration in
   return {t->sequence()};
 }
 
-void TimerQueue::Cancel(coropact::time::TimerId id) {
+void TimerQueue::Cancel(alyrn::time::TimerId id) {
   auto active_it = active_timers_.find(id.sequence);
   if (active_it != active_timers_.end()) {
     time::Timer* active_timer = active_it->second;
     const bool earliest_removed = active_timer == timers_.Earliest();
     active_timers_.erase(active_it);
-    COROPACT_CHECK(timers_.Erase(active_timer),
+    ALYRN_CHECK(timers_.Erase(active_timer),
                    "TimerQueue: active timer is missing from timer tree");
     timer_pool_.Release(active_timer);
     if (earliest_removed && !timers_.Empty()) {
@@ -121,7 +121,7 @@ void TimerQueue::HandleRead() {
 
   timers_.PopWhile([now](const time::Timer* timer) { return timer->expiration() <= now; },
                    [this, now](time::Timer* timer) {
-                     COROPACT_CHECK(active_timers_.erase(timer->sequence()) == 1,
+                     ALYRN_CHECK(active_timers_.erase(timer->sequence()) == 1,
                                     "TimerQueue: expired timer is missing from active set");
                      processing_timer_ = timer;
                      processing_timer_cancelled_ = false;
@@ -133,9 +133,9 @@ void TimerQueue::HandleRead() {
 
                      if (timer->repeat() && !cancelled) {
                        timer->Restart(now);
-                       COROPACT_CHECK(timers_.Insert(timer),
+                       ALYRN_CHECK(timers_.Insert(timer),
                                       "TimerQueue: repeating timer is already in timer tree");
-                     COROPACT_CHECK(active_timers_.emplace(timer->sequence(), timer).second,
+                     ALYRN_CHECK(active_timers_.emplace(timer->sequence(), timer).second,
                                       "TimerQueue: repeating timer sequence was reused");
                      } else {
                        timer_pool_.Release(timer);
@@ -149,4 +149,4 @@ void TimerQueue::HandleRead() {
 
 void TimerQueue::ResetTimerfd(time::Deadline expiration) { SetTimerfd(timerfd_, expiration); }
 
-}  // namespace coropact::reactor::detail
+}  // namespace alyrn::reactor::detail

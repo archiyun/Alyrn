@@ -1,10 +1,10 @@
 #include <chrono>
 #include <iostream>
 
-#include "coropact/time/clock.h"
+#include "alyrn/time/clock.h"
 
 int main() {
-  using namespace coropact::time;
+  using namespace alyrn::time;
   static_assert(noexcept(SteadyNow()));
 
   const Deadline first = SteadyNow();

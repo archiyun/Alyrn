@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "coropact/kqueue/detail/worker_group.h"
+#include "alyrn/kqueue/detail/worker_group.h"
 
 #include <unistd.h>
 
@@ -7,11 +7,11 @@
 #include <expected>
 #include <utility>
 
-#include "coropact/result.h"
-#include "coropact/coro/spawn.h"
-#include "coropact/kqueue/stream.h"
+#include "alyrn/result.h"
+#include "alyrn/coro/spawn.h"
+#include "alyrn/kqueue/stream.h"
 
-namespace coropact::kqueue::detail {
+namespace alyrn::kqueue::detail {
 namespace {
 
 coro::DetachedTask HandoffAccepted(WorkerGroup* group,
@@ -141,4 +141,4 @@ void WorkerGroup::RequestStop() noexcept {
   }
 }
 
-}  // namespace coropact::kqueue::detail
+}  // namespace alyrn::kqueue::detail

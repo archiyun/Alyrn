@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-#include "coropact/luring/loop.h"
+#include "alyrn/luring/loop.h"
 
 #include <liburing.h>
 #include <liburing/io_uring.h>
@@ -22,22 +22,22 @@
 #include <thread>
 #include <utility>
 
-#include "coropact/base/check.h"
-#include "coropact/base/current_thread.h"
-#include "coropact/backend/loop.h"
-#include "coropact/coro/frame_allocator.h"
-#include "coropact/coro/scheduler.h"
-#include "coropact/coro/work.h"
-#include "coropact/luring/detail/completion_dispatch.h"
-#include "coropact/luring/detail/op.h"
-#include "coropact/luring/detail/provided_buffer_pool.h"
-#include "coropact/luring/detail/sqe_prep.h"
-#include "coropact/luring/detail/ring.h"
-#include "coropact/luring/detail/timer_queue.h"
-#include "coropact/luring/options.h"
-#include "coropact/result.h"
+#include "alyrn/base/check.h"
+#include "alyrn/base/current_thread.h"
+#include "alyrn/backend/loop.h"
+#include "alyrn/coro/frame_allocator.h"
+#include "alyrn/coro/scheduler.h"
+#include "alyrn/coro/work.h"
+#include "alyrn/luring/detail/completion_dispatch.h"
+#include "alyrn/luring/detail/op.h"
+#include "alyrn/luring/detail/provided_buffer_pool.h"
+#include "alyrn/luring/detail/sqe_prep.h"
+#include "alyrn/luring/detail/ring.h"
+#include "alyrn/luring/detail/timer_queue.h"
+#include "alyrn/luring/options.h"
+#include "alyrn/result.h"
 
-namespace coropact::luring {
+namespace alyrn::luring {
 
 using namespace detail;
 
@@ -50,16 +50,16 @@ constexpr std::size_t kMaxCompletionWorkPerTurn = 64;
 constexpr std::chrono::milliseconds kStopPollInterval{100};
 
 [[nodiscard]]
-::coropact::luring::detail::Op* DecodeOp(io_uring_cqe* cqe) noexcept {
-  return reinterpret_cast<::coropact::luring::detail::Op*>(io_uring_cqe_get_data(cqe));
+::alyrn::luring::detail::Op* DecodeOp(io_uring_cqe* cqe) noexcept {
+  return reinterpret_cast<::alyrn::luring::detail::Op*>(io_uring_cqe_get_data(cqe));
 }
 
 }  // namespace
 
 namespace detail {
 
-CompletionDisposition DispatchCompletion(::coropact::luring::detail::Op* op, CompletionEvent event) noexcept {
-  COROPACT_CHECK(op != nullptr, "cannot dispatch a null Op");
+CompletionDisposition DispatchCompletion(::alyrn::luring::detail::Op* op, CompletionEvent event) noexcept {
+  ALYRN_CHECK(op != nullptr, "cannot dispatch a null Op");
 
   switch (op->DispatchKind()) {
     case OpKind::kAcceptComplete:
@@ -135,7 +135,7 @@ Loop::Loop(time::TimerIndexKind timers, std::pmr::memory_resource* frame_resourc
 
 Result<time::TimerId> Loop::RunAfter(time::Duration delay,
                                      std::function<void()> callback) {
-  COROPACT_CHECK(IsInLoopThread(), "Loop::RunAfter called from wrong thread");
+  ALYRN_CHECK(IsInLoopThread(), "Loop::RunAfter called from wrong thread");
   if (!initialized_) {
     return std::unexpected(Errno(EBADF));
   }
@@ -143,7 +143,7 @@ Result<time::TimerId> Loop::RunAfter(time::Duration delay,
 }
 
 Result<void> Loop::CancelTimer(time::TimerId id) noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "Loop::CancelTimer called from wrong thread");
+  ALYRN_CHECK(IsInLoopThread(), "Loop::CancelTimer called from wrong thread");
   if (!initialized_) {
     return std::unexpected(Errno(EBADF));
   }
@@ -151,9 +151,9 @@ Result<void> Loop::CancelTimer(time::TimerId id) noexcept {
 }
 
 Loop::~Loop() noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "Loop destroyed from wrong thread");
+  ALYRN_CHECK(IsInLoopThread(), "Loop destroyed from wrong thread");
   if (initialized_) {
-    COROPACT_CHECK(IsDrained(), "Loop destroyed with pending user operation work");
+    ALYRN_CHECK(IsDrained(), "Loop destroyed with pending user operation work");
   }
   if (wake_fd_ >= 0) {
     ::close(wake_fd_);
@@ -161,7 +161,7 @@ Loop::~Loop() noexcept {
 }
 
 Result<void> Loop::Init(const Options& options) noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "Loop::Init called from wrong thread");
+  ALYRN_CHECK(IsInLoopThread(), "Loop::Init called from wrong thread");
 
   if (initialized_) {
     return std::unexpected(Errno(EALREADY));
@@ -197,7 +197,7 @@ Result<void> Loop::Init(const Options& options) noexcept {
 
 Result<detail::ProvidedBufferPool*> Loop::GetSharedProvidedBufferPool(
     std::size_t buffer_size, std::size_t source_capacity) noexcept {
-  COROPACT_CHECK(IsInLoopThread(),
+  ALYRN_CHECK(IsInLoopThread(),
                  "Loop::GetSharedProvidedBufferPool called from wrong thread");
   if (shared_buffer_capacity_ == 0) {
     return std::unexpected(Errno(ENOENT));
@@ -230,7 +230,7 @@ Result<detail::ProvidedBufferPool*> Loop::GetSharedProvidedBufferPool(
 }
 
 void Loop::Run(std::stop_token token) noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "Loop::Run called from wrong thread");
+  ALYRN_CHECK(IsInLoopThread(), "Loop::Run called from wrong thread");
 
   if (!initialized_) {
     return;
@@ -291,7 +291,7 @@ void Loop::RequestStop() noexcept {
 }
 
 Result<void> Loop::CancelPendingOperations() noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "Loop::CancelPendingOperations called from wrong thread");
+  ALYRN_CHECK(IsInLoopThread(), "Loop::CancelPendingOperations called from wrong thread");
 
   if (cancel_all_pending_ || (PendingSubmitCount() == 0 && InflightCount() == 0)) {
     return {};
@@ -307,7 +307,7 @@ Result<void> Loop::CancelPendingOperations() noexcept {
 }
 
 void Loop::DrainStoppedOperations() noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "Loop::DrainStoppedOperations called from wrong thread");
+  ALYRN_CHECK(IsInLoopThread(), "Loop::DrainStoppedOperations called from wrong thread");
 
   while (!IsDrained()) {
     RunReady();
@@ -350,17 +350,17 @@ void Loop::DrainStoppedOperations() noexcept {
 }
 
 void Loop::Schedule(coro::Work* work) noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "Loop::Schedule called from wrong thread");
+  ALYRN_CHECK(IsInLoopThread(), "Loop::Schedule called from wrong thread");
   ready_.PushBack(work);
 }
 
 void Loop::ScheduleCompletion(coro::Work* work) noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "Loop::ScheduleCompletion called from wrong thread");
+  ALYRN_CHECK(IsInLoopThread(), "Loop::ScheduleCompletion called from wrong thread");
   completion_ready_.PushBack(work);
 }
 
 void Loop::RunReady() noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "Loop::RunReady called from wrong thread");
+  ALYRN_CHECK(IsInLoopThread(), "Loop::RunReady called from wrong thread");
   ExecutionScope execution_scope{*this};
   CheckExecutionScope();
 
@@ -388,7 +388,7 @@ void Loop::RunReady() noexcept {
 }
 
 Result<void> Loop::FlushSubmit() noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "Loop::FlushSubmit called from wrong thread");
+  ALYRN_CHECK(IsInLoopThread(), "Loop::FlushSubmit called from wrong thread");
 
   while (pending_submit_ > 0) {
     auto submitted = ring_.Submit();
@@ -412,7 +412,7 @@ Result<void> Loop::FlushSubmit() noexcept {
 }
 
 Result<std::size_t> Loop::PollCompletions() noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "Loop::PollCompletions called from wrong thread");
+  ALYRN_CHECK(IsInLoopThread(), "Loop::PollCompletions called from wrong thread");
 
   auto flushed = FlushSubmit();
   if (!flushed.has_value()) {
@@ -427,7 +427,7 @@ Result<std::size_t> Loop::WaitCompletions() noexcept {
 }
 
 Result<std::size_t> Loop::WaitCompletionsFor(std::chrono::nanoseconds timeout) noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "Loop::WaitCompletionsFor called from wrong thread");
+  ALYRN_CHECK(IsInLoopThread(), "Loop::WaitCompletionsFor called from wrong thread");
 
   auto flushed = FlushSubmit();
   if (!flushed.has_value()) {
@@ -455,9 +455,9 @@ Result<std::size_t> Loop::WaitCompletionsFor(std::chrono::nanoseconds timeout) n
 }
 
 void Loop::HandleCqe(io_uring_cqe* cqe) noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "Loop::HandleCqe called from wrong thread");
+  ALYRN_CHECK(IsInLoopThread(), "Loop::HandleCqe called from wrong thread");
 
-  ::coropact::luring::detail::Op* op = DecodeOp(cqe);
+  ::alyrn::luring::detail::Op* op = DecodeOp(cqe);
   if (op == nullptr) {
     if (inflight_ > 0) {
       --inflight_;
@@ -469,16 +469,16 @@ void Loop::HandleCqe(io_uring_cqe* cqe) noexcept {
 
   const auto apply_disposition = [this, op](CompletionDisposition disposition) noexcept {
     if (disposition.kernel_request_terminal) {
-      COROPACT_CHECK(disposition.decrement_inflight,
+      ALYRN_CHECK(disposition.decrement_inflight,
                      "terminal LUring completion must decrement inflight work");
     }
     if (disposition.decrement_inflight) {
-      COROPACT_CHECK(inflight_ > 0, "Loop inflight count underflow");
+      ALYRN_CHECK(inflight_ > 0, "Loop inflight count underflow");
       --inflight_;
     }
     if (disposition.resume_continuation) {
       if (UsesCoupledSingleResultLifecycle(op->DispatchKind())) {
-        COROPACT_CHECK(op->TryAuthorizeCoupledContinuation(),
+        ALYRN_CHECK(op->TryAuthorizeCoupledContinuation(),
                        "coupled LUring operation resumed before release authorization");
       }
       const bool resume_gate_won =
@@ -534,7 +534,7 @@ void Loop::HandleCqe(io_uring_cqe* cqe) noexcept {
 }
 
 Result<void> Loop::ArmWakePoll() noexcept {
-  COROPACT_CHECK(IsInLoopThread(), "Loop::ArmWakePoll called from wrong thread");
+  ALYRN_CHECK(IsInLoopThread(), "Loop::ArmWakePoll called from wrong thread");
   if (wake_fd_ < 0) {
     return std::unexpected(Errno(EBADF));
   }
@@ -570,4 +570,4 @@ void Loop::Wake() noexcept {
   }
 }
 
-}  // namespace coropact::luring
+}  // namespace alyrn::luring

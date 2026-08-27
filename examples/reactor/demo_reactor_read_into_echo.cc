@@ -18,16 +18,16 @@
 #include <stop_token>
 #include <utility>
 
-#include "coropact/coro.h"
-#include "coropact/coro/detached_task.h"
-#include "coropact/io.h"
-#include "coropact/io/buffer.h"
-#include "coropact/net/endpoint.h"
-#include "coropact/reactor.h"
-#include "coropact/reactor/listener.h"
-#include "coropact/reactor/loop.h"
+#include "alyrn/coro.h"
+#include "alyrn/coro/detached_task.h"
+#include "alyrn/io.h"
+#include "alyrn/io/buffer.h"
+#include "alyrn/net/endpoint.h"
+#include "alyrn/reactor.h"
+#include "alyrn/reactor/listener.h"
+#include "alyrn/reactor/loop.h"
 
-using namespace coropact;
+using namespace alyrn;
 
 namespace {
 

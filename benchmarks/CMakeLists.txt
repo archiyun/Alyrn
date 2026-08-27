@@ -17,12 +17,12 @@ add_executable(coro_spawn_microbenchmark
 
 target_link_libraries(coro_spawn_microbenchmark
     PRIVATE
-        coropact_coro
+        alyrn_coro
 )
 
 target_compile_definitions(coro_spawn_microbenchmark
     PRIVATE
-        COROPACT_ENABLE_SPAWN_STATS
+        ALYRN_ENABLE_SPAWN_STATS
 )
 
 target_compile_features(coro_spawn_microbenchmark PRIVATE cxx_std_23)
@@ -33,12 +33,12 @@ add_executable(coro_spawn_join_microbenchmark
 
 target_link_libraries(coro_spawn_join_microbenchmark
     PRIVATE
-        coropact_coro
+        alyrn_coro
 )
 
 target_compile_definitions(coro_spawn_join_microbenchmark
     PRIVATE
-        COROPACT_ENABLE_SPAWN_STATS
+        ALYRN_ENABLE_SPAWN_STATS
 )
 
 target_compile_features(coro_spawn_join_microbenchmark PRIVATE cxx_std_23)
@@ -49,8 +49,8 @@ add_executable(coro_channel_microbenchmark
 
 target_link_libraries(coro_channel_microbenchmark
     PRIVATE
-        coropact_coro
-        coropact_foundation
+        alyrn_coro
+        alyrn_foundation
 )
 
 target_compile_features(coro_channel_microbenchmark PRIVATE cxx_std_23)

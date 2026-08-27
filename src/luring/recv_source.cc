@@ -1,4 +1,4 @@
-#include "coropact/luring/recv_source.h"
+#include "alyrn/luring/recv_source.h"
 
 #include <cerrno>
 #include <cstddef>
@@ -10,22 +10,22 @@
 #include <utility>
 #include <vector>
 
-#include "coropact/base/check.h"
-#include "coropact/luring/detail/cancel_result.h"
-#include "coropact/luring/detail/completion_dispatch.h"
-#include "coropact/luring/detail/loop_access.h"
-#include "coropact/luring/detail/op.h"
-#include "coropact/luring/detail/provided_buffer_pool.h"
-#include "coropact/luring/detail/sqe_prep.h"
-#include "coropact/luring/loop.h"
-#include "coropact/net/detail/recv_source_state.h"
-#include "coropact/net/detail/source_state.h"
-#include "coropact/net/recv_source.h"
-#include "coropact/operation/detail/completion_gate.h"
-#include "coropact/operation/detail/scheduler_continuation.h"
-#include "coropact/result.h"
+#include "alyrn/base/check.h"
+#include "alyrn/luring/detail/cancel_result.h"
+#include "alyrn/luring/detail/completion_dispatch.h"
+#include "alyrn/luring/detail/loop_access.h"
+#include "alyrn/luring/detail/op.h"
+#include "alyrn/luring/detail/provided_buffer_pool.h"
+#include "alyrn/luring/detail/sqe_prep.h"
+#include "alyrn/luring/loop.h"
+#include "alyrn/net/detail/recv_source_state.h"
+#include "alyrn/net/detail/source_state.h"
+#include "alyrn/net/recv_source.h"
+#include "alyrn/operation/detail/completion_gate.h"
+#include "alyrn/operation/detail/scheduler_continuation.h"
+#include "alyrn/result.h"
 
-namespace coropact::luring {
+namespace alyrn::luring {
 
 using namespace detail;
 using namespace net::detail;
@@ -109,7 +109,7 @@ public:
   }
 
   Result<void> await_resume() noexcept {
-    COROPACT_CHECK(result_.has_value(), "LUring recv source Stop resumed without a result");
+    ALYRN_CHECK(result_.has_value(), "LUring recv source Stop resumed without a result");
     return std::move(*result_);
   }
 
@@ -158,7 +158,7 @@ Result<RecvSource> RecvSource::Create(Loop* loop, int fd,
     return std::unexpected(shared_pool.error());
   }
   detail::ProvidedBufferPool* const buffer_pool = *shared_pool;
-  COROPACT_CHECK(buffer_pool != nullptr, "RecvSource failed to select a buffer pool");
+  ALYRN_CHECK(buffer_pool != nullptr, "RecvSource failed to select a buffer pool");
   if (capacity > buffer_pool->capacity()) return std::unexpected(Errno(EINVAL));
 
   std::vector<RecvSource::PendingEvent> event_storage;
@@ -193,19 +193,19 @@ RecvSource::~RecvSource() {
     return;
   }
 
-  COROPACT_CHECK(loop_->IsInLoopThread(), "RecvSource destroyed from wrong thread");
-  COROPACT_CHECK(pending_next_ == nullptr, "RecvSource destroyed with pending Next");
-  COROPACT_CHECK(pending_stop_ == nullptr, "RecvSource destroyed with pending Stop");
-  COROPACT_CHECK(!recv_submitted_, "RecvSource destroyed with active recv");
-  COROPACT_CHECK(!cancel_submitted_, "RecvSource destroyed with active cancel");
-  COROPACT_CHECK(
+  ALYRN_CHECK(loop_->IsInLoopThread(), "RecvSource destroyed from wrong thread");
+  ALYRN_CHECK(pending_next_ == nullptr, "RecvSource destroyed with pending Next");
+  ALYRN_CHECK(pending_stop_ == nullptr, "RecvSource destroyed with pending Stop");
+  ALYRN_CHECK(!recv_submitted_, "RecvSource destroyed with active recv");
+  ALYRN_CHECK(!cancel_submitted_, "RecvSource destroyed with active cancel");
+  ALYRN_CHECK(
       state_.State() == RecvSourceState::kIdle || state_.State() == RecvSourceState::kTerminal,
       "RecvSource destroyed before Stop completed");
-  COROPACT_CHECK(event_count_ == 0, "RecvSource destroyed with queued events");
-  COROPACT_CHECK(state_.OutstandingLeases() == 0,
+  ALYRN_CHECK(event_count_ == 0, "RecvSource destroyed with queued events");
+  ALYRN_CHECK(state_.OutstandingLeases() == 0,
                  "RecvSource destroyed with outstanding leases");
   for (const SlotState& slot : slots_) {
-    COROPACT_CHECK(!slot.active, "RecvSource destroyed with borrowed provided buffer");
+    ALYRN_CHECK(!slot.active, "RecvSource destroyed with borrowed provided buffer");
   }
 }
 
@@ -214,19 +214,19 @@ void RecvSource::ValidateMovable(const RecvSource& source) noexcept {
     return;
   }
 
-  COROPACT_CHECK(source.loop_->IsInLoopThread(), "RecvSource moved from wrong thread");
-  COROPACT_CHECK(source.pending_next_ == nullptr, "RecvSource cannot move with pending Next");
-  COROPACT_CHECK(source.pending_stop_ == nullptr, "RecvSource cannot move with pending Stop");
-  COROPACT_CHECK(!source.recv_submitted_, "RecvSource cannot move while active");
-  COROPACT_CHECK(!source.cancel_submitted_, "RecvSource cannot move while cancelling");
-  COROPACT_CHECK(source.state_.OutstandingLeases() == 0,
+  ALYRN_CHECK(source.loop_->IsInLoopThread(), "RecvSource moved from wrong thread");
+  ALYRN_CHECK(source.pending_next_ == nullptr, "RecvSource cannot move with pending Next");
+  ALYRN_CHECK(source.pending_stop_ == nullptr, "RecvSource cannot move with pending Stop");
+  ALYRN_CHECK(!source.recv_submitted_, "RecvSource cannot move while active");
+  ALYRN_CHECK(!source.cancel_submitted_, "RecvSource cannot move while cancelling");
+  ALYRN_CHECK(source.state_.OutstandingLeases() == 0,
                  "RecvSource cannot move with outstanding leases");
-  COROPACT_CHECK(source.state_.State() == RecvSourceState::kIdle ||
+  ALYRN_CHECK(source.state_.State() == RecvSourceState::kIdle ||
                      source.state_.State() == RecvSourceState::kTerminal,
                  "RecvSource cannot move before Stop completed");
-  COROPACT_CHECK(source.event_count_ == 0, "RecvSource cannot move with queued events");
+  ALYRN_CHECK(source.event_count_ == 0, "RecvSource cannot move with queued events");
   for (const SlotState& slot : source.slots_) {
-    COROPACT_CHECK(!slot.active, "RecvSource cannot move with borrowed provided buffer");
+    ALYRN_CHECK(!slot.active, "RecvSource cannot move with borrowed provided buffer");
   }
 }
 
@@ -253,7 +253,7 @@ RecvSource& RecvSource::operator=(RecvSource&& other) noexcept {
 
   ValidateMovable(*this);
   ValidateMovable(other);
-  COROPACT_CHECK(loop_ == nullptr || other.loop_ == nullptr || loop_ == other.loop_,
+  ALYRN_CHECK(loop_ == nullptr || other.loop_ == nullptr || loop_ == other.loop_,
                  "RecvSource cannot move across loops");
 
   loop_ = std::exchange(other.loop_, nullptr);
@@ -289,7 +289,7 @@ Result<void> RecvSource::StartOperation() noexcept {
     const auto completed = state_.CompleteMultishotEvent(EventDisposition::kNone,
                                                          MultishotRequestDisposition::kTerminal);
     (void)(completed);
-    COROPACT_CHECK(completed.has_value(),
+    ALYRN_CHECK(completed.has_value(),
                    "LUring recv source failed to record terminal submit failure");
     return std::unexpected(submitted.error());
   }
@@ -462,7 +462,7 @@ CompletionDisposition RecvSource::OnCompletion(CompletionEvent event) noexcept {
     } else if (valid_buffer && slots_[buffer_id].active) {
       MarkKernelDone(buffer_id);
     } else if (valid_buffer && buffer_pool_->Acquire(buffer_id)) {
-      COROPACT_CHECK(buffer_pool_->Return(buffer_id),
+      ALYRN_CHECK(buffer_pool_->Return(buffer_id),
                      "RecvSource failed to return empty provided buffer");
     }
     if (!request_still_active) {
@@ -474,7 +474,7 @@ CompletionDisposition RecvSource::OnCompletion(CompletionEvent event) noexcept {
     } else if (valid_buffer && slots_[buffer_id].active) {
       MarkKernelDone(buffer_id);
     } else if (valid_buffer && buffer_pool_->Acquire(buffer_id)) {
-      COROPACT_CHECK(buffer_pool_->Return(buffer_id),
+      ALYRN_CHECK(buffer_pool_->Return(buffer_id),
                      "RecvSource failed to return error provided buffer");
     }
     const auto state = state_.State();
@@ -563,7 +563,7 @@ void RecvSource::CompleteStopIfReady() noexcept {
 bool RecvSource::TryTakeNext(NextResult& result) noexcept {
   PendingEvent pending;
   if (TryTakeQueuedEvent(pending)) {
-    COROPACT_CHECK(state_.AcquireEvent(), "RecvSource: queue and state became inconsistent");
+    ALYRN_CHECK(state_.AcquireEvent(), "RecvSource: queue and state became inconsistent");
     Event event{.buffer = MakeLease(pending.buffer_id, pending.size)};
     result = NextResult(std::in_place, std::move(event));
     if (state_.State() == RecvSourceState::kPaused) {
@@ -584,7 +584,7 @@ bool RecvSource::TryTakeNext(NextResult& result) noexcept {
 }
 
 void RecvSource::QueueEvent(std::uint32_t buffer_id, std::size_t size) noexcept {
-  COROPACT_CHECK(!events_.empty() && event_count_ < events_.size(),
+  ALYRN_CHECK(!events_.empty() && event_count_ < events_.size(),
                  "RecvSource event queue overflow");
   const std::size_t index = (event_head_ + event_count_) % events_.size();
   events_[index] = PendingEvent{.buffer_id = buffer_id, .size = size};
@@ -624,10 +624,10 @@ Result<void> RecvSource::AcquireBuffer(std::uint32_t buffer_id, std::size_t size
 }
 
 void RecvSource::MarkKernelDone(std::uint32_t buffer_id) noexcept {
-  COROPACT_CHECK(buffer_id < slots_.size() && slots_[buffer_id].active,
+  ALYRN_CHECK(buffer_id < slots_.size() && slots_[buffer_id].active,
                  "RecvSource completed an unknown provided buffer");
   SlotState& slot = slots_[buffer_id];
-  COROPACT_CHECK(!slot.kernel_done, "RecvSource completed a provided buffer twice");
+  ALYRN_CHECK(!slot.kernel_done, "RecvSource completed a provided buffer twice");
   slot.kernel_done = true;
   ReturnIfReclaimable(buffer_id);
 }
@@ -645,14 +645,14 @@ void RecvSource::ReturnIfReclaimable(std::uint32_t buffer_id) noexcept {
   if (!slot.active || !slot.kernel_done || slot.lease_count != 0) {
     return;
   }
-  COROPACT_CHECK(buffer_pool_ != nullptr, "RecvSource missing provided buffer pool");
-  COROPACT_CHECK(buffer_pool_->Return(buffer_id),
+  ALYRN_CHECK(buffer_pool_ != nullptr, "RecvSource missing provided buffer pool");
+  ALYRN_CHECK(buffer_pool_->Return(buffer_id),
                  "RecvSource failed to return provided buffer");
   slot = SlotState{};
 }
 
 void RecvSource::ReleaseSlotLease(std::uint32_t buffer_id) noexcept {
-  COROPACT_CHECK(
+  ALYRN_CHECK(
       buffer_id < slots_.size() && slots_[buffer_id].active && slots_[buffer_id].lease_count != 0,
       "RecvSource provided buffer lease released twice");
   --slots_[buffer_id].lease_count;
@@ -660,19 +660,19 @@ void RecvSource::ReleaseSlotLease(std::uint32_t buffer_id) noexcept {
 }
 
 net::BufferLease RecvSource::MakeLease(std::uint32_t buffer_id, std::size_t size) noexcept {
-  COROPACT_CHECK(buffer_pool_ != nullptr, "RecvSource missing provided buffer pool");
-  COROPACT_CHECK(buffer_id < slots_.size() && slots_[buffer_id].active,
+  ALYRN_CHECK(buffer_pool_ != nullptr, "RecvSource missing provided buffer pool");
+  ALYRN_CHECK(buffer_id < slots_.size() && slots_[buffer_id].active,
                  "RecvSource lease refers to an inactive provided buffer");
   auto* data = buffer_pool_->slot(buffer_id);
-  COROPACT_CHECK(data != nullptr && size <= buffer_size_,
+  ALYRN_CHECK(data != nullptr && size <= buffer_size_,
                  "RecvSource lease exceeds provided buffer");
   return net::BufferLease(data, size, buffer_id, this, &ReclaimBuffer);
 }
 
 void RecvSource::ReturnBuffer(std::uint32_t buffer_id) noexcept {
-  COROPACT_CHECK(buffer_pool_ != nullptr, "RecvSource missing provided buffer pool");
+  ALYRN_CHECK(buffer_pool_ != nullptr, "RecvSource missing provided buffer pool");
   ReleaseSlotLease(buffer_id);
-  COROPACT_CHECK(state_.ReleaseLease(), "RecvSource buffer lease released twice");
+  ALYRN_CHECK(state_.ReleaseLease(), "RecvSource buffer lease released twice");
 
   // A live multishot request already has admission. In the common direct
   // delivery path, releasing the lease cannot re-arm anything or complete a
@@ -724,12 +724,12 @@ coro::Task<Result<void>> RecvSource::Stop() {
 
 namespace detail {
 
-CompletionDisposition DispatchRecvSourceComplete(::coropact::luring::detail::Op* op, CompletionEvent event) noexcept {
+CompletionDisposition DispatchRecvSourceComplete(::alyrn::luring::detail::Op* op, CompletionEvent event) noexcept {
   auto* operation = static_cast<RecvSource::RecvOperation*>(op);
   return operation->Source()->OnCompletion(event);
 }
 
-void DispatchRecvSourceCancelComplete(::coropact::luring::detail::Op* op) noexcept {
+void DispatchRecvSourceCancelComplete(::alyrn::luring::detail::Op* op) noexcept {
   auto* operation = static_cast<RecvSource::CancelOperation*>(op);
 
   int result = -EIO;
@@ -741,4 +741,4 @@ void DispatchRecvSourceCancelComplete(::coropact::luring::detail::Op* op) noexce
 
 }  // namespace detail
 
-}  // namespace coropact::luring
+}  // namespace alyrn::luring

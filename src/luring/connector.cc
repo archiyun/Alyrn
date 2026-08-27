@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "coropact/luring/connector.h"
+#include "alyrn/luring/connector.h"
 
 #include <fcntl.h>
 #include <sys/socket.h>
@@ -11,20 +11,20 @@
 #include <string_view>
 #include <utility>
 
-#include "coropact/backend/detail/value_result_state.h"
-#include "coropact/base/check.h"
-#include "coropact/luring/detail/completion_dispatch.h"
-#include "coropact/luring/detail/op.h"
-#include "coropact/luring/detail/operation_submission.h"
-#include "coropact/luring/detail/sqe_prep.h"
-#include "coropact/luring/loop.h"
-#include "coropact/luring/stream.h"
-#include "coropact/luring/timer.h"
-#include "coropact/net/endpoint.h"
-#include "coropact/net/socket.h"
-#include "coropact/result.h"
+#include "alyrn/backend/detail/value_result_state.h"
+#include "alyrn/base/check.h"
+#include "alyrn/luring/detail/completion_dispatch.h"
+#include "alyrn/luring/detail/op.h"
+#include "alyrn/luring/detail/operation_submission.h"
+#include "alyrn/luring/detail/sqe_prep.h"
+#include "alyrn/luring/loop.h"
+#include "alyrn/luring/stream.h"
+#include "alyrn/luring/timer.h"
+#include "alyrn/net/endpoint.h"
+#include "alyrn/net/socket.h"
+#include "alyrn/result.h"
 
-namespace coropact::luring {
+namespace alyrn::luring {
 
 using namespace detail;
 
@@ -54,7 +54,7 @@ Result<void> SetNonBlocking(int fd) noexcept {
 
 // --- ConnectAwaiter ---
 class ConnectAwaiter : public detail::OpHook<ConnectAwaiter> {
-  friend void detail::DispatchConnectComplete(::coropact::luring::detail::Op* op) noexcept;
+  friend void detail::DispatchConnectComplete(::alyrn::luring::detail::Op* op) noexcept;
 
 public:
   using OpHook = detail::OpHook<ConnectAwaiter>;
@@ -63,7 +63,7 @@ public:
       : OpHook(OpKind::kConnect), loop_(loop), peer_(peer), tcp_options_(tcp_options) {}
 
   ~ConnectAwaiter() noexcept {
-    COROPACT_CHECK(!Operation()->resume_work.HasHandle() || Operation()->CqeCompletionRecorded(),
+    ALYRN_CHECK(!Operation()->resume_work.HasHandle() || Operation()->CqeCompletionRecorded(),
                    "ConnectAwaiter destroyed before its physical connect CQE settled");
     if (fd_ >= 0) {
       ::close(fd_);
@@ -73,8 +73,8 @@ public:
   bool await_ready() const noexcept { return false; }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
-    COROPACT_CHECK(loop_ != nullptr, "Connector operation has no owner loop");
-    COROPACT_CHECK(loop_->IsInLoopThread(), "Connector operation called from wrong Loop thread");
+    ALYRN_CHECK(loop_ != nullptr, "Connector operation has no owner loop");
+    ALYRN_CHECK(loop_->IsInLoopThread(), "Connector operation called from wrong Loop thread");
     if (loop_->State() == backend::LoopState::kStopping ||
         loop_->State() == backend::LoopState::kStopped) {
       CompleteInline(std::unexpected(Errno(ECANCELED)));
@@ -98,9 +98,9 @@ public:
   Result<Stream> await_resume() noexcept { return result_.Take(); }
 
 private:
-  static void OnComplete(::coropact::luring::detail::Op* op) noexcept {
+  static void OnComplete(::alyrn::luring::detail::Op* op) noexcept {
     auto* self = OpHook::OwnerFrom(op);
-    COROPACT_CHECK(op->result.HasValue(), "LUring Connect CQE is missing its result");
+    ALYRN_CHECK(op->result.HasValue(), "LUring Connect CQE is missing its result");
 
     if (*op->result < 0) {
       self->result_.SetError(NegErrno(*op->result));
@@ -113,17 +113,17 @@ private:
       }
     }
 
-    COROPACT_CHECK(op->TryAuthorizeCoupledResult(), "LUring Connect result was authorized twice");
-    COROPACT_CHECK(op->TryAuthorizeCoupledRelease(),
+    ALYRN_CHECK(op->TryAuthorizeCoupledResult(), "LUring Connect result was authorized twice");
+    ALYRN_CHECK(op->TryAuthorizeCoupledRelease(),
                    "LUring Connect release was not authorized after its result");
     self->ReleasePhysicalRequest();
   }
 
   void CompleteInline(Result<Stream> result) noexcept {
     result_.SetResult(std::move(result));
-    COROPACT_CHECK(Operation()->TryAuthorizeCoupledResult(),
+    ALYRN_CHECK(Operation()->TryAuthorizeCoupledResult(),
                    "LUring Connect result was authorized twice");
-    COROPACT_CHECK(Operation()->TryAuthorizeCoupledRelease(),
+    ALYRN_CHECK(Operation()->TryAuthorizeCoupledRelease(),
                    "LUring Connect release was not authorized after its result");
     ReleasePhysicalRequest();
   }
@@ -163,7 +163,7 @@ coro::Task<Result<Stream>> ConnectResolved(Loop* loop, net::TcpOptions tcp_optio
 
 namespace detail {
 
-void DispatchConnectComplete(::coropact::luring::detail::Op* op) noexcept {
+void DispatchConnectComplete(::alyrn::luring::detail::Op* op) noexcept {
   ConnectAwaiter::OnComplete(op);
 }
 
@@ -171,8 +171,8 @@ void DispatchConnectComplete(::coropact::luring::detail::Op* op) noexcept {
 
 Connector::Connector(Loop* loop, ConnectorOptions options) noexcept
     : loop_(loop), options_(options) {
-  COROPACT_CHECK(loop_ != nullptr, "Connector: loop must not be null");
-  COROPACT_CHECK(loop_->IsInLoopThread(), "Connector created from wrong Loop thread");
+  ALYRN_CHECK(loop_ != nullptr, "Connector: loop must not be null");
+  ALYRN_CHECK(loop_->IsInLoopThread(), "Connector created from wrong Loop thread");
 }
 
 Result<Connector> Connector::Create(Loop* loop, ConnectorOptions options) noexcept {
@@ -200,13 +200,13 @@ coro::Task<Result<Stream>> Connector::Connect(std::string_view host, std::uint16
 
 coro::Task<void> Connector::SleepFor(time::Duration delay) {
   RequireOwnerLoop();
-  auto result = co_await coropact::luring::SleepFor(*loop_, delay);
+  auto result = co_await alyrn::luring::SleepFor(*loop_, delay);
   (void)result;
 }
 
 void Connector::RequireOwnerLoop() const noexcept {
-  COROPACT_CHECK(loop_ != nullptr, "Connector operation has no owner Loop");
-  COROPACT_CHECK(loop_->IsInLoopThread(), "Connector operation called from wrong Loop thread");
+  ALYRN_CHECK(loop_ != nullptr, "Connector operation has no owner Loop");
+  ALYRN_CHECK(loop_->IsInLoopThread(), "Connector operation called from wrong Loop thread");
 }
 
-}  // namespace coropact::luring
+}  // namespace alyrn::luring

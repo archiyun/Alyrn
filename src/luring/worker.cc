@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "coropact/luring/detail/worker.h"
+#include "alyrn/luring/detail/worker.h"
 
 #include <pthread.h>
 #include <sched.h>
@@ -12,14 +12,14 @@
 #include <thread>
 #include <utility>
 
-#include "coropact/result.h"
-#include "coropact/coro/spawn.h"
-#include "coropact/luring/detail/loop_access.h"
-#include "coropact/luring/listener.h"
-#include "coropact/luring/loop.h"
-#include "coropact/net/accept_source.h"
+#include "alyrn/result.h"
+#include "alyrn/coro/spawn.h"
+#include "alyrn/luring/detail/loop_access.h"
+#include "alyrn/luring/listener.h"
+#include "alyrn/luring/loop.h"
+#include "alyrn/net/accept_source.h"
 
-namespace coropact::luring::detail {
+namespace alyrn::luring::detail {
 
 namespace {
 
@@ -82,7 +82,7 @@ void CloseListenerAfterLoopDrain(Loop& loop, Listener& listener) noexcept {
   std::optional<Result<void>> close_result;
   coro::SpawnDetach(loop, CloseListener(&listener, &close_result));
   LoopAccess::RunReady(loop);
-  COROPACT_CHECK(close_result.has_value(),
+  ALYRN_CHECK(close_result.has_value(),
                  "Loop drain left listener Close coroutine pending");
 }
 
@@ -215,4 +215,4 @@ void Worker::WorkLoop(std::stop_token token) noexcept {
   }
 }
 
-}  // namespace coropact::luring::detail
+}  // namespace alyrn::luring::detail

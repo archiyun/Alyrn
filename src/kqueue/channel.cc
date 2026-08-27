@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MIT
-#include "coropact/kqueue/detail/channel.h"
+#include "alyrn/kqueue/detail/channel.h"
 
 #include <utility>
 
-#include "coropact/base/check.h"
-#include "coropact/kqueue/loop.h"
+#include "alyrn/base/check.h"
+#include "alyrn/kqueue/loop.h"
 
-namespace coropact::kqueue::detail {
+namespace alyrn::kqueue::detail {
 
 Channel::Channel(Loop* loop, int fd) noexcept : loop_(loop), fd_(fd) {
-  COROPACT_CHECK(loop_ != nullptr, "Channel: loop must not be null");
-  COROPACT_CHECK(fd_ >= 0, "Channel: fd must be a valid non-negative descriptor");
+  ALYRN_CHECK(loop_ != nullptr, "Channel: loop must not be null");
+  ALYRN_CHECK(fd_ >= 0, "Channel: fd must be a valid non-negative descriptor");
 }
 
 /*
@@ -21,7 +21,7 @@ Channel::Channel(Loop* loop, int fd) noexcept : loop_(loop), fd_(fd) {
  * local index.
  */
 Channel::Channel(Channel&& other) noexcept {
-  COROPACT_CHECK(other.loop_ == nullptr || !other.IsRegistered(),
+  ALYRN_CHECK(other.loop_ == nullptr || !other.IsRegistered(),
                  "Channel move requires the source to be detached from the Poller");
 
   loop_ = std::exchange(other.loop_, nullptr);
@@ -45,9 +45,9 @@ Channel& Channel::operator=(Channel&& other) noexcept {
     return *this;
   }
 
-  COROPACT_CHECK(loop_ == nullptr || !IsRegistered(),
+  ALYRN_CHECK(loop_ == nullptr || !IsRegistered(),
                  "Channel move assignment requires the destination to be detached from the Poller");
-  COROPACT_CHECK(other.loop_ == nullptr || !other.IsRegistered(),
+  ALYRN_CHECK(other.loop_ == nullptr || !other.IsRegistered(),
                  "Channel move requires the source to be detached from the Poller");
 
   loop_ = std::exchange(other.loop_, nullptr);
@@ -68,7 +68,7 @@ Channel& Channel::operator=(Channel&& other) noexcept {
 }
 
 void Channel::Update() {
-  COROPACT_CHECK(loop_->IsInLoopThread(), "Channel::Update called from wrong thread");
+  ALYRN_CHECK(loop_->IsInLoopThread(), "Channel::Update called from wrong thread");
   loop_->UpdateChannel(this);
 }
 
@@ -78,15 +78,15 @@ void Channel::Update() {
  * registration that still names this Channel.
  */
 void Channel::Remove() {
-  COROPACT_CHECK(loop_->IsInLoopThread(), "Channel::Remove called from wrong thread");
-  COROPACT_CHECK(IsNoneEvent(), "Channel::Remove called while events are still enabled");
+  ALYRN_CHECK(loop_->IsInLoopThread(), "Channel::Remove called from wrong thread");
+  ALYRN_CHECK(IsNoneEvent(), "Channel::Remove called while events are still enabled");
   loop_->RemoveChannel(this);
 }
 
 bool Channel::IsRegistered() const { return loop_->HasChannel(const_cast<Channel*>(this)); }
 
 void Channel::HandleEvent() {
-  COROPACT_CHECK(loop_->IsInLoopThread(), "Channel::HandleEvent called from wrong thread");
+  ALYRN_CHECK(loop_->IsInLoopThread(), "Channel::HandleEvent called from wrong thread");
   /*
    * Channel callbacks are non-owning. Owners must detach the Channel before
    * destruction; keeping that lifetime rule explicit avoids a per-event
@@ -121,4 +121,4 @@ void Channel::HandleEvent() {
   }
 }
 
-}  // namespace coropact::kqueue::detail
+}  // namespace alyrn::kqueue::detail

@@ -8,15 +8,15 @@
 #include <limits>
 #include <utility>
 
-#include "coropact/backend/detail/value_result_state.h"
-#include "coropact/base/check.h"
-#include "coropact/result.h"
-#include "coropact/operation/detail/completion_gate.h"
-#include "coropact/operation/detail/scheduler_continuation.h"
-#include "coropact/reactor/detail/loop_access.h"
-#include "coropact/reactor/recv_source.h"
+#include "alyrn/backend/detail/value_result_state.h"
+#include "alyrn/base/check.h"
+#include "alyrn/result.h"
+#include "alyrn/operation/detail/completion_gate.h"
+#include "alyrn/operation/detail/scheduler_continuation.h"
+#include "alyrn/reactor/detail/loop_access.h"
+#include "alyrn/reactor/recv_source.h"
 
-namespace coropact::reactor {
+namespace alyrn::reactor {
 
 using detail::LoopAccess;
 
@@ -139,7 +139,7 @@ public:
   }
 
   Result<void> await_resume() noexcept {
-    COROPACT_CHECK(result_.has_value(), "Reactor recv source Stop resumed without a result");
+    ALYRN_CHECK(result_.has_value(), "Reactor recv source Stop resumed without a result");
     return std::move(*result_);
   }
 
@@ -212,16 +212,16 @@ RecvSource::~RecvSource() {
     return;
   }
 
-  COROPACT_CHECK(loop_->IsInLoopThread(), "RecvSource destroyed from wrong thread");
-  COROPACT_CHECK(pending_next_ == nullptr, "RecvSource destroyed with pending Next");
-  COROPACT_CHECK(pending_stop_ == nullptr, "RecvSource destroyed with pending Stop");
-  COROPACT_CHECK(state_.State() == net::detail::RecvSourceState::kIdle ||
+  ALYRN_CHECK(loop_->IsInLoopThread(), "RecvSource destroyed from wrong thread");
+  ALYRN_CHECK(pending_next_ == nullptr, "RecvSource destroyed with pending Next");
+  ALYRN_CHECK(pending_stop_ == nullptr, "RecvSource destroyed with pending Stop");
+  ALYRN_CHECK(state_.State() == net::detail::RecvSourceState::kIdle ||
                      state_.State() == net::detail::RecvSourceState::kTerminal,
                  "RecvSource destroyed before Stop completed");
-  COROPACT_CHECK(events_.empty(), "RecvSource destroyed with queued events");
-  COROPACT_CHECK(state_.OutstandingLeases() == 0,
+  ALYRN_CHECK(events_.empty(), "RecvSource destroyed with queued events");
+  ALYRN_CHECK(state_.OutstandingLeases() == 0,
                  "RecvSource destroyed with outstanding leases");
-  COROPACT_CHECK(available_buffers_.size() == state_.Options().buffer_capacity,
+  ALYRN_CHECK(available_buffers_.size() == state_.Options().buffer_capacity,
                  "RecvSource destroyed with a missing buffer");
 
   LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
@@ -238,13 +238,13 @@ RecvSource::RecvSource(RecvSource&& other) noexcept
       buffer_size_(std::exchange(other.buffer_size_, 0)),
       storage_(std::move(other.storage_)),
       available_buffers_(std::move(other.available_buffers_)) {
-  COROPACT_CHECK(other.pending_next_ == nullptr, "RecvSource cannot move with pending Next");
-  COROPACT_CHECK(other.pending_stop_ == nullptr, "RecvSource cannot move with pending Stop");
-  COROPACT_CHECK(other.state_.State() == net::detail::RecvSourceState::kIdle ||
+  ALYRN_CHECK(other.pending_next_ == nullptr, "RecvSource cannot move with pending Next");
+  ALYRN_CHECK(other.pending_stop_ == nullptr, "RecvSource cannot move with pending Stop");
+  ALYRN_CHECK(other.state_.State() == net::detail::RecvSourceState::kIdle ||
                      other.state_.State() == net::detail::RecvSourceState::kTerminal,
                  "RecvSource cannot move while active");
-  COROPACT_CHECK(other.events_.empty(), "RecvSource cannot move with queued events");
-  COROPACT_CHECK(other.state_.OutstandingLeases() == 0,
+  ALYRN_CHECK(other.events_.empty(), "RecvSource cannot move with queued events");
+  ALYRN_CHECK(other.state_.OutstandingLeases() == 0,
                  "RecvSource cannot move with outstanding leases");
   LoopAccess::UnregisterShutdownParticipant(*other.loop_, other.shutdown_participant_);
   other.loop_ = nullptr;
@@ -257,22 +257,22 @@ RecvSource& RecvSource::operator=(RecvSource&& other) noexcept {
     return *this;
   }
 
-  COROPACT_CHECK(pending_next_ == nullptr, "RecvSource destination has pending Next");
-  COROPACT_CHECK(pending_stop_ == nullptr, "RecvSource destination has pending Stop");
-  COROPACT_CHECK(state_.State() == net::detail::RecvSourceState::kIdle ||
+  ALYRN_CHECK(pending_next_ == nullptr, "RecvSource destination has pending Next");
+  ALYRN_CHECK(pending_stop_ == nullptr, "RecvSource destination has pending Stop");
+  ALYRN_CHECK(state_.State() == net::detail::RecvSourceState::kIdle ||
                      state_.State() == net::detail::RecvSourceState::kTerminal,
                  "RecvSource destination is active");
-  COROPACT_CHECK(events_.empty(), "RecvSource destination has queued events");
-  COROPACT_CHECK(state_.OutstandingLeases() == 0,
+  ALYRN_CHECK(events_.empty(), "RecvSource destination has queued events");
+  ALYRN_CHECK(state_.OutstandingLeases() == 0,
                  "RecvSource destination has outstanding leases");
 
-  COROPACT_CHECK(other.pending_next_ == nullptr, "RecvSource source has pending Next");
-  COROPACT_CHECK(other.pending_stop_ == nullptr, "RecvSource source has pending Stop");
-  COROPACT_CHECK(other.state_.State() == net::detail::RecvSourceState::kIdle ||
+  ALYRN_CHECK(other.pending_next_ == nullptr, "RecvSource source has pending Next");
+  ALYRN_CHECK(other.pending_stop_ == nullptr, "RecvSource source has pending Stop");
+  ALYRN_CHECK(other.state_.State() == net::detail::RecvSourceState::kIdle ||
                      other.state_.State() == net::detail::RecvSourceState::kTerminal,
                  "RecvSource source is active");
-  COROPACT_CHECK(other.events_.empty(), "RecvSource source has queued events");
-  COROPACT_CHECK(other.state_.OutstandingLeases() == 0,
+  ALYRN_CHECK(other.events_.empty(), "RecvSource source has queued events");
+  ALYRN_CHECK(other.state_.OutstandingLeases() == 0,
                  "RecvSource source has outstanding leases");
 
   if (loop_ != nullptr) {
@@ -333,7 +333,7 @@ void RecvSource::EnsureAdmission() noexcept {
 
 void RecvSource::RequestBackendPause() noexcept {
   auto paused = state_.RequestPause();
-  COROPACT_CHECK(paused.has_value(), "RecvSource failed to enter the paused state");
+  ALYRN_CHECK(paused.has_value(), "RecvSource failed to enter the paused state");
   CompleteReadiness();
 }
 
@@ -344,7 +344,7 @@ void RecvSource::CompleteReadiness() noexcept {
   if (state_.ArmedRequests() != 0) {
     auto completed = state_.CompleteMultishotEvent(
         net::detail::EventDisposition::kNone, net::detail::MultishotRequestDisposition::kTerminal);
-    COROPACT_CHECK(completed.has_value(), "RecvSource failed to complete readiness request");
+    ALYRN_CHECK(completed.has_value(), "RecvSource failed to complete readiness request");
   }
 }
 
@@ -354,7 +354,7 @@ void RecvSource::RequestBackendStop(std::optional<Error> error) noexcept {
   }
 
   auto stopped = state_.RequestStop();
-  COROPACT_CHECK(stopped.has_value(), "RecvSource failed to enter stopping state");
+  ALYRN_CHECK(stopped.has_value(), "RecvSource failed to enter stopping state");
   CompleteReadiness();
   DeliverNextIfReady();
   CompleteStopIfReady();
@@ -411,7 +411,7 @@ void RecvSource::OnReady() noexcept {
     } catch (...) {
       // The temporary lease returns the buffer and decrements the outstanding
       // lease count before the queue reservation is rolled back.
-      COROPACT_CHECK(state_.DiscardQueuedEvent(),
+      ALYRN_CHECK(state_.DiscardQueuedEvent(),
                      "RecvSource failed to roll back queue reservation");
       RequestBackendStop(Errno(ENOMEM));
       return;
@@ -456,7 +456,7 @@ bool RecvSource::TryTakeNext(NextResult& result) noexcept {
   if (!events_.empty()) {
     Event event = std::move(events_.front());
     events_.pop_front();
-    COROPACT_CHECK(state_.AcquireEvent(), "RecvSource queue and state became inconsistent");
+    ALYRN_CHECK(state_.AcquireEvent(), "RecvSource queue and state became inconsistent");
     result = NextResult(std::in_place, std::move(event));
     if (state_.State() == net::detail::RecvSourceState::kPaused) {
       (void)(state_.TryResume());
@@ -477,14 +477,14 @@ bool RecvSource::TryTakeNext(NextResult& result) noexcept {
 }
 
 void RecvSource::ReturnBuffer(std::uint32_t buffer_id) noexcept {
-  COROPACT_CHECK(loop_ != nullptr && loop_->IsInLoopThread(),
+  ALYRN_CHECK(loop_ != nullptr && loop_->IsInLoopThread(),
                  "RecvSource buffer returned from wrong thread");
-  COROPACT_CHECK(buffer_id < state_.Options().buffer_capacity,
+  ALYRN_CHECK(buffer_id < state_.Options().buffer_capacity,
                  "RecvSource invalid buffer id");
-  COROPACT_CHECK(available_buffers_.size() < state_.Options().buffer_capacity,
+  ALYRN_CHECK(available_buffers_.size() < state_.Options().buffer_capacity,
                  "RecvSource buffer returned twice");
   available_buffers_.push_back(buffer_id);
-  COROPACT_CHECK(state_.ReleaseLease(), "RecvSource lease released twice");
+  ALYRN_CHECK(state_.ReleaseLease(), "RecvSource lease released twice");
   EnsureAdmission();
   DeliverNextIfReady();
   CompleteStopIfReady();
@@ -546,4 +546,4 @@ coro::Task<Result<void>> RecvSource::Stop() {
   co_return co_await StopAwaiter(*this);
 }
 
-}  // namespace coropact::reactor
+}  // namespace alyrn::reactor

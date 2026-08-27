@@ -9,7 +9,7 @@
 #include <iostream>
 #include <string>
 
-#include "coropact/memory/object_pool.h"
+#include "alyrn/memory/object_pool.h"
 
 namespace {
 
@@ -62,7 +62,7 @@ bool TestAcquireAndRelease() {
     TrackedObject::live_count = 0;
     TrackedObject::dtor_count = 0;
 
-    coropact::memory::ObjectPool<TrackedObject, 2> pool;
+    alyrn::memory::ObjectPool<TrackedObject, 2> pool;
     auto* first = pool.Acquire(1, "alpha");
     auto* second = pool.Acquire(2, "beta");
 
@@ -85,7 +85,7 @@ bool TestAcquireScoped() {
     TrackedObject::live_count = 0;
     TrackedObject::dtor_count = 0;
 
-    coropact::memory::ObjectPool<TrackedObject, 1> pool;
+    alyrn::memory::ObjectPool<TrackedObject, 1> pool;
     {
         auto scoped = pool.AcquireScoped(7, "scoped");
         if (!Expect(static_cast<bool>(scoped), "AcquireScoped should return a valid handle")) return false;
@@ -100,7 +100,7 @@ bool TestAcquireScoped() {
 }
 
 bool TestExhaustion() {
-    coropact::memory::ObjectPool<TrackedObject, 1> pool;
+    alyrn::memory::ObjectPool<TrackedObject, 1> pool;
 
     auto* first = pool.Acquire(3, "only");
     auto* second = pool.Acquire(4, "extra");
@@ -117,7 +117,7 @@ bool TestExhaustion() {
 }
 
 bool TestOwns() {
-    coropact::memory::ObjectPool<TrackedObject, 1> pool;
+    alyrn::memory::ObjectPool<TrackedObject, 1> pool;
 
     auto* obj = pool.Acquire(5, "owned");
     TrackedObject external(6, "external");
@@ -131,33 +131,33 @@ bool TestOwns() {
 }
 
 void ReleaseForeignHeapObject() {
-    coropact::memory::ObjectPool<TrackedObject, 1> pool;
+    alyrn::memory::ObjectPool<TrackedObject, 1> pool;
     auto* foreign = new TrackedObject(7, "foreign");
     pool.Release(foreign);
 }
 
 void ReleaseOverflowFromAnotherPool() {
-    coropact::memory::ObjectPool<TrackedObject, 1> source;
-    coropact::memory::ObjectPool<TrackedObject, 1> destination;
+    alyrn::memory::ObjectPool<TrackedObject, 1> source;
+    alyrn::memory::ObjectPool<TrackedObject, 1> destination;
     (void)source.Acquire(8, "pooled");
     auto* overflow = source.Acquire(9, "overflow");
     destination.Release(overflow);
 }
 
 void ReleasePoolObjectTwice() {
-    coropact::memory::ObjectPool<TrackedObject, 1> pool;
+    alyrn::memory::ObjectPool<TrackedObject, 1> pool;
     auto* object = pool.Acquire(10, "pooled");
     pool.Release(object);
     pool.Release(object);
 }
 
 void DestroyWithLivePoolObject() {
-    coropact::memory::ObjectPool<TrackedObject, 1> pool;
+    alyrn::memory::ObjectPool<TrackedObject, 1> pool;
     (void)pool.Acquire(11, "pooled");
 }
 
 void DestroyWithLiveOverflowObject() {
-    coropact::memory::ObjectPool<TrackedObject, 1> pool;
+    alyrn::memory::ObjectPool<TrackedObject, 1> pool;
     (void)pool.Acquire(12, "pooled");
     (void)pool.Acquire(13, "overflow");
 }

@@ -15,12 +15,12 @@
 #include <thread>
 #include <vector>
 
-#include "coropact/coro/frame_allocator.h"
-#include "coropact/coro/scheduler.h"
-#include "coropact/coro/spawn.h"
-#include "coropact/coro/sync_wait.h"
-#include "coropact/coro/task.h"
-#include "coropact/coro/work.h"
+#include "alyrn/coro/frame_allocator.h"
+#include "alyrn/coro/scheduler.h"
+#include "alyrn/coro/spawn.h"
+#include "alyrn/coro/sync_wait.h"
+#include "alyrn/coro/task.h"
+#include "alyrn/coro/work.h"
 
 namespace {
 
@@ -49,15 +49,15 @@ bool ExpectChildAbort(void (*entry)(), const char* message) {
 }
 
 void PackOversizedFrameMetadata() {
-  (void)coropact::coro::detail::PackFrameMetadata(
-      static_cast<std::size_t>(coropact::coro::detail::kFrameMetadataBytesMask) + 1, 16);
+  (void)alyrn::coro::detail::PackFrameMetadata(
+      static_cast<std::size_t>(alyrn::coro::detail::kFrameMetadataBytesMask) + 1, 16);
 }
 
-void PackMisalignedFrameMetadata() { (void)coropact::coro::detail::PackFrameMetadata(128, 3); }
+void PackMisalignedFrameMetadata() { (void)alyrn::coro::detail::PackFrameMetadata(128, 3); }
 
 void PackUnencodableFrameAlignment() {
-  (void)coropact::coro::detail::PackFrameMetadata(
-      128, std::size_t{1} << (coropact::coro::detail::kFrameMetadataMaxAlignmentExponent + 1));
+  (void)alyrn::coro::detail::PackFrameMetadata(
+      128, std::size_t{1} << (alyrn::coro::detail::kFrameMetadataMaxAlignmentExponent + 1));
 }
 
 bool TestPackedMetadataRejectsInvalidValues() {
@@ -71,10 +71,10 @@ bool TestPackedMetadataRejectsInvalidValues() {
 
 void TestPackedFrameMetadata() {
   constexpr std::size_t kBytes = 123456;
-  const auto metadata = coropact::coro::detail::PackFrameMetadata(kBytes, 64);
-  Check(coropact::coro::detail::UnpackFrameBytes(metadata) == kBytes,
+  const auto metadata = alyrn::coro::detail::PackFrameMetadata(kBytes, 64);
+  Check(alyrn::coro::detail::UnpackFrameBytes(metadata) == kBytes,
         "packed metadata should preserve frame bytes");
-  Check(coropact::coro::detail::UnpackFrameAlignment(metadata) == 64,
+  Check(alyrn::coro::detail::UnpackFrameAlignment(metadata) == 64,
         "packed metadata should preserve frame alignment");
 }
 
@@ -105,43 +105,43 @@ private:
 bool TestNestedFrameAllocatorScopesRestoreSelection() {
   RecordingResource first;
   RecordingResource second;
-  auto* const original = coropact::coro::FrameAllocatorScope::TryCurrent();
+  auto* const original = alyrn::coro::FrameAllocatorScope::TryCurrent();
 
   {
-    coropact::coro::FrameAllocatorScope first_scope{first};
-    if (!Check(coropact::coro::FrameAllocatorScope::TryCurrent() == &first,
+    alyrn::coro::FrameAllocatorScope first_scope{first};
+    if (!Check(alyrn::coro::FrameAllocatorScope::TryCurrent() == &first,
                "outer frame allocator scope should select its resource")) {
       return false;
     }
 
     {
-      coropact::coro::FrameAllocatorScope same_scope{first};
-      if (!Check(coropact::coro::FrameAllocatorScope::TryCurrent() == &first,
+      alyrn::coro::FrameAllocatorScope same_scope{first};
+      if (!Check(alyrn::coro::FrameAllocatorScope::TryCurrent() == &first,
                  "same-resource frame allocator scope should preserve selection")) {
         return false;
       }
     }
 
-    if (!Check(coropact::coro::FrameAllocatorScope::TryCurrent() == &first,
+    if (!Check(alyrn::coro::FrameAllocatorScope::TryCurrent() == &first,
                "same-resource frame allocator scope should restore outer selection")) {
       return false;
     }
 
     {
-      coropact::coro::FrameAllocatorScope second_scope{second};
-      if (!Check(coropact::coro::FrameAllocatorScope::TryCurrent() == &second,
+      alyrn::coro::FrameAllocatorScope second_scope{second};
+      if (!Check(alyrn::coro::FrameAllocatorScope::TryCurrent() == &second,
                  "nested frame allocator scope should select its resource")) {
         return false;
       }
     }
 
-    if (!Check(coropact::coro::FrameAllocatorScope::TryCurrent() == &first,
+    if (!Check(alyrn::coro::FrameAllocatorScope::TryCurrent() == &first,
                "nested frame allocator scope should restore outer resource")) {
       return false;
     }
   }
 
-  return Check(coropact::coro::FrameAllocatorScope::TryCurrent() == original,
+  return Check(alyrn::coro::FrameAllocatorScope::TryCurrent() == original,
                "outer frame allocator scope should restore original resource");
 }
 
@@ -149,29 +149,29 @@ struct alignas(64) OverAlignedBlock {
   std::byte data[64];
 };
 
-class DrainScheduler final : public coropact::coro::Scheduler {
+class DrainScheduler final : public alyrn::coro::Scheduler {
 public:
   explicit DrainScheduler(std::pmr::memory_resource* resource) noexcept : Scheduler(resource) {}
 
-  void Schedule(coropact::coro::Work* work) noexcept override {
+  void Schedule(alyrn::coro::Work* work) noexcept override {
     const bool queued = queue_.PushBack(work);
     assert(queued);
     (void)queued;
   }
 
   void Drain() noexcept {
-    while (coropact::coro::Work* work = queue_.PopFront()) {
+    while (alyrn::coro::Work* work = queue_.PopFront()) {
       Run(work);
     }
   }
 
 private:
-  coropact::coro::WorkQueue queue_;
+  alyrn::coro::WorkQueue queue_;
 };
 
-coropact::coro::Task<int> Immediate() { co_return 42; }
+alyrn::coro::Task<int> Immediate() { co_return 42; }
 
-coropact::coro::Task<int> Nested() {
+alyrn::coro::Task<int> Nested() {
   const int value = co_await Immediate();
   co_return value + 1;
 }
@@ -179,7 +179,7 @@ coropact::coro::Task<int> Nested() {
 void TestSizeClassReuseAndFallback() {
   RecordingResource upstream;
   {
-    coropact::coro::CoroFramePoolResource pool{upstream};
+    alyrn::coro::CoroFramePoolResource pool{upstream};
     void* first = pool.allocate(128, alignof(std::max_align_t));
     const std::size_t chunk_allocations = upstream.allocations();
     pool.deallocate(first, 128, alignof(std::max_align_t));
@@ -189,11 +189,11 @@ void TestSizeClassReuseAndFallback() {
           "same size class should reuse a returned slot");
     pool.deallocate(second, 128, alignof(std::max_align_t));
 
-    void* large = pool.allocate(coropact::coro::CoroFramePoolResource::kMaxPooledBytes + 1,
+    void* large = pool.allocate(alyrn::coro::CoroFramePoolResource::kMaxPooledBytes + 1,
                                 alignof(std::max_align_t));
     Check(upstream.allocations() == chunk_allocations + 1,
           "large allocations should bypass size classes");
-    pool.deallocate(large, coropact::coro::CoroFramePoolResource::kMaxPooledBytes + 1,
+    pool.deallocate(large, alyrn::coro::CoroFramePoolResource::kMaxPooledBytes + 1,
                     alignof(std::max_align_t));
 
     void* over_aligned = pool.allocate(sizeof(OverAlignedBlock), alignof(OverAlignedBlock));
@@ -207,7 +207,7 @@ void TestSizeClassReuseAndFallback() {
 
 bool TestRemoteFreeReusesAfterOwnerDrain() {
   RecordingResource upstream;
-  coropact::coro::CoroFramePoolResource pool{upstream};
+  alyrn::coro::CoroFramePoolResource pool{upstream};
   void* first = pool.allocate(128, alignof(std::max_align_t));
   const std::size_t chunk_allocations = upstream.allocations();
 
@@ -227,12 +227,12 @@ bool TestRemoteFreeReusesAfterOwnerDrain() {
 
 bool TestDrainCurrentReusesRemote() {
   RecordingResource upstream;
-  coropact::coro::CoroFramePoolResource pool{upstream};
+  alyrn::coro::CoroFramePoolResource pool{upstream};
   void* first = pool.allocate(128, alignof(std::max_align_t));
   const std::size_t chunk_allocations = upstream.allocations();
 
   std::thread{[&] { pool.deallocate(first, 128, alignof(std::max_align_t)); }}.join();
-  coropact::coro::CoroFramePoolResource::DrainCurrent();
+  alyrn::coro::CoroFramePoolResource::DrainCurrent();
 
   void* second = pool.allocate(128, alignof(std::max_align_t));
   if (!Check(second == first, "DrainCurrent should reuse a remotely freed slot")) {
@@ -248,8 +248,8 @@ bool TestDrainCurrentReusesRemote() {
 
 bool TestRemoteFreeReusesWhenLocalEmpty() {
   RecordingResource upstream;
-  coropact::coro::CoroFramePoolResource pool{upstream};
-  const std::size_t slot_count = coropact::coro::CoroFramePoolResource::SlotsPerChunk(128);
+  alyrn::coro::CoroFramePoolResource pool{upstream};
+  const std::size_t slot_count = alyrn::coro::CoroFramePoolResource::SlotsPerChunk(128);
 
   std::vector<void*> live(slot_count);
   for (void*& slot : live) {
@@ -277,7 +277,7 @@ bool TestRemoteFreeReusesWhenLocalEmpty() {
 
 bool TestRemoteFreeFromManyThreadsReusesAfterDrain() {
   RecordingResource upstream;
-  coropact::coro::CoroFramePoolResource pool{upstream};
+  alyrn::coro::CoroFramePoolResource pool{upstream};
   constexpr std::size_t kSlots = 32;
   std::vector<void*> slots(kSlots);
   for (void*& slot : slots) {
@@ -316,7 +316,7 @@ bool TestRemoteFreeFromManyThreadsReusesAfterDrain() {
 bool TestDestructorDrainsRemote() {
   RecordingResource upstream;
   {
-    coropact::coro::CoroFramePoolResource pool{upstream};
+    alyrn::coro::CoroFramePoolResource pool{upstream};
     void* first = pool.allocate(128, alignof(std::max_align_t));
     std::thread{[&] { pool.deallocate(first, 128, alignof(std::max_align_t)); }}.join();
   }
@@ -326,11 +326,11 @@ bool TestDestructorDrainsRemote() {
 
 bool TestPooledSlotsShareAlignedSlab() {
   RecordingResource upstream;
-  coropact::coro::CoroFramePoolResource pool{upstream};
+  alyrn::coro::CoroFramePoolResource pool{upstream};
   void* first = pool.allocate(128, alignof(std::max_align_t));
   void* second = pool.allocate(128, alignof(std::max_align_t));
-  const auto chunk = coropact::coro::CoroFramePoolResource::kChunkBytes;
-  const auto header = coropact::coro::CoroFramePoolResource::kSlabHeaderBytes;
+  const auto chunk = alyrn::coro::CoroFramePoolResource::kChunkBytes;
+  const auto header = alyrn::coro::CoroFramePoolResource::kSlabHeaderBytes;
   const auto a = reinterpret_cast<std::uintptr_t>(first);
   const auto b = reinterpret_cast<std::uintptr_t>(second);
   if (!Check((a & (chunk - 1)) >= header, "pooled slot should sit after the slab header")) {
@@ -351,57 +351,57 @@ bool TestPooledSlotsShareAlignedSlab() {
 
 bool TestPooledCoroutineFrameHasNoPrefix() {
   RecordingResource upstream;
-  coropact::coro::CoroFramePoolResource pool{upstream};
-  coropact::coro::FrameAllocatorScope scope{pool};
-  void* first = coropact::coro::detail::AllocateFrame(64, alignof(std::max_align_t));
+  alyrn::coro::CoroFramePoolResource pool{upstream};
+  alyrn::coro::FrameAllocatorScope scope{pool};
+  void* first = alyrn::coro::detail::AllocateFrame(64, alignof(std::max_align_t));
   const std::size_t chunks = upstream.allocations();
   if (!Check(chunks == 1, "a pooled coroutine frame should come from one slab")) {
     return false;
   }
 
-  const auto chunk = coropact::coro::CoroFramePoolResource::kChunkBytes;
-  const auto header = coropact::coro::CoroFramePoolResource::kSlabHeaderBytes;
+  const auto chunk = alyrn::coro::CoroFramePoolResource::kChunkBytes;
+  const auto header = alyrn::coro::CoroFramePoolResource::kSlabHeaderBytes;
   const auto offset = reinterpret_cast<std::uintptr_t>(first) % chunk;
   if (!Check(offset >= header && (offset - header) % 64 == 0,
              "a pooled coroutine frame should be returned at a slot start")) {
     return false;
   }
 
-  coropact::coro::detail::DeallocateFrame(first);
-  void* second = coropact::coro::detail::AllocateFrame(64, alignof(std::max_align_t));
+  alyrn::coro::detail::DeallocateFrame(first);
+  void* second = alyrn::coro::detail::AllocateFrame(64, alignof(std::max_align_t));
   if (!Check(second == first, "slab lookup should reuse a pooled frame without a prefix header")) {
     return false;
   }
   if (!Check(upstream.allocations() == chunks, "slot reuse should not allocate another slab")) {
     return false;
   }
-  coropact::coro::detail::DeallocateFrame(second);
+  alyrn::coro::detail::DeallocateFrame(second);
   return true;
 }
 
 bool TestPooledCoroutineFrameRemoteFree() {
   RecordingResource upstream;
-  coropact::coro::CoroFramePoolResource pool{upstream};
-  coropact::coro::FrameAllocatorScope scope{pool};
-  void* first = coropact::coro::detail::AllocateFrame(64, alignof(std::max_align_t));
+  alyrn::coro::CoroFramePoolResource pool{upstream};
+  alyrn::coro::FrameAllocatorScope scope{pool};
+  void* first = alyrn::coro::detail::AllocateFrame(64, alignof(std::max_align_t));
   const std::size_t chunks = upstream.allocations();
-  std::thread{[&] { coropact::coro::detail::DeallocateFrame(first); }}.join();
+  std::thread{[&] { alyrn::coro::detail::DeallocateFrame(first); }}.join();
   pool.DrainRemote();
-  void* second = coropact::coro::detail::AllocateFrame(64, alignof(std::max_align_t));
+  void* second = alyrn::coro::detail::AllocateFrame(64, alignof(std::max_align_t));
   if (!Check(second == first, "cross-thread destroy should return the slot to its slab owner")) {
     return false;
   }
   if (!Check(upstream.allocations() == chunks, "remote frame free should not grow the pool")) {
     return false;
   }
-  coropact::coro::detail::DeallocateFrame(second);
+  alyrn::coro::detail::DeallocateFrame(second);
   return true;
 }
 
 bool TestTightSizeClassesStayOnOneSlab() {
   RecordingResource upstream;
-  coropact::coro::CoroFramePoolResource pool{upstream};
-  const std::size_t overflow_128 = coropact::coro::CoroFramePoolResource::SlotsPerChunk(128) + 1;
+  alyrn::coro::CoroFramePoolResource pool{upstream};
+  const std::size_t overflow_128 = alyrn::coro::CoroFramePoolResource::SlotsPerChunk(128) + 1;
 
   std::vector<void*> tiny(overflow_128);
   for (void*& slot : tiny) {
@@ -426,7 +426,7 @@ bool TestTightSizeClassesStayOnOneSlab() {
     pool.deallocate(slot, 96, alignof(std::max_align_t));
   }
 
-  const std::size_t overflow_256 = coropact::coro::CoroFramePoolResource::SlotsPerChunk(256) + 1;
+  const std::size_t overflow_256 = alyrn::coro::CoroFramePoolResource::SlotsPerChunk(256) + 1;
   std::vector<void*> wide(overflow_256);
   for (void*& slot : wide) {
     slot = pool.allocate(129, alignof(std::max_align_t));
@@ -461,7 +461,7 @@ int main() {
   RecordingResource resource;
 
   // The default path remains independent of the recording resource.
-  if (!Check(coropact::coro::SyncWait(Immediate()) == 42,
+  if (!Check(alyrn::coro::SyncWait(Immediate()) == 42,
              "default frame allocation should still work")) {
     return 1;
   }
@@ -472,8 +472,8 @@ int main() {
   // The scope covers argument evaluation, so both the leaf Task and the
   // eager SyncWait root are allocated from the selected resource.
   {
-    coropact::coro::FrameAllocatorScope frame_scope{resource};
-    if (!Check(coropact::coro::SyncWait(Immediate()) == 42,
+    alyrn::coro::FrameAllocatorScope frame_scope{resource};
+    if (!Check(alyrn::coro::SyncWait(Immediate()) == 42,
                "SyncWait should run with a custom frame resource")) {
       return 1;
     }
@@ -489,9 +489,9 @@ int main() {
   // The dedicated worker-local size-class resource must support coroutine
   // frames of different sizes and return every frame before destruction.
   {
-    coropact::coro::CoroFramePoolResource pool;
-    coropact::coro::FrameAllocatorScope frame_scope{pool};
-    if (!Check(coropact::coro::SyncWait(Nested()) == 43,
+    alyrn::coro::CoroFramePoolResource pool;
+    alyrn::coro::FrameAllocatorScope frame_scope{pool};
+    if (!Check(alyrn::coro::SyncWait(Nested()) == 43,
                "size-class frame pool should preserve nested results")) {
       return 1;
     }
@@ -502,10 +502,10 @@ int main() {
   // creation scope has ended.
   {
     DrainScheduler scheduler{&resource};
-    coropact::coro::JoinHandle<int> handle{nullptr};
+    alyrn::coro::JoinHandle<int> handle{nullptr};
     {
-      coropact::coro::FrameAllocatorScope frame_scope{resource};
-      handle = coropact::coro::Spawn(scheduler, Nested());
+      alyrn::coro::FrameAllocatorScope frame_scope{resource};
+      handle = alyrn::coro::Spawn(scheduler, Nested());
     }
 
     scheduler.Drain();

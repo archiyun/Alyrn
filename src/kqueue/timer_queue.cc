@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-#include "coropact/kqueue/detail/timer_queue.h"
+#include "alyrn/kqueue/detail/timer_queue.h"
 
 #include <chrono>
 
-#include "coropact/base/check.h"
-#include "coropact/kqueue/detail/poller.h"
+#include "alyrn/base/check.h"
+#include "alyrn/kqueue/detail/poller.h"
 
-namespace coropact::kqueue::detail {
+namespace alyrn::kqueue::detail {
 
 TimerQueue::TimerQueue(Poller& poller, time::TimerIndexKind index)
     : poller_(&poller), timers_(index) {
@@ -17,9 +17,9 @@ TimerQueue::~TimerQueue() {
   poller_->SetTimerExpireHandler(nullptr, nullptr);
   while (!timers_.Empty()) {
     time::Timer* timer = timers_.Earliest();
-    COROPACT_CHECK(active_timers_.erase(timer->sequence()) == 1,
+    ALYRN_CHECK(active_timers_.erase(timer->sequence()) == 1,
                    "TimerQueue: destroyed timer is missing from active set");
-    COROPACT_CHECK(timers_.Erase(timer), "TimerQueue: destroyed timer is missing from timer tree");
+    ALYRN_CHECK(timers_.Erase(timer), "TimerQueue: destroyed timer is missing from timer tree");
     timer_pool_.Release(timer);
   }
   poller_->DisarmTimer();
@@ -29,8 +29,8 @@ time::TimerId TimerQueue::AddTimer(TimerCallback cb, TimePoint when, Duration in
   time::Timer* timer = timer_pool_.Acquire(std::move(cb), when, interval);
   const bool earliest_changed =
       timers_.Empty() || timer->expiration() < timers_.Earliest()->expiration();
-  COROPACT_CHECK(timers_.Insert(timer), "TimerQueue: duplicate timer-tree entry");
-  COROPACT_CHECK(active_timers_.emplace(timer->sequence(), timer).second,
+  ALYRN_CHECK(timers_.Insert(timer), "TimerQueue: duplicate timer-tree entry");
+  ALYRN_CHECK(active_timers_.emplace(timer->sequence(), timer).second,
                  "TimerQueue: duplicate active timer sequence");
   if (earliest_changed) {
     ArmKernel(timer->expiration());
@@ -44,7 +44,7 @@ void TimerQueue::Cancel(time::TimerId id) {
     time::Timer* active_timer = active_it->second;
     const bool earliest_removed = active_timer == timers_.Earliest();
     active_timers_.erase(active_it);
-    COROPACT_CHECK(timers_.Erase(active_timer),
+    ALYRN_CHECK(timers_.Erase(active_timer),
                    "TimerQueue: active timer is missing from timer tree");
     timer_pool_.Release(active_timer);
     if (timers_.Empty()) {
@@ -71,7 +71,7 @@ void TimerQueue::HandleExpire() {
 
   timers_.PopWhile([now](const time::Timer* timer) { return timer->expiration() <= now; },
                    [this, now](time::Timer* timer) {
-                     COROPACT_CHECK(active_timers_.erase(timer->sequence()) == 1,
+                     ALYRN_CHECK(active_timers_.erase(timer->sequence()) == 1,
                                     "TimerQueue: expired timer is missing from active set");
                      processing_timer_ = timer;
                      processing_timer_cancelled_ = false;
@@ -83,9 +83,9 @@ void TimerQueue::HandleExpire() {
 
                      if (timer->repeat() && !cancelled) {
                        timer->Restart(now);
-                       COROPACT_CHECK(timers_.Insert(timer),
+                       ALYRN_CHECK(timers_.Insert(timer),
                                       "TimerQueue: repeating timer is already in timer tree");
-                       COROPACT_CHECK(active_timers_.emplace(timer->sequence(), timer).second,
+                       ALYRN_CHECK(active_timers_.emplace(timer->sequence(), timer).second,
                                       "TimerQueue: repeating timer sequence was reused");
                      } else {
                        timer_pool_.Release(timer);
@@ -102,4 +102,4 @@ void TimerQueue::ArmKernel(TimePoint expiration) {
   poller_->ArmOneShotTimer(std::chrono::duration_cast<std::chrono::nanoseconds>(remaining).count());
 }
 
-}  // namespace coropact::kqueue::detail
+}  // namespace alyrn::kqueue::detail

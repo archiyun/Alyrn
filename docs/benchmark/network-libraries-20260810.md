@@ -1,6 +1,6 @@
 # 2026-08-10 网络库基线
 
-这是一轮用于回归观察的 loopback HTTP 基线，不是网络框架综合排名。它比较 CoroPact 的 Reactor、当前源码构建的 luring、raw liburing、standalone Asio、libuv、libevent 和 libev；工作负载不覆盖 TLS、真实网卡、HTTP 解析、路由或业务逻辑。
+这是一轮用于回归观察的 loopback HTTP 基线，不是网络框架综合排名。它比较 Alyrn 的 Reactor、当前源码构建的 luring、raw liburing、standalone Asio、libuv、libevent 和 libev；工作负载不覆盖 TLS、真实网卡、HTTP 解析、路由或业务逻辑。
 
 ## 结论
 
@@ -15,7 +15,7 @@
 - 日期：2026-08-10
 - 主机：12th Gen Intel(R) Core(TM) i5-12450H，12 个逻辑 CPU；Linux `7.1.6-arch1-1`
 - 编译器：GCC `16.1.1`；客户端：`wrk f8eb608 [epoll]`
-- 构建：Release，`COROPACT_ENABLE_URING=ON`
+- 构建：Release，`ALYRN_ENABLE_URING=ON`
 - 服务：固定 HTTP/1.1 keep-alive；收到完整请求头后返回 HTTP 200 和 512-byte body。
 - 每个目标：4 worker，`SO_REUSEPORT`；luring 和 raw liburing 使用 `URING_ENTRIES=1024`。
 - luring：当前 checkout 构建的 `examples/luring/demo_bench_http_luring`，single-shot accept，普通借用 buffer，协程帧池关闭。
@@ -35,7 +35,7 @@
 | 1000 | 672,202 / 2.34 | 747,908 / 3.34 | 759,657 / 4.09 | 706,484 / 2.93 | 608,484 / 2.94 | 353,862 / 4.20 | 658,715 / 3.05 |
 | 5000 | 492,078 / 12.59 | 558,934 / 10.91 | 553,572 / 13.56 | 509,706 / 12.08 | 407,070 / 14.79 | 298,458 / 22.82 | 435,641 / 13.74 |
 
-Reactor、luring、Asio、libuv、libevent 与 libev 的 `C=100` 原始目录为 `/tmp/coropact-network-libraries-current-20260810/`；`C=1000` 的高 `nofile` 复测为 `/tmp/coropact-network-libraries-current-20260810-c1000-highfd/`；`C=5000` 的高 `nofile` 复测为 `/tmp/coropact-network-libraries-current-20260810-highfd/`。修复后 raw liburing 的全档复测为 `/tmp/coropact-raw-liburing-fixed-full-20260810/`。它与其它目标是同一配置下的独立批次，临时原始日志不纳入仓库。
+Reactor、luring、Asio、libuv、libevent 与 libev 的 `C=100` 原始目录为 `/tmp/alyrn-network-libraries-current-20260810/`；`C=1000` 的高 `nofile` 复测为 `/tmp/alyrn-network-libraries-current-20260810-c1000-highfd/`；`C=5000` 的高 `nofile` 复测为 `/tmp/alyrn-network-libraries-current-20260810-highfd/`。修复后 raw liburing 的全档复测为 `/tmp/alyrn-raw-liburing-fixed-full-20260810/`。它与其它目标是同一配置下的独立批次，临时原始日志不纳入仓库。
 
 ### 波动范围
 
@@ -68,7 +68,7 @@ cmake -S . -B build-uring \\
   -DBUILD_EXAMPLES=ON \\
   -DBUILD_TESTS=OFF \\
   -DBUILD_BENCHMARKS=OFF \\
-  -DCOROPACT_ENABLE_URING=ON
+  -DALYRN_ENABLE_URING=ON
 cmake --build build-uring -j2
 ```
 
@@ -76,7 +76,7 @@ cmake --build build-uring -j2
 
 ```bash
 ulimit -n 65535
-OUTDIR=/tmp/coropact-network-libraries-$(date +%Y%m%d-%H%M%S) \\
+OUTDIR=/tmp/alyrn-network-libraries-$(date +%Y%m%d-%H%M%S) \\
   TARGETS='reactor luring raw-liburing asio libuv libevent libev' \\
   ENTRIES=1024 WORKERS=4 THREADS=8 \\
   LEVELS='100 1000 5000' WARMUP=3s DURATION=5s ROUNDS=3 TIMEOUT=5s \\

@@ -1,6 +1,6 @@
 # io_uring Operation Matrix
 
-本文档记录 CoroPact 当前以及计划支持的 io_uring operation 语义。
+本文档记录 Alyrn 当前以及计划支持的 io_uring operation 语义。
 它描述的是 luring 适配层的完成协议，不是把 io_uring 原始 SQE/CQE 暴露给业务代码。
 
 当前公共网络接口仍然是 `AsyncStream`、`AsyncListener` 和一次性
@@ -48,7 +48,7 @@ inflight 是否应该减少
 
 | 维度 | 要回答的问题 | 例子 |
 | --- | --- | --- |
-| 构建期 | 当前构建是否启用了 io_uring，以及 liburing 头文件是否提供接口或 flag？ | `COROPACT_ENABLE_URING`、`IORING_CQE_F_MORE` |
+| 构建期 | 当前构建是否启用了 io_uring，以及 liburing 头文件是否提供接口或 flag？ | `ALYRN_ENABLE_URING`、`IORING_CQE_F_MORE` |
 | 内核期 | 当前 kernel/ring 是否接受该 opcode 或注册操作？ | ring setup 成功，operation CQE 不返回 unsupported |
 | 配置期 | 当前 ring setup 是否满足使用条件？ | SQPOLL、CQ 大小、buffer ring 注册 |
 | 语义期 | 当前适配器是否实现了结果、取消和资源生命周期？ | multishot 的重复事件与终止 CQE |

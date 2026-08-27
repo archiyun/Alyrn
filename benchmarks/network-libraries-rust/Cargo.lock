@@ -233,7 +233,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "coropact-network-library-bench"
+name = "alyrn-network-library-bench"
 version = "0.1.0"
 dependencies = [
  "compio",

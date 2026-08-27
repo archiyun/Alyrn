@@ -3,7 +3,7 @@
 EXTENDS Naturals
 
 (***************************************************************************)
-(* CoroPact AsyncStream 的最小可检查模型。                              *)
+(* Alyrn AsyncStream 的最小可检查模型。                              *)
 (*                                                                         *)
 (* 范围：一个协程、一个 stream、一个 single-shot operation。             *)
 (* 不描述 fd、SQE、CQE 或具体 backend，只描述协程可观察状态。            *)

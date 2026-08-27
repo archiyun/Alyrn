@@ -1,6 +1,6 @@
 # Runtime Subsystem Boundaries
 
-This document is the normative dependency policy for CoroPact. It is a
+This document is the normative dependency policy for Alyrn. It is a
 networking runtime: HTTP parsing, routing, proxying, and gateway policy belong
 to the separate [CoroGateway](https://github.com/archiyun/CoroGateway) project.
 
@@ -30,19 +30,19 @@ application protocol, route, peer, proxy, or gateway policy.
 
 | Directory | Layer | Ownership |
 |---|---:|---|
-| `include/coropact/base`, `ds`, `memory` | L0 | Primitive values, intrusive structures, and pools. |
-| `include/coropact/time` | L1 | Time values and timer indexes; no fd or event-loop ownership. |
-| `include/coropact/coro` | L2 | Coroutine ownership, scheduling, frame allocation, and continuation rules. |
-| `include/coropact/coro/detail` | L2 | Promise storage, root-coroutine, and frame-allocation implementation; not an application seam. |
-| `include/coropact/operation/detail` | L2 | Internal completion and lifecycle authorization shared by backend adapters: one-shot, composite, and split-release protocols plus scheduler-bound continuations; no transport resource ownership. |
-| `include/coropact/backend/detail` | L2 | Internal backend-neutral awaiter result storage; retains `Result<T>` but owns no authorization or transport-lifecycle protocol. |
-| `include/coropact/net` | L2 | Header-only POSIX socket, address, and buffer values shared by backends; no concrete backend or Linux-only dependency. |
-| `include/coropact/net/detail` | L2 | Internal stream/source lifecycle, admission, pause/drain, and lease-accounting state machines shared by backend adapters. |
-| `include/coropact/io`, `include/coropact/backend` | L2 | Backend-neutral I/O and dispatcher lifecycle contracts and algorithms. |
-| `include/coropact/runtime.h` | L2 | Backend-neutral application lifecycle facade. It type-erases only cold start/stop control; backend tags select a Builder specialization at compile time. |
-| `include/coropact/reactor`, `src/reactor` | L2 | Linux epoll readiness adapter. `Loop`, the `Runtime::Builder<runtime::Reactor>` binding, and transport adapters are public; `reactor/detail` owns channel registration, epoll polling, timers, and worker bootstrap implementation. |
-| `include/coropact/luring`, `src/luring` | L2 | Linux io_uring completion adapter. `Loop`, the `Runtime::Builder<runtime::LUring>` binding, and transport adapters are public; `luring/detail` owns raw SQE/CQE operations, ring/mailbox transport, timer queue, and worker/server bootstrap implementation. |
-| `include/coropact/kqueue`, `src/kqueue` | L2 | BSD/Darwin kqueue readiness adapter. `Loop`, the `Runtime::Builder<runtime::Kqueue>` binding, and transport adapters are public; `kqueue/detail` owns channel registration, kevent polling, timers, and master-slave worker bootstrap. |
+| `include/alyrn/base`, `ds`, `memory` | L0 | Primitive values, intrusive structures, and pools. |
+| `include/alyrn/time` | L1 | Time values and timer indexes; no fd or event-loop ownership. |
+| `include/alyrn/coro` | L2 | Coroutine ownership, scheduling, frame allocation, and continuation rules. |
+| `include/alyrn/coro/detail` | L2 | Promise storage, root-coroutine, and frame-allocation implementation; not an application seam. |
+| `include/alyrn/operation/detail` | L2 | Internal completion and lifecycle authorization shared by backend adapters: one-shot, composite, and split-release protocols plus scheduler-bound continuations; no transport resource ownership. |
+| `include/alyrn/backend/detail` | L2 | Internal backend-neutral awaiter result storage; retains `Result<T>` but owns no authorization or transport-lifecycle protocol. |
+| `include/alyrn/net` | L2 | Header-only POSIX socket, address, and buffer values shared by backends; no concrete backend or Linux-only dependency. |
+| `include/alyrn/net/detail` | L2 | Internal stream/source lifecycle, admission, pause/drain, and lease-accounting state machines shared by backend adapters. |
+| `include/alyrn/io`, `include/alyrn/backend` | L2 | Backend-neutral I/O and dispatcher lifecycle contracts and algorithms. |
+| `include/alyrn/runtime.h` | L2 | Backend-neutral application lifecycle facade. It type-erases only cold start/stop control; backend tags select a Builder specialization at compile time. |
+| `include/alyrn/reactor`, `src/reactor` | L2 | Linux epoll readiness adapter. `Loop`, the `Runtime::Builder<runtime::Reactor>` binding, and transport adapters are public; `reactor/detail` owns channel registration, epoll polling, timers, and worker bootstrap implementation. |
+| `include/alyrn/luring`, `src/luring` | L2 | Linux io_uring completion adapter. `Loop`, the `Runtime::Builder<runtime::LUring>` binding, and transport adapters are public; `luring/detail` owns raw SQE/CQE operations, ring/mailbox transport, timer queue, and worker/server bootstrap implementation. |
+| `include/alyrn/kqueue`, `src/kqueue` | L2 | BSD/Darwin kqueue readiness adapter. `Loop`, the `Runtime::Builder<runtime::Kqueue>` binding, and transport adapters are public; `kqueue/detail` owns channel registration, kevent polling, timers, and master-slave worker bootstrap. |
 | `examples`, `benchmarks`, `tests` | L3 | Consumers and validation; never runtime dependencies. |
 
 ## Hard Dependency Rules
@@ -66,7 +66,7 @@ application protocol, route, peer, proxy, or gateway policy.
   public transport adapters instead.
 - `io_contract` remains backend-neutral. The `io` facade may assemble adapters
   only at a composition root; backend cores must not link it.
-- CoroGateway may depend on CoroPact public interfaces. CoroPact must not
+- CoroGateway may depend on Alyrn public interfaces. Alyrn must not
   depend on CoroGateway.
 - A backend extension belongs behind a separate contract or capability profile;
   it must not change the meaning of `ReadSome`, `WriteAll`, or `Close`.
@@ -91,4 +91,4 @@ application protocol, route, peer, proxy, or gateway policy.
 Before adding a module, state its owned resource or invariant, its public
 interface, and its permitted dependencies. If it needs HTTP messages, routing,
 upstream peers, retries, or response policy, it belongs in CoroGateway rather
-than CoroPact.
+than Alyrn.

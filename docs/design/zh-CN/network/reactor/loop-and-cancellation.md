@@ -50,11 +50,11 @@ Loop ──► EPollPoller::Poll() ──► Channel::HandleEvent()
 
 源码入口：
 
-- `include/coropact/reactor/loop.h`
+- `include/alyrn/reactor/loop.h`
 - `src/reactor/loop.cc`
-- `include/coropact/reactor/stream.h`
+- `include/alyrn/reactor/stream.h`
 - `src/reactor/stream.cc`
-- `include/coropact/reactor/detail/channel.h`
+- `include/alyrn/reactor/detail/channel.h`
 - `src/reactor/epoll_poller.cc`
 
 ## 2. Loop：一个线程，一个调度器
@@ -76,7 +76,7 @@ owner thread
 `RequestStop()`；它不是通用任务队列。
 
 这不是仅供 debug 的建议：`Channel -> Loop -> Poller` 的注册表属于 owner thread，跨线程
-修改会破坏其非并发容器和 intrusive hook。在所有构建中，Reactor 都以 `COROPACT_CHECK` 拒绝
+修改会破坏其非并发容器和 intrusive hook。在所有构建中，Reactor 都以 `ALYRN_CHECK` 拒绝
 这类调用；需要跨线程停止时只能请求 `RequestStop()`，由 eventfd 把动作带回 owner loop。
 
 `Loop` 状态为：
@@ -211,7 +211,7 @@ Result Ready -> Release Authorized -> Continuation Authorized
 Reactor 不允许多个线程直接执行 `CompleteRead()` 或 `CompleteWrite()`。跨线程 stop 先通过
 `eventfd` 回到 owner loop，避免把阶段机变成一把热路径原子锁。获胜者只可向 awaiter 的
 result storage 写入一次；`await_resume()` 只可取走一次并使 storage 回到 pending。这两个状态
-转移同样在 Release 构建由 `COROPACT_CHECK` 约束，避免重复 completion 或错误的 await protocol
+转移同样在 Release 构建由 `ALYRN_CHECK` 约束，避免重复 completion 或错误的 await protocol
 读取未构造的 value storage。
 
 `Listener::Accept()` 也遵循相同的 coupled single-result 顺序。其 pending accept
@@ -362,7 +362,7 @@ disable EPOLLIN
 
 因此 source 的最终销毁前必须满足：没有 pending `Next/Stop`、事件队列为空、没有 outstanding
 lease。这是资源归还协议，不应被 `Loop::Stopped` 偷偷绕过；这些前提在 Release 构建中也
-通过 `COROPACT_CHECK` 强制检查，因为延后释放的 `BufferLease` 仍保存 source 的 reclaim context。
+通过 `ALYRN_CHECK` 强制检查，因为延后释放的 `BufferLease` 仍保存 source 的 reclaim context。
 
 ## 6. 必须保持的安全不变量
 
@@ -392,9 +392,9 @@ lease。这是资源归还协议，不应被 `Loop::Stopped` 偷偷绕过；这�
 
 第一次阅读建议只走单次 read：
 
-1. `include/coropact/reactor/loop.h`
+1. `include/alyrn/reactor/loop.h`
 2. `src/reactor/loop.cc`
-3. `include/coropact/reactor/detail/channel.h`
+3. `include/alyrn/reactor/detail/channel.h`
 4. `src/reactor/channel.cc`
 5. `src/reactor/epoll_poller.cc`
 6. `src/reactor/stream.cc` 中 `ReadSomeAwaiter`、`HandleRead`、`CompleteRead`、`CloseNow`

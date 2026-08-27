@@ -1,6 +1,6 @@
 # 生命周期精化协程 I/O
 
-Lifecycle-Refined Coroutine I/O（LRCI）是 CoroPact 用来统一 Reactor 与 io_uring
+Lifecycle-Refined Coroutine I/O（LRCI）是 Alyrn 用来统一 Reactor 与 io_uring
 业务语义的设计模型。它不要求两个后端共享物理控制流，而是要求它们的可观察 trace
 精化同一套逻辑 I/O specification。
 
@@ -278,7 +278,7 @@ LRCI 不表示：
 
 - Reactor、io_uring 与 kqueue 使用相同物理执行机制；
 - 所有后端能力都能通过同一个返回类型表达；
-- CoroPact 已经验证 IOCP；
+- Alyrn 已经验证 IOCP；
 - 收到一个事件就必须恢复协程；
 - Result Ready 后资源一定可以立即复用；
 - 每个 C++ implementation transition 都有一个可见 logical transition。

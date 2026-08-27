@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Fixed HTTP keep-alive benchmark for the current CoroPact checkout.
+# Fixed HTTP keep-alive benchmark for the current Alyrn checkout.
 # Generated wrk logs and CSV are written to OUTDIR, which defaults to /tmp.
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
-OUTDIR=${OUTDIR:-/tmp/coropact-luring-vs-raw-liburing-$(date +%Y%m%d-%H%M%S)}
+OUTDIR=${OUTDIR:-/tmp/alyrn-luring-vs-raw-liburing-$(date +%Y%m%d-%H%M%S)}
 BUILD_DIR=${BUILD_DIR:-"$ROOT_DIR/build-uring"}
 WRK=${WRK:-wrk}
 THREADS=${THREADS:-8}

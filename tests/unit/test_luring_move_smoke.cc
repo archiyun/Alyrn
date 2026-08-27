@@ -9,13 +9,13 @@
 #include <type_traits>
 #include <utility>
 
-#include "coropact/result.h"
-#include "coropact/luring/listener.h"
-#include "coropact/luring/loop.h"
-#include "coropact/luring/detail/loop_access.h"
-#include "coropact/luring/options.h"
-#include "coropact/luring/stream.h"
-#include "coropact/net/endpoint.h"
+#include "alyrn/result.h"
+#include "alyrn/luring/listener.h"
+#include "alyrn/luring/loop.h"
+#include "alyrn/luring/detail/loop_access.h"
+#include "alyrn/luring/options.h"
+#include "alyrn/luring/stream.h"
+#include "alyrn/net/endpoint.h"
 
 namespace {
 
@@ -33,12 +33,12 @@ bool Check(bool condition, const char* message) {
   return true;
 }
 
-bool IsEnvironmentSkip(coropact::Error error) {
+bool IsEnvironmentSkip(alyrn::Error error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 
-LoopInitStatus InitLoop(coropact::luring::Loop& loop) {
-  coropact::luring::Options options;
+LoopInitStatus InitLoop(alyrn::luring::Loop& loop) {
+  alyrn::luring::Options options;
   options.entries = 16;
 
   auto init = loop.Init(options);
@@ -54,7 +54,7 @@ LoopInitStatus InitLoop(coropact::luring::Loop& loop) {
   return LoopInitStatus::kFail;
 }
 
-bool TestStreamMove(coropact::luring::Loop& loop) {
+bool TestStreamMove(alyrn::luring::Loop& loop) {
   int fds[2]{-1, -1};
   if (!Check(::socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, fds) == 0,
              "Stream socketpair creation failed")) {
@@ -62,9 +62,9 @@ bool TestStreamMove(coropact::luring::Loop& loop) {
   }
 
   {
-    coropact::luring::Stream source(&loop, fds[0], coropact::net::Endpoint(0));
-    coropact::luring::Stream moved(std::move(source));
-    coropact::luring::Stream target(&loop, fds[1], coropact::net::Endpoint(0));
+    alyrn::luring::Stream source(&loop, fds[0], alyrn::net::Endpoint(0));
+    alyrn::luring::Stream moved(std::move(source));
+    alyrn::luring::Stream target(&loop, fds[1], alyrn::net::Endpoint(0));
     target = std::move(moved);
 
     if (!Check(source.Fd() == -1 && moved.Fd() == -1 && target.Fd() == fds[0],
@@ -76,8 +76,8 @@ bool TestStreamMove(coropact::luring::Loop& loop) {
   return true;
 }
 
-bool TestListenerMove(coropact::luring::Loop& loop) {
-  auto source = coropact::luring::Listener::Create(&loop, coropact::net::Endpoint(0));
+bool TestListenerMove(alyrn::luring::Loop& loop) {
+  auto source = alyrn::luring::Listener::Create(&loop, alyrn::net::Endpoint(0));
   if (!Check(source.has_value(), "Listener creation failed")) {
     return false;
   }
@@ -86,14 +86,14 @@ bool TestListenerMove(coropact::luring::Loop& loop) {
     return false;
   }
 
-  coropact::luring::Listener moved(std::move(*source));
+  alyrn::luring::Listener moved(std::move(*source));
   auto moved_address = moved.LocalAddress();
   if (!Check(moved_address.has_value() && moved_address->ToPort() == source_address->ToPort(),
              "Listener move construction did not transfer the socket")) {
     return false;
   }
 
-  auto target = coropact::luring::Listener::Create(&loop, coropact::net::Endpoint(0));
+  auto target = alyrn::luring::Listener::Create(&loop, alyrn::net::Endpoint(0));
   if (!Check(target.has_value(), "Listener move target creation failed")) {
     return false;
   }
@@ -108,12 +108,12 @@ bool TestListenerMove(coropact::luring::Loop& loop) {
 }  // namespace
 
 int main() {
-  static_assert(std::is_move_constructible_v<coropact::luring::Stream>);
-  static_assert(std::is_move_assignable_v<coropact::luring::Stream>);
-  static_assert(std::is_move_constructible_v<coropact::luring::Listener>);
-  static_assert(std::is_move_assignable_v<coropact::luring::Listener>);
+  static_assert(std::is_move_constructible_v<alyrn::luring::Stream>);
+  static_assert(std::is_move_assignable_v<alyrn::luring::Stream>);
+  static_assert(std::is_move_constructible_v<alyrn::luring::Listener>);
+  static_assert(std::is_move_assignable_v<alyrn::luring::Listener>);
 
-  coropact::luring::Loop loop;
+  alyrn::luring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
       break;

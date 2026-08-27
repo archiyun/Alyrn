@@ -5,5 +5,5 @@ add_executable(demo_bench_http_reactor
 )
 target_link_libraries(demo_bench_http_reactor
     PRIVATE
-        coropact_reactor
+        alyrn_reactor
 )

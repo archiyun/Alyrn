@@ -14,13 +14,13 @@
 #include <utility>
 #include <vector>
 
-#include "coropact/coro/scheduler.h"
-#include "coropact/coro/spawn.h"
-#include "coropact/coro/work.h"
-#include "coropact/io/loop.h"
-#include "coropact/reactor/connector.h"
-#include "coropact/reactor/detail/channel.h"
-#include "coropact/reactor/loop.h"
+#include "alyrn/coro/scheduler.h"
+#include "alyrn/coro/spawn.h"
+#include "alyrn/coro/work.h"
+#include "alyrn/io/loop.h"
+#include "alyrn/reactor/connector.h"
+#include "alyrn/reactor/detail/channel.h"
+#include "alyrn/reactor/loop.h"
 
 namespace {
 
@@ -32,17 +32,17 @@ bool Expect(bool condition, const char* message) {
   return true;
 }
 
-class NoopWork final : public coropact::coro::Work {
+class NoopWork final : public alyrn::coro::Work {
 public:
   NoopWork() noexcept { SetRun(&RunNoop); }
 
 private:
-  static void RunNoop(coropact::coro::Work*) noexcept {}
+  static void RunNoop(alyrn::coro::Work*) noexcept {}
 };
 
 void DestroyLoopWithQueuedWork() {
   NoopWork work;
-  coropact::reactor::Loop loop;
+  alyrn::reactor::Loop loop;
   loop.Schedule(&work);
 }
 
@@ -67,10 +67,10 @@ bool TestReactorLoopRejectsQueuedWorkAtDestruction() {
 }
 
 void MutateChannelFromForeignThread() {
-  coropact::reactor::Loop loop;
+  alyrn::reactor::Loop loop;
   const int fd = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
-  COROPACT_CHECK(fd >= 0, "eventfd creation failed for Channel ownership test");
-  coropact::reactor::detail::Channel channel(&loop, fd);
+  ALYRN_CHECK(fd >= 0, "eventfd creation failed for Channel ownership test");
+  alyrn::reactor::detail::Channel channel(&loop, fd);
 
   std::thread foreign([&] { channel.EnableReading(); });
   foreign.join();
@@ -100,7 +100,7 @@ bool TestReactorLoopRejectsForeignChannelMutation() {
 }
 
 bool TestRunOnOwnerExecutesImmediately() {
-  coropact::reactor::Loop loop;
+  alyrn::reactor::Loop loop;
   bool called = false;
   std::thread::id callback_thread;
 
@@ -114,10 +114,10 @@ bool TestRunOnOwnerExecutesImmediately() {
                 "RunOnOwner callback should execute on owner thread");
 }
 
-class SchedulerProbeWork final : public coropact::coro::Work {
+class SchedulerProbeWork final : public alyrn::coro::Work {
 public:
-  SchedulerProbeWork(coropact::coro::Scheduler* expected_scheduler, bool* ran,
-                     bool* scheduler_matched, coropact::reactor::Loop* loop) noexcept
+  SchedulerProbeWork(alyrn::coro::Scheduler* expected_scheduler, bool* ran,
+                     bool* scheduler_matched, alyrn::reactor::Loop* loop) noexcept
       : expected_scheduler_(expected_scheduler),
         ran_(ran),
         scheduler_matched_(scheduler_matched),
@@ -126,22 +126,22 @@ public:
   }
 
 private:
-  static void RunProbe(coropact::coro::Work* work) noexcept {
+  static void RunProbe(alyrn::coro::Work* work) noexcept {
     auto* self = static_cast<SchedulerProbeWork*>(work);
     *self->scheduler_matched_ =
-        &coropact::coro::Scheduler::RequireCurrent() == self->expected_scheduler_;
+        &alyrn::coro::Scheduler::RequireCurrent() == self->expected_scheduler_;
     *self->ran_ = true;
     self->loop_->RequestStop();
   }
 
-  coropact::coro::Scheduler* expected_scheduler_;
+  alyrn::coro::Scheduler* expected_scheduler_;
   bool* ran_;
   bool* scheduler_matched_;
-  coropact::reactor::Loop* loop_;
+  alyrn::reactor::Loop* loop_;
 };
 
 bool TestSchedulerWorkIsDeferredAndBound() {
-  coropact::reactor::Loop loop;
+  alyrn::reactor::Loop loop;
 
   bool ran = false;
   bool scheduler_matched = false;
@@ -156,21 +156,21 @@ bool TestSchedulerWorkIsDeferredAndBound() {
 
   ok &= Expect(ran, "scheduler work should run through Loop");
   ok &= Expect(scheduler_matched, "scheduler work should run with its Scheduler::Current affinity");
-  ok &= Expect(coropact::coro::Scheduler::TryCurrent() == nullptr,
+  ok &= Expect(alyrn::coro::Scheduler::TryCurrent() == nullptr,
                "scheduler work should restore the previous Scheduler::Current value");
   return ok;
 }
 
 bool TestReactorLoopOwnsFrameResource() {
   std::pmr::monotonic_buffer_resource first_resource;
-  coropact::reactor::Loop loop(&first_resource);
+  alyrn::reactor::Loop loop(&first_resource);
   return Expect(loop.FrameResource() == &first_resource,
                 "Loop should retain its configured frame resource");
 }
 
-class ScheduleNextWork final : public coropact::coro::Work {
+class ScheduleNextWork final : public alyrn::coro::Work {
 public:
-  ScheduleNextWork(coropact::reactor::Loop* scheduler, coropact::coro::Work* next,
+  ScheduleNextWork(alyrn::reactor::Loop* scheduler, alyrn::coro::Work* next,
                    bool* next_ran, bool* next_was_deferred) noexcept
       : scheduler_(scheduler),
         next_(next),
@@ -180,20 +180,20 @@ public:
   }
 
 private:
-  static void RunScheduleNext(coropact::coro::Work* work) noexcept {
+  static void RunScheduleNext(alyrn::coro::Work* work) noexcept {
     auto* self = static_cast<ScheduleNextWork*>(work);
     self->scheduler_->Schedule(self->next_);
     *self->next_was_deferred_ = !*self->next_ran_;
   }
 
-  coropact::reactor::Loop* scheduler_;
-  coropact::coro::Work* next_;
+  alyrn::reactor::Loop* scheduler_;
+  alyrn::coro::Work* next_;
   bool* next_ran_;
   bool* next_was_deferred_;
 };
 
 bool TestSchedulerWorkScheduledDuringResumeIsDeferred() {
-  coropact::reactor::Loop loop;
+  alyrn::reactor::Loop loop;
 
   bool second_ran = false;
   bool scheduler_matched = false;
@@ -211,15 +211,15 @@ bool TestSchedulerWorkScheduledDuringResumeIsDeferred() {
 }
 
 bool TestRepeatingTimerCanCancelItself() {
-  coropact::reactor::Loop loop;
+  alyrn::reactor::Loop loop;
   int fire_count = 0;
-  coropact::time::TimerId timer_id;
+  alyrn::time::TimerId timer_id;
 
-  timer_id = loop.RunEvery(coropact::time::Milliseconds(10), [&] {
+  timer_id = loop.RunEvery(alyrn::time::Milliseconds(10), [&] {
     ++fire_count;
     if (fire_count == 1) {
       loop.Cancel(timer_id);
-      loop.RunAfter(coropact::time::Milliseconds(50), [&loop] { loop.RequestStop(); });
+      loop.RunAfter(alyrn::time::Milliseconds(50), [&loop] { loop.RequestStop(); });
     }
   });
   loop.Run();
@@ -228,7 +228,7 @@ bool TestRepeatingTimerCanCancelItself() {
 }
 
 bool TestSameDeadlineTimersKeepSequenceOrderOnQuadHeap() {
-  coropact::reactor::Loop loop;
+  alyrn::reactor::Loop loop;
   std::vector<int> fired;
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(10);
 
@@ -245,7 +245,7 @@ bool TestSameDeadlineTimersKeepSequenceOrderOnQuadHeap() {
 }
 
 bool TestSameDeadlineTimersKeepSequenceOrder() {
-  coropact::reactor::Loop loop;
+  alyrn::reactor::Loop loop;
   std::vector<int> fired;
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(10);
 
@@ -262,18 +262,18 @@ bool TestSameDeadlineTimersKeepSequenceOrder() {
 }
 
 bool TestCancelEarliestKeepsNextTimerScheduled() {
-  coropact::reactor::Loop loop;
+  alyrn::reactor::Loop loop;
   bool cancelled_timer_fired = false;
   bool next_timer_fired = false;
   bool timed_out = false;
 
   auto cancelled =
-      loop.RunAfter(coropact::time::Milliseconds(10), [&] { cancelled_timer_fired = true; });
-  loop.RunAfter(coropact::time::Milliseconds(30), [&] {
+      loop.RunAfter(alyrn::time::Milliseconds(10), [&] { cancelled_timer_fired = true; });
+  loop.RunAfter(alyrn::time::Milliseconds(30), [&] {
     next_timer_fired = true;
     loop.RequestStop();
   });
-  loop.RunAfter(coropact::time::Milliseconds(500), [&] {
+  loop.RunAfter(alyrn::time::Milliseconds(500), [&] {
     timed_out = true;
     loop.RequestStop();
   });
@@ -286,18 +286,18 @@ bool TestCancelEarliestKeepsNextTimerScheduled() {
 }
 
 bool TestStaleTimerIdCannotCancelReplacement() {
-  coropact::reactor::Loop loop;
+  alyrn::reactor::Loop loop;
   bool replacement_fired = false;
   bool timed_out = false;
 
-  auto stale = loop.RunAfter(coropact::time::Seconds(60), [] {});
+  auto stale = loop.RunAfter(alyrn::time::Seconds(60), [] {});
   loop.Cancel(stale);
 
-  auto replacement = loop.RunAfter(coropact::time::Milliseconds(10), [&] {
+  auto replacement = loop.RunAfter(alyrn::time::Milliseconds(10), [&] {
     replacement_fired = true;
     loop.RequestStop();
   });
-  loop.RunAfter(coropact::time::Milliseconds(500), [&] {
+  loop.RunAfter(alyrn::time::Milliseconds(500), [&] {
     timed_out = true;
     loop.RequestStop();
   });
@@ -314,20 +314,20 @@ bool TestStaleTimerIdCannotCancelReplacement() {
 }
 
 bool TestLoopStopDiscardsUnexpiredTimer() {
-  coropact::reactor::Loop loop;
+  alyrn::reactor::Loop loop;
   bool fired = false;
 
-  loop.RunAfter(coropact::time::Seconds(60), [&] { fired = true; });
+  loop.RunAfter(alyrn::time::Seconds(60), [&] { fired = true; });
   loop.RequestStop();
   loop.Run();
 
-  return Expect(loop.State() == coropact::io::LoopState::kStopped,
+  return Expect(loop.State() == alyrn::io::LoopState::kStopped,
                 "loop with an unexpired timer should stop") &&
          Expect(!fired, "loop shutdown must discard an unexpired timer without running it");
 }
 
 bool TestCrossThreadRequestStopWakesPoll() {
-  coropact::reactor::Loop loop;
+  alyrn::reactor::Loop loop;
   std::atomic_bool stop_sent{false};
 
   std::jthread stopper([&] {
@@ -343,24 +343,24 @@ bool TestCrossThreadRequestStopWakesPoll() {
 
   return Expect(stop_sent.load(std::memory_order_acquire),
                 "cross-thread stop request should be delivered") &&
-         Expect(loop.State() == coropact::io::LoopState::kStopped,
+         Expect(loop.State() == alyrn::io::LoopState::kStopped,
                 "Loop should reach stopped after RequestStop") &&
          Expect(elapsed < std::chrono::seconds(1),
                 "RequestStop should wake epoll_wait instead of waiting for its poll timeout");
 }
 
-coropact::coro::DetachedTask SleepUntilLoopStops(coropact::reactor::Connector* connector,
+alyrn::coro::DetachedTask SleepUntilLoopStops(alyrn::reactor::Connector* connector,
                                                  bool* resumed) {
   co_await connector->SleepFor(std::chrono::hours(1));
   *resumed = true;
 }
 
 bool TestLoopStopCancelsConnectorTimer() {
-  coropact::reactor::Loop loop;
-  coropact::reactor::Connector connector(&loop);
+  alyrn::reactor::Loop loop;
+  alyrn::reactor::Connector connector(&loop);
   bool resumed = false;
 
-  coropact::coro::SpawnDetach(loop, SleepUntilLoopStops(&connector, &resumed));
+  alyrn::coro::SpawnDetach(loop, SleepUntilLoopStops(&connector, &resumed));
   std::jthread stopper([&] {
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
     loop.RequestStop();
@@ -369,7 +369,7 @@ bool TestLoopStopCancelsConnectorTimer() {
   stopper.join();
 
   return Expect(resumed, "loop stop should settle Connector::SleepFor") &&
-         Expect(loop.State() == coropact::io::LoopState::kStopped,
+         Expect(loop.State() == alyrn::io::LoopState::kStopped,
                 "timer cancellation should leave Loop stopped");
 }
 

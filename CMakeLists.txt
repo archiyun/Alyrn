@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(high_concurrency_coropact
+project(Alyrn
         VERSION 0.1.0
         LANGUAGES CXX)
 
@@ -15,142 +15,142 @@ option(BUILD_TESTS "Build tests" ON)
 option(BUILD_EXAMPLES "Build example programs" ON)
 option(BUILD_BENCHMARKS "Build standalone microbenchmarks" OFF)
 option(BUILD_FUZZERS "Build libFuzzer targets (requires Clang)" OFF)
-option(COROPACT_ENABLE_URING "Enable io_uring proactor backend (requires liburing, Linux 5.19+)" OFF)
-option(COROPACT_ENABLE_KQUEUE "Enable kqueue readiness backend (requires a BSD kqueue host)" OFF)
-option(COROPACT_ENABLE_KQUEUE_SHIM_TESTS
+option(ALYRN_ENABLE_URING "Enable io_uring proactor backend (requires liburing, Linux 5.19+)" OFF)
+option(ALYRN_ENABLE_KQUEUE "Enable kqueue readiness backend (requires a BSD kqueue host)" OFF)
+option(ALYRN_ENABLE_KQUEUE_SHIM_TESTS
        "Build kqueue backend tests against an in-memory kqueue shim (developer aid, no BSD host)"
        OFF)
-option(COROPACT_STRICT_WARNINGS
-       "Treat common GCC/Clang warnings as errors for CoroPact sources" OFF)
+option(ALYRN_STRICT_WARNINGS
+       "Treat common GCC/Clang warnings as errors for Alyrn sources" OFF)
 
 find_package(Threads REQUIRED)
 
-set(COROPACT_HAS_EPOLL OFF)
+set(ALYRN_HAS_EPOLL OFF)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    set(COROPACT_HAS_EPOLL ON)
+    set(ALYRN_HAS_EPOLL ON)
 endif()
 
-set(COROPACT_HAS_KQUEUE OFF)
+set(ALYRN_HAS_KQUEUE OFF)
 if(CMAKE_SYSTEM_NAME MATCHES "^(FreeBSD|NetBSD|OpenBSD|Darwin)$")
-    set(COROPACT_HAS_KQUEUE ON)
+    set(ALYRN_HAS_KQUEUE ON)
 endif()
 
-if(COROPACT_ENABLE_URING AND NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    message(FATAL_ERROR "COROPACT_ENABLE_URING requires Linux")
+if(ALYRN_ENABLE_URING AND NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    message(FATAL_ERROR "ALYRN_ENABLE_URING requires Linux")
 endif()
 
-if(COROPACT_ENABLE_KQUEUE AND NOT COROPACT_HAS_KQUEUE)
-    message(FATAL_ERROR "COROPACT_ENABLE_KQUEUE requires a BSD or Darwin kqueue host")
+if(ALYRN_ENABLE_KQUEUE AND NOT ALYRN_HAS_KQUEUE)
+    message(FATAL_ERROR "ALYRN_ENABLE_KQUEUE requires a BSD or Darwin kqueue host")
 endif()
 
-if(COROPACT_ENABLE_URING)
+if(ALYRN_ENABLE_URING)
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(URING REQUIRED IMPORTED_TARGET liburing>=2.6)
 endif()
 
 # Sanitizer toggle. Empty/OFF = no instrumentation (default). Accepts any
 # value the compiler understands after -fsanitize=, e.g.:
-#   cmake -B build-tsan -DCOROPACT_SANITIZER=thread
-#   cmake -B build-asan -DCOROPACT_SANITIZER=address,undefined
+#   cmake -B build-tsan -DALYRN_SANITIZER=thread
+#   cmake -B build-asan -DALYRN_SANITIZER=address,undefined
 # Applied globally to every target defined below (must precede add_library).
 # address and thread are mutually exclusive — pick one build dir per sanitizer.
-set(COROPACT_SANITIZER "" CACHE STRING
+set(ALYRN_SANITIZER "" CACHE STRING
     "Build with a sanitizer: address | thread | undefined | address,undefined (empty = off)")
 
-if(COROPACT_SANITIZER)
-    message(STATUS "Building with sanitizer: -fsanitize=${COROPACT_SANITIZER}")
-    add_compile_options(-fsanitize=${COROPACT_SANITIZER} -fno-omit-frame-pointer -g)
-    add_link_options(-fsanitize=${COROPACT_SANITIZER})
+if(ALYRN_SANITIZER)
+    message(STATUS "Building with sanitizer: -fsanitize=${ALYRN_SANITIZER}")
+    add_compile_options(-fsanitize=${ALYRN_SANITIZER} -fno-omit-frame-pointer -g)
+    add_link_options(-fsanitize=${ALYRN_SANITIZER})
 endif()
 
 # Keep strict diagnostics opt-in for local development and CI experiments.
 # Project consumers do not inherit these flags through exported targets.
-if(COROPACT_STRICT_WARNINGS)
+if(ALYRN_STRICT_WARNINGS)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         add_compile_options(-Wall -Wextra -Wpedantic -Werror)
     else()
         message(WARNING
-            "COROPACT_STRICT_WARNINGS is supported only for GCC and Clang")
+            "ALYRN_STRICT_WARNINGS is supported only for GCC and Clang")
     endif()
 endif()
 
-add_library(coropact_foundation INTERFACE)
+add_library(alyrn_foundation INTERFACE)
 
-target_include_directories(coropact_foundation
+target_include_directories(alyrn_foundation
     INTERFACE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
-target_link_libraries(coropact_foundation
+target_link_libraries(alyrn_foundation
     INTERFACE
         Threads::Threads
 )
 
-target_compile_features(coropact_foundation INTERFACE cxx_std_23)
+target_compile_features(alyrn_foundation INTERFACE cxx_std_23)
 
 # ── Coroutine and IO contracts ──────────────────────────────────────────────
 #
-# coropact_coro —— backend-neutral 协程原语(Task<T>、Work、Scheduler、Spawn/
+# alyrn_coro —— backend-neutral 协程原语(Task<T>、Work、Scheduler、Spawn/
 # JoinHandle、SyncWait、可选 FrameAllocatorScope)。Task<T> 不定义错误策略；
 # I/O 层按需返回 Task<Result<T>>。
 # Scheduler TLS lives in one translation unit so macOS static links do not see
 # duplicate inline thread_local symbols across backend object files.
-add_library(coropact_coro STATIC
+add_library(alyrn_coro STATIC
     src/coro/scheduler.cc
 )
-target_include_directories(coropact_coro PUBLIC
+target_include_directories(alyrn_coro PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
-target_compile_features(coropact_coro PUBLIC cxx_std_23)
+target_compile_features(alyrn_coro PUBLIC cxx_std_23)
 
-# coropact_io_contract —— 后端实现使用的 I/O concepts、Result 算法和语义 profile
+# alyrn_io_contract —— 后端实现使用的 I/O concepts、Result 算法和语义 profile
 # profile。它不包含具体 backend，也不依赖具体 backend。
-add_library(coropact_io_contract INTERFACE)
-target_include_directories(coropact_io_contract INTERFACE
+add_library(alyrn_io_contract INTERFACE)
+target_include_directories(alyrn_io_contract INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
-target_link_libraries(coropact_io_contract INTERFACE coropact_coro coropact_foundation)
-target_compile_features(coropact_io_contract INTERFACE cxx_std_23)
+target_link_libraries(alyrn_io_contract INTERFACE alyrn_coro alyrn_foundation)
+target_compile_features(alyrn_io_contract INTERFACE cxx_std_23)
 
-# coropact_io —— 面向应用的 I/O facade。它只依赖 backend-neutral contract；
+# alyrn_io —— 面向应用的 I/O facade。它只依赖 backend-neutral contract；
 # 最终可执行文件显式选择一个具体 backend，避免传递引入平台实现。
-add_library(coropact_io INTERFACE)
-target_include_directories(coropact_io INTERFACE
+add_library(alyrn_io INTERFACE)
+target_include_directories(alyrn_io INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
-target_link_libraries(coropact_io INTERFACE coropact_io_contract)
-target_compile_features(coropact_io INTERFACE cxx_std_23)
+target_link_libraries(alyrn_io INTERFACE alyrn_io_contract)
+target_compile_features(alyrn_io INTERFACE cxx_std_23)
 
-# coropact_net —— backend-shared socket/address/buffer value layer.  Its
+# alyrn_net —— backend-shared socket/address/buffer value layer.  Its
 # implementation is entirely inline so consumers do not pay for a separate
 # transport utility library.
-add_library(coropact_net INTERFACE)
+add_library(alyrn_net INTERFACE)
 
-target_include_directories(coropact_net
+target_include_directories(alyrn_net
     INTERFACE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
-target_link_libraries(coropact_net
+target_link_libraries(alyrn_net
     INTERFACE
-        coropact_foundation
+        alyrn_foundation
 )
 
-target_compile_features(coropact_net INTERFACE cxx_std_23)
+target_compile_features(alyrn_net INTERFACE cxx_std_23)
 
 # I/O contracts expose lower net primitives through lightweight public
 # spellings, while remaining independent of concrete backend adapters.
-target_link_libraries(coropact_io_contract INTERFACE coropact_net)
+target_link_libraries(alyrn_io_contract INTERFACE alyrn_net)
 
-# coropact_reactor —— Linux epoll readiness backend. kqueue remains a parallel
+# alyrn_reactor —— Linux epoll readiness backend. kqueue remains a parallel
 # backend rather than a preprocessor branch inside this implementation.
-if(COROPACT_HAS_EPOLL)
-    add_library(coropact_reactor STATIC
+if(ALYRN_HAS_EPOLL)
+    add_library(alyrn_reactor STATIC
         src/reactor/channel.cc
         src/reactor/epoll_poller.cc
         src/reactor/loop.cc
@@ -165,30 +165,30 @@ if(COROPACT_HAS_EPOLL)
         src/reactor/timer_queue.cc
     )
 
-    target_include_directories(coropact_reactor
+    target_include_directories(alyrn_reactor
         PUBLIC
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
             $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
 
-    target_link_libraries(coropact_reactor
+    target_link_libraries(alyrn_reactor
         PUBLIC
-            coropact_net
-            coropact_coro
-            coropact_foundation
+            alyrn_net
+            alyrn_coro
+            alyrn_foundation
             Threads::Threads
     )
 
-    target_compile_features(coropact_reactor PUBLIC cxx_std_23)
+    target_compile_features(alyrn_reactor PUBLIC cxx_std_23)
 endif()
 
-# coropact_kqueue —— BSD/Darwin kqueue readiness backend. It is parallel to
+# alyrn_kqueue —— BSD/Darwin kqueue readiness backend. It is parallel to
 # the Linux epoll Reactor rather than a conditional implementation of Reactor.
 # The initial source files intentionally remain separate while their kqueue
 # event semantics are validated; only proven backend-neutral contracts may be
 # extracted later.
-if(COROPACT_ENABLE_KQUEUE)
-    add_library(coropact_kqueue STATIC
+if(ALYRN_ENABLE_KQUEUE)
+    add_library(alyrn_kqueue STATIC
         src/kqueue/channel.cc
         src/kqueue/connector.cc
         src/kqueue/listener.cc
@@ -202,35 +202,35 @@ if(COROPACT_ENABLE_KQUEUE)
         src/kqueue/timer_queue.cc
     )
 
-    target_include_directories(coropact_kqueue
+    target_include_directories(alyrn_kqueue
         PUBLIC
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
             $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
 
-    target_link_libraries(coropact_kqueue
+    target_link_libraries(alyrn_kqueue
         PUBLIC
-            coropact_net
-            coropact_coro
-            coropact_foundation
+            alyrn_net
+            alyrn_coro
+            alyrn_foundation
             Threads::Threads
     )
 
-    target_compile_features(coropact_kqueue PUBLIC cxx_std_23)
+    target_compile_features(alyrn_kqueue PUBLIC cxx_std_23)
 
-    add_library(coropact_coro_kqueue INTERFACE)
-    target_include_directories(coropact_coro_kqueue INTERFACE
+    add_library(alyrn_coro_kqueue INTERFACE)
+    target_include_directories(alyrn_coro_kqueue INTERFACE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
-    target_link_libraries(coropact_coro_kqueue INTERFACE coropact_kqueue)
-    target_compile_features(coropact_coro_kqueue INTERFACE cxx_std_23)
+    target_link_libraries(alyrn_coro_kqueue INTERFACE alyrn_kqueue)
+    target_compile_features(alyrn_coro_kqueue INTERFACE cxx_std_23)
 endif()
 
-# coropact_luring —— io_uring proactor 网络模块。它与 coropact_reactor 并列，
-# 共同解释 coropact_io 的协程可观察 I/O 契约。
-if(COROPACT_ENABLE_URING)
-    add_library(coropact_luring STATIC
+# alyrn_luring —— io_uring proactor 网络模块。它与 alyrn_reactor 并列，
+# 共同解释 alyrn_io 的协程可观察 I/O 契约。
+if(ALYRN_ENABLE_URING)
+    add_library(alyrn_luring STATIC
         src/luring/connector.cc
         src/luring/listener.cc
         src/luring/recv_source.cc
@@ -244,58 +244,58 @@ if(COROPACT_ENABLE_URING)
         src/luring/worker_group.cc
     )
 
-    target_include_directories(coropact_luring
+    target_include_directories(alyrn_luring
         PUBLIC
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
             $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
 
-    target_link_libraries(coropact_luring
+    target_link_libraries(alyrn_luring
         PUBLIC
-            coropact_net
-            coropact_io_contract
+            alyrn_net
+            alyrn_io_contract
             PkgConfig::URING
     )
 
-    target_compile_definitions(coropact_luring PUBLIC COROPACT_ENABLE_URING)
-    target_compile_features(coropact_luring PUBLIC cxx_std_23)
+    target_compile_definitions(alyrn_luring PUBLIC ALYRN_ENABLE_URING)
+    target_compile_features(alyrn_luring PUBLIC cxx_std_23)
 
 endif()
 
-# coropact_coro_reactor —— 把协程绑定到 coropact_reactor 后端。
-if(COROPACT_HAS_EPOLL)
-    add_library(coropact_coro_reactor INTERFACE)
-    target_include_directories(coropact_coro_reactor INTERFACE
+# alyrn_coro_reactor —— 把协程绑定到 alyrn_reactor 后端。
+if(ALYRN_HAS_EPOLL)
+    add_library(alyrn_coro_reactor INTERFACE)
+    target_include_directories(alyrn_coro_reactor INTERFACE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
-    target_link_libraries(coropact_coro_reactor INTERFACE coropact_reactor)
-    target_compile_features(coropact_coro_reactor INTERFACE cxx_std_23)
+    target_link_libraries(alyrn_coro_reactor INTERFACE alyrn_reactor)
+    target_compile_features(alyrn_coro_reactor INTERFACE cxx_std_23)
 endif()
 
-# coropact_coro_luring —— 把协程绑定到 io_uring proactor 后端。
-# It is available only when COROPACT_ENABLE_URING is enabled.
-if(COROPACT_ENABLE_URING)
-    add_library(coropact_coro_luring INTERFACE)
-    target_include_directories(coropact_coro_luring INTERFACE
+# alyrn_coro_luring —— 把协程绑定到 io_uring proactor 后端。
+# It is available only when ALYRN_ENABLE_URING is enabled.
+if(ALYRN_ENABLE_URING)
+    add_library(alyrn_coro_luring INTERFACE)
+    target_include_directories(alyrn_coro_luring INTERFACE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
-    target_link_libraries(coropact_coro_luring INTERFACE coropact_luring)
-    target_compile_definitions(coropact_coro_luring INTERFACE COROPACT_ENABLE_URING)
-    target_compile_features(coropact_coro_luring INTERFACE cxx_std_23)
+    target_link_libraries(alyrn_coro_luring INTERFACE alyrn_luring)
+    target_compile_definitions(alyrn_coro_luring INTERFACE ALYRN_ENABLE_URING)
+    target_compile_features(alyrn_coro_luring INTERFACE cxx_std_23)
 endif()
 
 if(BUILD_TESTS)
     enable_testing()
 endif()
 
-if(BUILD_EXAMPLES AND COROPACT_HAS_EPOLL)
+if(BUILD_EXAMPLES AND ALYRN_HAS_EPOLL)
     add_subdirectory(examples)
 elseif(BUILD_EXAMPLES)
     message(STATUS "Examples are disabled until a native readiness backend is enabled")
 endif()
 
-if(BUILD_BENCHMARKS AND COROPACT_HAS_EPOLL)
+if(BUILD_BENCHMARKS AND ALYRN_HAS_EPOLL)
     add_subdirectory(benchmarks)
 elseif(BUILD_BENCHMARKS)
     message(STATUS "Benchmarks are disabled until a native readiness backend is enabled")
@@ -305,13 +305,13 @@ if(BUILD_FUZZERS)
     if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         message(FATAL_ERROR "BUILD_FUZZERS requires Clang and libFuzzer")
     endif()
-    if(COROPACT_SANITIZER)
+    if(ALYRN_SANITIZER)
         message(FATAL_ERROR "BUILD_FUZZERS selects its own fuzzer,address,undefined sanitizers")
     endif()
     add_subdirectory(fuzz)
 endif()
 
-if(BUILD_TESTS AND (COROPACT_HAS_EPOLL OR COROPACT_ENABLE_KQUEUE))
+if(BUILD_TESTS AND (ALYRN_HAS_EPOLL OR ALYRN_ENABLE_KQUEUE))
     add_subdirectory(tests)
 elseif(BUILD_TESTS)
     message(STATUS "Backend tests are disabled until a native readiness backend is enabled")
@@ -320,37 +320,37 @@ endif()
 # ── Installation and package metadata ──────────────────────────────────────
 # Keep the build-tree and install-tree include paths separate so the exported
 # targets remain relocatable after the source tree is removed.
-set(COROPACT_INSTALL_CMAKEDIR
-    "${CMAKE_INSTALL_LIBDIR}/cmake/CoroPact")
-set(COROPACT_PACKAGE_HAS_URING ${COROPACT_ENABLE_URING})
+set(ALYRN_INSTALL_CMAKEDIR
+    "${CMAKE_INSTALL_LIBDIR}/cmake/Alyrn")
+set(ALYRN_PACKAGE_HAS_URING ${ALYRN_ENABLE_URING})
 
-set(COROPACT_INSTALL_TARGETS
-    coropact_foundation
-    coropact_coro
-    coropact_io_contract
-    coropact_io
-    coropact_net)
+set(ALYRN_INSTALL_TARGETS
+    alyrn_foundation
+    alyrn_coro
+    alyrn_io_contract
+    alyrn_io
+    alyrn_net)
 
-if(COROPACT_HAS_EPOLL)
-    list(APPEND COROPACT_INSTALL_TARGETS
-        coropact_reactor
-        coropact_coro_reactor)
+if(ALYRN_HAS_EPOLL)
+    list(APPEND ALYRN_INSTALL_TARGETS
+        alyrn_reactor
+        alyrn_coro_reactor)
 endif()
 
-if(COROPACT_ENABLE_KQUEUE)
-    list(APPEND COROPACT_INSTALL_TARGETS
-        coropact_kqueue
-        coropact_coro_kqueue)
+if(ALYRN_ENABLE_KQUEUE)
+    list(APPEND ALYRN_INSTALL_TARGETS
+        alyrn_kqueue
+        alyrn_coro_kqueue)
 endif()
 
-if(COROPACT_ENABLE_URING)
-    list(APPEND COROPACT_INSTALL_TARGETS
-        coropact_luring
-        coropact_coro_luring)
+if(ALYRN_ENABLE_URING)
+    list(APPEND ALYRN_INSTALL_TARGETS
+        alyrn_luring
+        alyrn_coro_luring)
 endif()
 
-install(TARGETS ${COROPACT_INSTALL_TARGETS}
-    EXPORT CoroPactTargets
+install(TARGETS ${ALYRN_INSTALL_TARGETS}
+    EXPORT AlyrnTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
@@ -359,37 +359,37 @@ install(TARGETS ${COROPACT_INSTALL_TARGETS}
 install(DIRECTORY include/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
-install(EXPORT CoroPactTargets
-    FILE CoroPactTargets.cmake
-    NAMESPACE CoroPact::
-    DESTINATION ${COROPACT_INSTALL_CMAKEDIR})
+install(EXPORT AlyrnTargets
+    FILE AlyrnTargets.cmake
+    NAMESPACE Alyrn::
+    DESTINATION ${ALYRN_INSTALL_CMAKEDIR})
 
 configure_package_config_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CoroPactConfig.cmake.in
-    ${CMAKE_CURRENT_BINARY_DIR}/CoroPactConfig.cmake
-    INSTALL_DESTINATION ${COROPACT_INSTALL_CMAKEDIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/AlyrnConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/AlyrnConfig.cmake
+    INSTALL_DESTINATION ${ALYRN_INSTALL_CMAKEDIR}
     PATH_VARS CMAKE_INSTALL_INCLUDEDIR CMAKE_INSTALL_LIBDIR)
 
 write_basic_package_version_file(
-    ${CMAKE_CURRENT_BINARY_DIR}/CoroPactConfigVersion.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/AlyrnConfigVersion.cmake
     VERSION ${PROJECT_VERSION}
     COMPATIBILITY SameMajorVersion)
 
 install(FILES
-    ${CMAKE_CURRENT_BINARY_DIR}/CoroPactConfig.cmake
-    ${CMAKE_CURRENT_BINARY_DIR}/CoroPactConfigVersion.cmake
-    DESTINATION ${COROPACT_INSTALL_CMAKEDIR})
+    ${CMAKE_CURRENT_BINARY_DIR}/AlyrnConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/AlyrnConfigVersion.cmake
+    DESTINATION ${ALYRN_INSTALL_CMAKEDIR})
 
-set(CPACK_PACKAGE_NAME "coropact")
-set(CPACK_PACKAGE_VENDOR "CoroPact contributors")
-set(CPACK_PACKAGE_CONTACT "archiyun/CoroPact maintainers")
+set(CPACK_PACKAGE_NAME "alyrn")
+set(CPACK_PACKAGE_VENDOR "Alyrn contributors")
+set(CPACK_PACKAGE_CONTACT "archiyun/Alyrn maintainers")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
     "C++23 coroutine networking runtime with Reactor and io_uring backends")
 set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
 set(CPACK_RESOURCE_FILE_LICENSE ${CMAKE_CURRENT_SOURCE_DIR}/LICENSE)
 set(CPACK_GENERATOR "TGZ;DEB")
 set(CPACK_PACKAGING_INSTALL_PREFIX "/usr")
-if(COROPACT_ENABLE_URING)
+if(ALYRN_ENABLE_URING)
     set(CPACK_DEBIAN_PACKAGE_DEPENDS "liburing-dev (>= 2.6)")
 endif()
 include(CPack)

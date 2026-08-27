@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "coropact/kqueue/detail/worker.h"
+#include "alyrn/kqueue/detail/worker.h"
 
 #include <cerrno>
 #include <expected>
@@ -7,18 +7,18 @@
 #include <stop_token>
 #include <utility>
 
-#include "coropact/base/check.h"
-#include "coropact/result.h"
-#include "coropact/coro/frame_allocator.h"
-#include "coropact/coro/spawn.h"
+#include "alyrn/base/check.h"
+#include "alyrn/result.h"
+#include "alyrn/coro/frame_allocator.h"
+#include "alyrn/coro/spawn.h"
 
-namespace coropact::kqueue::detail {
+namespace alyrn::kqueue::detail {
 
 namespace {
 
 coro::DetachedTask AcceptLoop(WorkerContext& context,
                               Worker::ConnectionCallback* callback) {
-  COROPACT_CHECK(context.listener != nullptr, "AcceptLoop requires an acceptor listener");
+  ALYRN_CHECK(context.listener != nullptr, "AcceptLoop requires an acceptor listener");
   while (true) {
     auto accepted = co_await context.listener->Accept();
     if (!accepted.has_value()) {
@@ -144,4 +144,4 @@ void Worker::WorkLoop(std::stop_token token) noexcept {
   loop_ = nullptr;
 }
 
-}  // namespace coropact::kqueue::detail
+}  // namespace alyrn::kqueue::detail

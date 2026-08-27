@@ -6,7 +6,7 @@ add_executable(demo_luring_single_shot_echo
 
 target_link_libraries(demo_luring_single_shot_echo
     PRIVATE
-        coropact_luring
+        alyrn_luring
 )
 
 add_executable(demo_luring_single_shot_connect
@@ -15,7 +15,7 @@ add_executable(demo_luring_single_shot_connect
 
 target_link_libraries(demo_luring_single_shot_connect
     PRIVATE
-        coropact_luring
+        alyrn_luring
 )
 
 add_executable(demo_luring_read_into_echo
@@ -24,7 +24,7 @@ add_executable(demo_luring_read_into_echo
 
 target_link_libraries(demo_luring_read_into_echo
     PRIVATE
-        coropact_luring
+        alyrn_luring
 )
 
 add_executable(demo_luring_half_close
@@ -33,7 +33,7 @@ add_executable(demo_luring_half_close
 
 target_link_libraries(demo_luring_half_close
     PRIVATE
-        coropact_luring
+        alyrn_luring
 )
 
 add_executable(demo_luring_close_pending_read
@@ -42,7 +42,7 @@ add_executable(demo_luring_close_pending_read
 
 target_link_libraries(demo_luring_close_pending_read
     PRIVATE
-        coropact_luring
+        alyrn_luring
 )
 
 add_executable(demo_luring_zero_copy_send
@@ -51,7 +51,7 @@ add_executable(demo_luring_zero_copy_send
 
 target_link_libraries(demo_luring_zero_copy_send
     PRIVATE
-        coropact_luring
+        alyrn_luring
 )
 
 add_executable(demo_bench_http_luring
@@ -65,7 +65,7 @@ target_include_directories(demo_bench_http_luring
 
 target_link_libraries(demo_bench_http_luring
     PRIVATE
-        coropact_luring
+        alyrn_luring
 )
 
 add_executable(demo_bench_frame_churn
@@ -74,7 +74,7 @@ add_executable(demo_bench_frame_churn
 
 target_link_libraries(demo_bench_frame_churn
     PRIVATE
-        coropact_luring
+        alyrn_luring
 )
 
 add_executable(demo_bench_http_liburing

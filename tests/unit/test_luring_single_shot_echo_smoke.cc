@@ -12,15 +12,15 @@
 #include <system_error>
 #include <utility>
 
-#include "coropact/result.h"
-#include "coropact/coro/spawn.h"
-#include "coropact/io/loop.h"
-#include "coropact/luring/connector.h"
-#include "coropact/luring/listener.h"
-#include "coropact/luring/loop.h"
-#include "coropact/luring/options.h"
-#include "coropact/luring/stream.h"
-#include "coropact/net/endpoint.h"
+#include "alyrn/result.h"
+#include "alyrn/coro/spawn.h"
+#include "alyrn/io/loop.h"
+#include "alyrn/luring/connector.h"
+#include "alyrn/luring/listener.h"
+#include "alyrn/luring/loop.h"
+#include "alyrn/luring/options.h"
+#include "alyrn/luring/stream.h"
+#include "alyrn/net/endpoint.h"
 
 namespace {
 
@@ -34,11 +34,11 @@ bool Check(bool condition, const char* message) {
   return true;
 }
 
-bool IsEnvironmentSkip(coropact::Error error) {
+bool IsEnvironmentSkip(alyrn::Error error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 
-coropact::coro::DetachedTask EchoOnce(coropact::luring::Stream stream) {
+alyrn::coro::DetachedTask EchoOnce(alyrn::luring::Stream stream) {
   std::array<std::byte, 4096> buffer{};
 
   for (;;) {
@@ -57,20 +57,20 @@ coropact::coro::DetachedTask EchoOnce(coropact::luring::Stream stream) {
   (void)co_await stream.Close();
 }
 
-coropact::coro::DetachedTask AcceptOnce(coropact::luring::Loop& loop,
-                                        coropact::luring::Listener& listener) {
+alyrn::coro::DetachedTask AcceptOnce(alyrn::luring::Loop& loop,
+                                        alyrn::luring::Listener& listener) {
   auto accepted = co_await listener.Accept();
   if (!accepted.has_value()) {
     loop.RequestStop();
     co_return;
   }
 
-  coropact::coro::SpawnDetach(loop, EchoOnce(std::move(*accepted)));
+  alyrn::coro::SpawnDetach(loop, EchoOnce(std::move(*accepted)));
 }
 
-coropact::coro::DetachedTask ConnectOnce(coropact::luring::Loop& loop, std::uint16_t port,
+alyrn::coro::DetachedTask ConnectOnce(alyrn::luring::Loop& loop, std::uint16_t port,
                                          bool* echo_ok) {
-  auto connector = coropact::luring::Connector::Create(&loop);
+  auto connector = alyrn::luring::Connector::Create(&loop);
   if (!connector.has_value()) {
     loop.RequestStop();
     co_return;
@@ -118,8 +118,8 @@ coropact::coro::DetachedTask ConnectOnce(coropact::luring::Loop& loop, std::uint
 }
 
 bool CheckEchoRoundTrip() {
-  coropact::luring::Loop loop;
-  coropact::luring::Options options;
+  alyrn::luring::Loop loop;
+  alyrn::luring::Options options;
   options.entries = 64;
 
   auto init = loop.Init(options);
@@ -132,7 +132,7 @@ bool CheckEchoRoundTrip() {
     return false;
   }
 
-  auto listener = coropact::luring::Listener::Create(&loop, coropact::net::Endpoint::Loopback(0));
+  auto listener = alyrn::luring::Listener::Create(&loop, alyrn::net::Endpoint::Loopback(0));
   if (!listener.has_value()) {
     std::cout << "FAIL: Listener::Create failed: " << listener.error().message() << '\n';
     return false;
@@ -145,12 +145,12 @@ bool CheckEchoRoundTrip() {
   }
 
   bool echo_ok = false;
-  coropact::coro::SpawnDetach(loop, AcceptOnce(loop, *listener));
-  coropact::coro::SpawnDetach(loop, ConnectOnce(loop, local->ToPort(), &echo_ok));
+  alyrn::coro::SpawnDetach(loop, AcceptOnce(loop, *listener));
+  alyrn::coro::SpawnDetach(loop, ConnectOnce(loop, local->ToPort(), &echo_ok));
   loop.Run();
 
   return Check(echo_ok, "echo round-trip did not match") &&
-         Check(loop.State() == coropact::io::LoopState::kStopped, "loop did not stop");
+         Check(loop.State() == alyrn::io::LoopState::kStopped, "loop did not stop");
 }
 
 }  // namespace

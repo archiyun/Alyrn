@@ -17,11 +17,11 @@
 #include <print>
 #include <stop_token>
 
-#include "coropact/coro.h"
-#include "coropact/luring.h"
-#include "coropact/net.h"
+#include "alyrn/coro.h"
+#include "alyrn/luring.h"
+#include "alyrn/net.h"
 
-using namespace coropact;
+using namespace alyrn;
 
 namespace {
 

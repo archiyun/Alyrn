@@ -11,14 +11,14 @@ target_include_directories(panic_check_smoke_test
 
 target_link_libraries(panic_check_smoke_test
     PRIVATE
-        coropact_foundation
+        alyrn_foundation
 )
 
 add_test(NAME panic_check_smoke_test COMMAND panic_check_smoke_test)
 
 # Native kqueue oneshot smoke: real kevent on BSD/Darwin hosts. Built only when
-# coropact_kqueue exists; does not use the Linux-only fake_kqueue shim.
-if(COROPACT_ENABLE_KQUEUE)
+# alyrn_kqueue exists; does not use the Linux-only fake_kqueue shim.
+if(ALYRN_ENABLE_KQUEUE)
     add_executable(kqueue_native_oneshot_smoke_test
         unit/test_kqueue_native_oneshot_smoke.cc
     )
@@ -30,7 +30,7 @@ if(COROPACT_ENABLE_KQUEUE)
 
     target_link_libraries(kqueue_native_oneshot_smoke_test
         PRIVATE
-            coropact_kqueue
+            alyrn_kqueue
     )
 
     target_compile_features(kqueue_native_oneshot_smoke_test PUBLIC cxx_std_23)
@@ -48,7 +48,7 @@ if(COROPACT_ENABLE_KQUEUE)
 
     target_link_libraries(kqueue_loop_smoke_test
         PRIVATE
-            coropact_kqueue
+            alyrn_kqueue
     )
 
     target_compile_features(kqueue_loop_smoke_test PUBLIC cxx_std_23)
@@ -66,7 +66,7 @@ if(COROPACT_ENABLE_KQUEUE)
 
     target_link_libraries(kqueue_stream_smoke_test
         PRIVATE
-            coropact_kqueue
+            alyrn_kqueue
     )
 
     target_compile_features(kqueue_stream_smoke_test PUBLIC cxx_std_23)
@@ -77,7 +77,7 @@ if(COROPACT_ENABLE_KQUEUE)
         unit/test_kqueue_listener_smoke.cc
     )
     target_include_directories(kqueue_listener_smoke_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
-    target_link_libraries(kqueue_listener_smoke_test PRIVATE coropact_kqueue)
+    target_link_libraries(kqueue_listener_smoke_test PRIVATE alyrn_kqueue)
     target_compile_features(kqueue_listener_smoke_test PUBLIC cxx_std_23)
     add_test(NAME kqueue_listener_smoke_test COMMAND kqueue_listener_smoke_test)
 
@@ -85,7 +85,7 @@ if(COROPACT_ENABLE_KQUEUE)
         unit/test_kqueue_connector_smoke.cc
     )
     target_include_directories(kqueue_connector_smoke_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
-    target_link_libraries(kqueue_connector_smoke_test PRIVATE coropact_kqueue)
+    target_link_libraries(kqueue_connector_smoke_test PRIVATE alyrn_kqueue)
     target_compile_features(kqueue_connector_smoke_test PUBLIC cxx_std_23)
     add_test(NAME kqueue_connector_smoke_test COMMAND kqueue_connector_smoke_test)
 
@@ -93,7 +93,7 @@ if(COROPACT_ENABLE_KQUEUE)
         unit/test_kqueue_recv_source_smoke.cc
     )
     target_include_directories(kqueue_recv_source_smoke_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
-    target_link_libraries(kqueue_recv_source_smoke_test PRIVATE coropact_kqueue)
+    target_link_libraries(kqueue_recv_source_smoke_test PRIVATE alyrn_kqueue)
     target_compile_features(kqueue_recv_source_smoke_test PUBLIC cxx_std_23)
     add_test(NAME kqueue_recv_source_smoke_test COMMAND kqueue_recv_source_smoke_test)
 
@@ -101,7 +101,7 @@ if(COROPACT_ENABLE_KQUEUE)
         unit/test_kqueue_worker_group_smoke.cc
     )
     target_include_directories(kqueue_worker_group_smoke_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
-    target_link_libraries(kqueue_worker_group_smoke_test PRIVATE coropact_kqueue)
+    target_link_libraries(kqueue_worker_group_smoke_test PRIVATE alyrn_kqueue)
     target_compile_features(kqueue_worker_group_smoke_test PUBLIC cxx_std_23)
     add_test(NAME kqueue_worker_group_smoke_test COMMAND kqueue_worker_group_smoke_test)
 
@@ -109,14 +109,14 @@ if(COROPACT_ENABLE_KQUEUE)
         unit/test_kqueue_runtime_builder_smoke.cc
     )
     target_include_directories(kqueue_runtime_builder_smoke_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
-    target_link_libraries(kqueue_runtime_builder_smoke_test PRIVATE coropact_kqueue)
+    target_link_libraries(kqueue_runtime_builder_smoke_test PRIVATE alyrn_kqueue)
     target_compile_features(kqueue_runtime_builder_smoke_test PUBLIC cxx_std_23)
     add_test(NAME kqueue_runtime_builder_smoke_test COMMAND kqueue_runtime_builder_smoke_test)
 endif()
 
 # Remaining targets below assume the Linux epoll Reactor. On Darwin/BSD with
-# only COROPACT_ENABLE_KQUEUE, stop after the foundation + native kqueue tests.
-if(NOT COROPACT_HAS_EPOLL)
+# only ALYRN_ENABLE_KQUEUE, stop after the foundation + native kqueue tests.
+if(NOT ALYRN_HAS_EPOLL)
     return()
 endif()
 
@@ -135,12 +135,12 @@ target_include_directories(io_contract_smoke_test
 
 target_link_libraries(io_contract_smoke_test
     PRIVATE
-        coropact_reactor
+        alyrn_reactor
 )
 
-if(COROPACT_ENABLE_URING)
-    target_link_libraries(io_contract_smoke_test PRIVATE coropact_luring)
-    target_compile_definitions(io_contract_smoke_test PRIVATE COROPACT_ENABLE_URING)
+if(ALYRN_ENABLE_URING)
+    target_link_libraries(io_contract_smoke_test PRIVATE alyrn_luring)
+    target_compile_definitions(io_contract_smoke_test PRIVATE ALYRN_ENABLE_URING)
 endif()
 
 add_test(NAME io_contract_smoke_test COMMAND io_contract_smoke_test)
@@ -159,12 +159,12 @@ target_include_directories(stream_lifecycle_conformance_test
 
 target_link_libraries(stream_lifecycle_conformance_test
     PRIVATE
-        coropact_reactor
+        alyrn_reactor
 )
 
-if(COROPACT_ENABLE_URING)
-    target_link_libraries(stream_lifecycle_conformance_test PRIVATE coropact_luring)
-    target_compile_definitions(stream_lifecycle_conformance_test PRIVATE COROPACT_ENABLE_URING)
+if(ALYRN_ENABLE_URING)
+    target_link_libraries(stream_lifecycle_conformance_test PRIVATE alyrn_luring)
+    target_compile_definitions(stream_lifecycle_conformance_test PRIVATE ALYRN_ENABLE_URING)
 endif()
 
 add_test(NAME stream_lifecycle_conformance_test COMMAND stream_lifecycle_conformance_test)
@@ -183,12 +183,12 @@ target_include_directories(listener_lifecycle_conformance_test
 
 target_link_libraries(listener_lifecycle_conformance_test
     PRIVATE
-        coropact_reactor
+        alyrn_reactor
 )
 
-if(COROPACT_ENABLE_URING)
-    target_link_libraries(listener_lifecycle_conformance_test PRIVATE coropact_luring)
-    target_compile_definitions(listener_lifecycle_conformance_test PRIVATE COROPACT_ENABLE_URING)
+if(ALYRN_ENABLE_URING)
+    target_link_libraries(listener_lifecycle_conformance_test PRIVATE alyrn_luring)
+    target_compile_definitions(listener_lifecycle_conformance_test PRIVATE ALYRN_ENABLE_URING)
 endif()
 
 add_test(NAME listener_lifecycle_conformance_test COMMAND listener_lifecycle_conformance_test)
@@ -206,12 +206,12 @@ target_include_directories(connector_lifecycle_conformance_test
 
 target_link_libraries(connector_lifecycle_conformance_test
     PRIVATE
-        coropact_reactor
+        alyrn_reactor
 )
 
-if(COROPACT_ENABLE_URING)
-    target_link_libraries(connector_lifecycle_conformance_test PRIVATE coropact_luring)
-    target_compile_definitions(connector_lifecycle_conformance_test PRIVATE COROPACT_ENABLE_URING)
+if(ALYRN_ENABLE_URING)
+    target_link_libraries(connector_lifecycle_conformance_test PRIVATE alyrn_luring)
+    target_compile_definitions(connector_lifecycle_conformance_test PRIVATE ALYRN_ENABLE_URING)
 endif()
 
 add_test(NAME connector_lifecycle_conformance_test COMMAND connector_lifecycle_conformance_test)
@@ -222,12 +222,12 @@ add_executable(runtime_builder_smoke_test
 
 target_link_libraries(runtime_builder_smoke_test
     PRIVATE
-        coropact_reactor
+        alyrn_reactor
 )
 
-if(COROPACT_ENABLE_URING)
-    target_link_libraries(runtime_builder_smoke_test PRIVATE coropact_luring)
-    target_compile_definitions(runtime_builder_smoke_test PRIVATE COROPACT_ENABLE_URING)
+if(ALYRN_ENABLE_URING)
+    target_link_libraries(runtime_builder_smoke_test PRIVATE alyrn_luring)
+    target_compile_definitions(runtime_builder_smoke_test PRIVATE ALYRN_ENABLE_URING)
 endif()
 
 add_test(NAME runtime_builder_smoke_test COMMAND runtime_builder_smoke_test)
@@ -243,7 +243,7 @@ target_include_directories(completion_gate_smoke_test
 
 target_link_libraries(completion_gate_smoke_test
     PRIVATE
-        coropact_coro
+        alyrn_coro
 )
 
 add_test(NAME completion_gate_smoke_test COMMAND completion_gate_smoke_test)
@@ -324,7 +324,7 @@ target_include_directories(coro_smoke_test
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
 
-target_link_libraries(coro_smoke_test PRIVATE coropact_coro coropact_foundation)
+target_link_libraries(coro_smoke_test PRIVATE alyrn_coro alyrn_foundation)
 
 add_test(NAME coro_smoke_test COMMAND coro_smoke_test)
 
@@ -337,7 +337,7 @@ target_include_directories(coro_channel_smoke_test
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
 
-target_link_libraries(coro_channel_smoke_test PRIVATE coropact_coro coropact_foundation)
+target_link_libraries(coro_channel_smoke_test PRIVATE alyrn_coro alyrn_foundation)
 
 add_test(NAME coro_channel_smoke_test COMMAND coro_channel_smoke_test)
 
@@ -350,7 +350,7 @@ target_include_directories(coro_frame_allocator_smoke_test
         ${CMAKE_CURRENT_SOURCE_DIR}/../include
 )
 
-target_link_libraries(coro_frame_allocator_smoke_test PRIVATE coropact_coro)
+target_link_libraries(coro_frame_allocator_smoke_test PRIVATE alyrn_coro)
 
 add_test(NAME coro_frame_allocator_smoke_test COMMAND coro_frame_allocator_smoke_test)
 
@@ -365,7 +365,7 @@ target_include_directories(io_buffer_smoke_test
 
 target_link_libraries(io_buffer_smoke_test
     PRIVATE
-        coropact_io_contract
+        alyrn_io_contract
 )
 
 add_test(NAME io_buffer_smoke_test COMMAND io_buffer_smoke_test)
@@ -381,7 +381,7 @@ target_include_directories(accept_source_state_smoke_test
 
 target_link_libraries(accept_source_state_smoke_test
     PRIVATE
-        coropact_net
+        alyrn_net
 )
 
 add_test(NAME accept_source_state_smoke_test COMMAND accept_source_state_smoke_test)
@@ -397,8 +397,8 @@ target_include_directories(recv_source_state_smoke_test
 
 target_link_libraries(recv_source_state_smoke_test
     PRIVATE
-        coropact_coro
-        coropact_net
+        alyrn_coro
+        alyrn_net
 )
 
 add_test(NAME recv_source_state_smoke_test COMMAND recv_source_state_smoke_test)
@@ -414,7 +414,7 @@ target_include_directories(stream_lifecycle_smoke_test
 
 target_link_libraries(stream_lifecycle_smoke_test
     PRIVATE
-        coropact_net
+        alyrn_net
 )
 
 add_test(NAME stream_lifecycle_smoke_test COMMAND stream_lifecycle_smoke_test)
@@ -430,12 +430,12 @@ target_include_directories(luring_buffer_storage_smoke_test
 
 target_link_libraries(luring_buffer_storage_smoke_test
     PRIVATE
-        coropact_foundation
+        alyrn_foundation
 )
 
 add_test(NAME luring_buffer_storage_smoke_test COMMAND luring_buffer_storage_smoke_test)
 
-# C3:detached 连接协程(Spawn)park→resume→自毁,无泄漏/无 UAF。链 coropact_reactor。
+# C3:detached 连接协程(Spawn)park→resume→自毁,无泄漏/无 UAF。链 alyrn_reactor。
 add_executable(spawn_c3_smoke_test
     unit/test_spawn_c3_smoke.cc
 )
@@ -447,7 +447,7 @@ target_include_directories(spawn_c3_smoke_test
 
 target_link_libraries(spawn_c3_smoke_test
     PRIVATE
-        coropact_reactor
+        alyrn_reactor
 )
 
 add_test(NAME spawn_c3_smoke_test COMMAND spawn_c3_smoke_test)
@@ -463,7 +463,7 @@ target_include_directories(reactor_stream_smoke_test
 
 target_link_libraries(reactor_stream_smoke_test
     PRIVATE
-        coropact_reactor
+        alyrn_reactor
 )
 
 add_test(NAME reactor_stream_smoke_test COMMAND reactor_stream_smoke_test)
@@ -479,7 +479,7 @@ target_include_directories(reactor_listener_smoke_test
 
 target_link_libraries(reactor_listener_smoke_test
     PRIVATE
-        coropact_reactor
+        alyrn_reactor
 )
 
 add_test(NAME reactor_listener_smoke_test COMMAND reactor_listener_smoke_test)
@@ -495,7 +495,7 @@ target_include_directories(reactor_recv_source_smoke_test
 
 target_link_libraries(reactor_recv_source_smoke_test
     PRIVATE
-        coropact_reactor
+        alyrn_reactor
 )
 
 add_test(NAME reactor_recv_source_smoke_test COMMAND reactor_recv_source_smoke_test)
@@ -511,12 +511,12 @@ target_include_directories(reactor_worker_group_smoke_test
 
 target_link_libraries(reactor_worker_group_smoke_test
     PRIVATE
-        coropact_reactor
+        alyrn_reactor
 )
 
 add_test(NAME reactor_worker_group_smoke_test COMMAND reactor_worker_group_smoke_test)
 
-if(COROPACT_ENABLE_URING)
+if(ALYRN_ENABLE_URING)
     add_executable(luring_op_smoke_test
         unit/test_luring_op_smoke.cc
     )
@@ -529,10 +529,10 @@ if(COROPACT_ENABLE_URING)
 
     target_link_libraries(luring_op_smoke_test
         PRIVATE
-            coropact_luring
+            alyrn_luring
     )
 
-    target_compile_definitions(luring_op_smoke_test PRIVATE COROPACT_ENABLE_URING)
+    target_compile_definitions(luring_op_smoke_test PRIVATE ALYRN_ENABLE_URING)
 
     add_test(NAME luring_op_smoke_test COMMAND luring_op_smoke_test)
 
@@ -548,10 +548,10 @@ if(COROPACT_ENABLE_URING)
 
     target_link_libraries(luring_coro_smoke_test
         PRIVATE
-            coropact_luring
+            alyrn_luring
     )
 
-    target_compile_definitions(luring_coro_smoke_test PRIVATE COROPACT_ENABLE_URING)
+    target_compile_definitions(luring_coro_smoke_test PRIVATE ALYRN_ENABLE_URING)
 
     add_test(NAME luring_coro_smoke_test COMMAND luring_coro_smoke_test)
 
@@ -567,10 +567,10 @@ if(COROPACT_ENABLE_URING)
 
     target_link_libraries(luring_timer_smoke_test
         PRIVATE
-            coropact_luring
+            alyrn_luring
     )
 
-    target_compile_definitions(luring_timer_smoke_test PRIVATE COROPACT_ENABLE_URING)
+    target_compile_definitions(luring_timer_smoke_test PRIVATE ALYRN_ENABLE_URING)
 
     add_test(NAME luring_timer_smoke_test COMMAND luring_timer_smoke_test)
 
@@ -586,10 +586,10 @@ if(COROPACT_ENABLE_URING)
 
     target_link_libraries(luring_connector_smoke_test
         PRIVATE
-            coropact_luring
+            alyrn_luring
     )
 
-    target_compile_definitions(luring_connector_smoke_test PRIVATE COROPACT_ENABLE_URING)
+    target_compile_definitions(luring_connector_smoke_test PRIVATE ALYRN_ENABLE_URING)
 
     add_test(NAME luring_connector_smoke_test COMMAND luring_connector_smoke_test)
 
@@ -605,10 +605,10 @@ if(COROPACT_ENABLE_URING)
 
     target_link_libraries(luring_stream_smoke_test
         PRIVATE
-            coropact_luring
+            alyrn_luring
     )
 
-    target_compile_definitions(luring_stream_smoke_test PRIVATE COROPACT_ENABLE_URING)
+    target_compile_definitions(luring_stream_smoke_test PRIVATE ALYRN_ENABLE_URING)
 
     add_test(NAME luring_stream_smoke_test COMMAND luring_stream_smoke_test)
 
@@ -624,10 +624,10 @@ if(COROPACT_ENABLE_URING)
 
     target_link_libraries(luring_move_smoke_test
         PRIVATE
-            coropact_luring
+            alyrn_luring
     )
 
-    target_compile_definitions(luring_move_smoke_test PRIVATE COROPACT_ENABLE_URING)
+    target_compile_definitions(luring_move_smoke_test PRIVATE ALYRN_ENABLE_URING)
 
     add_test(NAME luring_move_smoke_test COMMAND luring_move_smoke_test)
 
@@ -643,10 +643,10 @@ if(COROPACT_ENABLE_URING)
 
     target_link_libraries(luring_listener_smoke_test
         PRIVATE
-            coropact_luring
+            alyrn_luring
     )
 
-    target_compile_definitions(luring_listener_smoke_test PRIVATE COROPACT_ENABLE_URING)
+    target_compile_definitions(luring_listener_smoke_test PRIVATE ALYRN_ENABLE_URING)
 
     add_test(NAME luring_listener_smoke_test COMMAND luring_listener_smoke_test)
 
@@ -662,12 +662,12 @@ if(COROPACT_ENABLE_URING)
 
     target_link_libraries(luring_multishot_accept_smoke_test
         PRIVATE
-            coropact_luring
+            alyrn_luring
     )
 
     target_compile_definitions(luring_multishot_accept_smoke_test
         PRIVATE
-            COROPACT_ENABLE_URING
+            ALYRN_ENABLE_URING
     )
 
     add_test(NAME luring_multishot_accept_smoke_test
@@ -686,10 +686,10 @@ if(COROPACT_ENABLE_URING)
 
     target_link_libraries(luring_recv_source_smoke_test
         PRIVATE
-            coropact_luring
+            alyrn_luring
     )
 
-    target_compile_definitions(luring_recv_source_smoke_test PRIVATE COROPACT_ENABLE_URING)
+    target_compile_definitions(luring_recv_source_smoke_test PRIVATE ALYRN_ENABLE_URING)
 
     add_test(NAME luring_recv_source_smoke_test
         COMMAND luring_recv_source_smoke_test
@@ -707,10 +707,10 @@ if(COROPACT_ENABLE_URING)
 
     target_link_libraries(luring_send_zc_smoke_test
         PRIVATE
-            coropact_luring
+            alyrn_luring
     )
 
-    target_compile_definitions(luring_send_zc_smoke_test PRIVATE COROPACT_ENABLE_URING)
+    target_compile_definitions(luring_send_zc_smoke_test PRIVATE ALYRN_ENABLE_URING)
 
     add_test(NAME luring_send_zc_smoke_test
         COMMAND luring_send_zc_smoke_test
@@ -728,10 +728,10 @@ if(COROPACT_ENABLE_URING)
 
     target_link_libraries(luring_worker_group_smoke_test
         PRIVATE
-            coropact_luring
+            alyrn_luring
     )
 
-    target_compile_definitions(luring_worker_group_smoke_test PRIVATE COROPACT_ENABLE_URING)
+    target_compile_definitions(luring_worker_group_smoke_test PRIVATE ALYRN_ENABLE_URING)
 
     add_test(NAME luring_worker_group_smoke_test COMMAND luring_worker_group_smoke_test)
 
@@ -747,10 +747,10 @@ if(COROPACT_ENABLE_URING)
 
     target_link_libraries(luring_server_smoke_test
         PRIVATE
-            coropact_luring
+            alyrn_luring
     )
 
-    target_compile_definitions(luring_server_smoke_test PRIVATE COROPACT_ENABLE_URING)
+    target_compile_definitions(luring_server_smoke_test PRIVATE ALYRN_ENABLE_URING)
 
     add_test(NAME luring_server_smoke_test COMMAND luring_server_smoke_test)
 
@@ -766,10 +766,10 @@ if(COROPACT_ENABLE_URING)
 
     target_link_libraries(luring_single_shot_echo_smoke_test
         PRIVATE
-            coropact_luring
+            alyrn_luring
     )
 
-    target_compile_definitions(luring_single_shot_echo_smoke_test PRIVATE COROPACT_ENABLE_URING)
+    target_compile_definitions(luring_single_shot_echo_smoke_test PRIVATE ALYRN_ENABLE_URING)
 
     add_test(NAME luring_single_shot_echo_smoke_test
         COMMAND luring_single_shot_echo_smoke_test
@@ -790,7 +790,7 @@ target_include_directories(epoll_poller_smoke_test
 
 target_link_libraries(epoll_poller_smoke_test
     PRIVATE
-        coropact_reactor
+        alyrn_reactor
 )
 
 add_test(NAME epoll_poller_smoke_test COMMAND epoll_poller_smoke_test)
@@ -806,7 +806,7 @@ target_include_directories(net_move_smoke_test
 
 target_link_libraries(net_move_smoke_test
     PRIVATE
-        coropact_reactor
+        alyrn_reactor
 )
 
 add_test(NAME net_move_smoke_test COMMAND net_move_smoke_test)
@@ -822,7 +822,7 @@ target_include_directories(reactor_loop_smoke_test
 
 target_link_libraries(reactor_loop_smoke_test
     PRIVATE
-        coropact_reactor
+        alyrn_reactor
 )
 
 add_test(NAME reactor_loop_smoke_test COMMAND reactor_loop_smoke_test)
@@ -838,7 +838,7 @@ target_include_directories(timer_tree_smoke_test
 
 target_link_libraries(timer_tree_smoke_test
     PRIVATE
-        coropact_foundation
+        alyrn_foundation
 )
 
 add_test(NAME timer_tree_smoke_test COMMAND timer_tree_smoke_test)
@@ -854,7 +854,7 @@ target_include_directories(timer_index_smoke_test
 
 target_link_libraries(timer_index_smoke_test
     PRIVATE
-        coropact_foundation
+        alyrn_foundation
 )
 
 add_test(NAME timer_index_smoke_test COMMAND timer_index_smoke_test)
@@ -916,10 +916,10 @@ add_test(NAME intrusive_queue_smoke_test COMMAND intrusive_queue_smoke_test)
 
 # Exercises the kqueue backend's registration state machine on a non-kqueue
 # host. The kqueue sources are compiled directly into the test rather than
-# linked from coropact_kqueue, because that library only exists on a BSD or
+# linked from alyrn_kqueue, because that library only exists on a BSD or
 # Darwin host. support/kqueue_shim supplies the BSD declarations and
 # fake_kqueue.cc supplies kqueue()/kevent(), so nothing here reaches a kernel.
-if(COROPACT_ENABLE_KQUEUE_SHIM_TESTS)
+if(ALYRN_ENABLE_KQUEUE_SHIM_TESTS)
     add_executable(kqueue_oneshot_smoke_test
         unit/test_kqueue_oneshot_smoke.cc
         support/fake_kqueue.cc
@@ -944,9 +944,9 @@ if(COROPACT_ENABLE_KQUEUE_SHIM_TESTS)
 
     target_link_libraries(kqueue_oneshot_smoke_test
         PRIVATE
-            coropact_net
-            coropact_coro
-            coropact_foundation
+            alyrn_net
+            alyrn_coro
+            alyrn_foundation
             Threads::Threads
     )
 
@@ -959,17 +959,17 @@ find_package(GTest CONFIG QUIET)
 if(GTest_FOUND)
     include(GoogleTest)
 
-    add_executable(coropact_unit_tests
+    add_executable(alyrn_unit_tests
         unit/test_net_utils.cc
     )
 
-    target_link_libraries(coropact_unit_tests
+    target_link_libraries(alyrn_unit_tests
         PRIVATE
             GTest::gtest_main
-            coropact_net
+            alyrn_net
     )
 
-    gtest_discover_tests(coropact_unit_tests DISCOVERY_MODE PRE_TEST)
+    gtest_discover_tests(alyrn_unit_tests DISCOVERY_MODE PRE_TEST)
 
 else()
     message(STATUS "GTest not found; skipping gtest-based unit tests.")

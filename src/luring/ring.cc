@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "coropact/luring/detail/ring.h"
+#include "alyrn/luring/detail/ring.h"
 
 #include <liburing.h>
 #include <liburing/io_uring.h>
@@ -9,10 +9,10 @@
 #include <expected>
 #include <utility>
 
-#include "coropact/result.h"
-#include "coropact/luring/options.h"
+#include "alyrn/result.h"
+#include "alyrn/luring/options.h"
 
-namespace coropact::luring::detail {
+namespace alyrn::luring::detail {
 
 namespace {
 
@@ -70,7 +70,7 @@ Result<Ring> Ring::Create(const Options& options) noexcept {
 
   const int result = io_uring_queue_init_params(options.entries, &ring, &params);
   if (result < 0) {
-    return std::unexpected(coropact::NegErrno(result));
+    return std::unexpected(alyrn::NegErrno(result));
   }
 
   return Ring(ring);
@@ -86,4 +86,4 @@ Result<std::size_t> Ring::Submit() noexcept {
   return static_cast<std::size_t>(result);
 }
 
-}  // namespace coropact::luring::detail
+}  // namespace alyrn::luring::detail

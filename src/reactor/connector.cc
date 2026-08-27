@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "coropact/reactor/connector.h"
+#include "alyrn/reactor/connector.h"
 
 #include <sys/socket.h>
 #include <unistd.h>
@@ -10,19 +10,19 @@
 #include <optional>
 #include <utility>
 
-#include "coropact/backend/detail/value_result_state.h"
-#include "coropact/base/check.h"
-#include "coropact/net/endpoint.h"
-#include "coropact/net/socket.h"
-#include "coropact/net/tcp_options.h"
-#include "coropact/operation/detail/completion_gate.h"
-#include "coropact/operation/detail/scheduler_continuation.h"
-#include "coropact/operation/detail/single_result_lifecycle.h"
-#include "coropact/reactor/detail/channel.h"
-#include "coropact/reactor/detail/loop_access.h"
-#include "coropact/result.h"
+#include "alyrn/backend/detail/value_result_state.h"
+#include "alyrn/base/check.h"
+#include "alyrn/net/endpoint.h"
+#include "alyrn/net/socket.h"
+#include "alyrn/net/tcp_options.h"
+#include "alyrn/operation/detail/completion_gate.h"
+#include "alyrn/operation/detail/scheduler_continuation.h"
+#include "alyrn/operation/detail/single_result_lifecycle.h"
+#include "alyrn/reactor/detail/channel.h"
+#include "alyrn/reactor/detail/loop_access.h"
+#include "alyrn/result.h"
 
-namespace coropact::reactor {
+namespace alyrn::reactor {
 namespace {
 
 using namespace detail;
@@ -43,7 +43,7 @@ public:
       : loop_(loop), peer_(peer), stream_options_(stream_options), tcp_options_(tcp_options) {}
 
   ~ConnectAwaiter() {
-    COROPACT_CHECK(!(channel_.has_value() && channel_->IsRegistered()),
+    ALYRN_CHECK(!(channel_.has_value() && channel_->IsRegistered()),
                    "ConnectAwaiter destroyed before its physical connect settled");
     if (shutdown_participant_.InList()) {
       LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
@@ -56,8 +56,8 @@ public:
   bool await_ready() const noexcept { return false; }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
-    COROPACT_CHECK(loop_ != nullptr, "ConnectAwaiter has no owner Loop");
-    COROPACT_CHECK(loop_->IsInLoopThread(), "ConnectAwaiter called from wrong Loop thread");
+    ALYRN_CHECK(loop_ != nullptr, "ConnectAwaiter has no owner Loop");
+    ALYRN_CHECK(loop_->IsInLoopThread(), "ConnectAwaiter called from wrong Loop thread");
     if (loop_->State() == backend::LoopState::kStopping ||
         loop_->State() == backend::LoopState::kStopped) {
       CompleteInline(std::unexpected(Errno(ECANCELED)));
@@ -132,8 +132,8 @@ private:
 
   void CompleteInline(Result<Stream> result) noexcept {
     result_.SetResult(std::move(result));
-    COROPACT_CHECK(lifecycle_.TryAuthorizeResult(), "Reactor Connect result was authorized twice");
-    COROPACT_CHECK(lifecycle_.TryAuthorizeRelease(),
+    ALYRN_CHECK(lifecycle_.TryAuthorizeResult(), "Reactor Connect result was authorized twice");
+    ALYRN_CHECK(lifecycle_.TryAuthorizeRelease(),
                    "Reactor Connect release was not authorized after its result");
     ReleasePhysicalRequest();
   }
@@ -143,10 +143,10 @@ private:
       return;
     }
     result_.SetResult(std::move(result));
-    COROPACT_CHECK(lifecycle_.TryAuthorizeRelease(),
+    ALYRN_CHECK(lifecycle_.TryAuthorizeRelease(),
                    "Reactor Connect release was not authorized after its result");
     ReleasePhysicalRequest();
-    COROPACT_CHECK(lifecycle_.TryAuthorizeContinuation(),
+    ALYRN_CHECK(lifecycle_.TryAuthorizeContinuation(),
                    "Reactor Connect continuation was not authorized after release");
     continuation_.Schedule();
   }
@@ -200,8 +200,8 @@ public:
   bool await_ready() const noexcept { return delay_ <= time::Duration::zero(); }
 
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
-    COROPACT_CHECK(loop_ != nullptr, "SleepAwaiter has no owner Loop");
-    COROPACT_CHECK(loop_->IsInLoopThread(), "SleepAwaiter called from wrong Loop thread");
+    ALYRN_CHECK(loop_ != nullptr, "SleepAwaiter has no owner Loop");
+    ALYRN_CHECK(loop_->IsInLoopThread(), "SleepAwaiter called from wrong Loop thread");
     if (loop_->State() == backend::LoopState::kStopping ||
         loop_->State() == backend::LoopState::kStopped) {
       (void)(completion_gate_.TryComplete());
@@ -250,8 +250,8 @@ private:
 
 Connector::Connector(Loop* loop, ConnectorOptions options) noexcept
     : loop_(loop), options_(options) {
-  COROPACT_CHECK(loop_ != nullptr, "Connector: loop must not be null");
-  COROPACT_CHECK(loop_->IsInLoopThread(), "Connector created from wrong Loop thread");
+  ALYRN_CHECK(loop_ != nullptr, "Connector: loop must not be null");
+  ALYRN_CHECK(loop_->IsInLoopThread(), "Connector created from wrong Loop thread");
 }
 
 [[nodiscard]]
@@ -291,8 +291,8 @@ coro::Task<void> Connector::SleepFor(time::Duration delay) {
 }
 
 void Connector::RequireOwnerLoop() const noexcept {
-  COROPACT_CHECK(loop_ != nullptr, "Connector operation has no owner Loop");
-  COROPACT_CHECK(loop_->IsInLoopThread(), "Connector operation called from wrong Loop thread");
+  ALYRN_CHECK(loop_ != nullptr, "Connector operation has no owner Loop");
+  ALYRN_CHECK(loop_->IsInLoopThread(), "Connector operation called from wrong Loop thread");
 }
 
-}  // namespace coropact::reactor
+}  // namespace alyrn::reactor

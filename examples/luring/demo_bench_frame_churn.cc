@@ -15,20 +15,20 @@
 #include <cstdlib>
 #include <optional>
 
-#include "coropact/coro/detached_task.h"
-#include "coropact/coro/frame_allocator.h"
-#include "coropact/coro/spawn.h"
-#include "coropact/coro/work.h"
-#include "coropact/luring/loop.h"
-#include "coropact/luring/options.h"
+#include "alyrn/coro/detached_task.h"
+#include "alyrn/coro/frame_allocator.h"
+#include "alyrn/coro/spawn.h"
+#include "alyrn/coro/work.h"
+#include "alyrn/luring/loop.h"
+#include "alyrn/luring/options.h"
 
 namespace {
 
-using coropact::coro::DetachedTask;
-using coropact::coro::ResumeWork;
-using coropact::coro::Scheduler;
-using coropact::coro::SpawnDetach;
-using coropact::luring::Loop;
+using alyrn::coro::DetachedTask;
+using alyrn::coro::ResumeWork;
+using alyrn::coro::Scheduler;
+using alyrn::coro::SpawnDetach;
+using alyrn::luring::Loop;
 
 [[nodiscard]]
 std::uint64_t EnvU64(const char* key, std::uint64_t fallback) {
@@ -98,13 +98,13 @@ int main() {
     return 2;
   }
 
-  std::optional<coropact::coro::CoroFramePoolResource> pool;
+  std::optional<alyrn::coro::CoroFramePoolResource> pool;
   if (use_pool) {
     pool.emplace();
   }
 
   Loop loop{use_pool ? &*pool : nullptr};
-  coropact::luring::Options options;
+  alyrn::luring::Options options;
   options.entries = 256;
   options.shared_buffer_capacity = 0;
   auto initialized = loop.Init(options);

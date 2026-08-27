@@ -9,7 +9,7 @@ auto main() -> int {
  \____\___/|_|  \___/|_|   \__,_|\___|\__|
 )logo");
 
-  std::println("CoroPact is working now.");
-  std::println("Welcome to CoroPact.");
+  std::println("Alyrn is working now.");
+  std::println("Welcome to Alyrn.");
   return 0;
 }

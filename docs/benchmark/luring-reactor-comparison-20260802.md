@@ -1,6 +1,6 @@
-# CoroPact luring 与 Reactor 独立对比
+# Alyrn luring 与 Reactor 独立对比
 
-本报告记录 2026-08-02 对 CoroPact `src/luring` 和 `src/reactor` 两个网络后端的统一 HTTP 压测。本文专门修正一个容易误解的地方：`LT/ET` 是 Reactor 的 epoll readiness 触发模式，luring 不存在 LT/ET 两条路径。
+本报告记录 2026-08-02 对 Alyrn `src/luring` 和 `src/reactor` 两个网络后端的统一 HTTP 压测。本文专门修正一个容易误解的地方：`LT/ET` 是 Reactor 的 epoll readiness 触发模式，luring 不存在 LT/ET 两条路径。
 
 ## 两个模块的测试对象
 
@@ -82,7 +82,7 @@ luring 使用 io_uring 的 SQE/CQE 完成路径，由每个 worker 独占自己�
 
 ## 原始结果
 
-- ET 批次：`/tmp/coropact-luring-reactor-20260802-et-entries1024/`
-- LT 批次：`/tmp/coropact-luring-reactor-20260802-lt-entries1024/`
+- ET 批次：`/tmp/alyrn-luring-reactor-20260802-et-entries1024/`
+- LT 批次：`/tmp/alyrn-luring-reactor-20260802-lt-entries1024/`
 
 临时目录不纳入仓库；本文件保留汇总数据和可复核的测试口径。
