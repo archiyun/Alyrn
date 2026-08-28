@@ -90,7 +90,6 @@ nav:
                 - Intrusive 模型与契约: design/zh-CN/datastructure/intrusive-model.md
           - ADR:
                 - intrusive rbtree timer: adr/0001-intrusive-rbtree-timer.md
-                - intrusive quad heap: adr/0003-intrusive-quad-heap.md
                 - timer index strategy: adr/0011-timer-index-strategy.md
     - 验证与发布:
           - 基准:

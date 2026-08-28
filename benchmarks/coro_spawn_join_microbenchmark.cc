@@ -34,7 +34,7 @@
 #include <string_view>
 #include <utility>
 
-#include "alyrn/coro/detail/spawn_stats.h"
+#include "alyrn/detail/coro/spawn_stats.h"
 #include "alyrn/coro/frame_allocator.h"
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/spawn.h"
