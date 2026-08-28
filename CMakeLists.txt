@@ -11,20 +11,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-option(BUILD_TESTS "Build tests" ON)
-option(BUILD_EXAMPLES "Build example programs" ON)
-option(BUILD_BENCHMARKS "Build standalone microbenchmarks" OFF)
-option(BUILD_FUZZERS "Build libFuzzer targets (requires Clang)" OFF)
-option(ALYRN_ENABLE_URING "Enable io_uring proactor backend (requires liburing, Linux 5.19+)" OFF)
-option(ALYRN_ENABLE_KQUEUE "Enable kqueue readiness backend (requires a BSD kqueue host)" OFF)
-option(ALYRN_ENABLE_KQUEUE_SHIM_TESTS
-       "Build kqueue backend tests against an in-memory kqueue shim (developer aid, no BSD host)"
-       OFF)
-option(ALYRN_STRICT_WARNINGS
-       "Treat common GCC/Clang warnings as errors for Alyrn sources" OFF)
-
-find_package(Threads REQUIRED)
-
 set(ALYRN_HAS_EPOLL OFF)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(ALYRN_HAS_EPOLL ON)
@@ -34,6 +20,20 @@ set(ALYRN_HAS_KQUEUE OFF)
 if(CMAKE_SYSTEM_NAME MATCHES "^(FreeBSD|NetBSD|OpenBSD|Darwin)$")
     set(ALYRN_HAS_KQUEUE ON)
 endif()
+
+option(BUILD_TESTS "Build tests" ON)
+option(BUILD_EXAMPLES "Build example programs" ON)
+option(BUILD_BENCHMARKS "Build standalone microbenchmarks" OFF)
+option(BUILD_FUZZERS "Build libFuzzer targets (requires Clang)" OFF)
+option(ALYRN_ENABLE_URING "Enable io_uring proactor backend (requires liburing, Linux 5.19+)" OFF)
+option(ALYRN_ENABLE_KQUEUE "Enable kqueue readiness backend (requires a BSD kqueue host)" ${ALYRN_HAS_KQUEUE})
+option(ALYRN_ENABLE_KQUEUE_SHIM_TESTS
+       "Build kqueue backend tests against an in-memory kqueue shim (developer aid, no BSD host)"
+       OFF)
+option(ALYRN_STRICT_WARNINGS
+       "Treat common GCC/Clang warnings as errors for Alyrn sources" OFF)
+
+find_package(Threads REQUIRED)
 
 if(ALYRN_ENABLE_URING AND NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
     message(FATAL_ERROR "ALYRN_ENABLE_URING requires Linux")

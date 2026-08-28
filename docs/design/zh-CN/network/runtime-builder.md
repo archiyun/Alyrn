@@ -9,6 +9,30 @@
 它不是新的统一 I/O backend，也不取代 `epoll::Loop`、`uring::Loop` 或 `kqueue::Loop`。需要手动控制 loop、
 定时器、跨 worker mailbox/`Post` 或特殊资源生命周期时，仍应使用对应后端的原生公开类型。
 
+## Auto：平台默认 backend
+
+`runtime::Auto` 是编译期别名，不会在运行时探测或切换 backend：Linux 映射到 `runtime::Epoll`，
+Darwin/BSD 映射到 `runtime::Kqueue`。`io_uring` 仍需显式选择，因为它依赖额外的库、内核能力和
+不同的 I/O capability。
+
+根据目标平台包含对应的 backend umbrella 后，即可使用相同的 Builder 入口：
+
+```cpp
+#include <alyrn/epoll.h>   // Linux；Darwin/BSD 使用 <alyrn/kqueue.h>
+
+auto runtime = alyrn::Runtime::Builder<alyrn::runtime::Auto>{
+                   alyrn::net::Endpoint::Any(8080)}
+                   .AutoWorkers()
+                   .OnConnection([](auto stream) -> alyrn::DetachedTask {
+                     // 使用跨 backend 的 stream 操作
+                     co_return;
+                   })
+                   .Build();
+```
+
+在支持 kqueue 的 Darwin/BSD 主机上，CMake 默认启用 kqueue；也可以继续通过
+`-DALYRN_ENABLE_KQUEUE=ON/OFF` 显式控制构建。
+
 ## Epoll
 
 ```cpp
@@ -140,10 +164,10 @@ Start() -> wait stop_token or RequestStop() -> Stop() -> drain and join -> retur
 
 ## 默认短路径
 
-不需要显式 worker 配置的服务可以直接选择 backend：
+不需要显式 worker 配置的服务可以省略 backend template 参数，使用平台默认 backend：
 
 ```cpp
-auto runtime = alyrn::Runtime::Create<alyrn::runtime::Epoll>(
+auto runtime = alyrn::Runtime::Create(
     alyrn::net::Endpoint::Any(8080),
     [](auto stream) -> alyrn::DetachedTask {
       // stream 的静态类型仍是 epoll::Stream。
@@ -151,10 +175,11 @@ auto runtime = alyrn::Runtime::Create<alyrn::runtime::Epoll>(
     });
 ```
 
+此调用等价于 `Create<runtime::Auto>`，即 Linux 选择 Epoll、Darwin/BSD 选择 Kqueue。
 `Create` 等价于对应 `Builder` 的默认配置加 `OnConnection`；它仍返回同一个
-`alyrn::Runtime`。选择 `runtime::Uring` 或 `runtime::Kqueue` 时，handler 中的
-`stream` 静态类型相应为 `uring::Stream` 或 `kqueue::Stream`，没有虚调用或类型擦除进入
-连接数据路径。
+`alyrn::Runtime`。需要指定后端时可以显式写 `Create<runtime::Uring>` 或
+`Create<runtime::Epoll>`，此时 handler 中的
+`stream` 静态类型相应为所选 backend 的 `Stream`，没有虚调用或类型擦除进入连接数据路径。
 
 ## 为什么不做 C++ 宏
 

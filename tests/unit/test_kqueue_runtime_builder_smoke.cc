@@ -110,6 +110,13 @@ coro::DetachedTask HandleKqueue(kqueue::Stream) { co_return; }
 static_assert(std::same_as<decltype(Runtime::Create<runtime::Kqueue>(
                               net::Endpoint::Loopback(0), HandleKqueue)),
                            Runtime>);
+static_assert(std::same_as<runtime::Auto, runtime::Kqueue>);
+static_assert(std::same_as<decltype(Runtime::Create(
+                              net::Endpoint::Loopback(0), HandleKqueue)),
+                           Runtime>);
+static_assert(std::same_as<decltype(Runtime::Create<runtime::Auto>(
+                              net::Endpoint::Loopback(0), HandleKqueue)),
+                           Runtime>);
 
 bool CheckKqueueRuntime() {
   auto missing_handler = Runtime::Builder<runtime::Kqueue>{net::Endpoint::Loopback(0)}

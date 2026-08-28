@@ -112,6 +112,13 @@ coro::DetachedTask HandleEpoll(epoll::Stream) { co_return; }
 static_assert(std::same_as<decltype(Runtime::Create<runtime::Epoll>(
                               net::Endpoint::Loopback(0), HandleEpoll)),
                            Runtime>);
+static_assert(std::same_as<runtime::Auto, runtime::Epoll>);
+static_assert(std::same_as<decltype(Runtime::Create(
+                              net::Endpoint::Loopback(0), HandleEpoll)),
+                           Runtime>);
+static_assert(std::same_as<decltype(Runtime::Create<runtime::Auto>(
+                              net::Endpoint::Loopback(0), HandleEpoll)),
+                           Runtime>);
 
 bool CheckEpollRuntime() {
   auto missing_handler = Runtime::Builder<runtime::Epoll>{net::Endpoint::Loopback(0)}

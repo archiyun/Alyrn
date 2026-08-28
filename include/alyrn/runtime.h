@@ -16,6 +16,17 @@ struct Epoll final {};
 struct Uring final {};
 struct Kqueue final {};
 
+// Selects the platform-native default backend at compile time. io_uring stays
+// explicit because its availability and semantics are capability-dependent.
+#if defined(__linux__)
+using Auto = Epoll;
+#elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || \
+    defined(__OpenBSD__)
+using Auto = Kqueue;
+#else
+#error "Alyrn has no default runtime backend for this platform"
+#endif
+
 }  // namespace alyrn::runtime
 
 namespace alyrn::detail::runtime {
@@ -75,9 +86,10 @@ public:
     return control_->Started();
   }
 
-  // Default startup path. It deliberately leaves backend selection explicit,
-  // while avoiding a Builder for applications that accept default settings.
-  template <class Backend, class Handler>
+  // Default startup path. Omitting Backend selects the platform-native
+  // runtime::Auto backend; an explicit backend remains available when the
+  // application needs a specific capability profile.
+  template <class Backend = runtime::Auto, class Handler>
   [[nodiscard]]
   static Runtime Create(net::Endpoint listen_addr, Handler&& handler) {
     return Builder<Backend>{listen_addr}.OnConnection(std::forward<Handler>(handler)).Build();
