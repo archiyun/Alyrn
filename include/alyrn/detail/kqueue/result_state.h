@@ -7,7 +7,7 @@
 #include <system_error>
 #include <utility>
 
-#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/result.h"
 
 namespace alyrn::kqueue::detail {
@@ -20,7 +20,6 @@ class IoResultState {
 public:
   static constexpr std::int64_t kPending = std::numeric_limits<std::int64_t>::min();
 
-  [[nodiscard]]
   bool HasResult() const noexcept {
     return encoded_ != kPending;
   }
@@ -49,7 +48,6 @@ public:
     }
   }
 
-  [[nodiscard]]
   Result<std::size_t> Take() noexcept {
     ALYRN_CHECK(HasResult(), "IoResultState result was taken before completion");
     const std::int64_t encoded = std::exchange(encoded_, kPending);

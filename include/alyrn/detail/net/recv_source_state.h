@@ -19,7 +19,6 @@ using RecvSourceState = SourceState;
  */
 class RecvSourceStateMachine final {
 public:
-  [[nodiscard]]
   static Result<RecvSourceStateMachine> Create(RecvSourceOptions options) noexcept {
     if (!options.Valid()) {
       return std::unexpected(Errno(EINVAL));
@@ -27,7 +26,6 @@ public:
     return RecvSourceStateMachine(options);
   }
 
-  [[nodiscard]]
   Result<void> Start() noexcept {
     if (state_ != RecvSourceState::kIdle) {
       return std::unexpected(Errno(EALREADY));
@@ -36,7 +34,6 @@ public:
     return {};
   }
 
-  [[nodiscard]]
   bool TryArm() noexcept {
     if (!CanArm()) {
       return false;
@@ -45,7 +42,6 @@ public:
     return true;
   }
 
-  [[nodiscard]]
   Result<void> RequestPause() noexcept {
     if (state_ == RecvSourceState::kTerminal || state_ == RecvSourceState::kDraining ||
         state_ == RecvSourceState::kStopping || state_ == RecvSourceState::kPausing ||
@@ -61,7 +57,6 @@ public:
     return {};
   }
 
-  [[nodiscard]]
   bool TryResume() noexcept {
     if (state_ != RecvSourceState::kPaused || queued_events_ > options_.ResumeThreshold()) {
       return false;
@@ -70,7 +65,6 @@ public:
     return true;
   }
 
-  [[nodiscard]]
   Result<void> CompleteMultishotEvent(EventDisposition event,
                                       MultishotRequestDisposition request) noexcept {
     if (armed_requests_ == 0) {
@@ -98,7 +92,6 @@ public:
     return {};
   }
 
-  [[nodiscard]]
   bool AcquireEvent() noexcept {
     if (queued_events_ == 0) {
       return false;
@@ -110,7 +103,6 @@ public:
     return true;
   }
 
-  [[nodiscard]]
   bool DiscardQueuedEvent() noexcept {
     if (queued_events_ == 0) {
       return false;
@@ -122,7 +114,6 @@ public:
     return true;
   }
 
-  [[nodiscard]]
   bool ReleaseLease() noexcept {
     if (outstanding_leases_ == 0) {
       return false;
@@ -134,7 +125,6 @@ public:
     return true;
   }
 
-  [[nodiscard]]
   Result<void> RequestStop() noexcept {
     if (state_ == RecvSourceState::kTerminal || state_ == RecvSourceState::kDraining ||
         state_ == RecvSourceState::kStopping) {
@@ -151,45 +141,37 @@ public:
     return {};
   }
 
-  [[nodiscard]]
   RecvSourceState State() const noexcept {
     return state_;
   }
 
-  [[nodiscard]]
   const RecvSourceOptions& Options() const noexcept {
     return options_;
   }
 
-  [[nodiscard]]
   std::size_t QueuedEvents() const noexcept {
     return queued_events_;
   }
 
-  [[nodiscard]]
   std::size_t ArmedRequests() const noexcept {
     return armed_requests_;
   }
 
-  [[nodiscard]]
   std::size_t OutstandingLeases() const noexcept {
     return outstanding_leases_;
   }
 
-  [[nodiscard]]
   bool CanArm() const noexcept {
     return state_ == RecvSourceState::kActive && armed_requests_ < options_.pending_depth &&
            CanQueueEvent() && outstanding_leases_ + armed_requests_ < options_.buffer_capacity;
   }
 
-  [[nodiscard]]
   bool CanQueueEvent() const noexcept {
     return queued_events_ < options_.event_capacity &&
            outstanding_leases_ < options_.buffer_capacity;
   }
 
 private:
-  [[nodiscard]]
   bool CanDeliverEvent() const noexcept {
     return outstanding_leases_ < options_.buffer_capacity;
   }

@@ -17,7 +17,7 @@
 #include "alyrn/uring/loop.h"
 #include "alyrn/uring/options.h"
 #include "alyrn/net/endpoint.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::uring::detail {
 
@@ -73,11 +73,9 @@ public:
                ThreadExitCallback exit_callback = {});
   ~Worker() noexcept;
 
-  [[nodiscard]]
   Result<void> Start();
   void Stop() noexcept;
 
-  [[nodiscard]]
   std::size_t Index() const noexcept { return index_; }
 
 private:

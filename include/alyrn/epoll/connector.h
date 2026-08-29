@@ -4,14 +4,15 @@
 #include <cstdint>
 #include <string_view>
 
-#include "alyrn/result.h"
-#include "alyrn/task.h"
-#include "alyrn/net/endpoint.h"
-#include "alyrn/net/tcp_options.h"
+#include "alyrn/backend/async_connector.h"
+#include "alyrn/detail/macros.h"
 #include "alyrn/epoll/loop.h"
 #include "alyrn/epoll/stream.h"
+#include "alyrn/net/endpoint.h"
+#include "alyrn/net/tcp_options.h"
+#include "alyrn/result.h"
+#include "alyrn/task.h"
 #include "alyrn/time/clock.h"
-#include "alyrn/detail/utils/macros.h"
 
 namespace alyrn::epoll {
 
@@ -28,8 +29,7 @@ public:
   using StreamType = Stream;
 
   [[nodiscard]]
-  static Result<Connector> Create(Loop* loop,
-                                               ConnectorOptions options = {}) noexcept;
+  static Result<Connector> Create(Loop* loop, ConnectorOptions options = {}) noexcept;
 
   explicit Connector(Loop* loop, ConnectorOptions options = {}) noexcept;
 
@@ -38,9 +38,9 @@ public:
 
   // Connect is loop-affine. Independent calls may be pending concurrently;
   // each call owns its socket, Channel, result, and continuation.
-  ::alyrn::Task<Result<Stream>> Connect(net::Endpoint peer);
-  ::alyrn::Task<Result<Stream>> Connect(std::string_view host, std::uint16_t port);
-  ::alyrn::Task<void> SleepFor(time::Duration delay);
+  Task<Result<Stream>> Connect(net::Endpoint peer);
+  Task<Result<Stream>> Connect(std::string_view host, std::uint16_t port);
+  Task<void> SleepFor(time::Duration delay);
 
 private:
   void RequireOwnerLoop() const noexcept;
@@ -48,5 +48,7 @@ private:
   Loop* loop_;
   ConnectorOptions options_;
 };
+
+static_assert(backend::AsyncConnector<Connector>);
 
 }  // namespace alyrn::epoll

@@ -19,7 +19,6 @@ public:
   QueueNode(QueueNode&&) = delete;
   QueueNode& operator=(QueueNode&&) = delete;
 
-  [[nodiscard]]
   bool InQueue() const noexcept {
     return next_ != nullptr;
   }
@@ -67,7 +66,6 @@ public:
 
   ~IntrusiveQueue() { Clear(); }
 
-  [[nodiscard]]
   bool Empty() const noexcept {
     return head_.next_ == &head_;
   }

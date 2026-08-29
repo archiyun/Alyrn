@@ -8,8 +8,8 @@
 #include <optional>
 #include <vector>
 
-#include "alyrn/detail/backend/value_result_state.h"
-#include "alyrn/io/recv_source.h"
+#include "alyrn/backend/value_result_state.h"
+#include "alyrn/backend/recv_source.h"
 #include "alyrn/result.h"
 #include "alyrn/task.h"
 #include "alyrn/net/recv_source.h"
@@ -18,7 +18,7 @@
 #include "alyrn/detail/kqueue/channel.h"
 #include "alyrn/detail/kqueue/loop_shutdown.h"
 #include "alyrn/kqueue/loop.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::kqueue {
 
@@ -38,12 +38,12 @@ public:
   ALYRN_DELETE_COPY(RecvSource);
 
   using Event = net::RecvEvent;
-  using NextResult = alyrn::Result<std::optional<Event>>;
+  using NextResult = Result<std::optional<Event>>;
 
   // Direct awaiter for the single-consumer receive loop. It keeps Next() on
   // the caller's coroutine frame, matching the uring source path and
   // avoiding a child Task frame for every event.
-  class NextAwaiter {
+  class [[nodiscard]] NextAwaiter {
   public:
     explicit NextAwaiter(RecvSource& source) noexcept : source_(&source) {}
 
@@ -59,7 +59,7 @@ public:
     RecvSource* source_;
     ::alyrn::detail::operation::SchedulerContinuation continuation_;
     ::alyrn::detail::operation::CompletionGate completion_gate_;
-    ::alyrn::detail::backend::ValueResultState<std::optional<Event>> result_;
+    backend::ValueResultState<std::optional<Event>> result_;
   };
 
   [[nodiscard]]
@@ -71,7 +71,6 @@ public:
   RecvSource(RecvSource&& other) noexcept;
   RecvSource& operator=(RecvSource&& other) noexcept;
 
-  [[nodiscard]]
   NextAwaiter Next() noexcept {
     return NextAwaiter(*this);
   }
@@ -82,7 +81,7 @@ public:
   [[nodiscard]]
   Result<void> RequestStop() noexcept;
 
-  ::alyrn::Task<Result<void>> Stop();
+  Task<Result<void>> Stop();
 
 private:
   class StopAwaiter;
@@ -91,10 +90,8 @@ private:
                     std::size_t buffer_size, std::vector<std::byte> storage,
                     std::vector<std::uint32_t> available_buffers) noexcept;
 
-  [[nodiscard]]
   Result<void> Start() noexcept;
 
-  [[nodiscard]]
   Result<bool> BeginStop() noexcept;
 
   void EnsureAdmission() noexcept;
@@ -132,6 +129,6 @@ private:
   detail::LoopShutdownParticipant shutdown_participant_{this, &DispatchLoopStop};
 };
 
-static_assert(::alyrn::io::AsyncRecvSource<RecvSource>);
+static_assert(backend::AsyncRecvSource<RecvSource>);
 
 }  // namespace alyrn::kqueue

@@ -7,7 +7,7 @@
 #include <limits>
 #include <memory>
 
-#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/result.h"
 #include "alyrn/coro/work.h"
 #include "alyrn/detail/uring/reusable_completion_slot.h"
@@ -22,32 +22,26 @@ struct CompletionEvent {
   int result{0};
   std::uint32_t flags{0};
 
-  [[nodiscard]]
   bool More() const noexcept {
     return (flags & IORING_CQE_F_MORE) != 0;
   }
 
-  [[nodiscard]]
   bool Notification() const noexcept {
     return (flags & IORING_CQE_F_NOTIF) != 0;
   }
 
-  [[nodiscard]]
   bool BufferMore() const noexcept {
     return (flags & IORING_CQE_F_BUF_MORE) != 0;
   }
 
-  [[nodiscard]]
   bool HasSelectedBuffer() const noexcept {
     return (flags & IORING_CQE_F_BUFFER) != 0;
   }
 
-  [[nodiscard]]
   std::uint32_t SelectedBufferId() const noexcept {
     return flags >> IORING_CQE_BUFFER_SHIFT;
   }
 
-  [[nodiscard]]
   bool ZeroCopyWasCopied() const noexcept {
     return (static_cast<std::uint32_t>(result) & IORING_NOTIF_USAGE_ZC_COPIED) != 0;
   }
@@ -104,7 +98,6 @@ enum class OpKind : std::uint8_t {
   kCount,
 };
 
-[[nodiscard]]
 constexpr CompletionModel CompletionModelFor(OpKind kind) noexcept {
   switch (kind) {
     case OpKind::kAcceptSourceComplete:
@@ -138,7 +131,6 @@ constexpr CompletionModel CompletionModelFor(OpKind kind) noexcept {
 // operation-owned resource before their continuation runs. Some can publish
 // the CQE result directly, while others first refine it into a richer value
 // such as a connected stream.
-[[nodiscard]]
 constexpr bool UsesCoupledSingleResultLifecycle(OpKind kind) noexcept {
   switch (kind) {
     case OpKind::kReadComplete:
@@ -171,7 +163,6 @@ constexpr bool UsesCoupledSingleResultLifecycle(OpKind kind) noexcept {
 // await_resume(). Accept and Connect first convert a successful CQE into
 // Stream, so their adapters authorize result readiness after that
 // construction.
-[[nodiscard]]
 constexpr bool CqeResultDirectlyPublishesLogicalResult(OpKind kind) noexcept {
   switch (kind) {
     case OpKind::kReadComplete:
@@ -218,12 +209,10 @@ public:
     return *this;
   }
 
-  [[nodiscard]]
   bool HasValue() const noexcept {
     return encoded_ != kEmpty;
   }
 
-  [[nodiscard]]
   int operator*() const noexcept {
     ALYRN_CHECK(HasValue(), "CqeResult was read before completion");
     return static_cast<int>(encoded_);
@@ -251,7 +240,6 @@ public:
   // Records one physical CQE result. When the CQE is itself the logical
   // result, this also enters the coupled result-ready phase. Adapters such as
   // Connect first refine the CQE into a richer result, then authorize it.
-  [[nodiscard]]
   bool TryRecordCqeCompletion(int cqe_res) noexcept {
     if (!completion_slot_.TryComplete()) {
       return false;
@@ -268,7 +256,6 @@ public:
   // Some operation protocols have more than one CQE and keep their primary
   // result outside Op. They mark the operation terminal only after the
   // final CQE has been interpreted by the operation-specific handler.
-  [[nodiscard]]
   bool TryMarkCompletionWithoutCqeResult() noexcept {
     return completion_slot_.TryComplete();
   }
@@ -280,12 +267,10 @@ public:
     result = -error.value();
   }
 
-  [[nodiscard]]
   OpKind DispatchKind() const noexcept {
     return kind;
   }
 
-  [[nodiscard]]
   bool CqeCompletionRecorded() const noexcept {
     return completion_slot_.Completed();
   }
@@ -293,38 +278,32 @@ public:
   // The coupled lifecycle is intentionally separate from the reusable
   // physical completion slot. It does not govern composites, sources, close,
   // or split-release operations.
-  [[nodiscard]]
   bool TryAuthorizeCoupledResult() noexcept {
     ALYRN_CHECK(UsesCoupledSingleResultLifecycle(kind),
                    "result authorization requested for a non-coupled Uring operation");
     return single_result_lifecycle_.TryAuthorizeResult();
   }
 
-  [[nodiscard]]
   bool TryAuthorizeCoupledRelease() noexcept {
     ALYRN_CHECK(UsesCoupledSingleResultLifecycle(kind),
                    "release authorization requested for a non-coupled Uring operation");
     return single_result_lifecycle_.TryAuthorizeRelease();
   }
 
-  [[nodiscard]]
   bool TryAuthorizeCoupledContinuation() noexcept {
     ALYRN_CHECK(UsesCoupledSingleResultLifecycle(kind),
                    "continuation authorization requested for a non-coupled Uring operation");
     return single_result_lifecycle_.TryAuthorizeContinuation();
   }
 
-  [[nodiscard]]
   bool CoupledResultReady() const noexcept {
     return single_result_lifecycle_.ResultReady();
   }
 
-  [[nodiscard]]
   bool CoupledReleaseAuthorized() const noexcept {
     return single_result_lifecycle_.ReleaseAuthorized();
   }
 
-  [[nodiscard]]
   bool CoupledContinuationAuthorized() const noexcept {
     return single_result_lifecycle_.ContinuationAuthorized();
   }

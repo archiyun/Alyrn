@@ -16,12 +16,10 @@ namespace alyrn::uring::detail {
 // their respective lifecycle state machines.
 class ReusableCompletionSlot {
  public:
-  [[nodiscard]]
   bool TryComplete() noexcept {
     return completion_gate_->TryComplete();
   }
 
-  [[nodiscard]]
   bool Completed() const noexcept {
     return completion_gate_->Completed();
   }

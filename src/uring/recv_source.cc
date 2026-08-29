@@ -10,7 +10,7 @@
 #include <utility>
 #include <vector>
 
-#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/detail/uring/cancel_result.h"
 #include "alyrn/detail/uring/completion_dispatch.h"
 #include "alyrn/detail/uring/loop_access.h"
@@ -80,7 +80,7 @@ void RecvSource::NextAwaiter::Complete(NextResult result) noexcept {
   detail::LoopAccess::ScheduleCompletion(*source_->loop_, &resume_work_);
 }
 
-class RecvSource::StopAwaiter {
+class [[nodiscard]] RecvSource::StopAwaiter {
 public:
   explicit StopAwaiter(RecvSource& source) noexcept : source_(&source) {}
 

@@ -8,6 +8,6 @@
 
 namespace alyrn::io {
 
-using Buffer = ::alyrn::net::Buffer;
+using Buffer = net::Buffer;
 
 }  // namespace alyrn::io

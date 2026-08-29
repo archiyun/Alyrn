@@ -13,8 +13,8 @@
 #include <span>
 #include <utility>
 
-#include "alyrn/detail/backend/loop.h"
-#include "alyrn/detail/base/check.h"
+#include "alyrn/backend/loop.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/detail/uring/fd_close_convergence.h"
 #include "alyrn/detail/uring/loop_access.h"
 #include "alyrn/detail/uring/op.h"
@@ -53,8 +53,8 @@ Result<void> detail::StreamOperationSlot::Validate(Stream& stream,
                                                    StreamOperationDirection direction) noexcept {
   stream.RequireOwnerLoop();
 
-  const ::alyrn::detail::backend::LoopState loop_state = stream.loop_->State();
-  if (loop_state == ::alyrn::detail::backend::LoopState::kStopping || loop_state == ::alyrn::detail::backend::LoopState::kStopped) {
+  const backend::LoopState loop_state = stream.loop_->State();
+  if (loop_state == backend::LoopState::kStopping || loop_state == backend::LoopState::kStopped) {
     return std::unexpected(Errno(ECANCELED));
   }
 
@@ -301,7 +301,7 @@ void Stream::SendAwaiter::OnComplete(::alyrn::uring::detail::Op* op) noexcept {
 }
 
 // ----- CloseAwaiter ------
-class Stream::CloseAwaiter : public detail::OpHook<Stream::CloseAwaiter> {
+class [[nodiscard]] Stream::CloseAwaiter : public detail::OpHook<Stream::CloseAwaiter> {
   friend void detail::DispatchStreamCloseComplete(::alyrn::uring::detail::Op* op) noexcept;
 
 public:

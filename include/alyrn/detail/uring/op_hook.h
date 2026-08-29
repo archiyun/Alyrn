@@ -17,32 +17,26 @@ class OpHook : public Op {
 public:
   explicit OpHook(OpKind kind) noexcept { this->kind = kind; }
 
-  [[nodiscard]]
   Op* Operation() noexcept {
     return this;
   }
 
-  [[nodiscard]]
   const Op* Operation() const noexcept {
     return this;
   }
 
-  [[nodiscard]]
   TOwner* Owner() noexcept {
     return static_cast<TOwner*>(this);
   }
 
-  [[nodiscard]]
   const TOwner* Owner() const noexcept {
     return static_cast<const TOwner*>(this);
   }
 
-  [[nodiscard]]
   static TOwner* OwnerFrom(Op* op) noexcept {
     return static_cast<OpHook*>(op)->Owner();
   }
 
-  [[nodiscard]]
   static const TOwner* OwnerFrom(const Op* op) noexcept {
     return static_cast<const OpHook*>(op)->Owner();
   }

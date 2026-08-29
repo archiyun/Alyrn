@@ -10,14 +10,17 @@
 #include "alyrn/detail/time/timer.h"
 #include "alyrn/time/timer_id.h"
 #include "alyrn/detail/time/timer_index.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::kqueue::detail {
 
 class Poller;
 
-using ActiveTimerTable =
-    std::unordered_map<std::int64_t, ::alyrn::detail::time::Timer*>;
+using Timer = ::alyrn::detail::time::Timer;
+using TimerIndex = ::alyrn::detail::time::TimerIndex;
+using TimerIndexKind = ::alyrn::detail::time::TimerIndexKind;
+
+using ActiveTimerTable = std::unordered_map<std::int64_t, Timer*>;
 
 /*
  * User-space timer heap for one Loop, woken by a single EVFILT_TIMER.
@@ -35,10 +38,7 @@ public:
   using TimePoint = time::Deadline;
   using Duration = time::Duration;
 
-  explicit TimerQueue(
-      Poller& poller,
-      ::alyrn::detail::time::TimerIndexKind index =
-          ::alyrn::detail::time::TimerIndexKind::kRbTree);
+  explicit TimerQueue(Poller& poller, TimerIndexKind index = TimerIndexKind::kRbTree);
   ~TimerQueue();
 
   time::TimerId AddTimer(TimerCallback callback, TimePoint when, Duration interval);
@@ -52,11 +52,10 @@ private:
   void ArmKernel(TimePoint expiration);
 
   Poller* poller_;
-  ::alyrn::detail::time::TimerIndex timers_;
-  ::alyrn::detail::memory::ObjectPool<::alyrn::detail::time::Timer, kTimerQueueMax>
-      timer_pool_;
+  TimerIndex timers_;
+  ::alyrn::detail::memory::ObjectPool<Timer, kTimerQueueMax> timer_pool_;
   ActiveTimerTable active_timers_;
-  ::alyrn::detail::time::Timer* processing_timer_{nullptr};
+  Timer* processing_timer_{nullptr};
   bool processing_timer_cancelled_{false};
 };
 

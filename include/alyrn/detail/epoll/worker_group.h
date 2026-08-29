@@ -9,7 +9,7 @@
 
 #include "alyrn/result.h"
 #include "alyrn/detail/epoll/worker.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::epoll::detail {
 
@@ -37,23 +37,18 @@ public:
 
   ~WorkerGroup() noexcept;
 
-  [[nodiscard]]
   Result<void> Start();
 
   // Asks every worker loop to stop without joining its thread.
   void RequestStop() noexcept;
   void Stop() noexcept;
 
-  [[nodiscard]]
   bool Started() const noexcept { return started_; }
-  [[nodiscard]]
   std::size_t Size() const noexcept { return workers_.size(); }
 
-  [[nodiscard]]
   Worker* At(std::size_t index) noexcept {
     return index < workers_.size() ? workers_[index].get() : nullptr;
   }
-  [[nodiscard]]
   const Worker* At(std::size_t index) const noexcept {
     return index < workers_.size() ? workers_[index].get() : nullptr;
   }

@@ -4,11 +4,13 @@
 [README.zh-CN.md](https://github.com/archiyun/Alyrn/blob/main/README.zh-CN.md) 是使用入口；
 `CONTEXT.md` 是仅供本地开发使用的领域词汇，不属于仓库发布内容；
 [`SUBSYSTEMS.md`](SUBSYSTEMS.md)
-是模块依赖的规范。
+是模块依赖的规范；[C++ 书写规范](../.claude/rules/coding-style.md)
+覆盖 `auto` 等语义拼写规则。
 
 ## 先读
 
 - [Runtime 子系统边界](SUBSYSTEMS.md) — 分层与硬依赖规则
+- [C++ 书写规范](../.claude/rules/coding-style.md) — `auto` / `auto*` 与长限定名
 - [ADR](adr/) — 已接受的架构决策
 
 ## 网络

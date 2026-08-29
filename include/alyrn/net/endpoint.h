@@ -12,7 +12,7 @@
 #include <string_view>
 #include <system_error>
 
-#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/result.h"
 
 namespace alyrn::net {

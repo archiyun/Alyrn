@@ -9,7 +9,7 @@
 #include <expected>
 #include <utility>
 
-#include "alyrn/detail/backend/value_result_state.h"
+#include "alyrn/backend/value_result_state.h"
 #include "alyrn/result.h"
 #include "alyrn/detail/epoll/result_state.h"
 
@@ -87,7 +87,7 @@ struct LifetimeProbe {
 };
 
 void TakePendingValueState() {
-  ::alyrn::detail::backend::ValueResultState<LifetimeProbe> state;
+  ::alyrn::backend::ValueResultState<LifetimeProbe> state;
   (void)state.Take();
 }
 
@@ -101,7 +101,7 @@ bool TestResultStatesRejectInvalidTransitions() {
 }
 
 bool TestValueStateTakeDestroysActiveMember() {
-  using State = ::alyrn::detail::backend::ValueResultState<LifetimeProbe>;
+  using State = ::alyrn::backend::ValueResultState<LifetimeProbe>;
 
   LifetimeProbe::live_count = 0;
   State state;
@@ -126,7 +126,7 @@ bool TestValueStateTakeDestroysActiveMember() {
 }
 
 bool TestValueStateErrorCanBeReused() {
-  ::alyrn::detail::backend::ValueResultState<LifetimeProbe> state;
+  ::alyrn::backend::ValueResultState<LifetimeProbe> state;
 
   state.SetError(alyrn::Errno(ECANCELED));
   auto error = state.Take();

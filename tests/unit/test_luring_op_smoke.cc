@@ -11,7 +11,7 @@
 #include "alyrn/detail/uring/cancel_result.h"
 #include "alyrn/detail/uring/op.h"
 #include "alyrn/detail/uring/result_state.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace {
 

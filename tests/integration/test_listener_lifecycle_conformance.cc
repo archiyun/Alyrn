@@ -16,7 +16,7 @@
 #include <system_error>
 #include <utility>
 
-#include "alyrn/detail/backend/accept_source.h"
+#include "alyrn/backend/accept_source.h"
 #include "alyrn/result.h"
 #include "alyrn/coro/awaitable.h"
 #include "alyrn/coro/scheduler.h"
@@ -35,12 +35,12 @@ namespace {
 
 using VoidResult = alyrn::Result<void>;
 
-static_assert(::alyrn::detail::backend::AsyncAcceptSource<alyrn::epoll::AcceptSource>);
+static_assert(::alyrn::backend::AsyncAcceptSource<alyrn::epoll::AcceptSource>);
 static_assert(alyrn::coro::Awaiter<
               decltype(std::declval<alyrn::epoll::AcceptSource&>().Next())>);
 
 #if defined(ALYRN_ENABLE_URING)
-static_assert(::alyrn::detail::backend::AsyncAcceptSource<alyrn::uring::AcceptSource>);
+static_assert(::alyrn::backend::AsyncAcceptSource<alyrn::uring::AcceptSource>);
 static_assert(alyrn::coro::Awaiter<
               decltype(std::declval<alyrn::uring::AcceptSource&>().Next())>);
 #endif

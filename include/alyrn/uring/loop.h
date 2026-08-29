@@ -13,15 +13,13 @@
 #include <stop_token>
 #include <utility>
 
+#include "alyrn/backend/loop.h"
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/work.h"
-#include "alyrn/detail/backend/loop.h"
-#include "alyrn/detail/base/check.h"
-#include "alyrn/detail/base/current_thread.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/detail/uring/op.h"
 #include "alyrn/detail/uring/ring.h"
 #include "alyrn/detail/uring/sqe_prep.h"
-#include "alyrn/io/loop.h"
 #include "alyrn/result.h"
 #include "alyrn/time/clock.h"
 #include "alyrn/time/timer_id.h"
@@ -75,14 +73,12 @@ public:
   void RequestStop() noexcept;
 
   [[nodiscard]]
-  ::alyrn::io::LoopState State() const noexcept {
+  backend::LoopState State() const noexcept {
     return state_.load(std::memory_order_acquire);
   }
 
   [[nodiscard]]
-  bool IsInLoopThread() const noexcept {
-    return thread_id_ == ::alyrn::detail::CurrentThreadId();
-  }
+  bool IsInLoopThread() const noexcept;
 
   [[nodiscard]]
   Result<time::TimerId> RunAfter(time::Duration delay, std::function<void()> callback);
@@ -95,23 +91,15 @@ private:
   friend class detail::LoopAccess;
   friend class RecvSource;
 
-  [[nodiscard]]
-  int RingFd() const noexcept {
-    return ring_.Fd();
-  }
+  int RingFd() const noexcept { return ring_.Fd(); }
 
   // Internal wake polling is not part of the user-visible operation count.
-  [[nodiscard]]
   std::size_t PendingSubmitCount() const noexcept {
     return pending_submit_ - (wake_pending_ ? 1 : 0);
   }
 
-  [[nodiscard]]
-  std::size_t InflightCount() const noexcept {
-    return inflight_ - (wake_inflight_ ? 1 : 0);
-  }
+  std::size_t InflightCount() const noexcept { return inflight_ - (wake_inflight_ ? 1 : 0); }
 
-  [[nodiscard]]
   bool IsDrained() const noexcept {
     return !HasReadyWork() && PendingSubmitCount() == 0 && InflightCount() == 0;
   }
@@ -123,7 +111,6 @@ private:
   // Prepares one io_uring operation. The operation reaches the kernel only
   // after FlushSubmit() or another submission path.
   template <class Prep>
-  [[nodiscard]]
   Result<void> SubmitOp(detail::Op* op, Prep&& prep) noexcept {
     ALYRN_CHECK(IsInLoopThread(), "Loop::SubmitOp called from wrong thread");
 
@@ -133,8 +120,9 @@ private:
     if (op == nullptr) {
       return std::unexpected(Errno(EINVAL));
     }
-    const ::alyrn::io::LoopState state = State();
-    if ((state == ::alyrn::io::LoopState::kStopping || state == ::alyrn::io::LoopState::kStopped) &&
+    const backend::LoopState state = State();
+    if ((state == backend::LoopState::kStopping ||
+         state == backend::LoopState::kStopped) &&
         op != &cancel_all_op_ && op != &wake_op_) {
       return std::unexpected(Errno(ECANCELED));
     }
@@ -158,25 +146,19 @@ private:
     return {};
   }
 
-  [[nodiscard]]
   Result<void> FlushSubmit() noexcept;
   // Cancels all user operations currently pending in this ring. The resulting
   // CQEs are still delivered through the normal completion path so awaiters
   // can release their stream ownership before the ring is destroyed.
-  [[nodiscard]]
   Result<void> CancelPendingOperations() noexcept;
-  [[nodiscard]]
   Result<std::size_t> PollCompletions() noexcept;
-  [[nodiscard]]
   Result<std::size_t> WaitCompletions() noexcept;
 
   void RunReady() noexcept;
 
-  [[nodiscard]]
   Result<detail::ProvidedBufferPool*> GetSharedProvidedBufferPool(
       std::size_t buffer_size, std::size_t source_capacity) noexcept;
 
-  [[nodiscard]]
   Result<std::uint16_t> AllocateBufferGroupId() noexcept {
     if (next_buffer_group_id_ > std::numeric_limits<std::uint16_t>::max()) {
       return std::unexpected(Errno(EOVERFLOW));
@@ -184,13 +166,11 @@ private:
     return static_cast<std::uint16_t>(next_buffer_group_id_++);
   }
 
-  [[nodiscard]]
   Result<std::size_t> WaitCompletionsFor(std::chrono::nanoseconds timeout) noexcept;
 
   void DrainStoppedOperations() noexcept;
   void HandleCqe(io_uring_cqe* cqe) noexcept;
 
-  const ::alyrn::detail::ThreadId thread_id_;
   detail::Ring ring_;
   coro::WorkQueue ready_;
   coro::WorkQueue completion_ready_;
@@ -202,18 +182,15 @@ private:
   // Submitted operations that have not yet produced a CQE.
   std::size_t inflight_{0};
 
-  [[nodiscard]]
-  bool HasReadyWork() const noexcept {
-    return !ready_.Empty() || !completion_ready_.Empty();
-  }
+  bool HasReadyWork() const noexcept { return !ready_.Empty() || !completion_ready_.Empty(); }
 
-  [[nodiscard]]
   Result<void> ArmWakePoll() noexcept;
   void DrainWakeFd() noexcept;
   void Wake() noexcept;
 
   // Cross-thread lifecycle state observed by the event loop.
-  std::atomic<::alyrn::io::LoopState> state_{::alyrn::io::LoopState::kCreated};
+  std::atomic<backend::LoopState> state_{
+      backend::LoopState::kCreated};
 
   std::unique_ptr<detail::TimerQueue> timers_;
   int wake_fd_{-1};
@@ -227,5 +204,7 @@ private:
   std::size_t shared_buffer_capacity_{0};
   std::size_t shared_buffer_size_{0};
 };
+
+static_assert(backend::ManagedLoop<Loop>);
 
 }  // namespace alyrn::uring

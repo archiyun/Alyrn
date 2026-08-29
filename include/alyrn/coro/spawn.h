@@ -2,19 +2,19 @@
 //
 // Spawn(Scheduler&, Task<T>) produces a joinable root; SpawnDetach schedules a
 // detached root. Root-frame, final-suspend, and result-lifetime machinery is
-// intentionally kept in coro/detail/spawn_root.h.
+// intentionally kept in detail/coro/spawn_root.h.
 #pragma once
 
 #include <coroutine>
 #include <utility>
 
-#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/coro/detached_task.h"
 #include "alyrn/detail/coro/spawn_state.h"
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/task.h"
 #include "alyrn/coro/work.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::coro {
 
@@ -55,7 +55,6 @@ public:
       State* state;
 
       bool await_ready() const noexcept { return state->IsFinished(); }
-      [[nodiscard]]
       bool await_suspend(std::coroutine_handle<> joiner) noexcept {
         return state->TryParkWaiter(Scheduler::RequireCurrent(), joiner);
       }
@@ -82,7 +81,6 @@ private:
 namespace alyrn::coro {
 
 template <Returnable T>
-[[nodiscard]]
 JoinHandle<T> Spawn(Scheduler& scheduler, Task<T> task) {
   auto child = std::move(task).operator co_await();
   auto root = detail::RunSpawn<T>(std::move(child));

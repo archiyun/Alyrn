@@ -3,7 +3,7 @@
 
 #include <coroutine>
 
-#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/result.h"
 #include "alyrn/coro/work.h"
 #include "alyrn/detail/uring/loop_access.h"
@@ -16,13 +16,12 @@ namespace alyrn::uring {
 // Suspends the current coroutine and resumes it on the owning Loop.
 // Cancellation of the enclosing coroutine is an owner-side protocol; while
 // suspended, the awaiter must remain alive just like other Alyrn awaiters.
-class SleepAwaiter final {
+class [[nodiscard]] SleepAwaiter final {
 public:
   SleepAwaiter(Loop& loop, time::Duration delay) noexcept : loop_(&loop), delay_(delay) {}
 
   bool await_ready() const noexcept { return delay_ <= time::Duration::zero(); }
 
-  [[nodiscard]]
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
 
   Result<void> await_resume() noexcept {

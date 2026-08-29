@@ -83,7 +83,6 @@ public:
   RBTreeNode& operator=(RBTreeNode&&) = delete;
 
   // Only says "linked into some tree", not which one.
-  [[nodiscard]]
   bool InTree() const noexcept {
     return linked();
   }
@@ -119,7 +118,6 @@ private:
   Node* right() const noexcept { return right_; }
   void set_right(Node* right) noexcept { right_ = right; }
 
-  [[nodiscard]]
   bool red() const noexcept {
     return (parent_and_flags_ & kRed) != 0;
   }
@@ -132,7 +130,6 @@ private:
     }
   }
 
-  [[nodiscard]]
   bool linked() const noexcept {
     return (parent_and_flags_ & kLinked) != 0;
   }
@@ -183,24 +180,20 @@ public:
   // Resets every linked node's hook so a stale Erase after destruction is safe.
   ~IntrusiveTree() noexcept { Clear(); }
 
-  [[nodiscard]]
   bool Empty() const noexcept {
     return size_ == 0;
   }
-  [[nodiscard]]
   std::size_t Size() const noexcept {
     return size_;
   }
 
   // O(log n). Returns false for nullptr or when elem is already linked (in this
   // or any tree).
-  [[nodiscard]]
   bool Insert(T* elem) noexcept;
 
   // O(log n). Returns false for nullptr or if elem was not linked.
   // Precondition: if linked, elem is linked in *this* (cross-tree erase is UB,
   // same caveat as IntrusiveList::Erase). InTree() only says "linked somewhere".
-  [[nodiscard]]
   bool Erase(T* elem) noexcept;
 
   // O(1). Cached minimum; nullptr when empty.
@@ -233,7 +226,6 @@ public:
 
   // O(n). Verifies RB invariants, BST order, parent/child links, linked state,
   // subtree size, cached root/min, and header identity (right == self).
-  [[nodiscard]]
   bool CheckInvariants() const;
 
 private:

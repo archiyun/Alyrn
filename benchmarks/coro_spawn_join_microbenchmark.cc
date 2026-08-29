@@ -114,12 +114,10 @@ struct ManualGate {
   struct Awaiter {
     ManualGate* gate;
 
-    [[nodiscard]]
     bool await_ready() const noexcept {
       return false;
     }
 
-    [[nodiscard]]
     bool await_suspend(std::coroutine_handle<> waiter) noexcept {
       gate->resume_work.SetHandle(waiter);
       return true;

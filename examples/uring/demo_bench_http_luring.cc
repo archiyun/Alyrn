@@ -28,12 +28,10 @@ std::atomic_bool g_stop{false};
 
 void OnSignal(int) noexcept { g_stop.store(true, std::memory_order_relaxed); }
 
-[[nodiscard]]
 bool EnvEnabled(const char* key, bool fallback) noexcept {
   return alyrn_bench::EnvInt(key, fallback ? 1 : 0) != 0;
 }
 
-[[nodiscard]]
 bool AcceptMultishotEnabled() noexcept {
   const auto mode = alyrn_bench::EnvString("ACCEPT_MODE");
   if (mode.empty()) {

@@ -7,10 +7,10 @@
 #include <type_traits>
 #include <utility>
 
-#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/detail/coro/promise_base.h"
 #include "alyrn/detail/coro/task_fwd.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::coro::detail {
 

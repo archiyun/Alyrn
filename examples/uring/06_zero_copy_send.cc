@@ -37,7 +37,6 @@ namespace {
 
 constexpr std::string_view kPayload = "hello from SendZeroCopy";
 
-[[nodiscard]]
 const char* UsageName(uring::ZeroCopySendUsage usage) noexcept {
   switch (usage) {
     case uring::ZeroCopySendUsage::kUnknown:
@@ -52,7 +51,6 @@ const char* UsageName(uring::ZeroCopySendUsage usage) noexcept {
 
 // Blocking TCP client + non-blocking server fd, same shape as the send_zc smoke
 // test. AF_UNIX socketpair is less reliable for send_zc across kernels.
-[[nodiscard]]
 Result<std::pair<int, int>> MakeTcpPair() noexcept {
   const int listener = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
   if (listener < 0) {

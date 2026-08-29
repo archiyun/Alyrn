@@ -10,9 +10,9 @@
 #include <optional>
 #include <utility>
 
-#include "alyrn/detail/backend/value_result_state.h"
-#include "alyrn/detail/backend/loop.h"
-#include "alyrn/detail/base/check.h"
+#include "alyrn/backend/value_result_state.h"
+#include "alyrn/backend/loop.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/coro/task.h"
 #include "alyrn/detail/uring/cancel_result.h"
 #include "alyrn/detail/uring/fd_close_convergence.h"
@@ -155,7 +155,7 @@ void AcceptSource::NextAwaiter::Complete(NextResult result) noexcept {
 }
 
 // --- StopAwaiter ---
-class AcceptSource::StopAwaiter {
+class [[nodiscard]] AcceptSource::StopAwaiter {
 public:
   explicit StopAwaiter(AcceptSource& source) noexcept : source_(&source) {}
 
@@ -302,8 +302,8 @@ Result<void> AcceptSource::StartOperation() noexcept {
     return std::unexpected(Errno(EBADF));
   }
 
-  if (listener_->loop_->State() == ::alyrn::detail::backend::LoopState::kStopping ||
-      listener_->loop_->State() == ::alyrn::detail::backend::LoopState::kStopped) {
+  if (listener_->loop_->State() == backend::LoopState::kStopping ||
+      listener_->loop_->State() == backend::LoopState::kStopped) {
     return std::unexpected(Errno(ECANCELED));
   }
 
@@ -642,7 +642,7 @@ coro::Task<Result<void>> AcceptSource::Stop() {
 }
 
 // --- AcceptAwaiter ---
-class Listener::AcceptAwaiter : public detail::OpHook<Listener::AcceptAwaiter> {
+class [[nodiscard]] Listener::AcceptAwaiter : public detail::OpHook<Listener::AcceptAwaiter> {
   friend void detail::DispatchAcceptComplete(::alyrn::uring::detail::Op* op) noexcept;
 
 public:
@@ -728,12 +728,12 @@ private:
   Listener* listener_;
   sockaddr_storage peer_addr_{};
   socklen_t peer_len_{sizeof(peer_addr_)};
-  ::alyrn::detail::backend::ValueResultState<Stream> result_;
+  backend::ValueResultState<Stream> result_;
   bool listener_reservation_{false};
 };
 
 // --- CloseAwaiter ---
-class Listener::CloseAwaiter : public detail::OpHook<Listener::CloseAwaiter> {
+class [[nodiscard]] Listener::CloseAwaiter : public detail::OpHook<Listener::CloseAwaiter> {
   friend void detail::DispatchListenerCloseComplete(::alyrn::uring::detail::Op* op) noexcept;
 
 public:
@@ -937,8 +937,8 @@ Result<net::Endpoint> Listener::LocalAddress() const noexcept {
 
 Result<AcceptSource> Listener::CreateAcceptSource(net::AcceptSourceOptions options) noexcept {
   RequireOwnerLoop();
-  if (loop_->State() == ::alyrn::detail::backend::LoopState::kStopping ||
-      loop_->State() == ::alyrn::detail::backend::LoopState::kStopped) {
+  if (loop_->State() == backend::LoopState::kStopping ||
+      loop_->State() == backend::LoopState::kStopped) {
     return std::unexpected(Errno(ECANCELED));
   }
   if (closed_ || fd_ < 0) {

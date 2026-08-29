@@ -20,7 +20,6 @@ using AcceptSourceState = SourceState;
  */
 class AcceptSourceStateMachine final {
 public:
-  [[nodiscard]]
   static Result<AcceptSourceStateMachine> Create(AcceptSourceOptions options) noexcept {
     if (!options.Valid()) {
       return std::unexpected(Errno(EINVAL));
@@ -28,7 +27,6 @@ public:
     return AcceptSourceStateMachine(options);
   }
 
-  [[nodiscard]]
   Result<void> Start() noexcept {
     if (state_ != AcceptSourceState::kIdle) {
       return std::unexpected(Errno(EALREADY));
@@ -37,7 +35,6 @@ public:
     return {};
   }
 
-  [[nodiscard]]
   bool TryArm() noexcept {
     if (state_ != AcceptSourceState::kActive || armed_requests_ >= options_.pending_depth ||
         queued_events_ + armed_requests_ >= options_.event_capacity) {
@@ -47,7 +44,6 @@ public:
     return true;
   }
 
-  [[nodiscard]]
   Result<void> RequestPause() noexcept {
     if (state_ == AcceptSourceState::kTerminal || state_ == AcceptSourceState::kDraining ||
         state_ == AcceptSourceState::kStopping || state_ == AcceptSourceState::kPausing ||
@@ -63,7 +59,6 @@ public:
     return {};
   }
 
-  [[nodiscard]]
   bool TryResume() noexcept {
     if (state_ != AcceptSourceState::kPaused || queued_events_ > options_.ResumeThreshold()) {
       return false;
@@ -72,7 +67,6 @@ public:
     return true;
   }
 
-  [[nodiscard]]
   Result<void> CompleteRequest(bool produced_event) noexcept {
     if (armed_requests_ == 0) {
       return std::unexpected(Errno(EINVAL));
@@ -89,7 +83,6 @@ public:
     return {};
   }
 
-  [[nodiscard]]
   Result<void> CompleteMultishotEvent(EventDisposition event,
                                       MultishotRequestDisposition request) noexcept {
     if (armed_requests_ == 0) {
@@ -109,7 +102,6 @@ public:
     return {};
   }
 
-  [[nodiscard]]
   bool ConsumeEvent() noexcept {
     if (queued_events_ == 0) {
       return false;
@@ -134,27 +126,22 @@ public:
     ReconcileStopping();
   }
 
-  [[nodiscard]]
   AcceptSourceState State() const noexcept {
     return state_;
   }
 
-  [[nodiscard]]
   const AcceptSourceOptions& Options() const noexcept {
     return options_;
   }
 
-  [[nodiscard]]
   std::size_t QueuedEvents() const noexcept {
     return queued_events_;
   }
 
-  [[nodiscard]]
   std::size_t ArmedRequests() const noexcept {
     return armed_requests_;
   }
 
-  [[nodiscard]]
   bool CanArm() const noexcept {
     return state_ == AcceptSourceState::kActive && armed_requests_ < options_.pending_depth &&
            queued_events_ + armed_requests_ < options_.event_capacity;

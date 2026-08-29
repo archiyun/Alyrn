@@ -15,7 +15,7 @@
 #include "alyrn/kqueue/listener.h"
 #include "alyrn/kqueue/loop.h"
 #include "alyrn/kqueue/stream.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::kqueue::detail {
 
@@ -64,20 +64,16 @@ public:
                 ThreadExitCallback exit_callback = {});
   ~Worker() noexcept;
 
-  [[nodiscard]]
   Result<void> Start();
 
   // Requests shutdown. The worker thread is joined by the destructor or by
   // the owning WorkerGroup.
   void Stop() noexcept;
 
-  [[nodiscard]]
   std::size_t Index() const noexcept { return index_; }
 
-  [[nodiscard]]
   Loop* OwnerLoop() const noexcept { return loop_; }
 
-  [[nodiscard]]
   WorkerContext* Context() const noexcept { return context_; }
 
 private:

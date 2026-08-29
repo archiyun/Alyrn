@@ -7,10 +7,9 @@
 #include <cerrno>
 #include <cstdint>
 
-#include "alyrn/detail/base/check.h"
-#include "alyrn/detail/base/current_thread.h"
 #include "alyrn/coro/frame_allocator.h"
 #include "alyrn/coro/scheduler.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/detail/epoll/channel.h"
 #include "alyrn/detail/epoll/poller.h"
 #include "alyrn/detail/epoll/timer_queue.h"
@@ -26,12 +25,13 @@ thread_local Loop* t_loop_in_this_thread = nullptr;
 }  // namespace
 
 Loop::Loop(std::pmr::memory_resource* frame_resource) noexcept
-    : Scheduler(frame_resource),
-      thread_id_(::alyrn::detail::CurrentThreadId()),
-      poller_(Poller::NewDefaultPoller()),
-      timer_queue_(std::make_unique<TimerQueue>(this)) {
+    : Scheduler(frame_resource), poller_(Poller::NewDefaultPoller()) {
   ALYRN_CHECK(t_loop_in_this_thread == nullptr, "Loop: only one Loop may exist per thread");
   t_loop_in_this_thread = this;
+
+  // Channel registration goes through IsInLoopThread(), so the TLS owner
+  // pointer must be published before TimerQueue or the wakeup Channel.
+  timer_queue_ = std::make_unique<TimerQueue>(this);
 
   wakeup_fd_ = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
   ALYRN_CHECK(wakeup_fd_ >= 0, "Loop: eventfd creation failed");
@@ -46,6 +46,10 @@ Loop::~Loop() noexcept {
 
   ALYRN_CHECK(pending_work_.Empty(), "Loop destroyed with pending owner work");
   ALYRN_CHECK(shutdown_registry_.Empty(), "Loop destroyed with registered shutdown resources");
+  // TimerQueue and the wakeup Channel unregister through IsInLoopThread().
+  // Tear them down while TLS still names this Loop; the member unique_ptr
+  // would otherwise run after this pointer is cleared.
+  timer_queue_.reset();
   DetachWakeupChannel();
   if (wakeup_fd_ >= 0) {
     ::close(wakeup_fd_);
@@ -57,20 +61,20 @@ void Loop::Run(std::stop_token token) noexcept {
   ALYRN_CHECK(IsInLoopThread(), "Loop::Run called from wrong thread");
   ALYRN_CHECK(!looping_, "Loop::Run called while already running");
 
-  ::alyrn::detail::backend::LoopState expected = ::alyrn::detail::backend::LoopState::kCreated;
-  if (!state_.compare_exchange_strong(expected, ::alyrn::detail::backend::LoopState::kRunning,
+  auto expected = backend::LoopState::kCreated;
+  if (!state_.compare_exchange_strong(expected, backend::LoopState::kRunning,
                                       std::memory_order_acq_rel, std::memory_order_acquire)) {
-    ALYRN_CHECK(expected == ::alyrn::detail::backend::LoopState::kStopping,
-                   "Loop::Run may only run a created or stopping loop");
+    ALYRN_CHECK(expected == backend::LoopState::kStopping,
+                "Loop::Run may only run a created or stopping loop");
   }
 
   looping_ = true;
   std::stop_callback on_stop{token, [this] { RequestStop(); }};
 
-  while (State() == ::alyrn::detail::backend::LoopState::kRunning) {
+  while (State() == backend::LoopState::kRunning) {
     DoPendingWork();
 
-    if (State() != ::alyrn::detail::backend::LoopState::kRunning) {
+    if (State() != backend::LoopState::kRunning) {
       break;
     }
 
@@ -89,13 +93,14 @@ void Loop::Run(std::stop_token token) noexcept {
   RunPending();
   coro::CoroFramePoolResource::DrainCurrent();
   looping_ = false;
-  state_.store(::alyrn::detail::backend::LoopState::kStopped, std::memory_order_release);
+  state_.store(backend::LoopState::kStopped, std::memory_order_release);
 }
 
 void Loop::RequestStop() noexcept {
-  ::alyrn::detail::backend::LoopState observed = state_.load(std::memory_order_acquire);
-  while (observed == ::alyrn::detail::backend::LoopState::kCreated || observed == ::alyrn::detail::backend::LoopState::kRunning) {
-    if (state_.compare_exchange_weak(observed, ::alyrn::detail::backend::LoopState::kStopping,
+  backend::LoopState observed = state_.load(std::memory_order_acquire);
+  while (observed == backend::LoopState::kCreated ||
+         observed == backend::LoopState::kRunning) {
+    if (state_.compare_exchange_weak(observed, backend::LoopState::kStopping,
                                      std::memory_order_acq_rel, std::memory_order_acquire)) {
       Wakeup();
       return;
@@ -139,20 +144,18 @@ bool Loop::HasChannel(Channel* channel) const {
 void Loop::RegisterShutdownParticipant(LoopShutdownParticipant& participant) noexcept {
   ALYRN_CHECK(IsInLoopThread(), "Loop::RegisterShutdownParticipant called from wrong thread");
   ALYRN_CHECK(shutdown_registry_.Register(&participant),
-                 "Loop shutdown participant registered twice");
+              "Loop shutdown participant registered twice");
 }
 
 void Loop::UnregisterShutdownParticipant(LoopShutdownParticipant& participant) noexcept {
   ALYRN_CHECK(IsInLoopThread(), "Loop::UnregisterShutdownParticipant called from wrong thread");
   ALYRN_CHECK(shutdown_registry_.Unregister(&participant),
-                 "Loop shutdown participant was not registered");
+              "Loop shutdown participant was not registered");
 }
 
 bool Loop::IsInLoopThread() const noexcept {
-  // The constructor enforces one Epoll Loop per thread, so the TLS owner
-  // pointer is an exact owner-thread test and avoids pthread/self-id work on
-  // the hot path. Keep the identity comparison for foreign callers.
-  return t_loop_in_this_thread == this || thread_id_ == ::alyrn::detail::CurrentThreadId();
+  // One Loop per thread: the TLS owner pointer is the owner-thread test.
+  return t_loop_in_this_thread == this;
 }
 
 void Loop::DoPendingWork() {
@@ -187,7 +190,7 @@ void Loop::DrainWakeup() noexcept {
       continue;
     }
     ALYRN_CHECK(read < 0 && (errno == EAGAIN || errno == EWOULDBLOCK),
-                   "Loop wakeup fd read failed");
+                "Loop wakeup fd read failed");
     return;
   }
 }
@@ -203,7 +206,7 @@ void Loop::Wakeup() noexcept {
       continue;
     }
     ALYRN_CHECK(written < 0 && (errno == EAGAIN || errno == EWOULDBLOCK),
-                   "Loop wakeup fd write failed");
+                "Loop wakeup fd write failed");
     return;
   }
 }

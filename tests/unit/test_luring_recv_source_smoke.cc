@@ -53,7 +53,6 @@ public:
 
   ~UniqueFd() { Reset(); }
 
-  [[nodiscard]]
   int Get() const noexcept {
     return fd_;
   }

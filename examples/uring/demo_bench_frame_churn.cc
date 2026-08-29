@@ -31,7 +31,6 @@ using alyrn::coro::Scheduler;
 using alyrn::SpawnDetach;
 using alyrn::uring::Loop;
 
-[[nodiscard]]
 std::uint64_t EnvU64(const char* key, std::uint64_t fallback) {
   const char* value = std::getenv(key);
   if (value == nullptr) {

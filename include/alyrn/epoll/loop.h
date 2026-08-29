@@ -6,17 +6,14 @@
 #include <memory>
 #include <memory_resource>
 #include <stop_token>
-#include <thread>
 #include <vector>
 
-#include "alyrn/detail/backend/loop.h"
-#include "alyrn/detail/base/current_thread.h"
+#include "alyrn/backend/loop.h"
 #include "alyrn/coro/scheduler.h"
-#include "alyrn/io/loop.h"
 #include "alyrn/detail/epoll/loop_shutdown.h"
+#include "alyrn/detail/macros.h"
 #include "alyrn/time/clock.h"
 #include "alyrn/time/timer_id.h"
-#include "alyrn/detail/utils/macros.h"
 
 namespace alyrn::epoll {
 
@@ -53,7 +50,7 @@ public:
   void RequestStop() noexcept;
 
   [[nodiscard]]
-  ::alyrn::io::LoopState State() const noexcept {
+  backend::LoopState State() const noexcept {
     return state_.load(std::memory_order_acquire);
   }
 
@@ -90,6 +87,7 @@ private:
 
   using Channel = detail::Channel;
   using LoopShutdownParticipant = detail::LoopShutdownParticipant;
+  using LoopShutdownRegistry = detail::LoopShutdownRegistry;
   using Poller = detail::Poller;
   using TimerQueue = detail::TimerQueue;
 
@@ -110,24 +108,25 @@ private:
   void Wakeup() noexcept;
   void DetachWakeupChannel() noexcept;
 
-  [[nodiscard]]
   bool HasImmediateWork() const;
 
   bool looping_{false};
-  std::atomic<::alyrn::io::LoopState> state_{::alyrn::io::LoopState::kCreated};
+  std::atomic<backend::LoopState> state_{
+      backend::LoopState::kCreated};
 
-  const ::alyrn::detail::ThreadId thread_id_;
-  std::unique_ptr<detail::Poller> poller_;
-  std::vector<detail::Channel*> active_channels_;
+  std::unique_ptr<Poller> poller_;
+  std::vector<Channel*> active_channels_;
 
   int wakeup_fd_{-1};
-  std::unique_ptr<detail::Channel> wakeup_channel_;
+  std::unique_ptr<Channel> wakeup_channel_;
 
   coro::WorkQueue pending_work_;
-  detail::LoopShutdownRegistry shutdown_registry_;
+  LoopShutdownRegistry shutdown_registry_;
   bool shutdown_started_{false};
 
-  std::unique_ptr<detail::TimerQueue> timer_queue_;
+  std::unique_ptr<TimerQueue> timer_queue_;
 };
+
+static_assert(backend::ManagedLoop<Loop>);
 
 }  // namespace alyrn::epoll

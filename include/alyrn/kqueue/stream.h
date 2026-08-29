@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <span>
 
-#include "alyrn/task.h"
+#include "alyrn/backend/async_stream.h"
 #include "alyrn/detail/kqueue/channel.h"
 #include "alyrn/detail/kqueue/loop_shutdown.h"
 #include "alyrn/detail/kqueue/op_hook.h"
@@ -23,8 +23,9 @@
 #include "alyrn/detail/operation/scheduler_continuation.h"
 #include "alyrn/detail/operation/single_result_lifecycle.h"
 #include "alyrn/result.h"
+#include "alyrn/task.h"
 #include "alyrn/time/clock.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::kqueue {
 
@@ -52,18 +53,13 @@ public:
   Stream(Stream&& other) noexcept;
   Stream& operator=(Stream&& other) noexcept;
 
-  [[nodiscard]]
   ReadSomeAwaiter ReadSome(std::span<std::byte> buffer) noexcept;
-  [[nodiscard]]
   ReadIntoAwaiter ReadInto(net::Buffer buffer, std::size_t reserve = 4096) noexcept;
-  [[nodiscard]]
   WriteAllAwaiter WriteAll(std::span<const std::byte> buffer) noexcept;
 
-  [[nodiscard]]
   // Legacy alias for CloseWrite().
-  ::alyrn::Task<Result<void>> Shutdown() noexcept;
-  [[nodiscard]]
-  ::alyrn::Task<Result<void>> Close() noexcept;
+  Task<Result<void>> Shutdown() noexcept;
+  Task<Result<void>> Close() noexcept;
 
   [[nodiscard]]
   Result<net::Endpoint> LocalAddr() const noexcept;
@@ -88,13 +84,11 @@ public:
   [[nodiscard]]
   Result<void> SetWriteBuffer(std::size_t bytes) const noexcept;
 
-  [[nodiscard]]
   // Shuts down local reception while keeping the descriptor and write side.
-  ::alyrn::Task<Result<void>> CloseRead() noexcept;
+  Task<Result<void>> CloseRead() noexcept;
 
-  [[nodiscard]]
   // Shuts down local transmission while keeping the descriptor and read side.
-  ::alyrn::Task<Result<void>> CloseWrite() noexcept;
+  Task<Result<void>> CloseWrite() noexcept;
 
   [[nodiscard]]
   int Fd() const noexcept {
@@ -160,26 +154,21 @@ private:
 
 class Stream::ReadAwaiterState {
 public:
-  [[nodiscard]]
   bool TryAuthorizeRelease() noexcept;
-  [[nodiscard]]
   bool TryAuthorizeContinuation() noexcept;
   void ScheduleContinuation() noexcept;
 
 protected:
   explicit ReadAwaiterState(Stream& stream) noexcept : stream_(&stream) {}
 
-  [[nodiscard]]
   bool BeginRead(std::coroutine_handle<> continuation) noexcept;
   void SuspendForRead(void* awaiter, PendingReadKind kind) noexcept;
 
-  [[nodiscard]]
   bool TryAuthorizeResult() noexcept;
   void CompleteInline(Result<std::size_t> result) noexcept;
   void CompleteStoredInline() noexcept;
   void SetResult(Result<std::size_t> result) noexcept;
 
-  [[nodiscard]]
   Result<std::size_t> TakeResult() noexcept;
 
   Stream* stream_;
@@ -188,7 +177,7 @@ protected:
   IoResultState result_;
 };
 
-class Stream::ReadSomeAwaiter final : public ReadAwaiterState,
+class [[nodiscard]] Stream::ReadSomeAwaiter final : public ReadAwaiterState,
                                       public OperationHook<Stream::ReadSomeAwaiter> {
 public:
   ALYRN_DELETE_COPY_MOVE(ReadSomeAwaiter);
@@ -197,7 +186,6 @@ public:
       : ReadAwaiterState(stream), buffer_(buffer) {}
 
   bool await_ready() const noexcept { return false; }
-  [[nodiscard]]
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
   Result<std::size_t> await_resume() noexcept;
 
@@ -210,7 +198,7 @@ private:
   std::span<std::byte> buffer_;
 };
 
-class Stream::WriteAllAwaiter final : public OperationHook<Stream::WriteAllAwaiter> {
+class [[nodiscard]] Stream::WriteAllAwaiter final : public OperationHook<Stream::WriteAllAwaiter> {
 public:
   ALYRN_DELETE_COPY_MOVE(WriteAllAwaiter);
 
@@ -218,7 +206,6 @@ public:
       : stream_(&stream), buffer_(buffer) {}
 
   bool await_ready() const noexcept { return false; }
-  [[nodiscard]]
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
   Result<void> await_resume() noexcept;
 
@@ -227,9 +214,9 @@ private:
   friend OperationHook<WriteAllAwaiter>;
 
   void CompleteInline(Result<std::size_t> result) noexcept;
-  [[nodiscard]] bool CompleteResultImpl(Result<std::size_t> result) noexcept;
-  [[nodiscard]] bool TryAuthorizeRelease() noexcept;
-  [[nodiscard]] bool TryAuthorizeContinuation() noexcept;
+  bool CompleteResultImpl(Result<std::size_t> result) noexcept;
+  bool TryAuthorizeRelease() noexcept;
+  bool TryAuthorizeContinuation() noexcept;
   void ScheduleContinuation() noexcept;
   void OnReadyImpl() noexcept;
 
@@ -240,7 +227,7 @@ private:
   IoResultState result_;
 };
 
-class Stream::ReadIntoAwaiter : public ReadAwaiterState,
+class [[nodiscard]] Stream::ReadIntoAwaiter : public ReadAwaiterState,
                                 public OperationHook<Stream::ReadIntoAwaiter> {
 public:
   ALYRN_DELETE_COPY_MOVE(ReadIntoAwaiter);
@@ -248,7 +235,6 @@ public:
   ReadIntoAwaiter(Stream& stream, net::Buffer buffer, std::size_t reserve) noexcept;
 
   bool await_ready() const noexcept { return false; }
-  [[nodiscard]]
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
   net::ReadIntoOutcome await_resume() noexcept;
 
@@ -264,5 +250,8 @@ private:
   std::size_t reserve_;
   bool reservation_active_{false};
 };
+
+static_assert(backend::AsyncStream<Stream>);
+static_assert(backend::AsyncReadIntoStream<Stream>);
 
 }  // namespace alyrn::kqueue

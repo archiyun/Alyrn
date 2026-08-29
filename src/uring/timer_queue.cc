@@ -8,7 +8,7 @@
 #include <cstdint>
 #include <utility>
 
-#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/detail/uring/loop_access.h"
 #include "alyrn/detail/uring/sqe_prep.h"
 #include "alyrn/uring/loop.h"
@@ -46,7 +46,7 @@ Result<time::TimerId> TimerQueue::AddTimer(TimerCallback callback,
   ALYRN_CHECK(loop_ != nullptr, "TimerQueue has no owner loop");
   ALYRN_CHECK(loop_->IsInLoopThread(), "TimerQueue::AddTimer called from wrong thread");
 
-  auto timer = std::make_unique<::alyrn::detail::time::Timer>(
+  auto timer = std::make_unique<Timer>(
       std::move(callback), deadline, time::Duration::zero());
   const time::TimerId id{timer->sequence()};
   auto [it, inserted] = active_.emplace(id.sequence, std::move(timer));
@@ -162,13 +162,13 @@ void TimerQueue::HandleControlComplete(::alyrn::uring::detail::Op* op) noexcept 
 void TimerQueue::ProcessExpired() noexcept {
   const auto now = time::SteadyNow();
   timers_.PopWhile(
-      [now](const ::alyrn::detail::time::Timer* timer) { return timer->expiration() <= now; },
-      [this](::alyrn::detail::time::Timer* timer) noexcept {
+      [now](const Timer* timer) { return timer->expiration() <= now; },
+      [this](Timer* timer) noexcept {
                      const auto id = timer->sequence();
                      auto it = active_.find(id);
                      ALYRN_CHECK(it != active_.end(),
                                     "TimerQueue expired timer is missing from active set");
-                     std::unique_ptr<::alyrn::detail::time::Timer> owned = std::move(it->second);
+                     auto owned = std::move(it->second);
                      active_.erase(it);
                      owned->Run();
                    });

@@ -8,14 +8,14 @@
 #include <deque>
 #include <optional>
 
-#include "alyrn/detail/backend/value_result_state.h"
+#include "alyrn/backend/accept_source.h"
+#include "alyrn/backend/async_listener.h"
+#include "alyrn/backend/value_result_state.h"
 #include "alyrn/detail/operation/completion_gate.h"
 #include "alyrn/detail/operation/scheduler_continuation.h"
 #include "alyrn/detail/uring/completion_dispatch.h"
 #include "alyrn/detail/uring/op.h"
-#include "alyrn/detail/utils/macros.h"
-#include "alyrn/io/accept_source.h"
-#include "alyrn/io/async_listener.h"
+#include "alyrn/detail/macros.h"
 #include "alyrn/net/accept_source.h"
 #include "alyrn/net/endpoint.h"
 #include "alyrn/net/tcp_options.h"
@@ -55,12 +55,12 @@ public:
 
   using StreamType = Stream;
   using Event = std::optional<Stream>;
-  using NextResult = alyrn::Result<Event>;
+  using NextResult = Result<Event>;
 
   // Direct awaiter for the single-consumer accept loop. It preserves the
   // source's multishot/one-shot physical implementation while avoiding a
   // child Task frame for each logical accept event.
-  class NextAwaiter {
+  class [[nodiscard]] NextAwaiter {
   public:
     explicit NextAwaiter(AcceptSource& source) noexcept : source_(&source) {}
 
@@ -76,7 +76,7 @@ public:
     AcceptSource* source_;
     ::alyrn::detail::operation::SchedulerContinuation continuation_;
     ::alyrn::detail::operation::CompletionGate completion_gate_;
-    ::alyrn::detail::backend::ValueResultState<Event> result_;
+    backend::ValueResultState<Event> result_;
   };
 
   ~AcceptSource();
@@ -84,11 +84,10 @@ public:
   AcceptSource(AcceptSource&& other) noexcept;
   AcceptSource& operator=(AcceptSource&& other) noexcept;
 
-  [[nodiscard]]
   NextAwaiter Next() noexcept {
     return NextAwaiter(*this);
   }
-  ::alyrn::Task<Result<void>> Stop();
+  Task<Result<void>> Stop();
 
 private:
   class StopAwaiter;
@@ -99,7 +98,6 @@ private:
       kind = detail::OpKind::kAcceptSourceComplete;
     }
 
-    [[nodiscard]]
     AcceptSource* Source() const noexcept {
       return source_;
     }
@@ -119,7 +117,6 @@ private:
       kind = detail::OpKind::kAcceptSourceCancelComplete;
     }
 
-    [[nodiscard]]
     AcceptSource* Source() const noexcept {
       return source_;
     }
@@ -135,16 +132,12 @@ private:
 
   AcceptSource(Listener* listener, net::detail::AcceptSourceStateMachine state) noexcept;
 
-  [[nodiscard]]
   Result<void> Start() noexcept;
 
-  [[nodiscard]]
   Result<void> StartOperation() noexcept;
 
-  [[nodiscard]]
   Result<void> StartCancel() noexcept;
 
-  [[nodiscard]]
   Result<bool> BeginStop() noexcept;
 
   void EnsureSubmission() noexcept;
@@ -161,7 +154,6 @@ private:
   bool TryTakeNext(NextResult& result) noexcept;
   void ReleaseListenerReservation() noexcept;
 
-  [[nodiscard]]
   Result<Stream> MakeStream(int accepted_fd) noexcept;
 
   Listener* listener_{nullptr};
@@ -184,7 +176,7 @@ private:
   bool multishot_enabled_{true};
 };
 
-static_assert(::alyrn::io::AsyncAcceptSource<AcceptSource>);
+static_assert(backend::AsyncAcceptSource<AcceptSource>);
 
 class Listener {
   friend class AcceptSource;
@@ -207,12 +199,12 @@ public:
   // Accept, Close, and CreateAcceptSource are loop-affine. Their coroutine or
   // factory call must execute on this listener's owner Loop; a foreign
   // thread is a runtime-contract violation checked in every build.
-  ::alyrn::Task<Result<Stream>> Accept();
+  Task<Result<Stream>> Accept();
 
   [[nodiscard]]
   Result<AcceptSource> CreateAcceptSource(net::AcceptSourceOptions options = {}) noexcept;
 
-  ::alyrn::Task<Result<void>> Close();
+  Task<Result<void>> Close();
 
   [[nodiscard]]
   Result<net::Endpoint> LocalAddress() const noexcept;
@@ -226,7 +218,6 @@ private:
   class AcceptAwaiter;
   class CloseAwaiter;
 
-  [[nodiscard]]
   Listener(Loop* loop, int fd, bool zero_copy_writes, net::TcpOptions tcp_options) noexcept;
 
   void RequireOwnerLoop() const noexcept;
@@ -244,6 +235,6 @@ private:
   bool closed_{false};
 };
 
-static_assert(::alyrn::io::AsyncListener<Listener>);
+static_assert(backend::AsyncListener<Listener>);
 
 }  // namespace alyrn::uring

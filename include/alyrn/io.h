@@ -2,8 +2,8 @@
 #pragma once
 
 // Public umbrella header for backend-neutral I/O contracts and algorithms.
-// Concrete backends and profile/binding controls are included explicitly by
-// composition roots.
+// Concrete adapters include alyrn/backend/*.h directly; there is no
+// alyrn/backend.h. Composition roots pick a concrete adapter umbrella.
 
 #include "alyrn/io/accept_source.h"   // IWYU pragma: export
 #include "alyrn/io/async_connector.h" // IWYU pragma: export

@@ -13,7 +13,7 @@
 
 #include "alyrn/detail/uring/provided_buffer_storage.h"
 #include "alyrn/result.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::uring::detail {
 
@@ -53,7 +53,6 @@ public:
     return *this;
   }
 
-  [[nodiscard]]
   static Result<ProvidedBufferPool> Create(io_uring* ring, std::uint16_t buffer_group,
                                            std::size_t capacity, std::size_t buffer_size,
                                            std::size_t initial_capacity) noexcept {
@@ -105,12 +104,10 @@ public:
     return pool;
   }
 
-  [[nodiscard]]
   std::uint16_t BufferGroup() const noexcept {
     return buffer_group_;
   }
 
-  [[nodiscard]]
   std::size_t capacity() const noexcept {
     return capacity_;
   }
@@ -135,18 +132,15 @@ public:
     published_capacity_ += count;
   }
 
-  [[nodiscard]]
   std::size_t buffer_size() const noexcept {
     return buffer_size_;
   }
 
-  [[nodiscard]]
   std::byte* slot(std::uint32_t buffer_id) noexcept {
     return buffer_id < capacity_ ? storage_.slot(buffer_id) : nullptr;
   }
 
   // Called when a source borrows a slot.
-  [[nodiscard]]
   bool Acquire(std::uint32_t buffer_id) noexcept {
     if (buffer_id >= in_use_.size() || in_use_[buffer_id]) {
       return false;
@@ -157,7 +151,6 @@ public:
 
   // Re-adds a released slot to the shared ring. All calls are loop-thread
   // affine, so no lock or atomic operation is needed here.
-  [[nodiscard]]
   bool Return(std::uint32_t buffer_id) noexcept {
     if (buffer_id >= in_use_.size() || !in_use_[buffer_id] || buffer_ring_ == nullptr) {
       return false;

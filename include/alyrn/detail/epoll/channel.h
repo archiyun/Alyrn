@@ -2,7 +2,7 @@
 #pragma once
 
 #include "alyrn/epoll/options.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::epoll {
 
@@ -57,15 +57,12 @@ public:
     error_context_ = context;
   }
 
-  [[nodiscard]]
   int Fd() const noexcept{
     return fd_;
   }
-  [[nodiscard]]
   int Events() const noexcept{
     return events_;
   }
-  [[nodiscard]]
   int Revents() const noexcept{
     return revents_;
   }
@@ -94,15 +91,12 @@ public:
     Update();
   }
 
-  [[nodiscard]]
   bool IsNoneEvent() const noexcept {
     return events_ == kNoneEvent;
   }
-  [[nodiscard]]
   bool IsWriting() const noexcept {
     return static_cast<bool>(events_ & kWriteEvent);
   }
-  [[nodiscard]]
   bool IsReading() const noexcept {
     return static_cast<bool>(events_ & kReadEvent);
   }
@@ -112,7 +106,6 @@ public:
     trigger_mode_ = et_mode ? TriggerMode::kEdgeTriggered : TriggerMode::kLevelTriggered;
   }
 
-  [[nodiscard]]
   bool IsEdgeTriggered() const noexcept {
     return trigger_mode_ == TriggerMode::kEdgeTriggered;
   }
@@ -120,7 +113,6 @@ public:
   // Returns whether the owning poller currently tracks this Channel. This is
   // an implementation-only lifecycle query; Loop deliberately keeps its
   // poller membership private from Epoll callers.
-  [[nodiscard]]
   bool IsRegistered() const noexcept;
 
   // Returns the Loop that owns this Channel.
@@ -150,7 +142,6 @@ private:
   // detail-layer callers; the loop uses this owner-only fast path.
   void HandleEventUnchecked() noexcept;
 
-  [[nodiscard]]
   int index() const {
     return index_;
   }

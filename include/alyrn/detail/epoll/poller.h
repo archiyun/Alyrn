@@ -4,7 +4,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::epoll::detail {
 
@@ -39,7 +39,6 @@ public:
   virtual void RemoveChannel(Channel* channel) = 0;
 
   // Returns true if channel is currently tracked by this Poller.
-  [[nodiscard]]
   bool HasChannel(Channel* channel) const;
 
   // Creates the epoll-backed Poller implementation.

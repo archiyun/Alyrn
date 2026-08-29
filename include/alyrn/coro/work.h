@@ -10,9 +10,9 @@
 #include <coroutine>
 #include <cstdint>
 
-#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/detail/ds/intrusive_queue.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::coro {
 
@@ -76,7 +76,6 @@ private:
   static constexpr std::uintptr_t kResumeTag = std::uintptr_t{1}
                                                << (sizeof(std::uintptr_t) * 8 - 1);
 
-  [[nodiscard]]
   bool IsResume() const noexcept {
     return (action_ & kResumeTag) != 0;
   }

@@ -10,8 +10,8 @@
 #include <optional>
 #include <utility>
 
-#include "alyrn/detail/backend/value_result_state.h"
-#include "alyrn/detail/base/check.h"
+#include "alyrn/backend/value_result_state.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/net/endpoint.h"
 #include "alyrn/detail/net/socket.h"
 #include "alyrn/net/tcp_options.h"
@@ -36,7 +36,7 @@ Result<int> ConnectError(int fd) noexcept {
   return err;
 }
 
-class ConnectAwaiter {
+class [[nodiscard]] ConnectAwaiter {
 public:
   ConnectAwaiter(Loop* loop, net::Endpoint peer, StreamOptions stream_options,
                  net::TcpOptions tcp_options) noexcept
@@ -58,8 +58,8 @@ public:
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     ALYRN_CHECK(loop_ != nullptr, "ConnectAwaiter has no owner Loop");
     ALYRN_CHECK(loop_->IsInLoopThread(), "ConnectAwaiter called from wrong Loop thread");
-    if (loop_->State() == ::alyrn::detail::backend::LoopState::kStopping ||
-        loop_->State() == ::alyrn::detail::backend::LoopState::kStopped) {
+    if (loop_->State() == backend::LoopState::kStopping ||
+        loop_->State() == backend::LoopState::kStopped) {
       CompleteInline(std::unexpected(Errno(ECANCELED)));
       return false;
     }
@@ -180,7 +180,7 @@ private:
   std::optional<Channel> channel_;
   ::alyrn::detail::operation::SchedulerContinuation continuation_;
   ::alyrn::detail::operation::SingleResultLifecycle lifecycle_;
-  ::alyrn::detail::backend::ValueResultState<Stream> result_;
+  backend::ValueResultState<Stream> result_;
   LoopShutdownParticipant shutdown_participant_{this, &DispatchLoopStop};
 };
 
@@ -193,7 +193,7 @@ coro::Task<Result<Stream>> ConnectResolved(Loop* loop, StreamOptions stream_opti
   co_return co_await ConnectAwaiter(loop, *peer, stream_options, tcp_options);
 }
 
-class SleepAwaiter {
+class [[nodiscard]] SleepAwaiter {
 public:
   SleepAwaiter(Loop* loop, time::Duration delay) noexcept : loop_(loop), delay_(delay) {}
 
@@ -202,8 +202,8 @@ public:
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     ALYRN_CHECK(loop_ != nullptr, "SleepAwaiter has no owner Loop");
     ALYRN_CHECK(loop_->IsInLoopThread(), "SleepAwaiter called from wrong Loop thread");
-    if (loop_->State() == ::alyrn::detail::backend::LoopState::kStopping ||
-        loop_->State() == ::alyrn::detail::backend::LoopState::kStopped) {
+    if (loop_->State() == backend::LoopState::kStopping ||
+        loop_->State() == backend::LoopState::kStopped) {
       (void)(completion_gate_.TryComplete());
       return false;
     }

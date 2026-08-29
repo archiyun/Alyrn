@@ -4,7 +4,7 @@
 #include <cstdint>
 
 #include "alyrn/kqueue/options.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::kqueue {
 
@@ -59,15 +59,12 @@ public:
     error_context_ = context;
   }
 
-  [[nodiscard]]
   int Fd() const {
     return fd_;
   }
-  [[nodiscard]]
   int Events() const {
     return events_;
   }
-  [[nodiscard]]
   int Revents() const {
     return revents_;
   }
@@ -96,15 +93,12 @@ public:
     Update();
   }
 
-  [[nodiscard]]
   bool IsNoneEvent() const {
     return events_ == kNoneEvent;
   }
-  [[nodiscard]]
   bool IsWriting() const {
     return static_cast<bool>(events_ & kWriteEvent);
   }
-  [[nodiscard]]
   bool IsReading() const {
     return static_cast<bool>(events_ & kReadEvent);
   }
@@ -126,12 +120,10 @@ public:
     }
   }
 
-  [[nodiscard]]
   TriggerMode Mode() const {
     return trigger_mode_;
   }
 
-  [[nodiscard]]
   bool IsEdgeTriggered() const {
     return trigger_mode_ == TriggerMode::kEdgeTriggered;
   }
@@ -141,7 +133,6 @@ public:
    * no interest in a filter once that filter has fired, and the callback must
    * call EnableReading() or EnableWriting() again to arm the next operation.
    */
-  [[nodiscard]]
   bool IsOneShot() const {
     return trigger_mode_ == TriggerMode::kOneShot;
   }
@@ -150,7 +141,6 @@ public:
   // authoritative registration state lives in the poller's per-filter table,
   // not here; Loop deliberately keeps that table private from kqueue
   // callers.
-  [[nodiscard]]
   bool IsRegistered() const;
 
   // Returns the Loop that owns this Channel.
@@ -176,7 +166,6 @@ private:
   // Read and write readiness arrive as two separate kevents, so one Poll() can
   // report the same Channel twice. The poller stamps the current poll epoch on
   // first sight to decide whether to overwrite revents_ or accumulate into it.
-  [[nodiscard]]
   std::uint64_t ActiveEpoch() const noexcept {
     return active_epoch_;
   }

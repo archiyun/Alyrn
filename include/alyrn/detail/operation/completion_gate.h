@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::detail::operation {
 
@@ -21,7 +21,6 @@ public:
 
   CompletionGate() noexcept = default;
 
-  [[nodiscard]]
   bool TryComplete() noexcept {
     if (completed_) {
       return false;
@@ -30,7 +29,6 @@ public:
     return true;
   }
 
-  [[nodiscard]]
   bool Completed() const noexcept {
     return completed_;
   }

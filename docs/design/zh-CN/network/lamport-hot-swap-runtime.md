@@ -818,9 +818,10 @@ Refine_Uring  : ConcreteUringState  -> S_abs
 映射后的观察轨迹都满足 Σ_core 和 Inv。
 ```
 
-这也解释了项目中的固定边界：`alyrn::io::AsyncStream` 是抽象语义入口，
-`epoll::Stream` 和 `uring::Stream` 是两个具体解释器，epoll、SQE、CQE 和 mailbox
-属于具体后端的状态与事件。
+这也解释了项目中的固定边界：canonical concept 是 `alyrn::backend::AsyncStream`；
+`alyrn::io::AsyncStream` 是给业务用的零成本别名。`epoll::Stream` 和
+`uring::Stream` 是两个具体解释器，epoll、SQE、CQE 和 mailbox 属于具体后端的状态
+与事件。
 
 ### 不变量与活性条件
 
@@ -949,7 +950,7 @@ Epoll 和 io_uring 已经有共同的协程语义接口，
 两个后端已经被形式化证明语义等价，或已经支持任意时刻热插拔。
 ```
 
-当前实现中的 [`AsyncStream`](https://github.com/archiyun/Alyrn/blob/main/include/alyrn/io/async_stream.h) 主要检查
+当前实现中的 [`AsyncStream`](https://github.com/archiyun/Alyrn/blob/main/include/alyrn/backend/async_stream.h) 主要检查
 接口形状，不能在编译期检查“最多完成一次”“Close 后不能成功提交”或“buffer 在
 Complete 前有效”等动态性质。这些性质目前依赖具体实现、调试断言和 smoke test。
 

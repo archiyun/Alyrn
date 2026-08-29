@@ -3,7 +3,7 @@
 
 #include <utility>
 
-#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/kqueue/loop.h"
 
 namespace alyrn::kqueue::detail {

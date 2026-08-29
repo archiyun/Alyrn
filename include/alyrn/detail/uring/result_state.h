@@ -5,7 +5,7 @@
 #include <expected>
 #include <limits>
 
-#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/result.h"
 
 namespace alyrn::uring::detail {
@@ -20,7 +20,6 @@ class ResultStorage {
 public:
   static constexpr std::int32_t kPending = std::numeric_limits<std::int32_t>::min();
 
-  [[nodiscard]]
   bool IsImmediate() const noexcept {
     return encoded_ != kPending;
   }
@@ -47,7 +46,6 @@ public:
   }
 
 protected:
-  [[nodiscard]]
   std::int32_t Encoded() const noexcept {
     return encoded_;
   }
@@ -67,7 +65,6 @@ public:
   using ResultStorage::SetResult;
   using ResultStorage::SetSuccess;
 
-  [[nodiscard]]
   Result<void> Take() const noexcept {
     ALYRN_CHECK(IsImmediate(), "ResultState result was taken before completion");
     if (Encoded() == 0) {

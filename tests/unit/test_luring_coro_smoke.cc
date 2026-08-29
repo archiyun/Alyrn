@@ -15,7 +15,7 @@
 #include <thread>
 #include <utility>
 
-#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/result.h"
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/spawn.h"

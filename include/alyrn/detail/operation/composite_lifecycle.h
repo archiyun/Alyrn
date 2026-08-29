@@ -29,22 +29,18 @@ public:
   CompositeLifecycle(CompositeLifecycle&&) = delete;
   CompositeLifecycle& operator=(CompositeLifecycle&&) = delete;
 
-  [[nodiscard]]
   bool RecordMemberCompletion(CompositeMember member) noexcept {
     return GateFor(member).TryComplete();
   }
 
-  [[nodiscard]]
   bool MemberCompleted(CompositeMember member) const noexcept {
     return GateFor(member).Completed();
   }
 
-  [[nodiscard]]
   bool AllMembersCompleted() const noexcept {
     return first_member_.Completed() && second_member_.Completed();
   }
 
-  [[nodiscard]]
   bool TryAuthorizeLogicalResult() noexcept {
     if (!AllMembersCompleted()) {
       return false;
@@ -52,7 +48,6 @@ public:
     return logical_result_.TryComplete();
   }
 
-  [[nodiscard]]
   bool TryAuthorizeRelease() noexcept {
     if (!logical_result_.Completed()) {
       return false;
@@ -60,7 +55,6 @@ public:
     return release_authorized_.TryComplete();
   }
 
-  [[nodiscard]]
   bool TryAuthorizeContinuation() noexcept {
     if (!release_authorized_.Completed()) {
       return false;
@@ -68,20 +62,20 @@ public:
     return continuation_authorized_.TryComplete();
   }
 
-  [[nodiscard]] bool LogicalResultAuthorized() const noexcept {
+  bool LogicalResultAuthorized() const noexcept {
     return logical_result_.Completed();
   }
-  [[nodiscard]] bool ReleaseAuthorized() const noexcept { return release_authorized_.Completed(); }
-  [[nodiscard]] bool ContinuationAuthorized() const noexcept {
+  bool ReleaseAuthorized() const noexcept { return release_authorized_.Completed(); }
+  bool ContinuationAuthorized() const noexcept {
     return continuation_authorized_.Completed();
   }
 
 private:
-  [[nodiscard]] CompletionGate& GateFor(CompositeMember member) noexcept {
+  CompletionGate& GateFor(CompositeMember member) noexcept {
     return member == CompositeMember::kFirst ? first_member_ : second_member_;
   }
 
-  [[nodiscard]] const CompletionGate& GateFor(CompositeMember member) const noexcept {
+  const CompletionGate& GateFor(CompositeMember member) const noexcept {
     return member == CompositeMember::kFirst ? first_member_ : second_member_;
   }
 

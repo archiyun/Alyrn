@@ -8,7 +8,7 @@
 #include <string>
 #include <string_view>
 
-#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/check.h"
 
 namespace {
 

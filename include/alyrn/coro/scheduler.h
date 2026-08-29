@@ -9,10 +9,10 @@
 // never implements a concrete scheduler or owns a queue.
 #pragma once
 
-#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/coro/frame_allocator.h"
 #include "alyrn/coro/work.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::coro {
 

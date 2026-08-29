@@ -105,8 +105,8 @@ target_include_directories(alyrn_coro PUBLIC
 )
 target_compile_features(alyrn_coro PUBLIC cxx_std_23)
 
-# alyrn_io_contract —— 后端实现使用的 I/O concepts、Result 算法和语义 profile
-# profile。它不包含具体 backend，也不依赖具体 backend。
+# alyrn_io_contract —— 后端实现使用的 I/O concepts（include/alyrn/backend）、
+# Result 算法和语义 profile。它不包含具体 backend，也不依赖具体 backend。
 add_library(alyrn_io_contract INTERFACE)
 target_include_directories(alyrn_io_contract INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -173,6 +173,7 @@ if(ALYRN_HAS_EPOLL)
 
     target_link_libraries(alyrn_epoll
         PUBLIC
+            alyrn_io_contract
             alyrn_net
             alyrn_coro
             alyrn_foundation
@@ -211,6 +212,7 @@ if(ALYRN_ENABLE_KQUEUE)
 
     target_link_libraries(alyrn_kqueue
         PUBLIC
+            alyrn_io_contract
             alyrn_net
             alyrn_coro
             alyrn_foundation
@@ -229,7 +231,7 @@ if(ALYRN_ENABLE_KQUEUE)
 endif()
 
 # alyrn_luring —— io_uring proactor 网络模块。它与 alyrn_epoll 并列，
-# 共同解释 alyrn_io 的协程可观察 I/O 契约。
+# 共同实现 alyrn::backend 的协程可观察 I/O 契约；应用通过 io facade 看见这些契约。
 if(ALYRN_ENABLE_URING)
     add_library(alyrn_luring STATIC
         src/uring/connector.cc
@@ -360,8 +362,8 @@ install(TARGETS ${ALYRN_INSTALL_TARGETS}
 # The source tree contains implementation support headers under
 # include/alyrn/detail.  They are installed only as dependencies of inline
 # public adapters; callers should include the stable manifest below instead
-# of depending on implementation module names such as base, ds, memory, or
-# backend.  Keeping this list explicit prevents a new internal header from
+# of depending on implementation directories such as ds or memory.
+# Keeping this list explicit prevents a new internal header from
 # silently becoming part of the package interface.
 set(ALYRN_PUBLIC_HEADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/alyrn.h
@@ -409,9 +411,20 @@ foreach(ALYRN_PUBLIC_DIR IN LISTS ALYRN_PUBLIC_DIRS)
         FILES_MATCHING PATTERN "*.h")
 endforeach()
 
+# Adapter-contract headers consumed by epoll/uring/kqueue and the io facade.
+# Not a public module: there is no alyrn/backend.h umbrella.
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/backend/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/alyrn/backend
+    FILES_MATCHING PATTERN "*.h")
+
+install(FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/detail/check.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/detail/macros.h
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/alyrn/detail)
+
 # These headers are implementation dependencies of the header-defined
 # adapters.  They intentionally have no stable namespace contract.
-set(ALYRN_DETAIL_DIRS backend base coro ds memory net operation time utils)
+set(ALYRN_DETAIL_DIRS coro ds memory net operation time)
 if(ALYRN_HAS_EPOLL)
     list(APPEND ALYRN_DETAIL_DIRS epoll)
 endif()

@@ -5,21 +5,22 @@
 #include <deque>
 #include <optional>
 
-#include "alyrn/io/accept_source.h"
-#include "alyrn/detail/backend/value_result_state.h"
-#include "alyrn/task.h"
-#include "alyrn/net/accept_source.h"
-#include "alyrn/net/endpoint.h"
-#include "alyrn/detail/net/socket.h"
-#include "alyrn/net/tcp_options.h"
-#include "alyrn/detail/operation/completion_gate.h"
-#include "alyrn/detail/operation/scheduler_continuation.h"
+#include "alyrn/backend/accept_source.h"
+#include "alyrn/backend/async_listener.h"
+#include "alyrn/backend/value_result_state.h"
 #include "alyrn/detail/epoll/channel.h"
 #include "alyrn/detail/epoll/loop_shutdown.h"
+#include "alyrn/detail/net/socket.h"
+#include "alyrn/detail/operation/completion_gate.h"
+#include "alyrn/detail/operation/scheduler_continuation.h"
+#include "alyrn/detail/macros.h"
 #include "alyrn/epoll/loop.h"
 #include "alyrn/epoll/stream.h"
+#include "alyrn/net/accept_source.h"
+#include "alyrn/net/endpoint.h"
+#include "alyrn/net/tcp_options.h"
 #include "alyrn/result.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/task.h"
 
 namespace alyrn::epoll {
 
@@ -31,19 +32,17 @@ public:
 
   using StreamType = Stream;
   using Event = std::optional<Stream>;
-  using NextResult = alyrn::Result<Event>;
+  using NextResult = Result<Event>;
 
   // Direct awaiter for the single-consumer accept loop. It keeps Next() on
   // the caller's coroutine frame and avoids a child Task frame per accepted
   // connection, while the source retains admission and terminal state.
-  class NextAwaiter {
+  class [[nodiscard]] NextAwaiter {
   public:
     explicit NextAwaiter(AcceptSource& source) noexcept : source_(&source) {}
 
     bool await_ready() const noexcept { return false; }
-
     bool await_suspend(std::coroutine_handle<> continuation) noexcept;
-
     NextResult await_resume() noexcept;
 
     void Complete(NextResult result) noexcept;
@@ -52,7 +51,7 @@ public:
     AcceptSource* source_;
     ::alyrn::detail::operation::SchedulerContinuation continuation_;
     ::alyrn::detail::operation::CompletionGate completion_gate_;
-    ::alyrn::detail::backend::ValueResultState<Event> result_;
+    backend::ValueResultState<Event> result_;
   };
 
   ~AcceptSource();
@@ -60,11 +59,10 @@ public:
   AcceptSource(AcceptSource&& other) noexcept;
   AcceptSource& operator=(AcceptSource&& other) noexcept;
 
-  [[nodiscard]]
   NextAwaiter Next() noexcept {
     return NextAwaiter(*this);
   }
-  ::alyrn::Task<Result<void>> Stop();
+  Task<Result<void>> Stop();
 
 private:
   friend class Listener;
@@ -88,7 +86,7 @@ private:
   NextAwaiter* pending_next_{nullptr};
 };
 
-static_assert(::alyrn::io::AsyncAcceptSource<AcceptSource>);
+static_assert(backend::AsyncAcceptSource<AcceptSource>);
 
 struct ListenerOptions {
   bool reuse_addr{true};
@@ -116,10 +114,10 @@ public:
   Listener(Listener&& other) noexcept;
   Listener& operator=(Listener&& other) noexcept;
 
-  ::alyrn::Task<Result<Stream>> Accept();
+  Task<Result<Stream>> Accept();
   [[nodiscard]]
   Result<AcceptSource> CreateAcceptSource(net::AcceptSourceOptions options = {}) noexcept;
-  ::alyrn::Task<Result<void>> Close();
+  Task<Result<void>> Close();
 
   // Accept, Close, CreateAcceptSource, and destruction are loop-affine. The caller
   // must use this listener from its owning Loop thread; a foreign thread
@@ -159,5 +157,7 @@ private:
   bool closed_{false};
   detail::LoopShutdownParticipant shutdown_participant_{this, &DispatchLoopStop};
 };
+
+static_assert(backend::AsyncListener<Listener>);
 
 }  // namespace alyrn::epoll

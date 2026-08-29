@@ -13,17 +13,16 @@
 #include <system_error>
 #include <utility>
 
-#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/net/endpoint.h"
 #include "alyrn/net/tcp_options.h"
 #include "alyrn/result.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::net {
 
 namespace detail {
 
-[[nodiscard]]
 inline Result<void> SetDescriptorFlag(int fd, int get_command, int set_command, int flag,
                                       bool enabled) noexcept {
   const int old_flags = ::fcntl(fd, get_command, 0);
@@ -39,7 +38,6 @@ inline Result<void> SetDescriptorFlag(int fd, int get_command, int set_command, 
 }
 
 template <class T>
-[[nodiscard]]
 inline Result<void> SetSocketOptionValue(int fd, int level, int option, const T& value) noexcept {
   if (fd < 0) {
     return std::unexpected(Errno(EBADF));
@@ -50,13 +48,11 @@ inline Result<void> SetSocketOptionValue(int fd, int level, int option, const T&
   return {};
 }
 
-[[nodiscard]]
 inline Result<void> SetSocketOption(int fd, int level, int option, bool enabled) noexcept {
   const int value = enabled ? 1 : 0;
   return SetSocketOptionValue(fd, level, option, value);
 }
 
-[[nodiscard]]
 inline Result<int> CheckedSocketOptionSize(std::size_t bytes) noexcept {
   if (bytes > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
     return std::unexpected(Errno(EINVAL));
@@ -64,7 +60,6 @@ inline Result<int> CheckedSocketOptionSize(std::size_t bytes) noexcept {
   return static_cast<int>(bytes);
 }
 
-[[nodiscard]]
 inline Result<Endpoint> GetEndpoint(int fd, bool peer) noexcept {
   sockaddr_storage address{};
   auto length = static_cast<socklen_t>(sizeof(address));
@@ -79,7 +74,6 @@ inline Result<Endpoint> GetEndpoint(int fd, bool peer) noexcept {
   return Endpoint(reinterpret_cast<const sockaddr*>(&address), length);
 }
 
-[[nodiscard]]
 inline Result<void> ConfigureNonBlockingCloseOnExec(int fd) noexcept {
   auto non_blocking = SetDescriptorFlag(fd, F_GETFL, F_SETFL, O_NONBLOCK, true);
   if (!non_blocking.has_value()) {
@@ -93,7 +87,6 @@ inline Result<void> ConfigureNonBlockingCloseOnExec(int fd) noexcept {
 // Creates a non-blocking TCP socket with close-on-exec enabled. Linux keeps
 // its atomic creation fast path; other POSIX systems configure the descriptor
 // immediately after creation.
-[[nodiscard]]
 inline Result<int> CreateNonBlockingSocket(sa_family_t family = AF_INET) noexcept {
   if (family != AF_INET && family != AF_INET6) {
     return std::unexpected(Error(std::make_error_code(std::errc::address_family_not_supported)));
@@ -119,22 +112,18 @@ inline Result<int> CreateNonBlockingSocket(sa_family_t family = AF_INET) noexcep
   return fd;
 }
 
-[[nodiscard]]
 inline Result<void> SetNonBlocking(int fd, bool enabled = true) noexcept {
   return detail::SetDescriptorFlag(fd, F_GETFL, F_SETFL, O_NONBLOCK, enabled);
 }
 
-[[nodiscard]]
 inline Result<void> SetCloseOnExec(int fd, bool enabled = true) noexcept {
   return detail::SetDescriptorFlag(fd, F_GETFD, F_SETFD, FD_CLOEXEC, enabled);
 }
 
-[[nodiscard]]
 inline Result<void> SetReuseAddr(int fd, bool enabled = true) noexcept {
   return detail::SetSocketOption(fd, SOL_SOCKET, SO_REUSEADDR, enabled);
 }
 
-[[nodiscard]]
 inline Result<void> SetReusePort(int fd, bool enabled = true) noexcept {
 #if defined(SO_REUSEPORT)
   return detail::SetSocketOption(fd, SOL_SOCKET, SO_REUSEPORT, enabled);
@@ -145,23 +134,19 @@ inline Result<void> SetReusePort(int fd, bool enabled = true) noexcept {
 #endif
 }
 
-[[nodiscard]]
 inline Result<void> SetNoDelay(int fd, bool enabled = true) noexcept {
   return detail::SetSocketOption(fd, IPPROTO_TCP, TCP_NODELAY, enabled);
 }
 
 // Compatibility spelling retained for existing callers.
-[[nodiscard]]
 inline Result<void> SetTcpNoDelay(int fd, bool enabled = true) noexcept {
   return SetNoDelay(fd, enabled);
 }
 
-[[nodiscard]]
 inline Result<void> SetKeepAlive(int fd, bool enabled = true) noexcept {
   return detail::SetSocketOption(fd, SOL_SOCKET, SO_KEEPALIVE, enabled);
 }
 
-[[nodiscard]]
 inline Result<void> SetKeepAlivePeriod(int fd, time::Duration period) noexcept {
   const auto seconds = std::chrono::duration_cast<std::chrono::seconds>(period).count();
   if (seconds <= 0 || seconds > std::numeric_limits<int>::max()) {
@@ -180,7 +165,6 @@ inline Result<void> SetKeepAlivePeriod(int fd, time::Duration period) noexcept {
 #endif
 }
 
-[[nodiscard]]
 inline Result<void> SetReadBuffer(int fd, std::size_t bytes) noexcept {
   auto value = detail::CheckedSocketOptionSize(bytes);
   if (!value.has_value()) {
@@ -189,7 +173,6 @@ inline Result<void> SetReadBuffer(int fd, std::size_t bytes) noexcept {
   return detail::SetSocketOptionValue(fd, SOL_SOCKET, SO_RCVBUF, *value);
 }
 
-[[nodiscard]]
 inline Result<void> SetWriteBuffer(int fd, std::size_t bytes) noexcept {
   auto value = detail::CheckedSocketOptionSize(bytes);
   if (!value.has_value()) {
@@ -198,7 +181,6 @@ inline Result<void> SetWriteBuffer(int fd, std::size_t bytes) noexcept {
   return detail::SetSocketOptionValue(fd, SOL_SOCKET, SO_SNDBUF, *value);
 }
 
-[[nodiscard]]
 inline Result<void> ApplyTcpOptions(int fd, const TcpOptions& options) noexcept {
   if (options.no_delay.has_value()) {
     auto result = SetNoDelay(fd, *options.no_delay);
@@ -238,17 +220,14 @@ inline Result<void> ApplyTcpOptions(int fd, const TcpOptions& options) noexcept 
   return {};
 }
 
-[[nodiscard]]
 inline Result<Endpoint> GetLocalEndpoint(int fd) noexcept {
   return detail::GetEndpoint(fd, false);
 }
 
-[[nodiscard]]
 inline Result<Endpoint> GetPeerEndpoint(int fd) noexcept {
   return detail::GetEndpoint(fd, true);
 }
 
-[[nodiscard]]
 inline Result<bool> IsSelfConnected(int fd) noexcept {
   auto local = GetLocalEndpoint(fd);
   if (!local.has_value()) {
@@ -289,14 +268,12 @@ public:
     return *this;
   }
 
-  [[nodiscard]]
   int fd() const noexcept {
     return sockfd_;
   }
 
   // Relinquishes ownership without closing. The caller becomes responsible
   // for the descriptor.
-  [[nodiscard]]
   int Release() noexcept {
     return std::exchange(sockfd_, -1);
   }
@@ -345,7 +322,7 @@ public:
 
   // Shuts down the write side of the socket. This does not close the
   // descriptor and therefore leaves reads available to the caller.
-  [[nodiscard]] Result<void> ShutdownWrite() const noexcept {
+  Result<void> ShutdownWrite() const noexcept {
     if (sockfd_ < 0) {
       return std::unexpected(Errno(EBADF));
     }
@@ -357,7 +334,7 @@ public:
 
   // Shuts down the read side of the socket. This does not close the
   // descriptor and therefore leaves writes available to the caller.
-  [[nodiscard]] Result<void> ShutdownRead() const noexcept {
+  Result<void> ShutdownRead() const noexcept {
     if (sockfd_ < 0) {
       return std::unexpected(Errno(EBADF));
     }
@@ -378,13 +355,11 @@ public:
   }
 
   // Enables or disables TCP_NODELAY.
-  [[nodiscard]]
   Result<void> SetNoDelay(bool on) const noexcept {
     return ::alyrn::net::SetNoDelay(sockfd_, on);
   }
 
   // Compatibility spelling retained for existing callers.
-  [[nodiscard]]
   Result<void> SetTcpNoDelay(bool on) const noexcept {
     return SetNoDelay(on);
   }
@@ -402,37 +377,30 @@ public:
   }
 
   // Enables or disables SO_KEEPALIVE.
-  [[nodiscard]]
   Result<void> SetKeepAlive(bool on) const noexcept {
     return ::alyrn::net::SetKeepAlive(sockfd_, on);
   }
 
-  [[nodiscard]]
   Result<void> SetKeepAlivePeriod(time::Duration period) const noexcept {
     return ::alyrn::net::SetKeepAlivePeriod(sockfd_, period);
   }
 
-  [[nodiscard]]
   Result<void> SetReadBuffer(std::size_t bytes) const noexcept {
     return ::alyrn::net::SetReadBuffer(sockfd_, bytes);
   }
 
-  [[nodiscard]]
   Result<void> SetWriteBuffer(std::size_t bytes) const noexcept {
     return ::alyrn::net::SetWriteBuffer(sockfd_, bytes);
   }
 
-  [[nodiscard]]
   Result<Endpoint> LocalEndpoint() const noexcept {
     return GetLocalEndpoint(sockfd_);
   }
 
-  [[nodiscard]]
   Result<Endpoint> PeerEndpoint() const noexcept {
     return GetPeerEndpoint(sockfd_);
   }
 
-  [[nodiscard]]
   Result<bool> IsSelfConnected() const noexcept {
     return ::alyrn::net::IsSelfConnected(sockfd_);
   }

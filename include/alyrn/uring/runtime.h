@@ -18,7 +18,7 @@ class Runtime::Builder<runtime::Uring> {
 public:
   // Runtime transfers each accepted stream to the handler by value. The
   // detached handler coroutine owns that stream until it finishes.
-  using ConnectionHandler = std::function<::alyrn::DetachedTask(uring::Stream)>;
+  using ConnectionHandler = std::function<DetachedTask(uring::Stream)>;
 
   explicit Builder(net::Endpoint listen_addr) noexcept;
 

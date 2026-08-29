@@ -8,7 +8,7 @@
 
 #include "alyrn/detail/time/timer_tree.h"
 #include "alyrn/detail/time/timer_index_kind.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::detail::time {
 
@@ -19,12 +19,10 @@ public:
 
   explicit TimerIndex(TimerIndexKind = TimerIndexKind::kRbTree) noexcept {}
 
-  [[nodiscard]]
   bool Empty() const {
     return store_.Empty();
   }
 
-  [[nodiscard]]
   std::size_t Size() const {
     return store_.Size();
   }
@@ -37,12 +35,10 @@ public:
     return store_.Erase(timer);
   }
 
-  [[nodiscard]]
   Timer* Earliest() {
     return store_.Earliest();
   }
 
-  [[nodiscard]]
   const Timer* Earliest() const {
     return store_.Earliest();
   }

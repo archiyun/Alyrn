@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "alyrn/kqueue/options.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::kqueue::detail {
 
@@ -48,7 +48,6 @@ public:
   // Drops every filter registered for the Channel and forgets it.
   void RemoveChannel(Channel* channel);
 
-  [[nodiscard]]
   bool HasChannel(Channel* channel) const;
 
   using TimerExpireHandler = void (*)(void* context) noexcept;

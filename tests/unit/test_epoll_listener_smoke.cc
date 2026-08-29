@@ -3,9 +3,12 @@
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <cerrno>
+#include <csignal>
+#include <cstdio>
 #include <expected>
 #include <iostream>
 #include <optional>
@@ -36,6 +39,25 @@ bool Check(bool condition, const char* message) {
     return false;
   }
   return true;
+}
+
+bool ExpectChildAbort(void (*entry)(), const char* message) {
+  const pid_t child = ::fork();
+  if (child < 0) {
+    return Check(false, "fork failed for Listener affinity test");
+  }
+  if (child == 0) {
+    (void)::freopen("/dev/null", "w", stderr);
+    entry();
+    ::_exit(0);
+  }
+
+  int status = 0;
+  while (::waitpid(child, &status, 0) < 0 && errno == EINTR) {
+  }
+  return Check(WIFSIGNALED(status), message) &&
+         Check(WTERMSIG(status) == SIGABRT,
+               "listener-affinity invariant must terminate with SIGABRT");
 }
 
 int ConnectNonBlocking(const alyrn::net::Endpoint& address) {
@@ -429,6 +451,45 @@ bool CheckAcceptSourceStopRejectsForeignLoop() {
                "foreign AcceptSource::Stop must return EINVAL");
 }
 
+void AcceptFromForeignThread() {
+  alyrn::epoll::Loop loop;
+  alyrn::epoll::Listener listener(&loop, alyrn::net::Endpoint(0));
+  std::thread foreign([&listener] { static_cast<void>(alyrn::coro::SyncWait(listener.Accept())); });
+  foreign.join();
+}
+
+void CloseFromForeignThread() {
+  alyrn::epoll::Loop loop;
+  alyrn::epoll::Listener listener(&loop, alyrn::net::Endpoint(0));
+  std::thread foreign([&listener] { static_cast<void>(alyrn::coro::SyncWait(listener.Close())); });
+  foreign.join();
+}
+
+void CreateAcceptSourceFromForeignThread() {
+  alyrn::epoll::Loop loop;
+  alyrn::epoll::Listener listener(&loop, alyrn::net::Endpoint(0));
+  std::thread foreign([&listener] { (void)listener.CreateAcceptSource(); });
+  foreign.join();
+}
+
+void DestroyListenerFromForeignThread() {
+  alyrn::epoll::Loop loop;
+  auto* listener = new alyrn::epoll::Listener(&loop, alyrn::net::Endpoint(0));
+  std::thread foreign([listener] { delete listener; });
+  foreign.join();
+}
+
+bool CheckListenerAffinityIsEnforcedInRelease() {
+  return ExpectChildAbort(&AcceptFromForeignThread,
+                          "Accept from a foreign thread must terminate in Release") &&
+         ExpectChildAbort(&CloseFromForeignThread,
+                          "Close from a foreign thread must terminate in Release") &&
+         ExpectChildAbort(&CreateAcceptSourceFromForeignThread,
+                          "CreateAcceptSource from a foreign thread must terminate in Release") &&
+         ExpectChildAbort(&DestroyListenerFromForeignThread,
+                          "Listener destruction from a foreign thread must terminate in Release");
+}
+
 }  // namespace
 
 int main() {
@@ -442,6 +503,7 @@ int main() {
   if (!CheckAcceptSourceStopWakesPendingNext()) return 1;
   if (!CheckAcceptSourceListenerCloseWakesPendingNext()) return 1;
   if (!CheckAcceptSourceStopRejectsForeignLoop()) return 1;
+  if (!CheckListenerAffinityIsEnforcedInRelease()) return 1;
 
   std::cout << "epoll listener smoke: PASS\n";
   return 0;

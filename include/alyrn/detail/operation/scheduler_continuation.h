@@ -5,10 +5,10 @@
 #include <type_traits>
 #include <utility>
 
-#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/work.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::detail::operation {
 
@@ -35,7 +35,6 @@ public:
     resume_work_.SetHandle(handle);
   }
 
-  [[nodiscard]]
   bool Bound() const noexcept {
     return scheduler_ != nullptr;
   }

@@ -15,7 +15,7 @@
 #include "alyrn/epoll/listener.h"
 #include "alyrn/epoll/loop.h"
 #include "alyrn/epoll/stream.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::epoll::detail {
 
@@ -58,14 +58,12 @@ public:
                 ThreadExitCallback exit_callback = {});
   ~Worker() noexcept;
 
-  [[nodiscard]]
   Result<void> Start();
 
   // Requests shutdown. The worker thread is joined by the destructor or by
   // the owning WorkerGroup.
   void Stop() noexcept;
 
-  [[nodiscard]]
   std::size_t Index() const noexcept { return index_; }
 
 private:

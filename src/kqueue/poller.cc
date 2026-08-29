@@ -9,7 +9,7 @@
 #include <cerrno>
 #include <limits>
 
-#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/detail/kqueue/channel.h"
 
 namespace alyrn::kqueue::detail {

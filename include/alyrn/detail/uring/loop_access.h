@@ -18,7 +18,6 @@ namespace alyrn::uring::detail {
 class LoopAccess final {
 public:
   template <class Prep>
-  [[nodiscard]]
   static Result<void> SubmitOp(Loop& loop, Op* op, Prep&& prep) noexcept {
     return loop.SubmitOp(op, std::forward<Prep>(prep));
   }
@@ -38,49 +37,40 @@ public:
     });
   }
 
-  [[nodiscard]]
   static Result<void> FlushSubmit(Loop& loop) noexcept {
     return loop.FlushSubmit();
   }
 
-  [[nodiscard]]
   static Result<void> CancelPendingOperations(Loop& loop) noexcept {
     return loop.CancelPendingOperations();
   }
 
-  [[nodiscard]]
   static Result<std::size_t> PollCompletions(Loop& loop) noexcept {
     return loop.PollCompletions();
   }
 
-  [[nodiscard]]
   static Result<std::size_t> WaitCompletions(Loop& loop) noexcept {
     return loop.WaitCompletions();
   }
 
   static void RunReady(Loop& loop) noexcept { loop.RunReady(); }
 
-  [[nodiscard]]
   static int RingFd(const Loop& loop) noexcept {
     return loop.RingFd();
   }
 
-  [[nodiscard]]
   static std::size_t PendingSubmitCount(const Loop& loop) noexcept {
     return loop.PendingSubmitCount();
   }
 
-  [[nodiscard]]
   static std::size_t InflightCount(const Loop& loop) noexcept {
     return loop.InflightCount();
   }
 
-  [[nodiscard]]
   static bool IsDrained(const Loop& loop) noexcept {
     return loop.IsDrained();
   }
 
-  [[nodiscard]]
   static Result<ProvidedBufferPool*> GetSharedProvidedBufferPool(
       Loop& loop, std::size_t buffer_size, std::size_t source_capacity) noexcept {
     return loop.GetSharedProvidedBufferPool(buffer_size, source_capacity);

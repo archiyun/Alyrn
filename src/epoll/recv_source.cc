@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT
+#include "alyrn/epoll/recv_source.h"
+
 #include <sys/socket.h>
 
 #include <algorithm>
@@ -8,13 +10,12 @@
 #include <limits>
 #include <utility>
 
-#include "alyrn/detail/backend/value_result_state.h"
-#include "alyrn/detail/base/check.h"
-#include "alyrn/result.h"
+#include "alyrn/backend/value_result_state.h"
+#include "alyrn/detail/check.h"
+#include "alyrn/detail/epoll/loop_access.h"
 #include "alyrn/detail/operation/completion_gate.h"
 #include "alyrn/detail/operation/scheduler_continuation.h"
-#include "alyrn/detail/epoll/loop_access.h"
-#include "alyrn/epoll/recv_source.h"
+#include "alyrn/result.h"
 
 namespace alyrn::epoll {
 
@@ -58,8 +59,8 @@ bool RecvSource::NextAwaiter::await_suspend(std::coroutine_handle<> continuation
   }
 
   if (source_->state_.State() == net::detail::RecvSourceState::kIdle) {
-    if (source_->loop_->State() == ::alyrn::detail::backend::LoopState::kStopping ||
-        source_->loop_->State() == ::alyrn::detail::backend::LoopState::kStopped) {
+    if (source_->loop_->State() == backend::LoopState::kStopping ||
+        source_->loop_->State() == backend::LoopState::kStopped) {
       result_.SetError(Errno(ECANCELED));
       (void)(completion_gate_.TryComplete());
       return false;
@@ -94,9 +95,7 @@ bool RecvSource::NextAwaiter::await_suspend(std::coroutine_handle<> continuation
   return true;
 }
 
-RecvSource::NextResult RecvSource::NextAwaiter::await_resume() noexcept {
-  return result_.Take();
-}
+RecvSource::NextResult RecvSource::NextAwaiter::await_resume() noexcept { return result_.Take(); }
 
 void RecvSource::NextAwaiter::Complete(NextResult result) noexcept {
   if (!completion_gate_.TryComplete()) {
@@ -106,7 +105,7 @@ void RecvSource::NextAwaiter::Complete(NextResult result) noexcept {
   continuation_.Schedule();
 }
 
-class RecvSource::StopAwaiter {
+class [[nodiscard]] RecvSource::StopAwaiter {
 public:
   explicit StopAwaiter(RecvSource& source) noexcept : source_(&source) {}
 
@@ -140,14 +139,14 @@ public:
 
   Result<void> await_resume() noexcept {
     ALYRN_CHECK(result_.has_value(), "Epoll recv source Stop resumed without a result");
-    return std::move(*result_);
+    return *result_;
   }
 
   void Complete(Result<void> result) noexcept {
     if (!completion_gate_.TryComplete()) {
       return;
     }
-    result_.emplace(std::move(result));
+    result_.emplace(result);
     continuation_.Schedule();
   }
 
@@ -158,8 +157,7 @@ private:
   std::optional<Result<void>> result_;
 };
 
-Result<RecvSource> RecvSource::Create(
-    Loop* loop, int fd, RecvSourceOptions options) noexcept {
+Result<RecvSource> RecvSource::Create(Loop* loop, int fd, RecvSourceOptions options) noexcept {
   if (loop == nullptr || fd < 0 || !loop->IsInLoopThread()) {
     return std::unexpected(Errno(EINVAL));
   }
@@ -188,17 +186,16 @@ Result<RecvSource> RecvSource::Create(
     return std::unexpected(Errno(ENOMEM));
   }
 
-  return RecvSource(loop, fd, std::move(*state), options.buffer_size, std::move(storage),
-                           std::move(available_buffers));
+  return RecvSource(loop, fd, *state, options.buffer_size, std::move(storage),
+                    std::move(available_buffers));
 }
 
-RecvSource::RecvSource(Loop* loop, int fd,
-                                     net::detail::RecvSourceStateMachine state,
-                                     std::size_t buffer_size, std::vector<std::byte> storage,
-                                     std::vector<std::uint32_t> available_buffers) noexcept
+RecvSource::RecvSource(Loop* loop, int fd, net::detail::RecvSourceStateMachine state,
+                       std::size_t buffer_size, std::vector<std::byte> storage,
+                       std::vector<std::uint32_t> available_buffers) noexcept
     : loop_(loop),
       fd_(fd),
-      state_(std::move(state)),
+      state_(state),
       channel_(loop, fd),
       buffer_size_(buffer_size),
       storage_(std::move(storage)),
@@ -216,13 +213,12 @@ RecvSource::~RecvSource() {
   ALYRN_CHECK(pending_next_ == nullptr, "RecvSource destroyed with pending Next");
   ALYRN_CHECK(pending_stop_ == nullptr, "RecvSource destroyed with pending Stop");
   ALYRN_CHECK(state_.State() == net::detail::RecvSourceState::kIdle ||
-                     state_.State() == net::detail::RecvSourceState::kTerminal,
-                 "RecvSource destroyed before Stop completed");
+                  state_.State() == net::detail::RecvSourceState::kTerminal,
+              "RecvSource destroyed before Stop completed");
   ALYRN_CHECK(events_.empty(), "RecvSource destroyed with queued events");
-  ALYRN_CHECK(state_.OutstandingLeases() == 0,
-                 "RecvSource destroyed with outstanding leases");
+  ALYRN_CHECK(state_.OutstandingLeases() == 0, "RecvSource destroyed with outstanding leases");
   ALYRN_CHECK(available_buffers_.size() == state_.Options().buffer_capacity,
-                 "RecvSource destroyed with a missing buffer");
+              "RecvSource destroyed with a missing buffer");
 
   LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
   DetachChannel();
@@ -231,21 +227,21 @@ RecvSource::~RecvSource() {
 RecvSource::RecvSource(RecvSource&& other) noexcept
     : loop_(other.loop_),
       fd_(std::exchange(other.fd_, -1)),
-      state_(std::move(other.state_)),
+      state_(other.state_),
       channel_(std::move(other.channel_)),
       events_(std::move(other.events_)),
-      terminal_error_(std::move(other.terminal_error_)),
+      terminal_error_(other.terminal_error_),
       buffer_size_(std::exchange(other.buffer_size_, 0)),
       storage_(std::move(other.storage_)),
       available_buffers_(std::move(other.available_buffers_)) {
   ALYRN_CHECK(other.pending_next_ == nullptr, "RecvSource cannot move with pending Next");
   ALYRN_CHECK(other.pending_stop_ == nullptr, "RecvSource cannot move with pending Stop");
   ALYRN_CHECK(other.state_.State() == net::detail::RecvSourceState::kIdle ||
-                     other.state_.State() == net::detail::RecvSourceState::kTerminal,
-                 "RecvSource cannot move while active");
+                  other.state_.State() == net::detail::RecvSourceState::kTerminal,
+              "RecvSource cannot move while active");
   ALYRN_CHECK(other.events_.empty(), "RecvSource cannot move with queued events");
   ALYRN_CHECK(other.state_.OutstandingLeases() == 0,
-                 "RecvSource cannot move with outstanding leases");
+              "RecvSource cannot move with outstanding leases");
   LoopAccess::UnregisterShutdownParticipant(*other.loop_, other.shutdown_participant_);
   other.loop_ = nullptr;
   BindChannelCallbacks();
@@ -260,20 +256,18 @@ RecvSource& RecvSource::operator=(RecvSource&& other) noexcept {
   ALYRN_CHECK(pending_next_ == nullptr, "RecvSource destination has pending Next");
   ALYRN_CHECK(pending_stop_ == nullptr, "RecvSource destination has pending Stop");
   ALYRN_CHECK(state_.State() == net::detail::RecvSourceState::kIdle ||
-                     state_.State() == net::detail::RecvSourceState::kTerminal,
-                 "RecvSource destination is active");
+                  state_.State() == net::detail::RecvSourceState::kTerminal,
+              "RecvSource destination is active");
   ALYRN_CHECK(events_.empty(), "RecvSource destination has queued events");
-  ALYRN_CHECK(state_.OutstandingLeases() == 0,
-                 "RecvSource destination has outstanding leases");
+  ALYRN_CHECK(state_.OutstandingLeases() == 0, "RecvSource destination has outstanding leases");
 
   ALYRN_CHECK(other.pending_next_ == nullptr, "RecvSource source has pending Next");
   ALYRN_CHECK(other.pending_stop_ == nullptr, "RecvSource source has pending Stop");
   ALYRN_CHECK(other.state_.State() == net::detail::RecvSourceState::kIdle ||
-                     other.state_.State() == net::detail::RecvSourceState::kTerminal,
-                 "RecvSource source is active");
+                  other.state_.State() == net::detail::RecvSourceState::kTerminal,
+              "RecvSource source is active");
   ALYRN_CHECK(other.events_.empty(), "RecvSource source has queued events");
-  ALYRN_CHECK(other.state_.OutstandingLeases() == 0,
-                 "RecvSource source has outstanding leases");
+  ALYRN_CHECK(other.state_.OutstandingLeases() == 0, "RecvSource source has outstanding leases");
 
   if (loop_ != nullptr) {
     LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
@@ -282,9 +276,9 @@ RecvSource& RecvSource::operator=(RecvSource&& other) noexcept {
   LoopAccess::UnregisterShutdownParticipant(*other.loop_, other.shutdown_participant_);
   loop_ = std::exchange(other.loop_, nullptr);
   fd_ = std::exchange(other.fd_, -1);
-  state_ = std::move(other.state_);
+  state_ = other.state_;
   channel_ = std::move(other.channel_);
-  terminal_error_ = std::move(other.terminal_error_);
+  terminal_error_ = other.terminal_error_;
   buffer_size_ = std::exchange(other.buffer_size_, 0);
   storage_ = std::move(other.storage_);
   available_buffers_ = std::move(other.available_buffers_);
@@ -373,7 +367,7 @@ void RecvSource::OnReady() noexcept {
 
     const std::uint32_t buffer_id = available_buffers_.back();
     available_buffers_.pop_back();
-    auto* data = storage_.data() + static_cast<std::size_t>(buffer_id) * buffer_size_;
+    auto* data = storage_.data() + (static_cast<std::size_t>(buffer_id) * buffer_size_);
 
     ssize_t received = -1;
     do {
@@ -411,8 +405,7 @@ void RecvSource::OnReady() noexcept {
     } catch (...) {
       // The temporary lease returns the buffer and decrements the outstanding
       // lease count before the queue reservation is rolled back.
-      ALYRN_CHECK(state_.DiscardQueuedEvent(),
-                     "RecvSource failed to roll back queue reservation");
+      ALYRN_CHECK(state_.DiscardQueuedEvent(), "RecvSource failed to roll back queue reservation");
       RequestBackendStop(Errno(ENOMEM));
       return;
     }
@@ -478,11 +471,10 @@ bool RecvSource::TryTakeNext(NextResult& result) noexcept {
 
 void RecvSource::ReturnBuffer(std::uint32_t buffer_id) noexcept {
   ALYRN_CHECK(loop_ != nullptr && loop_->IsInLoopThread(),
-                 "RecvSource buffer returned from wrong thread");
-  ALYRN_CHECK(buffer_id < state_.Options().buffer_capacity,
-                 "RecvSource invalid buffer id");
+              "RecvSource buffer returned from wrong thread");
+  ALYRN_CHECK(buffer_id < state_.Options().buffer_capacity, "RecvSource invalid buffer id");
   ALYRN_CHECK(available_buffers_.size() < state_.Options().buffer_capacity,
-                 "RecvSource buffer returned twice");
+              "RecvSource buffer returned twice");
   available_buffers_.push_back(buffer_id);
   ALYRN_CHECK(state_.ReleaseLease(), "RecvSource lease released twice");
   EnsureAdmission();

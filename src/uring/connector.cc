@@ -11,8 +11,8 @@
 #include <string_view>
 #include <utility>
 
-#include "alyrn/detail/backend/value_result_state.h"
-#include "alyrn/detail/base/check.h"
+#include "alyrn/backend/value_result_state.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/detail/uring/completion_dispatch.h"
 #include "alyrn/detail/uring/op.h"
 #include "alyrn/detail/uring/operation_submission.h"
@@ -53,7 +53,7 @@ Result<void> SetNonBlocking(int fd) noexcept {
 }
 
 // --- ConnectAwaiter ---
-class ConnectAwaiter : public detail::OpHook<ConnectAwaiter> {
+class [[nodiscard]] ConnectAwaiter : public detail::OpHook<ConnectAwaiter> {
   friend void detail::DispatchConnectComplete(::alyrn::uring::detail::Op* op) noexcept;
 
 public:
@@ -75,8 +75,8 @@ public:
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     ALYRN_CHECK(loop_ != nullptr, "Connector operation has no owner loop");
     ALYRN_CHECK(loop_->IsInLoopThread(), "Connector operation called from wrong Loop thread");
-    if (loop_->State() == ::alyrn::detail::backend::LoopState::kStopping ||
-        loop_->State() == ::alyrn::detail::backend::LoopState::kStopped) {
+    if (loop_->State() == backend::LoopState::kStopping ||
+        loop_->State() == backend::LoopState::kStopped) {
       CompleteInline(std::unexpected(Errno(ECANCELED)));
       return false;
     }
@@ -148,7 +148,7 @@ private:
   net::Endpoint peer_;
   net::TcpOptions tcp_options_;
   int fd_{-1};
-  ::alyrn::detail::backend::ValueResultState<Stream> result_;
+  backend::ValueResultState<Stream> result_;
 };
 
 coro::Task<Result<Stream>> ConnectResolved(Loop* loop, net::TcpOptions tcp_options,

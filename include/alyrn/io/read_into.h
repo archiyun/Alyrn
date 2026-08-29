@@ -7,6 +7,6 @@
 
 namespace alyrn::io {
 
-using ReadIntoOutcome = ::alyrn::net::ReadIntoOutcome;
+using ReadIntoOutcome = net::ReadIntoOutcome;
 
 }  // namespace alyrn::io

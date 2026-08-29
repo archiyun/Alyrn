@@ -2,7 +2,7 @@
 #pragma once
 
 #include "alyrn/detail/ds/intrusive_list.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::epoll::detail {
 
@@ -35,12 +35,10 @@ public:
 
   ALYRN_DELETE_COPY_MOVE(LoopShutdownRegistry);
 
-  [[nodiscard]]
   bool Register(LoopShutdownParticipant* participant) noexcept {
     return participants_.PushBack(participant);
   }
 
-  [[nodiscard]]
   bool Unregister(LoopShutdownParticipant* participant) noexcept {
     return participants_.Erase(participant);
   }
@@ -52,7 +50,6 @@ public:
     });
   }
 
-  [[nodiscard]]
   bool Empty() const noexcept { return participants_.Empty(); }
 
 private:

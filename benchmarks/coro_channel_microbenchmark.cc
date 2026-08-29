@@ -15,7 +15,7 @@
 #include <cstdlib>
 #include <iostream>
 
-#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/coro/channel.h"
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/work.h"
@@ -40,7 +40,7 @@ public:
     SetRun([](Work* work) noexcept { static_cast<ChannelWork*>(work)->RunPairs(); });
   }
 
-  [[nodiscard]] std::uint64_t checksum() const noexcept {
+  std::uint64_t checksum() const noexcept {
     return checksum_;
   }
 

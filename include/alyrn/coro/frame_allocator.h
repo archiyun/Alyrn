@@ -18,8 +18,8 @@
 #include <new>
 #include <thread>
 
-#include "alyrn/detail/base/check.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/check.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::coro {
 namespace detail {
@@ -92,7 +92,6 @@ inline constexpr std::size_t FrameAllocationMarkerSize = sizeof(FrameAllocationH
 // Heap and over-aligned frames keep a prefix header. Pooled frames are raw
 // size-class slots; their definitions live after CoroFramePoolResource so they
 // can consult the slab map.
-[[nodiscard]]
 inline void* AllocateFrame(std::size_t frame_size, std::size_t frame_alignment);
 inline void DeallocateFrame(void* frame) noexcept;
 
@@ -309,7 +308,6 @@ private:
     directory->entries[l2].store(nullptr, std::memory_order_release);
   }
 
-  [[nodiscard]]
   static SlabHeader* LookupSlab(void* pointer) noexcept {
     const auto addr = reinterpret_cast<std::uintptr_t>(pointer);
     std::size_t l1 = 0;
@@ -325,7 +323,6 @@ private:
     return directory->entries[l2].load(std::memory_order_acquire);
   }
 
-  [[nodiscard]]
   static bool IsSlot(const SlabHeader* slab, void* pointer) noexcept {
     auto* base = reinterpret_cast<const std::byte*>(slab);
     auto* slot = static_cast<const std::byte*>(pointer);
@@ -340,7 +337,6 @@ private:
     return (offset / slab->slot_size) < slab->slot_count;
   }
 
-  [[nodiscard]]
   std::size_t FindSizeClass(std::size_t bytes, std::size_t alignment) const noexcept {
     if (bytes == 0 || bytes > kMaxPooledBytes || alignment > kSlotAlignment) {
       return kSizeClassCount;
@@ -348,7 +344,6 @@ private:
     return kClassByBytes[bytes];
   }
 
-  [[nodiscard]]
   bool IsOwnerThread() const noexcept {
     return owner_thread_ == std::this_thread::get_id();
   }
@@ -438,12 +433,10 @@ private:
     }
   }
 
-  [[nodiscard]]
   void* TryAllocateFrame(std::size_t frame_size, std::size_t alignment) {
     return AllocatePooled(frame_size, alignment);
   }
 
-  [[nodiscard]]
   void* AllocatePooled(std::size_t bytes, std::size_t alignment) {
     BindOwnerThread();
     const std::size_t index = FindSizeClass(bytes, alignment);

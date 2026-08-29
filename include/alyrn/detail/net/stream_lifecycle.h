@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <expected>
 
-#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/result.h"
 
 namespace alyrn::net::detail {
@@ -38,7 +38,6 @@ public:
     return *this;
   }
 
-  [[nodiscard]]
   Result<void> ValidateRead() const noexcept {
     if (resource_ == ResourceState::kClosing) {
       return std::unexpected(Errno(ECANCELED));
@@ -49,7 +48,6 @@ public:
     return {};
   }
 
-  [[nodiscard]]
   Result<void> ValidateWrite() const noexcept {
     auto readable = ValidateRead();
     if (!readable.has_value()) {
@@ -64,7 +62,6 @@ public:
     return {};
   }
 
-  [[nodiscard]]
   bool IsReadShutdown() const noexcept {
     return read_ == ReadState::kShutdown;
   }
@@ -74,7 +71,6 @@ public:
   // CommitCloseRead() on success or AbortCloseReadPreparation() before
   // reporting its local error. false means the read side was already shut
   // down.
-  [[nodiscard]]
   Result<bool> PrepareCloseRead(bool read_pending) noexcept {
     auto readable = ValidateRead();
     if (!readable.has_value()) {
@@ -110,7 +106,6 @@ public:
   // now owns a required shutdown syscall and must either CommitShutdown() on
   // success or AbortShutdownPreparation() before reporting its local error.
   // false means the write side was already shut down.
-  [[nodiscard]]
   Result<bool> PrepareShutdown(bool write_pending) noexcept {
     auto readable = ValidateRead();
     if (!readable.has_value()) {
@@ -149,7 +144,6 @@ public:
   // stream operations while the adapter either commits physical drain/close
   // or aborts before any cancel request reached the backend.  false means the
   // resource was already closed; a concurrent preparation receives EBUSY.
-  [[nodiscard]]
   Result<bool> PrepareClose() noexcept {
     if (resource_ == ResourceState::kClosed) {
       return false;

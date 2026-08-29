@@ -32,6 +32,25 @@ bool Expect(bool condition, const char* message) {
   return true;
 }
 
+bool ExpectChildAbort(void (*entry)(), const char* message) {
+  const pid_t child = ::fork();
+  if (child < 0) {
+    return Expect(false, "fork failed for Loop affinity test");
+  }
+  if (child == 0) {
+    (void)::freopen("/dev/null", "w", stderr);
+    entry();
+    ::_exit(0);
+  }
+
+  int status = 0;
+  while (::waitpid(child, &status, 0) < 0 && errno == EINTR) {
+  }
+  return Expect(WIFSIGNALED(status), message) &&
+         Expect(WTERMSIG(status) == SIGABRT,
+                "loop-affinity invariant must terminate with SIGABRT");
+}
+
 class NoopWork final : public alyrn::coro::Work {
 public:
   NoopWork() noexcept { SetRun(&RunNoop); }
@@ -47,23 +66,8 @@ void DestroyLoopWithQueuedWork() {
 }
 
 bool TestEpollLoopRejectsQueuedWorkAtDestruction() {
-  const pid_t child = ::fork();
-  if (child < 0) {
-    return Expect(false, "fork failed for Loop destructor invariant test");
-  }
-  if (child == 0) {
-    (void)::freopen("/dev/null", "w", stderr);
-    DestroyLoopWithQueuedWork();
-    ::_exit(0);
-  }
-
-  int status = 0;
-  while (::waitpid(child, &status, 0) < 0 && errno == EINTR) {
-  }
-  return Expect(WIFSIGNALED(status),
-                "Loop destruction with queued work must terminate in Release") &&
-         Expect(WTERMSIG(status) == SIGABRT,
-                "Loop queued-work invariant must terminate with SIGABRT");
+  return ExpectChildAbort(&DestroyLoopWithQueuedWork,
+                          "Loop destruction with queued work must terminate in Release");
 }
 
 void MutateChannelFromForeignThread() {
@@ -81,22 +85,27 @@ void MutateChannelFromForeignThread() {
 }
 
 bool TestEpollLoopRejectsForeignChannelMutation() {
-  const pid_t child = ::fork();
-  if (child < 0) {
-    return Expect(false, "fork failed for Channel ownership test");
-  }
-  if (child == 0) {
-    (void)::freopen("/dev/null", "w", stderr);
-    MutateChannelFromForeignThread();
-    ::_exit(0);
-  }
+  return ExpectChildAbort(&MutateChannelFromForeignThread,
+                          "foreign Channel mutation must terminate in Release");
+}
 
-  int status = 0;
-  while (::waitpid(child, &status, 0) < 0 && errno == EINTR) {
-  }
-  return Expect(WIFSIGNALED(status), "foreign Channel mutation must terminate in Release") &&
-         Expect(WTERMSIG(status) == SIGABRT,
-                "foreign Channel mutation must terminate with SIGABRT");
+void RunAfterFromForeignThread() {
+  alyrn::epoll::Loop loop;
+  std::thread foreign([&loop] { (void)loop.RunAfter(alyrn::time::Duration::zero(), [] {}); });
+  foreign.join();
+}
+
+void DestroyLoopFromForeignThread() {
+  auto* loop = new alyrn::epoll::Loop;
+  std::thread foreign([loop] { delete loop; });
+  foreign.join();
+}
+
+bool TestEpollLoopAffinityIsEnforcedInRelease() {
+  return ExpectChildAbort(&RunAfterFromForeignThread,
+                          "RunAfter from a foreign thread must terminate in Release") &&
+         ExpectChildAbort(&DestroyLoopFromForeignThread,
+                          "Loop destruction from a foreign thread must terminate in Release");
 }
 
 bool TestRunOnOwnerExecutesImmediately() {
@@ -380,6 +389,7 @@ int main() {
     if (!TestRunOnOwnerExecutesImmediately()) return 1;
     if (!TestEpollLoopRejectsQueuedWorkAtDestruction()) return 1;
     if (!TestEpollLoopRejectsForeignChannelMutation()) return 1;
+    if (!TestEpollLoopAffinityIsEnforcedInRelease()) return 1;
     if (!TestSchedulerWorkIsDeferredAndBound()) return 1;
     if (!TestEpollLoopOwnsFrameResource()) return 1;
     if (!TestSchedulerWorkScheduledDuringResumeIsDeferred()) return 1;

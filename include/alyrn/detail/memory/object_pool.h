@@ -8,9 +8,9 @@
 #include <new>
 #include <utility>
 
-#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/detail/memory/memory_pool.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::detail::memory {
 
@@ -148,16 +148,16 @@ class ObjectPool {
     OverflowNode* next{nullptr};
     alignas(T) std::byte storage[sizeof(T)];
 
-    [[nodiscard]] T* Storage() noexcept {
+    T* Storage() noexcept {
       return reinterpret_cast<T*>(storage);
     }
 
-    [[nodiscard]] T* Object() noexcept {
+    T* Object() noexcept {
       return std::launder(Storage());
     }
   };
 
-  [[nodiscard]] OverflowNode* TakeOverflow(T* object) noexcept {
+  OverflowNode* TakeOverflow(T* object) noexcept {
     std::lock_guard<MutexPolicy> lock{overflow_mutex_};
     OverflowNode** link = &overflow_head_;
     while (*link != nullptr) {

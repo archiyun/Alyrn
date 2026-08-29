@@ -4,7 +4,7 @@
 #include <coroutine>
 #include <utility>
 
-#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/detail/uring/loop_access.h"
 #include "alyrn/uring/loop.h"
 
@@ -20,9 +20,8 @@ namespace alyrn::uring::detail {
 //   bind ResumeWork -> SubmitOp -> clear ResumeWork and rollback on failure
 //
 // It is deliberately uring-specific. Completion-protocol interpretation stays
-// with the submitting awaiter, while operation/detail remains resource-free.
+// with the submitting awaiter, while detail/operation remains resource-free.
 template <typename Prep, typename OnSubmitFailure>
-[[nodiscard]]
 bool SubmitAwaitingOperation(Loop& loop, Op& op, std::coroutine_handle<> continuation,
                              Prep&& prep, OnSubmitFailure&& on_submit_failure) noexcept {
   ALYRN_CHECK(loop.IsInLoopThread(), "Uring operation submitted from a non-owner loop thread");

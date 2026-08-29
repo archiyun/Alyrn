@@ -20,7 +20,6 @@ public:
   ListNode(ListNode&&) = delete;
   ListNode& operator=(ListNode&&) = delete;
 
-  [[nodiscard]]
   bool InList() const noexcept {
     return next_ != nullptr;
   }
@@ -123,7 +122,6 @@ public:
   const_iterator Begin() const noexcept { return const_iterator(Next(&head_)); }
   const_iterator End() const noexcept { return const_iterator(&head_); }
 
-  [[nodiscard]]
   bool Empty() const noexcept {
     return head_.next_ == &head_;
   }
@@ -134,9 +132,7 @@ public:
 
   // Insert at either end. Returns false for nullptr or when elem is already
   // linked (in this or any list).
-  [[nodiscard]]
   bool PushFront(T*) noexcept;
-  [[nodiscard]]
   bool PushBack(T*) noexcept;
   // Pop. Returns nullptr when empty.
   T* PopFront() noexcept;
@@ -144,7 +140,6 @@ public:
   // Erase by element. O(1). Returns false if elem was not linked.
   // Precondition: if linked, elem is linked in *this* (cross-list erase is UB,
   // same caveat as IntrusiveTree::Erase). InList() only says "linked somewhere".
-  [[nodiscard]]
   bool Erase(T* elem) noexcept;
 
   // Unlink every element (resetting its hook) and reset the sentinel. O(n).

@@ -17,7 +17,6 @@ namespace alyrn::uring::detail {
 namespace {
 
 // Convert the high-level Options into native liburing parameters.
-[[nodiscard]]
 io_uring_params MakeParams(const Options& options) noexcept {
   io_uring_params params{};
   params.flags |= IORING_SETUP_CLAMP;

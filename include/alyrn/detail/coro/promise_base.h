@@ -9,7 +9,7 @@
 #include <exception>
 
 #include "alyrn/coro/frame_allocator.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::coro::detail {
 
@@ -27,7 +27,6 @@ public:
 
     bool await_ready() const noexcept { return false; }
 
-    [[nodiscard]]
     std::coroutine_handle<> await_suspend(std::coroutine_handle<>) const noexcept {
       return continuation;
     }
@@ -44,7 +43,6 @@ public:
     continuation_ = continuation ? continuation : std::noop_coroutine();
   }
 
-  [[nodiscard]]
   std::coroutine_handle<> Continuation() const noexcept {
     return continuation_;
   }

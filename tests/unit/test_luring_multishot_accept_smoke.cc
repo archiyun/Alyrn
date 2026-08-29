@@ -291,27 +291,22 @@ public:
 
   bool ConsumeEvent() noexcept { return state_.ConsumeEvent(); }
 
-  [[nodiscard]]
   std::size_t SubmissionCount() const noexcept {
     return submission_count_;
   }
 
-  [[nodiscard]]
   bool RequestSubmitted() const noexcept {
     return request_submitted_;
   }
 
-  [[nodiscard]]
   bool MultishotEnabled() const noexcept {
     return multishot_enabled_;
   }
 
-  [[nodiscard]]
   AcceptSourceState State() const noexcept {
     return state_.State();
   }
 
-  [[nodiscard]]
   std::size_t QueuedEvents() const noexcept {
     return state_.QueuedEvents();
   }

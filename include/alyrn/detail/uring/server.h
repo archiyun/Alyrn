@@ -9,7 +9,7 @@
 #include "alyrn/uring/stream.h"
 #include "alyrn/detail/uring/worker_group.h"
 #include "alyrn/net/endpoint.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::uring::detail {
 
@@ -50,12 +50,10 @@ public:
     session_handler_ = std::move(handler);
   }
 
-  [[nodiscard]]
   Result<void> Start();
 
   void Stop() noexcept;
 
-  [[nodiscard]]
   bool Started() const noexcept {
     return started_;
   }

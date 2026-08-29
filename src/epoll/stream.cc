@@ -17,10 +17,10 @@
 #include <span>
 #include <utility>
 
-#include "alyrn/detail/base/check.h"
-#include "alyrn/net/endpoint.h"
-#include "alyrn/detail/net/socket.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/detail/epoll/loop_access.h"
+#include "alyrn/detail/net/socket.h"
+#include "alyrn/net/endpoint.h"
 #include "alyrn/result.h"
 
 namespace alyrn::epoll {
@@ -31,7 +31,6 @@ namespace {
 
 constexpr std::size_t kReadIntoMaxIov = 16;
 
-[[nodiscard]]
 constexpr bool IsWouldBlock(int error) noexcept {
   return error == EAGAIN || error == EWOULDBLOCK;
 }
@@ -45,7 +44,6 @@ struct IoAttempt {
   IoAttemptState state{IoAttemptState::kCompleted};
   Result<std::size_t> result{0};
 
-  [[nodiscard]]
   static IoAttempt Completed(std::size_t bytes) noexcept {
     return {
         .state = IoAttemptState::kCompleted,
@@ -53,7 +51,6 @@ struct IoAttempt {
     };
   }
 
-  [[nodiscard]]
   static IoAttempt WouldBlock() noexcept {
     return {
         .state = IoAttemptState::kWouldBlock,
@@ -61,7 +58,6 @@ struct IoAttempt {
     };
   }
 
-  [[nodiscard]]
   static IoAttempt Failed(Error error) noexcept {
     return {
         .state = IoAttemptState::kCompleted,
@@ -71,7 +67,6 @@ struct IoAttempt {
 };
 
 template <typename Operation>
-[[nodiscard]]
 IoAttempt RetryNonBlockingIo(Operation&& operation) noexcept {
   while (true) {
     const ssize_t result = operation();
@@ -90,19 +85,16 @@ IoAttempt RetryNonBlockingIo(Operation&& operation) noexcept {
   }
 }
 
-[[nodiscard]]
 IoAttempt TryRead(int fd, std::span<std::byte> buffer) noexcept {
   return RetryNonBlockingIo(
       [fd, buffer]() noexcept { return ::read(fd, buffer.data(), buffer.size()); });
 }
 
-[[nodiscard]]
 IoAttempt TryWrite(int fd, std::span<const std::byte> buffer) noexcept {
   return RetryNonBlockingIo(
       [fd, buffer]() noexcept { return ::send(fd, buffer.data(), buffer.size(), MSG_NOSIGNAL); });
 }
 
-[[nodiscard]]
 Result<int> CheckedIovCount(std::size_t count) noexcept {
   if (count > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
     return std::unexpected(Errno(EINVAL));
@@ -117,7 +109,6 @@ Result<int> CheckedIovCount(std::size_t count) noexcept {
   return static_cast<int>(count);
 }
 
-[[nodiscard]]
 IoAttempt TryReadv(int fd, std::span<const iovec> buffers) noexcept {
   if (buffers.empty()) {
     return IoAttempt::Completed(0);
@@ -135,7 +126,6 @@ IoAttempt TryReadv(int fd, std::span<const iovec> buffers) noexcept {
 
 // Called only after a epoll error event. SO_ERROR == 0 is inconsistent with
 // that event, so use EIO as a stable error result rather than reporting errno 0.
-[[nodiscard]]
 Error ErrorFromSocketErrorEvent(int fd) noexcept {
   int err = 0;
   auto len = static_cast<socklen_t>(sizeof(err));
@@ -153,8 +143,8 @@ Error ErrorFromSocketErrorEvent(int fd) noexcept {
 // --- ReadAwaiterState ---
 bool Stream::ReadAwaiterState::BeginRead(std::coroutine_handle<> continuation) noexcept {
   stream_->RequireOwnerLoop();
-  if (stream_->loop_->State() == ::alyrn::detail::backend::LoopState::kStopping ||
-      stream_->loop_->State() == ::alyrn::detail::backend::LoopState::kStopped) {
+  if (stream_->loop_->State() == backend::LoopState::kStopping ||
+      stream_->loop_->State() == backend::LoopState::kStopped) {
     CompleteInline(std::unexpected(Errno(ECANCELED)));
     return false;
   }
@@ -361,8 +351,8 @@ Stream::WriteAllAwaiter Stream::WriteAll(std::span<const std::byte> buffer) noex
 
 bool Stream::WriteAllAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   stream_->RequireOwnerLoop();
-  if (stream_->loop_->State() == ::alyrn::detail::backend::LoopState::kStopping ||
-      stream_->loop_->State() == ::alyrn::detail::backend::LoopState::kStopped) {
+  if (stream_->loop_->State() == backend::LoopState::kStopping ||
+      stream_->loop_->State() == backend::LoopState::kStopped) {
     CompleteInline(std::unexpected(Errno(ECANCELED)));
     return false;
   }
@@ -418,7 +408,7 @@ void Stream::WriteAllAwaiter::CompleteInline(Result<std::size_t> result) noexcep
   result_.SetResult(result);
   ALYRN_CHECK(lifecycle_.TryAuthorizeResult(), "Epoll write result was authorized twice");
   ALYRN_CHECK(lifecycle_.TryAuthorizeRelease(),
-                 "Epoll write release was not authorized after its result");
+              "Epoll write release was not authorized after its result");
 }
 
 Stream::WriteAllAwaiter::~WriteAllAwaiter() {
@@ -503,7 +493,7 @@ Stream& Stream::operator=(Stream&& other) noexcept {
 
   Loop* other_loop = PrepareMove(other);
   ALYRN_CHECK(loop_ == nullptr || loop_ == other_loop,
-                 "Stream move requires both objects to use the same Loop");
+              "Stream move requires both objects to use the same Loop");
   if (loop_ != nullptr) {
     ResetForMove();
   }
@@ -678,11 +668,11 @@ void Stream::CompleteRead(Result<std::size_t> result) {
   switch (kind) {
     case PendingReadKind::kReadSome:
       state = static_cast<ReadSomeAwaiter*>(awaiter);
-      result_authorized = static_cast<ReadSomeAwaiter*>(awaiter)->CompleteResult(std::move(result));
+      result_authorized = static_cast<ReadSomeAwaiter*>(awaiter)->CompleteResult(result);
       break;
     case PendingReadKind::kReadInto:
       state = static_cast<ReadIntoAwaiter*>(awaiter);
-      result_authorized = static_cast<ReadIntoAwaiter*>(awaiter)->CompleteResult(std::move(result));
+      result_authorized = static_cast<ReadIntoAwaiter*>(awaiter)->CompleteResult(result);
       break;
     case PendingReadKind::kNone:
       ALYRN_CHECK(false, "Stream::CompleteRead missing operation kind");
@@ -691,7 +681,7 @@ void Stream::CompleteRead(Result<std::size_t> result) {
   ALYRN_CHECK(result_authorized, "Stream::CompleteRead result was already authorized");
   ALYRN_CHECK(state != nullptr, "Stream::CompleteRead has no awaiter state");
   ALYRN_CHECK(state->TryAuthorizeRelease(),
-                 "Stream::CompleteRead release was not authorized after its result");
+              "Stream::CompleteRead release was not authorized after its result");
 
   // The stream slot is an operation resource. Release it only after the
   // result is fixed, but before continuation authorization: resumed code may
@@ -699,7 +689,7 @@ void Stream::CompleteRead(Result<std::size_t> result) {
   void* released = std::exchange(pending_read_, nullptr);
   const PendingReadKind released_kind = std::exchange(pending_read_kind_, PendingReadKind::kNone);
   ALYRN_CHECK(released == awaiter && released_kind == kind,
-                 "Stream::CompleteRead pending slot changed during completion");
+              "Stream::CompleteRead pending slot changed during completion");
 
   // Successful reads keep interest armed in both modes so a continuation can
   // immediately submit the next read without an epoll_ctl pair. LT disarms
@@ -711,7 +701,7 @@ void Stream::CompleteRead(Result<std::size_t> result) {
     }
   }
   ALYRN_CHECK(state->TryAuthorizeContinuation(),
-                 "Stream::CompleteRead continuation was not authorized after release");
+              "Stream::CompleteRead continuation was not authorized after release");
   state->ScheduleContinuation();
 }
 
@@ -720,19 +710,18 @@ void Stream::CompleteWrite(Result<std::size_t> result) {
   if (awaiter == nullptr) {
     return;
   }
-  ALYRN_CHECK(awaiter->CompleteResult(std::move(result)),
-                 "Stream::CompleteWrite result was already authorized");
+  ALYRN_CHECK(awaiter->CompleteResult(result),
+              "Stream::CompleteWrite result was already authorized");
   ALYRN_CHECK(awaiter->TryAuthorizeRelease(),
-                 "Stream::CompleteWrite release was not authorized after its result");
+              "Stream::CompleteWrite release was not authorized after its result");
 
   WriteAllAwaiter* released = std::exchange(pending_write_, nullptr);
-  ALYRN_CHECK(released == awaiter,
-                 "Stream::CompleteWrite pending slot changed during completion");
+  ALYRN_CHECK(released == awaiter, "Stream::CompleteWrite pending slot changed during completion");
   if (channel_.IsWriting()) {
     channel_.DisableWriting();
   }
   ALYRN_CHECK(awaiter->TryAuthorizeContinuation(),
-                 "Stream::CompleteWrite continuation was not authorized after release");
+              "Stream::CompleteWrite continuation was not authorized after release");
   awaiter->ScheduleContinuation();
 }
 
@@ -801,10 +790,8 @@ void Stream::ResetForMove() noexcept {
 Loop* Stream::PrepareMove(Stream& other) noexcept {
   ALYRN_CHECK(other.loop_ != nullptr, "Stream move source is not initialized");
   ALYRN_CHECK(other.loop_->IsInLoopThread(), "Stream move called from wrong Loop thread");
-  ALYRN_CHECK(other.pending_read_ == nullptr,
-                 "Stream cannot move with a pending read operation");
-  ALYRN_CHECK(other.pending_write_ == nullptr,
-                 "Stream cannot move with a pending write operation");
+  ALYRN_CHECK(other.pending_read_ == nullptr, "Stream cannot move with a pending read operation");
+  ALYRN_CHECK(other.pending_write_ == nullptr, "Stream cannot move with a pending write operation");
 
   other.DetachChannel();
   LoopAccess::UnregisterShutdownParticipant(*other.loop_, other.shutdown_participant_);

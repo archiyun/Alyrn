@@ -10,7 +10,7 @@
 #include <span>
 #include <vector>
 
-#include "alyrn/io/async_stream.h"
+#include "alyrn/backend/async_stream.h"
 #include "alyrn/task.h"
 #include "alyrn/detail/uring/completion_dispatch.h"
 #include "alyrn/detail/uring/op.h"
@@ -22,7 +22,7 @@
 #include "alyrn/detail/operation/split_release_lifecycle.h"
 #include "alyrn/result.h"
 #include "alyrn/time/clock.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::uring {
 
@@ -77,16 +77,13 @@ public:
   // await_suspend() on this stream's owner Loop. Calling them from a
   // different thread violates the runtime contract and terminates through
   // ALYRN_CHECK in every build configuration.
-  [[nodiscard]]
   ReadSomeAwaiter ReadSome(std::span<std::byte> buffer) noexcept;
 
   // Transfers the destination Buffer into the awaiter. The result returns the
   // owner after the CQE has made the kernel's access to its storage terminal.
-  [[nodiscard]]
   ReadIntoAwaiter ReadInto(net::Buffer buffer, std::size_t reserve = 4096) noexcept;
 
-  [[nodiscard]]
-  ::alyrn::Task<Result<void>> WriteAll(std::span<const std::byte> buffer);
+  Task<Result<void>> WriteAll(std::span<const std::byte> buffer);
 
   // WriteAll() chooses this optional extension when enabled. SendZeroCopy()
   // keeps the caller's buffer alive until its notification CQE is observed.
@@ -101,14 +98,11 @@ public:
   // after the kernel's resource-release boundary: either the primary CQE
   // itself, or the F_NOTIF CQE promised by primary F_MORE. This keeps the
   // caller's buffer alive through the kernel's resource lifetime.
-  [[nodiscard]]
   SendZeroCopyAwaiter SendZeroCopy(std::span<const std::byte> buffer) noexcept;
 
-  [[nodiscard]]
   // Legacy alias for CloseWrite().
-  ::alyrn::Task<Result<void>> Shutdown() noexcept;
-  [[nodiscard]]
-  ::alyrn::Task<Result<void>> Close() noexcept;
+  Task<Result<void>> Shutdown() noexcept;
+  Task<Result<void>> Close() noexcept;
 
   [[nodiscard]]
   Result<net::Endpoint> LocalAddr() const noexcept;
@@ -133,13 +127,11 @@ public:
   [[nodiscard]]
   Result<void> SetWriteBuffer(std::size_t bytes) const noexcept;
 
-  [[nodiscard]]
   // Shuts down local reception while keeping the descriptor and write side.
-  ::alyrn::Task<Result<void>> CloseRead() noexcept;
+  Task<Result<void>> CloseRead() noexcept;
 
-  [[nodiscard]]
   // Shuts down local transmission while keeping the descriptor and read side.
-  ::alyrn::Task<Result<void>> CloseWrite() noexcept;
+  Task<Result<void>> CloseWrite() noexcept;
 
   [[nodiscard]]
   int Fd() const noexcept {
@@ -164,7 +156,6 @@ private:
 
   class CloseAwaiter;
 
-  [[nodiscard]]
   SendAwaiter Send(std::span<const std::byte> buffer) noexcept;
 
   void RequireOwnerLoop() const noexcept;
@@ -183,7 +174,7 @@ private:
 };
 
 // --- ReadSomeAwaiter ---
-class Stream::ReadSomeAwaiter : public detail::OpHook<Stream::ReadSomeAwaiter> {
+class [[nodiscard]] Stream::ReadSomeAwaiter : public detail::OpHook<Stream::ReadSomeAwaiter> {
 public:
   using OpHook = detail::OpHook<ReadSomeAwaiter>;
 
@@ -194,7 +185,6 @@ public:
 
   bool await_ready() const noexcept { return false; }
 
-  [[nodiscard]]
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
 
   Result<std::size_t> await_resume() noexcept;
@@ -209,7 +199,7 @@ private:
 };
 
 // --- ReadIntoAwaiter ---
-class Stream::ReadIntoAwaiter : public detail::OpHook<Stream::ReadIntoAwaiter> {
+class [[nodiscard]] Stream::ReadIntoAwaiter : public detail::OpHook<Stream::ReadIntoAwaiter> {
 public:
   using OpHook = detail::OpHook<ReadIntoAwaiter>;
 
@@ -223,7 +213,6 @@ public:
 
   bool await_ready() const noexcept { return false; }
 
-  [[nodiscard]]
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
 
   net::ReadIntoOutcome await_resume() noexcept;
@@ -239,7 +228,6 @@ private:
     kMultiple,
   };
 
-  [[nodiscard]]
   ReservationKind PrepareReservation(iovec& single_iov) noexcept;
   void FinishReservation(Result<std::size_t> result) noexcept;
 
@@ -253,7 +241,7 @@ private:
   ReservationKind reservation_kind_{ReservationKind::kNone};
 };
 
-class Stream::SendAwaiter : public detail::OpHook<Stream::SendAwaiter> {
+class [[nodiscard]] Stream::SendAwaiter : public detail::OpHook<Stream::SendAwaiter> {
 public:
   using OpHook = detail::OpHook<SendAwaiter>;
 
@@ -264,7 +252,6 @@ public:
 
   bool await_ready() const noexcept { return false; }
 
-  [[nodiscard]]
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
 
   Result<std::size_t> await_resume() noexcept;
@@ -278,7 +265,7 @@ private:
   std::span<const std::byte> buffer_;
 };
 
-class Stream::SendZeroCopyAwaiter : public detail::OpHook<Stream::SendZeroCopyAwaiter> {
+class [[nodiscard]] Stream::SendZeroCopyAwaiter : public detail::OpHook<Stream::SendZeroCopyAwaiter> {
 public:
   using OpHook = detail::OpHook<SendZeroCopyAwaiter>;
 
@@ -289,7 +276,6 @@ public:
 
   bool await_ready() const noexcept { return false; }
 
-  [[nodiscard]]
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
 
   Result<ZeroCopySendResult> await_resume() noexcept;
@@ -298,7 +284,6 @@ private:
   friend detail::CompletionDisposition detail::DispatchSendZeroCopyComplete(
       detail::Op* op, detail::CompletionEvent event) noexcept;
 
-  [[nodiscard]]
   static detail::CompletionDisposition OnComplete(detail::Op* op,
                                                   detail::CompletionEvent event) noexcept;
 
@@ -309,7 +294,7 @@ private:
   bool notification_received_{false};
 };
 
-static_assert(::alyrn::io::AsyncStream<Stream>);
-static_assert(::alyrn::io::AsyncReadIntoStream<Stream>);
+static_assert(backend::AsyncStream<Stream>);
+static_assert(backend::AsyncReadIntoStream<Stream>);
 
 }  // namespace alyrn::uring

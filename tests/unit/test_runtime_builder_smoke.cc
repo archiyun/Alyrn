@@ -55,7 +55,7 @@ public:
     return *this;
   }
 
-  [[nodiscard]] std::uint16_t port() const noexcept { return port_; }
+  std::uint16_t port() const noexcept { return port_; }
 
   void Close() noexcept {
     if (fd_ >= 0) {

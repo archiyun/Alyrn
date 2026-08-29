@@ -8,8 +8,7 @@
 #include <utility>
 #include <vector>
 
-#include "alyrn/detail/base/check.h"
-#include "alyrn/detail/base/current_thread.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/coro/frame_allocator.h"
 #include "alyrn/detail/kqueue/channel.h"
 #include "alyrn/detail/kqueue/poller.h"
@@ -27,13 +26,14 @@ thread_local Loop* t_loop_in_this_thread = nullptr;
 }  // namespace
 
 Loop::Loop(std::pmr::memory_resource* frame_resource)
-    : Scheduler(frame_resource),
-      thread_id_(::alyrn::detail::CurrentThreadId()),
-      poller_(std::make_unique<detail::Poller>()),
-      timer_queue_(std::make_unique<detail::TimerQueue>(*poller_)) {
+    : Scheduler(frame_resource), poller_(std::make_unique<detail::Poller>()) {
   ALYRN_CHECK(t_loop_in_this_thread == nullptr,
                  "Loop: only one Loop may exist per thread");
   t_loop_in_this_thread = this;
+
+  // Channel registration goes through IsInLoopThread(), so the TLS owner
+  // pointer must be published before TimerQueue or the wakeup Channel.
+  timer_queue_ = std::make_unique<detail::TimerQueue>(*poller_);
 
   int wakeup_fds[2] = {-1, -1};
   ALYRN_CHECK(::pipe(wakeup_fds) == 0, "Loop: wakeup pipe creation failed");
@@ -62,6 +62,10 @@ Loop::~Loop() {
   ALYRN_CHECK(pending_work_.Empty(), "Loop destroyed with pending owner work");
   ALYRN_CHECK(shutdown_registry_.Empty(),
                  "Loop destroyed with registered shutdown resources");
+  // TimerQueue and the wakeup Channel unregister while TLS still names this
+  // Loop; the member unique_ptrs would otherwise run after this pointer is
+  // cleared.
+  timer_queue_.reset();
   DetachWakeupChannel();
   {
     std::lock_guard lock{posted_mutex_};
@@ -81,22 +85,22 @@ void Loop::Run(std::stop_token token) {
   ALYRN_CHECK(IsInLoopThread(), "Loop::Run called from wrong thread");
   ALYRN_CHECK(!looping_, "Loop::Run called while already running");
 
-  ::alyrn::detail::backend::LoopState expected = ::alyrn::detail::backend::LoopState::kCreated;
-  if (!state_.compare_exchange_strong(expected, ::alyrn::detail::backend::LoopState::kRunning,
+  auto expected = backend::LoopState::kCreated;
+  if (!state_.compare_exchange_strong(expected, backend::LoopState::kRunning,
                                       std::memory_order_acq_rel, std::memory_order_acquire)) {
-    ALYRN_CHECK(expected == ::alyrn::detail::backend::LoopState::kStopping,
+    ALYRN_CHECK(expected == backend::LoopState::kStopping,
                    "Loop::Run may only run a created or stopping loop");
   }
 
   looping_ = true;
   std::stop_callback on_stop{token, [this] { RequestStop(); }};
 
-  while (State() == ::alyrn::detail::backend::LoopState::kRunning) {
+  while (State() == backend::LoopState::kRunning) {
     DoPendingWork();
 
     /* Work run above may have requested stop. Re-checking here keeps a final
      * queued continuation from being stranded behind another blocking wait. */
-    if (State() != ::alyrn::detail::backend::LoopState::kRunning) {
+    if (State() != backend::LoopState::kRunning) {
       break;
     }
 
@@ -119,13 +123,13 @@ void Loop::Run(std::stop_token token) {
   RunPending();
   coro::CoroFramePoolResource::DrainCurrent();
   looping_ = false;
-  state_.store(::alyrn::detail::backend::LoopState::kStopped, std::memory_order_release);
+  state_.store(backend::LoopState::kStopped, std::memory_order_release);
 }
 
 void Loop::RequestStop() noexcept {
-  ::alyrn::detail::backend::LoopState observed = state_.load(std::memory_order_acquire);
-  while (observed == ::alyrn::detail::backend::LoopState::kCreated || observed == ::alyrn::detail::backend::LoopState::kRunning) {
-    if (state_.compare_exchange_weak(observed, ::alyrn::detail::backend::LoopState::kStopping,
+  backend::LoopState observed = state_.load(std::memory_order_acquire);
+  while (observed == backend::LoopState::kCreated || observed == backend::LoopState::kRunning) {
+    if (state_.compare_exchange_weak(observed, backend::LoopState::kStopping,
                                      std::memory_order_acq_rel, std::memory_order_acquire)) {
       Wakeup();
       return;
@@ -189,7 +193,9 @@ void Loop::UnregisterShutdownParticipant(LoopShutdownParticipant& participant) n
                  "Loop shutdown participant was not registered");
 }
 
-bool Loop::IsInLoopThread() const noexcept { return thread_id_ == ::alyrn::detail::CurrentThreadId(); }
+bool Loop::IsInLoopThread() const noexcept {
+  return t_loop_in_this_thread == this;
+}
 
 void Loop::DoPendingWork() {
   DrainPostedWork();

@@ -19,7 +19,7 @@
 #include <iostream>
 #include <thread>
 
-#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/detail/kqueue/channel.h"
 #include "alyrn/kqueue/loop.h"
 #include "alyrn/kqueue/options.h"
@@ -64,11 +64,9 @@ public:
   ScopedPipe(const ScopedPipe&) = delete;
   ScopedPipe& operator=(const ScopedPipe&) = delete;
 
-  [[nodiscard]]
   int ReadFd() const {
     return fds_[0];
   }
-  [[nodiscard]]
   int WriteFd() const {
     return fds_[1];
   }
@@ -97,11 +95,9 @@ public:
   ScopedSocketPair(const ScopedSocketPair&) = delete;
   ScopedSocketPair& operator=(const ScopedSocketPair&) = delete;
 
-  [[nodiscard]]
   int Local() const {
     return fds_[0];
   }
-  [[nodiscard]]
   int Peer() const {
     return fds_[1];
   }
@@ -390,7 +386,7 @@ bool CheckRequestStopWakesBlockedLoop() {
   loop.Run();
   stopper.join();
 
-  return Check(loop.State() == ::alyrn::detail::backend::LoopState::kStopped,
+  return Check(loop.State() == ::alyrn::backend::LoopState::kStopped,
                "RequestStop must wake a blocked Loop");
 }
 

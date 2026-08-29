@@ -39,22 +39,25 @@ scheduler or I/O backend.
 - `alyrn::DetachedTask` is the resultless fire-and-forget coroutine type.
   `alyrn::SpawnDetach` schedules it directly; the detached coroutine frame
   embeds its `ResumeWork` and has no join state.
-- Promise and awaiter implementation details live under `coro/detail/`.
+- Promise and awaiter implementation details live under
+  `include/alyrn/detail/coro/`.
 - Epoll awaiters remain in the network adapter layer and may depend on
   `Loop` and epoll-specific operation state.
 - io_uring awaiters remain in the luring adapter layer and may depend on the
   ring runtime.
 - The dependency direction is one-way from lower primitives to concrete
-  backends: `coro/foundation -> net -> Epoll/luring`. The `io` module is a
-  higher-level contract/facade layer and may depend on `net` or a selected
-  backend, but concrete backends must not include `io` headers or link the
-  `alyrn_io` target.
+  backends: `coro/foundation -> net -> backend -> epoll/uring/kqueue`.
+  `include/alyrn/backend` holds the adapter-contract concepts (`alyrn::backend`);
+  CMake exposes them as `alyrn_io_contract`. The `io` module is the
+  application facade of those concepts (`alyrn::io` aliases). Concrete
+  backends link `alyrn_io_contract` and include `alyrn/backend/*.h`; they must
+  not include `io` headers or link the `alyrn_io` target.
 - `net::Buffer` owns backend-neutral segmented byte storage and accept-source
   admission state remains a network primitive. `io::Buffer` is the public
   zero-cost spelling for `net::Buffer`. The `io` facade may compose these lower
   modules but does not own their implementations.
 - Business and protocol code may depend on `Task` and abstract asynchronous
-  stream operations, but not on either concrete I/O backend.
+  stream operations, but not on a concrete I/O backend.
 
 ## File Responsibilities
 
@@ -69,10 +72,11 @@ scheduler or I/O backend.
 | `coro/scheduler.h` | Backend-neutral scheduling boundary |
 | `coro/work.h` | Schedulable work and coroutine resume adapter |
 | `coro/frame_allocator.h` | Coroutine-frame allocation through PMR resources |
-| `coro/detail/promise_base.h` | Shared lazy coroutine promise and continuation protocol |
-| `coro/detail/spawn_state.h` | Joinable root result, detach, waiter, and ownership state embedded in the root frame |
-| `coro/detail/spawn_root.h` | Joinable root coroutine, promise, final-suspend, and root-frame destruction protocol |
-| `operation/detail/` | Backend-neutral completion gates, composite/split-release lifecycle helpers, and scheduler-bound continuations; never fd, buffer, or CQE ownership |
+| `detail/coro/promise_base.h` | Shared lazy coroutine promise and continuation protocol |
+| `detail/coro/spawn_state.h` | Joinable root result, detach, waiter, and ownership state embedded in the root frame |
+| `detail/coro/spawn_root.h` | Joinable root coroutine, promise, final-suspend, and root-frame destruction protocol |
+| `detail/operation/` | Backend-neutral completion gates, composite/split-release lifecycle helpers, and scheduler-bound continuations; never fd, buffer, or CQE ownership |
+| `backend/*.h` | Adapter-contract concepts and awaiter result storage (`alyrn::backend`); no `alyrn/backend.h` umbrella |
 
 ## Remaining Boundaries
 
@@ -93,3 +97,10 @@ The following are deliberate limits or require separate design work:
   multishot accept and receive sources, provided-buffer leases, and split
   zero-copy send completion. Future extensions must refine the same logical
   completion/lifetime protocol without changing `Task<T>` ownership semantics.
+
+## 修订（2026-08）
+
+Promise 与 spawn 实现位于 `include/alyrn/detail/coro/`，完成协议位于
+`include/alyrn/detail/operation/`，不再使用 `coro/detail/` 或 `operation/detail/`。
+adapter 契约在 `include/alyrn/backend`（`alyrn_io_contract`）；`io` 只是应用侧别名。
+依赖方向包含 kqueue，且具体后端链接 `alyrn_io_contract`、不链接 `alyrn_io`。

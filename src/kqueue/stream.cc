@@ -17,7 +17,7 @@
 #include <span>
 #include <utility>
 
-#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/detail/kqueue/loop_access.h"
 #include "alyrn/net/endpoint.h"
 #include "alyrn/detail/net/socket.h"
@@ -31,7 +31,6 @@ namespace {
 
 constexpr std::size_t kReadIntoMaxIov = 16;
 
-[[nodiscard]]
 constexpr bool IsWouldBlock(int error) noexcept {
   return error == EAGAIN || error == EWOULDBLOCK;
 }
@@ -45,7 +44,6 @@ struct IoAttempt {
   IoAttemptState state{IoAttemptState::kCompleted};
   Result<std::size_t> result{0};
 
-  [[nodiscard]]
   static IoAttempt Completed(std::size_t bytes) noexcept {
     return {
         .state = IoAttemptState::kCompleted,
@@ -53,7 +51,6 @@ struct IoAttempt {
     };
   }
 
-  [[nodiscard]]
   static IoAttempt WouldBlock() noexcept {
     return {
         .state = IoAttemptState::kWouldBlock,
@@ -61,7 +58,6 @@ struct IoAttempt {
     };
   }
 
-  [[nodiscard]]
   static IoAttempt Failed(Error error) noexcept {
     return {
         .state = IoAttemptState::kCompleted,
@@ -71,7 +67,6 @@ struct IoAttempt {
 };
 
 template <typename Operation>
-[[nodiscard]]
 IoAttempt RetryNonBlockingIo(Operation&& operation) noexcept {
   while (true) {
     const ssize_t result = operation();
@@ -90,13 +85,11 @@ IoAttempt RetryNonBlockingIo(Operation&& operation) noexcept {
   }
 }
 
-[[nodiscard]]
 IoAttempt TryRead(int fd, std::span<std::byte> buffer) noexcept {
   return RetryNonBlockingIo(
       [fd, buffer]() noexcept { return ::read(fd, buffer.data(), buffer.size()); });
 }
 
-[[nodiscard]]
 IoAttempt TryWrite(int fd, std::span<const std::byte> buffer) noexcept {
 #if defined(MSG_NOSIGNAL)
   return RetryNonBlockingIo(
@@ -107,7 +100,6 @@ IoAttempt TryWrite(int fd, std::span<const std::byte> buffer) noexcept {
 #endif
 }
 
-[[nodiscard]]
 Result<int> CheckedIovCount(std::size_t count) noexcept {
   if (count > static_cast<std::size_t>(std::numeric_limits<int>::max())) {
     return std::unexpected(Errno(EINVAL));
@@ -122,7 +114,6 @@ Result<int> CheckedIovCount(std::size_t count) noexcept {
   return static_cast<int>(count);
 }
 
-[[nodiscard]]
 IoAttempt TryReadv(int fd, std::span<const iovec> buffers) noexcept {
   if (buffers.empty()) {
     return IoAttempt::Completed(0);
@@ -138,7 +129,6 @@ IoAttempt TryReadv(int fd, std::span<const iovec> buffers) noexcept {
   });
 }
 
-[[nodiscard]]
 Error ErrorFromSocketErrorEvent(int fd) noexcept {
   int err = 0;
   auto len = static_cast<socklen_t>(sizeof(err));
@@ -178,8 +168,8 @@ void RearmWriting(detail::Channel& channel) noexcept {
 
 bool Stream::ReadAwaiterState::BeginRead(std::coroutine_handle<> continuation) noexcept {
   stream_->RequireOwnerLoop();
-  if (stream_->loop_->State() == ::alyrn::detail::backend::LoopState::kStopping ||
-      stream_->loop_->State() == ::alyrn::detail::backend::LoopState::kStopped) {
+  if (stream_->loop_->State() == backend::LoopState::kStopping ||
+      stream_->loop_->State() == backend::LoopState::kStopped) {
     CompleteInline(std::unexpected(Errno(ECANCELED)));
     return false;
   }
@@ -364,8 +354,8 @@ Stream::WriteAllAwaiter Stream::WriteAll(std::span<const std::byte> buffer) noex
 
 bool Stream::WriteAllAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   stream_->RequireOwnerLoop();
-  if (stream_->loop_->State() == ::alyrn::detail::backend::LoopState::kStopping ||
-      stream_->loop_->State() == ::alyrn::detail::backend::LoopState::kStopped) {
+  if (stream_->loop_->State() == backend::LoopState::kStopping ||
+      stream_->loop_->State() == backend::LoopState::kStopped) {
     CompleteInline(std::unexpected(Errno(ECANCELED)));
     return false;
   }

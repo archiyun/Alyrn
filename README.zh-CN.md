@@ -20,7 +20,7 @@ Alyrn 在相互独立的网络后端之上，提供统一、直观且高性能�
 Alyrn 使用[生命周期精化协程 I/O（LRCI）](docs/design/zh-CN/network/lifecycle-refined-coroutine-io.md)：readiness 与 CQE 等后端事件不会直接等同于协程完成，而是被精化到一套共享逻辑生命周期，分别确定结果何时 ready、continuation 何时恢复、资源何时释放。
 
 * 🔀 **统一的异步 I/O 契约**
-  各后端保留各自的线程、事件循环与完成模型，但通过 `io` 的 `AsyncStream`、`AsyncListener` 与 `AsyncConnector` concept 提供一致的业务可观察语义。`coro` 以同步代码形式表达异步控制流，并隐藏协程帧、挂起、恢复与生命周期细节；业务代码无需接触 `epoll_event`、SQE、CQE 或 `kevent`。
+  各后端保留各自的线程、事件循环与完成模型，但通过 `backend` 的 `AsyncStream`、`AsyncListener` 与 `AsyncConnector` concept 提供一致的业务可观察语义（应用侧使用 `io` 别名）。`coro` 以同步代码形式表达异步控制流，并隐藏协程帧、挂起、恢复与生命周期细节；业务代码无需接触 `epoll_event`、SQE、CQE 或 `kevent`。
 
 * 🧩 **明确的所有权与完成语义**
   每个 Worker 独占自己的线程、事件循环、连接与 I/O 操作。操作在所属执行上下文中完成，协程 continuation 也在相同上下文中恢复，同时明确约束 buffer 生命周期、取消行为与异步关闭流程。协程帧不跨 loop 迁移。

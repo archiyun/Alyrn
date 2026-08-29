@@ -1,17 +1,20 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+// Shared adapter-contract header for epoll, uring, and kqueue. Include this
+// file directly; there is no alyrn/backend.h. Applications use alyrn/io.h.
+
 #include <cstdint>
 #include <expected>
 #include <memory>
 #include <type_traits>
 #include <utility>
 
-#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/result.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
-namespace alyrn::detail::backend {
+namespace alyrn::backend {
 
 // Storage for a non-trivial Result<T>. Backend adapters use it to retain
 // a result across suspension; a separate operation lifecycle authorizes when
@@ -24,7 +27,6 @@ public:
   ValueResultState() noexcept = default;
   ~ValueResultState() { Reset(); }
 
-  [[nodiscard]]
   bool HasResult() const noexcept {
     return state_ != State::kPending;
   }
@@ -46,7 +48,6 @@ public:
     }
   }
 
-  [[nodiscard]]
   Result<T> Take() noexcept(std::is_nothrow_move_constructible_v<T>) {
     ALYRN_CHECK(HasResult(), "ValueResultState result was taken before completion");
     if (state_ == State::kError) {
@@ -93,4 +94,4 @@ private:
   }
 };
 
-}  // namespace alyrn::detail::backend
+}  // namespace alyrn::backend

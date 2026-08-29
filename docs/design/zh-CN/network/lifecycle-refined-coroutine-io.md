@@ -260,10 +260,10 @@ cross-backend conformance tests
 
 代码中的 `SingleResultLifecycle`、`CompletionGate`、`CompositeLifecycle`、
 `SplitReleaseLifecycle` 和 source lifecycle 分别实现局部授权规则；
-`backend/detail::ValueResultState<T>` 只保存已经固定的非平凡 `Result<T>`，不拥有任何授权规则。
+`alyrn::backend::ValueResultState<T>` 只保存已经固定的非平凡 `Result<T>`，不拥有任何授权规则。
 `SingleResultLifecycle` 将 coupled single-result 操作压缩为一个 1-byte 的严格阶段机；
 这些 lifecycle 类型都不拥有 fd、buffer、Channel、SQE 或 CQE；具体 Adapter 负责物理资源，
-而 backend detail 只提供结果存储。
+而 `alyrn::backend` 只提供结果存储。
 
 TLA+ 检查有界 interleaving 和 observation projection。conformance tests 则对 Epoll 和
 io_uring 运行同一组应用可观察场景，例如 EOF、半关闭、pending I/O close、一次恢复和 buffer

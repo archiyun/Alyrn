@@ -11,7 +11,7 @@
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/detail/operation/completion_gate.h"
 #include "alyrn/detail/operation/scheduler_continuation.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace {
 

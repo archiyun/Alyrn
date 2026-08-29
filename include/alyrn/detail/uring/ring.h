@@ -9,7 +9,7 @@
 
 #include "alyrn/result.h"
 #include "alyrn/uring/options.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::uring::detail {
 
@@ -34,19 +34,14 @@ public:
   Ring(Ring&& other) noexcept;
   Ring& operator=(Ring&& other) noexcept;
 
-  [[nodiscard]]
   static Result<Ring> Create(const Options& options) noexcept;
 
-  [[nodiscard]]
   io_uring_sqe* GetSqe() noexcept;
-  [[nodiscard]]
   Result<std::size_t> Submit() noexcept;
 
-  [[nodiscard]]
   int Fd() const noexcept { return initialized_ ? ring_.ring_fd : -1; }
 
   template <class F>
-  [[nodiscard]]
   Result<std::size_t> Reap(F&& on_cqe, std::size_t max_count = 0) noexcept {
     io_uring_cqe* cqe = nullptr;
     int result = io_uring_peek_cqe(&ring_, &cqe);

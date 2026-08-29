@@ -8,8 +8,8 @@
 #include <limits>
 #include <utility>
 
-#include "alyrn/detail/backend/value_result_state.h"
-#include "alyrn/detail/base/check.h"
+#include "alyrn/backend/value_result_state.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/result.h"
 #include "alyrn/detail/operation/completion_gate.h"
 #include "alyrn/detail/operation/scheduler_continuation.h"
@@ -59,8 +59,8 @@ bool RecvSource::NextAwaiter::await_suspend(std::coroutine_handle<> continuation
   }
 
   if (source_->state_.State() == net::detail::RecvSourceState::kIdle) {
-    if (source_->loop_->State() == ::alyrn::detail::backend::LoopState::kStopping ||
-        source_->loop_->State() == ::alyrn::detail::backend::LoopState::kStopped) {
+    if (source_->loop_->State() == backend::LoopState::kStopping ||
+        source_->loop_->State() == backend::LoopState::kStopped) {
       result_.SetError(Errno(ECANCELED));
       (void)(completion_gate_.TryComplete());
       return false;
@@ -107,7 +107,7 @@ void RecvSource::NextAwaiter::Complete(NextResult result) noexcept {
   continuation_.Schedule();
 }
 
-class RecvSource::StopAwaiter {
+class [[nodiscard]] RecvSource::StopAwaiter {
 public:
   explicit StopAwaiter(RecvSource& source) noexcept : source_(&source) {}
 

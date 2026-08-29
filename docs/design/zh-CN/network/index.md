@@ -1,7 +1,8 @@
 # 网络库
 
 三个网络后端是平行 adapter：Linux epoll、Linux `io_uring` luring、
-BSD/Darwin kqueue。它们 refine 同一套 `io` 契约，不共享 event loop 或 poller 实现。
+BSD/Darwin kqueue。它们 refine 同一套 `alyrn::backend` 契约（应用通过 `alyrn::io`
+别名使用），不共享 event loop 或 poller 实现。
 
 - [生命周期精化协程 I/O（LRCI）](lifecycle-refined-coroutine-io.md)
 - [AsyncStream 与 AsyncListener 协程语义契约](async-stream-contract.md)

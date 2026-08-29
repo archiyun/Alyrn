@@ -8,7 +8,7 @@
 #include <chrono>
 #include <cstdint>
 
-#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/epoll/loop.h"
 #include "alyrn/time/timer_id.h"
 
@@ -58,7 +58,7 @@ static void ReadTimerfd(int timerfd) {
   }
 }
 
-TimerQueue::TimerQueue(Loop* loop, ::alyrn::detail::time::TimerIndexKind index)
+TimerQueue::TimerQueue(Loop* loop, TimerIndexKind index)
     : timerfd_(CreateTimerfd()), timerfd_channel_(loop, timerfd_), timers_(index) {
   timerfd_channel_.SetReadCallback(&TimerQueue::DispatchRead, this);
   timerfd_channel_.EnableReading();
@@ -69,7 +69,7 @@ TimerQueue::~TimerQueue() {
   timerfd_channel_.Remove();
   ::close(timerfd_);
   while (!timers_.Empty()) {
-    ::alyrn::detail::time::Timer* timer = timers_.Earliest();
+    auto* timer = timers_.Earliest();
     ALYRN_CHECK(active_timers_.erase(timer->sequence()) == 1,
                    "TimerQueue: destroyed timer is missing from active set");
     ALYRN_CHECK(timers_.Erase(timer), "TimerQueue: destroyed timer is missing from timer tree");
@@ -78,7 +78,7 @@ TimerQueue::~TimerQueue() {
 }
 
 time::TimerId TimerQueue::AddTimer(TimerCallback cb, TimePoint when, Duration interval) {
-  ::alyrn::detail::time::Timer* t = timer_pool_.Acquire(std::move(cb), when, interval);
+  auto* t = timer_pool_.Acquire(std::move(cb), when, interval);
   bool earliest_changed = timers_.Empty() || t->expiration() < timers_.Earliest()->expiration();
   ALYRN_CHECK(timers_.Insert(t), "TimerQueue: duplicate timer-tree entry");
   ALYRN_CHECK(active_timers_.emplace(t->sequence(), t).second,
@@ -92,7 +92,7 @@ time::TimerId TimerQueue::AddTimer(TimerCallback cb, TimePoint when, Duration in
 void TimerQueue::Cancel(alyrn::time::TimerId id) {
   auto active_it = active_timers_.find(id.sequence);
   if (active_it != active_timers_.end()) {
-    ::alyrn::detail::time::Timer* active_timer = active_it->second;
+    auto* active_timer = active_it->second;
     const bool earliest_removed = active_timer == timers_.Earliest();
     active_timers_.erase(active_it);
     ALYRN_CHECK(timers_.Erase(active_timer),
@@ -120,8 +120,8 @@ void TimerQueue::HandleRead() {
   ReadTimerfd(timerfd_);
 
   timers_.PopWhile(
-      [now](const ::alyrn::detail::time::Timer* timer) { return timer->expiration() <= now; },
-      [this, now](::alyrn::detail::time::Timer* timer) {
+      [now](const Timer* timer) { return timer->expiration() <= now; },
+      [this, now](Timer* timer) {
                      ALYRN_CHECK(active_timers_.erase(timer->sequence()) == 1,
                                     "TimerQueue: expired timer is missing from active set");
                      processing_timer_ = timer;

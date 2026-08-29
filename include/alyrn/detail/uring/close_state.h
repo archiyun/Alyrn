@@ -19,24 +19,20 @@ public:
 
   void SetResult(const Result<void>& result) noexcept { result_.SetResult(result); }
 
-  [[nodiscard]]
   bool HasResult() const noexcept {
     return result_.IsImmediate();
   }
 
-  [[nodiscard]]
   Result<void> TakeResult() const noexcept {
     return result_.Take();
   }
 
-  [[nodiscard]]
   bool CancelRequestTerminal() const noexcept {
     return (flags_ & kCancelRequestTerminalBit) != 0;
   }
 
   void MarkCancelRequestTerminal() noexcept { flags_ |= kCancelRequestTerminalBit; }
 
-  [[nodiscard]]
   bool Completed() const noexcept {
     return (flags_ & kCompletedBit) != 0;
   }

@@ -8,7 +8,7 @@
 #include <string>
 #include <string_view>
 
-#include "alyrn/detail/backend/recv_source.h"
+#include "alyrn/backend/recv_source.h"
 #include "alyrn/result.h"
 #include "alyrn/coro/detached_task.h"
 #include "alyrn/coro/spawn.h"

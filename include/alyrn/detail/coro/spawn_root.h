@@ -56,7 +56,6 @@ struct SpawnFinalAwaiter {
   bool await_ready() const noexcept { return false; }
 
   template <class Promise>
-  [[nodiscard]]
   std::coroutine_handle<> await_suspend(std::coroutine_handle<Promise> handle) noexcept {
     auto& state = static_cast<SpawnState<T>&>(handle.promise());
     if (state.Finish() == SpawnState<T>::FinishAction::kDestroyRoot) {

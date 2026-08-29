@@ -10,7 +10,7 @@
 #include <utility>
 
 #include "alyrn/result.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::uring::detail {
 
@@ -44,7 +44,6 @@ public:
     return *this;
   }
 
-  [[nodiscard]]
   static Result<ProvidedBufferStorage> Create(
       std::size_t capacity, std::size_t buffer_size) noexcept {
     if (capacity == 0 || buffer_size == 0) {
@@ -67,32 +66,26 @@ public:
     return storage;
   }
 
-  [[nodiscard]]
   std::size_t capacity() const noexcept {
     return capacity_;
   }
 
-  [[nodiscard]]
   std::size_t buffer_size() const noexcept {
     return buffer_size_;
   }
 
-  [[nodiscard]]
   std::size_t size_bytes() const noexcept {
     return size_bytes_;
   }
 
-  [[nodiscard]]
   std::byte* data() noexcept {
     return mapped_;
   }
 
-  [[nodiscard]]
   const std::byte* data() const noexcept {
     return mapped_;
   }
 
-  [[nodiscard]]
   std::byte* slot(std::size_t buffer_id) noexcept {
     if (buffer_id >= capacity_) {
       return nullptr;
@@ -100,7 +93,6 @@ public:
     return data() + (buffer_id * buffer_size_);
   }
 
-  [[nodiscard]]
   const std::byte* slot(std::size_t buffer_id) const noexcept {
     if (buffer_id >= capacity_) {
       return nullptr;

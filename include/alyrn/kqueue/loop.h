@@ -9,15 +9,13 @@
 #include <stop_token>
 #include <vector>
 
-#include "alyrn/detail/backend/loop.h"
-#include "alyrn/detail/base/current_thread.h"
+#include "alyrn/backend/loop.h"
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/work.h"
-#include "alyrn/io/loop.h"
 #include "alyrn/detail/kqueue/loop_shutdown.h"
 #include "alyrn/time/clock.h"
 #include "alyrn/time/timer_id.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::kqueue {
 
@@ -58,7 +56,7 @@ public:
   void RequestStop() noexcept;
 
   [[nodiscard]]
-  ::alyrn::io::LoopState State() const noexcept {
+  backend::LoopState State() const noexcept {
     return state_.load(std::memory_order_acquire);
   }
 
@@ -109,7 +107,6 @@ private:
   // kqueue callers.
   void UpdateChannel(Channel* channel);
   void RemoveChannel(Channel* channel);
-  [[nodiscard]]
   bool HasChannel(Channel* channel) const;
 
   void RegisterShutdownParticipant(LoopShutdownParticipant& participant) noexcept;
@@ -125,13 +122,12 @@ private:
   void Wakeup() noexcept;
   void DetachWakeupChannel() noexcept;
 
-  [[nodiscard]]
   bool HasImmediateWork() const;
 
   bool looping_{false};
-  std::atomic<::alyrn::io::LoopState> state_{::alyrn::io::LoopState::kCreated};
+  std::atomic<backend::LoopState> state_{
+      backend::LoopState::kCreated};
 
-  const ::alyrn::detail::ThreadId thread_id_;
   std::unique_ptr<detail::Poller> poller_;
   std::unique_ptr<detail::TimerQueue> timer_queue_;
   std::vector<detail::Channel*> active_channels_;
@@ -149,6 +145,6 @@ private:
   bool shutdown_started_{false};
 };
 
-static_assert(::alyrn::io::ManagedLoop<Loop>);
+static_assert(backend::ManagedLoop<Loop>);
 
 }  // namespace alyrn::kqueue

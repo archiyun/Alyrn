@@ -9,8 +9,8 @@
 #include <mutex>
 #include <new>
 
-#include "alyrn/detail/base/check.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/check.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::detail::memory {
 
@@ -20,7 +20,7 @@ class ObjectPool;
 // NullMutex satisfies BasicLockable with zero overhead.
 // Use as MutexPolicy for single-threaded or benchmark scenarios.
 struct NullMutex {
-  void lock()   noexcept {}
+  void lock() noexcept {}
   void unlock() noexcept {}
 };
 
@@ -43,24 +43,18 @@ struct NullMutex {
 //   auto* obj = new (mem) MyClass(args...);
 //   obj->~MyClass();
 //   pool.Deallocate(mem);
-template <
-    std::size_t BlockSize,
-    std::size_t Alignment   = alignof(std::max_align_t),
-    std::size_t kCapacity   = 1024,
-    typename    MutexPolicy = std::mutex
->
+template <std::size_t BlockSize, std::size_t Alignment = alignof(std::max_align_t),
+          std::size_t kCapacity = 1024, typename MutexPolicy = std::mutex>
 class MemoryPool {
-  static_assert(BlockSize > 0,  "MemoryPool: BlockSize must be > 0");
+  static_assert(BlockSize > 0, "MemoryPool: BlockSize must be > 0");
   static_assert(kCapacity > 0, "MemoryPool: kCapacity must be > 0");
   static_assert(Alignment > 0 && (Alignment & (Alignment - 1)) == 0,
                 "MemoryPool: Alignment must be a power of two");
 
- public:
+public:
   MemoryPool() { Initialize(); }
 
-  ~MemoryPool() {
-    ::operator delete(buffer_, std::align_val_t{kAlignment});
-  }
+  ~MemoryPool() { ::operator delete(buffer_, std::align_val_t{kAlignment}); }
 
   ALYRN_DELETE_COPY_MOVE(MemoryPool);
 
@@ -76,7 +70,7 @@ class MemoryPool {
     free_list_head_ = *static_cast<void**>(free_list_head_);
     const std::size_t slot = SlotIndex(ptr);
     ALYRN_CHECK(!SlotAllocated(slot) && !SlotReleasing(slot),
-                   "MemoryPool::Allocate: duplicate free-list slot");
+                "MemoryPool::Allocate: duplicate free-list slot");
     MarkSlotAllocated(slot);
     --free_count_;
     return ptr;
@@ -116,9 +110,9 @@ class MemoryPool {
       return false;
     }
 
-    const std::uintptr_t begin = reinterpret_cast<std::uintptr_t>(buffer_);
-    const std::uintptr_t end   = begin + kSlotSize * kCapacity;
-    const std::uintptr_t p     = reinterpret_cast<std::uintptr_t>(ptr);
+    const auto begin = reinterpret_cast<std::uintptr_t>(buffer_);
+    const auto end = static_cast<std::uintptr_t>(begin + (kSlotSize * kCapacity));
+    const auto p = reinterpret_cast<std::uintptr_t>(ptr);
 
     if (p < begin || p >= end) {
       return false;
@@ -127,13 +121,12 @@ class MemoryPool {
     return (p - begin) % kSlotSize == 0;
   }
 
- private:
+private:
   template <typename, std::size_t, typename>
   friend class ObjectPool;
 
   // Effective alignment: must fit at least one void* for the intrusive free list.
-  static constexpr std::size_t kAlignment =
-      std::max(Alignment, alignof(void*));
+  static constexpr std::size_t kAlignment = std::max(Alignment, alignof(void*));
 
   // Effective slot size: must be large enough for the free-list void* pointer,
   // then rounded up to the alignment boundary.
@@ -145,22 +138,21 @@ class MemoryPool {
   static_assert(kSlotSize <= std::numeric_limits<std::size_t>::max() / kCapacity,
                 "MemoryPool: total storage size would overflow");
   static constexpr std::size_t kStateWordBits = 64;
-  static constexpr std::size_t kStateWordCount =
-      (kCapacity + kStateWordBits - 1) / kStateWordBits;
+  static constexpr std::size_t kStateWordCount = (kCapacity + kStateWordBits - 1) / kStateWordBits;
 
-  [[nodiscard]] std::size_t SlotIndex(const void* ptr) const noexcept {
+  std::size_t SlotIndex(const void* ptr) const noexcept {
     const auto begin = reinterpret_cast<std::uintptr_t>(buffer_);
     const auto address = reinterpret_cast<std::uintptr_t>(ptr);
     return static_cast<std::size_t>((address - begin) / kSlotSize);
   }
 
-  [[nodiscard]] bool SlotAllocated(std::size_t slot) const noexcept {
+  bool SlotAllocated(std::size_t slot) const noexcept {
     const std::size_t word = slot / kStateWordBits;
     const std::size_t bit = slot % kStateWordBits;
     return (allocated_slots_[word] & (std::uint64_t{1} << bit)) != 0;
   }
 
-  [[nodiscard]] bool SlotReleasing(std::size_t slot) const noexcept {
+  bool SlotReleasing(std::size_t slot) const noexcept {
     const std::size_t word = slot / kStateWordBits;
     const std::size_t bit = slot % kStateWordBits;
     return (releasing_slots_[word] & (std::uint64_t{1} << bit)) != 0;
@@ -229,11 +221,11 @@ class MemoryPool {
 
     *reinterpret_cast<void**>(current) = nullptr;
     free_list_head_ = buffer_;
-    free_count_     = kCapacity;
+    free_count_ = kCapacity;
   }
 
-  std::byte*  buffer_{nullptr};
-  void*       free_list_head_{nullptr};
+  std::byte* buffer_{nullptr};
+  void* free_list_head_{nullptr};
   std::size_t free_count_{0};
   std::array<std::uint64_t, kStateWordCount> allocated_slots_{};
   std::array<std::uint64_t, kStateWordCount> releasing_slots_{};

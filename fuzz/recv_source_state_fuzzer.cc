@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "alyrn/base/check.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/net/detail/recv_source_state.h"
 
 namespace {

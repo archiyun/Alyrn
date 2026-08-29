@@ -5,7 +5,7 @@
 
 #include <cerrno>
 
-#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/detail/epoll/channel.h"
 
 namespace alyrn::epoll::detail {

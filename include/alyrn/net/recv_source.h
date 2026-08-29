@@ -6,7 +6,7 @@
 #include <span>
 #include <utility>
 
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::net {
 

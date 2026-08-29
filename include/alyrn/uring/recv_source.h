@@ -10,13 +10,13 @@
 #include <optional>
 #include <vector>
 
+#include "alyrn/backend/recv_source.h"
+#include "alyrn/backend/value_result_state.h"
 #include "alyrn/coro/work.h"
-#include "alyrn/detail/backend/value_result_state.h"
 #include "alyrn/detail/operation/completion_gate.h"
 #include "alyrn/detail/uring/completion_dispatch.h"
 #include "alyrn/detail/uring/op.h"
-#include "alyrn/detail/utils/macros.h"
-#include "alyrn/io/recv_source.h"
+#include "alyrn/detail/macros.h"
 #include "alyrn/net/recv_source.h"
 #include "alyrn/result.h"
 #include "alyrn/task.h"
@@ -54,12 +54,12 @@ public:
   ALYRN_DELETE_COPY(RecvSource);
 
   using Event = net::RecvEvent;
-  using NextResult = alyrn::Result<std::optional<Event>>;
+  using NextResult = Result<std::optional<Event>>;
 
   // Direct awaiter for the single-consumer receive loop. It keeps the same
   // result and ownership semantics without creating a child Task frame for
   // every received buffer.
-  class NextAwaiter {
+  class [[nodiscard]] NextAwaiter {
   public:
     explicit NextAwaiter(RecvSource& source) noexcept : source_(&source) {}
 
@@ -75,7 +75,7 @@ public:
     RecvSource* source_;
     coro::ResumeWork resume_work_;
     ::alyrn::detail::operation::CompletionGate completion_gate_;
-    ::alyrn::detail::backend::ValueResultState<std::optional<Event>> result_;
+    backend::ValueResultState<std::optional<Event>> result_;
   };
 
   [[nodiscard]]
@@ -86,7 +86,6 @@ public:
   RecvSource(RecvSource&& other) noexcept;
   RecvSource& operator=(RecvSource&& other) noexcept;
 
-  [[nodiscard]]
   NextAwaiter Next() noexcept {
     return NextAwaiter(*this);
   }
@@ -98,7 +97,7 @@ public:
   [[nodiscard]]
   Result<void> RequestStop() noexcept;
 
-  ::alyrn::Task<Result<void>> Stop();
+  Task<Result<void>> Stop();
 
 private:
   class StopAwaiter;
@@ -109,7 +108,6 @@ private:
       kind = detail::OpKind::kRecvSourceComplete;
     }
 
-    [[nodiscard]]
     RecvSource* Source() const noexcept {
       return source_;
     }
@@ -129,7 +127,6 @@ private:
       kind = detail::OpKind::kRecvSourceCancelComplete;
     }
 
-    [[nodiscard]]
     RecvSource* Source() const noexcept {
       return source_;
     }
@@ -158,16 +155,12 @@ private:
              detail::ProvidedBufferPool* buffer_pool, std::vector<PendingEvent> event_storage,
              std::vector<SlotState> slot_storage) noexcept;
 
-  [[nodiscard]]
   Result<void> Start() noexcept;
 
-  [[nodiscard]]
   Result<void> StartOperation() noexcept;
 
-  [[nodiscard]]
   Result<void> StartCancel() noexcept;
 
-  [[nodiscard]]
   Result<bool> BeginStop() noexcept;
 
   void EnsureSubmission() noexcept;
@@ -183,12 +176,12 @@ private:
   bool TryTakeNext(NextResult& result) noexcept;
   void QueueEvent(std::uint32_t buffer_id, std::size_t size) noexcept;
   bool TryTakeQueuedEvent(PendingEvent& event) noexcept;
-  [[nodiscard]] Result<void> AcquireBuffer(std::uint32_t buffer_id, std::size_t size) noexcept;
+  Result<void> AcquireBuffer(std::uint32_t buffer_id, std::size_t size) noexcept;
   void MarkKernelDone(std::uint32_t buffer_id) noexcept;
   void MarkActiveSlotsKernelDone() noexcept;
   void ReturnIfReclaimable(std::uint32_t buffer_id) noexcept;
   void ReleaseSlotLease(std::uint32_t buffer_id) noexcept;
-  [[nodiscard]] net::BufferLease MakeLease(std::uint32_t buffer_id, std::size_t size) noexcept;
+  net::BufferLease MakeLease(std::uint32_t buffer_id, std::size_t size) noexcept;
   void ReturnBuffer(std::uint32_t buffer_id) noexcept;
 
   static void ValidateMovable(const RecvSource& source) noexcept;
@@ -217,6 +210,6 @@ private:
   bool cancel_submitted_{false};
 };
 
-static_assert(::alyrn::io::AsyncRecvSource<RecvSource>);
+static_assert(backend::AsyncRecvSource<RecvSource>);
 
 }  // namespace alyrn::uring

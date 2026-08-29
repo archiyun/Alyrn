@@ -3,7 +3,7 @@
 
 #include <cstdint>
 
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::detail::operation {
 
@@ -24,7 +24,6 @@ public:
 
   SingleResultLifecycle() noexcept = default;
 
-  [[nodiscard]]
   bool TryAuthorizeResult() noexcept {
     if (state_ != State::kPending) {
       return false;
@@ -33,7 +32,6 @@ public:
     return true;
   }
 
-  [[nodiscard]]
   bool TryAuthorizeRelease() noexcept {
     if (state_ != State::kResultReady) {
       return false;
@@ -42,7 +40,6 @@ public:
     return true;
   }
 
-  [[nodiscard]]
   bool TryAuthorizeContinuation() noexcept {
     if (state_ != State::kReleaseAuthorized) {
       return false;
@@ -51,17 +48,14 @@ public:
     return true;
   }
 
-  [[nodiscard]]
   bool ResultReady() const noexcept {
     return state_ != State::kPending;
   }
 
-  [[nodiscard]]
   bool ReleaseAuthorized() const noexcept {
     return state_ == State::kReleaseAuthorized || state_ == State::kContinuationAuthorized;
   }
 
-  [[nodiscard]]
   bool ContinuationAuthorized() const noexcept {
     return state_ == State::kContinuationAuthorized;
   }

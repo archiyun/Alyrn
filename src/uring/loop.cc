@@ -19,15 +19,13 @@
 #include <memory>
 #include <memory_resource>
 #include <stop_token>
-#include <thread>
 #include <utility>
 
-#include "alyrn/detail/base/check.h"
-#include "alyrn/detail/base/current_thread.h"
-#include "alyrn/detail/backend/loop.h"
+#include "alyrn/backend/loop.h"
 #include "alyrn/coro/frame_allocator.h"
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/work.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/detail/uring/completion_dispatch.h"
 #include "alyrn/detail/uring/op.h"
 #include "alyrn/detail/uring/provided_buffer_pool.h"
@@ -49,16 +47,17 @@ constexpr std::size_t kMaxCompletionWorkPerTurn = 64;
 
 constexpr std::chrono::milliseconds kStopPollInterval{100};
 
-[[nodiscard]]
-::alyrn::uring::detail::Op* DecodeOp(io_uring_cqe* cqe) noexcept {
-  return reinterpret_cast<::alyrn::uring::detail::Op*>(io_uring_cqe_get_data(cqe));
+thread_local Loop* t_loop_in_this_thread = nullptr;
+
+Op* DecodeOp(io_uring_cqe* cqe) noexcept {
+  return reinterpret_cast<Op*>(io_uring_cqe_get_data(cqe));
 }
 
 }  // namespace
 
 namespace detail {
 
-CompletionDisposition DispatchCompletion(::alyrn::uring::detail::Op* op, CompletionEvent event) noexcept {
+CompletionDisposition DispatchCompletion(Op* op, CompletionEvent event) noexcept {
   ALYRN_CHECK(op != nullptr, "cannot dispatch a null Op");
 
   switch (op->DispatchKind()) {
@@ -120,9 +119,15 @@ CompletionDisposition DispatchCompletion(::alyrn::uring::detail::Op* op, Complet
 }  // namespace detail
 
 Loop::Loop(std::pmr::memory_resource* frame_resource)
-    : Scheduler(frame_resource),
-      thread_id_(::alyrn::detail::CurrentThreadId()),
-      timers_(std::make_unique<TimerQueue>(this)) {}
+    : Scheduler(frame_resource) {
+  ALYRN_CHECK(t_loop_in_this_thread == nullptr, "Loop: only one Loop may exist per thread");
+  t_loop_in_this_thread = this;
+  timers_ = std::make_unique<TimerQueue>(this);
+}
+
+bool Loop::IsInLoopThread() const noexcept {
+  return t_loop_in_this_thread == this;
+}
 
 Result<time::TimerId> Loop::RunAfter(time::Duration delay,
                                      std::function<void()> callback) {
@@ -146,9 +151,12 @@ Loop::~Loop() noexcept {
   if (initialized_) {
     ALYRN_CHECK(IsDrained(), "Loop destroyed with pending user operation work");
   }
+  // TimerQueue::DiscardAll() goes through IsInLoopThread().
+  timers_.reset();
   if (wake_fd_ >= 0) {
     ::close(wake_fd_);
   }
+  t_loop_in_this_thread = nullptr;
 }
 
 Result<void> Loop::Init(const Options& options) noexcept {
@@ -227,15 +235,15 @@ void Loop::Run(std::stop_token token) noexcept {
     return;
   }
 
-  ::alyrn::detail::backend::LoopState expected = ::alyrn::detail::backend::LoopState::kCreated;
-  if (!state_.compare_exchange_strong(expected, ::alyrn::detail::backend::LoopState::kRunning,
+  auto expected = backend::LoopState::kCreated;
+  if (!state_.compare_exchange_strong(expected, backend::LoopState::kRunning,
                                       std::memory_order_acq_rel, std::memory_order_acquire) &&
-      expected != ::alyrn::detail::backend::LoopState::kStopping) {
+      expected != backend::LoopState::kStopping) {
     return;
   }
 
   std::stop_callback on_stop{token, [this] { RequestStop(); }};
-  while (State() == ::alyrn::detail::backend::LoopState::kRunning) {
+  while (State() == backend::LoopState::kRunning) {
     // Observe already available completions before spending the turn on
     // ready work. This prevents a ready backlog from delaying CQE handling.
     auto completed = PollCompletions();
@@ -244,7 +252,7 @@ void Loop::Run(std::stop_token token) noexcept {
       break;
     }
 
-    if (State() != ::alyrn::detail::backend::LoopState::kRunning) {
+    if (State() != backend::LoopState::kRunning) {
       break;
     }
 
@@ -260,20 +268,20 @@ void Loop::Run(std::stop_token token) noexcept {
     }
   }
 
-  if (State() == ::alyrn::detail::backend::LoopState::kStopping) {
+  if (State() == backend::LoopState::kStopping) {
     DrainStoppedOperations();
     // Physical timeout requests are terminal after the drain. Logical timers
     // that have not expired are now canceled by loop shutdown and may release
     // their callbacks without running them.
     timers_->DiscardAll();
   }
-  state_.store(::alyrn::detail::backend::LoopState::kStopped, std::memory_order_release);
+  state_.store(backend::LoopState::kStopped, std::memory_order_release);
 }
 
 void Loop::RequestStop() noexcept {
-  ::alyrn::detail::backend::LoopState observed = state_.load(std::memory_order_acquire);
-  while (observed == ::alyrn::detail::backend::LoopState::kCreated || observed == ::alyrn::detail::backend::LoopState::kRunning) {
-    if (state_.compare_exchange_weak(observed, ::alyrn::detail::backend::LoopState::kStopping,
+  backend::LoopState observed = state_.load(std::memory_order_acquire);
+  while (observed == backend::LoopState::kCreated || observed == backend::LoopState::kRunning) {
+    if (state_.compare_exchange_weak(observed, backend::LoopState::kStopping,
                                      std::memory_order_acq_rel, std::memory_order_acquire)) {
       Wake();
       return;
@@ -448,7 +456,7 @@ Result<std::size_t> Loop::WaitCompletionsFor(std::chrono::nanoseconds timeout) n
 void Loop::HandleCqe(io_uring_cqe* cqe) noexcept {
   ALYRN_CHECK(IsInLoopThread(), "Loop::HandleCqe called from wrong thread");
 
-  ::alyrn::uring::detail::Op* op = DecodeOp(cqe);
+  auto* op = DecodeOp(cqe);
   if (op == nullptr) {
     if (inflight_ > 0) {
       --inflight_;
@@ -488,7 +496,7 @@ void Loop::HandleCqe(io_uring_cqe* cqe) noexcept {
     });
     wake_inflight_ = false;
     DrainWakeFd();
-    if (State() == ::alyrn::detail::backend::LoopState::kRunning) {
+    if (State() == backend::LoopState::kRunning) {
       wake_op_.BeginNextRequest();
       auto armed = ArmWakePoll();
       if (!armed.has_value()) {

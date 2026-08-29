@@ -11,13 +11,15 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 
-#include "alyrn/detail/backend/recv_source.h"
+#include "alyrn/backend/recv_source.h"
 #include "alyrn/result.h"
 #include "alyrn/coro/awaitable.h"
 #include "alyrn/coro/detached_task.h"
 #include "alyrn/coro/spawn.h"
+#include "alyrn/coro/sync_wait.h"
 #include "alyrn/io/recv_source.h"
 #include "alyrn/epoll/loop.h"
 #include "alyrn/epoll/recv_source.h"
@@ -530,12 +532,47 @@ bool CheckQueuePauseThenRearm() {
          Check(observation.stopped, "paused recv source Stop failed");
 }
 
+bool CheckRecvSourceStopRejectsForeignLoop() {
+  int fds[2] = {-1, -1};
+  if (!Check(MakeSocketPair(fds), "socketpair failed for foreign Stop test")) {
+    return false;
+  }
+
+  Loop loop;
+  auto source_result = RecvSource::Create(&loop, fds[0]);
+  if (!Check(source_result.has_value(), "failed to create foreign Stop test source")) {
+    ::close(fds[0]);
+    ::close(fds[1]);
+    return false;
+  }
+  auto source = std::move(*source_result);
+
+  std::optional<alyrn::Result<void>> request_stop;
+  std::optional<alyrn::Result<void>> stop;
+  std::thread foreign([&] {
+    request_stop.emplace(source.RequestStop());
+    stop.emplace(alyrn::coro::SyncWait(source.Stop()));
+  });
+  foreign.join();
+
+  ::close(fds[1]);
+  ::close(fds[0]);
+  return Check(request_stop.has_value(), "foreign RecvSource::RequestStop did not return") &&
+         Check(!request_stop->has_value() &&
+                   request_stop->error() == std::errc::invalid_argument,
+               "foreign RecvSource::RequestStop must return EINVAL") &&
+         Check(stop.has_value(), "foreign RecvSource::Stop did not return") &&
+         Check(!stop->has_value() && stop->error() == std::errc::invalid_argument,
+               "foreign RecvSource::Stop must return EINVAL");
+}
+
 }  // namespace
 
 int main() {
   if (!CheckImmediateReceive() || !CheckPendingReceive() || !CheckEof() || !CheckQueuedEvents() ||
       !CheckStopWaitsForLease() || !CheckStopWakesPendingNext() ||
-      !CheckTerminalNextAfterLoopStop() || !CheckQueuePauseThenRearm()) {
+      !CheckTerminalNextAfterLoopStop() || !CheckQueuePauseThenRearm() ||
+      !CheckRecvSourceStopRejectsForeignLoop()) {
     return 1;
   }
   std::cout << "epoll recv source smoke: PASS\n";

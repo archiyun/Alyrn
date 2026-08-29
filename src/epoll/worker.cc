@@ -6,16 +6,15 @@
 #include <stop_token>
 #include <utility>
 
-#include "alyrn/result.h"
 #include "alyrn/coro/frame_allocator.h"
 #include "alyrn/coro/spawn.h"
+#include "alyrn/result.h"
 
 namespace alyrn::epoll::detail {
 
 namespace {
 
-coro::DetachedTask AcceptLoop(WorkerContext& context,
-                              Worker::ConnectionCallback* callback) {
+coro::DetachedTask AcceptLoop(WorkerContext& context, Worker::ConnectionCallback* callback) {
   while (true) {
     auto accepted = co_await context.listener.Accept();
     if (!accepted.has_value()) {
@@ -34,13 +33,12 @@ coro::DetachedTask AcceptLoop(WorkerContext& context,
 
 }  // namespace
 
-Worker::Worker(std::size_t index, net::Endpoint listen_addr,
-                             WorkerOptions options, ThreadInitCallback init_callback,
-                             ConnectionCallback connection_callback,
-                             ThreadExitCallback exit_callback)
+Worker::Worker(std::size_t index, net::Endpoint listen_addr, WorkerOptions options,
+               ThreadInitCallback init_callback, ConnectionCallback connection_callback,
+               ThreadExitCallback exit_callback)
     : index_(index),
       listen_addr_(listen_addr),
-      options_(std::move(options)),
+      options_(options),
       init_callback_(std::move(init_callback)),
       connection_callback_(std::move(connection_callback)),
       exit_callback_(std::move(exit_callback)) {}
@@ -117,7 +115,7 @@ void Worker::WorkLoop(std::stop_token token) noexcept {
   }
 
   publish_start(Result<void>{});
-  loop.Run(token);
+  loop.Run(std::move(token));
 
   if (exit_callback_) {
     try {

@@ -19,12 +19,10 @@ public:
 
   void SetResult(const Result<void>& result) noexcept { state_.SetResult(result); }
 
-  [[nodiscard]]
   bool HasResult() const noexcept {
     return state_.HasResult();
   }
 
-  [[nodiscard]]
   Result<void> TakeResult() const noexcept {
     return state_.TakeResult();
   }
@@ -36,7 +34,6 @@ public:
   // Returns true exactly once, after the cancel request itself and every
   // physical operation using the descriptor have reached terminal state. The
   // caller may then close the descriptor and resume Continuation().
-  [[nodiscard]]
   bool TryAuthorizeClose(bool operations_pending) noexcept {
     if (state_.Completed() || !state_.CancelRequestTerminal() || operations_pending) {
       return false;
@@ -45,7 +42,6 @@ public:
     return true;
   }
 
-  [[nodiscard]]
   std::coroutine_handle<> Continuation() const noexcept {
     return continuation_;
   }

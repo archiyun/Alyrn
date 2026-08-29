@@ -8,17 +8,17 @@
 #include <optional>
 #include <vector>
 
-#include "alyrn/detail/backend/value_result_state.h"
-#include "alyrn/io/recv_source.h"
-#include "alyrn/result.h"
-#include "alyrn/task.h"
-#include "alyrn/net/recv_source.h"
-#include "alyrn/detail/operation/completion_gate.h"
-#include "alyrn/detail/operation/scheduler_continuation.h"
+#include "alyrn/backend/recv_source.h"
+#include "alyrn/backend/value_result_state.h"
 #include "alyrn/detail/epoll/channel.h"
 #include "alyrn/detail/epoll/loop_shutdown.h"
+#include "alyrn/detail/operation/completion_gate.h"
+#include "alyrn/detail/operation/scheduler_continuation.h"
+#include "alyrn/detail/macros.h"
 #include "alyrn/epoll/loop.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/net/recv_source.h"
+#include "alyrn/result.h"
+#include "alyrn/task.h"
 
 namespace alyrn::epoll {
 
@@ -38,19 +38,17 @@ public:
   ALYRN_DELETE_COPY(RecvSource);
 
   using Event = net::RecvEvent;
-  using NextResult = alyrn::Result<std::optional<Event>>;
+  using NextResult = Result<std::optional<Event>>;
 
   // Direct awaiter for the single-consumer receive loop. It keeps Next() on
   // the caller's coroutine frame, matching the uring source path and
   // avoiding a child Task frame for every event.
-  class NextAwaiter {
+  class [[nodiscard]] NextAwaiter {
   public:
     explicit NextAwaiter(RecvSource& source) noexcept : source_(&source) {}
 
     bool await_ready() const noexcept { return false; }
-
     bool await_suspend(std::coroutine_handle<> continuation) noexcept;
-
     NextResult await_resume() noexcept;
 
     void Complete(NextResult result) noexcept;
@@ -59,22 +57,18 @@ public:
     RecvSource* source_;
     ::alyrn::detail::operation::SchedulerContinuation continuation_;
     ::alyrn::detail::operation::CompletionGate completion_gate_;
-    ::alyrn::detail::backend::ValueResultState<std::optional<Event>> result_;
+    backend::ValueResultState<std::optional<Event>> result_;
   };
 
   [[nodiscard]]
-  static Result<RecvSource> Create(Loop* loop, int fd,
-                                                RecvSourceOptions options = {}) noexcept;
+  static Result<RecvSource> Create(Loop* loop, int fd, RecvSourceOptions options = {}) noexcept;
 
   ~RecvSource();
 
   RecvSource(RecvSource&& other) noexcept;
   RecvSource& operator=(RecvSource&& other) noexcept;
 
-  [[nodiscard]]
-  NextAwaiter Next() noexcept {
-    return NextAwaiter(*this);
-  }
+  NextAwaiter Next() noexcept { return NextAwaiter(*this); }
 
   // Stops new readiness admission without waiting for queued events or
   // BufferLease instances. An owning consumer drains those events and then
@@ -82,19 +76,16 @@ public:
   [[nodiscard]]
   Result<void> RequestStop() noexcept;
 
-  ::alyrn::Task<Result<void>> Stop();
+  Task<Result<void>> Stop();
 
 private:
   class StopAwaiter;
 
-  RecvSource(Loop* loop, int fd, net::detail::RecvSourceStateMachine state,
-                    std::size_t buffer_size, std::vector<std::byte> storage,
-                    std::vector<std::uint32_t> available_buffers) noexcept;
+  RecvSource(Loop* loop, int fd, net::detail::RecvSourceStateMachine state, std::size_t buffer_size,
+             std::vector<std::byte> storage, std::vector<std::uint32_t> available_buffers) noexcept;
 
-  [[nodiscard]]
   Result<void> Start() noexcept;
 
-  [[nodiscard]]
   Result<bool> BeginStop() noexcept;
 
   void EnsureAdmission() noexcept;
@@ -132,6 +123,6 @@ private:
   detail::LoopShutdownParticipant shutdown_participant_{this, &DispatchLoopStop};
 };
 
-static_assert(::alyrn::io::AsyncRecvSource<RecvSource>);
+static_assert(backend::AsyncRecvSource<RecvSource>);
 
 }  // namespace alyrn::epoll

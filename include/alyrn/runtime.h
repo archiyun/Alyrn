@@ -41,7 +41,6 @@ public:
   virtual Result<void> Run(std::stop_token stop_token) = 0;
   virtual void RequestStop() noexcept = 0;
   virtual void Stop() noexcept = 0;
-  [[nodiscard]]
   virtual bool Started() const noexcept = 0;
 };
 

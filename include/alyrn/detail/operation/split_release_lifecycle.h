@@ -22,12 +22,10 @@ public:
   SplitReleaseLifecycle(SplitReleaseLifecycle&&) = delete;
   SplitReleaseLifecycle& operator=(SplitReleaseLifecycle&&) = delete;
 
-  [[nodiscard]]
   bool RecordLogicalResult() noexcept {
     return logical_result_.TryComplete();
   }
 
-  [[nodiscard]]
   bool MarkPhysicalTerminal() noexcept {
     if (physical_terminal_) {
       return false;
@@ -36,7 +34,6 @@ public:
     return true;
   }
 
-  [[nodiscard]]
   bool TryAuthorizeRelease() noexcept {
     if (!logical_result_.Completed() || !physical_terminal_) {
       return false;
@@ -44,7 +41,6 @@ public:
     return release_authorized_.TryComplete();
   }
 
-  [[nodiscard]]
   bool TryAuthorizeContinuation() noexcept {
     if (!release_authorized_.Completed()) {
       return false;
@@ -52,10 +48,10 @@ public:
     return continuation_authorized_.TryComplete();
   }
 
-  [[nodiscard]] bool LogicalResultReady() const noexcept { return logical_result_.Completed(); }
-  [[nodiscard]] bool PhysicalTerminal() const noexcept { return physical_terminal_; }
-  [[nodiscard]] bool ReleaseAuthorized() const noexcept { return release_authorized_.Completed(); }
-  [[nodiscard]] bool ContinuationAuthorized() const noexcept {
+  bool LogicalResultReady() const noexcept { return logical_result_.Completed(); }
+  bool PhysicalTerminal() const noexcept { return physical_terminal_; }
+  bool ReleaseAuthorized() const noexcept { return release_authorized_.Completed(); }
+  bool ContinuationAuthorized() const noexcept {
     return continuation_authorized_.Completed();
   }
 

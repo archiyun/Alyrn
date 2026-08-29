@@ -13,9 +13,9 @@
 #include <utility>
 #include <vector>
 
-#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/detail/ds/intrusive_list.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::net {
 
@@ -265,20 +265,16 @@ private:
     std::size_t write_pos{0};
     bool reserved_for_write{false};
 
-    [[nodiscard]]
     std::size_t ReadableBytes() const noexcept {
       return write_pos - read_pos;
     }
-    [[nodiscard]]
     std::size_t WritableBytes() const noexcept {
       return capacity - write_pos;
     }
 
-    [[nodiscard]]
     const std::byte* ReadData() const noexcept {
       return data.get() + read_pos;
     }
-    [[nodiscard]]
     std::byte* WriteData() noexcept {
       return data.get() + write_pos;
     }
@@ -288,7 +284,6 @@ private:
 
   static Block* NewBlock(std::size_t capacity) { return new Block(capacity); }
 
-  [[nodiscard]]
   const Block* FirstReadableBlock() const noexcept {
     auto& blocks = const_cast<BlockList&>(blocks_);
     for (const Block& block : blocks) {
@@ -326,7 +321,6 @@ private:
     }
   }
 
-  [[nodiscard]]
   std::span<iovec> FillReservedWriteIov(std::span<iovec> out) noexcept {
     std::size_t count = 0;
     for (Block& block : blocks_) {

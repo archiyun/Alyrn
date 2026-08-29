@@ -7,7 +7,7 @@
 #include <stop_token>
 #include <utility>
 
-#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/result.h"
 #include "alyrn/coro/frame_allocator.h"
 #include "alyrn/coro/spawn.h"

@@ -25,7 +25,7 @@ preprocessor branches:
 Alyrn uses [Lifecycle-Refined Coroutine I/O (LRCI)](docs/design/zh-CN/network/lifecycle-refined-coroutine-io.md): backend events such as readiness notifications and CQEs are not treated directly as coroutine completion. They are refined into a shared logical lifecycle that separately determines result readiness, continuation resumption, and resource release.
 
 * 🔀 **A unified asynchronous I/O contract**
-  Each backend keeps its own threading, event-loop, and completion model, but exposes the same application-observable semantics through the `io` concepts `AsyncStream`, `AsyncListener`, and `AsyncConnector`. `coro` expresses asynchronous control flow in synchronous-looking code while hiding frame, suspension, resumption, and lifetime mechanics; application code need not handle `epoll_event`, SQEs, CQEs, or `kevent`.
+  Each backend keeps its own threading, event-loop, and completion model, but exposes the same application-observable semantics through the `backend` concepts `AsyncStream`, `AsyncListener`, and `AsyncConnector` (application code uses the `io` aliases). `coro` expresses asynchronous control flow in synchronous-looking code while hiding frame, suspension, resumption, and lifetime mechanics; application code need not handle `epoll_event`, SQEs, CQEs, or `kevent`.
 
 * 🧩 **Explicit ownership and completion semantics**
   Each Worker owns its thread, event loop, connections, and I/O operations. Operations complete in their owning execution context and coroutine continuations resume in that same context, with explicit rules for buffer lifetimes, cancellation, and asynchronous close. Coroutine frames are not moved across loops.

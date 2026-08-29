@@ -8,7 +8,7 @@
 
 #include "alyrn/detail/ds/intrusive_rbtree.h"
 #include "alyrn/time/clock.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::detail::time {
 
@@ -44,17 +44,14 @@ public:
     }
   }
 
-  [[nodiscard]]
   Deadline expiration() const {
     return expiration_;
   }
 
-  [[nodiscard]]
   bool repeat() const {
     return repeat_;
   }
 
-  [[nodiscard]]
   int64_t sequence() const {
     return sequence_;
   }

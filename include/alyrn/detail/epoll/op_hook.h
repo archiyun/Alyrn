@@ -14,7 +14,6 @@ namespace alyrn::epoll::detail {
 template <typename TOwner>
 class OperationHook {
 public:
-  [[nodiscard]]
   bool CompleteResult(Result<std::size_t> result) noexcept {
     return static_cast<TOwner*>(this)->CompleteResultImpl(std::move(result));
   }

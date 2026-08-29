@@ -10,12 +10,12 @@
 #include <utility>
 #include <vector>
 
-#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/work.h"
 #include "alyrn/detail/ds/intrusive_queue.h"
 #include "alyrn/result.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::coro {
 
@@ -87,12 +87,10 @@ public:
     return std::unexpected(Errno(EAGAIN));
   }
 
-  [[nodiscard]]
   SendAwaiter Send(T value) noexcept {
     return SendAwaiter{*this, std::move(value)};
   }
 
-  [[nodiscard]]
   ReceiveAwaiter Receive() noexcept { return ReceiveAwaiter{*this}; }
 
   void Close() noexcept {
@@ -119,7 +117,7 @@ public:
   [[nodiscard]]
   bool Closed() const noexcept { return closed_; }
 
-  class SendAwaiter : public ::alyrn::detail::ds::QueueNode<SendAwaiter, SendTag> {
+  class [[nodiscard]] SendAwaiter : public ::alyrn::detail::ds::QueueNode<SendAwaiter, SendTag> {
   public:
     ALYRN_DELETE_COPY_MOVE(SendAwaiter);
 
@@ -185,7 +183,7 @@ public:
     bool waiting_{false};
   };
 
-  class ReceiveAwaiter : public ::alyrn::detail::ds::QueueNode<ReceiveAwaiter, ReceiveTag> {
+  class [[nodiscard]] ReceiveAwaiter : public ::alyrn::detail::ds::QueueNode<ReceiveAwaiter, ReceiveTag> {
   public:
     ALYRN_DELETE_COPY_MOVE(ReceiveAwaiter);
 

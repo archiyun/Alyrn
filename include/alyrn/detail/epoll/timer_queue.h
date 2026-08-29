@@ -13,7 +13,7 @@
 #include "alyrn/detail/time/timer.h"
 #include "alyrn/time/timer_id.h"
 #include "alyrn/detail/time/timer_index.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::epoll {
 
@@ -21,8 +21,11 @@ class Loop;
 
 namespace detail {
 
-using ActiveTimerTable =
-    std::unordered_map<std::int64_t, ::alyrn::detail::time::Timer*>;
+using Timer = ::alyrn::detail::time::Timer;
+using TimerIndex = ::alyrn::detail::time::TimerIndex;
+using TimerIndexKind = ::alyrn::detail::time::TimerIndexKind;
+
+using ActiveTimerTable = std::unordered_map<std::int64_t, Timer*>;
 
 // TimerQueue manages timerfd-driven timer scheduling for one Loop.
 //
@@ -34,10 +37,7 @@ public:
 
   using TimerCallback = std::function<void()>;
 
-  explicit TimerQueue(
-      Loop* loop,
-      ::alyrn::detail::time::TimerIndexKind index =
-          ::alyrn::detail::time::TimerIndexKind::kRbTree);
+  explicit TimerQueue(Loop* loop, TimerIndexKind index = TimerIndexKind::kRbTree);
   ~TimerQueue();
 
   using TimePoint = time::Deadline;
@@ -57,11 +57,10 @@ private:
   // deliberately not duplicated here.
   int timerfd_;
   Channel timerfd_channel_;
-  ::alyrn::detail::time::TimerIndex timers_;
-  ::alyrn::detail::memory::ObjectPool<::alyrn::detail::time::Timer, kTimerQueueMax>
-      timer_pool_;
+  TimerIndex timers_;
+  ::alyrn::detail::memory::ObjectPool<Timer, kTimerQueueMax> timer_pool_;
   ActiveTimerTable active_timers_;
-  ::alyrn::detail::time::Timer* processing_timer_{nullptr};
+  Timer* processing_timer_{nullptr};
   bool processing_timer_cancelled_{false};
 };
 

@@ -58,8 +58,8 @@ public:
   }
   ~UniqueFd() noexcept { Reset(); }
 
-  [[nodiscard]] int Get() const noexcept { return fd_; }
-  [[nodiscard]] int Release() noexcept { return std::exchange(fd_, -1); }
+  int Get() const noexcept { return fd_; }
+  int Release() noexcept { return std::exchange(fd_, -1); }
 
   void Reset(int fd = -1) noexcept {
     if (fd_ >= 0) {

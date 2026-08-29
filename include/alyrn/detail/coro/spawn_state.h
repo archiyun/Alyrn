@@ -15,7 +15,7 @@
 #include <type_traits>
 #include <utility>
 
-#include "alyrn/detail/base/check.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/work.h"
 
@@ -92,7 +92,6 @@ public:
     root_work_.SetHandle(handle);
   }
 
-  [[nodiscard]]
   Work* RootWork() noexcept {
     return &root_work_;
   }
@@ -105,7 +104,6 @@ public:
   // Called exactly once from SpawnRoot::final_suspend. The detached path
   // returns kDestroyRoot so the final awaiter can destroy the containing frame
   // after scheduling/completion bookkeeping is finished.
-  [[nodiscard]]
   FinishAction Finish() noexcept {
     Phase expected = Phase::kRunningJoinable;
     if (phase_.compare_exchange_strong(expected, Phase::kFinished, std::memory_order_acq_rel)) {
@@ -128,14 +126,12 @@ public:
   }
 
   // -- consumer side (the JoinHandle) -------------------------------------
-  [[nodiscard]]
   bool IsFinished() const noexcept {
     return phase_.load(std::memory_order_acquire) == Phase::kFinished;
   }
 
   // Async wait. Returns true when the waiter was parked (the caller suspends);
   // false when the result is already available (resume immediately).
-  [[nodiscard]]
   bool TryParkWaiter(Scheduler& scheduler, std::coroutine_handle<> waiter) noexcept {
     waiter_scheduler_ = &scheduler;
     waiter_resume_.SetHandle(waiter);

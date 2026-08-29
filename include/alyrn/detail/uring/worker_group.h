@@ -11,7 +11,7 @@
 #include "alyrn/result.h"
 #include "alyrn/detail/uring/worker.h"
 #include "alyrn/net/endpoint.h"
-#include "alyrn/detail/utils/macros.h"
+#include "alyrn/detail/macros.h"
 
 namespace alyrn::uring::detail {
 
@@ -43,19 +43,16 @@ public:
                     ThreadExitCallback exit_callback = {});
   ~WorkerGroup() noexcept;
 
-  [[nodiscard]]
   Result<void> Start();
 
   // Asks every worker loop to stop without joining its thread.
   void RequestStop() noexcept;
   void Stop() noexcept;
 
-  [[nodiscard]]
   bool Started() const noexcept {
     return started_;
   }
 
-  [[nodiscard]]
   std::size_t Size() const noexcept {
     return workers_.size();
   }

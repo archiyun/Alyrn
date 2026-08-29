@@ -22,6 +22,10 @@ class Loop;
 
 namespace detail {
 
+using Timer = ::alyrn::detail::time::Timer;
+using TimerIndex = ::alyrn::detail::time::TimerIndex;
+using TimerIndexKind = ::alyrn::detail::time::TimerIndexKind;
+
 struct TimerDriverTag;
 struct TimerControlTag;
 
@@ -38,10 +42,7 @@ public:
   using ControlOpHook = OpHook<TimerQueue, TimerControlTag>;
   using TimerCallback = std::function<void()>;
 
-  explicit TimerQueue(
-      Loop* loop,
-      ::alyrn::detail::time::TimerIndexKind index =
-          ::alyrn::detail::time::TimerIndexKind::kRbTree) noexcept
+  explicit TimerQueue(Loop* loop, TimerIndexKind index = TimerIndexKind::kRbTree) noexcept
       : DriverOpHook(OpKind::kTimerDriverComplete),
         ControlOpHook(OpKind::kTimerControlComplete),
         loop_(loop),
@@ -51,9 +52,7 @@ public:
   TimerQueue(const TimerQueue&) = delete;
   TimerQueue& operator=(const TimerQueue&) = delete;
 
-  [[nodiscard]]
   Result<time::TimerId> AddAfter(time::Duration delay, TimerCallback callback);
-  [[nodiscard]]
   Result<time::TimerId> AddTimer(TimerCallback callback, time::Deadline deadline);
   Result<void> Cancel(time::TimerId id) noexcept;
 
@@ -71,19 +70,17 @@ private:
   void HandleControlComplete(Op* op) noexcept;
   void ProcessExpired() noexcept;
   void ReconcileOrStop() noexcept;
-  [[nodiscard]] Result<void> Reconcile() noexcept;
-  [[nodiscard]] Result<void> Arm(time::Deadline deadline) noexcept;
-  [[nodiscard]] Result<void> ArmFallback(time::Deadline deadline) noexcept;
-  [[nodiscard]] Result<void> Update(time::Deadline deadline) noexcept;
+  Result<void> Reconcile() noexcept;
+  Result<void> Arm(time::Deadline deadline) noexcept;
+  Result<void> ArmFallback(time::Deadline deadline) noexcept;
+  Result<void> Update(time::Deadline deadline) noexcept;
 
   Op* DriverOp() noexcept { return DriverOpHook::Operation(); }
   Op* ControlOp() noexcept { return ControlOpHook::Operation(); }
 
   Loop* loop_;
-  ::alyrn::detail::time::TimerIndex timers_;
-  std::unordered_map<std::int64_t,
-                     std::unique_ptr<::alyrn::detail::time::Timer>>
-      active_;
+  TimerIndex timers_;
+  std::unordered_map<std::int64_t, std::unique_ptr<Timer>> active_;
 
   bool driver_armed_{false};
   bool control_pending_{false};
