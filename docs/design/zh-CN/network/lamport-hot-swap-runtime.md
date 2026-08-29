@@ -958,10 +958,8 @@ source 创建和 operation 提交处返回实际运行期错误。Epoll 仍可�
 语义 profile 校验。Epoll 和 luring 的 stream 都是 loop-bound，pending operation 不能直接
 迁移。因此现阶段最多只能把 quiescent switch 作为未来设计目标，不能把它描述成已有能力。
 
-timeout 现在由独立的 `AsyncTimedReadStream` / `AsyncTimedStream` interface 表达：
-`epoll::Stream` 和 `uring::Stream` 都满足该 extension，而 `AsyncStream` 仍刻意保持最小。
-`io::AsyncTimedStream` 负责编译期 interface 约束，不能替代公共语义验证；实际 timeout
-失败仍由 backend 的 `Result` 返回。
+per-call `ReadSomeFor` 已从 Stream 公开契约撤回。`AsyncStream` 仍刻意保持最小；连接级
+sticky 每操超时是后续工作。loop 级 `SleepFor` / `RunAfter` 不受影响。
 
 ## 结论
 

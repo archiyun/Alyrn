@@ -24,15 +24,13 @@
 #include "alyrn/detail/operation/single_result_lifecycle.h"
 #include "alyrn/result.h"
 #include "alyrn/time/clock.h"
-#include "alyrn/time/timer_id.h"
 #include "alyrn/detail/utils/macros.h"
 
 namespace alyrn::kqueue {
 
 /*
  * One-shot readiness is the only supported stream mode for now: each await arms
- * a filter, delivery retires it, and the next await must re-arm. Timed reads
- * share the loop's user-space timer tree rather than a per-op kernel timer.
+ * a filter, delivery retires it, and the next await must re-arm.
  */
 struct StreamOptions {
   TriggerMode trigger_mode{TriggerMode::kOneShot};
@@ -56,8 +54,6 @@ public:
 
   [[nodiscard]]
   ReadSomeAwaiter ReadSome(std::span<std::byte> buffer) noexcept;
-  [[nodiscard]]
-  ReadSomeAwaiter ReadSomeFor(std::span<std::byte> buffer, time::Duration timeout) noexcept;
   [[nodiscard]]
   ReadIntoAwaiter ReadInto(net::Buffer buffer, std::size_t reserve = 4096) noexcept;
   [[nodiscard]]
@@ -177,9 +173,6 @@ protected:
   bool BeginRead(std::coroutine_handle<> continuation) noexcept;
   void SuspendForRead(void* awaiter, PendingReadKind kind) noexcept;
 
-  void ArmReadTimeout(time::Duration timeout, void* awaiter, time::TimerId& timer) noexcept;
-  void CancelReadTimeout(time::TimerId& timer) noexcept;
-
   [[nodiscard]]
   bool TryAuthorizeResult() noexcept;
   void CompleteInline(Result<std::size_t> result) noexcept;
@@ -200,9 +193,8 @@ class Stream::ReadSomeAwaiter final : public ReadAwaiterState,
 public:
   ALYRN_DELETE_COPY_MOVE(ReadSomeAwaiter);
 
-  ReadSomeAwaiter(Stream& stream, std::span<std::byte> buffer,
-                  time::Duration timeout = time::Duration::zero()) noexcept
-      : ReadAwaiterState(stream), buffer_(buffer), timeout_(timeout) {}
+  explicit ReadSomeAwaiter(Stream& stream, std::span<std::byte> buffer) noexcept
+      : ReadAwaiterState(stream), buffer_(buffer) {}
 
   bool await_ready() const noexcept { return false; }
   [[nodiscard]]
@@ -216,8 +208,6 @@ private:
   void OnReadyImpl() noexcept;
 
   std::span<std::byte> buffer_;
-  time::Duration timeout_{};
-  time::TimerId timer_{};
 };
 
 class Stream::WriteAllAwaiter final : public OperationHook<Stream::WriteAllAwaiter> {

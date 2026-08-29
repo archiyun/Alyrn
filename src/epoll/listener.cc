@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT
+#include "alyrn/epoll/listener.h"
+
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -9,15 +11,14 @@
 
 #include "alyrn/detail/backend/value_result_state.h"
 #include "alyrn/detail/base/check.h"
-#include "alyrn/result.h"
-#include "alyrn/net/accept_source.h"
+#include "alyrn/detail/epoll/loop_access.h"
+#include "alyrn/detail/epoll/result_state.h"
 #include "alyrn/detail/net/socket.h"
 #include "alyrn/detail/operation/completion_gate.h"
 #include "alyrn/detail/operation/scheduler_continuation.h"
 #include "alyrn/detail/operation/single_result_lifecycle.h"
-#include "alyrn/detail/epoll/loop_access.h"
-#include "alyrn/detail/epoll/result_state.h"
-#include "alyrn/epoll/listener.h"
+#include "alyrn/net/accept_source.h"
+#include "alyrn/result.h"
 
 namespace alyrn::epoll {
 
@@ -46,7 +47,7 @@ Loop* CheckLoop(Loop* loop) noexcept {
 }
 
 Result<net::Socket> TryCreateListenSocket(const net::Endpoint& listen_addr,
-                                                ListenerOptions options) noexcept {
+                                          ListenerOptions options) noexcept {
   auto fd = net::CreateNonBlockingSocket(listen_addr.NativeFamily());
   if (!fd.has_value()) {
     return std::unexpected(fd.error());
@@ -126,7 +127,7 @@ private:
     result_.SetResult(std::move(result));
     ALYRN_CHECK(lifecycle_.TryAuthorizeResult(), "Epoll accept result was authorized twice");
     ALYRN_CHECK(lifecycle_.TryAuthorizeRelease(),
-                   "Epoll accept release was not authorized after its result");
+                "Epoll accept release was not authorized after its result");
   }
 
   [[nodiscard]] bool CompleteResult(Result<Stream> result) noexcept {
@@ -180,8 +181,7 @@ private:
   ::alyrn::detail::backend::ValueResultState<Stream> result_;
 };
 
-bool AcceptSource::NextAwaiter::await_suspend(
-    std::coroutine_handle<> continuation) noexcept {
+bool AcceptSource::NextAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   if (source_->listener_ == nullptr) {
     result_.SetError(Errno(EBADF));
     (void)(completion_gate_.TryComplete());
@@ -262,21 +262,18 @@ void AcceptSource::NextAwaiter::Complete(NextResult result) noexcept {
   continuation_.Schedule();
 }
 
-AcceptSource::AcceptSource(Listener* listener,
-                                         net::detail::AcceptSourceStateMachine state) noexcept
-    : listener_(listener), state_(std::move(state)) {}
+AcceptSource::AcceptSource(Listener* listener, net::detail::AcceptSourceStateMachine state) noexcept
+    : listener_(listener), state_(state) {}
 
 AcceptSource::AcceptSource(AcceptSource&& other) noexcept
     : listener_(std::exchange(other.listener_, nullptr)),
-      state_(std::move(other.state_)),
+      state_(other.state_),
       events_(std::move(other.events_)),
-      terminal_error_(std::move(other.terminal_error_)),
-      pending_next_(nullptr) {
-  ALYRN_CHECK(other.pending_next_ == nullptr,
-                 "AcceptSource cannot move with a pending Next");
+      terminal_error_(other.terminal_error_) {
+  ALYRN_CHECK(other.pending_next_ == nullptr, "AcceptSource cannot move with a pending Next");
   ALYRN_CHECK(state_.State() != net::detail::AcceptSourceState::kActive &&
-                     state_.State() != net::detail::AcceptSourceState::kStopping,
-                 "AcceptSource cannot move while it is running");
+                  state_.State() != net::detail::AcceptSourceState::kStopping,
+              "AcceptSource cannot move while it is running");
   if (listener_ != nullptr && listener_->accept_source_ == &other) {
     listener_->accept_source_ = this;
   }
@@ -289,22 +286,21 @@ AcceptSource& AcceptSource::operator=(AcceptSource&& other) noexcept {
 
   ALYRN_CHECK(pending_next_ == nullptr, "AcceptSource destination has a pending Next");
   ALYRN_CHECK(state_.State() != net::detail::AcceptSourceState::kActive &&
-                     state_.State() != net::detail::AcceptSourceState::kStopping,
-                 "AcceptSource destination is running");
-  ALYRN_CHECK(other.pending_next_ == nullptr,
-                 "AcceptSource cannot move with a pending Next");
+                  state_.State() != net::detail::AcceptSourceState::kStopping,
+              "AcceptSource destination is running");
+  ALYRN_CHECK(other.pending_next_ == nullptr, "AcceptSource cannot move with a pending Next");
   ALYRN_CHECK(other.state_.State() != net::detail::AcceptSourceState::kActive &&
-                     other.state_.State() != net::detail::AcceptSourceState::kStopping,
-                 "AcceptSource cannot move while it is running");
+                  other.state_.State() != net::detail::AcceptSourceState::kStopping,
+              "AcceptSource cannot move while it is running");
 
   if (listener_ != nullptr && listener_->accept_source_ == this) {
     listener_->accept_source_ = nullptr;
   }
 
   listener_ = std::exchange(other.listener_, nullptr);
-  state_ = std::move(other.state_);
+  state_ = other.state_;
   events_ = std::move(other.events_);
-  terminal_error_ = std::move(other.terminal_error_);
+  terminal_error_ = other.terminal_error_;
   if (listener_ != nullptr && listener_->accept_source_ == &other) {
     listener_->accept_source_ = this;
   }
@@ -316,13 +312,13 @@ AcceptSource::~AcceptSource() {
     return;
   }
   ALYRN_CHECK(listener_->loop_->IsInLoopThread(),
-                 "AcceptSource destructor called from wrong thread");
+              "AcceptSource destructor called from wrong thread");
   ALYRN_CHECK(pending_next_ == nullptr, "AcceptSource destroyed with a pending Next");
   const auto state = state_.State();
   ALYRN_CHECK(state == net::detail::AcceptSourceState::kIdle ||
-                     state == net::detail::AcceptSourceState::kDraining ||
-                     state == net::detail::AcceptSourceState::kTerminal,
-                 "AcceptSource destroyed before reaching a safe lifecycle state");
+                  state == net::detail::AcceptSourceState::kDraining ||
+                  state == net::detail::AcceptSourceState::kTerminal,
+              "AcceptSource destroyed before reaching a safe lifecycle state");
   ALYRN_CHECK(state_.ArmedRequests() == 0, "AcceptSource destroyed with an armed accept");
   if (listener_->accept_source_ == this) {
     listener_->accept_source_ = nullptr;
@@ -381,8 +377,7 @@ void AcceptSource::OnReady() noexcept {
     if (!accepted.has_value()) {
       Error error = accepted.error();
       auto completed = state_.CompleteRequest(false);
-      ALYRN_CHECK(completed.has_value(),
-                     "AcceptSource: failed to record accept completion");
+      ALYRN_CHECK(completed.has_value(), "AcceptSource: failed to record accept completion");
       if (IsWouldBlock(error.value())) {
         break;
       }
@@ -394,8 +389,7 @@ void AcceptSource::OnReady() noexcept {
       events_.push_back(std::move(*accepted));
     } catch (...) {
       auto completed = state_.CompleteRequest(false);
-      ALYRN_CHECK(completed.has_value(),
-                     "AcceptSource: failed to record accept completion");
+      ALYRN_CHECK(completed.has_value(), "AcceptSource: failed to record accept completion");
       Fail(Errno(ENOMEM));
       return;
     }
@@ -475,8 +469,7 @@ bool AcceptSource::TryTakeNext(NextResult& result) noexcept {
   if (!events_.empty()) {
     Event event(std::in_place, std::move(events_.front()));
     events_.pop_front();
-    ALYRN_CHECK(state_.ConsumeEvent(),
-                   "AcceptSource: queue and state became inconsistent");
+    ALYRN_CHECK(state_.ConsumeEvent(), "AcceptSource: queue and state became inconsistent");
     result = NextResult(std::in_place, std::move(event));
     if (state_.State() == net::detail::AcceptSourceState::kPaused) {
       (void)(state_.TryResume());
@@ -534,8 +527,7 @@ Result<Stream> AcceptSource::TryAccept() noexcept {
   return Stream(listener_->loop_, fd, peer_addr, listener_->stream_options_);
 }
 
-Listener::Listener(Loop* loop, const net::Endpoint& listen_addr,
-                                 ListenerOptions options)
+Listener::Listener(Loop* loop, const net::Endpoint& listen_addr, ListenerOptions options)
     : loop_(CheckLoop(loop)),
       socket_(CreateListenSocket(listen_addr.NativeFamily())),
       channel_(loop_, socket_.fd()),
@@ -563,9 +555,8 @@ Listener::Listener(Loop* loop, net::Socket socket, StreamOptions stream_options,
   LoopAccess::RegisterShutdownParticipant(*loop_, shutdown_participant_);
 }
 
-Result<Listener> Listener::Create(Loop* loop,
-                                                      const net::Endpoint& listen_addr,
-                                                      ListenerOptions options) noexcept {
+Result<Listener> Listener::Create(Loop* loop, const net::Endpoint& listen_addr,
+                                  ListenerOptions options) noexcept {
   if (loop == nullptr) {
     return std::unexpected(Errno(EINVAL));
   }
@@ -583,8 +574,6 @@ Listener::Listener(Listener&& other) noexcept
       channel_(std::move(other.channel_)),
       stream_options_(other.stream_options_),
       tcp_options_(other.tcp_options_),
-      pending_accept_(nullptr),
-      accept_source_(nullptr),
       closed_(other.closed_) {
   BindChannelCallbacks();
   LoopAccess::RegisterShutdownParticipant(*loop_, shutdown_participant_);
@@ -598,7 +587,7 @@ Listener& Listener::operator=(Listener&& other) noexcept {
 
   Loop* other_loop = PrepareMove(other);
   ALYRN_CHECK(loop_ == nullptr || loop_ == other_loop,
-                 "Listener move requires both objects to use the same Loop");
+              "Listener move requires both objects to use the same Loop");
   if (loop_ != nullptr) {
     ResetForMove();
   }
@@ -623,8 +612,7 @@ Listener::~Listener() {
   }
   RequireOwnerLoop();
   ALYRN_CHECK(pending_accept_ == nullptr, "Listener destroyed with a pending accept");
-  ALYRN_CHECK(accept_source_ == nullptr,
-                 "Listener destroyed with an active AcceptSource");
+  ALYRN_CHECK(accept_source_ == nullptr, "Listener destroyed with an active AcceptSource");
   LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
   DetachChannel();
 }
@@ -640,8 +628,7 @@ coro::Task<Result<Stream>> Listener::Accept() {
   co_return co_await AcceptAwaiter(*this);
 }
 
-Result<AcceptSource> Listener::CreateAcceptSource(
-    net::AcceptSourceOptions options) noexcept {
+Result<AcceptSource> Listener::CreateAcceptSource(net::AcceptSourceOptions options) noexcept {
   RequireOwnerLoop();
   if (loop_->State() == ::alyrn::detail::backend::LoopState::kStopping ||
       loop_->State() == ::alyrn::detail::backend::LoopState::kStopped) {
@@ -721,24 +708,23 @@ void Listener::CompleteAccept(Result<Stream> result) {
     return;
   }
   ALYRN_CHECK(awaiter->CompleteResult(std::move(result)),
-                 "Listener::CompleteAccept result was already authorized");
+              "Listener::CompleteAccept result was already authorized");
   ALYRN_CHECK(awaiter->TryAuthorizeRelease(),
-                 "Listener::CompleteAccept release was not authorized after its result");
+              "Listener::CompleteAccept release was not authorized after its result");
 
   AcceptAwaiter* released = std::exchange(pending_accept_, nullptr);
   ALYRN_CHECK(released == awaiter,
-                 "Listener::CompleteAccept pending slot changed during completion");
+              "Listener::CompleteAccept pending slot changed during completion");
   if (channel_.IsReading()) {
     channel_.DisableReading();
   }
   ALYRN_CHECK(awaiter->TryAuthorizeContinuation(),
-                 "Listener::CompleteAccept continuation was not authorized after release");
+              "Listener::CompleteAccept continuation was not authorized after release");
   awaiter->ScheduleContinuation();
 }
 
 void Listener::DetachChannel() {
-  ALYRN_DCHECK(loop_->IsInLoopThread(),
-                  "Listener::DetachChannel called from wrong thread");
+  ALYRN_DCHECK(loop_->IsInLoopThread(), "Listener::DetachChannel called from wrong thread");
   if (!channel_.IsNoneEvent()) {
     channel_.DisableAll();
   }
@@ -749,8 +735,7 @@ void Listener::DetachChannel() {
 
 void Listener::RequireOwnerLoop() const noexcept {
   ALYRN_CHECK(loop_ != nullptr, "Listener operation has no owner Loop");
-  ALYRN_CHECK(loop_->IsInLoopThread(),
-                 "Listener operation called from wrong Loop thread");
+  ALYRN_CHECK(loop_->IsInLoopThread(), "Listener operation called from wrong Loop thread");
 }
 
 void Listener::BindChannelCallbacks() noexcept {
@@ -764,12 +749,9 @@ void Listener::BindChannelCallbacks() noexcept {
 
 void Listener::ResetForMove() noexcept {
   ALYRN_CHECK(loop_ != nullptr, "Listener move destination is not initialized");
-  ALYRN_CHECK(loop_->IsInLoopThread(),
-                 "Listener move called from wrong Loop thread");
-  ALYRN_CHECK(pending_accept_ == nullptr,
-                 "Listener move destination has a pending accept");
-  ALYRN_CHECK(accept_source_ == nullptr,
-                 "Listener move destination has an active AcceptSource");
+  ALYRN_CHECK(loop_->IsInLoopThread(), "Listener move called from wrong Loop thread");
+  ALYRN_CHECK(pending_accept_ == nullptr, "Listener move destination has a pending accept");
+  ALYRN_CHECK(accept_source_ == nullptr, "Listener move destination has an active AcceptSource");
   LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
   DetachChannel();
   socket_.Close();
@@ -777,12 +759,10 @@ void Listener::ResetForMove() noexcept {
 
 Loop* Listener::PrepareMove(Listener& other) noexcept {
   ALYRN_CHECK(other.loop_ != nullptr, "Listener move source is not initialized");
-  ALYRN_CHECK(other.loop_->IsInLoopThread(),
-                 "Listener move called from wrong Loop thread");
+  ALYRN_CHECK(other.loop_->IsInLoopThread(), "Listener move called from wrong Loop thread");
   ALYRN_CHECK(other.pending_accept_ == nullptr,
-                 "Listener cannot move with a pending accept operation");
-  ALYRN_CHECK(other.accept_source_ == nullptr,
-                 "Listener cannot move with an active AcceptSource");
+              "Listener cannot move with a pending accept operation");
+  ALYRN_CHECK(other.accept_source_ == nullptr, "Listener cannot move with an active AcceptSource");
 
   other.DetachChannel();
   LoopAccess::UnregisterShutdownParticipant(*other.loop_, other.shutdown_participant_);

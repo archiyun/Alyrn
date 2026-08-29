@@ -32,11 +32,10 @@ inflight 是否应该减少
 
 例如：
 
-- timed read 的 read CQE 和 timeout CQE 都可能到达，但业务 continuation 只能恢复一次；
+- close 的 cancel CQE 到达后，原有 read/write CQE 仍然可能在后面到达，但业务 continuation 只能恢复一次；
 - multishot recv 的 `F_MORE` CQE 已经可以产生业务事件，但 operation 仍然存活；
 - send zerocopy 的 send CQE 可以确定发送结果；若带 `F_MORE`，notification CQE 才确定 buffer
   可以复用，否则 primary CQE 本身就是该边界；
-- close 的 cancel CQE 到达后，原有 read/write CQE 仍然可能在后面到达。
 
 因此第一阶段的 loop 只应接收原始 CQE，并交给 operation-specific handler；handler 再决定这
 次事件是否产生业务事件、是否保持 operation、以及何时提交恢复工作。
@@ -101,7 +100,6 @@ IORING_RECV_MULTISHOT 可用
 | `send` / `WriteAll` 的内部 request | 1 个 SQE | 1 个 CQE | CQE 到达后确定 | CQE 到达后 buffer 可按普通 send 语义释放 | 已实现，single-shot |
 | `accept` / `Accept` | 1 个 SQE；listener 可以同时保持多个 pending accept | 每个 SQE 1 个 CQE | adapter 将 CQE 转换为 `Result<Stream>` 后确定 | 新 stream 转移 fd 所有权；listener pending-accept reservation 在 continuation 前释放 | 已实现，single-shot coupled |
 | `connect` / `Connect` | 1 个 SQE | 1 个 CQE | adapter 将 CQE 转换为 `Result<Stream>` 后确定 | stream 接管 fd，或 error 路径关闭 fd；两者均先于 continuation | 已实现，single-shot coupled |
-| `link_timeout` / timed read | read SQE + timeout SQE | 最多 2 个 CQE | read 和 timeout 两个物理完成都观察到后确定 | 两个 operation 都结束后 awaiter 才能安全释放；只恢复一次 | 已实现，linked composite |
 | fd cancel / `Close` | cancel SQE 加上原有 pending I/O | cancel 和原 I/O 各自产生 CQE | cancel 完成且 pending I/O 全部收敛后确定 | fd 关闭前必须等待相关 operation 收敛；不能只看到 cancel CQE 就销毁 stream | 已实现，composite close |
 | timer driver/control | timeout 或 timeout update SQE | 每次提交通常 1 个 CQE | timer queue 内部状态更新 | timer operation 自身完成后复用 | 已实现，内部 operation |
 | MSG_RING / wake | notification 或 poll SQE | 特殊 CQE | 不产生普通业务结果 | mailbox/wake 状态按专用协议清理，不走普通网络 operation dispatch | 已实现，内部 operation |
@@ -126,7 +124,7 @@ IORING_RECV_MULTISHOT 可用
 | send zerocopy | 一个 send CQE；primary 带 `F_MORE` 时另有 `F_NOTIF` | send CQE 确定发送结果；primary 无 `F_MORE` 或 notification 确定 memory 可复用 | send result 与 buffer release 可分离；`F_MORE` 后不能在 notification 前释放 buffer | 普通 write 完成后释放发送 buffer；没有同等的两阶段 zc 协议 | `Stream::SendZeroCopy` 已实现；按 primary `F_MORE` 选择 terminal 边界 |
 | registered fixed buffer | 当前 backend 未提交 registered buffer SQE | 结果仍可为 single-shot 或其它 lifecycle shape | registration 的 owner 必须覆盖所有 in-flight operation | 普通用户 buffer；没有固定 buffer 的相同语义 | 未实现；当前没有公共接口 |
 | fixed file | 当前 backend 未提交 fixed-file SQE | 结果语义由具体 operation 决定 | file table slot 释放前不能有引用 | 普通 fd 所有权 | 未实现；当前没有公共接口 |
-| linked operations | 多个 SQE 组成一个逻辑操作 | 可能有多个物理 CQE，但业务结果通常只确定一次 | 所有影响结果或资源的 link member 都必须收敛 | Epoll 通过组合 awaiter/状态机模拟 | timed read 已内部使用；通用公共 API 未实现 |
+| linked operations | 多个 SQE 组成一个逻辑操作 | 可能有多个物理 CQE，但业务结果通常只确定一次 | 所有影响结果或资源的 link member 都必须收敛 | Epoll 通过组合 awaiter/状态机模拟 | 通用公共 API 未实现；per-call timed read 已撤回 |
 
 ### 4.1 multishot 的恢复规则
 
@@ -213,7 +211,7 @@ Release coupling   : Coupled | Split
 某个互斥 family。每个 Physical Request 仍有自己的终态；Logical Operation 则按其 convergence
 和 release coupling 决定何时产生 terminal、释放资源及恢复 continuation。
 
-timed read、close 和 send zerocopy 分别记录：
+close 和 send zerocopy 分别记录：
 
 ```text
 physical completion count
@@ -232,8 +230,6 @@ operation destruction
   syscall success commit、local-error rollback，以及与 Close preparation 的排斥；
 - `formal/async_stream_multiop.tla`：并发 read/write 的 operation identity、owner coroutine
   与 Close 收敛；
-- `formal/linked_timeout_submission_failure.tla`：linked read 已提交但 timeout SQE 提交失败时，
-  synthetic timeout completion 与 read CQE 的一次性收敛；
 - `formal/scheduler_completion_liveness.tla`：在 worker 持续执行 turn 的公平性假设下，
   completion-ready continuation 最终被调度，且 normal ready backlog 不会令其饥饿；
 - `formal/async_stream_multiop_backend_refinement.tla`：Epoll readiness 与 io_uring
@@ -278,8 +274,6 @@ tlc docs/design/zh-CN/network/formal/async_stream_multiop.tla \
   -config docs/design/zh-CN/network/formal/async_stream_multiop.cfg
 tlc docs/design/zh-CN/network/formal/async_operation_lifecycle_shapes.tla \
   -config docs/design/zh-CN/network/formal/async_operation_lifecycle_shapes.cfg
-tlc docs/design/zh-CN/network/formal/linked_timeout_submission_failure.tla \
-  -config docs/design/zh-CN/network/formal/linked_timeout_submission_failure.cfg
 tlc docs/design/zh-CN/network/formal/scheduler_completion_liveness.tla \
   -config docs/design/zh-CN/network/formal/scheduler_completion_liveness.cfg
 tlc docs/design/zh-CN/network/formal/async_stream_multiop_backend_refinement.tla \

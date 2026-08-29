@@ -77,12 +77,6 @@ CompletionDisposition DispatchCompletion(::alyrn::uring::detail::Op* op, Complet
     case OpKind::kReadIntoComplete:
       DispatchStreamReadIntoComplete(op);
       break;
-    case OpKind::kTimedReadComplete:
-      DispatchTimedReadComplete(op);
-      break;
-    case OpKind::kTimedReadTimeoutComplete:
-      DispatchTimedReadTimeoutComplete(op);
-      break;
     case OpKind::kWriteComplete:
       DispatchStreamWriteComplete(op);
       break;

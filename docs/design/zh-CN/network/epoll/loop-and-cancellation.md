@@ -6,7 +6,7 @@
 
 > Epoll 取消的是“等待下一次 readiness”的逻辑操作，不是取消一个内核仍在访问用户 buffer 的 I/O 请求。
 
-因此 Epoll 与 luring 可以给业务层相同的 `Result`、恢复位置与 close 语义，却不应假装
+因此 Epoll 与 Uring 可以给业务层相同的 `Result`、恢复位置与 close 语义，却不应假装
 它们有相同的物理取消过程。
 
 ## 1. 模块与职责
@@ -219,33 +219,14 @@ result storage 写入一次；`await_resume()` 只可取走一次并使 storage 
 `CheckAcceptReleasesSlotBeforeContinuation()` 让同一协程连续执行两次 `Accept()`，验证第二次
 提交可以立即复用第一轮释放的槽位。
 
-### 4.3 timeout 是“解除等待”，不是内核取消
+### 4.3 TimerQueue 服务 loop 延时，不是 Stream I/O
 
-`ReadSomeFor()` 在 read 因 `EAGAIN` 挂起后，将一个 timer 放入 `TimerQueue`：
+`TimerQueue` 仍为 `SleepFor` / `RunAfter` 提供用户态 deadline。Stream 不再把一次 read
+与 timer 绑成 composite operation；per-call `ReadSomeFor` 已撤回。
 
-```text
-read readiness  ─┐
-                 ├─ CompleteRead(result) ─► SingleResultLifecycle
-timer expiry ────┘
-```
-
-timer 首先检查该 awaiter 是否仍是 stream 的 `pending_read_`，随后以 `ETIMEDOUT` 走同一条
-`CompleteRead()` 路径。正常 read、EOF、error、close 任一方先胜出时，awaiter 会取消 timer。
-
-因此 timeout 后：
-
-```text
-pending slot 已清除
-EPOLLIN 已按终态收敛
-timer 已取消或已消费
-协程恰好恢复一次
-```
-
-`epoll_stream_smoke_test` 的
-`CheckTimedReadReleasesSlotBeforeContinuation()` 让 timed read 在挂起后读取
-`"timednext"`，并在它恢复的同一协程中立刻提交第二个 read。第二次 read 必须能取得
-`"next"`：这验证 `CompleteRead()` 在安排 continuation 前已经清除了旧的
-`pending_read_` 槽位；否则第二次提交会得到 `EBUSY`。
+descriptor readiness 与 timer 到期可以出现在同一轮 poll 里。timer 回调只安排 loop 上的
+后续 work，不能在回调里同步 resume 一个仍占用 read slot 的 stream awaiter——因为那种
+awaiter 已经不存在。
 
 ### 4.4 `Stream::Close()`：资源级取消
 
@@ -264,6 +245,10 @@ ResourceState: Open -> Closing
 
 1. 已经挂起的 read/write 都得到一次 `ECANCELED`；
 2. 后续新操作因 `Closed` 或无效 fd 得到 `EBADF`，不会重新注册 epoll interest。
+
+`Stream` 析构在 owner loop 上调用同一条 `CloseNow()` 路径。空闲析构因此会关闭 fd；
+带着 pending I/O 析构会取消这些 operation，并把 continuation 排入后续 loop turn。
+`co_await Close()` 仍然可用来观察关闭结果，但不是析构前的正确性前置条件。
 
 `Shutdown()` 不等于 `Close()`：前者仅执行 socket 写方向 shutdown，不会取消 pending read、
 也不释放 fd。它要求没有 pending write（否则返回 `EBUSY`），之后保持 read 可用，而新的
@@ -310,7 +295,7 @@ owner thread
 event-loop 析构当作取消尚未完成 operation 的后门。
 
 普通 `RunAfter`/`RunAt`/`RunEvery` callback 不代表一个可等待的 logical operation。若它在
-stop 前尚未触发，`TimerQueue` 会在 loop 析构时丢弃它；相反，`SleepFor`、timed read 等协程操作
+stop 前尚未触发，`TimerQueue` 会在 loop 析构时丢弃它；相反，`SleepFor` 等协程操作
 会登记 shutdown participant，并在 `BeginShutdown()` 中以其协议规定的结果结算。
 
 ## 5. AcceptSource 与 RecvSource 的停止

@@ -40,14 +40,6 @@ inline auto PrepareRecv(int fd, void* buffer, std::size_t size) {
 }
 
 [[nodiscard]]
-inline auto PrepareLinkedRecv(int fd, void* buffer, std::size_t size) {
-  return [prep = PrepareRecv(fd, buffer, size)](io_uring_sqe* sqe) mutable noexcept {
-    prep(sqe);
-    sqe->flags |= IOSQE_IO_LINK;
-  };
-}
-
-[[nodiscard]]
 inline auto PrepareSend(int fd, const void* buffer, std::size_t size, int flags) {
   return MakeSqePrep(io_uring_prep_send, fd, buffer, size, flags);
 }
@@ -94,11 +86,6 @@ inline auto PrepareCancelAllByFd(int fd) {
 inline auto PrepareCancelAll() {
   return MakeSqePrep(io_uring_prep_cancel, nullptr,
                      IORING_ASYNC_CANCEL_ANY | IORING_ASYNC_CANCEL_ALL);
-}
-
-[[nodiscard]]
-inline auto PrepareLinkTimeout(__kernel_timespec* timeout) {
-  return MakeSqePrep(io_uring_prep_link_timeout, timeout, 0);
 }
 
 [[nodiscard]]

@@ -31,20 +31,6 @@ SleepFor
 因此此时若 re-arm preparation 失败，owner loop 会进入 `Stopping` 并通过正常 cancel/drain 收敛，
 而不是静默丢失仍在树中的 timer。
 
-## ReadSomeFor
-
-带超时的读是一个 composite operation：
-
-```text
-read SQE -----------\
-                     -> logical read result
-timeout SQE --------/
-```
-
-read 和 timeout 可能按任意顺序产生 CQE。业务协程只能恢复一次；两个 physical member 都
-收敛后，awaiter 才能安全释放。read 先成功时，timeout 的迟到 CQE 仍要被正确消费；timeout
-先到时，read 的迟到 CQE 也不能访问已释放的 buffer。
-
 ## loop 停止
 
 `RequestStop()` 会让 owner loop 进入取消与 completion drain，不能替代应用资源的 `Close()`。
@@ -54,7 +40,5 @@ read 和 timeout 可能按任意顺序产生 CQE。业务协程只能恢复一�
 ## 测试观察点
 
 - delay 到期后恢复一次，零 delay 不死锁；
-- read-first、timeout-first、同一轮到达和提交失败都可结束；
-- timeout 后 buffer 仍然不会被迟到 read CQE 写入；
 - loop stop 后 timer callback 不再新增业务 work；
 - timer 和 network operation 同时 pending 时，drain 不泄漏 CQE 或 coroutine frame。

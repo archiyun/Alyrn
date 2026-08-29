@@ -50,6 +50,9 @@ public:
   // result storage, and cancellation protocol are not a stream interface.
 
   Stream(Loop* loop, int fd, net::Endpoint peer = net::Endpoint(0), StreamOptions options = {});
+  // Destruction is loop-affine. An idle stream closes its descriptor.
+  // Pending read/write operations complete once with ECANCELED; their
+  // continuations resume on a later loop turn, not during this destructor.
   ~Stream();
 
   // Moves are loop-affine: the source must be used from its owning loop
@@ -62,8 +65,6 @@ public:
   [[nodiscard]]
   ReadIntoAwaiter ReadInto(net::Buffer buffer, std::size_t reserve = 4096) noexcept;
   [[nodiscard]]
-  ReadSomeAwaiter ReadSomeFor(std::span<std::byte> buffer, time::Duration timeout) noexcept;
-  [[nodiscard]]
   WriteAllAwaiter WriteAll(std::span<const std::byte> buffer) noexcept;
   [[nodiscard]]
   // Legacy alias for CloseWrite().
@@ -74,7 +75,8 @@ public:
   // Stream operations and destruction are loop-affine. The coroutine must
   // reach await_suspend() on this stream's owning Loop; a foreign thread
   // violates the runtime contract and terminates through ALYRN_CHECK in
-  // every build configuration.
+  // every build configuration. co_await Close() remains the way to observe
+  // close errors; it is not required before destruction.
 
   [[nodiscard]]
   Result<net::Endpoint> LocalAddr() const noexcept;
@@ -184,13 +186,13 @@ public:
 
 protected:
   explicit ReadAwaiterState(Stream& stream) noexcept : stream_(&stream) {}
+  // Detaches from the stream without scheduling a continuation. Used when the
+  // waiting coroutine is destroyed while the operation is still pending.
+  ~ReadAwaiterState();
 
   [[nodiscard]]
   bool BeginRead(std::coroutine_handle<> continuation) noexcept;
   void SuspendForRead(void* awaiter, PendingReadKind kind) noexcept;
-
-  void ArmReadTimeout(time::Duration timeout, void* awaiter, time::TimerId& timer) noexcept;
-  void CancelReadTimeout(time::TimerId& timer) noexcept;
 
   [[nodiscard]]
   bool TryAuthorizeResult() noexcept;
@@ -212,9 +214,8 @@ class Stream::ReadSomeAwaiter final : public ReadAwaiterState,
 public:
   ALYRN_DELETE_COPY_MOVE(ReadSomeAwaiter);
 
-  ReadSomeAwaiter(Stream& stream, std::span<std::byte> buffer,
-                  time::Duration timeout = time::Duration::zero()) noexcept
-      : ReadAwaiterState(stream), buffer_(buffer), timeout_(timeout) {}
+  explicit ReadSomeAwaiter(Stream& stream, std::span<std::byte> buffer) noexcept
+      : ReadAwaiterState(stream), buffer_(buffer) {}
 
   bool await_ready() const noexcept { return false; }
   [[nodiscard]]
@@ -228,8 +229,6 @@ private:
   void OnReadyImpl() noexcept;
 
   std::span<std::byte> buffer_;
-  time::Duration timeout_;
-  time::TimerId timer_;
 };
 
 // Keeps the short-write loop in the caller's coroutine frame. The physical
@@ -240,6 +239,7 @@ public:
 
   WriteAllAwaiter(Stream& stream, std::span<const std::byte> buffer) noexcept
       : stream_(&stream), buffer_(buffer) {}
+  ~WriteAllAwaiter();
 
   bool await_ready() const noexcept { return false; }
   [[nodiscard]]
@@ -273,6 +273,7 @@ public:
   ALYRN_DELETE_COPY_MOVE(ReadIntoAwaiter);
 
   ReadIntoAwaiter(Stream& stream, net::Buffer buffer, std::size_t reserve) noexcept;
+  ~ReadIntoAwaiter();
 
   bool await_ready() const noexcept { return false; }
   [[nodiscard]] bool await_suspend(std::coroutine_handle<> continuation) noexcept;

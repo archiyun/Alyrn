@@ -190,27 +190,6 @@ void Stream::ReadAwaiterState::SuspendForRead(void* awaiter, PendingReadKind kin
   }
 }
 
-void Stream::ReadAwaiterState::ArmReadTimeout(time::Duration timeout, void* awaiter,
-                                              time::TimerId& timer) noexcept {
-  if (timeout <= time::Duration::zero()) {
-    return;
-  }
-
-  timer = stream_->loop_->RunAfter(std::max(timeout, time::Microseconds(100)), [this, awaiter] {
-    if (stream_ != nullptr && stream_->pending_read_ == awaiter) {
-      stream_->CompleteRead(std::unexpected(Errno(ETIMEDOUT)));
-    }
-  });
-}
-
-void Stream::ReadAwaiterState::CancelReadTimeout(time::TimerId& timer) noexcept {
-  if (!timer.Valid()) {
-    return;
-  }
-  stream_->loop_->Cancel(timer);
-  timer = {};
-}
-
 bool Stream::ReadAwaiterState::TryAuthorizeResult() noexcept {
   return lifecycle_.TryAuthorizeResult();
 }
@@ -221,6 +200,18 @@ bool Stream::ReadAwaiterState::TryAuthorizeRelease() noexcept {
 
 bool Stream::ReadAwaiterState::TryAuthorizeContinuation() noexcept {
   return lifecycle_.TryAuthorizeContinuation();
+}
+
+Stream::ReadAwaiterState::~ReadAwaiterState() {
+  if (stream_ == nullptr || stream_->pending_read_ != this) {
+    return;
+  }
+  stream_->pending_read_ = nullptr;
+  stream_->pending_read_kind_ = PendingReadKind::kNone;
+  if (stream_->channel_.IsReading()) {
+    stream_->channel_.DisableReading();
+  }
+  stream_ = nullptr;
 }
 
 void Stream::ReadAwaiterState::CompleteInline(Result<std::size_t> result) noexcept {
@@ -254,7 +245,6 @@ bool Stream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> continuation
   }
 
   SuspendForRead(this, Stream::PendingReadKind::kReadSome);
-  ArmReadTimeout(timeout_, this, timer_);
   return true;
 }
 
@@ -264,7 +254,6 @@ bool Stream::ReadSomeAwaiter::CompleteResultImpl(Result<std::size_t> result) noe
   if (!TryAuthorizeResult()) {
     return false;
   }
-  CancelReadTimeout(timer_);
   stream_ = nullptr;
   SetResult(result);
   return true;
@@ -282,6 +271,13 @@ void Stream::ReadSomeAwaiter::OnReadyImpl() noexcept {
 Stream::ReadIntoAwaiter::ReadIntoAwaiter(Stream& stream, net::Buffer buffer,
                                          std::size_t reserve) noexcept
     : ReadAwaiterState(stream), buffer_(std::move(buffer)), reserve_(reserve) {}
+
+Stream::ReadIntoAwaiter::~ReadIntoAwaiter() {
+  if (reservation_active_) {
+    buffer_.AbortWrite();
+    reservation_active_ = false;
+  }
+}
 
 bool Stream::ReadIntoAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   if (!BeginRead(continuation)) {
@@ -425,11 +421,23 @@ void Stream::WriteAllAwaiter::CompleteInline(Result<std::size_t> result) noexcep
                  "Epoll write release was not authorized after its result");
 }
 
+Stream::WriteAllAwaiter::~WriteAllAwaiter() {
+  if (stream_ == nullptr || stream_->pending_write_ != this) {
+    return;
+  }
+  stream_->pending_write_ = nullptr;
+  if (stream_->channel_.IsWriting()) {
+    stream_->channel_.DisableWriting();
+  }
+  stream_ = nullptr;
+}
+
 bool Stream::WriteAllAwaiter::CompleteResultImpl(Result<std::size_t> result) noexcept {
   if (!lifecycle_.TryAuthorizeResult()) {
     return false;
   }
   result_.SetResult(result);
+  stream_ = nullptr;
   return true;
 }
 
@@ -517,10 +525,8 @@ Stream::~Stream() {
     return;
   }
   RequireOwnerLoop();
-  ALYRN_CHECK(pending_read_ == nullptr, "Stream destroyed with a pending read");
-  ALYRN_CHECK(pending_write_ == nullptr, "Stream destroyed with a pending write");
+  CloseNow();
   LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
-  DetachChannel();
 }
 
 Stream::ReadSomeAwaiter Stream::ReadSome(std::span<std::byte> buffer) noexcept {
@@ -529,11 +535,6 @@ Stream::ReadSomeAwaiter Stream::ReadSome(std::span<std::byte> buffer) noexcept {
 
 Stream::ReadIntoAwaiter Stream::ReadInto(net::Buffer buffer, std::size_t reserve) noexcept {
   return ReadIntoAwaiter{*this, std::move(buffer), reserve};
-}
-
-Stream::ReadSomeAwaiter Stream::ReadSomeFor(std::span<std::byte> buffer,
-                                            time::Duration timeout) noexcept {
-  return ReadSomeAwaiter{*this, buffer, timeout};
 }
 
 coro::Task<Result<void>> Stream::Shutdown() noexcept { return CloseWrite(); }

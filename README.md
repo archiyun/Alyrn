@@ -78,35 +78,22 @@ namespace cp = alyrn;
 template <cp::io::AsyncStream Stream>
 auto EchoSession(Stream stream) -> cp::Task<cp::Result<void>> {
   std::array<std::byte, 4096> buffer{};
-  cp::Result<void> session_result{};
 
   for (;;) {
     auto read = co_await stream.ReadSome(buffer);
     if (!read.has_value()) {
-      session_result = std::unexpected(read.error());
-      break;
+      co_return std::unexpected(read.error());
     }
     if (*read == 0) {  // EOF
-      break;
+      co_return cp::Result<void>{};
     }
 
     auto payload = std::span<const std::byte>(buffer.data(), *read);
     auto written = co_await stream.WriteAll(payload);
     if (!written.has_value()) {
-      session_result = std::unexpected(written.error());
-      break;
+      co_return std::unexpected(written.error());
     }
   }
-
-  auto closed = co_await stream.Close();
-  if (!closed.has_value()) {
-    if (session_result.has_value()) {
-      session_result = std::unexpected(closed.error());
-    } else {
-      std::println(stderr, "close failed: {}", closed.error().message());
-    }
-  }
-  co_return session_result;
 }
 
 template <cp::io::AsyncStream Stream>

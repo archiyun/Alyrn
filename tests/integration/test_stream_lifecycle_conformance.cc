@@ -112,6 +112,12 @@ bool FillSendBuffer(int fd) noexcept {
   }
 }
 
+bool PeerSawEof(int fd) noexcept {
+  std::array<char, 1> buf{};
+  const ssize_t n = ::recv(fd, buf.data(), buf.size(), 0);
+  return n == 0;
+}
+
 bool Expect(bool condition, std::string_view backend, std::string_view message) {
   if (condition) {
     return true;
@@ -133,6 +139,7 @@ struct EpollHarness {
   using Stream = alyrn::epoll::Stream;
 
   static constexpr std::string_view Name() noexcept { return "Epoll"; }
+  static constexpr bool DropCancelsPendingOperations() noexcept { return true; }
   static bool Init(Loop&) noexcept { return true; }
   static bool Skip(const Loop&) noexcept { return false; }
 
@@ -157,6 +164,7 @@ struct UringHarness {
   using Stream = alyrn::uring::Stream;
 
   static constexpr std::string_view Name() noexcept { return "io_uring"; }
+  static constexpr bool DropCancelsPendingOperations() noexcept { return false; }
 
   static bool Init(Loop& loop) noexcept {
     alyrn::uring::Options options;
@@ -1075,6 +1083,101 @@ bool CheckPendingReadCloseContract() {
   return ok;
 }
 
+template <alyrn::io::AsyncStream Stream, class Loop>
+auto DropIdleStream(Stream stream, Loop& loop, bool& dropped) -> alyrn::coro::DetachedTask {
+  dropped = true;
+  loop.RequestStop();
+  co_return;
+}
+
+template <class Harness>
+bool CheckIdleStreamDropContract() {
+  typename Harness::Loop loop;
+  if (!Harness::Init(loop)) {
+    if (Harness::Skip(loop)) {
+      return true;
+    }
+    std::cerr << "FAIL [" << Harness::Name() << "]: loop initialization\n";
+    return false;
+  }
+
+  UniqueFd local;
+  UniqueFd peer;
+  if (!MakeSocketPair(local, peer)) {
+    return false;
+  }
+
+  bool dropped = false;
+  alyrn::coro::SpawnDetach(
+      loop, DropIdleStream(Harness::MakeStream(loop, local.Release()), loop, dropped));
+  Harness::Run(loop);
+
+  bool ok = true;
+  ok &= Expect(dropped, Harness::Name(), "idle stream drop task did not run");
+  ok &= Expect(PeerSawEof(peer.Get()), Harness::Name(),
+               "idle stream drop did not close the peer connection");
+  return ok;
+}
+
+template <alyrn::io::AsyncStream Stream, class Loop>
+auto ObserveDroppedRead(Stream& stream, Loop& loop, std::span<std::byte> buffer,
+                        CloseObservation& observation) -> alyrn::coro::DetachedTask {
+  observation.read.emplace(co_await stream.ReadSome(buffer));
+  ++observation.read_resume_count;
+  observation.resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
+  loop.RequestStop();
+}
+
+template <class Harness>
+bool CheckPendingReadDropContract() {
+  typename Harness::Loop loop;
+  if (!Harness::Init(loop)) {
+    if (Harness::Skip(loop)) {
+      return true;
+    }
+    std::cerr << "FAIL [" << Harness::Name() << "]: loop initialization\n";
+    return false;
+  }
+
+  UniqueFd local;
+  UniqueFd peer;
+  if (!MakeSocketPair(local, peer)) {
+    return false;
+  }
+
+  std::optional<typename Harness::Stream> stream{Harness::MakeStream(loop, local.Release())};
+  std::array<std::byte, 16> read_buffer{};
+  CloseObservation observation;
+
+  alyrn::coro::SpawnDetach(loop,
+                           ObserveDroppedRead(*stream, loop, read_buffer, observation));
+  if (!Harness::RunAfter(loop, std::chrono::milliseconds(1), [&] { stream.reset(); })) {
+    return false;
+  }
+  if (!Harness::RunAfter(loop, std::chrono::milliseconds(500), [&] {
+        observation.timed_out = true;
+        loop.RequestStop();
+      })) {
+    return false;
+  }
+
+  Harness::Run(loop);
+
+  bool ok = true;
+  ok &= Expect(!observation.timed_out, Harness::Name(), "pending-read drop timed out");
+  ok &= Expect(!stream.has_value(), Harness::Name(), "stream was not dropped");
+  ok &= Expect(observation.read.has_value() && !observation.read->has_value() &&
+                   observation.read->error() == std::errc::operation_canceled,
+               Harness::Name(), "pending read did not return ECANCELED after drop");
+  ok &= Expect(observation.read_resume_count == 1, Harness::Name(),
+               "pending read resumed more than once after drop");
+  ok &= Expect(observation.resumed_with_scheduler, Harness::Name(),
+               "dropped-stream read lost scheduler affinity");
+  ok &= Expect(PeerSawEof(peer.Get()), Harness::Name(),
+               "pending-read drop did not close the peer connection");
+  return ok;
+}
+
 template <class Harness>
 bool CheckBackend() {
   const bool pending_read = CheckPendingReadSuccessContract<Harness>();
@@ -1089,14 +1192,19 @@ bool CheckBackend() {
   const bool pending_write_close = CheckPendingWriteCloseContract<Harness>();
   const bool closed_stream = CheckClosedStreamContract<Harness>();
   const bool pending_read_close = CheckPendingReadCloseContract<Harness>();
+  const bool idle_drop = CheckIdleStreamDropContract<Harness>();
+  bool pending_read_drop = true;
+  if constexpr (Harness::DropCancelsPendingOperations()) {
+    pending_read_drop = CheckPendingReadDropContract<Harness>();
+  }
   if (pending_read && sequential_read && owned_read && read_lane && loop_stop && stop_rejection &&
       shutdown && close_read && pending_close_read && pending_write_close && closed_stream &&
-      pending_read_close) {
+      pending_read_close && idle_drop && pending_read_drop) {
     std::cout << "lifecycle conformance [" << Harness::Name() << "]: PASS\n";
   }
   return pending_read && sequential_read && owned_read && read_lane && loop_stop &&
          stop_rejection && shutdown && close_read && pending_close_read && pending_write_close &&
-         closed_stream && pending_read_close;
+         closed_stream && pending_read_close && idle_drop && pending_read_drop;
 }
 
 }  // namespace

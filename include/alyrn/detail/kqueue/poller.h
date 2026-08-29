@@ -67,7 +67,7 @@ public:
 
   // Runs the expire handler after Channel::HandleEvent() for this poll, so a
   // descriptor that became ready in the same kevent batch is delivered before
-  // a colliding ReadSomeFor timeout.
+  // a colliding SleepFor / RunAfter deadline.
   void DispatchTimerExpire();
 
 private:

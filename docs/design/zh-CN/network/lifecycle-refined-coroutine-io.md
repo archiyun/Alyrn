@@ -42,7 +42,7 @@ stuttering step。一个 readiness 或 CQE 到达本身不自动改变三个逻�
 
 ### Logical Operation
 
-调用者认为自己发起的一次异步动作，例如一次 `ReadSome`、timed read、`Close` 或 source
+调用者认为自己发起的一次异步动作，例如一次 `ReadSome`、`Close` 或 source
 消费。它不等于 syscall、SQE 或 CQE。
 
 ### Backend Execution
@@ -56,9 +56,9 @@ syscall 与 readiness re-arm；io_uring execution 可以包含一个或多个 Ph
 对应：
 
 ```text
-timed read:
+close:
   1 Logical Operation
-  2 Physical Requests: read + timeout
+  N Physical Requests: cancel + original pending I/O
 
 multishot accept:
   1 Logical Operation source
@@ -122,7 +122,7 @@ or release authorization.
 例如：
 
 - epoll readiness 只说明 syscall 值得重试；
-- timed read 的任意一个 CQE 不一定使所有物理成员终态；
+- close 的任意一个 CQE 不一定使所有物理成员终态；
 - zero-copy primary CQE 不授权复用发送 buffer；
 - cancel CQE 不证明原 target request 已终态。
 
@@ -187,7 +187,6 @@ Split    结果 ready 后，资源仍需等待更晚的物理终态或 lease 归
 | 普通 read/write | Single | Single | Coupled |
 | connect | Single | Single | Coupled |
 | accept | Single | Single | Coupled |
-| timed read | Single | Composite | Coupled |
 | cancel + close | Single | Composite | Coupled |
 | multishot accept | Multiple | Single | Coupled |
 | zero-copy send | Single | Single | Split |

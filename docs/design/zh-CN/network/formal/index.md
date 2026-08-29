@@ -33,7 +33,6 @@ scheduler 恢复分开建模。
 | `luring_loop_stop_retry.tla` | Loop 全局 cancel 的本地 preparation/flush 失败必须保持 Stopping，并在重试、target CQE 与 cancel CQE 排空后才进入 Stopped |
 | `timer_preparation_failure.tla` | timer 只有在 driver/update SQE 已准备时才被逻辑接受；首次/update 失败回滚，重臂失败使 loop 停止并显式丢弃未到期 timer |
 | `scheduler_completion_liveness.tla` | completion 后 continuation 最终获得调度服务 |
-| `linked_timeout_submission_failure.tla` | timed operation 的子请求提交失败与收敛 |
 | `accept_source_refinement.tla` | Epoll accept drain 与 luring multishot accept 的逻辑 source 语义 |
 | `recv_source_lease.tla` | `BufferLease` 归还与 source 停止 |
 | `recv_source_incremental_lease.tla` | 未来 incremental source 的逐步 lease 归还与背压模型 |

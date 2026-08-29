@@ -6,7 +6,6 @@
 
 #include <array>
 #include <cerrno>
-#include <chrono>
 #include <cstddef>
 #include <expected>
 #include <iostream>
@@ -34,7 +33,6 @@ namespace {
 using OwnedReadOutcome = alyrn::io::ReadIntoOutcome;
 
 static_assert(alyrn::io::AsyncReadIntoStream<alyrn::uring::Stream>);
-static_assert(alyrn::io::AsyncTimedStream<alyrn::uring::Stream>);
 
 class UniqueFd {
 public:
@@ -173,28 +171,6 @@ alyrn::coro::DetachedTask ReadIntoWithReserveOnce(alyrn::uring::Stream* stream,
   OwnedReadOutcome outcome = co_await stream->ReadInto(std::move(buffer), reserve);
   *resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == loop;
   out->emplace(std::move(outcome));
-}
-
-alyrn::coro::DetachedTask ReadForOnce(alyrn::uring::Stream* stream,
-                                         alyrn::uring::Loop* loop,
-                                         std::span<std::byte> buffer,
-                                         std::chrono::milliseconds timeout,
-                                         std::optional<alyrn::Result<std::size_t>>* out,
-                                         bool* resumed_with_scheduler, int* resume_count) {
-  auto result = co_await stream->ReadSomeFor(buffer, timeout);
-  ++*resume_count;
-  *resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == loop;
-  out->emplace(std::move(result));
-}
-
-alyrn::coro::DetachedTask TimedReadThenRead(
-    alyrn::uring::Stream* stream, alyrn::uring::Loop* loop,
-    std::span<std::byte> timed_buffer, std::span<std::byte> next_buffer,
-    std::optional<alyrn::Result<std::size_t>>* timed_result,
-    std::optional<alyrn::Result<std::size_t>>* next_result, bool* resumed_with_scheduler) {
-  timed_result->emplace(co_await stream->ReadSomeFor(timed_buffer, std::chrono::seconds(1)));
-  next_result->emplace(co_await stream->ReadSome(next_buffer));
-  *resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == loop;
 }
 
 alyrn::coro::DetachedTask ReadThenRead(
@@ -489,152 +465,6 @@ bool CheckOwnedReadIntoSpansBufferBlocks() {
   expected.append(kPayload);
   return Check(actual == expected, "vectored owned read payload mismatch");
 }
-
-bool CheckTimedReadSuccessResumesOnce() {
-  alyrn::uring::Loop loop;
-  switch (InitLoop(loop)) {
-    case LoopInitStatus::kReady:
-      break;
-    case LoopInitStatus::kSkip:
-      return true;
-    case LoopInitStatus::kFail:
-      return false;
-  }
-
-  UniqueFd local;
-  UniqueFd peer;
-  if (!CreateSocketPair(local, peer)) return false;
-
-  alyrn::uring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
-  constexpr std::string_view kPayload = "timed";
-  if (!WriteFd(peer.fd(), kPayload)) return false;
-
-  std::array<std::byte, 16> buffer{};
-  std::optional<alyrn::Result<std::size_t>> result;
-  bool resumed_with_scheduler = false;
-  int resume_count = 0;
-  alyrn::coro::SpawnDetach(loop, ReadForOnce(&stream, &loop, buffer, std::chrono::seconds(1),
-                                                &result, &resumed_with_scheduler, &resume_count));
-  alyrn::uring::detail::LoopAccess::RunReady(loop);
-
-  for (int i = 0; i < 4 && !result.has_value(); ++i) {
-    auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
-    if (!completions.has_value()) {
-      std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
-      return false;
-    }
-    alyrn::uring::detail::LoopAccess::RunReady(loop);
-  }
-
-  std::string_view actual(reinterpret_cast<const char*>(buffer.data()), kPayload.size());
-  return Check(result.has_value(), "timed read success coroutine did not resume") &&
-         Check(result->has_value(), "timed read success returned an error") &&
-         Check(**result == kPayload.size(), "timed read success returned wrong byte count") &&
-         Check(actual == kPayload, "timed read success payload mismatch") &&
-         Check(resume_count == 1, "timed read success resumed more than once") &&
-         Check(resumed_with_scheduler, "timed read success resumed without current scheduler");
-}
-
-bool CheckTimedReadTimeoutResumesOnce() {
-  alyrn::uring::Loop loop;
-  switch (InitLoop(loop)) {
-    case LoopInitStatus::kReady:
-      break;
-    case LoopInitStatus::kSkip:
-      return true;
-    case LoopInitStatus::kFail:
-      return false;
-  }
-
-  UniqueFd local;
-  UniqueFd peer;
-  if (!CreateSocketPair(local, peer)) return false;
-
-  alyrn::uring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
-  std::array<std::byte, 16> buffer{};
-  std::optional<alyrn::Result<std::size_t>> result;
-  bool resumed_with_scheduler = false;
-  int resume_count = 0;
-  alyrn::coro::SpawnDetach(
-      loop, ReadForOnce(&stream, &loop, buffer, std::chrono::milliseconds(1), &result,
-                        &resumed_with_scheduler, &resume_count));
-  alyrn::uring::detail::LoopAccess::RunReady(loop);
-
-  for (int i = 0; i < 4 && !result.has_value(); ++i) {
-    auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
-    if (!completions.has_value()) {
-      std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
-      return false;
-    }
-    alyrn::uring::detail::LoopAccess::RunReady(loop);
-  }
-
-  return Check(result.has_value(), "timed read timeout coroutine did not resume") &&
-         Check(!result->has_value(), "timed read timeout unexpectedly succeeded") &&
-         Check(result->error().value() == ETIMEDOUT, "timed read did not return ETIMEDOUT") &&
-         Check(resume_count == 1, "timed read timeout resumed more than once") &&
-         Check(resumed_with_scheduler, "timed read timeout resumed without current scheduler");
-}
-
-bool CheckTimedReadReleasesSlotBeforeContinuation() {
-  alyrn::uring::Loop loop;
-  switch (InitLoop(loop)) {
-    case LoopInitStatus::kReady:
-      break;
-    case LoopInitStatus::kSkip:
-      return true;
-    case LoopInitStatus::kFail:
-      return false;
-  }
-
-  UniqueFd local;
-  UniqueFd peer;
-  if (!CreateSocketPair(local, peer)) return false;
-
-  alyrn::uring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
-  constexpr std::string_view kTimedPayload = "timed";
-  constexpr std::string_view kNextPayload = "next";
-  std::string payload{kTimedPayload};
-  payload.append(kNextPayload);
-  if (!WriteFd(peer.fd(), payload)) return false;
-
-  std::array<std::byte, kTimedPayload.size()> timed_buffer{};
-  std::array<std::byte, kNextPayload.size()> next_buffer{};
-  std::optional<alyrn::Result<std::size_t>> timed_result;
-  std::optional<alyrn::Result<std::size_t>> next_result;
-  bool resumed_with_scheduler = false;
-
-  alyrn::coro::SpawnDetach(
-      loop, TimedReadThenRead(&stream, &loop, timed_buffer, next_buffer, &timed_result,
-                              &next_result, &resumed_with_scheduler));
-  alyrn::uring::detail::LoopAccess::RunReady(loop);
-
-  for (int i = 0; i < 8 && !next_result.has_value(); ++i) {
-    auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
-    if (!completions.has_value()) {
-      std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
-      return false;
-    }
-    alyrn::uring::detail::LoopAccess::RunReady(loop);
-  }
-
-  const std::string_view timed_actual(reinterpret_cast<const char*>(timed_buffer.data()),
-                                      kTimedPayload.size());
-  const std::string_view next_actual(reinterpret_cast<const char*>(next_buffer.data()),
-                                     kNextPayload.size());
-  return Check(timed_result.has_value(), "timed read did not finish before follow-up read") &&
-         Check(timed_result->has_value(), "timed read returned an error before follow-up read") &&
-         Check(**timed_result == kTimedPayload.size(), "timed read returned wrong byte count") &&
-         Check(timed_actual == kTimedPayload, "timed read payload mismatch") &&
-         Check(next_result.has_value(), "follow-up read did not finish") &&
-         Check(next_result->has_value(),
-               "timed read left the stream read slot reserved during continuation") &&
-         Check(**next_result == kNextPayload.size(), "follow-up read returned wrong byte count") &&
-         Check(next_actual == kNextPayload, "follow-up read payload mismatch") &&
-         Check(resumed_with_scheduler,
-               "follow-up read continuation resumed without current scheduler");
-}
-
 
 bool CheckWriteAll() {
   alyrn::uring::Loop loop;
@@ -950,9 +780,6 @@ int main() {
   if (!CheckReadReleasesSlotBeforeContinuation()) return 1;
   if (!CheckOwnedReadIntoReturnsBuffer()) return 1;
   if (!CheckOwnedReadIntoSpansBufferBlocks()) return 1;
-  if (!CheckTimedReadSuccessResumesOnce()) return 1;
-  if (!CheckTimedReadTimeoutResumesOnce()) return 1;
-  if (!CheckTimedReadReleasesSlotBeforeContinuation()) return 1;
   if (!CheckWriteAll()) return 1;
   if (!CheckShutdownKeepsReadOpen()) return 1;
   if (!CheckCloseWithoutPending()) return 1;

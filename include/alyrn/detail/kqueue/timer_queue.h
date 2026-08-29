@@ -22,7 +22,7 @@ using ActiveTimerTable =
 /*
  * User-space timer heap for one Loop, woken by a single EVFILT_TIMER.
  *
- * SleepFor and ReadSomeFor are logical timers in this index. The kernel holds
+ * SleepFor and RunAfter are logical timers in this index. The kernel holds
  * one one-shot alarm for the earliest deadline; firing it drains every timer
  * that is due, then re-arms for whatever remains. Per-operation kernel timers
  * are intentionally not used.

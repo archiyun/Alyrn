@@ -37,7 +37,6 @@ using WriteResult = alyrn::Result<void>;
 using OwnedReadOutcome = alyrn::io::ReadIntoOutcome;
 
 static_assert(alyrn::io::AsyncStream<alyrn::epoll::Stream>);
-static_assert(alyrn::io::AsyncTimedStream<alyrn::epoll::Stream>);
 static_assert(alyrn::io::AsyncReadIntoStream<alyrn::epoll::Stream>);
 
 bool Check(bool condition, const char* message) {
@@ -69,17 +68,6 @@ alyrn::coro::DetachedTask ReadOnce(alyrn::epoll::Stream* stream,
   ReadResult result = co_await stream->ReadSome(*buffer);
   *resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == scheduler;
   out->emplace(std::move(result));
-  loop->RequestStop();
-}
-
-alyrn::coro::DetachedTask TimedReadThenRead(
-    alyrn::epoll::Stream* stream, alyrn::epoll::Loop* loop,
-    alyrn::epoll::Loop* scheduler, std::span<std::byte> timed_buffer,
-    std::span<std::byte> next_buffer, std::optional<ReadResult>* timed_result,
-    std::optional<ReadResult>* next_result, bool* resumed_with_scheduler) {
-  timed_result->emplace(co_await stream->ReadSomeFor(timed_buffer, std::chrono::seconds{1}));
-  next_result->emplace(co_await stream->ReadSome(next_buffer));
-  *resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == scheduler;
   loop->RequestStop();
 }
 
@@ -330,48 +318,6 @@ bool CheckPendingRead() {
          Check(std::memcmp(buffer.data(), payload, sizeof(payload) - 1) == 0,
                "pending read payload mismatch") &&
          Check(resumed_with_scheduler, "pending read resumed without current scheduler");
-}
-
-bool CheckTimedReadReleasesSlotBeforeContinuation() {
-  int sv[2] = {-1, -1};
-  if (!MakeSocketPair(sv)) {
-    std::cout << "FAIL: socketpair failed\n";
-    return false;
-  }
-
-  alyrn::epoll::Loop loop;
-  alyrn::epoll::Stream stream(&loop, sv[0]);
-  constexpr std::string_view kTimedPayload = "timed";
-  constexpr std::string_view kNextPayload = "next";
-  std::array<std::byte, kTimedPayload.size()> timed_buffer{};
-  std::array<std::byte, kNextPayload.size()> next_buffer{};
-  std::optional<ReadResult> timed_result;
-  std::optional<ReadResult> next_result;
-  bool resumed_with_scheduler = false;
-
-  alyrn::coro::SpawnDetach(
-      loop, TimedReadThenRead(&stream, &loop, &loop, timed_buffer, next_buffer, &timed_result,
-                              &next_result, &resumed_with_scheduler));
-  // The initial coroutine work runs before timer dispatch, so ReadSomeFor()
-  // has installed its pending slot when this callback writes both reads.
-  loop.RunAfter(alyrn::time::Duration::zero(), [fd = sv[1]] {
-    constexpr char kPayload[] = "timednext";
-    (void)::write(fd, kPayload, sizeof(kPayload) - 1);
-  });
-  loop.Run();
-
-  ::close(sv[1]);
-  return Check(timed_result.has_value(), "timed read did not finish") &&
-         Check(timed_result->has_value(), "timed read returned error") &&
-         Check(**timed_result == kTimedPayload.size(), "timed read byte count mismatch") &&
-         Check(std::memcmp(timed_buffer.data(), kTimedPayload.data(), kTimedPayload.size()) == 0,
-               "timed read payload mismatch") &&
-         Check(next_result.has_value(), "next read did not finish") &&
-         Check(next_result->has_value(), "next read returned error") &&
-         Check(**next_result == kNextPayload.size(), "next read byte count mismatch") &&
-         Check(std::memcmp(next_buffer.data(), kNextPayload.data(), kNextPayload.size()) == 0,
-               "next read payload mismatch") &&
-         Check(resumed_with_scheduler, "next read resumed without current scheduler");
 }
 
 bool CheckOwnedReadIntoReturnsBuffer() {
@@ -684,7 +630,6 @@ int main() {
   if (!CheckImmediateRead()) return 1;
   if (!CheckImmediateWrite()) return 1;
   if (!CheckPendingRead()) return 1;
-  if (!CheckTimedReadReleasesSlotBeforeContinuation()) return 1;
   if (!CheckOwnedReadIntoReturnsBuffer()) return 1;
   if (!CheckOwnedReadIntoCloseReturnsBuffer()) return 1;
   if (!CheckCloseCancelsPendingRead()) return 1;

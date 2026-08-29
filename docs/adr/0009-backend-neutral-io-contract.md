@@ -34,7 +34,6 @@ provided buffer 和 zero-copy 的不同生命周期。
 
 以下能力保持为独立 extension：
 
-- `AsyncTimedStream`；
 - `AsyncReadIntoStream`；
 - `AsyncRecvSource`、`BufferLease` 和 provided buffer；
 - send zero-copy、multishot 以及其他 backend capability。
@@ -62,3 +61,15 @@ Epoll 和 io_uring 继续保留独立实现，并通过集中式 compile-time co
 契约测试至少覆盖成功、pending、EOF、短写、Close 竞争、重复完成、buffer 生命周期和
 owner-thread 规则。现有 Epoll/io_uring stream、listener、recv-source 与 completion
 生命周期测试继续负责行为验证；集中式测试负责确保所有公开 adapter 满足相同的 concepts。
+
+## 修订（2026-08）
+
+owner-thread 上销毁 Stream 是 Core 可观察的资源释放：空闲 drop 关闭 fd，不必先
+`Close()`。Epoll 将 pending drop refine 为 `CloseNow()`（pending I/O 各完成一次
+`ECANCELED`，continuation 延后 resume）。io_uring 在 in-flight SQE 仍占用协程帧上的
+`Op` 时，pending drop 仍是契约违反；取消那些 operation 继续走 `Close()`。
+
+## 修订（2026-08，timeout）
+
+per-call `ReadSomeFor` 与 `AsyncTimedStream` 已从公开契约撤回。超时不再是 Stream 的
+一次性覆盖 API；连接级 sticky 每操超时是后续工作。loop 级 `SleepFor` / `RunAfter` 不受影响。

@@ -12,7 +12,6 @@ buffer 可以复用，以及关闭和取消如何收敛。内部类、CQE 分发
 | 功能 | 对外入口 | 状态 | 首要测试目标 |
 | --- | --- | --- | --- |
 | stream I/O | `ReadSome`、`ReadInto`、`WriteAll` | 稳定 | 单次结果、完整写入、错误和 buffer 生命周期 |
-| 超时读 | `ReadSomeFor` | 稳定扩展 | read/timeout 两个 CQE 只恢复一次 |
 | listener / 单次 accept | `Accept` | 稳定 | 新连接所有权与关闭 |
 | 持续 accept | `AcceptSource`、`AcceptMode::kMultishot` | 已实现扩展 | 多事件、终止 CQE、背压、降级 |
 | 持续 recv | `RecvSource` | 已实现扩展 | provided buffer、事件队列、`BufferLease` |
@@ -40,7 +39,7 @@ buffer 可以复用，以及关闭和取消如何收敛。内部类、CQE 分发
   -> 最多恢复一次等待中的协程
 ```
 
-single-shot 通常是一条 SQE 对一条 CQE；multishot、超时和 zerocopy 会产生多个物理
+single-shot 通常是一条 SQE 对一条 CQE；multishot 和 zerocopy 会产生多个物理
 事件，因此必须经过自己的状态机。业务接口看到的是逻辑结果，不是 CQE 数量。
 
 对于普通的 single-shot awaiter，loop 的内部顺序也被固定为：
@@ -55,7 +54,7 @@ CQE
 
 因此 coroutine 恢复后可以立刻开始同方向的下一次 stream operation；它不应因为上一项
 operation 的 slot 尚未释放而得到 `EBUSY`。这个规则只适用于 coupled single-shot 路径。
-timed read、close、multishot source 和 zerocopy 各自根据其 composite、event-source 或
+close、multishot source 和 zerocopy 各自根据其 composite、event-source 或
 split-release 生命周期决定何时进入最后两步。
 
 ## 生命周期上的硬规则

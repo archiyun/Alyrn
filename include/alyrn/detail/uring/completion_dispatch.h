@@ -17,8 +17,6 @@ CompletionDisposition DispatchSendZeroCopyComplete(Op* op, CompletionEvent event
 void DispatchListenerCloseComplete(Op* op) noexcept;
 void DispatchStreamReadComplete(Op* op) noexcept;
 void DispatchStreamReadIntoComplete(Op* op) noexcept;
-void DispatchTimedReadComplete(Op* op) noexcept;
-void DispatchTimedReadTimeoutComplete(Op* op) noexcept;
 void DispatchStreamWriteComplete(Op* op) noexcept;
 void DispatchStreamCloseComplete(Op* op) noexcept;
 void DispatchTimerDriverComplete(Op* op) noexcept;

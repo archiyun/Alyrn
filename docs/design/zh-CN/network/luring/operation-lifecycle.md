@@ -23,16 +23,11 @@
 | single-shot read/write | 1 | 通常 1 | 1 | CQE dispatch 后 |
 | accept | 1 | 1 | 1 个 `Result<Stream>` | adapter 构造 stream 并释放 listener reservation 后 |
 | connect | 1 | 1 | 1 个 `Result<Stream>` | adapter 构造/转移 stream 或关闭失败 fd 后 |
-| timed read | 2（read + timeout） | 最多 2 | 1 | 两个 member 收敛后 |
 | multishot | 1 | 多个，最后一个 terminal | 多个事件 + 1 个 terminal | terminal 和已产生事件都收敛后 |
 | send zerocopy | 1 | primary，primary `F_MORE` 时另有 notification | 1 | primary 无 `F_MORE` 后，或 notification 到达后 |
 | close/cancel | cancel + 原 pending 请求 | 多个 | 1 个 close 结果 | 所有关联请求收敛后 |
 
-`timed read` 属于 coupled composite：read 与 timeout 两个 member 都已收敛后，adapter 先固定
-逻辑结果，再释放 stream 的 read slot，最后才授权 continuation。因而恢复后的协程可以立刻发起下一个
-`ReadSome()`；不能把仍指向旧 awaiter 的 slot 暴露给 continuation。
-
-普通的 coupled single-result operation 也遵守同一顺序：`ReadSome`、`ReadInto`、关闭
+普通的 coupled single-result operation 遵守同一顺序：`ReadSome`、`ReadInto`、关闭
 zerocopy 时 `WriteAll` 内部的一次 send，以及 `Connect` 都在其嵌入的 `Op` 中使用
 `SingleResultLifecycle`。该阶段机把 `result ready -> release authorized -> continuation
 authorized` 编码为三个不可倒退的 transition；物理 CQE 的重复防护仍由独立的可复用 physical
@@ -135,7 +130,7 @@ storage 或 source state 的释放。
 
 - 成功、负 errno、提交失败三条路径都能结束；
 - 多个 physical completion 只产生一个 logical continuation；
-- single-shot read、single-shot accept 与 timed read 的 continuation 恢复前，对应 reservation
+- single-shot read 与 single-shot accept 的 continuation 恢复前，对应 reservation
   已释放，因此 follow-up operation 不会得到 `EBUSY`；
 - single-shot Accept continuation 观察到的 stream 已拥有 live fd，且可以立即执行 `Close()`；
 - Connect continuation 观察到的 stream 已拥有 live fd，且可以立即执行 `Close()`；

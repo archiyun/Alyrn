@@ -6,8 +6,7 @@
 
 Core contract 的冻结范围是 `AsyncStream`、`AsyncListener`、`AsyncConnector` 及其
 可观察的结果、生命周期、buffer 和线程归属语义。后端可以继续更换内部队列、提交
-批处理、completion dispatch 和内存池实现，但不得改变这些语义。`AsyncTimedStream`、
-`AsyncReadIntoStream`、`AsyncRecvSource`、`BufferLease` 和 zero-copy 属于独立的
+批处理、completion dispatch 和内存池实现，但不得改变这些语义。`AsyncReadIntoStream`、`AsyncRecvSource`、`BufferLease` 和 zero-copy 属于独立的
 extension，不得通过扩大 Core contract 的隐含行为加入。
 
 ## 1. 这份契约解决什么问题
@@ -133,22 +132,12 @@ alyrn::io::AsyncStream
 `RemoteAddr()` 返回连接建立时保存的 peer endpoint，不重复发起 `getpeername`。
 当前 `epoll::Stream`、`kqueue::Stream` 和 `uring::Stream` 都满足它。
 
-### 2.2 TimedStream extension
+### 2.2 Timeout 不是 Stream 方法
 
-timeout 不是 `AsyncStream` 的隐含开关。它把一次 read 解释为 read 与 timer/cancel 的
-composite operation，因此使用独立 concept：
+per-call `ReadSomeFor(buffer, timeout)` 已从公开契约撤回。超时不是 `AsyncStream` 的隐含开关，
+也不再以一次性覆盖 API 出现；连接级 sticky 每操超时是后续工作，不在本契约范围内。
 
-```cpp
-ReadSomeFor(std::span<std::byte> buffer, time::Duration timeout)
-    -> 可 await，await_resume() 为 Result<std::size_t>
-
-alyrn::io::AsyncTimedReadStream
-alyrn::io::AsyncTimedStream
-```
-
-`AsyncTimedStream` 表示完整的 `AsyncStream` 加上 timed read。当前 `Stream` 与
-`Stream` 都满足它；只满足 `AsyncStream` 的 adapter 不承诺 `ReadSomeFor`。调用方应
-使用这些 concept 做编译期约束；具体内核或资源限制由 backend 的运行期 `Result` 报告。
+loop 级 `SleepFor` / `RunAfter` 仍然存在，它们挂的是 loop 的 timer tree，不是 stream I/O。
 
 ### 2.3 Buffer ownership extension
 
@@ -543,14 +532,8 @@ read 和 write 可以同时 pending；同方向的两个 operation 不能同时 
 ### I8：语义 contract 固定
 
 业务通过 `io::*` concept 选择所需的语义 interface；具体 backend 不得在运行实例中改变
-这些方法的含义：
-
-```text
-AsyncTimedStream ⊆ AsyncStream + ReadSomeFor
-```
-
-concept 只负责编译期 interface 约束，不能凭空保证内核资源。内核或 ring 不支持某条具体
-路径时，由对应 operation 的 `Result` 返回错误。
+这些方法的含义。concept 只负责编译期 interface 约束，不能凭空保证内核资源。内核或 ring
+不支持某条具体路径时，由对应 operation 的 `Result` 返回错误。
 
 ## 5. AsyncStream 语义
 
@@ -575,7 +558,7 @@ pending operation 收敛。因此 `Open + WriteShutdown` 仍然允许 `ReadSome(
 资源状态和写槽位验证。
 
 `CloseRead()` 只改变读方向，不关闭 fd，也不影响 `WriteAll()`。它要求没有 pending read；否则
-返回 `EBUSY`。成功后新的 `ReadSome()`、`ReadInto()` 和 `ReadSomeFor()` 立即得到项目约定的
+返回 `EBUSY`。成功后新的 `ReadSome()` 和 `ReadInto()` 立即得到项目约定的
 `Result<0>` EOF，不再提交新的 receive operation。读侧关闭和写侧关闭可以独立发生，二者都不
 等价于 `Close()`。
 
@@ -663,7 +646,7 @@ Shutdown()
 ```text
 CloseRead()
   -> ReadState: Readable -> ReadShutdown
-  -> 后续本端 ReadSome() / ReadInto() / ReadSomeFor() 直接返回 Result<0>
+  -> 后续本端 ReadSome() / ReadInto() 直接返回 Result<0>
   -> 写方向仍可继续使用
 ```
 
@@ -694,6 +677,22 @@ Close 必须满足：
 
 `Close()` 完成不等价于其他等待中的协程已经恢复。它只保证相关 operation 已经离开后端
 访问窗口；每个 pending operation 的调用方仍然必须等待自己的 Task 观察结果。
+
+### 5.6.1 析构 / drop
+
+owner loop 上销毁 Stream 是合法的会话结束，不要求先 `co_await Close()`。
+
+```text
+1. 空闲析构（没有 pending read/write/close）关闭 fd；对端观察到连接结束；
+2. 错线程析构仍是编程错误，所有构建中都会终止；
+3. Epoll 的 pending drop 等价于一次 CloseNow：已挂起的 read/write 各完成一次
+   ECANCELED，continuation 在之后的 loop turn 恢复，而不是在析构里同步 resume；
+4. io_uring 在仍有 in-flight SQE 时析构仍是契约违反。Op 嵌在 awaiter 帧上，
+   析构无法等待 CQE。取消 pending 仍走 `co_await Close()`。
+```
+
+`Close()` 留下来观察关闭结果，或在 uring 上取消仍在飞的 I/O。它不是空闲会话结束的
+正确性前置条件。
 
 Epoll 可以通过 readiness 状态直接完成取消，luring 可能需要提交 cancel request、
 等待 cancel CQE 和原 operation CQE。它们的内部路径不同，但不能改变上述状态转移。
@@ -825,46 +824,20 @@ registered fixed buffer 仍属于后续扩展。
 
 ## 8. Timeout 语义
 
-timeout 的目标业务语义是：
+Stream 不再提供 per-call `ReadSomeFor`。把超时做成单次操作覆盖会引入第三套状态机
+（无超时 / 本次覆盖 / 连接级），调用方必须参加。后续若重新引入超时，应是连接级 sticky
+每操超时（例如 `SetReadTimeout(30s)`：每次 Read 从挂起起算），而不是 Go 式绝对
+`SetDeadline`，也不是一次性 `ReadSomeFor`。
 
-```cpp
-ReadSomeFor(std::span<std::byte> buffer, time::Duration timeout)
-    -> 可 await，await_resume() 为 Result<std::size_t>
-```
-
-结果应为：
+loop 级延时仍然存在：
 
 ```text
-读取到数据 -> Result<N>
-对端关闭   -> Result<0>
-超时       -> unexpected(ETIMEDOUT)
-其他失败   -> unexpected(errno)
+SleepFor / RunAfter
+  -> owner loop 的 timer tree
+  -> 到期后在同一 loop 上恢复一次
 ```
 
-实现可以使用 Epoll 的 TimerQueue，或 io_uring 的 linked timeout/cancel，但业务不应
-观察这些内部机制。
-
-它由 `AsyncTimedReadStream` / `AsyncTimedStream` 明确表达。当前代码状态为：
-
-```text
-Stream 已提供 ReadSomeFor；
-Stream 也已提供 ReadSomeFor；
-两者满足 io::AsyncTimedStream；
-kTimeout 只描述语义文档中的 timed extension，
-不扩张 AsyncStream 的最小 interface。
-```
-
-因此，通用算法必须按需要约束正确的 concept：
-
-```text
-AsyncStream       不要求 ReadSomeFor；
-AsyncTimedStream  才要求 ReadSomeFor；
-static_assert     验证具体 backend 已实现 timed extension；
-runtime Result    报告内核或资源层面的实际失败。
-```
-
-超时由后端作为 composite operation 实现：Epoll 使用 TimerQueue，luring 使用 linked
-timeout/cancel；业务不观察这些内部机制。`AsyncStream` 不应被静默扩展成 timed contract。
+`AsyncStream` 不因此变成 timed contract。
 
 ## 9. Capability 分层
 
@@ -882,7 +855,6 @@ kClose
 kCancelByClose
 kAccept       // CoreNetwork
 kConnect      // CoreNetwork / Connector
-kTimeout      // TimedStream / TimedNetwork 的 AsyncTimedStream extension
 ```
 
 ### B 类：实现标签
@@ -997,9 +969,6 @@ CloseRead 之后新读 -> Result<0>
 
 WriteAll -> EPIPE 或具体传输错误
   写方向无法继续。
-
-Timed operation -> ETIMEDOUT
-  只有在 TimedStream profile 真正绑定后才是核心可用结果。
 ```
 
 底层系统调用返回的其他 errno 应保留，不应在后端层无理由改写。应用可以据此区分
@@ -1026,8 +995,7 @@ EOF、本地取消、连接失败、上游失败和超时。
 11. buffer 在 Complete 前被修改或释放时不属于合法用法；
 12. listener 的 pending accept 可被 Close 收敛；
 13. Epoll 和 luring 对同一测试场景的核心结果投影一致；
-14. timeout 在 AsyncTimedStream concept 与后端实现同时存在时，验证 read/timeout
-    竞争只产生一个逻辑结果和一次恢复；
+14. loop 级 SleepFor / RunAfter 到期后恢复一次；Stream 不提供 per-call ReadSomeFor；
 15. EventSource 的 high-water pause 只终止当前 physical request，不把 logical source
     误报为 terminal；
 16. SplitRelease 的业务结果、恢复和 buffer/resource release 按各自授权边界发生。
@@ -1040,6 +1008,8 @@ EOF、本地取消、连接失败、上游失败和超时。
     恢复后可以立刻对该 stream 调用 `Close()`。
 22. `Accept()` 的 continuation 只在 `Result<Stream>` 已固定、listener 的 pending-accept
     reservation 已释放后才运行；恢复后可以立刻关闭该 stream 或发起下一次 `Accept()`。
+23. 空闲析构关闭 fd，无需先 Close；Epoll 上 pending drop 使挂起的 I/O 以 ECANCELED
+    完成一次。io_uring 的 pending drop 仍是契约违反。
 ```
 
 测试应覆盖成功、EOF、ECANCELED、EBADF、EPIPE、资源关闭竞争和 loop 归属，而不是只

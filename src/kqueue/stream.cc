@@ -213,27 +213,6 @@ void Stream::ReadAwaiterState::SuspendForRead(void* awaiter, PendingReadKind kin
   RearmReading(stream_->channel_);
 }
 
-void Stream::ReadAwaiterState::ArmReadTimeout(time::Duration timeout, void* awaiter,
-                                              time::TimerId& timer) noexcept {
-  if (timeout <= time::Duration::zero()) {
-    return;
-  }
-
-  timer = stream_->loop_->RunAfter(std::max(timeout, time::Microseconds(100)), [this, awaiter] {
-    if (stream_ != nullptr && stream_->pending_read_ == awaiter) {
-      stream_->CompleteRead(std::unexpected(Errno(ETIMEDOUT)));
-    }
-  });
-}
-
-void Stream::ReadAwaiterState::CancelReadTimeout(time::TimerId& timer) noexcept {
-  if (!timer.Valid()) {
-    return;
-  }
-  stream_->loop_->Cancel(timer);
-  timer = {};
-}
-
 bool Stream::ReadAwaiterState::TryAuthorizeResult() noexcept {
   return lifecycle_.TryAuthorizeResult();
 }
@@ -276,7 +255,6 @@ bool Stream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> continuation
   }
 
   SuspendForRead(this, Stream::PendingReadKind::kReadSome);
-  ArmReadTimeout(timeout_, this, timer_);
   return true;
 }
 
@@ -286,7 +264,6 @@ bool Stream::ReadSomeAwaiter::CompleteResultImpl(Result<std::size_t> result) noe
   if (!TryAuthorizeResult()) {
     return false;
   }
-  CancelReadTimeout(timer_);
   stream_ = nullptr;
   SetResult(result);
   return true;
@@ -556,11 +533,6 @@ int Stream::Release() noexcept {
 
 Stream::ReadSomeAwaiter Stream::ReadSome(std::span<std::byte> buffer) noexcept {
   return ReadSomeAwaiter{*this, buffer};
-}
-
-Stream::ReadSomeAwaiter Stream::ReadSomeFor(std::span<std::byte> buffer,
-                                            time::Duration timeout) noexcept {
-  return ReadSomeAwaiter{*this, buffer, timeout};
 }
 
 Stream::ReadIntoAwaiter Stream::ReadInto(net::Buffer buffer, std::size_t reserve) noexcept {

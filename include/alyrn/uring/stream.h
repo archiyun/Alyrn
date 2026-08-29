@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include <linux/time_types.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
 
@@ -20,7 +19,6 @@
 #include "alyrn/detail/net/stream_lifecycle.h"
 #include "alyrn/net/endpoint.h"
 #include "alyrn/net/read_into.h"
-#include "alyrn/detail/operation/composite_lifecycle.h"
 #include "alyrn/detail/operation/split_release_lifecycle.h"
 #include "alyrn/result.h"
 #include "alyrn/time/clock.h"
@@ -49,8 +47,6 @@ struct ZeroCopySendResult {
 
 namespace detail {
 
-struct ReadSomeForReadTag;
-struct ReadSomeForTimeoutTag;
 class StreamOperationSlot;
 
 }  // namespace detail
@@ -59,7 +55,6 @@ class Stream {
 private:
   class ReadSomeAwaiter;
   class ReadIntoAwaiter;
-  class ReadSomeForAwaiter;
   class SendAwaiter;
   class SendZeroCopyAwaiter;
 
@@ -90,8 +85,6 @@ public:
   [[nodiscard]]
   ReadIntoAwaiter ReadInto(net::Buffer buffer, std::size_t reserve = 4096) noexcept;
 
-  [[nodiscard]]
-  ReadSomeForAwaiter ReadSomeFor(std::span<std::byte> buffer, time::Duration timeout) noexcept;
   [[nodiscard]]
   ::alyrn::Task<Result<void>> WriteAll(std::span<const std::byte> buffer);
 
@@ -163,8 +156,6 @@ public:
 private:
   friend void detail::DispatchStreamReadComplete(detail::Op* op) noexcept;
   friend void detail::DispatchStreamReadIntoComplete(detail::Op* op) noexcept;
-  friend void detail::DispatchTimedReadComplete(detail::Op* op) noexcept;
-  friend void detail::DispatchTimedReadTimeoutComplete(detail::Op* op) noexcept;
   friend void detail::DispatchStreamWriteComplete(detail::Op* op) noexcept;
   friend detail::CompletionDisposition detail::DispatchSendZeroCopyComplete(
       detail::Op* op, detail::CompletionEvent event) noexcept;
@@ -262,46 +253,6 @@ private:
   ReservationKind reservation_kind_{ReservationKind::kNone};
 };
 
-// --- ReadSomeForAwaiter ---
-class Stream::ReadSomeForAwaiter
-    : public detail::OpHook<Stream::ReadSomeForAwaiter, detail::ReadSomeForReadTag>,
-      public detail::OpHook<Stream::ReadSomeForAwaiter, detail::ReadSomeForTimeoutTag> {
-public:
-  using ReadOpHook = detail::OpHook<ReadSomeForAwaiter, detail::ReadSomeForReadTag>;
-  using TimeoutOpHook = detail::OpHook<ReadSomeForAwaiter, detail::ReadSomeForTimeoutTag>;
-
-  ALYRN_DELETE_COPY_MOVE(ReadSomeForAwaiter);
-
-  ReadSomeForAwaiter(Stream& stream, std::span<std::byte> buffer, time::Duration timeout) noexcept;
-
-  bool await_ready() const noexcept { return false; }
-
-  [[nodiscard]]
-  bool await_suspend(std::coroutine_handle<> continuation) noexcept;
-
-  Result<std::size_t> await_resume() noexcept;
-
-private:
-  friend void detail::DispatchTimedReadComplete(detail::Op* op) noexcept;
-  friend void detail::DispatchTimedReadTimeoutComplete(detail::Op* op) noexcept;
-
-  static void OnReadComplete(detail::Op* op) noexcept;
-  static void OnTimeoutComplete(detail::Op* op) noexcept;
-
-  detail::Op* ReadOp() noexcept { return ReadOpHook::Operation(); }
-  detail::Op* TimeoutOp() noexcept { return TimeoutOpHook::Operation(); }
-
-  void CompleteRead(detail::Op* current) noexcept;
-  void CompleteTimeout(detail::Op* current) noexcept;
-  void FinishIfReady(detail::Op* current) noexcept;
-
-  Stream* stream_;
-  std::span<std::byte> buffer_;
-  __kernel_timespec timeout_ts_{};
-  std::coroutine_handle<> continuation_{};
-  ::alyrn::detail::operation::CompositeLifecycle lifecycle_;
-};
-
 class Stream::SendAwaiter : public detail::OpHook<Stream::SendAwaiter> {
 public:
   using OpHook = detail::OpHook<SendAwaiter>;
@@ -359,7 +310,6 @@ private:
 };
 
 static_assert(::alyrn::io::AsyncStream<Stream>);
-static_assert(::alyrn::io::AsyncTimedStream<Stream>);
 static_assert(::alyrn::io::AsyncReadIntoStream<Stream>);
 
 }  // namespace alyrn::uring

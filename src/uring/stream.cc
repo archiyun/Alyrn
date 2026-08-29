@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: MIT
 #include "alyrn/uring/stream.h"
 
-#include <linux/time_types.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include <algorithm>
 #include <cerrno>
-#include <chrono>
 #include <coroutine>
 #include <cstddef>
 #include <cstdint>
@@ -29,7 +26,6 @@
 #include "alyrn/net/endpoint.h"
 #include "alyrn/net/read_into.h"
 #include "alyrn/detail/net/socket.h"
-#include "alyrn/detail/operation/composite_lifecycle.h"
 #include "alyrn/result.h"
 #include "alyrn/time/clock.h"
 
@@ -258,114 +254,6 @@ void Stream::ReadIntoAwaiter::FinishReservation(Result<std::size_t> result) noex
   }
   iovs_.clear();
   reservation_kind_ = ReservationKind::kNone;
-}
-
-// --- ReadSomeForAwaiter ---
-Stream::ReadSomeForAwaiter::ReadSomeForAwaiter(Stream& stream, std::span<std::byte> buffer,
-                                               time::Duration timeout) noexcept
-    : ReadOpHook(OpKind::kTimedReadComplete),
-      TimeoutOpHook(OpKind::kTimedReadTimeoutComplete),
-      stream_(&stream),
-      buffer_(buffer) {
-  const auto milliseconds = std::max(
-      std::chrono::duration_cast<std::chrono::milliseconds>(timeout).count(), std::int64_t{1});
-  timeout_ts_.tv_sec = static_cast<__kernel_time64_t>(milliseconds / 1000);
-  timeout_ts_.tv_nsec = static_cast<long>(milliseconds % 1000) * 1'000'000;
-}
-
-bool Stream::ReadSomeForAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
-  auto available = detail::StreamOperationSlot::ValidateAvailable(
-      *stream_, detail::StreamOperationDirection::kRead);
-  if (!available.has_value()) {
-    ReadOp()->SetImmediateError(available.error());
-    return false;
-  }
-  if (stream_->lifecycle_.IsReadShutdown()) {
-    ReadOp()->SetImmediateSuccess();
-    return false;
-  }
-  auto reserved =
-      detail::StreamOperationSlot::Reserve(*stream_, detail::StreamOperationDirection::kRead, this);
-  if (!reserved.has_value()) {
-    ReadOp()->SetImmediateError(reserved.error());
-    return false;
-  }
-  if (buffer_.empty()) {
-    detail::StreamOperationSlot::Release(*stream_, detail::StreamOperationDirection::kRead, this);
-    ReadOp()->SetImmediateSuccess();
-    return false;
-  }
-
-  continuation_ = continuation;
-
-  auto submitted = detail::LoopAccess::SubmitOp(
-      *stream_->loop_, ReadOp(),
-      detail::PrepareLinkedRecv(stream_->fd_, buffer_.data(), buffer_.size()));
-  if (!submitted.has_value()) {
-    detail::StreamOperationSlot::Release(*stream_, detail::StreamOperationDirection::kRead, this);
-    ReadOp()->SetImmediateError(submitted.error());
-    return false;
-  }
-
-  submitted = detail::LoopAccess::SubmitOp(*stream_->loop_, TimeoutOp(),
-                                           detail::PrepareLinkTimeout(&timeout_ts_));
-  if (!submitted.has_value()) {
-    // The receive is already queued. It will complete normally without the
-    // optional timeout, and the awaiter remains alive until that CQE.
-    (void)(lifecycle_.RecordMemberCompletion(::alyrn::detail::operation::CompositeMember::kSecond));
-  }
-  return true;
-}
-
-Result<std::size_t> Stream::ReadSomeForAwaiter::await_resume() noexcept {
-  if (!ReadOp()->CqeCompletionRecorded()) {
-    return ToSizeResult(ReadOp()->result);
-  }
-
-  ALYRN_CHECK(lifecycle_.MemberCompleted(::alyrn::detail::operation::CompositeMember::kFirst),
-                 "timed read resumed before its read member settled");
-  if (ReadOp()->result.HasValue() && *ReadOp()->result >= 0) {
-    return static_cast<std::size_t>(*ReadOp()->result);
-  }
-  if (TimeoutOp()->result.HasValue() && *TimeoutOp()->result == -ETIME) {
-    return std::unexpected(Errno(ETIMEDOUT));
-  }
-  return ToSizeResult(ReadOp()->result);
-}
-
-void Stream::ReadSomeForAwaiter::OnReadComplete(::alyrn::uring::detail::Op* op) noexcept {
-  ReadOpHook::OwnerFrom(op)->CompleteRead(op);
-}
-
-void Stream::ReadSomeForAwaiter::OnTimeoutComplete(::alyrn::uring::detail::Op* op) noexcept {
-  TimeoutOpHook::OwnerFrom(op)->CompleteTimeout(op);
-}
-
-void Stream::ReadSomeForAwaiter::CompleteRead(::alyrn::uring::detail::Op* current) noexcept {
-  if (!lifecycle_.RecordMemberCompletion(::alyrn::detail::operation::CompositeMember::kFirst)) {
-    return;
-  }
-  FinishIfReady(current);
-}
-
-void Stream::ReadSomeForAwaiter::CompleteTimeout(::alyrn::uring::detail::Op* current) noexcept {
-  if (!lifecycle_.RecordMemberCompletion(::alyrn::detail::operation::CompositeMember::kSecond)) {
-    return;
-  }
-  FinishIfReady(current);
-}
-
-void Stream::ReadSomeForAwaiter::FinishIfReady(::alyrn::uring::detail::Op* current) noexcept {
-  if (!lifecycle_.TryAuthorizeLogicalResult()) {
-    return;
-  }
-
-  if (lifecycle_.TryAuthorizeRelease() && stream_ != nullptr) {
-    detail::StreamOperationSlot::Release(*stream_, detail::StreamOperationDirection::kRead, this);
-  }
-  if (lifecycle_.TryAuthorizeContinuation()) {
-    current->resume_work.SetHandle(continuation_);
-  }
 }
 
 // --- SendAwaiter ---
@@ -610,14 +498,6 @@ void DispatchStreamReadIntoComplete(::alyrn::uring::detail::Op* op) noexcept {
   Stream::ReadIntoAwaiter::OnComplete(op);
 }
 
-void DispatchTimedReadComplete(::alyrn::uring::detail::Op* op) noexcept {
-  Stream::ReadSomeForAwaiter::OnReadComplete(op);
-}
-
-void DispatchTimedReadTimeoutComplete(::alyrn::uring::detail::Op* op) noexcept {
-  Stream::ReadSomeForAwaiter::OnTimeoutComplete(op);
-}
-
 void DispatchStreamWriteComplete(::alyrn::uring::detail::Op* op) noexcept {
   Stream::SendAwaiter::OnComplete(op);
 }
@@ -671,6 +551,9 @@ Stream& Stream::operator=(Stream&& other) noexcept {
 }
 
 Stream::~Stream() noexcept {
+  // Idle drop closes the descriptor. Pending SQEs still hold user_data in the
+  // coroutine frame, so destroying this object while a read, write, or close
+  // is in flight remains a contract violation until operations live off-frame.
   ALYRN_CHECK(pending_read_ == nullptr, "Stream destroyed with a pending read");
   ALYRN_CHECK(pending_write_ == nullptr, "Stream destroyed with a pending write");
   ALYRN_CHECK(pending_close_ == nullptr, "Stream destroyed with a pending close");
@@ -690,11 +573,6 @@ Stream::ReadSomeAwaiter Stream::ReadSome(std::span<std::byte> buffer) noexcept {
 
 Stream::ReadIntoAwaiter Stream::ReadInto(net::Buffer buffer, std::size_t reserve) noexcept {
   return ReadIntoAwaiter{*this, std::move(buffer), reserve};
-}
-
-Stream::ReadSomeForAwaiter Stream::ReadSomeFor(std::span<std::byte> buffer,
-                                               time::Duration timeout) noexcept {
-  return ReadSomeForAwaiter{*this, buffer, timeout};
 }
 
 Stream::SendAwaiter Stream::Send(std::span<const std::byte> buffer) noexcept {
