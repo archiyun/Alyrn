@@ -19,16 +19,16 @@
 #include <system_error>
 #include <utility>
 
-#include "alyrn/result.h"
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/spawn.h"
+#include "alyrn/epoll/loop.h"
+#include "alyrn/epoll/stream.h"
 #include "alyrn/io/async_stream.h"
 #include "alyrn/io/buffer.h"
 #include "alyrn/io/read_into.h"
-#include "alyrn/net/endpoint.h"
 #include "alyrn/net/detail/socket.h"
-#include "alyrn/epoll/loop.h"
-#include "alyrn/epoll/stream.h"
+#include "alyrn/net/endpoint.h"
+#include "alyrn/result.h"
 
 #if defined(ALYRN_ENABLE_URING)
 #include "alyrn/uring/loop.h"
@@ -740,21 +740,21 @@ bool CheckCloseReadContract() {
   std::array<char, 32> peer_buffer{};
   const ssize_t peer_read = ::read(peer.Get(), peer_buffer.data(), peer_buffer.size());
   bool ok = true;
-  ok &= Expect(observation.first_close_read.has_value() &&
-                   observation.first_close_read->has_value(),
-               Harness::Name(), "first CloseRead failed");
-  ok &= Expect(observation.second_close_read.has_value() &&
-                   observation.second_close_read->has_value(),
-               Harness::Name(), "CloseRead was not idempotent");
-  ok &= Expect(observation.read.has_value() && observation.read->has_value() &&
-                   **observation.read == 0,
-               Harness::Name(), "read after CloseRead did not return EOF");
+  ok &=
+      Expect(observation.first_close_read.has_value() && observation.first_close_read->has_value(),
+             Harness::Name(), "first CloseRead failed");
+  ok &= Expect(
+      observation.second_close_read.has_value() && observation.second_close_read->has_value(),
+      Harness::Name(), "CloseRead was not idempotent");
+  ok &= Expect(
+      observation.read.has_value() && observation.read->has_value() && **observation.read == 0,
+      Harness::Name(), "read after CloseRead did not return EOF");
   ok &= Expect(observation.write.has_value() && observation.write->has_value(), Harness::Name(),
                "write after CloseRead failed");
-  ok &= Expect(peer_read == static_cast<ssize_t>(kOutgoing.size()) &&
-                   std::string_view(peer_buffer.data(), static_cast<std::size_t>(peer_read)) ==
-                       kOutgoing,
-               Harness::Name(), "CloseRead disabled the write direction");
+  ok &= Expect(
+      peer_read == static_cast<ssize_t>(kOutgoing.size()) &&
+          std::string_view(peer_buffer.data(), static_cast<std::size_t>(peer_read)) == kOutgoing,
+      Harness::Name(), "CloseRead disabled the write direction");
   ok &= Expect(observation.resumed_with_scheduler, Harness::Name(),
                "CloseRead continuation lost scheduler affinity");
   return ok;
@@ -780,10 +780,12 @@ auto ObservePendingReadForCloseRead(Stream& stream, Loop& loop, std::span<std::b
 }
 
 template <alyrn::io::AsyncStream Stream, class Loop>
-auto RejectCloseReadWhileReadPending(Stream& stream, Loop& loop,
+auto RejectCloseReadWhileReadPending(Stream& stream, Loop& loop, int peer_fd,
                                      PendingReadCloseReadObservation& observation)
     -> alyrn::coro::DetachedTask {
   observation.rejected_close_read.emplace(co_await stream.CloseRead());
+  constexpr std::string_view kPayload = "ready";
+  (void)WriteExactly(peer_fd, kPayload);
   if (++observation.finished == 2) {
     loop.RequestStop();
   }
@@ -809,16 +811,11 @@ bool CheckPendingReadCloseReadContract() {
   auto stream = Harness::MakeStream(loop, local.Release());
   std::array<std::byte, 16> read_buffer{};
   PendingReadCloseReadObservation observation;
-  alyrn::coro::SpawnDetach(
-      loop, ObservePendingReadForCloseRead(stream, loop, read_buffer, observation));
+  alyrn::coro::SpawnDetach(loop,
+                           ObservePendingReadForCloseRead(stream, loop, read_buffer, observation));
   if (!Harness::RunAfter(loop, std::chrono::milliseconds(1), [&] {
-        alyrn::coro::SpawnDetach(loop, RejectCloseReadWhileReadPending(stream, loop, observation));
-      })) {
-    return false;
-  }
-  if (!Harness::RunAfter(loop, std::chrono::milliseconds(2), [&] {
-        constexpr std::string_view kPayload = "ready";
-        (void)WriteExactly(peer.Get(), kPayload);
+        alyrn::coro::SpawnDetach(
+            loop, RejectCloseReadWhileReadPending(stream, loop, peer.Get(), observation));
       })) {
     return false;
   }
@@ -837,9 +834,9 @@ bool CheckPendingReadCloseReadContract() {
                    !observation.rejected_close_read->has_value() &&
                    observation.rejected_close_read->error() == std::errc::device_or_resource_busy,
                Harness::Name(), "CloseRead did not return EBUSY for a pending read");
-  ok &= Expect(observation.read.has_value() && observation.read->has_value() &&
-                   **observation.read > 0,
-               Harness::Name(), "pending read did not complete before CloseRead");
+  ok &= Expect(
+      observation.read.has_value() && observation.read->has_value() && **observation.read > 0,
+      Harness::Name(), "pending read did not complete before CloseRead");
   ok &= Expect(observation.close_read.has_value() && observation.close_read->has_value(),
                Harness::Name(), "CloseRead failed after the pending read drained");
   return ok;
@@ -1150,8 +1147,7 @@ bool CheckPendingReadDropContract() {
   std::array<std::byte, 16> read_buffer{};
   CloseObservation observation;
 
-  alyrn::coro::SpawnDetach(loop,
-                           ObserveDroppedRead(*stream, loop, read_buffer, observation));
+  alyrn::coro::SpawnDetach(loop, ObserveDroppedRead(*stream, loop, read_buffer, observation));
   if (!Harness::RunAfter(loop, std::chrono::milliseconds(1), [&] { stream.reset(); })) {
     return false;
   }

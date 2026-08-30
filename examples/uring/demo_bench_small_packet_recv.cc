@@ -6,7 +6,7 @@
 //   cmake --build build-uring --target demo_bench_small_packet_recv
 //   build-uring/examples/uring/demo_bench_small_packet_recv
 //
-//   PACKET=64 CONNECTIONS=16 DURATION_MS=3000 MODE=both \
+//   PACKET=64 CONNECTIONS=16 DURATION_MS=3000 MODE=both
 //     build-uring/examples/uring/demo_bench_small_packet_recv
 
 #include <arpa/inet.h>
@@ -42,8 +42,8 @@ namespace {
 
 using alyrn::DetachedTask;
 using alyrn::SpawnDetach;
-using alyrn::uring::ListenOptions;
 using alyrn::uring::Listener;
+using alyrn::uring::ListenOptions;
 using alyrn::uring::Loop;
 using alyrn::uring::Options;
 using alyrn::uring::RecvSource;
@@ -107,9 +107,7 @@ std::string_view EnvString(const char* key) {
   return value != nullptr ? std::string_view(value) : std::string_view{};
 }
 
-bool PowerOfTwo(std::size_t value) noexcept {
-  return value != 0 && (value & (value - 1)) == 0;
-}
+bool PowerOfTwo(std::size_t value) noexcept { return value != 0 && (value & (value - 1)) == 0; }
 
 int ConnectBlocking(std::uint16_t port) noexcept {
   const int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
@@ -343,16 +341,14 @@ RunResult RunOnce(const BenchConfig& config, RecvMode mode) {
 }
 
 void PrintResult(const RunResult& result) {
-  const double mpps = result.seconds > 0 ? (static_cast<double>(result.recvs) / result.seconds) /
-                                               1'000'000.0
-                                         : 0;
-  const double mib_s = result.seconds > 0
-                           ? (static_cast<double>(result.bytes) / result.seconds) / (1024.0 * 1024.0)
-                           : 0;
-  const double delivered =
-      result.client_bytes > 0
-          ? static_cast<double>(result.bytes) / static_cast<double>(result.client_bytes)
-          : 0;
+  const double mpps =
+      result.seconds > 0 ? (static_cast<double>(result.recvs) / result.seconds) / 1'000'000.0 : 0;
+  const double mib_s =
+      result.seconds > 0 ? (static_cast<double>(result.bytes) / result.seconds) / (1024.0 * 1024.0)
+                         : 0;
+  const double delivered = result.client_bytes > 0 ? static_cast<double>(result.bytes) /
+                                                         static_cast<double>(result.client_bytes)
+                                                   : 0;
   std::printf(
       "%-12s recvs=%llu bytes=%llu client_sends=%llu client_bytes=%llu "
       "deliver=%.3f errors=%llu create_fail=%llu next_fail=%llu next_eof=%llu "
@@ -382,7 +378,8 @@ int main() {
   config.buffer_capacity = static_cast<std::size_t>(EnvU64("BUFFER_CAPACITY", 8));
 
   const auto mode = EnvString("MODE");
-  const bool run_single = mode.empty() || mode == "both" || mode == "single" || mode == "single-shot";
+  const bool run_single =
+      mode.empty() || mode == "both" || mode == "single" || mode == "single-shot";
   const bool run_multi = mode.empty() || mode == "both" || mode == "multi" || mode == "multishot";
 
   if (config.packet_size == 0 || config.connections == 0 || config.duration_ms == 0 ||
