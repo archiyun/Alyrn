@@ -77,6 +77,15 @@ target_link_libraries(demo_bench_frame_churn
         alyrn_luring
 )
 
+add_executable(demo_bench_small_packet_recv
+    demo_bench_small_packet_recv.cc
+)
+
+target_link_libraries(demo_bench_small_packet_recv
+    PRIVATE
+        alyrn_luring
+)
+
 add_executable(demo_bench_http_liburing
     demo_bench_http_liburing.cc
 )

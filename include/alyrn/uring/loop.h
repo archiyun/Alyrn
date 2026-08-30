@@ -170,6 +170,10 @@ private:
 
   void DrainStoppedOperations() noexcept;
   void HandleCqe(io_uring_cqe* cqe) noexcept;
+  // Recycle provided buffers and resume CQE waiters before the next CQE so a
+  // multishot recv can restock and rearm inside the same reap.
+  void DrainCompletionReady() noexcept;
+  void OnCqeHandled() noexcept;
 
   detail::Ring ring_;
   coro::WorkQueue ready_;

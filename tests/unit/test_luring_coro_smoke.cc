@@ -211,20 +211,13 @@ bool CheckNopResumesCoroutine() {
     return false;
   }
 
-  if (!Check(alyrn::uring::detail::LoopAccess::PendingSubmitCount(loop) == 0,
-             "pending submit should be empty after wait") ||
-      !Check(alyrn::uring::detail::LoopAccess::InflightCount(loop) == 0,
-             "inflight should be empty after NOP CQE") ||
-      !Check(!alyrn::uring::detail::LoopAccess::IsDrained(loop),
-             "completion should queue coroutine resume work")) {
-    return false;
-  }
-
-  alyrn::uring::detail::LoopAccess::RunReady(loop);
-
-  return Check(alyrn::uring::detail::LoopAccess::IsDrained(loop),
-               "loop should be drained after coroutine resume") &&
-         Check(*completions >= 1, "NOP did not produce a completion") &&
+  return Check(*completions >= 1, "NOP did not produce a completion") &&
+         Check(alyrn::uring::detail::LoopAccess::PendingSubmitCount(loop) == 0,
+               "pending submit should be empty after wait") &&
+         Check(alyrn::uring::detail::LoopAccess::InflightCount(loop) == 0,
+               "inflight should be empty after NOP CQE") &&
+         Check(alyrn::uring::detail::LoopAccess::IsDrained(loop),
+               "CQE handling should resume the waiter before WaitCompletions returns") &&
          Check(result.has_value(), "coroutine did not resume") &&
          Check(result->has_value(), "NOP returned an error") &&
          Check(**result == 0, "NOP result must be zero") &&

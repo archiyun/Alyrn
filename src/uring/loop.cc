@@ -26,14 +26,14 @@
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/work.h"
 #include "alyrn/detail/check.h"
+#include "alyrn/result.h"
 #include "alyrn/uring/detail/completion_dispatch.h"
 #include "alyrn/uring/detail/op.h"
 #include "alyrn/uring/detail/provided_buffer_pool.h"
-#include "alyrn/uring/detail/sqe_prep.h"
 #include "alyrn/uring/detail/ring.h"
+#include "alyrn/uring/detail/sqe_prep.h"
 #include "alyrn/uring/detail/timer_queue.h"
 #include "alyrn/uring/options.h"
-#include "alyrn/result.h"
 
 namespace alyrn::uring {
 
@@ -118,19 +118,15 @@ CompletionDisposition DispatchCompletion(Op* op, CompletionEvent event) noexcept
 
 }  // namespace detail
 
-Loop::Loop(std::pmr::memory_resource* frame_resource)
-    : Scheduler(frame_resource) {
+Loop::Loop(std::pmr::memory_resource* frame_resource) : Scheduler(frame_resource) {
   ALYRN_CHECK(t_loop_in_this_thread == nullptr, "Loop: only one Loop may exist per thread");
   t_loop_in_this_thread = this;
   timers_ = std::make_unique<TimerQueue>(this);
 }
 
-bool Loop::IsInLoopThread() const noexcept {
-  return t_loop_in_this_thread == this;
-}
+bool Loop::IsInLoopThread() const noexcept { return t_loop_in_this_thread == this; }
 
-Result<time::TimerId> Loop::RunAfter(time::Duration delay,
-                                     std::function<void()> callback) {
+Result<time::TimerId> Loop::RunAfter(time::Duration delay, std::function<void()> callback) {
   ALYRN_CHECK(IsInLoopThread(), "Loop::RunAfter called from wrong thread");
   if (!initialized_) {
     return std::unexpected(Errno(EBADF));
@@ -196,8 +192,7 @@ Result<void> Loop::Init(const Options& options) noexcept {
 
 Result<detail::ProvidedBufferPool*> Loop::GetSharedProvidedBufferPool(
     std::size_t buffer_size, std::size_t source_capacity) noexcept {
-  ALYRN_CHECK(IsInLoopThread(),
-                 "Loop::GetSharedProvidedBufferPool called from wrong thread");
+  ALYRN_CHECK(IsInLoopThread(), "Loop::GetSharedProvidedBufferPool called from wrong thread");
   if (shared_buffer_capacity_ == 0) {
     return std::unexpected(Errno(ENOENT));
   }
@@ -358,6 +353,30 @@ void Loop::ScheduleCompletion(coro::Work* work) noexcept {
   completion_ready_.PushBack(work);
 }
 
+void Loop::DrainCompletionReady() noexcept {
+  ALYRN_CHECK(IsInLoopThread(), "Loop::DrainCompletionReady called from wrong thread");
+  if (completion_ready_.Empty()) {
+    return;
+  }
+
+  ExecutionScope execution_scope{*this};
+  CheckExecutionScope();
+  std::size_t resumed = 0;
+  while (resumed < kMaxCompletionWorkPerTurn && !completion_ready_.Empty()) {
+    RunInExecutionScopeUnchecked(completion_ready_.PopFront());
+    ++resumed;
+  }
+}
+
+void Loop::OnCqeHandled() noexcept {
+  auto flushed = FlushSubmit();
+  if (!flushed.has_value()) {
+    RequestStop();
+    return;
+  }
+  DrainCompletionReady();
+}
+
 void Loop::RunReady() noexcept {
   ALYRN_CHECK(IsInLoopThread(), "Loop::RunReady called from wrong thread");
   ExecutionScope execution_scope{*this};
@@ -373,7 +392,8 @@ void Loop::RunReady() noexcept {
     }
 
     const bool run_completion =
-        completion_available && (!ready_available || completion_resumed < kMaxCompletionWorkPerTurn);
+        completion_available &&
+        (!ready_available || completion_resumed < kMaxCompletionWorkPerTurn);
     coro::Work* work = nullptr;
     if (run_completion) {
       work = completion_ready_.PopFront();
@@ -418,7 +438,12 @@ Result<std::size_t> Loop::PollCompletions() noexcept {
     return std::unexpected(flushed.error());
   }
 
-  return ring_.Reap([this](io_uring_cqe* cqe) { HandleCqe(cqe); }, kMaxCqesPerTurn);
+  return ring_.Reap(
+      [this](io_uring_cqe* cqe) {
+        HandleCqe(cqe);
+        OnCqeHandled();
+      },
+      kMaxCqesPerTurn);
 }
 
 Result<std::size_t> Loop::WaitCompletions() noexcept {
@@ -449,8 +474,12 @@ Result<std::size_t> Loop::WaitCompletionsFor(std::chrono::nanoseconds timeout) n
     return std::unexpected(NegErrno(r));
   }
 
-  return ring_.Reap([this](io_uring_cqe* completed_cqe) { HandleCqe(completed_cqe); },
-                    kMaxCqesPerTurn);
+  return ring_.Reap(
+      [this](io_uring_cqe* completed_cqe) {
+        HandleCqe(completed_cqe);
+        OnCqeHandled();
+      },
+      kMaxCqesPerTurn);
 }
 
 void Loop::HandleCqe(io_uring_cqe* cqe) noexcept {
@@ -469,7 +498,7 @@ void Loop::HandleCqe(io_uring_cqe* cqe) noexcept {
   const auto apply_disposition = [this, op](CompletionDisposition disposition) noexcept {
     if (disposition.kernel_request_terminal) {
       ALYRN_CHECK(disposition.decrement_inflight,
-                     "terminal Uring completion must decrement inflight work");
+                  "terminal Uring completion must decrement inflight work");
     }
     if (disposition.decrement_inflight) {
       ALYRN_CHECK(inflight_ > 0, "Loop inflight count underflow");
@@ -478,7 +507,7 @@ void Loop::HandleCqe(io_uring_cqe* cqe) noexcept {
     if (disposition.resume_continuation) {
       if (UsesCoupledSingleResultLifecycle(op->DispatchKind())) {
         ALYRN_CHECK(op->TryAuthorizeCoupledContinuation(),
-                       "coupled Uring operation resumed before release authorization");
+                    "coupled Uring operation resumed before release authorization");
       }
       const bool resume_gate_won =
           op->CqeCompletionRecorded() || op->TryMarkCompletionWithoutCqeResult();

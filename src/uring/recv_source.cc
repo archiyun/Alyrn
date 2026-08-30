@@ -1,9 +1,12 @@
+// SPDX-License-Identifier: MIT
 #include "alyrn/uring/recv_source.h"
 
+#include <algorithm>
 #include <cerrno>
-#include <cstddef>
 #include <coroutine>
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <expected>
 #include <limits>
 #include <optional>
@@ -11,18 +14,18 @@
 #include <vector>
 
 #include "alyrn/detail/check.h"
+#include "alyrn/detail/completion_gate.h"
+#include "alyrn/detail/scheduler_continuation.h"
+#include "alyrn/net/detail/recv_source_state.h"
+#include "alyrn/net/detail/source_state.h"
+#include "alyrn/net/recv_source.h"
+#include "alyrn/result.h"
 #include "alyrn/uring/detail/completion_dispatch.h"
 #include "alyrn/uring/detail/loop_access.h"
 #include "alyrn/uring/detail/op.h"
 #include "alyrn/uring/detail/provided_buffer_pool.h"
 #include "alyrn/uring/detail/sqe_prep.h"
 #include "alyrn/uring/loop.h"
-#include "alyrn/net/detail/recv_source_state.h"
-#include "alyrn/net/detail/source_state.h"
-#include "alyrn/net/recv_source.h"
-#include "alyrn/detail/completion_gate.h"
-#include "alyrn/detail/scheduler_continuation.h"
-#include "alyrn/result.h"
 
 namespace alyrn::uring {
 
@@ -67,9 +70,7 @@ bool RecvSource::NextAwaiter::await_suspend(std::coroutine_handle<> continuation
   return true;
 }
 
-RecvSource::NextResult RecvSource::NextAwaiter::await_resume() noexcept {
-  return result_.Take();
-}
+RecvSource::NextResult RecvSource::NextAwaiter::await_resume() noexcept { return result_.Take(); }
 
 void RecvSource::NextAwaiter::Complete(NextResult result) noexcept {
   if (!completion_gate_.TryComplete()) {
@@ -109,14 +110,14 @@ public:
 
   Result<void> await_resume() noexcept {
     ALYRN_CHECK(result_.has_value(), "Uring recv source Stop resumed without a result");
-    return std::move(*result_);
+    return *result_;
   }
 
   void Complete(Result<void> result) noexcept {
     if (!completion_gate_.TryComplete()) {
       return;
     }
-    result_.emplace(std::move(result));
+    result_.emplace(result);
     continuation_.Schedule();
   }
 
@@ -127,8 +128,7 @@ private:
   std::optional<Result<void>> result_;
 };
 
-Result<RecvSource> RecvSource::Create(Loop* loop, int fd,
-                                                  RecvSourceOptions options) noexcept {
+Result<RecvSource> RecvSource::Create(Loop* loop, int fd, RecvSourceOptions options) noexcept {
   if (loop == nullptr || !loop->Initialized()) {
     return std::unexpected(Errno(EBADF));
   }
@@ -148,8 +148,9 @@ Result<RecvSource> RecvSource::Create(Loop* loop, int fd,
     return std::unexpected(state_result.error());
   }
 
-  auto shared_pool = detail::LoopAccess::GetSharedProvidedBufferPool(
-      *loop, options.buffer_size, options.source.buffer_capacity);
+  const auto published = std::min(capacity, RecvSourceStateMachine::kMaxRearmWorkingSet);
+  auto shared_pool =
+      detail::LoopAccess::GetSharedProvidedBufferPool(*loop, options.buffer_size, published);
   if (!shared_pool.has_value()) {
     if (shared_pool.error().value() == ENOENT) {
       return std::unexpected(Errno(ENOTSUP));
@@ -162,26 +163,37 @@ Result<RecvSource> RecvSource::Create(Loop* loop, int fd,
 
   std::vector<RecvSource::PendingEvent> event_storage;
   std::vector<RecvSource::SlotState> slot_storage;
+  std::vector<std::byte> queued_payloads;
+  std::vector<std::uint32_t> copy_free;
   try {
     event_storage.resize(options.source.event_capacity);
     slot_storage.resize(buffer_pool->capacity());
+    queued_payloads.resize(capacity * options.buffer_size);
+    copy_free.resize(capacity);
   } catch (...) {
     return std::unexpected(Errno(ENOMEM));
   }
+  for (std::uint32_t slot = 0; slot < capacity; ++slot) {
+    copy_free[slot] = slot;
+  }
 
-  return RecvSource(loop, fd, std::move(*state_result), options.buffer_size, buffer_pool,
-                          std::move(event_storage), std::move(slot_storage));
+  return RecvSource(loop, fd, *state_result, options.buffer_size, buffer_pool,
+                    std::move(event_storage), std::move(slot_storage), std::move(queued_payloads),
+                    std::move(copy_free));
 }
 
-RecvSource::RecvSource(
-    Loop* loop, int fd, RecvSourceStateMachine state, std::size_t buffer_size,
-    detail::ProvidedBufferPool* buffer_pool, std::vector<PendingEvent> event_storage,
-    std::vector<SlotState> slot_storage) noexcept
+RecvSource::RecvSource(Loop* loop, int fd, RecvSourceStateMachine state, std::size_t buffer_size,
+                       detail::ProvidedBufferPool* buffer_pool,
+                       std::vector<PendingEvent> event_storage, std::vector<SlotState> slot_storage,
+                       std::vector<std::byte> queued_payloads,
+                       std::vector<std::uint32_t> copy_free) noexcept
     : loop_(loop),
       fd_(fd),
-      state_(std::move(state)),
+      state_(state),
       events_(std::move(event_storage)),
       slots_(std::move(slot_storage)),
+      queued_payloads_(std::move(queued_payloads)),
+      copy_free_(std::move(copy_free)),
       recv_op_(this),
       cancel_op_(this),
       buffer_size_(buffer_size),
@@ -201,8 +213,7 @@ RecvSource::~RecvSource() {
       state_.State() == RecvSourceState::kIdle || state_.State() == RecvSourceState::kTerminal,
       "RecvSource destroyed before Stop completed");
   ALYRN_CHECK(event_count_ == 0, "RecvSource destroyed with queued events");
-  ALYRN_CHECK(state_.OutstandingLeases() == 0,
-                 "RecvSource destroyed with outstanding leases");
+  ALYRN_CHECK(state_.OutstandingLeases() == 0, "RecvSource destroyed with outstanding leases");
   for (const SlotState& slot : slots_) {
     ALYRN_CHECK(!slot.active, "RecvSource destroyed with borrowed provided buffer");
   }
@@ -219,10 +230,10 @@ void RecvSource::ValidateMovable(const RecvSource& source) noexcept {
   ALYRN_CHECK(!source.recv_submitted_, "RecvSource cannot move while active");
   ALYRN_CHECK(!source.cancel_submitted_, "RecvSource cannot move while cancelling");
   ALYRN_CHECK(source.state_.OutstandingLeases() == 0,
-                 "RecvSource cannot move with outstanding leases");
+              "RecvSource cannot move with outstanding leases");
   ALYRN_CHECK(source.state_.State() == RecvSourceState::kIdle ||
-                     source.state_.State() == RecvSourceState::kTerminal,
-                 "RecvSource cannot move before Stop completed");
+                  source.state_.State() == RecvSourceState::kTerminal,
+              "RecvSource cannot move before Stop completed");
   ALYRN_CHECK(source.event_count_ == 0, "RecvSource cannot move with queued events");
   for (const SlotState& slot : source.slots_) {
     ALYRN_CHECK(!slot.active, "RecvSource cannot move with borrowed provided buffer");
@@ -232,18 +243,19 @@ void RecvSource::ValidateMovable(const RecvSource& source) noexcept {
 RecvSource::RecvSource(RecvSource&& other) noexcept
     : loop_((ValidateMovable(other), std::exchange(other.loop_, nullptr))),
       fd_(std::exchange(other.fd_, -1)),
-      state_(std::move(other.state_)),
+      state_(other.state_),
       events_(std::move(other.events_)),
       slots_(std::move(other.slots_)),
+      queued_payloads_(std::move(other.queued_payloads_)),
+      copy_free_(std::move(other.copy_free_)),
       event_head_(std::exchange(other.event_head_, 0)),
       event_count_(std::exchange(other.event_count_, 0)),
-      terminal_error_(std::move(other.terminal_error_)),
+      active_slot_count_(std::exchange(other.active_slot_count_, 0)),
+      terminal_error_(other.terminal_error_),
       recv_op_(this),
       cancel_op_(this),
       buffer_size_(std::exchange(other.buffer_size_, 0)),
-      buffer_pool_(std::exchange(other.buffer_pool_, nullptr)),
-      recv_submitted_(false),
-      cancel_submitted_(false) {}
+      buffer_pool_(std::exchange(other.buffer_pool_, nullptr)) {}
 
 RecvSource& RecvSource::operator=(RecvSource&& other) noexcept {
   if (this == &other) {
@@ -253,16 +265,19 @@ RecvSource& RecvSource::operator=(RecvSource&& other) noexcept {
   ValidateMovable(*this);
   ValidateMovable(other);
   ALYRN_CHECK(loop_ == nullptr || other.loop_ == nullptr || loop_ == other.loop_,
-                 "RecvSource cannot move across loops");
+              "RecvSource cannot move across loops");
 
   loop_ = std::exchange(other.loop_, nullptr);
   fd_ = std::exchange(other.fd_, -1);
-  state_ = std::move(other.state_);
+  state_ = other.state_;
   events_ = std::move(other.events_);
   slots_ = std::move(other.slots_);
+  queued_payloads_ = std::move(other.queued_payloads_);
+  copy_free_ = std::move(other.copy_free_);
   event_head_ = std::exchange(other.event_head_, 0);
   event_count_ = std::exchange(other.event_count_, 0);
-  terminal_error_ = std::move(other.terminal_error_);
+  active_slot_count_ = std::exchange(other.active_slot_count_, 0);
+  terminal_error_ = other.terminal_error_;
   buffer_size_ = std::exchange(other.buffer_size_, 0);
   buffer_pool_ = std::exchange(other.buffer_pool_, nullptr);
   return *this;
@@ -289,7 +304,7 @@ Result<void> RecvSource::StartOperation() noexcept {
                                                          MultishotRequestDisposition::kTerminal);
     (void)(completed);
     ALYRN_CHECK(completed.has_value(),
-                   "Uring recv source failed to record terminal submit failure");
+                "Uring recv source failed to record terminal submit failure");
     return std::unexpected(submitted.error());
   }
 
@@ -325,8 +340,8 @@ Result<void> RecvSource::StartCancel() noexcept {
 
   cancel_op_.Prepare();
   const auto target = reinterpret_cast<std::uint64_t>(&recv_op_);
-  auto submitted = detail::LoopAccess::SubmitOp(
-      *loop_, &cancel_op_, detail::PrepareCancelAllByUserData(target));
+  auto submitted =
+      detail::LoopAccess::SubmitOp(*loop_, &cancel_op_, detail::PrepareCancelAllByUserData(target));
   if (!submitted.has_value()) {
     return std::unexpected(submitted.error());
   }
@@ -445,7 +460,10 @@ CompletionDisposition RecvSource::OnCompletion(CompletionEvent event) noexcept {
           } else {
             state_recorded = true;
             if (direct_delivery) {
-              net::BufferLease lease = MakeLease(buffer_id, static_cast<std::size_t>(cqe_result));
+              const auto copy_slot =
+                  CopyAndReleasePoolSlot(buffer_id, static_cast<std::size_t>(cqe_result));
+              net::BufferLease lease =
+                  MakeQueuedLease(copy_slot, static_cast<std::size_t>(cqe_result));
               auto* awaiter = std::exchange(pending_next_, nullptr);
               awaiter->Complete(NextResult(std::in_place, Event{.buffer = std::move(lease)}));
             } else {
@@ -462,7 +480,7 @@ CompletionDisposition RecvSource::OnCompletion(CompletionEvent event) noexcept {
       MarkKernelDone(buffer_id);
     } else if (valid_buffer && buffer_pool_->Acquire(buffer_id)) {
       ALYRN_CHECK(buffer_pool_->Return(buffer_id),
-                     "RecvSource failed to return empty provided buffer");
+                  "RecvSource failed to return empty provided buffer");
     }
     if (!request_still_active) {
       RequestBackendStop();
@@ -474,14 +492,14 @@ CompletionDisposition RecvSource::OnCompletion(CompletionEvent event) noexcept {
       MarkKernelDone(buffer_id);
     } else if (valid_buffer && buffer_pool_->Acquire(buffer_id)) {
       ALYRN_CHECK(buffer_pool_->Return(buffer_id),
-                     "RecvSource failed to return error provided buffer");
+                  "RecvSource failed to return error provided buffer");
     }
     const auto state = state_.State();
     const bool stopping = state == RecvSourceState::kStopping ||
                           state == RecvSourceState::kPausing || state == RecvSourceState::kPaused ||
                           state == RecvSourceState::kDraining ||
                           state == RecvSourceState::kTerminal;
-    if (!stopping) {
+    if (!stopping && (cqe_result != -ENOBUFS || request_still_active)) {
       RequestBackendStop(NegErrno(cqe_result));
     }
   }
@@ -563,7 +581,7 @@ bool RecvSource::TryTakeNext(NextResult& result) noexcept {
   PendingEvent pending;
   if (TryTakeQueuedEvent(pending)) {
     ALYRN_CHECK(state_.AcquireEvent(), "RecvSource: queue and state became inconsistent");
-    Event event{.buffer = MakeLease(pending.buffer_id, pending.size)};
+    Event event{.buffer = MakeQueuedLease(pending.copy_slot, pending.size)};
     result = NextResult(std::in_place, std::move(event));
     if (state_.State() == RecvSourceState::kPaused) {
       MaybeResume();
@@ -583,10 +601,10 @@ bool RecvSource::TryTakeNext(NextResult& result) noexcept {
 }
 
 void RecvSource::QueueEvent(std::uint32_t buffer_id, std::size_t size) noexcept {
-  ALYRN_CHECK(!events_.empty() && event_count_ < events_.size(),
-                 "RecvSource event queue overflow");
+  ALYRN_CHECK(!events_.empty() && event_count_ < events_.size(), "RecvSource event queue overflow");
+  const auto copy_slot = CopyAndReleasePoolSlot(buffer_id, size);
   const std::size_t index = (event_head_ + event_count_) % events_.size();
-  events_[index] = PendingEvent{.buffer_id = buffer_id, .size = size};
+  events_[index] = PendingEvent{.copy_slot = copy_slot, .size = size};
   ++event_count_;
 }
 
@@ -614,6 +632,7 @@ Result<void> RecvSource::AcquireBuffer(std::uint32_t buffer_id, std::size_t size
     slot.active = true;
     slot.kernel_done = false;
     slot.lease_count = 0;
+    ++active_slot_count_;
   } else {
     return std::unexpected(Errno(EPROTO));
   }
@@ -624,7 +643,7 @@ Result<void> RecvSource::AcquireBuffer(std::uint32_t buffer_id, std::size_t size
 
 void RecvSource::MarkKernelDone(std::uint32_t buffer_id) noexcept {
   ALYRN_CHECK(buffer_id < slots_.size() && slots_[buffer_id].active,
-                 "RecvSource completed an unknown provided buffer");
+              "RecvSource completed an unknown provided buffer");
   SlotState& slot = slots_[buffer_id];
   ALYRN_CHECK(!slot.kernel_done, "RecvSource completed a provided buffer twice");
   slot.kernel_done = true;
@@ -632,6 +651,9 @@ void RecvSource::MarkKernelDone(std::uint32_t buffer_id) noexcept {
 }
 
 void RecvSource::MarkActiveSlotsKernelDone() noexcept {
+  if (active_slot_count_ == 0) {
+    return;
+  }
   for (std::uint32_t buffer_id = 0; buffer_id < slots_.size(); ++buffer_id) {
     if (slots_[buffer_id].active && !slots_[buffer_id].kernel_done) {
       MarkKernelDone(buffer_id);
@@ -645,8 +667,9 @@ void RecvSource::ReturnIfReclaimable(std::uint32_t buffer_id) noexcept {
     return;
   }
   ALYRN_CHECK(buffer_pool_ != nullptr, "RecvSource missing provided buffer pool");
-  ALYRN_CHECK(buffer_pool_->Return(buffer_id),
-                 "RecvSource failed to return provided buffer");
+  ALYRN_CHECK(buffer_pool_->Return(buffer_id), "RecvSource failed to return provided buffer");
+  ALYRN_CHECK(active_slot_count_ > 0, "RecvSource active slot count underflow");
+  --active_slot_count_;
   slot = SlotState{};
 }
 
@@ -658,24 +681,38 @@ void RecvSource::ReleaseSlotLease(std::uint32_t buffer_id) noexcept {
   ReturnIfReclaimable(buffer_id);
 }
 
-net::BufferLease RecvSource::MakeLease(std::uint32_t buffer_id, std::size_t size) noexcept {
-  ALYRN_CHECK(buffer_pool_ != nullptr, "RecvSource missing provided buffer pool");
-  ALYRN_CHECK(buffer_id < slots_.size() && slots_[buffer_id].active,
-                 "RecvSource lease refers to an inactive provided buffer");
-  auto* data = buffer_pool_->slot(buffer_id);
-  ALYRN_CHECK(data != nullptr && size <= buffer_size_,
-                 "RecvSource lease exceeds provided buffer");
-  return net::BufferLease(data, size, buffer_id, this, &ReclaimBuffer);
+net::BufferLease RecvSource::MakeQueuedLease(std::uint32_t copy_slot, std::size_t size) noexcept {
+  ALYRN_CHECK(static_cast<std::size_t>(copy_slot) * buffer_size_ + size <= queued_payloads_.size(),
+              "RecvSource queued lease exceeds copy storage");
+  auto* data = queued_payloads_.data() + static_cast<std::size_t>(copy_slot) * buffer_size_;
+  return net::BufferLease{data, size, copy_slot, this, &ReclaimQueuedPayload};
 }
 
-void RecvSource::ReturnBuffer(std::uint32_t buffer_id) noexcept {
-  ALYRN_CHECK(buffer_pool_ != nullptr, "RecvSource missing provided buffer pool");
-  ReleaseSlotLease(buffer_id);
-  ALYRN_CHECK(state_.ReleaseLease(), "RecvSource buffer lease released twice");
+std::uint32_t RecvSource::TakeCopySlot() noexcept {
+  ALYRN_CHECK(!copy_free_.empty(), "RecvSource copy slot pool exhausted");
+  const auto copy_slot = copy_free_.back();
+  copy_free_.pop_back();
+  return copy_slot;
+}
 
-  // A live multishot request already has admission. In the common direct
-  // delivery path, releasing the lease cannot re-arm anything or complete a
-  // pending Stop, so avoid two cold-path probes for every received buffer.
+void RecvSource::FreeCopySlot(std::uint32_t copy_slot) noexcept { copy_free_.push_back(copy_slot); }
+
+std::uint32_t RecvSource::CopyAndReleasePoolSlot(std::uint32_t buffer_id,
+                                                 std::size_t size) noexcept {
+  ALYRN_CHECK(buffer_pool_ != nullptr, "RecvSource missing provided buffer pool");
+  const auto copy_slot = TakeCopySlot();
+  auto* dest = queued_payloads_.data() + static_cast<std::size_t>(copy_slot) * buffer_size_;
+  auto* src = buffer_pool_->slot(buffer_id);
+  ALYRN_CHECK(src != nullptr && dest != nullptr && size <= buffer_size_,
+              "RecvSource copy exceeds provided buffer");
+  std::memcpy(dest, src, size);
+  ReleaseSlotLease(buffer_id);
+  return copy_slot;
+}
+
+void RecvSource::ReturnQueuedPayload(std::uint32_t copy_slot) noexcept {
+  FreeCopySlot(copy_slot);
+  ALYRN_CHECK(state_.ReleaseLease(), "RecvSource queued payload released twice");
   if (state_.State() == RecvSourceState::kActive && recv_submitted_ && pending_stop_ == nullptr) {
     return;
   }
@@ -684,8 +721,8 @@ void RecvSource::ReturnBuffer(std::uint32_t buffer_id) noexcept {
   CompleteStopIfReady();
 }
 
-void RecvSource::ReclaimBuffer(void* context, std::uint32_t buffer_id) noexcept {
-  static_cast<RecvSource*>(context)->ReturnBuffer(buffer_id);
+void RecvSource::ReclaimQueuedPayload(void* context, std::uint32_t copy_slot) noexcept {
+  static_cast<RecvSource*>(context)->ReturnQueuedPayload(copy_slot);
 }
 
 Result<void> RecvSource::RequestStop() noexcept {
@@ -723,7 +760,8 @@ coro::Task<Result<void>> RecvSource::Stop() {
 
 namespace detail {
 
-CompletionDisposition DispatchRecvSourceComplete(::alyrn::uring::detail::Op* op, CompletionEvent event) noexcept {
+CompletionDisposition DispatchRecvSourceComplete(::alyrn::uring::detail::Op* op,
+                                                 CompletionEvent event) noexcept {
   auto* operation = static_cast<RecvSource::RecvOperation*>(op);
   return operation->Source()->OnCompletion(event);
 }

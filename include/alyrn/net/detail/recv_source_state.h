@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <algorithm>
 #include <cerrno>
 #include <cstddef>
 
@@ -14,11 +15,16 @@ using RecvSourceState = SourceState;
 
 /*
  * Backend-neutral receive admission and lease accounting. The owner keeps this
- * state alive until OutstandingLeases() is zero, so an adapter never returns a
- * provided buffer while a BufferLease can still expose it to application code.
+ * state alive until OutstandingLeases() is zero so Stop() can wait for every
+ * BufferLease the application still holds.
+ *
+ * kMaxRearmWorkingSet is the kernel provided-buffer pipeline depth. Copy-out
+ * adapters recycle slots during CQE handling; publishing more than this only
+ * lengthens the ENOBUFS burst before userspace can restock the ring.
  */
 class RecvSourceStateMachine final {
 public:
+  static constexpr std::size_t kMaxRearmWorkingSet = 8;
   static Result<RecvSourceStateMachine> Create(RecvSourceOptions options) noexcept {
     if (!options.Valid()) {
       return std::unexpected(Errno(EINVAL));
@@ -141,29 +147,28 @@ public:
     return {};
   }
 
-  RecvSourceState State() const noexcept {
-    return state_;
-  }
+  RecvSourceState State() const noexcept { return state_; }
 
-  const RecvSourceOptions& Options() const noexcept {
-    return options_;
-  }
+  const RecvSourceOptions& Options() const noexcept { return options_; }
 
-  std::size_t QueuedEvents() const noexcept {
-    return queued_events_;
-  }
+  std::size_t QueuedEvents() const noexcept { return queued_events_; }
 
-  std::size_t ArmedRequests() const noexcept {
-    return armed_requests_;
-  }
+  std::size_t ArmedRequests() const noexcept { return armed_requests_; }
 
-  std::size_t OutstandingLeases() const noexcept {
-    return outstanding_leases_;
-  }
+  std::size_t OutstandingLeases() const noexcept { return outstanding_leases_; }
 
   bool CanArm() const noexcept {
-    return state_ == RecvSourceState::kActive && armed_requests_ < options_.pending_depth &&
-           CanQueueEvent() && outstanding_leases_ + armed_requests_ < options_.buffer_capacity;
+    if (state_ != RecvSourceState::kActive || armed_requests_ >= options_.pending_depth ||
+        !CanQueueEvent()) {
+      return false;
+    }
+    const std::size_t reserved = outstanding_leases_ + armed_requests_;
+    if (reserved >= options_.buffer_capacity) {
+      return false;
+    }
+    const std::size_t free_slots = options_.buffer_capacity - reserved;
+    const std::size_t min_free = std::min(options_.ResumeThreshold(), kMaxRearmWorkingSet);
+    return free_slots >= min_free;
   }
 
   bool CanQueueEvent() const noexcept {
@@ -172,9 +177,7 @@ public:
   }
 
 private:
-  bool CanDeliverEvent() const noexcept {
-    return outstanding_leases_ < options_.buffer_capacity;
-  }
+  bool CanDeliverEvent() const noexcept { return outstanding_leases_ < options_.buffer_capacity; }
 
   explicit RecvSourceStateMachine(RecvSourceOptions options) noexcept : options_(options) {}
 

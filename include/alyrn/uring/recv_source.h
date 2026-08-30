@@ -13,13 +13,13 @@
 #include "alyrn/backend/recv_source.h"
 #include "alyrn/backend/value_result_state.h"
 #include "alyrn/coro/work.h"
-#include "alyrn/detail/macros.h"
 #include "alyrn/detail/completion_gate.h"
-#include "alyrn/uring/detail/completion_dispatch.h"
-#include "alyrn/uring/detail/op.h"
+#include "alyrn/detail/macros.h"
 #include "alyrn/net/recv_source.h"
 #include "alyrn/result.h"
 #include "alyrn/task.h"
+#include "alyrn/uring/detail/completion_dispatch.h"
+#include "alyrn/uring/detail/op.h"
 
 namespace alyrn::uring {
 
@@ -64,9 +64,7 @@ public:
     explicit NextAwaiter(RecvSource& source) noexcept : source_(&source) {}
 
     bool await_ready() const noexcept { return false; }
-
     bool await_suspend(std::coroutine_handle<> continuation) noexcept;
-
     NextResult await_resume() noexcept;
 
     void Complete(NextResult result) noexcept;
@@ -135,7 +133,7 @@ private:
   };
 
   struct PendingEvent {
-    std::uint32_t buffer_id{0};
+    std::uint32_t copy_slot{0};
     std::size_t size{0};
   };
 
@@ -147,7 +145,8 @@ private:
 
   RecvSource(Loop* loop, int fd, net::detail::RecvSourceStateMachine state, std::size_t buffer_size,
              detail::ProvidedBufferPool* buffer_pool, std::vector<PendingEvent> event_storage,
-             std::vector<SlotState> slot_storage) noexcept;
+             std::vector<SlotState> slot_storage, std::vector<std::byte> queued_payloads,
+             std::vector<std::uint32_t> copy_free) noexcept;
 
   Result<void> Start() noexcept;
 
@@ -175,19 +174,25 @@ private:
   void MarkActiveSlotsKernelDone() noexcept;
   void ReturnIfReclaimable(std::uint32_t buffer_id) noexcept;
   void ReleaseSlotLease(std::uint32_t buffer_id) noexcept;
-  net::BufferLease MakeLease(std::uint32_t buffer_id, std::size_t size) noexcept;
-  void ReturnBuffer(std::uint32_t buffer_id) noexcept;
+  net::BufferLease MakeQueuedLease(std::uint32_t copy_slot, std::size_t size) noexcept;
+  std::uint32_t CopyAndReleasePoolSlot(std::uint32_t buffer_id, std::size_t size) noexcept;
+  void ReturnQueuedPayload(std::uint32_t copy_slot) noexcept;
+  std::uint32_t TakeCopySlot() noexcept;
+  void FreeCopySlot(std::uint32_t copy_slot) noexcept;
 
   static void ValidateMovable(const RecvSource& source) noexcept;
-  static void ReclaimBuffer(void* context, std::uint32_t buffer_id) noexcept;
+  static void ReclaimQueuedPayload(void* context, std::uint32_t copy_slot) noexcept;
 
   Loop* loop_{nullptr};
   int fd_{-1};
   net::detail::RecvSourceStateMachine state_;
   std::vector<PendingEvent> events_;
   std::vector<SlotState> slots_;
+  std::vector<std::byte> queued_payloads_;
+  std::vector<std::uint32_t> copy_free_;
   std::size_t event_head_{0};
   std::size_t event_count_{0};
+  std::size_t active_slot_count_{0};
   std::optional<Error> terminal_error_;
 
   NextAwaiter* pending_next_{nullptr};
