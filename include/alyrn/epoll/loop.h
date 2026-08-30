@@ -10,7 +10,7 @@
 
 #include "alyrn/backend/loop.h"
 #include "alyrn/coro/scheduler.h"
-#include "alyrn/detail/epoll/loop_shutdown.h"
+#include "alyrn/epoll/detail/loop_shutdown.h"
 #include "alyrn/detail/macros.h"
 #include "alyrn/time/clock.h"
 #include "alyrn/time/timer_id.h"

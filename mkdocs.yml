@@ -52,6 +52,7 @@ nav:
     - 开始:
           - 概览: index.md
           - 子系统边界: SUBSYSTEMS.md
+          - C++ 书写规范: coding-style.md
           - 构建与安装: packaging.md
           - Runtime Builder: design/zh-CN/network/runtime-builder.md
     - 架构:

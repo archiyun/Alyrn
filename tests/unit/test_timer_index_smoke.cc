@@ -2,8 +2,8 @@
 #include <iostream>
 #include <vector>
 
-#include "alyrn/detail/time/timer.h"
-#include "alyrn/detail/time/timer_index.h"
+#include "alyrn/detail/timer.h"
+#include "alyrn/detail/timer_index.h"
 
 namespace {
 
@@ -19,10 +19,10 @@ bool TestOrdersByExpirationThenSequence() {
   const auto base = alyrn::time::Deadline{};
   const auto early_deadline = base + alyrn::time::Seconds(1);
   const auto late_deadline = base + alyrn::time::Seconds(2);
-  alyrn::detail::time::Timer first([] {}, late_deadline, alyrn::time::Duration::zero());
-  alyrn::detail::time::Timer second([] {}, late_deadline, alyrn::time::Duration::zero());
-  alyrn::detail::time::Timer early([] {}, early_deadline, alyrn::time::Duration::zero());
-  alyrn::detail::time::TimerIndex timers;
+  alyrn::detail::Timer first([] {}, late_deadline, alyrn::time::Duration::zero());
+  alyrn::detail::Timer second([] {}, late_deadline, alyrn::time::Duration::zero());
+  alyrn::detail::Timer early([] {}, early_deadline, alyrn::time::Duration::zero());
+  alyrn::detail::TimerIndex timers;
 
   if (!Expect(timers.Empty(), "fresh index should be empty")) {
     return false;
@@ -50,11 +50,11 @@ bool TestOrdersByExpirationThenSequence() {
 bool TestPopWhileUnlinksAndPreservesOrder() {
   const auto base = alyrn::time::Deadline{};
   const auto deadline = base + alyrn::time::Seconds(3);
-  alyrn::detail::time::Timer first([] {}, deadline, alyrn::time::Duration::zero());
-  alyrn::detail::time::Timer second([] {}, deadline, alyrn::time::Duration::zero());
-  alyrn::detail::time::Timer later([] {}, base + alyrn::time::Seconds(4),
+  alyrn::detail::Timer first([] {}, deadline, alyrn::time::Duration::zero());
+  alyrn::detail::Timer second([] {}, deadline, alyrn::time::Duration::zero());
+  alyrn::detail::Timer later([] {}, base + alyrn::time::Seconds(4),
                                    alyrn::time::Duration::zero());
-  alyrn::detail::time::TimerIndex timers;
+  alyrn::detail::TimerIndex timers;
 
   timers.Insert(&later);
   timers.Insert(&second);
@@ -62,10 +62,10 @@ bool TestPopWhileUnlinksAndPreservesOrder() {
 
   std::vector<std::int64_t> popped_sequences;
   const std::size_t popped = timers.PopWhile(
-      [deadline](const alyrn::detail::time::Timer* timer) {
+      [deadline](const alyrn::detail::Timer* timer) {
         return timer->expiration() <= deadline;
       },
-      [&](alyrn::detail::time::Timer* timer) {
+      [&](alyrn::detail::Timer* timer) {
         if (!timer->InTree()) {
           popped_sequences.push_back(timer->sequence());
         }
@@ -82,9 +82,9 @@ bool TestPopWhileUnlinksAndPreservesOrder() {
 
 bool TestTimerCanBeReinsertedAfterRestart() {
   const auto base = alyrn::time::Deadline{};
-  alyrn::detail::time::Timer repeating([] {}, base + alyrn::time::Seconds(5),
+  alyrn::detail::Timer repeating([] {}, base + alyrn::time::Seconds(5),
                                        alyrn::time::Milliseconds(10));
-  alyrn::detail::time::TimerIndex timers;
+  alyrn::detail::TimerIndex timers;
 
   timers.Insert(&repeating);
   if (!Expect(timers.Erase(&repeating), "repeating timer should be erasable")) {

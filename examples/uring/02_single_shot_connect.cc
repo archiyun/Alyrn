@@ -9,8 +9,6 @@
 #include <string_view>
 #include <utility>
 
-#include "alyrn/coro/detached_task.h"
-#include "alyrn/coro/spawn.h"
 #include "alyrn/spawn.h"
 #include "alyrn/io.h"
 #include "alyrn/uring/connector.h"

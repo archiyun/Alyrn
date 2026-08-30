@@ -22,14 +22,14 @@
 #include "alyrn/coro/detached_task.h"
 #include "alyrn/coro/work.h"
 #include "alyrn/io/loop.h"
-#include "alyrn/detail/uring/loop_access.h"
-#include "alyrn/detail/uring/op.h"
-#include "alyrn/detail/uring/sqe_prep.h"
+#include "alyrn/uring/detail/loop_access.h"
+#include "alyrn/uring/detail/op.h"
+#include "alyrn/uring/detail/sqe_prep.h"
 #include "alyrn/uring/loop.h"
 #include "alyrn/uring/options.h"
 #include "alyrn/uring/stream.h"
 #include "alyrn/net/endpoint.h"
-#include "alyrn/detail/operation/scheduler_continuation.h"
+#include "alyrn/detail/scheduler_continuation.h"
 
 namespace {
 
@@ -96,7 +96,7 @@ private:
 class SuspendOnContinuation final {
 public:
   explicit SuspendOnContinuation(
-      alyrn::detail::operation::SchedulerContinuation* continuation) noexcept
+      alyrn::detail::SchedulerContinuation* continuation) noexcept
       : continuation_(continuation) {}
 
   bool await_ready() const noexcept { return false; }
@@ -109,11 +109,11 @@ public:
   void await_resume() const noexcept {}
 
 private:
-  alyrn::detail::operation::SchedulerContinuation* continuation_;
+  alyrn::detail::SchedulerContinuation* continuation_;
 };
 
 alyrn::coro::DetachedTask AwaitCompletionQueue(
-    alyrn::detail::operation::SchedulerContinuation* continuation,
+    alyrn::detail::SchedulerContinuation* continuation,
     alyrn::uring::Loop* loop, std::string* order, bool* resumed_with_scheduler) {
   co_await SuspendOnContinuation(continuation);
   *resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == loop;
@@ -127,7 +127,7 @@ bool CheckCompletionQueuePrecedesNormalReadyWork() {
    * pointing at dead stack. */
   std::string order;
   bool resumed_with_scheduler = false;
-  alyrn::detail::operation::SchedulerContinuation continuation;
+  alyrn::detail::SchedulerContinuation continuation;
   AppendOrderWork normal_work{&order, 'N'};
 
   alyrn::uring::Loop loop;

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-#include "alyrn/detail/kqueue/timer_queue.h"
+#include "alyrn/kqueue/detail/timer_queue.h"
 
 #include <chrono>
 
 #include "alyrn/detail/check.h"
-#include "alyrn/detail/kqueue/poller.h"
+#include "alyrn/kqueue/detail/poller.h"
 
 namespace alyrn::kqueue::detail {
 

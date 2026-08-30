@@ -25,9 +25,9 @@
 #include "alyrn/coro/task.h"
 #include "alyrn/coro/work.h"
 #include "alyrn/kqueue/connector.h"
-#include "alyrn/detail/kqueue/channel.h"
+#include "alyrn/kqueue/detail/channel.h"
 #include "alyrn/kqueue/loop.h"
-#include "alyrn/detail/net/socket.h"
+#include "alyrn/net/detail/socket.h"
 #include "alyrn/time/clock.h"
 #include "alyrn/time/timer_id.h"
 

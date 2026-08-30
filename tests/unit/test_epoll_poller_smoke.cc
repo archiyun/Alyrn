@@ -21,14 +21,12 @@
 #include <unistd.h>
 
 #include <array>
-#include <cerrno>
-#include <cstring>
 #include <exception>
 #include <iostream>
 #include <memory>
 #include <vector>
 
-#include "alyrn/detail/epoll/channel.h"
+#include "alyrn/epoll/detail/channel.h"
 #include "alyrn/epoll/loop.h"
 
 namespace {

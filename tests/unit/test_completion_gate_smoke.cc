@@ -9,9 +9,8 @@
 #include <cstdio>
 
 #include "alyrn/coro/scheduler.h"
-#include "alyrn/detail/operation/completion_gate.h"
-#include "alyrn/detail/operation/scheduler_continuation.h"
-#include "alyrn/detail/macros.h"
+#include "alyrn/detail/completion_gate.h"
+#include "alyrn/detail/scheduler_continuation.h"
 
 namespace {
 
@@ -47,11 +46,11 @@ concept ResettableCompletionGate = requires(T& gate) { gate.Reset(); };
 template <typename T>
 concept ReassignableCompletionGate = requires(T& gate) { gate = {}; };
 
-static_assert(!ResettableCompletionGate<alyrn::detail::operation::CompletionGate>);
-static_assert(!ReassignableCompletionGate<alyrn::detail::operation::CompletionGate>);
+static_assert(!ResettableCompletionGate<alyrn::detail::CompletionGate>);
+static_assert(!ReassignableCompletionGate<alyrn::detail::CompletionGate>);
 
 bool TestOneShotTransition() {
-  alyrn::detail::operation::CompletionGate gate;
+  alyrn::detail::CompletionGate gate;
 
   bool ok = true;
   ok &= Expect(!gate.Completed(), "a new completion gate must be open");
@@ -70,7 +69,7 @@ public:
 
 class BindContinuationWork final : public alyrn::coro::Work {
 public:
-  BindContinuationWork(alyrn::detail::operation::SchedulerContinuation* continuation,
+  BindContinuationWork(alyrn::detail::SchedulerContinuation* continuation,
                        bool bind_twice) noexcept
       : continuation_(continuation), bind_twice_(bind_twice) {
     SetRun(&RunBind);
@@ -85,7 +84,7 @@ private:
     }
   }
 
-  alyrn::detail::operation::SchedulerContinuation* continuation_;
+  alyrn::detail::SchedulerContinuation* continuation_;
   bool bind_twice_;
 };
 
@@ -130,25 +129,25 @@ private:
 };
 
 void ScheduleUnboundContinuation() {
-  alyrn::detail::operation::SchedulerContinuation continuation;
+  alyrn::detail::SchedulerContinuation continuation;
   continuation.Schedule();
 }
 
 void BindContinuationTwice() {
   RecordingScheduler scheduler;
-  alyrn::detail::operation::SchedulerContinuation continuation;
+  alyrn::detail::SchedulerContinuation continuation;
   BindContinuationWork work{&continuation, true};
   scheduler.Run(&work);
 }
 
 void BindContinuationWithoutScheduler() {
-  alyrn::detail::operation::SchedulerContinuation continuation;
+  alyrn::detail::SchedulerContinuation continuation;
   continuation.Bind(std::noop_coroutine());
 }
 
 bool TestSchedulerContinuationPreservesAffinity() {
   RecordingScheduler scheduler;
-  alyrn::detail::operation::SchedulerContinuation continuation;
+  alyrn::detail::SchedulerContinuation continuation;
   BindContinuationWork work{&continuation, false};
   scheduler.Run(&work);
 
@@ -160,7 +159,7 @@ bool TestSchedulerContinuationPreservesAffinity() {
 
 bool TestSchedulerContinuationUsesCustomDispatch() {
   RecordingScheduler scheduler;
-  alyrn::detail::operation::SchedulerContinuation continuation;
+  alyrn::detail::SchedulerContinuation continuation;
   BindContinuationWork work{&continuation, false};
   scheduler.Run(&work);
 

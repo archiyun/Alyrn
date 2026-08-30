@@ -13,13 +13,13 @@
 #include "alyrn/backend/value_result_state.h"
 #include "alyrn/detail/check.h"
 #include "alyrn/net/endpoint.h"
-#include "alyrn/detail/net/socket.h"
+#include "alyrn/net/detail/socket.h"
 #include "alyrn/net/tcp_options.h"
-#include "alyrn/detail/operation/completion_gate.h"
-#include "alyrn/detail/operation/scheduler_continuation.h"
-#include "alyrn/detail/operation/single_result_lifecycle.h"
-#include "alyrn/detail/epoll/channel.h"
-#include "alyrn/detail/epoll/loop_access.h"
+#include "alyrn/detail/completion_gate.h"
+#include "alyrn/detail/scheduler_continuation.h"
+#include "alyrn/detail/single_result_lifecycle.h"
+#include "alyrn/epoll/detail/channel.h"
+#include "alyrn/epoll/detail/loop_access.h"
 #include "alyrn/result.h"
 
 namespace alyrn::epoll {
@@ -178,8 +178,8 @@ private:
   net::TcpOptions tcp_options_;
   int fd_{-1};
   std::optional<Channel> channel_;
-  ::alyrn::detail::operation::SchedulerContinuation continuation_;
-  ::alyrn::detail::operation::SingleResultLifecycle lifecycle_;
+  ::alyrn::detail::SchedulerContinuation continuation_;
+  ::alyrn::detail::SingleResultLifecycle lifecycle_;
   backend::ValueResultState<Stream> result_;
   LoopShutdownParticipant shutdown_participant_{this, &DispatchLoopStop};
 };
@@ -240,8 +240,8 @@ private:
 
   Loop* loop_;
   time::Duration delay_;
-  ::alyrn::detail::operation::SchedulerContinuation continuation_;
-  ::alyrn::detail::operation::CompletionGate completion_gate_;
+  ::alyrn::detail::SchedulerContinuation continuation_;
+  ::alyrn::detail::CompletionGate completion_gate_;
   time::TimerId timer_;
   LoopShutdownParticipant shutdown_participant_{this, &DispatchLoopStop};
 };

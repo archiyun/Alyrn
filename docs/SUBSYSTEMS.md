@@ -21,7 +21,7 @@ L1  process services and value utilities
                          |
                          v
 L0  dependency-free foundations
-    detail/ds / detail/memory / detail/check.h / detail/macros.h
+    detail (check, macros, intrusive structures, pools)
 ```
 
 `backend` is at L2 beside the adapters. It is the compile-time I/O contract
@@ -36,32 +36,29 @@ application protocol, route, peer, proxy, or gateway policy.
 
 | Directory | Layer | Ownership |
 |---|---:|---|
-| `include/alyrn/detail/ds`, `detail/memory` | L0 | Intrusive structures and pools used by Alyrn; not application seams. |
-| `include/alyrn/detail/check.h` | L0 | Invariant abort helper (`ALYRN_CHECK`); not an application error API. |
-| `include/alyrn/detail/macros.h` | L0 | Copy/move deletion macros; a helper header, not a `utils` module. |
+| `include/alyrn/detail` | L0–L2 | Shared internals with no public module: `check.h` / `macros.h`, intrusive structures, pools (L0); completion/lifecycle helpers and timer indexes (L2). Not an application seam. |
 | `include/alyrn/time` | L1 | Public time values and timer identifiers; timer indexes and queues are implementation support. |
 | `include/alyrn/coro` | L2 | Coroutine ownership, scheduling, frame allocation, and continuation rules. |
-| `include/alyrn/detail/coro` | L2 | Promise storage, root-coroutine, and frame-allocation implementation; not an application seam. |
-| `include/alyrn/detail/operation` | L2 | Internal completion and lifecycle authorization shared by backend adapters: one-shot, composite, and split-release protocols plus scheduler-bound continuations; no transport resource ownership. |
+| `include/alyrn/coro/detail` | L2 | Promise storage, root-coroutine, and frame-allocation implementation; not an application seam. |
 | `include/alyrn/backend` | L2 | Shared adapter-contract headers for epoll, uring, and kqueue (`alyrn::backend`): loop state, ManagedLoop, Async* concepts, and awaiter result storage. Parallel to those adapters, not an application seam: no `alyrn/backend.h` umbrella. Adapters and the `io` facade include specific files; applications use `io.h`. |
 | `include/alyrn/net` | L2 | Header-only POSIX socket, address, and buffer values shared by backends; no concrete backend or Linux-only dependency. |
-| `include/alyrn/detail/net` | L2 | Internal stream/source lifecycle, admission, pause/drain, and lease-accounting state machines shared by backend adapters. |
+| `include/alyrn/net/detail` | L2 | Internal stream/source lifecycle, admission, pause/drain, and lease-accounting state machines shared by backend adapters. |
 | `include/alyrn/io` | L2 | Application-facing aliases of the backend-neutral I/O contract. Composition roots and callers use this facade; concrete backends must not include it. |
 | `include/alyrn/runtime.h` | L2 | Backend-neutral application lifecycle facade. It type-erases only cold start/stop control; backend tags select a Builder specialization at compile time. |
-| `include/alyrn/epoll`, `src/epoll` | L2 | Linux epoll readiness adapter. `Loop`, the `Runtime::Builder<runtime::Epoll>` binding, and transport adapters are public; `detail/epoll` owns channel registration, epoll polling, timers, and worker bootstrap implementation. |
-| `include/alyrn/uring`, `src/uring` | L2 | Linux io_uring completion adapter. `Loop`, the `Runtime::Builder<runtime::Uring>` binding, and transport adapters are public; `detail/uring` owns raw SQE/CQE operations, ring/mailbox transport, timer queue, and worker/server bootstrap implementation. |
-| `include/alyrn/kqueue`, `src/kqueue` | L2 | BSD/Darwin kqueue readiness adapter. `Loop`, the `Runtime::Builder<runtime::Kqueue>` binding, and transport adapters are public; `detail/kqueue` owns channel registration, kevent polling, timers, and master-slave worker bootstrap. |
+| `include/alyrn/epoll`, `src/epoll` | L2 | Linux epoll readiness adapter. `Loop`, the `Runtime::Builder<runtime::Epoll>` binding, and transport adapters are public; `epoll/detail` owns channel registration, epoll polling, timers, and worker bootstrap implementation. |
+| `include/alyrn/uring`, `src/uring` | L2 | Linux io_uring completion adapter. `Loop`, the `Runtime::Builder<runtime::Uring>` binding, and transport adapters are public; `uring/detail` owns raw SQE/CQE operations, ring/mailbox transport, timer queue, and worker/server bootstrap implementation. |
+| `include/alyrn/kqueue`, `src/kqueue` | L2 | BSD/Darwin kqueue readiness adapter. `Loop`, the `Runtime::Builder<runtime::Kqueue>` binding, and transport adapters are public; `kqueue/detail` owns channel registration, kevent polling, timers, and master-slave worker bootstrap. |
 | `examples`, `benchmarks`, `tests` | L3 | Consumers and validation; never runtime dependencies. |
 
 ## Hard Dependency Rules
 
-- `detail/check.h`, `detail/macros.h`, `detail/ds`, and `detail/memory` must not depend on networking or any
-  application-layer library.
-- `detail/operation` may depend on backend-neutral runtime primitives, but not
-  on `net`, `io`, Epoll, uring, or CoroGateway.
+- L0 files in `detail/` (`check.h`, `macros.h`, intrusive structures, pools)
+  must not depend on networking or any application-layer library.
+- Completion and lifecycle helpers in `detail/` may depend on backend-neutral
+  runtime primitives, but not on `net`, `io`, Epoll, uring, or CoroGateway.
 - `backend` may depend on coro, result, and net value types. It must not
   include the `io` facade or depend on Epoll, uring, kqueue, or CoroGateway.
-  Completion authorization stays in `detail/operation`. Do not add
+  Completion authorization stays in `detail/`. Do not add
   `include/alyrn/backend.h`; adapters include the specific header they need.
 - `net` may depend on portable POSIX socket facilities, but must not depend on
   Linux-only facilities, `io`, Epoll, uring, or CoroGateway.
@@ -70,7 +67,7 @@ application protocol, route, peer, proxy, or gateway policy.
 - A kqueue backend is a parallel adapter. Do not add BSD conditionals to
   Epoll's epoll implementation; share only a genuinely backend-neutral
   contract or value module.
-- `detail/kqueue` is not a supported application interface. Callers outside the
+- `kqueue/detail` is not a supported application interface. Callers outside the
   kqueue implementation and validation code must use `Loop` and the
   public transport adapters instead.
 - `alyrn_io_contract` remains backend-neutral (headers under
@@ -84,11 +81,11 @@ application protocol, route, peer, proxy, or gateway policy.
 - `ManagedLoop::RequestStop` is a thread-safe dispatcher-control request that
   begins backend cancellation/drain; it is not a resource `Close`. A backend
   must not treat `Stopped` as proof of fd, buffer, or coroutine-frame release.
-- `detail/epoll` is not a supported application interface. It may depend on
+- `epoll/detail` is not a supported application interface. It may depend on
   public Epoll adapter types, while callers outside the Epoll
   implementation, validation, and benchmark code must use `Loop` and the
   public transport adapters instead.
-- `detail/uring` is not a supported application interface. It may depend on
+- `uring/detail` is not a supported application interface. It may depend on
   public uring adapter types, while callers outside the uring implementation
   and validation code must use `Loop` and the public transport adapters
   instead.

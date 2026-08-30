@@ -13,10 +13,10 @@
 #include <utility>
 #include <vector>
 
-#include "alyrn/detail/ds/intrusive_list.h"
+#include "alyrn/detail/intrusive_list.h"
 
-using alyrn::detail::ds::IntrusiveList;
-using alyrn::detail::ds::ListNode;
+using alyrn::detail::IntrusiveList;
+using alyrn::detail::ListNode;
 
 // Element with a stable identity (id) used to match nodes against oracle values.
 struct Item : ListNode<Item> {

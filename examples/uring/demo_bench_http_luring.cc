@@ -17,7 +17,7 @@
 #include "bench_http_common.h"
 #include "alyrn/coro/frame_allocator.h"
 #include "alyrn/io.h"
-#include "alyrn/detail/uring/worker_group.h"
+#include "alyrn/uring/detail/worker_group.h"
 #include "alyrn/uring/recv_source.h"
 #include "alyrn/net/endpoint.h"
 #include "alyrn/spawn.h"

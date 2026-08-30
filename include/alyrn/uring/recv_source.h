@@ -13,10 +13,10 @@
 #include "alyrn/backend/recv_source.h"
 #include "alyrn/backend/value_result_state.h"
 #include "alyrn/coro/work.h"
-#include "alyrn/detail/operation/completion_gate.h"
-#include "alyrn/detail/uring/completion_dispatch.h"
-#include "alyrn/detail/uring/op.h"
 #include "alyrn/detail/macros.h"
+#include "alyrn/detail/completion_gate.h"
+#include "alyrn/uring/detail/completion_dispatch.h"
+#include "alyrn/uring/detail/op.h"
 #include "alyrn/net/recv_source.h"
 #include "alyrn/result.h"
 #include "alyrn/task.h"
@@ -74,7 +74,7 @@ public:
   private:
     RecvSource* source_;
     coro::ResumeWork resume_work_;
-    ::alyrn::detail::operation::CompletionGate completion_gate_;
+    ::alyrn::detail::CompletionGate completion_gate_;
     backend::ValueResultState<std::optional<Event>> result_;
   };
 
@@ -86,9 +86,7 @@ public:
   RecvSource(RecvSource&& other) noexcept;
   RecvSource& operator=(RecvSource&& other) noexcept;
 
-  NextAwaiter Next() noexcept {
-    return NextAwaiter(*this);
-  }
+  NextAwaiter Next() noexcept { return NextAwaiter(*this); }
 
   // Begins cancellation without waiting for queued events or outstanding
   // BufferLease instances. This lets an owning adapter stop admission, drain
@@ -108,9 +106,7 @@ private:
       kind = detail::OpKind::kRecvSourceComplete;
     }
 
-    RecvSource* Source() const noexcept {
-      return source_;
-    }
+    RecvSource* Source() const noexcept { return source_; }
 
     void Prepare() noexcept {
       kind = detail::OpKind::kRecvSourceComplete;
@@ -127,9 +123,7 @@ private:
       kind = detail::OpKind::kRecvSourceCancelComplete;
     }
 
-    RecvSource* Source() const noexcept {
-      return source_;
-    }
+    RecvSource* Source() const noexcept { return source_; }
 
     void Prepare() noexcept {
       kind = detail::OpKind::kRecvSourceCancelComplete;

@@ -11,12 +11,12 @@
 #include <cstdint>
 
 #include "alyrn/detail/check.h"
-#include "alyrn/detail/ds/intrusive_queue.h"
+#include "alyrn/detail/intrusive_queue.h"
 #include "alyrn/detail/macros.h"
 
 namespace alyrn::coro {
 
-struct Work : public ::alyrn::detail::ds::QueueNode<Work> {
+struct Work : public ::alyrn::detail::QueueNode<Work> {
   ALYRN_DELETE_COPY_MOVE(Work);
   using RunFn = void (*)(Work*) noexcept;
 
@@ -84,7 +84,7 @@ private:
   std::uintptr_t action_{0};
 };
 
-using WorkQueue = ::alyrn::detail::ds::IntrusiveQueue<Work>;
+using WorkQueue = ::alyrn::detail::IntrusiveQueue<Work>;
 
 // A Work that resumes a coroutine. This is the only place Work meets a frame.
 struct ResumeWork : public Work {

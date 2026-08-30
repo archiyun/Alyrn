@@ -19,7 +19,6 @@
 #include <utility>
 
 #include "alyrn/coro.h"
-#include "alyrn/coro/detached_task.h"
 #include "alyrn/io.h"
 #include "alyrn/io/buffer.h"
 #include "alyrn/net/endpoint.h"

@@ -7,16 +7,20 @@
 #include <span>
 #include <utility>
 
-#include "alyrn/alyrn.h"
 #include "alyrn/io.h"
+#include "alyrn/spawn.h"
 
 namespace simple_echo {
 
-using alyrn::Result;
+namespace {
+
+constexpr std::size_t kDefaultBufferSize = 4096;
+
+}  // namespace
 
 template <alyrn::io::AsyncStream Stream>
-auto EchoSession(Stream stream) -> alyrn::Task<Result<void>> {
-  std::array<std::byte, 4096> buffer{};
+auto EchoSession(Stream stream) -> alyrn::Task<alyrn::Result<void>> {
+  std::array<std::byte, kDefaultBufferSize> buffer{};
 
   for (;;) {
     auto read = co_await stream.ReadSome(buffer);
@@ -24,7 +28,7 @@ auto EchoSession(Stream stream) -> alyrn::Task<Result<void>> {
       co_return std::unexpected(read.error());
     }
     if (*read == 0) {
-      co_return Result<void>{};
+      co_return {};
     }
 
     const std::span<const std::byte> payload(buffer.data(), *read);

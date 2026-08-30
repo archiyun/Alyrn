@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
-#include "alyrn/detail/epoll/poller.h"
+#include "alyrn/epoll/detail/poller.h"
 
-#include "alyrn/detail/epoll/channel.h"
-#include "alyrn/detail/epoll/epoll_poller.h"
+#include "alyrn/epoll/detail/channel.h"
+#include "alyrn/epoll/detail/epoll_poller.h"
 
 namespace alyrn::epoll::detail {
 
@@ -11,6 +11,6 @@ bool Poller::HasChannel(Channel* channel) const {
   return it != channels_.end() && it->second == channel;
 }
 
-Poller* Poller::NewDefaultPoller() { return new EPollPoller(); }
+std::unique_ptr<Poller> Poller::NewDefaultPoller() { return std::make_unique<EPollPoller>(); }
 
 }  // namespace alyrn::epoll::detail

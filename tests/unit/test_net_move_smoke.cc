@@ -14,10 +14,9 @@
 
 #include "alyrn/result.h"
 #include "alyrn/coro/spawn.h"
-#include "alyrn/coro/task.h"
 #include "alyrn/net/endpoint.h"
-#include "alyrn/detail/net/socket.h"
-#include "alyrn/detail/epoll/channel.h"
+#include "alyrn/net/detail/socket.h"
+#include "alyrn/epoll/detail/channel.h"
 #include "alyrn/epoll/listener.h"
 #include "alyrn/epoll/loop.h"
 #include "alyrn/epoll/stream.h"

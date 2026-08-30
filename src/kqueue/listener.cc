@@ -11,15 +11,14 @@
 
 #include "alyrn/backend/value_result_state.h"
 #include "alyrn/detail/check.h"
-#include "alyrn/detail/kqueue/loop_access.h"
-#include "alyrn/detail/kqueue/result_state.h"
+#include "alyrn/kqueue/detail/loop_access.h"
 #include "alyrn/kqueue/options.h"
 #include "alyrn/net/accept_source.h"
-#include "alyrn/detail/net/socket.h"
+#include "alyrn/net/detail/socket.h"
 #include "alyrn/net/tcp_options.h"
-#include "alyrn/detail/operation/completion_gate.h"
-#include "alyrn/detail/operation/scheduler_continuation.h"
-#include "alyrn/detail/operation/single_result_lifecycle.h"
+#include "alyrn/detail/completion_gate.h"
+#include "alyrn/detail/scheduler_continuation.h"
+#include "alyrn/detail/single_result_lifecycle.h"
 #include "alyrn/result.h"
 
 namespace alyrn::kqueue {
@@ -181,8 +180,8 @@ private:
   }
 
   Listener* listener_;
-  ::alyrn::detail::operation::SchedulerContinuation continuation_;
-  ::alyrn::detail::operation::SingleResultLifecycle lifecycle_;
+  ::alyrn::detail::SchedulerContinuation continuation_;
+  ::alyrn::detail::SingleResultLifecycle lifecycle_;
   backend::ValueResultState<Stream> result_;
 };
 

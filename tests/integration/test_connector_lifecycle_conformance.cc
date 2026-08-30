@@ -2,12 +2,10 @@
 // Runs the same application-observable connector scenarios against every
 // enabled network backend.
 
-#include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
-#include <cerrno>
 #include <chrono>
 #include <cstdint>
 #include <expected>

@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 
-#include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -18,7 +17,7 @@
 #include "alyrn/result.h"
 #include "alyrn/kqueue/runtime.h"
 #include "alyrn/net/endpoint.h"
-#include "alyrn/detail/net/socket.h"
+#include "alyrn/net/detail/socket.h"
 
 using namespace alyrn;
 

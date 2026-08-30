@@ -11,7 +11,6 @@
 #include "alyrn/result.h"
 #include "alyrn/coro/spawn.h"
 #include "alyrn/coro/sync_wait.h"
-#include "alyrn/coro/task.h"
 #include "alyrn/coro/work.h"
 #include "alyrn/io/async_listener.h"
 #include "alyrn/kqueue/connector.h"
@@ -19,7 +18,7 @@
 #include "alyrn/kqueue/loop.h"
 #include "alyrn/kqueue/stream.h"
 #include "alyrn/net/endpoint.h"
-#include "alyrn/detail/net/socket.h"
+#include "alyrn/net/detail/socket.h"
 
 namespace {
 

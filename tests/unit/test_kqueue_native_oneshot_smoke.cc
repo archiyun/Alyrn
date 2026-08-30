@@ -20,10 +20,10 @@
 #include <thread>
 
 #include "alyrn/detail/check.h"
-#include "alyrn/detail/kqueue/channel.h"
+#include "alyrn/kqueue/detail/channel.h"
 #include "alyrn/kqueue/loop.h"
 #include "alyrn/kqueue/options.h"
-#include "alyrn/detail/net/socket.h"
+#include "alyrn/net/detail/socket.h"
 
 namespace {
 

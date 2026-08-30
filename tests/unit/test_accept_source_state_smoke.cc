@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 
 #include <cassert>
-#include <cerrno>
 #include <utility>
 
 #include "alyrn/net/accept_source.h"

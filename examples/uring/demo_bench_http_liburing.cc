@@ -4,7 +4,6 @@
 // uring benchmark's thread-per-ring topology without using Alyrn runtime
 // objects, and is kept as an abstraction-cost reference.
 
-#include <arpa/inet.h>
 #include <errno.h>
 #include <liburing.h>
 #include <netinet/in.h>

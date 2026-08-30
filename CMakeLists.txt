@@ -417,29 +417,9 @@ install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/backend/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/alyrn/backend
     FILES_MATCHING PATTERN "*.h")
 
-install(FILES
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/detail/check.h
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/detail/macros.h
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/alyrn/detail)
-
-# These headers are implementation dependencies of the header-defined
-# adapters.  They intentionally have no stable namespace contract.
-set(ALYRN_DETAIL_DIRS coro ds memory net operation time)
-if(ALYRN_HAS_EPOLL)
-    list(APPEND ALYRN_DETAIL_DIRS epoll)
-endif()
-if(ALYRN_ENABLE_KQUEUE)
-    list(APPEND ALYRN_DETAIL_DIRS kqueue)
-endif()
-if(ALYRN_ENABLE_URING)
-    list(APPEND ALYRN_DETAIL_DIRS uring)
-endif()
-
-foreach(ALYRN_DETAIL_DIR IN LISTS ALYRN_DETAIL_DIRS)
-    install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/detail/${ALYRN_DETAIL_DIR}/
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/alyrn/detail/${ALYRN_DETAIL_DIR}
-        FILES_MATCHING PATTERN "*.h")
-endforeach()
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/detail/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/alyrn/detail
+    FILES_MATCHING PATTERN "*.h")
 
 install(EXPORT AlyrnTargets
     FILE AlyrnTargets.cmake

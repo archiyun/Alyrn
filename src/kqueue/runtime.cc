@@ -12,7 +12,7 @@
 #include <utility>
 
 #include "alyrn/result.h"
-#include "alyrn/detail/kqueue/worker_group.h"
+#include "alyrn/kqueue/detail/worker_group.h"
 
 namespace alyrn::kqueue {
 

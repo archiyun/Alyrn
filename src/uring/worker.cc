@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "alyrn/detail/uring/worker.h"
+#include "alyrn/uring/detail/worker.h"
 
 #include <pthread.h>
 #include <sched.h>
@@ -14,10 +14,9 @@
 
 #include "alyrn/result.h"
 #include "alyrn/coro/spawn.h"
-#include "alyrn/detail/uring/loop_access.h"
+#include "alyrn/uring/detail/loop_access.h"
 #include "alyrn/uring/listener.h"
 #include "alyrn/uring/loop.h"
-#include "alyrn/net/accept_source.h"
 
 namespace alyrn::uring::detail {
 

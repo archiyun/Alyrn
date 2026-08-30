@@ -7,7 +7,6 @@
 #include <cerrno>
 #include <coroutine>
 #include <cstddef>
-#include <cstdint>
 #include <expected>
 #include <new>
 #include <span>
@@ -15,17 +14,17 @@
 
 #include "alyrn/backend/loop.h"
 #include "alyrn/detail/check.h"
-#include "alyrn/detail/uring/fd_close_convergence.h"
-#include "alyrn/detail/uring/loop_access.h"
-#include "alyrn/detail/uring/op.h"
-#include "alyrn/detail/uring/op_hook.h"
-#include "alyrn/detail/uring/operation_submission.h"
-#include "alyrn/detail/uring/sqe_prep.h"
-#include "alyrn/detail/uring/stream_operation_slot.h"
+#include "alyrn/uring/detail/fd_close_convergence.h"
+#include "alyrn/uring/detail/loop_access.h"
+#include "alyrn/uring/detail/op.h"
+#include "alyrn/uring/detail/op_hook.h"
+#include "alyrn/uring/detail/operation_submission.h"
+#include "alyrn/uring/detail/sqe_prep.h"
+#include "alyrn/uring/detail/stream_operation_slot.h"
 #include "alyrn/uring/loop.h"
 #include "alyrn/net/endpoint.h"
 #include "alyrn/net/read_into.h"
-#include "alyrn/detail/net/socket.h"
+#include "alyrn/net/detail/socket.h"
 #include "alyrn/result.h"
 #include "alyrn/time/clock.h"
 
@@ -302,7 +301,7 @@ void Stream::SendAwaiter::OnComplete(::alyrn::uring::detail::Op* op) noexcept {
 
 // ----- CloseAwaiter ------
 class [[nodiscard]] Stream::CloseAwaiter : public detail::OpHook<Stream::CloseAwaiter> {
-  friend void detail::DispatchStreamCloseComplete(::alyrn::uring::detail::Op* op) noexcept;
+  friend void detail::DispatchStreamCloseComplete(detail::Op* op) noexcept;
 
 public:
   using OpHook = detail::OpHook<CloseAwaiter>;

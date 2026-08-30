@@ -8,7 +8,6 @@
 #include <string>
 #include <string_view>
 
-#include "alyrn/backend/recv_source.h"
 #include "alyrn/result.h"
 #include "alyrn/coro/detached_task.h"
 #include "alyrn/coro/spawn.h"
@@ -16,7 +15,7 @@
 #include "alyrn/io/recv_source.h"
 #include "alyrn/kqueue/loop.h"
 #include "alyrn/kqueue/recv_source.h"
-#include "alyrn/detail/net/socket.h"
+#include "alyrn/net/detail/socket.h"
 
 namespace {
 

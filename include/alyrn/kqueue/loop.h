@@ -12,7 +12,7 @@
 #include "alyrn/backend/loop.h"
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/work.h"
-#include "alyrn/detail/kqueue/loop_shutdown.h"
+#include "alyrn/kqueue/detail/loop_shutdown.h"
 #include "alyrn/time/clock.h"
 #include "alyrn/time/timer_id.h"
 #include "alyrn/detail/macros.h"

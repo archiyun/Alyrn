@@ -13,7 +13,7 @@
 #include "bench_http_common.h"
 #include "alyrn/io.h"
 #include "alyrn/net/endpoint.h"
-#include "alyrn/detail/epoll/worker_group.h"
+#include "alyrn/epoll/detail/worker_group.h"
 #include "alyrn/spawn.h"
 
 namespace {

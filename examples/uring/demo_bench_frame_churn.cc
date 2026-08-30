@@ -15,7 +15,6 @@
 #include <cstdlib>
 #include <optional>
 
-#include "alyrn/coro/detached_task.h"
 #include "alyrn/coro/frame_allocator.h"
 #include "alyrn/coro/spawn.h"
 #include "alyrn/coro/work.h"

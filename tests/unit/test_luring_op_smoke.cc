@@ -8,10 +8,8 @@
 #include <csignal>
 #include <cstdio>
 
-#include "alyrn/detail/uring/cancel_result.h"
-#include "alyrn/detail/uring/op.h"
-#include "alyrn/detail/uring/result_state.h"
-#include "alyrn/detail/macros.h"
+#include "alyrn/uring/detail/op.h"
+#include "alyrn/uring/detail/result_state.h"
 
 namespace {
 

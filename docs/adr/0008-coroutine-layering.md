@@ -40,7 +40,7 @@ scheduler or I/O backend.
   `alyrn::SpawnDetach` schedules it directly; the detached coroutine frame
   embeds its `ResumeWork` and has no join state.
 - Promise and awaiter implementation details live under
-  `include/alyrn/detail/coro/`.
+  `include/alyrn/coro/detail/`.
 - Epoll awaiters remain in the network adapter layer and may depend on
   `Loop` and epoll-specific operation state.
 - io_uring awaiters remain in the luring adapter layer and may depend on the
@@ -72,10 +72,10 @@ scheduler or I/O backend.
 | `coro/scheduler.h` | Backend-neutral scheduling boundary |
 | `coro/work.h` | Schedulable work and coroutine resume adapter |
 | `coro/frame_allocator.h` | Coroutine-frame allocation through PMR resources |
-| `detail/coro/promise_base.h` | Shared lazy coroutine promise and continuation protocol |
-| `detail/coro/spawn_state.h` | Joinable root result, detach, waiter, and ownership state embedded in the root frame |
-| `detail/coro/spawn_root.h` | Joinable root coroutine, promise, final-suspend, and root-frame destruction protocol |
-| `detail/operation/` | Backend-neutral completion gates, composite/split-release lifecycle helpers, and scheduler-bound continuations; never fd, buffer, or CQE ownership |
+| `coro/detail/promise_base.h` | Shared lazy coroutine promise and continuation protocol |
+| `coro/detail/spawn_state.h` | Joinable root result, detach, waiter, and ownership state embedded in the root frame |
+| `coro/detail/spawn_root.h` | Joinable root coroutine, promise, final-suspend, and root-frame destruction protocol |
+| `detail/completion_gate.h`, `detail/*_lifecycle.h`, `detail/scheduler_continuation.h` | Backend-neutral completion gates, composite/split-release lifecycle helpers, and scheduler-bound continuations; never fd, buffer, or CQE ownership |
 | `backend/*.h` | Adapter-contract concepts and awaiter result storage (`alyrn::backend`); no `alyrn/backend.h` umbrella |
 
 ## Remaining Boundaries
@@ -100,7 +100,8 @@ The following are deliberate limits or require separate design work:
 
 ## 修订（2026-08）
 
-Promise 与 spawn 实现位于 `include/alyrn/detail/coro/`，完成协议位于
-`include/alyrn/detail/operation/`，不再使用 `coro/detail/` 或 `operation/detail/`。
+Promise 与 spawn 实现位于 `include/alyrn/coro/detail/`（公开模块下的
+`detail/`，与 `epoll/detail`、`condy/detail` 同一布局）。完成协议仍在
+`include/alyrn/detail/`，因为没有公开的 `operation` 模块。
 adapter 契约在 `include/alyrn/backend`（`alyrn_io_contract`）；`io` 只是应用侧别名。
 依赖方向包含 kqueue，且具体后端链接 `alyrn_io_contract`、不链接 `alyrn_io`。

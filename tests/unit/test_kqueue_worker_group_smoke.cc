@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 
-#include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -17,11 +16,10 @@
 
 #include "alyrn/result.h"
 #include "alyrn/coro/scheduler.h"
-#include "alyrn/coro/task.h"
-#include "alyrn/detail/kqueue/worker.h"
-#include "alyrn/detail/kqueue/worker_group.h"
+#include "alyrn/kqueue/detail/worker.h"
+#include "alyrn/kqueue/detail/worker_group.h"
 #include "alyrn/net/endpoint.h"
-#include "alyrn/detail/net/socket.h"
+#include "alyrn/net/detail/socket.h"
 
 namespace {
 

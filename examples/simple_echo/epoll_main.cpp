@@ -16,8 +16,9 @@
 #include <thread>
 #include <utility>
 
-#include "alyrn/net.h"
 #include "alyrn/epoll.h"
+#include "alyrn/net.h"
+#include "alyrn/runtime.h"
 #include "echo_app.h"
 #include "signal_stop.h"
 
@@ -41,9 +42,10 @@ int main() {
   }
   std::jthread signal_forwarder{simple_echo::ForwardTerminationSignals, &stop_source};
 
-  auto runtime = Runtime::Create<runtime::Epoll>(
-      net::Endpoint::Loopback(kPort),
-      [](auto stream) { return simple_echo::HandleConnection(std::move(stream)); });
+  // Select runtime::Auto, and it also provide Epoll for Linux.
+  auto runtime = Runtime::Create<runtime::Epoll>(net::Endpoint::Loopback(kPort), [](auto stream) {
+    return simple_echo::HandleConnection(std::move(stream));
+  });
 
   std::println("simple echo (Epoll) listening on 127.0.0.1:{}", kPort);
   auto ran = runtime.Run(stop_source.get_token());

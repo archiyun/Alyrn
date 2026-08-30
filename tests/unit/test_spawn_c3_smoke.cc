@@ -16,8 +16,6 @@
 // ASan (leak check proves self-destruct) and TSan.
 
 #include <atomic>
-#include <cerrno>
-#include <chrono>
 #include <coroutine>
 #include <expected>
 #include <iostream>
@@ -25,7 +23,6 @@
 #include <utility>
 
 #include "alyrn/result.h"
-#include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/spawn.h"
 #include "alyrn/coro/task.h"
 #include "alyrn/coro/work.h"

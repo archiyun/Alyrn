@@ -5,7 +5,6 @@
 #include <sys/uio.h>
 #include <unistd.h>
 
-#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <coroutine>
@@ -18,9 +17,9 @@
 #include <utility>
 
 #include "alyrn/detail/check.h"
-#include "alyrn/detail/kqueue/loop_access.h"
+#include "alyrn/kqueue/detail/loop_access.h"
 #include "alyrn/net/endpoint.h"
-#include "alyrn/detail/net/socket.h"
+#include "alyrn/net/detail/socket.h"
 #include "alyrn/result.h"
 
 namespace alyrn::kqueue {

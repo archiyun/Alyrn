@@ -10,9 +10,9 @@
 #include "alyrn/coro/frame_allocator.h"
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/detail/check.h"
-#include "alyrn/detail/epoll/channel.h"
-#include "alyrn/detail/epoll/poller.h"
-#include "alyrn/detail/epoll/timer_queue.h"
+#include "alyrn/epoll/detail/channel.h"
+#include "alyrn/epoll/detail/poller.h"
+#include "alyrn/epoll/detail/timer_queue.h"
 #include "alyrn/time/timer_id.h"
 
 namespace alyrn::epoll {

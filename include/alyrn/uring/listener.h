@@ -11,16 +11,16 @@
 #include "alyrn/backend/accept_source.h"
 #include "alyrn/backend/async_listener.h"
 #include "alyrn/backend/value_result_state.h"
-#include "alyrn/detail/operation/completion_gate.h"
-#include "alyrn/detail/operation/scheduler_continuation.h"
-#include "alyrn/detail/uring/completion_dispatch.h"
-#include "alyrn/detail/uring/op.h"
 #include "alyrn/detail/macros.h"
+#include "alyrn/detail/completion_gate.h"
+#include "alyrn/detail/scheduler_continuation.h"
 #include "alyrn/net/accept_source.h"
 #include "alyrn/net/endpoint.h"
 #include "alyrn/net/tcp_options.h"
 #include "alyrn/result.h"
 #include "alyrn/task.h"
+#include "alyrn/uring/detail/completion_dispatch.h"
+#include "alyrn/uring/detail/op.h"
 #include "alyrn/uring/stream.h"
 
 namespace alyrn::uring {
@@ -65,17 +65,15 @@ public:
     explicit NextAwaiter(AcceptSource& source) noexcept : source_(&source) {}
 
     bool await_ready() const noexcept { return false; }
-
     bool await_suspend(std::coroutine_handle<> continuation) noexcept;
-
     NextResult await_resume() noexcept;
 
     void Complete(NextResult result) noexcept;
 
   private:
     AcceptSource* source_;
-    ::alyrn::detail::operation::SchedulerContinuation continuation_;
-    ::alyrn::detail::operation::CompletionGate completion_gate_;
+    ::alyrn::detail::SchedulerContinuation continuation_;
+    ::alyrn::detail::CompletionGate completion_gate_;
     backend::ValueResultState<Event> result_;
   };
 
@@ -84,9 +82,7 @@ public:
   AcceptSource(AcceptSource&& other) noexcept;
   AcceptSource& operator=(AcceptSource&& other) noexcept;
 
-  NextAwaiter Next() noexcept {
-    return NextAwaiter(*this);
-  }
+  NextAwaiter Next() noexcept { return NextAwaiter(*this); }
   Task<Result<void>> Stop();
 
 private:
@@ -98,9 +94,7 @@ private:
       kind = detail::OpKind::kAcceptSourceComplete;
     }
 
-    AcceptSource* Source() const noexcept {
-      return source_;
-    }
+    AcceptSource* Source() const noexcept { return source_; }
 
     void Prepare() noexcept {
       kind = detail::OpKind::kAcceptSourceComplete;
@@ -117,9 +111,7 @@ private:
       kind = detail::OpKind::kAcceptSourceCancelComplete;
     }
 
-    AcceptSource* Source() const noexcept {
-      return source_;
-    }
+    AcceptSource* Source() const noexcept { return source_; }
 
     void Prepare() noexcept {
       kind = detail::OpKind::kAcceptSourceCancelComplete;

@@ -2,8 +2,8 @@
 
 #include <cstdio>
 
-#include "alyrn/detail/operation/composite_lifecycle.h"
-#include "alyrn/detail/operation/split_release_lifecycle.h"
+#include "alyrn/detail/composite_lifecycle.h"
+#include "alyrn/detail/split_release_lifecycle.h"
 
 namespace {
 
@@ -16,7 +16,7 @@ bool Expect(bool condition, const char* message) {
 }
 
 bool TestPrimaryThenRelease() {
-  alyrn::detail::operation::SplitReleaseLifecycle lifecycle;
+  alyrn::detail::SplitReleaseLifecycle lifecycle;
 
   bool ok = true;
   ok &= Expect(lifecycle.RecordLogicalResult(), "the first logical result must win");
@@ -34,7 +34,7 @@ bool TestPrimaryThenRelease() {
 }
 
 bool TestPhysicalTerminalBeforeLogicalResult() {
-  alyrn::detail::operation::SplitReleaseLifecycle lifecycle;
+  alyrn::detail::SplitReleaseLifecycle lifecycle;
 
   return Expect(lifecycle.MarkPhysicalTerminal(), "physical terminal event must be recorded") &&
          Expect(!lifecycle.TryAuthorizeRelease(),
@@ -47,8 +47,8 @@ bool TestPhysicalTerminalBeforeLogicalResult() {
 }
 
 bool TestCompositeMembersAuthorizeReleaseThenContinuation() {
-  using alyrn::detail::operation::CompositeLifecycle;
-  using alyrn::detail::operation::CompositeMember;
+  using alyrn::detail::CompositeLifecycle;
+  using alyrn::detail::CompositeMember;
 
   CompositeLifecycle lifecycle;
   bool ok = true;

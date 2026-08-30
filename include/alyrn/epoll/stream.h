@@ -9,14 +9,14 @@
 #include <span>
 
 #include "alyrn/backend/async_stream.h"
-#include "alyrn/detail/epoll/channel.h"
-#include "alyrn/detail/epoll/loop_shutdown.h"
-#include "alyrn/detail/epoll/op_hook.h"
-#include "alyrn/detail/epoll/result_state.h"
-#include "alyrn/detail/net/socket.h"
-#include "alyrn/detail/net/stream_lifecycle.h"
-#include "alyrn/detail/operation/scheduler_continuation.h"
-#include "alyrn/detail/operation/single_result_lifecycle.h"
+#include "alyrn/epoll/detail/channel.h"
+#include "alyrn/epoll/detail/loop_shutdown.h"
+#include "alyrn/epoll/detail/op_hook.h"
+#include "alyrn/epoll/detail/result_state.h"
+#include "alyrn/net/detail/socket.h"
+#include "alyrn/net/detail/stream_lifecycle.h"
+#include "alyrn/detail/scheduler_continuation.h"
+#include "alyrn/detail/single_result_lifecycle.h"
 #include "alyrn/detail/macros.h"
 #include "alyrn/epoll/loop.h"
 #include "alyrn/epoll/options.h"
@@ -122,8 +122,8 @@ private:
   // every includer's alyrn::epoll namespace.
   using Channel = detail::Channel;
   using LoopShutdownParticipant = detail::LoopShutdownParticipant;
-  using SchedulerContinuation = ::alyrn::detail::operation::SchedulerContinuation;
-  using SingleResultLifecycle = ::alyrn::detail::operation::SingleResultLifecycle;
+  using SchedulerContinuation = ::alyrn::detail::SchedulerContinuation;
+  using SingleResultLifecycle = ::alyrn::detail::SingleResultLifecycle;
   using IoResultState = detail::IoResultState;
 
   template <class Awaiter>

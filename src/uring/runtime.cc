@@ -12,7 +12,7 @@
 #include <utility>
 
 #include "alyrn/result.h"
-#include "alyrn/detail/uring/worker_group.h"
+#include "alyrn/uring/detail/worker_group.h"
 
 namespace alyrn::uring {
 

@@ -1,5 +1,10 @@
 include(CTest)
 
+add_test(NAME namespace_layout_check
+    COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/../scripts/check-namespace-layout.py)
+set_tests_properties(namespace_layout_check PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/..)
+
 add_executable(panic_check_smoke_test
     unit/test_panic_check_smoke.cc
 )

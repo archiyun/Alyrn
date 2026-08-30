@@ -20,23 +20,17 @@
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
-#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
 #include <utility>
 
-#include "alyrn/result.h"
-#include "alyrn/coro/scheduler.h"
-#include "alyrn/coro/spawn.h"
-#include "alyrn/coro/task.h"
 #include "alyrn/spawn.h"
 #include "alyrn/io/async_listener.h"
 #include "alyrn/io/async_stream.h"
 #include "alyrn/net/endpoint.h"
 #include "alyrn/epoll/listener.h"
 #include "alyrn/epoll/loop.h"
-#include "alyrn/epoll/stream.h"
 
 namespace {
 

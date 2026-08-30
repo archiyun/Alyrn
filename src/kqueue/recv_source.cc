@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include <sys/socket.h>
 
-#include <algorithm>
 #include <cerrno>
 #include <coroutine>
 #include <expected>
@@ -11,9 +10,9 @@
 #include "alyrn/backend/value_result_state.h"
 #include "alyrn/detail/check.h"
 #include "alyrn/result.h"
-#include "alyrn/detail/operation/completion_gate.h"
-#include "alyrn/detail/operation/scheduler_continuation.h"
-#include "alyrn/detail/kqueue/loop_access.h"
+#include "alyrn/detail/completion_gate.h"
+#include "alyrn/detail/scheduler_continuation.h"
+#include "alyrn/kqueue/detail/loop_access.h"
 #include "alyrn/kqueue/options.h"
 #include "alyrn/kqueue/recv_source.h"
 
@@ -154,8 +153,8 @@ public:
 
 private:
   RecvSource* source_;
-  ::alyrn::detail::operation::SchedulerContinuation continuation_;
-  ::alyrn::detail::operation::CompletionGate completion_gate_;
+  ::alyrn::detail::SchedulerContinuation continuation_;
+  ::alyrn::detail::CompletionGate completion_gate_;
   std::optional<Result<void>> result_;
 };
 

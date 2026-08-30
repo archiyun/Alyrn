@@ -12,7 +12,7 @@
 #include <utility>
 
 #include "alyrn/result.h"
-#include "alyrn/detail/epoll/worker_group.h"
+#include "alyrn/epoll/detail/worker_group.h"
 
 namespace alyrn::epoll {
 

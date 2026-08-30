@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-#include "alyrn/detail/uring/timer_queue.h"
+#include "alyrn/uring/detail/timer_queue.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -9,8 +9,8 @@
 #include <utility>
 
 #include "alyrn/detail/check.h"
-#include "alyrn/detail/uring/loop_access.h"
-#include "alyrn/detail/uring/sqe_prep.h"
+#include "alyrn/uring/detail/loop_access.h"
+#include "alyrn/uring/detail/sqe_prep.h"
 #include "alyrn/uring/loop.h"
 #include "alyrn/time/clock.h"
 

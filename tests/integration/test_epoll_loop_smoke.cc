@@ -10,17 +10,19 @@
 #include <exception>
 #include <iostream>
 #include <memory_resource>
+#include <stop_token>
 #include <thread>
-#include <utility>
 #include <vector>
 
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/spawn.h"
+#include "alyrn/coro/sync_wait.h"
 #include "alyrn/coro/work.h"
 #include "alyrn/io/loop.h"
 #include "alyrn/epoll/connector.h"
-#include "alyrn/detail/epoll/channel.h"
+#include "alyrn/epoll/detail/channel.h"
 #include "alyrn/epoll/loop.h"
+#include "alyrn/net/endpoint.h"
 
 namespace {
 
@@ -358,6 +360,58 @@ bool TestCrossThreadRequestStopWakesPoll() {
                 "RequestStop should wake epoll_wait instead of waiting for its poll timeout");
 }
 
+bool TestConcurrentRequestStopIsIdempotent() {
+  alyrn::epoll::Loop loop;
+  constexpr int kStoppers = 8;
+  std::atomic_int returned{0};
+
+  std::vector<std::jthread> stoppers;
+  stoppers.reserve(kStoppers);
+  for (int i = 0; i < kStoppers; ++i) {
+    stoppers.emplace_back([&] {
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+      loop.RequestStop();
+      loop.RequestStop();
+      returned.fetch_add(1, std::memory_order_relaxed);
+    });
+  }
+
+  const auto start = std::chrono::steady_clock::now();
+  loop.Run();
+  stoppers.clear();
+  const auto elapsed = std::chrono::steady_clock::now() - start;
+  loop.RequestStop();
+
+  return Expect(returned.load(std::memory_order_relaxed) == kStoppers,
+                "every concurrent RequestStop must return") &&
+         Expect(loop.State() == alyrn::io::LoopState::kStopped,
+                "Loop should reach stopped after concurrent RequestStop") &&
+         Expect(elapsed < std::chrono::seconds(1),
+                "concurrent RequestStop should wake epoll_wait instead of waiting for its poll "
+                "timeout");
+}
+
+bool TestForeignStopTokenWakesPoll() {
+  alyrn::epoll::Loop loop;
+  std::stop_source source;
+
+  std::jthread canceller([&] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    source.request_stop();
+  });
+
+  const auto start = std::chrono::steady_clock::now();
+  loop.Run(source.get_token());
+  canceller.join();
+  const auto elapsed = std::chrono::steady_clock::now() - start;
+
+  return Expect(source.stop_requested(), "foreign stop_token cancel should be visible") &&
+         Expect(loop.State() == alyrn::io::LoopState::kStopped,
+                "Loop should reach stopped after stop_token cancellation") &&
+         Expect(elapsed < std::chrono::seconds(1),
+                "stop_token cancel should wake epoll_wait instead of waiting for its poll timeout");
+}
+
 alyrn::coro::DetachedTask SleepUntilLoopStops(alyrn::epoll::Connector* connector,
                                                  bool* resumed) {
   co_await connector->SleepFor(std::chrono::hours(1));
@@ -382,6 +436,42 @@ bool TestLoopStopCancelsConnectorTimer() {
                 "timer cancellation should leave Loop stopped");
 }
 
+void ConnectFromForeignThread() {
+  alyrn::epoll::Loop loop;
+  alyrn::epoll::Connector connector(&loop);
+  std::thread foreign([&connector] {
+    static_cast<void>(alyrn::coro::SyncWait(connector.Connect(alyrn::net::Endpoint(1))));
+  });
+  foreign.join();
+}
+
+void ConnectHostPortFromForeignThread() {
+  alyrn::epoll::Loop loop;
+  alyrn::epoll::Connector connector(&loop);
+  std::thread foreign([&connector] {
+    static_cast<void>(alyrn::coro::SyncWait(connector.Connect("127.0.0.1", 1)));
+  });
+  foreign.join();
+}
+
+void SleepForFromForeignThread() {
+  alyrn::epoll::Loop loop;
+  alyrn::epoll::Connector connector(&loop);
+  std::thread foreign([&connector] {
+    static_cast<void>(alyrn::coro::SyncWait(connector.SleepFor(alyrn::time::Milliseconds(10))));
+  });
+  foreign.join();
+}
+
+bool TestConnectorAffinityIsEnforcedInRelease() {
+  return ExpectChildAbort(&ConnectFromForeignThread,
+                          "Connect from a foreign thread must terminate in Release") &&
+         ExpectChildAbort(&ConnectHostPortFromForeignThread,
+                          "Connect(host, port) from a foreign thread must terminate in Release") &&
+         ExpectChildAbort(&SleepForFromForeignThread,
+                          "SleepFor from a foreign thread must terminate in Release");
+}
+
 }  // namespace
 
 int main() {
@@ -400,7 +490,10 @@ int main() {
     if (!TestStaleTimerIdCannotCancelReplacement()) return 1;
     if (!TestLoopStopDiscardsUnexpiredTimer()) return 1;
     if (!TestCrossThreadRequestStopWakesPoll()) return 1;
+    if (!TestConcurrentRequestStopIsIdempotent()) return 1;
+    if (!TestForeignStopTokenWakesPoll()) return 1;
     if (!TestLoopStopCancelsConnectorTimer()) return 1;
+    if (!TestConnectorAffinityIsEnforcedInRelease()) return 1;
   } catch (const std::exception& ex) {
     std::cerr << "[FAIL] unexpected exception: " << ex.what() << '\n';
     return 1;

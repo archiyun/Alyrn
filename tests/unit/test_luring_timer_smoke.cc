@@ -11,10 +11,9 @@
 #include <thread>
 
 #include "alyrn/coro/spawn.h"
-#include "alyrn/coro/task.h"
 #include "alyrn/io/loop.h"
 #include "alyrn/uring/connector.h"
-#include "alyrn/detail/uring/loop_access.h"
+#include "alyrn/uring/detail/loop_access.h"
 #include "alyrn/uring/loop.h"
 #include "alyrn/uring/options.h"
 #include "alyrn/uring/timer.h"

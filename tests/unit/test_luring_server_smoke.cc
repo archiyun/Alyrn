@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 
-#include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -12,14 +11,12 @@
 #include <cstdint>
 #include <expected>
 #include <iostream>
-#include <memory>
 #include <system_error>
 #include <thread>
 #include <utility>
 
 #include "alyrn/result.h"
-#include "alyrn/coro/task.h"
-#include "alyrn/detail/uring/server.h"
+#include "alyrn/uring/detail/server.h"
 #include "alyrn/uring/stream.h"
 #include "alyrn/net/endpoint.h"
 

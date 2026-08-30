@@ -2,12 +2,10 @@
 
 #include <cassert>
 #include <cstddef>
-#include <cstdint>
 #include <limits>
 #include <utility>
 
-#include "alyrn/result.h"
-#include "alyrn/detail/uring/provided_buffer_storage.h"
+#include "alyrn/uring/detail/provided_buffer_storage.h"
 
 namespace {
 

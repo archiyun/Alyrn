@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "alyrn/detail/uring/server.h"
+#include "alyrn/uring/detail/server.h"
 
 #include <cerrno>
 #include <expected>

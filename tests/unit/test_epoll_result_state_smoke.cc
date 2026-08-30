@@ -11,7 +11,7 @@
 
 #include "alyrn/backend/value_result_state.h"
 #include "alyrn/result.h"
-#include "alyrn/detail/epoll/result_state.h"
+#include "alyrn/epoll/detail/result_state.h"
 
 namespace {
 

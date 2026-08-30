@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 
-#include <arpa/inet.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
@@ -17,7 +16,6 @@
 #include "alyrn/result.h"
 #include "alyrn/coro/spawn.h"
 #include "alyrn/coro/sync_wait.h"
-#include "alyrn/coro/task.h"
 #include "alyrn/io/async_listener.h"
 #include "alyrn/net/endpoint.h"
 #include "alyrn/epoll/connector.h"

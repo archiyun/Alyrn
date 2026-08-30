@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "alyrn/detail/epoll/worker.h"
+#include "alyrn/epoll/detail/worker.h"
 
 #include <cerrno>
 #include <expected>

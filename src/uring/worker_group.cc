@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-#include "alyrn/detail/uring/worker_group.h"
+#include "alyrn/uring/detail/worker_group.h"
 
 #include <cerrno>
 #include <expected>
 #include <memory>
 #include <utility>
 
-#include "alyrn/detail/uring/worker.h"
+#include "alyrn/uring/detail/worker.h"
 #include "alyrn/net/endpoint.h"
 
 namespace alyrn::uring::detail {

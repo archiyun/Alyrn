@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-#include "alyrn/detail/epoll/epoll_poller.h"
+#include "alyrn/epoll/detail/epoll_poller.h"
 
 #include <unistd.h>
 
 #include <cerrno>
 
 #include "alyrn/detail/check.h"
-#include "alyrn/detail/epoll/channel.h"
+#include "alyrn/epoll/detail/channel.h"
 
 namespace alyrn::epoll::detail {
 namespace {

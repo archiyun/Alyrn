@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 
-#include <arpa/inet.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
@@ -18,14 +17,12 @@
 #include <vector>
 
 #include "alyrn/result.h"
-#include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/spawn.h"
 #include "alyrn/uring/listener.h"
 #include "alyrn/uring/loop.h"
-#include "alyrn/detail/uring/loop_access.h"
+#include "alyrn/uring/detail/loop_access.h"
 #include "alyrn/uring/options.h"
 #include "alyrn/uring/timer.h"
-#include "alyrn/net/accept_source.h"
 #include "alyrn/net/endpoint.h"
 
 namespace {

@@ -11,18 +11,17 @@
 #include <vector>
 
 #include "alyrn/detail/check.h"
-#include "alyrn/detail/uring/cancel_result.h"
-#include "alyrn/detail/uring/completion_dispatch.h"
-#include "alyrn/detail/uring/loop_access.h"
-#include "alyrn/detail/uring/op.h"
-#include "alyrn/detail/uring/provided_buffer_pool.h"
-#include "alyrn/detail/uring/sqe_prep.h"
+#include "alyrn/uring/detail/completion_dispatch.h"
+#include "alyrn/uring/detail/loop_access.h"
+#include "alyrn/uring/detail/op.h"
+#include "alyrn/uring/detail/provided_buffer_pool.h"
+#include "alyrn/uring/detail/sqe_prep.h"
 #include "alyrn/uring/loop.h"
-#include "alyrn/detail/net/recv_source_state.h"
-#include "alyrn/detail/net/source_state.h"
+#include "alyrn/net/detail/recv_source_state.h"
+#include "alyrn/net/detail/source_state.h"
 #include "alyrn/net/recv_source.h"
-#include "alyrn/detail/operation/completion_gate.h"
-#include "alyrn/detail/operation/scheduler_continuation.h"
+#include "alyrn/detail/completion_gate.h"
+#include "alyrn/detail/scheduler_continuation.h"
 #include "alyrn/result.h"
 
 namespace alyrn::uring {
@@ -123,8 +122,8 @@ public:
 
 private:
   RecvSource* source_;
-  ::alyrn::detail::operation::SchedulerContinuation continuation_;
-  ::alyrn::detail::operation::CompletionGate completion_gate_;
+  ::alyrn::detail::SchedulerContinuation continuation_;
+  ::alyrn::detail::CompletionGate completion_gate_;
   std::optional<Result<void>> result_;
 };
 

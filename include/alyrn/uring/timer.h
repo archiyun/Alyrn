@@ -3,13 +3,13 @@
 
 #include <coroutine>
 
+#include "alyrn/coro/work.h"
 #include "alyrn/detail/check.h"
 #include "alyrn/result.h"
-#include "alyrn/coro/work.h"
-#include "alyrn/detail/uring/loop_access.h"
-#include "alyrn/detail/uring/result_state.h"
-#include "alyrn/uring/loop.h"
 #include "alyrn/time/clock.h"
+#include "alyrn/uring/detail/loop_access.h"
+#include "alyrn/uring/detail/result_state.h"
+#include "alyrn/uring/loop.h"
 
 namespace alyrn::uring {
 
@@ -21,14 +21,9 @@ public:
   SleepAwaiter(Loop& loop, time::Duration delay) noexcept : loop_(&loop), delay_(delay) {}
 
   bool await_ready() const noexcept { return delay_ <= time::Duration::zero(); }
-
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
-
   Result<void> await_resume() noexcept {
-    if (!result_.IsImmediate()) {
-      return {};
-    }
-    return result_.Take();
+    return result_.IsImmediate() ? result_.Take() : Result<void>{};
   }
 
 private:
@@ -40,8 +35,7 @@ private:
 
 inline bool SleepAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   ALYRN_CHECK(loop_ != nullptr, "Uring sleep operation has no owner loop");
-  ALYRN_CHECK(loop_->IsInLoopThread(),
-                 "Uring sleep operation called from wrong Loop thread");
+  ALYRN_CHECK(loop_->IsInLoopThread(), "Uring sleep operation called from wrong Loop thread");
   resume_work_.SetHandle(continuation);
   auto timer = loop_->RunAfter(
       delay_, [this]() noexcept { detail::LoopAccess::ScheduleCompletion(*loop_, &resume_work_); });

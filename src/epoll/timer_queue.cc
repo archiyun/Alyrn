@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "alyrn/detail/epoll/timer_queue.h"
+#include "alyrn/epoll/detail/timer_queue.h"
 
 #include <sys/timerfd.h>
 #include <unistd.h>

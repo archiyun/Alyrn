@@ -9,7 +9,7 @@
 #include <type_traits>
 #include <utility>
 
-#include "alyrn/detail/coro/sync_wait_root.h"
+#include "alyrn/coro/detail/sync_wait_root.h"
 
 namespace alyrn::coro {
 

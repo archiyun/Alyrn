@@ -13,10 +13,10 @@
 #include "alyrn/result.h"
 #include "alyrn/task.h"
 #include "alyrn/net/recv_source.h"
-#include "alyrn/detail/operation/completion_gate.h"
-#include "alyrn/detail/operation/scheduler_continuation.h"
-#include "alyrn/detail/kqueue/channel.h"
-#include "alyrn/detail/kqueue/loop_shutdown.h"
+#include "alyrn/detail/completion_gate.h"
+#include "alyrn/detail/scheduler_continuation.h"
+#include "alyrn/kqueue/detail/channel.h"
+#include "alyrn/kqueue/detail/loop_shutdown.h"
 #include "alyrn/kqueue/loop.h"
 #include "alyrn/detail/macros.h"
 
@@ -57,8 +57,8 @@ public:
 
   private:
     RecvSource* source_;
-    ::alyrn::detail::operation::SchedulerContinuation continuation_;
-    ::alyrn::detail::operation::CompletionGate completion_gate_;
+    ::alyrn::detail::SchedulerContinuation continuation_;
+    ::alyrn::detail::CompletionGate completion_gate_;
     backend::ValueResultState<std::optional<Event>> result_;
   };
 

@@ -54,7 +54,7 @@ Loop ──► EPollPoller::Poll() ──► Channel::HandleEvent()
 - `src/epoll/loop.cc`
 - `include/alyrn/epoll/stream.h`
 - `src/epoll/stream.cc`
-- `include/alyrn/detail/epoll/channel.h`
+- `include/alyrn/epoll/detail/channel.h`
 - `src/epoll/epoll_poller.cc`
 
 ## 2. Loop：一个线程，一个调度器
@@ -379,7 +379,7 @@ lease。这是资源归还协议，不应被 `Loop::Stopped` 偷偷绕过；这�
 
 1. `include/alyrn/epoll/loop.h`
 2. `src/epoll/loop.cc`
-3. `include/alyrn/detail/epoll/channel.h`
+3. `include/alyrn/epoll/detail/channel.h`
 4. `src/epoll/channel.cc`
 5. `src/epoll/epoll_poller.cc`
 6. `src/epoll/stream.cc` 中 `ReadSomeAwaiter`、`HandleRead`、`CompleteRead`、`CloseNow`

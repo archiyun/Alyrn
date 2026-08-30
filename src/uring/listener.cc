@@ -14,21 +14,20 @@
 #include "alyrn/backend/loop.h"
 #include "alyrn/detail/check.h"
 #include "alyrn/coro/task.h"
-#include "alyrn/detail/uring/cancel_result.h"
-#include "alyrn/detail/uring/fd_close_convergence.h"
-#include "alyrn/detail/uring/loop_access.h"
-#include "alyrn/detail/uring/op.h"
-#include "alyrn/detail/uring/op_hook.h"
-#include "alyrn/detail/uring/operation_submission.h"
-#include "alyrn/detail/uring/sqe_prep.h"
+#include "alyrn/uring/detail/fd_close_convergence.h"
+#include "alyrn/uring/detail/loop_access.h"
+#include "alyrn/uring/detail/op.h"
+#include "alyrn/uring/detail/op_hook.h"
+#include "alyrn/uring/detail/operation_submission.h"
+#include "alyrn/uring/detail/sqe_prep.h"
 #include "alyrn/uring/loop.h"
 #include "alyrn/uring/stream.h"
-#include "alyrn/detail/net/accept_source_state.h"
-#include "alyrn/detail/net/source_state.h"
+#include "alyrn/net/detail/accept_source_state.h"
+#include "alyrn/net/detail/source_state.h"
 #include "alyrn/net/endpoint.h"
-#include "alyrn/detail/net/socket.h"
-#include "alyrn/detail/operation/completion_gate.h"
-#include "alyrn/detail/operation/scheduler_continuation.h"
+#include "alyrn/net/detail/socket.h"
+#include "alyrn/detail/completion_gate.h"
+#include "alyrn/detail/scheduler_continuation.h"
 #include "alyrn/result.h"
 
 namespace alyrn::uring {
@@ -198,8 +197,8 @@ public:
 
 private:
   AcceptSource* source_;
-  ::alyrn::detail::operation::SchedulerContinuation continuation_;
-  ::alyrn::detail::operation::CompletionGate completion_gate_;
+  ::alyrn::detail::SchedulerContinuation continuation_;
+  ::alyrn::detail::CompletionGate completion_gate_;
   std::optional<Result<void>> result_;
 };
 
@@ -643,7 +642,7 @@ coro::Task<Result<void>> AcceptSource::Stop() {
 
 // --- AcceptAwaiter ---
 class [[nodiscard]] Listener::AcceptAwaiter : public detail::OpHook<Listener::AcceptAwaiter> {
-  friend void detail::DispatchAcceptComplete(::alyrn::uring::detail::Op* op) noexcept;
+  friend void detail::DispatchAcceptComplete(detail::Op* op) noexcept;
 
 public:
   using OpHook = detail::OpHook<AcceptAwaiter>;
@@ -734,7 +733,7 @@ private:
 
 // --- CloseAwaiter ---
 class [[nodiscard]] Listener::CloseAwaiter : public detail::OpHook<Listener::CloseAwaiter> {
-  friend void detail::DispatchListenerCloseComplete(::alyrn::uring::detail::Op* op) noexcept;
+  friend void detail::DispatchListenerCloseComplete(detail::Op* op) noexcept;
 
 public:
   using OpHook = detail::OpHook<CloseAwaiter>;

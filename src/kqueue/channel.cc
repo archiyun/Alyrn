@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "alyrn/detail/kqueue/channel.h"
+#include "alyrn/kqueue/detail/channel.h"
 
 #include <utility>
 

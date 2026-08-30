@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "alyrn/detail/uring/ring.h"
+#include "alyrn/uring/detail/ring.h"
 
 #include <liburing.h>
 #include <liburing/io_uring.h>

@@ -7,8 +7,8 @@
 #include <coroutine>
 #include <utility>
 
-#include "alyrn/detail/coro/task_fwd.h"
-#include "alyrn/detail/coro/task_state.h"
+#include "alyrn/coro/detail/task_fwd.h"
+#include "alyrn/coro/detail/task_state.h"
 #include "alyrn/detail/macros.h"
 
 namespace alyrn::coro {

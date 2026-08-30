@@ -2,28 +2,26 @@
 
 #include <atomic>
 #include <cassert>
-#include <cstddef>
-#include <cstdint>
 #include <optional>
 #include <thread>
 #include <vector>
 
-#include "alyrn/detail/ds/mpsc_bounded_queue.h"
+#include "alyrn/detail/mpsc_bounded_queue.h"
 
 namespace {
 
 void CheckFifoAndWrapAround() {
-  using Queue = alyrn::detail::ds::MpscBoundedQueue<int, 8>;
+  using Queue = alyrn::detail::MpscBoundedQueue<int, 8>;
   Queue queue;
 
   assert(!queue.TryPop().has_value());
 
   for (int value = 0; value < 8; ++value) {
     assert(queue.TryPush(value) ==
-           alyrn::detail::ds::MpscQueuePushResult::kPushed);
+           alyrn::detail::MpscQueuePushResult::kPushed);
   }
   assert(queue.TryPush(8) ==
-         alyrn::detail::ds::MpscQueuePushResult::kFull);
+         alyrn::detail::MpscQueuePushResult::kFull);
 
   for (int value = 0; value < 4; ++value) {
     auto popped = queue.TryPop();
@@ -33,7 +31,7 @@ void CheckFifoAndWrapAround() {
 
   for (int value = 8; value < 12; ++value) {
     assert(queue.TryPush(value) ==
-           alyrn::detail::ds::MpscQueuePushResult::kPushed);
+           alyrn::detail::MpscQueuePushResult::kPushed);
   }
 
   for (int value = 4; value < 12; ++value) {
@@ -46,7 +44,7 @@ void CheckFifoAndWrapAround() {
 }
 
 void CheckMultipleProducers() {
-  using Queue = alyrn::detail::ds::MpscBoundedQueue<int, 1024>;
+  using Queue = alyrn::detail::MpscBoundedQueue<int, 1024>;
 
   constexpr int kProducerCount = 4;
   constexpr int kItemsPerProducer = 10000;
@@ -78,7 +76,7 @@ void CheckMultipleProducers() {
         const int value = producer * kItemsPerProducer + i;
 
         while (queue.TryPush(value) ==
-               alyrn::detail::ds::MpscQueuePushResult::kFull) {
+               alyrn::detail::MpscQueuePushResult::kFull) {
           std::this_thread::yield();
         }
       }

@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 #include <sys/socket.h>
-#include <unistd.h>
 
-#include <cerrno>
 #include <iostream>
 #include <system_error>
 #include <type_traits>
@@ -12,7 +10,6 @@
 #include "alyrn/result.h"
 #include "alyrn/uring/listener.h"
 #include "alyrn/uring/loop.h"
-#include "alyrn/detail/uring/loop_access.h"
 #include "alyrn/uring/options.h"
 #include "alyrn/uring/stream.h"
 #include "alyrn/net/endpoint.h"

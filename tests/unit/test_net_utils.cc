@@ -7,7 +7,7 @@
 #include <cerrno>
 
 #include "alyrn/net/endpoint.h"
-#include "alyrn/detail/net/socket.h"
+#include "alyrn/net/detail/socket.h"
 
 namespace alyrn::net {
 namespace {

@@ -110,4 +110,4 @@ struct RecvSourceOptions {
 }  // namespace alyrn::net
 
 // Backend-only lifecycle accounting for RecvSource implementations.
-#include "alyrn/detail/net/recv_source_state.h"
+#include "alyrn/net/detail/recv_source_state.h"

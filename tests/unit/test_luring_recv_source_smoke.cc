@@ -6,7 +6,6 @@
 #include <cerrno>
 #include <chrono>
 #include <cstddef>
-#include <cstdint>
 #include <expected>
 #include <iostream>
 #include <optional>
@@ -17,7 +16,7 @@
 
 #include "alyrn/coro/detached_task.h"
 #include "alyrn/coro/spawn.h"
-#include "alyrn/detail/uring/loop_access.h"
+#include "alyrn/uring/detail/loop_access.h"
 #include "alyrn/uring/loop.h"
 #include "alyrn/uring/options.h"
 #include "alyrn/uring/recv_source.h"

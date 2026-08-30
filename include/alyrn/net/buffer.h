@@ -14,7 +14,7 @@
 #include <vector>
 
 #include "alyrn/detail/check.h"
-#include "alyrn/detail/ds/intrusive_list.h"
+#include "alyrn/detail/intrusive_list.h"
 #include "alyrn/detail/macros.h"
 
 namespace alyrn::net {
@@ -254,7 +254,7 @@ public:
 private:
   struct BlockTag {};
 
-  struct Block : alyrn::detail::ds::ListNode<Block, BlockTag> {
+  struct Block : alyrn::detail::ListNode<Block, BlockTag> {
     explicit Block(std::size_t cap) : data(new std::byte[cap]), capacity(cap) {}
 
     ALYRN_DELETE_COPY(Block);
@@ -280,7 +280,7 @@ private:
     }
   };
 
-  using BlockList = alyrn::detail::ds::IntrusiveList<Block, BlockTag>;
+  using BlockList = alyrn::detail::IntrusiveList<Block, BlockTag>;
 
   static Block* NewBlock(std::size_t capacity) { return new Block(capacity); }
 

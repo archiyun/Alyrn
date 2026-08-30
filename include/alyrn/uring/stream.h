@@ -11,18 +11,18 @@
 #include <vector>
 
 #include "alyrn/backend/async_stream.h"
-#include "alyrn/task.h"
-#include "alyrn/detail/uring/completion_dispatch.h"
-#include "alyrn/detail/uring/op.h"
-#include "alyrn/detail/uring/op_hook.h"
+#include "alyrn/detail/macros.h"
+#include "alyrn/detail/split_release_lifecycle.h"
 #include "alyrn/net/buffer.h"
-#include "alyrn/detail/net/stream_lifecycle.h"
+#include "alyrn/net/detail/stream_lifecycle.h"
 #include "alyrn/net/endpoint.h"
 #include "alyrn/net/read_into.h"
-#include "alyrn/detail/operation/split_release_lifecycle.h"
 #include "alyrn/result.h"
+#include "alyrn/task.h"
 #include "alyrn/time/clock.h"
-#include "alyrn/detail/macros.h"
+#include "alyrn/uring/detail/completion_dispatch.h"
+#include "alyrn/uring/detail/op.h"
+#include "alyrn/uring/detail/op_hook.h"
 
 namespace alyrn::uring {
 
@@ -184,9 +184,7 @@ public:
       : OpHook(detail::OpKind::kReadComplete), stream_(&stream), buffer_(buffer) {}
 
   bool await_ready() const noexcept { return false; }
-
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
-
   Result<std::size_t> await_resume() noexcept;
 
 private:
@@ -212,9 +210,7 @@ public:
         reserve_(reserve) {}
 
   bool await_ready() const noexcept { return false; }
-
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
-
   net::ReadIntoOutcome await_resume() noexcept;
 
 private:
@@ -251,9 +247,7 @@ public:
       : OpHook(detail::OpKind::kWriteComplete), stream_(&stream), buffer_(buffer) {}
 
   bool await_ready() const noexcept { return false; }
-
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
-
   Result<std::size_t> await_resume() noexcept;
 
 private:
@@ -265,7 +259,8 @@ private:
   std::span<const std::byte> buffer_;
 };
 
-class [[nodiscard]] Stream::SendZeroCopyAwaiter : public detail::OpHook<Stream::SendZeroCopyAwaiter> {
+class [[nodiscard]] Stream::SendZeroCopyAwaiter
+    : public detail::OpHook<Stream::SendZeroCopyAwaiter> {
 public:
   using OpHook = detail::OpHook<SendZeroCopyAwaiter>;
 
@@ -275,9 +270,7 @@ public:
       : OpHook(detail::OpKind::kSendZeroCopyComplete), stream_(&stream), buffer_(buffer) {}
 
   bool await_ready() const noexcept { return false; }
-
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
-
   Result<ZeroCopySendResult> await_resume() noexcept;
 
 private:
@@ -289,7 +282,7 @@ private:
 
   Stream* stream_;
   std::span<const std::byte> buffer_;
-  ::alyrn::detail::operation::SplitReleaseLifecycle lifecycle_;
+  ::alyrn::detail::SplitReleaseLifecycle lifecycle_;
   ZeroCopySendUsage usage_{ZeroCopySendUsage::kUnknown};
   bool notification_received_{false};
 };

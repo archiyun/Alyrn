@@ -3,11 +3,11 @@
 #include <cstdio>
 #include <utility>
 
-#include "alyrn/detail/ds/intrusive_queue.h"
+#include "alyrn/detail/intrusive_queue.h"
 
 namespace {
 
-struct Item : alyrn::detail::ds::QueueNode<Item> {
+struct Item : alyrn::detail::QueueNode<Item> {
   explicit Item(int value) : value(value) {}
 
   int value;
@@ -27,7 +27,7 @@ int main() {
   Item three(3);
   Item four(4);
 
-  alyrn::detail::ds::IntrusiveQueue<Item> queue;
+  alyrn::detail::IntrusiveQueue<Item> queue;
   if (!require(queue.Empty(), "new queue must be empty")) return 1;
   if (!require(!queue.PushBack(nullptr), "PushBack(nullptr) must fail without mutation")) return 1;
   if (!require(queue.PushBack(&two), "PushBack must link an unlinked node") ||
@@ -43,13 +43,13 @@ int main() {
     return 1;
   }
 
-  alyrn::detail::ds::IntrusiveQueue<Item> moved(std::move(queue));
+  alyrn::detail::IntrusiveQueue<Item> moved(std::move(queue));
   if (!require(queue.Empty(), "move construction must empty source queue") ||
       !require(moved.Front() == &three, "move construction must preserve front")) {
     return 1;
   }
 
-  alyrn::detail::ds::IntrusiveQueue<Item> suffix;
+  alyrn::detail::IntrusiveQueue<Item> suffix;
   if (!require(suffix.PushBack(&four), "suffix queue must accept unlinked node")) return 1;
   moved.Splice(suffix);
   if (!require(suffix.Empty(), "Splice must empty source queue") ||
@@ -61,7 +61,7 @@ int main() {
     return 1;
   }
 
-  alyrn::detail::ds::IntrusiveQueue<Item> assigned;
+  alyrn::detail::IntrusiveQueue<Item> assigned;
   assigned = std::move(moved);
   if (!require(moved.Empty(), "move assignment must empty source queue") ||
       !require(assigned.PopFront() == &three, "PopFront must return first node") ||

@@ -9,6 +9,7 @@
 #include <chrono>
 #include <csignal>
 #include <cstddef>
+#include <cstdio>
 #include <cstring>
 #include <expected>
 #include <iostream>
@@ -45,6 +46,25 @@ bool Check(bool condition, const char* message) {
     return false;
   }
   return true;
+}
+
+bool ExpectChildAbort(void (*entry)(), const char* message) {
+  const pid_t child = ::fork();
+  if (child < 0) {
+    return Check(false, "fork failed for Stream affinity test");
+  }
+  if (child == 0) {
+    (void)::freopen("/dev/null", "w", stderr);
+    entry();
+    ::_exit(0);
+  }
+
+  int status = 0;
+  while (::waitpid(child, &status, 0) < 0 && errno == EINTR) {
+  }
+  return Check(WIFSIGNALED(status), message) &&
+         Check(WTERMSIG(status) == SIGABRT,
+               "stream-affinity invariant must terminate with SIGABRT");
 }
 
 bool MakeSocketPair(int sv[2]) {
@@ -182,38 +202,77 @@ alyrn::coro::Task<ReadResult> ReadFromForeignLoopThread(alyrn::epoll::Stream* st
   co_return co_await stream->ReadSome(*buffer);
 }
 
-bool CheckForeignLoopReadTerminates() {
+alyrn::coro::Task<WriteResult> WriteFromForeignLoopThread(alyrn::epoll::Stream* stream,
+                                                             std::span<const std::byte> buffer) {
+  co_return co_await stream->WriteAll(buffer);
+}
+
+void OpenStreamOnOwner(alyrn::epoll::Loop* loop, alyrn::epoll::Stream** stream) {
   int sv[2] = {-1, -1};
   if (!MakeSocketPair(sv)) {
-    std::cout << "FAIL: socketpair failed for owner-loop check\n";
-    return false;
+    ::_exit(1);
   }
+  *stream = new alyrn::epoll::Stream(loop, sv[0]);
+  (void)::close(sv[1]);
+}
 
+void ReadSomeFromForeignThread() {
   alyrn::epoll::Loop loop;
-  alyrn::epoll::Stream stream(&loop, sv[0]);
-  const pid_t child = ::fork();
-  if (child < 0) {
-    ::close(sv[1]);
-    return false;
-  }
-  if (child == 0) {
-    ::close(sv[1]);
-    ::alarm(3);
-    std::thread foreign_thread([&stream] {
-      std::array<std::byte, 16> buffer{};
-      static_cast<void>(alyrn::coro::SyncWait(ReadFromForeignLoopThread(&stream, &buffer)));
-    });
-    foreign_thread.join();
-    ::_exit(0);
-  }
+  alyrn::epoll::Stream* stream = nullptr;
+  OpenStreamOnOwner(&loop, &stream);
+  std::thread foreign([stream] {
+    std::array<std::byte, 16> buffer{};
+    static_cast<void>(alyrn::coro::SyncWait(ReadFromForeignLoopThread(stream, &buffer)));
+  });
+  foreign.join();
+}
 
-  ::close(sv[1]);
-  int status = 0;
-  while (::waitpid(child, &status, 0) < 0 && errno == EINTR) {
-  }
-  return Check(WIFSIGNALED(status), "foreign-loop stream operation did not terminate") &&
-         Check(WTERMSIG(status) == SIGABRT,
-               "foreign-loop stream operation must terminate through ALYRN_CHECK");
+void WriteAllFromForeignThread() {
+  alyrn::epoll::Loop loop;
+  alyrn::epoll::Stream* stream = nullptr;
+  OpenStreamOnOwner(&loop, &stream);
+  std::thread foreign([stream] {
+    const std::array<std::byte, 1> buffer{};
+    static_cast<void>(alyrn::coro::SyncWait(WriteFromForeignLoopThread(stream, buffer)));
+  });
+  foreign.join();
+}
+
+void CloseFromForeignThread() {
+  alyrn::epoll::Loop loop;
+  alyrn::epoll::Stream* stream = nullptr;
+  OpenStreamOnOwner(&loop, &stream);
+  std::thread foreign([stream] { static_cast<void>(alyrn::coro::SyncWait(stream->Close())); });
+  foreign.join();
+}
+
+void MoveFromForeignThread() {
+  alyrn::epoll::Loop loop;
+  alyrn::epoll::Stream* stream = nullptr;
+  OpenStreamOnOwner(&loop, &stream);
+  std::thread foreign([stream] { alyrn::epoll::Stream moved(std::move(*stream)); });
+  foreign.join();
+}
+
+void DestroyStreamFromForeignThread() {
+  alyrn::epoll::Loop loop;
+  alyrn::epoll::Stream* stream = nullptr;
+  OpenStreamOnOwner(&loop, &stream);
+  std::thread foreign([stream] { delete stream; });
+  foreign.join();
+}
+
+bool CheckStreamAffinityIsEnforcedInRelease() {
+  return ExpectChildAbort(&ReadSomeFromForeignThread,
+                          "ReadSome from a foreign thread must terminate in Release") &&
+         ExpectChildAbort(&WriteAllFromForeignThread,
+                          "WriteAll from a foreign thread must terminate in Release") &&
+         ExpectChildAbort(&CloseFromForeignThread,
+                          "Close from a foreign thread must terminate in Release") &&
+         ExpectChildAbort(&MoveFromForeignThread,
+                          "Stream move from a foreign thread must terminate in Release") &&
+         ExpectChildAbort(&DestroyStreamFromForeignThread,
+                          "Stream destruction from a foreign thread must terminate in Release");
 }
 
 bool CheckImmediateRead() {
@@ -626,7 +685,7 @@ bool CheckShutdownKeepsReadOpen() {
 }  // namespace
 
 int main() {
-  if (!CheckForeignLoopReadTerminates()) return 1;
+  if (!CheckStreamAffinityIsEnforcedInRelease()) return 1;
   if (!CheckImmediateRead()) return 1;
   if (!CheckImmediateWrite()) return 1;
   if (!CheckPendingRead()) return 1;

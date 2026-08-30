@@ -26,7 +26,7 @@
 #include "alyrn/io/buffer.h"
 #include "alyrn/io/read_into.h"
 #include "alyrn/net/endpoint.h"
-#include "alyrn/detail/net/socket.h"
+#include "alyrn/net/detail/socket.h"
 #include "alyrn/epoll/loop.h"
 #include "alyrn/epoll/stream.h"
 
@@ -1084,7 +1084,8 @@ bool CheckPendingReadCloseContract() {
 }
 
 template <alyrn::io::AsyncStream Stream, class Loop>
-auto DropIdleStream(Stream stream, Loop& loop, bool& dropped) -> alyrn::coro::DetachedTask {
+auto DropIdleStream([[maybe_unused]] Stream stream, Loop& loop, bool& dropped)
+    -> alyrn::coro::DetachedTask {
   dropped = true;
   loop.RequestStop();
   co_return;

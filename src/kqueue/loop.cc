@@ -10,10 +10,10 @@
 
 #include "alyrn/detail/check.h"
 #include "alyrn/coro/frame_allocator.h"
-#include "alyrn/detail/kqueue/channel.h"
-#include "alyrn/detail/kqueue/poller.h"
-#include "alyrn/detail/kqueue/timer_queue.h"
-#include "alyrn/detail/net/socket.h"
+#include "alyrn/kqueue/detail/channel.h"
+#include "alyrn/kqueue/detail/poller.h"
+#include "alyrn/kqueue/detail/timer_queue.h"
+#include "alyrn/net/detail/socket.h"
 #include "alyrn/time/timer_id.h"
 
 namespace alyrn::kqueue {

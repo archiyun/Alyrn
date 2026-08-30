@@ -13,16 +13,16 @@
 
 #include "alyrn/backend/value_result_state.h"
 #include "alyrn/detail/check.h"
-#include "alyrn/detail/uring/completion_dispatch.h"
-#include "alyrn/detail/uring/op.h"
-#include "alyrn/detail/uring/operation_submission.h"
-#include "alyrn/detail/uring/sqe_prep.h"
+#include "alyrn/net/detail/socket.h"
+#include "alyrn/uring/detail/completion_dispatch.h"
+#include "alyrn/uring/detail/op.h"
+#include "alyrn/uring/detail/operation_submission.h"
+#include "alyrn/uring/detail/sqe_prep.h"
+#include "alyrn/net/endpoint.h"
+#include "alyrn/result.h"
 #include "alyrn/uring/loop.h"
 #include "alyrn/uring/stream.h"
 #include "alyrn/uring/timer.h"
-#include "alyrn/net/endpoint.h"
-#include "alyrn/detail/net/socket.h"
-#include "alyrn/result.h"
 
 namespace alyrn::uring {
 
@@ -54,7 +54,7 @@ Result<void> SetNonBlocking(int fd) noexcept {
 
 // --- ConnectAwaiter ---
 class [[nodiscard]] ConnectAwaiter : public detail::OpHook<ConnectAwaiter> {
-  friend void detail::DispatchConnectComplete(::alyrn::uring::detail::Op* op) noexcept;
+  friend void ::alyrn::uring::detail::DispatchConnectComplete(::alyrn::uring::detail::Op* op) noexcept;
 
 public:
   using OpHook = detail::OpHook<ConnectAwaiter>;
@@ -64,7 +64,7 @@ public:
 
   ~ConnectAwaiter() noexcept {
     ALYRN_CHECK(!Operation()->resume_work.HasHandle() || Operation()->CqeCompletionRecorded(),
-                   "ConnectAwaiter destroyed before its physical connect CQE settled");
+                "ConnectAwaiter destroyed before its physical connect CQE settled");
     if (fd_ >= 0) {
       ::close(fd_);
     }
@@ -115,16 +115,16 @@ private:
 
     ALYRN_CHECK(op->TryAuthorizeCoupledResult(), "Uring Connect result was authorized twice");
     ALYRN_CHECK(op->TryAuthorizeCoupledRelease(),
-                   "Uring Connect release was not authorized after its result");
+                "Uring Connect release was not authorized after its result");
     self->ReleasePhysicalRequest();
   }
 
   void CompleteInline(Result<Stream> result) noexcept {
     result_.SetResult(std::move(result));
     ALYRN_CHECK(Operation()->TryAuthorizeCoupledResult(),
-                   "Uring Connect result was authorized twice");
+                "Uring Connect result was authorized twice");
     ALYRN_CHECK(Operation()->TryAuthorizeCoupledRelease(),
-                   "Uring Connect release was not authorized after its result");
+                "Uring Connect release was not authorized after its result");
     ReleasePhysicalRequest();
   }
 
@@ -163,7 +163,7 @@ coro::Task<Result<Stream>> ConnectResolved(Loop* loop, net::TcpOptions tcp_optio
 
 namespace detail {
 
-void DispatchConnectComplete(::alyrn::uring::detail::Op* op) noexcept {
+void DispatchConnectComplete(Op* op) noexcept {
   ConnectAwaiter::OnComplete(op);
 }
 
@@ -200,7 +200,7 @@ coro::Task<Result<Stream>> Connector::Connect(std::string_view host, std::uint16
 
 coro::Task<void> Connector::SleepFor(time::Duration delay) {
   RequireOwnerLoop();
-  auto result = co_await alyrn::uring::SleepFor(*loop_, delay);
+  auto result = co_await uring::SleepFor(*loop_, delay);
   (void)result;
 }
 
