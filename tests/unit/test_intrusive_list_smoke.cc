@@ -10,7 +10,6 @@
 #include <cstdio>
 #include <list>
 #include <random>
-#include <utility>
 #include <vector>
 
 #include "alyrn/detail/intrusive_list.h"
@@ -69,46 +68,6 @@ int main() {
     assert(list.Front() == &first);
     assert(list.Back() == &fourth);
     assert(other.Empty());
-  }
-
-  {
-    Item one{};
-    Item two{};
-    Item replacement{};
-    one.id = 1;
-    two.id = 2;
-    replacement.id = 3;
-
-    IntrusiveList<Item> source;
-    bool inserted = source.PushBack(&one);
-    assert(inserted);
-    inserted = source.PushBack(&two);
-    assert(inserted);
-
-    IntrusiveList<Item> moved(std::move(source));
-    assert(source.Empty());
-    assert(moved.Front() == &one);
-    assert(moved.Back() == &two);
-
-    inserted = source.PushBack(&replacement);
-    assert(inserted);
-    moved = std::move(source);
-    assert(source.Empty());
-    assert(moved.Front() == &replacement);
-    assert(moved.Back() == &replacement);
-    assert(!one.InList());
-    assert(!two.InList());
-
-    // Keep the self-move contract test while avoiding a compiler diagnostic
-    // intended for accidental production self-assignment.
-    IntrusiveList<Item>* volatile self = &moved;
-    moved = std::move(*self);
-    assert(moved.Front() == &replacement);
-
-    IntrusiveList<Item> empty;
-    moved = std::move(empty);
-    assert(moved.Empty());
-    assert(!replacement.InList());
   }
 
   constexpr int N = 2000;        // pool size; ids are unique so oracle.remove(id) is exact

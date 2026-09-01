@@ -237,6 +237,5 @@ if (item.InList()) {
   - tests/unit/test_quad_heap.cc
   - tests/unit/test_timer_tree_smoke.cc
   - tests/unit/test_timer_index_smoke.cc
-  - tests/unit/test_mpsc_bounded_queue_smoke.cc
 
 完.

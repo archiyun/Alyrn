@@ -3,6 +3,8 @@
 
 #include <concepts>
 
+#include "alyrn/detail/macros.h"
+
 namespace alyrn::detail {
 
 template <typename T, class Tag>
@@ -43,26 +45,12 @@ concept QueueNodeBaseHook =
 template <class T, class Tag = void>
 class IntrusiveQueue {
 public:
-  IntrusiveQueue(const IntrusiveQueue&) = delete;
-  IntrusiveQueue& operator=(const IntrusiveQueue&) = delete;
+  ALYRN_DELETE_COPY_MOVE(IntrusiveQueue);
 
   static_assert(QueueNodeBaseHook<T, Tag>,
                 "T must publicly and non-virtually inherit QueueNode<T, Tag>");
 
   IntrusiveQueue() noexcept { Reset(); }
-
-  IntrusiveQueue(IntrusiveQueue&& other) noexcept {
-    Reset();
-    TakeFrom(other);
-  }
-
-  IntrusiveQueue& operator=(IntrusiveQueue&& other) noexcept {
-    if (this != &other) {
-      Clear();
-      TakeFrom(other);
-    }
-    return *this;
-  }
 
   ~IntrusiveQueue() { Clear(); }
 
@@ -144,15 +132,6 @@ private:
   void Reset() noexcept {
     head_.next_ = &head_;
     tail_ = &head_;
-  }
-
-  void TakeFrom(IntrusiveQueue& other) noexcept {
-    if (other.Empty()) return;
-
-    head_.next_ = other.head_.next_;
-    tail_ = other.tail_;
-    tail_->next_ = &head_;
-    other.Reset();
   }
 
   Node head_{};

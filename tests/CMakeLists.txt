@@ -222,17 +222,6 @@ target_include_directories(object_pool_smoke_test
 
 add_test(NAME object_pool_smoke_test COMMAND object_pool_smoke_test)
 
-add_executable(mpsc_bounded_queue_smoke_test
-    unit/test_mpsc_bounded_queue_smoke.cc
-)
-
-target_include_directories(mpsc_bounded_queue_smoke_test
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
-
-add_test(NAME mpsc_bounded_queue_smoke_test COMMAND mpsc_bounded_queue_smoke_test)
-
 # coro 叶子:Task<T> 惰性 + 对称转移 + Spawn/JoinHandle,不绑定网络后端或错误类型。
 add_executable(coro_smoke_test
     unit/test_coro_smoke.cc

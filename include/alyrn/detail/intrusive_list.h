@@ -4,6 +4,8 @@
 #include <concepts>
 #include <utility>
 
+#include "alyrn/detail/macros.h"
+
 namespace alyrn::detail {
 
 template <typename T, class Tag>
@@ -49,24 +51,13 @@ concept ListNodeBaseHook =
 template <class T, class Tag = void>
 class IntrusiveList {
 public:
-  IntrusiveList(const IntrusiveList&) = delete;
-  IntrusiveList& operator=(const IntrusiveList&) = delete;
+  ALYRN_DELETE_COPY_MOVE(IntrusiveList);
 
   using Node = ListNode<T, Tag>;
   static_assert(ListNodeBaseHook<T, Tag>,
                 "T must publicly and non-virtually inherit ListNode<T, Tag>");
 
   IntrusiveList() noexcept { Reset(); }
-
-  IntrusiveList(IntrusiveList&& other) noexcept : IntrusiveList() { TakeFrom(other); }
-
-  IntrusiveList& operator=(IntrusiveList&& other) noexcept {
-    if (this != &other) {
-      Clear();
-      TakeFrom(other);
-    }
-    return *this;
-  }
 
   // Resets every linked node's hook so a stale Erase after destruction is safe.
   ~IntrusiveList() noexcept { Clear(); }
@@ -168,16 +159,6 @@ private:
     head_.prev_ = &head_;
   }
 
-  void TakeFrom(IntrusiveList& other) noexcept {
-    if (other.Empty()) return;
-
-    head_.next_ = other.head_.next_;
-    head_.prev_ = other.head_.prev_;
-
-    head_.next_->prev_ = &head_;
-    head_.prev_->next_ = &head_;
-    other.Reset();
-  }
   // -- Link primitives --
   static void SpliceOut(Node* node) {
     node->prev_->next_ = node->next_;

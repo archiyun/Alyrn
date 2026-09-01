@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 
 #include <cstdio>
-#include <utility>
 
 #include "alyrn/detail/intrusive_queue.h"
 
@@ -43,32 +42,23 @@ int main() {
     return 1;
   }
 
-  alyrn::detail::IntrusiveQueue<Item> moved(std::move(queue));
-  if (!require(queue.Empty(), "move construction must empty source queue") ||
-      !require(moved.Front() == &three, "move construction must preserve front")) {
-    return 1;
-  }
-
   alyrn::detail::IntrusiveQueue<Item> suffix;
   if (!require(suffix.PushBack(&four), "suffix queue must accept unlinked node")) return 1;
-  moved.Splice(suffix);
+  queue.Splice(suffix);
   if (!require(suffix.Empty(), "Splice must empty source queue") ||
-      !require(moved.Front() == &three, "Splice must preserve queue front")) {
+      !require(queue.Front() == &three, "Splice must preserve queue front")) {
     return 1;
   }
-  moved.Splice(moved);
-  if (!require(moved.Front() == &three, "self splice must preserve queue front")) {
+  queue.Splice(queue);
+  if (!require(queue.Front() == &three, "self splice must preserve queue front")) {
     return 1;
   }
 
-  alyrn::detail::IntrusiveQueue<Item> assigned;
-  assigned = std::move(moved);
-  if (!require(moved.Empty(), "move assignment must empty source queue") ||
-      !require(assigned.PopFront() == &three, "PopFront must return first node") ||
-      !require(assigned.PopFront() == &four, "PopFront must return third node") ||
-      !require(assigned.PopFront() == nullptr, "PopFront must return null for empty queue") ||
-      !require(assigned.Empty(), "drained queue must be empty") ||
-      !require(assigned.Front() == nullptr, "empty queue front must be null")) {
+  if (!require(queue.PopFront() == &three, "PopFront must return first node") ||
+      !require(queue.PopFront() == &four, "PopFront must return third node") ||
+      !require(queue.PopFront() == nullptr, "PopFront must return null for empty queue") ||
+      !require(queue.Empty(), "drained queue must be empty") ||
+      !require(queue.Front() == nullptr, "empty queue front must be null")) {
     return 1;
   }
 
