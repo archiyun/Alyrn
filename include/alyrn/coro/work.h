@@ -73,7 +73,7 @@ struct Work : public ::alyrn::detail::QueueNode<Work> {
 
 private:
   static constexpr std::uintptr_t kResumeTag = std::uintptr_t{1}
-                                               << (sizeof(std::uintptr_t) * 8) - 1;
+                                               << ((sizeof(std::uintptr_t) * 8) - 1);
 
   bool IsResume() const noexcept { return (action_ & kResumeTag) != 0; }
 
