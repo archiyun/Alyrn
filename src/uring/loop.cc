@@ -182,6 +182,7 @@ Result<void> Loop::Init(const Options& options) noexcept {
   shared_buffer_pool_.reset();
   shared_buffer_capacity_ = options.shared_buffer_capacity;
   shared_buffer_size_ = options.shared_buffer_size;
+  defer_task_run_ = options.task_run_mode == TaskRunMode::kDeferred;
   cancel_all_op_.BeginNextRequest();
   initialized_ = true;
   auto armed = ArmWakePoll();
@@ -321,10 +322,15 @@ void Loop::DrainStoppedOperations() noexcept {
     if (!cancelled.has_value()) {
       // Run() has no error return channel, and publishing Stopped with a
       // live ring request would violate its drain contract. A local cancel
-      // preparation failure therefore cannot end shutdown: reap any work
+      // preparation failure therefore cannot end shutdown: wait for any work
       // that is already in flight and retry the cancellation on a later turn.
-      auto completed = PollCompletions();
-      if (!completed.has_value() || *completed == 0) {
+      // The wait is important for DEFER_TASKRUN, where a non-blocking CQ peek
+      // does not enter the kernel to run deferred task work.
+      if (defer_task_run_) {
+        (void)ring_.GetEvents();
+      }
+      auto completed = WaitCompletionsFor(kStopPollInterval);
+      if (!completed.has_value() && completed.error().value() != ETIME) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
       }
       continue;
@@ -334,7 +340,13 @@ void Loop::DrainStoppedOperations() noexcept {
       continue;
     }
 
-    auto completed = PollCompletions();
+    // A deferred-task ring needs an io_uring_enter(GETEVENTS) transition to
+    // publish task work and cancellation CQEs. WaitCompletionsFor performs
+    // that transition while retaining a bounded wait for the shutdown path.
+    if (defer_task_run_) {
+      (void)ring_.GetEvents();
+    }
+    auto completed = WaitCompletionsFor(kStopPollInterval);
     if (!completed.has_value()) {
       // FlushSubmit() or CQ reaping can fail after a cancel SQE has already
       // been prepared. Keep the pending SQEs and retry rather than publishing

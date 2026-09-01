@@ -38,6 +38,7 @@ public:
 
   io_uring_sqe* GetSqe() noexcept;
   Result<std::size_t> Submit() noexcept;
+  Result<void> GetEvents() noexcept;
 
   int Fd() const noexcept { return initialized_ ? ring_.ring_fd : -1; }
 

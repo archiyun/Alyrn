@@ -209,6 +209,7 @@ private:
   std::unique_ptr<detail::ProvidedBufferPool> shared_buffer_pool_;
   std::size_t shared_buffer_capacity_{0};
   std::size_t shared_buffer_size_{0};
+  bool defer_task_run_{false};
 };
 
 static_assert(backend::ManagedLoop<Loop>);

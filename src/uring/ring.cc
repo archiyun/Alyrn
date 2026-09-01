@@ -32,6 +32,17 @@ io_uring_params MakeParams(const Options& options) noexcept {
     params.sq_thread_idle = options.sqpoll_idle_ms;
   }
 
+  switch (options.task_run_mode) {
+    case TaskRunMode::kCooperative:
+      params.flags |= IORING_SETUP_COOP_TASKRUN;
+      break;
+    case TaskRunMode::kDeferred:
+      params.flags |= IORING_SETUP_DEFER_TASKRUN;
+      break;
+    default:
+      break;
+  }
+
   return params;
 }
 
@@ -83,6 +94,14 @@ Result<std::size_t> Ring::Submit() noexcept {
     return std::unexpected(NegErrno(result));
   }
   return static_cast<std::size_t>(result);
+}
+
+Result<void> Ring::GetEvents() noexcept {
+  const int result = io_uring_get_events(&ring_);
+  if (result < 0) {
+    return std::unexpected(NegErrno(result));
+  }
+  return {};
 }
 
 }  // namespace alyrn::uring::detail

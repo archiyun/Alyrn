@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <array>
@@ -10,6 +11,7 @@
 #include <expected>
 #include <iostream>
 #include <optional>
+#include <signal.h>
 #include <string>
 #include <system_error>
 #include <thread>
@@ -164,19 +166,34 @@ alyrn::coro::DetachedTask AwaitNop(alyrn::uring::Loop* loop, std::optional<alyrn
   out->emplace(std::move(result));
 }
 
-bool CheckNopResumesCoroutine() {
+const char* TaskRunModeName(alyrn::uring::TaskRunMode mode) {
+  switch (mode) {
+    case alyrn::uring::TaskRunMode::kDefault:
+      return "default";
+    case alyrn::uring::TaskRunMode::kCooperative:
+      return "cooperative";
+    case alyrn::uring::TaskRunMode::kDeferred:
+      return "deferred";
+  }
+  return "unknown";
+}
+
+bool CheckNopResumesCoroutine(alyrn::uring::TaskRunMode task_run_mode) {
   alyrn::uring::Loop loop;
 
   alyrn::uring::Options options;
   options.entries = 8;
+  options.task_run_mode = task_run_mode;
 
   auto init = loop.Init(options);
   if (!init.has_value()) {
     if (IsEnvironmentSkip(init.error())) {
-      std::cout << "SKIP: io_uring unavailable: " << init.error().message() << '\n';
+      std::cout << "SKIP: " << TaskRunModeName(task_run_mode)
+                << " task-run mode unavailable: " << init.error().message() << '\n';
       return true;
     }
-    std::cout << "FAIL: Loop init failed: " << init.error().message() << '\n';
+    std::cout << "FAIL: " << TaskRunModeName(task_run_mode)
+              << " task-run mode init failed: " << init.error().message() << '\n';
     return false;
   }
   if (!Check(loop.IsInLoopThread(), "loop should be bound to the creating thread")) {
@@ -219,6 +236,12 @@ bool CheckNopResumesCoroutine() {
          Check(result->has_value(), "NOP returned an error") &&
          Check(**result == 0, "NOP result must be zero") &&
          Check(resumed_with_scheduler, "coroutine resumed without current scheduler");
+}
+
+bool CheckTaskRunModes() {
+  return CheckNopResumesCoroutine(alyrn::uring::TaskRunMode::kDefault) &&
+         CheckNopResumesCoroutine(alyrn::uring::TaskRunMode::kCooperative) &&
+         CheckNopResumesCoroutine(alyrn::uring::TaskRunMode::kDeferred);
 }
 
 bool CheckCrossThreadRequestStopWakesRing() {
@@ -267,7 +290,8 @@ enum class StopDrainFailure {
   kFlushSubmit,
 };
 
-bool RunLoopStopDrainScenario(StopDrainFailure injected_failure) {
+bool RunLoopStopDrainScenario(alyrn::uring::TaskRunMode task_run_mode,
+                              StopDrainFailure injected_failure) {
   int fds[2] = {-1, -1};
   if (::socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, fds) != 0) {
     std::cout << "FAIL: socketpair failed\n";
@@ -277,6 +301,7 @@ bool RunLoopStopDrainScenario(StopDrainFailure injected_failure) {
   alyrn::uring::Loop loop;
   alyrn::uring::Options options;
   options.entries = 8;
+  options.task_run_mode = task_run_mode;
 
   auto init = loop.Init(options);
   if (!init.has_value()) {
@@ -327,13 +352,52 @@ bool RunLoopStopDrainScenario(StopDrainFailure injected_failure) {
          Check(resumed_with_scheduler, "stopped loop resumed the read without scheduler affinity");
 }
 
-bool CheckLoopStopDrainsPendingRead() { return RunLoopStopDrainScenario(StopDrainFailure::kNone); }
+bool CheckDeferredTaskRunStopDrain() {
+  const pid_t child = ::fork();
+  if (child < 0) {
+    std::cout << "FAIL: fork failed for deferred task-run drain test\n";
+    return false;
+  }
+
+  if (child == 0) {
+    const bool passed = RunLoopStopDrainScenario(alyrn::uring::TaskRunMode::kDeferred,
+                                                 StopDrainFailure::kNone);
+    _exit(passed ? 0 : 1);
+  }
+
+  constexpr auto kTimeout = std::chrono::seconds(1);
+  const auto deadline = std::chrono::steady_clock::now() + kTimeout;
+  int status = 0;
+  for (;;) {
+    const pid_t result = ::waitpid(child, &status, WNOHANG);
+    if (result == child) {
+      return Check(WIFEXITED(status) && WEXITSTATUS(status) == 0,
+                   "deferred task-run stop drain failed");
+    }
+    if (result < 0) {
+      std::cout << "FAIL: waitpid failed for deferred task-run drain test\n";
+      return false;
+    }
+    if (std::chrono::steady_clock::now() >= deadline) {
+      (void)::kill(child, SIGKILL);
+      (void)::waitpid(child, &status, 0);
+      return Check(false, "deferred task-run stop drain stalled");
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+}
+
+bool CheckLoopStopDrainsPendingRead() {
+  return RunLoopStopDrainScenario(alyrn::uring::TaskRunMode::kDefault,
+                                  StopDrainFailure::kNone) &&
+         CheckDeferredTaskRunStopDrain();
+}
 
 }  // namespace
 
 int main() {
   if (!CheckCompletionQueuePrecedesNormalReadyWork()) return 1;
-  if (!CheckNopResumesCoroutine()) return 1;
+  if (!CheckTaskRunModes()) return 1;
   if (!CheckCrossThreadRequestStopWakesRing()) return 1;
   if (!CheckLoopStopDrainsPendingRead()) return 1;
   std::cout << "luring coro smoke: PASS\n";

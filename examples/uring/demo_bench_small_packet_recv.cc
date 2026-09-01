@@ -64,6 +64,7 @@ struct BenchConfig {
   std::size_t shared_buffer_capacity{4096};
   std::size_t event_capacity{64};
   std::size_t buffer_capacity{64};
+  alyrn::uring::TaskRunMode task_run_mode{alyrn::uring::TaskRunMode::kDefault};
 };
 
 struct BenchStats {
@@ -248,6 +249,7 @@ RunResult RunOnce(const BenchConfig& config, RecvMode mode) {
     options.shared_buffer_capacity =
         mode == RecvMode::kMultishot ? config.shared_buffer_capacity : 0;
     options.shared_buffer_size = config.packet_size;
+    options.task_run_mode = config.task_run_mode;
 
     auto initialized = loop.Init(options);
     if (!initialized.has_value()) {
@@ -377,6 +379,18 @@ int main() {
   config.event_capacity = static_cast<std::size_t>(EnvU64("EVENT_CAPACITY", 8));
   config.buffer_capacity = static_cast<std::size_t>(EnvU64("BUFFER_CAPACITY", 8));
 
+  const auto task_run_mode = EnvString("TASK_RUN_MODE");
+  if (task_run_mode.empty() || task_run_mode == "default") {
+    config.task_run_mode = alyrn::uring::TaskRunMode::kDefault;
+  } else if (task_run_mode == "coop" || task_run_mode == "cooperative") {
+    config.task_run_mode = alyrn::uring::TaskRunMode::kCooperative;
+  } else if (task_run_mode == "defer" || task_run_mode == "deferred") {
+    config.task_run_mode = alyrn::uring::TaskRunMode::kDeferred;
+  } else {
+    std::fprintf(stderr, "TASK_RUN_MODE must be default, cooperative, or deferred\n");
+    return 2;
+  }
+
   const auto mode = EnvString("MODE");
   const bool run_single =
       mode.empty() || mode == "both" || mode == "single" || mode == "single-shot";
@@ -395,10 +409,15 @@ int main() {
 
   std::printf(
       "SmallPacketRecv packet=%zu connections=%zu duration_ms=%llu warmup_ms=%llu "
-      "entries=%u shared_buffer_capacity=%zu event_capacity=%zu buffer_capacity=%zu\n",
+      "entries=%u shared_buffer_capacity=%zu event_capacity=%zu buffer_capacity=%zu "
+      "task_run_mode=%s\n",
       config.packet_size, config.connections, static_cast<unsigned long long>(config.duration_ms),
       static_cast<unsigned long long>(config.warmup_ms), config.entries,
-      config.shared_buffer_capacity, config.event_capacity, config.buffer_capacity);
+      config.shared_buffer_capacity, config.event_capacity, config.buffer_capacity,
+      config.task_run_mode == alyrn::uring::TaskRunMode::kDefault
+          ? "default"
+          : config.task_run_mode == alyrn::uring::TaskRunMode::kCooperative ? "cooperative"
+                                                                             : "deferred");
   std::fflush(stdout);
 
   std::optional<RunResult> single;
