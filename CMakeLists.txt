@@ -16,20 +16,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(ALYRN_HAS_EPOLL ON)
 endif()
 
-set(ALYRN_HAS_KQUEUE OFF)
-if(CMAKE_SYSTEM_NAME MATCHES "^(FreeBSD|NetBSD|OpenBSD|Darwin)$")
-    set(ALYRN_HAS_KQUEUE ON)
-endif()
-
 option(BUILD_TESTS "Build tests" ON)
 option(BUILD_EXAMPLES "Build example programs" ON)
 option(BUILD_BENCHMARKS "Build standalone microbenchmarks" OFF)
 option(BUILD_FUZZERS "Build libFuzzer targets (requires Clang)" OFF)
 option(ALYRN_ENABLE_URING "Enable io_uring proactor backend (requires liburing, Linux 5.19+)" OFF)
-option(ALYRN_ENABLE_KQUEUE "Enable kqueue readiness backend (requires a BSD kqueue host)" ${ALYRN_HAS_KQUEUE})
-option(ALYRN_ENABLE_KQUEUE_SHIM_TESTS
-       "Build kqueue backend tests against an in-memory kqueue shim (developer aid, no BSD host)"
-       OFF)
 option(ALYRN_STRICT_WARNINGS
        "Treat common GCC/Clang warnings as errors for Alyrn sources" OFF)
 
@@ -37,10 +28,6 @@ find_package(Threads REQUIRED)
 
 if(ALYRN_ENABLE_URING AND NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
     message(FATAL_ERROR "ALYRN_ENABLE_URING requires Linux")
-endif()
-
-if(ALYRN_ENABLE_KQUEUE AND NOT ALYRN_HAS_KQUEUE)
-    message(FATAL_ERROR "ALYRN_ENABLE_KQUEUE requires a BSD or Darwin kqueue host")
 endif()
 
 if(ALYRN_ENABLE_URING)
@@ -144,8 +131,8 @@ target_compile_features(alyrn_net INTERFACE cxx_std_23)
 # spellings, while remaining independent of concrete backend adapters.
 target_link_libraries(alyrn_io_contract INTERFACE alyrn_net)
 
-# alyrn_epoll —— Linux epoll readiness backend. kqueue remains a parallel
-# backend rather than a preprocessor branch inside this implementation.
+# alyrn_epoll —— Linux epoll readiness backend. A second readiness adapter
+# would be a parallel backend, not a preprocessor branch inside this one.
 if(ALYRN_HAS_EPOLL)
     add_library(alyrn_epoll STATIC
         src/epoll/channel.cc
@@ -178,53 +165,6 @@ if(ALYRN_HAS_EPOLL)
     )
 
     target_compile_features(alyrn_epoll PUBLIC cxx_std_23)
-endif()
-
-# alyrn_kqueue —— BSD/Darwin kqueue readiness backend. It is parallel to
-# the Linux epoll backend rather than a conditional implementation shared with
-# the other readiness backends.
-# The initial source files intentionally remain separate while their kqueue
-# event semantics are validated; only proven backend-neutral contracts may be
-# extracted later.
-if(ALYRN_ENABLE_KQUEUE)
-    add_library(alyrn_kqueue STATIC
-        src/kqueue/channel.cc
-        src/kqueue/connector.cc
-        src/kqueue/listener.cc
-        src/kqueue/poller.cc
-        src/kqueue/recv_source.cc
-        src/kqueue/stream.cc
-        src/kqueue/worker.cc
-        src/kqueue/worker_group.cc
-        src/kqueue/loop.cc
-        src/kqueue/runtime.cc
-        src/kqueue/timer_queue.cc
-    )
-
-    target_include_directories(alyrn_kqueue
-        PUBLIC
-            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-    )
-
-    target_link_libraries(alyrn_kqueue
-        PUBLIC
-            alyrn_io_contract
-            alyrn_net
-            alyrn_coro
-            alyrn_foundation
-            Threads::Threads
-    )
-
-    target_compile_features(alyrn_kqueue PUBLIC cxx_std_23)
-
-    add_library(alyrn_coro_kqueue INTERFACE)
-    target_include_directories(alyrn_coro_kqueue INTERFACE
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-    )
-    target_link_libraries(alyrn_coro_kqueue INTERFACE alyrn_kqueue)
-    target_compile_features(alyrn_coro_kqueue INTERFACE cxx_std_23)
 endif()
 
 # alyrn_luring —— io_uring proactor 网络模块。它与 alyrn_epoll 并列，
@@ -311,7 +251,7 @@ if(BUILD_FUZZERS)
     add_subdirectory(fuzz)
 endif()
 
-if(BUILD_TESTS AND (ALYRN_HAS_EPOLL OR ALYRN_ENABLE_KQUEUE))
+if(BUILD_TESTS AND ALYRN_HAS_EPOLL)
     add_subdirectory(tests)
 elseif(BUILD_TESTS)
     message(STATUS "Backend tests are disabled until a native readiness backend is enabled")
@@ -335,12 +275,6 @@ if(ALYRN_HAS_EPOLL)
     list(APPEND ALYRN_INSTALL_TARGETS
         alyrn_epoll
         alyrn_coro_epoll)
-endif()
-
-if(ALYRN_ENABLE_KQUEUE)
-    list(APPEND ALYRN_INSTALL_TARGETS
-        alyrn_kqueue
-        alyrn_coro_kqueue)
 endif()
 
 if(ALYRN_ENABLE_URING)
@@ -378,11 +312,6 @@ if(ALYRN_HAS_EPOLL)
         ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/epoll.h)
 endif()
 
-if(ALYRN_ENABLE_KQUEUE)
-    list(APPEND ALYRN_PUBLIC_HEADERS
-        ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/kqueue.h)
-endif()
-
 if(ALYRN_ENABLE_URING)
     list(APPEND ALYRN_PUBLIC_HEADERS
         ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/uring.h)
@@ -395,9 +324,6 @@ set(ALYRN_PUBLIC_DIRS coro io net time)
 if(ALYRN_HAS_EPOLL)
     list(APPEND ALYRN_PUBLIC_DIRS epoll)
 endif()
-if(ALYRN_ENABLE_KQUEUE)
-    list(APPEND ALYRN_PUBLIC_DIRS kqueue)
-endif()
 if(ALYRN_ENABLE_URING)
     list(APPEND ALYRN_PUBLIC_DIRS uring)
 endif()
@@ -408,7 +334,7 @@ foreach(ALYRN_PUBLIC_DIR IN LISTS ALYRN_PUBLIC_DIRS)
         FILES_MATCHING PATTERN "*.h")
 endforeach()
 
-# Adapter-contract headers consumed by epoll/uring/kqueue and the io facade.
+# Adapter-contract headers consumed by epoll/uring and the io facade.
 # Not a public module: there is no alyrn/backend.h umbrella.
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/backend/
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/alyrn/backend

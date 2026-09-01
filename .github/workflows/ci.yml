@@ -95,15 +95,12 @@ jobs:
             ${{ matrix.compiler.pkgs }}
 
       # Benchmarks are built here because several strict warnings only appear
-      # in benchmark sources, which the default configuration skips. The kqueue
-      # shim compiles the BSD backend against an in-memory kevent() so Linux CI
-      # can exercise its registration state machine.
+      # in benchmark sources, which the default configuration skips.
       - name: Configure
         run: >
           cmake -B build -G Ninja
           -DCMAKE_BUILD_TYPE=Debug
           -DALYRN_STRICT_WARNINGS=ON
-          -DALYRN_ENABLE_KQUEUE_SHIM_TESTS=ON
           -DBUILD_BENCHMARKS=ON
           -DCMAKE_CXX_FLAGS="${{ matrix.compiler.cxxflags }}"
 
@@ -210,7 +207,6 @@ jobs:
           -DCMAKE_BUILD_TYPE=Debug
           -DALYRN_SANITIZER=${{ matrix.san.sanitizer }}
           -DALYRN_ENABLE_URING=ON
-          -DALYRN_ENABLE_KQUEUE_SHIM_TESTS=ON
           -DBUILD_EXAMPLES=OFF
           -DCMAKE_CXX_FLAGS="-Wno-builtin-macro-redefined -D__cpp_concepts=202002"
 

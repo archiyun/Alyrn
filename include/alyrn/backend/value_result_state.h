@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-// Shared adapter-contract header for epoll, uring, and kqueue. Include this
+// Shared adapter-contract header for epoll and uring. Include this
 // file directly; there is no alyrn/backend.h. Applications use alyrn/io.h.
 
 #include <cstdint>

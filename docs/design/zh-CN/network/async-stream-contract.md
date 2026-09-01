@@ -130,7 +130,7 @@ alyrn::io::AsyncStream
 
 `LocalAddr()` 必须在 owner loop 上执行，并通过 `Result` 报告 `getsockname` 失败；
 `RemoteAddr()` 返回连接建立时保存的 peer endpoint，不重复发起 `getpeername`。
-当前 `epoll::Stream`、`kqueue::Stream` 和 `uring::Stream` 都满足它。
+当前 `epoll::Stream` 和 `uring::Stream` 都满足它。
 
 ### 2.2 Timeout 不是 Stream 方法
 
@@ -182,7 +182,7 @@ Recv()
 
 调用者不提供存储。成功（含 0 字节 EOF）返回一块新的 `net::Buffer`；失败返回
 `unexpected`，没有 caller-owned buffer 需要归还。io_uring 使用 loop 的 provided-buffer
-ring 作为内核写入目标，再 copy-out 并在 resume 前归还 slot；epoll/kqueue 接收进内部
+ring 作为内核写入目标，再 copy-out 并在 resume 前归还 slot；epoll 接收进内部
 `Buffer`。它不暴露 `BufferLease`，也不把 `Recv()` 并入 `AsyncRecvStream`：后者要求调用者
 移交一块 `Buffer`。
 

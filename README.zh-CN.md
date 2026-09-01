@@ -1,11 +1,11 @@
 # Alyrn⚡
 
 ![C++](https://img.shields.io/badge/C++-23-blue)
-![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20FreeBSD%20%7C%20macOS-lightgrey)
+![Platform](https://img.shields.io/badge/platform-Linux-lightgrey)
 ![License](https://img.shields.io/github/license/archiyun/Alyrn)
 ![Stars](https://img.shields.io/github/stars/archiyun/Alyrn?style=social)
 
-***C++23 协程网络运行时：epoll、io_uring 与 kqueue 作为平行后端。***
+***C++23 协程网络运行时：epoll 与 io_uring 作为平行后端。***
 
 Alyrn 在相互独立的网络后端之上，提供统一、直观且高性能的 C++23 协程编程模型。它让默认路径像常规网络库一样不暴露底层事件机制，并通过 `Runtime` 提供类似 Tokio 的快速启动方式；需要时，应用仍可显式使用后端原生扩展与配置。
 
@@ -15,20 +15,19 @@ Alyrn 在相互独立的网络后端之上，提供统一、直观且高性能�
 |---|---|---|---|
 | `epoll` | Linux | `epoll` readiness | 独立 listener + `SO_REUSEPORT` |
 | `uring` | Linux | `io_uring` completion | thread-per-ring Proactor |
-| `kqueue` | FreeBSD / NetBSD / OpenBSD / Darwin | `kqueue` readiness | 主从：单 acceptor，用户态移交 fd |
 
 Alyrn 使用[生命周期精化协程 I/O（LRCI）](docs/design/zh-CN/network/lifecycle-refined-coroutine-io.md)：readiness 与 CQE 等后端事件不会直接等同于协程完成，而是被精化到一套共享逻辑生命周期，分别确定结果何时 ready、continuation 何时恢复、资源何时释放。
 
 * 🔀 **统一的异步 I/O 契约**
-  各后端保留各自的线程、事件循环与完成模型，但通过 `backend` 的 `AsyncStream`、`AsyncListener` 与 `AsyncConnector` concept 提供一致的业务可观察语义（应用侧使用 `io` 别名）。`coro` 以同步代码形式表达异步控制流，并隐藏协程帧、挂起、恢复与生命周期细节；业务代码无需接触 `epoll_event`、SQE、CQE 或 `kevent`。
+  各后端保留各自的线程、事件循环与完成模型，但通过 `backend` 的 `AsyncStream`、`AsyncListener` 与 `AsyncConnector` concept 提供一致的业务可观察语义（应用侧使用 `io` 别名）。`coro` 以同步代码形式表达异步控制流，并隐藏协程帧、挂起、恢复与生命周期细节；业务代码无需接触 `epoll_event`、SQE 或 CQE。
 
 * 🧩 **明确的所有权与完成语义**
   每个 Worker 独占自己的线程、事件循环、连接与 I/O 操作。操作在所属执行上下文中完成，协程 continuation 也在相同上下文中恢复，同时明确约束 buffer 生命周期、取消行为与异步关闭流程。协程帧不跨 loop 迁移。
 
 * 🚀 **基础功能与高级扩展**
-  Alyrn 提供异步 accept、connect、read、write、close 与 timer。Epoll 可选择 LT/ET；kqueue 当前以 one-shot readiness 作为 stream 模式；uring 还提供 multishot receive、zero-copy send 等扩展。HTTP 与网关策略已迁移至 [CoroGateway](https://github.com/archiyun/CoroGateway)。
+  Alyrn 提供异步 accept、connect、read、write、close 与 timer。Epoll 可选择 LT/ET；uring 还提供 multishot receive、zero-copy send 等扩展。HTTP 与网关策略已迁移至 [CoroGateway](https://github.com/archiyun/CoroGateway)。
 
-Linux 是 Epoll 与可选 io_uring 后端的 CI 验证宿主。kqueue 已作为第三个 adapter 在 BSD 与 Darwin 上实现；Linux 可用内存中的 kevent shim 编译 loop/poller 测试，这不能替代原生 `kevent` 宿主。IOCP 尚未实现。
+Linux 是 CI 验证宿主。IOCP 尚未实现。
 
 ## 快速开始
 
@@ -49,13 +48,10 @@ Linux 是 Epoll 与可选 io_uring 后端的 CI 验证宿主。kqueue 已作为�
 |---|---|---|---|
 | Epoll | `alyrn/epoll.h` | `runtime::Epoll` | Linux 默认 |
 | uring / io_uring | `alyrn/uring.h` | `runtime::Uring` | `-DALYRN_ENABLE_URING=ON` |
-| kqueue | `alyrn/kqueue.h` | `runtime::Kqueue` | `-DALYRN_ENABLE_KQUEUE=ON` |
-
-kqueue 伞头文件在非 BSD 宿主上会直接 `#error`。
 
 ### 2. 后端无关的连接处理协程
 
-以 echo server 为例。该协程只依赖 `AsyncStream`，可同时服务 `epoll::Stream`、`uring::Stream` 与 `kqueue::Stream`；Linux 可运行版本见 [`examples/simple_echo`](examples/simple_echo)。
+以 echo server 为例。该协程只依赖 `AsyncStream`，可同时服务 `epoll::Stream` 与 `uring::Stream`；Linux 可运行版本见 [`examples/simple_echo`](examples/simple_echo)。
 
 ```cpp
 #include <array>
@@ -118,7 +114,7 @@ int main() {
 }
 ```
 
-要使用 io_uring，只需在启用 `ALYRN_ENABLE_URING=ON` 的构建中包含 `alyrn/uring.h`，并将 tag 改为 `cp::runtime::Uring`。在 kqueue 宿主上包含 `alyrn/kqueue.h`，使用 `cp::runtime::Kqueue`。handler 中的 `stream` 仍保持对应后端的静态类型，不会引入虚调用。
+要使用 io_uring，只需在启用 `ALYRN_ENABLE_URING=ON` 的构建中包含 `alyrn/uring.h`，并将 tag 改为 `cp::runtime::Uring`。handler 中的 `stream` 仍保持对应后端的静态类型，不会引入虚调用。
 
 ### 4. 需要时显式配置
 
@@ -136,7 +132,7 @@ auto runtime = cp::Runtime::Builder<cp::runtime::Epoll>{
 
 Backend tag 仍在编译期选择实现；ring 深度、provided buffer、zero-copy 等改变后端资源或生命周期语义的选项不伪装成通用 Runtime 配置。
 
-`Workers(n)` 始终表示 *n 条线程*。其背后的拓扑由后端决定：Epoll 在 `n > 1` 时用 `SO_REUSEPORT` 共享监听端口；kqueue 只在 worker 0 上绑定 listener，再把已接受的描述符 Post 到其他 loop；uring 保持每个 worker 一个 ring。
+`Workers(n)` 始终表示 *n 条线程*。其背后的拓扑由后端决定：Epoll 在 `n > 1` 时用 `SO_REUSEPORT` 共享监听端口；uring 保持每个 worker 一个 ring。
 
 ### 5. 使用 uring 原生能力
 
@@ -205,35 +201,11 @@ cmake --build build-uring -j"$(nproc)"
 ctest --test-dir build-uring --output-on-failure
 ```
 
-在 FreeBSD、NetBSD、OpenBSD 或 macOS 上构建 kqueue 后端：
-
-```bash
-cmake -B build-kqueue \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DBUILD_TESTS=ON \
-  -DALYRN_ENABLE_KQUEUE=ON
-
-cmake --build build-kqueue -j"$(sysctl -n hw.ncpu)"
-ctest --test-dir build-kqueue --output-on-failure
-```
-
-Linux 上不能启用 kqueue *库*。内存中的 kevent shim 只是开发辅助，用于 loop 与 one-shot 注册测试：
-
-```bash
-cmake -B build-kqueue-shim \
-  -DALYRN_ENABLE_KQUEUE_SHIM_TESTS=ON \
-  -DBUILD_TESTS=ON
-```
-
-该 shim 不监视真实 socket，也不运行原生 worker-group smoke test。
-
 ### CMake 选项
 
 | 选项 | 默认 | 作用 |
 |---|---|---|
 | `ALYRN_ENABLE_URING` | `OFF` | Linux io_uring 后端（`liburing >= 2.6`） |
-| `ALYRN_ENABLE_KQUEUE` | `OFF` | BSD/Darwin kqueue 后端；其它宿主上 CMake 会失败 |
-| `ALYRN_ENABLE_KQUEUE_SHIM_TESTS` | `OFF` | 用假 `kevent` 编译 kqueue loop/poller 测试 |
 | `ALYRN_STRICT_WARNINGS` | `OFF` | GCC/Clang 下 `-Wall -Wextra -Wpedantic -Werror` |
 | `ALYRN_SANITIZER` | 空 | 例如 `address,undefined` 或 `thread` |
 | `BUILD_TESTS` | `ON` | 单元与 smoke 测试 |
@@ -269,8 +241,7 @@ ITERATIONS=1000000 build-bench/benchmarks/coro_channel_microbenchmark
 * CMake 3.20+；支持 C++23 coroutine 的编译器。
 * Epoll 使用 `epoll`，是 Linux 默认后端，不依赖额外网络库。
 * uring 需要 Linux 与 `liburing >= 2.6`，并建议使用 Linux 5.19 或更新内核。
-* kqueue 需要带原生 `kqueue(2)` 的 BSD 或 Darwin 宿主。
-* `net` 与后端无关契约只使用可移植的 POSIX socket 设施。不要把 BSD readiness 做成 epoll backend 内的条件分支。
+* `net` 与后端无关契约只使用可移植的 POSIX socket 设施。
 
 可安装的 Debian/tarball 产物与 Docker 发布构建见[打包与安装](docs/packaging.md)。
 
@@ -285,14 +256,14 @@ ITERATIONS=1000000 build-bench/benchmarks/coro_channel_microbenchmark
        Submit -> Suspend
        Complete -> Resume
                |
-        +------+------+------+
-        |             |      |
-        v             v      v
-   Epoll/epoll   uring   kqueue
-   alyrn::epoll  ::uring  ::kqueue
+        +------+------+
+        |             |
+        v             v
+   Epoll/epoll      uring
+   alyrn::epoll     ::uring
 ```
 
-三个后端不共享事件循环，内部状态机也不需要完全一致。它们只需要遵守相同的业务可观察异步 I/O 契约。依赖边界以 [`docs/SUBSYSTEMS.md`](docs/SUBSYSTEMS.md) 为准。
+两个后端不共享事件循环，内部状态机也不需要完全一致。它们只需要遵守相同的业务可观察异步 I/O 契约。依赖边界以 [`docs/SUBSYSTEMS.md`](docs/SUBSYSTEMS.md) 为准。
 
 Epoll 多 worker（`Workers(n>1)`）在同一端口上使用独立 listener：
 
@@ -314,20 +285,7 @@ Server
   `-- Worker N -> Thread N -> Loop N -> Ring N
 ```
 
-kqueue 多 worker 是主从模型。只有 worker 0 绑定 listener。I/O worker 先启动，保证 loop 已存在；acceptor 随后 `Release()` 描述符，经 `Post()` 轮询交给属主 loop，在该线程上重建 `Stream`：
-
-```text
-WorkerGroup
-  |
-  +-- Worker 0 (acceptor) -> Loop 0 -> listen :port
-  |         |
-  |         +-- accept -> Release(fd) -> Post --> 重建 stream
-  |
-  +-- Worker 1 (I/O) -> Loop 1
-  `-- Worker N (I/O) -> Loop N
-```
-
-连接、I/O 操作与协程 continuation 始终归属于运行它们的 Worker 和 loop。`Stream` 不能跨 loop 移动；移交的是原始 fd，不是活的 stream，也不是 `Work*`。
+连接、I/O 操作与协程 continuation 始终归属于运行它们的 Worker 和 loop。`Stream` 不能跨 loop 移动。
 
 ## 性能测试
 
@@ -351,7 +309,6 @@ Alyrn 提供了可复现的 `wrk` 性能测试，用于比较：
 文档目录见 [`docs/index.md`](docs/index.md)。设计说明目前以中文编写，是契约与所有权的依据。`CONTEXT.md` 是仅供本地开发使用的领域词汇表，不随仓库发布。
 
 * **[网络架构](docs/design/zh-CN/network/index.md)：** 运行时分层、后端边界与所有权模型。
-* **[kqueue 后端](docs/design/zh-CN/network/kqueue/index.md)：** one-shot readiness、`Post` 与主从移交。
 * **[Runtime Builder](docs/design/zh-CN/network/runtime-builder.md)：** 编译期 backend tag 与启停生命周期。
 * **[生命周期精化协程 I/O](docs/design/zh-CN/network/lifecycle-refined-coroutine-io.md)：** 逻辑 I/O 规范、三条授权边界，以及 epoll / io_uring 精化。
 * **[AsyncStream 语义契约](docs/design/zh-CN/network/async-stream-contract.md)：** read、write、close、取消与 buffer 生命周期语义。
@@ -366,7 +323,6 @@ Alyrn 目前仍是一个实验性网络运行时，尚不适合作为成熟网�
 
 当前正在推进的方向包括：
 
-* 在真实 BSD/Darwin 宿主上加固 kqueue adapter（那里已有原生 worker-group 与 Runtime smoke）。
 * 给出状态机的形式化证明，并编写不变量测试和并发检验接入的后端。
 * io_uring：提供 liburing 较新版本的网络选项配置和现代优化。
 * 更贴近实际环境的数据压测和瓶颈分析。

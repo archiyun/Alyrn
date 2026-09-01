@@ -26,8 +26,6 @@
 - [Runtime Builder](design/zh-CN/network/runtime-builder.md)
 - [Epoll](design/zh-CN/network/epoll/index.md)
 - [luring / io_uring](design/zh-CN/network/luring/index.md)
-- [kqueue](design/zh-CN/network/kqueue/index.md)
-- [Loop、Post 与主从移交](design/zh-CN/network/kqueue/loop-and-handoff.md)
 
 ## 数据结构
 
@@ -38,9 +36,6 @@
 
 - [打包与安装](packaging.md) — Linux 源码安装、`.deb`、Arch `PKGBUILD`、Docker
 - [Release notes: Alyrn 0.1.0](releases/v0.1.0.md)
-
-kqueue 后端不进入 Linux 发行包。BSD/Darwin 上用
-`-DALYRN_ENABLE_KQUEUE=ON` 从源码构建，并链接 `Alyrn::alyrn_kqueue`。
 
 ## 基准报告
 

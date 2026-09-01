@@ -55,7 +55,7 @@ Buffer ownership -> awaiter
 无参 `Recv()` 不接收调用者 buffer。它提交带 `IOSQE_BUFFER_SELECT` 的 single-shot recv，
 把内核写入 loop 共享 ring 的一个 slot，再 memcpy 进新的 `net::Buffer` 并在 resume 前
 归还该 slot。`RecvSource` 仍独占 `BufferLease` 路径；两条 API 共用 ring，但不能共用
-lease 语义。epoll/kqueue 没有 ring，用内部 `Buffer` 接收后返回同一 `Result<Buffer>`。
+lease 语义。epoll 没有 ring，用内部 `Buffer` 接收后返回同一 `Result<Buffer>`。
 
 ## Close 的可观察语义
 

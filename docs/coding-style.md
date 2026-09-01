@@ -36,7 +36,7 @@ const backend::LoopState state = State();
 
 ## `detail` 与 friend
 
-在 `alyrn::epoll` / `uring` / `kqueue` 里，`detail` 是嵌套命名空间，引用共享内部时要写 `::alyrn::detail::...`。文件内 `using Timer = ::alyrn::detail::Timer;` 优于每个局部或 lambda 参数重复前缀。
+在 `alyrn::epoll` / `uring` 里，`detail` 是嵌套命名空间，引用共享内部时要写 `::alyrn::detail::...`。文件内 `using Timer = ::alyrn::detail::Timer;` 优于每个局部或 lambda 参数重复前缀。
 
 不要写混搭 friend，例如 `friend void detail::Fn(::alyrn::uring::detail::Op*)`。
 

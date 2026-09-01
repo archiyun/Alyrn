@@ -6,8 +6,8 @@ Accepted for the initial coroutine implementation.
 
 ## Context
 
-Alyrn must allow the same business coroutine to run on the epoll backend,
-the io_uring backend, and the kqueue backend. The coroutine layer therefore cannot own network
+Alyrn must allow the same business coroutine to run on the epoll backend
+and the io_uring backend. The coroutine layer therefore cannot own network
 descriptors, submit I/O, or depend on a concrete runtime.
 
 The public coroutine API has three distinct roles:
@@ -46,7 +46,7 @@ scheduler or I/O backend.
 - io_uring awaiters remain in the luring adapter layer and may depend on the
   ring runtime.
 - The dependency direction is one-way from lower primitives to concrete
-  backends: `coro/foundation -> net -> backend -> epoll/uring/kqueue`.
+  backends: `coro/foundation -> net -> backend -> epoll/uring`.
   `include/alyrn/backend` holds the adapter-contract concepts (`alyrn::backend`);
   CMake exposes them as `alyrn_io_contract`. The `io` module is the
   application facade of those concepts (`alyrn::io` aliases). Concrete
@@ -104,4 +104,4 @@ Promise 与 spawn 实现位于 `include/alyrn/coro/detail/`（公开模块下的
 `detail/`，与 `epoll/detail`、`condy/detail` 同一布局）。完成协议仍在
 `include/alyrn/detail/`，因为没有公开的 `operation` 模块。
 adapter 契约在 `include/alyrn/backend`（`alyrn_io_contract`）；`io` 只是应用侧别名。
-依赖方向包含 kqueue，且具体后端链接 `alyrn_io_contract`、不链接 `alyrn_io`。
+具体后端链接 `alyrn_io_contract`、不链接 `alyrn_io`。

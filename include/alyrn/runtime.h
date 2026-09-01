@@ -14,15 +14,11 @@ namespace alyrn::runtime {
 // carry no runtime state and never enter an I/O hot path.
 struct Epoll final {};
 struct Uring final {};
-struct Kqueue final {};
 
 // Selects the platform-native default backend at compile time. io_uring stays
 // explicit because its availability and semantics are capability-dependent.
 #if defined(__linux__)
 using Auto = Epoll;
-#elif defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || \
-    defined(__OpenBSD__)
-using Auto = Kqueue;
 #else
 #error "Alyrn has no default runtime backend for this platform"
 #endif

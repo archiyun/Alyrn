@@ -12,7 +12,7 @@ L3  applications and validation
                          |
                          v
 L2  coroutine execution and network transport
-    application-facing:  coro / net / io / epoll / uring / kqueue
+    application-facing:  coro / net / io / epoll / uring
     adapter contract:    backend
                          |
                          v
@@ -40,14 +40,13 @@ application protocol, route, peer, proxy, or gateway policy.
 | `include/alyrn/time` | L1 | Public time values and timer identifiers; timer indexes and queues are implementation support. |
 | `include/alyrn/coro` | L2 | Coroutine ownership, scheduling, frame allocation, and continuation rules. |
 | `include/alyrn/coro/detail` | L2 | Promise storage, root-coroutine, and frame-allocation implementation; not an application seam. |
-| `include/alyrn/backend` | L2 | Shared adapter-contract headers for epoll, uring, and kqueue (`alyrn::backend`): loop state, ManagedLoop, Async* concepts, and awaiter result storage. Parallel to those adapters, not an application seam: no `alyrn/backend.h` umbrella. Adapters and the `io` facade include specific files; applications use `io.h`. |
+| `include/alyrn/backend` | L2 | Shared adapter-contract headers for epoll and uring (`alyrn::backend`): loop state, ManagedLoop, Async* concepts, and awaiter result storage. Parallel to those adapters, not an application seam: no `alyrn/backend.h` umbrella. Adapters and the `io` facade include specific files; applications use `io.h`. |
 | `include/alyrn/net` | L2 | Header-only POSIX socket, address, and buffer values shared by backends; no concrete backend or Linux-only dependency. |
 | `include/alyrn/net/detail` | L2 | Internal stream/source lifecycle, admission, pause/drain, and lease-accounting state machines shared by backend adapters. |
 | `include/alyrn/io` | L2 | Application-facing aliases of the backend-neutral I/O contract. Composition roots and callers use this facade; concrete backends must not include it. |
 | `include/alyrn/runtime.h` | L2 | Backend-neutral application lifecycle facade. It type-erases only cold start/stop control; backend tags select a Builder specialization at compile time. |
 | `include/alyrn/epoll`, `src/epoll` | L2 | Linux epoll readiness adapter. `Loop`, the `Runtime::Builder<runtime::Epoll>` binding, and transport adapters are public; `epoll/detail` owns channel registration, epoll polling, timers, and worker bootstrap implementation. |
 | `include/alyrn/uring`, `src/uring` | L2 | Linux io_uring completion adapter. `Loop`, the `Runtime::Builder<runtime::Uring>` binding, and transport adapters are public; `uring/detail` owns raw SQE/CQE operations, ring/mailbox transport, timer queue, and worker/server bootstrap implementation. |
-| `include/alyrn/kqueue`, `src/kqueue` | L2 | BSD/Darwin kqueue readiness adapter. `Loop`, the `Runtime::Builder<runtime::Kqueue>` binding, and transport adapters are public; `kqueue/detail` owns channel registration, kevent polling, timers, and master-slave worker bootstrap. |
 | `examples`, `benchmarks`, `tests` | L3 | Consumers and validation; never runtime dependencies. |
 
 ## Hard Dependency Rules
@@ -57,21 +56,18 @@ application protocol, route, peer, proxy, or gateway policy.
 - Completion and lifecycle helpers in `detail/` may depend on backend-neutral
   runtime primitives, but not on `net`, `io`, Epoll, uring, or CoroGateway.
 - `backend` may depend on coro, result, and net value types. It must not
-  include the `io` facade or depend on Epoll, uring, kqueue, or CoroGateway.
+  include the `io` facade or depend on Epoll, uring, or CoroGateway.
   Completion authorization stays in `detail/`. Do not add
   `include/alyrn/backend.h`; adapters include the specific header they need.
 - `net` may depend on portable POSIX socket facilities, but must not depend on
   Linux-only facilities, `io`, Epoll, uring, or CoroGateway.
-- Epoll, uring, and kqueue may depend on `net`, `backend`, and coroutine
+- Epoll and uring may depend on `net`, `backend`, and coroutine
   contracts, but none of them may include the application-level `io` facade.
-- A kqueue backend is a parallel adapter. Do not add BSD conditionals to
-  Epoll's epoll implementation; share only a genuinely backend-neutral
-  contract or value module.
-- `kqueue/detail` is not a supported application interface. Callers outside the
-  kqueue implementation and validation code must use `Loop` and the
-  public transport adapters instead.
+- A later readiness adapter is a parallel backend. Do not add BSD
+  conditionals to Epoll's epoll implementation; share only a genuinely
+  backend-neutral contract or value module.
 - `alyrn_io_contract` remains backend-neutral (headers under
-  `include/alyrn/backend`). Epoll, uring, and kqueue link this target. The
+  `include/alyrn/backend`). Epoll and uring link this target. The
   `io` facade (`alyrn_io`) may assemble adapters only at a composition root;
   backend cores must not include `alyrn/io` or link `alyrn_io`.
 - CoroGateway may depend on Alyrn public interfaces. Alyrn must not

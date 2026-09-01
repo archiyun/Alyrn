@@ -6,8 +6,8 @@ Accepted
 
 ## 背景
 
-Alyrn 同时提供 Epoll、io_uring 与 kqueue 三个平行网络后端。业务协程应该依赖共同的异步
-语义，而不是依赖 epoll、SQE/CQE、`kevent` 或某个具体 loop 的实现细节。
+Alyrn 同时提供 Epoll 与 io_uring 两个平行网络后端。业务协程应该依赖共同的异步
+语义，而不是依赖 epoll、SQE/CQE 或某个具体 loop 的实现细节。
 
 当前项目已经有 `alyrn::backend` 上的 Core concepts，以及面向应用的 `alyrn::io`
 facade（零成本别名）。如果没有明确的稳定范围，后端特性容易逐步渗透到

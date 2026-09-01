@@ -19,7 +19,7 @@ overload：调用者不提供存储，完成后得到一块新的 `Buffer`。
 因此，`Recv(Buffer)` 的价值不是把普通 receive 变为零拷贝；数据仍从内核复制进 destination
 storage。它解决的是 C++ borrowed buffer 在 `co_await`、取消和 close 交错时的所有权风险。
 无参 `Recv()` 也不承诺零拷贝：io_uring 用 ring 作为内核 dest，再 memcpy 进 userspace
-`Buffer`；epoll/kqueue 直接 recv 进内部 `Buffer`。
+`Buffer`；epoll 直接 recv 进内部 `Buffer`。
 
 ## 接口与结果
 
@@ -70,7 +70,7 @@ Consume(*buf);
 ```
 
 io_uring 把 kernel 选中的 provided-buffer slot 作为 recv dest，再 copy-out 到这份
-`Buffer`，并在 resume 前归还 slot。Epoll / kqueue 没有 ring，改为向内部
+`Buffer`，并在 resume 前归还 slot。Epoll 没有 ring，改为向内部
 `kDefaultBlockSize` 的 `Buffer` 做一次短读。slot 不会以 `BufferLease` 的形式暴露给调用者。
 
 ## 生命周期
@@ -189,7 +189,7 @@ Tokio 的 `read_buf(&mut B)` 也向可增长 buffer 写入并推进内部 cursor
 
 ## 验证覆盖与后续约束
 
-现有 Epoll/io_uring/kqueue smoke tests 已覆盖：`Recv(Buffer)` 成功读回、close/cancel 后
+现有 Epoll/io_uring smoke tests 已覆盖：`Recv(Buffer)` 成功读回、close/cancel 后
 归还、io_uring 提交失败回滚并允许下一次读、恢复时 scheduler affinity，以及返回 buffer
 不带活动 reservation；无参 `Recv()` 则覆盖 payload copy-out 与返回后 buffer 可再
 `PrepareWrite`。

@@ -397,11 +397,11 @@ IOCP 也是 Proactor：提交请求、等待完成、重叠操作结束前不能
 ```text
 逻辑 I/O 规范     OS 无关（本文对象）
 C++ 协程契约     语言相关，backend 中立
-POSIX net        fd / sockaddr / sockopt（三个 Unix 后端的底座）
-epoll | io_uring | kqueue
+POSIX net        fd / sockaddr / sockopt（Unix 后端的底座）
+epoll | io_uring
 ```
 
-kqueue 换 dispatcher，仍使用 POSIX socket，因此是第三条 adapter，不是第三个科学对象。IOCP 连资源身份都换了。Core 契约保持 OS 中立；`net` 承认自己是 POSIX。Windows 若出现，应是平行的资源层加平行的 Proactor adapter，而不是 `socket.h` 里的宏。
+kqueue 换 dispatcher，仍使用 POSIX socket，因此若重新出现也是第三条 adapter，不是第三个科学对象；当前不在树内。IOCP 连资源身份都换了。Core 契约保持 OS 中立；`net` 承认自己是 POSIX。Windows 若出现，应是平行的资源层加平行的 Proactor adapter，而不是 `socket.h` 里的宏。
 
 这条边界强化而非削弱成对主张：epoll 与 io_uring 共享资源域，所以精化可以只讨论事件与生命周期。
 
@@ -424,7 +424,7 @@ kqueue 换 dispatcher，仍使用 POSIX socket，因此是第三条 adapter，�
 ## 12 限制
 
 - **有界、不是证明。** 模型固定小的操作数与事件数。没有对实现做 refinement mapping 的机器检查。
-- **单一资源域。** 只声称 POSIX/Linux。kqueue 是平行 adapter；IOCP 未实现，也不在精化定理里。
+- **单一资源域。** 只声称 POSIX/Linux。kqueue 不在树内，也不是第三个科学对象；IOCP 未实现，也不在精化定理里。
 - **无动态切换。** 后端在初始化时固定。可替换 ≠ 热插拔。
 - **扩展覆盖不对称。** 最尖锐的分裂（lease、`F_NOTIF`、`F_MORE`）出现在 io_uring。epoll 对这些扩展的精化，或是类似物（accept drain），或是明确的非目标。Core 主张不依赖单边扩展。
 - **尚无负例外评。** 表 1 来自内核合同与本实现。对 Tokio/Asio 的系统对照仍待补。

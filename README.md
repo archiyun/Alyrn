@@ -1,11 +1,11 @@
 # Alyrn⚡
 
 ![C++](https://img.shields.io/badge/C++-23-blue)
-![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20FreeBSD%20%7C%20macOS-lightgrey)
+![Platform](https://img.shields.io/badge/platform-Linux-lightgrey)
 ![License](https://img.shields.io/github/license/archiyun/Alyrn)
 ![Stars](https://img.shields.io/github/stars/archiyun/Alyrn?style=social)
 
-***A C++23 coroutine networking runtime with parallel epoll, io_uring, and kqueue backends.***
+***A C++23 coroutine networking runtime with parallel epoll and io_uring backends.***
 
 Alyrn provides a unified, explicit, and high-performance C++23 coroutine
 model over independent networking backends. Its default path hides
@@ -20,20 +20,19 @@ preprocessor branches:
 |---|---|---|---|
 | `epoll` | Linux | `epoll` readiness | Independent listeners with `SO_REUSEPORT` |
 | `uring` | Linux | `io_uring` completion | Thread-per-ring Proactor |
-| `kqueue` | FreeBSD, NetBSD, OpenBSD, Darwin | `kqueue` readiness | Master-slave: one acceptor, user-space fd handoff |
 
 Alyrn uses [Lifecycle-Refined Coroutine I/O (LRCI)](docs/design/zh-CN/network/lifecycle-refined-coroutine-io.md): backend events such as readiness notifications and CQEs are not treated directly as coroutine completion. They are refined into a shared logical lifecycle that separately determines result readiness, continuation resumption, and resource release.
 
 * 🔀 **A unified asynchronous I/O contract**
-  Each backend keeps its own threading, event-loop, and completion model, but exposes the same application-observable semantics through the `backend` concepts `AsyncStream`, `AsyncListener`, and `AsyncConnector` (application code uses the `io` aliases). `coro` expresses asynchronous control flow in synchronous-looking code while hiding frame, suspension, resumption, and lifetime mechanics; application code need not handle `epoll_event`, SQEs, CQEs, or `kevent`.
+  Each backend keeps its own threading, event-loop, and completion model, but exposes the same application-observable semantics through the `backend` concepts `AsyncStream`, `AsyncListener`, and `AsyncConnector` (application code uses the `io` aliases). `coro` expresses asynchronous control flow in synchronous-looking code while hiding frame, suspension, resumption, and lifetime mechanics; application code need not handle `epoll_event`, SQEs, or CQEs.
 
 * 🧩 **Explicit ownership and completion semantics**
   Each Worker owns its thread, event loop, connections, and I/O operations. Operations complete in their owning execution context and coroutine continuations resume in that same context, with explicit rules for buffer lifetimes, cancellation, and asynchronous close. Coroutine frames are not moved across loops.
 
 * 🚀 **Core operations and native extensions**
-  Alyrn provides asynchronous accept, connect, read, write, close, and timers. Epoll can select LT or ET; kqueue currently ships one-shot readiness as the stream mode; uring additionally exposes extensions such as multishot receive and zero-copy send. HTTP and gateway policy live in [CoroGateway](https://github.com/archiyun/CoroGateway).
+  Alyrn provides asynchronous accept, connect, read, write, close, and timers. Epoll can select LT or ET; uring additionally exposes extensions such as multishot receive and zero-copy send. HTTP and gateway policy live in [CoroGateway](https://github.com/archiyun/CoroGateway).
 
-Linux is the CI-validated host for Epoll and the optional io_uring backend. kqueue is implemented as a third adapter on BSD and Darwin; Linux can compile its loop/poller tests against an in-memory shim, which does not replace a native `kevent` host. IOCP is not implemented.
+Linux is the CI-validated host. IOCP is not implemented.
 
 ## Quick Start
 
@@ -54,14 +53,11 @@ Include only the modules your application uses.
 |---|---|---|---|
 | Epoll | `alyrn/epoll.h` | `runtime::Epoll` | default on Linux |
 | uring / io_uring | `alyrn/uring.h` | `runtime::Uring` | `-DALYRN_ENABLE_URING=ON` |
-| kqueue | `alyrn/kqueue.h` | `runtime::Kqueue` | `-DALYRN_ENABLE_KQUEUE=ON` |
-
-The kqueue umbrella header is rejected at compile time on non-BSD hosts.
 
 ### 2. Write backend-neutral connection code
 
 This echo session depends only on `AsyncStream`, so it works with
-`epoll::Stream`, `uring::Stream`, and `kqueue::Stream`. See
+`epoll::Stream` and `uring::Stream`. See
 [`examples/simple_echo`](examples/simple_echo) for the runnable Linux version.
 
 ```cpp
@@ -125,7 +121,7 @@ int main() {
 }
 ```
 
-For io_uring, build with `ALYRN_ENABLE_URING=ON`, include `alyrn/uring.h`, and change the tag to `cp::runtime::Uring`. On a kqueue host, include `alyrn/kqueue.h` and use `cp::runtime::Kqueue`. The handler's stream remains statically typed as the selected backend type; no virtual call enters the connection data path.
+For io_uring, build with `ALYRN_ENABLE_URING=ON`, include `alyrn/uring.h`, and change the tag to `cp::runtime::Uring`. The handler's stream remains statically typed as the selected backend type; no virtual call enters the connection data path.
 
 ### 4. Configure the default server explicitly
 
@@ -143,7 +139,7 @@ auto runtime = cp::Runtime::Builder<cp::runtime::Epoll>{
 
 The backend tag still selects the implementation at compile time. Options that alter backend resources or lifecycle semantics—ring depth, provided buffers, and zero-copy, for example—are not disguised as cross-backend Runtime settings.
 
-`Workers(n)` always means *n threads*. The topology behind that number is backend-specific: Epoll shares the listen port with `SO_REUSEPORT` when `n > 1`; kqueue binds a single listener on worker 0 and posts accepted descriptors onto the other loops; uring keeps one ring per worker.
+`Workers(n)` always means *n threads*. The topology behind that number is backend-specific: Epoll shares the listen port with `SO_REUSEPORT` when `n > 1`; uring keeps one ring per worker.
 
 ### 5. Use uring-native capabilities
 
@@ -212,35 +208,11 @@ cmake --build build-uring -j"$(nproc)"
 ctest --test-dir build-uring --output-on-failure
 ```
 
-Build the kqueue backend on FreeBSD, NetBSD, OpenBSD, or macOS:
-
-```bash
-cmake -B build-kqueue \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DBUILD_TESTS=ON \
-  -DALYRN_ENABLE_KQUEUE=ON
-
-cmake --build build-kqueue -j"$(sysctl -n hw.ncpu)"
-ctest --test-dir build-kqueue --output-on-failure
-```
-
-On Linux, the kqueue *library* cannot be enabled. The in-memory kevent shim is a developer aid for loop and one-shot registration tests:
-
-```bash
-cmake -B build-kqueue-shim \
-  -DALYRN_ENABLE_KQUEUE_SHIM_TESTS=ON \
-  -DBUILD_TESTS=ON
-```
-
-That shim does not watch real sockets and does not run the native worker-group smoke test.
-
 ### CMake options
 
 | Option | Default | Effect |
 |---|---|---|
 | `ALYRN_ENABLE_URING` | `OFF` | Linux io_uring backend (`liburing >= 2.6`) |
-| `ALYRN_ENABLE_KQUEUE` | `OFF` | BSD/Darwin kqueue backend; CMake fails on other hosts |
-| `ALYRN_ENABLE_KQUEUE_SHIM_TESTS` | `OFF` | Compile kqueue loop/poller tests against a fake `kevent` |
 | `ALYRN_STRICT_WARNINGS` | `OFF` | `-Wall -Wextra -Wpedantic -Werror` on GCC/Clang |
 | `ALYRN_SANITIZER` | empty | e.g. `address,undefined` or `thread` |
 | `BUILD_TESTS` | `ON` | Unit and smoke tests |
@@ -277,8 +249,7 @@ ITERATIONS=1000000 build-bench/benchmarks/coro_channel_microbenchmark
 * CMake 3.20+ and a compiler with C++23 coroutine support.
 * Epoll uses `epoll` and is the default Linux backend. It has no extra networking-library dependency.
 * uring requires Linux, `liburing >= 2.6` (Linux 5.19 or newer is recommended).
-* kqueue requires a BSD or Darwin host with a native `kqueue(2)`.
-* `net` and the backend-neutral contracts use portable POSIX socket facilities. Do not implement BSD readiness as conditional code inside the epoll backend.
+* `net` and the backend-neutral contracts use portable POSIX socket facilities.
 
 Installable Debian/tarball artifacts and Docker release builds are described
 in [Packaging and installation](docs/packaging.md).
@@ -294,11 +265,11 @@ Custom Session / Application
        Submit -> Suspend
        Complete -> Resume
                |
-        +------+------+------+
-        |             |      |
-        v             v      v
-   Epoll/epoll   uring    kqueue
-   alyrn::epoll  alyrn::uring  alyrn::kqueue
+        +------+------+
+        |             |
+        v             v
+   Epoll/epoll      uring
+   alyrn::epoll     alyrn::uring
 ```
 
 The backends do not share an event loop, and their internal state machines do not need to be identical. They only need to satisfy the same business-observable asynchronous I/O contract. [`docs/SUBSYSTEMS.md`](docs/SUBSYSTEMS.md) is the normative dependency policy.
@@ -323,20 +294,7 @@ Server
   `-- Worker N -> Thread N -> Loop N -> Ring N
 ```
 
-kqueue multi-worker is master-slave. Only worker 0 binds the listener. I/O workers start first so their loops exist; the acceptor then `Release()`s the descriptor and `Post()`s it onto a round-robin owner loop, which reconstructs `Stream` on that thread:
-
-```text
-WorkerGroup
-  |
-  +-- Worker 0 (acceptor) -> Loop 0 -> listen :port
-  |         |
-  |         +-- accept -> Release(fd) -> Post --> reconstruct stream
-  |
-  +-- Worker 1 (I/O) -> Loop 1
-  `-- Worker N (I/O) -> Loop N
-```
-
-Connections, I/O operations, and coroutine continuations remain owned by the Worker and loop that run them. `Stream` cannot be moved across loops; the handoff is a raw fd, not a live stream or a `Work*`.
+Connections, I/O operations, and coroutine continuations remain owned by the Worker and loop that run them. `Stream` cannot be moved across loops.
 
 ## Performance Benchmarks
 
@@ -358,7 +316,6 @@ Results depend strongly on the workload and must not be interpreted as a univers
 The documentation map is [`docs/index.md`](docs/index.md). Design notes are currently written in Chinese; they are the source of truth for contracts and ownership. `CONTEXT.md` is a local developer glossary and is intentionally not distributed.
 
 * **[Networking architecture](docs/design/zh-CN/network/index.md)**: runtime layering, backend boundaries, and ownership models.
-* **[kqueue backend](docs/design/zh-CN/network/kqueue/index.md)**: one-shot readiness, `Post`, and master-slave handoff.
 * **[Runtime Builder](docs/design/zh-CN/network/runtime-builder.md)**: compile-time backend tags and start/stop lifecycle.
 * **[Lifecycle-refined coroutine I/O](docs/design/zh-CN/network/lifecycle-refined-coroutine-io.md)**: logical I/O specification, three authorization boundaries, and epoll / io_uring refinement.
 * **[AsyncStream semantics](docs/design/zh-CN/network/async-stream-contract.md)**: read, write, close, cancellation, and buffer-lifetime semantics.
@@ -373,7 +330,6 @@ Alyrn is still an experimental networking runtime and is not yet a production-re
 
 Current work includes:
 
-* Hardening the kqueue adapter on real BSD/Darwin hosts (native worker-group and Runtime smoke already exist there).
 * Formal state-machine proofs, invariant tests, and concurrency validation for additional backends.
 * Modern liburing networking options and io_uring optimizations.
 * More realistic workload benchmarks and bottleneck analysis.
