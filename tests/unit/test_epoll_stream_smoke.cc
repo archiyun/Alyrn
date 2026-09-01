@@ -20,25 +20,26 @@
 #include <thread>
 #include <vector>
 
-#include "alyrn/result.h"
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/spawn.h"
 #include "alyrn/coro/sync_wait.h"
 #include "alyrn/coro/task.h"
-#include "alyrn/io/async_stream.h"
-#include "alyrn/io/buffer.h"
-#include "alyrn/io/read_into.h"
 #include "alyrn/epoll/loop.h"
 #include "alyrn/epoll/stream.h"
+#include "alyrn/io/async_stream.h"
+#include "alyrn/io/buffer.h"
+#include "alyrn/io/recv.h"
+#include "alyrn/result.h"
 
 namespace {
 
 using ReadResult = alyrn::Result<std::size_t>;
 using WriteResult = alyrn::Result<void>;
-using OwnedReadOutcome = alyrn::io::ReadIntoOutcome;
+using OwnedRecvOutcome = alyrn::io::RecvOutcome;
 
 static_assert(alyrn::io::AsyncStream<alyrn::epoll::Stream>);
-static_assert(alyrn::io::AsyncReadIntoStream<alyrn::epoll::Stream>);
+static_assert(alyrn::io::AsyncRecvStream<alyrn::epoll::Stream>);
+static_assert(alyrn::io::AsyncRecvCopyStream<alyrn::epoll::Stream>);
 
 bool Check(bool condition, const char* message) {
   if (!condition) {
@@ -79,65 +80,67 @@ std::string Gather(alyrn::io::Buffer& buffer) {
   return out;
 }
 
-alyrn::coro::DetachedTask ReadOnce(alyrn::epoll::Stream* stream,
-                                      alyrn::epoll::Loop* loop,
-                                      alyrn::epoll::Loop* scheduler,
-                                      std::array<std::byte, 16>* buffer,
-                                      std::optional<ReadResult>* out,
-                                      bool* resumed_with_scheduler) {
-  ReadResult result = co_await stream->ReadSome(*buffer);
+alyrn::coro::DetachedTask ReadOnce(alyrn::epoll::Stream* stream, alyrn::epoll::Loop* loop,
+                                   alyrn::epoll::Loop* scheduler, std::array<std::byte, 16>* buffer,
+                                   std::optional<ReadResult>* out, bool* resumed_with_scheduler) {
+  ReadResult result = co_await stream->Read(*buffer);
   *resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == scheduler;
   out->emplace(std::move(result));
   loop->RequestStop();
 }
 
 alyrn::coro::DetachedTask ReadWithoutQuit(alyrn::epoll::Stream* stream,
-                                             alyrn::epoll::Loop* scheduler,
-                                             std::array<std::byte, 16>* buffer,
-                                             std::optional<ReadResult>* out, int* resume_count,
-                                             bool* resumed_with_scheduler) {
-  ReadResult result = co_await stream->ReadSome(*buffer);
+                                          alyrn::epoll::Loop* scheduler,
+                                          std::array<std::byte, 16>* buffer,
+                                          std::optional<ReadResult>* out, int* resume_count,
+                                          bool* resumed_with_scheduler) {
+  ReadResult result = co_await stream->Read(*buffer);
   ++*resume_count;
   *resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == scheduler;
   out->emplace(std::move(result));
 }
 
-alyrn::coro::DetachedTask ReadIntoOnce(alyrn::epoll::Stream* stream,
-                                          alyrn::epoll::Loop* loop,
-                                          alyrn::epoll::Loop* scheduler,
-                                          alyrn::net::Buffer buffer,
-                                          std::optional<OwnedReadOutcome>* out,
-                                          bool* resumed_with_scheduler) {
-  OwnedReadOutcome outcome = co_await stream->ReadInto(std::move(buffer), 32);
+alyrn::coro::DetachedTask RecvOnce(alyrn::epoll::Stream* stream, alyrn::epoll::Loop* loop,
+                                   alyrn::epoll::Loop* scheduler, alyrn::net::Buffer buffer,
+                                   std::optional<OwnedRecvOutcome>* out,
+                                   bool* resumed_with_scheduler) {
+  OwnedRecvOutcome outcome = co_await stream->Recv(std::move(buffer), 32);
   *resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == scheduler;
   out->emplace(std::move(outcome));
   loop->RequestStop();
 }
 
-alyrn::coro::DetachedTask WriteOnce(alyrn::epoll::Stream* stream,
-                                       alyrn::epoll::Loop* loop,
+alyrn::coro::DetachedTask RecvCopyOnce(alyrn::epoll::Stream* stream, alyrn::epoll::Loop* loop,
                                        alyrn::epoll::Loop* scheduler,
-                                       std::span<const std::byte> payload,
-                                       std::optional<WriteResult>* out,
+                                       std::optional<alyrn::Result<alyrn::net::Buffer>>* out,
                                        bool* resumed_with_scheduler) {
-  WriteResult result = co_await stream->WriteAll(payload);
+  auto buffer = co_await stream->Recv();
+  *resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == scheduler;
+  out->emplace(std::move(buffer));
+  loop->RequestStop();
+}
+
+alyrn::coro::DetachedTask WriteOnce(alyrn::epoll::Stream* stream, alyrn::epoll::Loop* loop,
+                                    alyrn::epoll::Loop* scheduler,
+                                    std::span<const std::byte> payload,
+                                    std::optional<WriteResult>* out, bool* resumed_with_scheduler) {
+  WriteResult result = co_await stream->Write(payload);
   *resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == scheduler;
   out->emplace(std::move(result));
   loop->RequestStop();
 }
 
 alyrn::coro::DetachedTask EchoServer(alyrn::epoll::Stream* stream,
-                                        std::array<std::byte, 64>* scratch,
-                                        std::optional<alyrn::Result<void>>* out,
-                                        int* done_count, alyrn::epoll::Loop* loop) {
-  ReadResult read_result = co_await stream->ReadSome(*scratch);
+                                     std::array<std::byte, 64>* scratch,
+                                     std::optional<alyrn::Result<void>>* out, int* done_count,
+                                     alyrn::epoll::Loop* loop) {
+  ReadResult read_result = co_await stream->Read(*scratch);
   if (!read_result.has_value()) {
     out->emplace(std::unexpected(read_result.error()));
   } else if (*read_result == 0) {
     out->emplace(alyrn::Result<void>{});
   } else {
-    out->emplace(
-        co_await stream->WriteAll(std::span<const std::byte>(scratch->data(), *read_result)));
+    out->emplace(co_await stream->Write(std::span<const std::byte>(scratch->data(), *read_result)));
   }
   if (++(*done_count) == 2) {
     loop->RequestStop();
@@ -145,16 +148,16 @@ alyrn::coro::DetachedTask EchoServer(alyrn::epoll::Stream* stream,
 }
 
 alyrn::coro::DetachedTask EchoClient(alyrn::epoll::Stream* stream,
-                                        std::span<const std::byte> payload,
-                                        std::array<std::byte, 64>* received,
-                                        std::optional<alyrn::Result<void>>* out,
-                                        std::size_t* received_size, int* done_count,
-                                        alyrn::epoll::Loop* loop) {
-  alyrn::Result<void> write_result = co_await stream->WriteAll(payload);
+                                     std::span<const std::byte> payload,
+                                     std::array<std::byte, 64>* received,
+                                     std::optional<alyrn::Result<void>>* out,
+                                     std::size_t* received_size, int* done_count,
+                                     alyrn::epoll::Loop* loop) {
+  alyrn::Result<void> write_result = co_await stream->Write(payload);
   if (!write_result.has_value()) {
     out->emplace(std::unexpected(write_result.error()));
   } else {
-    ReadResult read_result = co_await stream->ReadSome(*received);
+    ReadResult read_result = co_await stream->Read(*received);
     if (!read_result.has_value()) {
       out->emplace(std::unexpected(read_result.error()));
     } else {
@@ -168,43 +171,42 @@ alyrn::coro::DetachedTask EchoClient(alyrn::epoll::Stream* stream,
   }
 }
 
-alyrn::coro::DetachedTask CloseThenSubmit(alyrn::epoll::Stream* stream,
-                                             alyrn::epoll::Loop* loop,
-                                             std::array<std::byte, 16>* read_buffer,
-                                             std::span<const std::byte> write_buffer,
-                                             std::optional<ReadResult>* read_result,
-                                             std::optional<WriteResult>* write_result) {
+alyrn::coro::DetachedTask CloseThenSubmit(alyrn::epoll::Stream* stream, alyrn::epoll::Loop* loop,
+                                          std::array<std::byte, 16>* read_buffer,
+                                          std::span<const std::byte> write_buffer,
+                                          std::optional<ReadResult>* read_result,
+                                          std::optional<WriteResult>* write_result) {
   alyrn::Result<void> close_result = co_await stream->Close();
   if (!close_result.has_value()) {
     read_result->emplace(std::unexpected(close_result.error()));
     write_result->emplace(std::unexpected(close_result.error()));
   } else {
-    read_result->emplace(co_await stream->ReadSome(*read_buffer));
-    write_result->emplace(co_await stream->WriteAll(write_buffer));
+    read_result->emplace(co_await stream->Read(*read_buffer));
+    write_result->emplace(co_await stream->Write(write_buffer));
   }
   loop->RequestStop();
 }
 
 alyrn::coro::DetachedTask ShutdownThenReadAndWrite(
-    alyrn::epoll::Stream* stream, alyrn::epoll::Loop* loop,
-    std::array<std::byte, 16>* read_buffer, std::span<const std::byte> write_buffer,
-    std::optional<WriteResult>* first_shutdown, std::optional<WriteResult>* second_shutdown,
-    std::optional<WriteResult>* write_result, std::optional<ReadResult>* read_result) {
+    alyrn::epoll::Stream* stream, alyrn::epoll::Loop* loop, std::array<std::byte, 16>* read_buffer,
+    std::span<const std::byte> write_buffer, std::optional<WriteResult>* first_shutdown,
+    std::optional<WriteResult>* second_shutdown, std::optional<WriteResult>* write_result,
+    std::optional<ReadResult>* read_result) {
   first_shutdown->emplace(co_await stream->CloseWrite());
   second_shutdown->emplace(co_await stream->Shutdown());
-  write_result->emplace(co_await stream->WriteAll(write_buffer));
-  read_result->emplace(co_await stream->ReadSome(*read_buffer));
+  write_result->emplace(co_await stream->Write(write_buffer));
+  read_result->emplace(co_await stream->Read(*read_buffer));
   loop->RequestStop();
 }
 
 alyrn::coro::Task<ReadResult> ReadFromForeignLoopThread(alyrn::epoll::Stream* stream,
-                                                           std::array<std::byte, 16>* buffer) {
-  co_return co_await stream->ReadSome(*buffer);
+                                                        std::array<std::byte, 16>* buffer) {
+  co_return co_await stream->Read(*buffer);
 }
 
 alyrn::coro::Task<WriteResult> WriteFromForeignLoopThread(alyrn::epoll::Stream* stream,
-                                                             std::span<const std::byte> buffer) {
-  co_return co_await stream->WriteAll(buffer);
+                                                          std::span<const std::byte> buffer) {
+  co_return co_await stream->Write(buffer);
 }
 
 void OpenStreamOnOwner(alyrn::epoll::Loop* loop, alyrn::epoll::Stream** stream) {
@@ -216,7 +218,7 @@ void OpenStreamOnOwner(alyrn::epoll::Loop* loop, alyrn::epoll::Stream** stream) 
   (void)::close(sv[1]);
 }
 
-void ReadSomeFromForeignThread() {
+void ReadFromForeignThread() {
   alyrn::epoll::Loop loop;
   alyrn::epoll::Stream* stream = nullptr;
   OpenStreamOnOwner(&loop, &stream);
@@ -227,7 +229,7 @@ void ReadSomeFromForeignThread() {
   foreign.join();
 }
 
-void WriteAllFromForeignThread() {
+void WriteFromForeignThread() {
   alyrn::epoll::Loop loop;
   alyrn::epoll::Stream* stream = nullptr;
   OpenStreamOnOwner(&loop, &stream);
@@ -263,10 +265,10 @@ void DestroyStreamFromForeignThread() {
 }
 
 bool CheckStreamAffinityIsEnforcedInRelease() {
-  return ExpectChildAbort(&ReadSomeFromForeignThread,
-                          "ReadSome from a foreign thread must terminate in Release") &&
-         ExpectChildAbort(&WriteAllFromForeignThread,
-                          "WriteAll from a foreign thread must terminate in Release") &&
+  return ExpectChildAbort(&ReadFromForeignThread,
+                          "Read from a foreign thread must terminate in Release") &&
+         ExpectChildAbort(&WriteFromForeignThread,
+                          "Write from a foreign thread must terminate in Release") &&
          ExpectChildAbort(&CloseFromForeignThread,
                           "Close from a foreign thread must terminate in Release") &&
          ExpectChildAbort(&MoveFromForeignThread,
@@ -350,8 +352,8 @@ bool CheckPendingRead() {
   }
 
   alyrn::epoll::Loop loop;
-  alyrn::epoll::StreamOptions stream_options{
-      .trigger_mode = alyrn::epoll::TriggerMode::kLevelTriggered};
+  alyrn::epoll::StreamOptions stream_options{.trigger_mode =
+                                                 alyrn::epoll::TriggerMode::kLevelTriggered};
   alyrn::epoll::Stream stream(&loop, sv[0], alyrn::net::Endpoint(0), stream_options);
 
   std::array<std::byte, 16> buffer{};
@@ -379,7 +381,7 @@ bool CheckPendingRead() {
          Check(resumed_with_scheduler, "pending read resumed without current scheduler");
 }
 
-bool CheckOwnedReadIntoReturnsBuffer() {
+bool CheckOwnedRecvReturnsBuffer() {
   int sv[2] = {-1, -1};
   if (!MakeSocketPair(sv)) {
     std::cout << "FAIL: socketpair failed\n";
@@ -396,11 +398,11 @@ bool CheckOwnedReadIntoReturnsBuffer() {
 
   alyrn::epoll::Loop loop;
   alyrn::epoll::Stream stream(&loop, sv[0]);
-  std::optional<OwnedReadOutcome> outcome;
+  std::optional<OwnedRecvOutcome> outcome;
   bool resumed_with_scheduler = false;
 
-  alyrn::coro::SpawnDetach(loop, ReadIntoOnce(&stream, &loop, &loop, alyrn::net::Buffer(4),
-                                                 &outcome, &resumed_with_scheduler));
+  alyrn::coro::SpawnDetach(loop, RecvOnce(&stream, &loop, &loop, alyrn::net::Buffer(4), &outcome,
+                                          &resumed_with_scheduler));
   loop.Run();
 
   ::close(sv[1]);
@@ -418,7 +420,48 @@ bool CheckOwnedReadIntoReturnsBuffer() {
   return Check(reusable_after_resume, "owned read returned a buffer with a live reservation");
 }
 
-bool CheckOwnedReadIntoCloseReturnsBuffer() {
+bool CheckPooledRecvCopiesPayload() {
+  int sv[2] = {-1, -1};
+  if (!MakeSocketPair(sv)) {
+    std::cout << "FAIL: socketpair failed\n";
+    return false;
+  }
+
+  constexpr std::string_view kPayload = "pooled-recv";
+  if (::write(sv[1], kPayload.data(), kPayload.size()) != static_cast<ssize_t>(kPayload.size())) {
+    std::cout << "FAIL: peer write failed\n";
+    ::close(sv[0]);
+    ::close(sv[1]);
+    return false;
+  }
+
+  alyrn::epoll::Loop loop;
+  alyrn::epoll::Stream stream(&loop, sv[0]);
+  std::optional<alyrn::Result<alyrn::net::Buffer>> outcome;
+  bool resumed_with_scheduler = false;
+
+  alyrn::coro::SpawnDetach(loop,
+                           RecvCopyOnce(&stream, &loop, &loop, &outcome, &resumed_with_scheduler));
+  loop.Run();
+
+  ::close(sv[1]);
+  if (!Check(outcome.has_value(), "pooled Recv did not finish") ||
+      !Check(outcome->has_value(), "pooled Recv returned an error") ||
+      !Check(resumed_with_scheduler, "pooled Recv resumed without current scheduler")) {
+    return false;
+  }
+
+  auto& buffer = **outcome;
+  if (!Check(Gather(buffer) == kPayload, "pooled Recv payload mismatch")) {
+    return false;
+  }
+  auto reusable = buffer.PrepareWrite(8, 1);
+  const bool reusable_after_resume = !reusable.empty();
+  buffer.AbortWrite();
+  return Check(reusable_after_resume, "pooled Recv returned a buffer with a live reservation");
+}
+
+bool CheckOwnedRecvCloseReturnsBuffer() {
   int sv[2] = {-1, -1};
   if (!MakeSocketPair(sv)) {
     std::cout << "FAIL: socketpair failed\n";
@@ -427,11 +470,11 @@ bool CheckOwnedReadIntoCloseReturnsBuffer() {
 
   alyrn::epoll::Loop loop;
   alyrn::epoll::Stream stream(&loop, sv[0]);
-  std::optional<OwnedReadOutcome> outcome;
+  std::optional<OwnedRecvOutcome> outcome;
   bool resumed_with_scheduler = false;
 
-  alyrn::coro::SpawnDetach(loop, ReadIntoOnce(&stream, &loop, &loop, alyrn::net::Buffer(8),
-                                                 &outcome, &resumed_with_scheduler));
+  alyrn::coro::SpawnDetach(loop, RecvOnce(&stream, &loop, &loop, alyrn::net::Buffer(8), &outcome,
+                                          &resumed_with_scheduler));
   loop.RunAfter(alyrn::time::Duration::zero(),
                 [&] { alyrn::coro::Spawn(loop, stream.Close()).Detach(); });
   loop.Run();
@@ -498,7 +541,7 @@ bool CheckLoopStopCancelsPendingRead() {
   bool resumed_with_scheduler = false;
 
   alyrn::coro::SpawnDetach(loop, ReadWithoutQuit(&stream, &loop, &buffer, &result, &resume_count,
-                                                    &resumed_with_scheduler));
+                                                 &resumed_with_scheduler));
   std::thread stopper([&] {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
     loop.RequestStop();
@@ -532,7 +575,7 @@ bool CheckReadableThenCloseResumesOnce() {
   bool resumed_with_scheduler = false;
 
   alyrn::coro::SpawnDetach(loop, ReadWithoutQuit(&stream, &loop, &buffer, &result, &resume_count,
-                                                    &resumed_with_scheduler));
+                                                 &resumed_with_scheduler));
   loop.RunAfter(alyrn::time::Duration::zero(), [&] {
     const char payload[] = "race";
     (void)(::write(sv[1], payload, sizeof(payload) - 1));
@@ -578,10 +621,10 @@ bool CheckEchoAlgorithmUsesAsyncStream() {
   std::size_t received_size = 0;
   int done_count = 0;
 
-  alyrn::coro::SpawnDetach(
-      loop, EchoServer(&server, &server_buffer, &server_result, &done_count, &loop));
+  alyrn::coro::SpawnDetach(loop,
+                           EchoServer(&server, &server_buffer, &server_result, &done_count, &loop));
   alyrn::coro::SpawnDetach(loop, EchoClient(&client, bytes, &client_buffer, &client_result,
-                                               &received_size, &done_count, &loop));
+                                            &received_size, &done_count, &loop));
 
   loop.Run();
 
@@ -671,14 +714,14 @@ bool CheckShutdownKeepsReadOpen() {
          Check(second_shutdown.has_value() && second_shutdown->has_value(),
                "second Shutdown was not idempotent") &&
          Check(write_result.has_value() && !write_result->has_value(),
-               "WriteAll after Shutdown unexpectedly succeeded") &&
+               "Write after Shutdown unexpectedly succeeded") &&
          Check(write_result->error() == std::errc::broken_pipe,
-               "WriteAll after Shutdown did not return EPIPE") &&
+               "Write after Shutdown did not return EPIPE") &&
          Check(read_result.has_value() && read_result->has_value() &&
                    **read_result == sizeof(kReply) - 1,
-               "ReadSome after Shutdown did not remain usable") &&
+               "Read after Shutdown did not remain usable") &&
          Check(actual == std::string_view(kReply, sizeof(kReply) - 1),
-               "ReadSome after Shutdown returned wrong payload") &&
+               "Read after Shutdown returned wrong payload") &&
          Check(peer_read == 0, "peer did not observe Shutdown EOF");
 }
 
@@ -689,8 +732,9 @@ int main() {
   if (!CheckImmediateRead()) return 1;
   if (!CheckImmediateWrite()) return 1;
   if (!CheckPendingRead()) return 1;
-  if (!CheckOwnedReadIntoReturnsBuffer()) return 1;
-  if (!CheckOwnedReadIntoCloseReturnsBuffer()) return 1;
+  if (!CheckOwnedRecvReturnsBuffer()) return 1;
+  if (!CheckPooledRecvCopiesPayload()) return 1;
+  if (!CheckOwnedRecvCloseReturnsBuffer()) return 1;
   if (!CheckCloseCancelsPendingRead()) return 1;
   if (!CheckLoopStopCancelsPendingRead()) return 1;
   if (!CheckReadableThenCloseResumesOnce()) return 1;

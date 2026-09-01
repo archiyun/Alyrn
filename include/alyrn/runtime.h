@@ -86,8 +86,7 @@ public:
   }
 
   // Default startup path. Omitting Backend selects the platform-native
-  // runtime::Auto backend; an explicit backend remains available when the
-  // application needs a specific capability profile.
+  // runtime::Auto backend; an explicit backend tag selects that adapter.
   template <class Backend = runtime::Auto, class Handler>
   [[nodiscard]]
   static Runtime Create(net::Endpoint listen_addr, Handler&& handler) {

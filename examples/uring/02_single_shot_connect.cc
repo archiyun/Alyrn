@@ -9,8 +9,8 @@
 #include <string_view>
 #include <utility>
 
-#include "alyrn/spawn.h"
 #include "alyrn/io.h"
+#include "alyrn/spawn.h"
 #include "alyrn/uring/connector.h"
 #include "alyrn/uring/loop.h"
 #include "alyrn/uring/stream.h"
@@ -42,7 +42,7 @@ alyrn::DetachedTask ConnectOnce(uring::Loop& loop, int& exit_code) {
 
   const auto payload = std::as_bytes(std::span<const char>(kMessage.data(), kMessage.size()));
 
-  auto write_result = co_await stream.WriteAll(payload);
+  auto write_result = co_await stream.Write(payload);
   if (!write_result.has_value()) {
     std::println(stderr, "write failed: {}", write_result.error().message());
     (void)co_await stream.Close();
@@ -56,10 +56,10 @@ alyrn::DetachedTask ConnectOnce(uring::Loop& loop, int& exit_code) {
   std::string received;
   received.reserve(kMessage.size());
 
-  // ReadSome may return a partial read, so keep reading until the complete
+  // Read may return a partial read, so keep reading until the complete
   // message has arrived instead of assuming one CQE equals one message.
   while (received.size() < kMessage.size()) {
-    auto read = co_await stream.ReadSome(buffer);
+    auto read = co_await stream.Read(buffer);
 
     if (!read.has_value()) {
       std::println(stderr, "read failed: {}", read.error().message());

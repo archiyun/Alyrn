@@ -3,17 +3,17 @@
 
 #include <iostream>
 
-#include "async_io_contracts.h"
 #include "alyrn/coro.h"
-#include "alyrn/io.h"
-#include "alyrn/net.h"
 #include "alyrn/epoll.h"
-#include "alyrn/io/buffer.h"
-#include "alyrn/io/loop.h"
 #include "alyrn/epoll/connector.h"
 #include "alyrn/epoll/listener.h"
 #include "alyrn/epoll/loop.h"
 #include "alyrn/epoll/stream.h"
+#include "alyrn/io.h"
+#include "alyrn/io/buffer.h"
+#include "alyrn/io/loop.h"
+#include "alyrn/net.h"
+#include "async_io_contracts.h"
 
 #if defined(ALYRN_ENABLE_URING)
 #include "alyrn/uring/connector.h"
@@ -30,7 +30,7 @@ using alyrn::test::contracts::AssertCoreStream;
 
 template <class T>
 concept HasBorrowedBufferRead =
-    requires(T& stream, alyrn::io::Buffer& buffer) { stream.ReadSome(buffer, 4096); };
+    requires(T& stream, alyrn::io::Buffer& buffer) { stream.Read(buffer, 4096); };
 
 consteval bool CheckEpollContracts() {
   AssertCoreStream<alyrn::epoll::Stream>();

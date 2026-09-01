@@ -3,12 +3,12 @@
 
 #include <cstddef>
 
-#include "alyrn/result.h"
 #include "alyrn/net/buffer.h"
+#include "alyrn/result.h"
 
 namespace alyrn::net {
 
-struct ReadIntoOutcome {
+struct RecvOutcome {
   Result<std::size_t> result;
   Buffer buffer;
 };

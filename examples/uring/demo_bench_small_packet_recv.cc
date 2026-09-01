@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 //
 // Flood 64-byte TCP payloads at a uring Loop and compare single-shot
-// Stream::ReadSome against multishot RecvSource (provided-buffer recv).
+// Stream::Read against multishot RecvSource (provided-buffer recv).
 //
 //   cmake --build build-uring --target demo_bench_small_packet_recv
 //   build-uring/examples/uring/demo_bench_small_packet_recv
@@ -163,7 +163,7 @@ DetachedTask SingleShotSession(Stream stream, BenchStats* stats, std::size_t pac
   const auto dest = std::span(buffer).first(std::min(buffer.size(), packet_size));
 
   for (;;) {
-    auto read = co_await stream.ReadSome(dest);
+    auto read = co_await stream.Read(dest);
     if (!read.has_value() || *read == 0) {
       if (!read.has_value()) {
         stats->errors.fetch_add(1, std::memory_order_relaxed);

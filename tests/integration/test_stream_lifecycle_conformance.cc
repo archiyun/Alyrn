@@ -25,7 +25,7 @@
 #include "alyrn/epoll/stream.h"
 #include "alyrn/io/async_stream.h"
 #include "alyrn/io/buffer.h"
-#include "alyrn/io/read_into.h"
+#include "alyrn/io/recv.h"
 #include "alyrn/net/detail/socket.h"
 #include "alyrn/net/endpoint.h"
 #include "alyrn/result.h"
@@ -40,7 +40,7 @@ namespace {
 
 using ReadResult = alyrn::Result<std::size_t>;
 using VoidResult = alyrn::Result<void>;
-using OwnedReadOutcome = alyrn::io::ReadIntoOutcome;
+using OwnedRecvOutcome = alyrn::io::RecvOutcome;
 
 class UniqueFd {
 public:
@@ -222,7 +222,7 @@ struct PendingReadObservation {
 template <alyrn::io::AsyncReadStream Stream, class Loop>
 auto ObservePendingRead(Stream& stream, Loop& loop, std::span<std::byte> buffer,
                         PendingReadObservation& observation) -> alyrn::coro::DetachedTask {
-  observation.result.emplace(co_await stream.ReadSome(buffer));
+  observation.result.emplace(co_await stream.Read(buffer));
   ++observation.resume_count;
   observation.resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   loop.RequestStop();
@@ -288,8 +288,8 @@ template <alyrn::io::AsyncReadStream Stream, class Loop>
 auto ObserveSequentialRead(Stream& stream, Loop& loop, std::span<std::byte> first_buffer,
                            std::span<std::byte> second_buffer,
                            SequentialReadObservation& observation) -> alyrn::coro::DetachedTask {
-  observation.first.emplace(co_await stream.ReadSome(first_buffer));
-  observation.second.emplace(co_await stream.ReadSome(second_buffer));
+  observation.first.emplace(co_await stream.Read(first_buffer));
+  observation.second.emplace(co_await stream.Read(second_buffer));
   observation.resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   loop.RequestStop();
 }
@@ -354,16 +354,16 @@ bool CheckReadReleaseBeforeContinuationContract() {
 }
 
 struct OwnedReadObservation {
-  std::optional<OwnedReadOutcome> outcome;
+  std::optional<OwnedRecvOutcome> outcome;
   int resume_count{0};
   bool resumed_with_scheduler{false};
   bool timed_out{false};
 };
 
-template <alyrn::io::AsyncReadIntoStream Stream, class Loop>
+template <alyrn::io::AsyncRecvStream Stream, class Loop>
 auto ObserveOwnedRead(Stream& stream, Loop& loop, alyrn::io::Buffer buffer,
                       OwnedReadObservation& observation) -> alyrn::coro::DetachedTask {
-  observation.outcome.emplace(co_await stream.ReadInto(std::move(buffer), 32));
+  observation.outcome.emplace(co_await stream.Recv(std::move(buffer), 32));
   ++observation.resume_count;
   observation.resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   loop.RequestStop();
@@ -407,17 +407,17 @@ bool CheckPendingOwnedReadSuccessContract() {
   Harness::Run(loop);
 
   bool ok = true;
-  ok &= Expect(!observation.timed_out, Harness::Name(), "pending ReadInto timed out");
+  ok &= Expect(!observation.timed_out, Harness::Name(), "pending Recv timed out");
   ok &= Expect(observation.outcome.has_value() && observation.outcome->result.has_value() &&
                    *observation.outcome->result == kPayload.size(),
-               Harness::Name(), "pending ReadInto returned the wrong result");
+               Harness::Name(), "pending Recv returned the wrong result");
   ok &= Expect(
       observation.outcome.has_value() && Gather(observation.outcome->buffer) == "prefix:owned-read",
-      Harness::Name(), "ReadInto did not commit into the returned owner");
-  ok &= Expect(observation.resume_count == 1, Harness::Name(),
-               "pending ReadInto resumed more than once");
+      Harness::Name(), "Recv did not commit into the returned owner");
+  ok &=
+      Expect(observation.resume_count == 1, Harness::Name(), "pending Recv resumed more than once");
   ok &= Expect(observation.resumed_with_scheduler, Harness::Name(),
-               "pending ReadInto lost scheduler affinity");
+               "pending Recv lost scheduler affinity");
   return ok;
 }
 
@@ -433,7 +433,7 @@ struct ConcurrentReadObservation {
 template <alyrn::io::AsyncReadStream Stream, class Loop>
 auto ObserveFirstRead(Stream& stream, Loop& loop, std::span<std::byte> buffer,
                       ConcurrentReadObservation& observation) -> alyrn::coro::DetachedTask {
-  observation.first.emplace(co_await stream.ReadSome(buffer));
+  observation.first.emplace(co_await stream.Read(buffer));
   ++observation.first_resume_count;
   if (++observation.finished == 2) {
     loop.RequestStop();
@@ -443,7 +443,7 @@ auto ObserveFirstRead(Stream& stream, Loop& loop, std::span<std::byte> buffer,
 template <alyrn::io::AsyncReadStream Stream, class Loop>
 auto ObserveCompetingEmptyRead(Stream& stream, Loop& loop, ConcurrentReadObservation& observation)
     -> alyrn::coro::DetachedTask {
-  observation.second.emplace(co_await stream.ReadSome(std::span<std::byte>{}));
+  observation.second.emplace(co_await stream.Read(std::span<std::byte>{}));
   ++observation.second_resume_count;
   if (++observation.finished == 2) {
     loop.RequestStop();
@@ -500,11 +500,11 @@ bool CheckReadLaneExclusivityContract() {
   return ok;
 }
 
-template <alyrn::io::AsyncReadIntoStream Stream, class Loop>
+template <alyrn::io::AsyncRecvStream Stream, class Loop>
 auto ObserveOwnedReadDuringLoopStop(Stream& stream, Loop& loop, alyrn::io::Buffer buffer,
                                     OwnedReadObservation& observation)
     -> alyrn::coro::DetachedTask {
-  observation.outcome.emplace(co_await stream.ReadInto(std::move(buffer), 32));
+  observation.outcome.emplace(co_await stream.Recv(std::move(buffer), 32));
   ++observation.resume_count;
   observation.resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
 }
@@ -542,18 +542,18 @@ bool CheckOwnedReadLoopStopContract() {
   bool ok = true;
   ok &= Expect(observation.outcome.has_value() && !observation.outcome->result.has_value() &&
                    observation.outcome->result.error() == std::errc::operation_canceled,
-               Harness::Name(), "loop stop did not cancel ReadInto");
+               Harness::Name(), "loop stop did not cancel Recv");
   ok &=
       Expect(observation.outcome.has_value() && Gather(observation.outcome->buffer) == "preserved",
-             Harness::Name(), "cancelled ReadInto did not return the original owner");
+             Harness::Name(), "cancelled Recv did not return the original owner");
   ok &= Expect(observation.resume_count == 1, Harness::Name(),
-               "loop-stop ReadInto resumed more than once");
+               "loop-stop Recv resumed more than once");
   ok &= Expect(observation.resumed_with_scheduler, Harness::Name(),
-               "loop-stop ReadInto lost scheduler affinity");
+               "loop-stop Recv lost scheduler affinity");
   if (observation.outcome.has_value()) {
     observation.outcome->buffer.Append(":reused");
     ok &= Expect(Gather(observation.outcome->buffer) == "preserved:reused", Harness::Name(),
-                 "returned ReadInto buffer retained an active reservation");
+                 "returned Recv buffer retained an active reservation");
   }
   return ok;
 }
@@ -568,8 +568,8 @@ template <alyrn::io::AsyncStream Stream, class Loop>
 auto ObserveIoAfterStopRequest(Stream& stream, Loop& loop, StopRequestObservation& observation)
     -> alyrn::coro::DetachedTask {
   loop.RequestStop();
-  observation.read.emplace(co_await stream.ReadSome(std::span<std::byte>{}));
-  observation.write.emplace(co_await stream.WriteAll(std::span<const std::byte>{}));
+  observation.read.emplace(co_await stream.Read(std::span<std::byte>{}));
+  observation.write.emplace(co_await stream.Write(std::span<const std::byte>{}));
   observation.resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
 }
 
@@ -620,8 +620,8 @@ auto ObserveShutdownContract(Stream& stream, Loop& loop, std::span<std::byte> re
                              ShutdownObservation& observation) -> alyrn::coro::DetachedTask {
   observation.first_shutdown.emplace(co_await stream.Shutdown());
   observation.second_shutdown.emplace(co_await stream.Shutdown());
-  observation.rejected_write.emplace(co_await stream.WriteAll(write_buffer));
-  observation.read.emplace(co_await stream.ReadSome(read_buffer));
+  observation.rejected_write.emplace(co_await stream.Write(write_buffer));
+  observation.read.emplace(co_await stream.Read(read_buffer));
   observation.resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   loop.RequestStop();
 }
@@ -696,8 +696,8 @@ auto ObserveCloseReadContract(Stream& stream, Loop& loop, std::span<std::byte> r
                               CloseReadObservation& observation) -> alyrn::coro::DetachedTask {
   observation.first_close_read.emplace(co_await stream.CloseRead());
   observation.second_close_read.emplace(co_await stream.CloseRead());
-  observation.read.emplace(co_await stream.ReadSome(read_buffer));
-  observation.write.emplace(co_await stream.WriteAll(write_buffer));
+  observation.read.emplace(co_await stream.Read(read_buffer));
+  observation.write.emplace(co_await stream.Write(write_buffer));
   observation.resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   loop.RequestStop();
 }
@@ -772,7 +772,7 @@ template <alyrn::io::AsyncStream Stream, class Loop>
 auto ObservePendingReadForCloseRead(Stream& stream, Loop& loop, std::span<std::byte> buffer,
                                     PendingReadCloseReadObservation& observation)
     -> alyrn::coro::DetachedTask {
-  observation.read.emplace(co_await stream.ReadSome(buffer));
+  observation.read.emplace(co_await stream.Read(buffer));
   observation.close_read.emplace(co_await stream.CloseRead());
   if (++observation.finished == 2) {
     loop.RequestStop();
@@ -857,7 +857,7 @@ struct PendingWriteObservation {
 template <alyrn::io::AsyncWriteStream Stream, class Loop>
 auto ObservePendingWrite(Stream& stream, Loop& loop, std::span<const std::byte> buffer,
                          PendingWriteObservation& observation) -> alyrn::coro::DetachedTask {
-  observation.write.emplace(co_await stream.WriteAll(buffer));
+  observation.write.emplace(co_await stream.Write(buffer));
   ++observation.write_resume_count;
   observation.write_resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   if (++observation.finished == 2) {
@@ -868,7 +868,7 @@ auto ObservePendingWrite(Stream& stream, Loop& loop, std::span<const std::byte> 
 template <alyrn::io::AsyncStream Stream, class Loop>
 auto ControlPendingWrite(Stream& stream, Loop& loop, PendingWriteObservation& observation)
     -> alyrn::coro::DetachedTask {
-  observation.competing_write.emplace(co_await stream.WriteAll(std::span<const std::byte>{}));
+  observation.competing_write.emplace(co_await stream.Write(std::span<const std::byte>{}));
   observation.shutdown.emplace(co_await stream.Shutdown());
   observation.close.emplace(co_await stream.Close());
   observation.control_resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
@@ -952,8 +952,8 @@ auto ObserveClosedStream(Stream& stream, Loop& loop, ClosedStreamObservation& ob
     -> alyrn::coro::DetachedTask {
   observation.first_close.emplace(co_await stream.Close());
   observation.second_close.emplace(co_await stream.Close());
-  observation.read.emplace(co_await stream.ReadSome(std::span<std::byte>{}));
-  observation.write.emplace(co_await stream.WriteAll(std::span<const std::byte>{}));
+  observation.read.emplace(co_await stream.Read(std::span<std::byte>{}));
+  observation.write.emplace(co_await stream.Write(std::span<const std::byte>{}));
   observation.shutdown.emplace(co_await stream.Shutdown());
   observation.resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   loop.RequestStop();
@@ -1013,7 +1013,7 @@ struct CloseObservation {
 template <alyrn::io::AsyncStream Stream, class Loop>
 auto ObserveCancelledRead(Stream& stream, Loop& loop, std::span<std::byte> buffer,
                           CloseObservation& observation) -> alyrn::coro::DetachedTask {
-  observation.read.emplace(co_await stream.ReadSome(buffer));
+  observation.read.emplace(co_await stream.Read(buffer));
   ++observation.read_resume_count;
   observation.resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   if (++observation.finished == 2) {
@@ -1120,7 +1120,7 @@ bool CheckIdleStreamDropContract() {
 template <alyrn::io::AsyncStream Stream, class Loop>
 auto ObserveDroppedRead(Stream& stream, Loop& loop, std::span<std::byte> buffer,
                         CloseObservation& observation) -> alyrn::coro::DetachedTask {
-  observation.read.emplace(co_await stream.ReadSome(buffer));
+  observation.read.emplace(co_await stream.Read(buffer));
   ++observation.read_resume_count;
   observation.resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   loop.RequestStop();

@@ -73,8 +73,11 @@ CompletionDisposition DispatchCompletion(Op* op, CompletionEvent event) noexcept
     case OpKind::kReadComplete:
       DispatchStreamReadComplete(op);
       break;
-    case OpKind::kReadIntoComplete:
-      DispatchStreamReadIntoComplete(op);
+    case OpKind::kRecvComplete:
+      DispatchStreamRecvComplete(op);
+      break;
+    case OpKind::kRecvCopyComplete:
+      DispatchStreamRecvCopyComplete(op, event);
       break;
     case OpKind::kWriteComplete:
       DispatchStreamWriteComplete(op);
@@ -221,6 +224,11 @@ Result<detail::ProvidedBufferPool*> Loop::GetSharedProvidedBufferPool(
     return std::unexpected(Errno(ENOMEM));
   }
   return shared_buffer_pool_.get();
+}
+
+Result<detail::ProvidedBufferPool*> Loop::GetSharedProvidedBufferPool(
+    std::size_t source_capacity) noexcept {
+  return GetSharedProvidedBufferPool(shared_buffer_size_, source_capacity);
 }
 
 void Loop::Run(std::stop_token token) noexcept {

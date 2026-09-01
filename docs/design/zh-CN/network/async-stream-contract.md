@@ -6,7 +6,7 @@
 
 Core contract 的冻结范围是 `AsyncStream`、`AsyncListener`、`AsyncConnector` 及其
 可观察的结果、生命周期、buffer 和线程归属语义。后端可以继续更换内部队列、提交
-批处理、completion dispatch 和内存池实现，但不得改变这些语义。`AsyncReadIntoStream`、`AsyncRecvSource`、`BufferLease` 和 zero-copy 属于独立的
+批处理、completion dispatch 和内存池实现，但不得改变这些语义。`AsyncRecvStream`、`AsyncRecvCopyStream`、`AsyncRecvSource`、`BufferLease` 和 zero-copy 属于独立的
 extension，不得通过扩大 Core contract 的隐含行为加入。
 
 ## 1. 这份契约解决什么问题
@@ -90,10 +90,10 @@ RequestStop
 当前公共概念约束的最小接口是：
 
 ```cpp
-ReadSome(std::span<std::byte> buffer)
+Read(std::span<std::byte> buffer)
     -> 可 await，await_resume() 为 Result<std::size_t>
 
-WriteAll(std::span<const std::byte> buffer)
+Write(std::span<const std::byte> buffer)
     -> 可 await，await_resume() 为 Result<void>
 
 Shutdown()
@@ -134,14 +134,14 @@ alyrn::io::AsyncStream
 
 ### 2.2 Timeout 不是 Stream 方法
 
-per-call `ReadSomeFor(buffer, timeout)` 已从公开契约撤回。超时不是 `AsyncStream` 的隐含开关，
+per-call `ReadFor(buffer, timeout)` 已从公开契约撤回。超时不是 `AsyncStream` 的隐含开关，
 也不再以一次性覆盖 API 出现；连接级 sticky 每操超时是后续工作，不在本契约范围内。
 
 loop 级 `SleepFor` / `RunAfter` 仍然存在，它们挂的是 loop 的 timer tree，不是 stream I/O。
 
 ### 2.3 Buffer ownership extension
 
-`ReadSome(std::span<std::byte>)` 是核心的 borrowed-buffer 路径：调用者拥有 storage，
+`Read(std::span<std::byte>)` 是核心的 borrowed-buffer 路径：调用者拥有 storage，
 并且必须在 `await_resume()` 前保持对象存活、地址稳定，不能释放、扩容、移动或并发访问
 同一段内存。这个约束包括 close 和 cancel 路径。
 
@@ -153,18 +153,18 @@ backend no longer accesses storage
   -> await_resume()
 ```
 
-`AsyncReadIntoStream` 是独立的可选 extension，不属于 `AsyncStream` 的最小接口：
+`AsyncRecvStream` 是独立的可选 extension，不属于 `AsyncStream` 的最小接口：
 
 ```cpp
-ReadInto(net::Buffer buffer, std::size_t reserve)
-    -> 可 await，await_resume() 为 net::ReadIntoOutcome
+Recv(net::Buffer buffer, std::size_t reserve)
+    -> 可 await，await_resume() 为 net::RecvOutcome
 ```
 
 它按值接收 move-only `net::Buffer`，awaiter 在整个 pending interval 内持有该 owner，并在
 所有终态路径返回：
 
 ```cpp
-struct net::ReadIntoOutcome {
+struct net::RecvOutcome {
   Result<std::size_t> result;
   net::Buffer buffer;
 };
@@ -172,6 +172,19 @@ struct net::ReadIntoOutcome {
 
 因此提交失败、关闭和取消也不会吞掉调用者转交的 buffer。`BufferLease` 则属于
 `AsyncRecvSource`：它代表后端/池提供的存储及其归还协议，不能替代普通 `net::Buffer`。
+
+`AsyncRecvCopyStream` 是另一条独立的可选 extension，也不属于 `AsyncStream` 的最小接口：
+
+```cpp
+Recv()
+    -> 可 await，await_resume() 为 Result<net::Buffer>
+```
+
+调用者不提供存储。成功（含 0 字节 EOF）返回一块新的 `net::Buffer`；失败返回
+`unexpected`，没有 caller-owned buffer 需要归还。io_uring 使用 loop 的 provided-buffer
+ring 作为内核写入目标，再 copy-out 并在 resume 前归还 slot；epoll/kqueue 接收进内部
+`Buffer`。它不暴露 `BufferLease`，也不把 `Recv()` 并入 `AsyncRecvStream`：后者要求调用者
+移交一块 `Buffer`。
 
 `Buffer::PrepareWrite()` 与 `CommitWrite()`/`AbortWrite()` 构成一个短暂的 reservation
 transaction。该区间内不得再次 `PrepareWrite()`、`Append()`、`Drain()` 或 move buffer；这些不是
@@ -241,16 +254,16 @@ Stream，失败或取消时由该次 operation 回收。
 
 ### 2.4 Awaitable 的使用规则
 
-`ReadSome` 和 `WriteAll` 的返回值必须是可 await 对象，并产生约定的
+`Read` 和 `Write` 的返回值必须是可 await 对象，并产生约定的
 `Result`。后端可以返回惰性的 `alyrn::Task<T>`，也可以返回直接承载操作状态的
 底层 awaiter：
 
 ```cpp
-auto result = co_await stream.ReadSome(buffer);
+auto result = co_await stream.Read(buffer);
 ```
 
-`Stream` 的 `ReadSome` 和 `WriteAll` 都返回直接 awaiter；luring 的 `ReadSome` 返回
-直接 awaiter，而 `WriteAll` 以一个后端内建 `Task` 驱动多个内部 send request，以保留普通
+`Stream` 的 `Read` 和 `Write` 都返回直接 awaiter；luring 的 `Read` 返回
+直接 awaiter，而 `Write` 以一个后端内建 `Task` 驱动多个内部 send request，以保留普通
 send 与 send-zc 的不同 completion/release 语义。`Shutdown()`、`Close()` 也可以返回 `Task`。
 
 如果具体接口返回 `Task`，它仍然是 move-only、single-consumer 对象，只能被 await 一次，
@@ -259,31 +272,22 @@ send 与 send-zc 的不同 completion/release 语义。`Shutdown()`、`Close()` 
 无论返回哪种 awaitable，丢弃未等待的操作都属于错误：
 
 ```cpp
-stream.ReadSome(buffer);  // 错误：没有等待该 I/O operation
+stream.Read(buffer);  // 错误：没有等待该 I/O operation
 ```
 
 I/O 方法本身不抛出业务异常。结果通过 `alyrn::Result<T>` 返回，它是
 `std::expected<T, std::error_code>` 的别名。协程未处理异常会终止进程，不属于网络错误
 传播机制。
 
-## 3. 六元组状态机
+## 3. 逻辑状态与可观察事件
 
-本文使用的是**由后端、语义 contract 和策略参数化**的六元组，而不是把这些固定解释条件误写成
-运行时可变状态：
-
-```text
-M(B, P, π) = (X, x0, E_obs, δ_B, Inv, Live)
-```
-
-```text
-B : 解释器（Epoll 或 luring），在实例生命周期内固定。
-P : 可选的语义策略集合；具体方法和 extension 由 `io::*` concept 在编译期约束。
-π : 调度/批处理策略，在实例生命周期内固定或只按显式策略转换。
-```
+后端是固定的解释器，不是运行时可变状态。具体方法和 extension 由 `io::*` concept
+在编译期约束；调度与批处理策略在实例生命周期内固定，或只按显式策略转换。
 
 `H(trace)` 不是状态变量；它是从一次执行 trace 推导出的 happens-before 偏序。证明时需要
 验证 `Submit(op) -> Complete(op) -> Resume(owner(op))` 等边存在，而不需要在每个状态复制一份
-偏序图。
+偏序图。逻辑操作的三条一次授权边界见
+[生命周期精化协程 I/O](lifecycle-refined-coroutine-io.md)。
 
 ### 3.1 状态空间 X
 
@@ -373,9 +377,9 @@ io_uring 也可能在准备阶段立即拒绝操作。此时没有真实挂起�
 `Schedule(ResumeWork)`。只有发生实际挂起时，结果、释放授权与恢复授权才需要经过后端的
 ready queue 或等价调度路径。形式模型将两者分别记为 `InlineContinue` 与 `Resume`。
 
-### 3.3 转移 δ_B、策略 π 与不变量
+### 3.3 后端解释、调度策略与不变量
 
-`δ_B` 是后端对物理事件的解释；它必须保持以下语义机制（也就是 `Inv` 的基础）：
+后端对物理事件的解释必须保持以下语义机制：
 
 ```text
 σ_submit   : 一次提交尝试创建唯一 operation 归属。
@@ -387,16 +391,16 @@ ready queue 或等价调度路径。形式模型将两者分别记为 `InlineCon
 σ_contract : 对外暴露的每个 concept 都必须有真实且可测试的语义解释。
 ```
 
-`π` 负责选择调度和实现策略，例如：
+调度与批处理策略负责选择实现细节，例如：
 
 ```text
-π_ready       : ready work 的处理顺序
-π_batch       : SQE/CQE 的批量大小
-π_poll        : epoll 或 io_uring 的等待策略
-π_resume      : completion 到 coroutine resume 的投递策略
+ready 顺序     : ready work 的处理顺序
+批处理大小     : SQE/CQE 的批量大小
+等待策略       : epoll 或 io_uring 的等待策略
+恢复投递       : completion 到 coroutine resume 的投递策略
 ```
 
-后端可以有不同的 `δ_B`，但必须在上述机制和不变量约束下解释同一组
+后端可以有不同的物理解释，但必须在上述机制和不变量约束下解释同一组
 核心事件：
 
 ```text
@@ -407,10 +411,10 @@ ready queue 或等价调度路径。形式模型将两者分别记为 `InlineCon
   -- Schedule --------> Resume(result)
 ```
 
-`π` 可以改变批量、调度顺序和延迟，但不能把一次完成变成两次恢复，也不能把一次
+调度策略可以改变批量、调度顺序和延迟，但不能把一次完成变成两次恢复，也不能把一次
 single-result 操作变成多次业务结果。
 
-`Live` 单独描述最终性，而不是混入安全不变量：在公平的后端投递和 owner-loop 调度假设下，
+最终性单独描述，而不是混入安全不变量：在公平的后端投递和 owner-loop 调度假设下，
 pending single-result operation 最终 settled、已 settled 的等待协程最终 Ready、`Closing`
 资源最终 `Closed`。`async_stream_core.tla` 已对这个最小模型检查这些性质；多 operation 与
 source refinement 继续分别检查自己的终态条件。
@@ -492,7 +496,7 @@ Submit(op) -> Complete(op, result)
 包括：
 
 ```text
-ReadSome / WriteAll 传入的 buffer；
+Read / Write 传入的 buffer；
 底层 fd 和 stream 对象；
 operation awaiter；
 用于恢复协程的 coroutine handle；
@@ -553,22 +557,22 @@ Writable -- Shutdown --> WriteShutdown
 ```
 
 `Shutdown()` 只改变写方向，不改变 stream 的资源状态；`Close()` 才负责本地资源终止和
-pending operation 收敛。因此 `Open + WriteShutdown` 仍然允许 `ReadSome()`，但不再接受新的
-`WriteAll()`。空 span 不产生物理 write request，但仍是一次逻辑 operation，必须经过 loop、
+pending operation 收敛。因此 `Open + WriteShutdown` 仍然允许 `Read()`，但不再接受新的
+`Write()`。空 span 不产生物理 write request，但仍是一次逻辑 operation，必须经过 loop、
 资源状态和写槽位验证。
 
-`CloseRead()` 只改变读方向，不关闭 fd，也不影响 `WriteAll()`。它要求没有 pending read；否则
-返回 `EBUSY`。成功后新的 `ReadSome()` 和 `ReadInto()` 立即得到项目约定的
-`Result<0>` EOF，不再提交新的 receive operation。读侧关闭和写侧关闭可以独立发生，二者都不
-等价于 `Close()`。
+`CloseRead()` 只改变读方向，不关闭 fd，也不影响 `Write()`。它要求没有 pending read；否则
+返回 `EBUSY`。成功后新的 `Read()` 和 `Recv(Buffer)` 立即得到项目约定的 `Result<0>` EOF，
+无参 `Recv()` 立即得到一块空的 `Buffer`；都不再提交新的 receive operation。读侧关闭和写侧
+关闭可以独立发生，二者都不等价于 `Close()`。
 
 一个 stream 的生命周期由其拥有者管理。调用方必须保证 stream 对象至少存活到所有依赖
 它的 operation 已经 Complete；通常应在 session 协程内统一负责 Close 和销毁。
 
-### 5.2 ReadSome
+### 5.2 Read
 
 ```cpp
-auto result = co_await stream.ReadSome(buffer);
+auto result = co_await stream.Read(buffer);
 ```
 
 语义为：一次调用最多产生一次读取结果，结果满足：
@@ -584,16 +588,16 @@ unexpected(error)
   读取失败，error 是 errno 风格的 std::error_code。
 ```
 
-`ReadSome` 不保证填满 buffer。`Result<0>` 的 EOF 语义只适用于非空 buffer；空 buffer
+`Read` 不保证填满 buffer。`Result<0>` 的 EOF 语义只适用于非空 buffer；空 buffer
 不是通用业务算法应依赖的输入。当前实现可能直接返回 0，但这不应被用来判断对端关闭。
 
-### 5.3 WriteAll
+### 5.3 Write
 
 ```cpp
-auto result = co_await stream.WriteAll(buffer);
+auto result = co_await stream.Write(buffer);
 ```
 
-`WriteAll` 是 Core contract 的完整写入操作：它重复提交后端的物理 write request，直到
+`Write` 是 Core contract 的完整写入操作：它重复提交后端的物理 write request，直到
 输入 span 被完全接受，或任一 request 到达终态错误。它产生的业务结果只有：
 
 ```text
@@ -607,17 +611,17 @@ unexpected(error)
   某个物理 write request 失败。
 ```
 
-调用方必须把 span 的 storage 保持有效、地址稳定，直到 `WriteAll` 的 `await_resume()`。
+调用方必须把 span 的 storage 保持有效、地址稳定，直到 `Write` 的 `await_resume()`。
 后端可以把短写循环做成直接 awaiter 或内部 coroutine；短写 request 及其 bytes-progress
 只属于 backend 私有状态，不再作为公共 API 暴露。send zero-copy 启用时，luring 的
-`WriteAll` 在每轮 send-zc 的 kernel resource-release 边界之后，才继续推进或降级为普通
+`Write` 在每轮 send-zc 的 kernel resource-release 边界之后，才继续推进或降级为普通
 send：primary 无 `F_MORE` 时该边界就是 primary CQE，带 `F_MORE` 时则是 notification CQE。
 
 空 span 立即产生 `Result<void>`，但不会绕过逻辑验证：已有 pending write 时返回 `EBUSY`，
 loop 停止时返回 `ECANCELED`，stream 已关闭时返回 `EBADF`，写方向已 Shutdown 时返回
 `EPIPE`。这保证空操作不能绕过 I6 的槽位和资源状态规则。
 
-多块 `Buffer` 的写出由业务显式迭代 `ContiguousView()`，并在每个 `WriteAll` 成功后调用
+多块 `Buffer` 的写出由业务显式迭代 `ContiguousView()`，并在每个 `Write` 成功后调用
 `Drain()`；Core contract 不提供 `Buffer&` 或 scatter-write convenience overload。
 
 ### 5.4 Shutdown
@@ -627,7 +631,7 @@ loop 停止时返回 `ECANCELED`，stream 已关闭时返回 `EBADF`，写方向
 ```text
 Shutdown()
   -> WriteState: Writable -> WriteShutdown
-  -> 后续本端 WriteAll() 在提交到后端前返回 EPIPE
+  -> 后续本端 Write() 在提交到后端前返回 EPIPE
   -> 读方向仍可以继续观察数据或 EOF
 ```
 
@@ -646,7 +650,8 @@ Shutdown()
 ```text
 CloseRead()
   -> ReadState: Readable -> ReadShutdown
-  -> 后续本端 ReadSome() / ReadInto() 直接返回 Result<0>
+  -> 后续本端 Read() / Recv(Buffer) 直接返回 Result<0>
+  -> 后续本端 Recv() 直接返回空 Buffer
   -> 写方向仍可继续使用
 ```
 
@@ -671,7 +676,7 @@ Close 必须满足：
 2. 已经 pending 的 read/write 最终各自 Complete 一次；
 3. 后端不再持有 fd 或 buffer 后，资源才进入 Closed；
 4. Close 自己也必须产生一个可观察的 Result<void>；
-5. Closed 后的 ReadSome / WriteAll / Shutdown / CloseRead / CloseWrite 返回 closed error；
+5. Closed 后的 Read / Write / Shutdown / CloseRead / CloseWrite 返回 closed error；
 6. Closed 后重复 Close 可以成功返回。
 ```
 
@@ -705,9 +710,9 @@ Epoll 可以通过 readiness 状态直接完成取消，luring 可能需要提�
 以下结果都可能是合法的，取决于事件在线程归属序列中的线性化顺序：
 
 ```text
-read 先完成 -> ReadSome 得到 N、0 或传输错误；随后 Close 完成
-Close 先取消 -> ReadSome 得到 ECANCELED；随后 Close 完成
-底层连接先断开 -> ReadSome 得到 0，WriteAll 得到 EPIPE 或具体错误
+read 先完成 -> Read 得到 N、0 或传输错误；随后 Close 完成
+Close 先取消 -> Read 得到 ECANCELED；随后 Close 完成
+底层连接先断开 -> Read 得到 0，Write 得到 EPIPE 或具体错误
 ```
 
 实现不能同时为同一个 operation 报告两个结果，也不能因为 Close 已被调用就丢弃 pending
@@ -758,9 +763,9 @@ Close(listener)
 `std::span` 只携带地址和长度，不拥有内存。调用方必须保证内存覆盖：
 
 ```text
-co_await stream.ReadSome(buffer)
+co_await stream.Read(buffer)
 或
-co_await stream.WriteAll(buffer)
+co_await stream.Write(buffer)
 ```
 
 对应 I/O operation 完成的整个过程：
@@ -774,7 +779,7 @@ co_await stream.WriteAll(buffer)
 ```cpp
 alyrn::Task<void> Bad(alyrn::io::AsyncStream auto& stream) {
   std::vector<std::byte> local(4096);
-  auto task = stream.ReadSome(local);
+  auto task = stream.Read(local);
   local = {};                    // 错误：底层 operation 仍可能使用这块内存
   auto result = co_await std::move(task);
   (void)result;
@@ -786,7 +791,7 @@ alyrn::Task<void> Bad(alyrn::io::AsyncStream auto& stream) {
 ```cpp
 alyrn::Task<void> Good(alyrn::io::AsyncStream auto& stream) {
   std::array<std::byte, 4096> buffer{};
-  auto result = co_await stream.ReadSome(buffer);
+  auto result = co_await stream.Read(buffer);
   (void)result;
 }
 ```
@@ -794,13 +799,13 @@ alyrn::Task<void> Good(alyrn::io::AsyncStream auto& stream) {
 ### 7.2 io::Buffer
 
 `alyrn::io::Buffer` 是 `net::Buffer` 的零成本公开 spelling。它不是
-`ReadSome` 的第二种 borrowed overload：可增长 buffer 的异步读取必须使用
-`ReadInto(std::move(buffer))`，以便 pending operation 独占 storage 并在每条终态路径归还
+`Read` 的第二种 borrowed overload：可增长 buffer 的异步读取必须使用
+`Recv(std::move(buffer))`，以便 pending operation 独占 storage 并在每条终态路径归还
 owner。实现留在 `net` 以保持后端位于 `io` facade 之下，调用者应使用 `io` spelling：
 
 ```text
-ReadInto 在读成功后 CommitWrite，在读失败后 AbortWrite；写成功后由调用者在
-WriteAll 后 Drain 已写出的字节。
+Recv 在读成功后 CommitWrite，在读失败后 AbortWrite；写成功后由调用者在
+Write 后 Drain 已写出的字节。
 ```
 
 扩展 `RecvSource` 已明确提供 buffer 的所有权边界：luring 使用每 worker 共享的 provided
@@ -824,10 +829,10 @@ registered fixed buffer 仍属于后续扩展。
 
 ## 8. Timeout 语义
 
-Stream 不再提供 per-call `ReadSomeFor`。把超时做成单次操作覆盖会引入第三套状态机
+Stream 不再提供 per-call `ReadFor`。把超时做成单次操作覆盖会引入第三套状态机
 （无超时 / 本次覆盖 / 连接级），调用方必须参加。后续若重新引入超时，应是连接级 sticky
 每操超时（例如 `SetReadTimeout(30s)`：每次 Read 从挂起起算），而不是 Go 式绝对
-`SetDeadline`，也不是一次性 `ReadSomeFor`。
+`SetDeadline`，也不是一次性 `ReadFor`。
 
 loop 级延时仍然存在：
 
@@ -848,8 +853,8 @@ Capability 描述的是语义 profile 或实现标签，不是 API 的替代品�
 A 类进入 active profile，后端必须提供可观察且可测试的统一语义：
 
 ```text
-kReadSome
-kWriteAll
+kRead
+kWrite
 kShutdown
 kClose
 kCancelByClose
@@ -884,12 +889,12 @@ kSendZeroCopy
 例如：
 
 ```text
-普通 ReadSome：一次 Submit -> 一次 Complete -> 一次 Resume
+普通 Read：一次 Submit -> 一次 Complete -> 一次 Resume
 multishot recv：一次 Submit -> 多次 Complete -> cancel/close 终止
 ```
 
-因此 multishot 不能塞进 `ReadSome`，provided buffer 不能伪装成普通 span，send zero-copy
-不能复用普通 `WriteAll` 的 buffer 完成边界。
+因此 multishot 不能塞进 `Read`，provided buffer 不能伪装成普通 span，send zero-copy
+不能复用普通 `Write` 的 buffer 完成边界。
 
 当前 luring 还提供显式扩展：
 
@@ -940,14 +945,14 @@ await_suspend
 两条路径必须对业务保留同一个核心投影：
 
 ```text
-ReadSome      -> Result<N> / Result<0> / error
-WriteAll      -> Result<void> / error
+Read      -> Result<N> / Result<0> / error
+Write      -> Result<void> / error
 Close         -> eventual resource closure
 Accept        -> one stream or error
 Resume        -> the coroutine waiting for that operation
 ```
 
-当前 luring 没有跨 ring 的公共消息层，也没有 runtime hot-swap。后端在启动期绑定后固定，
+当前 luring 没有跨 ring 的公共消息层。后端在启动期绑定后固定，
 不是运行中任意迁移 pending operation。
 
 ## 11. 错误和传输结束
@@ -955,7 +960,7 @@ Resume        -> the coroutine waiting for that operation
 核心层不把所有异常情况压成一个 `closed` 状态：
 
 ```text
-ReadSome -> Result<0>
+Read -> Result<0>
   对端有序关闭，EOF。
 
 Close 取消 pending operation -> ECANCELED
@@ -967,14 +972,14 @@ Close 之后新提交 -> EBADF 或等价 closed error
 CloseRead 之后新读 -> Result<0>
   本地读方向已关闭，但 stream 资源和写方向仍然存在。
 
-WriteAll -> EPIPE 或具体传输错误
+Write -> EPIPE 或具体传输错误
   写方向无法继续。
 ```
 
 底层系统调用返回的其他 errno 应保留，不应在后端层无理由改写。应用可以据此区分
 EOF、本地取消、连接失败、上游失败和超时。
 
-`WriteAll` 不是单次物理 write；它是后端实现的完整写入 Core operation。它会重复提交短写，
+`Write` 不是单次物理 write；它是后端实现的完整写入 Core operation。它会重复提交短写，
 并把成功但零进展的结果转换成 `EPIPE`，防止无限循环。
 
 ## 12. 实现和测试义务
@@ -983,8 +988,8 @@ EOF、本地取消、连接失败、上游失败和超时。
 
 ```text
 1. 立即读成功和 pending 读成功都只恢复一次；
-2. 短写由 WriteAll 正确推进；
-3. 对端关闭产生 ReadSome -> Result<0>；
+2. 短写由 Write 正确推进；
+3. 对端关闭产生 Read -> Result<0>；
 4. pending read 在 Close 后最终完成，且不会悬挂；
 5. pending write 在 Close 后最终完成，且不会悬挂；
 6. CloseRead 后的新 read 立即得到 EOF，且 write 仍然可用；
@@ -995,7 +1000,7 @@ EOF、本地取消、连接失败、上游失败和超时。
 11. buffer 在 Complete 前被修改或释放时不属于合法用法；
 12. listener 的 pending accept 可被 Close 收敛；
 13. Epoll 和 luring 对同一测试场景的核心结果投影一致；
-14. loop 级 SleepFor / RunAfter 到期后恢复一次；Stream 不提供 per-call ReadSomeFor；
+14. loop 级 SleepFor / RunAfter 到期后恢复一次；Stream 不提供 per-call ReadFor；
 15. EventSource 的 high-water pause 只终止当前 physical request，不把 logical source
     误报为 terminal；
 16. SplitRelease 的业务结果、恢复和 buffer/resource release 按各自授权边界发生。
@@ -1017,7 +1022,7 @@ EOF、本地取消、连接失败、上游失败和超时。
 
 ## 13. 当前明确不属于 CoreStream
 
-以下能力不能通过修改 `ReadSome` 或 `WriteAll` 的隐含行为加入核心层：
+以下能力不能通过修改 `Read` 或 `Write` 的隐含行为加入核心层：
 
 ```text
 provided buffer
@@ -1025,7 +1030,7 @@ multishot recv / accept
 send zero-copy
 暴露给业务的 linked operation
 跨 ring msg_ring 通信
-runtime hot-swap
+运行中切换后端
 per-ring upstream keep-alive pool
 ```
 
@@ -1051,7 +1056,7 @@ buffer 活到后端 release authorization，而 borrowed buffer 至少活到 Com
 Close 支配后续提交，但不抹掉已经完成的结果；
 EOF、取消、closed error 和传输错误保持可区分；
 read/write/accept 的槽位归属唯一；
-后端线程归属和 capability profile 在启动期固定；
+后端线程归属在启动期固定；扩展通过独立 contract 暴露；
 后端内部事件不进入业务接口。
 ```
 
@@ -1065,7 +1070,8 @@ Epoll 和 luring 是不同解释器；
 不支持的能力在 bind 阶段拒绝，而不是运行时静默妥协。
 ```
 
-六元组状态机及其 refinement 讨论见：[Lamport 视角下的运行时语义](lamport-hot-swap-runtime.md)。
+逻辑生命周期与后端 refinement 见 [LRCI](lifecycle-refined-coroutine-io.md)
+和 [TLA+ 模型](formal/index.md)。
 `async_stream_core.tla` 验证最小 single-result 模型；`async_stream_multiop.tla` 验证
 read/write 并行归属；`accept_source_refinement.tla` 与 `recv_source_lease.tla` 验证
 EventSource 的 pause/re-arm 与 lease 生命周期。它们是同一抽象模型的不同有界检查，

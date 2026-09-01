@@ -64,12 +64,8 @@ public:
   ScopedPipe(const ScopedPipe&) = delete;
   ScopedPipe& operator=(const ScopedPipe&) = delete;
 
-  int ReadFd() const {
-    return fds_[0];
-  }
-  int WriteFd() const {
-    return fds_[1];
-  }
+  int ReadFd() const { return fds_[0]; }
+  int WriteFd() const { return fds_[1]; }
 
 private:
   int fds_[2]{-1, -1};
@@ -95,18 +91,14 @@ public:
   ScopedSocketPair(const ScopedSocketPair&) = delete;
   ScopedSocketPair& operator=(const ScopedSocketPair&) = delete;
 
-  int Local() const {
-    return fds_[0];
-  }
-  int Peer() const {
-    return fds_[1];
-  }
+  int Local() const { return fds_[0]; }
+  int Peer() const { return fds_[1]; }
 
 private:
   int fds_[2]{-1, -1};
 };
 
-void WriteAll(int fd, const char* bytes, std::size_t length) {
+void Write(int fd, const char* bytes, std::size_t length) {
   std::size_t offset = 0;
   while (offset < length) {
     const ssize_t written = ::write(fd, bytes + offset, length - offset);
@@ -168,7 +160,7 @@ bool CheckOneShotDoesNotRefireWithoutRearm() {
         auto* ctx = static_cast<Context*>(raw);
         ++ctx->observation->reads;
         Drain(ctx->data_read_fd);
-        WriteAll(ctx->data_write_fd, "x", 1);
+        Write(ctx->data_write_fd, "x", 1);
         ctx->sentinel->SetTriggerMode(TriggerMode::kOneShot);
         ctx->sentinel->EnableWriting();
       },
@@ -183,7 +175,7 @@ bool CheckOneShotDoesNotRefireWithoutRearm() {
       },
       &context);
 
-  WriteAll(data.WriteFd(), "a", 1);
+  Write(data.WriteFd(), "a", 1);
   data_channel.EnableReading();
   loop.Run();
 
@@ -229,7 +221,7 @@ bool CheckReArmDeliversAgain() {
         ++ctx->observation->reads;
         Drain(ctx->read_fd);
         if (ctx->observation->reads == 1) {
-          WriteAll(ctx->write_fd, "b", 1);
+          Write(ctx->write_fd, "b", 1);
           ctx->channel->EnableReading();
           return;
         }
@@ -237,7 +229,7 @@ bool CheckReArmDeliversAgain() {
       },
       &context);
 
-  WriteAll(pipe.WriteFd(), "a", 1);
+  Write(pipe.WriteFd(), "a", 1);
   channel.EnableReading();
   loop.Run();
 
@@ -271,7 +263,7 @@ bool CheckRetiredFilterRemoveIsSafe() {
       },
       &context);
 
-  WriteAll(pipe.WriteFd(), "a", 1);
+  Write(pipe.WriteFd(), "a", 1);
   channel.EnableReading();
   loop.Run();
 
@@ -315,7 +307,7 @@ bool CheckLevelTriggeredRefiresWhileReadable() {
       },
       &context);
 
-  WriteAll(pipe.WriteFd(), "abc", 3);
+  Write(pipe.WriteFd(), "abc", 3);
   channel.EnableReading();
   loop.Run();
 
@@ -355,7 +347,7 @@ bool CheckBothFiltersRetireInOneTurn() {
 
   channel.EnableReading();
   channel.EnableWriting();
-  WriteAll(pair.Peer(), "a", 1);
+  Write(pair.Peer(), "a", 1);
   loop.Run();
 
   const bool read_once = observation.reads == 1;

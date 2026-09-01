@@ -1,6 +1,6 @@
 # Loop、readiness 与取消/关闭
 
-这篇文档按一次 `ReadSome()` 的实际路径介绍 Epoll，并重点说明取消。
+这篇文档按一次 `Read()` 的实际路径介绍 Epoll，并重点说明取消。
 
 先记住一句话：
 
@@ -30,7 +30,7 @@ epoll::detail::LoopShutdownRegistry
 
 ```text
 业务协程
-  │ co_await stream.ReadSome(buffer)
+  │ co_await stream.Read(buffer)
   ▼
 Stream awaiter
   │ 尝试 nonblocking read()
@@ -96,12 +96,12 @@ Created ──Run──► Running ──RequestStop──► Stopping ──dra
 
 ```cpp
 std::array<std::byte, 4096> storage;
-auto read = co_await stream.ReadSome(storage);
+auto read = co_await stream.Read(storage);
 ```
 
 ### 3.1 首次尝试：不必挂起
 
-`ReadSomeAwaiter::await_suspend()` 先检查：
+`ReadAwaiter::await_suspend()` 先检查：
 
 ```text
 loop 不是 Stopping/Stopped
@@ -222,7 +222,7 @@ result storage 写入一次；`await_resume()` 只可取走一次并使 storage 
 ### 4.3 TimerQueue 服务 loop 延时，不是 Stream I/O
 
 `TimerQueue` 仍为 `SleepFor` / `RunAfter` 提供用户态 deadline。Stream 不再把一次 read
-与 timer 绑成 composite operation；per-call `ReadSomeFor` 已撤回。
+与 timer 绑成 composite operation；per-call `ReadFor` 已撤回。
 
 descriptor readiness 与 timer 到期可以出现在同一轮 poll 里。timer 回调只安排 loop 上的
 后续 work，不能在回调里同步 resume 一个仍占用 read slot 的 stream awaiter——因为那种
@@ -252,7 +252,7 @@ ResourceState: Open -> Closing
 
 `Shutdown()` 不等于 `Close()`：前者仅执行 socket 写方向 shutdown，不会取消 pending read、
 也不释放 fd。它要求没有 pending write（否则返回 `EBUSY`），之后保持 read 可用，而新的
-`WriteAll()` 在进入 `send(MSG_NOSIGNAL)` 前返回 `EPIPE`；空 span 也不会绕过逻辑状态验证。
+`Write()` 在进入 `send(MSG_NOSIGNAL)` 前返回 `EPIPE`；空 span 也不会绕过逻辑状态验证。
 `CloseWrite()` 是 `Shutdown()` 的兼容别名；`CloseRead()` 对称地执行读方向 shutdown，要求没有
 pending read，成功后新的 read 立即返回 EOF，但不会关闭 fd 或影响新的 write。
 
@@ -382,12 +382,12 @@ lease。这是资源归还协议，不应被 `Loop::Stopped` 偷偷绕过；这�
 3. `include/alyrn/epoll/detail/channel.h`
 4. `src/epoll/channel.cc`
 5. `src/epoll/epoll_poller.cc`
-6. `src/epoll/stream.cc` 中 `ReadSomeAwaiter`、`HandleRead`、`CompleteRead`、`CloseNow`
+6. `src/epoll/stream.cc` 中 `ReadAwaiter`、`HandleRead`、`CompleteRead`、`CloseNow`
 
 再看两条更复杂的取消路径：
 
 ```text
-timeout: ReadSomeAwaiter timer -> CompleteRead(ETIMEDOUT)
+timeout: ReadAwaiter timer -> CompleteRead(ETIMEDOUT)
 loop stop: RequestStop -> BeginShutdown -> LoopShutdownRegistry -> CloseNow
 ```
 

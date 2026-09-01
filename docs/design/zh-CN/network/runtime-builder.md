@@ -37,7 +37,7 @@ auto runtime = alyrn::Runtime::Builder<alyrn::runtime::Auto>{
 
 ```cpp
 alyrn::DetachedTask Handle(alyrn::epoll::Stream stream) {
-  // co_await stream.ReadSome(...)
+  // co_await stream.Read(...)
   co_return;
 }
 

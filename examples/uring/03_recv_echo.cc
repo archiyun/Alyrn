@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 //
-// Uring ReadInto echo demo
+// Uring Recv echo demo
 //
 // Build:
-//   cmake --build build-uring --target demo_luring_read_into_echo -j"$(nproc)"
+//   cmake --build build-uring --target demo_luring_recv_echo -j"$(nproc)"
 //
 // Run:
-//   ./build-uring/examples/demo_luring_read_into_echo
+//   ./build-uring/examples/demo_luring_recv_echo
 //
 // Try:
 //   nc 127.0.0.1 19092
@@ -20,8 +20,8 @@
 
 #include "alyrn/coro.h"
 #include "alyrn/io.h"
-#include "alyrn/uring.h"
 #include "alyrn/net.h"
+#include "alyrn/uring.h"
 
 using namespace alyrn;
 
@@ -34,7 +34,7 @@ auto EchoSession(uring::Stream stream) -> alyrn::DetachedTask {
   io::Buffer buffer{kReadReserve};
 
   for (;;) {
-    auto [read, returned_buffer] = co_await stream.ReadInto(std::move(buffer), kReadReserve);
+    auto [read, returned_buffer] = co_await stream.Recv(std::move(buffer), kReadReserve);
 
     buffer = std::move(returned_buffer);
 
@@ -49,7 +49,7 @@ auto EchoSession(uring::Stream stream) -> alyrn::DetachedTask {
 
     while (!buffer.Empty()) {
       auto view = buffer.ContiguousView();
-      auto written = co_await stream.WriteAll(view);
+      auto written = co_await stream.Write(view);
       if (!written.has_value()) {
         std::println(stderr, "write failed: {}", written.error().message());
         break;
@@ -103,7 +103,7 @@ auto main() -> int {
   auto listener = std::move(*listener_result);
   alyrn::SpawnDetach(loop, AcceptLoop(loop, listener));
 
-  std::println("Uring ReadInto echo listening on 127.0.0.1:{}", kPort);
+  std::println("Uring Recv echo listening on 127.0.0.1:{}", kPort);
 
   loop.Run(std::stop_token{});
   return 0;

@@ -11,11 +11,9 @@
 namespace {
 
 struct PublicStream {
-  alyrn::Task<alyrn::Result<std::size_t>> ReadSome(std::span<std::byte>) {
-    co_return std::size_t{0};
-  }
+  alyrn::Task<alyrn::Result<std::size_t>> Read(std::span<std::byte>) { co_return std::size_t{0}; }
 
-  alyrn::Task<alyrn::Result<void>> WriteAll(std::span<const std::byte>) {
+  alyrn::Task<alyrn::Result<void>> Write(std::span<const std::byte>) {
     co_return alyrn::Result<void>{};
   }
 

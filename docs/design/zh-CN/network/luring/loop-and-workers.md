@@ -55,7 +55,7 @@ flush 失败后，`Stopped` 只能在后续 retry 成功并完全 drain 后出�
 | --- | --- | --- |
 | `entries` | SQ 容量 | 影响突发期间可排队的物理请求 |
 | `setup_sqpoll` | 启用 kernel submission thread | opt-in，可能需要权限并长期占用资源 |
-| `shared_buffer_capacity/size` | worker 共享的 provided-buffer ring 上限 | 为零时不能创建 `RecvSource` |
+| `shared_buffer_capacity/size` | worker 共享的 provided-buffer ring 上限 | 为零时不能创建 `RecvSource`，也不能使用无参 `Recv()` |
 
 CQ 深度、submission flag 和每轮 CQE/continuation 公平性预算是 `Loop` 的内部策略，
 不属于调用方配置。这样每个 loop 都使用相同的提交和调度模型；需要改变资源成本时，调用方

@@ -5,7 +5,7 @@ io_uring 的“注册资源”不是一个单一功能。luring 当前已经使�
 
 ## 当前已实现：provided buffer ring
 
-`RecvSource` 使用 loop 级共享 provided-buffer ring：
+`RecvSource` 和无参 `Recv()` 共用 loop 级共享 provided-buffer ring：
 
 ```text
 loop init / source create
@@ -16,8 +16,10 @@ loop init / source create
   -> slot 重新可供 kernel 选择
 ```
 
-它的外部契约见 [multishot recv 与 provided buffer](recv-source.md)。这里的关键是
-`BufferLease` 的 ownership，而不是让业务保存或修改内核 buffer id。
+`RecvSource` 的外部契约见 [multishot recv 与 provided buffer](recv-source.md)。这里的关键是
+`BufferLease` 的 ownership，而不是让业务保存或修改内核 buffer id。无参 `Recv()` 只把
+ring 当作内核写入目标：CQE 后 copy-out 到 `net::Buffer`，并在 resume 前归还 slot，不把
+lease 交给调用者。
 
 ## 尚未公开：fixed registered buffer
 

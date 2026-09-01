@@ -20,14 +20,14 @@
 #include <thread>
 #include <utility>
 
-#include "alyrn/result.h"
 #include "alyrn/coro/detached_task.h"
 #include "alyrn/coro/spawn.h"
+#include "alyrn/net/endpoint.h"
+#include "alyrn/result.h"
 #include "alyrn/uring/detail/loop_access.h"
 #include "alyrn/uring/loop.h"
 #include "alyrn/uring/options.h"
 #include "alyrn/uring/stream.h"
-#include "alyrn/net/endpoint.h"
 
 namespace {
 
@@ -49,9 +49,7 @@ public:
 
   ~UniqueFd() { Reset(); }
 
-  int Get() const noexcept {
-    return fd_;
-  }
+  int Get() const noexcept { return fd_; }
 
   int Release() noexcept { return std::exchange(fd_, -1); }
 
@@ -149,9 +147,9 @@ DetachedTask SendOnce(Stream* stream, std::span<const std::byte> payload,
   result->emplace(co_await stream->SendZeroCopy(payload));
 }
 
-DetachedTask WriteAllOnce(Stream* stream, std::span<const std::byte> payload,
-                          std::optional<Result<void>>* result) {
-  result->emplace(co_await stream->WriteAll(payload));
+DetachedTask WriteOnce(Stream* stream, std::span<const std::byte> payload,
+                       std::optional<Result<void>>* result) {
+  result->emplace(co_await stream->Write(payload));
 }
 
 template <typename T>
@@ -307,7 +305,7 @@ bool CheckPrimaryErrorWithoutNotificationCompletes() {
                "unconnected send zerocopy retained an inflight request");
 }
 
-bool CheckZeroCopyWriteAllIntegrity() {
+bool CheckZeroCopyWriteIntegrity() {
   Loop loop;
   if (!InitLoop(loop)) {
     return true;
@@ -339,8 +337,8 @@ bool CheckZeroCopyWriteAllIntegrity() {
 
     const auto bytes = std::as_bytes(std::span<const char>(payload));
     std::optional<Result<void>> result;
-    alyrn::coro::SpawnDetach(loop, WriteAllOnce(&stream, bytes, &result));
-    if (!DriveUntilResult(loop, result, "zero-copy WriteAll")) {
+    alyrn::coro::SpawnDetach(loop, WriteOnce(&stream, bytes, &result));
+    if (!DriveUntilResult(loop, result, "zero-copy Write")) {
       return false;
     }
     if (!result->has_value()) {
@@ -348,11 +346,11 @@ bool CheckZeroCopyWriteAllIntegrity() {
         std::cout << "SKIP: send zerocopy unsupported: " << result->error().message() << '\n';
         return true;
       }
-      std::cout << "FAIL: zero-copy WriteAll error: " << result->error().message() << '\n';
+      std::cout << "FAIL: zero-copy Write error: " << result->error().message() << '\n';
       return false;
     }
     if (!Check(ReadExact(peer.Get(), std::span<const char>(payload)),
-               "zero-copy WriteAll response payload mismatch")) {
+               "zero-copy Write response payload mismatch")) {
       return false;
     }
   }
@@ -369,7 +367,7 @@ int main() {
   if (!CheckPrimaryErrorWithoutNotificationCompletes()) {
     return 1;
   }
-  if (!CheckZeroCopyWriteAllIntegrity()) {
+  if (!CheckZeroCopyWriteIntegrity()) {
     return 1;
   }
   std::cout << "luring send zerocopy smoke: PASS\n";

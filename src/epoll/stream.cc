@@ -28,11 +28,9 @@ using detail::LoopAccess;
 
 namespace {
 
-constexpr std::size_t kReadIntoMaxIov = 16;
+constexpr std::size_t kRecvMaxIov = 16;
 
-constexpr bool IsWouldBlock(int error) noexcept {
-  return error == EAGAIN || error == EWOULDBLOCK;
-}
+constexpr bool IsWouldBlock(int error) noexcept { return error == EAGAIN || error == EWOULDBLOCK; }
 
 enum class IoAttemptState : std::uint8_t {
   kCompleted,
@@ -221,8 +219,8 @@ void Stream::ReadAwaiterState::ScheduleContinuation() noexcept { continuation_.S
 
 Result<std::size_t> Stream::ReadAwaiterState::TakeResult() noexcept { return result_.Take(); }
 
-// --- ReadSomeAwaiter ---
-bool Stream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
+// --- ReadAwaiter ---
+bool Stream::ReadAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   if (!BeginRead(continuation)) {
     return false;
   }
@@ -233,13 +231,13 @@ bool Stream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> continuation
     return false;
   }
 
-  SuspendForRead(this, Stream::PendingReadKind::kReadSome);
+  SuspendForRead(this, Stream::PendingReadKind::kRead);
   return true;
 }
 
-Result<std::size_t> Stream::ReadSomeAwaiter::await_resume() noexcept { return TakeResult(); }
+Result<std::size_t> Stream::ReadAwaiter::await_resume() noexcept { return TakeResult(); }
 
-bool Stream::ReadSomeAwaiter::CompleteResultImpl(Result<std::size_t> result) noexcept {
+bool Stream::ReadAwaiter::CompleteResultImpl(Result<std::size_t> result) noexcept {
   if (!TryAuthorizeResult()) {
     return false;
   }
@@ -248,7 +246,7 @@ bool Stream::ReadSomeAwaiter::CompleteResultImpl(Result<std::size_t> result) noe
   return true;
 }
 
-void Stream::ReadSomeAwaiter::OnReadyImpl() noexcept {
+void Stream::ReadAwaiter::OnReadyImpl() noexcept {
   auto [state, result] = TryRead(stream_->socket_.fd(), buffer_);
   if (state == IoAttemptState::kWouldBlock) {
     return;
@@ -256,19 +254,18 @@ void Stream::ReadSomeAwaiter::OnReadyImpl() noexcept {
   stream_->CompleteRead(result);
 }
 
-// --- ReadIntoAwaiter ---
-Stream::ReadIntoAwaiter::ReadIntoAwaiter(Stream& stream, net::Buffer buffer,
-                                         std::size_t reserve) noexcept
+// --- RecvAwaiter ---
+Stream::RecvAwaiter::RecvAwaiter(Stream& stream, net::Buffer buffer, std::size_t reserve) noexcept
     : ReadAwaiterState(stream), buffer_(std::move(buffer)), reserve_(reserve) {}
 
-Stream::ReadIntoAwaiter::~ReadIntoAwaiter() {
+Stream::RecvAwaiter::~RecvAwaiter() {
   if (reservation_active_) {
     buffer_.AbortWrite();
     reservation_active_ = false;
   }
 }
 
-bool Stream::ReadIntoAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
+bool Stream::RecvAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   if (!BeginRead(continuation)) {
     return false;
   }
@@ -278,7 +275,7 @@ bool Stream::ReadIntoAwaiter::await_suspend(std::coroutine_handle<> continuation
     return false;
   }
 
-  std::array<iovec, kReadIntoMaxIov> iovs;
+  std::array<iovec, kRecvMaxIov> iovs;
   auto [state, result] = TryReadv(stream_->socket_.fd(), buffer_.ReservedWriteIov(iovs));
   if (state != IoAttemptState::kWouldBlock) {
     FinishAttempt(result);
@@ -286,18 +283,18 @@ bool Stream::ReadIntoAwaiter::await_suspend(std::coroutine_handle<> continuation
     return false;
   }
 
-  SuspendForRead(this, PendingReadKind::kReadInto);
+  SuspendForRead(this, PendingReadKind::kRecv);
   return true;
 }
 
-net::ReadIntoOutcome Stream::ReadIntoAwaiter::await_resume() noexcept {
+net::RecvOutcome Stream::RecvAwaiter::await_resume() noexcept {
   return {
       .result = TakeResult(),
       .buffer = std::move(buffer_),
   };
 }
 
-bool Stream::ReadIntoAwaiter::CompleteResultImpl(Result<std::size_t> result) noexcept {
+bool Stream::RecvAwaiter::CompleteResultImpl(Result<std::size_t> result) noexcept {
   if (!TryAuthorizeResult()) {
     return false;
   }
@@ -306,8 +303,8 @@ bool Stream::ReadIntoAwaiter::CompleteResultImpl(Result<std::size_t> result) noe
   return true;
 }
 
-void Stream::ReadIntoAwaiter::OnReadyImpl() noexcept {
-  std::array<iovec, kReadIntoMaxIov> iovs;
+void Stream::RecvAwaiter::OnReadyImpl() noexcept {
+  std::array<iovec, kRecvMaxIov> iovs;
   auto [state, result] = TryReadv(stream_->socket_.fd(), buffer_.ReservedWriteIov(iovs));
   if (state == IoAttemptState::kWouldBlock) {
     return;
@@ -315,9 +312,9 @@ void Stream::ReadIntoAwaiter::OnReadyImpl() noexcept {
   stream_->CompleteRead(result);
 }
 
-bool Stream::ReadIntoAwaiter::PrepareReservation() noexcept {
+bool Stream::RecvAwaiter::PrepareReservation() noexcept {
   try {
-    std::array<iovec, kReadIntoMaxIov> iovs;
+    std::array<iovec, kRecvMaxIov> iovs;
     if (buffer_.PrepareWrite(reserve_, iovs).empty()) {
       buffer_.AbortWrite();
       result_.SetError(Errno(ENOMEM));
@@ -332,8 +329,8 @@ bool Stream::ReadIntoAwaiter::PrepareReservation() noexcept {
   return true;
 }
 
-void Stream::ReadIntoAwaiter::FinishAttempt(Result<std::size_t> result) noexcept {
-  ALYRN_CHECK(reservation_active_, "ReadIntoAwaiter completion without a buffer reservation");
+void Stream::RecvAwaiter::FinishAttempt(Result<std::size_t> result) noexcept {
+  ALYRN_CHECK(reservation_active_, "RecvAwaiter completion without a buffer reservation");
   if (result.has_value()) {
     buffer_.CommitWrite(*result);
   } else {
@@ -343,12 +340,98 @@ void Stream::ReadIntoAwaiter::FinishAttempt(Result<std::size_t> result) noexcept
   result_.SetResult(result);
 }
 
-// --- WriteAllAwaiter ---
-Stream::WriteAllAwaiter Stream::WriteAll(std::span<const std::byte> buffer) noexcept {
-  return WriteAllAwaiter{*this, buffer};
+Stream::RecvCopyAwaiter::RecvCopyAwaiter(Stream& stream) noexcept
+    : ReadAwaiterState(stream), reserve_(net::Buffer::kDefaultBlockSize) {}
+
+Stream::RecvCopyAwaiter::~RecvCopyAwaiter() {
+  if (reservation_active_) {
+    buffer_.AbortWrite();
+    reservation_active_ = false;
+  }
 }
 
-bool Stream::WriteAllAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
+bool Stream::RecvCopyAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
+  if (!BeginRead(continuation)) {
+    return false;
+  }
+
+  if (!PrepareReservation()) {
+    CompleteStoredInline();
+    return false;
+  }
+
+  std::array<iovec, kRecvMaxIov> iovs;
+  auto [state, result] = TryReadv(stream_->socket_.fd(), buffer_.ReservedWriteIov(iovs));
+  if (state != IoAttemptState::kWouldBlock) {
+    FinishAttempt(result);
+    CompleteStoredInline();
+    return false;
+  }
+
+  SuspendForRead(this, PendingReadKind::kRecvCopy);
+  return true;
+}
+
+Result<net::Buffer> Stream::RecvCopyAwaiter::await_resume() noexcept {
+  auto result = TakeResult();
+  if (!result.has_value()) {
+    return std::unexpected(result.error());
+  }
+  return std::move(buffer_);
+}
+
+bool Stream::RecvCopyAwaiter::CompleteResultImpl(Result<std::size_t> result) noexcept {
+  if (!TryAuthorizeResult()) {
+    return false;
+  }
+  FinishAttempt(result);
+  stream_ = nullptr;
+  return true;
+}
+
+void Stream::RecvCopyAwaiter::OnReadyImpl() noexcept {
+  std::array<iovec, kRecvMaxIov> iovs;
+  auto [state, result] = TryReadv(stream_->socket_.fd(), buffer_.ReservedWriteIov(iovs));
+  if (state == IoAttemptState::kWouldBlock) {
+    return;
+  }
+  stream_->CompleteRead(result);
+}
+
+bool Stream::RecvCopyAwaiter::PrepareReservation() noexcept {
+  try {
+    std::array<iovec, kRecvMaxIov> iovs;
+    if (buffer_.PrepareWrite(reserve_, iovs).empty()) {
+      buffer_.AbortWrite();
+      result_.SetError(Errno(ENOMEM));
+      return false;
+    }
+  } catch (const std::bad_alloc&) {
+    buffer_.AbortWrite();
+    result_.SetError(Errno(ENOMEM));
+    return false;
+  }
+  reservation_active_ = true;
+  return true;
+}
+
+void Stream::RecvCopyAwaiter::FinishAttempt(Result<std::size_t> result) noexcept {
+  ALYRN_CHECK(reservation_active_, "RecvCopyAwaiter completion without a buffer reservation");
+  if (result.has_value()) {
+    buffer_.CommitWrite(*result);
+  } else {
+    buffer_.AbortWrite();
+  }
+  reservation_active_ = false;
+  result_.SetResult(result);
+}
+
+// --- WriteAwaiter ---
+Stream::WriteAwaiter Stream::Write(std::span<const std::byte> buffer) noexcept {
+  return WriteAwaiter{*this, buffer};
+}
+
+bool Stream::WriteAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   stream_->RequireOwnerLoop();
   if (stream_->loop_->State() == backend::LoopState::kStopping ||
       stream_->loop_->State() == backend::LoopState::kStopped) {
@@ -395,7 +478,7 @@ bool Stream::WriteAllAwaiter::await_suspend(std::coroutine_handle<> continuation
   return false;
 }
 
-Result<void> Stream::WriteAllAwaiter::await_resume() noexcept {
+Result<void> Stream::WriteAwaiter::await_resume() noexcept {
   auto result = result_.Take();
   if (!result.has_value()) {
     return std::unexpected(result.error());
@@ -403,14 +486,14 @@ Result<void> Stream::WriteAllAwaiter::await_resume() noexcept {
   return Result<void>{};
 }
 
-void Stream::WriteAllAwaiter::CompleteInline(Result<std::size_t> result) noexcept {
+void Stream::WriteAwaiter::CompleteInline(Result<std::size_t> result) noexcept {
   result_.SetResult(result);
   ALYRN_CHECK(lifecycle_.TryAuthorizeResult(), "Epoll write result was authorized twice");
   ALYRN_CHECK(lifecycle_.TryAuthorizeRelease(),
               "Epoll write release was not authorized after its result");
 }
 
-Stream::WriteAllAwaiter::~WriteAllAwaiter() {
+Stream::WriteAwaiter::~WriteAwaiter() {
   if (stream_ == nullptr || stream_->pending_write_ != this) {
     return;
   }
@@ -421,7 +504,7 @@ Stream::WriteAllAwaiter::~WriteAllAwaiter() {
   stream_ = nullptr;
 }
 
-bool Stream::WriteAllAwaiter::CompleteResultImpl(Result<std::size_t> result) noexcept {
+bool Stream::WriteAwaiter::CompleteResultImpl(Result<std::size_t> result) noexcept {
   if (!lifecycle_.TryAuthorizeResult()) {
     return false;
   }
@@ -430,17 +513,17 @@ bool Stream::WriteAllAwaiter::CompleteResultImpl(Result<std::size_t> result) noe
   return true;
 }
 
-bool Stream::WriteAllAwaiter::TryAuthorizeRelease() noexcept {
+bool Stream::WriteAwaiter::TryAuthorizeRelease() noexcept {
   return lifecycle_.TryAuthorizeRelease();
 }
 
-bool Stream::WriteAllAwaiter::TryAuthorizeContinuation() noexcept {
+bool Stream::WriteAwaiter::TryAuthorizeContinuation() noexcept {
   return lifecycle_.TryAuthorizeContinuation();
 }
 
-void Stream::WriteAllAwaiter::ScheduleContinuation() noexcept { continuation_.Schedule(); }
+void Stream::WriteAwaiter::ScheduleContinuation() noexcept { continuation_.Schedule(); }
 
-void Stream::WriteAllAwaiter::OnReadyImpl() noexcept {
+void Stream::WriteAwaiter::OnReadyImpl() noexcept {
   while (!buffer_.empty()) {
     auto [state, result] = TryWrite(stream_->socket_.fd(), buffer_);
     if (state == IoAttemptState::kWouldBlock) {
@@ -469,7 +552,7 @@ Stream::Stream(Loop* loop, int fd, net::Endpoint peer, StreamOptions options)
 
   // A stream keeps read interest across successful reads. Edge-triggered
   // delivery avoids the level-triggered disable/re-enable epoll_ctl pair on
-  // every keep-alive request; every ReadSome still probes the socket first.
+  // every keep-alive request; every Read still probes the socket first.
   channel_.SetEdgeTriggered(options.trigger_mode == TriggerMode::kEdgeTriggered);
   BindChannelCallbacks();
   LoopAccess::RegisterShutdownParticipant(*loop_, shutdown_participant_);
@@ -518,12 +601,14 @@ Stream::~Stream() {
   LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
 }
 
-Stream::ReadSomeAwaiter Stream::ReadSome(std::span<std::byte> buffer) noexcept {
-  return ReadSomeAwaiter{*this, buffer};
+Stream::ReadAwaiter Stream::Read(std::span<std::byte> buffer) noexcept {
+  return ReadAwaiter{*this, buffer};
 }
 
-Stream::ReadIntoAwaiter Stream::ReadInto(net::Buffer buffer, std::size_t reserve) noexcept {
-  return ReadIntoAwaiter{*this, std::move(buffer), reserve};
+Stream::RecvCopyAwaiter Stream::Recv() noexcept { return RecvCopyAwaiter{*this}; }
+
+Stream::RecvAwaiter Stream::Recv(net::Buffer buffer, std::size_t reserve) noexcept {
+  return RecvAwaiter{*this, std::move(buffer), reserve};
 }
 
 coro::Task<Result<void>> Stream::Shutdown() noexcept { return CloseWrite(); }
@@ -625,11 +710,14 @@ void Stream::HandleRead() {
     return;
   }
   switch (pending_read_kind_) {
-    case PendingReadKind::kReadSome:
-      static_cast<ReadSomeAwaiter*>(pending_read_)->OnReady();
+    case PendingReadKind::kRead:
+      static_cast<ReadAwaiter*>(pending_read_)->OnReady();
       return;
-    case PendingReadKind::kReadInto:
-      static_cast<ReadIntoAwaiter*>(pending_read_)->OnReady();
+    case PendingReadKind::kRecv:
+      static_cast<RecvAwaiter*>(pending_read_)->OnReady();
+      return;
+    case PendingReadKind::kRecvCopy:
+      static_cast<RecvCopyAwaiter*>(pending_read_)->OnReady();
       return;
     case PendingReadKind::kNone:
       return;
@@ -665,13 +753,17 @@ void Stream::CompleteRead(Result<std::size_t> result) {
   ReadAwaiterState* state = nullptr;
   bool result_authorized = false;
   switch (kind) {
-    case PendingReadKind::kReadSome:
-      state = static_cast<ReadSomeAwaiter*>(awaiter);
-      result_authorized = static_cast<ReadSomeAwaiter*>(awaiter)->CompleteResult(result);
+    case PendingReadKind::kRead:
+      state = static_cast<ReadAwaiter*>(awaiter);
+      result_authorized = static_cast<ReadAwaiter*>(awaiter)->CompleteResult(result);
       break;
-    case PendingReadKind::kReadInto:
-      state = static_cast<ReadIntoAwaiter*>(awaiter);
-      result_authorized = static_cast<ReadIntoAwaiter*>(awaiter)->CompleteResult(result);
+    case PendingReadKind::kRecv:
+      state = static_cast<RecvAwaiter*>(awaiter);
+      result_authorized = static_cast<RecvAwaiter*>(awaiter)->CompleteResult(result);
+      break;
+    case PendingReadKind::kRecvCopy:
+      state = static_cast<RecvCopyAwaiter*>(awaiter);
+      result_authorized = static_cast<RecvCopyAwaiter*>(awaiter)->CompleteResult(result);
       break;
     case PendingReadKind::kNone:
       ALYRN_CHECK(false, "Stream::CompleteRead missing operation kind");
@@ -705,7 +797,7 @@ void Stream::CompleteRead(Result<std::size_t> result) {
 }
 
 void Stream::CompleteWrite(Result<std::size_t> result) {
-  WriteAllAwaiter* awaiter = pending_write_;
+  WriteAwaiter* awaiter = pending_write_;
   if (awaiter == nullptr) {
     return;
   }
@@ -714,7 +806,7 @@ void Stream::CompleteWrite(Result<std::size_t> result) {
   ALYRN_CHECK(awaiter->TryAuthorizeRelease(),
               "Stream::CompleteWrite release was not authorized after its result");
 
-  WriteAllAwaiter* released = std::exchange(pending_write_, nullptr);
+  WriteAwaiter* released = std::exchange(pending_write_, nullptr);
   ALYRN_CHECK(released == awaiter, "Stream::CompleteWrite pending slot changed during completion");
   if (channel_.IsWriting()) {
     channel_.DisableWriting();

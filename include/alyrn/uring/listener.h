@@ -11,8 +11,8 @@
 #include "alyrn/backend/accept_source.h"
 #include "alyrn/backend/async_listener.h"
 #include "alyrn/backend/value_result_state.h"
-#include "alyrn/detail/macros.h"
 #include "alyrn/detail/completion_gate.h"
+#include "alyrn/detail/macros.h"
 #include "alyrn/detail/scheduler_continuation.h"
 #include "alyrn/net/accept_source.h"
 #include "alyrn/net/endpoint.h"
@@ -32,7 +32,7 @@ struct ListenOptions {
   bool reuse_addr{true};
   bool reuse_port{true};
   // Exposes the uring stream's explicit zero-copy send extension to generic
-  // WriteAll(). It is opt-in; the physical single-send operation remains
+  // Write(). It is opt-in; the physical single-send operation remains
   // internal to Stream.
   bool zero_copy_writes{false};
   int backlog{SOMAXCONN};

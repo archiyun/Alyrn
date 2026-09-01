@@ -18,11 +18,11 @@ target_link_libraries(demo_luring_single_shot_connect
         alyrn_luring
 )
 
-add_executable(demo_luring_read_into_echo
-    03_read_into_echo.cc
+add_executable(demo_luring_recv_echo
+    03_recv_echo.cc
 )
 
-target_link_libraries(demo_luring_read_into_echo
+target_link_libraries(demo_luring_recv_echo
     PRIVATE
         alyrn_luring
 )

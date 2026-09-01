@@ -8,10 +8,10 @@
 
 #include "alyrn/coro/spawn.h"
 #include "alyrn/io.h"
+#include "alyrn/net/endpoint.h"
 #include "alyrn/uring.h"
 #include "alyrn/uring/listener.h"
 #include "alyrn/uring/stream.h"
-#include "alyrn/net/endpoint.h"
 
 using namespace alyrn;
 
@@ -23,7 +23,7 @@ auto EchoSession(uring::Stream stream) -> alyrn::DetachedTask {
   std::array<std::byte, 4096> buffer{};
 
   for (;;) {
-    auto read = co_await stream.ReadSome(buffer);
+    auto read = co_await stream.Read(buffer);
 
     if (!read.has_value()) {
       std::println(stderr, "read failed: {}", read.error().message());
@@ -36,7 +36,7 @@ auto EchoSession(uring::Stream stream) -> alyrn::DetachedTask {
 
     auto payload = std::span<const std::byte>(buffer.data(), *read);
 
-    auto written = co_await stream.WriteAll(payload);
+    auto written = co_await stream.Write(payload);
     if (!written.has_value()) {
       std::println(stderr, "write failed: {}", written.error().message());
       break;

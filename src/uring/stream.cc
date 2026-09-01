@@ -7,6 +7,7 @@
 #include <cerrno>
 #include <coroutine>
 #include <cstddef>
+#include <cstring>
 #include <expected>
 #include <new>
 #include <span>
@@ -14,19 +15,20 @@
 
 #include "alyrn/backend/loop.h"
 #include "alyrn/detail/check.h"
+#include "alyrn/net/detail/socket.h"
+#include "alyrn/net/endpoint.h"
+#include "alyrn/net/recv.h"
+#include "alyrn/result.h"
+#include "alyrn/time/clock.h"
 #include "alyrn/uring/detail/fd_close_convergence.h"
 #include "alyrn/uring/detail/loop_access.h"
 #include "alyrn/uring/detail/op.h"
 #include "alyrn/uring/detail/op_hook.h"
 #include "alyrn/uring/detail/operation_submission.h"
+#include "alyrn/uring/detail/provided_buffer_pool.h"
 #include "alyrn/uring/detail/sqe_prep.h"
 #include "alyrn/uring/detail/stream_operation_slot.h"
 #include "alyrn/uring/loop.h"
-#include "alyrn/net/endpoint.h"
-#include "alyrn/net/read_into.h"
-#include "alyrn/net/detail/socket.h"
-#include "alyrn/result.h"
-#include "alyrn/time/clock.h"
 
 namespace alyrn::uring {
 
@@ -34,11 +36,10 @@ using namespace detail;
 
 namespace {
 
-constexpr std::size_t kReadIntoMaxIov = 16;
+constexpr std::size_t kRecvMaxIov = 16;
 
 Result<std::size_t> ToSizeResult(const CqeResult& result) noexcept {
-  ALYRN_CHECK(result.HasValue(),
-                 "Uring stream awaiter resumed before its CQE result was ready");
+  ALYRN_CHECK(result.HasValue(), "Uring stream awaiter resumed before its CQE result was ready");
   const int cqe_result = *result;
   if (cqe_result < 0) {
     return std::unexpected(NegErrno(cqe_result));
@@ -107,8 +108,8 @@ void detail::StreamOperationSlot::Release(Stream& stream, StreamOperationDirecti
   }
 }
 
-// ---- ReadSomeAwaiter ---
-bool Stream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
+// ---- ReadAwaiter ---
+bool Stream::ReadAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   auto available = detail::StreamOperationSlot::ValidateAvailable(
       *stream_, detail::StreamOperationDirection::kRead);
   if (!available.has_value()) {
@@ -142,22 +143,22 @@ bool Stream::ReadSomeAwaiter::await_suspend(std::coroutine_handle<> continuation
       });
 }
 
-Result<std::size_t> Stream::ReadSomeAwaiter::await_resume() noexcept {
+Result<std::size_t> Stream::ReadAwaiter::await_resume() noexcept {
   return ToSizeResult(Operation()->result);
 }
 
-void Stream::ReadSomeAwaiter::OnComplete(::alyrn::uring::detail::Op* op) noexcept {
+void Stream::ReadAwaiter::OnComplete(::alyrn::uring::detail::Op* op) noexcept {
   auto* self = OpHook::OwnerFrom(op);
   ALYRN_CHECK(op->TryAuthorizeCoupledRelease(),
-                 "Uring ReadSome released its stream slot before result readiness");
+              "Uring Read released its stream slot before result readiness");
   if (self->stream_ != nullptr) {
     detail::StreamOperationSlot::Release(*self->stream_, detail::StreamOperationDirection::kRead,
                                          self);
   }
 }
 
-// ---- ReadIntoAwaiter ---
-bool Stream::ReadIntoAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
+// ---- RecvAwaiter ---
+bool Stream::RecvAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   auto available = detail::StreamOperationSlot::ValidateAvailable(
       *stream_, detail::StreamOperationDirection::kRead);
   if (!available.has_value()) {
@@ -182,7 +183,7 @@ bool Stream::ReadIntoAwaiter::await_suspend(std::coroutine_handle<> continuation
     return false;
   }
 
-  Operation()->kind = OpKind::kReadIntoComplete;
+  Operation()->kind = OpKind::kRecvComplete;
 
   auto on_submit_failure = [this](Error error) noexcept {
     detail::StreamOperationSlot::Release(*stream_, detail::StreamOperationDirection::kRead, this);
@@ -203,17 +204,17 @@ bool Stream::ReadIntoAwaiter::await_suspend(std::coroutine_handle<> continuation
       std::move(on_submit_failure));
 }
 
-net::ReadIntoOutcome Stream::ReadIntoAwaiter::await_resume() noexcept {
+net::RecvOutcome Stream::RecvAwaiter::await_resume() noexcept {
   return {
       .result = ToSizeResult(Operation()->result),
       .buffer = std::move(buffer_),
   };
 }
 
-void Stream::ReadIntoAwaiter::OnComplete(::alyrn::uring::detail::Op* op) noexcept {
+void Stream::RecvAwaiter::OnComplete(::alyrn::uring::detail::Op* op) noexcept {
   auto* self = OpHook::OwnerFrom(op);
   ALYRN_CHECK(op->TryAuthorizeCoupledRelease(),
-                 "Uring ReadInto released its reservation before result readiness");
+              "Uring Recv released its reservation before result readiness");
   self->FinishReservation(ToSizeResult(op->result));
   if (self->stream_ != nullptr) {
     detail::StreamOperationSlot::Release(*self->stream_, detail::StreamOperationDirection::kRead,
@@ -221,14 +222,14 @@ void Stream::ReadIntoAwaiter::OnComplete(::alyrn::uring::detail::Op* op) noexcep
   }
 }
 
-Stream::ReadIntoAwaiter::ReservationKind Stream::ReadIntoAwaiter::PrepareReservation(
+Stream::RecvAwaiter::ReservationKind Stream::RecvAwaiter::PrepareReservation(
     iovec& single_iov) noexcept {
   try {
     if (auto iov = buffer_.TryPrepareWriteOne(reserve_); iov.has_value()) {
       single_iov = *iov;
       reservation_kind_ = ReservationKind::kSingle;
     } else {
-      auto iovs = buffer_.PrepareWrite(reserve_, kReadIntoMaxIov);
+      auto iovs = buffer_.PrepareWrite(reserve_, kRecvMaxIov);
       if (iovs.empty()) {
         buffer_.AbortWrite();
         return ReservationKind::kNone;
@@ -243,9 +244,9 @@ Stream::ReadIntoAwaiter::ReservationKind Stream::ReadIntoAwaiter::PrepareReserva
   return reservation_kind_;
 }
 
-void Stream::ReadIntoAwaiter::FinishReservation(Result<std::size_t> result) noexcept {
+void Stream::RecvAwaiter::FinishReservation(Result<std::size_t> result) noexcept {
   ALYRN_CHECK(reservation_kind_ != ReservationKind::kNone,
-                 "ReadIntoAwaiter completion without a buffer reservation");
+              "RecvAwaiter completion without a buffer reservation");
   if (result.has_value()) {
     buffer_.CommitWrite(*result);
   } else {
@@ -253,6 +254,119 @@ void Stream::ReadIntoAwaiter::FinishReservation(Result<std::size_t> result) noex
   }
   iovs_.clear();
   reservation_kind_ = ReservationKind::kNone;
+}
+
+// ---- RecvCopyAwaiter ---
+bool Stream::RecvCopyAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
+  auto available = detail::StreamOperationSlot::ValidateAvailable(
+      *stream_, detail::StreamOperationDirection::kRead);
+  if (!available.has_value()) {
+    Finish(std::unexpected(available.error()));
+    Operation()->SetImmediateError(available.error());
+    return false;
+  }
+  if (stream_->lifecycle_.IsReadShutdown()) {
+    Finish(net::Buffer{});
+    Operation()->SetImmediateSuccess();
+    return false;
+  }
+
+  auto pool = detail::LoopAccess::GetSharedProvidedBufferPool(*stream_->loop_, 1);
+  if (!pool.has_value()) {
+    Finish(std::unexpected(pool.error()));
+    Operation()->SetImmediateError(pool.error());
+    return false;
+  }
+  pool_ = *pool;
+
+  auto reserved =
+      detail::StreamOperationSlot::Reserve(*stream_, detail::StreamOperationDirection::kRead, this);
+  if (!reserved.has_value()) {
+    Finish(std::unexpected(reserved.error()));
+    Operation()->SetImmediateError(reserved.error());
+    return false;
+  }
+
+  Operation()->kind = OpKind::kRecvCopyComplete;
+  return detail::SubmitAwaitingOperation(
+      *stream_->loop_, *Operation(), continuation,
+      detail::PrepareProvidedRecv(stream_->fd_, pool_->buffer_size(), pool_->BufferGroup()),
+      [this](Error error) noexcept {
+        detail::StreamOperationSlot::Release(*stream_, detail::StreamOperationDirection::kRead,
+                                             this);
+        Finish(std::unexpected(error));
+        Operation()->SetImmediateError(error);
+      });
+}
+
+Result<net::Buffer> Stream::RecvCopyAwaiter::await_resume() noexcept {
+  ALYRN_CHECK(outcome_.has_value(), "Uring Recv() resumed before its result was ready");
+  return std::move(*outcome_);
+}
+
+void Stream::RecvCopyAwaiter::Finish(Result<net::Buffer> outcome) noexcept {
+  ALYRN_CHECK(!outcome_.has_value(), "Uring Recv() recorded two results");
+  outcome_ = std::move(outcome);
+}
+
+void Stream::RecvCopyAwaiter::OnComplete(::alyrn::uring::detail::Op* op,
+                                         CompletionEvent event) noexcept {
+  auto* self = OpHook::OwnerFrom(op);
+  ALYRN_CHECK(op->TryAuthorizeCoupledResult(), "Uring Recv() result was authorized twice");
+
+  const int cqe_result = event.result;
+  const bool has_buffer = event.HasSelectedBuffer();
+  const auto buffer_id = event.SelectedBufferId();
+  auto* pool = self->pool_;
+  const bool valid_buffer = has_buffer && pool != nullptr && buffer_id < pool->capacity() &&
+                            pool->slot(buffer_id) != nullptr;
+
+  auto return_slot = [pool, valid_buffer, buffer_id]() noexcept {
+    if (!valid_buffer) {
+      return;
+    }
+    if (pool->Acquire(buffer_id)) {
+      ALYRN_CHECK(pool->Return(buffer_id), "Uring Recv() failed to return provided buffer");
+    }
+  };
+
+  if (cqe_result < 0) {
+    return_slot();
+    self->Finish(std::unexpected(NegErrno(cqe_result)));
+  } else if (cqe_result == 0) {
+    return_slot();
+    self->Finish(net::Buffer{});
+  } else if (!valid_buffer || event.BufferMore()) {
+    return_slot();
+    self->Finish(std::unexpected(Errno(EPROTO)));
+  } else if (!pool->Acquire(buffer_id)) {
+    self->Finish(std::unexpected(Errno(EPROTO)));
+  } else {
+    net::Buffer buffer;
+    try {
+      buffer.Append(
+          std::span<const std::byte>(pool->slot(buffer_id), static_cast<std::size_t>(cqe_result)));
+    } catch (const std::bad_alloc&) {
+      ALYRN_CHECK(pool->Return(buffer_id), "Uring Recv() failed to return provided buffer");
+      self->Finish(std::unexpected(Errno(ENOMEM)));
+      ALYRN_CHECK(op->TryAuthorizeCoupledRelease(),
+                  "Uring Recv() released its stream slot before result readiness");
+      if (self->stream_ != nullptr) {
+        detail::StreamOperationSlot::Release(*self->stream_,
+                                             detail::StreamOperationDirection::kRead, self);
+      }
+      return;
+    }
+    ALYRN_CHECK(pool->Return(buffer_id), "Uring Recv() failed to return provided buffer");
+    self->Finish(std::move(buffer));
+  }
+
+  ALYRN_CHECK(op->TryAuthorizeCoupledRelease(),
+              "Uring Recv() released its stream slot before result readiness");
+  if (self->stream_ != nullptr) {
+    detail::StreamOperationSlot::Release(*self->stream_, detail::StreamOperationDirection::kRead,
+                                         self);
+  }
 }
 
 // --- SendAwaiter ---
@@ -292,7 +406,7 @@ Result<std::size_t> Stream::SendAwaiter::await_resume() noexcept {
 void Stream::SendAwaiter::OnComplete(::alyrn::uring::detail::Op* op) noexcept {
   auto* self = OpHook::OwnerFrom(op);
   ALYRN_CHECK(op->TryAuthorizeCoupledRelease(),
-                 "Uring send released its stream slot before result readiness");
+              "Uring send released its stream slot before result readiness");
   if (self->stream_ != nullptr) {
     detail::StreamOperationSlot::Release(*self->stream_, detail::StreamOperationDirection::kWrite,
                                          self);
@@ -473,7 +587,7 @@ CompletionDisposition Stream::SendZeroCopyAwaiter::OnComplete(::alyrn::uring::de
       disposition.kernel_request_terminal = true;
       disposition.decrement_inflight = true;
     }
-    // Keep a primary -errno as a raw kernel result. WriteAll() may recover
+    // Keep a primary -errno as a raw kernel result. Write() may recover
     // ENOMEM only after this awaiter has crossed its release boundary.
   }
 
@@ -490,11 +604,16 @@ CompletionDisposition Stream::SendZeroCopyAwaiter::OnComplete(::alyrn::uring::de
 namespace detail {
 
 void DispatchStreamReadComplete(::alyrn::uring::detail::Op* op) noexcept {
-  Stream::ReadSomeAwaiter::OnComplete(op);
+  Stream::ReadAwaiter::OnComplete(op);
 }
 
-void DispatchStreamReadIntoComplete(::alyrn::uring::detail::Op* op) noexcept {
-  Stream::ReadIntoAwaiter::OnComplete(op);
+void DispatchStreamRecvComplete(::alyrn::uring::detail::Op* op) noexcept {
+  Stream::RecvAwaiter::OnComplete(op);
+}
+
+void DispatchStreamRecvCopyComplete(::alyrn::uring::detail::Op* op,
+                                    CompletionEvent event) noexcept {
+  Stream::RecvCopyAwaiter::OnComplete(op, event);
 }
 
 void DispatchStreamWriteComplete(::alyrn::uring::detail::Op* op) noexcept {
@@ -533,7 +652,7 @@ Stream& Stream::operator=(Stream&& other) noexcept {
 
   Loop* other_loop = PrepareMove(other);
   ALYRN_CHECK(loop_ == nullptr || loop_ == other_loop,
-                 "Stream move requires both objects to use the same Loop");
+              "Stream move requires both objects to use the same Loop");
   if (loop_ != nullptr) {
     ResetForMove();
   }
@@ -566,19 +685,21 @@ void Stream::RequireOwnerLoop() const noexcept {
   ALYRN_CHECK(loop_->IsInLoopThread(), "Stream operation called from wrong Loop thread");
 }
 
-Stream::ReadSomeAwaiter Stream::ReadSome(std::span<std::byte> buffer) noexcept {
-  return ReadSomeAwaiter{*this, buffer};
+Stream::ReadAwaiter Stream::Read(std::span<std::byte> buffer) noexcept {
+  return ReadAwaiter{*this, buffer};
 }
 
-Stream::ReadIntoAwaiter Stream::ReadInto(net::Buffer buffer, std::size_t reserve) noexcept {
-  return ReadIntoAwaiter{*this, std::move(buffer), reserve};
+Stream::RecvCopyAwaiter Stream::Recv() noexcept { return RecvCopyAwaiter{*this}; }
+
+Stream::RecvAwaiter Stream::Recv(net::Buffer buffer, std::size_t reserve) noexcept {
+  return RecvAwaiter{*this, std::move(buffer), reserve};
 }
 
 Stream::SendAwaiter Stream::Send(std::span<const std::byte> buffer) noexcept {
   return SendAwaiter{*this, buffer};
 }
 
-coro::Task<Result<void>> Stream::WriteAll(std::span<const std::byte> buffer) {
+coro::Task<Result<void>> Stream::Write(std::span<const std::byte> buffer) {
   if (buffer.empty()) {
     auto available = detail::StreamOperationSlot::ValidateAvailable(
         *this, detail::StreamOperationDirection::kWrite);
@@ -726,12 +847,9 @@ void Stream::ResetForMove() noexcept {
 Loop* Stream::PrepareMove(Stream& other) noexcept {
   ALYRN_CHECK(other.loop_ != nullptr, "Stream move source is not initialized");
   ALYRN_CHECK(other.loop_->IsInLoopThread(), "Stream move called from wrong Loop thread");
-  ALYRN_CHECK(other.pending_read_ == nullptr,
-                 "Stream cannot move with a pending read operation");
-  ALYRN_CHECK(other.pending_write_ == nullptr,
-                 "Stream cannot move with a pending write operation");
-  ALYRN_CHECK(other.pending_close_ == nullptr,
-                 "Stream cannot move with a pending close operation");
+  ALYRN_CHECK(other.pending_read_ == nullptr, "Stream cannot move with a pending read operation");
+  ALYRN_CHECK(other.pending_write_ == nullptr, "Stream cannot move with a pending write operation");
+  ALYRN_CHECK(other.pending_close_ == nullptr, "Stream cannot move with a pending close operation");
 
   Loop* loop = std::exchange(other.loop_, nullptr);
   return loop;

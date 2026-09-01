@@ -42,7 +42,7 @@ stuttering step。一个 readiness 或 CQE 到达本身不自动改变三个逻�
 
 ### Logical Operation
 
-调用者认为自己发起的一次异步动作，例如一次 `ReadSome`、`Close` 或 source
+调用者认为自己发起的一次异步动作，例如一次 `Read`、`Close` 或 source
 消费。它不等于 syscall、SQE 或 CQE。
 
 ### Backend Execution
@@ -199,7 +199,7 @@ composite operation 也可以包含 split-release member；未来扩展不需要
 ### Epoll
 
 ```text
-Logical ReadSome
+Logical Read
   -> immediate recv
        ├─ bytes / EOF / error -> Result Ready
        └─ EAGAIN
@@ -215,7 +215,7 @@ Logical ReadSome
 ### io_uring
 
 ```text
-Logical ReadSome
+Logical Read
   -> prepare recv SQE                         [stuttering]
   -> submit Physical Request                  [stuttering]
   -> Suspend

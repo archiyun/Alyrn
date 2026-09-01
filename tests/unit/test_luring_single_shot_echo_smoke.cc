@@ -12,15 +12,15 @@
 #include <system_error>
 #include <utility>
 
-#include "alyrn/result.h"
 #include "alyrn/coro/spawn.h"
 #include "alyrn/io/loop.h"
+#include "alyrn/net/endpoint.h"
+#include "alyrn/result.h"
 #include "alyrn/uring/connector.h"
 #include "alyrn/uring/listener.h"
 #include "alyrn/uring/loop.h"
 #include "alyrn/uring/options.h"
 #include "alyrn/uring/stream.h"
-#include "alyrn/net/endpoint.h"
 
 namespace {
 
@@ -42,13 +42,13 @@ alyrn::coro::DetachedTask EchoOnce(alyrn::uring::Stream stream) {
   std::array<std::byte, 4096> buffer{};
 
   for (;;) {
-    auto read = co_await stream.ReadSome(buffer);
+    auto read = co_await stream.Read(buffer);
     if (!read.has_value() || *read == 0) {
       break;
     }
 
     auto payload = std::span<const std::byte>(buffer.data(), *read);
-    auto written = co_await stream.WriteAll(payload);
+    auto written = co_await stream.Write(payload);
     if (!written.has_value()) {
       break;
     }
@@ -57,8 +57,7 @@ alyrn::coro::DetachedTask EchoOnce(alyrn::uring::Stream stream) {
   (void)co_await stream.Close();
 }
 
-alyrn::coro::DetachedTask AcceptOnce(alyrn::uring::Loop& loop,
-                                        alyrn::uring::Listener& listener) {
+alyrn::coro::DetachedTask AcceptOnce(alyrn::uring::Loop& loop, alyrn::uring::Listener& listener) {
   auto accepted = co_await listener.Accept();
   if (!accepted.has_value()) {
     loop.RequestStop();
@@ -68,8 +67,7 @@ alyrn::coro::DetachedTask AcceptOnce(alyrn::uring::Loop& loop,
   alyrn::coro::SpawnDetach(loop, EchoOnce(std::move(*accepted)));
 }
 
-alyrn::coro::DetachedTask ConnectOnce(alyrn::uring::Loop& loop, std::uint16_t port,
-                                         bool* echo_ok) {
+alyrn::coro::DetachedTask ConnectOnce(alyrn::uring::Loop& loop, std::uint16_t port, bool* echo_ok) {
   auto connector = alyrn::uring::Connector::Create(&loop);
   if (!connector.has_value()) {
     loop.RequestStop();
@@ -85,7 +83,7 @@ alyrn::coro::DetachedTask ConnectOnce(alyrn::uring::Loop& loop, std::uint16_t po
   auto stream = std::move(*connected);
   const auto payload = std::as_bytes(std::span<const char>(kMessage.data(), kMessage.size()));
 
-  auto written = co_await stream.WriteAll(payload);
+  auto written = co_await stream.Write(payload);
   if (!written.has_value()) {
     (void)co_await stream.Close();
     loop.RequestStop();
@@ -97,7 +95,7 @@ alyrn::coro::DetachedTask ConnectOnce(alyrn::uring::Loop& loop, std::uint16_t po
   received.reserve(kMessage.size());
 
   while (received.size() < kMessage.size()) {
-    auto read = co_await stream.ReadSome(buffer);
+    auto read = co_await stream.Read(buffer);
     if (!read.has_value() || *read == 0) {
       (void)co_await stream.Close();
       loop.RequestStop();

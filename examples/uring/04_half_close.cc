@@ -23,9 +23,9 @@
 
 #include "alyrn/coro.h"
 #include "alyrn/io.h"
-#include "alyrn/uring.h"
 #include "alyrn/net.h"
 #include "alyrn/net/native.h"
+#include "alyrn/uring.h"
 
 using namespace alyrn;
 
@@ -67,10 +67,10 @@ bool SendExactly(int fd, std::string_view bytes) noexcept {
   return true;
 }
 
-auto HalfCloseSession(uring::Loop& loop, uring::Stream stream, int peer_fd,
-                      int& exit_code) -> alyrn::DetachedTask {
+auto HalfCloseSession(uring::Loop& loop, uring::Stream stream, int peer_fd, int& exit_code)
+    -> alyrn::DetachedTask {
   const auto request = std::as_bytes(std::span<const char>(kRequest.data(), kRequest.size()));
-  auto written = co_await stream.WriteAll(request);
+  auto written = co_await stream.Write(request);
   if (!written.has_value()) {
     std::println(stderr, "write failed: {}", written.error().message());
     (void)co_await stream.Close();
@@ -91,7 +91,7 @@ auto HalfCloseSession(uring::Loop& loop, uring::Stream stream, int peer_fd,
   }
 
   // Future writes fail locally after the write half has been shut down.
-  auto rejected_write = co_await stream.WriteAll(request);
+  auto rejected_write = co_await stream.Write(request);
   if (rejected_write.has_value() || rejected_write.error() != std::errc::broken_pipe) {
     std::println(stderr, "write after Shutdown did not fail with EPIPE");
     (void)co_await stream.Close();
@@ -128,7 +128,7 @@ auto HalfCloseSession(uring::Loop& loop, uring::Stream stream, int peer_fd,
   std::array<std::byte, 64> read_buffer{};
   std::string reply;
   while (reply.size() < kReply.size()) {
-    auto read = co_await stream.ReadSome(read_buffer);
+    auto read = co_await stream.Read(read_buffer);
     if (!read.has_value() || *read == 0) {
       std::println(stderr, "read after Shutdown failed");
       (void)co_await stream.Close();
@@ -154,7 +154,7 @@ auto HalfCloseSession(uring::Loop& loop, uring::Stream stream, int peer_fd,
 
   std::println("Shutdown sequence verified:");
   std::println("  write request -> Shutdown -> peer EOF");
-  std::println("  peer reply -> ReadSome still succeeds -> Close");
+  std::println("  peer reply -> Read still succeeds -> Close");
   exit_code = 0;
   loop.RequestStop();
 }

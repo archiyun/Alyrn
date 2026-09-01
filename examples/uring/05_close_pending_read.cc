@@ -18,8 +18,8 @@
 #include <stop_token>
 
 #include "alyrn/coro.h"
-#include "alyrn/uring.h"
 #include "alyrn/net.h"
+#include "alyrn/uring.h"
 
 using namespace alyrn;
 
@@ -43,21 +43,21 @@ struct DemoState {
 auto WaitForCancellation(uring::Stream& stream, DemoState& state) -> alyrn::DetachedTask {
   std::array<std::byte, 64> buffer{};
 
-  std::println("submitting ReadSome; the peer intentionally sends no data");
-  auto read = co_await stream.ReadSome(buffer);
+  std::println("submitting Read; the peer intentionally sends no data");
+  auto read = co_await stream.Read(buffer);
 
   if (read.has_value() || read.error().value() != ECANCELED) {
     std::println(stderr, "pending read did not finish with ECANCELED");
     state.Fail();
   } else {
-    std::println("pending ReadSome resumed once with ECANCELED");
+    std::println("pending Read resumed once with ECANCELED");
   }
 
   state.FinishOne();
 }
 
-auto CloseAfterReadSuspends(uring::Loop& loop, uring::Stream& stream,
-                            DemoState& state) -> alyrn::DetachedTask {
+auto CloseAfterReadSuspends(uring::Loop& loop, uring::Stream& stream, DemoState& state)
+    -> alyrn::DetachedTask {
   // The read task is scheduled first. This timer gives the loop a separate
   // completion boundary before Close starts its cancel-and-drain protocol.
   auto delayed = co_await uring::SleepFor(loop, time::Milliseconds(10));
@@ -66,7 +66,7 @@ auto CloseAfterReadSuspends(uring::Loop& loop, uring::Stream& stream,
     state.Fail();
   }
 
-  std::println("calling Close while ReadSome is pending");
+  std::println("calling Close while Read is pending");
   auto closed = co_await stream.Close();
   if (!closed.has_value()) {
     std::println(stderr, "close failed: {}", closed.error().message());

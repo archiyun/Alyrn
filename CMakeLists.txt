@@ -93,17 +93,14 @@ target_compile_features(alyrn_foundation INTERFACE cxx_std_23)
 #
 # alyrn_coro —— backend-neutral 协程原语(Task<T>、Work、Scheduler、Spawn/
 # JoinHandle、SyncWait、可选 FrameAllocatorScope)。Task<T> 不定义错误策略；
-# I/O 层按需返回 Task<Result<T>>。
-# Scheduler TLS lives in one translation unit so macOS static links do not see
-# duplicate inline thread_local symbols across backend object files.
-add_library(alyrn_coro STATIC
-    src/coro/scheduler.cc
-)
-target_include_directories(alyrn_coro PUBLIC
+# I/O 层按需返回 Task<Result<T>>。实现全部在头文件里。
+add_library(alyrn_coro INTERFACE)
+target_include_directories(alyrn_coro INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
-target_compile_features(alyrn_coro PUBLIC cxx_std_23)
+target_link_libraries(alyrn_coro INTERFACE alyrn_foundation)
+target_compile_features(alyrn_coro INTERFACE cxx_std_23)
 
 # alyrn_io_contract —— 后端实现使用的 I/O concepts（include/alyrn/backend）、
 # Result 算法和语义 profile。它不包含具体 backend，也不依赖具体 backend。

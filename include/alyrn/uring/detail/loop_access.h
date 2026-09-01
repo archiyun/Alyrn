@@ -75,6 +75,11 @@ public:
       Loop& loop, std::size_t buffer_size, std::size_t source_capacity) noexcept {
     return loop.GetSharedProvidedBufferPool(buffer_size, source_capacity);
   }
+
+  static Result<ProvidedBufferPool*> GetSharedProvidedBufferPool(
+      Loop& loop, std::size_t source_capacity) noexcept {
+    return loop.GetSharedProvidedBufferPool(source_capacity);
+  }
 };
 
 }  // namespace alyrn::uring::detail

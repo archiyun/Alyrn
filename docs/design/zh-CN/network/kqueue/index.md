@@ -13,7 +13,7 @@ Channel 或 worker bootstrap 实现。
 | --- | --- | --- | --- |
 | loop / dispatcher | `Loop` | 已实现 | owner-thread `kevent` + 用户态 timer tree |
 | 跨线程投递 | `Loop::Post` | 已实现 | 线程安全回调队列；唤醒属主 loop |
-| stream I/O | `ReadSome`、`ReadInto`、`WriteAll` | 已实现 | 当前仅 one-shot readiness |
+| stream I/O | `Read`、`Recv`、`Write` | 已实现 | 当前仅 one-shot readiness |
 | listener / accept | `Listener` | 已实现 | 多 worker 时只有 acceptor 持有 listener |
 | connector | `Connector` | 已实现 | |
 | 持续 recv | `RecvSource` | 已实现 | readiness 驱动的多事件 source |

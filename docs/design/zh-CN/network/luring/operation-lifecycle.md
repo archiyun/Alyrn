@@ -27,8 +27,8 @@
 | send zerocopy | 1 | primary，primary `F_MORE` 时另有 notification | 1 | primary 无 `F_MORE` 后，或 notification 到达后 |
 | close/cancel | cancel + 原 pending 请求 | 多个 | 1 个 close 结果 | 所有关联请求收敛后 |
 
-普通的 coupled single-result operation 遵守同一顺序：`ReadSome`、`ReadInto`、关闭
-zerocopy 时 `WriteAll` 内部的一次 send，以及 `Connect` 都在其嵌入的 `Op` 中使用
+普通的 coupled single-result operation 遵守同一顺序：`Read`、`Recv`、关闭
+zerocopy 时 `Write` 内部的一次 send，以及 `Connect` 都在其嵌入的 `Op` 中使用
 `SingleResultLifecycle`。该阶段机把 `result ready -> release authorized -> continuation
 authorized` 编码为三个不可倒退的 transition；物理 CQE 的重复防护仍由独立的可复用 physical
 slot 负责。两者都内嵌在现有的 24B `Op` 中，不引入额外分配或扩大该 operation 的布局。

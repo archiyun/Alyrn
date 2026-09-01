@@ -11,7 +11,7 @@ buffer 可以复用，以及关闭和取消如何收敛。内部类、CQE 分发
 
 | 功能 | 对外入口 | 状态 | 首要测试目标 |
 | --- | --- | --- | --- |
-| stream I/O | `ReadSome`、`ReadInto`、`WriteAll` | 稳定 | 单次结果、完整写入、错误和 buffer 生命周期 |
+| stream I/O | `Read`、`Recv`、`Write` | 稳定 | 单次结果、完整写入、错误和 buffer 生命周期 |
 | listener / 单次 accept | `Accept` | 稳定 | 新连接所有权与关闭 |
 | 持续 accept | `AcceptSource`、`AcceptMode::kMultishot` | 已实现扩展 | 多事件、终止 CQE、背压、降级 |
 | 持续 recv | `RecvSource` | 已实现扩展 | provided buffer、事件队列、`BufferLease` |

@@ -10,11 +10,11 @@
 #include <span>
 #include <thread>
 
-#include "bench_http_common.h"
+#include "alyrn/epoll/detail/worker_group.h"
 #include "alyrn/io.h"
 #include "alyrn/net/endpoint.h"
-#include "alyrn/epoll/detail/worker_group.h"
 #include "alyrn/spawn.h"
+#include "bench_http_common.h"
 
 namespace {
 
@@ -38,26 +38,26 @@ inline void Count(std::atomic<std::uint64_t>& counter) noexcept {
 alyrn::DetachedTask HttpSession(alyrn::epoll::Stream stream) {
   Count(g_sessions);
   std::array<std::byte, alyrn_bench::kRequestBufferSize> request{};
-  const auto response = std::as_bytes(
-      std::span(alyrn_bench::Response().data(), alyrn_bench::Response().size()));
+  const auto response =
+      std::as_bytes(std::span(alyrn_bench::Response().data(), alyrn_bench::Response().size()));
   std::size_t used = 0;
 
   for (;;) {
     const std::size_t previous_used = used;
     Count(g_read_awaits);
-    auto read = co_await stream.ReadSome(std::span(request).subspan(used));
+    auto read = co_await stream.Read(std::span(request).subspan(used));
     if (!read.has_value() || *read == 0) break;
     Count(g_reads_completed);
     used += *read;
     const std::size_t scan_from = previous_used >= 3 ? previous_used - 3 : 0;
     if (!alyrn_bench::HasHeaderTerminator(reinterpret_cast<const char*>(request.data()), used,
-                                             scan_from)) {
+                                          scan_from)) {
       if (used == request.size()) break;
       continue;
     }
 
     Count(g_write_awaits);
-    auto written = co_await stream.WriteAll(response);
+    auto written = co_await stream.Write(response);
     if (!written.has_value()) break;
     Count(g_responses);
     used = 0;
@@ -90,8 +90,9 @@ int main() {
 
   alyrn::epoll::detail::WorkerGroup server(
       address, std::move(options), {},
-      [](alyrn::epoll::detail::WorkerContext&,
-         alyrn::epoll::Stream stream) { return HttpSession(std::move(stream)); });
+      [](alyrn::epoll::detail::WorkerContext&, alyrn::epoll::Stream stream) {
+        return HttpSession(std::move(stream));
+      });
   auto started = server.Start();
   if (!started.has_value()) {
     std::cerr << "WorkerGroup::Start failed: " << started.error().message() << '\n';

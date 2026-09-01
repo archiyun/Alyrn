@@ -18,7 +18,7 @@ zero-copy 的不同生命周期。
 
 冻结以下 Core contract：
 
-- `AsyncStream`：`ReadSome`、`WriteAll`、`Shutdown`、`CloseRead`、`CloseWrite`、`Close`、
+- `AsyncStream`：`Read`、`Write`、`Shutdown`、`CloseRead`、`CloseWrite`、`Close`、
   `LocalAddr`、`RemoteAddr`；
 - `AsyncListener`：`Accept`、`Close`；
 - `AsyncConnector`：建立满足 `AsyncStream` 的 outbound stream；
@@ -35,14 +35,14 @@ zero-copy 的不同生命周期。
 
 以下能力保持为独立 extension：
 
-- `AsyncReadIntoStream`；
+- `AsyncRecvStream`；
 - `AsyncRecvSource`、`BufferLease` 和 provided buffer；
 - send zero-copy、multishot 以及其他 backend capability。
 
 extension 可以增加能力，但不能改变 Core contract 的含义，也不能把可选能力变成
 `AsyncStream` 的隐含要求。
 
-`WriteAll` 虽然可能在一个后端内提交多个物理 write request，但它仍属于 Core contract：
+`Write` 虽然可能在一个后端内提交多个物理 write request，但它仍属于 Core contract：
 它只把“完整写入或终态失败”这一业务语义暴露给调用方。短写推进、send zero-copy 的
 notification 边界以及 coroutine frame 布局是后端 implementation，不是业务侧需要拼接的
 通用 fallback。
@@ -72,5 +72,5 @@ owner-thread 上销毁 Stream 是 Core 可观察的资源释放：空闲 drop �
 
 ## 修订（2026-08，timeout）
 
-per-call `ReadSomeFor` 与 `AsyncTimedStream` 已从公开契约撤回。超时不再是 Stream 的
+per-call `ReadFor` 与 `AsyncTimedStream` 已从公开契约撤回。超时不再是 Stream 的
 一次性覆盖 API；连接级 sticky 每操超时是后续工作。loop 级 `SleepFor` / `RunAfter` 不受影响。

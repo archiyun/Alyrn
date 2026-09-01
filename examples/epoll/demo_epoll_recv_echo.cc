@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 //
-// Epoll ReadInto echo demo
+// Epoll Recv echo demo
 //
 // Build:
-//   cmake --build build --target demo_epoll_read_into_echo -j"$(nproc)"
+//   cmake --build build --target demo_epoll_recv_echo -j"$(nproc)"
 //
 // Run:
-//   ./build/examples/epoll/demo_epoll_read_into_echo
+//   ./build/examples/epoll/demo_epoll_recv_echo
 //
 // Try:
 //   nc 127.0.0.1 19001
@@ -19,12 +19,12 @@
 #include <utility>
 
 #include "alyrn/coro.h"
-#include "alyrn/io.h"
-#include "alyrn/io/buffer.h"
-#include "alyrn/net/endpoint.h"
 #include "alyrn/epoll.h"
 #include "alyrn/epoll/listener.h"
 #include "alyrn/epoll/loop.h"
+#include "alyrn/io.h"
+#include "alyrn/io/buffer.h"
+#include "alyrn/net/endpoint.h"
 
 using namespace alyrn;
 
@@ -37,9 +37,9 @@ auto EchoSession(epoll::Stream stream) -> alyrn::DetachedTask {
   io::Buffer buffer{kReadReserve};
 
   for (;;) {
-    // ReadInto moves the buffer into the pending operation. Do not access
-    // 'buffer' until await_resume returns its ReadIntoOutcome.
-    auto [read, returned_buffer] = co_await stream.ReadInto(std::move(buffer), kReadReserve);
+    // Recv moves the buffer into the pending operation. Do not access
+    // 'buffer' until await_resume returns its RecvOutcome.
+    auto [read, returned_buffer] = co_await stream.Recv(std::move(buffer), kReadReserve);
 
     // Every terminal path returns ownership of the buffer: successful read,
     // EOF, or I/O error, cancellation, and shutdown.
@@ -55,10 +55,10 @@ auto EchoSession(epoll::Stream stream) -> alyrn::DetachedTask {
     }
 
     // The completed read has already committed bytes into 'buffer'. Each
-    // WriteAll call owns one contiguous borrowed view; drain it after success.
+    // Write call owns one contiguous borrowed view; drain it after success.
     while (!buffer.Empty()) {
       auto view = buffer.ContiguousView();
-      auto written = co_await stream.WriteAll(view);
+      auto written = co_await stream.Write(view);
       if (!written.has_value()) {
         std::println(stderr, "write failed: {}", written.error().message());
         break;
@@ -75,8 +75,7 @@ auto EchoSession(epoll::Stream stream) -> alyrn::DetachedTask {
   }
 }
 
-auto AcceptLoop(epoll::Loop& loop, epoll::Listener& listener)
-    -> alyrn::DetachedTask {
+auto AcceptLoop(epoll::Loop& loop, epoll::Listener& listener) -> alyrn::DetachedTask {
   for (;;) {
     auto accepted = co_await listener.Accept();
     if (!accepted.has_value()) {
@@ -104,7 +103,7 @@ auto main() -> int {
   auto listener = std::move(*listener_result);
   alyrn::SpawnDetach(loop, AcceptLoop(loop, listener));
 
-  std::println("Epoll ReadInto echo listening on 127.0.0.1:{}", kPort);
+  std::println("Epoll Recv echo listening on 127.0.0.1:{}", kPort);
   loop.Run(std::stop_token{});
   return 0;
 }

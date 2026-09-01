@@ -71,7 +71,7 @@ SendZeroCopy
   -> buffer 才可以复用
 ```
 
-listener 的 `zero_copy_writes` 会让 `Stream::WriteAll()` 在每个完整写入轮次优先选择
+listener 的 `zero_copy_writes` 会让 `Stream::Write()` 在每个完整写入轮次优先选择
 这条路径；它不会改变内部普通 send 的语义，也不会让所有写操作自动变成 zerocopy。
 
 ## 测试观察点
@@ -81,4 +81,4 @@ listener 的 `zero_copy_writes` 会让 `Stream::WriteAll()` 在每个完整写�
 - notification 先到时，仍要等待发送结果；
 - notification usage 的 copied bit 被正确解释为状态，而不是负 errno；
 - 正常发送、copy fallback、发送错误和 close 交错都只恢复一次；
-- `WriteAll` 开启该扩展后仍保持完整发送语义。
+- `Write` 开启该扩展后仍保持完整发送语义。

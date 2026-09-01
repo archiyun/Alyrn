@@ -8,7 +8,7 @@ EXTENDS Naturals
 (*                                                                         *)
 (* 证明范围：                                                             *)
 (*   - 一个 stream；                                                       *)
-(*   - 一个 single-result ReadSome；                                       *)
+(*   - 一个 single-result Read；                                       *)
 (*   - 正常、立即完成和 Close 取消；                                       *)
 (*   - backend 在 Init 时固定，不允许动态切换。                           *)
 (*                                                                         *)

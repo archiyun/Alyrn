@@ -8,11 +8,11 @@
 #include <limits>
 #include <memory>
 
-#include "alyrn/detail/check.h"
-#include "alyrn/result.h"
 #include "alyrn/coro/work.h"
-#include "alyrn/uring/detail/reusable_completion_slot.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/detail/single_result_lifecycle.h"
+#include "alyrn/result.h"
+#include "alyrn/uring/detail/reusable_completion_slot.h"
 
 namespace alyrn::uring::detail {
 
@@ -23,25 +23,15 @@ struct CompletionEvent {
   int result{0};
   std::uint32_t flags{0};
 
-  bool More() const noexcept {
-    return (flags & IORING_CQE_F_MORE) != 0;
-  }
+  bool More() const noexcept { return (flags & IORING_CQE_F_MORE) != 0; }
 
-  bool Notification() const noexcept {
-    return (flags & IORING_CQE_F_NOTIF) != 0;
-  }
+  bool Notification() const noexcept { return (flags & IORING_CQE_F_NOTIF) != 0; }
 
-  bool BufferMore() const noexcept {
-    return (flags & IORING_CQE_F_BUF_MORE) != 0;
-  }
+  bool BufferMore() const noexcept { return (flags & IORING_CQE_F_BUF_MORE) != 0; }
 
-  bool HasSelectedBuffer() const noexcept {
-    return (flags & IORING_CQE_F_BUFFER) != 0;
-  }
+  bool HasSelectedBuffer() const noexcept { return (flags & IORING_CQE_F_BUFFER) != 0; }
 
-  std::uint32_t SelectedBufferId() const noexcept {
-    return flags >> IORING_CQE_BUFFER_SHIFT;
-  }
+  std::uint32_t SelectedBufferId() const noexcept { return flags >> IORING_CQE_BUFFER_SHIFT; }
 
   bool ZeroCopyWasCopied() const noexcept {
     return (static_cast<std::uint32_t>(result) & IORING_NOTIF_USAGE_ZC_COPIED) != 0;
@@ -82,7 +72,8 @@ enum class OpKind : std::uint8_t {
   kListenerCloseComplete,
 
   kReadComplete,
-  kReadIntoComplete,
+  kRecvComplete,
+  kRecvCopyComplete,
 
   kWriteComplete,
   kStreamCloseComplete,
@@ -112,7 +103,8 @@ constexpr CompletionModel CompletionModelFor(OpKind kind) noexcept {
     case OpKind::kRecvSourceCancelComplete:
     case OpKind::kListenerCloseComplete:
     case OpKind::kReadComplete:
-    case OpKind::kReadIntoComplete:
+    case OpKind::kRecvComplete:
+    case OpKind::kRecvCopyComplete:
     case OpKind::kWriteComplete:
     case OpKind::kStreamCloseComplete:
     case OpKind::kTimerDriverComplete:
@@ -135,7 +127,8 @@ constexpr CompletionModel CompletionModelFor(OpKind kind) noexcept {
 constexpr bool UsesCoupledSingleResultLifecycle(OpKind kind) noexcept {
   switch (kind) {
     case OpKind::kReadComplete:
-    case OpKind::kReadIntoComplete:
+    case OpKind::kRecvComplete:
+    case OpKind::kRecvCopyComplete:
     case OpKind::kWriteComplete:
     case OpKind::kAcceptComplete:
     case OpKind::kConnect:
@@ -167,7 +160,7 @@ constexpr bool UsesCoupledSingleResultLifecycle(OpKind kind) noexcept {
 constexpr bool CqeResultDirectlyPublishesLogicalResult(OpKind kind) noexcept {
   switch (kind) {
     case OpKind::kReadComplete:
-    case OpKind::kReadIntoComplete:
+    case OpKind::kRecvComplete:
     case OpKind::kWriteComplete:
       return true;
     case OpKind::kNone:
@@ -176,6 +169,7 @@ constexpr bool CqeResultDirectlyPublishesLogicalResult(OpKind kind) noexcept {
     case OpKind::kAcceptSourceCancelComplete:
     case OpKind::kRecvSourceComplete:
     case OpKind::kRecvSourceCancelComplete:
+    case OpKind::kRecvCopyComplete:
     case OpKind::kSendZeroCopyComplete:
     case OpKind::kListenerCloseComplete:
     case OpKind::kStreamCloseComplete:
@@ -210,9 +204,7 @@ public:
     return *this;
   }
 
-  bool HasValue() const noexcept {
-    return encoded_ != kEmpty;
-  }
+  bool HasValue() const noexcept { return encoded_ != kEmpty; }
 
   int operator*() const noexcept {
     ALYRN_CHECK(HasValue(), "CqeResult was read before completion");
@@ -249,7 +241,7 @@ public:
     result = cqe_res;
     if (CqeResultDirectlyPublishesLogicalResult(kind)) {
       ALYRN_CHECK(single_result_lifecycle_.TryAuthorizeResult(),
-                     "coupled single-result operation recorded a CQE twice");
+                  "coupled single-result operation recorded a CQE twice");
     }
     return true;
   }
@@ -257,9 +249,7 @@ public:
   // Some operation protocols have more than one CQE and keep their primary
   // result outside Op. They mark the operation terminal only after the
   // final CQE has been interpreted by the operation-specific handler.
-  bool TryMarkCompletionWithoutCqeResult() noexcept {
-    return completion_slot_.TryComplete();
-  }
+  bool TryMarkCompletionWithoutCqeResult() noexcept { return completion_slot_.TryComplete(); }
 
   void SetImmediateSuccess() noexcept { result = 0; }
 
@@ -268,38 +258,32 @@ public:
     result = -error.value();
   }
 
-  OpKind DispatchKind() const noexcept {
-    return kind;
-  }
+  OpKind DispatchKind() const noexcept { return kind; }
 
-  bool CqeCompletionRecorded() const noexcept {
-    return completion_slot_.Completed();
-  }
+  bool CqeCompletionRecorded() const noexcept { return completion_slot_.Completed(); }
 
   // The coupled lifecycle is intentionally separate from the reusable
   // physical completion slot. It does not govern composites, sources, close,
   // or split-release operations.
   bool TryAuthorizeCoupledResult() noexcept {
     ALYRN_CHECK(UsesCoupledSingleResultLifecycle(kind),
-                   "result authorization requested for a non-coupled Uring operation");
+                "result authorization requested for a non-coupled Uring operation");
     return single_result_lifecycle_.TryAuthorizeResult();
   }
 
   bool TryAuthorizeCoupledRelease() noexcept {
     ALYRN_CHECK(UsesCoupledSingleResultLifecycle(kind),
-                   "release authorization requested for a non-coupled Uring operation");
+                "release authorization requested for a non-coupled Uring operation");
     return single_result_lifecycle_.TryAuthorizeRelease();
   }
 
   bool TryAuthorizeCoupledContinuation() noexcept {
     ALYRN_CHECK(UsesCoupledSingleResultLifecycle(kind),
-                   "continuation authorization requested for a non-coupled Uring operation");
+                "continuation authorization requested for a non-coupled Uring operation");
     return single_result_lifecycle_.TryAuthorizeContinuation();
   }
 
-  bool CoupledResultReady() const noexcept {
-    return single_result_lifecycle_.ResultReady();
-  }
+  bool CoupledResultReady() const noexcept { return single_result_lifecycle_.ResultReady(); }
 
   bool CoupledReleaseAuthorized() const noexcept {
     return single_result_lifecycle_.ReleaseAuthorized();

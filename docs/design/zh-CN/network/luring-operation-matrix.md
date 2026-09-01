@@ -6,7 +6,7 @@
 当前公共网络接口仍然是 `AsyncStream`、`AsyncListener` 和一次性
 `Task<Result<T>>` 操作。multishot、provided buffer、send zerocopy 等能力会改变完成次数、
 结果类型或 buffer 生命周期，因此必须通过独立的扩展接口表达，不能伪装成普通
-`ReadSome()` 或单次内部 send。
+`Read()` 或单次内部 send。
 
 持续 accept 的具体语义见 [AcceptSource 语义契约](accept-source-contract.md)。
 
@@ -54,18 +54,8 @@ inflight 是否应该减少
 | 运行期 | 当前 operation 的对象、资源和状态是否允许走该路径？ | buffer ring 有可用 buffer、send zerocopy 满足 buffer 条件 |
 
 构建期条件决定具体 backend 是否参与编译；其余条件由 `Loop::Init()`、source 创建
-或 operation 提交返回 `Result`。luring 不再维护独立的 native capability/profile 层：
-
-```cpp
-enum class OperationPath {
-  kSingleShot,
-  kMultiShot,
-  kZeroCopy,
-  kFallback,
-};
-```
-
-最终路径选择可以表达为：
+或 operation 提交返回 `Result`。luring 不维护独立的 native capability / profile 层，
+也不用 `OperationPath` 枚举给路径命名。一条操作能走下去，当且仅当：
 
 ```text
 Compiled
@@ -73,7 +63,6 @@ Compiled
   ∧ RingConfigured
   ∧ AdapterImplemented
   ∧ RuntimeEligible
-  = OperationPathSelected
 ```
 
 例如，provided buffer ring 注册失败时，`RecvSource::Create()` 直接返回对应错误；send
@@ -96,8 +85,8 @@ IORING_RECV_MULTISHOT 可用
 
 | Operation | 提交方式 | 物理完成 | 业务结果 | 资源释放边界 | 当前状态 |
 | --- | --- | --- | --- | --- | --- |
-| `recv` / `ReadSome` | 1 个 SQE | 1 个 CQE | CQE 到达后确定 | CQE dispatch 后，await 结束时释放 awaiter frame；buffer 至少存活到 CQE | 已实现，single-shot |
-| `send` / `WriteAll` 的内部 request | 1 个 SQE | 1 个 CQE | CQE 到达后确定 | CQE 到达后 buffer 可按普通 send 语义释放 | 已实现，single-shot |
+| `recv` / `Read` | 1 个 SQE | 1 个 CQE | CQE 到达后确定 | CQE dispatch 后，await 结束时释放 awaiter frame；buffer 至少存活到 CQE | 已实现，single-shot |
+| `send` / `Write` 的内部 request | 1 个 SQE | 1 个 CQE | CQE 到达后确定 | CQE 到达后 buffer 可按普通 send 语义释放 | 已实现，single-shot |
 | `accept` / `Accept` | 1 个 SQE；listener 可以同时保持多个 pending accept | 每个 SQE 1 个 CQE | adapter 将 CQE 转换为 `Result<Stream>` 后确定 | 新 stream 转移 fd 所有权；listener pending-accept reservation 在 continuation 前释放 | 已实现，single-shot coupled |
 | `connect` / `Connect` | 1 个 SQE | 1 个 CQE | adapter 将 CQE 转换为 `Result<Stream>` 后确定 | stream 接管 fd，或 error 路径关闭 fd；两者均先于 continuation | 已实现，single-shot coupled |
 | fd cancel / `Close` | cancel SQE 加上原有 pending I/O | cancel 和原 I/O 各自产生 CQE | cancel 完成且 pending I/O 全部收敛后确定 | fd 关闭前必须等待相关 operation 收敛；不能只看到 cancel CQE 就销毁 stream | 已实现，composite close |
@@ -110,7 +99,7 @@ IORING_RECV_MULTISHOT 可用
 它不能直接承载 multishot operation。
 
 当前公共 API 不提供 `WritePart` 或 scatter-write 路径。需要保证完整发送
-时使用 `stream.WriteAll` 的连续 span；多块 `Buffer` 由业务按 `ContiguousView()` 和 `Drain()`
+时使用 `stream.Write` 的连续 span；多块 `Buffer` 由业务按 `ContiguousView()` 和 `Drain()`
 显式推进，不属于当前 `AsyncStream` 契约。
 
 ## 4. 扩展 operation

@@ -13,6 +13,10 @@
 - [C++ 书写规范](coding-style.md) — `auto` / `auto*` 与长限定名
 - [ADR](adr/) — 已接受的架构决策
 
+## 论文草稿
+
+- [LRCI：epoll 与 io_uring 的可观察语义统一](papers/lrci-epoll-iouring-draft.md)
+
 ## 网络
 
 - [网络库总览](design/zh-CN/network/index.md)

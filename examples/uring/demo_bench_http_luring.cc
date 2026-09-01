@@ -14,13 +14,13 @@
 #include <utility>
 #include <vector>
 
-#include "bench_http_common.h"
 #include "alyrn/coro/frame_allocator.h"
 #include "alyrn/io.h"
-#include "alyrn/uring/detail/worker_group.h"
-#include "alyrn/uring/recv_source.h"
 #include "alyrn/net/endpoint.h"
 #include "alyrn/spawn.h"
+#include "alyrn/uring/detail/worker_group.h"
+#include "alyrn/uring/recv_source.h"
+#include "bench_http_common.h"
 
 namespace {
 
@@ -40,26 +40,26 @@ bool AcceptMultishotEnabled() noexcept {
   return mode != "single" && mode != "single-shot";
 }
 
-// Consume one HTTP request (headers + Content-Length body), then WriteAll the
+// Consume one HTTP request (headers + Content-Length body), then Write the
 // fixed response. Leftover pipelined bytes stay in `request`/`used`.
-alyrn::DetachedTask HttpSessionReadSome(alyrn::uring::Stream stream) {
+alyrn::DetachedTask HttpSessionRead(alyrn::uring::Stream stream) {
   std::array<std::byte, alyrn_bench::kRequestBufferSize> request{};
-  const auto response = std::as_bytes(
-      std::span(alyrn_bench::Response().data(), alyrn_bench::Response().size()));
+  const auto response =
+      std::as_bytes(std::span(alyrn_bench::Response().data(), alyrn_bench::Response().size()));
   std::size_t used = 0;
   std::size_t body_remain = 0;
   bool reading_body = false;
 
   for (;;) {
     if (!reading_body) {
-      auto read = co_await stream.ReadSome(std::span(request).subspan(used));
+      auto read = co_await stream.Read(std::span(request).subspan(used));
       if (!read.has_value() || *read == 0) {
         break;
       }
       used += *read;
 
-      const auto header_end = alyrn_bench::HeaderTerminatorEnd(
-          reinterpret_cast<const char*>(request.data()), used);
+      const auto header_end =
+          alyrn_bench::HeaderTerminatorEnd(reinterpret_cast<const char*>(request.data()), used);
       if (header_end == static_cast<std::size_t>(-1)) {
         if (used == request.size()) {
           break;
@@ -73,7 +73,7 @@ alyrn::DetachedTask HttpSessionReadSome(alyrn::uring::Stream stream) {
       if (available >= content_length) {
         const std::size_t consumed = header_end + content_length;
         const std::size_t remain = used - consumed;
-        auto written = co_await stream.WriteAll(response);
+        auto written = co_await stream.Write(response);
         if (!written.has_value()) {
           break;
         }
@@ -90,7 +90,7 @@ alyrn::DetachedTask HttpSessionReadSome(alyrn::uring::Stream stream) {
       continue;
     }
 
-    auto read = co_await stream.ReadSome(std::span(request));
+    auto read = co_await stream.Read(std::span(request));
     if (!read.has_value() || *read == 0) {
       break;
     }
@@ -102,7 +102,7 @@ alyrn::DetachedTask HttpSessionReadSome(alyrn::uring::Stream stream) {
       used = leftover;
       body_remain = 0;
       reading_body = false;
-      auto written = co_await stream.WriteAll(response);
+      auto written = co_await stream.Write(response);
       if (!written.has_value()) {
         break;
       }
@@ -114,15 +114,15 @@ alyrn::DetachedTask HttpSessionReadSome(alyrn::uring::Stream stream) {
 }
 
 alyrn::DetachedTask HttpSessionRecvSource(alyrn::uring::Stream stream) {
-  const auto response = std::as_bytes(
-      std::span(alyrn_bench::Response().data(), alyrn_bench::Response().size()));
+  const auto response =
+      std::as_bytes(std::span(alyrn_bench::Response().data(), alyrn_bench::Response().size()));
 
   alyrn::uring::RecvSourceOptions recv_options;
   recv_options.source.pending_depth = 1;
   recv_options.source.event_capacity = 16;
   recv_options.source.buffer_capacity = 16;
-  recv_options.buffer_size = alyrn_bench::EnvSize(
-      "SHARED_BUFFER_SIZE", alyrn_bench::kRequestBufferSize);
+  recv_options.buffer_size =
+      alyrn_bench::EnvSize("SHARED_BUFFER_SIZE", alyrn_bench::kRequestBufferSize);
 
   auto source_result =
       alyrn::uring::RecvSource::Create(stream.OwnerLoop(), stream.Fd(), recv_options);
@@ -161,8 +161,8 @@ alyrn::DetachedTask HttpSessionRecvSource(alyrn::uring::Stream stream) {
       (*received)->buffer.Release();
       received->reset();
 
-      const auto header_end = alyrn_bench::HeaderTerminatorEnd(
-          reinterpret_cast<const char*>(staging.data()), used);
+      const auto header_end =
+          alyrn_bench::HeaderTerminatorEnd(reinterpret_cast<const char*>(staging.data()), used);
       if (header_end == static_cast<std::size_t>(-1)) {
         if (used == staging.size()) {
           failed = true;
@@ -177,7 +177,7 @@ alyrn::DetachedTask HttpSessionRecvSource(alyrn::uring::Stream stream) {
       if (available >= content_length) {
         const std::size_t consumed = header_end + content_length;
         const std::size_t remain = used - consumed;
-        auto written = co_await stream.WriteAll(response);
+        auto written = co_await stream.Write(response);
         if (!written.has_value()) {
           failed = true;
           break;
@@ -211,7 +211,7 @@ alyrn::DetachedTask HttpSessionRecvSource(alyrn::uring::Stream stream) {
       (*received)->buffer.Release();
       received->reset();
 
-      auto written = co_await stream.WriteAll(response);
+      auto written = co_await stream.Write(response);
       if (!written.has_value()) {
         failed = true;
         break;
@@ -241,8 +241,7 @@ int main() {
   const bool accept_multishot = AcceptMultishotEnabled();
   const bool zero_copy_writes = EnvEnabled("ZERO_COPY_WRITES", true);
   const bool use_recv_source = EnvEnabled("USE_RECV_SOURCE", true);
-  const std::size_t shared_buffer_capacity =
-      alyrn_bench::EnvSize("SHARED_BUFFER_CAPACITY", 4096);
+  const std::size_t shared_buffer_capacity = alyrn_bench::EnvSize("SHARED_BUFFER_CAPACITY", 4096);
   const std::size_t shared_buffer_size =
       alyrn_bench::EnvSize("SHARED_BUFFER_SIZE", alyrn_bench::kRequestBufferSize);
   const std::size_t response_body = alyrn_bench::ResponseBodySize();
@@ -267,9 +266,9 @@ int main() {
   options.worker_options.listen_options.reuse_addr = true;
   options.worker_options.listen_options.reuse_port = true;
   options.worker_options.listen_options.zero_copy_writes = zero_copy_writes;
-  options.worker_options.accept_mode =
-      accept_multishot ? alyrn::uring::detail::AcceptMode::kMultishot
-                       : alyrn::uring::detail::AcceptMode::kSingleShot;
+  options.worker_options.accept_mode = accept_multishot
+                                           ? alyrn::uring::detail::AcceptMode::kMultishot
+                                           : alyrn::uring::detail::AcceptMode::kSingleShot;
 
   const bool use_frame_pool = EnvEnabled("FRAME_POOL", false);
   std::vector<std::unique_ptr<alyrn::coro::CoroFramePoolResource>> frame_pools;
@@ -285,17 +284,15 @@ int main() {
 
   alyrn::uring::detail::WorkerGroup server(
       alyrn::net::Endpoint::Loopback(port), std::move(options), {},
-      [use_recv_source](alyrn::uring::detail::WorkerContext&,
-                        alyrn::uring::Stream stream) {
+      [use_recv_source](alyrn::uring::detail::WorkerContext&, alyrn::uring::Stream stream) {
         if (use_recv_source) {
           return HttpSessionRecvSource(std::move(stream));
         }
-        return HttpSessionReadSome(std::move(stream));
+        return HttpSessionRead(std::move(stream));
       });
   auto started = server.Start();
   if (!started.has_value()) {
-    std::fprintf(stderr, "WorkerGroup::Start failed: %s\n",
-                 started.error().message().c_str());
+    std::fprintf(stderr, "WorkerGroup::Start failed: %s\n", started.error().message().c_str());
     return 1;
   }
 

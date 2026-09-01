@@ -16,22 +16,23 @@
 #include <system_error>
 #include <utility>
 
-#include "alyrn/result.h"
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/spawn.h"
 #include "alyrn/io/async_stream.h"
-#include "alyrn/io/read_into.h"
+#include "alyrn/io/recv.h"
+#include "alyrn/net/endpoint.h"
+#include "alyrn/result.h"
 #include "alyrn/uring/detail/loop_access.h"
 #include "alyrn/uring/loop.h"
 #include "alyrn/uring/options.h"
 #include "alyrn/uring/stream.h"
-#include "alyrn/net/endpoint.h"
 
 namespace {
 
-using OwnedReadOutcome = alyrn::io::ReadIntoOutcome;
+using OwnedRecvOutcome = alyrn::io::RecvOutcome;
 
-static_assert(alyrn::io::AsyncReadIntoStream<alyrn::uring::Stream>);
+static_assert(alyrn::io::AsyncRecvStream<alyrn::uring::Stream>);
+static_assert(alyrn::io::AsyncRecvCopyStream<alyrn::uring::Stream>);
 
 class UniqueFd {
 public:
@@ -134,12 +135,11 @@ bool WriteFd(int fd, std::string_view bytes) {
   return true;
 }
 
-alyrn::coro::DetachedTask ReadOnce(alyrn::uring::Stream* stream,
-                                      alyrn::uring::Loop* loop,
-                                      std::span<std::byte> buffer,
-                                      std::optional<alyrn::Result<std::size_t>>* out,
-                                      bool* resumed_with_scheduler, int* resume_count = nullptr) {
-  auto result = co_await stream->ReadSome(buffer);
+alyrn::coro::DetachedTask ReadOnce(alyrn::uring::Stream* stream, alyrn::uring::Loop* loop,
+                                   std::span<std::byte> buffer,
+                                   std::optional<alyrn::Result<std::size_t>>* out,
+                                   bool* resumed_with_scheduler, int* resume_count = nullptr) {
+  auto result = co_await stream->Read(buffer);
   if (resume_count != nullptr) {
     ++*resume_count;
   }
@@ -147,13 +147,10 @@ alyrn::coro::DetachedTask ReadOnce(alyrn::uring::Stream* stream,
   out->emplace(std::move(result));
 }
 
-alyrn::coro::DetachedTask ReadIntoOnce(alyrn::uring::Stream* stream,
-                                          alyrn::uring::Loop* loop,
-                                          alyrn::net::Buffer buffer,
-                                          std::optional<OwnedReadOutcome>* out,
-                                          bool* resumed_with_scheduler,
-                                          int* resume_count = nullptr) {
-  OwnedReadOutcome outcome = co_await stream->ReadInto(std::move(buffer), 32);
+alyrn::coro::DetachedTask RecvOnce(alyrn::uring::Stream* stream, alyrn::uring::Loop* loop,
+                                   alyrn::net::Buffer buffer, std::optional<OwnedRecvOutcome>* out,
+                                   bool* resumed_with_scheduler, int* resume_count = nullptr) {
+  OwnedRecvOutcome outcome = co_await stream->Recv(std::move(buffer), 32);
   if (resume_count != nullptr) {
     ++*resume_count;
   }
@@ -161,34 +158,40 @@ alyrn::coro::DetachedTask ReadIntoOnce(alyrn::uring::Stream* stream,
   out->emplace(std::move(outcome));
 }
 
-alyrn::coro::DetachedTask ReadIntoWithReserveOnce(alyrn::uring::Stream* stream,
-                                                     alyrn::uring::Loop* loop,
-                                                     alyrn::net::Buffer buffer,
-                                                     std::size_t reserve,
-                                                     std::optional<OwnedReadOutcome>* out,
-                                                     bool* resumed_with_scheduler) {
-  OwnedReadOutcome outcome = co_await stream->ReadInto(std::move(buffer), reserve);
+alyrn::coro::DetachedTask RecvCopyOnce(alyrn::uring::Stream* stream, alyrn::uring::Loop* loop,
+                                       std::optional<alyrn::Result<alyrn::net::Buffer>>* out,
+                                       bool* resumed_with_scheduler) {
+  auto buffer = co_await stream->Recv();
+  *resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == loop;
+  out->emplace(std::move(buffer));
+}
+
+alyrn::coro::DetachedTask RecvWithReserveOnce(alyrn::uring::Stream* stream,
+                                              alyrn::uring::Loop* loop, alyrn::net::Buffer buffer,
+                                              std::size_t reserve,
+                                              std::optional<OwnedRecvOutcome>* out,
+                                              bool* resumed_with_scheduler) {
+  OwnedRecvOutcome outcome = co_await stream->Recv(std::move(buffer), reserve);
   *resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == loop;
   out->emplace(std::move(outcome));
 }
 
-alyrn::coro::DetachedTask ReadThenRead(
-    alyrn::uring::Stream* stream, alyrn::uring::Loop* loop,
-    std::span<std::byte> first_buffer, std::span<std::byte> second_buffer,
-    std::optional<alyrn::Result<std::size_t>>* first_result,
-    std::optional<alyrn::Result<std::size_t>>* second_result,
-    bool* resumed_with_scheduler) {
-  first_result->emplace(co_await stream->ReadSome(first_buffer));
-  second_result->emplace(co_await stream->ReadSome(second_buffer));
+alyrn::coro::DetachedTask ReadThenRead(alyrn::uring::Stream* stream, alyrn::uring::Loop* loop,
+                                       std::span<std::byte> first_buffer,
+                                       std::span<std::byte> second_buffer,
+                                       std::optional<alyrn::Result<std::size_t>>* first_result,
+                                       std::optional<alyrn::Result<std::size_t>>* second_result,
+                                       bool* resumed_with_scheduler) {
+  first_result->emplace(co_await stream->Read(first_buffer));
+  second_result->emplace(co_await stream->Read(second_buffer));
   *resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == loop;
 }
 
-alyrn::coro::DetachedTask WriteOnce(alyrn::uring::Stream* stream,
-                                       alyrn::uring::Loop* loop,
-                                       std::span<const std::byte> buffer,
-                                       std::optional<alyrn::Result<void>>* out,
-                                       bool* resumed_with_scheduler, int* resume_count = nullptr) {
-  auto result = co_await stream->WriteAll(buffer);
+alyrn::coro::DetachedTask WriteOnce(alyrn::uring::Stream* stream, alyrn::uring::Loop* loop,
+                                    std::span<const std::byte> buffer,
+                                    std::optional<alyrn::Result<void>>* out,
+                                    bool* resumed_with_scheduler, int* resume_count = nullptr) {
+  auto result = co_await stream->Write(buffer);
   if (resume_count != nullptr) {
     ++*resume_count;
   }
@@ -197,26 +200,25 @@ alyrn::coro::DetachedTask WriteOnce(alyrn::uring::Stream* stream,
 }
 
 alyrn::coro::DetachedTask CloseOnce(alyrn::uring::Stream* stream,
-                                       std::optional<alyrn::Result<void>>* out) {
+                                    std::optional<alyrn::Result<void>>* out) {
   auto result = co_await stream->Close();
   out->emplace(std::move(result));
 }
 
 alyrn::coro::DetachedTask ShutdownThenReadAndWrite(
-    alyrn::uring::Stream* stream, alyrn::uring::Loop* loop,
-    std::span<const std::byte> write_buffer, std::span<std::byte> read_buffer,
-    std::optional<alyrn::Result<void>>* first_shutdown,
+    alyrn::uring::Stream* stream, alyrn::uring::Loop* loop, std::span<const std::byte> write_buffer,
+    std::span<std::byte> read_buffer, std::optional<alyrn::Result<void>>* first_shutdown,
     std::optional<alyrn::Result<void>>* second_shutdown,
     std::optional<alyrn::Result<void>>* write_result,
     std::optional<alyrn::Result<std::size_t>>* read_result, bool* resumed_with_scheduler) {
   first_shutdown->emplace(co_await stream->CloseWrite());
   second_shutdown->emplace(co_await stream->Shutdown());
-  write_result->emplace(co_await stream->WriteAll(write_buffer));
-  read_result->emplace(co_await stream->ReadSome(read_buffer));
+  write_result->emplace(co_await stream->Write(write_buffer));
+  read_result->emplace(co_await stream->Read(read_buffer));
   *resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == loop;
 }
 
-bool CheckReadSome() {
+bool CheckRead() {
   alyrn::uring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
@@ -241,7 +243,7 @@ bool CheckReadSome() {
   bool resumed_with_scheduler = false;
 
   alyrn::coro::SpawnDetach(loop,
-                              ReadOnce(&stream, &loop, buffer, &result, &resumed_with_scheduler));
+                           ReadOnce(&stream, &loop, buffer, &result, &resumed_with_scheduler));
 
   alyrn::uring::detail::LoopAccess::RunReady(loop);
 
@@ -257,9 +259,9 @@ bool CheckReadSome() {
 
   return Check(*completions >= 1, "read did not produce a completion") &&
          Check(result.has_value(), "read coroutine did not resume") &&
-         Check(result->has_value(), "ReadSome returned an error") &&
-         Check(**result == kPayload.size(), "ReadSome returned wrong byte count") &&
-         Check(actual == kPayload, "ReadSome payload mismatch") &&
+         Check(result->has_value(), "Read returned an error") &&
+         Check(**result == kPayload.size(), "Read returned wrong byte count") &&
+         Check(actual == kPayload, "Read payload mismatch") &&
          Check(resumed_with_scheduler, "read resumed without current scheduler");
 }
 
@@ -282,7 +284,7 @@ bool CheckEmptyReadCompletesInlineWithoutRingWork() {
   std::optional<alyrn::Result<std::size_t>> result;
   bool resumed_with_scheduler = false;
 
-  // ReadSome(empty) takes the await_suspend() == false path. The root work
+  // Read(empty) takes the await_suspend() == false path. The root work
   // may run once, but no read SQE/CQE or scheduled continuation may remain.
   alyrn::coro::SpawnDetach(
       loop, ReadOnce(&stream, &loop, std::span<std::byte>{}, &result, &resumed_with_scheduler));
@@ -360,7 +362,7 @@ bool CheckReadReleasesSlotBeforeContinuation() {
                "single-shot follow-up read resumed without current scheduler");
 }
 
-bool CheckOwnedReadIntoReturnsBuffer() {
+bool CheckOwnedRecvReturnsBuffer() {
   alyrn::uring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
@@ -379,10 +381,10 @@ bool CheckOwnedReadIntoReturnsBuffer() {
   constexpr std::string_view kPayload = "owned-read";
   if (!WriteFd(peer.fd(), kPayload)) return false;
 
-  std::optional<OwnedReadOutcome> outcome;
+  std::optional<OwnedRecvOutcome> outcome;
   bool resumed_with_scheduler = false;
-  alyrn::coro::SpawnDetach(loop, ReadIntoOnce(&stream, &loop, alyrn::net::Buffer(4), &outcome,
-                                                 &resumed_with_scheduler));
+  alyrn::coro::SpawnDetach(
+      loop, RecvOnce(&stream, &loop, alyrn::net::Buffer(4), &outcome, &resumed_with_scheduler));
   alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
@@ -411,7 +413,57 @@ bool CheckOwnedReadIntoReturnsBuffer() {
          Check(reusable_after_resume, "owned read returned a buffer with a live reservation");
 }
 
-bool CheckOwnedReadIntoSpansBufferBlocks() {
+bool CheckPooledRecvCopiesPayload() {
+  alyrn::uring::Loop loop;
+  switch (InitLoop(loop)) {
+    case LoopInitStatus::kReady:
+      break;
+    case LoopInitStatus::kSkip:
+      return true;
+    case LoopInitStatus::kFail:
+      return false;
+  }
+
+  UniqueFd local;
+  UniqueFd peer;
+  if (!CreateSocketPair(local, peer)) return false;
+
+  alyrn::uring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
+  constexpr std::string_view kPayload = "pooled-recv";
+  if (!WriteFd(peer.fd(), kPayload)) return false;
+
+  std::optional<alyrn::Result<alyrn::net::Buffer>> outcome;
+  bool resumed_with_scheduler = false;
+  alyrn::coro::SpawnDetach(loop, RecvCopyOnce(&stream, &loop, &outcome, &resumed_with_scheduler));
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
+
+  auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
+  if (!completions.has_value()) {
+    std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+    return false;
+  }
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
+
+  if (!Check(*completions >= 1, "pooled Recv did not produce a completion") ||
+      !Check(outcome.has_value(), "pooled Recv coroutine did not resume") ||
+      !Check(outcome->has_value(), "pooled Recv returned an error") ||
+      !Check(resumed_with_scheduler, "pooled Recv resumed without current scheduler")) {
+    return false;
+  }
+
+  auto& buffer = **outcome;
+  std::string actual;
+  for (const iovec& iov : buffer.ReadableIov(8)) {
+    actual.append(static_cast<const char*>(iov.iov_base), iov.iov_len);
+  }
+  auto reusable = buffer.PrepareWrite(8, 1);
+  const bool reusable_after_resume = !reusable.empty();
+  buffer.AbortWrite();
+  return Check(actual == kPayload, "pooled Recv payload mismatch") &&
+         Check(reusable_after_resume, "pooled Recv returned a buffer with a live reservation");
+}
+
+bool CheckOwnedRecvSpansBufferBlocks() {
   alyrn::uring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
@@ -434,11 +486,11 @@ bool CheckOwnedReadIntoSpansBufferBlocks() {
   buffer.Append(kPrefix);
   if (!WriteFd(peer.fd(), kPayload)) return false;
 
-  std::optional<OwnedReadOutcome> outcome;
+  std::optional<OwnedRecvOutcome> outcome;
   bool resumed_with_scheduler = false;
   alyrn::coro::SpawnDetach(
-      loop, ReadIntoWithReserveOnce(&stream, &loop, std::move(buffer), kPayload.size(), &outcome,
-                                    &resumed_with_scheduler));
+      loop, RecvWithReserveOnce(&stream, &loop, std::move(buffer), kPayload.size(), &outcome,
+                                &resumed_with_scheduler));
   alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
@@ -465,7 +517,7 @@ bool CheckOwnedReadIntoSpansBufferBlocks() {
   return Check(actual == expected, "vectored owned read payload mismatch");
 }
 
-bool CheckWriteAll() {
+bool CheckWrite() {
   alyrn::uring::Loop loop;
   switch (InitLoop(loop)) {
     case LoopInitStatus::kReady:
@@ -489,7 +541,7 @@ bool CheckWriteAll() {
   bool resumed_with_scheduler = false;
 
   alyrn::coro::SpawnDetach(loop,
-                              WriteOnce(&stream, &loop, bytes, &result, &resumed_with_scheduler));
+                           WriteOnce(&stream, &loop, bytes, &result, &resumed_with_scheduler));
 
   alyrn::uring::detail::LoopAccess::RunReady(loop);
 
@@ -512,8 +564,8 @@ bool CheckWriteAll() {
 
   return Check(*completions >= 1, "write did not produce a completion") &&
          Check(result.has_value(), "write coroutine did not resume") &&
-         Check(result->has_value(), "WriteAll returned an error") &&
-         Check(actual == kPayload, "WriteAll payload mismatch") &&
+         Check(result->has_value(), "Write returned an error") &&
+         Check(actual == kPayload, "Write payload mismatch") &&
          Check(resumed_with_scheduler, "write resumed without current scheduler");
 }
 
@@ -568,13 +620,13 @@ bool CheckShutdownKeepsReadOpen() {
          Check(second_shutdown.has_value() && second_shutdown->has_value(),
                "second Shutdown was not idempotent") &&
          Check(write_result.has_value() && !write_result->has_value(),
-               "WriteAll after Shutdown unexpectedly succeeded") &&
+               "Write after Shutdown unexpectedly succeeded") &&
          Check(write_result->error() == std::errc::broken_pipe,
-               "WriteAll after Shutdown did not return EPIPE") &&
+               "Write after Shutdown did not return EPIPE") &&
          Check(
              read_result.has_value() && read_result->has_value() && **read_result == kReply.size(),
-             "ReadSome after Shutdown did not remain usable") &&
-         Check(actual == kReply, "ReadSome after Shutdown returned wrong payload") &&
+             "Read after Shutdown did not remain usable") &&
+         Check(actual == kReply, "Read after Shutdown returned wrong payload") &&
          Check(peer_read == 0, "peer did not observe Shutdown EOF") &&
          Check(resumed_with_scheduler, "read after Shutdown resumed without current scheduler");
 }
@@ -628,7 +680,7 @@ bool CheckCloseCancelsPendingRead() {
   int read_resume_count = 0;
 
   alyrn::coro::SpawnDetach(loop, ReadOnce(&stream, &loop, buffer, &read_result,
-                                             &read_resumed_with_scheduler, &read_resume_count));
+                                          &read_resumed_with_scheduler, &read_resume_count));
 
   alyrn::uring::detail::LoopAccess::RunReady(loop);
 
@@ -659,7 +711,6 @@ bool CheckCloseCancelsPendingRead() {
          Check(read_resumed_with_scheduler, "pending read resumed without current scheduler");
 }
 
-
 bool CheckCloseReturnsOwnedReadBuffer() {
   alyrn::uring::Loop loop;
   switch (InitLoop(loop)) {
@@ -676,12 +727,11 @@ bool CheckCloseReturnsOwnedReadBuffer() {
   if (!CreateSocketPair(local, peer)) return false;
 
   alyrn::uring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
-  std::optional<OwnedReadOutcome> read_outcome;
+  std::optional<OwnedRecvOutcome> read_outcome;
   bool resumed_with_scheduler = false;
   int resume_count = 0;
-  alyrn::coro::SpawnDetach(loop,
-                              ReadIntoOnce(&stream, &loop, alyrn::net::Buffer(8), &read_outcome,
-                                           &resumed_with_scheduler, &resume_count));
+  alyrn::coro::SpawnDetach(loop, RecvOnce(&stream, &loop, alyrn::net::Buffer(8), &read_outcome,
+                                          &resumed_with_scheduler, &resume_count));
   alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   std::optional<alyrn::Result<void>> close_result;
@@ -737,7 +787,7 @@ bool CheckReadCompletionCancelRaceResumesOnce() {
   int read_resume_count = 0;
 
   alyrn::coro::SpawnDetach(loop, ReadOnce(&stream, &loop, buffer, &read_result,
-                                             &read_resumed_with_scheduler, &read_resume_count));
+                                          &read_resumed_with_scheduler, &read_resume_count));
   alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   constexpr std::string_view kPayload = "race";
@@ -774,12 +824,13 @@ bool CheckReadCompletionCancelRaceResumesOnce() {
 }  // namespace
 
 int main() {
-  if (!CheckReadSome()) return 1;
+  if (!CheckRead()) return 1;
   if (!CheckEmptyReadCompletesInlineWithoutRingWork()) return 1;
   if (!CheckReadReleasesSlotBeforeContinuation()) return 1;
-  if (!CheckOwnedReadIntoReturnsBuffer()) return 1;
-  if (!CheckOwnedReadIntoSpansBufferBlocks()) return 1;
-  if (!CheckWriteAll()) return 1;
+  if (!CheckOwnedRecvReturnsBuffer()) return 1;
+  if (!CheckPooledRecvCopiesPayload()) return 1;
+  if (!CheckOwnedRecvSpansBufferBlocks()) return 1;
+  if (!CheckWrite()) return 1;
   if (!CheckShutdownKeepsReadOpen()) return 1;
   if (!CheckCloseWithoutPending()) return 1;
   if (!CheckCloseCancelsPendingRead()) return 1;

@@ -20,11 +20,11 @@
 #include <vector>
 
 #include "alyrn/io/buffer.h"
-#include "alyrn/io/read_into.h"
+#include "alyrn/io/recv.h"
 
 namespace {
 
-static_assert(std::same_as<alyrn::io::ReadIntoOutcome, alyrn::net::ReadIntoOutcome>);
+static_assert(std::same_as<alyrn::io::RecvOutcome, alyrn::net::RecvOutcome>);
 
 bool Expect(bool condition, std::string_view message) {
   if (!condition) {

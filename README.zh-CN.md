@@ -73,7 +73,7 @@ auto EchoSession(Stream stream) -> cp::Task<cp::Result<void>> {
   std::array<std::byte, 4096> buffer{};
 
   for (;;) {
-    auto read = co_await stream.ReadSome(buffer);
+    auto read = co_await stream.Read(buffer);
     if (!read.has_value()) {
       co_return std::unexpected(read.error());
     }
@@ -82,7 +82,7 @@ auto EchoSession(Stream stream) -> cp::Task<cp::Result<void>> {
     }
 
     auto payload = std::span<const std::byte>(buffer.data(), *read);
-    auto written = co_await stream.WriteAll(payload);
+    auto written = co_await stream.Write(payload);
     if (!written.has_value()) {
       co_return std::unexpected(written.error());
     }
@@ -353,7 +353,7 @@ Alyrn 提供了可复现的 `wrk` 性能测试，用于比较：
 * **[网络架构](docs/design/zh-CN/network/index.md)：** 运行时分层、后端边界与所有权模型。
 * **[kqueue 后端](docs/design/zh-CN/network/kqueue/index.md)：** one-shot readiness、`Post` 与主从移交。
 * **[Runtime Builder](docs/design/zh-CN/network/runtime-builder.md)：** 编译期 backend tag 与启停生命周期。
-* **[协程状态机模型](docs/design/zh-CN/network/lamport-hot-swap-runtime.md)：** 抽象 stream 不变量与后端 refinement 说明。
+* **[生命周期精化协程 I/O](docs/design/zh-CN/network/lifecycle-refined-coroutine-io.md)：** 逻辑 I/O 规范、三条授权边界，以及 epoll / io_uring 精化。
 * **[AsyncStream 语义契约](docs/design/zh-CN/network/async-stream-contract.md)：** read、write、close、取消与 buffer 生命周期语义。
 * **[数据结构](docs/design/zh-CN/datastructure/index.md)：** C++ 现代风格的侵入式数据结构，侵入式红黑树，侵入式链表，MPSC 队列的设计与实现，以及它们在项目各处的应用。四叉堆是通过 `time::TimerIndex` 注入的一等 timer-index 适配器。
 * **[性能测试](docs/benchmark/network-libraries-20260810.md)：** 最新的当前源码 C++ 对照基线；完整统一网络库报告、测试方法、原始结果与优化记录见 [`docs/benchmark`](docs/benchmark/)。

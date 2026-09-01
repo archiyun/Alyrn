@@ -1,44 +1,47 @@
-# `ReadInto`：转移所有权的单次读取
+# `Recv`：转移所有权的单次接收
 
 ## 结论
 
-`ReadInto` 已经是 Alyrn 的 **ownership-transfer read** 扩展：调用者把一个 move-only
-`net::Buffer` 转移给 awaiter；awaiter 在整个 pending interval 内独占这块存储；每条
-终态路径都把 buffer 和读取结果一起归还。
+`Recv` 已经是 Alyrn 的 **ownership-transfer read** 扩展：`Recv(Buffer)` 把调用者的
+move-only `net::Buffer` 转移给 awaiter；awaiter 在整个 pending interval 内独占这块存储；
+每条终态路径都把 buffer 和读取结果一起归还。无参 `Recv()` 是同一扩展上的 copy-out
+overload：调用者不提供存储，完成后得到一块新的 `Buffer`。
 
-它不是 `AsyncStream` core，也不是 `BufferLease` 的替代品。三者解决的是不同的问题：
+它不是 `AsyncStream` core，也不是 `BufferLease` 的替代品。这些路径解决的是不同的问题：
 
 | 路径 | 调用者提供什么 | pending 期间谁拥有存储 | 完成后得到什么 |
 | --- | --- | --- | --- |
-| `ReadSome(span<byte>)` | 借用的连续内存 | 调用者 | `Result<size_t>` |
-| `ReadInto(Buffer)` | 移交的 `Buffer` | awaiter / operation | `ReadIntoOutcome` |
+| `Read(span<byte>)` | 借用的连续内存 | 调用者 | `Result<size_t>` |
+| `Recv(Buffer)` | 移交的 `Buffer` | awaiter / operation | `RecvOutcome` |
+| `Recv()` | 不提供存储 | 后端 ring / 内部 `Buffer` | `Result<Buffer>` |
 | `RecvSource::Next()` | 不提供存储 | 后端 pool/ring | 带 `BufferLease` 的事件 |
 
-因此，`ReadInto` 的价值不是把普通 receive 变为零拷贝；数据仍从内核复制进 destination
+因此，`Recv(Buffer)` 的价值不是把普通 receive 变为零拷贝；数据仍从内核复制进 destination
 storage。它解决的是 C++ borrowed buffer 在 `co_await`、取消和 close 交错时的所有权风险。
+无参 `Recv()` 也不承诺零拷贝：io_uring 用 ring 作为内核 dest，再 memcpy 进 userspace
+`Buffer`；epoll/kqueue 直接 recv 进内部 `Buffer`。
 
 ## 接口与结果
 
 后端实现的可选扩展为：
 
 ```cpp
-auto awaiter = stream.ReadInto(io::Buffer buffer,
-                               std::size_t reserve = 4096);
+auto awaiter = stream.Recv(io::Buffer buffer, std::size_t reserve = 4096);
 
-struct io::ReadIntoOutcome {
+struct io::RecvOutcome {
   Result<std::size_t> result;
   io::Buffer buffer;
 };
 ```
 
-`io::Buffer` 与 `io::ReadIntoOutcome` 都是公开 spelling；它们分别是 `net` 内部实现类型的
+`io::Buffer` 与 `io::RecvOutcome` 都是公开 spelling；它们分别是 `net` 内部实现类型的
 无成本别名。后端和 contract 内部仍使用 `net`，避免反向依赖 `io`。
 
 调用模式应始终移动 owner：
 
 ```cpp
 io::Buffer buffer;
-auto outcome = co_await stream.ReadInto(std::move(buffer));
+auto outcome = co_await stream.Recv(std::move(buffer));
 
 if (!outcome.result) {
   // buffer 仍然归调用者；本次 reservation 已经回滚。
@@ -50,15 +53,32 @@ if (!outcome.result) {
 Consume(outcome.buffer);
 ```
 
-不能把返回类型改成单纯的 `Result<Buffer>`：那会让失败时 buffer 的归属不清楚。现在的
-`ReadIntoOutcome` 明确表达两项独立事实：本次读取是否成功，以及 buffer owner 已经归还。
+`Recv(Buffer)` 不能把返回类型改成单纯的 `Result<Buffer>`：那会让失败时调用者移交的
+buffer 归属不清楚。现在的 `RecvOutcome` 明确表达两项独立事实：本次读取是否成功，以及
+buffer owner 已经归还。
+
+无参 `Recv()` 是另一条 overload：调用者从不交出 storage，因此失败时没有 owner 需要归还，
+成功（含 0 字节 EOF）时返回一份新的 `Buffer`。返回类型是 `Result<Buffer>`：
+
+```cpp
+auto buf = co_await stream.Recv();
+if (!buf) {
+  HandleError(buf.error());
+  return;
+}
+Consume(*buf);
+```
+
+io_uring 把 kernel 选中的 provided-buffer slot 作为 recv dest，再 copy-out 到这份
+`Buffer`，并在 resume 前归还 slot。Epoll / kqueue 没有 ring，改为向内部
+`kDefaultBlockSize` 的 `Buffer` 做一次短读。slot 不会以 `BufferLease` 的形式暴露给调用者。
 
 ## 生命周期
 
 ```text
 Caller owns Buffer
     |
-    | ReadInto(std::move(buffer))
+    | Recv(std::move(buffer))
     v
 Awaiter owns Buffer
     |
@@ -85,7 +105,7 @@ await_resume() returns { result, Buffer }
 1. `PrepareWrite()` 与 `CommitWrite()`/`AbortWrite()` 成对出现，且至多一次；
 2. 在 physical read terminal 前，buffer 仍由 awaiter 持有，不能被调用者析构、移动或修改；
 3. `await_resume()` 前 reservation 必须已经结算；
-4. 无论成功、EOF、I/O error、关闭、取消还是提交失败，owner 都通过 `ReadIntoOutcome` 归还；
+4. 无论成功、EOF、I/O error、关闭、取消还是提交失败，owner 都通过 `RecvOutcome` 归还；
 5. 对单次操作，业务 continuation 只恢复一次。
 
 `reserve == 0` 不代表零容量读取：两个 Adapter 都把它交给
@@ -96,7 +116,7 @@ destination 混淆；`0` 的读取结果仍按 stream 语义表示 EOF。
 
 ### Epoll
 
-`Stream::ReadIntoAwaiter` 只保存 `Buffer` 与 reservation 状态。它在
+`Stream::RecvAwaiter` 只保存 `Buffer` 与 reservation 状态。它在
 `await_suspend()` 和每次 readiness retry 的普通调用栈上创建固定的
 `std::array<iovec, 16>`，再让 `Buffer` 填充 `iov_storage`；因此 iovec view 不进入
 协程帧，也不为 Epoll 的同步 `readv()` 额外堆分配。随后立即调用非阻塞 `readv()`：
@@ -110,12 +130,12 @@ destination 混淆；`0` 的读取结果仍按 stream 语义表示 EOF。
 array 直到 terminal CQE，所以 luring awaiter 必须持久拥有该 array。
 
 为避免把外部 `Buffer&` 在 pending interval 内的地址稳定性留给调用者，Alyrn 不提供
-`ReadSome(Buffer&)` overload；可增长 buffer 必须通过 move-only `ReadInto(Buffer)` 进入
+`Read(Buffer&)` overload；可增长 buffer 必须通过 move-only `Recv(Buffer)` 进入
 operation。
 
 ### io_uring
 
-`Stream::ReadIntoAwaiter` 也拥有 `Buffer`。它先尝试取得一个连续 writable range：
+`Stream::RecvAwaiter` 也拥有 `Buffer`。它先尝试取得一个连续 writable range：
 
 - 连续 tail 足够时，`IORING_OP_RECV` 直接复制该 range 的地址和长度进入 SQE；不必保存
   iovec 对象；
@@ -135,7 +155,7 @@ operation。
 这与 liburing 的单次 `recv` 语义匹配：destination buffer 是 request 的输入，CQE 的
 `res` 才是业务结果；而 multishot `recv` 则要求 `IOSQE_BUFFER_SELECT` 并从 provided
 buffer pool 为每个 CQE 取 buffer，属于 `RecvSource`/`BufferLease` 协议，而不是
-`ReadInto`。参见 [io_uring_prep_recv(3)](https://man7.org/linux/man-pages/man3/io_uring_prep_recv.3.html)
+`Recv`。参见 [io_uring_prep_recv(3)](https://man7.org/linux/man-pages/man3/io_uring_prep_recv.3.html)
 与 [io_uring_prep_recv_multishot(3)](https://man7.org/linux/man-pages/man3/io_uring_prep_recv_multishot.3.html)。
 
 ## LRCI 边界审计
@@ -158,25 +178,28 @@ buffer pool 为每个 CQE 取 buffer，属于 `RecvSource`/`BufferLease` 协议�
 ## 与主流接口的关系
 
 Boost.Asio 的 `async_read_some` 是典型 borrowed-buffer API：底层 buffer object 可以被复制，
-但调用者必须保证其指向的内存直到 completion handler 被调用前都有效。`ReadSome(span)`
-与它是同类契约；`ReadInto` 则把这项有效性保证转移进 operation。参见
+但调用者必须保证其指向的内存直到 completion handler 被调用前都有效。`Read(span)`
+与它是同类契约；`Recv` 则把这项有效性保证转移进 operation。参见
 [Boost.Asio `async_read_some`](https://www.boost.org/doc/libs/latest/doc/html/boost_asio/reference/basic_stream_socket/async_read_some.html)。
 
 Tokio 的 `read_buf(&mut B)` 也向可增长 buffer 写入并推进内部 cursor，但 Rust 的独占可变
 借用在类型系统中保证 buffer 不能在 `.await` 期间被另行移动或修改。C++ 无法从
-`Buffer&`/`span` 获得同等保证，因此 `ReadInto(Buffer)` 是对应的显式所有权方案。参见
+`Buffer&`/`span` 获得同等保证，因此 `Recv(Buffer)` 是对应的显式所有权方案。参见
 [Tokio `AsyncReadExt::read_buf`](https://docs.rs/tokio/latest/tokio/io/trait.AsyncReadExt.html#method.read_buf)。
 
 ## 验证覆盖与后续约束
 
-现有 Epoll/io_uring smoke tests 已覆盖：成功读回 buffer、close/cancel 后归还、io_uring
-提交失败回滚并允许下一次读、恢复时 scheduler affinity，以及返回 buffer 不带活动
-reservation。
+现有 Epoll/io_uring/kqueue smoke tests 已覆盖：`Recv(Buffer)` 成功读回、close/cancel 后
+归还、io_uring 提交失败回滚并允许下一次读、恢复时 scheduler affinity，以及返回 buffer
+不带活动 reservation；无参 `Recv()` 则覆盖 payload copy-out 与返回后 buffer 可再
+`PrepareWrite`。
 
-后续不应把 `ReadInto` 扩张成 multishot 或 provided-buffer 的通用入口。若要增加能力，应遵守：
+`Recv()` 可以使用 loop 的 provided-buffer ring 作为内核写入目标，但必须在 resume 前
+copy-out 并归还 slot。它不是 `RecvSource`，也不把 `BufferLease` 交给调用者。后续仍
+不应把 `Recv` 扩张成 multishot 或 lease 的通用入口。若要增加能力，应遵守：
 
 - 需要后端提供存储、多个事件或显式归还时，扩展 `RecvSource`/`BufferLease`；
 - 需要 registered/fixed buffer 时，作为 backend-specific optimization profile，不改变
-  `ReadIntoOutcome` 的 ownership 意义；
+  `RecvOutcome` 的 ownership 意义，也不改变 `Recv()` 的 copy-out 结果；
 - 若引入“逻辑取消先返回、物理 I/O 后结束”的操作，不能复用本接口，除非 operation 继续
   独占 buffer 直到 physical release boundary。

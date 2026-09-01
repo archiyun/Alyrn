@@ -12,14 +12,14 @@
 #include <type_traits>
 #include <utility>
 
-#include "alyrn/result.h"
 #include "alyrn/coro/spawn.h"
-#include "alyrn/net/endpoint.h"
-#include "alyrn/net/detail/socket.h"
 #include "alyrn/epoll/detail/channel.h"
 #include "alyrn/epoll/listener.h"
 #include "alyrn/epoll/loop.h"
 #include "alyrn/epoll/stream.h"
+#include "alyrn/net/detail/socket.h"
+#include "alyrn/net/endpoint.h"
+#include "alyrn/result.h"
 
 namespace {
 
@@ -136,17 +136,15 @@ static_assert(std::is_move_assignable_v<alyrn::epoll::Stream>);
 static_assert(std::is_move_constructible_v<alyrn::epoll::Listener>);
 static_assert(std::is_move_assignable_v<alyrn::epoll::Listener>);
 
-alyrn::coro::DetachedTask ReadOnce(alyrn::epoll::Stream* stream,
-                                      alyrn::epoll::Loop* loop,
-                                      std::array<std::byte, 16>* buffer,
-                                      std::optional<ReadResult>* result) {
-  result->emplace(co_await stream->ReadSome(*buffer));
+alyrn::coro::DetachedTask ReadOnce(alyrn::epoll::Stream* stream, alyrn::epoll::Loop* loop,
+                                   std::array<std::byte, 16>* buffer,
+                                   std::optional<ReadResult>* result) {
+  result->emplace(co_await stream->Read(*buffer));
   loop->RequestStop();
 }
 
-alyrn::coro::DetachedTask AcceptOnce(alyrn::epoll::Listener* listener,
-                                        alyrn::epoll::Loop* loop,
-                                        std::optional<AcceptResult>* result) {
+alyrn::coro::DetachedTask AcceptOnce(alyrn::epoll::Listener* listener, alyrn::epoll::Loop* loop,
+                                     std::optional<AcceptResult>* result) {
   result->emplace(co_await listener->Accept());
   loop->RequestStop();
 }
@@ -173,7 +171,7 @@ bool TestEpollStreamMove() {
     alyrn::epoll::Stream moved(std::move(source));
 
     alyrn::coro::SpawnDetach(loop,
-                                ReadOnce(&moved, &loop, &constructed_buffer, &constructed_result));
+                             ReadOnce(&moved, &loop, &constructed_buffer, &constructed_result));
     loop.RunAfter(alyrn::time::Duration::zero(),
                   [peer_fd = source_pair[1]] { ::write(peer_fd, "c", 1); });
     loop.RunAfter(alyrn::time::Milliseconds(200), [&] { loop.RequestStop(); });

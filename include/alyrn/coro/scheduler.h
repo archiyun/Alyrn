@@ -146,7 +146,7 @@ protected:
   ALYRN_DELETE_COPY_MOVE(Scheduler);
 
 private:
-  static thread_local Scheduler* current_;
+  inline static thread_local Scheduler* current_{nullptr};
   std::pmr::memory_resource* frame_resource_{nullptr};
 };
 

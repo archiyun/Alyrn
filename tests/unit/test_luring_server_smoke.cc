@@ -15,10 +15,10 @@
 #include <thread>
 #include <utility>
 
+#include "alyrn/net/endpoint.h"
 #include "alyrn/result.h"
 #include "alyrn/uring/detail/server.h"
 #include "alyrn/uring/stream.h"
-#include "alyrn/net/endpoint.h"
 
 namespace {
 
@@ -174,7 +174,7 @@ bool CheckServerSessionHandler() {
   std::atomic_bool invalid_stream{false};
   std::atomic_bool wrong_loop{false};
   server.SetSessionHandler([&](alyrn::uring::detail::WorkerContext& context,
-                                 alyrn::uring::Stream stream) -> alyrn::coro::DetachedTask {
+                               alyrn::uring::Stream stream) -> alyrn::coro::DetachedTask {
     if (!context.loop.IsInLoopThread()) {
       wrong_loop.store(true, std::memory_order_relaxed);
     }
@@ -239,16 +239,15 @@ bool CheckServerStopsActiveSession() {
   std::atomic_bool session_started{false};
   std::atomic_bool session_cancelled{false};
 
-  server.SetSessionHandler(
-      [&](alyrn::uring::detail::WorkerContext&, alyrn::uring::Stream stream)
-          -> alyrn::coro::DetachedTask {
-        session_started.store(true, std::memory_order_release);
-        std::array<std::byte, 1> buffer{};
-        auto result = co_await stream.ReadSome(buffer);
-        if (!result.has_value() && result.error().value() == ECANCELED) {
-          session_cancelled.store(true, std::memory_order_release);
-        }
-      });
+  server.SetSessionHandler([&](alyrn::uring::detail::WorkerContext&,
+                               alyrn::uring::Stream stream) -> alyrn::coro::DetachedTask {
+    session_started.store(true, std::memory_order_release);
+    std::array<std::byte, 1> buffer{};
+    auto result = co_await stream.Read(buffer);
+    if (!result.has_value() && result.error().value() == ECANCELED) {
+      session_cancelled.store(true, std::memory_order_release);
+    }
+  });
 
   auto started = server.Start();
   if (!started.has_value()) {

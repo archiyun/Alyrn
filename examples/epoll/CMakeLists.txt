@@ -8,11 +8,11 @@ target_link_libraries(demo_epoll_coro_echo
         alyrn_epoll
 )
 
-add_executable(demo_epoll_read_into_echo
-    demo_epoll_read_into_echo.cc
+add_executable(demo_epoll_recv_echo
+    demo_epoll_recv_echo.cc
 )
 
-target_link_libraries(demo_epoll_read_into_echo
+target_link_libraries(demo_epoll_recv_echo
     PRIVATE
         alyrn_epoll
 )

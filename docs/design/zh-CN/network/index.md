@@ -13,4 +13,4 @@ BSD/Darwin kqueue。它们 refine 同一套 `alyrn::backend` 契约（应用通�
 - [io_uring Operation Matrix](luring-operation-matrix.md)
 - [kqueue](kqueue/index.md)
 - [Loop、Post 与主从移交](kqueue/loop-and-handoff.md)
-- [用 Lamport 视角讨论协程网络运行时的语义统一与热插拔](lamport-hot-swap-runtime.md)
+- [TLA+ 生命周期模型](formal/index.md)

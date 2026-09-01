@@ -2,14 +2,13 @@
 #pragma once
 
 #include <liburing.h>
+#include <sys/socket.h>
+#include <sys/uio.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <utility>
-
-#include <sys/socket.h>
-#include <sys/uio.h>
 
 namespace alyrn::uring::detail {
 
@@ -23,9 +22,7 @@ auto MakeSqePrep(Prep&& prep, Args&&... args) {
              io_uring_sqe* sqe) mutable noexcept { std::invoke(prep, sqe, args...); };
 }
 
-inline auto PrepareNop() {
-  return MakeSqePrep(io_uring_prep_nop);
-}
+inline auto PrepareNop() { return MakeSqePrep(io_uring_prep_nop); }
 
 inline auto PrepareReadv(int fd, const iovec* iovs, unsigned count, off_t offset) {
   return MakeSqePrep(io_uring_prep_readv, fd, iovs, count, offset);
@@ -41,8 +38,7 @@ inline auto PrepareSend(int fd, const void* buffer, std::size_t size, int flags)
 
 inline auto PrepareSendZeroCopyReportUsage(int fd, const void* buffer, std::size_t size,
                                            int flags) {
-  return MakeSqePrep(io_uring_prep_send_zc, fd, buffer, size, flags,
-                     IORING_SEND_ZC_REPORT_USAGE);
+  return MakeSqePrep(io_uring_prep_send_zc, fd, buffer, size, flags, IORING_SEND_ZC_REPORT_USAGE);
 }
 
 inline auto PrepareAccept(int fd, sockaddr* address, socklen_t* address_length, int flags) {
@@ -86,6 +82,14 @@ inline auto PrepareAbsoluteTimeoutUpdate(__kernel_timespec* timeout, std::uint64
 
 inline auto PreparePollAdd(int fd, unsigned poll_mask) {
   return MakeSqePrep(io_uring_prep_poll_add, fd, poll_mask);
+}
+
+inline auto PrepareProvidedRecv(int fd, std::size_t buffer_size, std::uint16_t buffer_group) {
+  return [fd, buffer_size, buffer_group](io_uring_sqe* sqe) noexcept {
+    io_uring_prep_recv(sqe, fd, nullptr, buffer_size, 0);
+    sqe->flags |= IOSQE_BUFFER_SELECT;
+    sqe->buf_group = buffer_group;
+  };
 }
 
 inline auto PrepareProvidedRecvMultishot(int fd, std::size_t buffer_size,

@@ -9,7 +9,10 @@ template <class T>
 concept AsyncReadStream = backend::AsyncReadStream<T>;
 
 template <class T>
-concept AsyncReadIntoStream = backend::AsyncReadIntoStream<T>;
+concept AsyncRecvStream = backend::AsyncRecvStream<T>;
+
+template <class T>
+concept AsyncRecvCopyStream = backend::AsyncRecvCopyStream<T>;
 
 template <class T>
 concept AsyncWriteStream = backend::AsyncWriteStream<T>;

@@ -7,9 +7,10 @@
 
 | API | 结果 | 生命周期重点 |
 | --- | --- | --- |
-| `ReadSome(span<byte>)` | `Result<size_t>` | 写入 buffer 的 request 完成前不能复用 buffer |
-| `ReadInto(Buffer, reserve)` | `ReadIntoOutcome` | `Buffer` 的 ownership 交给 awaiter，完成后返回给调用方 |
-| `WriteAll(span<const byte>)` | `Task<Result<void>>` | 内建短写循环；每轮 send-zc 越过 kernel release boundary 后才可继续使用同一视图 |
+| `Read(span<byte>)` | `Result<size_t>` | 写入 buffer 的 request 完成前不能复用 buffer |
+| `Recv(Buffer, reserve)` | `RecvOutcome` | `Buffer` 的 ownership 交给 awaiter，完成后返回给调用方 |
+| `Recv()` | `Result<Buffer>` | 内核写入 shared provided-buffer ring，copy-out 后立即归还 slot |
+| `Write(span<const byte>)` | `Task<Result<void>>` | 内建短写循环；每轮 send-zc 越过 kernel release boundary 后才可继续使用同一视图 |
 | `Shutdown()` | `Task<Result<void>>` | 写方向 half-close；幂等，保留读方向，拒绝新写入 |
 | `CloseRead()` | `Task<Result<void>>` | 读方向 half-close；幂等，后续读立即返回 EOF，保留写方向 |
 | `CloseWrite()` | `Task<Result<void>>` | 写方向 half-close 的 canonical spelling |
@@ -25,7 +26,7 @@
 典型生命周期是：
 
 ```text
-ReadSome / internal short send
+Read / internal short send
   -> 一个 SQE
   -> 一个 CQE
   -> 保存 CQE.res
@@ -33,13 +34,13 @@ ReadSome / internal short send
   -> await_resume 返回 Result
 ```
 
-`res >= 0` 表示字节数，负值映射为错误。内部 short send 不承诺完整发送；`WriteAll()` 是
+`res >= 0` 表示字节数，负值映射为错误。内部 short send 不承诺完整发送；`Write()` 是
 后端内建的完整发送操作，按短写推进输入 span 并把零进展转换为 `EPIPE`。短写 awaiter 是
 实现细节，不属于公共 `AsyncStream` 契约。当前没有公共 scatter-write 或 `WritePart` 接口。
 
-## ReadInto
+## Recv
 
-`ReadInto()` 把可增长的 `net::Buffer` 移入 operation。它适合不希望业务层手动管理一块
+`Recv(Buffer)` 把可增长的 `net::Buffer` 移入 operation。它适合不希望业务层手动管理一块
 固定 scratch span 的场景：
 
 ```text
@@ -51,6 +52,11 @@ Buffer ownership -> awaiter
 
 测试需要验证成功、EOF、错误和 close 期间 ownership 都只转移一次。
 
+无参 `Recv()` 不接收调用者 buffer。它提交带 `IOSQE_BUFFER_SELECT` 的 single-shot recv，
+把内核写入 loop 共享 ring 的一个 slot，再 memcpy 进新的 `net::Buffer` 并在 resume 前
+归还该 slot。`RecvSource` 仍独占 `BufferLease` 路径；两条 API 共用 ring，但不能共用
+lease 语义。epoll/kqueue 没有 ring，用内部 `Buffer` 接收后返回同一 `Result<Buffer>`。
+
 ## Close 的可观察语义
 
 `Close()` 不是立即 `close(fd)`：如果 stream 还有 pending read/write，必须先让这些物理
@@ -58,18 +64,19 @@ operation 经过正常或取消完成路径，再关闭 fd。这样可以防止 
 影响新对象。
 
 `Shutdown()` 与 `Close()` 是正交状态：`Shutdown()` 只从 `Writable` 转到
-`WriteShutdown`，因此后续 `ReadSome()` 仍然有效；新的 `WriteAll()` 在提交 SQE 前返回
+`WriteShutdown`，因此后续 `Read()` 仍然有效；新的 `Write()` 在提交 SQE 前返回
 `EPIPE`。空 span 不提交 SQE，但仍检查 loop、stream 生命周期和写槽位。若已有 write request
 仍在 pending，`Shutdown()` 返回 `EBUSY`，避免把 half-close 与内核仍可能访问的发送 operation
 交错。
 
 `CloseWrite()` 是 `Shutdown()` 的兼容别名。`CloseRead()` 从 `Readable` 转到
-`ReadShutdown`；它要求没有 pending read，成功后新的 `ReadSome()` 和 `ReadInto()`
-不再提交 recv SQE，而是立即返回 `Result<0>`，写侧仍可继续使用。
+`ReadShutdown`；它要求没有 pending read，成功后新的 `Read()` 和 `Recv(Buffer)`
+不再提交 recv SQE，而是立即返回 `Result<0>`，无参 `Recv()` 立即返回空 `Buffer`，写侧仍可
+继续使用。
 
 ## 测试观察点
 
 - 一次 read/write 只恢复一次，即使 loop 一轮处理了多个 CQE；
-- buffer 在 CQE 前保持有效，`ReadInto` 的 ownership 在成功和错误路径都可回收；
+- buffer 在 CQE 前保持有效，`Recv` 的 ownership 在成功和错误路径都可回收；
 - `Close()` 与 pending read/write 交错时不 double close、不泄漏 fd；
 - 内部 short send 的部分发送不会被误报成完整发送。

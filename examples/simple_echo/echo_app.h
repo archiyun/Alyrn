@@ -23,7 +23,7 @@ auto EchoSession(Stream stream) -> alyrn::Task<alyrn::Result<void>> {
   std::array<std::byte, kDefaultBufferSize> buffer{};
 
   for (;;) {
-    auto read = co_await stream.ReadSome(buffer);
+    auto read = co_await stream.Read(buffer);
     if (!read.has_value()) {
       co_return std::unexpected(read.error());
     }
@@ -32,7 +32,7 @@ auto EchoSession(Stream stream) -> alyrn::Task<alyrn::Result<void>> {
     }
 
     const std::span<const std::byte> payload(buffer.data(), *read);
-    auto written = co_await stream.WriteAll(payload);
+    auto written = co_await stream.Write(payload);
     if (!written.has_value()) {
       co_return std::unexpected(written.error());
     }

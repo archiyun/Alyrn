@@ -25,12 +25,12 @@
 #include <string_view>
 #include <utility>
 
-#include "alyrn/spawn.h"
+#include "alyrn/epoll/listener.h"
+#include "alyrn/epoll/loop.h"
 #include "alyrn/io/async_listener.h"
 #include "alyrn/io/async_stream.h"
 #include "alyrn/net/endpoint.h"
-#include "alyrn/epoll/listener.h"
-#include "alyrn/epoll/loop.h"
+#include "alyrn/spawn.h"
 
 namespace {
 
@@ -54,15 +54,14 @@ std::string_view StripLineEnding(std::string_view line) {
 }
 
 template <alyrn::io::AsyncStream Stream>
-alyrn::DetachedTask Session(Stream stream, long long* active_sessions,
-                                     long long* total_messages) {
+alyrn::DetachedTask Session(Stream stream, long long* active_sessions, long long* total_messages) {
   ++(*active_sessions);
 
   std::array<std::byte, 4096> buffer{};
   std::string pending;
 
   for (;;) {
-    auto read_result = co_await stream.ReadSome(buffer);
+    auto read_result = co_await stream.Read(buffer);
     if (!read_result.has_value()) {
       std::cerr << "read failed: " << read_result.error().message() << '\n';
       break;
@@ -72,14 +71,14 @@ alyrn::DetachedTask Session(Stream stream, long long* active_sessions,
     if (n == 0) {
       if (!pending.empty()) {
         ++(*total_messages);
-        (void)co_await stream.WriteAll(Bytes(pending));
+        (void)co_await stream.Write(Bytes(pending));
       }
       break;
     }
 
     pending.append(reinterpret_cast<const char*>(buffer.data()), n);
     if (pending.size() > 64 * 1024) {
-      (void)co_await stream.WriteAll(Bytes("ERR line too long\n"));
+      (void)co_await stream.Write(Bytes("ERR line too long\n"));
       break;
     }
 
@@ -93,7 +92,7 @@ alyrn::DetachedTask Session(Stream stream, long long* active_sessions,
       const std::string_view command = StripLineEnding(line);
 
       if (command == "/quit") {
-        (void)co_await stream.WriteAll(Bytes("bye\n"));
+        (void)co_await stream.Write(Bytes("bye\n"));
         (void)co_await stream.Close();
         --(*active_sessions);
         co_return;
@@ -102,14 +101,14 @@ alyrn::DetachedTask Session(Stream stream, long long* active_sessions,
       if (command == "/stats") {
         std::string reply = "active_sessions=" + std::to_string(*active_sessions) +
                             " total_messages=" + std::to_string(*total_messages) + "\n";
-        (void)co_await stream.WriteAll(Bytes(reply));
+        (void)co_await stream.Write(Bytes(reply));
         pending.erase(0, line_end + 1);
         continue;
       }
 
       ++(*total_messages);
 
-      auto write_result = co_await stream.WriteAll(Bytes(line));
+      auto write_result = co_await stream.Write(Bytes(line));
       if (!write_result.has_value()) {
         std::cerr << "write failed: " << write_result.error().message() << '\n';
         break;
@@ -125,7 +124,7 @@ alyrn::DetachedTask Session(Stream stream, long long* active_sessions,
 
 template <alyrn::io::AsyncListener Listener>
 alyrn::DetachedTask AcceptLoop(Listener* listener, alyrn::epoll::Loop* scheduler,
-                                        long long* active_sessions, long long* total_messages) {
+                               long long* active_sessions, long long* total_messages) {
   using Stream = typename Listener::StreamType;
 
   for (;;) {
@@ -135,8 +134,8 @@ alyrn::DetachedTask AcceptLoop(Listener* listener, alyrn::epoll::Loop* scheduler
       co_return;
     }
 
-    alyrn::SpawnDetach(
-        *scheduler, Session<Stream>(std::move(*accepted), active_sessions, total_messages));
+    alyrn::SpawnDetach(*scheduler,
+                       Session<Stream>(std::move(*accepted), active_sessions, total_messages));
   }
 }
 
@@ -148,8 +147,7 @@ int main() {
   const auto port = static_cast<std::uint16_t>(EnvInt("PORT", 9090));
 
   alyrn::epoll::Loop loop;
-  auto listener_result =
-      alyrn::epoll::Listener::Create(&loop, alyrn::net::Endpoint(port));
+  auto listener_result = alyrn::epoll::Listener::Create(&loop, alyrn::net::Endpoint(port));
   if (!listener_result.has_value()) {
     std::cerr << "failed to create listener: " << listener_result.error().message() << '\n';
     return 1;
@@ -159,8 +157,7 @@ int main() {
   long long active_sessions = 0;
   long long total_messages = 0;
 
-  alyrn::SpawnDetach(loop,
-                              AcceptLoop(&listener, &loop, &active_sessions, &total_messages));
+  alyrn::SpawnDetach(loop, AcceptLoop(&listener, &loop, &active_sessions, &total_messages));
 
   std::cout << "epoll coro echo listening on 127.0.0.1:" << port << '\n';
   std::cout << "try: nc 127.0.0.1 " << port << '\n';

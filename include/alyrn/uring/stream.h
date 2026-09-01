@@ -7,6 +7,7 @@
 #include <coroutine>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -16,7 +17,7 @@
 #include "alyrn/net/buffer.h"
 #include "alyrn/net/detail/stream_lifecycle.h"
 #include "alyrn/net/endpoint.h"
-#include "alyrn/net/read_into.h"
+#include "alyrn/net/recv.h"
 #include "alyrn/result.h"
 #include "alyrn/task.h"
 #include "alyrn/time/clock.h"
@@ -47,14 +48,16 @@ struct ZeroCopySendResult {
 
 namespace detail {
 
+class ProvidedBufferPool;
 class StreamOperationSlot;
 
 }  // namespace detail
 
 class Stream {
 private:
-  class ReadSomeAwaiter;
-  class ReadIntoAwaiter;
+  class ReadAwaiter;
+  class RecvAwaiter;
+  class RecvCopyAwaiter;
   class SendAwaiter;
   class SendZeroCopyAwaiter;
 
@@ -77,15 +80,19 @@ public:
   // await_suspend() on this stream's owner Loop. Calling them from a
   // different thread violates the runtime contract and terminates through
   // ALYRN_CHECK in every build configuration.
-  ReadSomeAwaiter ReadSome(std::span<std::byte> buffer) noexcept;
+  ReadAwaiter Read(std::span<std::byte> buffer) noexcept;
+
+  // Fills a kernel provided-buffer slot, copies into a caller-owned Buffer, and
+  // returns the slot to the shared ring before resume.
+  RecvCopyAwaiter Recv() noexcept;
 
   // Transfers the destination Buffer into the awaiter. The result returns the
   // owner after the CQE has made the kernel's access to its storage terminal.
-  ReadIntoAwaiter ReadInto(net::Buffer buffer, std::size_t reserve = 4096) noexcept;
+  RecvAwaiter Recv(net::Buffer buffer, std::size_t reserve = 4096) noexcept;
 
-  Task<Result<void>> WriteAll(std::span<const std::byte> buffer);
+  Task<Result<void>> Write(std::span<const std::byte> buffer);
 
-  // WriteAll() chooses this optional extension when enabled. SendZeroCopy()
+  // Write() chooses this optional extension when enabled. SendZeroCopy()
   // keeps the caller's buffer alive until its notification CQE is observed.
   [[nodiscard]]
   bool ZeroCopyWritesEnabled() const noexcept {
@@ -147,7 +154,9 @@ public:
 
 private:
   friend void detail::DispatchStreamReadComplete(detail::Op* op) noexcept;
-  friend void detail::DispatchStreamReadIntoComplete(detail::Op* op) noexcept;
+  friend void detail::DispatchStreamRecvComplete(detail::Op* op) noexcept;
+  friend void detail::DispatchStreamRecvCopyComplete(detail::Op* op,
+                                                     detail::CompletionEvent event) noexcept;
   friend void detail::DispatchStreamWriteComplete(detail::Op* op) noexcept;
   friend detail::CompletionDisposition detail::DispatchSendZeroCopyComplete(
       detail::Op* op, detail::CompletionEvent event) noexcept;
@@ -173,14 +182,14 @@ private:
   net::detail::StreamLifecycle lifecycle_;
 };
 
-// --- ReadSomeAwaiter ---
-class [[nodiscard]] Stream::ReadSomeAwaiter : public detail::OpHook<Stream::ReadSomeAwaiter> {
+// --- ReadAwaiter ---
+class [[nodiscard]] Stream::ReadAwaiter : public detail::OpHook<Stream::ReadAwaiter> {
 public:
-  using OpHook = detail::OpHook<ReadSomeAwaiter>;
+  using OpHook = detail::OpHook<ReadAwaiter>;
 
-  ALYRN_DELETE_COPY_MOVE(ReadSomeAwaiter);
+  ALYRN_DELETE_COPY_MOVE(ReadAwaiter);
 
-  ReadSomeAwaiter(Stream& stream, std::span<std::byte> buffer) noexcept
+  ReadAwaiter(Stream& stream, std::span<std::byte> buffer) noexcept
       : OpHook(detail::OpKind::kReadComplete), stream_(&stream), buffer_(buffer) {}
 
   bool await_ready() const noexcept { return false; }
@@ -196,25 +205,25 @@ private:
   std::span<std::byte> buffer_;
 };
 
-// --- ReadIntoAwaiter ---
-class [[nodiscard]] Stream::ReadIntoAwaiter : public detail::OpHook<Stream::ReadIntoAwaiter> {
+// --- RecvAwaiter ---
+class [[nodiscard]] Stream::RecvAwaiter : public detail::OpHook<Stream::RecvAwaiter> {
 public:
-  using OpHook = detail::OpHook<ReadIntoAwaiter>;
+  using OpHook = detail::OpHook<RecvAwaiter>;
 
-  ALYRN_DELETE_COPY_MOVE(ReadIntoAwaiter);
+  ALYRN_DELETE_COPY_MOVE(RecvAwaiter);
 
-  ReadIntoAwaiter(Stream& stream, net::Buffer buffer, std::size_t reserve) noexcept
-      : OpHook(detail::OpKind::kReadIntoComplete),
+  RecvAwaiter(Stream& stream, net::Buffer buffer, std::size_t reserve) noexcept
+      : OpHook(detail::OpKind::kRecvComplete),
         stream_(&stream),
         buffer_(std::move(buffer)),
         reserve_(reserve) {}
 
   bool await_ready() const noexcept { return false; }
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
-  net::ReadIntoOutcome await_resume() noexcept;
+  net::RecvOutcome await_resume() noexcept;
 
 private:
-  friend void detail::DispatchStreamReadIntoComplete(detail::Op* op) noexcept;
+  friend void detail::DispatchStreamRecvComplete(detail::Op* op) noexcept;
 
   static void OnComplete(detail::Op* op) noexcept;
 
@@ -235,6 +244,31 @@ private:
   // need to survive await_suspend().
   std::vector<iovec> iovs_;
   ReservationKind reservation_kind_{ReservationKind::kNone};
+};
+
+class [[nodiscard]] Stream::RecvCopyAwaiter : public detail::OpHook<Stream::RecvCopyAwaiter> {
+public:
+  using OpHook = detail::OpHook<RecvCopyAwaiter>;
+
+  ALYRN_DELETE_COPY_MOVE(RecvCopyAwaiter);
+
+  explicit RecvCopyAwaiter(Stream& stream) noexcept
+      : OpHook(detail::OpKind::kRecvCopyComplete), stream_(&stream) {}
+
+  bool await_ready() const noexcept { return false; }
+  bool await_suspend(std::coroutine_handle<> continuation) noexcept;
+  Result<net::Buffer> await_resume() noexcept;
+
+private:
+  friend void detail::DispatchStreamRecvCopyComplete(detail::Op* op,
+                                                     detail::CompletionEvent event) noexcept;
+
+  static void OnComplete(detail::Op* op, detail::CompletionEvent event) noexcept;
+  void Finish(Result<net::Buffer> outcome) noexcept;
+
+  Stream* stream_;
+  detail::ProvidedBufferPool* pool_{nullptr};
+  std::optional<Result<net::Buffer>> outcome_;
 };
 
 class [[nodiscard]] Stream::SendAwaiter : public detail::OpHook<Stream::SendAwaiter> {
@@ -288,6 +322,7 @@ private:
 };
 
 static_assert(backend::AsyncStream<Stream>);
-static_assert(backend::AsyncReadIntoStream<Stream>);
+static_assert(backend::AsyncRecvStream<Stream>);
+static_assert(backend::AsyncRecvCopyStream<Stream>);
 
 }  // namespace alyrn::uring

@@ -76,8 +76,8 @@ application protocol, route, peer, proxy, or gateway policy.
   backend cores must not include `alyrn/io` or link `alyrn_io`.
 - CoroGateway may depend on Alyrn public interfaces. Alyrn must not
   depend on CoroGateway.
-- A backend extension belongs behind a separate contract or capability profile;
-  it must not change the meaning of `ReadSome`, `WriteAll`, or `Close`.
+- A backend extension belongs behind a separate contract;
+  it must not change the meaning of `Read`, `Write`, or `Close`.
 - `ManagedLoop::RequestStop` is a thread-safe dispatcher-control request that
   begins backend cancellation/drain; it is not a resource `Close`. A backend
   must not treat `Stopped` as proof of fd, buffer, or coroutine-frame release.

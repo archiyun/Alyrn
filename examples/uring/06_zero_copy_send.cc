@@ -27,8 +27,8 @@
 
 #include "alyrn/coro.h"
 #include "alyrn/io.h"
-#include "alyrn/uring.h"
 #include "alyrn/net.h"
+#include "alyrn/uring.h"
 
 using namespace alyrn;
 
@@ -116,8 +116,8 @@ bool ReceiveExactly(int fd, std::span<char> destination) noexcept {
   return true;
 }
 
-auto ZeroCopySession(uring::Loop& loop, uring::Stream stream, int peer_fd,
-                     int& exit_code) -> alyrn::DetachedTask {
+auto ZeroCopySession(uring::Loop& loop, uring::Stream stream, int peer_fd, int& exit_code)
+    -> alyrn::DetachedTask {
   // Own the send memory until co_await returns. After release authorization,
   // overwriting it is safe even if the peer has not yet read every byte.
   std::array<char, kPayload.size()> owned{};
@@ -127,8 +127,7 @@ auto ZeroCopySession(uring::Loop& loop, uring::Stream stream, int peer_fd,
   auto sent = co_await stream.SendZeroCopy(payload);
   if (!sent.has_value()) {
     std::println(stderr, "SendZeroCopy failed: {}", sent.error().message());
-    std::println(stderr,
-                 "hint: older kernels or restricted environments may not support send_zc");
+    std::println(stderr, "hint: older kernels or restricted environments may not support send_zc");
     (void)co_await stream.Close();
     loop.RequestStop();
     co_return;

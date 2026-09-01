@@ -5,8 +5,8 @@
 
 #include <array>
 #include <chrono>
-#include <cstddef>
 #include <coroutine>
+#include <cstddef>
 #include <expected>
 #include <iostream>
 #include <optional>
@@ -15,21 +15,21 @@
 #include <thread>
 #include <utility>
 
-#include "alyrn/detail/check.h"
-#include "alyrn/result.h"
+#include "alyrn/coro/detached_task.h"
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/spawn.h"
-#include "alyrn/coro/detached_task.h"
 #include "alyrn/coro/work.h"
+#include "alyrn/detail/check.h"
+#include "alyrn/detail/scheduler_continuation.h"
 #include "alyrn/io/loop.h"
+#include "alyrn/net/endpoint.h"
+#include "alyrn/result.h"
 #include "alyrn/uring/detail/loop_access.h"
 #include "alyrn/uring/detail/op.h"
 #include "alyrn/uring/detail/sqe_prep.h"
 #include "alyrn/uring/loop.h"
 #include "alyrn/uring/options.h"
 #include "alyrn/uring/stream.h"
-#include "alyrn/net/endpoint.h"
-#include "alyrn/detail/scheduler_continuation.h"
 
 namespace {
 
@@ -42,8 +42,8 @@ public:
   bool await_suspend(std::coroutine_handle<> continuation) noexcept {
     op_.resume_work.SetHandle(continuation);
 
-    auto submitted = alyrn::uring::detail::LoopAccess::SubmitOp(
-        *loop_, &op_, alyrn::uring::detail::PrepareNop());
+    auto submitted = alyrn::uring::detail::LoopAccess::SubmitOp(*loop_, &op_,
+                                                                alyrn::uring::detail::PrepareNop());
     if (!submitted.has_value()) {
       result_.emplace(std::unexpected(submitted.error()));
       return false;
@@ -95,8 +95,7 @@ private:
 
 class SuspendOnContinuation final {
 public:
-  explicit SuspendOnContinuation(
-      alyrn::detail::SchedulerContinuation* continuation) noexcept
+  explicit SuspendOnContinuation(alyrn::detail::SchedulerContinuation* continuation) noexcept
       : continuation_(continuation) {}
 
   bool await_ready() const noexcept { return false; }
@@ -112,9 +111,9 @@ private:
   alyrn::detail::SchedulerContinuation* continuation_;
 };
 
-alyrn::coro::DetachedTask AwaitCompletionQueue(
-    alyrn::detail::SchedulerContinuation* continuation,
-    alyrn::uring::Loop* loop, std::string* order, bool* resumed_with_scheduler) {
+alyrn::coro::DetachedTask AwaitCompletionQueue(alyrn::detail::SchedulerContinuation* continuation,
+                                               alyrn::uring::Loop* loop, std::string* order,
+                                               bool* resumed_with_scheduler) {
   co_await SuspendOnContinuation(continuation);
   *resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == loop;
   order->push_back('C');
@@ -158,9 +157,8 @@ bool IsEnvironmentSkip(alyrn::Error error) {
   return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
 }
 
-alyrn::coro::DetachedTask AwaitNop(alyrn::uring::Loop* loop,
-                                      std::optional<alyrn::Result<int>>* out,
-                                      bool* resumed_with_scheduler) {
+alyrn::coro::DetachedTask AwaitNop(alyrn::uring::Loop* loop, std::optional<alyrn::Result<int>>* out,
+                                   bool* resumed_with_scheduler) {
   auto result = co_await NopAwaiter(*loop);
   *resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == loop;
   out->emplace(std::move(result));
@@ -184,8 +182,7 @@ bool CheckNopResumesCoroutine() {
   if (!Check(loop.IsInLoopThread(), "loop should be bound to the creating thread")) {
     return false;
   }
-  if (!Check(alyrn::uring::detail::LoopAccess::IsDrained(loop),
-             "fresh loop should be drained")) {
+  if (!Check(alyrn::uring::detail::LoopAccess::IsDrained(loop), "fresh loop should be drained")) {
     return false;
   }
 
@@ -255,10 +252,11 @@ bool CheckCrossThreadRequestStopWakesRing() {
                "RequestStop should wake the io_uring wait promptly");
 }
 
-alyrn::coro::DetachedTask AwaitPendingRead(
-    alyrn::uring::Stream* stream, std::array<std::byte, 16>* buffer,
-    std::optional<alyrn::Result<std::size_t>>* result, bool* resumed_with_scheduler) {
-  auto read = co_await stream->ReadSome(*buffer);
+alyrn::coro::DetachedTask AwaitPendingRead(alyrn::uring::Stream* stream,
+                                           std::array<std::byte, 16>* buffer,
+                                           std::optional<alyrn::Result<std::size_t>>* result,
+                                           bool* resumed_with_scheduler) {
+  auto read = co_await stream->Read(*buffer);
   *resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == stream->OwnerLoop();
   result->emplace(std::move(read));
 }
@@ -297,10 +295,9 @@ bool RunLoopStopDrainScenario(StopDrainFailure injected_failure) {
   std::optional<alyrn::Result<std::size_t>> result;
   bool resumed_with_scheduler = false;
   alyrn::coro::SpawnDetach(loop,
-                              AwaitPendingRead(&stream, &buffer, &result, &resumed_with_scheduler));
+                           AwaitPendingRead(&stream, &buffer, &result, &resumed_with_scheduler));
 
   const bool stop_before_run = injected_failure == StopDrainFailure::kFlushSubmit;
-
 
   if (stop_before_run) {
     loop.RequestStop();
@@ -331,7 +328,6 @@ bool RunLoopStopDrainScenario(StopDrainFailure injected_failure) {
 }
 
 bool CheckLoopStopDrainsPendingRead() { return RunLoopStopDrainScenario(StopDrainFailure::kNone); }
-
 
 }  // namespace
 

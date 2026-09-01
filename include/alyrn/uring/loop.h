@@ -158,6 +158,8 @@ private:
 
   Result<detail::ProvidedBufferPool*> GetSharedProvidedBufferPool(
       std::size_t buffer_size, std::size_t source_capacity) noexcept;
+  Result<detail::ProvidedBufferPool*> GetSharedProvidedBufferPool(
+      std::size_t source_capacity) noexcept;
 
   Result<std::uint16_t> AllocateBufferGroupId() noexcept {
     if (next_buffer_group_id_ > std::numeric_limits<std::uint16_t>::max()) {

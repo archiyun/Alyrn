@@ -80,7 +80,7 @@ auto EchoSession(Stream stream) -> cp::Task<cp::Result<void>> {
   std::array<std::byte, 4096> buffer{};
 
   for (;;) {
-    auto read = co_await stream.ReadSome(buffer);
+    auto read = co_await stream.Read(buffer);
     if (!read.has_value()) {
       co_return std::unexpected(read.error());
     }
@@ -89,7 +89,7 @@ auto EchoSession(Stream stream) -> cp::Task<cp::Result<void>> {
     }
 
     auto payload = std::span<const std::byte>(buffer.data(), *read);
-    auto written = co_await stream.WriteAll(payload);
+    auto written = co_await stream.Write(payload);
     if (!written.has_value()) {
       co_return std::unexpected(written.error());
     }
@@ -360,7 +360,7 @@ The documentation map is [`docs/index.md`](docs/index.md). Design notes are curr
 * **[Networking architecture](docs/design/zh-CN/network/index.md)**: runtime layering, backend boundaries, and ownership models.
 * **[kqueue backend](docs/design/zh-CN/network/kqueue/index.md)**: one-shot readiness, `Post`, and master-slave handoff.
 * **[Runtime Builder](docs/design/zh-CN/network/runtime-builder.md)**: compile-time backend tags and start/stop lifecycle.
-* **[Coroutine state-machine models](docs/design/zh-CN/network/lamport-hot-swap-runtime.md)**: abstract stream invariants and backend refinement notes.
+* **[Lifecycle-refined coroutine I/O](docs/design/zh-CN/network/lifecycle-refined-coroutine-io.md)**: logical I/O specification, three authorization boundaries, and epoll / io_uring refinement.
 * **[AsyncStream semantics](docs/design/zh-CN/network/async-stream-contract.md)**: read, write, close, cancellation, and buffer-lifetime semantics.
 * **[Data structures](docs/design/zh-CN/datastructure/index.md)**: modern C++ intrusive data structures, intrusive red-black trees, intrusive lists, MPSC queues, and their use in the project. QuadHeap is a first-class timer-index adapter injected through `time::TimerIndex`.
 * **[Performance benchmarks](docs/benchmark/network-libraries-20260810.md)**: the latest current-source C++ baseline; the broader unified network-library report and supporting material are in [`docs/benchmark`](docs/benchmark/).

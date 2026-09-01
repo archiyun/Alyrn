@@ -29,8 +29,7 @@ struct Work : public ::alyrn::detail::QueueNode<Work> {
   void SetRun(RunFn run_fn) noexcept {
     ALYRN_CHECK(run_fn != nullptr, "Work::SetRun requires a callback");
     const auto encoded = std::bit_cast<std::uintptr_t>(run_fn);
-    ALYRN_CHECK((encoded & kResumeTag) == 0,
-                   "Work callback address collides with the resume tag");
+    ALYRN_CHECK((encoded & kResumeTag) == 0, "Work callback address collides with the resume tag");
     action_ = encoded;
   }
 
@@ -55,7 +54,7 @@ struct Work : public ::alyrn::detail::QueueNode<Work> {
     auto* address = handle.address();
     const auto encoded = reinterpret_cast<std::uintptr_t>(address);
     ALYRN_CHECK((encoded & kResumeTag) == 0,
-                   "coroutine frame address collides with the resume tag");
+                "coroutine frame address collides with the resume tag");
     action_ = encoded | kResumeTag;
   }
 
@@ -74,11 +73,9 @@ struct Work : public ::alyrn::detail::QueueNode<Work> {
 
 private:
   static constexpr std::uintptr_t kResumeTag = std::uintptr_t{1}
-                                               << (sizeof(std::uintptr_t) * 8 - 1);
+                                               << (sizeof(std::uintptr_t) * 8) - 1;
 
-  bool IsResume() const noexcept {
-    return (action_ & kResumeTag) != 0;
-  }
+  bool IsResume() const noexcept { return (action_ & kResumeTag) != 0; }
 
   static_assert(sizeof(RunFn) == sizeof(std::uintptr_t));
   std::uintptr_t action_{0};

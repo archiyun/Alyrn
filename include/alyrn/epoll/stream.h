@@ -9,20 +9,20 @@
 #include <span>
 
 #include "alyrn/backend/async_stream.h"
+#include "alyrn/detail/macros.h"
+#include "alyrn/detail/scheduler_continuation.h"
+#include "alyrn/detail/single_result_lifecycle.h"
 #include "alyrn/epoll/detail/channel.h"
 #include "alyrn/epoll/detail/loop_shutdown.h"
 #include "alyrn/epoll/detail/op_hook.h"
 #include "alyrn/epoll/detail/result_state.h"
-#include "alyrn/net/detail/socket.h"
-#include "alyrn/net/detail/stream_lifecycle.h"
-#include "alyrn/detail/scheduler_continuation.h"
-#include "alyrn/detail/single_result_lifecycle.h"
-#include "alyrn/detail/macros.h"
 #include "alyrn/epoll/loop.h"
 #include "alyrn/epoll/options.h"
 #include "alyrn/net/buffer.h"
+#include "alyrn/net/detail/socket.h"
+#include "alyrn/net/detail/stream_lifecycle.h"
 #include "alyrn/net/endpoint.h"
-#include "alyrn/net/read_into.h"
+#include "alyrn/net/recv.h"
 #include "alyrn/result.h"
 #include "alyrn/task.h"
 #include "alyrn/time/clock.h"
@@ -38,10 +38,11 @@ struct StreamOptions {
 
 class Stream {
 private:
-  class ReadSomeAwaiter;
-  class ReadIntoAwaiter;
+  class ReadAwaiter;
+  class RecvAwaiter;
+  class RecvCopyAwaiter;
   class ReadAwaiterState;
-  class WriteAllAwaiter;
+  class WriteAwaiter;
 
 public:
   ALYRN_DELETE_COPY(Stream);
@@ -61,9 +62,10 @@ public:
   Stream(Stream&& other) noexcept;
   Stream& operator=(Stream&& other) noexcept;
 
-  ReadSomeAwaiter ReadSome(std::span<std::byte> buffer) noexcept;
-  ReadIntoAwaiter ReadInto(net::Buffer buffer, std::size_t reserve = 4096) noexcept;
-  WriteAllAwaiter WriteAll(std::span<const std::byte> buffer) noexcept;
+  ReadAwaiter Read(std::span<std::byte> buffer) noexcept;
+  RecvCopyAwaiter Recv() noexcept;
+  RecvAwaiter Recv(net::Buffer buffer, std::size_t reserve = 4096) noexcept;
+  WriteAwaiter Write(std::span<const std::byte> buffer) noexcept;
   // Legacy alias for CloseWrite().
   Task<Result<void>> Shutdown() noexcept;
   Task<Result<void>> Close() noexcept;
@@ -155,11 +157,12 @@ private:
   net::Endpoint peer_;
   enum class PendingReadKind : std::uint8_t {
     kNone,
-    kReadSome,
-    kReadInto,
+    kRead,
+    kRecv,
+    kRecvCopy,
   };
   void* pending_read_{nullptr};
-  WriteAllAwaiter* pending_write_{nullptr};
+  WriteAwaiter* pending_write_{nullptr};
   PendingReadKind pending_read_kind_{PendingReadKind::kNone};
   net::detail::StreamLifecycle lifecycle_;
   LoopShutdownParticipant shutdown_participant_{this, &DispatchLoopStop};
@@ -198,12 +201,12 @@ protected:
   IoResultState result_;
 };
 
-class [[nodiscard]] Stream::ReadSomeAwaiter final : public ReadAwaiterState,
-                                      public OperationHook<Stream::ReadSomeAwaiter> {
+class [[nodiscard]] Stream::ReadAwaiter final : public ReadAwaiterState,
+                                                public OperationHook<Stream::ReadAwaiter> {
 public:
-  ALYRN_DELETE_COPY_MOVE(ReadSomeAwaiter);
+  ALYRN_DELETE_COPY_MOVE(ReadAwaiter);
 
-  explicit ReadSomeAwaiter(Stream& stream, std::span<std::byte> buffer) noexcept
+  explicit ReadAwaiter(Stream& stream, std::span<std::byte> buffer) noexcept
       : ReadAwaiterState(stream), buffer_(buffer) {}
 
   bool await_ready() const noexcept { return false; }
@@ -211,7 +214,7 @@ public:
   Result<std::size_t> await_resume() noexcept;
 
 private:
-  friend OperationHook<ReadSomeAwaiter>;
+  friend OperationHook<ReadAwaiter>;
 
   bool CompleteResultImpl(Result<std::size_t> result) noexcept;
   void OnReadyImpl() noexcept;
@@ -220,14 +223,14 @@ private:
 };
 
 // Keeps the short-write loop in the caller's coroutine frame. The physical
-// write operation is private; callers observe only complete-or-error WriteAll.
-class [[nodiscard]] Stream::WriteAllAwaiter final : public OperationHook<Stream::WriteAllAwaiter> {
+// write operation is private; callers observe only complete-or-error Write.
+class [[nodiscard]] Stream::WriteAwaiter final : public OperationHook<Stream::WriteAwaiter> {
 public:
-  ALYRN_DELETE_COPY_MOVE(WriteAllAwaiter);
+  ALYRN_DELETE_COPY_MOVE(WriteAwaiter);
 
-  WriteAllAwaiter(Stream& stream, std::span<const std::byte> buffer) noexcept
+  WriteAwaiter(Stream& stream, std::span<const std::byte> buffer) noexcept
       : stream_(&stream), buffer_(buffer) {}
-  ~WriteAllAwaiter();
+  ~WriteAwaiter();
 
   bool await_ready() const noexcept { return false; }
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
@@ -235,7 +238,7 @@ public:
 
 private:
   friend class Stream;
-  friend OperationHook<WriteAllAwaiter>;
+  friend OperationHook<WriteAwaiter>;
 
   void CompleteInline(Result<std::size_t> result) noexcept;
   bool CompleteResultImpl(Result<std::size_t> result) noexcept;
@@ -254,20 +257,45 @@ private:
 // Owns the destination buffer while a read is pending and returns it on every
 // terminal path, so callers cannot invalidate its storage while the backend
 // may still access it.
-class [[nodiscard]] Stream::ReadIntoAwaiter : public ReadAwaiterState,
-                                public OperationHook<Stream::ReadIntoAwaiter> {
+class [[nodiscard]] Stream::RecvAwaiter : public ReadAwaiterState,
+                                          public OperationHook<Stream::RecvAwaiter> {
 public:
-  ALYRN_DELETE_COPY_MOVE(ReadIntoAwaiter);
+  ALYRN_DELETE_COPY_MOVE(RecvAwaiter);
 
-  ReadIntoAwaiter(Stream& stream, net::Buffer buffer, std::size_t reserve) noexcept;
-  ~ReadIntoAwaiter();
+  RecvAwaiter(Stream& stream, net::Buffer buffer, std::size_t reserve) noexcept;
+  ~RecvAwaiter();
 
   bool await_ready() const noexcept { return false; }
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
-  net::ReadIntoOutcome await_resume() noexcept;
+  net::RecvOutcome await_resume() noexcept;
 
 private:
-  friend OperationHook<ReadIntoAwaiter>;
+  friend OperationHook<RecvAwaiter>;
+
+  bool CompleteResultImpl(Result<std::size_t> result) noexcept;
+  void OnReadyImpl() noexcept;
+  bool PrepareReservation() noexcept;
+  void FinishAttempt(Result<std::size_t> result) noexcept;
+
+  net::Buffer buffer_;
+  std::size_t reserve_;
+  bool reservation_active_{false};
+};
+
+class [[nodiscard]] Stream::RecvCopyAwaiter : public ReadAwaiterState,
+                                              public OperationHook<Stream::RecvCopyAwaiter> {
+public:
+  ALYRN_DELETE_COPY_MOVE(RecvCopyAwaiter);
+
+  explicit RecvCopyAwaiter(Stream& stream) noexcept;
+  ~RecvCopyAwaiter();
+
+  bool await_ready() const noexcept { return false; }
+  bool await_suspend(std::coroutine_handle<> continuation) noexcept;
+  Result<net::Buffer> await_resume() noexcept;
+
+private:
+  friend OperationHook<RecvCopyAwaiter>;
 
   bool CompleteResultImpl(Result<std::size_t> result) noexcept;
   void OnReadyImpl() noexcept;
@@ -280,6 +308,7 @@ private:
 };
 
 static_assert(backend::AsyncStream<Stream>);
-static_assert(backend::AsyncReadIntoStream<Stream>);
+static_assert(backend::AsyncRecvStream<Stream>);
+static_assert(backend::AsyncRecvCopyStream<Stream>);
 
 }  // namespace alyrn::epoll

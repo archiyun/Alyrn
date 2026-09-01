@@ -4,6 +4,12 @@ AGENTS.md
 CONTEXT.md
 /tmp/
 
+# Generated MkDocs output. GitHub Pages builds this in .github/workflows/docs.yml.
+/site/
+
+# Rust benchmark crate build output.
+/benchmarks/network-libraries-rust/target/
+
 # Local-only third-party benchmark comparisons; never part of the library.
 /benchmarks/third_party/
 
