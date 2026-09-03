@@ -38,15 +38,6 @@ namespace {
 
 constexpr std::size_t kRecvMaxIov = 16;
 
-Result<std::size_t> ToSizeResult(const CqeResult& result) noexcept {
-  ALYRN_CHECK(result.HasValue(), "Uring stream awaiter resumed before its CQE result was ready");
-  const int cqe_result = *result;
-  if (cqe_result < 0) {
-    return std::unexpected(NegErrno(cqe_result));
-  }
-  return static_cast<std::size_t>(cqe_result);
-}
-
 Result<std::size_t> ToSizeResult(const CqeResult& result, bool timed_out) noexcept {
   ALYRN_CHECK(result.HasValue(), "Uring stream awaiter resumed before its CQE result was ready");
   const int cqe_result = *result;
