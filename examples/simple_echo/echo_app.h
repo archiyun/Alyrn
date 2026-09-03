@@ -47,7 +47,7 @@ auto EchoSession2(Stream stream) -> alyrn::Task<alyrn::Result<void>> {
     // Value() eagerly unwraps Result, like Rust's unwrap(). A failed read
     // triggers Panic and terminates the process, so normal production I/O
     // should use EchoSession's explicit error propagation instead.
-    auto read_bytes = (co_await stream.Read(buffer)).Value();
+    auto read_bytes = std::move(co_await stream.Read(buffer)).Value();
     if (read_bytes == 0) {  // EOF
       co_return {};
     }
@@ -56,7 +56,7 @@ auto EchoSession2(Stream stream) -> alyrn::Task<alyrn::Result<void>> {
     // Expect() also triggers Panic and terminates the process, but lets the
     // caller add failure context. It is for assertion-like paths, not
     // recoverable I/O failures.
-    (co_await stream.Write(payload)).Expect("echo write failed");
+    std::move(co_await stream.Write(payload)).Expect("echo write failed");
   }
 }
 
