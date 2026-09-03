@@ -94,12 +94,12 @@ LoopInitStatus InitLoop(alyrn::uring::Loop& loop) {
   if (init.has_value()) {
     return LoopInitStatus::kReady;
   }
-  if (IsEnvironmentSkip(init.error())) {
-    std::cout << "SKIP: io_uring unavailable: " << init.error().message() << '\n';
+  if (IsEnvironmentSkip(init.Error())) {
+    std::cout << "SKIP: io_uring unavailable: " << init.Error().message() << '\n';
     return LoopInitStatus::kSkip;
   }
 
-  std::cout << "FAIL: Loop init failed: " << init.error().message() << '\n';
+  std::cout << "FAIL: Loop init failed: " << init.Error().message() << '\n';
   return LoopInitStatus::kFail;
 }
 
@@ -251,7 +251,7 @@ bool CheckRead() {
 
   auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
   if (!completions.has_value()) {
-    std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+    std::cout << "FAIL: WaitCompletions failed: " << completions.Error().message() << '\n';
     return false;
   }
 
@@ -297,7 +297,7 @@ bool CheckReadDeadline() {
   for (int i = 0; i < 8 && !result.has_value(); ++i) {
     auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
     if (!completions.has_value()) {
-      std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+      std::cout << "FAIL: WaitCompletions failed: " << completions.Error().message() << '\n';
       return false;
     }
     alyrn::uring::detail::LoopAccess::RunReady(loop);
@@ -305,7 +305,7 @@ bool CheckReadDeadline() {
 
   return Check(result.has_value(), "deadline read coroutine did not resume") &&
          Check(!result->has_value(), "deadline read unexpectedly succeeded") &&
-         Check(result->error().value() == ETIMEDOUT,
+         Check(result->Error().value() == ETIMEDOUT,
                "deadline read returned an unexpected error") &&
          Check(resumed_with_scheduler, "deadline read resumed without current scheduler") &&
          Check(alyrn::uring::detail::LoopAccess::PendingSubmitCount(loop) == 0,
@@ -344,7 +344,7 @@ bool CheckExpiredReadDeadlineCompletesInline() {
 
   return Check(result.has_value(), "expired deadline read did not complete inline") &&
          Check(!result->has_value(), "expired deadline read unexpectedly succeeded") &&
-         Check(result->error().value() == ETIMEDOUT,
+         Check(result->Error().value() == ETIMEDOUT,
                "expired deadline read returned an unexpected error") &&
          Check(resumed_with_scheduler, "expired deadline read resumed without current scheduler") &&
          Check(alyrn::uring::detail::LoopAccess::PendingSubmitCount(loop) == 0,
@@ -383,7 +383,7 @@ bool CheckWriteDeadline() {
   for (int i = 0; i < 8 && !result.has_value(); ++i) {
     auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
     if (!completions.has_value()) {
-      std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+      std::cout << "FAIL: WaitCompletions failed: " << completions.Error().message() << '\n';
       return false;
     }
     alyrn::uring::detail::LoopAccess::RunReady(loop);
@@ -391,7 +391,7 @@ bool CheckWriteDeadline() {
 
   return Check(result.has_value(), "deadline write coroutine did not resume") &&
          Check(!result->has_value(), "deadline write unexpectedly succeeded") &&
-         Check(result->error().value() == ETIMEDOUT,
+         Check(result->Error().value() == ETIMEDOUT,
                "deadline write returned an unexpected error") &&
          Check(resumed_with_scheduler, "deadline write resumed without current scheduler") &&
          Check(alyrn::uring::detail::LoopAccess::PendingSubmitCount(loop) == 0,
@@ -475,7 +475,7 @@ bool CheckReadReleasesSlotBeforeContinuation() {
   for (int i = 0; i < 8 && !second_result.has_value(); ++i) {
     auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
     if (!completions.has_value()) {
-      std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+      std::cout << "FAIL: WaitCompletions failed: " << completions.Error().message() << '\n';
       return false;
     }
     alyrn::uring::detail::LoopAccess::RunReady(loop);
@@ -526,7 +526,7 @@ bool CheckOwnedRecvReturnsBuffer() {
 
   auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
   if (!completions.has_value()) {
-    std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+    std::cout << "FAIL: WaitCompletions failed: " << completions.Error().message() << '\n';
     return false;
   }
   alyrn::uring::detail::LoopAccess::RunReady(loop);
@@ -576,7 +576,7 @@ bool CheckPooledRecvCopiesPayload() {
 
   auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
   if (!completions.has_value()) {
-    std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+    std::cout << "FAIL: WaitCompletions failed: " << completions.Error().message() << '\n';
     return false;
   }
   alyrn::uring::detail::LoopAccess::RunReady(loop);
@@ -632,7 +632,7 @@ bool CheckOwnedRecvSpansBufferBlocks() {
 
   auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
   if (!completions.has_value()) {
-    std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+    std::cout << "FAIL: WaitCompletions failed: " << completions.Error().message() << '\n';
     return false;
   }
   alyrn::uring::detail::LoopAccess::RunReady(loop);
@@ -684,7 +684,7 @@ bool CheckWrite() {
 
   auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
   if (!completions.has_value()) {
-    std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+    std::cout << "FAIL: WaitCompletions failed: " << completions.Error().message() << '\n';
     return false;
   }
 
@@ -742,7 +742,7 @@ bool CheckShutdownKeepsReadOpen() {
 
   auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
   if (!completions.has_value()) {
-    std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+    std::cout << "FAIL: WaitCompletions failed: " << completions.Error().message() << '\n';
     return false;
   }
   alyrn::uring::detail::LoopAccess::RunReady(loop);
@@ -758,7 +758,7 @@ bool CheckShutdownKeepsReadOpen() {
                "second Shutdown was not idempotent") &&
          Check(write_result.has_value() && !write_result->has_value(),
                "Write after Shutdown unexpectedly succeeded") &&
-         Check(write_result->error() == std::errc::broken_pipe,
+         Check(write_result->Error() == std::errc::broken_pipe,
                "Write after Shutdown did not return EPIPE") &&
          Check(
              read_result.has_value() && read_result->has_value() && **read_result == kReply.size(),
@@ -833,7 +833,7 @@ bool CheckCloseCancelsPendingRead() {
   for (int i = 0; i < 4 && (!close_result.has_value() || !read_result.has_value()); ++i) {
     auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
     if (!completions.has_value()) {
-      std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+      std::cout << "FAIL: WaitCompletions failed: " << completions.Error().message() << '\n';
       return false;
     }
     alyrn::uring::detail::LoopAccess::RunReady(loop);
@@ -843,7 +843,7 @@ bool CheckCloseCancelsPendingRead() {
          Check(close_result->has_value(), "Close with pending read returned an error") &&
          Check(read_result.has_value(), "pending read was not cleaned up") &&
          Check(!read_result->has_value(), "pending read should be cancelled") &&
-         Check(read_result->error().value() == ECANCELED, "pending read should return ECANCELED") &&
+         Check(read_result->Error().value() == ECANCELED, "pending read should return ECANCELED") &&
          Check(read_resume_count == 1, "pending read cancellation resumed more than once") &&
          Check(read_resumed_with_scheduler, "pending read resumed without current scheduler");
 }
@@ -878,7 +878,7 @@ bool CheckCloseReturnsOwnedReadBuffer() {
   for (int i = 0; i < 4 && (!close_result.has_value() || !read_outcome.has_value()); ++i) {
     auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
     if (!completions.has_value()) {
-      std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+      std::cout << "FAIL: WaitCompletions failed: " << completions.Error().message() << '\n';
       return false;
     }
     alyrn::uring::detail::LoopAccess::RunReady(loop);
@@ -888,7 +888,7 @@ bool CheckCloseReturnsOwnedReadBuffer() {
       !Check(close_result->has_value(), "owned read close returned an error") ||
       !Check(read_outcome.has_value(), "owned cancelled read did not resume") ||
       !Check(!read_outcome->result.has_value(), "owned cancelled read unexpectedly succeeded") ||
-      !Check(read_outcome->result.error().value() == ECANCELED,
+      !Check(read_outcome->result.Error().value() == ECANCELED,
              "owned cancelled read did not return ECANCELED") ||
       !Check(resume_count == 1, "owned cancelled read resumed more than once") ||
       !Check(resumed_with_scheduler, "owned cancelled read resumed without current scheduler")) {
@@ -937,7 +937,7 @@ bool CheckReadCompletionCancelRaceResumesOnce() {
   for (int i = 0; i < 6 && (!close_result.has_value() || !read_result.has_value()); ++i) {
     auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
     if (!completions.has_value()) {
-      std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+      std::cout << "FAIL: WaitCompletions failed: " << completions.Error().message() << '\n';
       return false;
     }
     alyrn::uring::detail::LoopAccess::RunReady(loop);
@@ -954,7 +954,7 @@ bool CheckReadCompletionCancelRaceResumesOnce() {
   if (read_result->has_value()) {
     return Check(**read_result == kPayload.size(), "race read returned wrong byte count");
   }
-  return Check(read_result->error().value() == ECANCELED,
+  return Check(read_result->Error().value() == ECANCELED,
                "race read failed with an unexpected error");
 }
 

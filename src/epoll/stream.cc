@@ -112,8 +112,8 @@ IoAttempt TryReadv(int fd, std::span<const iovec> buffers) noexcept {
   }
 
   auto count = CheckedIovCount(buffers.size());
-  if (!count.has_value()) {
-    return IoAttempt::Failed(count.error());
+  if (!count.HasValue()) {
+    return IoAttempt::Failed(count.Error());
   }
 
   return RetryNonBlockingIo([fd, buffers, iov_count = *count]() noexcept {
@@ -146,8 +146,8 @@ bool Stream::ReadAwaiterState::BeginRead(std::coroutine_handle<> continuation) n
     return false;
   }
   auto valid = stream_->lifecycle_.ValidateRead();
-  if (!valid.has_value()) {
-    CompleteInline(std::unexpected(valid.error()));
+  if (!valid.HasValue()) {
+    CompleteInline(std::unexpected(valid.Error()));
     return false;
   }
   if (stream_->socket_.fd() < 0) {
@@ -335,7 +335,7 @@ bool Stream::RecvAwaiter::PrepareReservation() noexcept {
 
 void Stream::RecvAwaiter::FinishAttempt(Result<std::size_t> result) noexcept {
   ALYRN_CHECK(reservation_active_, "RecvAwaiter completion without a buffer reservation");
-  if (result.has_value()) {
+  if (result.HasValue()) {
     buffer_.CommitWrite(*result);
   } else {
     buffer_.AbortWrite();
@@ -378,8 +378,8 @@ bool Stream::RecvCopyAwaiter::await_suspend(std::coroutine_handle<> continuation
 
 Result<net::Buffer> Stream::RecvCopyAwaiter::await_resume() noexcept {
   auto result = TakeResult();
-  if (!result.has_value()) {
-    return std::unexpected(result.error());
+  if (!result.HasValue()) {
+    return std::unexpected(result.Error());
   }
   return std::move(buffer_);
 }
@@ -421,7 +421,7 @@ bool Stream::RecvCopyAwaiter::PrepareReservation() noexcept {
 
 void Stream::RecvCopyAwaiter::FinishAttempt(Result<std::size_t> result) noexcept {
   ALYRN_CHECK(reservation_active_, "RecvCopyAwaiter completion without a buffer reservation");
-  if (result.has_value()) {
+  if (result.HasValue()) {
     buffer_.CommitWrite(*result);
   } else {
     buffer_.AbortWrite();
@@ -443,8 +443,8 @@ bool Stream::WriteAwaiter::await_suspend(std::coroutine_handle<> continuation) n
     return false;
   }
   auto valid = stream_->lifecycle_.ValidateWrite();
-  if (!valid.has_value()) {
-    CompleteInline(std::unexpected(valid.error()));
+  if (!valid.HasValue()) {
+    CompleteInline(std::unexpected(valid.Error()));
     return false;
   }
   if (stream_->socket_.fd() < 0) {
@@ -470,7 +470,7 @@ bool Stream::WriteAwaiter::await_suspend(std::coroutine_handle<> continuation) n
       }
       return true;
     }
-    if (!result.has_value()) {
+    if (!result.HasValue()) {
       CompleteInline(result);
       return false;
     }
@@ -487,8 +487,8 @@ bool Stream::WriteAwaiter::await_suspend(std::coroutine_handle<> continuation) n
 
 Result<void> Stream::WriteAwaiter::await_resume() noexcept {
   auto result = result_.Take();
-  if (!result.has_value()) {
-    return std::unexpected(result.error());
+  if (!result.HasValue()) {
+    return std::unexpected(result.Error());
   }
   return Result<void>{};
 }
@@ -537,7 +537,7 @@ void Stream::WriteAwaiter::OnReadyImpl() noexcept {
     if (state == IoAttemptState::kWouldBlock) {
       return;
     }
-    if (!result.has_value()) {
+    if (!result.HasValue()) {
       stream_->CompleteWrite(result);
       return;
     }
@@ -556,7 +556,7 @@ Stream::Stream(Loop* loop, int fd, net::Endpoint peer, StreamOptions options)
   ALYRN_CHECK(loop_ != nullptr, "Stream: loop must not be null");
   ALYRN_CHECK(loop_->IsInLoopThread(), "Stream created from wrong Loop thread");
   [[maybe_unused]] auto nonblocking = net::SetNonBlocking(fd, true);
-  ALYRN_CHECK(nonblocking.has_value(), "Stream: failed to set non-blocking mode");
+  ALYRN_CHECK(nonblocking.HasValue(), "Stream: failed to set non-blocking mode");
 
   // A stream keeps read interest across successful reads. Edge-triggered
   // delivery avoids the level-triggered disable/re-enable epoll_ctl pair on
@@ -631,16 +631,16 @@ coro::Task<Result<void>> Stream::CloseWrite() noexcept {
     co_return std::unexpected(Errno(EBADF));
   }
   auto prepare = lifecycle_.PrepareShutdown(pending_write_ != nullptr);
-  if (!prepare.has_value()) {
-    co_return std::unexpected(prepare.error());
+  if (!prepare.HasValue()) {
+    co_return std::unexpected(prepare.Error());
   }
   if (!*prepare) {
     co_return Result<void>{};
   }
   auto shutdown = socket_.ShutdownWrite();
-  if (!shutdown.has_value()) {
+  if (!shutdown.HasValue()) {
     lifecycle_.AbortShutdownPreparation();
-    co_return std::unexpected(shutdown.error());
+    co_return std::unexpected(shutdown.Error());
   }
   lifecycle_.CommitShutdown();
   co_return Result<void>{};
@@ -652,16 +652,16 @@ coro::Task<Result<void>> Stream::CloseRead() noexcept {
     co_return std::unexpected(Errno(EBADF));
   }
   auto prepare = lifecycle_.PrepareCloseRead(pending_read_ != nullptr);
-  if (!prepare.has_value()) {
-    co_return std::unexpected(prepare.error());
+  if (!prepare.HasValue()) {
+    co_return std::unexpected(prepare.Error());
   }
   if (!*prepare) {
     co_return Result<void>{};
   }
   auto close_read = socket_.ShutdownRead();
-  if (!close_read.has_value()) {
+  if (!close_read.HasValue()) {
     lifecycle_.AbortCloseReadPreparation();
-    co_return std::unexpected(close_read.error());
+    co_return std::unexpected(close_read.Error());
   }
   lifecycle_.CommitCloseRead();
   if (channel_.IsReading()) {
@@ -713,7 +713,7 @@ Result<void> Stream::SetWriteBuffer(std::size_t bytes) const noexcept {
 
 Result<void> Stream::SetDeadline(std::optional<time::Deadline> deadline) noexcept {
   auto read_result = SetReadDeadline(deadline);
-  if (!read_result.has_value()) {
+  if (!read_result.HasValue()) {
     return read_result;
   }
   return SetWriteDeadline(deadline);
@@ -792,7 +792,7 @@ void Stream::CompleteRead(Result<std::size_t> result) {
   }
   CancelReadDeadline();
 
-  const bool terminal_result = !result.has_value() || *result == 0;
+  const bool terminal_result = !result.HasValue() || *result == 0;
   ReadAwaiterState* state = nullptr;
   bool result_authorized = false;
   switch (kind) {
@@ -863,7 +863,7 @@ void Stream::CompleteWrite(Result<std::size_t> result) {
 void Stream::CloseNow() noexcept {
   ALYRN_DCHECK(loop_->IsInLoopThread(), "Stream::CloseNow called from wrong thread");
   auto close_prepared = lifecycle_.PrepareClose();
-  if (!close_prepared.has_value() || !*close_prepared) {
+  if (!close_prepared.HasValue() || !*close_prepared) {
     return;
   }
 

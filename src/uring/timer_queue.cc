@@ -59,11 +59,11 @@ Result<time::TimerId> TimerQueue::AddTimer(TimerCallback callback,
   }
 
   auto reconciled = Reconcile();
-  if (!reconciled.has_value()) {
+  if (!reconciled.HasValue()) {
     ALYRN_CHECK(timers_.Erase(it->second.get()),
                    "TimerQueue inserted timer is missing from timer tree");
     active_.erase(it);
-    return std::unexpected(reconciled.error());
+    return std::unexpected(reconciled.Error());
   }
   return id;
 }
@@ -176,7 +176,7 @@ void TimerQueue::ProcessExpired() noexcept {
 
 void TimerQueue::ReconcileOrStop() noexcept {
   auto reconciled = Reconcile();
-  if (!reconciled.has_value()) {
+  if (!reconciled.HasValue()) {
     loop_->RequestStop();
   }
 }
@@ -207,7 +207,7 @@ Result<void> TimerQueue::Arm(time::Deadline deadline) noexcept {
 
   auto result = LoopAccess::SubmitOp(
       *loop_, DriverOp(), detail::PrepareAbsoluteTimeout(&driver_timespec_));
-  if (!result.has_value()) return std::unexpected(result.error());
+  if (!result.HasValue()) return std::unexpected(result.Error());
 
   driver_armed_ = true;
   driver_deadline_ = deadline;
@@ -221,12 +221,12 @@ Result<void> TimerQueue::ArmFallback(time::Deadline deadline) noexcept {
 
   auto result = LoopAccess::SubmitOp(
       *loop_, ControlOp(), detail::PrepareAbsoluteTimeout(&fallback_timespec_));
-  if (result.has_value()) {
+  if (result.HasValue()) {
     control_pending_ = true;
     fallback_armed_ = true;
   } else {
     control_is_fallback_ = false;
-    return std::unexpected(result.error());
+    return std::unexpected(result.Error());
   }
   return {};
 }
@@ -240,9 +240,9 @@ Result<void> TimerQueue::Update(time::Deadline deadline) noexcept {
   auto result = LoopAccess::SubmitOp(
       *loop_, ControlOp(), detail::PrepareAbsoluteTimeoutUpdate(
                                &update_timespec_, reinterpret_cast<std::uint64_t>(DriverOp())));
-  if (!result.has_value()) {
+  if (!result.HasValue()) {
     requested_deadline_ = {};
-    return std::unexpected(result.error());
+    return std::unexpected(result.Error());
   }
   control_pending_ = true;
   return {};

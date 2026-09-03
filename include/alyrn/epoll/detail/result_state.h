@@ -41,10 +41,10 @@ public:
   }
 
   void SetResult(const Result<std::size_t>& result) noexcept {
-    if (result.has_value()) {
+    if (result.HasValue()) {
       SetSuccess(*result);
     } else {
-      SetError(result.error());
+      SetError(result.Error());
     }
   }
 

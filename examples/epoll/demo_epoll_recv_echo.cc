@@ -3,10 +3,10 @@
 // Epoll Recv echo demo
 //
 // Build:
-//   cmake --build build --target demo_epoll_recv_echo -j"$(nproc)"
+//   make build
 //
 // Run:
-//   ./build/examples/epoll/demo_epoll_recv_echo
+//   ./build/debug/examples/epoll/demo_epoll_recv_echo
 //
 // Try:
 //   nc 127.0.0.1 19001
@@ -45,8 +45,8 @@ auto EchoSession(epoll::Stream stream) -> alyrn::DetachedTask {
     // EOF, or I/O error, cancellation, and shutdown.
     buffer = std::move(returned_buffer);
 
-    if (!read.has_value()) {
-      std::println(stderr, "read failed: {}", read.error().message());
+    if (!read.HasValue()) {
+      std::println(stderr, "read failed: {}", read.Error().message());
       break;
     }
 
@@ -59,8 +59,8 @@ auto EchoSession(epoll::Stream stream) -> alyrn::DetachedTask {
     while (!buffer.Empty()) {
       auto view = buffer.ContiguousView();
       auto written = co_await stream.Write(view);
-      if (!written.has_value()) {
-        std::println(stderr, "write failed: {}", written.error().message());
+      if (!written.HasValue()) {
+        std::println(stderr, "write failed: {}", written.Error().message());
         break;
       }
       buffer.Drain(view.size());
@@ -70,16 +70,16 @@ auto EchoSession(epoll::Stream stream) -> alyrn::DetachedTask {
   }
 
   auto closed = co_await stream.Close();
-  if (!closed.has_value()) {
-    std::println(stderr, "close failed: {}", closed.error().message());
+  if (!closed.HasValue()) {
+    std::println(stderr, "close failed: {}", closed.Error().message());
   }
 }
 
 auto AcceptLoop(epoll::Loop& loop, epoll::Listener& listener) -> alyrn::DetachedTask {
   for (;;) {
     auto accepted = co_await listener.Accept();
-    if (!accepted.has_value()) {
-      std::println(stderr, "accept failed: {}", accepted.error().message());
+    if (!accepted.HasValue()) {
+      std::println(stderr, "accept failed: {}", accepted.Error().message());
       co_return;
     }
 
@@ -95,8 +95,8 @@ auto main() -> int {
   epoll::Loop loop;
 
   auto listener_result = epoll::Listener::Create(&loop, net::Endpoint::Loopback(kPort));
-  if (!listener_result.has_value()) {
-    std::println(stderr, "listener create failed: {}", listener_result.error().message());
+  if (!listener_result.HasValue()) {
+    std::println(stderr, "listener create failed: {}", listener_result.Error().message());
     return 1;
   }
 

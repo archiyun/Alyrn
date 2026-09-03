@@ -1,4 +1,9 @@
 // SPDX-License-Identifier: MIT
+//
+// Build:
+//   make uring
+// Run:
+//   ./build/uring/debug/examples/uring/demo_bench_http_luring
 
 #include <array>
 #include <atomic>
@@ -53,7 +58,7 @@ alyrn::DetachedTask HttpSessionRead(alyrn::uring::Stream stream) {
   for (;;) {
     if (!reading_body) {
       auto read = co_await stream.Read(std::span(request).subspan(used));
-      if (!read.has_value() || *read == 0) {
+      if (!read.HasValue() || *read == 0) {
         break;
       }
       used += *read;
@@ -74,7 +79,7 @@ alyrn::DetachedTask HttpSessionRead(alyrn::uring::Stream stream) {
         const std::size_t consumed = header_end + content_length;
         const std::size_t remain = used - consumed;
         auto written = co_await stream.Write(response);
-        if (!written.has_value()) {
+        if (!written.HasValue()) {
           break;
         }
         if (remain > 0) {
@@ -91,7 +96,7 @@ alyrn::DetachedTask HttpSessionRead(alyrn::uring::Stream stream) {
     }
 
     auto read = co_await stream.Read(std::span(request));
-    if (!read.has_value() || *read == 0) {
+    if (!read.HasValue() || *read == 0) {
       break;
     }
     if (*read >= body_remain) {
@@ -103,7 +108,7 @@ alyrn::DetachedTask HttpSessionRead(alyrn::uring::Stream stream) {
       body_remain = 0;
       reading_body = false;
       auto written = co_await stream.Write(response);
-      if (!written.has_value()) {
+      if (!written.HasValue()) {
         break;
       }
     } else {
@@ -126,7 +131,7 @@ alyrn::DetachedTask HttpSessionRecvSource(alyrn::uring::Stream stream) {
 
   auto source_result =
       alyrn::uring::RecvSource::Create(stream.OwnerLoop(), stream.Fd(), recv_options);
-  if (!source_result.has_value()) {
+  if (!source_result.HasValue()) {
     (void)co_await stream.Close();
     co_return;
   }
@@ -140,7 +145,7 @@ alyrn::DetachedTask HttpSessionRecvSource(alyrn::uring::Stream stream) {
 
   for (;;) {
     auto received = co_await source.Next();
-    if (!received.has_value()) {
+    if (!received.HasValue()) {
       failed = true;
       break;
     }
@@ -178,7 +183,7 @@ alyrn::DetachedTask HttpSessionRecvSource(alyrn::uring::Stream stream) {
         const std::size_t consumed = header_end + content_length;
         const std::size_t remain = used - consumed;
         auto written = co_await stream.Write(response);
-        if (!written.has_value()) {
+        if (!written.HasValue()) {
           failed = true;
           break;
         }
@@ -212,7 +217,7 @@ alyrn::DetachedTask HttpSessionRecvSource(alyrn::uring::Stream stream) {
       received->reset();
 
       auto written = co_await stream.Write(response);
-      if (!written.has_value()) {
+      if (!written.HasValue()) {
         failed = true;
         break;
       }
@@ -291,8 +296,8 @@ int main() {
         return HttpSessionRead(std::move(stream));
       });
   auto started = server.Start();
-  if (!started.has_value()) {
-    std::fprintf(stderr, "WorkerGroup::Start failed: %s\n", started.error().message().c_str());
+  if (!started.HasValue()) {
+    std::fprintf(stderr, "WorkerGroup::Start failed: %s\n", started.Error().message().c_str());
     return 1;
   }
 

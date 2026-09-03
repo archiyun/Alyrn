@@ -168,7 +168,7 @@ struct PauseResumeObservation {
 bool TakeRecvEvent(RecvSource::NextResult received, PauseResumeObservation* observation,
                    std::string* payload) {
   if (!received.has_value()) {
-    observation->error = received.error();
+    observation->error = received.Error();
     return false;
   }
   if (!received->has_value()) {
@@ -212,7 +212,7 @@ DetachedTask DrainPausedSource(RecvSource* source, Loop* loop,
 
   auto stopped = co_await source->Stop();
   if (!stopped.has_value()) {
-    observation->error = stopped.error();
+    observation->error = stopped.Error();
   } else {
     observation->stopped = true;
   }
@@ -556,10 +556,10 @@ bool CheckRecvSourceStopRejectsForeignLoop() {
   ::close(fds[0]);
   return Check(request_stop.has_value(), "foreign RecvSource::RequestStop did not return") &&
          Check(!request_stop->has_value() &&
-                   request_stop->error() == std::errc::invalid_argument,
+                   request_stop->Error() == std::errc::invalid_argument,
                "foreign RecvSource::RequestStop must return EINVAL") &&
          Check(stop.has_value(), "foreign RecvSource::Stop did not return") &&
-         Check(!stop->has_value() && stop->error() == std::errc::invalid_argument,
+         Check(!stop->has_value() && stop->Error() == std::errc::invalid_argument,
                "foreign RecvSource::Stop must return EINVAL");
 }
 

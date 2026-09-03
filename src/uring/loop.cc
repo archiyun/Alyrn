@@ -170,8 +170,8 @@ Result<void> Loop::Init(const Options& options) noexcept {
   }
 
   auto ring = Ring::Create(options);
-  if (!ring.has_value()) {
-    return std::unexpected(ring.error());
+  if (!ring.HasValue()) {
+    return std::unexpected(ring.Error());
   }
   ring_ = std::move(*ring);
   wake_fd_ = ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
@@ -190,10 +190,10 @@ Result<void> Loop::Init(const Options& options) noexcept {
   cancel_all_op_.BeginNextRequest();
   initialized_ = true;
   auto armed = ArmWakePoll();
-  if (!armed.has_value()) {
+  if (!armed.HasValue()) {
     initialized_ = false;
     ::close(std::exchange(wake_fd_, -1));
-    return std::unexpected(armed.error());
+    return std::unexpected(armed.Error());
   }
   return {};
 }
@@ -215,13 +215,13 @@ Result<detail::ProvidedBufferPool*> Loop::GetSharedProvidedBufferPool(
     return shared_buffer_pool_.get();
   }
   auto group = AllocateBufferGroupId();
-  if (!group.has_value()) {
-    return std::unexpected(group.error());
+  if (!group.HasValue()) {
+    return std::unexpected(group.Error());
   }
   auto pool = detail::ProvidedBufferPool::Create(ring_.Native(), *group, shared_buffer_capacity_,
                                                  shared_buffer_size_, source_capacity);
-  if (!pool.has_value()) {
-    return std::unexpected(pool.error());
+  if (!pool.HasValue()) {
+    return std::unexpected(pool.Error());
   }
   try {
     shared_buffer_pool_ = std::make_unique<detail::ProvidedBufferPool>(std::move(*pool));
@@ -255,7 +255,7 @@ void Loop::Run(std::stop_token token) noexcept {
     // Observe already available completions before spending the turn on
     // ready work. This prevents a ready backlog from delaying CQE handling.
     auto completed = PollCompletions();
-    if (!completed.has_value()) {
+    if (!completed.HasValue()) {
       RequestStop();
       break;
     }
@@ -269,7 +269,7 @@ void Loop::Run(std::stop_token token) noexcept {
 
     if (*completed == 0 && !HasReadyWork() && inflight_ > 0) {
       completed = WaitCompletionsFor(kStopPollInterval);
-      if (!completed.has_value() && completed.error().value() != ETIME) {
+      if (!completed.HasValue() && completed.Error().value() != ETIME) {
         RequestStop();
         break;
       }
@@ -307,7 +307,7 @@ Result<void> Loop::CancelPendingOperations() noexcept {
   cancel_all_op_.BeginNextRequest();
 
   auto submitted = SubmitOp(&cancel_all_op_, detail::PrepareCancelAll());
-  if (submitted.has_value()) {
+  if (submitted.HasValue()) {
     cancel_all_pending_ = true;
   }
   return submitted;
@@ -323,7 +323,7 @@ void Loop::DrainStoppedOperations() noexcept {
     }
 
     auto cancelled = CancelPendingOperations();
-    if (!cancelled.has_value()) {
+    if (!cancelled.HasValue()) {
       // Run() has no error return channel, and publishing Stopped with a
       // live ring request would violate its drain contract. A local cancel
       // preparation failure therefore cannot end shutdown: wait for any work
@@ -334,7 +334,7 @@ void Loop::DrainStoppedOperations() noexcept {
         (void)ring_.GetEvents();
       }
       auto completed = WaitCompletionsFor(kStopPollInterval);
-      if (!completed.has_value() && completed.error().value() != ETIME) {
+      if (!completed.HasValue() && completed.Error().value() != ETIME) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
       }
       continue;
@@ -351,7 +351,7 @@ void Loop::DrainStoppedOperations() noexcept {
       (void)ring_.GetEvents();
     }
     auto completed = WaitCompletionsFor(kStopPollInterval);
-    if (!completed.has_value()) {
+    if (!completed.HasValue()) {
       // FlushSubmit() or CQ reaping can fail after a cancel SQE has already
       // been prepared. Keep the pending SQEs and retry rather than publishing
       // Stopped with requests that the ring may still observe.
@@ -394,7 +394,7 @@ void Loop::DrainCompletionReady() noexcept {
 
 void Loop::OnCqeHandled() noexcept {
   auto flushed = FlushSubmit();
-  if (!flushed.has_value()) {
+  if (!flushed.HasValue()) {
     RequestStop();
     return;
   }
@@ -435,8 +435,8 @@ Result<void> Loop::FlushSubmit() noexcept {
 
   while (pending_submit_ > 0) {
     auto submitted = ring_.Submit();
-    if (!submitted.has_value()) {
-      return std::unexpected(submitted.error());
+    if (!submitted.HasValue()) {
+      return std::unexpected(submitted.Error());
     }
     if (*submitted == 0) {
       return std::unexpected(Errno(EAGAIN));
@@ -458,8 +458,8 @@ Result<std::size_t> Loop::PollCompletions() noexcept {
   ALYRN_CHECK(IsInLoopThread(), "Loop::PollCompletions called from wrong thread");
 
   auto flushed = FlushSubmit();
-  if (!flushed.has_value()) {
-    return std::unexpected(flushed.error());
+  if (!flushed.HasValue()) {
+    return std::unexpected(flushed.Error());
   }
 
   return ring_.Reap(
@@ -478,8 +478,8 @@ Result<std::size_t> Loop::WaitCompletionsFor(std::chrono::nanoseconds timeout) n
   ALYRN_CHECK(IsInLoopThread(), "Loop::WaitCompletionsFor called from wrong thread");
 
   auto flushed = FlushSubmit();
-  if (!flushed.has_value()) {
-    return std::unexpected(flushed.error());
+  if (!flushed.HasValue()) {
+    return std::unexpected(flushed.Error());
   }
 
   io_uring_cqe* cqe = nullptr;
@@ -552,7 +552,7 @@ void Loop::HandleCqe(io_uring_cqe* cqe) noexcept {
     if (State() == backend::LoopState::kRunning) {
       wake_op_.BeginNextRequest();
       auto armed = ArmWakePoll();
-      if (!armed.has_value()) {
+      if (!armed.HasValue()) {
         RequestStop();
       }
     }
@@ -594,7 +594,7 @@ Result<void> Loop::ArmWakePoll() noexcept {
   wake_op_.kind = OpKind::kWake;
   wake_op_.resume_work.ClearHandle();
   auto submitted = SubmitOp(&wake_op_, detail::PreparePollAdd(wake_fd_, POLLIN));
-  if (submitted.has_value()) {
+  if (submitted.HasValue()) {
     wake_pending_ = true;
   }
   return submitted;

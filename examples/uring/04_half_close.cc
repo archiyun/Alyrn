@@ -3,10 +3,10 @@
 // Uring write-half shutdown demo
 //
 // Build:
-//   cmake --build build-uring --target demo_luring_half_close -j"$(nproc)"
+//   make uring
 //
 // Run:
-//   ./build-uring/examples/uring/demo_luring_half_close
+//   ./build/uring/debug/examples/uring/demo_luring_half_close
 
 #include <sys/socket.h>
 #include <unistd.h>
@@ -71,8 +71,8 @@ auto HalfCloseSession(uring::Loop& loop, uring::Stream stream, int peer_fd, int&
     -> alyrn::DetachedTask {
   const auto request = std::as_bytes(std::span<const char>(kRequest.data(), kRequest.size()));
   auto written = co_await stream.Write(request);
-  if (!written.has_value()) {
-    std::println(stderr, "write failed: {}", written.error().message());
+  if (!written.HasValue()) {
+    std::println(stderr, "write failed: {}", written.Error().message());
     (void)co_await stream.Close();
     loop.RequestStop();
     co_return;
@@ -82,8 +82,8 @@ auto HalfCloseSession(uring::Loop& loop, uring::Stream stream, int peer_fd, int&
   // does not invalidate reads or close the descriptor.
   auto shutdown = co_await stream.Shutdown();
   auto repeated_shutdown = co_await stream.Shutdown();
-  if (!shutdown.has_value() || !repeated_shutdown.has_value()) {
-    const auto& error = shutdown.has_value() ? repeated_shutdown.error() : shutdown.error();
+  if (!shutdown.HasValue() || !repeated_shutdown.HasValue()) {
+    const auto& error = shutdown.HasValue() ? repeated_shutdown.Error() : shutdown.Error();
     std::println(stderr, "shutdown failed: {}", error.message());
     (void)co_await stream.Close();
     loop.RequestStop();
@@ -92,7 +92,7 @@ auto HalfCloseSession(uring::Loop& loop, uring::Stream stream, int peer_fd, int&
 
   // Future writes fail locally after the write half has been shut down.
   auto rejected_write = co_await stream.Write(request);
-  if (rejected_write.has_value() || rejected_write.error() != std::errc::broken_pipe) {
+  if (rejected_write.HasValue() || rejected_write.Error() != std::errc::broken_pipe) {
     std::println(stderr, "write after Shutdown did not fail with EPIPE");
     (void)co_await stream.Close();
     loop.RequestStop();
@@ -129,7 +129,7 @@ auto HalfCloseSession(uring::Loop& loop, uring::Stream stream, int peer_fd, int&
   std::string reply;
   while (reply.size() < kReply.size()) {
     auto read = co_await stream.Read(read_buffer);
-    if (!read.has_value() || *read == 0) {
+    if (!read.HasValue() || *read == 0) {
       std::println(stderr, "read after Shutdown failed");
       (void)co_await stream.Close();
       loop.RequestStop();
@@ -146,8 +146,8 @@ auto HalfCloseSession(uring::Loop& loop, uring::Stream stream, int peer_fd, int&
   }
 
   auto closed = co_await stream.Close();
-  if (!closed.has_value()) {
-    std::println(stderr, "close failed: {}", closed.error().message());
+  if (!closed.HasValue()) {
+    std::println(stderr, "close failed: {}", closed.Error().message());
     loop.RequestStop();
     co_return;
   }
@@ -171,8 +171,8 @@ auto main() -> int {
   // Keep the Uring endpoint non-blocking, but make the small demonstration
   // peer blocking so its EOF observation is deterministic and readable.
   auto blocking_peer = net::SetNonBlocking(sockets[1], false);
-  if (!blocking_peer.has_value()) {
-    std::println(stderr, "failed to configure peer: {}", blocking_peer.error().message());
+  if (!blocking_peer.HasValue()) {
+    std::println(stderr, "failed to configure peer: {}", blocking_peer.Error().message());
     (void)::close(sockets[0]);
     (void)::close(sockets[1]);
     return 1;
@@ -183,8 +183,8 @@ auto main() -> int {
   options.entries = 64;
 
   auto initialized = loop.Init(options);
-  if (!initialized.has_value()) {
-    std::println(stderr, "loop init failed: {}", initialized.error().message());
+  if (!initialized.HasValue()) {
+    std::println(stderr, "loop init failed: {}", initialized.Error().message());
     (void)::close(sockets[0]);
     (void)::close(sockets[1]);
     return 1;

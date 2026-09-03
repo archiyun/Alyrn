@@ -48,20 +48,20 @@ Loop* CheckLoop(Loop* loop) noexcept {
 Result<net::Socket> TryCreateListenSocket(const net::Endpoint& listen_addr,
                                           ListenerOptions options) noexcept {
   auto fd = net::CreateNonBlockingSocket(listen_addr.NativeFamily());
-  if (!fd.has_value()) {
-    return std::unexpected(fd.error());
+  if (!fd.HasValue()) {
+    return std::unexpected(fd.Error());
   }
   net::Socket socket(*fd);
 
   auto reuse_addr = net::SetReuseAddr(socket.fd(), options.reuse_addr);
-  if (!reuse_addr.has_value()) {
-    return std::unexpected(reuse_addr.error());
+  if (!reuse_addr.HasValue()) {
+    return std::unexpected(reuse_addr.Error());
   }
 
   if (options.reuse_port) {
     auto reuse_port = net::SetReusePort(socket.fd(), true);
-    if (!reuse_port.has_value()) {
-      return std::unexpected(reuse_port.error());
+    if (!reuse_port.HasValue()) {
+      return std::unexpected(reuse_port.Error());
     }
   }
 
@@ -78,7 +78,7 @@ Result<net::Socket> TryCreateListenSocket(const net::Endpoint& listen_addr,
 
 int CreateListenSocket(sa_family_t family) {
   auto fd = net::CreateNonBlockingSocket(family);
-  ALYRN_CHECK(fd.has_value(), "Listener: failed to create listening socket");
+  ALYRN_CHECK(fd.HasValue(), "Listener: failed to create listening socket");
   return *fd;
 }
 
@@ -105,7 +105,7 @@ public:
     continuation_.Bind(continuation);
 
     Result<Stream> result = TryAccept();
-    if (result.has_value() || !IsWouldBlock(result.error().value())) {
+    if (result.HasValue() || !IsWouldBlock(result.Error().value())) {
       CompleteInline(std::move(result));
       return false;
     }
@@ -148,7 +148,7 @@ private:
 public:
   void OnReady() noexcept {
     Result<Stream> result = TryAccept();
-    if (!result.has_value() && IsWouldBlock(result.error().value())) {
+    if (!result.HasValue() && IsWouldBlock(result.Error().value())) {
       return;
     }
     listener_->CompleteAccept(std::move(result));
@@ -167,9 +167,9 @@ private:
     }
 
     auto configured = net::ApplyTcpOptions(fd, listener_->tcp_options_);
-    if (!configured.has_value()) {
+    if (!configured.HasValue()) {
       (void)::close(fd);
-      return std::unexpected(configured.error());
+      return std::unexpected(configured.Error());
     }
     return Stream(listener_->loop_, fd, peer_addr, listener_->stream_options_);
   }
@@ -218,8 +218,8 @@ bool AcceptSource::NextAwaiter::await_suspend(std::coroutine_handle<> continuati
       return false;
     }
     auto started = source_->state_.Start();
-    if (!started.has_value()) {
-      result_.SetError(started.error());
+    if (!started.HasValue()) {
+      result_.SetError(started.Error());
       (void)(completion_gate_.TryComplete());
       return false;
     }
@@ -347,8 +347,8 @@ coro::Task<Result<void>> AcceptSource::Stop() {
     }
     if (state_.ArmedRequests() != 0) {
       auto completed = state_.CompleteRequest(false);
-      if (!completed.has_value()) {
-        co_return std::unexpected(completed.error());
+      if (!completed.HasValue()) {
+        co_return std::unexpected(completed.Error());
       }
     }
     state_.RequestStop();
@@ -373,10 +373,10 @@ void AcceptSource::OnReady() noexcept {
 
   while (state_.State() == net::detail::AcceptSourceState::kActive && state_.ArmedRequests() != 0) {
     Result<Stream> accepted = TryAccept();
-    if (!accepted.has_value()) {
-      Error error = accepted.error();
+    if (!accepted.HasValue()) {
+      Error error = accepted.Error();
       auto completed = state_.CompleteRequest(false);
-      ALYRN_CHECK(completed.has_value(), "AcceptSource: failed to record accept completion");
+      ALYRN_CHECK(completed.HasValue(), "AcceptSource: failed to record accept completion");
       if (IsWouldBlock(error.value())) {
         break;
       }
@@ -388,17 +388,17 @@ void AcceptSource::OnReady() noexcept {
       events_.push_back(std::move(*accepted));
     } catch (...) {
       auto completed = state_.CompleteRequest(false);
-      ALYRN_CHECK(completed.has_value(), "AcceptSource: failed to record accept completion");
+      ALYRN_CHECK(completed.HasValue(), "AcceptSource: failed to record accept completion");
       Fail(Errno(ENOMEM));
       return;
     }
 
     auto completed = state_.CompleteRequest(true);
-    ALYRN_CHECK(completed.has_value(), "AcceptSource: failed to record accepted stream");
+    ALYRN_CHECK(completed.HasValue(), "AcceptSource: failed to record accepted stream");
     if (!state_.TryArm()) {
       if (state_.QueuedEvents() >= state_.Options().event_capacity) {
         auto paused = state_.RequestPause();
-        ALYRN_CHECK(paused.has_value(), "AcceptSource: failed to enter the paused state");
+        ALYRN_CHECK(paused.HasValue(), "AcceptSource: failed to enter the paused state");
       }
       break;
     }
@@ -414,7 +414,7 @@ void AcceptSource::OnError(Error error) noexcept {
   }
   if (state_.ArmedRequests() != 0) {
     auto completed = state_.CompleteRequest(false);
-    ALYRN_CHECK(completed.has_value(), "AcceptSource: failed to record error completion");
+    ALYRN_CHECK(completed.HasValue(), "AcceptSource: failed to record error completion");
   }
   Fail(error);
 }
@@ -425,7 +425,7 @@ void AcceptSource::OnListenerClosed() noexcept {
   }
   if (state_.ArmedRequests() != 0) {
     auto completed = state_.CompleteRequest(false);
-    ALYRN_CHECK(completed.has_value(), "AcceptSource: failed to drain close completion");
+    ALYRN_CHECK(completed.HasValue(), "AcceptSource: failed to drain close completion");
   }
   state_.RequestStop();
   DeliverNextIfReady();
@@ -519,9 +519,9 @@ Result<Stream> AcceptSource::TryAccept() noexcept {
   }
 
   auto configured = net::ApplyTcpOptions(fd, listener_->tcp_options_);
-  if (!configured.has_value()) {
+  if (!configured.HasValue()) {
     (void)::close(fd);
-    return std::unexpected(configured.error());
+    return std::unexpected(configured.Error());
   }
   return Stream(listener_->loop_, fd, peer_addr, listener_->stream_options_);
 }
@@ -561,8 +561,8 @@ Result<Listener> Listener::Create(Loop* loop, const net::Endpoint& listen_addr,
   }
 
   auto socket = TryCreateListenSocket(listen_addr, options);
-  if (!socket.has_value()) {
-    return std::unexpected(socket.error());
+  if (!socket.HasValue()) {
+    return std::unexpected(socket.Error());
   }
   return Listener(loop, std::move(*socket), options.stream_options, options.tcp_options);
 }
@@ -640,8 +640,8 @@ Result<AcceptSource> Listener::CreateAcceptSource(net::AcceptSourceOptions optio
     return std::unexpected(Errno(EBUSY));
   }
   auto state = net::detail::AcceptSourceStateMachine::Create(options);
-  if (!state.has_value()) {
-    return std::unexpected(state.error());
+  if (!state.HasValue()) {
+    return std::unexpected(state.Error());
   }
   return AcceptSource(this, std::move(*state));
 }

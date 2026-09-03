@@ -65,8 +65,8 @@ bool RecvSource::NextAwaiter::await_suspend(std::coroutine_handle<> continuation
       return false;
     }
     auto started = source_->Start();
-    if (!started.has_value()) {
-      result_.SetError(started.error());
+    if (!started.HasValue()) {
+      result_.SetError(started.Error());
       (void)(completion_gate_.TryComplete());
       return false;
     }
@@ -121,9 +121,9 @@ public:
     source_->pending_stop_ = this;
 
     auto waiting = source_->BeginStop();
-    if (!waiting.has_value()) {
+    if (!waiting.HasValue()) {
       source_->pending_stop_ = nullptr;
-      result_.emplace(std::unexpected(waiting.error()));
+      result_.emplace(std::unexpected(waiting.Error()));
       (void)(completion_gate_.TryComplete());
       return false;
     }
@@ -169,8 +169,8 @@ Result<RecvSource> RecvSource::Create(Loop* loop, int fd, RecvSourceOptions opti
   }
 
   auto state = net::detail::RecvSourceStateMachine::Create(options.source);
-  if (!state.has_value()) {
-    return std::unexpected(state.error());
+  if (!state.HasValue()) {
+    return std::unexpected(state.Error());
   }
 
   std::vector<std::byte> storage;
@@ -292,7 +292,7 @@ Result<void> RecvSource::Start() noexcept {
   }
 
   auto started = state_.Start();
-  if (!started.has_value()) {
+  if (!started.HasValue()) {
     return started;
   }
   EnsureAdmission();
@@ -304,8 +304,8 @@ Result<void> RecvSource::Start() noexcept {
 
 Result<bool> RecvSource::BeginStop() noexcept {
   auto stopped = state_.RequestStop();
-  if (!stopped.has_value()) {
-    return std::unexpected(stopped.error());
+  if (!stopped.HasValue()) {
+    return std::unexpected(stopped.Error());
   }
 
   CompleteReadiness();
@@ -326,7 +326,7 @@ void RecvSource::EnsureAdmission() noexcept {
 
 void RecvSource::RequestBackendPause() noexcept {
   auto paused = state_.RequestPause();
-  ALYRN_CHECK(paused.has_value(), "RecvSource failed to enter the paused state");
+  ALYRN_CHECK(paused.HasValue(), "RecvSource failed to enter the paused state");
   CompleteReadiness();
 }
 
@@ -337,7 +337,7 @@ void RecvSource::CompleteReadiness() noexcept {
   if (state_.ArmedRequests() != 0) {
     auto completed = state_.CompleteMultishotEvent(
         net::detail::EventDisposition::kNone, net::detail::MultishotRequestDisposition::kTerminal);
-    ALYRN_CHECK(completed.has_value(), "RecvSource failed to complete readiness request");
+    ALYRN_CHECK(completed.HasValue(), "RecvSource failed to complete readiness request");
   }
 }
 
@@ -347,7 +347,7 @@ void RecvSource::RequestBackendStop(std::optional<Error> error) noexcept {
   }
 
   auto stopped = state_.RequestStop();
-  ALYRN_CHECK(stopped.has_value(), "RecvSource failed to enter stopping state");
+  ALYRN_CHECK(stopped.HasValue(), "RecvSource failed to enter stopping state");
   CompleteReadiness();
   DeliverNextIfReady();
   CompleteStopIfReady();
@@ -391,9 +391,9 @@ void RecvSource::OnReady() noexcept {
 
     auto recorded = state_.CompleteMultishotEvent(net::detail::EventDisposition::kProduced,
                                                   net::detail::MultishotRequestDisposition::kMore);
-    if (!recorded.has_value()) {
+    if (!recorded.HasValue()) {
       available_buffers_.push_back(buffer_id);
-      RequestBackendStop(recorded.error());
+      RequestBackendStop(recorded.Error());
       return;
     }
 
@@ -518,8 +518,8 @@ Result<void> RecvSource::RequestStop() noexcept {
     return std::unexpected(Errno(EINVAL));
   }
   auto waiting = BeginStop();
-  if (!waiting.has_value()) {
-    return std::unexpected(waiting.error());
+  if (!waiting.HasValue()) {
+    return std::unexpected(waiting.Error());
   }
   return {};
 }

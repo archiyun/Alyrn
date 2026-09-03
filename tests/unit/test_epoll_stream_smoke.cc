@@ -96,7 +96,7 @@ alyrn::coro::DetachedTask ReadWithDeadline(alyrn::epoll::Stream* stream,
   auto configured =
       stream->SetReadDeadline(alyrn::time::SteadyNow() + alyrn::time::Milliseconds(10));
   if (!configured.has_value()) {
-    out->emplace(std::unexpected(configured.error()));
+    out->emplace(std::unexpected(configured.Error()));
     loop->RequestStop();
     co_return;
   }
@@ -152,7 +152,7 @@ alyrn::coro::DetachedTask EchoServer(alyrn::epoll::Stream* stream,
                                      alyrn::epoll::Loop* loop) {
   ReadResult read_result = co_await stream->Read(*scratch);
   if (!read_result.has_value()) {
-    out->emplace(std::unexpected(read_result.error()));
+    out->emplace(std::unexpected(read_result.Error()));
   } else if (*read_result == 0) {
     out->emplace(alyrn::Result<void>{});
   } else {
@@ -171,11 +171,11 @@ alyrn::coro::DetachedTask EchoClient(alyrn::epoll::Stream* stream,
                                      alyrn::epoll::Loop* loop) {
   alyrn::Result<void> write_result = co_await stream->Write(payload);
   if (!write_result.has_value()) {
-    out->emplace(std::unexpected(write_result.error()));
+    out->emplace(std::unexpected(write_result.Error()));
   } else {
     ReadResult read_result = co_await stream->Read(*received);
     if (!read_result.has_value()) {
-      out->emplace(std::unexpected(read_result.error()));
+      out->emplace(std::unexpected(read_result.Error()));
     } else {
       *received_size = *read_result;
       out->emplace(co_await stream->Shutdown());
@@ -194,8 +194,8 @@ alyrn::coro::DetachedTask CloseThenSubmit(alyrn::epoll::Stream* stream, alyrn::e
                                           std::optional<WriteResult>* write_result) {
   alyrn::Result<void> close_result = co_await stream->Close();
   if (!close_result.has_value()) {
-    read_result->emplace(std::unexpected(close_result.error()));
-    write_result->emplace(std::unexpected(close_result.error()));
+    read_result->emplace(std::unexpected(close_result.Error()));
+    write_result->emplace(std::unexpected(close_result.Error()));
   } else {
     read_result->emplace(co_await stream->Read(*read_buffer));
     write_result->emplace(co_await stream->Write(write_buffer));
@@ -416,7 +416,7 @@ bool CheckReadDeadline() {
 
   return Check(result.has_value(), "read deadline did not finish") &&
          Check(!result->has_value(), "read deadline unexpectedly succeeded") &&
-         Check(result->error() == std::errc::timed_out,
+         Check(result->Error() == std::errc::timed_out,
                "read deadline returned an unexpected error");
 }
 
@@ -521,7 +521,7 @@ bool CheckOwnedRecvCloseReturnsBuffer() {
   ::close(sv[1]);
   if (!Check(outcome.has_value(), "owned cancelled read did not finish") ||
       !Check(!outcome->result.has_value(), "owned cancelled read unexpectedly succeeded") ||
-      !Check(outcome->result.error() == std::errc::operation_canceled,
+      !Check(outcome->result.Error() == std::errc::operation_canceled,
              "owned cancelled read did not return ECANCELED") ||
       !Check(resumed_with_scheduler, "owned cancelled read resumed without current scheduler")) {
     return false;
@@ -559,7 +559,7 @@ bool CheckCloseCancelsPendingRead() {
 
   return Check(result.has_value(), "cancelled read did not finish") &&
          Check(!result->has_value(), "cancelled read unexpectedly returned value") &&
-         Check(result->error() == std::errc::operation_canceled,
+         Check(result->Error() == std::errc::operation_canceled,
                "cancelled read did not return ECANCELED") &&
          Check(resumed_with_scheduler, "cancelled read resumed without current scheduler");
 }
@@ -592,7 +592,7 @@ bool CheckLoopStopCancelsPendingRead() {
 
   return Check(result.has_value(), "loop stop did not settle the pending read") &&
          Check(!result->has_value(), "loop stop unexpectedly completed the read") &&
-         Check(result->error() == std::errc::operation_canceled,
+         Check(result->Error() == std::errc::operation_canceled,
                "loop stop did not return ECANCELED") &&
          Check(resume_count == 1, "loop stop resumed the read continuation more than once") &&
          Check(resumed_with_scheduler, "loop stop resumed the read without scheduler affinity");
@@ -635,7 +635,7 @@ bool CheckReadableThenCloseResumesOnce() {
   if (result->has_value()) {
     return Check(**result == 4, "readable-close race returned wrong byte count");
   }
-  return Check(result->error() == std::errc::operation_canceled,
+  return Check(result->Error() == std::errc::operation_canceled,
                "readable-close race failed with an unexpected error");
 }
 
@@ -703,11 +703,11 @@ bool CheckCloseRejectsLaterSubmit() {
 
   return Check(read_result.has_value(), "read after close did not finish") &&
          Check(!read_result->has_value(), "read after close unexpectedly succeeded") &&
-         Check(read_result->error() == std::errc::bad_file_descriptor,
+         Check(read_result->Error() == std::errc::bad_file_descriptor,
                "read after close did not return EBADF") &&
          Check(write_result.has_value(), "write after close did not finish") &&
          Check(!write_result->has_value(), "write after close unexpectedly succeeded") &&
-         Check(write_result->error() == std::errc::bad_file_descriptor,
+         Check(write_result->Error() == std::errc::bad_file_descriptor,
                "write after close did not return EBADF") &&
          Check(peer_read == 0, "peer did not observe local close");
 }
@@ -754,7 +754,7 @@ bool CheckShutdownKeepsReadOpen() {
                "second Shutdown was not idempotent") &&
          Check(write_result.has_value() && !write_result->has_value(),
                "Write after Shutdown unexpectedly succeeded") &&
-         Check(write_result->error() == std::errc::broken_pipe,
+         Check(write_result->Error() == std::errc::broken_pipe,
                "Write after Shutdown did not return EPIPE") &&
          Check(read_result.has_value() && read_result->has_value() &&
                    **read_result == sizeof(kReply) - 1,

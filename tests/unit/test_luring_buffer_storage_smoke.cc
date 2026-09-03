@@ -46,16 +46,16 @@ void CheckInvalidArguments() {
   auto zero_capacity = ProvidedBufferStorage::Create(
       0, 4096);
   assert(!zero_capacity.has_value());
-  assert(zero_capacity.error() == std::errc::invalid_argument);
+  assert(zero_capacity.Error() == std::errc::invalid_argument);
 
   auto zero_size = ProvidedBufferStorage::Create(4, 0);
   assert(!zero_size.has_value());
-  assert(zero_size.error() == std::errc::invalid_argument);
+  assert(zero_size.Error() == std::errc::invalid_argument);
 
   auto overflow = ProvidedBufferStorage::Create(
       std::numeric_limits<std::size_t>::max(), 2);
   assert(!overflow.has_value());
-  assert(overflow.error() == std::errc::value_too_large);
+  assert(overflow.Error() == std::errc::value_too_large);
 }
 
 }  // namespace

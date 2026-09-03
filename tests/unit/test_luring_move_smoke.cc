@@ -42,12 +42,12 @@ LoopInitStatus InitLoop(alyrn::uring::Loop& loop) {
   if (init.has_value()) {
     return LoopInitStatus::kReady;
   }
-  if (IsEnvironmentSkip(init.error())) {
-    std::cout << "SKIP: io_uring unavailable: " << init.error().message() << '\n';
+  if (IsEnvironmentSkip(init.Error())) {
+    std::cout << "SKIP: io_uring unavailable: " << init.Error().message() << '\n';
     return LoopInitStatus::kSkip;
   }
 
-  std::cout << "FAIL: Loop init failed: " << init.error().message() << '\n';
+  std::cout << "FAIL: Loop init failed: " << init.Error().message() << '\n';
   return LoopInitStatus::kFail;
 }
 

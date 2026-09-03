@@ -26,8 +26,8 @@ coro::DetachedTask AcceptLoop(WorkerContext& context,
                                Worker::ConnectionCallback* callback) {
   while (true) {
     auto accepted = co_await context.listener.Accept();
-    if (!accepted.has_value()) {
-      const int error = accepted.error().value();
+    if (!accepted.HasValue()) {
+      const int error = accepted.Error().value();
       if (error == ECANCELED || error == EBADF) {
         co_return;
       }
@@ -46,14 +46,14 @@ coro::DetachedTask MultishotAcceptLoop(
       .pending_depth = 1,
       .event_capacity = 1024,
   });
-  if (!source_result.has_value()) {
+  if (!source_result.HasValue()) {
     co_return;
   }
 
   auto source = std::move(*source_result);
   for (;;) {
     auto accepted = co_await source.Next();
-    if (!accepted.has_value()) {
+    if (!accepted.HasValue()) {
       break;
     }
     if (!*accepted) {
@@ -150,8 +150,8 @@ void Worker::WorkLoop(std::stop_token token) noexcept {
 
   if (options_.cpu_affinity.has_value()) {
     auto affinity = SetCurrentThreadAffinity(*options_.cpu_affinity);
-    if (!affinity.has_value()) {
-      PublishStart(std::unexpected(affinity.error()));
+    if (!affinity.HasValue()) {
+      PublishStart(std::unexpected(affinity.Error()));
       return;
     }
   }
@@ -160,21 +160,21 @@ void Worker::WorkLoop(std::stop_token token) noexcept {
   Loop loop(options_.frame_resource);
 
   auto loop_init = loop.Init(options_.loop_options);
-  if (!loop_init.has_value()) {
-    PublishStart(std::unexpected(loop_init.error()));
+  if (!loop_init.HasValue()) {
+    PublishStart(std::unexpected(loop_init.Error()));
     return;
   }
 
   auto listener = Listener::Create(&loop, listen_addr_, options_.listen_options);
 
-  if (!listener.has_value()) {
-    PublishStart(std::unexpected(listener.error()));
+  if (!listener.HasValue()) {
+    PublishStart(std::unexpected(listener.Error()));
     return;
   }
 
   auto connector = Connector::Create(&loop);
-  if (!connector.has_value()) {
-    PublishStart(std::unexpected(connector.error()));
+  if (!connector.HasValue()) {
+    PublishStart(std::unexpected(connector.Error()));
     return;
   }
 

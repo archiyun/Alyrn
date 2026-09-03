@@ -142,7 +142,7 @@ struct UringHarness {
       init_error = {};
       return true;
     }
-    init_error = initialized.error();
+    init_error = initialized.Error();
     return false;
   }
 
@@ -161,7 +161,7 @@ struct UringHarness {
     if (timer.has_value()) {
       return true;
     }
-    std::cerr << "FAIL [io_uring]: timer setup: " << timer.error().message() << '\n';
+    std::cerr << "FAIL [io_uring]: timer setup: " << timer.Error().message() << '\n';
     return false;
   }
 
@@ -218,7 +218,7 @@ bool CheckConnectSuccessContract() {
   auto listener = ListenLoopback();
   if (!listener.has_value()) {
     std::cerr << "FAIL [" << Harness::Name()
-              << "]: listener creation: " << listener.error().message() << '\n';
+              << "]: listener creation: " << listener.Error().message() << '\n';
     return false;
   }
 
@@ -229,7 +229,7 @@ bool CheckConnectSuccessContract() {
   auto connector = Harness::CreateConnector(loop);
   if (!connector.has_value()) {
     std::cerr << "FAIL [" << Harness::Name()
-              << "]: connector creation: " << connector.error().message() << '\n';
+              << "]: connector creation: " << connector.Error().message() << '\n';
     return false;
   }
 
@@ -286,7 +286,7 @@ bool CheckConnectResultReleaseContract() {
   auto listener = ListenLoopback();
   if (!listener.has_value()) {
     std::cerr << "FAIL [" << Harness::Name()
-              << "]: listener creation: " << listener.error().message() << '\n';
+              << "]: listener creation: " << listener.Error().message() << '\n';
     return false;
   }
 
@@ -297,7 +297,7 @@ bool CheckConnectResultReleaseContract() {
   auto connector = Harness::CreateConnector(loop);
   if (!connector.has_value()) {
     std::cerr << "FAIL [" << Harness::Name()
-              << "]: connector creation: " << connector.error().message() << '\n';
+              << "]: connector creation: " << connector.Error().message() << '\n';
     return false;
   }
 
@@ -328,7 +328,7 @@ bool CheckConnectionRefusedContract() {
   auto endpoint = ListenLoopback();
   if (!endpoint.has_value()) {
     std::cerr << "FAIL [" << Harness::Name()
-              << "]: port reservation: " << endpoint.error().message() << '\n';
+              << "]: port reservation: " << endpoint.Error().message() << '\n';
     return false;
   }
   const std::uint16_t port = endpoint->port;
@@ -356,7 +356,7 @@ bool CheckConnectionRefusedContract() {
 
   return Expect(!observation.timed_out, Harness::Name(), "refused Connect timed out") &&
          Expect(observation.result.has_value() && !observation.result->has_value() &&
-                    observation.result->error() == std::errc::connection_refused,
+                    observation.result->Error() == std::errc::connection_refused,
                 Harness::Name(), "Connect did not preserve ECONNREFUSED") &&
          Expect(observation.resume_count == 1, Harness::Name(),
                 "refused Connect resumed more than once") &&
@@ -380,7 +380,7 @@ bool CheckInvalidHostContract() {
   Harness::Run(loop);
 
   return Expect(observation.result.has_value() && !observation.result->has_value() &&
-                    observation.result->error() == std::errc::invalid_argument,
+                    observation.result->Error() == std::errc::invalid_argument,
                 Harness::Name(), "invalid numeric host did not return EINVAL") &&
          Expect(observation.resume_count == 1, Harness::Name(),
                 "invalid-host Connect resumed more than once") &&
@@ -414,7 +414,7 @@ bool CheckConnectAfterStopRequestContract() {
   Harness::Run(loop);
 
   return Expect(observation.result.has_value() && !observation.result->has_value() &&
-                    observation.result->error() == std::errc::operation_canceled,
+                    observation.result->Error() == std::errc::operation_canceled,
                 Harness::Name(), "Connect succeeded after loop stop was requested") &&
          Expect(observation.resume_count == 1, Harness::Name(),
                 "post-stop Connect resumed more than once") &&

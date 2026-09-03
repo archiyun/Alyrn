@@ -6,10 +6,10 @@
 // buffer-release boundary (primary CQE without F_MORE, or the later F_NOTIF).
 //
 // Build:
-//   cmake --build build-uring --target demo_luring_zero_copy_send -j"$(nproc)"
+//   make uring
 //
 // Run:
-//   ./build-uring/examples/uring/demo_luring_zero_copy_send
+//   ./build/uring/debug/examples/uring/demo_luring_zero_copy_send
 
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -125,8 +125,8 @@ auto ZeroCopySession(uring::Loop& loop, uring::Stream stream, int peer_fd, int& 
   auto payload = std::as_bytes(std::span<const char>(owned.data(), owned.size()));
 
   auto sent = co_await stream.SendZeroCopy(payload);
-  if (!sent.has_value()) {
-    std::println(stderr, "SendZeroCopy failed: {}", sent.error().message());
+  if (!sent.HasValue()) {
+    std::println(stderr, "SendZeroCopy failed: {}", sent.Error().message());
     std::println(stderr, "hint: older kernels or restricted environments may not support send_zc");
     (void)co_await stream.Close();
     loop.RequestStop();
@@ -146,8 +146,8 @@ auto ZeroCopySession(uring::Loop& loop, uring::Stream stream, int peer_fd, int& 
   }
 
   auto closed = co_await stream.Close();
-  if (!closed.has_value()) {
-    std::println(stderr, "close failed: {}", closed.error().message());
+  if (!closed.HasValue()) {
+    std::println(stderr, "close failed: {}", closed.Error().message());
     loop.RequestStop();
     co_return;
   }
@@ -165,8 +165,8 @@ auto ZeroCopySession(uring::Loop& loop, uring::Stream stream, int peer_fd, int& 
 
 auto main() -> int {
   auto sockets = MakeTcpPair();
-  if (!sockets.has_value()) {
-    std::println(stderr, "tcp pair failed: {}", sockets.error().message());
+  if (!sockets.HasValue()) {
+    std::println(stderr, "tcp pair failed: {}", sockets.Error().message());
     return 1;
   }
   auto [server_fd, client_fd] = *sockets;
@@ -176,8 +176,8 @@ auto main() -> int {
   options.entries = 64;
 
   auto initialized = loop.Init(options);
-  if (!initialized.has_value()) {
-    std::println(stderr, "loop init failed: {}", initialized.error().message());
+  if (!initialized.HasValue()) {
+    std::println(stderr, "loop init failed: {}", initialized.Error().message());
     (void)::close(server_fd);
     (void)::close(client_fd);
     return 1;

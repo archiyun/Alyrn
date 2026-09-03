@@ -47,7 +47,7 @@ public:
     auto submitted = alyrn::uring::detail::LoopAccess::SubmitOp(*loop_, &op_,
                                                                 alyrn::uring::detail::PrepareNop());
     if (!submitted.has_value()) {
-      result_.emplace(std::unexpected(submitted.error()));
+      result_.emplace(std::unexpected(submitted.Error()));
       return false;
     }
 
@@ -187,13 +187,13 @@ bool CheckNopResumesCoroutine(alyrn::uring::TaskRunMode task_run_mode) {
 
   auto init = loop.Init(options);
   if (!init.has_value()) {
-    if (IsEnvironmentSkip(init.error())) {
+    if (IsEnvironmentSkip(init.Error())) {
       std::cout << "SKIP: " << TaskRunModeName(task_run_mode)
-                << " task-run mode unavailable: " << init.error().message() << '\n';
+                << " task-run mode unavailable: " << init.Error().message() << '\n';
       return true;
     }
     std::cout << "FAIL: " << TaskRunModeName(task_run_mode)
-              << " task-run mode init failed: " << init.error().message() << '\n';
+              << " task-run mode init failed: " << init.Error().message() << '\n';
     return false;
   }
   if (!Check(loop.IsInLoopThread(), "loop should be bound to the creating thread")) {
@@ -221,7 +221,7 @@ bool CheckNopResumesCoroutine(alyrn::uring::TaskRunMode task_run_mode) {
 
   auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
   if (!completions.has_value()) {
-    std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+    std::cout << "FAIL: WaitCompletions failed: " << completions.Error().message() << '\n';
     return false;
   }
 
@@ -251,11 +251,11 @@ bool CheckCrossThreadRequestStopWakesRing() {
 
   auto init = loop.Init(options);
   if (!init.has_value()) {
-    if (IsEnvironmentSkip(init.error())) {
-      std::cout << "SKIP: io_uring unavailable: " << init.error().message() << '\n';
+    if (IsEnvironmentSkip(init.Error())) {
+      std::cout << "SKIP: io_uring unavailable: " << init.Error().message() << '\n';
       return true;
     }
-    std::cout << "FAIL: Loop init failed: " << init.error().message() << '\n';
+    std::cout << "FAIL: Loop init failed: " << init.Error().message() << '\n';
     return false;
   }
 
@@ -307,11 +307,11 @@ bool RunLoopStopDrainScenario(alyrn::uring::TaskRunMode task_run_mode,
   if (!init.has_value()) {
     ::close(fds[0]);
     ::close(fds[1]);
-    if (IsEnvironmentSkip(init.error())) {
-      std::cout << "SKIP: io_uring unavailable: " << init.error().message() << '\n';
+    if (IsEnvironmentSkip(init.Error())) {
+      std::cout << "SKIP: io_uring unavailable: " << init.Error().message() << '\n';
       return true;
     }
-    std::cout << "FAIL: Loop init failed: " << init.error().message() << '\n';
+    std::cout << "FAIL: Loop init failed: " << init.Error().message() << '\n';
     return false;
   }
 
@@ -347,7 +347,7 @@ bool RunLoopStopDrainScenario(alyrn::uring::TaskRunMode task_run_mode,
                "stopped loop retained pending ring work") &&
          Check(result.has_value(), "stopped loop did not resume the pending read") &&
          Check(!result->has_value(), "stopped loop unexpectedly completed the read") &&
-         Check(result->error() == std::errc::operation_canceled,
+         Check(result->Error() == std::errc::operation_canceled,
                "stopped loop did not cancel the pending read") &&
          Check(resumed_with_scheduler, "stopped loop resumed the read without scheduler affinity");
 }

@@ -42,9 +42,9 @@ Result<void> WorkerGroup::Start() {
     auto worker = std::make_unique<Worker>(i, listen_addr_, worker_options, init_callback_,
                                                   connection_callback_, exit_callback_);
     auto result = worker->Start();
-    if (!result.has_value()) {
+    if (!result.HasValue()) {
       Stop();
-      return std::unexpected(result.error());
+      return std::unexpected(result.Error());
     }
 
     workers_.push_back(std::move(worker));

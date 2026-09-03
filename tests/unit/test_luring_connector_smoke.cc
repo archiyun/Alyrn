@@ -92,12 +92,12 @@ LoopInitStatus InitLoop(alyrn::uring::Loop& loop) {
   if (init.has_value()) {
     return LoopInitStatus::kReady;
   }
-  if (IsEnvironmentSkip(init.error())) {
-    std::cout << "SKIP: io_uring unavailable: " << init.error().message() << '\n';
+  if (IsEnvironmentSkip(init.Error())) {
+    std::cout << "SKIP: io_uring unavailable: " << init.Error().message() << '\n';
     return LoopInitStatus::kSkip;
   }
 
-  std::cout << "FAIL: Loop init failed: " << init.error().message() << '\n';
+  std::cout << "FAIL: Loop init failed: " << init.Error().message() << '\n';
   return LoopInitStatus::kFail;
 }
 
@@ -151,11 +151,11 @@ alyrn::coro::DetachedTask ConnectOnce(
 bool CheckConnectSuccess() {
   auto listener = ListenLoopback();
   if (!listener.has_value()) {
-    if (IsEnvironmentSkip(listener.error())) {
-      std::cout << "SKIP: TCP listen unavailable: " << listener.error().message() << '\n';
+    if (IsEnvironmentSkip(listener.Error())) {
+      std::cout << "SKIP: TCP listen unavailable: " << listener.Error().message() << '\n';
       return true;
     }
-    std::cout << "FAIL: listen failed: " << listener.error().message() << '\n';
+    std::cout << "FAIL: listen failed: " << listener.Error().message() << '\n';
     return false;
   }
 
@@ -185,7 +185,7 @@ bool CheckConnectSuccess() {
 
   auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
   if (!completions.has_value()) {
-    std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+    std::cout << "FAIL: WaitCompletions failed: " << completions.Error().message() << '\n';
     return false;
   }
 
@@ -232,7 +232,7 @@ bool CheckConnectRejectsInvalidHost() {
 
   return Check(connected.has_value(), "invalid host connect did not finish immediately") &&
          Check(!connected->has_value(), "invalid host connect unexpectedly succeeded") &&
-         Check(connected->error().value() == EINVAL, "invalid host should return EINVAL") &&
+         Check(connected->Error().value() == EINVAL, "invalid host should return EINVAL") &&
          Check(resumed_with_scheduler, "invalid host connect resumed without current scheduler");
 }
 

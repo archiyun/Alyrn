@@ -38,10 +38,10 @@ public:
 
   template <typename T>
   void SetResult(const Result<T>& result) noexcept {
-    if (result.has_value()) {
+    if (result.HasValue()) {
       SetSuccess();
     } else {
-      SetError(result.error());
+      SetError(result.Error());
     }
   }
 

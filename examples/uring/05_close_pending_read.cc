@@ -3,10 +3,10 @@
 // Uring close-convergence demo
 //
 // Build:
-//   cmake --build build-uring --target demo_luring_close_pending_read -j"$(nproc)"
+//   make uring
 //
 // Run:
-//   ./build-uring/examples/uring/demo_luring_close_pending_read
+//   ./build/uring/debug/examples/uring/demo_luring_close_pending_read
 
 #include <sys/socket.h>
 #include <unistd.h>
@@ -46,7 +46,7 @@ auto WaitForCancellation(uring::Stream& stream, DemoState& state) -> alyrn::Deta
   std::println("submitting Read; the peer intentionally sends no data");
   auto read = co_await stream.Read(buffer);
 
-  if (read.has_value() || read.error().value() != ECANCELED) {
+  if (read.HasValue() || read.Error().value() != ECANCELED) {
     std::println(stderr, "pending read did not finish with ECANCELED");
     state.Fail();
   } else {
@@ -61,15 +61,15 @@ auto CloseAfterReadSuspends(uring::Loop& loop, uring::Stream& stream, DemoState&
   // The read task is scheduled first. This timer gives the loop a separate
   // completion boundary before Close starts its cancel-and-drain protocol.
   auto delayed = co_await uring::SleepFor(loop, time::Milliseconds(10));
-  if (!delayed.has_value()) {
-    std::println(stderr, "delay failed: {}", delayed.error().message());
+  if (!delayed.HasValue()) {
+    std::println(stderr, "delay failed: {}", delayed.Error().message());
     state.Fail();
   }
 
   std::println("calling Close while Read is pending");
   auto closed = co_await stream.Close();
-  if (!closed.has_value()) {
-    std::println(stderr, "close failed: {}", closed.error().message());
+  if (!closed.HasValue()) {
+    std::println(stderr, "close failed: {}", closed.Error().message());
     state.Fail();
   } else {
     std::println("Close returned after cancel and original read CQEs converged");
@@ -92,8 +92,8 @@ auto main() -> int {
   options.entries = 64;
 
   auto initialized = loop.Init(options);
-  if (!initialized.has_value()) {
-    std::println(stderr, "loop init failed: {}", initialized.error().message());
+  if (!initialized.HasValue()) {
+    std::println(stderr, "loop init failed: {}", initialized.Error().message());
     (void)::close(sockets[0]);
     (void)::close(sockets[1]);
     return 1;

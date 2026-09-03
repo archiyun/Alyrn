@@ -122,23 +122,23 @@ bool CheckEchoRoundTrip() {
 
   auto init = loop.Init(options);
   if (!init.has_value()) {
-    if (IsEnvironmentSkip(init.error())) {
-      std::cout << "SKIP: io_uring unavailable: " << init.error().message() << '\n';
+    if (IsEnvironmentSkip(init.Error())) {
+      std::cout << "SKIP: io_uring unavailable: " << init.Error().message() << '\n';
       return true;
     }
-    std::cout << "FAIL: Loop init failed: " << init.error().message() << '\n';
+    std::cout << "FAIL: Loop init failed: " << init.Error().message() << '\n';
     return false;
   }
 
   auto listener = alyrn::uring::Listener::Create(&loop, alyrn::net::Endpoint::Loopback(0));
   if (!listener.has_value()) {
-    std::cout << "FAIL: Listener::Create failed: " << listener.error().message() << '\n';
+    std::cout << "FAIL: Listener::Create failed: " << listener.Error().message() << '\n';
     return false;
   }
 
   auto local = listener->LocalAddress();
   if (!local.has_value()) {
-    std::cout << "FAIL: LocalAddress failed: " << local.error().message() << '\n';
+    std::cout << "FAIL: LocalAddress failed: " << local.Error().message() << '\n';
     return false;
   }
 

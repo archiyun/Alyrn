@@ -17,8 +17,8 @@ namespace {
 coro::DetachedTask AcceptLoop(WorkerContext& context, Worker::ConnectionCallback* callback) {
   while (true) {
     auto accepted = co_await context.listener.Accept();
-    if (!accepted.has_value()) {
-      const int error = accepted.error().value();
+    if (!accepted.HasValue()) {
+      const int error = accepted.Error().value();
       if (error == ECANCELED || error == EBADF) {
         co_return;
       }
@@ -88,14 +88,14 @@ void Worker::WorkLoop(std::stop_token token) noexcept {
   Loop loop{options_.frame_resource};
 
   auto listener = Listener::Create(&loop, listen_addr_, options_.listener_options);
-  if (!listener.has_value()) {
-    publish_start(std::unexpected(listener.error()));
+  if (!listener.HasValue()) {
+    publish_start(std::unexpected(listener.Error()));
     return;
   }
 
   auto connector = Connector::Create(&loop, options_.connector_options);
-  if (!connector.has_value()) {
-    publish_start(std::unexpected(connector.error()));
+  if (!connector.HasValue()) {
+    publish_start(std::unexpected(connector.Error()));
     return;
   }
 

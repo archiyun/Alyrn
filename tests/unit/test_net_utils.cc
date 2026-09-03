@@ -71,11 +71,11 @@ TEST(EndpointTest, RejectsInvalidIpWithoutLoopbackFallback) {
   auto address = ParseIpAddress("not-an-ip", 8080);
 
   EXPECT_FALSE(address);
-  EXPECT_EQ(address.error(), std::make_error_code(std::errc::invalid_argument));
+  EXPECT_EQ(address.Error(), std::make_error_code(std::errc::invalid_argument));
 
   auto hostname = ParseIpAddress("localhost", 8080);
   EXPECT_FALSE(hostname);
-  EXPECT_EQ(hostname.error(), std::make_error_code(std::errc::invalid_argument));
+  EXPECT_EQ(hostname.Error(), std::make_error_code(std::errc::invalid_argument));
 }
 
 TEST(SocketTest, CreatesSocketWithAtomicFlagsAndSupportsClearingThem) {
@@ -122,12 +122,12 @@ TEST(SocketTest, ReportsSocketOptionErrorsAndSupportsOnOff) {
   EXPECT_TRUE(SetKeepAlive(fd.get(), false));
   EXPECT_EQ(get_socket_option(fd.get(), SOL_SOCKET, SO_KEEPALIVE), 0);
 
-  EXPECT_EQ(SetNonBlocking(-1).error().value(), EBADF);
-  EXPECT_EQ(SetCloseOnExec(-1).error().value(), EBADF);
-  EXPECT_EQ(SetReuseAddr(-1).error().value(), EBADF);
-  EXPECT_EQ(SetNoDelay(-1).error().value(), EBADF);
-  EXPECT_EQ(SetReadBuffer(-1, 4096).error().value(), EBADF);
-  EXPECT_EQ(SetWriteBuffer(-1, 4096).error().value(), EBADF);
+  EXPECT_EQ(SetNonBlocking(-1).Error().value(), EBADF);
+  EXPECT_EQ(SetCloseOnExec(-1).Error().value(), EBADF);
+  EXPECT_EQ(SetReuseAddr(-1).Error().value(), EBADF);
+  EXPECT_EQ(SetNoDelay(-1).Error().value(), EBADF);
+  EXPECT_EQ(SetReadBuffer(-1, 4096).Error().value(), EBADF);
+  EXPECT_EQ(SetWriteBuffer(-1, 4096).Error().value(), EBADF);
 }
 
 TEST(SocketTest, SupportsTcpBufferAndKeepAliveOptions) {
@@ -150,21 +150,21 @@ TEST(SocketTest, SupportsTcpBufferAndKeepAliveOptions) {
 #if defined(TCP_KEEPIDLE) || defined(TCP_KEEPALIVE)
   EXPECT_TRUE(SetKeepAlivePeriod(fd.get(), time::Seconds(30)));
 #endif
-  EXPECT_EQ(SetKeepAlivePeriod(fd.get(), time::Duration::zero()).error().value(), EINVAL);
+  EXPECT_EQ(SetKeepAlivePeriod(fd.get(), time::Duration::zero()).Error().value(), EINVAL);
 }
 
 TEST(SocketTest, AddressQueriesPreserveErrors) {
   auto local = GetLocalEndpoint(-1);
   EXPECT_FALSE(local);
-  EXPECT_EQ(local.error().value(), EBADF);
+  EXPECT_EQ(local.Error().value(), EBADF);
 
   auto peer = GetPeerEndpoint(-1);
   EXPECT_FALSE(peer);
-  EXPECT_EQ(peer.error().value(), EBADF);
+  EXPECT_EQ(peer.Error().value(), EBADF);
 
   auto self_connect = IsSelfConnected(-1);
   EXPECT_FALSE(self_connect);
-  EXPECT_EQ(self_connect.error().value(), EBADF);
+  EXPECT_EQ(self_connect.Error().value(), EBADF);
 }
 
 TEST(SocketTest, QueriesConnectedIPv4Endpoints) {

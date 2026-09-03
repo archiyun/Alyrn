@@ -33,9 +33,9 @@ Result<void> Server::Start() {
                                           thread_init_callback_, std::move(connection_callback),
                                           thread_exit_callback_);
   auto started = workers_->Start();
-  if (!started.has_value()) {
+  if (!started.HasValue()) {
     workers_.reset();
-    return std::unexpected(started.error());
+    return std::unexpected(started.Error());
   }
   started_ = true;
   return {};

@@ -76,8 +76,8 @@ inline Result<Endpoint> GetEndpoint(int fd, bool peer) noexcept {
 
 inline Result<void> ConfigureNonBlockingCloseOnExec(int fd) noexcept {
   auto non_blocking = SetDescriptorFlag(fd, F_GETFL, F_SETFL, O_NONBLOCK, true);
-  if (!non_blocking.has_value()) {
-    return std::unexpected(non_blocking.error());
+  if (!non_blocking.HasValue()) {
+    return std::unexpected(non_blocking.Error());
   }
   return SetDescriptorFlag(fd, F_GETFD, F_SETFD, FD_CLOEXEC, true);
 }
@@ -103,8 +103,8 @@ inline Result<int> CreateNonBlockingSocket(sa_family_t family = AF_INET) noexcep
 
 #if !defined(__linux__)
   auto configured = detail::ConfigureNonBlockingCloseOnExec(fd);
-  if (!configured.has_value()) {
-    const Error error = configured.error();
+  if (!configured.HasValue()) {
+    const Error error = configured.Error();
     (void)::close(fd);
     return std::unexpected(error);
   }
@@ -167,16 +167,16 @@ inline Result<void> SetKeepAlivePeriod(int fd, time::Duration period) noexcept {
 
 inline Result<void> SetReadBuffer(int fd, std::size_t bytes) noexcept {
   auto value = detail::CheckedSocketOptionSize(bytes);
-  if (!value.has_value()) {
-    return std::unexpected(value.error());
+  if (!value.HasValue()) {
+    return std::unexpected(value.Error());
   }
   return detail::SetSocketOptionValue(fd, SOL_SOCKET, SO_RCVBUF, *value);
 }
 
 inline Result<void> SetWriteBuffer(int fd, std::size_t bytes) noexcept {
   auto value = detail::CheckedSocketOptionSize(bytes);
-  if (!value.has_value()) {
-    return std::unexpected(value.error());
+  if (!value.HasValue()) {
+    return std::unexpected(value.Error());
   }
   return detail::SetSocketOptionValue(fd, SOL_SOCKET, SO_SNDBUF, *value);
 }
@@ -184,36 +184,36 @@ inline Result<void> SetWriteBuffer(int fd, std::size_t bytes) noexcept {
 inline Result<void> ApplyTcpOptions(int fd, const TcpOptions& options) noexcept {
   if (options.no_delay.has_value()) {
     auto result = SetNoDelay(fd, *options.no_delay);
-    if (!result.has_value()) {
-      return std::unexpected(result.error());
+    if (!result.HasValue()) {
+      return std::unexpected(result.Error());
     }
   }
 
   if (options.keep_alive.has_value()) {
     auto result = SetKeepAlive(fd, *options.keep_alive);
-    if (!result.has_value()) {
-      return std::unexpected(result.error());
+    if (!result.HasValue()) {
+      return std::unexpected(result.Error());
     }
   }
 
   if (options.keep_alive_period.has_value()) {
     auto result = SetKeepAlivePeriod(fd, *options.keep_alive_period);
-    if (!result.has_value()) {
-      return std::unexpected(result.error());
+    if (!result.HasValue()) {
+      return std::unexpected(result.Error());
     }
   }
 
   if (options.read_buffer.has_value()) {
     auto result = SetReadBuffer(fd, *options.read_buffer);
-    if (!result.has_value()) {
-      return std::unexpected(result.error());
+    if (!result.HasValue()) {
+      return std::unexpected(result.Error());
     }
   }
 
   if (options.write_buffer.has_value()) {
     auto result = SetWriteBuffer(fd, *options.write_buffer);
-    if (!result.has_value()) {
-      return std::unexpected(result.error());
+    if (!result.HasValue()) {
+      return std::unexpected(result.Error());
     }
   }
 
@@ -230,12 +230,12 @@ inline Result<Endpoint> GetPeerEndpoint(int fd) noexcept {
 
 inline Result<bool> IsSelfConnected(int fd) noexcept {
   auto local = GetLocalEndpoint(fd);
-  if (!local.has_value()) {
-    return std::unexpected(local.error());
+  if (!local.HasValue()) {
+    return std::unexpected(local.Error());
   }
   auto peer = GetPeerEndpoint(fd);
-  if (!peer.has_value()) {
-    return std::unexpected(peer.error());
+  if (!peer.HasValue()) {
+    return std::unexpected(peer.Error());
   }
   return *local == *peer;
 }
@@ -305,8 +305,8 @@ public:
     connfd = ::accept(sockfd_, reinterpret_cast<sockaddr*>(&addr), &len);
     if (connfd >= 0) {
       auto configured = detail::ConfigureNonBlockingCloseOnExec(connfd);
-      if (!configured.has_value()) {
-        const int error = configured.error().value();
+      if (!configured.HasValue()) {
+        const int error = configured.Error().value();
         (void)::close(connfd);
         errno = error;
         return -1;
@@ -367,13 +367,13 @@ public:
   // Enables or disables SO_REUSEADDR.
   void SetReuseAddr(bool on) noexcept {
     const auto result = ::alyrn::net::SetReuseAddr(sockfd_, on);
-    ALYRN_CHECK(result.has_value(), "Socket::SetReuseAddr: setsockopt failed");
+    ALYRN_CHECK(result.HasValue(), "Socket::SetReuseAddr: setsockopt failed");
   }
 
   // Enables or disables SO_REUSEPORT.
   void SetReusePort(bool on) noexcept {
     const auto result = ::alyrn::net::SetReusePort(sockfd_, on);
-    ALYRN_CHECK(result.has_value(), "Socket::SetReusePort: setsockopt failed");
+    ALYRN_CHECK(result.HasValue(), "Socket::SetReusePort: setsockopt failed");
   }
 
   // Enables or disables SO_KEEPALIVE.

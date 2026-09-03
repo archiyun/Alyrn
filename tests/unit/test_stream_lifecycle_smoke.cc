@@ -79,7 +79,7 @@ bool CheckShutdownLifecycle() {
   StreamLifecycle lifecycle;
 
   auto pending = lifecycle.PrepareShutdown(true);
-  if (!Check(!pending.has_value() && pending.error() == std::errc::device_or_resource_busy,
+  if (!Check(!pending.has_value() && pending.Error() == std::errc::device_or_resource_busy,
              "pending write did not block Shutdown")) {
     return false;
   }
@@ -93,7 +93,7 @@ bool CheckShutdownLifecycle() {
   auto repeated = lifecycle.PrepareShutdown(false);
   return Check(lifecycle.ValidateRead().has_value(), "Shutdown disabled the read direction") &&
          Check(!lifecycle.ValidateWrite().has_value() &&
-                   lifecycle.ValidateWrite().error() == std::errc::broken_pipe,
+                   lifecycle.ValidateWrite().Error() == std::errc::broken_pipe,
                "Shutdown did not reject writes with EPIPE") &&
          Check(repeated.has_value() && !*repeated, "repeated Shutdown was not idempotent");
 }
@@ -106,7 +106,7 @@ bool CheckShutdownPreparationRollback() {
     return false;
   }
   if (!Check(!lifecycle.ValidateWrite().has_value() &&
-                 lifecycle.ValidateWrite().error() == std::errc::device_or_resource_busy,
+                 lifecycle.ValidateWrite().Error() == std::errc::device_or_resource_busy,
              "Shutdown preparation did not exclude writes")) {
     return false;
   }
@@ -125,7 +125,7 @@ bool CheckCloseReadLifecycle() {
   StreamLifecycle lifecycle;
 
   auto pending = lifecycle.PrepareCloseRead(true);
-  if (!Check(!pending.has_value() && pending.error() == std::errc::device_or_resource_busy,
+  if (!Check(!pending.has_value() && pending.Error() == std::errc::device_or_resource_busy,
              "pending read did not block CloseRead")) {
     return false;
   }
@@ -153,7 +153,7 @@ bool CheckCloseReadPreparationRollback() {
   }
   auto duplicate = lifecycle.PrepareCloseRead(false);
   if (!Check(!duplicate.has_value() &&
-                 duplicate.error() == std::errc::device_or_resource_busy,
+                 duplicate.Error() == std::errc::device_or_resource_busy,
              "CloseRead preparation did not exclude a duplicate CloseRead")) {
     return false;
   }
@@ -177,7 +177,7 @@ bool CheckCloseRejectsShutdownPreparation() {
 
   auto close = lifecycle.PrepareClose();
   lifecycle.AbortShutdownPreparation();
-  return Check(!close.has_value() && close.error() == std::errc::device_or_resource_busy,
+  return Check(!close.has_value() && close.Error() == std::errc::device_or_resource_busy,
                "Close did not reject an in-progress Shutdown preparation");
 }
 
@@ -190,7 +190,7 @@ bool CheckCloseRejectsCloseReadPreparation() {
 
   auto close = lifecycle.PrepareClose();
   lifecycle.AbortCloseReadPreparation();
-  return Check(!close.has_value() && close.error() == std::errc::device_or_resource_busy,
+  return Check(!close.has_value() && close.Error() == std::errc::device_or_resource_busy,
                "Close did not reject an in-progress CloseRead preparation");
 }
 
@@ -202,10 +202,10 @@ bool CheckCloseLifecycle() {
   }
 
   auto duplicate = lifecycle.PrepareClose();
-  if (!Check(!duplicate.has_value() && duplicate.error() == std::errc::device_or_resource_busy,
+  if (!Check(!duplicate.has_value() && duplicate.Error() == std::errc::device_or_resource_busy,
              "duplicate close did not return EBUSY") ||
       !Check(!lifecycle.ValidateRead().has_value() &&
-                 lifecycle.ValidateRead().error() == std::errc::operation_canceled,
+                 lifecycle.ValidateRead().Error() == std::errc::operation_canceled,
              "Closing did not reject reads with ECANCELED")) {
     return false;
   }
@@ -222,7 +222,7 @@ bool CheckCloseLifecycle() {
   return Check(prepared.has_value() && *prepared, "second close did not enter preparation") &&
          Check(closed_again.has_value() && !*closed_again, "Closed close was not idempotent") &&
          Check(!lifecycle.ValidateRead().has_value() &&
-                   lifecycle.ValidateRead().error() == std::errc::bad_file_descriptor,
+                   lifecycle.ValidateRead().Error() == std::errc::bad_file_descriptor,
                "Closed did not reject reads with EBADF");
 }
 
@@ -231,7 +231,7 @@ bool CheckMoveTransfersLifecycle() {
   StreamLifecycle destination(std::move(source));
   return Check(destination.ValidateRead().has_value(), "move did not transfer Open state") &&
          Check(!source.ValidateRead().has_value() &&
-                   source.ValidateRead().error() == std::errc::bad_file_descriptor,
+                   source.ValidateRead().Error() == std::errc::bad_file_descriptor,
                "moved-from lifecycle was not Closed");
 }
 

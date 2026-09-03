@@ -1,3 +1,8 @@
+// Build:
+//   make uring
+// Run:
+//   ./build/uring/debug/examples/uring/demo_luring_single_shot_connect
+
 #include <array>
 #include <csignal>
 #include <cstddef>
@@ -31,8 +36,8 @@ alyrn::DetachedTask ConnectOnce(uring::Loop& loop, int& exit_code) {
   uring::Connector connector(&loop);
 
   auto connected = co_await connector.Connect("127.0.0.1", kEchoPort);
-  if (!connected.has_value()) {
-    std::println(stderr, "connect failed: {}", connected.error().message());
+  if (!connected.HasValue()) {
+    std::println(stderr, "connect failed: {}", connected.Error().message());
     loop.RequestStop();
     co_return;
   }
@@ -43,8 +48,8 @@ alyrn::DetachedTask ConnectOnce(uring::Loop& loop, int& exit_code) {
   const auto payload = std::as_bytes(std::span<const char>(kMessage.data(), kMessage.size()));
 
   auto write_result = co_await stream.Write(payload);
-  if (!write_result.has_value()) {
-    std::println(stderr, "write failed: {}", write_result.error().message());
+  if (!write_result.HasValue()) {
+    std::println(stderr, "write failed: {}", write_result.Error().message());
     (void)co_await stream.Close();
     loop.RequestStop();
     co_return;
@@ -61,8 +66,8 @@ alyrn::DetachedTask ConnectOnce(uring::Loop& loop, int& exit_code) {
   while (received.size() < kMessage.size()) {
     auto read = co_await stream.Read(buffer);
 
-    if (!read.has_value()) {
-      std::println(stderr, "read failed: {}", read.error().message());
+    if (!read.HasValue()) {
+      std::println(stderr, "read failed: {}", read.Error().message());
       (void)co_await stream.Close();
       loop.RequestStop();
       co_return;
@@ -98,8 +103,8 @@ alyrn::DetachedTask ConnectOnce(uring::Loop& loop, int& exit_code) {
   std::println("echo check passed");
 
   auto closed = co_await stream.Close();
-  if (!closed.has_value()) {
-    std::println(stderr, "close failed: {}", closed.error().message());
+  if (!closed.HasValue()) {
+    std::println(stderr, "close failed: {}", closed.Error().message());
     loop.RequestStop();
     co_return;
   }
@@ -120,8 +125,8 @@ int main() {
   options.entries = 64;
 
   auto initialized = loop.Init(options);
-  if (!initialized.has_value()) {
-    std::println(stderr, "loop init failed: {}", initialized.error().message());
+  if (!initialized.HasValue()) {
+    std::println(stderr, "loop init failed: {}", initialized.Error().message());
     return 1;
   }
 

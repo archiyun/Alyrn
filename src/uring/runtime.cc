@@ -65,11 +65,11 @@ public:
         listen_addr_, std::move(options), detail::WorkerGroup::ThreadInitCallback{},
         std::move(callback));
     auto started = workers->Start();
-    if (!started.has_value()) {
+    if (!started.HasValue()) {
       std::lock_guard lock{lifecycle_mutex_};
       stop_requested_.store(false, std::memory_order_release);
       state_ = LifecycleState::kCreated;
-      return std::unexpected(started.error());
+      return std::unexpected(started.Error());
     }
 
     {
@@ -85,8 +85,8 @@ public:
 
   Result<void> Run(std::stop_token stop_token) override {
     auto started = Start();
-    if (!started.has_value()) {
-      return std::unexpected(started.error());
+    if (!started.HasValue()) {
+      return std::unexpected(started.Error());
     }
 
     std::stop_callback on_stop{stop_token, [this] { RequestStop(); }};

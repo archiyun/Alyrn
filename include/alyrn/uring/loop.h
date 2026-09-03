@@ -132,7 +132,7 @@ private:
     io_uring_sqe* sqe = ring_.GetSqe();
     if (sqe == nullptr) {
       auto flushed = FlushSubmit();
-      if (!flushed.has_value()) {
+      if (!flushed.HasValue()) {
         return flushed;
       }
 

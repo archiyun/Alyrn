@@ -176,13 +176,13 @@ alyrn::coro::DetachedTask ObserveCompetingAccept(alyrn::epoll::Listener* listene
 bool CheckFactories() {
   auto null_listener =
       alyrn::epoll::Listener::Create(nullptr, alyrn::net::Endpoint(0));
-  if (!Check(!null_listener.has_value() && null_listener.error() == std::errc::invalid_argument,
+  if (!Check(!null_listener.has_value() && null_listener.Error() == std::errc::invalid_argument,
              "listener factory accepted a null Loop")) {
     return false;
   }
 
   auto null_connector = alyrn::epoll::Connector::Create(nullptr);
-  if (!Check(!null_connector.has_value() && null_connector.error() == std::errc::invalid_argument,
+  if (!Check(!null_connector.has_value() && null_connector.Error() == std::errc::invalid_argument,
              "connector factory accepted a null Loop")) {
     return false;
   }
@@ -191,7 +191,7 @@ bool CheckFactories() {
   auto listener = alyrn::epoll::Listener::Create(&loop, alyrn::net::Endpoint(0));
   if (!Check(listener.has_value(), "listener factory failed for a valid socket")) {
     if (!listener.has_value()) {
-      std::cout << "factory error: " << listener.error().message() << '\n';
+      std::cout << "factory error: " << listener.Error().message() << '\n';
     }
     return false;
   }
@@ -203,7 +203,7 @@ bool CheckFactories() {
 
   auto conflicting_listener = alyrn::epoll::Listener::Create(&loop, *address);
   return Check(!conflicting_listener.has_value() &&
-                   conflicting_listener.error() == std::errc::address_in_use,
+                   conflicting_listener.Error() == std::errc::address_in_use,
                "listener factory did not return bind errors");
 }
 
@@ -314,7 +314,7 @@ bool CheckCloseCancelsPendingAccept() {
 
   return Check(result.has_value(), "cancelled accept did not finish") &&
          Check(!result->has_value(), "cancelled accept unexpectedly succeeded") &&
-         Check(result->error() == std::errc::operation_canceled,
+         Check(result->Error() == std::errc::operation_canceled,
                "cancelled accept did not return ECANCELED");
 }
 
@@ -333,10 +333,10 @@ bool CheckCompetingAcceptIsRejected() {
 
   return Check(!observation.timed_out, "competing Accept test timed out") &&
          Check(observation.second.has_value() && !observation.second->has_value() &&
-                   observation.second->error() == std::errc::device_or_resource_busy,
+                   observation.second->Error() == std::errc::device_or_resource_busy,
                "second pending Accept did not return EBUSY") &&
          Check(observation.first.has_value() && !observation.first->has_value() &&
-                   observation.first->error() == std::errc::operation_canceled,
+                   observation.first->Error() == std::errc::operation_canceled,
                "Close did not cancel the first pending Accept") &&
          Check(observation.close.has_value() && observation.close->has_value(),
                "Close failed after rejecting the competing Accept") &&
@@ -445,7 +445,7 @@ bool CheckAcceptSourceStopRejectsForeignLoop() {
   foreign.join();
 
   return Check(stop_result.has_value(), "foreign AcceptSource::Stop did not return") &&
-         Check(!stop_result->has_value() && stop_result->error() == std::errc::invalid_argument,
+         Check(!stop_result->has_value() && stop_result->Error() == std::errc::invalid_argument,
                "foreign AcceptSource::Stop must return EINVAL");
 }
 

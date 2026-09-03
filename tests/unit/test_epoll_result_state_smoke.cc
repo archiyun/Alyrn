@@ -64,8 +64,8 @@ bool TestIoStateTakeConsumesResult() {
   state.SetError(alyrn::Errno(EPIPE));
   auto error = state.Take();
   ok &= Expect(!error.has_value(), "packed errno must decode as an error") &&
-        Expect(error.error().value() == EPIPE, "packed errno must preserve its value") &&
-        Expect(error.error().category() == std::system_category(),
+        Expect(error.Error().value() == EPIPE, "packed errno must preserve its value") &&
+        Expect(error.Error().category() == std::system_category(),
                "packed errno must preserve the system category") &&
         Expect(!state.HasResult(), "packed error Take must restore pending state");
   return ok;
@@ -131,7 +131,7 @@ bool TestValueStateErrorCanBeReused() {
   state.SetError(alyrn::Errno(ECANCELED));
   auto error = state.Take();
   bool ok = Expect(!error.has_value(), "value state error must decode") &&
-            Expect(error.error().value() == ECANCELED, "value state error must preserve errno") &&
+            Expect(error.Error().value() == ECANCELED, "value state error must preserve errno") &&
             Expect(!state.HasResult(), "value error Take must restore pending state");
 
   alyrn::Result<LifetimeProbe> next(std::in_place, 9);

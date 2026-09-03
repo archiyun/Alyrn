@@ -126,11 +126,11 @@ alyrn::uring::detail::ServerOptions MakeOptions(std::size_t worker_num = 1) {
 bool CheckServerStartStop() {
   auto port = PickFreePort();
   if (!port.has_value()) {
-    if (IsEnvironmentSkip(port.error())) {
-      std::cout << "SKIP: TCP bind unavailable: " << port.error().message() << '\n';
+    if (IsEnvironmentSkip(port.Error())) {
+      std::cout << "SKIP: TCP bind unavailable: " << port.Error().message() << '\n';
       return true;
     }
-    std::cout << "FAIL: PickFreePort failed: " << port.error().message() << '\n';
+    std::cout << "FAIL: PickFreePort failed: " << port.Error().message() << '\n';
     return false;
   }
 
@@ -138,18 +138,18 @@ bool CheckServerStartStop() {
 
   auto started = server.Start();
   if (!started.has_value()) {
-    if (IsEnvironmentSkip(started.error())) {
-      std::cout << "SKIP: io_uring unavailable: " << started.error().message() << '\n';
+    if (IsEnvironmentSkip(started.Error())) {
+      std::cout << "SKIP: io_uring unavailable: " << started.Error().message() << '\n';
       return true;
     }
-    std::cout << "FAIL: Server::Start failed: " << started.error().message() << '\n';
+    std::cout << "FAIL: Server::Start failed: " << started.Error().message() << '\n';
     return false;
   }
 
   auto second_start = server.Start();
   bool ok = Check(server.Started(), "server should be started") &&
             Check(!second_start.has_value(), "second Start should fail") &&
-            Check(second_start.error().value() == EALREADY, "second Start should return EALREADY");
+            Check(second_start.Error().value() == EALREADY, "second Start should return EALREADY");
 
   server.Stop();
 
@@ -159,11 +159,11 @@ bool CheckServerStartStop() {
 bool CheckServerSessionHandler() {
   auto port = PickFreePort();
   if (!port.has_value()) {
-    if (IsEnvironmentSkip(port.error())) {
-      std::cout << "SKIP: TCP bind unavailable: " << port.error().message() << '\n';
+    if (IsEnvironmentSkip(port.Error())) {
+      std::cout << "SKIP: TCP bind unavailable: " << port.Error().message() << '\n';
       return true;
     }
-    std::cout << "FAIL: PickFreePort failed: " << port.error().message() << '\n';
+    std::cout << "FAIL: PickFreePort failed: " << port.Error().message() << '\n';
     return false;
   }
 
@@ -187,22 +187,22 @@ bool CheckServerSessionHandler() {
 
   auto started = server.Start();
   if (!started.has_value()) {
-    if (IsEnvironmentSkip(started.error())) {
-      std::cout << "SKIP: io_uring unavailable: " << started.error().message() << '\n';
+    if (IsEnvironmentSkip(started.Error())) {
+      std::cout << "SKIP: io_uring unavailable: " << started.Error().message() << '\n';
       return true;
     }
-    std::cout << "FAIL: Server::Start failed: " << started.error().message() << '\n';
+    std::cout << "FAIL: Server::Start failed: " << started.Error().message() << '\n';
     return false;
   }
 
   auto client_fd = ConnectClient(listen_addr);
   if (!client_fd.has_value()) {
     server.Stop();
-    if (IsEnvironmentSkip(client_fd.error())) {
-      std::cout << "SKIP: TCP connect unavailable: " << client_fd.error().message() << '\n';
+    if (IsEnvironmentSkip(client_fd.Error())) {
+      std::cout << "SKIP: TCP connect unavailable: " << client_fd.Error().message() << '\n';
       return true;
     }
-    std::cout << "FAIL: client connect failed: " << client_fd.error().message() << '\n';
+    std::cout << "FAIL: client connect failed: " << client_fd.Error().message() << '\n';
     return false;
   }
   UniqueFd client(*client_fd);
@@ -226,11 +226,11 @@ bool CheckServerSessionHandler() {
 bool CheckServerStopsActiveSession() {
   auto port = PickFreePort();
   if (!port.has_value()) {
-    if (IsEnvironmentSkip(port.error())) {
-      std::cout << "SKIP: TCP bind unavailable: " << port.error().message() << '\n';
+    if (IsEnvironmentSkip(port.Error())) {
+      std::cout << "SKIP: TCP bind unavailable: " << port.Error().message() << '\n';
       return true;
     }
-    std::cout << "FAIL: PickFreePort failed: " << port.error().message() << '\n';
+    std::cout << "FAIL: PickFreePort failed: " << port.Error().message() << '\n';
     return false;
   }
 
@@ -244,29 +244,29 @@ bool CheckServerStopsActiveSession() {
     session_started.store(true, std::memory_order_release);
     std::array<std::byte, 1> buffer{};
     auto result = co_await stream.Read(buffer);
-    if (!result.has_value() && result.error().value() == ECANCELED) {
+    if (!result.has_value() && result.Error().value() == ECANCELED) {
       session_cancelled.store(true, std::memory_order_release);
     }
   });
 
   auto started = server.Start();
   if (!started.has_value()) {
-    if (IsEnvironmentSkip(started.error())) {
-      std::cout << "SKIP: io_uring unavailable: " << started.error().message() << '\n';
+    if (IsEnvironmentSkip(started.Error())) {
+      std::cout << "SKIP: io_uring unavailable: " << started.Error().message() << '\n';
       return true;
     }
-    std::cout << "FAIL: Server::Start failed: " << started.error().message() << '\n';
+    std::cout << "FAIL: Server::Start failed: " << started.Error().message() << '\n';
     return false;
   }
 
   auto client_fd = ConnectClient(listen_addr);
   if (!client_fd.has_value()) {
     server.Stop();
-    if (IsEnvironmentSkip(client_fd.error())) {
-      std::cout << "SKIP: TCP connect unavailable: " << client_fd.error().message() << '\n';
+    if (IsEnvironmentSkip(client_fd.Error())) {
+      std::cout << "SKIP: TCP connect unavailable: " << client_fd.Error().message() << '\n';
       return true;
     }
-    std::cout << "FAIL: client connect failed: " << client_fd.error().message() << '\n';
+    std::cout << "FAIL: client connect failed: " << client_fd.Error().message() << '\n';
     return false;
   }
   UniqueFd client(*client_fd);

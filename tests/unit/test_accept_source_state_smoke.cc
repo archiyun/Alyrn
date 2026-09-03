@@ -23,15 +23,15 @@ void CheckOptions() {
 
   auto invalid = AcceptSourceStateMachine::Create({0, 1});
   assert(!invalid.has_value());
-  assert(invalid.error().value() == EINVAL);
+  assert(invalid.Error().value() == EINVAL);
 
   invalid = AcceptSourceStateMachine::Create({4, 3});
   assert(!invalid.has_value());
-  assert(invalid.error().value() == EINVAL);
+  assert(invalid.Error().value() == EINVAL);
 
   invalid = AcceptSourceStateMachine::Create({1, 4, 4});
   assert(!invalid.has_value());
-  assert(invalid.error().value() == EINVAL);
+  assert(invalid.Error().value() == EINVAL);
 }
 
 void CheckStartAndStopEdges() {
@@ -51,7 +51,7 @@ void CheckStartAndStopEdges() {
   assert(active.Start().has_value());
   auto second_start = active.Start();
   assert(!second_start.has_value());
-  assert(second_start.error().value() == EALREADY);
+  assert(second_start.Error().value() == EALREADY);
 }
 
 void CheckAdmissionBudget() {
@@ -129,13 +129,13 @@ void CheckInvalidCompletion() {
   assert(machine.Start().has_value());
   auto completion = machine.CompleteRequest(true);
   assert(!completion.has_value());
-  assert(completion.error().value() == EINVAL);
+  assert(completion.Error().value() == EINVAL);
 
   assert(machine.TryArm());
   assert(machine.CompleteRequest(false).has_value());
   auto duplicate = machine.CompleteRequest(false);
   assert(!duplicate.has_value());
-  assert(duplicate.error().value() == EINVAL);
+  assert(duplicate.Error().value() == EINVAL);
 }
 
 void CheckMultishotCapacityAndTransientCompletion() {
@@ -168,7 +168,7 @@ void CheckMultishotCapacityAndTransientCompletion() {
       EventDisposition::kProduced,
       MultishotRequestDisposition::kMore);
   assert(!full.has_value());
-  assert(full.error().value() == ENOBUFS);
+  assert(full.Error().value() == ENOBUFS);
   assert(machine.QueuedEvents() == 2);
   assert(machine.ArmedRequests() == 1);
 
@@ -209,7 +209,7 @@ void CheckMultishotTerminalEventAndDuplicateTerminal() {
       EventDisposition::kNone,
       MultishotRequestDisposition::kTerminal);
   assert(!duplicate.has_value());
-  assert(duplicate.error().value() == EINVAL);
+  assert(duplicate.Error().value() == EINVAL);
 }
 
 void CheckMultishotLifecycle() {

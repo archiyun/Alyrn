@@ -255,8 +255,8 @@ Result<void> Stream::SubmitReadDeadlineCancel() noexcept {
   auto submitted = LoopAccess::SubmitOp(
       *loop_, read_cancel_op_.Operation(),
       PrepareCancelAllByUserData(reinterpret_cast<std::uint64_t>(read_deadline_target_)));
-  if (!submitted.has_value()) {
-    return std::unexpected(submitted.error());
+  if (!submitted.HasValue()) {
+    return std::unexpected(submitted.Error());
   }
   read_cancel_submitted_ = true;
   return {};
@@ -273,8 +273,8 @@ Result<void> Stream::SubmitWriteDeadlineCancel() noexcept {
   auto submitted = LoopAccess::SubmitOp(
       *loop_, write_cancel_op_.Operation(),
       PrepareCancelAllByUserData(reinterpret_cast<std::uint64_t>(write_deadline_target_)));
-  if (!submitted.has_value()) {
-    return std::unexpected(submitted.error());
+  if (!submitted.HasValue()) {
+    return std::unexpected(submitted.Error());
   }
   write_cancel_submitted_ = true;
   return {};
@@ -284,7 +284,7 @@ bool Stream::ScheduleReadDeadlineCancelRetry(std::uint64_t generation) noexcept 
   try {
     auto retry = loop_->RunAfter(time::Milliseconds(1),
                                  [this, generation] { RetryReadDeadlineCancel(generation); });
-    if (!retry.has_value()) {
+    if (!retry.HasValue()) {
       return false;
     }
     read_timer_ = *retry;
@@ -298,7 +298,7 @@ bool Stream::ScheduleWriteDeadlineCancelRetry(std::uint64_t generation) noexcept
   try {
     auto retry = loop_->RunAfter(time::Milliseconds(1),
                                  [this, generation] { RetryWriteDeadlineCancel(generation); });
-    if (!retry.has_value()) {
+    if (!retry.HasValue()) {
       return false;
     }
     write_timer_ = *retry;
@@ -320,7 +320,7 @@ void Stream::HandleReadDeadline(std::uint64_t generation) noexcept {
   read_timed_out_ = true;
   read_cancel_requested_ = true;
   auto cancelled = SubmitReadDeadlineCancel();
-  if (!cancelled.has_value() && !ScheduleReadDeadlineCancelRetry(generation)) {
+  if (!cancelled.HasValue() && !ScheduleReadDeadlineCancelRetry(generation)) {
     loop_->RequestStop();
   }
 }
@@ -337,7 +337,7 @@ void Stream::HandleWriteDeadline(std::uint64_t generation) noexcept {
   write_timed_out_ = true;
   write_cancel_requested_ = true;
   auto cancelled = SubmitWriteDeadlineCancel();
-  if (!cancelled.has_value() && !ScheduleWriteDeadlineCancelRetry(generation)) {
+  if (!cancelled.HasValue() && !ScheduleWriteDeadlineCancelRetry(generation)) {
     loop_->RequestStop();
   }
 }
@@ -352,7 +352,7 @@ void Stream::RetryReadDeadlineCancel(std::uint64_t generation) noexcept {
   }
 
   auto cancelled = SubmitReadDeadlineCancel();
-  if (!cancelled.has_value() && !ScheduleReadDeadlineCancelRetry(generation)) {
+  if (!cancelled.HasValue() && !ScheduleReadDeadlineCancelRetry(generation)) {
     loop_->RequestStop();
   }
 }
@@ -367,7 +367,7 @@ void Stream::RetryWriteDeadlineCancel(std::uint64_t generation) noexcept {
   }
 
   auto cancelled = SubmitWriteDeadlineCancel();
-  if (!cancelled.has_value() && !ScheduleWriteDeadlineCancelRetry(generation)) {
+  if (!cancelled.HasValue() && !ScheduleWriteDeadlineCancelRetry(generation)) {
     loop_->RequestStop();
   }
 }
@@ -382,7 +382,7 @@ bool Stream::ArmReadDeadlineTimer() noexcept {
   const auto delay = *read_deadline_ > now ? *read_deadline_ - now : time::Duration::zero();
   try {
     auto timer = loop_->RunAfter(delay, [this, generation] { HandleReadDeadline(generation); });
-    if (!timer.has_value()) {
+    if (!timer.HasValue()) {
       return false;
     }
     read_timer_ = *timer;
@@ -403,7 +403,7 @@ bool Stream::ArmWriteDeadlineTimer() noexcept {
   const auto delay = *write_deadline_ > now ? *write_deadline_ - now : time::Duration::zero();
   try {
     auto timer = loop_->RunAfter(delay, [this, generation] { HandleWriteDeadline(generation); });
-    if (!timer.has_value()) {
+    if (!timer.HasValue()) {
       return false;
     }
     write_timer_ = *timer;
@@ -439,7 +439,7 @@ Result<void> detail::StreamOperationSlot::Validate(Stream& stream,
 
   auto valid = direction == StreamOperationDirection::kRead ? stream.lifecycle_.ValidateRead()
                                                             : stream.lifecycle_.ValidateWrite();
-  if (!valid.has_value()) {
+  if (!valid.HasValue()) {
     return valid;
   }
   if (stream.fd_ < 0) {
@@ -452,7 +452,7 @@ Result<void> detail::StreamOperationSlot::Reserve(Stream& stream,
                                                   StreamOperationDirection direction,
                                                   void* operation) noexcept {
   auto available = ValidateAvailable(stream, direction);
-  if (!available.has_value()) {
+  if (!available.HasValue()) {
     return available;
   }
 
@@ -465,7 +465,7 @@ Result<void> detail::StreamOperationSlot::Reserve(Stream& stream,
 Result<void> detail::StreamOperationSlot::ValidateAvailable(
     Stream& stream, StreamOperationDirection direction) noexcept {
   auto valid = Validate(stream, direction);
-  if (!valid.has_value()) {
+  if (!valid.HasValue()) {
     return valid;
   }
 
@@ -491,8 +491,8 @@ void detail::StreamOperationSlot::Release(Stream& stream, StreamOperationDirecti
 bool Stream::ReadAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   auto available = detail::StreamOperationSlot::ValidateAvailable(
       *stream_, detail::StreamOperationDirection::kRead);
-  if (!available.has_value()) {
-    Operation()->SetImmediateError(available.error());
+  if (!available.HasValue()) {
+    Operation()->SetImmediateError(available.Error());
     return false;
   }
   if (stream_->lifecycle_.IsReadShutdown()) {
@@ -501,8 +501,8 @@ bool Stream::ReadAwaiter::await_suspend(std::coroutine_handle<> continuation) no
   }
   auto reserved =
       detail::StreamOperationSlot::Reserve(*stream_, detail::StreamOperationDirection::kRead, this);
-  if (!reserved.has_value()) {
-    Operation()->SetImmediateError(reserved.error());
+  if (!reserved.HasValue()) {
+    Operation()->SetImmediateError(reserved.Error());
     return false;
   }
   if (buffer_.empty()) {
@@ -513,10 +513,10 @@ bool Stream::ReadAwaiter::await_suspend(std::coroutine_handle<> continuation) no
 
   Operation()->kind = OpKind::kReadComplete;
   auto begun = stream_->BeginReadOperation(Operation(), this, &ReadAwaiter::Finalize);
-  if (!begun.has_value()) {
+  if (!begun.HasValue()) {
     stream_->AbortReadOperation(Operation());
     detail::StreamOperationSlot::Release(*stream_, detail::StreamOperationDirection::kRead, this);
-    Operation()->SetImmediateError(begun.error());
+    Operation()->SetImmediateError(begun.Error());
     return false;
   }
   return detail::SubmitAwaitingOperation(
@@ -552,8 +552,8 @@ void Stream::ReadAwaiter::Finalize(void* owner) noexcept {
 bool Stream::RecvAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   auto available = detail::StreamOperationSlot::ValidateAvailable(
       *stream_, detail::StreamOperationDirection::kRead);
-  if (!available.has_value()) {
-    Operation()->SetImmediateError(available.error());
+  if (!available.HasValue()) {
+    Operation()->SetImmediateError(available.Error());
     return false;
   }
   if (stream_->lifecycle_.IsReadShutdown()) {
@@ -562,8 +562,8 @@ bool Stream::RecvAwaiter::await_suspend(std::coroutine_handle<> continuation) no
   }
   auto reserved =
       detail::StreamOperationSlot::Reserve(*stream_, detail::StreamOperationDirection::kRead, this);
-  if (!reserved.has_value()) {
-    Operation()->SetImmediateError(reserved.error());
+  if (!reserved.HasValue()) {
+    Operation()->SetImmediateError(reserved.Error());
     return false;
   }
   iovec single_iov{};
@@ -577,11 +577,11 @@ bool Stream::RecvAwaiter::await_suspend(std::coroutine_handle<> continuation) no
   Operation()->kind = OpKind::kRecvComplete;
 
   auto begun = stream_->BeginReadOperation(Operation(), this, &RecvAwaiter::Finalize);
-  if (!begun.has_value()) {
+  if (!begun.HasValue()) {
     stream_->AbortReadOperation(Operation());
     detail::StreamOperationSlot::Release(*stream_, detail::StreamOperationDirection::kRead, this);
-    FinishReservation(std::unexpected(begun.error()));
-    Operation()->SetImmediateError(begun.error());
+    FinishReservation(std::unexpected(begun.Error()));
+    Operation()->SetImmediateError(begun.Error());
     return false;
   }
 
@@ -652,7 +652,7 @@ Stream::RecvAwaiter::ReservationKind Stream::RecvAwaiter::PrepareReservation(
 void Stream::RecvAwaiter::FinishReservation(Result<std::size_t> result) noexcept {
   ALYRN_CHECK(reservation_kind_ != ReservationKind::kNone,
               "RecvAwaiter completion without a buffer reservation");
-  if (result.has_value()) {
+  if (result.HasValue()) {
     buffer_.CommitWrite(*result);
   } else {
     buffer_.AbortWrite();
@@ -665,9 +665,9 @@ void Stream::RecvAwaiter::FinishReservation(Result<std::size_t> result) noexcept
 bool Stream::RecvCopyAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
   auto available = detail::StreamOperationSlot::ValidateAvailable(
       *stream_, detail::StreamOperationDirection::kRead);
-  if (!available.has_value()) {
-    Finish(std::unexpected(available.error()));
-    Operation()->SetImmediateError(available.error());
+  if (!available.HasValue()) {
+    Finish(std::unexpected(available.Error()));
+    Operation()->SetImmediateError(available.Error());
     return false;
   }
   if (stream_->lifecycle_.IsReadShutdown()) {
@@ -677,28 +677,28 @@ bool Stream::RecvCopyAwaiter::await_suspend(std::coroutine_handle<> continuation
   }
 
   auto pool = detail::LoopAccess::GetSharedProvidedBufferPool(*stream_->loop_, 1);
-  if (!pool.has_value()) {
-    Finish(std::unexpected(pool.error()));
-    Operation()->SetImmediateError(pool.error());
+  if (!pool.HasValue()) {
+    Finish(std::unexpected(pool.Error()));
+    Operation()->SetImmediateError(pool.Error());
     return false;
   }
   pool_ = *pool;
 
   auto reserved =
       detail::StreamOperationSlot::Reserve(*stream_, detail::StreamOperationDirection::kRead, this);
-  if (!reserved.has_value()) {
-    Finish(std::unexpected(reserved.error()));
-    Operation()->SetImmediateError(reserved.error());
+  if (!reserved.HasValue()) {
+    Finish(std::unexpected(reserved.Error()));
+    Operation()->SetImmediateError(reserved.Error());
     return false;
   }
 
   Operation()->kind = OpKind::kRecvCopyComplete;
   auto begun = stream_->BeginReadOperation(Operation(), this, &RecvCopyAwaiter::Finalize);
-  if (!begun.has_value()) {
+  if (!begun.HasValue()) {
     stream_->AbortReadOperation(Operation());
     detail::StreamOperationSlot::Release(*stream_, detail::StreamOperationDirection::kRead, this);
-    Finish(std::unexpected(begun.error()));
-    Operation()->SetImmediateError(begun.error());
+    Finish(std::unexpected(begun.Error()));
+    Operation()->SetImmediateError(begun.Error());
     return false;
   }
   return detail::SubmitAwaitingOperation(
@@ -790,8 +790,8 @@ bool Stream::SendAwaiter::await_suspend(std::coroutine_handle<> continuation) no
   if (buffer_.empty()) {
     auto available = detail::StreamOperationSlot::ValidateAvailable(
         *stream_, detail::StreamOperationDirection::kWrite);
-    if (!available.has_value()) {
-      Operation()->SetImmediateError(available.error());
+    if (!available.HasValue()) {
+      Operation()->SetImmediateError(available.Error());
       return false;
     }
     Operation()->SetImmediateSuccess();
@@ -799,17 +799,17 @@ bool Stream::SendAwaiter::await_suspend(std::coroutine_handle<> continuation) no
   }
   auto reserved = detail::StreamOperationSlot::Reserve(
       *stream_, detail::StreamOperationDirection::kWrite, this);
-  if (!reserved.has_value()) {
-    Operation()->SetImmediateError(reserved.error());
+  if (!reserved.HasValue()) {
+    Operation()->SetImmediateError(reserved.Error());
     return false;
   }
 
   Operation()->kind = OpKind::kWriteComplete;
   auto begun = stream_->BeginWriteOperation(Operation(), this, &SendAwaiter::Finalize);
-  if (!begun.has_value()) {
+  if (!begun.HasValue()) {
     stream_->AbortWriteOperation(Operation());
     detail::StreamOperationSlot::Release(*stream_, detail::StreamOperationDirection::kWrite, this);
-    Operation()->SetImmediateError(begun.error());
+    Operation()->SetImmediateError(begun.Error());
     return false;
   }
   return detail::SubmitAwaitingOperation(
@@ -861,8 +861,8 @@ public:
     }
 
     auto close_prepared = stream_->lifecycle_.PrepareClose();
-    if (!close_prepared.has_value()) {
-      convergence_.SetError(close_prepared.error());
+    if (!close_prepared.HasValue()) {
+      convergence_.SetError(close_prepared.Error());
       return false;
     }
     if (!*close_prepared) {
@@ -883,10 +883,10 @@ public:
 
     auto submitted = detail::LoopAccess::SubmitOp(*stream_->loop_, Operation(),
                                                   detail::PrepareCancelAllByFd(stream_->fd_));
-    if (!submitted.has_value()) {
+    if (!submitted.HasValue()) {
       stream_->pending_close_ = nullptr;
       stream_->lifecycle_.AbortClosePreparation();
-      convergence_.SetError(submitted.error());
+      convergence_.SetError(submitted.Error());
       return false;
     }
 
@@ -944,8 +944,8 @@ bool Stream::SendZeroCopyAwaiter::await_suspend(std::coroutine_handle<> continua
   if (buffer_.empty()) {
     auto available = detail::StreamOperationSlot::ValidateAvailable(
         *stream_, detail::StreamOperationDirection::kWrite);
-    if (!available.has_value()) {
-      Operation()->SetImmediateError(available.error());
+    if (!available.HasValue()) {
+      Operation()->SetImmediateError(available.Error());
       return false;
     }
     Operation()->SetImmediateSuccess();
@@ -953,17 +953,17 @@ bool Stream::SendZeroCopyAwaiter::await_suspend(std::coroutine_handle<> continua
   }
   auto reserved = detail::StreamOperationSlot::Reserve(
       *stream_, detail::StreamOperationDirection::kWrite, this);
-  if (!reserved.has_value()) {
-    Operation()->SetImmediateError(reserved.error());
+  if (!reserved.HasValue()) {
+    Operation()->SetImmediateError(reserved.Error());
     return false;
   }
 
   Operation()->kind = OpKind::kSendZeroCopyComplete;
   auto begun = stream_->BeginWriteOperation(Operation(), this, &SendZeroCopyAwaiter::Finalize);
-  if (!begun.has_value()) {
+  if (!begun.HasValue()) {
     stream_->AbortWriteOperation(Operation());
     detail::StreamOperationSlot::Release(*stream_, detail::StreamOperationDirection::kWrite, this);
-    Operation()->SetImmediateError(begun.error());
+    Operation()->SetImmediateError(begun.Error());
     return false;
   }
   Operation()->resume_work.SetHandle(continuation);
@@ -972,10 +972,10 @@ bool Stream::SendZeroCopyAwaiter::await_suspend(std::coroutine_handle<> continua
       detail::LoopAccess::SubmitOp(*stream_->loop_, Operation(),
                                    detail::PrepareSendZeroCopyReportUsage(
                                        stream_->fd_, buffer_.data(), buffer_.size(), MSG_NOSIGNAL));
-  if (!submitted.has_value()) {
+  if (!submitted.HasValue()) {
     stream_->AbortWriteOperation(Operation());
     detail::StreamOperationSlot::Release(*stream_, detail::StreamOperationDirection::kWrite, this);
-    Operation()->SetImmediateError(submitted.error());
+    Operation()->SetImmediateError(submitted.Error());
     return false;
   }
   return true;
@@ -1172,8 +1172,8 @@ coro::Task<Result<void>> Stream::Write(std::span<const std::byte> buffer) {
   if (buffer.empty()) {
     auto available = detail::StreamOperationSlot::ValidateAvailable(
         *this, detail::StreamOperationDirection::kWrite);
-    if (!available.has_value()) {
-      co_return std::unexpected(available.error());
+    if (!available.HasValue()) {
+      co_return std::unexpected(available.Error());
     }
     co_return Result<void>{};
   }
@@ -1181,7 +1181,7 @@ coro::Task<Result<void>> Stream::Write(std::span<const std::byte> buffer) {
   while (!buffer.empty()) {
     if (ZeroCopyWritesEnabled()) {
       auto sent = co_await SendZeroCopy(buffer);
-      if (sent.has_value()) {
+      if (sent.HasValue()) {
         if (sent->bytes == 0) {
           co_return std::unexpected(Errno(EPIPE));
         }
@@ -1192,14 +1192,14 @@ coro::Task<Result<void>> Stream::Write(std::span<const std::byte> buffer) {
       // SendZeroCopy() has crossed its kernel release boundary before
       // returning, so an ENOMEM fallback cannot race the kernel's access to
       // buffer.
-      if (sent.error().value() != ENOMEM) {
-        co_return std::unexpected(sent.error());
+      if (sent.Error().value() != ENOMEM) {
+        co_return std::unexpected(sent.Error());
       }
     }
 
     auto written = co_await Send(buffer);
-    if (!written.has_value()) {
-      co_return std::unexpected(written.error());
+    if (!written.HasValue()) {
+      co_return std::unexpected(written.Error());
     }
     if (*written == 0) {
       co_return std::unexpected(Errno(EPIPE));
@@ -1218,8 +1218,8 @@ coro::Task<Result<void>> Stream::CloseWrite() noexcept {
     co_return std::unexpected(Errno(EBADF));
   }
   auto shutdown = lifecycle_.PrepareShutdown(pending_write_ != nullptr);
-  if (!shutdown.has_value()) {
-    co_return std::unexpected(shutdown.error());
+  if (!shutdown.HasValue()) {
+    co_return std::unexpected(shutdown.Error());
   }
   if (!*shutdown) {
     co_return Result<void>{};
@@ -1239,8 +1239,8 @@ coro::Task<Result<void>> Stream::CloseRead() noexcept {
     co_return std::unexpected(Errno(EBADF));
   }
   auto prepare = lifecycle_.PrepareCloseRead(pending_read_ != nullptr);
-  if (!prepare.has_value()) {
-    co_return std::unexpected(prepare.error());
+  if (!prepare.HasValue()) {
+    co_return std::unexpected(prepare.Error());
   }
   if (!*prepare) {
     co_return Result<void>{};
@@ -1292,7 +1292,7 @@ Result<void> Stream::SetWriteBuffer(std::size_t bytes) const noexcept {
 
 Result<void> Stream::SetDeadline(std::optional<time::Deadline> deadline) noexcept {
   auto read_result = SetReadDeadline(deadline);
-  if (!read_result.has_value()) {
+  if (!read_result.HasValue()) {
     return read_result;
   }
   return SetWriteDeadline(deadline);

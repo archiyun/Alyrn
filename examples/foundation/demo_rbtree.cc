@@ -5,11 +5,10 @@
 // 场景：一个按截止时间调度的任务调度器。
 // 任务按照 deadline_ms 排序，树顶总是最早的任务。
 
-// 测试方法
-// 编译:
-// cmake --build build --target demo_rbtree -j2
-// 运行:
-// ./build/examples/foundation/demo_rbtree
+// Build:
+//   make build
+// Run:
+//   ./build/debug/examples/foundation/demo_rbtree
 //
 #include <cstdint>
 #include <cstdio>

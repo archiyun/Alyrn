@@ -81,12 +81,12 @@ LoopInitStatus InitLoop(alyrn::uring::Loop& loop) {
   if (init.has_value()) {
     return LoopInitStatus::kReady;
   }
-  if (IsEnvironmentSkip(init.error())) {
-    std::cout << "SKIP: io_uring unavailable: " << init.error().message() << '\n';
+  if (IsEnvironmentSkip(init.Error())) {
+    std::cout << "SKIP: io_uring unavailable: " << init.Error().message() << '\n';
     return LoopInitStatus::kSkip;
   }
 
-  std::cout << "FAIL: Loop init failed: " << init.error().message() << '\n';
+  std::cout << "FAIL: Loop init failed: " << init.Error().message() << '\n';
   return LoopInitStatus::kFail;
 }
 
@@ -167,19 +167,19 @@ bool CheckAccept() {
   options.tcp_options.keep_alive = true;
   auto listener = alyrn::uring::Listener::Create(&loop, LoopbackAddress(0), options);
   if (!listener.has_value()) {
-    std::cout << "FAIL: Listener::Create failed: " << listener.error().message() << '\n';
+    std::cout << "FAIL: Listener::Create failed: " << listener.Error().message() << '\n';
     return false;
   }
 
   auto local = listener->LocalAddress();
   if (!local.has_value()) {
-    std::cout << "FAIL: LocalAddress failed: " << local.error().message() << '\n';
+    std::cout << "FAIL: LocalAddress failed: " << local.Error().message() << '\n';
     return false;
   }
 
   auto client_fd = ConnectClient(*local);
   if (!client_fd.has_value()) {
-    std::cout << "FAIL: client connect failed: " << client_fd.error().message() << '\n';
+    std::cout << "FAIL: client connect failed: " << client_fd.Error().message() << '\n';
     return false;
   }
   UniqueFd client(*client_fd);
@@ -194,7 +194,7 @@ bool CheckAccept() {
 
   auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
   if (!completions.has_value()) {
-    std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+    std::cout << "FAIL: WaitCompletions failed: " << completions.Error().message() << '\n';
     return false;
   }
 
@@ -228,26 +228,26 @@ bool CheckAcceptReleasesReservationBeforeContinuation() {
 
   auto listener = alyrn::uring::Listener::Create(&loop, LoopbackAddress(0));
   if (!listener.has_value()) {
-    std::cout << "FAIL: Listener::Create failed: " << listener.error().message() << '\n';
+    std::cout << "FAIL: Listener::Create failed: " << listener.Error().message() << '\n';
     return false;
   }
 
   auto local = listener->LocalAddress();
   if (!local.has_value()) {
-    std::cout << "FAIL: LocalAddress failed: " << local.error().message() << '\n';
+    std::cout << "FAIL: LocalAddress failed: " << local.Error().message() << '\n';
     return false;
   }
 
   auto first_client_fd = ConnectClient(*local);
   if (!first_client_fd.has_value()) {
-    std::cout << "FAIL: first client connect failed: " << first_client_fd.error().message() << '\n';
+    std::cout << "FAIL: first client connect failed: " << first_client_fd.Error().message() << '\n';
     return false;
   }
   UniqueFd first_client(*first_client_fd);
 
   auto second_client_fd = ConnectClient(*local);
   if (!second_client_fd.has_value()) {
-    std::cout << "FAIL: second client connect failed: " << second_client_fd.error().message()
+    std::cout << "FAIL: second client connect failed: " << second_client_fd.Error().message()
               << '\n';
     return false;
   }
@@ -263,7 +263,7 @@ bool CheckAcceptReleasesReservationBeforeContinuation() {
   for (int i = 0; i < 8 && !second.has_value(); ++i) {
     auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
     if (!completions.has_value()) {
-      std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+      std::cout << "FAIL: WaitCompletions failed: " << completions.Error().message() << '\n';
       return false;
     }
     alyrn::uring::detail::LoopAccess::RunReady(loop);
@@ -293,7 +293,7 @@ bool CheckCloseCancelsPendingAccept() {
 
   auto listener = alyrn::uring::Listener::Create(&loop, LoopbackAddress(0));
   if (!listener.has_value()) {
-    std::cout << "FAIL: Listener::Create failed: " << listener.error().message() << '\n';
+    std::cout << "FAIL: Listener::Create failed: " << listener.Error().message() << '\n';
     return false;
   }
 
@@ -316,7 +316,7 @@ bool CheckCloseCancelsPendingAccept() {
   for (int i = 0; i < 4 && (!close_result.has_value() || !accepted.has_value()); ++i) {
     auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
     if (!completions.has_value()) {
-      std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+      std::cout << "FAIL: WaitCompletions failed: " << completions.Error().message() << '\n';
       return false;
     }
     alyrn::uring::detail::LoopAccess::RunReady(loop);
@@ -326,7 +326,7 @@ bool CheckCloseCancelsPendingAccept() {
          Check(close_result->has_value(), "Close with pending accept returned an error") &&
          Check(accepted.has_value(), "pending accept was not cleaned up") &&
          Check(!accepted->has_value(), "pending accept should be cancelled") &&
-         Check(accepted->error().value() == ECANCELED, "pending accept should return ECANCELED") &&
+         Check(accepted->Error().value() == ECANCELED, "pending accept should return ECANCELED") &&
          Check(resumed_with_scheduler, "pending accept resumed without current scheduler");
 }
 

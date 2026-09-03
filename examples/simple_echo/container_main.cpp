@@ -1,4 +1,9 @@
 // SPDX-License-Identifier: MIT
+//
+// Build:
+//   make build
+// Run:
+//   ./build/debug/examples/simple_echo_container
 
 #include <csignal>
 #include <cstdint>
@@ -25,9 +30,9 @@ int main() {
 
   std::stop_source stop_source;
   auto blocked_signals = simple_echo::BlockTerminationSignals();
-  if (!blocked_signals.has_value()) {
+  if (!blocked_signals.HasValue()) {
     std::println(stderr, "failed to block termination signals: {}",
-                 blocked_signals.error().message());
+                 blocked_signals.Error().message());
     return 1;
   }
   std::jthread signal_forwarder{simple_echo::ForwardTerminationSignals, &stop_source};
@@ -39,8 +44,8 @@ int main() {
   std::println("Alyrn container echo server listening on 0.0.0.0:{}", kPort);
   auto ran = runtime.Run(stop_source.get_token());
   (void)stop_source.request_stop();
-  if (!ran.has_value()) {
-    std::println(stderr, "failed to run Epoll runtime: {}", ran.error().message());
+  if (!ran.HasValue()) {
+    std::println(stderr, "failed to run Epoll runtime: {}", ran.Error().message());
     return 1;
   }
   return 0;

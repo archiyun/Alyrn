@@ -64,8 +64,8 @@ public:
     }
 
     auto storage = ProvidedBufferStorage::Create(capacity, buffer_size);
-    if (!storage.has_value()) {
-      return std::unexpected(storage.error());
+    if (!storage.HasValue()) {
+      return std::unexpected(storage.Error());
     }
 
     int setup_error = 0;

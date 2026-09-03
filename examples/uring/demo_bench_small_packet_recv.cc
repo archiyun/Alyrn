@@ -3,11 +3,13 @@
 // Flood 64-byte TCP payloads at a uring Loop and compare single-shot
 // Stream::Read against multishot RecvSource (provided-buffer recv).
 //
-//   cmake --build build-uring --target demo_bench_small_packet_recv
-//   build-uring/examples/uring/demo_bench_small_packet_recv
+// Build:
+//   make uring
+// Run:
+//   ./build/uring/debug/examples/uring/demo_bench_small_packet_recv
 //
 //   PACKET=64 CONNECTIONS=16 DURATION_MS=3000 MODE=both
-//     build-uring/examples/uring/demo_bench_small_packet_recv
+//     ./build/uring/debug/examples/uring/demo_bench_small_packet_recv
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -165,8 +167,8 @@ DetachedTask SingleShotSession(Stream stream, BenchStats* stats, std::size_t pac
 
   for (;;) {
     auto read = co_await stream.Read(dest);
-    if (!read.has_value() || *read == 0) {
-      if (!read.has_value()) {
+    if (!read.HasValue() || *read == 0) {
+      if (!read.HasValue()) {
         stats->errors.fetch_add(1, std::memory_order_relaxed);
       }
       break;
@@ -186,10 +188,10 @@ DetachedTask MultishotSession(Stream stream, BenchStats* stats, std::size_t pack
   recv_options.buffer_size = packet_size;
 
   auto source_result = RecvSource::Create(stream.OwnerLoop(), stream.Fd(), recv_options);
-  if (!source_result.has_value()) {
+  if (!source_result.HasValue()) {
     stats->create_fail.fetch_add(1, std::memory_order_relaxed);
     int expected = 0;
-    stats->first_error.compare_exchange_strong(expected, source_result.error().value());
+    stats->first_error.compare_exchange_strong(expected, source_result.Error().value());
     stats->errors.fetch_add(1, std::memory_order_relaxed);
     (void)co_await stream.Close();
     co_return;
@@ -198,10 +200,10 @@ DetachedTask MultishotSession(Stream stream, BenchStats* stats, std::size_t pack
 
   for (;;) {
     auto received = co_await source.Next();
-    if (!received.has_value()) {
+    if (!received.HasValue()) {
       stats->next_fail.fetch_add(1, std::memory_order_relaxed);
       int expected = 0;
-      stats->first_error.compare_exchange_strong(expected, received.error().value());
+      stats->first_error.compare_exchange_strong(expected, received.Error().value());
       stats->errors.fetch_add(1, std::memory_order_relaxed);
       break;
     }
@@ -223,7 +225,7 @@ DetachedTask AcceptLoop(Loop& loop, Listener& listener, RecvMode mode, BenchStat
                         const BenchConfig& config) {
   for (;;) {
     auto accepted = co_await listener.Accept();
-    if (!accepted.has_value()) {
+    if (!accepted.HasValue()) {
       co_return;
     }
     if (mode == RecvMode::kMultishot) {
@@ -252,7 +254,7 @@ RunResult RunOnce(const BenchConfig& config, RecvMode mode) {
     options.task_run_mode = config.task_run_mode;
 
     auto initialized = loop.Init(options);
-    if (!initialized.has_value()) {
+    if (!initialized.HasValue()) {
       clients_failed.store(true, std::memory_order_relaxed);
       ready.store(true, std::memory_order_release);
       return;
@@ -265,14 +267,14 @@ RunResult RunOnce(const BenchConfig& config, RecvMode mode) {
 
     auto listener_result =
         Listener::Create(&loop, alyrn::net::Endpoint::Loopback(0), listen_options);
-    if (!listener_result.has_value()) {
+    if (!listener_result.HasValue()) {
       clients_failed.store(true, std::memory_order_relaxed);
       ready.store(true, std::memory_order_release);
       return;
     }
     auto listener = std::move(*listener_result);
     auto local = listener.LocalAddress();
-    if (!local.has_value()) {
+    if (!local.HasValue()) {
       clients_failed.store(true, std::memory_order_relaxed);
       ready.store(true, std::memory_order_release);
       return;

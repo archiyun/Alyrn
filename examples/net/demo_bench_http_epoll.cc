@@ -1,4 +1,9 @@
 // SPDX-License-Identifier: MIT
+//
+// Build:
+//   make build
+// Run:
+//   ./build/debug/examples/net/demo_bench_http_epoll
 
 #include <array>
 #include <atomic>
@@ -46,7 +51,7 @@ alyrn::DetachedTask HttpSession(alyrn::epoll::Stream stream) {
     const std::size_t previous_used = used;
     Count(g_read_awaits);
     auto read = co_await stream.Read(std::span(request).subspan(used));
-    if (!read.has_value() || *read == 0) break;
+    if (!read.HasValue() || *read == 0) break;
     Count(g_reads_completed);
     used += *read;
     const std::size_t scan_from = previous_used >= 3 ? previous_used - 3 : 0;
@@ -58,7 +63,7 @@ alyrn::DetachedTask HttpSession(alyrn::epoll::Stream stream) {
 
     Count(g_write_awaits);
     auto written = co_await stream.Write(response);
-    if (!written.has_value()) break;
+    if (!written.HasValue()) break;
     Count(g_responses);
     used = 0;
   }
@@ -94,8 +99,8 @@ int main() {
         return HttpSession(std::move(stream));
       });
   auto started = server.Start();
-  if (!started.has_value()) {
-    std::cerr << "WorkerGroup::Start failed: " << started.error().message() << '\n';
+  if (!started.HasValue()) {
+    std::cerr << "WorkerGroup::Start failed: " << started.Error().message() << '\n';
     return 1;
   }
 

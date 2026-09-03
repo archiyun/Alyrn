@@ -91,7 +91,7 @@ struct UringHarness {
       init_error = {};
       return true;
     }
-    init_error = initialized.error();
+    init_error = initialized.Error();
     return false;
   }
 
@@ -110,7 +110,7 @@ struct UringHarness {
     if (timer.has_value()) {
       return true;
     }
-    std::cerr << "FAIL [io_uring]: timer setup: " << timer.error().message() << '\n';
+    std::cerr << "FAIL [io_uring]: timer setup: " << timer.Error().message() << '\n';
     return false;
   }
 
@@ -135,7 +135,7 @@ bool PrepareLoopAndListener(typename Harness::Loop& loop,
   listener = Harness::CreateListener(loop);
   if (!listener.has_value()) {
     std::cerr << "FAIL [" << Harness::Name()
-              << "]: listener creation: " << listener.error().message() << '\n';
+              << "]: listener creation: " << listener.Error().message() << '\n';
     return false;
   }
   return true;
@@ -201,7 +201,7 @@ bool CheckPendingAcceptCloseContract() {
   bool ok = true;
   ok &= Expect(!observation.timed_out, Harness::Name(), "pending Accept Close timed out");
   ok &= Expect(observation.accept.has_value() && !observation.accept->has_value() &&
-                   observation.accept->error() == std::errc::operation_canceled,
+                   observation.accept->Error() == std::errc::operation_canceled,
                Harness::Name(), "Close did not cancel pending Accept with ECANCELED");
   ok &= Expect(observation.close.has_value() && observation.close->has_value(), Harness::Name(),
                "listener Close did not converge");
@@ -229,15 +229,15 @@ auto ObserveClosedListener(Listener& listener, Loop& loop, ClosedListenerObserva
 
   auto accepted = co_await listener.Accept();
   observation.accept_rejected =
-      !accepted.has_value() && accepted.error() == std::errc::bad_file_descriptor;
+      !accepted.has_value() && accepted.Error() == std::errc::bad_file_descriptor;
 
   auto source = listener.CreateAcceptSource();
   observation.source_rejected =
-      !source.has_value() && source.error() == std::errc::bad_file_descriptor;
+      !source.has_value() && source.Error() == std::errc::bad_file_descriptor;
 
   auto address = listener.LocalAddress();
   observation.address_rejected =
-      !address.has_value() && address.error() == std::errc::bad_file_descriptor;
+      !address.has_value() && address.Error() == std::errc::bad_file_descriptor;
   observation.resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   loop.RequestStop();
 }
@@ -282,11 +282,11 @@ auto ObserveListenerAfterStopRequest(Listener& listener, Loop& loop,
   loop.RequestStop();
   auto accepted = co_await listener.Accept();
   observation.accept_rejected =
-      !accepted.has_value() && accepted.error() == std::errc::operation_canceled;
+      !accepted.has_value() && accepted.Error() == std::errc::operation_canceled;
 
   auto source = listener.CreateAcceptSource();
   observation.source_rejected =
-      !source.has_value() && source.error() == std::errc::operation_canceled;
+      !source.has_value() && source.Error() == std::errc::operation_canceled;
   observation.resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
 }
 
@@ -359,7 +359,7 @@ bool CheckSourceStopContract() {
   auto source_result = listener->CreateAcceptSource();
   if (!source_result.has_value()) {
     std::cerr << "FAIL [" << Harness::Name()
-              << "]: AcceptSource creation: " << source_result.error().message() << '\n';
+              << "]: AcceptSource creation: " << source_result.Error().message() << '\n';
     return false;
   }
   typename Harness::Source source = std::move(*source_result);
@@ -426,7 +426,7 @@ bool CheckTerminalNextAfterLoopStopContract() {
   auto source_result = listener->CreateAcceptSource();
   if (!source_result.has_value()) {
     std::cerr << "FAIL [" << Harness::Name()
-              << "]: AcceptSource creation: " << source_result.error().message() << '\n';
+              << "]: AcceptSource creation: " << source_result.Error().message() << '\n';
     return false;
   }
   typename Harness::Source source = std::move(*source_result);
@@ -495,7 +495,7 @@ bool CheckListenerCloseSourceContract() {
   auto source_result = listener->CreateAcceptSource();
   if (!source_result.has_value()) {
     std::cerr << "FAIL [" << Harness::Name()
-              << "]: AcceptSource creation: " << source_result.error().message() << '\n';
+              << "]: AcceptSource creation: " << source_result.Error().message() << '\n';
     return false;
   }
   typename Harness::Source source = std::move(*source_result);
@@ -599,7 +599,7 @@ bool CheckAcceptReleaseBeforeContinuationContract() {
   auto address = listener->LocalAddress();
   if (!address.has_value()) {
     std::cerr << "FAIL [" << Harness::Name()
-              << "]: listener address lookup: " << address.error().message() << '\n';
+              << "]: listener address lookup: " << address.Error().message() << '\n';
     return false;
   }
 
@@ -712,7 +712,7 @@ bool CheckAcceptSourceAdmissionTrace() {
   });
   if (!source_result.has_value()) {
     std::cerr << "FAIL [" << Harness::Name()
-              << "]: AcceptSource creation: " << source_result.error().message() << '\n';
+              << "]: AcceptSource creation: " << source_result.Error().message() << '\n';
     return false;
   }
   typename Harness::Source source = std::move(*source_result);
@@ -720,7 +720,7 @@ bool CheckAcceptSourceAdmissionTrace() {
   auto address = listener->LocalAddress();
   if (!address.has_value()) {
     std::cerr << "FAIL [" << Harness::Name()
-              << "]: listener address lookup: " << address.error().message() << '\n';
+              << "]: listener address lookup: " << address.Error().message() << '\n';
     return false;
   }
 
@@ -789,7 +789,7 @@ bool CheckAcceptSourceStopDrainsBurstContract() {
   });
   if (!source_result.has_value()) {
     std::cerr << "FAIL [" << Harness::Name()
-              << "]: AcceptSource creation: " << source_result.error().message() << '\n';
+              << "]: AcceptSource creation: " << source_result.Error().message() << '\n';
     return false;
   }
   typename Harness::Source source = std::move(*source_result);
@@ -797,7 +797,7 @@ bool CheckAcceptSourceStopDrainsBurstContract() {
   auto address = listener->LocalAddress();
   if (!address.has_value()) {
     std::cerr << "FAIL [" << Harness::Name()
-              << "]: listener address lookup: " << address.error().message() << '\n';
+              << "]: listener address lookup: " << address.Error().message() << '\n';
     return false;
   }
 

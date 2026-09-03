@@ -163,15 +163,15 @@ LoopInitStatus InitLoop(Loop& loop) {
   if (initialized.has_value()) {
     return LoopInitStatus::kReady;
   }
-  if (initialized.error() == std::errc::operation_not_supported ||
-      initialized.error() == std::errc::operation_not_permitted) {
+  if (initialized.Error() == std::errc::operation_not_supported ||
+      initialized.Error() == std::errc::operation_not_permitted) {
     std::cout << "SKIP: io_uring unavailable: "
-              << initialized.error().message() << '\n';
+              << initialized.Error().message() << '\n';
     return LoopInitStatus::kSkip;
   }
 
   std::cout << "FAIL: loop init failed: "
-            << initialized.error().message() << '\n';
+            << initialized.Error().message() << '\n';
   return LoopInitStatus::kFail;
 }
 
@@ -181,7 +181,7 @@ bool PumpUntil(Loop& loop, Predicate&& predicate, int max_iterations = 64) {
     auto completed = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
     if (!completed.has_value()) {
       std::cout << "FAIL: waiting for CQE failed: "
-                << completed.error().message() << '\n';
+                << completed.Error().message() << '\n';
       return false;
     }
     alyrn::uring::detail::LoopAccess::RunReady(loop);
@@ -365,7 +365,7 @@ void CheckFakeRearmSubmitFailure() {
       CompletionEvent{12, 0},
       EventDisposition::kProduced);
   assert(!rearm.has_value());
-  assert(rearm.error().value() == EIO);
+  assert(rearm.Error().value() == EIO);
   assert(source.SubmissionCount() == 2);
   assert(!source.RequestSubmitted());
   assert(source.State() == AcceptSourceState::kDraining);
@@ -416,15 +416,15 @@ alyrn::coro::DetachedTask Consume(
     auto result = co_await source->Next();
 
     if (!result.has_value()) {
-      if (IsUnsupported(result.error())) {
+      if (IsUnsupported(result.Error())) {
         observation->unsupported = true;
       } else {
-        observation->error = result.error();
+        observation->error = result.Error();
       }
 
       auto stopped = co_await source->Stop();
       if (!stopped.has_value()) {
-        observation->error = stopped.error();
+        observation->error = stopped.Error();
       }
       co_return;
     }
@@ -454,7 +454,7 @@ alyrn::coro::DetachedTask Consume(
   auto stopped = co_await source->Stop();
   observation->stopped = stopped.has_value();
   if (!stopped.has_value()) {
-    observation->error = stopped.error();
+    observation->error = stopped.Error();
   }
 }
 
@@ -463,10 +463,10 @@ alyrn::coro::DetachedTask ConsumeOneThenStop(
     CancelObservation* observation) {
   auto result = co_await source->Next();
   if (!result.has_value()) {
-    if (IsUnsupported(result.error())) {
+    if (IsUnsupported(result.Error())) {
       observation->unsupported = true;
     } else {
-      observation->error = result.error();
+      observation->error = result.Error();
     }
     observation->done = true;
     co_return;
@@ -483,14 +483,14 @@ alyrn::coro::DetachedTask ConsumeOneThenStop(
   auto stopped = co_await source->Stop();
   observation->stopped = stopped.has_value();
   if (!stopped.has_value()) {
-    observation->error = stopped.error();
+    observation->error = stopped.Error();
     observation->done = true;
     co_return;
   }
 
   auto end = co_await source->Next();
   if (!end.has_value()) {
-    observation->error = end.error();
+    observation->error = end.Error();
   } else {
     observation->terminal = !end->has_value();
   }
@@ -502,10 +502,10 @@ alyrn::coro::DetachedTask WaitForSourceEnd(
     CloseObservation* observation) {
   auto result = co_await source->Next();
   if (!result.has_value()) {
-    if (IsUnsupported(result.error())) {
+    if (IsUnsupported(result.Error())) {
       observation->unsupported = true;
     } else {
-      observation->error = result.error();
+      observation->error = result.Error();
     }
   } else {
     observation->source_end = !result->has_value();
@@ -519,7 +519,7 @@ alyrn::coro::DetachedTask CloseListener(
   auto result = co_await listener->Close();
   observation->close_succeeded = result.has_value();
   if (!result.has_value()) {
-    observation->error = result.error();
+    observation->error = result.Error();
   }
 }
 
@@ -531,10 +531,10 @@ alyrn::coro::DetachedTask FillQueueThenStop(
     BackpressureObservation* observation) {
   auto first = co_await source->Next();
   if (!first.has_value()) {
-    if (IsUnsupported(first.error())) {
+    if (IsUnsupported(first.Error())) {
       observation->unsupported = true;
     } else {
-      observation->error = first.error();
+      observation->error = first.Error();
     }
     observation->done = true;
     co_return;
@@ -551,7 +551,7 @@ alyrn::coro::DetachedTask FillQueueThenStop(
   auto delay = co_await alyrn::uring::SleepFor(
       *loop, std::chrono::milliseconds(50));
   if (!delay.has_value()) {
-    observation->error = delay.error();
+    observation->error = delay.Error();
     observation->done = true;
     co_return;
   }
@@ -559,14 +559,14 @@ alyrn::coro::DetachedTask FillQueueThenStop(
   auto stopped = co_await source->Stop();
   observation->stop_succeeded = stopped.has_value();
   if (!stopped.has_value()) {
-    observation->error = stopped.error();
+    observation->error = stopped.Error();
     observation->done = true;
     co_return;
   }
 
   auto queued = co_await source->Next();
   if (!queued.has_value()) {
-    observation->error = queued.error();
+    observation->error = queued.Error();
     observation->done = true;
     co_return;
   }
@@ -579,7 +579,7 @@ alyrn::coro::DetachedTask FillQueueThenStop(
 
   auto terminal = co_await source->Next();
   if (!terminal.has_value()) {
-    observation->error = terminal.error();
+    observation->error = terminal.Error();
   } else if (!terminal->has_value()) {
     observation->normal_end = true;
   } else {
@@ -594,10 +594,10 @@ alyrn::coro::DetachedTask PauseThenResume(
     PauseResumeObservation* observation) {
   auto first = co_await source->Next();
   if (!first.has_value()) {
-    if (IsUnsupported(first.error())) {
+    if (IsUnsupported(first.Error())) {
       observation->unsupported = true;
     } else {
-      observation->error = first.error();
+      observation->error = first.Error();
     }
     observation->done = true;
     co_return;
@@ -615,7 +615,7 @@ alyrn::coro::DetachedTask PauseThenResume(
   auto delay = co_await alyrn::uring::SleepFor(
       *loop, std::chrono::milliseconds(50));
   if (!delay.has_value()) {
-    observation->error = delay.error();
+    observation->error = delay.Error();
     observation->done = true;
     co_return;
   }
@@ -624,7 +624,7 @@ alyrn::coro::DetachedTask PauseThenResume(
   if (!queued.has_value() || !queued->has_value()) {
     observation->error = queued.has_value()
                              ? alyrn::Errno(ECONNABORTED)
-                             : queued.error();
+                             : queued.Error();
     observation->done = true;
     co_return;
   }
@@ -637,7 +637,7 @@ alyrn::coro::DetachedTask PauseThenResume(
   if (!resumed.has_value() || !resumed->has_value()) {
     observation->error = resumed.has_value()
                              ? alyrn::Errno(ECONNABORTED)
-                             : resumed.error();
+                             : resumed.Error();
     observation->done = true;
     co_return;
   }
@@ -646,14 +646,14 @@ alyrn::coro::DetachedTask PauseThenResume(
   auto stopped = co_await source->Stop();
   observation->stop_succeeded = stopped.has_value();
   if (!stopped.has_value()) {
-    observation->error = stopped.error();
+    observation->error = stopped.Error();
     observation->done = true;
     co_return;
   }
 
   auto terminal = co_await source->Next();
   if (!terminal.has_value()) {
-    observation->error = terminal.error();
+    observation->error = terminal.Error();
   } else if (!terminal->has_value()) {
     observation->normal_end = true;
   } else {
@@ -680,7 +680,7 @@ bool CheckMultishotAccept() {
   auto listener_result = Listener::Create(&loop, LoopbackAddress(0), options);
   if (!listener_result.has_value()) {
     std::cout << "FAIL: listener creation failed: "
-              << listener_result.error().message() << '\n';
+              << listener_result.Error().message() << '\n';
     return false;
   }
 
@@ -691,7 +691,7 @@ bool CheckMultishotAccept() {
   });
   if (!source_result.has_value()) {
     std::cout << "FAIL: AcceptSource creation failed: "
-              << source_result.error().message() << '\n';
+              << source_result.Error().message() << '\n';
     return false;
   }
 
@@ -708,7 +708,7 @@ bool CheckMultishotAccept() {
   auto address = listener.LocalAddress();
   if (!address.has_value()) {
     std::cout << "FAIL: LocalAddress failed: "
-              << address.error().message() << '\n';
+              << address.Error().message() << '\n';
     return false;
   }
 
@@ -719,7 +719,7 @@ bool CheckMultishotAccept() {
     auto client = ConnectClient(*address);
     if (!client.has_value()) {
       std::cout << "FAIL: client connect failed: "
-                << client.error().message() << '\n';
+                << client.Error().message() << '\n';
       return false;
     }
     clients.emplace_back(*client);
@@ -762,7 +762,7 @@ bool CheckStopCancelsActiveSource() {
       Listener::Create(&loop, LoopbackAddress(0));
   if (!listener_result.has_value()) {
     std::cout << "FAIL: listener creation failed: "
-              << listener_result.error().message() << '\n';
+              << listener_result.Error().message() << '\n';
     return false;
   }
   auto listener = std::move(*listener_result);
@@ -770,7 +770,7 @@ bool CheckStopCancelsActiveSource() {
                                               .event_capacity = 4});
   if (!source_result.has_value()) {
     std::cout << "FAIL: source creation failed: "
-              << source_result.error().message() << '\n';
+              << source_result.Error().message() << '\n';
     return false;
   }
   auto source = std::move(*source_result);
@@ -783,13 +783,13 @@ bool CheckStopCancelsActiveSource() {
   auto address = listener.LocalAddress();
   if (!address.has_value()) {
     std::cout << "FAIL: LocalAddress failed: "
-              << address.error().message() << '\n';
+              << address.Error().message() << '\n';
     return false;
   }
   auto client = ConnectClient(*address);
   if (!client.has_value()) {
     std::cout << "FAIL: client connect failed: "
-              << client.error().message() << '\n';
+              << client.Error().message() << '\n';
     return false;
   }
   UniqueFd client_fd(*client);
@@ -828,14 +828,14 @@ bool CheckListenerCloseCancelsActiveSource() {
       Listener::Create(&loop, LoopbackAddress(0));
   if (!listener_result.has_value()) {
     std::cout << "FAIL: listener creation failed: "
-              << listener_result.error().message() << '\n';
+              << listener_result.Error().message() << '\n';
     return false;
   }
   auto listener = std::move(*listener_result);
   auto source_result = listener.CreateAcceptSource();
   if (!source_result.has_value()) {
     std::cout << "FAIL: source creation failed: "
-              << source_result.error().message() << '\n';
+              << source_result.Error().message() << '\n';
     return false;
   }
   auto source = std::move(*source_result);
@@ -883,7 +883,7 @@ bool CheckQueueBackpressure() {
       Listener::Create(&loop, LoopbackAddress(0));
   if (!listener_result.has_value()) {
     std::cout << "FAIL: listener creation failed: "
-              << listener_result.error().message() << '\n';
+              << listener_result.Error().message() << '\n';
     return false;
   }
   auto listener = std::move(*listener_result);
@@ -891,7 +891,7 @@ bool CheckQueueBackpressure() {
                                               .event_capacity = 1});
   if (!source_result.has_value()) {
     std::cout << "FAIL: source creation failed: "
-              << source_result.error().message() << '\n';
+              << source_result.Error().message() << '\n';
     return false;
   }
   auto source = std::move(*source_result);
@@ -904,7 +904,7 @@ bool CheckQueueBackpressure() {
   auto address = listener.LocalAddress();
   if (!address.has_value()) {
     std::cout << "FAIL: LocalAddress failed: "
-              << address.error().message() << '\n';
+              << address.Error().message() << '\n';
     return false;
   }
 
@@ -915,7 +915,7 @@ bool CheckQueueBackpressure() {
   auto first_client = ConnectClient(*address);
   if (!first_client.has_value()) {
     std::cout << "FAIL: first client connect failed: "
-              << first_client.error().message() << '\n';
+              << first_client.Error().message() << '\n';
     return false;
   }
   clients.emplace_back(*first_client);
@@ -940,7 +940,7 @@ bool CheckQueueBackpressure() {
     auto client = ConnectClient(*address);
     if (!client.has_value()) {
       std::cout << "FAIL: burst client connect failed: "
-                << client.error().message() << '\n';
+                << client.Error().message() << '\n';
       return false;
     }
     clients.emplace_back(*client);
@@ -982,7 +982,7 @@ bool RunQueuePauseThenRearmScenario() {
   auto listener_result = Listener::Create(&loop, LoopbackAddress(0));
   if (!listener_result.has_value()) {
     std::cout << "FAIL: listener creation failed: "
-              << listener_result.error().message() << '\n';
+              << listener_result.Error().message() << '\n';
     return false;
   }
   auto listener = std::move(*listener_result);
@@ -990,7 +990,7 @@ bool RunQueuePauseThenRearmScenario() {
                                               .event_capacity = 1});
   if (!source_result.has_value()) {
     std::cout << "FAIL: source creation failed: "
-              << source_result.error().message() << '\n';
+              << source_result.Error().message() << '\n';
     return false;
   }
   auto source = std::move(*source_result);
@@ -1003,7 +1003,7 @@ bool RunQueuePauseThenRearmScenario() {
   auto address = listener.LocalAddress();
   if (!address.has_value()) {
     std::cout << "FAIL: LocalAddress failed: "
-              << address.error().message() << '\n';
+              << address.Error().message() << '\n';
     return false;
   }
 
@@ -1013,7 +1013,7 @@ bool RunQueuePauseThenRearmScenario() {
     auto client = ConnectClient(*address);
     if (!client.has_value()) {
       std::cout << "FAIL: client connect failed: "
-                << client.error().message() << '\n';
+                << client.Error().message() << '\n';
       return false;
     }
     clients.emplace_back(*client);

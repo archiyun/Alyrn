@@ -3,10 +3,10 @@
 // Coroutine echo demo with backend-neutral business code.
 //
 // Build:
-//   cmake --build build --target demo_epoll_coro_echo -j"$(nproc)"
+//   make build
 //
 // Run:
-//   PORT=9090 ./build/examples/net/demo_epoll_coro_echo
+//   PORT=9090 ./build/debug/examples/epoll/demo_epoll_coro_echo
 //
 // Try:
 //   nc 127.0.0.1 9090
@@ -62,8 +62,8 @@ alyrn::DetachedTask Session(Stream stream, long long* active_sessions, long long
 
   for (;;) {
     auto read_result = co_await stream.Read(buffer);
-    if (!read_result.has_value()) {
-      std::cerr << "read failed: " << read_result.error().message() << '\n';
+    if (!read_result.HasValue()) {
+      std::cerr << "read failed: " << read_result.Error().message() << '\n';
       break;
     }
 
@@ -109,8 +109,8 @@ alyrn::DetachedTask Session(Stream stream, long long* active_sessions, long long
       ++(*total_messages);
 
       auto write_result = co_await stream.Write(Bytes(line));
-      if (!write_result.has_value()) {
-        std::cerr << "write failed: " << write_result.error().message() << '\n';
+      if (!write_result.HasValue()) {
+        std::cerr << "write failed: " << write_result.Error().message() << '\n';
         break;
       }
 
@@ -129,8 +129,8 @@ alyrn::DetachedTask AcceptLoop(Listener* listener, alyrn::epoll::Loop* scheduler
 
   for (;;) {
     auto accepted = co_await listener->Accept();
-    if (!accepted.has_value()) {
-      std::cerr << "accept failed: " << accepted.error().message() << '\n';
+    if (!accepted.HasValue()) {
+      std::cerr << "accept failed: " << accepted.Error().message() << '\n';
       co_return;
     }
 
@@ -148,8 +148,8 @@ int main() {
 
   alyrn::epoll::Loop loop;
   auto listener_result = alyrn::epoll::Listener::Create(&loop, alyrn::net::Endpoint(port));
-  if (!listener_result.has_value()) {
-    std::cerr << "failed to create listener: " << listener_result.error().message() << '\n';
+  if (!listener_result.HasValue()) {
+    std::cerr << "failed to create listener: " << listener_result.Error().message() << '\n';
     return 1;
   }
   auto listener = std::move(*listener_result);

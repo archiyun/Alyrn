@@ -116,11 +116,11 @@ alyrn::Result<int> ConnectClient(const alyrn::net::Endpoint& address) {
 bool CheckWorkerGroupStartStop() {
   auto port = PickFreePort();
   if (!port.has_value()) {
-    if (IsEnvironmentSkip(port.error())) {
-      std::cout << "SKIP: TCP bind unavailable: " << port.error().message() << '\n';
+    if (IsEnvironmentSkip(port.Error())) {
+      std::cout << "SKIP: TCP bind unavailable: " << port.Error().message() << '\n';
       return true;
     }
-    std::cout << "FAIL: PickFreePort failed: " << port.error().message() << '\n';
+    std::cout << "FAIL: PickFreePort failed: " << port.Error().message() << '\n';
     return false;
   }
 
@@ -150,11 +150,11 @@ bool CheckWorkerGroupStartStop() {
 
   auto started = group.Start();
   if (!started.has_value()) {
-    if (IsEnvironmentSkip(started.error())) {
-      std::cout << "SKIP: io_uring unavailable: " << started.error().message() << '\n';
+    if (IsEnvironmentSkip(started.Error())) {
+      std::cout << "SKIP: io_uring unavailable: " << started.Error().message() << '\n';
       return true;
     }
-    std::cout << "FAIL: WorkerGroup::Start failed: " << started.error().message() << '\n';
+    std::cout << "FAIL: WorkerGroup::Start failed: " << started.Error().message() << '\n';
     return false;
   }
 
@@ -178,11 +178,11 @@ bool CheckWorkerGroupStartStop() {
 bool CheckWorkerGroupAcceptCallback() {
   auto port = PickFreePort();
   if (!port.has_value()) {
-    if (IsEnvironmentSkip(port.error())) {
-      std::cout << "SKIP: TCP bind unavailable: " << port.error().message() << '\n';
+    if (IsEnvironmentSkip(port.Error())) {
+      std::cout << "SKIP: TCP bind unavailable: " << port.Error().message() << '\n';
       return true;
     }
-    std::cout << "FAIL: PickFreePort failed: " << port.error().message() << '\n';
+    std::cout << "FAIL: PickFreePort failed: " << port.Error().message() << '\n';
     return false;
   }
 
@@ -213,22 +213,22 @@ bool CheckWorkerGroupAcceptCallback() {
 
   auto started = group.Start();
   if (!started.has_value()) {
-    if (IsEnvironmentSkip(started.error())) {
-      std::cout << "SKIP: io_uring unavailable: " << started.error().message() << '\n';
+    if (IsEnvironmentSkip(started.Error())) {
+      std::cout << "SKIP: io_uring unavailable: " << started.Error().message() << '\n';
       return true;
     }
-    std::cout << "FAIL: WorkerGroup::Start failed: " << started.error().message() << '\n';
+    std::cout << "FAIL: WorkerGroup::Start failed: " << started.Error().message() << '\n';
     return false;
   }
 
   auto client_fd = ConnectClient(listen_addr);
   if (!client_fd.has_value()) {
     group.Stop();
-    if (IsEnvironmentSkip(client_fd.error())) {
-      std::cout << "SKIP: TCP connect unavailable: " << client_fd.error().message() << '\n';
+    if (IsEnvironmentSkip(client_fd.Error())) {
+      std::cout << "SKIP: TCP connect unavailable: " << client_fd.Error().message() << '\n';
       return true;
     }
-    std::cout << "FAIL: client connect failed: " << client_fd.error().message() << '\n';
+    std::cout << "FAIL: client connect failed: " << client_fd.Error().message() << '\n';
     return false;
   }
   UniqueFd client(*client_fd);

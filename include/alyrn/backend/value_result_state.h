@@ -39,11 +39,11 @@ public:
 
   void SetResult(Result<T>&& result) noexcept(std::is_nothrow_move_constructible_v<T>) {
     ALYRN_CHECK(state_ == State::kPending, "ValueResultState result was set twice");
-    if (result.has_value()) {
+    if (result.HasValue()) {
       std::construct_at(&storage_.value, std::move(*result));
       state_ = State::kValue;
     } else {
-      std::construct_at(&storage_.error, std::move(result.error()));
+      std::construct_at(&storage_.error, std::move(result.Error()));
       state_ = State::kError;
     }
   }

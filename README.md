@@ -77,8 +77,8 @@ auto EchoSession(Stream stream) -> cp::Task<cp::Result<void>> {
 
   for (;;) {
     auto read = co_await stream.Read(buffer);
-    if (!read.has_value()) {
-      co_return std::unexpected(read.error());
+    if (!read.HasValue()) {
+      co_return std::unexpected(read.Error());
     }
     if (*read == 0) {  // EOF
       co_return cp::Result<void>{};
@@ -86,8 +86,8 @@ auto EchoSession(Stream stream) -> cp::Task<cp::Result<void>> {
 
     auto payload = std::span<const std::byte>(buffer.data(), *read);
     auto written = co_await stream.Write(payload);
-    if (!written.has_value()) {
-      co_return std::unexpected(written.error());
+    if (!written.HasValue()) {
+      co_return std::unexpected(written.Error());
     }
   }
 }
@@ -95,8 +95,8 @@ auto EchoSession(Stream stream) -> cp::Task<cp::Result<void>> {
 template <cp::io::AsyncStream Stream>
 auto HandleConnection(Stream stream) -> cp::DetachedTask {
   auto result = co_await EchoSession(std::move(stream));
-  if (!result.has_value()) {
-    std::println(stderr, "session failed: {}", result.error().message());
+  if (!result.HasValue()) {
+    std::println(stderr, "session failed: {}", result.Error().message());
   }
   co_return;
 }
@@ -117,7 +117,7 @@ int main() {
 
   // A signal handler, management thread, or test later calls request_stop().
   auto result = runtime.Run(stop_source.get_token());
-  return result.has_value() ? 0 : 1;
+  return result.HasValue() ? 0 : 1;
 }
 ```
 
@@ -177,6 +177,30 @@ printf 'hello\n' | nc 127.0.0.1 9090
 To build the same image from a checkout, run `docker build -t alyrn:local .`.
 The image is a runnable demonstration, not a replacement for an application
 image that links Alyrn.
+
+### Makefile shortcuts (Linux)
+
+The repository Makefile configures Ninja builds and keeps
+`compile_commands.json` pointed at the active build directory for clangd.
+
+```bash
+make build                  # configure and build the default Debug epoll build
+make test                   # build, then run its tests
+make run                    # build, then start examples/simple_echo
+make run EXAMPLE=epoll/demo_epoll_coro_echo
+                            # build, then start a chosen epoll example
+make release                # configure and build Release epoll
+
+# Requires liburing >= 2.6.
+make uring                  # configure and build the Debug io_uring backend
+make test-uring             # build, then run the io_uring-enabled test suite
+make run-uring              # build, then start examples/simple_echo_luring
+make run-uring URING_EXAMPLE=uring/demo_luring_recv_echo
+                            # build, then start a chosen io_uring example
+make uring TYPE=Release     # Release io_uring build
+```
+
+Use the CMake commands below when you need to set additional cache options.
 
 Build the default Linux Epoll backend:
 

@@ -3,6 +3,11 @@
 // Native liburing fixed HTTP keep-alive benchmark server. It mirrors the
 // uring benchmark's thread-per-ring topology without using Alyrn runtime
 // objects, and is kept as an abstraction-cost reference.
+//
+// Build:
+//   make uring
+// Run:
+//   ./build/uring/debug/examples/uring/demo_bench_http_liburing
 
 #include <errno.h>
 #include <liburing.h>

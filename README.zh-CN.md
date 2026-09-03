@@ -70,8 +70,8 @@ auto EchoSession(Stream stream) -> cp::Task<cp::Result<void>> {
 
   for (;;) {
     auto read = co_await stream.Read(buffer);
-    if (!read.has_value()) {
-      co_return std::unexpected(read.error());
+    if (!read.HasValue()) {
+      co_return std::unexpected(read.Error());
     }
     if (*read == 0) {  // EOF
       co_return cp::Result<void>{};
@@ -79,8 +79,8 @@ auto EchoSession(Stream stream) -> cp::Task<cp::Result<void>> {
 
     auto payload = std::span<const std::byte>(buffer.data(), *read);
     auto written = co_await stream.Write(payload);
-    if (!written.has_value()) {
-      co_return std::unexpected(written.error());
+    if (!written.HasValue()) {
+      co_return std::unexpected(written.Error());
     }
   }
 }
@@ -88,8 +88,8 @@ auto EchoSession(Stream stream) -> cp::Task<cp::Result<void>> {
 template <cp::io::AsyncStream Stream>
 auto HandleConnection(Stream stream) -> cp::DetachedTask {
   auto result = co_await EchoSession(std::move(stream));
-  if (!result.has_value()) {
-    std::println(stderr, "session failed: {}", result.error().message());
+  if (!result.HasValue()) {
+    std::println(stderr, "session failed: {}", result.Error().message());
   }
   co_return;
 }
@@ -110,7 +110,7 @@ int main() {
 
   // signal handler、管理线程或测试代码随后调用 stop_source.request_stop()。
   auto result = runtime.Run(stop_source.get_token());
-  return result.has_value() ? 0 : 1;
+  return result.HasValue() ? 0 : 1;
 }
 ```
 
@@ -170,6 +170,30 @@ printf 'hello\n' | nc 127.0.0.1 9090
 作为最终镜像入口。
 
 ## 构建
+
+### Makefile 快捷方式（Linux）
+
+仓库内的 Makefile 使用 Ninja 配置构建，并将 `compile_commands.json`
+指向当前构建目录，供 clangd 使用。
+
+```bash
+make build                  # 配置并构建默认的 Debug epoll
+make test                   # 构建后运行对应测试
+make run                    # 构建后启动 examples/simple_echo
+make run EXAMPLE=epoll/demo_epoll_coro_echo
+                            # 构建后启动指定的 epoll 示例
+make release                # 配置并构建 Release epoll
+
+# 需要 liburing >= 2.6。
+make uring                  # 配置并构建 Debug io_uring 后端
+make test-uring             # 构建后运行启用 io_uring 的测试集
+make run-uring              # 构建后启动 examples/simple_echo_luring
+make run-uring URING_EXAMPLE=uring/demo_luring_recv_echo
+                            # 构建后启动指定的 io_uring 示例
+make uring TYPE=Release     # Release io_uring 构建
+```
+
+需要额外传递 CMake cache 选项时，使用下方的原始 CMake 命令。
 
 构建默认的 Linux Epoll 后端：
 

@@ -141,7 +141,7 @@ bool CheckWorkerAcceptAndStop() {
 
   auto started = worker.Start();
   if (!started.has_value()) {
-    std::cout << "FAIL: Worker::Start failed: " << started.error().message() << '\n';
+    std::cout << "FAIL: Worker::Start failed: " << started.Error().message() << '\n';
     return false;
   }
 
@@ -157,7 +157,7 @@ bool CheckWorkerAcceptAndStop() {
 
   auto client_fd = ConnectClient(*state.listen_address);
   if (!client_fd.has_value()) {
-    std::cout << "FAIL: client connect failed: " << client_fd.error().message() << '\n';
+    std::cout << "FAIL: client connect failed: " << client_fd.Error().message() << '\n';
     worker.Stop();
     return false;
   }
@@ -178,7 +178,7 @@ bool CheckWorkerAcceptAndStop() {
 bool CheckWorkerGroupStartAndStop() {
   auto port = PickFreePort();
   if (!port.has_value()) {
-    std::cout << "FAIL: PickFreePort failed: " << port.error().message() << '\n';
+    std::cout << "FAIL: PickFreePort failed: " << port.Error().message() << '\n';
     return false;
   }
 
@@ -201,7 +201,7 @@ bool CheckWorkerGroupStartAndStop() {
 
   auto started = group.Start();
   if (!started.has_value()) {
-    std::cout << "FAIL: WorkerGroup::Start failed: " << started.error().message() << '\n';
+    std::cout << "FAIL: WorkerGroup::Start failed: " << started.Error().message() << '\n';
     return false;
   }
 
@@ -246,7 +246,7 @@ bool CheckZeroWorkersRejected() {
   alyrn::epoll::detail::WorkerGroup group(alyrn::net::Endpoint(0), options);
   auto result = group.Start();
   return Check(!result.has_value(), "zero-worker group should be rejected") &&
-         Check(result.error() == std::errc::invalid_argument,
+         Check(result.Error() == std::errc::invalid_argument,
                "zero-worker group should return EINVAL");
 }
 

@@ -1,3 +1,8 @@
+// Build:
+//   make uring
+// Run:
+//   ./build/uring/debug/examples/uring/demo_luring_single_shot_echo
+
 #include <array>
 #include <csignal>
 #include <cstddef>
@@ -25,8 +30,8 @@ auto EchoSession(uring::Stream stream) -> alyrn::DetachedTask {
   for (;;) {
     auto read = co_await stream.Read(buffer);
 
-    if (!read.has_value()) {
-      std::println(stderr, "read failed: {}", read.error().message());
+    if (!read.HasValue()) {
+      std::println(stderr, "read failed: {}", read.Error().message());
       break;
     }
 
@@ -37,15 +42,15 @@ auto EchoSession(uring::Stream stream) -> alyrn::DetachedTask {
     auto payload = std::span<const std::byte>(buffer.data(), *read);
 
     auto written = co_await stream.Write(payload);
-    if (!written.has_value()) {
-      std::println(stderr, "write failed: {}", written.error().message());
+    if (!written.HasValue()) {
+      std::println(stderr, "write failed: {}", written.Error().message());
       break;
     }
   }
 
   auto closed = co_await stream.Close();
-  if (!closed.has_value()) {
-    std::println(stderr, "close failed: {}", closed.error().message());
+  if (!closed.HasValue()) {
+    std::println(stderr, "close failed: {}", closed.Error().message());
   }
 }
 
@@ -53,8 +58,8 @@ auto AcceptLoop(uring::Loop& loop, uring::Listener& listener) -> alyrn::Detached
   for (;;) {
     auto accepted = co_await listener.Accept();
 
-    if (!accepted.has_value()) {
-      std::println(stderr, "accept failed: {}", accepted.error().message());
+    if (!accepted.HasValue()) {
+      std::println(stderr, "accept failed: {}", accepted.Error().message());
       co_return;
     }
 
@@ -74,15 +79,15 @@ auto main() -> int {
 
   auto initialized = loop.Init(options);
 
-  if (!initialized.has_value()) {
-    std::println(stderr, "loop init failed: {}", initialized.error().message());
+  if (!initialized.HasValue()) {
+    std::println(stderr, "loop init failed: {}", initialized.Error().message());
     return 1;
   }
 
   auto listener_result = uring::Listener::Create(&loop, net::Endpoint::Loopback(kPort));
 
-  if (!listener_result.has_value()) {
-    std::println(stderr, "listener create failed: {}", listener_result.error().message());
+  if (!listener_result.HasValue()) {
+    std::println(stderr, "listener create failed: {}", listener_result.Error().message());
     return 1;
   }
 

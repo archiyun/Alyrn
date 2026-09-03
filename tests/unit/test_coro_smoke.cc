@@ -436,7 +436,7 @@ int main() {
   {
     Result<int> r = SyncWait(Fail());
     if (!Check(!r.has_value(), "Fail should not hold a value")) return 1;
-    if (!Check(r.error() == std::errc::invalid_argument, "Fail should carry EINVAL")) return 1;
+    if (!Check(r.Error() == std::errc::invalid_argument, "Fail should carry EINVAL")) return 1;
   }
 
   std::cout << "coro smoke: PASS\n";

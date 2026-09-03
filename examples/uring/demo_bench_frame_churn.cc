@@ -4,9 +4,11 @@
 // cost in I/O; this program does almost no syscalls so malloc vs the worker
 // frame pool shows up in wall time.
 //
-//   cmake --build build-uring --target demo_bench_frame_churn
-//   ITERATIONS=1000000 FRAME_POOL=0 build-uring/examples/uring/demo_bench_frame_churn
-//   ITERATIONS=1000000 FRAME_POOL=1 build-uring/examples/uring/demo_bench_frame_churn
+// Build:
+//   make uring
+// Run:
+//   ITERATIONS=1000000 FRAME_POOL=0 ./build/uring/debug/examples/uring/demo_bench_frame_churn
+//   ITERATIONS=1000000 FRAME_POOL=1 ./build/uring/debug/examples/uring/demo_bench_frame_churn
 
 #include <algorithm>
 #include <chrono>
@@ -107,8 +109,8 @@ int main() {
   options.entries = 256;
   options.shared_buffer_capacity = 0;
   auto initialized = loop.Init(options);
-  if (!initialized.has_value()) {
-    std::fprintf(stderr, "Loop::Init failed: %s\n", initialized.error().message().c_str());
+  if (!initialized.HasValue()) {
+    std::fprintf(stderr, "Loop::Init failed: %s\n", initialized.Error().message().c_str());
     return 1;
   }
 

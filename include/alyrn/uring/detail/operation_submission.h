@@ -28,7 +28,7 @@ bool SubmitAwaitingOperation(Loop& loop, Op& op, std::coroutine_handle<> continu
 
   op.resume_work.SetHandle(continuation);
   auto submitted = LoopAccess::SubmitOp(loop, &op, std::forward<Prep>(prep));
-  if (submitted.has_value()) {
+  if (submitted.HasValue()) {
     return true;
   }
 
@@ -36,7 +36,7 @@ bool SubmitAwaitingOperation(Loop& loop, Op& op, std::coroutine_handle<> continu
   // would permit a stale CQE or a later accidental schedule to resume a frame
   // which has already continued inline.
   op.resume_work.ClearHandle();
-  std::forward<OnSubmitFailure>(on_submit_failure)(submitted.error());
+  std::forward<OnSubmitFailure>(on_submit_failure)(submitted.Error());
   return false;
 }
 

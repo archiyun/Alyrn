@@ -125,12 +125,12 @@ LoopInitStatus InitLoop(Loop& loop, std::size_t shared_buffer_capacity = 64,
   if (initialized.has_value()) {
     return LoopInitStatus::kReady;
   }
-  if (IsEnvironmentSkip(initialized.error())) {
-    std::cout << "SKIP: io_uring unavailable: " << initialized.error().message() << '\n';
+  if (IsEnvironmentSkip(initialized.Error())) {
+    std::cout << "SKIP: io_uring unavailable: " << initialized.Error().message() << '\n';
     return LoopInitStatus::kSkip;
   }
 
-  std::cout << "FAIL: loop init failed: " << initialized.error().message() << '\n';
+  std::cout << "FAIL: loop init failed: " << initialized.Error().message() << '\n';
   return LoopInitStatus::kFail;
 }
 
@@ -139,7 +139,7 @@ bool PumpUntil(Loop& loop, Predicate&& predicate, int max_iterations = 64) {
   for (int i = 0; i < max_iterations && !predicate(); ++i) {
     auto completed = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
     if (!completed.has_value()) {
-      std::cout << "FAIL: waiting for CQE failed: " << completed.error().message() << '\n';
+      std::cout << "FAIL: waiting for CQE failed: " << completed.Error().message() << '\n';
       return false;
     }
     alyrn::uring::detail::LoopAccess::RunReady(loop);
@@ -158,7 +158,7 @@ Result<std::pair<UniqueFd, UniqueFd>> MakeSocketPair() {
 DetachedTask ReceiveOne(RecvSource* source, Observation* observation) {
   auto received = co_await source->Next();
   if (!received.has_value()) {
-    observation->error = received.error();
+    observation->error = received.Error();
     observation->done = true;
     co_return;
   }
@@ -175,7 +175,7 @@ DetachedTask ReceiveOne(RecvSource* source, Observation* observation) {
 
   auto stopped = co_await source->Stop();
   if (!stopped.has_value()) {
-    observation->error = stopped.error();
+    observation->error = stopped.Error();
   } else {
     observation->stopped = true;
   }
@@ -189,7 +189,7 @@ DetachedTask ReceivePauseThenResume(RecvSource* source, Loop* loop,
   const auto take = [observation](RecvSource::NextResult received,
                                   std::string* target) -> bool {
     if (!received.has_value()) {
-      observation->error = received.error();
+      observation->error = received.Error();
       return false;
     }
     if (!received->has_value()) {
@@ -214,7 +214,7 @@ DetachedTask ReceivePauseThenResume(RecvSource* source, Loop* loop,
   // multishot request before this coroutine consumes it.
   auto delay = co_await alyrn::uring::SleepFor(*loop, std::chrono::milliseconds(50));
   if (!delay.has_value()) {
-    observation->error = delay.error();
+    observation->error = delay.Error();
     observation->done = true;
     co_return;
   }
@@ -238,7 +238,7 @@ DetachedTask ReceivePauseThenResume(RecvSource* source, Loop* loop,
 
   auto stopped = co_await source->Stop();
   if (!stopped.has_value()) {
-    observation->error = stopped.error();
+    observation->error = stopped.Error();
   } else {
     observation->stopped = true;
   }
@@ -249,7 +249,7 @@ DetachedTask ReceiveWithFirstLeaseHeld(RecvSource* source,
                                        HeldLeaseObservation* observation) {
   auto first = co_await source->Next();
   if (!first.has_value() || !first->has_value()) {
-    observation->error = first.has_value() ? alyrn::Errno(ECONNRESET) : first.error();
+    observation->error = first.has_value() ? alyrn::Errno(ECONNRESET) : first.Error();
     observation->done = true;
     co_return;
   }
@@ -257,7 +257,7 @@ DetachedTask ReceiveWithFirstLeaseHeld(RecvSource* source,
 
   auto second = co_await source->Next();
   if (!second.has_value() || !second->has_value()) {
-    observation->error = second.has_value() ? alyrn::Errno(ECONNRESET) : second.error();
+    observation->error = second.has_value() ? alyrn::Errno(ECONNRESET) : second.Error();
     observation->done = true;
     co_return;
   }
@@ -272,7 +272,7 @@ DetachedTask ReceiveWithFirstLeaseHeld(RecvSource* source,
 
   auto stopped = co_await source->Stop();
   if (!stopped.has_value()) {
-    observation->error = stopped.error();
+    observation->error = stopped.Error();
   } else {
     observation->stopped = true;
   }
@@ -292,7 +292,7 @@ bool CheckRecvAndLease() {
 
   auto pair = MakeSocketPair();
   if (!pair.has_value()) {
-    std::cout << "FAIL: socketpair failed: " << pair.error().message() << '\n';
+    std::cout << "FAIL: socketpair failed: " << pair.Error().message() << '\n';
     return false;
   }
   auto receiver = std::move(pair->first);
@@ -306,12 +306,12 @@ bool CheckRecvAndLease() {
 
   auto source_result = RecvSource::Create(&loop, receiver.Get(), options);
   if (!source_result.has_value()) {
-    if (IsEnvironmentSkip(source_result.error())) {
-      std::cout << "SKIP: provided buffer ring unavailable: " << source_result.error().message()
+    if (IsEnvironmentSkip(source_result.Error())) {
+      std::cout << "SKIP: provided buffer ring unavailable: " << source_result.Error().message()
                 << '\n';
       return true;
     }
-    std::cout << "FAIL: RecvSource creation failed: " << source_result.error().message() << '\n';
+    std::cout << "FAIL: RecvSource creation failed: " << source_result.Error().message() << '\n';
     return false;
   }
   auto source = std::move(*source_result);
@@ -351,7 +351,7 @@ bool CheckHeldLeases() {
 
   auto pair = MakeSocketPair();
   if (!pair.has_value()) {
-    std::cout << "FAIL: held-lease socketpair failed: " << pair.error().message() << '\n';
+    std::cout << "FAIL: held-lease socketpair failed: " << pair.Error().message() << '\n';
     return false;
   }
   auto receiver = std::move(pair->first);
@@ -363,12 +363,12 @@ bool CheckHeldLeases() {
   options.buffer_size = 256;
   auto source_result = RecvSource::Create(&loop, receiver.Get(), options);
   if (!source_result.has_value()) {
-    if (IsEnvironmentSkip(source_result.error())) {
+    if (IsEnvironmentSkip(source_result.Error())) {
       std::cout << "SKIP: held-lease provided buffer ring unavailable: "
-                << source_result.error().message() << '\n';
+                << source_result.Error().message() << '\n';
       return true;
     }
-    std::cout << "FAIL: held-lease source creation failed: " << source_result.error().message()
+    std::cout << "FAIL: held-lease source creation failed: " << source_result.Error().message()
               << '\n';
     return false;
   }
@@ -441,8 +441,8 @@ bool CheckSharedBufferPool() {
   auto first_source_result = RecvSource::Create(&loop, first_receiver.Get(), options);
   auto second_source_result = RecvSource::Create(&loop, second_receiver.Get(), options);
   if (!first_source_result.has_value() || !second_source_result.has_value()) {
-    const auto& error = !first_source_result.has_value() ? first_source_result.error()
-                                                         : second_source_result.error();
+    const auto& error = !first_source_result.has_value() ? first_source_result.Error()
+                                                         : second_source_result.Error();
     if (IsEnvironmentSkip(error)) {
       std::cout << "SKIP: shared provided buffer ring unavailable: " << error.message() << '\n';
       return true;
@@ -500,7 +500,7 @@ bool CheckEof() {
 
   auto pair = MakeSocketPair();
   if (!pair.has_value()) {
-    std::cout << "FAIL: socketpair failed: " << pair.error().message() << '\n';
+    std::cout << "FAIL: socketpair failed: " << pair.Error().message() << '\n';
     return false;
   }
   auto receiver = std::move(pair->first);
@@ -508,12 +508,12 @@ bool CheckEof() {
 
   auto source_result = RecvSource::Create(&loop, receiver.Get());
   if (!source_result.has_value()) {
-    if (IsEnvironmentSkip(source_result.error())) {
-      std::cout << "SKIP: provided buffer ring unavailable: " << source_result.error().message()
+    if (IsEnvironmentSkip(source_result.Error())) {
+      std::cout << "SKIP: provided buffer ring unavailable: " << source_result.Error().message()
                 << '\n';
       return true;
     }
-    std::cout << "FAIL: RecvSource creation failed: " << source_result.error().message() << '\n';
+    std::cout << "FAIL: RecvSource creation failed: " << source_result.Error().message() << '\n';
     return false;
   }
   auto source = std::move(*source_result);
@@ -546,7 +546,7 @@ bool CheckQueuePauseThenRearm() {
 
   auto pair = MakeSocketPair();
   if (!pair.has_value()) {
-    std::cout << "FAIL: socketpair failed: " << pair.error().message() << '\n';
+    std::cout << "FAIL: socketpair failed: " << pair.Error().message() << '\n';
     return false;
   }
   auto receiver = std::move(pair->first);
@@ -560,12 +560,12 @@ bool CheckQueuePauseThenRearm() {
 
   auto source_result = RecvSource::Create(&loop, receiver.Get(), options);
   if (!source_result.has_value()) {
-    if (IsEnvironmentSkip(source_result.error())) {
-      std::cout << "SKIP: provided buffer ring unavailable: " << source_result.error().message()
+    if (IsEnvironmentSkip(source_result.Error())) {
+      std::cout << "SKIP: provided buffer ring unavailable: " << source_result.Error().message()
                 << '\n';
       return true;
     }
-    std::cout << "FAIL: RecvSource creation failed: " << source_result.error().message() << '\n';
+    std::cout << "FAIL: RecvSource creation failed: " << source_result.Error().message() << '\n';
     return false;
   }
   auto source = std::move(*source_result);

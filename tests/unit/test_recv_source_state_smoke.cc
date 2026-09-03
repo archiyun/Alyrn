@@ -213,7 +213,7 @@ void CheckBufferCapacityFailure() {
   auto overflow = state.CompleteMultishotEvent(
       EventDisposition::kProduced, MultishotRequestDisposition::kMore);
   assert(!overflow.has_value());
-  assert(overflow.error().value() == ENOBUFS);
+  assert(overflow.Error().value() == ENOBUFS);
   assert(state.State() == RecvSourceState::kActive);
   assert(state.ArmedRequests() == 1);
   assert(state.QueuedEvents() == 1);

@@ -50,7 +50,7 @@ public:
 
   Result<void> ValidateWrite() const noexcept {
     auto readable = ValidateRead();
-    if (!readable.has_value()) {
+    if (!readable.HasValue()) {
       return readable;
     }
     if (write_ == WriteState::kShutdown) {
@@ -73,8 +73,8 @@ public:
   // down.
   Result<bool> PrepareCloseRead(bool read_pending) noexcept {
     auto readable = ValidateRead();
-    if (!readable.has_value()) {
-      return std::unexpected(readable.error());
+    if (!readable.HasValue()) {
+      return std::unexpected(readable.Error());
     }
     if (read_ == ReadState::kShutdown) {
       return false;
@@ -108,8 +108,8 @@ public:
   // false means the write side was already shut down.
   Result<bool> PrepareShutdown(bool write_pending) noexcept {
     auto readable = ValidateRead();
-    if (!readable.has_value()) {
-      return std::unexpected(readable.error());
+    if (!readable.HasValue()) {
+      return std::unexpected(readable.Error());
     }
     if (write_ == WriteState::kShutdown) {
       return false;

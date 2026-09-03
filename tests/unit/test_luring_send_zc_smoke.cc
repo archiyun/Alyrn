@@ -86,11 +86,11 @@ bool InitLoop(Loop& loop) {
   if (initialized.has_value()) {
     return true;
   }
-  if (IsEnvironmentSkip(initialized.error())) {
-    std::cout << "SKIP: io_uring unavailable: " << initialized.error().message() << '\n';
+  if (IsEnvironmentSkip(initialized.Error())) {
+    std::cout << "SKIP: io_uring unavailable: " << initialized.Error().message() << '\n';
     return false;
   }
-  std::cout << "FAIL: io_uring initialization failed: " << initialized.error().message() << '\n';
+  std::cout << "FAIL: io_uring initialization failed: " << initialized.Error().message() << '\n';
   return false;
 }
 
@@ -161,7 +161,7 @@ bool DriveUntilResult(Loop& loop, std::optional<Result<T>>& result, const char* 
     auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
     if (!completions.has_value()) {
       std::cout << "FAIL: waiting for " << operation
-                << " CQE failed: " << completions.error().message() << '\n';
+                << " CQE failed: " << completions.Error().message() << '\n';
       return false;
     }
     alyrn::uring::detail::LoopAccess::RunReady(loop);
@@ -177,7 +177,7 @@ bool DriveUntilResultWithPolling(Loop& loop, std::optional<Result<T>>& result,
     alyrn::uring::detail::LoopAccess::RunReady(loop);
     auto completions = alyrn::uring::detail::LoopAccess::PollCompletions(loop);
     if (!completions.has_value()) {
-      std::cout << "FAIL: polling " << operation << " CQE failed: " << completions.error().message()
+      std::cout << "FAIL: polling " << operation << " CQE failed: " << completions.Error().message()
                 << '\n';
       return false;
     }
@@ -227,7 +227,7 @@ bool CheckSendZeroCopy() {
 
   auto pair = MakeTcpPair();
   if (!pair.has_value()) {
-    std::cout << "FAIL: TCP pair failed: " << pair.error().message() << '\n';
+    std::cout << "FAIL: TCP pair failed: " << pair.Error().message() << '\n';
     return false;
   }
   auto local = std::move(pair->first);
@@ -246,7 +246,7 @@ bool CheckSendZeroCopy() {
   for (int i = 0; i < 8 && !result.has_value(); ++i) {
     auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
     if (!completions.has_value()) {
-      std::cout << "FAIL: waiting for send zerocopy CQE failed: " << completions.error().message()
+      std::cout << "FAIL: waiting for send zerocopy CQE failed: " << completions.Error().message()
                 << '\n';
       return false;
     }
@@ -257,12 +257,12 @@ bool CheckSendZeroCopy() {
     std::cout << "FAIL: send zerocopy did not reach terminal CQE\n";
     return false;
   }
-  if (!result->has_value() && IsEnvironmentSkip(result->error())) {
-    std::cout << "SKIP: send zerocopy unsupported: " << result->error().message() << '\n';
+  if (!result->has_value() && IsEnvironmentSkip(result->Error())) {
+    std::cout << "SKIP: send zerocopy unsupported: " << result->Error().message() << '\n';
     return true;
   }
   if (!Check(result->has_value(), "send zerocopy returned an error")) {
-    std::cout << "send zerocopy error: " << result->error().message() << '\n';
+    std::cout << "send zerocopy error: " << result->Error().message() << '\n';
     return false;
   }
 
@@ -313,7 +313,7 @@ bool CheckZeroCopyWriteIntegrity() {
 
   auto pair = MakeTcpPair();
   if (!pair.has_value()) {
-    std::cout << "FAIL: TCP pair failed: " << pair.error().message() << '\n';
+    std::cout << "FAIL: TCP pair failed: " << pair.Error().message() << '\n';
     return false;
   }
   auto local = std::move(pair->first);
@@ -342,11 +342,11 @@ bool CheckZeroCopyWriteIntegrity() {
       return false;
     }
     if (!result->has_value()) {
-      if (IsEnvironmentSkip(result->error())) {
-        std::cout << "SKIP: send zerocopy unsupported: " << result->error().message() << '\n';
+      if (IsEnvironmentSkip(result->Error())) {
+        std::cout << "SKIP: send zerocopy unsupported: " << result->Error().message() << '\n';
         return true;
       }
-      std::cout << "FAIL: zero-copy Write error: " << result->error().message() << '\n';
+      std::cout << "FAIL: zero-copy Write error: " << result->Error().message() << '\n';
       return false;
     }
     if (!Check(ReadExact(peer.Get(), std::span<const char>(payload)),

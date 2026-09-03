@@ -4,9 +4,11 @@
 // current-thread small-packet benchmark. The server only receives and counts
 // bytes; it does not echo them back.
 //
-//   cmake --build build-uring --target demo_bench_small_packet_epoll
+// Build:
+//   make build
+// Run:
 //   PACKET=64 CONNECTIONS=16 DURATION_MS=3000 WARMUP_MS=200 \
-//     build-uring/examples/epoll/demo_bench_small_packet_epoll
+//     ./build/debug/examples/epoll/demo_bench_small_packet_epoll
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -108,8 +110,8 @@ DetachedTask ReadSession(Stream stream, Stats* stats, std::size_t packet_size) {
 
   for (;;) {
     auto read = co_await stream.Read(destination);
-    if (!read.has_value() || *read == 0) {
-      if (!read.has_value()) stats->errors.fetch_add(1, std::memory_order_relaxed);
+    if (!read.HasValue() || *read == 0) {
+      if (!read.HasValue()) stats->errors.fetch_add(1, std::memory_order_relaxed);
       break;
     }
     stats->recvs.fetch_add(1, std::memory_order_relaxed);
@@ -121,7 +123,7 @@ DetachedTask ReadSession(Stream stream, Stats* stats, std::size_t packet_size) {
 DetachedTask AcceptLoop(Loop& loop, Listener& listener, Stats* stats, std::size_t packet_size) {
   for (;;) {
     auto accepted = co_await listener.Accept();
-    if (!accepted.has_value()) co_return;
+    if (!accepted.HasValue()) co_return;
     SpawnDetach(loop, ReadSession(std::move(*accepted), stats, packet_size));
   }
 }
@@ -148,14 +150,14 @@ int main() {
     (void)::pthread_setname_np(::pthread_self(), "alyrn-server");
     Loop loop;
     auto listener_result = Listener::Create(&loop, alyrn::net::Endpoint::Loopback(0));
-    if (!listener_result.has_value()) {
+    if (!listener_result.HasValue()) {
       failed.store(true, std::memory_order_relaxed);
       ready.store(true, std::memory_order_release);
       return;
     }
     auto listener = std::move(*listener_result);
     auto local = listener.LocalAddress();
-    if (!local.has_value()) {
+    if (!local.HasValue()) {
       failed.store(true, std::memory_order_relaxed);
       ready.store(true, std::memory_order_release);
       return;

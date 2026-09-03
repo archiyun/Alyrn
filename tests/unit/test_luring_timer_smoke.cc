@@ -95,8 +95,8 @@ bool TestTimers() {
 
   auto init = loop.Init(options);
   if (!init.has_value()) {
-    if (IsEnvironmentSkip(init.error())) {
-      std::cout << "SKIP: io_uring unavailable: " << init.error().message() << '\n';
+    if (IsEnvironmentSkip(init.Error())) {
+      std::cout << "SKIP: io_uring unavailable: " << init.Error().message() << '\n';
       return true;
     }
     return Check(false, "Loop initialization failed");
@@ -170,7 +170,7 @@ bool TestStopDiscardsUnexpiredTimer() {
 
     auto init = loop.Init(options);
     if (!init.has_value()) {
-      if (IsEnvironmentSkip(init.error())) {
+      if (IsEnvironmentSkip(init.Error())) {
         return true;
       }
       return Check(false, "Loop initialization failed for stop test");

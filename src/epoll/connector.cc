@@ -67,8 +67,8 @@ public:
     LoopAccess::RegisterShutdownParticipant(*loop_, shutdown_participant_);
 
     auto fd = net::CreateNonBlockingSocket(peer_.NativeFamily());
-    if (!fd.has_value()) {
-      CompleteInline(std::unexpected(fd.error()));
+    if (!fd.HasValue()) {
+      CompleteInline(std::unexpected(fd.Error()));
       return false;
     }
     fd_ = *fd;
@@ -108,8 +108,8 @@ private:
 
   Result<Stream> MakeStream() noexcept {
     auto configured = net::ApplyTcpOptions(fd_, tcp_options_);
-    if (!configured.has_value()) {
-      return std::unexpected(configured.error());
+    if (!configured.HasValue()) {
+      return std::unexpected(configured.Error());
     }
     Stream stream(loop_, fd_, peer_, stream_options_);
     fd_ = -1;
@@ -121,8 +121,8 @@ private:
       return;
     }
     auto error = ConnectError(fd_);
-    if (!error.has_value()) {
-      CompletePending(std::unexpected(error.error()));
+    if (!error.HasValue()) {
+      CompletePending(std::unexpected(error.Error()));
     } else if (*error == 0) {
       CompletePending(MakeStream());
     } else {
@@ -187,8 +187,8 @@ private:
 coro::Task<Result<Stream>> ConnectResolved(Loop* loop, StreamOptions stream_options,
                                            net::TcpOptions tcp_options,
                                            Result<net::Endpoint> peer) {
-  if (!peer.has_value()) {
-    co_return std::unexpected(peer.error());
+  if (!peer.HasValue()) {
+    co_return std::unexpected(peer.Error());
   }
   co_return co_await ConnectAwaiter(loop, *peer, stream_options, tcp_options);
 }

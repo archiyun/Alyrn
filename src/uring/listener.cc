@@ -89,9 +89,9 @@ Result<net::Endpoint> GetLocalAddress(int fd) noexcept {
 AcceptResult MakeStream(Loop* loop, int fd, const sockaddr_storage& peer_addr,
                         socklen_t peer_len, const net::TcpOptions& tcp_options) noexcept {
   auto configured = net::ApplyTcpOptions(fd, tcp_options);
-  if (!configured.has_value()) {
+  if (!configured.HasValue()) {
     (void)::close(fd);
-    return std::unexpected(configured.error());
+    return std::unexpected(configured.Error());
   }
   return Stream(loop, fd, net::Endpoint(reinterpret_cast<const sockaddr*>(&peer_addr), peer_len));
 }
@@ -122,8 +122,8 @@ bool AcceptSource::NextAwaiter::await_suspend(std::coroutine_handle<> continuati
 
   if (source_->state_.State() == AcceptSourceState::kIdle) {
     auto started = source_->Start();
-    if (!started.has_value()) {
-      result_.SetError(started.error());
+    if (!started.HasValue()) {
+      result_.SetError(started.Error());
       (void)(completion_gate_.TryComplete());
       return false;
     }
@@ -165,9 +165,9 @@ public:
     source_->pending_stop_ = this;
 
     auto waiting = source_->BeginStop();
-    if (!waiting.has_value()) {
+    if (!waiting.HasValue()) {
       source_->pending_stop_ = nullptr;
-      result_.emplace(std::unexpected(waiting.error()));
+      result_.emplace(std::unexpected(waiting.Error()));
       (void)(completion_gate_.TryComplete());
       return false;
     }
@@ -276,9 +276,9 @@ AcceptSource& AcceptSource::operator=(AcceptSource&& other) noexcept {
 
 Result<Stream> AcceptSource::MakeStream(int accepted_fd) noexcept {
   auto configured = net::ApplyTcpOptions(accepted_fd, listener_->tcp_options_);
-  if (!configured.has_value()) {
+  if (!configured.HasValue()) {
     (void)::close(accepted_fd);
-    return std::unexpected(configured.error());
+    return std::unexpected(configured.Error());
   }
 
   sockaddr_storage peer{};
@@ -322,14 +322,14 @@ Result<void> AcceptSource::StartOperation() noexcept {
                                    detail::PrepareAcceptSource(listener_->fd_, multishot_enabled_,
                                                                SOCK_NONBLOCK | SOCK_CLOEXEC));
 
-  if (!submitted.has_value()) {
+  if (!submitted.HasValue()) {
     --listener_->pending_accepts_;
     const auto completed = state_.CompleteMultishotEvent(EventDisposition::kNone,
                                                          MultishotRequestDisposition::kTerminal);
     (void)(completed);
-    ALYRN_CHECK(completed.has_value(),
+    ALYRN_CHECK(completed.HasValue(),
                    "Uring accept source failed to record terminal submit failure");
-    return std::unexpected(submitted.error());
+    return std::unexpected(submitted.Error());
   }
 
   accept_submitted_ = true;
@@ -350,16 +350,16 @@ Result<void> AcceptSource::Start() noexcept {
   }
 
   auto started = state_.Start();
-  if (!started.has_value()) {
+  if (!started.HasValue()) {
     return started;
   }
 
   listener_->accept_source_ = this;
 
   auto submitted = StartOperation();
-  if (!submitted.has_value()) {
-    RequestBackendStop(submitted.error());
-    return std::unexpected(submitted.error());
+  if (!submitted.HasValue()) {
+    RequestBackendStop(submitted.Error());
+    return std::unexpected(submitted.Error());
   }
 
   return {};
@@ -376,8 +376,8 @@ Result<void> AcceptSource::StartCancel() noexcept {
   auto submitted = detail::LoopAccess::SubmitOp(*listener_->loop_, &cancel_op_,
                                                 detail::PrepareCancelAllByUserData(target));
 
-  if (!submitted.has_value()) {
-    return std::unexpected(submitted.error());
+  if (!submitted.HasValue()) {
+    return std::unexpected(submitted.Error());
   }
 
   cancel_submitted_ = true;
@@ -393,8 +393,8 @@ Result<bool> AcceptSource::BeginStop() noexcept {
 
   if (accept_submitted_) {
     auto cancelled = StartCancel();
-    if (!cancelled.has_value()) {
-      return std::unexpected(cancelled.error());
+    if (!cancelled.HasValue()) {
+      return std::unexpected(cancelled.Error());
     }
   }
 
@@ -410,8 +410,8 @@ void AcceptSource::RequestBackendStop(std::optional<Error> error) noexcept {
 
   if (accept_submitted_ && !cancel_submitted_) {
     auto cancelled = StartCancel();
-    if (!cancelled.has_value() && !terminal_error_.has_value()) {
-      terminal_error_ = cancelled.error();
+    if (!cancelled.HasValue() && !terminal_error_.has_value()) {
+      terminal_error_ = cancelled.Error();
     }
   }
 }
@@ -421,8 +421,8 @@ void AcceptSource::RequestBackendPause() noexcept {
 
   if (accept_submitted_ && !cancel_submitted_) {
     auto cancelled = StartCancel();
-    if (!cancelled.has_value()) {
-      RequestBackendStop(cancelled.error());
+    if (!cancelled.HasValue()) {
+      RequestBackendStop(cancelled.Error());
     }
   }
 }
@@ -434,8 +434,8 @@ void AcceptSource::EnsureSubmission() noexcept {
   }
 
   auto submitted = StartOperation();
-  if (!submitted.has_value()) {
-    RequestBackendStop(submitted.error());
+  if (!submitted.HasValue()) {
+    RequestBackendStop(submitted.Error());
     DeliverNextIfReady();
   }
 }
@@ -471,8 +471,8 @@ CompletionDisposition AcceptSource::OnCompletion(CompletionEvent event) noexcept
       RequestBackendPause();
     } else {
       auto stream = MakeStream(cqe_res);
-      if (!stream.has_value()) {
-        RequestBackendStop(stream.error());
+      if (!stream.HasValue()) {
+        RequestBackendStop(stream.Error());
       } else {
         try {
           events_.push_back(std::move(*stream));
@@ -504,8 +504,8 @@ CompletionDisposition AcceptSource::OnCompletion(CompletionEvent event) noexcept
       produced_event ? EventDisposition::kProduced : EventDisposition::kNone,
       request_still_active ? MultishotRequestDisposition::kMore
                            : MultishotRequestDisposition::kTerminal);
-  if (!recorded.has_value()) {
-    RequestBackendStop(recorded.error());
+  if (!recorded.HasValue()) {
+    RequestBackendStop(recorded.Error());
   }
 
   if (!request_still_active) {
@@ -690,7 +690,7 @@ private:
     } else {
       auto result = MakeStream(listener->loop_, *op->result, self->peer_addr_, self->peer_len_,
                                listener->tcp_options_);
-      if (result.has_value()) {
+      if (result.HasValue()) {
         result->SetZeroCopyWritesEnabled(listener->zero_copy_writes_);
       }
       self->result_.SetResult(std::move(result));
@@ -769,9 +769,9 @@ public:
 
     auto submitted = detail::LoopAccess::SubmitOp(*listener_->loop_, Operation(),
                                                   detail::PrepareCancelAllByFd(listener_->fd_));
-    if (!submitted.has_value()) {
+    if (!submitted.HasValue()) {
       listener_->pending_close_ = nullptr;
-      convergence_.SetError(submitted.error());
+      convergence_.SetError(submitted.Error());
       return false;
     }
 
@@ -864,8 +864,8 @@ Result<Listener> Listener::Create(Loop* loop, const net::Endpoint& listen_addr,
   ALYRN_CHECK(loop->IsInLoopThread(), "Listener created from wrong Loop thread");
 
   auto fd = CreatedListenFd(listen_addr, options);
-  if (!fd.has_value()) {
-    return std::unexpected(fd.error());
+  if (!fd.HasValue()) {
+    return std::unexpected(fd.Error());
   }
   return Listener(loop, *fd, options.zero_copy_writes, options.tcp_options);
 }
@@ -948,8 +948,8 @@ Result<AcceptSource> Listener::CreateAcceptSource(net::AcceptSourceOptions optio
   }
 
   auto state = AcceptSourceStateMachine::Create(options);
-  if (!state.has_value()) {
-    return std::unexpected(state.error());
+  if (!state.HasValue()) {
+    return std::unexpected(state.Error());
   }
   return AcceptSource(this, std::move(*state));
 }

@@ -51,8 +51,8 @@ bool RecvSource::NextAwaiter::await_suspend(std::coroutine_handle<> continuation
 
   if (source_->state_.State() == RecvSourceState::kIdle) {
     auto started = source_->Start();
-    if (!started.has_value()) {
-      result_.SetError(started.error());
+    if (!started.HasValue()) {
+      result_.SetError(started.Error());
       (void)(completion_gate_.TryComplete());
       return false;
     }
@@ -91,9 +91,9 @@ public:
     source_->pending_stop_ = this;
 
     auto waiting = source_->BeginStop();
-    if (!waiting.has_value()) {
+    if (!waiting.HasValue()) {
       source_->pending_stop_ = nullptr;
-      result_.emplace(std::unexpected(waiting.error()));
+      result_.emplace(std::unexpected(waiting.Error()));
       (void)(completion_gate_.TryComplete());
       return false;
     }
@@ -144,18 +144,18 @@ Result<RecvSource> RecvSource::Create(Loop* loop, int fd, RecvSourceOptions opti
   }
 
   auto state_result = RecvSourceStateMachine::Create(options.source);
-  if (!state_result.has_value()) {
-    return std::unexpected(state_result.error());
+  if (!state_result.HasValue()) {
+    return std::unexpected(state_result.Error());
   }
 
   const auto published = std::min(capacity, RecvSourceStateMachine::kMaxRearmWorkingSet);
   auto shared_pool =
       detail::LoopAccess::GetSharedProvidedBufferPool(*loop, options.buffer_size, published);
-  if (!shared_pool.has_value()) {
-    if (shared_pool.error().value() == ENOENT) {
+  if (!shared_pool.HasValue()) {
+    if (shared_pool.Error().value() == ENOENT) {
       return std::unexpected(Errno(ENOTSUP));
     }
-    return std::unexpected(shared_pool.error());
+    return std::unexpected(shared_pool.Error());
   }
   detail::ProvidedBufferPool* const buffer_pool = *shared_pool;
   ALYRN_CHECK(buffer_pool != nullptr, "RecvSource failed to select a buffer pool");
@@ -299,13 +299,13 @@ Result<void> RecvSource::StartOperation() noexcept {
   auto submitted = detail::LoopAccess::SubmitOp(
       *loop_, &recv_op_, detail::PrepareProvidedRecvMultishot(fd_, buffer_size_, buffer_group));
 
-  if (!submitted.has_value()) {
+  if (!submitted.HasValue()) {
     const auto completed = state_.CompleteMultishotEvent(EventDisposition::kNone,
                                                          MultishotRequestDisposition::kTerminal);
     (void)(completed);
-    ALYRN_CHECK(completed.has_value(),
+    ALYRN_CHECK(completed.HasValue(),
                 "Uring recv source failed to record terminal submit failure");
-    return std::unexpected(submitted.error());
+    return std::unexpected(submitted.Error());
   }
 
   recv_submitted_ = true;
@@ -321,14 +321,14 @@ Result<void> RecvSource::Start() noexcept {
   }
 
   auto started = state_.Start();
-  if (!started.has_value()) {
+  if (!started.HasValue()) {
     return started;
   }
 
   auto submitted = StartOperation();
-  if (!submitted.has_value()) {
-    RequestBackendStop(submitted.error());
-    return std::unexpected(submitted.error());
+  if (!submitted.HasValue()) {
+    RequestBackendStop(submitted.Error());
+    return std::unexpected(submitted.Error());
   }
   return {};
 }
@@ -342,8 +342,8 @@ Result<void> RecvSource::StartCancel() noexcept {
   const auto target = reinterpret_cast<std::uint64_t>(&recv_op_);
   auto submitted =
       detail::LoopAccess::SubmitOp(*loop_, &cancel_op_, detail::PrepareCancelAllByUserData(target));
-  if (!submitted.has_value()) {
-    return std::unexpected(submitted.error());
+  if (!submitted.HasValue()) {
+    return std::unexpected(submitted.Error());
   }
 
   cancel_submitted_ = true;
@@ -352,14 +352,14 @@ Result<void> RecvSource::StartCancel() noexcept {
 
 Result<bool> RecvSource::BeginStop() noexcept {
   auto stopped = state_.RequestStop();
-  if (!stopped.has_value()) {
-    return std::unexpected(stopped.error());
+  if (!stopped.HasValue()) {
+    return std::unexpected(stopped.Error());
   }
 
   if (recv_submitted_) {
     auto cancelled = StartCancel();
-    if (!cancelled.has_value()) {
-      return std::unexpected(cancelled.error());
+    if (!cancelled.HasValue()) {
+      return std::unexpected(cancelled.Error());
     }
   }
 
@@ -373,8 +373,8 @@ void RecvSource::EnsureSubmission() noexcept {
   }
 
   auto submitted = StartOperation();
-  if (!submitted.has_value()) {
-    RequestBackendStop(submitted.error());
+  if (!submitted.HasValue()) {
+    RequestBackendStop(submitted.Error());
     DeliverNextIfReady();
   }
 }
@@ -384,8 +384,8 @@ void RecvSource::RequestBackendPause() noexcept {
 
   if (recv_submitted_ && !cancel_submitted_) {
     auto cancelled = StartCancel();
-    if (!cancelled.has_value()) {
-      RequestBackendStop(cancelled.error());
+    if (!cancelled.HasValue()) {
+      RequestBackendStop(cancelled.Error());
     }
   }
 }
@@ -410,8 +410,8 @@ void RecvSource::RequestBackendStop(std::optional<Error> error) noexcept {
 
   if (recv_submitted_ && !cancel_submitted_) {
     auto cancelled = StartCancel();
-    if (!cancelled.has_value() && !terminal_error_.has_value()) {
-      terminal_error_ = cancelled.error();
+    if (!cancelled.HasValue() && !terminal_error_.has_value()) {
+      terminal_error_ = cancelled.Error();
     }
   }
 }
@@ -437,8 +437,8 @@ CompletionDisposition RecvSource::OnCompletion(CompletionEvent event) noexcept {
       completion_error = Errno(EPROTO);
     } else {
       auto acquired = AcquireBuffer(buffer_id, static_cast<std::size_t>(cqe_result));
-      if (!acquired.has_value()) {
-        completion_error = acquired.error();
+      if (!acquired.HasValue()) {
+        completion_error = acquired.Error();
       } else {
         if (!event.BufferMore()) {
           MarkKernelDone(buffer_id);
@@ -454,9 +454,9 @@ CompletionDisposition RecvSource::OnCompletion(CompletionEvent event) noexcept {
               direct_delivery ? EventDisposition::kDelivered : EventDisposition::kProduced,
               request_still_active ? MultishotRequestDisposition::kMore
                                    : MultishotRequestDisposition::kTerminal);
-          if (!recorded.has_value()) {
+          if (!recorded.HasValue()) {
             ReleaseSlotLease(buffer_id);
-            RequestBackendStop(recorded.error());
+            RequestBackendStop(recorded.Error());
           } else {
             state_recorded = true;
             if (direct_delivery) {
@@ -512,9 +512,9 @@ CompletionDisposition RecvSource::OnCompletion(CompletionEvent event) noexcept {
     auto recorded = state_.CompleteMultishotEvent(
         EventDisposition::kNone, request_still_active ? MultishotRequestDisposition::kMore
                                                       : MultishotRequestDisposition::kTerminal);
-    if (!recorded.has_value()) {
-      terminal_error_ = recorded.error();
-      RequestBackendStop(recorded.error());
+    if (!recorded.HasValue()) {
+      terminal_error_ = recorded.Error();
+      RequestBackendStop(recorded.Error());
     }
   }
 
@@ -734,8 +734,8 @@ Result<void> RecvSource::RequestStop() noexcept {
   }
 
   auto waiting = BeginStop();
-  if (!waiting.has_value()) {
-    return std::unexpected(waiting.error());
+  if (!waiting.HasValue()) {
+    return std::unexpected(waiting.Error());
   }
   return {};
 }
