@@ -89,6 +89,22 @@ alyrn::coro::DetachedTask ReadOnce(alyrn::epoll::Stream* stream, alyrn::epoll::L
   loop->RequestStop();
 }
 
+alyrn::coro::DetachedTask ReadWithDeadline(alyrn::epoll::Stream* stream,
+                                           alyrn::epoll::Loop* loop,
+                                           std::array<std::byte, 16>* buffer,
+                                           std::optional<ReadResult>* out) {
+  auto configured =
+      stream->SetReadDeadline(alyrn::time::SteadyNow() + alyrn::time::Milliseconds(10));
+  if (!configured.has_value()) {
+    out->emplace(std::unexpected(configured.error()));
+    loop->RequestStop();
+    co_return;
+  }
+
+  out->emplace(co_await stream->Read(*buffer));
+  loop->RequestStop();
+}
+
 alyrn::coro::DetachedTask ReadWithoutQuit(alyrn::epoll::Stream* stream,
                                           alyrn::epoll::Loop* scheduler,
                                           std::array<std::byte, 16>* buffer,
@@ -322,6 +338,7 @@ bool CheckImmediateWrite() {
 
   alyrn::epoll::Loop loop;
   alyrn::epoll::Stream stream(&loop, sv[0]);
+  std::cout << "write test fds=" << sv[0] << "," << sv[1] << '\n';
 
   const char payload[] = "write";
   auto bytes = std::as_bytes(std::span(payload, sizeof(payload) - 1));
@@ -379,6 +396,28 @@ bool CheckPendingRead() {
          Check(std::memcmp(buffer.data(), payload, sizeof(payload) - 1) == 0,
                "pending read payload mismatch") &&
          Check(resumed_with_scheduler, "pending read resumed without current scheduler");
+}
+
+bool CheckReadDeadline() {
+  int sv[2] = {-1, -1};
+  if (!MakeSocketPair(sv)) {
+    std::cout << "FAIL: socketpair failed\n";
+    return false;
+  }
+
+  alyrn::epoll::Loop loop;
+  alyrn::epoll::Stream stream(&loop, sv[0]);
+  std::array<std::byte, 16> buffer{};
+  std::optional<ReadResult> result;
+
+  alyrn::coro::SpawnDetach(loop, ReadWithDeadline(&stream, &loop, &buffer, &result));
+  loop.Run();
+  ::close(sv[1]);
+
+  return Check(result.has_value(), "read deadline did not finish") &&
+         Check(!result->has_value(), "read deadline unexpectedly succeeded") &&
+         Check(result->error() == std::errc::timed_out,
+               "read deadline returned an unexpected error");
 }
 
 bool CheckOwnedRecvReturnsBuffer() {
@@ -732,6 +771,7 @@ int main() {
   if (!CheckImmediateRead()) return 1;
   if (!CheckImmediateWrite()) return 1;
   if (!CheckPendingRead()) return 1;
+  if (!CheckReadDeadline()) return 1;
   if (!CheckOwnedRecvReturnsBuffer()) return 1;
   if (!CheckPooledRecvCopiesPayload()) return 1;
   if (!CheckOwnedRecvCloseReturnsBuffer()) return 1;

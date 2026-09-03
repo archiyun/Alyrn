@@ -175,6 +175,9 @@ void Stream::ReadAwaiterState::SuspendForRead(void* awaiter, PendingReadKind kin
   if (!stream_->channel_.IsReading()) {
     stream_->channel_.EnableReading();
   }
+  if (!stream_->ArmReadDeadline()) {
+    stream_->CompleteRead(std::unexpected(Errno(ENOMEM)));
+  }
 }
 
 bool Stream::ReadAwaiterState::TryAuthorizeResult() noexcept {
@@ -193,6 +196,7 @@ Stream::ReadAwaiterState::~ReadAwaiterState() {
   if (stream_ == nullptr || stream_->pending_read_ != this) {
     return;
   }
+  stream_->CancelReadDeadline();
   stream_->pending_read_ = nullptr;
   stream_->pending_read_kind_ = PendingReadKind::kNone;
   if (stream_->channel_.IsReading()) {
@@ -461,6 +465,9 @@ bool Stream::WriteAwaiter::await_suspend(std::coroutine_handle<> continuation) n
       if (!stream_->channel_.IsWriting()) {
         stream_->channel_.EnableWriting();
       }
+      if (!stream_->ArmWriteDeadline()) {
+        stream_->CompleteWrite(std::unexpected(Errno(ENOMEM)));
+      }
       return true;
     }
     if (!result.has_value()) {
@@ -497,6 +504,7 @@ Stream::WriteAwaiter::~WriteAwaiter() {
   if (stream_ == nullptr || stream_->pending_write_ != this) {
     return;
   }
+  stream_->CancelWriteDeadline();
   stream_->pending_write_ = nullptr;
   if (stream_->channel_.IsWriting()) {
     stream_->channel_.DisableWriting();
@@ -563,6 +571,8 @@ Stream::Stream(Stream&& other) noexcept
       socket_(std::move(other.socket_)),
       channel_(std::move(other.channel_)),
       peer_(other.peer_),
+      read_deadline_(std::move(other.read_deadline_)),
+      write_deadline_(std::move(other.write_deadline_)),
       lifecycle_(std::move(other.lifecycle_)) {
   BindChannelCallbacks();
   LoopAccess::RegisterShutdownParticipant(*loop_, shutdown_participant_);
@@ -586,6 +596,8 @@ Stream& Stream::operator=(Stream&& other) noexcept {
   peer_ = other.peer_;
   pending_read_ = nullptr;
   pending_write_ = nullptr;
+  read_deadline_ = std::move(other.read_deadline_);
+  write_deadline_ = std::move(other.write_deadline_);
   lifecycle_ = std::move(other.lifecycle_);
   BindChannelCallbacks();
   LoopAccess::RegisterShutdownParticipant(*loop_, shutdown_participant_);
@@ -699,6 +711,36 @@ Result<void> Stream::SetWriteBuffer(std::size_t bytes) const noexcept {
   return net::SetWriteBuffer(socket_.fd(), bytes);
 }
 
+Result<void> Stream::SetDeadline(std::optional<time::Deadline> deadline) noexcept {
+  auto read_result = SetReadDeadline(deadline);
+  if (!read_result.has_value()) {
+    return read_result;
+  }
+  return SetWriteDeadline(deadline);
+}
+
+Result<void> Stream::SetReadDeadline(std::optional<time::Deadline> deadline) noexcept {
+  RequireOwnerLoop();
+  CancelReadDeadline();
+  read_deadline_ = deadline;
+  if (pending_read_ != nullptr && !ArmReadDeadline()) {
+    CompleteRead(std::unexpected(Errno(ENOMEM)));
+    return std::unexpected(Errno(ENOMEM));
+  }
+  return {};
+}
+
+Result<void> Stream::SetWriteDeadline(std::optional<time::Deadline> deadline) noexcept {
+  RequireOwnerLoop();
+  CancelWriteDeadline();
+  write_deadline_ = deadline;
+  if (pending_write_ != nullptr && !ArmWriteDeadline()) {
+    CompleteWrite(std::unexpected(Errno(ENOMEM)));
+    return std::unexpected(Errno(ENOMEM));
+  }
+  return {};
+}
+
 void Stream::HandleRead() {
   if (pending_read_ == nullptr) {
     // Keep LT cheap for back-to-back reads, but disarm stale readiness when a
@@ -748,6 +790,7 @@ void Stream::CompleteRead(Result<std::size_t> result) {
   if (awaiter == nullptr) {
     return;
   }
+  CancelReadDeadline();
 
   const bool terminal_result = !result.has_value() || *result == 0;
   ReadAwaiterState* state = nullptr;
@@ -801,6 +844,7 @@ void Stream::CompleteWrite(Result<std::size_t> result) {
   if (awaiter == nullptr) {
     return;
   }
+  CancelWriteDeadline();
   ALYRN_CHECK(awaiter->CompleteResult(result),
               "Stream::CompleteWrite result was already authorized");
   ALYRN_CHECK(awaiter->TryAuthorizeRelease(),
@@ -841,6 +885,84 @@ void Stream::DetachChannel() {
   }
   if (channel_.IsRegistered()) {
     channel_.Remove();
+  }
+}
+
+bool Stream::ArmReadDeadline() noexcept {
+  if (pending_read_ == nullptr || !read_deadline_.has_value()) {
+    return true;
+  }
+
+  if (*read_deadline_ <= time::SteadyNow()) {
+    CompleteRead(std::unexpected(Errno(ETIMEDOUT)));
+    return true;
+  }
+
+  const std::uint64_t generation = ++read_timer_generation_;
+  try {
+    read_timer_ = loop_->RunAt(*read_deadline_, [this, generation] {
+      HandleReadDeadline(generation);
+    });
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+bool Stream::ArmWriteDeadline() noexcept {
+  if (pending_write_ == nullptr || !write_deadline_.has_value()) {
+    return true;
+  }
+
+  if (*write_deadline_ <= time::SteadyNow()) {
+    CompleteWrite(std::unexpected(Errno(ETIMEDOUT)));
+    return true;
+  }
+
+  const std::uint64_t generation = ++write_timer_generation_;
+  try {
+    write_timer_ = loop_->RunAt(*write_deadline_, [this, generation] {
+      HandleWriteDeadline(generation);
+    });
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+void Stream::CancelReadDeadline() noexcept {
+  ++read_timer_generation_;
+  const auto timer = std::exchange(read_timer_, time::TimerId{});
+  if (timer.Valid()) {
+    loop_->Cancel(timer);
+  }
+}
+
+void Stream::CancelWriteDeadline() noexcept {
+  ++write_timer_generation_;
+  const auto timer = std::exchange(write_timer_, time::TimerId{});
+  if (timer.Valid()) {
+    loop_->Cancel(timer);
+  }
+}
+
+void Stream::HandleReadDeadline(std::uint64_t generation) noexcept {
+  if (generation != read_timer_generation_) {
+    return;
+  }
+  read_timer_ = {};
+  if (pending_read_ != nullptr) {
+    CompleteRead(std::unexpected(Errno(ETIMEDOUT)));
+  }
+}
+
+void Stream::HandleWriteDeadline(std::uint64_t generation) noexcept {
+  if (generation != write_timer_generation_) {
+    return;
+  }
+  write_timer_ = {};
+  if (pending_write_ != nullptr) {
+    CompleteWrite(std::unexpected(Errno(ETIMEDOUT)));
   }
 }
 

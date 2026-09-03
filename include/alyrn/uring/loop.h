@@ -17,12 +17,12 @@
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/work.h"
 #include "alyrn/detail/check.h"
-#include "alyrn/uring/detail/op.h"
-#include "alyrn/uring/detail/ring.h"
-#include "alyrn/uring/detail/sqe_prep.h"
 #include "alyrn/result.h"
 #include "alyrn/time/clock.h"
 #include "alyrn/time/timer_id.h"
+#include "alyrn/uring/detail/op.h"
+#include "alyrn/uring/detail/ring.h"
+#include "alyrn/uring/detail/sqe_prep.h"
 #include "alyrn/uring/options.h"
 
 namespace alyrn::uring {
@@ -121,9 +121,11 @@ private:
       return std::unexpected(Errno(EINVAL));
     }
     const backend::LoopState state = State();
-    if ((state == backend::LoopState::kStopping ||
-         state == backend::LoopState::kStopped) &&
-        op != &cancel_all_op_ && op != &wake_op_) {
+    const auto kind = op->DispatchKind();
+    const bool is_stream_deadline_cancel = kind == detail::OpKind::kStreamReadCancelComplete ||
+                                           kind == detail::OpKind::kStreamWriteCancelComplete;
+    if ((state == backend::LoopState::kStopping || state == backend::LoopState::kStopped) &&
+        op != &cancel_all_op_ && op != &wake_op_ && !is_stream_deadline_cancel) {
       return std::unexpected(Errno(ECANCELED));
     }
 
@@ -195,8 +197,7 @@ private:
   void Wake() noexcept;
 
   // Cross-thread lifecycle state observed by the event loop.
-  std::atomic<backend::LoopState> state_{
-      backend::LoopState::kCreated};
+  std::atomic<backend::LoopState> state_{backend::LoopState::kCreated};
 
   std::unique_ptr<detail::TimerQueue> timers_;
   int wake_fd_{-1};

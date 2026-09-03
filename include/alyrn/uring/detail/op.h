@@ -77,6 +77,8 @@ enum class OpKind : std::uint8_t {
 
   kWriteComplete,
   kStreamCloseComplete,
+  kStreamReadCancelComplete,
+  kStreamWriteCancelComplete,
 
   kTimerDriverComplete,
   kTimerControlComplete,
@@ -107,6 +109,8 @@ constexpr CompletionModel CompletionModelFor(OpKind kind) noexcept {
     case OpKind::kRecvCopyComplete:
     case OpKind::kWriteComplete:
     case OpKind::kStreamCloseComplete:
+    case OpKind::kStreamReadCancelComplete:
+    case OpKind::kStreamWriteCancelComplete:
     case OpKind::kTimerDriverComplete:
     case OpKind::kTimerControlComplete:
     case OpKind::kConnect:
@@ -141,6 +145,8 @@ constexpr bool UsesCoupledSingleResultLifecycle(OpKind kind) noexcept {
     case OpKind::kSendZeroCopyComplete:
     case OpKind::kListenerCloseComplete:
     case OpKind::kStreamCloseComplete:
+    case OpKind::kStreamReadCancelComplete:
+    case OpKind::kStreamWriteCancelComplete:
     case OpKind::kTimerDriverComplete:
     case OpKind::kTimerControlComplete:
     case OpKind::kWake:
@@ -173,6 +179,8 @@ constexpr bool CqeResultDirectlyPublishesLogicalResult(OpKind kind) noexcept {
     case OpKind::kSendZeroCopyComplete:
     case OpKind::kListenerCloseComplete:
     case OpKind::kStreamCloseComplete:
+    case OpKind::kStreamReadCancelComplete:
+    case OpKind::kStreamWriteCancelComplete:
     case OpKind::kTimerDriverComplete:
     case OpKind::kTimerControlComplete:
     case OpKind::kConnect:
@@ -299,8 +307,7 @@ public:
   // physical requests.
   void BeginNextRequest() noexcept {
     completion_slot_.BeginNextRequest();
-    std::destroy_at(std::addressof(single_result_lifecycle_));
-    std::construct_at(std::addressof(single_result_lifecycle_));
+    single_result_lifecycle_.Reset();
     result.Clear();
     resume_work.ClearHandle();
   }

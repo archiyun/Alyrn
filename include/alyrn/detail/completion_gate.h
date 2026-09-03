@@ -21,6 +21,10 @@ public:
 
   CompletionGate() noexcept = default;
 
+  void Reset() noexcept {
+    completed_ = false;
+  }
+
   bool TryComplete() noexcept {
     if (completed_) {
       return false;

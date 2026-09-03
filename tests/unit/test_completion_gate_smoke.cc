@@ -46,7 +46,7 @@ concept ResettableCompletionGate = requires(T& gate) { gate.Reset(); };
 template <typename T>
 concept ReassignableCompletionGate = requires(T& gate) { gate = {}; };
 
-static_assert(!ResettableCompletionGate<alyrn::detail::CompletionGate>);
+static_assert(ResettableCompletionGate<alyrn::detail::CompletionGate>);
 static_assert(!ReassignableCompletionGate<alyrn::detail::CompletionGate>);
 
 bool TestOneShotTransition() {
@@ -60,6 +60,14 @@ bool TestOneShotTransition() {
   return ok;
 }
 
+bool TestResetTransition() {
+  alyrn::detail::CompletionGate gate;
+  gate.TryComplete();
+  gate.Reset();
+  return Expect(!gate.Completed(), "a reset completion gate must become open") &&
+         Expect(gate.TryComplete(), "a reset completion gate must accept a new completion");
+}
+
 class RecordingScheduler final : public alyrn::coro::Scheduler {
 public:
   void Schedule(alyrn::coro::Work* work) noexcept override { scheduled_ = work; }
@@ -69,8 +77,7 @@ public:
 
 class BindContinuationWork final : public alyrn::coro::Work {
 public:
-  BindContinuationWork(alyrn::detail::SchedulerContinuation* continuation,
-                       bool bind_twice) noexcept
+  BindContinuationWork(alyrn::detail::SchedulerContinuation* continuation, bool bind_twice) noexcept
       : continuation_(continuation), bind_twice_(bind_twice) {
     SetRun(&RunBind);
   }
@@ -215,7 +222,8 @@ bool TestSchedulerContinuationRejectsInvalidTransitions() {
 }  // namespace
 
 int main() {
-  const bool ok = TestOneShotTransition() && TestSchedulerContinuationPreservesAffinity() &&
+  const bool ok = TestOneShotTransition() && TestResetTransition() &&
+                  TestSchedulerContinuationPreservesAffinity() &&
                   TestSchedulerContinuationUsesCustomDispatch() &&
                   TestSchedulerRunRestoresNestedAffinity() &&
                   TestSchedulerContinuationRejectsInvalidTransitions();

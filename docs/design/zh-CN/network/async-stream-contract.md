@@ -829,10 +829,15 @@ registered fixed buffer 仍属于后续扩展。
 
 ## 8. Timeout 语义
 
-Stream 不再提供 per-call `ReadFor`。把超时做成单次操作覆盖会引入第三套状态机
-（无超时 / 本次覆盖 / 连接级），调用方必须参加。后续若重新引入超时，应是连接级 sticky
-每操超时（例如 `SetReadTimeout(30s)`：每次 Read 从挂起起算），而不是 Go 式绝对
-`SetDeadline`，也不是一次性 `ReadFor`。
+Stream 不提供 per-call `ReadFor`。把超时做成单次操作覆盖会引入第三套状态机
+（无超时 / 本次覆盖 / 连接级），调用方必须参加。Stream 的 deadline 是连接级 sticky
+绝对单调时刻：`SetReadDeadline(t)` 与 `SetWriteDeadline(t)` 同时作用于当前 pending
+operation 和之后的同向 operation，直到传入 `std::nullopt` 清除。
+
+deadline 已过期时，后续 operation 不提交后端 I/O，确定返回 `ETIMEDOUT`。当 owner loop
+先观察到在途 operation 的 deadline 到期，该 operation 同样确定返回 `ETIMEDOUT`；与其竞争
+的 I/O completion 不改变该结果。deadline 是 `AsyncDeadlineStream` 的可选 capability，
+不属于 `AsyncStream` 核心 contract。
 
 loop 级延时仍然存在：
 

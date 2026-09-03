@@ -47,8 +47,396 @@ Result<std::size_t> ToSizeResult(const CqeResult& result) noexcept {
   return static_cast<std::size_t>(cqe_result);
 }
 
+Result<std::size_t> ToSizeResult(const CqeResult& result, bool timed_out) noexcept {
+  ALYRN_CHECK(result.HasValue(), "Uring stream awaiter resumed before its CQE result was ready");
+  const int cqe_result = *result;
+  if (timed_out) {
+    return std::unexpected(Errno(ETIMEDOUT));
+  }
+  if (cqe_result < 0) {
+    return std::unexpected(NegErrno(cqe_result));
+  }
+  return static_cast<std::size_t>(cqe_result);
+}
+
 }  // namespace
 
+CompletionDisposition Stream::DeadlineCancelOp::OnComplete(Op* op) noexcept {
+  auto* self = detail::OpHook<DeadlineCancelOp>::OwnerFrom(op);
+  return self->stream_->CompleteDeadlineCancel(self->read_);
+}
+
+Result<void> Stream::BeginReadOperation(Op* operation, void* owner,
+                                        DeadlineFinalizer finalizer) noexcept {
+  ALYRN_CHECK(operation != nullptr, "Uring read deadline requires an operation");
+  ALYRN_CHECK(owner != nullptr, "Uring read deadline requires an owner");
+  ALYRN_CHECK(finalizer != nullptr, "Uring read deadline requires a finalizer");
+  ALYRN_CHECK(read_deadline_target_ == nullptr,
+              "Uring read deadline state was not released before a new operation");
+
+  read_cancel_op_.BeginNextRequest();
+  read_deadline_target_ = operation;
+  read_deadline_owner_ = owner;
+  read_deadline_finalizer_ = finalizer;
+  read_cancel_requested_ = false;
+  read_cancel_submitted_ = false;
+  read_cancel_terminal_ = false;
+  read_primary_terminal_ = false;
+  read_timed_out_ = false;
+
+  if (read_deadline_.has_value() && *read_deadline_ <= time::SteadyNow()) {
+    return std::unexpected(Errno(ETIMEDOUT));
+  }
+
+  if (read_deadline_.has_value() && !ArmReadDeadlineTimer()) {
+    return std::unexpected(Errno(ENOMEM));
+  }
+  return {};
+}
+
+Result<void> Stream::BeginWriteOperation(Op* operation, void* owner,
+                                         DeadlineFinalizer finalizer) noexcept {
+  ALYRN_CHECK(operation != nullptr, "Uring write deadline requires an operation");
+  ALYRN_CHECK(owner != nullptr, "Uring write deadline requires an owner");
+  ALYRN_CHECK(finalizer != nullptr, "Uring write deadline requires a finalizer");
+  ALYRN_CHECK(write_deadline_target_ == nullptr,
+              "Uring write deadline state was not released before a new operation");
+
+  write_cancel_op_.BeginNextRequest();
+  write_deadline_target_ = operation;
+  write_deadline_owner_ = owner;
+  write_deadline_finalizer_ = finalizer;
+  write_cancel_requested_ = false;
+  write_cancel_submitted_ = false;
+  write_cancel_terminal_ = false;
+  write_primary_terminal_ = false;
+  write_timed_out_ = false;
+
+  if (write_deadline_.has_value() && *write_deadline_ <= time::SteadyNow()) {
+    return std::unexpected(Errno(ETIMEDOUT));
+  }
+
+  if (write_deadline_.has_value() && !ArmWriteDeadlineTimer()) {
+    return std::unexpected(Errno(ENOMEM));
+  }
+  return {};
+}
+
+void Stream::AbortReadOperation(Op* operation) noexcept {
+  ALYRN_CHECK(read_deadline_target_ == operation,
+              "Uring read deadline aborted for a different operation");
+  CancelReadDeadlineTimer();
+  read_deadline_target_ = nullptr;
+  read_deadline_owner_ = nullptr;
+  read_deadline_finalizer_ = nullptr;
+  read_cancel_requested_ = false;
+  read_cancel_submitted_ = false;
+  read_cancel_terminal_ = false;
+  read_primary_terminal_ = false;
+  read_timed_out_ = false;
+}
+
+void Stream::AbortWriteOperation(Op* operation) noexcept {
+  ALYRN_CHECK(write_deadline_target_ == operation,
+              "Uring write deadline aborted for a different operation");
+  CancelWriteDeadlineTimer();
+  write_deadline_target_ = nullptr;
+  write_deadline_owner_ = nullptr;
+  write_deadline_finalizer_ = nullptr;
+  write_cancel_requested_ = false;
+  write_cancel_submitted_ = false;
+  write_cancel_terminal_ = false;
+  write_primary_terminal_ = false;
+  write_timed_out_ = false;
+}
+
+void Stream::CompleteReadOperation(Op* operation) noexcept {
+  ALYRN_CHECK(read_deadline_target_ == operation,
+              "Uring read completion belongs to a different deadline state");
+  read_primary_terminal_ = true;
+  CancelReadDeadlineTimer();
+
+  if (read_cancel_submitted_ && !read_cancel_terminal_) {
+    if (operation->resume_work.HasHandle()) {
+      read_cancel_op_.resume_work.SetHandle(operation->resume_work.Handle());
+      operation->resume_work.ClearHandle();
+    }
+    return;
+  }
+  FinalizeReadOperation();
+}
+
+void Stream::CompleteWriteOperation(Op* operation) noexcept {
+  ALYRN_CHECK(write_deadline_target_ == operation,
+              "Uring write completion belongs to a different deadline state");
+  write_primary_terminal_ = true;
+  CancelWriteDeadlineTimer();
+
+  if (write_cancel_submitted_ && !write_cancel_terminal_) {
+    if (operation->resume_work.HasHandle()) {
+      write_cancel_op_.resume_work.SetHandle(operation->resume_work.Handle());
+      operation->resume_work.ClearHandle();
+    }
+    return;
+  }
+  FinalizeWriteOperation();
+}
+
+CompletionDisposition Stream::CompleteDeadlineCancel(bool read) noexcept {
+  Op& cancel_op = read ? read_cancel_op_ : write_cancel_op_;
+  bool& cancel_submitted = read ? read_cancel_submitted_ : write_cancel_submitted_;
+  bool& cancel_terminal = read ? read_cancel_terminal_ : write_cancel_terminal_;
+  bool& primary_terminal = read ? read_primary_terminal_ : write_primary_terminal_;
+
+  ALYRN_CHECK(cancel_submitted, "Uring deadline cancel completed before submission");
+  cancel_terminal = true;
+  if (!primary_terminal) {
+    return CompletionDisposition{
+        .kernel_request_terminal = true,
+        .decrement_inflight = true,
+        .resume_continuation = false,
+    };
+  }
+
+  const bool resume_continuation = cancel_op.resume_work.HasHandle();
+  if (read) {
+    FinalizeReadOperation();
+  } else {
+    FinalizeWriteOperation();
+  }
+  return CompletionDisposition{
+      .kernel_request_terminal = true,
+      .decrement_inflight = true,
+      .resume_continuation = resume_continuation,
+  };
+}
+
+void Stream::FinalizeReadOperation() noexcept {
+  ALYRN_CHECK(read_deadline_target_ != nullptr,
+              "Uring read finalized without a registered operation");
+  ALYRN_CHECK(read_primary_terminal_, "Uring read finalized before its primary CQE");
+  ALYRN_CHECK(!read_cancel_submitted_ || read_cancel_terminal_,
+              "Uring read finalized before its deadline cancel CQE");
+
+  auto* owner = read_deadline_owner_;
+  const auto finalizer = read_deadline_finalizer_;
+  finalizer(owner);
+  CancelReadDeadlineTimer();
+  read_deadline_target_ = nullptr;
+  read_deadline_owner_ = nullptr;
+  read_deadline_finalizer_ = nullptr;
+  read_cancel_requested_ = false;
+  read_cancel_submitted_ = false;
+  read_cancel_terminal_ = false;
+  read_primary_terminal_ = false;
+  read_timed_out_ = false;
+}
+
+void Stream::FinalizeWriteOperation() noexcept {
+  ALYRN_CHECK(write_deadline_target_ != nullptr,
+              "Uring write finalized without a registered operation");
+  ALYRN_CHECK(write_primary_terminal_, "Uring write finalized before its primary CQE");
+  ALYRN_CHECK(!write_cancel_submitted_ || write_cancel_terminal_,
+              "Uring write finalized before its deadline cancel CQE");
+
+  auto* owner = write_deadline_owner_;
+  const auto finalizer = write_deadline_finalizer_;
+  finalizer(owner);
+  CancelWriteDeadlineTimer();
+  write_deadline_target_ = nullptr;
+  write_deadline_owner_ = nullptr;
+  write_deadline_finalizer_ = nullptr;
+  write_cancel_requested_ = false;
+  write_cancel_submitted_ = false;
+  write_cancel_terminal_ = false;
+  write_primary_terminal_ = false;
+  write_timed_out_ = false;
+}
+
+Result<void> Stream::SubmitReadDeadlineCancel() noexcept {
+  ALYRN_CHECK(read_deadline_target_ != nullptr,
+              "Uring read deadline cancel has no target operation");
+  if (read_cancel_submitted_) {
+    return {};
+  }
+
+  read_cancel_op_.BeginNextRequest();
+  auto submitted = LoopAccess::SubmitOp(
+      *loop_, read_cancel_op_.Operation(),
+      PrepareCancelAllByUserData(reinterpret_cast<std::uint64_t>(read_deadline_target_)));
+  if (!submitted.has_value()) {
+    return std::unexpected(submitted.error());
+  }
+  read_cancel_submitted_ = true;
+  return {};
+}
+
+Result<void> Stream::SubmitWriteDeadlineCancel() noexcept {
+  ALYRN_CHECK(write_deadline_target_ != nullptr,
+              "Uring write deadline cancel has no target operation");
+  if (write_cancel_submitted_) {
+    return {};
+  }
+
+  write_cancel_op_.BeginNextRequest();
+  auto submitted = LoopAccess::SubmitOp(
+      *loop_, write_cancel_op_.Operation(),
+      PrepareCancelAllByUserData(reinterpret_cast<std::uint64_t>(write_deadline_target_)));
+  if (!submitted.has_value()) {
+    return std::unexpected(submitted.error());
+  }
+  write_cancel_submitted_ = true;
+  return {};
+}
+
+bool Stream::ScheduleReadDeadlineCancelRetry(std::uint64_t generation) noexcept {
+  try {
+    auto retry = loop_->RunAfter(time::Milliseconds(1),
+                                 [this, generation] { RetryReadDeadlineCancel(generation); });
+    if (!retry.has_value()) {
+      return false;
+    }
+    read_timer_ = *retry;
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+bool Stream::ScheduleWriteDeadlineCancelRetry(std::uint64_t generation) noexcept {
+  try {
+    auto retry = loop_->RunAfter(time::Milliseconds(1),
+                                 [this, generation] { RetryWriteDeadlineCancel(generation); });
+    if (!retry.has_value()) {
+      return false;
+    }
+    write_timer_ = *retry;
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+void Stream::HandleReadDeadline(std::uint64_t generation) noexcept {
+  if (generation != read_timer_generation_) {
+    return;
+  }
+  read_timer_ = {};
+  if (read_deadline_target_ == nullptr || read_primary_terminal_ || read_cancel_submitted_) {
+    return;
+  }
+
+  read_timed_out_ = true;
+  read_cancel_requested_ = true;
+  auto cancelled = SubmitReadDeadlineCancel();
+  if (!cancelled.has_value() && !ScheduleReadDeadlineCancelRetry(generation)) {
+    loop_->RequestStop();
+  }
+}
+
+void Stream::HandleWriteDeadline(std::uint64_t generation) noexcept {
+  if (generation != write_timer_generation_) {
+    return;
+  }
+  write_timer_ = {};
+  if (write_deadline_target_ == nullptr || write_primary_terminal_ || write_cancel_submitted_) {
+    return;
+  }
+
+  write_timed_out_ = true;
+  write_cancel_requested_ = true;
+  auto cancelled = SubmitWriteDeadlineCancel();
+  if (!cancelled.has_value() && !ScheduleWriteDeadlineCancelRetry(generation)) {
+    loop_->RequestStop();
+  }
+}
+
+void Stream::RetryReadDeadlineCancel(std::uint64_t generation) noexcept {
+  if (generation != read_timer_generation_) {
+    return;
+  }
+  read_timer_ = {};
+  if (read_deadline_target_ == nullptr || read_primary_terminal_ || read_cancel_submitted_) {
+    return;
+  }
+
+  auto cancelled = SubmitReadDeadlineCancel();
+  if (!cancelled.has_value() && !ScheduleReadDeadlineCancelRetry(generation)) {
+    loop_->RequestStop();
+  }
+}
+
+void Stream::RetryWriteDeadlineCancel(std::uint64_t generation) noexcept {
+  if (generation != write_timer_generation_) {
+    return;
+  }
+  write_timer_ = {};
+  if (write_deadline_target_ == nullptr || write_primary_terminal_ || write_cancel_submitted_) {
+    return;
+  }
+
+  auto cancelled = SubmitWriteDeadlineCancel();
+  if (!cancelled.has_value() && !ScheduleWriteDeadlineCancelRetry(generation)) {
+    loop_->RequestStop();
+  }
+}
+
+bool Stream::ArmReadDeadlineTimer() noexcept {
+  if (read_deadline_target_ == nullptr || !read_deadline_.has_value() || read_cancel_requested_) {
+    return true;
+  }
+
+  const std::uint64_t generation = ++read_timer_generation_;
+  const auto now = time::SteadyNow();
+  const auto delay = *read_deadline_ > now ? *read_deadline_ - now : time::Duration::zero();
+  try {
+    auto timer = loop_->RunAfter(delay, [this, generation] { HandleReadDeadline(generation); });
+    if (!timer.has_value()) {
+      return false;
+    }
+    read_timer_ = *timer;
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+bool Stream::ArmWriteDeadlineTimer() noexcept {
+  if (write_deadline_target_ == nullptr || !write_deadline_.has_value() ||
+      write_cancel_requested_) {
+    return true;
+  }
+
+  const std::uint64_t generation = ++write_timer_generation_;
+  const auto now = time::SteadyNow();
+  const auto delay = *write_deadline_ > now ? *write_deadline_ - now : time::Duration::zero();
+  try {
+    auto timer = loop_->RunAfter(delay, [this, generation] { HandleWriteDeadline(generation); });
+    if (!timer.has_value()) {
+      return false;
+    }
+    write_timer_ = *timer;
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+void Stream::CancelReadDeadlineTimer() noexcept {
+  ++read_timer_generation_;
+  const auto timer = std::exchange(read_timer_, time::TimerId{});
+  if (timer.Valid()) {
+    (void)loop_->CancelTimer(timer);
+  }
+}
+
+void Stream::CancelWriteDeadlineTimer() noexcept {
+  ++write_timer_generation_;
+  const auto timer = std::exchange(write_timer_, time::TimerId{});
+  if (timer.Valid()) {
+    (void)loop_->CancelTimer(timer);
+  }
+}
 Result<void> detail::StreamOperationSlot::Validate(Stream& stream,
                                                    StreamOperationDirection direction) noexcept {
   stream.RequireOwnerLoop();
@@ -133,10 +521,18 @@ bool Stream::ReadAwaiter::await_suspend(std::coroutine_handle<> continuation) no
   }
 
   Operation()->kind = OpKind::kReadComplete;
+  auto begun = stream_->BeginReadOperation(Operation(), this, &ReadAwaiter::Finalize);
+  if (!begun.has_value()) {
+    stream_->AbortReadOperation(Operation());
+    detail::StreamOperationSlot::Release(*stream_, detail::StreamOperationDirection::kRead, this);
+    Operation()->SetImmediateError(begun.error());
+    return false;
+  }
   return detail::SubmitAwaitingOperation(
       *stream_->loop_, *Operation(), continuation,
       detail::PrepareRecv(stream_->fd_, buffer_.data(), buffer_.size()),
       [this](Error error) noexcept {
+        stream_->AbortReadOperation(Operation());
         detail::StreamOperationSlot::Release(*stream_, detail::StreamOperationDirection::kRead,
                                              this);
         Operation()->SetImmediateError(error);
@@ -144,17 +540,21 @@ bool Stream::ReadAwaiter::await_suspend(std::coroutine_handle<> continuation) no
 }
 
 Result<std::size_t> Stream::ReadAwaiter::await_resume() noexcept {
-  return ToSizeResult(Operation()->result);
+  return ToSizeResult(Operation()->result, timed_out_);
 }
 
 void Stream::ReadAwaiter::OnComplete(::alyrn::uring::detail::Op* op) noexcept {
   auto* self = OpHook::OwnerFrom(op);
-  ALYRN_CHECK(op->TryAuthorizeCoupledRelease(),
+  self->timed_out_ = self->stream_->ReadDeadlineTimedOut();
+  self->stream_->CompleteReadOperation(op);
+}
+
+void Stream::ReadAwaiter::Finalize(void* owner) noexcept {
+  auto* self = static_cast<ReadAwaiter*>(owner);
+  ALYRN_CHECK(self->Operation()->TryAuthorizeCoupledRelease(),
               "Uring Read released its stream slot before result readiness");
-  if (self->stream_ != nullptr) {
-    detail::StreamOperationSlot::Release(*self->stream_, detail::StreamOperationDirection::kRead,
-                                         self);
-  }
+  detail::StreamOperationSlot::Release(*self->stream_, detail::StreamOperationDirection::kRead,
+                                       self);
 }
 
 // ---- RecvAwaiter ---
@@ -185,7 +585,17 @@ bool Stream::RecvAwaiter::await_suspend(std::coroutine_handle<> continuation) no
 
   Operation()->kind = OpKind::kRecvComplete;
 
+  auto begun = stream_->BeginReadOperation(Operation(), this, &RecvAwaiter::Finalize);
+  if (!begun.has_value()) {
+    stream_->AbortReadOperation(Operation());
+    detail::StreamOperationSlot::Release(*stream_, detail::StreamOperationDirection::kRead, this);
+    FinishReservation(std::unexpected(begun.error()));
+    Operation()->SetImmediateError(begun.error());
+    return false;
+  }
+
   auto on_submit_failure = [this](Error error) noexcept {
+    stream_->AbortReadOperation(Operation());
     detail::StreamOperationSlot::Release(*stream_, detail::StreamOperationDirection::kRead, this);
     FinishReservation(std::unexpected(error));
     Operation()->SetImmediateError(error);
@@ -206,20 +616,24 @@ bool Stream::RecvAwaiter::await_suspend(std::coroutine_handle<> continuation) no
 
 net::RecvOutcome Stream::RecvAwaiter::await_resume() noexcept {
   return {
-      .result = ToSizeResult(Operation()->result),
+      .result = ToSizeResult(Operation()->result, timed_out_),
       .buffer = std::move(buffer_),
   };
 }
 
 void Stream::RecvAwaiter::OnComplete(::alyrn::uring::detail::Op* op) noexcept {
   auto* self = OpHook::OwnerFrom(op);
-  ALYRN_CHECK(op->TryAuthorizeCoupledRelease(),
+  self->timed_out_ = self->stream_->ReadDeadlineTimedOut();
+  self->FinishReservation(ToSizeResult(op->result, self->timed_out_));
+  self->stream_->CompleteReadOperation(op);
+}
+
+void Stream::RecvAwaiter::Finalize(void* owner) noexcept {
+  auto* self = static_cast<RecvAwaiter*>(owner);
+  ALYRN_CHECK(self->Operation()->TryAuthorizeCoupledRelease(),
               "Uring Recv released its reservation before result readiness");
-  self->FinishReservation(ToSizeResult(op->result));
-  if (self->stream_ != nullptr) {
-    detail::StreamOperationSlot::Release(*self->stream_, detail::StreamOperationDirection::kRead,
-                                         self);
-  }
+  detail::StreamOperationSlot::Release(*self->stream_, detail::StreamOperationDirection::kRead,
+                                       self);
 }
 
 Stream::RecvAwaiter::ReservationKind Stream::RecvAwaiter::PrepareReservation(
@@ -288,10 +702,19 @@ bool Stream::RecvCopyAwaiter::await_suspend(std::coroutine_handle<> continuation
   }
 
   Operation()->kind = OpKind::kRecvCopyComplete;
+  auto begun = stream_->BeginReadOperation(Operation(), this, &RecvCopyAwaiter::Finalize);
+  if (!begun.has_value()) {
+    stream_->AbortReadOperation(Operation());
+    detail::StreamOperationSlot::Release(*stream_, detail::StreamOperationDirection::kRead, this);
+    Finish(std::unexpected(begun.error()));
+    Operation()->SetImmediateError(begun.error());
+    return false;
+  }
   return detail::SubmitAwaitingOperation(
       *stream_->loop_, *Operation(), continuation,
       detail::PrepareProvidedRecv(stream_->fd_, pool_->buffer_size(), pool_->BufferGroup()),
       [this](Error error) noexcept {
+        stream_->AbortReadOperation(Operation());
         detail::StreamOperationSlot::Release(*stream_, detail::StreamOperationDirection::kRead,
                                              this);
         Finish(std::unexpected(error));
@@ -313,6 +736,7 @@ void Stream::RecvCopyAwaiter::OnComplete(::alyrn::uring::detail::Op* op,
                                          CompletionEvent event) noexcept {
   auto* self = OpHook::OwnerFrom(op);
   ALYRN_CHECK(op->TryAuthorizeCoupledResult(), "Uring Recv() result was authorized twice");
+  self->timed_out_ = self->stream_->ReadDeadlineTimedOut();
 
   const int cqe_result = event.result;
   const bool has_buffer = event.HasSelectedBuffer();
@@ -330,7 +754,10 @@ void Stream::RecvCopyAwaiter::OnComplete(::alyrn::uring::detail::Op* op,
     }
   };
 
-  if (cqe_result < 0) {
+  if (self->timed_out_) {
+    return_slot();
+    self->Finish(std::unexpected(Errno(ETIMEDOUT)));
+  } else if (cqe_result < 0) {
     return_slot();
     self->Finish(std::unexpected(NegErrno(cqe_result)));
   } else if (cqe_result == 0) {
@@ -349,24 +776,22 @@ void Stream::RecvCopyAwaiter::OnComplete(::alyrn::uring::detail::Op* op,
     } catch (const std::bad_alloc&) {
       ALYRN_CHECK(pool->Return(buffer_id), "Uring Recv() failed to return provided buffer");
       self->Finish(std::unexpected(Errno(ENOMEM)));
-      ALYRN_CHECK(op->TryAuthorizeCoupledRelease(),
-                  "Uring Recv() released its stream slot before result readiness");
-      if (self->stream_ != nullptr) {
-        detail::StreamOperationSlot::Release(*self->stream_,
-                                             detail::StreamOperationDirection::kRead, self);
-      }
+      self->stream_->CompleteReadOperation(op);
       return;
     }
     ALYRN_CHECK(pool->Return(buffer_id), "Uring Recv() failed to return provided buffer");
     self->Finish(std::move(buffer));
   }
 
-  ALYRN_CHECK(op->TryAuthorizeCoupledRelease(),
+  self->stream_->CompleteReadOperation(op);
+}
+
+void Stream::RecvCopyAwaiter::Finalize(void* owner) noexcept {
+  auto* self = static_cast<RecvCopyAwaiter*>(owner);
+  ALYRN_CHECK(self->Operation()->TryAuthorizeCoupledRelease(),
               "Uring Recv() released its stream slot before result readiness");
-  if (self->stream_ != nullptr) {
-    detail::StreamOperationSlot::Release(*self->stream_, detail::StreamOperationDirection::kRead,
-                                         self);
-  }
+  detail::StreamOperationSlot::Release(*self->stream_, detail::StreamOperationDirection::kRead,
+                                       self);
 }
 
 // --- SendAwaiter ---
@@ -389,10 +814,18 @@ bool Stream::SendAwaiter::await_suspend(std::coroutine_handle<> continuation) no
   }
 
   Operation()->kind = OpKind::kWriteComplete;
+  auto begun = stream_->BeginWriteOperation(Operation(), this, &SendAwaiter::Finalize);
+  if (!begun.has_value()) {
+    stream_->AbortWriteOperation(Operation());
+    detail::StreamOperationSlot::Release(*stream_, detail::StreamOperationDirection::kWrite, this);
+    Operation()->SetImmediateError(begun.error());
+    return false;
+  }
   return detail::SubmitAwaitingOperation(
       *stream_->loop_, *Operation(), continuation,
       detail::PrepareSend(stream_->fd_, buffer_.data(), buffer_.size(), MSG_NOSIGNAL),
       [this](Error error) noexcept {
+        stream_->AbortWriteOperation(Operation());
         detail::StreamOperationSlot::Release(*stream_, detail::StreamOperationDirection::kWrite,
                                              this);
         Operation()->SetImmediateError(error);
@@ -400,17 +833,21 @@ bool Stream::SendAwaiter::await_suspend(std::coroutine_handle<> continuation) no
 }
 
 Result<std::size_t> Stream::SendAwaiter::await_resume() noexcept {
-  return ToSizeResult(Operation()->result);
+  return ToSizeResult(Operation()->result, timed_out_);
 }
 
 void Stream::SendAwaiter::OnComplete(::alyrn::uring::detail::Op* op) noexcept {
   auto* self = OpHook::OwnerFrom(op);
-  ALYRN_CHECK(op->TryAuthorizeCoupledRelease(),
+  self->timed_out_ = self->stream_->WriteDeadlineTimedOut();
+  self->stream_->CompleteWriteOperation(op);
+}
+
+void Stream::SendAwaiter::Finalize(void* owner) noexcept {
+  auto* self = static_cast<SendAwaiter*>(owner);
+  ALYRN_CHECK(self->Operation()->TryAuthorizeCoupledRelease(),
               "Uring send released its stream slot before result readiness");
-  if (self->stream_ != nullptr) {
-    detail::StreamOperationSlot::Release(*self->stream_, detail::StreamOperationDirection::kWrite,
-                                         self);
-  }
+  detail::StreamOperationSlot::Release(*self->stream_, detail::StreamOperationDirection::kWrite,
+                                       self);
 }
 
 // ----- CloseAwaiter ------
@@ -531,6 +968,13 @@ bool Stream::SendZeroCopyAwaiter::await_suspend(std::coroutine_handle<> continua
   }
 
   Operation()->kind = OpKind::kSendZeroCopyComplete;
+  auto begun = stream_->BeginWriteOperation(Operation(), this, &SendZeroCopyAwaiter::Finalize);
+  if (!begun.has_value()) {
+    stream_->AbortWriteOperation(Operation());
+    detail::StreamOperationSlot::Release(*stream_, detail::StreamOperationDirection::kWrite, this);
+    Operation()->SetImmediateError(begun.error());
+    return false;
+  }
   Operation()->resume_work.SetHandle(continuation);
 
   auto submitted =
@@ -538,6 +982,7 @@ bool Stream::SendZeroCopyAwaiter::await_suspend(std::coroutine_handle<> continua
                                    detail::PrepareSendZeroCopyReportUsage(
                                        stream_->fd_, buffer_.data(), buffer_.size(), MSG_NOSIGNAL));
   if (!submitted.has_value()) {
+    stream_->AbortWriteOperation(Operation());
     detail::StreamOperationSlot::Release(*stream_, detail::StreamOperationDirection::kWrite, this);
     Operation()->SetImmediateError(submitted.error());
     return false;
@@ -550,6 +995,9 @@ Result<ZeroCopySendResult> Stream::SendZeroCopyAwaiter::await_resume() noexcept 
     return std::unexpected(Errno(EIO));
   }
   const int result = *Operation()->result;
+  if (timed_out_) {
+    return std::unexpected(Errno(ETIMEDOUT));
+  }
   if (result < 0) {
     return std::unexpected(NegErrno(result));
   }
@@ -580,6 +1028,7 @@ CompletionDisposition Stream::SendZeroCopyAwaiter::OnComplete(::alyrn::uring::de
     disposition.decrement_inflight = true;
   } else if (self->lifecycle_.RecordLogicalResult()) {
     op->result = event.result;
+    self->timed_out_ = self->stream_->WriteDeadlineTimedOut();
     // F_MORE is the kernel's indication that a notification CQE will follow.
     // Without it, the primary CQE is already the physical terminal boundary,
     // including primary error paths that never borrowed the caller buffer.
@@ -591,14 +1040,21 @@ CompletionDisposition Stream::SendZeroCopyAwaiter::OnComplete(::alyrn::uring::de
     // ENOMEM only after this awaiter has crossed its release boundary.
   }
 
-  if (self->lifecycle_.TryAuthorizeRelease()) {
-    if (self->stream_ != nullptr) {
-      detail::StreamOperationSlot::Release(*self->stream_, detail::StreamOperationDirection::kWrite,
-                                           self);
-    }
+  if (self->lifecycle_.PhysicalTerminal()) {
+    self->stream_->CompleteWriteOperation(op);
   }
-  disposition.resume_continuation = self->lifecycle_.TryAuthorizeContinuation();
+  disposition.resume_continuation = self->lifecycle_.ContinuationAuthorized();
   return disposition;
+}
+
+void Stream::SendZeroCopyAwaiter::Finalize(void* owner) noexcept {
+  auto* self = static_cast<SendZeroCopyAwaiter*>(owner);
+  ALYRN_CHECK(self->lifecycle_.TryAuthorizeRelease(),
+              "Uring send-zc released its stream slot before physical terminal");
+  detail::StreamOperationSlot::Release(*self->stream_, detail::StreamOperationDirection::kWrite,
+                                       self);
+  ALYRN_CHECK(self->lifecycle_.TryAuthorizeContinuation(),
+              "Uring send-zc continuation was not authorized after release");
 }
 
 namespace detail {
@@ -629,10 +1085,22 @@ void DispatchStreamCloseComplete(::alyrn::uring::detail::Op* op) noexcept {
   Stream::CloseAwaiter::OnCancelComplete(op);
 }
 
+CompletionDisposition DispatchStreamReadCancelComplete(::alyrn::uring::detail::Op* op) noexcept {
+  return Stream::DeadlineCancelOp::OnComplete(op);
+}
+
+CompletionDisposition DispatchStreamWriteCancelComplete(::alyrn::uring::detail::Op* op) noexcept {
+  return Stream::DeadlineCancelOp::OnComplete(op);
+}
+
 }  // namespace detail
 
 Stream::Stream(Loop* loop, int fd, net::Endpoint peer) noexcept
-    : loop_(loop), fd_(fd), peer_(peer) {
+    : loop_(loop),
+      fd_(fd),
+      peer_(peer),
+      read_cancel_op_(*this, true),
+      write_cancel_op_(*this, false) {
   ALYRN_CHECK(loop_ != nullptr, "Stream requires an owner loop");
   ALYRN_CHECK(loop_->IsInLoopThread(), "Stream created from wrong Loop thread");
   ALYRN_CHECK(fd_ >= 0, "Stream requires a valid file descriptor");
@@ -643,7 +1111,11 @@ Stream::Stream(Stream&& other) noexcept
       fd_(std::exchange(other.fd_, -1)),
       peer_(other.peer_),
       zero_copy_writes_enabled_(other.zero_copy_writes_enabled_),
-      lifecycle_(std::move(other.lifecycle_)) {}
+      lifecycle_(std::move(other.lifecycle_)),
+      read_deadline_(std::move(other.read_deadline_)),
+      write_deadline_(std::move(other.write_deadline_)),
+      read_cancel_op_(*this, true),
+      write_cancel_op_(*this, false) {}
 
 Stream& Stream::operator=(Stream&& other) noexcept {
   if (this == &other) {
@@ -665,6 +1137,8 @@ Stream& Stream::operator=(Stream&& other) noexcept {
   pending_close_ = nullptr;
   zero_copy_writes_enabled_ = other.zero_copy_writes_enabled_;
   lifecycle_ = std::move(other.lifecycle_);
+  read_deadline_ = std::move(other.read_deadline_);
+  write_deadline_ = std::move(other.write_deadline_);
   return *this;
 }
 
@@ -675,6 +1149,10 @@ Stream::~Stream() noexcept {
   ALYRN_CHECK(pending_read_ == nullptr, "Stream destroyed with a pending read");
   ALYRN_CHECK(pending_write_ == nullptr, "Stream destroyed with a pending write");
   ALYRN_CHECK(pending_close_ == nullptr, "Stream destroyed with a pending close");
+  ALYRN_CHECK(read_deadline_target_ == nullptr,
+              "Stream destroyed with a pending read deadline cancellation");
+  ALYRN_CHECK(write_deadline_target_ == nullptr,
+              "Stream destroyed with a pending write deadline cancellation");
   if (fd_ >= 0) {
     ::close(fd_);
   }
@@ -819,6 +1297,34 @@ Result<void> Stream::SetReadBuffer(std::size_t bytes) const noexcept {
 Result<void> Stream::SetWriteBuffer(std::size_t bytes) const noexcept {
   RequireOwnerLoop();
   return net::SetWriteBuffer(fd_, bytes);
+}
+
+Result<void> Stream::SetDeadline(std::optional<time::Deadline> deadline) noexcept {
+  auto read_result = SetReadDeadline(deadline);
+  if (!read_result.has_value()) {
+    return read_result;
+  }
+  return SetWriteDeadline(deadline);
+}
+
+Result<void> Stream::SetReadDeadline(std::optional<time::Deadline> deadline) noexcept {
+  RequireOwnerLoop();
+  CancelReadDeadlineTimer();
+  read_deadline_ = deadline;
+  if (read_deadline_target_ != nullptr && !read_cancel_requested_ && !ArmReadDeadlineTimer()) {
+    return std::unexpected(Errno(ENOMEM));
+  }
+  return {};
+}
+
+Result<void> Stream::SetWriteDeadline(std::optional<time::Deadline> deadline) noexcept {
+  RequireOwnerLoop();
+  CancelWriteDeadlineTimer();
+  write_deadline_ = deadline;
+  if (write_deadline_target_ != nullptr && !write_cancel_requested_ && !ArmWriteDeadlineTimer()) {
+    return std::unexpected(Errno(ENOMEM));
+  }
+  return {};
 }
 
 Stream::SendZeroCopyAwaiter Stream::SendZeroCopy(std::span<const std::byte> buffer) noexcept {

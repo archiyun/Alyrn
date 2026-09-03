@@ -21,6 +21,7 @@
 #include "alyrn/result.h"
 #include "alyrn/task.h"
 #include "alyrn/time/clock.h"
+#include "alyrn/time/timer_id.h"
 #include "alyrn/uring/detail/completion_dispatch.h"
 #include "alyrn/uring/detail/op.h"
 #include "alyrn/uring/detail/op_hook.h"
@@ -134,6 +135,23 @@ public:
   [[nodiscard]]
   Result<void> SetWriteBuffer(std::size_t bytes) const noexcept;
 
+  // Sticky monotonic deadlines. They apply to the current pending operation
+  // and all later operations in the selected direction. nullopt clears a
+  // deadline. These setters are loop-affine, like stream I/O.
+  //
+  // Once the owning loop observes expiry, that operation reports ETIMEDOUT
+  // even if a competing I/O CQE also reaches the loop. A pending operation is
+  // canceled through its own io_uring user_data and resumes only after both
+  // the I/O CQE and cancellation CQE have reached the loop.
+  [[nodiscard]]
+  Result<void> SetDeadline(std::optional<time::Deadline> deadline) noexcept;
+
+  [[nodiscard]]
+  Result<void> SetReadDeadline(std::optional<time::Deadline> deadline) noexcept;
+
+  [[nodiscard]]
+  Result<void> SetWriteDeadline(std::optional<time::Deadline> deadline) noexcept;
+
   // Shuts down local reception while keeping the descriptor and write side.
   Task<Result<void>> CloseRead() noexcept;
 
@@ -161,6 +179,10 @@ private:
   friend detail::CompletionDisposition detail::DispatchSendZeroCopyComplete(
       detail::Op* op, detail::CompletionEvent event) noexcept;
   friend void detail::DispatchStreamCloseComplete(detail::Op* op) noexcept;
+  friend detail::CompletionDisposition detail::DispatchStreamReadCancelComplete(
+      detail::Op* op) noexcept;
+  friend detail::CompletionDisposition detail::DispatchStreamWriteCancelComplete(
+      detail::Op* op) noexcept;
   friend class detail::StreamOperationSlot;
 
   class CloseAwaiter;
@@ -172,6 +194,49 @@ private:
   void ResetForMove() noexcept;
   static Loop* PrepareMove(Stream& other) noexcept;
 
+  using DeadlineFinalizer = void (*)(void*) noexcept;
+
+  class DeadlineCancelOp : public detail::OpHook<DeadlineCancelOp> {
+  public:
+    DeadlineCancelOp(Stream& stream, bool read) noexcept
+        : OpHook(read ? detail::OpKind::kStreamReadCancelComplete
+                      : detail::OpKind::kStreamWriteCancelComplete),
+          stream_(&stream),
+          read_(read) {}
+
+    static detail::CompletionDisposition OnComplete(detail::Op* op) noexcept;
+
+  private:
+    Stream* stream_;
+    bool read_;
+  };
+
+  Result<void> BeginReadOperation(detail::Op* operation, void* owner,
+                                  DeadlineFinalizer finalizer) noexcept;
+  Result<void> BeginWriteOperation(detail::Op* operation, void* owner,
+                                   DeadlineFinalizer finalizer) noexcept;
+  void AbortReadOperation(detail::Op* operation) noexcept;
+  void AbortWriteOperation(detail::Op* operation) noexcept;
+  void CompleteReadOperation(detail::Op* operation) noexcept;
+  void CompleteWriteOperation(detail::Op* operation) noexcept;
+  detail::CompletionDisposition CompleteDeadlineCancel(bool read) noexcept;
+  bool ReadDeadlineTimedOut() const noexcept { return read_timed_out_; }
+  bool WriteDeadlineTimedOut() const noexcept { return write_timed_out_; }
+  void HandleReadDeadline(std::uint64_t generation) noexcept;
+  void HandleWriteDeadline(std::uint64_t generation) noexcept;
+  void RetryReadDeadlineCancel(std::uint64_t generation) noexcept;
+  void RetryWriteDeadlineCancel(std::uint64_t generation) noexcept;
+  Result<void> SubmitReadDeadlineCancel() noexcept;
+  Result<void> SubmitWriteDeadlineCancel() noexcept;
+  bool ArmReadDeadlineTimer() noexcept;
+  bool ArmWriteDeadlineTimer() noexcept;
+  void CancelReadDeadlineTimer() noexcept;
+  void CancelWriteDeadlineTimer() noexcept;
+  bool ScheduleReadDeadlineCancelRetry(std::uint64_t generation) noexcept;
+  bool ScheduleWriteDeadlineCancelRetry(std::uint64_t generation) noexcept;
+  void FinalizeReadOperation() noexcept;
+  void FinalizeWriteOperation() noexcept;
+
   Loop* loop_;
   int fd_{-1};
   net::Endpoint peer_;
@@ -180,6 +245,30 @@ private:
   CloseAwaiter* pending_close_{nullptr};
   bool zero_copy_writes_enabled_{false};
   net::detail::StreamLifecycle lifecycle_;
+  std::optional<time::Deadline> read_deadline_;
+  std::optional<time::Deadline> write_deadline_;
+  time::TimerId read_timer_;
+  time::TimerId write_timer_;
+  std::uint64_t read_timer_generation_{0};
+  std::uint64_t write_timer_generation_{0};
+  DeadlineCancelOp read_cancel_op_;
+  DeadlineCancelOp write_cancel_op_;
+  detail::Op* read_deadline_target_{nullptr};
+  detail::Op* write_deadline_target_{nullptr};
+  void* read_deadline_owner_{nullptr};
+  void* write_deadline_owner_{nullptr};
+  DeadlineFinalizer read_deadline_finalizer_{nullptr};
+  DeadlineFinalizer write_deadline_finalizer_{nullptr};
+  bool read_cancel_requested_{false};
+  bool write_cancel_requested_{false};
+  bool read_cancel_submitted_{false};
+  bool write_cancel_submitted_{false};
+  bool read_cancel_terminal_{false};
+  bool write_cancel_terminal_{false};
+  bool read_primary_terminal_{false};
+  bool write_primary_terminal_{false};
+  bool read_timed_out_{false};
+  bool write_timed_out_{false};
 };
 
 // --- ReadAwaiter ---
@@ -200,9 +289,11 @@ private:
   friend void detail::DispatchStreamReadComplete(detail::Op* op) noexcept;
 
   static void OnComplete(detail::Op* op) noexcept;
+  static void Finalize(void* owner) noexcept;
 
   Stream* stream_;
   std::span<std::byte> buffer_;
+  bool timed_out_{false};
 };
 
 // --- RecvAwaiter ---
@@ -226,6 +317,7 @@ private:
   friend void detail::DispatchStreamRecvComplete(detail::Op* op) noexcept;
 
   static void OnComplete(detail::Op* op) noexcept;
+  static void Finalize(void* owner) noexcept;
 
   enum class ReservationKind : std::uint8_t {
     kNone,
@@ -244,6 +336,7 @@ private:
   // need to survive await_suspend().
   std::vector<iovec> iovs_;
   ReservationKind reservation_kind_{ReservationKind::kNone};
+  bool timed_out_{false};
 };
 
 class [[nodiscard]] Stream::RecvCopyAwaiter : public detail::OpHook<Stream::RecvCopyAwaiter> {
@@ -264,11 +357,13 @@ private:
                                                      detail::CompletionEvent event) noexcept;
 
   static void OnComplete(detail::Op* op, detail::CompletionEvent event) noexcept;
+  static void Finalize(void* owner) noexcept;
   void Finish(Result<net::Buffer> outcome) noexcept;
 
   Stream* stream_;
   detail::ProvidedBufferPool* pool_{nullptr};
   std::optional<Result<net::Buffer>> outcome_;
+  bool timed_out_{false};
 };
 
 class [[nodiscard]] Stream::SendAwaiter : public detail::OpHook<Stream::SendAwaiter> {
@@ -288,9 +383,11 @@ private:
   friend void detail::DispatchStreamWriteComplete(detail::Op* op) noexcept;
 
   static void OnComplete(detail::Op* op) noexcept;
+  static void Finalize(void* owner) noexcept;
 
   Stream* stream_;
   std::span<const std::byte> buffer_;
+  bool timed_out_{false};
 };
 
 class [[nodiscard]] Stream::SendZeroCopyAwaiter
@@ -313,15 +410,18 @@ private:
 
   static detail::CompletionDisposition OnComplete(detail::Op* op,
                                                   detail::CompletionEvent event) noexcept;
+  static void Finalize(void* owner) noexcept;
 
   Stream* stream_;
   std::span<const std::byte> buffer_;
   ::alyrn::detail::SplitReleaseLifecycle lifecycle_;
   ZeroCopySendUsage usage_{ZeroCopySendUsage::kUnknown};
   bool notification_received_{false};
+  bool timed_out_{false};
 };
 
 static_assert(backend::AsyncStream<Stream>);
+static_assert(backend::AsyncDeadlineStream<Stream>);
 static_assert(backend::AsyncRecvStream<Stream>);
 static_assert(backend::AsyncRecvCopyStream<Stream>);
 

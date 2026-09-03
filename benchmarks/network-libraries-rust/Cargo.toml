@@ -12,8 +12,13 @@ path = "src/bin/monoio.rs"
 name = "bench-http-compio"
 path = "src/bin/compio.rs"
 
+[[bin]]
+name = "bench-small-packet-tokio"
+path = "src/bin/tokio_small_packet.rs"
+
 [dependencies]
 libc = "0.2.189"
 monoio = { version = "0.2.4", features = ["iouring"] }
 compio = { version = "0.19.1", features = ["net"] }
 socket2 = "0.5.10"
+tokio = { version = "1.47.1", features = ["io-util", "macros", "net", "rt", "sync"] }

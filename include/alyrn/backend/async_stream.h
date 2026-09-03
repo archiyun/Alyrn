@@ -6,6 +6,7 @@
 
 #include <concepts>
 #include <cstddef>
+#include <optional>
 #include <span>
 #include <utility>
 
@@ -14,6 +15,7 @@
 #include "alyrn/net/recv.h"
 #include "alyrn/result.h"
 #include "alyrn/task.h"
+#include "alyrn/time/clock.h"
 
 namespace alyrn::backend {
 
@@ -46,6 +48,13 @@ template <class T>
 concept AsyncClosableStream = requires(T& stream) {
   { stream.Shutdown() } -> std::same_as<Task<Result<void>>>;
   { stream.Close() } -> std::same_as<Task<Result<void>>>;
+};
+
+template <class T>
+concept AsyncDeadlineStream = requires(T& stream, std::optional<time::Deadline> deadline) {
+  { stream.SetDeadline(deadline) } -> std::same_as<Result<void>>;
+  { stream.SetReadDeadline(deadline) } -> std::same_as<Result<void>>;
+  { stream.SetWriteDeadline(deadline) } -> std::same_as<Result<void>>;
 };
 
 template <class T>

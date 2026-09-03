@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 #include <cstddef>
+#include <optional>
 #include <span>
 
 #include "alyrn/alyrn.h"
@@ -32,6 +33,7 @@ struct PublicStream {
 };
 
 static_assert(alyrn::io::AsyncStream<PublicStream>);
+static_assert(!alyrn::io::AsyncDeadlineStream<PublicStream>);
 static_assert(alyrn::io::AsyncReadStream<PublicStream>);
 static_assert(alyrn::io::AsyncWriteStream<PublicStream>);
 

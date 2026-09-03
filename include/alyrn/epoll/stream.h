@@ -6,6 +6,7 @@
 #include <coroutine>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 
 #include "alyrn/backend/async_stream.h"
@@ -26,6 +27,7 @@
 #include "alyrn/result.h"
 #include "alyrn/task.h"
 #include "alyrn/time/clock.h"
+#include "alyrn/time/timer_id.h"
 
 namespace alyrn::epoll {
 
@@ -99,6 +101,14 @@ public:
   [[nodiscard]]
   Result<void> SetWriteBuffer(std::size_t bytes) const noexcept;
 
+  // Sticky monotonic deadlines. They apply to the current pending operation
+  // and all later operations in the selected direction. nullopt clears a
+  // deadline. These setters are loop-affine, like stream I/O. Once the owner
+  // loop observes expiry, that operation reports ETIMEDOUT.
+  Result<void> SetDeadline(std::optional<time::Deadline> deadline) noexcept;
+  Result<void> SetReadDeadline(std::optional<time::Deadline> deadline) noexcept;
+  Result<void> SetWriteDeadline(std::optional<time::Deadline> deadline) noexcept;
+
   // Shuts down local reception while keeping the descriptor and write side.
   Task<Result<void>> CloseRead() noexcept;
 
@@ -145,6 +155,12 @@ private:
   void CompleteWrite(Result<std::size_t> result);
   void CloseNow() noexcept;
   void DetachChannel();
+  bool ArmReadDeadline() noexcept;
+  bool ArmWriteDeadline() noexcept;
+  void CancelReadDeadline() noexcept;
+  void CancelWriteDeadline() noexcept;
+  void HandleReadDeadline(std::uint64_t generation) noexcept;
+  void HandleWriteDeadline(std::uint64_t generation) noexcept;
   void RequireOwnerLoop() const noexcept;
   void BindChannelCallbacks() noexcept;
   void ResetForMove() noexcept;
@@ -164,6 +180,12 @@ private:
   void* pending_read_{nullptr};
   WriteAwaiter* pending_write_{nullptr};
   PendingReadKind pending_read_kind_{PendingReadKind::kNone};
+  std::optional<time::Deadline> read_deadline_;
+  std::optional<time::Deadline> write_deadline_;
+  time::TimerId read_timer_;
+  time::TimerId write_timer_;
+  std::uint64_t read_timer_generation_{0};
+  std::uint64_t write_timer_generation_{0};
   net::detail::StreamLifecycle lifecycle_;
   LoopShutdownParticipant shutdown_participant_{this, &DispatchLoopStop};
 };

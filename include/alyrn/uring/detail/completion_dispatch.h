@@ -20,6 +20,8 @@ void DispatchStreamRecvComplete(Op* op) noexcept;
 void DispatchStreamRecvCopyComplete(Op* op, CompletionEvent event) noexcept;
 void DispatchStreamWriteComplete(Op* op) noexcept;
 void DispatchStreamCloseComplete(Op* op) noexcept;
+CompletionDisposition DispatchStreamReadCancelComplete(Op* op) noexcept;
+CompletionDisposition DispatchStreamWriteCancelComplete(Op* op) noexcept;
 void DispatchTimerDriverComplete(Op* op) noexcept;
 void DispatchTimerControlComplete(Op* op) noexcept;
 

@@ -16,3 +16,12 @@ target_link_libraries(demo_epoll_recv_echo
     PRIVATE
         alyrn_epoll
 )
+
+add_executable(demo_bench_small_packet_epoll
+    demo_bench_small_packet_recv.cc
+)
+
+target_link_libraries(demo_bench_small_packet_epoll
+    PRIVATE
+        alyrn_epoll
+)

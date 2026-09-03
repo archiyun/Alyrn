@@ -18,6 +18,9 @@ template <class T>
 concept AsyncWriteStream = backend::AsyncWriteStream<T>;
 
 template <class T>
+concept AsyncDeadlineStream = backend::AsyncDeadlineStream<T>;
+
+template <class T>
 concept AsyncClosableStream = backend::AsyncClosableStream<T>;
 
 template <class T>

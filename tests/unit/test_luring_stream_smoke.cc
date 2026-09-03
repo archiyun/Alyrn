@@ -15,6 +15,7 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/spawn.h"
@@ -22,6 +23,7 @@
 #include "alyrn/io/recv.h"
 #include "alyrn/net/endpoint.h"
 #include "alyrn/result.h"
+#include "alyrn/time/clock.h"
 #include "alyrn/uring/detail/loop_access.h"
 #include "alyrn/uring/loop.h"
 #include "alyrn/uring/options.h"
@@ -263,6 +265,141 @@ bool CheckRead() {
          Check(**result == kPayload.size(), "Read returned wrong byte count") &&
          Check(actual == kPayload, "Read payload mismatch") &&
          Check(resumed_with_scheduler, "read resumed without current scheduler");
+}
+
+bool CheckReadDeadline() {
+  alyrn::uring::Loop loop;
+  switch (InitLoop(loop)) {
+    case LoopInitStatus::kReady:
+      break;
+    case LoopInitStatus::kSkip:
+      return true;
+    case LoopInitStatus::kFail:
+      return false;
+  }
+
+  UniqueFd local;
+  UniqueFd peer;
+  if (!CreateSocketPair(local, peer)) return false;
+
+  alyrn::uring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
+  const auto deadline = alyrn::time::SteadyNow() + alyrn::time::Milliseconds(5);
+  auto configured = stream.SetReadDeadline(deadline);
+  if (!Check(configured.has_value(), "setting the uring read deadline failed")) return false;
+
+  std::array<std::byte, 16> buffer{};
+  std::optional<alyrn::Result<std::size_t>> result;
+  bool resumed_with_scheduler = false;
+  alyrn::coro::SpawnDetach(loop,
+                           ReadOnce(&stream, &loop, buffer, &result, &resumed_with_scheduler));
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
+
+  for (int i = 0; i < 8 && !result.has_value(); ++i) {
+    auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
+    if (!completions.has_value()) {
+      std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+      return false;
+    }
+    alyrn::uring::detail::LoopAccess::RunReady(loop);
+  }
+
+  return Check(result.has_value(), "deadline read coroutine did not resume") &&
+         Check(!result->has_value(), "deadline read unexpectedly succeeded") &&
+         Check(result->error().value() == ETIMEDOUT,
+               "deadline read returned an unexpected error") &&
+         Check(resumed_with_scheduler, "deadline read resumed without current scheduler") &&
+         Check(alyrn::uring::detail::LoopAccess::PendingSubmitCount(loop) == 0,
+               "deadline read left a pending submit") &&
+         Check(alyrn::uring::detail::LoopAccess::InflightCount(loop) == 0,
+               "deadline read left an operation inflight") &&
+         Check(alyrn::uring::detail::LoopAccess::IsDrained(loop),
+               "deadline read left completion work queued");
+}
+
+bool CheckExpiredReadDeadlineCompletesInline() {
+  alyrn::uring::Loop loop;
+  switch (InitLoop(loop)) {
+    case LoopInitStatus::kReady:
+      break;
+    case LoopInitStatus::kSkip:
+      return true;
+    case LoopInitStatus::kFail:
+      return false;
+  }
+
+  UniqueFd local;
+  UniqueFd peer;
+  if (!CreateSocketPair(local, peer)) return false;
+
+  alyrn::uring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
+  auto configured = stream.SetReadDeadline(alyrn::time::SteadyNow() - alyrn::time::Milliseconds(1));
+  if (!Check(configured.has_value(), "setting an expired uring read deadline failed")) return false;
+
+  std::array<std::byte, 16> buffer{};
+  std::optional<alyrn::Result<std::size_t>> result;
+  bool resumed_with_scheduler = false;
+  alyrn::coro::SpawnDetach(loop,
+                           ReadOnce(&stream, &loop, buffer, &result, &resumed_with_scheduler));
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
+
+  return Check(result.has_value(), "expired deadline read did not complete inline") &&
+         Check(!result->has_value(), "expired deadline read unexpectedly succeeded") &&
+         Check(result->error().value() == ETIMEDOUT,
+               "expired deadline read returned an unexpected error") &&
+         Check(resumed_with_scheduler, "expired deadline read resumed without current scheduler") &&
+         Check(alyrn::uring::detail::LoopAccess::PendingSubmitCount(loop) == 0,
+               "expired deadline read submitted I/O") &&
+         Check(alyrn::uring::detail::LoopAccess::InflightCount(loop) == 0,
+               "expired deadline read left an operation inflight");
+}
+
+bool CheckWriteDeadline() {
+  alyrn::uring::Loop loop;
+  switch (InitLoop(loop)) {
+    case LoopInitStatus::kReady:
+      break;
+    case LoopInitStatus::kSkip:
+      return true;
+    case LoopInitStatus::kFail:
+      return false;
+  }
+
+  UniqueFd local;
+  UniqueFd peer;
+  if (!CreateSocketPair(local, peer)) return false;
+
+  alyrn::uring::Stream stream(&loop, local.Release(), EmptyPeerAddress());
+  auto configured =
+      stream.SetWriteDeadline(alyrn::time::SteadyNow() + alyrn::time::Milliseconds(5));
+  if (!Check(configured.has_value(), "setting the uring write deadline failed")) return false;
+
+  std::vector<std::byte> buffer(8 * 1024 * 1024);
+  std::optional<alyrn::Result<void>> result;
+  bool resumed_with_scheduler = false;
+  alyrn::coro::SpawnDetach(loop,
+                           WriteOnce(&stream, &loop, buffer, &result, &resumed_with_scheduler));
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
+
+  for (int i = 0; i < 8 && !result.has_value(); ++i) {
+    auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
+    if (!completions.has_value()) {
+      std::cout << "FAIL: WaitCompletions failed: " << completions.error().message() << '\n';
+      return false;
+    }
+    alyrn::uring::detail::LoopAccess::RunReady(loop);
+  }
+
+  return Check(result.has_value(), "deadline write coroutine did not resume") &&
+         Check(!result->has_value(), "deadline write unexpectedly succeeded") &&
+         Check(result->error().value() == ETIMEDOUT,
+               "deadline write returned an unexpected error") &&
+         Check(resumed_with_scheduler, "deadline write resumed without current scheduler") &&
+         Check(alyrn::uring::detail::LoopAccess::PendingSubmitCount(loop) == 0,
+               "deadline write left a pending submit") &&
+         Check(alyrn::uring::detail::LoopAccess::InflightCount(loop) == 0,
+               "deadline write left an operation inflight") &&
+         Check(alyrn::uring::detail::LoopAccess::IsDrained(loop),
+               "deadline write left completion work queued");
 }
 
 bool CheckEmptyReadCompletesInlineWithoutRingWork() {
@@ -825,6 +962,9 @@ bool CheckReadCompletionCancelRaceResumesOnce() {
 
 int main() {
   if (!CheckRead()) return 1;
+  if (!CheckReadDeadline()) return 1;
+  if (!CheckExpiredReadDeadlineCompletesInline()) return 1;
+  if (!CheckWriteDeadline()) return 1;
   if (!CheckEmptyReadCompletesInlineWithoutRingWork()) return 1;
   if (!CheckReadReleasesSlotBeforeContinuation()) return 1;
   if (!CheckOwnedRecvReturnsBuffer()) return 1;

@@ -24,6 +24,10 @@ public:
 
   SingleResultLifecycle() noexcept = default;
 
+  void Reset() noexcept {
+    state_ = State::kPending;
+  }
+
   bool TryAuthorizeResult() noexcept {
     if (state_ != State::kPending) {
       return false;

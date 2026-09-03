@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include <optional>
-
 #include "alyrn/detail/completion_gate.h"
 
 namespace alyrn::uring::detail {
@@ -17,17 +15,17 @@ namespace alyrn::uring::detail {
 class ReusableCompletionSlot {
  public:
   bool TryComplete() noexcept {
-    return completion_gate_->TryComplete();
+    return completion_gate_.TryComplete();
   }
 
   bool Completed() const noexcept {
-    return completion_gate_->Completed();
+    return completion_gate_.Completed();
   }
 
-  void BeginNextRequest() noexcept { completion_gate_.emplace(); }
+  void BeginNextRequest() noexcept { completion_gate_.Reset(); }
 
 private:
-  std::optional<::alyrn::detail::CompletionGate> completion_gate_{std::in_place};
+  ::alyrn::detail::CompletionGate completion_gate_{};
 };
 
 }  // namespace alyrn::uring::detail
