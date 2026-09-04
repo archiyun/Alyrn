@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 //
-// Measures owner-thread Channel TrySend/TryReceive pairs. This deliberately
-// excludes cross-thread handoff and coroutine scheduling: those are backend
-// mailbox/scheduler costs, not channel-buffer costs.
+// Measures owner-thread Channel send/receive pairs. This deliberately excludes
+// cross-thread handoff: that is a backend mailbox concern, not channel cost.
 //
 // Build:
 //   cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_BENCHMARKS=ON
@@ -14,52 +13,72 @@
 #include <cstdint>
 #include <cstdlib>
 #include <iostream>
+#include <optional>
 
-#include "alyrn/detail/check.h"
 #include "alyrn/coro/channel.h"
 #include "alyrn/coro/scheduler.h"
+#include "alyrn/coro/spawn.h"
+#include "alyrn/coro/task.h"
 #include "alyrn/coro/work.h"
+#include "alyrn/detail/check.h"
 
 namespace {
 
 using alyrn::coro::Channel;
 using alyrn::coro::Scheduler;
+using alyrn::coro::Spawn;
+using alyrn::coro::Task;
 using alyrn::coro::Work;
+using alyrn::coro::WorkQueue;
 
-class InlineScheduler final : public Scheduler {
+class DrainScheduler final : public Scheduler {
 public:
-  void Schedule(Work*) noexcept override {
-    ALYRN_CHECK(false, "channel microbenchmark must not schedule coroutine work");
-  }
-};
-
-class ChannelWork final : public Work {
-public:
-  ChannelWork(Channel<std::uint64_t>& channel, std::uint64_t iterations) noexcept
-      : channel_(&channel), iterations_(iterations) {
-    SetRun([](Work* work) noexcept { static_cast<ChannelWork*>(work)->RunPairs(); });
+  void Schedule(Work* work) noexcept override {
+    ALYRN_CHECK(queue_.PushBack(work), "channel microbenchmark scheduler queue overflow");
   }
 
-  std::uint64_t checksum() const noexcept {
-    return checksum_;
-  }
-
-private:
-  void RunPairs() noexcept {
-    for (std::uint64_t value = 0; value < iterations_; ++value) {
-      ALYRN_CHECK(channel_->TrySend(std::move(value)).HasValue(),
-                     "channel microbenchmark send failed");
-      auto received = channel_->TryReceive();
-      ALYRN_CHECK(received.HasValue() && received->has_value(),
-                     "channel microbenchmark receive failed");
-      checksum_ += **received;
+  void Drain() noexcept {
+    while (Work* work = queue_.PopFront()) {
+      Run(work);
     }
   }
 
-  Channel<std::uint64_t>* channel_;
-  std::uint64_t iterations_;
-  std::uint64_t checksum_{0};
+private:
+  WorkQueue queue_;
 };
+
+Task<void> RunBufferedPairs(Channel<std::uint64_t>& channel, std::uint64_t iterations,
+                            std::uint64_t& checksum) {
+  for (std::uint64_t value = 0; value < iterations; ++value) {
+    ALYRN_CHECK((co_await (channel << value)).HasValue(), "channel microbenchmark send failed");
+    std::optional<std::uint64_t> received;
+    ALYRN_CHECK((co_await (channel >> received)).HasValue() && received.has_value(),
+                "channel microbenchmark receive failed");
+    checksum += *received;
+  }
+  channel.Close();
+  co_return;
+}
+
+Task<void> SendRendezvousValues(Channel<std::uint64_t>& channel, std::uint64_t iterations) {
+  for (std::uint64_t value = 0; value < iterations; ++value) {
+    ALYRN_CHECK((co_await (channel << value)).HasValue(),
+                "channel rendezvous benchmark send failed");
+  }
+  channel.Close();
+  co_return;
+}
+
+Task<void> ReceiveRendezvousValues(Channel<std::uint64_t>& channel, std::uint64_t iterations,
+                                   std::uint64_t& checksum) {
+  for (std::uint64_t value = 0; value < iterations; ++value) {
+    std::optional<std::uint64_t> received;
+    ALYRN_CHECK((co_await (channel >> received)).HasValue() && received.has_value(),
+                "channel rendezvous benchmark receive failed");
+    checksum += *received;
+  }
+  co_return;
+}
 
 std::uint64_t ReadIterations() {
   constexpr std::uint64_t kDefaultIterations = 1'000'000;
@@ -74,19 +93,44 @@ std::uint64_t ReadIterations() {
 
 int main() {
   const std::uint64_t iterations = ReadIterations();
-  InlineScheduler scheduler;
-  Channel<std::uint64_t> channel{scheduler, 1};
-  ChannelWork work{channel, iterations};
-
-  const auto started = std::chrono::steady_clock::now();
-  scheduler.Run(&work);
-  const auto elapsed = std::chrono::steady_clock::now() - started;
-  const auto nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count();
   const auto expected = (iterations - 1) * iterations / 2;
-  ALYRN_CHECK(work.checksum() == expected, "channel microbenchmark checksum mismatch");
+  std::cout << "record,iterations,elapsed_ns,ns_per_pair,checksum\n";
 
-  std::cout << "record,iterations,elapsed_ns,ns_per_pair,checksum\n"
-            << "channel_try_send_receive," << iterations << ',' << nanos << ','
-            << static_cast<double>(nanos) / static_cast<double>(iterations) << ','
-            << work.checksum() << '\n';
+  {
+    DrainScheduler scheduler;
+    Channel<std::uint64_t> channel{scheduler, 1};
+    std::uint64_t checksum = 0;
+    auto task = Spawn(scheduler, RunBufferedPairs(channel, iterations, checksum));
+
+    const auto started = std::chrono::steady_clock::now();
+    scheduler.Drain();
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+    const auto nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count();
+    task.Wait();
+    ALYRN_CHECK(checksum == expected, "buffered channel benchmark checksum mismatch");
+
+    std::cout << "channel_buffered_send_receive," << iterations << ',' << nanos << ','
+              << static_cast<double>(nanos) / static_cast<double>(iterations) << ',' << checksum
+              << '\n';
+  }
+
+  {
+    DrainScheduler scheduler;
+    Channel<std::uint64_t> channel{scheduler, 0};
+    std::uint64_t checksum = 0;
+    auto sender = Spawn(scheduler, SendRendezvousValues(channel, iterations));
+    auto receiver = Spawn(scheduler, ReceiveRendezvousValues(channel, iterations, checksum));
+
+    const auto started = std::chrono::steady_clock::now();
+    scheduler.Drain();
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+    const auto nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(elapsed).count();
+    sender.Wait();
+    receiver.Wait();
+    ALYRN_CHECK(checksum == expected, "rendezvous channel benchmark checksum mismatch");
+
+    std::cout << "channel_rendezvous_send_receive," << iterations << ',' << nanos << ','
+              << static_cast<double>(nanos) / static_cast<double>(iterations) << ',' << checksum
+              << '\n';
+  }
 }

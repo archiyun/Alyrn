@@ -1,15 +1,17 @@
-#include <cerrno>
-#include <csignal>
-#include <optional>
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include "alyrn/detail/check.h"
+#include <cerrno>
+#include <csignal>
+#include <cstdio>
+#include <optional>
+
 #include "alyrn/coro/channel.h"
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/spawn.h"
 #include "alyrn/coro/task.h"
 #include "alyrn/coro/work.h"
+#include "alyrn/detail/check.h"
 
 namespace {
 
@@ -44,42 +46,42 @@ private:
 };
 
 Task<void> BufferedCase(Channel<int>& channel, bool& passed) {
-  ALYRN_CHECK((co_await channel.Send(1)).HasValue(), "first buffered send failed");
-  ALYRN_CHECK((co_await channel.Send(2)).HasValue(), "second buffered send failed");
-  ALYRN_CHECK(!channel.TrySend(3).HasValue(), "full channel accepted a value");
+  ALYRN_CHECK((co_await (channel << 1)).HasValue(), "first buffered send failed");
+  ALYRN_CHECK((co_await (channel << 2)).HasValue(), "second buffered send failed");
   channel.Close();
 
-  auto first = co_await channel.Receive();
-  auto second = co_await channel.Receive();
-  ALYRN_CHECK(first.HasValue() && first->has_value() && **first == 1,
-                 "first buffered value was not FIFO");
-  ALYRN_CHECK(second.HasValue() && second->has_value() && **second == 2,
-                 "second buffered value was not FIFO");
+  std::optional<int> first;
+  std::optional<int> second;
+  ALYRN_CHECK((co_await (channel >> first)).HasValue() && first.has_value() && *first == 1,
+              "first buffered value was not FIFO");
+  ALYRN_CHECK((co_await (channel >> second)).HasValue() && second.has_value() && *second == 2,
+              "second buffered value was not FIFO");
 
-  ALYRN_CHECK(!(co_await channel.Send(3)).HasValue(), "closed channel accepted a send");
-  auto closed = co_await channel.Receive();
-  ALYRN_CHECK(closed.HasValue() && !closed->has_value(),
-                 "closed empty channel did not report end of stream");
+  std::optional<int> closed{99};
+  ALYRN_CHECK((co_await (channel >> closed)).HasValue() && !closed.has_value(),
+              "closed empty channel did not report end of stream");
   passed = true;
 }
 
 Task<void> SendOne(Channel<int>& channel, bool& passed) {
-  const auto sent = co_await channel.Send(42);
+  const auto sent = co_await (channel << 42);
   ALYRN_CHECK(sent.HasValue(), "rendezvous send failed");
   passed = true;
 }
 
 Task<void> ReceiveOne(Channel<int>& channel, bool& passed) {
-  const auto received = co_await channel.Receive();
-  ALYRN_CHECK(received.HasValue() && received->has_value() && **received == 42,
-                 "rendezvous receive failed");
+  std::optional<int> received;
+  const auto result = co_await (channel >> received);
+  ALYRN_CHECK(result.HasValue() && received.has_value() && *received == 42,
+              "rendezvous receive failed");
   passed = true;
 }
 
 Task<void> WaitForClose(Channel<int>& channel, bool& passed) {
-  const auto received = co_await channel.Receive();
-  ALYRN_CHECK(received.HasValue() && !received->has_value(),
-                 "Close did not wake the pending receiver");
+  std::optional<int> received{99};
+  const auto result = co_await (channel >> received);
+  ALYRN_CHECK(result.HasValue() && !received.has_value(),
+              "Close did not wake the pending receiver");
   passed = true;
 }
 
@@ -89,7 +91,35 @@ Task<void> Close(Channel<int>& channel) {
 }
 
 Task<void> WaitForever(Channel<int>& channel) {
-  [[maybe_unused]] const auto received = co_await channel.Receive();
+  std::optional<int> received;
+  [[maybe_unused]] const auto result = co_await (channel >> received);
+}
+
+Task<void> SendOnClosed(Channel<int>& channel) {
+  channel.Close();
+  [[maybe_unused]] const auto result = co_await (channel << 1);
+}
+
+Task<void> CloseTwice(Channel<int>& channel) {
+  channel.Close();
+  channel.Close();
+  co_return;
+}
+
+bool ExpectChildAbort(void (*entry)(), const char* message) {
+  const pid_t child = ::fork();
+  if (child < 0) return false;
+  if (child == 0) {
+    entry();
+    ::_exit(0);
+  }
+
+  int status = 0;
+  while (::waitpid(child, &status, 0) < 0 && errno == EINTR) {
+  }
+  const bool aborted = WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT;
+  if (!aborted) std::fprintf(stderr, "FAIL: %s\n", message);
+  return aborted;
 }
 
 bool TestBufferedAndClose() {
@@ -112,6 +142,9 @@ bool TestUnbufferedRendezvous() {
   scheduler.Drain();
   sender.Wait();
   receiver.Wait();
+  auto closer = Spawn(scheduler, Close(channel));
+  scheduler.Drain();
+  closer.Wait();
   return sent && received;
 }
 
@@ -126,6 +159,50 @@ bool TestCloseWakesReceiver() {
   receiver.Wait();
   closer.Wait();
   return received;
+}
+
+void TriggerSendOnClosed() {
+  DrainScheduler scheduler;
+  Channel<int> channel{scheduler, 0};
+  auto task = Spawn(scheduler, SendOnClosed(channel));
+  scheduler.Drain();
+  task.Wait();
+}
+
+void TriggerCloseTwice() {
+  DrainScheduler scheduler;
+  Channel<int> channel{scheduler, 0};
+  auto task = Spawn(scheduler, CloseTwice(channel));
+  scheduler.Drain();
+  task.Wait();
+}
+
+void TriggerInvalidCapacity() {
+  DrainScheduler scheduler;
+  Channel<int> channel{scheduler, 3};
+}
+
+void TriggerCloseWithPendingSender() {
+  DrainScheduler scheduler;
+  Channel<int> channel{scheduler, 0};
+  bool sent = false;
+  auto sender = Spawn(scheduler, SendOne(channel, sent));
+  ALYRN_CHECK(scheduler.DrainOne(), "sender root was not scheduled");
+  auto closer = Spawn(scheduler, Close(channel));
+  scheduler.Drain();
+  sender.Wait();
+  closer.Wait();
+}
+
+bool TestClosePanics() {
+  return ExpectChildAbort(&TriggerSendOnClosed, "send on closed channel must panic") &&
+         ExpectChildAbort(&TriggerCloseTwice, "closing a channel twice must panic") &&
+         ExpectChildAbort(&TriggerCloseWithPendingSender,
+                          "closing with a pending sender must panic");
+}
+
+bool TestCapacityContract() {
+  return ExpectChildAbort(&TriggerInvalidCapacity, "non-power-of-two channel capacity must panic");
 }
 
 void DestroyChannelWithWaiter() {
@@ -156,6 +233,7 @@ bool TestPendingWaiterDestructionFailsFast() {
 
 int main() {
   return TestBufferedAndClose() && TestUnbufferedRendezvous() && TestCloseWakesReceiver() &&
+                 TestClosePanics() && TestCapacityContract() &&
                  TestPendingWaiterDestructionFailsFast()
              ? 0
              : 1;

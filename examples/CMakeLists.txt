@@ -6,6 +6,15 @@
 #
 # 各子目录自带 CMakeLists.txt，只声明本层的 demo 目标。
 
+add_executable(coro_select_example
+    coro_select.cc
+)
+target_link_libraries(coro_select_example
+    PRIVATE
+        alyrn_coro
+        alyrn_foundation
+)
+
 add_executable(simple_echo
     simple_echo/epoll_main.cpp
 )

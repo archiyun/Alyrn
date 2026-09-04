@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include <cerrno>
+#include <bit>
 #include <coroutine>
 #include <cstddef>
 #include <expected>
@@ -10,114 +10,152 @@
 #include <utility>
 #include <vector>
 
-#include "alyrn/detail/check.h"
 #include "alyrn/coro/scheduler.h"
+#include "alyrn/coro/select_case.h"
 #include "alyrn/coro/work.h"
+#include "alyrn/detail/check.h"
 #include "alyrn/detail/intrusive_queue.h"
-#include "alyrn/result.h"
 #include "alyrn/detail/macros.h"
+#include "alyrn/result.h"
 
 namespace alyrn::coro {
+
+namespace detail {
+
+template <class T>
+struct ChannelSendTag;
+
+template <class T>
+class ChannelSendWaiter
+    : public ::alyrn::detail::QueueNode<ChannelSendWaiter<T>, ChannelSendTag<T>> {
+public:
+  virtual ~ChannelSendWaiter() = default;
+  virtual T TakeValue() noexcept = 0;
+  virtual void Complete() noexcept = 0;
+  virtual void NotifyClosed() noexcept = 0;
+  virtual void Cancelled() noexcept = 0;
+};
+
+template <class T>
+struct ChannelReceiveTag;
+
+template <class T>
+class ChannelReceiveWaiter
+    : public ::alyrn::detail::QueueNode<ChannelReceiveWaiter<T>, ChannelReceiveTag<T>> {
+public:
+  virtual ~ChannelReceiveWaiter() = default;
+  virtual void CompleteValue(T value) noexcept = 0;
+  virtual void CompleteClosed() noexcept = 0;
+  virtual void Cancelled() noexcept = 0;
+};
+
+template <class T>
+class SelectSendRegistration;
+
+template <class T>
+class SelectReceiveRegistration;
+
+}  // namespace detail
 
 /*
  * A scheduler-affine FIFO channel. Its buffer and waiter queues are mutated
  * only by the owning scheduler thread. Cross-thread transport remains a
  * backend mailbox concern: Scheduler::Schedule() is not a portable posting
  * interface.
+ *
+ * Blocking operations use Go-like channel notation:
+ *
+ *   co_await (channel << value);
+ *   std::optional<T> received;
+ *   co_await (channel >> received);
+ *
+ * A successful receive stores a value in `received`; a successful receive from
+ * a closed and drained channel clears it. `Result<void>` still reports
+ * operation errors separately from the closed-channel state.
+ *
+ * `capacity` must be zero or a power of two. Zero selects an unbuffered
+ * channel.
  */
 template <class T>
 class Channel final {
   static_assert(std::is_nothrow_move_constructible_v<T>);
   static_assert(std::is_nothrow_destructible_v<T>);
 
-  struct SendTag;
-  struct ReceiveTag;
-
 public:
   ALYRN_DELETE_COPY_MOVE(Channel);
 
+  friend class detail::SelectSendRegistration<T>;
+  friend class detail::SelectReceiveRegistration<T>;
+
   explicit Channel(Scheduler& scheduler, std::size_t capacity)
-      : scheduler_(&scheduler), buffer_(capacity), capacity_(capacity) {}
+      : scheduler_(&scheduler), buffer_(ValidateCapacity(capacity)), capacity_(capacity) {}
 
   ~Channel() {
+    // Channel has an explicit lifetime contract: the owner must Close() it
+    // before destruction. Forgetting to close the channel is a programming
+    // error and therefore triggers a panic rather than silently abandoning
+    // channel state.
+    ALYRN_CHECK(closed_, "Channel destroyed without Close()");
     // Scheduling a waiter here would leave its awaiter holding this destroyed
     // channel. The owner must Close() and drain its scheduler before releasing
     // the channel, so outstanding waiters are a lifetime-contract violation.
     ALYRN_CHECK(senders_.Empty() && receivers_.Empty(),
-                   "Channel destroyed with pending send or receive waiter");
+                "Channel destroyed with pending send or receive waiter");
   }
 
   class SendAwaiter;
   class ReceiveAwaiter;
 
-  [[nodiscard]]
-  Result<void> TrySend(T&& value) noexcept {
-    CheckOwner();
-    if (closed_) return std::unexpected(Errno(EPIPE));
-
-    if (ReceiveAwaiter* receiver = receivers_.PopFront()) {
-      receiver->CompleteAndSchedule(Result<std::optional<T>>{
-          std::in_place, std::optional<T>{std::move(value)}});
-      return {};
-    }
-    if (size_ == capacity_) return std::unexpected(Errno(EAGAIN));
-
-    PushBuffer(std::move(value));
-    return {};
+  // Blocking send. The parentheses are required when this expression is used
+  // as the operand of co_await because shift operators have lower precedence.
+  SelectSendCase<T> operator<<(T value) noexcept {
+    return SelectSendCase<T>{this, std::move(value)};
   }
 
-  [[nodiscard]]
-  Result<std::optional<T>> TryReceive() noexcept {
-    CheckOwner();
-
-    if (size_ != 0) {
-      T value = PopBuffer();
-      if (SendAwaiter* sender = senders_.PopFront()) {
-        PushBuffer(sender->TakeValue());
-        sender->CompleteAndSchedule(Result<void>{});
-      }
-      return std::optional<T>{std::move(value)};
-    }
-    if (SendAwaiter* sender = senders_.PopFront()) {
-      T value = sender->TakeValue();
-      sender->CompleteAndSchedule(Result<void>{});
-      return std::optional<T>{std::move(value)};
-    }
-    if (closed_) return std::optional<T>{};
-    return std::unexpected(Errno(EAGAIN));
+  // Blocking receive. The output optional is reset on a successful receive;
+  // it remains unchanged when the operation returns an error.
+  SelectReceiveCase<T> operator>>(std::optional<T>& output) noexcept {
+    return SelectReceiveCase<T>{this, &output};
   }
 
-  SendAwaiter Send(T value) noexcept {
-    return SendAwaiter{*this, std::move(value)};
-  }
-
-  ReceiveAwaiter Receive() noexcept { return ReceiveAwaiter{*this}; }
-
+  // Close the channel exactly once. Pending senders fail immediately;
+  // buffered values remain receivable, followed by the end-of-stream after drain.
   void Close() noexcept {
     CheckOwner();
-    if (closed_) return;
+    ALYRN_CHECK(!closed_, "close of closed Channel");
+
     closed_ = true;
 
-    while (SendAwaiter* sender = senders_.PopFront()) {
-      sender->CompleteAndSchedule(std::unexpected(Errno(EPIPE)));
+    while (auto* sender = senders_.PopFront()) {
+      sender->NotifyClosed();
     }
-    if (size_ != 0) return;
-    while (ReceiveAwaiter* receiver = receivers_.PopFront()) {
-      receiver->CompleteAndSchedule(Result<std::optional<T>>{
-          std::in_place, std::optional<T>{}});
+    if (size_ != 0) {
+      return;
+    }
+    while (auto* receiver = receivers_.PopFront()) {
+      receiver->CompleteClosed();
     }
   }
 
   [[nodiscard]]
-  std::size_t Capacity() const noexcept { return capacity_; }
+  std::size_t Capacity() const noexcept {
+    CheckOwner();
+    return capacity_;
+  }
 
   [[nodiscard]]
-  std::size_t Size() const noexcept { return size_; }
+  std::size_t Size() const noexcept {
+    CheckOwner();
+    return size_;
+  }
 
   [[nodiscard]]
-  bool Closed() const noexcept { return closed_; }
+  bool Closed() const noexcept {
+    CheckOwner();
+    return closed_;
+  }
 
-  class [[nodiscard]] SendAwaiter : public ::alyrn::detail::QueueNode<SendAwaiter, SendTag> {
+  class [[nodiscard]] SendAwaiter : public detail::ChannelSendWaiter<T> {
   public:
     ALYRN_DELETE_COPY_MOVE(SendAwaiter);
 
@@ -125,20 +163,18 @@ public:
         : channel_(&channel), value_(std::move(value)) {}
 
     ~SendAwaiter() {
-      if (waiting_) channel_->CancelSend(*this);
+      if (waiting_) {
+        channel_->CancelSend(*this);
+      }
     }
 
     bool await_ready() const noexcept { return false; }
 
     bool await_suspend(std::coroutine_handle<> continuation) noexcept {
       channel_->CheckOwner();
-      if (channel_->closed_) {
-        result_.emplace(std::unexpected(Errno(EPIPE)));
-        return false;
-      }
-      if (ReceiveAwaiter* receiver = channel_->receivers_.PopFront()) {
-        receiver->CompleteAndSchedule(Result<std::optional<T>>{
-            std::in_place, std::optional<T>{TakeValue()}});
+      ALYRN_CHECK(!channel_->closed_, "send on closed Channel");
+      if (auto* receiver = channel_->receivers_.PopFront()) {
+        receiver->CompleteValue(TakeValue());
         result_.emplace(Result<void>{});
         return false;
       }
@@ -156,25 +192,29 @@ public:
 
     Result<void> await_resume() noexcept {
       ALYRN_CHECK(result_.has_value(), "Channel sender resumed without a result");
-      return std::move(*result_);
+      return *result_;
     }
 
   private:
     friend class Channel;
 
-    T TakeValue() noexcept {
+    T TakeValue() noexcept override {
       ALYRN_CHECK(value_.has_value(), "Channel sender value taken twice");
       T value = std::move(*value_);
       value_.reset();
       return value;
     }
 
-    void CompleteAndSchedule(Result<void> result) noexcept {
+    void NotifyClosed() noexcept override { ALYRN_CHECK(false, "send on closed Channel"); }
+
+    void Complete() noexcept override {
       ALYRN_CHECK(waiting_, "Channel completed a sender that was not waiting");
       waiting_ = false;
-      result_.emplace(std::move(result));
+      result_.emplace(Result<void>{});
       channel_->scheduler_->Schedule(&continuation_);
     }
+
+    void Cancelled() noexcept override { waiting_ = false; }
 
     Channel* channel_;
     std::optional<T> value_;
@@ -183,14 +223,17 @@ public:
     bool waiting_{false};
   };
 
-  class [[nodiscard]] ReceiveAwaiter : public ::alyrn::detail::QueueNode<ReceiveAwaiter, ReceiveTag> {
+  class [[nodiscard]] ReceiveAwaiter : public detail::ChannelReceiveWaiter<T> {
   public:
     ALYRN_DELETE_COPY_MOVE(ReceiveAwaiter);
 
-    explicit ReceiveAwaiter(Channel& channel) noexcept : channel_(&channel) {}
+    ReceiveAwaiter(Channel& channel, std::optional<T>& output) noexcept
+        : channel_(&channel), output_(&output) {}
 
     ~ReceiveAwaiter() {
-      if (waiting_) channel_->CancelReceive(*this);
+      if (waiting_) {
+        channel_->CancelReceive(*this);
+      }
     }
 
     bool await_ready() const noexcept { return false; }
@@ -199,16 +242,16 @@ public:
       channel_->CheckOwner();
       if (channel_->size_ != 0) {
         T value = channel_->PopBuffer();
-        if (SendAwaiter* sender = channel_->senders_.PopFront()) {
+        if (auto* sender = channel_->senders_.PopFront()) {
           channel_->PushBuffer(sender->TakeValue());
-          sender->CompleteAndSchedule(Result<void>{});
+          sender->Complete();
         }
         result_.emplace(std::in_place, std::optional<T>{std::move(value)});
         return false;
       }
-      if (SendAwaiter* sender = channel_->senders_.PopFront()) {
+      if (auto* sender = channel_->senders_.PopFront()) {
         T value = sender->TakeValue();
-        sender->CompleteAndSchedule(Result<void>{});
+        sender->Complete();
         result_.emplace(std::in_place, std::optional<T>{std::move(value)});
         return false;
       }
@@ -223,37 +266,67 @@ public:
       return true;
     }
 
-    Result<std::optional<T>> await_resume() noexcept {
+    Result<void> await_resume() noexcept {
       ALYRN_CHECK(result_.has_value(), "Channel receiver resumed without a result");
-      return std::move(*result_);
+      auto result = std::move(*result_);
+      if (!result.HasValue()) {
+        return std::unexpected(result.Error());
+      }
+
+      output_->reset();
+      if (result->has_value()) {
+        output_->emplace(std::move(**result));
+      }
+      return {};
     }
 
   private:
     friend class Channel;
 
-    void CompleteAndSchedule(Result<std::optional<T>> result) noexcept {
+    void CompleteValue(T value) noexcept override {
       ALYRN_CHECK(waiting_, "Channel completed a receiver that was not waiting");
       waiting_ = false;
-      result_.emplace(std::move(result));
+      result_.emplace(std::in_place, std::optional<T>{std::move(value)});
       channel_->scheduler_->Schedule(&continuation_);
     }
 
+    void CompleteClosed() noexcept override {
+      ALYRN_CHECK(waiting_, "Channel completed a receiver that was not waiting");
+      waiting_ = false;
+      result_.emplace(std::in_place, std::optional<T>{});
+      channel_->scheduler_->Schedule(&continuation_);
+    }
+
+    void Cancelled() noexcept override { waiting_ = false; }
+
     Channel* channel_;
+    std::optional<T>* output_;
     std::optional<Result<std::optional<T>>> result_;
     ResumeWork continuation_;
     bool waiting_{false};
   };
 
 private:
+  using SendQueue =
+      ::alyrn::detail::IntrusiveQueue<detail::ChannelSendWaiter<T>, detail::ChannelSendTag<T>>;
+  using ReceiveQueue = ::alyrn::detail::IntrusiveQueue<detail::ChannelReceiveWaiter<T>,
+                                                       detail::ChannelReceiveTag<T>>;
+
+  static std::size_t ValidateCapacity(std::size_t capacity) noexcept {
+    ALYRN_CHECK(capacity == 0 || std::has_single_bit(capacity),
+                "Channel capacity must be zero or a power of two");
+    return capacity;
+  }
+
   void CheckOwner() const noexcept {
     ALYRN_CHECK(Scheduler::TryCurrent() == scheduler_,
-                   "Channel operation called outside its owning scheduler");
+                "Channel operation called outside its owning scheduler");
   }
 
   void PushBuffer(T value) noexcept {
     ALYRN_CHECK(size_ != capacity_, "Channel buffer overflow");
     buffer_[tail_].emplace(std::move(value));
-    tail_ = (tail_ + 1) % capacity_;
+    tail_ = (tail_ + 1) & (capacity_ - 1);
     ++size_;
   }
 
@@ -263,44 +336,124 @@ private:
     ALYRN_CHECK(slot.has_value(), "Channel buffer slot is empty");
     T value = std::move(*slot);
     slot.reset();
-    head_ = (head_ + 1) % capacity_;
+    head_ = (head_ + 1) & (capacity_ - 1);
     --size_;
     return value;
   }
 
-  void CancelSend(SendAwaiter& sender) noexcept {
+  bool SelectSendReady() const noexcept {
+    CheckOwner();
+    return closed_ || !receivers_.Empty() || size_ != capacity_;
+  }
+
+  bool SelectReceiveReady() const noexcept {
+    CheckOwner();
+    return closed_ || !senders_.Empty() || size_ != 0;
+  }
+
+  void RegisterSelectSend(detail::ChannelSendWaiter<T>& sender) noexcept {
+    CheckOwner();
+    ALYRN_CHECK(!closed_, "cannot register a sender on a closed Channel");
+    ALYRN_CHECK(senders_.PushBack(&sender), "Channel select sender queued twice");
+  }
+
+  void RegisterSelectReceive(detail::ChannelReceiveWaiter<T>& receiver) noexcept {
+    CheckOwner();
+    ALYRN_CHECK(!closed_, "cannot register a receiver on a closed Channel");
+    ALYRN_CHECK(receivers_.PushBack(&receiver), "Channel select receiver queued twice");
+  }
+
+  void CommitSelectSend(detail::ChannelSendWaiter<T>& sender) noexcept {
+    CheckOwner();
+    if (closed_) {
+      sender.NotifyClosed();
+      return;
+    }
+    if (auto* receiver = receivers_.PopFront()) {
+      receiver->CompleteValue(sender.TakeValue());
+      sender.Complete();
+      return;
+    }
+
+    ALYRN_CHECK(size_ != capacity_, "selected sender was not ready");
+    PushBuffer(sender.TakeValue());
+    sender.Complete();
+  }
+
+  void CommitSelectReceive(detail::ChannelReceiveWaiter<T>& receiver) noexcept {
+    CheckOwner();
+    if (size_ != 0) {
+      T value = PopBuffer();
+      if (auto* sender = senders_.PopFront()) {
+        PushBuffer(sender->TakeValue());
+        sender->Complete();
+      }
+      receiver.CompleteValue(std::move(value));
+      return;
+    }
+    if (auto* sender = senders_.PopFront()) {
+      receiver.CompleteValue(sender->TakeValue());
+      sender->Complete();
+      return;
+    }
+    if (closed_) {
+      receiver.CompleteClosed();
+      return;
+    }
+
+    ALYRN_CHECK(false, "selected receiver was not ready");
+  }
+
+  void CancelSend(detail::ChannelSendWaiter<T>& sender) noexcept {
     CheckOwner();
     bool removed = false;
-    senders_.ForEachSafe([&](SendAwaiter& current) noexcept {
-      if (&current != &sender) return false;
+    senders_.ForEachSafe([&](auto& current) noexcept {
+      if (&current != &sender) {
+        return false;
+      }
       removed = true;
       return true;
     });
     ALYRN_CHECK(removed, "Channel sender was not queued");
-    sender.waiting_ = false;
+    sender.Cancelled();
   }
 
-  void CancelReceive(ReceiveAwaiter& receiver) noexcept {
+  void CancelReceive(detail::ChannelReceiveWaiter<T>& receiver) noexcept {
     CheckOwner();
     bool removed = false;
-    receivers_.ForEachSafe([&](ReceiveAwaiter& current) noexcept {
-      if (&current != &receiver) return false;
+    receivers_.ForEachSafe([&](auto& current) noexcept {
+      if (&current != &receiver) {
+        return false;
+      }
       removed = true;
       return true;
     });
     ALYRN_CHECK(removed, "Channel receiver was not queued");
-    receiver.waiting_ = false;
+    receiver.Cancelled();
   }
 
   Scheduler* scheduler_;
-  ::alyrn::detail::IntrusiveQueue<SendAwaiter, SendTag> senders_;
-  ::alyrn::detail::IntrusiveQueue<ReceiveAwaiter, ReceiveTag> receivers_;
+  SendQueue senders_;
+  ReceiveQueue receivers_;
   std::vector<std::optional<T>> buffer_;
-  std::size_t capacity_;
+  std::size_t capacity_{0};
   std::size_t head_{0};
   std::size_t tail_{0};
   std::size_t size_{0};
   bool closed_{false};
 };
+
+template <class T>
+typename Channel<T>::SendAwaiter operator co_await(SelectSendCase<T>&& send) noexcept {
+  ALYRN_CHECK(send.channel != nullptr, "Select send case has no Channel");
+  return typename Channel<T>::SendAwaiter{*send.channel, std::move(send.value)};
+}
+
+template <class T>
+typename Channel<T>::ReceiveAwaiter operator co_await(SelectReceiveCase<T>&& receive) noexcept {
+  ALYRN_CHECK(receive.channel != nullptr, "Select receive case has no Channel");
+  ALYRN_CHECK(receive.output != nullptr, "Select receive case has no output");
+  return typename Channel<T>::ReceiveAwaiter{*receive.channel, *receive.output};
+}
 
 }  // namespace alyrn::coro
