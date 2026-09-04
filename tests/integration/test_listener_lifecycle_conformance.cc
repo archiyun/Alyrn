@@ -87,7 +87,7 @@ struct UringHarness {
     alyrn::uring::Options options;
     options.entries = 32;
     auto initialized = loop.Init(options);
-    if (initialized.has_value()) {
+    if (initialized.HasValue()) {
       init_error = {};
       return true;
     }
@@ -107,7 +107,7 @@ struct UringHarness {
   static bool RunAfter(Loop& loop, std::chrono::milliseconds delay,
                        std::function<void()> callback) {
     auto timer = loop.RunAfter(delay, std::move(callback));
-    if (timer.has_value()) {
+    if (timer.HasValue()) {
       return true;
     }
     std::cerr << "FAIL [io_uring]: timer setup: " << timer.Error().message() << '\n';
@@ -133,7 +133,7 @@ bool PrepareLoopAndListener(typename Harness::Loop& loop,
   }
 
   listener = Harness::CreateListener(loop);
-  if (!listener.has_value()) {
+  if (!listener.HasValue()) {
     std::cerr << "FAIL [" << Harness::Name()
               << "]: listener creation: " << listener.Error().message() << '\n';
     return false;
@@ -200,10 +200,10 @@ bool CheckPendingAcceptCloseContract() {
 
   bool ok = true;
   ok &= Expect(!observation.timed_out, Harness::Name(), "pending Accept Close timed out");
-  ok &= Expect(observation.accept.has_value() && !observation.accept->has_value() &&
+  ok &= Expect(observation.accept.has_value() && !observation.accept->HasValue() &&
                    observation.accept->Error() == std::errc::operation_canceled,
                Harness::Name(), "Close did not cancel pending Accept with ECANCELED");
-  ok &= Expect(observation.close.has_value() && observation.close->has_value(), Harness::Name(),
+  ok &= Expect(observation.close.has_value() && observation.close->HasValue(), Harness::Name(),
                "listener Close did not converge");
   ok &= Expect(observation.accept_resume_count == 1, Harness::Name(),
                "cancelled Accept resumed more than once");
@@ -229,15 +229,15 @@ auto ObserveClosedListener(Listener& listener, Loop& loop, ClosedListenerObserva
 
   auto accepted = co_await listener.Accept();
   observation.accept_rejected =
-      !accepted.has_value() && accepted.Error() == std::errc::bad_file_descriptor;
+      !accepted.HasValue() && accepted.Error() == std::errc::bad_file_descriptor;
 
   auto source = listener.CreateAcceptSource();
   observation.source_rejected =
-      !source.has_value() && source.Error() == std::errc::bad_file_descriptor;
+      !source.HasValue() && source.Error() == std::errc::bad_file_descriptor;
 
   auto address = listener.LocalAddress();
   observation.address_rejected =
-      !address.has_value() && address.Error() == std::errc::bad_file_descriptor;
+      !address.HasValue() && address.Error() == std::errc::bad_file_descriptor;
   observation.resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   loop.RequestStop();
 }
@@ -255,9 +255,9 @@ bool CheckClosedListenerContract() {
   alyrn::coro::SpawnDetach(loop, ObserveClosedListener(*listener, loop, observation));
   Harness::Run(loop);
 
-  return Expect(observation.first_close.has_value() && observation.first_close->has_value(),
+  return Expect(observation.first_close.has_value() && observation.first_close->HasValue(),
                 Harness::Name(), "first listener Close failed") &&
-         Expect(observation.second_close.has_value() && observation.second_close->has_value(),
+         Expect(observation.second_close.has_value() && observation.second_close->HasValue(),
                 Harness::Name(), "listener Close was not idempotent") &&
          Expect(observation.accept_rejected, Harness::Name(),
                 "Accept after Close did not return EBADF") &&
@@ -282,11 +282,11 @@ auto ObserveListenerAfterStopRequest(Listener& listener, Loop& loop,
   loop.RequestStop();
   auto accepted = co_await listener.Accept();
   observation.accept_rejected =
-      !accepted.has_value() && accepted.Error() == std::errc::operation_canceled;
+      !accepted.HasValue() && accepted.Error() == std::errc::operation_canceled;
 
   auto source = listener.CreateAcceptSource();
   observation.source_rejected =
-      !source.has_value() && source.Error() == std::errc::operation_canceled;
+      !source.HasValue() && source.Error() == std::errc::operation_canceled;
   observation.resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
 }
 
@@ -357,7 +357,7 @@ bool CheckSourceStopContract() {
   }
 
   auto source_result = listener->CreateAcceptSource();
-  if (!source_result.has_value()) {
+  if (!source_result.HasValue()) {
     std::cerr << "FAIL [" << Harness::Name()
               << "]: AcceptSource creation: " << source_result.Error().message() << '\n';
     return false;
@@ -377,14 +377,14 @@ bool CheckSourceStopContract() {
 
   bool ok = true;
   ok &= Expect(!observation.timed_out, Harness::Name(), "AcceptSource Stop timed out");
-  ok &= Expect(observation.pending_next.has_value() && observation.pending_next->has_value() &&
-                   !observation.pending_next->value().has_value(),
+  ok &= Expect(observation.pending_next.has_value() && observation.pending_next->HasValue() &&
+                   !observation.pending_next->Value().has_value(),
                Harness::Name(), "Stop did not end a pending Next normally");
-  ok &= Expect(observation.sticky_next.has_value() && observation.sticky_next->has_value() &&
-                   !observation.sticky_next->value().has_value(),
+  ok &= Expect(observation.sticky_next.has_value() && observation.sticky_next->HasValue() &&
+                   !observation.sticky_next->Value().has_value(),
                Harness::Name(), "AcceptSource terminal result was not sticky");
-  ok &= Expect(observation.first_stop.has_value() && observation.first_stop->has_value() &&
-                   observation.second_stop.has_value() && observation.second_stop->has_value(),
+  ok &= Expect(observation.first_stop.has_value() && observation.first_stop->HasValue() &&
+                   observation.second_stop.has_value() && observation.second_stop->HasValue(),
                Harness::Name(), "AcceptSource Stop was not idempotent");
   ok &= Expect(observation.next_resume_count == 1, Harness::Name(),
                "stopped AcceptSource::Next resumed more than once");
@@ -424,7 +424,7 @@ bool CheckTerminalNextAfterLoopStopContract() {
   }
 
   auto source_result = listener->CreateAcceptSource();
-  if (!source_result.has_value()) {
+  if (!source_result.HasValue()) {
     std::cerr << "FAIL [" << Harness::Name()
               << "]: AcceptSource creation: " << source_result.Error().message() << '\n';
     return false;
@@ -436,10 +436,10 @@ bool CheckTerminalNextAfterLoopStopContract() {
       loop, StopSourceThenObserveTerminalAfterLoopStop(source, loop, observation));
   Harness::Run(loop);
 
-  return Expect(observation.stop.has_value() && observation.stop->has_value(), Harness::Name(),
+  return Expect(observation.stop.has_value() && observation.stop->HasValue(), Harness::Name(),
                 "AcceptSource Stop failed before loop shutdown") &&
-         Expect(observation.terminal.has_value() && observation.terminal->has_value() &&
-                    !observation.terminal->value().has_value(),
+         Expect(observation.terminal.has_value() && observation.terminal->HasValue() &&
+                    !observation.terminal->Value().has_value(),
                 Harness::Name(), "terminal Next changed after loop stop was requested") &&
          Expect(observation.terminal_with_scheduler, Harness::Name(),
                 "terminal Next after loop stop lost scheduler affinity");
@@ -493,7 +493,7 @@ bool CheckListenerCloseSourceContract() {
   }
 
   auto source_result = listener->CreateAcceptSource();
-  if (!source_result.has_value()) {
+  if (!source_result.HasValue()) {
     std::cerr << "FAIL [" << Harness::Name()
               << "]: AcceptSource creation: " << source_result.Error().message() << '\n';
     return false;
@@ -513,15 +513,15 @@ bool CheckListenerCloseSourceContract() {
 
   bool ok = true;
   ok &= Expect(!observation.timed_out, Harness::Name(), "listener Close with source timed out");
-  ok &= Expect(observation.close.has_value() && observation.close->has_value(), Harness::Name(),
+  ok &= Expect(observation.close.has_value() && observation.close->HasValue(), Harness::Name(),
                "listener Close with source failed");
-  ok &= Expect(observation.pending_next.has_value() && observation.pending_next->has_value() &&
-                   !observation.pending_next->value().has_value(),
+  ok &= Expect(observation.pending_next.has_value() && observation.pending_next->HasValue() &&
+                   !observation.pending_next->Value().has_value(),
                Harness::Name(), "listener Close did not end pending source Next");
-  ok &= Expect(observation.sticky_next.has_value() && observation.sticky_next->has_value() &&
-                   !observation.sticky_next->value().has_value(),
+  ok &= Expect(observation.sticky_next.has_value() && observation.sticky_next->HasValue() &&
+                   !observation.sticky_next->Value().has_value(),
                Harness::Name(), "listener Close did not leave a sticky source terminal");
-  ok &= Expect(observation.stop.has_value() && observation.stop->has_value(), Harness::Name(),
+  ok &= Expect(observation.stop.has_value() && observation.stop->HasValue(), Harness::Name(),
                "source Stop failed after listener Close");
   ok &= Expect(observation.next_resume_count == 1, Harness::Name(),
                "listener Close resumed source Next more than once");
@@ -574,13 +574,13 @@ auto ObserveSequentialAccept(Listener& listener, Loop& loop,
     -> alyrn::coro::DetachedTask {
   observation.first.emplace(co_await listener.Accept());
   observation.first_stream_valid =
-      observation.first->has_value() && observation.first->value().Fd() >= 0;
+      observation.first->HasValue() && observation.first->Value().Fd() >= 0;
   if (observation.first_stream_valid) {
-    observation.first_close.emplace(co_await observation.first->value().Close());
+    observation.first_close.emplace(co_await observation.first->Value().Close());
   }
   observation.second.emplace(co_await listener.Accept());
   observation.second_stream_valid =
-      observation.second->has_value() && observation.second->value().Fd() >= 0;
+      observation.second->HasValue() && observation.second->Value().Fd() >= 0;
   observation.resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
   // RequestStop synchronously asks owner-loop resources to close, so stream
   // validity must be observed before entering the loop shutdown boundary.
@@ -597,7 +597,7 @@ bool CheckAcceptReleaseBeforeContinuationContract() {
   }
 
   auto address = listener->LocalAddress();
-  if (!address.has_value()) {
+  if (!address.HasValue()) {
     std::cerr << "FAIL [" << Harness::Name()
               << "]: listener address lookup: " << address.Error().message() << '\n';
     return false;
@@ -624,12 +624,12 @@ bool CheckAcceptReleaseBeforeContinuationContract() {
   return Expect(!observation.timed_out, Harness::Name(), "sequential Accept timed out") &&
          Expect(clients_connected, Harness::Name(),
                 "sequential Accept clients failed to connect") &&
-         Expect(observation.first.has_value() && observation.first->has_value() &&
+         Expect(observation.first.has_value() && observation.first->HasValue() &&
                     observation.first_stream_valid,
                 Harness::Name(), "first Accept returned an invalid stream") &&
-         Expect(observation.first_close.has_value() && observation.first_close->has_value(),
+         Expect(observation.first_close.has_value() && observation.first_close->HasValue(),
                 Harness::Name(), "accepted stream Close failed immediately after Accept") &&
-         Expect(observation.second.has_value() && observation.second->has_value() &&
+         Expect(observation.second.has_value() && observation.second->HasValue() &&
                     observation.second_stream_valid,
                 Harness::Name(),
                 "follow-up Accept observed a stale listener reservation instead of a stream") &&
@@ -639,7 +639,7 @@ bool CheckAcceptReleaseBeforeContinuationContract() {
 
 template <class Source>
 bool IsStreamEvent(const std::optional<typename Source::NextResult>& result) {
-  return result.has_value() && result->has_value() && result->value().has_value();
+  return result.has_value() && result->HasValue() && result->Value().has_value();
 }
 
 template <class Source>
@@ -710,7 +710,7 @@ bool CheckAcceptSourceAdmissionTrace() {
       .event_capacity = 2,
       .resume_threshold = 1,
   });
-  if (!source_result.has_value()) {
+  if (!source_result.HasValue()) {
     std::cerr << "FAIL [" << Harness::Name()
               << "]: AcceptSource creation: " << source_result.Error().message() << '\n';
     return false;
@@ -718,7 +718,7 @@ bool CheckAcceptSourceAdmissionTrace() {
   typename Harness::Source source = std::move(*source_result);
 
   auto address = listener->LocalAddress();
-  if (!address.has_value()) {
+  if (!address.HasValue()) {
     std::cerr << "FAIL [" << Harness::Name()
               << "]: listener address lookup: " << address.Error().message() << '\n';
     return false;
@@ -763,10 +763,10 @@ bool CheckAcceptSourceAdmissionTrace() {
                "AcceptSource did not retain the high-water burst event");
   ok &= Expect(IsStreamEvent<typename Harness::Source>(observation.fourth), Harness::Name(),
                "AcceptSource did not re-arm after reaching low-water");
-  ok &= Expect(observation.stop.has_value() && observation.stop->has_value(), Harness::Name(),
+  ok &= Expect(observation.stop.has_value() && observation.stop->HasValue(), Harness::Name(),
                "AcceptSource Stop failed after the admission trace");
-  ok &= Expect(observation.terminal.has_value() && observation.terminal->has_value() &&
-                   !observation.terminal->value().has_value(),
+  ok &= Expect(observation.terminal.has_value() && observation.terminal->HasValue() &&
+                   !observation.terminal->Value().has_value(),
                Harness::Name(), "AcceptSource did not produce its normal terminal result");
   ok &= Expect(observation.first_with_scheduler && observation.drain_with_scheduler,
                Harness::Name(), "AcceptSource admission trace lost scheduler affinity");
@@ -787,7 +787,7 @@ bool CheckAcceptSourceStopDrainsBurstContract() {
       .event_capacity = 2,
       .resume_threshold = 1,
   });
-  if (!source_result.has_value()) {
+  if (!source_result.HasValue()) {
     std::cerr << "FAIL [" << Harness::Name()
               << "]: AcceptSource creation: " << source_result.Error().message() << '\n';
     return false;
@@ -795,7 +795,7 @@ bool CheckAcceptSourceStopDrainsBurstContract() {
   typename Harness::Source source = std::move(*source_result);
 
   auto address = listener->LocalAddress();
-  if (!address.has_value()) {
+  if (!address.HasValue()) {
     std::cerr << "FAIL [" << Harness::Name()
               << "]: listener address lookup: " << address.Error().message() << '\n';
     return false;
@@ -837,10 +837,10 @@ bool CheckAcceptSourceStopDrainsBurstContract() {
                "AcceptSource Stop discarded the first queued burst event");
   ok &= Expect(IsStreamEvent<typename Harness::Source>(observation.third), Harness::Name(),
                "AcceptSource Stop discarded the second queued burst event");
-  ok &= Expect(observation.stop.has_value() && observation.stop->has_value(), Harness::Name(),
+  ok &= Expect(observation.stop.has_value() && observation.stop->HasValue(), Harness::Name(),
                "AcceptSource Stop failed during the bounded burst");
-  ok &= Expect(observation.terminal.has_value() && observation.terminal->has_value() &&
-                   !observation.terminal->value().has_value(),
+  ok &= Expect(observation.terminal.has_value() && observation.terminal->HasValue() &&
+                   !observation.terminal->Value().has_value(),
                Harness::Name(), "AcceptSource Stop did not terminate after draining the burst");
   ok &= Expect(observation.first_with_scheduler && observation.drain_with_scheduler,
                Harness::Name(), "AcceptSource Stop during burst lost scheduler affinity");

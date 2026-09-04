@@ -22,21 +22,21 @@ void CheckOptions() {
   assert((AcceptSourceOptions{1, 4}.ResumeThreshold() == 2));
 
   auto invalid = AcceptSourceStateMachine::Create({0, 1});
-  assert(!invalid.has_value());
+  assert(!invalid.HasValue());
   assert(invalid.Error().value() == EINVAL);
 
   invalid = AcceptSourceStateMachine::Create({4, 3});
-  assert(!invalid.has_value());
+  assert(!invalid.HasValue());
   assert(invalid.Error().value() == EINVAL);
 
   invalid = AcceptSourceStateMachine::Create({1, 4, 4});
-  assert(!invalid.has_value());
+  assert(!invalid.HasValue());
   assert(invalid.Error().value() == EINVAL);
 }
 
 void CheckStartAndStopEdges() {
   auto machine_result = AcceptSourceStateMachine::Create({1, 1});
-  assert(machine_result.has_value());
+  assert(machine_result.HasValue());
   auto machine = std::move(*machine_result);
 
   // An idle source can be stopped without ever arming a backend request.
@@ -46,20 +46,20 @@ void CheckStartAndStopEdges() {
   assert(!machine.TryArm());
 
   auto started = AcceptSourceStateMachine::Create({1, 1});
-  assert(started.has_value());
+  assert(started.HasValue());
   auto active = std::move(*started);
-  assert(active.Start().has_value());
+  assert(active.Start().HasValue());
   auto second_start = active.Start();
-  assert(!second_start.has_value());
+  assert(!second_start.HasValue());
   assert(second_start.Error().value() == EALREADY);
 }
 
 void CheckAdmissionBudget() {
   auto machine_result = AcceptSourceStateMachine::Create({2, 3});
-  assert(machine_result.has_value());
+  assert(machine_result.HasValue());
   auto machine = std::move(*machine_result);
 
-  assert(machine.Start().has_value());
+  assert(machine.Start().HasValue());
   assert(machine.State() == AcceptSourceState::kActive);
 
   assert(machine.TryArm());
@@ -67,7 +67,7 @@ void CheckAdmissionBudget() {
   assert(!machine.TryArm());
   assert(machine.ArmedRequests() == 2);
 
-  assert(machine.CompleteRequest(true).has_value());
+  assert(machine.CompleteRequest(true).HasValue());
   assert(machine.QueuedEvents() == 1);
   assert(machine.ArmedRequests() == 1);
 
@@ -83,12 +83,12 @@ void CheckAdmissionBudget() {
 
 void CheckStopDrainsQueuedEvents() {
   auto machine_result = AcceptSourceStateMachine::Create({1, 2});
-  assert(machine_result.has_value());
+  assert(machine_result.HasValue());
   auto machine = std::move(*machine_result);
 
-  assert(machine.Start().has_value());
+  assert(machine.Start().HasValue());
   assert(machine.TryArm());
-  assert(machine.CompleteRequest(true).has_value());
+  assert(machine.CompleteRequest(true).HasValue());
   assert(machine.QueuedEvents() == 1);
 
   machine.RequestStop();
@@ -103,62 +103,62 @@ void CheckStopDrainsQueuedEvents() {
 
 void CheckStopWaitsForPendingRequests() {
   auto machine_result = AcceptSourceStateMachine::Create({2, 2});
-  assert(machine_result.has_value());
+  assert(machine_result.HasValue());
   auto machine = std::move(*machine_result);
 
-  assert(machine.Start().has_value());
+  assert(machine.Start().HasValue());
   assert(machine.TryArm());
   assert(machine.TryArm());
   machine.RequestStop();
   assert(machine.State() == AcceptSourceState::kStopping);
 
-  assert(machine.CompleteRequest(false).has_value());
+  assert(machine.CompleteRequest(false).HasValue());
   assert(machine.State() == AcceptSourceState::kStopping);
   assert(machine.ArmedRequests() == 1);
 
-  assert(machine.CompleteRequest(false).has_value());
+  assert(machine.CompleteRequest(false).HasValue());
   assert(machine.State() == AcceptSourceState::kTerminal);
   assert(machine.ArmedRequests() == 0);
 }
 
 void CheckInvalidCompletion() {
   auto machine_result = AcceptSourceStateMachine::Create({1, 1});
-  assert(machine_result.has_value());
+  assert(machine_result.HasValue());
   auto machine = std::move(*machine_result);
 
-  assert(machine.Start().has_value());
+  assert(machine.Start().HasValue());
   auto completion = machine.CompleteRequest(true);
-  assert(!completion.has_value());
+  assert(!completion.HasValue());
   assert(completion.Error().value() == EINVAL);
 
   assert(machine.TryArm());
-  assert(machine.CompleteRequest(false).has_value());
+  assert(machine.CompleteRequest(false).HasValue());
   auto duplicate = machine.CompleteRequest(false);
-  assert(!duplicate.has_value());
+  assert(!duplicate.HasValue());
   assert(duplicate.Error().value() == EINVAL);
 }
 
 void CheckMultishotCapacityAndTransientCompletion() {
   auto machine_result = AcceptSourceStateMachine::Create({1, 2});
-  assert(machine_result.has_value());
+  assert(machine_result.HasValue());
   auto machine = std::move(*machine_result);
 
-  assert(machine.Start().has_value());
+  assert(machine.Start().HasValue());
   assert(machine.TryArm());
 
   // A non-event F_MORE CQE is still part of the same physical request.
   assert(machine.CompleteMultishotEvent(
       EventDisposition::kNone,
-      MultishotRequestDisposition::kMore).has_value());
+      MultishotRequestDisposition::kMore).HasValue());
   assert(machine.ArmedRequests() == 1);
   assert(machine.QueuedEvents() == 0);
 
   assert(machine.CompleteMultishotEvent(
       EventDisposition::kProduced,
-      MultishotRequestDisposition::kMore).has_value());
+      MultishotRequestDisposition::kMore).HasValue());
   assert(machine.CompleteMultishotEvent(
       EventDisposition::kProduced,
-      MultishotRequestDisposition::kMore).has_value());
+      MultishotRequestDisposition::kMore).HasValue());
   assert(machine.QueuedEvents() == 2);
   assert(machine.ArmedRequests() == 1);
 
@@ -167,7 +167,7 @@ void CheckMultishotCapacityAndTransientCompletion() {
   auto full = machine.CompleteMultishotEvent(
       EventDisposition::kProduced,
       MultishotRequestDisposition::kMore);
-  assert(!full.has_value());
+  assert(!full.HasValue());
   assert(full.Error().value() == ENOBUFS);
   assert(machine.QueuedEvents() == 2);
   assert(machine.ArmedRequests() == 1);
@@ -176,7 +176,7 @@ void CheckMultishotCapacityAndTransientCompletion() {
   // is responsible for having requested cancellation when it saw ENOBUFS.
   assert(machine.CompleteMultishotEvent(
       EventDisposition::kNone,
-      MultishotRequestDisposition::kTerminal).has_value());
+      MultishotRequestDisposition::kTerminal).HasValue());
   assert(machine.ArmedRequests() == 0);
   assert(machine.State() == AcceptSourceState::kActive);
 
@@ -189,16 +189,16 @@ void CheckMultishotCapacityAndTransientCompletion() {
 
 void CheckMultishotTerminalEventAndDuplicateTerminal() {
   auto machine_result = AcceptSourceStateMachine::Create({1, 1});
-  assert(machine_result.has_value());
+  assert(machine_result.HasValue());
   auto machine = std::move(*machine_result);
 
-  assert(machine.Start().has_value());
+  assert(machine.Start().HasValue());
   assert(machine.TryArm());
 
   // A terminal error has no queued event but still releases the request.
   assert(machine.CompleteMultishotEvent(
       EventDisposition::kNone,
-      MultishotRequestDisposition::kTerminal).has_value());
+      MultishotRequestDisposition::kTerminal).HasValue());
   assert(machine.State() == AcceptSourceState::kActive);
   assert(machine.ArmedRequests() == 0);
 
@@ -208,35 +208,35 @@ void CheckMultishotTerminalEventAndDuplicateTerminal() {
   auto duplicate = machine.CompleteMultishotEvent(
       EventDisposition::kNone,
       MultishotRequestDisposition::kTerminal);
-  assert(!duplicate.has_value());
+  assert(!duplicate.HasValue());
   assert(duplicate.Error().value() == EINVAL);
 }
 
 void CheckMultishotLifecycle() {
   auto machine_result = AcceptSourceStateMachine::Create({1, 3});
-  assert(machine_result.has_value());
+  assert(machine_result.HasValue());
   auto machine = std::move(*machine_result);
 
-  assert(machine.Start().has_value());
+  assert(machine.Start().HasValue());
   assert(machine.TryArm());
 
   // F_MORE keeps the one physical request armed while producing events.
   assert(machine.CompleteMultishotEvent(
       EventDisposition::kProduced,
-      MultishotRequestDisposition::kMore).has_value());
+      MultishotRequestDisposition::kMore).HasValue());
   assert(machine.ArmedRequests() == 1);
   assert(machine.QueuedEvents() == 1);
 
   assert(machine.CompleteMultishotEvent(
       EventDisposition::kProduced,
-      MultishotRequestDisposition::kMore).has_value());
+      MultishotRequestDisposition::kMore).HasValue());
   assert(machine.ArmedRequests() == 1);
   assert(machine.QueuedEvents() == 2);
 
   // The terminal CQE releases the physical request.
   assert(machine.CompleteMultishotEvent(
       EventDisposition::kNone,
-      MultishotRequestDisposition::kTerminal).has_value());
+      MultishotRequestDisposition::kTerminal).HasValue());
   assert(machine.ArmedRequests() == 0);
   assert(machine.State() == AcceptSourceState::kActive);
 
@@ -247,23 +247,23 @@ void CheckMultishotLifecycle() {
 
 void CheckMultishotStopDrain() {
   auto machine_result = AcceptSourceStateMachine::Create({1, 2});
-  assert(machine_result.has_value());
+  assert(machine_result.HasValue());
   auto machine = std::move(*machine_result);
 
-  assert(machine.Start().has_value());
+  assert(machine.Start().HasValue());
   assert(machine.TryArm());
   machine.RequestStop();
   assert(machine.State() == AcceptSourceState::kStopping);
 
   assert(machine.CompleteMultishotEvent(
       EventDisposition::kProduced,
-      MultishotRequestDisposition::kMore).has_value());
+      MultishotRequestDisposition::kMore).HasValue());
   assert(machine.State() == AcceptSourceState::kStopping);
   assert(machine.ArmedRequests() == 1);
 
   assert(machine.CompleteMultishotEvent(
       EventDisposition::kNone,
-      MultishotRequestDisposition::kTerminal).has_value());
+      MultishotRequestDisposition::kTerminal).HasValue());
   assert(machine.State() == AcceptSourceState::kDraining);
   assert(machine.ArmedRequests() == 0);
 
@@ -277,26 +277,26 @@ void CheckPauseAndResume() {
       .event_capacity = 4,
       .resume_threshold = 1,
   });
-  assert(machine_result.has_value());
+  assert(machine_result.HasValue());
   auto machine = std::move(*machine_result);
 
-  assert(machine.Start().has_value());
+  assert(machine.Start().HasValue());
   assert(machine.TryArm());
   for (int i = 0; i < 4; ++i) {
     assert(machine.CompleteMultishotEvent(
                    EventDisposition::kProduced,
                    MultishotRequestDisposition::kMore)
-               .has_value());
+               .HasValue());
   }
 
-  assert(machine.RequestPause().has_value());
+  assert(machine.RequestPause().HasValue());
   assert(machine.State() == AcceptSourceState::kPausing);
   assert(!machine.TryArm());
 
   assert(machine.CompleteMultishotEvent(
                  EventDisposition::kNone,
                  MultishotRequestDisposition::kTerminal)
-             .has_value());
+             .HasValue());
   assert(machine.State() == AcceptSourceState::kPaused);
   assert(!machine.TryResume());
 

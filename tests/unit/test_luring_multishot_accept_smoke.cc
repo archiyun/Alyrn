@@ -160,7 +160,7 @@ LoopInitStatus InitLoop(Loop& loop) {
   options.entries = 32;
 
   auto initialized = loop.Init(options);
-  if (initialized.has_value()) {
+  if (initialized.HasValue()) {
     return LoopInitStatus::kReady;
   }
   if (initialized.Error() == std::errc::operation_not_supported ||
@@ -179,7 +179,7 @@ template <typename Predicate>
 bool PumpUntil(Loop& loop, Predicate&& predicate, int max_iterations = 64) {
   for (int i = 0; i < max_iterations && !predicate(); ++i) {
     auto completed = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
-    if (!completed.has_value()) {
+    if (!completed.HasValue()) {
       std::cout << "FAIL: waiting for CQE failed: "
                 << completed.Error().message() << '\n';
       return false;
@@ -243,7 +243,7 @@ public:
 
   Result<void> Start() noexcept {
     auto started = state_.Start();
-    if (!started.has_value()) {
+    if (!started.HasValue()) {
       return started;
     }
     return EnsureSubmission();
@@ -275,7 +275,7 @@ public:
     }
 
     auto recorded = state_.CompleteMultishotEvent(disposition, request);
-    if (!recorded.has_value()) {
+    if (!recorded.HasValue()) {
       return recorded;
     }
 
@@ -322,7 +322,7 @@ private:
       auto rolled_back = state_.CompleteMultishotEvent(
           EventDisposition::kNone,
           MultishotRequestDisposition::kTerminal);
-      assert(rolled_back.has_value());
+      assert(rolled_back.HasValue());
       state_.RequestStop();
       terminal_error_ = error;
       return std::unexpected(error);
@@ -342,17 +342,17 @@ private:
 
 void CheckFakeRearmSubmitFailure() {
   auto state_result = AcceptSourceStateMachine::Create({1, 4});
-  assert(state_result.has_value());
+  assert(state_result.HasValue());
   FakeMultishotSourceHarness source(std::move(*state_result));
 
-  assert(source.Start().has_value());
+  assert(source.Start().HasValue());
   assert(source.SubmissionCount() == 1);
   assert(source.RequestSubmitted());
 
   // F_MORE keeps the original request in flight and must not rearm.
   assert(source.Complete(
       CompletionEvent{11, IORING_CQE_F_MORE},
-      EventDisposition::kProduced).has_value());
+      EventDisposition::kProduced).HasValue());
   assert(source.SubmissionCount() == 1);
   assert(source.RequestSubmitted());
   assert(source.QueuedEvents() == 1);
@@ -364,7 +364,7 @@ void CheckFakeRearmSubmitFailure() {
   auto rearm = source.Complete(
       CompletionEvent{12, 0},
       EventDisposition::kProduced);
-  assert(!rearm.has_value());
+  assert(!rearm.HasValue());
   assert(rearm.Error().value() == EIO);
   assert(source.SubmissionCount() == 2);
   assert(!source.RequestSubmitted());
@@ -379,10 +379,10 @@ void CheckFakeRearmSubmitFailure() {
 
 void CheckFakeMultishotFallback() {
   auto state_result = AcceptSourceStateMachine::Create({1, 4});
-  assert(state_result.has_value());
+  assert(state_result.HasValue());
   FakeMultishotSourceHarness source(std::move(*state_result));
 
-  assert(source.Start().has_value());
+  assert(source.Start().HasValue());
   assert(source.MultishotEnabled());
   assert(source.SubmissionCount() == 1);
 
@@ -390,7 +390,7 @@ void CheckFakeMultishotFallback() {
   // logical AcceptSource failure. The next request must be one-shot.
   assert(source.Complete(
       CompletionEvent{-EINVAL, 0},
-      EventDisposition::kNone).has_value());
+      EventDisposition::kNone).HasValue());
   assert(!source.MultishotEnabled());
   assert(source.State() == AcceptSourceState::kActive);
   assert(source.SubmissionCount() == 2);
@@ -400,7 +400,7 @@ void CheckFakeMultishotFallback() {
   // rearmed after each terminal completion.
   assert(source.Complete(
       CompletionEvent{17, 0},
-      EventDisposition::kProduced).has_value());
+      EventDisposition::kProduced).HasValue());
   assert(source.State() == AcceptSourceState::kActive);
   assert(source.SubmissionCount() == 3);
   assert(source.RequestSubmitted());
@@ -415,7 +415,7 @@ alyrn::coro::DetachedTask Consume(
   for (int i = 0; i < kClientCount; ++i) {
     auto result = co_await source->Next();
 
-    if (!result.has_value()) {
+    if (!result.HasValue()) {
       if (IsUnsupported(result.Error())) {
         observation->unsupported = true;
       } else {
@@ -423,7 +423,7 @@ alyrn::coro::DetachedTask Consume(
       }
 
       auto stopped = co_await source->Stop();
-      if (!stopped.has_value()) {
+      if (!stopped.HasValue()) {
         observation->error = stopped.Error();
       }
       co_return;
@@ -452,8 +452,8 @@ alyrn::coro::DetachedTask Consume(
   }
 
   auto stopped = co_await source->Stop();
-  observation->stopped = stopped.has_value();
-  if (!stopped.has_value()) {
+  observation->stopped = stopped.HasValue();
+  if (!stopped.HasValue()) {
     observation->error = stopped.Error();
   }
 }
@@ -462,7 +462,7 @@ alyrn::coro::DetachedTask ConsumeOneThenStop(
     AcceptSource* source,
     CancelObservation* observation) {
   auto result = co_await source->Next();
-  if (!result.has_value()) {
+  if (!result.HasValue()) {
     if (IsUnsupported(result.Error())) {
       observation->unsupported = true;
     } else {
@@ -481,15 +481,15 @@ alyrn::coro::DetachedTask ConsumeOneThenStop(
   // Stop while the multishot request is still active. This exercises the
   // independent cancel operation and the two-CQE convergence path.
   auto stopped = co_await source->Stop();
-  observation->stopped = stopped.has_value();
-  if (!stopped.has_value()) {
+  observation->stopped = stopped.HasValue();
+  if (!stopped.HasValue()) {
     observation->error = stopped.Error();
     observation->done = true;
     co_return;
   }
 
   auto end = co_await source->Next();
-  if (!end.has_value()) {
+  if (!end.HasValue()) {
     observation->error = end.Error();
   } else {
     observation->terminal = !end->has_value();
@@ -501,7 +501,7 @@ alyrn::coro::DetachedTask WaitForSourceEnd(
     AcceptSource* source,
     CloseObservation* observation) {
   auto result = co_await source->Next();
-  if (!result.has_value()) {
+  if (!result.HasValue()) {
     if (IsUnsupported(result.Error())) {
       observation->unsupported = true;
     } else {
@@ -517,8 +517,8 @@ alyrn::coro::DetachedTask CloseListener(
     Listener* listener,
     CloseObservation* observation) {
   auto result = co_await listener->Close();
-  observation->close_succeeded = result.has_value();
-  if (!result.has_value()) {
+  observation->close_succeeded = result.HasValue();
+  if (!result.HasValue()) {
     observation->error = result.Error();
   }
 }
@@ -530,7 +530,7 @@ alyrn::coro::DetachedTask FillQueueThenStop(
     Loop* loop,
     BackpressureObservation* observation) {
   auto first = co_await source->Next();
-  if (!first.has_value()) {
+  if (!first.HasValue()) {
     if (IsUnsupported(first.Error())) {
       observation->unsupported = true;
     } else {
@@ -550,22 +550,22 @@ alyrn::coro::DetachedTask FillQueueThenStop(
   // later F_MORE CQE to hit the full-queue path.
   auto delay = co_await alyrn::uring::SleepFor(
       *loop, std::chrono::milliseconds(50));
-  if (!delay.has_value()) {
+  if (!delay.HasValue()) {
     observation->error = delay.Error();
     observation->done = true;
     co_return;
   }
 
   auto stopped = co_await source->Stop();
-  observation->stop_succeeded = stopped.has_value();
-  if (!stopped.has_value()) {
+  observation->stop_succeeded = stopped.HasValue();
+  if (!stopped.HasValue()) {
     observation->error = stopped.Error();
     observation->done = true;
     co_return;
   }
 
   auto queued = co_await source->Next();
-  if (!queued.has_value()) {
+  if (!queued.HasValue()) {
     observation->error = queued.Error();
     observation->done = true;
     co_return;
@@ -578,7 +578,7 @@ alyrn::coro::DetachedTask FillQueueThenStop(
   observation->queued_received = true;
 
   auto terminal = co_await source->Next();
-  if (!terminal.has_value()) {
+  if (!terminal.HasValue()) {
     observation->error = terminal.Error();
   } else if (!terminal->has_value()) {
     observation->normal_end = true;
@@ -593,7 +593,7 @@ alyrn::coro::DetachedTask PauseThenResume(
     Loop* loop,
     PauseResumeObservation* observation) {
   auto first = co_await source->Next();
-  if (!first.has_value()) {
+  if (!first.HasValue()) {
     if (IsUnsupported(first.Error())) {
       observation->unsupported = true;
     } else {
@@ -614,15 +614,15 @@ alyrn::coro::DetachedTask PauseThenResume(
   // the native cancel/terminal-CQE convergence path.
   auto delay = co_await alyrn::uring::SleepFor(
       *loop, std::chrono::milliseconds(50));
-  if (!delay.has_value()) {
+  if (!delay.HasValue()) {
     observation->error = delay.Error();
     observation->done = true;
     co_return;
   }
 
   auto queued = co_await source->Next();
-  if (!queued.has_value() || !queued->has_value()) {
-    observation->error = queued.has_value()
+  if (!queued.HasValue() || !queued->has_value()) {
+    observation->error = queued.HasValue()
                              ? alyrn::Errno(ECONNABORTED)
                              : queued.Error();
     observation->done = true;
@@ -634,8 +634,8 @@ alyrn::coro::DetachedTask PauseThenResume(
   // crossed the low-water mark. It therefore proves physical re-arm, not
   // merely draining an already queued accept.
   auto resumed = co_await source->Next();
-  if (!resumed.has_value() || !resumed->has_value()) {
-    observation->error = resumed.has_value()
+  if (!resumed.HasValue() || !resumed->has_value()) {
+    observation->error = resumed.HasValue()
                              ? alyrn::Errno(ECONNABORTED)
                              : resumed.Error();
     observation->done = true;
@@ -644,15 +644,15 @@ alyrn::coro::DetachedTask PauseThenResume(
   observation->resumed_received = true;
 
   auto stopped = co_await source->Stop();
-  observation->stop_succeeded = stopped.has_value();
-  if (!stopped.has_value()) {
+  observation->stop_succeeded = stopped.HasValue();
+  if (!stopped.HasValue()) {
     observation->error = stopped.Error();
     observation->done = true;
     co_return;
   }
 
   auto terminal = co_await source->Next();
-  if (!terminal.has_value()) {
+  if (!terminal.HasValue()) {
     observation->error = terminal.Error();
   } else if (!terminal->has_value()) {
     observation->normal_end = true;
@@ -678,7 +678,7 @@ bool CheckMultishotAccept() {
   options.tcp_options.no_delay = true;
   options.tcp_options.keep_alive = true;
   auto listener_result = Listener::Create(&loop, LoopbackAddress(0), options);
-  if (!listener_result.has_value()) {
+  if (!listener_result.HasValue()) {
     std::cout << "FAIL: listener creation failed: "
               << listener_result.Error().message() << '\n';
     return false;
@@ -689,7 +689,7 @@ bool CheckMultishotAccept() {
       .pending_depth = 1,
       .event_capacity = 16,
   });
-  if (!source_result.has_value()) {
+  if (!source_result.HasValue()) {
     std::cout << "FAIL: AcceptSource creation failed: "
               << source_result.Error().message() << '\n';
     return false;
@@ -706,7 +706,7 @@ bool CheckMultishotAccept() {
   alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   auto address = listener.LocalAddress();
-  if (!address.has_value()) {
+  if (!address.HasValue()) {
     std::cout << "FAIL: LocalAddress failed: "
               << address.Error().message() << '\n';
     return false;
@@ -717,7 +717,7 @@ bool CheckMultishotAccept() {
 
   for (int i = 0; i < kClientCount; ++i) {
     auto client = ConnectClient(*address);
-    if (!client.has_value()) {
+    if (!client.HasValue()) {
       std::cout << "FAIL: client connect failed: "
                 << client.Error().message() << '\n';
       return false;
@@ -760,7 +760,7 @@ bool CheckStopCancelsActiveSource() {
 
   auto listener_result =
       Listener::Create(&loop, LoopbackAddress(0));
-  if (!listener_result.has_value()) {
+  if (!listener_result.HasValue()) {
     std::cout << "FAIL: listener creation failed: "
               << listener_result.Error().message() << '\n';
     return false;
@@ -768,7 +768,7 @@ bool CheckStopCancelsActiveSource() {
   auto listener = std::move(*listener_result);
   auto source_result = listener.CreateAcceptSource({.pending_depth = 1,
                                               .event_capacity = 4});
-  if (!source_result.has_value()) {
+  if (!source_result.HasValue()) {
     std::cout << "FAIL: source creation failed: "
               << source_result.Error().message() << '\n';
     return false;
@@ -781,13 +781,13 @@ bool CheckStopCancelsActiveSource() {
   alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   auto address = listener.LocalAddress();
-  if (!address.has_value()) {
+  if (!address.HasValue()) {
     std::cout << "FAIL: LocalAddress failed: "
               << address.Error().message() << '\n';
     return false;
   }
   auto client = ConnectClient(*address);
-  if (!client.has_value()) {
+  if (!client.HasValue()) {
     std::cout << "FAIL: client connect failed: "
               << client.Error().message() << '\n';
     return false;
@@ -826,14 +826,14 @@ bool CheckListenerCloseCancelsActiveSource() {
 
   auto listener_result =
       Listener::Create(&loop, LoopbackAddress(0));
-  if (!listener_result.has_value()) {
+  if (!listener_result.HasValue()) {
     std::cout << "FAIL: listener creation failed: "
               << listener_result.Error().message() << '\n';
     return false;
   }
   auto listener = std::move(*listener_result);
   auto source_result = listener.CreateAcceptSource();
-  if (!source_result.has_value()) {
+  if (!source_result.HasValue()) {
     std::cout << "FAIL: source creation failed: "
               << source_result.Error().message() << '\n';
     return false;
@@ -881,7 +881,7 @@ bool CheckQueueBackpressure() {
 
   auto listener_result =
       Listener::Create(&loop, LoopbackAddress(0));
-  if (!listener_result.has_value()) {
+  if (!listener_result.HasValue()) {
     std::cout << "FAIL: listener creation failed: "
               << listener_result.Error().message() << '\n';
     return false;
@@ -889,7 +889,7 @@ bool CheckQueueBackpressure() {
   auto listener = std::move(*listener_result);
   auto source_result = listener.CreateAcceptSource({.pending_depth = 1,
                                               .event_capacity = 1});
-  if (!source_result.has_value()) {
+  if (!source_result.HasValue()) {
     std::cout << "FAIL: source creation failed: "
               << source_result.Error().message() << '\n';
     return false;
@@ -902,7 +902,7 @@ bool CheckQueueBackpressure() {
   alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   auto address = listener.LocalAddress();
-  if (!address.has_value()) {
+  if (!address.HasValue()) {
     std::cout << "FAIL: LocalAddress failed: "
               << address.Error().message() << '\n';
     return false;
@@ -913,7 +913,7 @@ bool CheckQueueBackpressure() {
   std::vector<UniqueFd> clients;
   clients.reserve(8);
   auto first_client = ConnectClient(*address);
-  if (!first_client.has_value()) {
+  if (!first_client.HasValue()) {
     std::cout << "FAIL: first client connect failed: "
               << first_client.Error().message() << '\n';
     return false;
@@ -938,7 +938,7 @@ bool CheckQueueBackpressure() {
 
   for (int i = 0; i < 7; ++i) {
     auto client = ConnectClient(*address);
-    if (!client.has_value()) {
+    if (!client.HasValue()) {
       std::cout << "FAIL: burst client connect failed: "
                 << client.Error().message() << '\n';
       return false;
@@ -980,7 +980,7 @@ bool RunQueuePauseThenRearmScenario() {
   }
 
   auto listener_result = Listener::Create(&loop, LoopbackAddress(0));
-  if (!listener_result.has_value()) {
+  if (!listener_result.HasValue()) {
     std::cout << "FAIL: listener creation failed: "
               << listener_result.Error().message() << '\n';
     return false;
@@ -988,7 +988,7 @@ bool RunQueuePauseThenRearmScenario() {
   auto listener = std::move(*listener_result);
   auto source_result = listener.CreateAcceptSource({.pending_depth = 1,
                                               .event_capacity = 1});
-  if (!source_result.has_value()) {
+  if (!source_result.HasValue()) {
     std::cout << "FAIL: source creation failed: "
               << source_result.Error().message() << '\n';
     return false;
@@ -1001,7 +1001,7 @@ bool RunQueuePauseThenRearmScenario() {
 
 
   auto address = listener.LocalAddress();
-  if (!address.has_value()) {
+  if (!address.HasValue()) {
     std::cout << "FAIL: LocalAddress failed: "
               << address.Error().message() << '\n';
     return false;
@@ -1011,7 +1011,7 @@ bool RunQueuePauseThenRearmScenario() {
   clients.reserve(3);
   auto connect = [&]() -> bool {
     auto client = ConnectClient(*address);
-    if (!client.has_value()) {
+    if (!client.HasValue()) {
       std::cout << "FAIL: client connect failed: "
                 << client.Error().message() << '\n';
       return false;

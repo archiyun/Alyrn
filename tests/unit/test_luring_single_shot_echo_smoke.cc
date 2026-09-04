@@ -43,13 +43,13 @@ alyrn::coro::DetachedTask EchoOnce(alyrn::uring::Stream stream) {
 
   for (;;) {
     auto read = co_await stream.Read(buffer);
-    if (!read.has_value() || *read == 0) {
+    if (!read.HasValue() || *read == 0) {
       break;
     }
 
     auto payload = std::span<const std::byte>(buffer.data(), *read);
     auto written = co_await stream.Write(payload);
-    if (!written.has_value()) {
+    if (!written.HasValue()) {
       break;
     }
   }
@@ -59,7 +59,7 @@ alyrn::coro::DetachedTask EchoOnce(alyrn::uring::Stream stream) {
 
 alyrn::coro::DetachedTask AcceptOnce(alyrn::uring::Loop& loop, alyrn::uring::Listener& listener) {
   auto accepted = co_await listener.Accept();
-  if (!accepted.has_value()) {
+  if (!accepted.HasValue()) {
     loop.RequestStop();
     co_return;
   }
@@ -69,13 +69,13 @@ alyrn::coro::DetachedTask AcceptOnce(alyrn::uring::Loop& loop, alyrn::uring::Lis
 
 alyrn::coro::DetachedTask ConnectOnce(alyrn::uring::Loop& loop, std::uint16_t port, bool* echo_ok) {
   auto connector = alyrn::uring::Connector::Create(&loop);
-  if (!connector.has_value()) {
+  if (!connector.HasValue()) {
     loop.RequestStop();
     co_return;
   }
 
   auto connected = co_await connector->Connect("127.0.0.1", port);
-  if (!connected.has_value()) {
+  if (!connected.HasValue()) {
     loop.RequestStop();
     co_return;
   }
@@ -84,7 +84,7 @@ alyrn::coro::DetachedTask ConnectOnce(alyrn::uring::Loop& loop, std::uint16_t po
   const auto payload = std::as_bytes(std::span<const char>(kMessage.data(), kMessage.size()));
 
   auto written = co_await stream.Write(payload);
-  if (!written.has_value()) {
+  if (!written.HasValue()) {
     (void)co_await stream.Close();
     loop.RequestStop();
     co_return;
@@ -96,7 +96,7 @@ alyrn::coro::DetachedTask ConnectOnce(alyrn::uring::Loop& loop, std::uint16_t po
 
   while (received.size() < kMessage.size()) {
     auto read = co_await stream.Read(buffer);
-    if (!read.has_value() || *read == 0) {
+    if (!read.HasValue() || *read == 0) {
       (void)co_await stream.Close();
       loop.RequestStop();
       co_return;
@@ -121,7 +121,7 @@ bool CheckEchoRoundTrip() {
   options.entries = 64;
 
   auto init = loop.Init(options);
-  if (!init.has_value()) {
+  if (!init.HasValue()) {
     if (IsEnvironmentSkip(init.Error())) {
       std::cout << "SKIP: io_uring unavailable: " << init.Error().message() << '\n';
       return true;
@@ -131,13 +131,13 @@ bool CheckEchoRoundTrip() {
   }
 
   auto listener = alyrn::uring::Listener::Create(&loop, alyrn::net::Endpoint::Loopback(0));
-  if (!listener.has_value()) {
+  if (!listener.HasValue()) {
     std::cout << "FAIL: Listener::Create failed: " << listener.Error().message() << '\n';
     return false;
   }
 
   auto local = listener->LocalAddress();
-  if (!local.has_value()) {
+  if (!local.HasValue()) {
     std::cout << "FAIL: LocalAddress failed: " << local.Error().message() << '\n';
     return false;
   }

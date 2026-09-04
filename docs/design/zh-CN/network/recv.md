@@ -45,7 +45,7 @@ auto outcome = co_await stream.Recv(std::move(buffer));
 
 if (!outcome.result) {
   // buffer 仍然归调用者；本次 reservation 已经回滚。
-  HandleError(outcome.result.error());
+  HandleError(outcome.result.Error());
   return;
 }
 
@@ -63,7 +63,7 @@ buffer owner 已经归还。
 ```cpp
 auto buf = co_await stream.Recv();
 if (!buf) {
-  HandleError(buf.error());
+  HandleError(buf.Error());
   return;
 }
 Consume(*buf);

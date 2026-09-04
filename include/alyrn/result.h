@@ -107,11 +107,6 @@ public:
   }
 
   [[nodiscard]]
-  bool has_value() const noexcept {
-    return HasValue();
-  }
-
-  [[nodiscard]]
   explicit operator bool() const noexcept {
     return HasValue();
   }
@@ -165,21 +160,6 @@ public:
   }
 
   [[nodiscard]]
-  T& value() & noexcept {
-    return Value();
-  }
-
-  [[nodiscard]]
-  const T& value() const& noexcept {
-    return Value();
-  }
-
-  [[nodiscard]]
-  T&& value() && noexcept {
-    return std::move(*this).Value();
-  }
-
-  [[nodiscard]]
   T& Expect(std::string_view message) & noexcept {
     ALYRN_CHECK(result_.has_value(), message);
     return *result_;
@@ -209,30 +189,15 @@ public:
     return std::move(result_.error());
   }
 
-  [[nodiscard]]
-  E& error() & noexcept {
-    return Error();
-  }
-
-  [[nodiscard]]
-  const E& error() const& noexcept {
-    return Error();
-  }
-
-  [[nodiscard]]
-  E&& error() && noexcept {
-    return std::move(*this).Error();
-  }
-
   template <typename U>
   [[nodiscard]]
-  T value_or(U&& fallback) const& {
+  T ValueOr(U&& fallback) const& {
     return result_.value_or(std::forward<U>(fallback));
   }
 
   template <typename U>
   [[nodiscard]]
-  T value_or(U&& fallback) && {
+  T ValueOr(U&& fallback) && {
     return std::move(result_).value_or(std::forward<U>(fallback));
   }
 
@@ -275,11 +240,6 @@ public:
   }
 
   [[nodiscard]]
-  bool has_value() const noexcept {
-    return HasValue();
-  }
-
-  [[nodiscard]]
   explicit operator bool() const noexcept {
     return HasValue();
   }
@@ -287,8 +247,6 @@ public:
   void Value() const noexcept {
     ALYRN_CHECK(result_.has_value(), "called Result::Value() on an error result");
   }
-
-  void value() const noexcept { Value(); }
 
   void Expect(std::string_view message) const noexcept {
     ALYRN_CHECK(result_.has_value(), message);
@@ -310,21 +268,6 @@ public:
   E&& Error() && noexcept {
     ALYRN_CHECK(!result_.has_value(), "called Result::Error() on a value result");
     return std::move(result_.error());
-  }
-
-  [[nodiscard]]
-  E& error() & noexcept {
-    return Error();
-  }
-
-  [[nodiscard]]
-  const E& error() const& noexcept {
-    return Error();
-  }
-
-  [[nodiscard]]
-  E&& error() && noexcept {
-    return std::move(*this).Error();
   }
 
 private:

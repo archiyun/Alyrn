@@ -16,7 +16,7 @@ void CheckStorage() {
   constexpr std::size_t kBufferSize = 4096;
 
   auto result = ProvidedBufferStorage::Create(kCapacity, kBufferSize);
-  assert(result.has_value());
+  assert(result.HasValue());
 
   auto storage = std::move(*result);
   assert(storage.capacity() == kCapacity);
@@ -45,16 +45,16 @@ void CheckStorage() {
 void CheckInvalidArguments() {
   auto zero_capacity = ProvidedBufferStorage::Create(
       0, 4096);
-  assert(!zero_capacity.has_value());
+  assert(!zero_capacity.HasValue());
   assert(zero_capacity.Error() == std::errc::invalid_argument);
 
   auto zero_size = ProvidedBufferStorage::Create(4, 0);
-  assert(!zero_size.has_value());
+  assert(!zero_size.HasValue());
   assert(zero_size.Error() == std::errc::invalid_argument);
 
   auto overflow = ProvidedBufferStorage::Create(
       std::numeric_limits<std::size_t>::max(), 2);
-  assert(!overflow.has_value());
+  assert(!overflow.HasValue());
   assert(overflow.Error() == std::errc::value_too_large);
 }
 

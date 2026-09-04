@@ -39,7 +39,7 @@ LoopInitStatus InitLoop(alyrn::uring::Loop& loop) {
   options.entries = 16;
 
   auto init = loop.Init(options);
-  if (init.has_value()) {
+  if (init.HasValue()) {
     return LoopInitStatus::kReady;
   }
   if (IsEnvironmentSkip(init.Error())) {
@@ -75,29 +75,29 @@ bool TestStreamMove(alyrn::uring::Loop& loop) {
 
 bool TestListenerMove(alyrn::uring::Loop& loop) {
   auto source = alyrn::uring::Listener::Create(&loop, alyrn::net::Endpoint(0));
-  if (!Check(source.has_value(), "Listener creation failed")) {
+  if (!Check(source.HasValue(), "Listener creation failed")) {
     return false;
   }
   auto source_address = source->LocalAddress();
-  if (!Check(source_address.has_value(), "Listener local address lookup failed")) {
+  if (!Check(source_address.HasValue(), "Listener local address lookup failed")) {
     return false;
   }
 
   alyrn::uring::Listener moved(std::move(*source));
   auto moved_address = moved.LocalAddress();
-  if (!Check(moved_address.has_value() && moved_address->ToPort() == source_address->ToPort(),
+  if (!Check(moved_address.HasValue() && moved_address->ToPort() == source_address->ToPort(),
              "Listener move construction did not transfer the socket")) {
     return false;
   }
 
   auto target = alyrn::uring::Listener::Create(&loop, alyrn::net::Endpoint(0));
-  if (!Check(target.has_value(), "Listener move target creation failed")) {
+  if (!Check(target.HasValue(), "Listener move target creation failed")) {
     return false;
   }
   *target = std::move(moved);
 
   auto target_address = target->LocalAddress();
-  return Check(source->Fd() == -1 && moved.Fd() == -1 && target_address.has_value() &&
+  return Check(source->Fd() == -1 && moved.Fd() == -1 && target_address.HasValue() &&
                    target_address->ToPort() == source_address->ToPort(),
                "Listener move assignment did not transfer the socket");
 }

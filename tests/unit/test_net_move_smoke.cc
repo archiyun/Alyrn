@@ -178,7 +178,7 @@ bool TestEpollStreamMove() {
     loop.Run();
   }
 
-  if (!Check(constructed_result.has_value() && constructed_result->has_value() &&
+  if (!Check(constructed_result.has_value() && constructed_result->HasValue() &&
                  **constructed_result == 1,
              "Stream move construction lost the read callback")) {
     ::close(source_pair[1]);
@@ -204,7 +204,7 @@ bool TestEpollStreamMove() {
   ::close(target_pair[1]);
 
   return Check(
-      assigned_result.has_value() && assigned_result->has_value() && **assigned_result == 1,
+      assigned_result.has_value() && assigned_result->HasValue() && **assigned_result == 1,
       "Stream move assignment lost the read callback");
 }
 
@@ -227,7 +227,7 @@ bool TestEpollListenerMove() {
   alyrn::epoll::Loop loop;
   alyrn::epoll::Listener source(&loop, alyrn::net::Endpoint(0));
   auto source_address = source.LocalAddress();
-  if (!Check(source_address.has_value(), "Listener local address lookup failed")) {
+  if (!Check(source_address.HasValue(), "Listener local address lookup failed")) {
     return false;
   }
 
@@ -236,7 +236,7 @@ bool TestEpollListenerMove() {
   {
     alyrn::epoll::Listener moved(std::move(source));
     auto moved_address = moved.LocalAddress();
-    if (!Check(moved_address.has_value() && moved_address->ToPort() == source_address->ToPort(),
+    if (!Check(moved_address.HasValue() && moved_address->ToPort() == source_address->ToPort(),
                "Listener move construction did not transfer the socket")) {
       return false;
     }
@@ -252,7 +252,7 @@ bool TestEpollListenerMove() {
     ::close(client_fd);
   }
 
-  if (!Check(accepted.has_value() && accepted->has_value(),
+  if (!Check(accepted.has_value() && accepted->HasValue(),
              "Listener move construction lost the accept callback")) {
     return false;
   }
@@ -262,7 +262,7 @@ bool TestEpollListenerMove() {
   alyrn::epoll::Listener assigned_target(&loop, alyrn::net::Endpoint(0));
   assigned_target = std::move(assigned_source);
   auto assigned_target_address = assigned_target.LocalAddress();
-  return Check(assigned_source_address.has_value() && assigned_target_address.has_value() &&
+  return Check(assigned_source_address.HasValue() && assigned_target_address.HasValue() &&
                    assigned_target_address->ToPort() == assigned_source_address->ToPort(),
                "Listener move assignment did not transfer the socket");
 }

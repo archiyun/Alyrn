@@ -122,7 +122,7 @@ LoopInitStatus InitLoop(Loop& loop, std::size_t shared_buffer_capacity = 64,
   options.shared_buffer_capacity = shared_buffer_capacity;
   options.shared_buffer_size = shared_buffer_size;
   auto initialized = loop.Init(options);
-  if (initialized.has_value()) {
+  if (initialized.HasValue()) {
     return LoopInitStatus::kReady;
   }
   if (IsEnvironmentSkip(initialized.Error())) {
@@ -138,7 +138,7 @@ template <typename Predicate>
 bool PumpUntil(Loop& loop, Predicate&& predicate, int max_iterations = 64) {
   for (int i = 0; i < max_iterations && !predicate(); ++i) {
     auto completed = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
-    if (!completed.has_value()) {
+    if (!completed.HasValue()) {
       std::cout << "FAIL: waiting for CQE failed: " << completed.Error().message() << '\n';
       return false;
     }
@@ -157,7 +157,7 @@ Result<std::pair<UniqueFd, UniqueFd>> MakeSocketPair() {
 
 DetachedTask ReceiveOne(RecvSource* source, Observation* observation) {
   auto received = co_await source->Next();
-  if (!received.has_value()) {
+  if (!received.HasValue()) {
     observation->error = received.Error();
     observation->done = true;
     co_return;
@@ -174,7 +174,7 @@ DetachedTask ReceiveOne(RecvSource* source, Observation* observation) {
   }
 
   auto stopped = co_await source->Stop();
-  if (!stopped.has_value()) {
+  if (!stopped.HasValue()) {
     observation->error = stopped.Error();
   } else {
     observation->stopped = true;
@@ -188,7 +188,7 @@ DetachedTask ReceivePauseThenResume(RecvSource* source, Loop* loop,
                                     PauseResumeObservation* observation) {
   const auto take = [observation](RecvSource::NextResult received,
                                   std::string* target) -> bool {
-    if (!received.has_value()) {
+    if (!received.HasValue()) {
       observation->error = received.Error();
       return false;
     }
@@ -213,7 +213,7 @@ DetachedTask ReceivePauseThenResume(RecvSource* source, Loop* loop,
   // element event queue it reaches the high-water mark and pauses the native
   // multishot request before this coroutine consumes it.
   auto delay = co_await alyrn::uring::SleepFor(*loop, std::chrono::milliseconds(50));
-  if (!delay.has_value()) {
+  if (!delay.HasValue()) {
     observation->error = delay.Error();
     observation->done = true;
     co_return;
@@ -237,7 +237,7 @@ DetachedTask ReceivePauseThenResume(RecvSource* source, Loop* loop,
   observation->resumed_received = true;
 
   auto stopped = co_await source->Stop();
-  if (!stopped.has_value()) {
+  if (!stopped.HasValue()) {
     observation->error = stopped.Error();
   } else {
     observation->stopped = true;
@@ -248,16 +248,16 @@ DetachedTask ReceivePauseThenResume(RecvSource* source, Loop* loop,
 DetachedTask ReceiveWithFirstLeaseHeld(RecvSource* source,
                                        HeldLeaseObservation* observation) {
   auto first = co_await source->Next();
-  if (!first.has_value() || !first->has_value()) {
-    observation->error = first.has_value() ? alyrn::Errno(ECONNRESET) : first.Error();
+  if (!first.HasValue() || !first->has_value()) {
+    observation->error = first.HasValue() ? alyrn::Errno(ECONNRESET) : first.Error();
     observation->done = true;
     co_return;
   }
   observation->first_received = true;
 
   auto second = co_await source->Next();
-  if (!second.has_value() || !second->has_value()) {
-    observation->error = second.has_value() ? alyrn::Errno(ECONNRESET) : second.Error();
+  if (!second.HasValue() || !second->has_value()) {
+    observation->error = second.HasValue() ? alyrn::Errno(ECONNRESET) : second.Error();
     observation->done = true;
     co_return;
   }
@@ -271,7 +271,7 @@ DetachedTask ReceiveWithFirstLeaseHeld(RecvSource* source,
   second->reset();
 
   auto stopped = co_await source->Stop();
-  if (!stopped.has_value()) {
+  if (!stopped.HasValue()) {
     observation->error = stopped.Error();
   } else {
     observation->stopped = true;
@@ -291,7 +291,7 @@ bool CheckRecvAndLease() {
   }
 
   auto pair = MakeSocketPair();
-  if (!pair.has_value()) {
+  if (!pair.HasValue()) {
     std::cout << "FAIL: socketpair failed: " << pair.Error().message() << '\n';
     return false;
   }
@@ -305,7 +305,7 @@ bool CheckRecvAndLease() {
   options.buffer_size = 256;
 
   auto source_result = RecvSource::Create(&loop, receiver.Get(), options);
-  if (!source_result.has_value()) {
+  if (!source_result.HasValue()) {
     if (IsEnvironmentSkip(source_result.Error())) {
       std::cout << "SKIP: provided buffer ring unavailable: " << source_result.Error().message()
                 << '\n';
@@ -350,7 +350,7 @@ bool CheckHeldLeases() {
   }
 
   auto pair = MakeSocketPair();
-  if (!pair.has_value()) {
+  if (!pair.HasValue()) {
     std::cout << "FAIL: held-lease socketpair failed: " << pair.Error().message() << '\n';
     return false;
   }
@@ -362,7 +362,7 @@ bool CheckHeldLeases() {
   options.source.buffer_capacity = 2;
   options.buffer_size = 256;
   auto source_result = RecvSource::Create(&loop, receiver.Get(), options);
-  if (!source_result.has_value()) {
+  if (!source_result.HasValue()) {
     if (IsEnvironmentSkip(source_result.Error())) {
       std::cout << "SKIP: held-lease provided buffer ring unavailable: "
                 << source_result.Error().message() << '\n';
@@ -424,7 +424,7 @@ bool CheckSharedBufferPool() {
 
   auto first_pair = MakeSocketPair();
   auto second_pair = MakeSocketPair();
-  if (!first_pair.has_value() || !second_pair.has_value()) {
+  if (!first_pair.HasValue() || !second_pair.HasValue()) {
     std::cout << "FAIL: shared-pool socketpair failed\n";
     return false;
   }
@@ -440,8 +440,8 @@ bool CheckSharedBufferPool() {
 
   auto first_source_result = RecvSource::Create(&loop, first_receiver.Get(), options);
   auto second_source_result = RecvSource::Create(&loop, second_receiver.Get(), options);
-  if (!first_source_result.has_value() || !second_source_result.has_value()) {
-    const auto& error = !first_source_result.has_value() ? first_source_result.Error()
+  if (!first_source_result.HasValue() || !second_source_result.HasValue()) {
+    const auto& error = !first_source_result.HasValue() ? first_source_result.Error()
                                                          : second_source_result.Error();
     if (IsEnvironmentSkip(error)) {
       std::cout << "SKIP: shared provided buffer ring unavailable: " << error.message() << '\n';
@@ -499,7 +499,7 @@ bool CheckEof() {
   }
 
   auto pair = MakeSocketPair();
-  if (!pair.has_value()) {
+  if (!pair.HasValue()) {
     std::cout << "FAIL: socketpair failed: " << pair.Error().message() << '\n';
     return false;
   }
@@ -507,7 +507,7 @@ bool CheckEof() {
   auto sender = std::move(pair->second);
 
   auto source_result = RecvSource::Create(&loop, receiver.Get());
-  if (!source_result.has_value()) {
+  if (!source_result.HasValue()) {
     if (IsEnvironmentSkip(source_result.Error())) {
       std::cout << "SKIP: provided buffer ring unavailable: " << source_result.Error().message()
                 << '\n';
@@ -545,7 +545,7 @@ bool CheckQueuePauseThenRearm() {
   }
 
   auto pair = MakeSocketPair();
-  if (!pair.has_value()) {
+  if (!pair.HasValue()) {
     std::cout << "FAIL: socketpair failed: " << pair.Error().message() << '\n';
     return false;
   }
@@ -559,7 +559,7 @@ bool CheckQueuePauseThenRearm() {
   options.buffer_size = 256;
 
   auto source_result = RecvSource::Create(&loop, receiver.Get(), options);
-  if (!source_result.has_value()) {
+  if (!source_result.HasValue()) {
     if (IsEnvironmentSkip(source_result.Error())) {
       std::cout << "SKIP: provided buffer ring unavailable: " << source_result.Error().message()
                 << '\n';

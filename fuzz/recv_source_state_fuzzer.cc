@@ -40,7 +40,7 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
       .buffer_capacity = static_cast<std::size_t>(data[1] % 4 + 1 + data[2] % 4),
   };
   auto created = RecvSourceStateMachine::Create(options);
-  if (!created.has_value()) return 0;
+  if (!created.HasValue()) return 0;
   auto state = std::move(*created);
 
   for (std::size_t index = 3; index < size; ++index) {

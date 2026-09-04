@@ -7,7 +7,7 @@
 
 ```cpp
 auto result = co_await stream.SendZeroCopy(payload);
-if (!result.has_value()) {
+if (!result.HasValue()) {
   // 发送失败
 }
 

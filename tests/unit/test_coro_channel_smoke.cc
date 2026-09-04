@@ -44,41 +44,41 @@ private:
 };
 
 Task<void> BufferedCase(Channel<int>& channel, bool& passed) {
-  ALYRN_CHECK((co_await channel.Send(1)).has_value(), "first buffered send failed");
-  ALYRN_CHECK((co_await channel.Send(2)).has_value(), "second buffered send failed");
-  ALYRN_CHECK(!channel.TrySend(3).has_value(), "full channel accepted a value");
+  ALYRN_CHECK((co_await channel.Send(1)).HasValue(), "first buffered send failed");
+  ALYRN_CHECK((co_await channel.Send(2)).HasValue(), "second buffered send failed");
+  ALYRN_CHECK(!channel.TrySend(3).HasValue(), "full channel accepted a value");
   channel.Close();
 
   auto first = co_await channel.Receive();
   auto second = co_await channel.Receive();
-  ALYRN_CHECK(first.has_value() && first->has_value() && **first == 1,
+  ALYRN_CHECK(first.HasValue() && first->has_value() && **first == 1,
                  "first buffered value was not FIFO");
-  ALYRN_CHECK(second.has_value() && second->has_value() && **second == 2,
+  ALYRN_CHECK(second.HasValue() && second->has_value() && **second == 2,
                  "second buffered value was not FIFO");
 
-  ALYRN_CHECK(!(co_await channel.Send(3)).has_value(), "closed channel accepted a send");
+  ALYRN_CHECK(!(co_await channel.Send(3)).HasValue(), "closed channel accepted a send");
   auto closed = co_await channel.Receive();
-  ALYRN_CHECK(closed.has_value() && !closed->has_value(),
+  ALYRN_CHECK(closed.HasValue() && !closed->has_value(),
                  "closed empty channel did not report end of stream");
   passed = true;
 }
 
 Task<void> SendOne(Channel<int>& channel, bool& passed) {
   const auto sent = co_await channel.Send(42);
-  ALYRN_CHECK(sent.has_value(), "rendezvous send failed");
+  ALYRN_CHECK(sent.HasValue(), "rendezvous send failed");
   passed = true;
 }
 
 Task<void> ReceiveOne(Channel<int>& channel, bool& passed) {
   const auto received = co_await channel.Receive();
-  ALYRN_CHECK(received.has_value() && received->has_value() && **received == 42,
+  ALYRN_CHECK(received.HasValue() && received->has_value() && **received == 42,
                  "rendezvous receive failed");
   passed = true;
 }
 
 Task<void> WaitForClose(Channel<int>& channel, bool& passed) {
   const auto received = co_await channel.Receive();
-  ALYRN_CHECK(received.has_value() && !received->has_value(),
+  ALYRN_CHECK(received.HasValue() && !received->has_value(),
                  "Close did not wake the pending receiver");
   passed = true;
 }

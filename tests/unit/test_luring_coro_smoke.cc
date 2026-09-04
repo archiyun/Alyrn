@@ -46,7 +46,7 @@ public:
 
     auto submitted = alyrn::uring::detail::LoopAccess::SubmitOp(*loop_, &op_,
                                                                 alyrn::uring::detail::PrepareNop());
-    if (!submitted.has_value()) {
+    if (!submitted.HasValue()) {
       result_.emplace(std::unexpected(submitted.Error()));
       return false;
     }
@@ -186,7 +186,7 @@ bool CheckNopResumesCoroutine(alyrn::uring::TaskRunMode task_run_mode) {
   options.task_run_mode = task_run_mode;
 
   auto init = loop.Init(options);
-  if (!init.has_value()) {
+  if (!init.HasValue()) {
     if (IsEnvironmentSkip(init.Error())) {
       std::cout << "SKIP: " << TaskRunModeName(task_run_mode)
                 << " task-run mode unavailable: " << init.Error().message() << '\n';
@@ -220,7 +220,7 @@ bool CheckNopResumesCoroutine(alyrn::uring::TaskRunMode task_run_mode) {
   }
 
   auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
-  if (!completions.has_value()) {
+  if (!completions.HasValue()) {
     std::cout << "FAIL: WaitCompletions failed: " << completions.Error().message() << '\n';
     return false;
   }
@@ -233,7 +233,7 @@ bool CheckNopResumesCoroutine(alyrn::uring::TaskRunMode task_run_mode) {
          Check(alyrn::uring::detail::LoopAccess::IsDrained(loop),
                "CQE handling should resume the waiter before WaitCompletions returns") &&
          Check(result.has_value(), "coroutine did not resume") &&
-         Check(result->has_value(), "NOP returned an error") &&
+         Check(result->HasValue(), "NOP returned an error") &&
          Check(**result == 0, "NOP result must be zero") &&
          Check(resumed_with_scheduler, "coroutine resumed without current scheduler");
 }
@@ -250,7 +250,7 @@ bool CheckCrossThreadRequestStopWakesRing() {
   options.entries = 8;
 
   auto init = loop.Init(options);
-  if (!init.has_value()) {
+  if (!init.HasValue()) {
     if (IsEnvironmentSkip(init.Error())) {
       std::cout << "SKIP: io_uring unavailable: " << init.Error().message() << '\n';
       return true;
@@ -304,7 +304,7 @@ bool RunLoopStopDrainScenario(alyrn::uring::TaskRunMode task_run_mode,
   options.task_run_mode = task_run_mode;
 
   auto init = loop.Init(options);
-  if (!init.has_value()) {
+  if (!init.HasValue()) {
     ::close(fds[0]);
     ::close(fds[1]);
     if (IsEnvironmentSkip(init.Error())) {
@@ -346,7 +346,7 @@ bool RunLoopStopDrainScenario(alyrn::uring::TaskRunMode task_run_mode,
          Check(alyrn::uring::detail::LoopAccess::IsDrained(loop),
                "stopped loop retained pending ring work") &&
          Check(result.has_value(), "stopped loop did not resume the pending read") &&
-         Check(!result->has_value(), "stopped loop unexpectedly completed the read") &&
+         Check(!result->HasValue(), "stopped loop unexpectedly completed the read") &&
          Check(result->Error() == std::errc::operation_canceled,
                "stopped loop did not cancel the pending read") &&
          Check(resumed_with_scheduler, "stopped loop resumed the read without scheduler affinity");

@@ -47,10 +47,10 @@ public:
 private:
   void RunPairs() noexcept {
     for (std::uint64_t value = 0; value < iterations_; ++value) {
-      ALYRN_CHECK(channel_->TrySend(std::move(value)).has_value(),
+      ALYRN_CHECK(channel_->TrySend(std::move(value)).HasValue(),
                      "channel microbenchmark send failed");
       auto received = channel_->TryReceive();
-      ALYRN_CHECK(received.has_value() && received->has_value(),
+      ALYRN_CHECK(received.HasValue() && received->has_value(),
                      "channel microbenchmark receive failed");
       checksum_ += **received;
     }

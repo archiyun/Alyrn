@@ -85,7 +85,7 @@ alyrn::coro::DetachedTask SleepTask(alyrn::uring::Loop* loop, bool* resumed,
   auto result = co_await alyrn::uring::SleepFor(*loop, 1ms);
   *resumed = true;
   *scheduler_ok = alyrn::coro::Scheduler::TryCurrent() == loop;
-  if (!result.has_value()) co_return;
+  if (!result.HasValue()) co_return;
 }
 
 bool TestTimers() {
@@ -94,7 +94,7 @@ bool TestTimers() {
   options.entries = 16;
 
   auto init = loop.Init(options);
-  if (!init.has_value()) {
+  if (!init.HasValue()) {
     if (IsEnvironmentSkip(init.Error())) {
       std::cout << "SKIP: io_uring unavailable: " << init.Error().message() << '\n';
       return true;
@@ -105,13 +105,13 @@ bool TestTimers() {
   bool early_fired = false;
   bool late_fired = false;
   auto late = loop.RunAfter(100ms, [&late_fired] noexcept { late_fired = true; });
-  if (!Check(late.has_value(), "late timer should be accepted")) {
+  if (!Check(late.HasValue(), "late timer should be accepted")) {
     (void)StopAndDrain(loop);
     return false;
   }
 
   auto early = loop.RunAfter(2ms, [&early_fired] noexcept { early_fired = true; });
-  if (!Check(early.has_value(), "early timer should be accepted")) {
+  if (!Check(early.HasValue(), "early timer should be accepted")) {
     (void)StopAndDrain(loop);
     return false;
   }
@@ -120,7 +120,7 @@ bool TestTimers() {
   // before the updated timer itself expires.
   while (!early_fired && !late_fired) {
     auto completed = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
-    if (!Check(completed.has_value(), "timer completion should be received")) {
+    if (!Check(completed.HasValue(), "timer completion should be received")) {
       (void)StopAndDrain(loop);
       return false;
     }
@@ -132,7 +132,7 @@ bool TestTimers() {
     return false;
   }
 
-  if (!Check(loop.CancelTimer(*late).has_value(), "later timer should be cancellable")) {
+  if (!Check(loop.CancelTimer(*late).HasValue(), "later timer should be cancellable")) {
     (void)StopAndDrain(loop);
     return false;
   }
@@ -148,7 +148,7 @@ bool TestTimers() {
   bool completion_received = false;
   for (int attempt = 0; attempt != 3 && !resumed; ++attempt) {
     auto completed = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
-    if (!completed.has_value()) {
+    if (!completed.HasValue()) {
       break;
     }
     completion_received = true;
@@ -169,7 +169,7 @@ bool TestStopDiscardsUnexpiredTimer() {
     options.entries = 8;
 
     auto init = loop.Init(options);
-    if (!init.has_value()) {
+    if (!init.HasValue()) {
       if (IsEnvironmentSkip(init.Error())) {
         return true;
       }
@@ -177,7 +177,7 @@ bool TestStopDiscardsUnexpiredTimer() {
     }
 
     auto timer = loop.RunAfter(1h, [&fired] noexcept { fired = true; });
-    if (!Check(timer.has_value(), "unexpired timer should be accepted")) {
+    if (!Check(timer.HasValue(), "unexpired timer should be accepted")) {
       return false;
     }
 

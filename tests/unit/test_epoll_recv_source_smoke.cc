@@ -57,7 +57,7 @@ DetachedTask ReceiveOne(RecvSource* source, Loop* loop,
                         std::optional<RecvSource::NextResult>* result, std::string* payload,
                         bool* received_event, bool* stop_succeeded) {
   auto received = co_await source->Next();
-  if (received.has_value() && received->has_value()) {
+  if (received.HasValue() && received->has_value()) {
     *received_event = true;
     *payload = BytesToString(**received);
     // The source cannot finish while this lease is alive. Release it before
@@ -67,7 +67,7 @@ DetachedTask ReceiveOne(RecvSource* source, Loop* loop,
   result->emplace(std::move(received));
 
   auto stopped = co_await source->Stop();
-  *stop_succeeded = stopped.has_value();
+  *stop_succeeded = stopped.HasValue();
   loop->RequestStop();
 }
 
@@ -75,13 +75,13 @@ DetachedTask ReceivePending(RecvSource* source, Loop* loop,
                             std::optional<RecvSource::NextResult>* result, bool* received_event,
                             bool* stop_succeeded) {
   auto received = co_await source->Next();
-  if (received.has_value() && received->has_value()) {
+  if (received.HasValue() && received->has_value()) {
     *received_event = true;
     received->reset();
   }
   result->emplace(std::move(received));
   auto stopped = co_await source->Stop();
-  *stop_succeeded = stopped.has_value();
+  *stop_succeeded = stopped.HasValue();
   loop->RequestStop();
 }
 
@@ -93,7 +93,7 @@ DetachedTask WaitForEnd(RecvSource* source, Loop* loop,
 
 DetachedTask StopOnly(RecvSource* source, bool* stop_succeeded) {
   auto stopped = co_await source->Stop();
-  *stop_succeeded = stopped.has_value();
+  *stop_succeeded = stopped.HasValue();
 }
 
 DetachedTask StopThenObserveTerminalAfterLoopStop(
@@ -108,7 +108,7 @@ DetachedTask StopThenObserveTerminalAfterLoopStop(
 DetachedTask ReceiveTwo(RecvSource* source, Loop* loop, int sender,
                         std::array<std::string, 2>* payloads, bool* stop_succeeded) {
   auto first = co_await source->Next();
-  if (!first.has_value() || !first->has_value()) {
+  if (!first.HasValue() || !first->has_value()) {
     loop->RequestStop();
     co_return;
   }
@@ -123,7 +123,7 @@ DetachedTask ReceiveTwo(RecvSource* source, Loop* loop, int sender,
   });
 
   auto second = co_await source->Next();
-  if (!second.has_value() || !second->has_value()) {
+  if (!second.HasValue() || !second->has_value()) {
     loop->RequestStop();
     co_return;
   }
@@ -131,7 +131,7 @@ DetachedTask ReceiveTwo(RecvSource* source, Loop* loop, int sender,
   second->reset();
 
   auto stopped = co_await source->Stop();
-  *stop_succeeded = stopped.has_value();
+  *stop_succeeded = stopped.HasValue();
   loop->RequestStop();
 }
 
@@ -139,7 +139,7 @@ DetachedTask HoldLeaseThenStop(RecvSource* source, Loop* loop,
                                std::optional<alyrn::net::RecvEvent>* held, bool* stop_started,
                                bool* stop_succeeded) {
   auto received = co_await source->Next();
-  if (!received.has_value() || !received->has_value()) {
+  if (!received.HasValue() || !received->has_value()) {
     loop->RequestStop();
     co_return;
   }
@@ -147,7 +147,7 @@ DetachedTask HoldLeaseThenStop(RecvSource* source, Loop* loop,
 
   *stop_started = true;
   auto stopped = co_await source->Stop();
-  *stop_succeeded = stopped.has_value();
+  *stop_succeeded = stopped.HasValue();
   loop->RequestStop();
 }
 
@@ -167,7 +167,7 @@ struct PauseResumeObservation {
 
 bool TakeRecvEvent(RecvSource::NextResult received, PauseResumeObservation* observation,
                    std::string* payload) {
-  if (!received.has_value()) {
+  if (!received.HasValue()) {
     observation->error = received.Error();
     return false;
   }
@@ -211,7 +211,7 @@ DetachedTask DrainPausedSource(RecvSource* source, Loop* loop,
   observation->resumed_received = true;
 
   auto stopped = co_await source->Stop();
-  if (!stopped.has_value()) {
+  if (!stopped.HasValue()) {
     observation->error = stopped.Error();
   } else {
     observation->stopped = true;
@@ -241,7 +241,7 @@ bool CheckImmediateReceive() {
 
   Loop loop;
   auto source_result = RecvSource::Create(&loop, fds[0]);
-  if (!Check(source_result.has_value(), "immediate source creation failed")) {
+  if (!Check(source_result.HasValue(), "immediate source creation failed")) {
     ::close(fds[0]);
     ::close(fds[1]);
     return false;
@@ -259,7 +259,7 @@ bool CheckImmediateReceive() {
   ::close(fds[1]);
   ::close(fds[0]);
   return Check(result.has_value(), "immediate receive did not finish") &&
-         Check(result->has_value(), "immediate receive returned an error") &&
+         Check(result->HasValue(), "immediate receive returned an error") &&
          Check(received_event, "immediate receive returned EOF") &&
          Check(payload == kPayload, "immediate receive payload mismatch") &&
          Check(stop_succeeded, "immediate receive Stop failed");
@@ -273,7 +273,7 @@ bool CheckPendingReceive() {
 
   Loop loop;
   auto source_result = RecvSource::Create(&loop, fds[0]);
-  if (!Check(source_result.has_value(), "pending source creation failed")) {
+  if (!Check(source_result.HasValue(), "pending source creation failed")) {
     ::close(fds[0]);
     ::close(fds[1]);
     return false;
@@ -294,9 +294,9 @@ bool CheckPendingReceive() {
   ::close(fds[1]);
   ::close(fds[0]);
   return Check(result.has_value(), "pending receive did not finish") &&
-         Check(result->has_value(), "pending receive returned an error") &&
+         Check(result->HasValue(), "pending receive returned an error") &&
          Check(received_event, "pending receive returned EOF") &&
-         Check(!result->value().has_value(), "pending receive retained a released lease") &&
+         Check(!result->Value().has_value(), "pending receive retained a released lease") &&
          Check(stop_succeeded, "pending receive Stop failed");
 }
 
@@ -308,7 +308,7 @@ bool CheckEof() {
 
   Loop loop;
   auto source_result = RecvSource::Create(&loop, fds[0]);
-  if (!Check(source_result.has_value(), "EOF source creation failed")) {
+  if (!Check(source_result.HasValue(), "EOF source creation failed")) {
     ::close(fds[0]);
     ::close(fds[1]);
     return false;
@@ -327,9 +327,9 @@ bool CheckEof() {
 
   ::close(fds[0]);
   return Check(result.has_value(), "EOF receive did not finish") &&
-         Check(result->has_value(), "EOF receive returned an error") &&
+         Check(result->HasValue(), "EOF receive returned an error") &&
          Check(!received_event, "EOF receive unexpectedly produced data") &&
-         Check(!result->value().has_value(), "EOF receive returned an event") &&
+         Check(!result->Value().has_value(), "EOF receive returned an event") &&
          Check(stop_succeeded, "EOF receive Stop failed");
 }
 
@@ -345,7 +345,7 @@ bool CheckQueuedEvents() {
   options.source.buffer_capacity = 2;
   options.buffer_size = 32;
   auto source_result = RecvSource::Create(&loop, fds[0], options);
-  if (!Check(source_result.has_value(), "queued source creation failed")) {
+  if (!Check(source_result.HasValue(), "queued source creation failed")) {
     ::close(fds[0]);
     ::close(fds[1]);
     return false;
@@ -388,7 +388,7 @@ bool CheckStopWaitsForLease() {
 
   Loop loop;
   auto source_result = RecvSource::Create(&loop, fds[0]);
-  if (!Check(source_result.has_value(), "lease source creation failed")) {
+  if (!Check(source_result.HasValue(), "lease source creation failed")) {
     ::close(fds[0]);
     ::close(fds[1]);
     return false;
@@ -418,7 +418,7 @@ bool CheckStopWakesPendingNext() {
 
   Loop loop;
   auto source_result = RecvSource::Create(&loop, fds[0]);
-  if (!Check(source_result.has_value(), "stop source creation failed")) {
+  if (!Check(source_result.HasValue(), "stop source creation failed")) {
     ::close(fds[0]);
     ::close(fds[1]);
     return false;
@@ -435,8 +435,8 @@ bool CheckStopWakesPendingNext() {
   ::close(fds[1]);
   ::close(fds[0]);
   return Check(result.has_value(), "Stop did not wake pending Next") &&
-         Check(result->has_value(), "Stop wake returned an error") &&
-         Check(!result->value().has_value(), "Stop wake did not return EOF") &&
+         Check(result->HasValue(), "Stop wake returned an error") &&
+         Check(!result->Value().has_value(), "Stop wake did not return EOF") &&
          Check(stop_succeeded, "pending Next Stop failed");
 }
 
@@ -448,7 +448,7 @@ bool CheckTerminalNextAfterLoopStop() {
 
   Loop loop;
   auto source_result = RecvSource::Create(&loop, fds[0]);
-  if (!Check(source_result.has_value(), "terminal source creation failed")) {
+  if (!Check(source_result.HasValue(), "terminal source creation failed")) {
     ::close(fds[0]);
     ::close(fds[1]);
     return false;
@@ -464,8 +464,8 @@ bool CheckTerminalNextAfterLoopStop() {
 
   ::close(fds[1]);
   ::close(fds[0]);
-  return Check(stop.has_value() && stop->has_value(), "terminal source Stop failed") &&
-         Check(terminal.has_value() && terminal->has_value() && !terminal->value().has_value(),
+  return Check(stop.has_value() && stop->HasValue(), "terminal source Stop failed") &&
+         Check(terminal.has_value() && terminal->HasValue() && !terminal->Value().has_value(),
                "terminal recv Next changed after loop stop was requested") &&
          Check(with_scheduler, "terminal recv Next lost scheduler affinity");
 }
@@ -483,7 +483,7 @@ bool CheckQueuePauseThenRearm() {
   options.source.buffer_capacity = 2;
   options.buffer_size = 256;
   auto source_result = RecvSource::Create(&loop, fds[0], options);
-  if (!Check(source_result.has_value(), "pause source creation failed")) {
+  if (!Check(source_result.HasValue(), "pause source creation failed")) {
     ::close(fds[0]);
     ::close(fds[1]);
     return false;
@@ -537,7 +537,7 @@ bool CheckRecvSourceStopRejectsForeignLoop() {
 
   Loop loop;
   auto source_result = RecvSource::Create(&loop, fds[0]);
-  if (!Check(source_result.has_value(), "failed to create foreign Stop test source")) {
+  if (!Check(source_result.HasValue(), "failed to create foreign Stop test source")) {
     ::close(fds[0]);
     ::close(fds[1]);
     return false;
@@ -555,11 +555,11 @@ bool CheckRecvSourceStopRejectsForeignLoop() {
   ::close(fds[1]);
   ::close(fds[0]);
   return Check(request_stop.has_value(), "foreign RecvSource::RequestStop did not return") &&
-         Check(!request_stop->has_value() &&
+         Check(!request_stop->HasValue() &&
                    request_stop->Error() == std::errc::invalid_argument,
                "foreign RecvSource::RequestStop must return EINVAL") &&
          Check(stop.has_value(), "foreign RecvSource::Stop did not return") &&
-         Check(!stop->has_value() && stop->Error() == std::errc::invalid_argument,
+         Check(!stop->HasValue() && stop->Error() == std::errc::invalid_argument,
                "foreign RecvSource::Stop must return EINVAL");
 }
 

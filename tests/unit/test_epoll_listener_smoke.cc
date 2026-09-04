@@ -93,7 +93,7 @@ alyrn::coro::DetachedTask AcceptAndCheckTcpOptions(
     alyrn::epoll::Listener* listener, alyrn::epoll::Loop* loop,
     bool* accepted, bool* options_applied) {
   auto result = co_await listener->Accept();
-  *accepted = result.has_value();
+  *accepted = result.HasValue();
   if (*accepted) {
     const int fd = result->Fd();
     *options_applied =
@@ -120,26 +120,26 @@ alyrn::coro::DetachedTask AcceptSourceTwice(AcceptSource* source,
   first->emplace(co_await source->Next());
   second->emplace(co_await source->Next());
   auto stopped = co_await source->Stop();
-  *stop_succeeded = stopped.has_value();
+  *stop_succeeded = stopped.HasValue();
   loop->RequestStop();
 }
 
 alyrn::coro::DetachedTask WaitForSourceEnd(AcceptSource* source,
                                               alyrn::epoll::Loop* loop, bool* got_end) {
   auto result = co_await source->Next();
-  *got_end = result.has_value() && !result->has_value();
+  *got_end = result.HasValue() && !result->has_value();
   loop->RequestStop();
 }
 
 alyrn::coro::DetachedTask StopSource(AcceptSource* source, bool* succeeded) {
   auto result = co_await source->Stop();
-  *succeeded = result.has_value();
+  *succeeded = result.HasValue();
 }
 
 alyrn::coro::DetachedTask CloseListener(alyrn::epoll::Listener* listener,
                                            bool* succeeded) {
   auto result = co_await listener->Close();
-  *succeeded = result.has_value();
+  *succeeded = result.HasValue();
 }
 
 struct CompetingAcceptObservation {
@@ -176,33 +176,33 @@ alyrn::coro::DetachedTask ObserveCompetingAccept(alyrn::epoll::Listener* listene
 bool CheckFactories() {
   auto null_listener =
       alyrn::epoll::Listener::Create(nullptr, alyrn::net::Endpoint(0));
-  if (!Check(!null_listener.has_value() && null_listener.Error() == std::errc::invalid_argument,
+  if (!Check(!null_listener.HasValue() && null_listener.Error() == std::errc::invalid_argument,
              "listener factory accepted a null Loop")) {
     return false;
   }
 
   auto null_connector = alyrn::epoll::Connector::Create(nullptr);
-  if (!Check(!null_connector.has_value() && null_connector.Error() == std::errc::invalid_argument,
+  if (!Check(!null_connector.HasValue() && null_connector.Error() == std::errc::invalid_argument,
              "connector factory accepted a null Loop")) {
     return false;
   }
 
   alyrn::epoll::Loop loop;
   auto listener = alyrn::epoll::Listener::Create(&loop, alyrn::net::Endpoint(0));
-  if (!Check(listener.has_value(), "listener factory failed for a valid socket")) {
-    if (!listener.has_value()) {
+  if (!Check(listener.HasValue(), "listener factory failed for a valid socket")) {
+    if (!listener.HasValue()) {
       std::cout << "factory error: " << listener.Error().message() << '\n';
     }
     return false;
   }
 
   auto address = listener->LocalAddress();
-  if (!Check(address.has_value(), "factory listener local address lookup failed")) {
+  if (!Check(address.HasValue(), "factory listener local address lookup failed")) {
     return false;
   }
 
   auto conflicting_listener = alyrn::epoll::Listener::Create(&loop, *address);
-  return Check(!conflicting_listener.has_value() &&
+  return Check(!conflicting_listener.HasValue() &&
                    conflicting_listener.Error() == std::errc::address_in_use,
                "listener factory did not return bind errors");
 }
@@ -212,7 +212,7 @@ bool CheckPendingAccept() {
   alyrn::epoll::Listener listener(&loop, alyrn::net::Endpoint(0));
 
   auto listen_addr = listener.LocalAddress();
-  if (!listen_addr.has_value()) {
+  if (!listen_addr.HasValue()) {
     std::cout << "FAIL: listener local address failed\n";
     return false;
   }
@@ -231,7 +231,7 @@ bool CheckPendingAccept() {
   }
 
   return Check(result.has_value(), "pending accept did not finish") &&
-         Check(result->has_value(), "pending accept returned error");
+         Check(result->HasValue(), "pending accept returned error");
 }
 
 bool CheckAcceptedTcpOptions() {
@@ -242,7 +242,7 @@ bool CheckAcceptedTcpOptions() {
   alyrn::epoll::Listener listener(&loop, alyrn::net::Endpoint(0), options);
 
   auto listen_addr = listener.LocalAddress();
-  if (!Check(listen_addr.has_value(), "listener local address failed")) {
+  if (!Check(listen_addr.HasValue(), "listener local address failed")) {
     return false;
   }
 
@@ -271,7 +271,7 @@ bool CheckAcceptReleasesSlotBeforeContinuation() {
   alyrn::epoll::Listener listener(&loop, alyrn::net::Endpoint(0));
 
   auto listen_addr = listener.LocalAddress();
-  if (!Check(listen_addr.has_value(), "listener local address failed")) {
+  if (!Check(listen_addr.HasValue(), "listener local address failed")) {
     return false;
   }
 
@@ -295,8 +295,8 @@ bool CheckAcceptReleasesSlotBeforeContinuation() {
   }
 
   return Check(first_client >= 0 && second_client >= 0, "accept test clients failed to connect") &&
-         Check(first.has_value() && first->has_value(), "first pending accept returned error") &&
-         Check(second.has_value() && second->has_value(),
+         Check(first.has_value() && first->HasValue(), "first pending accept returned error") &&
+         Check(second.has_value() && second->HasValue(),
                "second accept did not reuse the released pending slot");
 }
 
@@ -313,7 +313,7 @@ bool CheckCloseCancelsPendingAccept() {
   loop.Run();
 
   return Check(result.has_value(), "cancelled accept did not finish") &&
-         Check(!result->has_value(), "cancelled accept unexpectedly succeeded") &&
+         Check(!result->HasValue(), "cancelled accept unexpectedly succeeded") &&
          Check(result->Error() == std::errc::operation_canceled,
                "cancelled accept did not return ECANCELED");
 }
@@ -332,13 +332,13 @@ bool CheckCompetingAcceptIsRejected() {
   loop.Run();
 
   return Check(!observation.timed_out, "competing Accept test timed out") &&
-         Check(observation.second.has_value() && !observation.second->has_value() &&
+         Check(observation.second.has_value() && !observation.second->HasValue() &&
                    observation.second->Error() == std::errc::device_or_resource_busy,
                "second pending Accept did not return EBUSY") &&
-         Check(observation.first.has_value() && !observation.first->has_value() &&
+         Check(observation.first.has_value() && !observation.first->HasValue() &&
                    observation.first->Error() == std::errc::operation_canceled,
                "Close did not cancel the first pending Accept") &&
-         Check(observation.close.has_value() && observation.close->has_value(),
+         Check(observation.close.has_value() && observation.close->HasValue(),
                "Close failed after rejecting the competing Accept") &&
          Check(observation.first_resume_count == 1 && observation.second_resume_count == 1,
                "a competing Accept resumed more than once");
@@ -349,13 +349,13 @@ bool CheckAcceptSourceQueueAndStop() {
   alyrn::epoll::Listener listener(&loop, alyrn::net::Endpoint(0));
 
   auto source_result = listener.CreateAcceptSource({.pending_depth = 1, .event_capacity = 1});
-  if (!Check(source_result.has_value(), "failed to create epoll AcceptSource")) {
+  if (!Check(source_result.HasValue(), "failed to create epoll AcceptSource")) {
     return false;
   }
   AcceptSource source = std::move(*source_result);
 
   auto listen_addr = listener.LocalAddress();
-  if (!Check(listen_addr.has_value(), "AcceptSource listener address lookup failed")) {
+  if (!Check(listen_addr.HasValue(), "AcceptSource listener address lookup failed")) {
     return false;
   }
 
@@ -381,9 +381,9 @@ bool CheckAcceptSourceQueueAndStop() {
   }
 
   return Check(first_client >= 0 && second_client >= 0, "AcceptSource clients failed to connect") &&
-         Check(first.has_value() && first->has_value() && first->value().has_value(),
+         Check(first.has_value() && first->HasValue() && first->Value().has_value(),
                "AcceptSource did not deliver its first stream") &&
-         Check(second.has_value() && second->has_value() && second->value().has_value(),
+         Check(second.has_value() && second->HasValue() && second->Value().has_value(),
                "AcceptSource did not deliver its second stream") &&
          Check(stop_succeeded, "AcceptSource Stop failed after queued events drained");
 }
@@ -393,7 +393,7 @@ bool CheckAcceptSourceStopWakesPendingNext() {
   alyrn::epoll::Listener listener(&loop, alyrn::net::Endpoint(0));
 
   auto source_result = listener.CreateAcceptSource();
-  if (!Check(source_result.has_value(), "failed to create pending epoll AcceptSource")) {
+  if (!Check(source_result.HasValue(), "failed to create pending epoll AcceptSource")) {
     return false;
   }
   AcceptSource source = std::move(*source_result);
@@ -414,7 +414,7 @@ bool CheckAcceptSourceListenerCloseWakesPendingNext() {
   alyrn::epoll::Listener listener(&loop, alyrn::net::Endpoint(0));
 
   auto source_result = listener.CreateAcceptSource();
-  if (!Check(source_result.has_value(), "failed to create close-test AcceptSource")) {
+  if (!Check(source_result.HasValue(), "failed to create close-test AcceptSource")) {
     return false;
   }
   AcceptSource source = std::move(*source_result);
@@ -435,7 +435,7 @@ bool CheckAcceptSourceStopRejectsForeignLoop() {
   alyrn::epoll::Loop loop;
   alyrn::epoll::Listener listener(&loop, alyrn::net::Endpoint(0));
   auto source_result = listener.CreateAcceptSource();
-  if (!Check(source_result.has_value(), "failed to create foreign Stop test source")) {
+  if (!Check(source_result.HasValue(), "failed to create foreign Stop test source")) {
     return false;
   }
   AcceptSource source = std::move(*source_result);
@@ -445,7 +445,7 @@ bool CheckAcceptSourceStopRejectsForeignLoop() {
   foreign.join();
 
   return Check(stop_result.has_value(), "foreign AcceptSource::Stop did not return") &&
-         Check(!stop_result->has_value() && stop_result->Error() == std::errc::invalid_argument,
+         Check(!stop_result->HasValue() && stop_result->Error() == std::errc::invalid_argument,
                "foreign AcceptSource::Stop must return EINVAL");
 }
 

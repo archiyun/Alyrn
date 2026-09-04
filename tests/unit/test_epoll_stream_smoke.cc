@@ -95,7 +95,7 @@ alyrn::coro::DetachedTask ReadWithDeadline(alyrn::epoll::Stream* stream,
                                            std::optional<ReadResult>* out) {
   auto configured =
       stream->SetReadDeadline(alyrn::time::SteadyNow() + alyrn::time::Milliseconds(10));
-  if (!configured.has_value()) {
+  if (!configured.HasValue()) {
     out->emplace(std::unexpected(configured.Error()));
     loop->RequestStop();
     co_return;
@@ -151,7 +151,7 @@ alyrn::coro::DetachedTask EchoServer(alyrn::epoll::Stream* stream,
                                      std::optional<alyrn::Result<void>>* out, int* done_count,
                                      alyrn::epoll::Loop* loop) {
   ReadResult read_result = co_await stream->Read(*scratch);
-  if (!read_result.has_value()) {
+  if (!read_result.HasValue()) {
     out->emplace(std::unexpected(read_result.Error()));
   } else if (*read_result == 0) {
     out->emplace(alyrn::Result<void>{});
@@ -170,11 +170,11 @@ alyrn::coro::DetachedTask EchoClient(alyrn::epoll::Stream* stream,
                                      std::size_t* received_size, int* done_count,
                                      alyrn::epoll::Loop* loop) {
   alyrn::Result<void> write_result = co_await stream->Write(payload);
-  if (!write_result.has_value()) {
+  if (!write_result.HasValue()) {
     out->emplace(std::unexpected(write_result.Error()));
   } else {
     ReadResult read_result = co_await stream->Read(*received);
-    if (!read_result.has_value()) {
+    if (!read_result.HasValue()) {
       out->emplace(std::unexpected(read_result.Error()));
     } else {
       *received_size = *read_result;
@@ -193,7 +193,7 @@ alyrn::coro::DetachedTask CloseThenSubmit(alyrn::epoll::Stream* stream, alyrn::e
                                           std::optional<ReadResult>* read_result,
                                           std::optional<WriteResult>* write_result) {
   alyrn::Result<void> close_result = co_await stream->Close();
-  if (!close_result.has_value()) {
+  if (!close_result.HasValue()) {
     read_result->emplace(std::unexpected(close_result.Error()));
     write_result->emplace(std::unexpected(close_result.Error()));
   } else {
@@ -322,7 +322,7 @@ bool CheckImmediateRead() {
   ::close(sv[1]);
 
   return Check(result.has_value(), "immediate read did not finish") &&
-         Check(result->has_value(), "immediate read returned error") &&
+         Check(result->HasValue(), "immediate read returned error") &&
          Check(**result == sizeof(payload) - 1, "immediate read byte count mismatch") &&
          Check(std::memcmp(buffer.data(), payload, sizeof(payload) - 1) == 0,
                "immediate read payload mismatch") &&
@@ -354,7 +354,7 @@ bool CheckImmediateWrite() {
   ::close(sv[1]);
 
   return Check(result.has_value(), "immediate write did not finish") &&
-         Check(result->has_value(), "immediate write returned error") &&
+         Check(result->HasValue(), "immediate write returned error") &&
          Check(n == static_cast<ssize_t>(sizeof(payload) - 1), "peer read byte count mismatch") &&
          Check(std::memcmp(received.data(), payload, sizeof(payload) - 1) == 0,
                "peer read payload mismatch") &&
@@ -391,7 +391,7 @@ bool CheckPendingRead() {
   ::close(sv[1]);
 
   return Check(result.has_value(), "pending read did not finish") &&
-         Check(result->has_value(), "pending read returned error") &&
+         Check(result->HasValue(), "pending read returned error") &&
          Check(**result == sizeof(payload) - 1, "pending read byte count mismatch") &&
          Check(std::memcmp(buffer.data(), payload, sizeof(payload) - 1) == 0,
                "pending read payload mismatch") &&
@@ -415,7 +415,7 @@ bool CheckReadDeadline() {
   ::close(sv[1]);
 
   return Check(result.has_value(), "read deadline did not finish") &&
-         Check(!result->has_value(), "read deadline unexpectedly succeeded") &&
+         Check(!result->HasValue(), "read deadline unexpectedly succeeded") &&
          Check(result->Error() == std::errc::timed_out,
                "read deadline returned an unexpected error");
 }
@@ -446,7 +446,7 @@ bool CheckOwnedRecvReturnsBuffer() {
 
   ::close(sv[1]);
   if (!Check(outcome.has_value(), "owned read did not finish") ||
-      !Check(outcome->result.has_value(), "owned read returned an error") ||
+      !Check(outcome->result.HasValue(), "owned read returned an error") ||
       !Check(*outcome->result == kPayload.size(), "owned read byte count mismatch") ||
       !Check(Gather(outcome->buffer) == kPayload, "owned read payload mismatch") ||
       !Check(resumed_with_scheduler, "owned read resumed without current scheduler")) {
@@ -485,7 +485,7 @@ bool CheckPooledRecvCopiesPayload() {
 
   ::close(sv[1]);
   if (!Check(outcome.has_value(), "pooled Recv did not finish") ||
-      !Check(outcome->has_value(), "pooled Recv returned an error") ||
+      !Check(outcome->HasValue(), "pooled Recv returned an error") ||
       !Check(resumed_with_scheduler, "pooled Recv resumed without current scheduler")) {
     return false;
   }
@@ -520,7 +520,7 @@ bool CheckOwnedRecvCloseReturnsBuffer() {
 
   ::close(sv[1]);
   if (!Check(outcome.has_value(), "owned cancelled read did not finish") ||
-      !Check(!outcome->result.has_value(), "owned cancelled read unexpectedly succeeded") ||
+      !Check(!outcome->result.HasValue(), "owned cancelled read unexpectedly succeeded") ||
       !Check(outcome->result.Error() == std::errc::operation_canceled,
              "owned cancelled read did not return ECANCELED") ||
       !Check(resumed_with_scheduler, "owned cancelled read resumed without current scheduler")) {
@@ -558,7 +558,7 @@ bool CheckCloseCancelsPendingRead() {
   ::close(sv[1]);
 
   return Check(result.has_value(), "cancelled read did not finish") &&
-         Check(!result->has_value(), "cancelled read unexpectedly returned value") &&
+         Check(!result->HasValue(), "cancelled read unexpectedly returned value") &&
          Check(result->Error() == std::errc::operation_canceled,
                "cancelled read did not return ECANCELED") &&
          Check(resumed_with_scheduler, "cancelled read resumed without current scheduler");
@@ -591,7 +591,7 @@ bool CheckLoopStopCancelsPendingRead() {
   ::close(sv[1]);
 
   return Check(result.has_value(), "loop stop did not settle the pending read") &&
-         Check(!result->has_value(), "loop stop unexpectedly completed the read") &&
+         Check(!result->HasValue(), "loop stop unexpectedly completed the read") &&
          Check(result->Error() == std::errc::operation_canceled,
                "loop stop did not return ECANCELED") &&
          Check(resume_count == 1, "loop stop resumed the read continuation more than once") &&
@@ -632,7 +632,7 @@ bool CheckReadableThenCloseResumesOnce() {
     return false;
   }
 
-  if (result->has_value()) {
+  if (result->HasValue()) {
     return Check(**result == 4, "readable-close race returned wrong byte count");
   }
   return Check(result->Error() == std::errc::operation_canceled,
@@ -668,9 +668,9 @@ bool CheckEchoAlgorithmUsesAsyncStream() {
   loop.Run();
 
   return Check(server_result.has_value(), "echo server did not finish") &&
-         Check(server_result->has_value(), "echo server returned error") &&
+         Check(server_result->HasValue(), "echo server returned error") &&
          Check(client_result.has_value(), "echo client did not finish") &&
-         Check(client_result->has_value(), "echo client returned error") &&
+         Check(client_result->HasValue(), "echo client returned error") &&
          Check(received_size == sizeof(payload) - 1, "echo client byte count mismatch") &&
          Check(std::memcmp(client_buffer.data(), payload, sizeof(payload) - 1) == 0,
                "echo client payload mismatch");
@@ -702,11 +702,11 @@ bool CheckCloseRejectsLaterSubmit() {
   ::close(sv[1]);
 
   return Check(read_result.has_value(), "read after close did not finish") &&
-         Check(!read_result->has_value(), "read after close unexpectedly succeeded") &&
+         Check(!read_result->HasValue(), "read after close unexpectedly succeeded") &&
          Check(read_result->Error() == std::errc::bad_file_descriptor,
                "read after close did not return EBADF") &&
          Check(write_result.has_value(), "write after close did not finish") &&
-         Check(!write_result->has_value(), "write after close unexpectedly succeeded") &&
+         Check(!write_result->HasValue(), "write after close unexpectedly succeeded") &&
          Check(write_result->Error() == std::errc::bad_file_descriptor,
                "write after close did not return EBADF") &&
          Check(peer_read == 0, "peer did not observe local close");
@@ -748,15 +748,15 @@ bool CheckShutdownKeepsReadOpen() {
 
   const std::string_view actual(reinterpret_cast<const char*>(read_buffer.data()),
                                 sizeof(kReply) - 1);
-  return Check(first_shutdown.has_value() && first_shutdown->has_value(),
+  return Check(first_shutdown.has_value() && first_shutdown->HasValue(),
                "first Shutdown failed") &&
-         Check(second_shutdown.has_value() && second_shutdown->has_value(),
+         Check(second_shutdown.has_value() && second_shutdown->HasValue(),
                "second Shutdown was not idempotent") &&
-         Check(write_result.has_value() && !write_result->has_value(),
+         Check(write_result.has_value() && !write_result->HasValue(),
                "Write after Shutdown unexpectedly succeeded") &&
          Check(write_result->Error() == std::errc::broken_pipe,
                "Write after Shutdown did not return EPIPE") &&
-         Check(read_result.has_value() && read_result->has_value() &&
+         Check(read_result.has_value() && read_result->HasValue() &&
                    **read_result == sizeof(kReply) - 1,
                "Read after Shutdown did not remain usable") &&
          Check(actual == std::string_view(kReply, sizeof(kReply) - 1),

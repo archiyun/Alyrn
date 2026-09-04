@@ -78,7 +78,7 @@ LoopInitStatus InitLoop(alyrn::uring::Loop& loop) {
   options.entries = 16;
 
   auto init = loop.Init(options);
-  if (init.has_value()) {
+  if (init.HasValue()) {
     return LoopInitStatus::kReady;
   }
   if (IsEnvironmentSkip(init.Error())) {
@@ -166,19 +166,19 @@ bool CheckAccept() {
   options.tcp_options.no_delay = true;
   options.tcp_options.keep_alive = true;
   auto listener = alyrn::uring::Listener::Create(&loop, LoopbackAddress(0), options);
-  if (!listener.has_value()) {
+  if (!listener.HasValue()) {
     std::cout << "FAIL: Listener::Create failed: " << listener.Error().message() << '\n';
     return false;
   }
 
   auto local = listener->LocalAddress();
-  if (!local.has_value()) {
+  if (!local.HasValue()) {
     std::cout << "FAIL: LocalAddress failed: " << local.Error().message() << '\n';
     return false;
   }
 
   auto client_fd = ConnectClient(*local);
-  if (!client_fd.has_value()) {
+  if (!client_fd.HasValue()) {
     std::cout << "FAIL: client connect failed: " << client_fd.Error().message() << '\n';
     return false;
   }
@@ -193,7 +193,7 @@ bool CheckAccept() {
   alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
-  if (!completions.has_value()) {
+  if (!completions.HasValue()) {
     std::cout << "FAIL: WaitCompletions failed: " << completions.Error().message() << '\n';
     return false;
   }
@@ -202,11 +202,11 @@ bool CheckAccept() {
 
   bool ok = Check(*completions >= 1, "accept did not produce a completion") &&
             Check(accepted.has_value(), "accept coroutine did not resume") &&
-            Check(accepted->has_value(), "Accept returned an error") &&
-            Check(accepted->value().Fd() >= 0, "Accept returned an invalid stream") &&
+            Check(accepted->HasValue(), "Accept returned an error") &&
+            Check(accepted->Value().Fd() >= 0, "Accept returned an invalid stream") &&
             Check(resumed_with_scheduler, "accept resumed without current scheduler");
   if (ok) {
-    const int accepted_fd = accepted->value().Fd();
+    const int accepted_fd = accepted->Value().Fd();
     ok = Check(GetSocketOption(accepted_fd, IPPROTO_TCP, TCP_NODELAY) == 1,
                "Listener did not apply TCP_NODELAY to accepted socket") &&
          Check(GetSocketOption(accepted_fd, SOL_SOCKET, SO_KEEPALIVE) == 1,
@@ -227,26 +227,26 @@ bool CheckAcceptReleasesReservationBeforeContinuation() {
   }
 
   auto listener = alyrn::uring::Listener::Create(&loop, LoopbackAddress(0));
-  if (!listener.has_value()) {
+  if (!listener.HasValue()) {
     std::cout << "FAIL: Listener::Create failed: " << listener.Error().message() << '\n';
     return false;
   }
 
   auto local = listener->LocalAddress();
-  if (!local.has_value()) {
+  if (!local.HasValue()) {
     std::cout << "FAIL: LocalAddress failed: " << local.Error().message() << '\n';
     return false;
   }
 
   auto first_client_fd = ConnectClient(*local);
-  if (!first_client_fd.has_value()) {
+  if (!first_client_fd.HasValue()) {
     std::cout << "FAIL: first client connect failed: " << first_client_fd.Error().message() << '\n';
     return false;
   }
   UniqueFd first_client(*first_client_fd);
 
   auto second_client_fd = ConnectClient(*local);
-  if (!second_client_fd.has_value()) {
+  if (!second_client_fd.HasValue()) {
     std::cout << "FAIL: second client connect failed: " << second_client_fd.Error().message()
               << '\n';
     return false;
@@ -262,7 +262,7 @@ bool CheckAcceptReleasesReservationBeforeContinuation() {
 
   for (int i = 0; i < 8 && !second.has_value(); ++i) {
     auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
-    if (!completions.has_value()) {
+    if (!completions.HasValue()) {
       std::cout << "FAIL: WaitCompletions failed: " << completions.Error().message() << '\n';
       return false;
     }
@@ -270,12 +270,12 @@ bool CheckAcceptReleasesReservationBeforeContinuation() {
   }
 
   return Check(first.has_value(), "first accept did not finish") &&
-         Check(first->has_value(), "first accept returned an error") &&
-         Check(first->value().Fd() >= 0, "first accept returned an invalid stream") &&
+         Check(first->HasValue(), "first accept returned an error") &&
+         Check(first->Value().Fd() >= 0, "first accept returned an invalid stream") &&
          Check(second.has_value(), "follow-up accept did not finish") &&
-         Check(second->has_value(),
+         Check(second->HasValue(),
                "single-shot accept left its listener reservation active during continuation") &&
-         Check(second->value().Fd() >= 0, "follow-up accept returned an invalid stream") &&
+         Check(second->Value().Fd() >= 0, "follow-up accept returned an invalid stream") &&
          Check(resumed_with_scheduler,
                "single-shot follow-up accept resumed without current scheduler");
 }
@@ -292,7 +292,7 @@ bool CheckCloseCancelsPendingAccept() {
   }
 
   auto listener = alyrn::uring::Listener::Create(&loop, LoopbackAddress(0));
-  if (!listener.has_value()) {
+  if (!listener.HasValue()) {
     std::cout << "FAIL: Listener::Create failed: " << listener.Error().message() << '\n';
     return false;
   }
@@ -315,7 +315,7 @@ bool CheckCloseCancelsPendingAccept() {
 
   for (int i = 0; i < 4 && (!close_result.has_value() || !accepted.has_value()); ++i) {
     auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
-    if (!completions.has_value()) {
+    if (!completions.HasValue()) {
       std::cout << "FAIL: WaitCompletions failed: " << completions.Error().message() << '\n';
       return false;
     }
@@ -323,9 +323,9 @@ bool CheckCloseCancelsPendingAccept() {
   }
 
   return Check(close_result.has_value(), "close coroutine did not resume") &&
-         Check(close_result->has_value(), "Close with pending accept returned an error") &&
+         Check(close_result->HasValue(), "Close with pending accept returned an error") &&
          Check(accepted.has_value(), "pending accept was not cleaned up") &&
-         Check(!accepted->has_value(), "pending accept should be cancelled") &&
+         Check(!accepted->HasValue(), "pending accept should be cancelled") &&
          Check(accepted->Error().value() == ECANCELED, "pending accept should return ECANCELED") &&
          Check(resumed_with_scheduler, "pending accept resumed without current scheduler");
 }

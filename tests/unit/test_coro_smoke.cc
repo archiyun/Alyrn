@@ -435,8 +435,15 @@ int main() {
   // e) Error path travels through the value channel, no exceptions.
   {
     Result<int> r = SyncWait(Fail());
-    if (!Check(!r.has_value(), "Fail should not hold a value")) return 1;
+    if (!Check(!r.HasValue(), "Fail should not hold a value")) return 1;
     if (!Check(r.Error() == std::errc::invalid_argument, "Fail should carry EINVAL")) return 1;
+
+    Result<int> success{42};
+    if (!Check(success.ValueOr(7) == 42, "ValueOr should return the stored value")) return 1;
+    if (!Check(Result<int>{std::unexpected(Errno(EIO))}.ValueOr(7) == 7,
+               "ValueOr should return the fallback for an error")) {
+      return 1;
+    }
   }
 
   std::cout << "coro smoke: PASS\n";

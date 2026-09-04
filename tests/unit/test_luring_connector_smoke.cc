@@ -89,7 +89,7 @@ LoopInitStatus InitLoop(alyrn::uring::Loop& loop) {
   options.entries = 16;
 
   auto init = loop.Init(options);
-  if (init.has_value()) {
+  if (init.HasValue()) {
     return LoopInitStatus::kReady;
   }
   if (IsEnvironmentSkip(init.Error())) {
@@ -150,7 +150,7 @@ alyrn::coro::DetachedTask ConnectOnce(
 
 bool CheckConnectSuccess() {
   auto listener = ListenLoopback();
-  if (!listener.has_value()) {
+  if (!listener.HasValue()) {
     if (IsEnvironmentSkip(listener.Error())) {
       std::cout << "SKIP: TCP listen unavailable: " << listener.Error().message() << '\n';
       return true;
@@ -184,7 +184,7 @@ bool CheckConnectSuccess() {
   alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
-  if (!completions.has_value()) {
+  if (!completions.HasValue()) {
     std::cout << "FAIL: WaitCompletions failed: " << completions.Error().message() << '\n';
     return false;
   }
@@ -193,13 +193,13 @@ bool CheckConnectSuccess() {
 
   if (!Check(*completions >= 1, "connect did not produce a completion") ||
       !Check(connected.has_value(), "connect coroutine did not resume") ||
-      !Check(connected->has_value(), "Connect returned an error") ||
-      !Check(connected->value().Fd() >= 0, "Connect returned an invalid stream") ||
+      !Check(connected->HasValue(), "Connect returned an error") ||
+      !Check(connected->Value().Fd() >= 0, "Connect returned an invalid stream") ||
       !Check(resumed_with_scheduler, "connect resumed without current scheduler")) {
     return false;
   }
 
-  const int fd = connected->value().Fd();
+  const int fd = connected->Value().Fd();
   int no_delay = 0;
   int keep_alive = 0;
   int read_buffer = 0;
@@ -231,7 +231,7 @@ bool CheckConnectRejectsInvalidHost() {
   alyrn::uring::detail::LoopAccess::RunReady(loop);
 
   return Check(connected.has_value(), "invalid host connect did not finish immediately") &&
-         Check(!connected->has_value(), "invalid host connect unexpectedly succeeded") &&
+         Check(!connected->HasValue(), "invalid host connect unexpectedly succeeded") &&
          Check(connected->Error().value() == EINVAL, "invalid host should return EINVAL") &&
          Check(resumed_with_scheduler, "invalid host connect resumed without current scheduler");
 }

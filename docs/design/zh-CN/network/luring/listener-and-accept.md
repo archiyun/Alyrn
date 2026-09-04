@@ -18,11 +18,11 @@ fd 所有权转移给该 stream。listener 关闭后不能再接受连接。
 
 ```cpp
 auto source_result = listener.CreateAcceptSource();
-if (!source_result.has_value()) co_return;
+if (!source_result.HasValue()) co_return;
 auto source = std::move(*source_result);
 for (;;) {
   auto result = co_await source.Next();
-  if (!result.has_value()) break;       // source error
+  if (!result.HasValue()) break;       // source error
   if (!result->has_value()) break;      // source terminal
   Stream stream = std::move(**result);
   // consume one connection

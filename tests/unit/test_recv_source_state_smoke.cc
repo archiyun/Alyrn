@@ -137,17 +137,17 @@ void CheckLeaseLifetimeAndStop() {
       .event_capacity = 2,
       .buffer_capacity = 2,
   });
-  assert(state_result.has_value());
+  assert(state_result.HasValue());
   auto state = std::move(*state_result);
 
-  assert(state.Start().has_value());
+  assert(state.Start().HasValue());
   assert(state.TryArm());
 
   // An F_MORE event keeps the physical request armed and queues one buffer.
   assert(state.CompleteMultishotEvent(
                  EventDisposition::kProduced,
                  MultishotRequestDisposition::kMore)
-             .has_value());
+             .HasValue());
   assert(state.ArmedRequests() == 1);
   assert(state.QueuedEvents() == 1);
   assert(state.OutstandingLeases() == 1);
@@ -162,14 +162,14 @@ void CheckLeaseLifetimeAndStop() {
   assert(state.CompleteMultishotEvent(
                  EventDisposition::kProduced,
                  MultishotRequestDisposition::kTerminal)
-             .has_value());
+             .HasValue());
   assert(state.ArmedRequests() == 0);
   assert(state.QueuedEvents() == 1);
   assert(state.OutstandingLeases() == 2);
   assert(!state.CanArm());
 
   auto stopped = state.RequestStop();
-  assert(stopped.has_value());
+  assert(stopped.HasValue());
   assert(state.State() == RecvSourceState::kDraining);
 
   // Stop drains queued events but cannot become terminal until both leases
@@ -197,22 +197,22 @@ void CheckBufferCapacityFailure() {
       .event_capacity = 1,
       .buffer_capacity = 1,
   });
-  assert(state_result.has_value());
+  assert(state_result.HasValue());
   auto state = std::move(*state_result);
 
-  assert(state.Start().has_value());
+  assert(state.Start().HasValue());
   assert(state.TryArm());
   assert(state.CompleteMultishotEvent(
                  EventDisposition::kProduced,
                  MultishotRequestDisposition::kMore)
-             .has_value());
+             .HasValue());
 
   // A second event cannot be represented while the only provided buffer is
   // already owned. The physical request remains armed so the backend can
   // cancel it and converge through the normal terminal path.
   auto overflow = state.CompleteMultishotEvent(
       EventDisposition::kProduced, MultishotRequestDisposition::kMore);
-  assert(!overflow.has_value());
+  assert(!overflow.HasValue());
   assert(overflow.Error().value() == ENOBUFS);
   assert(state.State() == RecvSourceState::kActive);
   assert(state.ArmedRequests() == 1);
@@ -221,11 +221,11 @@ void CheckBufferCapacityFailure() {
   assert(state.CompleteMultishotEvent(
                  EventDisposition::kNone,
                  MultishotRequestDisposition::kTerminal)
-             .has_value());
-  assert(state.RequestStop().has_value());
+             .HasValue());
+  assert(state.RequestStop().HasValue());
   assert(state.State() == RecvSourceState::kDraining);
   assert(state.AcquireEvent());
-  assert(state.RequestStop().has_value());
+  assert(state.RequestStop().HasValue());
   assert(state.State() == RecvSourceState::kDraining);
   assert(state.ReleaseLease());
   assert(state.State() == RecvSourceState::kTerminal);
@@ -237,15 +237,15 @@ void CheckDirectDeliveryAccounting() {
       .event_capacity = 2,
       .buffer_capacity = 2,
   });
-  assert(state_result.has_value());
+  assert(state_result.HasValue());
   auto state = std::move(*state_result);
 
-  assert(state.Start().has_value());
+  assert(state.Start().HasValue());
   assert(state.TryArm());
   assert(state.CompleteMultishotEvent(
                  EventDisposition::kDelivered,
                  MultishotRequestDisposition::kMore)
-             .has_value());
+             .HasValue());
   assert(state.ArmedRequests() == 1);
   assert(state.QueuedEvents() == 0);
   assert(state.OutstandingLeases() == 1);
@@ -253,11 +253,11 @@ void CheckDirectDeliveryAccounting() {
 
   // A directly delivered lease still keeps Stop in the draining state until
   // the consumer releases it.
-  assert(state.RequestStop().has_value());
+  assert(state.RequestStop().HasValue());
   assert(state.CompleteMultishotEvent(
                  EventDisposition::kNone,
                  MultishotRequestDisposition::kTerminal)
-             .has_value());
+             .HasValue());
   assert(state.State() == RecvSourceState::kDraining);
   assert(state.ReleaseLease());
   assert(state.State() == RecvSourceState::kTerminal);
@@ -270,22 +270,22 @@ void CheckPauseAndResume() {
       .buffer_capacity = 2,
       .resume_threshold = 0,
   });
-  assert(state_result.has_value());
+  assert(state_result.HasValue());
   auto state = std::move(*state_result);
 
-  assert(state.Start().has_value());
+  assert(state.Start().HasValue());
   assert(state.TryArm());
   assert(state.CompleteMultishotEvent(
                  EventDisposition::kProduced,
                  MultishotRequestDisposition::kMore)
-             .has_value());
+             .HasValue());
 
-  assert(state.RequestPause().has_value());
+  assert(state.RequestPause().HasValue());
   assert(state.State() == RecvSourceState::kPausing);
   assert(state.CompleteMultishotEvent(
                  EventDisposition::kNone,
                  MultishotRequestDisposition::kTerminal)
-             .has_value());
+             .HasValue());
   assert(state.State() == RecvSourceState::kPaused);
 
   assert(state.AcquireEvent());

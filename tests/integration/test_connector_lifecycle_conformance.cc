@@ -138,7 +138,7 @@ struct UringHarness {
     alyrn::uring::Options options;
     options.entries = 32;
     auto initialized = loop.Init(options);
-    if (initialized.has_value()) {
+    if (initialized.HasValue()) {
       init_error = {};
       return true;
     }
@@ -158,7 +158,7 @@ struct UringHarness {
   static bool RunAfter(Loop& loop, std::chrono::milliseconds delay,
                        std::function<void()> callback) {
     auto timer = loop.RunAfter(delay, std::move(callback));
-    if (timer.has_value()) {
+    if (timer.HasValue()) {
       return true;
     }
     std::cerr << "FAIL [io_uring]: timer setup: " << timer.Error().message() << '\n';
@@ -216,7 +216,7 @@ bool Initialize(typename Harness::Loop& loop) {
 template <class Harness>
 bool CheckConnectSuccessContract() {
   auto listener = ListenLoopback();
-  if (!listener.has_value()) {
+  if (!listener.HasValue()) {
     std::cerr << "FAIL [" << Harness::Name()
               << "]: listener creation: " << listener.Error().message() << '\n';
     return false;
@@ -227,7 +227,7 @@ bool CheckConnectSuccessContract() {
     return Harness::Skip();
   }
   auto connector = Harness::CreateConnector(loop);
-  if (!connector.has_value()) {
+  if (!connector.HasValue()) {
     std::cerr << "FAIL [" << Harness::Name()
               << "]: connector creation: " << connector.Error().message() << '\n';
     return false;
@@ -248,7 +248,7 @@ bool CheckConnectSuccessContract() {
   Harness::Run(loop);
 
   return Expect(!observation.timed_out, Harness::Name(), "successful Connect timed out") &&
-         Expect(observation.result.has_value() && observation.result->has_value(), Harness::Name(),
+         Expect(observation.result.has_value() && observation.result->HasValue(), Harness::Name(),
                 "Connect to a listening endpoint failed") &&
          Expect(observation.resume_count == 1, Harness::Name(),
                 "successful Connect resumed more than once") &&
@@ -272,8 +272,8 @@ auto ObserveConnectThenClose(Connector& connector, Loop& loop, std::uint16_t por
                              ConnectCloseObservation<Connector>& observation)
     -> alyrn::coro::DetachedTask {
   observation.connect.emplace(co_await connector.Connect("127.0.0.1", port));
-  if (observation.connect->has_value()) {
-    auto& stream = observation.connect->value();
+  if (observation.connect->HasValue()) {
+    auto& stream = observation.connect->Value();
     observation.stream_valid_before_close = stream.Fd() >= 0;
     observation.close.emplace(co_await stream.Close());
   }
@@ -284,7 +284,7 @@ auto ObserveConnectThenClose(Connector& connector, Loop& loop, std::uint16_t por
 template <class Harness>
 bool CheckConnectResultReleaseContract() {
   auto listener = ListenLoopback();
-  if (!listener.has_value()) {
+  if (!listener.HasValue()) {
     std::cerr << "FAIL [" << Harness::Name()
               << "]: listener creation: " << listener.Error().message() << '\n';
     return false;
@@ -295,7 +295,7 @@ bool CheckConnectResultReleaseContract() {
     return Harness::Skip();
   }
   auto connector = Harness::CreateConnector(loop);
-  if (!connector.has_value()) {
+  if (!connector.HasValue()) {
     std::cerr << "FAIL [" << Harness::Name()
               << "]: connector creation: " << connector.Error().message() << '\n';
     return false;
@@ -313,11 +313,11 @@ bool CheckConnectResultReleaseContract() {
   Harness::Run(loop);
 
   return Expect(!observation.timed_out, Harness::Name(), "Connect followed by Close timed out") &&
-         Expect(observation.connect.has_value() && observation.connect->has_value(),
+         Expect(observation.connect.has_value() && observation.connect->HasValue(),
                 Harness::Name(), "Connect did not publish a stream before continuation") &&
          Expect(observation.stream_valid_before_close, Harness::Name(),
                 "Connect published a stream without a live descriptor") &&
-         Expect(observation.close.has_value() && observation.close->has_value(), Harness::Name(),
+         Expect(observation.close.has_value() && observation.close->HasValue(), Harness::Name(),
                 "stream Close failed immediately after Connect") &&
          Expect(observation.resumed_with_scheduler, Harness::Name(),
                 "Connect followed by Close lost scheduler affinity");
@@ -326,7 +326,7 @@ bool CheckConnectResultReleaseContract() {
 template <class Harness>
 bool CheckConnectionRefusedContract() {
   auto endpoint = ListenLoopback();
-  if (!endpoint.has_value()) {
+  if (!endpoint.HasValue()) {
     std::cerr << "FAIL [" << Harness::Name()
               << "]: port reservation: " << endpoint.Error().message() << '\n';
     return false;
@@ -339,7 +339,7 @@ bool CheckConnectionRefusedContract() {
     return Harness::Skip();
   }
   auto connector = Harness::CreateConnector(loop);
-  if (!connector.has_value()) {
+  if (!connector.HasValue()) {
     return false;
   }
 
@@ -355,7 +355,7 @@ bool CheckConnectionRefusedContract() {
   Harness::Run(loop);
 
   return Expect(!observation.timed_out, Harness::Name(), "refused Connect timed out") &&
-         Expect(observation.result.has_value() && !observation.result->has_value() &&
+         Expect(observation.result.has_value() && !observation.result->HasValue() &&
                     observation.result->Error() == std::errc::connection_refused,
                 Harness::Name(), "Connect did not preserve ECONNREFUSED") &&
          Expect(observation.resume_count == 1, Harness::Name(),
@@ -371,7 +371,7 @@ bool CheckInvalidHostContract() {
     return Harness::Skip();
   }
   auto connector = Harness::CreateConnector(loop);
-  if (!connector.has_value()) {
+  if (!connector.HasValue()) {
     return false;
   }
 
@@ -379,7 +379,7 @@ bool CheckInvalidHostContract() {
   alyrn::coro::SpawnDetach(loop, ObserveConnect(*connector, loop, "not-an-ip", 80, observation));
   Harness::Run(loop);
 
-  return Expect(observation.result.has_value() && !observation.result->has_value() &&
+  return Expect(observation.result.has_value() && !observation.result->HasValue() &&
                     observation.result->Error() == std::errc::invalid_argument,
                 Harness::Name(), "invalid numeric host did not return EINVAL") &&
          Expect(observation.resume_count == 1, Harness::Name(),
@@ -405,7 +405,7 @@ bool CheckConnectAfterStopRequestContract() {
     return Harness::Skip();
   }
   auto connector = Harness::CreateConnector(loop);
-  if (!connector.has_value()) {
+  if (!connector.HasValue()) {
     return false;
   }
 
@@ -413,7 +413,7 @@ bool CheckConnectAfterStopRequestContract() {
   alyrn::coro::SpawnDetach(loop, ObserveConnectAfterStopRequest(*connector, loop, observation));
   Harness::Run(loop);
 
-  return Expect(observation.result.has_value() && !observation.result->has_value() &&
+  return Expect(observation.result.has_value() && !observation.result->HasValue() &&
                     observation.result->Error() == std::errc::operation_canceled,
                 Harness::Name(), "Connect succeeded after loop stop was requested") &&
          Expect(observation.resume_count == 1, Harness::Name(),
@@ -452,7 +452,7 @@ auto ObserveConcurrentConnect(
 template <class Harness>
 bool CheckConcurrentConnectContract() {
   auto listener = ListenLoopback();
-  if (!listener.has_value()) {
+  if (!listener.HasValue()) {
     return false;
   }
 
@@ -461,7 +461,7 @@ bool CheckConcurrentConnectContract() {
     return Harness::Skip();
   }
   auto connector = Harness::CreateConnector(loop);
-  if (!connector.has_value()) {
+  if (!connector.HasValue()) {
     return false;
   }
 
@@ -481,8 +481,8 @@ bool CheckConcurrentConnectContract() {
   Harness::Run(loop);
 
   return Expect(!observation.timed_out, Harness::Name(), "concurrent Connect timed out") &&
-         Expect(observation.first.has_value() && observation.first->has_value() &&
-                    observation.second.has_value() && observation.second->has_value(),
+         Expect(observation.first.has_value() && observation.first->HasValue() &&
+                    observation.second.has_value() && observation.second->HasValue(),
                 Harness::Name(),
                 "connector did not support independent concurrent Connect calls") &&
          Expect(observation.first_resume_count == 1 && observation.second_resume_count == 1,

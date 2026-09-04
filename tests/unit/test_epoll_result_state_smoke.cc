@@ -57,13 +57,13 @@ bool TestIoStateTakeConsumesResult() {
 
   state.SetSuccess(42);
   auto success = state.Take();
-  bool ok = Expect(success.has_value(), "packed success must decode") &&
+  bool ok = Expect(success.HasValue(), "packed success must decode") &&
             Expect(*success == 42, "packed success must preserve byte count") &&
             Expect(!state.HasResult(), "packed Take must restore pending state");
 
   state.SetError(alyrn::Errno(EPIPE));
   auto error = state.Take();
-  ok &= Expect(!error.has_value(), "packed errno must decode as an error") &&
+  ok &= Expect(!error.HasValue(), "packed errno must decode as an error") &&
         Expect(error.Error().value() == EPIPE, "packed errno must preserve its value") &&
         Expect(error.Error().category() == std::system_category(),
                "packed errno must preserve the system category") &&
@@ -114,7 +114,7 @@ bool TestValueStateTakeDestroysActiveMember() {
                    "value state must own one probe after source destruction");
   {
     auto result = state.Take();
-    ok &= Expect(result.has_value(), "value state must return its stored value") &&
+    ok &= Expect(result.HasValue(), "value state must return its stored value") &&
           Expect(result->value == 7, "value state must preserve the stored value") &&
           Expect(!state.HasResult(), "value Take must restore pending state") &&
           Expect(LifetimeProbe::live_count == 1,
@@ -130,14 +130,14 @@ bool TestValueStateErrorCanBeReused() {
 
   state.SetError(alyrn::Errno(ECANCELED));
   auto error = state.Take();
-  bool ok = Expect(!error.has_value(), "value state error must decode") &&
+  bool ok = Expect(!error.HasValue(), "value state error must decode") &&
             Expect(error.Error().value() == ECANCELED, "value state error must preserve errno") &&
             Expect(!state.HasResult(), "value error Take must restore pending state");
 
   alyrn::Result<LifetimeProbe> next(std::in_place, 9);
   state.SetResult(std::move(next));
   auto value = state.Take();
-  return ok && Expect(value.has_value(), "value state must be reusable after error Take") &&
+  return ok && Expect(value.HasValue(), "value state must be reusable after error Take") &&
          Expect(value->value == 9, "reused value state must preserve its value");
 }
 

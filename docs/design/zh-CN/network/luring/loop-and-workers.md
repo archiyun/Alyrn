@@ -19,7 +19,7 @@
 ```cpp
 alyrn::uring::Loop loop;
 auto initialized = loop.Init(options);
-if (!initialized.has_value()) {
+if (!initialized.HasValue()) {
   // 根据 error 判断环境不支持或配置错误
 }
 loop.Run(stop_token);

@@ -124,7 +124,7 @@ bool CheckEpollRuntime() {
                              .Workers(1)
                              .Build();
   auto missing_started = missing_handler.Start();
-  if (!Check(!missing_started.has_value() && missing_started.Error() == std::errc::invalid_argument,
+  if (!Check(!missing_started.HasValue() && missing_started.Error() == std::errc::invalid_argument,
              "Epoll Runtime must reject a missing connection handler")) {
     return false;
   }
@@ -134,14 +134,14 @@ bool CheckEpollRuntime() {
                           .OnConnection(HandleEpoll)
                           .Build();
   auto zero_workers_started = zero_workers.Start();
-  if (!Check(!zero_workers_started.has_value() && zero_workers_started.Error().value() == EINVAL,
+  if (!Check(!zero_workers_started.HasValue() && zero_workers_started.Error().value() == EINVAL,
              "Epoll Runtime must reject zero workers")) {
     return false;
   }
 
   auto runtime = Runtime::Create<runtime::Epoll>(net::Endpoint::Loopback(0), HandleEpoll);
   auto started = runtime.Start();
-  if (!Check(started.has_value(), "Epoll Runtime failed to start")) {
+  if (!Check(started.HasValue(), "Epoll Runtime failed to start")) {
     return false;
   }
   const bool was_started = runtime.Started();
@@ -150,7 +150,7 @@ bool CheckEpollRuntime() {
   auto restarted = runtime.Start();
   return Check(was_started, "Epoll Runtime did not report started") &&
          Check(!runtime.Started(), "Epoll Runtime did not stop") &&
-         Check(!restarted.has_value() && restarted.Error().value() == EALREADY,
+         Check(!restarted.HasValue() && restarted.Error().value() == EALREADY,
                "Epoll Runtime must reject restart after Stop");
 }
 
@@ -163,12 +163,12 @@ bool CheckEpollRuntimeRunWithPreCancelledToken() {
                      .OnConnection(HandleEpoll)
                      .Build();
   auto ran = runtime.Run(stop_source.get_token());
-  if (!Check(ran.has_value(), "Epoll Runtime::Run failed")) {
+  if (!Check(ran.HasValue(), "Epoll Runtime::Run failed")) {
     return false;
   }
   auto restarted = runtime.Start();
   return Check(!runtime.Started(), "Epoll Runtime::Run returned before stopping workers") &&
-         Check(!restarted.has_value() && restarted.Error().value() == EALREADY,
+         Check(!restarted.HasValue() && restarted.Error().value() == EALREADY,
                "Epoll Runtime::Run must leave Runtime stopped");
 }
 
@@ -188,7 +188,7 @@ bool CheckEpollRunStopsFromRuntimeRequest() {
 
   runtime.RequestStop();
   runner.join();
-  return Check(run_result.has_value() && run_result->has_value(),
+  return Check(run_result.has_value() && run_result->HasValue(),
                "Epoll Runtime::Run failed after RequestStop") &&
          Check(!runtime.Started(), "Epoll Runtime::Run did not join after RequestStop");
 }
@@ -199,7 +199,7 @@ bool CheckEpollRequestStopFromForeignThread() {
                      .OnConnection(HandleEpoll)
                      .Build();
   auto started = runtime.Start();
-  if (!Check(started.has_value(), "Epoll Runtime failed to start for RequestStop")) {
+  if (!Check(started.HasValue(), "Epoll Runtime failed to start for RequestStop")) {
     return false;
   }
 
@@ -214,7 +214,7 @@ bool CheckEpollRequestStopFromForeignThread() {
 
 bool CheckEpollStartFailureCanRetry() {
   auto reserved = BindLoopbackPort();
-  if (!Check(reserved.has_value(), "failed to reserve Epoll retry test port")) {
+  if (!Check(reserved.HasValue(), "failed to reserve Epoll retry test port")) {
     return false;
   }
 
@@ -223,14 +223,14 @@ bool CheckEpollStartFailureCanRetry() {
                      .OnConnection(HandleEpoll)
                      .Build();
   auto rejected = runtime.Start();
-  if (!Check(!rejected.has_value() && rejected.Error().value() == EADDRINUSE,
+  if (!Check(!rejected.HasValue() && rejected.Error().value() == EADDRINUSE,
              "Epoll Runtime must report an occupied port")) {
     return false;
   }
 
   reserved->Close();
   auto started = runtime.Start();
-  if (!Check(started.has_value(), "Epoll Runtime could not retry after bind failure")) {
+  if (!Check(started.HasValue(), "Epoll Runtime could not retry after bind failure")) {
     return false;
   }
   runtime.Stop();
@@ -255,14 +255,14 @@ bool CheckUringRuntime() {
                           .OnConnection(HandleUring)
                           .Build();
   auto zero_workers_started = zero_workers.Start();
-  if (!Check(!zero_workers_started.has_value() && zero_workers_started.Error().value() == EINVAL,
+  if (!Check(!zero_workers_started.HasValue() && zero_workers_started.Error().value() == EINVAL,
              "luring Runtime must reject zero workers")) {
     return false;
   }
 
   auto runtime = Runtime::Create<runtime::Uring>(net::Endpoint::Loopback(0), HandleUring);
   auto started = runtime.Start();
-  if (!started.has_value()) {
+  if (!started.HasValue()) {
     if (IsEnvironmentSkip(started.Error())) {
       std::print("SKIP: io_uring unavailable: {}\n", started.Error().message());
       return true;
@@ -276,7 +276,7 @@ bool CheckUringRuntime() {
   auto restarted = runtime.Start();
   return Check(was_started, "luring Runtime did not report started") &&
          Check(!runtime.Started(), "luring Runtime did not stop") &&
-         Check(!restarted.has_value() && restarted.Error().value() == EALREADY,
+         Check(!restarted.HasValue() && restarted.Error().value() == EALREADY,
                "luring Runtime must reject restart after Stop");
 }
 
@@ -289,7 +289,7 @@ bool CheckUringRuntimeRunWithPreCancelledToken() {
                      .OnConnection(HandleUring)
                      .Build();
   auto ran = runtime.Run(stop_source.get_token());
-  if (!ran.has_value()) {
+  if (!ran.HasValue()) {
     if (IsEnvironmentSkip(ran.Error())) {
       std::print("SKIP: io_uring unavailable: {}\n", ran.Error().message());
       return true;
@@ -299,7 +299,7 @@ bool CheckUringRuntimeRunWithPreCancelledToken() {
   }
   auto restarted = runtime.Start();
   return Check(!runtime.Started(), "luring Runtime::Run returned before stopping workers") &&
-         Check(!restarted.has_value() && restarted.Error().value() == EALREADY,
+         Check(!restarted.HasValue() && restarted.Error().value() == EALREADY,
                "luring Runtime::Run must leave Runtime stopped");
 }
 
@@ -314,7 +314,7 @@ bool CheckUringRunStopsFromRuntimeRequest() {
   if (!WaitUntilStarted(runtime)) {
     runtime.RequestStop();
     runner.join();
-    if (run_result.has_value() && !run_result->has_value() &&
+    if (run_result.has_value() && !run_result->HasValue() &&
         IsEnvironmentSkip(run_result->Error())) {
       std::print("SKIP: io_uring unavailable: {}\n", run_result->Error().message());
       return true;
@@ -327,7 +327,7 @@ bool CheckUringRunStopsFromRuntimeRequest() {
   if (!Check(run_result.has_value(), "luring Runtime::Run did not return a result")) {
     return false;
   }
-  if (!run_result->has_value()) {
+  if (!run_result->HasValue()) {
     if (IsEnvironmentSkip(run_result->Error())) {
       std::print("SKIP: io_uring unavailable: {}\n", run_result->Error().message());
       return true;
@@ -345,7 +345,7 @@ bool CheckUringRequestStopFromForeignThread() {
                      .OnConnection(HandleUring)
                      .Build();
   auto started = runtime.Start();
-  if (!started.has_value()) {
+  if (!started.HasValue()) {
     if (IsEnvironmentSkip(started.Error())) {
       std::print("SKIP: io_uring unavailable: {}\n", started.Error().message());
       return true;
@@ -366,7 +366,7 @@ bool CheckUringRequestStopFromForeignThread() {
 
 bool CheckUringStartFailureCanRetry() {
   auto reserved = BindLoopbackPort();
-  if (!Check(reserved.has_value(), "failed to reserve luring retry test port")) {
+  if (!Check(reserved.HasValue(), "failed to reserve luring retry test port")) {
     return false;
   }
 
@@ -375,18 +375,18 @@ bool CheckUringStartFailureCanRetry() {
                      .OnConnection(HandleUring)
                      .Build();
   auto rejected = runtime.Start();
-  if (!rejected.has_value() && IsEnvironmentSkip(rejected.Error())) {
+  if (!rejected.HasValue() && IsEnvironmentSkip(rejected.Error())) {
     std::print("SKIP: io_uring unavailable: {}\n", rejected.Error().message());
     return true;
   }
-  if (!Check(!rejected.has_value() && rejected.Error().value() == EADDRINUSE,
+  if (!Check(!rejected.HasValue() && rejected.Error().value() == EADDRINUSE,
              "luring Runtime must report an occupied port")) {
     return false;
   }
 
   reserved->Close();
   auto started = runtime.Start();
-  if (!started.has_value()) {
+  if (!started.HasValue()) {
     std::print("FAIL: luring Runtime could not retry after bind failure: {}\n",
                started.Error().message());
     return false;

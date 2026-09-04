@@ -46,7 +46,7 @@ auto runtime = alyrn::Runtime::Builder<alyrn::runtime::Epoll>{
 
 auto started = runtime.Start();
 if (!started) {
-  // 检查 started.error()
+  // 检查 started.Error()
 }
 
 // 应用自己的 stop 协议完成后：

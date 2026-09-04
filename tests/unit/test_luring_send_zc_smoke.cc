@@ -83,7 +83,7 @@ bool InitLoop(Loop& loop) {
   Options options;
   options.entries = 32;
   auto initialized = loop.Init(options);
-  if (initialized.has_value()) {
+  if (initialized.HasValue()) {
     return true;
   }
   if (IsEnvironmentSkip(initialized.Error())) {
@@ -159,7 +159,7 @@ bool DriveUntilResult(Loop& loop, std::optional<Result<T>>& result, const char* 
   }
   for (int i = 0; i < 16 && !result.has_value(); ++i) {
     auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
-    if (!completions.has_value()) {
+    if (!completions.HasValue()) {
       std::cout << "FAIL: waiting for " << operation
                 << " CQE failed: " << completions.Error().message() << '\n';
       return false;
@@ -176,7 +176,7 @@ bool DriveUntilResultWithPolling(Loop& loop, std::optional<Result<T>>& result,
   while (!result.has_value() && std::chrono::steady_clock::now() < deadline) {
     alyrn::uring::detail::LoopAccess::RunReady(loop);
     auto completions = alyrn::uring::detail::LoopAccess::PollCompletions(loop);
-    if (!completions.has_value()) {
+    if (!completions.HasValue()) {
       std::cout << "FAIL: polling " << operation << " CQE failed: " << completions.Error().message()
                 << '\n';
       return false;
@@ -226,7 +226,7 @@ bool CheckSendZeroCopy() {
   }
 
   auto pair = MakeTcpPair();
-  if (!pair.has_value()) {
+  if (!pair.HasValue()) {
     std::cout << "FAIL: TCP pair failed: " << pair.Error().message() << '\n';
     return false;
   }
@@ -245,7 +245,7 @@ bool CheckSendZeroCopy() {
 
   for (int i = 0; i < 8 && !result.has_value(); ++i) {
     auto completions = alyrn::uring::detail::LoopAccess::WaitCompletions(loop);
-    if (!completions.has_value()) {
+    if (!completions.HasValue()) {
       std::cout << "FAIL: waiting for send zerocopy CQE failed: " << completions.Error().message()
                 << '\n';
       return false;
@@ -257,11 +257,11 @@ bool CheckSendZeroCopy() {
     std::cout << "FAIL: send zerocopy did not reach terminal CQE\n";
     return false;
   }
-  if (!result->has_value() && IsEnvironmentSkip(result->Error())) {
+  if (!result->HasValue() && IsEnvironmentSkip(result->Error())) {
     std::cout << "SKIP: send zerocopy unsupported: " << result->Error().message() << '\n';
     return true;
   }
-  if (!Check(result->has_value(), "send zerocopy returned an error")) {
+  if (!Check(result->HasValue(), "send zerocopy returned an error")) {
     std::cout << "send zerocopy error: " << result->Error().message() << '\n';
     return false;
   }
@@ -272,10 +272,10 @@ bool CheckSendZeroCopy() {
                "send zerocopy peer byte count mismatch") &&
          Check(std::string_view(received.data(), static_cast<std::size_t>(count)) == text,
                "send zerocopy payload mismatch") &&
-         Check(result->value().bytes == text.size(), "send zerocopy result byte count mismatch") &&
-         Check(result->value().notification_received,
+         Check(result->Value().bytes == text.size(), "send zerocopy result byte count mismatch") &&
+         Check(result->Value().notification_received,
                "send zerocopy notification CQE was not observed") &&
-         Check(result->value().usage != ZeroCopySendUsage::kUnknown,
+         Check(result->Value().usage != ZeroCopySendUsage::kUnknown,
                "send zerocopy notification did not report usage");
 }
 
@@ -300,7 +300,7 @@ bool CheckPrimaryErrorWithoutNotificationCompletes() {
     return false;
   }
 
-  return Check(!result->has_value(), "unconnected send zerocopy unexpectedly succeeded") &&
+  return Check(!result->HasValue(), "unconnected send zerocopy unexpectedly succeeded") &&
          Check(alyrn::uring::detail::LoopAccess::InflightCount(loop) == 0,
                "unconnected send zerocopy retained an inflight request");
 }
@@ -312,7 +312,7 @@ bool CheckZeroCopyWriteIntegrity() {
   }
 
   auto pair = MakeTcpPair();
-  if (!pair.has_value()) {
+  if (!pair.HasValue()) {
     std::cout << "FAIL: TCP pair failed: " << pair.Error().message() << '\n';
     return false;
   }
@@ -341,7 +341,7 @@ bool CheckZeroCopyWriteIntegrity() {
     if (!DriveUntilResult(loop, result, "zero-copy Write")) {
       return false;
     }
-    if (!result->has_value()) {
+    if (!result->HasValue()) {
       if (IsEnvironmentSkip(result->Error())) {
         std::cout << "SKIP: send zerocopy unsupported: " << result->Error().message() << '\n';
         return true;

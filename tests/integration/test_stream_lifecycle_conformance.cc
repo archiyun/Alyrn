@@ -170,7 +170,7 @@ struct UringHarness {
     alyrn::uring::Options options;
     options.entries = 32;
     auto initialized = loop.Init(options);
-    if (initialized.has_value()) {
+    if (initialized.HasValue()) {
       return true;
     }
     init_error = initialized.Error();
@@ -188,7 +188,7 @@ struct UringHarness {
 
   static bool PreparePendingWriteFd(int fd) noexcept {
     auto blocking = alyrn::net::SetNonBlocking(fd, false);
-    if (blocking.has_value()) {
+    if (blocking.HasValue()) {
       return true;
     }
     std::cerr << "FAIL [io_uring]: failed to restore blocking socket mode: "
@@ -199,7 +199,7 @@ struct UringHarness {
   static bool RunAfter(Loop& loop, std::chrono::milliseconds delay,
                        std::function<void()> callback) {
     auto timer = loop.RunAfter(delay, std::move(callback));
-    if (!timer.has_value()) {
+    if (!timer.HasValue()) {
       std::cerr << "FAIL [io_uring]: timer setup: " << timer.Error().message() << '\n';
       return false;
     }
@@ -267,7 +267,7 @@ bool CheckPendingReadSuccessContract() {
   const std::string_view actual(reinterpret_cast<const char*>(buffer.data()), kPayload.size());
   bool ok = true;
   ok &= Expect(!observation.timed_out, Harness::Name(), "pending read timed out");
-  ok &= Expect(observation.result.has_value() && observation.result->has_value() &&
+  ok &= Expect(observation.result.has_value() && observation.result->HasValue() &&
                    **observation.result == kPayload.size() && actual == kPayload,
                Harness::Name(), "pending read returned the wrong result");
   ok &=
@@ -341,10 +341,10 @@ bool CheckReadReleaseBeforeContinuationContract() {
                                        kSecondPayload.size());
   bool ok = true;
   ok &= Expect(!observation.timed_out, Harness::Name(), "sequential read timed out");
-  ok &= Expect(observation.first.has_value() && observation.first->has_value() &&
+  ok &= Expect(observation.first.has_value() && observation.first->HasValue() &&
                    **observation.first == kFirstPayload.size() && first_actual == kFirstPayload,
                Harness::Name(), "first sequential read returned the wrong result");
-  ok &= Expect(observation.second.has_value() && observation.second->has_value() &&
+  ok &= Expect(observation.second.has_value() && observation.second->HasValue() &&
                    **observation.second == kSecondPayload.size() && second_actual == kSecondPayload,
                Harness::Name(),
                "follow-up read observed a stale pending slot instead of the next payload");
@@ -408,7 +408,7 @@ bool CheckPendingOwnedReadSuccessContract() {
 
   bool ok = true;
   ok &= Expect(!observation.timed_out, Harness::Name(), "pending Recv timed out");
-  ok &= Expect(observation.outcome.has_value() && observation.outcome->result.has_value() &&
+  ok &= Expect(observation.outcome.has_value() && observation.outcome->result.HasValue() &&
                    *observation.outcome->result == kPayload.size(),
                Harness::Name(), "pending Recv returned the wrong result");
   ok &= Expect(
@@ -489,10 +489,10 @@ bool CheckReadLaneExclusivityContract() {
 
   bool ok = true;
   ok &= Expect(!observation.timed_out, Harness::Name(), "concurrent read test timed out");
-  ok &= Expect(observation.first.has_value() && observation.first->has_value() &&
+  ok &= Expect(observation.first.has_value() && observation.first->HasValue() &&
                    **observation.first == kPayload.size(),
                Harness::Name(), "first pending read did not complete");
-  ok &= Expect(observation.second.has_value() && !observation.second->has_value() &&
+  ok &= Expect(observation.second.has_value() && !observation.second->HasValue() &&
                    observation.second->Error() == std::errc::device_or_resource_busy,
                Harness::Name(), "second read did not return EBUSY");
   ok &= Expect(observation.first_resume_count == 1 && observation.second_resume_count == 1,
@@ -540,7 +540,7 @@ bool CheckOwnedReadLoopStopContract() {
   Harness::Run(loop);
 
   bool ok = true;
-  ok &= Expect(observation.outcome.has_value() && !observation.outcome->result.has_value() &&
+  ok &= Expect(observation.outcome.has_value() && !observation.outcome->result.HasValue() &&
                    observation.outcome->result.Error() == std::errc::operation_canceled,
                Harness::Name(), "loop stop did not cancel Recv");
   ok &=
@@ -596,10 +596,10 @@ bool CheckIoAfterStopRequestContract() {
 
   Harness::Run(loop);
 
-  return Expect(observation.read.has_value() && !observation.read->has_value() &&
+  return Expect(observation.read.has_value() && !observation.read->HasValue() &&
                     observation.read->Error() == std::errc::operation_canceled,
                 Harness::Name(), "empty read succeeded after loop stop was requested") &&
-         Expect(observation.write.has_value() && !observation.write->has_value() &&
+         Expect(observation.write.has_value() && !observation.write->HasValue() &&
                     observation.write->Error() == std::errc::operation_canceled,
                 Harness::Name(), "empty write succeeded after loop stop was requested") &&
          Expect(observation.resumed_with_scheduler, Harness::Name(),
@@ -666,14 +666,14 @@ bool CheckShutdownContract() {
   const std::string_view actual(reinterpret_cast<const char*>(read_buffer.data()), kReply.size());
 
   bool ok = true;
-  ok &= Expect(observation.first_shutdown.has_value() && observation.first_shutdown->has_value(),
+  ok &= Expect(observation.first_shutdown.has_value() && observation.first_shutdown->HasValue(),
                Harness::Name(), "first Shutdown failed");
-  ok &= Expect(observation.second_shutdown.has_value() && observation.second_shutdown->has_value(),
+  ok &= Expect(observation.second_shutdown.has_value() && observation.second_shutdown->HasValue(),
                Harness::Name(), "Shutdown was not idempotent");
-  ok &= Expect(observation.rejected_write.has_value() && !observation.rejected_write->has_value() &&
+  ok &= Expect(observation.rejected_write.has_value() && !observation.rejected_write->HasValue() &&
                    observation.rejected_write->Error() == std::errc::broken_pipe,
                Harness::Name(), "write after Shutdown did not return EPIPE");
-  ok &= Expect(observation.read.has_value() && observation.read->has_value() &&
+  ok &= Expect(observation.read.has_value() && observation.read->HasValue() &&
                    **observation.read == kReply.size() && actual == kReply,
                Harness::Name(), "read direction did not remain open after Shutdown");
   ok &= Expect(peer_read == 0, Harness::Name(), "peer did not observe write-half EOF");
@@ -741,15 +741,15 @@ bool CheckCloseReadContract() {
   const ssize_t peer_read = ::read(peer.Get(), peer_buffer.data(), peer_buffer.size());
   bool ok = true;
   ok &=
-      Expect(observation.first_close_read.has_value() && observation.first_close_read->has_value(),
+      Expect(observation.first_close_read.has_value() && observation.first_close_read->HasValue(),
              Harness::Name(), "first CloseRead failed");
   ok &= Expect(
-      observation.second_close_read.has_value() && observation.second_close_read->has_value(),
+      observation.second_close_read.has_value() && observation.second_close_read->HasValue(),
       Harness::Name(), "CloseRead was not idempotent");
   ok &= Expect(
-      observation.read.has_value() && observation.read->has_value() && **observation.read == 0,
+      observation.read.has_value() && observation.read->HasValue() && **observation.read == 0,
       Harness::Name(), "read after CloseRead did not return EOF");
-  ok &= Expect(observation.write.has_value() && observation.write->has_value(), Harness::Name(),
+  ok &= Expect(observation.write.has_value() && observation.write->HasValue(), Harness::Name(),
                "write after CloseRead failed");
   ok &= Expect(
       peer_read == static_cast<ssize_t>(kOutgoing.size()) &&
@@ -831,13 +831,13 @@ bool CheckPendingReadCloseReadContract() {
   bool ok = true;
   ok &= Expect(!observation.timed_out, Harness::Name(), "pending-read CloseRead timed out");
   ok &= Expect(observation.rejected_close_read.has_value() &&
-                   !observation.rejected_close_read->has_value() &&
+                   !observation.rejected_close_read->HasValue() &&
                    observation.rejected_close_read->Error() == std::errc::device_or_resource_busy,
                Harness::Name(), "CloseRead did not return EBUSY for a pending read");
   ok &= Expect(
-      observation.read.has_value() && observation.read->has_value() && **observation.read > 0,
+      observation.read.has_value() && observation.read->HasValue() && **observation.read > 0,
       Harness::Name(), "pending read did not complete before CloseRead");
-  ok &= Expect(observation.close_read.has_value() && observation.close_read->has_value(),
+  ok &= Expect(observation.close_read.has_value() && observation.close_read->HasValue(),
                Harness::Name(), "CloseRead failed after the pending read drained");
   return ok;
 }
@@ -918,17 +918,17 @@ bool CheckPendingWriteCloseContract() {
 
   bool ok = true;
   ok &= Expect(!observation.timed_out, Harness::Name(), "pending-write Close timed out");
-  ok &= Expect(observation.write.has_value() && !observation.write->has_value() &&
+  ok &= Expect(observation.write.has_value() && !observation.write->HasValue() &&
                    observation.write->Error() == std::errc::operation_canceled,
                Harness::Name(), "Close did not cancel the pending write");
   ok &=
-      Expect(observation.competing_write.has_value() && !observation.competing_write->has_value() &&
+      Expect(observation.competing_write.has_value() && !observation.competing_write->HasValue() &&
                  observation.competing_write->Error() == std::errc::device_or_resource_busy,
              Harness::Name(), "empty competing write did not return EBUSY");
-  ok &= Expect(observation.shutdown.has_value() && !observation.shutdown->has_value() &&
+  ok &= Expect(observation.shutdown.has_value() && !observation.shutdown->HasValue() &&
                    observation.shutdown->Error() == std::errc::device_or_resource_busy,
                Harness::Name(), "Shutdown did not return EBUSY for a pending write");
-  ok &= Expect(observation.close.has_value() && observation.close->has_value(), Harness::Name(),
+  ok &= Expect(observation.close.has_value() && observation.close->HasValue(), Harness::Name(),
                "Close did not converge after cancelling a pending write");
   ok &= Expect(observation.write_resume_count == 1, Harness::Name(),
                "cancelled write resumed more than once");
@@ -983,17 +983,17 @@ bool CheckClosedStreamContract() {
   Harness::Run(loop);
 
   bool ok = true;
-  ok &= Expect(observation.first_close.has_value() && observation.first_close->has_value(),
+  ok &= Expect(observation.first_close.has_value() && observation.first_close->HasValue(),
                Harness::Name(), "first Close failed");
-  ok &= Expect(observation.second_close.has_value() && observation.second_close->has_value(),
+  ok &= Expect(observation.second_close.has_value() && observation.second_close->HasValue(),
                Harness::Name(), "Close was not idempotent");
-  ok &= Expect(observation.read.has_value() && !observation.read->has_value() &&
+  ok &= Expect(observation.read.has_value() && !observation.read->HasValue() &&
                    observation.read->Error() == std::errc::bad_file_descriptor,
                Harness::Name(), "empty read after Close did not return EBADF");
-  ok &= Expect(observation.write.has_value() && !observation.write->has_value() &&
+  ok &= Expect(observation.write.has_value() && !observation.write->HasValue() &&
                    observation.write->Error() == std::errc::bad_file_descriptor,
                Harness::Name(), "empty write after Close did not return EBADF");
-  ok &= Expect(observation.shutdown.has_value() && !observation.shutdown->has_value() &&
+  ok &= Expect(observation.shutdown.has_value() && !observation.shutdown->HasValue() &&
                    observation.shutdown->Error() == std::errc::bad_file_descriptor,
                Harness::Name(), "Shutdown after Close did not return EBADF");
   ok &= Expect(observation.resumed_with_scheduler, Harness::Name(),
@@ -1068,9 +1068,9 @@ bool CheckPendingReadCloseContract() {
 
   bool ok = true;
   ok &= Expect(!observation.timed_out, Harness::Name(), "pending-read Close timed out");
-  ok &= Expect(observation.close.has_value() && observation.close->has_value(), Harness::Name(),
+  ok &= Expect(observation.close.has_value() && observation.close->HasValue(), Harness::Name(),
                "Close did not converge successfully");
-  ok &= Expect(observation.read.has_value() && !observation.read->has_value() &&
+  ok &= Expect(observation.read.has_value() && !observation.read->HasValue() &&
                    observation.read->Error() == std::errc::operation_canceled,
                Harness::Name(), "pending read did not return ECANCELED");
   ok &= Expect(observation.read_resume_count == 1, Harness::Name(),
@@ -1163,7 +1163,7 @@ bool CheckPendingReadDropContract() {
   bool ok = true;
   ok &= Expect(!observation.timed_out, Harness::Name(), "pending-read drop timed out");
   ok &= Expect(!stream.has_value(), Harness::Name(), "stream was not dropped");
-  ok &= Expect(observation.read.has_value() && !observation.read->has_value() &&
+  ok &= Expect(observation.read.has_value() && !observation.read->HasValue() &&
                    observation.read->Error() == std::errc::operation_canceled,
                Harness::Name(), "pending read did not return ECANCELED after drop");
   ok &= Expect(observation.read_resume_count == 1, Harness::Name(),

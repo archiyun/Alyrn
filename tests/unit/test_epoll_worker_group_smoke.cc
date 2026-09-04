@@ -127,7 +127,7 @@ bool CheckWorkerAcceptAndStop() {
       [&state](alyrn::epoll::detail::WorkerContext& context) {
         auto address = context.listener.LocalAddress();
         std::lock_guard lock{state.mutex};
-        if (!address.has_value()) {
+        if (!address.HasValue()) {
           state.init_failed = true;
         } else {
           state.listen_address = *address;
@@ -140,7 +140,7 @@ bool CheckWorkerAcceptAndStop() {
       });
 
   auto started = worker.Start();
-  if (!started.has_value()) {
+  if (!started.HasValue()) {
     std::cout << "FAIL: Worker::Start failed: " << started.Error().message() << '\n';
     return false;
   }
@@ -156,7 +156,7 @@ bool CheckWorkerAcceptAndStop() {
   }
 
   auto client_fd = ConnectClient(*state.listen_address);
-  if (!client_fd.has_value()) {
+  if (!client_fd.HasValue()) {
     std::cout << "FAIL: client connect failed: " << client_fd.Error().message() << '\n';
     worker.Stop();
     return false;
@@ -177,7 +177,7 @@ bool CheckWorkerAcceptAndStop() {
 
 bool CheckWorkerGroupStartAndStop() {
   auto port = PickFreePort();
-  if (!port.has_value()) {
+  if (!port.HasValue()) {
     std::cout << "FAIL: PickFreePort failed: " << port.Error().message() << '\n';
     return false;
   }
@@ -192,7 +192,7 @@ bool CheckWorkerGroupStartAndStop() {
       [&state](alyrn::epoll::detail::WorkerContext& context) {
         auto address = context.listener.LocalAddress();
         std::lock_guard lock{state.mutex};
-        if (address.has_value()) {
+        if (address.HasValue()) {
           state.listen_addresses.push_back(*address);
         }
         state.init_threads.push_back(std::this_thread::get_id());
@@ -200,7 +200,7 @@ bool CheckWorkerGroupStartAndStop() {
       });
 
   auto started = group.Start();
-  if (!started.has_value()) {
+  if (!started.HasValue()) {
     std::cout << "FAIL: WorkerGroup::Start failed: " << started.Error().message() << '\n';
     return false;
   }
@@ -245,7 +245,7 @@ bool CheckZeroWorkersRejected() {
   options.worker_num = 0;
   alyrn::epoll::detail::WorkerGroup group(alyrn::net::Endpoint(0), options);
   auto result = group.Start();
-  return Check(!result.has_value(), "zero-worker group should be rejected") &&
+  return Check(!result.HasValue(), "zero-worker group should be rejected") &&
          Check(result.Error() == std::errc::invalid_argument,
                "zero-worker group should return EINVAL");
 }

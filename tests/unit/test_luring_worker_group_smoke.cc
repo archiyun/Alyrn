@@ -115,7 +115,7 @@ alyrn::Result<int> ConnectClient(const alyrn::net::Endpoint& address) {
 
 bool CheckWorkerGroupStartStop() {
   auto port = PickFreePort();
-  if (!port.has_value()) {
+  if (!port.HasValue()) {
     if (IsEnvironmentSkip(port.Error())) {
       std::cout << "SKIP: TCP bind unavailable: " << port.Error().message() << '\n';
       return true;
@@ -149,7 +149,7 @@ bool CheckWorkerGroupStartStop() {
                                         });
 
   auto started = group.Start();
-  if (!started.has_value()) {
+  if (!started.HasValue()) {
     if (IsEnvironmentSkip(started.Error())) {
       std::cout << "SKIP: io_uring unavailable: " << started.Error().message() << '\n';
       return true;
@@ -177,7 +177,7 @@ bool CheckWorkerGroupStartStop() {
 
 bool CheckWorkerGroupAcceptCallback() {
   auto port = PickFreePort();
-  if (!port.has_value()) {
+  if (!port.HasValue()) {
     if (IsEnvironmentSkip(port.Error())) {
       std::cout << "SKIP: TCP bind unavailable: " << port.Error().message() << '\n';
       return true;
@@ -212,7 +212,7 @@ bool CheckWorkerGroupAcceptCallback() {
       });
 
   auto started = group.Start();
-  if (!started.has_value()) {
+  if (!started.HasValue()) {
     if (IsEnvironmentSkip(started.Error())) {
       std::cout << "SKIP: io_uring unavailable: " << started.Error().message() << '\n';
       return true;
@@ -222,7 +222,7 @@ bool CheckWorkerGroupAcceptCallback() {
   }
 
   auto client_fd = ConnectClient(listen_addr);
-  if (!client_fd.has_value()) {
+  if (!client_fd.HasValue()) {
     group.Stop();
     if (IsEnvironmentSkip(client_fd.Error())) {
       std::cout << "SKIP: TCP connect unavailable: " << client_fd.Error().message() << '\n';
