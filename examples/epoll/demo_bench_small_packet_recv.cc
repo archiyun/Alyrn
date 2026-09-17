@@ -4,11 +4,13 @@
 // current-thread small-packet benchmark. The server only receives and counts
 // bytes; it does not echo them back.
 //
-// Build:
-//   make build
-// Run:
-//   PACKET=64 CONNECTIONS=16 DURATION_MS=3000 WARMUP_MS=200 \
-//     ./build/debug/examples/epoll/demo_bench_small_packet_epoll
+/*
+Build:
+  make build
+Run:
+  PACKET=64 CONNECTIONS=16 DURATION_MS=3000 WARMUP_MS=200 \
+    ./build/debug/examples/epoll/demo_bench_small_packet_epoll
+*/
 
 #include <arpa/inet.h>
 #include <netinet/in.h>

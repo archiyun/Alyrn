@@ -298,11 +298,14 @@ install(TARGETS ${ALYRN_INSTALL_TARGETS}
 # silently becoming part of the package interface.
 set(ALYRN_PUBLIC_HEADERS
     ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/alyrn.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/channel.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/coro.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/io.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/net.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/result.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/runtime.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/scheduler.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/select.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/spawn.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/task.h
     ${CMAKE_CURRENT_SOURCE_DIR}/include/alyrn/time.h)

@@ -1,5 +1,12 @@
 // SPDX-License-Identifier: MIT
 
+/*
+Build:
+  cmake -S . -B build/debug \
+    -DCMAKE_BUILD_TYPE=Debug \
+    -DBUILD_EXAMPLES=ON
+*/
+
 #include <iostream>
 #include <optional>
 #include <string>
