@@ -28,6 +28,8 @@ uring 原生回显），外加一组误用探针。
 | F7 | 错误传播样板多；异常策略没有写进文档 | P2 | 小 | — |
 | F8 | 若干易用性小项 | P3 | 小 | — |
 | F9 | 文档承诺了不存在的 mailbox / `Post` / MPSC 队列 | P2 | 小 | F3 |
+| F10 | uring `RecvSource` 在队列满时丢弃内核已收下的数据（落地时发现） | P0 | 中 | — |
+| F11 | uring `AcceptSource` 被单个重置连接终止，队列满时关闭已接受的连接（落地时发现） | P0 | 中 | — |
 
 P0：正常使用公开 API 就会崩溃。P1：常见场景缺能力或踩性能坑。P2：理解或使用上的摩擦。
 P3：打磨。
@@ -375,10 +377,10 @@ KV 服务一次读到流水线化的 `SET` + `GET`，分两次 `Write` 回复；
 
 **清单**
 
-- [ ] 1：Channel 任意容量，同步更新 `docs/design/zh-CN/coro/channel.md`。
-- [ ] 3：`net::AsBytes`。
-- [ ] 5：RecvSource 示例。
-- [ ] 6：`uring::ListenerOptions` 别名。
+- [x] 1：Channel 任意容量，同步更新 `docs/design/zh-CN/coro/channel.md`。
+- [x] 3：`net::AsBytes`。
+- [x] 5：RecvSource 示例。
+- [x] 6：`uring::ListenerOptions` 别名。
 
 ## F9 文档与代码不一致
 
@@ -400,10 +402,66 @@ KV 服务一次读到流水线化的 `SET` + `GET`，分两次 `Write` 回复；
 
 - [ ] 更新上述文档与 `mkdocs.yml`。
 
+## F10 uring RecvSource 在队列满时丢弃数据（落地时发现）
+
+**现象：** 为 F8-5 写 `RecvSource` 示例并压测时，40 个并发连接各发约 66KB，有 24–39 个连接收到的
+回显被截断：客户端收到的是正确的前缀，只缺末尾几百字节；服务端没有任何读写错误，每个连接只收到
+16 个事件（16 × 4096 字节）就收到了 EOF。只有在消费者两次 `Next()` 之间还在做别的事（例如等待
+`Write`）时出现；拷贝后立即释放租约、单连接、30KB 以下都不丢。原始提交 `6a72f22` 上同样复现。
+
+**根因：** `RecvSource::OnCompletion`（`src/uring/recv_source.cc`）在有界队列已满时直接
+`ReleaseSlotLease(buffer_id)` 并请求暂停。但多发 recv 共享 loop 级的 provided-buffer ring，
+暂停（取消请求）生效之前，内核已经把更多数据从 socket 读进了缓冲区并投递了 CQE。这些字节已经
+离开 socket，归还缓冲区等于永久丢失，随后的 EOF 让流看起来正常结束。
+
+**方案：** 队列满或已有溢出时，把这次完成的数据拷进按到达顺序排列的溢出队列（位于有界队列之后），
+`Next()` 依次交付有界队列、溢出队列，最后才交付 EOF 或错误；溢出未取完之前不恢复接收，因此溢出
+不会无限增长，其上限是内核在缓冲区耗尽前能完成的接收数。溢出交付的租约持有自己的内存，不引用
+source 的存储。
+
+**清单**
+
+- [x] `RecvSource` 增加溢出队列，`Next()` 按到达顺序交付，溢出未取完不恢复接收。
+- [x] `test_luring_recv_source_smoke.cc`：数据与 EOF 先写入 socketpair，`event_capacity = 1`、
+      消费者每次取完先睡 1ms，要求 8192 字节全部按序收到（修复前只收到 1280 字节）。
+- [x] ASan/UBSan 下运行 `RecvSource` 测试；用 100 连接 × 200KB、10 连接 × 1MB 等负载压测无损坏。
+
+## F11 uring AcceptSource 被单个连接拖垮（落地时发现）
+
+**现象：** 同一个示例在客户端"发送后以 RST 断开"之后不再接受任何新连接。uring `Runtime`
+（`Runtime::Create<runtime::Uring>` 默认走多发 accept）同样中招：20 个"连上即重置"的客户端之后，
+0/5 个正常客户端能得到服务；epoll `Runtime` 为 5/5。任何客户端都能借此让 uring 服务器停止接受
+连接。
+
+**根因**（`src/uring/listener.cc` 的 `AcceptSource::OnCompletion`）：
+
+- 多发 accept 拿不到对端地址，`MakeStream` 用 `getpeername()` 补取；对端在内核完成 accept 之后、
+  用户态处理 CQE 之前重置时，它返回 `ENOTCONN`。代码随即 `RequestBackendStop(...)`，一个连接的
+  失败终止了整个 source；`MultishotAcceptLoop`（`src/uring/worker.cc`）遇到错误就退出。
+- 队列满时 `::close(cqe_res)`：与 F10 同类，暂停生效前内核已经接受的连接被直接关闭。
+- epoll 的 `AcceptSource` 对 `accept4` 或 `ApplyTcpOptions` 的单连接错误同样调用 `Fail(error)`。
+
+**方案：**
+
+- 在 `net/detail/socket.h` 增加 `IsAcceptedConnectionError(errno)`：`accept(2)` 手册要求"像
+  `EAGAIN` 一样重试"的那组网络错误，外加 `ECONNABORTED`、`ECONNRESET`、`ENOTCONN` 等。
+- uring：`MakeStream` 失败只跳过该连接；多发请求因单连接错误结束时重新挂上而不是停止；队列满时
+  把连接放进溢出队列，按到达顺序在有界队列之后交付，溢出未取完之前不恢复接收。
+- epoll：单连接错误时跳过并继续排空；`ApplyTcpOptions` 失败按该连接中止处理。
+
+**清单**
+
+- [x] 共享的错误分类；uring 跳过失败连接并保留溢出连接；epoll 跳过失败连接。
+- [x] `test_luring_multishot_accept_smoke.cc`：先挂上 accept，5 个客户端连上即重置，处理完之后再连入
+      正常客户端，要求 source 仍在工作并接受它（修复前以 `ENOTCONN` 终止）；8 个连接先进入 backlog、
+      `event_capacity = 1`、消费者忙碌，要求 8 个连接全部交付（修复前只交付 2 个）。
+- [x] 现有 `FillQueueThenStop` 改为在 `Stop()` 之后取完所有已接受的连接，不再依赖"超出队列的连接被
+      关闭"的旧行为。
+
 ## 落地顺序
 
 1. **第一批：** F1、F4、F5、F6、F7（README 错误模型）。
-2. **第二批：** F2、F7（宏与单子操作）、F8。
+2. **第二批：** F2、F7（宏与单子操作）、F8，以及落地时发现的 F10、F11。
 3. **第三批：** F3，随后 F9。
 
 每一批完成后运行 epoll 与 uring 两套测试，并在只包含已提交内容的独立 worktree 中构建、测试，
