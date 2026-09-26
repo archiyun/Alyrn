@@ -245,6 +245,10 @@ target_link_libraries(coro_smoke_test PRIVATE alyrn_coro alyrn_foundation)
 
 add_test(NAME coro_smoke_test COMMAND coro_smoke_test)
 
+add_executable(result_smoke_test unit/test_result_smoke.cc)
+target_link_libraries(result_smoke_test PRIVATE alyrn_coro alyrn_foundation)
+add_test(NAME result_smoke_test COMMAND result_smoke_test)
+
 add_executable(coro_channel_smoke_test
     unit/test_coro_channel_smoke.cc
 )

@@ -190,6 +190,17 @@ This native path makes ownership of each ring, buffer lease, and operation lifec
 
 Fallible Alyrn operations return `Result<T>`, a thin wrapper over `std::expected<T, std::error_code>`. Test it with `HasValue()` or `operator bool`, read `*result` or `Error()`, and propagate a failure with `co_return std::unexpected(result.Error())`. `Value()` and `Expect()` terminate the process on an error value, like Rust's `unwrap`; keep them for invariants, not for I/O results.
 
+`ALYRN_CO_TRY` and `ALYRN_CO_TRY_ASSIGN` write that propagation for you inside coroutines (`ALYRN_TRY` / `ALYRN_TRY_ASSIGN` in ordinary functions), and `Result` offers `AndThen`, `Transform`, `OrElse`, and `TransformError` like `std::expected`:
+
+```cpp
+auto EchoOnce(cp::epoll::Stream& stream) -> cp::Task<cp::Result<void>> {
+  std::array<std::byte, 4096> buffer{};
+  ALYRN_CO_TRY_ASSIGN(auto n, co_await stream.Read(buffer));
+  ALYRN_CO_TRY(co_await stream.Write(std::span<const std::byte>(buffer.data(), n)));
+  co_return cp::Result<void>{};
+}
+```
+
 Alyrn does not use exceptions. An exception that escapes a `Task`, `DetachedTask`, spawned root, or `SyncWait` coroutine calls `std::terminate`. Catch exceptions from throwing code inside your own frames, or prefer non-throwing APIs, such as `std::from_chars` instead of `std::stoi`.
 
 ## Build

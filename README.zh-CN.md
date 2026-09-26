@@ -183,6 +183,17 @@ auto initialized = loop.Init(options);
 
 可能失败的 Alyrn 操作返回 `Result<T>`，它是 `std::expected<T, std::error_code>` 的薄封装。用 `HasValue()` 或 `operator bool` 判断，用 `*result` 或 `Error()` 取值，用 `co_return std::unexpected(result.Error())` 向上传播错误。`Value()` 与 `Expect()` 遇到错误值会终止进程，类似 Rust 的 `unwrap`；只用于不变量，不要用于 I/O 结果。
 
+在协程里可以用 `ALYRN_CO_TRY` 与 `ALYRN_CO_TRY_ASSIGN` 代写这段传播（普通函数用 `ALYRN_TRY` / `ALYRN_TRY_ASSIGN`）；`Result` 也提供与 `std::expected` 对应的 `AndThen`、`Transform`、`OrElse`、`TransformError`：
+
+```cpp
+auto EchoOnce(cp::epoll::Stream& stream) -> cp::Task<cp::Result<void>> {
+  std::array<std::byte, 4096> buffer{};
+  ALYRN_CO_TRY_ASSIGN(auto n, co_await stream.Read(buffer));
+  ALYRN_CO_TRY(co_await stream.Write(std::span<const std::byte>(buffer.data(), n)));
+  co_return cp::Result<void>{};
+}
+```
+
 Alyrn 不使用异常。从 `Task`、`DetachedTask`、`Spawn` 根任务或 `SyncWait` 协程中逃逸的异常会调用 `std::terminate`。会抛异常的代码请在自己的栈帧里捕获，或优先使用不抛异常的接口，例如用 `std::from_chars` 代替 `std::stoi`。
 
 ## 运行容器示例

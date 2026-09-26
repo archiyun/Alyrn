@@ -352,7 +352,7 @@ KV 服务一次读到流水线化的 `SET` + `GET`，分两次 `Write` 回复；
 
 **清单**
 
-- [ ] 宏与 `Result` 的单子操作，单元测试覆盖 `Result<void>`、`Result<T>` 与只可移动的 `T`。
+- [x] 宏与 `Result` 的单子操作，单元测试覆盖 `Result<void>`、`Result<T>` 与只可移动的 `T`。
 - [x] README 错误模型一节。
 
 ## F8 易用性小项
