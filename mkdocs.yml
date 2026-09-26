@@ -56,10 +56,6 @@ nav:
           - 构建与安装: packaging.md
           - Runtime Builder: design/zh-CN/network/runtime-builder.md
     - 架构:
-          - 协程与调度:
-                - 协程分层: adr/0008-coroutine-layering.md
-                - 后端无关 I/O contract: adr/0009-backend-neutral-io-contract.md
-                - Runtime 组合根: adr/0010-runtime-composition-root.md
           - 网络语义:
                 - 概览: design/zh-CN/network/index.md
                 - 生命周期精化协程 I/O: design/zh-CN/network/lifecycle-refined-coroutine-io.md
@@ -90,7 +86,6 @@ nav:
                 - Intrusive 模型与契约: design/zh-CN/datastructure/intrusive-model.md
           - ADR:
                 - intrusive rbtree timer: adr/0001-intrusive-rbtree-timer.md
-                - timer index strategy: adr/0011-timer-index-strategy.md
     - 验证与发布:
           - 基准:
                 - 2026-08-10 C++ 网络库基线: benchmark/network-libraries-20260810.md
