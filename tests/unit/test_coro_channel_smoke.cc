@@ -309,9 +309,24 @@ void TriggerCloseTwice() {
   task.Wait();
 }
 
-void TriggerInvalidCapacity() {
-  DrainScheduler scheduler;
-  Channel<int> channel{scheduler, 3};
+Task<void> OddCapacityCase(Channel<int>& channel) {
+  // Three rounds over a capacity-3 channel: the second and third wrap around
+  // the power-of-two ring storage, which must stay invisible to callers.
+  for (int round = 0; round < 3; ++round) {
+    for (int i = 0; i < 3; ++i) {
+      ALYRN_CHECK(channel.TrySend(round * 10 + i), "send within an odd capacity failed");
+    }
+    ALYRN_CHECK(!channel.TrySend(99), "channel buffered a value beyond its capacity");
+    ALYRN_CHECK(channel.Size() == 3 && channel.Capacity() == 3,
+                "odd-capacity channel reported the wrong size");
+    for (int i = 0; i < 3; ++i) {
+      std::optional<int> value;
+      ALYRN_CHECK(channel.TryReceive(value) && value == round * 10 + i,
+                  "odd-capacity channel lost FIFO order");
+    }
+  }
+  channel.Close();
+  co_return;
 }
 
 void TriggerCloseWithPendingSender() {
@@ -333,8 +348,13 @@ bool TestClosePanics() {
                           "closing with a pending sender must panic");
 }
 
-bool TestCapacityContract() {
-  return ExpectChildAbort(&TriggerInvalidCapacity, "non-power-of-two channel capacity must panic");
+bool TestArbitraryCapacity() {
+  DrainScheduler scheduler;
+  Channel<int> channel{scheduler, 3};
+  auto task = Spawn(scheduler, OddCapacityCase(channel));
+  scheduler.Drain();
+  task.Wait();
+  return true;
 }
 
 void DestroyChannelWithWaiter() {
@@ -368,7 +388,7 @@ int main() {
                  ExpectChildAbort(&TriggerTrySendOnClosed,
                                   "TrySend on closed channel must panic") &&
                  TestBufferedAndClose() && TestUnbufferedRendezvous() && TestCloseWakesReceiver() &&
-                 TestClosePanics() && TestCapacityContract() &&
+                 TestClosePanics() && TestArbitraryCapacity() &&
                  TestPendingWaiterDestructionFailsFast()
              ? 0
              : 1;

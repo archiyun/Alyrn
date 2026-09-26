@@ -5,6 +5,7 @@
 #include <coroutine>
 #include <cstddef>
 #include <expected>
+#include <limits>
 #include <optional>
 #include <type_traits>
 #include <utility>
@@ -73,8 +74,8 @@ class SelectReceiveRegistration;
  * a closed and drained channel clears it. `Result<void>` still reports
  * operation errors separately from the closed-channel state.
  *
- * `capacity` must be zero or a power of two. Zero selects an unbuffered
- * channel.
+ * `capacity` is the number of values the channel buffers; zero selects an
+ * unbuffered channel.
  */
 template <class T>
 class Channel final {
@@ -88,7 +89,10 @@ public:
   friend class detail::SelectReceiveRegistration<T>;
 
   explicit Channel(Scheduler& scheduler, std::size_t capacity)
-      : scheduler_(&scheduler), buffer_(ValidateCapacity(capacity)), capacity_(capacity) {}
+      : scheduler_(&scheduler),
+        buffer_(RingSize(capacity)),
+        capacity_(capacity),
+        mask_(buffer_.empty() ? 0 : buffer_.size() - 1) {}
 
   ~Channel() {
     // Channel has an explicit lifetime contract: the owner must Close() it
@@ -357,10 +361,13 @@ private:
   using ReceiveQueue = ::alyrn::detail::IntrusiveQueue<detail::ChannelReceiveWaiter<T>,
                                                        detail::ChannelReceiveTag<T>>;
 
-  static std::size_t ValidateCapacity(std::size_t capacity) noexcept {
-    ALYRN_CHECK(capacity == 0 || std::has_single_bit(capacity),
-                "Channel capacity must be zero or a power of two");
-    return capacity;
+  // The ring is rounded up to a power of two so indices wrap with a mask; the
+  // logical capacity stays exactly what the caller asked for.
+  static std::size_t RingSize(std::size_t capacity) noexcept {
+    constexpr std::size_t kMaxCapacity = std::size_t{1}
+                                         << (std::numeric_limits<std::size_t>::digits - 1);
+    ALYRN_CHECK(capacity <= kMaxCapacity, "Channel capacity is too large");
+    return capacity == 0 ? 0 : std::bit_ceil(capacity);
   }
 
   void CheckOwner() const noexcept {
@@ -371,7 +378,7 @@ private:
   void PushBuffer(T value) noexcept {
     ALYRN_CHECK(size_ != capacity_, "Channel buffer overflow");
     buffer_[tail_].emplace(std::move(value));
-    tail_ = (tail_ + 1) & (capacity_ - 1);
+    tail_ = (tail_ + 1) & mask_;
     ++size_;
   }
 
@@ -381,7 +388,7 @@ private:
     ALYRN_CHECK(slot.has_value(), "Channel buffer slot is empty");
     T value = std::move(*slot);
     slot.reset();
-    head_ = (head_ + 1) & (capacity_ - 1);
+    head_ = (head_ + 1) & mask_;
     --size_;
     return value;
   }
@@ -482,6 +489,7 @@ private:
   ReceiveQueue receivers_;
   std::vector<std::optional<T>> buffer_;
   std::size_t capacity_{0};
+  std::size_t mask_{0};
   std::size_t head_{0};
   std::size_t tail_{0};
   std::size_t size_{0};

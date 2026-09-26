@@ -94,8 +94,9 @@ const std::size_t selected = co_await Select(
 清空对应 `optional`；send closed Channel 被选中时触发 panic。完整可运行示例见
 `examples/coro_select.cc`。
 
-构造函数的 `capacity` 必须为 `0` 或 `2` 的幂（例如 `1`、`2`、`4`、`8`）。`0` 表示无缓冲
-channel；传入其他容量会在构造时触发 fail-fast。
+构造函数的 `capacity` 是 channel 可缓冲的 value 数量，可以是任意值；`0` 表示无缓冲 channel。
+内部环形存储向上取整为 `2` 的幂，以便用掩码回绕下标，但逻辑容量严格等于传入值：
+容量为 `3` 的 channel 恰好缓冲 `3` 个 value。
 
 容量为零时，`<<` 和 `>>` 只会直接交接 value；容量大于零时，buffer 满会使 `<<` 等待，
 buffer 空会使 `>>` 等待。接收成功后，`received` 保存 value；channel 已关闭且 buffer
