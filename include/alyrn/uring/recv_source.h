@@ -6,7 +6,9 @@
 #include <coroutine>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -143,6 +145,16 @@ private:
     bool kernel_done{false};
   };
 
+  // A completion that arrived after the bounded queue filled, before the
+  // pause reached the kernel. Its bytes have already left the socket, so they
+  // are kept in arrival order behind the bounded queue. The shared ring bounds
+  // how many such completions can arrive before the kernel runs out of
+  // buffers and ends the multishot request.
+  struct OverflowPayload {
+    std::unique_ptr<std::byte[]> data;
+    std::size_t size{0};
+  };
+
   RecvSource(Loop* loop, int fd, net::detail::RecvSourceStateMachine state, std::size_t buffer_size,
              detail::ProvidedBufferPool* buffer_pool, std::vector<PendingEvent> event_storage,
              std::vector<SlotState> slot_storage, std::vector<std::byte> queued_payloads,
@@ -177,11 +189,13 @@ private:
   net::BufferLease MakeQueuedLease(std::uint32_t copy_slot, std::size_t size) noexcept;
   std::uint32_t CopyAndReleasePoolSlot(std::uint32_t buffer_id, std::size_t size) noexcept;
   void ReturnQueuedPayload(std::uint32_t copy_slot) noexcept;
+  void KeepOverflow(std::uint32_t buffer_id, std::size_t size) noexcept;
   std::uint32_t TakeCopySlot() noexcept;
   void FreeCopySlot(std::uint32_t copy_slot) noexcept;
 
   static void ValidateMovable(const RecvSource& source) noexcept;
   static void ReclaimQueuedPayload(void* context, std::uint32_t copy_slot) noexcept;
+  static void ReclaimOverflowPayload(void* context, std::uint32_t buffer_id) noexcept;
 
   Loop* loop_{nullptr};
   int fd_{-1};
@@ -192,6 +206,7 @@ private:
   std::vector<std::uint32_t> copy_free_;
   std::size_t event_head_{0};
   std::size_t event_count_{0};
+  std::deque<OverflowPayload> overflow_;
   std::size_t active_slot_count_{0};
   std::optional<Error> terminal_error_;
 

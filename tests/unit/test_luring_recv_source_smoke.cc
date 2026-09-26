@@ -629,6 +629,109 @@ bool CheckQueuePauseThenRearm() {
          observation.low_water_consumed && observation.resumed_received && observation.stopped;
 }
 
+struct DrainObservation {
+  std::string received;
+  bool eof{false};
+  bool done{false};
+  std::optional<Error> error;
+};
+
+// Sleeps after every event, like a consumer that writes each chunk before it
+// asks for the next one, so later completions find the queue full.
+DetachedTask DrainUntilEof(Loop* loop, RecvSource* source, DrainObservation* observation) {
+  for (;;) {
+    auto next = co_await source->Next();
+    if (!next.HasValue()) {
+      observation->error = next.Error();
+      break;
+    }
+    if (!next->has_value()) {
+      observation->eof = true;
+      break;
+    }
+    const auto bytes = (*next)->buffer.Bytes();
+    observation->received.append(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+    (void)co_await alyrn::uring::SleepFor(*loop, std::chrono::milliseconds(1));
+  }
+  auto stopped = co_await source->Stop();
+  if (!stopped.HasValue() && !observation->error.has_value()) {
+    observation->error = stopped.Error();
+  }
+  observation->done = true;
+}
+
+// The shared provided-buffer ring lets the kernel complete more multishot
+// receives than the source can queue before its pause lands. Those bytes have
+// already left the socket, so the source must keep them rather than drop them.
+bool CheckOverflowKeepsEveryByte() {
+  Loop loop;
+  switch (InitLoop(loop, 64, 256)) {
+    case LoopInitStatus::kReady:
+      break;
+    case LoopInitStatus::kSkip:
+      return true;
+    case LoopInitStatus::kFail:
+      return false;
+  }
+
+  auto pair = MakeSocketPair();
+  if (!pair.HasValue()) {
+    std::cout << "FAIL: overflow socketpair failed: " << pair.Error().message() << '\n';
+    return false;
+  }
+  auto receiver = std::move(pair->first);
+  auto sender = std::move(pair->second);
+
+  // Everything, including EOF, is readable before the first receive is armed.
+  std::string payload(8192, '\0');
+  for (std::size_t i = 0; i < payload.size(); ++i) {
+    payload[i] = static_cast<char>('a' + i % 26);
+  }
+  if (::send(sender.Get(), payload.data(), payload.size(), MSG_NOSIGNAL) !=
+      static_cast<ssize_t>(payload.size())) {
+    std::cout << "FAIL: overflow send failed: " << alyrn::CurrentErrno().message() << '\n';
+    return false;
+  }
+  (void)::shutdown(sender.Get(), SHUT_WR);
+
+  RecvSourceOptions options;
+  options.source.pending_depth = 1;
+  options.source.event_capacity = 1;
+  options.source.buffer_capacity = 8;
+  options.buffer_size = 256;
+
+  auto source_result = RecvSource::Create(&loop, receiver.Get(), options);
+  if (!source_result.HasValue()) {
+    if (IsEnvironmentSkip(source_result.Error())) {
+      std::cout << "SKIP: provided buffer ring unavailable: " << source_result.Error().message()
+                << '\n';
+      return true;
+    }
+    std::cout << "FAIL: overflow RecvSource creation failed: " << source_result.Error().message()
+              << '\n';
+    return false;
+  }
+  auto source = std::move(*source_result);
+
+  DrainObservation observation;
+  alyrn::coro::SpawnDetach(loop, DrainUntilEof(&loop, &source, &observation));
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
+  if (!PumpUntil(loop, [&] { return observation.done; }, 1024)) {
+    std::cout << "FAIL: overflow drain did not finish\n";
+    return false;
+  }
+  if (observation.error.has_value()) {
+    std::cout << "FAIL: overflow drain failed: " << observation.error->message() << '\n';
+    return false;
+  }
+  if (!observation.eof || observation.received != payload) {
+    std::cout << "FAIL: overflow lost data: received " << observation.received.size() << " of "
+              << payload.size() << " bytes\n";
+    return false;
+  }
+  return true;
+}
+
 }  // namespace
 
 int main() {
@@ -645,6 +748,9 @@ int main() {
     return 1;
   }
   if (!CheckQueuePauseThenRearm()) {
+    return 1;
+  }
+  if (!CheckOverflowKeepsEveryByte()) {
     return 1;
   }
   std::cout << "luring recv source/BufferLease smoke: PASS\n";

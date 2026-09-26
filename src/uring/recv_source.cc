@@ -9,6 +9,7 @@
 #include <cstring>
 #include <expected>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -250,6 +251,7 @@ RecvSource::RecvSource(RecvSource&& other) noexcept
       copy_free_(std::move(other.copy_free_)),
       event_head_(std::exchange(other.event_head_, 0)),
       event_count_(std::exchange(other.event_count_, 0)),
+      overflow_(std::move(other.overflow_)),
       active_slot_count_(std::exchange(other.active_slot_count_, 0)),
       terminal_error_(other.terminal_error_),
       recv_op_(this),
@@ -276,6 +278,7 @@ RecvSource& RecvSource::operator=(RecvSource&& other) noexcept {
   copy_free_ = std::move(other.copy_free_);
   event_head_ = std::exchange(other.event_head_, 0);
   event_count_ = std::exchange(other.event_count_, 0);
+  overflow_ = std::move(other.overflow_);
   active_slot_count_ = std::exchange(other.active_slot_count_, 0);
   terminal_error_ = other.terminal_error_;
   buffer_size_ = std::exchange(other.buffer_size_, 0);
@@ -391,8 +394,10 @@ void RecvSource::RequestBackendPause() noexcept {
 }
 
 void RecvSource::MaybeResume() noexcept {
+  // Overflowed completions must be consumed before new data may arrive, or
+  // the overflow would grow without bound and lose its arrival order.
   if (terminal_error_.has_value() || loop_ == nullptr || !loop_->Initialized() ||
-      cancel_submitted_) {
+      cancel_submitted_ || !overflow_.empty()) {
     return;
   }
 
@@ -445,9 +450,12 @@ CompletionDisposition RecvSource::OnCompletion(CompletionEvent event) noexcept {
         }
 
         const bool direct_delivery = pending_next_ != nullptr && event_count_ == 0 &&
+                                     overflow_.empty() &&
                                      state_.State() == RecvSourceState::kActive;
-        if (!direct_delivery && !state_.CanQueueEvent()) {
-          ReleaseSlotLease(buffer_id);
+        if (!direct_delivery && (!overflow_.empty() || !state_.CanQueueEvent())) {
+          // The kernel completed this receive before the pause landed. Its
+          // bytes are gone from the socket: keep them, never drop them.
+          KeepOverflow(buffer_id, static_cast<std::size_t>(cqe_result));
           RequestBackendPause();
         } else {
           auto recorded = state_.CompleteMultishotEvent(
@@ -589,6 +597,20 @@ bool RecvSource::TryTakeNext(NextResult& result) noexcept {
     return true;
   }
 
+  // Overflowed completions arrived after everything in the bounded queue and
+  // before any terminal result, so they are delivered in between.
+  if (!overflow_.empty()) {
+    OverflowPayload payload = std::move(overflow_.front());
+    overflow_.pop_front();
+    std::byte* data = payload.data.release();
+    Event event{.buffer = net::BufferLease{data, payload.size, 0, data, &ReclaimOverflowPayload}};
+    result = NextResult(std::in_place, std::move(event));
+    if (overflow_.empty() && state_.State() == RecvSourceState::kPaused) {
+      MaybeResume();
+    }
+    return true;
+  }
+
   if (state_.State() == RecvSourceState::kTerminal) {
     if (terminal_error_.has_value()) {
       result = std::unexpected(*terminal_error_);
@@ -723,6 +745,23 @@ void RecvSource::ReturnQueuedPayload(std::uint32_t copy_slot) noexcept {
 
 void RecvSource::ReclaimQueuedPayload(void* context, std::uint32_t copy_slot) noexcept {
   static_cast<RecvSource*>(context)->ReturnQueuedPayload(copy_slot);
+}
+
+void RecvSource::KeepOverflow(std::uint32_t buffer_id, std::size_t size) noexcept {
+  ALYRN_CHECK(buffer_pool_ != nullptr, "RecvSource missing provided buffer pool");
+  auto* src = buffer_pool_->slot(buffer_id);
+  ALYRN_CHECK(src != nullptr && size <= buffer_size_,
+              "RecvSource overflow exceeds provided buffer");
+  OverflowPayload payload{.data = std::make_unique_for_overwrite<std::byte[]>(size), .size = size};
+  std::memcpy(payload.data.get(), src, size);
+  ReleaseSlotLease(buffer_id);
+  overflow_.push_back(std::move(payload));
+}
+
+// An overflow lease owns its heap copy; it references no source storage, so
+// it may outlive the source.
+void RecvSource::ReclaimOverflowPayload(void* context, std::uint32_t) noexcept {
+  delete[] static_cast<std::byte*>(context);
 }
 
 Result<void> RecvSource::RequestStop() noexcept {
