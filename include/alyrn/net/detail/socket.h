@@ -82,6 +82,35 @@ inline Result<void> ConfigureNonBlockingCloseOnExec(int fd) noexcept {
   return SetDescriptorFlag(fd, F_GETFD, F_SETFD, FD_CLOEXEC, true);
 }
 
+// Errors that belong to one pending connection rather than to the listening
+// socket. Linux passes network errors already pending on the new socket
+// through accept(2), and a peer may reset a connection before it is accepted
+// or configured. A listener skips such a connection and keeps accepting.
+[[nodiscard]]
+constexpr bool IsAcceptedConnectionError(int error) noexcept {
+  switch (error) {
+    case ECONNABORTED:
+    case ECONNRESET:
+    case ENOTCONN:
+    case EPROTO:
+    case EPERM:
+    case ETIMEDOUT:
+    case ENETDOWN:
+    case ENETUNREACH:
+    case ENOPROTOOPT:
+    case EHOSTUNREACH:
+#if defined(EHOSTDOWN)
+    case EHOSTDOWN:
+#endif
+#if defined(ENONET)
+    case ENONET:
+#endif
+      return true;
+    default:
+      return false;
+  }
+}
+
 }  // namespace detail
 
 // Creates a non-blocking TCP socket with close-on-exec enabled. Linux keeps

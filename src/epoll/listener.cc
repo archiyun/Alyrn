@@ -380,6 +380,14 @@ void AcceptSource::OnReady() noexcept {
       if (IsWouldBlock(error.value())) {
         break;
       }
+      if (net::detail::IsAcceptedConnectionError(error.value())) {
+        // One pending connection failed, for example because its peer reset
+        // it; the listener is fine, so skip it and keep draining.
+        if (!state_.TryArm()) {
+          break;
+        }
+        continue;
+      }
       Fail(error);
       return;
     }
@@ -521,7 +529,9 @@ Result<Stream> AcceptSource::TryAccept() noexcept {
   auto configured = net::ApplyTcpOptions(fd, listener_->tcp_options_);
   if (!configured.HasValue()) {
     (void)::close(fd);
-    return std::unexpected(configured.Error());
+    // Only this connection could not be configured; report it as aborted so
+    // the source skips it instead of failing the listener.
+    return std::unexpected(Errno(ECONNABORTED));
   }
   return Stream(listener_->loop_, fd, peer_addr, listener_->stream_options_);
 }

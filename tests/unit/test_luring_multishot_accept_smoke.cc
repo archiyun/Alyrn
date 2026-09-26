@@ -13,6 +13,7 @@
 #include <iostream>
 #include <optional>
 #include <system_error>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -104,6 +105,20 @@ struct CloseObservation {
   bool done{false};
 };
 
+struct ResetObservation {
+  std::uint16_t wanted_port{0};
+  bool found{false};
+  bool done{false};
+  std::optional<Error> error;
+};
+
+struct BurstObservation {
+  int wanted{0};
+  int accepted{0};
+  bool done{false};
+  std::optional<Error> error;
+};
+
 struct BackpressureObservation {
   bool first_received{false};
   bool queued_received{false};
@@ -185,6 +200,26 @@ bool PumpUntil(Loop& loop, Predicate&& predicate, int max_iterations = 64) {
       return false;
     }
     alyrn::uring::detail::LoopAccess::RunReady(loop);
+  }
+  return predicate();
+}
+
+// Like PumpUntil, but polls without blocking so a scenario that stalls (for
+// example a source that stopped with nothing in flight) fails instead of
+// waiting forever for a completion.
+template <typename Predicate>
+bool PumpFor(Loop& loop, Predicate&& predicate, std::chrono::milliseconds budget) {
+  const auto deadline = std::chrono::steady_clock::now() + budget;
+  while (!predicate() && std::chrono::steady_clock::now() < deadline) {
+    auto completed = alyrn::uring::detail::LoopAccess::PollCompletions(loop);
+    if (!completed.HasValue()) {
+      std::cout << "FAIL: polling for CQEs failed: " << completed.Error().message() << '\n';
+      return false;
+    }
+    alyrn::uring::detail::LoopAccess::RunReady(loop);
+    if (*completed == 0) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
   }
   return predicate();
 }
@@ -564,26 +599,19 @@ alyrn::coro::DetachedTask FillQueueThenStop(
     co_return;
   }
 
-  auto queued = co_await source->Next();
-  if (!queued.HasValue()) {
-    observation->error = queued.Error();
-    observation->done = true;
-    co_return;
-  }
-  if (!queued->has_value()) {
-    observation->error = alyrn::Errno(ECONNABORTED);
-    observation->done = true;
-    co_return;
-  }
-  observation->queued_received = true;
-
-  auto terminal = co_await source->Next();
-  if (!terminal.HasValue()) {
-    observation->error = terminal.Error();
-  } else if (!terminal->has_value()) {
-    observation->normal_end = true;
-  } else {
-    observation->error = alyrn::Errno(ECONNABORTED);
+  // Every connection the kernel accepted, queued or overflowed after the queue
+  // filled, is still delivered after Stop() and before the terminal result.
+  for (;;) {
+    auto queued = co_await source->Next();
+    if (!queued.HasValue()) {
+      observation->error = queued.Error();
+      break;
+    }
+    if (!queued->has_value()) {
+      observation->normal_end = true;
+      break;
+    }
+    observation->queued_received = true;
   }
   observation->done = true;
 }
@@ -1086,6 +1114,211 @@ bool CheckQueuePauseThenRearm() {
   return RunQueuePauseThenRearmScenario();
 }
 
+alyrn::coro::DetachedTask AcceptUntilPort(AcceptSource* source, ResetObservation* observation) {
+  while (!observation->found) {
+    auto next = co_await source->Next();
+    if (!next.HasValue()) {
+      observation->error = next.Error();
+      break;
+    }
+    if (!next->has_value()) {
+      break;
+    }
+    observation->found = (*next)->RemoteAddr().ToPort() == observation->wanted_port;
+  }
+  (void)co_await source->Stop();
+  observation->done = true;
+}
+
+// Connects, then resets the connection before the server can accept it.
+bool ConnectAndReset(const Endpoint& address) {
+  const int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
+  if (fd < 0) {
+    return false;
+  }
+  if (::connect(fd, address.SockAddr(), address.SockAddrLen()) < 0) {
+    ::close(fd);
+    return false;
+  }
+  const linger abortive{.l_onoff = 1, .l_linger = 0};
+  (void)::setsockopt(fd, SOL_SOCKET, SO_LINGER, &abortive, sizeof(abortive));
+  ::close(fd);
+  return true;
+}
+
+// A peer that resets its connection before it is accepted fails only that
+// connection. The source must keep accepting, or any client could stop a
+// server from accepting connections.
+bool CheckResetBeforeAcceptKeepsSource() {
+  Loop loop;
+  switch (InitLoop(loop)) {
+    case LoopInitStatus::kReady:
+      break;
+    case LoopInitStatus::kSkip:
+      return true;
+    case LoopInitStatus::kFail:
+      return false;
+  }
+
+  auto listener_result = Listener::Create(&loop, LoopbackAddress(0));
+  if (!listener_result.HasValue()) {
+    std::cout << "FAIL: reset listener creation failed: " << listener_result.Error().message()
+              << '\n';
+    return false;
+  }
+  auto listener = std::move(*listener_result);
+  auto address = listener.LocalAddress();
+  auto source_result = listener.CreateAcceptSource({.pending_depth = 1, .event_capacity = 16});
+  if (!address.HasValue() || !source_result.HasValue()) {
+    std::cout << "FAIL: reset source setup failed\n";
+    return false;
+  }
+  auto source = std::move(*source_result);
+
+  // Arm the multishot accept and hand it to the kernel before any client
+  // connects, so the kernel accepts each connection while its CQE is still
+  // unreaped; the reset then lands before userspace sets the stream up.
+  ResetObservation observation;
+  alyrn::coro::SpawnDetach(loop, AcceptUntilPort(&source, &observation));
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
+  if (!alyrn::uring::detail::LoopAccess::FlushSubmit(loop).HasValue()) {
+    std::cout << "FAIL: accept submission failed\n";
+    return false;
+  }
+
+  for (int i = 0; i < 5; ++i) {
+    if (!ConnectAndReset(*address)) {
+      std::cout << "FAIL: abortive client failed: " << alyrn::CurrentErrno().message() << '\n';
+      return false;
+    }
+  }
+  // Let the source process the reset connections before a healthy client
+  // arrives: the failure being guarded against is a source that stops, so
+  // clients that come later are never accepted.
+  (void)PumpFor(loop, [&] { return observation.done; }, std::chrono::milliseconds(200));
+  if (observation.done) {
+    std::cout << "FAIL: reset connections ended the accept source: "
+              << (observation.error.has_value() ? observation.error->message() : "end") << '\n';
+    return false;
+  }
+
+  auto client = ConnectClient(*address);
+  if (!client.HasValue()) {
+    std::cout << "FAIL: normal client connect failed: " << client.Error().message() << '\n';
+    return false;
+  }
+  UniqueFd normal(*client);
+  sockaddr_in local{};
+  socklen_t local_length = sizeof(local);
+  if (::getsockname(*client, reinterpret_cast<sockaddr*>(&local), &local_length) < 0) {
+    std::cout << "FAIL: getsockname failed\n";
+    return false;
+  }
+  observation.wanted_port = ntohs(local.sin_port);
+
+  if (!PumpFor(loop, [&] { return observation.done; }, std::chrono::seconds(5))) {
+    std::cout << "FAIL: reset scenario did not finish\n";
+    return false;
+  }
+  if (observation.error.has_value()) {
+    if (IsUnsupported(*observation.error)) {
+      std::cout << "SKIP: multishot accept unavailable\n";
+      return true;
+    }
+    std::cout << "FAIL: a reset connection ended the accept source: "
+              << observation.error->message() << '\n';
+    return false;
+  }
+  if (!observation.found) {
+    std::cout << "FAIL: the accept source never delivered the normal client\n";
+    return false;
+  }
+  return true;
+}
+
+alyrn::coro::DetachedTask AcceptBurst(AcceptSource* source, Loop* loop,
+                                      BurstObservation* observation) {
+  // Keep accepted streams open, and sleep after each Next() like a consumer
+  // with work to do, so later completions find the one-event queue full.
+  std::vector<alyrn::uring::Stream> streams;
+  while (observation->accepted < observation->wanted) {
+    auto next = co_await source->Next();
+    if (!next.HasValue()) {
+      observation->error = next.Error();
+      break;
+    }
+    if (!next->has_value()) {
+      break;
+    }
+    streams.push_back(std::move(**next));
+    ++observation->accepted;
+    (void)co_await alyrn::uring::SleepFor(*loop, std::chrono::milliseconds(1));
+  }
+  (void)co_await source->Stop();
+  streams.clear();
+  observation->done = true;
+}
+
+// The kernel may accept more connections than the source can queue before the
+// pause lands. Each of them is open on the peer's side, so none may be closed.
+bool CheckAcceptBurstKeepsEveryConnection() {
+  Loop loop;
+  switch (InitLoop(loop)) {
+    case LoopInitStatus::kReady:
+      break;
+    case LoopInitStatus::kSkip:
+      return true;
+    case LoopInitStatus::kFail:
+      return false;
+  }
+
+  auto listener_result = Listener::Create(&loop, LoopbackAddress(0));
+  if (!listener_result.HasValue()) {
+    std::cout << "FAIL: burst listener creation failed: " << listener_result.Error().message()
+              << '\n';
+    return false;
+  }
+  auto listener = std::move(*listener_result);
+  auto address = listener.LocalAddress();
+  auto source_result = listener.CreateAcceptSource({.pending_depth = 1, .event_capacity = 1});
+  if (!address.HasValue() || !source_result.HasValue()) {
+    std::cout << "FAIL: burst source setup failed\n";
+    return false;
+  }
+  auto source = std::move(*source_result);
+
+  // All connections wait in the backlog before the first accept is armed.
+  constexpr int kClients = 8;
+  std::vector<UniqueFd> clients;
+  for (int i = 0; i < kClients; ++i) {
+    auto client = ConnectClient(*address);
+    if (!client.HasValue()) {
+      std::cout << "FAIL: burst client connect failed: " << client.Error().message() << '\n';
+      return false;
+    }
+    clients.emplace_back(*client);
+  }
+
+  BurstObservation observation;
+  observation.wanted = kClients;
+  alyrn::coro::SpawnDetach(loop, AcceptBurst(&source, &loop, &observation));
+  alyrn::uring::detail::LoopAccess::RunReady(loop);
+  if (!PumpFor(loop, [&] { return observation.done; }, std::chrono::seconds(5))) {
+    std::cout << "FAIL: burst accepted " << observation.accepted << " of " << kClients
+              << " connections\n";
+    return false;
+  }
+  if (observation.error.has_value()) {
+    if (IsUnsupported(*observation.error)) {
+      std::cout << "SKIP: multishot accept unavailable\n";
+      return true;
+    }
+    std::cout << "FAIL: burst accept failed: " << observation.error->message() << '\n';
+    return false;
+  }
+  return observation.accepted == kClients;
+}
+
 
 }  // namespace
 
@@ -1106,6 +1339,12 @@ int main() {
     return 1;
   }
   if (!CheckQueuePauseThenRearm()) {
+    return 1;
+  }
+  if (!CheckResetBeforeAcceptKeepsSource()) {
+    return 1;
+  }
+  if (!CheckAcceptBurstKeepsEveryConnection()) {
     return 1;
   }
 

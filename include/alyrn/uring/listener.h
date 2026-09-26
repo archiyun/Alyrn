@@ -151,6 +151,10 @@ private:
   Listener* listener_{nullptr};
   net::detail::AcceptSourceStateMachine state_;
   std::deque<Stream> events_;
+  // Connections the kernel accepted after the bounded queue filled, before
+  // the pause landed. They are delivered after events_, in arrival order,
+  // instead of being closed; admission stays paused until they are taken.
+  std::deque<Stream> overflow_;
   std::optional<Error> terminal_error_;
 
   NextAwaiter* pending_next_{nullptr};

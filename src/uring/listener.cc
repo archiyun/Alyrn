@@ -229,6 +229,7 @@ AcceptSource::AcceptSource(AcceptSource&& other) noexcept
     : listener_(std::exchange(other.listener_, nullptr)),
       state_(other.state_),
       events_(std::move(other.events_)),
+      overflow_(std::move(other.overflow_)),
       terminal_error_(other.terminal_error_),
       accept_op_(this),
       cancel_op_(this),
@@ -264,6 +265,7 @@ AcceptSource& AcceptSource::operator=(AcceptSource&& other) noexcept {
   listener_ = std::exchange(other.listener_, nullptr);
   state_ = other.state_;
   events_ = std::move(other.events_);
+  overflow_ = std::move(other.overflow_);
   terminal_error_ = other.terminal_error_;
   multishot_enabled_ = other.multishot_enabled_;
 
@@ -441,8 +443,10 @@ void AcceptSource::EnsureSubmission() noexcept {
 }
 
 void AcceptSource::MaybeResume() noexcept {
+  // Overflowed connections must be taken before admission resumes, or the
+  // overflow could grow without bound.
   if (terminal_error_.has_value() || listener_ == nullptr || listener_->closed_ ||
-      cancel_submitted_) {
+      cancel_submitted_ || !overflow_.empty()) {
     return;
   }
 
@@ -466,20 +470,25 @@ CompletionDisposition AcceptSource::OnCompletion(CompletionEvent event) noexcept
   bool produced_event = false;
 
   if (cqe_res >= 0) {
-    if (state_.QueuedEvents() >= state_.Options().event_capacity) {
-      ::close(cqe_res);
-      RequestBackendPause();
-    } else {
-      auto stream = MakeStream(cqe_res);
-      if (!stream.HasValue()) {
-        RequestBackendStop(stream.Error());
-      } else {
-        try {
+    // MakeStream closes a connection it cannot set up, such as one the peer
+    // reset before it was accepted. That failure belongs to the connection,
+    // not to the listener, so the source keeps accepting.
+    auto stream = MakeStream(cqe_res);
+    if (stream.HasValue()) {
+      const bool overflowing =
+          !overflow_.empty() || state_.QueuedEvents() >= state_.Options().event_capacity;
+      try {
+        if (overflowing) {
+          // The kernel accepted this connection before the pause landed. Keep
+          // it instead of closing a connection the peer already sees as open.
+          overflow_.push_back(std::move(*stream));
+          RequestBackendPause();
+        } else {
           events_.push_back(std::move(*stream));
           produced_event = true;
-        } catch (...) {
-          RequestBackendStop(Errno(ENOMEM));
         }
+      } catch (...) {
+        RequestBackendStop(Errno(ENOMEM));
       }
     }
   } else if (!request_still_active) {
@@ -495,9 +504,10 @@ CompletionDisposition AcceptSource::OnCompletion(CompletionEvent event) noexcept
       // unsupported terminal CQE as a path-selection event and retry the same
       // logical source with ordinary one-shot accept.
       multishot_enabled_ = false;
-    } else if (!stopping) {
+    } else if (!stopping && !net::detail::IsAcceptedConnectionError(-cqe_res)) {
       RequestBackendStop(NegErrno(cqe_res));
     }
+    // A per-connection error only ends this request; it is re-armed below.
   }
 
   auto recorded = state_.CompleteMultishotEvent(
@@ -567,6 +577,18 @@ bool AcceptSource::TryTakeNext(NextResult& result) noexcept {
       MaybeResume();
     } else {
       EnsureSubmission();
+    }
+    return true;
+  }
+
+  // Overflowed connections were accepted after everything in events_ and
+  // before any terminal result.
+  if (!overflow_.empty()) {
+    Event event(std::in_place, std::move(overflow_.front()));
+    overflow_.pop_front();
+    result = NextResult(std::in_place, std::move(event));
+    if (overflow_.empty() && state_.State() == AcceptSourceState::kPaused) {
+      MaybeResume();
     }
     return true;
   }
