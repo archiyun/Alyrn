@@ -3,8 +3,8 @@
 `alyrn::Runtime` 是应用的组合根：它管理启动与停止；编译期 backend tag 选择由哪个后端
 创建 worker group，并将每个已接受的 stream 交给连接处理协程。
 
-其默认 interface 已由 [ADR-0010](../../../adr/0010-runtime-composition-root.md) 冻结：本页仅记录
-稳定用法。backend 选择不是运行时 enum；ring/epoll tuning 与 main 宏也不进入公共默认路径。
+本页记录默认 interface 的稳定用法。backend 选择不是运行时 enum；ring/epoll tuning 与 main 宏
+也不进入公共默认路径。
 
 它不是新的统一 I/O backend，也不取代 `epoll::Loop` 或 `uring::Loop`。需要手动控制 loop、
 定时器、跨 worker mailbox/`Post` 或特殊资源生命周期时，仍应使用对应后端的原生公开类型。
