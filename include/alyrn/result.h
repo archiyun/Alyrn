@@ -49,8 +49,8 @@ public:
   Result(const Result&) = default;
   Result& operator=(const Result&) = default;
 
-  Result(Result&&) noexcept = default;
-  Result& operator=(Result&&) noexcept = default;
+  Result(Result&&) = default;
+  Result& operator=(Result&&) = default;
 
   Result(const T& value)
     requires std::copy_constructible<T>
@@ -216,8 +216,8 @@ public:
   Result(const Result&) = default;
   Result& operator=(const Result&) = default;
 
-  Result(Result&&) noexcept = default;
-  Result& operator=(Result&&) noexcept = default;
+  Result(Result&&) = default;
+  Result& operator=(Result&&) = default;
 
   template <typename G>
   Result(const std::unexpected<G>& error)
