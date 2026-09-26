@@ -69,6 +69,10 @@ void Loop::Run(std::stop_token token) noexcept {
   }
 
   looping_ = true;
+  // Readiness handlers, timer callbacks, and shutdown participants run in this
+  // Loop's scheduling context, exactly like resumed coroutine work. Channel
+  // and spawn operations from those callbacks then observe their owner.
+  ExecutionScope execution_scope{*this};
   std::stop_callback on_stop{token, [this] { RequestStop(); }};
 
   while (State() == backend::LoopState::kRunning) {
@@ -110,6 +114,7 @@ void Loop::RequestStop() noexcept {
 
 void Loop::RunOnOwner(Functor callback) noexcept {
   ALYRN_CHECK(IsInLoopThread(), "Loop::RunOnOwner called from wrong thread");
+  ExecutionScope execution_scope{*this};
   callback();
 }
 

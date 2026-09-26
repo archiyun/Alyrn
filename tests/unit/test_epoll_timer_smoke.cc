@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: MIT
 #include <chrono>
 #include <iostream>
+#include <optional>
 #include <thread>
 #include <type_traits>
 
+#include "alyrn/channel.h"
 #include "alyrn/coro/work.h"
 #include "alyrn/epoll.h"
+#include "alyrn/spawn.h"
 
 namespace {
 using namespace std::chrono_literals;
@@ -126,6 +129,56 @@ bool DestroyPendingSleep() {
                "destroyed pending sleep must remove its callback and shutdown participant");
 }
 
+Task<void> ReceiveTicks(Loop& loop, alyrn::Channel<int>& ticks, int wanted, int& received) {
+  for (int i = 0; i < wanted; ++i) {
+    std::optional<int> value;
+    (void)co_await (ticks >> value);
+    if (value.has_value()) {
+      ++received;
+    }
+  }
+  ticks.Close();
+  loop.RequestStop();
+}
+
+// Timer callbacks must observe their Loop as the current scheduler, so an
+// owner-affine Channel can be fed from RunAfter/RunEvery.
+bool TimerCallbacksUseOwnerChannels() {
+  Loop loop;
+  alyrn::Channel<int> ticks(loop, 1);
+  bool owner_context = false;
+  int received = 0;
+  (void)loop.RunAfter(1ms, [&] {
+    owner_context = alyrn::coro::Scheduler::TryCurrent() == &loop;
+    (void)ticks.TrySend(1);
+  });
+  auto repeating = loop.RunEvery(1ms, [&] {
+    if (!ticks.Closed()) {
+      (void)ticks.TrySend(2);
+    }
+  });
+  auto receiver = alyrn::Spawn(loop, ReceiveTicks(loop, ticks, 3, received));
+  loop.Run();
+  loop.Cancel(repeating);
+  receiver.Wait();
+  return Check(owner_context, "timer callback must run in its Loop scheduling context") &&
+         Check(received == 3, "timer callbacks must feed an owner-affine Channel");
+}
+
+bool RunOnOwnerUsesOwnerChannels() {
+  Loop loop;
+  alyrn::Channel<int> channel(loop, 1);
+  bool sent = false;
+  bool received = false;
+  loop.RunOnOwner([&] {
+    sent = channel.TrySend(7);
+    std::optional<int> value;
+    received = channel.TryReceive(value) && value == 7;
+    channel.Close();
+  });
+  return Check(sent && received, "RunOnOwner must run in its Loop scheduling context");
+}
+
 bool LegacySleepCancels() {
   Loop loop;
   alyrn::epoll::Connector connector(&loop);
@@ -139,7 +192,8 @@ bool LegacySleepCancels() {
 
 int main() {
   if (!NonpositiveAndStopped() || !ShutdownCancelsPending() || !ExpiryBeforeShutdown() ||
-      !StopBeforeExpiryInSameBatch() || !DestroyPendingSleep() || !LegacySleepCancels())
+      !StopBeforeExpiryInSameBatch() || !DestroyPendingSleep() || !LegacySleepCancels() ||
+      !TimerCallbacksUseOwnerChannels() || !RunOnOwnerUsesOwnerChannels())
     return 1;
   std::cout << "epoll timer smoke: PASS\n";
 }

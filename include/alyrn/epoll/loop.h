@@ -54,7 +54,8 @@ public:
     return state_.load(std::memory_order_acquire);
   }
 
-  // Runs callback immediately on the owning loop thread.
+  // Runs callback immediately on the owning loop thread, inside this Loop's
+  // scheduling context: it may use owner-affine Channels and Spawn.
   void RunOnOwner(Functor callback) noexcept;
 
   // Schedules a coroutine work item for a later loop turn. The Loop is
@@ -69,6 +70,9 @@ public:
   [[nodiscard]]
   bool IsInLoopThread() const noexcept;
 
+  // Timer callbacks run on the owner thread inside this Loop's scheduling
+  // context, so they may use owner-affine Channels and Spawn.
+  //
   // Schedules callback to run once at the specified time point.
   time::TimerId RunAt(time::Deadline deadline, Functor callback);
 

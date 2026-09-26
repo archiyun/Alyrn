@@ -8,8 +8,10 @@
 #include <csignal>
 #include <cstdio>
 #include <iostream>
+#include <optional>
 #include <thread>
 
+#include "alyrn/coro/channel.h"
 #include "alyrn/coro/spawn.h"
 #include "alyrn/io/loop.h"
 #include "alyrn/uring/connector.h"
@@ -161,6 +163,49 @@ bool TestTimers() {
   return StopAndDrain(loop) && passed;
 }
 
+alyrn::coro::DetachedTask ReceiveTick(alyrn::uring::Loop* loop, alyrn::coro::Channel<int>* ticks,
+                                      int* received) {
+  std::optional<int> value;
+  (void)co_await (*ticks >> value);
+  *received = value.value_or(-1);
+  ticks->Close();
+  loop->RequestStop();
+}
+
+// A timer callback must observe its Loop as the current scheduler, so it can
+// feed an owner-affine Channel.
+bool TestTimerCallbackUsesOwnerChannel() {
+  alyrn::uring::Loop loop;
+  alyrn::uring::Options options;
+  options.entries = 16;
+
+  auto init = loop.Init(options);
+  if (!init.HasValue()) {
+    if (IsEnvironmentSkip(init.Error())) {
+      return true;
+    }
+    return Check(false, "Loop initialization failed for channel callback test");
+  }
+
+  alyrn::coro::Channel<int> ticks(loop, 1);
+  bool owner_context = false;
+  int received = 0;
+  auto timer = loop.RunAfter(1ms, [&] {
+    owner_context = alyrn::coro::Scheduler::TryCurrent() == &loop;
+    (void)ticks.TrySend(42);
+  });
+  if (!Check(timer.HasValue(), "channel timer should be accepted")) {
+    (void)StopAndDrain(loop);
+    return false;
+  }
+  alyrn::coro::SpawnDetach(loop, ReceiveTick(&loop, &ticks, &received));
+  loop.Run();
+
+  return Check(owner_context, "timer callback must run in its Loop scheduling context") &&
+         Check(received == 42, "timer callback must feed an owner-affine Channel") &&
+         Check(loop.State() == alyrn::io::LoopState::kStopped, "channel test loop should stop");
+}
+
 bool TestStopDiscardsUnexpiredTimer() {
   bool fired = false;
   {
@@ -204,6 +249,7 @@ int main() {
   if (!TestLoopAffinityIsEnforcedInRelease()) return 1;
   if (!TestTimers()) return 1;
   if (!TestStopDiscardsUnexpiredTimer()) return 1;
+  if (!TestTimerCallbackUsesOwnerChannel()) return 1;
   std::cout << "luring timer smoke: PASS\n";
   return 0;
 }

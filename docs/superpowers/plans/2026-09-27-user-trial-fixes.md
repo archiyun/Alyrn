@@ -85,13 +85,13 @@ Loop 就是 Channel 的 scheduler，仍然 panic。"定时器往 channel 里喂 
 
 **清单**
 
-- [ ] epoll：`Loop::Run`、`Loop::RunOnOwner` 建立执行域。
-- [ ] uring：`Loop::Run` 建立执行域。
-- [ ] `epoll/loop.h`、`uring/loop.h` 中定时器与 `RunOnOwner` 的注释写明：回调在 Loop 的调度
+- [x] epoll：`Loop::Run`、`Loop::RunOnOwner` 建立执行域。
+- [x] uring：`Loop::Run` 建立执行域。
+- [x] `epoll/loop.h`、`uring/loop.h` 中定时器与 `RunOnOwner` 的注释写明：回调在 Loop 的调度
       上下文中执行，可以操作 Channel、`Spawn` / `SpawnDetach`。
-- [ ] `tests/unit/test_epoll_timer_smoke.cc`：`RunAfter` / `RunEvery` 回调中 `TrySend`，
+- [x] `tests/unit/test_epoll_timer_smoke.cc`：`RunAfter` / `RunEvery` 回调中 `TrySend`，
       接收协程收到值；`Run()` 之前在 `RunOnOwner` 中 `TrySend` + `Close()` 不 panic。
-- [ ] `tests/unit/test_luring_timer_smoke.cc`：`RunAfter` 回调中 `TrySend`。
+- [x] `tests/unit/test_luring_timer_smoke.cc`：`RunAfter` 回调中 `TrySend`。
 
 ## F2 Runtime 缺少 worker 生命周期钩子
 

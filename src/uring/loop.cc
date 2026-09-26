@@ -250,6 +250,10 @@ void Loop::Run(std::stop_token token) noexcept {
     return;
   }
 
+  // CQE dispatch, timer callbacks, and the stop drain run in this Loop's
+  // scheduling context, exactly like resumed coroutine work. Channel and
+  // spawn operations from those callbacks then observe their owner.
+  ExecutionScope execution_scope{*this};
   std::stop_callback on_stop{token, [this] { RequestStop(); }};
   while (State() == backend::LoopState::kRunning) {
     // Observe already available completions before spending the turn on

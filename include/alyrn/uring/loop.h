@@ -80,6 +80,8 @@ public:
   [[nodiscard]]
   bool IsInLoopThread() const noexcept;
 
+  // Runs callback once after delay, on the owner thread inside this Loop's
+  // scheduling context, so it may use owner-affine Channels and Spawn.
   [[nodiscard]]
   Result<time::TimerId> RunAfter(time::Duration delay, std::function<void()> callback);
   Result<void> CancelTimer(time::TimerId id) noexcept;
