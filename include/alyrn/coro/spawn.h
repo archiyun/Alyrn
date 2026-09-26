@@ -43,6 +43,15 @@ public:
     return state_->Wait();
   }
 
+  // Returns true once the task has completed and Wait() would return without
+  // blocking. It stays false after an async joiner parked: that joiner owns
+  // the result.
+  [[nodiscard]]
+  bool IsFinished() const noexcept {
+    ALYRN_CHECK(state_ != nullptr, "JoinHandle::IsFinished called after ownership was released");
+    return state_->IsFinished();
+  }
+
   // Detach: give up the result; the coroutine still runs to completion and
   // cleans itself up.
   void Detach() noexcept { Reset(); }

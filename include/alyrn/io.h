@@ -9,6 +9,7 @@
 #include "alyrn/io/async_connector.h"  // IWYU pragma: export
 #include "alyrn/io/async_listener.h"   // IWYU pragma: export
 #include "alyrn/io/async_stream.h"     // IWYU pragma: export
+#include "alyrn/io/block_on.h"         // IWYU pragma: export
 #include "alyrn/io/buffer.h"           // IWYU pragma: export
 #include "alyrn/io/loop.h"             // IWYU pragma: export
 #include "alyrn/io/recv.h"             // IWYU pragma: export

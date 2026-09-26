@@ -292,10 +292,10 @@ KV 服务一次读到流水线化的 `SET` + `GET`，分两次 `Write` 回复；
 
 **清单**
 
-- [ ] `JoinHandle::IsFinished()`；`io::BlockOn`（含 `Task<void>`）。
-- [ ] 测试：返回值、`Task<void>`、在本地 listener 上完成 connect / write / read。
-- [ ] 改进 panic 信息；`SyncWait` 注释指向 `BlockOn`。
-- [ ] README 客户端一节。
+- [x] `JoinHandle::IsFinished()`；`io::BlockOn`（含 `Task<void>`）。
+- [x] 测试：返回值、`Task<void>`、在本地 listener 上完成 connect / write / read。
+- [x] 改进 panic 信息；`SyncWait` 注释指向 `BlockOn`。
+- [x] README 客户端一节。
 
 ## F6 `Connect(host, port)` 不解析主机名
 

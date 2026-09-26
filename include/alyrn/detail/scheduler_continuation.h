@@ -31,7 +31,9 @@ public:
     ALYRN_CHECK(handle, "SchedulerContinuation requires a valid coroutine handle");
     scheduler_ = coro::Scheduler::TryCurrent();
     ALYRN_CHECK(scheduler_ != nullptr,
-                   "SchedulerContinuation requires a current owner scheduler");
+                "awaited a Loop operation outside its Loop's scheduling context: run I/O on "
+                "its Loop (Spawn(loop, task) then loop.Run(), or io::BlockOn); "
+                "coro::SyncWait cannot drive I/O");
     resume_work_.SetHandle(handle);
   }
 

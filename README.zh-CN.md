@@ -137,7 +137,31 @@ Backend tag 仍在编译期选择实现；ring 深度、provided buffer、zero-c
 
 `Tcp(net::TcpOptions)` 作用于每个已接受的连接；未设置的字段保持操作系统默认值。请求/响应协议通常应开启 `no_delay`：Nagle 算法开启时，紧跟在另一次写之后的小回复可能要等对端的延迟 ACK（Linux 上每个往返约 40ms）。
 
-### 5. 使用 uring 原生能力
+### 5. 编写客户端
+
+`Runtime` 负责服务端。客户端或命令行工具自己持有 Loop，用 `io::BlockOn` 运行一个根任务；任务完成时 loop 随之停止：
+
+```cpp
+auto Fetch(cp::epoll::Loop& loop) -> cp::Task<cp::Result<std::size_t>> {
+  cp::epoll::Connector connector(&loop);
+  auto stream = co_await connector.Connect("127.0.0.1", 19090);  // 只接受数字 IP
+  if (!stream.HasValue()) {
+    co_return std::unexpected(stream.Error());
+  }
+  // co_await stream->Write(...)、stream->Read(...)、stream->Close() ...
+  co_return std::size_t{0};
+}
+
+int main() {
+  cp::epoll::Loop loop;
+  auto fetched = cp::io::BlockOn(loop, Fetch(loop));
+  return fetched.HasValue() ? 0 : 1;
+}
+```
+
+`coro::SyncWait` 只用于纯计算，不能驱动 Loop 上的 I/O。
+
+### 6. 使用 uring 原生能力
 
 `Runtime` 只负责默认 TCP server 的 worker 生命周期，不是通用的 io_uring 配置接口。它可以选择安全的默认策略（例如带 fallback 的 multishot accept），但应用若要**显式**控制 ring 深度、SQPOLL、provided-buffer ring、multishot receive 或 zero-copy send，应直接组合 `uring::Loop`、`Options` 与对应的 listener、stream 或 source：
 

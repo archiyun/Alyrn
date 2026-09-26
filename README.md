@@ -144,7 +144,31 @@ The backend tag still selects the implementation at compile time. Options that a
 
 `Tcp(net::TcpOptions)` applies to every accepted stream; unset fields keep the operating-system default. Request/response protocols usually want `no_delay`: with Nagle's algorithm enabled, a small reply written right after another one can wait for the peer's delayed ACK (about 40 ms per round trip on Linux).
 
-### 5. Use uring-native capabilities
+### 5. Write a client
+
+`Runtime` owns servers. A client or command-line tool owns its Loop and runs one root task with `io::BlockOn`, which stops the loop when the task completes:
+
+```cpp
+auto Fetch(cp::epoll::Loop& loop) -> cp::Task<cp::Result<std::size_t>> {
+  cp::epoll::Connector connector(&loop);
+  auto stream = co_await connector.Connect("127.0.0.1", 19090);  // numeric IP literal
+  if (!stream.HasValue()) {
+    co_return std::unexpected(stream.Error());
+  }
+  // co_await stream->Write(...), stream->Read(...), stream->Close() ...
+  co_return std::size_t{0};
+}
+
+int main() {
+  cp::epoll::Loop loop;
+  auto fetched = cp::io::BlockOn(loop, Fetch(loop));
+  return fetched.HasValue() ? 0 : 1;
+}
+```
+
+`coro::SyncWait` is for pure computation; it cannot drive Loop I/O.
+
+### 6. Use uring-native capabilities
 
 `Runtime` owns the default TCP server's worker lifecycle; it is not a general io_uring configuration API. It may select safe defaults, such as multishot accept with fallback, but applications that need explicit control of ring depth, SQPOLL, provided-buffer rings, multishot receive, or zero-copy send should compose `uring::Loop`, `Options`, and the relevant listener, stream, or source directly:
 

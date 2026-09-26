@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 //
 // SyncWait(Task<T>) drives a task from a blocking thread. It is for tests and
-// pure-computation coroutines only; never call it on an I/O loop thread.
+// pure-computation coroutines only; never call it on an I/O loop thread. It
+// cannot drive Loop I/O: a client or tool entry point uses io::BlockOn.
 #pragma once
 
 #include <optional>
