@@ -5,7 +5,10 @@
 #include <unistd.h>
 
 #include <cerrno>
+#include <cstddef>
+#include <string_view>
 
+#include "alyrn/net/bytes.h"
 #include "alyrn/net/endpoint.h"
 #include "alyrn/net/detail/socket.h"
 
@@ -205,3 +208,12 @@ TEST(SocketTest, QueriesConnectedIPv4Endpoints) {
 
 }  // namespace
 }  // namespace alyrn::net
+
+TEST(NetBytes, AsBytesViewsTextWithoutCopying) {
+  constexpr std::string_view text = "ping";
+  const auto bytes = alyrn::net::AsBytes(text);
+  EXPECT_EQ(bytes.size(), text.size());
+  EXPECT_EQ(static_cast<const void*>(bytes.data()), static_cast<const void*>(text.data()));
+  EXPECT_EQ(bytes.front(), std::byte{'p'});
+  EXPECT_TRUE(alyrn::net::AsBytes(std::string_view{}).empty());
+}

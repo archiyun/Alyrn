@@ -5,5 +5,6 @@
 // socket operations are an advanced opt-in through net/native.h; event-source
 // protocols are exposed through io.h or a concrete backend.
 
+#include "alyrn/net/bytes.h"        // IWYU pragma: export
 #include "alyrn/net/endpoint.h"     // IWYU pragma: export
 #include "alyrn/net/tcp_options.h"  // IWYU pragma: export

@@ -2,6 +2,7 @@
 // The shared compile-time seam for backend-neutral network contracts.
 
 #include <iostream>
+#include <type_traits>
 
 #include "alyrn/coro.h"
 #include "alyrn/epoll.h"
@@ -53,6 +54,8 @@ consteval bool CheckLuringContracts() {
 
 static_assert(CheckLuringContracts());
 static_assert(alyrn::io::ManagedLoop<alyrn::uring::Loop>);
+static_assert(std::is_same_v<alyrn::uring::ListenerOptions, alyrn::uring::ListenOptions>,
+              "uring must accept the epoll spelling of its listener options");
 static_assert(!HasBorrowedBufferRead<alyrn::uring::Stream>);
 #endif
 

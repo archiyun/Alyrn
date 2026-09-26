@@ -42,6 +42,10 @@ struct ListenOptions {
   net::TcpOptions tcp_options{};
 };
 
+// The same spelling as epoll::ListenerOptions, for code written against both
+// adapters. ListenOptions remains the original name.
+using ListenerOptions = ListenOptions;
+
 class AcceptSource {
   friend class Listener;
 
