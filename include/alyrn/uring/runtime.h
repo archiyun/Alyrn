@@ -7,6 +7,7 @@
 #include "alyrn/spawn.h"
 #include "alyrn/uring/stream.h"
 #include "alyrn/net/endpoint.h"
+#include "alyrn/net/tcp_options.h"
 #include "alyrn/runtime.h"
 
 namespace alyrn {
@@ -24,6 +25,10 @@ public:
 
   Builder& Workers(std::size_t count) noexcept;
   Builder& AutoWorkers() noexcept;
+  // Socket options applied to every accepted stream. Request/response
+  // protocols usually want no_delay: otherwise a small reply written right
+  // after another one can wait for the peer's delayed ACK (Nagle).
+  Builder& Tcp(net::TcpOptions options) noexcept;
   Builder& OnConnection(ConnectionHandler handler);
 
   [[nodiscard]] Runtime Build();
@@ -31,6 +36,7 @@ public:
 private:
   net::Endpoint listen_addr_;
   std::size_t worker_count_{1};
+  net::TcpOptions tcp_options_{};
   ConnectionHandler connection_handler_;
 };
 

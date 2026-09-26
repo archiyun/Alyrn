@@ -250,10 +250,12 @@ KV 服务一次读到流水线化的 `SET` + `GET`，分两次 `Write` 回复；
 
 **清单**
 
-- [ ] 两个 Builder 增加 `Tcp()` 并透传。
-- [ ] `test_runtime_builder_smoke.cc`：`Tcp({.no_delay = true})` 后，accept 得到的连接
+- [x] 两个 Builder 增加 `Tcp()` 并透传。
+- [x] `net::TcpOptions` 的字段补默认初始化：否则用户在 `-Wextra -Werror` 下写
+      `TcpOptions{.no_delay = true}` 会因 `-Wmissing-field-initializers` 编译失败（落地时发现）。
+- [x] `test_runtime_builder_smoke.cc`：`Tcp({.no_delay = true})` 后，accept 得到的连接
       `getsockopt(TCP_NODELAY) == 1`，两个后端。
-- [ ] README 与 `runtime-builder.md` 补充说明。
+- [x] README 与 `runtime-builder.md` 补充说明。
 
 ## F5 客户端没有入口；SyncWait 做 I/O 的报错难懂
 

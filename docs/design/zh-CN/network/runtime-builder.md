@@ -57,6 +57,11 @@ runtime.Stop();  // request stop、drain、join workers
 库在未声明的情况下占满机器。`Workers(n>1)` 时每个 worker 绑定自己的 listener，并打开
 `SO_REUSEPORT`。
 
+`Tcp(net::TcpOptions)` 透传给每个 worker 的 listener，作用于所有已接受的连接；未设置的字段
+保持操作系统默认值，Runtime 不替应用改默认。请求/响应协议通常应开启 `no_delay`，否则紧跟在
+另一次写之后的小回复可能被 Nagle 算法扣住，等待对端的延迟 ACK。两个后端的 Builder 都提供
+这个选项，语义一致。
+
 ## luring
 
 ```cpp

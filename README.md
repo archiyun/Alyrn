@@ -125,12 +125,13 @@ For io_uring, build with `ALYRN_ENABLE_URING=ON`, include `alyrn/uring.h`, and c
 
 ### 4. Configure the default server explicitly
 
-`Create` uses conservative defaults (one worker). Use the same Runtime's backend-specific Builder when worker count needs explicit control:
+`Create` uses conservative defaults (one worker, operating-system socket options). Use the same Runtime's backend-specific Builder when worker count or accepted-socket options need explicit control:
 
 ```cpp
 auto runtime = cp::Runtime::Builder<cp::runtime::Epoll>{
                    cp::net::Endpoint::Loopback(19090)}
                    .AutoWorkers()
+                   .Tcp({.no_delay = true})
                    .OnConnection([](auto stream) {
                      return HandleConnection(std::move(stream));
                    })
@@ -140,6 +141,8 @@ auto runtime = cp::Runtime::Builder<cp::runtime::Epoll>{
 The backend tag still selects the implementation at compile time. Options that alter backend resources or lifecycle semantics—ring depth, provided buffers, and zero-copy, for example—are not disguised as cross-backend Runtime settings.
 
 `Workers(n)` always means *n threads*. The topology behind that number is backend-specific: Epoll shares the listen port with `SO_REUSEPORT` when `n > 1`; uring keeps one ring per worker.
+
+`Tcp(net::TcpOptions)` applies to every accepted stream; unset fields keep the operating-system default. Request/response protocols usually want `no_delay`: with Nagle's algorithm enabled, a small reply written right after another one can wait for the peer's delayed ACK (about 40 ms per round trip on Linux).
 
 ### 5. Use uring-native capabilities
 

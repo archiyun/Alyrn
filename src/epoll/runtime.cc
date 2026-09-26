@@ -31,9 +31,11 @@ void WaitForStop(std::atomic_bool& stop_requested) noexcept {
 class RuntimeControl final : public ::alyrn::detail::runtime::RuntimeControl {
 public:
   RuntimeControl(net::Endpoint listen_addr, std::size_t worker_count,
-                        Builder::ConnectionHandler connection_handler) noexcept
+                 net::TcpOptions tcp_options,
+                 Builder::ConnectionHandler connection_handler) noexcept
       : listen_addr_(listen_addr),
         worker_count_(worker_count),
+        tcp_options_(tcp_options),
         connection_handler_(std::move(connection_handler)) {}
 
   ~RuntimeControl() noexcept override { Stop(); }
@@ -55,6 +57,7 @@ public:
     options.worker_num = worker_count_;
     // A single listener does not need SO_REUSEPORT; independent workers do.
     options.worker_options.listener_options.reuse_port = worker_count_ > 1;
+    options.worker_options.listener_options.tcp_options = tcp_options_;
 
     auto callback = [this](detail::WorkerContext&, Stream stream) {
       return connection_handler_(std::move(stream));
@@ -143,6 +146,7 @@ private:
 
   net::Endpoint listen_addr_;
   std::size_t worker_count_;
+  net::TcpOptions tcp_options_;
   Builder::ConnectionHandler connection_handler_;
   mutable std::mutex lifecycle_mutex_;
   std::unique_ptr<detail::WorkerGroup> workers_;
@@ -153,10 +157,10 @@ private:
 }  // namespace
 
 std::unique_ptr<::alyrn::detail::runtime::RuntimeControl> MakeRuntimeControl(
-    net::Endpoint listen_addr, std::size_t worker_count,
+    net::Endpoint listen_addr, std::size_t worker_count, net::TcpOptions tcp_options,
     Runtime::Builder<runtime::Epoll>::ConnectionHandler connection_handler) {
-  return std::make_unique<RuntimeControl>(listen_addr, worker_count,
-                                                 std::move(connection_handler));
+  return std::make_unique<RuntimeControl>(listen_addr, worker_count, tcp_options,
+                                          std::move(connection_handler));
 }
 
 }  // namespace alyrn::epoll
@@ -177,6 +181,12 @@ Runtime::Builder<runtime::Epoll>& Runtime::Builder<runtime::Epoll>::AutoWorkers(
   return *this;
 }
 
+Runtime::Builder<runtime::Epoll>& Runtime::Builder<runtime::Epoll>::Tcp(
+    net::TcpOptions options) noexcept {
+  tcp_options_ = options;
+  return *this;
+}
+
 Runtime::Builder<runtime::Epoll>& Runtime::Builder<runtime::Epoll>::OnConnection(
     ConnectionHandler handler) {
   connection_handler_ = std::move(handler);
@@ -184,8 +194,8 @@ Runtime::Builder<runtime::Epoll>& Runtime::Builder<runtime::Epoll>::OnConnection
 }
 
 Runtime Runtime::Builder<runtime::Epoll>::Build() {
-  return Runtime{epoll::MakeRuntimeControl(listen_addr_, worker_count_,
-                                             std::move(connection_handler_))};
+  return Runtime{epoll::MakeRuntimeControl(listen_addr_, worker_count_, tcp_options_,
+                                           std::move(connection_handler_))};
 }
 
 }  // namespace alyrn

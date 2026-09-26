@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MIT
 
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <cerrno>
 #include <chrono>
 #include <concepts>
@@ -90,6 +92,100 @@ alyrn::Result<BoundPort> BindLoopbackPort() {
     return std::unexpected(error);
   }
   return BoundPort{fd, ntohs(address.sin_port)};
+}
+
+bool IsEnvironmentSkip(std::error_code error) {
+  return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
+}
+
+template <typename Predicate>
+bool WaitFor(Predicate predicate) {
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (predicate()) {
+      return true;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  return predicate();
+}
+
+alyrn::Result<int> ConnectLoopback(std::uint16_t port) {
+  const int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
+  if (fd < 0) {
+    return std::unexpected(alyrn::CurrentErrno());
+  }
+  sockaddr_in address{};
+  address.sin_family = AF_INET;
+  address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  address.sin_port = htons(port);
+  if (::connect(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0) {
+    auto error = alyrn::CurrentErrno();
+    (void)::close(fd);
+    return std::unexpected(error);
+  }
+  return fd;
+}
+
+// Reserves an ephemeral loopback port number for a Runtime under test.
+alyrn::Result<std::uint16_t> PickLoopbackPort() {
+  auto reserved = BindLoopbackPort();
+  if (!reserved.HasValue()) {
+    return std::unexpected(reserved.Error());
+  }
+  const std::uint16_t port = reserved->port();
+  reserved->Close();
+  return port;
+}
+
+std::atomic<int> g_observed_no_delay{-1};
+
+template <typename Stream>
+coro::DetachedTask RecordNoDelay(Stream stream) {
+  int value = 0;
+  socklen_t length = sizeof(value);
+  const int result = ::getsockopt(stream.Fd(), IPPROTO_TCP, TCP_NODELAY, &value, &length);
+  g_observed_no_delay.store(result == 0 ? value : -2, std::memory_order_release);
+  co_return;
+}
+
+// Accepted streams must carry the Builder's TCP options (and only those).
+template <typename Backend, typename Stream>
+bool CheckAcceptedTcpOptions(std::optional<net::TcpOptions> tcp_options, int expected,
+                             const char* message) {
+  auto port = PickLoopbackPort();
+  if (!Check(port.HasValue(), "failed to reserve TCP options test port")) {
+    return false;
+  }
+
+  g_observed_no_delay.store(-1, std::memory_order_release);
+  Runtime::Builder<Backend> builder{net::Endpoint::Loopback(*port)};
+  builder.Workers(1).OnConnection(RecordNoDelay<Stream>);
+  if (tcp_options.has_value()) {
+    builder.Tcp(*tcp_options);
+  }
+  auto runtime = builder.Build();
+  auto started = runtime.Start();
+  if (!started.HasValue()) {
+    if (IsEnvironmentSkip(started.Error())) {
+      std::print("SKIP: runtime backend unavailable: {}\n", started.Error().message());
+      return true;
+    }
+    std::print("FAIL: TCP options Runtime failed to start: {}\n", started.Error().message());
+    return false;
+  }
+
+  auto client = ConnectLoopback(*port);
+  const bool observed =
+      client.HasValue() &&
+      WaitFor([] { return g_observed_no_delay.load(std::memory_order_acquire) != -1; });
+  if (client.HasValue()) {
+    (void)::close(*client);
+  }
+  runtime.Stop();
+  return Check(client.HasValue(), "TCP options test client failed to connect") &&
+         Check(observed, "TCP options test handler did not run") &&
+         Check(g_observed_no_delay.load(std::memory_order_acquire) == expected, message);
 }
 
 template <typename Runtime>
@@ -212,6 +308,14 @@ bool CheckEpollRequestStopFromForeignThread() {
          Check(!runtime.Started(), "Epoll Stop must join requested workers");
 }
 
+bool CheckEpollTcpOptions() {
+  return CheckAcceptedTcpOptions<runtime::Epoll, epoll::Stream>(
+             std::nullopt, 0, "Epoll Runtime must keep the OS default without Tcp()") &&
+         CheckAcceptedTcpOptions<runtime::Epoll, epoll::Stream>(
+             net::TcpOptions{.no_delay = true}, 1,
+             "Epoll Runtime must apply Tcp() options to accepted streams");
+}
+
 bool CheckEpollStartFailureCanRetry() {
   auto reserved = BindLoopbackPort();
   if (!Check(reserved.HasValue(), "failed to reserve Epoll retry test port")) {
@@ -244,10 +348,6 @@ coro::DetachedTask HandleUring(uring::Stream) { co_return; }
 static_assert(std::same_as<decltype(Runtime::Create<runtime::Uring>(
                               net::Endpoint::Loopback(0), HandleUring)),
                            Runtime>);
-
-bool IsEnvironmentSkip(std::error_code error) {
-  return error == std::errc::operation_not_supported || error == std::errc::operation_not_permitted;
-}
 
 bool CheckUringRuntime() {
   auto zero_workers = Runtime::Builder<runtime::Uring>{net::Endpoint::Loopback(0)}
@@ -364,6 +464,14 @@ bool CheckUringRequestStopFromForeignThread() {
          Check(!runtime.Started(), "luring Stop must join requested workers");
 }
 
+bool CheckUringTcpOptions() {
+  return CheckAcceptedTcpOptions<runtime::Uring, uring::Stream>(
+             std::nullopt, 0, "luring Runtime must keep the OS default without Tcp()") &&
+         CheckAcceptedTcpOptions<runtime::Uring, uring::Stream>(
+             net::TcpOptions{.no_delay = true}, 1,
+             "luring Runtime must apply Tcp() options to accepted streams");
+}
+
 bool CheckUringStartFailureCanRetry() {
   auto reserved = BindLoopbackPort();
   if (!Check(reserved.HasValue(), "failed to reserve luring retry test port")) {
@@ -405,12 +513,14 @@ int main() {
   ok = CheckEpollRunStopsFromRuntimeRequest() && ok;
   ok = CheckEpollRequestStopFromForeignThread() && ok;
   ok = CheckEpollStartFailureCanRetry() && ok;
+  ok = CheckEpollTcpOptions() && ok;
 #ifdef ALYRN_ENABLE_URING
   ok = CheckUringRuntime() && ok;
   ok = CheckUringRuntimeRunWithPreCancelledToken() && ok;
   ok = CheckUringRunStopsFromRuntimeRequest() && ok;
   ok = CheckUringRequestStopFromForeignThread() && ok;
   ok = CheckUringStartFailureCanRetry() && ok;
+  ok = CheckUringTcpOptions() && ok;
 #endif
   return ok ? 0 : 1;
 }

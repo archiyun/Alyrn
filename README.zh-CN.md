@@ -118,12 +118,13 @@ int main() {
 
 ### 4. 需要时显式配置
 
-`Create` 使用保守默认值（一个 worker）。需要控制 worker 数量时，使用同一个 Runtime 的 backend-specific Builder：
+`Create` 使用保守默认值（一个 worker、操作系统默认的 socket 选项）。需要控制 worker 数量或已接受连接的 socket 选项时，使用同一个 Runtime 的 backend-specific Builder：
 
 ```cpp
 auto runtime = cp::Runtime::Builder<cp::runtime::Epoll>{
                    cp::net::Endpoint::Loopback(19090)}
                    .AutoWorkers()
+                   .Tcp({.no_delay = true})
                    .OnConnection([](auto stream) {
                      return HandleConnection(std::move(stream));
                    })
@@ -133,6 +134,8 @@ auto runtime = cp::Runtime::Builder<cp::runtime::Epoll>{
 Backend tag 仍在编译期选择实现；ring 深度、provided buffer、zero-copy 等改变后端资源或生命周期语义的选项不伪装成通用 Runtime 配置。
 
 `Workers(n)` 始终表示 *n 条线程*。其背后的拓扑由后端决定：Epoll 在 `n > 1` 时用 `SO_REUSEPORT` 共享监听端口；uring 保持每个 worker 一个 ring。
+
+`Tcp(net::TcpOptions)` 作用于每个已接受的连接；未设置的字段保持操作系统默认值。请求/响应协议通常应开启 `no_delay`：Nagle 算法开启时，紧跟在另一次写之后的小回复可能要等对端的延迟 ACK（Linux 上每个往返约 40ms）。
 
 ### 5. 使用 uring 原生能力
 
