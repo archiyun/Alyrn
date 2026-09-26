@@ -342,6 +342,36 @@ bool TestSameChannelCasesDoNotSelfMatch() {
   return selected == 1 && received.has_value() && *received == 42;
 }
 
+Task<void> TryMatchSelect(Channel<int>& channel, bool send) {
+  if (send) {
+    ALYRN_CHECK(channel.TrySend(42), "TrySend missed Select receiver");
+  } else {
+    std::optional<int> value;
+    ALYRN_CHECK(channel.TryReceive(value) && value == 7, "TryReceive missed Select sender");
+  }
+  // Closing would panic if the losing Select sender remained registered.
+  channel.Close();
+  co_return;
+}
+
+bool TestTryOperationsMatchSelect() {
+  for (bool send : {false, true}) {
+    DrainScheduler scheduler;
+    Channel<int> channel{scheduler, 0};
+    std::size_t selected = 99;
+    std::optional<int> value;
+    auto select = Spawn(scheduler, SelectSameChannel(channel, selected, value));
+    ALYRN_CHECK(scheduler.DrainOne(), "Select was not started");
+    auto matcher = Spawn(scheduler, TryMatchSelect(channel, send));
+    scheduler.Drain();
+    select.Wait();
+    matcher.Wait();
+    ALYRN_CHECK(selected == (send ? 1u : 0u), "wrong Select case won");
+    ALYRN_CHECK(send ? value == 42 : !value, "losing Select modified receive output");
+  }
+  return true;
+}
+
 bool TestReadyCasesAreFair() {
   DrainScheduler scheduler;
   Channel<int> first{scheduler, 1};
@@ -358,10 +388,11 @@ bool TestReadyCasesAreFair() {
 }  // namespace
 
 int main() {
-  return TestImmediateReceive() && TestWaitForSecondReceive() && TestImmediateSend() &&
-                 TestDefault() && TestClosedReceive() && TestHeterogeneousReceive() &&
-                 TestClosedSendPanics() && TestSuspendedSelectCanBeCancelled() &&
-                 TestSameChannelCasesDoNotSelfMatch() && TestReadyCasesAreFair()
+  return TestTryOperationsMatchSelect() && TestImmediateReceive() && TestWaitForSecondReceive() &&
+                 TestImmediateSend() && TestDefault() && TestClosedReceive() &&
+                 TestHeterogeneousReceive() && TestClosedSendPanics() &&
+                 TestSuspendedSelectCanBeCancelled() && TestSameChannelCasesDoNotSelfMatch() &&
+                 TestReadyCasesAreFair()
              ? 0
              : 1;
 }

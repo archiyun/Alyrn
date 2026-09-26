@@ -4,6 +4,7 @@
 #include <cerrno>
 #include <csignal>
 #include <cstdio>
+#include <memory>
 #include <optional>
 
 #include "alyrn/coro/channel.h"
@@ -122,6 +123,137 @@ bool ExpectChildAbort(void (*entry)(), const char* message) {
   return aborted;
 }
 
+Task<void> TryBufferedCase(Channel<int>& channel) {
+  std::optional<int> value{99};
+  ALYRN_CHECK(!channel.TryReceive(value) && value == 99, "would-block changed output");
+  ALYRN_CHECK(channel.TrySend(1) && channel.TrySend(2), "buffered TrySend failed");
+  ALYRN_CHECK(!channel.TrySend(9), "full channel accepted a value");
+  ALYRN_CHECK(channel.TryReceive(value) && value == 1, "TryReceive broke FIFO");
+  ALYRN_CHECK(channel.TrySend(3), "buffer did not reuse its free slot");
+  channel.Close();
+  ALYRN_CHECK(channel.TryReceive(value) && value == 2, "close lost buffered value");
+  ALYRN_CHECK(channel.TryReceive(value) && value == 3, "wraparound broke FIFO");
+  ALYRN_CHECK(channel.TryReceive(value) && !value, "closed receive is not ready EOF");
+  ALYRN_CHECK(channel.TryReceive(value) && !value, "EOF is not repeatable");
+  co_return;
+}
+
+Task<void> TryMoveOnlyCase(Channel<std::unique_ptr<int>>& channel) {
+  auto first = std::make_unique<int>(42);
+  ALYRN_CHECK(channel.TrySend(std::move(first)) && !first, "TrySend did not transfer ownership");
+  auto rejected = std::make_unique<int>(9);
+  ALYRN_CHECK(!channel.TrySend(std::move(rejected)) && !rejected,
+              "by-value TrySend must consume its argument even on failure");
+  std::optional<std::unique_ptr<int>> value;
+  ALYRN_CHECK(channel.TryReceive(value) && **value == 42, "move-only receive lost value");
+  ALYRN_CHECK(!channel.TryReceive(value) && **value == 42, "empty receive changed output");
+  channel.Close();
+  ALYRN_CHECK(channel.TryReceive(value) && !value, "closed receive retained old value");
+  co_return;
+}
+
+Task<void> TryWakeReceiver(Channel<int>& channel, const bool& received) {
+  ALYRN_CHECK(channel.TrySend(42), "TrySend failed to match waiting receiver");
+  ALYRN_CHECK(!received, "TrySend resumed receiver inline");
+  channel.Close();
+  co_return;
+}
+
+Task<void> TryWakeSender(Channel<int>& channel, const bool& sent) {
+  std::optional<int> value;
+  ALYRN_CHECK(channel.TryReceive(value) && value == 42, "TryReceive missed waiting sender");
+  ALYRN_CHECK(!sent, "TryReceive resumed sender inline");
+  channel.Close();
+  co_return;
+}
+
+Task<void> TryUnbufferedEmpty(Channel<int>& channel) {
+  std::optional<int> value{99};
+  ALYRN_CHECK(!channel.TrySend(1), "unbuffered send succeeded without receiver");
+  ALYRN_CHECK(!channel.TryReceive(value) && value == 99, "unbuffered receive did not block");
+  co_return;
+}
+
+Task<void> SendValue(Channel<int>& channel, int value) {
+  ALYRN_CHECK((co_await (channel << value)).HasValue(), "queued send failed");
+}
+
+Task<void> FillBuffer(Channel<int>& channel) {
+  ALYRN_CHECK(channel.TrySend(1), "initial buffer fill failed");
+  co_return;
+}
+
+Task<void> TryDrainQueuedSenders(Channel<int>& channel) {
+  std::optional<int> value;
+  for (int expected : {1, 2, 3}) {
+    ALYRN_CHECK(channel.TryReceive(value) && value == expected,
+                "TryReceive did not refill buffer from oldest waiting sender");
+  }
+  channel.Close();
+  co_return;
+}
+
+bool TestTryOperations() {
+  DrainScheduler scheduler;
+  Channel<int> buffered{scheduler, 2};
+  Channel<std::unique_ptr<int>> owned{scheduler, 1};
+  auto buffer_task = Spawn(scheduler, TryBufferedCase(buffered));
+  auto owned_task = Spawn(scheduler, TryMoveOnlyCase(owned));
+  scheduler.Drain();
+  buffer_task.Wait();
+  owned_task.Wait();
+
+  Channel<int> rendezvous{scheduler, 0};
+  auto empty = Spawn(scheduler, TryUnbufferedEmpty(rendezvous));
+  scheduler.Drain();
+  empty.Wait();
+  bool received = false;
+  auto receiver = Spawn(scheduler, ReceiveOne(rendezvous, received));
+  ALYRN_CHECK(scheduler.DrainOne(), "receiver was not started");
+  auto sender = Spawn(scheduler, TryWakeReceiver(rendezvous, received));
+  scheduler.Drain();
+  sender.Wait();
+  receiver.Wait();
+  ALYRN_CHECK(received, "TrySend did not schedule waiting receiver");
+
+  Channel<int> incoming{scheduler, 0};
+  bool sent = false;
+  auto waiting = Spawn(scheduler, SendOne(incoming, sent));
+  ALYRN_CHECK(scheduler.DrainOne(), "sender was not started");
+  auto reader = Spawn(scheduler, TryWakeSender(incoming, sent));
+  scheduler.Drain();
+  waiting.Wait();
+  reader.Wait();
+  ALYRN_CHECK(sent, "TryReceive did not schedule waiting sender");
+
+  Channel<int> fifo{scheduler, 1};
+  auto fill = Spawn(scheduler, FillBuffer(fifo));
+  auto second = Spawn(scheduler, SendValue(fifo, 2));
+  auto third = Spawn(scheduler, SendValue(fifo, 3));
+  scheduler.Drain();
+  auto drain = Spawn(scheduler, TryDrainQueuedSenders(fifo));
+  scheduler.Drain();
+  fill.Wait();
+  second.Wait();
+  third.Wait();
+  drain.Wait();
+  return true;
+}
+
+Task<void> TrySendOnClosed(Channel<int>& channel) {
+  channel.Close();
+  (void)channel.TrySend(1);
+  co_return;
+}
+
+void TriggerTrySendOnClosed() {
+  DrainScheduler scheduler;
+  Channel<int> channel{scheduler, 1};
+  auto task = Spawn(scheduler, TrySendOnClosed(channel));
+  scheduler.Drain();
+  task.Wait();
+}
+
 bool TestBufferedAndClose() {
   DrainScheduler scheduler;
   Channel<int> channel{scheduler, 2};
@@ -232,7 +364,10 @@ bool TestPendingWaiterDestructionFailsFast() {
 }  // namespace
 
 int main() {
-  return TestBufferedAndClose() && TestUnbufferedRendezvous() && TestCloseWakesReceiver() &&
+  return TestTryOperations() &&
+                 ExpectChildAbort(&TriggerTrySendOnClosed,
+                                  "TrySend on closed channel must panic") &&
+                 TestBufferedAndClose() && TestUnbufferedRendezvous() && TestCloseWakesReceiver() &&
                  TestClosePanics() && TestCapacityContract() &&
                  TestPendingWaiterDestructionFailsFast()
              ? 0

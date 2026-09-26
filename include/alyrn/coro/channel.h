@@ -118,6 +118,51 @@ public:
     return SelectReceiveCase<T>{this, &output};
   }
 
+  // Nonblocking send on the owning scheduler. Returns false if no receiver
+  // or buffer slot is available; sending on a closed channel still panics.
+  // The argument is taken by value and consumed even when the send fails.
+  // A waiting receiver is scheduled, never resumed inline.
+  [[nodiscard]]
+  bool TrySend(T value) noexcept {
+    CheckOwner();
+    ALYRN_CHECK(!closed_, "send on closed Channel");
+    if (auto* receiver = receivers_.PopFront()) {
+      receiver->CompleteValue(std::move(value));
+      return true;
+    }
+    if (size_ == capacity_) {
+      return false;
+    }
+    PushBuffer(std::move(value));
+    return true;
+  }
+
+  // Returns false without changing output when an open channel would block.
+  // Returns true with a value, or true with empty output at end-of-stream.
+  // As with blocking receive, draining a full buffer admits its oldest sender.
+  [[nodiscard]]
+  bool TryReceive(std::optional<T>& output) noexcept {
+    CheckOwner();
+    if (size_ != 0) {
+      output.emplace(PopBuffer());
+      if (auto* sender = senders_.PopFront()) {
+        PushBuffer(sender->TakeValue());
+        sender->Complete();
+      }
+      return true;
+    }
+    if (auto* sender = senders_.PopFront()) {
+      output.emplace(sender->TakeValue());
+      sender->Complete();
+      return true;
+    }
+    if (closed_) {
+      output.reset();
+      return true;
+    }
+    return false;
+  }
+
   // Close the channel exactly once. Pending senders fail immediately;
   // buffered values remain receivable, followed by the end-of-stream after drain.
   void Close() noexcept {

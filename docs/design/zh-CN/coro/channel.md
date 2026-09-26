@@ -3,7 +3,10 @@
 `coro::Channel<T>` 是一个 scheduler-affine 的 FIFO 值交接模块。它拥有有界 value
 buffer 和等待 sender/receiver 的队列；不拥有线程、event loop、fd 或 backend mailbox。
 
-接口为 Go 风格的阻塞运算符 `<<` / `>>` 与 `Close`。
+应用可以包含 `alyrn/alyrn.h` 或独立的 `alyrn/channel.h`，使用 `alyrn::Channel<T>`；
+它与 `alyrn::coro::Channel<T>` 是同一个类型。
+
+接口包括 Go 风格的阻塞运算符 `<<` / `>>`、非阻塞的 `TrySend` / `TryReceive` 与 `Close`。
 发送和接收分别写成：
 
 ```cpp
@@ -12,6 +15,40 @@ co_await (channel << value);
 std::optional<T> received;
 co_await (channel >> received);
 ```
+
+## 非阻塞操作
+
+普通函数可以直接尝试发送或接收，无需创建协程：
+
+```cpp
+bool queued = channel.TrySend(value);
+
+std::optional<Message> received;
+if (channel.TryReceive(received)) {
+  if (received) {
+    Handle(*received);
+  } else {
+    // channel 已关闭且缓冲已读完。
+  }
+}
+```
+
+`TrySend(T value)` 在成功交给等待者或放入缓冲时返回 `true`；暂时无法发送时返回
+`false`。参数按值传递，所以即使发送失败，传入的参数也会被消耗；需要保留原值以便重试时，
+可复制类型应传左值。对 move-only 值使用 `std::move` 后，失败也不会归还所有权。
+发送到已关闭的 channel 仍会触发 panic，与 `<<` 一致。
+
+`TryReceive(std::optional<T>& output)` 的结果有三种：
+
+| 返回值 | output | 含义 |
+|---|---|---|
+| `false` | 保持原值 | channel 尚未关闭，目前没有值或等待发送者 |
+| `true` | 保存收到的值 | 接收成功 |
+| `true` | 空 | channel 已关闭且缓冲已读完 |
+
+这两个操作不挂起、不注册等待者；匹配到已有等待者时，通过所属 scheduler 排队恢复对方。
+它们遵守与阻塞操作相同的 FIFO 顺序，也能匹配 `Select` 的等待 case，并移除败选 case。
+从满缓冲接收时，会让最早的等待发送者填补空位。
 
 ## Select
 

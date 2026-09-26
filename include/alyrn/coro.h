@@ -6,11 +6,14 @@
 // schedulers, Work, awaitable introspection, and frame-resource tuning remain
 // available through their individual advanced headers.
 
+#include "alyrn/channel.h"             // IWYU pragma: export
 #include "alyrn/coro/channel.h"        // IWYU pragma: export
 #include "alyrn/coro/detached_task.h"  // IWYU pragma: export
 #include "alyrn/coro/select.h"         // IWYU pragma: export
 #include "alyrn/coro/spawn.h"          // IWYU pragma: export
 #include "alyrn/coro/sync_wait.h"      // IWYU pragma: export
 #include "alyrn/coro/task.h"           // IWYU pragma: export
+#include "alyrn/scheduler.h"           // IWYU pragma: export
+#include "alyrn/select.h"              // IWYU pragma: export
 #include "alyrn/spawn.h"               // IWYU pragma: export
 #include "alyrn/task.h"                // IWYU pragma: export
