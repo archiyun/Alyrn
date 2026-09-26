@@ -316,8 +316,8 @@ KV 服务一次读到流水线化的 `SET` + `GET`，分两次 `Write` 回复；
 
 **清单**
 
-- [ ] 头文件与 concept 参数改名、补注释。
-- [ ] 测试：`Connect("localhost", port)` 返回 `EINVAL`（锁定已文档化的行为）。
+- [x] 头文件与 concept 参数改名、补注释。
+- [x] 测试：`Connect("localhost", port)` 返回 `EINVAL`（锁定已文档化的行为）。
 
 ## F7 错误传播样板多；异常策略没有写进文档
 

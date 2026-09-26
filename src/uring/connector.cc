@@ -193,9 +193,9 @@ Connector& Connector::operator=(Connector&& other) noexcept {
   return *this;
 }
 
-coro::Task<Result<Stream>> Connector::Connect(std::string_view host, std::uint16_t port) {
+coro::Task<Result<Stream>> Connector::Connect(std::string_view ip, std::uint16_t port) {
   RequireOwnerLoop();
-  return ConnectResolved(loop_, options_.tcp_options, net::ParseIpAddress(host, port));
+  return ConnectResolved(loop_, options_.tcp_options, net::ParseIpAddress(ip, port));
 }
 
 coro::Task<void> Connector::SleepFor(time::Duration delay) {

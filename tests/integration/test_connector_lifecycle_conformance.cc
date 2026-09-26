@@ -365,7 +365,7 @@ bool CheckConnectionRefusedContract() {
 }
 
 template <class Harness>
-bool CheckInvalidHostContract() {
+bool CheckNonNumericHostRejected(std::string_view host) {
   typename Harness::Loop loop;
   if (!Initialize<Harness>(loop)) {
     return Harness::Skip();
@@ -376,16 +376,24 @@ bool CheckInvalidHostContract() {
   }
 
   ConnectObservation<typename Harness::Connector> observation;
-  alyrn::coro::SpawnDetach(loop, ObserveConnect(*connector, loop, "not-an-ip", 80, observation));
+  alyrn::coro::SpawnDetach(loop, ObserveConnect(*connector, loop, host, 80, observation));
   Harness::Run(loop);
 
   return Expect(observation.result.has_value() && !observation.result->HasValue() &&
                     observation.result->Error() == std::errc::invalid_argument,
-                Harness::Name(), "invalid numeric host did not return EINVAL") &&
+                Harness::Name(), "non-numeric host did not return EINVAL") &&
          Expect(observation.resume_count == 1, Harness::Name(),
                 "invalid-host Connect resumed more than once") &&
          Expect(observation.resumed_with_scheduler, Harness::Name(),
                 "invalid-host Connect lost scheduler affinity");
+}
+
+// Connect takes a numeric IP literal. Host names, even "localhost", are not
+// resolved and fail with EINVAL rather than blocking the loop on a resolver.
+template <class Harness>
+bool CheckInvalidHostContract() {
+  return CheckNonNumericHostRejected<Harness>("not-an-ip") &&
+         CheckNonNumericHostRejected<Harness>("localhost");
 }
 
 template <class Connector, class Loop>

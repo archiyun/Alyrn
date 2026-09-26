@@ -14,11 +14,13 @@
 
 namespace alyrn::backend {
 
+// Connect(ip, port) takes a numeric IPv4/IPv6 literal. Name resolution is not
+// part of the connector contract; a non-numeric address completes with EINVAL.
 template <class T>
-concept AsyncConnector = requires(T& connector, std::string_view host, std::uint16_t port) {
+concept AsyncConnector = requires(T& connector, std::string_view ip, std::uint16_t port) {
   typename T::StreamType;
   requires AsyncStream<typename T::StreamType>;
-  { connector.Connect(host, port) } -> std::same_as<Task<Result<typename T::StreamType>>>;
+  { connector.Connect(ip, port) } -> std::same_as<Task<Result<typename T::StreamType>>>;
 };
 
 }  // namespace alyrn::backend

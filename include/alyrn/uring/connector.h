@@ -34,7 +34,11 @@ public:
 
   // Connect is loop-affine. Independent calls may be pending concurrently;
   // each call owns its socket, physical request, result, and continuation.
-  Task<Result<Stream>> Connect(std::string_view host, std::uint16_t port);
+  // Connects to a numeric IPv4 or IPv6 literal such as "127.0.0.1" or "::1".
+  // Host names, including "localhost", are not resolved: they complete with
+  // EINVAL. Resolve names before connecting; a blocking resolver would stall
+  // the loop.
+  Task<Result<Stream>> Connect(std::string_view ip, std::uint16_t port);
 
   // Backend-selected timer for application-level health-check loops.
   Task<void> SleepFor(time::Duration delay);
