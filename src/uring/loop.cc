@@ -18,8 +18,10 @@
 #include <functional>
 #include <memory>
 #include <memory_resource>
+#include <mutex>
 #include <stop_token>
 #include <utility>
+#include <vector>
 
 #include "alyrn/backend/loop.h"
 #include "alyrn/coro/frame_allocator.h"
@@ -132,6 +134,58 @@ Loop::Loop(std::pmr::memory_resource* frame_resource) : Scheduler(frame_resource
 }
 
 bool Loop::IsInLoopThread() const noexcept { return t_loop_in_this_thread == this; }
+
+Result<void> Loop::Post(std::function<void()> callback) {
+  bool wake = false;
+  {
+    std::lock_guard lock{post_mutex_};
+    if (post_closed_) {
+      return std::unexpected(Errno(ECANCELED));
+    }
+    // Only the post that makes the queue non-empty needs to wake the loop;
+    // the drain takes everything queued behind it.
+    wake = posted_.empty();
+    posted_.push_back(std::move(callback));
+  }
+  if (wake) {
+    Wake();
+  }
+  return {};
+}
+
+void Loop::RunPosted() noexcept {
+  std::vector<std::function<void()>> batch;
+  {
+    std::lock_guard lock{post_mutex_};
+    batch.swap(posted_);
+  }
+  for (auto& callback : batch) {
+    callback();
+  }
+}
+
+// Runs posted callbacks, and the work they schedule, until none remain, then
+// closes the queue in the same critical section: every accepted Post runs and
+// every later one fails.
+void Loop::DrainPostedAndClose() noexcept {
+  for (;;) {
+    std::vector<std::function<void()>> batch;
+    {
+      std::lock_guard lock{post_mutex_};
+      if (posted_.empty()) {
+        post_closed_ = true;
+        return;
+      }
+      batch.swap(posted_);
+    }
+    for (auto& callback : batch) {
+      callback();
+    }
+    while (HasReadyWork()) {
+      RunReady();
+    }
+  }
+}
 
 void Loop::RunOnOwner(std::function<void()> callback) noexcept {
   ALYRN_CHECK(IsInLoopThread(), "Loop::RunOnOwner called from wrong thread");
@@ -261,6 +315,8 @@ void Loop::Run(std::stop_token token) noexcept {
   // spawn operations from those callbacks then observe their owner.
   ExecutionScope execution_scope{*this};
   std::stop_callback on_stop{token, [this] { RequestStop(); }};
+  // Posts made before Init() could not signal the wake descriptor.
+  RunPosted();
   while (State() == backend::LoopState::kRunning) {
     // Observe already available completions before spending the turn on
     // ready work. This prevents a ready backlog from delaying CQE handling.
@@ -293,6 +349,7 @@ void Loop::Run(std::stop_token token) noexcept {
     // their callbacks without running them.
     timers_->DiscardAll();
   }
+  DrainPostedAndClose();
   state_.store(backend::LoopState::kStopped, std::memory_order_release);
 }
 
@@ -559,6 +616,7 @@ void Loop::HandleCqe(io_uring_cqe* cqe) noexcept {
     });
     wake_inflight_ = false;
     DrainWakeFd();
+    RunPosted();
     if (State() == backend::LoopState::kRunning) {
       wake_op_.BeginNextRequest();
       auto armed = ArmWakePoll();

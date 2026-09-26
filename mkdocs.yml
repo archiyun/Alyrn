@@ -78,7 +78,7 @@ nav:
                 - SendZeroCopy: design/zh-CN/network/luring/zero-copy-send.md
                 - timer、超时与停止: design/zh-CN/network/luring/timers-and-timeouts.md
                 - 注册资源的边界: design/zh-CN/network/luring/registered-resources.md
-                - 跨 worker mailbox: design/zh-CN/network/luring/cross-worker-mailbox.md
+                - 跨线程投递（Post）: design/zh-CN/network/luring/cross-worker-mailbox.md
                 - operation 语义矩阵: design/zh-CN/network/luring-operation-matrix.md
     - 基础模块:
           - 数据结构:

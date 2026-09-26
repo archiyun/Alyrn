@@ -19,7 +19,7 @@ buffer 可以复用，以及关闭和取消如何收敛。内部类、CQE 分发
 | 发送 zerocopy | `SendZeroCopy` | 已实现扩展 | primary CQE 与可选 `F_NOTIF` 的分离式 release |
 | timer | `SleepFor`、`RunAfter` | 已实现 | 到期恢复、错误和 loop 归属 |
 | 多 worker / CPU 绑定 | `WorkerGroup` | 已实现 | 每 worker 一个 loop、启动和停止 |
-| 跨 worker 通知 | `PostMessage` / `MSG_RING` | runtime 内部能力 | 有界 mailbox、通知合并、目标 loop 投递 |
+| 跨线程投递 | `Loop::Post` | 已实现 | 线程安全入队、首个投递唤醒、owner 线程执行、关停排空 |
 | fixed registered buffer | 暂无公共入口 | 设计占位 | 不应误标为已支持 |
 | fixed file / 通用 linked API | 暂无公共入口 | 设计占位 | 不应从内部实现泄露为 API |
 
@@ -78,7 +78,7 @@ split-release 生命周期决定何时进入最后两步。
 - [SendZeroCopy](zero-copy-send.md)
 - [timer、超时与停止](timers-and-timeouts.md)
 - [注册资源的边界](registered-resources.md)
-- [跨 worker mailbox](cross-worker-mailbox.md)
+- [跨线程投递（Post）](cross-worker-mailbox.md)
 - [io_uring operation 语义矩阵（内部设计对照）](../luring-operation-matrix.md)
 
 ## 测试框架的切片方式

@@ -73,6 +73,15 @@ endif()
 add_test(NAME io_block_on_smoke_test COMMAND io_block_on_smoke_test)
 set_tests_properties(io_block_on_smoke_test PROPERTIES TIMEOUT 30)
 
+add_executable(loop_post_smoke_test unit/test_loop_post_smoke.cc)
+target_link_libraries(loop_post_smoke_test PRIVATE alyrn_epoll)
+if(ALYRN_ENABLE_URING)
+    target_link_libraries(loop_post_smoke_test PRIVATE alyrn_luring)
+    target_compile_definitions(loop_post_smoke_test PRIVATE ALYRN_ENABLE_URING)
+endif()
+add_test(NAME loop_post_smoke_test COMMAND loop_post_smoke_test)
+set_tests_properties(loop_post_smoke_test PROPERTIES TIMEOUT 60)
+
 # Runs one application-observable Shutdown/Close contract suite against every
 # enabled backend. Backend-specific smoke tests continue to cover physical
 # Channel and SQE/CQE interleavings.

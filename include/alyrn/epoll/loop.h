@@ -5,6 +5,7 @@
 #include <functional>
 #include <memory>
 #include <memory_resource>
+#include <mutex>
 #include <stop_token>
 #include <vector>
 
@@ -12,6 +13,7 @@
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/epoll/detail/loop_shutdown.h"
 #include "alyrn/detail/macros.h"
+#include "alyrn/result.h"
 #include "alyrn/time/clock.h"
 #include "alyrn/time/timer_id.h"
 
@@ -45,9 +47,20 @@ public:
   void Run(std::stop_token token = {}) noexcept;
 
   // Requests dispatcher shutdown. This is thread-safe, idempotent, and wakes
-  // an epoll_wait immediately. It is intentionally not a cross-thread work
-  // queue. Registered owner-loop resources are asked to shut down by Run().
+  // an epoll_wait immediately. Cross-thread work goes through Post().
+  // Registered owner-loop resources are asked to shut down by Run().
   void RequestStop() noexcept;
+
+  // Thread-safe. Queues callback to run on the owner thread, inside this
+  // Loop's scheduling context, on a later turn; callbacks posted from one
+  // thread run in the order they were posted. A successful Post runs exactly
+  // once: callbacks posted before the Loop finishes its shutdown drain still
+  // run during that drain. Afterwards Post returns operation_canceled and the
+  // callback is destroyed, unrun, on the calling thread. The Loop must outlive
+  // every Post call; a Loop destroyed without running destroys queued
+  // callbacks unrun. Callbacks run during shutdown must not start new I/O.
+  [[nodiscard]]
+  Result<void> Post(Functor callback);
 
   [[nodiscard]]
   backend::LoopState State() const noexcept {
@@ -110,6 +123,8 @@ private:
   static void DispatchWakeup(void* context) noexcept;
   void DrainWakeup() noexcept;
   void Wakeup() noexcept;
+  void RunPosted();
+  void DrainPostedAndClose();
   void DetachWakeupChannel() noexcept;
 
   bool HasImmediateWork() const;
@@ -129,6 +144,10 @@ private:
   bool shutdown_started_{false};
 
   std::unique_ptr<TimerQueue> timer_queue_;
+
+  std::mutex post_mutex_;
+  std::vector<Functor> posted_;
+  bool post_closed_{false};
 };
 
 static_assert(backend::ManagedLoop<Loop>);

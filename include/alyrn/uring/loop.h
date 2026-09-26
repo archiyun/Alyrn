@@ -10,8 +10,10 @@
 #include <limits>
 #include <memory>
 #include <memory_resource>
+#include <mutex>
 #include <stop_token>
 #include <utility>
+#include <vector>
 
 #include "alyrn/backend/loop.h"
 #include "alyrn/coro/scheduler.h"
@@ -71,6 +73,17 @@ public:
   // Requests dispatcher shutdown. This function is thread-safe, idempotent,
   // and wakes a blocked ring wait. It does not itself release user resources.
   void RequestStop() noexcept;
+
+  // Thread-safe. Queues callback to run on the owner thread, inside this
+  // Loop's scheduling context, on a later turn; callbacks posted from one
+  // thread run in the order they were posted. A successful Post runs exactly
+  // once: callbacks posted before the Loop finishes its shutdown drain still
+  // run during that drain. Afterwards Post returns operation_canceled and the
+  // callback is destroyed, unrun, on the calling thread. The Loop must outlive
+  // every Post call; a Loop destroyed without running destroys queued
+  // callbacks unrun. Callbacks run during shutdown must not start new I/O.
+  [[nodiscard]]
+  Result<void> Post(std::function<void()> callback);
 
   [[nodiscard]]
   backend::LoopState State() const noexcept {
@@ -163,6 +176,8 @@ private:
   Result<std::size_t> WaitCompletions() noexcept;
 
   void RunReady() noexcept;
+  void RunPosted() noexcept;
+  void DrainPostedAndClose() noexcept;
 
   Result<detail::ProvidedBufferPool*> GetSharedProvidedBufferPool(
       std::size_t buffer_size, std::size_t source_capacity) noexcept;
@@ -207,6 +222,9 @@ private:
 
   std::unique_ptr<detail::TimerQueue> timers_;
   int wake_fd_{-1};
+  std::mutex post_mutex_;
+  std::vector<std::function<void()>> posted_;
+  bool post_closed_{false};
   bool wake_pending_{false};
   bool wake_inflight_{false};
   detail::Op wake_op_{detail::OpKind::kWake};

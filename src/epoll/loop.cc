@@ -6,6 +6,9 @@
 
 #include <cerrno>
 #include <cstdint>
+#include <mutex>
+#include <utility>
+#include <vector>
 
 #include "alyrn/coro/frame_allocator.h"
 #include "alyrn/coro/scheduler.h"
@@ -95,6 +98,7 @@ void Loop::Run(std::stop_token token) noexcept {
 
   BeginShutdown();
   RunPending();
+  DrainPostedAndClose();
   coro::CoroFramePoolResource::DrainCurrent();
   looping_ = false;
   state_.store(backend::LoopState::kStopped, std::memory_order_release);
@@ -109,6 +113,56 @@ void Loop::RequestStop() noexcept {
       Wakeup();
       return;
     }
+  }
+}
+
+Result<void> Loop::Post(Functor callback) {
+  bool wake = false;
+  {
+    std::lock_guard lock{post_mutex_};
+    if (post_closed_) {
+      return std::unexpected(Errno(ECANCELED));
+    }
+    // Only the post that makes the queue non-empty needs to wake the loop;
+    // the drain takes everything queued behind it.
+    wake = posted_.empty();
+    posted_.push_back(std::move(callback));
+  }
+  if (wake) {
+    Wakeup();
+  }
+  return {};
+}
+
+void Loop::RunPosted() {
+  std::vector<Functor> batch;
+  {
+    std::lock_guard lock{post_mutex_};
+    batch.swap(posted_);
+  }
+  for (Functor& callback : batch) {
+    callback();
+  }
+}
+
+// Runs posted callbacks, and the work they schedule, until none remain, then
+// closes the queue in the same critical section: every accepted Post runs and
+// every later one fails.
+void Loop::DrainPostedAndClose() {
+  for (;;) {
+    std::vector<Functor> batch;
+    {
+      std::lock_guard lock{post_mutex_};
+      if (posted_.empty()) {
+        post_closed_ = true;
+        return;
+      }
+      batch.swap(posted_);
+    }
+    for (Functor& callback : batch) {
+      callback();
+    }
+    RunPending();
   }
 }
 
@@ -196,8 +250,9 @@ void Loop::DrainWakeup() noexcept {
     }
     ALYRN_CHECK(read < 0 && (errno == EAGAIN || errno == EWOULDBLOCK),
                 "Loop wakeup fd read failed");
-    return;
+    break;
   }
+  RunPosted();
 }
 
 void Loop::Wakeup() noexcept {
