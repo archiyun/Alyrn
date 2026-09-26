@@ -95,3 +95,12 @@ target_link_libraries(demo_bench_http_liburing
         PkgConfig::URING
         Threads::Threads
 )
+
+add_executable(demo_luring_recv_source_echo
+    07_recv_source_echo.cc
+)
+
+target_link_libraries(demo_luring_recv_source_echo
+    PRIVATE
+        alyrn_luring
+)
