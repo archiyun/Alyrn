@@ -184,6 +184,12 @@ auto initialized = loop.Init(options);
 
 This native path makes ownership of each ring, buffer lease, and operation lifecycle explicit. See [`examples/uring`](examples/uring) and the uring public headers. Do not add these capabilities as cross-backend Runtime switches.
 
+## Error model
+
+Fallible Alyrn operations return `Result<T>`, a thin wrapper over `std::expected<T, std::error_code>`. Test it with `HasValue()` or `operator bool`, read `*result` or `Error()`, and propagate a failure with `co_return std::unexpected(result.Error())`. `Value()` and `Expect()` terminate the process on an error value, like Rust's `unwrap`; keep them for invariants, not for I/O results.
+
+Alyrn does not use exceptions. An exception that escapes a `Task`, `DetachedTask`, spawned root, or `SyncWait` coroutine calls `std::terminate`. Catch exceptions from throwing code inside your own frames, or prefer non-throwing APIs, such as `std::from_chars` instead of `std::stoi`.
+
 ## Build
 
 ## Run the container demo

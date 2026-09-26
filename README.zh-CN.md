@@ -177,6 +177,12 @@ auto initialized = loop.Init(options);
 
 这条原生路径让应用明确承担每个 ring、buffer lease 与操作生命周期；参考 [`examples/uring`](examples/uring) 及 uring 的公开头文件。不要把这些能力增加为 `Runtime` 的跨后端开关。
 
+## 错误模型
+
+可能失败的 Alyrn 操作返回 `Result<T>`，它是 `std::expected<T, std::error_code>` 的薄封装。用 `HasValue()` 或 `operator bool` 判断，用 `*result` 或 `Error()` 取值，用 `co_return std::unexpected(result.Error())` 向上传播错误。`Value()` 与 `Expect()` 遇到错误值会终止进程，类似 Rust 的 `unwrap`；只用于不变量，不要用于 I/O 结果。
+
+Alyrn 不使用异常。从 `Task`、`DetachedTask`、`Spawn` 根任务或 `SyncWait` 协程中逃逸的异常会调用 `std::terminate`。会抛异常的代码请在自己的栈帧里捕获，或优先使用不抛异常的接口，例如用 `std::from_chars` 代替 `std::stoi`。
+
 ## 运行容器示例
 
 发布的容器运行一个基于 Alyrn Epoll 后端的 TCP echo server。通过 Docker
