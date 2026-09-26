@@ -7,7 +7,7 @@
 也不进入公共默认路径。
 
 它不是新的统一 I/O backend，也不取代 `epoll::Loop` 或 `uring::Loop`。需要手动控制 loop、
-定时器、跨 worker mailbox/`Post` 或特殊资源生命周期时，仍应使用对应后端的原生公开类型。
+定时器、跨线程投递（`Loop::Post`）或特殊资源生命周期时，仍应使用对应后端的原生公开类型。
 
 ## Auto：平台默认 backend
 

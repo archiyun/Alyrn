@@ -225,10 +225,10 @@ auto runtime = alyrn::Runtime::Builder<alyrn::runtime::Epoll>{endpoint}
 
 **清单**
 
-- [ ] epoll / uring 实现 `Loop::Post`。
-- [ ] 压力测试：多个 producer 线程并发投递，每个 callback 恰好执行一次、在 owner 线程、
+- [x] epoll / uring 实现 `Loop::Post`。
+- [x] 压力测试：多个 producer 线程并发投递，每个 callback 恰好执行一次、在 owner 线程、
       producer 内 FIFO；关停后投递返回 `ECANCELED`；与关停并发的投递不丢不重。
-- [ ] 设计文档：新增投递语义说明，替换 `luring/cross-worker-mailbox.md`。
+- [x] 设计文档：新增投递语义说明，替换 `luring/cross-worker-mailbox.md`。
 
 ## F4 Builder 不能配置 TCP 选项（Nagle 陷阱）
 
@@ -400,7 +400,9 @@ KV 服务一次读到流水线化的 `SET` + `GET`，分两次 `Write` 回复；
 
 **清单**
 
-- [ ] 更新上述文档与 `mkdocs.yml`。
+- [x] 更新上述文档与 `mkdocs.yml`。
+- [x] 另外更新 `async-stream-contract.md`、`luring/loop-and-workers.md`、
+      `epoll/loop-and-cancellation.md` 与 `docs/skills/alyrn/epoll/SKILL.md` 中同样过时的说法。
 
 ## F10 uring RecvSource 在队列满时丢弃数据（落地时发现）
 

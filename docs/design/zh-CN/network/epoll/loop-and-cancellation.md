@@ -72,12 +72,13 @@ owner thread
 ```
 
 以下操作都必须在 owner thread：创建/移动/销毁 stream、提交 I/O、修改 `Channel` interest、
-执行 `Run()`，以及 `Scheduler::Schedule()`。跨线程唯一的 loop 控制入口是
-`RequestStop()`；它不是通用任务队列。
+执行 `Run()`，以及 `Scheduler::Schedule()`。跨线程的入口只有两个：`RequestStop()` 请求关停，
+`Post()` 把回调投递到 owner 线程执行。
 
 这不是仅供 debug 的建议：`Channel -> Loop -> Poller` 的注册表属于 owner thread，跨线程
 修改会破坏其非并发容器和 intrusive hook。在所有构建中，Epoll 都以 `ALYRN_CHECK` 拒绝
-这类调用；需要跨线程停止时只能请求 `RequestStop()`，由 eventfd 把动作带回 owner loop。
+这类调用；需要跨线程停止时请求 `RequestStop()`，需要跨线程执行工作时用 `Post()`，两者都由
+eventfd 把动作带回 owner loop。
 
 `Loop` 状态为：
 

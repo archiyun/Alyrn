@@ -80,7 +80,7 @@ CQ 深度、submission flag 和每轮 CQE/continuation 公平性预算是 `Loop`
 ```
 
 它不是协程迁移机制，也不改变 operation 的 loop affinity。跨 worker 发送工作要经过
-mailbox/`MSG_RING`，不能把一个 worker 的 stream 直接交给另一个 worker 使用。
+目标 Loop 的 `Post()`，不能把一个 worker 的 stream 直接交给另一个 worker 使用。
 
 ## 测试观察点
 

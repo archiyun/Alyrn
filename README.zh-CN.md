@@ -355,7 +355,7 @@ Server
   `-- Worker N -> Thread N -> Loop N -> Ring N
 ```
 
-连接、I/O 操作与协程 continuation 始终归属于运行它们的 Worker 和 loop。`Stream` 不能跨 loop 移动。
+连接、I/O 操作与协程 continuation 始终归属于运行它们的 Worker 和 loop。`Stream` 不能跨 loop 移动；其他线程通过线程安全的 `Loop::Post` 把工作交给某个 loop，回调在该 loop 的 owner 线程执行。
 
 ## 性能测试
 
@@ -382,7 +382,7 @@ Alyrn 提供了可复现的 `wrk` 性能测试，用于比较：
 * **[Runtime Builder](docs/design/zh-CN/network/runtime-builder.md)：** 编译期 backend tag 与启停生命周期。
 * **[生命周期精化协程 I/O](docs/design/zh-CN/network/lifecycle-refined-coroutine-io.md)：** 逻辑 I/O 规范、三条授权边界，以及 epoll / io_uring 精化。
 * **[AsyncStream 语义契约](docs/design/zh-CN/network/async-stream-contract.md)：** read、write、close、取消与 buffer 生命周期语义。
-* **[数据结构](docs/design/zh-CN/datastructure/index.md)：** C++ 现代风格的侵入式数据结构，侵入式红黑树，侵入式链表，MPSC 队列的设计与实现，以及它们在项目各处的应用。四叉堆是通过 `time::TimerIndex` 注入的一等 timer-index 适配器。
+* **[数据结构](docs/design/zh-CN/datastructure/index.md)：** C++ 现代风格的侵入式数据结构，侵入式红黑树，侵入式链表的设计与实现，以及它们在项目各处的应用。四叉堆是通过 `time::TimerIndex` 注入的一等 timer-index 适配器。
 * **[性能测试](docs/benchmark/network-libraries-20260810.md)：** 最新的当前源码 C++ 对照基线；完整统一网络库报告、测试方法、原始结果与优化记录见 [`docs/benchmark`](docs/benchmark/)。
 * **[示例](examples/)：** Linux 上的 Epoll 与 io_uring 使用示例。
 * **[测试](tests/)：** 协程、网络、生命周期与后端行为验证。

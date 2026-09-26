@@ -108,8 +108,9 @@ buffer 空会使 `>>` 等待。接收成功后，`received` 保存 value；chann
 optional。
 
 Channel 的所有操作必须在构造它的 `Scheduler` 上执行。唤醒只通过该 scheduler 排队，不会
-直接恢复协程。跨线程或跨 worker 交接必须先用 backend 的 `Post`/mailbox 回投到 channel
-owner；当前 `Scheduler` 没有通用 thread-safe post seam，Channel 不能伪造这一保证。
+直接恢复协程。跨线程或跨 worker 交接必须先用目标 Loop 的 `Post()` 回投到 channel owner，
+再在回调里操作 channel；`Scheduler` 本身没有通用的 thread-safe post seam，Channel 不能伪造
+这一保证。
 
 等待 awaiter 在 coroutine frame 被销毁前会从 channel 队列移除。和所有已调度的
 `coro::Work` 一样，已被 scheduler 接管的 continuation 必须保持有效，直到 scheduler 执行它。

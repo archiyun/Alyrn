@@ -529,9 +529,8 @@ read 和 write 可以同时 pending；同方向的两个 operation 不能同时 
 ```
 
 `Loop::RunOnOwner` 和 `Schedule` 都要求调用者位于所属 loop
-线程；它们不提供跨线程投递能力。当前 `Loop::Schedule` 也要求调用者位于 loop
-线程。跨 loop 投递需要单独的 mailbox/message 机制；`eventfd` 和 `msg_ring` 都不属于
-当前 CoreStream 契约。
+线程；它们不提供跨线程投递能力。跨 loop 投递使用 `Loop::Post()`：回调在目标 loop 的 owner
+线程执行，stream 仍只能在其所属 loop 上操作。`Post` 属于 Loop，而不属于 CoreStream 契约。
 
 ### I8：语义 contract 固定
 

@@ -46,7 +46,7 @@ application protocol, route, peer, proxy, or gateway policy.
 | `include/alyrn/io` | L2 | Application-facing aliases of the backend-neutral I/O contract. Composition roots and callers use this facade; concrete backends must not include it. |
 | `include/alyrn/runtime.h` | L2 | Backend-neutral application lifecycle facade. It type-erases only cold start/stop control; backend tags select a Builder specialization at compile time. |
 | `include/alyrn/epoll`, `src/epoll` | L2 | Linux epoll readiness adapter. `Loop`, the `Runtime::Builder<runtime::Epoll>` binding, and transport adapters are public; `epoll/detail` owns channel registration, epoll polling, timers, and worker bootstrap implementation. |
-| `include/alyrn/uring`, `src/uring` | L2 | Linux io_uring completion adapter. `Loop`, the `Runtime::Builder<runtime::Uring>` binding, and transport adapters are public; `uring/detail` owns raw SQE/CQE operations, ring/mailbox transport, timer queue, and worker/server bootstrap implementation. |
+| `include/alyrn/uring`, `src/uring` | L2 | Linux io_uring completion adapter. `Loop`, the `Runtime::Builder<runtime::Uring>` binding, and transport adapters are public; `uring/detail` owns raw SQE/CQE operations, ring transport, timer queue, and worker/server bootstrap implementation. |
 | `examples`, `benchmarks`, `tests` | L3 | Consumers and validation; never runtime dependencies. |
 
 ## Hard Dependency Rules

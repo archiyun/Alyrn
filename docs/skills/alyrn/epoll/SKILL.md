@@ -42,8 +42,9 @@ layer.
 - Channel, Poller, fd, stream state, and timer mutation belong to that loop.
 - `RunOnOwner`, `Schedule`, timers, and `Quit` are owner-thread
   APIs; they are not cross-thread safe.
-- Cross-thread delivery belongs to a separate mailbox design. Do not add a
-  global lock or wakeup fd to compensate for wrong-thread access.
+- Cross-thread delivery goes through `Loop::Post()`, which runs the callback on
+  the owner. Do not add locks to owner-only APIs to compensate for wrong-thread
+  access.
 
 ## Lifetime rules
 
@@ -105,7 +106,7 @@ Timer: pending-insert -> active -> executing -> active(repeat) | released
 ## Patch rules
 
 - State the owning loop for each new resource.
-- Keep work on the owning loop; cross-thread delivery requires the separate mailbox seam.
+- Keep work on the owning loop; cross-thread delivery goes through `Loop::Post()`.
 - Every fd path must identify one owner and one close point.
 - Every async terminal path must be idempotent.
 - Add a teardown/race test for lifetime fixes.

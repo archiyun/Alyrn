@@ -364,7 +364,7 @@ Server
   `-- Worker N -> Thread N -> Loop N -> Ring N
 ```
 
-Connections, I/O operations, and coroutine continuations remain owned by the Worker and loop that run them. `Stream` cannot be moved across loops.
+Connections, I/O operations, and coroutine continuations remain owned by the Worker and loop that run them. `Stream` cannot be moved across loops; other threads hand work to a loop with the thread-safe `Loop::Post`, whose callback runs on the owner thread.
 
 ## Performance Benchmarks
 
@@ -389,7 +389,7 @@ The documentation map is [`docs/index.md`](docs/index.md). Design notes are curr
 * **[Runtime Builder](docs/design/zh-CN/network/runtime-builder.md)**: compile-time backend tags and start/stop lifecycle.
 * **[Lifecycle-refined coroutine I/O](docs/design/zh-CN/network/lifecycle-refined-coroutine-io.md)**: logical I/O specification, three authorization boundaries, and epoll / io_uring refinement.
 * **[AsyncStream semantics](docs/design/zh-CN/network/async-stream-contract.md)**: read, write, close, cancellation, and buffer-lifetime semantics.
-* **[Data structures](docs/design/zh-CN/datastructure/index.md)**: modern C++ intrusive data structures, intrusive red-black trees, intrusive lists, MPSC queues, and their use in the project. QuadHeap is a first-class timer-index adapter injected through `time::TimerIndex`.
+* **[Data structures](docs/design/zh-CN/datastructure/index.md)**: modern C++ intrusive data structures, intrusive red-black trees, intrusive lists, and their use in the project. QuadHeap is a first-class timer-index adapter injected through `time::TimerIndex`.
 * **[Performance benchmarks](docs/benchmark/network-libraries-20260810.md)**: the latest current-source C++ baseline; the broader unified network-library report and supporting material are in [`docs/benchmark`](docs/benchmark/).
 * **[Examples](examples/)**: Epoll and io_uring examples on Linux.
 * **[Tests](tests/)**: coroutine, networking, lifecycle, and backend validation.
