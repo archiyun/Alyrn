@@ -171,13 +171,15 @@ auto runtime = alyrn::Runtime::Builder<alyrn::runtime::Epoll>{endpoint}
 
 **清单**
 
-- [ ] epoll / uring Builder 增加 `OnWorkerStart` / `OnWorkerStop`，`RuntimeControl` 透传。
-- [ ] `Worker::WorkLoop` 在执行域内调用回调，exit 回调后排空 ready 工作。
-- [ ] uring `Loop` 补 `RunOnOwner`。
-- [ ] `tests/unit/test_runtime_builder_smoke.cc`：start hook 每个 worker 在其线程上各调用一次，
+- [x] epoll / uring Builder 增加 `OnWorkerStart` / `OnWorkerStop`，`RuntimeControl` 透传。
+- [x] `Worker::WorkLoop` 在执行域内调用回调，exit 回调后排空 ready 工作。
+- [x] uring `Loop` 补 `RunOnOwner`。
+- [x] `epoll/runtime.h`、`uring/runtime.h` 显式包含各自的 `loop.h`：hook 签名暴露 `Loop&`，
+      只包含 `uring/runtime.h` 时 `uring::Loop` 是不完整类型（落地时发现）。
+- [x] `tests/unit/test_runtime_builder_smoke.cc`：start hook 每个 worker 在其线程上各调用一次，
       并且先于首个连接；start hook 返回错误时 `Run()` 失败；stop hook 关闭 Channel 后，阻塞在
       该 Channel 上的协程完成，进程正常退出。两个后端都覆盖。
-- [ ] `docs/design/zh-CN/network/runtime-builder.md` 补充钩子的时序与所有权说明。
+- [x] `docs/design/zh-CN/network/runtime-builder.md` 补充钩子的时序与所有权说明。
 
 ## F3 没有跨线程投递 API
 

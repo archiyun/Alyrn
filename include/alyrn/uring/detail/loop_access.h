@@ -55,6 +55,8 @@ public:
 
   static void RunReady(Loop& loop) noexcept { loop.RunReady(); }
 
+  static bool HasReadyWork(const Loop& loop) noexcept { return loop.HasReadyWork(); }
+
   static int RingFd(const Loop& loop) noexcept {
     return loop.RingFd();
   }

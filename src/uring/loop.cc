@@ -133,6 +133,12 @@ Loop::Loop(std::pmr::memory_resource* frame_resource) : Scheduler(frame_resource
 
 bool Loop::IsInLoopThread() const noexcept { return t_loop_in_this_thread == this; }
 
+void Loop::RunOnOwner(std::function<void()> callback) noexcept {
+  ALYRN_CHECK(IsInLoopThread(), "Loop::RunOnOwner called from wrong thread");
+  ExecutionScope execution_scope{*this};
+  callback();
+}
+
 Result<time::TimerId> Loop::RunAfter(time::Duration delay, std::function<void()> callback) {
   ALYRN_CHECK(IsInLoopThread(), "Loop::RunAfter called from wrong thread");
   if (!initialized_) {

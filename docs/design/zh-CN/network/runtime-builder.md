@@ -122,6 +122,44 @@ Created --Start--> Starting --success--> Running --RequestStop--> Stopping --Sto
 no-op。每个 `OnConnection` 调用按值接收 stream，handler 的 detached coroutine 独占该 stream，
 直至协程结束。
 
+## Worker 生命周期钩子
+
+有状态的服务（例如每个 worker 一个聊天 hub）需要在 loop 线程上创建 owner-affine 状态，并在
+loop 销毁前关闭它。`OnWorkerStart` / `OnWorkerStop` 提供这两个时机：
+
+```cpp
+thread_local std::unique_ptr<Hub> t_hub;  // Hub 内含 Channel，并在其 loop 上 SpawnDetach 事件循环
+
+auto runtime = alyrn::Runtime::Builder<alyrn::runtime::Epoll>{endpoint}
+                   .OnWorkerStart([](alyrn::epoll::Loop& loop, std::size_t) -> alyrn::Result<void> {
+                     t_hub = std::make_unique<Hub>(loop);
+                     return {};
+                   })
+                   .OnWorkerStop([](alyrn::epoll::Loop&, std::size_t) { t_hub->Close(); })
+                   .OnConnection([](auto stream) { return HandleConnection(std::move(stream)); })
+                   .Build();
+```
+
+时序与所有权：
+
+```text
+worker thread: Loop / listener 创建
+  -> OnWorkerStart(loop, index)      在 loop 调度上下文中；返回错误则 Start()/Run() 失败
+  -> accept 循环启动，连接 handler 开始运行
+  ...
+  -> RequestStop：listener 停止，pending I/O 取消，连接协程链排空
+  -> OnWorkerStop(loop, index)       仅对 start hook 成功的 worker；在 loop 调度上下文中
+  -> 排空 hook 调度的工作（例如 Channel::Close() 唤醒的等待者）
+  -> listener / connector / Loop 销毁，线程退出（thread_local 析构）
+```
+
+- 两个 hook 都在 worker 自己的线程上、以该 worker 的 Loop 为当前 scheduler 执行，可以直接创建、
+  关闭 Channel，`Spawn` / `SpawnDetach` 根任务。
+- `OnWorkerStop` 应当**关闭**仍有等待者的 Channel，但不要**销毁**被唤醒协程仍在引用的对象：
+  runtime 在 hook 返回之后才排空这些协程。销毁放在排空之后，例如交给 `thread_local` 析构。
+- `OnWorkerStop` 不能发起新的 I/O：此时 loop 已经停止。
+- `Workers(n > 1)` 时每个 worker 各有一份状态；跨 worker 共享需要跨线程投递。
+
 ## 默认阻塞入口
 
 当应用希望由调用 `main()` 的线程拥有整个 server 生命周期时，可使用 `Run()`：

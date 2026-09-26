@@ -80,6 +80,10 @@ public:
   [[nodiscard]]
   bool IsInLoopThread() const noexcept;
 
+  // Runs callback immediately on the owning loop thread, inside this Loop's
+  // scheduling context: it may use owner-affine Channels and Spawn.
+  void RunOnOwner(std::function<void()> callback) noexcept;
+
   // Runs callback once after delay, on the owner thread inside this Loop's
   // scheduling context, so it may use owner-affine Channels and Spawn.
   [[nodiscard]]

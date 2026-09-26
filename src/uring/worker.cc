@@ -191,10 +191,17 @@ void Worker::WorkLoop(std::stop_token token) noexcept {
 
   auto init_result = Result<void>{};
   if (init_callback_) {
-    try {
-      init_callback_(context);
-    } catch (...) {
-      init_result = std::unexpected(Errno(EFAULT));
+    loop.RunOnOwner([&] {
+      try {
+        init_callback_(context);
+      } catch (...) {
+        init_result = std::unexpected(Errno(EFAULT));
+      }
+    });
+    if (init_result.HasValue() && !context.start_result.HasValue()) {
+      init_result = context.start_result;
+    }
+    if (!init_result.HasValue()) {
       // The callback may already have scheduled work. Drain it while the
       // context is alive, then run exit cleanup for partial initialization.
       loop.RequestStop();
@@ -218,10 +225,17 @@ void Worker::WorkLoop(std::stop_token token) noexcept {
   CloseListenerAfterLoopDrain(loop, *listener);
 
   if (exit_callback_) {
-    try {
-      exit_callback_(context);
-    } catch (...) {
-      exit_result_ = std::unexpected(std::current_exception());
+    loop.RunOnOwner([&] {
+      try {
+        exit_callback_(context);
+      } catch (...) {
+        exit_result_ = std::unexpected(std::current_exception());
+      }
+    });
+    // Waiters the callback woke, for example through Channel::Close(), must
+    // finish while the loop-bound resources they may reference are alive.
+    while (LoopAccess::HasReadyWork(loop)) {
+      LoopAccess::RunReady(loop);
     }
   }
 }

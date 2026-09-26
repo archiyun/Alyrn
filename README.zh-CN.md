@@ -135,6 +135,8 @@ Backend tag 仍在编译期选择实现；ring 深度、provided buffer、zero-c
 
 `Workers(n)` 始终表示 *n 条线程*。其背后的拓扑由后端决定：Epoll 在 `n > 1` 时用 `SO_REUSEPORT` 共享监听端口；uring 保持每个 worker 一个 ring。
 
+`OnWorkerStart` 与 `OnWorkerStop` 在每个 worker 线程上、以其 Loop 为调度上下文执行：在 start hook 中创建 Channel 等 per-worker 状态，在 stop hook 中关闭它；stop hook 在连接排空之后、Loop 销毁之前运行。详见 [Runtime Builder](docs/design/zh-CN/network/runtime-builder.md)。
+
 `Tcp(net::TcpOptions)` 作用于每个已接受的连接；未设置的字段保持操作系统默认值。请求/响应协议通常应开启 `no_delay`：Nagle 算法开启时，紧跟在另一次写之后的小回复可能要等对端的延迟 ACK（Linux 上每个往返约 40ms）。
 
 ### 5. 编写客户端

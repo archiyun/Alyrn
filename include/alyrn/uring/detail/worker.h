@@ -38,6 +38,9 @@ struct WorkerContext {
   Loop& loop;
   Listener& listener;
   Connector& connector;
+  // A ThreadInitCallback may set an error here to fail worker startup without
+  // throwing; Start() then reports this error.
+  Result<void> start_result{};
 };
 
 struct WorkerOptions {
@@ -63,11 +66,16 @@ public:
   ALYRN_DELETE_COPY_MOVE(Worker);
 
   using ExitResult = Result<void, std::exception_ptr>;
+  // Runs on the worker thread inside the Loop's scheduling context, after the
+  // loop, listener, and connector exist and before connections are accepted.
+  // It fails startup by throwing or by setting WorkerContext::start_result.
   using ThreadInitCallback = std::function<void(WorkerContext&)>;
-  // Runs on the worker thread after the loop has drained and before loop-bound
-  // listener/connector resources are destroyed. Also runs if ThreadInitCallback
-  // throws, so it must tolerate partial initialization. Exceptions are retained
-  // and returned by Join(); the callback is not retried.
+  // Runs on the worker thread inside the Loop's scheduling context, after the
+  // loop has drained and before loop-bound listener/connector resources are
+  // destroyed; work it schedules is drained before those resources go away.
+  // Also runs if ThreadInitCallback fails, so it must tolerate partial
+  // initialization. Exceptions are retained and returned by Join(); the
+  // callback is not retried.
   using ThreadExitCallback = std::function<void(WorkerContext&)>;
   using ConnectionCallback =
       std::function<coro::DetachedTask(WorkerContext&, Stream)>;

@@ -9,13 +9,16 @@
 #include <cerrno>
 #include <chrono>
 #include <concepts>
+#include <memory>
 #include <optional>
 #include <print>
 #include <stop_token>
 #include <system_error>
 #include <thread>
 
+#include "alyrn/channel.h"
 #include "alyrn/coro/detached_task.h"
+#include "alyrn/spawn.h"
 #include "alyrn/result.h"
 #include "alyrn/net/endpoint.h"
 #include "alyrn/epoll/runtime.h"
@@ -188,6 +191,123 @@ bool CheckAcceptedTcpOptions(std::optional<net::TcpOptions> tcp_options, int exp
          Check(g_observed_no_delay.load(std::memory_order_acquire) == expected, message);
 }
 
+// Per-worker state created by OnWorkerStart and closed by OnWorkerStop, the
+// shape of a stateful server (for example a chat hub owned by each worker).
+thread_local std::unique_ptr<Channel<int>> t_worker_channel;
+std::atomic<int> g_handler_saw_worker_state{-1};
+
+struct WorkerHookObservation {
+  std::atomic<int> started{0};
+  std::atomic<int> stopped{0};
+  std::atomic<int> waiters_finished{0};
+  std::atomic<bool> hooks_in_loop_context{true};
+};
+
+coro::DetachedTask WaitForWorkerChannelClose(Channel<int>& channel,
+                                             WorkerHookObservation& observed) {
+  std::optional<int> value;
+  (void)co_await (channel >> value);
+  if (!value.has_value()) {
+    ++observed.waiters_finished;
+  }
+}
+
+template <typename Stream>
+coro::DetachedTask RecordWorkerState(Stream) {
+  g_handler_saw_worker_state.store(t_worker_channel != nullptr ? 1 : 0,
+                                   std::memory_order_release);
+  co_return;
+}
+
+// Start hooks create owner-affine state before the first connection; stop
+// hooks close it before the Loop dies, and the waiters they wake complete.
+template <typename Backend, typename Loop, typename Stream>
+bool CheckWorkerHooks() {
+  constexpr std::size_t kWorkers = 2;
+  auto port = PickLoopbackPort();
+  if (!Check(port.HasValue(), "failed to reserve worker hook test port")) {
+    return false;
+  }
+
+  WorkerHookObservation observed;
+  g_handler_saw_worker_state.store(-1, std::memory_order_release);
+  auto runtime =
+      Runtime::Builder<Backend>{net::Endpoint::Loopback(*port)}
+          .Workers(kWorkers)
+          .OnWorkerStart([&observed](Loop& loop, std::size_t) -> Result<void> {
+            if (!loop.IsInLoopThread() || coro::Scheduler::TryCurrent() != &loop) {
+              observed.hooks_in_loop_context = false;
+            }
+            t_worker_channel = std::make_unique<Channel<int>>(loop, 0);
+            SpawnDetach(loop, WaitForWorkerChannelClose(*t_worker_channel, observed));
+            ++observed.started;
+            return {};
+          })
+          .OnWorkerStop([&observed](Loop& loop, std::size_t) {
+            if (!loop.IsInLoopThread() || coro::Scheduler::TryCurrent() != &loop) {
+              observed.hooks_in_loop_context = false;
+            }
+            t_worker_channel->Close();
+            ++observed.stopped;
+          })
+          .OnConnection(RecordWorkerState<Stream>)
+          .Build();
+
+  auto started = runtime.Start();
+  if (!started.HasValue()) {
+    if (IsEnvironmentSkip(started.Error())) {
+      std::print("SKIP: runtime backend unavailable: {}\n", started.Error().message());
+      return true;
+    }
+    std::print("FAIL: worker hook Runtime failed to start: {}\n", started.Error().message());
+    return false;
+  }
+  const int started_before_stop = observed.started.load();
+
+  auto client = ConnectLoopback(*port);
+  const bool handled =
+      client.HasValue() &&
+      WaitFor([] { return g_handler_saw_worker_state.load(std::memory_order_acquire) != -1; });
+  if (client.HasValue()) {
+    (void)::close(*client);
+  }
+  runtime.Stop();
+
+  return Check(started_before_stop == static_cast<int>(kWorkers),
+               "every worker must run its start hook before Start() returns") &&
+         Check(handled && g_handler_saw_worker_state.load() == 1,
+               "a connection handler must see the state its worker's start hook created") &&
+         Check(observed.stopped.load() == static_cast<int>(kWorkers),
+               "every started worker must run its stop hook") &&
+         Check(observed.waiters_finished.load() == static_cast<int>(kWorkers),
+               "waiters woken by the stop hook must finish before the Loop is destroyed") &&
+         Check(observed.hooks_in_loop_context.load(),
+               "worker hooks must run on the worker thread in its Loop scheduling context");
+}
+
+// A failing start hook fails Start() with its error; the stop hook only runs
+// for workers whose start hook succeeded.
+template <typename Backend, typename Loop, typename Stream>
+bool CheckWorkerStartFailure() {
+  std::atomic<int> stopped{0};
+  auto runtime = Runtime::Builder<Backend>{net::Endpoint::Loopback(0)}
+                     .Workers(1)
+                     .OnWorkerStart([](Loop&, std::size_t) -> Result<void> {
+                       return std::unexpected(Errno(EACCES));
+                     })
+                     .OnWorkerStop([&stopped](Loop&, std::size_t) { ++stopped; })
+                     .OnConnection(RecordWorkerState<Stream>)
+                     .Build();
+  auto started = runtime.Start();
+  if (!started.HasValue() && IsEnvironmentSkip(started.Error())) {
+    std::print("SKIP: runtime backend unavailable: {}\n", started.Error().message());
+    return true;
+  }
+  return Check(!started.HasValue() && started.Error().value() == EACCES,
+               "Start() must report the start hook's error") &&
+         Check(stopped.load() == 0, "a worker whose start hook failed must not run its stop hook");
+}
+
 template <typename Runtime>
 bool WaitUntilStarted(Runtime& runtime) {
   constexpr auto kTimeout = std::chrono::seconds(1);
@@ -314,6 +434,11 @@ bool CheckEpollTcpOptions() {
          CheckAcceptedTcpOptions<runtime::Epoll, epoll::Stream>(
              net::TcpOptions{.no_delay = true}, 1,
              "Epoll Runtime must apply Tcp() options to accepted streams");
+}
+
+bool CheckEpollWorkerHooks() {
+  return CheckWorkerHooks<runtime::Epoll, epoll::Loop, epoll::Stream>() &&
+         CheckWorkerStartFailure<runtime::Epoll, epoll::Loop, epoll::Stream>();
 }
 
 bool CheckEpollStartFailureCanRetry() {
@@ -472,6 +597,11 @@ bool CheckUringTcpOptions() {
              "luring Runtime must apply Tcp() options to accepted streams");
 }
 
+bool CheckUringWorkerHooks() {
+  return CheckWorkerHooks<runtime::Uring, uring::Loop, uring::Stream>() &&
+         CheckWorkerStartFailure<runtime::Uring, uring::Loop, uring::Stream>();
+}
+
 bool CheckUringStartFailureCanRetry() {
   auto reserved = BindLoopbackPort();
   if (!Check(reserved.HasValue(), "failed to reserve luring retry test port")) {
@@ -514,6 +644,7 @@ int main() {
   ok = CheckEpollRequestStopFromForeignThread() && ok;
   ok = CheckEpollStartFailureCanRetry() && ok;
   ok = CheckEpollTcpOptions() && ok;
+  ok = CheckEpollWorkerHooks() && ok;
 #ifdef ALYRN_ENABLE_URING
   ok = CheckUringRuntime() && ok;
   ok = CheckUringRuntimeRunWithPreCancelledToken() && ok;
@@ -521,6 +652,7 @@ int main() {
   ok = CheckUringRequestStopFromForeignThread() && ok;
   ok = CheckUringStartFailureCanRetry() && ok;
   ok = CheckUringTcpOptions() && ok;
+  ok = CheckUringWorkerHooks() && ok;
 #endif
   return ok ? 0 : 1;
 }
