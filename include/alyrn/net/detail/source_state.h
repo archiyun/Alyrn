@@ -25,8 +25,9 @@ enum class MultishotRequestDisposition : std::uint8_t {
 enum class EventDisposition : std::uint8_t {
   kNone,
   kProduced,
-  // The event is handed directly to an already-waiting consumer instead of
-  // entering the source's bounded queue. It still owns a live buffer lease.
+  // RecvSource-only: the event is handed directly to an already-waiting
+  // consumer instead of entering the source's bounded queue. It still owns a
+  // live buffer lease; AcceptSource must reject this disposition.
   kDelivered,
 };
 

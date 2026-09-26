@@ -88,6 +88,12 @@ public:
     if (armed_requests_ == 0) {
       return std::unexpected(Errno(EINVAL));
     }
+    // AcceptSource produces Stream values; kDelivered is reserved for
+    // RecvSource's direct BufferLease hand-off and is not a valid accept
+    // disposition.
+    if (event == EventDisposition::kDelivered) {
+      return std::unexpected(Errno(EINVAL));
+    }
     if (event == EventDisposition::kProduced && queued_events_ >= options_.event_capacity) {
       return std::unexpected(Errno(ENOBUFS));
     }

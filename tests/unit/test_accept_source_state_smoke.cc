@@ -212,6 +212,22 @@ void CheckMultishotTerminalEventAndDuplicateTerminal() {
   assert(duplicate.Error().value() == EINVAL);
 }
 
+void CheckDeliveredIsInvalid() {
+  auto machine_result = AcceptSourceStateMachine::Create({1, 1});
+  assert(machine_result.HasValue());
+  auto machine = std::move(*machine_result);
+
+  assert(machine.Start().HasValue());
+  assert(machine.TryArm());
+  auto invalid = machine.CompleteMultishotEvent(
+      EventDisposition::kDelivered,
+      MultishotRequestDisposition::kMore);
+  assert(!invalid.HasValue());
+  assert(invalid.Error() == std::errc::invalid_argument);
+  assert(machine.ArmedRequests() == 1);
+  assert(machine.QueuedEvents() == 0);
+}
+
 void CheckMultishotLifecycle() {
   auto machine_result = AcceptSourceStateMachine::Create({1, 3});
   assert(machine_result.HasValue());
@@ -320,6 +336,7 @@ int main() {
   CheckInvalidCompletion();
   CheckMultishotCapacityAndTransientCompletion();
   CheckMultishotTerminalEventAndDuplicateTerminal();
+  CheckDeliveredIsInvalid();
   CheckMultishotLifecycle();
   CheckMultishotStopDrain();
   CheckPauseAndResume();

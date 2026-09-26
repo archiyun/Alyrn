@@ -18,9 +18,10 @@ using RecvSourceState = SourceState;
  * state alive until OutstandingLeases() is zero so Stop() can wait for every
  * BufferLease the application still holds.
  *
- * kMaxRearmWorkingSet is the kernel provided-buffer pipeline depth. Copy-out
- * adapters recycle slots during CQE handling; publishing more than this only
- * lengthens the ENOBUFS burst before userspace can restock the ring.
+ * kMaxRearmWorkingSet is Alyrn's per-source bound on the number of provided
+ * buffer slots published to the ring. It is an admission policy, not a kernel
+ * requirement. Copy-out adapters recycle slots during CQE handling; limiting
+ * publication bounds the burst before userspace can restock the ring.
  */
 class RecvSourceStateMachine final {
 public:
@@ -167,6 +168,8 @@ public:
       return false;
     }
     const std::size_t free_slots = options_.buffer_capacity - reserved;
+    // Keep a rearm working set available. This threshold is a policy choice;
+    // the safety condition above is what prevents buffer overcommit.
     const std::size_t min_free = std::min(options_.ResumeThreshold(), kMaxRearmWorkingSet);
     return free_slots >= min_free;
   }

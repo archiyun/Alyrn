@@ -39,19 +39,20 @@ public:
   }
 
   Result<void> ValidateRead() const noexcept {
-    if (resource_ == ResourceState::kClosing) {
-      return std::unexpected(Errno(ECANCELED));
+    auto resource = ValidateResource();
+    if (!resource.HasValue()) {
+      return resource;
     }
-    if (resource_ == ResourceState::kClosed) {
-      return std::unexpected(Errno(EBADF));
+    if (read_ == ReadState::kShutdownPreparing) {
+      return std::unexpected(Errno(EBUSY));
     }
     return {};
   }
 
   Result<void> ValidateWrite() const noexcept {
-    auto readable = ValidateRead();
-    if (!readable.HasValue()) {
-      return readable;
+    auto resource = ValidateResource();
+    if (!resource.HasValue()) {
+      return resource;
     }
     if (write_ == WriteState::kShutdown) {
       return std::unexpected(Errno(EPIPE));
@@ -107,9 +108,9 @@ public:
   // success or AbortShutdownPreparation() before reporting its local error.
   // false means the write side was already shut down.
   Result<bool> PrepareShutdown(bool write_pending) noexcept {
-    auto readable = ValidateRead();
-    if (!readable.HasValue()) {
-      return std::unexpected(readable.Error());
+    auto resource = ValidateResource();
+    if (!resource.HasValue()) {
+      return std::unexpected(resource.Error());
     }
     if (write_ == WriteState::kShutdown) {
       return false;
@@ -170,6 +171,16 @@ public:
   void MarkClosed() noexcept { resource_ = ResourceState::kClosed; }
 
 private:
+  Result<void> ValidateResource() const noexcept {
+    if (resource_ == ResourceState::kClosing) {
+      return std::unexpected(Errno(ECANCELED));
+    }
+    if (resource_ == ResourceState::kClosed) {
+      return std::unexpected(Errno(EBADF));
+    }
+    return {};
+  }
+
   enum class ResourceState : std::uint8_t {
     kOpen,
     kClosing,

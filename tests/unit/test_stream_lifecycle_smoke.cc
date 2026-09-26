@@ -168,6 +168,39 @@ bool CheckCloseReadPreparationRollback() {
   return restored;
 }
 
+bool CheckCloseReadPreparationExcludesReads() {
+  StreamLifecycle lifecycle;
+  auto prepared = lifecycle.PrepareCloseRead(false);
+  if (!Check(prepared.HasValue() && *prepared,
+             "CloseRead preparation did not start for read exclusion test")) {
+    return false;
+  }
+
+  const auto read = lifecycle.ValidateRead();
+  lifecycle.AbortCloseReadPreparation();
+  return Check(!read.HasValue() && read.Error() == std::errc::device_or_resource_busy,
+               "CloseRead preparation did not exclude a new read");
+}
+
+bool CheckCloseReadPreparationPreservesWrites() {
+  StreamLifecycle lifecycle;
+  auto prepared = lifecycle.PrepareCloseRead(false);
+  if (!Check(prepared.HasValue() && *prepared,
+             "CloseRead preparation did not start for write preservation test")) {
+    return false;
+  }
+
+  const bool write_valid = lifecycle.ValidateWrite().HasValue();
+  auto shutdown = lifecycle.PrepareShutdown(false);
+  lifecycle.AbortCloseReadPreparation();
+  if (shutdown.HasValue() && *shutdown) {
+    lifecycle.AbortShutdownPreparation();
+  }
+  return Check(write_valid, "CloseRead preparation incorrectly blocked writes") &&
+         Check(shutdown.HasValue() && *shutdown,
+               "CloseRead preparation incorrectly blocked Shutdown");
+}
+
 bool CheckCloseRejectsShutdownPreparation() {
   StreamLifecycle lifecycle;
   auto prepared = lifecycle.PrepareShutdown(false);
@@ -267,6 +300,8 @@ int main() {
   if (!CheckShutdownPreparationRollback()) return 1;
   if (!CheckCloseReadLifecycle()) return 1;
   if (!CheckCloseReadPreparationRollback()) return 1;
+  if (!CheckCloseReadPreparationExcludesReads()) return 1;
+  if (!CheckCloseReadPreparationPreservesWrites()) return 1;
   if (!CheckCloseRejectsShutdownPreparation()) return 1;
   if (!CheckCloseRejectsCloseReadPreparation()) return 1;
   if (!CheckCloseLifecycle()) return 1;
