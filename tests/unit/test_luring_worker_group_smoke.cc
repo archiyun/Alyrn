@@ -14,9 +14,11 @@
 #include <thread>
 #include <utility>
 
+#include "../contracts/worker_exit.h"
+#include "../contracts/worker_group_startup.h"
+#include "alyrn/net/endpoint.h"
 #include "alyrn/result.h"
 #include "alyrn/uring/detail/worker_group.h"
-#include "alyrn/net/endpoint.h"
 
 namespace {
 
@@ -253,6 +255,46 @@ bool CheckWorkerGroupAcceptCallback() {
 }  // namespace
 
 int main() {
+  {
+    auto loop = alyrn::uring::Loop{};
+    auto initialized = loop.Init({.entries = 16});
+    if (!initialized.HasValue()) {
+      if (IsEnvironmentSkip(initialized.Error())) {
+        std::cout << "SKIP: io_uring unavailable: " << initialized.Error().message() << '\n';
+        return 0;
+      }
+      std::cout << "FAIL: io_uring init failed: " << initialized.Error().message() << '\n';
+      return 1;
+    }
+  }
+  using Group = alyrn::uring::detail::WorkerGroup;
+  auto options = alyrn::uring::detail::WorkerGroupOptions{};
+  options.worker_options.loop_options.entries = 16;
+  if (!alyrn::test::contracts::CheckGroupExitFailure<Group>(options)) return 1;
+  if (!alyrn::test::contracts::CheckRollbackExitFailure<Group>(options, false)) return 1;
+  if (!alyrn::test::contracts::CheckRollbackExitFailure<Group>(options, true)) return 1;
+  if (!alyrn::test::contracts::CheckWorkerExitFailure<alyrn::uring::detail::Worker>(
+          options.worker_options))
+    return 1;
+  if (!alyrn::test::contracts::CheckFactoryFailureRollsBack<Group>(
+          options, [](auto& configured, bool& fail) {
+            configured.frame_resource_factory =
+                [&fail](std::size_t index) -> std::pmr::memory_resource* {
+              if (fail && index == 1) throw alyrn::test::contracts::StartupFailure{};
+              return nullptr;
+            };
+          }))
+    return 1;
+  if (!alyrn::test::contracts::CheckFactoryFailureRollsBack<Group>(options, [](auto& configured,
+                                                                               bool& fail) {
+        configured.cpu_affinity_factory = [&fail](std::size_t index) -> std::optional<unsigned> {
+          if (fail && index == 1) throw alyrn::test::contracts::StartupFailure{};
+          return std::nullopt;
+        };
+      }))
+    return 1;
+  if (!alyrn::test::contracts::CheckInitFailureRollsBack<Group>(options, true)) return 1;
+  if (!alyrn::test::contracts::CheckInitFailureRollsBack<Group>(options, false)) return 1;
   if (!CheckWorkerGroupStartStop()) return 1;
   if (!CheckWorkerGroupAcceptCallback()) return 1;
 

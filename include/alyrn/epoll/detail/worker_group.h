@@ -26,6 +26,7 @@ class WorkerGroup {
 public:
   ALYRN_DELETE_COPY_MOVE(WorkerGroup);
 
+  using ExitResult = Worker::ExitResult;
   using ThreadInitCallback = Worker::ThreadInitCallback;
   using ThreadExitCallback = Worker::ThreadExitCallback;
   using ConnectionCallback = Worker::ConnectionCallback;
@@ -37,11 +38,18 @@ public:
 
   ~WorkerGroup() noexcept;
 
+  // Failed startup stops and joins all workers, leaving an empty group that
+  // can be retried. Exceptions propagate after rollback. EALREADY preserves
+  // the running group. Lifecycle calls must be serialized by the caller.
   Result<void> Start();
 
   // Asks every worker loop to stop without joining its thread.
   void RequestStop() noexcept;
-  void Stop() noexcept;
+  // Stops and joins every worker, returning the first exit callback exception
+  // in worker-index order. The result survives repeated Stop() calls and startup
+  // rollback until the next Start() attempt. Destruction discards the result;
+  // call Stop() explicitly to observe it, from outside the worker threads.
+  ExitResult Stop() noexcept;
 
   bool Started() const noexcept { return started_; }
   std::size_t Size() const noexcept { return workers_.size(); }
@@ -61,6 +69,7 @@ private:
   ThreadExitCallback exit_callback_;
 
   bool started_{false};
+  ExitResult exit_result_;
   std::vector<std::unique_ptr<Worker>> workers_;
 };
 

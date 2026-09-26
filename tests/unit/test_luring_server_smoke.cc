@@ -15,6 +15,7 @@
 #include <thread>
 #include <utility>
 
+#include "../contracts/worker_exit.h"
 #include "alyrn/net/endpoint.h"
 #include "alyrn/result.h"
 #include "alyrn/uring/detail/server.h"
@@ -285,9 +286,66 @@ bool CheckServerStopsActiveSession() {
          Check(!server.Started(), "server should stop after cancelling active session");
 }
 
+bool CheckServerExitFailure(int startup_failure) {
+  std::atomic_size_t exited{0};
+  bool fail_start = true;
+  bool fail_exit = true;
+  auto options = MakeOptions(2);
+  options.worker_group_options.frame_resource_factory =
+      [&](std::size_t index) -> std::pmr::memory_resource* {
+    if (fail_start && startup_failure == 2 && index == 1) throw 42;
+    return nullptr;
+  };
+  auto server = alyrn::uring::detail::Server(LoopbackAddress(0), options);
+  server.SetThreadInitCallback([&](auto& context) {
+    if (fail_start && startup_failure == 1 && context.index == 1) throw 42;
+  });
+  server.SetThreadExitCallback([&](auto& context) {
+    ++exited;
+    if (fail_exit) throw alyrn::test::contracts::ExitFailure{context.index};
+  });
+  bool caught = false;
+  try {
+    auto started = server.Start();
+    if (!started.HasValue() && IsEnvironmentSkip(started.Error())) {
+      std::cout << "SKIP: io_uring unavailable: " << started.Error().message() << '\n';
+      return true;
+    }
+    if (startup_failure == 1) {
+      if (!Check(!started.HasValue() && started.Error() == std::errc::bad_address,
+                 "server must preserve the init failure"))
+        return false;
+    } else if (!Check(started.HasValue(), "server exit test must start")) {
+      return false;
+    }
+  } catch (int value) {
+    caught = value == 42;
+  }
+  if (!Check(caught == (startup_failure == 2), "server must preserve the factory exception")) {
+    return false;
+  }
+  auto result = server.Stop();
+  if (!Check(alyrn::test::contracts::IsExitFailure(result, 0),
+             "server Stop must return the original worker exit exception") ||
+      !Check(!server.Started() && exited == (startup_failure == 2 ? 1 : 2),
+             "server must finish joining workers before returning an exit failure"))
+    return false;
+  auto repeated = server.Stop();
+  if (!Check(!repeated.HasValue() && repeated.Error() == result.Error(),
+             "server must retain the exit result after releasing workers"))
+    return false;
+  fail_start = false;
+  fail_exit = false;
+  if (!Check(server.Start().HasValue(), "server must restart after exit failure")) return false;
+  return Check(server.Stop().HasValue(), "server restart must clear the previous exit failure");
+}
+
 }  // namespace
 
 int main() {
+  if (!CheckServerExitFailure(0)) return 1;
+  if (!CheckServerExitFailure(1)) return 1;
+  if (!CheckServerExitFailure(2)) return 1;
   if (!CheckServerStartStop()) return 1;
   if (!CheckServerSessionHandler()) return 1;
   if (!CheckServerStopsActiveSession()) return 1;

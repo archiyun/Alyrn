@@ -32,6 +32,7 @@ public:
   ALYRN_DELETE_COPY_MOVE(Server);
 
   using StreamType = Stream;
+  using ExitResult = WorkerGroup::ExitResult;
   using ThreadInitCallback = WorkerGroup::ThreadInitCallback;
   using ThreadExitCallback = WorkerGroup::ThreadExitCallback;
   using SessionHandler =
@@ -52,7 +53,10 @@ public:
 
   Result<void> Start();
 
-  void Stop() noexcept;
+  // Returns the first worker exit callback exception after joining all workers.
+  // The result survives repeated calls and startup rollback until the next
+  // Start() attempt. Call explicitly to observe it; destruction discards it.
+  ExitResult Stop() noexcept;
 
   bool Started() const noexcept {
     return started_;
@@ -68,6 +72,7 @@ private:
 
   std::unique_ptr<WorkerGroup> workers_;
   bool started_{false};
+  ExitResult exit_result_;
 };
 
 }  // namespace alyrn::uring::detail

@@ -119,6 +119,7 @@ Result<void> Worker::Start() {
     std::lock_guard lock{mutex_};
     init_done_ = false;
     start_result_ = Result<void>{};
+    exit_result_ = ExitResult{};
   }
 
   thread_ = std::jthread([this](std::stop_token token) { WorkLoop(std::move(token)); });
@@ -136,6 +137,14 @@ void Worker::Stop() noexcept {
   if (thread_.joinable()) {
     thread_.request_stop();
   }
+}
+
+Worker::ExitResult Worker::Join() noexcept {
+  if (thread_.joinable()) {
+    thread_.join();
+  }
+  // Joining synchronizes with the worker's publication of the exit result.
+  return exit_result_;
 }
 
 void Worker::WorkLoop(std::stop_token token) noexcept {
@@ -180,16 +189,19 @@ void Worker::WorkLoop(std::stop_token token) noexcept {
 
   WorkerContext context{index_, loop, *listener, *connector};
 
+  auto init_result = Result<void>{};
   if (init_callback_) {
     try {
       init_callback_(context);
     } catch (...) {
-      PublishStart(std::unexpected(Errno(EFAULT)));
-      return;
+      init_result = std::unexpected(Errno(EFAULT));
+      // The callback may already have scheduled work. Drain it while the
+      // context is alive, then run exit cleanup for partial initialization.
+      loop.RequestStop();
     }
   }
 
-  if (connection_callback_) {
+  if (init_result.HasValue() && connection_callback_) {
     if (options_.accept_mode == AcceptMode::kMultishot) {
       coro::SpawnDetach(loop, MultishotAcceptLoop(context, &connection_callback_));
     } else {
@@ -201,7 +213,7 @@ void Worker::WorkLoop(std::stop_token token) noexcept {
     }
   }
 
-  PublishStart(Result<void>{});
+  PublishStart(init_result);
   loop.Run(token);
   CloseListenerAfterLoopDrain(loop, *listener);
 
@@ -209,7 +221,7 @@ void Worker::WorkLoop(std::stop_token token) noexcept {
     try {
       exit_callback_(context);
     } catch (...) {
-      // Worker exit cleanup must not escape WorkLoop's noexcept boundary.
+      exit_result_ = std::unexpected(std::current_exception());
     }
   }
 }

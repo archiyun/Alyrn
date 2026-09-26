@@ -38,7 +38,7 @@ Worker::Worker(std::size_t index, net::Endpoint listen_addr, WorkerOptions optio
                ThreadExitCallback exit_callback)
     : index_(index),
       listen_addr_(listen_addr),
-      options_(options),
+      options_(std::move(options)),
       init_callback_(std::move(init_callback)),
       connection_callback_(std::move(connection_callback)),
       exit_callback_(std::move(exit_callback)) {}
@@ -54,6 +54,7 @@ Result<void> Worker::Start() {
     std::lock_guard lock{mutex_};
     init_done_ = false;
     start_result_ = Result<void>{};
+    exit_result_ = ExitResult{};
   }
 
   thread_ = std::jthread([this](std::stop_token token) { WorkLoop(std::move(token)); });
@@ -71,6 +72,14 @@ void Worker::Stop() noexcept {
   if (thread_.joinable()) {
     thread_.request_stop();
   }
+}
+
+Worker::ExitResult Worker::Join() noexcept {
+  if (thread_.joinable()) {
+    thread_.join();
+  }
+  // Joining synchronizes with the worker's publication of the exit result.
+  return exit_result_;
 }
 
 void Worker::WorkLoop(std::stop_token token) noexcept {
@@ -101,27 +110,30 @@ void Worker::WorkLoop(std::stop_token token) noexcept {
 
   WorkerContext context{index_, loop, *listener, *connector};
 
+  auto init_result = Result<void>{};
   if (init_callback_) {
     try {
       init_callback_(context);
     } catch (...) {
-      publish_start(std::unexpected(Errno(EFAULT)));
-      return;
+      init_result = std::unexpected(Errno(EFAULT));
+      // The callback may already have scheduled work. Drain it while the
+      // context is alive, then run exit cleanup for partial initialization.
+      loop.RequestStop();
     }
   }
 
-  if (connection_callback_) {
+  if (init_result.HasValue() && connection_callback_) {
     coro::SpawnDetach(loop, AcceptLoop(context, &connection_callback_));
   }
 
-  publish_start(Result<void>{});
+  publish_start(init_result);
   loop.Run(std::move(token));
 
   if (exit_callback_) {
     try {
       exit_callback_(context);
     } catch (...) {
-      // Worker exit cleanup must not escape WorkLoop's noexcept boundary.
+      exit_result_ = std::unexpected(std::current_exception());
     }
   }
 }

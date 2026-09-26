@@ -14,13 +14,14 @@ namespace alyrn::uring::detail {
 Server::Server(net::Endpoint listen_addr, ServerOptions options)
     : listen_addr_(listen_addr), options_(std::move(options)) {}
 
-Server::~Server() noexcept { Stop(); }
+Server::~Server() noexcept { (void)Stop(); }
 
 Result<void> Server::Start() {
   if (started_) {
     return std::unexpected(Errno(EALREADY));
   }
 
+  exit_result_ = ExitResult{};
   WorkerGroup::ConnectionCallback connection_callback;
   if (session_handler_) {
     connection_callback = [this](WorkerContext& context, Stream stream) {
@@ -28,25 +29,30 @@ Result<void> Server::Start() {
     };
   }
 
-  workers_ =
-      std::make_unique<WorkerGroup>(listen_addr_, options_.worker_group_options,
-                                          thread_init_callback_, std::move(connection_callback),
-                                          thread_exit_callback_);
-  auto started = workers_->Start();
-  if (!started.HasValue()) {
-    workers_.reset();
-    return std::unexpected(started.Error());
+  try {
+    workers_ = std::make_unique<WorkerGroup>(listen_addr_, options_.worker_group_options,
+                                             thread_init_callback_, std::move(connection_callback),
+                                             thread_exit_callback_);
+    auto started = workers_->Start();
+    if (!started.HasValue()) {
+      (void)Stop();
+      return std::unexpected(started.Error());
+    }
+  } catch (...) {
+    (void)Stop();
+    throw;
   }
   started_ = true;
   return {};
 }
 
-void Server::Stop() noexcept {
+Server::ExitResult Server::Stop() noexcept {
   if (workers_) {
-    workers_->Stop();
+    exit_result_ = workers_->Stop();
     workers_.reset();
   }
   started_ = false;
+  return exit_result_;
 }
 
 }  // namespace alyrn::uring::detail

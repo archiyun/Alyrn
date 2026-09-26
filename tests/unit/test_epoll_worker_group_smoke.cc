@@ -16,11 +16,13 @@
 #include <utility>
 #include <vector>
 
-#include "alyrn/result.h"
+#include "../contracts/worker_exit.h"
+#include "../contracts/worker_group_startup.h"
 #include "alyrn/coro/scheduler.h"
-#include "alyrn/net/endpoint.h"
 #include "alyrn/epoll/detail/worker.h"
 #include "alyrn/epoll/detail/worker_group.h"
+#include "alyrn/net/endpoint.h"
+#include "alyrn/result.h"
 
 namespace {
 
@@ -253,6 +255,25 @@ bool CheckZeroWorkersRejected() {
 }  // namespace
 
 int main() {
+  using Group = alyrn::epoll::detail::WorkerGroup;
+  auto options = alyrn::epoll::detail::WorkerGroupOptions{};
+  if (!alyrn::test::contracts::CheckGroupExitFailure<Group>(options)) return 1;
+  if (!alyrn::test::contracts::CheckRollbackExitFailure<Group>(options, false)) return 1;
+  if (!alyrn::test::contracts::CheckRollbackExitFailure<Group>(options, true)) return 1;
+  if (!alyrn::test::contracts::CheckWorkerExitFailure<alyrn::epoll::detail::Worker>(
+          options.worker_options))
+    return 1;
+  if (!alyrn::test::contracts::CheckFactoryFailureRollsBack<Group>(
+          options, [](auto& configured, bool& fail) {
+            configured.frame_resource_factory =
+                [&fail](std::size_t index) -> std::pmr::memory_resource* {
+              if (fail && index == 1) throw alyrn::test::contracts::StartupFailure{};
+              return nullptr;
+            };
+          }))
+    return 1;
+  if (!alyrn::test::contracts::CheckInitFailureRollsBack<Group>(options, true)) return 1;
+  if (!alyrn::test::contracts::CheckInitFailureRollsBack<Group>(options, false)) return 1;
   if (!CheckZeroWorkersRejected()) return 1;
   if (!CheckWorkerAcceptAndStop()) return 1;
   if (!CheckWorkerGroupStartAndStop()) return 1;
