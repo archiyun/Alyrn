@@ -15,11 +15,11 @@
 #include "alyrn/net/endpoint.h"
 #include "alyrn/net/detail/socket.h"
 #include "alyrn/net/tcp_options.h"
-#include "alyrn/detail/completion_gate.h"
 #include "alyrn/detail/scheduler_continuation.h"
 #include "alyrn/detail/single_result_lifecycle.h"
 #include "alyrn/epoll/detail/channel.h"
 #include "alyrn/epoll/detail/loop_access.h"
+#include "alyrn/epoll/timer.h"
 #include "alyrn/result.h"
 
 namespace alyrn::epoll {
@@ -193,59 +193,6 @@ coro::Task<Result<Stream>> ConnectResolved(Loop* loop, StreamOptions stream_opti
   co_return co_await ConnectAwaiter(loop, *peer, stream_options, tcp_options);
 }
 
-class [[nodiscard]] SleepAwaiter {
-public:
-  SleepAwaiter(Loop* loop, time::Duration delay) noexcept : loop_(loop), delay_(delay) {}
-
-  bool await_ready() const noexcept { return delay_ <= time::Duration::zero(); }
-
-  bool await_suspend(std::coroutine_handle<> continuation) noexcept {
-    ALYRN_CHECK(loop_ != nullptr, "SleepAwaiter has no owner Loop");
-    ALYRN_CHECK(loop_->IsInLoopThread(), "SleepAwaiter called from wrong Loop thread");
-    if (loop_->State() == backend::LoopState::kStopping ||
-        loop_->State() == backend::LoopState::kStopped) {
-      (void)(completion_gate_.TryComplete());
-      return false;
-    }
-    continuation_.Bind(continuation);
-    LoopAccess::RegisterShutdownParticipant(*loop_, shutdown_participant_);
-    timer_ = loop_->RunAfter(delay_, [this] {
-      if (completion_gate_.TryComplete()) {
-        continuation_.Schedule();
-      }
-    });
-    return true;
-  }
-
-  void await_resume() const noexcept {}
-
-  ~SleepAwaiter() {
-    if (shutdown_participant_.InList()) {
-      LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
-    }
-  }
-
-private:
-  static void DispatchLoopStop(void* context) noexcept {
-    auto* self = static_cast<SleepAwaiter*>(context);
-    if (!self->completion_gate_.TryComplete()) {
-      return;
-    }
-    if (self->timer_.Valid()) {
-      self->loop_->Cancel(self->timer_);
-      self->timer_ = {};
-    }
-    self->continuation_.Schedule();
-  }
-
-  Loop* loop_;
-  time::Duration delay_;
-  ::alyrn::detail::SchedulerContinuation continuation_;
-  ::alyrn::detail::CompletionGate completion_gate_;
-  time::TimerId timer_;
-  LoopShutdownParticipant shutdown_participant_{this, &DispatchLoopStop};
-};
-
 }  // namespace
 
 Connector::Connector(Loop* loop, ConnectorOptions options) noexcept
@@ -287,7 +234,7 @@ coro::Task<Result<Stream>> Connector::Connect(std::string_view host, std::uint16
 
 coro::Task<void> Connector::SleepFor(time::Duration delay) {
   RequireOwnerLoop();
-  co_await SleepAwaiter(loop_, delay);
+  (void)co_await epoll::SleepFor(*loop_, delay);
 }
 
 void Connector::RequireOwnerLoop() const noexcept {

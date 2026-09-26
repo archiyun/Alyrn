@@ -748,6 +748,11 @@ target_link_libraries(epoll_loop_smoke_test
 
 add_test(NAME epoll_loop_smoke_test COMMAND epoll_loop_smoke_test)
 
+add_executable(epoll_timer_smoke_test unit/test_epoll_timer_smoke.cc)
+target_link_libraries(epoll_timer_smoke_test PRIVATE alyrn_epoll)
+add_test(NAME epoll_timer_smoke_test COMMAND epoll_timer_smoke_test)
+set_tests_properties(epoll_timer_smoke_test PROPERTIES TIMEOUT 10)
+
 add_executable(timer_tree_smoke_test
     unit/test_timer_tree_smoke.cc
 )

@@ -16,3 +16,4 @@
 #include "alyrn/epoll/recv_source.h"  // IWYU pragma: export
 #include "alyrn/epoll/runtime.h"      // IWYU pragma: export
 #include "alyrn/epoll/stream.h"       // IWYU pragma: export
+#include "alyrn/epoll/timer.h"        // IWYU pragma: export

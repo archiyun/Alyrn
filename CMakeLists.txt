@@ -146,6 +146,7 @@ if(ALYRN_HAS_EPOLL)
         src/epoll/worker.cc
         src/epoll/worker_group.cc
         src/epoll/runtime.cc
+        src/epoll/timer.cc
         src/epoll/timer_queue.cc
     )
 

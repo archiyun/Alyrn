@@ -40,6 +40,9 @@ public:
   // each call owns its socket, Channel, result, and continuation.
   Task<Result<Stream>> Connect(net::Endpoint peer);
   Task<Result<Stream>> Connect(std::string_view host, std::uint16_t port);
+  // Compatibility wrapper around epoll::SleepFor; loop shutdown resumes the
+  // caller and discards the cancellation result. Prefer the standalone API
+  // when cancellation needs to be observed.
   Task<void> SleepFor(time::Duration delay);
 
 private:
