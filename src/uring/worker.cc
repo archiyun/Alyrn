@@ -22,6 +22,23 @@ namespace alyrn::uring::detail {
 
 namespace {
 
+// Runs when a connection handler finishes. A drain stops the loop once the
+// last handler is gone.
+void OnConnectionDone(void* context) noexcept {
+  auto& worker = *static_cast<WorkerContext*>(context);
+  --worker.live_connections;
+  if (worker.draining && worker.live_connections == 0) {
+    worker.loop.RequestStop();
+  }
+}
+
+void SpawnHandler(WorkerContext& context, Worker::ConnectionCallback& callback, Stream stream) {
+  auto handler = callback(context, std::move(stream));
+  ++context.live_connections;
+  handler.OnComplete(&OnConnectionDone, &context);
+  coro::SpawnDetach(context.loop, std::move(handler));
+}
+
 coro::DetachedTask AcceptLoop(WorkerContext& context,
                                Worker::ConnectionCallback* callback) {
   while (true) {
@@ -34,7 +51,7 @@ coro::DetachedTask AcceptLoop(WorkerContext& context,
       continue;
     }
     if (*callback) {
-      coro::SpawnDetach(context.loop, (*callback)(context, std::move(*accepted)));
+      SpawnHandler(context, *callback, std::move(*accepted));
     }
   }
 }
@@ -61,7 +78,7 @@ coro::DetachedTask MultishotAcceptLoop(
     }
 
     if (*callback) {
-      coro::SpawnDetach(context.loop, (*callback)(context, std::move(**accepted)));
+      SpawnHandler(context, *callback, std::move(**accepted));
     }
   }
 
@@ -76,6 +93,9 @@ coro::DetachedTask CloseListener(Listener* listener,
                                  std::optional<Result<void>>* result) {
   result->emplace(co_await listener->Close());
 }
+
+// Stops accepting during a drain; the accept loops observe the close.
+coro::DetachedTask CloseListenerForDrain(Listener& listener) { (void)co_await listener.Close(); }
 
 void CloseListenerAfterLoopDrain(Loop& loop, Listener& listener) noexcept {
   std::optional<Result<void>> close_result;
@@ -98,15 +118,16 @@ Result<void> SetCurrentThreadAffinity(unsigned cpu) noexcept {
 
 }  // namespace
 
-Worker::Worker(std::size_t index, net::Endpoint listen_addr,
-                           WorkerOptions options, ThreadInitCallback init_callback,
-                           ConnectionCallback connection_callback, ThreadExitCallback exit_callback)
+Worker::Worker(std::size_t index, net::Endpoint listen_addr, WorkerOptions options,
+               ThreadInitCallback init_callback, ConnectionCallback connection_callback,
+               ThreadExitCallback exit_callback, ThreadDrainCallback drain_callback)
     : index_(index),
       listen_addr_(listen_addr),
       options_(std::move(options)),
       init_callback_(std::move(init_callback)),
       connection_callback_(std::move(connection_callback)),
-      exit_callback_(std::move(exit_callback)) {}
+      exit_callback_(std::move(exit_callback)),
+      drain_callback_(std::move(drain_callback)) {}
 
 Worker::~Worker() noexcept { Stop(); }
 
@@ -121,6 +142,7 @@ Result<void> Worker::Start() {
     start_result_ = Result<void>{};
     exit_result_ = ExitResult{};
   }
+  drain_source_ = std::stop_source{};
 
   thread_ = std::jthread([this](std::stop_token token) { WorkLoop(std::move(token)); });
 
@@ -134,8 +156,37 @@ Result<void> Worker::Start() {
 }
 
 void Worker::Stop() noexcept {
-  if (thread_.joinable()) {
-    thread_.request_stop();
+  // The stop source, unlike joinable(), may be used while another thread
+  // joins; a worker that never started has no stop state and ignores it.
+  (void)thread_.get_stop_source().request_stop();
+}
+
+void Worker::RequestDrain() noexcept { (void)drain_source_.request_stop(); }
+
+void Worker::BeginDrain(WorkerContext& context) noexcept {
+  Loop& loop = context.loop;
+  if (context.draining || loop.State() != backend::LoopState::kRunning) {
+    return;
+  }
+  context.draining = true;
+  // Stop accepting: pending accepts complete and the accept loops end.
+  // Connections the kernel queued but nobody accepted are reset.
+  coro::SpawnDetach(loop, CloseListenerForDrain(context.listener));
+  if (drain_callback_) {
+    try {
+      drain_callback_(context);
+    } catch (...) {
+      exit_result_ = std::unexpected(std::current_exception());
+    }
+  }
+  if (context.live_connections == 0) {
+    loop.RequestStop();
+    return;
+  }
+  auto grace = loop.RunAfter(options_.shutdown_grace, [&loop] { loop.RequestStop(); });
+  if (!grace.HasValue()) {
+    // Without a timer the grace period cannot end: stop now.
+    loop.RequestStop();
   }
 }
 
@@ -221,6 +272,13 @@ void Worker::WorkLoop(std::stop_token token) noexcept {
   }
 
   PublishStart(init_result);
+  // A drain request runs BeginDrain on this loop. The callback is destroyed
+  // before the loop and waits for a concurrent RequestDrain() to return; a
+  // request that came first runs it here, at registration.
+  auto post_drain = [this, &loop, &context] {
+    (void)loop.Post([this, &context] { BeginDrain(context); });
+  };
+  std::stop_callback on_drain{drain_source_.get_token(), post_drain};
   loop.Run(token);
   CloseListenerAfterLoopDrain(loop, *listener);
 

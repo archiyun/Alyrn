@@ -144,6 +144,8 @@ The backend tag still selects the implementation at compile time. Options that a
 
 `OnWorkerStart` and `OnWorkerStop` run on each worker thread in its Loop's scheduling context: create per-worker state such as Channels in the start hook, and close it in the stop hook, which runs after connections have drained and before the Loop is destroyed. See [Runtime Builder](docs/design/zh-CN/network/runtime-builder.md).
 
+`ShutdownGrace(grace)` makes a stop request drain instead of cancel: each worker stops accepting, runs `OnWorkerDrain` (wake idle keep-alive connections there), and waits up to `grace` for its connection handlers before canceling the rest; a second `RequestStop()` cancels at once.
+
 Inside a connection handler, `stream.OwnerLoop()` is the worker's Loop: pass it to a `Connector` to reach an upstream (`epoll::Connector upstream(stream.OwnerLoop())`), or use it for `Spawn` and timers on the same thread.
 
 `Tcp(net::TcpOptions)` applies to every accepted stream; unset fields keep the operating-system default. Request/response protocols usually want `no_delay`: with Nagle's algorithm enabled, a small reply written right after another one can wait for the peer's delayed ACK (about 40 ms per round trip on Linux).

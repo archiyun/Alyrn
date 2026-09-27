@@ -37,11 +37,11 @@ public:
   using ThreadInitCallback = Worker::ThreadInitCallback;
   using ThreadExitCallback = Worker::ThreadExitCallback;
   using ConnectionCallback = Worker::ConnectionCallback;
+  using ThreadDrainCallback = Worker::ThreadDrainCallback;
 
   WorkerGroup(net::Endpoint listen_addr, WorkerGroupOptions options = {},
-                    ThreadInitCallback init_callback = {},
-                    ConnectionCallback connection_callback = {},
-                    ThreadExitCallback exit_callback = {});
+              ThreadInitCallback init_callback = {}, ConnectionCallback connection_callback = {},
+              ThreadExitCallback exit_callback = {}, ThreadDrainCallback drain_callback = {});
   ~WorkerGroup() noexcept;
 
   // Failed startup stops and joins all workers, leaving an empty group that
@@ -49,8 +49,14 @@ public:
   // the running group. Lifecycle calls must be serialized by the caller.
   Result<void> Start();
 
-  // Asks every worker loop to stop without joining its thread.
+  // Asks every worker loop to stop without joining its thread. Safe to call
+  // while another thread is inside Join().
   void RequestStop() noexcept;
+  // Asks every worker to drain (see Worker::RequestDrain) without joining.
+  void RequestDrain() noexcept;
+  // Joins every worker without asking it to stop: call after RequestStop()
+  // or RequestDrain(). Returns the first exit callback exception.
+  ExitResult Join() noexcept;
   // Stops and joins every worker, returning the first exit callback exception
   // in worker-index order. The result survives repeated Stop() calls and startup
   // rollback until the next Start() attempt. Destruction discards the result;
@@ -71,6 +77,7 @@ private:
   ThreadInitCallback init_callback_;
   ConnectionCallback connection_callback_;
   ThreadExitCallback exit_callback_;
+  ThreadDrainCallback drain_callback_;
 
   bool started_{false};
   ExitResult exit_result_;

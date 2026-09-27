@@ -8,6 +8,7 @@
 #include <memory>
 #include <memory_resource>
 #include <mutex>
+#include <stop_token>
 #include <thread>
 
 #include "alyrn/coro/detached_task.h"
@@ -17,6 +18,7 @@
 #include "alyrn/epoll/loop.h"
 #include "alyrn/epoll/stream.h"
 #include "alyrn/result.h"
+#include "alyrn/time/clock.h"
 
 namespace alyrn::epoll::detail {
 
@@ -34,6 +36,10 @@ struct WorkerContext {
   // A ThreadInitCallback may set an error here to fail worker startup without
   // throwing; Start() then reports this error.
   Result<void> start_result{};
+  // Owner-thread drain state: connection handlers still running, and whether
+  // a graceful shutdown began.
+  std::size_t live_connections{0};
+  bool draining{false};
 };
 
 struct WorkerOptions {
@@ -44,6 +50,8 @@ struct WorkerOptions {
   std::pmr::memory_resource* frame_resource{nullptr};
 
   ConnectorOptions connector_options{};
+  // How long a drain waits for connection handlers before the loop stops.
+  time::Duration shutdown_grace{};
 };
 
 class Worker {
@@ -64,17 +72,25 @@ public:
   using ThreadExitCallback = std::function<void(WorkerContext&)>;
   using ConnectionCallback =
       std::function<coro::DetachedTask(WorkerContext&, Stream)>;
+  // Runs on the worker thread inside the Loop's scheduling context when a
+  // drain begins, after the listener closed.
+  using ThreadDrainCallback = std::function<void(WorkerContext&)>;
 
   Worker(std::size_t index, net::Endpoint listen_addr, WorkerOptions options = {},
-                ThreadInitCallback init_callback = {}, ConnectionCallback connection_callback = {},
-                ThreadExitCallback exit_callback = {});
+         ThreadInitCallback init_callback = {}, ConnectionCallback connection_callback = {},
+         ThreadExitCallback exit_callback = {}, ThreadDrainCallback drain_callback = {});
   ~Worker() noexcept;
 
   Result<void> Start();
 
   // Requests shutdown. The worker thread is joined by the destructor or by
-  // the owning WorkerGroup.
+  // the owning WorkerGroup. Safe to call while another thread joins.
   void Stop() noexcept;
+  // Requests a graceful shutdown: the worker stops accepting, runs the drain
+  // callback, and stops its loop once its connection handlers finished or
+  // WorkerOptions::shutdown_grace elapsed. Stop() still stops at once.
+  // Thread-safe.
+  void RequestDrain() noexcept;
 
   // Waits for thread exit and returns any exception from ThreadExitCallback.
   // Call Stop() first to request shutdown. Join and lifecycle calls must be
@@ -86,6 +102,7 @@ public:
 
 private:
   void WorkLoop(std::stop_token token) noexcept;
+  void BeginDrain(WorkerContext& context) noexcept;
 
   std::size_t index_;
   net::Endpoint listen_addr_;
@@ -93,6 +110,8 @@ private:
   ThreadInitCallback init_callback_;
   ConnectionCallback connection_callback_;
   ThreadExitCallback exit_callback_;
+  ThreadDrainCallback drain_callback_;
+  std::stop_source drain_source_;
 
   std::mutex mutex_;
   std::condition_variable_any cv_;

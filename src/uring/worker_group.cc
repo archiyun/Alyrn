@@ -12,14 +12,14 @@
 namespace alyrn::uring::detail {
 
 WorkerGroup::WorkerGroup(net::Endpoint listen_addr, WorkerGroupOptions options,
-                                     ThreadInitCallback init_callback,
-                                     ConnectionCallback connection_callback,
-                                     ThreadExitCallback exit_callback)
+                         ThreadInitCallback init_callback, ConnectionCallback connection_callback,
+                         ThreadExitCallback exit_callback, ThreadDrainCallback drain_callback)
     : listen_addr_(listen_addr),
       options_(std::move(options)),
       init_callback_(std::move(init_callback)),
       connection_callback_(std::move(connection_callback)),
-      exit_callback_(std::move(exit_callback)) {}
+      exit_callback_(std::move(exit_callback)),
+      drain_callback_(std::move(drain_callback)) {}
 
 WorkerGroup::~WorkerGroup() noexcept { (void)Stop(); }
 
@@ -49,7 +49,7 @@ Result<void> WorkerGroup::Start() {
       // before joining any thread, including a partially started worker.
       workers_.push_back(std::make_unique<Worker>(i, listen_addr_, std::move(worker_options),
                                                   init_callback_, connection_callback_,
-                                                  exit_callback_));
+                                                  exit_callback_, drain_callback_));
       auto result = workers_.back()->Start();
       if (!result.HasValue()) {
         (void)Stop();
@@ -67,16 +67,26 @@ Result<void> WorkerGroup::Start() {
 
 WorkerGroup::ExitResult WorkerGroup::Stop() noexcept {
   RequestStop();
+  (void)Join();
+  workers_.clear();
+  started_ = false;
+  return exit_result_;
+}
 
+WorkerGroup::ExitResult WorkerGroup::Join() noexcept {
   for (auto& worker : workers_) {
     auto result = worker->Join();
     if (exit_result_.HasValue() && !result.HasValue()) {
       exit_result_ = std::move(result);
     }
   }
-  workers_.clear();
-  started_ = false;
   return exit_result_;
+}
+
+void WorkerGroup::RequestDrain() noexcept {
+  for (auto& worker : workers_) {
+    worker->RequestDrain();
+  }
 }
 
 void WorkerGroup::RequestStop() noexcept {

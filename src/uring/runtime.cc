@@ -30,15 +30,18 @@ void WaitForStop(std::atomic_bool& stop_requested) noexcept {
 // accepted stream remains Stream all the way to ConnectionHandler.
 class RuntimeControl final : public ::alyrn::detail::runtime::RuntimeControl {
 public:
-  RuntimeControl(net::Endpoint listen_addr, std::size_t worker_count,
-                 net::TcpOptions tcp_options, Builder::ConnectionHandler connection_handler,
-                 Builder::WorkerStartHook start_hook, Builder::WorkerStopHook stop_hook) noexcept
+  RuntimeControl(net::Endpoint listen_addr, std::size_t worker_count, net::TcpOptions tcp_options,
+                 Builder::ConnectionHandler connection_handler, Builder::WorkerStartHook start_hook,
+                 Builder::WorkerStopHook stop_hook, time::Duration shutdown_grace,
+                 Builder::WorkerDrainHook drain_hook) noexcept
       : listen_addr_(listen_addr),
         worker_count_(worker_count),
         tcp_options_(tcp_options),
         connection_handler_(std::move(connection_handler)),
         start_hook_(std::move(start_hook)),
-        stop_hook_(std::move(stop_hook)) {}
+        stop_hook_(std::move(stop_hook)),
+        shutdown_grace_(shutdown_grace),
+        drain_hook_(std::move(drain_hook)) {}
 
   ~RuntimeControl() noexcept override { Stop(); }
 
@@ -62,6 +65,7 @@ public:
     options.worker_options.accept_mode = detail::AcceptMode::kMultishot;
     options.worker_options.listen_options.reuse_port = worker_count_ > 1;
     options.worker_options.listen_options.tcp_options = tcp_options_;
+    options.worker_options.shutdown_grace = shutdown_grace_;
 
     auto callback = [this](detail::WorkerContext&, Stream stream) {
       return connection_handler_(std::move(stream));
@@ -88,9 +92,17 @@ public:
         }
       };
     }
+    detail::WorkerGroup::ThreadDrainCallback drain_callback;
+    if (drain_hook_) {
+      drain_callback = [this](detail::WorkerContext& context) {
+        if (!start_hook_ || worker_started_[context.index]) {
+          drain_hook_(context.loop, context.index);
+        }
+      };
+    }
     auto workers = std::make_unique<detail::WorkerGroup>(
         listen_addr_, std::move(options), std::move(init_callback), std::move(callback),
-        std::move(exit_callback));
+        std::move(exit_callback), std::move(drain_callback));
     auto started = workers->Start();
     if (!started.HasValue()) {
       std::lock_guard lock{lifecycle_mutex_};
@@ -127,38 +139,51 @@ public:
     stop_requested_.notify_all();
 
     std::lock_guard lock{lifecycle_mutex_};
-    if (state_ != LifecycleState::kRunning) {
-      return;
+    if (state_ == LifecycleState::kRunning) {
+      BeginStopLocked();
+    } else if (state_ == LifecycleState::kDraining) {
+      // A second request cuts the grace period short.
+      state_ = LifecycleState::kStopping;
+      workers_->RequestStop();
     }
-    state_ = LifecycleState::kStopping;
-    workers_->RequestStop();
   }
 
   void Stop() noexcept override {
-    std::unique_ptr<detail::WorkerGroup> workers;
+    detail::WorkerGroup* joining = nullptr;
     {
       std::lock_guard lock{lifecycle_mutex_};
       if (state_ == LifecycleState::kCreated || state_ == LifecycleState::kStopped ||
-          state_ == LifecycleState::kStarting) {
+          state_ == LifecycleState::kStarting || joining_) {
         return;
       }
 
       stop_requested_.store(true, std::memory_order_release);
       stop_requested_.notify_all();
-      state_ = LifecycleState::kStopping;
-      workers_->RequestStop();
-      workers = std::move(workers_);
+      if (state_ == LifecycleState::kRunning) {
+        BeginStopLocked();
+      }
+      joining_ = true;
+      joining = workers_.get();
     }
 
-    workers.reset();
+    // Draining workers stop on their own. The group stays reachable while this
+    // thread joins, so RequestStop() can still cut the drain short.
+    (void)joining->Join();
 
-    std::lock_guard lock{lifecycle_mutex_};
-    state_ = LifecycleState::kStopped;
+    std::unique_ptr<detail::WorkerGroup> workers;
+    {
+      std::lock_guard lock{lifecycle_mutex_};
+      workers = std::move(workers_);
+      joining_ = false;
+      state_ = LifecycleState::kStopped;
+    }
+    workers.reset();
   }
 
   bool Started() const noexcept override {
     std::lock_guard lock{lifecycle_mutex_};
-    return state_ == LifecycleState::kRunning || state_ == LifecycleState::kStopping;
+    return state_ == LifecycleState::kRunning || state_ == LifecycleState::kDraining ||
+           state_ == LifecycleState::kStopping;
   }
 
 private:
@@ -166,9 +191,21 @@ private:
     kCreated,
     kStarting,
     kRunning,
+    kDraining,
     kStopping,
     kStopped,
   };
+
+  // Called with lifecycle_mutex_ held on the first stop request.
+  void BeginStopLocked() noexcept {
+    if (shutdown_grace_ > time::Duration::zero()) {
+      state_ = LifecycleState::kDraining;
+      workers_->RequestDrain();
+    } else {
+      state_ = LifecycleState::kStopping;
+      workers_->RequestStop();
+    }
+  }
 
   net::Endpoint listen_addr_;
   std::size_t worker_count_;
@@ -176,10 +213,13 @@ private:
   Builder::ConnectionHandler connection_handler_;
   Builder::WorkerStartHook start_hook_;
   Builder::WorkerStopHook stop_hook_;
+  time::Duration shutdown_grace_;
+  Builder::WorkerDrainHook drain_hook_;
   std::unique_ptr<bool[]> worker_started_;
   mutable std::mutex lifecycle_mutex_;
   std::unique_ptr<detail::WorkerGroup> workers_;
   LifecycleState state_{LifecycleState::kCreated};
+  bool joining_{false};
   std::atomic_bool stop_requested_{false};
 };
 
@@ -189,10 +229,11 @@ std::unique_ptr<::alyrn::detail::runtime::RuntimeControl> MakeRuntimeControl(
     net::Endpoint listen_addr, std::size_t worker_count, net::TcpOptions tcp_options,
     Runtime::Builder<runtime::Uring>::ConnectionHandler connection_handler,
     Runtime::Builder<runtime::Uring>::WorkerStartHook start_hook,
-    Runtime::Builder<runtime::Uring>::WorkerStopHook stop_hook) {
-  return std::make_unique<RuntimeControl>(listen_addr, worker_count, tcp_options,
-                                          std::move(connection_handler), std::move(start_hook),
-                                          std::move(stop_hook));
+    Runtime::Builder<runtime::Uring>::WorkerStopHook stop_hook, time::Duration shutdown_grace,
+    Runtime::Builder<runtime::Uring>::WorkerDrainHook drain_hook) {
+  return std::make_unique<RuntimeControl>(
+      listen_addr, worker_count, tcp_options, std::move(connection_handler), std::move(start_hook),
+      std::move(stop_hook), shutdown_grace, std::move(drain_hook));
 }
 
 }  // namespace alyrn::uring
@@ -219,6 +260,12 @@ Runtime::Builder<runtime::Uring>& Runtime::Builder<runtime::Uring>::Tcp(
   return *this;
 }
 
+Runtime::Builder<runtime::Uring>& Runtime::Builder<runtime::Uring>::ShutdownGrace(
+    time::Duration grace) noexcept {
+  shutdown_grace_ = grace;
+  return *this;
+}
+
 Runtime::Builder<runtime::Uring>& Runtime::Builder<runtime::Uring>::OnConnection(
     ConnectionHandler handler) {
   connection_handler_ = std::move(handler);
@@ -237,11 +284,17 @@ Runtime::Builder<runtime::Uring>& Runtime::Builder<runtime::Uring>::OnWorkerStop
   return *this;
 }
 
+Runtime::Builder<runtime::Uring>& Runtime::Builder<runtime::Uring>::OnWorkerDrain(
+    WorkerDrainHook hook) {
+  worker_drain_hook_ = std::move(hook);
+  return *this;
+}
+
 Runtime Runtime::Builder<runtime::Uring>::Build() {
-  return Runtime{uring::MakeRuntimeControl(listen_addr_, worker_count_, tcp_options_,
-                                           std::move(connection_handler_),
-                                           std::move(worker_start_hook_),
-                                           std::move(worker_stop_hook_))};
+  return Runtime{uring::MakeRuntimeControl(
+      listen_addr_, worker_count_, tcp_options_, std::move(connection_handler_),
+      std::move(worker_start_hook_), std::move(worker_stop_hook_), shutdown_grace_,
+      std::move(worker_drain_hook_))};
 }
 
 }  // namespace alyrn

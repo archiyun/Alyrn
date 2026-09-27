@@ -4,12 +4,13 @@
 #include <cstddef>
 #include <functional>
 
-#include "alyrn/spawn.h"
-#include "alyrn/net/endpoint.h"
-#include "alyrn/net/tcp_options.h"
 #include "alyrn/epoll/loop.h"
 #include "alyrn/epoll/stream.h"
+#include "alyrn/net/endpoint.h"
+#include "alyrn/net/tcp_options.h"
 #include "alyrn/runtime.h"
+#include "alyrn/spawn.h"
+#include "alyrn/time/clock.h"
 
 namespace alyrn {
 
@@ -34,6 +35,11 @@ public:
   // as waiters woken by Channel::Close(), drains after it returns, so objects
   // those waiters reference must outlive the hook. It must not start new I/O.
   using WorkerStopHook = std::function<void(epoll::Loop&, std::size_t worker_index)>;
+  // Runs on each worker thread, inside its Loop scheduling context, when a
+  // graceful shutdown begins (see ShutdownGrace), after the worker stopped
+  // accepting. Wake idle connections here, for example by giving idle
+  // keep-alive streams an expired read deadline.
+  using WorkerDrainHook = std::function<void(epoll::Loop&, std::size_t worker_index)>;
 
   explicit Builder(net::Endpoint listen_addr) noexcept;
 
@@ -45,9 +51,15 @@ public:
   // protocols usually want no_delay: otherwise a small reply written right
   // after another one can wait for the peer's delayed ACK (Nagle).
   Builder& Tcp(net::TcpOptions options) noexcept;
+  // Graceful shutdown. When stop is requested, each worker stops accepting,
+  // runs the OnWorkerDrain hook, and waits up to `grace` for its connection
+  // handlers to finish before canceling the rest. Calling RequestStop() again
+  // cancels them at once. Zero, the default, cancels them immediately.
+  Builder& ShutdownGrace(time::Duration grace) noexcept;
   Builder& OnConnection(ConnectionHandler handler);
   Builder& OnWorkerStart(WorkerStartHook hook);
   Builder& OnWorkerStop(WorkerStopHook hook);
+  Builder& OnWorkerDrain(WorkerDrainHook hook);
 
   [[nodiscard]] Runtime Build();
 
@@ -58,6 +70,8 @@ private:
   ConnectionHandler connection_handler_;
   WorkerStartHook worker_start_hook_;
   WorkerStopHook worker_stop_hook_;
+  time::Duration shutdown_grace_{};
+  WorkerDrainHook worker_drain_hook_;
 };
 
 }  // namespace alyrn

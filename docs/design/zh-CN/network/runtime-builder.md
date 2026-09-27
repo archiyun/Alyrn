@@ -172,6 +172,38 @@ alyrn::DetachedTask Proxy(alyrn::epoll::Stream client) {
 }
 ```
 
+## 优雅关停
+
+默认的停止请求会立即取消所有连接上的 I/O。设置 `ShutdownGrace(grace)` 后，第一次停止请求
+（`Run()` 的 stop token、`RequestStop()` 或 `Stop()`）改为排空：
+
+```text
+停止请求
+  -> 每个 worker：关闭 listener（不再 accept；内核里尚未 accept 的连接被重置）
+  -> OnWorkerDrain(loop, index)      在 loop 调度上下文中，由应用唤醒空闲连接
+  -> 等待该 worker 的连接 handler 全部结束，或 grace 到期
+  -> 按默认流程停止：取消剩余 I/O、排空、OnWorkerStop、销毁 Loop
+```
+
+- 正在处理的请求照常完成；handler 结束时 Runtime 通过 `DetachedTask::OnComplete` 计数。
+- 排空期间再次调用 `RequestStop()` 会跳过剩余宽限期，立即按默认流程停止（例如第二次 Ctrl+C）。
+- 阻塞在 `Read` 上等待下一个请求的 keep-alive 连接不会自己结束：在 `OnWorkerDrain` 里给它们一个
+  已到期的 read deadline，`Read` 随即返回 `ETIMEDOUT`。
+
+```cpp
+thread_local std::vector<alyrn::epoll::Stream*> t_idle;  // handler 在等待请求时登记
+
+auto runtime = alyrn::Runtime::Builder<alyrn::runtime::Epoll>{endpoint}
+                   .ShutdownGrace(alyrn::time::Seconds(10))
+                   .OnWorkerDrain([](alyrn::epoll::Loop&, std::size_t) {
+                     for (auto* stream : t_idle) {
+                       (void)stream->SetReadDeadline(alyrn::time::SteadyNow());
+                     }
+                   })
+                   .OnConnection([](auto stream) { return HandleConnection(std::move(stream)); })
+                   .Build();
+```
+
 ## 默认阻塞入口
 
 当应用希望由调用 `main()` 的线程拥有整个 server 生命周期时，可使用 `Run()`：

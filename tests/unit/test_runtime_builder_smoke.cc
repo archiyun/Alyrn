@@ -3,8 +3,11 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <unistd.h>
 
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <cerrno>
 #include <chrono>
@@ -13,18 +16,23 @@
 #include <optional>
 #include <print>
 #include <stop_token>
+#include <string>
 #include <system_error>
 #include <thread>
+#include <vector>
 
 #include "alyrn/channel.h"
 #include "alyrn/coro/detached_task.h"
-#include "alyrn/spawn.h"
-#include "alyrn/result.h"
-#include "alyrn/net/endpoint.h"
 #include "alyrn/epoll/runtime.h"
+#include "alyrn/epoll/timer.h"
+#include "alyrn/net/endpoint.h"
+#include "alyrn/result.h"
+#include "alyrn/spawn.h"
+#include "alyrn/time/clock.h"
 
 #ifdef ALYRN_ENABLE_URING
 #include "alyrn/uring/runtime.h"
+#include "alyrn/uring/timer.h"
 #endif
 
 using namespace alyrn;
@@ -635,6 +643,216 @@ bool CheckUringStartFailureCanRetry() {
 
 #endif
 
+// --- Graceful shutdown (ShutdownGrace / OnWorkerDrain) ---
+
+std::atomic<int> g_drain_answered{0};
+std::atomic<int> g_drain_canceled{0};
+std::atomic<int> g_drain_idle_open{0};
+
+// Reads one command byte. 's' answers after 300 ms, 'z' after 10 s (longer
+// than any grace period used here); anything else answers at once.
+template <class Stream>
+coro::DetachedTask ServeCommand(Stream stream) {
+  std::array<std::byte, 8> buffer{};
+  auto read = co_await stream.Read(buffer);
+  if (!read.HasValue() || *read == 0) {
+    co_return;
+  }
+  if (buffer[0] == std::byte{'s'} || buffer[0] == std::byte{'z'}) {
+    const auto hold = buffer[0] == std::byte{'s'} ? std::chrono::milliseconds(300)
+                                                  : std::chrono::milliseconds(10'000);
+    auto slept = co_await SleepFor(*stream.OwnerLoop(), hold);
+    if (!slept.HasValue()) {
+      ++g_drain_canceled;
+      co_return;
+    }
+  }
+  const std::array<std::byte, 4> done{std::byte{'d'}, std::byte{'o'}, std::byte{'n'},
+                                      std::byte{'e'}};
+  if ((co_await stream.Write(done)).HasValue()) {
+    ++g_drain_answered;
+  }
+}
+
+// Idle keep-alive connections that the drain hook wakes.
+template <class Stream>
+thread_local std::vector<Stream*> t_idle_streams;
+
+template <class Stream>
+coro::DetachedTask ServeKeepAlive(Stream stream) {
+  t_idle_streams<Stream>.push_back(&stream);
+  ++g_drain_idle_open;
+  std::array<std::byte, 8> buffer{};
+  for (;;) {
+    auto read = co_await stream.Read(buffer);
+    if (!read.HasValue() || *read == 0) {
+      break;
+    }
+  }
+  std::erase(t_idle_streams<Stream>, &stream);
+  --g_drain_idle_open;
+}
+
+template <class Loop, class Stream>
+void WakeIdleStreams(Loop&, std::size_t) {
+  for (Stream* stream : t_idle_streams<Stream>) {
+    (void)stream->SetReadDeadline(time::SteadyNow());
+  }
+}
+
+// Sends one command byte and returns the reply read until EOF (3 s limit).
+std::string SendCommand(int fd, char command) {
+  if (::send(fd, &command, 1, MSG_NOSIGNAL) != 1) {
+    return "send failed";
+  }
+  timeval limit{.tv_sec = 3, .tv_usec = 0};
+  (void)::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &limit, sizeof(limit));
+  std::string reply;
+  char chunk[16];
+  for (;;) {
+    const ssize_t n = ::recv(fd, chunk, sizeof(chunk), 0);
+    if (n <= 0) {
+      break;
+    }
+    reply.append(chunk, static_cast<std::size_t>(n));
+  }
+  return reply;
+}
+
+bool ConnectRefused(std::uint16_t port) {
+  auto late = ConnectLoopback(port);
+  if (late.HasValue()) {
+    (void)::close(*late);
+    return false;
+  }
+  return late.Error() == std::errc::connection_refused;
+}
+
+// A request in flight when stop begins still gets its answer, new
+// connections are refused, and the drain ends with the last handler.
+template <class Backend, class Stream>
+bool CheckDrainFinishesInFlightRequests(const char* name) {
+  auto port = PickLoopbackPort();
+  if (!Check(port.HasValue(), "drain test could not pick a port")) return false;
+  g_drain_answered = 0;
+  g_drain_canceled = 0;
+  auto runtime = Runtime::Builder<Backend>{net::Endpoint::Loopback(*port)}
+                     .Workers(2)
+                     .ShutdownGrace(std::chrono::seconds(2))
+                     .OnConnection([](Stream stream) { return ServeCommand(std::move(stream)); })
+                     .Build();
+  auto started = runtime.Start();
+  if (!started.HasValue() && IsEnvironmentSkip(started.Error())) return true;
+  if (!Check(started.HasValue(), "drain test runtime failed to start")) return false;
+
+  auto client = ConnectLoopback(*port);
+  if (!Check(client.HasValue(), "drain test client failed to connect")) return false;
+  std::string reply;
+  std::jthread reader([&] { reply = SendCommand(*client, 's'); });
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+  const auto stop_began = std::chrono::steady_clock::now();
+  runtime.RequestStop();
+  const bool refused = WaitFor([&] { return ConnectRefused(*port); });
+  reader.join();
+  runtime.Stop();
+  const auto stopped_after = std::chrono::steady_clock::now() - stop_began;
+  (void)::close(*client);
+
+  std::print("{} drain: answered={} canceled={} stop took {} ms\n", name, g_drain_answered.load(),
+             g_drain_canceled.load(),
+             std::chrono::duration_cast<std::chrono::milliseconds>(stopped_after).count());
+  return Check(reply == "done", "a request in flight when stop began must still be answered") &&
+         Check(refused, "new connections must be refused once the drain began") &&
+         Check(stopped_after < std::chrono::milliseconds(1500),
+               "the drain must end with the last handler, not wait for the grace period") &&
+         Check(g_drain_canceled == 0, "work within the grace period must not be canceled");
+}
+
+// OnWorkerDrain wakes idle keep-alive readers so the drain ends promptly.
+template <class Backend, class Loop, class Stream>
+bool CheckDrainHookWakesIdleConnections() {
+  auto port = PickLoopbackPort();
+  if (!Check(port.HasValue(), "drain hook test could not pick a port")) return false;
+  g_drain_idle_open = 0;
+  auto runtime = Runtime::Builder<Backend>{net::Endpoint::Loopback(*port)}
+                     .Workers(1)
+                     .ShutdownGrace(std::chrono::seconds(5))
+                     .OnWorkerDrain(&WakeIdleStreams<Loop, Stream>)
+                     .OnConnection([](Stream stream) { return ServeKeepAlive(std::move(stream)); })
+                     .Build();
+  auto started = runtime.Start();
+  if (!started.HasValue() && IsEnvironmentSkip(started.Error())) return true;
+  if (!Check(started.HasValue(), "drain hook runtime failed to start")) return false;
+
+  auto client = ConnectLoopback(*port);
+  if (!Check(client.HasValue(), "drain hook client failed to connect")) return false;
+  const bool opened = WaitFor([] { return g_drain_idle_open.load() == 1; });
+
+  const auto stop_began = std::chrono::steady_clock::now();
+  runtime.RequestStop();
+  runtime.Stop();
+  const auto stopped_after = std::chrono::steady_clock::now() - stop_began;
+  char byte = 0;
+  const ssize_t eof = ::recv(*client, &byte, 1, 0);
+  (void)::close(*client);
+
+  return Check(opened, "the idle connection must reach its handler") &&
+         Check(stopped_after < std::chrono::seconds(1),
+               "the drain hook must let idle connections end before the grace period") &&
+         Check(eof == 0, "an idle client must see its connection close") &&
+         Check(g_drain_idle_open == 0, "the idle handler must finish");
+}
+
+// Handlers still running when the grace period ends are canceled; a second
+// RequestStop() cancels them without waiting for it.
+template <class Backend, class Stream>
+bool CheckDrainGraceEnds(std::chrono::milliseconds grace, bool second_request) {
+  auto port = PickLoopbackPort();
+  if (!Check(port.HasValue(), "grace test could not pick a port")) return false;
+  g_drain_canceled = 0;
+  auto runtime = Runtime::Builder<Backend>{net::Endpoint::Loopback(*port)}
+                     .Workers(1)
+                     .ShutdownGrace(grace)
+                     .OnConnection([](Stream stream) { return ServeCommand(std::move(stream)); })
+                     .Build();
+  auto started = runtime.Start();
+  if (!started.HasValue() && IsEnvironmentSkip(started.Error())) return true;
+  if (!Check(started.HasValue(), "grace test runtime failed to start")) return false;
+
+  auto client = ConnectLoopback(*port);
+  if (!Check(client.HasValue(), "grace test client failed to connect")) return false;
+  if (::send(*client, "z", 1, MSG_NOSIGNAL) != 1) return Check(false, "grace test send failed");
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+  const auto stop_began = std::chrono::steady_clock::now();
+  runtime.RequestStop();
+  if (second_request) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    runtime.RequestStop();
+  }
+  runtime.Stop();
+  const auto stopped_after = std::chrono::steady_clock::now() - stop_began;
+  (void)::close(*client);
+
+  const auto limit =
+      second_request ? std::chrono::milliseconds(1000) : grace + std::chrono::milliseconds(1000);
+  return Check(stopped_after < limit, second_request
+                                          ? "a second RequestStop must cut the drain short"
+                                          : "the drain must end when the grace period does") &&
+         Check(second_request || stopped_after >= grace - std::chrono::milliseconds(20),
+               "the drain must wait for the grace period while a handler runs") &&
+         Check(g_drain_canceled == 1, "a handler past the grace period must be canceled");
+}
+
+template <class Backend, class Loop, class Stream>
+bool CheckGracefulShutdown(const char* name) {
+  return CheckDrainFinishesInFlightRequests<Backend, Stream>(name) &&
+         CheckDrainHookWakesIdleConnections<Backend, Loop, Stream>() &&
+         CheckDrainGraceEnds<Backend, Stream>(std::chrono::milliseconds(200), false) &&
+         CheckDrainGraceEnds<Backend, Stream>(std::chrono::seconds(10), true);
+}
+
 }  // namespace
 
 int main() {
@@ -645,6 +863,7 @@ int main() {
   ok = CheckEpollStartFailureCanRetry() && ok;
   ok = CheckEpollTcpOptions() && ok;
   ok = CheckEpollWorkerHooks() && ok;
+  ok = CheckGracefulShutdown<runtime::Epoll, epoll::Loop, epoll::Stream>("epoll") && ok;
 #ifdef ALYRN_ENABLE_URING
   ok = CheckUringRuntime() && ok;
   ok = CheckUringRuntimeRunWithPreCancelledToken() && ok;
@@ -653,6 +872,7 @@ int main() {
   ok = CheckUringStartFailureCanRetry() && ok;
   ok = CheckUringTcpOptions() && ok;
   ok = CheckUringWorkerHooks() && ok;
+  ok = CheckGracefulShutdown<runtime::Uring, uring::Loop, uring::Stream>("uring") && ok;
 #endif
   return ok ? 0 : 1;
 }

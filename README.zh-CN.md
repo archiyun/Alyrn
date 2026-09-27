@@ -137,6 +137,8 @@ Backend tag 仍在编译期选择实现；ring 深度、provided buffer、zero-c
 
 `OnWorkerStart` 与 `OnWorkerStop` 在每个 worker 线程上、以其 Loop 为调度上下文执行：在 start hook 中创建 Channel 等 per-worker 状态，在 stop hook 中关闭它；stop hook 在连接排空之后、Loop 销毁之前运行。详见 [Runtime Builder](docs/design/zh-CN/network/runtime-builder.md)。
 
+`ShutdownGrace(grace)` 让停止请求改为排空：每个 worker 停止 accept，调用 `OnWorkerDrain`（在这里唤醒空闲的 keep-alive 连接），并最多等待 `grace` 让连接 handler 结束，之后再取消剩余的；再次调用 `RequestStop()` 会立即取消。
+
 在连接 handler 里，`stream.OwnerLoop()` 就是该 worker 的 Loop：把它交给 `Connector` 去连接上游（`epoll::Connector upstream(stream.OwnerLoop())`），或在同一线程上 `Spawn`、开定时器。
 
 `Tcp(net::TcpOptions)` 作用于每个已接受的连接；未设置的字段保持操作系统默认值。请求/响应协议通常应开启 `no_delay`：Nagle 算法开启时，紧跟在另一次写之后的小回复可能要等对端的延迟 ACK（Linux 上每个往返约 40ms）。
