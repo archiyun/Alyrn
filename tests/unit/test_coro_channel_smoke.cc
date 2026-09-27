@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <memory>
 #include <optional>
+#include <string>
 
 #include "alyrn/coro/channel.h"
 #include "alyrn/coro/scheduler.h"
@@ -341,11 +342,44 @@ void TriggerCloseWithPendingSender() {
   closer.Wait();
 }
 
+// Like ExpectChildAbort, and the panic report must name the cause.
+bool ExpectChildAbortMentioning(void (*entry)(), const char* expected, const char* message) {
+  int pipe_fds[2];
+  if (::pipe(pipe_fds) != 0) return false;
+  const pid_t child = ::fork();
+  if (child < 0) return false;
+  if (child == 0) {
+    ::close(pipe_fds[0]);
+    ::dup2(pipe_fds[1], STDERR_FILENO);
+    entry();
+    ::_exit(0);
+  }
+  ::close(pipe_fds[1]);
+  std::string report;
+  char chunk[512];
+  for (;;) {
+    const ssize_t n = ::read(pipe_fds[0], chunk, sizeof(chunk));
+    if (n > 0) {
+      report.append(chunk, static_cast<std::size_t>(n));
+    } else if (n == 0 || errno != EINTR) {
+      break;
+    }
+  }
+  ::close(pipe_fds[0]);
+  int status = 0;
+  while (::waitpid(child, &status, 0) < 0 && errno == EINTR) {
+  }
+  const bool aborted = WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT;
+  const bool named = report.find(expected) != std::string::npos;
+  if (!aborted || !named) std::fprintf(stderr, "FAIL: %s\n", message);
+  return aborted && named;
+}
+
 bool TestClosePanics() {
   return ExpectChildAbort(&TriggerSendOnClosed, "send on closed channel must panic") &&
          ExpectChildAbort(&TriggerCloseTwice, "closing a channel twice must panic") &&
-         ExpectChildAbort(&TriggerCloseWithPendingSender,
-                          "closing with a pending sender must panic");
+         ExpectChildAbortMentioning(&TriggerCloseWithPendingSender, "while a sender was waiting",
+                                    "closing with a pending sender must panic and say why");
 }
 
 bool TestArbitraryCapacity() {

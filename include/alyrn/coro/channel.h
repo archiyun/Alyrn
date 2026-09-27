@@ -167,8 +167,10 @@ public:
     return false;
   }
 
-  // Close the channel exactly once. Pending senders fail immediately;
-  // buffered values remain receivable, followed by the end-of-stream after drain.
+  // Close the channel exactly once. A sender still waiting to hand over its
+  // value panics, like a blocked send in Go: signal producers to stop before
+  // closing. Buffered values remain receivable, followed by the end-of-stream
+  // after drain.
   void Close() noexcept {
     CheckOwner();
     ALYRN_CHECK(!closed_, "close of closed Channel");
@@ -254,7 +256,9 @@ public:
       return value;
     }
 
-    void NotifyClosed() noexcept override { ALYRN_CHECK(false, "send on closed Channel"); }
+    void NotifyClosed() noexcept override {
+      ALYRN_CHECK(false, "Channel closed while a sender was waiting (send on closed Channel)");
+    }
 
     void Complete() noexcept override {
       ALYRN_CHECK(waiting_, "Channel completed a sender that was not waiting");
