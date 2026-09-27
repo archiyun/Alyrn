@@ -22,13 +22,13 @@ uring 会话泄漏；代理的 connect 超时竞速在 uring + LSan 下报告 71
 
 修复：
 
-- [ ] 把 `LoopShutdownParticipant` / `LoopShutdownRegistry` 移到共享的 `alyrn/detail/loop_shutdown.h`，
+- [x] 把 `LoopShutdownParticipant` / `LoopShutdownRegistry` 移到共享的 `alyrn/detail/loop_shutdown.h`，
       epoll 继续以原名使用。
-- [ ] uring Loop 增加关停参与者注册表：停止时先通知参与者，再取消并排空 ring 操作；
+- [x] uring Loop 增加关停参与者注册表：停止时先通知参与者，再取消并排空 ring 操作；
       析构时检查注册表已空。
-- [ ] uring `SleepFor` 与 epoll 契约一致：停止时以 `ECANCELED` 恢复；loop 已停止时立即返回
+- [x] uring `SleepFor` 与 epoll 契约一致：停止时以 `ECANCELED` 恢复；loop 已停止时立即返回
       `ECANCELED`；提前销毁时撤销定时器。
-- [ ] 测试：睡眠中的 detached 协程在停止时恢复并销毁帧；停止后 `SleepFor` 立即返回
+- [x] 测试：睡眠中的 detached 协程在停止时恢复并销毁帧；停止后 `SleepFor` 立即返回
       `ECANCELED`；提前销毁不触发回调（ASan）。
 
 ## G2 `Connect` 没有超时，挂起的 connect 无法取消（缺陷，中）
@@ -38,12 +38,12 @@ uring 会话泄漏；代理的 connect 超时竞速在 uring + LSan 下报告 71
 
 修复：
 
-- [ ] `ConnectorOptions::connect_timeout`（`time::Duration`，零表示不限）适用于每次 `Connect()`。
+- [x] `ConnectorOptions::connect_timeout`（`time::Duration`，零表示不限）适用于每次 `Connect()`。
       到期以 `ETIMEDOUT` 完成并立即关闭 socket；loop 停止仍报告 `ECANCELED`。
-- [ ] epoll：EINPROGRESS 后挂 loop 定时器，完成时撤销。
-- [ ] uring：沿用 stream deadline 的模式——定时器到期提交按 user_data 取消的请求，
+- [x] epoll：EINPROGRESS 后挂 loop 定时器，完成时撤销。
+- [x] uring：沿用 stream deadline 的模式——定时器到期提交按 user_data 取消的请求，
       connect 与取消两个 CQE 都收到后才恢复。
-- [ ] 测试（两后端 conformance）：用积满 accept 队列的监听端制造确定的 SYN 丢弃；超时时间与
+- [x] 测试（两后端 conformance）：用积满 accept 队列的监听端制造确定的 SYN 丢弃；超时时间与
       fd 释放；超时前成功时定时器被撤销；停止时为 `ECANCELED`。
 
 ## G3 `Select` 只能等 channel，定时器要自己拼（缺陷，中）
@@ -53,10 +53,10 @@ uring 会话泄漏；代理的 connect 超时竞速在 uring + LSan 下报告 71
 
 修复：
 
-- [ ] 两个后端提供 `Timer`（一次性）与 `Ticker`（周期性，接收方跟不上时丢弃多余 tick）。
+- [x] 两个后端提供 `Timer`（一次性）与 `Ticker`（周期性，接收方跟不上时丢弃多余 tick）。
       二者都支持 `co_await (timer >> fired)` 和 `Select(..., ticker >> tick)`；`Stop()`、`Reset()`
       丢弃未接收的值；loop 停止时关闭内部 channel，使等待者收到空值而不是永远挂起。
-- [ ] 测试：select 超时、ticker 丢弃、Stop/Reset、loop 停止唤醒等待者，两后端各一份。
+- [x] 测试：select 超时、ticker 丢弃、Stop/Reset、loop 停止唤醒等待者，两后端各一份。
 
 ## G4 Runtime 没有优雅关停（缺陷，中）
 
@@ -65,32 +65,59 @@ uring 会话泄漏；代理的 connect 超时竞速在 uring + LSan 下报告 71
 
 修复：
 
-- [ ] `Builder::ShutdownGrace(time::Duration)`：停止请求到达后，各 worker 先关闭 listener 停止接受，
+- [x] `Builder::ShutdownGrace(time::Duration)`：停止请求到达后，各 worker 先关闭 listener 停止接受，
       在 loop 线程上调用 `OnWorkerDrain` 钩子，然后等待该 worker 的连接 handler 全部结束或宽限期
       到期，再按原流程停止。宽限期为零时行为不变；排空期间再次 `RequestStop()` 立即强停。
-- [ ] `Builder::OnWorkerDrain(hook)`：应用在这里唤醒空闲会话（例如设置 read deadline）。
-- [ ] `DetachedTask` 增加内部完成通知，Runtime 用它统计存活的 handler。
-- [ ] 测试（两后端）：在途请求完成、钩子关闭空闲连接、排空后不再接受新连接、宽限期到期强停。
+- [x] `Builder::OnWorkerDrain(hook)`：应用在这里唤醒空闲会话（例如设置 read deadline）。
+- [x] `DetachedTask` 增加内部完成通知，Runtime 用它统计存活的 handler。
+- [x] 测试（两后端）：在途请求完成、钩子关闭空闲连接、排空后不再接受新连接、宽限期到期强停。
 
 ## G5 小问题
 
-- [ ] **handler 取不到 Loop**：两个后端的 `Stream` 增加 `OwnerLoop()`；文档说明如何在 handler 中
-      向外连接。
-- [ ] **`Channel::Close()` 注释与行为不符**：注释改为“等待中的发送方会 panic”，panic 文案指明是
+- [x] **handler 取不到 Loop**：更正——两个后端的 `Stream::OwnerLoop()` 早已公开（第一轮的
+      `07_recv_source_echo.cc` 就用过），但注释只说它给 native 扩展用，试用时没找到。改为在注释、
+      两份 README 与 runtime builder 文档中写明 handler 用它向外连接、`Spawn` 或开定时器。
+- [x] **`Channel::Close()` 注释与行为不符**：注释改为“等待中的发送方会 panic”，panic 文案指明是
       “关闭时仍有发送方在等待”。
-- [ ] **`Stream` 与非 socket fd**：epoll 读路径改用 `recv`/`recvmsg`，两后端对非 socket 一律返回
+- [x] **`Stream` 与非 socket fd**：epoll 读路径改用 `recv`/`recvmsg`，两后端对非 socket 一律返回
       `ENOTSOCK`；构造函数写明只接受已连接的流式 socket。
-- [ ] **两后端定时器接口不一致**：uring Loop 增加 `RunAt`、`RunEvery`、`Cancel`（`CancelTimer`
+- [x] **两后端定时器接口不一致**：uring Loop 增加 `RunAt`、`RunEvery`、`Cancel`（`CancelTimer`
       保留为别名）；uring 注册定时器需要提交 SQE，因此仍返回 `Result`，文档说明差异。
-- [ ] **`Endpoint` 缺少改端口的方法**：增加 `WithPort()`；`net::ParseIpAddress(ip, port)` 早已公开，
-      试用时没找到，在 `Endpoint` 注释与文档中给出指引。
-- [ ] **`net::Buffer` 无法跨块查找**：增加 `Find()` 与 `Linearize(n)`。
-- [ ] **UDP / Unix domain socket**：文档记录为当前不支持。
-- [ ] **取消与超时模式**：新增文档，说明各资源的取消方式与推荐写法，以及不提供任务级取消的原因。
+- [x] **`Endpoint` 缺少改端口的方法**：增加 `WithPort()`；`net::ParseIpAddress(ip, port)` 早已公开，
+      试用时没找到，在 `Endpoint` 注释中给出指引。另外补上 uring 缺少的 `Connect(net::Endpoint)`，
+      并把它加入 `AsyncConnector` 契约。
+- [x] **`net::Buffer` 无法跨块查找**：增加 `Find()` 与 `Linearize(n)`。
+- [x] **UDP / Unix domain socket**：文档记录为当前不支持。
+- [x] **取消与超时模式**：新增文档，说明各资源的取消方式与推荐写法，以及不提供任务级取消的原因。
 
 ## 验收
 
-- [ ] 每个修复先写失败的测试，修复后通过。
-- [ ] 每个提交在干净副本中单独通过 epoll 与 uring 全量测试；最终版本跑 CI 全部配置
+- [x] 每个修复先写失败的测试，修复后通过。
+- [x] 每个提交在干净副本中单独通过 epoll 与 uring 全量测试；最终版本跑 CI 全部配置
       （clang/GCC 严格警告、Release、ASan/UBSan、TSan）与 `mkdocs build --strict`。
-- [ ] 用修复后的库重跑第二轮试用程序，改用新 API 后删掉对应的自制代码。
+- [x] 用修复后的库重跑第二轮试用程序，改用新 API 后删掉对应的自制代码。
+
+## 结果
+
+分支 `agent/user-trial-round2-fixes`，在 `main`（88feb74）之上：
+
+| 提交 | 内容 |
+|---|---|
+| f1e95fe | 本计划 |
+| 175499a | G1 uring `SleepFor` 在停止时恢复；共享关停参与者注册表 |
+| 7ad4e63 | `Channel::Close()` 注释与 panic 文案 |
+| 1d4ff11 | 非 socket fd 在所有读路径上一致返回 `ENOTSOCK` |
+| 935b8e0 | uring 定时器接口与 epoll 对齐 |
+| 23ec969 | G3 `Timer` / `Ticker` |
+| afae2c5 | G2 `connect_timeout` 与 uring `Connect(Endpoint)` |
+| 569b1df | `Endpoint::WithPort()`，`OwnerLoop()` 文档 |
+| 1247e9a | `DetachedTask::OnComplete` |
+| e95740c | G4 `ShutdownGrace` / `OnWorkerDrain` |
+| 0283aa1 | `net::Buffer::Find()` / `Linearize()` |
+| 99ddf1f | 取消与超时文档、传输层范围说明 |
+
+用修复后的库重跑第二轮试用程序：代理去掉自制的 connect 竞速（233 → 181 行），20 个客户端在
+300 ms 超时后全部释放且不再残留 SYN-SENT socket（修复前 20 个）；uring 代理在 ASan/LSan 下
+不再报告泄漏（修复前 719 字节）；uring 睡眠中的协程在停止时以 `operation_canceled` 恢复；优雅关停
+改用 `ShutdownGrace` + `OnWorkerDrain`，结果与手写版一致，关停期间的新连接在连接阶段即被拒绝；
+流水线改用 `Ticker`；解析客户端改用 `WithPort()` + `Connect(Endpoint)`。
