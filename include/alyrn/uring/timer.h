@@ -4,47 +4,49 @@
 #include <coroutine>
 
 #include "alyrn/coro/work.h"
-#include "alyrn/detail/check.h"
+#include "alyrn/detail/loop_shutdown.h"
+#include "alyrn/detail/macros.h"
 #include "alyrn/result.h"
 #include "alyrn/time/clock.h"
-#include "alyrn/uring/detail/loop_access.h"
-#include "alyrn/uring/detail/result_state.h"
+#include "alyrn/time/timer_id.h"
 #include "alyrn/uring/loop.h"
 
 namespace alyrn::uring {
 
-// Suspends the current coroutine and resumes it on the owning Loop.
-// Cancellation of the enclosing coroutine is an owner-side protocol; while
-// suspended, the awaiter must remain alive just like other Alyrn awaiters.
+// Await on the owning Loop thread; positive waits require its active scheduler.
+// Returns success after the delay (immediately for nonpositive delays), or
+// operation_canceled if the Loop is stopping/stopped or stops before expiry.
+// Once expiry fixes success, a later stop does not change that result.
+// The Loop must outlive the awaiting coroutine. Destroying that coroutine
+// before expiry on the owner thread removes the timer. Once a continuation is
+// queued, its frame must remain alive until resumed; destroying it early is a
+// checked contract violation.
 class [[nodiscard]] SleepAwaiter final {
 public:
   SleepAwaiter(Loop& loop, time::Duration delay) noexcept : loop_(&loop), delay_(delay) {}
+  ~SleepAwaiter();
 
-  bool await_ready() const noexcept { return delay_ <= time::Duration::zero(); }
+  ALYRN_DELETE_COPY_MOVE(SleepAwaiter);
+
+  bool await_ready() const noexcept { return false; }
   bool await_suspend(std::coroutine_handle<> continuation) noexcept;
-  Result<void> await_resume() noexcept {
-    return result_.IsImmediate() ? result_.Take() : Result<void>{};
-  }
+  Result<void> await_resume() noexcept;
 
 private:
+  static void DispatchLoopStop(void* context) noexcept;
+
+  bool Stopping() const noexcept;
+  void Complete(Result<void> result) noexcept;
+  void ReleaseTimer() noexcept;
+
   Loop* loop_;
   time::Duration delay_;
-  detail::ResultState<void> result_;
+  Result<void> result_{};
   coro::ResumeWork resume_work_{};
+  time::TimerId timer_{};
+  ::alyrn::detail::LoopShutdownParticipant shutdown_participant_{this, &DispatchLoopStop};
+  bool continuation_pending_{false};
 };
-
-inline bool SleepAwaiter::await_suspend(std::coroutine_handle<> continuation) noexcept {
-  ALYRN_CHECK(loop_ != nullptr, "Uring sleep operation has no owner loop");
-  ALYRN_CHECK(loop_->IsInLoopThread(), "Uring sleep operation called from wrong Loop thread");
-  resume_work_.SetHandle(continuation);
-  auto timer = loop_->RunAfter(
-      delay_, [this]() noexcept { detail::LoopAccess::ScheduleCompletion(*loop_, &resume_work_); });
-  if (!timer.HasValue()) {
-    result_.SetError(timer.Error());
-    return false;
-  }
-  return true;
-}
 
 inline SleepAwaiter SleepFor(Loop& loop, time::Duration delay) noexcept {
   return SleepAwaiter{loop, delay};

@@ -57,6 +57,16 @@ public:
 
   static bool HasReadyWork(const Loop& loop) noexcept { return loop.HasReadyWork(); }
 
+  static void RegisterShutdownParticipant(
+      Loop& loop, ::alyrn::detail::LoopShutdownParticipant& participant) noexcept {
+    loop.RegisterShutdownParticipant(participant);
+  }
+
+  static void UnregisterShutdownParticipant(
+      Loop& loop, ::alyrn::detail::LoopShutdownParticipant& participant) noexcept {
+    loop.UnregisterShutdownParticipant(participant);
+  }
+
   static int RingFd(const Loop& loop) noexcept {
     return loop.RingFd();
   }

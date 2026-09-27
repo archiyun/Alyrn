@@ -13,6 +13,9 @@
 
 #include "alyrn/coro/channel.h"
 #include "alyrn/coro/spawn.h"
+#include "alyrn/coro/task.h"
+#include "alyrn/coro/work.h"
+#include "alyrn/detail/macros.h"
 #include "alyrn/io/loop.h"
 #include "alyrn/uring/connector.h"
 #include "alyrn/uring/detail/loop_access.h"
@@ -242,6 +245,196 @@ bool TestStopDiscardsUnexpiredTimer() {
   return Check(!fired, "loop shutdown must discard an unexpired timer without running it");
 }
 
+// --- SleepFor lifecycle: the same contract as epoll::SleepFor ---
+
+using UringLoop = alyrn::uring::Loop;
+
+struct Observation {
+  int resumes{0};
+  bool success{false};
+  bool canceled{false};
+  bool owner{false};
+};
+
+alyrn::coro::Task<void> Sleep(UringLoop& loop, alyrn::time::Duration delay, Observation& observed) {
+  auto result = co_await alyrn::uring::SleepFor(loop, delay);
+  ++observed.resumes;
+  observed.success = result.HasValue();
+  observed.canceled = !result && result.Error() == std::errc::operation_canceled;
+  observed.owner = loop.IsInLoopThread() && alyrn::coro::Scheduler::TryCurrent() == &loop;
+}
+
+// Owns the root explicitly so a test can destroy a sleeping frame.
+class RunningTask {
+public:
+  RunningTask(UringLoop& loop, alyrn::coro::Task<void> task) : handle_(task.Release()) {
+    alyrn::coro::ResumeWork work{handle_};
+    loop.alyrn::coro::Scheduler::Run(&work);
+  }
+  ~RunningTask() { handle_.destroy(); }
+
+  ALYRN_DELETE_COPY_MOVE(RunningTask);
+
+private:
+  alyrn::coro::Task<void>::Handle handle_;
+};
+
+// Returns false and sets `skipped` when io_uring is unavailable.
+bool InitSmallLoop(UringLoop& loop, bool& skipped) {
+  alyrn::uring::Options options;
+  options.entries = 16;
+  auto init = loop.Init(options);
+  skipped = !init.HasValue() && IsEnvironmentSkip(init.Error());
+  return init.HasValue();
+}
+
+bool SleepNonpositiveAndStopped() {
+  UringLoop loop;
+  bool skipped = false;
+  if (!InitSmallLoop(loop, skipped)) return skipped;
+  for (auto delay : {0ms, -1ms}) {
+    Observation observed;
+    RunningTask task(loop, Sleep(loop, delay, observed));
+    if (!Check(observed.resumes == 1 && observed.success && observed.owner,
+               "nonpositive sleep must complete inline on owner"))
+      return false;
+  }
+  loop.RequestStop();
+  for (auto delay : {0ms, -1ms, 1ms}) {
+    Observation observed;
+    RunningTask task(loop, Sleep(loop, delay, observed));
+    if (!Check(observed.resumes == 1 && observed.canceled, "stopping loop must reject every delay"))
+      return false;
+  }
+  loop.Run();
+  Observation stopped;
+  RunningTask task(loop, Sleep(loop, 1ms, stopped));
+  return Check(stopped.resumes == 1 && stopped.canceled, "stopped loop must reject sleep");
+}
+
+bool SleepShutdownCancelsPending() {
+  UringLoop loop;
+  bool skipped = false;
+  if (!InitSmallLoop(loop, skipped)) return skipped;
+  Observation observed;
+  RunningTask task(loop, Sleep(loop, 1h, observed));
+  if (!Check(observed.resumes == 0, "positive sleep must suspend")) return false;
+  std::thread stopper([&loop] { loop.RequestStop(); });
+  stopper.join();
+  loop.Run();
+  return Check(observed.resumes == 1 && observed.canceled && observed.owner,
+               "shutdown must cancel pending sleep once on owner scheduler");
+}
+
+bool SleepExpiryBeforeShutdown() {
+  UringLoop loop;
+  bool skipped = false;
+  if (!InitSmallLoop(loop, skipped)) return skipped;
+  Observation observed;
+  RunningTask task(loop, Sleep(loop, 1ms, observed));
+  // Both timers are overdue before Run: expiry queues the continuation, then
+  // shutdown starts before that continuation gets a turn.
+  (void)loop.RunAfter(2ms, [&loop] { loop.RequestStop(); });
+  std::this_thread::sleep_for(4ms);
+  loop.Run();
+  return Check(observed.resumes == 1 && observed.success && observed.owner,
+               "expiry result must survive later shutdown before resume");
+}
+
+bool SleepStopBeforeExpiryInSameBatch() {
+  UringLoop loop;
+  bool skipped = false;
+  if (!InitSmallLoop(loop, skipped)) return skipped;
+  Observation observed;
+  (void)loop.RunAfter(1ms, [&loop] { loop.RequestStop(); });
+  RunningTask task(loop, Sleep(loop, 2ms, observed));
+  std::this_thread::sleep_for(4ms);
+  loop.Run();
+  return Check(observed.resumes == 1 && observed.canceled && observed.owner,
+               "timer callback seeing stop must cancel instead of reporting elapsed");
+}
+
+bool SleepDestroyedBeforeExpiry() {
+  UringLoop loop;
+  bool skipped = false;
+  if (!InitSmallLoop(loop, skipped)) return skipped;
+  Observation abandoned;
+  {
+    RunningTask task(loop, Sleep(loop, 1ms, abandoned));
+  }
+  Observation live;
+  RunningTask task(loop, Sleep(loop, 2ms, live));
+  (void)loop.RunAfter(3ms, [&loop] { loop.RequestStop(); });
+  std::this_thread::sleep_for(5ms);
+  loop.Run();
+  return Check(abandoned.resumes == 0 && live.resumes == 1 && live.success,
+               "destroyed pending sleep must remove its timer and shutdown participant");
+}
+
+struct FrameTracker {
+  bool* destroyed;
+  ~FrameTracker() { *destroyed = true; }
+};
+
+alyrn::coro::DetachedTask DetachedSleeper(UringLoop& loop, bool& resumed_canceled,
+                                          bool& destroyed) {
+  FrameTracker tracker{&destroyed};
+  auto slept = co_await alyrn::uring::SleepFor(loop, 10s);
+  resumed_canceled = !slept && slept.Error() == std::errc::operation_canceled;
+}
+
+// A detached coroutine sleeping when the loop stops must resume and release
+// its frame instead of being abandoned.
+bool DetachedSleepReleasedOnStop() {
+  bool resumed_canceled = false;
+  bool destroyed = false;
+  {
+    UringLoop loop;
+    bool skipped = false;
+    if (!InitSmallLoop(loop, skipped)) return skipped;
+    alyrn::coro::SpawnDetach(loop, DetachedSleeper(loop, resumed_canceled, destroyed));
+    (void)loop.RunAfter(20ms, [&loop] { loop.RequestStop(); });
+    loop.Run();
+  }
+  return Check(resumed_canceled, "a sleep pending at stop must resume with operation_canceled") &&
+         Check(destroyed, "a detached sleeper must release its frame when the loop stops");
+}
+
+alyrn::coro::Task<void> LegacySleep(alyrn::uring::Connector& connector, int& resumes) {
+  co_await connector.SleepFor(1h);
+  ++resumes;
+}
+
+bool LegacySleepResumesOnStop() {
+  UringLoop loop;
+  bool skipped = false;
+  if (!InitSmallLoop(loop, skipped)) return skipped;
+  alyrn::uring::Connector connector(&loop);
+  int resumes = 0;
+  RunningTask task(loop, LegacySleep(connector, resumes));
+  loop.RequestStop();
+  loop.Run();
+  return Check(resumes == 1, "legacy sleep must resume when the loop stops");
+}
+
+void DestroyLoopWithSleepingFrame() {
+  auto* loop = new UringLoop;
+  bool skipped = false;
+  if (!InitSmallLoop(*loop, skipped)) ::_exit(0);
+  Observation observed;
+  // Leak the sleeping frame so the Loop is destroyed while it is registered.
+  new RunningTask(*loop, Sleep(*loop, 1h, observed));
+  delete loop;
+}
+
+bool TestSleepLifecycle() {
+  return SleepNonpositiveAndStopped() && SleepShutdownCancelsPending() &&
+         SleepExpiryBeforeShutdown() && SleepStopBeforeExpiryInSameBatch() &&
+         SleepDestroyedBeforeExpiry() && DetachedSleepReleasedOnStop() &&
+         LegacySleepResumesOnStop() &&
+         ExpectChildAbort(&DestroyLoopWithSleepingFrame,
+                          "destroying a Loop with a registered sleep must terminate");
+}
 
 }  // namespace
 
@@ -250,6 +443,7 @@ int main() {
   if (!TestTimers()) return 1;
   if (!TestStopDiscardsUnexpiredTimer()) return 1;
   if (!TestTimerCallbackUsesOwnerChannel()) return 1;
+  if (!TestSleepLifecycle()) return 1;
   std::cout << "luring timer smoke: PASS\n";
   return 0;
 }

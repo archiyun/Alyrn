@@ -179,6 +179,7 @@ if(ALYRN_ENABLE_URING)
         src/uring/ring.cc
         src/uring/runtime.cc
         src/uring/server.cc
+        src/uring/timer.cc
         src/uring/timer_queue.cc
         src/uring/stream.cc
         src/uring/worker.cc

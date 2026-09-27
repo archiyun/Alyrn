@@ -214,6 +214,7 @@ Loop::~Loop() noexcept {
   if (initialized_) {
     ALYRN_CHECK(IsDrained(), "Loop destroyed with pending user operation work");
   }
+  ALYRN_CHECK(shutdown_registry_.Empty(), "Loop destroyed with registered shutdown resources");
   // TimerQueue::DiscardAll() goes through IsInLoopThread().
   timers_.reset();
   if (wake_fd_ >= 0) {
@@ -343,6 +344,9 @@ void Loop::Run(std::stop_token token) noexcept {
   }
 
   if (State() == backend::LoopState::kStopping) {
+    // Participants such as sleeping timers are not ring operations: complete
+    // them first so the drain below resumes their continuations.
+    BeginShutdown();
     DrainStoppedOperations();
     // Physical timeout requests are terminal after the drain. Logical timers
     // that have not expired are now canceled by loop shutdown and may release
@@ -351,6 +355,29 @@ void Loop::Run(std::stop_token token) noexcept {
   }
   DrainPostedAndClose();
   state_.store(backend::LoopState::kStopped, std::memory_order_release);
+}
+
+void Loop::RegisterShutdownParticipant(
+    ::alyrn::detail::LoopShutdownParticipant& participant) noexcept {
+  ALYRN_CHECK(IsInLoopThread(), "Loop::RegisterShutdownParticipant called from wrong thread");
+  ALYRN_CHECK(shutdown_registry_.Register(&participant),
+              "Loop shutdown participant registered twice");
+}
+
+void Loop::UnregisterShutdownParticipant(
+    ::alyrn::detail::LoopShutdownParticipant& participant) noexcept {
+  ALYRN_CHECK(IsInLoopThread(), "Loop::UnregisterShutdownParticipant called from wrong thread");
+  ALYRN_CHECK(shutdown_registry_.Unregister(&participant),
+              "Loop shutdown participant was not registered");
+}
+
+void Loop::BeginShutdown() noexcept {
+  ALYRN_CHECK(IsInLoopThread(), "Loop::BeginShutdown called from wrong thread");
+  if (shutdown_started_) {
+    return;
+  }
+  shutdown_started_ = true;
+  shutdown_registry_.RequestStop();
 }
 
 void Loop::RequestStop() noexcept {

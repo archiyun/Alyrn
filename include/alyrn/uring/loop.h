@@ -19,6 +19,7 @@
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/work.h"
 #include "alyrn/detail/check.h"
+#include "alyrn/detail/loop_shutdown.h"
 #include "alyrn/result.h"
 #include "alyrn/time/clock.h"
 #include "alyrn/time/timer_id.h"
@@ -194,6 +195,12 @@ private:
   Result<std::size_t> WaitCompletionsFor(std::chrono::nanoseconds timeout) noexcept;
 
   void DrainStoppedOperations() noexcept;
+  // Owner-loop resources that are not ring operations, such as sleeping
+  // timers, register here so stopping can complete them before the drain.
+  void RegisterShutdownParticipant(::alyrn::detail::LoopShutdownParticipant& participant) noexcept;
+  void UnregisterShutdownParticipant(
+      ::alyrn::detail::LoopShutdownParticipant& participant) noexcept;
+  void BeginShutdown() noexcept;
   void HandleCqe(io_uring_cqe* cqe) noexcept;
   // Recycle provided buffers and resume CQE waiters before the next CQE so a
   // multishot recv can restock and rearm inside the same reap.
@@ -221,6 +228,8 @@ private:
   std::atomic<backend::LoopState> state_{backend::LoopState::kCreated};
 
   std::unique_ptr<detail::TimerQueue> timers_;
+  ::alyrn::detail::LoopShutdownRegistry shutdown_registry_;
+  bool shutdown_started_{false};
   int wake_fd_{-1};
   std::mutex post_mutex_;
   std::vector<std::function<void()>> posted_;
