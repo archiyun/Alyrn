@@ -53,6 +53,9 @@ public:
   // directly with co_await (or keep the result in auto); their registration,
   // result storage, and cancellation protocol are not a stream interface.
 
+  // Adopts fd, which must be a connected stream socket (TCP, or one end of a
+  // socketpair). Other descriptors such as pipes, files, or terminals are not
+  // supported: reads and writes on them fail with ENOTSOCK.
   Stream(Loop* loop, int fd, net::Endpoint peer = net::Endpoint(0), StreamOptions options = {});
   // Destruction is loop-affine. An idle stream closes its descriptor.
   // Pending read/write operations complete once with ECANCELED; their

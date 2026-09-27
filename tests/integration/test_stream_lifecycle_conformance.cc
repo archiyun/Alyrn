@@ -2,6 +2,7 @@
 // Runs the same application-observable lifecycle scenarios against every
 // enabled stream backend. Backend harnesses own only setup and timer syntax.
 
+#include <fcntl.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -1175,6 +1176,79 @@ bool CheckPendingReadDropContract() {
   return ok;
 }
 
+struct NonSocketObservation {
+  std::optional<alyrn::Result<std::size_t>> read;
+  std::optional<alyrn::Result<std::size_t>> scattered;
+  std::optional<alyrn::Result<void>> write;
+  bool timed_out{false};
+};
+
+template <class Stream, class Loop>
+  requires alyrn::io::AsyncStream<Stream> && alyrn::io::AsyncRecvStream<Stream>
+auto UseNonSocketStreams(Stream& reader, Stream& writer, Loop& loop, NonSocketObservation& observed)
+    -> alyrn::coro::DetachedTask {
+  std::array<std::byte, 8> buffer{};
+  observed.read.emplace(co_await reader.Read(buffer));
+  // A partly filled small block forces a reservation that spans two blocks.
+  alyrn::io::Buffer chain(16);
+  chain.Append(std::string_view("0123456789"));
+  auto scattered = co_await reader.Recv(std::move(chain), 64);
+  observed.scattered.emplace(std::move(scattered.result));
+  const std::array<std::byte, 1> byte{std::byte{'x'}};
+  observed.write.emplace(co_await writer.Write(byte));
+  loop.RequestStop();
+}
+
+// Stream adopts connected stream sockets only. Every read and write path on
+// another descriptor must fail with ENOTSOCK on every backend, even when the
+// descriptor has data that a plain read() would return.
+template <class Harness>
+bool CheckNonSocketDescriptorContract() {
+  typename Harness::Loop loop;
+  if (!Harness::Init(loop)) {
+    if (Harness::Skip(loop)) {
+      return true;
+    }
+    std::cerr << "FAIL [" << Harness::Name() << "]: loop initialization\n";
+    return false;
+  }
+
+  int pipe_fds[2];
+  if (::pipe2(pipe_fds, O_CLOEXEC) != 0) {
+    std::cerr << "FAIL [" << Harness::Name() << "]: pipe creation\n";
+    return false;
+  }
+  if (::write(pipe_fds[1], "abc", 3) != 3) {
+    std::cerr << "FAIL [" << Harness::Name() << "]: pipe preload\n";
+    return false;
+  }
+  auto reader = Harness::MakeStream(loop, pipe_fds[0]);
+  auto writer = Harness::MakeStream(loop, pipe_fds[1]);
+
+  NonSocketObservation observed;
+  alyrn::coro::SpawnDetach(loop, UseNonSocketStreams(reader, writer, loop, observed));
+  if (!Harness::RunAfter(loop, std::chrono::milliseconds(500), [&] {
+        observed.timed_out = true;
+        loop.RequestStop();
+      })) {
+    return false;
+  }
+  Harness::Run(loop);
+
+  auto not_a_socket = [](const auto& result) {
+    return result.has_value() && !result->HasValue() && result->Error() == std::errc::not_a_socket;
+  };
+  bool ok = true;
+  ok &= Expect(!observed.timed_out, Harness::Name(), "non-socket stream operations timed out");
+  ok &= Expect(not_a_socket(observed.read), Harness::Name(),
+               "Read on a pipe must fail with ENOTSOCK");
+  ok &= Expect(not_a_socket(observed.scattered), Harness::Name(),
+               "scattered Recv on a pipe must fail with ENOTSOCK");
+  ok &= Expect(not_a_socket(observed.write), Harness::Name(),
+               "Write on a pipe must fail with ENOTSOCK");
+  return ok;
+}
+
 template <class Harness>
 bool CheckBackend() {
   const bool pending_read = CheckPendingReadSuccessContract<Harness>();
@@ -1190,18 +1264,19 @@ bool CheckBackend() {
   const bool closed_stream = CheckClosedStreamContract<Harness>();
   const bool pending_read_close = CheckPendingReadCloseContract<Harness>();
   const bool idle_drop = CheckIdleStreamDropContract<Harness>();
+  const bool non_socket = CheckNonSocketDescriptorContract<Harness>();
   bool pending_read_drop = true;
   if constexpr (Harness::DropCancelsPendingOperations()) {
     pending_read_drop = CheckPendingReadDropContract<Harness>();
   }
   if (pending_read && sequential_read && owned_read && read_lane && loop_stop && stop_rejection &&
       shutdown && close_read && pending_close_read && pending_write_close && closed_stream &&
-      pending_read_close && idle_drop && pending_read_drop) {
+      pending_read_close && idle_drop && non_socket && pending_read_drop) {
     std::cout << "lifecycle conformance [" << Harness::Name() << "]: PASS\n";
   }
   return pending_read && sequential_read && owned_read && read_lane && loop_stop &&
          stop_rejection && shutdown && close_read && pending_close_read && pending_write_close &&
-         closed_stream && pending_read_close && idle_drop && pending_read_drop;
+         closed_stream && pending_read_close && idle_drop && non_socket && pending_read_drop;
 }
 
 }  // namespace

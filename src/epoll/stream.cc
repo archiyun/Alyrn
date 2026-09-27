@@ -82,9 +82,12 @@ IoAttempt RetryNonBlockingIo(Operation&& operation) noexcept {
   }
 }
 
+// Stream wraps connected stream sockets only. Socket calls in both
+// directions make any other descriptor fail with ENOTSOCK, as uring's recv
+// and send operations do, instead of reading a pipe and failing to write it.
 IoAttempt TryRead(int fd, std::span<std::byte> buffer) noexcept {
   return RetryNonBlockingIo(
-      [fd, buffer]() noexcept { return ::read(fd, buffer.data(), buffer.size()); });
+      [fd, buffer]() noexcept { return ::recv(fd, buffer.data(), buffer.size(), 0); });
 }
 
 IoAttempt TryWrite(int fd, std::span<const std::byte> buffer) noexcept {
@@ -117,7 +120,11 @@ IoAttempt TryReadv(int fd, std::span<const iovec> buffers) noexcept {
   }
 
   return RetryNonBlockingIo([fd, buffers, iov_count = *count]() noexcept {
-    return ::readv(fd, buffers.data(), iov_count);
+    msghdr message{};
+    // recvmsg does not write through msg_iov itself, only through its buffers.
+    message.msg_iov = const_cast<iovec*>(buffers.data());
+    message.msg_iovlen = static_cast<std::size_t>(iov_count);
+    return ::recvmsg(fd, &message, 0);
   });
 }
 

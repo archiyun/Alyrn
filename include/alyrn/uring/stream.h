@@ -69,6 +69,9 @@ public:
   // directly with co_await (or keep the result in auto); SQE/CQE ownership is
   // implementation detail, not a stream interface.
 
+  // Adopts fd, which must be a connected stream socket (TCP, or one end of a
+  // socketpair). Other descriptors such as pipes, files, or terminals are not
+  // supported: reads and writes on them fail with ENOTSOCK.
   Stream(Loop* loop, int fd, net::Endpoint peer) noexcept;
   ~Stream() noexcept;
 
@@ -331,10 +334,11 @@ private:
   Stream* stream_;
   net::Buffer buffer_;
   std::size_t reserve_;
-  // READV SQEs retain their iovec array until a terminal CQE. A single-range
-  // RECV copies its base and length into the SQE, so its local iovec does not
-  // need to survive await_suspend().
+  // RECVMSG SQEs retain their message and iovec array until a terminal CQE.
+  // A single-range RECV copies its base and length into the SQE, so its local
+  // iovec does not need to survive await_suspend().
   std::vector<iovec> iovs_;
+  msghdr message_{};
   ReservationKind reservation_kind_{ReservationKind::kNone};
   bool timed_out_{false};
 };

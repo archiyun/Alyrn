@@ -599,9 +599,14 @@ bool Stream::RecvAwaiter::await_suspend(std::coroutine_handle<> continuation) no
         std::move(on_submit_failure));
   }
 
+  // A socket receive, not readv: like the single-range RECV and epoll's
+  // recvmsg, it rejects descriptors that are not sockets with ENOTSOCK.
+  message_ = msghdr{};
+  message_.msg_iov = iovs_.data();
+  message_.msg_iovlen = iovs_.size();
   return detail::SubmitAwaitingOperation(
       *stream_->loop_, *Operation(), continuation,
-      detail::PrepareReadv(stream_->fd_, iovs_.data(), static_cast<unsigned>(iovs_.size()), -1),
+      detail::MakeSqePrep(io_uring_prep_recvmsg, stream_->fd_, &message_, 0U),
       std::move(on_submit_failure));
 }
 
