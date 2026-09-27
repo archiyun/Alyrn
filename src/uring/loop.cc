@@ -201,13 +201,31 @@ Result<time::TimerId> Loop::RunAfter(time::Duration delay, std::function<void()>
   return timers_->AddAfter(delay, std::move(callback));
 }
 
-Result<void> Loop::CancelTimer(time::TimerId id) noexcept {
-  ALYRN_CHECK(IsInLoopThread(), "Loop::CancelTimer called from wrong thread");
+Result<time::TimerId> Loop::RunAt(time::Deadline deadline, std::function<void()> callback) {
+  ALYRN_CHECK(IsInLoopThread(), "Loop::RunAt called from wrong thread");
+  if (!initialized_) {
+    return std::unexpected(Errno(EBADF));
+  }
+  return timers_->AddTimer(std::move(callback), deadline);
+}
+
+Result<time::TimerId> Loop::RunEvery(time::Duration interval, std::function<void()> callback) {
+  ALYRN_CHECK(IsInLoopThread(), "Loop::RunEvery called from wrong thread");
+  if (!initialized_) {
+    return std::unexpected(Errno(EBADF));
+  }
+  return timers_->AddTimer(std::move(callback), time::SteadyNow() + interval, interval);
+}
+
+Result<void> Loop::Cancel(time::TimerId id) noexcept {
+  ALYRN_CHECK(IsInLoopThread(), "Loop::Cancel called from wrong thread");
   if (!initialized_) {
     return std::unexpected(Errno(EBADF));
   }
   return timers_->Cancel(id);
 }
+
+Result<void> Loop::CancelTimer(time::TimerId id) noexcept { return Cancel(id); }
 
 Loop::~Loop() noexcept {
   ALYRN_CHECK(IsInLoopThread(), "Loop destroyed from wrong thread");

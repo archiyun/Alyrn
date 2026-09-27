@@ -427,6 +427,62 @@ void DestroyLoopWithSleepingFrame() {
   delete loop;
 }
 
+// uring::Loop spells its timers like epoll::Loop: RunAt, RunAfter, RunEvery,
+// and Cancel, with CancelTimer kept as an alias.
+bool TestTimerApiParity() {
+  UringLoop loop;
+  bool skipped = false;
+  if (!InitSmallLoop(loop, skipped)) return skipped;
+
+  bool at_fired = false;
+  auto at = loop.RunAt(alyrn::time::SteadyNow() + 2ms, [&] { at_fired = true; });
+
+  int every_count = 0;
+  auto every = loop.RunEvery(1ms, [&] { ++every_count; });
+
+  int self_count = 0;
+  alyrn::time::TimerId self_id{};
+  auto self = loop.RunEvery(1ms, [&] {
+    if (++self_count == 3) {
+      (void)loop.Cancel(self_id);
+    }
+  });
+  if (self.HasValue()) self_id = *self;
+
+  int count_at_cancel = -1;
+  std::optional<alyrn::Result<void>> cancel_every;
+  (void)loop.RunAfter(15ms, [&] {
+    count_at_cancel = every_count;
+    cancel_every.emplace(loop.Cancel(*every));
+  });
+
+  std::optional<alyrn::Result<void>> cancel_fired;
+  std::optional<alyrn::Result<void>> cancel_alias;
+  int count_at_stop = -1;
+  (void)loop.RunAfter(30ms, [&] {
+    count_at_stop = every_count;
+    cancel_fired.emplace(loop.Cancel(*at));
+    cancel_alias.emplace(loop.CancelTimer(*at));
+    loop.RequestStop();
+  });
+  loop.Run();
+
+  auto no_entry = [](const std::optional<alyrn::Result<void>>& result) {
+    return result.has_value() && !result->HasValue() &&
+           result->Error() == std::errc::no_such_file_or_directory;
+  };
+  return Check(at.HasValue() && every.HasValue() && self.HasValue(),
+               "RunAt and RunEvery must register timers") &&
+         Check(at_fired, "RunAt must fire at its deadline") &&
+         Check(count_at_cancel >= 3, "RunEvery must fire repeatedly") &&
+         Check(cancel_every.has_value() && cancel_every->HasValue(),
+               "Cancel must stop a repeating timer") &&
+         Check(count_at_stop == count_at_cancel, "a canceled repeating timer must not run again") &&
+         Check(self_count == 3, "a repeating timer must be able to cancel itself") &&
+         Check(no_entry(cancel_fired) && no_entry(cancel_alias),
+               "Cancel and CancelTimer must report ENOENT for a timer that already ran");
+}
+
 bool TestSleepLifecycle() {
   return SleepNonpositiveAndStopped() && SleepShutdownCancelsPending() &&
          SleepExpiryBeforeShutdown() && SleepStopBeforeExpiryInSameBatch() &&
@@ -444,6 +500,7 @@ int main() {
   if (!TestStopDiscardsUnexpiredTimer()) return 1;
   if (!TestTimerCallbackUsesOwnerChannel()) return 1;
   if (!TestSleepLifecycle()) return 1;
+  if (!TestTimerApiParity()) return 1;
   std::cout << "luring timer smoke: PASS\n";
   return 0;
 }

@@ -41,13 +41,12 @@ Result<time::TimerId> TimerQueue::AddAfter(time::Duration delay,
   return AddTimer(std::move(callback), time::SteadyNow() + std::max(delay, time::Duration::zero()));
 }
 
-Result<time::TimerId> TimerQueue::AddTimer(TimerCallback callback,
-                                                       time::Deadline deadline) {
+Result<time::TimerId> TimerQueue::AddTimer(TimerCallback callback, time::Deadline deadline,
+                                           time::Duration interval) {
   ALYRN_CHECK(loop_ != nullptr, "TimerQueue has no owner loop");
   ALYRN_CHECK(loop_->IsInLoopThread(), "TimerQueue::AddTimer called from wrong thread");
 
-  auto timer = std::make_unique<Timer>(
-      std::move(callback), deadline, time::Duration::zero());
+  auto timer = std::make_unique<Timer>(std::move(callback), deadline, interval);
   const time::TimerId id{timer->sequence()};
   auto [it, inserted] = active_.emplace(id.sequence, std::move(timer));
   if (!inserted) {
@@ -71,6 +70,11 @@ Result<time::TimerId> TimerQueue::AddTimer(TimerCallback callback,
 Result<void> TimerQueue::Cancel(time::TimerId id) noexcept {
   ALYRN_CHECK(loop_ != nullptr, "TimerQueue has no owner loop");
   ALYRN_CHECK(loop_->IsInLoopThread(), "TimerQueue::Cancel called from wrong thread");
+
+  if (processing_timer_ != nullptr && processing_timer_->sequence() == id.sequence) {
+    processing_timer_cancelled_ = true;
+    return {};
+  }
 
   auto it = active_.find(id.sequence);
   if (it == active_.end()) {
@@ -163,15 +167,33 @@ void TimerQueue::ProcessExpired() noexcept {
   const auto now = time::SteadyNow();
   timers_.PopWhile(
       [now](const Timer* timer) { return timer->expiration() <= now; },
-      [this](Timer* timer) noexcept {
-                     const auto id = timer->sequence();
-                     auto it = active_.find(id);
-                     ALYRN_CHECK(it != active_.end(),
-                                    "TimerQueue expired timer is missing from active set");
-                     auto owned = std::move(it->second);
-                     active_.erase(it);
-                     owned->Run();
-                   });
+      [this, now](Timer* timer) noexcept {
+        const auto id = timer->sequence();
+        auto it = active_.find(id);
+        ALYRN_CHECK(it != active_.end(), "TimerQueue expired timer is missing from active set");
+        auto owned = std::move(it->second);
+        active_.erase(it);
+        if (!owned->repeat()) {
+          owned->Run();
+          return;
+        }
+
+        processing_timer_ = owned.get();
+        processing_timer_cancelled_ = false;
+        owned->Run();
+        const bool cancelled = processing_timer_cancelled_;
+        processing_timer_ = nullptr;
+        processing_timer_cancelled_ = false;
+        if (cancelled) {
+          return;
+        }
+        // The new expiry is after `now`, so this pass does not pop it again.
+        owned->Restart(now);
+        Timer* repeating = owned.get();
+        ALYRN_CHECK(active_.emplace(id, std::move(owned)).second,
+                    "TimerQueue repeating timer sequence was reused");
+        ALYRN_CHECK(timers_.Insert(repeating), "TimerQueue repeating timer is already indexed");
+      });
 }
 
 void TimerQueue::ReconcileOrStop() noexcept {

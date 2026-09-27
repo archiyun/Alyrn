@@ -25,10 +25,12 @@ if (!initialized.HasValue()) {
 loop.Run(stop_token);
 ```
 
-`Init()`、`RunAfter()`、`CancelTimer()`、`Schedule()` 与所有提交/消费 CQE 的 loop 内部操作都
+`Init()`、定时器（`RunAt()`/`RunAfter()`/`RunEvery()`/`Cancel()`，拼写与 epoll 一致；因为 arm 最早
+deadline 需要提交 ring 请求，注册返回 `Result`）、`Schedule()` 与所有提交/消费 CQE 的 loop 内部操作都
 必须发生在 loop 所属线程；这不是仅供 debug 的约定，错误线程会在所有构建配置中被拒绝。
-`RequestStop()` 是唯一可由其他线程调用的 loop API：它唤醒 ring wait，并由 owner loop 提交全局
-取消、消费目标 CQE、drain ready work，然后才进入 `Stopped`。这仍不等价于销毁 listener/stream
+只有 `RequestStop()` 与 `Post()` 可由其他线程调用。`RequestStop()` 唤醒 ring wait，由 owner loop
+先通知关停参与者（例如以 `operation_canceled` 结束正在进行的 `SleepFor`），再提交全局取消、
+消费目标 CQE、drain ready work，然后才进入 `Stopped`。这仍不等价于销毁 listener/stream
 或归还 BufferLease；这些对象的最终 close/release 仍属于 worker/runtime 的 owner-thread 协议。
 
 `Loop` 析构不是隐式 shutdown，且始终必须在创建它的 owner thread 执行。若已初始化的 loop

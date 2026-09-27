@@ -53,7 +53,9 @@ public:
   TimerQueue& operator=(const TimerQueue&) = delete;
 
   Result<time::TimerId> AddAfter(time::Duration delay, TimerCallback callback);
-  Result<time::TimerId> AddTimer(TimerCallback callback, time::Deadline deadline);
+  // A positive interval repeats the timer from each expiry until Cancel().
+  Result<time::TimerId> AddTimer(TimerCallback callback, time::Deadline deadline,
+                                 time::Duration interval = time::Duration::zero());
   Result<void> Cancel(time::TimerId id) noexcept;
 
   // Drops every logical timer without invoking user callbacks. The loop calls
@@ -81,6 +83,10 @@ private:
   Loop* loop_;
   TimerIndex timers_;
   std::unordered_map<std::int64_t, std::unique_ptr<Timer>> active_;
+  // The repeating timer whose callback is running. It is outside both the
+  // index and active_ then, so Cancel() only records the request.
+  Timer* processing_timer_{nullptr};
+  bool processing_timer_cancelled_{false};
 
   bool driver_armed_{false};
   bool control_pending_{false};

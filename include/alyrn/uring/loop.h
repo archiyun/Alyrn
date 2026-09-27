@@ -98,10 +98,26 @@ public:
   // scheduling context: it may use owner-affine Channels and Spawn.
   void RunOnOwner(std::function<void()> callback) noexcept;
 
-  // Runs callback once after delay, on the owner thread inside this Loop's
-  // scheduling context, so it may use owner-affine Channels and Spawn.
+  // Timers run callbacks on the owner thread inside this Loop's scheduling
+  // context, so they may use owner-affine Channels and Spawn. The spelling
+  // matches epoll::Loop; registration returns Result here because arming the
+  // earliest deadline submits a ring request, which can fail.
+  //
+  // Runs callback once after delay.
   [[nodiscard]]
   Result<time::TimerId> RunAfter(time::Duration delay, std::function<void()> callback);
+  // Runs callback once at deadline.
+  [[nodiscard]]
+  Result<time::TimerId> RunAt(time::Deadline deadline, std::function<void()> callback);
+  // Runs callback every interval, starting one interval from now, until
+  // Cancel(); a callback may cancel its own timer. A nonpositive interval runs
+  // it once.
+  [[nodiscard]]
+  Result<time::TimerId> RunEvery(time::Duration interval, std::function<void()> callback);
+  // Cancels a pending timer. Returns ENOENT for a one-shot timer that already
+  // ran or an id that was never issued.
+  Result<void> Cancel(time::TimerId id) noexcept;
+  // Same as Cancel().
   Result<void> CancelTimer(time::TimerId id) noexcept;
 
   // Enqueues coroutine work to be resumed by RunReady().
