@@ -1,5 +1,6 @@
 #include <fcntl.h>
 #include <gtest/gtest.h>
+#include <netdb.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -9,8 +10,8 @@
 #include <string_view>
 
 #include "alyrn/net/bytes.h"
-#include "alyrn/net/endpoint.h"
 #include "alyrn/net/detail/socket.h"
+#include "alyrn/net/endpoint.h"
 
 namespace alyrn::net {
 namespace {
@@ -68,6 +69,32 @@ TEST(EndpointTest, ParsesAndFormatsNumericIPv6) {
 
   const Endpoint loopback = Endpoint::Loopback(8080, Endpoint::Family::kIPv6);
   EXPECT_EQ(loopback, *address);
+}
+
+TEST(EndpointTest, WithPortReplacesOnlyThePort) {
+  auto v4 = ParseIpAddress("192.0.2.7", 80);
+  ASSERT_TRUE(v4);
+  EXPECT_EQ(v4->WithPort(8443).ToIpPort(), "192.0.2.7:8443");
+  EXPECT_EQ(v4->ToPort(), 80);
+
+  auto v6 = ParseIpAddress("2001:db8::7", 80);
+  ASSERT_TRUE(v6);
+  EXPECT_EQ(v6->WithPort(8443).ToIpPort(), "[2001:db8::7]:8443");
+  EXPECT_EQ(v6->WithPort(8443).family(), Endpoint::Family::kIPv6);
+}
+
+// getaddrinfo without a service leaves the port zero; WithPort completes it.
+TEST(EndpointTest, WithPortCompletesAResolvedAddress) {
+  addrinfo hints{};
+  hints.ai_family = AF_INET;
+  hints.ai_socktype = SOCK_STREAM;
+  hints.ai_flags = AI_NUMERICHOST;
+  addrinfo* found = nullptr;
+  ASSERT_EQ(::getaddrinfo("127.0.0.1", nullptr, &hints, &found), 0);
+  const Endpoint resolved = Endpoint(found->ai_addr, found->ai_addrlen).WithPort(8080);
+  ::freeaddrinfo(found);
+
+  EXPECT_EQ(resolved, Endpoint::Loopback(8080));
 }
 
 TEST(EndpointTest, RejectsInvalidIpWithoutLoopbackFallback) {

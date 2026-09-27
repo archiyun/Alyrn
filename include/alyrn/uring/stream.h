@@ -166,8 +166,11 @@ public:
     return fd_;
   }
 
-  // Native extensions that need to bind an operation to this stream's
-  // owning ring use this only while executing on that loop's thread.
+  // The Loop that owns this stream. A connection handler uses it to connect
+  // outbound, spawn work, or start timers on the same thread:
+  //   uring::Connector upstream(stream.OwnerLoop());
+  // Native extensions such as RecvSource bind their operations to this ring
+  // and use it only while executing on that loop's thread.
   [[nodiscard]]
   Loop* OwnerLoop() const noexcept {
     return loop_;

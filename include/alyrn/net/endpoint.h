@@ -23,6 +23,10 @@ namespace alyrn::net {
 // exposing an IPv4-specific sockaddr_in. This keeps bind/connect/accept code
 // independent of the address family while retaining the address length needed
 // by the socket APIs.
+//
+// Build one from a numeric literal with ParseIpAddress(ip, port) below, or
+// from a resolved sockaddr, such as a getaddrinfo result, with the sockaddr
+// constructor and WithPort().
 class Endpoint {
 public:
   enum class Family : std::uint8_t {
@@ -115,6 +119,24 @@ public:
       return "[" + ToIp() + "]:" + std::to_string(ToPort());
     }
     return ToIp() + ":" + std::to_string(ToPort());
+  }
+
+  // Returns this address with another port, for example to complete an
+  // address that getaddrinfo resolved without a service.
+  [[nodiscard]]
+  Endpoint WithPort(std::uint16_t port) const noexcept {
+    Endpoint copy = *this;
+    switch (NativeFamily()) {
+      case AF_INET:
+        reinterpret_cast<sockaddr_in&>(copy.addr_).sin_port = htons(port);
+        break;
+      case AF_INET6:
+        reinterpret_cast<sockaddr_in6&>(copy.addr_).sin6_port = htons(port);
+        break;
+      default:
+        break;
+    }
+    return copy;
   }
 
   [[nodiscard]]

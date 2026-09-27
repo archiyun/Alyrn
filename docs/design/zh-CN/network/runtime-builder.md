@@ -160,6 +160,18 @@ worker thread: Loop / listener 创建
 - `OnWorkerStop` 不能发起新的 I/O：此时 loop 已经停止。
 - `Workers(n > 1)` 时每个 worker 各有一份状态；跨 worker 共享需要跨线程投递。
 
+连接 handler 只收到 Stream。需要该 worker 的 Loop 时（向上游发起连接、`Spawn`、开定时器），用
+`stream.OwnerLoop()`：
+
+```cpp
+alyrn::DetachedTask Proxy(alyrn::epoll::Stream client) {
+  alyrn::epoll::Connector upstream(client.OwnerLoop(),
+                                   {.connect_timeout = alyrn::time::Seconds(3)});
+  auto server = co_await upstream.Connect("10.0.0.2", 8080);
+  // ...
+}
+```
+
 ## 默认阻塞入口
 
 当应用希望由调用 `main()` 的线程拥有整个 server 生命周期时，可使用 `Run()`：

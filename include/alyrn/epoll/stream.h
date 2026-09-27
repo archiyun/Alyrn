@@ -126,6 +126,9 @@ public:
     return socket_.fd();
   }
 
+  // The Loop that owns this stream. A connection handler uses it to connect
+  // outbound, spawn work, or start timers on the same thread:
+  //   epoll::Connector upstream(stream.OwnerLoop());
   [[nodiscard]]
   Loop* OwnerLoop() const noexcept {
     return loop_;
