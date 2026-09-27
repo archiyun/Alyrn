@@ -84,6 +84,7 @@ enum class OpKind : std::uint8_t {
   kTimerControlComplete,
 
   kConnect,
+  kConnectCancelComplete,
   kWake,
   kCancelAll,
   kNop,
@@ -111,6 +112,7 @@ constexpr CompletionModel CompletionModelFor(OpKind kind) noexcept {
     case OpKind::kStreamCloseComplete:
     case OpKind::kStreamReadCancelComplete:
     case OpKind::kStreamWriteCancelComplete:
+    case OpKind::kConnectCancelComplete:
     case OpKind::kTimerDriverComplete:
     case OpKind::kTimerControlComplete:
     case OpKind::kConnect:
@@ -147,6 +149,7 @@ constexpr bool UsesCoupledSingleResultLifecycle(OpKind kind) noexcept {
     case OpKind::kStreamCloseComplete:
     case OpKind::kStreamReadCancelComplete:
     case OpKind::kStreamWriteCancelComplete:
+    case OpKind::kConnectCancelComplete:
     case OpKind::kTimerDriverComplete:
     case OpKind::kTimerControlComplete:
     case OpKind::kWake:
@@ -181,6 +184,7 @@ constexpr bool CqeResultDirectlyPublishesLogicalResult(OpKind kind) noexcept {
     case OpKind::kStreamCloseComplete:
     case OpKind::kStreamReadCancelComplete:
     case OpKind::kStreamWriteCancelComplete:
+    case OpKind::kConnectCancelComplete:
     case OpKind::kTimerDriverComplete:
     case OpKind::kTimerControlComplete:
     case OpKind::kConnect:

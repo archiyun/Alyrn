@@ -9,6 +9,7 @@ namespace alyrn::uring::detail {
 
 void DispatchAcceptComplete(Op* op) noexcept;
 void DispatchConnectComplete(Op* op) noexcept;
+CompletionDisposition DispatchConnectCancelComplete(Op* op) noexcept;
 CompletionDisposition DispatchAcceptSourceComplete(Op* op, CompletionEvent event) noexcept;
 void DispatchAcceptSourceCancelComplete(Op* op) noexcept;
 CompletionDisposition DispatchRecvSourceComplete(Op* op, CompletionEvent event) noexcept;

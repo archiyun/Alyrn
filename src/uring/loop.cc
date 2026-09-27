@@ -91,6 +91,8 @@ CompletionDisposition DispatchCompletion(Op* op, CompletionEvent event) noexcept
       return DispatchStreamReadCancelComplete(op);
     case OpKind::kStreamWriteCancelComplete:
       return DispatchStreamWriteCancelComplete(op);
+    case OpKind::kConnectCancelComplete:
+      return DispatchConnectCancelComplete(op);
     case OpKind::kTimerDriverComplete:
       DispatchTimerDriverComplete(op);
       break;

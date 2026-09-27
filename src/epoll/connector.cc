@@ -39,8 +39,12 @@ Result<int> ConnectError(int fd) noexcept {
 class [[nodiscard]] ConnectAwaiter {
 public:
   ConnectAwaiter(Loop* loop, net::Endpoint peer, StreamOptions stream_options,
-                 net::TcpOptions tcp_options) noexcept
-      : loop_(loop), peer_(peer), stream_options_(stream_options), tcp_options_(tcp_options) {}
+                 net::TcpOptions tcp_options, time::Duration timeout) noexcept
+      : loop_(loop),
+        peer_(peer),
+        stream_options_(stream_options),
+        tcp_options_(tcp_options),
+        timeout_(timeout) {}
 
   ~ConnectAwaiter() {
     ALYRN_CHECK(!(channel_.has_value() && channel_->IsRegistered()),
@@ -91,6 +95,13 @@ public:
     channel_->SetWriteCallback(&ConnectAwaiter::DispatchReady, this);
     channel_->SetErrorCallback(&ConnectAwaiter::DispatchReady, this);
     channel_->EnableWriting();
+    if (timeout_ > time::Duration::zero()) {
+      timer_ = loop_->RunAfter(timeout_, [this] {
+        // The queue already removed this timer before running it.
+        timer_ = {};
+        CompletePending(std::unexpected(Errno(ETIMEDOUT)));
+      });
+    }
     return true;
   }
 
@@ -152,6 +163,9 @@ private:
   }
 
   void ReleasePhysicalRequest() noexcept {
+    if (timer_.Valid()) {
+      loop_->Cancel(std::exchange(timer_, {}));
+    }
     DetachChannel();
     if (shutdown_participant_.InList()) {
       LoopAccess::UnregisterShutdownParticipant(*loop_, shutdown_participant_);
@@ -176,6 +190,8 @@ private:
   net::Endpoint peer_;
   StreamOptions stream_options_;
   net::TcpOptions tcp_options_;
+  time::Duration timeout_;
+  time::TimerId timer_{};
   int fd_{-1};
   std::optional<Channel> channel_;
   ::alyrn::detail::SchedulerContinuation continuation_;
@@ -184,13 +200,13 @@ private:
   LoopShutdownParticipant shutdown_participant_{this, &DispatchLoopStop};
 };
 
-coro::Task<Result<Stream>> ConnectResolved(Loop* loop, StreamOptions stream_options,
-                                           net::TcpOptions tcp_options,
+coro::Task<Result<Stream>> ConnectResolved(Loop* loop, ConnectorOptions options,
                                            Result<net::Endpoint> peer) {
   if (!peer.HasValue()) {
     co_return std::unexpected(peer.Error());
   }
-  co_return co_await ConnectAwaiter(loop, *peer, stream_options, tcp_options);
+  co_return co_await ConnectAwaiter(loop, *peer, options.stream_options, options.tcp_options,
+                                    options.connect_timeout);
 }
 
 }  // namespace
@@ -222,14 +238,12 @@ Connector& Connector::operator=(Connector&& other) noexcept {
 
 coro::Task<Result<Stream>> Connector::Connect(net::Endpoint peer) {
   RequireOwnerLoop();
-  return ConnectResolved(loop_, options_.stream_options, options_.tcp_options,
-                         Result<net::Endpoint>(std::in_place, peer));
+  return ConnectResolved(loop_, options_, Result<net::Endpoint>(std::in_place, peer));
 }
 
 coro::Task<Result<Stream>> Connector::Connect(std::string_view ip, std::uint16_t port) {
   RequireOwnerLoop();
-  return ConnectResolved(loop_, options_.stream_options, options_.tcp_options,
-                         net::ParseIpAddress(ip, port));
+  return ConnectResolved(loop_, options_, net::ParseIpAddress(ip, port));
 }
 
 coro::Task<void> Connector::SleepFor(time::Duration delay) {

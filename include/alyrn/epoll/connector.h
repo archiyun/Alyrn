@@ -20,6 +20,11 @@ struct ConnectorOptions {
   // Applies to every Stream returned by Connect.
   StreamOptions stream_options{};
   net::TcpOptions tcp_options{};
+  // Fails a Connect() that has not completed within this time with ETIMEDOUT
+  // and closes its socket at once. Zero waits for the kernel's own SYN
+  // retries (about two minutes on Linux). Loop shutdown still reports
+  // ECANCELED.
+  time::Duration connect_timeout{};
 };
 
 class Connector {

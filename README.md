@@ -168,6 +168,8 @@ int main() {
 }
 ```
 
+Set `ConnectorOptions::connect_timeout` to bound how long a connect may stay pending: an unresponsive peer otherwise holds it for the kernel's SYN retries, about two minutes on Linux. `Connect` also accepts a `net::Endpoint`, for addresses resolved elsewhere.
+
 `coro::SyncWait` is for pure computation; it cannot drive Loop I/O.
 
 ### 6. Use uring-native capabilities

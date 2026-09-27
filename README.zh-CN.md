@@ -161,6 +161,8 @@ int main() {
 }
 ```
 
+用 `ConnectorOptions::connect_timeout` 限定 connect 最多挂起多久：否则对端不响应时，它会一直等到内核的 SYN 重试结束，在 Linux 上约两分钟。`Connect` 也接受 `net::Endpoint`，用于在别处解析好的地址。
+
 `coro::SyncWait` 只用于纯计算，不能驱动 Loop 上的 I/O。
 
 ### 6. 使用 uring 原生能力

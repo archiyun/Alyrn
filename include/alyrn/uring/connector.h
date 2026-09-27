@@ -6,6 +6,7 @@
 
 #include "alyrn/backend/async_connector.h"
 #include "alyrn/detail/macros.h"
+#include "alyrn/net/endpoint.h"
 #include "alyrn/net/tcp_options.h"
 #include "alyrn/result.h"
 #include "alyrn/task.h"
@@ -16,7 +17,12 @@
 namespace alyrn::uring {
 
 struct ConnectorOptions {
-  net::TcpOptions tcp_options;
+  net::TcpOptions tcp_options{};
+  // Fails a Connect() that has not completed within this time with ETIMEDOUT
+  // and closes its socket at once. Zero waits for the kernel's own SYN
+  // retries (about two minutes on Linux). Loop shutdown still reports
+  // ECANCELED.
+  time::Duration connect_timeout{};
 };
 
 class Connector {
@@ -38,6 +44,7 @@ public:
   // Host names, including "localhost", are not resolved: they complete with
   // EINVAL. Resolve names before connecting; a blocking resolver would stall
   // the loop.
+  Task<Result<Stream>> Connect(net::Endpoint peer);
   Task<Result<Stream>> Connect(std::string_view ip, std::uint16_t port);
 
   // Backend-selected timer for application-level health-check loops.

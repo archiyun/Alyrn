@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cstdint>
 #include <expected>
+#include <filesystem>
 #include <functional>
 #include <iostream>
 #include <optional>
@@ -17,12 +18,14 @@
 #include <system_error>
 #include <utility>
 
-#include "alyrn/result.h"
 #include "alyrn/coro/scheduler.h"
 #include "alyrn/coro/spawn.h"
 #include "alyrn/coro/task.h"
 #include "alyrn/epoll/connector.h"
 #include "alyrn/epoll/loop.h"
+#include "alyrn/net/endpoint.h"
+#include "alyrn/result.h"
+#include "alyrn/time/clock.h"
 
 #if defined(ALYRN_ENABLE_URING)
 #include "alyrn/uring/connector.h"
@@ -64,7 +67,7 @@ struct ListenEndpoint {
   std::uint16_t port{0};
 };
 
-alyrn::Result<ListenEndpoint> ListenLoopback() noexcept {
+alyrn::Result<ListenEndpoint> ListenLoopback(int backlog = SOMAXCONN) noexcept {
   const int fd = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
   if (fd < 0) {
     return std::unexpected(alyrn::CurrentErrno());
@@ -87,7 +90,7 @@ alyrn::Result<ListenEndpoint> ListenLoopback() noexcept {
   if (::bind(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0) {
     return fail(alyrn::CurrentErrno());
   }
-  if (::listen(fd, SOMAXCONN) < 0) {
+  if (::listen(fd, backlog) < 0) {
     return fail(alyrn::CurrentErrno());
   }
 
@@ -116,6 +119,11 @@ struct EpollHarness {
 
   static alyrn::Result<Connector> CreateConnector(Loop& loop) noexcept {
     return Connector::Create(&loop);
+  }
+
+  static alyrn::Result<Connector> CreateConnector(Loop& loop,
+                                                  alyrn::time::Duration timeout) noexcept {
+    return Connector::Create(&loop, {.connect_timeout = timeout});
   }
 
   static bool RunAfter(Loop& loop, std::chrono::milliseconds delay,
@@ -153,6 +161,11 @@ struct UringHarness {
 
   static alyrn::Result<Connector> CreateConnector(Loop& loop) noexcept {
     return Connector::Create(&loop);
+  }
+
+  static alyrn::Result<Connector> CreateConnector(Loop& loop,
+                                                  alyrn::time::Duration timeout) noexcept {
+    return Connector::Create(&loop, {.connect_timeout = timeout});
   }
 
   static bool RunAfter(Loop& loop, std::chrono::milliseconds delay,
@@ -499,12 +512,181 @@ bool CheckConcurrentConnectContract() {
                 "concurrent Connect lost scheduler affinity");
 }
 
+// A listener whose single accept-queue slot is taken: the kernel drops later
+// SYNs until that connection is accepted, so a new connect stays pending.
+struct BlackHole {
+  ListenEndpoint listener;
+  UniqueFd filler;
+};
+
+alyrn::Result<BlackHole> ListenBlackHole() noexcept {
+  auto listener = ListenLoopback(0);
+  if (!listener.HasValue()) {
+    return std::unexpected(listener.Error());
+  }
+  const int filler = ::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, IPPROTO_TCP);
+  if (filler < 0) {
+    return std::unexpected(alyrn::CurrentErrno());
+  }
+  UniqueFd owned_filler(filler);
+  sockaddr_in address{};
+  address.sin_family = AF_INET;
+  address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  address.sin_port = htons(listener->port);
+  if (::connect(filler, reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0) {
+    return std::unexpected(alyrn::CurrentErrno());
+  }
+  return BlackHole{.listener = std::move(*listener), .filler = std::move(owned_filler)};
+}
+
+std::size_t OpenDescriptorCount() {
+  std::size_t count = 0;
+  for ([[maybe_unused]] const auto& entry : std::filesystem::directory_iterator("/proc/self/fd")) {
+    ++count;
+  }
+  return count;
+}
+
+template <class Connector>
+struct TimedConnectObservation {
+  std::optional<alyrn::Result<typename Connector::StreamType>> result;
+  int resume_count{0};
+  bool resumed_with_scheduler{false};
+  alyrn::time::Duration elapsed{};
+  std::size_t descriptors_before{0};
+  std::size_t descriptors_after{0};
+  bool timed_out{false};
+};
+
+template <class Connector, class Loop>
+auto ObserveTimedConnect(Connector& connector, Loop& loop, std::uint16_t port,
+                         TimedConnectObservation<Connector>& observation)
+    -> alyrn::coro::DetachedTask {
+  observation.descriptors_before = OpenDescriptorCount();
+  const auto started = alyrn::time::SteadyNow();
+  observation.result.emplace(co_await connector.Connect("127.0.0.1", port));
+  observation.elapsed = alyrn::time::SteadyNow() - started;
+  observation.descriptors_after = OpenDescriptorCount();
+  ++observation.resume_count;
+  observation.resumed_with_scheduler = alyrn::coro::Scheduler::TryCurrent() == &loop;
+  loop.RequestStop();
+}
+
+// connect_timeout fails a connect that is still pending with ETIMEDOUT and
+// releases its socket before the caller resumes.
+template <class Harness>
+bool CheckConnectTimeoutContract() {
+  auto hole = ListenBlackHole();
+  if (!hole.HasValue()) {
+    std::cerr << "FAIL [" << Harness::Name() << "]: black-hole listener: " << hole.Error().message()
+              << '\n';
+    return false;
+  }
+  typename Harness::Loop loop;
+  if (!Initialize<Harness>(loop)) {
+    return Harness::Skip();
+  }
+  auto connector = Harness::CreateConnector(loop, alyrn::time::Milliseconds(100));
+  if (!connector.HasValue()) {
+    return Expect(false, Harness::Name(), "connector creation failed");
+  }
+
+  TimedConnectObservation<typename Harness::Connector> observation;
+  alyrn::coro::SpawnDetach(loop,
+                           ObserveTimedConnect(*connector, loop, hole->listener.port, observation));
+  if (!Harness::RunAfter(loop, std::chrono::milliseconds(3000), [&] {
+        observation.timed_out = true;
+        loop.RequestStop();
+      })) {
+    return false;
+  }
+  Harness::Run(loop);
+
+  return Expect(!observation.timed_out, Harness::Name(), "timed Connect never completed") &&
+         Expect(observation.result.has_value() && !observation.result->HasValue() &&
+                    observation.result->Error() == std::errc::timed_out,
+                Harness::Name(), "a pending Connect must fail with ETIMEDOUT at its timeout") &&
+         Expect(observation.elapsed >= std::chrono::milliseconds(100) &&
+                    observation.elapsed < std::chrono::milliseconds(1000),
+                Harness::Name(),
+                "Connect must time out after connect_timeout, not the SYN retries") &&
+         Expect(observation.descriptors_after == observation.descriptors_before, Harness::Name(),
+                "a timed-out Connect must release its socket before resuming") &&
+         Expect(observation.resume_count == 1 && observation.resumed_with_scheduler,
+                Harness::Name(), "a timed-out Connect must resume once on its scheduler");
+}
+
+// A connect that completes first cancels its timer: nothing fires later.
+template <class Harness>
+bool CheckTimedConnectSuccessContract() {
+  auto listener = ListenLoopback();
+  if (!listener.HasValue()) {
+    return Expect(false, Harness::Name(), "listener creation failed");
+  }
+  typename Harness::Loop loop;
+  if (!Initialize<Harness>(loop)) {
+    return Harness::Skip();
+  }
+  auto connector = Harness::CreateConnector(loop, alyrn::time::Milliseconds(50));
+  if (!connector.HasValue()) {
+    return Expect(false, Harness::Name(), "connector creation failed");
+  }
+
+  ConnectObservation<typename Harness::Connector> observation;
+  alyrn::coro::SpawnDetach(
+      loop,
+      ObservePreparedConnect<typename Harness::Connector>(
+          connector->Connect(alyrn::net::Endpoint::Loopback(listener->port)), loop, observation));
+  // Outlive the timeout so a timer that was not canceled would fire.
+  if (!Harness::RunAfter(loop, std::chrono::milliseconds(150), [&] { loop.RequestStop(); })) {
+    return false;
+  }
+  Harness::Run(loop);
+
+  return Expect(observation.result.has_value() && observation.result->HasValue(), Harness::Name(),
+                "Connect(Endpoint) with a timeout must connect") &&
+         Expect(observation.resume_count == 1, Harness::Name(),
+                "a Connect that won against its timeout must resume once");
+}
+
+// Loop shutdown while a timed connect is pending reports ECANCELED.
+template <class Harness>
+bool CheckTimedConnectStopContract() {
+  auto hole = ListenBlackHole();
+  if (!hole.HasValue()) {
+    return Expect(false, Harness::Name(), "black-hole listener failed");
+  }
+  typename Harness::Loop loop;
+  if (!Initialize<Harness>(loop)) {
+    return Harness::Skip();
+  }
+  auto connector = Harness::CreateConnector(loop, alyrn::time::Seconds(5));
+  if (!connector.HasValue()) {
+    return Expect(false, Harness::Name(), "connector creation failed");
+  }
+
+  TimedConnectObservation<typename Harness::Connector> observation;
+  alyrn::coro::SpawnDetach(loop,
+                           ObserveTimedConnect(*connector, loop, hole->listener.port, observation));
+  if (!Harness::RunAfter(loop, std::chrono::milliseconds(50), [&] { loop.RequestStop(); })) {
+    return false;
+  }
+  Harness::Run(loop);
+
+  return Expect(observation.result.has_value() && !observation.result->HasValue() &&
+                    observation.result->Error() == std::errc::operation_canceled,
+                Harness::Name(), "loop shutdown must cancel a pending timed Connect") &&
+         Expect(observation.resume_count == 1, Harness::Name(),
+                "a canceled timed Connect must resume once");
+}
+
 template <class Harness>
 bool RunBackendSuite() {
   return CheckConnectSuccessContract<Harness>() && CheckConnectResultReleaseContract<Harness>() &&
          CheckConnectionRefusedContract<Harness>() && CheckInvalidHostContract<Harness>() &&
          CheckConnectAfterStopRequestContract<Harness>() &&
-         CheckConcurrentConnectContract<Harness>();
+         CheckConcurrentConnectContract<Harness>() && CheckConnectTimeoutContract<Harness>() &&
+         CheckTimedConnectSuccessContract<Harness>() && CheckTimedConnectStopContract<Harness>();
 }
 
 }  // namespace

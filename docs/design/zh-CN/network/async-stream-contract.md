@@ -245,6 +245,10 @@ auto result = co_await connector.Connect(host, port);
 - `Connect(host, port)` 在返回惰性 Task 前同步解析并快照地址；返回后修改或销毁原始
   `string_view` 的底层字符不会影响该 operation；
 - transport errno（例如 `ECONNREFUSED`）原样保留；
+- `ConnectorOptions::connect_timeout` 为零时等待内核自己的 SYN 重试（Linux 上约两分钟）；为正时，
+  未在该时间内完成的 connect 以 `ETIMEDOUT` 完成，并在恢复调用方之前关闭 socket。超时一旦被 owner
+  loop 观察到，结果即确定为 `ETIMEDOUT`，与之竞争的 connect completion 不改变它；
+- `Connect(net::Endpoint)` 接收在别处解析好的地址（例如后台线程上的 `getaddrinfo`），两个后端都提供；
 - loop 进入 `Stopping` 后不再创建 socket 或提交 request，新 `Connect()` 返回
   `ECANCELED`；已经 pending 的 connect 必须经后端取消路径收敛且只恢复一次。
 
