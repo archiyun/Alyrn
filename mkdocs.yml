@@ -60,6 +60,7 @@ nav:
                 - 概览: design/zh-CN/network/index.md
                 - 生命周期精化协程 I/O: design/zh-CN/network/lifecycle-refined-coroutine-io.md
                 - AsyncStream / AsyncListener 契约: design/zh-CN/network/async-stream-contract.md
+                - 取消与超时: design/zh-CN/network/cancellation-and-timeouts.md
                 - Recv：所有权转移接收: design/zh-CN/network/recv.md
                 - AcceptSource 契约: design/zh-CN/network/accept-source-contract.md
           - 形式模型:

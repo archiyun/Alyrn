@@ -395,6 +395,7 @@ The documentation map is [`docs/index.md`](docs/index.md). Design notes are curr
 * **[Runtime Builder](docs/design/zh-CN/network/runtime-builder.md)**: compile-time backend tags and start/stop lifecycle.
 * **[Lifecycle-refined coroutine I/O](docs/design/zh-CN/network/lifecycle-refined-coroutine-io.md)**: logical I/O specification, three authorization boundaries, and epoll / io_uring refinement.
 * **[AsyncStream semantics](docs/design/zh-CN/network/async-stream-contract.md)**: read, write, close, cancellation, and buffer-lifetime semantics.
+* **[Cancellation and timeouts](docs/design/zh-CN/network/cancellation-and-timeouts.md)**: deadlines, connect timeouts, Timer/Ticker in Select, loop stop, and graceful shutdown.
 * **[Data structures](docs/design/zh-CN/datastructure/index.md)**: modern C++ intrusive data structures, intrusive red-black trees, intrusive lists, and their use in the project. QuadHeap is a first-class timer-index adapter injected through `time::TimerIndex`.
 * **[Performance benchmarks](docs/benchmark/network-libraries-20260810.md)**: the latest current-source C++ baseline; the broader unified network-library report and supporting material are in [`docs/benchmark`](docs/benchmark/).
 * **[Examples](examples/)**: Epoll and io_uring examples on Linux.
@@ -403,6 +404,8 @@ The documentation map is [`docs/index.md`](docs/index.md). Design notes are curr
 ## Current Status
 
 Alyrn is still an experimental networking runtime and is not yet a production-ready replacement for mature networking frameworks.
+
+Transport scope: TCP over IPv4 and IPv6. UDP and Unix domain sockets are not supported yet.
 
 Current work includes:
 

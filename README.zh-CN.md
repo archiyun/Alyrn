@@ -388,6 +388,7 @@ Alyrn 提供了可复现的 `wrk` 性能测试，用于比较：
 * **[Runtime Builder](docs/design/zh-CN/network/runtime-builder.md)：** 编译期 backend tag 与启停生命周期。
 * **[生命周期精化协程 I/O](docs/design/zh-CN/network/lifecycle-refined-coroutine-io.md)：** 逻辑 I/O 规范、三条授权边界，以及 epoll / io_uring 精化。
 * **[AsyncStream 语义契约](docs/design/zh-CN/network/async-stream-contract.md)：** read、write、close、取消与 buffer 生命周期语义。
+* **[取消与超时](docs/design/zh-CN/network/cancellation-and-timeouts.md)：** deadline、connect 超时、`Select` 中的 Timer/Ticker、loop 停止与优雅关停。
 * **[数据结构](docs/design/zh-CN/datastructure/index.md)：** C++ 现代风格的侵入式数据结构，侵入式红黑树，侵入式链表的设计与实现，以及它们在项目各处的应用。四叉堆是通过 `time::TimerIndex` 注入的一等 timer-index 适配器。
 * **[性能测试](docs/benchmark/network-libraries-20260810.md)：** 最新的当前源码 C++ 对照基线；完整统一网络库报告、测试方法、原始结果与优化记录见 [`docs/benchmark`](docs/benchmark/)。
 * **[示例](examples/)：** Linux 上的 Epoll 与 io_uring 使用示例。
@@ -396,6 +397,8 @@ Alyrn 提供了可复现的 `wrk` 性能测试，用于比较：
 ## 当前状态
 
 Alyrn 目前仍是一个实验性网络运行时，尚不适合作为成熟网络框架的生产级替代方案。
+
+传输层范围：IPv4 与 IPv6 上的 TCP。目前还不支持 UDP 和 Unix domain socket。
 
 当前正在推进的方向包括：
 

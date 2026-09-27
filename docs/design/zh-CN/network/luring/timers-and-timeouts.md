@@ -22,8 +22,21 @@ SleepFor
   -> 协程恢复
 ```
 
-非正 delay 可以立即 ready。loop 尚未初始化、timer 提交失败等情况应通过底层 `Result`
-返回，不应静默挂起。
+非正 delay 立即以成功完成。loop 尚未初始化、timer 提交失败等情况通过底层 `Result`
+返回，不会静默挂起。停止语义与 `epoll::SleepFor` 一致：
+
+- loop 停止时，正在进行的 `SleepFor` 以 `operation_canceled` 恢复。`SleepAwaiter` 是 loop 的
+  关停参与者，loop 在取消 ring 操作之前先结束它，随后的 drain 恢复该协程，因此睡眠中的
+  detached 协程不会被丢弃、帧也不会泄漏；
+- loop 已进入 `Stopping`/`Stopped` 时，任何 delay 都立即返回 `operation_canceled`；
+- 到期已经确定为成功之后，再发生的停止不改变结果；
+- owner 线程上提前销毁挂起中的协程帧会撤销 timer；continuation 已排队后才销毁帧属于契约违反，
+  会被检查拦下。
+
+定时器 API 的拼写与 `epoll::Loop` 一致：`RunAt`、`RunAfter`、`RunEvery`、`Cancel`
+（`CancelTimer` 保留为别名）。周期 timer 从每次到期重新计时，回调里可以取消自己。
+需要在 `Select` 中等待超时或周期事件时，用 `uring::Timer` / `uring::Ticker`：它们把触发时刻
+送进单槽 channel，loop 停止时关闭 channel，让等待者以空 `optional` 结束。
 
 `RunAfter()` 只有在新 timer 已进入逻辑树、且其首次 driver/update SQE 已成功准备后才返回
 `TimerId`。若 preparation 失败，它会回滚该新 timer 并保留原先已 armed 的 deadline；不能把
@@ -33,7 +46,8 @@ SleepFor
 
 ## loop 停止
 
-`RequestStop()` 会让 owner loop 进入取消与 completion drain，不能替代应用资源的 `Close()`。
+`RequestStop()` 会让 owner loop 先通知关停参与者（`SleepFor`、`Timer`/`Ticker`），再进入取消与
+completion drain，不能替代应用资源的 `Close()`。
 测试不能把“调用 `RequestStop()`”等同于“所有对象已经析构”：只有 pending CQE 和 ready work
 收敛后 loop 才会进入 `Stopped`；fd、BufferLease 和 coroutine owner 仍必须遵循各自的释放协议。
 
@@ -41,4 +55,5 @@ SleepFor
 
 - delay 到期后恢复一次，零 delay 不死锁；
 - loop stop 后 timer callback 不再新增业务 work；
-- timer 和 network operation 同时 pending 时，drain 不泄漏 CQE 或 coroutine frame。
+- timer 和 network operation 同时 pending 时，drain 不泄漏 CQE 或 coroutine frame；
+- loop 停止时睡眠中的协程以 `operation_canceled` 恢复并释放帧（`test_luring_timer_smoke`）。
