@@ -94,6 +94,32 @@ const std::size_t selected = co_await Select(
 清空对应 `optional`；send closed Channel 被选中时触发 panic。完整可运行示例见
 `examples/coro_select.cc`。
 
+### 定时器分支
+
+`Select` 只接受 channel case。需要超时或周期性事件时，使用后端提供的 `Timer`（一次性）与
+`Ticker`（周期性）：它们把 loop 定时器的触发时间送进一个单槽 channel，因此可以直接作为
+receive case，也可以单独 `co_await (ticker >> tick)`：
+
+```cpp
+alyrn::epoll::Ticker flush(loop, 50ms);  // alyrn::uring::Ticker 用法相同
+for (;;) {
+  std::optional<Event> event;
+  std::optional<alyrn::time::Deadline> tick;
+  const std::size_t which = co_await Select(events >> event, flush >> tick);
+  if (which == 0 && !event) break;  // events 已关闭且读完
+  // which == 1：到了刷新时间
+}
+```
+
+- `Timer` 触发一次，`Ticker` 每个周期触发一次，送出的值是触发时刻。接收方跟不上时 `Ticker`
+  只保留一个未取走的触发并丢弃其余的，不会积压。
+- `Stop()` 取消后续触发，`Reset()` 重新开始；二者都会丢弃尚未取走的触发。
+- loop 停止时它们关闭内部 channel：等在上面的 receive 以空 `optional` 完成，而不是永远挂起。
+- 只能在 loop 的 owner 线程上创建、使用和销毁，但可以在 `Run()` 之外创建或销毁。
+
+自己用 `RunAfter`/`RunEvery` 回调往 channel 里 `TrySend` 也可以，但要先检查 `Closed()`
+（向已关闭的 channel 发送会 panic），并且 loop 停止时等待者不会被唤醒。
+
 构造函数的 `capacity` 是 channel 可缓冲的 value 数量，可以是任意值；`0` 表示无缓冲 channel。
 内部环形存储向上取整为 `2` 的幂，以便用掩码回绕下标，但逻辑容量严格等于传入值：
 容量为 `3` 的 channel 恰好缓冲 `3` 个 value。
