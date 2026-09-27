@@ -88,6 +88,52 @@ bool AppendAndDrainPreserveOrder() {
   return ok;
 }
 
+// Four-byte blocks split the request line and the delimiter across blocks.
+bool FindSearchesAcrossBlocks() {
+  alyrn::io::Buffer buffer(4);
+  buffer.Append("GET / HTTP/1.1\r");
+  buffer.Append("\n\r\nbody");
+
+  bool ok = Expect(buffer.Find("\r\n\r\n") == 14u, "Find must match across block boundaries");
+  ok &= Expect(buffer.Find("GET") == 0u, "Find must match at the start");
+  ok &= Expect(buffer.Find("body") == 18u, "Find must match at the end");
+  ok &= Expect(!buffer.Find("\r\n\r\n", 15), "Find must honor its start offset");
+  ok &= Expect(!buffer.Find("bodyx"), "Find must not read past the readable bytes");
+  ok &= Expect(!buffer.Find("missing"), "Find must report a missing needle");
+  ok &= Expect(buffer.Find("", 3) == 3u, "an empty needle matches at its start offset");
+
+  buffer.Drain(4);
+  ok &= Expect(buffer.Find("\r\n\r\n") == 10u, "Find offsets must follow Drain");
+  return ok;
+}
+
+bool LinearizeJoinsAPrefix() {
+  alyrn::io::Buffer buffer(4);
+  buffer.Append("ab");
+  buffer.Append("cdefghij");
+
+  bool ok = Expect(buffer.ContiguousView().size() < 6, "the test needs a split prefix");
+  auto joined = buffer.Linearize(6);
+  ok &= Expect(joined.size() == 6 &&
+                   std::string_view(reinterpret_cast<const char*>(joined.data()), 6) == "abcdef",
+               "Linearize must return the first n bytes contiguously");
+  ok &= Expect(buffer.ContiguousText().starts_with("abcdef"),
+               "the linearized prefix must be the first contiguous view");
+  ok &= Expect(buffer.ReadableBytes() == 10 && Gather(buffer) == "abcdefghij",
+               "Linearize must not change the readable bytes");
+
+  const std::byte* before = buffer.ContiguousView().data();
+  auto again = buffer.Linearize(4);
+  ok &= Expect(again.data() == before, "an already contiguous prefix must not be copied");
+  ok &= Expect(buffer.Linearize(0).empty(), "Linearize(0) must return an empty view");
+
+  buffer.Append("XY");
+  ok &= Expect(Gather(buffer) == "abcdefghijXY", "appends after Linearize must keep order");
+  buffer.Drain(7);
+  ok &= Expect(Gather(buffer) == "hijXY", "drain after Linearize must keep the suffix");
+  return ok;
+}
+
 bool PreparedWriteAppendsAtTailOnly() {
   alyrn::io::Buffer buffer(4);
 
@@ -285,6 +331,8 @@ bool ReservationInvariantsFailClosed() {
 int main() {
   bool ok = true;
   ok &= AppendAndDrainPreserveOrder();
+  ok &= FindSearchesAcrossBlocks();
+  ok &= LinearizeJoinsAPrefix();
   ok &= PreparedWriteAppendsAtTailOnly();
   ok &= AbortWriteDiscardsReservation();
   ok &= StackBackedWriteReservationCanBeRecreated();

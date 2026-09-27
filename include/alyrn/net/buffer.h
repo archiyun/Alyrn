@@ -66,6 +66,83 @@ public:
     return {reinterpret_cast<const char*>(view.data()), view.size()};
   }
 
+  // Returns the offset of the first occurrence of needle in the readable
+  // bytes at or after `from`, searching across block boundaries, or nullopt.
+  // A protocol parser can look for a delimiter such as "\r\n\r\n" without
+  // knowing how the bytes were split into blocks.
+  [[nodiscard]]
+  std::optional<std::size_t> Find(std::span<const std::byte> needle,
+                                  std::size_t from = 0) const noexcept {
+    if (from > readable_bytes_ || needle.size() > readable_bytes_ - from) {
+      return std::nullopt;
+    }
+    if (needle.empty()) {
+      return from;
+    }
+    const std::size_t last_start = readable_bytes_ - needle.size();
+    std::size_t offset = 0;
+    for (auto block = blocks_.Begin(); block != blocks_.End(); ++block) {
+      const std::size_t size = block->ReadableBytes();
+      const std::byte* data = block->ReadData();
+      for (std::size_t i = from > offset ? from - offset : 0; i < size; ++i) {
+        if (offset + i > last_start) {
+          return std::nullopt;
+        }
+        if (data[i] == needle[0] && MatchesFrom(block, i, needle)) {
+          return offset + i;
+        }
+      }
+      offset += size;
+    }
+    return std::nullopt;
+  }
+
+  [[nodiscard]]
+  std::optional<std::size_t> Find(std::string_view needle, std::size_t from = 0) const noexcept {
+    return Find(std::as_bytes(std::span<const char>(needle.data(), needle.size())), from);
+  }
+
+  // Makes the first n readable bytes contiguous and returns them. It copies
+  // only when they span blocks, moving them into one new front block. The
+  // view is valid until the next change to the buffer.
+  std::span<const std::byte> Linearize(std::size_t n) {
+    AssertNoWriteReservation();
+    ALYRN_CHECK(n <= readable_bytes_, "Buffer::Linearize past the readable bytes");
+    if (n == 0) {
+      return {};
+    }
+    // Drained blocks in front would hide where the readable bytes start.
+    while (Block* front = blocks_.Front()) {
+      if (front->ReadableBytes() > 0) {
+        break;
+      }
+      blocks_.PopFront();
+      delete front;
+    }
+    Block* first = blocks_.Front();
+    if (first->ReadableBytes() >= n) {
+      return {first->ReadData(), n};
+    }
+
+    Block* merged = NewBlock(std::max(block_size_, n));
+    std::size_t copied = 0;
+    while (copied < n) {
+      Block* front = blocks_.Front();
+      const std::size_t take = std::min(front->ReadableBytes(), n - copied);
+      std::memcpy(merged->WriteData(), front->ReadData(), take);
+      merged->write_pos += take;
+      front->read_pos += take;
+      copied += take;
+      if (front->ReadableBytes() == 0) {
+        blocks_.PopFront();
+        delete front;
+      }
+    }
+    const bool linked = blocks_.PushFront(merged);
+    ALYRN_CHECK(linked, "Buffer failed to link a linearized block");
+    return {merged->ReadData(), n};
+  }
+
   [[nodiscard]]
   std::vector<iovec> ReadableIov(std::size_t max_iov = 16) const {
     std::vector<iovec> out;
@@ -283,6 +360,26 @@ private:
   using BlockList = alyrn::detail::IntrusiveList<Block, BlockTag>;
 
   static Block* NewBlock(std::size_t capacity) { return new Block(capacity); }
+
+  // Whether needle occurs at `index` of `block`, continuing into the blocks
+  // after it.
+  bool MatchesFrom(BlockList::const_iterator block, std::size_t index,
+                   std::span<const std::byte> needle) const noexcept {
+    std::size_t matched = 0;
+    for (; block != blocks_.End(); ++block, index = 0) {
+      const std::size_t size = block->ReadableBytes();
+      const std::byte* data = block->ReadData();
+      for (; index < size && matched < needle.size(); ++index, ++matched) {
+        if (data[index] != needle[matched]) {
+          return false;
+        }
+      }
+      if (matched == needle.size()) {
+        return true;
+      }
+    }
+    return false;
+  }
 
   const Block* FirstReadableBlock() const noexcept {
     auto& blocks = const_cast<BlockList&>(blocks_);
