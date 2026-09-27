@@ -271,6 +271,38 @@ DetachedTask DetachedWaitForGate(ManualGate* gate, bool* resumed, Scheduler** re
   *resumed_scheduler = Scheduler::TryCurrent();
 }
 
+// Marks its flag when the last owner is destroyed.
+struct LifeFlag {
+  explicit LifeFlag(bool* destroyed) noexcept : destroyed_(destroyed) {}
+  LifeFlag(LifeFlag&& other) noexcept : destroyed_(std::exchange(other.destroyed_, nullptr)) {}
+  LifeFlag(const LifeFlag&) = delete;
+  LifeFlag& operator=(const LifeFlag&) = delete;
+  LifeFlag& operator=(LifeFlag&&) = delete;
+  ~LifeFlag() {
+    if (destroyed_ != nullptr) *destroyed_ = true;
+  }
+
+private:
+  bool* destroyed_;
+};
+
+DetachedTask DetachedWithParameter(LifeFlag flag, ManualGate* gate) {
+  co_await gate->Wait();
+  (void)flag;
+}
+
+struct CompletionRecord {
+  int calls{0};
+  const bool* parameter_destroyed{nullptr};
+  bool parameter_alive_at_call{false};
+};
+
+void RecordCompletion(void* context) noexcept {
+  auto* record = static_cast<CompletionRecord*>(context);
+  ++record->calls;
+  record->parameter_alive_at_call = !*record->parameter_destroyed;
+}
+
 Task<int> ReturnAfterGate(ManualGate* gate) {
   co_await gate->Wait();
   co_return 42;
@@ -390,6 +422,23 @@ int main() {
     if (!Check(detached_resumed, "resumed DetachedTask should finish")) return 1;
     if (!Check(detached_scheduler == &sched,
                "resumed DetachedTask should use the current scheduler")) {
+      return 1;
+    }
+
+    // OnComplete runs once when the task finishes, before its frame and the
+    // parameters it owns are destroyed.
+    bool parameter_destroyed = false;
+    CompletionRecord record{.parameter_destroyed = &parameter_destroyed};
+    ManualGate completion_gate;
+    auto observed = DetachedWithParameter(LifeFlag{&parameter_destroyed}, &completion_gate);
+    observed.OnComplete(&RecordCompletion, &record);
+    SpawnDetach(sched, std::move(observed));
+    if (!Check(sched.DrainOne(), "observed DetachedTask should start")) return 1;
+    if (!Check(record.calls == 0, "OnComplete must wait for the task to finish")) return 1;
+    completion_gate.Open(sched);
+    if (!Check(sched.DrainOne(), "observed DetachedTask should resume")) return 1;
+    if (!Check(record.calls == 1 && record.parameter_alive_at_call && parameter_destroyed,
+               "OnComplete must run once, before the frame and its parameters go away")) {
       return 1;
     }
 
