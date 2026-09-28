@@ -40,17 +40,17 @@
 把 `EMFILE` / `ENFILE` / `ENOBUFS` / `ENOMEM` 归为**可重试的瞬时资源错误**：不是致命错误，也不能
 立即空转重试，而应退避后重试，让事件循环在退避窗口里服务已有连接、腾出 fd。
 
-- [ ] 在 `net::detail` 增加 `IsTransientAcceptResourceError(int)`，与既有的
+- [x] 在 `net::detail` 增加 `IsTransientAcceptResourceError(int)`，与既有的
       `IsAcceptedConnectionError` 并列，集中定义这组 errno。
-- [ ] epoll `AcceptLoop`（`src/epoll/worker.cc`）：遇到瞬时资源错误时先 `co_await SleepFor` 退避
+- [x] epoll `AcceptLoop`（`src/epoll/worker.cc`）：遇到瞬时资源错误时先 `co_await SleepFor` 退避
       再重试；`SleepFor` 在 loop 停止时返回 `ECANCELED`，据此退出循环。这既打破同步死转，又让
       loop 在退避期间处理已有连接。
-- [ ] uring 单发 `AcceptLoop`（`src/uring/worker.cc`，非默认路径）：同样退避后重试。
-- [ ] uring 多发 `MultishotAcceptLoop`（默认路径）：源在瞬时错误时本就把 errno 通过 `Next()` 抛出
+- [x] uring 单发 `AcceptLoop`（`src/uring/worker.cc`，非默认路径）：同样退避后重试。
+- [x] uring 多发 `MultishotAcceptLoop`（默认路径）：源在瞬时错误时本就把 errno 通过 `Next()` 抛出
       （`RequestBackendStop(NegErrno)` 已设 `terminal_error_`）。消费循环识别该 errno →
       `co_await source.Stop()` 收敛旧源 → 销毁旧源 → 退避 → `CreateAcceptSource` 重建，继续接受。
       **完全复用已测的源生命周期，不改 LRCI 收敛状态机。**
-- [ ] 退避固定为一个较小的常量（打破空转、可预测即可）；持续压力下每个退避周期只尝试一次
+- [x] 退避固定为 `kAcceptBackoff = 10ms`（打破空转、可预测）；持续压力下每个退避周期只尝试一次
       accept，CPU 可忽略，能服务的连接仍在 backlog 等待 fd 释放。
 
 不做（记录）：Marc Lehmann/libev 的"预留一个备用 fd，`EMFILE` 时关掉它、accept 后立即 close 摘掉
@@ -59,11 +59,32 @@
 
 ## 验收
 
-- [ ] `IsTransientAcceptResourceError` 有单元测试覆盖分类。
-- [ ] 行为测试（两后端）：fork 子进程内降 `RLIMIT_NOFILE` 隔离，起单 worker `Runtime` echo 服务器，
-      建立一条 keep-alive 连接并确认 echo，随后把 fd 顶爆，断言：①老连接在超时内仍能 echo（证明
-      未被饿死/空转）；②请求停止后子进程在墙钟期限内干净退出（证明 loop 未被卡死）。父进程用墙钟
-      超时兜底，卡死即杀并判失败。uring 在 io_uring 不可用时按仓库惯例 SKIP。
-- [ ] 每个提交在干净副本中单独通过 epoll 与 uring 全量测试；最终版本跑 CI 全部配置
+- [x] `IsTransientAcceptResourceError` 有单元测试覆盖分类（`test_net_utils.cc`）。
+- [x] 行为测试（两后端，`test_accept_resource_exhaustion_smoke.cc`）：fork 子进程内降
+      `RLIMIT_NOFILE` 隔离（服务器在子进程，客户端在父进程用自己的 fd 预算把服务端顶爆），断言
+      ①老连接在压力下仍能 echo；②放开 fd 后新连接能被服务（自愈）；③请求停止后子进程在墙钟期限内
+      干净退出。父进程用墙钟超时兜底，卡死即杀并判失败。已做正反验证：还原任一后端的旧逻辑，测试
+      都能在期限内失败（epoll 报饿死+未恢复+未停止；uring 报未恢复）。uring 不可用时 SKIP。
+- [x] 每个提交在干净副本中单独通过 epoll 与 uring 全量测试；最终版本跑 CI 全部配置
       （clang/GCC 严格警告、Release、ASan/UBSan、TSan）与 `mkdocs build --strict`。
-- [ ] 用修复后的库重跑第三轮试用程序，确认两后端在 fd 耗尽后都不再卡死、能自愈。
+- [x] 用修复后的库重跑第三轮试用程序，确认两后端在 fd 耗尽后都不再卡死、能自愈。
+
+## 结果
+
+分支 `agent/user-trial-round3-fixes`，在 `main`（fc83dcf）之上：
+
+| 提交 | 内容 |
+|---|---|
+| fe486a8 | 本计划 |
+| 23b79f4 | `net::detail::IsTransientAcceptResourceError` 分类 + 单元测试 |
+| b61c909 | epoll accept 退避（G6）+ fork 行为测试 |
+| a9e5dda | uring 单发/多发 accept 退避与源重建（G7） |
+
+用修复后的库（干净副本，隔离用户 WIP）重跑第三轮试用程序，`prlimit --nofile=64` + 多开 84 条连接：
+
+| 阶段 | 修复前 epoll | 修复后 epoll | 修复前 uring | 修复后 uring |
+|---|---|---|---|---|
+| 耗尽时 | CPU 100%，老连接超时 | CPU 0%，老连接 ok | CPU 0%，老连接 ok | CPU 0%，老连接 ok |
+| 放开后 | CPU 100%，新/老全超时 | CPU 0%，新/老 ok | 新连接超时 | 新/老 ok |
+
+两后端现在都：不空转、耗尽期间照常服务已有连接、fd 释放后完全自愈。
