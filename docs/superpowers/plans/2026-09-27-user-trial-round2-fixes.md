@@ -121,3 +121,8 @@ uring 会话泄漏；代理的 connect 超时竞速在 uring + LSan 下报告 71
 不再报告泄漏（修复前 719 字节）；uring 睡眠中的协程在停止时以 `operation_canceled` 恢复；优雅关停
 改用 `ShutdownGrace` + `OnWorkerDrain`，结果与手写版一致，关停期间的新连接在连接阶段即被拒绝；
 流水线改用 `Ticker`；解析客户端改用 `WithPort()` + `Connect(Endpoint)`。
+
+合入 `main` 并推送后，GitHub CI 的 gcc-14 job 全部编译失败：GCC 14 解析不了模板里的
+`(co_await x).member`，本地验证用的 GCC 16 与 clang 22 都没有这个问题。739958c 改为先把结果存进
+具名变量再判断，并在 GCC 14.2 容器中跑通了 CI 里 gcc-14 的全部配置（Debug、Release、严格警告、
+io_uring）。
