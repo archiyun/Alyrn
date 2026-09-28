@@ -14,13 +14,20 @@
 
 #include "alyrn/result.h"
 #include "alyrn/coro/spawn.h"
+#include "alyrn/net/detail/socket.h"
+#include "alyrn/time/clock.h"
 #include "alyrn/uring/detail/loop_access.h"
 #include "alyrn/uring/listener.h"
 #include "alyrn/uring/loop.h"
+#include "alyrn/uring/timer.h"
 
 namespace alyrn::uring::detail {
 
 namespace {
+
+// Backoff before retrying accept after a transient resource error, so the loop
+// can service existing connections and free descriptors instead of spinning.
+constexpr time::Duration kAcceptBackoff = time::Milliseconds(10);
 
 // Runs when a connection handler finishes. A drain stops the loop once the
 // last handler is gone.
@@ -48,6 +55,14 @@ coro::DetachedTask AcceptLoop(WorkerContext& context,
       if (error == ECANCELED || error == EBADF) {
         co_return;
       }
+      if (net::detail::IsTransientAcceptResourceError(error)) {
+        // Descriptors are exhausted; back off so the loop can drain and close
+        // connections before retrying. A loop stop ends the wait with ECANCELED.
+        auto waited = co_await SleepFor(context.loop, kAcceptBackoff);
+        if (!waited.HasValue()) {
+          co_return;
+        }
+      }
       continue;
     }
     if (*callback) {
@@ -59,34 +74,54 @@ coro::DetachedTask AcceptLoop(WorkerContext& context,
 coro::DetachedTask MultishotAcceptLoop(
     WorkerContext& context,
     Worker::ConnectionCallback* callback) {
-  auto source_result = context.listener.CreateAcceptSource({
-      .pending_depth = 1,
-      .event_capacity = 1024,
-  });
-  if (!source_result.HasValue()) {
-    co_return;
-  }
-
-  auto source = std::move(*source_result);
   for (;;) {
-    auto accepted = co_await source.Next();
-    if (!accepted.HasValue()) {
-      break;
-    }
-    if (!*accepted) {
-      break;
+    // A terminal EMFILE/ENFILE CQE stops the multishot source (it cannot be
+    // re-armed in place, unlike a per-connection error). The source surfaces
+    // that errno through Next(); recreate the source after a backoff so the
+    // listener keeps accepting instead of stopping for good after one EMFILE.
+    bool retry_after_backoff = false;
+    {
+      auto source_result = context.listener.CreateAcceptSource({
+          .pending_depth = 1,
+          .event_capacity = 1024,
+      });
+      if (!source_result.HasValue()) {
+        co_return;
+      }
+
+      auto source = std::move(*source_result);
+      for (;;) {
+        auto accepted = co_await source.Next();
+        if (!accepted.HasValue()) {
+          retry_after_backoff =
+              net::detail::IsTransientAcceptResourceError(accepted.Error().value());
+          break;
+        }
+        if (!*accepted) {
+          break;
+        }
+
+        if (*callback) {
+          SpawnHandler(context, *callback, std::move(**accepted));
+        }
+      }
+
+      // Stop() is idempotent and also covers an error or listener-close path. It
+      // keeps the source's operation/cancel state converged before its frame is
+      // destroyed at the end of this scope, which releases the listener's
+      // accept-source slot for the next CreateAcceptSource.
+      auto stopped = co_await source.Stop();
+      (void)stopped;
     }
 
-    if (*callback) {
-      SpawnHandler(context, *callback, std::move(**accepted));
+    if (!retry_after_backoff) {
+      co_return;
+    }
+    auto waited = co_await SleepFor(context.loop, kAcceptBackoff);
+    if (!waited.HasValue()) {
+      co_return;
     }
   }
-
-  // Stop() is idempotent and also covers an error or listener-close path. It
-  // keeps the source's operation/cancel state converged before its frame is
-  // destroyed.
-  auto stopped = co_await source.Stop();
-  (void)stopped;
 }
 
 coro::DetachedTask CloseListener(Listener* listener,
