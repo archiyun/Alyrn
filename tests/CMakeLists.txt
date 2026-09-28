@@ -178,6 +178,22 @@ endif()
 
 add_test(NAME runtime_builder_smoke_test COMMAND runtime_builder_smoke_test)
 
+add_executable(accept_resource_exhaustion_smoke_test
+    unit/test_accept_resource_exhaustion_smoke.cc
+)
+
+target_link_libraries(accept_resource_exhaustion_smoke_test
+    PRIVATE
+        alyrn_epoll
+)
+
+if(ALYRN_ENABLE_URING)
+    target_link_libraries(accept_resource_exhaustion_smoke_test PRIVATE alyrn_luring)
+    target_compile_definitions(accept_resource_exhaustion_smoke_test PRIVATE ALYRN_ENABLE_URING)
+endif()
+
+add_test(NAME accept_resource_exhaustion_smoke_test COMMAND accept_resource_exhaustion_smoke_test)
+
 add_executable(completion_gate_smoke_test
     unit/test_completion_gate_smoke.cc
 )

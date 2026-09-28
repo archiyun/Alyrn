@@ -8,11 +8,18 @@
 
 #include "alyrn/coro/frame_allocator.h"
 #include "alyrn/coro/spawn.h"
+#include "alyrn/epoll/timer.h"
+#include "alyrn/net/detail/socket.h"
 #include "alyrn/result.h"
+#include "alyrn/time/clock.h"
 
 namespace alyrn::epoll::detail {
 
 namespace {
+
+// Backoff before retrying accept after a transient resource error, so the loop
+// can service existing connections and free descriptors instead of spinning.
+constexpr time::Duration kAcceptBackoff = time::Milliseconds(10);
 
 // Runs when a connection handler finishes. A drain stops the loop once the
 // last handler is gone.
@@ -31,6 +38,17 @@ coro::DetachedTask AcceptLoop(WorkerContext& context, Worker::ConnectionCallback
       const int error = accepted.Error().value();
       if (error == ECANCELED || error == EBADF) {
         co_return;
+      }
+      if (net::detail::IsTransientAcceptResourceError(error)) {
+        // Descriptors are exhausted; the failed connection is still queued and
+        // the listen socket stays readable, so retrying at once would spin at
+        // 100% CPU and starve every existing connection. Back off first, which
+        // lets the loop drain and close connections; a loop stop cuts the wait
+        // short with ECANCELED.
+        auto waited = co_await SleepFor(context.loop, kAcceptBackoff);
+        if (!waited.HasValue()) {
+          co_return;
+        }
       }
       continue;
     }
