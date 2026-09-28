@@ -233,6 +233,30 @@ TEST(SocketTest, QueriesConnectedIPv4Endpoints) {
   EXPECT_FALSE(*self_connect);
 }
 
+TEST(SocketErrorsTest, ClassifiesTransientAcceptResourceErrors) {
+  // Descriptor and memory exhaustion are transient: the connection stays in
+  // the backlog and accept can succeed later, so a listener backs off.
+  EXPECT_TRUE(detail::IsTransientAcceptResourceError(EMFILE));
+  EXPECT_TRUE(detail::IsTransientAcceptResourceError(ENFILE));
+  EXPECT_TRUE(detail::IsTransientAcceptResourceError(ENOBUFS));
+  EXPECT_TRUE(detail::IsTransientAcceptResourceError(ENOMEM));
+
+  // A reset or aborted single connection is skippable, not a resource limit.
+  EXPECT_FALSE(detail::IsTransientAcceptResourceError(ECONNABORTED));
+  EXPECT_FALSE(detail::IsTransientAcceptResourceError(EAGAIN));
+  EXPECT_FALSE(detail::IsTransientAcceptResourceError(EBADF));
+  EXPECT_FALSE(detail::IsTransientAcceptResourceError(ECANCELED));
+
+  // The two accept-error classes are disjoint: a connection error is skipped,
+  // a resource error is retried, and neither must be mistaken for the other.
+  for (int error : {EMFILE, ENFILE, ENOBUFS, ENOMEM}) {
+    EXPECT_FALSE(detail::IsAcceptedConnectionError(error));
+  }
+  for (int error : {ECONNABORTED, ECONNRESET, ETIMEDOUT}) {
+    EXPECT_FALSE(detail::IsTransientAcceptResourceError(error));
+  }
+}
+
 }  // namespace
 }  // namespace alyrn::net
 

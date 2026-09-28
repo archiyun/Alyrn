@@ -111,6 +111,24 @@ constexpr bool IsAcceptedConnectionError(int error) noexcept {
   }
 }
 
+// Resource-exhaustion errors from accept() that are transient, not fatal: the
+// pending connection stays in the listen backlog and the same accept can
+// succeed once descriptors or memory free up. A listener must not treat these
+// as terminal, nor retry them in a tight loop (the listen socket stays
+// readable, so an immediate retry spins at 100% CPU); it backs off and retries.
+[[nodiscard]]
+constexpr bool IsTransientAcceptResourceError(int error) noexcept {
+  switch (error) {
+    case EMFILE:   // per-process descriptor limit
+    case ENFILE:   // system-wide descriptor limit
+    case ENOBUFS:  // no buffer space
+    case ENOMEM:   // out of memory
+      return true;
+    default:
+      return false;
+  }
+}
+
 }  // namespace detail
 
 // Creates a non-blocking TCP socket with close-on-exec enabled. Linux keeps
