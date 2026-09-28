@@ -669,7 +669,9 @@ coro::DetachedTask ServeCommand(Stream stream) {
   }
   const std::array<std::byte, 4> done{std::byte{'d'}, std::byte{'o'}, std::byte{'n'},
                                       std::byte{'e'}};
-  if ((co_await stream.Write(done)).HasValue()) {
+  // A named result: GCC 14 cannot parse `(co_await x).member` in a template.
+  auto written = co_await stream.Write(done);
+  if (written.HasValue()) {
     ++g_drain_answered;
   }
 }
