@@ -32,12 +32,19 @@ class ProvidedBufferPool;
 
 struct RecvSourceOptions {
   net::RecvSourceOptions source{};
-  std::size_t buffer_size{16 * 1024};
+  // Size of each provided buffer. Every RecvSource on a Loop shares one
+  // provided-buffer ring, which has a single buffer size fixed at Loop::Init by
+  // uring::Options::shared_buffer_size (default 16 KiB). A non-zero value here
+  // must equal that size, or Create() fails. Leave it 0 (the default) to adopt
+  // the Loop's size, which always matches; set it only to assert an expected
+  // size.
+  std::size_t buffer_size{0};
 
   [[nodiscard]]
   bool Valid() const noexcept {
     const std::size_t capacity = source.buffer_capacity;
-    return source.Valid() && source.pending_depth == 1 && buffer_size > 0 &&
+    // buffer_size == 0 means "adopt the Loop's shared buffer size".
+    return source.Valid() && source.pending_depth == 1 &&
            buffer_size <= std::numeric_limits<std::uint32_t>::max() && capacity <= 32 * 1024 &&
            (capacity & (capacity - 1)) == 0;
   }

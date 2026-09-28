@@ -734,8 +734,114 @@ bool CheckOverflowKeepsEveryByte() {
 
 }  // namespace
 
+// Only a genuinely missing provided-buffer ring is a skip here. Unlike
+// IsEnvironmentSkip, EINVAL is NOT skipped: it is the very error a buffer_size
+// mismatch produces, and this test must see it rather than mask it.
+bool IsProvidedBufferUnavailable(Error error) {
+  return error == std::errc::operation_not_supported ||
+         error == std::errc::operation_not_permitted || error == std::errc::permission_denied ||
+         error == std::errc::function_not_supported;
+}
+
+// buffer_size == 0 adopts the Loop's shared buffer size, so a RecvSource need
+// not restate it; a non-zero size that disagrees with the ring is rejected.
+bool CheckBufferSizeInheritance() {
+  // (1) Inherit against a NON-default shared buffer size. With the old default
+  // (16 KiB) this Create would have failed against an 8 KiB ring.
+  {
+    Loop loop;
+    switch (InitLoop(loop, 32, 8192)) {
+      case LoopInitStatus::kReady:
+        break;
+      case LoopInitStatus::kSkip:
+        return true;
+      case LoopInitStatus::kFail:
+        return false;
+    }
+    auto pair = MakeSocketPair();
+    if (!pair.HasValue()) {
+      std::cout << "FAIL: socketpair failed: " << pair.Error().message() << '\n';
+      return false;
+    }
+    auto receiver = std::move(pair->first);
+    auto sender = std::move(pair->second);
+
+    RecvSourceOptions options;
+    options.source.pending_depth = 1;
+    options.source.event_capacity = 4;
+    options.source.buffer_capacity = 4;
+    // buffer_size left 0: adopt the loop's 8 KiB ring.
+
+    auto source_result = RecvSource::Create(&loop, receiver.Get(), options);
+    if (!source_result.HasValue()) {
+      if (IsProvidedBufferUnavailable(source_result.Error())) {
+        std::cout << "SKIP: provided buffer ring unavailable: "
+                  << source_result.Error().message() << '\n';
+        return true;
+      }
+      std::cout << "FAIL: inherited-size RecvSource creation failed: "
+                << source_result.Error().message() << '\n';
+      return false;
+    }
+    auto source = std::move(*source_result);
+
+    Observation observation;
+    alyrn::coro::SpawnDetach(loop, ReceiveOne(&source, &observation));
+    alyrn::uring::detail::LoopAccess::RunReady(loop);
+    constexpr std::string_view kPayload = "inherited-buffer-size";
+    if (::send(sender.Get(), kPayload.data(), kPayload.size(), MSG_NOSIGNAL) !=
+        static_cast<ssize_t>(kPayload.size())) {
+      std::cout << "FAIL: send failed: " << alyrn::CurrentErrno().message() << '\n';
+      return false;
+    }
+    if (!PumpUntil(loop, [&] { return observation.done || observation.error.has_value(); })) {
+      return false;
+    }
+    if (observation.error.has_value() || observation.payload != kPayload) {
+      std::cout << "FAIL: inherited-size recv did not echo the payload\n";
+      return false;
+    }
+  }
+
+  // (2) An explicit size that disagrees with the ring is rejected (the loop is
+  // up, since case 1 received data on this same environment).
+  {
+    Loop loop;
+    switch (InitLoop(loop, 32, 8192)) {
+      case LoopInitStatus::kReady:
+        break;
+      case LoopInitStatus::kSkip:
+        return true;
+      case LoopInitStatus::kFail:
+        return false;
+    }
+    auto pair = MakeSocketPair();
+    if (!pair.HasValue()) {
+      std::cout << "FAIL: socketpair failed: " << pair.Error().message() << '\n';
+      return false;
+    }
+    auto receiver = std::move(pair->first);
+
+    RecvSourceOptions options;
+    options.source.pending_depth = 1;
+    options.source.event_capacity = 4;
+    options.source.buffer_capacity = 4;
+    options.buffer_size = 4096;  // != the loop's 8 KiB ring
+
+    auto mismatched = RecvSource::Create(&loop, receiver.Get(), options);
+    if (mismatched.HasValue()) {
+      std::cout << "FAIL: a buffer_size that disagrees with the ring must be rejected\n";
+      return false;
+    }
+  }
+  return true;
+}
+
 int main() {
   if (!CheckRecvAndLease()) {
+    return 1;
+  }
+  if (!CheckBufferSizeInheritance()) {
     return 1;
   }
   if (!CheckHeldLeases()) {

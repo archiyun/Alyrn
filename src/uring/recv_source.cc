@@ -140,9 +140,6 @@ Result<RecvSource> RecvSource::Create(Loop* loop, int fd, RecvSourceOptions opti
     return std::unexpected(Errno(EINVAL));
   }
   const std::size_t capacity = options.source.buffer_capacity;
-  if (capacity > std::numeric_limits<std::size_t>::max() / options.buffer_size) {
-    return std::unexpected(Errno(EOVERFLOW));
-  }
 
   auto state_result = RecvSourceStateMachine::Create(options.source);
   if (!state_result.HasValue()) {
@@ -150,8 +147,13 @@ Result<RecvSource> RecvSource::Create(Loop* loop, int fd, RecvSourceOptions opti
   }
 
   const auto published = std::min(capacity, RecvSourceStateMachine::kMaxRearmWorkingSet);
-  auto shared_pool =
-      detail::LoopAccess::GetSharedProvidedBufferPool(*loop, options.buffer_size, published);
+  // buffer_size == 0 adopts the Loop's shared buffer size (which always matches
+  // the shared ring); a non-zero size must equal it or the two-argument lookup
+  // rejects the mismatch.
+  auto shared_pool = options.buffer_size == 0
+                         ? detail::LoopAccess::GetSharedProvidedBufferPool(*loop, published)
+                         : detail::LoopAccess::GetSharedProvidedBufferPool(
+                               *loop, options.buffer_size, published);
   if (!shared_pool.HasValue()) {
     if (shared_pool.Error().value() == ENOENT) {
       return std::unexpected(Errno(ENOTSUP));
@@ -160,6 +162,12 @@ Result<RecvSource> RecvSource::Create(Loop* loop, int fd, RecvSourceOptions opti
   }
   detail::ProvidedBufferPool* const buffer_pool = *shared_pool;
   ALYRN_CHECK(buffer_pool != nullptr, "RecvSource failed to select a buffer pool");
+  // The pool's size is authoritative once selected, whether inherited or matched.
+  const std::size_t buffer_size = buffer_pool->buffer_size();
+  ALYRN_CHECK(buffer_size > 0, "RecvSource selected a pool with a zero buffer size");
+  if (capacity > std::numeric_limits<std::size_t>::max() / buffer_size) {
+    return std::unexpected(Errno(EOVERFLOW));
+  }
   if (capacity > buffer_pool->capacity()) return std::unexpected(Errno(EINVAL));
 
   std::vector<RecvSource::PendingEvent> event_storage;
@@ -169,7 +177,7 @@ Result<RecvSource> RecvSource::Create(Loop* loop, int fd, RecvSourceOptions opti
   try {
     event_storage.resize(options.source.event_capacity);
     slot_storage.resize(buffer_pool->capacity());
-    queued_payloads.resize(capacity * options.buffer_size);
+    queued_payloads.resize(capacity * buffer_size);
     copy_free.resize(capacity);
   } catch (...) {
     return std::unexpected(Errno(ENOMEM));
@@ -178,9 +186,8 @@ Result<RecvSource> RecvSource::Create(Loop* loop, int fd, RecvSourceOptions opti
     copy_free[slot] = slot;
   }
 
-  return RecvSource(loop, fd, *state_result, options.buffer_size, buffer_pool,
-                    std::move(event_storage), std::move(slot_storage), std::move(queued_payloads),
-                    std::move(copy_free));
+  return RecvSource(loop, fd, *state_result, buffer_size, buffer_pool, std::move(event_storage),
+                    std::move(slot_storage), std::move(queued_payloads), std::move(copy_free));
 }
 
 RecvSource::RecvSource(Loop* loop, int fd, RecvSourceStateMachine state, std::size_t buffer_size,
