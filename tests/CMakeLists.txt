@@ -178,6 +178,18 @@ endif()
 
 add_test(NAME runtime_builder_smoke_test COMMAND runtime_builder_smoke_test)
 
+add_executable(buffer_fuzz_test
+    unit/test_buffer_fuzz.cc
+)
+target_link_libraries(buffer_fuzz_test PRIVATE alyrn_net)
+add_test(NAME buffer_fuzz_test COMMAND buffer_fuzz_test)
+
+add_executable(endpoint_parse_fuzz_test
+    unit/test_endpoint_parse_fuzz.cc
+)
+target_link_libraries(endpoint_parse_fuzz_test PRIVATE alyrn_net)
+add_test(NAME endpoint_parse_fuzz_test COMMAND endpoint_parse_fuzz_test)
+
 add_executable(accept_resource_exhaustion_smoke_test
     unit/test_accept_resource_exhaustion_smoke.cc
 )
